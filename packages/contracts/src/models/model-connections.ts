@@ -4,6 +4,7 @@ import { SettingsScopeSchema } from "../settings-scope.js";
 import { ModelHeadersSchema } from "./model-headers.js";
 
 const optionalText = z.string().optional();
+const optionalFlag = z.boolean().optional();
 
 /** Default maximum number of completion tokens for an OpenAI-compatible connection. */
 export const DEFAULT_MODEL_MAX_TOKENS = 4_096;
@@ -86,9 +87,9 @@ export const ModelSettingsSchema = z
   .object({
     contextWindow: z.number().int().min(1).max(MAX_MODEL_CONTEXT_WINDOW).optional(),
     maxTokens: z.number().int().min(1).max(MAX_MODEL_MAX_TOKENS).optional(),
-    images: z.boolean().optional(),
+    images: optionalFlag,
     maxImagesPerPrompt: z.number().int().min(1).max(1000).optional(),
-    reasoning: z.boolean().optional(),
+    reasoning: optionalFlag,
   })
   .refine((value) => modelOutputLeavesInputRoom(value.maxTokens, value.contextWindow), {
     message: "Maximum output tokens must leave room for input",
@@ -133,12 +134,12 @@ export const ModelCredentialSchema = z.object({
   projectId: optionalText,
   region: optionalText,
   /** Requests only reach endpoints that keep no prompts or replies. Absent means off. */
-  zeroDataRetention: z.boolean().optional(),
+  zeroDataRetention: optionalFlag,
   modelId: optionalText,
-  reasoning: z.boolean().optional(),
+  reasoning: optionalFlag,
   thinkingLevel: ThinkingLevelSchema.nullable().optional(),
   maxTokens: z.number().int().min(1).max(MAX_MODEL_MAX_TOKENS).optional(),
-  supportsImages: z.boolean().optional(),
+  supportsImages: optionalFlag,
   maxImagesPerPrompt: z.number().int().min(1).max(1000).optional(),
   thinkingLevels: z.array(ThinkingLevelSchema).optional(),
   /** Openai-compatible only; always contains `modelId` when set. */
@@ -153,7 +154,7 @@ export const ModelCredentialSchema = z.object({
    * The subscription sign-in was rejected. The stored tokens are gone and the
    * owner has to sign in again. Model choices on this connection are kept.
    */
-  reconnectRequired: z.boolean().optional(),
+  reconnectRequired: optionalFlag,
 });
 export type ModelCredential = z.infer<typeof ModelCredentialSchema>;
 
@@ -296,7 +297,7 @@ export const ModelConnectInputSchema = z
     projectId: optionalText,
     region: optionalText,
     /** Omitted keeps the saved choice; false turns it off. */
-    zeroDataRetention: z.boolean().optional(),
+    zeroDataRetention: optionalFlag,
     headers: ModelHeadersSchema.optional(),
     baseUrl: optionalText,
     apiProtocol: ModelApiProtocolSchema.optional(),
@@ -307,14 +308,14 @@ export const ModelConnectInputSchema = z
      */
     credentialId: ModelConnectionTargetSchema,
     modelId: optionalText,
-    reasoning: z.boolean().optional(),
+    reasoning: optionalFlag,
     thinkingLevel: ThinkingLevelSchema.nullable().optional(),
     /** False keeps the current main model; omitted means true. */
-    makeDefault: z.boolean().optional(),
+    makeDefault: optionalFlag,
     /** Where makeDefault sets the main model; omitted means whichever applies in the Space. */
     scope: SettingsScopeSchema.optional(),
     maxTokens: z.number().int().min(1).max(MAX_MODEL_MAX_TOKENS).nullable().optional(),
-    supportsImages: z.boolean().optional(),
+    supportsImages: optionalFlag,
     maxImagesPerPrompt: z.number().int().min(1).max(1000).nullable().optional(),
     enabledModelIds: z
       .array(z.string().trim().min(1).max(512))
@@ -401,7 +402,7 @@ export const CompatibleEndpointPresetSchema = z.object({
   name: z.string(),
   baseUrl: z.string(),
   /** The model list can be loaded before the connection has a key. */
-  publicModels: z.boolean().optional(),
+  publicModels: optionalFlag,
 });
 export type CompatibleEndpointPreset = z.infer<typeof CompatibleEndpointPresetSchema>;
 
@@ -409,11 +410,11 @@ export const ModelCatalogEntrySchema = z.object({
   /** Omitted by older servers and ordinary chat connections. */
   protocol: z.enum(["chat", "decisions"]).optional(),
   /** Preselected for a new connection when there is no saved model choice. */
-  recommended: z.boolean().optional(),
+  recommended: optionalFlag,
   /** The provider's connections that can run it, when not all of them can. */
   credentialIds: z.array(z.string()).optional(),
   /** Available through the deployment without a personal credential. */
-  managed: z.boolean().optional(),
+  managed: optionalFlag,
   creditOfferingId: Id.optional(),
   provider: z.string(),
   providerName: optionalText,
@@ -426,29 +427,29 @@ export const ModelCatalogEntrySchema = z.object({
   auth: z.enum(["api-key", "oauth", "both"]).optional(),
   oauthLabel: optionalText,
   authHint: optionalText,
-  subscription: z.boolean().optional(),
+  subscription: optionalFlag,
   signIn: ModelOAuthSignInModeSchema.optional(),
   /** A setting the provider makes the user turn on before its sign-in can work. */
   signInSetup: z.object({ label: z.string(), url: z.string().url() }).optional(),
-  reasoning: z.boolean().optional(),
+  reasoning: optionalFlag,
   thinkingLevels: z.array(ThinkingLevelSchema).optional(),
   /** Uncustomized capabilities for forms on other connections of the same provider. */
   defaultCapabilities: z
     .object({
-      images: z.boolean().optional(),
-      reasoning: z.boolean().optional(),
+      images: optionalFlag,
+      reasoning: optionalFlag,
       thinkingLevels: z.array(ThinkingLevelSchema).optional(),
     })
     .optional(),
   /** The model reads images. Left out where a connection setting decides it. */
-  images: z.boolean().optional(),
+  images: optionalFlag,
   /** The model card's context window and output ceiling, where the catalog has one. */
   contextWindow: z.number().int().min(1).optional(),
   maxTokens: z.number().int().min(1).optional(),
   /** Catalog stand-in so a provider appears before the user enters a real model id. */
-  placeholder: z.boolean().optional(),
+  placeholder: optionalFlag,
   /** Models share one pinned HTTPS models-list URL that can be probed. */
-  catalogProbe: z.boolean().optional(),
+  catalogProbe: optionalFlag,
   /** Ids the provider needs besides a key; a connection cannot save without them. */
   routingFields: z.array(ModelRoutingFieldSchema).optional(),
   /** A connection can limit requests to endpoints that keep no prompts or replies. */
