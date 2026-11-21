@@ -117,12 +117,10 @@ export function useComputerControls({
   async function bootComputer({
     botId: targetBotId,
     takeControl,
-    showProgress,
     force = false,
   }: {
     botId: string;
     takeControl: boolean;
-    showProgress: boolean;
     force?: boolean;
   }) {
     if (takeControl && controlRequests.current.has(targetBotId)) return;
@@ -137,7 +135,7 @@ export function useComputerControls({
     const targetComputer = computer?.botId === targetBotId ? computer : (cached?.computer ?? null);
     const targetScreen = computer?.botId === targetBotId ? screenUrl : (cached?.screenUrl ?? null);
     const needsBoot = force || targetComputer?.state !== "running" || !targetScreen;
-    if (showProgress && needsBoot) setBootingBotId(targetBotId);
+    if (needsBoot) setBootingBotId(targetBotId);
     setComputerError(null);
     setComputerErrorFromScreen(false);
     try {
@@ -150,6 +148,7 @@ export function useComputerControls({
           commitComputer(status);
           cacheComputerFor(targetBotId, { computer: status });
         }
+        if (!takeControl) setBootingBotId(null);
       }
       if (takeControl) {
         expectOwnControlEvent(targetBotId, "computer.takeover.granted");
@@ -209,6 +208,17 @@ export function useComputerControls({
     setComputerBotId(active?.id);
   }, [active?.id]);
 
+  // Showing the bot panel reads a running computer's screen; it never wakes one.
+  const panelScreenBotId =
+    panel === "settings" && !computerOpen && computer?.state === "running" && !screenUrl
+      ? computer.botId
+      : undefined;
+  useEffect(() => {
+    if (!panelScreenBotId || activeBotId.current !== panelScreenBotId) return;
+    if (screenAwaitsRetry.current) return;
+    void refreshComputerScreen(panelScreenBotId).catch(() => undefined);
+  }, [panelScreenBotId]);
+
   useEffect(() => {
     if (!computer?.busyBotName) {
       setComputerError(null);
@@ -228,14 +238,20 @@ export function useComputerControls({
     void bootComputer({
       botId,
       takeControl: false,
-      showProgress: true,
       force: true,
     }).catch(() => undefined);
   }, [computerBlockedByRun]);
 
-  useEventListener(computerOpen ? window : null, "keydown", (event) => {
-    if (event.key === "Escape" && !event.isComposing && event.keyCode !== 229)
+  useEventListener(computerOpen ? document : null, "keydown", (event) => {
+    if (
+      event.key === "Escape" &&
+      !event.defaultPrevented &&
+      !event.isComposing &&
+      event.keyCode !== 229
+    ) {
+      event.preventDefault();
       setComputerOpen(false);
+    }
   });
 
   const hasControl = userHoldsComputerControl(computer, computerBot?.id);
@@ -305,11 +321,12 @@ export function useComputerControls({
     if (computer?.botId !== id) {
       setScreenUrlLoadedBotId(null);
       commitComputer(targetComputer);
-      setScreenUrl(targetScreen);
+      setScreenUrl(targetScreen, id);
     }
     // Reopening during a boot shows it; a second boot would be refused as busy.
     const bootInFlight = bootsInFlight.current.has(id) || targetComputer?.state === "booting";
     setComputerOpen(true);
+    computerOpenRef.current = true;
     computerVisible.current = true;
     if (bootInFlight && !takeControl) {
       // An external boot may have finished since this snapshot was cached.
@@ -321,7 +338,6 @@ export function useComputerControls({
       await bootComputer({
         botId: id,
         takeControl: needsTakeover,
-        showProgress: needsTakeover || targetComputer?.state !== "running",
         force: targetComputer?.state !== "running",
       });
       return true;
@@ -396,10 +412,13 @@ export function useComputerControls({
   );
 
   const embeddedScreenUrl = embeddableScreenUrl(screenUrl);
-  const hideScreenLoadError = computerErrorFromScreen && Boolean(embeddedScreenUrl);
+  const running = computer?.state === "running";
+  const frameError = running && !booting ? screenLoadError : null;
+  const hideScreenReadError =
+    computerErrorFromScreen && (!running || booting || Boolean(embeddedScreenUrl));
   const screenFailure =
-    Boolean(screenLoadError) ||
-    Boolean(computerError && !hideScreenLoadError && computerErrorFromScreen) ||
+    Boolean(frameError) ||
+    Boolean(computerError && !hideScreenReadError && computerErrorFromScreen) ||
     screenMissing({
       state: computer?.state,
       runsOnUserMachine: runsOnUserMachine(computer),
@@ -408,9 +427,9 @@ export function useComputerControls({
       embeddedUrl: embeddedScreenUrl,
     });
   const computerFailure =
-    computerError && !hideScreenLoadError
+    computerError && !hideScreenReadError
       ? computerError
-      : (screenLoadError ??
+      : (frameError ??
         (screenFailure
           ? t`Could not connect to the computer screen`
           : !booting && computer?.state === "error"
@@ -445,15 +464,11 @@ export function useComputerControls({
             if (computer?.state === "running") {
               setComputerError(null);
               setComputerErrorFromScreen(false);
-              // The screen is read only while its window is open, so a retry from the panel opens it.
-              setComputerOpen(true);
-              computerVisible.current = true;
               void refreshComputerScreen(computerBot.id);
             } else
               void bootComputer({
                 botId: computerBot.id,
                 takeControl: false,
-                showProgress: true,
                 force: true,
               }).catch(() => undefined);
           }}

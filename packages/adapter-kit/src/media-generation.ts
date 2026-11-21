@@ -3,7 +3,7 @@ import type { AdapterContext } from "./types.js";
 export type MediaGenerationInput = { prompt: string };
 export type GeneratedMedia = {
   bytes: Uint8Array;
-  mimeType: "image/png" | "video/mp4";
+  mimeType: "image/png" | "image/jpeg" | "image/webp" | "video/mp4";
 };
 export type MediaVideoJob =
   | { id: string; status: "queued" | "running"; progress?: number }

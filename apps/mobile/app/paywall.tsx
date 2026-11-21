@@ -19,7 +19,6 @@ import {
   ActivityIndicator,
   Alert,
   BackHandler,
-  Linking,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -53,6 +52,7 @@ import { dateLocaleForUi } from "../lib/i18n/i18n";
 import { FORM_COLUMN_WIDTH } from "../lib/layout/adaptive-layout";
 import { useContentBottomInset } from "../lib/layout/content-bottom-inset";
 import { useMobileTokens } from "../lib/native/native";
+import { openExternalUrl } from "../lib/platform/open-url";
 import { formRead, queryClient, rpcQuery, useSave } from "../lib/query/query";
 import { useScreenQuery } from "../lib/query/screen-query";
 import {
@@ -708,7 +708,7 @@ function TimelineStep({
 function LegalLink({ label, url }: { label: string; url: string }) {
   const tokens = useMobileTokens();
   return (
-    <Pressable accessibilityRole="link" hitSlop={8} onPress={() => void Linking.openURL(url)}>
+    <Pressable accessibilityRole="link" hitSlop={8} onPress={() => void openExternalUrl(url)}>
       <Text style={[styles.legalLabel, { color: tokens.mutedForeground }]}>{label}</Text>
     </Pressable>
   );

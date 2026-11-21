@@ -206,7 +206,11 @@ export function ApprovalRulesSettings({ scope }: { scope: SettingsScope }) {
           </div>
         );
       })}
-      {error ? <p className="text-body-sm text-destructive">{error}</p> : null}
+      {error ? (
+        <p role="alert" className="text-body-sm text-destructive">
+          {error}
+        </p>
+      ) : null}
     </div>
   );
 }

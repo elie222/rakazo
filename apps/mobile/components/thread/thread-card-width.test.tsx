@@ -25,6 +25,7 @@ vi.mock("react-native", async () => {
       onPress,
       onLongPress,
       numberOfLines,
+      disabled,
       accessibilityState,
       accessibilityRole,
       accessibilityLabel,
@@ -35,7 +36,8 @@ vi.mock("react-native", async () => {
       onPress?: () => void;
       onLongPress?: () => void;
       numberOfLines?: number;
-      accessibilityState?: { expanded?: boolean };
+      disabled?: boolean;
+      accessibilityState?: { expanded?: boolean; selected?: boolean };
       accessibilityRole?: string;
       accessibilityLabel?: string;
       ref?: Ref<unknown>;
@@ -49,6 +51,8 @@ vi.mock("react-native", async () => {
           "data-style": JSON.stringify(flatten(style)),
           "data-number-of-lines": numberOfLines,
           "aria-expanded": accessibilityState?.expanded,
+          "aria-pressed": accessibilityState?.selected || undefined,
+          disabled,
           role: accessibilityRole,
           "aria-label": accessibilityLabel,
           onClick: onPress,
@@ -93,10 +97,13 @@ vi.mock("../../lib/native/native", () => ({
   useResolvedAppearance: () => "light",
 }));
 
+const linkConfirm = vi.hoisted(() => vi.fn());
+
 vi.mock("@rakazo/chat-ui/native", () => ({
   MarkdownLongPressContext: createContext(undefined),
   ChatMarkdown: ({ children }: { children: string }) => <p>{children}</p>,
   withBlockMentions: <T,>(blocks: T) => blocks,
+  useNativeLinkConfirm: () => linkConfirm,
 }));
 
 vi.mock("../messages/message-caption", () => ({
@@ -393,7 +400,8 @@ describe("thread cards", () => {
     const link = container.querySelector('[role="link"]');
     expect(link?.getAttribute("aria-label")).toBe("Remote task: finished");
     act(() => (link as HTMLElement).click());
-    expect(Linking.openURL).toHaveBeenCalledWith("https://example.test/task");
+    expect(linkConfirm).toHaveBeenCalledWith("https://example.test/task");
+    expect(Linking.openURL).not.toHaveBeenCalled();
     act(() => link!.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true })));
     expect(onLongPress).toHaveBeenCalledTimes(1);
   });

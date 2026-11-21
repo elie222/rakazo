@@ -237,10 +237,15 @@ describeBreakdown("usage.breakdown", () => {
     expect(names(elsewhere)).toEqual(["Elsewhere"]);
   }, 150000);
 
-  it("cuts today and day buckets at the member's own midnight", async () => {
-    vi.setSystemTime(new Date(`${utcDay(Date.now())}T09:59:30.000Z`));
-    const offset = 14 * 60 * 60 * 1000;
-    const cookie = await signup(app, `usage-breakdown-tz-${stamp}@rakazo.test`, "Zoned");
+  it.each([
+    ["Pacific/Kiritimati", 14],
+    ["Asia/Calcutta", 5.5],
+    ["Asia/Saigon", 7],
+    ["America/Indianapolis", -5],
+  ])("cuts today and day buckets at midnight in %s", async (timezone, hours) => {
+    vi.setSystemTime(new Date("2026-01-31T09:59:30.000Z"));
+    const offset = hours * 60 * 60 * 1000;
+    const cookie = await signup(app, `usage-breakdown-tz-${stamp}-${hours}@rakazo.test`, "Zoned");
     const bot = await rpc<{ id: string }>(app, cookie, "bots/create", {
       name: "Zoned",
       title: "",
@@ -251,7 +256,7 @@ describeBreakdown("usage.breakdown", () => {
     const thread = await prisma.thread.findFirstOrThrow({ where: { botId: bot.id } });
     await prisma.user.update({
       where: { id: thread.userId },
-      data: { timezone: "Pacific/Kiritimati" },
+      data: { timezone },
     });
     const now = Date.now();
     const localMidnight = now + offset - ((now + offset) % DAY) - offset;

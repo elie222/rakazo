@@ -214,6 +214,12 @@ tags:
     timeout: 10000
 - takeScreenshot: "18-computer"
 
+- openLink: "rakazo:///computers"
+- extendedWaitUntil:
+    visible: "Computers"
+    timeout: 10000
+- takeScreenshot: "18b-computers"
+
 - openLink: "rakazo:///group-thread?groupId=${RAKAZO_SCREENSHOT_GROUP_ID}&name=Launch%20team"
 - extendedWaitUntil:
     visible: "The fixture launch plan is ready."

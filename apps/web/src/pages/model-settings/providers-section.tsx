@@ -133,12 +133,13 @@ export function ConnectionNameField({
             event.stopPropagation();
             setName(null);
           }}
-          className="h-10 text-foreground"
+          size="lg"
+          className="text-foreground"
         />
         <Button
           type="submit"
           variant="secondary"
-          className="h-10"
+          size="lg"
           disabled={saving || disabled || !trimmed}
         >
           {saving ? <Trans>Saving…</Trans> : <Trans>Save</Trans>}

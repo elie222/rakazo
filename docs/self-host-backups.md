@@ -28,6 +28,8 @@ Compose stack. Both scripts use the Postgres container’s `POSTGRES_USER` and `
 before touching the database, then stops the API, worker, and supervisor. It rejects a `data/`
 path that is a symlink or a non-directory. Stop bot computers and any other processes that
 write to this database or tree before running the script.
+The script waits up to 60 seconds for Postgres to accept connections. If it fails, the script prints
+the command to read the Postgres logs and leaves the writers stopped.
 
 The SQL import runs in one transaction and stops on the first error, including conflicts with
 existing tables. An invalid archive or failed import leaves the current data tree unchanged.
@@ -75,6 +77,52 @@ checkout's `.env` and production Compose file. If the stack was started with a c
 set the same `COMPOSE_PROJECT_NAME` in that file. Set the retention and space settings there too.
 When updating an existing installation, reinstall the script and units, then run
 `systemctl daemon-reload`; pulling the repository does not update `/usr/local/sbin` copies.
+
+### Published-images installs
+
+The same script backs up an install made with `install-images.sh`, which has no checkout. Set
+`RAKAZO_DEPLOY_DIR` to the directory holding `docker-compose.images.yml` and `.env`; with no
+production Compose file there, the script uses `docker-compose.images.yml` and, when present,
+`docker-compose.override.yml`. For any other set of files, list them in `RAKAZO_COMPOSE_FILE`, in
+order, as paths inside the deployment directory, separated the way the
+[updater](./self-host-upgrading.md#deployments-that-layer-a-compose-overlay) takes them. A list
+already set in the deployment's `.env` for the updater is used as it is; a value in
+`/etc/rakazo/backup.env` takes its place.
+
+Fetch the script and units for the release you run, then enable the timer:
+
+```bash
+base=https://raw.githubusercontent.com/elie222/rakazo/vX.Y.Z/infra
+sudo curl -fsSL "$base/compose/backup-prod.sh" -o /usr/local/sbin/rakazo-backup
+sudo chmod 755 /usr/local/sbin/rakazo-backup
+for unit in rakazo-backup.service rakazo-backup.timer; do
+  sudo curl -fsSL "$base/systemd/$unit" -o "/etc/systemd/system/$unit"
+done
+sudo install -d -m 700 /etc/rakazo
+printf '\nRAKAZO_DEPLOY_DIR=%s\n' "$PWD" | sudo tee -a /etc/rakazo/backup.env >/dev/null
+sudo chmod 600 /etc/rakazo/backup.env
+sudo systemctl daemon-reload
+sudo systemctl enable --now rakazo-backup.timer
+sudo systemctl start rakazo-backup.service
+```
+
+Run it from the deployment directory. The deployment directory is added to
+`/etc/rakazo/backup.env` on a line of its own, without replacing settings already there. The
+last command takes the first backup now, so a misconfiguration shows at once in
+`journalctl -u rakazo-backup.service`. The restore steps below apply with your own Compose file
+and volume names. That first backup is plaintext until you set recipients as described under
+[encrypted and off-site backups](#encrypted-and-off-site-backups); the drill reads encrypted
+snapshots only. Its script is not part of this install. Where you keep the identity file, fetch
+it and run it on an encrypted snapshot you copied there:
+
+```bash
+curl -fsSLO https://raw.githubusercontent.com/elie222/rakazo/vX.Y.Z/infra/compose/backup-drill.sh
+bash backup-drill.sh ./<stamp> rakazo-backup.key
+```
+
+This stack runs Postgres 16, so the drill needs `pg_restore` 16 or newer. A file list in `.env`
+that uses a `$` reference is refused, since the script does not expand it: set the plain list
+in `/etc/rakazo/backup.env`.
 
 For a dedicated backup disk, mount it persistently and bind its `backups` directory onto
 `/var/backups` in `/etc/fstab`. Add `x-systemd.requires-mounts-for=/mnt/your-backup-volume` to the bind

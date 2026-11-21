@@ -46,8 +46,10 @@ vi.mock("react-native", () => {
     children?: ReactNode;
     onPress?: () => void;
     disabled?: boolean;
+    role?: string;
     accessibilityRole?: string;
     accessibilityLabel?: string;
+    accessibilityHint?: string;
     accessibilityValue?: { text?: string };
     accessibilityState?: { expanded?: boolean };
     style?: unknown;
@@ -63,9 +65,11 @@ vi.mock("react-native", () => {
         "data-style": JSON.stringify(style ?? null),
         "data-pressed-style": JSON.stringify(pressedStyle ?? null),
         "data-ripple": JSON.stringify(props.android_ripple ?? null),
+        "data-native-role": props.role,
         disabled: props.disabled,
         role: props.accessibilityRole,
         "aria-label": props.accessibilityLabel,
+        "aria-description": props.accessibilityHint,
         "aria-valuetext": props.accessibilityValue?.text,
         "aria-expanded": props.accessibilityState?.expanded,
         onClick: () => {
@@ -258,11 +262,52 @@ describe("settings group", () => {
     expect(onPress).toHaveBeenCalledTimes(1);
   });
 
+  it("passes a default button role to a tappable row with no explicit role", () => {
+    const onPress = vi.fn();
+    const view = render(
+      <SettingsRow
+        accessibilityLabel="Auto-join"
+        accessibilityHint="Opens calendar settings"
+        onPress={onPress}
+        title="Auto-join"
+      />,
+    );
+    const row = view.querySelector("button");
+
+    // Check the forwarded native prop, not the button element's implicit web role.
+    expect(row?.getAttribute("role")).toBe("button");
+    expect(row?.getAttribute("aria-label")).toBe("Auto-join");
+    expect(row?.getAttribute("aria-description")).toBe("Opens calendar settings");
+    act(() => row?.click());
+    expect(onPress).toHaveBeenCalledTimes(1);
+  });
+
+  it("preserves explicit accessibilityRole and role props without adding a default", () => {
+    const onPress = () => undefined;
+    const view = render(
+      <>
+        <SettingsRow accessibilityRole="link" onPress={onPress} title="Help" />
+        <SettingsRow role="menuitem" onPress={onPress} title="Language" />
+        <SettingsRow accessibilityRole="link" role="menuitem" onPress={onPress} title="More" />
+      </>,
+    );
+    const [legacyRole, role, both] = view.querySelectorAll("button");
+
+    expect(legacyRole?.getAttribute("role")).toBe("link");
+    expect(role?.getAttribute("data-native-role")).toBe("menuitem");
+    expect(role?.getAttribute("role")).toBeNull();
+    expect(both?.getAttribute("role")).toBe("link");
+    expect(both?.getAttribute("data-native-role")).toBe("menuitem");
+  });
+
   it("does not run a disabled row's handler", () => {
     const onPress = vi.fn();
     const view = render(<SettingsRow disabled onPress={onPress} title="Models" />);
+    const row = view.querySelector("button");
 
-    act(() => view.querySelector("button")?.click());
+    expect(row?.disabled).toBe(true);
+    expect(row?.getAttribute("role")).toBe("button");
+    act(() => row?.click());
     expect(onPress).not.toHaveBeenCalled();
   });
 

@@ -65,6 +65,110 @@ function stubAudio(play: (audio: { onended: (() => void) | null }) => Promise<vo
 }
 
 describe("Speaker", () => {
+  it("says queued text after what is playing, rendering it meanwhile, without a gap", async () => {
+    let finish: () => void = () => undefined;
+    stubAudio((audio) => {
+      finish = () => audio.onended?.();
+      return Promise.resolve();
+    });
+    const speaker = new Speaker();
+    vi.spyOn(
+      speaker as unknown as { prepare: (text: string) => Promise<string[]> },
+      "prepare",
+    ).mockImplementation(async (text) => [text]);
+    const statuses: string[] = [];
+    speaker.subscribe((state) => statuses.push(`${state.status}:${state.caption ?? ""}`));
+
+    const first = speaker.queue("Booked.", { botId: "bot-1" });
+    await vi.waitFor(() => expect(speaker.state.caption).toBe("Booked."));
+    const second = speaker.queue("The hotel is close.");
+    // The next clip renders while the first one plays.
+    await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(2));
+
+    finish();
+    await expect(first).resolves.toBeUndefined();
+    await vi.waitFor(() => expect(speaker.state.caption).toBe("The hotel is close."));
+    finish();
+    await expect(second).resolves.toBeUndefined();
+
+    expect(statuses).toEqual([
+      "idle:",
+      "preparing:",
+      "speaking:Booked.",
+      "speaking:The hotel is close.",
+      "idle:",
+    ]);
+  });
+
+  it("starts over when speak replaces what is queued", async () => {
+    stubAudio(() => new Promise(() => undefined));
+    const speaker = new Speaker();
+    vi.spyOn(
+      speaker as unknown as { prepare: (text: string) => Promise<string[]> },
+      "prepare",
+    ).mockImplementation(async (text) => [text]);
+
+    const queued = speaker.queue("Booked.");
+    await vi.waitFor(() => expect(speaker.state.caption).toBe("Booked."));
+    const replaced = speaker.speak("Goodbye.");
+    await expect(queued).resolves.toBeUndefined();
+    await vi.waitFor(() => expect(speaker.state.caption).toBe("Goodbye."));
+    speaker.stop();
+    await expect(replaced).resolves.toBeUndefined();
+    expect(speaker.state).toEqual({ status: "idle" });
+  });
+
+  it("names the message a queued speech reads once it lands, through the clips still to play", async () => {
+    let finish: () => void = () => undefined;
+    stubAudio((audio) => {
+      finish = () => audio.onended?.();
+      return Promise.resolve();
+    });
+    const speaker = new Speaker();
+    vi.spyOn(
+      speaker as unknown as { prepare: (text: string) => Promise<string[]> },
+      "prepare",
+    ).mockImplementation(async (text) => [text]);
+
+    void speaker.queue("Booked.", { botId: "bot-1", messageId: "progress:run-1" });
+    const rest = speaker.queue("The hotel is close.");
+    await vi.waitFor(() => expect(speaker.state.caption).toBe("Booked."));
+    expect(speaker.isSpeaking("progress:run-1")).toBe(true);
+
+    speaker.relabel("message-1");
+    expect(speaker.isSpeaking("message-1")).toBe(true);
+    finish();
+    await vi.waitFor(() => expect(speaker.state.caption).toBe("The hotel is close."));
+    expect(speaker.state.messageId).toBe("message-1");
+    finish();
+    await rest;
+    speaker.relabel("message-2");
+    expect(speaker.state).toEqual({ status: "idle" });
+  });
+
+  it("names the message of new queued speech once the speech before it played to the end", async () => {
+    let finish: () => void = () => undefined;
+    stubAudio((audio) => {
+      finish = () => audio.onended?.();
+      return Promise.resolve();
+    });
+    const speaker = new Speaker();
+    vi.spyOn(
+      speaker as unknown as { prepare: (text: string) => Promise<string[]> },
+      "prepare",
+    ).mockImplementation(async (text) => [text]);
+
+    const opening = speaker.speak("Hi, it's Ada.", { botId: "bot-1" });
+    await vi.waitFor(() => expect(speaker.state.caption).toBe("Hi, it's Ada."));
+    finish();
+    await opening;
+    expect(speaker.state).toEqual({ status: "idle" });
+
+    void speaker.queue("Booked.", { botId: "bot-1", messageId: "progress:run-2" });
+    await vi.waitFor(() => expect(speaker.state.caption).toBe("Booked."));
+    expect(speaker.isSpeaking("progress:run-2")).toBe(true);
+  });
+
   it("forgets cached disclosure when the server requires current consent", async () => {
     stubAudio(async () => undefined);
     vi.mocked(fetch).mockResolvedValue(

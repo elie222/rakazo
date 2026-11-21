@@ -3,7 +3,8 @@
 Rakazo keeps a record of who did what in each organization: which bot or person took an action,
 what was approved and by whom, and which settings and credentials changed. Recording is always on.
 
-Organization owners and admins can export it as JSON Lines, and operators can forward it to a SIEM.
+Organization owners and admins can read and export all of it as JSON Lines; other members see only
+their own activity. Operators can forward it to a SIEM.
 
 ## What is recorded
 
@@ -73,5 +74,6 @@ are not sent.
 ## Export and API
 
 `GET /api/audit-events/export` returns the organization's events as JSON Lines, newest first, for
-a signed-in owner or admin. It accepts `from` and `to` (ISO 8601), `spaceId`, `actorId` and
-`action` filters. The `audit.events` RPC returns the same events in pages with a `nextCursor`.
+a signed-in owner or admin; any other full member gets only the events they took themselves. It
+accepts `from` and `to` (ISO 8601), `spaceId`, `actorId` and `action` filters. The `audit.events`
+RPC returns the same events in pages with a `nextCursor`.

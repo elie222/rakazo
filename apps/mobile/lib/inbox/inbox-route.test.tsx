@@ -10,6 +10,7 @@ import { resetI18nForTests } from "../i18n/i18n";
 import { useInboxHeader } from "./use-inbox-header";
 
 type HeaderItem = {
+  sharesBackground?: boolean;
   label: string;
   accessibilityLabel: string;
   onPress: () => void;
@@ -29,6 +30,7 @@ const home = vi.hoisted(() => ({
   setOptions: vi.fn(),
   push: vi.fn(),
   insets: { top: 20, bottom: 30, left: 0, right: 12 },
+  inboxShown: true,
 }));
 const { styled } = vi.hoisted(() => ({
   styled:
@@ -53,6 +55,13 @@ vi.mock("../appearance/appearance", () => ({ mobileTokens: () => ({}) }));
 vi.mock("../native/native", () => ({
   native: { page: "white", secondaryLabel: "gray" },
   useThemedStyles: (factory: () => unknown) => factory(),
+}));
+vi.mock("../layout/split-view", () => ({ useSplitView: () => ({ inboxShown: home.inboxShown }) }));
+vi.mock("../../components/native/glass-surface", () => ({
+  GlassSurface: ({ children }: { children?: ReactNode }) => children,
+}));
+vi.mock("../../components/thread/header/chat-route-header", () => ({
+  ShowChatsButton: () => createElement("button", { type: "button", "aria-label": "Show chats" }),
 }));
 
 const toggleActivityMode = vi.fn();
@@ -118,9 +127,14 @@ it.each([false, true])(
         expect(home.options.unstable_headerLeftItems?.().map((item) => item.label)).toEqual([
           "Account",
         ]);
-        expect(
-          home.options.unstable_headerRightItems?.().map((item) => item.accessibilityLabel),
-        ).toEqual(["Activity", "Search", "Create"]);
+        const right = home.options.unstable_headerRightItems?.() ?? [];
+        expect(right.map((item) => item.accessibilityLabel)).toEqual([
+          "Activity",
+          "Search",
+          "Create",
+        ]);
+        // Activity and search share a capsule; create has its own glass.
+        expect(right.map((item) => item.sharesBackground)).toEqual([undefined, undefined, false]);
       }
     }
   },
@@ -157,4 +171,13 @@ it("shows a translated, safe-area-centred placeholder only in the split pane", (
   expect(pane.style.paddingBottom).toBe("30px");
   expect(pane.style.paddingRight).toBe("12px");
   expect(container.querySelector("span")!.style.color).toBe("gray");
+});
+
+it("offers to show the hidden chat list from the empty pane", () => {
+  act(() => root.render(<PickChatPane />));
+  expect(container.querySelector('[aria-label="Show chats"]')).toBeNull();
+  home.inboxShown = false;
+  act(() => root.render(<PickChatPane />));
+  expect(container.querySelector('[aria-label="Show chats"]')).not.toBeNull();
+  home.inboxShown = true;
 });

@@ -1,6 +1,7 @@
 import type {
   BillingCancellationReason,
   ByokTier,
+  ComputerSize,
   CacheCapabilities as ConnectionCacheCapabilities,
   ConnectionCatalogItem,
   HistoryToolStep,
@@ -128,6 +129,13 @@ export interface ComputerRef {
   fresh?: boolean;
   /** True when this call started a stopped computer. Providers that cannot tell leave it unset. */
   started?: boolean;
+  /** Size the provider confirmed for this running machine. */
+  size?: ComputerSize;
+  /**
+   * Size to start the machine at when a call finds it stopped and wakes it. A running machine
+   * keeps the size it has, and without one a woken machine keeps it too.
+   */
+  startSize?: ComputerSize;
 }
 
 export type WorkspaceDirectoryRequest =
@@ -298,6 +306,12 @@ export interface SandboxKindCapabilities {
   serverOwnsStoredTeamHome: boolean;
   /** The computer works in a copy on a host that outlives it; the stored home only backs it up. */
   storedHomeIsBackup: boolean;
+  /** The provider can read the disk of a stopped sandbox without starting it. */
+  readStoppedFiles?: boolean;
+  /** Largest file one transfer can carry, when the provider's transport is tighter than the server's limit. */
+  maxFileBytes?: number;
+  /** The provider confirms machine size for size-based allowance accounting. */
+  sizedUsage?: boolean;
 }
 
 export interface SandboxCapabilities {
@@ -314,6 +328,8 @@ export interface ConnectorTool {
   name: string;
   description: string;
   inputSchema: Record<string, unknown>;
+  /** Editable, fully previewable outgoing arguments selected by the adapter. */
+  outgoingDraft?: OutgoingDraftDescriptor;
   /** Declared effect. `false` forces approval; `true` never relaxes the name-based gate. */
   readOnly?: boolean;
   /** Set when the tool runs other actions named in its arguments; see ToolBatch. */
@@ -326,6 +342,14 @@ export interface ConnectorTool {
   appResourceUri?: string;
 }
 
+export interface OutgoingDraftDescriptor {
+  kind: "email" | "message";
+  source: string;
+  keys: { to: string; body: string; subject?: string };
+  defaults?: Record<string, string | boolean>;
+  recipientAlias?: string;
+}
+
 /**
  * Where a batch tool's arguments name the actions it runs: `args[items][i][action]`, each with
  * its own arguments at `args[items][i][arguments]`. Approval rules and the read/write check judge
@@ -335,6 +359,7 @@ export interface ToolBatch {
   items: string;
   action: string;
   arguments: string;
+  outgoingDrafts?: Readonly<Record<string, OutgoingDraftDescriptor>>;
 }
 
 export interface ConnectorRoute {
@@ -595,9 +620,18 @@ export interface AgentSteeringMessage {
 /** Adapter-supplied cache policy metadata; absent fields mean unknown. */
 export type CacheCapabilities = ConnectionCacheCapabilities;
 
+/** Who pays for a model call: the user's subscription or key, the deployment, or its credits. */
+export type ModelBilling =
+  | "subscription"
+  | "api_key"
+  | "custom_endpoint"
+  | "credits"
+  | "deployment";
+
 export interface AgentRunModel {
   /** Server-side spending authorization, carried with the resolved credential. */
   callObserver?: ModelCallObserver;
+  billing?: ModelBilling;
   cacheCapabilities?: CacheCapabilities;
   provider: string;
   id: string;
@@ -610,6 +644,8 @@ export interface AgentRunModel {
   gatewayId?: string;
   projectId?: string;
   region?: string;
+  /** Route only to endpoints that keep no prompts or replies, where the provider offers it. */
+  zeroDataRetention?: boolean;
   baseUrl?: string;
   apiProtocol?: ModelApiProtocol;
   headers?: Record<string, string>;
@@ -703,6 +739,8 @@ export interface AgentRunRequest {
   /** Server verified legacy attachment bytes remain available to file tools. */
   currentTurnImageFileFallback?: boolean;
   tools: ConnectorTool[];
+  /** Why each built-in tool this run was not offered is unavailable, keyed by tool name. */
+  unavailableToolReasons?: Readonly<Record<string, string>>;
   model: AgentRunModel;
   /** Optional explicitly authenticated vision target for same-run computer mode. */
   computerModel?: AgentRunModel;
@@ -868,6 +906,7 @@ export type AgentRuntimeEvent =
       callId?: string;
       operationKind?: UsageOperationKind;
       agentId?: string;
+      billing?: ModelBilling;
     } & AgentUsage)
   | { type: "checkpoint"; blob: string }
   /**
@@ -899,6 +938,11 @@ export interface VoiceInfo {
   id: string;
   label: string;
   description?: string;
+}
+
+export interface VoiceModelInfo {
+  id: string;
+  label: string;
 }
 
 /** Provider evidence only; no transcript, audio or credentials. */
@@ -964,6 +1008,7 @@ export interface VoiceTranscribeRequest {
 
 export interface BackgroundJobPayloads {
   "run.continue": { runId: string };
+  "page.revise": { requestId: string };
   "routine.wakeup": { routineId: string; scheduledFor: string };
   /** Run a failed routine run once more; the payload names the failed run. */
   "routine.retry": { runId: string };
@@ -973,6 +1018,7 @@ export interface BackgroundJobPayloads {
   "skill.teaching-expire": { skillId: string };
   /** Drop the run-only logins and codes of a run still waiting on someone after the expiry. */
   "run.forget-secrets": { runId: string };
+  "approval.expire": { runId: string; effectId: string };
   /** The bot's call rang out: mark it missed if nobody answered. */
   "call.expire": { threadId: string; callId: string };
   "history.compact": { threadId: string; userId?: string };
@@ -1008,6 +1054,30 @@ export interface BackgroundJobPayloads {
   };
   /** Backup for one recorded outgoing chat message, and the conversation queued behind it. */
   "messaging.send": { outboundId: string };
+  /**
+   * Backup for one direct message answered before its files were in: posts it with what was
+   * stored and the rest marked, and tells the sender. It carries the file names and what the
+   * person wrote, sealed under their Space's key as message content is; never a link, a token or
+   * a provider's media id.
+   */
+  "messaging.inbound_settle": {
+    provider: string;
+    handle: string;
+    identityId: string;
+    /** The Space and bot it was sent to; a sender who re-linked since has it dropped. */
+    spaceId: string;
+    botId: string;
+    /** When it arrived (epoch ms): an owner's "stop" after this keeps it from starting a turn. */
+    receivedAt: number;
+    text: string;
+    /** Every file of the message in order, with the size its chat app reported when it did. */
+    attachments: { name: string; mimeType: string; size?: number }[];
+    /**
+     * Due late only to settle after the sender's jobs ahead of it: whichever path settles the one
+     * ahead makes it due now.
+     */
+    follower?: boolean;
+  };
   /** Backup for recording and sending what an ended run said where its turn came from. */
   "messaging.reply": { runId: string };
   /**
@@ -1051,6 +1121,19 @@ export interface BackgroundJobPayloads {
   "team_chat.ambient": { conversationId: string };
   /** Reconcile durable remote-agent intent; scope is loaded from the database. */
   "cloud_agent.poll": { agentId: string };
+  "meeting.calendar-sync": { connectionId: string };
+  "meeting.work": {
+    sessionId: string;
+    action:
+      | "join"
+      | "leave"
+      | "expire"
+      | "reconcile"
+      | "transcript"
+      | "transcript-check"
+      | "cleanup";
+    detached?: { provider: string; externalId?: string; recordingId?: string };
+  };
   "purchase.poll": { purchaseId: string };
   /** Check a submitted video and post it when ready; the ID is the bot-visible job ID. */
   "media.poll": { jobId: string };
@@ -1575,6 +1658,11 @@ export interface BrowserPurchaseCheckRequest {
 /** `steps`: the indexes of the clicks that would complete the purchase. */
 export interface BrowserPurchaseCheckResult {
   purchase: (BrowserPurchase & { steps: number[] }) | null;
+  /**
+   * The page could not be read because a JavaScript dialog is open on it: its type (alert, confirm,
+   * prompt, beforeunload). The caller decides whether a press may answer it.
+   */
+  dialog?: string;
 }
 
 /** A sandbox must route these commands through its owned screen, never generic host execution. */
@@ -1684,6 +1772,24 @@ export interface AutoReviewRequest {
    * instruction.
    */
   savedContextWrite?: boolean;
+  /**
+   * A command, page action or desktop input on the bot's own computer after the run took in
+   * outside content. `userTask` is then only the owner's own words; `args` is bounded by the
+   * caller, a browser action names the page it acts on, and a long command keeps every address
+   * it names.
+   */
+  ownComputerAction?: boolean;
+  /**
+   * The owner's own earlier messages in this chat, oldest first, before `userTask`: never a tool
+   * result or anyone else's message. Redacted and capped by the caller.
+   */
+  ownerMessages?: string[];
+  /**
+   * Recipients, sites, payees or accounts in `args` that outside content read during the run holds
+   * and the owner's own words do not, worked out by the server. Taken from `args`, so already
+   * redacted.
+   */
+  outsideOnlyTargets?: string[];
 }
 
 export interface AutoReviewResult {

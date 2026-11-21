@@ -43,6 +43,7 @@ import { isSandboxGoneError } from "../computers/sandbox/sandbox-errors.js";
 import { sandboxKindCapabilities } from "../computers/sandbox/sandbox-kind-capabilities.js";
 import { BrowserStoppedReleaseError } from "../computers/screens/computer-screens.js";
 import { toComputerRef } from "../computers/screens/computer-support.js";
+import type { MeetingService } from "../meetings/meeting-service.js";
 import { purgeClearedConversationMemory } from "../memory/conversation-memory-cleanup.js";
 import type { MemoryProviderResolver } from "../memory/memory-provider-factory.js";
 import { wakeRun } from "../runs/wakeups/wake-run.js";
@@ -212,6 +213,7 @@ async function ensureSpawnRun(
 }
 
 type BotLifecycleDeps = {
+  meetings?: Pick<MeetingService, "recordBotRetirements" | "retireDeletedBotSessions">;
   prisma: PrismaClient;
   sandbox: SandboxProvider;
   home: AgentHomeStore;
@@ -326,6 +328,11 @@ export async function archiveBot(
   const now = new Date();
   const cancelledRuns = await deps.prisma.$transaction(async (tx) => {
     const cancelled = await cancelRunsInTransaction(tx, activeRuns, now);
+    // The routines that were on are marked, so restoring the bot turns the same ones back on.
+    await tx.routine.updateMany({
+      where: { botId: bot.id, active: true },
+      data: { resumeOnRestore: true },
+    });
     await tx.routine.updateMany({
       where: { botId: bot.id },
       data: { active: false, nextRunAt: null },
@@ -501,6 +508,7 @@ export async function destroyBot(
           memoriesPreserved: !deleteMemories,
         },
       });
+      const meetingRetirements = await deps.meetings?.recordBotRetirements(tx, bot);
       await tx.bot.delete({ where: { id: bot.id } });
       if (webhookSecretId) {
         await tx.secret.deleteMany({
@@ -514,6 +522,7 @@ export async function destroyBot(
           ...groupCleanup.artifactKeys,
         ],
         removedGroupIds: groupCleanup.removedGroupIds,
+        meetingRetirements,
         directMemory,
         groupMemberMemory: groupMemberMemory.map((run) => run.thread),
         groupMemory: groupCleanup.memory,
@@ -523,6 +532,9 @@ export async function destroyBot(
     }, THREAD_LOCK_TRANSACTION_OPTIONS),
   );
   if (!deletion) return { removedGroupIds: [] as string[], alreadyRemoved: true };
+  if (deletion.meetingRetirements?.length) {
+    await deps.meetings?.retireDeletedBotSessions(deletion.meetingRetirements);
+  }
   await Promise.allSettled(
     deletion.cancelledGroupRuns.map((run) => deps.jobs.cancel(runJobKey(run.id))),
   );

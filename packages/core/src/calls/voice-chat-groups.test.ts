@@ -241,6 +241,20 @@ describe("groupVoiceChats", () => {
 });
 
 describe("voiceChatSummary", () => {
+  it("does not leave half an emoji at the end of a long sentence", () => {
+    const [group] = groupVoiceChats([
+      message({ role: "user", callId: "call-1", runId: "run-1" }),
+      message({
+        role: "bot",
+        runId: "run-1",
+        blocks: [{ kind: "text", text: `${"a".repeat(118)}😀${"b".repeat(10)}` }],
+      }),
+    ]);
+    const summary = group?.kind === "voiceChat" && voiceChatSummary(group);
+    expect(summary).toBe(`${"a".repeat(118)}…`);
+    expect(() => encodeURIComponent(summary || "")).not.toThrow();
+  });
+
   it("takes the first sentence of the first spoken bot reply", () => {
     const [group] = groupVoiceChats([
       message({ role: "user", callId: "call-1", runId: "run-1" }),

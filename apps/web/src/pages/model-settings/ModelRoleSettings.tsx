@@ -8,7 +8,12 @@ import type {
   SettingsScope,
   ThinkingLevel,
 } from "@rakazo/contracts";
-import { connectedBackupOptions, MAX_MODEL_BACKUPS, modelRoleChoiceKey } from "@rakazo/contracts";
+import {
+  connectedBackupOptions,
+  MAX_MODEL_BACKUPS,
+  modelConnectionNames,
+  modelRoleChoiceKey,
+} from "@rakazo/contracts";
 import {
   catalogEntryFor,
   connectionForModelChoice,
@@ -17,6 +22,7 @@ import {
   modelSettingsEditable,
   modelThinkingLevels,
 } from "@rakazo/core";
+import { localizeModelEntry } from "@rakazo/i18n/model-provider";
 import {
   Button,
   DropdownMenu,
@@ -55,6 +61,7 @@ type Props = {
   credentials: ModelCredential[];
   modelRole?: ModelRole;
   title: string;
+  hideHeading?: boolean;
   /** What runs when the first slot is empty. */
   defaultLabel: string;
   providers: ConnectableProvider[];
@@ -119,6 +126,7 @@ export function ModelRoleSettings({
   credentials,
   modelRole: role = "main",
   title,
+  hideHeading,
   defaultLabel,
   providers,
   providerLabel,
@@ -193,7 +201,7 @@ export function ModelRoleSettings({
     catalogEntryFor(state.catalog, choice.provider, choice.modelId);
   // Grouped by the connection that runs them.
   const options: RoleModelOption[] = connectedBackupOptions(
-    state.catalog,
+    state.catalog.map(localizeModelEntry),
     credentials,
     role === "computer",
   ).map((choice) => ({
@@ -204,11 +212,7 @@ export function ModelRoleSettings({
       billing: "",
     }),
     creditOfferingId: choice.creditOfferingId,
-    providerName: choice.creditOfferingId
-      ? t`Rakazo credits`
-      : choice.credentialId
-        ? choice.connectionName
-        : providerLabel(choice.provider),
+    providerName: choice.creditOfferingId ? t`Rakazo credits` : choice.connectionName,
     ...(choice.credentialId ? { credentialId: choice.credentialId } : {}),
   }));
   // A pinned row runs on its connection; others on the provider's newest.
@@ -219,14 +223,26 @@ export function ModelRoleSettings({
           (level) => level !== "off",
         )
       : [];
-  const providerName = (choice: ModelRoleChoice) =>
-    (choice.creditOfferingId ? t`Rakazo credits` : undefined) ||
-    (choice.credentialId &&
-      options.find((option) => option.credentialId === choice.credentialId)?.providerName) ||
-    providerLabel(choice.provider);
+  const providerName = (choice: ModelRoleChoice) => {
+    const named =
+      (choice.creditOfferingId ? t`Rakazo credits` : undefined) ||
+      (choice.credentialId &&
+        options.find((option) => option.credentialId === choice.credentialId)?.providerName);
+    if (named) return named;
+    const entry = entryFor(choice);
+    return entry?.managed
+      ? modelConnectionNames(localizeModelEntry(entry)).providerName
+      : providerLabel(choice.provider);
+  };
   // What runs when the member chose no first model; named in the empty row and offered to
   // return to from the picker.
   const deployment = settings?.deploymentPrimary ?? null;
+  // The deployment pays for its default, so it reads as included rather than as a provider bill.
+  const deploymentSource = deployment
+    ? settings?.deploymentIncluded
+      ? t`Included`
+      : providerName(deployment)
+    : undefined;
   const modelLabel = (choice: ModelBackupChoice) => entryFor(choice)?.label ?? choice.modelId;
   const busy = state.busy || state.stale || !settings;
   // Picks build their change from the settings loaded when they save, so a reload in flight
@@ -303,7 +319,7 @@ export function ModelRoleSettings({
   const reopenFor = (slot: "primary" | number | "add") =>
     reopen?.slot === slot ? { query: reopen.query, key: reopen.key } : undefined;
 
-  const canAdd = backups.length < MAX_MODEL_BACKUPS;
+  const canAdd = (primary || deployment) && backups.length < MAX_MODEL_BACKUPS;
   // Order only means something once there is more than one row.
   const ordered = rows.length + (primary ? 0 : 1) > 1;
   const rowClass = `flex min-h-[52px] items-center gap-2.5 py-2 pe-2 ${ordered ? "ps-2" : "ps-3"}`;
@@ -326,10 +342,12 @@ export function ModelRoleSettings({
 
   return (
     <section className="mb-8" data-testid={`model-role-${role}`}>
-      <div className="mb-2.5 flex min-h-7 items-center justify-between gap-3">
-        <SectionHeading variant="heading">{title}</SectionHeading>
-        {headerAction}
-      </div>
+      {hideHeading ? null : (
+        <div className="mb-2.5 flex min-h-7 items-center justify-between gap-3">
+          <SectionHeading variant="heading">{title}</SectionHeading>
+          {headerAction}
+        </div>
+      )}
       <ol className="divide-y divide-border rounded-xl border border-border">
         {primary ? null : (
           <li className={`${rowClass} ${ordered ? "ps-8" : ""}`} data-testid="model-role-default">
@@ -338,9 +356,9 @@ export function ModelRoleSettings({
               trigger={pickerTrigger(
                 // Blank until loaded, so an unloaded role never reads as unconfigured.
                 !settings ? "\u00a0" : deployment ? modelLabel(deployment) : defaultLabel,
-                deployment ? providerName(deployment) : undefined,
+                deploymentSource,
               )}
-              label={t`Change ${title}`}
+              label={hideHeading ? defaultLabel : t`Change ${title}`}
               options={options}
               providers={providers}
               disabled={pickerLocked}
@@ -416,7 +434,9 @@ export function ModelRoleSettings({
                 label={t`Change ${name}`}
                 options={options}
                 defaultOption={
-                  isPrimary && role !== "main" && deployment ? modelLabel(deployment) : undefined
+                  isPrimary && role !== "main" && deployment
+                    ? { label: modelLabel(deployment), included: settings?.deploymentIncluded }
+                    : undefined
                 }
                 providers={providers}
                 disabled={pickerLocked}

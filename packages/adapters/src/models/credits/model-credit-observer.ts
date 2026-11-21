@@ -11,7 +11,20 @@ import {
 import { modelCreditOfferings, offeringUsage } from "../../model-credits/offerings.js";
 import { maximumModelCallCost } from "../../runtime/pi/usage/pi-usage.js";
 
-export class HostedModelCreditsRequiredError extends Error {}
+export class HostedModelCreditsRequiredError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "HostedModelCreditsRequiredError";
+  }
+}
+
+/** The member belongs to no organization that could hold model credits. */
+export class ModelCreditAccountUnavailableError extends Error {
+  constructor() {
+    super("Model credit account is unavailable");
+    this.name = "ModelCreditAccountUnavailableError";
+  }
+}
 
 /** Only deployment credentials are metered; a personal connection never reaches this boundary. */
 export async function hostedModelCreditObserver(
@@ -19,7 +32,7 @@ export async function hostedModelCreditObserver(
   scope: { userId: string; spaceId: string },
 ): Promise<ModelCallObserver> {
   const membership = await organizationForMember(prisma, scope);
-  if (!membership) throw new Error("Model credit account is unavailable");
+  if (!membership) throw new ModelCreditAccountUnavailableError();
   const account = await creditAccount(prisma, membership.organizationId);
   if (account.mode !== "credits" && account.balanceMicros <= 0n)
     throw new HostedModelCreditsRequiredError(HOSTED_MODEL_CREDITS_REQUIRED_ERROR);

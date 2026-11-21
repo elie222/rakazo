@@ -6,6 +6,7 @@ import type {
   AgentImportPlan,
   AgentImportSkill,
 } from "@rakazo/contracts";
+import { THREAD_MESSAGE_TEXT_MAX_LENGTH } from "@rakazo/contracts";
 import { parse as parseYaml } from "yaml";
 import { parseSkillMd } from "../skills/agent-skill.js";
 
@@ -14,8 +15,9 @@ export type SkillFiles = Readonly<Record<string, readonly string[]>>;
 
 export type AgentImportParse = Omit<
   AgentImportPlan,
-  "source" | "model" | "mcpServers" | "routines" | "apiKeys"
->;
+  "source" | "model" | "mcpServers" | "routines" | "apiKeys" | "leftovers"
+> &
+  Partial<Pick<AgentImportPlan, "leftovers">>;
 
 const SKILL_CONTENT_MAX_LENGTH = 100_000;
 const SKILL_FILE = /^(?:\.agents\/)?skills\/(?:[^/]+\/){1,4}SKILL\.md$/;
@@ -109,24 +111,29 @@ function normalise(markdown: string): string {
 
 /** Rewrites only the value of the frontmatter `name:` entry, keeping every other byte. */
 export function renameSkillMd(content: string, name: string): string {
-  const match = /^(\uFEFF?---\r?\n)([\s\S]*?)(\r?\n---)(?=\r?\n|$)/.exec(content);
+  const match = /^(\s*---[ \t]*\r?\n)([\s\S]*?)(\r?\n---)(?=[ \t]*(?:\r?\n|$))/.exec(content);
   if (!match) return content;
   const head = match[1]!;
   const body = match[2]!;
-  const line = /^name[ \t]*:([^\r\n]*)(\r?)$/m.exec(body);
+  const line = /^(?:name|"name"|'name')[ \t]*:([^\r\n]*)(\r?)$/m.exec(body);
   if (!line) return content;
   const value = line[1]!.trim();
   const start = line.index + line[0].indexOf(":") + 1;
   let end = line.index + line[0].length - line[2]!.length;
-  let replacement = ` ${yamlScalar(name)}`;
   // A block scalar name continues on indented lines; replace those lines too.
   if (/^[|>]/.test(value)) {
-    const rest = body.slice(line.index + line[0].length);
+    const rest = body.slice(end);
     const continuation = /^(?:\r?\n(?:[ \t].*)?(?=\r?\n|$))*/.exec(rest)?.[0] ?? "";
-    end = line.index + line[0].length + continuation.length;
-    replacement = ` ${yamlScalar(name)}${line[2] ?? ""}`;
+    end += continuation.length;
+  } else if (value === "" || value.startsWith("#")) {
+    // A plain name can start on the indented lines below an empty `name:`, after blank lines.
+    // Indented comment lines are not part of it and stay.
+    const rest = body.slice(end);
+    const continuation =
+      /^(?:(?:\r?\n[ \t]*(?=\r?\n))*\r?\n[ \t]+(?![ \t#])[^\r\n]*)*/.exec(rest)?.[0] ?? "";
+    end += continuation.length;
   }
-  const renamed = `${body.slice(0, start)}${replacement}${body.slice(end)}`;
+  const renamed = `${body.slice(0, start)} ${yamlScalar(name)}${body.slice(end)}`;
   return `${head}${renamed}${content.slice(head.length + body.length)}`;
 }
 
@@ -265,3 +272,43 @@ export type AgentImportReader = {
   read: (path: string) => Promise<string> | string;
   size: (path: string) => number | undefined;
 };
+
+/**
+ * Text as a fenced block, so a reader takes it as quoted data. The fence is longer than the
+ * text's longest run of backticks, found in one pass whatever the text's length.
+ */
+function fencedBlock(text: string): string {
+  let longest = 2;
+  for (const run of text.matchAll(/`+/g)) longest = Math.max(longest, run[0].length);
+  const fence = "`".repeat(longest + 1);
+  return `${fence}\n${text}\n${fence}`;
+}
+
+/**
+ * What an import left over, as the messages posted in the new bot's chat: as many as one
+ * message's length allows, each leftover whole. Nothing runs on this text until the owner
+ * writes: an automatic turn would let an export's text act with the owner's access unasked.
+ */
+export function agentImportLeftoverMessages(
+  leftovers: readonly { title: string; content: string }[],
+): string[] {
+  const opening = "The import could not set these up:";
+  const closing = "Tell me which ones to set up.";
+  const joint = "\n\n";
+  const messages: string[][] = [[opening]];
+  let size = opening.length;
+  for (const item of leftovers) {
+    // A title sits outside the fence: its Markdown is escaped so an imported name stays a name.
+    const title = item.title.replace(/[\\`*_{}[\]()<>#+!|~]/g, "\\$&");
+    const part = `## ${title}${joint}${fencedBlock(item.content.trim())}`;
+    const room = THREAD_MESSAGE_TEXT_MAX_LENGTH - closing.length - 2 * joint.length;
+    if (size + part.length > room && messages.at(-1)!.length > (messages.length === 1 ? 1 : 0)) {
+      messages.push([]);
+      size = 0;
+    }
+    messages.at(-1)!.push(part);
+    size += part.length + joint.length;
+  }
+  messages.at(-1)!.push(closing);
+  return messages.map((parts) => parts.join(joint));
+}

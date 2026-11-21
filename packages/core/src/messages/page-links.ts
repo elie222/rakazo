@@ -4,31 +4,49 @@ const PAGE_ID = /^\(page:([A-Za-z0-9_-]{1,64})\)/;
 // Markdown escapes only ASCII punctuation; any other backslash is part of the title.
 const ESCAPABLE = /[!-/:-@[-`{-~]/;
 
+type FenceContainer = { end: number; later?: Record<"`" | "~", number[]> };
+
 /**
- * Backtick runs and tilde fences, each with where its closer ends: the next run of the same
- * length for a code span, the next fence line of its character at least as long, with nothing after it, for a block. Built in one pass from the end,
- * so finding closers never rescans the text. `skipTo[at]` is where a run starting at `at` leaves
- * off: past its closer, to the end for an unclosed fence, or past itself for a lone span.
+ * A code span closes at the next run of the same length. A fence closes at the next line in
+ * its container with the same marker, at least as many characters, and no trailing text.
+ * Unclosed fences skip to the end of their container. Closer lookup never rescans the text.
  */
 function codeSkips(text: string): Int32Array {
   const starts: number[] = [];
   const ends: number[] = [];
-  const fences: boolean[] = [];
+  const fences: (FenceContainer | undefined)[] = [];
   // Only a fence line with nothing but spaces after it can close a block; text after it opens one.
   const closes: boolean[] = [];
+  const root: FenceContainer = { end: text.length };
+  const containers = [root];
+  const quoteMarker = / {0,3}>[ \t]?/y;
   let lineStart = 0;
+  let contentStart = 0;
   for (let at = 0; at < text.length; at++) {
+    if (at === lineStart) {
+      contentStart = at;
+      quoteMarker.lastIndex = at;
+      let depth = 0;
+      while (quoteMarker.test(text)) {
+        contentStart = quoteMarker.lastIndex;
+        depth++;
+      }
+      // A fenced block cannot continue after its explicit quote markers end.
+      while (containers.length > depth + 1) containers.pop()!.end = at;
+      while (containers.length < depth + 1) containers.push({ end: text.length });
+    }
     const char = text.charCodeAt(at);
     if (char === 10) lineStart = at + 1;
     if ((char !== 96 && char !== 126) || text.charCodeAt(at - 1) === char) continue;
     let end = at + 1;
     while (text.charCodeAt(end) === char) end++;
-    const fence = end - at >= 3 && at - lineStart <= 3 && text.slice(lineStart, at).trim() === "";
+    const fence =
+      end - at >= 3 && at - contentStart <= 3 && text.slice(contentStart, at).trim() === "";
     // Tildes mark only fences; a shorter run is plain text.
     if (char === 126 && !fence) continue;
     starts.push(at);
     ends.push(end);
-    fences.push(fence);
+    fences.push(fence ? containers.at(-1) : undefined);
     let rest = end;
     if (fence) while (text[rest] === " " || text[rest] === "\t") rest++;
     const after = text.charCodeAt(rest);
@@ -38,13 +56,16 @@ function codeSkips(text: string): Int32Array {
   const nextOfLength = new Map<number, number>();
   // Later fences, nearest on top, each longer than every fence above it: a shorter one behind a
   // nearer fence at least as long can close no earlier fence, so it leaves for good.
-  const laterFences: Record<string, number[]> = { "`": [], "~": [] };
   const fenceLength = (index: number) => ends[index]! - starts[index]!;
   for (let index = starts.length - 1; index >= 0; index--) {
-    const length = ends[index]! - starts[index]!;
+    const start = starts[index]!;
+    const length = ends[index]! - start;
+    const char = text[start] === "`" ? "`" : "~";
+    const container = fences[index];
     let closer = -1;
-    if (fences[index]) {
-      const later = laterFences[text[starts[index]!]!]!;
+    if (container) {
+      container.later ??= { "`": [], "~": [] };
+      const later = container.later[char];
       if (closes[index]) {
         while (later.length && fenceLength(later.at(-1)!) < length) later.pop();
         closer = later.at(-1) ?? -1;
@@ -62,9 +83,9 @@ function codeSkips(text: string): Int32Array {
         closer = low > 0 ? later[low - 1]! : -1;
       }
     } else closer = nextOfLength.get(length) ?? -1;
-    nextOfLength.set(length, index);
-    skipTo[starts[index]!] =
-      closer >= 0 ? ends[closer]! : fences[index] ? text.length : ends[index]!;
+    // Quoted tildes do not participate in the existing code-span scan.
+    if (char === "`" || container === root) nextOfLength.set(length, index);
+    skipTo[start] = closer >= 0 ? ends[closer]! : (container?.end ?? ends[index]!);
   }
   return skipTo;
 }

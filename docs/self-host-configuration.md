@@ -48,8 +48,8 @@ SANDBOX_IDLE_MS=600000    # pause or stop after 10 minutes idle; 0 disables idle
 # E2B, CreateOS and Boat still apply their own timeouts.
 COMPUTER_MAX_ACTIVE_MS=7200000 # uptime cap for providers that bill while running; minimum 60000; 0 disables
 COMPUTER_MAX_ACTIVE_UNBILLED_MS=0 # uptime cap for providers that do not bill while running (Docker, Kubernetes, Incus); minimum 60000; 0 (default) disables; needs SANDBOX_IDLE_MS on
-SANDBOX_COMMAND_TIMEOUT_MS=300000 # stop a shell command after 5 minutes
-MAX_TOOL_CALLS_PER_TURN=  # optional Pi turn tool-call fuse; unset/0 = unlimited
+SANDBOX_COMMAND_TIMEOUT_MS=300000 # stop a shell command after 5 minutes; values above 3600000 (1 hour) use 3600000
+MAX_TOOL_CALLS_PER_TURN=  # optional Pi turn tool-call fuse; unset/0 = unlimited; any non-integer fails at startup
 RAKAZO_MESSAGE_USER_MAX_CHARS=500 # message_user length cap; narration stays at 500
 BOT_MESSAGE_MAX_HOPS=6    # bot-to-bot messages one chain may carry before the next is refused
 E2B_API_KEY=              # when SANDBOX_PROVIDER=e2b
@@ -63,7 +63,10 @@ BOAT_API_KEY=             # when SANDBOX_PROVIDER=boat
 (default `86400000`, 24 hours) is how long before the worker stops it, leaves a status line in the
 thread, and frees the bot's computer. Both take milliseconds from `60000` to `2592000000` (30 days);
 anything else keeps the default. Setting the expiry below the reminder time skips the reminder. A
-takeover request nobody acts on still stops after 30 minutes. The activity list keeps marking old
+takeover request nobody acts on still stops after 30 minutes. `UNATTENDED_APPROVAL_EXPIRE_AFTER_MS`
+(default `1800000`, 30 minutes) is how long an approval card an unattended run posts stays open
+before the action is dropped; it takes the same `60000`–`2592000000` range, and a card from a chat
+someone is in stays open until answered. The activity list keeps marking old
 queued runs after 4 hours. A question the bot asks stays open until someone answers it, unless its
 run holds a login or code it took only for itself: that run still stops at the expiry.
 
@@ -249,6 +252,18 @@ To send the API and worker's outbound traffic through a corporate proxy, set `HT
 ```env
 HTTPS_PROXY=http://proxy.example.com:3128
 NO_PROXY=localhost,127.0.0.1,postgres,supervisor,api,worker,web
+```
+
+Guarded fetches tunnel to the address that passed the public-address check, so the proxy never
+resolves the name. A proxy that classifies traffic by the CONNECT target drops a bare address. For
+the HTTPS hosts it allows by name, set `RAKAZO_PROXY_CONNECT_BY_HOSTNAME_HOSTS` to a
+comma-separated list of those hosts. A `*.example.com` entry matches subdomains only. A bare `*`
+and a public suffix such as `*.com` are rejected. Listed hosts are still checked against local DNS
+and their certificate, and plain HTTP stays pinned to the checked address. Leave it unset to keep
+every tunnel on the checked address.
+
+```env
+RAKAZO_PROXY_CONNECT_BY_HOSTNAME_HOSTS=api.example.com,*.downloads.example.com
 ```
 
 For mirrors of the installer and images, see [restricted networks](./self-host-restricted-network.md).

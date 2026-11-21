@@ -1,5 +1,6 @@
 import { Dialog as SheetPrimitive } from "@base-ui/react/dialog";
 import { Button } from "@rakazo/ui-web/components/ui/button";
+import { useKitLabels } from "@rakazo/ui-web/components/ui/kit-labels";
 import { cn } from "@rakazo/ui-web/lib/utils";
 import { XIcon } from "lucide-react";
 import type * as React from "react";
@@ -43,6 +44,7 @@ function SheetContent({
   side?: "top" | "right" | "bottom" | "left";
   showCloseButton?: boolean;
 }) {
+  const labels = useKitLabels();
   return (
     <SheetPortal>
       <SheetOverlay />
@@ -62,7 +64,7 @@ function SheetContent({
             render={<Button variant="ghost" className="absolute top-3 right-3" size="icon-sm" />}
           >
             <XIcon />
-            <span className="sr-only">Close</span>
+            <span className="sr-only">{labels.close}</span>
           </SheetPrimitive.Close>
         )}
       </SheetPrimitive.Popup>

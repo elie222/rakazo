@@ -14,6 +14,7 @@ import {
 import { availableInSpace, parseComputerMode } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { createApprovedEffectReplayQueue } from "../../approvals/approval-effect.js";
+import { appendOutsideText, taskPromptIsOutside } from "../../approvals/review-target-sources.js";
 import { loadGroupContext } from "../../bots/group-handoff.js";
 import { USER_CLOUD_AGENT_KEY_PREFIX } from "../../cloud-agents/cloud-agent-factory.js";
 import { diskNoteInstruction, recordComputerDisk } from "../../computers/computer-disk.js";
@@ -63,6 +64,7 @@ import {
   BUILTIN_AGENT_TOOL_NAMES,
   offersAgentConnectionTools,
   selectBuiltinToolsForRun,
+  unavailableBuiltinToolReasons,
 } from "../tools/run-tool-selection.js";
 import type { UserComputerState } from "../tools/run-tools-user-computer.js";
 import { USER_COMPUTER_SHELL_TOOL, userComputerOwner } from "../tools/run-tools-user-computer.js";
@@ -74,7 +76,7 @@ import {
 import { runModelBackups, startRunModel } from "../turn/run-model-start.js";
 import { RECENT_TURN_IMAGE_TURNS } from "../turn/run-turn-images.js";
 import { refreshTakeoverContinuePlan } from "../turn/takeover-resume.js";
-import { historyReplaysOutsideContent } from "../turn/tool-step-calls.js";
+import { historyReplaysOutsideContent, historyToolResults } from "../turn/tool-step-calls.js";
 import type { ThreadHistory, TurnContext } from "./run-assembly-history.js";
 import type { ConnectedRun, RunRecords, SavedTurn } from "./run-assembly-records.js";
 import { lazyRunComputer } from "./run-computer.js";
@@ -533,6 +535,7 @@ export async function resolveRunCapabilities(
   const ownerStartedRun = isOwnerStartedRun(
     conversationRun.trigger,
     (origin?.sourceMessage ?? sourceMessage)?.role === "user",
+    nonOwnerChatRun,
   );
   // A hang-up run has no source message: its own nonce carries the call it closes.
   const callEndRun = run.trigger === "call_end";
@@ -581,7 +584,10 @@ export async function resolveRunCapabilities(
       userComputer = "connected";
       userComputerShell = !device.screenOnly;
       // The macOS and Windows desktops fetch a screen driver; Linux has none yet.
-      userComputerScreen = device.platform === "darwin" || device.platform === "win32";
+      const computers = await deps.userDevices.list(userComputerOwnerId);
+      userComputerScreen = [device, ...computers.filter((computer) => computer.connected)].some(
+        (computer) => computer.platform === "darwin" || computer.platform === "win32",
+      );
     } else userComputer = "offline";
   }
   const cloudAgent = await cloudAgentPromise;
@@ -643,6 +649,7 @@ export async function selectRunTools(
     connected: ConnectedRun;
     turnContext: TurnContext;
     capabilities: RunCapabilities;
+    meetingTranscriptsAvailable?: boolean;
   },
 ) {
   const { contextStrategy, mediaGeneration, paidServices } = services;
@@ -689,13 +696,35 @@ export async function selectRunTools(
         orderBy: { createdAt: "asc" },
         take: BOT_DIRECTORY_LIMIT,
       });
+  // Another group the bot belongs to, which post_to_group can post into.
+  const otherGroups = await deps.prisma.chatGroup.findMany({
+    where: {
+      spaceId: run.spaceId,
+      archivedAt: null,
+      thread: { isNot: null },
+      members: { some: { botId: bot.id } },
+      ...(conversationThread.groupId ? { id: { not: conversationThread.groupId } } : {}),
+    },
+    select: { id: true },
+    take: 1,
+  });
   const builtins = [
     ...selectBuiltinToolsForRun({
       ticketBoardEnabled,
-      // A call rings the bot's own person, whose chat it is; other members of a shared
-      // Space reach it by message for now.
-      phoneCallsEnabled: deps.phoneCallsEnabled && run.userId === bot.userId,
+      // A call rings the bot's own person in its own app chat, and only once they set up a voice
+      // provider; other members of a shared Space reach it by message for now.
+      phoneCallsEnabled:
+        deps.phoneCallsEnabled &&
+        run.userId === bot.userId &&
+        !conversationThread.externalConversationId &&
+        Boolean(
+          await deps.prisma.userVoiceCredential.findFirst({
+            where: { userId: run.userId },
+            select: { id: true },
+          }),
+        ),
       historyRetrievalEnabled: contextStrategy !== "current" && !unknownChannelSourceId,
+      meetingTranscriptsAvailable: parts.meetingTranscriptsAvailable,
       graphicalToolsAllowed,
       pageBrowserAllowed,
       groupId: conversationThread.groupId,
@@ -717,6 +746,7 @@ export async function selectRunTools(
         : bot.disabledBuiltinTools,
       fleetManagement: bot.fleetManagement,
       hasTeammates: teammates.length > 0,
+      hasGroups: otherGroups.length > 0,
       followUpFromUser: sourceMessage?.role === "user",
       userComputer: userComputerShell,
       userComputerScreen,
@@ -771,12 +801,27 @@ export async function selectRunTools(
     Boolean(turnCheckpoint) ||
     Boolean(checkpointLoadError) ||
     historyReplaysOutsideContent(history);
+  // What Auto Review checks a call's targets against: a run someone else started carries their
+  // words in its task, and replayed history the results earlier turns read.
+  const initialOutsideText = [
+    ...(taskPromptIsOutside(run, ownerStartedRun) ? [task.prompt] : []),
+    ...historyToolResults(history),
+  ].reduce<string>(appendOutsideText, "");
   // The creation intro only asks what the bot is for (see selectBuiltinToolsForRun),
   // so it gets no connector tools either.
   const tools =
     run.trigger === "created"
       ? strategicBuiltins
       : [...strategicBuiltins, ...strategicConnectorTools];
+  // Reasons come from the bot's own settings, not the handoff_to_bot entry added above.
+  const unavailableToolReasons = unavailableBuiltinToolReasons(
+    {
+      groupId: conversationThread.groupId,
+      trigger: run.trigger,
+      disabledBuiltinTools: bot.disabledBuiltinTools,
+    },
+    tools,
+  );
   const taskCatalogInstruction = tools.some((tool) => tool.name === "task_catalog")
     ? TASK_CATALOG_GUIDANCE
     : undefined;
@@ -793,7 +838,9 @@ export async function selectRunTools(
     trustLoaders,
     searchResultUrls,
     initiallyTainted,
+    initialOutsideText,
     tools,
+    unavailableToolReasons,
     taskCatalogInstruction,
     approvedEffects,
     approvedEffectReplays,
