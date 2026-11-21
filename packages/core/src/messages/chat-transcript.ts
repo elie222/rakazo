@@ -3,6 +3,7 @@ import { commandVariableName, outgoingDraftPresentation } from "@rakazo/contract
 import { resolveAskChoice } from "../asks/answerable-ask.js";
 import { isSecretAskBlock } from "../asks/ask-kind.js";
 import { separateAskAnswers } from "../asks/ask-replies.js";
+import { callDurationText } from "../calls/voice-chat-groups.js";
 import { receiptItems } from "../runs/action-approval.js";
 import { helperCardState } from "../runs/run-state.js";
 import { isRetiredImportSetup, isToolActivityBlock } from "../runs/tool-activity.js";
@@ -55,6 +56,11 @@ export type CardStatusWords = {
   stopped: string;
   archived: string;
   deleted: string;
+  setupComplete: string;
+  /** The label on a call's card, before its length. */
+  phoneCall: string;
+  /** The label on the card of an answered call the bot placed, before its length. */
+  incomingCall: string;
 };
 
 /** Markdown that only character escapes can make, the same in every CommonMark reader. */
@@ -143,8 +149,20 @@ function closeOpenFence(markdown: string): string {
   return open ? `${text}\n${closer}` : text;
 }
 
-/** An autolink's `<scheme:...>` after its `<`, which the chat shows as a link and is left as it is. */
-const AUTOLINK = /[a-z][a-z0-9+.-]*:[^\s<>]*>/iy;
+/**
+ * Whether an autolink `<scheme:...>` starts at the `<` at `at`. The chat shows it as a link, so it is
+ * left as it is. A plain scan, so a long line of letters cannot cost more than its length.
+ */
+function isAutolinkAt(line: string, at: number): boolean {
+  let i = at + 1;
+  if (!/[a-z]/i.test(line.charAt(i))) return false;
+  i += 1;
+  while (/[a-z0-9+.-]/i.test(line.charAt(i))) i += 1;
+  if (line.charAt(i) !== ":") return false;
+  i += 1;
+  while (i < line.length && !/[\s<>]/.test(line.charAt(i))) i += 1;
+  return line.charAt(i) === ">";
+}
 
 /** The index just after the run of backticks that starts at `from`. */
 function backtickRunEnd(line: string, from: number): number {
@@ -188,8 +206,7 @@ function escapeHtml(line: string): string {
       // An odd run of backslashes already escapes the "<"; an even one needs a backslash of its own.
       let slashes = 0;
       while (line.charAt(i - 1 - slashes) === "\\") slashes += 1;
-      AUTOLINK.lastIndex = i + 1;
-      const needsEscape = slashes % 2 === 0 && !AUTOLINK.test(line);
+      const needsEscape = slashes % 2 === 0 && !isAutolinkAt(line, i);
       out += needsEscape ? "\\<" : "<";
     } else {
       out += char;
@@ -281,6 +298,8 @@ function askMarkdown(
     block.detail && (!isSecretAskBlock(block) || block.oneTimeCode) ? block.detail : "";
   // A protected request names where its answer goes, as its card does.
   const destination = isSecretAskBlock(block) ? secretDestination(block, words) : "";
+  // The shared-browser and replaced-login notices are left out: they only come with a saved login,
+  // whose card shows them to the run's owner alone while it waits, which the export cannot tell.
   const detail = block.receipt
     ? receiptMarkdown(block.receipt, words)
     : shownDetail
@@ -357,6 +376,8 @@ function blockMarkdown(
     status: CardStatusWords;
     memberName: (botId: string) => string;
     attachment: string;
+    isSetupComplete: (block: Extract<MessageBlock, { kind: "import_setup" }>) => boolean;
+    placedCalls: ReadonlyMap<string, { durationSeconds?: number }>;
   },
   answeredInOwnMessage: boolean,
 ): string {
@@ -397,9 +418,23 @@ function blockMarkdown(
     case "card":
       return block.lines.map((line) => `- ${oneLine(line.k)} → ${oneLine(line.v)}`).join("\n");
     case "page":
-    case "voice_call":
     case "cloud_agent":
       return oneLine(block.title);
+    case "voice_call": {
+      // A call the bot placed ends with this marker under its request's id: its card reads Incoming
+      // call and takes the length from the request when the marker has none (the bot hung up).
+      // Otherwise, with no recorded length, the card counts it from the message times, which the
+      // export leaves out.
+      const placed = block.callId ? words.placedCalls.get(block.callId) : undefined;
+      const label = placed ? words.status.incomingCall : words.status.phoneCall;
+      const seconds = block.durationSeconds ?? placed?.durationSeconds;
+      return [
+        seconds === undefined ? label : `${label} · ${callDurationText(seconds)}`,
+        oneLine(block.title),
+      ]
+        .filter(Boolean)
+        .join("\n\n");
+    }
     case "call_request":
       // The card shows the opening, which is spoken text, once the call is answered; the reason
       // while it rings or after it was missed.
@@ -446,6 +481,8 @@ function blockMarkdown(
         .filter(Boolean)
         .join("\n\n");
     case "import_setup":
+      // Once every item is done the card shows only that setup is complete, so the export does too.
+      if (words.isSetupComplete(block)) return oneLine(words.status.setupComplete);
       return block.items
         .map((item) => `- ${oneLine("name" in item ? item.name : item.title)}`)
         .join("\n");
@@ -478,6 +515,8 @@ export function chatTranscriptMarkdown<T extends TranscriptMessage>(options: {
   memberName: (botId: string) => string;
   /** The label before an attached file's name, in the reader's words. */
   attachment: string;
+  /** Whether a checklist's card shows it complete, which the caller checks against the bot's setup. */
+  isSetupComplete: (block: Extract<MessageBlock, { kind: "import_setup" }>) => boolean;
 }): string {
   // Folded as the chat folds them: work a bot did for another bot stays under its receipt, and an
   // emoji-only reply shows under the message it reacts to.
@@ -491,6 +530,14 @@ export function chatTranscriptMarkdown<T extends TranscriptMessage>(options: {
     status: options.cardStatus,
     memberName: options.memberName,
     attachment: options.attachment,
+    isSetupComplete: options.isSetupComplete,
+    placedCalls: new Map(
+      options.messages.flatMap((message) =>
+        message.blocks.flatMap((block) =>
+          block.kind === "call_request" ? [[block.callId, block] as const] : [],
+        ),
+      ),
+    ),
   };
   const entries = visibleMessages.flatMap((message) => {
     const body = message.blocks

@@ -1,6 +1,21 @@
-import type { Bot, Group, RoutineEventChange, ThreadMessage } from "@rakazo/contracts";
+import type {
+  Bot,
+  Group,
+  MessageBlock,
+  RoutineEventChange,
+  ThreadMessage,
+} from "@rakazo/contracts";
 import type { AskWords, CardStatusWords } from "@rakazo/core";
-import { chatTranscriptMarkdown, deadlineSignal, loadPeerHistory, otherAuthor } from "@rakazo/core";
+import {
+  chatTranscriptMarkdown,
+  deadlineSignal,
+  importSetupStateInput,
+  isImportSetupComplete,
+  isRetiredImportSetup,
+  loadPeerHistory,
+  otherAuthor,
+} from "@rakazo/core";
+import { bestEffort } from "@rakazo/logging/best-effort";
 import { downloadArtifactBytes } from "../pages/artifact-open";
 import type { RpcClient } from "../query/rpc";
 
@@ -8,6 +23,8 @@ import type { RpcClient } from "../query/rpc";
 const MAX_PAGES = 2000;
 /** Each page keeps loadPeerHistory's own limit; this bounds a long chat whose pages keep answering slowly. */
 const TOTAL_TIMEOUT_MS = 5 * 60_000;
+/** One checklist's setup check; a check that never answers shows its list rather than holding the export. */
+const SETUP_CHECK_TIMEOUT_MS = 15_000;
 
 export type ChatToExport = { kind: "bot"; chat: Bot } | { kind: "group"; chat: Group };
 
@@ -57,6 +74,41 @@ async function loadAllMessages(rpc: RpcClient, target: ChatToExport): Promise<Th
   }
 }
 
+type ImportSetupBlock = Extract<MessageBlock, { kind: "import_setup" }>;
+
+/** The checklists the chat shows as complete, each checked for its bot the way its card checks it. */
+async function completedSetups(
+  rpc: RpcClient,
+  target: ChatToExport,
+  messages: readonly ThreadMessage[],
+): Promise<Set<ImportSetupBlock>> {
+  const checks: { botId: string; block: ImportSetupBlock }[] = [];
+  for (const message of messages) {
+    for (const block of message.blocks) {
+      if (block.kind !== "import_setup" || isRetiredImportSetup(block)) continue;
+      // As its card does: the chat's bot in a one-bot chat, the message's bot in a group.
+      const botId = target.kind === "bot" ? target.chat.id : message.botId;
+      if (botId) checks.push({ botId, block });
+    }
+  }
+  // A check that fails or never answers leaves the card's full list on show, so the export keeps it too.
+  const states = await Promise.all(
+    checks.map(({ botId, block }) =>
+      bestEffort(
+        "import setup state",
+        rpc.bots.importSetupState(importSetupStateInput(botId, block), {
+          signal: deadlineSignal(SETUP_CHECK_TIMEOUT_MS),
+        }),
+      ),
+    ),
+  );
+  const done = new Set<ImportSetupBlock>();
+  checks.forEach(({ block }, i) => {
+    if (isImportSetupComplete(block, states[i] ?? null)) done.add(block);
+  });
+  return done;
+}
+
 /** Downloads the whole chat as a Markdown file: every page of history, oldest first. */
 export async function exportChat(options: {
   rpc: RpcClient;
@@ -79,6 +131,7 @@ export async function exportChat(options: {
 }): Promise<void> {
   const { rpc, target, labels, time, memberName, meId } = options;
   const messages = await loadAllMessages(rpc, target);
+  const completed = await completedSetups(rpc, target, messages);
   const markdown = chatTranscriptMarkdown({
     title: target.chat.name,
     messages,
@@ -88,6 +141,7 @@ export async function exportChat(options: {
     cardStatus: labels.status,
     memberName: (botId) => memberName(botId) ?? labels.deletedBot,
     attachment: labels.attachment,
+    isSetupComplete: (block) => completed.has(block),
     speaker: (message) => {
       if (message.role === "user") return otherAuthor(message.author, meId)?.name ?? labels.you;
       if (message.role === "system") return labels.system;

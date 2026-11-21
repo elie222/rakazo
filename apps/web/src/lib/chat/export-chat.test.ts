@@ -72,6 +72,9 @@ const labels = {
     stopped: "Stopped",
     archived: "archived",
     deleted: "deleted",
+    setupComplete: "Setup complete",
+    phoneCall: "Phone call",
+    incomingCall: "Incoming call",
   },
 };
 const time = (createdAt: string) => createdAt.slice(11, 16);
@@ -89,6 +92,101 @@ function exported() {
 }
 
 describe("exportChat", () => {
+  const checklist = {
+    kind: "import_setup" as const,
+    items: [{ kind: "routine" as const, routineId: "r_1", name: "Morning digest" }],
+  };
+
+  it("writes a finished checklist as its completion, after checking its bot's setup", async () => {
+    const importSetupState = vi.fn(async (_input: unknown) => ({
+      providers: {},
+      serverIds: {},
+      routineIds: { r_1: true },
+    }));
+    const messages = vi.fn(async (_input: unknown) => ({
+      threadId: "t_1",
+      // The server writes a checklist without a bot id; the chat's bot is the one checked.
+      messages: [message("", { blocks: [checklist] })],
+      olderCursor: null,
+    }));
+    const rpc = { threads: { messages }, bots: { importSetupState } } as unknown as RpcClient;
+    await exportChat({
+      rpc,
+      target: { kind: "bot", chat: bot },
+      labels,
+      time,
+      memberName: noMembers,
+    });
+    expect(importSetupState.mock.calls[0]?.[0]).toEqual({
+      botId: "bot-1",
+      providers: [],
+      serverIds: [],
+      routineIds: ["r_1"],
+    });
+    expect(exported().text).toContain("Setup complete");
+    expect(exported().text).not.toContain("Morning digest");
+  });
+
+  it("stops waiting on a setup check that never answers, and keeps the checklist's items", async () => {
+    // Node's AbortSignal.timeout ignores fake timers, so the test hands out controllable signals and
+    // aborts the setup check's own one, as its deadline would.
+    const controllers: { ms: number; controller: AbortController }[] = [];
+    vi.spyOn(AbortSignal, "timeout").mockImplementation((ms) => {
+      const controller = new AbortController();
+      controllers.push({ ms, controller });
+      return controller.signal;
+    });
+    try {
+      // The real client rejects a call whose signal aborts; the mock does the same.
+      const importSetupState = vi.fn(
+        (_input: unknown, options: { signal: AbortSignal }) =>
+          new Promise<never>((_resolve, reject) =>
+            options.signal.addEventListener("abort", () => reject(options.signal.reason)),
+          ),
+      );
+      const messages = vi.fn(async (_input: unknown) => ({
+        threadId: "t_1",
+        messages: [message("", { blocks: [checklist] })],
+        olderCursor: null,
+      }));
+      const rpc = { threads: { messages }, bots: { importSetupState } } as unknown as RpcClient;
+      const exporting = exportChat({
+        rpc,
+        target: { kind: "bot", chat: bot },
+        labels,
+        time,
+        memberName: noMembers,
+      });
+      await vi.waitFor(() => expect(importSetupState).toHaveBeenCalled());
+      const setupDeadline = controllers.find(({ ms }) => ms === 15_000);
+      expect(setupDeadline).toBeDefined();
+      setupDeadline?.controller.abort(new DOMException("timed out", "TimeoutError"));
+      await exporting;
+      expect(exported().text).toContain("- Morning digest");
+    } finally {
+      vi.restoreAllMocks();
+    }
+  });
+
+  it("keeps a checklist's items when its setup cannot be checked, as its card does", async () => {
+    const importSetupState = vi.fn(async (_input: unknown) => {
+      throw new Error("offline");
+    });
+    const messages = vi.fn(async (_input: unknown) => ({
+      threadId: "t_1",
+      messages: [message("", { botId: "bot-1", blocks: [checklist] })],
+      olderCursor: null,
+    }));
+    const rpc = { threads: { messages }, bots: { importSetupState } } as unknown as RpcClient;
+    await exportChat({
+      rpc,
+      target: { kind: "bot", chat: bot },
+      labels,
+      time,
+      memberName: noMembers,
+    });
+    expect(exported().text).toContain("- Morning digest");
+  });
   it("reads every page of history and writes it oldest first", async () => {
     const first = message(
       "Hi",

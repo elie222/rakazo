@@ -42,6 +42,9 @@ const cardStatus = {
   stopped: "Stopped",
   archived: "archived",
   deleted: "deleted",
+  setupComplete: "Setup complete",
+  phoneCall: "Phone call",
+  incomingCall: "Incoming call",
 };
 
 const transcript = (messages: ThreadMessage[]) =>
@@ -55,6 +58,7 @@ const transcript = (messages: ThreadMessage[]) =>
     cardStatus,
     memberName: (botId: string) => botId,
     attachment: "Attachment",
+    isSetupComplete: () => false,
   });
 
 describe("chatTranscriptMarkdown", () => {
@@ -211,6 +215,7 @@ describe("chatTranscriptMarkdown", () => {
       cardStatus,
       memberName: (botId: string) => botId,
       attachment: "Attachment",
+      isSetupComplete: () => false,
     });
     expect(text).toBe(
       "# Project \\#\\# Another heading\n\n---\n\n**Dana\\*\\* \\*\\*Lee** · 10:00\n\nHi\n",
@@ -488,6 +493,7 @@ describe("chatTranscriptMarkdown", () => {
       cardStatus,
       memberName: (botId: string) => botId,
       attachment: "Attachment",
+      isSetupComplete: () => false,
     });
     expect(text).toContain("Atualizar instruções?");
     expect(text).not.toContain("Update instructions?");
@@ -732,8 +738,111 @@ describe("chatTranscriptMarkdown", () => {
       cardStatus,
       memberName: (botId) => (botId === "b_lee" ? "Lee" : "Ada"),
       attachment: "Attachment",
+      isSetupComplete: () => false,
     });
     expect(text).toContain("\u21aa Lee \u2190 Ada\n\nTake the invoice");
+  });
+
+  it("leaves out a login's owner-only notices", () => {
+    const login = {
+      kind: "ask" as const,
+      text: "Sign in to the shop",
+      input: "secret" as const,
+      sharedBrowser: true as const,
+      credential: {
+        name: "shop_login",
+        origin: "https://shop.example",
+        auth: { type: "login" as const },
+      },
+      replaces: { id: "c_1", origin: "https://shop.example" },
+    };
+    for (const block of [login, { ...login, status: "answered" as const, answer: "hunter2" }]) {
+      const text = transcript([message("bot", [block])]);
+      expect(text).toContain("Sign in to the shop");
+      expect(text).not.toContain("signed in for everyone");
+      expect(text).not.toContain("Replaces the login");
+      expect(text).not.toContain("hunter2");
+    }
+  });
+
+  it("writes a call as its card's label and length, then its title", () => {
+    expect(
+      transcript([
+        message("bot", [{ kind: "voice_call", title: "", farewell: "Bye", durationSeconds: 185 }]),
+      ]),
+    ).toContain("**Ada** · 2026-03-04 10:00\n\nPhone call · 3:05");
+    // A call with neither a title nor a recorded length still shows as a call.
+    expect(transcript([message("bot", [{ kind: "voice_call", title: "", farewell: "Bye" }])])).toBe(
+      "# Ada\n\n---\n\n**Ada** · 2026-03-04 10:00\n\nPhone call\n",
+    );
+    expect(
+      transcript([
+        message("bot", [
+          { kind: "voice_call", title: "Renewal", farewell: "Bye", durationSeconds: 60 },
+        ]),
+      ]),
+    ).toContain("Phone call · 1:00\n\nRenewal");
+  });
+
+  it("labels the end of a call the bot placed as its card does", () => {
+    const text = transcript([
+      message("bot", [
+        {
+          kind: "call_request",
+          callId: "c_1",
+          reason: "Your invoice is overdue",
+          opening: "Hi Sam",
+          status: "answered",
+          expiresAt: "2026-03-04T10:05:00.000Z",
+        },
+      ]),
+      message("bot", [
+        { kind: "voice_call", callId: "c_1", title: "", farewell: "", durationSeconds: 185 },
+      ]),
+    ]);
+    expect(text).toContain("Incoming call · 3:05");
+    expect(text).not.toContain("Phone call");
+  });
+
+  it("takes a bot-placed call's length from its request when the bot hung up", () => {
+    const text = transcript([
+      message("bot", [
+        {
+          kind: "call_request",
+          callId: "c_1",
+          reason: "Your invoice is overdue",
+          opening: "Hi Sam",
+          status: "answered",
+          expiresAt: "2026-03-04T10:05:00.000Z",
+          durationSeconds: 185,
+        },
+      ]),
+      message("bot", [{ kind: "voice_call", callId: "c_1", title: "", farewell: "Bye" }]),
+    ]);
+    expect(text).toContain("Incoming call · 3:05");
+  });
+
+  it("writes a finished checklist as its completion, and an open one as its items", () => {
+    const checklist = {
+      kind: "import_setup" as const,
+      items: [{ kind: "routine" as const, routineId: "r_1", name: "Morning digest" }],
+    };
+    const render = (isSetupComplete: (block: unknown) => boolean) =>
+      chatTranscriptMarkdown({
+        title: "Ada",
+        messages: [message("bot", [checklist])],
+        speaker: () => "Ada",
+        time: () => "10:00",
+        routineEvent: (change, name) => `${change} ${name}`,
+        askWords,
+        cardStatus,
+        memberName: (botId: string) => botId,
+        attachment: "Attachment",
+        isSetupComplete: (block) => isSetupComplete(block),
+      });
+    expect(render((block) => block === checklist)).toContain("Setup complete");
+    expect(render((block) => block === checklist)).not.toContain("Morning digest");
+    expect(render(() => false)).toContain("- Morning digest");
   });
 
   it("is just the title for an empty chat", () => {
