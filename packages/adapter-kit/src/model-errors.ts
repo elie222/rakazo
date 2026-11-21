@@ -62,7 +62,11 @@ function errorFacts(value: unknown) {
       statuses.add(Number(match[1]));
     }
   }
-  return { text: text.join(" ").toLowerCase(), statuses };
+  // A transport deadline can surface as a timeout with the fetch abort attached.
+  const transportDeadline = text.some(
+    (detail) => detail.trim() === "Request timed out.: This operation was aborted (20)",
+  );
+  return { text: text.join(" ").toLowerCase(), statuses, transportDeadline };
 }
 
 /** Transport timeouts may expire before the model request's overall budget. */
@@ -118,7 +122,7 @@ export function isSignInRetryRequest(error: unknown): boolean {
 
 /** Only provider availability failures may advance the user's explicit chain. */
 export function isRetryableProviderUnavailable(error: unknown): boolean {
-  const { text, statuses } = errorFacts(error);
+  const { text, statuses, transportDeadline } = errorFacts(error);
   if (statuses.has(401)) return false;
   if (isAccountExhaustion(text, statuses)) return true;
   // The provider timed out fetching a file the request links to; another attempt fetches it again.
@@ -143,6 +147,7 @@ export function isRetryableProviderUnavailable(error: unknown): boolean {
   ) {
     return false;
   }
+  if (transportDeadline && statuses.size === 0) return true;
   if (
     /\b(abort(?:ed)?|cancel(?:lation|led|ed)?|unauthori[sz]ed|forbidden|permission(?: is)? (?:denied|refused|declined)|access denied|consent(?: is)? (?:required|denied|refused|declined|not granted)|user (?:refused|declined)|invalid api key|invalid credential|(?:expired|revoked|missing) (?:api )?(?:key|credential|token)|(?:api )?(?:key|credential|token) (?:expired|revoked|missing)|authentication (?:failed|failure|denied|expired|invalid)|authorization (?:failed|failure|denied|expired|invalid)|bad request|invalid request|invalid input|invalid argument|context length|model not found|unsupported parameter)\b/.test(
       text,
