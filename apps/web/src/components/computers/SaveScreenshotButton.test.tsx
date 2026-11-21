@@ -4,6 +4,7 @@ import { deferred } from "@rakazo/core/test-async";
 import type { ComponentProps, ReactNode } from "react";
 import { act } from "react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import type * as ArtifactOpen from "../../lib/pages/artifact-open";
 import { createQueryRoot as createRoot } from "../../lib/query/query-root.test-support";
 
 const preview = vi.hoisted(() => vi.fn());
@@ -14,7 +15,7 @@ vi.mock("../../lib/query/rpc", () => {
   return { rpc, rpcForSpace: () => rpc, createSpaceRpc: () => rpc, selectedSpaceId: () => null };
 });
 vi.mock("../../lib/pages/artifact-open", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("../../lib/pages/artifact-open")>()),
+  ...(await importOriginal<typeof ArtifactOpen>()),
   downloadArtifactBytes: download,
 }));
 vi.mock("@lingui/react/macro", () => ({
@@ -116,4 +117,13 @@ it("takes one picture however fast it is pressed", async () => {
   await act(async () => answer.resolve({ image: "data:image/png;base64,AQID" }));
   expect(download).toHaveBeenCalledOnce();
   expect(button().disabled).toBe(false);
+});
+
+it("saves nothing when the view closes before the picture arrives", async () => {
+  const answer = deferred<{ image: string }>();
+  preview.mockReturnValue(answer.promise);
+  await act(async () => button().click());
+  act(() => root.render(null));
+  await act(async () => answer.resolve({ image: "data:image/png;base64,AQID" }));
+  expect(download).not.toHaveBeenCalled();
 });

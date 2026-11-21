@@ -30,12 +30,11 @@ export function SaveScreenshotButton({ botId }: { botId: string }) {
       const { image } = await rpc.computer.preview({ botId });
       const match = image ? DATA_URL.exec(image) : null;
       if (!match?.[1] || !match[2]) throw new Error("The computer returned no screen image");
-      downloadArtifactBytes(
-        screenshotFileName(match[1], new Date()),
-        match[1],
-        decodeArtifactBase64(match[2]),
-      );
+      return { mimeType: match[1], bytes: decodeArtifactBase64(match[2]) };
     },
+    // Only while the same account, Space and view are still shown, so a late answer saves nothing.
+    onSaved: ({ mimeType, bytes }) =>
+      downloadArtifactBytes(screenshotFileName(mimeType, new Date()), mimeType, bytes),
   });
   return (
     <>
