@@ -6889,6 +6889,10 @@ msgstr "Loading memory settings…"
 msgid "Loading model catalog…"
 msgstr "Loading model catalog…"
 
+#: apps/web/src/pages/settings/UsageSettingsPanel.tsx
+msgid "Loading model name…"
+msgstr "Loading model name…"
+
 #: apps/web/src/components/pages/PageNotice.tsx
 msgid "Loading page…"
 msgstr "Loading page…"
@@ -7388,6 +7392,10 @@ msgstr "Model"
 #: apps/web/src/pages/onboarding/model-step.tsx
 msgid "Model id"
 msgstr "Model id"
+
+#: apps/web/src/pages/settings/UsageSettingsPanel.tsx
+msgid "Model name unavailable"
+msgstr "Model name unavailable"
 
 #: apps/web/src/components/models/FoundModelPicker.tsx
 #: apps/web/src/pages/model-settings/role-model-picker.tsx
@@ -12126,6 +12134,10 @@ msgstr "Unit"
 #: apps/web/src/pages/settings/MessagingSettingsPanel.tsx
 msgid "Unlink"
 msgstr "Unlink"
+
+#: apps/web/src/pages/settings/UsageSettingsPanel.tsx
+msgid "Unlisted model"
+msgstr "Unlisted model"
 
 #: apps/mobile/components/calls/CallCard.tsx
 #: apps/web/src/components/call/CallCard.tsx

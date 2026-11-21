@@ -6890,6 +6890,10 @@ msgstr "正在載入記憶設定…"
 msgid "Loading model catalog…"
 msgstr "正在載入模型目錄…"
 
+#: apps/web/src/pages/settings/UsageSettingsPanel.tsx
+msgid "Loading model name…"
+msgstr ""
+
 #: apps/web/src/components/pages/PageNotice.tsx
 msgid "Loading page…"
 msgstr "正在載入頁面…"
@@ -7389,6 +7393,10 @@ msgstr "模型"
 #: apps/web/src/pages/onboarding/model-step.tsx
 msgid "Model id"
 msgstr "模型 ID"
+
+#: apps/web/src/pages/settings/UsageSettingsPanel.tsx
+msgid "Model name unavailable"
+msgstr ""
 
 #: apps/web/src/components/models/FoundModelPicker.tsx
 #: apps/web/src/pages/model-settings/role-model-picker.tsx
@@ -12127,6 +12135,10 @@ msgstr "單位"
 #: apps/web/src/pages/settings/MessagingSettingsPanel.tsx
 msgid "Unlink"
 msgstr "取消關聯"
+
+#: apps/web/src/pages/settings/UsageSettingsPanel.tsx
+msgid "Unlisted model"
+msgstr ""
 
 #: apps/mobile/components/calls/CallCard.tsx
 #: apps/web/src/components/call/CallCard.tsx

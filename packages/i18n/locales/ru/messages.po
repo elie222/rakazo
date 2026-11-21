@@ -6889,6 +6889,10 @@ msgstr "Загрузка настроек памяти…"
 msgid "Loading model catalog…"
 msgstr "Загрузка каталога моделей…"
 
+#: apps/web/src/pages/settings/UsageSettingsPanel.tsx
+msgid "Loading model name…"
+msgstr ""
+
 #: apps/web/src/components/pages/PageNotice.tsx
 msgid "Loading page…"
 msgstr "Загрузка страницы…"
@@ -7388,6 +7392,10 @@ msgstr "Модель"
 #: apps/web/src/pages/onboarding/model-step.tsx
 msgid "Model id"
 msgstr "Идентификатор модели"
+
+#: apps/web/src/pages/settings/UsageSettingsPanel.tsx
+msgid "Model name unavailable"
+msgstr ""
 
 #: apps/web/src/components/models/FoundModelPicker.tsx
 #: apps/web/src/pages/model-settings/role-model-picker.tsx
@@ -12126,6 +12134,10 @@ msgstr "Единица"
 #: apps/web/src/pages/settings/MessagingSettingsPanel.tsx
 msgid "Unlink"
 msgstr "Отсоединить"
+
+#: apps/web/src/pages/settings/UsageSettingsPanel.tsx
+msgid "Unlisted model"
+msgstr ""
 
 #: apps/mobile/components/calls/CallCard.tsx
 #: apps/web/src/components/call/CallCard.tsx

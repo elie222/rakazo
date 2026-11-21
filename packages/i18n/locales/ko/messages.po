@@ -6889,6 +6889,10 @@ msgstr "기억 설정을 불러오는 중…"
 msgid "Loading model catalog…"
 msgstr "모델 목록을 불러오는 중…"
 
+#: apps/web/src/pages/settings/UsageSettingsPanel.tsx
+msgid "Loading model name…"
+msgstr ""
+
 #: apps/web/src/components/pages/PageNotice.tsx
 msgid "Loading page…"
 msgstr "페이지 불러오는 중…"
@@ -7388,6 +7392,10 @@ msgstr "모델"
 #: apps/web/src/pages/onboarding/model-step.tsx
 msgid "Model id"
 msgstr "모델 ID"
+
+#: apps/web/src/pages/settings/UsageSettingsPanel.tsx
+msgid "Model name unavailable"
+msgstr ""
 
 #: apps/web/src/components/models/FoundModelPicker.tsx
 #: apps/web/src/pages/model-settings/role-model-picker.tsx
@@ -12126,6 +12134,10 @@ msgstr "단위"
 #: apps/web/src/pages/settings/MessagingSettingsPanel.tsx
 msgid "Unlink"
 msgstr "연결 해제"
+
+#: apps/web/src/pages/settings/UsageSettingsPanel.tsx
+msgid "Unlisted model"
+msgstr ""
 
 #: apps/mobile/components/calls/CallCard.tsx
 #: apps/web/src/components/call/CallCard.tsx
