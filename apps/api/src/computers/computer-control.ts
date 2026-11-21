@@ -22,7 +22,7 @@ import {
   screenLeaseIdForRun,
 } from "@rakazo/adapters";
 import type { Actor, ComputerStatus } from "@rakazo/contracts";
-import { ACTIVE_RUN_STATUSES } from "@rakazo/core";
+import { ACTIVE_RUN_STATUSES, abortableDelay } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import { createRepos, IsolationError, recordComputerRunEnd, spaceIsShared } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
@@ -38,19 +38,22 @@ const BOOT_LEASE_ATTEMPTS = 20;
 
 /**
  * A run lets go of its computer in its executor's finally, a moment after the run ends. A boot
- * sent as the run finishes waits that moment out instead of being refused as busy.
+ * sent as the run finishes waits that moment out instead of being refused as busy. An abandoned
+ * request stops waiting: the wait is the shared abortable one, so a disconnect ends it at once.
  */
 export async function acquireBootLease(
   prisma: PrismaClient,
-  input: { computerId: string; runId: string; botId: string },
+  input: { computerId: string; runId: string; botId: string; signal?: AbortSignal },
 ): Promise<ComputerExecutionLease | null> {
+  input.signal?.throwIfAborted();
   for (let attempt = 1; ; attempt += 1) {
     try {
       return await acquireComputerExecutionLease(prisma, input);
     } catch (error) {
       if (!(error instanceof ComputerBusyError) || attempt >= BOOT_LEASE_ATTEMPTS) throw error;
       if (!(await leaseHeldByFinishedRun(prisma, input))) throw error;
-      await new Promise((resolve) => setTimeout(resolve, BOOT_LEASE_RETRY_MS));
+      await abortableDelay(BOOT_LEASE_RETRY_MS, input.signal);
+      input.signal?.throwIfAborted();
     }
   }
 }
