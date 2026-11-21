@@ -81,7 +81,8 @@ def handler(path: str):
             pass
 
         def forward(self):
-            if not self.path.startswith(PREFIX):
+            # Dot segments or encoded characters could step outside the Codex API upstream.
+            if not self.path.startswith(PREFIX) or ".." in self.path or "%" in self.path.split("?", 1)[0]:
                 self.send_response(403)
                 self.send_header("content-length", "0")
                 self.end_headers()

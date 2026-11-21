@@ -56,9 +56,10 @@ class ServeTest(unittest.TestCase):
         server = proxy.Server(("127.0.0.1", 0), proxy.handler("/nonexistent"))
         threading.Thread(target=server.serve_forever, daemon=True).start()
         try:
-            with self.assertRaises(urllib.error.HTTPError) as refused:
-                urllib.request.urlopen(f"http://127.0.0.1:{server.server_address[1]}/v1/other", timeout=5)
-            self.assertEqual(refused.exception.code, 403)
+            for path in ("/v1/other", "/backend-api/codex/../me", "/backend-api/codex/%2e%2e/me"):
+                with self.assertRaises(urllib.error.HTTPError) as refused:
+                    urllib.request.urlopen(f"http://127.0.0.1:{server.server_address[1]}{path}", timeout=5)
+                self.assertEqual(refused.exception.code, 403)
         finally:
             server.shutdown()
 

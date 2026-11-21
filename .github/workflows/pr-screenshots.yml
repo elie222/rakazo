@@ -279,9 +279,12 @@ jobs:
           nohup python3 .github/scripts/codex-credential-proxy.py serve "$auth" 18899 \
             > "$RUNNER_TEMP/screenshot-codex/proxy.log" 2>&1 &
           for _ in $(seq 50); do
-            curl -s -o /dev/null http://127.0.0.1:18899/ && break
+            curl -s -o /dev/null http://127.0.0.1:18899/ && exit 0
             sleep 0.2
           done
+          echo "::error::The credential proxy did not start"
+          tail -n 20 "$RUNNER_TEMP/screenshot-codex/proxy.log"
+          exit 1
       - name: Run Codex screenshot agent
         id: codex
         if: steps.auth.outputs.ready == 'true'
@@ -312,6 +315,9 @@ jobs:
             grep -E '^(ERROR|Error|error)[: ]|^[0-9-]+T[0-9:.]+Z +ERROR |^Not inside a trusted directory' "$log" \
               | grep -viE '[A-Za-z0-9+_=-]{24,}|token|bearer|secret|authoriz|cookie|password|eyJ' \
               | tail -n 20 | cut -c1-300 || true
+            grep -E 'Error|Exception' "$RUNNER_TEMP/screenshot-codex/proxy.log" \
+              | grep -viE '[A-Za-z0-9+_=-]{24,}|token|bearer|secret|authoriz|cookie|password|eyJ' \
+              | tail -n 5 | sed 's/^/proxy: /' | cut -c1-300 || true
             echo "::$resume::"
             exit "$status"
           fi
