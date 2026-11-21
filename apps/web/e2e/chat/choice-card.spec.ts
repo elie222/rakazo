@@ -67,21 +67,27 @@ test("renders tappable choice buttons and submits the offered action id", async 
   const seoul = page.getByRole("button", { name: "Seoul", exact: true });
   const toronto = page.getByRole("button", { name: "Toronto", exact: true });
   const lisbon = page.getByRole("button", { name: "Lisbon", exact: true });
-  await expect(berlin).toBeVisible();
-  await expect(seoul).toBeVisible();
-  await expect(toronto).toBeVisible();
-  await expect(lisbon).toBeVisible();
+  const osaka = page.getByRole("button", { name: "Osaka", exact: true });
+  const cairo = page.getByRole("button", { name: "Cairo", exact: true });
+  for (const option of [berlin, seoul, toronto, lisbon, osaka, cairo]) {
+    await expect(option).toBeVisible();
+  }
 
   const berlinBox = await berlin.boundingBox();
   const seoulBox = await seoul.boundingBox();
   const torontoBox = await toronto.boundingBox();
+  const cairoBox = await cairo.boundingBox();
   expect(berlinBox).toBeTruthy();
   expect(seoulBox).toBeTruthy();
   expect(torontoBox).toBeTruthy();
+  expect(cairoBox).toBeTruthy();
   expect(seoulBox!.y).toBeGreaterThan(berlinBox!.y + berlinBox!.height - 2);
   expect(torontoBox!.y).toBeGreaterThan(seoulBox!.y + seoulBox!.height - 2);
+  expect(cairoBox!.y).toBeGreaterThan(torontoBox!.y + torontoBox!.height - 2);
   expect(Math.abs(berlinBox!.x - seoulBox!.x)).toBeLessThan(2);
   expect(Math.abs(berlinBox!.width - seoulBox!.width)).toBeLessThan(2);
+  expect(Math.abs(berlinBox!.x - cairoBox!.x)).toBeLessThan(2);
+  expect(Math.abs(berlinBox!.width - cairoBox!.width)).toBeLessThan(2);
   // Rows bleed past the list so the hover fill frames the letter and label.
   const listBox = await berlin.locator("xpath=..").boundingBox();
   expect(listBox).toBeTruthy();
@@ -89,21 +95,22 @@ test("renders tappable choice buttons and submits the offered action id", async 
   await captureScreenshot(page, testInfo, "choice-card");
 
   await page.setViewportSize({ width: 390, height: 844 });
-  await expect(berlin).toBeVisible();
-  await expect(lisbon).toBeVisible();
+  for (const option of [berlin, seoul, toronto, lisbon, osaka, cairo]) {
+    await expect(option).toBeVisible();
+  }
   const narrowBerlin = await berlin.boundingBox();
-  const narrowLisbon = await lisbon.boundingBox();
+  const narrowCairo = await cairo.boundingBox();
   expect(narrowBerlin).toBeTruthy();
-  expect(narrowLisbon).toBeTruthy();
-  expect(narrowLisbon!.y).toBeGreaterThan(narrowBerlin!.y);
-  await expect(lisbon).toBeEnabled();
+  expect(narrowCairo).toBeTruthy();
+  expect(narrowCairo!.y).toBeGreaterThan(narrowBerlin!.y);
+  await expect(cairo).toBeEnabled();
   await captureScreenshot(page, testInfo, "choice-card-narrow");
 
   await page.setViewportSize({ width: 1280, height: 720 });
-  await seoul.click();
+  await cairo.click();
 
-  await expect(seoul).toHaveAttribute("aria-pressed", "true", { timeout: 30_000 });
-  await expect(seoul).toBeDisabled();
+  await expect(cairo).toHaveAttribute("aria-pressed", "true", { timeout: 30_000 });
+  await expect(cairo).toBeDisabled();
 
   await expect
     .poll(
@@ -125,13 +132,13 @@ test("renders tappable choice buttons and submits the offered action id", async 
               block.kind === "ask" &&
               block.status === "answered" &&
               Array.isArray(block.actions) &&
-              block.actions.some((action) => action.id === "choice-2"),
+              block.actions.some((action) => action.id === "choice-6"),
           );
         return answered?.answer ?? null;
       },
       { timeout: 30_000 },
     )
-    .toBe("choice-2");
+    .toBe("choice-6");
 
   await captureScreenshot(page, testInfo, "choice-card-answered");
 
@@ -139,7 +146,7 @@ test("renders tappable choice buttons and submits the offered action id", async 
   await composer.fill("pick from these cities with tappable choices");
   await page.keyboard.press("Enter");
   const customQuestion = page.getByTestId("question-card").last();
-  await expect(customQuestion.getByRole("button", { name: "Seoul", exact: true })).toBeEnabled({
+  await expect(customQuestion.getByRole("button", { name: "Cairo", exact: true })).toBeEnabled({
     timeout: 30_000,
   });
   await composer.fill("Somewhere else");
@@ -149,7 +156,7 @@ test("renders tappable choice buttons and submits the offered action id", async 
   ).toBeVisible();
   await expect(customQuestion).toHaveClass(/opacity-50/);
   await expect(customQuestion).not.toContainText("Somewhere else");
-  for (const name of ["Berlin", "Seoul", "Toronto", "Lisbon"]) {
+  for (const name of ["Berlin", "Seoul", "Toronto", "Lisbon", "Osaka", "Cairo"]) {
     await expect(customQuestion.getByRole("button", { name, exact: true })).toBeDisabled();
   }
   await page.setViewportSize({ width: 1280, height: 900 });
