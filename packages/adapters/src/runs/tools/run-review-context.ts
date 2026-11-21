@@ -2,6 +2,7 @@ import { redactSecrets } from "@rakazo/core";
 import { bestEffort } from "@rakazo/logging";
 import { reviewOwnerMessages } from "../../approvals/review-owner-messages.js";
 import { outsideOnlyTargets, taskPromptIsOutside } from "../../approvals/review-target-sources.js";
+import { findRoutinesTarget } from "../../routines/routine-target.js";
 import type { RunContext } from "../assembly/run-context.js";
 
 /**
@@ -39,8 +40,8 @@ export async function reviewOwnerContext(
 
 /**
  * The stored prompt a routine edit replaces, redacted like the call, so the review can show only
- * the change. Found as the update finds it (this bot's routine, this thread's in a group); a failed
- * lookup leaves the review of the whole new prompt.
+ * the change. Found as the update finds it (this bot's or a managed bot's routine, this thread's in
+ * a group); a failed lookup leaves the review of the whole new prompt.
  */
 export async function currentRoutinePrompt(
   ctx: RunContext,
@@ -52,15 +53,23 @@ export async function currentRoutinePrompt(
   if (!routineId) return undefined;
   const routine = await bestEffort(
     "auto_review.routine_prompt",
-    ctx.deps.prisma.routine.findFirst({
-      where: {
-        id: routineId,
-        spaceId: ctx.run.spaceId,
-        botId: ctx.bot.id,
-        ...(ctx.thread.groupId ? { threadId: ctx.thread.id } : {}),
-      },
-      select: { prompt: true },
-    }),
+    findRoutinesTarget(
+      { prisma: ctx.deps.prisma, fleetRun: ctx.fleetRun, botId: ctx.bot.id, thread: ctx.thread },
+      toolName,
+      args,
+    ).then((target) =>
+      "error" in target
+        ? null
+        : ctx.deps.prisma.routine.findFirst({
+            where: {
+              id: routineId,
+              spaceId: ctx.run.spaceId,
+              botId: target.botId,
+              ...(target.groupThreadId ? { threadId: target.groupThreadId } : {}),
+            },
+            select: { prompt: true },
+          }),
+    ),
   );
   return routine ? redactSecrets(routine.prompt, ctx.secrets) : undefined;
 }

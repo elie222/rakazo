@@ -859,6 +859,7 @@ it.each([false, true])(
         "Integrations",
         "Skills",
         "Artifacts",
+        "Pages shared with you",
         "General",
         "Models",
         "Approvals",
@@ -875,9 +876,15 @@ it.each([false, true])(
       expect(artifacts.getAttribute("role")).toBe("button");
       expect(artifacts.dataset.chevron).toBe("right");
 
-      // Artifacts lives on the root stack, so it closes the settings sheet first.
-      await view.press("Artifacts");
-      expect(events).toEqual(["close", "/artifacts"]);
+      // These shortcuts close the settings sheet before opening on the root stack.
+      for (const [title, href] of [
+        ["Artifacts", "/artifacts"],
+        ["Pages shared with you", "/shared-pages"],
+      ] as const) {
+        events.length = 0;
+        await view.press(title);
+        expect(events).toEqual(["close", href]);
+      }
       for (const [title, href] of [
         ["tester@example.test", "/profile"],
         ["General", "/general"],
