@@ -300,7 +300,7 @@ async function runTurn(
     taughtSkill: { findMany: vi.fn(async () => []) },
     vaultCredential: { findMany: vi.fn(async () => []) },
     agentSkill: { findMany: vi.fn(async () => []) },
-    scratchpadItem: { findMany: vi.fn(async () => []) },
+    scratchpadItem: { findMany: vi.fn(async () => []), count: vi.fn(async () => 0) },
     externalEffect: {
       findMany: vi.fn(async () => []),
       findFirst: vi.fn(async () => null),

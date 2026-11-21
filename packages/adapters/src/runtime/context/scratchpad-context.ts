@@ -20,15 +20,14 @@ export async function loadAgentScratchpadContext(
   input: { spaceId: string; botId: string },
   maxBytes = MAX_SCRATCHPAD_CONTEXT_BYTES,
 ): Promise<string | undefined> {
-  const unfinished = await listScratchpadItems(deps, {
-    spaceId: input.spaceId,
-    botId: input.botId,
-    includeDone: false,
-  });
-  if (unfinished.length === 0) return undefined;
   // Parked work is set aside: it is counted here and read on demand, so it never crowds out open work.
-  const items = unfinished.filter((item) => item.status !== "parked");
-  const parked = unfinished.length - items.length;
+  const [items, parked] = await Promise.all([
+    listScratchpadItems(deps, { spaceId: input.spaceId, botId: input.botId, status: "open" }),
+    deps.prisma.scratchpadItem.count({
+      where: { spaceId: input.spaceId, botId: input.botId, status: "parked" },
+    }),
+  ]);
+  if (items.length === 0 && parked === 0) return undefined;
 
   const fixedBytes = byteLength(SCRATCHPAD_PREAMBLE) + byteLength(SCRATCHPAD_CLOSING);
   if (maxBytes <= fixedBytes)
