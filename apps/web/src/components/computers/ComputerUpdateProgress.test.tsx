@@ -92,10 +92,8 @@ const button = (label: string) =>
   [...host.querySelectorAll("button")].find((item) => item.textContent?.includes(label));
 const click = (label: string) => act(async () => button(label)?.click());
 const dialog = () => host.querySelector<HTMLElement>('[data-testid="computer-update-dialog"]');
-const failureShown = () =>
-  [...host.querySelectorAll('[role="alert"]')].some(
-    (item) => item.textContent === "Could not complete action",
-  );
+const failureShown = (message = "refused") =>
+  [...host.querySelectorAll('[role="alert"]')].some((item) => item.textContent === message);
 const closeDialog = () =>
   act(async () =>
     dialog()?.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })),
@@ -155,3 +153,62 @@ it("opens a failed update again without its earlier error", async () => {
   expect(dialog()).not.toBeNull();
   expect(failureShown()).toBe(false);
 });
+
+const shuttingDown = "The computer is still shutting down. Try again after it stops.";
+
+it.each(["Recover computer", "Dismiss"])(
+  "shows actionable reasons when %s fails",
+  async (action) => {
+    const request = action === "Dismiss" ? computer.dismissUpdate : computer.recover;
+    await openFailed();
+    const alerts = dialog()?.querySelectorAll('[role="alert"]');
+    expect(alerts).toHaveLength(2);
+    const actionAlert = alerts?.[1];
+    expect(actionAlert?.textContent).toBe("");
+
+    for (const message of [
+      shuttingDown,
+      "Someone else is using this computer",
+      "Computer is busy",
+    ]) {
+      request.mockRejectedValueOnce(new Error(message));
+      await click(action);
+      expect(failureShown(message)).toBe(true);
+      expect(dialog()?.querySelectorAll('[role="alert"]')[1]).toBe(actionAlert);
+    }
+  },
+);
+
+it.each(["Recover computer", "Dismiss"])("sanitizes technical failures from %s", async (action) => {
+  const request = action === "Dismiss" ? computer.dismissUpdate : computer.recover;
+  await openFailed();
+  for (const error of [
+    new Error("TypeError: cannot read properties of undefined"),
+    new Error(""),
+    null,
+  ]) {
+    request.mockRejectedValueOnce(error);
+    await click(action);
+    expect(failureShown("Could not complete action")).toBe(true);
+  }
+  request.mockRejectedValueOnce(new TypeError("Failed to fetch"));
+  await click(action);
+  expect(failureShown("Could not reach the server")).toBe(true);
+});
+
+it.each(["Recover computer", "Dismiss"])(
+  "keeps a late %s reason on its own update",
+  async (action) => {
+    const request = action === "Dismiss" ? computer.dismissUpdate : computer.recover;
+    const pending = deferred<void>();
+    request.mockReturnValueOnce(pending.promise);
+    computer.updates.mockResolvedValueOnce([failed, healthy]);
+    await openFailed();
+    await click(action);
+    await closeDialog();
+    await act(() => computerUpdates.open(healthy.id));
+    await vi.waitFor(() => expect(dialog()?.textContent).toContain("Ben"));
+    await act(async () => pending.reject(new Error(shuttingDown)));
+    expect(failureShown(shuttingDown)).toBe(false);
+  },
+);
