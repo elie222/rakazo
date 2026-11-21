@@ -1,8 +1,8 @@
 import { useLingui } from "@lingui/react/macro";
 import { typeScale } from "@rakazo/ui-tokens";
 import { Modal, Platform, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { mobileTokens } from "../../lib/appearance/appearance";
+import { useSheetPadding } from "../../lib/layout/side-insets";
 import { useThemedStyles } from "../../lib/native/native";
 import { NativeActionButton } from "../native/native-action-button";
 
@@ -10,7 +10,7 @@ import { NativeActionButton } from "../native/native-action-button";
 export function SelectTextSheet({ text, onClose }: { text: string | null; onClose: () => void }) {
   const { t } = useLingui();
   const styles = useThemedStyles(createStyles);
-  const insets = useSafeAreaInsets();
+  const sheetPadding = useSheetPadding();
   return (
     <Modal
       visible={text !== null}
@@ -18,17 +18,7 @@ export function SelectTextSheet({ text, onClose }: { text: string | null; onClos
       presentationStyle="pageSheet"
       onRequestClose={onClose}
     >
-      <View
-        accessibilityViewIsModal
-        style={[
-          styles.sheet,
-          // Page sheets clear the notch on iOS; Android modals are full-screen.
-          {
-            paddingTop: Platform.OS === "ios" ? 12 : insets.top + 12,
-            paddingBottom: insets.bottom,
-          },
-        ]}
-      >
+      <View accessibilityViewIsModal style={[styles.sheet, sheetPadding]}>
         <View style={styles.header}>
           <NativeActionButton fill={false} label={t`Done`} onPress={onClose} prominence="primary" />
         </View>
