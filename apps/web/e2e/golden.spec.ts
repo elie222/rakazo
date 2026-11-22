@@ -265,6 +265,9 @@ test("takeover, routine, plugins, and export are reachable", async ({ page }, te
   await feed.getByRole("textbox", { name: "Integration domain" }).fill("github.com");
   await feed.getByRole("button", { name: "Search", exact: true }).click();
   await expect(feed.getByText("GitHub", { exact: true })).toBeVisible();
+  // The failure and empty-answer live regions stay mounted, and stay silent while results show.
+  await expect(feed.getByRole("alert")).toBeEmpty();
+  await expect(feed.getByRole("status")).toBeEmpty();
   await captureScreenshot(page, testInfo, "11c-catalog-feed");
 
   await feed.getByRole("button", { name: "MCP Add", exact: true }).click();
@@ -365,9 +368,12 @@ test("sign-in, spawn, and stop work in the shell", async ({ page }, testInfo) =>
     if (message.type() === "error") browserErrors.push(message.text());
   });
   page.on("requestfailed", (request) => {
-    // Leaving a page closes the live streams it held open.
+    // Leaving a page closes its live streams. A live signal replaces any in-flight account read.
+    const pathname = new URL(request.url()).pathname;
     if (
-      request.url().includes("/rpc/notifications/subscribe") &&
+      (pathname === "/rpc/notifications/subscribe" ||
+        pathname === "/rpc/notifications/subscribeCalls" ||
+        pathname === "/rpc/me") &&
       request.failure()?.errorText === "net::ERR_ABORTED"
     )
       return;

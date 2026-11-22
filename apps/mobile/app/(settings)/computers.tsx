@@ -1,7 +1,12 @@
 import { MenuView } from "@expo/ui/community/menu";
 import { useLingui } from "@lingui/react/macro";
 import type { CloudComputers, ComputerSize, UserDeviceSummary } from "@rakazo/contracts";
-import { ComputerSizeSchema, computerSizeChoice } from "@rakazo/contracts";
+import {
+  applySavedCloudComputerSize,
+  ComputerSizeSchema,
+  computerSizeChoice,
+} from "@rakazo/contracts";
+import { writeSaved } from "@rakazo/core/query";
 import { computerName, computerSizeLabel } from "@rakazo/i18n/computer-usage";
 import { useRouter } from "expo-router";
 import { useState } from "react";
@@ -54,8 +59,13 @@ export default function ComputersSettings() {
   });
   const resize = useSave({
     stale: [cloudRead.queryKey],
-    save: ({ computerId, size }: { computerId: string; size: ComputerSize }, send) =>
-      send("cloudComputers/setSize", { computerId, size }),
+    save: async ({ computerId, size }: { computerId: string; size: ComputerSize }, send) => {
+      const saved = await send("cloudComputers/setSize", { computerId, size });
+      await writeSaved(queryClient, cloudRead.queryKey, (listed) =>
+        applySavedCloudComputerSize(listed, computerId, size),
+      );
+      return saved;
+    },
     onSaved: (_saved, { computerId }) => setResized(computerId),
     onFailed: () => Alert.alert(t`Could not change computer size`),
   });

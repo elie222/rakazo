@@ -116,6 +116,7 @@ export const Transcript = memo(function Transcript({
   onOpenComputer,
   onReleaseComputer,
   onOpenImportSetup,
+  onOpenAgentImport,
   rpc,
 }: {
   scrollRef: RefObject<HTMLDivElement | null>;
@@ -175,6 +176,7 @@ export const Transcript = memo(function Transcript({
     reason: ComputerReleaseReason,
   ) => Promise<void>;
   onOpenImportSetup?: (target: ImportSetupTarget) => void;
+  onOpenAgentImport?: () => void;
   rpc: ReturnType<typeof createSpaceRpc>;
 }) {
   const { t } = useLingui();
@@ -627,7 +629,7 @@ export const Transcript = memo(function Transcript({
             following.current = false;
           }
         }}
-        className={`rk-scroll isolate flex min-h-0 flex-1 flex-col gap-2 overflow-x-hidden overflow-y-auto scroll-pt-16 scroll-pb-7 pt-20 pb-12 md:pt-[84px] md:pb-13 ${TRANSCRIPT_CONTENT_PADDING}`}
+        className={`rk-scroll isolate flex min-h-0 flex-1 flex-col gap-2 overflow-x-hidden overflow-y-auto scroll-pt-(--chat-top-clearance) scroll-pb-7 pt-(--chat-top-clearance) pb-12 md:pb-13 ${TRANSCRIPT_CONTENT_PADDING}`}
         style={
           userBubble
             ? ({
@@ -708,7 +710,7 @@ export const Transcript = memo(function Transcript({
                                 block.kind === "mcp_approval" ||
                                 block.kind === "tool_question",
                             )
-                          ? "relative w-full min-w-0 max-w-xl"
+                          ? "relative w-full min-w-0 max-w-[min(calc(100%_-_8rem),36rem)] [@media(hover:none)]:max-w-xl"
                           : `relative ${
                               message.blocks.some(
                                 (block) =>
@@ -763,6 +765,7 @@ export const Transcript = memo(function Transcript({
                       onOpenComputer={onOpenComputer}
                       onReleaseComputer={onReleaseComputer}
                       onOpenImportSetup={onOpenImportSetup}
+                      onOpenAgentImport={onOpenAgentImport}
                       rpc={rpc}
                       showToolActivity={showToolActivity}
                       onReply={onReply}

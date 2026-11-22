@@ -51,8 +51,8 @@ vi.mock("react-native-safe-area-context", () => ({
 }));
 vi.mock("expo-clipboard", () => ({ setStringAsync: vi.fn() }));
 vi.mock("../../lib/api/api", () => ({ rpc: vi.fn() }));
-vi.mock("../../lib/integrations/integrations-cache", () => ({
-  isIntegrationsScopeCurrent: () => true,
+vi.mock("../../lib/api/verified-scope", () => ({
+  isVerifiedScopeCurrent: () => true,
 }));
 vi.mock("../../lib/inbox/saved-chats", () => ({ liveSavedChatsScope: async () => null }));
 vi.mock("../../lib/native/native", () => ({
@@ -255,7 +255,7 @@ it("says the last loaded messages stay on screen when a refresh fails", () => {
   const node = mount(
     createElement(ThreadFetchErrorNotice, { error: "Network request failed", showingSaved: true }),
   );
-  expect(node.textContent).toBe("Couldn't refresh — showing the last loaded messages.");
+  expect(node.textContent).toBe("Couldn't refresh. Showing the last loaded messages.");
   expect(
     mount(createElement(ThreadFetchErrorNotice, { error: null, showingSaved: true })).textContent,
   ).toBe("");

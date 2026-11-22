@@ -51,6 +51,8 @@ const NOT_PASSED: Record<string, string> = {
   PM2_HOME: "restart-supervisor detection for PM2 hosts; Compose restarts containers",
   INVOCATION_ID: "restart-supervisor detection for systemd hosts; Compose restarts containers",
   RAKAZO_ALLOW_DEV_SECRETS: "development-only escape hatch for placeholder secrets",
+  RAKAZO_CLAUDE_CODE_SETUP_TOKEN:
+    "the Claude Code CLI runs only from a source checkout; the images do not include it",
   EMAIL_EMULATOR: "ignored when NODE_ENV=production",
   BILLING_EMULATOR: "ignored when NODE_ENV=production",
   NODE_USE_ENV_PROXY:

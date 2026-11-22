@@ -6,7 +6,6 @@ function nameEditor(os: "ios" | "android" = "android", currentName = "Old Name")
   const dependencies = {
     currentName,
     pending: { current: false },
-    saveVersion: { current: 0 },
     Platform: { OS: os },
     Alert: { alert: vi.fn(), prompt: vi.fn() },
     setNameDraft: vi.fn(),
@@ -14,53 +13,23 @@ function nameEditor(os: "ios" | "android" = "android", currentName = "Old Name")
     setNameError: vi.fn(),
     setNameDialogOpen: vi.fn(),
     updateAccountName: vi.fn<() => Promise<void>>().mockResolvedValue(undefined),
-    refresh: vi.fn<() => Promise<unknown>>().mockResolvedValue({}),
     onSaved: vi.fn(),
-    onRefreshed: vi.fn(),
+    markStale: vi.fn<() => Promise<void>>().mockResolvedValue(undefined),
     errorText: (_error: unknown, fallback: string) => fallback,
     t: (value: string) => value,
   };
   return { ...dependencies, ...createAccountNameEditor(dependencies) };
 }
 
-it("saves the trimmed name, closes the dialog, and ignores a failed refresh", async () => {
+it("saves the trimmed name, closes the dialog, and marks the account read stale", async () => {
   const editor = nameEditor();
-  const rejectRefresh = deferred<never>();
-  editor.refresh.mockReturnValue(rejectRefresh.promise);
   await editor.saveName("  Sam Rivera  ");
   expect(editor.updateAccountName).toHaveBeenCalledWith("Sam Rivera");
   expect(editor.setNameDialogOpen).toHaveBeenCalledExactlyOnceWith(false);
   expect(editor.setNamePending).toHaveBeenLastCalledWith(false);
-  expect(editor.refresh).toHaveBeenCalledWith();
-  rejectRefresh.reject(new Error("offline"));
-  await Promise.resolve();
-  await Promise.resolve();
+  expect(editor.markStale).toHaveBeenCalledOnce();
   expect(editor.setNameError).toHaveBeenCalledExactlyOnceWith(null);
   expect(editor.onSaved).toHaveBeenCalledExactlyOnceWith("Sam Rivera");
-});
-
-it("updates the account data when refresh succeeds", async () => {
-  const editor = nameEditor();
-  const me = { name: "Sam Rivera" };
-  editor.refresh.mockResolvedValue(me);
-  await editor.saveName("Sam Rivera");
-  expect(editor.onRefreshed).toHaveBeenCalledWith(me);
-  expect(editor.setNameDialogOpen).toHaveBeenCalledWith(false);
-});
-
-it("ignores a refresh from an earlier save across editor renders", async () => {
-  const editor = nameEditor();
-  const finishFirstRefresh = deferred<unknown>();
-  editor.refresh.mockReturnValueOnce(finishFirstRefresh.promise);
-  await editor.saveName("First Name");
-  const nextEditor = createAccountNameEditor({ ...editor, currentName: "First Name" });
-  const latestAccount = { name: "Latest Name" };
-  editor.refresh.mockResolvedValueOnce(latestAccount);
-  await nextEditor.saveName("Latest Name");
-  finishFirstRefresh.resolve({ name: "First Name" });
-  await Promise.resolve();
-  expect(editor.onSaved.mock.calls).toEqual([["First Name"], ["Latest Name"]]);
-  expect(editor.onRefreshed).toHaveBeenCalledExactlyOnceWith(latestAccount);
 });
 
 it("closes without saving when the name is unchanged or blank", async () => {
@@ -76,7 +45,7 @@ it("keeps the Android dialog open with an inline error when saving fails", async
   editor.updateAccountName.mockRejectedValue(new Error("offline"));
   await editor.saveName("Sam Rivera");
   expect(editor.setNameDialogOpen).not.toHaveBeenCalled();
-  expect(editor.refresh).not.toHaveBeenCalled();
+  expect(editor.markStale).not.toHaveBeenCalled();
   expect(editor.setNameError).toHaveBeenLastCalledWith("Could not update name");
   expect(editor.Alert.alert).not.toHaveBeenCalled();
   expect(editor.setNamePending).toHaveBeenLastCalledWith(false);

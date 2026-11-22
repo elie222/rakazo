@@ -47,7 +47,11 @@ import {
 import { listAgentSkillRecords } from "../../tools/skill-tools.js";
 import type { RunExecutorServices, RunHold } from "../lifecycle/run-attempt.js";
 import { PausedTurnModelUnlistedError } from "../lifecycle/run-lifecycle.js";
-import { isDelegatedRun, loadRunOrigin } from "../lifecycle/run-origin.js";
+import {
+  isDelegatedRun,
+  loadRunOrigin,
+  RunOriginUnauthorizedError,
+} from "../lifecycle/run-origin.js";
 import { runReplaysToolHistory } from "../turn/tool-step-calls.js";
 import { restoreTurnCheckpoint } from "../turn/turn-checkpoint.js";
 import type { HistoryReach } from "./run-instructions.prompt.js";
@@ -153,7 +157,7 @@ export async function loadRunRecords(
   const { pinnedComputerModels } = parts.saved;
   const origin = await loadRunOrigin(deps.prisma, run);
   if (isDelegatedRun(run.trigger) && run.delegatedFromRunId && !origin)
-    throw new Error("The originating conversation no longer authorizes this task.");
+    throw new RunOriginUnauthorizedError();
   const conversationRun = origin ?? run;
   const messagingSource =
     conversationRun.trigger === "messaging" && conversationRun.sourceMessageId
