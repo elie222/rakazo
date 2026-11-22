@@ -58,9 +58,9 @@ function previewName() {
   return document.querySelector('[role="dialog"] img')?.getAttribute("alt");
 }
 
-async function press(key: string) {
+async function press(key: string, init: KeyboardEventInit = {}, target: EventTarget = document) {
   await act(async () => {
-    document.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true }));
+    target.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true, ...init }));
   });
 }
 
@@ -84,6 +84,11 @@ it("moves through the chat's images with the arrow keys and the carousel", async
   await press("ArrowRight");
   expect(previewName()).toBe("one");
   await press("ArrowLeft");
+  expect(previewName()).toBe("three");
+  await press("ArrowRight", { altKey: true });
+  const field = document.body.appendChild(document.createElement("input"));
+  await press("ArrowRight", {}, field);
+  field.remove();
   expect(previewName()).toBe("three");
 
   await act(async () => {

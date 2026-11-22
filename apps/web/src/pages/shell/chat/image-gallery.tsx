@@ -6,6 +6,7 @@ import { createContext, useCallback, useContext, useEffect, useRef, useState } f
 import type { ArtifactTarget } from "../../../lib/pages/artifact-open";
 import { useArtifactImage } from "../../../lib/pages/use-artifact-image";
 import { useEventListener } from "../../../lib/use-event-listener";
+import { isEditableTarget } from "../shell-shortcuts";
 
 export type GalleryImage = {
   artifactId: string;
@@ -136,6 +137,9 @@ export function ImageLightbox({
     "keydown",
     (event) => {
       if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+      // Leave modified arrows (back and forward) and caret moves in a field above the lightbox alone.
+      if (event.altKey || event.metaKey || event.ctrlKey || event.shiftKey) return;
+      if (isEditableTarget(event.target)) return;
       event.preventDefault();
       step(event.key === "ArrowLeft" ? -1 : 1);
     },
