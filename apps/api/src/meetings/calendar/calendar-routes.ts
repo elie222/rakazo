@@ -69,6 +69,16 @@ export function meetingCalendarRoutes(ctx: RouterContext) {
         ({ context: { actor, sessionId }, input }) =>
           configured().authorization.complete(actor, input.state, input.code, sessionId),
       ),
+      connectAccount: authed.meetingCalendar.connectAccount.handler(
+        async ({ context: { actor }, input }) => {
+          await repos.getBot(actor, input.botId);
+          await configured().authorization.connectAccount(actor, {
+            serverUrl: input.serverUrl,
+            username: input.username,
+            password: input.password,
+          });
+        },
+      ),
       select: authed.meetingCalendar.select.handler(async ({ context: { actor }, input }) => {
         await repos.getBot(actor, input.botId);
         await configured().updateSelection(

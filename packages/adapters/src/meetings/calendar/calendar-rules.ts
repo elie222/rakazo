@@ -1,6 +1,8 @@
 import { createHash } from "node:crypto";
 import type { MeetingCalendarEvent } from "@rakazo/adapter-kit";
+import { ClientError } from "@rakazo/core";
 import type { Prisma } from "@rakazo/db";
+import { parseMeetingUrl } from "../meeting-link.js";
 
 export type CalendarRule = { scope: string; targetId: string; botId: string | null };
 
@@ -62,4 +64,26 @@ export async function syncScheduledTranscriptSharing(
     },
     data: { shareTranscript },
   });
+}
+
+/** The supported meeting link of an event that can still be scheduled in the window. */
+export function eligibleCalendarLink(
+  event: MeetingCalendarEvent,
+  { upcoming, startsThrough }: { upcoming: Date; startsThrough: Date },
+) {
+  if (
+    event.cancelled ||
+    event.declined ||
+    event.startsAt <= upcoming ||
+    event.startsAt > startsThrough ||
+    event.endsAt <= event.startsAt ||
+    !event.meetingUrl
+  )
+    return null;
+  try {
+    return parseMeetingUrl(event.meetingUrl);
+  } catch (error) {
+    if (error instanceof ClientError) return null;
+    throw error;
+  }
 }

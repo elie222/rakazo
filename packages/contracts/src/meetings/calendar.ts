@@ -33,6 +33,8 @@ const MeetingCalendarUpcomingSchema = z.object({
   connecting: z.boolean().optional(),
   disconnecting: z.boolean().optional(),
   calendarLabel: z.string(),
+  /** `password` calendars connect with a server address and app password instead of OAuth. */
+  signIn: z.enum(["oauth", "password"]).optional(),
   events: z.array(MeetingCalendarOccurrenceSchema),
 });
 export type MeetingCalendarUpcoming = z.infer<typeof MeetingCalendarUpcomingSchema>;
@@ -62,6 +64,15 @@ export const meetingCalendarRpc = {
         z.object({
           state: z.string().min(1).max(128),
           code: z.string().min(1).max(8192),
+        }),
+      )
+      .output(z.void()),
+    connectAccount: oc
+      .input(
+        bot.extend({
+          serverUrl: z.string().trim().min(1).max(2048),
+          username: z.string().trim().min(1).max(320),
+          password: z.string().min(1).max(1024),
         }),
       )
       .output(z.void()),

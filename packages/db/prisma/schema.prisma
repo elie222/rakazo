@@ -3118,6 +3118,8 @@ model MeetingCalendarConnection {
   disconnecting      Boolean                 @default(false)
   createdAt          DateTime                @default(now())
   eventsDigest       String?
+  /// Sealed account details for password sign-in calendars (CalDAV); null for OAuth providers.
+  accountCiphertext  String?
   rules              MeetingCalendarRule[]
   bookings           MeetingCalendarBooking[]
 

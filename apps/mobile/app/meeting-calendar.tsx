@@ -13,8 +13,14 @@ import {
   meetingPlatformLabel,
 } from "@rakazo/i18n/meeting";
 import { useIsFocused, useLocalSearchParams } from "expo-router";
+import { useState } from "react";
 import { ActivityIndicator, Alert, Platform, ScrollView } from "react-native";
-import { SettingsFooter, SettingsGroup, SettingsRow } from "../components/settings/settings-group";
+import {
+  SettingsFooter,
+  SettingsGroup,
+  SettingsInputRow,
+  SettingsRow,
+} from "../components/settings/settings-group";
 import { useSpaceChanges } from "../lib/api/roster-signals";
 import { errorText } from "../lib/api/user-error";
 import { useSideInsets } from "../lib/layout/side-insets";
@@ -23,7 +29,11 @@ import { useScreenHeader } from "../lib/navigation/screen-header";
 import { rpcQuery, useSave } from "../lib/query/query";
 import { useScreenQuery } from "../lib/query/screen-query";
 
-type Action = { kind: "connect" | "disconnect" } | { kind: MeetingCalendarAction; eventId: string };
+type Account = { serverUrl: string; username: string; password: string };
+type Action =
+  | { kind: "connect" | "disconnect" }
+  | ({ kind: "connectAccount" } & Account)
+  | { kind: MeetingCalendarAction; eventId: string };
 type UpcomingEvent = RpcOutput<"meetingCalendar/upcoming">["events"][number];
 
 export default function MeetingCalendarScreen() {
@@ -68,6 +78,13 @@ export default function MeetingCalendarScreen() {
           if (!code) throw new Error(t`Calendar sign-in did not complete.`);
           return send("meetingCalendar/complete", { state, code });
         }
+        case "connectAccount":
+          return send("meetingCalendar/connectAccount", {
+            botId,
+            serverUrl: action.serverUrl,
+            username: action.username,
+            password: action.password,
+          });
         case "disconnect":
           return send("meetingCalendar/disconnect", {});
         case "skip":
@@ -138,6 +155,11 @@ export default function MeetingCalendarScreen() {
             onPress={() => save.run({ kind: "disconnect" })}
           />
         </SettingsGroup>
+      ) : !data.connected && data.signIn === "password" ? (
+        <CalendarAccountForm
+          pending={save.pending}
+          onConnect={(account) => save.run({ kind: "connectAccount", ...account })}
+        />
       ) : !data.connected ? (
         <SettingsGroup
           footer={t`Connecting shares calendar access with the meeting service. You choose which meetings your bot joins.`}
@@ -195,5 +217,71 @@ export default function MeetingCalendarScreen() {
         </>
       )}
     </ScrollView>
+  );
+}
+
+function CalendarAccountForm({
+  pending,
+  onConnect,
+}: {
+  pending: boolean;
+  onConnect: (account: Account) => void;
+}) {
+  const { t } = useLingui();
+  const [serverUrl, setServerUrl] = useState("");
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const ready = Boolean(serverUrl.trim() && username.trim() && password);
+  return (
+    <>
+      <SettingsGroup
+        label={t`CalDAV calendar`}
+        footer={t`Connect a CalDAV calendar, such as iCloud, with an app password made for Rakazo. Rakazo reads your upcoming meetings, and you choose which ones your bot joins.`}
+      >
+        <SettingsInputRow
+          accessibilityLabel={t`Server address`}
+          placeholder="https://caldav.icloud.com"
+          keyboardType="url"
+          textContentType="URL"
+          autoCorrect={false}
+          autoCapitalize="none"
+          editable={!pending}
+          value={serverUrl}
+          onChangeText={setServerUrl}
+        />
+        <SettingsInputRow
+          accessibilityLabel={t`Username`}
+          placeholder={t`Username`}
+          textContentType="username"
+          autoComplete="username"
+          autoCorrect={false}
+          autoCapitalize="none"
+          editable={!pending}
+          value={username}
+          onChangeText={setUsername}
+        />
+        <SettingsInputRow
+          accessibilityLabel={t`App password`}
+          placeholder={t`App password`}
+          textContentType="password"
+          secureTextEntry
+          autoCorrect={false}
+          autoCapitalize="none"
+          editable={!pending}
+          value={password}
+          onChangeText={setPassword}
+        />
+      </SettingsGroup>
+      <SettingsGroup>
+        <SettingsRow
+          title={t`Connect calendar`}
+          disabled={pending || !ready}
+          onPress={() => {
+            onConnect({ serverUrl, username, password });
+            setPassword("");
+          }}
+        />
+      </SettingsGroup>
+    </>
   );
 }

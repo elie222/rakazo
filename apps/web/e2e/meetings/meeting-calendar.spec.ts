@@ -1,5 +1,53 @@
 import { expect, test } from "@playwright/test";
+import type { AppBootstrap, MeetingCalendarUpcoming } from "@rakazo/contracts";
 import { captureScreenshot, completeOnboarding, signup } from "../helpers/helpers";
+
+test("a CalDAV calendar can be configured with an app password", async ({ page }, testInfo) => {
+  const upcoming: MeetingCalendarUpcoming = {
+    available: true,
+    connected: false,
+    calendarLabel: "CalDAV",
+    signIn: "password",
+    events: [],
+  };
+  await page.route("**/rpc/bootstrap", async (route) => {
+    const response = await route.fetch();
+    if (!response.ok()) {
+      await route.fulfill({ response });
+      return;
+    }
+    const body: { json: AppBootstrap } = await response.json();
+    body.json.me.meetingsEnabled = true;
+    await route.fulfill({ response, json: body });
+  });
+  await page.route("**/rpc/meetings/list", (route) =>
+    route.fulfill({ json: { json: { enabled: true, meetings: [] } } }),
+  );
+  await page.route("**/rpc/meetingCalendar/status", (route) =>
+    route.fulfill({ json: { json: { available: true } } }),
+  );
+  await page.route("**/rpc/meetingCalendar/upcoming", (route) =>
+    route.fulfill({ json: { json: upcoming } }),
+  );
+  await signup(page, `caldav-${Date.now()}@rakazo.test`, "password12", "Calendar Tester");
+  await completeOnboarding(page);
+  await page.getByRole("button", { name: "Meetings", exact: true }).click();
+  await page.getByRole("button", { name: "Auto-join" }).click();
+
+  const meetings = page.getByRole("dialog", { name: "Meetings" });
+  const connect = meetings.getByRole("button", { name: "Connect calendar", exact: true });
+  await expect(connect).toBeDisabled();
+  await captureScreenshot(page, testInfo, "meeting-calendar-caldav-form");
+
+  await meetings.getByLabel("Server address").fill("https://caldav.example.com");
+  await meetings.getByLabel("Username").fill("member@example.com");
+  const password = meetings.getByLabel("App password");
+  await expect(password).toHaveAttribute("type", "password");
+  await password.fill("example-app-password");
+  await password.blur();
+  await expect(connect).toBeEnabled();
+  await captureScreenshot(page, testInfo, "meeting-calendar-caldav-form-filled");
+});
 
 test("a recurring meeting is scheduled and one occurrence can be skipped", async ({
   page,

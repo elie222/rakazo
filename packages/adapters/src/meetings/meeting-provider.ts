@@ -1,7 +1,15 @@
-import type { MeetingCalendarProvider, MeetingProvider } from "@rakazo/adapter-kit";
+import type {
+  MeetingCalendarAccountStore,
+  MeetingCalendarProvider,
+  MeetingProvider,
+} from "@rakazo/adapter-kit";
 
 /** Select transports here; meeting and calendar services receive only their interfaces. */
-export async function configuredMeetingProviders(source = process.env): Promise<{
+export async function configuredMeetingProviders(
+  source = process.env,
+  /** Sealed accounts of password sign-in calendars, required by `MEETING_CALENDAR_PROVIDER=caldav`. */
+  calendarAccounts?: MeetingCalendarAccountStore,
+): Promise<{
   meeting?: MeetingProvider;
   calendar?: MeetingCalendarProvider;
 }> {
@@ -17,7 +25,23 @@ export async function configuredMeetingProviders(source = process.env): Promise<
   }
   if (provider !== "recall") throw new Error("Unknown meeting provider");
   const { configuredRecallMeeting } = await import("../providers/meeting/recall/configuration.js");
-  return configuredRecallMeeting(source);
+  const recall = await configuredRecallMeeting(source);
+  if (!("scheduledBots" in recall) || !recall.scheduledBots) return recall;
+  if (!calendarAccounts) throw new Error("The CalDAV calendar needs account storage");
+  const [{ CalDavCalendarProvider }, { createSafeRemoteFetch }] = await Promise.all([
+    import("../providers/meeting/caldav/caldav-calendar-provider.js"),
+    import("../mcp/remote-mcp.js"),
+  ]);
+  // Members choose the server, so it gets the same address checks as remote connectors.
+  const safeFetch = createSafeRemoteFetch(undefined, undefined, {
+    allowPrivateEndpoint: source.MCP_ALLOW_PRIVATE_ENDPOINT === "true",
+  });
+  const calendar = new CalDavCalendarProvider({
+    accounts: calendarAccounts,
+    bots: recall.scheduledBots,
+    fetch: (url, init) => safeFetch(url, init),
+  });
+  return { meeting: recall.meeting, calendar };
 }
 
 export function configuredMeetingSpaces(provider: MeetingProvider, source = process.env) {
