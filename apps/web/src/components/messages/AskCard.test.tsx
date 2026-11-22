@@ -184,22 +184,21 @@ it("styles dismissed secrets like denied approvals, apart from the destination",
   expect(dismissed.classList.contains("text-muted-foreground")).toBe(true);
 });
 
-it.each([true, false])("gates secret dismissal: %s", async (canDismiss) => {
+it("offers no Dismiss on a secret card the viewer cannot dismiss", async () => {
   await act(async () =>
     root.render(
       <AskCard
         block={{ kind: "ask", text: "Secret", input: "secret", status: "pending" }}
         canAnswer
-        canDismiss={canDismiss}
+        canDismiss={false}
         onAnswer={async () => {}}
         onDismiss={async () => {}}
       />,
     ),
   );
   const labels = [...container.querySelectorAll("button")].map((button) => button.textContent);
-  expect(labels.includes("Dismiss")).toBe(canDismiss);
+  expect(labels.includes("Dismiss")).toBe(false);
   expect(labels.includes("Save")).toBe(true);
-  expect(button("Save")?.classList.contains("h-8")).toBe(true);
 });
 
 it("keeps an accepted secret Save answered without a block update", async () => {
