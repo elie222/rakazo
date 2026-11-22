@@ -770,6 +770,25 @@ describe("a key on the screen", () => {
     }
   });
 
+  it("exempts complete localized add-to-cart labels on a payment page", () => {
+    const labels = [
+      "加入购物车",
+      "加入購物車",
+      "カートに入れる",
+      "장바구니에 담기",
+      "Añadir al carrito",
+      "Ajouter au panier",
+      "In den Warenkorb",
+    ];
+    const checkout = "Ajouter au panier et passer à la caisse";
+    const { intent } = page(`<input autocomplete="cc-number" aria-label="Card">
+      ${[...labels, checkout].map((label) => `<button type="button">${label}</button>`).join("")}`);
+    for (const label of labels) {
+      expect(intent(label), label).toBeNull();
+    }
+    expect(intent(checkout)?.reason).toBe("payment_page");
+  });
+
   it("does not let a localized gift card or voucher field make a form a card form", () => {
     const zh = page(`<form><input name="gc" aria-label="礼品卡 CVV"><button>使用</button></form>`);
     expect(zh.intent("使用")).toBeNull();

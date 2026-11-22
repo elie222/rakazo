@@ -2019,18 +2019,18 @@ PURCHASE_HELPERS = r"""
     || (el && PAY_WORD.test(phrase(word)) && inPaymentForm(el)));
   // Controls on a payment page that never pay.
   const NOT_PAYING = /^(?:back|go back|previous|cancel|edit|change|remove|delete|clear|apply|redeem|coupon|promo|discount|gift card|show|hide|help|close|dismiss|terms|privacy|learn more|view|select (?:a )?seat|choose (?:a )?seat|sign in|log in|login|sign up|register|forgot|add (?:a )?(?:promo|coupon|code|gift|note)|add to (?:cart|basket|bag))\b|^(?:חזרה|ביטול|עריכה|שינוי|הסרה|קופון|סגירה|סגור|עזרה|תנאי|פרטיות|התחבר|כניסה|החל|הוסף לסל|הוספה לסל)(?:\s|$)/;
-  const localizedNavigationLabels = [
-    /^(?:返回|返回上一步|返回购物车|返回購物車|返回首页|返回首頁|上一步|取消|关闭|關閉|登录|登錄|登入|立即登录|立即登錄|去登录|去登錄|注册|註冊|立即注册|立即註冊|忘记密码|忘記密碼)$/,
-    /^(?:戻る|前へ|キャンセル|閉じる|ログイン|新規登録|会員登録|パスワードを忘れた方)$/,
-    /^(?:뒤로|이전|취소|닫기|로그인|회원가입|비밀번호 찾기)(?:하기)?$/,
-    /^(?:volver|atrás|cancelar|cerrar|iniciar sesión|acceder|registrarse|regístrate|olvidé mi contraseña)$/,
-    /^(?:retour|retourner|précédent|annuler|fermer|connexion|se connecter|s'inscrire|créer un compte|mot de passe oublié)$/,
-    /^(?:zurück|abbrechen|schließen|anmelden|einloggen|registrieren|passwort vergessen)$/,
+  const localizedNonPaymentLabels = [
+    /^(?:返回|返回上一步|返回购物车|返回購物車|返回首页|返回首頁|上一步|取消|关闭|關閉|登录|登錄|登入|立即登录|立即登錄|去登录|去登錄|注册|註冊|立即注册|立即註冊|忘记密码|忘記密碼|加入购物车|加入購物車|添加到购物车|添加到購物車)$/,
+    /^(?:戻る|前へ|キャンセル|閉じる|ログイン|新規登録|会員登録|パスワードを忘れた方|カートに追加|カートに入れる)$/,
+    /^(?:(?:뒤로|이전|취소|닫기|로그인|회원가입|비밀번호 찾기)(?:하기)?|장바구니(?:에)? 담기)$/,
+    /^(?:volver|atrás|cancelar|cerrar|iniciar sesión|acceder|registrarse|regístrate|olvidé mi contraseña|añadir al carrito|agregar al carrito)$/,
+    /^(?:retour|retourner|précédent|annuler|fermer|connexion|se connecter|s'inscrire|créer un compte|mot de passe oublié|ajouter au panier)$/,
+    /^(?:zurück|abbrechen|schließen|anmelden|einloggen|registrieren|passwort vergessen|in den warenkorb)$/,
   ];
   function notPaying(words) {
     const names = words.map(phrase);
     return names.some((name) => NOT_PAYING.test(name))
-      || (names.length > 0 && names.every((name) => localizedNavigationLabels.some((pattern) => pattern.test(name))));
+      || (names.length > 0 && names.every((name) => localizedNonPaymentLabels.some((pattern) => pattern.test(name))));
   }
   // A number may group its thousands with spaces, as in "1 234,56 €". Separators before its first digit
   // are kept, so ".99 USD" is not read as 99 dollars.
