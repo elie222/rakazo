@@ -7,13 +7,15 @@ import {
   normalizeOneTimeCode,
   vaultKind,
 } from "@rakazo/contracts";
+import { siteHost } from "@rakazo/core";
 import { secretAnswerErrorText } from "@rakazo/i18n/vault";
 import { Button, Input } from "@rakazo/ui-web";
 import { Check } from "lucide-react";
 import { useState } from "react";
 import { useEventListener } from "../../lib/use-event-listener";
 import { BuiCard } from "../ai/primitives";
-import { siteHost, VaultTile } from "../vault/kinds";
+import { VaultTile } from "../vault/kinds";
+import { passwordManagerIgnore } from "../vault/password-manager-ignore";
 import { useVaultContacts } from "../vault/use-vault-contacts";
 import type { VaultEditorResult } from "../vault/VaultItemEditor";
 import { VaultItemEditor } from "../vault/VaultItemEditor";
@@ -216,7 +218,7 @@ export function SecretAskCard({ block, canAnswer, canDismiss, onAnswer, onDismis
               setEditorOpen(true);
             }}
           >
-            <Trans>Add</Trans>
+            <Trans>Continue</Trans>
           </Button>
         ) : null}
       </div>
@@ -242,6 +244,7 @@ export function SecretAskCard({ block, canAnswer, canDismiss, onAnswer, onDismis
             aria-label={fieldLabel}
             type="password"
             autoComplete={codeInput ? "one-time-code" : "off"}
+            {...passwordManagerIgnore}
             spellCheck={false}
             disabled={submitting}
             readOnly={pastedLines}

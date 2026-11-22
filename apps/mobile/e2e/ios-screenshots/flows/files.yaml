@@ -47,3 +47,26 @@ name: Files
 - waitForAnimationToEnd:
     timeout: 5000
 - takeScreenshot: 06-video
+- openLink: "rakazo:///artifacts"
+- extendedWaitUntil:
+    visible: '.*launch-demo\.mp4.*'
+    timeout: 15000
+- tapOn: '.*launch-demo\.mp4.*'
+- extendedWaitUntil:
+    visible: "More"
+    timeout: 15000
+- swipe:
+    start: "85%,50%"
+    end: "15%,50%"
+    duration: 400
+- extendedWaitUntil:
+    visible: 'launch-chart\.png'
+    timeout: 15000
+- waitForAnimationToEnd:
+    timeout: 3000
+- takeScreenshot: 07-media-gallery
+- tapOn: "More"
+- assertVisible: "Download"
+- waitForAnimationToEnd:
+    timeout: 3000
+- takeScreenshot: 08-media-actions

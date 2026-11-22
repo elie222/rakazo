@@ -24,6 +24,7 @@ type SheetProps = {
   onClose: () => void;
   loginFields: readonly string[] | undefined;
   onSave: (fields: LoginFieldInput[], remember: boolean) => Promise<void>;
+  onDismiss?: () => Promise<void>;
 };
 let sheet: SheetProps;
 type EditorProps = {
@@ -240,7 +241,7 @@ it("caps a secret card's title at two lines and leaves question titles whole", a
   expect(container.textContent).toContain("login.example.test");
   expect(container.textContent).not.toContain("https://");
   expect(container.querySelector("input")).toBeNull();
-  expect(container.querySelector("button")?.textContent).toBe("Add");
+  expect(container.querySelector("button")?.textContent).toBe("Continue");
 
   expect((await render({ input: "secret", purpose: "otp" })).dataset.lines).toBe("2");
   expect((await render({})).dataset.lines).toBeUndefined();
@@ -399,7 +400,7 @@ for (const [type, destination] of [
     );
     expect(container.textContent).toContain(destination);
     expect(container.querySelector("input")).toBeNull();
-    await act(async () => button("Add").click());
+    await act(async () => button("Continue").click());
     expect(editor).toMatchObject({ kind: type, ask: true, title: longTitle });
 
     await act(async () => editor.onSave({ value: '{"city":"Paris"}' }));
@@ -472,28 +473,25 @@ it("leaves ordinary question answers to the composer", async () => {
   expect(container.querySelector("input")).toBeNull();
 });
 
-it("dismisses a login card directly without opening the sheet", async () => {
+it("keeps Dismiss out of a login card and offers it in the sheet", async () => {
   const onAnswer = vi.fn(async () => undefined);
   const onDismiss = vi.fn(async () => undefined);
   await render(loginAsk, onAnswer, onDismiss);
-  expect(buttons()).toEqual(["Add", "Dismiss"]);
-  expect(button("Add").dataset.prominence).toBe("secondary");
-  expect(button("Dismiss").dataset.prominence).toBe("plain");
-  await act(async () => button("Dismiss").click());
+  expect(buttons()).toEqual(["Continue"]);
+  expect(button("Continue").dataset.prominence).toBe("secondary");
+  await act(async () => button("Continue").click());
+  await act(async () => sheet.onDismiss!());
   expect(onDismiss).toHaveBeenCalledTimes(1);
   expect(onAnswer).not.toHaveBeenCalled();
   expect(container.textContent).toContain("Dismissed");
-  expect(container.querySelector("[data-sheet]")).toBeNull();
   expect(buttons()).toEqual([]);
 });
 
 it("lets the card's buttons wrap instead of overflowing at large text sizes", async () => {
-  for (const ask of [{ input: "secret", purpose: "otp" }, loginAsk]) {
-    await render(ask);
-    const row = button("Dismiss").parentElement!;
-    expect(row.style.flexDirection).toBe("row");
-    expect(row.style.flexWrap).toBe("wrap");
-  }
+  await render({ input: "secret", purpose: "otp" });
+  const row = button("Dismiss").parentElement!;
+  expect(row.style.flexDirection).toBe("row");
+  expect(row.style.flexWrap).toBe("wrap");
 });
 
 for (const input of ["secret", "login"]) {
@@ -526,12 +524,14 @@ for (const input of ["secret", "login"]) {
       ),
     );
     const labels = [...container.querySelectorAll("button")].map((button) => button.textContent);
-    expect(labels.includes("Dismiss")).toBe(canDismiss);
-    // A login is filled in only by the run's user; see the credential card test below.
+    // A login is filled in only by the run's user, and dismissed from its sheet; see the
+    // credential card test below.
     if (input === "login") {
-      expect(labels.includes("Add")).toBe(canDismiss);
+      expect(labels.includes("Dismiss")).toBe(false);
+      expect(labels.includes("Continue")).toBe(canDismiss);
       return;
     }
+    expect(labels.includes("Dismiss")).toBe(canDismiss);
     const primary = button("Save");
     expect(primary.style.flex).toBe("1 1 0%");
     expect(primary.dataset.fill).toBe("true");

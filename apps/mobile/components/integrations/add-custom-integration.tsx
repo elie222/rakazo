@@ -5,6 +5,7 @@ import type { McpSourcePreset } from "@rakazo/contracts";
 import { Text, TextInput, View } from "react-native";
 import { native, useResolvedAppearance, useThemedStyles } from "../../lib/native/native";
 import { iosAtLeast } from "../../lib/native/native-controls";
+import { openExternalUrl } from "../../lib/platform/open-url";
 import { NativeActionButton } from "../native/native-action-button";
 import { NativeSymbol } from "../native/native-symbol";
 import { MenuPicker } from "../ui/menu-picker";
@@ -137,13 +138,15 @@ export function AddCustomForm({
                   ? t`GraphQL endpoint`
                   : t`OpenAPI JSON`}
           </Text>
-          <TextInput
-            value={name}
-            onChangeText={setName}
-            placeholder={t`Display name`}
-            placeholderTextColor={native.tertiaryLabel}
-            style={styles.input}
-          />
+          {!sourcePreset?.featured ? (
+            <TextInput
+              value={name}
+              onChangeText={setName}
+              placeholder={t`Display name`}
+              placeholderTextColor={native.tertiaryLabel}
+              style={styles.input}
+            />
+          ) : null}
           {!sourcePreset?.url ? (
             <TextInput
               value={url}
@@ -195,15 +198,36 @@ export function AddCustomForm({
               secureTextEntry
               autoCapitalize="none"
               autoCorrect={false}
-              placeholder={sourceAuth === "header" ? t`API key` : t`Bearer token`}
+              placeholder={
+                sourcePreset?.credentialHelpUrl
+                  ? t`Personal access token`
+                  : sourceAuth === "header"
+                    ? t`API key`
+                    : t`Bearer token`
+              }
               placeholderTextColor={native.tertiaryLabel}
               style={styles.input}
+            />
+          ) : null}
+          {sourcePreset?.credentialHelpUrl ? (
+            <NativeActionButton
+              fill={false}
+              label={t`Create a personal access token`}
+              prominence="secondary"
+              onPress={() => {
+                const helpUrl = sourcePreset.credentialHelpUrl;
+                if (helpUrl) void openExternalUrl(helpUrl);
+              }}
             />
           ) : null}
           <View style={styles.accountActions}>
             <NativeActionButton
               busy={busy}
-              label={t`Verify and add`}
+              label={
+                sourcePreset?.featured && sourceAuth === "oauth"
+                  ? t`Save and sign in`
+                  : t`Verify and add`
+              }
               onPress={onAdd}
               prominence="secondary"
             />

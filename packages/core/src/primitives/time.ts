@@ -1,5 +1,14 @@
 import { CronDate } from "croner";
 
+/** A localized month and day, with the year when it differs in the viewer's time zone. */
+export function formatShortHistoryDate(date: Date, now: Date, locale: string): string {
+  return date.toLocaleDateString(locale, {
+    month: "short",
+    day: "numeric",
+    year: date.getFullYear() === now.getFullYear() ? undefined : "numeric",
+  });
+}
+
 const ISO_DATE_TIME =
   /^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2})(?::(\d{2})(?:\.(\d+))?)?(Z|[+-]\d{2}(?::?\d{2})?)?)?$/i;
 

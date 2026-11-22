@@ -1,6 +1,7 @@
 import { t } from "@lingui/core/macro";
 import type { SearchHit, SpaceBot, SpaceGroup } from "@rakazo/contracts";
 import { dedupeSearchHits, searchHitListKey } from "@rakazo/core";
+import { searchKindLabel } from "@rakazo/i18n/search";
 import type { MobileBot, MobileGroup } from "../api/mobile-types";
 import { filterBots } from "../inbox/inbox";
 import type { InboxSpace } from "../inbox/inbox-spaces";
@@ -20,21 +21,6 @@ export type SearchSheetRow = {
   destination: ReturnType<typeof mobileSearchDestination>;
 };
 
-export function searchKindLabel(hit: SearchHit): string {
-  switch (hit.kind) {
-    case "conversation":
-      return hit.groupId ? t`Group` : t`Bot`;
-    case "message":
-      return t`Message`;
-    case "file":
-      return t`File`;
-    case "link":
-      return t`Link`;
-    case "routine":
-      return t`Routine`;
-  }
-}
-
 export function searchSheetRows(
   spaces: readonly InboxSpace[],
   query: string,
@@ -45,7 +31,6 @@ export function searchSheetRows(
     .flatMap((space) => space.bots)
     .filter((bot) => !("archivedAt" in bot && bot.archivedAt));
   const groups = spaces.flatMap((space) => space.groups);
-  const needle = query.trim().toLowerCase();
   const rows: SearchSheetRow[] = [
     ...filterBots(bots, query).map(
       (bot): SearchSheetRow => ({
@@ -59,27 +44,25 @@ export function searchSheetRows(
         destination: { pathname: "/thread", params: { botId: bot.id, name: bot.name } },
       }),
     ),
-    ...groups
-      .filter((group) => `${group.name} ${group.preview}`.toLowerCase().includes(needle))
-      .map(
-        (group): SearchSheetRow => ({
-          key: `group-${group.id}`,
-          title: group.name,
-          preview:
-            previewSnippet(group.preview, 40) ||
-            group.members.map((member) => member.name).join(", "),
-          label: t`Group`,
-          group,
-          kind: "conversation",
-          spaceId: group.spaceId,
-          destination: {
-            pathname: "/group-thread",
-            params: { groupId: group.id, name: group.name },
-          },
-        }),
-      ),
+    ...filterBots(groups, query).map(
+      (group): SearchSheetRow => ({
+        key: `group-${group.id}`,
+        title: group.name,
+        preview:
+          previewSnippet(group.preview, 40) ||
+          group.members.map((member) => member.name).join(", "),
+        label: t`Group`,
+        group,
+        kind: "conversation",
+        spaceId: group.spaceId,
+        destination: {
+          pathname: "/group-thread",
+          params: { groupId: group.id, name: group.name },
+        },
+      }),
+    ),
   ];
-  if (!needle) return rows;
+  if (!query.trim()) return rows;
   const chats = new Set(rows.map((row) => row.key));
   for (const hit of dedupeSearchHits(hits)) {
     if (

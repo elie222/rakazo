@@ -3,6 +3,7 @@ import * as z from "zod";
 import { AnalyticsSurface, ModelSignInCancelReason } from "../account/analytics.js";
 import { Id, ThinkingLevelSchema } from "../ids.js";
 import { SettingsScopeSchema, settingsScopeInput } from "../settings-scope.js";
+import { DeploymentModelSettingsSchema, DeploymentModelUpdateSchema } from "./deployment-model.js";
 import {
   ModelApiProtocolSchema,
   ModelCatalogEntrySchema,
@@ -23,6 +24,7 @@ import {
   ModelRoleViewSchema,
 } from "./model-roles.js";
 import {
+  MAX_TRANSCRIPTION_VOCABULARY_LENGTH,
   VoiceCatalogEntrySchema,
   VoiceCredentialSchema,
   VoiceInfoSchema,
@@ -131,6 +133,11 @@ export const modelsRpc = {
     disconnect: oc
       .input(z.object({ provider: z.string().trim().min(1), credentialId: Id.optional() }))
       .output(z.object({ ok: z.literal(true) })),
+    /** Admin choice of the model members without their own run on, over the environment's. */
+    deployment: {
+      get: oc.output(DeploymentModelSettingsSchema),
+      update: oc.input(DeploymentModelUpdateSchema).output(DeploymentModelSettingsSchema),
+    },
   },
   voice: {
     catalog: oc.output(z.array(VoiceCatalogEntrySchema)),
@@ -156,6 +163,12 @@ export const modelsRpc = {
             sttApiKey: z.string().max(4096).optional(),
             ttsModel: z.string().max(200).optional(),
             sttModel: z.string().max(200).optional(),
+            /** Omitted keeps the hint for the same server. Blank clears it. */
+            transcriptionVocabulary: z
+              .string()
+              .trim()
+              .max(MAX_TRANSCRIPTION_VOCABULARY_LENGTH)
+              .optional(),
             /** Where the connection becomes the default voice. */
             scope: SettingsScopeSchema.optional(),
           })

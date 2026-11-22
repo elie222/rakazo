@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import type { AppEmulator } from "../apps/app-emulator.js";
+import { SHAPES_PICTURE, shapesPng } from "./fixtures/shapes-png.js";
 import type { HistoryExpectation, HistoryFixture, HistoryScenario } from "./history-fixtures.js";
 import {
   balancedAmbiguityFixture,
@@ -219,6 +220,8 @@ A colleague asked who owns the Fairhaven Robotics renewal, where it stands, whet
 The user told the bot which language they prefer for reports and asked it to remember that. "language" is the preference that holds now; "replaced", when present, is an earlier preference the user withdrew. Pass only if "memory" records "language" as the user's current report language. Fail if it is missing or negated, or if "replaced" still stands as a current preference. Recording "replaced" as a former preference is fine.`,
   "release-changes": `${preamble}
 The user asked the bot to save the newest release's exact version and the changes it introduces. "release" is that release as published; "file" is what the bot saved. Pass only if "file" describes every change in "release.notes" accurately. Fail if a change is missing, if something the notes do not say is given as a change in this release, or if another release's changes are given instead.`,
+  "image-description": `${preamble}
+The user gave the bot the URL of a picture and asked what it shows. The picture is a red circle on the left and a blue square on the right, on a white background, and nothing else. Pass only if "reply" says it shows a red circle and a blue square. Fail if either shape or its color is missing or wrong, if the reply describes something the picture does not show, or if it says the bot could not see or open the picture. Positions, sizes and the background may be left out.`,
   "rakazo-platform": `${preamble}
 The bot runs on Rakazo: an open-source platform, which people can also self-host, where they create and chat with AI bots that have their own memory, routines, connected apps and computer. "conversation" holds each message the user sent and the bot's reply to it. Pass only if every reply treats Rakazo as that platform: it says so, or works on the request as being about that platform, without asking the user what Rakazo is. Fail if any reply asks the user what Rakazo is, what it is for or how it works, says it does not know what Rakazo is, takes up an offer to have Rakazo explained, or describes Rakazo as something else, such as the user's own company or an unrelated product. Asking about the request itself (its scope, goals, priorities, conventions or which part to work on) is fine, even in answer to that offer, once the reply shows it knows what Rakazo is; so is a reply that offers or starts the requested work.`,
 };
@@ -227,6 +230,18 @@ const judgeInput = (kind: ProductRubric, evidence: Record<string, unknown>): Jud
   rubric: rubrics[kind],
   evidence,
 });
+const SHAPES_URL = "https://example.test/shapes.png";
+const SHAPES_ASK = `What does the picture at ${SHAPES_URL} show?`;
+/** Opening a page or the screen to look at the picture, instead of fetching the picture itself. */
+const PICTURE_DETOUR_TOOLS = new Set([
+  "open_path",
+  "launch_app",
+  "browser_navigate",
+  "browser_snapshot",
+  "browser_act",
+  "computer_observe",
+  "computer_act",
+]);
 const WIDGET_2_1 = {
   version: "v2.1.0",
   notes: "Adds CSV export and fixes duplicate notifications.",
@@ -289,6 +304,25 @@ export const PRODUCT_JUDGE_CALIBRATION = [
   {
     input: judgeInput("launch-blocker", {
       file: "The contract is signed. Review it by Friday.",
+    }),
+    pass: false,
+  },
+  {
+    input: judgeInput("image-description", {
+      reply: "It's a simple graphic: a red disc on the left and a blue square beside it, on white.",
+    }),
+    pass: true,
+  },
+  {
+    input: judgeInput("image-description", {
+      reply:
+        "The picture at that link is a red circle and a blue square, though I can't actually see images, so that is only a guess from the file name.",
+    }),
+    pass: false,
+  },
+  {
+    input: judgeInput("image-description", {
+      reply: "It shows a blue circle on the left and a red triangle on the right.",
     }),
     pass: false,
   },
@@ -794,6 +828,26 @@ export const EVAL_CASES: EvalCase[] = [
     grade: (e) => [repliedToEach(e, DEVELOPMENT_BOT_ASKS), noWrites(e)],
     judge: (e) => platformInput(DEVELOPMENT_BOT_ASKS, e.replies ?? []),
     observe: (e) => ({ "read-rakazo-skill": readRakazoSkill(e) }),
+  },
+  {
+    id: "describe-image-url",
+    purpose:
+      "Look at a picture by fetching its URL, instead of opening a page or the screen to read it.",
+    shellUnneeded: true,
+    configure: (s) => {
+      s.web.images[SHAPES_URL] = shapesPng();
+    },
+    fixtureData: { url: SHAPES_URL, picture: SHAPES_PICTURE },
+    steps: [{ ask: SHAPES_ASK }],
+    grade: (e) => [
+      check(
+        "fetched-picture",
+        e.toolCalls.some((call) => call.name === "web_fetch" && call.args.url === SHAPES_URL),
+      ),
+      check("no-detour", !e.toolNames.some((name) => PICTURE_DETOUR_TOOLS.has(name))),
+      noWrites(e),
+    ],
+    judge: (e) => judgeInput("image-description", { reply: e.text }),
   },
   {
     id: "what-is-rakazo",

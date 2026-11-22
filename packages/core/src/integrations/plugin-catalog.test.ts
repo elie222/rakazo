@@ -1,11 +1,17 @@
 import type { PluginMarketplaceEntry } from "@rakazo/contracts";
 import { describe, expect, it } from "vitest";
 import {
+  browsablePlugins,
   comparePlugins,
+  filterPluginBrands,
+  filterPlugins,
   installedPluginParts,
   managedAppFor,
   matchesPluginQuery,
   matchesWordPrefixes,
+  OTHER_PLUGINS,
+  pluginBrands,
+  pluginCategories,
   pluginCategory,
   pluginSite,
 } from "./plugin-catalog.js";
@@ -128,6 +134,63 @@ describe("managedAppFor", () => {
     for (const displayName of ["", "---", "\u2615\uFE0F"]) {
       expect(managedAppFor(entry({ name: "notes", displayName }), apps)).toBeUndefined();
     }
+  });
+});
+
+describe("browsing plugins", () => {
+  const app = (name: string) => ({
+    connectorId: "managed",
+    slug: name.toLowerCase(),
+    name,
+    logo: null,
+    connected: false,
+    noAuth: false,
+  });
+  const vercelApp = app("Vercel");
+  const linearApp = app("Linear");
+  const vercel = entry({ name: "vercel", displayName: "Vercel", skillCount: 3, category: "ops" });
+  const vercelCopy = entry({ name: "vercel-two", displayName: "Vercel", skillCount: 1 });
+  const linear = entry({ name: "linear", displayName: "Linear" });
+  const sentry = entry({ name: "sentry", description: "Error monitoring", category: "ops" });
+  const calcom = entry({ name: "calcom", keywords: ["scheduling"], category: "productivity" });
+  const loose = entry({ name: "loose" });
+  const pack = entry({ name: "teaching", hasConnector: false, skillCount: 2 });
+  const label = (name: string) => (name === "ops" ? "Security & Ops" : name);
+
+  it("lends a managed app its brand's first skills and keeps skill packs out", () => {
+    const { plugins, pluginForApp } = browsablePlugins(
+      [vercel, vercelCopy, linear, sentry, pack],
+      [vercelApp, linearApp],
+    );
+    expect(plugins.map((row) => row.name)).toEqual(["sentry"]);
+    expect([...pluginForApp]).toEqual([["managed:vercel", vercel]]);
+    expect(pluginBrands([linearApp, vercelApp], pluginForApp)).toEqual([
+      { item: vercelApp, entry: vercel },
+    ]);
+  });
+
+  it("lists only present categories in product order", () => {
+    expect(pluginCategories([sentry, calcom, loose])).toEqual(["productivity", "ops"]);
+  });
+
+  it("filters by category, the uncategorized filter, and the category label", () => {
+    const plugins = [calcom, sentry, loose];
+    const names = (rows: { name: string }[]) => rows.map((row) => row.name);
+    expect(names(filterPlugins(plugins, "cal sched", null, label))).toEqual(["calcom"]);
+    expect(names(filterPlugins(plugins, "", "productivity", label))).toEqual(["calcom"]);
+    expect(names(filterPlugins(plugins, "", OTHER_PLUGINS, label))).toEqual(["loose"]);
+    expect(names(filterPlugins(plugins, "secu", null, label))).toEqual(["sentry"]);
+    expect(filterPlugins(plugins, "error", "productivity", label)).toEqual([]);
+  });
+
+  it("lists brands only under their plugin's category, by app name or plugin text", () => {
+    const brands = [{ item: vercelApp, entry: vercel }];
+    expect(filterPluginBrands(brands, "", null, label)).toEqual([]);
+    expect(filterPluginBrands(brands, "", "ops", label)).toEqual(brands);
+    expect(filterPluginBrands(brands, "verc", "ops", label)).toEqual(brands);
+    expect(filterPluginBrands(brands, "secu", "ops", label)).toEqual(brands);
+    expect(filterPluginBrands(brands, "", "productivity", label)).toEqual([]);
+    expect(filterPluginBrands(brands, "stripe", "ops", label)).toEqual([]);
   });
 });
 

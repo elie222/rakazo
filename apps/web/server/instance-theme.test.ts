@@ -156,4 +156,24 @@ describe("instance theme", () => {
     expect(res.end).toHaveBeenCalledWith("");
     expect(warn).toHaveBeenCalledWith("dark.background must be a hex color");
   });
+
+  it("serves an edited theme without a restart, from one middleware instance", () => {
+    const file = themeFolder({ dark: { background: "#101418" } });
+    const warn = vi.fn();
+    const middleware = instanceThemeMiddleware(file, warn);
+    const run = (url: string) => {
+      const res = { setHeader: vi.fn(), end: vi.fn() };
+      const next = vi.fn();
+      middleware({ url } as IncomingMessage, res as unknown as ServerResponse, next);
+      return res;
+    };
+    expect(run("/instance-theme.css").end.mock.calls[0]?.[0]).toContain("--background: #101418;");
+    // A different size, so the edit is never mistaken for the same file.
+    writeFileSync(
+      file,
+      JSON.stringify({ dark: { background: "#101418" }, light: { primary: "#00AA00" } }),
+    );
+    expect(run("/instance-theme.css").end.mock.calls[0]?.[0]).toContain("--primary: #00AA00;");
+    expect(warn).not.toHaveBeenCalled();
+  });
 });

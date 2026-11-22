@@ -141,6 +141,20 @@ const APP_RUN_ERRORS = new Set([
   ...stuckWorkStatusMessages(),
 ]);
 
+/** Failures of the deployment itself, which nothing the user changes would fix. */
+const SERVER_RUN_ERRORS = new Set([
+  INTERNAL_RUN_ERROR,
+  COMPUTER_RATE_LIMIT_ERROR,
+  COMPUTER_PROVIDER_UNAVAILABLE_ERROR,
+  COMPUTER_UNRESPONSIVE_ERROR,
+  COMPUTER_START_FAILED_ERROR,
+  ...stuckWorkStatusMessages(),
+]);
+
+export function isServerRunError(error: string): boolean {
+  return SERVER_RUN_ERRORS.has(error.trim());
+}
+
 export const RUN_ERROR_LIMIT_MESSAGES = {
   key: {
     none: "{provider} key hit its limit.",

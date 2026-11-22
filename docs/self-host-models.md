@@ -35,6 +35,22 @@ The Compose files also pass the standard provider key variables the agent runtim
 (`OPENAI_API_KEY`, `GEMINI_API_KEY`, `MISTRAL_API_KEY`, `GROQ_API_KEY`, `XAI_API_KEY` and others) to
 the API and worker, for models that have no stored credential.
 
+### Default for everyone
+
+Admins (`RAKAZO_ADMIN_EMAILS`) can set the deployment model in **Settings → Models → Default for
+everyone** instead: choose a provider that connects with an API key, paste the key and pick the
+model. It replaces `PI_DEFAULT_PROVIDER` and `PI_DEFAULT_MODEL` for everyone without a model of
+their own, from their next run and without a restart; **Default** goes back to the environment's.
+The key is stored encrypted, is never shown again, and is redacted from run output like the
+environment's. Each change is recorded in the security audit log.
+
+`RAKAZO_MODEL_PROVIDER_ALLOWLIST` applies to it like any connection an account makes: a provider
+the list leaves out is not offered, and a saved one stops serving and the environment's model
+applies again. Deployments with model credits always run on the operator's own connection, so the
+block is not offered there and a saved choice is ignored. Calls the operator pays for, such as the
+deployment's approval checker, keep using the environment's keys. Messaging apps with open signup
+are turned on at startup only when the environment configures a model.
+
 `RAKAZO_LIVE_MODEL_CATALOG=off` (or `false`, `0`, `no`) disables provider and Codex live catalog probing; the default is on, and an unrecognized value stops the API at startup.
 
 ## Approvals
@@ -143,8 +159,10 @@ What it needs:
   OS user. The official Docker images and the desktop app's local stack do not include Claude
   Code, and adding it to them is not supported.
 - Claude Code 2.1.280 or newer on that user's `PATH`, signed in once in a terminal as that user
-  with `claude auth login`. This route uses no Claude sign-in inside Rakazo and no Claude token,
-  so `claude setup-token` is not needed.
+  with `claude auth login`. On a server without a browser, the CLI can use the token
+  `claude setup-token` creates instead: set it as `CLAUDE_CODE_OAUTH_TOKEN` together with
+  `RAKAZO_CLAUDE_CODE_SETUP_TOKEN=1` in the API's and worker's environment. Either way there is
+  no Claude sign-in inside Rakazo.
 - One account on the server. A Claude sign-in belongs to one person, so Rakazo refuses Claude Code
   runs while the server has more than one account (people who only message bots from chat apps do
   not count) or bills for model usage.
@@ -163,8 +181,9 @@ Anthropic's terms; see [Legal and compliance](https://code.claude.com/docs/en/le
 
 The CLI runs in an empty private temporary directory with an allowlisted environment. API keys and
 other server secrets, including `ANTHROPIC_API_KEY`, are never passed to it, so it always uses its
-own sign-in. Only the deployment model runs on Claude Code; it is not offered as a connection in
-**Settings → Models**.
+own sign-in. `RAKAZO_CLAUDE_CODE_SETUP_TOKEN=1` adds only `CLAUDE_CODE_OAUTH_TOKEN`, which the CLI
+reads and Rakazo does not. Only the deployment model runs on Claude Code; it is not offered as a
+connection in **Settings → Models**.
 
 ## Ollama Cloud
 

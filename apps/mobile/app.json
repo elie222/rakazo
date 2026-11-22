@@ -4,7 +4,7 @@
     "slug": "rakazo",
     "owner": "inbox-zero",
     "scheme": "rakazo",
-    "version": "1.0.17",
+    "version": "1.0.18",
     "orientation": "default",
     "userInterfaceStyle": "automatic",
     "icon": "./assets/icon.png",
@@ -37,6 +37,13 @@
         }
       ],
       "expo-localization",
+      [
+        "expo-media-library",
+        {
+          "savePhotosPermission": "Rakazo saves photos and videos you download from Artifacts to your photo library.",
+          "granularPermissions": []
+        }
+      ],
       [
         "expo-calendar",
         {
@@ -133,6 +140,7 @@
       }
     },
     "android": {
+      "blockedPermissions": ["android.permission.READ_MEDIA_VISUAL_USER_SELECTED"],
       "package": "com.rakazo.app",
       "versionCode": 10,
       "softwareKeyboardLayoutMode": "resize",

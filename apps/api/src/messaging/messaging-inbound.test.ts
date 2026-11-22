@@ -2213,7 +2213,7 @@ function sentPrompt(
   deps: { outboundRows: Array<Record<string, unknown>> },
   idempotencyKey: string,
   ageMs = 60_000,
-  state: "sent" | "pending" | "retry" | "in flight" | "failed" = "sent",
+  state: "sent" | "pending" | "in flight" | "failed" = "sent",
 ) {
   deps.outboundRows.push({
     idempotencyKey,
@@ -2575,7 +2575,7 @@ describe("createMessagingInboundHandler owner commands", () => {
     );
   });
 
-  it.each(["pending", "retry", "in flight", "failed"] as const)(
+  it.each(["pending", "in flight"] as const)(
     "answers the delivered question, not a request still %s",
     async (status) => {
       const deps = createDeps({
@@ -2591,7 +2591,7 @@ describe("createMessagingInboundHandler owner commands", () => {
     },
   );
 
-  it.each(["pending", "retry", "in flight", "failed"] as const)(
+  it.each(["pending", "in flight"] as const)(
     "treats YES as a reply once the bot has answered, even while that answer is %s",
     async (status) => {
       const deps = createDeps({

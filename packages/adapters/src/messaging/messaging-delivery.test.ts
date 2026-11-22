@@ -16,6 +16,7 @@ import {
   RetryJobLaterError,
 } from "@rakazo/adapter-kit";
 import {
+  BOT_MESSAGE_MAX_HOPS,
   CHAT_APP_ASK_NOTE,
   CHAT_APP_TAKEOVER_NOTE,
   TAKEOVER_COMPUTER_PENDING_STATE,
@@ -555,7 +556,7 @@ function createSurface() {
 
 const bytes = (storageKey: string) => new TextEncoder().encode(storageKey);
 
-function setup(options: { messaging?: MessagingSurface } = {}) {
+function setup(options: { messaging?: MessagingSurface; webOrigin?: string } = {}) {
   const world = createWorld();
   const jobs = createJobs();
   const prisma = createPrisma(world, jobs);
@@ -577,6 +578,7 @@ function setup(options: { messaging?: MessagingSurface } = {}) {
     events: events as unknown as MessagingDeliveryDeps["events"],
     jobs,
     artifacts,
+    webOrigin: options.webOrigin,
   });
   return {
     ...surface,
@@ -1066,6 +1068,31 @@ describe("deliverRun to a 1:1 chat", () => {
     await t.delivery.deliverRun("run-1");
 
     expect(bodies(t)).toEqual([`Send the email to Sam?\n${CHAT_APP_ASK_NOTE}`]);
+  });
+
+  it("links a pending approval to its bot's chat in the app when the web origin is set", async () => {
+    const t = setup({ webOrigin: "https://app.example.test" });
+    addRun(t.world, {
+      status: "waiting_input",
+      replies: [
+        {
+          id: "ask-1",
+          blocks: [
+            {
+              kind: "ask",
+              text: "Run this command?",
+              detail: "rm -rf ~/projects/old",
+              approvalEffectId: "effect-1",
+              status: "pending",
+            },
+          ],
+        },
+      ],
+    });
+    await t.delivery.deliverRun("run-1");
+    const [body] = bodies(t);
+    expect(body).toBe("Run this command?\nAnswer in the app: https://app.example.test/app/bot-1");
+    expect(body).not.toContain("rm -rf");
   });
 
   it("keeps an approval's detail in the app and skips a question its ended run cannot use", async () => {
@@ -1837,9 +1864,27 @@ describe("deliverRun to a group", () => {
     expect(wakes(t)).toEqual([]);
   });
 
-  it("only gives peers context once the hop budget is spent", async () => {
+  it("still wakes an @-mentioned peer past six bot-to-bot messages", async () => {
     const t = setup();
     groupRun(t.world, [text("m-1", "@Helper again?")], { hop: 6 });
+    await t.delivery.deliverRun("run-1");
+
+    expect(t.events.sendUserMessage).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({
+        botId: "bot-2",
+        clientNonce: "messaging-peer:m-1:bot-2",
+        blocks: [expect.objectContaining({ kind: "channel_message", hop: 7 })],
+      }),
+    );
+    expect(wakes(t)).toEqual([
+      expect.objectContaining({ name: "run.continue", payload: { runId: "run-wake" } }),
+    ]);
+    expect(peerContext(t)).toEqual([]);
+  });
+
+  it("only gives peers context once a runaway chain reaches the safety ceiling", async () => {
+    const t = setup();
+    groupRun(t.world, [text("m-1", "@Helper again?")], { hop: BOT_MESSAGE_MAX_HOPS });
     await t.delivery.deliverRun("run-1");
 
     expect(t.events.sendUserMessage).not.toHaveBeenCalled();
@@ -1847,7 +1892,7 @@ describe("deliverRun to a group", () => {
     expect(peerContext(t)).toEqual([
       expect.objectContaining({
         clientNonce: "messaging-peer:m-1:bot-2",
-        blocks: [expect.objectContaining({ hop: 7 })],
+        blocks: [expect.objectContaining({ hop: BOT_MESSAGE_MAX_HOPS + 1 })],
       }),
     ]);
   });
@@ -2052,6 +2097,39 @@ describe("delegated team-chat replies", () => {
       expect.objectContaining({ kind: "team", sourceMessageId: "c-msg" }),
     );
     expect(t.sendToThread).toHaveBeenCalledTimes(2);
+  });
+
+  it("answers in the thread the chain started in after many bot-to-bot hops", async () => {
+    const t = setup();
+    delegationChain(t.world);
+    // Eight more relays between the helper's answer and the run that replies in the thread.
+    let previous = "b-msg";
+    for (let index = 1; index <= 8; index += 1) {
+      addRun(t.world, {
+        id: `run-relay-${index}`,
+        botId: "bot-2",
+        userId: "user-2",
+        trigger: "bot_message",
+        replyTo: previous,
+        replies: [text(`relay-${index}-msg`, `Relay ${index}.`)],
+      });
+      previous = `relay-${index}-msg`;
+    }
+    addRun(t.world, {
+      id: "run-d",
+      threadId: "thread-slack",
+      trigger: "bot_message",
+      replyTo: previous,
+      replies: [text("d-msg", "Booked the second flight.")],
+    });
+    await t.delivery.deliverRun("run-d");
+
+    expect(summary(t)).toContainEqual([
+      "team-chat-run:run-d",
+      "slack:C1:1700.1",
+      "Booked the second flight.",
+      "sent",
+    ]);
   });
 
   it("says in the thread when the delegated run failed", async () => {

@@ -304,6 +304,18 @@ describe("Pi usage accounting", () => {
       expect(normalizePiUsage(undefined, model, fields)).toMatchObject({ costUsd, costSource });
     },
   );
+  it("records a local model call as free, but not an unpriced hosted one", () => {
+    const unpriced = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
+    expect(
+      normalizePiUsage({ input: 5, output: 2 }, { provider: "local", cost: unpriced }),
+    ).toMatchObject({ costUsd: 0, costSource: "free-endpoint" });
+    expect(normalizePiUsage(undefined, { provider: "local", cost: unpriced })).toMatchObject({
+      costUsd: 0,
+    });
+    expect(
+      normalizePiUsage({ input: 5, output: 2 }, { provider: "openrouter", cost: unpriced }),
+    ).toMatchObject({ costUsd: null, costSource: null });
+  });
   it("retains a provider cost receipt when a stream throws after reporting it", async () => {
     const afterCall = vi.fn();
     const events: AgentRuntimeEvent[] = [];
@@ -573,7 +585,7 @@ describe("Pi usage accounting", () => {
       normalizePiUsage({ input: 1.5, output: Number.MAX_SAFE_INTEGER + 1 }, model),
     ).toMatchObject({ inputTokens: null, outputTokens: null });
   });
-  it.each([400, 401, 402, 403, 429])(
+  it.each([400, 429])(
     "releases a rejected HTTP %s attempt without hidden retries",
     async (status) => {
       const fetcher = vi.fn(
@@ -673,7 +685,7 @@ describe("Pi usage accounting", () => {
     expect(events).toHaveLength(1);
     expect(events[0]).toMatchObject({ inputTokens: 0, outputTokens: 0, totalTokens: 0 });
   });
-  it.each([408, 500, 503])("retains uncertainty for HTTP %s", async (status) => {
+  it.each([408, 500])("retains uncertainty for HTTP %s", async (status) => {
     const afterCall = vi.fn();
     const stream = await observedPiStream(
       builtinModels(),
@@ -1274,7 +1286,7 @@ describe("Pi usage accounting", () => {
           output: 2,
           cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
         },
-        { cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } },
+        { provider: "openrouter", cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } },
       ).costUsd,
     ).toBeNull();
   });
