@@ -1,4 +1,4 @@
-import type { DataTag, QueryFunction, QueryKey } from "@tanstack/react-query";
+import type { QueryFunction, QueryKey } from "@tanstack/react-query";
 import { useQuery } from "@tanstack/react-query";
 import { useFocusEffect } from "expo-router";
 import { useCallback } from "react";
@@ -12,7 +12,7 @@ import { queryClient } from "./query";
  */
 export function useScreenQuery<T>(
   read: {
-    queryKey: DataTag<QueryKey, T, Error>;
+    queryKey: QueryKey;
     queryFn: QueryFunction<T>;
     gcTime?: number;
     meta?: Record<string, unknown>;

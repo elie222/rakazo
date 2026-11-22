@@ -1,18 +1,23 @@
 // @vitest-environment jsdom
 
 import { i18n } from "@lingui/core";
-import { deferred } from "@rakazo/core/test-async";
+import { deferred, flush } from "@rakazo/core/test-async";
 import type { ReactNode } from "react";
 import { act, createElement, useEffect } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import ArtifactDetail from "../../app/artifact";
+import { clearQueries } from "../query/query";
 
 i18n.loadAndActivate({ locale: "en", messages: {} });
 
 const state = vi.hoisted(() => ({
   id: "a",
   focused: true,
+  gallery: undefined as string | undefined,
+  changeActive: undefined as ((id: string) => void) | undefined,
+  actions: [] as { text: string; onPress: () => void }[],
+  setOptions: vi.fn(),
   back: vi.fn(),
   alert: vi.fn(),
   remove: vi.fn(),
@@ -32,16 +37,35 @@ vi.mock("expo-secure-store", () => ({
 vi.mock("../inbox/activity", () => ({ formatActivityRelativeTime: () => "now" }));
 vi.mock("../notifications/live-notifications", () => ({}));
 vi.mock("expo-router", () => ({
-  useLocalSearchParams: () => ({ artifactId: state.id }),
+  useLocalSearchParams: () => ({ artifactId: state.id, gallery: state.gallery }),
+  useIsFocused: () => state.focused,
   useRouter: () => ({ back: state.back }),
-  useNavigation: () => ({
-    setOptions: (options: typeof state.options) => {
-      state.options = options;
-    },
-  }),
+  useNavigation: () => ({ setOptions: state.setOptions }),
   useFocusEffect: (effect: () => () => void) => {
     useEffect(() => (state.focused ? effect() : undefined), [effect, state.focused]);
   },
+}));
+vi.mock("../api/roster-signals", () => ({ useSpaceChanges: vi.fn() }));
+vi.mock("../api/api", () => ({
+  currentApiBase: () => "https://fixture.example",
+  selectedSpaceId: () => "test-space",
+  captureApiRequestContext: async () => ({
+    apiBase: "https://fixture.example",
+    sessionGeneration: 0,
+    headers: { "x-rakazo-space-id": "test-space" },
+  }),
+  rpc: (proc: string, input: { familyId?: string; artifactId?: string }) => {
+    if (proc === "artifacts/listVersions") return Promise.resolve([{ id: input.familyId }]);
+    if (proc === "artifacts/remove") return state.remove(input.artifactId);
+    if (proc === "artifacts/getById") return state.getArtifact(input.artifactId);
+    throw new Error(`Unexpected RPC: ${proc}`);
+  },
+}));
+vi.mock("../api/session", () => ({ currentSessionGeneration: () => 0 }));
+vi.mock("../platform/app-foreground", () => ({ useAppForeground: () => true }));
+vi.mock("../../components/native/native-action-button", () => ({
+  NativeActionButton: ({ label, onPress }: { label: string; onPress: () => void }) =>
+    createElement("button", { type: "button", "aria-label": label, onClick: onPress }, label),
 }));
 vi.mock("react-native", () => {
   const component = ({
@@ -73,12 +97,17 @@ vi.mock("../../components/media/sandboxed-html-preview", () => ({
   SandboxedHtmlPreview: () => null,
 }));
 vi.mock("../../components/media/video-preview", () => ({ VideoPreview: () => null }));
-vi.mock("../../components/media/artifact-media-pager", () => ({ ArtifactMediaPager: () => null }));
-vi.mock("./artifacts", () => ({
-  listArtifactVersions: async (id: string) => [{ id }],
-  getArtifactById: (id: string) => state.getArtifact(id),
-  artifactThreadTarget: () => null,
-  removeArtifact: state.remove,
+vi.mock("../../components/media/artifact-media-pager", () => ({
+  ArtifactMediaPager: ({
+    onActiveIdChange,
+    children,
+  }: {
+    onActiveIdChange: (id: string) => void;
+    children: ReactNode;
+  }) => {
+    state.changeActive = onActiveIdChange;
+    return children;
+  },
 }));
 vi.mock("./artifact-open", () => ({
   writeArtifactCacheFile: () => ({
@@ -98,7 +127,11 @@ vi.mock("../native/native", () => ({
   useThemedStyles: () => ({}),
 }));
 vi.mock("../appearance/appearance", () => ({ mobileTokens: () => ({}) }));
-vi.mock("../messages/message-action-sheet", () => ({ presentMessageActionSheet: vi.fn() }));
+vi.mock("../messages/message-action-sheet", () => ({
+  presentMessageActionSheet: ({ actions }: { actions: typeof state.actions }) => {
+    state.actions = actions;
+  },
+}));
 
 let container: HTMLDivElement;
 let root: ReturnType<typeof createRoot>;
@@ -107,6 +140,13 @@ beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   state.id = "a";
   state.focused = true;
+  state.gallery = undefined;
+  state.changeActive = undefined;
+  state.actions = [];
+  state.options = {};
+  state.setOptions.mockImplementation((options: typeof state.options) => {
+    state.options = options;
+  });
   state.back.mockReset();
   state.alert.mockReset();
   state.remove.mockReset();
@@ -128,37 +168,43 @@ beforeEach(() => {
 });
 afterEach(() => {
   if (mounted) act(() => root.unmount());
+  clearQueries();
   container.remove();
   vi.unstubAllGlobals();
 });
-async function render() {
-  await act(async () => root.render(<ArtifactDetail />));
+async function waitForTitle(title: string) {
+  await vi.waitFor(async () => {
+    await act(async () => flush());
+    expect(state.options.title).toBe(title);
+    expect(state.options.headerRight).toBeTypeOf("function");
+  });
 }
-async function pressHeader(label: string) {
+async function render(waitForReady = true) {
+  await act(async () => root.render(<ArtifactDetail />));
+  if (waitForReady) await waitForTitle(state.id);
+}
+async function openActions() {
   const node = document.createElement("div");
   const buttons = createRoot(node);
   act(() => buttons.render(state.options.headerRight?.()));
-  await act(async () => node.querySelector<HTMLElement>(`[aria-label="${label}"]`)!.click());
-  act(() => {
-    buttons.unmount();
-  });
+  act(() => node.querySelector<HTMLElement>('[aria-label="More"]')!.click());
+  act(() => buttons.unmount());
+  return state.actions;
+}
+async function pressHeader(label: string) {
+  const actions = await openActions();
+  await act(async () => actions.find((action) => action.text === label)!.onPress());
 }
 async function startDelete() {
   const pending = deferred();
   state.remove.mockReturnValue(pending.promise);
   await render();
-  const node = document.createElement("div");
-  const buttons = createRoot(node);
-  act(() => buttons.render(state.options.headerRight?.()));
-  act(() => node.querySelector<HTMLElement>('[aria-label="Delete"]')!.click());
-  act(() =>
+  await pressHeader("Delete");
+  await act(async () =>
     state.alert.mock
       .lastCall![2].find((button: { style: string }) => button.style === "destructive")
       .onPress(),
   );
-  act(() => {
-    buttons.unmount();
-  });
   expect(state.remove).toHaveBeenCalledWith("a");
   state.alert.mockClear();
   return pending;
@@ -181,6 +227,13 @@ it.each(["blur", "target", "unmount", "refocus"])("does not navigate after %s", 
     await render();
     if (change === "refocus") {
       state.focused = true;
+      state.gallery = undefined;
+      state.changeActive = undefined;
+      state.actions = [];
+      state.options = {};
+      state.setOptions.mockImplementation((options: typeof state.options) => {
+        state.options = options;
+      });
       await render();
     }
   }
@@ -204,26 +257,14 @@ it("offers Download for an image and saves its cached file", async () => {
   state.mimeType = "image/png";
   state.download.mockResolvedValue("saved");
   await render();
-  const node = document.createElement("div");
-  const buttons = createRoot(node);
-  act(() => buttons.render(state.options.headerRight?.()));
-  await act(async () => node.querySelector<HTMLElement>('[aria-label="Download"]')!.click());
+  await pressHeader("Download");
   expect(state.download).toHaveBeenCalledWith("file:///test", "image/png", "a");
   expect(state.alert).toHaveBeenCalledWith("Saved to Photos");
-  act(() => {
-    buttons.unmount();
-  });
 });
 it("does not offer Download for a text artifact", async () => {
   await render();
-  const node = document.createElement("div");
-  const buttons = createRoot(node);
-  act(() => buttons.render(state.options.headerRight?.()));
-  expect(node.querySelector('[aria-label="Download"]')).toBeNull();
-  expect(node.querySelector('[aria-label="Share"]')).not.toBeNull();
-  act(() => {
-    buttons.unmount();
-  });
+  const actions = await openActions();
+  expect(actions.map((action) => action.text)).toEqual(["Share", "Delete"]);
 });
 it("reloads a purged cached file before saving", async () => {
   state.mimeType = "image/png";
@@ -233,6 +274,7 @@ it("reloads a purged cached file before saving", async () => {
   await render();
   state.fileUri = "file:///fresh";
   await pressHeader("Download");
+  await vi.waitFor(() => expect(state.download).toHaveBeenCalled());
   expect(state.download).toHaveBeenCalledWith("file:///fresh", "image/png", "a");
 });
 it("keeps a save from reporting over the next artifact", async () => {
@@ -246,16 +288,22 @@ it("keeps a save from reporting over the next artifact", async () => {
   await act(async () => saving.resolve("saved"));
   expect(state.alert).not.toHaveBeenCalled();
 });
-it("starts the next artifact's save while one is pending", async () => {
+it("starts the next artifact's save and deduplicates a return to the first", async () => {
   state.mimeType = "image/png";
+  state.gallery = JSON.stringify(
+    ["a", "b"].map((id) => ({ id, name: id, mimeType: state.mimeType })),
+  );
   const saving = deferred<"saved">();
   state.download.mockReturnValueOnce(saving.promise).mockResolvedValue("shared");
   await render();
   await pressHeader("Download");
-  state.id = "b";
-  await render();
+  await act(async () => state.changeActive?.("b"));
+  await waitForTitle("b");
   await pressHeader("Download");
-  expect(state.download).toHaveBeenCalledTimes(2);
+  await act(async () => state.changeActive?.("a"));
+  await waitForTitle("a");
+  await pressHeader("Download");
+  expect(state.download.mock.calls.map(([, , name]) => name)).toEqual(["a", "b"]);
   await act(async () => saving.resolve("saved"));
   expect(state.alert).not.toHaveBeenCalled();
 });
@@ -266,11 +314,16 @@ it("does not load the artifact the route left", async () => {
       ? slow.promise
       : Promise.resolve({ id, name: id, mimeType: state.mimeType, contentBase64: "" }),
   );
-  await render();
+  await render(false);
+  await vi.waitFor(async () => {
+    await act(async () => flush());
+    expect(state.getArtifact).toHaveBeenCalledWith("a");
+  });
   state.id = "b";
   await render();
   expect(state.getArtifact.mock.calls.map(([id]) => id)).toEqual(["a", "b"]);
   await act(async () =>
     slow.resolve({ id: "a", name: "a", mimeType: state.mimeType, contentBase64: "" }),
   );
+  expect(state.options.title).toBe("b");
 });

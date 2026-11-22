@@ -1,6 +1,5 @@
 import { artifactPreviewKind } from "@rakazo/contracts";
 
-/** The fields the artifact pager needs without fetching content. */
 export type ArtifactGalleryItem = {
   id: string;
   name: string;
@@ -26,7 +25,6 @@ export function mediaArtifactGallery(
   return gallery;
 }
 
-/** A route param can be missing, a repeated deep-link value, or from an older app version. */
 export function parseArtifactGallery(value: string | string[] | undefined): ArtifactGalleryItem[] {
   const raw = Array.isArray(value) ? value[0] : value;
   if (!raw) return [];
@@ -37,28 +35,15 @@ export function parseArtifactGallery(value: string | string[] | undefined): Arti
     return [];
   }
   if (!Array.isArray(parsed)) return [];
-  const seen = new Set<string>();
-  const gallery: ArtifactGalleryItem[] = [];
+  const items: ArtifactGalleryItem[] = [];
   for (const entry of parsed) {
     if (!entry || typeof entry !== "object") continue;
-    const candidate = entry as Record<string, unknown>;
-    if (
-      typeof candidate.id !== "string" ||
-      !candidate.id ||
-      typeof candidate.name !== "string" ||
-      typeof candidate.mimeType !== "string" ||
-      seen.has(candidate.id) ||
-      !isMediaArtifact({ mimeType: candidate.mimeType })
-    )
-      continue;
-    seen.add(candidate.id);
-    gallery.push({
-      id: candidate.id,
-      name: candidate.name,
-      mimeType: candidate.mimeType,
-    });
+    const { id, name, mimeType } = entry as Record<string, unknown>;
+    if (typeof id === "string" && id && typeof name === "string" && typeof mimeType === "string") {
+      items.push({ id, name, mimeType });
+    }
   }
-  return gallery;
+  return mediaArtifactGallery(items);
 }
 
 export function galleryIndex(gallery: readonly ArtifactGalleryItem[], id: string): number {

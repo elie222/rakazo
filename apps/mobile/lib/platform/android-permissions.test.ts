@@ -7,6 +7,7 @@ type ConfigPlugin = string | [string, Record<string, unknown>];
 type MobileAppConfig = {
   expo: {
     plugins: ConfigPlugin[];
+    android: { blockedPermissions?: string[] };
     locales: Record<string, string>;
   };
 };
@@ -30,7 +31,7 @@ describe("Android permission config", () => {
   });
 
   it("asks for add-only photo library access with explicit copy", () => {
-    const plugins = readMobileAppConfig().expo.plugins;
+    const { plugins, android } = readMobileAppConfig().expo;
     const mediaLibrary = plugins.find(
       (plugin): plugin is [string, Record<string, unknown>] =>
         Array.isArray(plugin) && plugin[0] === "expo-media-library",
@@ -40,6 +41,9 @@ describe("Android permission config", () => {
     expect(typeof mediaLibrary?.[1].savePhotosPermission).toBe("string");
     expect(mediaLibrary?.[1].savePhotosPermission).not.toBe("");
     expect(mediaLibrary?.[1].granularPermissions).toEqual([]);
+    expect(android.blockedPermissions).toContain(
+      "android.permission.READ_MEDIA_VISUAL_USER_SELECTED",
+    );
   });
 
   it("translates the add-only photo library prompt", () => {

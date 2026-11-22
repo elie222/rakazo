@@ -2,6 +2,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const state = vi.hoisted(() => ({
   moduleAvailable: true,
+  platform: { OS: "ios", Version: 26 },
+  warn: vi.fn(),
+  getPermissions: vi.fn(),
   permission: { granted: true, canAskAgain: true },
   requestPermission: vi.fn(async () => ({ granted: true, canAskAgain: true })),
   create: vi.fn(async () => ({})),
@@ -13,6 +16,17 @@ const state = vi.hoisted(() => ({
 vi.mock("expo", () => ({
   requireOptionalNativeModule: () => (state.moduleAvailable ? {} : null),
 }));
+vi.mock("react-native", () => ({ Platform: state.platform }));
+vi.mock("@rakazo/logging/best-effort", () => ({
+  bestEffort: async (label: string, attempt: Promise<unknown>) => {
+    try {
+      return await attempt;
+    } catch (error) {
+      state.warn(label, error);
+      return undefined;
+    }
+  },
+}));
 vi.mock("expo-file-system", () => ({
   File: class {
     uri: string;
@@ -23,7 +37,7 @@ vi.mock("expo-file-system", () => ({
 }));
 vi.mock("expo-media-library", () => ({
   Asset: { create: state.create },
-  getPermissionsAsync: vi.fn(async () => state.permission),
+  getPermissionsAsync: state.getPermissions,
   requestPermissionsAsync: state.requestPermission,
 }));
 vi.mock("./artifact-open", () => ({
@@ -40,6 +54,10 @@ afterEach(() => {
 beforeEach(() => {
   vi.resetModules();
   state.moduleAvailable = true;
+  state.platform.OS = "ios";
+  state.platform.Version = 26;
+  state.warn.mockClear();
+  state.getPermissions.mockReset().mockImplementation(async () => state.permission);
   state.permission = { granted: true, canAskAgain: true };
   state.requestPermission.mockResolvedValue({ granted: true, canAskAgain: true });
   state.create.mockReset().mockResolvedValue({});
@@ -70,8 +88,19 @@ describe("downloadArtifactToDevice", () => {
     const api = await load();
     const result = await api.downloadArtifactToDevice("file:///clip.mp4", "video/mp4", "clip.mp4");
     expect(result).toBe("saved");
-    expect(state.requestPermission).toHaveBeenCalledWith(true, ["photo", "video"]);
+    expect(state.requestPermission).toHaveBeenCalledWith(true);
     expect(state.create).toHaveBeenCalledWith("file:///named/clip.mp4");
+  });
+
+  it("writes through MediaStore on Android 11 without requesting storage access", async () => {
+    state.platform.OS = "android";
+    state.platform.Version = 30;
+    const api = await load();
+    await expect(
+      api.downloadArtifactToDevice("file:///chart.png", "image/png", "chart.png"),
+    ).resolves.toBe("saved");
+    expect(state.getPermissions).not.toHaveBeenCalled();
+    expect(state.requestPermission).not.toHaveBeenCalled();
   });
 
   it("falls back to the system sheet when permission is denied", async () => {
@@ -88,7 +117,6 @@ describe("downloadArtifactToDevice", () => {
   });
 
   it("logs unexpected saves and falls back when saving an unsupported image fails", async () => {
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     state.create.mockRejectedValue(new Error("unsupported"));
     const api = await load();
     const result = await api.downloadArtifactToDevice(
@@ -97,7 +125,7 @@ describe("downloadArtifactToDevice", () => {
       "chart.webp",
     );
     expect(result).toBe("shared");
-    expect(warn).toHaveBeenCalled();
+    expect(state.warn).toHaveBeenCalledWith("Save artifact to photo library", expect.any(Error));
     expect(state.share).toHaveBeenCalledWith("file:///chart.webp", "image/webp", "chart.webp");
   });
 

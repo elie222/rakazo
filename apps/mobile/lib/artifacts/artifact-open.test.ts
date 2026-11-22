@@ -20,6 +20,9 @@ vi.mock("expo-file-system", () => {
     constructor(...parts: Array<string | { uri: string }>) {
       this.uri = parts.map((part) => (typeof part === "string" ? part : part.uri)).join("/");
     }
+    get parentDirectory() {
+      return new Directory(this.uri.slice(0, this.uri.lastIndexOf("/")));
+    }
     get name() {
       return this.uri.split("/").at(-1)!;
     }

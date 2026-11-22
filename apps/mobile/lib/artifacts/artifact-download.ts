@@ -1,52 +1,44 @@
-import { artifactPreviewKind } from "@rakazo/contracts";
+import { bestEffort } from "@rakazo/logging/best-effort";
 import { requireOptionalNativeModule } from "expo";
 import { File } from "expo-file-system";
+import { Platform } from "react-native";
+import { isMediaArtifact } from "./artifact-gallery";
 import { namedArtifactFile, shareLocalFile } from "./artifact-open";
 
-// The root of expo-media-library talks to the Next module. Older binaries that receive this
-// bundle over the air have neither the JS package nor the native module, so only import it
-// when the build actually has it.
+// An over-the-air bundle can run on a binary built before the native module was added.
 const mediaLibraryAvailable = Boolean(requireOptionalNativeModule("ExpoMediaLibraryNext"));
 
-class PhotoLibraryPermissionError extends Error {}
-
-async function saveToPhotoLibrary(uri: string, mimeType: string, name: string): Promise<void> {
+async function saveToPhotoLibrary(uri: string, mimeType: string, name: string): Promise<boolean> {
   const { Asset, getPermissionsAsync, requestPermissionsAsync } = await import(
     "expo-media-library"
   );
-  const permissions = ["photo", "video"] as const;
-  const current = await getPermissionsAsync(true, [...permissions]);
-  const granted =
-    current.granted ||
-    (current.canAskAgain && (await requestPermissionsAsync(true, [...permissions])).granted);
-  if (!granted) throw new PhotoLibraryPermissionError("Photo library access was not granted");
-  await Asset.create(namedArtifactFile(new File(uri), mimeType, name).uri);
+  // Expo uses MediaStore on Android 11 and later. Writing a new file needs no read or storage grant.
+  if (!(Platform.OS === "android" && Number(Platform.Version) >= 30)) {
+    const current = await getPermissionsAsync(true);
+    if (
+      !current.granted &&
+      !(current.canAskAgain && (await requestPermissionsAsync(true)).granted)
+    ) {
+      return false;
+    }
+  }
+  const file = namedArtifactFile(new File(uri), mimeType, name);
+  await Asset.create(file.uri);
+  return true;
 }
 
-/** Where the artifact went: the photo library, or the system share/save sheet. */
-export type ArtifactDownloadResult = "saved" | "shared";
-
-/**
- * Save an artifact to the device. Images and videos go to the photo library when the native
- * module is present; anything else (and any failure) uses the system share/save sheet, which is
- * the platform's general destination for arbitrary files.
- */
+/** Saves media to Photos when available, otherwise opens the system share sheet. */
 export async function downloadArtifactToDevice(
   uri: string,
   mimeType: string,
   name: string,
-): Promise<ArtifactDownloadResult> {
-  const kind = artifactPreviewKind(mimeType);
-  if (mediaLibraryAvailable && (kind === "image" || kind === "video")) {
-    try {
-      await saveToPhotoLibrary(uri, mimeType, name);
-      return "saved";
-    } catch (error) {
-      if (!(error instanceof PhotoLibraryPermissionError)) {
-        console.warn("Could not save artifact to the photo library", error);
-      }
-      // A denied permission or an unsupported file still gets the system save sheet.
-    }
+): Promise<"saved" | "shared"> {
+  if (mediaLibraryAvailable && isMediaArtifact({ mimeType })) {
+    const saved = await bestEffort(
+      "Save artifact to photo library",
+      saveToPhotoLibrary(uri, mimeType, name),
+    );
+    if (saved) return "saved";
   }
   await shareLocalFile(uri, mimeType, name);
   return "shared";

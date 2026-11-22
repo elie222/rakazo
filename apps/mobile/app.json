@@ -40,7 +40,6 @@
       [
         "expo-media-library",
         {
-          "photosPermission": "Rakazo uses your photo library so you can attach images to a bot message.",
           "savePhotosPermission": "Rakazo saves photos and videos you download from Artifacts to your photo library.",
           "granularPermissions": []
         }
@@ -141,6 +140,7 @@
       }
     },
     "android": {
+      "blockedPermissions": ["android.permission.READ_MEDIA_VISUAL_USER_SELECTED"],
       "package": "com.rakazo.app",
       "versionCode": 10,
       "softwareKeyboardLayoutMode": "resize",

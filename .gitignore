@@ -31,8 +31,6 @@ infra/sandboxes/supervisor/dist
 *.log
 .vercel
 .cache
-.codebase-memory/
-.gradle/
 artifacts
 !apps/mobile/lib/artifacts
 !packages/contracts/src/artifacts
