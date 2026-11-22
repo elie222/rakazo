@@ -8,6 +8,7 @@ import type { ToolCall } from "./run-tool-gate.js";
 import {
   botChainFromOwner,
   NO_USER_COMPUTER_ACCESS,
+  ownerDirectMessage,
   routineRunWatches,
   userComputerAct,
   userComputerCwd,
@@ -607,5 +608,109 @@ describe("botChainFromOwner", () => {
     c.fromSender({ trigger: "bot_message", sourceMessageId: "in-1" });
     await expect(c.check(all, 3)).resolves.toBe(false);
     expect(c.runReads).toHaveBeenCalledTimes(3);
+  });
+});
+
+describe("ownerDirectMessage", () => {
+  type Source = {
+    id: string;
+    role: string;
+    authorUserId: string | null;
+    clientNonce: string | null;
+    blocks: unknown;
+    threadId: string;
+    thread: { groupId: string | null; externalConversationId: string | null };
+  };
+  const run = { userId: "user-1", botId: "bot-1", threadId: "thread-1", sourceMessageId: "m-1" };
+  const linkedSource = (): Source => ({
+    id: "m-1",
+    role: "user",
+    authorUserId: "user-1",
+    clientNonce: "messaging:chat-a:h1",
+    blocks: [{ kind: "text", text: "build it" }],
+    threadId: "thread-1",
+    thread: { groupId: null, externalConversationId: null },
+  });
+  const check = (
+    source: Source | null,
+    identity: { provider: string; userId: string } | null = {
+      provider: "chat-a",
+      userId: "user-1",
+    },
+    input:
+      | typeof run
+      | { userId: string; botId: string; threadId: string; sourceMessageId: null } = run,
+  ) =>
+    ownerDirectMessage(
+      {
+        message: {
+          findUnique: async ({ where }: { where: { id: string } }) =>
+            source && source.id === where.id ? source : null,
+        },
+        messagingIdentity: {
+          findUnique: async ({ where }: { where: { botId: string } }) =>
+            where.botId === "bot-1" ? identity : null,
+        },
+      } as never,
+      input,
+    );
+
+  it("is true for the owner's own message from their linked chat", async () => {
+    await expect(check(linkedSource())).resolves.toBe(true);
+  });
+
+  it("refuses a group chat message", async () => {
+    const source = linkedSource();
+    source.blocks = [
+      ...(source.blocks as unknown[]),
+      {
+        kind: "channel_message",
+        provider: "chat-a",
+        channelId: "c1",
+        fromAddress: "a",
+        fromLabel: "A",
+        text: "x",
+        hop: 0,
+      },
+    ];
+    await expect(check(source)).resolves.toBe(false);
+  });
+
+  it("refuses a team chat conversation", async () => {
+    const source = linkedSource();
+    source.thread.externalConversationId = "conv-1";
+    await expect(check(source)).resolves.toBe(false);
+  });
+
+  it("refuses another nonce shape", async () => {
+    for (const clientNonce of [
+      "messaging-peer:m9:bot-1",
+      "messaging:bot-1:abc",
+      "teamchat-run:chat-a:e1",
+      null,
+    ]) {
+      await expect(check({ ...linkedSource(), clientNonce })).resolves.toBe(false);
+    }
+  });
+
+  it("refuses when the bot's link is missing or belongs to someone else", async () => {
+    await expect(check(linkedSource(), null)).resolves.toBe(false);
+    await expect(check(linkedSource(), { provider: "chat-a", userId: "user-2" })).resolves.toBe(
+      false,
+    );
+  });
+
+  it("refuses another author, a bot message, another thread, a group thread or no source", async () => {
+    await expect(check({ ...linkedSource(), authorUserId: "user-2" })).resolves.toBe(false);
+    await expect(check({ ...linkedSource(), authorUserId: null })).resolves.toBe(false);
+    await expect(check({ ...linkedSource(), role: "bot" })).resolves.toBe(false);
+    await expect(check({ ...linkedSource(), threadId: "thread-9" })).resolves.toBe(false);
+    const grouped = linkedSource();
+    grouped.thread.groupId = "g1";
+    await expect(check(grouped)).resolves.toBe(false);
+    await expect(check(null)).resolves.toBe(false);
+    await expect(check(linkedSource(), undefined, { ...run, sourceMessageId: null })).resolves.toBe(
+      false,
+    );
   });
 });

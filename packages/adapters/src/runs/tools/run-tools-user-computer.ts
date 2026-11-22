@@ -27,6 +27,7 @@ import type {
   HostScreenObservation,
 } from "../../computers/screens/host-screen.js";
 import { HOST_SCREEN_MAX_ACTIONS, hostScreenAction } from "../../computers/screens/host-screen.js";
+import { messagingMessageClientNonce } from "../../messaging/intake/messaging-nonce.js";
 import { ROUTINE_WATCH_NOTE_START } from "../../routines/routine-watch.prompt.js";
 import type { RunContext } from "../assembly/run-context.js";
 import type { ToolCall } from "./run-tool-gate.js";
@@ -109,6 +110,49 @@ export async function routineRunWatches(prisma: PrismaClient, runId: string): Pr
     select: { task: { select: { prompt: true } }, routine: { select: { watch: true } } },
   });
   return !run || !scheduledRoutine(run);
+}
+
+/**
+ * Whether a chat-app run's source is the owner's own message from the chat app they linked to this
+ * bot: in the run's own thread, written by them, outside a group or team chat. The link proves the
+ * sender: a 1:1 chat-app message reaches a bot only from the address bound to it by a code its
+ * owner made while signed in.
+ */
+export async function ownerDirectMessage(
+  prisma: PrismaClient,
+  run: { userId: string; botId: string; threadId: string; sourceMessageId: string | null },
+): Promise<boolean> {
+  if (!run.sourceMessageId) return false;
+  const [source, link] = await Promise.all([
+    prisma.message.findUnique({
+      where: { id: run.sourceMessageId },
+      select: {
+        id: true,
+        role: true,
+        authorUserId: true,
+        clientNonce: true,
+        blocks: true,
+        threadId: true,
+        thread: { select: { groupId: true, externalConversationId: true } },
+      },
+    }),
+    prisma.messagingIdentity.findUnique({
+      where: { botId: run.botId },
+      select: { provider: true, userId: true },
+    }),
+  ]);
+  return Boolean(
+    source &&
+      link &&
+      link.userId === run.userId &&
+      source.threadId === run.threadId &&
+      source.role === "user" &&
+      source.authorUserId === run.userId &&
+      !source.thread.groupId &&
+      !source.thread.externalConversationId &&
+      source.clientNonce?.startsWith(messagingMessageClientNonce(link.provider, "")) &&
+      !mayBeChannelMessage(source),
+  );
 }
 
 /** Outside tasks whose text, once handed into a run, keeps it from the owner's computer. */
