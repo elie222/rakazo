@@ -163,17 +163,13 @@ export function createAgentSkillsService(
     return row;
   }
 
-  async function ownedWithFiles(
-    actor: Actor,
-    skillId: string,
-    db: Prisma.TransactionClient = prisma,
-  ) {
-    const row = await db.agentSkill.findFirst({
-      where: { id: skillId, ...availableInSpace(actor) },
+  function listAvailableRows(actor: Actor) {
+    return prisma.agentSkill.findMany({
+      where: availableInSpace(actor),
+      omit: { files: true },
       include: { availableIn: AVAILABILITY_SELECT },
+      orderBy: [{ name: "asc" }, { id: "asc" }],
     });
-    if (!row) throw new IsolationError();
-    return row;
   }
 
   async function updateFile(
@@ -181,9 +177,14 @@ export function createAgentSkillsService(
     skillId: string,
     file: NonNullable<UpdateAgentSkillInput["file"]>,
   ): Promise<AgentSkill> {
+    const where = { id: skillId, ...availableInSpace(actor) };
     return withTransactionRetry(() =>
       prisma.$transaction(async (tx) => {
-        const existing = await ownedWithFiles(actor, skillId, tx);
+        const existing = await tx.agentSkill.findFirst({
+          where,
+          include: { availableIn: AVAILABILITY_SELECT },
+        });
+        if (!existing) throw new IsolationError();
         if (existing.source !== "user") {
           throw new ClientError("BAD_REQUEST", "Only personal skills can have files updated.");
         }
@@ -202,7 +203,6 @@ export function createAgentSkillsService(
 
         const files = { ...current, [file.path]: file.content };
         const contents = Object.values(files);
-        // Use the same storage budget as plugin skill companions.
         if (contents.length > MAX_SKILL_FILES) {
           throw new ClientError(
             "BAD_REQUEST",
@@ -222,8 +222,7 @@ export function createAgentSkillsService(
         // Compare the file map itself. Document edits can commit without invalidating this write.
         const updated = await tx.agentSkill.updateMany({
           where: {
-            id: skillId,
-            ...availableInSpace(actor),
+            ...where,
             source: "user",
             files: { equals: existing.files ?? Prisma.AnyNull },
           },
@@ -239,24 +238,14 @@ export function createAgentSkillsService(
 
   return {
     async list(actor: Actor): Promise<Omit<AgentSkill, "content">[]> {
-      const rows = await prisma.agentSkill.findMany({
-        where: availableInSpace(actor),
-        omit: { files: true },
-        include: { availableIn: AVAILABILITY_SELECT },
-        orderBy: [{ name: "asc" }, { id: "asc" }],
-      });
+      const rows = await listAvailableRows(actor);
       return mergeBuiltinSkills(builtinCatalog(), rows.map(mapAgentSkill)).map(
         ({ content: _content, ...entry }) => entry,
       );
     },
 
     async listWithContent(actor: Actor): Promise<AgentSkill[]> {
-      const rows = await prisma.agentSkill.findMany({
-        where: availableInSpace(actor),
-        omit: { files: true },
-        include: { availableIn: AVAILABILITY_SELECT },
-        orderBy: [{ name: "asc" }, { id: "asc" }],
-      });
+      const rows = await listAvailableRows(actor);
       return mergeBuiltinSkills(builtinCatalog(), rows.map(mapAgentSkill));
     },
 
@@ -270,12 +259,7 @@ export function createAgentSkillsService(
         return mapAgentSkill(await owned(actor, input.skillId));
       }
       const name = input.name?.trim() ?? "";
-      const rows = await prisma.agentSkill.findMany({
-        where: availableInSpace(actor),
-        omit: { files: true },
-        include: { availableIn: AVAILABILITY_SELECT },
-        orderBy: [{ name: "asc" }, { id: "asc" }],
-      });
+      const rows = await listAvailableRows(actor);
       const row = findSkillByName(rows, name);
       if (row) return mapAgentSkill(row);
       const builtin = findSkillByName(builtinCatalog(), name);

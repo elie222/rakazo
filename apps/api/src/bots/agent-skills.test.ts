@@ -32,14 +32,14 @@ function savedSkill(name: string, source = "user", files: Prisma.JsonValue = nul
   };
 }
 
-type SavedSkillRow = ReturnType<typeof savedSkill> & { allSpaces?: boolean };
+type SavedSkillRow = ReturnType<typeof savedSkill>;
 
 function setup(rows: SavedSkillRow[] = []) {
   type Where = Prisma.AgentSkillWhereInput;
   const matches = (row: SavedSkillRow, where: Where): boolean =>
     Object.entries(where).every(([key, value]) => {
       if (key === "OR") {
-        return where.OR!.some((branch) => matches(row, branch));
+        return where.OR?.some((branch) => matches(row, branch)) ?? false;
       }
       if (key === "availableIn") {
         return row.availableIn.some((entry) => entry.spaceId === where.availableIn?.some?.spaceId);
@@ -52,18 +52,13 @@ function setup(rows: SavedSkillRow[] = []) {
       }
       return row[key as keyof typeof row] === value;
     });
-  const project = (row: SavedSkillRow, omit?: { files?: boolean }) => {
-    const copy = { ...row };
-    if (omit?.files) delete (copy as Partial<SavedSkillRow>).files;
-    return copy;
-  };
   const agentSkill = {
-    findMany: vi.fn(async ({ where, omit }: { where: Where; omit?: { files?: boolean } }) =>
-      rows.filter((row) => matches(row, where)).map((row) => project(row, omit)),
+    findMany: vi.fn(async ({ where }: { where: Where }) =>
+      rows.filter((row) => matches(row, where)).map((row) => ({ ...row })),
     ),
-    findFirst: vi.fn(async ({ where, omit }: { where: Where; omit?: { files?: boolean } }) => {
+    findFirst: vi.fn(async ({ where }: { where: Where }) => {
       const row = rows.find((row) => matches(row, where));
-      return row ? project(row, omit) : null;
+      return row ? { ...row } : null;
     }),
     updateMany: vi.fn(async ({ where, data }: { where: Where; data: object }) => {
       const row = rows.find((row) => matches(row, where));
