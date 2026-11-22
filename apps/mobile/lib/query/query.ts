@@ -56,6 +56,7 @@ function scopedRpcQuery<P extends RpcPath>(
   input: RpcInput<P> | undefined,
   space: RpcReadMeta["space"],
   spaceId?: string,
+  timeoutMs?: number,
 ) {
   type T = RpcOutput<P>;
   const scope = scopeKey();
@@ -71,7 +72,10 @@ function scopedRpcQuery<P extends RpcPath>(
     if (scopeKey().join("\n") !== scope.join("\n"))
       throw new Error(t`Something went wrong. Try again.`);
     const requestContext = await captureApiRequestContext(spaceId);
-    const answer = await rpc(proc, ...([input, { signal, requestContext }] as RpcArgs<P>));
+    const answer = await rpc(
+      proc,
+      ...([input, { signal, requestContext, timeoutMs }] as RpcArgs<P>),
+    );
     if (scopeKey().join("\n") !== scope.join("\n"))
       throw new Error(t`Something went wrong. Try again.`);
     return answer;
@@ -83,9 +87,14 @@ function scopedRpcQuery<P extends RpcPath>(
  * One rpc read in the current scope (server, session, space). Its answer is only cached under
  * the scope it was sent in. A `spaceId` sends it to that Space instead of the selected one.
  */
-export function rpcQuery<P extends RpcPath>(proc: P, input?: RpcInput<P>, spaceId?: string) {
+export function rpcQuery<P extends RpcPath>(
+  proc: P,
+  input?: RpcInput<P>,
+  spaceId?: string,
+  options?: { timeoutMs?: number },
+) {
   const space = { id: spaceId ?? selectedSpaceId() ?? null };
-  return scopedRpcQuery(() => spaceScope(spaceId), proc, input, space, spaceId);
+  return scopedRpcQuery(() => spaceScope(spaceId), proc, input, space, spaceId, options?.timeoutMs);
 }
 
 /** One rpc read of the signed-in user's own data, the same in every space: cached once per session. */
