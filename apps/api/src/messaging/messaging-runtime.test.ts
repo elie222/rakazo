@@ -8,15 +8,12 @@ import { createInboundAttachmentStores, startMessagingRuntime } from "./messagin
 const directMessages = vi.hoisted(() => ({
   prepareHandOff: vi.fn(async () => undefined),
   handOffPending: vi.fn(async () => undefined),
+  inbound: vi.fn(async () => undefined),
 }));
 
 vi.mock("./messaging-inbound.js", async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
-  createMessagingInboundHandler: () =>
-    Object.assign(
-      vi.fn(async () => undefined),
-      directMessages,
-    ),
+  createMessagingInboundHandler: () => Object.assign(directMessages.inbound, directMessages),
 }));
 
 describe("startMessagingRuntime", () => {
@@ -54,6 +51,117 @@ describe("startMessagingRuntime", () => {
     expect(directMessages.prepareHandOff.mock.invocationCallOrder[0]).toBeLessThan(
       directMessages.handOffPending.mock.invocationCallOrder[0]!,
     );
+  });
+});
+
+describe("inbound routing", () => {
+  /** Starts the runtime far enough to capture the handler the messaging surface calls. */
+  async function inboundHandler(
+    env: Record<string, unknown>,
+    platform: { provider: string; teamRooms: Record<string, unknown> } = {
+      provider: "discord",
+      teamRooms: { requiresWorkspace: true },
+    },
+  ) {
+    const handlers: ((event: unknown) => Promise<void>)[] = [];
+    const messaging = {
+      onInbound: (handler: (event: unknown) => Promise<void>) => handlers.push(handler),
+      stopReceiving: vi.fn(async () => undefined),
+      shutdown: vi.fn(async () => undefined),
+      // What a mounted room-style platform declares about its rooms.
+      platforms: () => [
+        {
+          ...platform,
+          capabilities: { direct: true, groups: true, receipt: "reaction" },
+        },
+      ],
+      acknowledge: vi.fn(),
+      handleWebhook: vi.fn(),
+      startReceiving: vi.fn(async () => undefined),
+    };
+    await startMessagingRuntime({
+      app: new Hono(),
+      prisma: {} as never,
+      events: {} as never,
+      jobs: {} as never,
+      sandbox: {} as never,
+      secrets: {} as never,
+      artifacts: {} as never,
+      env: {
+        maxUploadSizeBytes: 10,
+        messagingOpenSignup: false,
+        teamChatBotIds: {},
+        ...env,
+      } as never,
+      messaging: messaging as never,
+      messagingInstallations: undefined,
+      delivery: {} as never,
+      teamChat: {} as never,
+    });
+    return handlers[0]!;
+  }
+
+  const guildMessage = {
+    type: "message",
+    provider: "discord",
+    handle: "m-1",
+    threadId: "discord:G1:C1",
+    isDirect: false,
+    workspaceId: "G1",
+    conversationKey: "discord:G1:C1",
+    content: "@agent hello",
+    mentionsBot: true,
+  };
+
+  it("drops a Discord guild message when no bot owns guild channels", async () => {
+    const handle = await inboundHandler({});
+    await handle(guildMessage);
+
+    // Nothing answers, and nothing posts the personal-linking intro into the channel.
+    expect(directMessages.inbound).not.toHaveBeenCalled();
+  });
+
+  it("keeps routing a Slack channel to personal linking with no team-chat bot", async () => {
+    // A Slack channel could be linked as a personal group before team chat existed,
+    // and a deployment with no team-chat bot must not lose that.
+    const handle = await inboundHandler(
+      {},
+      { provider: "slack", teamRooms: { requiresWorkspace: true, personalLinking: true } },
+    );
+    await handle({
+      ...guildMessage,
+      provider: "slack",
+      threadId: "slack:C1",
+      workspaceId: "T1",
+      conversationKey: "slack:C1",
+    });
+
+    expect(directMessages.inbound).toHaveBeenCalledOnce();
+  });
+
+  it("keeps group linking on a platform that has no team rooms", async () => {
+    // Only a declared team room can be closed to linking; a group chat elsewhere is
+    // still a personal group to link.
+    const handle = await inboundHandler(
+      {},
+      { provider: "sendblue", teamRooms: undefined as never },
+    );
+    await handle({
+      ...guildMessage,
+      provider: "sendblue",
+      threadId: "sendblue:group-1",
+      workspaceId: undefined,
+      conversationKey: "sendblue:group-1",
+    });
+
+    expect(directMessages.inbound).toHaveBeenCalledOnce();
+  });
+
+  it("still routes a Discord direct message to personal linking", async () => {
+    const handle = await inboundHandler({});
+    await handle({ ...guildMessage, threadId: "discord:@me:D1", isDirect: true });
+
+    expect(directMessages.inbound).toHaveBeenCalledOnce();
   });
 });
 

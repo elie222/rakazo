@@ -1,0 +1,6 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": { "skipLibCheck": true, "incremental": false, "types": [], "noEmit": true },
+  "include": ["src/providers/**/*.ts"],
+  "exclude": ["node_modules", "**/*.test.ts"]
+}

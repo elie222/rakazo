@@ -87,6 +87,8 @@ function matches(row: object, where: Where = {}): boolean {
       return equal(value, condition);
     const operator = condition as Where;
     if ("in" in operator) return (operator.in as unknown[]).includes(value);
+    if ("startsWith" in operator)
+      return typeof value === "string" && value.startsWith(String(operator.startsWith));
     if ("not" in operator) return !equal(value, operator.not);
     return value !== null && typeof value === "object" && matches(value, operator);
   });
@@ -890,6 +892,13 @@ describe("TeamChatBridge receipts", () => {
     await expect(handled()).resolves.toBe(false);
     chat.outbound[0]!.providerHandle = "1700.2";
     await expect(handled()).resolves.toBe(true);
+    // A long answer's later parts still count: the first part out is not the answer.
+    chat.outbound.push({ idempotencyKey: `external-message:${id}:2`, status: "queued" });
+    await expect(handled()).resolves.toBe(false);
+    chat.outbound[1]!.status = "sent";
+    chat.outbound[1]!.providerHandle = "1700.3";
+    await expect(handled()).resolves.toBe(true);
+    chat.outbound.length = 1;
     chat.outbound.push({ idempotencyKey: `external-message:${id}:failure`, status: "retry" });
     await expect(handled()).resolves.toBe(false);
     // An ambient run that chose silence records no reply.

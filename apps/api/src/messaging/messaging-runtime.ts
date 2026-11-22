@@ -3,6 +3,7 @@ import type {
   JobPublisher,
   JobQueueOrder,
   MessagingInboundEvent,
+  MessagingInboundMessage,
   MessagingSurface,
   SandboxProvider,
   SecretStore,
@@ -24,7 +25,8 @@ import { createMessagingReceipts } from "./messaging-receipts.js";
 import { mountMessagingWebhookRoutes } from "./messaging-webhook.js";
 import { TeamChatBridge } from "./team-chat-bridge.js";
 import { createTeamChatInboundHandler } from "./team-chat-inbound.js";
-import { prefersTeamChatSurface } from "./team-chat-startup.js";
+import type { TeamRoomPolicy } from "./team-chat-startup.js";
+import { allowsPersonalLinking, prefersTeamChatSurface } from "./team-chat-startup.js";
 
 /**
  * Messaging and team chat for one API process; `stopReceiving` ends polling while replies still
@@ -94,9 +96,13 @@ export async function startMessagingRuntime({
   const inbound = createMessagingInboundHandler(inboundDeps);
   const handleTeamChatInbound = createTeamChatInboundHandler(inboundDeps, inbound, teamChat);
   const bridges = new Map<string, TeamChatBridge>();
-  /** One bridge per bot and connected workspace; it holds no timers, so it is never stopped. */
-  const bridgeFor = (botId: string, installation?: { id: string; workspaceId: string }) => {
-    const key = installation?.id ?? `static:${botId}`;
+  /** One bridge per provider, bot and connected workspace; it holds no timers, so it is never stopped. */
+  const bridgeFor = (
+    providerId: string,
+    botId: string,
+    installation?: { id: string; workspaceId: string },
+  ) => {
+    const key = installation?.id ?? `static:${providerId}:${botId}`;
     let bridge = bridges.get(key);
     if (!bridge) {
       bridge = new TeamChatBridge({
@@ -105,7 +111,7 @@ export async function startMessagingRuntime({
         jobs,
         fetchThreadHistory: createMessagingTeamChatHistory(messaging),
         storeAttachment: stores.teamChat,
-        providerId: "slack",
+        providerId,
         botId,
         workspaceId: installation?.workspaceId,
         isAvailable: installation
@@ -117,6 +123,30 @@ export async function startMessagingRuntime({
     }
     return bridge;
   };
+  /**
+   * The bot that owns shared rooms for one provider. A deployment can run one
+   * platform's rooms on a bot of their own without claiming another's, and falls
+   * back to the provider-neutral setting when it configures only that.
+   */
+  const teamChatBotIdFor = (provider: string): string | undefined =>
+    env.teamChatBotIds[provider] ?? env.teamChatBotId;
+  /** The room policy each mounted platform declares, read once from its descriptor. */
+  const roomsByProvider = new Map(
+    messaging.platforms().map((platform) => [platform.provider, platform.teamRooms] as const),
+  );
+  const teamRooms: TeamRoomPolicy = (provider) => roomsByProvider.get(provider) ?? undefined;
+  /** Said once per room: an operator with no team-chat bot otherwise sees nothing. */
+  const warnedRooms = new Set<string>();
+  const warnRoomWithoutBot = (event: Pick<MessagingInboundMessage, "provider" | "workspaceId">) => {
+    const key = `${event.provider}:${event.workspaceId ?? ""}`;
+    if (warnedRooms.has(key)) return;
+    warnedRooms.add(key);
+    getLogger().warn("shared room message ignored without a team chat bot", {
+      provider: event.provider,
+      workspaceId: event.workspaceId,
+      hint: "set the platform's team chat bot (or TEAM_CHAT_BOT_ID) to answer in shared rooms",
+    });
+  };
   const handleInbound = async (event: MessagingInboundEvent) => {
     if (event.type !== "message") {
       await applyMessagingOutboundStatus(prisma, event);
@@ -125,7 +155,7 @@ export async function startMessagingRuntime({
     if (event.installationBotId && !event.isDirect) {
       if (!event.installationId || !event.workspaceId) return;
       await handleTeamChatInbound(
-        bridgeFor(event.installationBotId, {
+        bridgeFor(event.provider, event.installationBotId, {
           id: event.installationId,
           workspaceId: event.workspaceId,
         }),
@@ -133,13 +163,24 @@ export async function startMessagingRuntime({
       );
       return;
     }
-    if (
-      !event.installationBotId &&
-      env.teamChatBotId &&
-      prefersTeamChatSurface(event, env.teamChatBotId)
-    ) {
-      await handleTeamChatInbound(bridgeFor(env.teamChatBotId), event);
-      return;
+    if (!event.installationBotId) {
+      const botId = teamChatBotIdFor(event.provider);
+      if (botId && prefersTeamChatSurface(event, botId, teamRooms)) {
+        await handleTeamChatInbound(bridgeFor(event.provider, botId), event);
+        return;
+      }
+      // A team room that cannot also be a linked group needs the bot that owns it:
+      // without it nothing can answer there, and the personal channel-linking flow has
+      // no inviter to ask, so the room would only get the one-time intro note. A
+      // platform with no team rooms at all keeps its personal group linking.
+      if (
+        !event.isDirect &&
+        teamRooms(event.provider) &&
+        !allowsPersonalLinking(event.provider, teamRooms)
+      ) {
+        warnRoomWithoutBot(event);
+        return;
+      }
     }
     await inbound(event);
   };
