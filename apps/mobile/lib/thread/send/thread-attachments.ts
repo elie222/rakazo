@@ -6,7 +6,8 @@ import { attachmentsForThread } from "@rakazo/core";
 import type { RefObject } from "react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { ThreadComposerHandle } from "../../../components/composer/thread-composer";
-import { registerSessionDiskCache } from "../../api/session";
+import { selectedSpaceId } from "../../api/api";
+import { currentSessionGeneration, registerSessionDiskCache } from "../../api/session";
 import { errorText } from "../../api/user-error";
 import type { ComposerDraftScope } from "../../composer/composer-draft";
 import {
@@ -247,13 +248,15 @@ export function useIncomingShareImport({
   attachments,
   composerRef,
   readOnly,
-  threadKey,
+  botId,
+  sessionEpoch,
   uploadConfig,
 }: {
   attachments: ReturnType<typeof useThreadAttachments>;
   composerRef: RefObject<ThreadComposerHandle | null>;
   readOnly: boolean;
-  threadKey: string | undefined;
+  botId: string | undefined;
+  sessionEpoch: number;
   uploadConfig?: { maxUploadSizeBytes?: number; maxAttachmentsPerMessage?: number };
 }) {
   const {
@@ -270,20 +273,25 @@ export function useIncomingShareImport({
   // A warm link to another chat commits before this effect's cleanup runs; a read that settles
   // in between must not land in the state the new chat is about to replace. Set at commit, so a
   // render of another chat that React discards leaves the committed chat's read in place.
-  const committedThread = useRef(threadKey);
+  const spaceId = selectedSpaceId();
+  const committedTarget = useRef({ botId, spaceId, sessionEpoch, readOnly });
   useLayoutEffect(() => {
-    committedThread.current = threadKey;
-  }, [threadKey]);
+    committedTarget.current = { botId, spaceId, sessionEpoch, readOnly };
+  }, [botId, spaceId, sessionEpoch, readOnly]);
   useEffect(() => {
-    if (!threadKey || readOnly || !uploadConfig || importingShare.current) return;
+    if (
+      !botId ||
+      readOnly ||
+      !uploadConfig ||
+      importingShare.current ||
+      currentSessionGeneration() !== sessionEpoch ||
+      selectedSpaceId() !== spaceId
+    )
+      return;
     const interrupted = interruptedShare.current;
     interruptedShare.current = null;
-    const share = takeIncomingShare();
+    const share = takeIncomingShare({ botId, spaceId, sessionEpoch }, interrupted?.generation);
     if (!share) return;
-    if (interrupted && share.generation !== interrupted.generation) {
-      retryIncomingShare(share);
-      return;
-    }
     let active = true;
     importingShare.current = true;
     setShareImporting(true);
@@ -295,7 +303,17 @@ export function useIncomingShareImport({
           attachmentMaxBytes(uploadConfig),
           attachmentMaxCount(uploadConfig),
         );
-        if (!active || committedThread.current !== threadKey || !isIncomingShareCurrent(share)) {
+        const current = committedTarget.current;
+        if (
+          !active ||
+          current.readOnly ||
+          current.botId !== botId ||
+          current.spaceId !== spaceId ||
+          current.sessionEpoch !== sessionEpoch ||
+          currentSessionGeneration() !== sessionEpoch ||
+          selectedSpaceId() !== spaceId ||
+          !isIncomingShareCurrent(share)
+        ) {
           retryIncomingShare(share);
           return;
         }
@@ -306,11 +324,11 @@ export function useIncomingShareImport({
         const maxCount = attachmentMaxCount(uploadConfig);
         const room = Math.max(
           0,
-          maxCount - attachmentsForThread(pendingAttachmentsRef.current, threadKey).length,
+          maxCount - attachmentsForThread(pendingAttachmentsRef.current, botId).length,
         );
         const accepted = result.attachments
           .slice(0, room)
-          .map((attachment) => ({ ...attachment, threadKey }));
+          .map((attachment) => ({ ...attachment, threadKey: botId }));
         if (accepted.length) {
           pendingAttachmentsRef.current = [...pendingAttachmentsRef.current, ...accepted];
           setPendingAttachments((current) => [...current, ...accepted]);
@@ -354,5 +372,5 @@ export function useIncomingShareImport({
     return () => {
       active = false;
     };
-  }, [threadKey, readOnly, uploadConfig, retryTick]);
+  }, [botId, spaceId, sessionEpoch, readOnly, uploadConfig, retryTick]);
 }

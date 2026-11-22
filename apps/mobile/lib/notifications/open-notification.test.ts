@@ -161,7 +161,7 @@ describe("opening a notification tap", () => {
     );
   });
 
-  it("opens a notification over the share picker without taking its pending share", async () => {
+  it("opens a notification above the protected share picker with ordinary chat parameters", async () => {
     vi.mocked(loadSessionToken).mockResolvedValue("token");
     navigation.getRootState.mockReturnValue(
       rootWithChatStack([
@@ -177,7 +177,7 @@ describe("opening a notification tap", () => {
     expect(router.push).toHaveBeenCalledExactlyOnceWith(
       {
         pathname: "/thread",
-        params: { botId: "bot-1", threadId: "thread-1", preserveIncomingShare: "1" },
+        params: { botId: "bot-1", threadId: "thread-1" },
       },
       { dangerouslySingular: threadRouteId },
     );

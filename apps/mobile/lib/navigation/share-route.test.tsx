@@ -14,6 +14,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const state = vi.hoisted(() => ({
   pending: { text: "https://example.com", files: [], arrivedAt: 0, generation: 1 } as unknown,
   cancel: vi.fn(),
+  select: vi.fn(),
+  forgetSelected: vi.fn(),
+  beforeLeave: undefined as (() => void) | undefined,
+  spaceId: "space-1" as string | null,
+  epoch: 1,
   dismissTo: vi.fn(),
   reset: vi.fn(),
   prevented: new Set<string>() as ReadonlySet<string>,
@@ -57,6 +62,9 @@ function NavigationHarness() {
   useLayoutEffect(() => {
     if (blocked) state.listener?.({ data: { action: blocked } });
   }, [blocked]);
+  useLayoutEffect(() => {
+    if (!state.prevented.has("share")) state.beforeLeave?.();
+  });
   return (
     <NavigationContext.Provider
       value={navigation as unknown as ComponentProps<typeof NavigationContext.Provider>["value"]}
@@ -71,6 +79,18 @@ vi.mock("../composer/incoming-share", () => ({
   getIncomingShare: () => state.pending,
   subscribeIncomingShare: () => () => {},
   cancelIncomingShare: state.cancel,
+  forgetSelectedIncomingShare: state.forgetSelected,
+  selectIncomingShare: (share: unknown, target: unknown) => {
+    state.select(share, target, state.prevented.has("share"));
+    return share === state.pending;
+  },
+}));
+vi.mock("../api/api", () => ({ selectedSpaceId: () => state.spaceId }));
+vi.mock("../api/session", () => ({
+  currentReadySessionGeneration: () => state.epoch,
+  currentSessionGeneration: () => state.epoch,
+  registerSessionDiskCache: vi.fn(),
+  subscribeSessionGeneration: () => () => {},
 }));
 vi.mock("../native/native", () => ({ useMobileTokens: () => ({}) }));
 vi.mock("react-native-safe-area-context", () => ({ useSafeAreaInsets: () => ({ top: 0 }) }));
@@ -112,6 +132,9 @@ beforeEach(() => vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true));
 afterEach(async () => {
   await act(async () => root?.unmount());
   state.pending = { text: "https://example.com", files: [], arrivedAt: 0, generation: 1 };
+  state.beforeLeave = undefined;
+  state.spaceId = "space-1";
+  state.epoch = 1;
   vi.clearAllMocks();
   vi.unstubAllGlobals();
 });
@@ -163,11 +186,19 @@ describe("share route", () => {
     expect(state.cancel).not.toHaveBeenCalled();
     expect(state.dismissTo).not.toHaveBeenCalled();
     expect(state.pending).toBe(share);
+    expect(state.select).toHaveBeenCalledExactlyOnceWith(
+      share,
+      { botId: "example", spaceId: "space-1", sessionEpoch: 1 },
+      false,
+    );
     expect(state.reset).toHaveBeenCalledExactlyOnceWith({
       type: "RESET",
       payload: {
         index: 1,
-        routes: [{ name: "index" }, { name: "thread", params: { botId: "example", name: "Bot" } }],
+        routes: [
+          { name: "index" },
+          { name: "thread", params: { botId: "example", name: "Bot", spaceId: "space-1" } },
+        ],
       },
     });
   });
@@ -178,6 +209,40 @@ describe("share route", () => {
       container.querySelectorAll("button")[1]?.click();
     });
     expect(state.reset).toHaveBeenCalledOnce();
+    expect(state.select).toHaveBeenCalledOnce();
     expect(state.cancel).not.toHaveBeenCalled();
+  });
+  it("does not let a delayed selection claim a replacement share before the picker updates", async () => {
+    await render();
+    const replacement = { text: "New share", files: [], arrivedAt: 1, generation: 2 };
+    state.pending = replacement;
+    await act(async () => container.querySelectorAll("button")[1]?.click());
+
+    expect(state.reset).not.toHaveBeenCalled();
+    expect(state.select).not.toHaveBeenCalled();
+    expect(state.pending).toBe(replacement);
+    expect(state.prevented.has("share")).toBe(true);
+  });
+  it("restores the picker guard if another share arrives before the exit commits", async () => {
+    await render();
+    const replacement = { text: "New share", files: [], arrivedAt: 1, generation: 2 };
+    state.beforeLeave = () => {
+      state.beforeLeave = undefined;
+      state.pending = replacement;
+    };
+    await act(async () => container.querySelectorAll("button")[1]?.click());
+
+    expect(state.reset).not.toHaveBeenCalled();
+    expect(state.cancel).not.toHaveBeenCalled();
+    expect(state.pending).toBe(replacement);
+    expect(state.prevented.has("share")).toBe(true);
+
+    await act(async () => container.querySelectorAll("button")[1]?.click());
+    expect(state.select).toHaveBeenLastCalledWith(
+      replacement,
+      { botId: "example", spaceId: "space-1", sessionEpoch: 1 },
+      false,
+    );
+    expect(state.reset).toHaveBeenCalledOnce();
   });
 });

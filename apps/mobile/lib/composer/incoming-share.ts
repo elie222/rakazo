@@ -11,10 +11,17 @@ export type IncomingShare = {
   generation: number;
 };
 
+type IncomingShareTarget = {
+  botId: string;
+  spaceId: string | null;
+  sessionEpoch: number;
+};
+
 const MAX_AGE_MS = 5 * 60 * 1000;
 let generation = 0;
 let copyId = 0;
 let pending: IncomingShare | null = null;
+let selected: (IncomingShareTarget & { generation: number }) | null = null;
 let expiry: ReturnType<typeof setTimeout> | undefined;
 const listeners = new Set<() => void>();
 
@@ -97,6 +104,7 @@ export function hasIncomingShare() {
 export function cancelIncomingShare() {
   if (!supported()) return;
   const dropped = pending;
+  selected = null;
   generation += 1;
   clearSharedPayloads();
   publish(null);
@@ -136,18 +144,52 @@ export function receiveIncomingShare(isShare: boolean, initial: boolean) {
     generation: ++generation,
   };
   const replaced = pending;
+  selected = null;
   publish(share.text || share.files.length ? share : null);
   if (replaced) releaseIncomingShareFiles(replaced.files);
   if (initial) sweepIosShareContainer(share.files);
 }
 
-/** Claim synchronously: a second chat/effect cannot take the same share. */
-export function takeIncomingShare(): IncomingShare | null {
+/** Only the picker can assign the exact share it presented to a chat. */
+export function selectIncomingShare(share: IncomingShare, target: IncomingShareTarget): boolean {
+  if (share !== pending) return false;
+  if (!isIncomingShareCurrent(share)) {
+    cancelIncomingShare();
+    return false;
+  }
+  selected = { ...target, generation: share.generation };
+  return true;
+}
+
+/** A not-yet-selected share survives sign-in; an old account's choice does not. */
+export function forgetSelectedIncomingShare() {
+  if (!selected) return;
+  if (pending) cancelIncomingShare();
+  else {
+    // The claim already cleared the native payload. Do not clear a new OS share.
+    selected = null;
+    generation += 1;
+  }
+}
+
+/** Claim only the chosen share, synchronously so two chat instances cannot both take it. */
+export function takeIncomingShare(
+  target: IncomingShareTarget,
+  expectedGeneration?: number,
+): IncomingShare | null {
   if (!supported()) return null;
   const share = pending;
+  if (
+    !share ||
+    selected?.generation !== share.generation ||
+    selected.botId !== target.botId ||
+    selected.spaceId !== target.spaceId ||
+    selected.sessionEpoch !== target.sessionEpoch ||
+    (expectedGeneration !== undefined && share.generation !== expectedGeneration)
+  )
+    return null;
   clearSharedPayloads();
   publish(null);
-  if (!share) return null;
   if (Date.now() - share.arrivedAt < MAX_AGE_MS) return share;
   releaseIncomingShareFiles(share.files);
   return null;

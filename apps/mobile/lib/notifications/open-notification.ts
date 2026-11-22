@@ -43,12 +43,11 @@ function mayLeaveForNotification(route: NavigationState["routes"][number]): bool
 
 function openNotificationThread(navigation: NotificationNavigation, target: NotificationRoute) {
   const stack = findChatStack(navigation.getRootState());
-  const sharing = stack?.routes.some((route) => route.name === "share");
   if (!stack || stack.routes.some((route) => !mayLeaveForNotification(route))) {
-    router.push(
-      sharing ? { ...target, params: { ...target.params, preserveIncomingShare: "1" } } : target,
-      { dangerouslySingular: threadRouteId, ...(!stack ? { withAnchor: true } : {}) },
-    );
+    router.push(target, {
+      dangerouslySingular: threadRouteId,
+      ...(!stack ? { withAnchor: true } : {}),
+    });
     return;
   }
 

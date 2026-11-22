@@ -6,20 +6,35 @@ import { Image, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { GlassIconButton } from "../components/native/glass-icon-button";
 import { NativeSymbol } from "../components/native/native-symbol";
+import { selectedSpaceId } from "../lib/api/api";
 import type { MobileBot } from "../lib/api/mobile-types";
 import {
+  currentReadySessionGeneration,
+  currentSessionGeneration,
+  registerSessionDiskCache,
+  subscribeSessionGeneration,
+} from "../lib/api/session";
+import {
   cancelIncomingShare,
+  forgetSelectedIncomingShare,
   getIncomingShare,
+  selectIncomingShare,
   subscribeIncomingShare,
 } from "../lib/composer/incoming-share";
 import { sharePreview } from "../lib/composer/share-preview";
 import { useMobileTokens } from "../lib/native/native";
 import { HomeSession } from "./index";
 
+registerSessionDiskCache(forgetSelectedIncomingShare);
+
 export default function ShareRoute() {
   const router = useRouter();
   const navigation = useNavigation();
   const share = useSyncExternalStore(subscribeIncomingShare, getIncomingShare);
+  const sessionEpoch = useSyncExternalStore(
+    subscribeSessionGeneration,
+    currentReadySessionGeneration,
+  );
   const leaving = useRef(false);
   const [onLeave, setOnLeave] = useState<(() => void) | null>(null);
   const tokens = useMobileTokens();
@@ -57,21 +72,39 @@ export default function ShareRoute() {
     if (!share) closeOnce();
   }, [share]);
 
-  const open = (bot: Pick<MobileBot, "id" | "name">) => {
-    // Removal must preserve the share for thread.tsx to claim it.
-    if (!getIncomingShare()) return;
-    leave(() =>
+  const open = (bot: Pick<MobileBot, "id" | "name" | "spaceId">) => {
+    // A space switch can delay this callback past a newer share or a session change.
+    if (!share || getIncomingShare() !== share || currentSessionGeneration() !== sessionEpoch)
+      return;
+    const spaceId = bot.spaceId ?? selectedSpaceId();
+    leave(() => {
+      // Hand off only after the picker can really exit, and only what this tap selected.
+      if (
+        currentSessionGeneration() !== sessionEpoch ||
+        selectedSpaceId() !== spaceId ||
+        !selectIncomingShare(share, { botId: bot.id, spaceId, sessionEpoch })
+      ) {
+        if (!getIncomingShare()) router.dismissTo("/");
+        else {
+          leaving.current = false;
+          setOnLeave(null);
+        }
+        return;
+      }
       navigation.dispatch({
         type: "RESET",
         payload: {
           index: 1,
           routes: [
             { name: "index" },
-            { name: "thread", params: { botId: bot.id, name: bot.name } },
+            {
+              name: "thread",
+              params: { botId: bot.id, name: bot.name, ...(spaceId && { spaceId }) },
+            },
           ],
         },
-      }),
-    );
+      });
+    });
   };
   const preview = share ? sharePreview(share) : null;
 
