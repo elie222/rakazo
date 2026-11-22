@@ -128,6 +128,17 @@ describe("resolveScheduleTiming", () => {
     expect(result.nextRunAt.getTime()).toBeLessThanOrEqual(Date.now() + 31_000);
   });
 
+  it("rejects one-shot delays too far out to be a date", () => {
+    expect(resolveScheduleTiming({ delayMinutes: 1e15 })).toEqual({
+      ok: false,
+      error: "The delay is too far in the future.",
+    });
+    expect(resolveScheduleTiming({ delaySeconds: 1e14 })).toEqual({
+      ok: false,
+      error: "The delay is too far in the future.",
+    });
+  });
+
   it("rejects one-shot schedules in the past", () => {
     expect(resolveScheduleTiming({ runAt: new Date(Date.now() - 60_000).toISOString() })).toEqual({
       ok: false,
@@ -1008,12 +1019,27 @@ describe("schedule_create with a watch", () => {
 });
 
 describe("cancelScheduleFromTool", () => {
+  it("refuses a name more than one schedule has", async () => {
+    const deleteMany = vi.fn();
+    const deps = {
+      prisma: { routine: { count: vi.fn(async () => 2), findFirst: vi.fn(), deleteMany } },
+      events: { append: vi.fn() },
+      jobs: { enqueue: vi.fn(), cancel: vi.fn() },
+    } as unknown as Parameters<typeof cancelScheduleFromTool>[0];
+    await expect(
+      cancelScheduleFromTool(deps, { spaceId: "ws-1", botId: "bot-1", name: "Daily" }),
+    ).resolves.toEqual({
+      error: 'More than one schedule is named "Daily". Pass routineId instead.',
+    });
+    expect(deleteMany).not.toHaveBeenCalled();
+  });
+
   it("deletes with the caller's scope and does not cancel the job when the row moved", async () => {
     const findFirst = vi.fn(async () => ({ id: "routine-1", name: "Daily" }));
     const deleteMany = vi.fn(async () => ({ count: 1 }));
     const cancel = vi.fn(async () => undefined);
     const deps = {
-      prisma: { routine: { findFirst, deleteMany } },
+      prisma: { routine: { count: vi.fn(async () => 1), findFirst, deleteMany } },
       events: { append: vi.fn(async () => undefined) },
       jobs: { enqueue: vi.fn(async () => undefined), cancel },
     } as unknown as Parameters<typeof cancelScheduleFromTool>[0];
@@ -1845,17 +1871,31 @@ describe("schedule tools with events", () => {
       key.plaintext = plaintext;
       return { id: "secret-1", ciphertext: "sealed" };
     });
+    const notices: unknown[] = [];
+    const stored = { webhookSecretId: null as string | null };
     const tx = {
       $queryRaw: vi.fn(async () => [{ webhookSecretId: null }]),
       secret: { create: vi.fn(), deleteMany: vi.fn() },
-      bot: { update: vi.fn() },
+      bot: {
+        update: vi.fn(async (args: { data: { webhookSecretId: string } }) => {
+          stored.webhookSecretId = args.data.webhookSecretId;
+        }),
+      },
+      thread: { update: vi.fn(async () => ({ nextMessageSeq: 2, spaceId: "ws-1" })) },
+      message: {
+        create: vi.fn(async (args: { data: { blocks: unknown } }) => {
+          notices.push(args.data.blocks);
+          return { id: "message-1" };
+        }),
+      },
+      event: { create: vi.fn(async () => ({ seq: 1 })) },
     };
     const prisma = accountZonePrisma(
       {
         routine: { create, findMany: noRoutines },
         bot: {
           findFirst: vi.fn(async () => ({ id: "bot-1", userId: options.botUserId ?? "user-1" })),
-          findUnique: vi.fn(async () => ({ webhookSecretId: null })),
+          findUnique: vi.fn(async () => ({ ...stored })),
         },
         messagingIdentity: {
           findUnique: vi.fn(async () => (options.provider ? { provider: options.provider } : null)),
@@ -1869,15 +1909,15 @@ describe("schedule tools with events", () => {
         $transaction: async (run: (client: unknown) => Promise<unknown>) =>
           run({ ...prisma, ...tx }),
       },
-      events: { append: vi.fn() },
+      events: { append: vi.fn(), notify: vi.fn() },
       jobs: { enqueue },
       secretStore: { put },
     } as unknown as Parameters<typeof createScheduleFromTool>[0];
-    return { deps, create, enqueue, put, key };
+    return { deps, create, enqueue, put, key, notices };
   }
 
   it("creates a routine only a webhook starts, and keeps its key from the result", async () => {
-    const { deps, create, enqueue, put, key } = eventDeps();
+    const { deps, create, enqueue, put, key, notices } = eventDeps();
     const result = await createScheduleFromTool(deps, {
       ...owner,
       ...scheduleCreateFields({
@@ -1905,6 +1945,10 @@ describe("schedule tools with events", () => {
     });
     expect(key.plaintext).not.toBe("");
     expect(JSON.stringify(result)).not.toContain(key.plaintext);
+    // The chat row offers the key to the person; the row itself never holds it.
+    expect(notices).toEqual([
+      [{ kind: "routine_event", change: "created", name: "Deploys", webhook: true }],
+    ]);
   });
 
   it("adds a chat event to a repeating schedule by the app's name", async () => {

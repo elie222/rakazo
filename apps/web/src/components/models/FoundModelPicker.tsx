@@ -1,4 +1,5 @@
 import { Trans, useLingui } from "@lingui/react/macro";
+import { useListSearch } from "@rakazo/chat-ui/hooks";
 import {
   Button,
   Command,
@@ -12,7 +13,6 @@ import {
 } from "@rakazo/ui-web";
 import { ChevronDown } from "lucide-react";
 import { useRef, useState } from "react";
-import { useListSearch } from "../../lib/use-list-search";
 
 export function FoundModelPicker({
   models,

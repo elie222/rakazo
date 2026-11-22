@@ -128,6 +128,8 @@ Compose bot homes mount only their own subdirectory of the application volume us
   messaging apps, cloud coding agents and payments.
 - [Bot email addresses](./self-host-inbound-email.md): an address for each bot, so mail you
   forward or CC to it starts its routines.
+- [Webhooks on a private network](./self-host-webhooks.md): receive webhooks while the app stays
+  on your tailnet, LAN or VPN.
 - [Computer providers](./self-host-sandbox-providers.md) and
   [Docker computers](./self-host-docker-computers.md): where bot computers run and how they are
   limited.
@@ -146,6 +148,44 @@ Compose bot homes mount only their own subdirectory of the application volume us
   page settings.
 - [Billing](./self-host-billing.md): optional Stripe plans and model credits.
 - [Restricted networks](./self-host-restricted-network.md): mirrors when downloads are blocked.
+
+## Admin commands
+
+`admin.js` runs operator tasks from the API container. It needs shell access to the server and opens
+no port.
+
+```bash
+docker compose --env-file .env -f docker-compose.images.yml exec api \
+  node dist/cli/admin.js bot webhook-key <bot-id> [--rotate] [--json]
+```
+
+`bot webhook-key` gives a bot that has no webhook key a new one and prints its webhook URL
+(the [published webhook address](./self-host-webhooks.md) when there is one, else `API_URL`, +
+`/api/v1/bots/<bot-id>/webhook`) and the key. When the bot already has one, it
+prints only the URL; `--rotate` replaces the key, and the old one stops working. `--json` prints
+one line, `{"botId","url","key","created"}`, for piping into another program so the key stays
+out of chat and logs. Each new key is recorded as a `credential.changed`
+[security event](./self-host-observability.md#security-events) with `by: operator`.
+
+### Account deletion and billing
+
+Run these from the API container. Omit `--confirm` to preview the target and action.
+
+```sh
+node dist/cli/admin.js account delete person@example.test --confirm
+node dist/cli/admin.js billing cancel person@example.test --confirm
+node dist/cli/admin.js billing refund person@example.test EXAMPLE-0001 --confirm
+```
+
+- **Account deletion** uses the same cleanup as Settings. It permanently removes the account and
+  the Spaces that go with it, cancels their subscriptions, and requires the database job runner.
+- **Billing cancellation** immediately ends the selected organization's subscriptions and expires
+  its open checkouts. If the account owns several billing organizations, pass the organization ID
+  after the email.
+- **Billing refunds** return the full amount of a paid invoice with a single, undisputed card
+  charge. Review the invoice and credit usage before confirming. Refunds of model-credit
+  purchases reconcile through the usual billing sync. Use the separate cancellation command to
+  end a recurring plan.
 
 ## Reporting a problem
 

@@ -22,7 +22,13 @@ describe("current model compatibility", () => {
     ["opencode", "claude-haiku-5-5"],
     ["opencode", "claude-sonnet-5-5"],
     ["opencode-go", "claude-haiku-5-5"],
+    ["openai", "gpt-6.2-sol"],
+    ["openai", "gpt-6.2-astra"],
+    ["azure", "gpt-6.2-sol"],
+    ["azure", "gpt-6.2-astra"],
     ["openai-codex", "gpt-6.1-sol"],
+    ["openai-codex", "gpt-6.2-sol"],
+    ["openai-codex", "gpt-6.2-astra"],
     ["openrouter", "deepseek/deepseek-v4.1-flash-1017"],
     ["amazon-bedrock", "anthropic.claude-sonnet-5-5"],
     ["amazon-bedrock", "eu.anthropic.claude-sonnet-5-5"],
@@ -60,7 +66,13 @@ describe("current model compatibility", () => {
   });
   it.each([
     ["anthropic", "claude-sonnet-5-5"],
+    ["openai", "gpt-6.2-sol"],
+    ["openai", "gpt-6.2-astra"],
+    ["azure", "gpt-6.2-sol"],
+    ["azure", "gpt-6.2-astra"],
     ["openai-codex", "gpt-6.1-sol"],
+    ["openai-codex", "gpt-6.2-sol"],
+    ["openai-codex", "gpt-6.2-astra"],
   ])("exposes %s/%s in the picker and runtime with valid efforts", (provider, id) => {
     const model = modelsForRequest(
       { model: { provider, id } } as Parameters<typeof modelsForRequest>[0],

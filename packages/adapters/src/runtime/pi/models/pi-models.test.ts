@@ -236,14 +236,14 @@ describe("catalog provider authentication", () => {
 });
 
 describe("Pi model catalog", () => {
-  it("recommends one Luna or Haiku model per supported provider", () => {
+  it("recommends one model per supported provider", () => {
     expect(
       listPiCatalog()
         .filter((entry) => entry.recommended)
         .map(({ provider, id }) => ({ provider, id })),
     ).toEqual(
       expect.arrayContaining([
-        { provider: "openai-codex", id: "gpt-6-luna" },
+        { provider: "openai-codex", id: "gpt-6.1-sol" },
         { provider: "openai", id: "gpt-6-luna" },
         { provider: "openrouter", id: "anthropic/claude-haiku-5.5" },
         { provider: "anthropic", id: "claude-haiku-5-5" },
@@ -263,6 +263,8 @@ describe("Pi model catalog", () => {
     for (const entry of codex) {
       expect(entry).toMatchObject({
         providerName: "OpenAI Codex",
+        subscriptionName: "ChatGPT subscription",
+        subscriptionNameId: "XrwIDk",
         auth: "oauth",
         oauthLabel: "Sign in with ChatGPT",
         subscription: true,
@@ -333,6 +335,10 @@ describe("Pi model catalog", () => {
     const chatgpt = catalog.find((entry) => entry.provider === "openai-codex");
     expect(chatgpt?.signIn).toBe("device-code");
     expect(chatgpt?.billing).toMatch(/ChatGPT Plus or Pro/);
+    expect(chatgpt?.signInSetup).toMatchObject({
+      url: expect.stringMatching(/^https:/),
+      note: expect.any(String),
+    });
     const copilot = catalog.find((entry) => entry.provider === "github-copilot");
     expect(copilot?.signIn).toBe("device-code");
     const grok = catalog.find((entry) => entry.provider === "xai");

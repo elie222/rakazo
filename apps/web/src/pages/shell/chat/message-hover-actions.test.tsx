@@ -194,3 +194,21 @@ it("names the action group after the message so each message's buttons are told 
   act(() => otherRoot.unmount());
   other.remove();
 });
+
+it.each([undefined, "Ada"])("omits a missing time from the action label for %s", (speakerName) => {
+  act(() =>
+    root.render(
+      <MessageHoverActions
+        message={{ ...message, createdAt: "invalid" }}
+        side="start"
+        speakerName={speakerName}
+        onReply={vi.fn()}
+        onMarkUnread={vi.fn()}
+        onReact={vi.fn<(message: ThreadMessage, reaction: MessageReaction) => Promise<void>>()}
+      />,
+    ),
+  );
+  expect(container.querySelector('[role="group"]')?.getAttribute("aria-label")).toBe(
+    speakerName ? "Message actions, Ada" : "Message actions",
+  );
+});

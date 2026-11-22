@@ -69,7 +69,7 @@ describe("queued run supersession", () => {
         updateMany: vi.fn(),
       },
       message: { findMany: vi.fn(async () => []) },
-      task: { updateMany: vi.fn() },
+      task: { update: vi.fn().mockResolvedValue({ id: "task-1" }), updateMany: vi.fn() },
       secret: { deleteMany: vi.fn(async () => ({ count: 1 })) },
     };
     await cancelSupersededQueuedRuns(tx as never, {
@@ -284,7 +284,7 @@ describe("reaction turns", () => {
             ? options.recentReaction
               ? { id: "recent" }
               : null
-            : { botId: "bot-1", userId: "user-1" },
+            : { botId: "bot-1", userId: "user-1", taskId: "task-1" },
         ),
         findUnique: vi.fn().mockResolvedValue({ status: "queued" }),
         updateMany: vi.fn().mockResolvedValue({ count: 1 }),
@@ -297,6 +297,7 @@ describe("reaction turns", () => {
       },
       task: {
         create: vi.fn().mockResolvedValue({ id: "task-new" }),
+        update: vi.fn().mockResolvedValue({ id: "task-1" }),
         updateMany: vi.fn().mockResolvedValue({ count: 1 }),
       },
       event: {
@@ -553,8 +554,9 @@ describe("reaction turns", () => {
       ],
     });
     await react();
-    expect(tx.task.updateMany).toHaveBeenCalledWith(
+    expect(tx.task.update).toHaveBeenCalledWith(
       expect.objectContaining({
+        where: { id: "task-1" },
         data: { prompt: `Selected choice ${label === "yes" ? "accept: Yes" : "reject: No"}` },
       }),
     );
@@ -574,9 +576,10 @@ describe("reaction turns", () => {
       ],
     });
     await react();
-    expect(tx.task.updateMany).toHaveBeenCalledWith({
-      where: { runs: { some: { id: "run-waiting" } } },
+    expect(tx.task.update).toHaveBeenCalledWith({
+      where: { id: "task-1" },
       data: { prompt: "no" },
+      select: { id: true },
     });
     expect(tx.run.create).not.toHaveBeenCalled();
     expect(enqueue).toHaveBeenCalledWith(expect.objectContaining({ name: "run.continue" }));
@@ -634,9 +637,10 @@ describe("reaction turns", () => {
       ],
     });
     await react();
-    expect(tx.task.updateMany).toHaveBeenCalledWith({
-      where: { runs: { some: { id: "run-waiting" } } },
+    expect(tx.task.update).toHaveBeenCalledWith({
+      where: { id: "task-1" },
       data: { prompt: "yes" },
+      select: { id: true },
     });
     expect(enqueue).toHaveBeenCalledWith(expect.objectContaining({ name: "run.continue" }));
   });
@@ -1833,13 +1837,19 @@ describe("sendThreadMessage", () => {
               trigger: "user",
             },
           ]),
-          findFirst: vi.fn().mockResolvedValue({ botId: "bot-1", userId: "user-1" }),
+          findFirst: vi
+            .fn()
+            .mockResolvedValue({ botId: "bot-1", userId: "user-1", taskId: "task-1" }),
           updateMany: vi.fn().mockResolvedValue({ count: 1 }),
           findUnique: vi.fn().mockResolvedValue({ status: "queued" }),
         },
         steeringMessage: { create: vi.fn() },
         event: { create: vi.fn().mockResolvedValue({ seq: 2, threadId: "thread-1" }) },
-        task: { create: vi.fn(), updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
+        task: {
+          create: vi.fn(),
+          update: vi.fn().mockResolvedValue({ id: "task-1" }),
+          updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+        },
       };
       const prisma = {
         message: { findUnique: vi.fn().mockResolvedValue(null) },
@@ -1885,9 +1895,10 @@ describe("sendThreadMessage", () => {
       expect(prisma.$transaction).toHaveBeenCalledWith(expect.any(Function), {
         timeout: 20_000,
       });
-      expect(tx.task.updateMany).toHaveBeenCalledWith({
-        where: { runs: { some: { id: "run-waiting" } } },
+      expect(tx.task.update).toHaveBeenCalledWith({
+        where: { id: "task-1" },
         data: { prompt: "Paris" },
+        select: { id: true },
       });
       expect(tx.run.updateMany).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -1990,7 +2001,9 @@ describe("sendThreadMessage", () => {
             userId: "user-1",
           },
         ]),
-        findFirst: vi.fn().mockResolvedValue({ botId: "bot-1", userId: "user-1" }),
+        findFirst: vi
+          .fn()
+          .mockResolvedValue({ botId: "bot-1", userId: "user-1", taskId: "task-1" }),
         updateMany: vi.fn().mockResolvedValue({ count: 1 }),
         findUnique: vi.fn(async ({ where }: { where: { id: string } }) => ({
           status: where.id === "run-waiting-2" && !explicitReply ? "cancelled" : "queued",
@@ -2000,7 +2013,11 @@ describe("sendThreadMessage", () => {
       secret: { deleteMany: vi.fn() },
       steeringMessage: { create: vi.fn() },
       event: { create: vi.fn().mockResolvedValue({ seq: 2, threadId: "thread-1" }) },
-      task: { create: vi.fn(), updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
+      task: {
+        create: vi.fn(),
+        update: vi.fn().mockResolvedValue({ id: "task-1" }),
+        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+      },
     };
     const prisma = {
       message: { findUnique: vi.fn().mockResolvedValue(null) },
@@ -2263,7 +2280,9 @@ describe("sendThreadMessage", () => {
             userId: "user-1",
           },
         ]),
-        findFirst: vi.fn().mockResolvedValue({ botId: "bot-a", userId: "user-1" }),
+        findFirst: vi
+          .fn()
+          .mockResolvedValue({ botId: "bot-a", userId: "user-1", taskId: "task-1" }),
         updateMany: vi.fn().mockResolvedValue({ count: 1 }),
         findUnique: vi.fn(async ({ where }: { where: { id: string } }) => ({
           status: where.id === "run-waiting-2" && !explicitReply ? "cancelled" : "queued",
@@ -2274,7 +2293,11 @@ describe("sendThreadMessage", () => {
       secret: { deleteMany: vi.fn() },
       steeringMessage: { create: vi.fn() },
       event: { create: vi.fn().mockResolvedValue({ seq: 2, threadId: "thread-1" }) },
-      task: { create: vi.fn(), updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
+      task: {
+        create: vi.fn(),
+        update: vi.fn().mockResolvedValue({ id: "task-1" }),
+        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+      },
       chatGroup: {
         findFirst: vi.fn().mockResolvedValue({
           id: "group-1",
@@ -2566,7 +2589,11 @@ describe("sendThreadMessage", () => {
         findUnique: vi.fn().mockResolvedValue({ status: "running", startedAt: new Date() }),
         updateMany: vi.fn(),
       },
-      task: { create: vi.fn(), updateMany: vi.fn() },
+      task: {
+        create: vi.fn(),
+        update: vi.fn().mockResolvedValue({ id: "task-1" }),
+        updateMany: vi.fn(),
+      },
       steeringMessage: { create: vi.fn() },
       event: { create: vi.fn().mockResolvedValue({ seq: 2, threadId: "thread-1" }) },
     };
@@ -3448,14 +3475,20 @@ describe("sendThreadMessage", () => {
             trigger: "routine",
           },
         ]),
-        findFirst: vi.fn().mockResolvedValue({ botId: "bot-1", userId: "user-1" }),
+        findFirst: vi
+          .fn()
+          .mockResolvedValue({ botId: "bot-1", userId: "user-1", taskId: "task-1" }),
         updateMany: vi.fn().mockResolvedValue({ count: 1 }),
         findUnique: vi.fn().mockResolvedValue({ status: "queued" }),
         create: vi.fn(),
       },
       steeringMessage: { create: vi.fn() },
       event: { create: vi.fn().mockResolvedValue({ seq: 2, threadId: "thread-1" }) },
-      task: { create: vi.fn(), updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
+      task: {
+        create: vi.fn(),
+        update: vi.fn().mockResolvedValue({ id: "task-1" }),
+        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+      },
     };
     const prisma = {
       message: { findUnique: vi.fn().mockResolvedValue(null) },
@@ -3487,9 +3520,10 @@ describe("sendThreadMessage", () => {
       taskId: "task-routine",
       runIds: ["run-routine"],
     });
-    expect(tx.task.updateMany).toHaveBeenCalledWith({
-      where: { runs: { some: { id: "run-routine" } } },
+    expect(tx.task.update).toHaveBeenCalledWith({
+      where: { id: "task-1" },
       data: { prompt: "Paris" },
+      select: { id: true },
     });
     expect(tx.run.updateMany).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -3547,14 +3581,20 @@ describe("sendThreadMessage", () => {
             trigger: "webhook",
           },
         ]),
-        findFirst: vi.fn().mockResolvedValue({ botId: "bot-a", userId: "user-1" }),
+        findFirst: vi
+          .fn()
+          .mockResolvedValue({ botId: "bot-a", userId: "user-1", taskId: "task-1" }),
         updateMany: vi.fn().mockResolvedValue({ count: 1 }),
         findUnique: vi.fn().mockResolvedValue({ status: "queued" }),
         create: vi.fn(),
       },
       steeringMessage: { create: vi.fn() },
       event: { create: vi.fn().mockResolvedValue({ seq: 2, threadId: "thread-1" }) },
-      task: { create: vi.fn(), updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
+      task: {
+        create: vi.fn(),
+        update: vi.fn().mockResolvedValue({ id: "task-1" }),
+        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+      },
       chatGroup: {
         findFirst: vi.fn().mockResolvedValue({
           id: "group-1",
@@ -3598,9 +3638,10 @@ describe("sendThreadMessage", () => {
       taskId: "task-webhook",
       runIds: ["run-webhook"],
     });
-    expect(tx.task.updateMany).toHaveBeenCalledWith({
-      where: { runs: { some: { id: "run-webhook" } } },
+    expect(tx.task.update).toHaveBeenCalledWith({
+      where: { id: "task-1" },
       data: { prompt: "Paris" },
+      select: { id: true },
     });
     expect(tx.run.updateMany).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -3670,7 +3711,11 @@ describe("sendThreadMessage", () => {
         updateMany: vi.fn(),
         create: vi.fn(),
       },
-      task: { create: vi.fn(), updateMany: vi.fn() },
+      task: {
+        create: vi.fn(),
+        update: vi.fn().mockResolvedValue({ id: "task-1" }),
+        updateMany: vi.fn(),
+      },
       steeringMessage: { create: vi.fn() },
       event: {
         create: vi.fn().mockResolvedValue({ id: "event-1", seq: 2, createdAt: new Date() }),
@@ -3774,7 +3819,11 @@ describe("sendThreadMessage", () => {
         updateMany: vi.fn(),
         create: vi.fn(),
       },
-      task: { create: vi.fn(), updateMany: vi.fn() },
+      task: {
+        create: vi.fn(),
+        update: vi.fn().mockResolvedValue({ id: "task-1" }),
+        updateMany: vi.fn(),
+      },
       steeringMessage: { create: vi.fn() },
       event: {
         create: vi.fn().mockResolvedValue({ id: "event-1", seq: 1, createdAt: new Date() }),

@@ -21,6 +21,7 @@ import {
   serializeModelSecret,
   storedOpenAiCompatibleProbeHeaders,
   storedOpenAiCompatibleProbeKey,
+  subscriptionSignInChoice,
   UNAVAILABLE_MODEL_FOR_AUTH_MESSAGE,
 } from "@rakazo/adapters";
 import type { Actor, ModelCredential, ThinkingLevel } from "@rakazo/contracts";
@@ -38,6 +39,7 @@ import {
   comparePreferenceOrder,
   defaultModelCredentialCandidates,
   deleteUnreferencedCredentialSecret,
+  deploymentModelChangesScope,
   findModelCredential,
   getModelRole,
   modelCredentialProviderFilter,
@@ -54,6 +56,10 @@ import { getLogger } from "@rakazo/logging";
 import { markExpectedFailure } from "@rakazo/logging/hono";
 import { assertCompatibleDefaultChange } from "../bots/model-pins.js";
 import { mayUsePrivateEndpoint } from "../integrations/mcp-servers.js";
+import {
+  getDeploymentModelSettings,
+  updateDeploymentModelSettings,
+} from "../models/deployment-model-settings.js";
 import {
   recordSignInStep,
   signInDurationMs,
@@ -113,6 +119,9 @@ export function modelsRoutes(ctx: RouterContext) {
         const record = signInRecorder(deps.analytics, actor.userId, login.measure);
         const target = await modelConnectionTarget(deps, actor, login.provider, login.credentialId);
         const retained = await prepareModelReconnectSettings(deps, actor, target);
+        const choice = target
+          ? { modelId: login.modelId, thinkingLevel: login.thinkingLevel }
+          : subscriptionSignInChoice(login.provider, login.modelId, login.thinkingLevel);
         const saved = await persistModelCredential(
           deps,
           actor,
@@ -130,8 +139,8 @@ export function modelsRoutes(ctx: RouterContext) {
               oauthCredentialEmail(login.credential) ??
               login.label ??
               listPiCatalog().find((entry) => entry.provider === login.provider)?.providerName,
-            modelId: login.modelId,
-            thinkingLevel: login.thinkingLevel,
+            modelId: choice.modelId,
+            thinkingLevel: choice.thinkingLevel,
             makeDefault: login.makeDefault,
             scope: login.settingsScope,
             signal: login.signal,
@@ -752,6 +761,21 @@ export function modelsRoutes(ctx: RouterContext) {
         );
         return { ok: true as const };
       }),
+      deployment: {
+        get: authed.models.deployment.get.handler(({ context }) =>
+          getDeploymentModelSettings(deps, context.actor),
+        ),
+        update: authed.models.deployment.update.handler(async ({ context, input }) => {
+          const saved = await updateDeploymentModelSettings(
+            deps,
+            context.actor,
+            input,
+            context.signal,
+          );
+          void deps.events?.publishSpaceChange?.(deploymentModelChangesScope, "deploymentModel");
+          return saved;
+        }),
+      },
     },
   };
 }

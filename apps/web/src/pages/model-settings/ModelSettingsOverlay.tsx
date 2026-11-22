@@ -1,7 +1,7 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { ModelSignInCancelReason, SettingsScope } from "@rakazo/contracts";
 import {
-  connectionDisplayName,
+  modelConnectionNames,
   modelRoleChoiceKey,
   OPENAI_COMPATIBLE_PROVIDER_ID,
   savedCompatibleEndpointMatches,
@@ -13,6 +13,7 @@ import {
   isFirstModelConnection,
   popularModelProvidersFirst,
 } from "@rakazo/core";
+import { localizeModelEntry } from "@rakazo/i18n/model-provider";
 import {
   Button,
   Dialog,
@@ -33,6 +34,7 @@ import type { ModelCredential } from "../../lib/models/model-auth";
 import { useSpaceQueries } from "../../lib/query/query";
 import { CompatibleModelFields } from "./compatible-model-fields";
 import { CompatibleKeyInput, ConnectionControls } from "./connection-controls";
+import { DeploymentModelSettings } from "./deployment-model-settings";
 import type { ModelRoleConnectIntent } from "./ModelRoleSettings";
 import { ModelRoleSettings, useModelRole } from "./ModelRoleSettings";
 import { ModelSettingsPanel } from "./model-settings-panel";
@@ -133,11 +135,10 @@ export function ModelSettingsOverlay({
   );
   const connectionName = (entry: ModelCredential) => {
     const group = groups.find((item) => item.id === entry.provider);
-    return connectionDisplayName(
+    return modelConnectionNames(
+      localizeModelEntry(group?.entries[0] ?? { provider: entry.provider }),
       entry,
-      group?.name ?? entry.provider,
-      group?.entries[0]?.providerName ? [group.entries[0].providerName] : [],
-    );
+    ).connectionName;
   };
   const providerLabel = (id: string) =>
     credentialByProvider.get(id)?.endpointName ??
@@ -453,6 +454,7 @@ export function ModelSettingsOverlay({
               panel={connectionAt === "providers:add" ? panelFor(true) : null}
             />
           )}
+          {scope === "account" && me.isAdmin ? <DeploymentModelSettings /> : null}
         </>
       ) : loading ? (
         <div className="grid place-items-center py-10">

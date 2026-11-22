@@ -1348,7 +1348,7 @@ function pinnedRoutineRunPrisma(modelId: string, trigger = "routine") {
     secret: { findMany: vi.fn(async () => []) },
     vaultCredential: { findMany: vi.fn(async () => []) },
     agentSkill: { findMany: vi.fn(async () => []) },
-    scratchpadItem: { findMany: vi.fn(async () => []) },
+    scratchpadItem: { findMany: vi.fn(async () => []), count: vi.fn(async () => 0) },
     $queryRaw: vi.fn(async () => []),
     space: { findUnique: vi.fn(async () => null) },
   };
@@ -1492,7 +1492,7 @@ describe("userTurnInstructions", () => {
     "A bot and a subagent are different. Never use both for the same request.",
     "create_space proposes a new privacy boundary inside the current organization. Use it when the user asks to create a space or separate data between teams or projects. Never claim the space exists before the tool succeeds.",
     "spawn_bot creates a lasting regular bot (own chat, computer, memory) that appears in the user's bot list. If the user asked to create a bot, call spawn_bot once and stop. Do not run_subagent to demo it.",
-    'update_bot reads and changes your own settings: name (chat header and list label), description (the one-line public summary teammates see), private instructions (how you do your job), avatar, notifyOnFinish, dailyCheckIns (switch it off when the user asks you to stop checking in), model, thinkingLevel (how hard you reason; a standing request to think harder, or to answer faster, is a request to change it) and readAloud. Call it with no fields to read them, for example when asked which model you run. Change a setting only when the user asks for that change; a standing rule for how you work ("from now on", "always") is a request to add it to your instructions, not just to follow it now. When you have no instructions yet and your job becomes clear, set your name, description and instructions yourself. Never claim a change without the tool. Pass color for a hex or encoded shape, artifact_id for an image in this space, or use_attached_image when they attached a picture on this message.',
+    'update_bot reads and changes your own settings: name (chat header and list label), description (the one-line public summary teammates see), private instructions (how you do your job), avatar, notifyOnFinish, dailyCheckIns (switch it off when the user asks you to stop checking in), model, thinkingLevel (how hard you reason; a standing request to think harder, or to answer faster, is a request to change it), readAloud, voice, replyMode, team chat listening and rules, memoryScope, and disableTools to turn built-in tools off. With bot_id it changes the name, description, color, notifications and those settings of another bot in this space, plus its computer; set_child_instructions and set_child_bot_model change its instructions and model. Call it with no fields to read them, for example when asked which model you run. Change a setting only when the user asks for that change; a standing rule for how you work ("from now on", "always") is a request to add it to your instructions, not just to follow it now. When you have no instructions yet and your job becomes clear, set your name, description and instructions yourself. Never claim a change without the tool. Pass color for a hex or encoded shape, artifact_id for an image in this space, or use_attached_image when they attached a picture on this message.',
     "run_subagent delegates work independently and returns immediately. Use it for work another agent can complete. Its result comes back later; end your turn when nothing else needs doing, and remain available for new user messages. Wait for the needed results before giving a final answer, combine related results, and honor newer instructions or cancellation. Subagents can act under the applicable permissions and request approval in this chat.",
   ];
   const archiveBot =
@@ -3429,7 +3429,7 @@ description: Prepare standup notes
         taughtSkill: { findMany: vi.fn(async () => []) },
         vaultCredential: { findMany: vi.fn(async () => []) },
         agentSkill: { findMany: vi.fn(async () => []) },
-        scratchpadItem: { findMany: vi.fn(async () => []) },
+        scratchpadItem: { findMany: vi.fn(async () => []), count: vi.fn(async () => 0) },
       } as unknown as PrismaClient;
       if (stored) withSpaceMain(prisma, "openrouter", "openai/gpt-6-luna");
       const executor = createRunExecutor({
@@ -3547,7 +3547,7 @@ description: Prepare standup notes
       secret: { findMany: vi.fn(async () => []) },
       vaultCredential: { findMany: vi.fn(async () => []) },
       agentSkill: { findMany: vi.fn(async () => []) },
-      scratchpadItem: { findMany: vi.fn(async () => []) },
+      scratchpadItem: { findMany: vi.fn(async () => []), count: vi.fn(async () => 0) },
     } as unknown as PrismaClient;
     withSpaceMain(prisma, "openrouter", "deepseek/deepseek-v4-flash-0731");
     const executor = createRunExecutor({
@@ -3687,7 +3687,7 @@ description: Prepare standup notes
       secret: { findMany: vi.fn(async () => []) },
       vaultCredential: { findMany: vi.fn(async () => []) },
       agentSkill: { findMany: vi.fn(async () => []) },
-      scratchpadItem: { findMany: vi.fn(async () => []) },
+      scratchpadItem: { findMany: vi.fn(async () => []), count: vi.fn(async () => 0) },
     } as unknown as PrismaClient;
     withSpaceMain(prisma, "openrouter", "deepseek/deepseek-v4-flash-0731");
     const executor = createRunExecutor({

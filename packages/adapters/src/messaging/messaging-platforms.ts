@@ -1,4 +1,5 @@
 import { isVitestRuntime } from "@rakazo/core/node/test-runtime";
+import { inboundOrigin } from "../ingress/ingress-factory.js";
 import { larkMessaging } from "../providers/messaging/lark/lark-messaging.js";
 import { photonMessaging } from "../providers/messaging/photon/photon-messaging.js";
 import { sendblueMessaging } from "../providers/messaging/sendblue/sendblue-messaging.js";
@@ -52,8 +53,10 @@ type PlatformValues = UnionToIntersection<
  * roots. A platform mounts when every setting it requires is present.
  */
 export type MessagingEnvironmentValues = {
-  /** Public API origin; vendors that push delivery status call back here. */
+  /** The app's own API origin, for redirects a signed-in browser follows. */
   apiUrl?: string | undefined;
+  /** The origin vendors that push delivery status call back to: the published one, else API_URL. */
+  inboundOrigin?: string | undefined;
 } & { [K in keyof PlatformValues]?: PlatformValues[K] | undefined };
 
 const definitions = Object.values(messagingPlatforms) as MessagingPlatformDefinition[];
@@ -62,7 +65,10 @@ const definitions = Object.values(messagingPlatforms) as MessagingPlatformDefini
 export function messagingEnvFromProcess(
   env: Record<string, string | undefined>,
 ): MessagingEnvironmentValues {
-  const values: Record<string, unknown> = { apiUrl: clean(env.API_URL) };
+  const values: Record<string, unknown> = {
+    apiUrl: clean(env.API_URL),
+    inboundOrigin: inboundOrigin(env) ?? clean(env.API_URL),
+  };
   for (const definition of definitions) {
     for (const [option, binding] of Object.entries(definition.env)) {
       values[option] = "read" in binding ? binding.read(env) : clean(env[binding.name]);
@@ -90,7 +96,7 @@ export function messagingPlatformsFromEnv(
   options: MessagingMountOptions = {},
 ): MessagingPlatform[] {
   const values = env as MessagingEnvValues<MessagingEnvBindings>;
-  const context = { ...options, apiUrl: env.apiUrl };
+  const context = { ...options, inboundOrigin: env.inboundOrigin };
   const platforms: MessagingPlatform[] = [];
   for (const definition of definitions) {
     const defaultMounted = requiredSettings(definition.env).every((option) => values[option]);

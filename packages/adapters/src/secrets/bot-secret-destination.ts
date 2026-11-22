@@ -15,6 +15,7 @@ import {
   LoginFieldLabels,
   OneTimeCodeTarget,
 } from "@rakazo/contracts";
+import { isRecord } from "@rakazo/core";
 import { z } from "zod";
 import { VaultItemRefusedError } from "./vault/vault-access.js";
 
@@ -142,7 +143,7 @@ export function resolveRequestSecretDestination(
   if (args.oneTimeCode !== undefined) {
     const target = OneTimeCodeTarget.safeParse(args.oneTimeCode);
     if (target.success) return { oneTimeCodeOrigin: target.data.origin };
-    const origin = isPlainObject(args.oneTimeCode) ? args.oneTimeCode.origin : undefined;
+    const origin = isRecord(args.oneTimeCode) ? args.oneTimeCode.origin : undefined;
     return {
       error:
         typeof origin === "string" && URL.canParse(origin) && new URL(origin).protocol === "http:"
@@ -158,14 +159,14 @@ export function resolveRequestSecretDestination(
 
 /** `{ origin }` only, reduced to the site: a code is never tied to a path, query or userinfo. */
 export function oneTimeCodeArgument(value: unknown): unknown {
-  if (!isPlainObject(value)) return value === undefined ? undefined : {};
+  if (!isRecord(value)) return value === undefined ? undefined : {};
   return { origin: originMetadata(value.origin) ?? "invalid-origin" };
 }
 
 /** Labels only, also from `{ label, hidden }` objects, so a bot's `hidden` is never recorded. */
 export function loginFieldLabelsArgument(value: unknown): unknown {
   return Array.isArray(value)
-    ? value.map((field) => (isPlainObject(field) ? field.label : field))
+    ? value.map((field) => (isRecord(field) ? field.label : field))
     : value;
 }
 
@@ -207,10 +208,6 @@ export function connectionIdArgument(value: unknown): string | undefined {
   return trimmed;
 }
 
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
-}
-
 /**
  * `{ name, origin, auth }` only. Secret fields must not survive, including ones nested in
  * `auth` or carried in an origin string. The effect request is this object, and destination
@@ -247,7 +244,7 @@ function destinationMetadata(record: Record<string, unknown>): Record<string, un
 function authMetadata(value: unknown): unknown {
   const parsed = BotSecretAuth.safeParse(value);
   if (parsed.success) return parsed.data;
-  if (!isPlainObject(value)) return undefined;
+  if (!isRecord(value)) return undefined;
   if (value.type === "header") {
     if (typeof value.name !== "string") return { type: "header" };
     const header = BotSecretAuth.safeParse({ type: "header", name: value.name });
@@ -301,13 +298,13 @@ function originMetadata(value: unknown): string | undefined {
 function parsedCredentialObject(value: unknown): unknown {
   if (typeof value !== "string") {
     // Not metadata. Keep the attempt, but do not forward the raw value into the effect.
-    return isPlainObject(value) ? destinationMetadata(value) : {};
+    return isRecord(value) ? destinationMetadata(value) : {};
   }
   const trimmed = value.trim();
   if (!trimmed.startsWith("{") || !trimmed.endsWith("}")) return {};
   try {
     const parsed = JSON.parse(trimmed) as unknown;
-    if (isPlainObject(parsed)) return destinationMetadata(parsed);
+    if (isRecord(parsed)) return destinationMetadata(parsed);
   } catch {
     return {};
   }

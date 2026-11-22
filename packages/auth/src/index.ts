@@ -19,8 +19,8 @@ import {
 import type { PrismaClient, SecurityEventType } from "@rakazo/db";
 import {
   bootstrapUserSpace,
+  clearAccountIdentity,
   OwnedOrganizationHasMembersError,
-  personalOrganizationIds,
   recordSecurityEvent,
   SpaceDeletionInProgressError,
 } from "@rakazo/db";
@@ -77,6 +77,7 @@ export {
   signInCodeEmail,
   verificationEmail,
 } from "./email.js";
+export { emailCopyAvailable } from "./email-copy/deployment-copy.js";
 export type { HomeDeletionReason } from "./home-deletion-email.js";
 export { homeDeletionEmail } from "./home-deletion-email.js";
 export { modelConnectionEmail } from "./model-connection-email.js";
@@ -463,19 +464,7 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
               throw new APIError("CONFLICT", { message: error.message });
             throw error;
           }
-          const organizationIds = await personalOrganizationIds(prisma, user.id);
-
-          await prisma.$transaction(async (tx) => {
-            // Messaging identities are deliberately FK-free, so clear them
-            // here or the unique address would point at a deleted bot forever.
-            await tx.messagingIdentity.deleteMany({
-              where: { userId: user.id },
-            });
-            await tx.passkey.deleteMany({ where: { userId: user.id } });
-            await tx.organization.deleteMany({
-              where: { id: { in: organizationIds } },
-            });
-          });
+          await prisma.$transaction((tx) => clearAccountIdentity(tx, user.id));
         },
         afterDelete: async (user) => {
           await recordSecurityEvent({ type: "auth.account.deleted", userId: user.id });
