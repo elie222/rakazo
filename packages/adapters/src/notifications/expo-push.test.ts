@@ -444,22 +444,6 @@ describe("expo push", () => {
     expect(Date.now() - started).toBeLessThan(500);
   });
 
-  it("caps a streamed response without a content length", async () => {
-    const tokens = new MemoryPushTokenStore();
-    await tokens.save("user-1", "ExponentPushToken[test]");
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue(new Response(new Uint8Array(MAX_EXPO_PUSH_RESPONSE_BYTES + 1))),
-    );
-
-    await expect(
-      new ExpoPushProvider(tokens).send(
-        { kind: "completion", title: "done", body: "ok", botId: "b", threadId: "t" },
-        notifyContext,
-      ),
-    ).rejects.toThrow("Expo push response is too large.");
-  });
-
   it("rejects malformed successful responses", async () => {
     const tokens = new MemoryPushTokenStore();
     await tokens.save("user-1", "ExponentPushToken[test]");

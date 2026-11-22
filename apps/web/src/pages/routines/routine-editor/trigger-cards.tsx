@@ -3,6 +3,7 @@ import type { Routine, RoutineEmailSenders } from "@rakazo/contracts";
 import { ROUTINE_WATCH_MIN_MINUTES } from "@rakazo/contracts";
 import {
   Button,
+  cn,
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -44,15 +45,16 @@ export function WatchTriggerCard({
   onChange: (watch: RoutineWatchDraft) => void;
   onRemove: () => void;
 }) {
-  const { t } = useLingui();
+  const { i18n, t } = useLingui();
   const id = useId();
+  const checkedAt = state ? new Date(state.checkedAt).toLocaleString(i18n.locale || "en") : "";
   const status = !state
     ? null
     : state.outcome === "failed"
       ? t`Check failed: ${state.detail ?? ""}`
       : state.outcome === "changed"
-        ? t`Last check ${new Date(state.checkedAt).toLocaleString()}: changed`
-        : t`Last check ${new Date(state.checkedAt).toLocaleString()}: no changes`;
+        ? t`Last check ${checkedAt}: changed`
+        : t`Last check ${checkedAt}: no changes`;
   return (
     <div className="rounded-xl border border-border p-3" data-testid="routine-watch-card">
       <div className="flex items-center gap-2.5 px-0.5">
@@ -319,12 +321,6 @@ export function InboundTriggerCard({
   onHide: () => void;
 }) {
   const { t } = useLingui();
-  const hidden = "••••••••";
-  const credential =
-    kind === "github"
-      ? { label: t`Secret`, value: secret ?? hidden }
-      : { label: t`Header`, value: `Authorization: Bearer ${secret ?? hidden}` };
-
   return (
     <div className="rounded-xl border border-border p-3">
       <div className="flex items-center gap-2.5 px-0.5">
@@ -369,25 +365,59 @@ export function InboundTriggerCard({
         </Button>
       </div>
       {saved && configured ? (
-        <div className="mt-2.5 space-y-2">
-          <CopyRow label={t`URL`} value={path} />
-          <CopyRow label={credential.label} value={credential.value} copyable={Boolean(secret)}>
-            <Button
-              variant="ghost"
-              size="icon-xs"
-              aria-label={secret ? t`Hide key` : t`Show key`}
-              onClick={secret ? onHide : onReveal}
-              className="text-muted-foreground"
-            >
-              {secret ? <EyeOff /> : <Eye />}
-            </Button>
-          </CopyRow>
-        </div>
+        <InboundKeyRows
+          kind={kind}
+          path={path}
+          secret={secret}
+          onReveal={onReveal}
+          onHide={onHide}
+          className="mt-2.5"
+        />
       ) : (
         <p className="mt-1.5 px-0.5 text-body-sm text-muted-foreground">
           <Trans>Available after saving</Trans>
         </p>
       )}
+    </div>
+  );
+}
+
+/** The URL and key a sender needs, with the key hidden until the person shows it. */
+export function InboundKeyRows({
+  kind,
+  path,
+  secret,
+  onReveal,
+  onHide,
+  className,
+}: {
+  kind: "webhook" | "github";
+  path: string;
+  secret: string | null;
+  onReveal: () => void;
+  onHide: () => void;
+  className?: string;
+}) {
+  const { t } = useLingui();
+  const hidden = "••••••••";
+  const credential =
+    kind === "github"
+      ? { label: t`Secret`, value: secret ?? hidden }
+      : { label: t`Header`, value: `Authorization: Bearer ${secret ?? hidden}` };
+  return (
+    <div className={cn("space-y-2", className)}>
+      <CopyRow label={t`URL`} value={path} />
+      <CopyRow label={credential.label} value={credential.value} copyable={Boolean(secret)}>
+        <Button
+          variant="ghost"
+          size="icon-xs"
+          aria-label={secret ? t`Hide key` : t`Show key`}
+          onClick={secret ? onHide : onReveal}
+          className="text-muted-foreground"
+        >
+          {secret ? <EyeOff /> : <Eye />}
+        </Button>
+      </CopyRow>
     </div>
   );
 }

@@ -2,64 +2,98 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import type { PrismaClient } from "../database/client.js";
 import { createDb } from "../database/client.js";
 import { asSystem, runAsSystem, runAsTenant } from "../database/row-security.js";
-import { admitSpeech, confirmSpeechCost, settleSpeech } from "./costs.js";
+import { admitSpeech, confirmSpeechCost, remainingSpeechAllowance, settleSpeech } from "./costs.js";
 
 const suite = process.env.VERIFY_DATABASE && process.env.DATABASE_URL ? describe : describe.skip;
 suite("operator speech costs (PostgreSQL)", () => {
   let db: ReturnType<typeof createDb>;
   let system: PrismaClient;
-  const actor = { userId: "speech-test-account", spaceId: "speech-test-space" };
+  let settings: { modelCreditsEnabled: boolean } | null;
+  const suffix = `${process.pid}-${Date.now()}`;
+  const organizationId = `speech-organization-${suffix}`;
+  const actor = { userId: "speech-test-account", spaceId: `speech-space-${suffix}` };
+  // A $15 plan includes 20%: $3, or three of these reservations.
+  const limit = 3_000_000n;
   const price = {
     model: "speech-model",
     unit: "characters" as const,
     microsPerUnit: 2,
-    maxRequestMicros: 100,
+    maxRequestMicros: 1_000_000,
     source: "https://pricing.example/speech",
     version: "test-v1",
   };
   const admit = () =>
     runAsTenant(actor, () => admitSpeech(db.prisma, actor, "test-provider", "synthesize", price));
-  beforeAll(() => {
+  beforeAll(async () => {
     db = createDb(process.env.DATABASE_URL!);
     system = asSystem(db.prisma);
+    settings = await system.deploymentSettings.findUnique({
+      where: { id: "default" },
+      select: { modelCreditsEnabled: true },
+    });
+    await system.deploymentSettings.upsert({
+      where: { id: "default" },
+      create: { id: "default", modelCreditsEnabled: true },
+      update: { modelCreditsEnabled: true },
+    });
+    await system.organization.create({
+      data: {
+        id: organizationId,
+        name: organizationId,
+        slug: organizationId,
+        createdAt: new Date(),
+      },
+    });
+    await system.space.create({
+      data: { id: actor.spaceId, organizationId, name: "General" },
+    });
+    await system.billingAccount.create({
+      data: {
+        organizationId,
+        customerId: `speech-customer-${suffix}`,
+        status: "active",
+        byokTier: "standard",
+        byokPriceCents: 1_500,
+        byokInterval: "month",
+        currentPeriodStartsAt: new Date(Date.now() - 86_400_000),
+        currentPeriodEndsAt: new Date(Date.now() + 29 * 86_400_000),
+      },
+    });
   });
   beforeEach(async () => {
-    await system.$executeRaw`DELETE FROM speech_costs`;
-    await system.$executeRaw`DELETE FROM speech_allowances`;
-    await system.$executeRaw`INSERT INTO speech_allowances ("userId", "limitMicros", "expiresAt")
-      VALUES (${actor.userId}, 300, now() + interval '1 day')`;
+    await system.speechCost.deleteMany({ where: { spaceId: actor.spaceId } });
   });
   afterAll(async () => {
+    await system.speechCost.deleteMany({ where: { spaceId: actor.spaceId } });
+    await system.billingAccount.deleteMany({ where: { organizationId } });
+    await system.space.deleteMany({ where: { id: actor.spaceId } });
+    await system.organization.deleteMany({ where: { id: organizationId } });
+    if (settings)
+      await system.deploymentSettings.update({ where: { id: "default" }, data: settings });
+    else await system.deploymentSettings.delete({ where: { id: "default" } });
     await db.prisma.$disconnect();
     await db.pool.end();
   });
   async function used() {
-    const [row] = await system.$queryRaw<
-      Array<{ usedMicros: bigint }>
-    >`SELECT "usedMicros" FROM speech_allowances`;
-    return row!.usedMicros;
+    const remaining = await remainingSpeechAllowance(system, actor.spaceId);
+    return limit - remaining!;
   }
-  it("refuses direct tenant writes to operator grants and cost evidence", async () => {
+  it("refuses direct tenant writes to cost evidence", async () => {
     const id = await admit();
     await runAsTenant(actor, async () => {
-      expect(
-        await db.prisma
-          .$executeRaw`UPDATE speech_allowances SET "limitMicros" = 999999 WHERE "userId" = ${actor.userId}`,
-      ).toBe(0);
       expect(await db.prisma.$executeRaw`DELETE FROM speech_costs WHERE id = ${id}`).toBe(0);
-      await expect(
-        db.prisma
-          .$executeRaw`INSERT INTO speech_allowances ("userId", "limitMicros", "expiresAt") VALUES ('forged-account', 999999, now() + interval '1 day')`,
-      ).rejects.toThrow();
+      expect(
+        await db.prisma.$executeRaw`UPDATE speech_costs SET "accountedMicros" = 0 WHERE id = ${id}`,
+      ).toBe(0);
     });
-    expect(await used()).toBe(100n);
-    expect(await system.speechCost.count()).toBe(1);
+    expect(await used()).toBe(1_000_000n);
+    expect(await system.speechCost.count({ where: { spaceId: actor.spaceId } })).toBe(1);
   });
   it("admits only the available allowance under concurrent database requests", async () => {
     const results = await Promise.allSettled(Array.from({ length: 10 }, admit));
     expect(results.filter((r) => r.status === "fulfilled")).toHaveLength(3);
-    expect(await used()).toBe(300n);
-    expect(await system.speechCost.count()).toBe(3);
+    expect(await used()).toBe(limit);
+    expect(await system.speechCost.count({ where: { spaceId: actor.spaceId } })).toBe(3);
   });
   it("settles once, records attribution and provenance, and confirms actual cost separately", async () => {
     const id = await admit();
@@ -120,10 +154,10 @@ suite("operator speech costs (PostgreSQL)", () => {
         ),
       ).rejects.toMatchObject({ kind: "FORBIDDEN" });
     }
-    expect(await used()).toBe(100n);
+    expect(await used()).toBe(1_000_000n);
     expect(await system.speechCost.findUniqueOrThrow({ where: { id } })).toMatchObject({
       state: "pending",
-      accountedMicros: 100n,
+      accountedMicros: 1_000_000n,
     });
   });
   it("classifies invalid reconciliation evidence and missing cost rows", async () => {
@@ -173,7 +207,7 @@ suite("operator speech costs (PostgreSQL)", () => {
     const pending = await admit();
     const unresolved = await admit();
     await runAsTenant(actor, () => settleSpeech(db.prisma, unresolved, undefined));
-    expect(await used()).toBe(200n);
+    expect(await used()).toBe(2_000_000n);
     expect((await system.speechCost.findUniqueOrThrow({ where: { id: pending } })).state).toBe(
       "pending",
     );
@@ -184,7 +218,7 @@ suite("operator speech costs (PostgreSQL)", () => {
         reference: "fake-no-charge",
       }),
     );
-    expect(await used()).toBe(100n);
+    expect(await used()).toBe(1_000_000n);
   });
   it("keeps mismatched and mixed token usage unresolved with evidence intact", async () => {
     const mismatched = await admit();
@@ -203,7 +237,7 @@ suite("operator speech costs (PostgreSQL)", () => {
         "fake-token-request",
       ),
     );
-    expect(await used()).toBe(200n);
+    expect(await used()).toBe(2_000_000n);
     const row = await system.speechCost.findUniqueOrThrow({ where: { id: tokenId } });
     expect(row).toMatchObject({
       state: "unresolved",
@@ -211,26 +245,64 @@ suite("operator speech costs (PostgreSQL)", () => {
       billableUnits: { inputTokens: 30, outputTokens: 10 },
     });
   });
-  it("counts observed overruns and refuses expired, missing and other-account allowances", async () => {
+  it("keeps counting a deleted Space's speech against its organization", async () => {
+    await admit();
+    const otherSpaceId = `${actor.spaceId}-other`;
+    await system.space.create({ data: { id: otherSpaceId, organizationId, name: "Other" } });
+    try {
+      await system.space.delete({ where: { id: actor.spaceId } });
+      expect(await remainingSpeechAllowance(system, otherSpaceId)).toBe(limit - 1_000_000n);
+    } finally {
+      await system.space.deleteMany({ where: { id: otherSpaceId } });
+      await system.space.create({ data: { id: actor.spaceId, organizationId, name: "General" } });
+    }
+  });
+  it("counts observed overruns, renews with the plan's period and refuses without a plan", async () => {
     const id = await admit();
     await runAsTenant(actor, () =>
-      settleSpeech(db.prisma, id, { model: price.model, unit: price.unit, units: 200 }),
+      settleSpeech(db.prisma, id, { model: price.model, unit: price.unit, units: 2_000_000 }),
     );
-    expect(await used()).toBe(400n);
+    expect(await used()).toBe(4_000_000n);
     await expect(admit()).rejects.toThrow("allowance unavailable");
-    await system.$executeRaw`UPDATE speech_allowances SET "usedMicros" = 0, "expiresAt" = now() - interval '1 second'`;
-    await expect(admit()).rejects.toThrow("allowance unavailable");
-    await expect(
-      runAsTenant({ ...actor, userId: "another-account" }, () =>
-        admitSpeech(
-          db.prisma,
-          { ...actor, userId: "another-account" },
-          "test-provider",
-          "synthesize",
-          price,
-        ),
-      ),
-    ).rejects.toThrow();
-    expect(await system.speechCost.count()).toBe(1);
+    await system.billingAccount.update({
+      where: { organizationId },
+      data: { currentPeriodStartsAt: new Date(Date.now() + 1_000) },
+    });
+    expect(
+      await remainingSpeechAllowance(system, actor.spaceId, new Date(Date.now() + 2_000)),
+    ).toBe(limit);
+    await system.billingAccount.update({
+      where: { organizationId },
+      data: {
+        currentPeriodStartsAt: new Date(Date.now() - 31 * 86_400_000),
+        currentPeriodEndsAt: new Date(Date.now() - 86_400_000),
+      },
+    });
+    try {
+      await system.speechCost.deleteMany({ where: { spaceId: actor.spaceId } });
+      // A subscription still marked active after its period ended pays for nothing more.
+      await expect(admit()).rejects.toThrow("allowance unavailable");
+      await system.billingAccount.update({
+        where: { organizationId },
+        data: {
+          status: "canceled",
+          currentPeriodStartsAt: new Date(Date.now() - 86_400_000),
+          currentPeriodEndsAt: new Date(Date.now() + 29 * 86_400_000),
+        },
+      });
+      await expect(admit()).rejects.toThrow("allowance unavailable");
+      await system.deploymentSettings.update({
+        where: { id: "default" },
+        data: { modelCreditsEnabled: false },
+      });
+      expect(await remainingSpeechAllowance(system, actor.spaceId)).toBeNull();
+      await admit();
+    } finally {
+      await system.billingAccount.update({ where: { organizationId }, data: { status: "active" } });
+      await system.deploymentSettings.update({
+        where: { id: "default" },
+        data: { modelCreditsEnabled: true },
+      });
+    }
   });
 });

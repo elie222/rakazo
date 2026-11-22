@@ -18,8 +18,15 @@ export function writeArtifactCacheFile(
   artifactId: string,
   mimeType: string,
   contentBase64: string,
+  scope: readonly string[],
 ): File {
-  const file = new File(Paths.cache, artifactCacheFileName(artifactId, mimeType));
+  const directory = new Directory(
+    Paths.cache,
+    "artifact-details",
+    ...scope.map(encodeURIComponent),
+  );
+  directory.create({ intermediates: true, idempotent: true });
+  const file = new File(directory, artifactCacheFileName(artifactId, mimeType));
   file.create({ overwrite: true });
   file.writeSync(contentBase64, { encoding: "base64" });
   return file;
@@ -236,13 +243,17 @@ export async function shareLocalFile(uri: string, mimeType: string, name: string
   await shareNamedFile(new File(uri), mimeType, name);
 }
 
+/** A cache copy named for the destination, which takes its filename from the path. */
+export function namedArtifactFile(source: File, mimeType: string, name: string): File {
+  const dir = new Directory(source.parentDirectory, "shares", source.name || "attachment");
+  dir.create({ intermediates: true, idempotent: true });
+  const named = new File(dir, artifactShareFileName(name, mimeType));
+  source.copySync(named, { overwrite: true });
+  return named;
+}
+
 async function shareNamedFile(source: File, mimeType: string, name: string): Promise<void> {
-  const root = new Directory(Paths.cache, "artifact-shares");
-  if (!root.exists) root.create();
-  const dir = new Directory(root, source.name || "attachment");
-  if (!dir.exists) dir.create();
-  const shared = new File(dir, artifactShareFileName(name, mimeType));
-  source.copySync(shared, { overwrite: true });
+  const shared = namedArtifactFile(source, mimeType, name);
   if (await Sharing.isAvailableAsync()) {
     await Sharing.shareAsync(shared.uri, { mimeType });
     return;

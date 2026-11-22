@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
+import { isBuildId } from "@rakazo/contracts/client-build";
 
 /** Under the web app's root. The container images create it and Compose mounts a volume there. */
 export const ASSET_ARCHIVE_DIR = "asset-archive";
@@ -89,7 +90,8 @@ export function archiveAssets(options: {
   now: number;
 }): string | null {
   const { assetsDir, archiveDir, buildId, now } = options;
-  if (!buildId || !fs.existsSync(archiveDir)) return null;
+  // The id names a file under the archive, so a malformed one must not reach a path.
+  if (!isBuildId(buildId) || !fs.existsSync(archiveDir)) return null;
   const archivedAssets = path.join(archiveDir, "assets");
   const buildsDir = path.join(archiveDir, "builds");
   fs.mkdirSync(archivedAssets, { recursive: true });

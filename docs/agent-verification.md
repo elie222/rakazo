@@ -242,9 +242,11 @@ variable rather than placing a key on the command line:
 ```bash
 pnpm test:evals --live --provider openrouter --model <model-id> \
   --api-key-env OPENROUTER_API_KEY --pricing <pricing.json> \
-  --judge-connection <private-judge-connection.json> --judge-pricing <judge-pricing.json> \
-  --trials 3
+  --judge-connection <private-judge-connection.json> --judge-pricing <judge-pricing.json>
 ```
+
+The CLI defaults to one trial per case and strategy. Use `--trials` with a higher
+count when investigating an intermittent failure or measuring variability.
 
 Cases that grade what the bot wrote need the judge: without `--judge-connection`
 and `--judge-pricing` a run that selects one schedules no inference and reports
@@ -278,7 +280,9 @@ version are kept apart.
 With a store, each case's first request is fingerprinted before it is sent. If
 a stored run has the same fingerprint, its trials are taken as they are under
 the same judge, or graded again from their stored evidence under a different
-one, and the request is never sent; otherwise the case runs. Trials that failed
+one, and the request is never sent; otherwise the case runs. The same judge
+means the same provider, model, rubric version and recorded settings; a run
+saved before the settings were recorded is graded again. Trials that failed
 for harness, provider, cleanup or time reasons are never reused. `--fresh`
 runs everything again. Each trial's `origin` and each case's `origin` counts in
 the summary say what was reused or regraded, and `workflowTotals` counts only
@@ -334,6 +338,27 @@ Failures distinguish agent outcomes, product errors, provider failures,
 harness failures and incomplete runs. Read the category and evidence before
 attributing a red run to a prompt change. Several trials establish an initial
 baseline, not a statistically precise reliability estimate.
+
+Compare two saved version 2 workflow Eval reports locally.
+
+```sh
+pnpm test:evals:compare baseline.json candidate.json
+```
+
+The command matches trials by case, strategy, and trial number. It lists
+passed-to-failed transitions and planned trials marked as not run. Reused or
+regraded results are marked on transitions. Workflow cost shows the report's
+recorded spend and displays `unknown` when unavailable. A completed comparison
+exits with status 0. If recorded settings or trial plans differ, the command
+names the differences and exits with status 1. This includes a suite recorded
+on only one side. Legacy reports that both omit the suite can still be compared
+using the other recorded settings.
+
+The check covers settings recorded in the JSON. Reports record the judge's
+output token limit, reasoning settings and a short hash of its endpoint, never
+the URL itself. Reports from before that show these as unknown instead of
+failing, so check them by hand. The bot's own endpoint is not recorded: keep
+its model connection the same when collecting a report pair.
 
 The injection case checks the requested artifact and forbidden service effects.
 It does not grade every claim in free-form explanatory prose; quoted or denied
@@ -439,7 +464,7 @@ on itself.
 
 ```sh
 pnpm test:evals --suite group-routing --list
-pnpm test:evals --live --suite group-routing --connection <private-connection.json> --pricing <pricing.json> --trials 3 --spend-cap-usd 1 --output test-report/evals/group-routing.json
+pnpm test:evals --live --suite group-routing --connection <private-connection.json> --pricing <pricing.json> --spend-cap-usd 1 --output test-report/evals/group-routing.json
 ```
 
 Each case sends a group message that names nobody, so every member gets it and
@@ -464,7 +489,7 @@ Anthropic model often answered a question about both peers with one of them.
 
 ```sh
 pnpm test:evals --suite bot-files --list
-pnpm test:evals --live --suite bot-files --connection <private-connection.json> --pricing <pricing.json> --trials 3 --spend-cap-usd 1 --output test-report/evals/bot-files.json
+pnpm test:evals --live --suite bot-files --connection <private-connection.json> --pricing <pricing.json> --spend-cap-usd 1 --output test-report/evals/bot-files.json
 ```
 
 The cases check that a bot passes a project to another bot with `files` instead
@@ -566,7 +591,7 @@ passed every case.
 
 ```sh
 pnpm test:evals --suite memory --list
-pnpm test:evals --live --suite memory --connection <private-connection.json> --pricing <pricing.json> --judge-connection <private-judge-connection.json> --judge-pricing <judge-pricing.json> --trials 3 --spend-cap-usd 1 --output test-report/evals/memory.json
+pnpm test:evals --live --suite memory --connection <private-connection.json> --pricing <pricing.json> --judge-connection <private-judge-connection.json> --judge-pricing <judge-pricing.json> --spend-cap-usd 1 --output test-report/evals/memory.json
 ```
 
 The five synthetic cases check that the bot's own memory stays short and correct
@@ -582,7 +607,7 @@ Deterministic checks read the stored memory and the model's `remember` calls:
 each earlier fact must have been saved before it can count as updated or
 forgotten, the home saved in the first conversation must not survive unchanged, entries
 stay under 200 characters, and the bot's memory stays within the limit. The
-`memory-meaning-v1` judge then grades meaning: no stale current home, no
+`memory-meaning-v2` judge then grades meaning: no stale current home, no
 recoverable forgotten code, no duplicate preference, every shared fact captured,
 and every important seeded fact preserved. Calibration labels cover a former
 home, a contradiction, a stale recall, a residual secret, a duplicate, a dropped
@@ -592,11 +617,28 @@ The offline model-protocol fixture runs the same product path and proves that an
 appended Berlin beside London and a claimed save after a full-memory refusal
 fail, while a rewrite and a consolidate-then-save pass.
 
+Seven `memory-proactive-*` cases check that the bot takes notes on its own. In
+three, the user mentions a lasting fact in passing (a child's allergy, a team
+decision, a new job) without asking for it to be saved: a save must happen, and
+the judge checks that memory now holds the fact. In four, nothing should be
+saved: small talk, a one-off conversion, a fact memory already holds, and a
+guest Wi-Fi password shared only to write a message, which must never reach
+memory.
+
+In the November 2026 run on two models over three trials each, the bot saved
+the passing facts on about two of every three tries and left every negative
+alone. After the memory guidance was changed to say passing facts count, it
+saved them every time (one trial still failed because the bot stopped to ask a
+question), the negatives stayed clean, and the existing memory cases still
+passed. An earlier wording that also told the bot to skip
+secrets made one model refuse to save a door code the user asked it to
+remember, so the guidance names what to save, not what to avoid.
+
 ### Earlier file recall evals
 
 ```sh
 pnpm test:evals --suite recall --list
-pnpm test:evals --live --suite recall --strategy retrieval --connection <private-connection.json> --pricing <pricing.json> --judge-connection <private-judge-connection.json> --judge-pricing <judge-pricing.json> --trials 3 --spend-cap-usd 1 --output test-report/evals/recall.json
+pnpm test:evals --live --suite recall --strategy retrieval --connection <private-connection.json> --pricing <pricing.json> --judge-connection <private-judge-connection.json> --judge-pricing <judge-pricing.json> --spend-cap-usd 1 --output test-report/evals/recall.json
 ```
 
 Each case seeds 1,000 synthetic messages, with a lease the user uploaded at

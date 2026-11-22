@@ -54,3 +54,36 @@ it("asks the server for the page runtime again each time a page opens", async ()
   expect(shown).toContain("kit-v2");
   expect(fetcher).toHaveBeenCalledTimes(2);
 });
+
+it("rebuilds the review document when only its section changes", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  vi.stubGlobal("matchMedia", () => ({
+    matches: false,
+    addEventListener() {},
+    removeEventListener() {},
+  }));
+  vi.stubGlobal("fetch", async () => new Response("/*kit*/"));
+  let shown: string | null = null;
+  function Page({ occurrence }: { occurrence: number }) {
+    shown = usePageDocument("export default () => null;", "card", false, 0, true, {
+      section: "Summary",
+      sectionOccurrence: occurrence,
+    }).document;
+    return null;
+  }
+  const root = createRoot(document.body.appendChild(document.createElement("div")));
+  const show = (occurrence: number) =>
+    act(async () => {
+      root.render(
+        <QueryClientProvider client={queryClient}>
+          <Page occurrence={occurrence} />
+        </QueryClientProvider>,
+      );
+    });
+  await show(0);
+  await act(flush);
+  expect(shown).toContain('"reviewAnchor":"Summary","reviewAnchorOccurrence":0');
+  await show(1);
+  expect(shown).toContain('"reviewAnchor":"Summary","reviewAnchorOccurrence":1');
+  await act(async () => root.unmount());
+});

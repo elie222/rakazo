@@ -1,7 +1,7 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AppHandles } from "../app.js";
 import { createApp } from "../app.js";
 import { loadEnv } from "../env.js";
@@ -15,10 +15,16 @@ describe.skipIf(!databaseUrl)("raw routes", () => {
   let dataDir: string;
   let handles: AppHandles;
 
-  beforeAll(async () => {
-    dataDir = await mkdtemp(join(tmpdir(), "rakazo-raw-routes-"));
+  // The app reads these when it starts, and the tests read them again.
+  const stubMeetingEnv = () => {
     vi.stubEnv("MEETING_PROVIDER", "emulator");
     vi.stubEnv("MEETING_PUBLIC_ORIGIN", "https://meetings.example.test");
+  };
+  beforeEach(stubMeetingEnv);
+
+  beforeAll(async () => {
+    dataDir = await mkdtemp(join(tmpdir(), "rakazo-raw-routes-"));
+    stubMeetingEnv();
     // Every optional feature that mounts a raw route is switched on.
     handles = await createApp({
       databaseUrl: databaseUrl!,

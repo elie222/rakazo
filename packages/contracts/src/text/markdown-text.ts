@@ -21,7 +21,7 @@ export function droppedTableHtmlText(html: string): string | null {
   return null;
 }
 
-function decodeHtmlEntities(value: string): string {
+export function decodeHtmlEntities(value: string): string {
   const named: Record<string, string> = {
     amp: "&",
     apos: "'",
@@ -38,9 +38,9 @@ function decodeHtmlEntities(value: string): string {
         code.slice(code[1]?.toLowerCase() === "x" ? 2 : 1),
         code[1]?.toLowerCase() === "x" ? 16 : 10,
       );
-      return Number.isInteger(point) && point > 0 && point <= 0x10ffff
-        ? String.fromCodePoint(point)
-        : entity;
+      // Like HTML, zero, surrogates and points past U+10FFFF decode to U+FFFD.
+      const invalid = point === 0 || point > 0x10ffff || (point >= 0xd800 && point <= 0xdfff);
+      return invalid ? "\ufffd" : String.fromCodePoint(point);
     },
   );
 }

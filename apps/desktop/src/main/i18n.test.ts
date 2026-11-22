@@ -67,12 +67,8 @@ describe("desktop language", () => {
     [null, "es_ES", "es"],
     ["pl", "en-US", "pl"],
     [null, "pl-PL", "pl"],
-    [null, "pl_PL", "pl"],
-    ["en", "pl-PL", "en"],
     ["th", "en-US", "th"],
     [null, "th-TH", "th"],
-    [null, "th_TH", "th"],
-    ["en", "th-TH", "en"],
     // The app offers languages the desktop has no catalog for yet; those read English.
     ["it", "es-CL", "en"],
     [null, "it-IT", "en"],

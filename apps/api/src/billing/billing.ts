@@ -23,7 +23,14 @@ import {
   sandboxHoursLeft,
   sandboxKindCapabilities,
 } from "@rakazo/adapters";
-import type { Actor, BillingStatus, ByokInterval, ByokTier, ComputerSize } from "@rakazo/contracts";
+import type {
+  Actor,
+  BillingStatus,
+  ByokInterval,
+  ByokTier,
+  CloudComputers,
+  ComputerSize,
+} from "@rakazo/contracts";
 import {
   BYOK_TIERS,
   byokTierPriceCents,
@@ -36,7 +43,6 @@ import type { BillingAccount, PrismaClient } from "@rakazo/db";
 import {
   billingAccountForOrganization,
   byokFreeUntil,
-  computerSizeSettings,
   createBillingAccount,
   creditAccount,
   expireModelCredits,
@@ -50,6 +56,7 @@ import {
   organizationOwnerHadTrial,
   organizationSeatCount,
   ownedBillingAccounts,
+  personalOrganizationIds,
   publishOrganizationChange,
   releaseByokTrialCheckout,
   releaseByokTrialCheckouts,
@@ -62,7 +69,6 @@ import {
 import { bestEffort, getLogger } from "@rakazo/logging";
 import { applyAccessGrants } from "../auth/access-grants.js";
 import type { ScheduleLifecycleEmail } from "../email/lifecycle-email.js";
-import { createExperiments } from "../telemetry/experiments.js";
 import {
   byokTierOffers,
   byokTrialAvailable,
@@ -72,7 +78,7 @@ import {
 } from "./byok-terms.js";
 import type { UnderLease } from "./checkout-lease.js";
 import { withCheckoutLease } from "./checkout-lease.js";
-import { readComputerUsage, saveComputerSize } from "./computer-usage.js";
+import { readCloudComputers, readComputerUsage, saveCloudComputerSize } from "./computer-usage.js";
 import { createPartnerSales } from "./partner-sales.js";
 import { schedulePlanStartEmails } from "./plan-start-emails.js";
 import { createReferrals } from "./referrals.js";
@@ -95,7 +101,9 @@ export interface BillingService {
   readonly referralsEnabled: boolean;
   status(actor: Actor): Promise<BillingStatus>;
   computerUsage(actor: Actor): ReturnType<typeof readComputerUsage>;
-  setComputerSize(actor: Actor, size: ComputerSize): Promise<void>;
+  /** Null where sizes cannot be chosen. */
+  cloudComputers(actor: Actor): Promise<CloudComputers | null>;
+  setComputerSize(actor: Actor, computerId: string, size: ComputerSize): Promise<void>;
   selectFunding(
     actor: Actor,
     funding: "byok" | "credits",
@@ -133,7 +141,10 @@ export interface BillingService {
   /** Pushes the organization's member count to the provider. Call when members change. */
   syncSeats(organizationId: string): Promise<void>;
   cancelForDeletedUser(userId: string): Promise<void>;
-  cancelForDeletedOrganization(organizationId: string): Promise<void>;
+  cancelOrganizationSubscriptions(
+    organizationId: string,
+    expectedCustomerId?: string,
+  ): Promise<void>;
   claimReferral(actor: Actor, code: string): Promise<void>;
 }
 
@@ -147,12 +158,10 @@ export function createBillingService(deps: {
   /** The session cookie lives on the web origin, which also proxies /api to this server. */
   webOrigin: string;
   analytics?: ProductAnalytics;
-  experiments?: ReturnType<typeof createExperiments>;
   partnerProgram?: PartnerProgram;
   scheduleLifecycleEmail?: ScheduleLifecycleEmail;
 }): BillingService {
   const { prisma, provider } = deps;
-  const experiments = deps.experiments ?? createExperiments(undefined);
   const appUrl = `${deps.webOrigin}/app`;
   const returnUrl = `${deps.webOrigin}${BILLING_RETURN_PATH}`;
   /** A mobile checkout returns through the API either way, which hands back to the app. */
@@ -351,7 +360,6 @@ export function createBillingService(deps: {
         ? { name: "subscription_started", ...terms, trial: live.status === "trialing" }
         : { name: "trial_ended", ...terms, converted: converted === true },
       { id: settled ? `${live.subscriptionId}:settled` : live.subscriptionId, at },
-      experiments.tags("plan-layout", previous.organizationId),
     );
   }
 
@@ -389,15 +397,23 @@ export function createBillingService(deps: {
     return members.find((member) => isOwnerRole(member.role))?.userId;
   }
 
-  async function cancel(organizationId: string) {
+  async function cancel(organizationId: string, expectedCustomerId?: string) {
     // Holds the organization's checkout lease, so a checkout still opening finishes first and
     // the session it leaves is expired here instead of outliving the cancellation. The account
     // is read under the lease: that checkout may have replaced its customer.
-    await withCheckoutLease(prisma, organizationId, async () => {
+    await withCheckoutLease(prisma, organizationId, async (underLease) => {
       const account = await billingAccountForOrganization(prisma, organizationId);
+      if (expectedCustomerId && account?.customerId !== expectedCustomerId)
+        throw new ClientError(
+          "CONFLICT",
+          "The billing account changed. Preview the cancellation again.",
+        );
       if (!account) return;
       await provider.cancelCustomerSubscriptions(account.customerId);
+      // A checkout may have completed before expiration. Sync the resulting subscription before
+      // releasing the hold, so another organization cannot offer that owner a second trial.
       await sync(account.customerId);
+      await underLease((tx) => releaseByokTrialCheckouts(tx, organizationId));
     });
   }
 
@@ -524,12 +540,13 @@ export function createBillingService(deps: {
         if (hold) await extendByokTrialCheckout(prisma, organizationId, hold);
         return session;
       });
-      deps.analytics?.capture(
-        actor.userId,
-        { name: "checkout_opened", plan: "own_key", tier, interval, amountCents },
-        undefined,
-        experiments.tags("plan-layout", organizationId),
-      );
+      deps.analytics?.capture(actor.userId, {
+        name: "checkout_opened",
+        plan: "own_key",
+        tier,
+        interval,
+        amountCents,
+      });
       return session;
     } catch (error) {
       if (!(error instanceof BillingCheckoutCompletedError)) throw error;
@@ -646,17 +663,12 @@ export function createBillingService(deps: {
           data: { pendingCreditCheckout: true },
         });
         if (input.monthly)
-          deps.analytics?.capture(
-            actor.userId,
-            {
-              name: "checkout_opened",
-              plan: "credits",
-              interval: "month",
-              amountCents: input.amountCents,
-            },
-            undefined,
-            experiments.tags("plan-layout", organizationId),
-          );
+          deps.analytics?.capture(actor.userId, {
+            name: "checkout_opened",
+            plan: "credits",
+            interval: "month",
+            amountCents: input.amountCents,
+          });
         return checkout;
       } catch (error) {
         if (error instanceof BillingCheckoutCompletedError)
@@ -693,11 +705,17 @@ export function createBillingService(deps: {
       return readComputerUsage(prisma, deps.sandbox, organizationId, actor.spaceId);
     },
 
-    async setComputerSize(actor, size) {
+    async cloudComputers(actor) {
+      if (!modelCredits || !supportsComputerSizing()) return null;
+      const { organizationId, isOwner } = await organization(actor);
+      return readCloudComputers(prisma, organizationId, actor.spaceId, isOwner);
+    },
+
+    async setComputerSize(actor, computerId, size) {
       const { organizationId } = await managedOrganization(actor);
       if (!modelCredits || !supportsComputerSizing())
         throw new ClientError("NOT_FOUND", "Computer size settings are unavailable");
-      await saveComputerSize(prisma, organizationId, size);
+      await saveCloudComputerSize(prisma, organizationId, actor.spaceId, computerId, size);
       await publishOrganizationChange(prisma, deps.realtime, organizationId);
     },
 
@@ -709,22 +727,13 @@ export function createBillingService(deps: {
             getLogger().error("access grant failed", error),
           );
         const sized = supportsComputerSizing();
-        const [credits, account, computerAllowance, days, hadTrial, sizePreference] =
-          await Promise.all([
-            unexpiredCreditAccount(prisma, organizationId),
-            billingAccountForOrganization(prisma, organizationId),
-            deps.sandbox
-              ? sandboxAllowance({ prisma, sandbox: deps.sandbox }, organizationId)
-              : null,
-            trialDays(organizationId),
-            organizationOwnerHadTrial(prisma, organizationId, "byok"),
-            sized
-              ? prisma.organization.findUnique({
-                  where: { id: organizationId },
-                  select: { computerSize: true },
-                })
-              : null,
-          ]);
+        const [credits, account, computerAllowance, days, hadTrial] = await Promise.all([
+          unexpiredCreditAccount(prisma, organizationId),
+          billingAccountForOrganization(prisma, organizationId),
+          deps.sandbox ? sandboxAllowance({ prisma, sandbox: deps.sandbox }, organizationId) : null,
+          trialDays(organizationId),
+          organizationOwnerHadTrial(prisma, organizationId, "byok"),
+        ]);
         const freeUntil =
           credits.mode === "byok" &&
           BYOK_TIERS.standard.monthlyPriceCents !== null &&
@@ -735,9 +744,6 @@ export function createBillingService(deps: {
         const tier = subscribed?.tier ?? "standard";
         const hourMicros = deps.sandbox && sandboxDisplayedHourMicros(deps.sandbox);
         const offers = byokTierOffers(Boolean(sized), hourMicros);
-        const sizing =
-          sizePreference &&
-          computerSizeSettings({ ...sizePreference, modelCredits: credits, billing: account });
         return {
           access: hasModelAccess(credits, account?.status ?? null),
           funding:
@@ -756,10 +762,6 @@ export function createBillingService(deps: {
           byokAnnualPriceCents: byokTierPriceCents(tier, "year"),
           byokTier: tier,
           ...(offers.length ? { byokTiers: offers } : {}),
-          // New organizations only, so a returning subscriber's choice stays out of the comparison.
-          ...(offers.length > 1 && !account?.subscribedAt && experiments.running("plan-layout")
-            ? { planLayout: experiments.variant("plan-layout", organizationId) }
-            : {}),
           byokFreeUntil: freeUntil?.toISOString() ?? null,
           canManage: isOwner,
           trialAvailable:
@@ -784,9 +786,9 @@ export function createBillingService(deps: {
             computerAllowance &&
             sandboxHoursLeft(
               computerAllowance,
-              sizing ? SANDBOX_SIZE_HOURLY_COST_MICROS[sizing.size] : hourMicros,
+              sized ? SANDBOX_SIZE_HOURLY_COST_MICROS.standard : hourMicros,
             ),
-          ...(sizing && { computerSizeSettings: sizing }),
+          ...(sized && { standardComputerHours: true as const }),
           computerHoursResetAt: computerAllowance?.resetsAt?.toISOString() ?? null,
           referral: await referrals.status(organizationId, isOwner),
         };
@@ -930,16 +932,14 @@ export function createBillingService(deps: {
     },
 
     async cancelForDeletedUser(userId) {
+      const departing = new Set(await personalOrganizationIds(prisma, userId));
       for (const account of await ownedBillingAccounts(prisma, userId))
-        await cancel(account.organizationId);
+        if (departing.has(account.organizationId)) await cancel(account.organizationId);
     },
 
-    async cancelForDeletedOrganization(organizationId) {
-      if (!(await billingAccountForOrganization(prisma, organizationId))) return;
-      await cancel(organizationId);
-      // The cancellation expired the organization's open checkout sessions, so their hold on
-      // the owners' trial goes; a failed cancellation keeps it until a retry succeeds.
-      await releaseByokTrialCheckouts(prisma, organizationId);
+    async cancelOrganizationSubscriptions(organizationId, expectedCustomerId) {
+      if (expectedCustomerId || (await billingAccountForOrganization(prisma, organizationId)))
+        await cancel(organizationId, expectedCustomerId);
     },
   };
 }

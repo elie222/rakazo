@@ -55,6 +55,13 @@ describe("chatAppAskText", () => {
     ).toBe(`Your API key\n${CHAT_APP_ASK_NOTE}`);
   });
 
+  it("links the note to the bot's chat in the app when its address is known", () => {
+    const appUrl = "https://app.example.test/app/bot-1";
+    expect(chatAppAskText({ kind: "ask", text: "Which day?", status: "pending" }, appUrl)).toBe(
+      `Which day?\nAnswer in the app: ${appUrl}`,
+    );
+  });
+
   it("adds nothing for an answered question or another block", () => {
     expect(chatAppAskText({ kind: "ask", text: "Which day?", status: "answered" })).toBeUndefined();
     expect(chatAppAskText({ kind: "text", text: "Hello" })).toBeUndefined();

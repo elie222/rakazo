@@ -1,0 +1,6 @@
+[Default Applications]
+x-scheme-handler/http=rakazo-browser.desktop
+x-scheme-handler/https=rakazo-browser.desktop
+text/html=rakazo-browser.desktop
+x-scheme-handler/about=rakazo-browser.desktop
+x-scheme-handler/unknown=rakazo-browser.desktop

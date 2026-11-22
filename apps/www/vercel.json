@@ -39,6 +39,16 @@
       "permanent": false
     },
     {
+      "source": "/supporter",
+      "destination": "https://buy.stripe.com/aFa8wQ4ACaY40Qr8rfcAo01",
+      "permanent": false
+    },
+    {
+      "source": "/priority-support",
+      "destination": "https://buy.stripe.com/4gM00kaZ08PW1Uv5f3cAo00",
+      "permanent": false
+    },
+    {
       "source": "/discord",
       "destination": "https://discord.gg/RWwKa2Sn7h",
       "permanent": false

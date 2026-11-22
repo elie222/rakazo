@@ -31,6 +31,13 @@ function lookupOptions(options: unknown): { all?: boolean; family?: number } {
   return {};
 }
 
+function preferredLookupFamily(): 0 | 4 | 6 {
+  const order = dns.getDefaultResultOrder();
+  if (order === "ipv4first") return 4;
+  if (order === "ipv6first") return 6;
+  return 0;
+}
+
 function selectLookupAddress(
   addresses: ResolvedAddress[],
   options: { all?: boolean; family?: number },
@@ -43,7 +50,13 @@ function selectLookupAddress(
     if (candidates.length === 0) throw new Error("Endpoint did not resolve to an address");
     return { all: true, addresses: candidates };
   }
-  const selected = candidates[0];
+  // Resolution is `verbatim` (DNS order), which ignores Node's `--dns-result-order`. For a single
+  // address with no requested family, honour that setting here so a host with no IPv6 route can
+  // run with `--dns-result-order=ipv4first`. The default (`verbatim`) keeps the first answer.
+  const preferredFamily = requestedFamily === 0 ? preferredLookupFamily() : 0;
+  const selected =
+    (preferredFamily ? candidates.find((entry) => entry.family === preferredFamily) : undefined) ??
+    candidates[0];
   if (!selected) throw new Error("Endpoint did not resolve to an address");
   return { all: false, address: selected.address, family: selected.family };
 }

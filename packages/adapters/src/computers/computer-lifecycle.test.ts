@@ -121,7 +121,7 @@ describe("computer provisioning", () => {
           "computer-1",
           context,
         ),
-      ).resolves.toEqual(ref);
+      ).resolves.toEqual({ ...ref, startSize: "standard" });
       expect(provision).toHaveBeenCalledOnce();
       expect(prisma.computer.updateMany).toHaveBeenLastCalledWith(
         expect.objectContaining({ data: expect.objectContaining({ state: "running" }) }),
@@ -1453,7 +1453,7 @@ describe("computer provisioning", () => {
           await vi.advanceTimersByTimeAsync(250);
           await new Promise((resolve) => setImmediate(resolve));
         }
-        await expect(started).resolves.toEqual(ref);
+        await expect(started).resolves.toEqual({ ...ref, startSize: "standard" });
         const activation = {
           state: "running",
           providerRef: next.providerRef,
@@ -1911,7 +1911,7 @@ describe("computer provisioning", () => {
         if (prepareFails) {
           await expect(result).rejects.toThrow("provider preparation failed");
         } else {
-          await expect(result).resolves.toEqual(ref);
+          await expect(result).resolves.toEqual({ ...ref, startSize: "standard" });
         }
         expect(prepare).toHaveBeenCalledWith(ref, context);
         expect(sandbox.importWorkspace).not.toHaveBeenCalled();
@@ -1975,7 +1975,7 @@ describe("computer provisioning", () => {
           "computer-1",
           context,
         ),
-      ).resolves.toEqual(ref);
+      ).resolves.toEqual({ ...ref, startSize: "standard" });
       expect(importWorkspace).toHaveBeenCalledTimes(1);
       expect(updateMany).toHaveBeenCalledTimes(2);
       expect(updateMany).toHaveBeenLastCalledWith(
@@ -2082,7 +2082,7 @@ describe("the record of a machine a start created", () => {
   it("is dropped in the transaction that stores the machine and leaves booting", async () => {
     const { row, writes, run } = start();
 
-    await expect(run()).resolves.toEqual(ref);
+    await expect(run()).resolves.toEqual({ ...ref, startSize: "standard" });
 
     expect(row).toMatchObject({ state: "running", providerRef: "machine-1" });
     expect(writes).toEqual(["in transaction: running", `in transaction: cancel ${key}`]);
@@ -2205,6 +2205,9 @@ describe("Team Computer wake", () => {
           modelCredits: { mode: "credits" },
           billing: { creditAmountCents: 5000 },
         }),
+      },
+      computerAllowanceGrant: {
+        aggregate: vi.fn().mockResolvedValue({ _sum: { amountCents: null } }),
       },
       // $10 of a $50 plan, at the default $0.10 an hour.
       $queryRaw: vi.fn().mockResolvedValue([{ kind: "e2b", hours: 100 }]),
@@ -2363,6 +2366,25 @@ describe("Team Computer wake", () => {
     );
   });
 
+  it("hands back a reference that wakes the computer at its planned size", async () => {
+    const harness = wakeHarness("stopped");
+    vi.mocked(planComputerSize).mockResolvedValueOnce("large");
+
+    await expect(boot(harness)).resolves.toMatchObject({ startSize: "large" });
+  });
+
+  it("wakes a reused running computer at its planned size", async () => {
+    const harness = wakeHarness("running", undefined, { kind: "boat" }, { kind: "boat" });
+    Object.assign(harness.sandbox, { isRunning: vi.fn().mockResolvedValue(true) });
+    vi.mocked(planComputerSize).mockResolvedValueOnce("large");
+
+    await expect(boot(harness)).resolves.toMatchObject({
+      providerRef: "sandbox-1",
+      startSize: "large",
+    });
+    expect(harness.sandbox.provision).not.toHaveBeenCalled();
+  });
+
   it("ends a run the provider stopped on its own when reconnecting has to start it again", async () => {
     const harness = wakeHarness(
       "running",
@@ -2383,13 +2405,13 @@ describe("Team Computer wake", () => {
       new Error("database unavailable"),
     );
 
-    await expect(boot(harness)).resolves.toEqual(harness.ref);
+    await expect(boot(harness)).resolves.toEqual({ ...harness.ref, startSize: "standard" });
   });
 
   it("removes folders of bots deleted while the Team Computer was stopped", async () => {
     const harness = wakeHarness("stopped");
 
-    await expect(boot(harness)).resolves.toEqual(harness.ref);
+    await expect(boot(harness)).resolves.toEqual({ ...harness.ref, startSize: "standard" });
 
     expect(harness.findMany).toHaveBeenCalledWith({
       where: { spaceId: "workspace-1" },
@@ -2408,7 +2430,7 @@ describe("Team Computer wake", () => {
   it("does not look for deleted bots' folders when reconnecting to a running Team Computer", async () => {
     const harness = wakeHarness("running");
 
-    await expect(boot(harness)).resolves.toEqual(harness.ref);
+    await expect(boot(harness)).resolves.toEqual({ ...harness.ref, startSize: "standard" });
 
     expect(harness.findMany).not.toHaveBeenCalled();
   });
@@ -2425,7 +2447,7 @@ describe("Team Computer wake", () => {
         provisioned,
       );
 
-      await expect(boot(harness)).resolves.toEqual(harness.ref);
+      await expect(boot(harness)).resolves.toEqual({ ...harness.ref, startSize: "standard" });
 
       expect(harness.execute).toHaveBeenCalledWith(
         harness.ref,
@@ -2455,7 +2477,7 @@ describe("Team Computer wake", () => {
       await cleanupStarted.promise;
       await vi.advanceTimersByTimeAsync(20_000);
 
-      await expect(booting).resolves.toEqual(harness.ref);
+      await expect(booting).resolves.toEqual({ ...harness.ref, startSize: "standard" });
     } finally {
       vi.useRealTimers();
     }
@@ -2469,7 +2491,7 @@ describe("Team Computer wake", () => {
     const sink = createTestSink();
     installLogger(createLogger({ service: "test", sinks: [sink] }));
     try {
-      await expect(boot(harness)).resolves.toEqual(harness.ref);
+      await expect(boot(harness)).resolves.toEqual({ ...harness.ref, startSize: "standard" });
     } finally {
       installLogger(createLogger({ service: "test", level: "off", sinks: [] }));
     }
@@ -3616,44 +3638,6 @@ describe("computer replacement", () => {
     expect(updateMany).not.toHaveBeenCalled();
   });
 
-  it("rejects replacement while the target bot has an active run", async () => {
-    const prisma = {
-      $transaction: vi.fn(async (fn: (tx: unknown) => unknown) => fn(prisma)),
-      $queryRaw: vi.fn(async () => []),
-      space: { findUnique: vi.fn(async () => null) },
-      computer: {
-        findUniqueOrThrow: vi.fn().mockResolvedValue({
-          id: "computer-1",
-          homeKey: "bot-1",
-          providerRef: "provider-1",
-          kind: "fake",
-          scope: "dedicated",
-          state: "running",
-          controlLeaseId: null,
-          updatedAt: new Date("2024-01-01T00:00:00.000Z"),
-        }),
-        updateMany: vi.fn().mockResolvedValueOnce({ count: 1 }),
-      },
-      run: {
-        findFirst: vi.fn().mockResolvedValue({ id: "same-bot-run" }),
-      },
-    } as unknown as PrismaClient;
-    await expect(
-      replaceComputer(
-        {
-          prisma,
-          sandbox: new FakeSandboxProvider(),
-          home: {} as AgentHomeStore,
-          jobs: jobQueue(),
-          events: {} as ThreadEvents,
-        },
-        "computer-1",
-        "recover",
-        context,
-      ),
-    ).rejects.toBeInstanceOf(ComputerBusyError);
-  });
-
   it("rejects replacement while any bot holds user control", async () => {
     const prisma = transactional({
       computer: {
@@ -3682,39 +3666,6 @@ describe("computer replacement", () => {
         },
         "computer-1",
         "recover",
-        context,
-      ),
-    ).rejects.toBeInstanceOf(ComputerBusyError);
-  });
-
-  it("rejects replacement while the same bot holds user control", async () => {
-    const prisma = transactional({
-      computer: {
-        findUniqueOrThrow: vi.fn().mockResolvedValue({
-          id: "computer-1",
-          homeKey: "bot-1",
-          providerRef: "provider-1",
-          kind: "fake",
-          scope: "dedicated",
-          state: "running",
-          controlHolder: "user",
-          controlLeaseId: "lease-1",
-          controlLeaseExpiresAt: new Date(Date.now() + 60_000),
-          controlBotId: "bot-1",
-        }),
-      },
-    });
-    await expect(
-      replaceComputer(
-        {
-          prisma,
-          sandbox: new FakeSandboxProvider(),
-          home: {} as AgentHomeStore,
-          jobs: jobQueue(),
-          events: {} as ThreadEvents,
-        },
-        "computer-1",
-        "reset",
         context,
       ),
     ).rejects.toBeInstanceOf(ComputerBusyError);

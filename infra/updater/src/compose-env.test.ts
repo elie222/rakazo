@@ -51,6 +51,8 @@ const NOT_PASSED: Record<string, string> = {
   PM2_HOME: "restart-supervisor detection for PM2 hosts; Compose restarts containers",
   INVOCATION_ID: "restart-supervisor detection for systemd hosts; Compose restarts containers",
   RAKAZO_ALLOW_DEV_SECRETS: "development-only escape hatch for placeholder secrets",
+  RAKAZO_CLAUDE_CODE_SETUP_TOKEN:
+    "the Claude Code CLI runs only from a source checkout; the images do not include it",
   EMAIL_EMULATOR: "ignored when NODE_ENV=production",
   BILLING_EMULATOR: "ignored when NODE_ENV=production",
   NODE_USE_ENV_PROXY:
@@ -318,4 +320,37 @@ describe("api and worker environment allowlists", () => {
       }
     },
   );
+});
+
+describe("supervisor environment", () => {
+  /** SANDBOX_* settings the supervisor reads for computers, found in its computer spec. */
+  const NOT_OPERATOR_SETTINGS = new Set(["SANDBOX_SCREEN_HOST"]);
+  const supervisorSettings = [
+    ...new Set(
+      readFileSync(
+        path.join(repoRoot, "infra/sandboxes/supervisor/src/computer-spec.ts"),
+        "utf8",
+      ).match(/\bSANDBOX_[A-Z0-9_]+/g),
+    ),
+  ]
+    .filter((name) => !NOT_OPERATOR_SETTINGS.has(name))
+    .sort();
+
+  it("finds the settings it is meant to find", () => {
+    expect(supervisorSettings).toContain("SANDBOX_TEAM_SCREEN_LIMIT");
+    expect(supervisorSettings).toContain("SANDBOX_MAX_COMPUTERS_PER_SPACE");
+  });
+
+  it.each(
+    [
+      ["docker-compose.images.yml"],
+      ["docker-compose.yml"],
+      ["docker-compose.prod.yml", "docker-compose.prod.docker.yml"],
+    ].map((files) => [files.join(" + "), files] as const),
+  )("%s passes the supervisor every setting it reads", (_name, files) => {
+    const environment = stackEnvironment(files, "supervisor");
+    expect(Object.keys(environment).length).toBeGreaterThan(0);
+    const missing = supervisorSettings.filter((name) => !(name in environment));
+    expect(missing).toEqual([]);
+  });
 });

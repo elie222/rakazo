@@ -352,6 +352,10 @@ describe("tool step outcomes", () => {
       { ...base, name: "computer_observe", executionId: "call-2", result: shot(2) },
       [],
     );
+    // A picture the bot read or fetched is neither kept nor replaces the screenshot.
+    for (const name of ["read_file", "web_fetch"]) {
+      keepToolStepResult(reply, { ...base, name, executionId: "call-1", result: shot(3) }, []);
+    }
     // Only the latest screenshot of the reply is kept.
     expect(reply.latestScreenshot).toMatchObject({ executionId: "call-2", mimeType: "image/png" });
     const create = vi.fn(async ({ data }: { data: { mimeType: string } }) => ({

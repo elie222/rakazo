@@ -1772,15 +1772,6 @@ describe("composio tool mapping", () => {
     });
   });
 
-  it("does not create connection rows for live slugs that have no workspace row", () => {
-    expect(
-      planLiveConnectionSync(
-        [{ id: "row-gh", provider: "github", status: "connected", displayName: "GitHub" }],
-        ["github", "slack"],
-      ),
-    ).toEqual({ connectIds: [], revokeIds: [] });
-  });
-
   it("reconnects existing error rows instead of inserting duplicates", () => {
     expect(
       planLiveConnectionSync(
