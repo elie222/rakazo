@@ -82,6 +82,7 @@ const routinesChanged = () =>
   });
 
 vi.mock("../layout/side-insets", () => ({ useSideInsets: () => ({}) }));
+vi.mock("../platform/app-foreground", () => ({ useAppForeground: () => true }));
 vi.mock("../api/api", () => ({
   rpc,
   currentApiBase: () => "https://api.example",
@@ -356,7 +357,7 @@ function profileRpc(
     computer = async () => ({ state: "stopped" }),
   }: {
     bot?: () => Promise<unknown>;
-    update?: () => Promise<unknown>;
+    update?: (input: { notifyOnFinish?: boolean }) => Promise<unknown>;
     updateRoutine?: (input: { routineId: string; active: boolean }) => Promise<unknown>;
     removeRoutine?: (input: { routineId: string }) => Promise<unknown>;
     history?: (input: { routineId: string; before?: unknown }) => Promise<unknown>;
@@ -366,7 +367,7 @@ function profileRpc(
   rpc.mockImplementation((procedure: string, input: never) => {
     if (procedure === "bots/get") return bot();
     if (procedure === "routines/list") return routines();
-    if (procedure === "bots/update") return update();
+    if (procedure === "bots/update") return update(input);
     if (procedure === "routines/update") return updateRoutine(input);
     if (procedure === "routines/remove") return removeRoutine(input);
     if (procedure === "routines/history") return history(input);
@@ -573,54 +574,55 @@ describe("bot profile notifications", () => {
     },
   );
 
-  it("saves at once and keeps the switch enabled while saving", async () => {
-    let save!: Deferred;
+  const updates = () =>
+    rpc.mock.calls
+      .filter(([procedure]) => procedure === "bots/update")
+      .map(([procedure, input]) => [procedure, input]);
+  /** A server holding the bot's setting; each write waits until the test answers it. */
+  function notifyServer(initial: boolean) {
+    const server = { notify: initial, writes: [] as Deferred<void>[] };
     profileRpc(async () => [], {
-      bot: async () => ({ ...fixtureBot, notifyOnFinish: false }),
-      update: () => {
-        save = deferred();
-        return save.promise;
+      bot: async () => ({ ...fixtureBot, notifyOnFinish: server.notify }),
+      update: async (input) => {
+        const write = deferred<void>();
+        server.writes.push(write);
+        await write.promise;
+        server.notify = input.notifyOnFinish!;
+        return { ...fixtureBot, notifyOnFinish: server.notify };
       },
     });
+    return server;
+  }
+
+  it("saves at once and keeps the switch enabled while saving", async () => {
+    const server = notifyServer(false);
     await render(createElement(BotProfile));
 
     await act(async () => notificationsSwitch()!.click());
     expect(notificationsSwitch()!.checked).toBe(true);
     expect(notificationsSwitch()!.disabled).toBe(false);
-    expect(rpc).toHaveBeenCalledWith("bots/update", {
-      botId: "bot-fixture",
-      notifyOnFinish: true,
-    });
+    expect(updates()).toEqual([["bots/update", { botId: "bot-fixture", notifyOnFinish: true }]]);
     expect(afterChatNotifyChange).not.toHaveBeenCalled();
 
-    await act(async () => save.resolve());
+    await act(async () => server.writes[0]!.resolve());
     expect(notificationsSwitch()!.checked).toBe(true);
     expect(notificationsSwitch()!.disabled).toBe(false);
-    expect(rpc.mock.calls.filter(([procedure]) => procedure === "bots/update")).toHaveLength(1);
+    expect(updates()).toHaveLength(1);
     expect(alert).not.toHaveBeenCalled();
   });
 
   it("keeps rapid on/off/on taps responsive and skips the redundant queued save", async () => {
-    let save!: Deferred;
-    profileRpc(async () => [], {
-      bot: async () => ({ ...fixtureBot, notifyOnFinish: false }),
-      update: () => {
-        save = deferred();
-        return save.promise;
-      },
-    });
+    const server = notifyServer(false);
     await render(createElement(BotProfile));
     for (const checked of [true, false, true]) {
       await act(async () => notificationsSwitch()!.click());
       expect(notificationsSwitch()!.checked).toBe(checked);
       expect(notificationsSwitch()!.disabled).toBe(false);
     }
-    expect(rpc.mock.calls.filter(([procedure]) => procedure === "bots/update")).toEqual([
-      ["bots/update", { botId: "bot-fixture", notifyOnFinish: true }],
-    ]);
-    await act(async () => save.resolve());
+    expect(updates()).toEqual([["bots/update", { botId: "bot-fixture", notifyOnFinish: true }]]);
+    await act(async () => server.writes[0]!.resolve());
     expect(notificationsSwitch()!.checked).toBe(true);
-    expect(rpc.mock.calls.filter(([procedure]) => procedure === "bots/update")).toHaveLength(1);
+    expect(updates()).toHaveLength(1);
     expect(afterChatNotifyChange).toHaveBeenCalledExactlyOnceWith(
       "https://api.example",
       "token",
@@ -630,23 +632,18 @@ describe("bot profile notifications", () => {
   });
 
   it("serializes taps and reverts a failed queued save to the last confirmed value", async () => {
-    const requests: Array<{ resolve: () => void; reject: (error: Error) => void }> = [];
-    profileRpc(async () => [], {
-      bot: async () => ({ ...fixtureBot, notifyOnFinish: false }),
-      update: () => new Promise<void>((resolve, reject) => requests.push({ resolve, reject })),
-    });
+    const server = notifyServer(false);
     await render(createElement(BotProfile));
     await act(async () => notificationsSwitch()!.click());
     await act(async () => notificationsSwitch()!.click());
     expect(notificationsSwitch()!.checked).toBe(false);
-    expect(requests).toHaveLength(1);
-    await act(async () => requests[0]!.resolve());
-    expect(requests).toHaveLength(2);
-    expect(rpc.mock.calls.filter(([procedure]) => procedure === "bots/update")).toEqual([
+    expect(server.writes).toHaveLength(1);
+    await act(async () => server.writes[0]!.resolve());
+    expect(updates()).toEqual([
       ["bots/update", { botId: "bot-fixture", notifyOnFinish: true }],
       ["bots/update", { botId: "bot-fixture", notifyOnFinish: false }],
     ]);
-    await act(async () => requests[1]!.reject(new Error("offline")));
+    await act(async () => server.writes[1]!.reject(new Error("offline")));
     expect(notificationsSwitch()!.checked).toBe(true);
     expect(notificationsSwitch()!.disabled).toBe(false);
     expect(alert).toHaveBeenCalledWith("Could not update notifications", "offline");
@@ -660,9 +657,10 @@ describe("bot profile notifications", () => {
       let save!: Deferred;
       profileRpc(async () => [], {
         bot: () => new Promise((resolve) => reads.push(resolve)),
-        update: () => {
+        update: async () => {
           save = deferred();
-          return save.promise;
+          await save.promise;
+          return { ...fixtureBot, notifyOnFinish: false };
         },
       });
       await render(createElement(BotProfile));
@@ -674,51 +672,24 @@ describe("bot profile notifications", () => {
 
       if (when === "before") await refocus();
       await act(async () => notificationsSwitch()!.click());
-      if (when === "during") await refocus();
+      if (when === "during") {
+        await refocus();
+        await act(async () => reads[1]!(fixtureBot));
+        expect(notificationsSwitch()!.checked).toBe(false);
+      }
       await act(async () => save.resolve());
-      await act(async () => reads[1]!({ ...fixtureBot, name: "Reloaded" }));
+      if (when === "before") await act(async () => reads[1]!(fixtureBot));
+      expect(notificationsSwitch()!.checked).toBe(false);
+      // The read after the save shows the server's value.
+      await act(async () => reads[2]!({ ...fixtureBot, name: "Reloaded", notifyOnFinish: false }));
       expect(container.textContent).toContain("Reloaded");
       expect(notificationsSwitch()!.checked).toBe(false);
 
-      // A reload after the save shows the server's value again.
       await refocus();
-      await act(async () => reads[2]!({ ...fixtureBot, notifyOnFinish: true }));
+      await act(async () => reads[3]!(fixtureBot));
       expect(notificationsSwitch()!.checked).toBe(true);
     },
   );
-
-  it("keeps the change when a reload starts and resolves while the save is pending", async () => {
-    const reads: Array<(bot: unknown) => void> = [];
-    let save!: Deferred;
-    profileRpc(async () => [], {
-      bot: () => new Promise((resolve) => reads.push(resolve)),
-      update: () => {
-        save = deferred();
-        return save.promise;
-      },
-    });
-    await render(createElement(BotProfile));
-    await act(async () => reads[0]!(fixtureBot));
-    const refocus = () =>
-      act(async () => {
-        for (const effect of focus) effect();
-      });
-
-    await act(async () => notificationsSwitch()!.click());
-    await refocus();
-    await act(async () => reads[1]!({ ...fixtureBot, name: "Reloaded" }));
-    expect(container.textContent).toContain("Reloaded");
-    expect(notificationsSwitch()!.checked).toBe(false);
-    expect(notificationsSwitch()!.disabled).toBe(false);
-
-    await act(async () => save.resolve());
-    expect(notificationsSwitch()!.checked).toBe(false);
-    expect(notificationsSwitch()!.disabled).toBe(false);
-
-    await refocus();
-    await act(async () => reads[2]!(fixtureBot));
-    expect(notificationsSwitch()!.checked).toBe(true);
-  });
 
   it("moves the switch back and says so when the save fails", async () => {
     profileRpc(async () => [], {
@@ -740,7 +711,7 @@ describe("bot profile notifications", () => {
     async (notify) => {
       profileRpc(async () => [], {
         bot: async () => ({ ...fixtureBot, notifyOnFinish: !notify }),
-        update: async () => undefined,
+        update: async () => ({ ...fixtureBot, notifyOnFinish: notify }),
       });
       await render(createElement(BotProfile));
 

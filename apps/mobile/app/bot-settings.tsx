@@ -20,6 +20,7 @@ import {
 import { typeScale } from "@rakazo/ui-tokens";
 import { Stack, useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import type { Voice } from "expo-speech";
+import type { Dispatch, SetStateAction } from "react";
 import { useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import type { ScrollViewInstance } from "react-native";
 import { Alert, Modal, Pressable, ScrollView, Share, StyleSheet, Text, View } from "react-native";
@@ -42,10 +43,9 @@ import { GrowingTextInput } from "../components/ui/growing-text-input";
 import type { MenuPickerChoice } from "../components/ui/menu-picker";
 import { MenuPicker, MenuPickerMenu } from "../components/ui/menu-picker";
 import { Chevron } from "../components/ui/row-accessories";
-import { currentApiBase, rpc, selectedSpaceId } from "../lib/api/api";
-import type { MobileMe, MobileModel, MobileModelCredential } from "../lib/api/mobile-types";
-import { loadSessionToken } from "../lib/api/session";
+import type { MobileModel, MobileModelCredential } from "../lib/api/mobile-types";
 import { errorText } from "../lib/api/user-error";
+import { patchBotReads, useBotSetting, useNotifyOnFinish } from "../lib/bots/bot-setting";
 import { CallKeyboardContext } from "../lib/calls/call-keyboard-context";
 import { COMPUTER_LIFECYCLE_TIMEOUT_MS } from "../lib/computers/computer";
 import { dateLocaleForUi, useUiLocale } from "../lib/i18n/i18n";
@@ -53,12 +53,16 @@ import { useSideInsets } from "../lib/layout/side-insets";
 import { chatModelPickerChoices } from "../lib/models/chat-model";
 import { thinkingLevelLabel } from "../lib/models/thinking-level";
 import { native, useMobileTokens } from "../lib/native/native";
-import { afterChatNotifyChange } from "../lib/notifications/live-notifications";
-import { createQueuedSave } from "../lib/query/queued-save";
+import { formRead, rpcQuery, useSave } from "../lib/query/query";
+import { useScreenQuery } from "../lib/query/screen-query";
 import { notifyConversationCleared } from "../lib/thread/conversation-cleared";
 import { deviceVoices, setVoiceForBot, voiceForBot, voiceLabel } from "../lib/voice/bot-voices";
 import { loadDeviceVoiceEnabled } from "../lib/voice/device-voice";
 import { stopVoicePlayback } from "../lib/voice/voice";
+
+type BotSettingsAction =
+  | { kind: "save" }
+  | { kind: "restore"; versionId: string; expectedInstructions: string };
 
 export default function BotSettingsScreen() {
   const rootAvoidsKeyboard = useContext(CallKeyboardContext);
@@ -74,9 +78,11 @@ export default function BotSettingsScreen() {
   } = useLocalSearchParams<{ botId: string; model?: string; focus?: string }>();
   const scrollRef = useRef<ScrollViewInstance>(null);
   const modelY = useRef(0);
-  const [bot, setBot] = useState<Bot | null>(null);
-  const threadId = useRef<string | undefined>(undefined);
-  const [name, setName] = useState("");
+  const botQuery = useScreenQuery(formRead(rpcQuery("bots/get", { botId })), {
+    enabled: Boolean(botId),
+    onForeground: false,
+  });
+  const bot = botQuery.data ?? null;
   const [description, setDescription] = useState("");
   const [instructions, setInstructions] = useState("");
   const [color, setColor] = useState<string>(DEFAULT_BOT_AVATAR_COLOR);
@@ -86,11 +92,7 @@ export default function BotSettingsScreen() {
   const [advancedOpen, setAdvancedOpen] = useState(focus === "model" || pickedModel !== undefined);
   const [modelKey, setModelKey] = useState("");
   const [thinkingLevel, setThinkingLevel] = useState("");
-  const [notifyOnFinish, setNotifyOnFinish] = useState(true);
   const [autoSpeak, setAutoSpeak] = useState(false);
-  const [dailyCheckIns, setDailyCheckIns] = useState(true);
-  const [crossSpaceCommunication, setCrossSpaceCommunication] = useState(true);
-  const [fleetManagement, setFleetManagement] = useState(true);
   // A setting this screen no longer offers still shows while the bot has it changed from the
   // default, so it can be put back. Decided once, so the row stays to undo a change.
   const [changed, setChanged] = useState<{
@@ -100,12 +102,21 @@ export default function BotSettingsScreen() {
     crossSpaceCommunication: boolean;
     fleetManagement: boolean;
   } | null>(null);
-  const [credentials, setCredentials] = useState<MobileModelCredential[]>([]);
-  const [catalog, setCatalog] = useState<MobileModel[]>([]);
-  const [me, setMe] = useState<MobileMe | null>(null);
-  const [modelMetaReady, setModelMetaReady] = useState(false);
-  const [modelMetaError, setModelMetaError] = useState<string | null>(null);
+  const meQuery = useScreenQuery(rpcQuery("me"));
+  const catalogQuery = useScreenQuery(rpcQuery("models/list"));
+  const credentialsQuery = useScreenQuery(rpcQuery("models/credentials"));
+  const me = meQuery.data ?? null;
+  const catalog = catalogQuery.data ?? NO_MODELS;
+  const credentials = credentialsQuery.data ?? NO_CREDENTIALS;
+  const modelMetaReady = Boolean(meQuery.data && catalogQuery.data && credentialsQuery.data);
+  const modelMetaFailure = meQuery.error ?? catalogQuery.error ?? credentialsQuery.error;
+  const modelMetaError =
+    modelMetaFailure && !modelMetaReady
+      ? errorText(modelMetaFailure, t`Could not load model settings`)
+      : null;
   const [error, setError] = useState<string | null>(null);
+  const shownError =
+    error ?? (botQuery.error && !bot ? errorText(botQuery.error, t`Could not load bot`) : null);
   const computerMaintenanceRows = useComputerMaintenanceRows(botId);
   const computerHomeVersionRows = useComputerHomeVersionRows(botId);
   const [deviceVoiceEnabled, setDeviceVoiceEnabled] = useState(false);
@@ -114,139 +125,65 @@ export default function BotSettingsScreen() {
   const savedVoiceId = useRef<string | undefined>(undefined);
   const voiceChoice = useRef(0);
   const [voiceError, setVoiceError] = useState<string | null>(null);
-  const [pending, setPending] = useState(false);
-  const pendingRef = useRef(false);
 
-  const crossSpaceSave = useMemo(
-    () =>
-      createQueuedSave<boolean>(false, {
-        save: async (value) => {
-          await rpc("bots/update", { botId, crossSpaceCommunication: value });
-        },
-        onChange: setCrossSpaceCommunication,
-        onError: (err) => setError(errorText(err, t`Could not save bot`)),
-      }),
-    [botId, t],
+  const saveFailed = (failure: Error) => setError(errorText(failure, t`Could not save bot`));
+  const nameSetting = useBotSetting(botId, "name", bot?.name ?? "", {
+    onFailed: (failure) => setError(errorText(failure)),
+  });
+  const notify = useNotifyOnFinish(botId, bot?.notifyOnFinish ?? true, (failure) =>
+    setError(errorText(failure)),
   );
-  const dailyCheckInsSave = useMemo(
-    () =>
-      createQueuedSave<boolean>(true, {
-        save: async (value) => {
-          await rpc("bots/update", { botId, dailyCheckIns: value });
-        },
-        onChange: setDailyCheckIns,
-        onError: (err) => setError(errorText(err, t`Could not save bot`)),
-      }),
-    [botId, t],
+  const dailyCheckIns = useBotSetting(botId, "dailyCheckIns", bot?.dailyCheckIns ?? true, {
+    onFailed: saveFailed,
+  });
+  const crossSpace = useBotSetting(
+    botId,
+    "crossSpaceCommunication",
+    bot?.crossSpaceCommunication ?? true,
+    { onFailed: saveFailed },
   );
+  const fleet = useBotSetting(botId, "fleetManagement", bot?.fleetManagement ?? true, {
+    onFailed: saveFailed,
+  });
+  // Save leaves the screen, so it waits for the settings that save at once.
+  const settingsSaving =
+    nameSetting.pending ||
+    notify.pending ||
+    dailyCheckIns.pending ||
+    crossSpace.pending ||
+    fleet.pending;
 
-  const fleetSave = useMemo(
-    () =>
-      createQueuedSave<boolean>(false, {
-        save: async (value) => {
-          await rpc("bots/update", { botId, fleetManagement: value });
-        },
-        onChange: setFleetManagement,
-        onError: (err) => setError(errorText(err, t`Could not save bot`)),
-      }),
-    [botId, t],
-  );
-
-  const notifySave = useMemo(
-    () =>
-      createQueuedSave<boolean>(true, {
-        save: async (notifyOnFinish) => {
-          const next = await rpc("bots/update", { botId, notifyOnFinish });
-          threadId.current = next.threadId;
-        },
-        onChange: setNotifyOnFinish,
-        onSaved: async (notify) => {
-          try {
-            await afterChatNotifyChange(
-              currentApiBase(),
-              await loadSessionToken(),
-              selectedSpaceId() ?? "",
-              { botId, threadId: threadId.current, notify },
-            );
-          } catch {
-            // The server save succeeded; device reconciliation can retry later.
-          }
-        },
-        onError: (err) => setError(errorText(err)),
-      }),
-    [botId],
-  );
-  const nameSave = useMemo(
-    () =>
-      createQueuedSave<string>("", {
-        save: async (name) => {
-          await rpc("bots/update", { botId, name });
-        },
-        onChange: setName,
-        onSaved: async (name) => {
-          setBot((prev) => (prev ? { ...prev, name } : prev));
-        },
-        onError: (err) => setError(errorText(err)),
-      }),
-    [botId],
-  );
-
+  // The form starts from the bot as read; a later read moves only the fields not edited since.
+  const baseline = useRef<Bot | null>(null);
   useEffect(() => {
-    if (!botId) return;
-    void rpc("bots/get", { botId })
-      .then((next) => {
-        threadId.current = next.threadId;
-        setBot(next);
-        setName(next.name);
-        nameSave.reset(next.name);
-        notifySave.reset(next.notifyOnFinish ?? true);
-        setDescription(next.description ?? "");
-        setInstructions(next.instructions ?? "");
-        setColor(next.color);
-        setAvatarSet(resolveBotAvatarSet(next.avatarSet));
-        setComputerMode(next.computerMode);
-        setModelKey(
-          next.modelProvider && next.modelId
-            ? modelOptionKey(next.modelProvider, next.modelId)
-            : "",
-        );
-        setThinkingLevel(next.thinkingLevel ?? "");
-        setAutoSpeak(next.autoSpeak);
-        setNotifyOnFinish(next.notifyOnFinish ?? true);
-        setDailyCheckIns(next.dailyCheckIns ?? true);
-        dailyCheckInsSave.reset(next.dailyCheckIns ?? true);
-        setCrossSpaceCommunication(next.crossSpaceCommunication ?? true);
-        crossSpaceSave.reset(next.crossSpaceCommunication ?? true);
-        setFleetManagement(next.fleetManagement);
-        fleetSave.reset(next.fleetManagement);
-        setChanged(
-          (current) =>
-            (current?.botId === next.id ? current : null) ?? {
-              botId: next.id,
-              readAloud: next.autoSpeak,
-              dailyCheckIns: next.dailyCheckIns === false,
-              crossSpaceCommunication: next.crossSpaceCommunication === false,
-              fleetManagement: !next.fleetManagement,
-            },
-        );
-      })
-      .catch((err) => setError(errorText(err, t`Could not load bot`)));
-  }, [botId, dailyCheckInsSave, crossSpaceSave, fleetSave, notifySave, nameSave]);
-
-  useEffect(() => {
-    void Promise.all([rpc("me"), rpc("models/list"), rpc("models/credentials")])
-      .then(([nextMe, nextCatalog, nextCredentials]) => {
-        setMe(nextMe);
-        setCatalog(nextCatalog);
-        setCredentials(nextCredentials);
-        setModelMetaError(null);
-        setModelMetaReady(true);
-      })
-      .catch((err) => {
-        setModelMetaReady(false);
-        setModelMetaError(errorText(err, t`Could not load model settings`));
-      });
-  }, [t]);
+    const next = botQuery.data;
+    if (!next) return;
+    const previous = baseline.current;
+    baseline.current = next;
+    function follow<T>(set: Dispatch<SetStateAction<T>>, read: (from: Bot) => T) {
+      set((current) => (!previous || current === read(previous) ? read(next!) : current));
+    }
+    follow(setDescription, (from) => from.description ?? "");
+    follow(setInstructions, (from) => from.instructions ?? "");
+    follow(setColor, (from) => from.color);
+    follow(setAvatarSet, (from) => resolveBotAvatarSet(from.avatarSet));
+    follow(setComputerMode, (from) => from.computerMode);
+    follow(setModelKey, (from) =>
+      from.modelProvider && from.modelId ? modelOptionKey(from.modelProvider, from.modelId) : "",
+    );
+    follow<string>(setThinkingLevel, (from) => from.thinkingLevel ?? "");
+    follow(setAutoSpeak, (from) => from.autoSpeak);
+    setChanged(
+      (current) =>
+        (current?.botId === next.id ? current : null) ?? {
+          botId: next.id,
+          readAloud: next.autoSpeak,
+          dailyCheckIns: next.dailyCheckIns === false,
+          crossSpaceCommunication: next.crossSpaceCommunication === false,
+          fleetManagement: !next.fleetManagement,
+        },
+    );
+  }, [botQuery.data]);
 
   const storedModel = modelKey ? parseModelOptionKey(modelKey) : null;
   const selectedModel = storedModel
@@ -378,7 +315,7 @@ export default function BotSettingsScreen() {
       if (choice !== voiceChoice.current) return;
       await Speech.stop();
       if (choice !== voiceChoice.current) return;
-      const sampleName = name.trim();
+      const sampleName = nameSetting.value.trim();
       Speech.speak(
         sampleName ? t`Hi, I'm ${ph({ name: sampleName })}.` : t`Hi, this is how I'll sound.`,
         { voice: voice.identifier },
@@ -401,15 +338,20 @@ export default function BotSettingsScreen() {
     }
   }
 
-  async function save() {
-    if (!botId || !bot || pendingRef.current) return;
-    pendingRef.current = true;
-    setPending(true);
-    setError(null);
-    try {
-      const profile = { description: description.trim() };
+  const action = useSave({
+    save: async (input: BotSettingsAction, send) => {
+      if (input.kind === "restore") {
+        const updated = await send("bots/restoreInstructions", {
+          botId,
+          versionId: input.versionId,
+          expectedInstructions: input.expectedInstructions,
+        });
+        patchBotReads(botId, updated);
+        return;
+      }
+      if (!bot) return;
       const selected = selectedModel;
-      const input: {
+      const update: {
         botId: string;
         description?: string;
         instructions?: string;
@@ -421,60 +363,72 @@ export default function BotSettingsScreen() {
         thinkingLevel?: ThinkingLevel | null;
         autoSpeak?: boolean;
       } = { botId };
-      if (profile.description !== (bot.description ?? "")) {
-        input.description = profile.description;
-      }
+      if (description.trim() !== (bot.description ?? "")) update.description = description.trim();
       if (instructions !== bot.instructions) {
-        input.instructions = instructions;
-        input.expectedInstructions = bot.instructions;
+        update.instructions = instructions;
+        update.expectedInstructions = bot.instructions;
       }
-      if (color !== bot.color) input.color = color;
-      if (avatarSet !== resolveBotAvatarSet(bot.avatarSet)) input.avatarSet = avatarSet;
+      if (color !== bot.color) update.color = color;
+      if (avatarSet !== resolveBotAvatarSet(bot.avatarSet)) update.avatarSet = avatarSet;
       const modelChanged =
         (selected?.provider ?? null) !== (bot.modelProvider ?? null) ||
         (selected?.modelId ?? null) !== (bot.modelId ?? null);
       const thinkingChanged = (thinkingLevel || null) !== (bot.thinkingLevel ?? null);
       if (modelChanged) {
-        input.modelProvider = selected?.provider ?? null;
-        input.modelId = selected?.modelId ?? null;
+        update.modelProvider = selected?.provider ?? null;
+        update.modelId = selected?.modelId ?? null;
       }
       if (modelMetaReady && (modelChanged || thinkingChanged)) {
-        input.thinkingLevel = thinkingOptions.length
+        update.thinkingLevel = thinkingOptions.length
           ? ((thinkingLevel || null) as ThinkingLevel | null)
           : null;
       }
-      if (autoSpeak !== bot.autoSpeak) input.autoSpeak = autoSpeak;
+      if (autoSpeak !== bot.autoSpeak) update.autoSpeak = autoSpeak;
       if (computerMode !== bot.computerMode) {
-        await rpc(
+        await send(
           "bots/setComputer",
           { botId, mode: computerMode },
           { timeoutMs: COMPUTER_LIFECYCLE_TIMEOUT_MS },
         );
-        setBot((prev) => (prev ? { ...prev, computerMode } : prev));
+        patchBotReads(botId, { computerMode });
       }
       // Use key presence so clearing description to "" still persists.
-      if (Object.keys(input).length > 1) {
-        const updated = await rpc("bots/update", input);
-        // Saved edits and their history become the baseline, so a retry after a failed switch write
-        // does not resend them.
-        const { botId: _botId, expectedInstructions: _expected, ...saved } = input;
-        setBot((prev) => (prev ? { ...prev, ...saved, ...updated } : prev));
+      if (Object.keys(update).length > 1) {
+        const updated = await send("bots/update", update);
+        // Saved edits and their history become the baseline, so a retry does not resend them.
+        const { botId: _botId, expectedInstructions: _expected, ...saved } = update;
+        patchBotReads(botId, { ...saved, ...updated });
       }
-      await Promise.all([
-        dailyCheckInsSave.flush(),
-        crossSpaceSave.flush(),
-        fleetSave.flush(),
-        notifySave.flush(),
-        nameSave.flush(),
-      ]);
-      router.back();
-    } catch (err) {
-      setError(errorText(err, t`Could not save bot`));
-    } finally {
-      pendingRef.current = false;
-      setPending(false);
-    }
+    },
+    onSaved: (_, input) => {
+      if (input.kind === "save") router.back();
+    },
+    onFailed: (failure, input) =>
+      setError(
+        input.kind === "restore" ? errorText(failure) : errorText(failure, t`Could not save bot`),
+      ),
+  });
+  const pending = action.pending;
+  function save() {
+    if (!botId || !bot || settingsSaving) return;
+    setError(null);
+    action.run({ kind: "save" });
   }
+  const exportBot = useSave({
+    save: async (_, send) => {
+      const manifest = await send("export/bot", { botId });
+      await Share.share({ message: JSON.stringify(manifest, null, 2) });
+    },
+    onFailed: (failure) => setError(errorText(failure)),
+  });
+  const clearConversation = useSave({
+    save: async (_, send) => {
+      await send("threads/clear", { botId });
+      notifyConversationCleared(botId);
+    },
+    onSaved: () => router.back(),
+    onFailed: (failure) => setError(errorText(failure)),
+  });
 
   const dirty =
     bot &&
@@ -576,11 +530,11 @@ export default function BotSettingsScreen() {
           <ProfileEditDialog
             label={t`Name`}
             editLabel={t`Edit name`}
-            value={name}
+            value={nameSetting.value}
             maxLength={BOT_NAME_MAX_LENGTH}
             large
             onCommit={async (value) => {
-              if (value && botId) nameSave.update(value);
+              if (value && botId) nameSetting.set(value);
             }}
           />
         </View>
@@ -588,8 +542,8 @@ export default function BotSettingsScreen() {
           <SettingsGroup label={t`Notifications`}>
             <SettingsSwitch
               label={t`When it finishes or needs input`}
-              value={notifyOnFinish}
-              onChange={(value) => notifySave.update(value)}
+              value={notify.value}
+              onChange={notify.set}
             />
           </SettingsGroup>
         </View>
@@ -678,22 +632,22 @@ export default function BotSettingsScreen() {
                 {changed.dailyCheckIns ? (
                   <SettingsSwitch
                     label={t`Daily check-ins on unfinished work`}
-                    value={dailyCheckIns}
+                    value={dailyCheckIns.value}
                     onChange={(value) => {
                       if (!botId) return;
                       setError(null);
-                      dailyCheckInsSave.update(value);
+                      dailyCheckIns.set(value);
                     }}
                   />
                 ) : null}
                 {changed.crossSpaceCommunication ? (
                   <SettingsSwitch
                     label={t`Allow cross-space bot communication`}
-                    value={crossSpaceCommunication}
+                    value={crossSpace.value}
                     onChange={(value) => {
                       if (!botId) return;
                       setError(null);
-                      crossSpaceSave.update(value);
+                      crossSpace.set(value);
                     }}
                   />
                 ) : null}
@@ -703,9 +657,9 @@ export default function BotSettingsScreen() {
                     onChange={(value) => {
                       if (!botId) return;
                       setError(null);
-                      fleetSave.update(value);
+                      fleet.set(value);
                     }}
-                    value={fleetManagement}
+                    value={fleet.value}
                   />
                 ) : null}
               </SettingsGroup>
@@ -730,7 +684,7 @@ export default function BotSettingsScreen() {
                         label: `${new Date(version.createdAt).toLocaleString(dateLocaleForUi(uiLocale))} (${version.reason})`,
                       }))}
                       onChange={(versionId) => {
-                        if (pendingRef.current || instructions !== bot.instructions) return;
+                        if (pending || instructions !== bot.instructions) return;
                         const version = bot.instructionHistory?.find(
                           (item) => item.id === versionId,
                         );
@@ -740,24 +694,12 @@ export default function BotSettingsScreen() {
                             {
                               text: t`Restore`,
                               onPress: () => {
-                                if (pendingRef.current) return;
-                                pendingRef.current = true;
-                                setPending(true);
                                 setError(null);
-                                void rpc("bots/restoreInstructions", {
-                                  botId: bot.id,
+                                action.run({
+                                  kind: "restore",
                                   versionId,
-                                  expectedInstructions: bot.instructions,
-                                })
-                                  .then((updated) => {
-                                    setBot(updated);
-                                    setInstructions(updated.instructions ?? "");
-                                  })
-                                  .catch((err) => setError(errorText(err)))
-                                  .finally(() => {
-                                    pendingRef.current = false;
-                                    setPending(false);
-                                  });
+                                  expectedInstructions: bot.instructions ?? "",
+                                });
                               },
                             },
                           ]);
@@ -817,11 +759,7 @@ export default function BotSettingsScreen() {
                     color={native.tertiaryLabel}
                   />
                 }
-                onPress={() => {
-                  void rpc("export/bot", { botId })
-                    .then((manifest) => Share.share({ message: JSON.stringify(manifest, null, 2) }))
-                    .catch((err) => setError(errorText(err)));
-                }}
+                onPress={() => exportBot.run()}
               />
               <SettingsRow
                 accessibilityRole="button"
@@ -833,12 +771,7 @@ export default function BotSettingsScreen() {
                     {
                       text: t`Clear conversation`,
                       style: "destructive",
-                      onPress: () => {
-                        void rpc("threads/clear", { botId })
-                          .then(() => notifyConversationCleared(botId))
-                          .then(() => router.back())
-                          .catch((err) => setError(errorText(err)));
-                      },
+                      onPress: () => clearConversation.run(),
                     },
                   ])
                 }
@@ -846,12 +779,14 @@ export default function BotSettingsScreen() {
             </SettingsGroup>
           </View>
         ) : null}
-        {error ? <Text style={{ color: tokens.destructive, marginTop: 16 }}>{error}</Text> : null}
+        {shownError ? (
+          <Text style={{ color: tokens.destructive, marginTop: 16 }}>{shownError}</Text>
+        ) : null}
         {dirty ? (
           <NativeActionButton
-            disabled={!name.trim() || pending || !bot}
+            disabled={!nameSetting.value.trim() || pending || settingsSaving || !bot}
             label={pending ? t`Saving…` : t`Save`}
-            onPress={() => void save()}
+            onPress={save}
             style={{ marginTop: 24 }}
           />
         ) : null}
@@ -906,6 +841,9 @@ export default function BotSettingsScreen() {
     </>
   );
 }
+
+const NO_MODELS: MobileModel[] = [];
+const NO_CREDENTIALS: MobileModelCredential[] = [];
 
 const styles = StyleSheet.create({
   voiceError: { flexShrink: 1, fontSize: 17 },
