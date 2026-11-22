@@ -7,12 +7,14 @@
     "dev": "node ../../scripts/dev-watch.mjs src/index.ts",
     "build": "node ../../scripts/build-server.mjs src/index.ts src/health-check.ts",
     "start": "node --enable-source-maps dist/index.js",
-    "check": "tsc --noEmit -p tsconfig.json",
+    "check": "tsrs --noEmit -p tsconfig.json",
     "test": "vitest run --root ../.. apps/worker/src"
   },
   "dependencies": {
     "@rakazo/adapter-kit": "workspace:*",
     "@rakazo/adapters": "workspace:*",
+    "@rakazo/auth": "workspace:*",
+    "@rakazo/contracts": "workspace:*",
     "@rakazo/core": "workspace:*",
     "@rakazo/db": "workspace:*",
     "@rakazo/logging": "workspace:*",

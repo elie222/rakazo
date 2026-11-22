@@ -324,21 +324,26 @@ const COLUMN_CHANNELS = ["x", "y", "x1", "x2", "y1", "y2", "fx", "fy"] as const;
 function assertChannelsMatchColumns(mark: PlotMarkSpec, data: unknown[]): void {
   const first = data[0];
   if (!first || typeof first !== "object" || Array.isArray(first)) return;
-  const keys = Object.keys(first);
-  const available = new Set(keys);
+  // A sparse first row can omit a column that later rows provide.
+  const available = new Set<string>();
+  for (const row of data) {
+    if (row && typeof row === "object" && !Array.isArray(row)) {
+      for (const key of Object.keys(row)) available.add(key);
+    }
+  }
   let namedChannels = 0;
   for (const channel of COLUMN_CHANNELS) {
     const value = mark.options?.[channel];
     if (value !== undefined) namedChannels += 1;
     if (typeof value === "string" && !available.has(value)) {
       throw new Error(
-        `Mark "${mark.type}": ${channel} refers to "${value}" but the data columns are: ${keys.join(", ")}. Channel names must match data keys exactly.`,
+        `Mark "${mark.type}": ${channel} refers to "${value}" but the data columns are: ${[...available].join(", ")}. Channel names must match data keys exactly.`,
       );
     }
   }
   if (namedChannels === 0 && !mark.transform) {
     throw new Error(
-      `Mark "${mark.type}" has object rows but no position channels; set options like {"x": "<column>", "y": "<column>"} using these columns: ${keys.join(", ")}.`,
+      `Mark "${mark.type}" has object rows but no position channels; set options like {"x": "<column>", "y": "<column>"} using these columns: ${[...available].join(", ")}.`,
     );
   }
 }
@@ -416,9 +421,15 @@ function buildMark(
 
 /** csvParse builds row objects with `new Function`, which the web app's CSP blocks. */
 function delimitedRows([columns = [], ...rows]: string[][]): unknown[] {
-  return rows.map((row) =>
-    autoType(Object.fromEntries(columns.map((column, index) => [column, row[index] ?? ""]))),
-  );
+  // A blank line parses as one empty (or whitespace-only) field. With several
+  // columns it cannot be a real row, so skip it. A single-column file is left
+  // alone: there a blank line may be an empty cell.
+  const dropBlankLines = columns.length > 1;
+  return rows
+    .filter((row) => !(dropBlankLines && row.length === 1 && row[0]?.trim() === ""))
+    .map((row) =>
+      autoType(Object.fromEntries(columns.map((column, index) => [column, row[index] ?? ""]))),
+    );
 }
 
 export function parsePlotData(name: string, content: string): unknown[] {

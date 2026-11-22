@@ -588,6 +588,18 @@ describe("tool step history", () => {
     expect(toolStepsHistoryText(steps, { full: true })).toContain("x".repeat(5_000));
   });
 
+  it("does not leave half an emoji at the end of a shortened label or note", () => {
+    const label = toolStepsHistoryText([{ label: `${"x".repeat(79)}😀tail`, count: 1 }]);
+    expect(label).toBe(`[tool calls this reply made]\n- ${"x".repeat(79)}…`);
+    expect(() => encodeURIComponent(label)).not.toThrow();
+
+    const note = toolStepsHistoryText([
+      { label: "Shell", count: 1, note: `${"y".repeat(299)}😀tail` },
+    ]);
+    expect(note).toBe(`[tool calls this reply made]\n- Shell: ${"y".repeat(299)}…`);
+    expect(() => encodeURIComponent(note)).not.toThrow();
+  });
+
   it("shortens a long note", () => {
     const text = blocksToAgentHistoryText([
       { kind: "steps", steps: [{ label: "Shell", count: 1, note: "a".repeat(400) }] },
@@ -685,5 +697,13 @@ describe("isStaticPng", () => {
     const bytes = new Uint8Array(png.length + 10);
     bytes.set(png, 5);
     expect(isStaticPng(bytes.subarray(5, 5 + png.length))).toBe(true);
+  });
+});
+
+describe("normalizeVoiceTranscript emoji limit", () => {
+  it("does not cut an emoji in half at the transcript limit", () => {
+    const text = normalizeVoiceTranscript(`${"a".repeat(3999)}😀 tail`);
+    expect(text).toBe("a".repeat(3999));
+    expect(() => encodeURIComponent(text)).not.toThrow();
   });
 });

@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
-import type { BackgroundJobHandlers, JobPublisher } from "@rakazo/adapter-kit";
+import type { BackgroundJobHandlers, JobPublisher, JobQueueOrder } from "@rakazo/adapter-kit";
 import { runContinueJob } from "@rakazo/adapter-kit";
 import { stuckWorkStatusMessage } from "@rakazo/core";
 import { deferred } from "@rakazo/core/test-async";
@@ -83,7 +83,7 @@ describePostgres("direct run dispatch (PostgreSQL)", () => {
       }),
       cancel: vi.fn(),
       close: vi.fn(),
-    }) as unknown as JobPublisher;
+    }) as unknown as JobPublisher & JobQueueOrder;
   const wait = async (assertion: () => Promise<void> | void) =>
     vi.waitFor(assertion, { timeout: 5_000, interval: 20 });
 

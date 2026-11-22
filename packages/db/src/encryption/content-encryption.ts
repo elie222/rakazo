@@ -1,3 +1,5 @@
+import { isRecord } from "@rakazo/core";
+import { bestEffort } from "@rakazo/logging";
 import { createRowId } from "../database/row-id.js";
 import type { PrismaClient } from "../generated/prisma/client.js";
 import { Prisma } from "../generated/prisma/client.js";
@@ -32,6 +34,8 @@ const EVENT_PAYLOAD_PLAIN_KEYS = new Set([
   "streaming",
 ]);
 
+const NO_PLAINTEXT_KEYS = new Set<string>();
+
 interface FieldSpec {
   /** Present for JSON columns: the scalar keys kept queryable beside the sealed copy. */
   plainKeys?: ReadonlySet<string>;
@@ -49,7 +53,7 @@ interface ModelSpec {
   space: { column: "spaceId" } | { parent: SpaceSource };
   /** Relation field for the owner column (ROW_OWNER), for `connect` writes. */
   ownerRelation: string;
-  searchTokens?: boolean;
+  searchTokens?: "prefix" | "han-pairs";
 }
 
 /** Further content columns (external messages, steering, skills, …) add an entry here. */
@@ -59,13 +63,22 @@ export const ENCRYPTED_MODELS: Record<string, ModelSpec> = {
     fields: { blocks: { plainKeys: MESSAGE_BLOCK_PLAIN_KEYS }, toolHistory: { hidden: true } },
     space: { parent: "threads" },
     ownerRelation: "thread",
-    searchTokens: true,
+    searchTokens: "han-pairs",
   },
   Event: {
     table: "events",
     fields: { payload: { plainKeys: EVENT_PAYLOAD_PLAIN_KEYS } },
     space: { column: "spaceId" },
     ownerRelation: "thread",
+  },
+  NativeCalendarRequest: {
+    table: "native_calendar_requests",
+    fields: {
+      operation: { plainKeys: NO_PLAINTEXT_KEYS },
+      result: { plainKeys: NO_PLAINTEXT_KEYS },
+    },
+    space: { column: "spaceId" },
+    ownerRelation: "user",
   },
   MeetingSession: {
     table: "meeting_sessions",
@@ -92,13 +105,20 @@ export const ENCRYPTED_MODELS: Record<string, ModelSpec> = {
     space: { column: "spaceId" },
     ownerRelation: "user",
   },
+  /** The text that starts a run: often the person's own words, answers to a bot's questions included. */
+  Task: {
+    table: "tasks",
+    fields: { prompt: {} },
+    space: { column: "spaceId" },
+    ownerRelation: "thread",
+  },
   /** A bot's inbox. Recipients and file names stay plaintext; `key` and `messageId` are lookups. */
   BotEmailMessage: {
     table: "bot_email_messages",
     fields: { fromAddress: {}, fromName: {}, subject: {}, text: {} },
     space: { column: "spaceId" },
     ownerRelation: "bot",
-    searchTokens: true,
+    searchTokens: "prefix",
   },
 };
 
@@ -113,10 +133,6 @@ type RecordValue = Record<string, unknown>;
 type RuntimeDataModel = {
   models: Record<string, { fields: Array<{ name: string; kind: string; type: string }> }>;
 };
-
-function isRecord(value: unknown): value is RecordValue {
-  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
-}
 
 /** Nulls (SQL or JSON) are stored as nulls: there is nothing to encrypt. */
 function writable(value: unknown): boolean {
@@ -179,6 +195,24 @@ export function contentEncryptionOf(prisma: unknown): ContentEncryption | undefi
   const accessor = (prisma as { $contentEncryption?: () => ContentEncryption } | null)
     ?.$contentEncryption;
   return typeof accessor === "function" ? accessor.call(prisma) : undefined;
+}
+
+/** Longer than the longest of these transactions, lock wait included, may stay open. */
+const KEYS_OUTLAST_TRANSACTION_MS = 30_000;
+
+/**
+ * Loads a Space's content keys before a transaction seals its rows, so the transaction does not
+ * wait on the key store or, for keys no longer in memory, the key manager. A Space without keys
+ * yet is left for the transaction to create them. A load that fails changes nothing: the
+ * transaction makes its own checks first and meets the same failure only where it seals.
+ */
+export async function loadSpaceContentKeys(prisma: unknown, spaceId: string): Promise<void> {
+  const ring = contentEncryptionOf(prisma)?.ring;
+  if (ring?.encryptWrites)
+    await bestEffort(
+      "load a Space's content keys",
+      ring.preload(spaceId, KEYS_OUTLAST_TRANSACTION_MS),
+    );
 }
 
 /**
@@ -396,7 +430,11 @@ export function withContentEncryption(prisma: PrismaClient, ring: ContentKeyRing
     }
     // Tokens cover the fields written here: indexed models write all of them together.
     if (spec.searchTokens && fields.some((field) => !spec.fields[field]!.hidden))
-      next.searchTokens = searchTokens(key, { words: words.join("\n"), strings });
+      next.searchTokens = searchTokens(
+        key,
+        { words: words.join("\n"), strings },
+        { hanPairs: spec.searchTokens === "han-pairs" },
+      );
     ring.remember(spec.table, rowId, context);
     return next;
   }

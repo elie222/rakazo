@@ -232,6 +232,75 @@ describeBreakdown("usage.breakdown", () => {
     expect(mixed.models.find((m) => m.model === "unpriced")?.costUsd).toBeNull();
     expect(mixed.models.find((m) => m.model === "m1")?.costUsd).toBeCloseTo(0.0115);
 
+    // A call with no token count leaves the total as the sum of the others, marked partial.
+    await prisma.usageRecord.create({
+      data: {
+        ...owner,
+        botId: alpha.id,
+        runId: runA1,
+        parentRunId: runA1,
+        provider: "p",
+        model: "interrupted",
+        costUsd: 0,
+      },
+    });
+    const partial = await get({ range: "30d", botId: alpha.id });
+    expect(partial.totals).toMatchObject({ modelCalls: 6, totalTokens: 207, tokensPartial: true });
+    expect(mixed.totals.tokensPartial).toBe(false);
+
+    // Input read from the cache is its own figure, unknown where a call did not measure it.
+    await prisma.usageRecord.createMany({
+      data: [40, 2].map((cacheReadTokens) => ({
+        ...owner,
+        botId: alpha.id,
+        runId: runA1,
+        parentRunId: runA1,
+        provider: "p",
+        model: "caching",
+        inputTokens: 1,
+        outputTokens: 1,
+        cacheReadTokens,
+        // A measured cache read counts even when the call reported no total.
+        totalTokens: cacheReadTokens === 2 ? null : cacheReadTokens + 2,
+      })),
+    });
+    const cached = await get({ range: "30d", botId: alpha.id });
+    expect(cached.models.find((m) => m.model === "caching")?.cachedTokens).toBe(42);
+    expect(cached.models.find((m) => m.model === "m1")?.cachedTokens).toBeNull();
+    // One call without the figure makes the model's sum unknown, even beside measured ones.
+    await prisma.usageRecord.createMany({
+      data: [5, null].map((cacheReadTokens) => ({
+        ...owner,
+        botId: alpha.id,
+        runId: runA1,
+        parentRunId: runA1,
+        provider: "p",
+        model: "mixed-cache",
+        inputTokens: 1,
+        outputTokens: 1,
+        cacheReadTokens,
+        totalTokens: 7,
+      })),
+    });
+    const mixedCache = await get({ range: "30d", botId: alpha.id });
+    expect(mixedCache.models.find((m) => m.model === "mixed-cache")?.cachedTokens).toBeNull();
+    // A row from before cache reads were measured holds a zero and no total: still unknown.
+    await prisma.usageRecord.create({
+      data: {
+        ...owner,
+        botId: alpha.id,
+        runId: runA1,
+        parentRunId: runA1,
+        provider: "p",
+        model: "caching",
+        inputTokens: 1,
+        outputTokens: 1,
+        cacheReadTokens: 0,
+      },
+    });
+    const older = await get({ range: "30d", botId: alpha.id });
+    expect(older.models.find((m) => m.model === "caching")?.cachedTokens).toBeNull();
+
     const elsewhere = await rpc<UsageBreakdown>(app, other, "usage/breakdown", { range: "all" });
     expect(summary(elsewhere)).toEqual({ runs: 1, calls: 1, tokens: 1_000_000 });
     expect(names(elsewhere)).toEqual(["Elsewhere"]);

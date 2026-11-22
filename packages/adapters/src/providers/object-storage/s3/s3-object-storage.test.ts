@@ -3,12 +3,23 @@ import { Agent as HttpsAgent } from "node:https";
 import type { AddressInfo } from "node:net";
 import type * as S3Sdk from "@aws-sdk/client-s3";
 import { S3Client } from "@aws-sdk/client-s3";
+import type { Deferred } from "@rakazo/core/test-async";
+import { deferred } from "@rakazo/core/test-async";
+import {
+  createLogger,
+  createTestSink,
+  getLogger,
+  installLogger,
+  runCorrelatedJob,
+} from "@rakazo/logging";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import {
   MemoryObjectStorage,
   objectStorageConformance,
 } from "../../../storage/object-storage.test-support.js";
+import { ObjectStorageUnavailableError } from "../../../storage/object-storage-common.js";
 import {
+  isPassingStorageFailure,
   objectStorageConfigFromEnv,
   objectStorageRequestHandler,
   S3ObjectStorage,
@@ -34,6 +45,8 @@ function fakeS3() {
   const objects = new Map<string, { body: Buffer; lastModified: Date }>();
   const uploads = new Map<string, { key: string; parts: Map<number, Buffer> }>();
   const requests: string[] = [];
+  /** Part uploads being answered; while `hold` is set, each waits for it before answering. */
+  const partsSending: { count: number; hold?: Deferred<void> } = { count: 0 };
   let nextUpload = 0;
   const xml = (value: string) =>
     value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -58,8 +71,23 @@ function fakeS3() {
     requests.push(
       `${req.method} ${key ? "object" : "bucket"}${named.length ? `?${named.join("&")}` : ""}`,
     );
+    if (bucket === "partly-busy-bucket" && req.method === "POST" && query.has("delete"))
+      return send(
+        200,
+        "<DeleteResult><Error><Key>k</Key><Code>SlowDown</Code><Message>Reduce your rate</Message></Error></DeleteResult>",
+      );
+    if (bucket === "mixed-bucket" && req.method === "POST" && query.has("delete"))
+      return send(
+        200,
+        "<DeleteResult><Error><Key>a</Key><Code>SlowDown</Code></Error><Error><Key>b</Key><Code>AccessDenied</Code></Error></DeleteResult>",
+      );
+    if (bucket === "busy-bucket")
+      return send(503, "<Error><Code>SlowDown</Code><Message>Reduce your rate</Message></Error>");
     if (bucket !== "test-bucket") return send(404, "<Error><Code>NoSuchBucket</Code></Error>");
     if (req.method === "PUT" && query.has("uploadId")) {
+      partsSending.count += 1;
+      await partsSending.hold?.promise;
+      partsSending.count -= 1;
       uploads.get(query.get("uploadId")!)!.parts.set(Number(query.get("partNumber")), body);
       return send(200, "", { ETag: `"part-${query.get("partNumber")}"` });
     }
@@ -128,7 +156,7 @@ function fakeS3() {
     }
     send(400, "<Error><Code>BadRequest</Code></Error>");
   });
-  return { server, objects, requests };
+  return { server, objects, requests, partsSending };
 }
 
 const fake = fakeS3();
@@ -143,9 +171,9 @@ afterAll(async () => {
   await new Promise((resolve) => fake.server.close(resolve));
 });
 
-function storage(prefix = "") {
+function storage(prefix = "", bucket = "test-bucket") {
   return new S3ObjectStorage({
-    bucket: "test-bucket",
+    bucket,
     endpoint,
     region: "us-east-1",
     accessKeyId: "fake-access-key",
@@ -198,6 +226,30 @@ describe("S3ObjectStorage", () => {
     ]);
   });
 
+  it("sends several parts of a large home at once and stores them in order", async () => {
+    const sizes = [16, 16, 1];
+    const body = (index: number) => Buffer.alloc(sizes[index]! * 1024 * 1024, index);
+    fake.partsSending.hold = deferred();
+    const uploaded = storage("parallel/").put(
+      "home",
+      (async function* () {
+        for (const index of sizes.keys()) yield body(index);
+      })(),
+    );
+    try {
+      await vi.waitFor(() => expect(fake.partsSending.count).toBe(3), { timeout: 10_000 });
+    } finally {
+      fake.partsSending.hold.resolve();
+      fake.partsSending.hold = undefined;
+    }
+    await uploaded;
+    expect(
+      fake.objects
+        .get("parallel/home")!
+        .body.equals(Buffer.concat(sizes.map((_, index) => body(index)))),
+    ).toBe(true);
+  });
+
   it("aborts a multipart upload when the source fails", async () => {
     fake.requests.length = 0;
     await expect(
@@ -239,6 +291,74 @@ describe("S3ObjectStorage failures", () => {
       ),
     ).rejects.toThrow();
     expect(closed).toBe(true);
+  });
+});
+
+describe("S3ObjectStorage outages", () => {
+  const upload = (bucket: string) =>
+    storage("", bucket).put(
+      "home",
+      (async function* () {
+        yield Buffer.from("x");
+      })(),
+    );
+
+  it("answers a store that stays busy through the SDK's retries as an expected outage", async () => {
+    const previous = getLogger();
+    const sink = createTestSink();
+    installLogger(createLogger({ service: "test", sinks: [sink] }));
+    try {
+      fake.requests.length = 0;
+      const failure = await runCorrelatedJob({
+        name: "computer.sleep",
+        payload: {},
+        run: () => upload("busy-bucket"),
+      }).catch((error: unknown) => error);
+      expect(failure).toBeInstanceOf(ObjectStorageUnavailableError);
+      expect(failure).toMatchObject({ kind: "SERVICE_UNAVAILABLE", cause: { name: "SlowDown" } });
+      expect(fake.requests.length).toBeGreaterThan(1);
+      expect(sink.events.map(({ level, message }) => ({ level, message }))).toEqual([
+        { level: "warn", message: "object storage unavailable" },
+        { level: "error", message: "job.completed" },
+      ]);
+      expect(sink.events.at(-1)).toMatchObject({ "error.report": false });
+    } finally {
+      installLogger(previous);
+    }
+  });
+
+  it("answers a deletion the store throttled object by object as an outage", async () => {
+    await expect(storage("", "partly-busy-bucket").delete(["k"])).rejects.toBeInstanceOf(
+      ObjectStorageUnavailableError,
+    );
+  });
+
+  it("keeps a deletion with a refused object an ordinary failure", async () => {
+    const failure = await storage("", "mixed-bucket")
+      .delete(["a", "b"])
+      .catch((error: unknown) => error);
+    expect(failure).toBeInstanceOf(Error);
+    expect(failure).not.toBeInstanceOf(ObjectStorageUnavailableError);
+  });
+
+  it("leaves a request the store refuses as it was", async () => {
+    const failure = await upload("missing-bucket").catch((error: unknown) => error);
+    expect(failure).not.toBeInstanceOf(ObjectStorageUnavailableError);
+  });
+
+  it("counts dropped connections and server errors as passing, and refusals as not", () => {
+    const withCode = (code: string) => Object.assign(new Error("socket hang up"), { code });
+    const withStatus = (name: string, httpStatusCode: number) =>
+      Object.assign(new Error(name), { name, $metadata: { httpStatusCode } });
+    expect(isPassingStorageFailure(withCode("ECONNRESET"))).toBe(true);
+    expect(isPassingStorageFailure(withStatus("BadGateway", 502))).toBe(true);
+    expect(isPassingStorageFailure(withStatus("ServiceUnavailable", 503))).toBe(true);
+    expect(isPassingStorageFailure(withStatus("TooManyRequests", 429))).toBe(true);
+    expect(isPassingStorageFailure(withStatus("AccessDenied", 403))).toBe(false);
+    expect(isPassingStorageFailure(withStatus("NoSuchKey", 404))).toBe(false);
+    expect(isPassingStorageFailure(withCode("ENOENT"))).toBe(false);
+    // A refused connection is as likely a wrong endpoint as an outage, so it stays reported.
+    expect(isPassingStorageFailure(withCode("ECONNREFUSED"))).toBe(false);
   });
 });
 

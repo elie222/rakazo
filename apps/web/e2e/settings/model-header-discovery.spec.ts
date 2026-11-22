@@ -1,5 +1,6 @@
 import type { Page } from "@playwright/test";
 import { expect, test } from "@playwright/test";
+import { deferred } from "@rakazo/core/test-async";
 import {
   captureScreenshot,
   completeOnboarding,
@@ -45,48 +46,46 @@ for (const surface of ["settings", "onboarding"] as const) {
         await page.getByRole("combobox", { name: "Provider", exact: true }).click();
         await page.getByRole("option", { name: "OpenAI-compatible", exact: true }).click();
       }
+      const pending = deferred<void>();
+      await page.route(probePath, async (route) => {
+        const { headers } = route.request().postDataJSON().json as {
+          headers?: Record<string, string>;
+        };
+        const value = headers?.["x-fixture"];
+        if (value === "held-fixture") await pending.promise;
+        const models =
+          value === "fixture-value"
+            ? ["old-header-model"]
+            : value === "held-fixture"
+              ? ["stale-header-model"]
+              : [];
+        await route.fulfill({ json: { json: { models } } });
+      });
       await page.getByLabel("OpenAI-compatible server URL").fill("http://127.0.0.1:8090/v1");
       await page.getByLabel("Model id", { exact: true }).fill("manual-model");
       await page.getByText("Advanced", { exact: true }).click();
-
-      async function prepareHeader() {
-        const remove = page.getByRole("button", { name: "Remove header", exact: true });
-        while (await remove.count()) await remove.first().click();
-        await page.getByRole("button", { name: "Add header", exact: true }).click();
-        await page.getByLabel("Header name", { exact: true }).fill("x-fixture");
-        await page.getByLabel("Header value", { exact: true }).fill("fixture-value");
-      }
-      await prepareHeader();
-      await page.route(probePath, (route) =>
-        route.fulfill({ json: { json: { models: ["old-header-model"] } } }),
-      );
-      await page.getByRole("button", { name: "Find models", exact: true }).click();
+      await page.getByRole("button", { name: "Add header", exact: true }).click();
+      await page.getByLabel("Header name", { exact: true }).fill("x-fixture");
+      const headerValue = page.getByLabel("Header value", { exact: true });
+      await headerValue.fill("fixture-value");
       const useFound = page.getByRole("button", { name: "Use a found model", exact: true });
       await expect(useFound).toBeVisible();
-      await edit(page);
-      await expect(useFound).toHaveCount(0);
-      await expect(page.getByLabel("Model id", { exact: true })).toHaveValue("manual-model");
 
-      await prepareHeader();
-      await page.unroute(probePath);
-      let release = () => {};
-      const held = new Promise<void>((resolve) => {
-        release = resolve;
-      });
-      await page.route(probePath, async (route) => {
-        await held;
-        await route.fulfill({ json: { json: { models: ["stale-header-model"] } } });
-      });
-      const response = page.waitForResponse(probePath);
+      const request = page.waitForRequest(probePath);
+      const response = page.waitForResponse(
+        (response) =>
+          response.url().endsWith("/rpc/models/probeOpenAiCompatible") &&
+          response.request().postDataJSON().json.headers?.["x-fixture"] === "held-fixture",
+      );
       try {
-        const request = page.waitForRequest(probePath);
-        await page.getByRole("button", { name: "Find models", exact: true }).click();
+        await headerValue.fill("held-fixture");
         await request;
-        await expect(page.getByRole("button", { name: "Finding…", exact: true })).toBeDisabled();
+        await expect(page.getByText("Finding…", { exact: true })).toBeVisible();
         await edit(page);
-        await expect(page.getByRole("button", { name: "Find models", exact: true })).toBeEnabled();
+        await expect(useFound).toHaveCount(0);
+        await expect(page.getByLabel("Model id", { exact: true })).toHaveValue("manual-model");
       } finally {
-        release();
+        pending.resolve();
       }
       await (await response).finished();
       // Let the RPC continuation and React's render run before checking stale state.
@@ -99,7 +98,6 @@ for (const surface of ["settings", "onboarding"] as const) {
       await expect(useFound).toHaveCount(0);
       await expect(page.getByRole("combobox", { name: "Models from server" })).toHaveCount(0);
       await expect(page.getByLabel("Model id", { exact: true })).toHaveValue("manual-model");
-      await expect(page.getByRole("button", { name: "Find models", exact: true })).toBeEnabled();
       if (action === "remove")
         await captureScreenshot(page, testInfo, `${surface}-header-discovery-reset`);
     });

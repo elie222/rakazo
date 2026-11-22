@@ -41,12 +41,15 @@ import {
   WorkspacePathError,
 } from "../../../computers/screens/computer-support.js";
 import {
+  isAllowedDesktopPath,
+  normalizeDesktopWorkspacePath,
+} from "../../../computers/screens/desktop-sandbox-paths.js";
+import {
   isTaggedCacheDirectory,
   shouldSkipPortableWorkspaceFile,
 } from "../../../storage/workspace-save-policy.js";
 import type { NativeProcessTree } from "./desktop-process-tree.js";
 import { spawnOwnedCommand } from "./desktop-process-tree.js";
-import { isAllowedDesktopPath, normalizeDesktopWorkspacePath } from "./desktop-sandbox-paths.js";
 import type { Win32FileHandle } from "./desktop-sandbox-win32-path.js";
 import {
   createExclusiveChildViaDirectoryFdWin32,

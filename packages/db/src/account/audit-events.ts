@@ -14,10 +14,10 @@ import {
 import { getLogger } from "@rakazo/logging";
 import { GUEST_ROLE, ownedOrganizationId } from "../billing/billing.js";
 import type { Prisma, PrismaClient } from "../database/client.js";
-import { parsePositiveInteger } from "../database/client.js";
 import { JsonObject, readJsonColumn, warnJsonColumnOnce } from "../database/json-column.js";
 import { runAsSystem } from "../database/row-security.js";
 import { IsolationError } from "../database/scope.js";
+import { parseRetentionDays } from "../history/retention-days.js";
 import { organizationRole } from "../spaces/organization-members.js";
 import { securityEventMetadata, securityRequestCaller } from "./security-events.js";
 
@@ -374,7 +374,8 @@ function storedAuditMetadata(row: { id: string; metadata: unknown }): AuditEvent
 export const DEFAULT_AUDIT_EVENT_RETENTION_DAYS = 365;
 
 export function auditEventRetentionDays(source: NodeJS.ProcessEnv = process.env): number {
-  return parsePositiveInteger(
+  return parseRetentionDays(
+    "AUDIT_EVENT_RETENTION_DAYS",
     source.AUDIT_EVENT_RETENTION_DAYS,
     DEFAULT_AUDIT_EVENT_RETENTION_DAYS,
   );

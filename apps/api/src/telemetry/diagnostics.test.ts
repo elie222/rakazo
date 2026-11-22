@@ -129,8 +129,24 @@ describe("diagnostics report", () => {
       }),
     );
     expect(report).toContain(
-      "space differs from bot; user differs from bot; user differs from server; server not available in space",
+      "space differs from bot; user differs from server; server not available in space",
     );
+  });
+
+  it("does not flag a member's server chosen for a teammate's bot", () => {
+    const report = renderDiagnostics(
+      input({
+        assignments: [
+          {
+            botId: "bot_private_1",
+            spaceId: input().bots[0]!.spaceId,
+            userId: "user_teammate",
+            server: server({ userId: "user_teammate" }),
+          },
+        ],
+      }),
+    );
+    expect(report).not.toMatch(/differs|not available/);
   });
 
   it("does not echo unexpected free-form values from enum-like fields", () => {

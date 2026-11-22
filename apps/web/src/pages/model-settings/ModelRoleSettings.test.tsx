@@ -8,12 +8,9 @@ import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 /** Provider rows end with their "Connect" action; models show their name alone. */
-const optionName = (entry: Element) => entry.textContent?.replace(/(Connect|Default)$/, "");
+const optionName = (entry: Element) =>
+  entry.textContent?.replace(/(Connect|Default|Included)$/, "");
 const api = vi.hoisted(() => ({ role: vi.fn(), forRole: vi.fn(), setRole: vi.fn() }));
-vi.mock("../../lib/models/localized-provider-hint", () => ({
-  providerDisplayName: (provider: string, name: string, auth?: string) =>
-    provider === "anthropic" && auth === "oauth" ? "Claude subscription" : name,
-}));
 vi.mock("../../lib/query/space-rpc", () => {
   const client = { models: api };
   return { useSpaceRpc: () => client };
@@ -280,6 +277,17 @@ describe("shared role editor", () => {
     expect(container.querySelector('[data-testid="model-role-default"]')?.textContent).toBe(
       "1ChatOpenRouter",
     );
+  });
+  it("marks a default the deployment pays for as included, in its row and in the picker", async () => {
+    saved = { primary: null, backups: [], deploymentPrimary: jev, deploymentIncluded: true };
+    await render({ modelRole: "approval", title: "Approval model" });
+    expect(container.querySelector('[data-testid="model-role-default"]')?.textContent).toBe(
+      "Jev 1.14Included",
+    );
+    await pick("Change Approval model", "Chat");
+    await click(trigger("Change Chat"));
+    const options = [...document.querySelectorAll<HTMLElement>('[role="option"]')];
+    expect(options[0]?.textContent).toBe("Jev 1.14Included");
   });
   it("leaves a model where the loaded list has it when it is picked again", async () => {
     saved = { primary: chat, backups: [jev] };
@@ -576,4 +584,24 @@ it("saves credit and personal routes to the same model without mixing their iden
   );
   expect(saved.primary).toEqual(pin(chat));
   expect(saved.primary?.creditOfferingId).toBeUndefined();
+});
+
+it("names a managed OAuth-only role by its catalog name without a credential", async () => {
+  api.forRole.mockResolvedValue([
+    {
+      provider: "example",
+      providerName: "Example",
+      subscriptionName: "Example subscription",
+      auth: "oauth",
+      managed: true,
+      id: "model",
+      label: "Model",
+      billing: "",
+    },
+  ]);
+  saved = { primary: { provider: "example", modelId: "model" }, backups: [] };
+  await render({ credentials: [], providerLabel: () => "Example subscription" });
+  expect(rows()).toEqual(["ModelExample"]);
+  await click(trigger("Change Model"));
+  expect(document.body.textContent).not.toContain("Example subscription");
 });
