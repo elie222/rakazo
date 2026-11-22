@@ -72,26 +72,19 @@ export function usePagedPages(owner: { botId?: string; groupId?: string }) {
     loadingMore.current = true;
     const started = generation.current;
     try {
-      const result = await rpc("pages/list", input(listed.nextCursor));
+      // Only the request's failure is reported as one; a failure from before a reload is dropped.
+      const result = await rpc("pages/list", input(listed.nextCursor)).catch(() => null);
       if (started !== generation.current) return;
-      setListed((current) =>
-        current.status === "ready" && current.generation === started
-          ? {
-              ...current,
-              items: uniquePages([...current.items, ...result.items]),
-              nextCursor: result.nextCursor,
-              paginationFailed: false,
-            }
-          : current,
-      );
-    } catch {
-      // A failure from before a reload is as stale as a success would be.
-      if (started !== generation.current) return;
-      setListed((current) =>
-        current.status === "ready" && current.generation === started
-          ? { ...current, paginationFailed: true }
-          : current,
-      );
+      setListed((current) => {
+        if (current.status !== "ready" || current.generation !== started) return current;
+        if (!result) return { ...current, paginationFailed: true };
+        return {
+          ...current,
+          items: uniquePages([...current.items, ...result.items]),
+          nextCursor: result.nextCursor,
+          paginationFailed: false,
+        };
+      });
     } finally {
       if (started === generation.current) loadingMore.current = false;
     }
