@@ -27,6 +27,7 @@ import type {
   HostScreenObservation,
 } from "../../computers/screens/host-screen.js";
 import { HOST_SCREEN_MAX_ACTIONS, hostScreenAction } from "../../computers/screens/host-screen.js";
+import { ROUTINE_WATCH_NOTE_START } from "../../routines/routine-watch.prompt.js";
 import type { RunContext } from "../assembly/run-context.js";
 import type { ToolCall } from "./run-tool-gate.js";
 
@@ -85,18 +86,29 @@ export function userComputerOwner(input: {
   return reachable ? input.runUserId : undefined;
 }
 
-/** Whether a routine run's routine still exists and watches nothing, so only its own prompt ran. */
-function scheduledRoutine(routine: { watch: unknown } | null): boolean {
-  return routine !== null && routine.watch === null;
+/**
+ * Whether a routine run is only its routine's own prompt: the routine still exists and watches
+ * nothing, and the task quotes no watch. A task queued while its routine watched keeps the note
+ * after the watch is removed, and a retry copies it.
+ */
+function scheduledRoutine(run: {
+  task: { prompt: string };
+  routine: { watch: unknown } | null;
+}): boolean {
+  return (
+    run.routine !== null &&
+    run.routine.watch === null &&
+    !run.task.prompt.includes(ROUTINE_WATCH_NOTE_START)
+  );
 }
 
 /** Whether a routine run may carry text its routine watched for, or no longer has a routine. */
 export async function routineRunWatches(prisma: PrismaClient, runId: string): Promise<boolean> {
   const run = await prisma.run.findUnique({
     where: { id: runId },
-    select: { routine: { select: { watch: true } } },
+    select: { task: { select: { prompt: true } }, routine: { select: { watch: true } } },
   });
-  return !scheduledRoutine(run?.routine ?? null);
+  return !run || !scheduledRoutine(run);
 }
 
 /** Outside tasks whose text, once handed into a run, keeps it from the owner's computer. */
@@ -146,6 +158,7 @@ export async function botChainFromOwner(
         bot: { select: { userId: true } },
         thread: { select: { groupId: true } },
         routine: { select: { watch: true } },
+        task: { select: { prompt: true } },
       },
     });
     if (
@@ -165,7 +178,7 @@ export async function botChainFromOwner(
       select: { id: true },
     });
     if (steered) return false;
-    if (sender.trigger === "routine") return access.routines && scheduledRoutine(sender.routine);
+    if (sender.trigger === "routine") return access.routines && scheduledRoutine(sender);
     if (sender.trigger === "user" || sender.trigger === "follow_up") {
       const source = sender.sourceMessageId
         ? await prisma.message.findUnique({
