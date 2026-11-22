@@ -8,6 +8,9 @@ import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import ChangePassword from "../../app/(settings)/change-password";
+import { announceToScreenReader } from "../native/announce";
+
+vi.mock("../native/announce", () => ({ announceToScreenReader: vi.fn() }));
 
 const session = vi.hoisted(() => ({
   order: [] as string[],
@@ -130,4 +133,78 @@ it("ends an active call on the server before changing the password", async () =>
   expect(session.order).toEqual(["threads/endCall", "change-password"]);
   expect(session.endCallBeforeSessionEnd).toHaveBeenCalledOnce();
   expect(session.changePassword).toHaveBeenCalledWith("old-password", "new-password");
+  expect(announceToScreenReader).not.toHaveBeenCalled();
+});
+
+function fillPasswords(confirmation = "new-password") {
+  type("Current password", "old-password");
+  type("New password", "new-password");
+  type("Confirm password", confirmation);
+}
+
+async function submit() {
+  await act(async () => {
+    container.querySelector<HTMLButtonElement>("button")!.click();
+  });
+}
+
+it("announces every mismatch with the displayed text, including an identical retry", async () => {
+  fillPasswords("different-password");
+  expect(announceToScreenReader).not.toHaveBeenCalled();
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    await submit();
+    const shown = container.querySelector("p")!.textContent;
+    expect(shown).toBe("Passwords do not match");
+    expect(announceToScreenReader).toHaveBeenCalledTimes(attempt);
+    expect(announceToScreenReader).toHaveBeenLastCalledWith(shown);
+  }
+  expect(session.endCallBeforeSessionEnd).not.toHaveBeenCalled();
+  expect(session.changePassword).not.toHaveBeenCalled();
+});
+
+it("announces every refused password change with the displayed error", async () => {
+  fillPasswords();
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    session.changePassword.mockRejectedValueOnce(new Error("Wrong current password"));
+    await submit();
+    const shown = container.querySelector("p")!.textContent;
+    // The existing errorText mock returns the user-facing fallback.
+    expect(shown).toBe("Could not change password");
+    expect(announceToScreenReader).toHaveBeenCalledTimes(attempt);
+    expect(announceToScreenReader).toHaveBeenLastCalledWith(shown);
+  }
+});
+
+it("announces a call teardown failure without changing the password", async () => {
+  fillPasswords();
+  session.endCallBeforeSessionEnd.mockRejectedValueOnce(new Error("Could not end call"));
+  await submit();
+  expect(session.changePassword).not.toHaveBeenCalled();
+  expect(announceToScreenReader).toHaveBeenCalledExactlyOnceWith(
+    container.querySelector("p")!.textContent,
+  );
+});
+
+it("does not announce a failure after leaving the screen", async () => {
+  fillPasswords();
+  const request = deferred();
+  session.changePassword.mockImplementationOnce(() => request.promise);
+  await submit();
+  expect(session.changePassword).toHaveBeenCalledOnce();
+  act(() => root.render(null));
+  await act(async () => {
+    request.reject(new Error("Wrong current password"));
+  });
+  expect(announceToScreenReader).not.toHaveBeenCalled();
+});
+
+it("stays silent on success after an announced mismatch", async () => {
+  fillPasswords("different-password");
+  await submit();
+  expect(announceToScreenReader).toHaveBeenCalledOnce();
+  type("Confirm password", "new-password");
+  await submit();
+  expect(session.changePassword).toHaveBeenCalledOnce();
+  expect(container.querySelector("p")).toBeNull();
+  expect(announceToScreenReader).toHaveBeenCalledOnce();
 });

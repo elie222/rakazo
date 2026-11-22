@@ -54,7 +54,9 @@ export function isoWeek(date) {
 export function normalizePath(path) {
   let pathname = String(path ?? "/");
   try {
-    pathname = new URL(pathname, "http://stack.invalid").pathname;
+    const url = new URL(pathname, "http://stack.invalid");
+    // Only web URLs percent-encode their path, which keeps it inside the issue's code span.
+    pathname = url.protocol === "http:" || url.protocol === "https:" ? url.pathname : "/";
   } catch {
     pathname = "/";
   }
@@ -101,7 +103,10 @@ export function plainText(text, max = 600) {
     })
     .join("")
     .trim();
-  return clean.length > max ? `${clean.slice(0, max - 1)}…` : clean;
+  if (clean.length <= max) return clean;
+  // Cut before a surrogate pair instead of through it.
+  const end = clean.codePointAt(max - 2) > 0xffff ? max - 2 : max - 1;
+  return `${clean.slice(0, end)}…`;
 }
 
 /** Model text for a public issue body, in a fenced code block so no Markdown, HTML or mention in it renders: the fence is longer than any backtick run the text holds. */

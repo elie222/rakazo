@@ -2,7 +2,7 @@ import { Trans, useLingui } from "@lingui/react/macro";
 import type { IntegrationCatalogResult } from "@rakazo/contracts";
 import { signInMcpServers } from "@rakazo/core";
 import { Button, Disclosure, Input } from "@rakazo/ui-web";
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import { connectMcpEndpoint } from "../../lib/integrations/mcp-connect";
 import { rpc } from "../../lib/query/rpc";
 import type { ErrorDetails } from "../../lib/query/user-error";
@@ -10,19 +10,10 @@ import { errorDetails } from "../../lib/query/user-error";
 import { ErrorNotice } from "../ErrorNotice";
 
 /** Personal MCP connections never configure deployment-wide provider credentials. */
-export function IntegrationSetup({
-  onDone,
-  botId,
-  initialQuery,
-}: {
-  onDone?: () => void;
-  botId?: string;
-  /** Searches the public catalog for this once on open. */
-  initialQuery?: string;
-}) {
+export function IntegrationSetup({ onDone, botId }: { onDone?: () => void; botId?: string }) {
   const { t } = useLingui();
   const [endpoint, setEndpoint] = useState("");
-  const [query, setQuery] = useState(initialQuery ?? "");
+  const [query, setQuery] = useState("");
   const [results, setResults] = useState<IntegrationCatalogResult[]>([]);
   const [searched, setSearched] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -51,14 +42,6 @@ export function IntegrationSetup({
       setSearched(true);
     });
   }
-
-  // Ref, not state: a development remount must not send the search twice.
-  const searchedInitial = useRef(false);
-  useEffect(() => {
-    if (searchedInitial.current || !initialQuery?.trim()) return;
-    searchedInitial.current = true;
-    search(initialQuery);
-  }, []);
 
   async function connect(name: string, url: string) {
     await run(async () => {

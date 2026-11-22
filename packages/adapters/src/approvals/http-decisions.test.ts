@@ -228,6 +228,25 @@ describe("decision provider failures", () => {
     );
   });
 
+  it("asks OpenRouter for hosts that retain nothing, and leaves routing alone otherwise", async () => {
+    const fetchMock = vi.fn<typeof fetch>(async () => response());
+    for (const zeroDataRetention of [true, false])
+      await new HttpDecisionProvider("openrouter", {
+        apiKey: "fake-key",
+        fetch: fetchMock,
+        zeroDataRetention,
+      }).decide(request, context);
+    const bodies = fetchMock.mock.calls.map(([, init]) => JSON.parse(String(init?.body)));
+    expect(bodies[0]).toEqual({ ...request, provider: { zdr: true } });
+    expect(bodies[1]).toEqual(request);
+  });
+
+  it("refuses data retention limits on a host that cannot enforce them", () => {
+    expect(
+      () => new HttpDecisionProvider("typesafe", { apiKey: "fake-key", zeroDataRetention: true }),
+    ).toThrow(expect.objectContaining({ kind: "invalid" }));
+  });
+
   it("refuses a blank API key before any request", () => {
     expect(() => new HttpDecisionProvider("typesafe", { apiKey: " " })).toThrow(
       expect.objectContaining({ kind: "authentication" }),

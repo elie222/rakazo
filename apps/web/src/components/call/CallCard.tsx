@@ -37,12 +37,14 @@ export function CallCard({ onSettings }: { onSettings: () => void }) {
   const navigate = useNavigate();
   const { botId } = useParams();
   const onCall = Boolean(call);
-  useEventListener(onCall ? window : null, "keydown", (event) => {
+  const onKey = (event: KeyboardEvent) => {
     if (event.key !== "Escape" || event.defaultPrevented) return;
     const target = event.target as HTMLElement | null;
     if (target?.isContentEditable || EDITABLE.test(target?.tagName ?? "")) return;
+    event.preventDefault();
     endCall();
-  });
+  };
+  useEventListener(onCall ? window : null, "keydown", onKey);
   if (!call || call.minimized) return null;
   const onBotScreen = botId === call.botId;
   const ringing = call.phase === "ringing";
@@ -56,6 +58,7 @@ export function CallCard({ onSettings }: { onSettings: () => void }) {
           : t`Listening`;
   return (
     <CallWindow
+      onKeyDown={(event) => onKey(event.nativeEvent)}
       data-testid="call-view"
       role="dialog"
       aria-label={t`Call with ${call.botName}`}
@@ -120,18 +123,9 @@ export function CallCard({ onSettings }: { onSettings: () => void }) {
           <span className="text-heading1 font-semibold text-foreground md:text-heading2" dir="auto">
             {call.botName}
           </span>
-          <span
-            className="flex gap-2 text-body tabular-nums text-muted-foreground"
-            aria-live="polite"
-          >
-            {ringing ? (
-              t`Calling…`
-            ) : (
-              <>
-                <span>{callClock(elapsed)}</span>
-                <span>{activity}</span>
-              </>
-            )}
+          <span className="flex gap-2 text-body tabular-nums text-muted-foreground">
+            {!ringing ? <span>{callClock(elapsed)}</span> : null}
+            <span aria-live="polite">{ringing ? t`Calling…` : activity}</span>
           </span>
         </div>
         {!ringing ? (

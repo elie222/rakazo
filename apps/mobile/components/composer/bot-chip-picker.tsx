@@ -8,6 +8,11 @@ import { native, useMobileTokens } from "../../lib/native/native";
 import { BotAvatar } from "../bots/bot-avatar";
 import { NativeSymbol } from "../native/native-symbol";
 
+// Lowercasing can create new composable sequences, so normalize again afterward.
+function searchKey(value: string): string {
+  return value.normalize("NFC").toLowerCase().normalize("NFC");
+}
+
 export function BotChipPicker({
   bots,
   selected,
@@ -20,13 +25,13 @@ export function BotChipPicker({
   const { t } = useLingui();
   const tokens = useMobileTokens();
   const [query, setQuery] = useState("");
-  const needle = query.trim().toLowerCase();
+  const needle = searchKey(query.trim());
   const remove = (id: string) => onChange(selected.filter((value) => value !== id));
   const available = bots.filter(
     (bot) =>
       !bot.archivedAt &&
       !selected.includes(bot.id) &&
-      (!needle || bot.name.toLowerCase().includes(needle)),
+      (!needle || searchKey(bot.name).includes(needle)),
   );
   return (
     <View>

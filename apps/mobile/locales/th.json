@@ -2,6 +2,7 @@
   "ios": {
     "NSCameraUsageDescription": "Rakazo ใช้กล้องเพื่อให้คุณแนบรูปภาพกับข้อความถึงบอทได้",
     "NSPhotoLibraryUsageDescription": "Rakazo ใช้คลังรูปภาพของคุณเพื่อให้แนบรูปภาพกับข้อความถึงบอทได้",
+    "NSPhotoLibraryAddUsageDescription": "Rakazo บันทึกรูปภาพและวิดีโอที่คุณดาวน์โหลดจากอาร์ติแฟกต์ลงในคลังรูปภาพของคุณ",
     "NSLocalNetworkUsageDescription": "Rakazo เชื่อมต่อกับเซิร์ฟเวอร์ Rakazo ที่ติดตั้งเองบนเครือข่ายภายในของคุณ",
     "NSMicrophoneUsageDescription": "Rakazo ใช้ไมโครโฟนระหว่างการแชทด้วยเสียงกับบอท",
     "NSSpeechRecognitionUsageDescription": "Rakazo แปลงเสียงพูดของคุณเป็นข้อความระหว่างการแชทด้วยเสียง",

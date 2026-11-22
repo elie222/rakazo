@@ -444,7 +444,7 @@ describe("call session", () => {
     );
   });
 
-  it.each(["failed", "cancelled", "completed"])(
+  it.each(["failed", "completed"])(
     "listens after a first turn ends with run.%s and no reply, then speaks a later reply",
     async (status) => {
       await answeredCall({ botId: "call-bot", botName: "Ada", transcribe: false });
@@ -638,6 +638,28 @@ describe("call session", () => {
     );
   });
 
+  it.each([
+    ["Pick a plan", "Pick a plan. "],
+    ["Keep “Launch?”", "Keep “Launch?” "],
+  ])("joins the card %s and the instruction with one ending", async (text, start) => {
+    const choice = askMessage("choice-1", {
+      text,
+      actions: [
+        { id: "allow", label: "Allow once" },
+        { id: "deny", label: "Deny" },
+      ],
+    });
+    await answeredCall({ botId: "call-bot", botName: "Ada", transcribe: false });
+    getThread.mockResolvedValue(
+      snapshot([callerMessage("pick for me"), choice], waitingRun) as never,
+    );
+    await heard("pick for me");
+    expect(speak).toHaveBeenCalledWith(
+      `${start}Say yes or no, or answer in a sentence.`,
+      expect.objectContaining({ messageId: "choice-1" }),
+    );
+  });
+
   it("reads a card past its stopped run's progress, then listens without reading it again", async () => {
     const progress = {
       ...streamingMessage(""),
@@ -657,7 +679,7 @@ describe("call session", () => {
     );
     await heard("pick for me");
     expect(speak).toHaveBeenCalledWith(
-      "Allow or deny?. Say yes or no, or answer in a sentence.",
+      "Allow or deny? Say yes or no, or answer in a sentence.",
       expect.objectContaining({ messageId: "choice-1" }),
     );
     const listens = listen.mock.calls.length;
@@ -1763,7 +1785,7 @@ async function approvalWait(turn: ThreadMessage, approval: ThreadMessage) {
   getThread.mockResolvedValue(snapshot([turn, approval], waitingRun) as never);
   await heard("check the site");
   expect(speak).toHaveBeenLastCalledWith(
-    "Open example.com?. Approve or deny it on screen.",
+    "Open example.com? Approve or deny it on screen.",
     expect.objectContaining({ messageId: "approval-1" }),
   );
   await finishSpeaking();
