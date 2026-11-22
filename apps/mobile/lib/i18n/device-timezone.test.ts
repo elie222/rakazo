@@ -21,7 +21,7 @@ function lastPrompt() {
   const call = vi.mocked(Alert.alert).mock.calls.at(-1);
   const buttons = (call?.[2] ?? []) as Button[];
   const press = (text: string) => buttons.find((button) => button.text === text)?.onPress?.();
-  return { title: call?.[0], press };
+  return { title: call?.[0], body: call?.[1], press };
 }
 
 beforeEach(() => {
@@ -53,6 +53,8 @@ it("asks once when the zones differ and switches on Switch", async () => {
   await checkDeviceTimezone("user-1", "Europe/London", active);
   expect(Alert.alert).toHaveBeenCalledTimes(1);
   expect(lastPrompt().title).toBe("Switch to Tokyo time?");
+  // The body says what the account uses now, so the question never shows an empty dialog.
+  expect(lastPrompt().body).toBe("Your account is set to London time.");
   lastPrompt().press("Switch");
   expect(rpc).toHaveBeenCalledWith("preferences/update", { timezone: "Asia/Tokyo" });
 });
