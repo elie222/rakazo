@@ -1846,6 +1846,14 @@ export interface BillingPlanPayment {
   reversed: boolean;
 }
 
+export interface BillingInvoiceRefund {
+  invoiceId: string;
+  amountMinor: number;
+  currency: string;
+  state: "refundable" | "pending" | "succeeded";
+  refundId?: string;
+}
+
 export interface BillingCreditCheckoutRequest {
   customerId: string;
   amountCents: number;

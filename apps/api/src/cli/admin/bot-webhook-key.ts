@@ -1,6 +1,6 @@
 import { storeBotWebhookKey } from "@rakazo/adapters";
 import { recordSecurityEvent } from "@rakazo/db";
-import type { AdminCommand, AdminContext, AdminResult } from "./admin-command.js";
+import type { AdminCommand, AdminDbContext, AdminResult } from "./admin-command.js";
 import { AdminCommandError } from "./admin-command.js";
 
 const BOT_ID = /^[A-Za-z0-9_-]{1,128}$/;
@@ -18,7 +18,7 @@ export const botWebhookKeyCommand: AdminCommand = {
 
 /** Issues a bot's webhook key when it has none, or replaces it on `rotate`; never prints one it has. */
 export async function botWebhookKey(
-  context: AdminContext,
+  context: AdminDbContext,
   botId: string,
   rotate: boolean,
 ): Promise<AdminResult> {
