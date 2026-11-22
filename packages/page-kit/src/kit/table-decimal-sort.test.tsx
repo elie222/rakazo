@@ -3,7 +3,8 @@
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vitest";
-import { Table, type TableCell } from "./data.js";
+import type { TableCell } from "./data.js";
+import { Table } from "./data.js";
 import { PageLanguage } from "./labels.js";
 
 const cleanup: (() => void)[] = [];
@@ -45,15 +46,33 @@ it("sorts unambiguous German decimals numerically, without a sort control on the
     ["fraction", "1,25"],
     ["numeric", 900],
     ["negative", "-0,5"],
+    ["english-group", "1,234"],
+    ["english-currency", "$1,200.50"],
   ];
   const view = mount("de-DE", source);
   expect(view.buttonCount()).toBe(2);
   view.sort();
   expect(view.ariaSort()).toBe("ascending");
-  expect(view.order()).toEqual(["negative", "fraction", "decimal", "numeric", "grouped"]);
+  expect(view.order()).toEqual([
+    "negative",
+    "fraction",
+    "decimal",
+    "numeric",
+    "english-currency",
+    "english-group",
+    "grouped",
+  ]);
   view.sort();
   expect(view.ariaSort()).toBe("descending");
-  expect(view.order()).toEqual(["grouped", "numeric", "decimal", "fraction", "negative"]);
+  expect(view.order()).toEqual([
+    "grouped",
+    "english-group",
+    "english-currency",
+    "numeric",
+    "decimal",
+    "fraction",
+    "negative",
+  ]);
   view.sort();
   expect(view.ariaSort()).toBeNull();
   expect(view.order()).toEqual(source.map(([key]) => key));
@@ -79,6 +98,7 @@ it("keeps standard English numbers, text, and blank values in their previous ord
     ["text", "n/a"],
     ["currency", "$1,200.50"],
     ["decimal", "10.5"],
+    ["legacy-comma", "1,25"],
     ["numeric", 999],
     ["empty", ""],
     ["word", "Alpha"],
@@ -91,6 +111,7 @@ it("keeps standard English numbers, text, and blank values in their previous ord
   expect(view.order()).toEqual([
     "percentage",
     "decimal",
+    "legacy-comma",
     "numeric",
     "currency",
     "grouped",
@@ -103,4 +124,16 @@ it("keeps standard English numbers, text, and blank values in their previous ord
     "word",
     "text",
   ]);
+});
+
+it.each([
+  { locale: "es-ES", order: ["comma", "numeric"] },
+  { locale: "es-MX", order: ["numeric", "comma"] },
+])("uses the page's regional number format in $locale", ({ locale, order }) => {
+  const view = mount(locale, [
+    ["numeric", 10],
+    ["comma", "1,25"],
+  ]);
+  view.sort();
+  expect(view.order()).toEqual(order);
 });
