@@ -1,6 +1,5 @@
 {
   "apps/api/src/account/account-import.ts": 1,
-  "apps/api/src/app.ts": 1,
   "apps/api/src/messaging/messaging-inbound.ts": 1,
   "apps/api/src/threads/thread-target.ts": 1,
   "apps/desktop/src/main/main.ts": 1,

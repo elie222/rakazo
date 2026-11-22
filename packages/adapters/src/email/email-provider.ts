@@ -10,6 +10,20 @@ export type EmailProviderConfig = {
   smtpUrl?: string;
 };
 
+/** The EMAIL_* and SMTP_URL settings, trimmed, with a blank value unset. */
+export function emailProviderConfigFromEnv(
+  source: Record<string, string | undefined>,
+): EmailProviderConfig {
+  const value = (name: string) => source[name]?.trim() || undefined;
+  return {
+    provider: value("EMAIL_PROVIDER"),
+    apiKey: value("EMAIL_API_KEY"),
+    from: value("EMAIL_FROM"),
+    replyTo: value("EMAIL_REPLY_TO"),
+    smtpUrl: value("SMTP_URL"),
+  };
+}
+
 /** The configured outbound email provider, in the API and the worker alike; undefined when none. */
 export function configuredEmailProvider(
   config: EmailProviderConfig,
