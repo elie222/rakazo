@@ -9,6 +9,7 @@ import type {
 import { MCP_OAUTH_CLIENT_REQUIRED, mcpServerConnection } from "@rakazo/contracts";
 import type { connectedAppMarks } from "@rakazo/core";
 import {
+  addedMcpEndpoints,
   CONNECTION_CATALOG_PAGE_SIZE,
   catalogItemKey,
   customMcpServerInput,
@@ -239,6 +240,10 @@ export function PluginsOverlay({
   };
 
   function beginSource(kind: SourceKind, preset: McpSourcePreset | null = null) {
+    if (preset?.url && addedMcpEndpoints(sources, mcpServers).has(preset.url)) {
+      openAddView("manage");
+      return;
+    }
     setPlugin(null);
     setDetailKey(null);
     setSourceBack("browse");
@@ -654,17 +659,12 @@ export function PluginsOverlay({
               onSearchPublic={setPublicTerm}
               onOpenPreset={(preset) => beginSource("mcp", preset)}
               onOpenMcp={(server) => {
+                if (addedMcpEndpoints(sources, mcpServers).has(server.source)) {
+                  openAddView("manage");
+                  return;
+                }
                 beginSource("mcp");
-                sourceForm.startFromCatalog(
-                  "mcp",
-                  server.name,
-                  server.source,
-                  server.auth ?? {
-                    type: "oauth",
-                    headerName: null,
-                    note: null,
-                  },
-                );
+                sourceForm.startFromCatalog("mcp", server.name, server.source, server.auth);
               }}
             />
           )}

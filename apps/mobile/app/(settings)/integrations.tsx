@@ -3,6 +3,7 @@ import { useLingui } from "@lingui/react/macro";
 import type { CapabilityInstall, ConnectionCatalogItem } from "@rakazo/contracts";
 import { SUBMIT_PLUGIN_URL } from "@rakazo/contracts";
 import {
+  addedMcpEndpoints,
   browsablePlugins,
   buildFeaturedConnectorTiles,
   CONNECTION_CATALOG_PAGE_SIZE,
@@ -139,6 +140,7 @@ export default function Integrations() {
   const sources = installs.filter(
     (item) => item.kind === "mcp" || item.kind === "api" || item.kind === "graphql",
   );
+  const addedEndpoints = addedMcpEndpoints(sources, mcpServers);
   const pluginInstalls = installs.filter((item) => item.kind === "plugin");
   // A server without presets (or a failed request) offers none, never another server's.
   const sourcePresets = presetsQuery.data ?? [];
@@ -190,7 +192,7 @@ export default function Integrations() {
     pending: sourcePending,
     formProps,
   } = useCustomSourceForm({
-    sourcePresets,
+    sourcePresets: sourcePresets.filter(({ url }) => !url || !addedEndpoints.has(url)),
     stale,
     authorizeMcp,
     setOauthServerId,
@@ -573,23 +575,35 @@ export default function Integrations() {
                   >{t`Managed apps haven’t been enabled on this server.`}</Text>
                 ) : null}
 
-                {directPresets.map((preset) => (
-                  <View key={preset.id} style={styles.row}>
-                    <ConnectorIcon name={preset.name} size={LOGO_SIZE} />
-                    <Text numberOfLines={1} style={[styles.title, styles.grow]}>
-                      {preset.name}
-                    </Text>
-                    <NativeActionButton
-                      fill={false}
-                      label={t`Connect`}
-                      accessibilityLabel={t`Connect ${ph({ name: preset.name })}`}
-                      onPress={() =>
-                        startAdding({ id: preset.id, label: preset.name, kind: "mcp", preset })
-                      }
-                      prominence="secondary"
-                    />
-                  </View>
-                ))}
+                {directPresets
+                  .filter(
+                    ({ url }) =>
+                      !url ||
+                      !(showFeatured
+                        ? addedEndpoints.has(url)
+                        : savedServerMatches.some(({ endpoint }) => endpoint === url)),
+                  )
+                  .map((preset) => (
+                    <View key={preset.id} style={styles.row}>
+                      <ConnectorIcon name={preset.name} size={LOGO_SIZE} />
+                      <Text numberOfLines={1} style={[styles.title, styles.grow]}>
+                        {preset.name}
+                      </Text>
+                      {preset.url && addedEndpoints.has(preset.url) ? (
+                        <Text style={styles.secondary}>{t`Added`}</Text>
+                      ) : (
+                        <NativeActionButton
+                          fill={false}
+                          label={t`Connect`}
+                          accessibilityLabel={t`Connect ${ph({ name: preset.name })}`}
+                          onPress={() =>
+                            startAdding({ id: preset.id, label: preset.name, kind: "mcp", preset })
+                          }
+                          prominence="secondary"
+                        />
+                      )}
+                    </View>
+                  ))}
 
                 {catalogReady && catalog.length > 0 && !category ? (
                   <View style={catalogColumns === 2 ? styles.catalogGrid : styles.catalogStack}>
@@ -642,6 +656,7 @@ export default function Integrations() {
                     excludedNames={[...catalog, ...directPresets].map(({ name }) =>
                       name.toLowerCase(),
                     )}
+                    addedEndpoints={addedEndpoints}
                     onOpenMcp={startCatalogMcp}
                     onChanged={(serverId) => {
                       if (serverId) setOauthServerId(serverId);

@@ -23,6 +23,7 @@ export function IntegrationCatalogSearch({
   onChanged,
   onOpenMcp,
   excludedNames = [],
+  addedEndpoints,
 }: {
   query: string;
   /** Kept mounted while hidden so a connect still in flight reports back when it finishes. */
@@ -33,6 +34,7 @@ export function IntegrationCatalogSearch({
   onChanged: (serverId?: string) => unknown;
   onOpenMcp: (server: CatalogMcpServer) => void;
   excludedNames?: readonly string[];
+  addedEndpoints?: ReadonlySet<string>;
 }) {
   const { t } = useLingui();
   const styles = useThemedStyles(createIntegrationsStyles);
@@ -102,18 +104,22 @@ export function IntegrationCatalogSearch({
           <Text numberOfLines={1} style={[styles.title, styles.grow]}>
             {server.name}
           </Text>
-          <NativeActionButton
-            fill={false}
-            label={t`Connect`}
-            accessibilityLabel={t`Connect ${ph({ name: server.name })}`}
-            busy={connect.pending && connect.input?.endpoint === server.source}
-            disabled={connect.pending}
-            onPress={() => {
-              if (server.auth && server.auth.type !== "oauth") onOpenMcp(server);
-              else connect.run({ name: server.name, endpoint: server.source });
-            }}
-            prominence="secondary"
-          />
+          {addedEndpoints?.has(server.source) ? (
+            <Text style={styles.secondary}>{t`Added`}</Text>
+          ) : (
+            <NativeActionButton
+              fill={false}
+              label={t`Connect`}
+              accessibilityLabel={t`Connect ${ph({ name: server.name })}`}
+              busy={connect.pending && connect.input?.endpoint === server.source}
+              disabled={connect.pending}
+              onPress={() => {
+                if (server.auth?.type !== "oauth") onOpenMcp(server);
+                else connect.run({ name: server.name, endpoint: server.source });
+              }}
+              prominence="secondary"
+            />
+          )}
         </View>
       ))}
       {failure ? (

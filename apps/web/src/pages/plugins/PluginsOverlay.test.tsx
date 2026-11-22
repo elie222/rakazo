@@ -219,6 +219,34 @@ it("shows public catalog results inline and sends nothing there until asked", as
   expect(host.textContent).not.toContain("No matches in your current catalogs.");
   expect(searchBox().value).toBe(" canva ");
   expect(publicSearches()).toEqual([{ query: "canva", usePublicCatalog: true }]);
+
+  const add = host.querySelector<HTMLButtonElement>('button[aria-label="Add Canva"]');
+  expect(add).not.toBeNull();
+  await act(async () => add?.click());
+  expect(host.textContent).toContain("Verify and add");
+  expect(host.textContent).not.toContain("Save and sign in");
+});
+
+it("opens Manage for an already-added direct MCP source", async () => {
+  const url = "https://mcp.tracker.example.test/mcp";
+  api.capabilities.sourcePresets.mockResolvedValue([
+    { id: "tracker", name: "Tracker", url, featured: true },
+  ]);
+  api.capabilities.list.mockResolvedValue([
+    { id: "tracker-source", kind: "mcp", source: url, name: "Tracker" },
+  ]);
+  await act(async () =>
+    root.render(
+      <QueryClientProvider client={client}>
+        <PluginsOverlay onClose={() => {}} />
+      </QueryClientProvider>,
+    ),
+  );
+  const added = () => host.querySelector<HTMLButtonElement>('button[aria-label="Added: Tracker"]');
+  await vi.waitFor(() => expect(added()).not.toBeNull());
+  await act(async () => added()?.click());
+  expect(host.querySelector('[data-testid="integrations-source-form"]')).toBeNull();
+  expect(host.textContent).toContain("Remove");
 });
 
 it("keeps complete Unicode initials in the connected-app marks", async () => {

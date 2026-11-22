@@ -7,6 +7,7 @@ import type {
 import { CATALOG_SEARCH_QUERY_MAX_LENGTH, SUBMIT_PLUGIN_URL } from "@rakazo/contracts";
 import type { CatalogMcpServer } from "@rakazo/core";
 import {
+  addedMcpEndpoints,
   CONNECTION_CATALOG_PAGE_SIZE,
   catalogItemKey,
   catalogMcpServers,
@@ -99,6 +100,7 @@ export function PluginBrowse({
           ({ name }) => !listedNames.has(name.toLowerCase()),
         )
       : [];
+  const addedEndpoints = addedMcpEndpoints(state.sources, state.mcpServers);
   const waitingForPublic = searchingPublic && publicCatalog.isPending;
 
   const installedPlugin = (installedSource: string) =>
@@ -241,7 +243,7 @@ export function PluginBrowse({
               key={preset.id}
               name={preset.name}
               description=""
-              installed={false}
+              installed={Boolean(preset.url && addedEndpoints.has(preset.url))}
               onOpen={() => onOpenPreset(preset)}
             />
           ))}
@@ -250,7 +252,7 @@ export function PluginBrowse({
               key={server.source}
               name={server.name}
               description=""
-              installed={false}
+              installed={addedEndpoints.has(server.source)}
               onOpen={() => onOpenMcp(server)}
             />
           ))}

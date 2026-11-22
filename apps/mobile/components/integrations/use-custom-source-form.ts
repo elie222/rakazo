@@ -162,7 +162,7 @@ export function useCustomSourceForm({
       beginSource("mcp");
       setName(name);
       setUrl(source);
-      setSourceAuth(auth?.type ?? "oauth");
+      setSourceAuth(auth?.type ?? "none");
       setAuthHeader(auth?.headerName ?? "x-api-key");
     },
     removeSource(source: CapabilityInstall) {

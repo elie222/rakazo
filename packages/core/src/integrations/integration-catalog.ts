@@ -1,6 +1,8 @@
 import type {
+  CapabilityInstall,
   IntegrationCatalogResult,
   IntegrationCatalogSurface,
+  McpServer,
   McpSourcePreset,
 } from "@rakazo/contracts";
 import { McpRemoteEndpointSchema } from "@rakazo/contracts";
@@ -41,4 +43,15 @@ export function catalogMcpServers(
 export function featuredMcpPresets(presets: readonly McpSourcePreset[], query: string) {
   const term = query.trim().toLowerCase();
   return presets.filter((preset) => preset.featured && preset.name.toLowerCase().includes(term));
+}
+
+/** Addresses already added through either of the remote MCP connection flows. */
+export function addedMcpEndpoints(
+  sources: readonly Pick<CapabilityInstall, "kind" | "source">[],
+  servers: readonly Pick<McpServer, "endpoint">[],
+): Set<string> {
+  return new Set([
+    ...sources.filter(({ kind }) => kind === "mcp").map(({ source }) => source),
+    ...servers.map(({ endpoint }) => endpoint).filter((endpoint) => endpoint !== null),
+  ]);
 }
