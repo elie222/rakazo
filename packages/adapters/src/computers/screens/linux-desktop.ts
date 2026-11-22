@@ -6,11 +6,14 @@ import type {
   ComputerAction,
   ComputerActionRequest,
   ComputerInput,
+  ComputerObservation,
   ComputerRef,
+  ControlLeaseRef,
   PageBrowserCommand,
   PageBrowserResult,
   ScreenRequest,
   ScreenSession,
+  SnapshotRef,
   TerminalRequest,
 } from "@rakazo/adapter-kit";
 import type { DesktopEnvironment } from "@rakazo/core/node/desktop-runtime";
@@ -347,6 +350,65 @@ export class LinuxDesktop {
     }
     if (result.code !== 0 && result.code !== 75)
       throw new Error(result.stderr || "computer desktop failed to stop");
+  }
+}
+
+/** A snapshot names the screen frame it captured. */
+export function observationSnapshot(observation: ComputerObservation): SnapshotRef {
+  return { id: observation.frameId, createdAt: observation.capturedAt };
+}
+
+/**
+ * A sandbox whose screens are a {@link LinuxDesktop}: its screen methods hand straight to it,
+ * and a provider overrides only the ones it adjusts.
+ */
+export abstract class LinuxDesktopSandbox {
+  protected abstract readonly desktops: LinuxDesktop;
+
+  async connectScreen(
+    computer: ComputerRef,
+    request: ScreenRequest,
+    context: AdapterContext,
+  ): Promise<ScreenSession> {
+    return this.desktops.connectScreen(computer, request, context);
+  }
+
+  async connectTerminal(computer: ComputerRef, request: TerminalRequest, context: AdapterContext) {
+    return this.desktops.connectTerminal(computer, request, context);
+  }
+
+  async setScreenControl(
+    computer: ComputerRef,
+    interactive: boolean,
+    context: AdapterContext,
+    controlToken?: string,
+  ): Promise<void> {
+    return this.desktops.setScreenControl(computer, interactive, context, controlToken);
+  }
+
+  async sendInput(
+    computer: ComputerRef,
+    input: ComputerInput,
+    _lease: ControlLeaseRef,
+    context: AdapterContext,
+  ): Promise<void> {
+    return this.desktops.sendInput(computer, input, context);
+  }
+
+  async observe(computer: ComputerRef, context: AdapterContext): Promise<ComputerObservation> {
+    return this.desktops.observe(computer, context);
+  }
+
+  async act(computer: ComputerRef, request: ComputerActionRequest, context: AdapterContext) {
+    return this.desktops.act(computer, request, context);
+  }
+
+  async releaseScreen(computer: ComputerRef, context: AdapterContext): Promise<void> {
+    return this.desktops.releaseScreen(computer, context);
+  }
+
+  async snapshot(computer: ComputerRef, context: AdapterContext): Promise<SnapshotRef> {
+    return observationSnapshot(await this.observe(computer, context));
   }
 }
 
