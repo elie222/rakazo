@@ -202,7 +202,7 @@ export const memoryTools: ConnectorTool[] = [
   {
     name: "save_memory",
     description:
-      "Store a durable fact in this bot's semantic memory (preferences, decisions, recurring context). Use for anything worth recalling in future conversations.",
+      "Store a durable fact in this bot's semantic memory, including one the user mentions in passing without asking you to save it, such as a preference, decision or fact about them or their work.",
     inputSchema: {
       type: "object",
       properties: {
