@@ -1,21 +1,26 @@
-import { createServer } from "node:http";
+import { readFileSync } from "node:fs";
+import type { IncomingMessage, ServerResponse } from "node:http";
+import { createServer as createHttpServer } from "node:http";
+import { createServer as createHttpsServer } from "node:https";
 import type { AddressInfo } from "node:net";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import type { TLSSocket } from "node:tls";
+import { getCACertificates, setDefaultCACertificates } from "node:tls";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { objectStorageConformance } from "../../../storage/object-storage.test-support.js";
 import { AzureBlobObjectStorage, azureBlobConfigFromEnv } from "./azure-blob-object-storage.js";
 
 /**
  * Just enough of the Blob REST API, addressed as `<host>/<account>/<container>/<blob>`, to
  * exercise the adapter offline: single-request and block uploads, reads, paged listings and
- * deletes. Signatures are not checked.
+ * deletes. Shared-key signatures are not checked; a bearer token must be exactly the test token.
  */
-function fakeBlobService() {
+function fakeBlobService(tls?: { key: string; cert: string }) {
   const blobs = new Map<string, { body: Buffer; lastModified: Date }>();
   const staged = new Map<string, Buffer>();
   const requests: string[] = [];
   const xml = (value: string) =>
     value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-  const server = createServer(async (req, res) => {
+  const serve = async (req: IncomingMessage, res: ServerResponse) => {
     const chunks: Buffer[] = [];
     for await (const chunk of req) chunks.push(chunk as Buffer);
     const body = Buffer.concat(chunks);
@@ -34,6 +39,13 @@ function fakeBlobService() {
     const comp = query.get("comp");
     const stalled = name.endsWith("/stalled") || name === "stalled";
     requests.push(`${req.method} ${name ? "blob" : "container"}${comp ? `?${comp}` : ""}`);
+    // Shared-key signatures are not checked. The TLS fake serves the Entra path, where every
+    // request must carry the credential's exact token — wrong or missing are both refused.
+    const authorization = req.headers.authorization;
+    if ((req.socket as TLSSocket).encrypted && authorization !== `Bearer ${TEST_TOKEN}`)
+      return send(401, "<Error><Code>AuthenticationFailed</Code></Error>", {
+        "x-ms-error-code": "AuthenticationFailed",
+      });
     if (account !== "devstoreaccount1" || container !== "test-container")
       return send(404, "<Error><Code>ContainerNotFound</Code></Error>", {
         "x-ms-error-code": "ContainerNotFound",
@@ -106,20 +118,61 @@ function fakeBlobService() {
       });
     }
     send(400, "<Error><Code>BadRequest</Code></Error>");
-  });
+  };
+  const server = tls ? createHttpsServer(tls, serve) : createHttpServer(serve);
   return { server, blobs, requests };
 }
 
 const fake = fakeBlobService();
 let endpoint = "";
 
+/**
+ * The one bearer token the fake accepts: it proves the Entra path sends the credential's token,
+ * and lets a wrong token be rejected, so a pass through this path is never vacuous.
+ */
+const TEST_TOKEN = "entra-test-token";
+
+/** Offline stand-in for the identity SDK: a client-secret credential's token is its secret. */
+vi.mock("@azure/identity", () => ({
+  ClientSecretCredential: class {
+    constructor(
+      _tenant: string,
+      _clientId: string,
+      private readonly secret: string,
+    ) {}
+    async getToken() {
+      return { token: this.secret, expiresOnTimestamp: Date.now() + 3_600_000 };
+    }
+  },
+}));
+
+/**
+ * Bearer tokens travel over TLS only (the SDK refuses plain http), so the Entra suite runs
+ * against its own https fake, served with the throwaway fixture pair. Its self-signed
+ * certificate names 127.0.0.1 and is trusted for this file alone, so TLS is still verified.
+ */
+const fixturePem = readFileSync(
+  new URL("./azure-entra-test-certificate.pem", import.meta.url),
+  "utf8",
+);
+const entraFake = fakeBlobService({ key: fixturePem, cert: fixturePem });
+let entraEndpoint = "";
+
+/** The default trust store, restored after the file's tests. */
+const trusted = getCACertificates("default");
+
 beforeAll(async () => {
+  setDefaultCACertificates([...trusted, fixturePem]);
   await new Promise<void>((resolve) => fake.server.listen(0, "127.0.0.1", resolve));
   endpoint = `http://127.0.0.1:${(fake.server.address() as AddressInfo).port}/devstoreaccount1`;
+  await new Promise<void>((resolve) => entraFake.server.listen(0, "127.0.0.1", resolve));
+  entraEndpoint = `https://127.0.0.1:${(entraFake.server.address() as AddressInfo).port}/devstoreaccount1`;
 });
 
 afterAll(async () => {
+  setDefaultCACertificates(trusted);
   await new Promise((resolve) => fake.server.close(resolve));
+  await new Promise((resolve) => entraFake.server.close(resolve));
 });
 
 function storage(prefix = "") {
@@ -228,6 +281,40 @@ describe("AzureBlobObjectStorage", () => {
   });
 });
 
+describe("AzureBlobObjectStorage with an Entra credential", () => {
+  let entraRun = 0;
+
+  function entraStorage(prefix: string, clientSecret = TEST_TOKEN) {
+    return new AzureBlobObjectStorage({
+      container: "test-container",
+      account: "devstoreaccount1",
+      endpoint: entraEndpoint,
+      prefix,
+      entra: { kind: "client-secret", tenant: "directory", clientId: "principal", clientSecret },
+    });
+  }
+
+  objectStorageConformance(async () => entraStorage(`entra-${++entraRun}/`));
+
+  it("rejects a request whose token is not the credential's", async () => {
+    const wrong = entraStorage("wrong-token/", "not-the-token");
+    await expect(wrong.put("k", bytes(Buffer.from("x")))).rejects.toThrow();
+    expect(entraFake.blobs.has("wrong-token/k")).toBe(false);
+  });
+
+  it("needs an account key or an Entra kind", () => {
+    expect(
+      () =>
+        new AzureBlobObjectStorage({
+          container: "test-container",
+          account: "devstoreaccount1",
+          endpoint,
+          prefix: "",
+        }),
+    ).toThrow(/account key or an Entra/);
+  });
+});
+
 describe("azureBlobConfigFromEnv", () => {
   const base = {
     OBJECT_STORAGE_BUCKET: "homes",
@@ -259,5 +346,49 @@ describe("azureBlobConfigFromEnv", () => {
       endpoint: "http://127.0.0.1:10000/account",
       prefix: "rakazo/",
     });
+  });
+
+  it("reads an Entra kind instead of the account key", () => {
+    expect(
+      azureBlobConfigFromEnv({
+        ...base,
+        OBJECT_STORAGE_AUTH: "client-secret",
+        OBJECT_STORAGE_TENANT: "directory",
+        OBJECT_STORAGE_CLIENT_ID: "principal",
+        OBJECT_STORAGE_SECRET_ACCESS_KEY: "secret",
+      }),
+    ).toEqual({
+      container: "homes",
+      account: "account",
+      entra: {
+        kind: "client-secret",
+        tenant: "directory",
+        clientId: "principal",
+        clientSecret: "secret",
+      },
+      prefix: "",
+    });
+  });
+
+  it("still names the storage account under an Entra kind", () => {
+    expect(() =>
+      azureBlobConfigFromEnv({
+        OBJECT_STORAGE_BUCKET: "homes",
+        OBJECT_STORAGE_AUTH: "managed-identity",
+      }),
+    ).toThrow(/OBJECT_STORAGE_ACCESS_KEY_ID/);
+  });
+
+  it("refuses a plain-http endpoint under an Entra kind, at startup", () => {
+    expect(() =>
+      azureBlobConfigFromEnv({
+        ...base,
+        OBJECT_STORAGE_AUTH: "client-secret",
+        OBJECT_STORAGE_TENANT: "directory",
+        OBJECT_STORAGE_CLIENT_ID: "principal",
+        OBJECT_STORAGE_SECRET_ACCESS_KEY: "secret",
+        OBJECT_STORAGE_ENDPOINT: "http://127.0.0.1:10000/devstoreaccount1",
+      }),
+    ).toThrow(/https OBJECT_STORAGE_ENDPOINT/);
   });
 });

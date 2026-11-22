@@ -121,6 +121,35 @@ OBJECT_STORAGE_ACCESS_KEY_ID=mystorageaccount
 OBJECT_STORAGE_SECRET_ACCESS_KEY=replace-me
 ```
 
+**Entra ID instead of the account key.** `OBJECT_STORAGE_AUTH` selects how the backend
+authenticates, so no account key needs to live in the configuration. The access key ID keeps its
+meaning — the storage account name — for every kind, and each kind adds its own settings:
+
+| `OBJECT_STORAGE_AUTH` | Settings                                                                                                                | Use                                                                      |
+| --------------------- | ----------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| unset (default)       | `OBJECT_STORAGE_SECRET_ACCESS_KEY` (the account key)                                                                    | the account key, as above                                                |
+| `client-secret`       | `OBJECT_STORAGE_TENANT`, `OBJECT_STORAGE_CLIENT_ID`, `OBJECT_STORAGE_SECRET_ACCESS_KEY` (the client secret)             | a service principal with a secret                                        |
+| `client-certificate`  | `OBJECT_STORAGE_TENANT`, `OBJECT_STORAGE_CLIENT_ID`, `OBJECT_STORAGE_CERTIFICATE` (a PEM bundle path or the PEM itself) | a service principal with a certificate                                   |
+| `federated-identity`  | `OBJECT_STORAGE_TENANT`, `OBJECT_STORAGE_CLIENT_ID`, `OBJECT_STORAGE_FEDERATED_TOKEN_FILE`                              | workload identity federation, such as a Kubernetes service account token |
+| `managed-identity`    | `OBJECT_STORAGE_CLIENT_ID` optional (user-assigned)                                                                     | a managed identity on the host                                           |
+
+```env
+OBJECT_STORAGE_PROTOCOL=azure-blob
+OBJECT_STORAGE_BUCKET=rakazo-homes
+OBJECT_STORAGE_ACCESS_KEY_ID=mystorageaccount
+OBJECT_STORAGE_AUTH=client-secret
+OBJECT_STORAGE_TENANT=00000000-0000-0000-0000-000000000000
+OBJECT_STORAGE_CLIENT_ID=11111111-1111-1111-1111-111111111111
+OBJECT_STORAGE_SECRET_ACCESS_KEY=replace-me
+```
+
+Whatever the identity is, give it the **Storage Blob Data Contributor** role on the storage
+account (or a narrower custom role with the same data actions). Entra ID tokens travel over TLS
+only, so these kinds need an `https` endpoint or the default account URL; a plain-`http`
+emulator endpoint keeps working with the account key. A certificate or federated-token file is
+read when the server starts, so under Compose it must be mounted into the containers and named
+by its in-container path.
+
 Only the API and worker read these settings. Bot computers never receive the credentials or
 links to stored objects; files still reach them through the server, as before. The settings
 apply to every provider, including Docker computers, which keep mounting their cached home.
