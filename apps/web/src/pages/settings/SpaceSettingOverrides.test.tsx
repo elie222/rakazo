@@ -196,6 +196,20 @@ it("opens the panels a Space already customizes", async () => {
   expect(new Set(panels)).toEqual(new Set(["models:space", "confirmations:space"]));
 });
 
+it("shows a lone Space's overrides only once one is customized", async () => {
+  spaceSettings.overrides.mockResolvedValue([]);
+  await render(<SpaceSettingOverrides hideUntilCustomized onClose={() => undefined} />);
+  await vi.waitFor(() => expect(spaceSettings.overrides).toHaveBeenCalled());
+  await act(async () => undefined);
+  expect(container.querySelector('[data-testid="space-setting-overrides"]')).toBeNull();
+
+  spaceSettings.overrides.mockResolvedValue(["voice"]);
+  await act(async () => root.unmount());
+  root = createRoot(container);
+  await render(<SpaceSettingOverrides hideUntilCustomized onClose={() => undefined} />);
+  await vi.waitFor(() => expect(button("Use account settings for Voice")).not.toBeNull());
+});
+
 it("asks before going back to the defaults deletes the Space's own vault", async () => {
   spaceSettings.overrides.mockResolvedValue(["credentials"]);
   spaceSettings.setOverride.mockResolvedValue([]);

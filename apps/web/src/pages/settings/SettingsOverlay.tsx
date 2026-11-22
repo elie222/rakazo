@@ -431,8 +431,10 @@ export function SettingsOverlay({
                       space={space ?? null}
                       spaces={spaces}
                       onOpenSpace={(spaceId) => onOpenSpace?.(spaceId)}
-                      onNewSpace={onNewSpace}
+                      onNewSpace={onNewSpace && (() => leaveSettings(onNewSpace))}
                       onLeft={(spaceId, activeSpaceId) => onLeftSpace?.(spaceId, activeSpaceId)}
+                      onClose={requestClose}
+                      onBusyChange={setVoiceBusy}
                     />
                   ) : null}
                   {section === "space" && space ? (

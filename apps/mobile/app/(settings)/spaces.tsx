@@ -1,4 +1,5 @@
 import { useLingui } from "@lingui/react/macro";
+import { useQuery } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
 import { ActivityIndicator, ScrollView, StyleSheet } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -7,11 +8,14 @@ import { LoadFailure } from "../../components/ui/load-failure";
 import { errorText } from "../../lib/api/user-error";
 import { useSideInsets } from "../../lib/layout/side-insets";
 import { native, useThemedStyles } from "../../lib/native/native";
-import { rpcQuery } from "../../lib/query/query";
+import { queryClient, rpcQuery } from "../../lib/query/query";
 import { useScreenQuery } from "../../lib/query/screen-query";
 import { openFromSettingsSheet } from "../../lib/settings/settings-sheet";
 
-/** One Space shows its members; several each open their own settings. */
+/**
+ * One Space shows its members, and its own settings only when some were customized while there
+ * were others; several each open their own settings.
+ */
 export default function SpacesSettings() {
   const { t } = useLingui();
   const router = useRouter();
@@ -20,6 +24,11 @@ export default function SpacesSettings() {
   const query = useScreenQuery(rpcQuery("spaces/list"));
   const spaces = query.data?.spaces;
   const only = spaces?.length === 1 ? spaces[0] : undefined;
+  const overrides = useQuery(
+    { ...rpcQuery("spaceSettings/overrides", undefined, only?.id), enabled: Boolean(only) },
+    queryClient,
+  );
+  const customized = (overrides.data?.length ?? 0) > 0;
 
   return (
     <SafeAreaView edges={["bottom"]} style={styles.screen}>
@@ -52,22 +61,37 @@ export default function SpacesSettings() {
                   })
                 }
               />
-            ) : (
-              spaces.map((space) => (
-                <SettingsRow
-                  key={space.id}
-                  accessibilityRole="button"
-                  chevron="right"
-                  title={space.name}
-                  onPress={() =>
-                    router.push({
-                      pathname: "/space",
-                      params: { spaceId: space.id, name: space.name },
-                    })
-                  }
-                />
-              ))
-            )}
+            ) : null}
+            {only && customized ? (
+              <SettingsRow
+                key="space-settings"
+                accessibilityRole="button"
+                chevron="right"
+                title={t`Settings for this Space`}
+                onPress={() =>
+                  router.push({
+                    pathname: "/space",
+                    params: { spaceId: only.id, name: only.name },
+                  })
+                }
+              />
+            ) : null}
+            {only
+              ? null
+              : spaces.map((space) => (
+                  <SettingsRow
+                    key={space.id}
+                    accessibilityRole="button"
+                    chevron="right"
+                    title={space.name}
+                    onPress={() =>
+                      router.push({
+                        pathname: "/space",
+                        params: { spaceId: space.id, name: space.name },
+                      })
+                    }
+                  />
+                ))}
             <SettingsRow
               key="new-space"
               accessibilityRole="button"

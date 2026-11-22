@@ -76,6 +76,7 @@ vi.mock("../../components/spaces/SpaceMembersSettings", () => ({
     <div data-testid="space-members">{space.id}</div>
   ),
 }));
+vi.mock("./SpaceSettingOverrides", () => ({ SpaceSettingOverrides: () => null }));
 vi.mock("./SpaceSettingsPanel", () => ({
   SpaceSettingsPanel: ({
     space,

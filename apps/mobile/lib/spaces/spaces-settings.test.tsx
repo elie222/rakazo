@@ -13,6 +13,7 @@ import { registerSettingsSheet } from "../settings/settings-sheet";
 const state = vi.hoisted(() => ({
   events: [] as unknown[],
   spaces: [] as { id: string; name: string }[],
+  overrides: [] as string[],
 }));
 const { element } = vi.hoisted(() => ({
   element:
@@ -31,6 +32,7 @@ vi.mock("../api/user-error", () => ({ errorText: (_: unknown, fallback = "Failed
 vi.mock("../api/api", () => ({
   rpc: vi.fn(async (proc: string) => {
     if (proc === "spaces/list") return { spaces: state.spaces };
+    if (proc === "spaceSettings/overrides") return state.overrides;
     throw new Error(`Unexpected RPC: ${proc}`);
   }),
   currentApiBase: () => "https://app.example.test",
@@ -82,6 +84,7 @@ beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   queryClient.clear();
   state.events = [];
+  state.overrides = [];
   unregister = registerSettingsSheet(() => state.events.push("close"));
   container = document.createElement("div");
   document.body.append(container);
@@ -110,6 +113,20 @@ it("offers one Space's members and a new Space, leaving settings for both", asyn
   state.events = [];
   await press("New private space");
   expect(state.events).toEqual(["close", "/new-space"]);
+});
+
+it("keeps a lone Space's customized settings reachable", async () => {
+  state.spaces = [{ id: "space-1", name: "Personal" }];
+  state.overrides = ["voice"];
+  await render();
+  await vi.waitFor(() =>
+    expect(rows()).toEqual(["Members", "Settings for this Space", "New private space"]),
+  );
+
+  await press("Settings for this Space");
+  expect(state.events).toEqual([
+    { pathname: "/space", params: { spaceId: "space-1", name: "Personal" } },
+  ]);
 });
 
 it("lists each of several Spaces, opening its settings in place", async () => {

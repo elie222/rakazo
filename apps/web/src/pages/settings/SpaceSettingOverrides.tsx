@@ -22,9 +22,12 @@ import { VoiceSettingsOverlay } from "./VoiceSettingsOverlay";
 export function SpaceSettingOverrides({
   onClose,
   onBusyChange,
+  hideUntilCustomized = false,
 }: {
   onClose: () => void;
   onBusyChange?: (busy: boolean) => void;
+  /** Shows nothing while the Space follows every account setting. */
+  hideUntilCustomized?: boolean;
 }) {
   const { t } = useLingui();
   const queries = useSpaceQueries();
@@ -100,6 +103,7 @@ export function SpaceSettingOverrides({
     ) : null;
   }
   const customized = overrides.data;
+  if (hideUntilCustomized && customized.length === 0) return null;
   const confirmTitle = settings.find(({ id }) => id === confirmingReset)?.resetConfirmation;
 
   return (

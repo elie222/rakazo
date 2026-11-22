@@ -4,10 +4,11 @@ import { Plus } from "lucide-react";
 import { SettingsGroup, SettingsRow } from "../../components/settings/SettingsRows";
 import { SpaceMembersSettings } from "../../components/spaces/SpaceMembersSettings";
 import type { SettingsSpace } from "../shell/create-delete-dialogs";
+import { SpaceSettingOverrides } from "./SpaceSettingOverrides";
 
 /**
- * Every Space this person can open. With only one, it is just the app: its members are shown here
- * and its name and overrides stay hidden until a second Space gives them something to differ from.
+ * Every Space this person can open. With only one, it is just the app: its members are shown here,
+ * and its overrides only when some were customized while there were others.
  */
 export function SpacesSettingsPanel({
   space,
@@ -15,6 +16,8 @@ export function SpacesSettingsPanel({
   onOpenSpace,
   onNewSpace,
   onLeft,
+  onClose,
+  onBusyChange,
 }: {
   /** The Space the app is showing. */
   space: SettingsSpace | null;
@@ -22,6 +25,8 @@ export function SpacesSettingsPanel({
   onOpenSpace: (spaceId: string) => void;
   onNewSpace?: () => void;
   onLeft: (spaceId: string, activeSpaceId: string) => void;
+  onClose: () => void;
+  onBusyChange?: (busy: boolean) => void;
 }) {
   const { t } = useLingui();
   const newSpace = onNewSpace ? (
@@ -40,6 +45,7 @@ export function SpacesSettingsPanel({
             onLeft={(activeSpaceId) => onLeft(space.id, activeSpaceId)}
           />
         ) : null}
+        <SpaceSettingOverrides hideUntilCustomized onClose={onClose} onBusyChange={onBusyChange} />
         {newSpace}
       </div>
     );
