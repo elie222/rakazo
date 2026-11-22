@@ -192,7 +192,7 @@ private struct WatchAvatar: View {
   var size: CGFloat = 32
 
   var body: some View {
-    let color = row.color.flatMap(Color.init(hex:)) ?? Color(white: 0.35)
+    let color = row.color.flatMap(Color.init(hex:)) ?? Color.gray
     Group {
       if let data = row.avatar, let image = UIImage(data: data) {
         Image(uiImage: image).resizable().scaledToFill()
@@ -231,7 +231,7 @@ private struct WatchConversation: View {
   @State private var needsRefresh = false
 
   private var chat: WatchChat { row.chat }
-  private var tint: Color { row.color.flatMap(Color.init(hex:)) ?? Color(white: 0.35) }
+  private var tint: Color { row.color.flatMap(Color.init(hex:)) ?? Color.gray }
 
   var body: some View {
     ScrollViewReader { proxy in
@@ -380,7 +380,7 @@ private struct WatchBubble: View {
         .padding(.horizontal, 10)
         .padding(.vertical, 6)
         .background(
-          message.fromUser ? Color(white: 0.3) : tint.opacity(0.3),
+          message.fromUser ? Color.gray.opacity(0.4) : tint.opacity(0.3),
           in: RoundedRectangle(cornerRadius: 16))
     }
     .frame(maxWidth: .infinity, alignment: Alignment(horizontal: alignment, vertical: .center))
@@ -397,7 +397,8 @@ enum WatchMarkdown {
     var first = true
     for raw in text.split(separator: "\n", omittingEmptySubsequences: false) {
       var line = String(raw)
-      if line.trimmingCharacters(in: .whitespaces).hasPrefix("```") {
+      let trimmed = line.trimmingCharacters(in: .whitespaces)
+      if trimmed.hasPrefix("```") || trimmed.hasPrefix("~~~") {
         inCode.toggle()
         continue
       }

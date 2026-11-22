@@ -1,6 +1,7 @@
 import Foundation
 import OSLog
 import UIKit
+import ImageIO
 import WatchConnectivity
 
 /// Uses the phone's existing session and server. Credentials never cross WatchConnectivity.
@@ -249,14 +250,15 @@ final class WatchRelay: NSObject, WCSessionDelegate {
   private func watchAvatar(_ value: String) -> Data? {
     guard value.hasPrefix("data:image/"), let comma = value.firstIndex(of: ","),
       let data = Data(base64Encoded: String(value[value.index(after: comma)...])),
-      let image = UIImage(data: data)
+      let source = CGImageSourceCreateWithData(data as CFData, nil),
+      // Decodes straight to the small size, whatever the picture's own dimensions.
+      let thumbnail = CGImageSourceCreateThumbnailAtIndex(source, 0, [
+        kCGImageSourceCreateThumbnailFromImageAlways: true,
+        kCGImageSourceCreateThumbnailWithTransform: true,
+        kCGImageSourceThumbnailMaxPixelSize: 64,
+      ] as CFDictionary)
     else { return nil }
-    let format = UIGraphicsImageRendererFormat()
-    format.scale = 1
-    let size = CGSize(width: 64, height: 64)
-    return UIGraphicsImageRenderer(size: size, format: format).image { _ in
-      image.draw(in: CGRect(origin: .zero, size: size))
-    }.jpegData(compressionQuality: 0.7)
+    return UIImage(cgImage: thumbnail).jpegData(compressionQuality: 0.7)
   }
 
   private func canAnswer(_ prompt: WatchPrompt, _ answer: String) -> Bool {
