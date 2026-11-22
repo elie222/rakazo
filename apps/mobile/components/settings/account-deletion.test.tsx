@@ -1,13 +1,14 @@
 // @vitest-environment jsdom
 
 import type { AccountSecurity } from "@rakazo/contracts";
-import { deferred } from "@rakazo/core/test-async";
+import { deferred, flush } from "@rakazo/core/test-async";
 import { tokensForAppearance } from "@rakazo/ui-tokens";
 import type { ReactNode } from "react";
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { Platform } from "react-native";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { promptAccountDeletion } from "../../lib/account/delete-account-prompt";
 import {
   deleteAccount,
   fetchAccountSecurity,
@@ -301,5 +302,102 @@ describe("passwordless account deletion", () => {
     expect(document.body.textContent).not.toContain("Continue with Provider");
     expect(continueWithSso).not.toHaveBeenCalled();
     expect(button("Delete").disabled).toBe(true);
+  });
+});
+
+describe("account deletion security read", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    Platform.OS = "ios";
+    vi.mocked(fetchAccountSecurity).mockResolvedValue(passwordless);
+    container = document.createElement("div");
+    document.body.append(container);
+    root = createRoot(container);
+    act(() => root.render(createElement(Screen)));
+  });
+
+  afterEach(() => {
+    act(() => root.unmount());
+    container.remove();
+    vi.unstubAllGlobals();
+  });
+
+  it("is pending while the read runs and opens one dialog for a second request", async () => {
+    const read = deferred<AccountSecurity>();
+    vi.mocked(fetchAccountSecurity).mockReturnValue(read.promise);
+    act(() => {
+      void deletion.request();
+      void deletion.request();
+    });
+    expect(deletion.pending).toBe(true);
+    expect(fetchAccountSecurity).toHaveBeenCalledOnce();
+    await act(async () => {
+      read.resolve(passwordless);
+      await flush();
+    });
+    expect(deletion.pending).toBe(false);
+    expect(promptAccountDeletion).not.toHaveBeenCalled();
+    expect(container.querySelectorAll("section")).toHaveLength(1);
+  });
+
+  it("prompts once for a password account when requested twice", async () => {
+    const read = deferred<AccountSecurity>();
+    vi.mocked(fetchAccountSecurity).mockReturnValue(read.promise);
+    act(() => {
+      void deletion.request();
+      void deletion.request();
+    });
+    expect(deletion.pending).toBe(true);
+    await act(async () => {
+      read.resolve({ ...passwordless, hasPassword: true });
+      await flush();
+    });
+    expect(promptAccountDeletion).toHaveBeenCalledOnce();
+    expect(deletion.pending).toBe(false);
+  });
+
+  it("keeps pending for a sign-in action that a request raced before the render", async () => {
+    const signIn = deferred<void>();
+    const action = vi.fn(() => signIn.promise);
+    act(() => {
+      void deletion.run(action);
+      void deletion.request();
+    });
+    expect(action).toHaveBeenCalledOnce();
+    expect(fetchAccountSecurity).not.toHaveBeenCalled();
+    expect(deletion.pending).toBe(true);
+    await act(async () => {
+      signIn.resolve();
+      await flush();
+    });
+    expect(deletion.pending).toBe(false);
+  });
+
+  it("does not start a sign-in action while the read is running", async () => {
+    const read = deferred<AccountSecurity>();
+    vi.mocked(fetchAccountSecurity).mockReturnValue(read.promise);
+    const action = vi.fn(async () => {});
+    act(() => {
+      void deletion.request();
+      void deletion.run(action);
+    });
+    expect(action).not.toHaveBeenCalled();
+    await act(async () => {
+      read.resolve(passwordless);
+      await flush();
+    });
+    expect(deletion.pending).toBe(false);
+  });
+
+  it("clears pending and shows the error when the read fails, then allows a retry", async () => {
+    vi.mocked(fetchAccountSecurity).mockRejectedValueOnce(new Error("offline"));
+    await act(() => deletion.request());
+    expect(deletion.pending).toBe(false);
+    expect(deletion.error).toBeTruthy();
+    expect(promptAccountDeletion).not.toHaveBeenCalled();
+    await act(() => deletion.request());
+    expect(fetchAccountSecurity).toHaveBeenCalledTimes(2);
+    expect(container.querySelectorAll("section")).toHaveLength(1);
   });
 });

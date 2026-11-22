@@ -13,6 +13,8 @@ import {
   ensureStackToken,
   initialStackState,
   LocalStackController,
+  missingStackSecrets,
+  parseStackEnv,
   readStackToken,
   reduceStackState,
   renderStackEnv,
@@ -174,6 +176,8 @@ describe("ensureStackEnv", () => {
     "POSTGRES_APP_PASSWORD=''",
     ' POSTGRES_APP_PASSWORD = "" # empty',
     "POSTGRES_APP_PASSWORD=''# empty\r",
+    "POSTGRES_APP_PASSWORD= # fill later",
+    "POSTGRES_APP_PASSWORD=\t# fill later",
     'POSTGRES_APP_PASSWORD=keep\nPOSTGRES_APP_PASSWORD=""',
     "OTHER='first line\nPOSTGRES_APP_PASSWORD=phantom\nlast line'\nPOSTGRES_APP_PASSWORD=\"\"",
   ])("fills an empty added secret in %j once", async (assignment) => {
@@ -194,8 +198,8 @@ describe("ensureStackEnv", () => {
     ' POSTGRES_APP_PASSWORD = "keep" # note',
     "POSTGRES_APP_PASSWORD='keep # literal'",
     'POSTGRES_APP_PASSWORD=" "',
-    "POSTGRES_APP_PASSWORD= # literal comment",
     "POSTGRES_APP_PASSWORD=#literal",
+    "POSTGRES_APP_PASSWORD=keep # note",
     "export POSTGRES_APP_PASSWORD='keep'",
     `POSTGRES_APP_PASSWORD=\${SYNTHETIC_PASSWORD}`,
     'POSTGRES_APP_PASSWORD=""\nPOSTGRES_APP_PASSWORD=keep',
@@ -226,6 +230,38 @@ describe("ensureStackEnv", () => {
       await expect(readFile(target, "utf8")).resolves.toBe("sentinel\n");
     },
   );
+});
+
+describe("parseStackEnv", () => {
+  it.each([
+    ["KEY= # c", ""],
+    ["KEY=\t# c", ""],
+    ["KEY=v # c", "v"],
+    ["KEY=v\t# c", "v"],
+    ["KEY=a#b", "a#b"],
+    ["KEY=#x", "#x"],
+    ['KEY="a # b"', "a # b"],
+    ["KEY='a # b'", "a # b"],
+    ['KEY="" # c', ""],
+  ])("reads %j as %j", (line, value) => {
+    expect(parseStackEnv(line).get("KEY")).toBe(value);
+  });
+
+  it("keeps the last assignment of a name, as Compose does", () => {
+    expect(parseStackEnv("KEY=first # c\nKEY= # later\n").get("KEY")).toBe("");
+  });
+});
+
+describe("missingStackSecrets", () => {
+  it("appends a missing secret whose value is only an inline comment", () => {
+    expect(missingStackSecrets("POSTGRES_APP_PASSWORD= # fill\n", fakeHex)).toBe(
+      `POSTGRES_APP_PASSWORD=${fakeHex(16)}\n`,
+    );
+  });
+
+  it("does not append a secret that has a value before its comment", () => {
+    expect(missingStackSecrets("POSTGRES_APP_PASSWORD=keep # note\n", fakeHex)).toBe("");
+  });
 });
 
 describe("stack identity", () => {

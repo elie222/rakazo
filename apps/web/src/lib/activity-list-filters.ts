@@ -1,5 +1,5 @@
-import { t } from "@lingui/core/macro";
 import type { RunActivityRow, RunStatus } from "@rakazo/contracts";
+import { activityPreview } from "@rakazo/i18n/activity";
 
 export type ActivityStatusFilter = RunStatus | "all";
 
@@ -27,18 +27,6 @@ export function activityFiltersActive(filters: ActivityListFilters): boolean {
     filters.dateRange.from.length > 0 ||
     filters.dateRange.to.length > 0
   );
-}
-
-export function activityPreview(run: RunActivityRow): string {
-  if (run.trigger !== "bot_message") return run.promptSnippet;
-  if (!run.agentMessage) return run.promptSnippet;
-  if (run.agentMessage.kind === "unknown") return t`Message from another agent`;
-  const name = run.agentMessage.fromBotName.trim() || t`Another agent`;
-  const text = run.agentMessage.text;
-  if (run.agentMessage.kind === "update") {
-    return text ? t`Update from ${name}: ${text}` : t`Update from ${name}`;
-  }
-  return text ? t`${name} asked: ${text}` : t`${name} asked`;
 }
 
 function normalizeActivitySearch(text: string): string {
@@ -74,8 +62,13 @@ export function runMatchesActivityFilters(
 
   if (filters.status !== "all" && run.status !== filters.status) return false;
 
-  const fromMs = filters.dateRange.from ? parseDayStart(filters.dateRange.from) : null;
-  const toMs = filters.dateRange.to ? parseDayEnd(filters.dateRange.to) : null;
+  // A From after To is read as the range between the two dates, not as one that matches nothing.
+  const { from, to } = filters.dateRange;
+  const swap = from.length > 0 && to.length > 0 && from > to;
+  const first = swap ? to : from;
+  const last = swap ? from : to;
+  const fromMs = first ? parseDayStart(first) : null;
+  const toMs = last ? parseDayEnd(last) : null;
   if (fromMs == null && toMs == null) return true;
 
   const runMs = Date.parse(run.updatedAt);
