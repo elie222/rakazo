@@ -1,6 +1,7 @@
 import { useLingui } from "@lingui/react/macro";
 import type { Me } from "@rakazo/contracts";
 import {
+  Import,
   Keyboard,
   LayoutTemplate,
   Lock,
@@ -79,6 +80,12 @@ export function usePaletteActions({
       label: t`Bot templates`,
       icon: LayoutTemplate,
       onSelect: () => setOverlay({ kind: "templates" }),
+    },
+    {
+      id: "import-agent",
+      label: t`Import an agent`,
+      icon: Import,
+      onSelect: () => setOverlay({ kind: "import" }),
     },
     {
       id: "keyboard-shortcuts",

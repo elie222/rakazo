@@ -59,6 +59,7 @@ export function useShellSettings({
   useLayoutEffect(() => {
     setOverlayRef.current = setOverlay;
   }, [setOverlay]);
+  const openAgentImport = useCallback(() => setOverlayRef.current({ kind: "import" }), []);
   const openImportSetup = useCallback(
     (target: ImportSetupTarget) => {
       importSetupOpen.current = true;
@@ -77,5 +78,12 @@ export function useShellSettings({
     [setSearchParams],
   );
 
-  return { settingsSpaceId, settingsSpace, openSettings, openSpaceSettings, openImportSetup };
+  return {
+    settingsSpaceId,
+    settingsSpace,
+    openSettings,
+    openSpaceSettings,
+    openImportSetup,
+    openAgentImport,
+  };
 }

@@ -69,6 +69,7 @@ export function VaultItemEditor({
   botsNote,
   onClose,
   onSave,
+  onDismiss,
 }: {
   kind: VaultKind;
   /** The saved item being edited; without one the sheet adds an item. */
@@ -86,6 +87,8 @@ export function VaultItemEditor({
   /** Said under the bots when only some may use it, or when this Space's can't be chosen. */
   botsNote?: string;
   onSave: (save: VaultSave, policy?: VaultPolicy, access?: VaultBots) => Promise<void>;
+  /** Turns a bot's request down without a value; absent outside a request or when this viewer can't. */
+  onDismiss?: () => Promise<void>;
 }) {
   const { t } = useLingui();
   const styles = useThemedStyles(createStyles);
@@ -171,6 +174,21 @@ export function VaultItemEditor({
   const cancel = () => {
     if (!submitting) close();
   };
+
+  async function dismiss() {
+    if (submitting || !onDismiss) return;
+    clear();
+    setSubmitting(true);
+    setError(null);
+    try {
+      await onDismiss();
+      close();
+    } catch (err) {
+      setError(secretAnswerErrorText(err, t`Could not send answer`));
+    } finally {
+      setSubmitting(false);
+    }
+  }
 
   async function submit() {
     if (submitting || !save) return;
@@ -617,6 +635,15 @@ export function VaultItemEditor({
             <Text accessibilityRole="alert" style={styles.error}>
               {error}
             </Text>
+          ) : null}
+          {onDismiss ? (
+            <NativeActionButton
+              label={t`Dismiss request`}
+              disabled={submitting || closing}
+              fill={false}
+              prominence="plain"
+              onPress={() => void dismiss()}
+            />
           ) : null}
         </ScrollView>
       </View>

@@ -363,17 +363,23 @@ function SpaceShell() {
     modelShortcuts,
     refreshThread,
   });
-  const { settingsSpaceId, settingsSpace, openSettings, openSpaceSettings, openImportSetup } =
-    useShellSettings({
-      overlay,
-      setOverlay,
-      searchParams,
-      setSearchParams,
-      spaces,
-      currentSpaceId: selectedSpaceId() ?? bootstrapMe?.spaceId ?? null,
-      initialBotsLoaded,
-      refreshActiveThread,
-    });
+  const {
+    settingsSpaceId,
+    settingsSpace,
+    openSettings,
+    openSpaceSettings,
+    openImportSetup,
+    openAgentImport,
+  } = useShellSettings({
+    overlay,
+    setOverlay,
+    searchParams,
+    setSearchParams,
+    spaces,
+    currentSpaceId: selectedSpaceId() ?? bootstrapMe?.spaceId ?? null,
+    initialBotsLoaded,
+    refreshActiveThread,
+  });
 
   const openSpaceChat = useOpenSpaceChat({
     bootstrapSpaceId: bootstrapMe?.spaceId,
@@ -718,6 +724,7 @@ function SpaceShell() {
         openSettings={openSettings}
         openIntegrations={() => setOverlay({ kind: "integrations" })}
         openSkills={() => setOverlay({ kind: "skills" })}
+        openAgentImport={() => setOverlay({ kind: "import" })}
         openSpaceChat={openSpaceChat}
       />
 
@@ -823,6 +830,7 @@ function SpaceShell() {
             onOpenComputer={computerControls.onOpenComputer}
             onReleaseComputer={computerControls.onReleaseComputer}
             onOpenImportSetup={openImportSetup}
+            onOpenAgentImport={openAgentImport}
             rpc={rpc}
           />
         )}

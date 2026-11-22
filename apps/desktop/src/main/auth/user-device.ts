@@ -467,6 +467,13 @@ export function createUserDeviceAccess(deps: {
         await saving;
         return;
       }
+      // A previously declined (or mistaken) answer must not block asking again.
+      if (consent.get(origin)?.consent === "declined") {
+        consent.delete(origin);
+        await rm(deviceFile(deps.userDataDir, origin, ".consent"), { force: true }).catch(
+          () => undefined,
+        );
+      }
       const seen = changes.get(origin);
       if (!isAllowed(origin) && !(await ask(origin))) return;
       if (changes.get(origin) !== seen && consent.get(origin)?.consent !== "allowed") return;
