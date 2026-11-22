@@ -118,15 +118,16 @@ describe("ChatModelPicker", () => {
     act(() => trigger.click());
     expect(options()).toHaveLength(12);
     expect(document.querySelector("[cmdk-group-heading]")?.textContent).toBe("OpenRouter");
-    expect(options()[2]?.getAttribute("aria-label")).toBe("Model 2 (OpenRouter)");
+    expect(options()[1]?.textContent).toBe("Model 11");
+    expect(options()[10]?.getAttribute("aria-label")).toBe("Model 2 (OpenRouter)");
     const checked = options().filter((option) => option.getAttribute("data-checked") === "true");
     expect(checked.map((option) => option.textContent)).toEqual(["Model 2"]);
 
     search("MODEL 1");
     expect(options().map((option) => option.textContent)).toEqual([
-      "Model 1",
-      "Model 10",
       "Model 11",
+      "Model 10",
+      "Model 1",
     ]);
     search("vendor/model-7");
     expect(options().map((option) => option.textContent)).toEqual(["Model 7"]);
@@ -134,6 +135,55 @@ describe("ChatModelPicker", () => {
     act(() => (options()[0] as HTMLElement).click());
     expect(onChange).toHaveBeenCalledExactlyOnceWith("openrouter::vendor/model-7");
     expect(options()).toHaveLength(0);
+  });
+
+  it("starts unfiltered after its owner closes and reopens it", () => {
+    const show = (open: boolean) =>
+      act(() =>
+        root.render(
+          <ChatModelPicker
+            compact
+            choices={choices(11)}
+            value=""
+            onChange={onChange}
+            open={open}
+            onOpenChange={vi.fn()}
+          />,
+        ),
+      );
+    show(true);
+    search("vendor/model-7");
+    expect(options()).toHaveLength(1);
+    show(false);
+    show(true);
+    expect(options()).toHaveLength(12);
+  });
+
+  it("names its keys on the compact button's tooltip, and hides it while the list is open", async () => {
+    act(() =>
+      root.render(
+        <ChatModelPicker
+          compact
+          choices={choices(2)}
+          value=""
+          onChange={onChange}
+          hint="Model ⌘⇧M"
+          keyShortcuts="Meta+Shift+M"
+        />,
+      ),
+    );
+    const trigger = container.querySelector<HTMLButtonElement>('button[aria-label^="Model"]')!;
+    expect(trigger.getAttribute("aria-keyshortcuts")).toBe("Meta+Shift+M");
+    const tooltip = () => document.querySelector('[data-slot="tooltip-content"]');
+    await act(async () => {
+      trigger.dispatchEvent(new PointerEvent("pointerenter", { bubbles: true }));
+      trigger.dispatchEvent(new MouseEvent("mouseenter", { bubbles: true }));
+      trigger.dispatchEvent(new MouseEvent("mousemove", { bubbles: true }));
+    });
+    await vi.waitFor(() => expect(tooltip()?.textContent).toContain("Model ⌘⇧M"));
+    act(() => trigger.click());
+    expect(options().length).toBeGreaterThan(0);
+    await vi.waitFor(() => expect(tooltip()).toBeNull());
   });
 
   it("says when nothing matches", () => {

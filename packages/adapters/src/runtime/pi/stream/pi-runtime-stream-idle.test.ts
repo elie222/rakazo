@@ -8,6 +8,8 @@ import type {
 } from "@earendil-works/pi-ai";
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
 import { AssistantMessageEventStream } from "@earendil-works/pi-ai/utils/event-stream";
+import { isTransientModelError } from "@rakazo/adapter-kit";
+import { abortableDelay } from "@rakazo/core";
 import { deferred } from "@rakazo/core/test-async";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createOpenAiCompatibleFetch } from "../models/pi-openai-compatible-provider.js";
@@ -588,6 +590,51 @@ it.each(["google-generative-ai", "google-vertex"] as const)(
       expect(fetch).toHaveBeenCalledOnce();
     } finally {
       vi.unstubAllGlobals();
+    }
+  },
+);
+
+it.each([false, true])(
+  "keeps a request deadline distinct from caller cancellation (cancelled: %s)",
+  async (cancelled) => {
+    vi.useFakeTimers();
+    const caller = new AbortController();
+    try {
+      const started = deferred();
+      const fetch: NonNullable<SimpleStreamOptions["fetch"]> = async (_input, init) => {
+        started.resolve();
+        await abortableDelay(10_000, init?.signal ?? undefined);
+        init?.signal?.throwIfAborted();
+        throw new Error("The request should have been interrupted");
+      };
+      const model: Model<"openai-completions"> = {
+        provider: "openrouter",
+        api: "openai-completions",
+        id: "fixture",
+        name: "Fixture",
+        baseUrl: "https://models.invalid/v1",
+        reasoning: false,
+        input: ["text"],
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+        contextWindow: 32768,
+        maxTokens: 4096,
+      };
+      const stream = reliableModelStream(
+        builtinModels(),
+        model,
+        { messages: [{ role: "user", content: "Fixture", timestamp: 0 }] },
+        { apiKey: "fake-key", signal: caller.signal, fetch, timeoutMs: 100, maxRetries: 0 },
+        undefined,
+      );
+      await started.promise;
+      if (cancelled) caller.abort();
+      else await vi.advanceTimersByTimeAsync(100);
+      const result = await stream.result();
+      expect(result.stopReason).toBe(cancelled ? "aborted" : "error");
+      expect(isTransientModelError(result.errorMessage)).toBe(!cancelled);
+    } finally {
+      caller.abort();
+      vi.useRealTimers();
     }
   },
 );
