@@ -1,7 +1,6 @@
 import type { Routine, TaughtSkill, ThreadMessage, ThreadSnapshot } from "@rakazo/contracts";
 import { withLiveStreamingProgress } from "@rakazo/core";
 import { useEffect, useRef, useState } from "react";
-import { responseStreamingPreference } from "../../../lib/preferences/response-streaming";
 
 export type PinnedAround = {
   botId?: string;
@@ -13,10 +12,9 @@ export type PinnedAround = {
 };
 
 /** The open chat's snapshot, the bot data loaded with it, and where its loaded history stands. */
-export function useThreadState() {
+export function useThreadState(streamResponses: boolean) {
   const [snapshot, setSnapshot] = useState<ThreadSnapshot | null>(null);
   const snapshotRef = useRef<ThreadSnapshot | null>(null);
-  const streamResponses = responseStreamingPreference.use();
   const streamResponsesRef = useRef(streamResponses);
   streamResponsesRef.current = streamResponses;
   const [routines, setRoutines] = useState<Routine[]>([]);

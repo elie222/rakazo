@@ -39,7 +39,7 @@ afterEach(() => {
 
 describe("live catalog merge and execution", () => {
   it("recomputes recommendations for live IDs instead of inheriting a sibling's flag", () => {
-    expect(liveCatalogEntry("openai-codex", "gpt-6-luna")?.recommended).toBe(true);
+    expect(liveCatalogEntry("openai-codex", "gpt-6.1-sol")?.recommended).toBe(true);
     expect(liveCatalogEntry("openai-codex", "gpt-future-chat")?.recommended).toBe(false);
   });
 

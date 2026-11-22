@@ -10,6 +10,7 @@ import {
   apnsVoipConfig,
   autoReviewMinConfidence,
   deploymentLabsFromEnv,
+  inboundOrigin,
   liveModelCatalogEnabled,
   mcpStdioOptionsFromEnv,
   messagingEnvFromProcess,
@@ -76,6 +77,8 @@ export interface AppEnv extends MessagingEnvironmentValues {
   passkeyAndroidCertFingerprints: string[];
   privacyPolicyUrl?: string;
   apiUrl: string;
+  /** The public origin outside services post webhooks to, when an ingress provider publishes one. */
+  publishedInboundOrigin?: string;
   apiHost: string;
   /** Proxies whose forwarded client address is believed; empty means local networks. */
   trustedProxies: string[];
@@ -288,6 +291,7 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
     privacyPolicyUrl: optional(source.PRIVACY_POLICY_URL),
     ...messagingEnvFromProcess(source),
     apiUrl: source.API_URL ?? "http://127.0.0.1:3100",
+    publishedInboundOrigin: inboundOrigin(source),
     apiHost: source.API_HOST ?? "127.0.0.1",
     trustedProxies: (source.TRUSTED_PROXIES ?? "")
       .split(/[\s,]+/)

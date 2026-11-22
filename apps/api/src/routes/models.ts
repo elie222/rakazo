@@ -21,6 +21,7 @@ import {
   serializeModelSecret,
   storedOpenAiCompatibleProbeHeaders,
   storedOpenAiCompatibleProbeKey,
+  subscriptionSignInChoice,
   UNAVAILABLE_MODEL_FOR_AUTH_MESSAGE,
 } from "@rakazo/adapters";
 import type { Actor, ModelCredential, ThinkingLevel } from "@rakazo/contracts";
@@ -118,6 +119,9 @@ export function modelsRoutes(ctx: RouterContext) {
         const record = signInRecorder(deps.analytics, actor.userId, login.measure);
         const target = await modelConnectionTarget(deps, actor, login.provider, login.credentialId);
         const retained = await prepareModelReconnectSettings(deps, actor, target);
+        const choice = target
+          ? { modelId: login.modelId, thinkingLevel: login.thinkingLevel }
+          : subscriptionSignInChoice(login.provider, login.modelId, login.thinkingLevel);
         const saved = await persistModelCredential(
           deps,
           actor,
@@ -135,8 +139,8 @@ export function modelsRoutes(ctx: RouterContext) {
               oauthCredentialEmail(login.credential) ??
               login.label ??
               listPiCatalog().find((entry) => entry.provider === login.provider)?.providerName,
-            modelId: login.modelId,
-            thinkingLevel: login.thinkingLevel,
+            modelId: choice.modelId,
+            thinkingLevel: choice.thinkingLevel,
             makeDefault: login.makeDefault,
             scope: login.settingsScope,
             signal: login.signal,

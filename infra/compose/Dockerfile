@@ -77,7 +77,7 @@ WORKDIR /app
 # --link keeps each layer independent of the ones below, so an unchanged one is reused as is.
 COPY --link --from=deps /app /app
 COPY --link --from=build /app /app
-RUN install -d -m 750 -o node -g node /data /app/apps/web/node_modules/.vite-temp /app/apps/web/asset-archive
+RUN install -d -m 750 -o node -g node /data /app/apps/web/node_modules/.vite-temp /app/apps/web/asset-archive /run/ingress
 # Last root step, so a cached earlier layer cannot be the filesystem that ships.
 RUN /tmp/apt-security.sh --check && rm -f /tmp/apt-security.sh
 ARG GIT_SHA

@@ -22,6 +22,7 @@ import {
   FieldLabel,
   Input,
   OptionSelect,
+  Spinner,
   Textarea,
   toast,
 } from "@rakazo/ui-web";
@@ -192,9 +193,9 @@ export function BoardPage() {
             onMove={(id, status) => change.run({ id, status })}
           />
         )}
-        {tickets.length === 0 && !error ? (
+        {!error && (ticketsQuery.isPending || (ticketsQuery.isSuccess && tickets.length === 0)) ? (
           <p className="pointer-events-none absolute inset-0 flex items-center justify-center text-body text-muted-foreground">
-            <Trans>No tickets yet</Trans>
+            {ticketsQuery.isPending ? <Spinner /> : <Trans>No tickets yet</Trans>}
           </p>
         ) : null}
       </main>
