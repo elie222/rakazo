@@ -29,9 +29,9 @@ import {
   passkeysAvailable,
   renamePasskey,
 } from "../../lib/auth/passkey";
+import { promptPasskeyName } from "../../lib/auth/passkey-name-prompt";
 import { continueWithSso } from "../../lib/auth/sso";
 import { dateLocaleForUi, useUiLocale } from "../../lib/i18n/i18n";
-import { promptSectionName } from "../../lib/inbox/sections/section-name-prompt";
 import { useSideInsets } from "../../lib/layout/side-insets";
 import { useResolvedAppearance, useThemedStyles } from "../../lib/native/native";
 import { accountRpcQuery, queryClient } from "../../lib/query/query";
@@ -136,7 +136,7 @@ export default function Profile() {
 
   function passkeyMenuAction(passkey: MobilePasskey, name: string, action: string) {
     if (action === "rename") {
-      promptSectionName({
+      promptPasskeyName({
         title: t`Rename`,
         cancelLabel: t`Cancel`,
         submitLabel: t`Save`,
