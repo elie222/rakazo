@@ -900,6 +900,48 @@ describe("MCP connector session cache", () => {
     await connector.close();
   });
 
+  it("redacts a default client secret that is not part of the stored credential", async () => {
+    const localAssignment = {
+      ...ASSIGNMENT,
+      server: { ...SERVER, endpoint: "http://localhost:8123/api/mcp", secretId: "secret-1" },
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response("rejected client default-secret", { status: 500 })),
+    );
+    const append = vi.fn().mockResolvedValue(undefined);
+    const prisma = {
+      mcpServer: NO_SHARED_SERVERS,
+      botMcpServer: { findMany: vi.fn().mockResolvedValue([localAssignment]) },
+      secret: { findFirst: vi.fn().mockResolvedValue({ id: "secret-1", ciphertext: "encrypted" }) },
+      run: { findUnique: vi.fn().mockResolvedValue({ threadId: "thread-1" }) },
+      deploymentSettings: { findUnique: vi.fn(async () => ({ ownerUserId: "u1" })) },
+    };
+    const oauth = {
+      defaultClientSecrets: () => ["default-secret"],
+      providerFor: vi.fn().mockResolvedValue(undefined),
+    };
+    const connector = new McpConnector(
+      prisma as never,
+      { load: vi.fn().mockReturnValue(JSON.stringify({})) } as never,
+      { network: TEST_NETWORK, events: { append }, allowPrivateEndpoint: true },
+      oauth as unknown as McpOAuthBroker,
+    );
+
+    await connector.discoverTools({
+      spaceId: "w1",
+      userId: "u1",
+      botId: "bot-1",
+      runId: "run-1",
+      signal: new AbortController().signal,
+    } as never);
+
+    const reason = String(append.mock.calls[0]?.[0].payload.error);
+    expect(reason).not.toContain("default-secret");
+    expect(reason).toContain("[redacted]");
+    await connector.close();
+  });
+
   it("redacts the same failed connect for every concurrent waiter", async () => {
     const localAssignment = {
       ...ASSIGNMENT,
@@ -2604,6 +2646,7 @@ describe("MCP connector session cache", () => {
       },
     };
     const oauth = {
+      defaultClientSecrets: () => [],
       providerFor: vi.fn(
         async (_server: unknown, _context: unknown, loaded: { material: OAuthMaterial }) =>
           loaded.material.oauth
@@ -3200,7 +3243,7 @@ describe("MCP connector stdio OAuth", () => {
 
   function stdioConnector(
     load: () => OAuthMaterial,
-    oauth: Pick<McpOAuthBroker, "providerFor"> | undefined,
+    oauth: Pick<McpOAuthBroker, "providerFor" | "defaultClientSecrets"> | undefined,
   ) {
     const assignment = { ...ASSIGNMENT, server: STDIO_SERVER };
     const prisma = {
@@ -3224,6 +3267,7 @@ describe("MCP connector stdio OAuth", () => {
   /** A broker whose provider holds whatever the stored material says. */
   function brokerFor() {
     return {
+      defaultClientSecrets: () => [],
       providerFor: vi.fn<McpOAuthBroker["providerFor"]>(async (_server, _context, loaded) =>
         loaded?.material.oauth
           ? new StoredMcpOAuthProvider("server-1", loaded.material, async () => undefined)
@@ -3553,6 +3597,7 @@ describe("MCP connector stdio credential files", () => {
     };
     const secrets = { load: vi.fn(async () => JSON.stringify(load())) };
     const broker = {
+      defaultClientSecrets: () => [],
       providerFor: vi.fn<McpOAuthBroker["providerFor"]>(async (_server, _context, loaded) =>
         loaded?.material.oauth
           ? new StoredMcpOAuthProvider("server-1", loaded.material, async () => undefined, {
