@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { AdminContext } from "./admin-command.js";
+import { billingCancelCommand, billingRefundCommand } from "./billing-commands.js";
 
 const mocks = vi.hoisted(() => ({
   refundInvoice: vi.fn(),
@@ -27,8 +28,13 @@ vi.mock("@rakazo/db", async (importOriginal) => ({
   recordAuditEvent: mocks.recordAuditEvent,
 }));
 
-const { billingCancelCommand, billingRefundCommand } = await import("./billing-commands.js");
 const email = "person@example.test";
+const preview = {
+  invoiceId: "in_fixture",
+  amountMinor: 1000,
+  currency: "usd",
+  state: "refundable",
+};
 const context = {
   env: {},
   prisma: { user: { findMany: async () => [{ id: "user_fixture", email }] } },
@@ -55,12 +61,6 @@ describe("operator billing writes", () => {
   });
 
   it("audits a refund request before sending it and reconciles after an uncertain response", async () => {
-    const preview = {
-      invoiceId: "in_fixture",
-      amountMinor: 1000,
-      currency: "usd",
-      state: "refundable",
-    };
     mocks.refundInvoice.mockResolvedValueOnce(preview).mockImplementationOnce(async () => {
       expect(mocks.recordAuditEvent).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -75,5 +75,20 @@ describe("operator billing writes", () => {
     await expect(refund(context)).rejects.toThrow("Unknown refund outcome");
     expect(mocks.sync).toHaveBeenCalledWith("cus_fixture");
     expect(mocks.reportPartnerSales).toHaveBeenCalledWith("cus_fixture");
+  });
+
+  it("records the provider's reported refund outcome separately from the request", async () => {
+    mocks.refundInvoice
+      .mockResolvedValueOnce(preview)
+      .mockResolvedValueOnce({ ...preview, state: "pending", refundId: "re_fixture" });
+    const refund = billingRefundCommand.parse([email, "EXAMPLE-0001"], { confirm: true })!;
+    await expect(refund(context)).resolves.toMatchObject({ json: { state: "pending" } });
+    expect(mocks.recordAuditEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "billing.invoice.refund_result",
+        target: { type: "invoice", id: preview.invoiceId },
+        metadata: { refundId: "re_fixture", status: "pending", amountMinor: 1000, currency: "usd" },
+      }),
+    );
   });
 });

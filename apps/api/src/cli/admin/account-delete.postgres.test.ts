@@ -49,10 +49,22 @@ dbTests("operator account deletion", () => {
       });
       expect(await prisma.user.count({ where: { id } })).toBe(1);
       await prisma.member.delete({ where: { id: teammate } });
+      const team = await bootstrapUserSpace(prisma, { id: teammate });
+      const surviving = await prisma.space.findUniqueOrThrow({ where: { id: team.spaceId } });
+      await prisma.member.create({
+        data: {
+          id: randomUUID(),
+          organizationId: surviving.organizationId,
+          userId: id,
+          role: "member",
+          createdAt: new Date(),
+        },
+      });
 
       const preview = await cli("account", "delete", email.toUpperCase(), "--json");
       expect(JSON.parse(preview.stdout)).toEqual({ userId: id, deleted: false });
       expect(await prisma.session.count({ where: { id } })).toBe(1);
+      expect(await prisma.securityEvent.count({ where: { userId: id } })).toBe(0);
 
       const confirmed = await cli("account", "delete", email, "--confirm", "--json");
       expect(JSON.parse(confirmed.stdout)).toEqual({ userId: id, deleted: true });
@@ -60,13 +72,30 @@ dbTests("operator account deletion", () => {
       expect(await prisma.session.count({ where: { id } })).toBe(0);
       expect(await prisma.account.count({ where: { id } })).toBe(0);
       expect(await prisma.space.count({ where: { id: spaceId } })).toBe(0);
-      expect(await prisma.securityEvent.findFirst({ where: { userId: id } })).toMatchObject({
-        type: "auth.account.deleted",
-        metadata: { by: "operator" },
-      });
+      expect(
+        await prisma.securityEvent.findMany({
+          where: { userId: id },
+          orderBy: { createdAt: "asc" },
+        }),
+      ).toMatchObject([
+        { type: "auth.account.delete_requested", metadata: { by: "operator" } },
+        { type: "auth.account.deleted", metadata: { by: "operator" } },
+      ]);
+      expect(
+        await prisma.auditEvent.findMany({
+          where: { organizationId: surviving.organizationId, targetId: id },
+          orderBy: { createdAt: "asc" },
+        }),
+      ).toMatchObject([
+        { action: "auth.account.delete_requested", actorType: "system", actorLabel: "operator" },
+        { action: "auth.account.deleted", actorType: "system", actorLabel: "operator" },
+      ]);
     } finally {
+      await prisma.auditEvent.deleteMany({ where: { targetType: "user", targetId: id } });
       await prisma.securityEvent.deleteMany({ where: { userId: id } });
-      await prisma.organization.deleteMany({ where: { members: { some: { userId: id } } } });
+      await prisma.organization.deleteMany({
+        where: { members: { some: { userId: { in: [id, teammate] } } } },
+      });
       await prisma.user.deleteMany({ where: { id: { in: [id, teammate] } } });
       await db.prisma.$disconnect();
       await db.pool.end();

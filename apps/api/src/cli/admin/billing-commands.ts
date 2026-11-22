@@ -139,6 +139,18 @@ async function refundBilling(
           throw new AdminCommandError(
             "The refund could not be confirmed. Preview the refund again.",
           );
+        await recordAuditEvent({
+          action: "billing.invoice.refund_result",
+          actor: { type: "system", label: "operator" },
+          organizationId,
+          target: { type: "invoice", id: result.invoiceId },
+          metadata: {
+            refundId: result.refundId,
+            status: result.state,
+            amountMinor: result.amountMinor,
+            currency: result.currency,
+          },
+        });
         return result;
       });
     } finally {

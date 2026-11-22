@@ -18,8 +18,10 @@ import {
   assertNoOwnedOrganizationWithMembers,
   clearAccountIdentity,
   createThreadEvents,
+  GUEST_ROLE,
   ownedBillingAccounts,
   personalOrganizationIds,
+  recordAuditEvent,
   recordSecurityEvent,
 } from "@rakazo/db";
 import { bestEffort } from "@rakazo/logging";
@@ -124,6 +126,15 @@ async function deleteAccount({ env, pool, prisma, secrets }: AdminContext, userI
         secrets,
       },
     });
+    const memberships = await prisma.member.findMany({
+      where: { userId, role: { not: GUEST_ROLE } },
+      select: { organizationId: true },
+    });
+    await recordSecurityEvent({
+      type: "auth.account.delete_requested",
+      userId,
+      metadata: { by: "operator" },
+    });
     await hooks.beforeDeleteUser(userId);
     await bestEffort(
       "account deletion device revocation",
@@ -149,6 +160,18 @@ async function deleteAccount({ env, pool, prisma, secrets }: AdminContext, userI
         userId,
         metadata: { by: "operator" },
       });
+      // The user row took the memberships with it, so address the completion to their
+      // organizations explicitly. Guests' account activity stays out of their hosts' logs.
+      await Promise.all(
+        memberships.map(({ organizationId }) =>
+          recordAuditEvent({
+            action: "auth.account.deleted",
+            actor: { type: "system", label: "operator" },
+            organizationId,
+            target: { type: "user", id: userId },
+          }),
+        ),
+      );
       await hooks.afterDeleteUser(userId);
     }
   } finally {
