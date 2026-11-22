@@ -1,6 +1,6 @@
 import { i18n } from "@lingui/core";
 import { t } from "@lingui/core/macro";
-import type { BillingStatus, ComputerSize } from "@rakazo/contracts";
+import type { BillingStatus, ComputerMode, ComputerSize } from "@rakazo/contracts";
 import { COMPUTER_SIZE_SPECS, SANDBOX_SIZE_HOURLY_COST_MICROS } from "@rakazo/contracts";
 
 export function tierComputerDescription(offer: NonNullable<BillingStatus["byokTiers"]>[number]) {
@@ -37,6 +37,11 @@ export function computerName(computer: { scope: "team" | "dedicated"; botName: s
   return computer.scope === "team"
     ? i18n._({ id: "ZrvL3B", message: "Team Computer" })
     : (computer.botName ?? i18n._({ id: "vNFOXs", message: "Private Computer" }));
+}
+
+/** The computer a bot works on: its own, or the Space's Team Computer. */
+export function computerLabel(mode: ComputerMode | undefined, name: string) {
+  return mode === "dedicated" ? t`${name}’s computer` : t`Team Computer`;
 }
 
 type UsageRead = {
