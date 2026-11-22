@@ -32,6 +32,7 @@ import {
 import type { RpcClient } from "../lib/query/rpc";
 import { createSpaceRpc, selectedSpaceId } from "../lib/query/rpc";
 import { SpaceRpcProvider } from "../lib/query/space-rpc";
+import { InboundOriginProvider } from "../lib/routines/inbound-url";
 import type { CreateBotDialogInput } from "./shell/bots/create-bot-dialog";
 import { useTeaching } from "./shell/bots/use-teaching";
 import { ChatColumn } from "./shell/chat/chat-column";
@@ -309,6 +310,7 @@ function SpaceShell() {
     active,
     activeBotId,
     timezone: bootstrapMe?.timezone,
+    inboundOrigin: bootstrapMe?.inboundOrigin,
     setBots,
     refreshThread,
     openGroup: (id) => navigate(`/app/g/${id}`),
@@ -679,8 +681,7 @@ function SpaceShell() {
             rosterDropAction={rosterDrop.rosterDropAction}
             applyRosterDrop={rosterDrop.applyRosterDrop}
             openSpaceChat={openSpaceChat}
-            spaceMenuAnchor={dialogs.spaceMenuAnchor}
-            setSpaceMenu={dialogs.setSpaceMenu}
+            openSpaceSettings={openSpaceSettings}
             setRenameSectionTarget={dialogs.setRenameSectionTarget}
             setDeleteSectionTarget={dialogs.setDeleteSectionTarget}
             toggleSidebarSection={toggleSidebarSection}
@@ -889,7 +890,6 @@ function SpaceShell() {
         <ShellDialogs
           dialogs={dialogs}
           rpc={rpc}
-          spaces={spaces}
           bots={bots}
           activeId={active?.id}
           activeGroupId={activeGroup?.id}
@@ -897,8 +897,6 @@ function SpaceShell() {
           navigate={navigate}
           setPanel={setPanel}
           refreshBots={refreshBots}
-          removeSpace={removeSpace}
-          openSpaceSettings={openSpaceSettings}
           closeMobileSidebar={() => setMobileSidebarOpen(false)}
           createBot={createBot}
           botAvatarSet={bootstrapMe?.botAvatarSet ?? DEFAULT_NEW_BOT_AVATAR_SET}
@@ -946,6 +944,7 @@ function SpaceShell() {
           setPeerConversation={setPeerConversation}
           active={active}
           peerBot={view.resolveBot}
+          openNewSpace={() => dialogs.setNewSpaceOpen(true)}
         />
       </Suspense>
 
@@ -984,7 +983,9 @@ function SpaceShell() {
   return (
     <SpaceRpcProvider spaceId={shellSpaceId}>
       {initialBotsLoaded || initialLoadFailed ? (
-        <PagesProvider value={pages}>{shell}</PagesProvider>
+        <InboundOriginProvider value={bootstrapMe?.inboundOrigin}>
+          <PagesProvider value={pages}>{shell}</PagesProvider>
+        </InboundOriginProvider>
       ) : (
         <PageLoading />
       )}

@@ -146,6 +146,7 @@ export function SettingsOverlays({
   setPeerConversation,
   active,
   peerBot,
+  openNewSpace,
 }: {
   rpc: ReturnType<typeof createSpaceRpc>;
   queries: SpaceQueries;
@@ -169,6 +170,7 @@ export function SettingsOverlays({
   setPeerConversation: (peer: null) => void;
   active: Bot | undefined;
   peerBot: (botId: string) => { color: string; avatarSet?: BotAvatarSet } | undefined;
+  openNewSpace: () => void;
 }) {
   const voiceStatusKey = queries.voice.status.queryKey();
   return (
@@ -188,6 +190,10 @@ export function SettingsOverlays({
             void leftSpace(spaceId, activeSpaceId);
           }}
           onOpenSpace={(spaceId) => setOverlay({ ...overlay, section: "space", spaceId })}
+          onNewSpace={() => {
+            setOverlay(null);
+            openNewSpace();
+          }}
           name={user?.name ?? ""}
           onNameSaved={async () => {
             await refetchSession();

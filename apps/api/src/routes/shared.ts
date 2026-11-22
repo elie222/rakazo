@@ -60,6 +60,7 @@ export async function meDto(deps: RouterDeps, actor: Actor): Promise<Me> {
     labsAvailable: LAB_FEATURES.filter((feature) => !deploymentLabs.includes(feature)),
     ticketBoardEnabled: labs.includes("board"),
     meetingsEnabled,
+    inboundOrigin: deps.env.publishedInboundOrigin,
     phoneCallsEnabled: deps.env.phoneCallsEnabled === true,
     navLinks: deps.env.navLinks ?? [],
     maxUploadSizeBytes: attachmentMaxBytes(deps.env),
