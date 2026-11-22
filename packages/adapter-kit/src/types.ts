@@ -771,7 +771,11 @@ export interface AgentRunRequest {
    */
   yieldSignal?: AbortSignal;
   /** Human answer or takeover outcome for the pending interaction. Never secret input. */
-  resumeToolResult?: { content: Array<{ type: "text"; text: string }> };
+  resumeToolResult?: {
+    content: Array<{ type: "text"; text: string }>;
+    /** History rows fully represented by the restored turn and its human answer. */
+    historyMessageIds?: string[];
+  };
   script?: ScriptedTurn[];
   /**
    * FYI bot-message wakes and scheduled routines may finish with no text.
