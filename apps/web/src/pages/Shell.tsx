@@ -166,13 +166,8 @@ function SpaceShell() {
     placeholderData: bootstrapMe ?? undefined,
     refetchOnWindowFocus: "always",
   });
-  const {
-    composerModelPicker: showComposerModel,
-    streamReplies,
-    sendWithEnter: enterToSend,
-    showToolActivity,
-  } = useChatPreferences(me?.chatPreferences);
-  const thread = useThreadState(streamReplies);
+  const chatPreferences = useChatPreferences(me?.chatPreferences);
+  const thread = useThreadState(chatPreferences.streamReplies);
   const { snapshot } = thread;
   const botsSidebarDensity = botsSidebarDensityPreference.use();
   const rightPanel = useRightPanel({ searchParams, setSearchParams });
@@ -335,7 +330,7 @@ function SpaceShell() {
   const recordingSkill = activeTaughtSkills.find((skill) => skill.status === "recording") ?? null;
   const modelShortcuts = useComposerModelShortcuts({
     botId: inGroup ? undefined : active?.id,
-    enabled: showComposerModel && !recordingSkill,
+    enabled: chatPreferences.composerModelPicker && !recordingSkill,
   });
   const {
     chatPanelOpen,
@@ -774,9 +769,9 @@ function SpaceShell() {
             memberName={view.resolveMemberName}
             recordingSkill={Boolean(recordingSkill)}
             running={composerRunning}
-            enterToSend={enterToSend}
+            enterToSend={chatPreferences.sendWithEnter}
             sendColors={userBubble}
-            modelPicker={showComposerModel ? modelShortcuts.pickerProps : null}
+            modelPicker={chatPreferences.composerModelPicker ? modelShortcuts.pickerProps : null}
             onBotSaved={(updated) =>
               setBots((current) => current.map((bot) => (bot.id === updated.id ? updated : bot)))
             }
@@ -810,7 +805,7 @@ function SpaceShell() {
             followRequest={composer.sentCount}
             {...view.transcriptProps}
             markedUnreadMessageId={read.markedUnreadMessageId}
-            showToolActivity={showToolActivity}
+            showToolActivity={chatPreferences.showToolActivity}
             unreadAfterSeq={read.unreadAfterSeq}
             loadingOlder={loadingOlder}
             userBubble={userBubble}
@@ -960,7 +955,7 @@ function SpaceShell() {
         onOpenChange={setShortcutsOpen}
         host={{ desktop: Boolean(desktopBridge()), apple: isApplePlatform() }}
         dictation={Boolean(bootstrapMe?.phoneCallsEnabled)}
-        modelPicker={showComposerModel}
+        modelPicker={chatPreferences.composerModelPicker}
       />
 
       {computerOpen && computerBot ? (
