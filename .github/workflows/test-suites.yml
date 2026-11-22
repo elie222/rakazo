@@ -172,7 +172,8 @@ jobs:
 
   # Four runners finish the unit suite before the Web E2E shards, which set the pull request's
   # finish time; more runners only add per-job setup and queue for the account's runner limit. A
-  # shard the classification leaves out stops after checkout.
+  # shard the classification leaves out stops after checkout. The slow files that start processes
+  # run in the job below instead (the `processes` project in vitest.config.ts).
   unit-tests-shard:
     name: Unit tests (${{ matrix.shard }}/4)
     runs-on: ${{ inputs.runner }}
@@ -216,16 +217,18 @@ jobs:
       - name: Unit tests
         if: steps.unit.outputs.run == 'true' && steps.areas.outputs.all_packages != 'false'
         env:
+          PROJECTS: --project isolated --project shared
           WHOLE: ${{ steps.unit.outputs.whole }}
           SHARD: ${{ matrix.shard }}
         run: |
-          if [[ "$WHOLE" == true ]]; then pnpm run test; else pnpm run test --shard="$SHARD/4"; fi
+          if [[ "$WHOLE" == true ]]; then pnpm run test $PROJECTS; else pnpm run test $PROJECTS --shard="$SHARD/4"; fi
       - name: Unit tests for affected packages
         if: steps.unit.outputs.run == 'true' && steps.areas.outputs.all_packages == 'false'
         env:
           TURBO_SCM_BASE: HEAD^1
           WHOLE: ${{ steps.unit.outputs.whole }}
         run: |
+          projects=(--project isolated --project shared)
           affected="$(pnpm exec turbo ls --affected --output=json | jq -r '.packages.items[].path + "/"')"
           mapfile -t packages < <(printf "%s" "$affected")
           # These read other packages' files without importing them, so the package graph misses them.
@@ -238,29 +241,80 @@ jobs:
             packages/testkit/src/infra/eas-pnpm-version.test.ts \
             packages/testkit/src/screenshots/ios-screenshot-catalog.test.ts)
           # Vitest rejects more shards than test files, so a small set runs whole on the first shard.
-          files="$(pnpm exec vitest list --filesOnly "${targets[@]}" | grep -c '\.test\.' || true)"
+          files="$(pnpm exec vitest list --filesOnly "${projects[@]}" "${targets[@]}" | grep -c '\.test\.' || true)"
           if [[ "$WHOLE" == true ]] || (( files < 4 )); then
             (( ${{ matrix.shard }} == 1 )) || exit 0
-            pnpm exec vitest run "${targets[@]}"
+            pnpm exec vitest run "${projects[@]}" "${targets[@]}" --passWithNoTests
           else
-            pnpm exec vitest run "${targets[@]}" --shard=${{ matrix.shard }}/4
+            pnpm exec vitest run "${projects[@]}" "${targets[@]}" --shard=${{ matrix.shard }}/4
           fi
+
+  # The unit files that start processes (scripts, CLIs, servers), beside the shards above. Pull
+  # requests run only the ones in packages their files touch.
+  unit-tests-processes:
+    name: Unit tests (processes)
+    runs-on: ${{ inputs.runner }}
+    timeout-minutes: 20
+    concurrency:
+      group: ci-unit-processes-${{ github.ref == 'refs/heads/main' && 'main' || github.run_id }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+          fetch-depth: 2
+      - id: areas
+        if: github.event_name == 'pull_request'
+        run: bash .github/scripts/changed-areas.sh >> "$GITHUB_OUTPUT"
+      - id: unit
+        env:
+          SHARDS: ${{ steps.areas.outputs.unit_shards || '[1,2,3,4]' }}
+        run: echo "run=$(jq 'length > 0' <<<"$SHARDS")" >> "$GITHUB_OUTPUT"
+      - uses: ./.github/actions/setup-workspace
+        if: steps.unit.outputs.run == 'true'
+      - run: pnpm db:generate
+        if: steps.unit.outputs.run == 'true'
+        env:
+          DATABASE_URL: postgres://rakazo:rakazo@127.0.0.1:5433/rakazo
+      - name: Install age for the encrypted backup round trip
+        if: steps.unit.outputs.run == 'true'
+        run: |
+          curl -fsSL -o "$RUNNER_TEMP/age.tar.gz" \
+            "https://github.com/FiloSottile/age/releases/download/v1.3.2/age-v1.3.2-linux-amd64.tar.gz"
+          echo "cbe24006683f8eb669266162894b9a522a1af52f2665fbc63a4bb032ed26ac10  $RUNNER_TEMP/age.tar.gz" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/age.tar.gz" -C "$RUNNER_TEMP" age/age age/age-keygen
+          sudo install -m 755 "$RUNNER_TEMP/age/age" "$RUNNER_TEMP/age/age-keygen" /usr/local/bin/
+      - name: Unit tests that start processes
+        if: steps.unit.outputs.run == 'true' && steps.areas.outputs.all_packages != 'false'
+        run: pnpm exec vitest run --project processes
+      - name: Unit tests that start processes, for affected packages
+        if: steps.unit.outputs.run == 'true' && steps.areas.outputs.all_packages == 'false'
+        env:
+          TURBO_SCM_BASE: HEAD^1
+        run: |
+          affected="$(pnpm exec turbo ls --affected --output=json | jq -r '.packages.items[].path + "/"')"
+          mapfile -t packages < <(printf "%s" "$affected")
+          # With no paths Vitest would run every file, so a change no package owns runs none.
+          (( ${#packages[@]} )) || exit 0
+          pnpm exec vitest run --project processes "${packages[@]}" --passWithNoTests
 
   # The required check and the deploy gate, under one stable name.
   checks:
     name: Checks
-    needs: [static-checks, unit-tests-shard]
+    needs: [static-checks, unit-tests-shard, unit-tests-processes]
     if: always()
     runs-on: ${{ inputs.runner }}
     steps:
-      - run: test "${{ needs.static-checks.result }}" = success && test "${{ needs.unit-tests-shard.result }}" = success
+      - run: >-
+          test "${{ needs.static-checks.result }}" = success &&
+          test "${{ needs.unit-tests-shard.result }}" = success &&
+          test "${{ needs.unit-tests-processes.result }}" = success
 
-  # Checks its own changed areas instead of needing `changes`: a deploy needs this job, and on main
-  # it must reach its lock in push order so an older revision cannot replace a newer waiting one.
-  # Four runners finish the suites before the Web E2E shards, which set the pull request's finish
-  # time; more runners only add per-job setup and queue for the account's runner limit.
+  # Main only: pull requests skip these, and every push to main runs them before the deploy, which
+  # needs this job. It needs nothing itself, so on main it reaches its lock in push order and an
+  # older revision cannot replace a newer waiting one.
   test-integration-shard:
     name: Postgres journeys (${{ matrix.shard }}/4)
+    if: github.event_name != 'pull_request'
     runs-on: ${{ inputs.runner }}
     strategy:
       fail-fast: false
@@ -273,20 +327,12 @@ jobs:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           persist-credentials: false
-          fetch-depth: 2
-      - id: areas
-        if: github.event_name == 'pull_request'
-        run: bash .github/scripts/changed-areas.sh >> "$GITHUB_OUTPUT"
       - name: Start Postgres
-        if: steps.areas.outputs.server != 'false'
         uses: ./.github/actions/start-postgres
       - uses: ./.github/actions/setup-workspace
-        if: steps.areas.outputs.server != 'false'
       - name: Wait for Postgres
-        if: steps.areas.outputs.server != 'false'
         run: bash .github/actions/start-postgres/wait.sh
       - run: pnpm test:integration --shard=${{ matrix.shard }}/4
-        if: steps.areas.outputs.server != 'false'
 
   # The required check and the deploy gate, under one stable name.
   test-integration:
@@ -295,7 +341,9 @@ jobs:
     if: always()
     runs-on: ${{ inputs.runner }}
     steps:
-      - run: test "${{ needs.test-integration-shard.result }}" = success
+      - run: >-
+          test "${{ needs.test-integration-shard.result }}" = success ||
+          test "${{ github.event_name }}/${{ needs.test-integration-shard.result }}" = pull_request/skipped
 
   test-postgres-upgrade:
     name: Postgres upgrade

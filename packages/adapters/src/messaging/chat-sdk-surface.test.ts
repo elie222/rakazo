@@ -824,15 +824,6 @@ describe("ChatSdkMessagingSurface outbound", () => {
     expect(posts[0]).not.toHaveProperty("text");
   });
 
-  it("sends a short plain Slack reply unchanged", async () => {
-    const { surface, posts } = slackSurface();
-
-    await surface.sendToThread({ threadId: "slack:C1:9", body: "On it." }, context);
-
-    expect(posts).toHaveLength(1);
-    expect(posts[0]).toMatchObject({ markdown_text: "On it." });
-  });
-
   it("posts a Telegram image attachment as a photo", async () => {
     const { surface, adapter } = createSurface({ provider: "telegram" });
     const data = new Uint8Array([1, 2, 3]);

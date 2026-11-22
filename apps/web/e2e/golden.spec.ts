@@ -235,7 +235,7 @@ test("takeover, routine, plugins, and export are reachable", async ({ page }, te
   await expect(page.getByTestId("connection-detail")).toHaveCount(0);
   await expect(linearRow.getByRole("button", { name: "Add Linear", exact: true })).toBeVisible();
 
-  // Custom sources live behind one menu: GitHub, then MCP → OpenAPI → GraphQL → Executor.
+  // The Add menu lists custom source kinds before the direct MCP presets.
   await page.getByRole("button", { name: "Add custom", exact: true }).click();
   const addItems = page.getByRole("menuitem");
   await expect(addItems).toHaveText([
@@ -243,6 +243,9 @@ test("takeover, routine, plugins, and export are reachable", async ({ page }, te
     "MCP server",
     "OpenAPI",
     "GraphQL",
+    "GitHub",
+    "Linear",
+    "Notion",
     "Executor",
     "Browse MCP servers",
     "Search by domain",

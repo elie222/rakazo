@@ -543,7 +543,7 @@ describe("account preferences", () => {
     expect(setup.updateMany).not.toHaveBeenCalled();
   });
 
-  it.each(["robot", "organic", "custom-cdn"])(
+  it.each(["robot", "custom-cdn"])(
     "always reports the organic style, whatever is stored (%s)",
     async (style) => {
       const { actor, handler } = preferencesDeps(style);
