@@ -2,8 +2,7 @@ import type { CollectionEntry, CollectionKey } from "astro:content";
 import type { AstroIntegration } from "astro";
 
 /**
- * Marketing pages (comparisons, blog, pricing, legal and the rest) live in a private repository
- * that production builds clone into `src/marketing/`. Without it the site builds the home page
+ * Marketing pages beyond the home page and docs are cloned into `src/marketing/` at build time. Without it the site builds the home page
  * and docs alone, and every link into marketing pages is left dangling.
  */
 

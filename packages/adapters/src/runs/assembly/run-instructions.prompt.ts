@@ -282,7 +282,10 @@ function spawnBotClause(disabled?: ReadonlySet<string>): string | undefined {
 }
 
 /** The fleet rules, naming only the tools the run was offered; none without a write tool. */
-function fleetClause(offered: readonly string[] | undefined): string | undefined {
+function fleetClause(
+  offered: readonly string[] | undefined,
+  delegates: boolean,
+): string | undefined {
   const names = new Set(offered);
   if (!FLEET_WRITE_TOOL_NAMES.some((name) => names.has(name))) return undefined;
   const approval = FLEET_WRITE_TOOL_NAMES.filter(
@@ -294,6 +297,9 @@ function fleetClause(offered: readonly string[] | undefined): string | undefined
       ? `${listWords(approval)} ${approval.length > 1 ? "need" : "needs"} the owner's approval; the card shows what will run.`
       : undefined,
     "You can edit, re-model or schedule any bot in your current space.",
+    delegates
+      ? "Subagents cannot use bot management tools; make these changes yourself."
+      : undefined,
     names.has("set_child_instructions")
       ? "Instruction edits use set_child_instructions with expected_version from list_fleet; the owner sees the whole new text on the card."
       : undefined,
@@ -455,7 +461,7 @@ export function userTurnInstructions(parts: {
     offeredBuiltinClause(
       parts.disabledBuiltinTools,
       "update_bot",
-      'update_bot reads and changes your own settings: name (chat header and list label), description (the one-line public summary teammates see), private instructions (how you do your job), avatar, notifyOnFinish, dailyCheckIns (switch it off when the user asks you to stop checking in), model, thinkingLevel (how hard you reason; a standing request to think harder, or to answer faster, is a request to change it) and readAloud. Call it with no fields to read them, for example when asked which model you run. Change a setting only when the user asks for that change; a standing rule for how you work ("from now on", "always") is a request to add it to your instructions, not just to follow it now. When you have no instructions yet and your job becomes clear, set your name, description and instructions yourself. Never claim a change without the tool. Pass color for a hex or encoded shape, artifact_id for an image in this space, or use_attached_image when they attached a picture on this message.',
+      'update_bot reads and changes your own settings: name (chat header and list label), description (the one-line public summary teammates see), private instructions (how you do your job), avatar, notifyOnFinish, dailyCheckIns (switch it off when the user asks you to stop checking in), model, thinkingLevel (how hard you reason; a standing request to think harder, or to answer faster, is a request to change it), readAloud, voice, replyMode, team chat listening and rules, memoryScope, and disableTools to turn built-in tools off. With bot_id it changes the name, description, color, notifications and those settings of another bot in this space, plus its computer; set_child_instructions and set_child_bot_model change its instructions and model. Call it with no fields to read them, for example when asked which model you run. Change a setting only when the user asks for that change; a standing rule for how you work ("from now on", "always") is a request to add it to your instructions, not just to follow it now. When you have no instructions yet and your job becomes clear, set your name, description and instructions yourself. Never claim a change without the tool. Pass color for a hex or encoded shape, artifact_id for an image in this space, or use_attached_image when they attached a picture on this message.',
     ),
     offeredBuiltinClause(
       parts.disabledBuiltinTools,
@@ -470,7 +476,11 @@ export function userTurnInstructions(parts: {
       "archive_bot",
       "archive_bot safely archives another bot in this space. Use it when the user asks to remove that bot or when it is finished and unused. The user can restore it or permanently delete it later. confirm_name must exactly match its name.",
     ),
-    fleetClause(parts.offeredFleetTools),
+    fleetClause(
+      parts.offeredFleetTools,
+      Boolean(parts.backgroundHelpersAllowed) &&
+        builtinOffered(parts.disabledBuiltinTools, "run_subagent"),
+    ),
     parts.pluginLine,
     parts.agentSkillsLine,
     parts.agentSkillsLine &&
@@ -517,7 +527,7 @@ export function userTurnInstructions(parts: {
 /** How much of its chat a run reads: all of it, only its latest messages, or none. */
 export type HistoryReach = "all" | "recent" | "none";
 
-export function threadContextForRun<T extends { id?: string; role: string }>(
+export function threadContextForRun<T extends { id?: string; role: string; waiting?: boolean }>(
   trigger: string,
   context: {
     messages: T[];
@@ -528,11 +538,14 @@ export function threadContextForRun<T extends { id?: string; role: string }>(
   sourceMessageId?: string | null,
   reach: HistoryReach = runReadsThreadHistory(trigger) ? "all" : "none",
 ) {
-  // The current reaction is supplied with its target in the prompt, once.
+  // The current reaction is supplied with its target in the prompt, once. It stays in the list,
+  // marked waiting, so the summary's contiguity check still sees its seq.
   if (trigger === "reaction" && sourceMessageId) {
     context = {
       ...context,
-      messages: context.messages.filter((message) => message.id !== sourceMessageId),
+      messages: context.messages.map((message) =>
+        message.id === sourceMessageId ? { ...message, waiting: true } : message,
+      ),
     };
   }
   // The creation intro reads no history: a message that arrives during it waits and is answered

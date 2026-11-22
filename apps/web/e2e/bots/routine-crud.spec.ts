@@ -12,6 +12,29 @@ import {
   signup,
 } from "../helpers/helpers";
 
+test("closing an edited new routine asks before discarding changes", async ({ page }, testInfo) => {
+  await signup(page, `routine-discard-${Date.now()}@rakazo.test`, "password12", "Routine draft");
+  await completeOnboarding(page);
+  await openBotPanel(page);
+  await page.getByTestId("routine-create-button").click();
+
+  const editor = page.getByTestId("side-panel");
+  const name = editor.locator("label:has-text('Name') input");
+  await name.fill("Morning report");
+  await editor.getByRole("button", { name: "Close", exact: true }).click();
+
+  const dialog = page.getByRole("alertdialog", { name: "Discard unsaved changes?" });
+  const cancel = dialog.getByRole("button", { name: "Cancel", exact: true });
+  await expect(dialog).toBeVisible();
+  await expect(cancel).toBeVisible();
+  await expect(dialog.getByRole("button", { name: "Discard", exact: true })).toBeVisible();
+  await captureScreenshot(page, testInfo, "routine-editor-discard-unsaved");
+
+  await cancel.click();
+  await expect(dialog).toBeHidden();
+  await expect(name).toHaveValue("Morning report");
+});
+
 async function addScheduleTrigger(page: Page, freq: string) {
   await page.getByRole("button", { name: "Add trigger" }).click();
   await page.getByRole("menuitem", { name: "On a schedule" }).hover();

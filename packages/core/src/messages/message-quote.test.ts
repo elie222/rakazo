@@ -143,6 +143,45 @@ describe("deriveMessageQuote", () => {
     expect(deriveMessageQuote(blocks, "Decorative", "markdown")).toBeUndefined();
   });
 
+  describe("bare links", () => {
+    const blocks = textBlock(
+      "The docs are at https://docs.example.com/guide/setup and also www.example.org today.",
+    );
+    it.each([
+      ["a URL", "at docs.example.com/guide/setup and", "at docs.example.com/guide/setup and"],
+      ["a www link", "also example.org today.", "also example.org today."],
+      [
+        "two links",
+        "docs.example.com/guide/setup and also example.org",
+        "docs.example.com/guide/setup and also example.org",
+      ],
+    ])("matches the label the apps draw for %s", (_name, hint, expected) => {
+      expect(deriveMessageQuote(blocks, hint, "markdown")).toBe(expected);
+    });
+
+    it("matches a long address by its trimmed label", () => {
+      const long = textBlock(
+        "See https://github.com/example-org/example-repository/pull/12345/files now.",
+      );
+      expect(
+        deriveMessageQuote(long, "See github.com/example-org/example-reposito… now.", "markdown"),
+      ).toBe("See github.com/example-org/example-reposito… now.");
+    });
+
+    it("still matches a hint that holds the raw address", () => {
+      expect(
+        deriveMessageQuote(blocks, "at https://docs.example.com/guide/setup and", "markdown"),
+      ).toBe("at https://docs.example.com/guide/setup and");
+    });
+
+    it("leaves an author's own link words alone", () => {
+      const named = textBlock("Read [the guide](https://docs.example.com/guide) first.");
+      expect(deriveMessageQuote(named, "Read the guide first.", "markdown")).toBe(
+        "Read the guide first.",
+      );
+    });
+  });
+
   it("truncates a whitespace-heavy excerpt to the cap instead of dropping it", () => {
     // 1000 single-char tokens survive the normalized hint, but their source
     // slice keeps the blank lines and cleans to more than the cap.

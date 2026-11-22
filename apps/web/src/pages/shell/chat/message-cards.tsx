@@ -1,7 +1,7 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import { useLinkPrompt } from "@rakazo/chat-ui/web";
 import type { MessageBlock } from "@rakazo/contracts";
-import { appConnectedInput, waitForSignIn } from "@rakazo/core";
+import { appConnectedInput, appConnectLabel, waitForSignIn } from "@rakazo/core";
 import { Button, Dialog, DialogClose, DialogContent, DialogTitle } from "@rakazo/ui-web";
 import { X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
@@ -82,7 +82,7 @@ export function ChoiceCard({
             <OptionRow
               key={option.id}
               letter={option.letter}
-              selected={block.answerId === option.id}
+              selected={block.answerId ? block.answerId === option.id : undefined}
               disabled={Boolean(block.answerId) || pending}
               onClick={() => answer.run({ optionId: option.id })}
             >
@@ -165,7 +165,7 @@ export function AppConnectCard({
       const started = await rpc.connections.begin({
         connectorId: block.connectorId,
         provider: block.provider,
-        displayName: block.name,
+        displayName: appConnectLabel(block),
       });
       if (started.authorizationUrl) {
         window.open(started.authorizationUrl, "rakazo-app-connect", "popup,width=560,height=720");

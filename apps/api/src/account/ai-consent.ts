@@ -1,5 +1,4 @@
 import { createHash } from "node:crypto";
-import { ORPCError } from "@orpc/server";
 import {
   aiRecipient,
   cloudAgentForActor,
@@ -18,6 +17,7 @@ import type {
   SettingsScope,
 } from "@rakazo/contracts";
 import { AI_DISCLOSURE_VERSION, AI_PRIVACY_URL } from "@rakazo/contracts";
+import { ClientError } from "@rakazo/core";
 import {
   findDefaultVoiceCredential,
   findModelCredential,
@@ -28,6 +28,7 @@ import {
   voicePreferenceTarget,
 } from "@rakazo/db";
 import { includedVoice, voiceCredentialServer } from "../calls/voice.js";
+import { getPageRevisionRecipient } from "../content/page-revisions.js";
 import type { RouterDeps } from "../router.js";
 import { resolveThreadTarget } from "../threads/thread-target.js";
 import { deploymentVoiceRecipients } from "../voice/deployment-consent.js";
@@ -37,6 +38,26 @@ export async function aiConsentStatus(
   actor: Actor,
   query: AiConsentQuery = {},
 ): Promise<AiConsentStatus> {
+  if (query.pageId) {
+    const recipient = await getPageRevisionRecipient(deps, actor, query.pageId);
+    const allowed =
+      recipient &&
+      (await deps.prisma.aiDataConsent.findFirst({
+        where: {
+          userId: actor.userId,
+          spaceId: actor.spaceId,
+          recipientKey: recipient.key,
+          version: AI_DISCLOSURE_VERSION,
+        },
+        select: { recipientKey: true },
+      }));
+    return {
+      scope: consentScope(actor, query.pageId),
+      version: AI_DISCLOSURE_VERSION,
+      privacyUrl: deps.env.privacyPolicyUrl ?? AI_PRIVACY_URL,
+      recipients: recipient ? [{ ...recipient, allowed: Boolean(allowed) }] : [],
+    };
+  }
   const uses = query.uses ?? ["model", "memory", "voice"];
   const modelsEnabled = uses.includes("model") && deps.env.agentRuntime !== "scripted";
   const target =
@@ -281,33 +302,42 @@ export async function aiConsentStatus(
     );
   }
   return {
-    scope: createHash("sha256")
-      .update(JSON.stringify([actor.userId, actor.spaceId]))
-      .digest("hex"),
+    scope: consentScope(actor),
     version: AI_DISCLOSURE_VERSION,
     privacyUrl: deps.env.privacyPolicyUrl ?? AI_PRIVACY_URL,
     recipients: [...recipients.values()],
   };
 }
 
+function consentScope(actor: Actor, pageId?: string) {
+  return createHash("sha256")
+    .update(JSON.stringify([actor.userId, actor.spaceId, ...(pageId ? [pageId] : [])]))
+    .digest("hex");
+}
+
 export async function allowAiConsent(
   deps: RouterDeps,
   actor: Actor,
-  input: { scope: string; version: string; keys: string[]; settingsScope?: SettingsScope },
+  input: {
+    scope: string;
+    version: string;
+    keys: string[];
+    settingsScope?: SettingsScope;
+    pageId?: string;
+  },
 ) {
   // Checked against the same settings copy the member reviewed.
-  const current = await aiConsentStatus(
-    deps,
-    actor,
-    input.settingsScope ? { settingsScope: input.settingsScope } : {},
-  );
+  const current = await aiConsentStatus(deps, actor, {
+    settingsScope: input.settingsScope,
+    pageId: input.pageId,
+  });
   const known = new Set(current.recipients.map((recipient) => recipient.key));
   if (
     input.scope !== current.scope ||
     input.version !== current.version ||
     input.keys.some((key) => !known.has(key))
   ) {
-    throw new ORPCError("CONFLICT", { message: "AI data sharing changed. Review it again." });
+    throw new ClientError("CONFLICT", "AI data sharing changed. Review it again.");
   }
   // Interactive rather than a batch: a batch cannot carry the request's database context.
   await deps.prisma.$transaction(async (tx) => {
