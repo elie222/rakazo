@@ -6,7 +6,7 @@ import { CornerDownLeft } from "lucide-react";
 import type { FormEvent } from "react";
 import { useEffect, useRef, useState } from "react";
 import { rpc } from "../../lib/query/rpc";
-import { enqueueTeachComputerInput, isTeachInputStopping } from "./teach-computer-input-chain";
+import { enqueueTeachComputerInput } from "./teach-computer-input-chain";
 
 export function formatRemaining(expiresAt: string | null, now = Date.now()): string {
   if (!expiresAt) return "10:00";
@@ -114,7 +114,7 @@ function ProtectedTeachInput({ botId, skillId }: { botId: string; skillId: strin
   function submitProtectedInput(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const text = protectedText;
-    if (!text || pendingRef.current || isTeachInputStopping(skillId)) return;
+    if (!text || pendingRef.current) return;
     const queuedSkillId = skillId;
     pendingRef.current = true;
     setPending(true);
