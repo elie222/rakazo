@@ -178,7 +178,7 @@ private struct WatchChatSummary: View {
           }
         }
       }
-      let preview = WatchMarkdown.plain(row.preview)
+      let preview = row.preview.split(whereSeparator: \.isNewline).joined(separator: " ")
       if !preview.isEmpty {
         Text(preview).font(.footnote).foregroundStyle(.secondary).lineLimit(2)
       }
@@ -441,12 +441,6 @@ enum WatchMarkdown {
       result += part
     }
     return result
-  }
-
-  static func plain(_ text: String) -> String {
-    String(render(text).characters)
-      .split(whereSeparator: \.isNewline)
-      .joined(separator: " ")
   }
 }
 
