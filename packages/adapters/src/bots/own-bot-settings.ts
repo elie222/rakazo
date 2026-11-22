@@ -38,8 +38,8 @@ export type OwnBotSettingsRow = {
 
 /** Ids listed per connected provider; the rest are reachable by name. */
 const MODELS_PER_PROVIDER = 15;
-/** Ids listed across all providers, so many connections cannot crowd out the rest of a read. */
-const MODELS_LISTED = 60;
+/** Serialized characters the model list may take, so connections cannot crowd out the rest of a read. */
+const MODELS_LISTED_CHARS = 4_000;
 /** Largest instructions page a settings read returns; the rest come on request by offset. */
 const INSTRUCTIONS_PAGE_SIZE = 8_000;
 /**
@@ -79,13 +79,30 @@ export async function readOwnBotSettings(
     ids.push(`${choice.provider}/${choice.id}`);
     providers.set(choice.providerName, ids);
   }
-  let room = MODELS_LISTED;
-  const models = [...providers].flatMap(([provider, ids]) => {
-    const listed = ids.slice(0, Math.min(MODELS_PER_PROVIDER, room));
-    room -= listed.length;
-    const more = ids.length - listed.length;
-    return listed.length || more ? [{ provider, ids: listed, ...(more ? { more } : {}) }] : [];
-  });
+  // One id per provider per round, so every provider, custom connections included, gets listed
+  // before any gets a second; stop at the size budget and count the rest as `more`.
+  const groups = [...providers].map(([provider, ids]) => ({
+    provider,
+    ids,
+    listed: [] as string[],
+  }));
+  let room =
+    MODELS_LISTED_CHARS -
+    JSON.stringify(groups.map((g) => ({ provider: g.provider, ids: [], more: g.ids.length })))
+      .length;
+  for (let round = 0; round < MODELS_PER_PROVIDER; round++) {
+    for (const group of groups) {
+      const id = group.ids[round];
+      if (id === undefined || id.length + 3 > room) continue;
+      group.listed.push(id);
+      room -= id.length + 3;
+    }
+  }
+  const models = groups.map(({ provider, ids, listed }) => ({
+    provider,
+    ids: listed,
+    ...(ids.length > listed.length ? { more: ids.length - listed.length } : {}),
+  }));
   const settings = (
     instructions: string,
     paging: { length: number; nextOffset: number | null } | null,

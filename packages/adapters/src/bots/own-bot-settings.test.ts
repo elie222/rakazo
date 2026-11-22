@@ -159,8 +159,11 @@ describe("readOwnBotSettings", () => {
     const many = await readOwnBotSettings(deps({ manyServers: 40 }), scope, bot);
     if ("error" in many) throw new Error(many.error);
     expect(many.instructions).toBe(bot.instructions);
-    expect(many.models.flatMap((group) => group.ids).length).toBeLessThanOrEqual(60);
+    expect(JSON.stringify(many.models).length).toBeLessThanOrEqual(4_000);
     expect(many.models.some((group) => group.more)).toBe(true);
+    // Every connection lists at least one id, even though the catalog's providers come first.
+    expect(many.models.filter((group) => group.provider.startsWith("Server "))).toHaveLength(40);
+    for (const group of many.models) expect(group.ids.length).toBeGreaterThan(0);
   });
 
   it("pages long instructions, naming the window and the next offset", async () => {
