@@ -331,21 +331,12 @@ jobs:
             | sed -E 's/^ (.*) in .*/shell: \1/' | tail -n 60 || true
           result=$(sudo -n -u codex-screenshots head -c 65537 /srv/pr-screenshot-agent/result.json | jq -c .)
           echo "result=$result" >> "$GITHUB_OUTPUT"
-      - name: Persist refreshed subscription login
-        if: always() && steps.auth.outputs.ready == 'true'
-        env:
-          GH_TOKEN: ${{ secrets.GH_DEPENDENCY_UPDATES_PAT }}
-        run: |
-          set -euo pipefail
-          python3 .github/scripts/codex-subscription-auth.py "$RUNNER_TEMP/screenshot-auth.json" \
-            < "$RUNNER_TEMP/screenshot-codex/auth.json"
-          gh secret set CODEX_SUBSCRIPTION_AUTH --repo "$GITHUB_REPOSITORY" < "$RUNNER_TEMP/screenshot-auth.json"
       - name: Remove subscription login and logs
         if: always() && env.SCREENSHOT_AGENT == 'codex'
         run: |
           pkill -f codex-credential-proxy.py || true
           sudo rm -rf /home/codex-screenshots/.codex /srv/pr-screenshot-agent /srv/pr-checkout /srv/pr-checkout.diff
-          rm -rf "$RUNNER_TEMP/screenshot-codex" "$RUNNER_TEMP/screenshot-auth.json" "$RUNNER_TEMP/codex-mcp.json"
+          rm -rf "$RUNNER_TEMP/screenshot-codex" "$RUNNER_TEMP/codex-mcp.json"
       - name: Collect screenshots
         if: steps.claude.outputs.structured_output != '' || steps.codex.outputs.result != ''
         run: |
