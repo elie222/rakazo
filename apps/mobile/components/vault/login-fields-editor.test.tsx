@@ -95,3 +95,27 @@ it.each([
     expect(switches.map((control) => control.getAttribute("aria-description"))).toEqual(hints);
   },
 );
+
+it("asks no Hidden switch when the fields keep the setting they start with", () => {
+  act(() =>
+    root.render(
+      <LoginFieldsEditor
+        fields={["Username", "Password"].map((label, id) => ({
+          id,
+          label,
+          value: "",
+          hidden: id === 1,
+        }))}
+        labels={["Username", "Password"]}
+        hiddenFixed
+        editable
+        inputs={{ current: [] }}
+        onChange={vi.fn()}
+        onEndEditing={vi.fn()}
+        onSubmit={vi.fn()}
+      />,
+    ),
+  );
+
+  expect(container.querySelector('[role="switch"]')).toBeNull();
+});

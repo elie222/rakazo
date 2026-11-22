@@ -157,7 +157,9 @@ it("rejects a comparison when the recorded judge rubric differs", () => {
   );
   expect(status).toBe(1);
   expect(stdout).toBe("");
-  expect(stderr).toContain("Reports cannot be directly compared. Differences: judge.");
+  expect(stderr).toContain(
+    "Reports cannot be directly compared. Differences: judge.rubricVersion.",
+  );
 });
 
 const judge = {

@@ -57,5 +57,3 @@ apps/web/public/computer-screen/sdk/
 
 # Private marketing pages, cloned in by apps/www/scripts/clone-marketing.sh
 apps/www/src/marketing/
-# Hosted email copy, copied in by infra/compose/fetch-email-copy.sh for published images
-/email-copy/

@@ -54,9 +54,6 @@ RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store pnpm install --frozen-lo
 # Normalize modes: a restrictive host umask (e.g. 077 on hardened hosts) would otherwise
 # leave the copied tree unreadable to USER node at runtime.
 COPY --chmod=755 . .
-# Published images carry the hosted email copy (infra/compose/fetch-email-copy.sh); a copy that
-# would fall back anywhere fails the build here rather than at send time.
-RUN [ ! -d email-copy ] || node packages/auth/scripts/check-email-copy.ts email-copy
 RUN pnpm --filter @rakazo/db generate
 RUN pnpm --filter @rakazo/api --filter @rakazo/worker build
 RUN RAKAZO_ALLOW_DEV_SECRETS=1 pnpm --filter @rakazo/web build

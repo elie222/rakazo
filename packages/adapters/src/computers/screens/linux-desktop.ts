@@ -526,7 +526,8 @@ export const PREPARE_LINUX_DESKTOP = [
   // retries while that lock is busy and fails at once for anything else.
   "apt_update() {",
   "  tries=0",
-  `  while ! err=$($root ${APT} update -qq 2>&1); do`,
+  // A signed repository can rename its label while a provider's base image still caches the old one.
+  `  while ! err=$($root ${APT} update -qq --allow-releaseinfo-change-label 2>&1); do`,
   '    case "$err" in',
   '      *"Could not get lock"*|*"Unable to lock"*) tries=$((tries + 1)); [ "$tries" -lt 12 ] || { echo "$err" >&2; return 1; }; sleep 5 ;;',
   '      *) echo "$err" >&2; return 1 ;;',

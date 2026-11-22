@@ -2,6 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import type { AgentRunModel, AgentRunRequest, AgentRuntime } from "@rakazo/adapter-kit";
 import { parseModelJson } from "@rakazo/adapters/model-json";
 import { z } from "zod";
+import type { JudgeSettings } from "./judge-identity.js";
 
 export type JudgeInput = { rubric: string; evidence: unknown };
 export type Judgment = { pass: boolean; reason: string };
@@ -11,7 +12,7 @@ export type EvalJudge = (input: JudgeInput, signal: AbortSignal) => Promise<Judg
  * The judge connection settings that can change a verdict, safe to save in a shared report:
  * the endpoint is a short hash of where calls go, never the URL or routing ids themselves.
  */
-export function judgeSettings(model: AgentRunModel) {
+export function judgeSettings(model: AgentRunModel): JudgeSettings {
   const routing = [
     model.apiProtocol,
     model.accountId,
