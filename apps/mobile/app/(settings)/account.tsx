@@ -23,7 +23,7 @@ import {
 } from "../../components/settings/settings-group";
 import { SpendingLimitRow, useSpendingStatus } from "../../components/settings/spending-limit-row";
 import { AppMark } from "../../components/ui/app-mark";
-import { rpc, selectedSpaceId } from "../../lib/api/api";
+import { rpc } from "../../lib/api/api";
 import type { MobileMe } from "../../lib/api/mobile-types";
 import { errorText } from "../../lib/api/user-error";
 import { signOut } from "../../lib/auth/api-auth";
@@ -86,7 +86,7 @@ export default function Account() {
       chevron="right"
       disabled={signingOut}
       leading={icon(glyph)}
-      // Artifacts, Board and Members live on the root stack, so they close the sheet first.
+      // Artifacts and Board live on the root stack, so they close the sheet first.
       onPress={() =>
         typeof href === "string" && isSettingsLink(href)
           ? router.push(href)
@@ -400,17 +400,11 @@ export default function Account() {
               />
             </OrganizationRowMenu>
           ) : null}
-          {me
-            ? settingsLink({
-                title: t`Members`,
-                // The space header holds Members too, but a single space has no header.
-                href: {
-                  pathname: "/space-members",
-                  params: { spaceId: selectedSpaceId() ?? me.spaceId },
-                },
-                icon: { ios: "person.2", android: "people-outline" },
-              })
-            : null}
+          {settingsLink({
+            title: t`Spaces`,
+            href: "/spaces",
+            icon: { ios: "square.stack", android: "layers-outline" },
+          })}
           {me?.billingEnabled
             ? settingsLink({
                 title: t`Billing`,

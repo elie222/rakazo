@@ -12,6 +12,8 @@ import { AvatarStyleSchema } from "./preferences.js";
 
 export const MeSchema = z.object({
   meetingsEnabled: z.boolean().optional(),
+  /** The public origin outside services post webhooks to, when the deployment publishes one. */
+  inboundOrigin: z.string().optional(),
   maxUploadSizeBytes: z.number().int().positive().optional(),
   maxAttachmentsPerMessage: z.number().int().positive().optional(),
   /** Labs features this account turned on. Absent from servers that predate Labs. */

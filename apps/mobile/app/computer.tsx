@@ -14,6 +14,7 @@ import {
   waitForScreenPage,
 } from "@rakazo/core";
 import { computerPreviewPlaceholder } from "@rakazo/i18n/computer-preview";
+import { computerLabel } from "@rakazo/i18n/computer-usage";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import type { RefObject } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -44,7 +45,6 @@ import { errorText } from "../lib/api/user-error";
 import { stacksAtTextScale } from "../lib/appearance/text-scale";
 import {
   COMPUTER_LIFECYCLE_TIMEOUT_MS,
-  computerLabel,
   controlLabel,
   embeddableScreenUrl,
   fromScreenPage,

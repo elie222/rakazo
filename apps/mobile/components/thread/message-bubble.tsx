@@ -33,12 +33,12 @@ import {
   userMentionTargets,
 } from "../../lib/messages/message-mentions";
 import {
+  askOptions,
   hasMessageSenderContent,
   messagePresentationSegments,
   splitMessageBlocks,
 } from "../../lib/messages/message-presentation";
 import type { RoutineEventBlock } from "../../lib/messages/routine-event-label";
-import { routineEventLabel } from "../../lib/messages/routine-event-label";
 import type { UserBubble } from "../../lib/messages/user-bubble";
 import { withUserBubble } from "../../lib/messages/user-bubble";
 import { useResolvedAppearance } from "../../lib/native/native";
@@ -64,6 +64,7 @@ import { AskBlock } from "./ask-block";
 import { McpAppCard } from "./mcp-app-card";
 import type { MessageRowActions } from "./message-row";
 import { PeerReceiptLine } from "./peer-receipt-line";
+import { RoutineEventRows } from "./routine-event-row";
 import { isSpecialMessageBlock, SpecialMessageCard } from "./special-message-card";
 
 type AskAction = NonNullable<Extract<MessageBlock, { kind: "ask" }>["actions"]>[number];
@@ -284,7 +285,7 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
 }) {
   const colorScheme = useResolvedAppearance();
   const tokens = withUserBubble(mobileTokens(), userBubble);
-  const { t } = useLingui();
+  const { t, i18n } = useLingui();
   const [peerExpanded, setPeerExpanded] = useState(false);
   const outgoing = message.role === "user" && !authorName;
   const showSpeaker = !hideSenderLabel && (showBotSenderName || Boolean(authorName));
@@ -411,19 +412,7 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
   );
   if (routineEvents.length > 0 && routineEvents.length === message.blocks.length) {
     return (
-      <Pressable
-        {...actionProps}
-        style={{ width: "100%", paddingVertical: 4, alignItems: "center" }}
-      >
-        {routineEvents.map((block, index) => (
-          <Text
-            key={`${block.change}-${index}`}
-            style={{ color: tokens.mutedForeground, fontSize: 13.5, textAlign: "center" }}
-          >
-            {routineEventLabel(block)}
-          </Text>
-        ))}
-      </Pressable>
+      <RoutineEventRows blocks={routineEvents} botId={message.botId} actionProps={actionProps} />
     );
   }
   const inlineCardCount = appConnectBlocks.length + mcpApprovalBlocks.length;
@@ -525,7 +514,7 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
               ) : null}
               {question && (answered || canAnswer) ? (
                 <AskActions
-                  actions={askBlock.actions}
+                  actions={askOptions(askBlock)}
                   approval={false}
                   disabled={answered}
                   selectedAnswer={answered ? askBlock.answer : undefined}
@@ -739,7 +728,7 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
                 >
                   📎 {attachment.name ?? t`File`}
                 </Text>
-                {formatFileSize(attachment.size) ? (
+                {formatFileSize(attachment.size, i18n.locale) ? (
                   <Text
                     style={{
                       color: outgoing ? tokens.chatUserForeground : tokens.mutedForeground,
@@ -747,7 +736,7 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
                       fontSize: 13,
                     }}
                   >
-                    {formatFileSize(attachment.size)}
+                    {formatFileSize(attachment.size, i18n.locale)}
                   </Text>
                 ) : null}
               </Pressable>

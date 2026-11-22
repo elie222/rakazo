@@ -1,14 +1,16 @@
 import { ph } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
+import { useListSearch } from "@rakazo/chat-ui/hooks";
 import { useCompatibleModelDiscovery } from "@rakazo/chat-ui/model-discovery";
 import type { ModelApiProtocol, ModelHeaderRow, ThinkingLevel } from "@rakazo/contracts";
 import {
   compatibleEndpointPresets,
-  connectionDisplayName,
   matchCompatibleEndpointPreset,
+  modelConnectionNames,
   modelRoutingDirty,
   modelRoutingForm,
   OPENAI_COMPATIBLE_PROVIDER_ID,
+  providerDisplayName,
   savedCompatibleEndpointMatches,
 } from "@rakazo/contracts";
 import {
@@ -24,6 +26,7 @@ import {
   sanitizeModelConnectionError,
   savedCompatibleModelIds,
 } from "@rakazo/core";
+import { localizeModelEntry } from "@rakazo/i18n/model-provider";
 import { useFocusEffect, useIsFocused, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -32,7 +35,6 @@ import {
   Alert,
   Keyboard,
   Linking,
-  Pressable,
   ScrollView,
   Text,
   TextInput,
@@ -44,7 +46,12 @@ import { ConnectionModelList } from "../../components/models/connection-model-li
 import { DisclosureRow } from "../../components/models/model-connection-fields";
 import { createModelsStyles } from "../../components/models/model-connection-styles";
 import { NativeActionButton } from "../../components/native/native-action-button";
-import { SettingsGroup, SettingsSwitch } from "../../components/settings/settings-group";
+import { NativeSymbol } from "../../components/native/native-symbol";
+import {
+  SettingsGroup,
+  SettingsRow,
+  SettingsSwitch,
+} from "../../components/settings/settings-group";
 import { MenuPicker } from "../../components/ui/menu-picker";
 import type { MobileMe, MobileModel, MobileModelCredential } from "../../lib/api/mobile-types";
 import { errorText } from "../../lib/api/user-error";
@@ -57,7 +64,6 @@ import { analyticsSurface } from "../../lib/native/analytics-surface";
 import { native, useThemedStyles } from "../../lib/native/native";
 import { useScreenHeader } from "../../lib/navigation/screen-header";
 import { ACCOUNT_SETTINGS, settingsRpc } from "../../lib/query/settings-target";
-import { useListSearch } from "../../lib/search/use-list-search";
 
 type ModelSelection = {
   modelId?: string;
@@ -146,7 +152,7 @@ export default function ModelConnection() {
     const nextError = next.error ?? null;
     setFeedbackAnchor(anchor);
     setError(nextError);
-    setSavedNotice(next.notice === t`Saved.` ? next.notice : null);
+    setSavedNotice(next.notice ?? null);
     const message = nextError ?? next.notice ?? null;
     // VoiceOver keeps focus on the tapped button, so speak the result from here.
     if (message) AccessibilityInfo.announceForAccessibility(message);
@@ -221,10 +227,8 @@ export default function ModelConnection() {
     pasteCode,
     setPasteCode,
     oauthPending,
-    codeCopied,
-    copyOAuthCode,
     cancelOAuth,
-    cancelSignIn,
+    leaveSignIn,
     openSignInPage,
     startSubscriptionSignIn,
     submitOAuthCode,
@@ -244,10 +248,19 @@ export default function ModelConnection() {
     clearFeedback,
   });
 
+  async function openSignInSetup(url: string) {
+    clearFeedback();
+    try {
+      await Linking.openURL(url);
+    } catch {
+      publishFeedback("connection", { error: t`Could not open security settings. Try again.` });
+    }
+  }
+
   const cancelInFlightWork = useCallback(() => {
     modelProbe.invalidate();
-    cancelSignIn();
-  }, [cancelSignIn, modelProbe]);
+    leaveSignIn();
+  }, [leaveSignIn, modelProbe]);
 
   useEffect(
     () => () => {
@@ -280,10 +293,10 @@ export default function ModelConnection() {
     }, [cancelInFlightWork, load]),
   );
 
-  const providerName = selected?.providerName ?? selected?.provider ?? "";
+  const selectedEntry = localizeModelEntry(selected ?? { provider, providerName: "" });
   const selectedProviderLabel = credential
-    ? connectionDisplayName(credential, providerName)
-    : (endpointPreset?.name ?? providerName);
+    ? modelConnectionNames(selectedEntry, credential).connectionName
+    : (endpointPreset?.name ?? providerDisplayName(selectedEntry));
   useScreenHeader({ title: selectedProviderLabel || undefined });
   const { needsRouting, needsGateway, needsProject, routingReady } = modelRoutingForm(
     selected?.routingFields,
@@ -556,21 +569,49 @@ export default function ModelConnection() {
     />
   ) : null;
 
+  const signInHost = oauth?.mode === "auth-url" ? new URL(oauth.verificationUri).hostname : "";
+  const deviceCodeInstructions = t`In your browser, sign in and paste this code when asked. Then return to Rakazo.`;
   const catalogConnectionControls =
     !isOpenAiCompatible && selected ? (
       <>
+        {subscriptionSignIn &&
+        signInSetup &&
+        (oauth || credential?.authKind !== "oauth" || credential.reconnectRequired) ? (
+          <SettingsGroup>
+            <SettingsRow
+              accessibilityRole="link"
+              title={`1. ${signInSetup.label}`}
+              detail={signInSetup.note}
+              trailing={
+                <NativeSymbol
+                  ios="arrow.up.right"
+                  android="open-outline"
+                  size={16}
+                  color={native.secondaryLabel}
+                />
+              }
+              onPress={() => void openSignInSetup(signInSetup.url)}
+            />
+          </SettingsGroup>
+        ) : null}
         {subscriptionSignIn ? (
           oauth ? (
             <View style={styles.oauthCard}>
               {oauth.mode === "auth-url" ? (
                 <>
-                  <Text style={styles.secondary}>{t`Finish signing in in your browser:`}</Text>
-                  <Pressable onPress={() => void openSignInPage(oauth.verificationUri)}>
-                    <Text style={styles.link}>{oauth.verificationUri}</Text>
-                  </Pressable>
-                  <Text style={styles.secondary}>{t`Then paste the code here.`}</Text>
+                  <Text style={styles.secondary}>
+                    {t`Sign in at ${ph({ host: signInHost })}, then paste the code it shows you here.`}
+                  </Text>
+                  <NativeActionButton
+                    fill
+                    label={t`Open ${ph({ host: signInHost })}`}
+                    onPress={() => void openSignInPage(oauth)}
+                    style={{ marginTop: 12 }}
+                  />
                   <TextInput
-                    accessibilityLabel={t`Authorization code`}
+                    accessibilityLabel={t`Code from ${ph({ host: signInHost })}`}
+                    placeholder={t`Paste code`}
+                    placeholderTextColor={native.tertiaryLabel}
                     value={pasteCode}
                     onChangeText={setPasteCode}
                     autoCapitalize="none"
@@ -585,44 +626,31 @@ export default function ModelConnection() {
                     prominence="secondary"
                     style={{ marginTop: 12 }}
                   />
-                  <Text style={styles.secondary}>
-                    {t`Waiting for sign-in — the link expires in about ${ph({ minutes: Math.ceil(oauth.expiresInSeconds / 60) })} minutes.`}
-                  </Text>
                 </>
               ) : (
                 <>
-                  {signInSetup ? (
-                    <Pressable
-                      accessibilityRole="link"
-                      onPress={() => void Linking.openURL(signInSetup.url)}
-                    >
-                      <Text style={styles.link}>{`1. ${signInSetup.label}`}</Text>
-                    </Pressable>
-                  ) : null}
                   <Text style={styles.secondary}>
-                    {signInSetup
-                      ? t`2. Enter this code at ${ph({ host: oauth.verificationUri.replace(/^https:\/\//, "") })}`
-                      : t`Enter this code at ${ph({ host: oauth.verificationUri.replace(/^https:\/\//, "") })}`}
+                    {signInSetup ? `2. ${deviceCodeInstructions}` : deviceCodeInstructions}
                   </Text>
                   <Text style={styles.code}>{oauth.userCode}</Text>
                   <NativeActionButton
                     fill
-                    label={codeCopied ? t`Code copied, open again` : t`Copy code and open`}
-                    onPress={() => {
-                      copyOAuthCode(oauth.userCode);
-                      void openSignInPage(oauth.verificationUri);
-                    }}
+                    label={t`Copy code and open`}
+                    onPress={() => void openSignInPage(oauth)}
                     style={{ marginTop: 12 }}
                   />
                   <Text style={styles.secondary}>
-                    {t`Waiting for sign-in — the code expires in about ${ph({ minutes: Math.ceil(oauth.expiresInSeconds / 60) })} minutes.`}
+                    {t`Waiting for you to sign in. The code expires in about ${ph({ minutes: Math.ceil(oauth.expiresInSeconds / 60) })} minutes.`}
                   </Text>
                 </>
               )}
               <NativeActionButton
                 fill
-                label={t`Cancel`}
-                onPress={() => cancelOAuth()}
+                label={oauth.mode === "device-code" ? t`Get a new code` : t`Start over`}
+                onPress={() => {
+                  cancelOAuth("replaced");
+                  void startSubscriptionSignIn();
+                }}
                 prominence="secondary"
                 style={{ marginTop: 12 }}
               />
@@ -636,10 +664,12 @@ export default function ModelConnection() {
                   ? t`Starting…`
                   : credential?.authKind === "oauth"
                     ? t`Sign in again`
-                    : (selected.oauthLabel ?? t`Sign in`)
+                    : signInSetup
+                      ? t`2. Get a sign-in code`
+                      : (selected.oauthLabel ?? t`Sign in`)
               }
               onPress={() => void startSubscriptionSignIn()}
-              prominence="secondary"
+              prominence={signInSetup ? "primary" : "secondary"}
               style={{ marginTop: 12 }}
             />
           ) : null

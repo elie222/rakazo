@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "lingui extract-template && cross-env NODE_ENV=production vite build",
     "preview": "vite preview",
-    "check": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p e2e/tsconfig.json",
+    "check": "tsrs --noEmit -p tsconfig.json && tsrs --noEmit -p e2e/tsconfig.json",
     "test": "vitest run --root ../.. apps/web/src apps/web/server",
     "e2e": "playwright test"
   },

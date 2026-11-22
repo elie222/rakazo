@@ -1,10 +1,10 @@
 // @vitest-environment jsdom
 
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { notifyManager, QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ComponentProps, ReactNode } from "react";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
-import { expect, it, vi } from "vitest";
+import { afterAll, beforeAll, expect, it, vi } from "vitest";
 
 const runs = vi.hoisted(() => ({ list: vi.fn() }));
 vi.mock("../../lib/query/rpc", () => ({
@@ -38,6 +38,7 @@ vi.mock("@rakazo/ui-web", () => {
   };
 });
 
+import type { ActivityStatusFilter } from "../../lib/activity-list-filters";
 import { emptyActivityFilters } from "../../lib/activity-list-filters";
 import { ActivityList } from "./ActivityList";
 
@@ -63,8 +64,16 @@ const run = {
   updatedAt: new Date().toISOString(),
 };
 
-it("reopens with cached runs and refreshes them in the background", async () => {
+beforeAll(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  notifyManager.setNotifyFunction((notify) => act(notify));
+});
+afterAll(() => {
+  notifyManager.setNotifyFunction((notify) => notify());
+  vi.unstubAllGlobals();
+});
+
+it("reopens with cached runs and refreshes them in the background", async () => {
   runs.list.mockImplementation(async ({ filter }: { filter: string }) => ({
     runs: filter === "recent" ? [run] : [],
   }));
@@ -96,12 +105,10 @@ it("reopens with cached runs and refreshes them in the background", async () => 
     await act(async () => second.unmount());
   } finally {
     container.remove();
-    vi.unstubAllGlobals();
   }
 });
 
 it("groups attention, work and unread chats under folding headers", async () => {
-  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   runs.list.mockImplementation(async ({ filter }: { filter: string }) => ({
     runs:
       filter === "active"
@@ -162,12 +169,10 @@ it("groups attention, work and unread chats under folding headers", async () => 
   } finally {
     await act(async () => root.unmount());
     client.clear();
-    vi.unstubAllGlobals();
   }
 });
 
 it("says there are no runs yet when nothing has happened", async () => {
-  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   runs.list.mockImplementation(async () => ({ runs: [] }));
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const container = document.createElement("div");
@@ -181,8 +186,45 @@ it("says there are no runs yet when nothing has happened", async () => {
       ),
     );
     await vi.waitFor(() => expect(container.textContent).toContain("No runs yet"));
-    await act(async () => root.unmount());
   } finally {
-    vi.unstubAllGlobals();
+    await act(async () => root.unmount());
+    client.clear();
+  }
+});
+
+it("shows the latest matching run for a chat when the status changes", async () => {
+  const latest = { ...run, promptSnippet: "Newer success" };
+  const failure = { ...run, runId: "older", status: "failed", promptSnippet: "Older failure" };
+  runs.list.mockImplementation(async ({ filter, status }) => {
+    if (filter === "recent" && status === undefined) return { runs: [latest] };
+    if (filter === "recent" && status === "failed") return { runs: [failure] };
+    return { runs: [] };
+  });
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const container = document.createElement("div");
+  const root = createRoot(container);
+  const show = (status: ActivityStatusFilter) =>
+    act(async () =>
+      root.render(
+        <QueryClientProvider client={client}>
+          <ActivityList {...listProps} filters={{ ...listProps.filters, status }} />
+        </QueryClientProvider>,
+      ),
+    );
+  const recent = () => container.querySelector('section[aria-label="Recent"]');
+  try {
+    await show("all");
+    await vi.waitFor(() => expect(recent()?.textContent).toContain("Newer success"));
+    await show("failed");
+    await vi.waitFor(() => expect(recent()?.textContent).toContain("Older failure"));
+    expect(recent()?.textContent).not.toContain("Newer success");
+    await show("cancelled");
+    await vi.waitFor(() => expect(container.textContent).toContain("No runs match these filters."));
+    expect(recent()).toBeNull();
+    await show("all");
+    await vi.waitFor(() => expect(recent()?.textContent).toContain("Newer success"));
+  } finally {
+    await act(async () => root.unmount());
+    client.clear();
   }
 });

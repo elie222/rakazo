@@ -1,7 +1,7 @@
-import { Plural, Trans, useLingui } from "@lingui/react/macro";
+import { Trans, useLingui } from "@lingui/react/macro";
 import { Button, Disclosure, Input, Label, OptionSelect, Switch } from "@rakazo/ui-web";
 import { useEffect, useState } from "react";
-import { DeviceCodeSignIn } from "../../components/models/DeviceCodeSignIn";
+import { SubscriptionSignInSteps } from "../../components/models/SubscriptionSignInSteps";
 import { CompatibleKeyField } from "./compatible-key-field";
 
 import type { ModelSettingsState } from "./use-model-settings";
@@ -102,89 +102,31 @@ export function ConnectionControls({
   return !isOpenAiCompatible ? (
     <>
       {subscriptionSignIn && (credential?.authKind !== "oauth" || credential.reconnectRequired) ? (
-        <div className="mt-5 flex flex-wrap items-center gap-2 first:mt-0">
-          {oauth ? (
-            <div className="w-full rounded-xl border border-border px-4 py-3">
-              {oauth.mode === "auth-url" ? (
-                <>
-                  <p className="text-body-sm leading-[1.5] text-muted-foreground">
-                    <Trans>
-                      Sign in at{" "}
-                      <a
-                        href={oauth.verificationUri}
-                        onClick={() => reportSignInStep("page_opened")}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="text-foreground underline"
-                      >
-                        {new URL(oauth.verificationUri).hostname}
-                      </a>
-                      , then paste the code here.
-                    </Trans>
-                  </p>
-                  <div className="mt-3 flex items-center gap-2">
-                    <Input
-                      value={pasteCode}
-                      onChange={(e) => setPasteCode(e.target.value)}
-                      aria-label={t`Authorization code`}
-                      autoComplete="off"
-                      spellCheck={false}
-                      className="text-foreground md:text-body-sm"
-                    />
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      disabled={!pasteCode.trim()}
-                      onClick={() => void submitOAuthCode()}
-                    >
-                      <Trans>Submit</Trans>
-                    </Button>
-                  </div>
-                  <p className="mt-2 text-body-sm leading-[1.5] text-muted-foreground">
-                    <Plural
-                      value={Math.ceil(oauth.expiresInSeconds / 60)}
-                      one="Waiting for sign-in — the link expires in about # minute."
-                      other="Waiting for sign-in — the link expires in about # minutes."
-                    />
-                  </p>
-                </>
-              ) : (
-                <DeviceCodeSignIn
-                  oauth={oauth}
-                  setup={selected?.signInSetup}
-                  codeCopied={codeCopied}
-                  onCopyCode={copyOAuthCode}
-                  onPageOpened={() => reportSignInStep("page_opened")}
-                />
-              )}
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                className="mt-2 -ml-2 text-muted-foreground"
-                onClick={() => cancelOAuthAttempt()}
-              >
-                <Trans>Cancel</Trans>
-              </Button>
-            </div>
-          ) : (
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              disabled={busy}
-              onClick={() => beginSelectedSubscriptionSignIn()}
-            >
-              {oauthPending ? (
-                <Trans>Starting…</Trans>
-              ) : credential?.authKind === "oauth" ? (
+        <div className="mt-5 first:mt-0">
+          <SubscriptionSignInSteps
+            oauth={oauth}
+            setup={selected?.signInSetup}
+            startLabel={
+              credential?.authKind === "oauth" ? (
                 <Trans>Sign in again</Trans>
               ) : (
                 (selected?.oauthLabel ?? t`Sign in`)
-              )}
-            </Button>
-          )}
+              )
+            }
+            starting={oauthPending}
+            disabled={busy}
+            onStart={() => beginSelectedSubscriptionSignIn()}
+            onRestart={() => {
+              cancelOAuthAttempt("replaced");
+              beginSelectedSubscriptionSignIn();
+            }}
+            codeCopied={codeCopied}
+            onCopyCode={copyOAuthCode}
+            pasteCode={pasteCode}
+            onPasteCodeChange={setPasteCode}
+            onSubmitCode={() => void submitOAuthCode()}
+            onPageOpened={() => reportSignInStep("page_opened")}
+          />
         </div>
       ) : null}
 

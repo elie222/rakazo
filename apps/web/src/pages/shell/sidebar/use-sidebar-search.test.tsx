@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { i18n } from "@lingui/core";
 import type { SearchHit } from "@rakazo/contracts";
 import { SEARCH_QUERY_MAX_LENGTH } from "@rakazo/contracts";
 import { act } from "react";
@@ -46,6 +47,8 @@ async function search(text: string) {
 }
 
 beforeEach(async () => {
+  i18n.load("en", {});
+  i18n.activate("en");
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.useFakeTimers();
   requests = [];
@@ -102,6 +105,39 @@ it("cancels the running search when the box is cleared or the sidebar unmounts",
   expect(requests[1]!.signal.aborted).toBe(true);
 });
 
+it("hides settled results immediately while typing and does not revive them upon returning", async () => {
+  await search("invoice");
+  await act(async () => requests[0]!.resolve([hit("Invoice")]));
+  expect(latest.searchHits).toEqual([hit("Invoice")]);
+
+  await act(async () => latest.setQuery("calendar"));
+  expect(requests).toHaveLength(1);
+  expect(latest.searchHits).toEqual([]);
+  expect(latest.searchLoading).toBe(true);
+
+  await act(async () => latest.setQuery("invoice"));
+  expect(latest.searchHits).toEqual([]);
+  expect(latest.searchLoading).toBe(true);
+  await act(async () => vi.advanceTimersByTime(200));
+  await act(async () => requests[1]!.resolve([hit("Updated invoice")]));
+  expect(latest.searchHits).toEqual([hit("Updated invoice")]);
+  expect(latest.searchLoading).toBe(false);
+});
+
+it("hides an old error during debounce and preserves results on whitespace-only edits", async () => {
+  await search("invoice");
+  await act(async () => requests[0]!.reject(new Error("unavailable")));
+  expect(latest.searchError).not.toBeNull();
+
+  await act(async () => latest.setQuery("calendar"));
+  expect(latest.searchError).toBeNull();
+  await act(async () => vi.advanceTimersByTime(200));
+  await act(async () => requests[1]!.resolve([hit("Calendar")]));
+  await act(async () => latest.setQuery(" calendar "));
+  expect(latest.searchHits).toEqual([hit("Calendar")]);
+  expect(latest.searchLoading).toBe(false);
+});
+
 it("sends at most the search query limit and searches the first part of a longer query", async () => {
   const long = `${"a".repeat(SEARCH_QUERY_MAX_LENGTH)}tail`;
   await search(long);
@@ -113,3 +149,34 @@ it("sends a short query unchanged", async () => {
   await search("  quarterly plan  ");
   expect(requests[0]!.q).toBe("quarterly plan");
 });
+
+it.each(["result", "error"])(
+  "ignores a late %s even when two long queries send the same prefix",
+  async (settlement) => {
+    const prefix = "a".repeat(SEARCH_QUERY_MAX_LENGTH);
+    const first = `${prefix}first`;
+    const second = `${prefix}second`;
+    await search(first);
+
+    await act(async () => latest.setQuery(second));
+    expect(latest.query).toBe(second);
+    expect(latest.searchLoading).toBe(true);
+    expect(requests[0]!.signal.aborted).toBe(true);
+    await act(async () => vi.advanceTimersByTime(200));
+    expect(requests.map((request) => request.q)).toEqual([prefix, prefix]);
+
+    await act(async () => {
+      if (settlement === "result") requests[0]!.resolve([hit("Stale")]);
+      else requests[0]!.reject(new Error("late failure"));
+    });
+    expect(latest.searchHits).toEqual([]);
+    expect(latest.searchError).toBeNull();
+    expect(latest.searchLoading).toBe(true);
+
+    await act(async () => requests[1]!.resolve([hit("Fresh")]));
+    await search(`  ${second}  `);
+    expect(requests).toHaveLength(2);
+    expect(latest.searchHits).toEqual([hit("Fresh")]);
+    expect(latest.searchLoading).toBe(false);
+  },
+);

@@ -141,3 +141,14 @@ export const CreateRoutineInput = z
     }
   });
 export type CreateRoutineInput = z.infer<typeof CreateRoutineInput>;
+
+/** Where a sender posts to start a bot's routines: its webhook, or its Git events. */
+export function botInboundPath(botId: string, kind: "webhook" | "github"): string {
+  return `/api/v1/bots/${botId}/${kind}`;
+}
+
+/** The full address a sender posts to: `origin` is the published inbound origin, else the app's own. */
+export function botInboundUrl(origin: string, botId: string, kind: "webhook" | "github"): string {
+  const base = origin.endsWith("/") ? origin.slice(0, -1) : origin;
+  return `${base}${botInboundPath(botId, kind)}`;
+}

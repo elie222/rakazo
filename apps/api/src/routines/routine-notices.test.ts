@@ -92,8 +92,25 @@ describe("routine rows from the routines API", () => {
       botId: "bot-1",
       change: "created",
       name: "Morning joke",
+      routine: { webhookEnabled: false, active: expect.any(Boolean) },
     });
     expect(JSON.stringify(adapters.postRoutineNotice.mock.calls)).not.toContain("SECRET PROMPT");
+  });
+
+  it("passes the saved routine's state, which decides whether its row offers the key", async () => {
+    await client({ ...routine, webhookEnabled: true }).routines.update({
+      routineId: "routine-1",
+      name: "Deploy hook",
+    });
+    expect(lastNotice()).toMatchObject({
+      change: "updated",
+      routine: { webhookEnabled: true, active: true },
+    });
+    await client({ ...routine, webhookEnabled: true, active: false }).routines.update({
+      routineId: "routine-1",
+      name: "Deploy hook",
+    });
+    expect(lastNotice()).toMatchObject({ routine: { webhookEnabled: true, active: false } });
   });
 
   it("a routine saved in a group posts to that group's chat", async () => {

@@ -1,6 +1,10 @@
+import { t } from "@lingui/core/macro";
+import { useTimeout } from "@rakazo/chat-ui/hooks";
 import type {
   AnalyticsModelSignInStep,
+  ModelCredential,
   ModelOAuthBegin,
+  ModelSignInCancelReason,
   SettingsScope,
   ThinkingLevel,
 } from "@rakazo/contracts";
@@ -34,8 +38,8 @@ export type ModelOAuthSignInBegin = {
  * guards so cancel-and-retry cannot drop a newer callback.
  */
 export function useModelOAuthSignIn(options: {
-  /** `credentialId` is the connection the sign-in saved. */
-  onFinished: (controller: AbortController, credentialId: string) => void | Promise<void>;
+  /** `saved` is the connection the sign-in saved, with the model it runs. */
+  onFinished: (controller: AbortController, saved: ModelCredential) => void | Promise<void>;
   onError: (message: string) => void;
   onClearError?: () => void;
 }) {
@@ -74,7 +78,8 @@ export function useModelOAuthSignIn(options: {
     oauthCaptureRef.current = null;
   }
 
-  function cancelOAuthAttempt(resetState = true) {
+  /** Stops the sign-in in progress; `reason` says why for measurement only. */
+  function cancelOAuthAttempt(reason: ModelSignInCancelReason = "cancelled", resetState = true) {
     releaseOAuthCapture();
     oauthCodeSubmittingRef.current = false;
     const loginId = oauthLoginIdRef.current;
@@ -85,20 +90,23 @@ export function useModelOAuthSignIn(options: {
         setOauthPending(false);
       }
     });
-    if (loginId) void rpc.models.cancelOAuth({ loginId }).catch(() => undefined);
+    if (loginId) void rpc.models.cancelOAuth({ loginId, reason }).catch(() => undefined);
   }
 
-  async function finishSubscriptionSignIn(loginId: string, controller: AbortController) {
-    await waitForModelOAuth(loginId, controller.signal, rpc);
+  async function finishSubscriptionSignIn(login: ModelOAuthBegin, controller: AbortController) {
+    await waitForModelOAuth(login, controller.signal, rpc);
     if (controller.signal.aborted) return;
-    const saved = await rpc.models.finishOAuth({ loginId }, { signal: controller.signal });
+    const saved = await rpc.models.finishOAuth(
+      { loginId: login.loginId },
+      { signal: controller.signal },
+    );
     if (controller.signal.aborted) return;
     oauthLoginIdRef.current = null;
     setOauth(null);
     // Keep post-connect UI work outside the OAuth try/catch so a refresh failure
     // is not reported as a failed sign-in (finishOAuth already persisted).
     try {
-      await onFinishedRef.current(controller, saved.id);
+      await onFinishedRef.current(controller, saved);
     } catch (err) {
       if (controller.signal.aborted) return;
       onErrorRef.current(errorText(err, "Connected, but could not refresh"));
@@ -123,13 +131,15 @@ export function useModelOAuthSignIn(options: {
         { signal: controller.signal },
       );
       submitted = true;
-      await finishSubscriptionSignIn(attempt.loginId, controller);
+      await finishSubscriptionSignIn(attempt, controller);
     } catch (err) {
       if (controller.signal.aborted) return;
       if (submitted) {
         oauthLoginIdRef.current = null;
         setOauth(null);
-        void rpc.models.cancelOAuth({ loginId: attempt.loginId }).catch(() => undefined);
+        void rpc.models
+          .cancelOAuth({ loginId: attempt.loginId, reason: "interrupted" })
+          .catch(() => undefined);
       } else {
         retryable = true;
         setPasteCode(code);
@@ -165,8 +175,9 @@ export function useModelOAuthSignIn(options: {
           makeDefault: begin.makeDefault,
           ...(begin.scope ? { scope: begin.scope } : {}),
           label: begin.label,
-          // Desktop receives the loopback redirect; a browser tab cannot, so it gets a code page.
-          codePage: !desktopBridge(),
+          // A desktop that opens the browser itself receives the loopback redirect; anywhere
+          // else the person opens the page from a link, so it shows a code to paste.
+          codePage: !desktopBridge()?.oauth.open,
           surface: analyticsSurface(),
         },
         { signal: controller.signal },
@@ -175,7 +186,8 @@ export function useModelOAuthSignIn(options: {
       oauthLoginIdRef.current = started.loginId;
       setPasteCode("");
       setOauth(started);
-      // A device code must be read before its page opens, so the user opens that page themselves.
+      // Only desktop opens the page here; a browser blocks a tab opened after this await,
+      // so there the card's link opens it from the user's own click.
       if (started.mode === "auth-url") {
         // Subscribe before the popup exists: a provider that is already
         // authorized can redirect before React commits the state above.
@@ -198,29 +210,17 @@ export function useModelOAuthSignIn(options: {
           await browserAuth.open(started.verificationUri);
           if (controller.signal.aborted) return;
           reportSignInStep("page_opened", started.loginId);
-        } else {
-          // noopener returns null even when the tab opens, so open a blank tab and navigate it.
-          // When the tab is blocked, the link beside the code field opens the page.
-          const popup = window.open("about:blank", "_blank");
-          if (popup) {
-            popup.opener = null;
-            // A noreferrer link suppresses the navigation request's Referer header.
-            const link = popup.document.createElement("a");
-            link.href = started.verificationUri;
-            link.rel = "noreferrer";
-            popup.document.body.append(link);
-            link.click();
-            reportSignInStep("page_opened");
-          }
         }
       }
       waitingForCode = started.mode === "auth-url";
-      if (!waitingForCode) await finishSubscriptionSignIn(started.loginId, controller);
+      if (!waitingForCode) await finishSubscriptionSignIn(started, controller);
     } catch (err) {
       if (controller.signal.aborted) return;
       const loginId = oauthLoginIdRef.current;
       oauthLoginIdRef.current = null;
-      if (loginId) void rpc.models.cancelOAuth({ loginId }).catch(() => undefined);
+      if (loginId) {
+        void rpc.models.cancelOAuth({ loginId, reason: "interrupted" }).catch(() => undefined);
+      }
       onErrorRef.current(errorText(err, "Could not start sign-in"));
       setOauth(null);
     } finally {
@@ -231,7 +231,19 @@ export function useModelOAuthSignIn(options: {
     }
   }
 
-  useEffect(() => () => cancelOAuthAttempt(false), []);
+  // Nothing asks the server about a code waiting to be pasted, so the card ends on the code's
+  // own clock. A device code's expiry arrives with its status.
+  useTimeout(
+    () => {
+      if (oauthCodeSubmittingRef.current) return;
+      cancelOAuthAttempt("interrupted");
+      onErrorRef.current(t`This code expired. Start again.`);
+    },
+    oauth?.mode === "auth-url" ? oauth.expiresInSeconds * 1000 : null,
+    oauth?.loginId,
+  );
+
+  useEffect(() => () => cancelOAuthAttempt("left", false), []);
 
   return {
     oauth,

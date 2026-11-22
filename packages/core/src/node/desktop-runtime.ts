@@ -427,8 +427,8 @@ function browserLauncherCommand(
       : []),
     "browser=$(command -v rakazo-browser || command -v google-chrome || command -v google-chrome-stable || command -v chromium || command -v chromium-browser)",
     `export DISPLAY=${layout.display} HOME=${shellQuote(env.homeDir)}`,
-    // Docker exec does not inherit the session bus exported by container startup.
-    // The boot portal draws on displayStart; other screens must source their own bus.
+    // The boot portal draws on displayStart; other screens use their own portal bus
+    // and must not fall back to the image's boot bus.
     ...browserSessionBusLines(index, env),
     // The image preloads libnss_wrapper so arbitrary UIDs resolve. Chromium's
     // process stays up with these flags while that library is loaded, and the
