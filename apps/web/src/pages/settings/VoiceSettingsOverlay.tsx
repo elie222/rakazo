@@ -23,6 +23,7 @@ import {
   DialogContent,
   DialogTitle,
   Field,
+  FieldDescription,
   FieldLabel,
   Input,
   OptionSelect,
@@ -836,11 +837,11 @@ export function VoiceSettingsOverlay({
                       chooseRealtimeModel(model);
                     }}
                   />
-                  <p className="text-sm text-muted-foreground">
+                  <FieldDescription>
                     <Trans>
                       Realtime calls share audio and recent chat context with the voice provider.
                     </Trans>
-                  </p>
+                  </FieldDescription>
                 </Field>
               ) : null}
               {selected.speechModel ? (
