@@ -468,15 +468,16 @@ it("reads and saves the account's model picker preference", async () => {
   const toggle = screen.querySelector<HTMLButtonElement>('[aria-label="Model picker in chat"]')!;
   expect(toggle.getAttribute("aria-checked")).toBe("true");
 
-  const { saving } = holdPreferenceSave();
+  vi.mocked(rpc).mockImplementationOnce(async () => {
+    account.me = { ...account.me, chatPreferences: { composerModelPicker: false } };
+    return account.me as never;
+  });
   await act(async () => toggle.click());
   expect(rpc).toHaveBeenCalledWith(
     "preferences/update",
     { chatPreferences: { composerModelPicker: false } },
     expect.anything(),
   );
-  account.me = { ...account.me, chatPreferences: { composerModelPicker: false } };
-  await act(async () => saving.resolve(account.me));
   await act(flush);
   expect(toggle.getAttribute("aria-checked")).toBe("false");
 });

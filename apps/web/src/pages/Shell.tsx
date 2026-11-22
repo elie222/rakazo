@@ -164,7 +164,7 @@ function SpaceShell() {
   const { data: me } = useQuery({
     ...queries.me.queryOptions(),
     enabled: Boolean(userId),
-    placeholderData: bootstrapMe ?? undefined,
+    placeholderData: bootstrapMe && bootstrapMe.userId === userId ? bootstrapMe : undefined,
     refetchOnWindowFocus: "always",
   });
   const chatPreferences = useChatPreferences(me?.chatPreferences);
