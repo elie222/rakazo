@@ -197,7 +197,10 @@ export type FinalizeRunInput = FinalizeRunBase &
         error: string;
         /** Reply text the user saw streaming before the failure, kept as a bot message. */
         partialReply?: MessageBlock[];
-        /** The run answered another bot, so its partial reply alerts nobody; the failure does. */
+        /**
+         * The run answered another bot, so its partial reply alerts nobody and is unread for
+         * nobody; the failure still alerts.
+         */
         forBot?: boolean;
       }
   );
@@ -926,7 +929,11 @@ async function finalizeRunOnce(
         runId: input.runId,
         ...(input.outcome === "completed"
           ? { markUnread: input.markUnread }
-          : { clientNonce: partialReplyClientNonce(input.runId) }),
+          : {
+              clientNonce: partialReplyClientNonce(input.runId),
+              // Written for another bot, as its finished reply would be: news to nobody.
+              ...(input.forBot ? { markUnread: false } : {}),
+            }),
       });
       const response = await appendEventInTransaction(tx, {
         spaceId: input.spaceId,
