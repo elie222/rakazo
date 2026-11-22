@@ -102,6 +102,8 @@ export async function readErrorTextWithin(
     });
     return new TextDecoder().decode(bytes);
   } catch {
+    // Deliberately quiet: the text only adds detail to a failure the caller already reports with
+    // the status code, and core has no logger to record why the detail was unreadable.
     return "";
   }
 }
