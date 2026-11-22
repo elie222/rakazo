@@ -1,8 +1,10 @@
 import { createRouterClient } from "@orpc/server";
 import type { Actor } from "@rakazo/contracts";
+import { accountPreferencesChangesScope, pageChangesScope } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
 import type { RouterDeps } from "../router.js";
 import { createRouter } from "../router.js";
+import { spaceChangesFor } from "./space-change-procedures.js";
 
 const actor: Actor = {
   spaceId: "space-1",
@@ -39,6 +41,35 @@ describe("notifications.subscribe space change signals", () => {
       controller.abort();
     }
   });
+
+  it.each([
+    ["pages", pageChangesScope],
+    ["preferences", accountPreferencesChangesScope],
+  ] as const)(
+    "delivers opening %s signals only on the signed-in account's topic",
+    async (kind, scopeForUser) => {
+      const controller = new AbortController();
+      const followSpaceChanges = vi.fn(async function* (scope: string) {
+        if (scope === actor.spaceId || scope === scopeForUser(actor.userId)) {
+          yield kind;
+        }
+      });
+      const client = createRouterClient(
+        createRouter({ events: { followChatAlerts, followSpaceChanges } } as unknown as RouterDeps),
+        { context: { actor, signal: controller.signal } },
+      );
+      try {
+        const iterator = (await client.notifications.subscribe())[Symbol.asyncIterator]();
+        expect((await iterator.next()).value).toEqual({ type: kind });
+        expect(followSpaceChanges).toHaveBeenCalledWith(
+          scopeForUser(actor.userId),
+          expect.any(AbortSignal),
+        );
+      } finally {
+        controller.abort();
+      }
+    },
+  );
 
   it("ends the stream half a minute after space change signals fail", async () => {
     vi.useFakeTimers();
@@ -117,5 +148,9 @@ describe("space change procedures", () => {
     );
     await client.routines.remove({ routineId: "routine-1" });
     expect(publishSpaceChange).toHaveBeenCalledExactlyOnceWith(actor.spaceId, "routines");
+  });
+
+  it("maps a created artifact to the artifacts signal", () => {
+    expect(spaceChangesFor(["artifacts", "create"])).toEqual(["artifacts"]);
   });
 });

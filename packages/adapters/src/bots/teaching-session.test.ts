@@ -82,6 +82,7 @@ function recordingDeps(skill: ReturnType<typeof skillRow>) {
         bot: {
           findUnique: vi.fn(),
         },
+        computer: { findUnique: vi.fn().mockResolvedValue(null) },
         message: {
           findMany: vi
             .fn()
@@ -473,6 +474,24 @@ describe("recordTeachingInputEvent", () => {
     expect(JSON.stringify(current().recording)).not.toContain("hunter2");
   });
 
+  it("does not apply input queued for an earlier recording", async () => {
+    const { deps, current, tx } = recordingDeps(skillRow({ id: "skill-b" }));
+    tx.bot.findUnique = vi.fn(async () => ({
+      id: "bot-1",
+      computer: { id: "computer-1", homeKey: "bot-1", kind: "e2b", providerRef: "boat-1" },
+    }));
+    await expect(
+      recordTeachingInputEvent(
+        deps as never,
+        { spaceId: "workspace-1", userId: "user-1" } as never,
+        "bot-1",
+        { kind: "pointer", type: "up", x: 10, y: 20, button: "left", skillId: "skill-a" },
+      ),
+    ).resolves.toBe("stale");
+    expect(deps.sandbox.sendInput).not.toHaveBeenCalled();
+    expect(current().recording.events).toHaveLength(0);
+  });
+
   it("drops protected input when the recording changes before it is typed", async () => {
     const { deps, current, tx } = recordingDeps(skillRow({ id: "skill-a" }));
     const computer = {
@@ -584,16 +603,18 @@ describe("recordTeachingInputEvent", () => {
 
 describe("applyTeachingDesktopInput", () => {
   const computer = {
+    id: "computer-1",
     homeKey: "bot-1",
     kind: "e2b",
     providerRef: "boat-1",
     controlLeaseId: "lease-1",
   };
+  const prisma = { computer: { findUnique: vi.fn().mockResolvedValue(null) } };
 
   it("types printable characters that have no keysym", async () => {
     const sandbox = { sendInput: vi.fn(), act: vi.fn() };
     await applyTeachingDesktopInput(
-      sandbox as never,
+      { prisma, sandbox } as never,
       computer,
       { kind: "key", key: " " },
       {} as never,
@@ -609,7 +630,7 @@ describe("applyTeachingDesktopInput", () => {
   it("sends browser key names as X11 keysyms", async () => {
     const sandbox = { sendInput: vi.fn(), act: vi.fn() };
     await applyTeachingDesktopInput(
-      sandbox as never,
+      { prisma, sandbox } as never,
       computer,
       { kind: "key", key: "ArrowLeft" },
       {} as never,
@@ -631,7 +652,7 @@ describe("applyTeachingDesktopInput", () => {
       button: "left" as const,
       type: "click" as const,
     };
-    await applyTeachingDesktopInput(sandbox as never, computer, pointer, {} as never);
+    await applyTeachingDesktopInput({ prisma, sandbox } as never, computer, pointer, {} as never);
     expect(sandbox.sendInput).toHaveBeenCalledWith(
       expect.anything(),
       pointer,
@@ -643,7 +664,7 @@ describe("applyTeachingDesktopInput", () => {
   it("scrolls the computer at the point the teacher scrolled", async () => {
     const sandbox = { sendInput: vi.fn(), act: vi.fn() };
     await applyTeachingDesktopInput(
-      sandbox as never,
+      { prisma, sandbox } as never,
       computer,
       { kind: "scroll", direction: "down", amount: 2, x: 600, y: 420 },
       {} as never,

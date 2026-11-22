@@ -1,3 +1,4 @@
+import { zstdDecompressSync } from "node:zlib";
 import type {
   Api,
   Context,
@@ -405,6 +406,65 @@ describe("Pi runtime transport", () => {
     } finally {
       vi.unstubAllGlobals();
     }
+  });
+
+  it("sends the Codex system prompt as a leading developer item instead of instructions", async () => {
+    const token = fakeJwt({
+      "https://api.openai.com/auth": { chatgpt_account_id: "acct_test" },
+    });
+    const resolved = resolveRuntimeModel({
+      provider: "openai-codex",
+      id: "gpt-6.2-sol",
+      oauth: {
+        credential: {
+          type: "oauth",
+          access: token,
+          refresh: "refresh-1",
+          expires: Date.now() + 3_600_000,
+        },
+      },
+    });
+    expect(resolved.model?.provider).toBe("openai-codex");
+
+    let sentBody: Record<string, unknown> | undefined;
+    const stream = reliableModelStream(
+      resolved.models,
+      resolved.model!,
+      {
+        systemPrompt: "Answer briefly.",
+        messages: [{ role: "user", content: "ping", timestamp: 0 }],
+      } as Context,
+      {
+        maxRetries: 0,
+        fetch: async (_input, init) => {
+          // Pi compresses Codex SSE bodies with zstd when the runtime offers it.
+          const raw = init?.body;
+          const text =
+            typeof raw === "string"
+              ? raw
+              : new TextDecoder().decode(
+                  zstdDecompressSync(
+                    raw instanceof ArrayBuffer ? new Uint8Array(raw) : (raw as Uint8Array),
+                  ),
+                );
+          sentBody = JSON.parse(text) as Record<string, unknown>;
+          return Response.json({ error: { message: "unauthorized" } }, { status: 401 });
+        },
+      },
+      undefined,
+      () => resolved.credentials?.accessToken,
+    );
+    for await (const _event of stream) {
+      // Drain so the request is dispatched.
+    }
+    await stream.result();
+
+    expect(sentBody).toBeDefined();
+    expect(sentBody).not.toHaveProperty("instructions");
+    expect(sentBody?.input).toEqual([
+      { role: "developer", content: "Answer briefly." },
+      { role: "user", content: [{ type: "input_text", text: "ping" }] },
+    ]);
   });
 
   it("never attaches the residency header for non-Codex providers", () => {

@@ -1,13 +1,8 @@
 import { useLingui } from "@lingui/react/macro";
-import { useTimeout } from "@rakazo/chat-ui/hooks";
+import { useListSearch, useTimeout } from "@rakazo/chat-ui/hooks";
 import { withConnectionName } from "@rakazo/contracts";
 import type { ChatModelChoice } from "@rakazo/core";
-import {
-  groupModelChoices,
-  modelChoiceSearchText,
-  modelMark,
-  newestModelsFirst,
-} from "@rakazo/core";
+import { groupModelChoices, modelChoiceSearchText, modelMark } from "@rakazo/core";
 import { useNavigation } from "expo-router";
 import type { ReactElement } from "react";
 import {
@@ -34,17 +29,11 @@ import { useContentBottomInset } from "../../lib/layout/content-bottom-inset";
 import { useFloatingHeaderInset } from "../../lib/layout/floating-header";
 import { useSideInsets } from "../../lib/layout/side-insets";
 import { native, useThemedStyles } from "../../lib/native/native";
-import { useListSearch } from "../../lib/search/use-list-search";
 import { SettingsLabel, SettingsRow } from "../settings/settings-group";
 import { ListSearchInput } from "../ui/list-search-input";
 import { Checkmark } from "../ui/row-accessories";
 import { TextOnlyMark } from "../ui/text-only-mark";
 import { ModelMarkIcon } from "./model-mark";
-
-const newestChoicesFirst = (choices: ChatModelChoice[]) =>
-  newestModelsFirst(choices.map((choice) => ({ id: choice.modelId ?? "", choice }))).map(
-    (entry) => entry.choice,
-  );
 
 /** Searchable grouped model cells shared by chat and connection settings. */
 export function ModelPickerList({
@@ -145,8 +134,6 @@ export function ModelPickerList({
       "",
     ).map((section) => ({
       ...section,
-      // The ungrouped section holds the default and saved choices, which stay first.
-      data: section.heading ? newestChoicesFirst(section.data) : section.data,
       connect: false,
       heading:
         providerLabel && section.heading === providerLabel

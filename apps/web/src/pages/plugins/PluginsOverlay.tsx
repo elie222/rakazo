@@ -392,52 +392,64 @@ export function PluginsOverlay({
       }}
     >
       <DialogContent showCloseButton={false} size="2xl" className="bg-card">
-        <DialogHeader className="flex-row items-start justify-between px-8 pt-7">
-          <DialogTitle className="text-heading2 text-foreground">
+        <DialogHeader className="flex-row flex-wrap items-start gap-2 px-8 pt-7">
+          <DialogTitle className="mr-auto text-heading2 text-foreground">
             <Trans>Integrations</Trans>
           </DialogTitle>
-          <div className="flex items-center gap-2">
-            {browsing && appCount > 0 ? (
+          <DialogClose
+            render={
               <Button
                 variant="ghost"
-                size="lg"
-                className="-my-1 gap-2.5 px-2.5 text-body text-muted-foreground"
-                onClick={() => setView("manage")}
-              >
-                <span aria-hidden className="flex -space-x-1.5">
-                  {connectedMarks.map((mark) => (
-                    <span key={mark.key} className="rounded-[9px] ring-2 ring-card">
-                      {mark.logo ? (
-                        <img
-                          src={mark.logo}
-                          alt=""
-                          className="h-6 w-6 rounded-lg bg-favicon-plate object-contain p-0.5"
-                        />
-                      ) : (
-                        <span className="grid h-6 w-6 place-items-center rounded-lg border border-border/60 bg-favicon-plate text-caption font-semibold text-foreground">
-                          {Array.from(mark.name)[0]?.toUpperCase()}
-                        </span>
-                      )}
-                    </span>
-                  ))}
-                </span>
-                <Plural value={connectedCount} one="# connected" other="# connected" />
-                <ChevronRight />
-              </Button>
-            ) : null}
-            {browsing && onOpenTemplates ? (
-              <Button
-                variant="ghost"
-                size="lg"
-                className="-my-1 gap-2 px-2.5 text-body text-muted-foreground"
-                data-testid="open-bot-templates"
-                onClick={onOpenTemplates}
-              >
-                <LayoutTemplate />
-                <Trans>Templates</Trans>
-              </Button>
-            ) : null}
-            {browsing || view === "manage" ? (
+                size="icon-sm"
+                className="sm:hidden"
+                aria-label={t`Close integrations`}
+              />
+            }
+          >
+            <X />
+          </DialogClose>
+          {browsing || view === "manage" ? (
+            <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
+              {browsing && appCount > 0 ? (
+                <Button
+                  variant="ghost"
+                  size="lg"
+                  className="-my-1 gap-2.5 px-2.5 text-body text-muted-foreground"
+                  onClick={() => setView("manage")}
+                >
+                  <span aria-hidden className="flex -space-x-1.5">
+                    {connectedMarks.map((mark) => (
+                      <span key={mark.key} className="rounded-[9px] ring-2 ring-card">
+                        {mark.logo ? (
+                          <img
+                            src={mark.logo}
+                            alt=""
+                            className="h-6 w-6 rounded-lg bg-favicon-plate object-contain p-0.5"
+                          />
+                        ) : (
+                          <span className="grid h-6 w-6 place-items-center rounded-lg border border-border/60 bg-favicon-plate text-caption font-semibold text-foreground">
+                            {Array.from(mark.name)[0]?.toUpperCase()}
+                          </span>
+                        )}
+                      </span>
+                    ))}
+                  </span>
+                  <Plural value={connectedCount} one="# connected" other="# connected" />
+                  <ChevronRight />
+                </Button>
+              ) : null}
+              {browsing && onOpenTemplates ? (
+                <Button
+                  variant="ghost"
+                  size="lg"
+                  className="-my-1 gap-2 px-2.5 text-body text-muted-foreground"
+                  data-testid="open-bot-templates"
+                  onClick={onOpenTemplates}
+                >
+                  <LayoutTemplate />
+                  <Trans>Templates</Trans>
+                </Button>
+              ) : null}
               <AddMenu
                 presets={sourcePresets}
                 onGithub={() => openAddView("github")}
@@ -449,13 +461,20 @@ export function PluginsOverlay({
                 onDomainSearch={catalogFeedEnabled ? () => openAddView("domain") : undefined}
                 onOpenMcp={onOpenMcp}
               />
-            ) : null}
-            <DialogClose
-              render={<Button variant="ghost" size="icon-sm" aria-label={t`Close integrations`} />}
-            >
-              <X />
-            </DialogClose>
-          </div>
+            </div>
+          ) : null}
+          <DialogClose
+            render={
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                className="hidden sm:inline-flex"
+                aria-label={t`Close integrations`}
+              />
+            }
+          >
+            <X />
+          </DialogClose>
         </DialogHeader>
 
         {browsing ? (

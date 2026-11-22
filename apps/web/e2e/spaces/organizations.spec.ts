@@ -155,17 +155,14 @@ test("create, switch, rename and delete an organization", async ({ page }, testI
   await captureScreenshot(page, testInfo, "org-menu-two-orgs");
   await closeAvatarMenu(page);
 
-  // Work has no bot yet, so its first visit finishes onboarding there.
-  await switchFromAvatarMenu(page, "Work", work.defaultSpaceId);
-  const workChat = new URL(page.url()).pathname;
-  await switchFromAvatarMenu(page, "Personal", personal.defaultSpaceId);
-
-  // A link to a chat in another organization opens it there.
-  await page.goto(workChat);
+  // Work starts empty: the account already has chats, so no Chief is made there.
+  menu = await openOrganizationMenu(page);
+  await menu.getByRole("button", { name: "Work", exact: true }).click();
   await expect.poll(() => selectedSpace(page)).toBe(work.defaultSpaceId);
-  await expect(page).toHaveURL((url) => url.pathname === workChat);
+  await expect(
+    page.locator("main").getByRole("button", { name: "New bot", exact: true }),
+  ).toBeVisible();
 
-  // So does a link to a group chat there.
   const inWork = async <T>(procedure: string, json: unknown) => {
     const response = await page.request.post(`/rpc/${procedure}`, {
       headers: { "x-rakazo-space-id": work.defaultSpaceId },
@@ -178,9 +175,25 @@ test("create, switch, rename and delete an organization", async ({ page }, testI
     name: "Scout",
     computerMode: "team",
   });
+  const helper = await inWork<{ id: string }>("bots/create", {
+    name: "Helper",
+    computerMode: "team",
+  });
+  const workChat = `/app/${scout.id}`;
+  // Open Scout first, so the roster settling on the new bots cannot pass for the switch away.
+  await page.goto(workChat);
+  await expect(page.getByPlaceholder("Message Scout")).toBeVisible();
+  await switchFromAvatarMenu(page, "Personal", personal.defaultSpaceId);
+
+  // A link to a chat in another organization opens it there.
+  await page.goto(workChat);
+  await expect.poll(() => selectedSpace(page)).toBe(work.defaultSpaceId);
+  await expect(page).toHaveURL((url) => url.pathname === workChat);
+
+  // So does a link to a group chat there.
   const standup = await inWork<{ id: string }>("groups/create", {
     name: "Standup",
-    botIds: [workChat.split("/")[2], scout.id],
+    botIds: [scout.id, helper.id],
   });
   await switchFromAvatarMenu(page, "Personal", personal.defaultSpaceId);
   await page.goto(`/app/g/${standup.id}`);
@@ -229,9 +242,10 @@ test("create, switch, rename and delete an organization", async ({ page }, testI
   );
 });
 
-test("an organization owner opens the activity log from the organization menu", async ({
-  page,
-}, testInfo) => {
+const auditTest = test.extend({ locale: "de-DE", timezoneId: "America/New_York" });
+
+auditTest("owner activity log uses the UI language", async ({ page }, testInfo) => {
+  await page.addInitScript(() => localStorage.setItem("rakazo.uiLocale", "en"));
   await signup(page, `audit-log-${Date.now()}@rakazo.test`, "password12", "Audit Owner");
   await completeOnboarding(page);
   await rpc(page, "spaces/create", { name: "Audited space" });
@@ -248,9 +262,24 @@ test("an organization owner opens the activity log from the organization menu", 
   const log = settings.getByTestId("audit-log");
   await expect(log.getByRole("heading", { name: "Activity log" })).toBeVisible();
   await expect(log.getByRole("button", { name: "Export" })).toBeEnabled();
-  await expect(log.getByRole("listitem").filter({ hasText: "space.created" })).toContainText(
-    "Audited space",
-  );
+  const creation = log.getByRole("listitem").filter({ hasText: "space.created" });
+  await expect(creation).toContainText("Audited space");
+  await expect(page.locator("html")).toHaveAttribute("lang", "en");
+  const time = creation.locator("time");
+  await expect(time).toHaveAttribute("datetime", /^\d{4}-\d{2}-\d{2}T/);
+  const formats = await time.evaluate((element) => {
+    const iso = element.getAttribute("datetime");
+    if (!iso) throw new Error("Missing audit timestamp");
+    const date = new Date(iso);
+    return {
+      app: date.toLocaleString("en"),
+      browser: date.toLocaleString(),
+      utc: date.toLocaleString("en", { timeZone: "UTC" }),
+    };
+  });
+  expect(formats.app).not.toBe(formats.browser);
+  expect(formats.app).not.toBe(formats.utc);
+  await expect(time).toHaveText(formats.app);
   await captureScreenshot(page, testInfo, "audit-log");
 
   await log.getByRole("button", { name: "Back" }).click();

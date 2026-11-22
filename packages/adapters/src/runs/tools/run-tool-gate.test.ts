@@ -5,6 +5,7 @@ import { gateToolCall } from "./run-tool-gate.js";
 import type { ToolRequest } from "./run-tool-request.js";
 
 const plans = vi.hoisted(() => [] as string[]);
+const reviewOnly = vi.hoisted(() => [] as (boolean | undefined)[]);
 vi.mock("@rakazo/core", async (importOriginal) => {
   const core = await importOriginal<typeof Core>();
   return {
@@ -12,6 +13,7 @@ vi.mock("@rakazo/core", async (importOriginal) => {
     planActionGate: (input: Parameters<typeof core.planActionGate>[0]) => {
       const plan = core.planActionGate(input);
       plans.push(plan);
+      reviewOnly.push(input.reviewOnly);
       return plan;
     },
   };
@@ -123,5 +125,71 @@ describe("gateToolCall: a login that asks first", () => {
     expect(await gate({ rule: "deny" })).toEqual({
       result: { error: expect.stringContaining("is blocked in this space") },
     });
+  });
+});
+
+describe("gateToolCall: typing into a page after outside content, in Auto", () => {
+  const typed = (
+    state: { pageUrl?: string; pageUrlUncertain?: boolean },
+    actions: Record<string, unknown>[] = [{ kind: "fill", ref: "e2", text: "12 Rua Nova" }],
+  ) => {
+    const args = { actions };
+    const executionId = JSON.stringify(["pi-tool", "main", "call-1"]);
+    const request = {
+      name: "browser_act",
+      args,
+      executionId,
+      connectorCall: { tool: "browser_act", args, executionId, route: undefined },
+      effectRequest: args,
+      replayEffectToolName: "browser_act",
+      heldForApproval: false,
+      settingsChange: false,
+      ignoresAllowRules: false,
+    } as unknown as ToolRequest;
+    const ctx = {
+      deps: { prisma: {}, autoReview: {} },
+      run: { id: "run-1", userId: "user-1", spaceId: "space-1", trigger: "user" },
+      runId: "run-1",
+      bot: { id: "bot-1", name: "Helper" },
+      thread: { id: "thread-1" },
+      context: { signal: new AbortController().signal },
+      source: { ownerStartedRun: true },
+      tools: { connector: new Map(), connectedPlugins: [] },
+      state: {
+        ...state,
+        tainted: true,
+        effects: { consumedIds: new Set(), counts: new Map(), occurrences: [] },
+      },
+      trust: {
+        searchResultUrls: new Set<string>(),
+        loadTrustedSites: async () => new Set(["example.com"]),
+        loadApprovalRules: async () => [],
+        loadAutoReviewPreference: async () => ({ enabled: true, skipApprovals: false }),
+      },
+    };
+    return gateToolCall(ctx as never, request, undefined).catch(() => undefined);
+  };
+
+  beforeEach(() => {
+    reviewOnly.length = 0;
+  });
+
+  it("leaves typing on a site the run was given alone, and judges it once a desktop action may have moved the page", async () => {
+    await typed({ pageUrl: "https://shop.example.com/address" });
+    await typed({ pageUrl: "https://shop.example.com/address", pageUrlUncertain: true });
+    await typed({ pageUrl: "https://forms.example.net/" });
+    expect(reviewOnly).toEqual([false, true, true]);
+  });
+
+  it("judges typing after a click in the same call, which can leave the page", async () => {
+    await typed({ pageUrl: "https://shop.example.com/address" }, [
+      { kind: "fill", ref: "e2", text: "12 Rua Nova" },
+      { kind: "click", ref: "e3" },
+    ]);
+    await typed({ pageUrl: "https://shop.example.com/address" }, [
+      { kind: "click", ref: "e9" },
+      { kind: "fill", ref: "e2", text: "12 Rua Nova" },
+    ]);
+    expect(reviewOnly).toEqual([false, true]);
   });
 });

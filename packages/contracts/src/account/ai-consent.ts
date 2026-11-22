@@ -10,6 +10,7 @@ export const AiConsentQuerySchema = z
     botId: z.string().optional(),
     groupId: z.string().optional(),
     routineId: z.string().optional(),
+    pageId: z.string().optional(),
     uses: z.array(AiDataUseSchema).optional(),
     /** Which copy of the member's settings names the recipients; omitted means the one that applies. */
     settingsScope: SettingsScopeSchema.optional(),

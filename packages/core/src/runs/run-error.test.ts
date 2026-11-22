@@ -1,7 +1,10 @@
 import {
   COMPUTER_ALLOWANCE_USED_ERROR,
+  COMPUTER_DAMAGED_ERROR,
   COMPUTER_PROVIDER_UNAVAILABLE_ERROR,
   COMPUTER_RATE_LIMIT_ERROR,
+  COMPUTER_RECOVERY_REQUIRED_ERROR,
+  COMPUTER_START_FAILED_ERROR,
   COMPUTER_UNRESPONSIVE_ERROR,
 } from "@rakazo/contracts";
 import { expectLinearTime } from "@rakazo/contracts/test-timing";
@@ -353,6 +356,14 @@ describe("normalizeRunError", () => {
       ],
       [
         '429: {"code":"1113","message":"Insufficient balance or no resource package. Please recharge."}',
+        "spending",
+      ],
+      [
+        '403 {"code":"The caller does not have permission to execute the specified operation","error":"Your newly created team doesn\'t have any credits or licenses yet."}',
+        "credit",
+      ],
+      [
+        '429 {"error":{"message":"Your account is not active, please check your account balance","type":"exceeded_current_quota_error"}}',
         "spending",
       ],
       [
@@ -740,6 +751,9 @@ it.each([
   COMPUTER_RATE_LIMIT_ERROR,
   COMPUTER_PROVIDER_UNAVAILABLE_ERROR,
   COMPUTER_UNRESPONSIVE_ERROR,
+  COMPUTER_START_FAILED_ERROR,
+  COMPUTER_DAMAGED_ERROR,
+  COMPUTER_RECOVERY_REQUIRED_ERROR,
 ])("shows the computer error %j as written", (message) => {
   expect(normalizeRunError(message)).toEqual({ summary: message, details: message });
 });

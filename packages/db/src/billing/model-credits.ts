@@ -160,11 +160,13 @@ export async function reconcileCreditPurchase(
     const owedBefore = owed(previousLot);
     const owedNow = owed(await tx.modelCreditLot.findUniqueOrThrow({ where: { id: entry.id } }));
     const charged = existing ? storedCreditAllocations(existing) : [];
+    // Read before the return, which lowers the stored allocations in place.
+    const chargedMicros = allocatedMicros(charged);
     const covering =
       owedNow > owedBefore
         ? [...charged, ...(await allocateCreditLots(tx, organizationId, owedNow - owedBefore, now))]
         : await returnCreditLots(tx, charged, owedBefore - owedNow, now);
-    if (allocatedMicros(covering) !== allocatedMicros(charged))
+    if (allocatedMicros(covering) !== chargedMicros)
       await tx.modelCreditEntry.update({
         where: { id: entry.id },
         data: { allocations: covering },
@@ -316,6 +318,7 @@ export function hasFinalModelCost(
     usage.costUsd >= 0 &&
     (usage.costSource === "provider-reported" ||
       usage.costSource === "deployment-tariff" ||
+      usage.costSource === "free-endpoint" ||
       usage.costSource === RECONCILED_ESTIMATE_COST_SOURCE ||
       (usage.costUsd === 0 &&
         ["not-started", "provider-rejected"].includes(usage.usageSource ?? "")))
