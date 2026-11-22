@@ -580,6 +580,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
       userComputerAccess: {
         routines: env.userDevicesAllowRoutines,
         ownBots: env.userDevicesAllowOwnBots,
+        messaging: env.userDevicesAllowMessaging,
       },
       paymentWallet,
       web,

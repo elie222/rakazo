@@ -101,6 +101,11 @@ export interface AppEnv extends MessagingEnvironmentValues {
    * their bots asked, in a chain they started. Default off.
    */
   userDevicesAllowOwnBots: boolean;
+  /**
+   * USER_DEVICES_ALLOW_MESSAGING=true lets a user's bot use their own computer when they message
+   * it themselves from a chat app they linked. Default off.
+   */
+  userDevicesAllowMessaging: boolean;
   /** COMPUTER_SETTINGS_ENABLED=true lets Settings choose where computers run. Default off. */
   computerSettingsEnabled: boolean;
   /** Operator menu links that frame a same-origin page (RAKAZO_NAV_LINKS). */
@@ -321,6 +326,11 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
     userDevicesAllowOwnBots: parseEnvFlag(
       "USER_DEVICES_ALLOW_OWN_BOTS",
       source.USER_DEVICES_ALLOW_OWN_BOTS,
+      false,
+    ),
+    userDevicesAllowMessaging: parseEnvFlag(
+      "USER_DEVICES_ALLOW_MESSAGING",
+      source.USER_DEVICES_ALLOW_MESSAGING,
       false,
     ),
     computerSettingsEnabled: source.COMPUTER_SETTINGS_ENABLED === "true",

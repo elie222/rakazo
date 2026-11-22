@@ -273,6 +273,11 @@ async function main() {
         process.env.USER_DEVICES_ALLOW_OWN_BOTS,
         false,
       ),
+      messaging: parseEnvFlag(
+        "USER_DEVICES_ALLOW_MESSAGING",
+        process.env.USER_DEVICES_ALLOW_MESSAGING,
+        false,
+      ),
     },
     paymentWallet,
     stoppingSignal: shutdown.signal,
