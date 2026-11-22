@@ -124,14 +124,16 @@ vi.mock("../../components/settings/settings-group", () => ({
     title,
     value,
     trailing,
+    disabled,
     onPress,
   }: {
     title: string;
     value?: string;
     trailing?: ReactNode;
+    disabled?: boolean;
     onPress?: () => void;
   }) => (
-    <button type="button" onClick={onPress}>
+    <button type="button" disabled={disabled} onClick={onPress}>
       {value === undefined ? title : `${title}: ${value}`}
       {trailing}
     </button>
@@ -432,6 +434,14 @@ it("reads the server again when its settings saved but bot access did not", asyn
   await save();
   expect(updates()).toHaveLength(1);
   expect(listReads().length).toBeGreaterThan(before);
+
+  // A retry sends only the access that is still unsaved.
+  vi.mocked(rpc).mockImplementation(read as never);
+  const sent = writes().length;
+  expect(await save()).toBe(true);
+  expect(writes().slice(sent)).toEqual([
+    ["mcp/servers/agents", { id: "srv-1", allBots: false, botIds: ["bot-2"] }],
+  ]);
 });
 
 it("waits for the server list to be read again before deciding the server is gone", async () => {
@@ -447,4 +457,24 @@ it("waits for the server list to be read again before deciding the server is gon
   await act(flush);
   expect(back).not.toHaveBeenCalled();
   expect(container.textContent).toContain("Status: Connected");
+});
+
+it("stays open when reading the server list again fails", async () => {
+  const list = deferred<unknown[]>();
+  const read = vi.mocked(rpc).getMockImplementation();
+  vi.mocked(rpc).mockImplementation(((path: string, ...rest: unknown[]) =>
+    path === "mcp/servers/list" ? list.promise : read?.(path as never, ...(rest as []))) as never);
+  queryClient.setQueryData(formRead(rpcQuery("mcp/servers/list")).queryKey, []);
+  await render();
+  await act(async () => list.reject(new Error("offline")));
+  await act(flush);
+  expect(back).not.toHaveBeenCalled();
+});
+
+it("waits for edited settings to be saved before testing the connection", async () => {
+  await render();
+  await type("Server URL", "https://other.example.test/mcp");
+  await tap("Test connection");
+  await act(flush);
+  expect(writes()).toEqual([]);
 });

@@ -3,6 +3,13 @@
  * starting from the first stored one, and never reads a stored value back.
  */
 
+/** Which bots can use a server: every bot, or only `botIds`. */
+export type McpServerAccess = { allBots: boolean; botIds: string[] };
+
+export function sameMcpServerAccess(a: McpServerAccess, b: McpServerAccess): boolean {
+  return a.allBots === b.allBots && [...a.botIds].sort().join() === [...b.botIds].sort().join();
+}
+
 /** The edited header's name: a value typed without one goes in Authorization. */
 export function mcpEditedHeaderName(name: string, value: string): string {
   return name.trim() || (value.trim() ? "Authorization" : "");

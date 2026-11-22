@@ -1,6 +1,11 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { Bot, McpServer, McpTransport } from "@rakazo/contracts";
-import { deriveMcpSlug, mcpOAuthClientInput, mcpServerHeaders } from "@rakazo/core";
+import {
+  deriveMcpSlug,
+  mcpHeaderEditValid,
+  mcpOAuthClientInput,
+  mcpServerHeaders,
+} from "@rakazo/core";
 import {
   Button,
   Checkbox,
@@ -547,7 +552,12 @@ export function McpServerForm({
       <Button
         type="button"
         className="w-full"
-        disabled={saving || (draft.transport === "stdio" && duplicateNames.size > 0)}
+        disabled={
+          saving ||
+          (draft.transport === "stdio" && duplicateNames.size > 0) ||
+          (editing !== null &&
+            !mcpHeaderEditValid(editing.headerKeys, draft.headerName, draft.headerValue))
+        }
         onClick={onSave}
       >
         {editing ? (

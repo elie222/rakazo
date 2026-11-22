@@ -1,7 +1,8 @@
 import { ph } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
 import { mcpServerConnection } from "@rakazo/contracts";
-import { mcpHeaderEditValid } from "@rakazo/core";
+import type { McpServerAccess } from "@rakazo/core";
+import { mcpHeaderEditValid, sameMcpServerAccess } from "@rakazo/core";
 import { mcpServerStatusLabel } from "@rakazo/i18n/plugin-catalog";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useState } from "react";
@@ -18,13 +19,12 @@ import {
 } from "../../components/settings/settings-group";
 import { errorText } from "../../lib/api/user-error";
 import { mobileTokens } from "../../lib/appearance/appearance";
-import type { McpServerAccess, RemoteMcpServerEdit } from "../../lib/integrations/mcp-server-edit";
+import type { RemoteMcpServerEdit } from "../../lib/integrations/mcp-server-edit";
 import {
   mcpAdvancedInUse,
   remoteMcpServerChanged,
   remoteMcpServerEdit,
   remoteMcpServerUpdate,
-  sameMcpServerAccess,
 } from "../../lib/integrations/mcp-server-edit";
 import { useSideInsets } from "../../lib/layout/side-insets";
 import { announceToScreenReader } from "../../lib/native/announce";
@@ -97,8 +97,12 @@ function McpServerScreen({ id }: { id: string }) {
       try {
         await send("mcp/servers/agents", { id, ...next.access });
       } catch (failure) {
-        // The settings saved above stay saved, so show them before reporting the failure.
-        if (config) await refreshRpcQueries("mcp/servers/list");
+        if (config) {
+          // The settings above are saved: keep only the access edit, so a retry sends access
+          // alone, and show the saved settings before reporting the failure.
+          setEdits(({ access }) => (access ? { access } : {}));
+          await refreshRpcQueries("mcp/servers/list");
+        }
         throw failure;
       }
     },
@@ -116,9 +120,9 @@ function McpServerScreen({ id }: { id: string }) {
     closesScreen: true,
   });
   const busy = save.pending || test.pending || remove.pending;
-  // A server deleted elsewhere leaves nothing to show or edit; a list still being read again
-  // may not have the server yet.
-  const gone = Boolean(servers.data) && !servers.isFetching && !server && !remove.pending;
+  // A server deleted elsewhere leaves nothing to show or edit. Only a list that was just read
+  // says so: one still being read, or one whose new read failed, may be out of date.
+  const gone = servers.isSuccess && !servers.isFetching && !server && !remove.pending;
   useEffect(() => {
     if (gone) router.back();
   }, [gone, router]);
@@ -153,6 +157,8 @@ function McpServerScreen({ id }: { id: string }) {
 
   function edit(patch: Partial<Draft>) {
     save.reset();
+    test.reset();
+    remove.reset();
     setEdits((current) => ({ ...current, ...patch }));
   }
 
@@ -201,7 +207,8 @@ function McpServerScreen({ id }: { id: string }) {
               key="test"
               title={t`Test connection`}
               tinted
-              disabled={busy || server.health.status === "installing"}
+              // A test checks the saved settings, so it waits until edits to them are saved.
+              disabled={busy || configChanged || server.health.status === "installing"}
               onPress={() => test.run()}
             />
           </SettingsGroup>

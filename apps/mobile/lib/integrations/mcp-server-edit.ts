@@ -1,13 +1,6 @@
 import type { McpServer, McpServerConfigInput } from "@rakazo/contracts";
 import { mcpEditedHeaderName, mcpOAuthClientInput, mcpServerHeaders } from "@rakazo/core";
 
-/** Which bots can use a server: every bot, or only `botIds`. */
-export type McpServerAccess = { allBots: boolean; botIds: string[] };
-
-export function sameMcpServerAccess(a: McpServerAccess, b: McpServerAccess): boolean {
-  return a.allBots === b.allBots && [...a.botIds].sort().join() === [...b.botIds].sort().join();
-}
-
 /** What the edit screen can change on a remote server; secrets start blank and blank keeps them. */
 export type RemoteMcpServerEdit = {
   name: string;
