@@ -48,12 +48,13 @@ export function useAppRail() {
 }
 
 /** The chat shell owns the overlay host; every other rail page hands the overlay back to it. */
-function isChatShellPath(pathname: string) {
+function isChatShellPath(pathname: string, boardEnabled: boolean) {
   return (
     pathname === "/app" ||
     pathname.startsWith("/app/g/") ||
     (pathname.startsWith("/app/") &&
-      !pathname.startsWith("/app/board") &&
+      // Without the lab the Board route is not registered, so `/app/:botId` serves it as a chat.
+      !(boardEnabled && pathname.startsWith("/app/board")) &&
       !pathname.startsWith("/app/artifacts") &&
       !pathname.startsWith("/app/x/"))
   );
@@ -171,7 +172,7 @@ function PrimaryRail({
   const navigate = useNavigate();
   const activityMode = activityModePreference.use();
   const integrationsOpen = new URLSearchParams(search).has("integrations");
-  const onChatShell = isChatShellPath(pathname);
+  const onChatShell = isChatShellPath(pathname, boardEnabled);
   const onChats = !activityMode && onChatShell;
   const onArtifacts = pathname === "/app/artifacts" || pathname.startsWith("/app/artifacts/");
   const onBoard = pathname === "/app/board" || pathname === "/app/board/";

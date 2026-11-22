@@ -91,3 +91,11 @@ it("keeps the rail but leaves Board out when the board is off", async () => {
   expect(host.querySelector('[data-testid="app-rail"] [aria-label="Board"]')).toBeNull();
   expect(current()).toBe("Chats");
 });
+
+it("treats /app/board as a chat when the board lab is off", async () => {
+  await render("/app/board", false);
+  expect(host.querySelector('[data-testid="rail-footer"]')).toBeNull();
+
+  await render("/app/board", true);
+  expect(host.querySelector('[data-testid="rail-footer"]')).not.toBeNull();
+});
