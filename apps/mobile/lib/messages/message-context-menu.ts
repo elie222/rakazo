@@ -7,6 +7,7 @@ export const messageMenuSymbols = [
   "select",
   "selectMessages",
   "unread",
+  "share",
 ] as const;
 
 export type MessageMenuSymbol = (typeof messageMenuSymbols)[number];
@@ -44,6 +45,7 @@ export function buildMessageContextMenu({
     select: boolean;
     selectMessages?: boolean;
     unread?: boolean;
+    share?: boolean;
   };
 }): MessageMenuEntry[] {
   const secondary: MessageMenuEntry[] = [
@@ -56,6 +58,7 @@ export function buildMessageContextMenu({
     ...(include.reply !== false ? [entry("reply", labels.reply)] : []),
     ...(include.unread ? [entry("unread", labels.unread)] : []),
     entry("copy", labels.copy),
+    ...(include.share ? [entry("share", labels.share)] : []),
     ...(include.react
       ? [
           {

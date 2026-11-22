@@ -187,6 +187,7 @@ export const ROW_SECURITY_MODELS: ReadonlySet<string> = new Set([
   "PageGrant",
   "PageComment",
   "PageRevisionRequest",
+  "ReplyShare",
 ]);
 
 /**

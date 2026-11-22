@@ -160,6 +160,7 @@ import type { SpaceDeletionDeps } from "./spaces/space-deletion.js";
 import { afterSpaceDeparture } from "./spaces/space-departure.js";
 import { cspReportRoutes } from "./telemetry/csp-report.js";
 import { monitoringRoutes } from "./telemetry/monitoring.js";
+import { mountSharedReplies } from "./threads/reply-shares.js";
 import { mountWebhookHttpRoutes } from "./webhooks/webhook.js";
 
 // A stop that hands runs back is allowed 30 seconds before the process is killed.
@@ -795,6 +796,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
   mountScreenTarget(app, prisma, env.screenProxySecret);
   mountScriptAssets(app);
   mountSharedPages(app, prisma, requestClientIp);
+  mountSharedReplies(app, prisma, requestClientIp);
   const auditAuthResponse = createAuthResponseAudit();
   for (const [path, reason] of SYSTEM_CONTEXT_PATHS) {
     app.use(path, (_c, next) => runAsSystem(reason, next));

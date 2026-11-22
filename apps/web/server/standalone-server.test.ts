@@ -106,6 +106,11 @@ describe("standalone web server", () => {
     expect(script.headers["content-type"]).toBe("text/javascript");
     expect((await get(port, "/assets/gone.js")).status).toBe(404);
     expect((await get(port, "/p/shared")).headers["x-robots-tag"]).toBe("noindex, nofollow");
+    const reply = await get(port, "/c/shared", { accept: "text/html" });
+    expect(reply.headers).toMatchObject({
+      "x-robots-tag": "noindex, nofollow",
+      "referrer-policy": "no-referrer",
+    });
     expect((await get(port, "/", { host: "evil.example" })).status).toBe(403);
   });
 

@@ -114,7 +114,8 @@ export function attachDesktopStackProbe(
 }
 
 export function sharedPageHeaders(req: IncomingMessage, res: ServerResponse, next: () => void) {
-  if (req.url?.startsWith("/p/") || /^\/review(?:[/?]|$)/.test(req.url ?? "")) {
+  // A shared page or reply; the page shell holds neither, and the API answer that does is no-store.
+  if (/^\/[pc]\//.test(req.url ?? "") || /^\/review(?:[/?]|$)/.test(req.url ?? "")) {
     res.setHeader("x-robots-tag", "noindex, nofollow");
     res.setHeader("referrer-policy", "no-referrer");
   }

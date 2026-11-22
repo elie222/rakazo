@@ -100,6 +100,23 @@ describe("CSP report parsing", () => {
     expect(JSON.stringify(violation)).not.toContain(token);
   });
 
+  it("never logs the link token of a shared reply the report came from", () => {
+    const token = "a".repeat(43);
+    const [violation] = parseCspReports([
+      {
+        type: "csp-violation",
+        body: {
+          documentURL: `https://app.example.com/c/${token}`,
+          blockedURL: "inline",
+          sourceFile: `https://app.example.com/c/${token}?x=1`,
+          effectiveDirective: "script-src-elem",
+        },
+      },
+    ]);
+    expect(violation?.page).toBe("/c/[Redacted]");
+    expect(JSON.stringify(violation)).not.toContain(token);
+  });
+
   it("falls back to violated-directive when an older browser omits the effective one", () => {
     const report = { "csp-report": { ...LEGACY["csp-report"], "effective-directive": undefined } };
     expect(parseCspReports(report)[0]?.directive).toBe("script-src-elem");

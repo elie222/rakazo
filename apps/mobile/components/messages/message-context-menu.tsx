@@ -16,6 +16,7 @@ const symbols = {
   select: "character.cursor.ibeam",
   selectMessages: "checkmark.circle",
   unread: "message.badge",
+  share: "link",
 } as const satisfies Record<MessageMenuSymbol, Extract<NonNullable<MenuAction["image"]>, string>>;
 
 const tapPoint = (event: GestureResponderEvent) => ({

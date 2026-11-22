@@ -45,6 +45,18 @@ in a preview and can be downloaded. Every file a bot has sent is also listed und
 the account menu. Bots can find files you sent them long ago, so "the lease I sent you" works
 without sending it again.
 
+### Share a reply
+
+To show someone one bot reply, open its **More** menu and choose **Share**. You see the text the
+link will show, and **Copy link** makes the link. Anyone with the link can read that reply's text,
+with the bot's name and the date, without signing in. Pictures, files, cards and tool activity are
+left out, and anything that looks like a secret is hidden. Your own messages and whole chats can't
+be shared.
+
+Your links are listed under **Settings → General → Shared links**, where **Remove** turns one off.
+A link also stops working when the reply is deleted or the chat is cleared, when the bot is
+deleted, or when you leave the Space or delete your account.
+
 When something is left open until a known time ("I'll send the contract on Friday"), the bot may
 set itself a follow-up for then. It stays quiet if the item is already done.
 

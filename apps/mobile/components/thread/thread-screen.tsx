@@ -40,6 +40,7 @@ import { useAppForeground } from "../../lib/platform/app-foreground";
 import { rpcQuery } from "../../lib/query/query";
 import { useScreenQuery } from "../../lib/query/screen-query";
 import { useInboxBot } from "../../lib/search/search-inbox";
+import { useReplyShare } from "../../lib/thread/reply-share";
 import {
   THREAD_HEADER_PILL_BOTTOM_INSET,
   threadColumnPadding,
@@ -177,6 +178,7 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
     : botId
       ? { botId }
       : undefined;
+  const shareReply = useReplyShare(artifactTarget);
   const history = useThreadSnapshot();
   const { snap, composingBots, showingSaved } = history;
   // Re-read on focus so returning from Models settings updates unsent missing-model messages.
@@ -466,6 +468,7 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
     speak,
     react: composer.react,
     markUnread: markUnreadFrom,
+    share: shareReply,
     answer: composer.answer,
     openBot,
     openComputer,

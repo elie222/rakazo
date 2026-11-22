@@ -239,3 +239,36 @@ name: Settings
 - tapOn:
     text: "Haptics"
     index: 1
+# Share a bot reply from its menu, then find the link under General > Shared links.
+- openLink: "rakazo:///thread?botId=${RAKAZO_SCREENSHOT_BOT_ID}&name=Researcher"
+- extendedWaitUntil:
+    visible: ".*The fixture workspace is ready.*"
+    timeout: 20000
+- longPressOn:
+    text: ".*The fixture workspace is ready.*"
+- extendedWaitUntil:
+    visible: "Share"
+    timeout: 8000
+- tapOn: "Share"
+- extendedWaitUntil:
+    visible: "Anyone with the link can read this reply"
+    timeout: 10000
+- waitForAnimationToEnd:
+    timeout: 3000
+- takeScreenshot: 23-share-reply
+- tapOn: "Copy link"
+- extendedWaitUntil:
+    visible: "Link copied"
+    timeout: 15000
+- tapOn: "OK"
+- openLink: "rakazo:///general"
+- scrollUntilVisible:
+    element: "Shared links"
+    direction: DOWN
+    timeout: 20000
+    visibilityPercentage: 100
+    centerElement: true
+- assertVisible: ".*The fixture workspace is ready.*"
+- waitForAnimationToEnd:
+    timeout: 3000
+- takeScreenshot: 24-shared-links

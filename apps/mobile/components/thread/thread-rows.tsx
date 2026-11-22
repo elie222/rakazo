@@ -50,6 +50,7 @@ export function useLatestRowActions(current: MessageRowActions): MessageRowActio
       speak: (message) => rowActionsRef.current.speak(message),
       react: (message, reaction) => rowActionsRef.current.react(message, reaction),
       markUnread: (message) => rowActionsRef.current.markUnread(message),
+      share: (message) => rowActionsRef.current.share(message),
       answer: (message, answer, fields, dismiss, remember) =>
         rowActionsRef.current.answer(message, answer, fields, dismiss, remember),
       openBot: (id, name) => rowActionsRef.current.openBot(id, name),

@@ -2,7 +2,12 @@ import { i18n } from "@lingui/core";
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { MessageReaction, ThreadMessage } from "@rakazo/contracts";
 import { canReactToThreadMessage, MESSAGE_REACTIONS } from "@rakazo/contracts";
-import { canMarkMessageUnread, copyableMessageText, formatTimeSeparator } from "@rakazo/core";
+import {
+  canMarkMessageUnread,
+  canShareReply,
+  copyableMessageText,
+  formatTimeSeparator,
+} from "@rakazo/core";
 import {
   CopyTextFallback,
   DropdownMenu,
@@ -14,9 +19,11 @@ import {
   PopoverTrigger,
   useCopyText,
 } from "@rakazo/ui-web";
-import { Check, Copy, MessageSquareDot, MoreHorizontal, Reply, Smile } from "lucide-react";
+import { Check, Copy, Link, MessageSquareDot, MoreHorizontal, Reply, Smile } from "lucide-react";
 import { useState } from "react";
 import { MessageHoverMetadata } from "../../../components/messages/MessageHoverMetadata";
+import type { ArtifactTarget } from "../../../lib/pages/artifact-open";
+import { ReplyShareDialog } from "./reply-share-dialog";
 
 export function MessageHoverActions({
   message,
@@ -26,6 +33,7 @@ export function MessageHoverActions({
   onMarkUnread,
   markedUnread = false,
   onReact,
+  shareTarget,
 }: {
   message: ThreadMessage;
   side: "start" | "end";
@@ -35,6 +43,8 @@ export function MessageHoverActions({
   onMarkUnread: (message: ThreadMessage) => void;
   markedUnread?: boolean;
   onReact: (message: ThreadMessage, reaction: MessageReaction) => Promise<void>;
+  /** The chat a bot reply's public link is made in; without it the reply offers no Share. */
+  shareTarget?: ArtifactTarget;
 }) {
   const { t } = useLingui();
   const [copiedNow, copy, copyFailed, resetCopy, copyFailedText] = useCopyText();
@@ -43,6 +53,7 @@ export function MessageHoverActions({
   const [copiedText, setCopiedText] = useState("");
   const [moreOpen, setMoreOpen] = useState(false);
   const [reactionsOpen, setReactionsOpen] = useState(false);
+  const [shareOpen, setShareOpen] = useState(false);
 
   // Streaming progress bubbles keep hover free for selection / stop clicks.
   if (message.id.startsWith("progress:")) return null;
@@ -69,7 +80,7 @@ export function MessageHoverActions({
     "grid h-11 w-11 place-items-center text-muted-foreground transition-colors hover:text-foreground [@media(hover:hover)_and_(pointer:fine)]:h-7 [@media(hover:hover)_and_(pointer:fine)]:w-7";
 
   return (
-    <MessageHoverMetadata pinned={moreOpen || reactionsOpen || copied} side={side}>
+    <MessageHoverMetadata pinned={moreOpen || reactionsOpen || shareOpen || copied} side={side}>
       {/* biome-ignore lint/a11y/useSemanticElements: a fieldset brings form styling the rail does not want */}
       <div
         data-testid="message-hover-actions"
@@ -145,6 +156,17 @@ export function MessageHoverActions({
               <Copy size={14} strokeWidth={1.7} />
               <Trans>Copy</Trans>
             </DropdownMenuItem>
+            {shareTarget && canShareReply(message) ? (
+              <DropdownMenuItem
+                onClick={() => {
+                  setMoreOpen(false);
+                  setShareOpen(true);
+                }}
+              >
+                <Link size={14} strokeWidth={1.7} />
+                <Trans>Share</Trans>
+              </DropdownMenuItem>
+            ) : null}
           </DropdownMenuContent>
         </DropdownMenu>
         <span role="status" className="sr-only">
@@ -157,6 +179,14 @@ export function MessageHoverActions({
         text={copyFailedText}
         label={t`Copy`}
       />
+      {shareTarget && shareOpen ? (
+        <ReplyShareDialog
+          message={message}
+          target={shareTarget}
+          open={shareOpen}
+          onOpenChange={setShareOpen}
+        />
+      ) : null}
     </MessageHoverMetadata>
   );
 }

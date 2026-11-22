@@ -20,6 +20,7 @@ import {
   UpdateExternalConversationPolicyInput,
 } from "./external-conversations.js";
 import { MessageReactionSchema } from "./reactions.js";
+import { ReplyShareSummarySchema } from "./reply-shares.js";
 import { SEARCH_QUERY_MAX_LENGTH, SearchQueryOutputSchema } from "./search.js";
 import { ChatAlertSchema, ThreadMessagePageSchema, ThreadSnapshotSchema } from "./thread.js";
 import {
@@ -213,6 +214,17 @@ export const threadsRpc = {
     snooze: oc
       .input(threadTarget.and(z.object({ until: z.iso.datetime({ offset: true }).nullable() })))
       .output(z.object({ ok: z.literal(true) })),
+  },
+  /** Public links to single bot replies, each made by the person who shared it. */
+  replyShares: {
+    /** A new link to one bot reply in a chat the caller can open. */
+    create: oc
+      .input(threadTarget.and(z.object({ messageId: Id })))
+      .output(z.object({ shareUrl: z.string() })),
+    /** Every link the caller made, in any Space, newest first. */
+    list: oc.output(z.array(ReplyShareSummarySchema)),
+    /** Only the person who made a link removes it. */
+    remove: oc.input(z.object({ shareId: Id })).output(z.object({ ok: z.literal(true) })),
   },
   notifications: {
     /**

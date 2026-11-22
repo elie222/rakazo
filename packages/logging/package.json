@@ -34,7 +34,8 @@
       "development": "./src/event-loop.ts",
       "default": "./src/event-loop.ts"
     },
-    "./monitoring": "./src/monitoring.ts"
+    "./monitoring": "./src/monitoring.ts",
+    "./redaction": "./src/redaction.ts"
   },
   "scripts": {
     "check": "tsrs --noEmit -p tsconfig.json",

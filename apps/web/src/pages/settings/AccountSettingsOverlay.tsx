@@ -32,6 +32,7 @@ import {
 import { DesktopUpdateSection } from "../../components/DesktopUpdates";
 import { AccountDataSettings } from "../../components/settings/AccountDataSettings";
 import { SettingsGroup, SettingsRow } from "../../components/settings/SettingsRows";
+import { SharedRepliesSettings } from "../../components/settings/SharedRepliesSettings";
 import { TrustedLinkSitesSettings } from "../../components/settings/TrustedLinkSitesSettings";
 import { authClient } from "../../lib/auth/auth";
 import { fetchAuthCapabilities } from "../../lib/auth/auth-capabilities";
@@ -502,6 +503,8 @@ export function GeneralSettingsPanels({
       </SettingsGroup>
 
       <TrustedLinkSitesSettings />
+
+      <SharedRepliesSettings />
 
       {showPassword || canLinkSso || passkeysSupported || unlinkedProviders.length > 0 ? (
         <SettingsGroup title={<Trans>Security</Trans>}>

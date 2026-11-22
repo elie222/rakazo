@@ -13,6 +13,7 @@ import {
   SettingsSwitch,
   useStackedSettings,
 } from "../../components/settings/settings-group";
+import { SharedRepliesGroup } from "../../components/settings/shared-replies";
 import { currentApiBase, selectedSpaceId } from "../../lib/api/api";
 import type { MobileMe } from "../../lib/api/mobile-types";
 import { loadSessionToken } from "../../lib/api/session";
@@ -333,6 +334,8 @@ export default function General() {
             title={t`AI data sharing`}
           />
         </SettingsGroup>
+
+        <SharedRepliesGroup />
       </ScrollView>
     </SafeAreaView>
   );
