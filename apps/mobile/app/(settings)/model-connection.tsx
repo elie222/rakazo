@@ -1,5 +1,6 @@
 import { ph } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
+import { useListSearch } from "@rakazo/chat-ui/hooks";
 import { useCompatibleModelDiscovery } from "@rakazo/chat-ui/model-discovery";
 import type { ModelApiProtocol, ModelHeaderRow, ThinkingLevel } from "@rakazo/contracts";
 import {
@@ -63,7 +64,6 @@ import { analyticsSurface } from "../../lib/native/analytics-surface";
 import { native, useThemedStyles } from "../../lib/native/native";
 import { useScreenHeader } from "../../lib/navigation/screen-header";
 import { ACCOUNT_SETTINGS, settingsRpc } from "../../lib/query/settings-target";
-import { useListSearch } from "../../lib/search/use-list-search";
 
 type ModelSelection = {
   modelId?: string;

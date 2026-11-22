@@ -319,7 +319,7 @@ export async function wakeRoutine(deps: ExecutorDeps, routineId: string, schedul
   }
   if ("cancelledEvents" in claimed && claimed.cancelledEvents) {
     for (const event of claimed.cancelledEvents) {
-      await deps.events.notify(event.threadId, event.seq).catch(() => undefined);
+      await deps.events.notify(event.threadId, event.seq);
     }
   }
   // Enqueue continuation first so a thread-signal failure cannot strand the run.

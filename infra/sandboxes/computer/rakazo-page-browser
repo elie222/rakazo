@@ -1915,28 +1915,38 @@ PURCHASE_HELPERS = r"""
   const SURROUNDINGS = "header, nav, footer, aside, [role=banner], [role=navigation], [role=contentinfo], [role=complementary]";
   const NOTICE = /cookie|consent|gdpr|onetrust/i;
   const CARD_TOKENS = ["cc-number", "cc-csc", "cc-exp", "cc-exp-month", "cc-exp-year"];
-  // What only a payment card's field is called. "Card number" alone is not: membership, frequent-flyer and ID
-  // cards have numbers too, and a payment card's form also asks for its security code.
-  const CARD_NAMING = /(?<![a-z])(?:cvv2?|cvc2?|cvn2?|csc)(?![a-z])|card[\s_-]*(?:security|verification)|(?:credit|debit)[\s_-]*card|(?:^|[^\d•*x])(?:\d|•|\*|x){4}[\s-]+(?:\d|•|\*|x){4}[\s-]+(?:\d|•|\*|x){4}|כרטיס[\s_-]*אשראי/i;
-  // A gift card, voucher or coupon number is not the card that pays.
-  const NOT_A_CARD = /gift|voucher|coupon|promo|loyalty|rewards?\b|שובר|קופון|מתנה|הטבה/i;
-  const CARD_NUMBER = /card[\s_-]*(?:number|no\b|num\b)|cardnumber|cc[\s_-]*(?:num|number)|ccnum|מספר[\s_-]*כרטיס/i;
-  const CARD_COMPANION = /(?<![a-z])(?:cvv2?|cvc2?|cvn2?|csc)(?![a-z])|security[\s_-]*code|(?<![a-z])mm\s*\/\s*yy(?!yy)|קוד[\s_-]*(?:אבטחה|ביטחון)/i;
+  const cardTypes = [
+    /(?:credit|debit)[\s_-]*card|כרטיס[\s_-]*אשראי/i,
+    /信用卡|银行卡|銀行卡|借记卡|借記卡|クレジットカード|デビットカード|신용카드/,
+    /tarjeta[\s_-]*de[\s_-]*(?:crédito|credito|débito|debito)|carte[\s_-]*(?:bancaire|de[\s_-]*cr[eé]dit)|kreditkarte|debitkarte|bankkarte/i,
+  ];
+  const MASKED_CARD_NUMBER = /(?:^|[^\d•*x])(?:\d|•|\*|x){4}[\s-]+(?:\d|•|\*|x){4}[\s-]+(?:\d|•|\*|x){4}/i;
+  const CARD_VERIFICATION = /card[\s_-]*(?:security|verification)/i;
+  const CARD_CODE = /(?<![a-z])(?:cvv2?|cvc2?|cvn2?)(?![a-z])/i;
+  const CSC_CODE = /(?:(?<!\p{L})|(?<=安全[码碼]|セキュリティコード|カード|卡|카드))csc(?:(?!\p{L})|(?=[码碼]|コード|번호|番号))/iu;
+  const hasCardCode = (name) => CARD_CODE.test(name) || CSC_CODE.test(name);
+  const NON_PAYMENT_CARD = /gift|voucher|coupon|promo|loyalty|rewards?[\s_-]*(?:card|number|no\b|id|program|points?)|שובר|קופון|מתנה|הטבה|礼品|禮品|礼券|禮券|优惠券|優惠券|代金券|ギフト|クーポン|기프트|쿠폰|regalo|cup[oó]n|cadeau|bon[\s_-]*d['’]?achat|geschenk|gutschein|会员卡|會員卡|积分卡|積分卡|会員カード|メンバーズカード|회원카드|멤버십|tarjeta[\s_-]*de[\s_-]*socio|carte[\s_-]*de[\s_-]*(?:membre|fid[ée]lit[ée])|mitgliedskarte|kundenkarte/i;
+  const CARD_NUMBER = /card[\s_-]*(?:number|no\b|num\b)|cc[\s_-]*(?:num|number)|מספר[\s_-]*כרטיס|卡号|卡號|カード番号|카드[\s_-]*번호|n[uú]mero[\s_-]*de[\s_-]*tarjeta|num[eé]ro[\s_-]*de[\s_-]*carte|kartennummer/i;
+  const CARD_COMPANION = /security[\s_-]*code|(?<![a-z])mm\s*\/\s*yy(?!yy)|קוד[\s_-]*(?:אבטחה|ביטחון)|安全[码碼]|セキュリティコード|보안[\s_-]*코드|c[oó]digo[\s_-]*de[\s_-]*seguridad|cryptogramme|sicherheitscode|pr[üu]fziffer/i;
   const namingOf = (el) => [el.name, el.id, el.placeholder, el.getAttribute("aria-label"),
-    ...Array.from(el.labels || [], (label) => label.textContent)].join(" ");
+    ...Array.from(el.labels || [], (label) => label.textContent)].join(" ").normalize("NFKC");
   function cardLike(el) {
     if (!(el instanceof HTMLInputElement) || !["text", "tel", "number", "password"].includes(el.type) || !visible(el)) return false;
     const tokens = (el.getAttribute("autocomplete") || "").toLowerCase().split(/\s+/);
     if (CARD_TOKENS.some((token) => tokens.includes(token))) return true;
     const naming = namingOf(el);
-    if (NOT_A_CARD.test(naming)) return false;
-    if (CARD_NAMING.test(naming)) return true;
+    if (cardTypes.some((pattern) => pattern.test(naming))) return true;
+    if (NON_PAYMENT_CARD.test(naming)) return false;
+    if (hasCardCode(naming) || CARD_VERIFICATION.test(naming) || MASKED_CARD_NUMBER.test(naming)) return true;
     // A card number counts beside a security code or a month/year expiry, which an ID or membership card
     // form does not ask for.
     if (!CARD_NUMBER.test(naming)) return false;
     const around = el.form ? [...el.form.elements] : [...el.getRootNode().querySelectorAll("input")];
-    return around.some((other) => other !== el && other instanceof HTMLInputElement && visible(other)
-      && CARD_COMPANION.test(namingOf(other)));
+    return around.some((other) => {
+      if (other === el || !(other instanceof HTMLInputElement) || !visible(other)) return false;
+      const name = namingOf(other);
+      return hasCardCode(name) || CARD_COMPANION.test(name);
+    });
   }
   // Inputs of the page and of its open shadow trees, where some checkouts draw their card fields.
   function deepInputs(root = document, found = []) {
@@ -2009,6 +2019,19 @@ PURCHASE_HELPERS = r"""
     || (el && PAY_WORD.test(phrase(word)) && inPaymentForm(el)));
   // Controls on a payment page that never pay.
   const NOT_PAYING = /^(?:back|go back|previous|cancel|edit|change|remove|delete|clear|apply|redeem|coupon|promo|discount|gift card|show|hide|help|close|dismiss|terms|privacy|learn more|view|select (?:a )?seat|choose (?:a )?seat|sign in|log in|login|sign up|register|forgot|add (?:a )?(?:promo|coupon|code|gift|note)|add to (?:cart|basket|bag))\b|^(?:חזרה|ביטול|עריכה|שינוי|הסרה|קופון|סגירה|סגור|עזרה|תנאי|פרטיות|התחבר|כניסה|החל|הוסף לסל|הוספה לסל)(?:\s|$)/;
+  const localizedNonPaymentLabels = [
+    /^(?:返回|返回上一步|返回购物车|返回購物車|返回首页|返回首頁|上一步|取消|关闭|關閉|登录|登錄|登入|立即登录|立即登錄|去登录|去登錄|注册|註冊|立即注册|立即註冊|忘记密码|忘記密碼|加入购物车|加入購物車|添加到购物车|添加到購物車)$/,
+    /^(?:戻る|前へ|キャンセル|閉じる|ログイン|新規登録|会員登録|パスワードを忘れた方|カートに追加|カートに入れる)$/,
+    /^(?:(?:뒤로|이전|취소|닫기|로그인|회원가입|비밀번호 찾기)(?:하기)?|장바구니(?:에)? 담기)$/,
+    /^(?:volver|atrás|cancelar|cerrar|iniciar sesión|acceder|registrarse|regístrate|olvidé mi contraseña|añadir al carrito|agregar al carrito)$/,
+    /^(?:retour|retourner|précédent|annuler|fermer|connexion|se connecter|s'inscrire|créer un compte|mot de passe oublié|ajouter au panier)$/,
+    /^(?:zurück|abbrechen|schließen|anmelden|einloggen|registrieren|passwort vergessen|in den warenkorb)$/,
+  ];
+  function notPaying(words) {
+    const names = words.map(phrase);
+    return names.some((name) => NOT_PAYING.test(name))
+      || (names.length > 0 && names.every((name) => localizedNonPaymentLabels.some((pattern) => pattern.test(name))));
+  }
   // A number may group its thousands with spaces, as in "1 234,56 €". Separators before its first digit
   // are kept, so ".99 USD" is not read as 99 dollars.
   const NUMBER = "[.,]*\\d(?:[\\d.,]|[ \\u00a0\\u202f](?=\\d{3}))*";
@@ -2168,7 +2191,7 @@ PURCHASE_HELPERS = r"""
     else if ((el instanceof HTMLButtonElement || el instanceof HTMLInputElement || el instanceof HTMLAnchorElement
         || el.getAttribute("role") === "button" || pressable(el)) && isFinalStep(words, el)) reason = "final_step";
     else if (!selectsMethod(el) && (frame || pageCards().length) && pressable(el) && !inSurroundings(el)
-        && !words.some((word) => NOT_PAYING.test(phrase(word)))) reason = "payment_page";
+        && !notPaying(words)) reason = "payment_page";
     return reason ? shownPurchase(reason, words[0] || "", words) : null;
   }
   // The control a click at this spot of the page presses, unless it lands on a field, label or nothing.

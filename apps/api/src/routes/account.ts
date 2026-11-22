@@ -31,6 +31,7 @@ import {
   auditLogAccess,
   auditLogScope,
   commitBotUpdate,
+  deploymentModelChangesScope,
   findAutoReviewPreference,
   findDefaultVoiceCredential,
   findModelCredential,
@@ -111,13 +112,7 @@ export function accountRoutes(ctx: RouterContext) {
     },
     analytics: {
       screen: authed.analytics.screen.handler(async ({ context, input }) => {
-        deps.analytics?.capture(
-          context.actor.userId,
-          { name: "screen_viewed", ...input },
-          undefined,
-          // The server only sends a plan layout while the test runs, so it is the exposure.
-          input.planLayout ? { "plan-layout": input.planLayout } : undefined,
-        );
+        deps.analytics?.capture(context.actor.userId, { name: "screen_viewed", ...input });
         return { ok: true as const };
       }),
       modelSignInStep: authed.analytics.modelSignInStep.handler(async ({ context, input }) => {
@@ -446,7 +441,7 @@ export function accountRoutes(ctx: RouterContext) {
         };
         const spaceChanges = async function* (
           signal: AbortSignal,
-          special?: "meetingCalendar" | "nativeCalendar" | "pages",
+          special?: "meetingCalendar" | "nativeCalendar" | "pages" | "deploymentModel",
         ): AsyncGenerator<{ spaceChange: SpaceChangeKind }> {
           if (!followSpaceChanges) return;
           let scope = spaceId;
@@ -458,6 +453,8 @@ export function accountRoutes(ctx: RouterContext) {
             scope = nativeCalendarScope({ spaceId, userId, sessionId: context.nativeSessionId });
           } else if (special === "pages") {
             scope = pageChangesScope(userId);
+          } else if (special === "deploymentModel") {
+            scope = deploymentModelChangesScope;
           }
           // The app re-reads what these cover only on signals, so a failure ends the stream and
           // the app reconnects and re-reads. Alerts keep flowing for a while first, so a lasting
@@ -469,7 +466,8 @@ export function accountRoutes(ctx: RouterContext) {
                   ? spaceChange === special
                   : spaceChange !== "meetingCalendar" &&
                     spaceChange !== "nativeCalendar" &&
-                    spaceChange !== "pages"
+                    spaceChange !== "pages" &&
+                    spaceChange !== "deploymentModel"
               )
                 yield { spaceChange };
             }
@@ -498,6 +496,7 @@ export function accountRoutes(ctx: RouterContext) {
             spaceChanges(signal, "meetingCalendar"),
             spaceChanges(signal, "nativeCalendar"),
             spaceChanges(signal, "pages"),
+            spaceChanges(signal, "deploymentModel"),
             organizationChanges(signal),
           ),
         );
@@ -662,6 +661,7 @@ export function accountRoutes(ctx: RouterContext) {
           sttApiKey: input.sttApiKey,
           ttsModel: input.ttsModel,
           sttModel: input.sttModel,
+          transcriptionVocabulary: input.transcriptionVocabulary,
           scope: input.scope,
           signal: context.signal,
         }),

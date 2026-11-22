@@ -18,7 +18,8 @@ server integration credentials, or deployment updates, and cannot read deploymen
 There is no app-admin role, first-user privilege, or `ADMINS` list. Workspace owners manage only their own workspace.
 
 `RAKAZO_ADMIN_EMAILS` names accounts, comma-separated, that review plugin submissions, add stdio
-MCP servers ([integrations](self-host-integrations.md)), and, on deployments that sell model
+MCP servers ([integrations](self-host-integrations.md)), choose the model for everyone
+([models](self-host-models.md#default-for-everyone)), and, on deployments that sell model
 credits, give free access at `/admin/access`. An account counts only once its email is verified.
 It grants nothing else.
 
@@ -111,20 +112,33 @@ loopback host. In `NODE_ENV=development`, captured messages are available from
 `http://127.0.0.1:3100/api/dev/emails` with cache disabled; the API logs only delivery
 metadata, never reset tokens. The inbox route is not registered in test, staging, or production.
 
-Set `WELCOME_EMAIL_ENABLED=true` to send each new account one welcome email, with an unsubscribe
-link, after it first signs in. It needs one of the providers above.
+Rakazo can also send product emails, each with an unsubscribe link: a welcome email after a new
+account first signs in, a referral email when billing referrals are on, and, with billing
+configured, reminders after a plan starts (connect a model, import an agent). This repository
+holds no wording for them, so each one goes out only when you supply its copy, and only with one
+of the providers above.
 
-With billing configured, the same switch also sends an organization's owner one reminder a day
-after their plan starts if they have not connected a model yet. That reminder is queued and
-sent by the worker, so give the worker the same mail settings as the API, including this switch
-(the Compose files already do); a worker without them drops the reminder.
+Copy is a folder with one `<email>.json` file per email (`welcome`, `referral`,
+`model-connection`, `agent-import`). Each file maps an app language (`en`, `de`, `pt-BR`, ...) to
+that email's strings by key:
 
-To word these emails your own way, write a directory of `<email>.json` files mapping each app
-language to that email's strings. The app reads it from `EMAIL_COPY_DIR` (`/app/email-copy` in the
-image), so mount yours there for the `api` and `worker` services, or point `EMAIL_COPY_DIR` at it. The
-emails, keys and `{placeholders}` are listed in `packages/auth/src/email-copy/defaults.ts`, and
-`node packages/auth/scripts/check-email-copy.ts <dir>` checks a directory. A missing or invalid
-string falls back to the file's English, then to the default.
+```json
+{
+  "en": { "subject": "...", "body": "... {weeks} ..." },
+  "de": { "subject": "...", "body": "... {weeks} ..." }
+}
+```
+
+Every key must be present, and a string must use exactly the `{placeholders}` its key lists in
+`packages/auth/src/email-copy/email-keys.ts`. An email is sent only when its file's English has a
+valid string for every key; a missing or invalid string in another language falls back to that
+English. At startup the API and worker log each email that is off and why.
+
+The app reads the folder from `EMAIL_COPY_DIR` (`/app/email-copy` in the image), so mount yours
+there for both the `api` and `worker` services, or point `EMAIL_COPY_DIR` at it. The worker sends
+the reminders, so give it the same mail settings as the API (the Compose files already do).
+`node packages/auth/scripts/check-email-copy.ts <dir>` checks a folder and fails on anything that
+would leave an email unsent or falling back.
 
 ## Password policy
 

@@ -28,7 +28,12 @@ vi.mock("./routine-store", () => ({
   setRoutineActive: vi.fn(),
 }));
 vi.mock("../native/native-controls", () => ({ iosAtLeast: () => false }));
-vi.mock("../api/api", () => ({ rpc: vi.fn() }));
+vi.mock("../api/api", () => ({
+  rpc: vi.fn(),
+  currentApiBase: () => "http://api.test",
+  selectedSpaceId: () => "space-1",
+}));
+vi.mock("../api/session", () => ({ currentSessionGeneration: () => 1 }));
 vi.mock("../native/native", () => ({ native: {}, useMobileTokens: () => ({}) }));
 vi.mock("./cron", () => ({ cronLabels: () => ({}) }));
 vi.mock("../layout/side-insets", () => ({ useSideInsets: () => ({}) }));
