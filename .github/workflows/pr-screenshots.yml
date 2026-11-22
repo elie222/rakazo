@@ -262,8 +262,8 @@ jobs:
           GH_TOKEN: ${{ secrets.GH_DEPENDENCY_UPDATES_PAT }}
         run: |
           set -euo pipefail
-          # The token shares its hourly API limit with other automation. Codex rotates the login,
-          # so skip the capture unless there is room left to save the rotated one afterwards.
+          # The token shares its hourly API limit with other automation. A refresh rotates the login,
+          # so skip the capture unless there is room left to save the rotated one.
           remaining="$(gh api rate_limit --jq .resources.core.remaining)"
           if (( remaining < 100 )); then
             reset="$(gh api rate_limit --jq '.resources.core.reset | todate')"
