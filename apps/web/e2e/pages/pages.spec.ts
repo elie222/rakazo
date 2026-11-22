@@ -1,5 +1,6 @@
 import type { Page, Route } from "@playwright/test";
 import { expect, test } from "@playwright/test";
+import type { PageComment } from "@rakazo/contracts";
 import {
   activeBotId,
   captureScreenshot,
@@ -61,6 +62,11 @@ test("a week calendar keeps its days aligned in a desktop two-column page", asyn
   const title = "Calendar layout";
   const source = `function CalendarPage() {
     return <Page width="wide" title="Calendar layout">
+      <Section heading="Daily activity"><CalendarHeatmap from="2026-11-09" to="2026-11-10" days={[
+        { date: "2026-11-09", value: 4 },
+        { date: "2026-11-10", value: 10 },
+        { date: "2026-11-16", value: 1000 }
+      ]} /></Section>
       <Grid columns={2}>
         <Section heading="Week"><WeekView week="2026-11-09" events={[
           { date: "2026-11-09", start: 9, end: 10, title: "Monday event" },
@@ -131,7 +137,61 @@ test("a week calendar keeps its days aligned in a desktop two-column page", asyn
   expect(layout.dayEvent.y - layout.dayColumns[0]!.y).toBeCloseTo(67, 0);
   expect(layout.dayText).toContain("Day event");
   expect(layout.dayText).toContain("9:30");
+  const heatmap = frame.getByRole("img", { name: /highest 10$/ });
+  await expect(heatmap).toBeVisible();
+  const heatmapColors = await heatmap
+    .locator(".rk-day")
+    .evaluateAll((cells) => cells.map((cell) => getComputedStyle(cell).backgroundColor));
+  expect(heatmapColors).toHaveLength(2);
+  expect(new Set(heatmapColors).size).toBe(2);
   await captureScreenshot(page, testInfo, "page-calendar-two-columns");
+});
+
+test("a day calendar fits a phone-width page while a week calendar scrolls", async ({
+  page,
+}, testInfo) => {
+  await signup(page, `pages-day-${Date.now()}@rakazo.test`, "password12", "Calendar Reader");
+  await completeOnboarding(page);
+  await page.setViewportSize({ width: 390, height: 844 });
+  const title = "Calendar on a phone";
+  const source = `function CalendarPage() {
+    const events = [{ start: 9.25, end: 10.25, title: "Design review" }];
+    return <Page title="Calendar on a phone">
+      <Section heading="Day"><DayView start={9} end={11} events={events} /></Section>
+      <Section heading="Day (RTL)"><div dir="rtl"><DayView start={9} end={11} events={events} /></div></Section>
+      <Section heading="Week"><WeekView week="2026-11-09" start={9} end={11} events={[
+        { date: "2026-11-15", start: 9, end: 10, title: "Sunday review" }
+      ]} /></Section>
+    </Page>;
+  }
+  export default CalendarPage;`;
+  await send(page, `call save_page with ${JSON.stringify({ title, source })}\nthen say Done.`);
+  const card = page.getByTestId("page-card");
+  await expect(card).toHaveCount(1, { timeout: 30_000 });
+  await card.getByRole("button", { name: `Open ${title}` }).click();
+  const frame = pageFrame(page, title);
+  await expect(frame.locator(".rk-cal-timed")).toHaveCount(3);
+  const layout = await frame.locator(".rk-page").evaluate((root) => {
+    const inside = (outer: Element, inner: Element) => {
+      const a = outer.getBoundingClientRect();
+      const b = inner.getBoundingClientRect();
+      return b.left >= a.left && b.right <= a.right;
+    };
+    const days = [...root.querySelectorAll(".rk-cal-timed:not(.rk-cal-week)")].map((day) => ({
+      overflow: day.scrollWidth - day.clientWidth,
+      axisVisible: inside(day, day.querySelector(".rk-cal-hours span")!),
+      eventVisible: inside(day, day.querySelector(".rk-cal-event")!),
+    }));
+    const week = root.querySelector(".rk-cal-week")!;
+    return { days, weekOverflow: week.scrollWidth - week.clientWidth };
+  });
+  expect(layout.days).toHaveLength(2);
+  for (const day of layout.days) {
+    expect(day).toMatchObject({ axisVisible: true, eventVisible: true });
+    expect(day.overflow).toBeLessThanOrEqual(1);
+  }
+  expect(layout.weekOverflow).toBeGreaterThan(0);
+  await captureScreenshot(page, testInfo, "page-day-calendar-phone");
 });
 
 test("shared page contents jump below the header and copy fallback", async ({
@@ -496,8 +556,14 @@ test("a bot's page shows in its reply, opens full screen, is shared by link and 
 
   // Turning the link off breaks it at once.
   await view.getByRole("button", { name: "Share" }).click();
-  await expect(share.getByText("The shared link stops working")).toBeVisible();
-  await share.getByRole("radio", { name: /Only you/ }).click();
+  const onlyYou = share.getByRole("radio", { name: /Only you/ });
+  await expect(
+    share
+      .locator("label")
+      .filter({ has: page.getByRole("radio", { name: /Only you/ }) })
+      .getByText("The shared link stops working"),
+  ).toBeVisible();
+  await onlyYou.click();
   await expect(share.getByRole("link", { name: "Open link" })).toBeHidden();
   await outside.reload();
   await expect(outside.getByRole("heading", { name: "This page isn't available" })).toBeVisible();
@@ -1068,4 +1134,141 @@ test("a page acts for its reader only after a click in it, never on load or from
   await page.keyboard.up("a");
   await page.waitForTimeout(500);
   expect(await page.evaluate(() => navigator.clipboard.readText())).toBe("key 1");
+});
+
+test("specific people review a version and lose access when removed", async ({
+  page,
+  browser,
+  baseURL,
+}, testInfo) => {
+  const stamp = Date.now();
+  const reviewerEmail = `reviewer-${stamp}@example.test`;
+  const reviewerContext = await browser.newContext({ baseURL, reducedMotion: "reduce" });
+  try {
+    const reviewer = await reviewerContext.newPage();
+    await signup(reviewer, reviewerEmail, "password12", "Reviewer");
+    const emailApi = process.env.API_URL ?? "http://127.0.0.1:3110";
+    let verificationLink: string | undefined;
+    await expect
+      .poll(async () => {
+        const response = await reviewer.request.get(`${emailApi}/__e2e/emails`);
+        const emails = (await response.json()) as Array<{ to: string; text: string }>;
+        verificationLink = emails
+          .filter(({ to }) => to === reviewerEmail)
+          .flatMap(({ text }) => text.match(/https?:\/\/\S+/g) ?? [])
+          .find((url) => new URL(url).pathname === "/api/auth/verify-email");
+        return Boolean(verificationLink);
+      })
+      .toBe(true);
+    expect((await reviewer.request.get(verificationLink!)).ok()).toBe(true);
+
+    await signup(page, `author-${stamp}@example.test`, "password12", "Author");
+    await completeOnboarding(page);
+    const title = "Weekly review";
+    const source = `export default function Report() {
+      return <Page title="Weekly review"><Section heading="Release readiness">
+        <Text>All checks are complete.</Text>
+      </Section><Section heading="Release readiness">
+        <Text>The rollout date is still open.</Text>
+      </Section></Page>;
+    }`;
+    await send(page, `call save_page with ${JSON.stringify({ title, source })}\nthen say Done.`);
+    await page.getByRole("button", { name: `Open ${title}` }).click({ timeout: 30_000 });
+    const pageId = new URL(page.url()).searchParams.get("page")!;
+    const shareButton = page.getByRole("button", { name: "Share", exact: true });
+    await shareButton.click();
+    const share = page.getByTestId("page-share");
+    await share.getByRole("radio", { name: "Specific people" }).click();
+    await share.getByRole("textbox", { name: "Account email" }).fill(reviewerEmail);
+    await share.getByRole("button", { name: "Add", exact: true }).click();
+    await expect(share.getByText(reviewerEmail, { exact: true })).toBeVisible();
+    await expect(share.getByRole("button", { name: "Copy review link" })).toBeVisible();
+    await captureScreenshot(page, testInfo, "page-specific-people");
+    const detail = await rpc<{ shareUrl: string }>(page, "pages/get", { pageId, link: true });
+
+    const listRequest = "**/rpc/pageReviews/list";
+    await reviewer.route(listRequest, (route) => route.fulfill({ status: 503 }));
+    await reviewer.goto(new URL("/review", detail.shareUrl).href);
+    const retry = reviewer.getByRole("button", { name: "Try again", exact: true });
+    await expect(retry).toBeVisible();
+    await captureScreenshot(reviewer, testInfo, "shared-pages-retry");
+    await reviewer.unroute(listRequest);
+    await retry.click();
+    await expect(reviewer.getByRole("link", { name: title, exact: true })).toBeVisible();
+
+    await reviewer.goto(detail.shareUrl);
+    await expect(
+      pageFrame(reviewer, title).getByRole("heading", { name: "Release readiness", exact: true }),
+    ).toHaveCount(2);
+    await reviewer.getByRole("button", { name: "Comments", exact: true }).click();
+    await reviewer.getByRole("combobox", { name: "Section", exact: true }).click();
+    await reviewer.getByRole("option", { name: "Release readiness (2)", exact: true }).click();
+    await reviewer
+      .getByRole("textbox", { name: "Comment", exact: true })
+      .fill("Add the rollout date.");
+    await reviewer.getByRole("button", { name: "Post comment" }).click();
+    await expect(
+      reviewer.getByRole("listitem").getByText("Add the rollout date.", { exact: true }),
+    ).toBeVisible();
+    const { items } = await rpc<{ items: PageComment[] }>(reviewer, "pageReviews/comments", {
+      pageId,
+    });
+    expect(items[0]).toMatchObject({ section: "Release readiness", sectionOccurrence: 1 });
+    const reviewerActions = reviewer.getByRole("button", { name: "Comment actions" });
+    await expect(reviewerActions).toBeVisible();
+    await captureScreenshot(reviewer, testInfo, "page-review-comment");
+
+    await rpc(page, "models/connect", {
+      provider: "openai",
+      apiKey: "test-key-not-a-real-secret",
+      modelId: "gpt-6-sol",
+    });
+    await rpc(page, "bots/update", {
+      botId: activeBotId(page),
+      modelProvider: "openai",
+      modelId: "gpt-6-sol",
+    });
+    await reviewerActions.click();
+    await reviewer.getByRole("menuitem", { name: "Ask bot to revise" }).click();
+    const consent = reviewer.getByRole("alertdialog", { name: "Share data with OpenAI?" });
+    await expect(consent).toBeVisible();
+    await expect(
+      consent.getByText("The page and selected comment are sent to draft a revision."),
+    ).toBeVisible();
+    await captureScreenshot(reviewer, testInfo, "page-review-ai-consent");
+    await consent.getByRole("button", { name: "Cancel" }).click();
+    await expect(consent).toBeHidden();
+    if (await reviewerActions.isHidden())
+      await reviewer.getByRole("button", { name: "Comments", exact: true }).click();
+    await expect(reviewerActions).toBeVisible();
+
+    await shareButton.click();
+    await expect(share).toBeHidden();
+    await expect(page).toHaveURL(new RegExp(`[?&]page=${pageId}`));
+    await page.getByRole("button", { name: "Review page" }).click();
+    await page.getByRole("button", { name: "Comments", exact: true }).click();
+    await expect(page.getByText("Add the rollout date.", { exact: true })).toBeVisible();
+    await page.getByRole("button", { name: "Comment actions" }).click();
+    await page.getByRole("menuitem", { name: "Resolve", exact: true }).click();
+    await expect(reviewer.getByText("Resolved", { exact: true })).toBeVisible();
+    await reviewerActions.click();
+    await expect(reviewer.getByRole("menuitem", { name: "Reopen", exact: true })).toBeVisible();
+    await page.goBack();
+    await shareButton.click();
+    await share.getByRole("button", { name: `Remove access for ${reviewerEmail}` }).click();
+    await expect(reviewer.getByText("This page isn't available", { exact: true })).toBeVisible();
+    await expect(reviewer.locator(`iframe[title="${title}"]`)).toHaveCount(0);
+    await shareButton.click();
+    await page.getByRole("button", { name: "Close page", exact: true }).click();
+    const card = page.getByTestId("page-card").filter({ hasText: title });
+    await expect(card).toContainText("Page · Specific people");
+    await openBotPanel(page);
+    const library = page.getByTestId("bot-pages").filter({ visible: true });
+    await expect(library.getByRole("listitem").filter({ hasText: title })).toContainText(
+      "Specific people",
+    );
+    await captureScreenshot(page, testInfo, "page-specific-people-library");
+  } finally {
+    await reviewerContext.close();
+  }
 });

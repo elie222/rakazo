@@ -10,8 +10,36 @@ describe("instructionUpdateDiff", () => {
     ).toBe(["  Be brief", "- Key is [redacted]", "+ Key is [redacted]"].join("\n"));
   });
 
+  it("still shows redacted lines as changed when line endings differ", () => {
+    expect(
+      instructionUpdateDiff(
+        "Be brief\r\nKey is [redacted]\r\nKeep context",
+        "Be brief\nKey is [redacted]\nKeep context",
+      ),
+    ).toBe(
+      ["  Be brief", "- Key is [redacted]", "+ Key is [redacted]", "  Keep context"].join("\n"),
+    );
+  });
+
   it("returns the new text when there is nothing to compare", () => {
     expect(instructionUpdateDiff("  \n", "Be brief")).toBe("Be brief");
+    expect(instructionUpdateDiff("  \r\n", "Be brief\r\nAsk first")).toBe("Be brief\r\nAsk first");
+  });
+
+  it("shows only the edited line when both sides mix CRLF and LF", () => {
+    expect(instructionUpdateDiff("a\r\nb\nc\r\nd", "a\nx\r\nc\nd")).toBe("  a\n- b\n+ x\n  c\n  d");
+  });
+
+  it("does not report changes when only the line endings differ", () => {
+    expect(instructionUpdateDiff("a\r\n\r\nb\r\n", "a\n\nb\n")).toBe(
+      ["  a", "  ", "  b", "  "].join("\n"),
+    );
+  });
+
+  it("keeps a standalone carriage return and meaningful trailing whitespace distinct", () => {
+    expect(instructionUpdateDiff("a\rb\r\nkeep  \n", "ab\nkeep \r\n")).toBe(
+      ["- a\rb", "- keep  ", "+ ab", "+ keep ", "  "].join("\n"),
+    );
   });
 
   it("shows a changed line with nearby context and counts the rest", () => {

@@ -8,6 +8,8 @@ import {
 } from "@expo/ui/jetpack-compose";
 import { useLingui } from "@lingui/react/macro";
 import { tokensForAppearance } from "@rakazo/ui-tokens";
+import { useEffect } from "react";
+import { AccessibilityInfo } from "react-native";
 import { useResolvedAppearance } from "../../lib/native/native";
 import type { NameDialogProps } from "./name-dialog";
 
@@ -24,6 +26,10 @@ export default function ComposeNameDialog({
   const tokens = tokensForAppearance(scheme);
   const value = useNativeState(draft);
   const selection = useNativeState({ start: 0, end: draft.length });
+  // The error shows under the field while focus stays on Save, so speak it when it appears.
+  useEffect(() => {
+    if (error) AccessibilityInfo.announceForAccessibility(error);
+  }, [error]);
   // Follow the app's monochrome accent instead of a palette generated from it.
   const buttonColors = {
     contentColor: tokens.foreground,

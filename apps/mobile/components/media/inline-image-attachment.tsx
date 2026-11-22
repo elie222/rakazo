@@ -67,13 +67,16 @@ export function InlineImageAttachment({
     };
   }, [targetBotId, targetGroupId, artifactId, mimeType]);
 
+  const canOpen = state.status !== "loading";
+  const openLabel = canOpen ? t`Open image ${name}` : undefined;
+
   if (state.status === "ready") {
     const size = fitImageSize(state.size, maxWidth, MAX_INLINE_HEIGHT);
     return (
       <Pressable
         {...pressableProps}
         accessibilityRole="imagebutton"
-        accessibilityLabel={t`Open image ${name}`}
+        accessibilityLabel={openLabel}
         onPress={onOpen}
       >
         <Image
@@ -85,7 +88,12 @@ export function InlineImageAttachment({
     );
   }
   return (
-    <Pressable {...pressableProps} onPress={state.status === "error" ? onOpen : undefined}>
+    <Pressable
+      {...pressableProps}
+      accessibilityRole={canOpen ? "button" : pressableProps?.accessibilityRole}
+      accessibilityLabel={openLabel ?? pressableProps?.accessibilityLabel}
+      onPress={canOpen ? onOpen : undefined}
+    >
       <View style={[styles.placeholder, { backgroundColor: tokens.muted }]}>
         <Text style={[styles.label, { color: labelColor }]}>🖼 {name}</Text>
         {state.status === "loading" ? (

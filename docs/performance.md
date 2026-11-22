@@ -70,10 +70,12 @@ pnpm perf:web-chat --label=local --sizes=100 --samples=5
 pnpm perf:web-chat check .context/performance/web-chat-local.json
 ```
 
-`check` holds the medians of the largest thread size to fixed lines (one frame, 16 ms, for input
-work; 100 ms for opening and switching) and exits non-zero when one is over. The nightly
-verification workflow runs both on a GitHub-hosted Ubuntu runner, writes the table to the job
-summary, and keeps the JSON report as an artifact. Desktop and mobile are not on the scorecard yet.
+`check` compares the medians for the largest thread size against fixed budgets and exits non-zero
+when any metric is over. Opening an uncached chat or a chat in another Space has a 200 ms budget.
+Switching back to a cached chat has a 100 ms budget. Typing and resizing each have a one-frame
+(16 ms) budget for main-thread work. The nightly verification workflow runs both commands on a
+GitHub-hosted Ubuntu runner, writes the table to the job summary, and keeps the JSON report as an
+artifact. Desktop and mobile are not on the scorecard yet.
 
 ## Mobile
 

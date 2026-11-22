@@ -1,6 +1,6 @@
 import { createAuth } from "@rakazo/auth";
 import { describe, expect, it } from "vitest";
-import { isTrustedOrigin, MOBILE_AUTH_ORIGINS, trustedRequestOrigins } from "../app.js";
+import { isTrustedOrigin, MOBILE_AUTH_ORIGINS, trustedRequestOrigins } from "./trusted-origins.js";
 
 // Better Auth skips its origin middleware under NODE_ENV=test, so check the
 // matcher that production uses for callback URLs and request origins.
