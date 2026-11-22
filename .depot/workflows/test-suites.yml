@@ -293,6 +293,8 @@ jobs:
         run: |
           affected="$(pnpm exec turbo ls --affected --output=json | jq -r '.packages.items[].path + "/"')"
           mapfile -t packages < <(printf "%s" "$affected")
+          # With no paths Vitest would run every file, so a change no package owns runs none.
+          (( ${#packages[@]} )) || exit 0
           pnpm exec vitest run --project processes "${packages[@]}" --passWithNoTests
 
   # The required check and the deploy gate, under one stable name.
