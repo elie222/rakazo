@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 
+import { flush } from "@rakazo/core/test-async";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ComponentProps, ReactNode } from "react";
 import { act } from "react";
@@ -200,7 +201,7 @@ it("shows a lone Space's overrides only once one is customized", async () => {
   spaceSettings.overrides.mockResolvedValue([]);
   await render(<SpaceSettingOverrides hideUntilCustomized onClose={() => undefined} />);
   await vi.waitFor(() => expect(spaceSettings.overrides).toHaveBeenCalled());
-  await act(async () => undefined);
+  await act(flush);
   expect(container.querySelector('[data-testid="space-setting-overrides"]')).toBeNull();
 
   spaceSettings.overrides.mockResolvedValue(["voice"]);
