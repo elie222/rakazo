@@ -158,14 +158,12 @@ export function resolveDefaultComputerMode(
   return mode.data;
 }
 
-/** Providers whose descriptors declare offersHostComputer; an adapters test keeps the two equal. */
-export const HOST_COMPUTER_OFFERING_KINDS: readonly string[] = ["docker", "local-vm"];
-
-/** A new bot's computer runs on the host machine once someone chose "this Mac" for it. */
+/**
+ * A new bot's computer runs on the host machine once someone chose "this Mac". Only the local
+ * route saves that choice, and it refuses providers that cannot offer the host computer.
+ */
 export function newComputerKind(envKind: string, computerHost: string | null | undefined) {
-  return HOST_COMPUTER_OFFERING_KINDS.includes(envKind) && computerHost === "this-mac"
-    ? "desktop"
-    : envKind;
+  return computerHost === "this-mac" ? "desktop" : envKind;
 }
 
 export class ComputerLimitError extends ClientError {

@@ -3,7 +3,6 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import type { ComputerRef, SandboxProvider } from "@rakazo/adapter-kit";
 import type { PrismaClient } from "@rakazo/db";
-import { HOST_COMPUTER_OFFERING_KINDS, newComputerKind } from "@rakazo/db";
 import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 import { DesktopSandboxProvider } from "../../providers/computer/desktop/desktop-sandbox.js";
 import { DockerSandboxProvider } from "../../providers/computer/docker/docker-sandbox.js";
@@ -11,7 +10,6 @@ import { FakeSandboxProvider } from "../../providers/computer/fake/fake-sandbox.
 import { HostComputerSandbox } from "../host/host-computer-sandbox.js";
 import { ComputerBrowserProvider } from "../screens/computer-browser.js";
 import { createRunSandbox, HostAwareSandbox } from "./host-aware-sandbox.js";
-import { sandboxKindsWhere } from "./sandbox-kind-capabilities.js";
 
 const ctx = {
   operationId: "1",
@@ -224,17 +222,6 @@ describe("host-aware sandbox", () => {
     } finally {
       vi.unstubAllEnvs();
     }
-  });
-
-  it("only switches deployments that offer the host computer onto this Mac", () => {
-    expect(newComputerKind("docker", "this-mac")).toBe("desktop");
-    expect(newComputerKind("docker", "docker")).toBe("docker");
-    expect(newComputerKind("local-vm", "this-mac")).toBe("desktop");
-    expect(newComputerKind("e2b", "this-mac")).toBe("e2b");
-    expect(newComputerKind("fake", "this-mac")).toBe("fake");
-    expect([...HOST_COMPUTER_OFFERING_KINDS].sort()).toEqual(
-      sandboxKindsWhere((entry) => entry.offersHostComputer === true).sort(),
-    );
   });
 
   it("forwards pageBrowser to the routed provider", async () => {
