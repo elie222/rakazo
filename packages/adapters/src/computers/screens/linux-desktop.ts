@@ -546,6 +546,9 @@ export const PREPARE_LINUX_DESKTOP = [
   `    $root env DEBIAN_FRONTEND=noninteractive ${APT} install -y -qq --fix-broken --no-remove`,
   `    $root env DEBIAN_FRONTEND=noninteractive ${APT} install -y -qq --reinstall --no-remove $missing`,
   "  fi",
+  // An install APT reports as done can still leave a tool out; the screen would then fail later.
+  ...FIND_MISSING_DESKTOP_TOOLS.map((line) => `  ${line}`),
+  '  if [ -n "$missing" ]; then echo "desktop tools still missing after install:$missing" >&2; exit 1; fi',
   "fi",
   // Bots read pages visually; without a color emoji font every emoji is an empty box. The
   // desktop works without it, so an image whose package manager is broken still runs.
