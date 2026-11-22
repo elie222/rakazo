@@ -40,6 +40,8 @@ import type { SecretCleanup, SecretCleanupDeps } from "../secrets/secret-cleanup
 import { attemptSecretCleanup, cleanUpUnsavedSecret } from "../secrets/secret-cleanup.js";
 import { persistPreparedSecret } from "../secrets/secret-persistence.js";
 import { holdSecretNotifications } from "../secrets/secret-store-factory.js";
+import type { McpOAuthDefaultClient, McpOAuthDefaultClients } from "./mcp-oauth-default-clients.js";
+import { defaultClientFor, defaultClientSecrets } from "./mcp-oauth-default-clients.js";
 import { MCP_DYNAMIC_REGISTRATION_UNSUPPORTED, needsMcpOAuthClient } from "./mcp-server-health.js";
 import {
   MAX_AUTHORIZATION_URL_LENGTH,
@@ -396,6 +398,37 @@ function boundClient(
   return information;
 }
 
+/**
+ * The operator's default client for the authorization server this grant belongs to. It applies
+ * only when the user entered no client and the server registered none, and it is read from
+ * the deployment's settings each time, never from the stored material.
+ */
+function deploymentClient(
+  material: OAuthMaterial,
+  defaults: McpOAuthDefaultClients | undefined,
+): McpOAuthDefaultClient | undefined {
+  if (material.oauthClient || material.oauth?.clientInformation) return undefined;
+  return defaultClientFor(defaults, material.oauth?.discoveryState?.authorizationServerUrl);
+}
+
+/** The client a request to the authorization server is made as. */
+function resolveClientInformation(
+  material: OAuthMaterial,
+  defaults: McpOAuthDefaultClients | undefined,
+): OAuthClientInformationMixed | undefined {
+  if (material.oauthClient)
+    return boundClient(
+      material.oauthClient,
+      material.oauth?.discoveryState?.authorizationServerUrl,
+    );
+  const fallback = deploymentClient(material, defaults);
+  if (!fallback) return material.oauth?.clientInformation;
+  return {
+    client_id: fallback.client_id,
+    ...(fallback.client_secret ? { client_secret: fallback.client_secret } : {}),
+  };
+}
+
 type ServerRef = { id: string; endpoint: string | null; secretId: string | null };
 type ActorRef = { spaceId: string; userId: string };
 
@@ -490,6 +523,8 @@ type ProviderOptions = {
   refresh?: (heldRefreshToken: string) => Promise<TokenGrant>;
   /** The instance opt-in that lets OAuth URLs use plain HTTP on a private network. */
   allowPrivateEndpoint?: boolean;
+  /** Clients the operator registered for every user; never stored with a user's credential. */
+  defaultClients?: McpOAuthDefaultClients;
 };
 
 /** Refresh before expiry to cover clock skew and request time. */
@@ -648,9 +683,10 @@ export class StoredMcpOAuthProvider implements OAuthClientProvider {
     // Only a registration this client is about to make has to match the server; a
     // pre-registered client was given its method out of band, and this document is
     // then read for its scope alone.
-    const authMethod = this.material.oauthClient
-      ? undefined
-      : registrationAuthMethod(this.material.oauth?.discoveryState);
+    const authMethod =
+      this.material.oauthClient || this.deploymentClient()
+        ? undefined
+        : registrationAuthMethod(this.material.oauth?.discoveryState);
     return {
       redirect_uris: [redirectUri],
       client_name: "Rakazo",
@@ -662,9 +698,18 @@ export class StoredMcpOAuthProvider implements OAuthClientProvider {
     } as OAuthClientMetadata;
   }
 
-  /** The scope configured with the pre-registered client, if any. */
+  /** The scope configured with the pre-registered or default client, if any. */
   get configuredScope(): string | undefined {
-    return this.material.oauthClient?.scope;
+    return (this.material.oauthClient ?? this.deploymentClient())?.scope;
+  }
+
+  private deploymentClient(): McpOAuthDefaultClient | undefined {
+    return deploymentClient(this.material, this.options.defaultClients);
+  }
+
+  /** Whether the client in use is the operator's default, registered with the web redirect. */
+  usesDefaultClient(): boolean {
+    return this.deploymentClient() !== undefined;
   }
 
   state(): string {
@@ -672,7 +717,7 @@ export class StoredMcpOAuthProvider implements OAuthClientProvider {
   }
   clientInformation(): OAuthClientInformationMixed | undefined {
     const client = this.material.oauthClient;
-    if (!client) return this.material.oauth?.clientInformation;
+    if (!client) return resolveClientInformation(this.material, this.options.defaultClients);
     // The SDK saves discovery before asking for the client, so this is the server
     // about to receive it. The first one is kept and written with the next persist.
     const server = this.material.oauth?.discoveryState?.authorizationServerUrl;
@@ -692,6 +737,9 @@ export class StoredMcpOAuthProvider implements OAuthClientProvider {
     this.material.oauthClient = { ...client, authorization_server: bound };
   }
   async saveClientInformation(value: OAuthClientInformationMixed): Promise<void> {
+    // The SDK echoes the client it was handed back here, stamped with the issuer. The default
+    // lives in the deployment's settings: stored, it would freeze a rotated secret in each user's copy.
+    if (this.deploymentClient()?.client_id === value.client_id) return;
     this.oauth().clientInformation = value;
     await this.persist();
   }
@@ -803,7 +851,7 @@ export class StoredMcpOAuthProvider implements OAuthClientProvider {
         cause: error,
       });
     }
-    const extra = this.material.oauthClient?.authorization_params;
+    const extra = (this.material.oauthClient ?? this.deploymentClient())?.authorization_params;
     if (extra) {
       for (const [key, value] of Object.entries(parseMcpOAuthAuthorizationParams(extra)))
         if (!authorizationUrl.searchParams.has(key)) authorizationUrl.searchParams.set(key, value);
@@ -919,6 +967,7 @@ function oauthFetch(
   network: RemoteTransportDependencies,
   material: OAuthMaterial = {},
   allowPrivateEndpoint = false,
+  redact: readonly string[] = [],
 ): {
   fetch: typeof fetch;
   close: () => Promise<void>;
@@ -984,7 +1033,7 @@ function oauthFetch(
     refusedRedirect: () => lastRejection?.code === "invalid_redirect_uri",
     publicError: (error, message) => {
       if (error instanceof McpOAuthStoreError) return error;
-      const secrets = oauthMaterialSecrets(material);
+      const secrets = [...oauthMaterialSecrets(material), ...redact];
       if (error instanceof Error && networkErrors.has(error)) {
         const reason = sanitizeConnectorError(error, secrets);
         return isUnreachableHost(error)
@@ -1174,11 +1223,10 @@ async function requestRefresh(
   refreshToken: string,
   fetchFn: typeof fetch,
   allowPrivateEndpoint: boolean,
+  defaultClients: McpOAuthDefaultClients,
 ): Promise<OAuthTokens> {
   const discovery = material.oauth?.discoveryState;
-  const clientInformation = material.oauthClient
-    ? boundClient(material.oauthClient, discovery?.authorizationServerUrl)
-    : material.oauth?.clientInformation;
+  const clientInformation = resolveClientInformation(material, defaultClients);
   if (!discovery?.authorizationServerUrl || !clientInformation)
     throw new Error("MCP OAuth state cannot refresh");
   return refreshAuthorization(discovery.authorizationServerUrl, {
@@ -1264,7 +1312,14 @@ export class McpOAuthBroker {
     private readonly allowPrivateEndpoint = false,
     /** The queue that retries removing a store entry a failed refresh left behind. */
     private readonly cleanupJobs?: SecretCleanupDeps["jobs"],
+    /** Clients the operator registered for every user, keyed by authorization server. */
+    private readonly defaultClients: McpOAuthDefaultClients = {},
   ) {}
+
+  /** Secrets that sit outside any user's credential and must still never be shown. */
+  defaultClientSecrets(): string[] {
+    return defaultClientSecrets(this.defaultClients);
+  }
 
   async statusFor(server: ServerRef, context: ActorRef): Promise<McpOAuthSummary["status"]> {
     return (await this.summaryFor(server, context)).status;
@@ -1353,6 +1408,7 @@ export class McpOAuthBroker {
       this.network,
       server.endpoint ? loaded.material : withoutRequestCredentials(loaded.material),
       this.allowPrivateEndpoint,
+      this.defaultClientSecrets(),
     );
     let retryOnLoopback = false;
     try {
@@ -1382,6 +1438,7 @@ export class McpOAuthBroker {
         input.capturesLoopback === true &&
         input.redirectUri !== MCP_LOOPBACK_REDIRECT_URI &&
         !loaded.material.oauthClient &&
+        !provider.usesDefaultClient() &&
         networkFetch.refusedRedirect();
       if (!authorizationUrl && !retryOnLoopback)
         throw networkFetch.publicError(error, "Could not start MCP OAuth");
@@ -1528,6 +1585,7 @@ export class McpOAuthBroker {
       // the server's static headers.
       { oauth: { clientInformation: pending.provider.clientInformation() } },
       this.allowPrivateEndpoint,
+      this.defaultClientSecrets(),
     );
     try {
       if (pending.stdio)
@@ -1689,6 +1747,7 @@ export class McpOAuthBroker {
             }
           : {}),
         allowPrivateEndpoint: this.allowPrivateEndpoint,
+        defaultClients: this.defaultClients,
         ...options,
       },
     );
@@ -1710,7 +1769,13 @@ export class McpOAuthBroker {
     onPersisted?: ProviderOptions["onPersisted"],
   ): Promise<TokenGrant> {
     // Resolve the network before taking a connection for the lock.
-    const network = oauthFetch(target, this.network, {}, this.allowPrivateEndpoint);
+    const network = oauthFetch(
+      target,
+      this.network,
+      {},
+      this.allowPrivateEndpoint,
+      this.defaultClientSecrets(),
+    );
     let stored: { id: string; ciphertext: string } | undefined;
     let rotated: { material: OAuthMaterial; grant: TokenGrant; spent: string | null } | undefined;
     try {
@@ -1739,6 +1804,7 @@ export class McpOAuthBroker {
                     current,
                     network.fetch,
                     this.allowPrivateEndpoint,
+                    this.defaultClients,
                   ),
                 };
                 grant.obtainedAt = Date.now();
