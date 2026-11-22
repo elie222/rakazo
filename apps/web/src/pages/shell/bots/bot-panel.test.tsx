@@ -3,7 +3,7 @@
 import { i18n } from "@lingui/core";
 import { ORPCError } from "@orpc/client";
 import type { Bot, BotAvatarSet } from "@rakazo/contracts";
-import { flush } from "@rakazo/core/test-async";
+import { deferred, flush } from "@rakazo/core/test-async";
 import type * as UiWeb from "@rakazo/ui-web";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ComponentProps, ReactNode } from "react";
@@ -293,6 +293,8 @@ afterEach(async () => {
   await act(async () => root.unmount());
   queryClient.clear();
   container.remove();
+  Reflect.deleteProperty(navigator, "clipboard");
+  Reflect.deleteProperty(document, "execCommand");
   vi.unstubAllGlobals();
 });
 
@@ -321,6 +323,50 @@ it("shows the profile and folds the settings away", async () => {
     ),
   ).toEqual(["Model", "Notifications", "Own computer"]);
 });
+
+it.each([false, true])(
+  "discards a pending email copy after the address changes (returns to first address: %s)",
+  async (returnsToFirstAddress) => {
+    const firstAddress = "scout@bots.test";
+    const nextAddress = "helper@bots.test";
+    const pending = deferred<void>();
+    const denied = new DOMException("Clipboard denied", "NotAllowedError");
+    const writeText = vi.fn().mockReturnValueOnce(pending.promise).mockRejectedValueOnce(denied);
+    Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } });
+    const copyBySelection = vi.fn(() => false);
+    document.execCommand = copyBySelection;
+
+    const input = { botId: bot().id };
+    const queryKey = spaceQueries(null, null).bots.emailAddress.queryKey({ input });
+    const email = (address: string) => ({ domain: "bots.test", address });
+    vi.mocked(rpc.bots.emailAddress).mockResolvedValueOnce(email(firstAddress));
+    await render();
+    const copyButton = (address: string) =>
+      container.querySelector<HTMLButtonElement>(`button[aria-label="Copy ${address}"]`)!;
+    await act(async () => copyButton(firstAddress).click());
+    expect(writeText).toHaveBeenCalledWith(firstAddress);
+
+    async function showAddress(address: string) {
+      await act(async () => {
+        queryClient.setQueryData(queryKey, email(address));
+        await flush();
+      });
+      expect(copyButton(address)).not.toBeNull();
+    }
+
+    await showAddress(nextAddress);
+    const currentAddress = returnsToFirstAddress ? firstAddress : nextAddress;
+    if (returnsToFirstAddress) await showAddress(firstAddress);
+    await act(async () => pending.reject(denied));
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
+    expect(copyBySelection).not.toHaveBeenCalled();
+
+    await act(async () => copyButton(currentAddress).click());
+    expect(writeText).toHaveBeenLastCalledWith(currentAddress);
+    const fallback = document.querySelector<HTMLTextAreaElement>('[role="dialog"] textarea');
+    expect(fallback?.value).toBe(currentAddress);
+  },
+);
 
 describe("BotSettings model choices", () => {
   it("offers an email address under the name until the bot has one", async () => {

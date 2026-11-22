@@ -596,6 +596,7 @@ export function BotSettings({
                 bot={{ id: bot.id, name }}
                 domain={email.domain}
                 address={email.address}
+                manualCopy
               />
             </div>
           ) : null}

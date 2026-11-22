@@ -1,33 +1,27 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import { parseBotEmailName, suggestedEmailName } from "@rakazo/contracts";
-import { Button, CopyTextFallback, Input } from "@rakazo/ui-web";
+import { Button, Input } from "@rakazo/ui-web";
 import { useQueryClient } from "@tanstack/react-query";
-import { Check, Copy } from "lucide-react";
 import { useState } from "react";
-import { useCopyText } from "../lib/copy-text";
 import { useSpaceQueries } from "../lib/query/query";
 import { useSpaceRpc } from "../lib/query/space-rpc";
 import { errorText } from "../lib/query/user-error";
+import { CopyTextButton } from "./CopyTextButton";
 
-/** A bot's email address with a copy button, or the form that claims it for good. */
-export function BotEmailAddressField(props: {
+type BotEmailAddressFieldProps = {
   bot: { id: string; name: string };
   domain: string;
   address: string | null;
-}) {
+  manualCopy?: boolean;
+};
+
+/** A bot's email address with a copy button, or the form that claims it for good. */
+export function BotEmailAddressField(props: BotEmailAddressFieldProps) {
   // A fresh form per bot, so a name suggested for one bot is never claimed for another.
   return <AddressField key={props.bot.id} {...props} />;
 }
 
-function AddressField({
-  bot,
-  domain,
-  address,
-}: {
-  bot: { id: string; name: string };
-  domain: string;
-  address: string | null;
-}) {
+function AddressField({ bot, domain, address, manualCopy }: BotEmailAddressFieldProps) {
   const { t } = useLingui();
   const queries = useSpaceQueries();
   const rpc = useSpaceRpc();
@@ -71,7 +65,11 @@ function AddressField({
         <span className="min-w-0 flex-1 break-all font-mono text-label text-foreground/75">
           {address}
         </span>
-        <BotEmailCopyButton address={address} />
+        <CopyTextButton
+          text={address}
+          copyLabel={t`Copy ${address}`}
+          manualCopyLabel={manualCopy ? t`Email address` : undefined}
+        />
       </div>
     );
   }
@@ -106,34 +104,5 @@ function AddressField({
         </p>
       ) : null}
     </div>
-  );
-}
-
-export function BotEmailCopyButton({ address }: { address: string }) {
-  // Do not carry an earlier copy attempt to a different address, or back to it after a change.
-  return <CopyAddress key={address} address={address} />;
-}
-
-function CopyAddress({ address }: { address: string }) {
-  const { t } = useLingui();
-  const [copied, copy, copyFailed, resetCopy, failedText] = useCopyText();
-  return (
-    <>
-      <Button
-        variant="ghost"
-        size="icon-xs"
-        aria-label={copied ? t`Copied` : t`Copy ${address}`}
-        onClick={() => copy(address)}
-        className="text-muted-foreground"
-      >
-        {copied ? <Check /> : <Copy />}
-      </Button>
-      <CopyTextFallback
-        open={copyFailed}
-        onOpenChange={resetCopy}
-        text={failedText}
-        label={t`Email address`}
-      />
-    </>
   );
 }
