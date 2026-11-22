@@ -7,11 +7,14 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { ApiRequestContext, RpcArgs } from "../api/api";
 import { captureApiRequestContext, currentApiBase, rpc, selectedSpaceId } from "../api/api";
 import { currentSessionGeneration } from "../api/session";
+import type { RpcReadMeta } from "./saved-reads";
 import type { SettingsTarget } from "./settings-target";
 
 /**
  * Screens paint what they last saw and refresh it in the background, so reopening a settings
- * screen does not wait on the network again. Kept in memory only; saved chats own the disk.
+ * screen does not wait on the network again. The reads `saved-reads.ts` lists also keep their
+ * last answer on disk, so a cold launch paints it too; the rest stay in memory. A form's read
+ * (`formRead`) carries no read meta, so it is never seeded from disk.
  */
 export const queryClient = new QueryClient({
   defaultOptions: {
@@ -50,12 +53,20 @@ function requestScope(context: ApiRequestContext, account: boolean): string {
 function scopedRpcQuery<P extends RpcPath>(
   scopeKey: () => string[],
   proc: P,
-  input?: RpcInput<P>,
+  input: RpcInput<P> | undefined,
+  space: RpcReadMeta["space"],
   spaceId?: string,
 ) {
   type T = RpcOutput<P>;
   const scope = scopeKey();
   const queryKey = [...scope, proc, input ?? {}] as unknown as DataTag<QueryKey, T, Error>;
+  const read: RpcReadMeta = {
+    proc,
+    input,
+    apiBase: currentApiBase(),
+    sessionGeneration: currentSessionGeneration(),
+    space,
+  };
   const queryFn: QueryFunction<T> = async ({ signal }) => {
     if (scopeKey().join("\n") !== scope.join("\n"))
       throw new Error(t`Something went wrong. Try again.`);
@@ -65,7 +76,7 @@ function scopedRpcQuery<P extends RpcPath>(
       throw new Error(t`Something went wrong. Try again.`);
     return answer;
   };
-  return { queryKey, queryFn };
+  return { queryKey, queryFn, meta: { rpc: read } };
 }
 
 /**
@@ -73,12 +84,13 @@ function scopedRpcQuery<P extends RpcPath>(
  * the scope it was sent in. A `spaceId` sends it to that Space instead of the selected one.
  */
 export function rpcQuery<P extends RpcPath>(proc: P, input?: RpcInput<P>, spaceId?: string) {
-  return scopedRpcQuery(() => spaceScope(spaceId), proc, input, spaceId);
+  const space = { id: spaceId ?? selectedSpaceId() ?? null };
+  return scopedRpcQuery(() => spaceScope(spaceId), proc, input, space, spaceId);
 }
 
 /** One rpc read of the signed-in user's own data, the same in every space: cached once per session. */
 export function accountRpcQuery<P extends RpcPath>(proc: P, input?: RpcInput<P>) {
-  return scopedRpcQuery(sessionScope, proc, input);
+  return scopedRpcQuery(sessionScope, proc, input, null);
 }
 
 /**
