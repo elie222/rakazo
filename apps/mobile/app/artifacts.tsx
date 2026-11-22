@@ -214,6 +214,7 @@ export default function ArtifactsScreen() {
   }, [activeBotId, madeByBots, nextCursor]);
 
   async function refresh() {
+    if (pullingRef.current) return;
     setRefreshing(true);
     pullingRef.current = true;
     try {
