@@ -37,7 +37,10 @@ import {
   abortedCommandEvents,
   timedOutCommandEvents,
 } from "../../../computers/sandbox/sandbox-command-events.js";
-import { sandboxNotFoundError } from "../../../computers/sandbox/sandbox-errors.js";
+import {
+  isSandboxNotFoundError,
+  sandboxNotFoundError,
+} from "../../../computers/sandbox/sandbox-errors.js";
 import {
   shellExportScript,
   sourceEnvironmentCommand,
@@ -189,7 +192,7 @@ export class BoxdSandboxProvider extends LinuxDesktopSandbox implements SandboxP
         const started = await this.ensureRunning(request.providerRef, context.signal);
         return { ...this.ref(request.providerRef, request.botId, false), started };
       } catch (error) {
-        if (!isMachineGone(error)) throw error;
+        if (!isSandboxNotFoundError(error)) throw error;
         this.forget(request.providerRef);
       }
     }
@@ -717,10 +720,6 @@ export async function createBoxdSandboxProvider(config: {
 
 function machineGone(id: string, cause?: unknown): Error {
   return sandboxNotFoundError(`boxd machine ${id} is gone`, { cause });
-}
-
-function isMachineGone(error: unknown): boolean {
-  return error instanceof Error && error.name === "SandboxNotFoundError";
 }
 
 /** Whether boxd answered a create with a refusal, which a delete would only meet again. */

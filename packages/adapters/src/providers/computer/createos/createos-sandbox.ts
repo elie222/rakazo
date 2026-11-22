@@ -35,7 +35,10 @@ import {
   abortedCommandEvents,
   timedOutCommandEvents,
 } from "../../../computers/sandbox/sandbox-command-events.js";
-import { sandboxNotFoundError } from "../../../computers/sandbox/sandbox-errors.js";
+import {
+  isSandboxNotFoundError,
+  sandboxNotFoundError,
+} from "../../../computers/sandbox/sandbox-errors.js";
 import { shellExportScript } from "../../../computers/sandbox/sandbox-shell-environment.js";
 import { screenSessionKey } from "../../../computers/screens/computer-screens.js";
 import {
@@ -427,11 +430,11 @@ export class CreateOSSandboxProvider implements SandboxProvider {
             : { auto_pause_after_seconds: autoPause },
           context,
         ).catch((error: unknown) => {
-          if (isCreateOSSandboxGone(error)) throw error;
+          if (isSandboxNotFoundError(error)) throw error;
         });
         return this.ref(id, request.botId, false);
       } catch (error) {
-        if (!isCreateOSSandboxGone(error)) throw error;
+        if (!isSandboxNotFoundError(error)) throw error;
       }
     }
 
@@ -466,7 +469,7 @@ export class CreateOSSandboxProvider implements SandboxProvider {
     try {
       return (await this.getSandbox(computer.providerRef, context)).status === "running";
     } catch (error) {
-      if (isCreateOSSandboxGone(error)) return false;
+      if (isSandboxNotFoundError(error)) return false;
       throw error;
     }
   }
@@ -771,11 +774,11 @@ print(json.dumps(out))
     try {
       await this.postJson(`/v1/sandboxes/${encodeURIComponent(id)}/pause`, undefined, context);
     } catch (error) {
-      if (isCreateOSSandboxGone(error)) return;
+      if (isSandboxNotFoundError(error)) return;
       // Pause is only valid while running; CreateOS may already be pausing it on its own.
       if (!(error instanceof CreateOSHttpError && error.status === 409)) throw error;
       const current = await this.waitUntilSettled(id, context).catch((settleError: unknown) => {
-        if (isCreateOSSandboxGone(settleError)) return undefined;
+        if (isSandboxNotFoundError(settleError)) return undefined;
         throw settleError;
       });
       if (current && current.status !== "paused" && !GONE_CREATEOS_STATUSES.has(current.status)) {
@@ -1079,7 +1082,7 @@ print(json.dumps(out))
     try {
       await this.request("DELETE", `/v1/sandboxes/${encodeURIComponent(id)}`, context);
     } catch (error) {
-      if (!isCreateOSSandboxGone(error)) throw error;
+      if (!isSandboxNotFoundError(error)) throw error;
     }
   }
 
@@ -1626,10 +1629,6 @@ function createosSandboxGone(id: string, reason: string, cause?: unknown): Error
   return sandboxNotFoundError(`CreateOS sandbox ${id} is gone (${reason})`, { cause });
 }
 
-function isCreateOSSandboxGone(error: unknown): boolean {
-  return error instanceof Error && error.name === "SandboxNotFoundError";
-}
-
 /**
  * CreateOS auto-pause is only a backstop: our sleep job checkpoints before it pauses, so
  * CreateOS must fire clearly after that job. Off when idle sleep is disabled, or when that
@@ -1737,7 +1736,7 @@ function isMissingCreateOSResource(error: unknown): error is CreateOSHttpError {
 }
 
 function ignoreMissingCreateOSResource(error: unknown): void {
-  if (!isMissingCreateOSResource(error) && !isCreateOSSandboxGone(error)) throw error;
+  if (!isMissingCreateOSResource(error) && !isSandboxNotFoundError(error)) throw error;
 }
 
 function isTimeoutAbort(error: unknown): boolean {
