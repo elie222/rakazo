@@ -337,6 +337,34 @@ describe("loadEnv", () => {
   });
 });
 
+describe("MCP_OAUTH_DEFAULT_CLIENTS", () => {
+  const client = { client_id: "fake-client", client_secret: "fake-secret", scope: "read" };
+
+  it("is off unless set", () => {
+    expect(loadEnv(base).mcpOAuthDefaultClients).toEqual({});
+    expect(loadEnv({ ...base, MCP_OAUTH_DEFAULT_CLIENTS: " " }).mcpOAuthDefaultClients).toEqual({});
+  });
+
+  it("reads a client per issuer, normalizing the issuer", () => {
+    const env = loadEnv({
+      ...base,
+      MCP_OAUTH_DEFAULT_CLIENTS: JSON.stringify({ "https://issuer.example": client }),
+    });
+
+    expect(env.mcpOAuthDefaultClients).toEqual({ "https://issuer.example/": client });
+  });
+
+  it.each([
+    ["malformed JSON", "{oops"],
+    ["an http issuer", JSON.stringify({ "http://issuer.example/": client })],
+    ["a missing client_id", JSON.stringify({ "https://issuer.example/": { scope: "read" } })],
+  ])("refuses %s at startup", (_name, value) => {
+    expect(() => loadEnv({ ...base, MCP_OAUTH_DEFAULT_CLIENTS: value })).toThrow(
+      /^MCP_OAUTH_DEFAULT_CLIENTS /,
+    );
+  });
+});
+
 describe("OIDC environment", () => {
   const oidc = {
     OIDC_ISSUER: "https://identity.example.test",

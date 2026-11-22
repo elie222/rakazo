@@ -29,6 +29,7 @@ function previousWorkerValues(source: NodeJS.ProcessEnv) {
       .filter(Boolean),
     mcpStdio: mcpStdioOptionsFromEnv(source),
     mcpAllowPrivateEndpoint: source.MCP_ALLOW_PRIVATE_ENDPOINT === "true",
+    mcpOAuthDefaultClients: {},
     pipedreamClientId: source.PIPEDREAM_CLIENT_ID,
     pipedreamClientSecret: source.PIPEDREAM_CLIENT_SECRET,
     pipedreamProjectId: source.PIPEDREAM_PROJECT_ID,
@@ -72,6 +73,15 @@ describe("runRuntimeEnvFromProcess", () => {
     { NODE_ENV: "test", INBOUND_EMAIL_DOMAIN: "  ", PIPEDREAM_ENVIRONMENT: "staging" },
   ])("reads the values the worker read before (%#)", (source) => {
     expect(runRuntimeEnvFromProcess(source)).toEqual(previousWorkerValues(source));
+  });
+
+  it("reads the default MCP OAuth clients and rejects a malformed value", () => {
+    const env = (MCP_OAUTH_DEFAULT_CLIENTS?: string) =>
+      runRuntimeEnvFromProcess({ NODE_ENV: "test", MCP_OAUTH_DEFAULT_CLIENTS });
+    expect(
+      env('{"https://issuer.example":{"client_id":"fake-client"}}').mcpOAuthDefaultClients,
+    ).toEqual({ "https://issuer.example/": { client_id: "fake-client" } });
+    expect(() => env("{oops")).toThrow("MCP_OAUTH_DEFAULT_CLIENTS");
   });
 
   it("reads the computer save limit and rejects a bad one", () => {
