@@ -1135,6 +1135,7 @@ function SpaceShell() {
         openSettings={openSettings}
         openIntegrations={() => setOverlay({ kind: "integrations" })}
         openSkills={() => setOverlay({ kind: "skills" })}
+        openAgentImport={() => setOverlay({ kind: "import" })}
         openSpaceChat={openSpaceChat}
       />
 
