@@ -421,19 +421,25 @@ describe("mobile computer keyboard", () => {
     expect(keys).toHaveLength(3);
   });
 
-  it("does not move the caret during composing input", () => {
-    const { input, inputListeners } = keyboardFixture();
+  it("does not move the caret during composing input, then aligns it when composition ends", () => {
+    const { input, inputListeners, keys } = keyboardFixture();
     const seed = input.value;
     inputListeners.get("compositionstart")?.({});
-    input.value = `${seed}か_`;
-    input.setSelectionRange(seed.length + 1, seed.length + 1);
+    input.value = `${seed.slice(1)}か_`;
+    input.setSelectionRange(seed.length, seed.length);
     inputListeners.get("input")?.({ target: input, isComposing: true });
     inputListeners.get("document:selectionchange")?.({});
-    expect(input.value).toBe(`${seed}か_`);
-    expect(input.selectionStart).toBe(seed.length + 1);
+    expect(input.value).toBe(`${seed.slice(1)}か_`);
+    expect(input.selectionStart).toBe(seed.length);
     inputListeners.get("compositionend")?.({});
-    inputListeners.get("input")?.({ target: input, isComposing: false });
+    expect(input.value).toBe(`${seed}か`);
     expect(input.selectionStart).toBe(input.value.length);
+    input.value = seed;
+    inputListeners.get("input")?.({ target: input, inputType: "deleteContentBackward" });
+    expect(keys).toEqual([
+      [0x304b, undefined, undefined],
+      [0xff08, "Backspace", undefined],
+    ]);
   });
 
   it("replaces corrected text instead of duplicating it", () => {

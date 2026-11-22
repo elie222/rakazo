@@ -471,6 +471,8 @@ export function attachMobileKeyboard(
   if (!button || !input || !Keyboard || !documentTarget || rfb.viewOnly) return () => {};
 
   let lastValue = "";
+  // What the remote computer has been sent; lastValue can differ while an IME composes at a moved caret.
+  let sentValue = "";
   let closeOnButtonClick = false;
   let controlLatched = false;
   let keyboardTouchAt = 0;
@@ -490,6 +492,7 @@ export function attachMobileKeyboard(
   const resetInput = () => {
     input.value = "_".repeat(DEFAULT_INPUT_LENGTH - 1);
     lastValue = input.value;
+    sentValue = lastValue;
   };
   const setOpen = (open) => {
     const label = open ? "Hide keyboard" : "Show keyboard";
@@ -602,6 +605,11 @@ export function attachMobileKeyboard(
   };
   const onCompositionEnd = () => {
     composing = false;
+    // A final input still on its way normalizes the field itself.
+    if (input.value !== lastValue) return;
+    if (input.value !== sentValue) input.value = sentValue;
+    lastValue = sentValue;
+    restoreCaret();
   };
   const show = () => {
     try {
@@ -653,11 +661,12 @@ export function attachMobileKeyboard(
     repeatBackspace(changes.backspaces);
     insertText(changes.text, false);
 
+    const sent = Array.from(sentValue);
+    sentValue = sent.slice(0, sent.length - changes.backspaces).join("") + changes.text;
     if (!composing && !event.isComposing) {
       // Keep the local history in the same order as the remote keys, even if input beat
       // selectionchange to a caret moved by the phone keyboard.
-      const previous = Array.from(lastValue);
-      newValue = previous.slice(0, previous.length - changes.backspaces).join("") + changes.text;
+      newValue = sentValue;
       if (input.value !== newValue) input.value = newValue;
       restoreCaret();
     }
