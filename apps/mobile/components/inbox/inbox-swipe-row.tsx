@@ -1,11 +1,12 @@
 import type { ReactElement } from "react";
 import type { MobileBotSection } from "../../lib/api/mobile-types";
-import type { InboxRowAction } from "../../lib/inbox/inbox-swipe";
+import type { InboxChatKind, InboxRowAction } from "../../lib/inbox/inbox-swipe";
 import type { BotOrganizationUpdate } from "./bot-organize-modal";
 import type { InboxChatPreviewProps } from "./inbox-chat-preview";
 
 export type InboxSwipeRowProps = {
   rowKey: string;
+  kind: InboxChatKind;
   unread?: boolean;
   pinned?: boolean;
   /** Bots only; groups have no finish notifications. */

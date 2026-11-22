@@ -22,8 +22,8 @@ import Animated, {
   withTiming,
 } from "react-native-reanimated";
 import { scheduleOnRN, scheduleOnUI } from "react-native-worklets";
-import type { InboxRowAction, inboxRowActions } from "../../lib/inbox/inbox-swipe";
-import { INBOX_ROW_ACTIONS } from "../../lib/inbox/inbox-swipe";
+import type { InboxChatKind, InboxRowAction, inboxRowActions } from "../../lib/inbox/inbox-swipe";
+import { inboxRowAction } from "../../lib/inbox/inbox-swipe";
 import { hapticSelection } from "../../lib/native/haptics";
 import { useMobileTokens } from "../../lib/native/native";
 import { InboxSwipeContext } from "./inbox-swipe-context";
@@ -45,15 +45,16 @@ const ACTION_INK = PlatformColor("whiteColor");
 
 /** Move the row with the gesture and grow its actions as space opens up. */
 export function InboxSwipeContent({
+  kind,
   actions,
   children,
   onAction,
 }: {
+  kind: InboxChatKind;
   actions: ReturnType<typeof inboxRowActions>;
   children: ReactNode;
   onAction: (action: InboxRowAction) => void;
 }) {
-  const { i18n } = useLingui();
   const tokens = useMobileTokens();
   const activeSwipe = useContext(InboxSwipeContext);
   const id = useId();
@@ -182,7 +183,7 @@ export function InboxSwipeContent({
           >
             <SwipeActionButton
               action={leading}
-              label={i18n._(INBOX_ROW_ACTIONS[leading].label)}
+              kind={kind}
               fill={READ_FILL}
               offset={offset}
               armed={armed}
@@ -194,7 +195,7 @@ export function InboxSwipeContent({
               <SwipeActionButton
                 key={action}
                 action={action}
-                label={i18n._(INBOX_ROW_ACTIONS[action].label)}
+                kind={kind}
                 fill={action === "archive" ? ARCHIVE_FILL : PIN_FILL}
                 offset={offset}
                 armed={armed}
@@ -223,7 +224,7 @@ export function InboxSwipeContent({
 
 function SwipeActionButton({
   action,
-  label,
+  kind,
   fill,
   offset,
   armed,
@@ -232,7 +233,7 @@ function SwipeActionButton({
   onPress,
 }: {
   action: InboxRowAction;
-  label: string;
+  kind: InboxChatKind;
   fill: ColorValue;
   offset: SharedValue<number>;
   armed: SharedValue<boolean>;
@@ -240,7 +241,8 @@ function SwipeActionButton({
   index: number;
   onPress: () => void;
 }) {
-  const { systemImage } = INBOX_ROW_ACTIONS[action];
+  const { i18n } = useLingui();
+  const { label, systemImage } = inboxRowAction(action, kind);
   const icon =
     systemImage === "eye.slash" || systemImage === "pin" || systemImage === "pin.slash"
       ? (`${systemImage}.fill` as const)
@@ -268,7 +270,10 @@ function SwipeActionButton({
     <View pointerEvents="box-none" style={[styles.actionSlot, { [edge]: position + ACTION_INSET }]}>
       <Animated.View style={[styles.action, revealStyle]}>
         <Host style={StyleSheet.absoluteFill} ignoreSafeArea="all">
-          <Button onPress={onPress} modifiers={[buttonStyle("plain"), accessibilityLabel(label)]}>
+          <Button
+            onPress={onPress}
+            modifiers={[buttonStyle("plain"), accessibilityLabel(i18n._(label))]}
+          >
             <ZStack
               modifiers={[
                 frame({ width: ACTION_DIAMETER, height: ACTION_DIAMETER }),

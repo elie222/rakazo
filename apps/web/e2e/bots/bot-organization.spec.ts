@@ -7,7 +7,7 @@ import {
   signup,
 } from "../helpers/helpers";
 
-test("pinned bots and sidebar sections persist", async ({ page }, testInfo) => {
+test("favorite bots and sidebar sections persist", async ({ page }, testInfo) => {
   const stamp = Date.now();
   await signup(page, `bot-organize-${stamp}@rakazo.test`, "password12", "Test User");
   await completeOnboarding(page);
@@ -18,12 +18,18 @@ test("pinned bots and sidebar sections persist", async ({ page }, testInfo) => {
   const bot = sidebar.getByRole("button", { name: /^Chief/ });
 
   await bot.click({ button: "right" });
-  await page.getByRole("menuitem", { name: "Pin", exact: true }).click();
-  await expect(sidebar.locator('[data-sidebar-group="pinned"]')).toContainText("Chief");
+  await page.getByRole("menuitem", { name: "Add to favorites", exact: true }).click();
+  const favorites = sidebar.locator('[data-sidebar-group="pinned"]');
+  await expect(favorites).toContainText("Chief");
+  await page.reload();
+  await expect(favorites.getByRole("button", { name: /^Chief/ })).toHaveAccessibleDescription(
+    "Favorite",
+  );
+  await expect(favorites.locator('[data-slot="favorite-badge"]')).toBeVisible();
   await captureScreenshot(page, testInfo, "pinned-bots");
 
   await bot.click({ button: "right" });
-  await page.getByRole("menuitem", { name: "Unpin", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Remove from favorites", exact: true }).click();
   await expect(sidebar.locator('[data-sidebar-group="pinned"]')).toHaveCount(0);
 
   await bot.click({ button: "right" });

@@ -1,3 +1,4 @@
+import { i18n } from "@lingui/core";
 // @vitest-environment jsdom
 
 import { deferred } from "@rakazo/core/test-async";
@@ -347,8 +348,11 @@ describe("native sheet behavior", () => {
 });
 
 describe("inbox organization actions", () => {
+  beforeEach(() => i18n.loadAndActivate({ locale: "en", messages: {} }));
+
   async function organize(botOverrides = {}, snoozed?: boolean) {
     const props = {
+      kind: "bot" as const,
       bot: {
         name: "Sample chat",
         pinned: false,
@@ -420,15 +424,15 @@ describe("inbox organization actions", () => {
     expect(props.onClose).toHaveBeenCalledOnce();
   });
   it.each([
-    ["Pin", { pinned: true }],
-    ["Unpin", { pinned: false }],
+    ["Add to favorites", { pinned: true }],
+    ["Remove from favorites", { pinned: false }],
     ["Silence notifications", { notifyOnFinish: false }],
     ["Resume notifications", { notifyOnFinish: true }],
     ["Second", { sectionId: "two" }],
     ["Unassigned", { sectionId: null }],
   ])("keeps %s working inside the native sheet", async (label, update) => {
     const { props, click } = await organize({
-      pinned: label === "Unpin",
+      pinned: label === "Remove from favorites",
       notifyOnFinish: label !== "Resume notifications",
     });
     await click(label as string);
@@ -438,7 +442,7 @@ describe("inbox organization actions", () => {
     expect(announce).not.toHaveBeenCalled();
   });
   it.each([
-    ["Pin", {}],
+    ["Add to favorites", {}],
     ["Unsnooze", {}],
   ])("announces a failed %s without closing the sheet", async (label, overrides) => {
     const { props, root, click } = await organize(
@@ -463,10 +467,10 @@ describe("inbox organization actions", () => {
   it("announces the same failure again on retry and stays silent when the retry succeeds", async () => {
     const { props, root, click } = await organize();
     props.onUpdate.mockRejectedValueOnce(undefined).mockRejectedValueOnce(undefined);
-    await click("Pin");
-    await click("Pin");
+    await click("Add to favorites");
+    await click("Add to favorites");
     expect(announce.mock.calls).toEqual([["Could not update chat"], ["Could not update chat"]]);
-    await click("Pin");
+    await click("Add to favorites");
     expect(props.onClose).toHaveBeenCalledOnce();
     expect(root.element.textContent).not.toContain("Could not update chat");
     expect(announce).toHaveBeenCalledTimes(2);

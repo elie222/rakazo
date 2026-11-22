@@ -945,6 +945,7 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
       ) : null}
       {organizeChat && organizeTarget ? (
         <BotOrganizeModal
+          kind={organizeTarget.kind}
           bot={organizeChat}
           sections={organizeSpace?.botSections ?? organizeTarget.sections}
           onClose={() => {

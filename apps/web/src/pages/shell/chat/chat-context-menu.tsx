@@ -128,6 +128,7 @@ export function ChatContextMenu({
     : { kind: "group" as const, chat: group! };
   return (
     <BotContextMenu
+      kind={target.kind}
       bot={chat}
       onClose={onClose}
       sections={sections}

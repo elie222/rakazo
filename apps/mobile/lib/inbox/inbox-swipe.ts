@@ -3,16 +3,36 @@ import { msg } from "@lingui/core/macro";
 import type { SnoozePreset } from "@rakazo/core";
 
 export type InboxChatKind = "bot" | "group";
-export type InboxRowAction = "read" | "unread" | "archive" | "pin" | "unpin" | "delete";
+type InboxPinAction = "pin" | "unpin";
+export type InboxRowAction = "read" | "unread" | "archive" | InboxPinAction | "delete";
 
-export const INBOX_ROW_ACTIONS = {
+const INBOX_ROW_ACTIONS = {
   read: { label: msg`Mark as Read`, systemImage: "checkmark.message.fill" },
   unread: { label: msg`Mark as Unread`, systemImage: "message.badge.filled.fill" },
   archive: { label: msg`Archive`, systemImage: "eye.slash" },
-  pin: { label: msg`Pin`, systemImage: "pin" },
-  unpin: { label: msg`Unpin`, systemImage: "pin.slash" },
   delete: { label: msg`Delete…`, systemImage: "trash" },
-} as const satisfies Record<InboxRowAction, { label: MessageDescriptor; systemImage: string }>;
+} as const;
+
+const PIN_ACTIONS = {
+  bot: {
+    pin: { label: msg`Add to favorites`, systemImage: "star", androidImage: "star-outline" },
+    unpin: { label: msg`Remove from favorites`, systemImage: "star.fill", androidImage: "star" },
+  },
+  group: {
+    pin: { label: msg`Pin`, systemImage: "pin", androidImage: "pin" },
+    unpin: { label: msg`Unpin`, systemImage: "pin.slash", androidImage: "pin-outline" },
+  },
+} as const;
+
+export function inboxPinAction(kind: InboxChatKind, action: InboxPinAction) {
+  return PIN_ACTIONS[kind][action];
+}
+
+export function inboxRowAction(action: InboxRowAction, kind: InboxChatKind = "group") {
+  return action === "pin" || action === "unpin"
+    ? inboxPinAction(kind, action)
+    : INBOX_ROW_ACTIONS[action];
+}
 
 /** The snooze choices in a chat's menu; translated where shown. */
 export const SNOOZE_LABELS = {
