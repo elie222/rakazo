@@ -2,8 +2,9 @@ import { useLingui } from "@lingui/react/macro";
 import type { CapabilityInstall, McpSourcePreset } from "@rakazo/contracts";
 import { customMcpServerInput } from "@rakazo/core";
 import type { QueryKey } from "@tanstack/react-query";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { errorText } from "../../lib/api/user-error";
+import { captureSessionScope } from "../../lib/api/verified-scope";
 import { useSave } from "../../lib/query/query";
 import type { AddCustomOption, SourceAuth, SourceKind } from "./add-custom-integration";
 
@@ -16,6 +17,7 @@ export function useCustomSourceForm({
   stale,
   authorizeMcp,
   setOauthServerId,
+  captureFocus,
   onStart,
 }: {
   sourcePresets: McpSourcePreset[];
@@ -23,6 +25,8 @@ export function useCustomSourceForm({
   stale: readonly QueryKey[];
   authorizeMcp: (serverId: string) => void;
   setOauthServerId: (serverId: string) => void;
+  /** Whether the screen keeps the focus it has now: a sign-in starts only on a screen in view. */
+  captureFocus: () => () => boolean;
   /** Called as the form opens. */
   onStart: () => void;
 }) {
@@ -36,9 +40,21 @@ export function useCustomSourceForm({
   const [credential, setCredential] = useState("");
   const [sourceAuth, setSourceAuth] = useState<SourceAuth>("none");
   const [authHeader, setAuthHeader] = useState("x-api-key");
+  // Bumped whenever the form opens or closes, so an add only closes the form it was sent from.
+  const formOpened = useRef(0);
 
   const add = useSave({
     save: async (kind: SourceKind, send) => {
+      const sameForm = captureSessionScope();
+      const opened = formOpened.current;
+      const focused = captureFocus();
+      /** Closes the form as soon as the source is added, while the lists read again behind it. */
+      const closeAfterAdding = () => {
+        if (!sameForm() || formOpened.current !== opened) return;
+        setCredential("");
+        setSourceKind(null);
+        setAdding(null);
+      };
       const displayName =
         name.trim() ||
         (sourcePreset?.name ?? (kind === "graphql" ? "GraphQL" : t`Custom connector`));
@@ -49,7 +65,7 @@ export function useCustomSourceForm({
       if (sourceAuth === "oauth") {
         const created = await send("mcp/servers/create", customMcpServerInput(displayName, url));
         closeAfterAdding();
-        return created.id;
+        return { serverId: created.id, focused };
       }
       await send("capabilities/install", {
         kind,
@@ -68,10 +84,11 @@ export function useCustomSourceForm({
       return null;
     },
     stale,
-    onSaved: (serverId) => {
-      if (!serverId) return;
-      setOauthServerId(serverId);
-      authorizeMcp(serverId);
+    onSaved: (created) => {
+      if (!created) return;
+      setOauthServerId(created.serverId);
+      // Never opens the browser over a screen the person has left.
+      if (created.focused()) authorizeMcp(created.serverId);
     },
   });
   const remove = useSave({
@@ -86,12 +103,6 @@ export function useCustomSourceForm({
   function clearSourceError() {
     add.reset();
     remove.reset();
-  }
-  /** Closes the form as soon as the source is added, while the lists read again behind it. */
-  function closeAfterAdding() {
-    setCredential("");
-    setSourceKind(null);
-    setAdding(null);
   }
 
   const addOptions: AddCustomOption[] = [
@@ -108,6 +119,7 @@ export function useCustomSourceForm({
   ];
 
   function closeAdding() {
+    formOpened.current += 1;
     setAdding(null);
     setSourceKind(null);
     clearSourceError();
@@ -117,6 +129,7 @@ export function useCustomSourceForm({
   }
 
   function beginSource(kind: SourceKind, preset: McpSourcePreset | null = null) {
+    formOpened.current += 1;
     setAdding("source");
     setSourceKind(kind);
     setSourcePreset(preset);
@@ -133,6 +146,7 @@ export function useCustomSourceForm({
     onStart();
     clearSourceError();
     if (option.kind === "github") {
+      formOpened.current += 1;
       setSourceKind(null);
       setAdding("github");
     } else beginSource(option.kind, option.preset);

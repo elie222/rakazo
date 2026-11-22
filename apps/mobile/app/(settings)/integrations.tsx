@@ -20,7 +20,7 @@ import {
 import { pluginCategoryLabel } from "@rakazo/i18n/plugin-catalog";
 import type { NativeStackNavigationOptions } from "expo-router";
 import { useFocusEffect, useLocalSearchParams, useNavigation, useRouter } from "expo-router";
-import { useCallback, useEffect, useLayoutEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Pressable, ScrollView, Text, TextInput, useWindowDimensions, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { BotTemplateIcon } from "../../components/bots/bot-template-icon";
@@ -186,6 +186,7 @@ export default function Integrations() {
     stale,
     authorizeMcp,
     setOauthServerId,
+    captureFocus,
     onStart: closeDetail,
   });
   const pending = accountPending ?? sourcePending;
@@ -202,14 +203,22 @@ export default function Integrations() {
     refresh();
   }
 
+  // Counted per focus, so work started before the screen was left never acts on a later visit.
+  const focus = useRef({ shown: false, visit: 0 });
+  function captureFocus() {
+    const visit = focus.current.visit;
+    return () => focus.current.shown && focus.current.visit === visit;
+  }
   useFocusEffect(
     useCallback(() => {
+      focus.current = { shown: true, visit: focus.current.visit + 1 };
       let cancelled = false;
       void loadLastBotId().then((id) => {
         if (!cancelled) setLastBotId(id);
       });
       return () => {
         cancelled = true;
+        focus.current = { ...focus.current, shown: false };
         stopConnecting();
       };
     }, [stopConnecting]),

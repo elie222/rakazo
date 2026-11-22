@@ -6,9 +6,9 @@ import type { DataTag, QueryKey } from "@tanstack/react-query";
 import type { Dispatch, SetStateAction } from "react";
 import { useCallback, useRef } from "react";
 import { Alert, Linking } from "react-native";
-import { rpc, selectedSpaceId } from "../../lib/api/api";
-import { currentSessionGeneration } from "../../lib/api/session";
+import { rpc } from "../../lib/api/api";
 import { errorText } from "../../lib/api/user-error";
+import { captureSessionScope } from "../../lib/api/verified-scope";
 import { loadLastBotId } from "../../lib/inbox/last-bot";
 import { signInToMcpServer } from "../../lib/integrations/mcp-oauth";
 import { queryClient, useSave } from "../../lib/query/query";
@@ -79,15 +79,8 @@ export function useConnectionActions({
     );
   }
 
-  /** Whether the screen still shows the Space and session of this moment. */
-  function captureScope() {
-    const spaceId = selectedSpaceId();
-    const generation = currentSessionGeneration();
-    return () => selectedSpaceId() === spaceId && currentSessionGeneration() === generation;
-  }
-
   async function notifyAppConnected(item: ConnectionCatalogItem) {
-    const isCurrent = captureScope();
+    const isCurrent = captureSessionScope();
     const botId = lastBotId || (await loadLastBotId());
     if (!botId || !isCurrent()) return;
     if (botId !== lastBotId) setLastBotId(botId);
@@ -119,7 +112,7 @@ export function useConnectionActions({
           complete: (input) => send("connections/complete", input),
           openUrl: (url) => Linking.openURL(url),
           signal: controller.signal,
-          isCurrent: captureScope(),
+          isCurrent: captureSessionScope(),
         });
         // Stopped (left, another app tapped, another Space): a failure that shows nothing and
         // reads nothing again, so a queued app starts at once.
@@ -228,7 +221,7 @@ export function useConnectionActions({
         return connect.run(item);
       }
       if (connect.input && catalogItemKey(connect.input) === catalogItemKey(item)) return;
-      nextConnect.current = { item, isCurrent: captureScope() };
+      nextConnect.current = { item, isCurrent: captureSessionScope() };
       connectionAttempt.current?.abort();
     },
     revokeAccount(row: Connection) {

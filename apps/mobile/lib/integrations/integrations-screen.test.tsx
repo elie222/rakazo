@@ -1267,6 +1267,51 @@ it("keeps the form open and reports a source that could not be added", async () 
   expect(container.textContent).toContain("Could not add source");
 });
 
+it("does not start an OAuth source's sign-in once the screen is left", async () => {
+  const fallback = state.rpc.getMockImplementation();
+  const created = deferred<unknown>();
+  state.rpc.mockImplementation((proc: string, args: unknown) =>
+    proc === "mcp/servers/create" ? created.promise : fallback?.(proc, args),
+  );
+  await openMcpSource();
+  await press("OAuth");
+  await press("Verify and add");
+  state.focused = false;
+  await render();
+  await act(async () => created.resolve({ id: "oauth-server", name: "Test", enabled: true }));
+  await settle();
+  expect(state.rpc).not.toHaveBeenCalledWith(
+    "mcp/oauth/begin",
+    expect.anything(),
+    expect.anything(),
+  );
+  expect(state.authSession).not.toHaveBeenCalled();
+});
+
+it.each(["Space", "form"])(
+  "keeps a source draft open when an add finishes after a %s change",
+  async (change) => {
+    const fallback = state.rpc.getMockImplementation();
+    const installed = deferred<unknown>();
+    state.rpc.mockImplementation((proc: string, args: unknown) =>
+      proc === "capabilities/install" ? installed.promise : fallback?.(proc, args),
+    );
+    await openMcpSource();
+    await press("Verify and add");
+    if (change === "Space") {
+      state.space = "space-b";
+      await render();
+    } else {
+      // A later form opened while the first add was still on its way.
+      await press("Cancel");
+      await press("MCP server");
+    }
+    await act(async () => installed.resolve({ id: "source-a", kind: "mcp", name: "Custom" }));
+    await settle();
+    expect(container.querySelector('input[placeholder="https://example.com/mcp"]')).not.toBeNull();
+  },
+);
+
 it("adds a source once when tapped again while a sign-in is still starting", async () => {
   const fallback = state.rpc.getMockImplementation();
   const unanswered = new Promise(() => undefined);

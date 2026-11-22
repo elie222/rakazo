@@ -74,6 +74,13 @@ export function verifiedSpaceId(
   return selectionId ?? (verified?.selectionId === null ? verified.spaceId : null);
 }
 
+/** Whether the selected Space and the session are still the ones of this moment. */
+export function captureSessionScope(): () => boolean {
+  const spaceId = selectedSpaceId();
+  const generation = currentSessionGeneration();
+  return () => selectedSpaceId() === spaceId && currentSessionGeneration() === generation;
+}
+
 export function isVerifiedScopeCurrent(scope: VerifiedScope): boolean {
   return (
     scope.apiBase === currentApiBase() &&
