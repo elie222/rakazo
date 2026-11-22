@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { listPiCatalog } from "../runtime/pi/models/pi-models.js";
 import {
   adminDeploymentModel,
   deploymentModelProviders,
@@ -206,9 +207,14 @@ describe("an admin's default for everyone", () => {
   });
 
   it("offers only providers that connect with a key alone", () => {
+    vi.stubEnv("RAKAZO_LOCAL_MODELS", "example-local-model");
+    expect(listPiCatalog()).toContainEqual(
+      expect.objectContaining({ provider: "local", id: "example-local-model" }),
+    );
     const providers = deploymentModelProviders();
     const ids = providers.map((provider) => provider.id);
     expect(ids).toContain("anthropic");
+    expect(ids).not.toContain("local");
     expect(ids).not.toContain("openai-compatible");
     expect(ids).not.toContain("openai-codex");
     expect(ids).not.toContain("google-vertex");

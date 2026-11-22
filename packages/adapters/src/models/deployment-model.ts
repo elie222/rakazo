@@ -1,6 +1,6 @@
 import { getEnvApiKey } from "@earendil-works/pi-ai/compat";
 import type { ModelUsageLookup, SecretStore } from "@rakazo/adapter-kit";
-import { canonicalPiProviderId, OPENAI_COMPATIBLE_PROVIDER_ID } from "@rakazo/contracts";
+import { canonicalPiProviderId } from "@rakazo/contracts";
 import { modelCreditOfferings } from "../model-credits/offerings.js";
 import { LOCAL_PROVIDER_ID, localModelIds } from "../runtime/pi/models/pi-local-provider-id.js";
 import { hiddenCatalogModel, listPiCatalog } from "../runtime/pi/models/pi-models.js";
@@ -145,8 +145,7 @@ export function deploymentModelProviders(): {
       entry.endpointPresets ||
       entry.routingFields?.length ||
       (entry.auth !== "api-key" && entry.auth !== "both") ||
-      entry.provider === LOCAL_PROVIDER_ID ||
-      entry.provider === OPENAI_COMPATIBLE_PROVIDER_ID ||
+      modelProviderDefinition(entry.provider)?.requiresHostConfiguration ||
       hiddenCatalogModel(entry)
     )
       continue;
