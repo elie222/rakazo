@@ -18,7 +18,12 @@ import type {
   UnreferencedMachineRecords,
 } from "@rakazo/adapter-kit";
 import { SandboxFileTooLargeError, SandboxUnavailableError } from "@rakazo/adapter-kit";
-import { cancelResponseBody, ResponseTooLargeError } from "@rakazo/core";
+import {
+  deadlineSignal,
+  ResponseTooLargeError,
+  readErrorTextWithin,
+  readResponseWithin,
+} from "@rakazo/core";
 import {
   browserProfilePathForScreen,
   DEFAULT_DESKTOP_ENV,
@@ -49,7 +54,6 @@ import {
   workspacePath,
 } from "../../../computers/screens/computer-support.js";
 import { shouldSkipPortableWorkspaceFile } from "../../../storage/workspace-save-policy.js";
-import { readBodyCapped } from "../../../web/web-ssrf.js";
 
 const CREATEOS_WORKSPACE = "/home/desktop/rakazo-home";
 const CREATEOS_BROWSER_PROFILES = `${CREATEOS_WORKSPACE}/.browser-profiles`;
@@ -686,7 +690,7 @@ print(json.dumps(out))
       );
     } catch (error) {
       // The file can grow between the size check and the read.
-      if (options?.maxBytes !== undefined && error instanceof CreateOSResponseTooLargeError) {
+      if (options?.maxBytes !== undefined && error instanceof ResponseTooLargeError) {
         throw new SandboxFileTooLargeError(options.maxBytes, { cause: error });
       }
       throw error;
@@ -1761,52 +1765,25 @@ async function readCreateOSJson<T>(response: Response, signal: AbortSignal): Pro
   return JSON.parse(new TextDecoder().decode(bytes)) as T;
 }
 
-class CreateOSResponseTooLargeError extends Error {
-  constructor(maxBytes: number, options?: { cause?: unknown }) {
-    super(`CreateOS response exceeds ${maxBytes} bytes`, options);
-  }
-}
-
-async function readCreateOSBody(
+function readCreateOSBody(
   response: Response,
   maxBytes: number,
   signal: AbortSignal,
 ): Promise<Uint8Array> {
-  const declared = Number(response.headers.get("content-length") ?? 0);
-  if (Number.isFinite(declared) && declared > maxBytes) {
-    cancelResponseBody(response);
-    throw new CreateOSResponseTooLargeError(maxBytes);
-  }
-  const readSignal = AbortSignal.any([
-    signal,
-    AbortSignal.timeout(CREATEOS_SUCCESS_RESPONSE_TIMEOUT_MS),
-  ]);
-  try {
-    return await readBodyCapped(response, maxBytes, readSignal);
-  } catch (error) {
-    if (error instanceof ResponseTooLargeError) {
-      throw new CreateOSResponseTooLargeError(maxBytes, { cause: error });
-    }
-    throw error;
-  }
+  return readResponseWithin(response, {
+    maxBytes,
+    tooLargeMessage: `CreateOS response exceeds ${maxBytes} bytes`,
+    signal: deadlineSignal(CREATEOS_SUCCESS_RESPONSE_TIMEOUT_MS, signal),
+  });
 }
 
 async function readCreateOSErrorBody(response: Response, signal: AbortSignal): Promise<string> {
-  const declared = Number(response.headers.get("content-length") ?? 0);
-  if (Number.isFinite(declared) && declared > MAX_CREATEOS_ERROR_RESPONSE_BYTES) {
-    cancelResponseBody(response);
-    return "";
-  }
-  try {
-    const readSignal = AbortSignal.any([
-      signal,
-      AbortSignal.timeout(CREATEOS_ERROR_RESPONSE_TIMEOUT_MS),
-    ]);
-    const bytes = await readBodyCapped(response, MAX_CREATEOS_ERROR_RESPONSE_BYTES, readSignal);
-    return new TextDecoder().decode(bytes).slice(0, MAX_ERROR_BODY_CHARS);
-  } catch {
-    return "";
-  }
+  const text = await readErrorTextWithin(response, {
+    maxBytes: MAX_CREATEOS_ERROR_RESPONSE_BYTES,
+    timeoutMs: CREATEOS_ERROR_RESPONSE_TIMEOUT_MS,
+    signal,
+  });
+  return text.slice(0, MAX_ERROR_BODY_CHARS);
 }
 
 /** Once request() has ruled out a stopped sandbox, a 404 means a screen or file inside it is missing. */
