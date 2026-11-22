@@ -1,3 +1,4 @@
+import { isRecord } from "@rakazo/core";
 import { bestEffort } from "@rakazo/logging";
 import { createRowId } from "../database/row-id.js";
 import type { PrismaClient } from "../generated/prisma/client.js";
@@ -132,10 +133,6 @@ type RecordValue = Record<string, unknown>;
 type RuntimeDataModel = {
   models: Record<string, { fields: Array<{ name: string; kind: string; type: string }> }>;
 };
-
-function isRecord(value: unknown): value is RecordValue {
-  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
-}
 
 /** Nulls (SQL or JSON) are stored as nulls: there is nothing to encrypt. */
 function writable(value: unknown): boolean {

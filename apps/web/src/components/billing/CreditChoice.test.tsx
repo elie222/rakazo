@@ -79,6 +79,8 @@ import { CreditChoice } from "./CreditChoice";
 
 i18n.activate("en");
 
+i18n.activate("en");
+
 const status = {
   canManage: true,
   creditPurchasesEnabled: true,

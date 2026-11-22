@@ -1,7 +1,7 @@
 // No runtime imports: scripts/check-email-copy.ts runs this file under plain Node.
-import type { EmailCopyId } from "./defaults.js";
+import type { EmailCopyId } from "./email-keys.js";
 
-type Defaults = Readonly<Record<string, Readonly<Record<string, string>>>>;
+type Keys = Readonly<Record<string, Readonly<Record<string, readonly string[]>>>>;
 /** One email's usable copy: app language to key to text. */
 export type CopyByLocale = Record<string, Record<string, string>>;
 
@@ -10,23 +10,25 @@ export function placeholders(text: string): string[] {
 }
 
 /**
- * Keeps each string of a copy file that the email can use: a non-empty string with the same
- * placeholders as its default. A string that would fall back (invalid, or a language or key the
- * file lacks) is named in `problems`. An email, language or key this release does not know is
- * named in `unused`: newer copy may add one before an older release is rebuilt.
+ * Keeps each string of a copy file that the email can use: a non-empty string with exactly the
+ * key's placeholders. A string the email lacks (invalid, or a language or key the file leaves
+ * out) is named in `problems`. An email, language or key this release does not know is named in
+ * `unused`: newer copy may add one before an older release is rebuilt. `complete` says whether
+ * the file's English holds every key, which the email needs to be sent at all.
  */
 export function readCopyFile(
-  defaults: Defaults,
+  emails: Keys,
   locales: readonly string[],
   id: EmailCopyId | string,
   file: unknown,
-): { copy: CopyByLocale; problems: string[]; unused: string[] } {
-  const keys = defaults[id];
+): { copy: CopyByLocale; complete: boolean; problems: string[]; unused: string[] } {
+  const keys = emails[id];
   const copy: CopyByLocale = {};
   const problems: string[] = [];
   const unused: string[] = [];
-  if (!keys) return { copy, problems, unused: [`${id}: no such email`] };
-  if (!isRecord(file)) return { copy, problems: [`${id}: not an object of languages`], unused };
+  if (!keys) return { copy, complete: false, problems, unused: [`${id}: no such email`] };
+  if (!isRecord(file))
+    return { copy, complete: false, problems: [`${id}: not an object of languages`], unused };
   for (const locale of locales)
     if (!Object.hasOwn(file, locale)) problems.push(`${id}.${locale}: missing`);
   for (const [locale, strings] of Object.entries(file)) {
@@ -40,13 +42,13 @@ export function readCopyFile(
     }
     const kept: Record<string, string> = {};
     for (const [key, text] of Object.entries(strings)) {
-      const fallback = Object.hasOwn(keys, key) ? keys[key] : undefined;
-      if (fallback === undefined) unused.push(`${id}.${locale}.${key}: no such key`);
+      const expected = Object.hasOwn(keys, key) ? [...(keys[key] ?? [])].sort() : undefined;
+      if (expected === undefined) unused.push(`${id}.${locale}.${key}: no such key`);
       else if (typeof text !== "string" || !text.trim())
         problems.push(`${id}.${locale}.${key}: not a non-empty string`);
-      else if (placeholders(text).join() !== placeholders(fallback).join())
+      else if (placeholders(text).join() !== expected.join())
         problems.push(
-          `${id}.${locale}.${key}: placeholders ${placeholders(text).join() || "none"}, expected ${placeholders(fallback).join() || "none"}`,
+          `${id}.${locale}.${key}: placeholders ${placeholders(text).join() || "none"}, expected ${expected.join() || "none"}`,
         );
       else kept[key] = text;
     }
@@ -54,7 +56,11 @@ export function readCopyFile(
       if (!Object.hasOwn(strings, key)) problems.push(`${id}.${locale}.${key}: missing`);
     copy[locale] = kept;
   }
-  return { copy, problems, unused };
+  const english = copy.en;
+  const complete = Boolean(
+    english && Object.keys(keys).every((key) => Object.hasOwn(english, key)),
+  );
+  return { copy, complete, problems, unused };
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

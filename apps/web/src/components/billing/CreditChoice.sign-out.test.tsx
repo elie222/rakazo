@@ -70,6 +70,8 @@ import { CreditChoice } from "./CreditChoice";
 
 i18n.activate("en");
 
+i18n.activate("en");
+
 afterEach(() => {
   vi.unstubAllGlobals();
   sessionStorage.clear();
