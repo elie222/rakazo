@@ -18,7 +18,7 @@ import {
   assertNoOwnedOrganizationWithMembers,
   clearAccountIdentity,
   createThreadEvents,
-  GUEST_ROLE,
+  fullMembershipOrganizationIds,
   ownedBillingAccounts,
   personalOrganizationIds,
   recordAuditEvent,
@@ -126,10 +126,7 @@ async function deleteAccount({ env, pool, prisma, secrets }: AdminContext, userI
         secrets,
       },
     });
-    const memberships = await prisma.member.findMany({
-      where: { userId, role: { not: GUEST_ROLE } },
-      select: { organizationId: true },
-    });
+    const organizationIds = await fullMembershipOrganizationIds(prisma, userId);
     await recordSecurityEvent({
       type: "auth.account.delete_requested",
       userId,
@@ -163,7 +160,7 @@ async function deleteAccount({ env, pool, prisma, secrets }: AdminContext, userI
       // The user row took the memberships with it, so address the completion to their
       // organizations explicitly. Guests' account activity stays out of their hosts' logs.
       await Promise.all(
-        memberships.map(({ organizationId }) =>
+        organizationIds.map((organizationId) =>
           recordAuditEvent({
             action: "auth.account.deleted",
             actor: { type: "system", label: "operator" },

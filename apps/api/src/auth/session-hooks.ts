@@ -2,7 +2,7 @@ import type { PrismaPushTokenStore, WorkActivities } from "@rakazo/adapters";
 import { removePiUserSessions } from "@rakazo/adapters";
 import type { AuthEnv } from "@rakazo/auth";
 import type { ThreadEvents } from "@rakazo/db";
-import { joinedOrganizationIds } from "@rakazo/db";
+import { fullMembershipOrganizationIds } from "@rakazo/db";
 import { bestEffort, getLogger } from "@rakazo/logging";
 import { deleteAccountContent } from "../account/account-deletion.js";
 import type { BillingService } from "../billing/billing.js";
@@ -29,7 +29,7 @@ export function accountDeletionHooks(
 ): Required<Pick<AuthEnv, "beforeDeleteUser" | "afterDeleteUser">> {
   const { spaceDeletion, billing, pushTokens, workActivities } = deps;
   const { prisma, dataDir } = spaceDeletion;
-  // Organizations an account being deleted joined, kept until it is gone to count their seats again.
+  // Keep the account's full memberships until it is gone so surviving organizations recount seats.
   const seatsAfterDeletion = new Map<string, string[]>();
   return {
     beforeDeleteUser: async (userId) => {
@@ -39,9 +39,10 @@ export function accountDeletionHooks(
       await logged("push token removal failed", pushTokens.remove(userId));
       // Before the rows go with the account, so its phones' cards end too.
       await logged("live status card removal failed", workActivities?.endUser(userId));
-      if (billing) seatsAfterDeletion.set(userId, await joinedOrganizationIds(prisma, userId));
+      if (billing)
+        seatsAfterDeletion.set(userId, await fullMembershipOrganizationIds(prisma, userId));
     },
-    // Its memberships went with it, so the organizations it joined stop paying for its seat.
+    // Its memberships went with it, including its seat in an organization it co-owned.
     afterDeleteUser: async (userId) => {
       const organizationIds = seatsAfterDeletion.get(userId) ?? [];
       seatsAfterDeletion.delete(userId);

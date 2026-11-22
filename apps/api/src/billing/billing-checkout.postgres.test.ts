@@ -288,6 +288,33 @@ dbTests("checkout and organization deletion", () => {
     expect(() => provider.completeCheckout(customerId)).toThrow();
   });
 
+  it("keeps the checkout trial hold until cancellation can verify subscription state", async () => {
+    const provider = new GatedCheckoutEmulator(`deletion-sync-${stamp}`, true);
+    const { organizationId } = await accountFor("sync", provider);
+    await prisma.user.update({
+      where: { id: userId },
+      data: {
+        byokTrialCheckoutOrganizationId: organizationId,
+        byokTrialCheckoutExpiresAt: new Date(Date.now() + 60_000),
+      },
+    });
+    vi.spyOn(provider, "getCustomerSubscription").mockRejectedValueOnce(
+      new Error("Provider unavailable"),
+    );
+    const service = createBillingService({ prisma, provider, webOrigin: "https://example.test" });
+    await expect(service.cancelOrganizationSubscriptions(organizationId)).rejects.toThrow(
+      "Provider unavailable",
+    );
+    await expect(prisma.user.findUniqueOrThrow({ where: { id: userId } })).resolves.toMatchObject({
+      byokTrialCheckoutOrganizationId: organizationId,
+    });
+
+    await service.cancelOrganizationSubscriptions(organizationId);
+    await expect(prisma.user.findUniqueOrThrow({ where: { id: userId } })).resolves.toMatchObject({
+      byokTrialCheckoutOrganizationId: null,
+    });
+  });
+
   it("refuses a session created after the checkout lease lapsed and was taken over", async () => {
     const { organizationId, actor } = await organizationFor("lapse");
     const provider = new GatedCheckoutEmulator(`deletion-lapse-${stamp}`, false);

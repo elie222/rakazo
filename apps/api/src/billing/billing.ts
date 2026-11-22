@@ -410,10 +410,10 @@ export function createBillingService(deps: {
         );
       if (!account) return;
       await provider.cancelCustomerSubscriptions(account.customerId);
-      // Open checkout sessions are now expired. Release their trial holds before the next
-      // checkout can open, even when the organization is staying.
-      await underLease((tx) => releaseByokTrialCheckouts(tx, organizationId));
+      // A checkout may have completed before expiration. Sync the resulting subscription before
+      // releasing the hold, so another organization cannot offer that owner a second trial.
       await sync(account.customerId);
+      await underLease((tx) => releaseByokTrialCheckouts(tx, organizationId));
     });
   }
 
