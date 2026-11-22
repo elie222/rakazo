@@ -4,6 +4,7 @@ import type { NavigationState, PartialState } from "expo-router/react-navigation
 import { CommonActions } from "expo-router/react-navigation";
 import { useEffect } from "react";
 import { loadSessionToken } from "../api/session";
+import { canDismissSettingsForNotification } from "../settings/settings-sheet";
 import type { NotificationRoute } from "./notification-open";
 import { notificationResponseRoute, threadRouteId } from "./notification-open";
 
@@ -34,11 +35,7 @@ function mayLeaveForNotification(route: NavigationState["routes"][number]): bool
   if (route.name === "index" || route.name === "thread" || route.name === "group-thread") {
     return true;
   }
-  if (route.name !== "(settings)") return false;
-  // Only the known, read-only settings landing may be dismissed. Keep editors and state
-  // that has not been resolved, so a notification cannot close a form or trigger its guard.
-  const sheet = route.state;
-  return sheet?.stale === false && sheet.routes.length === 1 && sheet.routes[0]?.name === "account";
+  return route.name === "(settings)" && canDismissSettingsForNotification(route.state);
 }
 
 function openNotificationThread(navigation: NotificationNavigation, target: NotificationRoute) {

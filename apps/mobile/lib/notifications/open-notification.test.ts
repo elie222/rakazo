@@ -63,18 +63,22 @@ function rootWithChatStack(routes: NavigationState["routes"]): NavigationState {
   };
 }
 
-function settingsSheet(pages: string[]): NavigationState["routes"][number] {
+function settingsSheet(
+  pages: (string | NavigationState["routes"][number])[],
+  key = "settings",
+): NavigationState["routes"][number] {
+  const routes = pages.map((page) => (typeof page === "string" ? { name: page, key: page } : page));
   return {
     name: "(settings)",
-    key: "settings",
+    key,
     state: {
       stale: false,
       type: "stack",
       key: "settings-stack",
-      index: pages.length - 1,
-      routeKeySeq: pages.length,
-      routeNames: ["account", "memory-note"],
-      routes: pages.map((name) => ({ name, key: name })),
+      index: routes.length - 1,
+      routeKeySeq: routes.length,
+      routeNames: routes.map(({ name }) => name),
+      routes,
     },
   };
 }
@@ -111,37 +115,53 @@ describe("opening a notification tap", () => {
     );
   });
 
-  it("closes the settings landing and replaces the previous chat in one action", async () => {
-    vi.mocked(loadSessionToken).mockResolvedValue("token");
-    const inbox = { name: "index", key: "inbox" };
-    navigation.getRootState.mockReturnValue(
-      rootWithChatStack([
-        inbox,
-        { name: "thread", key: "prior-chat", params: { botId: "bot-2" } },
-        settingsSheet(["account"]),
-      ]),
-    );
+  it.each([
+    { label: "the Account landing", pages: ["account"] },
+    { label: "the Memory list", pages: ["account", "memory"] },
+    { label: "the Bot Templates list opened directly", pages: ["bot-templates"] },
+  ])(
+    "returns to the chat list after opening a notification from $label",
+    async ({ label, pages }) => {
+      vi.mocked(loadSessionToken).mockResolvedValue("token");
+      const inbox = { name: "index", key: "inbox" };
+      navigation.getRootState.mockReturnValue(
+        rootWithChatStack([
+          inbox,
+          { name: "thread", key: "prior-chat", params: { botId: "bot-2" } },
+          settingsSheet(pages),
+        ]),
+      );
 
-    await expect(openNotificationResponse(tap("tap-over-settings-landing"))).resolves.toBe(true);
+      await expect(openNotificationResponse(tap(`tap-over-settings-${label}`))).resolves.toBe(true);
 
-    expect(navigation.dispatch).toHaveBeenCalledExactlyOnceWith(
-      expect.objectContaining({
-        type: "RESET",
-        target: "app-stack",
-        payload: expect.objectContaining({
-          index: 1,
-          routes: [inbox, { name: "thread", params: { botId: "bot-1", threadId: "thread-1" } }],
+      expect(navigation.dispatch).toHaveBeenCalledExactlyOnceWith(
+        expect.objectContaining({
+          type: "RESET",
+          target: "app-stack",
+          payload: expect.objectContaining({
+            index: 1,
+            routes: [inbox, { name: "thread", params: { botId: "bot-1", threadId: "thread-1" } }],
+          }),
         }),
-      }),
-    );
-    expect(router.push).not.toHaveBeenCalled();
-  });
+      );
+      expect(router.push).not.toHaveBeenCalled();
+    },
+  );
 
   it.each([
-    settingsSheet(["account", "memory-note"]),
+    settingsSheet(["account", "memory-note"], "memory-note"),
+    settingsSheet(["account", "memory-note", "memory"], "stacked-memory-editor"),
+    settingsSheet(["account", "future-settings", "memory"], "unknown-settings-ancestor"),
+    settingsSheet(["account", "billing"], "billing"),
+    settingsSheet(["account", "integrations"], "integrations"),
+    settingsSheet(["account", "skills", "bot-templates"], "stacked-skills-form"),
+    settingsSheet(
+      ["account", { name: "memory", key: "memory", state: { stale: true, routes: [] } }],
+      "stale-settings-child",
+    ),
     { name: "(settings)", key: "unresolved-settings" },
     ...["new-bot", "new-group", "new-space"].map((name) => ({ name, key: name })),
-  ])("opens above $key without removing its form", async (screen) => {
+  ])("opens above $key without removing protected state", async (screen) => {
     vi.mocked(loadSessionToken).mockResolvedValue("token");
     navigation.getRootState.mockReturnValue(
       rootWithChatStack([

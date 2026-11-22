@@ -1,4 +1,5 @@
 import type { Href } from "expo-router";
+import type { NavigationState } from "expo-router/react-navigation";
 
 // On iOS a screen opened on the root stack while the settings sheet is open is presented as a
 // second sheet over it, so navigation that leaves settings closes the sheet first.
@@ -40,6 +41,24 @@ const settingsScreens = new Set([
   "voice",
   "wallet",
 ]);
+
+// The account landing and these read-only lists have no unsaved inputs or removal guards.
+// If a page gains either, remove it here; undiscovered routes and nested state stay protected.
+const notificationDismissibleSettings = new Set(["account", "bot-templates", "memory"]);
+
+/** A notification may replace the sheet only when every page in its hydrated stack is safe to dismiss. */
+export function canDismissSettingsForNotification(
+  settings: NavigationState["routes"][number]["state"],
+): boolean {
+  return (
+    settings?.stale === false &&
+    settings.type === "stack" &&
+    settings.routes.length > 0 &&
+    settings.routes.every(
+      ({ name, state }) => state === undefined && notificationDismissibleSettings.has(name),
+    )
+  );
+}
 
 /** Registers the open settings sheet's close action; the returned function unregisters it. */
 export function registerSettingsSheet(close: () => void): () => void {
