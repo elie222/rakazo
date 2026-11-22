@@ -28,6 +28,28 @@ describe("procedureSecurityEvent", () => {
     });
   });
 
+  it("records the model for everyone without its key, and its removal as a deletion", () => {
+    expect(
+      procedureSecurityEvent(
+        ["models", "deployment", "update"],
+        { provider: "anthropic", modelId: "claude-sonnet-5", apiKey: "fake-admin-key" },
+        actor,
+      ),
+    ).toEqual({
+      type: "credential.changed",
+      userId: "user-1",
+      spaceId: "space-1",
+      metadata: {
+        procedure: "models.deployment.update",
+        kind: "deployment_model",
+        provider: "anthropic",
+      },
+    });
+    expect(
+      procedureSecurityEvent(["models", "deployment", "update"], { provider: null }, actor),
+    ).toMatchObject({ type: "credential.deleted", metadata: { provider: null } });
+  });
+
   it("records an MCP server added by connecting it, with the bot it is for", () => {
     const event = procedureSecurityEvent(
       ["mcp", "servers", "connect"],

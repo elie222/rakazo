@@ -49,6 +49,9 @@ function setup(options: { row?: Row | null; credits?: boolean } = {}) {
       id: "record",
       ciphertext: `sealed-${++sealed}`,
     })),
+    load: vi.fn(async (_ref: string, _context: unknown) =>
+      JSON.stringify({ kind: "api_key", key: "fake-saved-key" }),
+    ),
     delete: vi.fn(async () => undefined),
     isRemote: () => false,
   };
@@ -104,7 +107,7 @@ describe("the model an admin sets for everyone", () => {
   });
 
   it("keeps the saved key for another model of the same provider only", async () => {
-    const { deps, secrets, row } = setup({
+    const { deps, secrets, row, modelConnectionCheck } = setup({
       row: {
         defaultModelProvider: "anthropic",
         defaultModelId: "claude-sonnet-5",
@@ -116,6 +119,12 @@ describe("the model an admin sets for everyone", () => {
       modelId: "claude-haiku-5-5",
     });
     expect(secrets.put).not.toHaveBeenCalled();
+    // The kept key is checked against the newly chosen model.
+    expect(secrets.load).toHaveBeenCalledWith("sealed-earlier", "deployment-model");
+    expect(modelConnectionCheck).toHaveBeenCalledWith(
+      { provider: "anthropic", id: "claude-haiku-5-5", apiKey: "fake-saved-key" },
+      expect.anything(),
+    );
     expect(row()).toMatchObject({
       defaultModelId: "claude-haiku-5-5",
       deploymentModelCredentialCipher: "sealed-earlier",

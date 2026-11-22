@@ -9,6 +9,7 @@ import {
   modelCreditOfferings,
   modelProviderAllowed,
   modelProviderAllowlist,
+  parseModelSecret,
   recordSecretCleanup,
   savedSecretIn,
   verifyCatalogProviderApiKey,
@@ -135,6 +136,12 @@ export async function updateDeploymentModelSettings(
     previous?.defaultModelProvider === provider.id;
   if (!input.apiKey && !keepsKey) throw new ClientError("BAD_REQUEST", "Enter an API key");
   let ciphertext = previous?.deploymentModelCredentialCipher ?? null;
+  // A kept key is checked against a newly chosen model too, which it may not reach.
+  if (keepsKey && previous?.defaultModelId !== input.modelId) {
+    const saved = parseModelSecret(await deps.secrets.load(ciphertext!, DEPLOYMENT_MODEL_RECORD));
+    if (saved.kind === "api_key")
+      await verifyKey(deps, provider.id, input.modelId, saved.key, signal);
+  }
   if (input.apiKey) {
     await verifyKey(deps, provider.id, input.modelId, input.apiKey, signal);
     // Owned by the deployment row, not a user or space, so no account deletion removes it.

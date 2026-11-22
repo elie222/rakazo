@@ -166,7 +166,12 @@ export function procedureSecurityEvent(
   }
   if (procedure === "mcp.assignments.approve") metadata.decision = "allow";
   if (procedure === "mcp.assignments.dismiss") metadata.decision = "deny";
-  return { type: audited.type, userId: actor.userId, spaceId: actor.spaceId, metadata };
+  // Going back to the environment's model removes the key an admin saved.
+  const type =
+    procedure === "models.deployment.update" && fields.provider === null
+      ? "credential.deleted"
+      : audited.type;
+  return { type, userId: actor.userId, spaceId: actor.spaceId, metadata };
 }
 
 const FAILED_CREDENTIAL_PATHS: Record<string, SecurityEventType> = {
