@@ -1,4 +1,5 @@
 import type { Actor } from "@rakazo/contracts";
+import * as db from "@rakazo/db";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { DeploymentModelSettingsDeps } from "./deployment-model-settings.js";
 import {
@@ -219,6 +220,34 @@ describe("the model an admin sets for everyone", () => {
       modelId: null,
       keySaved: true,
     });
+  });
+
+  it("audits committed changes without including the key", async () => {
+    const record = vi.spyOn(db, "recordSecurityEvent").mockResolvedValue(undefined);
+    try {
+      const { deps } = setup();
+      await updateDeploymentModelSettings(deps, admin, { provider: null });
+      expect(record).not.toHaveBeenCalled();
+      await updateDeploymentModelSettings(deps, admin, { ...choice, apiKey: "fake-admin-key" });
+      await updateDeploymentModelSettings(deps, admin, choice);
+      await updateDeploymentModelSettings(deps, admin, { ...choice, modelId: "claude-haiku-5-5" });
+      await updateDeploymentModelSettings(deps, admin, { provider: null });
+      await updateDeploymentModelSettings(deps, admin, { provider: null });
+      expect(record.mock.calls.map(([event]) => event)).toEqual(
+        ["created", "changed", "deleted"].map((verb) => ({
+          type: `credential.${verb}`,
+          userId: admin.userId,
+          spaceId: admin.spaceId,
+          metadata: {
+            procedure: "models.deployment.update",
+            kind: "deployment_model",
+            provider: choice.provider,
+          },
+        })),
+      );
+    } finally {
+      record.mockRestore();
+    }
   });
 
   it("goes back to the environment's model and removes the key", async () => {

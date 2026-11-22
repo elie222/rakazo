@@ -20,11 +20,6 @@ export const AUDITED_PROCEDURES: Record<string, AuditedProcedure> = {
   "models.connect": { type: "credential.created", kind: "model", fields: ["provider"] },
   "models.finishOAuth": { type: "credential.created", kind: "model" },
   "models.disconnect": { type: "credential.deleted", kind: "model", fields: ["provider"] },
-  "models.deployment.update": {
-    type: "credential.changed",
-    kind: "deployment_model",
-    fields: ["provider"],
-  },
   "mcp.servers.create": { type: "credential.created", kind: "mcp" },
   "mcp.servers.connect": { type: "credential.created", kind: "mcp", fields: ["botId"] },
   "mcp.servers.update": { type: "credential.changed", kind: "mcp", fields: ["id"] },
@@ -166,12 +161,7 @@ export function procedureSecurityEvent(
   }
   if (procedure === "mcp.assignments.approve") metadata.decision = "allow";
   if (procedure === "mcp.assignments.dismiss") metadata.decision = "deny";
-  // Going back to the environment's model removes the key an admin saved.
-  const type =
-    procedure === "models.deployment.update" && fields.provider === null
-      ? "credential.deleted"
-      : audited.type;
-  return { type, userId: actor.userId, spaceId: actor.spaceId, metadata };
+  return { type: audited.type, userId: actor.userId, spaceId: actor.spaceId, metadata };
 }
 
 const FAILED_CREDENTIAL_PATHS: Record<string, SecurityEventType> = {

@@ -17,7 +17,7 @@ import {
 import type { Actor, DeploymentModelSettings, DeploymentModelUpdate } from "@rakazo/contracts";
 import { canonicalPiProviderId } from "@rakazo/contracts";
 import { ClientError } from "@rakazo/core";
-import { Prisma, runAsSystem, withTransactionRetry } from "@rakazo/db";
+import { Prisma, recordSecurityEvent, runAsSystem, withTransactionRetry } from "@rakazo/db";
 import { requireAdmin } from "../auth/admins.js";
 import type { RouterDeps } from "../router.js";
 import { modelConnectionErrorMessage } from "./model-credentials.js";
@@ -120,6 +120,12 @@ export async function updateDeploymentModelSettings(
           if (keptSecret && before !== keptSecret) {
             throw new ClientError("CONFLICT", "The model settings changed. Try again.");
           }
+          if (
+            keptSecret &&
+            current?.deploymentModelProvider === data.deploymentModelProvider &&
+            current?.deploymentModelId === data.deploymentModelId
+          )
+            return { saved: current };
           await tx.deploymentSettings.upsert({
             where: { id: "default" },
             create: { id: "default", ...data },
@@ -134,6 +140,21 @@ export async function updateDeploymentModelSettings(
           return {
             saved: { ...data, modelCreditsEnabled: current?.modelCreditsEnabled ?? false },
             cleanup,
+            event: {
+              type:
+                input.provider === null
+                  ? ("credential.deleted" as const)
+                  : before
+                    ? ("credential.changed" as const)
+                    : ("credential.created" as const),
+              userId: actor.userId,
+              spaceId: actor.spaceId,
+              metadata: {
+                procedure: "models.deployment.update",
+                kind: "deployment_model",
+                provider: data.deploymentModelProvider ?? current?.deploymentModelProvider ?? null,
+              },
+            },
           };
         },
         { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
@@ -143,6 +164,7 @@ export async function updateDeploymentModelSettings(
     if (newSecret) await cleanUpUnsavedSecret(deps, newSecret);
     throw error;
   });
+  if (result.event) await recordSecurityEvent(result.event);
   if (result.cleanup) await finishSecretCleanup(deps, result.cleanup);
   return view(deps, result.saved);
 }
