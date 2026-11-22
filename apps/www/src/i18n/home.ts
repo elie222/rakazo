@@ -2862,7 +2862,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
         {
           question: "Можно ли использовать подписку Claude Pro/Max или ChatGPT Plus/Pro?",
           answer:
-            "Да. В настройках моделей Rakazo войдите с тарифом Claude Pro или Max либо с подходящим тарифом ChatGPT. Можно также подключить API-ключ. Подробности — на странице Model subscriptions в документации.",
+            "Да. В настройках моделей Rakazo войдите с тарифом Claude Pro или Max либо с подходящим тарифом ChatGPT. Можно также подключить API-ключ. Подробности см. на странице Model subscriptions в документации.",
         },
         {
           question: "Можно ли запустить локальную модель?",
