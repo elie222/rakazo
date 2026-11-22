@@ -4,30 +4,14 @@ import { mobileTokens } from "../../lib/appearance/appearance";
 import { NativeActionButton } from "../native/native-action-button";
 
 /** A failed first load of a settings screen, with the way to try it again. */
-export function LoadFailure({
-  message,
-  onRetry,
-  retryDisabled = false,
-}: {
-  message: string | null;
-  onRetry: () => void;
-  retryDisabled?: boolean;
-}) {
+export function LoadFailure({ message, onRetry }: { message: string; onRetry: () => void }) {
   const { t } = useLingui();
   return (
     <View style={{ gap: 8 }}>
-      {message ? (
-        <Text accessibilityRole="alert" style={{ color: mobileTokens().destructive, fontSize: 14 }}>
-          {message}
-        </Text>
-      ) : null}
-      <NativeActionButton
-        label={t`Retry`}
-        disabled={retryDisabled}
-        fill={false}
-        prominence="secondary"
-        onPress={onRetry}
-      />
+      <Text accessibilityRole="alert" style={{ color: mobileTokens().destructive, fontSize: 14 }}>
+        {message}
+      </Text>
+      <NativeActionButton label={t`Retry`} fill={false} prominence="secondary" onPress={onRetry} />
     </View>
   );
 }
