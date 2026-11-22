@@ -416,8 +416,7 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
     attachments,
     composerRef: composer.composerRef,
     readOnly,
-    botId: inGroup ? undefined : botId,
-    sessionEpoch,
+    threadKey,
     uploadConfig,
   });
 

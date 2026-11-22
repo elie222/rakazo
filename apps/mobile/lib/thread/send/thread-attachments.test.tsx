@@ -5,9 +5,7 @@ import { act, Suspense, startTransition, use, useLayoutEffect } from "react";
 import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import type * as incomingShare from "../../composer/incoming-share";
 import {
-  isIncomingShareCurrent,
   releaseIncomingShareFiles,
   retryIncomingShare,
   takeIncomingShare,
@@ -17,35 +15,12 @@ import { pickDocuments, readDroppedFiles, readSharedFiles } from "../../composer
 import { useIncomingShareImport, useThreadAttachments } from "./thread-attachments";
 
 const sessionCaches = vi.hoisted(() => [] as Array<() => void>);
-const shareContext = vi.hoisted(() => ({
-  epoch: 1,
-  spaceId: "space-1",
-  files: [] as Array<{ value: string; shareType: string; mimeType: string }>,
-}));
-vi.mock("react-native", () => ({ Platform: { OS: "android" } }));
-vi.mock("expo-file-system", () => ({
-  File: class {
-    constructor(private uri: string) {}
-    get name() {
-      return this.uri.split("/").at(-1);
-    }
-  },
-  Paths: {},
-}));
-vi.mock("expo-sharing", () => ({
-  getSharedPayloads: () => shareContext.files,
-  clearSharedPayloads: () => {
-    shareContext.files = [];
-  },
-}));
-vi.mock("../../api/api", () => ({ selectedSpaceId: () => shareContext.spaceId }));
 const fileDrop = vi.hoisted(() => ({
   onDrop: undefined as
     | undefined
     | ((drop: { files: unknown[]; skipped: Array<{ name: string; reason: string }> }) => void),
 }));
 vi.mock("../../api/session", () => ({
-  currentSessionGeneration: () => shareContext.epoch,
   registerSessionDiskCache: (clear: () => void) => sessionCaches.push(clear),
 }));
 
@@ -103,26 +78,21 @@ const twoAttachments = { maxAttachmentsPerMessage: 2 };
 function ImportProbe({
   botId,
   uploadConfig = defaultUploadConfig,
-  sessionEpoch = 1,
-  readOnly = false,
 }: {
   botId: string;
   uploadConfig?: { maxAttachmentsPerMessage?: number };
-  sessionEpoch?: number;
-  readOnly?: boolean;
 }) {
   attachments = useThreadAttachments({
     botId,
-    readOnly,
+    readOnly: false,
     uploadConfig,
     draftScope: { apiBase: "https://example.test", userId: "user-1", threadKey: botId },
   });
   useIncomingShareImport({
     attachments,
     composerRef: { current: null },
-    readOnly,
-    botId,
-    sessionEpoch,
+    readOnly: false,
+    threadKey: botId,
     uploadConfig,
   });
   const current = attachments;
@@ -144,128 +114,6 @@ beforeEach(() => {
 afterEach(() => {
   unmount();
   vi.unstubAllGlobals();
-});
-
-it("leaves an OS share staged when a notification chat mounts before the picker", async () => {
-  const real = await vi.importActual<typeof incomingShare>("../../composer/incoming-share");
-  const file = { value: "file:///fake/staged.txt", shareType: "file", mimeType: "text/plain" };
-  shareContext.files = [file];
-  real.receiveIncomingShare(true, false);
-  const staged = real.getIncomingShare();
-  vi.mocked(takeIncomingShare).mockImplementation(real.takeIncomingShare);
-  vi.mocked(readSharedFiles).mockClear();
-  vi.mocked(readSharedFiles).mockResolvedValueOnce({
-    attachments: [attachment("staged", "notification-bot")],
-    skipped: [],
-    failedFiles: [],
-    sources: [file.value],
-  });
-  try {
-    mount(<ImportProbe botId="notification-bot" />);
-    await act(async () => {});
-
-    expect(attachments.activePendingAttachments).toEqual([]);
-    expect(readSharedFiles).not.toHaveBeenCalled();
-    expect(real.getIncomingShare()).toBe(staged);
-  } finally {
-    real.cancelIncomingShare();
-    vi.mocked(takeIncomingShare).mockReset();
-    vi.mocked(readSharedFiles).mockReset();
-  }
-});
-
-it("imports a chosen share only into that chat, even if another chat opens or it is reused", async () => {
-  const real = await vi.importActual<typeof incomingShare>("../../composer/incoming-share");
-  const file = { value: "file:///fake/chosen.txt", shareType: "file", mimeType: "text/plain" };
-  shareContext.files = [file];
-  real.receiveIncomingShare(true, false);
-  const staged = real.getIncomingShare()!;
-  expect(
-    real.selectIncomingShare(staged, { botId: "chosen-bot", spaceId: "space-1", sessionEpoch: 1 }),
-  ).toBe(true);
-  vi.mocked(takeIncomingShare).mockImplementation(real.takeIncomingShare);
-  vi.mocked(readSharedFiles).mockClear();
-  vi.mocked(readSharedFiles).mockResolvedValueOnce({
-    attachments: [attachment("chosen", "chosen-bot")],
-    skipped: [],
-    failedFiles: [],
-    sources: [file.value],
-  });
-  try {
-    mount(<ImportProbe botId="other-bot" />);
-    shareContext.spaceId = "space-2";
-    await act(async () => root.render(<ImportProbe botId="chosen-bot" />));
-    shareContext.spaceId = "space-1";
-    shareContext.epoch = 2;
-    await act(async () => root.render(<ImportProbe botId="chosen-bot" sessionEpoch={2} />));
-    expect(readSharedFiles).not.toHaveBeenCalled();
-    expect(real.getIncomingShare()).toBe(staged);
-
-    shareContext.epoch = 1;
-    await act(async () => root.render(<ImportProbe botId="chosen-bot" readOnly />));
-    expect(readSharedFiles).not.toHaveBeenCalled();
-    await act(async () => root.render(<ImportProbe botId="chosen-bot" />));
-    expect(attachments.activePendingAttachments.map(({ id }) => id)).toEqual(["chosen"]);
-    await act(async () =>
-      root.render(<ImportProbe botId="chosen-bot" uploadConfig={twoAttachments} />),
-    );
-    expect(readSharedFiles).toHaveBeenCalledOnce();
-    expect(real.getIncomingShare()).toBeNull();
-    expect(attachments.activePendingAttachments.map(({ id }) => id)).toEqual(["chosen"]);
-  } finally {
-    real.cancelIncomingShare();
-    shareContext.epoch = 1;
-    shareContext.spaceId = "space-1";
-    vi.mocked(takeIncomingShare).mockReset();
-    vi.mocked(readSharedFiles).mockReset();
-  }
-});
-
-it("retries an interrupted read only for its selected share and adds the file once", async () => {
-  const real = await vi.importActual<typeof incomingShare>("../../composer/incoming-share");
-  const file = { value: "file:///fake/interrupted.txt", shareType: "file", mimeType: "text/plain" };
-  shareContext.files = [file];
-  real.receiveIncomingShare(true, false);
-  const share = real.getIncomingShare()!;
-  expect(
-    real.selectIncomingShare(share, { botId: "retry-bot", spaceId: "space-1", sessionEpoch: 1 }),
-  ).toBe(true);
-  const delayed = deferred<Awaited<ReturnType<typeof readSharedFiles>>>();
-  const result = {
-    attachments: [attachment("retry", "retry-bot")],
-    skipped: [],
-    failedFiles: [],
-    sources: [file.value],
-  };
-  vi.mocked(takeIncomingShare).mockImplementation(real.takeIncomingShare);
-  vi.mocked(retryIncomingShare).mockImplementation(real.retryIncomingShare);
-  vi.mocked(isIncomingShareCurrent).mockImplementation(real.isIncomingShareCurrent);
-  vi.mocked(readSharedFiles).mockClear();
-  vi.mocked(readSharedFiles).mockReturnValueOnce(delayed.promise).mockResolvedValueOnce(result);
-  try {
-    mount(<ImportProbe botId="retry-bot" />);
-    expect(readSharedFiles).toHaveBeenCalledOnce();
-
-    await act(async () =>
-      root.render(<ImportProbe botId="retry-bot" uploadConfig={twoAttachments} />),
-    );
-    expect(attachments.activePendingAttachments).toEqual([]);
-    await act(async () => delayed.resolve(result));
-
-    expect(readSharedFiles).toHaveBeenCalledTimes(2);
-    expect(takeIncomingShare).toHaveBeenLastCalledWith(
-      { botId: "retry-bot", spaceId: "space-1", sessionEpoch: 1 },
-      share.generation,
-    );
-    expect(attachments.activePendingAttachments.map(({ id }) => id)).toEqual(["retry"]);
-    expect(real.getIncomingShare()).toBeNull();
-  } finally {
-    real.cancelIncomingShare();
-    vi.mocked(takeIncomingShare).mockReset();
-    vi.mocked(retryIncomingShare).mockReset();
-    vi.mocked(isIncomingShareCurrent).mockReset();
-    vi.mocked(readSharedFiles).mockReset();
-  }
 });
 
 it("counts a read that settles before the next render against the attachment limit", async () => {

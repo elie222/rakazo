@@ -115,71 +115,54 @@ describe("opening a notification tap", () => {
     );
   });
 
-  it.each([
-    { label: "the Account landing", pages: ["account"] },
-    { label: "the Memory list", pages: ["account", "memory"] },
-    { label: "the Bot Templates list opened directly", pages: ["bot-templates"] },
-  ])(
-    "returns to the chat list after opening a notification from $label",
-    async ({ label, pages }) => {
-      vi.mocked(loadSessionToken).mockResolvedValue("token");
-      const inbox = { name: "index", key: "inbox" };
-      navigation.getRootState.mockReturnValue(
-        rootWithChatStack([
-          inbox,
-          { name: "thread", key: "prior-chat", params: { botId: "bot-2" } },
-          settingsSheet(pages),
-        ]),
-      );
-
-      await expect(openNotificationResponse(tap(`tap-over-settings-${label}`))).resolves.toBe(true);
-
-      expect(navigation.dispatch).toHaveBeenCalledExactlyOnceWith(
-        expect.objectContaining({
-          type: "RESET",
-          target: "app-stack",
-          payload: expect.objectContaining({
-            index: 1,
-            routes: [inbox, { name: "thread", params: { botId: "bot-1", threadId: "thread-1" } }],
-          }),
-        }),
-      );
-      expect(router.push).not.toHaveBeenCalled();
-    },
-  );
-
-  it.each([
-    settingsSheet(["account", "memory-note"], "memory-note"),
-    settingsSheet(["account", "memory-note", "memory"], "stacked-memory-editor"),
-    settingsSheet(["account", "future-settings", "memory"], "unknown-settings-ancestor"),
-    settingsSheet(["account", "billing"], "billing"),
-    settingsSheet(["account", "integrations"], "integrations"),
-    settingsSheet(["account", "skills", "bot-templates"], "stacked-skills-form"),
-    settingsSheet(
-      ["account", { name: "memory", key: "memory", state: { stale: true, routes: [] } }],
-      "stale-settings-child",
-    ),
-    { name: "(settings)", key: "unresolved-settings" },
-    ...["new-bot", "new-group", "new-space"].map((name) => ({ name, key: name })),
-  ])("opens above $key without removing protected state", async (screen) => {
+  it("returns to the chat list after opening a notification from settings", async () => {
     vi.mocked(loadSessionToken).mockResolvedValue("token");
+    const inbox = { name: "index", key: "inbox" };
     navigation.getRootState.mockReturnValue(
       rootWithChatStack([
-        { name: "index", key: "inbox" },
+        inbox,
         { name: "thread", key: "prior-chat", params: { botId: "bot-2" } },
-        screen,
+        settingsSheet(["account", "memory-note"]),
       ]),
     );
 
-    await expect(openNotificationResponse(tap(`tap-over-${screen.key}`))).resolves.toBe(true);
+    await expect(openNotificationResponse(tap("tap-over-settings"))).resolves.toBe(true);
 
-    expect(navigation.dispatch).not.toHaveBeenCalled();
-    expect(router.dismissTo).not.toHaveBeenCalled();
-    expect(router.push).toHaveBeenCalledExactlyOnceWith(
-      { pathname: "/thread", params: { botId: "bot-1", threadId: "thread-1" } },
-      { dangerouslySingular: threadRouteId },
+    expect(navigation.dispatch).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({
+        type: "RESET",
+        target: "app-stack",
+        payload: expect.objectContaining({
+          index: 1,
+          routes: [inbox, { name: "thread", params: { botId: "bot-1", threadId: "thread-1" } }],
+        }),
+      }),
     );
+    expect(router.push).not.toHaveBeenCalled();
   });
+
+  it.each([...["new-bot", "new-group", "new-space"].map((name) => ({ name, key: name }))])(
+    "opens above $key without removing it",
+    async (screen) => {
+      vi.mocked(loadSessionToken).mockResolvedValue("token");
+      navigation.getRootState.mockReturnValue(
+        rootWithChatStack([
+          { name: "index", key: "inbox" },
+          { name: "thread", key: "prior-chat", params: { botId: "bot-2" } },
+          screen,
+        ]),
+      );
+
+      await expect(openNotificationResponse(tap(`tap-over-${screen.key}`))).resolves.toBe(true);
+
+      expect(navigation.dispatch).not.toHaveBeenCalled();
+      expect(router.dismissTo).not.toHaveBeenCalled();
+      expect(router.push).toHaveBeenCalledExactlyOnceWith(
+        { pathname: "/thread", params: { botId: "bot-1", threadId: "thread-1" } },
+        { dangerouslySingular: threadRouteId },
+      );
+    },
+  );
 
   it("opens a notification above the protected share picker with ordinary chat parameters", async () => {
     vi.mocked(loadSessionToken).mockResolvedValue("token");

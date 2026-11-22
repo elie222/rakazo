@@ -4,7 +4,7 @@ import type { NavigationState, PartialState } from "expo-router/react-navigation
 import { CommonActions } from "expo-router/react-navigation";
 import { useEffect } from "react";
 import { loadSessionToken } from "../api/session";
-import { canDismissSettingsForNotification } from "../settings/settings-sheet";
+import { closeSettingsSheet } from "../settings/settings-sheet";
 import type { NotificationRoute } from "./notification-open";
 import { notificationResponseRoute, threadRouteId } from "./notification-open";
 
@@ -15,32 +15,24 @@ type NotificationNavigation = Pick<
   "dispatch" | "getRootState"
 >;
 
+// Screens a notification may replace. Settings is closed for a notification either way.
+const replaceableScreens = new Set(["index", "thread", "group-thread", "(settings)"]);
+
 function findChatStack(root: NavigationState | undefined): NavigationState | undefined {
   let state: NavigationState | PartialState<NavigationState> | undefined = root;
   // Expo Router wraps the app's stack in its own root navigator.
   while (state?.stale === false) {
-    if (
-      state.type === "stack" &&
-      state.routeNames.includes("index") &&
-      state.routeNames.includes("thread") &&
-      state.routeNames.includes("group-thread")
-    ) {
-      return state;
-    }
+    if (state.type === "stack" && state.routeNames.includes("thread")) return state;
     state = state.routes[state.index]?.state;
   }
 }
 
-function mayLeaveForNotification(route: NavigationState["routes"][number]): boolean {
-  if (route.name === "index" || route.name === "thread" || route.name === "group-thread") {
-    return true;
-  }
-  return route.name === "(settings)" && canDismissSettingsForNotification(route.state);
-}
-
+/** Opens the chat with the chat list under it, so Back returns to the list. Any other screen
+ * in the stack (an editor, the share picker) stays, and the chat opens above it. */
 function openNotificationThread(navigation: NotificationNavigation, target: NotificationRoute) {
   const stack = findChatStack(navigation.getRootState());
-  if (!stack || stack.routes.some((route) => !mayLeaveForNotification(route))) {
+  if (!stack || stack.routes.some((route) => !replaceableScreens.has(route.name))) {
+    closeSettingsSheet();
     router.push(target, {
       dangerouslySingular: threadRouteId,
       ...(!stack ? { withAnchor: true } : {}),
@@ -54,7 +46,7 @@ function openNotificationThread(navigation: NotificationNavigation, target: Noti
     (route) => route.name === name && threadRouteId(route.name, { ...route.params }) === id,
   );
   const inbox = stack.routes.find((route) => route.name === "index") ?? { name: "index" };
-  // Retain the chat's route key so a new notification keeps the mounted screen and scroll.
+  // Keep the open chat's route key so a new delivery keeps the mounted screen and scroll.
   navigation.dispatch({
     ...CommonActions.reset({
       ...stack,
