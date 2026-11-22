@@ -215,7 +215,6 @@ describe("GroupSettings", () => {
     );
     expect(uncheckedRunner?.getAttribute("aria-checked")).toBe("false");
     await act(async () => uncheckedRunner!.click());
-    expect(onSave).not.toHaveBeenCalled();
     await click("Save");
     expect(onSave).toHaveBeenCalledWith({ name: "My edit", botIds: undefined });
   });

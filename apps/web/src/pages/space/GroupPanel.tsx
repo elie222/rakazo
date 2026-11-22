@@ -40,8 +40,9 @@ function MemberPicker({
   const listId = useId();
   const [expanded, setExpanded] = useState(initiallyExpanded);
   const [query, setQuery] = useState("");
-  // Keep displayed selections visible when collapsed, including selections
-  // from a refreshed group. A member unchecked locally can still be rechecked.
+  // Every bot ever selected this session, picked here or arriving with a
+  // refreshed group, stays listed when collapsed, so an unchecked member
+  // remains re-checkable until the form is saved.
   const [everPicked, setEverPicked] = useState<ReadonlySet<string>>(() => new Set(selected));
   if (selected.some((id) => !everPicked.has(id))) {
     setEverPicked(new Set([...everPicked, ...selected]));
@@ -60,7 +61,6 @@ function MemberPicker({
     if (selected.includes(botId)) {
       onChange(selected.filter((id) => id !== botId));
     } else if (selected.length < GROUP_MEMBER_MAX) {
-      setEverPicked((current) => new Set(current).add(botId));
       onChange([...selected, botId]);
     }
   }
