@@ -1,6 +1,6 @@
 import type { RealtimeFanout } from "@rakazo/adapter-kit";
 import type { ProductEvent } from "@rakazo/contracts";
-import { getLogger } from "@rakazo/logging";
+import { bestEffort, getLogger } from "@rakazo/logging";
 import type { PrismaClient } from "../database/client.js";
 import { JsonObject, readJsonColumn } from "../database/json-column.js";
 import { readRunTimingFields } from "../runs/run-timing.js";
@@ -10,7 +10,10 @@ const PUSH_CATCH_UP_MS = 30_000;
 const POLL_ONLY_CATCH_UP_MS = 400;
 const INCOMING_CALL_POLL_MS = 3_000;
 
-/** Timing metadata is returned by the transaction that recorded first output. */
+/**
+ * Timing metadata is returned by the transaction that recorded first output. Never rejects: the
+ * event is committed, so a failed publish is only logged and the timing read falls back to none.
+ */
 export async function notifyCommittedEvent(
   prisma: PrismaClient,
   realtime: RealtimeFanout | undefined,
@@ -31,7 +34,9 @@ export async function notifyRealtime(
   threadId: string,
   cursor: number,
 ): Promise<void> {
-  await realtime?.publish(threadTopic(threadId), JSON.stringify({ cursor })).catch(() => undefined);
+  // Async, so a fanout that throws before returning a promise is caught as well.
+  const publish = async () => realtime?.publish(threadTopic(threadId), JSON.stringify({ cursor }));
+  await bestEffort("publish thread change", publish());
 }
 
 export async function eventsAfter(

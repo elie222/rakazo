@@ -9,15 +9,16 @@ import {
   otherSitesText,
   vaultKind,
 } from "@rakazo/contracts";
+import { siteHost } from "@rakazo/core";
 import { vaultBotsLine } from "@rakazo/i18n/vault";
 import { Button } from "@rakazo/ui-web";
 import { Check, Copy, Eye, EyeOff } from "lucide-react";
 import type { ReactNode } from "react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { useCopyText } from "../../lib/copy-text";
 import { SettingsPageHeader } from "../settings/SettingsPageHeader";
 import type { VaultAuth } from "./kinds";
-import { siteHost, useVaultKindLabels, VaultTile } from "./kinds";
+import { useVaultKindLabels, VaultTile } from "./kinds";
 import { useVaultBots } from "./VaultItemAccess";
 import { VaultItemActivity, VaultItemUses } from "./VaultItemActivity";
 
@@ -26,7 +27,7 @@ export const REVEAL_MS = 30_000;
 
 const MASK = "••••••••";
 
-function CopyButton({ text }: { text: string }) {
+function CopyButton({ text, describedBy }: { text: string; describedBy: string }) {
   const { t } = useLingui();
   const [copied, copy] = useCopyText();
   return (
@@ -35,6 +36,7 @@ function CopyButton({ text }: { text: string }) {
       variant="ghost"
       size="icon-xs"
       aria-label={copied ? t`Copied` : t`Copy`}
+      aria-describedby={describedBy}
       className="shrink-0 text-muted-foreground"
       onClick={() => copy(text)}
     >
@@ -57,15 +59,18 @@ function DetailRow({
   action?: ReactNode;
   testId?: string;
 }) {
+  const labelId = useId();
   return (
     <div
       data-testid={testId}
       className="flex min-h-11 items-center gap-3 border-t border-border py-2 first:border-t-0"
     >
-      <span className="w-28 shrink-0 text-body-sm text-muted-foreground">{label}</span>
+      <span id={labelId} className="w-28 shrink-0 text-body-sm text-muted-foreground">
+        {label}
+      </span>
       <span className="min-w-0 flex-1 whitespace-pre-line break-words text-body">{children}</span>
       {action}
-      {copy ? <CopyButton text={copy} /> : null}
+      {copy ? <CopyButton text={copy} describedBy={labelId} /> : null}
     </div>
   );
 }

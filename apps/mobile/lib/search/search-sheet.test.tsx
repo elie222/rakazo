@@ -9,7 +9,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import SearchSheet from "../../app/search";
 import { selectSpace } from "../api/api-server";
 import type { InboxSpace } from "../inbox/inbox-spaces";
-import { searchKindLabel } from "./search-sheet";
+import type * as Search from "./search";
 
 const state = vi.hoisted(() => ({
   search: vi.fn(),
@@ -25,6 +25,7 @@ const state = vi.hoisted(() => ({
   apiBase: "https://example.test",
   dismiss: vi.fn(),
   alert: vi.fn(),
+  announce: vi.fn(),
   platform: { OS: "ios" },
 }));
 const bot = {
@@ -86,7 +87,10 @@ vi.mock("../api/api", () => ({
   currentApiBase: () => state.apiBase,
 }));
 vi.mock("../api/session", () => ({ currentSessionGeneration: () => state.generation }));
-vi.mock("./search", () => ({ querySpaceSearch: state.search }));
+vi.mock("./search", async (importOriginal) => ({
+  ...(await importOriginal<typeof Search>()),
+  querySpaceSearch: state.search,
+}));
 vi.mock("./search-inbox", () => ({
   getSearchInbox: () => spaces,
   subscribeSearchInbox: () => () => {},
@@ -125,6 +129,7 @@ vi.mock("../../components/native/glass-icon-button", () => ({
   ),
 }));
 vi.mock("react-native", () => ({
+  AccessibilityInfo: { announceForAccessibility: state.announce },
   Platform: state.platform,
   Alert: { alert: state.alert },
   StyleSheet: { create: (styles: unknown) => styles },
@@ -290,11 +295,62 @@ it("ignores stale server responses and restores chats when cleared", async () =>
   await type("second");
   await act(async () => vi.advanceTimersByTime(200));
   expect(container.textContent).toContain("No results");
+  expect(state.announce).toHaveBeenCalledExactlyOnceWith("No results");
   await act(async () => held.resolve([message]));
   expect(row("Found note, Message")).toBeNull();
   await type("");
   expect(row("Scout, Bot")).not.toBeNull();
 });
+it("announces No results once when a finished query has no rows", async () => {
+  await type("nothing");
+  await act(async () => vi.advanceTimersByTime(200));
+  expect(container.textContent).toContain("No results");
+  expect(state.announce).toHaveBeenCalledExactlyOnceWith("No results");
+});
+
+it("says nothing while the query is still searching", async () => {
+  const held = deferred<(typeof message)[]>();
+  state.search.mockImplementationOnce(() => held.promise);
+  await type("nothing");
+  await act(async () => vi.advanceTimersByTime(200));
+  expect(container.textContent).toContain("Searching…");
+  expect(state.announce).not.toHaveBeenCalled();
+  await act(async () => held.resolve([]));
+  expect(state.announce).toHaveBeenCalledExactlyOnceWith("No results");
+});
+
+it("does not announce a failed search, which has its own alert", async () => {
+  state.search.mockRejectedValueOnce(new Error("Search is unavailable right now"));
+  await type("nothing");
+  await act(async () => vi.advanceTimersByTime(200));
+  expect(container.querySelector('[role="alert"]')?.textContent).toBe(
+    "Search is unavailable right now",
+  );
+  expect(state.announce).not.toHaveBeenCalled();
+});
+
+it("does not announce when the query is cleared mid-search", async () => {
+  const held = deferred<(typeof message)[]>();
+  state.search.mockImplementationOnce(() => held.promise);
+  await type("nothing");
+  await act(async () => vi.advanceTimersByTime(200));
+  await type("");
+  await act(async () => held.resolve([]));
+  expect(container.textContent).not.toContain("No results");
+  expect(state.announce).not.toHaveBeenCalled();
+});
+
+it("does not announce a query typed after clearing until its own search finishes", async () => {
+  await type("nothing");
+  await act(async () => vi.advanceTimersByTime(200));
+  await type("");
+  await type("nothing else");
+  expect(state.announce).toHaveBeenCalledOnce();
+  await act(async () => vi.advanceTimersByTime(200));
+  expect(state.announce).toHaveBeenCalledTimes(2);
+  expect(state.announce).toHaveBeenLastCalledWith("No results");
+});
+
 it("says the search failed instead of no results, ignoring superseded and cleared requests", async () => {
   const pending: {
     resolve: (hits: (typeof message)[]) => void;
@@ -325,6 +381,7 @@ it("says the search failed instead of no results, ignoring superseded and cleare
   expect(state.search).toHaveBeenLastCalledWith("first", expect.any(AbortSignal));
   await act(async () => pending[1]!.resolve([]));
   expect(container.textContent).toBe("CloseNo results");
+  expect(state.announce).toHaveBeenCalledExactlyOnceWith("No results");
 
   await search("Scout");
   expect(container.textContent).not.toContain("Search is unavailable right now");
@@ -349,16 +406,6 @@ it("says the search failed instead of no results, ignoring superseded and cleare
   expect(container.textContent).not.toContain("Search is unavailable right now");
   expect(state.search).toHaveBeenCalledTimes(6);
 });
-it.each([
-  ["conversation", "Bot"],
-  ["message", "Message"],
-  ["file", "File"],
-  ["link", "Link"],
-  ["routine", "Routine"],
-] as const)("labels %s hits", (kind, label) => {
-  expect(searchKindLabel({ ...message, kind })).toBe(label);
-});
-
 it("retries focus after the sheet attaches and keeps the native search keyboard options", () => {
   const field = container.querySelector("input")!;
   const focus = vi.spyOn(field, "focus");

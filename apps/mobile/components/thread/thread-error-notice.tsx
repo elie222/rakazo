@@ -90,7 +90,7 @@ export function ThreadFetchErrorNotice({
   return (
     <View style={{ paddingBottom: 24 }}>
       <ThreadErrorNotice
-        error={showingSaved ? t`Couldn't refresh — showing the last loaded messages.` : error}
+        error={showingSaved ? t`Couldn't refresh. Showing the last loaded messages.` : error}
         summary={null}
       />
     </View>

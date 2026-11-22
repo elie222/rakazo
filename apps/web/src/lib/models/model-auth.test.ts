@@ -13,7 +13,7 @@ it("sends the sign-in ID and cancellation signal on the client that began it", a
     typeof waitForModelOAuth
   >[2];
 
-  await waitForModelOAuth("login-id", signal, client);
+  await waitForModelOAuth({ loginId: "login-id", expiresInSeconds: 900 }, signal, client);
 
   expect(completeOAuth).toHaveBeenCalledExactlyOnceWith({ loginId: "login-id" }, { signal });
   expect(rpc.models.completeOAuth).not.toHaveBeenCalled();

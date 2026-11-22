@@ -1,6 +1,7 @@
 import { t } from "@lingui/core/macro";
 import { isLocalhostOrLoopbackIp } from "@rakazo/contracts";
 import { COMPUTER_SCREEN_PATH } from "@rakazo/contracts/content-security-policy";
+import { sliceWellFormed } from "@rakazo/core";
 import { errorText } from "../query/user-error";
 
 export interface ComputerScreenResult {
@@ -149,7 +150,7 @@ export function screenFrameMessage(data: unknown): ScreenFrameMessage | null {
   if (!data || typeof data !== "object") return null;
   const { rakazoScreen, detail } = data as Record<string, unknown>;
   if (typeof rakazoScreen !== "string" || !SCREEN_FRAME_STATES.has(rakazoScreen)) return null;
-  const text = typeof detail === "string" ? detail.trim().slice(0, 200) : "";
+  const text = typeof detail === "string" ? sliceWellFormed(detail.trim(), 200) : "";
   return { rakazoScreen: rakazoScreen as ScreenFrameState, ...(text ? { detail: text } : {}) };
 }
 
