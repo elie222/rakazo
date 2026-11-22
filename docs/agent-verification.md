@@ -242,9 +242,11 @@ variable rather than placing a key on the command line:
 ```bash
 pnpm test:evals --live --provider openrouter --model <model-id> \
   --api-key-env OPENROUTER_API_KEY --pricing <pricing.json> \
-  --judge-connection <private-judge-connection.json> --judge-pricing <judge-pricing.json> \
-  --trials 3
+  --judge-connection <private-judge-connection.json> --judge-pricing <judge-pricing.json>
 ```
+
+The CLI defaults to one trial per case and strategy. Use `--trials` with a higher
+count when investigating an intermittent failure or measuring variability.
 
 Cases that grade what the bot wrote need the judge: without `--judge-connection`
 and `--judge-pricing` a run that selects one schedules no inference and reports
@@ -462,7 +464,7 @@ on itself.
 
 ```sh
 pnpm test:evals --suite group-routing --list
-pnpm test:evals --live --suite group-routing --connection <private-connection.json> --pricing <pricing.json> --trials 3 --spend-cap-usd 1 --output test-report/evals/group-routing.json
+pnpm test:evals --live --suite group-routing --connection <private-connection.json> --pricing <pricing.json> --spend-cap-usd 1 --output test-report/evals/group-routing.json
 ```
 
 Each case sends a group message that names nobody, so every member gets it and
@@ -487,7 +489,7 @@ Anthropic model often answered a question about both peers with one of them.
 
 ```sh
 pnpm test:evals --suite bot-files --list
-pnpm test:evals --live --suite bot-files --connection <private-connection.json> --pricing <pricing.json> --trials 3 --spend-cap-usd 1 --output test-report/evals/bot-files.json
+pnpm test:evals --live --suite bot-files --connection <private-connection.json> --pricing <pricing.json> --spend-cap-usd 1 --output test-report/evals/bot-files.json
 ```
 
 The cases check that a bot passes a project to another bot with `files` instead
@@ -589,7 +591,7 @@ passed every case.
 
 ```sh
 pnpm test:evals --suite memory --list
-pnpm test:evals --live --suite memory --connection <private-connection.json> --pricing <pricing.json> --judge-connection <private-judge-connection.json> --judge-pricing <judge-pricing.json> --trials 3 --spend-cap-usd 1 --output test-report/evals/memory.json
+pnpm test:evals --live --suite memory --connection <private-connection.json> --pricing <pricing.json> --judge-connection <private-judge-connection.json> --judge-pricing <judge-pricing.json> --spend-cap-usd 1 --output test-report/evals/memory.json
 ```
 
 The five synthetic cases check that the bot's own memory stays short and correct
@@ -619,7 +621,7 @@ fail, while a rewrite and a consolidate-then-save pass.
 
 ```sh
 pnpm test:evals --suite recall --list
-pnpm test:evals --live --suite recall --strategy retrieval --connection <private-connection.json> --pricing <pricing.json> --judge-connection <private-judge-connection.json> --judge-pricing <judge-pricing.json> --trials 3 --spend-cap-usd 1 --output test-report/evals/recall.json
+pnpm test:evals --live --suite recall --strategy retrieval --connection <private-connection.json> --pricing <pricing.json> --judge-connection <private-judge-connection.json> --judge-pricing <judge-pricing.json> --spend-cap-usd 1 --output test-report/evals/recall.json
 ```
 
 Each case seeds 1,000 synthetic messages, with a lease the user uploaded at
