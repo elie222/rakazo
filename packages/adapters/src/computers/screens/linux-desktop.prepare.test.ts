@@ -76,6 +76,11 @@ describe("provider desktop preparation", () => {
     expect(result.calls[3]).toContain("xvfb");
   });
 
+  it("reinstalls missing tools, since a restored disk can list a package whose files are gone", () => {
+    const result = prepareDesktop({ broken: false });
+    expect(result.calls[1]).toMatch(/ install .*--reinstall --no-remove .*websockify/);
+  });
+
   it("waits for another preparation of the same computer before checking its tools", () => {
     const lock = PREPARE_LINUX_DESKTOP.indexOf("flock 9");
     expect(lock).toBeGreaterThan(-1);
