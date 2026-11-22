@@ -1490,10 +1490,14 @@ export class McpOAuthBroker {
         endpoint: session.endpoint,
         stdio: !server.endpoint,
         generation: loaded.material.oauthGeneration ?? 0,
-        provider: this.createProvider(server, context, loaded, {
-          redirectUri: session.redirectUri,
-          state: session.id,
-        }),
+        // Its writes are held to the endpoint this sign-in began at, so a server moved since
+        // never stores the old endpoint's grant.
+        provider: this.createProvider(
+          server.endpoint === null ? server : { ...server, endpoint: session.endpoint },
+          context,
+          loaded,
+          { redirectUri: session.redirectUri, state: session.id },
+        ),
         botId: session.botId,
         createdAt: session.createdAt.getTime(),
         expiry: undefined,

@@ -260,15 +260,27 @@ export function mcpRoutes(ctx: RouterContext) {
               return { existing, existingSecret };
             });
             let existingMaterial: Record<string, unknown> = {};
+            let malformedSecret = false;
+            let loadFailure: unknown;
             if (existingSecret) {
+              let plaintext: string | undefined;
               try {
-                const value = JSON.parse(
-                  await deps.secrets.load(existingSecret.ciphertext, existingSecret.id),
-                );
-                if (value && typeof value === "object" && !Array.isArray(value))
-                  existingMaterial = value as Record<string, unknown>;
-              } catch {
-                /* Existing malformed secrets are replaced only when new credentials are supplied. */
+                plaintext = await deps.secrets.load(existingSecret.ciphertext, existingSecret.id);
+              } catch (failure) {
+                // Kept for an endpoint change, which must not go ahead without knowing what to drop.
+                loadFailure = failure;
+              }
+              if (plaintext !== undefined) {
+                try {
+                  const value = JSON.parse(plaintext);
+                  if (value && typeof value === "object" && !Array.isArray(value))
+                    existingMaterial = value as Record<string, unknown>;
+                  else malformedSecret = true;
+                } catch {
+                  /* Existing malformed secrets are replaced only when new credentials are
+                   * supplied, or dropped when the endpoint changes. */
+                  malformedSecret = true;
+                }
               }
             }
             const config =
@@ -289,7 +301,15 @@ export function mcpRoutes(ctx: RouterContext) {
               throw new ORPCError("BAD_REQUEST", { message: "A remote MCP server is required" });
             }
             const nextEndpoint = "endpoint" in config ? config.endpoint : null;
-            if (existing.endpoint !== nextEndpoint) {
+            // Spellings of one URL, such as with and without a trailing slash, are one endpoint.
+            const endpointChanged =
+              existing.endpoint &&
+              nextEndpoint &&
+              URL.canParse(existing.endpoint) &&
+              URL.canParse(nextEndpoint)
+                ? new URL(existing.endpoint).href !== new URL(nextEndpoint).href
+                : existing.endpoint !== nextEndpoint;
+            if (endpointChanged) {
               await assertMcpRemoteEndpoint(nextEndpoint, deps);
             }
             if (config.transport === "stdio") {
@@ -298,13 +318,25 @@ export function mcpRoutes(ctx: RouterContext) {
             } else if (existing.transport === "stdio") {
               await assertMcpStdioAdmin(context.actor, deps);
             }
-            const endpointChanged = existing.endpoint !== nextEndpoint;
             existingMaterial.args ??= legacyMcpArgs(existing.args);
-            const update = buildMcpUpdateMaterial(existingMaterial, config, {
+            const built = buildMcpUpdateMaterial(existingMaterial, config, {
               clearOAuth: endpointChanged,
               endpointChanged,
               commandChanged: existing.command !== ("command" in config ? config.command : null),
             });
+            // A malformed credential must not stay attached to a new endpoint.
+            const update: typeof built =
+              malformedSecret && endpointChanged && built.action === "keep"
+                ? { action: "store", material: {} }
+                : built;
+            // Without the stored credential, a move or a new one would lose what it keeps; only
+            // clearing it can go ahead.
+            if (
+              loadFailure !== undefined &&
+              (endpointChanged || update.action === "store") &&
+              !("clearCredential" in config && config.clearCredential)
+            )
+              throw loadFailure;
             if (update.action === "store" && config.transport === "stdio") {
               await assertMcpRemoteEndpoint(
                 update.material.oauthClient?.authorization_server,
@@ -401,8 +433,19 @@ export function mcpRoutes(ctx: RouterContext) {
                             ) as Prisma.InputJsonValue,
                           }
                         : {}),
+                      // A stored material can drop headers the update sent, so the keys follow it.
                       headers: ("headers" in config
-                        ? Object.fromEntries(Object.keys(config.headers).map((key) => [key, true]))
+                        ? Object.fromEntries(
+                            Object.keys(
+                              update.action === "store"
+                                ? (update.material.headers ?? {})
+                                : endpointChanged
+                                  ? Object.fromEntries(
+                                      Object.entries(config.headers).filter(([, value]) => value),
+                                    )
+                                  : config.headers,
+                            ).map((key) => [key, true]),
+                          )
                         : {}) as Prisma.InputJsonValue,
                       enabled: config.enabled,
                       verbatimResults: config.verbatimResults,
