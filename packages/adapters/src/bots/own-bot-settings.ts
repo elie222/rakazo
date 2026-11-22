@@ -86,7 +86,7 @@ export async function readOwnBotSettings(
   const groups: { provider: string; ids: string[]; listed: string[] }[] = [];
   for (const [provider, ids] of providers) {
     const cost = JSON.stringify({ provider, ids: [], more: ids.length }).length + 1;
-    if (cost > room) break;
+    if (cost > room) continue;
     room -= cost;
     groups.push({ provider, ids, listed: [] });
   }
