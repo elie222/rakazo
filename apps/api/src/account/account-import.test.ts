@@ -1,4 +1,4 @@
-import { mkdtemp, readdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { link, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Actor } from "@rakazo/contracts";
@@ -355,7 +355,7 @@ describe("account import archive", () => {
         yield bytes.subarray(0, 4);
         // The spool exists now: plant a link where its spill will be opened.
         const spool = (await readdir(dir)).find((name) => name.startsWith(SPOOL_PREFIX));
-        await symlink(victim, join(dir, `${spool}.entry`));
+        await link(victim, join(dir, `${spool}.entry`));
         yield bytes.subarray(4);
       }
       await expect(
