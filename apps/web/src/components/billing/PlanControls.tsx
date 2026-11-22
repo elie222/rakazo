@@ -6,7 +6,7 @@ import {
   creditAmountChoices,
   HeldCreditAmountSchema,
 } from "@rakazo/contracts";
-import { formatBillingAmount, formatBillingPrice } from "@rakazo/i18n/billing";
+import { formatBillingAmount, formatMonthlyPrice } from "@rakazo/i18n/billing";
 import {
   Select,
   SelectContent,
@@ -19,13 +19,6 @@ import {
 } from "@rakazo/ui-web";
 
 export type CreditAmount = (typeof MODEL_CREDIT_AMOUNTS)[number];
-
-export function formatMonthlyUsd(cents: number, locale: string): string {
-  return formatBillingPrice(
-    { amount: cents, currency: "usd", interval: "month", intervalCount: 1 },
-    locale,
-  );
-}
 
 /** Monthly or yearly own-key plan, with what the yearly plan saves. */
 export function ByokIntervalToggle({
@@ -79,7 +72,7 @@ export function CreditAmountSelect({
   const items = creditAmountChoices(value).map((amount) => ({
     value: amount,
     label: monthly
-      ? formatMonthlyUsd(amount, i18n.locale)
+      ? formatMonthlyPrice(amount, i18n.locale)
       : formatBillingAmount(amount, "usd", i18n.locale),
   }));
   return (

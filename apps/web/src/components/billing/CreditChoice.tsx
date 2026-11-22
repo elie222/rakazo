@@ -5,7 +5,7 @@ import {
   DEFAULT_MONTHLY_CREDIT_AMOUNT,
   ModelCreditAmountSchema,
 } from "@rakazo/contracts";
-import { formatBillingAmount } from "@rakazo/i18n/billing";
+import { formatBillingAmount, formatMonthlyPrice } from "@rakazo/i18n/billing";
 import { tierComputerDescription } from "@rakazo/i18n/computer-usage";
 import { bestEffort } from "@rakazo/logging/best-effort";
 import { Button, Card, CardContent, CardFooter, CardHeader } from "@rakazo/ui-web";
@@ -20,7 +20,7 @@ import { rpc } from "../../lib/query/rpc";
 import { AccountMenu } from "../account/AccountMenu";
 import { InfoTooltip } from "../InfoTooltip";
 import type { CreditAmount } from "./PlanControls";
-import { ByokIntervalToggle, CreditAmountSelect, formatMonthlyUsd } from "./PlanControls";
+import { ByokIntervalToggle, CreditAmountSelect } from "./PlanControls";
 
 type TierOffer = NonNullable<BillingStatus["byokTiers"]>[number];
 /** A checked line on a plan, with more about it behind an info button when it needs it. */
@@ -344,7 +344,7 @@ export function CreditChoice({
               ) : (
                 <p className="flex h-12 items-center text-display font-medium tracking-tight">
                   {status.byokPriceCents ? (
-                    formatMonthlyUsd(status.byokPriceCents, i18n.locale)
+                    formatMonthlyPrice(status.byokPriceCents, i18n.locale)
                   ) : (
                     <Trans>Free</Trans>
                   )}

@@ -26,6 +26,14 @@ export function formatBillingPrice(price: Price, locale: string): string {
   });
 }
 
+/** "$12 / month" from a monthly plan price in US cents. */
+export function formatMonthlyPrice(cents: number, locale: string): string {
+  return formatBillingPrice(
+    { amount: cents, currency: "usd", interval: "month", intervalCount: 1 },
+    locale,
+  );
+}
+
 function billingPeriod(interval: Price["interval"], count: number): string {
   if (count === 1) {
     if (interval === "day") return i18n._({ id: "/ITcnz", message: "day" });
