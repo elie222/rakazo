@@ -150,7 +150,7 @@ msgstr "{0} หยุดชั่วคราวจนกว่าจะเป�
 #. placeholder {2}: cost(point.costUsd)
 #: apps/web/src/pages/settings/UsageSettingsPanel.tsx
 msgid "{0}: {1} tokens, {2}"
-msgstr ""
+msgstr "{0}: {1} token, {2}"
 
 #. placeholder {0}: Math.round(used)
 #: apps/web/src/components/billing/PlanUsage.tsx
@@ -297,7 +297,7 @@ msgstr "ได้รับฟรี {count} เดือน"
 #. js-lingui-explicit-id
 #: packages/i18n/src/billing.ts
 msgid "/RQB8K"
-msgstr ""
+msgstr "{count} เดือน"
 
 #: apps/mobile/app/(settings)/plugin.tsx
 #: apps/mobile/components/cards/ask-receipt.tsx
@@ -877,7 +877,7 @@ msgstr "ยังไม่อ่าน 1 รายการ"
 
 #: apps/mobile/app/(settings)/model-connection.tsx
 msgid "2. Get a sign-in code"
-msgstr ""
+msgstr "2. รับรหัสเข้าสู่ระบบ"
 
 #: apps/mobile/lib/inbox/inbox-swipe.ts
 #: apps/web/src/pages/shell/chat/bot-context-menu.tsx
@@ -912,7 +912,7 @@ msgstr "โมเดลอนุมัติการทำงานของร
 
 #: apps/web/src/pages/shell/host-computer-prompt.tsx
 msgid "A sandbox limits access to your computer for added security. Using {hostLabel} lets bots work with your local files and tools."
-msgstr ""
+msgstr "แซนด์บ็อกซ์จำกัดการเข้าถึงคอมพิวเตอร์ของคุณเพื่อความปลอดภัยที่มากขึ้น การใช้ {hostLabel} ช่วยให้บอททำงานกับไฟล์และเครื่องมือในเครื่องของคุณได้"
 
 #: apps/mobile/lib/bots/bot-template-copy.ts
 #: apps/web/src/components/bot-templates/bot-template-copy.ts
@@ -1667,7 +1667,7 @@ msgstr "นำไปใช้"
 #: apps/mobile/lib/cards/ask-action-label.ts
 #: apps/web/src/components/messages/AskCard.tsx
 msgid "Apply now"
-msgstr ""
+msgstr "นำไปใช้เลย"
 
 #: apps/web/src/components/teach/SkillDraftCard.tsx
 msgid "Approval boundaries"
@@ -2172,7 +2172,7 @@ msgstr "ปุ่ม “{button}” · อ่านจากหน้าเว�
 
 #: apps/web/src/pages/settings/UsageSettingsPanel.tsx
 msgid "Cached"
-msgstr ""
+msgstr "แคช"
 
 #: apps/web/src/pages/shell/meetings/meeting-calendar.tsx
 msgid "Calendar options"
@@ -2865,7 +2865,7 @@ msgstr "ความคิดเห็น"
 #. js-lingui-explicit-id
 #: packages/i18n/src/plugin-catalog.ts
 msgid "Communication"
-msgstr ""
+msgstr "การสื่อสาร"
 
 #: apps/web/src/pages/settings/AccountSettingsOverlay.tsx
 msgid "Compact"
@@ -3098,7 +3098,7 @@ msgstr "เชื่อมต่อ API key ของคุณในหน้า
 #. js-lingui-explicit-id
 #: packages/i18n/src/plugin-catalog.ts
 msgid "Connected"
-msgstr ""
+msgstr "เชื่อมต่อแล้ว"
 
 #: apps/mobile/app/(settings)/bot-template.tsx
 #: apps/mobile/app/(settings)/computers.tsx
@@ -3541,7 +3541,7 @@ msgstr "ดำเนินการต่อไม่สำเร็จ"
 
 #: apps/mobile/lib/auth/use-subscription-sign-in.ts
 msgid "Could not copy the code. Try again."
-msgstr ""
+msgstr "คัดลอกรหัสไม่สำเร็จ ลองอีกครั้ง"
 
 #: apps/mobile/app/page-share.tsx
 #: apps/mobile/app/pages.tsx
@@ -4001,7 +4001,7 @@ msgstr "เปิดข้อความไม่สำเร็จ"
 
 #: apps/mobile/app/(settings)/model-connection.tsx
 msgid "Could not open security settings. Try again."
-msgstr ""
+msgstr "เปิดการตั้งค่าความปลอดภัยไม่สำเร็จ ลองอีกครั้ง"
 
 #: apps/web/src/components/bot-templates/bot-templates-dialog.tsx
 msgid "Could not open the bot"
@@ -4009,7 +4009,7 @@ msgstr "เปิดบอทไม่สำเร็จ"
 
 #: apps/mobile/lib/auth/use-subscription-sign-in.ts
 msgid "Could not open the sign-in page. Try again."
-msgstr ""
+msgstr "เปิดหน้าเข้าสู่ระบบไม่สำเร็จ ลองอีกครั้ง"
 
 #: apps/mobile/app/meeting-transcript.tsx
 msgid "Could not open the transcript"
@@ -4543,7 +4543,7 @@ msgstr "โหลดวอลเล็ตไม่สำเร็จ"
 
 #: apps/mobile/components/thread/thread-error-notice.tsx
 msgid "Couldn't refresh. Showing the last loaded messages."
-msgstr ""
+msgstr "รีเฟรชไม่สำเร็จ กำลังแสดงข้อความที่โหลดล่าสุด"
 
 #: apps/mobile/app/computer.tsx
 msgid "Couldn't start the computer"
@@ -4780,7 +4780,7 @@ msgstr "มืด"
 #. js-lingui-explicit-id
 #: packages/i18n/src/plugin-catalog.ts
 msgid "Data"
-msgstr ""
+msgstr "ข้อมูล"
 
 #: apps/web/src/pages/settings/AccountSettingsOverlay.tsx
 msgid "Data"
@@ -4793,7 +4793,7 @@ msgstr "ช่วงวันที่"
 #. js-lingui-explicit-id
 #: packages/i18n/src/billing.ts
 msgid "/ITcnz"
-msgstr ""
+msgstr "วัน"
 
 #: packages/i18n/src/cron.ts
 msgid "day"
@@ -4856,7 +4856,7 @@ msgstr "ค่าเริ่มต้น ({level})"
 
 #: apps/web/src/pages/model-settings/deployment-model-settings.tsx
 msgid "Default for everyone"
-msgstr ""
+msgstr "ค่าเริ่มต้นสำหรับทุกคน"
 
 #: apps/web/src/pages/shell/bots/agent-import-plan.tsx
 msgid "Default from Hermes"
@@ -5082,7 +5082,7 @@ msgstr "คำอธิบาย"
 #. js-lingui-explicit-id
 #: packages/i18n/src/plugin-catalog.ts
 msgid "Design"
-msgstr ""
+msgstr "การออกแบบ"
 
 #: apps/web/src/components/DesktopUpdates.tsx
 msgid "Desktop app"
@@ -5105,7 +5105,7 @@ msgstr "รายละเอียด"
 #. js-lingui-explicit-id
 #: packages/i18n/src/plugin-catalog.ts
 msgid "Developer"
-msgstr ""
+msgstr "นักพัฒนา"
 
 #: apps/mobile/app/bot-settings.tsx
 msgid "Device voice"
@@ -5151,7 +5151,7 @@ msgstr "ปิดใช้งานเครื่องมือ"
 #. js-lingui-explicit-id
 #: packages/i18n/src/plugin-catalog.ts
 msgid "Disabled"
-msgstr ""
+msgstr "ปิดใช้งาน"
 
 #: apps/mobile/lib/messages/routine-event-label.ts
 #: apps/web/src/pages/shell/chat/routine-event-row.tsx
@@ -5175,7 +5175,7 @@ msgstr "ละทิ้งการบันทึกเสียง"
 
 #: apps/web/src/pages/routines/RoutineEditor.tsx
 msgid "Discard unsaved changes?"
-msgstr ""
+msgstr "ละทิ้งการเปลี่ยนแปลงที่ยังไม่ได้บันทึกไหม?"
 
 #: apps/mobile/components/cards/OutgoingDraftCard.tsx
 #: apps/web/src/components/messages/OutgoingDraftCard.tsx
@@ -5268,7 +5268,7 @@ msgstr "ปิดข้อผิดพลาด"
 #: apps/mobile/components/vault/vault-item-editor.tsx
 #: apps/web/src/components/vault/VaultItemEditor.tsx
 msgid "Dismiss request"
-msgstr ""
+msgstr "ปิดคำขอ"
 
 #: apps/mobile/components/thread/ask-block.tsx
 #: apps/mobile/components/thread/message-bubble.tsx
@@ -5803,7 +5803,7 @@ msgstr "ตัวกรอง"
 #. js-lingui-explicit-id
 #: packages/i18n/src/plugin-catalog.ts
 msgid "Finance"
-msgstr ""
+msgstr "การเงิน"
 
 #: apps/web/src/components/pages/PagesList.tsx
 msgid "Find a page"
@@ -6145,7 +6145,7 @@ msgstr "ซ่อน"
 
 #: apps/mobile/components/vault/login-fields-editor.tsx
 msgid "Hide {field}"
-msgstr ""
+msgstr "ซ่อน {field}"
 
 #: apps/mobile/components/thread/message-bubble.tsx
 msgid "Hide {label}"
@@ -6344,7 +6344,7 @@ msgstr "ในบอทนี้"
 
 #: apps/mobile/app/(settings)/model-connection.tsx
 msgid "In your browser, sign in and paste this code when asked. Then return to Rakazo."
-msgstr ""
+msgstr "เข้าสู่ระบบในเบราว์เซอร์ แล้ววางรหัสนี้เมื่อระบบขอ จากนั้นกลับมาที่ Rakazo"
 
 #: apps/web/src/pages/settings/BillingSettingsPanel.tsx
 msgid "Inactive"
@@ -6512,7 +6512,7 @@ msgstr "แยกส่วน"
 
 #: apps/web/src/pages/space/Artifacts.tsx
 msgid "Isolated preview: no access to your account"
-msgstr ""
+msgstr "ตัวอย่างแบบแยกส่วน: ไม่มีสิทธิ์เข้าถึงบัญชีของคุณ"
 
 #: apps/mobile/app/new-space.tsx
 msgid "It could not be opened. Try again from the sidebar."
@@ -6840,7 +6840,7 @@ msgstr "กำลังโหลดแคตตาล็อกโมเดล…
 
 #: apps/web/src/pages/settings/UsageSettingsPanel.tsx
 msgid "Loading model name…"
-msgstr ""
+msgstr "กำลังโหลดชื่อโมเดล…"
 
 #: apps/web/src/components/pages/PageNotice.tsx
 msgid "Loading page…"
@@ -7045,7 +7045,7 @@ msgstr "ตาราง Markdown"
 #. js-lingui-explicit-id
 #: packages/i18n/src/plugin-catalog.ts
 msgid "Marketing"
-msgstr ""
+msgstr "การตลาด"
 
 #: packages/i18n/src/thinking-level.ts
 msgid "Max"
@@ -7204,19 +7204,19 @@ msgstr "ส่งข้อความถึง {name}"
 
 #: apps/web/src/pages/shell/chat/message-hover-actions.tsx
 msgid "Message actions"
-msgstr ""
+msgstr "การดำเนินการกับข้อความ"
 
 #: apps/web/src/pages/shell/chat/message-hover-actions.tsx
 msgid "Message actions, {speakerName}"
-msgstr ""
+msgstr "การดำเนินการกับข้อความ, {speakerName}"
 
 #: apps/web/src/pages/shell/chat/message-hover-actions.tsx
 msgid "Message actions, {speakerName}, {when}"
-msgstr ""
+msgstr "การดำเนินการกับข้อความ, {speakerName}, {when}"
 
 #: apps/web/src/pages/shell/chat/message-hover-actions.tsx
 msgid "Message actions, {when}"
-msgstr ""
+msgstr "การดำเนินการกับข้อความ, {when}"
 
 #: apps/web/src/pages/shell/composer/composer.tsx
 msgid "Message composer"
@@ -7331,7 +7331,7 @@ msgstr "ID โมเดล"
 
 #: apps/web/src/pages/settings/UsageSettingsPanel.tsx
 msgid "Model name unavailable"
-msgstr ""
+msgstr "ไม่มีชื่อโมเดล"
 
 #: apps/web/src/components/models/FoundModelPicker.tsx
 #: apps/web/src/pages/model-settings/role-model-picker.tsx
@@ -7441,7 +7441,7 @@ msgstr "ย้ายลง"
 
 #: apps/web/src/components/messages/AskCard.tsx
 msgid "Move from another assistant"
-msgstr ""
+msgstr "ย้ายจากแอสซิสแตนต์อื่น"
 
 #: apps/web/src/pages/shell/create-delete-dialogs.tsx
 msgid "Move them to your shared memory."
@@ -7543,7 +7543,7 @@ msgstr "ต้องการที่อยู่อีเมล"
 #. js-lingui-explicit-id
 #: packages/i18n/src/plugin-catalog.ts
 msgid "Needs an OAuth client ID"
-msgstr ""
+msgstr "ต้องมี OAuth client ID"
 
 #: apps/web/src/components/integrations/McpServerHealthLine.tsx
 #: packages/i18n/src/user-error.ts
@@ -7565,7 +7565,7 @@ msgstr "ต้องป้อนข้อมูล"
 #. js-lingui-explicit-id
 #: packages/i18n/src/plugin-catalog.ts
 msgid "Needs sign-in"
-msgstr ""
+msgstr "ต้องเข้าสู่ระบบ"
 
 #: packages/i18n/src/activity.ts
 msgid "Needs takeover"
@@ -7994,7 +7994,7 @@ msgstr "ยังไม่ได้ตรวจสอบ"
 #. js-lingui-explicit-id
 #: packages/i18n/src/plugin-catalog.ts
 msgid "Not connected"
-msgstr ""
+msgstr "ไม่ได้เชื่อมต่อ"
 
 #: apps/web/src/pages/shell/bots/agent-import-plan.tsx
 msgid "Not imported"
@@ -8070,7 +8070,7 @@ msgstr "Rakazo ไม่ใช้ส่วนนี้"
 #. js-lingui-explicit-id
 #: packages/i18n/src/plugin-catalog.ts
 msgid "Not working"
-msgstr ""
+msgstr "ใช้งานไม่ได้"
 
 #: apps/web/src/components/integrations/McpServerHealthLine.tsx
 msgid "Not working"
@@ -8786,7 +8786,7 @@ msgstr "ดูตัวอย่างฉบับร่าง"
 
 #: apps/web/src/pages/space/Artifacts.tsx
 msgid "Preview isn't available for this file type. Download it to view it."
-msgstr ""
+msgstr "ไม่สามารถดูตัวอย่างไฟล์ประเภทนี้ได้ ดาวน์โหลดเพื่อดูไฟล์"
 
 #: apps/web/src/pages/shell/chat/chat-find-bar.tsx
 msgid "Previous match"
@@ -8837,7 +8837,7 @@ msgstr "พื้นที่ทำงานส่วนตัวที่มี
 #. js-lingui-explicit-id
 #: packages/i18n/src/plugin-catalog.ts
 msgid "Productivity"
-msgstr ""
+msgstr "เพิ่มประสิทธิภาพการทำงาน"
 
 #: apps/mobile/app/_layout.tsx
 #: apps/mobile/components/thread/header/chat-header-title.tsx
@@ -8874,7 +8874,7 @@ msgstr "ผู้ให้บริการ"
 
 #: apps/mobile/components/models/model-role-settings.tsx
 msgid "Provider connected. Choose a model."
-msgstr ""
+msgstr "เชื่อมต่อผู้ให้บริการแล้ว เลือกโมเดล"
 
 #: apps/mobile/components/cards/run-error-sheet.tsx
 msgid "Provider message"
@@ -9124,7 +9124,7 @@ msgstr "กำลังสร้างคอมพิวเตอร์ใหม
 #. js-lingui-explicit-id
 #: packages/i18n/src/plugin-catalog.ts
 msgid "Recruiting & HR"
-msgstr ""
+msgstr "สรรหาบุคลากรและ HR"
 
 #: apps/web/src/pages/integrations/McpServerForm.tsx
 msgid "Redirect URI"
@@ -9824,7 +9824,7 @@ msgstr "รันเมื่อบอทนี้ได้รับข้อค
 #. js-lingui-explicit-id
 #: packages/i18n/src/plugin-catalog.ts
 msgid "Sales & CRM"
-msgstr ""
+msgstr "การขายและ CRM"
 
 #: apps/mobile/app/(settings)/team-conversation.tsx
 msgid "Same as {bot}"
@@ -9841,7 +9841,7 @@ msgstr "เหมือนกับโมเดลหลัก"
 
 #: apps/web/src/pages/shell/host-computer-prompt.tsx
 msgid "Sandbox"
-msgstr ""
+msgstr "แซนด์บ็อกซ์"
 
 #: packages/i18n/src/cron.ts
 msgid "Saturday"
@@ -10150,7 +10150,7 @@ msgstr "ความปลอดภัย"
 #. js-lingui-explicit-id
 #: packages/i18n/src/plugin-catalog.ts
 msgid "Security & Ops"
-msgstr ""
+msgstr "ความปลอดภัยและการปฏิบัติการ"
 
 #: apps/mobile/app/(settings)/vault.tsx
 #: apps/mobile/components/vault/vault-item-editor.tsx
@@ -10413,7 +10413,7 @@ msgstr "แสดง"
 
 #: apps/mobile/components/vault/login-fields-editor.tsx
 msgid "Show {field}"
-msgstr ""
+msgstr "แสดง {field}"
 
 #: apps/mobile/components/thread/message-bubble.tsx
 msgid "Show {label}"
@@ -11047,7 +11047,7 @@ msgstr "สมัครใช้งานด้วย AI ของตนเอ�
 
 #: apps/mobile/lib/auth/use-subscription-sign-in.ts
 msgid "Subscription connected."
-msgstr ""
+msgstr "เชื่อมต่อการสมัครใช้งานแล้ว"
 
 #: apps/web/src/pages/auth/Paywall.tsx
 msgid "Subscription required"
@@ -11908,7 +11908,7 @@ msgstr "ทดลองใช้"
 #. js-lingui-explicit-id
 #: packages/i18n/src/billing.ts
 msgid "Nlt+k3"
-msgstr ""
+msgstr "ทดลองใช้สิ้นสุด {day}"
 
 #: apps/mobile/app/(settings)/billing.tsx
 #: apps/web/src/components/billing/ModelCredits.tsx
@@ -12049,7 +12049,7 @@ msgstr "ยกเลิกการเชื่อมโยง"
 
 #: apps/web/src/pages/settings/UsageSettingsPanel.tsx
 msgid "Unlisted model"
-msgstr ""
+msgstr "โมเดลที่ไม่อยู่ในรายการ"
 
 #: apps/mobile/components/calls/CallCard.tsx
 #: apps/web/src/components/call/CallCard.tsx
@@ -12974,7 +12974,7 @@ msgstr "ชั่วโมงคอมพิวเตอร์ในช่วง
 #. js-lingui-explicit-id
 #: packages/i18n/src/vault.ts
 msgid "Your Vault is full. Remove items you no longer need, then try again."
-msgstr ""
+msgstr "ห้องนิรภัยของคุณเต็มแล้ว ลบรายการที่ไม่ต้องการแล้วลองอีกครั้ง"
 
 #: packages/i18n/src/user-error.ts
 msgid "Your voice provider is out of credit."
