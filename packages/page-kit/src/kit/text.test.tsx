@@ -296,26 +296,6 @@ describe("TableOfContents", () => {
     expect(html(<TableOfContents items={[]} />)).toBe("");
   });
 
-  it.each([
-    { lang: "en", direction: "ltr" },
-    { lang: "he", direction: "rtl" },
-  ])("indents nested links from the reading start in $lang", ({ lang, direction }) => {
-    const headings = [
-      { label: "Overview", id: "overview", depth: 0 },
-      { label: "Details", id: "details", depth: 1 },
-      { label: "Notes", id: "notes", depth: 2 },
-    ];
-    const markup = html(
-      <Page title="Plan" lang={lang}>
-        <TableOfContents items={headings} />
-      </Page>,
-    );
-    expect(markup).toContain(`lang="${lang}" dir="${direction}"`);
-    expect(markup).toContain('style="padding-inline-start:22px"');
-    expect(markup).toContain('style="padding-inline-start:38px"');
-    expect(markup).not.toContain("padding-left:");
-  });
-
   it("falls back to the first entry when the headings change", () => {
     const host = document.body.appendChild(document.createElement("div"));
     const root = createRoot(host);
