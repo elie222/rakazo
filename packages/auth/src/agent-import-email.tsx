@@ -3,7 +3,7 @@ import type { TransactionalEmail } from "@rakazo/adapter-kit";
 import { AGENT_IMPORT_ASSISTANTS } from "@rakazo/core";
 import { Text } from "react-email";
 import { Button, emailText, greeting, message } from "./email.js";
-import { emailCopy } from "./email-copy/hosted-copy.js";
+import { emailCopy } from "./email-copy/deployment-copy.js";
 
 /** Opens the agent import, through sign-in when the browser has no session. */
 export function agentImportUrl(webOrigin: string): string {
