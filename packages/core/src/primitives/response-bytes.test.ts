@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   ResponseTooLargeError,
   readBoundedResponseBytes,
+  readErrorTextWithin,
   readJsonObjectWithin,
   readResponseWithin,
 } from "./response-bytes.js";
@@ -116,11 +117,42 @@ describe("readResponseWithin", () => {
     await expect(readResponseWithin(new Response("1234"), within)).resolves.toEqual(
       new TextEncoder().encode("1234"),
     );
+    await expect(
+      readResponseWithin(new Response("1234"), { ...within, signal: undefined }),
+    ).resolves.toEqual(new TextEncoder().encode("1234"));
     const controller = new AbortController();
     const stalled = new Response(new ReadableStream({ start() {} }));
     const pending = readResponseWithin(stalled, { ...within, signal: controller.signal });
     controller.abort(new Error("stop"));
     await expect(pending).rejects.toThrow("stop");
+  });
+});
+
+describe("readErrorTextWithin", () => {
+  const within = { maxBytes: 8, timeoutMs: 1_000 };
+
+  it("returns the body text within the budget", async () => {
+    await expect(readErrorTextWithin(new Response("bad key"), within)).resolves.toBe("bad key");
+  });
+
+  it("reads an oversized body as empty and releases it unread", async () => {
+    const declared = new Response("123456789", { headers: { "content-length": "9" } });
+    const cancel = vi.spyOn(declared.body as ReadableStream, "cancel");
+    await expect(readErrorTextWithin(declared, within)).resolves.toBe("");
+    expect(cancel).toHaveBeenCalledOnce();
+    await expect(readErrorTextWithin(new Response("123456789"), within)).resolves.toBe("");
+  });
+
+  it("reads a failing or stalled body as empty", async () => {
+    const failing = new Response(
+      new ReadableStream({ pull: (controller) => controller.error(new Error("reset")) }),
+    );
+    await expect(readErrorTextWithin(failing, within)).resolves.toBe("");
+    const controller = new AbortController();
+    const stalled = new Response(new ReadableStream({ start() {} }));
+    const pending = readErrorTextWithin(stalled, { ...within, signal: controller.signal });
+    controller.abort(new Error("stop"));
+    await expect(pending).resolves.toBe("");
   });
 });
 

@@ -7,8 +7,8 @@ import {
   normalizeRunError,
   routineHistoryPage,
   routineRunAt,
-  routineRunLateness,
 } from "@rakazo/core";
+import { routineRunLateLabel, runStatusLabel } from "@rakazo/i18n/activity";
 import { translateRunError } from "@rakazo/i18n/run-error";
 import {
   Button,
@@ -33,7 +33,7 @@ import type { ArtifactTarget } from "../../lib/pages/artifact-open";
 import { useOpenPage } from "../../lib/pages/pages";
 import { useSpaceQueries } from "../../lib/query/query";
 import { ArtifactImage, ChartBlockView } from "../shell/chat/message-cards";
-import { statusLabel, statusTone } from "../space/ActivityList";
+import { statusTone } from "../space/ActivityList";
 
 export function RoutineRunHistory({ routineId }: { routineId: string }) {
   const { t } = useLingui();
@@ -91,15 +91,7 @@ function RunRow({ run }: { run: RoutineRun }) {
   const { i18n, t } = useLingui();
   const locale = i18n.locale || "en";
   const at = routineRunAt(run);
-  const late = routineRunLateness(run);
-  const count = late?.count;
-  const lateLabel = !late
-    ? null
-    : late.unit === "minutes"
-      ? t`Started ${count}m late`
-      : late.unit === "hours"
-        ? t`Started ${count}h late`
-        : t`Started ${count}d late`;
+  const lateLabel = routineRunLateLabel(run);
   // A silent run kept its reply out of the chat, so the row opens it here instead.
   const reply = run.reply?.length ? run.reply : null;
   const chatTo =
@@ -115,7 +107,7 @@ function RunRow({ run }: { run: RoutineRun }) {
       </time>
       {lateLabel ? <span>{lateLabel}</span> : null}
       {run.status !== "completed" ? (
-        <span className={`ml-auto ${statusTone(run.status)}`}>{statusLabel(run.status)}</span>
+        <span className={`ml-auto ${statusTone(run.status)}`}>{runStatusLabel(run.status)}</span>
       ) : chatTo || reply ? null : (
         <span className="ml-auto">{t`No reply`}</span>
       )}

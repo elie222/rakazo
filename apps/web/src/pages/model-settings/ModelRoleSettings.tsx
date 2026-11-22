@@ -21,8 +21,10 @@ import {
   modelRoleListPatch,
   modelSettingsEditable,
   modelThinkingLevels,
+  sameModelRoleChoice,
 } from "@rakazo/core";
 import { localizeModelEntry } from "@rakazo/i18n/model-provider";
+import { thinkingLevelLabel } from "@rakazo/i18n/thinking-level";
 import {
   Button,
   DropdownMenu,
@@ -41,7 +43,6 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { GripVertical, MoreHorizontal, Plus } from "lucide-react";
 import type { ReactNode } from "react";
 import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
-import { thinkingLevelLabel } from "../../lib/models/model-catalog";
 import { spaceQueries } from "../../lib/query/query";
 import { useSpaceRpc } from "../../lib/query/space-rpc";
 import type { ConnectableProvider, RoleModelOption } from "./role-model-picker";
@@ -90,9 +91,6 @@ const emptyDragImage = () => {
   });
   return blankImage;
 };
-
-const sameChoice = (left: ModelRoleChoice, right: ModelRoleChoice) =>
-  modelRoleChoiceKey(left) === modelRoleChoiceKey(right);
 
 const choiceOf = (option: RoleModelOption): ModelRoleChoice => ({
   provider: option.provider,
@@ -266,8 +264,8 @@ export function ModelRoleSettings({
       const list = current.primary ? [current.primary, ...current.backups] : current.backups;
       // A pick made from rows that were still catching up may already be in the loaded
       // list; it keeps its place rather than moving and displacing the main model.
-      if (list.some((item) => sameChoice(item, choice))) return {};
-      const at = slot === "add" ? -1 : list.findIndex((item) => sameChoice(item, slot));
+      if (list.some((item) => sameModelRoleChoice(item, choice))) return {};
+      const at = slot === "add" ? -1 : list.findIndex((item) => sameModelRoleChoice(item, slot));
       return modelRoleListPatch(
         current,
         at < 0 ? [...list, choice] : list.map((item, index) => (index === at ? choice : item)),
@@ -281,7 +279,7 @@ export function ModelRoleSettings({
     save((current) => ({
       primary: choice,
       backups: choice
-        ? current.backups.filter((item) => !sameChoice(item, choice))
+        ? current.backups.filter((item) => !sameModelRoleChoice(item, choice))
         : current.backups,
     }));
   const move = (index: number, target: number) => {
@@ -302,7 +300,8 @@ export function ModelRoleSettings({
   // A drop over a list that reloaded mid-drag is dropped rather than saving the old rows.
   const drop = () => {
     const unchanged = (list: ModelRoleChoice[]) =>
-      list.length === rows.length && list.every((item, index) => sameChoice(item, rows[index]!));
+      list.length === rows.length &&
+      list.every((item, index) => sameModelRoleChoice(item, rows[index]!));
     if (drag && unchanged(drag.from) && !unchanged(drag.order)) void commit(drag.order);
     setDrag(null);
   };
@@ -565,7 +564,7 @@ export function ModelRoleSettings({
               }
               label={t`Add fallback`}
               options={options.filter((option) =>
-                rows.every((row) => !sameChoice(row, choiceOf(option))),
+                rows.every((row) => !sameModelRoleChoice(row, choiceOf(option))),
               )}
               providers={providers}
               disabled={pickerLocked}

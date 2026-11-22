@@ -77,6 +77,7 @@ export {
   signInCodeEmail,
   verificationEmail,
 } from "./email.js";
+export { emailCopyAvailable } from "./email-copy/deployment-copy.js";
 export type { HomeDeletionReason } from "./home-deletion-email.js";
 export { homeDeletionEmail } from "./home-deletion-email.js";
 export { modelConnectionEmail } from "./model-connection-email.js";

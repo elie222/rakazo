@@ -1,4 +1,4 @@
-import { withAbort } from "./async.js";
+import { deadlineSignal, withAbort } from "./async.js";
 import { cancelResponseBody } from "./http-response.js";
 
 /** A response refused for being over its byte budget. The message says whose response it was. */
@@ -63,13 +63,15 @@ export async function readBoundedResponseBytes(
   return bytes;
 }
 
+type ReadWithinOptions = { maxBytes: number; tooLargeMessage: string; signal?: AbortSignal };
+
 /**
  * Read a response within a byte budget, refusing an oversized declared length before reading and
  * rejecting as soon as `signal` aborts.
  */
 export async function readResponseWithin(
   response: Response,
-  options: { maxBytes: number; tooLargeMessage: string; signal: AbortSignal },
+  options: ReadWithinOptions,
 ): Promise<Uint8Array> {
   const { maxBytes, tooLargeMessage, signal } = options;
   const declared = Number(response.headers.get("content-length") ?? 0);
@@ -80,14 +82,36 @@ export async function readResponseWithin(
   return readBoundedResponseBytes(response, {
     maxBytes,
     tooLargeMessage,
-    read: (operation) => withAbort(operation(), signal),
+    read: signal ? (operation) => withAbort(operation(), signal) : (operation) => operation(),
   });
+}
+
+/**
+ * Best-effort error text: the body read within `maxBytes` and `timeoutMs` (or until `signal`
+ * aborts), or `""` when it is too large or cannot be read.
+ */
+export async function readErrorTextWithin(
+  response: Response,
+  options: { maxBytes: number; timeoutMs: number; signal?: AbortSignal },
+): Promise<string> {
+  try {
+    const bytes = await readResponseWithin(response, {
+      maxBytes: options.maxBytes,
+      tooLargeMessage: "Error response is too large",
+      signal: deadlineSignal(options.timeoutMs, options.signal),
+    });
+    return new TextDecoder().decode(bytes);
+  } catch {
+    // Deliberately quiet: the text only adds detail to a failure the caller already reports with
+    // the status code, and core has no logger to record why the detail was unreadable.
+    return "";
+  }
 }
 
 /** A JSON object body read with `readResponseWithin`; any other body reads as `{}`. */
 export async function readJsonObjectWithin<T extends object>(
   response: Response,
-  options: { maxBytes: number; tooLargeMessage: string; signal: AbortSignal },
+  options: ReadWithinOptions,
 ): Promise<Partial<T>> {
   const bytes = await readResponseWithin(response, options);
   try {

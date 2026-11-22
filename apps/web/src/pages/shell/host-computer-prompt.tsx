@@ -148,7 +148,7 @@ function HostComputerDialog({
           <DialogDescription className="space-y-2 leading-relaxed">
             <span className="block">
               <Trans>
-                Docker limits access to your computer for added security. Using {hostLabel} lets
+                A sandbox limits access to your computer for added security. Using {hostLabel} lets
                 bots work with your local files and tools.
               </Trans>
             </span>
@@ -167,7 +167,7 @@ function HostComputerDialog({
         ) : null}
         <div className="flex flex-col gap-2">
           <Button variant="outline" size="lg" disabled={busy} onClick={() => choose("docker")}>
-            <Trans>Docker</Trans>
+            <Trans>Sandbox</Trans>
           </Button>
           <Button variant="outline" size="lg" disabled={busy} onClick={() => choose("this-mac")}>
             <Trans>Use {hostLabel}</Trans>
