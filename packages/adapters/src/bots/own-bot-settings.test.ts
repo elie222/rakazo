@@ -167,6 +167,13 @@ describe("readOwnBotSettings", () => {
     for (const group of many.models) expect(group.ids.length).toBeGreaterThan(0);
   });
 
+  it("counts the providers whose names no longer fit instead of overflowing the read", async () => {
+    const many = await readOwnBotSettings(deps({ manyServers: 300 }), scope, bot);
+    if ("error" in many) throw new Error(many.error);
+    expect(JSON.stringify(many.models).length).toBeLessThanOrEqual(4_000);
+    expect(many.moreProviders).toBeGreaterThan(0);
+  });
+
   it("pages long instructions, naming the window and the next offset", async () => {
     const long = { ...bot, instructions: "x".repeat(19_000) };
     const first = await readSettings(long);

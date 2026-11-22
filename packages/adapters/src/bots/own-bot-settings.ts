@@ -81,15 +81,16 @@ export async function readOwnBotSettings(
   }
   // One id per provider per round, so every provider, custom connections included, gets listed
   // before any gets a second; stop at the size budget and count the rest as `more`.
-  const groups = [...providers].map(([provider, ids]) => ({
-    provider,
-    ids,
-    listed: [] as string[],
-  }));
-  let room =
-    MODELS_LISTED_CHARS -
-    JSON.stringify(groups.map((g) => ({ provider: g.provider, ids: [], more: g.ids.length })))
-      .length;
+  // Providers are kept while their names fit; the rest are only counted.
+  let room = MODELS_LISTED_CHARS;
+  const groups: { provider: string; ids: string[]; listed: string[] }[] = [];
+  for (const [provider, ids] of providers) {
+    const cost = JSON.stringify({ provider, ids: [], more: ids.length }).length + 1;
+    if (cost > room) break;
+    room -= cost;
+    groups.push({ provider, ids, listed: [] });
+  }
+  const moreProviders = providers.size - groups.length;
   for (let round = 0; round < MODELS_PER_PROVIDER; round++) {
     for (const group of groups) {
       const id = group.ids[round];
@@ -126,6 +127,7 @@ export async function readOwnBotSettings(
     ...(bot.memoryScope ? { memoryScope: bot.memoryScope } : {}),
     disabledTools: bot.disabledBuiltinTools,
     models,
+    ...(moreProviders ? { moreProviders } : {}),
     thinkingLevels: levels?.allowed ?? ThinkingLevelSchema.options,
     ...(paging
       ? {
