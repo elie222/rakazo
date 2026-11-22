@@ -29,6 +29,8 @@ export function TeachCaptureOverlay({
     const overlay = rootRef.current;
     if (!overlay) return;
     const target: HTMLDivElement = overlay;
+    // Input names its recording, so any still queued when it stops never lands in the next one.
+    const skillId = skill.id;
 
     function enqueueInput(task: () => Promise<void>) {
       void enqueueTeachComputerInput(botId, task);
@@ -50,12 +52,12 @@ export function TeachCaptureOverlay({
       await rpc.computer.input({
         botId,
         kind: "pointer",
-        payload: { x, y, button, type },
+        payload: { x, y, button, type, skillId },
       });
     }
 
     async function sendKey(key: string) {
-      await rpc.computer.input({ botId, kind: "key", payload: { key } });
+      await rpc.computer.input({ botId, kind: "key", payload: { key, skillId } });
     }
 
     async function sendScroll(
@@ -67,7 +69,7 @@ export function TeachCaptureOverlay({
       await rpc.computer.input({
         botId,
         kind: "scroll",
-        payload: { direction, amount, x, y },
+        payload: { direction, amount, x, y, skillId },
       });
     }
 

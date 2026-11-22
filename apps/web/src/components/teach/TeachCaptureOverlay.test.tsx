@@ -34,7 +34,7 @@ const skill = {
   updatedAt: "2026-01-01T00:00:00.000Z",
 } as unknown as TaughtSkill;
 
-const escapeInput = { botId: "bot-1", kind: "key", payload: { key: "Escape" } };
+const escapeInput = { botId: "bot-1", kind: "key", payload: { key: "Escape", skillId: skill.id } };
 
 afterEach(() => {
   computerInput.mockClear();
@@ -130,7 +130,7 @@ it("sends a wheel scroll with the screen point it was made at", async () => {
   expect(computerInput).toHaveBeenCalledWith({
     botId: "bot-1",
     kind: "scroll",
-    payload: { direction: "down", amount: 2, x: 600, y: 420 },
+    payload: { direction: "down", amount: 2, x: 600, y: 420, skillId: skill.id },
   });
   // A mostly sideways swipe scrolls right, at its own point.
   computerInput.mockClear();
@@ -149,7 +149,7 @@ it("sends a wheel scroll with the screen point it was made at", async () => {
   expect(computerInput).toHaveBeenCalledWith({
     botId: "bot-1",
     kind: "scroll",
-    payload: { direction: "right", amount: 1, x: 200, y: 100 },
+    payload: { direction: "right", amount: 1, x: 200, y: 100, skillId: skill.id },
   });
   act(() => root.unmount());
   container.remove();
@@ -201,9 +201,9 @@ it("forwards a right drag and its release, even when the release is a cancel", a
   });
   await vi.waitFor(() =>
     expect(pointerPayloads()).toEqual([
-      { type: "down", button: "right", x: 10, y: 0 },
-      { type: "move", button: "right", x: 20, y: 0 },
-      { type: "up", button: "right", x: 20, y: 0 },
+      { type: "down", button: "right", x: 10, y: 0, skillId: skill.id },
+      { type: "move", button: "right", x: 20, y: 0, skillId: skill.id },
+      { type: "up", button: "right", x: 20, y: 0, skillId: skill.id },
     ]),
   );
 });
@@ -217,9 +217,9 @@ it("releases a supported button while an unsupported button stays held", async (
   });
   await vi.waitFor(() =>
     expect(pointerPayloads()).toEqual([
-      { type: "down", button: "left", x: 10, y: 0 },
-      { type: "move", button: "left", x: 20, y: 0 },
-      { type: "up", button: "left", x: 30, y: 0 },
+      { type: "down", button: "left", x: 10, y: 0, skillId: skill.id },
+      { type: "move", button: "left", x: 20, y: 0, skillId: skill.id },
+      { type: "up", button: "left", x: 30, y: 0, skillId: skill.id },
     ]),
   );
 });
