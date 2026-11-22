@@ -17,8 +17,8 @@ proxy = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(proxy)
 
 
-def jwt(exp: float) -> str:
-    payload = base64.urlsafe_b64encode(json.dumps({"exp": exp}).encode()).decode().rstrip("=")
+def jwt(exp: float, **extra) -> str:
+    payload = base64.urlsafe_b64encode(json.dumps({"exp": exp, **extra}).encode()).decode().rstrip("=")
     return f"h.{payload}.s"
 
 
@@ -62,6 +62,13 @@ class RefreshTest(unittest.TestCase):
                     self.assertRaises(SystemExit):
                 proxy.refresh(path)
             self.assertEqual(pathlib.Path(path).read_text(), before)
+
+
+class AccountTest(unittest.TestCase):
+    def test_reads_the_account_from_the_id_token_when_not_stored(self):
+        id_token = jwt(0, **{"https://api.openai.com/auth": {"chatgpt_account_id": "from-id"}})
+        self.assertEqual(proxy.account_id({"id_token": id_token}), "from-id")
+        self.assertEqual(proxy.account_id({"id_token": id_token, "account_id": "stored"}), "stored")
 
 
 class ServeTest(unittest.TestCase):

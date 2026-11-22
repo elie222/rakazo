@@ -44,9 +44,20 @@ def save(path: str, auth: dict):
     os.replace(temporary, path)
 
 
-def expires_at(token: str) -> float:
+def claims(token: str) -> dict:
     payload = token.split(".")[1]
-    return float(json.loads(base64.urlsafe_b64decode(payload + "=" * (-len(payload) % 4)))["exp"])
+    return json.loads(base64.urlsafe_b64decode(payload + "=" * (-len(payload) % 4)))
+
+
+def expires_at(token: str) -> float:
+    return float(claims(token)["exp"])
+
+
+def account_id(tokens: dict) -> str | None:
+    # Older logins store it only inside the ID token, where Codex reads it too.
+    return tokens.get("account_id") or claims(tokens["id_token"]).get("https://api.openai.com/auth", {}).get(
+        "chatgpt_account_id"
+    )
 
 
 def refresh(path: str):
@@ -98,7 +109,8 @@ def handler(path: str):
                 if k.lower() not in DROPPED and not any(c in k + v for c in "\r\n")
             }
             headers["Authorization"] = f"Bearer {tokens['access_token']}"
-            headers["chatgpt-account-id"] = tokens["account_id"]
+            if account := account_id(tokens):
+                headers["chatgpt-account-id"] = account
             upstream = http.client.HTTPSConnection(UPSTREAM, context=ssl.create_default_context(), timeout=600)
             upstream.request(self.command, self.path, body=body, headers=headers)
             response = upstream.getresponse()
