@@ -21,6 +21,9 @@ limits.
 
 Connecting an **Anthropic API key** instead uses separate API billing, not your subscription allowance.
 
+Your use remains subject to Anthropic's terms, including its
+[authentication and credential rules](https://code.claude.com/docs/en/legal-and-compliance#authentication-and-credential-use).
+
 If you self-host from a source checkout for yourself, you can also run models through the official
 [Claude Code CLI](./self-host-models.md#claude-code-cli), signed in on the host with your own account.
 
