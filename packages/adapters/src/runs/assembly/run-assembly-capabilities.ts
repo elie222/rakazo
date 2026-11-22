@@ -69,11 +69,10 @@ import {
 } from "../tools/run-tool-selection.js";
 import type { UserComputerState } from "../tools/run-tools-user-computer.js";
 import {
-  botChainFromOwner,
   NO_USER_COMPUTER_ACCESS,
-  routineRunWatches,
   USER_COMPUTER_SHELL_TOOL,
   userComputerOwner,
+  userComputerTrust,
 } from "../tools/run-tools-user-computer.js";
 import {
   modelCreditBillingEnabled,
@@ -577,15 +576,6 @@ export async function resolveRunCapabilities(
     !conversationThread.groupId &&
     !nonOwnerChatRun;
   const userComputerAccess = deps.userComputerAccess ?? NO_USER_COMPUTER_ACCESS;
-  const ownBotChain =
-    conversationRun.trigger === "bot_message" &&
-    userComputerAccess.ownBots &&
-    run.userId === bot.userId &&
-    (await botChainFromOwner(deps.prisma, conversationRun, userComputerAccess));
-  const routineWatches =
-    conversationRun.trigger === "routine" &&
-    userComputerAccess.routines &&
-    (await routineRunWatches(deps.prisma, conversationRun.id));
   const userComputerOwnerId = userComputerOwner({
     trigger: conversationRun.trigger,
     sourceRole: (origin?.sourceMessage ?? sourceMessage)?.role,
@@ -593,9 +583,13 @@ export async function resolveRunCapabilities(
     runUserId: run.userId,
     botUserId: bot.userId,
     access: userComputerAccess,
-    ownBotChain,
     groupThread: Boolean(conversationThread.groupId),
-    routineWatches,
+    ...(await userComputerTrust(
+      deps.prisma,
+      conversationRun,
+      run.userId === bot.userId,
+      userComputerAccess,
+    )),
   });
   let userComputer: UserComputerState;
   let userComputerShell = false;

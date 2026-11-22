@@ -101,8 +101,9 @@ describe("userComputerOwner", () => {
     ownBotChain: false,
     groupThread: false,
     routineWatches: false,
+    ownerMessage: false,
   };
-  const all = { routines: true, ownBots: true };
+  const all = { routines: true, ownBots: true, messaging: true };
 
   it("is the bot owner when their own message started the run", () => {
     expect(userComputerOwner(own)).toBe("user-1");
@@ -123,14 +124,14 @@ describe("userComputerOwner", () => {
   });
 
   it("is the owner for their own bot's routine when routines are allowed", () => {
-    const access = { routines: true, ownBots: false };
+    const access = { routines: true, ownBots: false, messaging: false };
     expect(userComputerOwner({ ...own, trigger: "routine", sourceRole: undefined, access })).toBe(
       "user-1",
     );
   });
 
   it("is the owner for a bot message whose chain they started, when own bots are allowed", () => {
-    const access = { routines: false, ownBots: true };
+    const access = { routines: false, ownBots: true, messaging: false };
     expect(
       userComputerOwner({
         ...own,
@@ -142,14 +143,30 @@ describe("userComputerOwner", () => {
     ).toBe("user-1");
   });
 
+  it("is the owner for their own chat-app message, when chat apps are allowed", () => {
+    const access = { routines: false, ownBots: false, messaging: true };
+    const message = { ...own, trigger: "messaging", access, ownerMessage: true };
+    expect(userComputerOwner(message)).toBe("user-1");
+    expect(userComputerOwner({ ...message, access: NO_USER_COMPUTER_ACCESS })).toBeUndefined();
+    expect(userComputerOwner({ ...message, ownerMessage: false })).toBeUndefined();
+    expect(userComputerOwner({ ...message, messagingChannelRun: true })).toBeUndefined();
+    expect(userComputerOwner({ ...message, groupThread: true })).toBeUndefined();
+    expect(userComputerOwner({ ...message, runUserId: "user-2" })).toBeUndefined();
+  });
+
   it.each([
-    { trigger: "routine", access: { routines: false, ownBots: true } },
+    { trigger: "routine", access: { routines: false, ownBots: true, messaging: true } },
     { trigger: "routine", access: all, runUserId: "user-2" },
     { trigger: "routine", access: all, messagingChannelRun: true },
     { trigger: "webhook", access: all },
     { trigger: "messaging", access: all },
     { trigger: "bot_message", access: all, ownBotChain: false },
-    { trigger: "bot_message", access: { routines: true, ownBots: false }, ownBotChain: true },
+    {
+      trigger: "bot_message",
+      access: { routines: true, ownBots: false, messaging: true },
+      ownBotChain: true,
+    },
+    { trigger: "user", access: all, ownerMessage: true, sourceRole: "bot" },
     { trigger: "bot_message", access: all, ownBotChain: true, runUserId: "user-2" },
     { trigger: "follow_up", sourceRole: "bot", access: all },
     { trigger: "helper", access: all },
@@ -370,20 +387,31 @@ describe("explicit computer targeting", () => {
 });
 
 describe("botChainFromOwner", () => {
-  type Message = { id: string; role: string; blocks: unknown; runId?: string | null };
+  type Message = {
+    id: string;
+    role: string;
+    blocks: unknown;
+    runId?: string | null;
+    authorUserId?: string | null;
+    clientNonce?: string | null;
+    threadId?: string;
+    thread?: { groupId: string | null; externalConversationId: string | null };
+  };
   type SenderRun = {
     id: string;
     trigger: string;
     userId: string;
     spaceId: string;
+    botId: string;
+    threadId: string;
     sourceMessageId: string | null;
     bot: { userId: string };
     thread: { groupId: string | null };
     routine: { watch: unknown } | null;
     task: { prompt: string };
   };
-  const ownBots = { routines: false, ownBots: true };
-  const all = { routines: true, ownBots: true };
+  const ownBots = { routines: false, ownBots: true, messaging: false };
+  const all = { routines: true, ownBots: true, messaging: true };
 
   function chain() {
     const messages = new Map<string, Message>();
@@ -400,6 +428,10 @@ describe("botChainFromOwner", () => {
           return runs.get(where.id) ?? null;
         },
       },
+      messagingIdentity: {
+        findUnique: async ({ where }: { where: { botId: string } }) =>
+          where.botId === "bot-sender" ? { provider: "chat-a", userId: "user-1" } : null,
+      },
       steeringMessage: {
         findFirst: async ({
           where,
@@ -413,6 +445,20 @@ describe("botChainFromOwner", () => {
     };
     const ownerMessage = (id: string, blocks: unknown[] = [{ kind: "text", text: "build it" }]) =>
       messages.set(id, { id, role: "user", blocks });
+    /** The owner's message from the chat app linked to the orchestrator, in its thread. */
+    const ownerChatMessage = (
+      id: string,
+      blocks: unknown[] = [{ kind: "text", text: "build it" }],
+    ) =>
+      messages.set(id, {
+        id,
+        role: "user",
+        blocks,
+        authorUserId: "user-1",
+        clientNonce: "messaging:chat-a:h1",
+        threadId: "thread-sender",
+        thread: { groupId: null, externalConversationId: null },
+      });
     const inbound = (id: string, returnToMessageId?: string) =>
       messages.set(id, {
         id,
@@ -446,6 +492,8 @@ describe("botChainFromOwner", () => {
         sourceMessageId: run.sourceMessageId,
         userId: run.userId ?? "user-1",
         spaceId: run.spaceId ?? "space-1",
+        botId: "bot-sender",
+        threadId: "thread-sender",
         bot: { userId: run.botOwner ?? "user-1" },
         thread: { groupId: run.groupId ?? null },
         routine:
@@ -474,6 +522,7 @@ describe("botChainFromOwner", () => {
       steered,
       runReads,
       ownerMessage,
+      ownerChatMessage,
       inbound,
       outbound,
       senderRun,
@@ -608,6 +657,33 @@ describe("botChainFromOwner", () => {
     c.fromSender({ trigger: "bot_message", sourceMessageId: "in-1" });
     await expect(c.check(all, 3)).resolves.toBe(false);
     expect(c.runReads).toHaveBeenCalledTimes(3);
+  });
+
+  it("passes a chain the owner started from their linked chat app, when chat apps are allowed", async () => {
+    const c = chain();
+    c.ownerChatMessage("src-1");
+    c.fromSender({ trigger: "messaging", sourceMessageId: "src-1" });
+    await expect(c.check({ ...ownBots, messaging: true })).resolves.toBe(true);
+    await expect(c.check(ownBots)).resolves.toBe(false);
+  });
+
+  it("refuses a chain that started in a chat-app group or someone else's chat", async () => {
+    const c = chain();
+    c.ownerChatMessage("src-1", [
+      {
+        kind: "channel_message",
+        provider: "chat-a",
+        channelId: "c1",
+        fromAddress: "a",
+        fromLabel: "A",
+        text: "build it",
+        hop: 0,
+      },
+    ]);
+    c.fromSender({ trigger: "messaging", sourceMessageId: "src-1" });
+    await expect(c.check(all)).resolves.toBe(false);
+    c.ownerMessage("src-1");
+    await expect(c.check(all)).resolves.toBe(false);
   });
 });
 

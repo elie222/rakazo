@@ -48,19 +48,25 @@ const USER_COMPUTER_UNAVAILABLE =
   'The user\'s computer is not connected. If the task needs it, ask them to open the Rakazo desktop app and turn on "Let bots use this computer" in its settings.';
 
 /**
- * Which runs besides the owner's own chat may reach their paired computer: their routines, and
- * chains of their own bots that started where the computer was reachable. Server switches
- * USER_DEVICES_ALLOW_ROUTINES and USER_DEVICES_ALLOW_OWN_BOTS, both off by default.
+ * Which runs besides the owner's own chat may reach their paired computer: their routines, chains
+ * of their own bots that started where the computer was reachable, and their own messages from a
+ * chat app they linked. Server switches USER_DEVICES_ALLOW_ROUTINES, USER_DEVICES_ALLOW_OWN_BOTS
+ * and USER_DEVICES_ALLOW_MESSAGING, all off by default.
  */
-export type UserComputerAccess = { routines: boolean; ownBots: boolean };
+export type UserComputerAccess = { routines: boolean; ownBots: boolean; messaging: boolean };
 
-export const NO_USER_COMPUTER_ACCESS: UserComputerAccess = { routines: false, ownBots: false };
+export const NO_USER_COMPUTER_ACCESS: UserComputerAccess = {
+  routines: false,
+  ownBots: false,
+  messaging: false,
+};
 
 /**
  * Whose own computer this run may reach: the person whose message started it, when they own the
- * bot. With the server's switches on, also their own bot's scheduled routine, and a message from
- * another of their bots when `ownBotChain` says the chain behind it started with them (see
- * botChainFromOwner), neither in a group chat. A routine that watches something hands the run text
+ * bot. With the server's switches on, also their own bot's scheduled routine, their own message from
+ * a chat app they linked (`ownerMessage`, see ownerDirectMessage), and a message from another of
+ * their bots when `ownBotChain` says the chain behind it started with them (see botChainFromOwner),
+ * none in a group chat. A routine that watches something hands the run text
  * someone else may have written, so it reaches no one's; nor do webhooks, channels, helpers and
  * other people's messages.
  */
@@ -75,6 +81,8 @@ export function userComputerOwner(input: {
   groupThread: boolean;
   /** The run's routine watches something, or is gone. */
   routineWatches: boolean;
+  /** A chat-app run's source is the owner's own message from their linked chat app. */
+  ownerMessage: boolean;
 }): string | undefined {
   if (input.messagingChannelRun || input.runUserId !== input.botUserId) return undefined;
   const reachable =
@@ -83,7 +91,9 @@ export function userComputerOwner(input: {
       : !input.groupThread &&
         (input.trigger === "routine"
           ? input.access.routines && !input.routineWatches
-          : input.trigger === "bot_message" && input.access.ownBots && input.ownBotChain);
+          : input.trigger === "messaging"
+            ? input.access.messaging && input.ownerMessage
+            : input.trigger === "bot_message" && input.access.ownBots && input.ownBotChain);
   return reachable ? input.runUserId : undefined;
 }
 
@@ -155,6 +165,40 @@ export async function ownerDirectMessage(
   );
 }
 
+/**
+ * The stored facts userComputerOwner needs about a run started by something other than the owner's
+ * own chat, each read only when its switch is on and the owner owns the bot.
+ */
+export async function userComputerTrust(
+  prisma: PrismaClient,
+  run: {
+    id: string;
+    trigger: string;
+    userId: string;
+    spaceId: string;
+    botId: string;
+    threadId: string;
+    sourceMessageId: string | null;
+  },
+  ownsBot: boolean,
+  access: UserComputerAccess,
+): Promise<{ ownBotChain: boolean; routineWatches: boolean; ownerMessage: boolean }> {
+  return {
+    ownBotChain:
+      run.trigger === "bot_message" &&
+      access.ownBots &&
+      ownsBot &&
+      (await botChainFromOwner(prisma, run, access)),
+    routineWatches:
+      run.trigger === "routine" && access.routines && (await routineRunWatches(prisma, run.id)),
+    ownerMessage:
+      run.trigger === "messaging" &&
+      access.messaging &&
+      ownsBot &&
+      (await ownerDirectMessage(prisma, run)),
+  };
+}
+
 /** Outside tasks whose text, once handed into a run, keeps it from the owner's computer. */
 export function userComputerBlockingOrigins(access: UserComputerAccess): string[] {
   return access.routines ? ["webhook"] : ["routine", "webhook"];
@@ -164,7 +208,7 @@ export function userComputerBlockingOrigins(access: UserComputerAccess): string[
  * Whether the bot message that started a run comes from a chain the owner started: each sender run
  * is theirs, in this Space, on one of their bots, outside a group chat, took in no blocked outside
  * task, and the first one started where their computer is reachable (their own message, or a
- * scheduled routine when allowed). The caller checks that the receiving run is the owner's own.
+ * scheduled routine or their own linked chat-app message when allowed). The caller checks that the receiving run is the owner's own.
  * A link that is missing, unreadable or past the hop limit refuses.
  */
 export async function botChainFromOwner(
@@ -198,6 +242,8 @@ export async function botChainFromOwner(
         trigger: true,
         userId: true,
         spaceId: true,
+        botId: true,
+        threadId: true,
         sourceMessageId: true,
         bot: { select: { userId: true } },
         thread: { select: { groupId: true } },
@@ -223,6 +269,8 @@ export async function botChainFromOwner(
     });
     if (steered) return false;
     if (sender.trigger === "routine") return access.routines && scheduledRoutine(sender);
+    if (sender.trigger === "messaging")
+      return access.messaging && (await ownerDirectMessage(prisma, sender));
     if (sender.trigger === "user" || sender.trigger === "follow_up") {
       const source = sender.sourceMessageId
         ? await prisma.message.findUnique({
