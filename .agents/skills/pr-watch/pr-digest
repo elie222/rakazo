@@ -153,6 +153,36 @@ commit_statuses() {
     jq '[.[] | select(.context | startswith("Vercel") | not) | {context, state}]'
 }
 
+# The checks the base branch requires, as a JSON array, or empty when none are
+# named or they cannot be read.
+REQUIRED=""
+required_checks() {
+  local branch
+  branch=$(get "repos/$1/branches/$2") || return 0
+  REQUIRED=$(jq -c '.protection.required_status_checks.contexts // [] | select(length > 0)' <<<"$branch")
+}
+
+# How many checks still hold the verdict back. When the base branch names its
+# required checks, only those count, and one that has not appeared yet is still
+# to come: optional checks such as image validation or code scanning never make
+# an agent wait, though a failure in one is still reported. Otherwise every
+# check run, pending status and unfinished workflow counts.
+pending_count() {
+  if [ -n "$REQUIRED" ]; then
+    jq -n --argjson req "$REQUIRED" --argjson runs "$1" --argjson statuses "$2" '
+      [$req[] as $c
+       | ([$runs[] | select(.name == $c)]) as $r
+       | ([$statuses[] | select(.context == $c)]) as $s
+       | select(($r | length) + ($s | length) == 0
+                or ($r | any(.status != "completed"))
+                or ($s | any(.state == "pending")))] | length'
+  else
+    echo $(( $(jq '[.[] | select(.status != "completed")] | length' <<<"$1") +
+             $(jq '[.[] | select(.state == "pending")] | length' <<<"$2") +
+             $(jq '[.[] | select(.status != "completed")] | length' <<<"$3") ))
+  fi
+}
+
 logs() {
   local job=$1 keep out
   keep='^[0-9]+\) |^ *(Error|TimeoutError|AssertionError):|^ *(Locator|Expected|Received|Timeout|Call log):|^ *- (Expect|waiting for|locator resolved)|^ *>? *[0-9]+ \| |^ *\^|^ *at .*\.(spec|test)\.[jt]sx?:[0-9]|^ *[0-9]+ (failed|passed|flaky|skipped)|^ *(✘|✗|×) |^##\[error\]'
@@ -395,9 +425,7 @@ digest() {
 
   # Legacy commit statuses gate a PR exactly like check runs do, so they have to
   # reach the verdict rather than only being printed.
-  pending=$(( $(jq '[.[] | select(.status != "completed")] | length' <<<"$runs") +
-              $(jq '[.[] | select(.state == "pending")] | length' <<<"$statuses") +
-              $(jq '[.[] | select(.status != "completed")] | length' <<<"$workflows") ))
+  pending=$(pending_count "$runs" "$statuses" "$workflows")
   failed=$(( $(jq '[.[] | select(.conclusion != null and (.conclusion | test("^(success|neutral|skipped)$") | not))] | length' <<<"$runs") +
              $(jq '[.[] | select(.state | test("^(failure|error)$"))] | length' <<<"$statuses") +
              $(jq length <<<"$wf_failed") ))
@@ -518,6 +546,7 @@ main() {
     || die "could not resolve authenticated user"
   case $viewer in ''|null|\{*) die "could not resolve authenticated user" ;; esac
   [ -n "$pr" ] || pr=$(gh pr view --json number --jq .number 2>/dev/null) || die "no PR for this branch"
+  required_checks "$repo" "$(get "repos/$repo/pulls/$pr" | jq -r .base.ref)"
 
   if [ "$watch" -eq 1 ]; then
     local pull head runs statuses workflows empty=0 baseline="" first=1 seen
@@ -540,12 +569,10 @@ main() {
       if [ -n "$(comm -13 <(sort -u "$seen" 2>/dev/null) <(jq -r '.[].key' <<<"$OPEN" | sort -u))" ]; then
         break
       fi
-      if [ "$(jq '[.[] | select(.status != "completed")] | length' <<<"$runs")" = "0" ] &&
-         [ "$(jq '[.[] | select(.state == "pending")] | length' <<<"$statuses")" = "0" ] &&
-         [ "$(jq '[.[] | select(.status != "completed")] | length' <<<"$workflows")" = "0" ]; then
+      if [ "$(pending_count "$runs" "$statuses" "$workflows")" = "0" ]; then
         # Nothing outstanding. Wait a few polls before believing a PR that has
         # reported nothing at all, in case checks are still registering.
-        if [ "$(jq 'length' <<<"$runs")" != "0" ] ||
+        if [ -n "$REQUIRED" ] || [ "$(jq 'length' <<<"$runs")" != "0" ] ||
            [ "$(jq 'length' <<<"$statuses")" != "0" ] ||
            [ "$empty" -ge "$EMPTY_POLLS" ]; then
           break

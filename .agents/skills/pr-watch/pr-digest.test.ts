@@ -43,7 +43,9 @@ else if (args[0] === "pr" && args[1] === "view") {
     else if (endpoint.includes("/issues/")) body = fixture.conversation ?? [];
     else if (endpoint.includes("/reviews?")) body = fixture.reviews ?? [];
     else if (endpoint.includes("/comments?")) body = fixture.inline ?? [];
-    else if (/\/pulls\/\d+$/.test(endpoint)) body = { head: { sha: "abc" } };
+    else if (/\/pulls\/\d+$/.test(endpoint)) body = { head: { sha: "abc" }, base: { ref: "main" } };
+    else if (endpoint.endsWith("/branches/main"))
+      body = fixture.required ? { protection: { required_status_checks: { contexts: fixture.required } } } : {};
     else process.exit(2);
     // Answer the way gh api -i does, honouring If-None-Match like GitHub.
     const limited = Number(fixture.rateLimited ?? 0);
@@ -93,6 +95,7 @@ function runDigest(
     workflows?: object[][];
     rateLimited?: number;
     noEtag?: boolean;
+    required?: string[];
     steps?: Record<string, object[]>;
   },
   ...args: string[]
@@ -578,6 +581,24 @@ describe("pr-digest", () => {
       expect(result.stdout).toContain("VERDICT green");
       // Conversation, review and status reads stay the same across polls.
       expect(result.calls.split("304").length - 1).toBeGreaterThan(5);
+    });
+
+    it("waits only for the checks the base branch requires", () => {
+      const passed = { ...running, name: "tests", status: "completed", conclusion: "success" };
+      const result = runDigest(
+        { required: ["tests"], checks: [[passed, { ...running, name: "image" }]] },
+        "--watch",
+        "1",
+      );
+      expect(result.stdout).toContain("VERDICT green");
+    });
+
+    it("waits for a required check that has not appeared yet", () => {
+      const result = runDigest({
+        required: ["tests", "e2e"],
+        check: { ...running, name: "tests", status: "completed", conclusion: "success" },
+      });
+      expect(result.stdout).toContain("VERDICT pending (1)");
     });
 
     it("reads a response that carries no ETag", () => {

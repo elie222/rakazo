@@ -71,6 +71,9 @@ PRD="$(git rev-parse --show-toplevel)/.agents/skills/pr-watch/pr-digest"
    there is something to act on: a review finding you have not seen, a check
    that newly failed, or every check run, commit status and workflow run on the
    exact head SHA terminal. Then it prints the digest. You are re-invoked when it exits.
+   When the base branch names required checks, only those hold it back; optional
+   ones (image validation, code scanning) never make you wait, though a failure
+   in one is still reported.
    It exits 0 on every verdict, so a finished watch is never a failure: read its
    `VERDICT` line. Polling is cheap: unchanged reads are conditional requests that
    GitHub does not count against the rate limit, and if the limit runs out the
@@ -208,7 +211,8 @@ gh api graphql -f query='mutation($id:ID!){
 Finish only when one observation of a single SHA proves all of:
 
 1. `VERDICT green` — local, upstream, and PR head agree; no failing check or
-   status, and no workflow run still queued or running.
+   status, and every required check finished (every check, when the base names
+   none).
 2. Every review bot has produced a signal on that SHA. If none has ever
    appeared, require two consecutive observations separated by a full wait
    before concluding none is configured.
