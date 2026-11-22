@@ -10,13 +10,15 @@ import type { PrismaClient } from "@rakazo/db";
 import { appliedModelRole } from "@rakazo/db";
 import { resolveAutoReviewChecker } from "../approvals/auto-review.js";
 import { approvedModelCreditOffering, modelCreditOfferings } from "../model-credits/offerings.js";
+import type { SavedDeploymentModel } from "./deployment-model.js";
+import { adminDeploymentModel } from "./deployment-model.js";
 import type { ModelChoice, ModelCredential } from "./model-selection.js";
 import { findConnectedModelCredential } from "./model-selection.js";
 
 /** The deployment's configuration that stands in for a member who chose nothing. */
 export type DeploymentModelDefaults = {
-  /** The owner's saved default, ahead of the environment's. */
-  settings?: { defaultModelProvider: string | null; defaultModelId: string | null } | null;
+  /** The default saved for everyone, ahead of the environment's while it applies. */
+  settings?: SavedDeploymentModel | null;
   /** The environment's model, when the deployment can run it. */
   deployment?: { provider: string; model: string } | null;
   env?: NodeJS.ProcessEnv;
@@ -37,9 +39,14 @@ export function deploymentModelRole(
   }
   // No computer model means the main model works the screen itself.
   if (role === "computer") return { primary: null, backups: [] };
-  const provider = defaults.settings?.defaultModelProvider ?? defaults.deployment?.provider;
-  const modelId =
-    usableModelId(defaults.settings?.defaultModelId) ?? usableModelId(defaults.deployment?.model);
+  // An admin's saved model that no longer applies leaves the environment's in charge.
+  const saved =
+    defaults.settings?.deploymentModelCredentialCipher &&
+    !adminDeploymentModel(defaults.settings, defaults.env)
+      ? null
+      : defaults.settings;
+  const provider = saved?.defaultModelProvider ?? defaults.deployment?.provider;
+  const modelId = usableModelId(saved?.defaultModelId) ?? usableModelId(defaults.deployment?.model);
   const offerings = modelCreditOfferings(defaults.env);
   if (
     offerings &&

@@ -10,6 +10,7 @@ import {
 } from "../../model-credits/offerings.js";
 import { approvedModelCreditMaterial } from "../../model-credits/routing.js";
 import { hostedModelCreditObserver } from "../../models/credits/model-credit-observer.js";
+import { deploymentModelKey } from "../../models/deployment-model.js";
 import {
   persistRefreshedModelCredential,
   refreshStoredModelCredential,
@@ -282,7 +283,16 @@ export class ModelTeamChatEngagementJudge implements TeamChatEngagementJudge {
       );
       const apiKey =
         material?.apiKey ??
-        (provider === this.deps.deploymentProvider ? this.deps.deploymentModelKey : undefined);
+        (await deploymentModelKey(
+          { prisma: this.deps.prisma, secretStore: this.deps.secrets },
+          provider,
+          {
+            provider: this.deps.deploymentProvider,
+            key: this.deps.deploymentModelKey,
+            // An admin's key serves only the deployment's default, never a pin or credits.
+            operatorOnly: Boolean(settings?.modelCreditsEnabled || hosted || pinned || mainModel),
+          },
+        ));
       const callObserver = settings?.modelCreditsEnabled
         ? await hostedModelCreditObserver(this.deps.prisma, scope)
         : undefined;

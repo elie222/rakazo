@@ -448,3 +448,38 @@ it("uses the approved default when owner settings name an unapproved model", () 
     }).primary,
   ).toEqual({ provider: entry.provider, modelId: entry.modelId });
 });
+
+describe("an admin's default for everyone", () => {
+  const saved = {
+    defaultModelProvider: "anthropic",
+    defaultModelId: "claude-sonnet-5",
+    deploymentModelCredentialCipher: "sealed-admin-key",
+    modelCreditsEnabled: false,
+  };
+  const deployment = { provider: "openrouter", model: "anthropic/claude-haiku-5.5" };
+  afterEach(() => vi.unstubAllEnvs());
+
+  it("replaces the environment's model", () => {
+    expect(deploymentModelRole("main", { settings: saved, deployment }).primary).toEqual({
+      provider: "anthropic",
+      modelId: "claude-sonnet-5",
+    });
+  });
+
+  it("leaves the environment's model in charge on a credits deployment", () => {
+    expect(
+      deploymentModelRole("main", {
+        settings: { ...saved, modelCreditsEnabled: true },
+        deployment,
+      }).primary,
+    ).toEqual({ provider: "openrouter", modelId: "anthropic/claude-haiku-5.5" });
+  });
+
+  it("leaves the environment's model in charge once the allowlist refuses its provider", () => {
+    vi.stubEnv("RAKAZO_MODEL_PROVIDER_ALLOWLIST", "openrouter");
+    expect(deploymentModelRole("main", { settings: saved, deployment }).primary).toEqual({
+      provider: "openrouter",
+      modelId: "anthropic/claude-haiku-5.5",
+    });
+  });
+});

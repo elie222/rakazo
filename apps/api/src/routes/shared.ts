@@ -1,5 +1,7 @@
 import { ORPCError } from "@orpc/server";
+import type { SavedDeploymentModel } from "@rakazo/adapters";
 import {
+  adminDeploymentModel,
   deploymentModelRole,
   findConnectedModelCredential,
   hasHostedModelCredits,
@@ -113,13 +115,22 @@ function computerHostFor(
 }
 
 /** Whether this member can use the deployment's model under the current funding mode. */
-export async function deploymentModelAccess(deps: RouterDeps, actor: Actor) {
-  const funding = deps.billing ? await deps.billing.status(actor) : null;
+export async function deploymentModelAccess(
+  deps: RouterDeps,
+  actor: Actor,
+  settings?: SavedDeploymentModel | null,
+) {
+  const [funding, saved] = await Promise.all([
+    deps.billing ? deps.billing.status(actor) : null,
+    settings === undefined
+      ? deps.prisma.deploymentSettings.findUnique({ where: { id: "default" } })
+      : settings,
+  ]);
   const creditsAvailable = modelCreditsUsd(funding) !== null;
   return {
     creditsAvailable,
     hasDeployment:
-      Boolean(deps.env.deploymentModelConfigured) &&
+      (Boolean(deps.env.deploymentModelConfigured) || Boolean(adminDeploymentModel(saved))) &&
       (!funding?.creditPurchasesEnabled || creditsAvailable),
   };
 }
@@ -137,7 +148,7 @@ export async function modelSetup(deps: RouterDeps, actor: Actor) {
         (await hasHostedModelCredits(deps.prisma, actor, member.provider))))
       ? member
       : null;
-  const deploymentAccess = await deploymentModelAccess(deps, actor);
+  const deploymentAccess = await deploymentModelAccess(deps, actor, settings);
   return {
     main,
     model:

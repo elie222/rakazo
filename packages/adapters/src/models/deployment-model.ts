@@ -1,9 +1,14 @@
 import { getEnvApiKey } from "@earendil-works/pi-ai/compat";
-import type { ModelUsageLookup } from "@rakazo/adapter-kit";
+import type { ModelUsageLookup, SecretStore } from "@rakazo/adapter-kit";
+import { canonicalPiProviderId, OPENAI_COMPATIBLE_PROVIDER_ID } from "@rakazo/contracts";
+import type { PrismaClient } from "@rakazo/db";
 import { modelCreditOfferings } from "../model-credits/offerings.js";
 import { LOCAL_PROVIDER_ID, localModelIds } from "../runtime/pi/models/pi-local-provider-id.js";
+import { hiddenCatalogModel, listPiCatalog } from "../runtime/pi/models/pi-models.js";
 
+import { modelProviderAllowed, modelProviderAllowlist } from "./model-provider-allowlist.js";
 import { modelProviderDefinition, modelProviders } from "./model-provider-registry.js";
+import { parseModelSecret } from "./model-secret.js";
 
 export const DEFAULT_OPENROUTER_MODEL_ID = modelProviders.openrouter.deployment.defaultModel;
 
@@ -67,4 +72,107 @@ export function resolveDeploymentModel(env: NodeJS.ProcessEnv = process.env) {
 export function deploymentModelUsageLookup(): ModelUsageLookup | undefined {
   const model = resolveDeploymentModel();
   return model.key ? modelProviderDefinition(model.provider)?.usageLookup?.(model.key) : undefined;
+}
+
+/** Record id binding the key an admin saved for everyone to the deployment's settings row. */
+export const DEPLOYMENT_MODEL_RECORD = "deployment-model";
+
+/** The deployment settings row's fields that hold an admin's default model for everyone. */
+export type SavedDeploymentModel = {
+  defaultModelProvider: string | null;
+  defaultModelId: string | null;
+  deploymentModelCredentialCipher?: string | null;
+  modelCreditsEnabled?: boolean;
+};
+
+/**
+ * The model and key an admin connected for everyone, while they apply. Model credits always run
+ * on the operator's own connection, so a saved one is never used on a credits deployment, and the
+ * provider allowlist governs it like any connection an app account makes.
+ */
+export function adminDeploymentModel(
+  settings: SavedDeploymentModel | null | undefined,
+  env: NodeJS.ProcessEnv = process.env,
+): { provider: string; modelId: string; cipher: string } | null {
+  const provider = settings?.defaultModelProvider?.trim();
+  const modelId = settings?.defaultModelId?.trim();
+  const cipher = settings?.deploymentModelCredentialCipher;
+  if (!provider || !modelId || !cipher) return null;
+  if (settings.modelCreditsEnabled || modelCreditOfferings(env)) return null;
+  if (!modelProviderAllowed(modelProviderAllowlist(), provider)) return null;
+  return { provider, modelId, cipher };
+}
+
+/**
+ * The key that serves a provider for a member without a connection of their own: the admin's for
+ * the provider they connected, else the environment's for its provider. Never another vendor's.
+ */
+export async function deploymentModelKey(
+  deps: {
+    prisma: Pick<PrismaClient, "deploymentSettings">;
+    secretStore: Pick<SecretStore, "load">;
+  },
+  provider: string,
+  environment: {
+    provider: string;
+    key: string | undefined;
+    /** Credit-funded and operator-paid calls use the operator's own key, never an admin's. */
+    operatorOnly?: boolean;
+  },
+): Promise<string | undefined> {
+  const saved = environment.operatorOnly
+    ? null
+    : adminDeploymentModel(
+        await deps.prisma.deploymentSettings.findUnique({
+          where: { id: "default" },
+          select: {
+            defaultModelProvider: true,
+            defaultModelId: true,
+            deploymentModelCredentialCipher: true,
+            modelCreditsEnabled: true,
+          },
+        }),
+      );
+  if (saved && canonicalPiProviderId(saved.provider) === canonicalPiProviderId(provider)) {
+    const secret = parseModelSecret(
+      await deps.secretStore.load(saved.cipher, DEPLOYMENT_MODEL_RECORD),
+    );
+    return secret.kind === "api_key" ? secret.key : undefined;
+  }
+  return environment.key && provider === environment.provider ? environment.key : undefined;
+}
+
+/**
+ * Providers an admin can connect for everyone with a key alone, and the models each runs. Ones
+ * that need routing ids, a sign-in or an endpoint stay operator configuration.
+ */
+export function deploymentModelProviders(): {
+  id: string;
+  name: string;
+  models: { id: string; label: string }[];
+}[] {
+  const providers = new Map<
+    string,
+    { id: string; name: string; models: { id: string; label: string }[] }
+  >();
+  for (const entry of listPiCatalog()) {
+    if (
+      entry.placeholder ||
+      entry.endpointPresets ||
+      entry.routingFields?.length ||
+      (entry.auth !== "api-key" && entry.auth !== "both") ||
+      entry.provider === LOCAL_PROVIDER_ID ||
+      entry.provider === OPENAI_COMPATIBLE_PROVIDER_ID ||
+      hiddenCatalogModel(entry)
+    )
+      continue;
+    const provider = providers.get(entry.provider) ?? {
+      id: entry.provider,
+      name: entry.providerName ?? entry.provider,
+      models: [],
+    };
+    provider.models.push({ id: entry.id, label: entry.label });
+    providers.set(entry.provider, provider);
+  }
+  return [...providers.values()];
 }

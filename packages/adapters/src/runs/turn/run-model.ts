@@ -24,7 +24,7 @@ import {
   HostedModelCreditsRequiredError,
   hostedModelCreditObserver,
 } from "../../models/credits/model-credit-observer.js";
-import { resolveDeploymentModel } from "../../models/deployment-model.js";
+import { deploymentModelKey, resolveDeploymentModel } from "../../models/deployment-model.js";
 import {
   CLOUDFLARE_AI_GATEWAY_CONFIG_MESSAGE,
   CLOUDFLARE_WORKERS_AI_PROVIDER_ID,
@@ -131,11 +131,15 @@ export async function fleetPrepareDeps(
 /**
  * The deployment key is a bearer credential for exactly one vendor, so it is handed out
  * only when the provider that won the resolution above is that vendor. A provider named
- * by deployment settings or a bot override gets no key rather than another vendor's.
+ * by a bot override gets no key rather than another vendor's. The key an admin saved serves
+ * only the deployment's default, never a call the operator pays for or one on credits.
  */
-function deploymentKeyFor(deps: ExecutorDeps, provider: string): string | undefined {
-  if (!deps.deploymentModelKey) return undefined;
-  return provider === resolveDeploymentModel().provider ? deps.deploymentModelKey : undefined;
+async function deploymentKeyFor(deps: ExecutorDeps, provider: string, admin: boolean) {
+  return deploymentModelKey(deps, provider, {
+    provider: resolveDeploymentModel().provider,
+    key: deps.deploymentModelKey,
+    operatorOnly: !admin || (await modelCreditBillingEnabled(deps)),
+  });
 }
 
 /**
@@ -309,7 +313,7 @@ async function resolveModelKeyMaterial(
           throw new UnavailableModelForAuthError(UNKNOWN_PROVIDER_MODEL);
         }
         cloudflareProviderEnv({ provider });
-        return { apiKey: deploymentKeyFor(deps, provider), redact: [] };
+        return { apiKey: await deploymentKeyFor(deps, provider, false), redact: [] };
       }
       const plaintext = await deps.secretStore.load(row.ciphertext, row.id);
       registerSecrets?.(secretValuesToRedact(parseModelSecret(plaintext)));
@@ -449,7 +453,7 @@ async function resolveModelKeyMaterial(
     return material!;
   }
   cloudflareProviderEnv({ provider });
-  return { apiKey: deploymentKeyFor(deps, provider), redact: [] };
+  return { apiKey: await deploymentKeyFor(deps, provider, !operatorFunded), redact: [] };
 }
 
 /** Translate resolved credentials and capabilities consistently for every run path. */
