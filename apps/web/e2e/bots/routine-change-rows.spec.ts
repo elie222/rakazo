@@ -77,7 +77,7 @@ test("a webhook routine's row shows its URL and key to the creator", async ({ pa
   const confirm = page.getByRole("dialog", { name: "Confirm it's you" });
   await expect(header.or(confirm)).toBeVisible();
   if (await confirm.isVisible()) {
-    await confirm.getByLabel("Password").fill("password12");
+    await confirm.getByLabel("Password", { exact: true }).fill("password12");
     await confirm.getByRole("button", { name: "Continue" }).click();
   }
   await expect(header).toBeVisible();

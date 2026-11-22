@@ -3,12 +3,13 @@ import { botInboundPath, isIdentityConfirmationRequired } from "@rakazo/contract
 import { errorCode } from "@rakazo/core";
 import { bestEffort } from "@rakazo/logging/best-effort";
 import * as Clipboard from "expo-clipboard";
-import { Alert, Pressable, Text, View } from "react-native";
+import { Alert, Pressable, StyleSheet, Text, View } from "react-native";
 import { currentApiBase } from "../../lib/api/api";
 import { errorText } from "../../lib/api/user-error";
 import { mobileTokens } from "../../lib/appearance/appearance";
 import type { RoutineEventBlock } from "../../lib/messages/routine-event-label";
 import { routineEventLabel } from "../../lib/messages/routine-event-label";
+import { useThemedStyles } from "../../lib/native/native";
 import { useSave } from "../../lib/query/query";
 import { NativeSymbol } from "../native/native-symbol";
 import { useIdentityConfirmation } from "../vault/confirm-identity";
@@ -24,31 +25,33 @@ export function RoutineEventRows({
   botId: string | undefined;
   actionProps: MessageActionProps;
 }) {
-  const tokens = mobileTokens();
+  const styles = useThemedStyles(createStyles);
   return (
-    <Pressable {...actionProps} style={{ width: "100%", paddingVertical: 4, alignItems: "center" }}>
+    <Pressable {...actionProps} style={styles.rows}>
       {blocks.map((block, index) => (
-        <View
-          key={`${block.change}-${index}`}
-          style={{ flexDirection: "row", alignItems: "center", gap: 6 }}
-        >
-          <Text
-            style={{
-              color: tokens.mutedForeground,
-              fontSize: 13.5,
-              textAlign: "center",
-              flexShrink: 1,
-            }}
-          >
-            {routineEventLabel(block)}
-          </Text>
+        <View key={`${block.change}-${index}`} style={styles.row}>
+          <Text style={styles.label}>{routineEventLabel(block)}</Text>
           {block.webhook && botId ? (
-            <WebhookKeyButton botId={botId} title={block.name} color={tokens.mutedForeground} />
+            <WebhookKeyButton botId={botId} title={block.name} color={styles.label.color} />
           ) : null}
         </View>
       ))}
     </Pressable>
   );
+}
+
+function createStyles() {
+  const tokens = mobileTokens();
+  return StyleSheet.create({
+    rows: { width: "100%", paddingVertical: 4, alignItems: "center" },
+    row: { flexDirection: "row", alignItems: "center", gap: 6 },
+    label: {
+      color: tokens.mutedForeground,
+      fontSize: 13.5,
+      textAlign: "center",
+      flexShrink: 1,
+    },
+  });
 }
 
 /**
