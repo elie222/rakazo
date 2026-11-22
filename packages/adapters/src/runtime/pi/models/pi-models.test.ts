@@ -335,6 +335,10 @@ describe("Pi model catalog", () => {
     const chatgpt = catalog.find((entry) => entry.provider === "openai-codex");
     expect(chatgpt?.signIn).toBe("device-code");
     expect(chatgpt?.billing).toMatch(/ChatGPT Plus or Pro/);
+    expect(chatgpt?.signInSetup).toMatchObject({
+      url: expect.stringMatching(/^https:/),
+      note: expect.any(String),
+    });
     const copilot = catalog.find((entry) => entry.provider === "github-copilot");
     expect(copilot?.signIn).toBe("device-code");
     const grok = catalog.find((entry) => entry.provider === "xai");

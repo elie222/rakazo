@@ -89,6 +89,7 @@ const breakdown = {
       totalTokens: model.totalTokens - 12,
       costUsd: model.costUsd - 0.001,
       modelCalls: model.modelCalls - 1,
+      cachedTokens: 0,
     })),
     {
       provider: "retired",
@@ -98,6 +99,7 @@ const breakdown = {
       totalTokens: 12,
       costUsd: 0.001,
       modelCalls: 1,
+      cachedTokens: 0,
     },
   ],
   overTimeUnit: "day",
@@ -202,8 +204,10 @@ test("account menu shows the usage hint and Usage shows allowances and credits o
           overTime: input.range === "30d" ? monthlyUsage : breakdown.overTime,
           ...(filtered
             ? {
-                totals: { ...point, runs: 14 },
-                models: [{ provider: "subscription", model: "example-large", ...point }],
+                totals: { ...point, runs: 14, tokensPartial: true },
+                models: [
+                  { provider: "subscription", model: "example-large", ...point, cachedTokens: 0 },
+                ],
                 overTime: [point],
               }
             : {}),
@@ -274,7 +278,9 @@ test("account menu shows the usage hint and Usage shows allowances and credits o
     .poll(() => requests.some((body) => body.includes('"botId":"bot-1"') && body.includes('"7d"')))
     .toBe(true);
   const totals = settings.getByTestId("usage-settings").locator("dl");
-  await expect(totals).toContainText("330,000");
+  // One call in this range reported no token count, so the total is marked as a lower bound.
+  await expect(totals).toContainText("330,000+");
+  await captureScreenshot(page, testInfo, "usage-tokens-partial");
   await expect(totals).toContainText("$1.40");
   await expect(settings.getByRole("row").filter({ hasText: "Example Large" })).toContainText(
     "300,000",

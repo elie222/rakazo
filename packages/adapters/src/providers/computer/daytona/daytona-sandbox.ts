@@ -4,33 +4,26 @@ import type { CreateSandboxFromSnapshotParams, DaytonaConfig, Sandbox } from "@d
 import type {
   AdapterContext,
   CommandRequest,
-  ComputerActionRequest,
   ComputerFileEntry,
-  ComputerInput,
-  ComputerObservation,
   ComputerRef,
-  ControlLeaseRef,
   PageBrowserCommand,
   PageBrowserResult,
   PortableFile,
   ProcessEvent,
   SandboxProvider,
-  ScreenRequest,
-  ScreenSession,
-  TerminalRequest,
   UnreferencedMachine,
   UnreferencedMachineRecords,
   WorkspaceExportLimits,
 } from "@rakazo/adapter-kit";
-import { SandboxFileTooLargeError, SandboxRateLimitError } from "@rakazo/adapter-kit";
-import { abortableDelay, parseRetryAfter } from "@rakazo/core";
+import { SandboxFileTooLargeError } from "@rakazo/adapter-kit";
+import { abortableDelay } from "@rakazo/core";
 import { boundedSandboxCommandTimeoutMs } from "@rakazo/core/node/sandbox-command";
 import { getLogger } from "@rakazo/logging";
 import {
   installPageBrowserCommand,
   privatePageInput,
 } from "../../../browser/page-browser-install.js";
-import { PortableFileBatcher } from "../../../computers/computer-workspace.js";
+import { writePortableFilesInBatches } from "../../../computers/computer-workspace.js";
 import {
   deleteUnreferencedMachine,
   recordUnreferencedMachine,
@@ -53,10 +46,10 @@ import {
 } from "../../../computers/screens/computer-support.js";
 import {
   LinuxDesktop,
+  LinuxDesktopSandbox,
   onBotScreen,
   PREPARE_LINUX_DESKTOP,
 } from "../../../computers/screens/linux-desktop.js";
-import { shouldSkipPortableWorkspaceFile } from "../../../storage/workspace-save-policy.js";
 import { withAbort } from "../../../web/web-ssrf.js";
 import { daytonaRateLimitError } from "./daytona-rate-limit.js";
 import { isDaytonaExecutable, walkDaytonaWorkspace } from "./daytona-workspace.js";
@@ -111,7 +104,7 @@ export interface DaytonaSandboxSdk {
 
 type ProviderConfig = { snapshot?: string; unreferencedMachines?: UnreferencedMachineRecords };
 
-export class DaytonaSandboxProvider implements SandboxProvider {
+export class DaytonaSandboxProvider extends LinuxDesktopSandbox implements SandboxProvider {
   billsWhileRunning(): boolean {
     return true;
   }
@@ -125,7 +118,7 @@ export class DaytonaSandboxProvider implements SandboxProvider {
   >();
   private readonly workspaceRoots = new Map<string, string>();
   private readonly prepared = new Set<string>();
-  private readonly desktops = new LinuxDesktop({
+  protected readonly desktops = new LinuxDesktop({
     environment: async (computer) => {
       const sandbox = await this.box(computer);
       return {
@@ -227,6 +220,7 @@ export class DaytonaSandboxProvider implements SandboxProvider {
   private readonly machines: UnreferencedMachineRecords | undefined;
 
   constructor(config: ProviderConfig, client: DaytonaSandboxSdk) {
+    super();
     this.snapshotName =
       config.snapshot?.trim() || process.env.DAYTONA_SNAPSHOT?.trim() || undefined;
     this.client = client;
@@ -353,39 +347,6 @@ export class DaytonaSandboxProvider implements SandboxProvider {
     }
   }
 
-  async connectScreen(
-    computer: ComputerRef,
-    request: ScreenRequest,
-    context: AdapterContext,
-  ): Promise<ScreenSession> {
-    return this.desktops.connectScreen(computer, request, context);
-  }
-  async connectTerminal(computer: ComputerRef, request: TerminalRequest, context: AdapterContext) {
-    return this.desktops.connectTerminal(computer, request, context);
-  }
-  async setScreenControl(
-    computer: ComputerRef,
-    interactive: boolean,
-    context: AdapterContext,
-    controlToken?: string,
-  ): Promise<void> {
-    return this.desktops.setScreenControl(computer, interactive, context, controlToken);
-  }
-  async sendInput(
-    computer: ComputerRef,
-    input: ComputerInput,
-    _lease: ControlLeaseRef,
-    context: AdapterContext,
-  ): Promise<void> {
-    return this.desktops.sendInput(computer, input, context);
-  }
-  async observe(computer: ComputerRef, context: AdapterContext): Promise<ComputerObservation> {
-    return this.desktops.observe(computer, context);
-  }
-  async act(computer: ComputerRef, request: ComputerActionRequest, context: AdapterContext) {
-    return this.desktops.act(computer, request, context);
-  }
-
   async pageBrowser(
     computer: ComputerRef,
     request: PageBrowserCommand,
@@ -462,32 +423,17 @@ export class DaytonaSandboxProvider implements SandboxProvider {
   ): Promise<void> {
     const sandbox = await this.box(computer);
     await this.desktops.stopBrowsers(computer, context);
-    const batcher = new PortableFileBatcher<PortableFile>(8, (file) => file.content.byteLength);
-    const flush = async (batch: PortableFile[]) => {
-      if (!batch.length) return;
-      await this.writeFiles(sandbox, batch);
-    };
-    for await (const file of files) {
-      if (shouldSkipPortableWorkspaceFile(file.path)) continue;
-      if (context.signal.aborted) throw context.signal.reason ?? new Error("import aborted");
-      const full = batcher.add(file);
-      if (full) await flush(full);
-    }
-    await flush(batcher.take());
+    await writePortableFilesInBatches(
+      files,
+      8,
+      (batch) => this.writeFiles(sandbox, batch),
+      context.signal,
+    );
     // Browser profiles are imported without opening a shared browser.
-  }
-
-  async snapshot(computer: ComputerRef, context: AdapterContext) {
-    const observation = await this.observe(computer, context);
-    return { id: observation.frameId, createdAt: observation.capturedAt };
   }
 
   async keepAlive(computer: ComputerRef): Promise<void> {
     await (await this.box(computer)).refreshActivity();
-  }
-
-  async releaseScreen(computer: ComputerRef, context: AdapterContext): Promise<void> {
-    return this.desktops.releaseScreen(computer, context);
   }
 
   async stop(computer: ComputerRef, _context: AdapterContext): Promise<void> {
@@ -655,7 +601,14 @@ export class DaytonaSandboxProvider implements SandboxProvider {
         undefined,
         300,
       );
-      if (runtime.exitCode !== 0) throw new Error("could not prepare computer desktop tools");
+      if (runtime.exitCode !== 0) {
+        const output = runtime.result?.trim().split("\n").at(-1)?.slice(0, 300);
+        throw new Error("could not prepare computer desktop tools", {
+          cause: new Error(
+            output ? `exit ${runtime.exitCode}: ${output}` : `exit ${runtime.exitCode}`,
+          ),
+        });
+      }
       const pageBrowser = await sandbox.process
         .executeCommand(
           `bash -c ${shellQuote(installPageBrowserCommand())}`,

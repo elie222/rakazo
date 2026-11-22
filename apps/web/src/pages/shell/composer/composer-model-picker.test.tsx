@@ -21,6 +21,11 @@ vi.mock("../../../lib/query/rpc", () => {
         { provider: "acme", id: "steady", label: "Steady", thinkingLevels: ["medium"] },
         { provider: "acme", id: "deep", label: "Deep", thinkingLevels: ["low", "medium", "high"] },
       ]),
+      suggested: vi.fn(async () => ({
+        checkedAt: "2026-01-01T00:00:00.000Z",
+        windowDays: 14,
+        suggestions: [],
+      })),
     },
     me: vi.fn(async () => ({ defaultProvider: "acme", defaultModel: "fast" })),
   };

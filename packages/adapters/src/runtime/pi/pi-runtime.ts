@@ -1146,6 +1146,8 @@ export class PiAgentRuntime implements AgentRuntime {
               if (host.pausePending || replayTerminated) break;
             }
             restoringCalls = false;
+            for (const id of request.resumeToolResult?.historyMessageIds ?? [])
+              representedHistoryIds.add(id);
             if (!host.pausePending && !replayTerminated) {
               const addedHistory = withoutSteeringMessages(request.history, initialSteering).filter(
                 (message) => message.id && !representedHistoryIds.has(message.id),

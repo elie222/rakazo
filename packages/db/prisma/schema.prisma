@@ -3027,20 +3027,13 @@ model CapabilityInstallSpace {
   @@map("capability_install_spaces")
 }
 
-/// Operator grants; never purchased model credits. Counter includes uncertain reservations.
-model SpeechAllowance {
-  userId String @id
-  limitMicros BigInt
-  usedMicros BigInt @default(0)
-  expiresAt DateTime
-  @@map("speech_allowances")
-}
-
 /// Financial evidence survives chat deletion; contains no audio, transcripts or credentials.
 model SpeechCost {
   id String @id
   userId String
   spaceId String
+  /// The organization the Space belonged to when charged, so usage outlives the Space.
+  organizationId String?
   callId String?
   provider String
   operation String
@@ -3064,6 +3057,7 @@ model SpeechCost {
   updatedAt DateTime @default(now())
   @@index([userId, createdAt], map: "speech_costs_account")
   @@index([spaceId, createdAt], map: "speech_costs_space")
+  @@index([organizationId, createdAt], map: "speech_costs_organization")
   @@index([state, createdAt], map: "speech_costs_reconcile")
   @@map("speech_costs")
 }

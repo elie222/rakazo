@@ -2,10 +2,10 @@ import { t } from "@lingui/core/macro";
 import type { ModelMark } from "@rakazo/core";
 import { botModelState, modelOptionKey } from "@rakazo/core";
 import { localizeModelEntry } from "@rakazo/i18n/model-provider";
+import { thinkingLevelLabel } from "@rakazo/i18n/thinking-level";
 import { useRouter } from "expo-router";
 import { useSyncExternalStore } from "react";
 import type { MobileMe, MobileModel, MobileModelCredential } from "../api/mobile-types";
-import { thinkingLevelLabel } from "../models/thinking-level";
 import { rpcQuery } from "../query/query";
 import { useScreenQuery } from "../query/screen-query";
 import {

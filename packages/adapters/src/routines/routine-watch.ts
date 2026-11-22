@@ -1016,7 +1016,7 @@ export async function postRoutineWatchMessage(
       });
       return event.seq;
     });
-    if (seq !== undefined) await deps.events.notify(input.threadId, seq).catch(() => undefined);
+    if (seq !== undefined) await deps.events.notify(input.threadId, seq);
   } catch {
     // Best effort: the routine's state is already saved.
   }

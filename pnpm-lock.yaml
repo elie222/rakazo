@@ -235,6 +235,9 @@ importers:
       esbuild:
         specifier: 0.28.2
         version: 0.28.2
+      tsrs:
+        specifier: 7.1.0-beta.tsrs4
+        version: 7.1.0-beta.tsrs4
       tsx:
         specifier: 4.23.15
         version: 4.23.15
@@ -719,6 +722,12 @@ importers:
       '@rakazo/adapters':
         specifier: workspace:*
         version: link:../../packages/adapters
+      '@rakazo/auth':
+        specifier: workspace:*
+        version: link:../../packages/auth
+      '@rakazo/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
       '@rakazo/core':
         specifier: workspace:*
         version: link:../../packages/core
@@ -6311,6 +6320,58 @@ packages:
 
   '@tsconfig/node16@1.0.4':
     resolution: {integrity: sha512-vxhUy4J8lyeyinH7Azl1pdd43GJhZH/tP2weN8TntQblOY+A0XbT8DJk1/oCPuOOyg/Ja757rG0CgHcWC8OfMA==}
+
+  '@tsrs/darwin-arm64@7.1.0-beta.tsrs4':
+    resolution: {integrity: sha512-Be1McQGyHipWIjnkvytZmh7Wi4YVATvTfiEuPX34kfk+W7QCtTdUUHnuLZ7bzwy8LgL9VDCmyvQtWiF3MENxBQ==}
+    engines: {node: '>=16.20.0'}
+    cpu: [arm64]
+    os: [darwin]
+
+  '@tsrs/darwin-x64@7.1.0-beta.tsrs4':
+    resolution: {integrity: sha512-J9LM9ja4EGcA1/DNnWOo9smswK1Aa4xW+zbCubWdT/4z8SPwCmVwm5sn5KmvNBCHQHkke9KRrBl+zROqz6F74A==}
+    engines: {node: '>=16.20.0'}
+    cpu: [x64]
+    os: [darwin]
+
+  '@tsrs/linux-arm64-gnu@7.1.0-beta.tsrs4':
+    resolution: {integrity: sha512-RIbwlpYWflMDq9XosRHL7gpwSV5fnEaUvjr3ehzKCcc7E6ozo0mH4m/OgQE3ts/4euWKzZxsK7lN6r091W5mWg==}
+    engines: {node: '>=16.20.0'}
+    cpu: [arm64]
+    os: [linux]
+    libc: [glibc]
+
+  '@tsrs/linux-arm64-musl@7.1.0-beta.tsrs4':
+    resolution: {integrity: sha512-4RGERFCpPayJ74T2eA+ky3VdIS0r1BezKIclqGWRTx/RXnj9H/1NbtEt0aKhj3TrTMPDmInlPiCwRJUv7M9kFA==}
+    engines: {node: '>=16.20.0'}
+    cpu: [arm64]
+    os: [linux]
+    libc: [musl]
+
+  '@tsrs/linux-x64-gnu@7.1.0-beta.tsrs4':
+    resolution: {integrity: sha512-YIqFRStXq5yURR+zYDwIKcV126KH+EibPMJ1ZbfT2ToJ0w5zmRUKV/A5z0kjmQu6A6wItLZxOzKjU1v+ad5blA==}
+    engines: {node: '>=16.20.0'}
+    cpu: [x64]
+    os: [linux]
+    libc: [glibc]
+
+  '@tsrs/linux-x64-musl@7.1.0-beta.tsrs4':
+    resolution: {integrity: sha512-TQeiFbrxowI26YDaUojRfV7DhDKjXlPWtz9DopyGtufFoKsv2efIzUiEAA8IVw689nUoi0CVl0aWTWio49lWMg==}
+    engines: {node: '>=16.20.0'}
+    cpu: [x64]
+    os: [linux]
+    libc: [musl]
+
+  '@tsrs/win32-arm64@7.1.0-beta.tsrs4':
+    resolution: {integrity: sha512-0YRK8h3vCTtJM7j+GpWByK8ehWMdHPCETLEAeQiW6Xy4wrrJJ2Fso/1FeF6gfi6LyCq1mZMfydn2OiDoJmAu1A==}
+    engines: {node: '>=16.20.0'}
+    cpu: [arm64]
+    os: [win32]
+
+  '@tsrs/win32-x64@7.1.0-beta.tsrs4':
+    resolution: {integrity: sha512-JW5JoAammbwL2pXkhC//p/9t7lxg34zHgtA6L5ixiCDw5s+hxxEc85h3sm9M3oYUqCOOi+W6Jw5PLDClN3nMHA==}
+    engines: {node: '>=16.20.0'}
+    cpu: [x64]
+    os: [win32]
 
   '@turbo/darwin-64@2.11.10':
     resolution: {integrity: sha512-By4idRap5+nLnMuRzLB4qkOPRlvNdyY1ne4VJYDyUoUB11H94k7uif9mbe3JT8JSNXs1D68uMcBj6hJ/jMQRvA==}
@@ -12796,6 +12857,11 @@ packages:
 
   tslib@2.8.1:
     resolution: {integrity: sha512-oJFu94HQb+KVduSUQL7wnpmqnfmLsOA/nAh6b6EH0wCEoK0/mPeXU6c3wKDV83MkOuHPRHtSXKKU99IBazS/2w==}
+
+  tsrs@7.1.0-beta.tsrs4:
+    resolution: {integrity: sha512-tPeUolNTUDJFk1Fc660PyFGUK/epGbuQVoo+2GnCIWkNDWp8i1DMI5n2X8pxxevi/3zbO8UvIKjWgE4T7OOCeA==}
+    engines: {node: '>=16.20.0'}
+    hasBin: true
 
   tsx@4.23.15:
     resolution: {integrity: sha512-Yiex1Ovn8z2xPpOWckIiysV1SSyRMY9BkLF++q0yKiDxCqRhosKfMg3janKkiLBwZ5c/YryloKwGZcrEmtwxKw==}
@@ -19379,6 +19445,30 @@ snapshots:
   '@tsconfig/node14@1.0.3': {}
 
   '@tsconfig/node16@1.0.4': {}
+
+  '@tsrs/darwin-arm64@7.1.0-beta.tsrs4':
+    optional: true
+
+  '@tsrs/darwin-x64@7.1.0-beta.tsrs4':
+    optional: true
+
+  '@tsrs/linux-arm64-gnu@7.1.0-beta.tsrs4':
+    optional: true
+
+  '@tsrs/linux-arm64-musl@7.1.0-beta.tsrs4':
+    optional: true
+
+  '@tsrs/linux-x64-gnu@7.1.0-beta.tsrs4':
+    optional: true
+
+  '@tsrs/linux-x64-musl@7.1.0-beta.tsrs4':
+    optional: true
+
+  '@tsrs/win32-arm64@7.1.0-beta.tsrs4':
+    optional: true
+
+  '@tsrs/win32-x64@7.1.0-beta.tsrs4':
+    optional: true
 
   '@turbo/darwin-64@2.11.10':
     optional: true
@@ -27105,6 +27195,17 @@ snapshots:
   tslib@2.6.2: {}
 
   tslib@2.8.1: {}
+
+  tsrs@7.1.0-beta.tsrs4:
+    optionalDependencies:
+      '@tsrs/darwin-arm64': 7.1.0-beta.tsrs4
+      '@tsrs/darwin-x64': 7.1.0-beta.tsrs4
+      '@tsrs/linux-arm64-gnu': 7.1.0-beta.tsrs4
+      '@tsrs/linux-arm64-musl': 7.1.0-beta.tsrs4
+      '@tsrs/linux-x64-gnu': 7.1.0-beta.tsrs4
+      '@tsrs/linux-x64-musl': 7.1.0-beta.tsrs4
+      '@tsrs/win32-arm64': 7.1.0-beta.tsrs4
+      '@tsrs/win32-x64': 7.1.0-beta.tsrs4
 
   tsx@4.23.15:
     dependencies:
