@@ -123,7 +123,6 @@ it.each([1, CATALOG_SEARCH_QUERY_MAX_LENGTH + 1])(
 
     expect(container.textContent).toContain("No apps match your search.");
     expect(container.textContent).not.toContain("Search more apps");
-    await press("Search more apps");
     expect(state.rpc).not.toHaveBeenCalled();
   },
 );
