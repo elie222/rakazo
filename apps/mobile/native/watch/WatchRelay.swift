@@ -25,9 +25,16 @@ final class WatchRelay: NSObject, WCSessionDelegate {
     WCSession.default.delegate = self
     WCSession.default.activate()
     keepSessionReadableWhileLocked()
-    _ = NotificationCenter.default.addObserver(
-      forName: UIApplication.protectedDataDidBecomeAvailableNotification, object: nil, queue: nil
-    ) { [weak self] _ in DispatchQueue.main.async { self?.keepSessionReadableWhileLocked() } }
+    // Leaving the foreground comes before the lock, so items the app created meanwhile
+    // (a new Space choice, server headers) are covered too.
+    for name in [
+      UIApplication.protectedDataDidBecomeAvailableNotification,
+      UIApplication.willResignActiveNotification,
+    ] {
+      _ = NotificationCenter.default.addObserver(forName: name, object: nil, queue: nil) {
+        [weak self] _ in DispatchQueue.main.async { self?.keepSessionReadableWhileLocked() }
+      }
+    }
     // The relay lives for the process. Enqueue session changes in order without making
     // the React Native thread wait on the main queue.
     _ = NotificationCenter.default.addObserver(
