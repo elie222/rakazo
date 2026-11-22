@@ -6,7 +6,9 @@ import { createRoot } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vitest";
 import { TeachCaptureOverlay } from "./TeachCaptureOverlay";
 
-const computerInput = vi.hoisted(() => vi.fn(async () => ({ ok: true })));
+const computerInput = vi.hoisted(() =>
+  vi.fn(async (_input: { payload: unknown }) => ({ ok: true })),
+);
 vi.mock("../../lib/query/rpc", () => ({ rpc: { computer: { input: computerInput } } }));
 
 const skill = {
@@ -32,7 +34,7 @@ const skill = {
   updatedAt: "2026-01-01T00:00:00.000Z",
 } as unknown as TaughtSkill;
 
-const escapeInput = { botId: "bot-1", kind: "key", payload: { key: "Escape" } };
+const escapeInput = { botId: "bot-1", kind: "key", payload: { key: "Escape", skillId: skill.id } };
 
 afterEach(() => {
   computerInput.mockClear();
@@ -128,7 +130,7 @@ it("sends a wheel scroll with the screen point it was made at", async () => {
   expect(computerInput).toHaveBeenCalledWith({
     botId: "bot-1",
     kind: "scroll",
-    payload: { direction: "down", amount: 2, x: 600, y: 420 },
+    payload: { direction: "down", amount: 2, x: 600, y: 420, skillId: skill.id },
   });
   // A mostly sideways swipe scrolls right, at its own point.
   computerInput.mockClear();
@@ -147,8 +149,77 @@ it("sends a wheel scroll with the screen point it was made at", async () => {
   expect(computerInput).toHaveBeenCalledWith({
     botId: "bot-1",
     kind: "scroll",
-    payload: { direction: "right", amount: 1, x: 200, y: 100 },
+    payload: { direction: "right", amount: 1, x: 200, y: 100, skillId: skill.id },
   });
   act(() => root.unmount());
   container.remove();
+});
+
+async function withPointerOverlay(run: (overlay: HTMLDivElement) => void) {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  await act(async () => {
+    root.render(<TeachCaptureOverlay botId="bot-1" skill={skill} enabled />);
+  });
+  const overlay = container.firstElementChild as HTMLDivElement;
+  overlay.setPointerCapture = vi.fn();
+  overlay.hasPointerCapture = () => true;
+  overlay.releasePointerCapture = vi.fn();
+  overlay.getBoundingClientRect = () => new DOMRect(0, 0, 1280, 800);
+  await act(async () => run(overlay));
+  act(() => root.unmount());
+  container.remove();
+}
+
+function pointer(overlay: HTMLDivElement, type: string, init: PointerEventInit = {}) {
+  overlay.dispatchEvent(new PointerEvent(type, { pointerId: 7, ...init }));
+}
+
+function pointerPayloads() {
+  return computerInput.mock.calls.map(([input]) => input.payload);
+}
+
+it.each([
+  { button: 1, buttons: 4 },
+  { button: 3, buttons: 8 },
+])("ignores an unsupported pointer button ($button)", async ({ button, buttons }) => {
+  await withPointerOverlay((overlay) => {
+    pointer(overlay, "pointerdown", { button, buttons });
+    pointer(overlay, "pointermove", { button: -1, buttons });
+    pointer(overlay, "pointerup", { button });
+  });
+  expect(computerInput).not.toHaveBeenCalled();
+});
+
+it("forwards a right drag and its release, even when the release is a cancel", async () => {
+  await withPointerOverlay((overlay) => {
+    pointer(overlay, "pointerdown", { button: 2, buttons: 2, clientX: 10 });
+    pointer(overlay, "pointermove", { button: -1, buttons: 2, clientX: 20 });
+    pointer(overlay, "pointercancel", { button: -1, clientX: 20 });
+  });
+  await vi.waitFor(() =>
+    expect(pointerPayloads()).toEqual([
+      { type: "down", button: "right", x: 10, y: 0, skillId: skill.id },
+      { type: "move", button: "right", x: 20, y: 0, skillId: skill.id },
+      { type: "up", button: "right", x: 20, y: 0, skillId: skill.id },
+    ]),
+  );
+});
+
+it("releases a supported button while an unsupported button stays held", async () => {
+  await withPointerOverlay((overlay) => {
+    pointer(overlay, "pointerdown", { button: 0, buttons: 1, clientX: 10 });
+    pointer(overlay, "pointermove", { button: 1, buttons: 5, clientX: 20 });
+    pointer(overlay, "pointermove", { button: 0, buttons: 4, clientX: 30 });
+    pointer(overlay, "pointerup", { button: 1, clientX: 40 });
+  });
+  await vi.waitFor(() =>
+    expect(pointerPayloads()).toEqual([
+      { type: "down", button: "left", x: 10, y: 0, skillId: skill.id },
+      { type: "move", button: "left", x: 20, y: 0, skillId: skill.id },
+      { type: "up", button: "left", x: 30, y: 0, skillId: skill.id },
+    ]),
+  );
 });

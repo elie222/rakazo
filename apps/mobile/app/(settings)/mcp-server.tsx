@@ -1,6 +1,7 @@
 import { ph } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
 import { mcpServerConnection } from "@rakazo/contracts";
+import { mcpServerStatusLabel } from "@rakazo/i18n/plugin-catalog";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useState } from "react";
 import { ActivityIndicator, Alert, ScrollView, StyleSheet, Text, View } from "react-native";
@@ -19,7 +20,6 @@ import { mobileTokens } from "../../lib/appearance/appearance";
 import type { McpServerAccess, RemoteMcpServerEdit } from "../../lib/integrations/mcp-server-edit";
 import {
   mcpAdvancedInUse,
-  mcpConnectionLabel,
   mcpHeaderEditValid,
   remoteMcpServerChanged,
   remoteMcpServerEdit,
@@ -183,7 +183,7 @@ function McpServerScreen({ id }: { id: string }) {
             <SettingsRow
               key="status"
               title={t`Status`}
-              value={test.pending ? t`Checking…` : mcpConnectionLabel(state)}
+              value={test.pending ? t`Checking…` : mcpServerStatusLabel(state)}
               detail={state === "not_working" ? (server.health.message ?? undefined) : undefined}
             />
             <SettingsRow

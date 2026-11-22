@@ -3,6 +3,7 @@ import type { TransactionalEmail } from "@rakazo/adapter-kit";
 import { INVITED_TRIAL_WEEKS } from "@rakazo/contracts";
 import { Link, Text } from "react-email";
 import { emailText, greeting, linkStyle, message } from "./email.js";
+import { emailCopy } from "./email-copy/deployment-copy.js";
 
 export function referralEmail(
   user: { email: string; name: string },
@@ -11,23 +12,21 @@ export function referralEmail(
   locale = "en",
 ): Promise<TransactionalEmail> {
   const say = emailText(locale);
+  const copy = emailCopy("referral", locale);
   return message(
     user.email,
     locale,
-    say("Invite a friend"),
+    copy("subject"),
     <>
       <Text>{greeting(say, user.name)}</Text>
       <Text>
-        {say(
-          "Invite a friend to Rakazo: they get {weeks} weeks free, and you earn a free month when they start a qualifying subscription with a new card.",
-          { weeks: INVITED_TRIAL_WEEKS },
-        )}{" "}
+        {copy("body", { weeks: INVITED_TRIAL_WEEKS })}{" "}
         <Link href={invitePageUrl} style={linkStyle}>
-          {say("Open Rakazo")}
+          {copy("link")}
         </Link>{" "}
-        {say("and choose Invite friends for your link.")}
+        {copy("afterLink")}
       </Text>
-      <Text>Elie</Text>
+      <Text>{copy("signature")}</Text>
     </>,
     unsubscribeUrl,
   );

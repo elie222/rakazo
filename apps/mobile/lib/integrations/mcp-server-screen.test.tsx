@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 
+import { i18n } from "@lingui/core";
 import { flush } from "@rakazo/core/test-async";
 import { useQuery } from "@tanstack/react-query";
 import type { ReactNode } from "react";
@@ -176,6 +177,9 @@ let root: Root;
 
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  // The server status text both apps share is translated at run time, so it needs a locale.
+  i18n.load("en", {});
+  i18n.activate("en");
   queryClient.clear();
   server = remote;
   vi.mocked(rpc).mockImplementation((async (path: string) => {

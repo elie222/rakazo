@@ -141,3 +141,8 @@ export const CreateRoutineInput = z
     }
   });
 export type CreateRoutineInput = z.infer<typeof CreateRoutineInput>;
+
+/** Where a sender posts to start a bot's routines: its webhook, or its Git events. */
+export function botInboundPath(botId: string, kind: "webhook" | "github"): string {
+  return `/api/v1/bots/${botId}/${kind}`;
+}

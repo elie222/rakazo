@@ -17,6 +17,7 @@ import {
 } from "../../../computers/sandbox/sandbox-cleanup.js";
 import {
   isSandboxGoneError,
+  isSandboxNotFoundError,
   isSandboxUnsafeStopError,
   SandboxUnsafeStopError,
   sandboxNotFoundError,
@@ -243,7 +244,7 @@ export function instaboxSdk(
       try {
         machine = await reach(id, false);
       } catch (error) {
-        if (error instanceof Error && error.name === "SandboxNotFoundError") return;
+        if (isSandboxNotFoundError(error)) return;
         throw error;
       }
       const current = await state(machine);

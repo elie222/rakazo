@@ -623,7 +623,7 @@ test("an approval default the deployment pays for reads as included", async ({
   expect(settings.primary).toBeNull();
 });
 
-test("a device-code sign-in shows its setup and code before opening the page", async ({
+test("a device-code sign-in shows its setup before issuing the code", async ({
   page,
 }, testInfo) => {
   const stamp = Date.now();
@@ -634,8 +634,10 @@ test("a device-code sign-in shows its setup and code before opening the page", a
     body.json.needsSignupSurvey = false;
     await route.fulfill({ response, json: body });
   });
-  await page.route("**/rpc/models/beginOAuth", (route) =>
-    route.fulfill({
+  let codesIssued = 0;
+  await page.route("**/rpc/models/beginOAuth", (route) => {
+    codesIssued += 1;
+    return route.fulfill({
       json: {
         json: {
           mode: "device-code",
@@ -646,8 +648,8 @@ test("a device-code sign-in shows its setup and code before opening the page", a
           expiresInSeconds: 900,
         },
       },
-    }),
-  );
+    });
+  });
   await page.route("**/rpc/models/completeOAuth", (route) =>
     route.fulfill({ json: { json: { status: "pending" } } }),
   );
@@ -656,7 +658,13 @@ test("a device-code sign-in shows its setup and code before opening the page", a
   await expect(
     page.getByText("Turn on device code sign-in in ChatGPT security settings"),
   ).toBeVisible();
-  await expect(page.getByRole("link", { name: "Open settings" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Open settings" })).toHaveAttribute(
+    "href",
+    "https://chatgpt.com/#settings/Security",
+  );
+  await expect(page.getByText("Workspace accounts need an admin to turn this on.")).toBeVisible();
+  // The setting comes first, so the code's clock starts only once the person is ready.
+  expect(codesIssued).toBe(0);
   await captureScreenshot(page, testInfo, "onboarding-device-code-setup");
   const opened = page.waitForEvent("popup", { timeout: 1000 }).catch(() => null);
   await page.getByRole("button", { name: "Sign in with ChatGPT" }).click();
@@ -703,6 +711,9 @@ test("a pasted-code sign-in opens its page from a click and then takes the code"
   const open = page.getByRole("link", { name: "Open auth.example.test" });
   await expect(open).toHaveAttribute("href", "https://auth.example.test/oauth/authorize?state=e2e");
   await expect(page.getByRole("textbox", { name: "Code from auth.example.test" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Continue" })).toBeHidden();
+  // A grey Continue still shows there is a step after signing in.
+  const next = page.getByRole("button", { name: "Continue" });
+  await expect(next).toBeVisible();
+  await expect(next).toBeDisabled();
   await captureScreenshot(page, testInfo, "onboarding-paste-code-sign-in");
 });

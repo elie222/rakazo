@@ -1,3 +1,4 @@
+export * from "./account/account-deletion.js";
 export * from "./account/account-export.js";
 export * from "./account/account-status.js";
 export * from "./account/audit-events.js";

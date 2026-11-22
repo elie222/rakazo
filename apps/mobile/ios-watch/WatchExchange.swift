@@ -12,6 +12,17 @@ struct WatchChat: Codable, Identifiable, Hashable {
   }
 }
 
+/// A chat as the list shows it. Requests name the chat alone, so they stay small.
+struct WatchChatRow: Codable, Identifiable {
+  let chat: WatchChat
+  let preview: String
+  let updatedAt: String
+  var color: String?
+  var avatar: Data?
+
+  var id: String { chat.id }
+}
+
 struct WatchRequest: Codable {
   enum Action: String, Codable { case chats, thread, send, answer }
   let action: Action
@@ -25,7 +36,7 @@ struct WatchRequest: Codable {
 
 struct WatchReply: Codable {
   var scope: UUID?
-  var chats: [WatchChat]?
+  var chats: [WatchChatRow]?
   var messages: [WatchMessage]?
   var botWorking: Bool?
   var error: WatchFailure?
@@ -39,6 +50,8 @@ enum WatchFailure: String, Codable, Error {
 struct WatchMessage: Codable, Identifiable {
   let id: String
   let fromUser: Bool
+  /// Who wrote it, when that is someone other than the user in a group.
+  var author: String?
   let text: String
   let prompt: WatchPrompt?
 }

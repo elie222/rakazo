@@ -26,13 +26,13 @@ import {
 } from "../components/settings/settings-group";
 import { GrowingTextInput } from "../components/ui/growing-text-input";
 import { MenuPickerMenu } from "../components/ui/menu-picker";
-import { rpc } from "../lib/api/api";
 import { errorText } from "../lib/api/user-error";
 import { CallKeyboardContext } from "../lib/calls/call-keyboard-context";
 import { dateLocaleForUi, useUiLocale } from "../lib/i18n/i18n";
 import { useSideInsets } from "../lib/layout/side-insets";
 import { native, useMobileTokens } from "../lib/native/native";
 import { iosAtLeast } from "../lib/native/native-controls";
+import { useSave } from "../lib/query/query";
 import { deviceTimeZone, routineTriggerRows, routineWebTriggers } from "../lib/routines/routine";
 import type { MobileRoutineDraft } from "../lib/routines/routine-draft";
 import {
@@ -169,7 +169,10 @@ function RoutineView({
   const { t } = useLingui();
   const locale = useUiLocale();
   const router = useRouter();
-  const [running, setRunning] = useState(false);
+  const testRun = useSave({
+    save: (_, send) => send("routines/testRun", { routineId: routine.id }),
+    onFailed: (cause) => Alert.alert(t`Could not run routine`, errorText(cause, t`Try again.`)),
+  });
   const triggers = routineTriggerRows(routine, deviceTimeZone());
   const nextRun =
     !routine.active || !routine.nextRunAt
@@ -183,18 +186,6 @@ function RoutineView({
             hour: "numeric",
             minute: "2-digit",
           });
-
-  async function testRun() {
-    if (running) return;
-    setRunning(true);
-    try {
-      await rpc("routines/testRun", { routineId: routine.id });
-    } catch (cause) {
-      Alert.alert(t`Could not run routine`, errorText(cause, t`Try again.`));
-    } finally {
-      setRunning(false);
-    }
-  }
 
   return (
     <>
@@ -215,8 +206,8 @@ function RoutineView({
                     type: "button" as const,
                     label: t`Run now`,
                     icon: { type: "sfSymbol" as const, name: "play" },
-                    disabled: running,
-                    onPress: () => void testRun(),
+                    disabled: testRun.pending,
+                    onPress: () => testRun.run(),
                   },
                 ],
               }
@@ -226,8 +217,8 @@ function RoutineView({
                     accessibilityLabel={t`Run now`}
                     ios="play"
                     android="play"
-                    disabled={running}
-                    onPress={() => void testRun()}
+                    disabled={testRun.pending}
+                    onPress={() => testRun.run()}
                   />
                 ),
               }),

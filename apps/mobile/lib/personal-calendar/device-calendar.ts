@@ -10,6 +10,7 @@ import { CalendarResults } from "@rakazo/contracts";
 import type { ExpoCalendar as AndroidCalendar, ExpoCalendarEvent } from "expo-calendar";
 import { requireOptionalNativeModule } from "expo-modules-core";
 import { Alert, Platform } from "react-native";
+import { dateLocaleForUi } from "../i18n/i18n";
 
 type Action<Action extends CalendarOperation["action"]> = Extract<
   CalendarOperation,
@@ -75,18 +76,36 @@ function confirm(title: string, message: string, action: string): Promise<boolea
 
 function eventPreview(event: Draft, calendar: CalendarInfo) {
   const { timing, recurrence } = event;
-  const formatter = new Intl.DateTimeFormat(undefined, {
+  const locale = dateLocaleForUi();
+  const formatter = new Intl.DateTimeFormat(locale, {
     dateStyle: "medium",
     ...(timing.allDay ? {} : { timeStyle: "short" }),
     timeZone: timing.allDay ? "UTC" : timing.timeZone,
   });
-  const date = (value: string) => formatter.format(new Date(value));
+  const start = new Date(timing.start);
   // All-day end is exclusive in storage and inclusive in the confirmation.
-  const end = timing.allDay
-    ? new Date(Date.parse(timing.end) - 86_400_000).toISOString()
-    : timing.end;
-  const range =
-    date(timing.start) === date(end) ? date(timing.start) : `${date(timing.start)} – ${date(end)}`;
+  const end = timing.allDay ? new Date(Date.parse(timing.end) - 86_400_000) : new Date(timing.end);
+  let startLabel = formatter.format(start);
+  let endLabel = formatter.format(end);
+  if (!timing.allDay && startLabel === endLabel) {
+    // A clock rollback can put different instants in the same displayed minute.
+    const withOffset = new Intl.DateTimeFormat(locale, {
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+      timeZone: timing.timeZone,
+      timeZoneName: "shortOffset",
+    });
+    const startWithOffset = withOffset.format(start);
+    const endWithOffset = withOffset.format(end);
+    if (startWithOffset !== endWithOffset) {
+      startLabel = startWithOffset;
+      endLabel = endWithOffset;
+    }
+  }
+  const range = startLabel === endLabel ? startLabel : `${startLabel} – ${endLabel}`;
   const repeat =
     recurrence &&
     (recurrence.frequency === "daily"
@@ -273,7 +292,7 @@ async function prepareReminders(
     const { title, notes, due } = operation.input;
     const when =
       due &&
-      new Intl.DateTimeFormat(undefined, {
+      new Intl.DateTimeFormat(dateLocaleForUi(), {
         dateStyle: "medium",
         timeStyle: "short",
         timeZone: due.timeZone,

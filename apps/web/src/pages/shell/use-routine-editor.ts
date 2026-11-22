@@ -10,6 +10,7 @@ import { parseModelOptionKey } from "../../lib/models/model-catalog";
 import type { createSpaceRpc } from "../../lib/query/rpc";
 import { sharedInflight } from "../../lib/query/shared-inflight";
 import { errorCode, errorText } from "../../lib/query/user-error";
+import { botInboundUrl } from "../../lib/routines/inbound-url";
 import type { RoutineDraftState } from "../../lib/routines/routine-draft";
 import {
   draftStateFromRoutine,
@@ -151,17 +152,11 @@ export function useRoutineEditor({
         editing: editingRoutine,
         timezone: editingRoutine?.timezone ?? timezone ?? localTimezone(),
         webhook: {
-          path:
-            typeof window !== "undefined"
-              ? `${window.location.origin}/api/v1/bots/${active.id}/webhook`
-              : `/api/v1/bots/${active.id}/webhook`,
+          path: botInboundUrl(active.id, "webhook"),
           secret: routineWebhookSecret,
           configured: active.webhookConfigured || Boolean(routineWebhookSecret),
         },
-        githubPath:
-          typeof window !== "undefined"
-            ? `${window.location.origin}/api/v1/bots/${active.id}/github`
-            : `/api/v1/bots/${active.id}/github`,
+        githubPath: botInboundUrl(active.id, "github"),
         messageProviders,
         saving: savingRoutine,
         running: runningRoutine,

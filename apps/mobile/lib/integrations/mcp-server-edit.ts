@@ -1,22 +1,4 @@
-import { t } from "@lingui/core/macro";
-import type { McpServer, McpServerConfigInput, McpServerConnection } from "@rakazo/contracts";
-
-export function mcpConnectionLabel(state: McpServerConnection): string {
-  switch (state) {
-    case "disabled":
-      return t`Disabled`;
-    case "needs_client":
-      return t`Needs an OAuth client ID`;
-    case "needs_sign_in":
-      return t`Needs sign-in`;
-    case "not_working":
-      return t`Not working`;
-    case "connected":
-      return t`Connected`;
-    case "not_connected":
-      return t`Not connected`;
-  }
-}
+import type { McpServer, McpServerConfigInput } from "@rakazo/contracts";
 
 /** Which bots can use a server: every bot, or only `botIds`. */
 export type McpServerAccess = { allBots: boolean; botIds: string[] };

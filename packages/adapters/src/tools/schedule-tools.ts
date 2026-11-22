@@ -722,6 +722,7 @@ export async function createScheduleFromTool(
     botId: routineBotId,
     change: "created",
     name: row.name,
+    routine: { webhookEnabled: row.webhookEnabled, active: row.active },
   });
 
   return {
@@ -908,6 +909,7 @@ async function createWatchFromTool(
     botId: input.botId,
     change: "created",
     name: row.name,
+    routine: { webhookEnabled: row.webhookEnabled, active: row.active },
   });
   return {
     ok: true as const,
@@ -1252,6 +1254,7 @@ export async function updateScheduleFromTool(
       botId: input.botId,
       change: routineEditChange(existing, saved),
       name: saved.name,
+      routine: { webhookEnabled: saved.webhookEnabled, active: saved.active },
     });
   }
 
