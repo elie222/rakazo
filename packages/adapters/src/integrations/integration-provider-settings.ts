@@ -1,6 +1,7 @@
 import type {
   AdapterContext,
   ConnectorCall,
+  ConnectorCapabilities,
   ManagedConnectorProvider,
   SecretStore,
 } from "@rakazo/adapter-kit";
@@ -9,8 +10,14 @@ import { ClientError } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import * as z from "zod";
-import { ComposioConnector } from "../providers/integration/composio/composio-connector.js";
-import { PipedreamConnector } from "../providers/integration/pipedream/pipedream-connector.js";
+import {
+  COMPOSIO_CONNECTOR_CAPABILITIES,
+  ComposioConnector,
+} from "../providers/integration/composio/composio-connector.js";
+import {
+  PIPEDREAM_CONNECTOR_CAPABILITIES,
+  PipedreamConnector,
+} from "../providers/integration/pipedream/pipedream-connector.js";
 import { credentialDigest } from "../secrets/credential-digest.js";
 
 /** Each provider this build has, with the credentials it takes. */
@@ -29,6 +36,12 @@ type IntegrationProviderId = IntegrationProviderConfig["provider"];
 const INTEGRATION_PROVIDER_IDS = IntegrationProviderConfigSchema.options.map(
   (option) => option.shape.provider.value,
 );
+
+/** Known before a provider is configured, so its tools are vetted the same either way. */
+const INTEGRATION_PROVIDER_CAPABILITIES: Record<IntegrationProviderId, ConnectorCapabilities> = {
+  composio: COMPOSIO_CONNECTOR_CAPABILITIES,
+  pipedream: PIPEDREAM_CONNECTOR_CAPABILITIES,
+};
 
 const PLUGIN_SLUG_PROVIDER: IntegrationProviderId = "composio";
 
@@ -220,7 +233,7 @@ class ConfiguredIntegrationProvider implements ManagedConnectorProvider {
       id: this.id,
       contractVersion: "1",
       adapterVersion: "0.1.0",
-      capabilities: { discover: true, oauth: true, secretsBrokered: true },
+      capabilities: INTEGRATION_PROVIDER_CAPABILITIES[this.id],
     };
   }
   private async resolve() {
@@ -277,6 +290,9 @@ class ConfiguredIntegrationProvider implements ManagedConnectorProvider {
   }
   async *execute(call: ConnectorCall, context: AdapterContext) {
     yield* (await this.required()).execute(call, context);
+  }
+  async declaredReads(call: ConnectorCall, actions: readonly string[], context: AdapterContext) {
+    return (await (await this.resolve())?.declaredReads?.(call, actions, context)) ?? new Set();
   }
 }
 

@@ -174,9 +174,75 @@ describe("connectorToolRequiresApproval", () => {
   it("still requires approval for a declared read whose name says load", () => {
     expect(connectorToolRequiresApproval("warehouse-load-rows", true)).toBe(true);
   });
+
+  it("lets a vetted read run whatever verb its name uses", () => {
+    expect(connectorToolRequiresApproval("GMAIL_FETCH_EMAILS", undefined, true)).toBe(false);
+    expect(connectorToolRequiresApproval("warehouse-load-rows", true, true)).toBe(false);
+    expect(connectorToolRequiresApproval("profile_card", true, true)).toBe(false);
+  });
+
+  it("keeps asking for a vetted read whose name or declaration says it writes", () => {
+    expect(connectorToolRequiresApproval("GMAIL_SEND_EMAIL", undefined, true)).toBe(true);
+    expect(connectorToolRequiresApproval("get_or_create_contact", true, true)).toBe(true);
+    expect(connectorToolRequiresApproval("profile_card", false, true)).toBe(true);
+  });
+
+  it("asks for a tool whose only claim to be a read is the server's own hint", () => {
+    expect(connectorToolRequiresApproval("GMAIL_FETCH_EMAILS", true)).toBe(true);
+    expect(connectorToolRequiresApproval("transfer_funds", true)).toBe(true);
+    expect(connectorToolRequiresApproval("GMAIL_FETCH_EMAILS")).toBe(true);
+  });
 });
 
 describe("resolveActionApprovalDetail", () => {
+  it("keeps a person's ask or block rule ahead of a vetted read", () => {
+    const base = { toolName: "GMAIL_FETCH_EMAILS", readOnly: true, vettedRead: true };
+    expect(resolveActionApprovalDetail({ ...base, rules: [] }).decision).toBe("allow");
+    for (const [matchKind, matchValue] of [
+      ["tool", "GMAIL_FETCH_EMAILS"],
+      ["connector", "gmail"],
+    ] as const) {
+      expect(
+        resolveActionApprovalDetail({
+          ...base,
+          rules: [{ effect: "require_approval", matchKind, matchValue }],
+        }).decision,
+      ).toBe("ask");
+      expect(
+        resolveActionApprovalDetail({
+          ...base,
+          rules: [{ effect: "deny", matchKind, matchValue }],
+        }).decision,
+      ).toBe("deny");
+    }
+  });
+
+  it("lets a watch use a vetted email read under an email ask rule", () => {
+    const watch = {
+      toolName: "GMAIL_FETCH_EMAILS",
+      connectorKind: "gmail",
+      readOnly: true,
+      rules: [
+        {
+          effect: "require_approval" as const,
+          matchKind: "category" as const,
+          matchValue: "email",
+        },
+      ],
+    };
+    expect(watchToolRefusal(watch)).toContain("needs approval");
+    expect(watchToolRefusal({ ...watch, vettedRead: true })).toBeNull();
+  });
+
+  it("does not count a vetted read as sending email", () => {
+    const rules = [
+      { effect: "require_approval" as const, matchKind: "category" as const, matchValue: "email" },
+    ];
+    const base = { toolName: "GMAIL_FETCH_EMAILS", connectorKind: "gmail", rules };
+    expect(resolveActionApprovalDetail(base).decision).toBe("ask");
+    expect(resolveActionApprovalDetail({ ...base, vettedRead: true }).decision).toBe("allow");
+  });
+
   it("applies category rules to declared writes with read-looking names", () => {
     const rules = [
       { effect: "require_approval" as const, matchKind: "category" as const, matchValue: "email" },

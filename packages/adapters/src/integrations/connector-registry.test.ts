@@ -15,6 +15,7 @@ class StubConnector implements ConnectorProvider {
   constructor(
     private readonly id: string,
     private readonly tools: ConnectorTool[],
+    private readonly vetsToolEffects = false,
   ) {}
 
   describe() {
@@ -22,8 +23,17 @@ class StubConnector implements ConnectorProvider {
       id: this.id,
       contractVersion: "1",
       adapterVersion: "1",
-      capabilities: { discover: true, oauth: false, secretsBrokered: false },
+      capabilities: {
+        discover: true,
+        oauth: false,
+        secretsBrokered: false,
+        vetsToolEffects: this.vetsToolEffects,
+      },
     };
+  }
+
+  async declaredReads(_call: ConnectorCall, actions: readonly string[]) {
+    return new Set(actions.filter((action) => action.startsWith("read")));
   }
 
   async discoverTools() {
@@ -118,6 +128,36 @@ describe("ConnectorRegistry", () => {
     expect(results).toEqual([{ connector: "second", tool: "shared.tool" }]);
     expect(first.calls).toHaveLength(0);
     expect(second.calls).toHaveLength(1);
+  });
+
+  it("vets a declared read only for a provider whose descriptor vouches for it", async () => {
+    const claims = [
+      { ...tool("read_a"), readOnly: true },
+      { ...tool("claims_b"), readOnlyVetted: true },
+      { ...tool("write_c"), readOnly: false, readOnlyVetted: true },
+    ];
+    const registry = new ConnectorRegistry([
+      new StubConnector("vetted", claims, true),
+      new StubConnector(
+        "server",
+        claims.map((entry) => ({ ...entry, name: `s_${entry.name}` })),
+      ),
+    ]);
+
+    const vetted = (await registry.discoverTools(context)).filter((entry) => entry.readOnlyVetted);
+    expect(vetted.map((entry) => entry.name)).toEqual(["read_a"]);
+    const call = (connectorId: string) => ({
+      tool: "batch",
+      args: {},
+      executionId: "execution",
+      route: { connectorId, toolName: "batch" },
+    });
+    await expect(
+      registry.declaredReads(call("vetted"), ["read_x", "send_y"], context),
+    ).resolves.toEqual(new Set(["read_x"]));
+    await expect(registry.declaredReads(call("server"), ["read_x"], context)).resolves.toEqual(
+      new Set(),
+    );
   });
 
   it("registers only the providers it is given", async () => {

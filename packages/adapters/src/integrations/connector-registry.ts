@@ -77,7 +77,7 @@ export class ConnectorRegistry implements ConnectorProvider {
         }
         used.add(name);
         discovered.push({
-          ...tool,
+          ...vetted(this.providers.get(connectorId), tool),
           name,
           route: tool.route ?? { connectorId, toolName: tool.name },
         });
@@ -127,13 +127,39 @@ export class ConnectorRegistry implements ConnectorProvider {
     if (!connectorId) {
       for (const provider of this.providers.values()) {
         const resolved = await provider.resolveCall?.(call, context);
-        if (resolved) return resolved;
+        if (resolved) return { ...resolved, tool: vetted(provider, resolved.tool) };
       }
       return undefined;
     }
     const provider = this.providers.get(connectorId);
-    return provider?.resolveCall?.({ ...call, tool: call.route?.toolName ?? call.tool }, context);
+    const resolved = await provider?.resolveCall?.(
+      { ...call, tool: call.route?.toolName ?? call.tool },
+      context,
+    );
+    return resolved && { ...resolved, tool: vetted(provider, resolved.tool) };
   }
+
+  async declaredReads(
+    call: ConnectorCall,
+    actions: readonly string[],
+    context: AdapterContext,
+  ): Promise<ReadonlySet<string>> {
+    const provider = this.providers.get(call.route?.connectorId ?? this.defaultConnectorId);
+    if (!provider?.declaredReads || !vetsToolEffects(provider)) return new Set();
+    return provider.declaredReads(call, actions, context);
+  }
+}
+
+function vetsToolEffects(provider: ConnectorProvider): boolean {
+  return provider.describe().capabilities.vetsToolEffects === true;
+}
+
+/** A tool's listing cannot vouch for itself: only its provider's descriptor marks a read vetted. */
+function vetted(provider: ConnectorProvider | undefined, tool: ConnectorTool): ConnectorTool {
+  const { readOnlyVetted: _claimed, ...rest } = tool;
+  return provider && tool.readOnly === true && vetsToolEffects(provider)
+    ? { ...rest, readOnlyVetted: true }
+    : rest;
 }
 
 function isManagedConnectorProvider(

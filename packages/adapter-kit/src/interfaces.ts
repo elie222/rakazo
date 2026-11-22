@@ -301,6 +301,15 @@ export interface ConnectorProvider {
     context: AdapterContext,
   ): Promise<{ call: ConnectorCall; tool: ConnectorTool } | undefined>;
   execute(call: ConnectorCall, context: AdapterContext): AsyncIterable<ConnectorEvent>;
+  /**
+   * The actions a batch call names (see ToolBatch) that this provider declares read-only. Read
+   * only from a provider whose descriptor sets `vetsToolEffects`.
+   */
+  declaredReads?(
+    call: ConnectorCall,
+    actions: readonly string[],
+    context: AdapterContext,
+  ): Promise<ReadonlySet<string>>;
   /** Release run-scoped state (open sessions) of a run that ended for good on
    * this worker. A run that ended elsewhere is bounded by the provider itself. */
   endRun?(runId: string): void;

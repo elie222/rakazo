@@ -23,6 +23,7 @@ import {
 import { normalizedHttpUrl, urlSite } from "@rakazo/core/egress";
 import { approvalEffectKey, toolEffectIdempotencyKey } from "@rakazo/core/node/approval-effect-key";
 import { runSecretKind } from "@rakazo/db";
+import { bestEffort } from "@rakazo/logging";
 import type { ApprovalCardOptions } from "../../approvals/approval-ask.js";
 import {
   approvalActionName,
@@ -153,6 +154,20 @@ export async function gateToolCall(
     toolName === approvalName || toolName === name || declaredReadOnly === false
       ? declaredReadOnly
       : ctx.tools.connector.get(toolName)?.readOnly;
+  // A read only a provider that vets its tools' effects declared skips approval; a server's own
+  // hint never does (see connectorToolRequiresApproval). A failed lookup leaves the call asking.
+  const batchReads =
+    batch?.actions.length && deps.connector?.declaredReads
+      ? await bestEffort(
+          "connector.declared_reads",
+          deps.connector.declaredReads(connectorCall, batch.actions, context),
+        )
+      : undefined;
+  // A batch action is vetted only by the batch's own provider, never by a same-named tool elsewhere.
+  const vettedReadFor = (toolName: string) =>
+    toolName === approvalName || toolName === name
+      ? connectorTool?.readOnlyVetted === true
+      : batchReads?.has(toolName) === true;
   const connectorProviders = ctx.tools.connectedPlugins.map((plugin) => plugin.provider);
   const connectorKind = connectorKindFromToolName(approvalName, connectorProviders);
   const watch = name === "schedule_create" ? watchFromTool(args.watch) : undefined;
@@ -208,7 +223,12 @@ export async function gateToolCall(
         !unidentifiedAction &&
         (catalogControlRead ||
           approvalToolNames.every(
-            (toolName) => !connectorToolRequiresApproval(toolName, declaredReadOnlyFor(toolName)),
+            (toolName) =>
+              !connectorToolRequiresApproval(
+                toolName,
+                declaredReadOnlyFor(toolName),
+                vettedReadFor(toolName),
+              ),
           ))
       ? connectorTrusts
       : undefined;
@@ -304,7 +324,12 @@ export async function gateToolCall(
     (!catalogControlRead &&
       approvalToolNames.some(
         (toolName) =>
-          toolRequiresApproval(toolName, viaConnector, declaredReadOnlyFor(toolName)) ||
+          toolRequiresApproval(
+            toolName,
+            viaConnector,
+            declaredReadOnlyFor(toolName),
+            vettedReadFor(toolName),
+          ) ||
           (!viaConnector && outsideRunToolRequiresApproval(run.trigger, toolName)),
       ));
   // A reviewed call still fails closed when its review errors, and keeps its approval key.
@@ -330,6 +355,7 @@ export async function gateToolCall(
           ? connectorKind
           : connectorKindFromToolName(toolName, connectorProviders),
       readOnly: declaredReadOnlyFor(toolName),
+      vettedRead: vettedReadFor(toolName),
     })),
     wrapper: batch ? { name, connectorKind } : undefined,
     site: fetchSite,

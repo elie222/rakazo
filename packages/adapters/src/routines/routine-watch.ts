@@ -764,6 +764,7 @@ async function readTool(
       ctx.connectedConnections?.map((row) => row.externalId),
     ),
     readOnly: declaredRead(resolved.tool),
+    vettedRead: !resolved.tool.batch && resolved.tool.readOnlyVetted === true,
     rules: (await listApprovalRules(deps.prisma, {
       userId: routine.userId,
       spaceId: routine.spaceId,

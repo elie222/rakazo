@@ -114,10 +114,16 @@ function fixture({
   userDevices,
   botUserId = "user-1",
   batch,
+  readOnlyVetted,
+  declaredReads,
   browser,
   spendingLimit = null,
   memoryProvider,
 }: {
+  /** The connector registry marked the tool's read as vetted by its provider. */
+  readOnlyVetted?: boolean;
+  /** Batch actions the tool's provider declares read-only. */
+  declaredReads?: string[];
   /** The Space's semantic memory provider; none by default. */
   memoryProvider?: Record<string, unknown>;
   /** A page browser on a graphical computer, so browser_act and computer_act are offered. */
@@ -171,6 +177,7 @@ function fixture({
     name,
     description: "Read an item",
     readOnly,
+    readOnlyVetted,
     batch,
     inputSchema: {
       type: "object",
@@ -609,6 +616,8 @@ function fixture({
         }
         return catalog ? resolveCatalogCall(call, catalogEntries([tool])) : undefined;
       },
+      declaredReads: async (_call: ConnectorCall, actions: readonly string[]) =>
+        new Set(actions.filter((action) => declaredReads?.includes(action))),
       execute,
     },
     sandbox: { describe: () => ({ capabilities: { graphical: Boolean(browser) } }) },
@@ -1394,6 +1403,26 @@ describe("connector read-only metadata and approval enforcement", () => {
       expect(f.pauseRunForInput).not.toHaveBeenCalled();
     });
 
+    it("reviews a read only its own server vouches for, and runs one its provider vetted", async () => {
+      reviewMock.mockResolvedValue({ decision: "ask", reason: "Unclear", model: "mock" });
+      const hinted = fixture({ catalog, name: "demo_fetch_item", autoReview: true });
+      await hinted.run();
+      expect(reviewMock).toHaveBeenCalledOnce();
+      expect(hinted.execute).not.toHaveBeenCalled();
+
+      reviewMock.mockClear();
+      const vetted = fixture({
+        catalog,
+        name: "demo_fetch_item",
+        readOnlyVetted: true,
+        autoReview: true,
+      });
+      await vetted.run();
+      expect(reviewMock).not.toHaveBeenCalled();
+      expect(vetted.execute).toHaveBeenCalledOnce();
+      expect(vetted.pauseRunForInput).not.toHaveBeenCalled();
+    });
+
     it("treats a read-named write operation as consequential for automatic review", async () => {
       reviewMock.mockResolvedValue({ decision: "ask", reason: "Writes data", model: "mock" });
       const f = fixture({
@@ -1605,6 +1634,40 @@ describe("Composio batches", () => {
     await f.run();
     expect(f.execute).not.toHaveBeenCalled();
     expect(f.pauseRunForInput).toHaveBeenCalledOnce();
+  });
+
+  it("runs actions their provider declares reads without asking or review", async () => {
+    const f = batchFixture({
+      autoReview: true,
+      declaredReads: ["GMAIL_FETCH_EMAILS", "GMAIL_SEND_EMAIL"],
+    });
+    f.setCalls([{ args: batch("GMAIL_FETCH_EMAILS"), executionId: "call-1" }]);
+    await f.run();
+    expect(reviewMock).not.toHaveBeenCalled();
+    expect(f.execute).toHaveBeenCalledOnce();
+    expect(f.pauseRunForInput).not.toHaveBeenCalled();
+  });
+
+  it("still gates a declared read named as a send, an undeclared action, or a ruled one", async () => {
+    reviewMock.mockResolvedValue({ decision: "ask", reason: "Not asked", model: "mock" });
+    for (const [slugs, rules] of [
+      [["GMAIL_FETCH_EMAILS", "GMAIL_SEND_EMAIL"], []],
+      [["GMAIL_FETCH_ATTACHMENT"], []],
+      [
+        ["GMAIL_FETCH_EMAILS"],
+        [{ effect: "require_approval", matchKind: "tool", matchValue: "GMAIL_FETCH_EMAILS" }],
+      ],
+    ] as Array<[string[], ActionApprovalRule[]]>) {
+      const f = batchFixture({
+        autoReview: true,
+        rules,
+        declaredReads: ["GMAIL_FETCH_EMAILS", "GMAIL_SEND_EMAIL"],
+      });
+      f.setCalls([{ args: batch(...slugs), executionId: "call-1" }]);
+      await f.run();
+      expect(f.execute).not.toHaveBeenCalled();
+      expect(f.pauseRunForInput).toHaveBeenCalledOnce();
+    }
   });
 
   it("runs a batch whose every action is allowed", async () => {

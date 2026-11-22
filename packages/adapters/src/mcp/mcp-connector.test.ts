@@ -97,7 +97,7 @@ function mcpFetch(
       name: string;
       description?: string;
       inputSchema: Record<string, unknown>;
-      annotations?: { readOnlyHint?: boolean };
+      annotations?: { readOnlyHint?: boolean; destructiveHint?: boolean };
     }>;
     calls?: string[];
     /** Answer tool calls with a JSON-RPC error, as a server whose tool failed. */
@@ -4105,6 +4105,11 @@ it("preserves explicit MCP read-only annotations for unattended consumers", asyn
       { name: "read", inputSchema: { type: "object" }, annotations: { readOnlyHint: true } },
       { name: "write", inputSchema: { type: "object" }, annotations: { readOnlyHint: false } },
       { name: "unknown", inputSchema: { type: "object" } },
+      {
+        name: "contradicts",
+        inputSchema: { type: "object" },
+        annotations: { readOnlyHint: true, destructiveHint: true },
+      },
     ],
   };
   vi.stubGlobal("fetch", mcpFetch(state));
@@ -4125,7 +4130,9 @@ it("preserves explicit MCP read-only annotations for unattended consumers", asyn
       botId: "bot-1",
       signal: new AbortController().signal,
     });
-    expect(tools.map((tool) => tool.readOnly)).toEqual([true, false, undefined]);
+    expect(tools.map((tool) => tool.readOnly)).toEqual([true, false, undefined, false]);
+    // The server's own hint is never vetted: only the registry marks a provider's reads.
+    expect(tools.some((tool) => tool.readOnlyVetted)).toBe(false);
   } finally {
     await connector.close();
   }
