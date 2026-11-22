@@ -179,6 +179,35 @@ describe("local history retrieval", () => {
       ),
     );
   });
+  it.each(["Aurora deadline", "Aurora, deadline?"])(
+    "prefers a later excerpt that contains more distinct query words for %s",
+    async (query) => {
+      const { mock, prisma } = db();
+      const evidence = "Final deadline for Aurora is July 18.";
+      const original = `Aurora weekly notes.\n${"Routine status update.\n".repeat(50)}${evidence}`;
+      mock.$queryRaw.mockResolvedValue([row(1, original)]);
+
+      const result = await searchHistory(prisma, scope, { query });
+      const message = result.messages[0]!;
+      expect(message.messageId).toBe("message-1");
+      expect(message.text).toContain(evidence);
+      expect(message.text).toBe(
+        original.slice(message.textOffset, message.textOffset + message.text.length),
+      );
+    },
+  );
+  it("preserves both query words when there is only room for part of the leading context", async () => {
+    const { mock, prisma } = db();
+    const original = `${"x".repeat(72)}😀${" ".repeat(7)}Aurora ${"status ".repeat(111)}deadline`;
+    mock.$queryRaw.mockResolvedValue([row(1, original)]);
+
+    const result = await searchHistory(prisma, scope, { query: "Aurora deadline" });
+    const message = result.messages[0]!;
+    expect(message.text).toContain("Aurora");
+    expect(message.text).toContain("deadline");
+    expect(message.textOffset).toBe(original.indexOf("😀") + "😀".length);
+    expect(message.text).toBe(original.slice(message.textOffset));
+  });
   it("restricts channel inputs and bot output using the run source, including neighbors", async () => {
     const { mock, prisma } = db();
     mock.$queryRaw.mockResolvedValueOnce([row(4)]).mockResolvedValueOnce([row(3), row(4)]);
@@ -256,6 +285,30 @@ describe("local history retrieval", () => {
     const middle = await readHistory(prisma, scope, { messageId: "message-1", textOffset: 2000 });
     expect(middle.messages[0]!.textOffset).toBe(1999);
     expect(middle.messages[0]!.text.startsWith("😀")).toBe(true);
+  });
+  it("uses original offsets for search matches after expanding lowercase characters", async () => {
+    const { mock, prisma } = db();
+    const term = "ledger-indexer";
+    const original = `${"İ".repeat(1000)} ${term} ${"x".repeat(900)}`;
+    mock.$queryRaw.mockResolvedValue([row(1, original)]);
+
+    const result = await searchHistory(prisma, scope, { query: term });
+    const message = result.messages[0]!;
+    expect(message.text).toContain(term);
+    expect(message.textOffset).toBe(original.indexOf(term) - 40);
+    const next = message.textOffset + message.text.length;
+    expect(message.text).toBe(original.slice(message.textOffset, next));
+    expect(message.nextTextOffset).toBe(next);
+
+    const continued = await readHistory(prisma, scope, {
+      messageId: message.messageId,
+      textOffset: message.nextTextOffset!,
+    });
+    expect(continued.messages[0]).toMatchObject({
+      text: original.slice(next),
+      textOffset: next,
+      nextTextOffset: null,
+    });
   });
   it("keeps search excerpt starts and snapshot topics on Unicode boundaries", async () => {
     const { mock, prisma } = db();

@@ -345,12 +345,8 @@ export async function messageBot(
   if ("replayed" in committed) return replayed();
   if (!committed.ok) return committed;
 
-  await deps.events.notify(targetThreadId, committed.targetEventSeq).catch((error) => {
-    getLogger().error("bot message realtime notification", error);
-  });
-  await deps.events.notify(run.threadId, committed.senderEventSeq).catch((error) => {
-    getLogger().error("bot message sender echo notification", error);
-  });
+  await deps.events.notify(targetThreadId, committed.targetEventSeq);
+  await deps.events.notify(run.threadId, committed.senderEventSeq);
   await wakeRun(deps.jobs, committed.runId);
   return {
     ok: true as const,
