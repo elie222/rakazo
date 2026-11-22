@@ -29,6 +29,7 @@ vi.mock("@lingui/react/macro", () => ({
 }));
 vi.mock("@rakazo/ui-web", () => ({
   BotAvatar: () => null,
+  buttonVariants: () => "button",
   cn: (...classes: unknown[]) => classes.filter(Boolean).join(" "),
   defaultBotAvatarValue: () => "",
   Button: ({ children, ...props }: { children: ReactNode }) => (
@@ -92,6 +93,9 @@ vi.mock("./lib/query/rpc", () => {
     selectedSpaceId: () => null,
   };
 });
+vi.mock("./pages/shell/sidebar/shell-sidebar-footer", () => ({
+  ShellSidebarFooter: () => <div>Account</div>,
+}));
 vi.mock("./lib/platform/performance", () => ({ markOnce: () => {}, markAfterPaint: () => {} }));
 vi.mock("./components/billing/SubscriptionGate", () => ({
   SubscriptionGate: ({ children }: { children: ReactNode }) => children,
