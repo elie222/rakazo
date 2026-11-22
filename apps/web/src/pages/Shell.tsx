@@ -258,6 +258,7 @@ function SpaceShell() {
     snapshot,
     callBotId: call?.botId,
     activeBotId,
+    openVoiceSettings: () => openSettings("voice"),
   });
   const read = useChatRead({ rpc, active, groupId, activeGroup, setBots, setGroups });
   // A chat that wakes while it is open is already seen: read it, which ends the snooze.
