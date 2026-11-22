@@ -22,6 +22,25 @@ const MAX_WIDTH = 208;
 const NODE_GAP = 24;
 const LOOP_ROOM = 36;
 const VIEWBOX_PAD = 2;
+const LABEL_TYPOGRAPHY = [
+  "font-family",
+  "font-size",
+  "font-stretch",
+  "font-style",
+  "font-weight",
+  "font-variant",
+  "font-feature-settings",
+  "font-variation-settings",
+  "font-kerning",
+  "font-optical-sizing",
+  "font-size-adjust",
+  "font-synthesis",
+  "letter-spacing",
+  "word-spacing",
+  "text-transform",
+  "text-rendering",
+  "white-space",
+];
 /** Node accents for `series` 0 to 4, in chart colour order. */
 const SERIES_COLORS = ["--rk-c1", "--rk-c2", "--rk-c3", "--rk-c4", "--rk-c5"];
 
@@ -286,34 +305,33 @@ function DiagramSvg({
       );
     };
     measure();
+    const scroller = svg.parentElement;
+    // Every edge label uses the same inherited typography. Read it once per observer batch.
+    const readTypography = () => {
+      const label = labels[0];
+      const style = label && svg.ownerDocument.defaultView?.getComputedStyle(label);
+      return style
+        ? LABEL_TYPOGRAPHY.map((property) => style.getPropertyValue(property)).join("\0")
+        : "";
+    };
     let wasVisible = isVisible();
-    const labelFonts = new Map<Element, string>();
-    const fontFamily = (label: Element) =>
-      svg.ownerDocument.defaultView?.getComputedStyle(label).fontFamily ?? "";
+    let typography = readTypography();
     const onResize = (entries: ResizeObserverEntry[]) => {
-      let changedFont = false;
-      for (const { target } of entries) {
-        const previous = labelFonts.get(target);
-        if (previous === undefined) continue;
-        const next = fontFamily(target);
-        if (previous === next) continue;
-        labelFonts.set(target, next);
-        changedFont = true;
-      }
       const visible = isVisible();
-      // An installed font can change text metrics without loading a font or rendering the graph.
-      // A geometry-only resize (including our own padding) must not trigger another measure.
-      if (visible && (!wasVisible || changedFont)) measure();
+      if (visible && (!wasVisible || entries.some(({ target }) => target !== scroller))) {
+        const next = readTypography();
+        // Even local SVG text bounds can round differently after a viewBox or viewport change.
+        // Only a reveal or typography change may invalidate the measured padding here.
+        if (!wasVisible || next !== typography) measure();
+        typography = next;
+      }
       wasVisible = visible;
     };
     const observer =
       typeof ResizeObserver === "undefined" ? undefined : new ResizeObserver(onResize);
     if (observer) {
-      if (svg.parentElement) observer.observe(svg.parentElement);
-      for (const label of labels) {
-        labelFonts.set(label, fontFamily(label));
-        observer.observe(label);
-      }
+      if (scroller) observer.observe(scroller);
+      for (const label of labels) observer.observe(label);
     }
     const fonts = svg.ownerDocument.fonts;
     fonts?.addEventListener("loadingdone", measure);

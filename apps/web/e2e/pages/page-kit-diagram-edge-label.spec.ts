@@ -239,3 +239,63 @@ test("a visible Page diagram remeasures after an installed font changes", async 
   await expect(diagram).toHaveAttribute("data-renders", initialRenders);
   await expect(page.locator("html")).toHaveAttribute("data-font-loads", "0");
 });
+
+for (const [property, changedStyle] of [
+  ["letter spacing", { letterSpacing: "2.5px" }],
+  ["font weight", { fontWeight: 700 }],
+] as const) {
+  test(`a visible Page diagram remeasures after changing inherited ${property}`, async ({
+    page,
+    request,
+  }) => {
+    await mountPage(
+      page,
+      request,
+      `
+        const h = React.createElement;
+        let renders = 0;
+        function Workflow() {
+          return h("div", { id: "workflow", "data-renders": ++renders },
+            h(Diagram, {
+              nodes: [{ id: "sent", label: "Sent" }, { id: "done", label: "Done" }],
+              edges: [{ from: "sent", to: "done", label: ${JSON.stringify(longLabel)} }],
+            }));
+        }
+        exports.default = function Fixture() {
+          const [changed, setChanged] = React.useState(false);
+          const diagram = React.useMemo(() => h(Workflow), []);
+          return h("main", null,
+            h("button", { onClick: () => setChanged(!changed) }, "Toggle typography"),
+            h("div", { style: {
+              width: 320,
+              fontFamily: "Times New Roman, serif",
+              letterSpacing: "normal",
+              fontWeight: 400,
+              ...(changed ? ${JSON.stringify(changedStyle)} : {}),
+            } }, diagram));
+        };
+      `,
+    );
+    const diagram = page.locator("#workflow");
+    const svg = diagram.locator("svg");
+    const label = svg.locator(".rk-diagram-edge-label");
+    await expect(svg).toBeVisible();
+    await expectOutlineInside(svg);
+    const initialViewBox = (await svg.getAttribute("viewBox"))!;
+    const initialRenders = (await diagram.getAttribute("data-renders"))!;
+    const width = () => label.evaluate((text: SVGTextElement) => text.getBBox().width);
+    const initialWidth = await width();
+    const initialFamily = await label.evaluate((text) => getComputedStyle(text).fontFamily);
+    const toggle = page.getByRole("button", { name: "Toggle typography" });
+
+    await toggle.click();
+    await expect.poll(width).toBeGreaterThan(initialWidth + 1);
+    await expectOutlineInside(svg);
+    await expect(svg).not.toHaveAttribute("viewBox", initialViewBox);
+    await expect(label).toHaveCSS("font-family", initialFamily);
+
+    await toggle.click();
+    await expect(svg).toHaveAttribute("viewBox", initialViewBox);
+    await expect(diagram).toHaveAttribute("data-renders", initialRenders);
+  });
+}
