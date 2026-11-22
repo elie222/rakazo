@@ -201,7 +201,7 @@ describe("the model an admin sets for everyone", () => {
     ).rejects.toThrow("This server's model is set by its operator");
   });
 
-  it("shows a saved model credits or the allowlist set aside as the environment's", async () => {
+  it("shows an inactive saved model as the environment's and keeps its key removable", async () => {
     const row = {
       deploymentModelProvider: "anthropic",
       deploymentModelId: "claude-sonnet-5",
@@ -214,6 +214,12 @@ describe("the model an admin sets for everyone", () => {
     expect(
       await getDeploymentModelSettings(setup({ row, credits: true }).deps, admin),
     ).toMatchObject({ provider: null, modelId: null, keySaved: true });
+    const retired = { ...row, deploymentModelId: "example-retired-model" };
+    expect(await getDeploymentModelSettings(setup({ row: retired }).deps, admin)).toMatchObject({
+      provider: null,
+      modelId: null,
+      keySaved: true,
+    });
     vi.stubEnv("RAKAZO_MODEL_PROVIDER_ALLOWLIST", "openrouter");
     expect(await getDeploymentModelSettings(setup({ row }).deps, admin)).toMatchObject({
       provider: null,

@@ -475,6 +475,15 @@ describe("an admin's default for everyone", () => {
     ).toEqual({ provider: "openrouter", modelId: "anthropic/claude-haiku-5.5" });
   });
 
+  it("falls back to the environment if an update removes the saved model", () => {
+    expect(
+      deploymentModelRole("main", {
+        settings: { ...saved, deploymentModelId: "example-retired-model" },
+        deployment,
+      }).primary,
+    ).toEqual({ provider: "openrouter", modelId: "anthropic/claude-haiku-5.5" });
+  });
+
   it("leaves the environment's model in charge once the allowlist refuses its provider", () => {
     vi.stubEnv("RAKAZO_MODEL_PROVIDER_ALLOWLIST", "openrouter");
     expect(deploymentModelRole("main", { settings: saved, deployment }).primary).toEqual({

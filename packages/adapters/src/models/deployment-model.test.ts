@@ -178,6 +178,7 @@ describe("an admin's default for everyone", () => {
     deploymentModelCredentialCipher: "sealed-admin-key",
     modelCreditsEnabled: false,
   };
+  beforeEach(() => vi.stubEnv("RAKAZO_LOCAL_MODELS", "example-local-model"));
   afterEach(() => vi.unstubAllEnvs());
 
   it("applies only with its key, without credits and while the allowlist offers it", () => {
@@ -207,7 +208,6 @@ describe("an admin's default for everyone", () => {
   });
 
   it("offers only providers that connect with a key alone", () => {
-    vi.stubEnv("RAKAZO_LOCAL_MODELS", "example-local-model");
     expect(listPiCatalog()).toContainEqual(
       expect.objectContaining({ provider: "local", id: "example-local-model" }),
     );

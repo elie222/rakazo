@@ -3,9 +3,9 @@ import type { ModelUsageLookup, SecretStore } from "@rakazo/adapter-kit";
 import { canonicalPiProviderId } from "@rakazo/contracts";
 import { modelCreditOfferings } from "../model-credits/offerings.js";
 import { LOCAL_PROVIDER_ID, localModelIds } from "../runtime/pi/models/pi-local-provider-id.js";
+import type { PiCatalogEntry } from "../runtime/pi/models/pi-models.js";
 import { hiddenCatalogModel, listPiCatalog } from "../runtime/pi/models/pi-models.js";
 
-import { modelProviderAllowed, modelProviderAllowlist } from "./model-provider-allowlist.js";
 import { modelProviderDefinition, modelProviders } from "./model-provider-registry.js";
 import { parseModelSecret } from "./model-secret.js";
 
@@ -100,7 +100,13 @@ export function adminDeploymentModel(
   const cipher = settings?.deploymentModelCredentialCipher;
   if (!provider || !modelId || !cipher) return null;
   if (settings.modelCreditsEnabled || modelCreditOfferings(env)) return null;
-  if (!modelProviderAllowed(modelProviderAllowlist(), provider)) return null;
+  if (
+    !listPiCatalog().some(
+      (entry) =>
+        entry.provider === provider && entry.id === modelId && eligibleDeploymentModel(entry),
+    )
+  )
+    return null;
   return { provider, modelId, cipher };
 }
 
@@ -140,15 +146,7 @@ export function deploymentModelProviders(): {
     { id: string; name: string; models: { id: string; label: string }[] }
   >();
   for (const entry of listPiCatalog()) {
-    if (
-      entry.placeholder ||
-      entry.endpointPresets ||
-      entry.routingFields?.length ||
-      (entry.auth !== "api-key" && entry.auth !== "both") ||
-      modelProviderDefinition(entry.provider)?.requiresHostConfiguration ||
-      hiddenCatalogModel(entry)
-    )
-      continue;
+    if (!eligibleDeploymentModel(entry)) continue;
     const provider = providers.get(entry.provider) ?? {
       id: entry.provider,
       name: entry.providerName ?? entry.provider,
@@ -158,4 +156,15 @@ export function deploymentModelProviders(): {
     providers.set(entry.provider, provider);
   }
   return [...providers.values()];
+}
+
+function eligibleDeploymentModel(entry: PiCatalogEntry): boolean {
+  return (
+    !entry.placeholder &&
+    !entry.endpointPresets &&
+    !entry.routingFields?.length &&
+    (entry.auth === "api-key" || entry.auth === "both") &&
+    !modelProviderDefinition(entry.provider)?.requiresHostConfiguration &&
+    !hiddenCatalogModel(entry)
+  );
 }

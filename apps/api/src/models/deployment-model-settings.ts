@@ -8,8 +8,6 @@ import {
   finishSecretCleanup,
   loadAdminDeploymentModelKey,
   modelCreditOfferings,
-  modelProviderAllowed,
-  modelProviderAllowlist,
   recordSecretCleanup,
   savedSecretIn,
   verifyCatalogProviderApiKey,
@@ -51,16 +49,11 @@ function view(
 ): DeploymentModelSettings {
   const canSet = available(deps, saved);
   const active = canSet ? adminDeploymentModel(saved) : null;
-  const allowlist = modelProviderAllowlist();
   return {
     provider: active?.provider ?? null,
     modelId: active?.modelId ?? null,
     keySaved: Boolean(saved?.deploymentModelCredentialCipher),
-    providers: canSet
-      ? deploymentModelProviders().filter((provider) =>
-          modelProviderAllowed(allowlist, provider.id),
-        )
-      : [],
+    providers: canSet ? deploymentModelProviders() : [],
   };
 }
 
