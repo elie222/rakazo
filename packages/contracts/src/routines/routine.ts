@@ -149,5 +149,6 @@ export function botInboundPath(botId: string, kind: "webhook" | "github"): strin
 
 /** The full address a sender posts to: `origin` is the published inbound origin, else the app's own. */
 export function botInboundUrl(origin: string, botId: string, kind: "webhook" | "github"): string {
-  return `${origin.replace(/\/+$/, "")}${botInboundPath(botId, kind)}`;
+  const base = origin.endsWith("/") ? origin.slice(0, -1) : origin;
+  return `${base}${botInboundPath(botId, kind)}`;
 }
