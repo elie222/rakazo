@@ -217,7 +217,7 @@ function PrimaryRail({
         )}
       </div>
 
-      <div className="mb-7 flex flex-col gap-2 px-3">
+      <div className="mt-7 flex flex-col gap-2 px-3">
         {listCollapsed ? (
           <RailItem
             active={false}
