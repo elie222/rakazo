@@ -36,23 +36,24 @@ export function aspectRatio(value: unknown): number | undefined {
 const px = (value: unknown) =>
   typeof value === "number" && value > 0 && Number.isFinite(value) ? value : undefined;
 
-/** A soft fill shows until the picture has drawn, then it fades in; it never waits forever. */
-function Picture({
-  src,
-  alt,
-  fit,
-  style,
-}: {
+type PictureProps = {
   src: string;
   alt: string;
   fit?: "contain" | "cover";
   style?: CSSProperties;
-}) {
+};
+
+/** A soft fill shows until the current picture has drawn, then it fades in. */
+function Picture(props: PictureProps) {
+  return <PictureSource key={props.src} {...props} />;
+}
+
+function PictureSource({ src, alt, fit, style }: PictureProps) {
   const [loaded, setLoaded] = useState(false);
   useEffect(() => {
     const timer = setTimeout(() => setLoaded(true), 8000);
     return () => clearTimeout(timer);
-  }, [src]);
+  }, []);
   return (
     <div className="rk-picture" data-loading={!loaded || undefined} style={style}>
       <img

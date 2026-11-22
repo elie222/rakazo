@@ -105,6 +105,20 @@ describe("media", () => {
     act(() => root.unmount());
   });
 
+  it("restores the placeholder when replacing an already drawn picture", () => {
+    const root = createRoot(host.appendChild(document.createElement("div")));
+    const loading = () => q(".rk-picture")!.hasAttribute("data-loading");
+    act(() => root.render(<Image src={PNG} alt="Harbour" />));
+    act(() => q("img")!.dispatchEvent(new Event("load")));
+    act(() => root.render(<Image src={PNG} alt="Updated" />));
+    expect(loading()).toBe(false);
+    act(() => root.render(<Image src="data:image/png;base64,QQ==" alt="Updated" />));
+    expect(loading()).toBe(true);
+    act(() => q("img")!.dispatchEvent(new Event("load")));
+    expect(loading()).toBe(false);
+    act(() => root.unmount());
+  });
+
   it("enlarges a picture on click and closes it with Escape, returning focus", () => {
     render(<Image src={PNG} alt="Harbour" />);
     const opener = q<HTMLButtonElement>('button[aria-label="Enlarge Harbour"]')!;
