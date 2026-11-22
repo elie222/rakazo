@@ -1004,6 +1004,7 @@ export async function createChildRoutine(
       prompt,
       timezone: replayTimezone,
       crons: { equals: cron ? [cron] : [] },
+      silent,
       active: true,
       ...(runAt ? { nextRunAt: new Date(runAt) } : {}),
       // The identical routine has the approved events too, so a retry returns it instead of a

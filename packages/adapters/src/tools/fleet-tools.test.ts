@@ -1639,6 +1639,10 @@ describe("a silent child routine", () => {
     expect(prepared.canonical).toMatchObject({ silent: true });
     expect(prepared.summary.lines).toContain("Silent: its runs post nothing in the chat");
     await createChildRoutine(writeDeps(prisma), run, prepared.canonical);
+    // An identical routine that posts in the chat is not reused for it.
+    expect(prisma.routine.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({ where: expect.objectContaining({ silent: true }) }),
+    );
     expect(prisma.routine.create).toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ silent: true }) }),
     );
