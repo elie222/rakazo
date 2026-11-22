@@ -33,6 +33,16 @@ const MAX_CLIP_MS = 30_000;
 /** A dictated message stays well inside the server's transcription size limit. */
 const MAX_DICTATION_MS = 5 * 60_000;
 
+/**
+ * Asks only when the microphone is not allowed yet: Android opens its prompt even for a granted
+ * permission, and the app leaving for it ends a dictation already listening.
+ */
+export async function microphonePermission(): Promise<{ granted: boolean }> {
+  const { AudioModule } = await import("expo-audio");
+  const current = await AudioModule.getRecordingPermissionsAsync();
+  return current.granted ? current : AudioModule.requestRecordingPermissionsAsync();
+}
+
 // A dictation that finishes late must not switch recording off under the next one's recorder.
 let recordingTurn: AbortSignal | undefined;
 
@@ -48,7 +58,7 @@ export async function recordClip(
 ): Promise<VoiceClip | null> {
   const { AudioModule, RecordingPresets } = await import("expo-audio");
   if (signal.aborted) return null;
-  const permission = await AudioModule.requestRecordingPermissionsAsync();
+  const permission = await microphonePermission();
   // The call can end while the microphone prompt is open.
   if (signal.aborted) return null;
   if (!permission.granted)
