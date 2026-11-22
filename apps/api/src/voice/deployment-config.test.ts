@@ -2,9 +2,9 @@ import * as adapters from "@rakazo/adapters";
 import type { Actor } from "@rakazo/contracts";
 import { AI_DISCLOSURE_VERSION } from "@rakazo/contracts";
 import type * as Database from "@rakazo/db";
-import { admitSpeech, settleSpeech } from "@rakazo/db";
+import { admitSpeech, remainingSpeechAllowance, settleSpeech } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { VoiceDeps } from "../calls/voice.js";
 import {
   effectiveVoiceStatus,
@@ -20,6 +20,7 @@ vi.mock("@rakazo/db", async (original) => ({
   ...(await original<typeof Database>()),
   admitSpeech: vi.fn(async () => "speech-call"),
   settleSpeech: vi.fn(async () => {}),
+  remainingSpeechAllowance: vi.fn(async () => 1000000n),
 }));
 
 const price = {
@@ -47,13 +48,12 @@ function deps(override = false, cred: unknown = null) {
       spaceVoicePreference: { findFirst: vi.fn().mockResolvedValue(null) },
       userVoiceCredential: { findFirst: vi.fn().mockResolvedValue(null) },
       secret: { findFirst: vi.fn().mockResolvedValue(null) },
-      speechAllowance: {
-        findFirst: vi.fn().mockResolvedValue({ limitMicros: 1000000n, usedMicros: 0n }),
-      },
     },
     secrets: { load: vi.fn() },
   } as unknown as VoiceDeps;
 }
+beforeEach(() => vi.mocked(remainingSpeechAllowance).mockResolvedValue(1000000n));
+
 describe("deployment speech default", () => {
   it("is optional and rejects unsafe pricing without disclosing input", () => {
     expect(deploymentVoiceFromEnv(undefined)).toBeUndefined();
@@ -256,10 +256,10 @@ describe("deployment speech default", () => {
       ),
     ).toThrow("Invalid DEPLOYMENT_VOICE");
   });
-  it("does not advertise or choose included speech without an available grant", async () => {
-    for (const allowance of [null, { limitMicros: 10n, usedMicros: 10n }]) {
+  it("does not advertise or choose included speech once the plan's allowance is spent", async () => {
+    for (const remaining of [0n, -5n]) {
       const d = deps();
-      vi.mocked(d.prisma.speechAllowance.findFirst).mockResolvedValue(allowance as never);
+      vi.mocked(remainingSpeechAllowance).mockResolvedValue(remaining);
       expect(await effectiveVoiceStatus(d, actor)).toMatchObject({
         ready: false,
         configured: false,
@@ -272,10 +272,7 @@ describe("deployment speech default", () => {
     async (operation) => {
       const d = deps();
       d.env!.deploymentVoice!.pricing[operation].maxRequestMicros = 10;
-      vi.mocked(d.prisma.speechAllowance.findFirst).mockResolvedValue({
-        limitMicros: 100n,
-        usedMicros: 50n,
-      } as never);
+      vi.mocked(remainingSpeechAllowance).mockResolvedValue(50n);
       const status = await effectiveVoiceStatus(d, actor);
       expect(status.ready).toBe(operation === "synthesize");
       expect(status.transcribe).toBe(operation === "transcribe");

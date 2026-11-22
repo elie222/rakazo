@@ -3,6 +3,7 @@ import { useLingui } from "@lingui/react/macro";
 import type { ThinkingLevel } from "@rakazo/contracts";
 import { botModelPick, botModelState, modelOptionKey } from "@rakazo/core";
 import { localizeModelEntry } from "@rakazo/i18n/model-provider";
+import { thinkingLevelLabel } from "@rakazo/i18n/thinking-level";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { Alert, View } from "react-native";
 import { ModelPickerList } from "../components/models/model-picker-list";
@@ -10,7 +11,6 @@ import { SettingsGroup, SettingsRow } from "../components/settings/settings-grou
 import { MenuPicker } from "../components/ui/menu-picker";
 import { errorText } from "../lib/api/user-error";
 import { chatModelPickerChoices } from "../lib/models/chat-model";
-import { thinkingLevelLabel } from "../lib/models/thinking-level";
 import { rpcQuery, useSave } from "../lib/query/query";
 import { useScreenQuery } from "../lib/query/screen-query";
 

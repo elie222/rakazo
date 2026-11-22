@@ -38,11 +38,14 @@ const mocks = vi.hoisted(() => ({
   savedGatewayId: "gateway-fixture",
   vendorLabels: false,
   subscriptionSignIn: false,
+  signInSetup: false,
   reconnectRequired: false,
   secondConnection: false,
   alert: vi.fn(),
   prompt: vi.fn(),
   completeOAuth: vi.fn(),
+  copyCode: vi.fn(async (_code: string) => true),
+  openURL: vi.fn(async (_url: string) => undefined),
   submitOAuthCode: vi.fn(),
   pasteBackSignIn: false,
   rpc: vi.fn(),
@@ -100,7 +103,7 @@ vi.mock("react-native-safe-area-context", () => ({
   SafeAreaView: ({ children }: { children: ReactNode }) => createElement("div", {}, children),
 }));
 vi.mock("../layout/floating-header", () => ({ useFloatingHeaderInset: () => mocks.headerInset }));
-vi.mock("expo-clipboard", () => ({ setStringAsync: vi.fn(async () => true) }));
+vi.mock("expo-clipboard", () => ({ setStringAsync: mocks.copyCode }));
 vi.mock("../appearance/appearance", () => ({ mobileTokens: () => ({}) }));
 vi.mock("../messages/message-action-sheet", () => ({ presentMessageActionSheet: vi.fn() }));
 vi.mock("../notifications/live-notifications", () => ({
@@ -233,6 +236,15 @@ vi.mock("../api/api", () => ({
                 ...entry,
                 auth: "both",
                 signIn: "device-code",
+                ...(mocks.signInSetup
+                  ? {
+                      signInSetup: {
+                        label: "Turn on device code sign-in in security settings",
+                        url: "https://example.com/security",
+                        note: "Workspace accounts need an admin to turn this on.",
+                      },
+                    }
+                  : {}),
               }))
             : [
                 ...catalog.map((entry) => ({
@@ -345,7 +357,7 @@ vi.mock("react-native", () => {
     },
     Keyboard: { dismiss: mocks.dismissKeyboard },
     Alert: { alert: mocks.alert, prompt: mocks.prompt },
-    Linking: { openURL: vi.fn() },
+    Linking: { openURL: mocks.openURL },
     StyleSheet: { create: (styles: unknown) => styles, hairlineWidth: 1 },
     ScrollView: view,
     View: view,
@@ -635,6 +647,7 @@ beforeEach(() => {
   mocks.savedGatewayId = "gateway-fixture";
   mocks.vendorLabels = false;
   mocks.subscriptionSignIn = false;
+  mocks.signInSetup = false;
   mocks.pasteBackSignIn = false;
   mocks.reconnectRequired = false;
   mocks.secondConnection = false;
@@ -1016,6 +1029,49 @@ describe("provider connection screen", () => {
     await act(async () => completeSignIn.resolve({ status: "ready" }));
     expect(mocks.rpc).not.toHaveBeenCalledWith("models/finishOAuth", expect.anything());
   });
+
+  it("opens prerequisites before issuing a code and lets the browser handoff be retried", async () => {
+    mocks.connected = false;
+    mocks.platform = "android";
+    mocks.subscriptionSignIn = true;
+    mocks.signInSetup = true;
+    const completeSignIn = deferred<{ status: "ready" }>();
+    const copied = deferred<boolean>();
+    mocks.completeOAuth.mockReturnValueOnce(completeSignIn.promise);
+    mocks.copyCode.mockReturnValueOnce(copied.promise);
+    await renderConnection();
+    expect(container.textContent).toContain("Workspace accounts need an admin to turn this on.");
+    const setupLink = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="1. Turn on device code sign-in in security settings"]',
+    );
+    await act(async () => setupLink!.click());
+    expect(mocks.openURL).toHaveBeenCalledWith("https://example.com/security");
+    expect(mocks.rpc).not.toHaveBeenCalledWith("models/beginOAuth", expect.anything());
+    mocks.openURL.mockClear();
+    mocks.openURL.mockRejectedValueOnce(new Error("Browser unavailable"));
+    await act(async () => buttonWithText("2. Get a sign-in code")!.click());
+    expect(container.textContent).toContain("paste this code when asked. Then return to Rakazo.");
+
+    await act(async () => buttonWithText("Copy code and open")!.click());
+    expect(mocks.copyCode).toHaveBeenCalledOnce();
+    expect(mocks.openURL).not.toHaveBeenCalled();
+    await act(async () => copied.resolve(true));
+    expect(container.textContent).toContain("Could not open the sign-in page. Try again.");
+    expect(mocks.rpc).not.toHaveBeenCalledWith("models/cancelOAuth", expect.anything());
+    expect(mocks.rpc).not.toHaveBeenCalledWith("analytics/modelSignInStep", {
+      loginId: "login-fixture",
+      step: "page_opened",
+    });
+
+    await act(async () => buttonWithText("Copy code and open")!.click());
+    expect(mocks.openURL).toHaveBeenCalledTimes(2);
+    expect(container.textContent).not.toContain("Could not open the sign-in page. Try again.");
+    expect(mocks.rpc).toHaveBeenCalledWith("analytics/modelSignInStep", {
+      loginId: "login-fixture",
+      step: "page_opened",
+    });
+  });
+
   it("lets a new sign-in submit its code while the one it replaced is still submitting", async () => {
     mocks.connected = false;
     mocks.subscriptionSignIn = true;
@@ -1305,6 +1361,7 @@ describe("model role lists", () => {
       (next as { params: { requestId: string } }).params.requestId,
     )!;
     expect(picker.title).toBe("Add fallback");
+    expect(picker.connectionNotice).toBe("Provider connected. Choose a model.");
     expect(picker.connectChoices).toBeUndefined();
     expect(picker.choices.map((choice) => choice.modelLabel)).toEqual(
       catalog.slice(1).map((entry) => entry.label),

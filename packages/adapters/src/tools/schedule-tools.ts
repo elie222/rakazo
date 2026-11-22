@@ -199,6 +199,9 @@ export function resolveScheduleTiming(
       if (!parsed) return { ok: false, error: "runAt must be a valid ISO datetime." };
       nextRunAt = parsed;
     }
+    if (Number.isNaN(nextRunAt.getTime())) {
+      return { ok: false, error: "The delay is too far in the future." };
+    }
     if (nextRunAt.getTime() <= Date.now()) {
       return { ok: false, error: `One-shot schedules must run in the future. ${nowIn(timezone)}` };
     }

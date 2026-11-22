@@ -15,6 +15,7 @@ import {
   AGENT_IMPORT_PROVIDER_KEYS,
   grokRoutineTrigger,
   grokSkillNames,
+  isRecord,
   looksLikeCredential,
   mcpServerImportable,
   nextCronDateAcrossStrict,
@@ -82,8 +83,6 @@ export type AgentImportSettings = {
 
 export { normalizeImportProvider, parseDotEnv };
 
-const isObject = (value: unknown): value is Json =>
-  typeof value === "object" && value !== null && !Array.isArray(value);
 const text = (value: unknown) => (typeof value === "string" ? value.trim() : "");
 const oneLine = (value: string) => value.replace(/\s+/g, " ").trim();
 
@@ -115,7 +114,7 @@ export function readAgentImportSettings(
   const mcpServers: ImportedMcpServer[] = [];
   const servers =
     folder.source === "hermes" ? config.mcp_servers : (config.mcp as Json | undefined)?.servers;
-  for (const [name, entry] of Object.entries(isObject(servers) ? servers : {})) {
+  for (const [name, entry] of Object.entries(isRecord(servers) ? servers : {})) {
     const server = mcpServer(name, entry, options.stdioAllowed ?? (() => true));
     if (server) mcpServers.push({ ...server, id: `mcp:${name}` });
     else skipped.push({ path: `${configPath}: ${name}`, reason: "unsupported" });
@@ -129,7 +128,7 @@ export function readAgentImportSettings(
   }
   const agentId = openClawAgentId(folder.root);
   for (const [index, job] of (Array.isArray(jobs) ? jobs : []).entries()) {
-    if (!isObject(job)) continue;
+    if (!isRecord(job)) continue;
     // A job bound to another OpenClaw agent belongs to that agent's import.
     if (text(job.agentId) && text(job.agentId) !== agentId) continue;
     const result = folder.source === "hermes" ? hermesJob(job) : openClawJob(job);
@@ -164,11 +163,11 @@ export function readAgentImportSettings(
     }
     if (folder.source === "hermes") {
       const auth = readAgentImportConfig("auth.json", folder.files.get("auth.json") ?? "") ?? {};
-      const pool = isObject(auth.credential_pool) ? auth.credential_pool : {};
+      const pool = isRecord(auth.credential_pool) ? auth.credential_pool : {};
       for (const [provider, entries] of Object.entries(pool)) {
         for (const entry of Array.isArray(entries) ? entries : []) {
           // OAuth grants are never imported; only keys the user entered by hand.
-          if (isObject(entry) && entry.auth_type === "api_key" && entry.source === "manual") {
+          if (isRecord(entry) && entry.auth_type === "api_key" && entry.source === "manual") {
             offer(provider, entry.access_token, "auth.json");
           }
         }
@@ -326,7 +325,7 @@ export function readGrokBotImportSettings(
  * the uploaded `.env` only. File, exec and store references cannot be read here.
  */
 function resolveSecret(value: unknown, env: Record<string, string>): string | null {
-  if (isObject(value)) {
+  if (isRecord(value)) {
     return value.source === "env" && typeof value.id === "string" ? (env[value.id] ?? null) : null;
   }
   if (typeof value !== "string" || !value.trim()) return null;
@@ -348,28 +347,28 @@ function providerConfigs(source: "openclaw" | "hermes", config: Json): [string, 
       ? [[text(provider), { key, baseUrl }]]
       : [];
   if (source === "openclaw") {
-    const models = isObject(config.models) ? config.models : {};
-    const providers = isObject(models.providers) ? models.providers : {};
+    const models = isRecord(config.models) ? config.models : {};
+    const providers = isRecord(models.providers) ? models.providers : {};
     return Object.entries(providers).flatMap(([id, value]) =>
-      isObject(value) ? entry(id, value.apiKey, value.baseUrl) : [],
+      isRecord(value) ? entry(id, value.apiKey, value.baseUrl) : [],
     );
   }
-  const model = isObject(config.model) ? config.model : {};
+  const model = isRecord(config.model) ? config.model : {};
   return [
     ...entry(model.provider, model.api_key, model.base_url),
-    ...Object.entries(isObject(config.providers) ? config.providers : {}).flatMap(
-      ([name, value]) => (isObject(value) ? entry(name, value.api_key, value.base_url) : []),
+    ...Object.entries(isRecord(config.providers) ? config.providers : {}).flatMap(
+      ([name, value]) => (isRecord(value) ? entry(name, value.api_key, value.base_url) : []),
     ),
     ...(Array.isArray(config.custom_providers) ? config.custom_providers : []).flatMap((value) =>
-      isObject(value) ? entry(value.name, value.api_key, value.base_url) : [],
+      isRecord(value) ? entry(value.name, value.api_key, value.base_url) : [],
     ),
   ];
 }
 
 /** OpenClaw `env.vars` and plain string entries directly under `env`. */
 function openClawEnv(config: Json): Record<string, unknown> {
-  const env = isObject(config.env) ? config.env : {};
-  const vars = isObject(env.vars) ? env.vars : {};
+  const env = isRecord(config.env) ? config.env : {};
+  const vars = isRecord(env.vars) ? env.vars : {};
   const direct = Object.entries(env).filter(([, value]) => typeof value === "string");
   return { ...Object.fromEntries(direct), ...vars };
 }
@@ -384,30 +383,30 @@ function catalogModel(title: string, provider: string, modelId: string): Importe
 
 /** The chosen agent's model: its own entry overrides `agents.defaults.model`. */
 function openClawModel(config: Json, root: string): ImportedModel | null {
-  const agents = isObject(config.agents) ? config.agents : {};
+  const agents = isRecord(config.agents) ? config.agents : {};
   const agentId = openClawAgentId(root);
   const entries = [
-    ...Object.entries(isObject(agents.entries) ? agents.entries : {}).map(([id, entry]) => ({
+    ...Object.entries(isRecord(agents.entries) ? agents.entries : {}).map(([id, entry]) => ({
       id,
-      ...(isObject(entry) ? entry : {}),
+      ...(isRecord(entry) ? entry : {}),
     })),
-    ...(Array.isArray(agents.list) ? agents.list.filter(isObject) : []),
+    ...(Array.isArray(agents.list) ? agents.list.filter(isRecord) : []),
   ] as Json[];
   const own = entries.find(
     (entry) =>
       entry.id === agentId ||
       (typeof entry.workspace === "string" && folderName(entry.workspace) === root),
   );
-  const defaults = isObject(agents.defaults) ? agents.defaults : {};
+  const defaults = isRecord(agents.defaults) ? agents.defaults : {};
   const value = own?.model ?? defaults.model;
-  const name = isObject(value) ? text(value.primary) : text(value);
+  const name = isRecord(value) ? text(value.primary) : text(value);
   const slash = name.indexOf("/");
   if (slash <= 0 || slash === name.length - 1) return null;
   return catalogModel(name, name.slice(0, slash), name.slice(slash + 1));
 }
 
 function hermesModel(config: Json): ImportedModel | null {
-  const model = isObject(config.model) ? config.model : {};
+  const model = isRecord(config.model) ? config.model : {};
   const modelId = text(model.default) || text(model.model);
   const provider = text(model.provider);
   if (!modelId || !provider) return null;
@@ -432,15 +431,15 @@ function mcpServer(
   entry: unknown,
   stdioAllowed: (command: string) => boolean,
 ): Omit<ImportedMcpServer, "id"> | null {
-  if (!isObject(entry)) return null;
+  if (!isRecord(entry)) return null;
   if (entry.skipped !== undefined || !mcpServerImportable(entry)) return null;
   // OAuth, client certificates and `$include` have no import equivalent.
   for (const key of ["auth", "oauth", "tls", "cert", "clientCert", "$include"]) {
     if (entry[key] !== undefined && entry[key] !== false) return null;
   }
-  const filter = isObject(entry.toolFilter)
+  const filter = isRecord(entry.toolFilter)
     ? entry.toolFilter
-    : isObject(entry.tools)
+    : isRecord(entry.tools)
       ? entry.tools
       : {};
   // Rakazo only lists allowed tools; dropping an exclusion would grant more than the source.
@@ -449,7 +448,7 @@ function mcpServer(
   // An approved server gets all its tools in Rakazo, so a source tool limit would widen.
   if (Array.isArray(filter.include) && filter.include.length > 0) warnings.push("dropped_settings");
   // MCP credentials are never imported: headers and env stay blank; only their names show.
-  const names = (record: unknown) => (isObject(record) ? Object.keys(record) : []);
+  const names = (record: unknown) => (isRecord(record) ? Object.keys(record) : []);
   const base = {
     slug: mcpSlug(name),
     name: name.slice(0, 120),
@@ -499,7 +498,7 @@ function mcpStatus(entry: Json, warnings: AgentImportWarning[]): AgentImportStat
   if (warnings.includes("unsupported_command")) {
     return { kind: "unsupported", reason: "unsupported_command" };
   }
-  const names = (record: unknown) => (isObject(record) ? Object.keys(record) : []);
+  const names = (record: unknown) => (isRecord(record) ? Object.keys(record) : []);
   const needs: AgentImportNeed[] = [];
   if (text(entry.url)) {
     const headers = names(entry.headers);
@@ -530,7 +529,7 @@ export function mcpSlug(name: string): string {
 type JobResult = Omit<ImportedRoutine, "id"> | { reason: Skipped["reason"] };
 
 function openClawJob(job: Json): JobResult {
-  const payload = isObject(job.payload) ? job.payload : {};
+  const payload = isRecord(job.payload) ? job.payload : {};
   const message = text(payload.message);
   // OpenClaw keeps its own heartbeat and memory jobs in the same list.
   if (job.declarationKey || payload.kind !== "agentTurn" || message.startsWith("__openclaw")) {
@@ -540,7 +539,7 @@ function openClawJob(job: Json): JobResult {
   const tools = Array.isArray(payload.toolsAllow) ? payload.toolsAllow : [];
   const limited = tools.length > 0 && !tools.includes("*");
   const dropped = limited || Boolean(text(payload.model));
-  const schedule = isObject(job.schedule) ? job.schedule : {};
+  const schedule = isRecord(job.schedule) ? job.schedule : {};
   const cron =
     schedule.kind === "cron"
       ? text(schedule.expr)
@@ -552,7 +551,7 @@ function openClawJob(job: Json): JobResult {
 
 function hermesJob(job: Json): JobResult {
   if (text(job.script) || job.no_agent === true) return { reason: "unsupported" };
-  const schedule = isObject(job.schedule) ? job.schedule : {};
+  const schedule = isRecord(job.schedule) ? job.schedule : {};
   const cron =
     schedule.kind === "cron"
       ? text(schedule.expr)
