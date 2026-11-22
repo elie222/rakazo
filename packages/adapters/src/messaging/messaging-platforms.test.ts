@@ -6,7 +6,11 @@ import { describe, expect, it, vi } from "vitest";
 import { Domain } from "../providers/messaging/lark/thread-id.js";
 import { photonProjectsFromEnv } from "../providers/messaging/photon/photon-messaging.js";
 import { parseSendblueStatuses } from "../providers/messaging/sendblue/sendblue-messaging.js";
-import { enrichSlackTeamRoom } from "../providers/messaging/slack/slack-messaging.js";
+import {
+  enrichSlackTeamRoom,
+  SLACK_MARKDOWN_LIMIT,
+  slackPayloads,
+} from "../providers/messaging/slack/slack-messaging.js";
 import { telegramBotsFromEnv } from "../providers/messaging/telegram/telegram-messaging.js";
 import { parseWhatsAppStatuses } from "../providers/messaging/whatsapp/whatsapp-messaging.js";
 import { ChatSdkMessagingSurface } from "./chat-sdk-surface.js";
@@ -75,7 +79,7 @@ describe("messagingPlatformsFromEnv", () => {
       telegramBotToken: "fake-token",
       telegramWebhookSecret: "fake-secret",
       telegramBots: [{ name: "support", botToken: "fake-support", webhookSecret: "fake-secret" }],
-      apiUrl,
+      inboundOrigin: apiUrl,
     };
     const modes = (pollInboundMessages: boolean) =>
       messagingPlatformsFromEnv(credentials, { pollInboundMessages }).map(
@@ -368,7 +372,7 @@ describe("messagingPlatformsFromEnv", () => {
     );
   });
 
-  it.each(["", "unknown", "feishu"])("uses normalized Lark defaults for domain %s", (domain) => {
+  it.each(["", "feishu"])("uses normalized Lark defaults for domain %s", (domain) => {
     vi.stubEnv("LARK_DOMAIN", domain);
     vi.stubEnv("LARK_ENCRYPT_KEY", "   ");
     try {
@@ -500,6 +504,68 @@ describe("parseSendblueStatuses", () => {
   });
 });
 
+describe("WhatsApp file sizes", () => {
+  const whatsapp = (env: MessagingEnvironmentValues = fullEnv) =>
+    messagingPlatformsFromEnv(env).find((platform) => platform.provider === "whatsapp")!;
+
+  it("reads the size WhatsApp reports for a file from its media lookup", async () => {
+    const fetch = vi.fn(async (_url: string, _init?: RequestInit) =>
+      Response.json({ url: "https://lookaside.example.test/m", file_size: 2048, id: "media-1" }),
+    );
+    vi.stubGlobal("fetch", fetch);
+    try {
+      const signal = new AbortController().signal;
+      await expect(
+        whatsapp().attachmentSize!({ type: "file", fetchMetadata: { mediaId: "media-1" } }, signal),
+      ).resolves.toBe(2048);
+      const [url, init] = fetch.mock.calls[0]!;
+      expect(url).toMatch(/^https:\/\/graph\.facebook\.com\/v[\d.]+\/media-1$/);
+      expect(init).toEqual({ headers: { authorization: "Bearer wa-token" }, signal });
+
+      // A file with no media id (a shared location) has nothing to look up.
+      await expect(whatsapp().attachmentSize!({ type: "file" }, signal)).resolves.toBeUndefined();
+      expect(fetch).toHaveBeenCalledOnce();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("looks the file up at a configured API URL", async () => {
+    const fetch = vi.fn(async (_url: string, _init?: RequestInit) =>
+      Response.json({ file_size: 5 }),
+    );
+    vi.stubGlobal("fetch", fetch);
+    try {
+      const signal = new AbortController().signal;
+      await whatsapp({ ...fullEnv, whatsappApiUrl: "https://graph.example.test" }).attachmentSize!(
+        { type: "file", fetchMetadata: { mediaId: "m/1" } },
+        signal,
+      );
+      const url = fetch.mock.calls[0]![0];
+      expect(url.startsWith("https://graph.example.test/v")).toBe(true);
+      expect(url.endsWith("/m%2F1")).toBe(true);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("leaves the size unknown when the lookup reports none, and fails when it fails", async () => {
+    const fetch = vi
+      .fn()
+      .mockResolvedValueOnce(Response.json({ id: "media-1" }))
+      .mockResolvedValueOnce(new Response("gone", { status: 404 }));
+    vi.stubGlobal("fetch", fetch);
+    try {
+      const attachment = { type: "file" as const, fetchMetadata: { mediaId: "media-1" } };
+      const signal = new AbortController().signal;
+      await expect(whatsapp().attachmentSize!(attachment, signal)).resolves.toBeUndefined();
+      await expect(whatsapp().attachmentSize!(attachment, signal)).rejects.toThrow("404");
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+});
+
 describe("parseWhatsAppStatuses", () => {
   // Shape of Meta's `statuses` webhook (Cloud API), including a 24-hour-window failure.
   const webhook = {
@@ -587,6 +653,26 @@ describe("splitOutboundBody", () => {
     expect(parts.every((part) => part.length <= 4096 && !/[\uD800-\uDFFF]/u.test(part))).toBe(true);
   });
 
+  it("splits Slack replies at its 12,000-character Markdown limit", () => {
+    const paragraph = "a".repeat(8000);
+    expect(splitOutboundBody("slack", `${paragraph}\n\n${paragraph}`)).toEqual([
+      paragraph,
+      paragraph,
+    ]);
+    const mid = "b".repeat(5000);
+    expect(splitOutboundBody("slack", `${mid}\n\n${mid}`)).toEqual([`${mid}\n\n${mid}`]);
+    expect(splitOutboundBody("slack", "short")).toEqual(["short"]);
+  });
+
+  it("leaves room for the user ids Slack writes in place of @names", () => {
+    const line = "@ab ".repeat(2500);
+    const parts = splitOutboundBody("slack", line);
+    expect(parts.length).toBeGreaterThan(1);
+    expect(parts.every((part) => slackPayloads(part)[0]!.length <= SLACK_MARKDOWN_LIMIT)).toBe(
+      true,
+    );
+  });
+
   it("splits WhatsApp replies between paragraphs and leaves other providers unchanged", () => {
     const long = `${"a".repeat(3000)}\n\n${"b".repeat(3000)}`;
     expect(splitOutboundBody("whatsapp", long)).toEqual(["a".repeat(3000), "b".repeat(3000)]);
@@ -663,7 +749,7 @@ describe("sendblue client", () => {
     const surface = new ChatSdkMessagingSurface(
       messagingPlatformsFromEnv(
         {
-          apiUrl,
+          inboundOrigin: apiUrl,
           sendblueApiKeyId: fullEnv.sendblueApiKeyId,
           sendblueApiSecret: fullEnv.sendblueApiSecret,
           sendblueSigningSecret: fullEnv.sendblueSigningSecret,

@@ -17,7 +17,12 @@ import {
   splitToolHistory,
 } from "@rakazo/core";
 import type { createDb } from "@rakazo/db";
-import { createThreadEvents, readJsonColumn, storedMessageBlocks } from "@rakazo/db";
+import {
+  chatPreferencesSelect,
+  createThreadEvents,
+  readJsonColumn,
+  storedMessageBlocks,
+} from "@rakazo/db";
 import { z } from "zod";
 import type { HostedApp } from "../apps/mcp-host.js";
 import { hostOverMcp } from "../apps/mcp-host.js";
@@ -606,7 +611,13 @@ export async function runTrial(
       const { userId, ...botSettings } = bot;
       const user = await prisma.user.findUniqueOrThrow({
         where: { id: userId },
-        select: { email: true, name: true, timezone: true, marketingEmailOptOutAt: true },
+        select: {
+          email: true,
+          name: true,
+          timezone: true,
+          marketingEmailOptOutAt: true,
+          ...chatPreferencesSelect,
+        },
       });
       const { marketingEmailOptOutAt, ...userSettings } = user;
       return {

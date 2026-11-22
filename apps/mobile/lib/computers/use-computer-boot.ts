@@ -1,5 +1,5 @@
 import { useLingui } from "@lingui/react/macro";
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { rpc } from "../api/api";
 import { computerBootErrorDetail, errorText } from "../api/user-error";
 import type { ComputerStatus } from "./computer";
@@ -11,7 +11,13 @@ export function useComputerBoot(botId: string | undefined) {
   const { t } = useLingui();
   const [computer, setComputer] = useState<ComputerStatus | null>(null);
   const [screenUrl, setScreenUrl] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setErrorState] = useState<string | null>(null);
+  const errorRecovery = useRef<{ read: object; kind: "read" | "start" } | null>(null);
+  const readIdentity = useMemo(() => ({ botId }), [botId]);
+  const setError = useCallback<typeof setErrorState>((value) => {
+    errorRecovery.current = null;
+    setErrorState(value);
+  }, []);
   const [readyBotId, setReadyBotId] = useState<string | null>(null);
   const [bootingCount, setBootingCount] = useState(0);
   const booting = bootingCount > 0;
@@ -29,12 +35,22 @@ export function useComputerBoot(botId: string | undefined) {
           setComputer(status);
           // Another client may have started it since this one failed.
           if (status.state === "running") setBootFailed(false);
+          const recovery = errorRecovery.current;
+          if (
+            recovery?.read === readIdentity &&
+            (recovery.kind === "read" || status.state === "running")
+          ) {
+            setError(null);
+          }
         },
         onScreen: setScreenUrl,
         onReady: () => setReadyBotId(botId ?? null),
-        onInitialError: (err) => setError(errorText(err)),
+        onInitialError: (err) => {
+          setError(errorText(err));
+          errorRecovery.current = { read: readIdentity, kind: "read" };
+        },
       }),
-    [botId],
+    [botId, readIdentity, setError],
   );
 
   async function bootComputer({
@@ -96,6 +112,7 @@ export function useComputerBoot(botId: string | undefined) {
             ? t`Request timed out`
             : errorText(err, t`Could not open computer`),
       );
+      if (starting) errorRecovery.current = { read: readIdentity, kind: "start" };
       setBootFailed(starting);
       throw err;
     } finally {

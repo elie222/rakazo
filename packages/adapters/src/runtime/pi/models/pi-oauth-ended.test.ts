@@ -3,7 +3,7 @@ import { deferred } from "@rakazo/core/test-async";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ModelSignInError, PiOAuthLogins } from "./pi-oauth.js";
 import type { PiOAuthEnded } from "./pi-oauth-ended.js";
-import { pendingSignInOfRow, signInFailure } from "./pi-oauth-ended.js";
+import { pendingSignInOfRow, signInFailure, signInFailureText } from "./pi-oauth-ended.js";
 
 const credential: OAuthCredential = {
   type: "oauth",
@@ -81,12 +81,28 @@ describe("sign-ins that end without connecting", () => {
     expect(ended.map((end) => end.reason)).toEqual(["timed_out"]);
   });
 
-  it("reports the earlier sign-in as cancelled when the person starts again", async () => {
+  it("reports the earlier sign-in as replaced when the person starts again", async () => {
     const { begin, ended } = deviceCode();
     await begin();
     await begin();
 
-    expect(ended.map((end) => end.reason)).toEqual(["cancelled"]);
+    expect(ended.map((end) => end.reason)).toEqual(["replaced"]);
+  });
+
+  it("reports the reason the app gave for stopping, and cancelled when it gave none", async () => {
+    const { logins, begin, ended } = deviceCode();
+    const left = await begin("openai-codex");
+    await logins.cancel(left.loginId, member, "left");
+    const replaced = await begin("github-copilot");
+    await logins.cancel(replaced.loginId, member, "replaced");
+    const older = await begin("xai");
+    await logins.cancel(older.loginId, member);
+
+    expect(ended.map((end) => [end.provider, end.reason])).toEqual([
+      ["openai-codex", "left"],
+      ["github-copilot", "replaced"],
+      ["xai", "cancelled"],
+    ]);
   });
 
   it("reports what the provider refused as a class, never its words", async () => {
@@ -181,5 +197,30 @@ describe("pendingSignInOfRow", () => {
     expect(
       pendingSignInOfRow({ ...row, ciphertext: null, surface: null, connectNumber: null }),
     ).toEqual({ userId: "u", provider: "anthropic", mode: "device-code", startedAt: new Date(0) });
+  });
+});
+
+describe("signInFailureText", () => {
+  it.each([
+    [
+      "Device sign-in poll failed (status 400, access_denied).",
+      "Sign-in was declined. Start again.",
+    ],
+    [
+      "Device sign-in poll failed (status 503).",
+      "Sign-in is unavailable right now. Try again in a minute.",
+    ],
+    [
+      "Device sign-in poll could not reach the provider.",
+      "Sign-in is unavailable right now. Try again in a minute.",
+    ],
+    ["The provider said the device code expired", "This code expired. Start again."],
+    ["Token request timed out", "Sign-in failed. Start again."],
+    [
+      "Device sign-in token exchange failed (status 400, request_failed).",
+      "Sign-in is unavailable right now. Try again in a minute.",
+    ],
+  ])("shows fixed text for %s", (message, text) => {
+    expect(signInFailureText(signInFailure(message))).toBe(text);
   });
 });

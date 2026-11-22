@@ -5,7 +5,9 @@ import {
   EmailEmulator,
   LIFECYCLE_EMAIL_GAP_MS,
 } from "@rakazo/adapters";
+import { writeEmailCopyDir } from "@rakazo/auth/test-email-copy";
 import type { Actor } from "@rakazo/contracts";
+import { LIFECYCLE_EMAIL_KINDS } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
 import { asSystem, billingAccountForOrganization, claimProductEmail, createDb } from "@rakazo/db";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
@@ -40,11 +42,16 @@ dbTests("model connection email", () => {
   beforeAll(async () => {
     db = createDb(process.env.DATABASE_URL!);
     prisma = asSystem(db.prisma);
+    vi.stubEnv(
+      "EMAIL_COPY_DIR",
+      writeEmailCopyDir({ "model-connection": true, "agent-import": true }),
+    );
     billing = createBillingService({
       prisma,
       provider,
       webOrigin: WEB_ORIGIN,
       scheduleLifecycleEmail: lifecycleEmailScheduler({
+        kinds: LIFECYCLE_EMAIL_KINDS,
         prisma,
         jobs,
         webOrigin: WEB_ORIGIN,
@@ -53,6 +60,7 @@ dbTests("model connection email", () => {
       }),
     });
     send = createLifecycleEmailSender({
+      kinds: LIFECYCLE_EMAIL_KINDS,
       prisma,
       email,
       jobs,
@@ -130,9 +138,9 @@ dbTests("model connection email", () => {
 
     const [message, ...extra] = sentTo(id);
     expect(extra).toHaveLength(0);
-    expect(message!.subject).toBe("Connect a model to start using Rakazo");
+    expect(message!.subject).toBe("Test subject");
     expect(message!.text).toContain(`${WEB_ORIGIN}/sign-in?next=%2Fonboarding%2Fmodel`);
-    expect(message!.text).toContain("ChatGPT or Claude subscription, or paste an API key");
+    expect(message!.text).toContain("Test connect ChatGPT or Claude");
     expect(message!.headers).toEqual({
       "List-Unsubscribe": expect.stringContaining(
         `${WEB_ORIGIN}/api/v1/email/unsubscribe?user=${id}&token=`,
@@ -284,7 +292,7 @@ dbTests("model connection email", () => {
     await send(importJob);
     const [message, ...extra] = sentTo(id);
     expect(extra).toHaveLength(0);
-    expect(message!.subject).toBe("Bring your old assistant to Rakazo");
+    expect(message!.subject).toBe("Test subject");
     expect(message!.text).toContain(`${WEB_ORIGIN}/sign-in?next=%2Fapp%3Fimport`);
   });
 
@@ -327,5 +335,36 @@ dbTests("model connection email", () => {
     const { job } = await subscriber("no-mail", withoutMail);
     expect(job).toBeUndefined();
     expect(queued).toHaveLength(before);
+  });
+
+  it("neither queues nor sends an email whose copy is off", async () => {
+    const importOnly = createBillingService({
+      prisma,
+      provider,
+      webOrigin: WEB_ORIGIN,
+      scheduleLifecycleEmail: lifecycleEmailScheduler({
+        kinds: ["agent-import"],
+        prisma,
+        jobs,
+        webOrigin: WEB_ORIGIN,
+        origin: WEB_ORIGIN,
+        secret: "test-auth-secret-at-least-32-characters",
+      }),
+    });
+    const before = queued.length;
+    await subscriber("copy-off", importOnly);
+    expect(queued.slice(before).map((queuedJob) => queuedJob.payload)).toEqual([
+      expect.objectContaining({ kind: "agent-import" }),
+    ]);
+
+    const { id, job: connectJob } = await subscriber("copy-off-send");
+    const importSender = createLifecycleEmailSender({
+      kinds: ["agent-import"],
+      prisma,
+      email,
+      jobs,
+    });
+    await importSender(connectJob);
+    expect(sentTo(id)).toHaveLength(0);
   });
 });

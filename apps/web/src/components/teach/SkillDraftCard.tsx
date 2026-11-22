@@ -193,7 +193,11 @@ export function SkillDraftCard({
           <Trans>Add to routine</Trans>
         </Button>
       </div>
-      {error ? <p className="mt-2 text-label text-destructive">{error}</p> : null}
+      {error ? (
+        <p role="alert" className="mt-2 text-label text-destructive">
+          {error}
+        </p>
+      ) : null}
     </BuiCard>
   );
 }
