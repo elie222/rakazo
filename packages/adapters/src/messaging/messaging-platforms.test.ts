@@ -426,12 +426,8 @@ describe("messagingPlatformsFromEnv", () => {
       receipt: null,
       verifiedSender: true,
     });
-    expect(capabilities.photon).toEqual({
-      direct: true,
-      groups: false,
-      receipt: "typing",
-      verifiedSender: true,
-    });
+    // Its SMS/RCS fallback is not reported per message, so no sender is taken as verified.
+    expect(capabilities.photon).toEqual({ direct: true, groups: false, receipt: "typing" });
   });
 });
 

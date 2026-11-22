@@ -93,7 +93,7 @@ function photonPlatform(
   return {
     provider,
     adapterName: "imessage",
-    capabilities: { direct: true, groups: false, receipt: "typing", verifiedSender: true },
+    capabilities: { direct: true, groups: false, receipt: "typing" },
     adapter: new LazyPhotonAdapter({
       projectId: project.projectId,
       projectSecret: project.projectSecret,
