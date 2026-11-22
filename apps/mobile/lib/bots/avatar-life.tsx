@@ -118,7 +118,7 @@ export function useAvatarOnScreen(): boolean {
   return focused && foreground && rowVisible;
 }
 
-/** A clock long enough to never wrap while an avatar moves. */
+/** A run of the clock, far longer than the stretch it is started again after. */
 const LIFE_RUN_SECONDS = 24 * 60 * 60;
 /** How long motion takes to ease in and out of the still picture. */
 export const AWAKE_MS = 600;
@@ -168,18 +168,6 @@ export function useLife(
   useEffect(() => {
     morph.value = withSpring(dots ? 1 : 0, MORPH_SPRING);
   }, [dots, morph]);
-  useEffect(() => {
-    if (!moving) return;
-    const start = sharedSeconds();
-    seconds.value = start;
-    seconds.value = withTiming(start + LIFE_RUN_SECONDS, {
-      duration: LIFE_RUN_SECONDS * 1000,
-      easing: Easing.linear,
-      // The clock only ever drives blinks under Reduce Motion; it must keep ticking.
-      reduceMotion: ReduceMotion.Never,
-    });
-    return () => cancelAnimation(seconds);
-  }, [moving, seconds]);
   // Counts the stretches this avatar has planned and how long until the next begins, so
   // the timer is armed once a stretch, not on every render.
   const [stretch, setStretch] = useState(() => ({ count: 0, wait: untilNextStretchMs() }));
@@ -196,7 +184,20 @@ export function useLife(
     planned.current = true;
     // The timeline covers this stretch and the next.
     schedule.value = avatarSharedSchedule(pool, identity, now, from);
-  }, [moving, pool, identity, schedule, stretch.count]);
+    // The UI thread's clock starts again from the shared clock with each plan, so it never
+    // runs out or drifts from the timeline however long the avatar stays on screen. A new
+    // timing replaces the running one; the clock stops only when the avatar does.
+    seconds.value = now;
+    seconds.value = withTiming(now + LIFE_RUN_SECONDS, {
+      duration: LIFE_RUN_SECONDS * 1000,
+      easing: Easing.linear,
+      // The clock only ever drives blinks under Reduce Motion; it must keep ticking.
+      reduceMotion: ReduceMotion.Never,
+    });
+  }, [moving, pool, identity, schedule, seconds, stretch.count]);
+  useEffect(() => {
+    if (moving) return () => cancelAnimation(seconds);
+  }, [moving, seconds]);
   // A wait worked out before the avatar started moving may be off, but it is never longer
   // than a stretch and the timeline already covers the next one, so nothing runs out.
   useTimeout(
