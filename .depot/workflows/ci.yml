@@ -19,4 +19,5 @@ jobs:
     name: Tests
     uses: ./.depot/workflows/test-suites.yml
     with:
-      runner: depot-ubuntu-latest
+      # Eight CPUs: the unit test and typecheck jobs spread across every core.
+      runner: depot-ubuntu-24.04-8
