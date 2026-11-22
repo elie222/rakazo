@@ -2,8 +2,8 @@ import { expect, test } from "@playwright/test";
 import { captureScreenshot } from "../helpers/helpers";
 
 const viewports = [
-  { name: "desktop-1440x900", width: 1440, height: 900 },
-  { name: "mobile-390x844", width: 390, height: 844 },
+  { name: "desktop-1440x900", width: 1440, height: 900, clearance: 84 },
+  { name: "mobile-390x844", width: 390, height: 844, clearance: 80 },
 ];
 const states = [
   { name: "active", live: true, reply: "Still finding a free slot…" },
@@ -15,6 +15,10 @@ test("chat shows mid-turn progress without Working…", async ({ page }, testInf
     await page.setViewportSize(viewport);
     for (const state of states) {
       await page.goto(`/e2e/fixtures/chat-progress-messages.html?live=${state.live ? 1 : 0}`);
+      const transcriptPadding = await page
+        .getByTestId("transcript")
+        .evaluate((element) => Number.parseFloat(getComputedStyle(element).paddingTop));
+      expect(transcriptPadding).toBe(viewport.clearance);
       const bubbles = page.getByTestId("message-bot-bubble");
       await expect(bubbles).toHaveCount(2);
       await expect(page.getByText("Chief", { exact: true })).toHaveCount(1);
