@@ -1,5 +1,5 @@
 import type { BillingProvider } from "@rakazo/adapter-kit";
-import { PostgresRealtimeFanout } from "@rakazo/adapters";
+import { createDubPartnerProgram, PostgresRealtimeFanout } from "@rakazo/adapters";
 import { ownedBillingAccounts, recordAuditEvent } from "@rakazo/db";
 import { bestEffort } from "@rakazo/logging";
 import { createBillingService } from "../../billing/billing.js";
@@ -76,6 +76,11 @@ async function cancelBilling(
       },
     };
   }
+  await recordAuditEvent({
+    action: "billing.subscriptions.cancel_requested",
+    actor: { type: "system", label: "operator" },
+    organizationId: account.organizationId,
+  });
   await withAdminBilling(context, provider, (billing) =>
     billing.cancelOrganizationSubscriptions(account.organizationId, account.customerId),
   );
@@ -112,30 +117,43 @@ async function refundBilling(
   const { customerId, organizationId } = match.account;
   let { refund } = match;
   if (confirm) {
-    refund = await withCheckoutLease(context.prisma, organizationId, async () => {
-      const owned = await ownedBillingAccounts(context.prisma, userId);
-      if (
-        !owned.some(
-          (item) => item.organizationId === organizationId && item.customerId === customerId,
+    let attempted = false;
+    try {
+      refund = await withCheckoutLease(context.prisma, organizationId, async () => {
+        const owned = await ownedBillingAccounts(context.prisma, userId);
+        if (
+          !owned.some(
+            (item) => item.organizationId === organizationId && item.customerId === customerId,
+          )
         )
-      )
-        throw new AdminCommandError("The billing account changed. Preview the refund again.");
-      const result = await invoiceRefund(customerId, invoiceNumber, true);
-      if (!result || result.state === "refundable")
-        throw new AdminCommandError("The refund could not be confirmed. Preview the refund again.");
-      return result;
-    });
-    await recordAuditEvent({
-      action: "billing.invoice.refund_requested",
-      actor: { type: "system", label: "operator" },
-      organizationId,
-      target: { type: "invoice", id: refund.invoiceId },
-      metadata: { refundId: refund.refundId, status: refund.state },
-    });
-    await bestEffort(
-      "reconcile operator invoice refund",
-      withAdminBilling(context, provider, (billing) => billing.sync(customerId)),
-    );
+          throw new AdminCommandError("The billing account changed. Preview the refund again.");
+        await recordAuditEvent({
+          action: "billing.invoice.refund_requested",
+          actor: { type: "system", label: "operator" },
+          organizationId,
+          target: { type: "invoice", id: match.refund.invoiceId },
+        });
+        attempted = true;
+        const result = await invoiceRefund(customerId, invoiceNumber, true);
+        if (!result || result.state === "refundable")
+          throw new AdminCommandError(
+            "The refund could not be confirmed. Preview the refund again.",
+          );
+        return result;
+      });
+    } finally {
+      // An error after sending the request may still leave a refund at the provider.
+      if (attempted)
+        await bestEffort(
+          "reconcile operator invoice refund",
+          withAdminBilling(context, provider, async (billing) => {
+            await Promise.all([
+              bestEffort("sync operator invoice refund", billing.sync(customerId)),
+              bestEffort("sync refunded partner sale", billing.reportPartnerSales(customerId)),
+            ]);
+          }),
+        );
+    }
   }
   const status = {
     refundable: "Add --confirm to refund the full charge.",
@@ -163,7 +181,13 @@ async function withAdminBilling<T>(
   });
   try {
     return await run(
-      createBillingService({ prisma, provider, realtime, webOrigin: env.webOrigin }),
+      createBillingService({
+        prisma,
+        provider,
+        realtime,
+        webOrigin: env.webOrigin,
+        partnerProgram: env.dubApiKey ? createDubPartnerProgram(env.dubApiKey) : undefined,
+      }),
     );
   } finally {
     await realtime.close();

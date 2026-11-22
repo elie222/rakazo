@@ -13,6 +13,7 @@ dbTests("operator account deletion", () => {
     const db = createDb(databaseUrl!);
     const prisma = asSystem(db.prisma);
     const id = randomUUID();
+    const teammate = randomUUID();
     const email = `${id}@example.test`;
     const cli = (...args: string[]) =>
       run(process.execPath, ["--import", "tsx", "apps/api/src/cli/admin.ts", ...args], {
@@ -28,6 +29,26 @@ dbTests("operator account deletion", () => {
       await prisma.account.create({
         data: { id, accountId: id, providerId: "credential", userId: id },
       });
+
+      const { organizationId } = await prisma.space.findUniqueOrThrow({ where: { id: spaceId } });
+      await prisma.user.create({
+        data: { id: teammate, email: `${teammate}@example.test`, name: "Teammate" },
+      });
+      await prisma.member.create({
+        data: {
+          id: teammate,
+          organizationId,
+          userId: teammate,
+          role: "member",
+          createdAt: new Date(),
+        },
+      });
+      await expect(cli("account", "delete", email, "--confirm")).rejects.toMatchObject({
+        code: 1,
+        stderr: "Remove the other members of your organization before deleting your account\n",
+      });
+      expect(await prisma.user.count({ where: { id } })).toBe(1);
+      await prisma.member.delete({ where: { id: teammate } });
 
       const preview = await cli("account", "delete", email.toUpperCase(), "--json");
       expect(JSON.parse(preview.stdout)).toEqual({ userId: id, deleted: false });
@@ -46,7 +67,7 @@ dbTests("operator account deletion", () => {
     } finally {
       await prisma.securityEvent.deleteMany({ where: { userId: id } });
       await prisma.organization.deleteMany({ where: { members: { some: { userId: id } } } });
-      await prisma.user.deleteMany({ where: { id } });
+      await prisma.user.deleteMany({ where: { id: { in: [id, teammate] } } });
       await db.prisma.$disconnect();
       await db.pool.end();
     }
