@@ -4,7 +4,6 @@ import type { NavigationState, PartialState } from "expo-router/react-navigation
 import { CommonActions } from "expo-router/react-navigation";
 import { useEffect } from "react";
 import { loadSessionToken } from "../api/session";
-import { closeSettingsSheet } from "../settings/settings-sheet";
 import type { NotificationRoute } from "./notification-open";
 import { notificationResponseRoute, threadRouteId } from "./notification-open";
 
@@ -31,16 +30,24 @@ function findChatStack(root: NavigationState | undefined): NavigationState | und
   }
 }
 
+function mayLeaveForNotification(route: NavigationState["routes"][number]): boolean {
+  if (route.name === "index" || route.name === "thread" || route.name === "group-thread") {
+    return true;
+  }
+  if (route.name !== "(settings)") return false;
+  // Only the known, read-only settings landing may be dismissed. Keep editors and state
+  // that has not been resolved, so a notification cannot close a form or trigger its guard.
+  const sheet = route.state;
+  return sheet?.stale === false && sheet.routes.length === 1 && sheet.routes[0]?.name === "account";
+}
+
 function openNotificationThread(navigation: NotificationNavigation, target: NotificationRoute) {
   const stack = findChatStack(navigation.getRootState());
   const sharing = stack?.routes.some((route) => route.name === "share");
-  if (!sharing) closeSettingsSheet();
-  if (!stack) router.dismissTo("/");
-  // Removing these routes can discard a pending share or ask again to close a dirty editor.
-  if (!stack || sharing || stack.routes.some((route) => route.name === "(settings)")) {
+  if (!stack || stack.routes.some((route) => !mayLeaveForNotification(route))) {
     router.push(
       sharing ? { ...target, params: { ...target.params, preserveIncomingShare: "1" } } : target,
-      { dangerouslySingular: threadRouteId },
+      { dangerouslySingular: threadRouteId, ...(!stack ? { withAnchor: true } : {}) },
     );
     return;
   }

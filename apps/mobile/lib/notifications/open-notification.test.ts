@@ -19,14 +19,10 @@ vi.mock("expo-router/react-navigation", () => ({
 vi.mock("../api/session", () => ({
   loadSessionToken: vi.fn(),
 }));
-vi.mock("../settings/settings-sheet", () => ({
-  closeSettingsSheet: vi.fn(),
-}));
 
 import * as Notifications from "expo-notifications";
 import { router } from "expo-router";
 import { loadSessionToken } from "../api/session";
-import { closeSettingsSheet } from "../settings/settings-sheet";
 import { threadRouteId } from "./notification-open";
 import { openNotificationResponse as openResponse } from "./open-notification";
 
@@ -44,7 +40,16 @@ function rootWithChatStack(routes: NavigationState["routes"]): NavigationState {
     key: "app-stack",
     index: routes.length - 1,
     routeKeySeq: routes.length,
-    routeNames: ["index", "thread", "group-thread", "(settings)", "share"],
+    routeNames: [
+      "index",
+      "thread",
+      "group-thread",
+      "(settings)",
+      "share",
+      "new-bot",
+      "new-group",
+      "new-space",
+    ],
     routes,
   };
   return {
@@ -55,6 +60,22 @@ function rootWithChatStack(routes: NavigationState["routes"]): NavigationState {
     routeKeySeq: 1,
     routeNames: ["__root"],
     routes: [{ name: "__root", key: "root-slot", state: stack }],
+  };
+}
+
+function settingsSheet(pages: string[]): NavigationState["routes"][number] {
+  return {
+    name: "(settings)",
+    key: "settings",
+    state: {
+      stale: false,
+      type: "stack",
+      key: "settings-stack",
+      index: pages.length - 1,
+      routeKeySeq: pages.length,
+      routeNames: ["account", "memory-note"],
+      routes: pages.map((name) => ({ name, key: name })),
+    },
   };
 }
 
@@ -90,19 +111,48 @@ describe("opening a notification tap", () => {
     );
   });
 
-  it("opens a notification without removing a settings editor that is still in the stack", async () => {
+  it("closes the settings landing and replaces the previous chat in one action", async () => {
+    vi.mocked(loadSessionToken).mockResolvedValue("token");
+    const inbox = { name: "index", key: "inbox" };
+    navigation.getRootState.mockReturnValue(
+      rootWithChatStack([
+        inbox,
+        { name: "thread", key: "prior-chat", params: { botId: "bot-2" } },
+        settingsSheet(["account"]),
+      ]),
+    );
+
+    await expect(openNotificationResponse(tap("tap-over-settings-landing"))).resolves.toBe(true);
+
+    expect(navigation.dispatch).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({
+        type: "RESET",
+        target: "app-stack",
+        payload: expect.objectContaining({
+          index: 1,
+          routes: [inbox, { name: "thread", params: { botId: "bot-1", threadId: "thread-1" } }],
+        }),
+      }),
+    );
+    expect(router.push).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    settingsSheet(["account", "memory-note"]),
+    { name: "(settings)", key: "unresolved-settings" },
+    ...["new-bot", "new-group", "new-space"].map((name) => ({ name, key: name })),
+  ])("opens above $key without removing its form", async (screen) => {
     vi.mocked(loadSessionToken).mockResolvedValue("token");
     navigation.getRootState.mockReturnValue(
       rootWithChatStack([
         { name: "index", key: "inbox" },
-        { name: "(settings)", key: "settings" },
+        { name: "thread", key: "prior-chat", params: { botId: "bot-2" } },
+        screen,
       ]),
     );
 
-    await expect(openNotificationResponse(tap("tap-over-settings"))).resolves.toBe(true);
+    await expect(openNotificationResponse(tap(`tap-over-${screen.key}`))).resolves.toBe(true);
 
-    expect(closeSettingsSheet).toHaveBeenCalledOnce();
-    expect(closeSettingsSheet).toHaveBeenCalledBefore(vi.mocked(router.push));
     expect(navigation.dispatch).not.toHaveBeenCalled();
     expect(router.dismissTo).not.toHaveBeenCalled();
     expect(router.push).toHaveBeenCalledExactlyOnceWith(
@@ -122,7 +172,6 @@ describe("opening a notification tap", () => {
 
     await expect(openNotificationResponse(tap("tap-over-share"))).resolves.toBe(true);
 
-    expect(closeSettingsSheet).not.toHaveBeenCalled();
     expect(navigation.dispatch).not.toHaveBeenCalled();
     expect(router.dismissTo).not.toHaveBeenCalled();
     expect(router.push).toHaveBeenCalledExactlyOnceWith(
@@ -158,7 +207,6 @@ describe("opening a notification tap", () => {
         }),
       }),
     );
-    expect(closeSettingsSheet).toHaveBeenCalledBefore(navigation.dispatch);
     expect(router.dismissTo).not.toHaveBeenCalled();
     expect(router.push).not.toHaveBeenCalled();
   });
@@ -191,13 +239,11 @@ describe("opening a notification tap", () => {
     release.resolve("token");
     await expect(first).resolves.toBe(true);
     await expect(second).resolves.toBe(false);
-    expect(router.dismissTo).toHaveBeenCalledTimes(1);
-    expect(router.dismissTo).toHaveBeenCalledWith("/");
-    expect(router.dismissTo).toHaveBeenCalledBefore(vi.mocked(router.push));
+    expect(router.dismissTo).not.toHaveBeenCalled();
     expect(router.push).toHaveBeenCalledTimes(1);
     expect(router.push).toHaveBeenCalledWith(
       { pathname: "/thread", params: { botId: "bot-1", threadId: "thread-1" } },
-      { dangerouslySingular: threadRouteId },
+      { dangerouslySingular: threadRouteId, withAnchor: true },
     );
     expect(Notifications.clearLastNotificationResponse).not.toHaveBeenCalled();
   });
@@ -259,7 +305,7 @@ describe("opening a notification tap", () => {
     expect(router.push).toHaveBeenCalledTimes(1);
     expect(router.push).toHaveBeenCalledWith(
       { pathname: "/thread", params: { botId: "bot-2", threadId: "thread-2" } },
-      { dangerouslySingular: threadRouteId },
+      { dangerouslySingular: threadRouteId, withAnchor: true },
     );
   });
 
