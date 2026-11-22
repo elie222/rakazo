@@ -59,6 +59,7 @@ function harness({
   };
   const saved: Record<string, unknown>[] = [];
   const save = vi.fn(async ({ data }: { data: Record<string, unknown> }) => {
+    steps.push("write");
     saved.push(data);
     Object.assign(
       row,
@@ -69,40 +70,52 @@ function harness({
   const bot = { id: "bot-1", userId: botOwner, thread: null, computer: null };
   const events = { count: eventRoutines };
   const pairedSince = vi.fn(async () => (paired ? new Date(0) : null));
+  /** What happened in order: the device-change lock, pairing checks and writes. */
+  const steps: string[] = [];
+  pairedSince.mockImplementation(async () => {
+    steps.push("paired?");
+    return paired ? new Date(0) : null;
+  });
+  const prisma = {
+    $transaction: vi.fn(async (fn: (tx: unknown) => unknown) => fn(prisma)),
+    $executeRaw: vi.fn(async () => {
+      steps.push("lock");
+      return 1;
+    }),
+    spaceMember: {
+      findMany: vi.fn(async () => [
+        { userId: "user-1", member: { user: { name: "Riley", email: "r@example.test" } } },
+      ]),
+    },
+    bot: {
+      findFirst: vi.fn(async () => bot),
+      findMany: vi.fn(async () => [{ id: bot.id, userId: bot.userId }]),
+    },
+    thread: {
+      findUnique: vi.fn(async () => ({ groupId: group ? "group-1" : null })),
+      findMany: vi.fn(async ({ where }: { where: { id: { in: string[] } } }) =>
+        group && where.id.in.includes("thread-group") ? [{ id: "thread-group" }] : [],
+      ),
+    },
+    routine: {
+      findFirst: vi.fn(async () => ({ ...row })),
+      // The view also lists the bot's routines that outside events start.
+      findMany: vi.fn(async ({ where }: { where: { OR?: unknown } }) =>
+        where.OR
+          ? Array.from({ length: events.count + (row.webhookEnabled ? 1 : 0) }, () => ({
+              botId: "bot-1",
+            }))
+          : [{ ...row }],
+      ),
+      count: vi.fn(async () => events.count),
+      create: save,
+      update: save,
+    },
+    agentSkill: { findMany: vi.fn(async () => skills) },
+  };
   const client = createRouterClient(
     createRouter({
-      prisma: {
-        spaceMember: {
-          findMany: vi.fn(async () => [
-            { userId: "user-1", member: { user: { name: "Riley", email: "r@example.test" } } },
-          ]),
-        },
-        bot: {
-          findFirst: vi.fn(async () => bot),
-          findMany: vi.fn(async () => [{ id: bot.id, userId: bot.userId }]),
-        },
-        thread: {
-          findUnique: vi.fn(async () => ({ groupId: group ? "group-1" : null })),
-          findMany: vi.fn(async ({ where }: { where: { id: { in: string[] } } }) =>
-            group && where.id.in.includes("thread-group") ? [{ id: "thread-group" }] : [],
-          ),
-        },
-        routine: {
-          findFirst: vi.fn(async () => ({ ...row })),
-          // The view also lists the bot's routines that outside events start.
-          findMany: vi.fn(async ({ where }: { where: { OR?: unknown } }) =>
-            where.OR
-              ? Array.from({ length: events.count + (row.webhookEnabled ? 1 : 0) }, () => ({
-                  botId: "bot-1",
-                }))
-              : [{ ...row }],
-          ),
-          count: vi.fn(async () => events.count),
-          create: save,
-          update: save,
-        },
-        agentSkill: { findMany: vi.fn(async () => skills) },
-      },
+      prisma,
       userDevices: { pairedSince },
       jobs: { enqueue: vi.fn(async () => undefined), cancel: vi.fn(async () => undefined) },
       env: { sandboxProvider: "fake" },
@@ -114,7 +127,7 @@ function harness({
       ...builtinAgentSkillRecords(),
       ...skills.map((skill) => ({ ...skill, source: "user" as const, readOnly: false })),
     ]);
-  return { client, row, saved, skills, events, fingerprint };
+  return { client, row, saved, skills, events, fingerprint, pairedSince, steps };
 }
 
 describe("Use my computer", () => {
@@ -131,6 +144,27 @@ describe("Use my computer", () => {
 
     await h.client.routines.update({ routineId: "routine-1", useComputer: false });
     expect(h.saved.at(-1)?.computerPromptHash).toBeNull();
+  });
+
+  it("checks pairing again under the device-change lock, so an unpairing meanwhile wins", async () => {
+    const h = harness();
+    await h.client.routines.update({
+      routineId: "routine-1",
+      prompt: "Check the backups",
+      useComputer: true,
+    });
+    expect(h.steps.slice(0, 4)).toEqual(["paired?", "lock", "paired?", "write"]);
+    // The owner unpairs their computer after the first check but before the write.
+    h.pairedSince.mockResolvedValueOnce(new Date(0)).mockResolvedValueOnce(null);
+    h.saved.length = 0;
+    await expect(
+      h.client.routines.update({
+        routineId: "routine-1",
+        useComputer: true,
+        prompt: "Check the backups",
+      }),
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    expect(h.saved).toEqual([]);
   });
 
   it("approves only the text the editor showed, never a stored one it did not", async () => {

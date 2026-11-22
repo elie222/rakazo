@@ -28,6 +28,9 @@ FOR EACH ROW EXECUTE FUNCTION clear_routine_computer_prompt_hash();
 CREATE OR REPLACE FUNCTION clear_routine_computer_on_device_change() RETURNS trigger
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp AS $clear$
 BEGIN
+  -- Shared with the route that turns it on (lockOwnerComputerApproval), which checks pairing
+  -- and writes the approval under it, so neither can land between the other's check and write.
+  PERFORM pg_advisory_xact_lock(hashtext('routine_computer'), hashtext(COALESCE(NEW."userId", OLD."userId")));
   UPDATE routines SET "computerPromptHash" = NULL
   WHERE "userId" = COALESCE(NEW."userId", OLD."userId") AND "computerPromptHash" IS NOT NULL;
   RETURN NULL;

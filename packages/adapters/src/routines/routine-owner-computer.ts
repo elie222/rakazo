@@ -1,8 +1,9 @@
 import { createHash } from "node:crypto";
 import type { SkillRecord } from "@rakazo/core";
 import { expandSkillReferencesInPrompt } from "@rakazo/core";
-import type { PrismaClient } from "@rakazo/db";
+import type { Prisma, PrismaClient } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
+import { advisoryLock } from "../locks/advisory-lock.js";
 
 function promptFingerprint(text: string): string {
   return createHash("sha256").update(text).digest("hex");
@@ -20,6 +21,16 @@ export function routineComputerFingerprint(
   return expandSkillReferencesInPrompt(prompt, skills) === prompt
     ? promptFingerprint(prompt)
     : null;
+}
+
+/**
+ * Held while turning "Use my computer" on, from the pairing check to the write. The trigger that
+ * clears approvals when the owner pairs or unpairs a computer takes the same lock
+ * (`pg_advisory_xact_lock(hashtext('routine_computer'), hashtext("userId"))`), so a device change
+ * either lands first and the check sees it, or waits and clears the approval after it is written.
+ */
+export function lockOwnerComputerApproval(tx: Prisma.TransactionClient, userId: string) {
+  return advisoryLock(tx, "routine_computer", userId);
 }
 
 /**

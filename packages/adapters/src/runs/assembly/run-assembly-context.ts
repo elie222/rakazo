@@ -212,6 +212,7 @@ export async function createRunContext(
       callClientNonce: callClientNonceForRun,
       peerMessage,
       userComputerOwner: userComputerOwnerId,
+      ownerComputerRoutine: parts.records.ownerComputerRoutine,
     },
     computer: {
       stored: storedComputer,
@@ -384,9 +385,11 @@ export async function buildTurnPrompt(
     if (routine && lateSince)
       lateRoutineNote = lateRoutineRunInstruction(lateSince, executionStartedAt, routine.timezone);
   }
-  const sharedSpaceNote = people
-    ? await loadSharedSpaceNote(deps.prisma, run.spaceId, run.userId)
-    : undefined;
+  // Other members' account names are text the owner of a routine with their computer never approved.
+  const sharedSpaceNote =
+    people && !ownerComputerRoutine
+      ? await loadSharedSpaceNote(deps.prisma, run.spaceId, run.userId)
+      : undefined;
   const prompt = [
     replyContext,
     parts.meetingContext,

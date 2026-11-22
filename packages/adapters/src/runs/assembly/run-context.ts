@@ -285,6 +285,8 @@ export interface RunSource {
   peerMessage: Awaited<ReturnType<typeof loadBotMessageContext>>;
   /** Whose own computer user_computer_shell may reach (see userComputerOwner). */
   userComputerOwner: string | undefined;
+  /** A routine run its owner let use their computer: it may call only the tools it was offered. */
+  ownerComputerRoutine: boolean;
 }
 
 export interface RunTools {

@@ -103,6 +103,8 @@ export async function applyTool(
   _route?: unknown,
   observer?: AgentToolExecutionObserver,
 ) {
+  // Refused there: a routine with its owner's computer is never offered update_bot.
+  if (ctx.source.ownerComputerRoutine) return dispatchTool(ctx, name, args, executionId, observer);
   // A bot naming itself in bot_id means its own settings. Dropping it here sends the call down
   // the own path everywhere: preparation, the stored approval, the handler and its taint check.
   if (
@@ -238,6 +240,11 @@ async function dispatchTool(
   }
   if (ctx.tools.disabled.has(name)) {
     return refuse(refusal("tool_disabled", "This tool is disabled for this bot."));
+  }
+  // A routine with its owner's computer may run only what it was offered, whatever name the
+  // runtime emits. It is offered no catalog or connector tool, so no call of its remaps either.
+  if (ctx.source.ownerComputerRoutine && !ctx.tools.offered.some((tool) => tool.name === name)) {
+    return refuse(refusal("tool_not_offered", `${name} is not available in this run.`));
   }
   // Only offered tools reach the model, but a runtime can still emit any name, and a connector
   // tool named like a local one still runs the local handler.

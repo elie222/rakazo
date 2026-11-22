@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import type { PrismaClient } from "../database/client.js";
 import { createDb, Prisma } from "../database/client.js";
 import { runAsSystem } from "../database/row-security.js";
@@ -142,6 +142,48 @@ describePostgres("a routine's computer approval (PostgreSQL)", () => {
         }),
       ),
     ).toBe("approved");
+  });
+
+  const revoke = (tokenHash: string) =>
+    prisma.userDevice.updateMany({
+      where: { tokenHash },
+      data: { revokedAt: new Date(), revokedBy: "owner" },
+    });
+  it.each<{ label: string; paired: boolean; change: (tokenHash: string) => Promise<unknown> }>([
+    { label: "pairs a computer", paired: false, change: device.bind(null, ids.userId) },
+    { label: "unpairs one", paired: true, change: revoke },
+  ])("clears an approval written while the owner $label", async ({ paired, change }) => {
+    const tokenHash = `race-${paired}-${suffix}`;
+    await afterChange({ computerPromptHash: null });
+    if (paired) await runAsSystem("test", () => device(ids.userId, tokenHash));
+    let deviceChange: Promise<unknown> | undefined;
+    await runAsSystem("test", () =>
+      prisma.$transaction(async (tx) => {
+        // What the route does: lock, check pairing, then write the approval.
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext('routine_computer'), hashtext(${ids.userId}))`;
+        deviceChange = runAsSystem("test", () => change(tokenHash));
+        // The device change lands after the check and waits for this write.
+        await vi.waitFor(async () => {
+          const [waiting] = await prisma.$queryRaw<{ count: bigint }[]>`
+            SELECT count(*) FROM pg_locks
+            WHERE locktype = 'advisory' AND NOT granted
+              AND database = (SELECT oid FROM pg_database WHERE datname = current_database())`;
+          expect(Number(waiting?.count)).toBeGreaterThan(0);
+        });
+        await tx.routine.update({
+          where: { id: ids.routineId },
+          data: { computerPromptHash: "approved" },
+        });
+      }),
+    );
+    await deviceChange;
+    const routine = await runAsSystem("test", () =>
+      prisma.routine.findUniqueOrThrow({
+        where: { id: ids.routineId },
+        select: { computerPromptHash: true },
+      }),
+    );
+    expect(routine.computerPromptHash).toBeNull();
   });
 
   it("keeps it for a save of the same prompt, other edits and the route's own approval", async () => {
