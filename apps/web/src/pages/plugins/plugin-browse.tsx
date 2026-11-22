@@ -75,8 +75,9 @@ export function PluginBrowse({
     pluginMatches,
   } = browse;
   const term = query.trim();
+  const directReady = !state.loading && !state.mcpQuery.isPending;
   const browsePublic =
-    !category && term.length >= 2 && term.length <= CATALOG_SEARCH_QUERY_MAX_LENGTH;
+    directReady && !category && term.length >= 2 && term.length <= CATALOG_SEARCH_QUERY_MAX_LENGTH;
   const searchingPublic = browsePublic && publicTerm === term;
   const queries = useSpaceQueries();
   const publicCatalog = useQuery({
@@ -88,11 +89,12 @@ export function PluginBrowse({
     retry: false,
   });
   const managedNames = new Set(catalog.map(({ name }) => name.toLowerCase()));
-  const presets = category
-    ? []
-    : featuredMcpPresets(sourcePresets, term).filter(
-        ({ name }) => !managedNames.has(name.toLowerCase()),
-      );
+  const presets =
+    category || !directReady
+      ? []
+      : featuredMcpPresets(sourcePresets, term).filter(
+          ({ name }) => !managedNames.has(name.toLowerCase()),
+        );
   const listedNames = new Set([...managedNames, ...presets.map(({ name }) => name.toLowerCase())]);
   const remoteMatches =
     searchingPublic && publicCatalog.data

@@ -241,11 +241,14 @@ export default function Integrations() {
     pluginsUnavailable: pluginsState === "partial",
   });
   const featuredTiles = useMemo(() => buildFeaturedConnectorTiles(catalog), [catalog]);
-  const directPresets = category
-    ? []
-    : featuredMcpPresets(sourcePresets, query).filter(
-        ({ name }) => !catalog.some((item) => item.name.toLowerCase() === name.toLowerCase()),
-      );
+  const directReady =
+    !catalogQuery.isPending && !installsQuery.isPending && !serversQuery.isPending;
+  const directPresets =
+    category || !directReady
+      ? []
+      : featuredMcpPresets(sourcePresets, query).filter(
+          ({ name }) => !catalog.some((item) => item.name.toLowerCase() === name.toLowerCase()),
+        );
   const showFeatured = !query.trim();
   const catalogApps = useMemo(() => filterConnectionCatalogItems(catalog, query), [catalog, query]);
   const renderedApps = catalogApps.slice(0, visibleCount);
@@ -648,7 +651,7 @@ export default function Integrations() {
                 {noMatch && category ? (
                   <Text style={styles.secondary}>{t`No apps match your search.`}</Text>
                 ) : null}
-                {catalogsReady ? (
+                {catalogsReady && directReady ? (
                   <IntegrationCatalogSearch
                     query={query}
                     hidden={Boolean(category)}

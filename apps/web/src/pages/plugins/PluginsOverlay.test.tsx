@@ -261,6 +261,8 @@ it("shows progress while retrying a failed public directory search", async () =>
 });
 
 it("opens Manage for an already-added direct MCP source", async () => {
+  const managedCatalog = deferred<[]>();
+  api.connections.catalog.mockReturnValue(managedCatalog.promise);
   const url = "https://mcp.tracker.example.test/mcp";
   api.capabilities.sourcePresets.mockResolvedValue([
     { id: "tracker", name: "Tracker", url, featured: true },
@@ -275,6 +277,11 @@ it("opens Manage for an already-added direct MCP source", async () => {
       </QueryClientProvider>,
     ),
   );
+  await act(flush);
+  expect(api.capabilities.sourcePresets).toHaveBeenCalled();
+  expect(host.querySelector('button[aria-label="Add Tracker"]')).toBeNull();
+
+  await act(async () => managedCatalog.resolve([]));
   const added = () => host.querySelector<HTMLButtonElement>('button[aria-label="Added: Tracker"]');
   await vi.waitFor(() => expect(added()).not.toBeNull());
   await act(async () => added()?.click());
