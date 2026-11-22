@@ -68,6 +68,12 @@ export function MentionPicker({
   onHighlight: (mention: ComposerMention) => void;
 }) {
   const { t } = useLingui();
+  const mentionedBotNames = new Set<string>();
+  const routineOrConnectorNames = new Set<string>();
+  for (const { name, kind } of options) {
+    if (kind === "bot") mentionedBotNames.add(name);
+    if (kind === "routine" || kind === "connector") routineOrConnectorNames.add(name);
+  }
   return (
     <div
       id={listboxId}
@@ -79,6 +85,13 @@ export function MentionPicker({
       {options.map((mention, index) => {
         const optionId = `${listboxId}-option-${index}`;
         const highlighted = index === activeIndex;
+        const { name, kind } = mention;
+        let kindLabel: string | undefined;
+        if (mentionedBotNames.has(name) && routineOrConnectorNames.has(name)) {
+          if (kind === "bot") kindLabel = t`Bot`;
+          if (kind === "routine") kindLabel = t`Routine`;
+          if (kind === "connector") kindLabel = t`Connector`;
+        }
         return (
           <button
             id={optionId}
@@ -86,7 +99,7 @@ export function MentionPicker({
             type="button"
             role="option"
             aria-selected={highlighted}
-            aria-label={t`@${mention.name}`}
+            aria-label={kindLabel ? t`@${name} ${kindLabel}` : t`@${name}`}
             onMouseDown={(event) => event.preventDefault()}
             onClick={() => onPick(mention)}
             // Opening the list under a stationary pointer must not steal the keyboard highlight.
