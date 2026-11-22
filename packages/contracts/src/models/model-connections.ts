@@ -423,8 +423,10 @@ export const ModelCatalogEntrySchema = z.object({
   authHint: z.string().optional(),
   subscription: z.boolean().optional(),
   signIn: ModelOAuthSignInModeSchema.optional(),
-  /** A setting the provider makes the user turn on before its sign-in can work. */
-  signInSetup: z.object({ label: z.string(), url: z.string().url() }).optional(),
+  /** A setting the provider makes the user turn on before its sign-in can work; shown before the sign-in starts. */
+  signInSetup: z
+    .object({ label: z.string(), url: z.string().url(), note: z.string().optional() })
+    .optional(),
   reasoning: z.boolean().optional(),
   thinkingLevels: z.array(ThinkingLevelSchema).optional(),
   /** Uncustomized capabilities for forms on other connections of the same provider. */

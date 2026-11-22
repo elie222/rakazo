@@ -262,6 +262,7 @@ export function ModelRoleSettings({
     const picks = new Map(pool.map((option) => [modelRoleChoiceKey(option), option]));
     return {
       title: slot === "add" ? t`Add fallback` : title,
+      connectionNotice: narrowed ? t`Provider connected. Choose a model.` : undefined,
       selectedKey: currentKey ?? (offerDefault ? "default" : ""),
       choices: [
         ...(offerDefault
