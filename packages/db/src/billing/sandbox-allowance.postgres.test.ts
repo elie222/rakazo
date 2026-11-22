@@ -7,6 +7,7 @@ import {
   sandboxAllowancePlan,
   sandboxRunHours,
   sandboxRunHoursByComputer,
+  speechAllowancePlan,
 } from "./sandbox-allowance.js";
 
 const databaseUrl = process.env.DATABASE_URL;
@@ -133,6 +134,11 @@ describePostgres("computer allowance hours (PostgreSQL)", () => {
       expect(await sandboxAllowancePlan(prisma, organizationId, now)).toMatchObject({
         limitCents: 2_000,
         extraCents: 0,
+      });
+      // Speech gets a fifth of the tier's list price, renewing with the same period.
+      expect(await speechAllowancePlan(prisma, organizationId, now)).toEqual({
+        limitMicros: 9_800_000n,
+        since: periodStart,
       });
       await grantComputerAllowance(prisma, organizationId, 2_500);
       const grant = await prisma.computerAllowanceGrant.findFirstOrThrow({

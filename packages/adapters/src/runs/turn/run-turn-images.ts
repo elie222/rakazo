@@ -361,7 +361,11 @@ export async function claimRunSteering(
   seenIds: string[],
   context: Parameters<typeof loadCurrentTurnImages>[2],
   pendingTurnFiles: MessageBlock[][],
-  currentTurn: { messageId?: string; hasImages: boolean },
+  currentTurn: {
+    messageId?: string;
+    hasImages: boolean;
+    resumeAnswerReplyContexts?: ReadonlyMap<string, string>;
+  },
 ): Promise<AgentSteeringMessage[]> {
   const steering = await deps.events.claimSteering({ ...lease, seenIds });
   return Promise.all(
@@ -374,14 +378,16 @@ export async function claimRunSteering(
       );
       if (files.length) pendingTurnFiles.push(item.blocks);
       const filesInstruction = currentTurnFilesInstruction(files);
+      const answerReplyContext = currentTurn.resumeAnswerReplyContexts?.get(item.messageId);
       return {
         id: item.id,
         messageId: item.messageId,
         origin: item.origin,
         historyText: item.text,
         text: [
-          await loadReplyContext(deps.prisma, lease.threadId, item.messageId),
-          item.text,
+          answerReplyContext ??
+            (await loadReplyContext(deps.prisma, lease.threadId, item.messageId)),
+          answerReplyContext === undefined ? item.text : undefined,
           filesInstruction,
           unavailableInstruction,
         ]

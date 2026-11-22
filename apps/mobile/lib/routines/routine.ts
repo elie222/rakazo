@@ -1,7 +1,8 @@
 import { ph, t } from "@lingui/core/macro";
 import type { Routine } from "@rakazo/contracts";
 import { formatCron } from "@rakazo/core";
-import { cronLabels } from "./cron";
+import { cronLabels } from "@rakazo/i18n/cron";
+import { getActiveUiLocale } from "../i18n/i18n";
 
 /** Triggers set up on web. Mobile lists them and can remove them, but not add or edit them. */
 export type RoutineWebTrigger = "webhookEnabled" | "githubEnabled" | "messageProvider" | "watch";
@@ -37,7 +38,7 @@ export function routineTriggerNames(routine: Routine): string[] {
 }
 
 function routineTriggers(routine: Routine): string {
-  const labels = cronLabels();
+  const labels = cronLabels(getActiveUiLocale());
   return [
     ...routine.crons.map((cron) => formatCron(cron, labels)),
     ...routineTriggerNames(routine),
@@ -52,7 +53,7 @@ function routineSchedule(routine: Routine, zone: string | undefined): string {
 
 /** One line per trigger for a routine's detail; schedules name their zone when it isn't the device's. */
 export function routineTriggerRows(routine: Routine, deviceTimeZone: string | undefined): string[] {
-  const labels = cronLabels();
+  const labels = cronLabels(getActiveUiLocale());
   const zone = routine.timezone === deviceTimeZone ? "" : ` (${routine.timezone})`;
   return [
     ...routine.crons.map((cron) => `${formatCron(cron, labels)}${zone}`),
@@ -60,11 +61,15 @@ export function routineTriggerRows(routine: Routine, deviceTimeZone: string | un
   ];
 }
 
-/** A list row: the schedule, its zone only when it isn't the device's, and "Paused" only when paused. */
+/**
+ * A list row: the schedule, its zone only when it isn't the device's, "Paused" only when paused,
+ * and its owner's name only when it is another member's.
+ */
 export function routineRowDetail(routine: Routine, deviceTimeZone: string | undefined): string {
   return [
     routineSchedule(routine, routine.timezone === deviceTimeZone ? undefined : routine.timezone),
     routine.active ? (routine.scheduleDelayed ? t`Schedule delayed` : "") : t`Paused`,
+    routine.runsAs && !routine.runsAs.isViewer ? routine.runsAs.name : "",
   ]
     .filter(Boolean)
     .join(", ");

@@ -1,10 +1,10 @@
 import { useLingui } from "@lingui/react/macro";
+import type { useListSearch } from "@rakazo/chat-ui/hooks";
 import type { ModelApiProtocol, ModelHeaderRow } from "@rakazo/contracts";
 import { isUnlistedCompatibleModel, toggleEnabledModelId } from "@rakazo/core";
 import type { Dispatch, ReactNode, SetStateAction } from "react";
 import { Pressable, Text, TextInput, View } from "react-native";
 import { native, useThemedStyles } from "../../lib/native/native";
-import type { useListSearch } from "../../lib/search/use-list-search";
 import { HeaderRowsEditor } from "../integrations/header-rows-editor";
 import { NativeActionButton } from "../native/native-action-button";
 import { NativeSwitch } from "../native/native-switch";

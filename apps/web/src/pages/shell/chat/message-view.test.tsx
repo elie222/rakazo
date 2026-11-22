@@ -291,6 +291,25 @@ it("names someone else's message and keeps it on the people side", () => {
   expect(bubble.className).not.toContain("bg-chat-user");
 });
 
+function actionsLabel() {
+  return container
+    .querySelector('[role="group"][aria-label^="Message actions"]')
+    ?.getAttribute("aria-label");
+}
+
+it("names the sender in another person's message actions", () => {
+  renderAuthored(authored);
+
+  expect(actionsLabel()).toContain("Ana");
+});
+
+it("leaves my own message actions without a sender name", () => {
+  renderAuthored(authored, ana.id);
+
+  expect(actionsLabel()).toMatch(/^Message actions, /);
+  expect(actionsLabel()).not.toContain("Ana");
+});
+
 it("keeps my own message unnamed on the right", () => {
   const { bubble, row } = renderAuthored(authored, ana.id);
 

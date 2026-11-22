@@ -189,6 +189,7 @@ function boundRetryableErrorBody(response: Response, idleTimeoutMs: number): Res
 function modelRequestFetch(
   fetchImpl: ModelsSimpleStreamOptions["fetch"],
   idleTimeoutMs: number,
+  streamSignal: AbortSignal,
 ): NonNullable<ModelsSimpleStreamOptions["fetch"]> {
   return async (input, init) => {
     // Compatible providers attach a package undici Agent after this wrapper is
@@ -197,8 +198,22 @@ function modelRequestFetch(
       init && "dispatcher" in init
         ? fetchPairedWithDispatcher(fetchImpl)
         : (fetchImpl ?? globalThis.fetch);
-    const response = await transport(input, init);
-    return boundRetryableErrorBody(response, idleTimeoutMs);
+    try {
+      return boundRetryableErrorBody(await transport(input, init), idleTimeoutMs);
+    } catch (error) {
+      const requestSignal = init?.signal ?? (input instanceof Request ? input.signal : undefined);
+      // The SDK's per-request timer aborts its fetch while the stream's signal is still live.
+      // Keep that distinction before the SDK flattens both the error and its cause into text.
+      if (
+        error instanceof DOMException &&
+        error.name === "AbortError" &&
+        requestSignal?.aborted &&
+        !streamSignal.aborted
+      ) {
+        throw new DOMException("Model request timed out", "TimeoutError");
+      }
+      throw error;
+    }
   };
 }
 
@@ -224,7 +239,7 @@ export function reliableModelStream(
         signal: watchdog.signal,
         fetch: APIS_WITHOUT_CUSTOM_FETCH.has(model.api)
           ? options?.fetch
-          : modelRequestFetch(options?.fetch, modelStreamIdleTimeoutMs()),
+          : modelRequestFetch(options?.fetch, modelStreamIdleTimeoutMs(), watchdog.signal),
         // Only a 2xx arms the shared watchdog. Error bodies are bounded by
         // the fetch wrapper where supported; caller hooks still see every status.
         onResponse: (response, requestModel) => {

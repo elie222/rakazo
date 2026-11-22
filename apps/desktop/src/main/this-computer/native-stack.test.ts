@@ -229,7 +229,7 @@ describe("choosePort", () => {
 describe("NativeStackController", () => {
   it("offers the stop item from the moment start begins, before Postgres is up", async () => {
     const { deps } = harness({
-      hostComputer: { url: "http://host.docker.internal:47000", token: "host-token" },
+      hostComputer: { url: "http://127.0.0.1:47000", token: "host-token" },
     });
     // What the menu sees each time a phase change rebuilds it.
     const seen: { phase: string; running: boolean }[] = [];
@@ -258,7 +258,7 @@ describe("NativeStackController", () => {
 
   it("brings up the database, migrations and the three services on loopback", async () => {
     const { deps, runs, byName } = harness({
-      hostComputer: { url: "http://host.docker.internal:47000", token: "host-token" },
+      hostComputer: { url: "http://127.0.0.1:47000", token: "host-token" },
     });
     const controller = new NativeStackController(deps);
     const state = await controller.start();

@@ -161,6 +161,53 @@ describe("actionTargets", () => {
     expectLinearTime(() => actionTargets({ to: value }));
   });
 
+  it("reads a recipient under a key that only contains a free-text word", () => {
+    expect(
+      actionTargets({
+        context_email: "a@x.example",
+        footnoteUrl: "https://notes.example/page",
+        keynote_contact: "b@x.example",
+        entitled_user: "c@x.example",
+        value: "d@x.example",
+        context: "e@x.example",
+        footnote: "f@x.example",
+      }).map((target) => target.value),
+    ).toEqual([
+      "a@x.example",
+      "notes.example",
+      "b@x.example",
+      "c@x.example",
+      "d@x.example",
+      "e@x.example",
+      "f@x.example",
+    ]);
+  });
+
+  it.each([
+    "body",
+    "html_body",
+    "htmlBody",
+    "TextBody",
+    "reply-note",
+    "comment.text",
+    "notes",
+    "Subject",
+    "htmlbody",
+    "textbody",
+    "plaintext",
+    "bodyhtml",
+    "messagetext",
+    "values",
+    "records",
+  ])("skips an address in the free-text key %s", (key) => {
+    expect(actionTargets({ [key]: "a@x.example" })).toEqual([]);
+  });
+
+  it("reads a long one-run key in linear time", () => {
+    expectLinearTime(() => actionTargets({ [`${"a".repeat(200_000)}x`]: "a@x.example" }));
+    expectLinearTime(() => actionTargets({ [`${"aA".repeat(100_000)}x`]: "a@x.example" }));
+  });
+
   it("reads recipients from nested batches", () => {
     expect(
       actionTargets({

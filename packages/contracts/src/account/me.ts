@@ -8,10 +8,12 @@ import { RoutineSchema } from "../routines/routine.js";
 import { GroupSchema } from "../spaces/groups.js";
 import { SpaceSchema } from "../spaces/space.js";
 import { ThreadSnapshotSchema } from "../threads/thread.js";
-import { AvatarStyleSchema } from "./preferences.js";
+import { AvatarStyleSchema, ChatPreferencesSchema } from "./preferences.js";
 
 export const MeSchema = z.object({
   meetingsEnabled: z.boolean().optional(),
+  /** The public origin outside services post webhooks to, when the deployment publishes one. */
+  inboundOrigin: z.string().optional(),
   maxUploadSizeBytes: z.number().int().positive().optional(),
   maxAttachmentsPerMessage: z.number().int().positive().optional(),
   /** Labs features this account turned on. Absent from servers that predate Labs. */
@@ -48,6 +50,8 @@ export const MeSchema = z.object({
   avatarStyle: AvatarStyleSchema,
   /** The icon set new and unpinned bots wear. Absent from servers that predate it. */
   botAvatarSet: BotAvatarSetSchema.optional(),
+  /** Absent from servers that predate account-level chat preferences. */
+  chatPreferences: ChatPreferencesSchema.optional(),
   /**
    * The user's IANA timezone, or null when unset (bots then see UTC only).
    * Absent from servers that predate it.

@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
+import { i18n } from "@lingui/core";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import type { ReactNode } from "react";
-import { act } from "react";
+import type { ReactElement, ReactNode } from "react";
+import { act, cloneElement } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { PluginsOverlay } from "./PluginsOverlay";
@@ -47,14 +48,12 @@ vi.mock("@rakazo/ui-web", async () => {
     ...[
       "Badge",
       "Dialog",
-      "DialogClose",
       "DialogContent",
       "DialogHeader",
       "DialogTitle",
       "Disclosure",
       "DropdownMenu",
       "DropdownMenuContent",
-      "DropdownMenuItem",
       "DropdownMenuSeparator",
       "DropdownMenuTrigger",
       "Field",
@@ -64,6 +63,16 @@ vi.mock("@rakazo/ui-web", async () => {
       "SectionHeading",
       "Spinner",
     ].map((name) => [name, container]),
+    [
+      "DropdownMenuItem",
+      ({ children, onClick }: { children?: ReactNode; onClick?: () => void }) =>
+        createElement("div", { role: "menuitem", onClick }, children),
+    ],
+    [
+      "DialogClose",
+      ({ children, render }: { children?: ReactNode; render: ReactElement }) =>
+        cloneElement(render, undefined, children),
+    ],
     [
       "Button",
       ({
@@ -110,6 +119,9 @@ let host: HTMLDivElement;
 let root: ReturnType<typeof createRoot>;
 
 beforeEach(() => {
+  // The plugin catalog text both apps share is translated at run time, so it needs a locale.
+  i18n.load("en", {});
+  i18n.activate("en");
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   api.connections.catalog.mockReset().mockResolvedValue([]);
@@ -199,6 +211,7 @@ it("offers the public catalog for a search and sends nothing there until it is p
 
   await type(searchBox(), " canva ");
   expect(host.textContent).toContain("No apps match your search.");
+  expect(host.querySelector('[role="status"]')?.textContent).toBe("No apps match your search.");
   expect(publicCatalogRow()?.textContent).toBe("Search MCP servers for “canva”");
   expect(publicSearches()).toHaveLength(0);
 
@@ -353,4 +366,40 @@ it("leads from an app that is also a chat app here to messaging, and says nothin
   ]);
   await act(async () => hints[0]!.querySelector("button")!.click());
   expect(onOpenMessaging).toHaveBeenCalledOnce();
+});
+
+it("keeps Close outside the wrapping action group so narrow screens still reach it", async () => {
+  await act(async () =>
+    root.render(
+      <QueryClientProvider client={client}>
+        <PluginsOverlay onClose={() => {}} onOpenTemplates={() => {}} />
+      </QueryClientProvider>,
+    ),
+  );
+  await vi.waitFor(() => expect(searchBox().disabled).toBe(false));
+  const close = host.querySelector('button[aria-label="Close integrations"]');
+  expect(close).not.toBeNull();
+  const templates = Array.from(host.querySelectorAll("button")).find((button) =>
+    button.textContent?.includes("Templates"),
+  )!;
+  expect(templates.parentElement!.contains(close!)).toBe(false);
+  expect(close!.compareDocumentPosition(templates) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+});
+
+it("leaves no empty action row above a form that has no header actions", async () => {
+  await act(async () =>
+    root.render(
+      <QueryClientProvider client={client}>
+        <PluginsOverlay onClose={() => {}} />
+      </QueryClientProvider>,
+    ),
+  );
+  await vi.waitFor(() => expect(searchBox().disabled).toBe(false));
+  const github = [...host.querySelectorAll('[role="menuitem"]')].find(
+    (item) => item.textContent === "From GitHub",
+  )!;
+  await act(async () => (github as HTMLElement).click());
+  const close = host.querySelector('button[aria-label="Close integrations"]')!;
+  expect(close.parentElement!.querySelector(":scope > div:empty")).toBeNull();
+  expect(host.querySelector('button[aria-label="Add custom"]')).toBeNull();
 });

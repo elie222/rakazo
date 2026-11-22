@@ -17,6 +17,7 @@ export const ZH_CN_MESSAGES: Record<string, string> = {
   Redo: "重做",
   Cut: "剪切",
   Copy: "拷贝",
+  "Copy Link Address": "拷贝链接地址",
   Paste: "粘贴",
   "Paste and Match Style": "粘贴并匹配样式",
   Delete: "删除",
