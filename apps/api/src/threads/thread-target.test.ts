@@ -2510,6 +2510,7 @@ describe("sendThreadMessage", () => {
         event: { create: vi.fn().mockResolvedValue({ seq: 5, threadId: "thread-1" }) },
         task: {
           create: vi.fn().mockResolvedValue({ id: "task-other-user" }),
+          update: vi.fn().mockResolvedValue({ id: "task-a" }),
           updateMany: vi.fn().mockResolvedValue({ count: 1 }),
         },
         chatGroup: {
@@ -2654,7 +2655,11 @@ describe("sendThreadMessage", () => {
         secret: { deleteMany: vi.fn() },
         steeringMessage: { create: vi.fn() },
         event: { create: vi.fn().mockResolvedValue({ seq: 4, threadId: "thread-1" }) },
-        task: { create: vi.fn(), updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
+        task: {
+          create: vi.fn(),
+          update: vi.fn().mockResolvedValue({ id: "task-1" }),
+          updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+        },
         chatGroup: {
           findFirst: vi.fn().mockResolvedValue({
             id: "group-1",
@@ -2811,7 +2816,11 @@ describe("sendThreadMessage", () => {
           secret: { deleteMany: vi.fn() },
           steeringMessage: { create: vi.fn() },
           event: { create: vi.fn() },
-          task: { create: vi.fn(), updateMany: vi.fn() },
+          task: {
+            create: vi.fn(),
+            update: vi.fn().mockResolvedValue({ id: "task-1" }),
+            updateMany: vi.fn(),
+          },
           chatGroup: {
             findFirst: vi.fn().mockResolvedValue({
               id: "group-1",
@@ -2957,7 +2966,11 @@ describe("sendThreadMessage", () => {
         secret: { deleteMany: vi.fn() },
         steeringMessage: { create: vi.fn() },
         event: { create: vi.fn().mockResolvedValue({ seq: 5, threadId: "thread-origin" }) },
-        task: { create: vi.fn(), updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
+        task: {
+          create: vi.fn(),
+          update: vi.fn().mockResolvedValue({ id: "task-helper" }),
+          updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+        },
         chatGroup: {
           findFirst: vi.fn().mockResolvedValue({
             id: "group-1",
@@ -3333,7 +3346,11 @@ describe("sendThreadMessage", () => {
           },
           attempt: { updateMany: vi.fn() },
           secret: { deleteMany: vi.fn() },
-          task: { create: vi.fn().mockResolvedValue({ id: "task-new" }), updateMany: vi.fn() },
+          task: {
+            create: vi.fn().mockResolvedValue({ id: "task-new" }),
+            update: vi.fn().mockResolvedValue({ id: "task-old" }),
+            updateMany: vi.fn(),
+          },
           steeringMessage: { create: vi.fn() },
           event: { create: vi.fn().mockResolvedValue({ seq: 4 }) },
           chatGroup: {
