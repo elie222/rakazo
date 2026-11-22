@@ -727,7 +727,7 @@ export function attachMobileKeyboard(
   button.addEventListener("touchend", onKeyboardTouchEnd, { passive: false });
   button.addEventListener("click", onKeyboardClick);
   input.addEventListener("input", onInput);
-  documentTarget.addEventListener?.("selectionchange", restoreCaret);
+  documentTarget.addEventListener("selectionchange", restoreCaret);
   input.addEventListener("compositionstart", onCompositionStart);
   input.addEventListener("compositionend", onCompositionEnd);
   input.addEventListener("focus", onFocus);
@@ -752,7 +752,7 @@ export function attachMobileKeyboard(
     button.removeEventListener("touchend", onKeyboardTouchEnd);
     button.removeEventListener("click", onKeyboardClick);
     input.removeEventListener("input", onInput);
-    documentTarget.removeEventListener?.("selectionchange", restoreCaret);
+    documentTarget.removeEventListener("selectionchange", restoreCaret);
     input.removeEventListener("compositionstart", onCompositionStart);
     input.removeEventListener("compositionend", onCompositionEnd);
     input.removeEventListener("focus", onFocus);
