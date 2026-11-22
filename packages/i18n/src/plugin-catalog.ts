@@ -7,24 +7,32 @@ import type { PluginCategory } from "@rakazo/core";
  * descriptors keep it in Lingui extraction.
  */
 
-function categoryLabels(): Record<PluginCategory, string> {
-  return {
-    productivity: i18n._({ id: "Productivity", message: "Productivity" }),
-    communication: i18n._({ id: "Communication", message: "Communication" }),
-    sales: i18n._({ id: "Sales & CRM", message: "Sales & CRM" }),
-    marketing: i18n._({ id: "Marketing", message: "Marketing" }),
-    finance: i18n._({ id: "Finance", message: "Finance" }),
-    people: i18n._({ id: "Recruiting & HR", message: "Recruiting & HR" }),
-    design: i18n._({ id: "Design", message: "Design" }),
-    code: i18n._({ id: "Developer", message: "Developer" }),
-    data: i18n._({ id: "Data", message: "Data" }),
-    ops: i18n._({ id: "Security & Ops", message: "Security & Ops" }),
-  };
-}
-
 /** A plugin category's name, or the name itself when it is not one of ours. */
 export function pluginCategoryLabel(name: string): string {
-  return categoryLabels()[name as PluginCategory] ?? name;
+  switch (name as PluginCategory) {
+    case "productivity":
+      return i18n._({ id: "Productivity", message: "Productivity" });
+    case "communication":
+      return i18n._({ id: "Communication", message: "Communication" });
+    case "sales":
+      return i18n._({ id: "Sales & CRM", message: "Sales & CRM" });
+    case "marketing":
+      return i18n._({ id: "Marketing", message: "Marketing" });
+    case "finance":
+      return i18n._({ id: "Finance", message: "Finance" });
+    case "people":
+      return i18n._({ id: "Recruiting & HR", message: "Recruiting & HR" });
+    case "design":
+      return i18n._({ id: "Design", message: "Design" });
+    case "code":
+      return i18n._({ id: "Developer", message: "Developer" });
+    case "data":
+      return i18n._({ id: "Data", message: "Data" });
+    case "ops":
+      return i18n._({ id: "Security & Ops", message: "Security & Ops" });
+    default:
+      return name;
+  }
 }
 
 /** How a saved MCP server's connection stands. */
