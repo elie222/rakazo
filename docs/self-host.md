@@ -128,6 +128,8 @@ Compose bot homes mount only their own subdirectory of the application volume us
   messaging apps, cloud coding agents and payments.
 - [Bot email addresses](./self-host-inbound-email.md): an address for each bot, so mail you
   forward or CC to it starts its routines.
+- [Webhooks on a private network](./self-host-webhooks.md): receive webhooks while the app stays
+  on your tailnet, LAN or VPN.
 - [Computer providers](./self-host-sandbox-providers.md) and
   [Docker computers](./self-host-docker-computers.md): where bot computers run and how they are
   limited.
@@ -158,7 +160,8 @@ docker compose --env-file .env -f docker-compose.images.yml exec api \
 ```
 
 `bot webhook-key` gives a bot that has no webhook key a new one and prints its webhook URL
-(`API_URL` + `/api/v1/bots/<bot-id>/webhook`) and the key. When the bot already has one, it
+(the [published webhook address](./self-host-webhooks.md) when there is one, else `API_URL`, +
+`/api/v1/bots/<bot-id>/webhook`) and the key. When the bot already has one, it
 prints only the URL; `--rotate` replaces the key, and the old one stops working. `--json` prints
 one line, `{"botId","url","key","created"}`, for piping into another program so the key stays
 out of chat and logs. Each new key is recorded as a `credential.changed`

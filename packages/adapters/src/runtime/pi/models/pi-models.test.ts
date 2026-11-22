@@ -236,14 +236,14 @@ describe("catalog provider authentication", () => {
 });
 
 describe("Pi model catalog", () => {
-  it("recommends one Luna or Haiku model per supported provider", () => {
+  it("recommends one model per supported provider", () => {
     expect(
       listPiCatalog()
         .filter((entry) => entry.recommended)
         .map(({ provider, id }) => ({ provider, id })),
     ).toEqual(
       expect.arrayContaining([
-        { provider: "openai-codex", id: "gpt-6-luna" },
+        { provider: "openai-codex", id: "gpt-6.1-sol" },
         { provider: "openai", id: "gpt-6-luna" },
         { provider: "openrouter", id: "anthropic/claude-haiku-5.5" },
         { provider: "anthropic", id: "claude-haiku-5-5" },

@@ -1,5 +1,5 @@
 import { useLingui } from "@lingui/react/macro";
-import { botInboundPath, isIdentityConfirmationRequired } from "@rakazo/contracts";
+import { botInboundUrl, isIdentityConfirmationRequired } from "@rakazo/contracts";
 import { errorCode } from "@rakazo/core";
 import { bestEffort } from "@rakazo/logging/best-effort";
 import * as Clipboard from "expo-clipboard";
@@ -77,9 +77,9 @@ export function WebhookKeyButton({
   const reveal = useSave({
     save: (_input, send) =>
       withIdentityConfirmation(() => send("bots/revealWebhookSecret", { botId })),
-    onSaved: ({ secret }) => {
+    onSaved: ({ secret, url: publishedUrl }) => {
       if (!focused.current) return;
-      const url = `${currentApiBase()}${botInboundPath(botId, "webhook")}`;
+      const url = publishedUrl ?? botInboundUrl(currentApiBase(), botId, "webhook");
       const copy = (text: string) =>
         void bestEffort("copy webhook", Clipboard.setStringAsync(text));
       Alert.alert(title, `${url}\n\nAuthorization: Bearer ${secret}`, [

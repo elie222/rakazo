@@ -31,6 +31,7 @@ import {
 import type { RpcClient } from "../lib/query/rpc";
 import { createSpaceRpc, selectedSpaceId } from "../lib/query/rpc";
 import { SpaceRpcProvider } from "../lib/query/space-rpc";
+import { InboundOriginProvider } from "../lib/routines/inbound-url";
 import type { CreateBotDialogInput } from "./shell/bots/create-bot-dialog";
 import { useTeaching } from "./shell/bots/use-teaching";
 import { ChatColumn } from "./shell/chat/chat-column";
@@ -317,6 +318,7 @@ function SpaceShell() {
     active,
     activeBotId,
     timezone: bootstrapMe?.timezone,
+    inboundOrigin: bootstrapMe?.inboundOrigin,
     setBots,
     refreshThread,
     openGroup: (id) => navigate(`/app/g/${id}`),
@@ -988,7 +990,9 @@ function SpaceShell() {
   return (
     <SpaceRpcProvider spaceId={shellSpaceId}>
       {initialBotsLoaded || initialLoadFailed ? (
-        <PagesProvider value={pages}>{shell}</PagesProvider>
+        <InboundOriginProvider value={bootstrapMe?.inboundOrigin}>
+          <PagesProvider value={pages}>{shell}</PagesProvider>
+        </InboundOriginProvider>
       ) : (
         <PageLoading />
       )}
