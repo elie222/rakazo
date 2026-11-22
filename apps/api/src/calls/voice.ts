@@ -957,15 +957,19 @@ export function mountVoiceHttpRoutes(
     const language = optionalString((body as { language?: unknown }).language);
     try {
       const audio = decodeAudioBase64(audioBase64);
+      const mimeType = String(body.mimeType ?? "audio/webm").slice(0, 100);
       const result = await runAsTenant(actor, () =>
         transcribeVoice(deps, actor, {
           audio,
-          mimeType: String((body as { mimeType?: unknown }).mimeType ?? "audio/webm"),
+          mimeType,
           language,
           callId: optionalString(body.callId)?.slice(0, 200),
           signal: c.req.raw.signal,
         }),
       );
+      // A silent or unusable clip reaches the client as no words, with no error to report.
+      if (!result.text.trim())
+        getLogger().info("voice transcript empty", { bytes: audio.byteLength, mimeType });
       return c.json({ text: result.text });
     } catch (error) {
       return voiceHttpError(c, error);

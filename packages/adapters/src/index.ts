@@ -317,7 +317,7 @@ export * from "./tools/fleet-tools.js";
 export * from "./tools/schedule-tools.js";
 export * from "./tools/skill-tools.js";
 export * from "./voice/voice-factory.js";
-export { VoiceProviderUnavailableError } from "./voice/voice-http.js";
+export { VoiceProviderRefusedError, VoiceProviderUnavailableError } from "./voice/voice-http.js";
 export * from "./voice/voice-model-connection.js";
 export * from "./voice/voice-providers.js";
 export * from "./web/favicon.js";

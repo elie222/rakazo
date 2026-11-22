@@ -3,6 +3,7 @@ import {
   abortableDelay,
   MAX_TRANSCRIPTION_RESPONSE_BYTES,
   readJsonObjectWithin,
+  recognitionLocaleTag,
 } from "@rakazo/core";
 import type { AudioRecorder } from "expo-audio";
 import { File } from "expo-file-system";
@@ -10,6 +11,7 @@ import { Platform } from "react-native";
 import type { ApiRequestContext } from "../api/api";
 import { fetchServer } from "../api/server-headers";
 import { errorText, voiceAccountErrorText } from "../api/user-error";
+import { deviceLanguage, getActiveUiLocale } from "../i18n/i18n";
 import { ensureVoiceConsent, setDictationAudio } from "./voice";
 
 /** A recorded clip, ready to send to the voice provider. */
@@ -151,6 +153,8 @@ export async function transcribeClip(
 ): Promise<string> {
   await ensureVoiceConsent(requestContext);
   const { apiBase, headers } = requestContext;
+  // Without a language the provider guesses one, and a short clip can come back in another.
+  const language = recognitionLocaleTag(getActiveUiLocale(), await deviceLanguage());
   const res = await fetchServer(
     `${apiBase}/api/voice/transcribe`,
     {
@@ -159,6 +163,7 @@ export async function transcribeClip(
       body: JSON.stringify({
         audioBase64: clip.base64,
         mimeType: clip.mimeType,
+        language,
         callId: currentCallId,
       }),
       signal,
