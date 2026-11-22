@@ -94,23 +94,28 @@ it("drops a Show more failure that started before a reload", async () => {
   read.mockResolvedValueOnce({ items: [page("a")], nextCursor: "c1" } as never);
   await act(async () => root.render(createElement(Probe)));
   const late = deferred<unknown>();
-  read.mockReturnValueOnce(late.promise.then(() => Promise.reject(new Error("offline"))) as never);
-  let shown: unknown = "pending";
-  await act(async () => {
-    hook.showMore().then(
-      () => {
-        shown = "quiet";
-      },
-      (error: unknown) => {
-        shown = error;
-      },
-    );
-  });
-  read.mockResolvedValueOnce({ items: [page("b")], nextCursor: null } as never);
+  read.mockReturnValueOnce(late.promise as never);
+  await act(async () => void hook.showMore());
+  read.mockResolvedValueOnce({ items: [page("b")], nextCursor: "c2" } as never);
   await act(async () => hook.refresh());
-  await act(async () => late.resolve(undefined));
-  expect(shown).toBe("quiet");
+  await act(async () => late.reject(new Error("offline")));
+  expect(hook.listed).toMatchObject({ status: "ready", paginationFailed: false });
   expect(items()).toEqual(["b"]);
+});
+
+it("drops the pagination alert when a refreshed list has no remaining pages", async () => {
+  const read = vi.mocked(rpc);
+  read.mockReset();
+  read.mockResolvedValueOnce({ items: [page("a")], nextCursor: "c1" } as never);
+  await act(async () => root.render(createElement(Probe)));
+  read.mockRejectedValueOnce(new Error("offline"));
+  await act(async () => hook.showMore());
+  expect(hook.listed).toMatchObject({ status: "ready", paginationFailed: true });
+
+  read.mockResolvedValueOnce({ items: [page("a")], nextCursor: null } as never);
+  await act(async () => hook.refresh());
+  expect(hook.listed).toMatchObject({ status: "ready", paginationFailed: false });
+  expect(items()).toEqual(["a"]);
 });
 
 it("keeps the pages shown when the list comes back on screen, newest first", async () => {
@@ -165,8 +170,13 @@ it("starts from five again when the screen moves to another bot or a group", asy
   await act(async () => root.render(createElement(Owner, { owner: { botId: "b1" } })));
   await act(async () => hook.refresh());
   expect(read).toHaveBeenLastCalledWith("pages/list", { botId: "b1", limit: 8 });
+  read.mockRejectedValueOnce(new Error("offline"));
+  await act(async () => hook.showMore());
+  expect(hook.listed).toMatchObject({ status: "ready", paginationFailed: true });
+
   await act(async () => root.render(createElement(Owner, { owner: { botId: "b2" } })));
   expect(read).toHaveBeenLastCalledWith("pages/list", { botId: "b2", limit: 5 });
+  expect(hook.listed).toMatchObject({ status: "ready", paginationFailed: false });
   await act(async () => root.render(createElement(Owner, { owner: { groupId: "g1" } })));
   expect(read).toHaveBeenLastCalledWith("pages/list", { groupId: "g1", limit: 5 });
   read.mockReset();

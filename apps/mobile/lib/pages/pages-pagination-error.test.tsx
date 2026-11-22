@@ -8,7 +8,10 @@ import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import PagesScreen from "../../app/pages";
 
-const { rpc } = vi.hoisted(() => ({ rpc: vi.fn() }));
+const { focusRead, rpc } = vi.hoisted(() => ({
+  focusRead: { current: null as (() => void) | null },
+  rpc: vi.fn(),
+}));
 vi.mock("../api/api", () => ({ rpc }));
 vi.mock("@lingui/core/macro", () => ({ ph: (value: unknown) => value }));
 vi.mock("@lingui/react/macro", () => ({
@@ -17,7 +20,14 @@ vi.mock("@lingui/react/macro", () => ({
 vi.mock("@rakazo/chat-ui/native", () => ({ PageIcon: () => null }));
 vi.mock("expo-clipboard", () => ({ setStringAsync: vi.fn() }));
 vi.mock("expo-router", () => ({
-  useFocusEffect: (effect: () => void) => useEffect(effect, [effect]),
+  useFocusEffect: (effect: () => void) =>
+    useEffect(() => {
+      focusRead.current = effect;
+      effect();
+      return () => {
+        focusRead.current = null;
+      };
+    }, [effect]),
   useLocalSearchParams: () => ({ botId: "bot-1" }),
   useRouter: () => ({ push: vi.fn() }),
 }));
@@ -123,7 +133,7 @@ const button = (label: string) =>
 const alert = () => host.querySelector('[role="alert"]')?.textContent;
 const tap = (label: string) => act(async () => button(label)?.click());
 
-it("clears a failed next-page alert on retry, reuses the cursor, and keeps the loaded pages", async () => {
+it("clears a failed next-page alert only after a same-cursor retry succeeds", async () => {
   const retry = deferred<typeof lastRead>();
   rpc.mockResolvedValueOnce(firstRead).mockRejectedValueOnce(new Error("offline"));
   await render();
@@ -141,17 +151,59 @@ it("clears a failed next-page alert on retry, reuses the cursor, and keeps the l
     ["pages/list", nextInput],
   ]);
   expect(button("First page")).toBeDefined();
-  const retryAlert = alert();
+  expect(alert()).toBe(pagingError);
 
   await act(async () => retry.resolve(lastRead));
   expect(button("First page")).toBeDefined();
   expect(button("Second page")).toBeDefined();
   expect(button("Show more")).toBeUndefined();
   expect(alert()).toBeUndefined();
-  expect(retryAlert).toBeUndefined();
 });
 
-it("shows the error again if the next-page retry also fails", async () => {
+it("keeps a pagination alert when a refresh makes Show more a no-op", async () => {
+  const refresh = deferred<typeof firstRead>();
+  rpc.mockResolvedValueOnce(firstRead).mockRejectedValueOnce(new Error("offline"));
+  await render();
+  await tap("Show more");
+  expect(alert()).toBe(pagingError);
+
+  rpc.mockReturnValueOnce(refresh.promise);
+  await act(async () => focusRead.current?.());
+  await tap("Show more");
+  expect(rpc).toHaveBeenCalledTimes(3);
+  expect(rpc).toHaveBeenLastCalledWith("pages/list", { botId: "bot-1", limit: 5 });
+  expect(button("First page")).toBeDefined();
+  expect(alert()).toBe(pagingError);
+
+  await act(async () => refresh.resolve(firstRead));
+  expect(button("Show more")).toBeDefined();
+  expect(alert()).toBe(pagingError);
+});
+
+it("does not let a stale pagination success clear the current alert or append a page", async () => {
+  const stalePage = deferred<typeof lastRead>();
+  rpc.mockResolvedValueOnce(firstRead).mockRejectedValueOnce(new Error("offline"));
+  await render();
+  await tap("Show more");
+
+  rpc.mockReturnValueOnce(stalePage.promise);
+  await tap("Show more");
+  rpc.mockResolvedValueOnce({ ...firstRead, nextCursor: "refreshed-cursor" });
+  await act(async () => focusRead.current?.());
+  await act(async () => stalePage.resolve(lastRead));
+
+  expect(button("First page")).toBeDefined();
+  expect(button("Second page")).toBeUndefined();
+  expect(alert()).toBe(pagingError);
+
+  rpc.mockResolvedValueOnce(lastRead);
+  await tap("Show more");
+  expect(rpc).toHaveBeenLastCalledWith("pages/list", { ...nextInput, cursor: "refreshed-cursor" });
+  expect(button("Second page")).toBeDefined();
+  expect(alert()).toBeUndefined();
+});
+
+it("keeps the error if the next-page retry also fails", async () => {
   rpc.mockResolvedValueOnce(firstRead).mockRejectedValue(new Error("offline"));
   await render();
   await tap("Show more");
@@ -179,16 +231,21 @@ it("keeps the dedicated first-read retry and does not add a cursor to it", async
   expect(alert()).toBeUndefined();
 });
 
-it("does not clear an unrelated page action error on pagination", async () => {
+it("preserves an unrelated page action error through pagination failure and success", async () => {
   rpc
     .mockResolvedValueOnce(firstRead)
     .mockRejectedValueOnce(new Error("offline"))
     .mockResolvedValueOnce(firstRead)
+    .mockRejectedValueOnce(new Error("pagination offline"))
     .mockResolvedValueOnce(lastRead);
   await render();
   await tap("Pin First page");
   expect(rpc).toHaveBeenNthCalledWith(2, "pages/pin", { pageId: first.id, pinned: true });
   expect(alert()).toBe("Could not pin the page.");
+
+  await tap("Show more");
+  expect(alert()).toBe("Could not pin the page.");
+  expect(button("First page")).toBeDefined();
 
   await tap("Show more");
   expect(rpc).toHaveBeenLastCalledWith("pages/list", nextInput);
