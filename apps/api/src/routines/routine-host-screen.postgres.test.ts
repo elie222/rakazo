@@ -4,7 +4,6 @@ import { join } from "node:path";
 import { FakeSandboxProvider } from "@rakazo/adapters";
 import { runAsSystem } from "@rakazo/db";
 import { expect, it } from "vitest";
-import { sessionCookieHeader } from "../../../../packages/testkit/src/index.js";
 import { createApp } from "../app.js";
 
 const databaseUrl = process.env.VERIFY_DATABASE === "1" ? process.env.DATABASE_URL : undefined;
@@ -42,7 +41,10 @@ it.skipIf(!databaseUrl)("never offers Use my computer for the server's own scree
       body: JSON.stringify({ email, password: "test-password-123", name: "Host tester" }),
     });
     expect(signup.status).toBeLessThan(400);
-    const cookie = sessionCookieHeader(signup);
+    const cookie = signup.headers
+      .getSetCookie()
+      .map((value) => value.split(";")[0])
+      .join("; ");
     const call = async (procedure: string, json: unknown) => {
       const response = await handles.app.request(`/rpc/${procedure}`, {
         method: "POST",
