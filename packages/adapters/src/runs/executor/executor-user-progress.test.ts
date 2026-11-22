@@ -1,6 +1,6 @@
 import type { AgentRunRequest, AgentRuntimeEvent, BackgroundJob } from "@rakazo/adapter-kit";
 import type { MessageBlock } from "@rakazo/contracts";
-import { AGENT_IMPORT_ASK_ACTION_ID } from "@rakazo/contracts";
+import { AGENT_IMPORT_ASK_ACTION_ID, FIRST_BOT_SPAWN_KEY } from "@rakazo/contracts";
 import { deferred } from "@rakazo/core/test-async";
 import type { AppendEventInput, Prisma } from "@rakazo/db";
 import {
@@ -64,8 +64,8 @@ async function runTurn(
   intent: "fyi" | "request" | "question" = "fyi",
   options: {
     trigger?: string;
-    /** The run's owner made another bot before this one. */
-    earlierBot?: boolean;
+    /** The run's bot is the one a new account starts with. */
+    firstBot?: boolean;
     doneText?: string;
     splitText?: boolean;
     priorProgressText?: string;
@@ -197,8 +197,8 @@ async function runTurn(
         memoryScope: null,
         replyMode: options.replyMode ?? "chat",
         computer: { id: "computer-1", scope: "dedicated" },
+        spawnKey: options.firstBot ? FIRST_BOT_SPAWN_KEY : null,
       })),
-      findFirst: vi.fn(async () => (options.earlierBot ? { id: "bot-0" } : null)),
       findMany: vi.fn(async () => []),
     },
     attempt: {
@@ -1298,6 +1298,7 @@ describe("text written before a question", () => {
     const offered = async (options: Parameters<typeof runTurn>[5]) => {
       const { pauseRunForInput } = await runTurn("", false, "", [], "fyi", {
         trigger: "created",
+        firstBot: true,
         ...options,
         runtimeEvents: [
           { type: "tool", name: "ask_user", args: {}, executionId: "ask-1" },
@@ -1315,8 +1316,8 @@ describe("text written before a question", () => {
       expect(await offered({})).toEqual(["choice-1", AGENT_IMPORT_ASK_ACTION_ID]);
     });
 
-    it("is not offered once the person has another bot", async () => {
-      expect(await offered({ earlierBot: true })).toEqual(["choice-1"]);
+    it("is not offered on any other bot", async () => {
+      expect(await offered({ firstBot: false })).toEqual(["choice-1"]);
     });
 
     it("is not offered after the person has written", async () => {

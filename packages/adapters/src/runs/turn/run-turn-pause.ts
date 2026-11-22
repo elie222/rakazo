@@ -1,4 +1,4 @@
-import { AGENT_IMPORT_ASK_ACTION_ID } from "@rakazo/contracts";
+import { AGENT_IMPORT_ASK_ACTION_ID, FIRST_BOT_SPAWN_KEY } from "@rakazo/contracts";
 import { displayName, redactSecrets, TAKEOVER_COMPUTER_PENDING_STATE } from "@rakazo/core";
 import { storedMessageBlocks } from "@rakazo/db";
 import { MAX_APPROVAL_DETAIL_LENGTH, truncate } from "../../approvals/approval-ask.js";
@@ -76,27 +76,17 @@ export async function pauseForAnswer(ctx: RunContext, event: RuntimeEvent<"ask">
 
 const IMPORT_ACTION = { id: AGENT_IMPORT_ASK_ACTION_ID, label: "Move from another assistant" };
 
-/** The first question a person's first bot asks, as it introduces itself. */
+/** The first question the bot a new account starts with asks, as it introduces itself. */
 async function isFirstBotOpening({ deps, run, bot }: RunContext): Promise<boolean> {
-  if (run.trigger !== "created") return false;
-  const [earlierBot, messages] = await Promise.all([
-    deps.prisma.bot.findFirst({
-      where: { userId: bot.userId, id: { not: bot.id }, createdAt: { lte: bot.createdAt } },
-      select: { id: true },
-    }),
-    deps.prisma.message.findMany({
-      where: { threadId: run.threadId },
-      select: { id: true, role: true, blocks: true },
-      take: 50,
-    }),
-  ]);
-  return (
-    !earlierBot &&
-    !messages.some(
-      (message) =>
-        message.role === "user" ||
-        storedMessageBlocks(message).some((block) => block.kind === "ask"),
-    )
+  if (run.trigger !== "created" || bot.spawnKey !== FIRST_BOT_SPAWN_KEY) return false;
+  const messages = await deps.prisma.message.findMany({
+    where: { threadId: run.threadId },
+    select: { id: true, role: true, blocks: true },
+    take: 50,
+  });
+  return !messages.some(
+    (message) =>
+      message.role === "user" || storedMessageBlocks(message).some((block) => block.kind === "ask"),
   );
 }
 
