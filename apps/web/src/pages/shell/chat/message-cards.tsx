@@ -18,6 +18,7 @@ import { rpc } from "../../../lib/query/rpc";
 import type { ErrorDetails } from "../../../lib/query/user-error";
 import { errorDetails, errorText } from "../../../lib/query/user-error";
 import { useEventListener } from "../../../lib/use-event-listener";
+import { galleryImageKey, ImageLightbox, useOpenImage } from "./image-gallery";
 
 export function ChoiceCard({
   botId,
@@ -216,7 +217,7 @@ export function AppConnectCard({
           />
         ) : (
           <span className="grid h-10 w-10 place-items-center rounded-md bg-muted text-body-lg text-foreground">
-            {block.name.slice(0, 1).toUpperCase()}
+            {Array.from(block.name)[0]?.toUpperCase()}
           </span>
         )}
         <span className="min-w-0 flex-1">
@@ -523,11 +524,11 @@ export function ArtifactImage({
   artifactId: string;
   name: string;
 }) {
-  const { t } = useLingui();
   const [open, setOpen] = useState(false);
   const [visible, setVisible] = useState(false);
   const container = useRef<HTMLDivElement>(null);
   const src = useArtifactImage(target, artifactId, visible);
+  const openImage = useOpenImage();
 
   useEffect(() => {
     const element = container.current;
@@ -553,7 +554,10 @@ export function ArtifactImage({
       {src ? (
         <button
           type="button"
-          onClick={() => setOpen(true)}
+          onClick={() => {
+            if (openImage) openImage({ artifactId, name, target });
+            else setOpen(true);
+          }}
           className="max-w-[240px] overflow-hidden rounded-2xl"
         >
           <img src={src} alt={name} className="max-h-48 w-full object-cover" />
@@ -561,26 +565,13 @@ export function ArtifactImage({
       ) : (
         <div className="rounded-2xl bg-muted px-4 py-3 text-body text-muted-foreground">{name}</div>
       )}
-      {src ? (
-        <Dialog open={open} onOpenChange={setOpen}>
-          <DialogContent
-            showCloseButton={false}
-            className="w-auto max-w-none bg-transparent p-0 ring-0 sm:max-w-none"
-          >
-            <DialogTitle className="sr-only">{name}</DialogTitle>
-            <DialogClose
-              aria-label={t`Close image preview`}
-              render={<Button variant="ghost" size="icon-sm" className="absolute end-2 top-2" />}
-            >
-              <X />
-            </DialogClose>
-            <img
-              src={src}
-              alt={name}
-              className="max-h-[85vh] max-w-[90vw] rounded-xl object-contain"
-            />
-          </DialogContent>
-        </Dialog>
+      {src && open && !openImage ? (
+        <ImageLightbox
+          images={[{ artifactId, name, target }]}
+          selectedKey={galleryImageKey({ artifactId, name, target })}
+          onSelect={() => undefined}
+          onClose={() => setOpen(false)}
+        />
       ) : null}
     </div>
   );

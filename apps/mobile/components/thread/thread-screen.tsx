@@ -22,6 +22,7 @@ import { useCallback, useContext, useMemo, useRef, useState } from "react";
 import { I18nManager, Platform, View } from "react-native";
 import { KeyboardAvoidingView } from "react-native-keyboard-controller";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useLiveStream } from "../../lib/api/roster-signals";
 import { mobileTokens } from "../../lib/appearance/appearance";
 import type { MobileArtifactTarget } from "../../lib/artifacts/artifact-open";
 import { CallKeyboardContext } from "../../lib/calls/call-keyboard-context";
@@ -146,6 +147,7 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
   const readOnly = readOnlyParam === "1";
   const requestedThreadId = typeof threadId === "string" && threadId ? threadId : undefined;
   const inGroup = Boolean(groupId);
+  useLiveStream(focused);
   const call = useCallSession();
   const rootAvoidsKeyboard = useContext(CallKeyboardContext);
   const contentBottomInset = useContentBottomInset();
@@ -177,10 +179,10 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
     : botId
       ? { botId }
       : undefined;
-  const history = useThreadSnapshot();
+  // Refresh chat preferences and model availability on focus and when the app returns.
+  const uploadConfig = useScreenQuery(rpcQuery("me")).data;
+  const history = useThreadSnapshot(uploadConfig?.chatPreferences?.streamReplies);
   const { snap, composingBots, showingSaved } = history;
-  // Re-read on focus so returning from Models settings updates unsent missing-model messages.
-  const uploadConfig = useScreenQuery(rpcQuery("me"), { onForeground: false }).data;
   const needsModel = uploadConfig?.needsModel;
 
   const {
@@ -271,7 +273,7 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
     botId && rosterLoaded ? mentionBots.find((bot) => bot.id === botId) : undefined;
   // Until the chat's own roster arrives, the bot as the inbox last loaded it.
   const inboxBot = useInboxBot(botId);
-  const composerModel = useComposerModel(inGroup ? undefined : botId);
+  const composerModel = useComposerModel(inGroup ? undefined : botId, uploadConfig);
   const titleBot = currentBot ?? inboxBot;
   // Without a name yet (a notification can leave it out), the title shows a placeholder.
   const titleName = currentBot?.name ?? name ?? inboxBot?.name;
@@ -551,7 +553,8 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
       }))}
       atBottom={!scroll.state.detached}
       label={
-        activityLine ?? (workingRoutine ? t`Running ${ph({ name: workingRoutine })}…` : t`Working…`)
+        activityLine ??
+        (workingRoutine ? t`Running ${ph({ name: workingRoutine })}…` : t`Thinking…`)
       }
     />
   );

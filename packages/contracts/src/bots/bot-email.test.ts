@@ -17,6 +17,11 @@ describe("suggestedEmailName", () => {
     expect(suggestedEmailName("研究")).toBe("");
     expect(suggestedEmailName("a".repeat(80))).toHaveLength(64);
     expect(suggestedEmailName("Support Bot")).toBe("");
+    // One character is below the minimum the server accepts.
+    expect(suggestedEmailName("A")).toBe("");
+    expect(suggestedEmailName("Ö")).toBe("");
+    expect(suggestedEmailName("7")).toBe("");
+    expect(suggestedEmailName("Al")).toBe("al");
   });
 });
 

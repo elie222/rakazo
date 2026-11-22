@@ -1,7 +1,9 @@
+import type { MenuComponentRef } from "@expo/ui/community/menu";
 import { MenuView } from "@expo/ui/community/menu";
 import { useLingui } from "@lingui/react/macro";
 import { typeScale } from "@rakazo/ui-tokens";
-import { Pressable, ScrollView, Text, View } from "react-native";
+import { useRef } from "react";
+import { Platform, Pressable, ScrollView, Text, View } from "react-native";
 import type { MobileBot, MobileGroup } from "../../lib/api/mobile-types";
 import { useSideInsets } from "../../lib/layout/side-insets";
 import { native, useResolvedAppearance } from "../../lib/native/native";
@@ -77,31 +79,56 @@ export function ArchivedBotList({
           </LongPressMenu>
         ))}
         {groups.map((group) => (
-          <MenuView
+          <ArchivedGroupRow
             key={`group-${group.id}`}
             colorScheme={scheme}
-            actions={[{ id: "restore", title: t`Restore`, attributes: { disabled: pending } }]}
-            onPressAction={() => onRestoreGroup(group)}
-          >
-            <View
-              accessible
-              accessibilityLabel={`${group.name}, ${t`Group`}`}
-              style={{
-                minHeight: 54,
-                paddingHorizontal: 16,
-                flexDirection: "row",
-                alignItems: "center",
-                gap: 12,
-              }}
-            >
-              <NativeSymbol ios="person.2" android="people-outline" color={native.secondaryLabel} />
-              <Text style={{ flex: 1, color: native.label, ...typeScale.cardTitle }}>
-                {group.name}
-              </Text>
-            </View>
-          </MenuView>
+            group={group}
+            pending={pending}
+            onRestoreGroup={onRestoreGroup}
+          />
         ))}
       </View>
     </ScrollView>
+  );
+}
+
+function ArchivedGroupRow({
+  colorScheme,
+  group,
+  pending,
+  onRestoreGroup,
+}: Pick<ArchivedBotListProps, "pending" | "onRestoreGroup"> & {
+  colorScheme: ReturnType<typeof useResolvedAppearance>;
+  group: MobileGroup;
+}) {
+  const { t } = useLingui();
+  const menu = useRef<MenuComponentRef>(null);
+  const android = Platform.OS === "android";
+  return (
+    <MenuView
+      ref={menu}
+      colorScheme={colorScheme}
+      actions={[{ id: "restore", title: t`Restore`, attributes: { disabled: pending } }]}
+      onPressAction={() => onRestoreGroup(group)}
+    >
+      <View
+        accessible
+        accessibilityLabel={`${group.name}, ${t`Group`}`}
+        accessibilityRole={android ? "button" : undefined}
+        accessibilityActions={android ? [{ name: "activate" }] : undefined}
+        // TalkBack activation does not reach the menu's touch handler, so open it here.
+        onAccessibilityAction={android ? () => menu.current?.show() : undefined}
+        style={{
+          minHeight: 54,
+          paddingHorizontal: 16,
+          flexDirection: "row",
+          alignItems: "center",
+          gap: 12,
+        }}
+      >
+        <NativeSymbol ios="person.2" android="people-outline" color={native.secondaryLabel} />
+        <Text style={{ flex: 1, color: native.label, ...typeScale.cardTitle }}>{group.name}</Text>
+      </View>
+    </MenuView>
   );
 }

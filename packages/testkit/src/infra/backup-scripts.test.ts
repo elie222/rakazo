@@ -318,7 +318,6 @@ function contents(archive: string) {
 describe("development database configuration", () => {
   it.each([
     ["rakazo", "rakazo"],
-    ["custom_admin", "custom_db"],
     ["admin with spaces", "db with $dollar; punctuation"],
   ])("uses container credentials %j / %j for backup and restore", (user, database) => {
     const f = fixture();

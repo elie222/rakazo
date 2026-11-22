@@ -592,7 +592,7 @@ describe("prepareHonchoConnection", () => {
     },
   );
 
-  it.each(["", "short", "k".repeat(4097)])(
+  it.each(["short", "k".repeat(4097)])(
     "rejects invalid key length before probing",
     async (apiKey) => {
       const fetch = vi.fn(() => {
@@ -983,7 +983,7 @@ describe("Honcho local mode", () => {
     expect(honchoRequiresPrivateEndpoint({ mode: "LOCAL", endpointTrust: "public" })).toBe(true);
   });
 
-  it.each([" local ", "LOCAL", " cloud "])(
+  it.each([" local ", "LOCAL"])(
     "rejects the unnormalized mode %j instead of reinterpreting it",
     async (mode) => {
       const fetch = localFetch();

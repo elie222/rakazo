@@ -40,3 +40,11 @@ decompression is untouched. Drop once fflate ships the fix — re-verify an
 export containing a file that starts with zero bytes.
 
 Introduced in #3694, which also carries the regression test.
+
+## `react-native-enriched-markdown@1.2.0.patch`
+
+On Android, wide code blocks and tables reserve the first motion events to
+distinguish sideways drags from vertical chat scrolling. Their viewports
+start at the physical left, and table layout preserves the user's scroll
+position where it still fits. Drop when an upstream release handles both
+behaviors in a vertical chat list (#6368, #6369).

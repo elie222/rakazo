@@ -1,7 +1,7 @@
 import path from "node:path";
 import type { AgentToolExecutionResult, ProcessEvent } from "@rakazo/adapter-kit";
 import type { ApprovalMode } from "@rakazo/core";
-import { botMessageMaxHops, redactSecrets } from "@rakazo/core";
+import { BOT_MESSAGE_MAX_HOPS, redactSecrets } from "@rakazo/core";
 import { sandboxCommandTimeoutMs } from "@rakazo/core/node/sandbox-command";
 import type { PrismaClient } from "@rakazo/db";
 import { mayBeChannelMessage, readMessageBlocks } from "@rakazo/db";
@@ -127,7 +127,7 @@ export async function botChainFromOwner(
   prisma: PrismaClient,
   run: { userId: string; spaceId: string; sourceMessageId: string | null },
   access: UserComputerAccess,
-  maxHops = botMessageMaxHops(),
+  maxHops = BOT_MESSAGE_MAX_HOPS,
 ): Promise<boolean> {
   let messageId = run.sourceMessageId;
   for (let hop = 0; hop < maxHops && messageId; hop++) {
