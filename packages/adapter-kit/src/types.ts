@@ -312,6 +312,8 @@ export interface SandboxKindCapabilities {
   maxFileBytes?: number;
   /** The provider confirms machine size for size-based allowance accounting. */
   sizedUsage?: boolean;
+  /** On the desktop app's own server, the person may give bots the host machine instead. */
+  offersHostComputer?: boolean;
 }
 
 export interface SandboxCapabilities {
@@ -769,7 +771,11 @@ export interface AgentRunRequest {
    */
   yieldSignal?: AbortSignal;
   /** Human answer or takeover outcome for the pending interaction. Never secret input. */
-  resumeToolResult?: { content: Array<{ type: "text"; text: string }> };
+  resumeToolResult?: {
+    content: Array<{ type: "text"; text: string }>;
+    /** History rows fully represented by the restored turn and its human answer. */
+    historyMessageIds?: string[];
+  };
   script?: ScriptedTurn[];
   /**
    * FYI bot-message wakes and scheduled routines may finish with no text.
@@ -1008,6 +1014,7 @@ export interface VoiceTranscribeRequest {
 
 export interface BackgroundJobPayloads {
   "run.continue": { runId: string };
+  "page.revise": { requestId: string };
   "routine.wakeup": { routineId: string; scheduledFor: string };
   /** Run a failed routine run once more; the payload names the failed run. */
   "routine.retry": { runId: string };
@@ -1160,6 +1167,7 @@ export type SecretCleanupKind =
   | "secret_tables"
   | "messaging_installation"
   | "deployment_computer_provider"
+  | "deployment_model"
   | "purchase_request"
   | "purchase_card"
   | "purchase_token"

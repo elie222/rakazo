@@ -13,7 +13,6 @@ import {
 } from "@rakazo/core";
 import type { Prisma, PrismaClient, ThreadEvents } from "@rakazo/db";
 import { eligibleWaitingTextAnswer, IsolationError, storedMessageBlocks } from "@rakazo/db";
-import { getLogger } from "@rakazo/logging";
 
 export const RUNS_NEEDING_CONTINUE = new Set(["queued", "waiting_takeover"]);
 
@@ -193,10 +192,7 @@ export async function replayExistingSend(
     select: { seq: true },
   });
   if (latestEvent) {
-    await deps.events.notify(threadId, latestEvent.seq).catch((error) => {
-      // Subscribers catch up from the durable event cursor after a missed realtime wake.
-      getLogger().error("thread send realtime notification", error);
-    });
+    await deps.events.notify(threadId, latestEvent.seq);
   }
   return sendResult(message, runs);
 }

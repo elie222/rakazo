@@ -2,7 +2,9 @@ import { execFileSync } from "node:child_process";
 import { writeFileSync } from "node:fs";
 import { createServer } from "node:net";
 import type { AdapterContext, ComputerRef, ProcessEvent } from "@rakazo/adapter-kit";
-import { afterEach, describe, expect, it } from "vitest";
+import { SandboxUnavailableError } from "@rakazo/adapter-kit";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { ExecComputer } from "../../../computers/sandbox/exec-computer.js";
 import {
   assertSandboxReadLimit,
   assertSandboxWorkspaceContract,
@@ -127,6 +129,34 @@ describe("AppleContainerSandboxProvider", () => {
     expect(apply!.stdin).toBe(localVmFirewall("192.168.70.1"));
     expect(verify!.argv.slice(-4)).toEqual(["list", "table", "inet", "rakazo"]);
   });
+
+  it.each(["exit", "throw"])(
+    "reports an unavailable computer and removes the VM and network when readiness probes %s",
+    async (failure) => {
+      const fake = fakeCli();
+      const probe = vi.spyOn(ExecComputer.prototype, "run");
+      if (failure === "throw") probe.mockRejectedValue(new Error("screen gateway unreachable"));
+      else probe.mockResolvedValue({ code: 1, stdout: "", stderr: "" });
+      // Expire the existing fake provider's deadline without a real wait.
+      const now = vi.spyOn(Date, "now").mockReturnValueOnce(0).mockReturnValue(5_000);
+      try {
+        const provision = fake.provider.provision({ botId: "bot-a", homePath: "/unused" }, context);
+        await expect(provision).rejects.toBeInstanceOf(SandboxUnavailableError);
+        const name = fake.calls().find((call) => call.argv[0] === "run")!.argv[3];
+        await expect(provision).rejects.toMatchObject({
+          cause: new Error(`VM computer ${name} did not become ready within 5000 ms`),
+        });
+        expect(probe).toHaveBeenCalledOnce();
+        expect(fake.vms()).toEqual({});
+        expect(fake.calls().map((call) => call.argv.join(" "))).toEqual(
+          expect.arrayContaining([`rm --force ${name}`, `network rm ${name}`]),
+        );
+      } finally {
+        now.mockRestore();
+        probe.mockRestore();
+      }
+    },
+  );
 
   it("re-applies the firewall when reusing a running VM of the same bot", async () => {
     const fake = fakeCli({ "rakazo-old": { botId: "bot-a" } });

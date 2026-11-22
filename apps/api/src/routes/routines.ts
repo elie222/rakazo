@@ -1,6 +1,7 @@
 import { ORPCError } from "@orpc/server";
 import { routineJobKey, routineWakeupJob } from "@rakazo/adapter-kit";
 import {
+  firstWatchCheck,
   parseRoutineWatch,
   postRoutineNotice,
   RoutineWatchError,
@@ -18,6 +19,7 @@ import {
   hasMixedOneShotSchedule,
   isOneShotRoutineCrons,
 } from "@rakazo/core";
+import type { PrismaClient } from "@rakazo/db";
 import { IsolationError, isRecordNotFound, Prisma } from "@rakazo/db";
 import { assertRoutineModel } from "../bots/model-pins.js";
 import { assertEmailTrigger } from "../email/bot-email-address.js";
@@ -25,13 +27,13 @@ import { listRoutineRuns } from "../routines/routine-runs.js";
 import {
   assertRoutineSchedule,
   createRoutineTestRun,
-  firstWatchCheck,
+  findRoutineTestRun,
   listRoutinesDto,
   nextRoutineDate,
   routineNextRunAt,
   routineRowData,
+  routineRunNowTarget,
   routineTestRunNonce,
-  routineTestTarget,
   routineView,
   routineViews,
 } from "../routines/routines.js";
@@ -362,41 +364,41 @@ export function routinesRoutes(ctx: RouterContext) {
         return { ok: true as const };
       }),
       testRun: authed.routines.testRun.handler(async ({ context, input }) => {
-        const target = await routineTestTarget(deps.prisma, repos, context.actor, input.routineId);
-        const { threadId } = target;
         const nonce = input.clientNonce
           ? routineTestRunNonce(context.actor, input.clientNonce)
           : undefined;
-        const findExisting = async () =>
-          nonce
-            ? deps.prisma.run.findFirst({
-                where: { threadId, userId: context.actor.userId, clientNonce: nonce },
-                select: { id: true },
-              })
-            : null;
+        const findExisting = (db: Pick<PrismaClient, "run"> = deps.prisma) =>
+          findRoutineTestRun(db, context.actor, input.routineId, nonce);
+        // Access is checked first, so a retry can't return a run for a bot the caller lost.
+        const target = await routineRunNowTarget(
+          deps.prisma,
+          repos,
+          context.actor,
+          input.routineId,
+        );
+        // The group chat a run went to, so the client can follow it there.
+        const runResult = (run: { id: string; thread: { groupId: string | null } }) => ({
+          runId: run.id,
+          groupId: run.thread.groupId,
+        });
         const existing = await findExisting();
-        if (existing) return { runId: existing.id };
+        if (existing) return runResult(existing);
         const skillRecords = await agentSkills.listWithContent(context.actor);
         const prompt = expandSkillReferencesInPrompt(target.routine.prompt, skillRecords);
-        let run: { id: string };
+        let run: { id: string; thread: { groupId: string | null } };
         try {
           // Task + run must commit together so a nonce collision cannot leave an orphan queued Task.
           run = await deps.prisma.$transaction(async (tx) => {
-            const existing = nonce
-              ? await tx.run.findFirst({
-                  where: { threadId, clientNonce: nonce },
-                  select: { id: true },
-                })
-              : null;
+            const existing = await findExisting(tx);
             return existing ?? createRoutineTestRun(tx, context.actor, target, prompt, nonce);
           });
         } catch (error) {
           const existing = await findExisting();
-          if (existing) return { runId: existing.id };
+          if (existing) return runResult(existing);
           throw error;
         }
         await wakeRun(deps.jobs, run.id);
-        return { runId: run.id };
+        return runResult(run);
       }),
     },
   };

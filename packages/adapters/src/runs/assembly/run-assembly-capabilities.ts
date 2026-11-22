@@ -201,6 +201,7 @@ export async function startTurnModel(
       id: selectedModelId,
       credential: selected.credential,
       connectionId: selected.connectionId,
+      adminSettings: settings,
       thinkingLevel: selected.thinkingLevel,
     },
     pinnedComputerModels?.main,

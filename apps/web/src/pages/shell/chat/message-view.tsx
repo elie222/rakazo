@@ -72,6 +72,7 @@ export const MessageView = memo(function MessageView({
   onOpenBot,
   onOpenPeerMessages,
   peerExchange,
+  hideSenderLabel,
   speakerName,
   memberName,
   peerBot,
@@ -87,6 +88,7 @@ export const MessageView = memo(function MessageView({
   onOpenComputer,
   onReleaseComputer,
   onOpenImportSetup,
+  onOpenAgentImport,
   rpc,
   showToolActivity,
   onReply,
@@ -119,6 +121,7 @@ export const MessageView = memo(function MessageView({
   onOpenPeerMessages: (peer: { peerBotId: string; peerBotName: string }) => void;
   /** The adjacent receipts represented by this peer line. */
   peerExchange?: PeerExchange;
+  hideSenderLabel?: boolean;
   speakerName?: string;
   memberName?: (botId: string | undefined) => string | undefined;
   peerBot: (
@@ -142,6 +145,8 @@ export const MessageView = memo(function MessageView({
   ) => Promise<void>;
   /** Opens where an imported item's setup is finished. */
   onOpenImportSetup?: (target: ImportSetupTarget) => void;
+  /** Opens the agent import, for the option a first bot's opening question offers. */
+  onOpenAgentImport?: () => void;
   rpc: ReturnType<typeof createSpaceRpc>;
   showToolActivity: boolean;
   onReply: (message: ThreadMessage) => void;
@@ -208,7 +213,7 @@ export const MessageView = memo(function MessageView({
   );
   const messageContext = (
     <>
-      {speakerName ? (
+      {hideSenderLabel ? null : speakerName ? (
         <div
           className="mb-1.5 flex items-center gap-2 text-body-sm font-semibold tracking-tight"
           dir="auto"
@@ -257,6 +262,7 @@ export const MessageView = memo(function MessageView({
     <MessageHoverActions
       message={message}
       side={message.role === "user" ? "start" : "end"}
+      speakerName={speakerName ?? author?.name}
       onReply={onReply}
       onMarkUnread={onMarkUnread}
       markedUnread={markedUnread}
@@ -686,6 +692,7 @@ export const MessageView = memo(function MessageView({
                     }
                     onDismiss={() => onAnswer(message, "", undefined, true)}
                     rpc={rpc}
+                    onOpenAgentImport={onOpenAgentImport}
                   />
                 )}
                 {i === hoverAnchorIndex ? hoverActions : null}
