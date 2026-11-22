@@ -5,13 +5,12 @@ import type {
   Connection,
   ConnectionCatalogItem,
   McpServer,
-  McpServerConnection,
   McpSourcePreset,
   PluginMarketplaceEntry,
 } from "@rakazo/contracts";
 import { mcpServerConnection, mcpServerNeedsSignIn, SUBMIT_PLUGIN_URL } from "@rakazo/contracts";
-import type { PluginCategory } from "@rakazo/core";
 import {
+  browsablePlugins,
   buildFeaturedConnectorTiles,
   CONNECTION_CATALOG_PAGE_SIZE,
   catalogItemAccounts,
@@ -19,11 +18,15 @@ import {
   connectCatalogItem,
   customMcpServerInput,
   filterConnectionCatalogItems,
+  filterPluginBrands,
+  filterPlugins,
   integrationCatalogsReady,
   isCatalogItemConnected,
   matchesWordPrefixes,
-  OTHER_PLUGINS,
+  pluginBrands,
+  pluginCategories,
 } from "@rakazo/core";
+import { mcpServerStatusLabel, pluginCategoryLabel } from "@rakazo/i18n/plugin-catalog";
 import type { NativeStackNavigationOptions } from "expo-router";
 import { useFocusEffect, useLocalSearchParams, useNavigation, useRouter } from "expo-router";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
@@ -77,12 +80,9 @@ import {
 import { signInToMcpServer } from "../../lib/integrations/mcp-oauth";
 import type { PluginParams } from "../../lib/integrations/plugin-marketplace";
 import {
-  browsablePlugins,
-  filterPlugins,
   gitImportParams,
   hasPluginConnector,
   managedPluginParams,
-  pluginCategories,
   pluginParams,
 } from "../../lib/integrations/plugin-marketplace";
 import { useSideInsets } from "../../lib/layout/side-insets";
@@ -98,19 +98,6 @@ export default function Integrations() {
   const navigation = useNavigation();
   const styles = useThemedStyles(createIntegrationsStyles);
   const { t } = useLingui();
-  const categoryLabels: Record<PluginCategory, string> = {
-    productivity: t`Productivity`,
-    communication: t`Communication`,
-    sales: t`Sales & CRM`,
-    marketing: t`Marketing`,
-    finance: t`Finance`,
-    people: t`Recruiting & HR`,
-    design: t`Design`,
-    code: t`Developer`,
-    data: t`Data`,
-    ops: t`Security & Ops`,
-  };
-  const categoryLabel = (name: string) => categoryLabels[name as PluginCategory] ?? name;
   const { width } = useWindowDimensions();
   const catalogColumns = width >= 480 ? 2 : 1;
   const [catalog, setCatalog] = useState<ConnectionCatalogItem[]>([]);
@@ -233,21 +220,15 @@ export default function Integrations() {
     () => browsablePlugins(pluginEntries, catalog),
     [pluginEntries, catalog],
   );
-  // Managed apps standing in for a plugin keep that plugin's category, so a category lists them too.
-  const mergedBrands = catalog.flatMap((item) => {
-    const entry = pluginForApp.get(catalogItemKey(item));
-    return entry ? [{ item, entry }] : [];
-  });
+  const mergedBrands = pluginBrands(catalog, pluginForApp);
   const categories = pluginCategories([...plugins, ...mergedBrands.map(({ entry }) => entry)]);
-  const brandMatches = category
-    ? mergedBrands.filter(
-        ({ item, entry }) =>
-          entry.category === (category === OTHER_PLUGINS ? null : category) &&
-          (matchesWordPrefixes(item.name, query) ||
-            filterPlugins([entry], query, null, categoryLabel).length > 0),
-      )
-    : [];
-  const pluginMatches = filterPlugins(plugins, query, category || null, categoryLabel);
+  const brandMatches = filterPluginBrands(
+    mergedBrands,
+    query,
+    category || null,
+    pluginCategoryLabel,
+  );
+  const pluginMatches = filterPlugins(plugins, query, category || null, pluginCategoryLabel);
   const filtering = Boolean(query.trim() || category);
   const installedSources = new Set(pluginInstalls.map((install) => install.source));
   const standaloneServers = mcpServers.filter((server) => !server.installId);
@@ -507,23 +488,6 @@ export default function Integrations() {
       : { source: install.source, installedSource: install.source, name: install.name };
   }
 
-  function serverStatus(state: McpServerConnection): string {
-    switch (state) {
-      case "disabled":
-        return t`Disabled`;
-      case "needs_client":
-        return t`Needs an OAuth client ID`;
-      case "needs_sign_in":
-        return t`Needs sign-in`;
-      case "not_working":
-        return t`Not working`;
-      case "connected":
-        return t`Connected`;
-      case "not_connected":
-        return t`Not connected`;
-    }
-  }
-
   function renderInstalledPlugin(install: CapabilityInstall, summary: string, signIn: boolean) {
     const params = installedParams(install);
     return (
@@ -593,7 +557,7 @@ export default function Integrations() {
               <NativeSymbol {...symbol} size={14} color={color} />
             </View>
           ) : null}
-          <Text style={[styles.secondary, { color }]}>{serverStatus(state)}</Text>
+          <Text style={[styles.secondary, { color }]}>{mcpServerStatusLabel(state)}</Text>
         </View>
         {server.enabled &&
         state !== "connected" &&
@@ -1085,7 +1049,7 @@ export default function Integrations() {
                   plain
                   choices={[
                     { key: "", label: t`All` },
-                    ...categories.map((name) => ({ key: name, label: categoryLabel(name) })),
+                    ...categories.map((name) => ({ key: name, label: pluginCategoryLabel(name) })),
                   ]}
                   value={category}
                   onChange={(key) => {
@@ -1250,7 +1214,7 @@ export default function Integrations() {
                   onShowMore={() => setPluginCount((count) => count + PLUGIN_PAGE_SIZE)}
                   plugins={plugins}
                   categories={categories}
-                  categoryLabel={categoryLabel}
+                  categoryLabel={pluginCategoryLabel}
                   onViewCategory={(name) => {
                     setCategory(name);
                     setPluginCount(PLUGIN_PAGE_SIZE);
