@@ -6,6 +6,7 @@ import type {
   AutoReviewProvider,
   BrowserProvider,
   ConnectorProvider,
+  DeploymentPolicy,
   JobPublisher,
   ManagedConnectorProvider,
   MediaGenerationProvider,
@@ -97,6 +98,8 @@ export interface ExecutorDeps {
   paymentWallet?: PaymentWalletProvider | null;
   /** Optional Auto Review verifier. When omitted, the factory selects from env (llm | jev | scripted). */
   autoReview?: AutoReviewProvider;
+  /** Rules this deployment adds to every run; see loadDeploymentPolicy. */
+  deploymentPolicy?: DeploymentPolicy;
   /**
    * Live Codex model catalog; when present, a statically excluded Codex model
    * can still run for the OAuth account whose backend lists it.

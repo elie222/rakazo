@@ -119,6 +119,41 @@ callbacks.
 | `PI_SESSION_RECORDING` | off             | `true` records agent sessions as JSONL under `DATA_DIR/pi-sessions`. The files are not encrypted, so do not use it on a shared or multi-tenant install. |
 | `PRIVACY_POLICY_URL`   | Rakazo's policy | The privacy policy linked from the AI data-sharing notice. Set it on the API.                                                                           |
 
+## Deployment policy
+
+Approval rules belong to each person and Space. For a rule that holds for every account and that
+nobody can change from the app, such as "no shell commands on this install", point
+`DEPLOYMENT_POLICY_MODULE` at a JavaScript module of your own:
+
+```js
+// policy.mjs
+export default {
+  async toolCall(call) {
+    if (call.tool === "shell") return { refuse: "Shell commands are turned off on this server." };
+  },
+};
+```
+
+```env
+DEPLOYMENT_POLICY_MODULE=/app/policy/policy.mjs
+```
+
+`toolCall` runs for every tool call a bot makes, before the app's own approval checks. It receives
+`userId`, `spaceId`, `botId`, `runId`, `tool`, `args` (a copy) and `actions`: the names approval
+rules match, which for a connected app is its own name for the tool and for a batch tool is each
+action it was asked to run. Return `{ refuse: "..." }` to stop the call; the bot reads that
+sentence in place of the result, so say what it should tell the user. Return nothing to leave the
+call to the usual checks. The type is `DeploymentPolicy` in `@rakazo/adapter-kit`.
+
+- A policy can only refuse. It cannot allow a call the app would refuse or ask about.
+- A policy that throws, takes longer than five seconds or returns anything else refuses the call,
+  and the failure is logged as `deployment_policy.failed` without the arguments.
+- A refused call is recorded as denied in the [audit log](./self-host-audit-log.md).
+- The API and the worker each load the module when they start, and neither starts if it cannot be
+  loaded. With Compose, mount the file into both services at the same path.
+- The module runs inside the API and worker with everything they can reach, so treat it like the
+  image itself: keep it under your control and review changes to it.
+
 ## Chat history retention
 
 Rakazo keeps chat history until someone clears the chat or deletes the bot. To delete it
