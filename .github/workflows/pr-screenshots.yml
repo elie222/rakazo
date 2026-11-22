@@ -224,6 +224,7 @@ jobs:
       # nothing of the runner's: the login stays with the credential proxy, the runner's home is
       # closed to other users, and its shell commands run in Codex's read-only, offline sandbox.
       - name: Prepare isolated Codex user
+        id: codex-user
         if: steps.current.outputs.current == 'true' && env.SCREENSHOT_AGENT == 'codex'
         env:
           HEAD_SHA: ${{ inputs.head_sha }}
@@ -234,7 +235,10 @@ jobs:
           sudo useradd --create-home --shell /usr/sbin/nologin codex-screenshots
           sudo install -d -o codex-screenshots -g codex-screenshots -m 700 \
             /home/codex-screenshots/.codex /srv/pr-screenshot-agent
-          [[ $(git -C pr-checkout rev-parse HEAD) == "$HEAD_SHA" ]] || { echo "::error::The pull request moved past the captured commit"; exit 1; }
+          if [[ $(git -C pr-checkout rev-parse HEAD) != "$HEAD_SHA" ]]; then
+            echo "This commit is no longer current; skipping."
+            exit 0
+          fi
           rm -rf pr-checkout/.git
           sudo cp -R pr-checkout /srv/pr-checkout
           sudo install -m 644 "$RUNNER_TEMP/prompt/full.diff" /srv/pr-checkout.diff
@@ -258,9 +262,10 @@ jobs:
           sudo python3 .github/scripts/pr-screenshot-codex.py "$RUNNER_TEMP/codex-mcp.json" /home/codex-screenshots/.codex 18899
           sudo chown -R codex-screenshots:codex-screenshots /home/codex-screenshots/.codex
           sudo chmod 600 /home/codex-screenshots/.codex/config.toml /home/codex-screenshots/.codex/schema.json
+          echo "ready=true" >> "$GITHUB_OUTPUT"
       - name: Restore subscription login
         id: auth
-        if: steps.current.outputs.current == 'true' && env.SCREENSHOT_AGENT == 'codex'
+        if: steps.codex-user.outputs.ready == 'true'
         env:
           CODEX_SUBSCRIPTION_AUTH: ${{ secrets.CODEX_SUBSCRIPTION_AUTH }}
           GH_TOKEN: ${{ secrets.GH_DEPENDENCY_UPDATES_PAT }}
