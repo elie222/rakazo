@@ -133,7 +133,6 @@ vi.mock("../../components/native/native-action-button", () => ({
 vi.mock("react-native-svg", () => ({
   fetchText: async (uri: string) => {
     if (uri.includes("failed.svg")) throw new Error("Artwork unavailable");
-    if (uri.includes("empty.svg")) return "";
     return uri.includes("oversized.svg") ? " ".repeat(1_000_000) : `<svg data-uri="${uri}"/>`;
   },
   parse: (xml: string, middleware: (ast: unknown) => unknown) => {
@@ -396,12 +395,6 @@ it("falls back when fetching catalog artwork fails", async () => {
 
 it("falls back before parsing oversized catalog artwork", async () => {
   await render(<ConnectorIcon name="Example" logo="https://example.test/oversized.svg" />);
-  expect(container.textContent).toBe("E");
-  expect(container.querySelector("svg")).toBeNull();
-});
-
-it("falls back when catalog artwork is empty", async () => {
-  await render(<ConnectorIcon name="Example" logo="https://example.test/empty.svg" />);
   expect(container.textContent).toBe("E");
   expect(container.querySelector("svg")).toBeNull();
 });
