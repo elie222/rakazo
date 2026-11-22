@@ -6,6 +6,7 @@ import { comparePreferenceOrder, newestModelCredentialOrder } from "@rakazo/db";
 import { modelCredentialDto } from "./model-connect.js";
 import { modelProviderAllowed, modelProviderAllowlist } from "./model-provider-allowlist.js";
 import { resolveMemberMainModel } from "./model-roles.js";
+import { parseModelSecret } from "./model-secret.js";
 
 /**
  * The member's model connections, newest first, as every model picker reads them. With
@@ -90,6 +91,8 @@ export async function listModelCredentials(
       let plaintext: string;
       try {
         plaintext = await deps.secretStore.load(ciphertext, row.secretId);
+        // A damaged secret leaves only its own connection out.
+        parseModelSecret(plaintext);
       } catch (error) {
         if (error instanceof SecretStoreUnavailableError) throw error;
         return unreadable;

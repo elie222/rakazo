@@ -254,6 +254,11 @@ describe("custom server models", () => {
     expect(await connectedModelChoices(unreadable, scope)).toEqual([]);
   });
 
+  it("leaves out only a connection whose secret is damaged", async () => {
+    const damaged = customServer(async () => JSON.stringify({ kind: "openai_compatible" }));
+    expect(await listModelCredentials(damaged, scope, { runnable: true })).toEqual([]);
+  });
+
   it("adds no saved free-form id from a connection that is not a custom server", async () => {
     const deps = customServer(async () => "fake-api-key", "anthropic");
     const choices = await connectedModelChoices(deps, scope);
