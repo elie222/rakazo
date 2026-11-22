@@ -395,6 +395,29 @@ describe("readFileFromTool images", () => {
     expect(result.content.map((part) => part.type)).toEqual(["text", "image"]);
   });
 
+  it("reads an image larger than the text limit whatever its name", async () => {
+    const bytes = await photo(400, 300);
+    expect(bytes.byteLength).toBeGreaterThan(250_000);
+    const { sandbox, workspace } = fileWorkspace(bytes);
+    const result = (await readFileFromTool(
+      sandbox,
+      workspace,
+      { path: "download" },
+      undefined,
+      true,
+    )) as AgentToolExecutionResult;
+    expect(result.details).toMatchObject({ mimeType: "image/png", width: 400, height: 300 });
+  });
+
+  it("keeps the text limit for a large file that is not an image", async () => {
+    const { sandbox, workspace } = fileWorkspace("x".repeat(250_001));
+    expect(await readFileFromTool(sandbox, workspace, { path: "logs/big.log" })).toEqual({
+      error: "file is over 250 KB; read parts of logs/big.log with shell (grep, sed -n, tail)",
+      path: "logs/big.log",
+      size: 250_001,
+    });
+  });
+
   it("recognizes an image by its bytes whatever its name", async () => {
     const { sandbox, workspace } = fileWorkspace(
       await sharp({ create: { width: 8, height: 8, channels: 3, background: "#fff" } })
@@ -436,7 +459,7 @@ describe("readFileFromTool images", () => {
       undefined,
       true,
     )) as ReadFileResult;
-    expect(maxBytesSeen).toEqual([250_000]);
+    expect(maxBytesSeen).toEqual([TOOL_IMAGE_MAX_BYTES]);
     expect(result.error).toContain("open_path");
   });
 });

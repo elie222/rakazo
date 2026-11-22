@@ -1,6 +1,7 @@
 import type { AgentToolExecutionResult } from "@rakazo/adapter-kit";
+import { createLogger, getLogger, installLogger } from "@rakazo/logging";
 import sharp from "sharp";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { imageToolResult, TOOL_IMAGE_MAX_EDGE } from "./tool-result-image.js";
 import { IMAGE_MODEL_CANNOT_SEE, IMAGE_UNREADABLE } from "./tool-result-image.prompt.js";
 
@@ -26,6 +27,9 @@ function sent(result: unknown) {
 }
 
 describe("imageToolResult", () => {
+  const logger = getLogger();
+  afterEach(() => installLogger(logger));
+
   it("hands a small PNG to the model unchanged in size", async () => {
     const result = await imageToolResult(await picture(40, 30, "png"), { path: "a.png" }, true);
     const { tool, image, bytes } = sent(result);
@@ -70,10 +74,31 @@ describe("imageToolResult", () => {
     });
   });
 
-  it("reports a corrupt picture instead of sending it", async () => {
+  it("reports a corrupt picture instead of sending it, and logs why", async () => {
+    const events: Array<Record<string, unknown>> = [];
+    installLogger(
+      createLogger({
+        service: "test",
+        sinks: [
+          {
+            write: (event) => {
+              events.push(event);
+            },
+          },
+        ],
+      }),
+    );
     const png = await picture(40, 30, "png");
     const result = await imageToolResult(png.subarray(0, 40), {}, true);
     expect(result).toMatchObject({ error: IMAGE_UNREADABLE });
+    expect(events).toEqual([
+      expect.objectContaining({
+        level: "warn",
+        message: "tool_image.decode_failed",
+        "image.format": "image/png",
+        error: expect.anything(),
+      }),
+    ]);
     expect(await imageToolResult(new TextEncoder().encode("hello"), {}, true)).toMatchObject({
       error: IMAGE_UNREADABLE,
     });

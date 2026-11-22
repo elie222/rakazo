@@ -1,5 +1,6 @@
 import type { AgentToolExecutionResult, AgentToolResultContent } from "@rakazo/adapter-kit";
 import { ATTACHMENT_MAX_BYTES } from "@rakazo/contracts";
+import { getLogger } from "@rakazo/logging";
 import { detectImageMimeType } from "./image-mime-type.js";
 import { IMAGE_MODEL_CANNOT_SEE, IMAGE_UNREADABLE } from "./tool-result-image.prompt.js";
 
@@ -11,6 +12,9 @@ export const TOOL_IMAGE_MAX_EDGE = 1568;
 const PNG_OUTPUT_MAX_BYTES = 1_500_000;
 // Refuse decompression bombs before their pixels are decoded.
 const MAX_INPUT_PIXELS = 50_000_000;
+
+/** Tools whose pictures are files or pages the bot read, not screenshots to keep with the reply. */
+export const PICTURE_READING_TOOLS = new Set(["read_file", "web_fetch"]);
 
 type ToolResultImage = Extract<AgentToolResultContent, { type: "image" }>;
 
@@ -98,8 +102,9 @@ async function encodeForModel(
       sentHeight: output.info.height,
       scaled: output.info.width !== width || output.info.height !== height,
     };
-  } catch {
-    // Truncated, corrupt or over the pixel limit.
+  } catch (error) {
+    // Truncated, corrupt or over the pixel limit. Logged so a broken decoder shows as one.
+    getLogger().warn("tool_image.decode_failed", { error, "image.format": format });
     return undefined;
   }
 }

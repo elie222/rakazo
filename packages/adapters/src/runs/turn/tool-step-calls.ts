@@ -5,6 +5,7 @@ import { redactSecrets } from "@rakazo/core";
 import { getLogger } from "@rakazo/logging";
 import { redactToolArgsForReview } from "../../approvals/auto-review.js";
 import { sanitizeConnectorError } from "../../integrations/connector-safety.js";
+import { PICTURE_READING_TOOLS } from "../../media/tool-result-image.js";
 import { READ_MEETING_TRANSCRIPT } from "../../meetings/meeting-chat.tool-definition.js";
 import { sanitizeSensitiveText } from "../../runtime/pi/pi-runtime-errors.js";
 import { storeStepScreenshot } from "../../storage/thread-artifacts.js";
@@ -204,7 +205,12 @@ export function historyToolResults(history: AgentRunRequest["history"]): unknown
 
 /** The image a call returned (a screenshot), when it is one this product stores. */
 function screenshotOf(completion: AgentToolCompletion) {
-  if (completion.paused || completion.error !== undefined || SECRET_TOOL.test(completion.name))
+  if (
+    completion.paused ||
+    completion.error !== undefined ||
+    SECRET_TOOL.test(completion.name) ||
+    PICTURE_READING_TOOLS.has(completion.name)
+  )
     return undefined;
   const content = (completion.result as { content?: unknown } | undefined)?.content;
   if (!Array.isArray(content)) return undefined;

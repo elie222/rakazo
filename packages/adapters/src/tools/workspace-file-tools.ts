@@ -207,9 +207,9 @@ export async function readFileFromTool(
   const { botId, computerMode, computer, context, runSecrets } = workspace;
   const filePath = String(args.path ?? "");
   const storedPath = resolveBotWorkspacePath(computerMode, botId, filePath);
-  // A picture is larger than any text file read whole; its name sets the limit, its bytes decide.
+  // Read up to the picture limit whatever the name: the bytes decide, and text keeps its limit below.
   const namedImage = inferAttachmentMimeType(filePath)?.startsWith("image/") === true;
-  const maxBytes = namedImage ? TOOL_IMAGE_MAX_BYTES : READ_FILE_MAX_BYTES;
+  const maxBytes = TOOL_IMAGE_MAX_BYTES;
   const tooLarge = () =>
     namedImage
       ? `image is over ${TOOL_IMAGE_MAX_BYTES / 1024 / 1024} MB`
