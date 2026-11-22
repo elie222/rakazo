@@ -31,6 +31,7 @@ const EXPORT_MESSAGE_PAGE_SIZE = 500;
 const usageTimezoneAliases = new Map([
   ["america/indianapolis", "America/Indiana/Indianapolis"],
   ["asia/calcutta", "Asia/Kolkata"],
+  ["asia/rangoon", "Asia/Yangon"],
   ["asia/saigon", "Asia/Ho_Chi_Minh"],
 ]);
 
