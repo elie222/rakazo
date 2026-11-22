@@ -54,7 +54,8 @@ function deps({ withCustomServer = false, manyServers = 0 } = {}): FleetPrepareD
     JSON.stringify({
       kind: "openai_compatible",
       baseUrl: "http://models.example.test/v1",
-      enabledModelIds: Array.from({ length: 15 }, (_, i) => `local-model-${server}-${i}`),
+      // Quotes and backslashes double in size once serialized.
+      enabledModelIds: Array.from({ length: 15 }, (_, i) => `local"\\model-${server}-${i}`),
     });
   const credentials = [credential, ...(withCustomServer ? [customServer] : []), ...servers];
   const prisma = {

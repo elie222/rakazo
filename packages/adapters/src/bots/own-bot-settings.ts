@@ -93,9 +93,11 @@ export async function readOwnBotSettings(
   for (let round = 0; round < MODELS_PER_PROVIDER; round++) {
     for (const group of groups) {
       const id = group.ids[round];
-      if (id === undefined || id.length + 3 > room) continue;
+      // Its serialized size, escapes included, plus the comma.
+      const cost = id === undefined ? 0 : JSON.stringify(id).length + 1;
+      if (id === undefined || cost > room) continue;
       group.listed.push(id);
-      room -= id.length + 3;
+      room -= cost;
     }
   }
   const models = groups.map(({ provider, ids, listed }) => ({
