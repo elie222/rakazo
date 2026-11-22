@@ -40,6 +40,7 @@ import { modelAcceptsImageInput } from "../../models/model-vision.js";
 import { paymentWalletConnected } from "../../payments/payment-wallets.js";
 import { desktopGuardApplies } from "../../providers/computer/desktop/desktop-command-guard.js";
 import { backOffRoutineAfterAccountError } from "../../routines/routine-backoff.js";
+import { pauseRoutineAfterRepeatedFailures } from "../../routines/routine-failure-pause.js";
 import { filterStrategicInitiativeTools } from "../../routines/strategic-initiative.js";
 import {
   createEarlierFileQueue,
@@ -161,10 +162,14 @@ export async function startTurnModel(
       { attemptId: attempt.id, workerId, fence },
       message,
     );
-    if (failed && accountFailure && run.trigger === "routine" && run.routineId) {
-      await backOffRoutineAfterAccountError(deps, {
-        routineId: run.routineId,
-        userId: run.userId,
+    if (failed && run.trigger === "routine" && run.routineId) {
+      const ref = { routineId: run.routineId, userId: run.userId };
+      if (accountFailure) await backOffRoutineAfterAccountError(deps, ref);
+      // The model setup the user chose cannot start, which only they can change.
+      await pauseRoutineAfterRepeatedFailures(deps, {
+        ...ref,
+        spaceId: run.spaceId,
+        botId: run.botId,
       });
     }
   };
