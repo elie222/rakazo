@@ -22,7 +22,7 @@ import { formatSnoozeWake, formatThreadTime } from "../../lib/inbox/inbox";
 import type { PinnedChat } from "../../lib/inbox/inbox-spaces";
 import { botNeedsAttention } from "../../lib/inbox/inbox-spaces";
 import type { InboxChatKind, InboxRowAction } from "../../lib/inbox/inbox-swipe";
-import { INBOX_ROW_ACTIONS, inboxRowActionList } from "../../lib/inbox/inbox-swipe";
+import { inboxRowAction, inboxRowActionList } from "../../lib/inbox/inbox-swipe";
 import { previewSnippet } from "../../lib/messages/preview";
 import { native, useThemedStyles } from "../../lib/native/native";
 import { BotAvatar } from "../bots/bot-avatar";
@@ -47,6 +47,7 @@ export const SelectedChatContext = createContext<string | null>(null);
 
 export function ConversationRow({
   chatId,
+  kind,
   title,
   preview,
   time,
@@ -60,6 +61,7 @@ export function ConversationRow({
   accessibilityHint,
 }: {
   chatId?: string;
+  kind?: InboxChatKind;
   title: string;
   preview: string;
   time: string;
@@ -79,7 +81,7 @@ export function ConversationRow({
   const selected = chatId !== undefined && openChatId === chatId;
   const rowActions = actions.map((action) => ({
     name: action,
-    label: i18n._(INBOX_ROW_ACTIONS[action].label),
+    label: i18n._(inboxRowAction(action, kind).label),
   }));
   return (
     <DragSafePressable
@@ -233,7 +235,7 @@ export const PinnedTiles = memo(function PinnedTiles({
   onBotAction: (action: InboxRowAction, bot: MobileBot | SpaceBot) => void;
   onGroupAction: (action: InboxRowAction, group: MobileGroup | SpaceGroup) => void;
 }) {
-  const { i18n } = useLingui();
+  const { i18n, t } = useLingui();
   const styles = useThemedStyles(createInboxStyles);
   const selectedId = useContext(SelectedChatContext);
   // Three tiles share the row, so a narrow pane shrinks the avatars instead of overlapping them.
@@ -256,11 +258,11 @@ export const PinnedTiles = memo(function PinnedTiles({
           <Pressable
             key={`${chat.kind}-${id}`}
             accessibilityRole="button"
-            accessibilityLabel={name}
+            accessibilityLabel={chat.kind === "bot" ? `${name}, ${t`Favorite`}` : name}
             accessibilityState={{ selected: selectedId === id }}
             accessibilityActions={actions.map((action) => ({
               name: action,
-              label: i18n._(INBOX_ROW_ACTIONS[action].label),
+              label: i18n._(inboxRowAction(action, chat.kind).label),
             }))}
             onAccessibilityAction={(event) => {
               const action = actions.find((item) => item === event.nativeEvent.actionName);
@@ -275,15 +277,20 @@ export const PinnedTiles = memo(function PinnedTiles({
             ]}
           >
             {chat.kind === "bot" ? (
-              <BotAvatar
-                color={chat.bot.color || FALLBACK_COLOR}
-                avatarSet={chat.bot.avatarSet}
-                identity={chat.bot.id}
-                size={avatarSize}
-                status={chat.bot.status}
-                muted={chat.bot.notifyOnFinish === false}
-                motion="lazy"
-              />
+              <View>
+                <BotAvatar
+                  color={chat.bot.color || FALLBACK_COLOR}
+                  avatarSet={chat.bot.avatarSet}
+                  identity={chat.bot.id}
+                  size={avatarSize}
+                  status={chat.bot.status}
+                  muted={chat.bot.notifyOnFinish === false}
+                  motion="lazy"
+                />
+                <View style={styles.favoriteBadge} accessibilityElementsHidden>
+                  <NativeSymbol ios="star.fill" android="star" size={11} color={native.page} />
+                </View>
+              </View>
             ) : (
               <GroupAvatar members={chat.group.members} size={avatarSize} />
             )}
@@ -369,6 +376,7 @@ export function ChatSwipe({
   return (
     <InboxSwipeRow
       rowKey={rowKey}
+      kind={kind}
       unread={chat.unread}
       pinned={chat.pinned}
       notifyOnFinish={target.kind === "bot" ? target.chat.notifyOnFinish : undefined}
@@ -441,14 +449,13 @@ export const BotRow = memo(function BotRow({
   const row = (
     <ConversationRow
       chatId={bot.id}
+      kind="bot"
       title={bot.name}
       preview={preview}
       time={time}
       unread={bot.unread}
       accessibilityLabel={label}
-      accessibilityHint={
-        onLongPress || onAction ? t`Long press to pin, move, or silence notifications` : undefined
-      }
+      accessibilityHint={onLongPress || onAction ? t`Long press for bot actions` : undefined}
       onPress={() => onPress(bot)}
       onLongPress={onLongPress ? () => onLongPress(bot) : onAction ? holdForMenu : undefined}
       actions={onAction ? inboxRowActionList(bot) : undefined}
@@ -513,6 +520,7 @@ export const GroupRow = memo(function GroupRow({
   const row = (
     <ConversationRow
       chatId={group.id}
+      kind="group"
       title={group.name}
       preview={preview}
       time={time}

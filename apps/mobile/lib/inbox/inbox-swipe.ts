@@ -5,7 +5,7 @@ import type { SnoozePreset } from "@rakazo/core";
 export type InboxChatKind = "bot" | "group";
 export type InboxRowAction = "read" | "unread" | "archive" | "pin" | "unpin" | "delete";
 
-export const INBOX_ROW_ACTIONS = {
+const INBOX_ROW_ACTIONS = {
   read: { label: msg`Mark as Read`, systemImage: "checkmark.message.fill" },
   unread: { label: msg`Mark as Unread`, systemImage: "message.badge.filled.fill" },
   archive: { label: msg`Archive`, systemImage: "eye.slash" },
@@ -13,6 +13,17 @@ export const INBOX_ROW_ACTIONS = {
   unpin: { label: msg`Unpin`, systemImage: "pin.slash" },
   delete: { label: msg`Delete…`, systemImage: "trash" },
 } as const satisfies Record<InboxRowAction, { label: MessageDescriptor; systemImage: string }>;
+
+const FAVORITE_ACTIONS = {
+  pin: { label: msg`Add to favorites`, systemImage: "star" },
+  unpin: { label: msg`Remove from favorites`, systemImage: "star.fill" },
+} as const;
+
+export function inboxRowAction(action: InboxRowAction, kind?: InboxChatKind) {
+  return kind === "bot" && (action === "pin" || action === "unpin")
+    ? FAVORITE_ACTIONS[action]
+    : INBOX_ROW_ACTIONS[action];
+}
 
 /** The snooze choices in a chat's menu; translated where shown. */
 export const SNOOZE_LABELS = {

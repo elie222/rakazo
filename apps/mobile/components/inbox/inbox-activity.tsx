@@ -8,7 +8,7 @@ import { useMemo } from "react";
 import { Text, View } from "react-native";
 import type { MobileBot, MobileGroup } from "../../lib/api/mobile-types";
 import { formatActivityRelativeTime } from "../../lib/inbox/activity";
-import type { InboxRowAction } from "../../lib/inbox/inbox-swipe";
+import type { InboxChatKind, InboxRowAction } from "../../lib/inbox/inbox-swipe";
 import { inboxRowActionList } from "../../lib/inbox/inbox-swipe";
 import type { SpaceActivityStatus } from "../../lib/inbox/use-space-activity";
 import { useThemedStyles } from "../../lib/native/native";
@@ -19,7 +19,11 @@ import { ChatSwipe, ConversationRow, FALLBACK_COLOR, SectionToggle } from "./inb
 import { createInboxStyles } from "./inbox-styles";
 
 type SwipeTarget = { kind: "bot"; chat: MobileBot } | { kind: "group"; chat: MobileGroup };
-type RowActions = { actions: InboxRowAction[]; onAction: (action: InboxRowAction) => void };
+type RowActions = {
+  kind: InboxChatKind;
+  actions: InboxRowAction[];
+  onAction: (action: InboxRowAction) => void;
+};
 
 export type ActivitySwipe = RowMenuProps & {
   botAction: (action: InboxRowAction, bot: MobileBot) => void;
@@ -77,7 +81,7 @@ export function ActivitySection({
         onEditSection={swipe.onEditSection}
         onSnooze={swipe.onSnooze && ((until) => swipe.onSnooze?.(target.kind, target.chat, until))}
       >
-        {row({ actions: inboxRowActionList(target.chat), onAction })}
+        {row({ kind: target.kind, actions: inboxRowActionList(target.chat), onAction })}
       </ChatSwipe>
     );
   };
@@ -225,6 +229,7 @@ function ActivityRow({
   bot,
   detailed,
   onPress,
+  kind,
   actions,
   onAction,
 }: Partial<RowActions> & {
@@ -241,6 +246,7 @@ function ActivityRow({
   const title = [run.botName, run.groupName].filter(Boolean).join(", ");
   return (
     <ConversationRow
+      kind={kind}
       title={title}
       preview={preview}
       time={detailed ? formatActivityRelativeTime(run.updatedAt) : ""}

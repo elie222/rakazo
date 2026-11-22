@@ -359,6 +359,7 @@ describe("iOS swipe row", () => {
         <InboxSwipeContext.Provider value={activeSwipe}>
           <InboxSwipeRow
             rowKey={key}
+            kind="bot"
             sections={sections}
             preview={preview}
             onAction={onAction}
@@ -410,7 +411,7 @@ describe("iOS swipe row", () => {
     );
     expect(
       buttons.map((button) => button.querySelector("[data-symbol]")?.getAttribute("data-symbol")),
-    ).toEqual(["checkmark.message.fill", "eye.slash.fill", "pin.slash.fill"]);
+    ).toEqual(["checkmark.message.fill", "eye.slash.fill", "star.fill"]);
     expect(buttons.every((button) => button.querySelector('[data-ui="Circle"]'))).toBe(true);
     act(() => {
       for (const button of buttons) button.click();
@@ -510,6 +511,7 @@ describe("iOS swipe row", () => {
         >
           <InboxSwipeRow
             rowKey="bot:1"
+            kind="bot"
             sections={sections}
             preview={{ title: "Ada", message: "Hi", avatar: <i /> }}
             onAction={vi.fn()}
@@ -549,7 +551,7 @@ describe("iOS swipe row", () => {
     act(() => root.unmount());
   });
 
-  it("offers read state, pin, notifications, move, then archive and delete last for a bot", () => {
+  it("offers read state, favorite, notifications, move, then archive and delete last for a bot", () => {
     const { items, find, root } = render({
       unread: true,
       pinned: false,
@@ -558,7 +560,7 @@ describe("iOS swipe row", () => {
     });
     expect(entries(items)).toEqual([
       ["Mark as Read", "checkmark.message.fill", null],
-      ["Pin", "pin", null],
+      ["Add to favorites", "star", null],
       ["Silence notifications", "bell.slash", null],
       ["Snooze", "moon.zzz", null],
       ["Move to", "folder", null],
@@ -580,7 +582,12 @@ describe("iOS swipe row", () => {
   });
 
   it("offers a group's actions without notifications or renaming outside a section", () => {
-    const { items, find, root } = render({ key: "group:1", unread: false, pinned: true });
+    const { items, find, root } = render({
+      key: "group:1",
+      kind: "group",
+      unread: false,
+      pinned: true,
+    });
     expect(entries(items).map(([label]) => label)).toEqual([
       "Mark as Unread",
       "Unpin",
@@ -629,7 +636,7 @@ describe("iOS swipe row", () => {
       sectionId: "s1",
     });
     press("Mark as Unread");
-    press("Pin");
+    press("Add to favorites");
     press("Resume notifications");
     press("Work");
     press("Home");

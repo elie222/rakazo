@@ -79,8 +79,11 @@ Under **Advanced**:
 
 ## Organize the sidebar
 
-Right-click a bot in the sidebar to **Pin** it, **Move to** a section, **Mark as Unread**,
-**Duplicate**, **Archive** or **Delete** it. Archived bots can be restored later.
+Right-click a bot in the sidebar and choose **Add to favorites** to put it in the pinned list.
+A star marks its avatar. Choose **Remove from favorites** to return it to its section.
+
+The same menu lets you **Move to** a section, **Mark as Unread**, **Duplicate**, **Archive**
+or **Delete** a bot. Archived bots can be restored later.
 
 ## Find things
 

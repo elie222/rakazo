@@ -24,6 +24,7 @@ import {
   Lock,
   Pencil,
   Settings,
+  Star,
   Trash2,
   Users,
 } from "lucide-react";
@@ -296,7 +297,11 @@ export function SidebarRoster({
                     : item.kind === "group"
                       ? item.chat.members
                       : [];
-                const avatar =
+                const favoriteId =
+                  item.kind === "bot" && item.chat.pinned
+                    ? `roster-favorite-${item.chat.id}`
+                    : undefined;
+                const chatAvatar =
                   item.kind === "bot" ? (
                     <BotAvatar
                       avatarSet={item.chat.avatarSet}
@@ -308,6 +313,21 @@ export function SidebarRoster({
                   ) : (
                     <GroupAvatar members={groupMembers} size={mini ? 40 : compact ? 28 : 38} />
                   );
+                const avatar = favoriteId ? (
+                  <div className="relative inline-flex shrink-0">
+                    {chatAvatar}
+                    <span id={favoriteId} hidden>{t`Favorite`}</span>
+                    <span
+                      aria-hidden
+                      data-slot="favorite-badge"
+                      className="pointer-events-none absolute end-0 top-0 grid size-3.5 place-items-center rounded-full bg-sidebar-foreground text-sidebar ring-1 ring-sidebar"
+                    >
+                      <Star className="size-2.5 fill-current" />
+                    </span>
+                  </div>
+                ) : (
+                  chatAvatar
+                );
                 const chatTrigger = (
                   <ContextMenuTrigger
                     render={<button type="button" />}
@@ -318,16 +338,17 @@ export function SidebarRoster({
                     aria-current={selected ? "page" : undefined}
                     aria-label={mini ? item.chat.name : undefined}
                     aria-describedby={
-                      mini
-                        ? [
-                            item.chat.unread ? `roster-unread-${item.kind}-${item.chat.id}` : null,
-                            compactStatusLabel
-                              ? `roster-status-${item.kind}-${item.chat.id}`
-                              : null,
-                          ]
-                            .filter(Boolean)
-                            .join(" ") || undefined
-                        : undefined
+                      [
+                        favoriteId,
+                        mini && item.chat.unread
+                          ? `roster-unread-${item.kind}-${item.chat.id}`
+                          : null,
+                        mini && compactStatusLabel
+                          ? `roster-status-${item.kind}-${item.chat.id}`
+                          : null,
+                      ]
+                        .filter(Boolean)
+                        .join(" ") || undefined
                     }
                     aria-keyshortcuts={
                       item.kind === "bot" ? "Alt+ArrowUp Alt+ArrowDown" : undefined

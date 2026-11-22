@@ -22,6 +22,7 @@ import {
   FolderPlus,
   Pencil,
   Pin,
+  Star,
   Trash2,
 } from "lucide-react";
 
@@ -31,6 +32,7 @@ const PRESET_DAYS: ReadonlySet<SnoozePreset> = new Set(["tomorrow", "nextWeek"])
 
 /** A roster row's context menu content; `onClose` serves the lazy-load error fallback. */
 export function BotContextMenu({
+  kind,
   bot,
   onTogglePinned,
   sections,
@@ -46,6 +48,7 @@ export function BotContextMenu({
   onArchive,
   onDelete,
 }: {
+  kind: "bot" | "group";
   bot: ChatMenuTarget;
   onClose: () => void;
   onTogglePinned: () => void;
@@ -79,8 +82,17 @@ export function BotContextMenu({
       className="max-h-[min(420px,calc(100vh-16px))] w-[264px] overflow-y-auto"
     >
       <ContextMenuItem onClick={onTogglePinned}>
-        <Pin />
-        {bot.pinned ? t`Unpin` : t`Pin`}
+        {kind === "bot" ? (
+          <>
+            <Star className={bot.pinned ? "fill-current" : undefined} />
+            {bot.pinned ? t`Remove from favorites` : t`Add to favorites`}
+          </>
+        ) : (
+          <>
+            <Pin />
+            {bot.pinned ? t`Unpin` : t`Pin`}
+          </>
+        )}
       </ContextMenuItem>
       <ContextMenuSub>
         <ContextMenuSubTrigger>

@@ -29,7 +29,7 @@ import type { ReactElement } from "react";
 import { useContext, useState } from "react";
 import { PlatformColor, useWindowDimensions, View } from "react-native";
 import type { InboxRowAction } from "../../lib/inbox/inbox-swipe";
-import { INBOX_ROW_ACTIONS, inboxRowActions, SNOOZE_LABELS } from "../../lib/inbox/inbox-swipe";
+import { inboxRowAction, inboxRowActions, SNOOZE_LABELS } from "../../lib/inbox/inbox-swipe";
 import { native, useResolvedAppearance } from "../../lib/native/native";
 import { iosAtLeast } from "../../lib/native/native-controls";
 import { NativeListRowContext } from "../native/native-list-row";
@@ -48,6 +48,7 @@ let lastRowHeight = 0;
  */
 export function InboxSwipeRow({
   rowKey,
+  kind,
   unread,
   pinned,
   notifyOnFinish,
@@ -71,7 +72,7 @@ export function InboxSwipeRow({
   const interactiveSwipe = iosAtLeast(26);
 
   function button(action: InboxRowAction, swipe = false) {
-    const { label, systemImage } = INBOX_ROW_ACTIONS[action];
+    const { label, systemImage } = inboxRowAction(action, kind);
     const fill =
       action === "archive" ? "systemRed" : action === actions.leading ? "systemBlue" : null;
     return (
@@ -168,7 +169,7 @@ export function InboxSwipeRow({
   }
 
   const swipeContent = interactiveSwipe ? (
-    <InboxSwipeContent actions={actions} onAction={onAction}>
+    <InboxSwipeContent kind={kind} actions={actions} onAction={onAction}>
       {children}
     </InboxSwipeContent>
   ) : (
