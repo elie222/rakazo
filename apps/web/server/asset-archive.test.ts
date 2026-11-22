@@ -107,4 +107,15 @@ describe("asset archive", () => {
     deploy(root, "20261003000000", { "new.js": "n" }, NOW + 2 * ASSET_ARCHIVE_GRACE_MS);
     expect(fs.readdirSync(archived!)).toEqual(["new.js"]);
   });
+
+  it("refuses a build id that is not a plain timestamp", () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "asset-archive-"));
+    roots.push(root);
+    const archiveDir = path.join(root, "archive");
+    fs.mkdirSync(archiveDir);
+    expect(
+      archiveAssets({ assetsDir: root, archiveDir, buildId: "../escape", now: NOW }),
+    ).toBeNull();
+    expect(fs.readdirSync(archiveDir)).toEqual([]);
+  });
 });
