@@ -1,4 +1,4 @@
-import type { Actor, RunActivityRow } from "@rakazo/contracts";
+import type { Actor, RunActivityRow, RunStatus, RunTrigger } from "@rakazo/contracts";
 import { MessageBlock } from "@rakazo/contracts";
 import {
   ACTIVE_RUN_STATUSES,
@@ -20,6 +20,11 @@ const ACTIVITY_HIDDEN_TRIGGERS = [
   BACKGROUND_HELPER_TRIGGER,
   HELPER_RESULT_TRIGGER,
 ] as const;
+// The prompt of these runs is written by the product, not the user, so it is no preview.
+const SYSTEM_PROMPT_TRIGGERS: readonly string[] = [
+  "created",
+  "call_end",
+] as const satisfies readonly RunTrigger[];
 const TERMINAL_STATUSES = ["completed", "failed", "cancelled"] as const;
 
 function promptSnippet(prompt: string, max = 120): string {
@@ -32,6 +37,8 @@ export function activityPreview(
   input: { trigger: string; prompt: string; sourceBlocks?: unknown },
   max = 120,
 ): Pick<RunActivityRow, "promptSnippet" | "agentMessage"> {
+  if (SYSTEM_PROMPT_TRIGGERS.includes(input.trigger))
+    return { promptSnippet: "", agentMessage: null };
   if (input.trigger !== "bot_message")
     return { promptSnippet: promptSnippet(input.prompt, max), agentMessage: null };
   const parsed = MessageBlock.array().safeParse(input.sourceBlocks);
@@ -69,17 +76,22 @@ export async function listSpaceRuns(
   prisma: PrismaClient,
   actor: Actor,
   filter: "active" | "recent",
+  status?: RunStatus,
 ): Promise<RunActivityRow[]> {
+  const sectionStatuses: readonly RunStatus[] =
+    filter === "active" ? ACTIVE_RUN_STATUSES : TERMINAL_STATUSES;
+  if (status && !sectionStatuses.includes(status)) return [];
+  const statuses = status ? [status] : [...sectionStatuses];
   const rows = await prisma.run.findMany({
-    where:
-      filter === "active"
-        ? {
-            spaceId: actor.spaceId,
-            bot: { archivedAt: null },
-            trigger: { notIn: [...ACTIVITY_HIDDEN_TRIGGERS] },
-            status: { in: [...ACTIVE_RUN_STATUSES] },
-          }
-        : { spaceId: actor.spaceId, id: { in: await latestFinishedRunPerChat(prisma, actor) } },
+    where: {
+      spaceId: actor.spaceId,
+      bot: { archivedAt: null },
+      trigger: { notIn: [...ACTIVITY_HIDDEN_TRIGGERS] },
+      status: { in: statuses },
+      ...(filter === "recent"
+        ? { id: { in: await latestFinishedRunPerChat(prisma, actor, statuses) } }
+        : {}),
+    },
     include: {
       bot: { select: { name: true, archivedAt: true, notifyOnFinish: true } },
       task: { select: { prompt: true } },
@@ -120,7 +132,11 @@ export async function listSpaceRuns(
 }
 
 /** Recent lists chats keyed like `activitySections`, so one busy chat must not push the others out of the limit. */
-async function latestFinishedRunPerChat(prisma: PrismaClient, actor: Actor): Promise<string[]> {
+async function latestFinishedRunPerChat(
+  prisma: PrismaClient,
+  actor: Actor,
+  statuses: RunStatus[],
+): Promise<string[]> {
   const rows = await prisma.$queryRaw<Array<{ id: string }>>`
     SELECT id FROM (
       SELECT DISTINCT ON (COALESCE('group:' || t."groupId", 'bot:' || r."botId")) r.id, r."completedAt", r."updatedAt"
@@ -130,7 +146,7 @@ async function latestFinishedRunPerChat(prisma: PrismaClient, actor: Actor): Pro
       WHERE r."spaceId" = ${actor.spaceId}
         AND b."archivedAt" IS NULL
         AND r.trigger NOT IN (${Prisma.join([...ACTIVITY_HIDDEN_TRIGGERS])})
-        AND r.status IN (${Prisma.join([...TERMINAL_STATUSES])})
+        AND r.status IN (${Prisma.join(statuses)})
       ORDER BY COALESCE('group:' || t."groupId", 'bot:' || r."botId"), r."completedAt" DESC, r."updatedAt" DESC, r.id DESC
     ) latest
     ORDER BY "completedAt" DESC, "updatedAt" DESC, id DESC

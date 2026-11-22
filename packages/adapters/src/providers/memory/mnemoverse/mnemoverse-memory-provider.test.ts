@@ -606,3 +606,20 @@ describe("Mnemoverse connection", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 });
+
+describe("Mnemoverse emoji limits", () => {
+  it("does not cut an emoji in half in the recall query", async () => {
+    const { calls } = mnemoverse();
+    await recallOf("isolated", `${"q".repeat(4999)}😀 tail`);
+    expect(calls.map((call) => (call.body as { query: string }).query)).toEqual(["q".repeat(4999)]);
+  });
+
+  it("does not cut an emoji in half in a recalled memory", async () => {
+    mnemoverse([{ id: "a", domain: BOT, content: `${"m".repeat(9999)}😀 tail` }]);
+    const result = await recallOf("isolated");
+    expect(result).toEqual({
+      ok: true,
+      value: [expect.objectContaining({ memory: "m".repeat(9999) })],
+    });
+  });
+});

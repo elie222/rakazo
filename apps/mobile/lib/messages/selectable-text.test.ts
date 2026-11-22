@@ -45,6 +45,27 @@ describe("selectableTextFromMarkdown", () => {
     expect(selectableTextFromMarkdown("| a | b |\n| --- | --- |\n| - | - |")).toBe("a | b\n- | -");
   });
 
+  it("keeps dash-only data rows with optional edge pipes", () => {
+    const source =
+      "Name | Value\n:--- | ---:\n--- | ---\n| --- | --- |\n| -- | :---\n--- | -- |\n**Ready** | Yes";
+    expect(selectableTextFromMarkdown(source)).toBe(
+      "Name | Value\n--- | ---\n--- | ---\n-- | :---\n--- | --\nReady | Yes",
+    );
+  });
+
+  it("keeps dash-only rows after a table row with one cell", () => {
+    const source = "| a | b |\n| --- | --- |\none cell\n--- | ---\n--- | ---";
+    expect(selectableTextFromMarkdown(source)).toBe("a | b\none cell\n--- | ---\n--- | ---");
+  });
+
+  it("keeps a delimiter-shaped line with a different cell count than the header", () => {
+    expect(selectableTextFromMarkdown("| a | b |\n| --- |")).toBe("a | b\n---");
+  });
+
+  it("keeps ordinary pipes outside a table", () => {
+    expect(selectableTextFromMarkdown("a|b\n\n||")).toBe("a|b\n\n||");
+  });
+
   it("keeps escaped pipes and pipes inside code spans within their cell", () => {
     expect(selectableTextFromMarkdown("| a\\|b | c |")).toBe("a|b | c");
     expect(selectableTextFromMarkdown("| `x|y` | c |")).toBe("x|y | c");

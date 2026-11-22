@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { VoiceUsage } from "@rakazo/adapter-kit";
 import { ClientError } from "@rakazo/core";
+import { speechAllowancePlan } from "../billing/sandbox-allowance.js";
 import type { PrismaClient } from "../database/client.js";
 import { currentDbContext, runAsSystem } from "../database/row-security.js";
 
@@ -11,6 +12,32 @@ export interface SpeechPrice {
   maxRequestMicros: number;
   source: string;
   version: string;
+}
+
+/**
+ * Micros the space's organization may still spend on deployment-funded speech this period, or
+ * null when the deployment does not limit it. Every reservation and cost recorded for any of the
+ * organization's Spaces since the period began counts.
+ */
+export async function remainingSpeechAllowance(
+  prisma: Pick<PrismaClient, "space" | "deploymentSettings" | "organization" | "speechCost">,
+  spaceId: string,
+  now = new Date(),
+): Promise<bigint | null> {
+  return runAsSystem("speech allowance across an organization's Spaces", async () => {
+    const space = await prisma.space.findUnique({
+      where: { id: spaceId },
+      select: { organizationId: true },
+    });
+    if (!space) return 0n;
+    const plan = await speechAllowancePlan(prisma, space.organizationId, now);
+    if (!plan) return null;
+    const used = await prisma.speechCost.aggregate({
+      where: { organizationId: space.organizationId, createdAt: { gte: plan.since } },
+      _sum: { accountedMicros: true },
+    });
+    return plan.limitMicros - (used._sum.accountedMicros ?? 0n);
+  });
 }
 
 /** A reservation survives a crash/cancel: only evidence of no charge may release it. */
@@ -31,16 +58,18 @@ export async function admitSpeech(
   const id = randomUUID();
   await runAsSystem("Admit operator-funded speech for the authenticated account", () =>
     prisma.$transaction(async (tx) => {
-      const count = await tx.$executeRaw`
-      UPDATE speech_allowances SET "usedMicros" = "usedMicros" + ${BigInt(price.maxRequestMicros)}
-      WHERE "userId" = ${scope.userId} AND "expiresAt" > now()
-        AND "usedMicros" + ${BigInt(price.maxRequestMicros)} <= "limitMicros"`;
-      if (count !== 1) throw new ClientError("TOO_MANY_REQUESTS", "Speech allowance unavailable.");
+      // One organization's admissions run one at a time, so concurrent requests cannot overspend.
+      await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtextextended(
+        'speech:' || (SELECT "organizationId" FROM spaces WHERE id = ${scope.spaceId}), 0))::text`;
+      const remaining = await remainingSpeechAllowance(tx, scope.spaceId);
+      if (remaining !== null && remaining < BigInt(price.maxRequestMicros))
+        throw new ClientError("TOO_MANY_REQUESTS", "Speech allowance unavailable.");
       await tx.$executeRaw`
       INSERT INTO speech_costs
-        (id, "userId", "spaceId", "callId", provider, operation, model, unit,
+        (id, "userId", "spaceId", "organizationId", "callId", provider, operation, model, unit,
          "reservedMicros", "accountedMicros", "pricingSource", "pricingVersion", "microsPerUnit")
-      VALUES (${id}, ${scope.userId}, ${scope.spaceId}, ${scope.callId ?? null}, ${provider},
+      VALUES (${id}, ${scope.userId}, ${scope.spaceId},
+        (SELECT "organizationId" FROM spaces WHERE id = ${scope.spaceId}), ${scope.callId ?? null}, ${provider},
         ${operation}, ${price.model}, ${price.unit}, ${BigInt(price.maxRequestMicros)},
         ${BigInt(price.maxRequestMicros)}, ${price.source}, ${price.version}, ${price.microsPerUnit})`;
     }),
@@ -91,7 +120,6 @@ export async function settleSpeech(
         matches && row.calculatedMicros !== null ? Number(row.calculatedMicros) : null;
       const micros = calculated !== null && Number.isSafeInteger(calculated) ? calculated : null;
       // Unknown costs keep the reservation. Observed overages also count against future admission.
-      const refund = micros !== null ? row.reservedMicros - BigInt(micros) : 0n;
       await tx.$executeRaw`UPDATE speech_costs SET
       state = ${micros !== null ? "estimated" : "unresolved"},
       units = ${usage?.units ?? null}, "observedModel" = ${usage?.model ?? null},
@@ -100,9 +128,6 @@ export async function settleSpeech(
       "billableUnits" = ${usage ? JSON.stringify(usage) : null}::jsonb,
       "providerRequestId" = ${providerRequestId ?? null}, "updatedAt" = now()
       WHERE id = ${id}`;
-      if (refund !== 0n)
-        await tx.$executeRaw`UPDATE speech_allowances
-      SET "usedMicros" = "usedMicros" - ${refund} WHERE "userId" = ${row.userId}`;
     }),
   );
 }
@@ -142,8 +167,6 @@ export async function confirmSpeechCost(
         throw new ClientError("CONFLICT", "Speech cost already confirmed with different evidence");
       return;
     }
-    await tx.$executeRaw`UPDATE speech_allowances SET "usedMicros" = "usedMicros" +
-      ${evidence.costMicros - row.accountedMicros} WHERE "userId" = ${row.userId}`;
     await tx.$executeRaw`UPDATE speech_costs SET state = 'confirmed',
       "costMicros" = ${evidence.costMicros}, "accountedMicros" = ${evidence.costMicros},
       "confirmationSource" = ${evidence.source}, "confirmationReference" = ${evidence.reference},

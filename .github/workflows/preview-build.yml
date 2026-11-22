@@ -1,13 +1,12 @@
 name: preview-build
 
-# Builds a pull request's preview image, including from forks, and main's after each push, which
-# screenshot runs use for "before" views. This half runs the pull request's code, so it gets a
-# read-only token and no secrets; preview-deploy.yml picks up the image.
+# Builds a pull request's preview image, including from forks. This half runs the pull request's
+# code with a read-only token and no secrets. preview-deploy.yml picks up the image.
 # See infra/preview/README.md.
 on:
-  push:
-    branches: [main]
-    paths: &paths
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
       - "apps/api/**"
       - "apps/web/**"
       - "apps/worker/**"
@@ -27,15 +26,12 @@ on:
       - "!packages/testkit/**"
       - "!scripts/checks/**"
       - "!scripts/release/**"
-  pull_request:
-    types: [opened, synchronize, reopened]
-    paths: *paths
 
 permissions:
   contents: read
 
 concurrency:
-  group: preview-build-${{ github.event.pull_request.number || github.ref_name }}
+  group: preview-build-${{ github.event.pull_request.number }}
   cancel-in-progress: true
 
 jobs:
@@ -49,7 +45,7 @@ jobs:
           persist-credentials: false
       - name: Build
         env:
-          GIT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          GIT_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           docker build -f infra/compose/Dockerfile --build-arg GIT_SHA="$GIT_SHA" \
             -t rakazo-server:preview .
@@ -60,5 +56,5 @@ jobs:
         with:
           name: preview-image
           path: ${{ runner.temp }}/preview-image.tar.zst
-          retention-days: 1
+          retention-days: 3
           compression-level: 0

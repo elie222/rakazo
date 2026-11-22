@@ -9,6 +9,7 @@ import {
   approvalRuleChoices,
   approvalRuleEffectChoices,
   batchActions,
+  clicksBeforeTyping,
   connectorKindFromToolName,
   connectorReadRequiresApproval,
   connectorToolRequiresApproval,
@@ -16,8 +17,10 @@ import {
   isApprovalAskBlock,
   isOwnerStartedRun,
   isSecretAskBlock,
+  lastingWriteKind,
   outboundSiteGate,
   outsideRunToolRequiresApproval,
+  ownComputerActionNeedsReview,
   planActionGate,
   receiptItems,
   repeatsDeniedAction,
@@ -63,6 +66,9 @@ describe("toolRequiresApproval", () => {
     expect(toolRequiresApproval("secret_request", false)).toBe(true);
     expect(toolRequiresApproval("forget_secret", false)).toBe(true);
     expect(toolRequiresApproval("forget_memory", false)).toBe(true);
+    expect(toolRequiresApproval("delete_shared_memory", false)).toBe(true);
+    expect(toolRequiresApproval("skill_delete", false)).toBe(true);
+    expect(toolRequiresApproval("remove_mcp_server", false)).toBe(true);
     expect(toolRequiresApproval("list_secrets", false)).toBe(false);
     // A random value the bot cannot read exposes nothing, and never replaces a saved credential.
     expect(toolRequiresApproval("generate_secret", false)).toBe(false);
@@ -956,6 +962,68 @@ describe("connectorReadRequiresApproval", () => {
   });
 });
 
+describe("lastingWriteKind", () => {
+  it("names the write that outlives the run", () => {
+    expect(lastingWriteKind({ toolName: "remember", args: {}, savedContextWrite: true })).toBe(
+      "memory",
+    );
+    expect(lastingWriteKind({ toolName: "schedule_create", args: { prompt: "p" } })).toBe(
+      "routine",
+    );
+    expect(lastingWriteKind({ toolName: "create_child_routine", args: { prompt: "p" } })).toBe(
+      "routine",
+    );
+    expect(lastingWriteKind({ toolName: "schedule_update", args: { on: "email" } })).toBe(
+      "routine",
+    );
+    expect(lastingWriteKind({ toolName: "update_bot", args: { instructions: "i" } })).toBe(
+      "instructions",
+    );
+  });
+
+  it("leaves pauses, new times, other settings and other paths to their own rubric", () => {
+    expect(lastingWriteKind({ toolName: "schedule_update", args: { active: false } })).toBe(
+      undefined,
+    );
+    expect(lastingWriteKind({ toolName: "schedule_update", args: { cron: "0 9 * * *" } })).toBe(
+      undefined,
+    );
+    expect(
+      lastingWriteKind({ toolName: "schedule_update", args: { prompt: "  ", active: false } }),
+    ).toBe(undefined);
+    expect(lastingWriteKind({ toolName: "update_bot", args: { model: "m" } })).toBe(undefined);
+    expect(
+      lastingWriteKind({ toolName: "update_bot", args: { model: "m", instructions: "  " } }),
+    ).toBe(undefined);
+    expect(
+      lastingWriteKind({
+        toolName: "update_bot",
+        args: { instructions: "i", instructions_offset: 0 },
+      }),
+    ).toBe(undefined);
+    // A null or blank offset is not a paged read: the update still writes the instructions.
+    expect(
+      lastingWriteKind({
+        toolName: "update_bot",
+        args: { instructions: "i", instructions_offset: null },
+      }),
+    ).toBe("instructions");
+    expect(
+      lastingWriteKind({
+        toolName: "update_bot",
+        args: { instructions: "i", instructionsOffset: "" },
+      }),
+    ).toBe("instructions");
+    expect(
+      lastingWriteKind({ toolName: "set_child_instructions", args: { instructions: "i" } }),
+    ).toBe(undefined);
+    expect(lastingWriteKind({ toolName: "remember", args: {} })).toBe(undefined);
+    expect(
+      lastingWriteKind({ toolName: "schedule_create", args: { prompt: "p" }, newSite: true }),
+    ).toBe(undefined);
+  });
+});
+
 describe("savedContextWriteNeedsReview", () => {
   const readOutside = async () => true;
   const readNothing = async () => false;
@@ -985,6 +1053,92 @@ describe("savedContextWriteNeedsReview", () => {
       await expect(savedContextWriteNeedsReview(name, check)).resolves.toBe(false);
     }
     expect(checked).toBe(false);
+  });
+});
+
+describe("ownComputerActionNeedsReview", () => {
+  const yes = async () => true;
+  const no = async () => false;
+  const review = (name: string, args: Record<string, unknown>, tainted = yes, pageSiteGiven = no) =>
+    ownComputerActionNeedsReview(name, args, { tainted, pageSiteGiven });
+
+  it.each([
+    ["shell", { command: "ls" }],
+    [
+      "browser_act",
+      {
+        actions: [
+          { kind: "click", ref: "e1" },
+          { kind: "fill", ref: "e2", text: "x" },
+        ],
+      },
+    ],
+    ["browser_act", { actions: [{ kind: "upload", ref: "e2", paths: ["a.pdf"] }] }],
+    ["browser_navigate", { url: "https://collect.example.net/?d=1" }],
+    ["open_path", { path: "https://collect.example.net/?d=1" }],
+    ["computer_act", { actions: [{ kind: "type", text: "notes" }] }],
+    ["computer_act", { actions: [{ kind: "key", key: "v", modifiers: ["ctrl"] }] }],
+    [
+      "computer_act",
+      { actions: [{ kind: "focus", application: "Mail", uri: "mailto:a@example.com" }] },
+    ],
+    ["launch_app", { application: "Mail", uri: "mailto:a@example.com?body=notes" }],
+  ])(
+    "reviews %s that could send something only once outside content entered the run",
+    async (name, args) => {
+      await expect(review(name, args)).resolves.toBe(true);
+      await expect(review(name, args, no)).resolves.toBe(false);
+    },
+  );
+
+  it.each([
+    ["browser_act", { actions: [{ kind: "fill", ref: "e2", text: "Porto" }] }],
+    ["browser_navigate", { url: "https://shop.example.com/orders" }],
+    ["open_path", { path: "https://shop.example.com/orders" }],
+  ])("leaves %s on a site the run was given alone", async (name, args) => {
+    await expect(review(name, args, yes, yes)).resolves.toBe(false);
+  });
+
+  it("leaves calls that send nothing the bot chose alone, without checking the run", async () => {
+    let checked = false;
+    const check = async () => {
+      checked = true;
+      return true;
+    };
+    for (const [name, args] of [
+      ["browser_act", { actions: [{ kind: "click", ref: "e1" }] }],
+      [
+        "computer_act",
+        {
+          actions: [
+            { kind: "click", x: 1, y: 2 },
+            { kind: "scroll", amount: 3 },
+          ],
+        },
+      ],
+      ["open_path", { path: "reports/q4.pdf" }],
+      ["open_path", { path: "report:2026.txt" }],
+      ["open_path", { path: "mailto:a@example.com?body=notes" }],
+      ["open_path", { path: "C:\\Users\\bot\\notes.txt" }],
+      ["launch_app", { application: "Calculator" }],
+      ["write_file", { path: "a.txt" }],
+      ["browser_snapshot", {}],
+    ] as const) {
+      await expect(review(name, args, check, check)).resolves.toBe(false);
+    }
+    expect(checked).toBe(false);
+  });
+});
+
+describe("clicksBeforeTyping", () => {
+  it("is true only when a click comes before something typed or uploaded", () => {
+    const of = (...kinds: string[]) =>
+      clicksBeforeTyping({ actions: kinds.map((kind) => ({ kind })) });
+    expect(of("click", "fill")).toBe(true);
+    expect(of("click", "upload")).toBe(true);
+    expect(of("fill", "click")).toBe(false);
+    expect(of("click", "click")).toBe(false);
+    expect(of("type")).toBe(false);
   });
 });
 

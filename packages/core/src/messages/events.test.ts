@@ -1289,3 +1289,14 @@ describe("a reply's kept tool calls", () => {
     expect(splitToolHistory(shown).toolHistory).toBeUndefined();
   });
 });
+
+describe("runFailureError emoji limit", () => {
+  it("does not cut an emoji in half before the ellipsis", () => {
+    const error = runFailureError({
+      type: "run.failed",
+      payload: { error: `${"a".repeat(299)}😀 tail` },
+    });
+    expect(error).toBe(`${"a".repeat(299)}…`);
+    expect(() => encodeURIComponent(error ?? "")).not.toThrow();
+  });
+});

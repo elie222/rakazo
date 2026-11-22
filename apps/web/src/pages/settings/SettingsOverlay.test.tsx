@@ -123,6 +123,19 @@ vi.mock("./OrganizationSettingsPanel", () => ({
     </div>
   ),
 }));
+const { cloudComputerCount } = vi.hoisted(() => ({ cloudComputerCount: { current: 0 } }));
+vi.mock("../../components/computers/CloudComputerSizes", () => ({
+  CloudComputerSizes: () => <div data-testid="cloud-computers" />,
+  useCloudComputers: () => ({
+    data: { computers: Array.from({ length: cloudComputerCount.current }) },
+    isError: false,
+  }),
+}));
+vi.mock("../../components/computers/ComputerDeviceSettings", () => ({
+  ComputerDeviceSettings: () => <div data-testid="computer-devices" />,
+  useThisComputer: () => ({ thisComputer: null, plainHttp: false }),
+  userDevicesQuery: () => ({ queryKey: ["user:", "userDevices"], queryFn: async () => [] }),
+}));
 vi.mock("../../components/computers/ComputersUnavailableHint", () => ({
   computersAreUnavailable: () => false,
 }));
@@ -374,6 +387,28 @@ it("says what a page is for only where its name does not", async () => {
     );
   } finally {
     await voice.cleanup();
+  }
+});
+
+it("offers Computers once the Space has a cloud computer, with its sizes and paired computers", async () => {
+  const none = await render({ section: "computer" });
+  try {
+    expect(none.container.querySelector('[data-testid="settings-nav-computer"]')).toBeNull();
+    expect(none.container.querySelector('[data-testid="cloud-computers"]')).toBeNull();
+  } finally {
+    await none.cleanup();
+  }
+  cloudComputerCount.current = 1;
+  const some = await render({ section: "computer" });
+  try {
+    expect(some.container.querySelector('[data-testid="settings-nav-computer"]')?.textContent).toBe(
+      "Computers",
+    );
+    expect(some.container.querySelector('[data-testid="cloud-computers"]')).not.toBeNull();
+    expect(some.container.querySelector('[data-testid="computer-devices"]')).not.toBeNull();
+  } finally {
+    cloudComputerCount.current = 0;
+    await some.cleanup();
   }
 });
 
