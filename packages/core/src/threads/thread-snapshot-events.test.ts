@@ -1617,6 +1617,26 @@ describe("events the snapshot already covers", () => {
     expect(mergeThreadSnapshot(next, { ...snapshot([]), cursor: 8 })).toBe(current);
   });
 
+  it.each(["run.waiting_input", "run.started", "computer.takeover.requested"] as const)(
+    "keeps a finished run finished when its %s arrives late",
+    (type) => {
+      const run = threadRun("run-1");
+      const working = { ...snapshot([]), cursor: 10, run, activeRuns: [run] };
+      const finished = reduceThreadSnapshot(working, event({ type: "run.completed", seq: 12 }));
+      expect(activeThreadRuns(finished)).toEqual([]);
+
+      expect(reduceThreadSnapshot(finished, event({ type, seq: 11 }))).toBe(finished);
+    },
+  );
+
+  it("applies a repeated event once", () => {
+    const delta = event({ type: "thread.progress", seq: 4, payload: { delta: "Checking " } });
+    const once = reduceThreadSnapshot(snapshot([]), delta);
+
+    expect(once?.messages).toHaveLength(1);
+    expect(reduceThreadSnapshot(once, delta)).toBe(once);
+  });
+
   it("keeps a group member's status from the snapshot when its run's events arrive late", () => {
     const run = threadRun("run-1", "bot-member");
     const member = { botId: "bot-member", name: "Member", color: "#8B5CF6" };

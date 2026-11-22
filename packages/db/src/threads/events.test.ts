@@ -3893,7 +3893,9 @@ describe("answerRunInput approvals", () => {
 
     it.each([
       ["a missing field", [bankFields[0]!]],
+      ["an extra field", [...bankFields, { label: "PIN", value: "1234", hidden: true }]],
       ["a renamed field", [bankFields[0]!, { ...bankFields[1]!, label: "Mobile" }]],
+      ["fields out of order", [bankFields[1]!, bankFields[0]!]],
       ["an empty field", [bankFields[0]!, { ...bankFields[1]!, value: "" }]],
     ])("rejects an answer with %s", async (_name, fields) => {
       const { store, tx, answerWith } = loginFixture(login, ["ID number", "Phone number"]);

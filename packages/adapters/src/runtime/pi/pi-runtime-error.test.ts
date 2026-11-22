@@ -1,7 +1,9 @@
 import { ModelAccountError, ModelOutputError, TransientModelError } from "@rakazo/adapter-kit";
 import {
   MODEL_CONTEXT_TOO_SMALL_ERROR,
+  MODEL_CREDITS_EXHAUSTED_ERROR,
   MODEL_OUTPUT_LIMIT_ERROR,
+  MODEL_UNPRICED_FOR_CREDITS_ERROR,
   modelFallbackFailure,
 } from "@rakazo/core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -175,6 +177,8 @@ describe("Pi runtime errors", () => {
     '413: {"message":"Request too large for model `example/model` on tokens per minute (TPM)."}',
     MODEL_CONTEXT_TOO_SMALL_ERROR,
     "Prompt tokens limit exceeded: 11298 > 992. To increase, visit https://openrouter.ai/settings/credits and upgrade to a paid account",
+    MODEL_CREDITS_EXHAUSTED_ERROR,
+    MODEL_UNPRICED_FOR_CREDITS_ERROR,
     `400: {"type":"server_error","message":"Upstream request failed: This example model requires Global regions. Select Global in your workspace's Privacy settings to use it."}`,
     'OAuth refresh failed for anthropic: Anthropic token refresh request failed. url=https://example.invalid/v1/oauth/token; details=Error: HTTP request failed. status=400; body={"error": "invalid_grant", "error_description": "Refresh token not found or invalid"}',
     '400 {"message":"Provider returned error","code":400,"metadata":{"raw":"{\\"error\\":{\\"message\\":\\"example upstream failure\\"}}","provider_name":"ExampleUpstream","is_byok":false}}',
