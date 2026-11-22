@@ -104,35 +104,6 @@ function ArchivedGroupRow({
   const { t } = useLingui();
   const menu = useRef<MenuComponentRef>(null);
   const android = Platform.OS === "android";
-  const canActivate = android && !pending;
-  const row = (
-    <View
-      accessible
-      accessibilityLabel={`${group.name}, ${t`Group`}`}
-      accessibilityRole={android ? "button" : undefined}
-      accessibilityState={android ? { disabled: pending } : undefined}
-      accessibilityActions={canActivate ? [{ name: "activate" }] : undefined}
-      onAccessibilityAction={
-        canActivate
-          ? ({ nativeEvent }) => {
-              // TalkBack activation does not reach the MenuView touch handler.
-              if (nativeEvent.actionName === "activate") menu.current?.show();
-            }
-          : undefined
-      }
-      style={{
-        minHeight: 54,
-        paddingHorizontal: 16,
-        flexDirection: "row",
-        alignItems: "center",
-        gap: 12,
-      }}
-    >
-      <NativeSymbol ios="person.2" android="people-outline" color={native.secondaryLabel} />
-      <Text style={{ flex: 1, color: native.label, ...typeScale.cardTitle }}>{group.name}</Text>
-    </View>
-  );
-  if (android && pending) return row;
   return (
     <MenuView
       ref={menu}
@@ -140,7 +111,24 @@ function ArchivedGroupRow({
       actions={[{ id: "restore", title: t`Restore`, attributes: { disabled: pending } }]}
       onPressAction={() => onRestoreGroup(group)}
     >
-      {row}
+      <View
+        accessible
+        accessibilityLabel={`${group.name}, ${t`Group`}`}
+        accessibilityRole={android ? "button" : undefined}
+        accessibilityActions={android ? [{ name: "activate" }] : undefined}
+        // TalkBack activation does not reach the menu's touch handler, so open it here.
+        onAccessibilityAction={android ? () => menu.current?.show() : undefined}
+        style={{
+          minHeight: 54,
+          paddingHorizontal: 16,
+          flexDirection: "row",
+          alignItems: "center",
+          gap: 12,
+        }}
+      >
+        <NativeSymbol ios="person.2" android="people-outline" color={native.secondaryLabel} />
+        <Text style={{ flex: 1, color: native.label, ...typeScale.cardTitle }}>{group.name}</Text>
+      </View>
     </MenuView>
   );
 }

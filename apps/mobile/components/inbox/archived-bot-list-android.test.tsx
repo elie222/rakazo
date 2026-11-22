@@ -57,7 +57,6 @@ vi.mock("react-native", () => ({
     accessibilityLabel,
     accessibilityRole,
     accessibilityActions,
-    accessibilityState,
     onAccessibilityAction,
   }: ViewProps) => {
     if (accessibilityRole !== "button") {
@@ -71,7 +70,6 @@ vi.mock("react-native", () => ({
       <button
         type="button"
         aria-label={accessibilityLabel}
-        disabled={accessibilityState?.disabled}
         onKeyDown={(event) => {
           if (
             event.key !== "Enter" ||
@@ -116,13 +114,13 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
-function render(pending = false) {
+function render() {
   return act(async () =>
     root.render(
       <ArchivedBotList
         bots={[]}
         groups={groups}
-        pending={pending}
+        pending={false}
         onOpen={vi.fn()}
         onRestore={vi.fn()}
         onDelete={vi.fn()}
@@ -149,26 +147,4 @@ it("opens only the named group's menu through accessibility activation before re
   expect(restore?.textContent).toBe("Restore");
   await act(async () => restore!.click());
   expect(onRestoreGroup).toHaveBeenCalledExactlyOnceWith(groups[1]);
-});
-
-it("keeps the pointer path and closes a menu when restore becomes pending", async () => {
-  await render();
-  await act(async () =>
-    host
-      .querySelector("[data-menu-trigger]")!
-      .dispatchEvent(new MouseEvent("pointerdown", { bubbles: true })),
-  );
-  expect(host.querySelector('[role="menuitem"]')?.textContent).toBe("Restore");
-  expect(onRestoreGroup).not.toHaveBeenCalled();
-
-  await render(true);
-  const first = button("Research");
-  expect(first?.disabled).toBe(true);
-  expect(host.querySelector('[role="menu"]')).toBeNull();
-  await act(async () => {
-    first!.click();
-    first!.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
-  });
-  expect(host.querySelector('[role="menu"]')).toBeNull();
-  expect(onRestoreGroup).not.toHaveBeenCalled();
 });
