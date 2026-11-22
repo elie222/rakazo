@@ -1,5 +1,4 @@
 import { ACTIVE_RUN_STATUSES } from "@rakazo/core";
-import { getLogger } from "@rakazo/logging";
 import { expireComputerExecutionLeases } from "../computers/computers.js";
 import type { Prisma, PrismaClient } from "../database/client.js";
 import { withTransactionRetry } from "../database/transaction-retry.js";
@@ -47,9 +46,7 @@ export async function cancelDeactivatedAccountRuns(
     );
     if (!event) continue;
     cancelled++;
-    await events.notify(threadId, event.seq).catch((error) => {
-      getLogger().error("deactivated account run cancellation notification", error);
-    });
+    await events.notify(threadId, event.seq);
     await events.publishSpaceChange?.(event.spaceId, "runs");
   }
   return cancelled;

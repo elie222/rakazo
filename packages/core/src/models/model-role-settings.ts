@@ -7,6 +7,11 @@ import type {
 } from "@rakazo/contracts";
 import { modelRoleChoiceKey } from "@rakazo/contracts";
 
+/** The same model on another connection is another row. */
+export function sameModelRoleChoice(left: ModelRoleChoice, right: ModelRoleChoice): boolean {
+  return modelRoleChoiceKey(left) === modelRoleChoiceKey(right);
+}
+
 /** Account settings lead with connecting a model until the account has a way to run one. */
 export function isFirstModelConnection(
   scope: SettingsScope,

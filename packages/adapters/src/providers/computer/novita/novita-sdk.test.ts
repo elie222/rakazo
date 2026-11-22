@@ -1,8 +1,16 @@
+import { SandboxRateLimitError } from "@rakazo/adapter-kit";
 import { deferred } from "@rakazo/core/test-async";
 import type { DesktopSandbox, Novita } from "novita-sandbox";
-import { SandboxNotFoundError, TimeoutError } from "novita-sandbox";
+import { RateLimitError, SandboxNotFoundError, TimeoutError } from "novita-sandbox";
 import { describe, expect, it, vi } from "vitest";
-import { destroyNovitaComputer, novitaDesktop, pauseNovitaComputer } from "./novita-sandbox.js";
+import type { RemoteDesktopSdk } from "../../../computers/sandbox/remote-desktop-sandbox.js";
+import type { NovitaApi } from "./novita-sandbox.js";
+import {
+  destroyNovitaComputer,
+  novitaDesktop,
+  novitaSdk,
+  pauseNovitaComputer,
+} from "./novita-sandbox.js";
 
 function fixture() {
   const handle = {
@@ -227,6 +235,80 @@ describe("Novita stop confirmation", () => {
     sandbox.pause.mockRejectedValueOnce(new SandboxNotFoundError("gone"));
     await expect(pauseNovitaComputer(client, "computer")).resolves.toBeUndefined();
     expect(sandbox.getInfo).not.toHaveBeenCalled();
+  });
+});
+
+describe("Novita rate limits", () => {
+  function sdkWithApi() {
+    const api = {
+      desktop: { create: vi.fn(), connect: vi.fn() },
+      sandbox: {
+        setTimeout: vi.fn(async () => undefined),
+        pause: vi.fn(async () => true),
+        getInfo: vi.fn(async () => ({ state: "running" })),
+        kill: vi.fn(async () => true),
+      },
+    };
+    const sdk = novitaSdk("test-novita-key", undefined, async () => api as unknown as NovitaApi);
+    return { api, sdk };
+  }
+
+  it("reports a rate-limited create as a computer rate limit, keeping the SDK error as cause", async () => {
+    const { api, sdk } = sdkWithApi();
+    const limited = new RateLimitError("429: too many requests");
+    api.desktop.create.mockRejectedValueOnce(limited);
+    const options = {} as Parameters<RemoteDesktopSdk["create"]>[1];
+    const error = await sdk.create("template", options).catch((failure: unknown) => failure);
+    expect(error).toBeInstanceOf(SandboxRateLimitError);
+    expect(error).toHaveProperty("cause", limited);
+  });
+
+  it("reports a rate-limited status read as a computer rate limit", async () => {
+    const { api, sdk } = sdkWithApi();
+    api.sandbox.getInfo.mockRejectedValueOnce(new RateLimitError("429"));
+    const signal = new AbortController().signal;
+    const error = await sdk.isRunning!("computer", { apiKey: "test-novita-key", signal }).catch(
+      (failure: unknown) => failure,
+    );
+    expect(error).toBeInstanceOf(SandboxRateLimitError);
+  });
+
+  it("reports a rate-limited keep-alive as a computer rate limit", async () => {
+    const { api, sdk } = sdkWithApi();
+    api.sandbox.setTimeout.mockRejectedValueOnce(new RateLimitError("429"));
+    const error = await sdk.keepAlive!("computer", {
+      apiKey: "test-novita-key",
+      timeoutMs: 1000,
+    }).catch((failure: unknown) => failure);
+    expect(error).toBeInstanceOf(SandboxRateLimitError);
+  });
+
+  it("reports a pause refused by rate limits on every attempt as a rate limit", async () => {
+    const { api, sdk } = sdkWithApi();
+    api.sandbox.pause.mockRejectedValue(new RateLimitError("429"));
+    const error = await sdk
+      .pause("computer", { apiKey: "test-novita-key" })
+      .catch((failure: unknown) => failure);
+    expect(error).toBeInstanceOf(SandboxRateLimitError);
+  });
+
+  it("keeps an unconfirmed deletion an unsafe stop when the SDK rate-limits it", async () => {
+    const { api, sdk } = sdkWithApi();
+    api.sandbox.kill.mockRejectedValue(new RateLimitError("429"));
+    api.sandbox.getInfo.mockResolvedValue({ state: "paused" });
+    await expect(sdk.kill("computer", { apiKey: "test-novita-key" })).rejects.toMatchObject({
+      name: "SandboxUnsafeStopError",
+    });
+  });
+
+  it("leaves other SDK failures unchanged", async () => {
+    const { api, sdk } = sdkWithApi();
+    const failure = new Error("fetch failed");
+    api.sandbox.getInfo.mockRejectedValueOnce(failure);
+    const signal = new AbortController().signal;
+    await expect(sdk.isRunning!("computer", { apiKey: "test-novita-key", signal })).rejects.toBe(
+      failure,
+    );
   });
 });
 

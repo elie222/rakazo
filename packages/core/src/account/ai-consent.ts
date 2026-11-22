@@ -17,6 +17,7 @@ const pendingAiConsent = new Map<string, Promise<void>>();
 /** Only user actions that can start AI processing need a foreground disclosure. */
 export function aiDataUsesForProcedure(procedure: string, input?: unknown): AiDataUse[] {
   const path = procedure.replaceAll(".", "/");
+  if (path === "pageReviews/askRevision") return ["model"];
   if (
     path === "routines/update" &&
     input &&
@@ -85,6 +86,7 @@ export function aiConsentTarget(input: unknown): {
   botId?: string;
   groupId?: string;
   routineId?: string;
+  pageId?: string;
   settingsScope?: SettingsScope;
 } {
   if (!input || typeof input !== "object") return {};
@@ -95,7 +97,12 @@ export function aiConsentTarget(input: unknown): {
 }
 
 /** A send that starts routines is also checked as each routine's own test run would be. */
-export function aiConsentTargets(input: unknown): ReturnType<typeof aiConsentTarget>[] {
+export function aiConsentTargets(
+  input: unknown,
+  procedure?: string,
+): ReturnType<typeof aiConsentTarget>[] {
+  const pageId = (input as { pageId?: unknown } | null | undefined)?.pageId;
+  if (procedure === "pageReviews/askRevision" && typeof pageId === "string") return [{ pageId }];
   const routineIds = (input as { routineIds?: unknown } | null | undefined)?.routineIds;
   return [
     aiConsentTarget(input),

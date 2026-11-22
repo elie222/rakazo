@@ -24,7 +24,7 @@ vi.mock("../native/native", () => ({
   useThemedStyles: (create: () => unknown) => create(),
 }));
 vi.mock("../i18n/i18n", () => ({ useUiLocale: () => "en" }));
-vi.mock("../routines/cron", () => ({ cronLabels: () => ({}) }));
+vi.mock("@rakazo/i18n/cron", () => ({ cronLabels: () => ({}) }));
 vi.mock("../api/api", () => ({
   rpc: mocks.rpc,
   currentApiBase: () => "https://app.example.test",

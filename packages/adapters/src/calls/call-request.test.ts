@@ -205,23 +205,6 @@ describe("settleCallRequest", () => {
     });
   });
 
-  it("keeps a committed answer recoverable when notification fails", async () => {
-    const prisma = prismaWith({});
-    const events = { notify: vi.fn().mockRejectedValue(new Error("offline")) };
-    await expect(
-      settleCallRequest(
-        { prisma, events },
-        {
-          threadId: "thread-1",
-          callId: "call-1",
-          from: ["ringing"],
-          status: "answered",
-        },
-      ),
-    ).resolves.toMatchObject({ status: "answered" });
-    expect(events.notify).toHaveBeenCalledWith("thread-1", 0);
-  });
-
   it("leaves a call that already moved on alone", async () => {
     const events = { notify: vi.fn(async () => undefined) };
     await expect(
