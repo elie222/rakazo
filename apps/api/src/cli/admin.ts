@@ -5,6 +5,7 @@ import {
   unwrapEnvFromKeyManager,
   withSecretPersistence,
 } from "@rakazo/adapters";
+import { ClientError } from "@rakazo/core";
 import {
   createDb,
   installAuditEventStore,
@@ -23,7 +24,10 @@ if (!invocation) {
 
 await unwrapEnvFromKeyManager();
 const env = loadEnv();
-const db = createDb(env.databaseUrl, { keyProvider: contentKeyProviderFromEnv() });
+const db = createDb(env.databaseUrl, {
+  keyProvider: contentKeyProviderFromEnv(),
+  encryptContent: env.contentEncryption,
+});
 const secrets = createSecretStore(env.encryptionKey);
 await secrets.start();
 const prisma = withSecretPersistence(db.prisma, secrets);
@@ -31,11 +35,18 @@ installSecurityEventStore(prisma);
 installAuditEventStore(prisma);
 try {
   const result = await runAsSystem("run an operator admin command", () =>
-    invocation.run({ prisma, secrets, apiUrl: env.apiUrl, signal: new AbortController().signal }),
+    invocation.run({
+      prisma,
+      secrets,
+      env,
+      pool: db.pool,
+      apiUrl: env.apiUrl,
+      signal: new AbortController().signal,
+    }),
   );
   process.stdout.write(formatAdminResult(result, invocation.json));
 } catch (error) {
-  if (!(error instanceof AdminCommandError)) throw error;
+  if (!(error instanceof AdminCommandError || error instanceof ClientError)) throw error;
   process.stderr.write(`${error.message}\n`);
   process.exitCode = 1;
 } finally {

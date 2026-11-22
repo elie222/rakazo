@@ -1,8 +1,15 @@
 import { parseArgs } from "node:util";
+import { accountDeleteCommand } from "./account-delete.js";
 import type { AdminCommand, AdminContext, AdminResult } from "./admin-command.js";
+import { billingCancelCommand, billingRefundCommand } from "./billing-commands.js";
 import { botWebhookKeyCommand } from "./bot-webhook-key.js";
 
-export const ADMIN_COMMANDS: readonly AdminCommand[] = [botWebhookKeyCommand];
+export const ADMIN_COMMANDS: readonly AdminCommand[] = [
+  accountDeleteCommand,
+  billingCancelCommand,
+  billingRefundCommand,
+  botWebhookKeyCommand,
+];
 
 export const ADMIN_USAGE = `Usage: admin.js <command> [--json]\n${ADMIN_COMMANDS.map(
   (command) => `  ${[...command.path, command.usage].join(" ")}`,

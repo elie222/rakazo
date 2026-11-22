@@ -56,6 +56,7 @@ import {
   organizationOwnerHadTrial,
   organizationSeatCount,
   ownedBillingAccounts,
+  personalOrganizationIds,
   publishOrganizationChange,
   releaseByokTrialCheckout,
   releaseByokTrialCheckouts,
@@ -140,7 +141,10 @@ export interface BillingService {
   /** Pushes the organization's member count to the provider. Call when members change. */
   syncSeats(organizationId: string): Promise<void>;
   cancelForDeletedUser(userId: string): Promise<void>;
-  cancelForDeletedOrganization(organizationId: string): Promise<void>;
+  cancelOrganizationSubscriptions(
+    organizationId: string,
+    expectedCustomerId?: string,
+  ): Promise<void>;
   claimReferral(actor: Actor, code: string): Promise<void>;
 }
 
@@ -393,14 +397,22 @@ export function createBillingService(deps: {
     return members.find((member) => isOwnerRole(member.role))?.userId;
   }
 
-  async function cancel(organizationId: string) {
+  async function cancel(organizationId: string, expectedCustomerId?: string) {
     // Holds the organization's checkout lease, so a checkout still opening finishes first and
     // the session it leaves is expired here instead of outliving the cancellation. The account
     // is read under the lease: that checkout may have replaced its customer.
-    await withCheckoutLease(prisma, organizationId, async () => {
+    await withCheckoutLease(prisma, organizationId, async (underLease) => {
       const account = await billingAccountForOrganization(prisma, organizationId);
+      if (expectedCustomerId && account?.customerId !== expectedCustomerId)
+        throw new ClientError(
+          "CONFLICT",
+          "The billing account changed. Preview the cancellation again.",
+        );
       if (!account) return;
       await provider.cancelCustomerSubscriptions(account.customerId);
+      // Open checkout sessions are now expired. Release their trial holds before the next
+      // checkout can open, even when the organization is staying.
+      await underLease((tx) => releaseByokTrialCheckouts(tx, organizationId));
       await sync(account.customerId);
     });
   }
@@ -920,16 +932,14 @@ export function createBillingService(deps: {
     },
 
     async cancelForDeletedUser(userId) {
+      const departing = new Set(await personalOrganizationIds(prisma, userId));
       for (const account of await ownedBillingAccounts(prisma, userId))
-        await cancel(account.organizationId);
+        if (departing.has(account.organizationId)) await cancel(account.organizationId);
     },
 
-    async cancelForDeletedOrganization(organizationId) {
-      if (!(await billingAccountForOrganization(prisma, organizationId))) return;
-      await cancel(organizationId);
-      // The cancellation expired the organization's open checkout sessions, so their hold on
-      // the owners' trial goes; a failed cancellation keeps it until a retry succeeds.
-      await releaseByokTrialCheckouts(prisma, organizationId);
+    async cancelOrganizationSubscriptions(organizationId, expectedCustomerId) {
+      if (expectedCustomerId || (await billingAccountForOrganization(prisma, organizationId)))
+        await cancel(organizationId, expectedCustomerId);
     },
   };
 }

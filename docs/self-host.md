@@ -149,7 +149,7 @@ Compose bot homes mount only their own subdirectory of the application volume us
 
 ## Admin commands
 
-`admin.js` runs setup tasks from the API container. It needs shell access to the server and opens
+`admin.js` runs operator tasks from the API container. It needs shell access to the server and opens
 no port.
 
 ```bash
@@ -163,6 +163,26 @@ prints only the URL; `--rotate` replaces the key, and the old one stops working.
 one line, `{"botId","url","key","created"}`, for piping into another program so the key stays
 out of chat and logs. Each new key is recorded as a `credential.changed`
 [security event](./self-host-observability.md#security-events) with `by: operator`.
+
+### Account deletion and billing
+
+Run these from the API container. Omit `--confirm` to preview the target and action.
+
+```sh
+node dist/cli/admin.js account delete person@example.test --confirm
+node dist/cli/admin.js billing cancel person@example.test --confirm
+node dist/cli/admin.js billing refund person@example.test EXAMPLE-0001 --confirm
+```
+
+- **Account deletion** uses the same cleanup as Settings. It permanently removes the account and
+  the Spaces that go with it, cancels their subscriptions, and requires the database job runner.
+- **Billing cancellation** immediately ends the selected organization's subscriptions and expires
+  its open checkouts. If the account owns several billing organizations, pass the organization ID
+  after the email.
+- **Billing refunds** return the full amount of a paid invoice with a single, undisputed card
+  charge. Review the invoice and credit usage before confirming. Refunds of model-credit
+  purchases reconcile through the usual billing sync. Use the separate cancellation command to
+  end a recurring plan.
 
 ## Reporting a problem
 

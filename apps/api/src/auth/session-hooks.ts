@@ -15,19 +15,19 @@ async function logged(label: string, cleanup: Promise<void> | undefined) {
   await cleanup?.catch((error) => getLogger().error(label, error));
 }
 
-/** What the auth library calls as accounts and sessions end. */
-export function accountLifecycleHooks(deps: {
+type AccountDeletionDeps = {
   spaceDeletion: SpaceDeletionDeps;
   events: ThreadEvents;
   billing: BillingService | undefined;
   pushTokens: PrismaPushTokenStore;
   workActivities: WorkActivities | undefined;
-  deviceSessions: DeviceStore;
-}): Pick<
-  AuthEnv,
-  "beforeDeleteUser" | "afterDeleteUser" | "afterDeleteSession" | "afterReplaceSession"
-> {
-  const { spaceDeletion, billing, pushTokens, workActivities, deviceSessions } = deps;
+};
+
+/** The same teardown and seat reconciliation for self-service and operator deletion. */
+export function accountDeletionHooks(
+  deps: AccountDeletionDeps,
+): Required<Pick<AuthEnv, "beforeDeleteUser" | "afterDeleteUser">> {
+  const { spaceDeletion, billing, pushTokens, workActivities } = deps;
   const { prisma, dataDir } = spaceDeletion;
   // Organizations an account being deleted joined, kept until it is gone to count their seats again.
   const seatsAfterDeletion = new Map<string, string[]>();
@@ -51,6 +51,19 @@ export function accountLifecycleHooks(deps: {
           billing?.syncSeats(organizationId),
         );
     },
+  };
+}
+
+/** What the auth library calls as accounts and sessions end. */
+export function accountLifecycleHooks(
+  deps: AccountDeletionDeps & { deviceSessions: DeviceStore },
+): Pick<
+  AuthEnv,
+  "beforeDeleteUser" | "afterDeleteUser" | "afterDeleteSession" | "afterReplaceSession"
+> {
+  const { pushTokens, workActivities, deviceSessions } = deps;
+  return {
+    ...accountDeletionHooks(deps),
     // The session change already happened, so a registration cleanup failure must not fail sign-out.
     afterDeleteSession: async (session) => {
       await logged("push token removal failed", pushTokens.endSession(session.userId, session.id));

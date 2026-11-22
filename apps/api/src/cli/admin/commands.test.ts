@@ -10,6 +10,15 @@ describe("parseAdminArgs", () => {
   });
 
   it.each([
+    ["account", "delete", "person@example.test"],
+    ["billing", "cancel", "person@example.test", "org_1"],
+    ["billing", "refund", "person@example.test", "EXAMPLE-0001"],
+  ])("accepts %s %s previews and confirmations", (...args) => {
+    expect(parseAdminArgs(args)).toMatchObject({ json: false });
+    expect(parseAdminArgs([...args, "--confirm", "--json"])).toMatchObject({ json: true });
+  });
+
+  it.each([
     [[]],
     [["bot"]],
     [["bot", "webhook-key"]],
@@ -18,6 +27,9 @@ describe("parseAdminArgs", () => {
     [["bot", "webhook-key", "bot_1", "--force"]],
     [["bot", "webhook-key", "bot_1", "--rotate=yes"]],
     [["bots", "webhook-key", "bot_1"]],
+    [["account", "delete", "bad-email", "--confirm"]],
+    [["billing", "cancel", "person@example.test", "a", "b", "--confirm"]],
+    [["billing", "refund", "person@example.test", "--confirm"]],
   ])("refuses %j", (argv) => {
     expect(parseAdminArgs(argv)).toBeNull();
   });

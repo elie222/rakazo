@@ -510,7 +510,7 @@ describePostgres("organizations (PostgreSQL)", () => {
         {
           ...deps(),
           billing: {
-            cancelForDeletedOrganization: async () => {
+            cancelOrganizationSubscriptions: async () => {
               called.resolve();
               await held.promise;
             },
@@ -665,7 +665,7 @@ describePostgres("organizations (PostgreSQL)", () => {
         {
           ...deps(),
           billing: {
-            cancelForDeletedOrganization: async () => {
+            cancelOrganizationSubscriptions: async () => {
               called.resolve();
               await held.promise;
             },
@@ -691,7 +691,7 @@ describePostgres("organizations (PostgreSQL)", () => {
     const work = await client(ada).organizations.create({ name: "Work" });
     const ref = `sb-held-rpc-${suffix}`;
     await botWithComputer(work.id, ada.userId, ref);
-    const cancel = vi.spyOn(billing, "cancelForDeletedOrganization");
+    const cancel = vi.spyOn(billing, "cancelOrganizationSubscriptions");
     const release = sandbox.hold(ref);
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
     try {
@@ -720,7 +720,7 @@ describePostgres("organizations (PostgreSQL)", () => {
     const ref = `sb-held-sweep-${suffix}`;
     await botWithComputer(work.id, ada.userId, ref);
     await failRemoval(ada, work.id, ref);
-    const cancel = vi.spyOn(billing, "cancelForDeletedOrganization");
+    const cancel = vi.spyOn(billing, "cancelOrganizationSubscriptions");
     const release = sandbox.hold(ref);
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
     try {
@@ -839,7 +839,7 @@ describePostgres("organizations (PostgreSQL)", () => {
           ...deps(),
           prisma: recordingQueries(prisma, () => billingReturned, queriesAfterBilling),
           billing: {
-            cancelForDeletedOrganization: async () => {
+            cancelOrganizationSubscriptions: async () => {
               called.resolve();
               await held.promise;
             },
@@ -886,7 +886,7 @@ describePostgres("organizations (PostgreSQL)", () => {
           {
             ...deps(),
             billing: {
-              cancelForDeletedOrganization: async () => {
+              cancelOrganizationSubscriptions: async () => {
                 called.resolve();
                 await held.promise;
               },
@@ -1091,7 +1091,7 @@ describePostgres("organizations (PostgreSQL)", () => {
         {
           ...deps(),
           billing: {
-            cancelForDeletedOrganization: async () => {
+            cancelOrganizationSubscriptions: async () => {
               placed.resolve();
               await stalled.promise;
               throw new Error("billing unavailable");

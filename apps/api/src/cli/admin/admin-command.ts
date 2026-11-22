@@ -1,7 +1,13 @@
 import type { SecretStore } from "@rakazo/adapter-kit";
-import type { PrismaClient } from "@rakazo/db";
+import type { Pool, PrismaClient } from "@rakazo/db";
+import type { AppEnv } from "../../env.js";
 
-export type AdminContext = {
+export type AdminContext = AdminDbContext & {
+  env: AppEnv;
+  pool: Pool;
+};
+
+export type AdminDbContext = {
   prisma: PrismaClient;
   secrets: SecretStore;
   apiUrl: string;
