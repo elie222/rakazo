@@ -235,7 +235,7 @@ test("takeover, routine, plugins, and export are reachable", async ({ page }, te
   await expect(page.getByTestId("connection-detail")).toHaveCount(0);
   await expect(linearRow.getByRole("button", { name: "Add Linear", exact: true })).toBeVisible();
 
-  // Custom sources live behind one menu: GitHub, then MCP → OpenAPI → GraphQL → Executor.
+  // The Add menu lists custom source kinds before the direct MCP presets.
   await page.getByRole("button", { name: "Add custom", exact: true }).click();
   const addItems = page.getByRole("menuitem");
   await expect(addItems).toHaveText([
@@ -243,6 +243,9 @@ test("takeover, routine, plugins, and export are reachable", async ({ page }, te
     "MCP server",
     "OpenAPI",
     "GraphQL",
+    "GitHub",
+    "Linear",
+    "Notion",
     "Executor",
     "Browse MCP servers",
     "Search by domain",
@@ -265,6 +268,9 @@ test("takeover, routine, plugins, and export are reachable", async ({ page }, te
   await feed.getByRole("textbox", { name: "Integration domain" }).fill("github.com");
   await feed.getByRole("button", { name: "Search", exact: true }).click();
   await expect(feed.getByText("GitHub", { exact: true })).toBeVisible();
+  // The failure and empty-answer live regions stay mounted, and stay silent while results show.
+  await expect(feed.getByRole("alert")).toBeEmpty();
+  await expect(feed.getByRole("status")).toBeEmpty();
   await captureScreenshot(page, testInfo, "11c-catalog-feed");
 
   await feed.getByRole("button", { name: "MCP Add", exact: true }).click();
@@ -365,9 +371,12 @@ test("sign-in, spawn, and stop work in the shell", async ({ page }, testInfo) =>
     if (message.type() === "error") browserErrors.push(message.text());
   });
   page.on("requestfailed", (request) => {
-    // Leaving a page closes the live streams it held open.
+    // Leaving a page closes its live streams. A live signal replaces any in-flight account read.
+    const pathname = new URL(request.url()).pathname;
     if (
-      request.url().includes("/rpc/notifications/subscribe") &&
+      (pathname === "/rpc/notifications/subscribe" ||
+        pathname === "/rpc/notifications/subscribeCalls" ||
+        pathname === "/rpc/me") &&
       request.failure()?.errorText === "net::ERR_ABORTED"
     )
       return;

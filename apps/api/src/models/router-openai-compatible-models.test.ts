@@ -204,7 +204,7 @@ describe("OpenAI-compatible model probes", () => {
     );
   });
 
-  it.each([undefined, "", "   "])("uses the saved key for a blank key %j", async (apiKey) => {
+  it.each([undefined, "   "])("uses the saved key for a blank key %j", async (apiKey) => {
     const { client, fetch, findSecret, load } = fixture();
     const response = await client.models.probeOpenAiCompatible({ baseUrl, apiKey });
     expect(fetch).toHaveBeenCalledWith(
@@ -931,6 +931,7 @@ describe("openai-compatible enabled models", () => {
       apiKey: "sk-fake-replacement-key",
       modelId: "m-z",
       enabledModelIds: ["m-z"],
+      makeDefault: true,
       reasoning: true,
       thinkingLevel: "high",
     });

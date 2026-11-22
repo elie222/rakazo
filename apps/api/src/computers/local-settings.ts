@@ -1,8 +1,10 @@
 import { timingSafeEqual } from "node:crypto";
+import { sandboxKindCapabilities } from "@rakazo/adapters";
 import { LOCAL_COMPUTER_HOST_PATH, LOCAL_SETTINGS_TOKEN_HEADER } from "@rakazo/contracts";
 import { LOCAL_SIGNUP_COOKIE, localSignupKey } from "@rakazo/core/node/local-signup";
 import type { PrismaClient } from "@rakazo/db";
 import { runAsSystem } from "@rakazo/db";
+import { bestEffort } from "@rakazo/logging";
 import type { Hono } from "hono";
 import { parse } from "hono/utils/cookie";
 import { readBoundedBody } from "../http/http-body.js";
@@ -39,13 +41,26 @@ export function mountLocalComputerHost(
     prisma: PrismaClient;
   },
 ) {
+  const offersHostComputer = sandboxKindCapabilities(deps.sandboxProvider).offersHostComputer;
+  // A choice saved under an earlier provider would hand new bots a computer nothing can run.
+  if (!offersHostComputer) {
+    void bestEffort(
+      "clear a host computer choice this provider cannot offer",
+      runAsSystem("clear an unavailable computer host choice", () =>
+        deps.prisma.deploymentSettings.updateMany({
+          where: { computerHost: "this-mac" },
+          data: { computerHost: null },
+        }),
+      ),
+    );
+  }
   // Only the native main process holds this token. Public sessions never authorize this route.
   app.post(LOCAL_COMPUTER_HOST_PATH, async (c) => {
     c.header("cache-control", "no-store");
     if (!validLocalSettingsToken(deps.token, c.req.header(LOCAL_SETTINGS_TOKEN_HEADER))) {
       return c.json({ error: "Local settings are unavailable" }, 401);
     }
-    if (deps.sandboxProvider !== "docker") return c.json({ error: "Unavailable" }, 403);
+    if (!offersHostComputer) return c.json({ error: "Unavailable" }, 403);
     const body = await readBoundedBody(c.req.raw, 1024);
     if (body === null) return c.json({ error: "Request too large" }, 413);
     let computerHost: unknown;

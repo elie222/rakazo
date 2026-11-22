@@ -8,6 +8,7 @@ import {
   otherSitesText,
   vaultKind,
 } from "@rakazo/contracts";
+import { siteHost } from "@rakazo/core";
 import { vaultBotsLine } from "@rakazo/i18n/vault";
 import * as Clipboard from "expo-clipboard";
 import { useState } from "react";
@@ -15,7 +16,6 @@ import { Modal, ScrollView, StyleSheet, Text, View } from "react-native";
 import { formatActivityRelativeTime } from "../../lib/inbox/activity";
 import { useSheetPadding } from "../../lib/layout/side-insets";
 import { native, useThemedStyles } from "../../lib/native/native";
-import { siteHost } from "../../lib/vault/secret-destination";
 import { readableItem, vaultKindLabel, vaultKindSymbol } from "../../lib/vault/vault";
 import { NativeActionButton } from "../native/native-action-button";
 import { NativeSymbol } from "../native/native-symbol";

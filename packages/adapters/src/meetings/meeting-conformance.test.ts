@@ -23,7 +23,10 @@ const input: MeetingJoinRequest = {
 };
 const signal = new AbortController().signal;
 
-function real(emulator = new RecallMeetingEmulator(), prefix: "webhook" | "svix" = "webhook") {
+function real(
+  emulator: Pick<RecallMeetingEmulator, "fetch"> = new RecallMeetingEmulator(),
+  prefix: "webhook" | "svix" = "webhook",
+) {
   return new RecallMeetingProvider({
     origin: "https://us-east-1.recall.ai",
     apiKey: "fake-key",
@@ -183,6 +186,43 @@ describe("Recall transcripts and delivery over the wire emulator", () => {
   });
 });
 
+describe("Recall leave refusals", () => {
+  function providerWithLeaveRefusal(code?: string) {
+    const calls: string[] = [];
+    const provider = real({
+      fetch: async (url, init) => {
+        calls.push(`${init?.method} ${new URL(String(url)).pathname}`);
+        if (init?.method === "POST") {
+          return code
+            ? Response.json({ code }, { status: 400 })
+            : new Response(null, { status: 400 });
+        }
+        return Response.json({
+          id: BOT_ID,
+          status_changes: [{ code: "in_call_recording", created_at: "2026-11-19T19:30:00.000Z" }],
+        });
+      },
+    });
+    return { provider, calls };
+  }
+
+  it("accepts a completed-bot refusal before the bot lookup reflects the shutdown", async () => {
+    const { provider, calls } = providerWithLeaveRefusal("cannot_command_completed_bot");
+    await expect(provider.leave(BOT_ID, signal)).resolves.toBeUndefined();
+    expect(calls).toEqual([`POST /api/v1/bot/${BOT_ID}/leave_call/`, `GET /api/v1/bot/${BOT_ID}/`]);
+  });
+
+  it.each(["cannot_command_unstarted_bot", "invalid_request", undefined])(
+    "keeps a leave refusal visible when shutdown is unconfirmed (%s)",
+    async (code) => {
+      const { provider } = providerWithLeaveRefusal(code);
+      await expect(provider.leave(BOT_ID, signal)).rejects.toThrow(
+        "Meeting provider could not remove participant (HTTP 400)",
+      );
+    },
+  );
+});
+
 it("validates common links and preserves Zoom's opaque passcode", () => {
   expect(parseMeetingUrl("https://org.zoom.us/j/123456789?pwd=abc%2Bxyz&foo=1")).toEqual({
     platform: "zoom",
@@ -222,6 +262,19 @@ it("sends a Teams meeting link and its passcode to the provider", async () => {
     meeting_url: "https://teams.cloud.microsoft/meet/123456789012?p=fake%2Bpasscode",
     variant: { microsoft_teams: "web_4_core" },
   });
+});
+
+it("accepts 16-digit Teams meeting IDs", () => {
+  expect(
+    parseMeetingUrl("https://teams.microsoft.com/meet/1234567890123456?p=fakePasscode"),
+  ).toEqual({
+    platform: "microsoft_teams",
+    url: "https://teams.microsoft.com/meet/1234567890123456?p=fakePasscode",
+    key: "1234567890123456",
+  });
+  expect(() => parseMeetingUrl("https://teams.microsoft.com/meet/123456789012345678901")).toThrow(
+    "Enter a valid Zoom, Google Meet, or Microsoft Teams link.",
+  );
 });
 
 it("preserves Teams meeting context and rejects look-alike or non-meeting links", () => {

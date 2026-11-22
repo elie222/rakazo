@@ -124,6 +124,27 @@ export const CloudComputersSchema = z.object({
 });
 export type CloudComputers = z.infer<typeof CloudComputersSchema>;
 
+/** Record a confirmed size without inventing a missing row or overriding the list's plan limits. */
+export function applySavedCloudComputerSize(
+  listed: CloudComputers | null | undefined,
+  computerId: string,
+  size: ComputerSize,
+): CloudComputers | undefined {
+  if (!listed?.computers.some((computer) => computer.id === computerId)) return;
+  return {
+    ...listed,
+    computers: listed.computers.map((computer) =>
+      computer.id === computerId
+        ? {
+            ...computer,
+            size: listed.available.includes(size) ? size : computer.size,
+            savedSize: size,
+          }
+        : computer,
+    ),
+  };
+}
+
 /**
  * What picking `size` for a cloud computer does: an upgrade prompt when the plan excludes it,
  * nothing when it is already the saved size, otherwise a save. A plan that shrank shows the size

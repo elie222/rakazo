@@ -36,6 +36,11 @@ before confirming the request there.
 
 ## Add your own tools
 
+GitHub, Linear and Notion can connect directly from Integrations without a managed app catalog.
+GitHub uses a personal access token and starts with read-only tools. Linear and Notion use browser
+sign-in. To look beyond the built-in entries, search for an app and choose **Search public MCP directory**
+to see public directory results alongside the other matches.
+
 The **+** in **Integrations** adds tools that aren't in the catalog:
 
 - **MCP server**: any remote MCP server at an HTTPS address. **Browse MCP servers** searches a public

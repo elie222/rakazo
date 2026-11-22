@@ -87,7 +87,12 @@ const usageFor = (input: Input) => ({
     ...point(input.botId ? 3 : 4, input.botId ? 400 : 467, 0.04),
   },
   models: [
-    { provider: input.provider ?? "p:1", model: input.model ?? "m1", ...point(3, 400, 0.04) },
+    {
+      provider: input.provider ?? "p:1",
+      model: input.model ?? "m1",
+      ...point(3, 400, 0.04),
+      cachedTokens: 250,
+    },
   ],
   overTimeUnit: "day",
   overTime: [{ date: "2026-11-10", ...point(3, 400, 0.04) }],
@@ -170,7 +175,7 @@ it("shows every bot's usage first, then narrows it by bot, model and date range"
       [...panel.container.querySelectorAll("tbody tr")].map((row) =>
         [...row.querySelectorAll("td")].map((cell) => cell.textContent),
       ),
-    ).toEqual([["2. Unlisted model", "3", "399", "1", "$0.04"]]);
+    ).toEqual([["2. Unlisted model", "3", "399", "250", "1", "$0.04"]]);
 
     await panel.choose("Bot", "Alpha");
     expect(breakdown.fetch).toHaveBeenLastCalledWith({ range: "30d", botId: "bot-a" });
@@ -238,6 +243,20 @@ it("does not show the previous selection's numbers while the next one loads", as
   }
 });
 
+it("marks a token total that leaves out calls with no count", async () => {
+  const panel = await renderPanel();
+  try {
+    breakdown.fetch.mockImplementation(async (input: Input) => {
+      const usage = usageFor(input);
+      return { ...usage, totals: { ...usage.totals, tokensPartial: true } };
+    });
+    await panel.pick("Today");
+    expect(panel.totals()).toEqual(["3", "467+", "$0.04"]);
+  } finally {
+    await panel.unmount();
+  }
+});
+
 it("says the request failed instead of showing zero spend", async () => {
   const panel = await renderPanel();
   try {
@@ -273,6 +292,39 @@ it("tells apart a model name that two providers share", async () => {
       "3. Unlisted model",
       "2. Unlisted model",
     ]);
+  } finally {
+    await panel.unmount();
+  }
+});
+
+it("draws every bar on one baseline and puts the dates in a separate row", async () => {
+  const panel = await renderPanel();
+  try {
+    const days = Array.from({ length: 30 }, (_, i) => ({
+      date: `2026-10-${String(i + 1).padStart(2, "0")}`,
+      ...point(1, i === 29 ? 900 : 100, 0.01),
+    }));
+    breakdown.fetch.mockImplementation(async (input: Input) => ({
+      ...usageFor(input),
+      overTime: days,
+    }));
+    await panel.pick("7 days");
+    // jsdom does no layout, so this checks the structure that gives the shared baseline,
+    // not the measured pixels.
+    const bars = panel.container.querySelector('[data-testid="usage-bars"]')!;
+    const axis = panel.container.querySelector('[data-testid="usage-axis"]')!;
+    expect(bars.children).toHaveLength(30);
+    for (const bar of bars.children) {
+      expect(bar.textContent).toBe("");
+      expect(bar.getAttribute("aria-label")).toMatch(/tokens/);
+    }
+    expect(bars.contains(axis)).toBe(false);
+    expect(axis.getAttribute("aria-hidden")).toBe("true");
+    const labels = [...axis.children];
+    expect(labels).toHaveLength(2);
+    expect(labels[0]?.className).toContain("text-start");
+    expect(labels[1]?.className).toContain("text-end");
+    expect(labels.map((label) => label.className).join(" ")).not.toContain("truncate");
   } finally {
     await panel.unmount();
   }

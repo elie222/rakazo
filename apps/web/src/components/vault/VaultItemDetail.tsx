@@ -9,6 +9,7 @@ import {
   otherSitesText,
   vaultKind,
 } from "@rakazo/contracts";
+import { siteHost } from "@rakazo/core";
 import { vaultBotsLine } from "@rakazo/i18n/vault";
 import { Button } from "@rakazo/ui-web";
 import { Check, Copy, Eye, EyeOff } from "lucide-react";
@@ -17,7 +18,7 @@ import { useEffect, useId, useRef, useState } from "react";
 import { useCopyText } from "../../lib/copy-text";
 import { SettingsPageHeader } from "../settings/SettingsPageHeader";
 import type { VaultAuth } from "./kinds";
-import { siteHost, useVaultKindLabels, VaultTile } from "./kinds";
+import { useVaultKindLabels, VaultTile } from "./kinds";
 import { useVaultBots } from "./VaultItemAccess";
 import { VaultItemActivity, VaultItemUses } from "./VaultItemActivity";
 

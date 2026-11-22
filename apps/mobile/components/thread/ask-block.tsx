@@ -2,7 +2,7 @@ import { ph } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
 import type { LoginFieldInput } from "@rakazo/contracts";
 import { normalizeOneTimeCode, vaultKind } from "@rakazo/contracts";
-import { isQuestionAskBlock, isSecretAskBlock } from "@rakazo/core";
+import { isQuestionAskBlock, isSecretAskBlock, siteHost } from "@rakazo/core";
 import { secretAnswerErrorText } from "@rakazo/i18n/vault";
 import { fontWeight, typeScale } from "@rakazo/ui-tokens";
 import { useRef, useState } from "react";
@@ -11,7 +11,7 @@ import type { MobileMessage } from "../../lib/api/mobile-types";
 import { errorText } from "../../lib/api/user-error";
 import { plainAskTitle } from "../../lib/cards/ask-title";
 import { useMobileTokens } from "../../lib/native/native";
-import { secretDestinationLabel, siteHost } from "../../lib/vault/secret-destination";
+import { secretDestinationLabel } from "../../lib/vault/secret-destination";
 import { secretFieldTraits } from "../../lib/vault/secret-field-traits";
 import { vaultKindSymbol } from "../../lib/vault/vault";
 import { SecretAskSheet } from "../cards/secret-ask-sheet";
@@ -130,6 +130,13 @@ export function AskBlock({
     const closeSheet = () => {
       if (session === sheetSession.current) setSheetOpen(false);
     };
+    // Turned down from inside the sheet, which shows its own failure.
+    const dismissFromSheet = canDismiss
+      ? async () => {
+          await onDismiss();
+          setDismissed(true);
+        }
+      : undefined;
     return (
       <View style={[askRowStyles.card, { backgroundColor: tokens.card }]}>
         <View style={askRowStyles.row}>
@@ -178,27 +185,17 @@ export function AskBlock({
             </View>
           ) : canAnswer && !ownerOnly ? (
             <NativeActionButton
-              label={t`Add`}
+              label={t`Continue`}
               disabled={submitting}
               fill={false}
               prominence="secondary"
               size="compact"
+              // The button pins itself to the top of a row; this one centers like the status text.
+              style={askRowStyles.action}
               onPress={openSheet}
             />
           ) : null}
         </View>
-        {!answered && canAnswer && !ownerOnly && canDismiss ? (
-          <View style={askInputStyles.buttons}>
-            <NativeActionButton
-              label={t`Dismiss`}
-              disabled={submitting}
-              fill={false}
-              prominence="plain"
-              size="compact"
-              onPress={() => void dismiss()}
-            />
-          </View>
-        ) : null}
         {!answered && !canAnswer ? (
           <Text style={{ color: tokens.mutedForeground, ...typeScale.caption }}>
             {t`Waiting for this bot’s response.`}
@@ -217,6 +214,7 @@ export function AskBlock({
             pending={canAnswer && !answered && !ownerOnly}
             onClose={closeSheet}
             loginFields={ask.loginFields}
+            onDismiss={dismissFromSheet}
             onSave={async (fields, remember) => {
               if (remember) await onAnswer("", fields);
               else await onAnswer("", fields, false);
@@ -232,6 +230,7 @@ export function AskBlock({
             ask
             title={title}
             onClose={closeSheet}
+            onDismiss={dismissFromSheet}
             onSave={async ({ value }) => {
               if (value === undefined) throw new Error("No value");
               await onAnswer(value);
@@ -355,6 +354,7 @@ const askRowStyles = StyleSheet.create({
   tile: { width: 34, height: 34, borderRadius: 9, alignItems: "center", justifyContent: "center" },
   text: { flex: 1, gap: 2 },
   done: { flexDirection: "row", alignItems: "center", gap: 4 },
+  action: { alignSelf: "center" },
 });
 
 const askInputStyles = StyleSheet.create({

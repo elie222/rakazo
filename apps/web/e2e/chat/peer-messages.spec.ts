@@ -375,7 +375,12 @@ test("answers a message sent while the bot works on another bot's request", asyn
   await page.goto(`/app/${researcher.id}`);
   const composer = page.getByRole("combobox", { name: "Message Researcher" });
   await composer.fill("remember peer-busy-alpha");
+  // The bubble shows before the server stores the send; the checks below read the stored one.
+  const stored = page.waitForResponse(
+    (response) => response.url().includes("/rpc/threads/send") && response.ok(),
+  );
   await composer.press("Enter");
+  await stored;
 
   const transcript = page.getByTestId("transcript");
   await expect(

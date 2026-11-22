@@ -38,6 +38,8 @@ export type OwnBotSettingsRow = {
 
 /** Ids listed per connected provider; the rest are reachable by name. */
 const MODELS_PER_PROVIDER = 15;
+/** Serialized characters the model list may take, so connections cannot crowd out the rest of a read. */
+const MODELS_LISTED_CHARS = 4_000;
 /** Largest instructions page a settings read returns; the rest come on request by offset. */
 const INSTRUCTIONS_PAGE_SIZE = 8_000;
 /**
@@ -77,6 +79,33 @@ export async function readOwnBotSettings(
     ids.push(`${choice.provider}/${choice.id}`);
     providers.set(choice.providerName, ids);
   }
+  // One id per provider per round, so every provider, custom connections included, gets listed
+  // before any gets a second; stop at the size budget and count the rest as `more`.
+  // Providers are kept while their names fit; the rest are only counted.
+  let room = MODELS_LISTED_CHARS;
+  const groups: { provider: string; ids: string[]; listed: string[] }[] = [];
+  for (const [provider, ids] of providers) {
+    const cost = JSON.stringify({ provider, ids: [], more: ids.length }).length + 1;
+    if (cost > room) continue;
+    room -= cost;
+    groups.push({ provider, ids, listed: [] });
+  }
+  const moreProviders = providers.size - groups.length;
+  for (let round = 0; round < MODELS_PER_PROVIDER; round++) {
+    for (const group of groups) {
+      const id = group.ids[round];
+      // Its serialized size, escapes included, plus the comma.
+      const cost = id === undefined ? 0 : JSON.stringify(id).length + 1;
+      if (id === undefined || cost > room) continue;
+      group.listed.push(id);
+      room -= cost;
+    }
+  }
+  const models = groups.map(({ provider, ids, listed }) => ({
+    provider,
+    ids: listed,
+    ...(ids.length > listed.length ? { more: ids.length - listed.length } : {}),
+  }));
   const settings = (
     instructions: string,
     paging: { length: number; nextOffset: number | null } | null,
@@ -97,11 +126,8 @@ export async function readOwnBotSettings(
     ...(bot.teamChatRules && !paging ? { teamChatRules: bot.teamChatRules } : {}),
     ...(bot.memoryScope ? { memoryScope: bot.memoryScope } : {}),
     disabledTools: bot.disabledBuiltinTools,
-    models: [...providers].map(([provider, ids]) => ({
-      provider,
-      ids: ids.slice(0, MODELS_PER_PROVIDER),
-      ...(ids.length > MODELS_PER_PROVIDER ? { more: ids.length - MODELS_PER_PROVIDER } : {}),
-    })),
+    models,
+    ...(moreProviders ? { moreProviders } : {}),
     thinkingLevels: levels?.allowed ?? ThinkingLevelSchema.options,
     ...(paging
       ? {

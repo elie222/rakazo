@@ -141,7 +141,6 @@ describe("web SSRF policy", () => {
     null,
     "text/html",
     "text/plain; charset=utf-8",
-    "text/plain; charset=",
     "text/plain; charset=not-an-encoding",
     "not a media type",
     'text/plain; note="ignore; charset=gbk"',

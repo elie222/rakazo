@@ -35,7 +35,7 @@ test("a failed integrations load offers Retry instead of an empty catalog", asyn
   await expect(retry).toBeVisible();
   await expect(page.getByText("Could not reach the server", { exact: true })).toBeVisible();
   await expect(
-    page.getByText("Configure a plugin catalog on the server to connect apps.", { exact: true }),
+    page.getByText("Managed apps haven’t been enabled on this server.", { exact: true }),
   ).toHaveCount(0);
   await captureScreenshot(page, testInfo, "integrations-load-failed");
 
@@ -103,14 +103,16 @@ for (const result of ["empty", "plugin", "unavailable"] as const) {
     });
     await page.getByRole("button", { name: "Connect apps", exact: true }).click();
     const loading = page.getByLabel("Loading plugins…", { exact: true });
-    const configure = page.getByText("Configure a plugin catalog on the server to connect apps.", {
+    const configure = page.getByText("Managed apps haven’t been enabled on this server.", {
       exact: true,
     });
     try {
       await expect(loading).toBeVisible();
       await expect(configure).toHaveCount(0);
       await page.getByPlaceholder("Search apps", { exact: true }).fill("missing");
-      await expect(page.getByText("No apps match your search.", { exact: true })).toHaveCount(0);
+      await expect(
+        page.getByText("No matches in your current catalogs.", { exact: true }),
+      ).toHaveCount(0);
       await page.getByPlaceholder("Search apps", { exact: true }).clear();
       if (result === "empty")
         await captureScreenshot(page, testInfo, "integrations-plugins-loading");

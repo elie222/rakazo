@@ -131,6 +131,12 @@ test("the chat's model can be changed from the message box once turned on", asyn
     modelId: "e2e-smart",
     thinkingLevel: null,
   });
+
+  // A write outside the settings UI reaches the open chat through the live stream.
+  await rpc(page, "preferences/update", { chatPreferences: { composerModelPicker: false } });
+  await expect(picker).toHaveCount(0);
+  await rpc(page, "preferences/update", { chatPreferences: { composerModelPicker: true } });
+  await expect(picker).toBeVisible();
 });
 
 test("the message box lists a provider's newest models first", async ({ page }, testInfo) => {
@@ -160,7 +166,9 @@ test("the message box lists a provider's newest models first", async ({ page }, 
   );
 
   const settings = await openUserSettings(page);
-  await settings.getByTestId("composer-model-picker-toggle").click();
+  const toggle = settings.getByTestId("composer-model-picker-toggle");
+  await toggle.click();
+  await expect(toggle).toBeChecked();
   await page.goto(`/app/${botId}`);
   const picker = page.getByTestId("composer-bar").getByRole("button", { name: /^Model/ });
   await expect(picker).toBeVisible();

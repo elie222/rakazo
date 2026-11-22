@@ -63,7 +63,7 @@ def vitest_config_files(config):
     return sorted(paths)
 
 
-AREAS = ("web", "e2e", "server", "www", "native", "compose", "all_packages")
+AREAS = ("web", "e2e", "www", "native", "compose", "all_packages")
 EVERY_SHARD = "[1,2,3,4]"
 
 
@@ -71,7 +71,7 @@ def expect(*on, unit=EVERY_SHARD):
     return {**{area: str(area in on).lower() for area in AREAS}, "unit_shards": unit}
 
 
-PRODUCT = ("web", "e2e", "server")
+PRODUCT = ("web", "e2e")
 EVERY_BROWSER_AREA = (*PRODUCT, "www")
 
 
@@ -85,13 +85,13 @@ class ChangedAreasTests(unittest.TestCase):
             ("docs/getting-started.md", expect("www", unit="[1]")),
             ("apps/www/src/page.astro", expect("www", unit="[1]")),
             ("apps/www/package.json", expect(*EVERY_BROWSER_AREA, "all_packages")),
-            ("apps/worker/src/index.ts", expect("web", "server")),
-            ("packages/adapters/src/slack.ts", expect("web", "e2e", "server")),
-            ("packages/adapters/src/runtime/scripted-runtime.ts", expect("web", "e2e", "server")),
-            ("packages/adapters/src/computers/host/host-computer-runner.ts", expect("web", "e2e", "server", "native")),
-            ("packages/adapters/src/computers/computer-workspace.ts", expect("web", "e2e", "server", "native")),
-            ("packages/adapters/src/storage/file-handle-path.ts", expect("web", "e2e", "server", "native")),
-            ("packages/adapters/src/storage/workspace-save-policy.ts", expect("web", "e2e", "server", "native")),
+            ("apps/worker/src/index.ts", expect("web")),
+            ("packages/adapters/src/slack.ts", expect("web", "e2e")),
+            ("packages/adapters/src/runtime/scripted-runtime.ts", expect("web", "e2e")),
+            ("packages/adapters/src/computers/host/host-computer-runner.ts", expect("web", "e2e", "native")),
+            ("packages/adapters/src/computers/computer-workspace.ts", expect("web", "e2e", "native")),
+            ("packages/adapters/src/storage/file-handle-path.ts", expect("web", "e2e", "native")),
+            ("packages/adapters/src/storage/workspace-save-policy.ts", expect("web", "e2e", "native")),
             ("packages/core/src/node/desktop-runtime.ts", expect(*EVERY_BROWSER_AREA, "native")),
             (
                 "infra/compose/docker-compose.prod.yml",

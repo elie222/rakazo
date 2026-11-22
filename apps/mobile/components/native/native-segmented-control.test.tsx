@@ -8,7 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NativeSegmentedControl } from "./native-segmented-control";
 import { NativeSegmentedControl as IosSegmentedControl } from "./native-segmented-control.ios";
 
-vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+beforeEach(() => vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true));
 
 const state = vi.hoisted(() => ({ missing: "", os: "android", imports: 0 }));
 const hapticSelection = vi.hoisted(() => vi.fn());

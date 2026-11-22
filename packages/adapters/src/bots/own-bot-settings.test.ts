@@ -19,24 +19,65 @@ vi.mock("../models/model-selection.js", async (importOriginal) => ({
 const validate = vi.mocked(validateBotModelChange);
 const scope = { userId: "user-1", spaceId: "space-1" };
 
-function deps(): FleetPrepareDeps {
+const customServer = {
+  id: "cred-custom",
+  provider: "openai-compatible",
+  label: "Home server",
+  secretId: "secret-custom",
+  createdAt: new Date(0),
+  updatedAt: new Date(0),
+  userPreferences: [],
+};
+const customSecret = JSON.stringify({
+  kind: "openai_compatible",
+  baseUrl: "http://models.example.test/v1",
+  enabledModelIds: ["local-qwen"],
+});
+
+function deps({ withCustomServer = false, manyServers = 0 } = {}): FleetPrepareDeps {
   const credential = {
     id: "cred-google",
     provider: "google",
+    label: "Google",
     secretId: "secret-google",
     createdAt: new Date(0),
     updatedAt: new Date(0),
     userPreferences: [],
   };
+  const servers = Array.from({ length: manyServers }, (_, i) => ({
+    ...customServer,
+    id: `cred-many-${i}`,
+    label: `Server ${i}`,
+    secretId: `secret-many-${i}`,
+  }));
+  const manySecret = (server: string) =>
+    JSON.stringify({
+      kind: "openai_compatible",
+      baseUrl: "http://models.example.test/v1",
+      // Quotes and backslashes double in size once serialized.
+      enabledModelIds: Array.from({ length: 15 }, (_, i) => `local"\\model-${server}-${i}`),
+    });
+  const credentials = [credential, ...(withCustomServer ? [customServer] : []), ...servers];
   const prisma = {
-    userModelCredential: { findMany: vi.fn(async () => [credential]) },
+    userModelCredential: { findMany: vi.fn(async () => credentials) },
     userModelPreference: { findMany: vi.fn(async () => []) },
-    secret: { findMany: vi.fn(async () => [{ id: "secret-google", ciphertext: "fake" }]) },
+    secret: {
+      findMany: vi.fn(async () =>
+        credentials.map((row) => ({ id: row.secretId, ciphertext: row.secretId })),
+      ),
+    },
   };
   return {
     prisma: prisma as unknown as PrismaClient,
     modelChange: {
-      secretStore: { load: async () => "fake-api-key" },
+      secretStore: {
+        load: async (ciphertext: string) =>
+          ciphertext === customServer.secretId
+            ? customSecret
+            : ciphertext.startsWith("secret-many-")
+              ? manySecret(ciphertext)
+              : "fake-api-key",
+      },
       refreshExpiredCredential: vi.fn(),
       defaultModel: async () => ({ provider: "google", model: "gemini-3.8-flash" }),
     },
@@ -104,6 +145,33 @@ describe("readOwnBotSettings", () => {
       }),
     ]);
     expect(settings.models[0]!.ids.length).toBeLessThanOrEqual(15);
+  });
+
+  it("lists a custom server's models beside the catalog's, as the model pickers do", async () => {
+    const settings = await readOwnBotSettings(deps({ withCustomServer: true }), scope, bot);
+    if ("error" in settings) throw new Error(settings.error);
+    expect(settings.models).toContainEqual({
+      provider: "Home server",
+      ids: ["openai-compatible/local-qwen"],
+    });
+  });
+
+  it("bounds the listed models so many connections still leave room for the settings", async () => {
+    const many = await readOwnBotSettings(deps({ manyServers: 40 }), scope, bot);
+    if ("error" in many) throw new Error(many.error);
+    expect(many.instructions).toBe(bot.instructions);
+    expect(JSON.stringify(many.models).length).toBeLessThanOrEqual(4_000);
+    expect(many.models.some((group) => group.more)).toBe(true);
+    // Every connection lists at least one id, even though the catalog's providers come first.
+    expect(many.models.filter((group) => group.provider.startsWith("Server "))).toHaveLength(40);
+    for (const group of many.models) expect(group.ids.length).toBeGreaterThan(0);
+  });
+
+  it("counts the providers whose names no longer fit instead of overflowing the read", async () => {
+    const many = await readOwnBotSettings(deps({ manyServers: 300 }), scope, bot);
+    if ("error" in many) throw new Error(many.error);
+    expect(JSON.stringify(many.models).length).toBeLessThanOrEqual(4_000);
+    expect(many.moreProviders).toBeGreaterThan(0);
   });
 
   it("pages long instructions, naming the window and the next offset", async () => {
@@ -198,6 +266,16 @@ describe("readOwnBotSettings", () => {
 });
 
 describe("prepareOwnBotSettings", () => {
+  it("switches to a custom server's model by its id, as to a catalog model", async () => {
+    expect(
+      await prepareOwnBotSettings(deps({ withCustomServer: true }), scope, bot, {
+        model: "local-qwen",
+      }),
+    ).toEqual({
+      data: { modelProvider: "openai-compatible", modelId: "local-qwen", thinkingLevel: null },
+    });
+  });
+
   it("resolves a loose model name and keeps a thinking level the new model supports", async () => {
     const result = await prepareOwnBotSettings(
       deps(),

@@ -159,12 +159,27 @@ export function SkillsDialog({
             <AgentSkills />
           </div>
         </section>
+        {installs.isLoadingError ? (
+          <div
+            role="alert"
+            className="mx-2.5 flex flex-wrap items-center gap-3 text-body text-muted-foreground"
+          >
+            <Trans>Could not load installed skill packs.</Trans>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => void installs.refetch({ cancelRefetch: false })}
+            >
+              <Trans>Retry</Trans>
+            </Button>
+          </div>
+        ) : null}
         {skillSets.length ? (
           <section data-testid="plugin-skill-sets">
             <h3 className="mb-2 px-2.5 text-body font-medium text-muted-foreground">
               <Trans>Plugins</Trans>
             </h3>
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
               {skillSets.map((install) => {
                 const set = installedSelection(install);
                 return (
@@ -217,7 +232,7 @@ export function SkillsDialog({
               </Button>
             </div>
           ) : null}
-          <div data-testid="skill-packs" className="grid grid-cols-2 gap-2">
+          <div data-testid="skill-packs" className="grid grid-cols-1 gap-2 sm:grid-cols-2">
             {packs.map((entry) => {
               const pack = pluginSelection(entry);
               return (

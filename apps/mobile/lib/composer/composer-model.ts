@@ -2,10 +2,10 @@ import { t } from "@lingui/core/macro";
 import type { ModelMark } from "@rakazo/core";
 import { botModelState, modelOptionKey } from "@rakazo/core";
 import { localizeModelEntry } from "@rakazo/i18n/model-provider";
+import { thinkingLevelLabel } from "@rakazo/i18n/thinking-level";
 import { useRouter } from "expo-router";
 import { useSyncExternalStore } from "react";
 import type { MobileMe, MobileModel, MobileModelCredential } from "../api/mobile-types";
-import { thinkingLevelLabel } from "../models/thinking-level";
 import { rpcQuery } from "../query/query";
 import { useScreenQuery } from "../query/screen-query";
 import {
@@ -28,17 +28,20 @@ type BotModel = {
 };
 
 /** The chip a bot chat's composer shows when the person turned the model picker on. */
-export function useComposerModel(botId: string | undefined): ComposerModel | undefined {
+export function useComposerModel(
+  botId: string | undefined,
+  me: MobileMe | undefined,
+): ComposerModel | undefined {
   const router = useRouter();
-  const on = useSyncExternalStore(
+  const deviceModelPicker = useSyncExternalStore(
     subscribeComposerModelPicker,
     getCachedComposerModelPicker,
     () => false,
   );
+  const on = me?.chatPreferences?.composerModelPicker ?? deviceModelPicker;
   const enabled = on && Boolean(botId);
   const read = { enabled };
   const bot = useScreenQuery(rpcQuery("bots/get", { botId: botId ?? "" }), read).data;
-  const me = useScreenQuery(rpcQuery("me"), read).data;
   const catalog = useScreenQuery(rpcQuery("models/list"), read).data;
   const credentials = useScreenQuery(rpcQuery("models/credentials"), read).data;
   if (!enabled || !botId || !bot || !me || !catalog || !credentials) return undefined;

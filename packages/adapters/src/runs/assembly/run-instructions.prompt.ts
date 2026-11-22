@@ -343,7 +343,9 @@ function toolUsageLine(parts: {
     builtinOffered(disabled, "connect_app")
       ? "Use connect_app when an app needs connecting or the user asks to connect one, then wait for them."
       : undefined,
-    builtinOffered(disabled, "remember") ? "Use remember for durable facts." : undefined,
+    builtinOffered(disabled, "remember")
+      ? "Use remember for durable facts, even ones the user mentions in passing without asking."
+      : undefined,
     scratchpadClause(disabled),
     parts.followUpsOffered ? FOLLOW_UP_INSTRUCTION : undefined,
     builtinOffered(disabled, "request_takeover")
