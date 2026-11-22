@@ -13,6 +13,7 @@ import {
 import { useSearchParams } from "react-router-dom";
 import { useSpaceQueries } from "../query/query";
 import { errorCode } from "../query/user-error";
+import { useMediaQuery } from "../use-media-query";
 
 /** The search parameter naming the page open full screen over a chat. */
 export const PAGE_PARAM = "page";
@@ -25,20 +26,9 @@ function readSurface(on: "card" | "background"): string {
   return getComputedStyle(document.documentElement).getPropertyValue(`--${on}`).trim();
 }
 
+/** The app shell's name for one media-query subscription; the implementation lives in one place. */
 export function useMedia(query: string) {
-  const subscribe = useCallback(
-    (onChange: () => void) => {
-      const media = window.matchMedia(query);
-      media.addEventListener("change", onChange);
-      return () => media.removeEventListener("change", onChange);
-    },
-    [query],
-  );
-  return useSyncExternalStore(
-    subscribe,
-    () => window.matchMedia(query).matches,
-    () => false,
-  );
+  return useMediaQuery(query);
 }
 
 function subscribeTheme(onChange: () => void) {

@@ -35,7 +35,7 @@ function OriginCard({
     <button
       type="button"
       onClick={onClick}
-      className="flex min-w-0 items-center gap-3 rounded-xl border border-border/70 p-3 text-start outline-none hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/50"
+      className="flex min-w-0 items-center gap-3 rounded-xl border border-border/70 p-3 text-start outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring/50"
     >
       <span
         aria-hidden

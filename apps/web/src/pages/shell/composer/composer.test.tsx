@@ -125,6 +125,15 @@ it("colors the send button like the bot's user bubbles", () => {
   expect(send()?.className).not.toContain("bg-chat-user");
 });
 
+it("marks Send busy while a send is in flight", () => {
+  renderComposer(async () => true, { sending: true });
+  const send = container?.querySelector<HTMLButtonElement>('button[aria-label="Send"]');
+  expect(send?.getAttribute("aria-busy")).toBe("true");
+  expect(send?.disabled).toBe(true);
+  // The spinner replaces the arrow instead of sitting beside it in a square icon button.
+  expect(send?.querySelectorAll("svg")).toHaveLength(1);
+});
+
 it("shows a readable run error with raw details, while preserving send errors", () => {
   const runError = '429: {"message":"Too many requests","metadata":{"provider":"OpenRouter"}}';
   renderComposer(async () => true, { runError, runErrorId: "failed-run" });

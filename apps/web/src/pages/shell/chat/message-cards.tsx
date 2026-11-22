@@ -205,7 +205,7 @@ export function AppConnectCard({
     <BuiCard
       role="group"
       aria-label={t`${block.name} connection`}
-      className="w-full max-w-[440px] px-4 py-3.5"
+      className="w-full max-w-[440px] p-4"
     >
       <div className="flex items-center gap-3.5">
         {block.logo ? (
@@ -475,7 +475,7 @@ export function ChartBlockView({
   const expandedViewport = chartViewport(viewport.width, viewport.height);
   return (
     <>
-      <div className="group relative w-[552px] max-w-full rounded-2xl bg-muted p-4">
+      <div className="group relative w-[552px] max-w-full rounded-xl bg-muted p-4 shadow-control">
         <ChartCanvas spec={spec} data={data} width={520} />
         <Button
           variant="outline"
@@ -554,12 +554,12 @@ export function ArtifactImage({
         <button
           type="button"
           onClick={() => setOpen(true)}
-          className="max-w-[240px] overflow-hidden rounded-2xl"
+          className="max-w-[240px] overflow-hidden rounded-xl"
         >
           <img src={src} alt={name} className="max-h-48 w-full object-cover" />
         </button>
       ) : (
-        <div className="rounded-2xl bg-muted px-4 py-3 text-body text-muted-foreground">{name}</div>
+        <div className="rounded-xl bg-muted px-4 py-3 text-body text-muted-foreground">{name}</div>
       )}
       {src ? (
         <Dialog open={open} onOpenChange={setOpen}>

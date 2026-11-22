@@ -63,6 +63,10 @@ type Props = {
   onCreateOrganization?: () => void;
 };
 
+// The footer moves between the sidebar and the rail at the desktop breakpoint, so a focused
+// account trigger is unmounted and replaced. Claim that focus for the new instance.
+let footerFocusClaimed = false;
+
 // Marks are 24px wide, overlap by 2px, and need 2px for the outer ring.
 export function sidebarMarkCount(availableWidth: number) {
   return Math.max(0, Math.min(3, Math.floor((availableWidth - 26) / 22) + 1));
@@ -99,9 +103,23 @@ export function SidebarFooter({
   const { t } = useLingui();
   const update = useSidebarUpdate();
   const [failedImage, setFailedImage] = useState<string | null>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
   const pillRef = useRef<HTMLButtonElement>(null);
   const labelRef = useRef<HTMLSpanElement>(null);
   const [markCount, setMarkCount] = useState(3);
+  const openRef = useRef(open);
+  openRef.current = open;
+  useLayoutEffect(() => {
+    if (footerFocusClaimed) {
+      footerFocusClaimed = false;
+      if (document.activeElement === document.body) triggerRef.current?.focus();
+    }
+    return () => {
+      if (triggerRef.current === document.activeElement || openRef.current) {
+        footerFocusClaimed = true;
+      }
+    };
+  }, [mini]);
   useLayoutEffect(() => {
     const pill = pillRef.current;
     const label = labelRef.current;
@@ -125,13 +143,14 @@ export function SidebarFooter({
   return (
     <div
       data-testid="sidebar-footer"
-      className={`flex shrink-0 items-center gap-2 bg-transparent ${mini ? "flex-col px-1 py-2" : "px-2.5 py-3"}`}
+      className={`flex shrink-0 items-center bg-transparent ${mini ? "flex-col gap-1 px-0 py-0" : "gap-2 px-2.5 py-3"}`}
     >
       <Popover open={open} onOpenChange={onOpenChange}>
         <PopoverTrigger
+          ref={triggerRef}
           data-testid="user-menu-trigger"
           aria-label={t`Account menu for ${name}`}
-          className="grid size-9 shrink-0 place-items-center overflow-hidden rounded-full bg-secondary text-body font-semibold text-secondary-foreground outline-none hover:ring-2 hover:ring-foreground/15 focus-visible:ring-2 focus-visible:ring-ring"
+          className={`grid shrink-0 place-items-center overflow-hidden rounded-full bg-secondary text-body font-semibold text-secondary-foreground outline-none hover:ring-2 hover:ring-foreground/15 focus-visible:ring-2 focus-visible:ring-ring ${mini ? "size-8" : "size-9"}`}
         >
           {image && failedImage !== image ? (
             <img
@@ -331,7 +350,7 @@ export function SidebarFooter({
       {update.available ? (
         <IconTooltip label={t`Install update`}>
           <Button
-            size="icon-lg"
+            size={mini ? "icon" : "icon-lg"}
             className="rounded-full"
             aria-label={t`Install update`}
             disabled={update.busy}

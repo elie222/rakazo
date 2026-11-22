@@ -9,6 +9,7 @@ import type {
 } from "@rakazo/contracts";
 import { BOT_NAME_MAX_LENGTH, isBuiltinToolName, resolveBotAvatarSet } from "@rakazo/contracts";
 import { botModelState, modelOptionKey } from "@rakazo/core";
+import { localizeModelEntry } from "@rakazo/i18n/model-provider";
 import {
   BotAvatar,
   Button,
@@ -39,6 +40,7 @@ import type { ConversationSettingsPatch } from "./bot-conversation-settings";
 import { ConversationSettingsCard } from "./bot-conversation-settings";
 import { BotLibrary } from "./bot-library";
 import { BotMemoryTabs } from "./bot-memory-tabs";
+import { advancedValues } from "./bot-panel-advanced";
 import {
   ApprovalModeRow,
   DescriptionGroup,
@@ -59,17 +61,6 @@ import { useChangedSettings } from "./use-changed-settings";
 const ScratchpadSection = lazyComponent(() =>
   import("../../space/ScratchpadSection").then((module) => module.ScratchpadSection),
 );
-
-/** The fields saved together as soon as one changes, in the order their saved snapshot keeps them. */
-function advancedValues(bot: Bot) {
-  return [
-    bot.modelProvider && bot.modelId ? modelOptionKey(bot.modelProvider, bot.modelId) : "",
-    bot.thinkingLevel ?? "",
-    bot.computerMode,
-    bot.autoSpeak,
-    bot.voiceId ?? "",
-  ] as const;
-}
 
 /** The panel itself, or one of its whole lists. */
 export type BotPanelView = "settings" | "routines" | "pages";
@@ -327,7 +318,13 @@ export function BotSettings({
     choices: modelChoices,
     thinkingLevels: thinkingOptions,
     defaultThinkingLevel,
-  } = botModelState({ credentials, catalog, me, modelKey, spaceDefaultLabel: t`Space default` });
+  } = botModelState({
+    credentials,
+    catalog: catalog.map(localizeModelEntry),
+    me,
+    modelKey,
+    spaceDefaultLabel: t`Space default`,
+  });
 
   async function executeSave(
     patchOverrides?: {

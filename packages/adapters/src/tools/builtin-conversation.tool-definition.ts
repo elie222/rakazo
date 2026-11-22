@@ -265,6 +265,18 @@ export const conversationTools: ConnectorTool[] = [
     },
   },
   {
+    name: "remove_mcp_server",
+    description:
+      "Remove one of the user's remote MCP tool servers from this Space when they ask, along with its saved credentials. Local (stdio) servers are removed in Settings.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        name: { type: "string", description: "The server's display name." },
+      },
+      required: ["name"],
+    },
+  },
+  {
     name: "remember",
     description: `Save one short new fact to your memory, one call per fact. To change or drop a fact, pass old_text from its entry with new or empty content. Holds ${MEMORY_TOKEN_CAPS.bot.toLocaleString()} tokens.`,
     inputSchema: {
@@ -291,6 +303,18 @@ export const conversationTools: ConnectorTool[] = [
         },
       },
       required: ["path", "content"],
+    },
+  },
+  {
+    name: "delete_shared_memory",
+    description:
+      "Delete a Space shared memory document when the user asks. MEMORY.md cannot be deleted; save it with new content instead.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        path: { type: "string", description: "Document name, for example team.md." },
+      },
+      required: ["path"],
     },
   },
 ];

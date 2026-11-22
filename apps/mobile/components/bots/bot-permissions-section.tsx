@@ -1,11 +1,14 @@
 import { useLingui } from "@lingui/react/macro";
 import type { ApprovalMode } from "@rakazo/contracts";
-import type { createQueuedSave } from "../../lib/query/queued-save";
 import { SettingsGroup, SettingsSwitch } from "../settings/settings-group";
 import type { MenuPickerChoice } from "../ui/menu-picker";
 import { MenuPicker } from "../ui/menu-picker";
 
-type BooleanSave = ReturnType<typeof createQueuedSave<boolean>>;
+type BooleanSetting = {
+  value: boolean;
+  pending: boolean;
+  set: (value: boolean) => void;
+};
 
 /** The bot's permission rows: approval mode, then the switches it has changed from defaults. */
 export function BotPermissionsSection({
@@ -18,9 +21,6 @@ export function BotPermissionsSection({
   dailyCheckIns,
   crossSpaceCommunication,
   fleetManagement,
-  dailyCheckInsSave,
-  crossSpaceSave,
-  fleetSave,
   onError,
 }: {
   botId: string | undefined;
@@ -33,12 +33,9 @@ export function BotPermissionsSection({
   approvalChoices: MenuPickerChoice[];
   autoAvailable: boolean;
   onApprovalModeChange: (mode: ApprovalMode | "space") => void;
-  dailyCheckIns: boolean;
-  crossSpaceCommunication: boolean;
-  fleetManagement: boolean;
-  dailyCheckInsSave: BooleanSave;
-  crossSpaceSave: BooleanSave;
-  fleetSave: BooleanSave;
+  dailyCheckIns: BooleanSetting;
+  crossSpaceCommunication: BooleanSetting;
+  fleetManagement: BooleanSetting;
   onError: (message: string | null) => void;
 }) {
   const { t } = useLingui();
@@ -60,34 +57,34 @@ export function BotPermissionsSection({
       {changed?.dailyCheckIns ? (
         <SettingsSwitch
           label={t`Daily check-ins on unfinished work`}
-          value={dailyCheckIns}
+          value={dailyCheckIns.value}
           onChange={(value) => {
             if (!botId) return;
             onError(null);
-            dailyCheckInsSave.update(value);
+            dailyCheckIns.set(value);
           }}
         />
       ) : null}
       {changed?.crossSpaceCommunication ? (
         <SettingsSwitch
           label={t`Allow cross-space bot communication`}
-          value={crossSpaceCommunication}
+          value={crossSpaceCommunication.value}
           onChange={(value) => {
             if (!botId) return;
             onError(null);
-            crossSpaceSave.update(value);
+            crossSpaceCommunication.set(value);
           }}
         />
       ) : null}
       {changed?.fleetManagement ? (
         <SettingsSwitch
           label={t`Manage other bots`}
+          value={fleetManagement.value}
           onChange={(value) => {
             if (!botId) return;
             onError(null);
-            fleetSave.update(value);
+            fleetManagement.set(value);
           }}
-          value={fleetManagement}
         />
       ) : null}
     </SettingsGroup>

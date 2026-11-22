@@ -807,6 +807,23 @@ describe("web markdown mentions", () => {
     expect(html).toContain("<span>Other</span>");
     expect(html).not.toContain("<a");
   });
+
+  it("keeps a mention added in front of the text out of a selection, but not one in the text", () => {
+    const renderMention = (_id: string, name: string) => <b>{name}</b>;
+    const added = renderToStaticMarkup(
+      <ChatMarkdown renderMention={renderMention}>
+        {"[Reporter](rakazo-mention:bot-1#added) I set up the weekly report."}
+      </ChatMarkdown>,
+    );
+    expect(added).toContain('<span class="select-none"><b>Reporter</b></span>');
+    const named = renderToStaticMarkup(
+      <ChatMarkdown renderMention={renderMention}>
+        {"[Reporter](rakazo-mention:bot-1) is ready."}
+      </ChatMarkdown>,
+    );
+    expect(named).toContain("<b>Reporter</b>");
+    expect(named).not.toContain("select-none");
+  });
 });
 
 describe("web markdown streaming", () => {

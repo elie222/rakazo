@@ -10,6 +10,9 @@ import { MemoryScopeSchema } from "./bot-memory.js";
 import { BotWorkspacePathSchema } from "./bot-workspace.js";
 import { DisabledBuiltinToolsSchema } from "./builtin-tools.js";
 
+/** The spawn key of the bot a new account starts with. */
+export const FIRST_BOT_SPAWN_KEY = "onboarding:first";
+
 export const AgentSecretSchema = z.object({
   id: Id,
   name: z.string().regex(AGENT_SECRET_NAME_PATTERN),

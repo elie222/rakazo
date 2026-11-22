@@ -134,6 +134,25 @@ function render(props: ComponentProps<typeof Transcript>) {
   act(() => root.render(<Transcript {...props} />));
 }
 
+it("pops only a reply that lands while the chat is open", () => {
+  const initial = history();
+  render(baseProps(initial));
+  expect(container.querySelector('[data-enter="pop"]')).toBeNull();
+
+  const reply = textMessage("m5", "bot", "Here are three cabins");
+  render(baseProps([...initial, reply]));
+  expect(container.querySelector('[data-message-id="m5"]')?.getAttribute("data-enter")).toBe("pop");
+  expect(container.querySelector('[data-message-id="m2"]')?.getAttribute("data-enter")).toBeNull();
+});
+
+it("sweeps over the live reply without replacing its text", () => {
+  const live = liveMessage("Checking cabins");
+  render(baseProps([...history(), live]));
+  const frame = container.querySelector('[data-message-id="progress:run"] [data-streaming]');
+  expect(frame).not.toBeNull();
+  expect(frame?.textContent).toContain("Checking cabins");
+});
+
 function selectText(element: Element, text: string, notify = true) {
   const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
   let node = walker.nextNode();

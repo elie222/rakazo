@@ -23,7 +23,7 @@ import type { FinishedShellCommand } from "../../../computers/sandbox/shell-comm
 import { liftMcpResultImages } from "../../../mcp/mcp-result-images.js";
 import { isVerbatimMcpResult } from "../../../mcp/verbatim-mcp-result.js";
 import { providerToolCallId } from "../../../runs/turn/tool-call-ids.js";
-import { textContentArg } from "../../../runs/turn/tool-text.js";
+import { settleMsArg, textContentArg } from "../../../runs/turn/tool-text.js";
 import {
   connectionIdArgument,
   credentialArgument,
@@ -265,6 +265,7 @@ export function describeToolActivity(
     return record.help === true ? "Reading the page kit reference" : "Writing the page code";
   }
   if (toolName === "add_mcp_server") return `Connecting MCP server: ${detail(record.name)}`;
+  if (toolName === "remove_mcp_server") return `Removing MCP server: ${detail(record.name)}`;
   if (toolName === "computer_observe") return "Looking at the screen";
   if (toolName === "browser_navigate")
     return `Opening page: ${detail(redactActivityUrl(record.url))}`;
@@ -283,6 +284,7 @@ export function describeToolActivity(
   if (toolName === "create_child_routine") return `Scheduling routine: ${detail(record.name)}`;
   if (toolName === "remember") return "Saving a note to memory";
   if (toolName === "save_shared_memory") return `Saving shared memory: ${detail(record.path)}`;
+  if (toolName === "delete_shared_memory") return `Deleting shared memory: ${detail(record.path)}`;
   if (toolName === "web_search") return `Searching the web: ${detail(record.query)}`;
   if (toolName === "web_fetch") return `Reading page: ${detail(redactActivityUrl(record.url))}`;
   if (toolName === "service_search") return `Finding a service: ${detail(record.query)}`;
@@ -443,8 +445,8 @@ function toAgentTool(
       if (tool.name === "computer_act") {
         return {
           actions: Array.isArray(raw.actions) ? raw.actions : [],
-          observe: raw.observe === undefined ? true : Boolean(raw.observe),
-          settle_ms: Number(raw.settle_ms ?? 350),
+          observe: raw.observe == null ? true : Boolean(raw.observe),
+          settle_ms: settleMsArg(raw.settle_ms),
         };
       }
       if (tool.name === "list_files") return { path: String(raw.path ?? "") };

@@ -51,7 +51,10 @@ export function MessageHoverActions({
     today: t`Today`,
     yesterday: t`Yesterday`,
   });
-  const groupLabel = t`Message actions, ${[speakerName, when].filter(Boolean).join(" ")}`;
+  let groupLabel = t`Message actions`;
+  if (speakerName && when) groupLabel = t`Message actions, ${speakerName}, ${when}`;
+  else if (speakerName) groupLabel = t`Message actions, ${speakerName}`;
+  else if (when) groupLabel = t`Message actions, ${when}`;
   const copied = copiedNow && copiedText === copyableMessageText(message);
 
   function copyMessage() {

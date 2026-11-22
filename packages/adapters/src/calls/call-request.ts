@@ -173,7 +173,7 @@ export async function settleCallRequest(
     };
   }, THREAD_LOCK_TRANSACTION_OPTIONS);
   if (!result) return null;
-  await deps.events.notify(input.threadId, result.eventSeq).catch(() => undefined);
+  await deps.events.notify(input.threadId, result.eventSeq);
   if (result.userId) {
     await deps.events.notifyIncomingCalls?.(result.userId).catch(() => undefined);
     if (result.stopRinging)

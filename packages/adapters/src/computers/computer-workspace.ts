@@ -68,6 +68,54 @@ export class PortableFileBatcher<T> {
   }
 }
 
+/**
+ * `items` in the non-empty transfer batches {@link PortableFileBatcher} groups them into, each
+ * made only when the caller asks for it.
+ */
+export function* batchesOf<T>(
+  items: Iterable<T>,
+  maxFiles: number,
+  size: (item: T) => number,
+): Generator<T[]> {
+  const batcher = new PortableFileBatcher<T>(maxFiles, size);
+  for (const item of items) {
+    const full = batcher.add(item);
+    if (full?.length) yield full;
+  }
+  const last = batcher.take();
+  if (last.length) yield last;
+}
+
+/**
+ * Writes an imported workspace in transfer batches of at most `maxFiles` files, leaving out the
+ * files a save never carries. With `signal`, an abort stops it before the next file or batch.
+ */
+export async function writePortableFilesInBatches(
+  files: AsyncIterable<PortableFile>,
+  maxFiles: number,
+  write: (batch: PortableFile[]) => Promise<void>,
+  signal?: AbortSignal,
+): Promise<void> {
+  const batcher = new PortableFileBatcher<PortableFile>(
+    maxFiles,
+    (file) => file.content.byteLength,
+  );
+  const flush = async (batch: PortableFile[]) => {
+    if (!batch.length) return;
+    signal?.throwIfAborted();
+    await write(batch);
+  };
+  for await (const file of files) {
+    if (shouldSkipPortableWorkspaceFile(file.path)) continue;
+    signal?.throwIfAborted();
+    const full = batcher.add(file);
+    if (full) await flush(full);
+  }
+  // A cancelled import that wrote nothing must not read as finished.
+  signal?.throwIfAborted();
+  await flush(batcher.take());
+}
+
 /** Disk a save leaves free for everything else on the data volume. */
 const SAVE_DISK_RESERVE_BYTES = 2 * 1024 ** 3;
 /** How often, in bytes written, a save checks the volume's free space again. */

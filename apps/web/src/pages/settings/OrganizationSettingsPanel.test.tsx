@@ -50,6 +50,11 @@ vi.mock("@lingui/react/macro", () => {
 vi.mock("@rakazo/ui-web", () => {
   const Box = ({ children }: { children?: ReactNode }) => <div>{children}</div>;
   return {
+    FieldContent: (props: React.ComponentProps<"div">) => <div {...props} />,
+    FieldTitle: (props: React.ComponentProps<"div">) => <div {...props} />,
+    FieldDescription: ({ children, id }: { children?: React.ReactNode; id?: string }) => (
+      <p id={id}>{children}</p>
+    ),
     Button: (props: ComponentProps<"button">) => <button type="button" {...props} />,
     Input: (props: ComponentProps<"input">) => <input {...props} />,
     Dialog: ({ open, children }: { open: boolean; children?: ReactNode }) =>
@@ -388,7 +393,10 @@ describe("organization members", () => {
       organizationId: "org-work",
       email: "cy@example.test",
     });
-    expect(copy).toHaveBeenCalledWith("https://app.example.test/join/invitation-1");
+    expect(copy).toHaveBeenCalledWith(
+      "https://app.example.test/join/invitation-1",
+      expect.any(Function),
+    );
     expect(toast).toHaveBeenCalledWith("Invite link copied");
 
     organizations.members.setRole.mockResolvedValue({ ok: true });

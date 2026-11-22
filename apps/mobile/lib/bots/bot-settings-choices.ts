@@ -1,8 +1,8 @@
 import { useLingui } from "@lingui/react/macro";
 import type { ThinkingLevel } from "@rakazo/contracts";
+import { thinkingLevelLabel } from "@rakazo/i18n/thinking-level";
 import { useMemo } from "react";
 import type { MenuPickerChoice } from "../../components/ui/menu-picker";
-import { thinkingLevelLabel } from "../models/thinking-level";
 
 /** The thinking-level rows, with the default first. */
 export function useThinkingChoices(options: readonly ThinkingLevel[]): MenuPickerChoice[] {

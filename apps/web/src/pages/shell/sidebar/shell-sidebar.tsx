@@ -1,6 +1,6 @@
 import { Trans, useLingui } from "@lingui/react/macro";
-import type { Bot, Group, NavLink } from "@rakazo/contracts";
-import { accountDisplay } from "@rakazo/core";
+import type { Bot, Group } from "@rakazo/contracts";
+import { formatBillingDate } from "@rakazo/i18n/billing";
 import {
   Button,
   InputGroup,
@@ -10,26 +10,20 @@ import {
   Sidebar,
 } from "@rakazo/ui-web";
 import { Search, SlidersHorizontal } from "lucide-react";
-import type { ReactNode, UIEvent } from "react";
-import { useState } from "react";
+import type { CSSProperties, ReactNode, UIEvent } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { PasskeyOffer } from "../../../components/account/PasskeyOffer";
-import { useUsageHint } from "../../../components/billing/PlanUsage";
 import { useBilling } from "../../../components/billing/SubscriptionGate";
-import { CreateOrganizationDialog } from "../../../components/spaces/CreateOrganizationDialog";
-import { InviteDialog } from "../../../components/spaces/InviteDialog";
-import { useSignOut } from "../../../lib/auth/sign-out";
-import { formatBillingDate } from "../../../lib/billing/billing";
+import { emptyActivityFilters } from "../../../lib/activity-list-filters";
 import type { BotsSidebarDensity } from "../../../lib/preferences/bots-sidebar-density-pref";
-import { useQueryUserId } from "../../../lib/query/query";
-import { switchOrganization, useOrganizations } from "../../../lib/spaces/organizations";
 import { ActivityList } from "../../space/ActivityList";
 import { SpaceSearchResults } from "../../space/SpaceSearch";
 import { useAppRail } from "../app-rail";
 import type { ChatMenuState } from "../chat/chat-context-menu";
 import type { Panel } from "../right-panel-state";
-import type { SettingsSection } from "../shell-overlay-url";
-import { SidebarFooter } from "./sidebar-footer";
+import { focusChatListRestore } from "./focus-chat-list";
 import { SidebarHeader } from "./sidebar-header";
+import { useFlip } from "./use-flip";
 import type { SidebarSearch } from "./use-sidebar-search";
 
 /** Focuses the search box once it renders, its text selected so typing replaces it. */
@@ -54,16 +48,13 @@ function resetFadeWhenUnscrollable(event: UIEvent<HTMLDivElement>) {
   }
 }
 
-type User = { name?: string | null; email?: string; image?: string | null };
-
 /** The bots sidebar: a drawer on phones, collapsible to icons elsewhere. */
 export function ShellSidebar({
   isMobile,
   mobileOpen,
-  setMobileOpen,
+  onCloseMobile,
   density,
   collapsed,
-  mini,
   setCollapsedPref,
   createMenuOpen,
   setCreateMenuOpen,
@@ -75,25 +66,18 @@ export function ShellSidebar({
   setPanel,
   navigate,
   setNewSpaceOpen,
+  openAgentImport,
   setCreateBotOpen,
   chatMenu,
   roster,
   archived,
-  footerLogos,
-  user,
-  boardEnabled,
-  navLinks,
-  openSettings,
-  openIntegrations,
-  openSkills,
-  openSpaceChat,
+  footer,
 }: {
   isMobile: boolean;
   mobileOpen: boolean;
-  setMobileOpen: (open: boolean) => void;
+  onCloseMobile: () => void;
   density: BotsSidebarDensity;
   collapsed: boolean;
-  mini: boolean;
   setCollapsedPref: (collapsed: boolean) => void;
   createMenuOpen: boolean;
   setCreateMenuOpen: (open: boolean) => void;
@@ -105,21 +89,35 @@ export function ShellSidebar({
   setPanel: (panel: Panel) => void;
   navigate: (path: string) => void;
   setNewSpaceOpen: (open: boolean) => void;
+  openAgentImport: () => void;
   setCreateBotOpen: (open: boolean) => void;
   chatMenu: ChatMenuState;
   roster: ReactNode;
   archived: ReactNode;
-  footerLogos: Array<{ name: string; logo?: string | null }>;
-  user: User | undefined;
-  boardEnabled: boolean;
-  navLinks: NavLink[];
-  openSettings: (section: SettingsSection) => void;
-  openIntegrations: () => void;
-  openSkills: () => void;
-  openSpaceChat: (spaceId: string, path: string) => void;
+  footer?: ReactNode;
 }) {
   const { t } = useLingui();
   const rail = useAppRail();
+  const listRef = useRef<HTMLDivElement>(null);
+  const flipRevision = useMemo(
+    () =>
+      [
+        bots
+          .map(
+            (bot) =>
+              `${bot.id}:${bot.pinned ? 1 : 0}:${bot.sectionId ?? ""}:${bot.spaceId}:${bot.updatedAt}`,
+          )
+          .join(","),
+        groups
+          .map(
+            (group) =>
+              `${group.id}:${group.pinned ? 1 : 0}:${group.sectionId ?? ""}:${group.spaceId}:${group.updatedAt}`,
+          )
+          .join(","),
+      ].join(";"),
+    [bots, groups],
+  );
+  useFlip(listRef, flipRevision);
   const {
     query,
     setQuery,
@@ -140,6 +138,15 @@ export function ShellSidebar({
     activityFiltersId,
     activityFilterCount,
   } = search;
+  // A closed drawer and a collapsed desktop list are both off screen, so neither may keep focus.
+  const listHidden = isMobile ? !mobileOpen : collapsed;
+  // Activity replaces the roster; leftovers from Chats must not filter or replace its results.
+  useEffect(() => {
+    if (!activityMode) return;
+    setQuery("");
+    setActivityFilters(emptyActivityFilters());
+    setActivityFiltersExpanded(false);
+  }, [activityMode, setQuery, setActivityFilters, setActivityFiltersExpanded]);
   return (
     <>
       <button
@@ -148,33 +155,44 @@ export function ShellSidebar({
         aria-hidden={mobileOpen ? undefined : true}
         inert={mobileOpen ? undefined : true}
         tabIndex={mobileOpen ? undefined : -1}
-        onClick={() => setMobileOpen(false)}
+        onClick={onCloseMobile}
         className={`absolute inset-y-0 end-0 start-[min(calc(100%-48px),316px)] z-30 bg-overlay transition-opacity duration-150 ease-out motion-reduce:transition-none md:hidden ${
           mobileOpen ? "opacity-100" : "pointer-events-none opacity-0"
         }`}
       />
       <Sidebar
-        collapsible={isMobile ? "none" : "icon"}
+        collapsible={isMobile ? "none" : "offcanvas"}
         side={document.documentElement.dir === "rtl" ? "right" : "left"}
         data-testid="bots-sidebar"
         data-space-switch="sidebar"
-        inert={isMobile && !mobileOpen ? true : undefined}
-        aria-hidden={isMobile && !mobileOpen ? true : undefined}
+        inert={listHidden || undefined}
+        aria-hidden={listHidden || undefined}
+        style={
+          {
+            // The list steps aside by its own width from the rail's edge while it slides.
+            "--app-rail-offset": "calc(var(--app-rail-width) - var(--sidebar-width))",
+          } as CSSProperties
+        }
         data-bots-sidebar-density={density}
         data-collapsed={collapsed ? "true" : "false"}
         className={
           isMobile
             ? `absolute inset-y-0 start-0 z-40 flex w-[calc(100%-48px)] max-w-[316px] shrink-0 flex-col border-e border-sidebar-border bg-sidebar transition-transform duration-200 ease-out motion-reduce:transition-none ${mobileOpen ? "translate-x-0" : "-translate-x-full rtl:translate-x-full"}`
             : // The sidebar is fixed to the window edge, so it steps aside for the rail there.
-              `h-full overflow-hidden border-sidebar-border ${rail ? "data-[side=left]:left-18 data-[side=right]:right-18" : ""}`
+              `h-full overflow-hidden border-sidebar-border ${
+                rail
+                  ? "data-[side=left]:left-(--app-rail-width) data-[side=right]:right-(--app-rail-width) data-[side=left]:group-data-[collapsible=offcanvas]:left-(--app-rail-offset) data-[side=right]:group-data-[collapsible=offcanvas]:right-(--app-rail-offset)"
+                  : ""
+              }`
         }
       >
         <SidebarHeader
-          mini={mini}
+          title={activityMode ? t`Activity` : t`Chats`}
+          isMobile={isMobile}
+          activityMode={activityMode}
+          onToggleActivity={toggleActivityMode}
           createMenuOpen={createMenuOpen}
           setCreateMenuOpen={setCreateMenuOpen}
-          activityMode={activityMode}
-          toggleActivityMode={toggleActivityMode}
           searchOpen={searchOpen}
           onSearch={() => {
             if (searchOpen) {
@@ -186,16 +204,19 @@ export function ShellSidebar({
             setSearchOpen(true);
             focusSidebarSearch();
           }}
-          setBotsSidebarCollapsedPref={setCollapsedPref}
+          onCollapse={() => {
+            setCollapsedPref(true);
+            focusChatListRestore();
+          }}
+          onCloseMobile={onCloseMobile}
           bots={bots}
-          setMobileSidebarOpen={setMobileOpen}
           setPanel={setPanel}
           navigate={navigate}
           setNewSpaceOpen={setNewSpaceOpen}
+          openAgentImport={openAgentImport}
           setCreateBotOpen={setCreateBotOpen}
         />
-        {mini ||
-        !(
+        {!(
           searchOpen ||
           query ||
           (activityMode && (activityFilterCount > 0 || activityFiltersExpanded))
@@ -255,10 +276,11 @@ export function ShellSidebar({
           </InputGroup>
         )}
         <div
+          ref={listRef}
           onScroll={resetFadeWhenUnscrollable}
           className="rk-scroll scroll-fade-y scroll-fade-12 flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto px-2.5 pb-2.5"
         >
-          {showSpaceSearch && !mini ? (
+          {showSpaceSearch ? (
             <SpaceSearchResults
               hits={searchHits}
               loading={searchLoading}
@@ -267,18 +289,18 @@ export function ShellSidebar({
               onSelect={(hit) => jumpToSearchHit(hit)}
               chatMenu={chatMenu}
             />
-          ) : activityMode && !mini ? (
+          ) : activityMode ? (
             <ActivityList
               bots={bots}
               groups={groups}
               toggledSections={collapsedSidebarSections}
               onToggleSection={toggleSidebarSection}
               onOpenBot={(bot) => {
-                setMobileOpen(false);
+                onCloseMobile();
                 navigate(`/app/${bot.id}`);
               }}
               onOpenGroup={(group) => {
-                setMobileOpen(false);
+                onCloseMobile();
                 navigate(`/app/g/${group.id}`);
               }}
               filters={activityFilters}
@@ -286,7 +308,7 @@ export function ShellSidebar({
               filtersExpanded={activityFiltersExpanded}
               filtersId={activityFiltersId}
               onOpenRun={(run) => {
-                setMobileOpen(false);
+                onCloseMobile();
                 if (run.groupId) navigate(`/app/g/${run.groupId}`);
                 else navigate(`/app/${run.botId}`);
               }}
@@ -298,62 +320,26 @@ export function ShellSidebar({
         {/* One height limit for every shelf, so open shelves never squeeze out the chat list. */}
         <div
           className={
-            mini || activityMode
+            activityMode
               ? "hidden"
               : "rk-scroll flex max-h-[40vh] shrink-0 flex-col overflow-y-auto px-2.5 pb-1"
           }
         >
           {archived}
         </div>
-        <div className={mini ? "hidden" : "contents"}>
+        <div className="contents">
           <PasskeyOffer />
         </div>
-        <ShellSidebarFooter
-          mini={mini}
-          logos={footerLogos}
-          user={user}
-          boardEnabled={boardEnabled}
-          navLinks={navLinks}
-          closeMobileSidebar={() => setMobileOpen(false)}
-          navigate={navigate}
-          openSettings={openSettings}
-          openIntegrations={openIntegrations}
-          openSkills={openSkills}
-          openSpaceChat={openSpaceChat}
-        />
+        <SidebarPlanNotice />
+        {footer}
       </Sidebar>
     </>
   );
 }
 
-function ShellSidebarFooter({
-  mini,
-  logos,
-  user,
-  boardEnabled,
-  navLinks,
-  closeMobileSidebar,
-  navigate,
-  openSettings,
-  openIntegrations,
-  openSkills,
-  openSpaceChat,
-}: {
-  mini: boolean;
-  logos: Array<{ name: string; logo?: string | null }>;
-  user: User | undefined;
-  boardEnabled: boolean;
-  navLinks: NavLink[];
-  closeMobileSidebar: () => void;
-  navigate: (path: string) => void;
-  openSettings: (section: SettingsSection) => void;
-  openIntegrations: () => void;
-  openSkills: () => void;
-  openSpaceChat: (spaceId: string, path: string) => void;
-}) {
-  const { t, i18n } = useLingui();
-  const userId = useQueryUserId();
-  const { organizations, activeOrganizationId } = useOrganizations();
+/** The list bottom's plan notice; the rail's account menu stays compact. */
+function SidebarPlanNotice() {
+  const { i18n } = useLingui();
   const { status: billing, showPlans } = useBilling();
   const freeUntil =
     billing?.funding === "byok" &&
@@ -361,121 +347,18 @@ function ShellSidebarFooter({
     new Date(billing.byokFreeUntil) > new Date()
       ? billing.byokFreeUntil
       : null;
-  const usage = useUsageHint();
-  const [menuOpen, setMenuOpen] = useState(false);
-  const [inviteOpen, setInviteOpen] = useState(false);
-  const [creatingOrganization, setCreatingOrganization] = useState(false);
-  const referral = billing?.referral;
-  const [logOutError, setLogOutError] = useState<string | null>(null);
-  const { signingOut, logOut } = useSignOut("/sign-in", (message) => {
-    // A failed sign-out reloads the page: reopen the menu so its error shows.
-    setMenuOpen(true);
-    setLogOutError(message);
-  });
-  const { label: userName, initial: initials } = accountDisplay(user ?? {}, t`You`);
-  const day = freeUntil ? formatBillingDate(freeUntil, i18n.locale || "en") : "";
+  if (!freeUntil) return null;
+  const day = formatBillingDate(freeUntil, i18n.locale || "en");
   return (
-    <>
-      {freeUntil && !mini ? (
-        <div className="mx-2.5 flex items-center justify-between gap-2 ps-2.5 text-body text-muted-foreground">
-          <span className="min-w-0 truncate">
-            <Trans>Free plan ends {day}</Trans>
-          </span>
-          {billing?.canManage ? (
-            <Button variant="outline" size="sm" onClick={showPlans}>
-              <Trans>Upgrade</Trans>
-            </Button>
-          ) : null}
-        </div>
+    <div className="mx-2.5 flex items-center justify-between gap-2 ps-2.5 text-body text-muted-foreground">
+      <span className="min-w-0 truncate">
+        <Trans>Free plan ends {day}</Trans>
+      </span>
+      {billing?.canManage ? (
+        <Button variant="outline" size="sm" onClick={showPlans}>
+          <Trans>Upgrade</Trans>
+        </Button>
       ) : null}
-      <SidebarFooter
-        mini={mini}
-        logos={logos}
-        name={userName}
-        initials={initials}
-        image={user?.image}
-        email={user?.email}
-        open={menuOpen}
-        onOpenChange={(open) => {
-          setMenuOpen(open);
-          if (!open) setLogOutError(null);
-        }}
-        onIntegrations={() => {
-          setMenuOpen(false);
-          openIntegrations();
-        }}
-        onSkills={() => {
-          setMenuOpen(false);
-          openSkills();
-        }}
-        onBoard={
-          boardEnabled
-            ? () => {
-                setMenuOpen(false);
-                closeMobileSidebar();
-                navigate("/app/board");
-              }
-            : undefined
-        }
-        links={navLinks}
-        onLink={(link) => {
-          setMenuOpen(false);
-          closeMobileSidebar();
-          navigate(`/app/x/${link.id}`);
-        }}
-        onSharedPages={() => {
-          setMenuOpen(false);
-          closeMobileSidebar();
-          navigate("/review");
-        }}
-        onArtifacts={() => {
-          setMenuOpen(false);
-          closeMobileSidebar();
-          navigate("/app/artifacts");
-        }}
-        onSettings={() => {
-          setMenuOpen(false);
-          openSettings("general");
-        }}
-        usage={usage}
-        onUsage={() => {
-          setMenuOpen(false);
-          openSettings("usage");
-        }}
-        onInvite={
-          referral
-            ? () => {
-                setMenuOpen(false);
-                setInviteOpen(true);
-              }
-            : undefined
-        }
-        onLogOut={() => {
-          setLogOutError(null);
-          void logOut();
-        }}
-        signingOut={signingOut}
-        logOutError={logOutError}
-        organizations={organizations}
-        activeOrganizationId={activeOrganizationId}
-        onSwitchOrganization={(organization) => {
-          setMenuOpen(false);
-          if (organization.id !== activeOrganizationId)
-            void switchOrganization(userId, organization, openSpaceChat);
-        }}
-        onCreateOrganization={() => {
-          setMenuOpen(false);
-          setCreatingOrganization(true);
-        }}
-      />
-      <CreateOrganizationDialog
-        open={creatingOrganization}
-        onOpenChange={setCreatingOrganization}
-        openSpaceChat={openSpaceChat}
-      />
-      {referral ? (
-        <InviteDialog referral={referral} open={inviteOpen} onOpenChange={setInviteOpen} />
-      ) : null}
-    </>
+    </div>
   );
 }

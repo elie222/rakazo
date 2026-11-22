@@ -7,6 +7,22 @@
    which restyles every element on the page mid-resize. */
 @source not inline("container");
 
+@keyframes page-loading-enter {
+  from {
+    opacity: 0;
+  }
+}
+
+.page-loading-fade {
+  animation: page-loading-enter 300ms ease-out var(--page-loading-delay, 500ms) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .page-loading-fade {
+    animation: none;
+  }
+}
+
 html,
 body,
 #root {

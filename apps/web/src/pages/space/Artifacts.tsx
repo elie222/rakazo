@@ -48,6 +48,7 @@ import { desktopBridge } from "../../lib/platform/desktop";
 import { createStoredPreference } from "../../lib/preferences/stored-preference";
 import { useSave, useSpaceQueries } from "../../lib/query/query";
 import { errorText } from "../../lib/query/user-error";
+import { useAppRail } from "../shell/app-rail";
 import { useRedrawAtMidnight } from "../shell/chat/use-redraw-at-midnight";
 import { ArtifactMimeIcon } from "./artifact-mime-icon";
 import { PreviewPane } from "./artifact-preview-pane";
@@ -102,6 +103,7 @@ function matchesCalendarDateFilter(
 }
 
 export function ArtifactsPage() {
+  const rail = useAppRail();
   const { artifactId } = useParams<{ artifactId?: string }>();
   const navigate = useNavigate();
   const today = useRedrawAtMidnight();
@@ -258,7 +260,7 @@ export function ArtifactsPage() {
     <div className="flex h-full min-w-0 flex-col bg-background text-foreground/90">
       <header className="app-drag flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-border px-4 py-3">
         {/* This route is the window's leading edge, so Electron window controls sit in the header. */}
-        {desktopBridge() ? <WindowChrome /> : null}
+        {desktopBridge() ? <WindowChrome className={rail ? "md:hidden" : undefined} /> : null}
         <div className="flex min-w-fit flex-1 items-center gap-1">
           <IconTooltip label={t`Back`}>
             <Link
@@ -759,7 +761,7 @@ function ArtifactCard({
     <div className="group relative">
       <Link
         to={`/app/artifacts/${artifact.id}${botQuery}`}
-        className="flex flex-col gap-4 rounded-2xl border border-border bg-card p-4 text-foreground hover:bg-accent/40"
+        className="flex flex-col gap-4 rounded-xl border border-border bg-card p-4 text-foreground shadow-control hover:bg-accent/40"
       >
         <div className="flex items-start justify-between">
           <span className="grid h-9 w-9 place-items-center rounded-md bg-accent text-accent-foreground">

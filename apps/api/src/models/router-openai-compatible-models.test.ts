@@ -956,6 +956,7 @@ describe("openai-compatible enabled models", () => {
       apiKey: "sk-fake-replacement-key",
       modelId: "m-z",
       enabledModelIds: ["m-z"],
+      makeDefault: true,
       reasoning: true,
       thinkingLevel: "high",
     });

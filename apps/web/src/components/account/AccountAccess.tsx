@@ -1,7 +1,7 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { AccountSecurity, SignInProvider } from "@rakazo/contracts";
 import { identityConfirmationProviders } from "@rakazo/contracts";
-import { Button, Input, Label } from "@rakazo/ui-web";
+import { Button, Field, FieldLabel, Input } from "@rakazo/ui-web";
 import { useEffect, useState } from "react";
 import { fetchAccountSecurity, requestAccountDeletionCode } from "../../lib/auth/account-security";
 import { authClient } from "../../lib/auth/auth";
@@ -109,10 +109,10 @@ export function DeleteAccountForm({
               <Trans>Retry</Trans>
             </Button>
           ) : security.hasPassword ? (
-            <div className="space-y-2">
-              <Label htmlFor="delete-password">
+            <Field>
+              <FieldLabel htmlFor="delete-password">
                 <Trans>Current password</Trans>
-              </Label>
+              </FieldLabel>
               <Input
                 id="delete-password"
                 type="password"
@@ -120,7 +120,7 @@ export function DeleteAccountForm({
                 value={password}
                 onChange={(event) => setPassword(event.target.value)}
               />
-            </div>
+            </Field>
           ) : (
             <>
               {identityConfirmationProviders(security).map((provider) => (
@@ -165,17 +165,17 @@ export function DeleteAccountForm({
                 </Button>
               ) : null}
               {sent ? (
-                <div className="space-y-2">
-                  <Label htmlFor="deletion-code">
+                <Field>
+                  <FieldLabel htmlFor="deletion-code">
                     <Trans>Deletion code</Trans>
-                  </Label>
+                  </FieldLabel>
                   <Input
                     id="deletion-code"
                     autoComplete="one-time-code"
                     value={code}
                     onChange={(event) => setCode(event.target.value)}
                   />
-                </div>
+                </Field>
               ) : null}
             </>
           )}

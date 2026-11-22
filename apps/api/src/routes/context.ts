@@ -124,7 +124,7 @@ export function createRouterContext(deps: RouterDeps) {
     prepareMcpServer,
     insertMcpServer,
     announceMcpServer,
-  } = createMcpServers(deps, onboardingDeps, mcpOAuth);
+  } = createMcpServers(deps, mcpOAuth);
   const announceRoutine = createRoutineAnnouncer(deps);
   const codexCatalog = deps.codexCatalog ?? new CodexCatalogCache();
   const { verifyModelConnection, connectModelCredential } = createModelConnector(
