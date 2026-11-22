@@ -7,6 +7,7 @@ import {
 } from "@rakazo/contracts";
 import { formatBillingAmount } from "@rakazo/i18n/billing";
 import { tierComputerDescription } from "@rakazo/i18n/computer-usage";
+import { bestEffort } from "@rakazo/logging/best-effort";
 import { Button, Card, CardContent, CardFooter, CardHeader } from "@rakazo/ui-web";
 import { cn } from "@rakazo/ui-web/lib/utils";
 import { Check } from "lucide-react";
@@ -261,15 +262,16 @@ export function CreditChoice({
   // first plan choice.
   useEffect(() => {
     if (dismissible) return;
-    void Promise.resolve()
-      .then(() =>
+    void bestEffort(
+      "report the plans screen",
+      Promise.resolve().then(() =>
         rpc.analytics.screen({
           screen: "plans",
           surface: desktopBridge() ? "desktop" : "web",
           ...(status.planLayout ? { planLayout: status.planLayout } : {}),
         }),
-      )
-      .catch(() => undefined);
+      ),
+    );
   }, []);
   async function choose(ownKey: boolean, plan?: { tier: ByokTier; interval: ByokInterval }) {
     setPending(true);
