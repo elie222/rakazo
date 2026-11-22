@@ -10,6 +10,7 @@ import { rpc } from "../api/api";
 import { subscribeThread } from "../api/api-live";
 import type { MobileSnapshot } from "../api/mobile-types";
 import { hapticSuccess } from "../native/haptics";
+import { noteRunCompleted } from "../platform/store-review";
 import type { ThreadJumpAnchor } from "./thread-jump";
 import { useThreadLiveSubscription } from "./thread-live";
 import type { PinnedThreadWindow } from "./thread-window";
@@ -32,6 +33,7 @@ vi.mock("../settings/ai-consent", () => ({}));
 vi.mock("../notifications/live-notifications", () => ({}));
 vi.mock("expo-secure-store", () => ({}));
 vi.mock("../native/haptics", () => ({ getHapticsEnabled: () => true, hapticSuccess: vi.fn() }));
+vi.mock("../platform/store-review", () => ({ noteRunCompleted: vi.fn() }));
 
 type LiveEvent = { type: string; seq: number; runId?: string };
 const ref = <T>(current: T) => ({ current });
@@ -264,6 +266,7 @@ describe("thread foreground subscription", () => {
     deliver(event("run.failed", 15, "run-2"));
     deliver(event("run.cancelled", 16, "run-3"));
     expect(hapticSuccess).toHaveBeenCalledTimes(1);
+    expect(noteRunCompleted).toHaveBeenCalledTimes(1);
     await render(false);
     expect(subscribeThread).toHaveBeenCalledTimes(1);
     deliver(event("run.completed", 18, "hidden-run"));
@@ -279,6 +282,7 @@ describe("thread foreground subscription", () => {
     expect(hapticSuccess).toHaveBeenCalledTimes(2);
     deliver(event("run.completed", 20, "pending-head-run"));
     expect(hapticSuccess).toHaveBeenCalledTimes(2);
+    expect(noteRunCompleted).toHaveBeenCalledTimes(2);
     headCursor = 21;
     await render(true, false);
     deliver(event("run.completed", 21, "aborted-stream"));
@@ -288,6 +292,7 @@ describe("thread foreground subscription", () => {
     deliver(event("run.started", 22, "run-4"));
     deliver(event("run.completed", 23, "run-4"));
     expect(hapticSuccess).toHaveBeenCalledTimes(3);
+    expect(noteRunCompleted).toHaveBeenCalledTimes(4);
     await act(async () => {});
     expect(refresh).not.toHaveBeenCalled();
     act(() => root.unmount());

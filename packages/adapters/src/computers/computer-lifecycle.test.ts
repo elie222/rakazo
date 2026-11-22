@@ -121,7 +121,7 @@ describe("computer provisioning", () => {
           "computer-1",
           context,
         ),
-      ).resolves.toEqual(ref);
+      ).resolves.toEqual({ ...ref, startSize: "standard" });
       expect(provision).toHaveBeenCalledOnce();
       expect(prisma.computer.updateMany).toHaveBeenLastCalledWith(
         expect.objectContaining({ data: expect.objectContaining({ state: "running" }) }),
@@ -1453,7 +1453,7 @@ describe("computer provisioning", () => {
           await vi.advanceTimersByTimeAsync(250);
           await new Promise((resolve) => setImmediate(resolve));
         }
-        await expect(started).resolves.toEqual(ref);
+        await expect(started).resolves.toEqual({ ...ref, startSize: "standard" });
         const activation = {
           state: "running",
           providerRef: next.providerRef,
@@ -1911,7 +1911,7 @@ describe("computer provisioning", () => {
         if (prepareFails) {
           await expect(result).rejects.toThrow("provider preparation failed");
         } else {
-          await expect(result).resolves.toEqual(ref);
+          await expect(result).resolves.toEqual({ ...ref, startSize: "standard" });
         }
         expect(prepare).toHaveBeenCalledWith(ref, context);
         expect(sandbox.importWorkspace).not.toHaveBeenCalled();
@@ -1975,7 +1975,7 @@ describe("computer provisioning", () => {
           "computer-1",
           context,
         ),
-      ).resolves.toEqual(ref);
+      ).resolves.toEqual({ ...ref, startSize: "standard" });
       expect(importWorkspace).toHaveBeenCalledTimes(1);
       expect(updateMany).toHaveBeenCalledTimes(2);
       expect(updateMany).toHaveBeenLastCalledWith(
@@ -2082,7 +2082,7 @@ describe("the record of a machine a start created", () => {
   it("is dropped in the transaction that stores the machine and leaves booting", async () => {
     const { row, writes, run } = start();
 
-    await expect(run()).resolves.toEqual(ref);
+    await expect(run()).resolves.toEqual({ ...ref, startSize: "standard" });
 
     expect(row).toMatchObject({ state: "running", providerRef: "machine-1" });
     expect(writes).toEqual(["in transaction: running", `in transaction: cancel ${key}`]);
@@ -2366,6 +2366,25 @@ describe("Team Computer wake", () => {
     );
   });
 
+  it("hands back a reference that wakes the computer at its planned size", async () => {
+    const harness = wakeHarness("stopped");
+    vi.mocked(planComputerSize).mockResolvedValueOnce("large");
+
+    await expect(boot(harness)).resolves.toMatchObject({ startSize: "large" });
+  });
+
+  it("wakes a reused running computer at its planned size", async () => {
+    const harness = wakeHarness("running", undefined, { kind: "boat" }, { kind: "boat" });
+    Object.assign(harness.sandbox, { isRunning: vi.fn().mockResolvedValue(true) });
+    vi.mocked(planComputerSize).mockResolvedValueOnce("large");
+
+    await expect(boot(harness)).resolves.toMatchObject({
+      providerRef: "sandbox-1",
+      startSize: "large",
+    });
+    expect(harness.sandbox.provision).not.toHaveBeenCalled();
+  });
+
   it("ends a run the provider stopped on its own when reconnecting has to start it again", async () => {
     const harness = wakeHarness(
       "running",
@@ -2386,13 +2405,13 @@ describe("Team Computer wake", () => {
       new Error("database unavailable"),
     );
 
-    await expect(boot(harness)).resolves.toEqual(harness.ref);
+    await expect(boot(harness)).resolves.toEqual({ ...harness.ref, startSize: "standard" });
   });
 
   it("removes folders of bots deleted while the Team Computer was stopped", async () => {
     const harness = wakeHarness("stopped");
 
-    await expect(boot(harness)).resolves.toEqual(harness.ref);
+    await expect(boot(harness)).resolves.toEqual({ ...harness.ref, startSize: "standard" });
 
     expect(harness.findMany).toHaveBeenCalledWith({
       where: { spaceId: "workspace-1" },
@@ -2411,7 +2430,7 @@ describe("Team Computer wake", () => {
   it("does not look for deleted bots' folders when reconnecting to a running Team Computer", async () => {
     const harness = wakeHarness("running");
 
-    await expect(boot(harness)).resolves.toEqual(harness.ref);
+    await expect(boot(harness)).resolves.toEqual({ ...harness.ref, startSize: "standard" });
 
     expect(harness.findMany).not.toHaveBeenCalled();
   });
@@ -2428,7 +2447,7 @@ describe("Team Computer wake", () => {
         provisioned,
       );
 
-      await expect(boot(harness)).resolves.toEqual(harness.ref);
+      await expect(boot(harness)).resolves.toEqual({ ...harness.ref, startSize: "standard" });
 
       expect(harness.execute).toHaveBeenCalledWith(
         harness.ref,
@@ -2458,7 +2477,7 @@ describe("Team Computer wake", () => {
       await cleanupStarted.promise;
       await vi.advanceTimersByTimeAsync(20_000);
 
-      await expect(booting).resolves.toEqual(harness.ref);
+      await expect(booting).resolves.toEqual({ ...harness.ref, startSize: "standard" });
     } finally {
       vi.useRealTimers();
     }
@@ -2472,7 +2491,7 @@ describe("Team Computer wake", () => {
     const sink = createTestSink();
     installLogger(createLogger({ service: "test", sinks: [sink] }));
     try {
-      await expect(boot(harness)).resolves.toEqual(harness.ref);
+      await expect(boot(harness)).resolves.toEqual({ ...harness.ref, startSize: "standard" });
     } finally {
       installLogger(createLogger({ service: "test", level: "off", sinks: [] }));
     }

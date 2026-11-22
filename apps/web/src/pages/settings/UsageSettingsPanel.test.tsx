@@ -31,10 +31,24 @@ vi.mock("@rakazo/ui-web", async (importOriginal) => ({
 }));
 
 const breakdown = vi.hoisted(() => ({ fetch: vi.fn() }));
+const catalog = vi.hoisted(() => ({
+  entries: [] as { provider: string; id: string; label: string; providerName?: string }[] | Error,
+}));
 
 vi.mock("../../lib/query/query", async (importOriginal) => ({
   ...(await importOriginal<typeof QueryModule>()),
   useSpaceQueries: () => ({
+    models: {
+      list: {
+        queryOptions: () => ({
+          queryKey: ["models-list"],
+          queryFn: async () => {
+            if (catalog.entries instanceof Error) throw catalog.entries;
+            return catalog.entries;
+          },
+        }),
+      },
+    },
     usage: {
       breakdown: {
         queryOptions: ({ input }: { input: unknown }) => ({
@@ -73,7 +87,12 @@ const usageFor = (input: Input) => ({
     ...point(input.botId ? 3 : 4, input.botId ? 400 : 467, 0.04),
   },
   models: [
-    { provider: input.provider ?? "p:1", model: input.model ?? "m1", ...point(3, 400, 0.04) },
+    {
+      provider: input.provider ?? "p:1",
+      model: input.model ?? "m1",
+      ...point(3, 400, 0.04),
+      cachedTokens: 250,
+    },
   ],
   overTimeUnit: "day",
   overTime: [{ date: "2026-11-10", ...point(3, 400, 0.04) }],
@@ -81,9 +100,10 @@ const usageFor = (input: Input) => ({
 
 const settle = () => act(flush);
 
-async function renderPanel() {
+async function renderPanel(entries: typeof catalog.entries = []) {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   breakdown.fetch.mockReset();
+  catalog.entries = entries;
   breakdown.fetch.mockImplementation(async (input: Input) => usageFor(input));
   const container = document.createElement("div");
   document.body.append(container);
@@ -108,6 +128,10 @@ async function renderPanel() {
     [...container.querySelectorAll("button")].find((node) => node.textContent === text)!;
   return {
     container,
+    refetchCatalog: async () => {
+      await act(async () => client.refetchQueries({ queryKey: ["models-list"] }));
+      await settle();
+    },
     chosen: (label: string) => trigger(label).textContent,
     totals: () => [...container.querySelectorAll("dd")].map((node) => node.textContent),
     options: async (label: string) => {
@@ -151,21 +175,25 @@ it("shows every bot's usage first, then narrows it by bot, model and date range"
       [...panel.container.querySelectorAll("tbody tr")].map((row) =>
         [...row.querySelectorAll("td")].map((cell) => cell.textContent),
       ),
-    ).toEqual([["m1p:1", "3", "399", "1", "$0.04"]]);
+    ).toEqual([["2. Unlisted model", "3", "399", "250", "1", "$0.04"]]);
 
     await panel.choose("Bot", "Alpha");
     expect(breakdown.fetch).toHaveBeenLastCalledWith({ range: "30d", botId: "bot-a" });
     expect(panel.totals()).toEqual(["2", "400", "$0.04"]);
 
     // The model list keeps every model, and a provider id with a colon survives the round trip.
-    await panel.choose("Model", "m1");
+    await panel.choose("Model", "2. Unlisted model");
     expect(breakdown.fetch).toHaveBeenLastCalledWith({
       range: "30d",
       botId: "bot-a",
       provider: "p:1",
       model: "m1",
     });
-    expect(await panel.options("Model")).toEqual(["All models", "m1", "m2"]);
+    expect(await panel.options("Model")).toEqual([
+      "All models",
+      "2. Unlisted model",
+      "1. Unlisted model",
+    ]);
 
     await panel.pick("7 days");
     expect(breakdown.fetch).toHaveBeenLastCalledWith({
@@ -215,15 +243,29 @@ it("does not show the previous selection's numbers while the next one loads", as
   }
 });
 
+it("marks a token total that leaves out calls with no count", async () => {
+  const panel = await renderPanel();
+  try {
+    breakdown.fetch.mockImplementation(async (input: Input) => {
+      const usage = usageFor(input);
+      return { ...usage, totals: { ...usage.totals, tokensPartial: true } };
+    });
+    await panel.pick("Today");
+    expect(panel.totals()).toEqual(["3", "467+", "$0.04"]);
+  } finally {
+    await panel.unmount();
+  }
+});
+
 it("says the request failed instead of showing zero spend", async () => {
   const panel = await renderPanel();
   try {
     await panel.choose("Bot", "Alpha");
-    await panel.choose("Model", "m1");
+    await panel.choose("Model", "2. Unlisted model");
     breakdown.fetch.mockRejectedValue(new Error("offline"));
     await panel.pick("Today");
     expect(panel.chosen("Bot")).toBe("Alpha");
-    expect(panel.chosen("Model")).toBe("m1");
+    expect(panel.chosen("Model")).toBe("2. Unlisted model");
     expect(panel.totals()).toEqual(["—", "—", "—"]);
     expect(panel.container.textContent).toContain("Could not load usage.");
     expect(panel.container.textContent).not.toContain("No usage for this selection.");
@@ -246,10 +288,181 @@ it("tells apart a model name that two providers share", async () => {
     await panel.pick("7 days");
     expect(await panel.options("Model")).toEqual([
       "All models",
-      "shared (alpha)",
-      "shared (beta)",
-      "solo",
+      "1. Unlisted model",
+      "3. Unlisted model",
+      "2. Unlisted model",
     ]);
+  } finally {
+    await panel.unmount();
+  }
+});
+
+it("draws every bar on one baseline and puts the dates in a separate row", async () => {
+  const panel = await renderPanel();
+  try {
+    const days = Array.from({ length: 30 }, (_, i) => ({
+      date: `2026-10-${String(i + 1).padStart(2, "0")}`,
+      ...point(1, i === 29 ? 900 : 100, 0.01),
+    }));
+    breakdown.fetch.mockImplementation(async (input: Input) => ({
+      ...usageFor(input),
+      overTime: days,
+    }));
+    await panel.pick("7 days");
+    // jsdom does no layout, so this checks the structure that gives the shared baseline,
+    // not the measured pixels.
+    const bars = panel.container.querySelector('[data-testid="usage-bars"]')!;
+    const axis = panel.container.querySelector('[data-testid="usage-axis"]')!;
+    expect(bars.children).toHaveLength(30);
+    for (const bar of bars.children) {
+      expect(bar.textContent).toBe("");
+      expect(bar.getAttribute("aria-label")).toMatch(/tokens/);
+    }
+    expect(bars.contains(axis)).toBe(false);
+    expect(axis.getAttribute("aria-hidden")).toBe("true");
+    const labels = [...axis.children];
+    expect(labels).toHaveLength(2);
+    expect(labels[0]?.className).toContain("text-start");
+    expect(labels[1]?.className).toContain("text-end");
+    expect(labels.map((label) => label.className).join(" ")).not.toContain("truncate");
+  } finally {
+    await panel.unmount();
+  }
+});
+
+it("names models and providers by their labels, and hides identifiers when none is known", async () => {
+  const panel = await renderPanel([
+    { provider: "openai-codex", id: "gpt-6-luna", label: "GPT-6 Luna", providerName: "ChatGPT" },
+    { provider: "alpha", id: "shared", label: "Shared Model", providerName: "Alpha AI" },
+    { provider: "alpha", id: "shared-v2", label: "Shared Model", providerName: "Alpha AI" },
+    { provider: "beta", id: "shared", label: "Shared Model", providerName: "Beta AI" },
+  ]);
+  try {
+    breakdown.fetch.mockImplementation(async (input: Input) => ({
+      ...usageFor(input),
+      modelOptions: [
+        { provider: "openai-codex", model: "gpt-6-luna" },
+        { provider: "alpha", model: "shared" },
+        { provider: "alpha", model: "shared-v2" },
+        { provider: "beta", model: "shared" },
+        { provider: "custom", model: "my-model" },
+      ],
+      models: [
+        { provider: "openai-codex", model: "gpt-6-luna", ...point(3, 400, 0.04) },
+        { provider: "custom", model: "my-model", ...point(1, 10, 0.001) },
+      ],
+    }));
+    await panel.pick("7 days");
+    expect(
+      [...panel.container.querySelectorAll("tbody tr")].map(
+        (row) => row.querySelector("td")?.textContent,
+      ),
+    ).toEqual(["5. GPT-6 LunaChatGPT", "4. Unlisted model"]);
+    expect(await panel.options("Model")).toEqual([
+      "All models",
+      "5. GPT-6 Luna",
+      "1. Shared Model (Alpha AI)",
+      "2. Shared Model (Alpha AI)",
+      "3. Shared Model (Beta AI)",
+      "4. Unlisted model",
+    ]);
+  } finally {
+    await panel.unmount();
+  }
+});
+
+it("distinguishes a failed catalog read from an unlisted model", async () => {
+  const panel = await renderPanel(new Error("catalog offline"));
+  try {
+    expect(panel.container.textContent).toContain("Model name unavailable");
+    expect(panel.container.textContent).not.toContain("Unlisted model");
+    expect(panel.totals()).toEqual(["3", "467", "$0.04"]);
+  } finally {
+    await panel.unmount();
+  }
+});
+
+it("uses stable matching references for table rows and colliding final filter labels", async () => {
+  const entries = [
+    { provider: "a", id: "opaque-a", label: "Foo (Bar)", providerName: "Quux" },
+    { provider: "b", id: "opaque-b", label: "Foo", providerName: "Bar" },
+    { provider: "c", id: "opaque-c", label: "Foo", providerName: "Baz" },
+  ];
+  const panel = await renderPanel(entries);
+  try {
+    let options = entries.map((entry) => ({ provider: entry.provider, model: entry.id }));
+    breakdown.fetch.mockImplementation(async (input: Input) => ({
+      ...usageFor(input),
+      modelOptions: options,
+      models: options.map((option) => ({ ...option, ...point(1, 10, 0.001) })),
+    }));
+    await panel.pick("7 days");
+    const labels = ["1. Foo (Bar)", "2. Foo (Bar)", "3. Foo (Baz)"];
+    expect(await panel.options("Model")).toEqual(["All models", ...labels]);
+    const rowLabels = () =>
+      [...panel.container.querySelectorAll("tbody tr")].map(
+        (row) => row.querySelector("td > div")?.textContent,
+      );
+    expect(rowLabels()).toEqual(labels);
+    await panel.choose("Model", labels[1]!);
+    expect(breakdown.fetch).toHaveBeenLastCalledWith({
+      range: "7d",
+      provider: "b",
+      model: "opaque-b",
+    });
+    options = [...options].reverse();
+    await panel.pick("Today");
+    expect(await panel.options("Model")).toEqual(["All models", ...[...labels].reverse()]);
+    expect(rowLabels()).toEqual([...labels].reverse());
+    expect(panel.container.textContent).not.toContain("opaque-");
+  } finally {
+    await panel.unmount();
+  }
+});
+
+it("keeps a known provider name when the recorded model is no longer listed", async () => {
+  const panel = await renderPanel([
+    { provider: "alpha", id: "current", label: "Current model", providerName: "Alpha AI" },
+  ]);
+  try {
+    breakdown.fetch.mockImplementation(async (input: Input) => ({
+      ...usageFor(input),
+      modelOptions: [{ provider: "alpha", model: "retired-opaque-id" }],
+      models: [{ provider: "alpha", model: "retired-opaque-id", ...point(1, 10, 0.001) }],
+    }));
+    await panel.pick("7 days");
+    expect(panel.container.querySelector("tbody tr td")?.textContent).toBe(
+      "Unlisted modelAlpha AI",
+    );
+    expect(panel.container.textContent).not.toContain("retired-opaque-id");
+    expect(await panel.options("Model")).toEqual(["All models", "Unlisted model"]);
+  } finally {
+    await panel.unmount();
+  }
+});
+
+it("keeps cached catalog names and unlisted labels after a failed refresh", async () => {
+  const panel = await renderPanel([
+    { provider: "p:1", id: "m1", label: "Known model", providerName: "Known provider" },
+  ]);
+  try {
+    breakdown.fetch.mockImplementation(async (input: Input) => ({
+      ...usageFor(input),
+      models: [
+        { provider: "p:1", model: "m1", ...point(1, 10, 0.001) },
+        { provider: "p", model: "m2", ...point(1, 10, 0.001) },
+      ],
+    }));
+    await panel.pick("7 days");
+    catalog.entries = new Error("catalog refresh failed");
+    await panel.refetchCatalog();
+    expect(
+      [...panel.container.querySelectorAll("tbody tr")].map(
+        (row) => row.querySelector("td")?.textContent,
+      ),
+    ).toEqual(["Known modelKnown provider", "Unlisted model"]);
+    expect(await panel.options("Model")).toEqual(["All models", "Known model", "Unlisted model"]);
+    expect(panel.container.textContent).not.toContain("Model name unavailable");
   } finally {
     await panel.unmount();
   }

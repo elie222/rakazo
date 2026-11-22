@@ -126,6 +126,13 @@ const heldRef: Record<
         select: { computerProviderCipher: true },
       })
     )?.computerProviderCipher,
+  deployment_model: async (prisma) =>
+    (
+      await prisma.deploymentSettings.findUnique({
+        where: { id: "default" },
+        select: { deploymentModelCredentialCipher: true },
+      })
+    )?.deploymentModelCredentialCipher,
   purchase_request: async (prisma, recordId) =>
     (
       await prisma.purchase.findUnique({

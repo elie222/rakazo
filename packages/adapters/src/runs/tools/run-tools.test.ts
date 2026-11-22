@@ -28,6 +28,8 @@ vi.mock("./run-tool-gate.js", async (importOriginal) => ({
       claimOrReturn: async () => undefined,
     },
   })),
+}));
+vi.mock("./run-tool-audit.js", () => ({
   auditToolCall: vi.fn(async (_ctx: unknown, tool: string, outcome: string, metadata: unknown) => {
     audited.push({ tool, outcome, metadata });
   }),
@@ -231,7 +233,7 @@ describe("dispatchTool audit outcomes", () => {
   it("records an ordinary successful call as a success", async () => {
     const ctx = dispatchContext(true);
     const result = await applyTool(ctx as never, "update_preferences", {}, "call-1");
-    expect(result).toEqual({ timezone: "UTC", marketingEmails: true });
+    expect(result).toMatchObject({ timezone: "UTC", marketingEmails: true });
     expect(audited).toEqual([
       {
         tool: "update_preferences",

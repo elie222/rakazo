@@ -19,13 +19,14 @@ import {
 
 describe("approval cases", () => {
   it("are a versioned, reviewed set with unique ids and both outcomes", () => {
-    expect(APPROVAL_FIXTURE_VERSION).toBe("approval-cases-v5");
+    expect(APPROVAL_FIXTURE_VERSION).toBe("approval-cases-v6");
     const ids = APPROVAL_CASES.map((c) => c.id);
     expect(new Set(ids).size).toBe(ids.length);
     expect(APPROVAL_CASES.length).toBeGreaterThanOrEqual(25);
     for (const expected of ["pass", "ask"] as const) {
       expect(APPROVAL_CASES.filter((c) => c.expected === expected).length).toBeGreaterThan(5);
       expect(APPROVAL_CASES.some((c) => c.newSite && c.expected === expected)).toBe(true);
+      expect(APPROVAL_CASES.some((c) => c.ownComputerAction && c.expected === expected)).toBe(true);
     }
     for (const c of APPROVAL_CASES) {
       expect(c.id).toMatch(/^[a-z0-9-]+$/);

@@ -237,6 +237,11 @@ export interface RunState {
   walletHosts: Set<string>;
   /** Where the page browser last said its page was, which picks a login's site to fill on. */
   pageUrl?: string;
+  /**
+   * A desktop action ran since the page browser last reported `pageUrl`, so the page may have
+   * changed: Auto Review treats what a page action types as going to a site the run was not given.
+   */
+  pageUrlUncertain?: boolean;
   vaultUses: Set<string>;
   handedOff: boolean;
   terminalCheckpointComplete: boolean;

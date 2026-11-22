@@ -131,6 +131,11 @@ export interface ComputerRef {
   started?: boolean;
   /** Size the provider confirmed for this running machine. */
   size?: ComputerSize;
+  /**
+   * Size to start the machine at when a call finds it stopped and wakes it. A running machine
+   * keeps the size it has, and without one a woken machine keeps it too.
+   */
+  startSize?: ComputerSize;
 }
 
 export type WorkspaceDirectoryRequest =
@@ -303,8 +308,12 @@ export interface SandboxKindCapabilities {
   storedHomeIsBackup: boolean;
   /** The provider can read the disk of a stopped sandbox without starting it. */
   readStoppedFiles?: boolean;
+  /** Largest file one transfer can carry, when the provider's transport is tighter than the server's limit. */
+  maxFileBytes?: number;
   /** The provider confirms machine size for size-based allowance accounting. */
   sizedUsage?: boolean;
+  /** On the desktop app's own server, the person may give bots the host machine instead. */
+  offersHostComputer?: boolean;
 }
 
 export interface SandboxCapabilities {
@@ -613,9 +622,18 @@ export interface AgentSteeringMessage {
 /** Adapter-supplied cache policy metadata; absent fields mean unknown. */
 export type CacheCapabilities = ConnectionCacheCapabilities;
 
+/** Who pays for a model call: the user's subscription or key, the deployment, or its credits. */
+export type ModelBilling =
+  | "subscription"
+  | "api_key"
+  | "custom_endpoint"
+  | "credits"
+  | "deployment";
+
 export interface AgentRunModel {
   /** Server-side spending authorization, carried with the resolved credential. */
   callObserver?: ModelCallObserver;
+  billing?: ModelBilling;
   cacheCapabilities?: CacheCapabilities;
   provider: string;
   id: string;
@@ -723,6 +741,8 @@ export interface AgentRunRequest {
   /** Server verified legacy attachment bytes remain available to file tools. */
   currentTurnImageFileFallback?: boolean;
   tools: ConnectorTool[];
+  /** Why each built-in tool this run was not offered is unavailable, keyed by tool name. */
+  unavailableToolReasons?: Readonly<Record<string, string>>;
   model: AgentRunModel;
   /** Optional explicitly authenticated vision target for same-run computer mode. */
   computerModel?: AgentRunModel;
@@ -751,7 +771,11 @@ export interface AgentRunRequest {
    */
   yieldSignal?: AbortSignal;
   /** Human answer or takeover outcome for the pending interaction. Never secret input. */
-  resumeToolResult?: { content: Array<{ type: "text"; text: string }> };
+  resumeToolResult?: {
+    content: Array<{ type: "text"; text: string }>;
+    /** History rows fully represented by the restored turn and its human answer. */
+    historyMessageIds?: string[];
+  };
   script?: ScriptedTurn[];
   /**
    * FYI bot-message wakes and scheduled routines may finish with no text.
@@ -888,6 +912,7 @@ export type AgentRuntimeEvent =
       callId?: string;
       operationKind?: UsageOperationKind;
       agentId?: string;
+      billing?: ModelBilling;
     } & AgentUsage)
   | { type: "checkpoint"; blob: string }
   /**
@@ -989,6 +1014,7 @@ export interface VoiceTranscribeRequest {
 
 export interface BackgroundJobPayloads {
   "run.continue": { runId: string };
+  "page.revise": { requestId: string };
   "routine.wakeup": { routineId: string; scheduledFor: string };
   /** Run a failed routine run once more; the payload names the failed run. */
   "routine.retry": { runId: string };
@@ -1141,6 +1167,7 @@ export type SecretCleanupKind =
   | "secret_tables"
   | "messaging_installation"
   | "deployment_computer_provider"
+  | "deployment_model"
   | "purchase_request"
   | "purchase_card"
   | "purchase_token"
@@ -1753,6 +1780,13 @@ export interface AutoReviewRequest {
    */
   savedContextWrite?: boolean;
   /**
+   * A command, page action or desktop input on the bot's own computer after the run took in
+   * outside content. `userTask` is then only the owner's own words; `args` is bounded by the
+   * caller, a browser action names the page it acts on, and a long command keeps every address
+   * it names.
+   */
+  ownComputerAction?: boolean;
+  /**
    * The owner's own earlier messages in this chat, oldest first, before `userTask`: never a tool
    * result or anyone else's message. Redacted and capped by the caller.
    */
@@ -1810,6 +1844,14 @@ export interface BillingPlanPayment {
   createdAt: Date;
   /** Every payment on it refunded in full, or lost to a dispute. */
   reversed: boolean;
+}
+
+export interface BillingInvoiceRefund {
+  invoiceId: string;
+  amountMinor: number;
+  currency: string;
+  state: "refundable" | "pending" | "succeeded";
+  refundId?: string;
 }
 
 export interface BillingCreditCheckoutRequest {
