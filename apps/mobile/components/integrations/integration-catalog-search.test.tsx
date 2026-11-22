@@ -1,5 +1,8 @@
 // @vitest-environment jsdom
-import { CATALOG_SEARCH_QUERY_MAX_LENGTH } from "@rakazo/contracts";
+import {
+  CATALOG_SEARCH_QUERY_MAX_LENGTH,
+  CATALOG_SEARCH_QUERY_MIN_LENGTH,
+} from "@rakazo/contracts";
 import { deferred, flush } from "@rakazo/core/test-async";
 import type { ReactNode } from "react";
 import { act, createElement } from "react";
@@ -115,7 +118,7 @@ afterEach(() => {
   container.remove();
 });
 
-it.each([1, CATALOG_SEARCH_QUERY_MAX_LENGTH + 1])(
+it.each([CATALOG_SEARCH_QUERY_MIN_LENGTH - 1, CATALOG_SEARCH_QUERY_MAX_LENGTH + 1])(
   "keeps the local empty state without offering public search for %i characters",
   async (length) => {
     state.rpc.mockResolvedValue(catalogResult);
@@ -127,7 +130,7 @@ it.each([1, CATALOG_SEARCH_QUERY_MAX_LENGTH + 1])(
   },
 );
 
-it.each([2, CATALOG_SEARCH_QUERY_MAX_LENGTH])(
+it.each([CATALOG_SEARCH_QUERY_MIN_LENGTH, CATALOG_SEARCH_QUERY_MAX_LENGTH])(
   "searches the public catalog for a trimmed query of %i characters",
   async (length) => {
     const query = "x".repeat(length);

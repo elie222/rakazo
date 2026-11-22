@@ -1,6 +1,9 @@
 import { ph } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
-import { CATALOG_SEARCH_QUERY_MAX_LENGTH } from "@rakazo/contracts";
+import {
+  CATALOG_SEARCH_QUERY_MAX_LENGTH,
+  CATALOG_SEARCH_QUERY_MIN_LENGTH,
+} from "@rakazo/contracts";
 import type { SignInMcpServer } from "@rakazo/core";
 import { signInMcpServers } from "@rakazo/core";
 import { useQuery } from "@tanstack/react-query";
@@ -33,7 +36,9 @@ export function IntegrationCatalogSearch({
   const { t } = useLingui();
   const styles = useThemedStyles(createIntegrationsStyles);
   const trimmed = query.trim();
-  const canSearch = trimmed.length >= 2 && trimmed.length <= CATALOG_SEARCH_QUERY_MAX_LENGTH;
+  const canSearch =
+    trimmed.length >= CATALOG_SEARCH_QUERY_MIN_LENGTH &&
+    trimmed.length <= CATALOG_SEARCH_QUERY_MAX_LENGTH;
   const [asked, setAsked] = useState<string | null>(null);
   const searching = canSearch && asked === trimmed;
   const search = useQuery(
