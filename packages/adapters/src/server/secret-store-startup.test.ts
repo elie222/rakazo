@@ -1,7 +1,7 @@
-import { InMemoryRealtimeFanout } from "@rakazo/adapters";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { infisicalFake } from "../../../packages/adapters/src/secrets/secret-store-fake.js";
-import { createWorkerSecretStore } from "./secret-store.js";
+import { InMemoryRealtimeFanout } from "../notifications/realtime.js";
+import { infisicalFake } from "../secrets/secret-store-fake.js";
+import { startSecretStore } from "./server-foundation.js";
 
 afterEach(() => vi.unstubAllGlobals());
 const context = {
@@ -11,13 +11,14 @@ const context = {
   spaceId: "test",
   signal: new AbortController().signal,
 };
-describe("worker secret storage startup", () => {
+describe("server secret storage startup", () => {
   it("starts degraded without blocking encrypted credentials and retries the configured remote later", async () => {
     const fake = infisicalFake();
     fake.offline = true;
     vi.stubGlobal("fetch", fake.fetcher);
     const realtime = new InMemoryRealtimeFanout();
-    const store = await createWorkerSecretStore(
+    const store = await startSecretStore(
+      "fake-encryption-key-at-least-thirty-two-characters",
       {
         NODE_ENV: "test",
         ENCRYPTION_KEY: "fake-encryption-key-at-least-thirty-two-characters",
