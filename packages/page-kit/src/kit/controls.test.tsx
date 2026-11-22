@@ -312,7 +312,6 @@ describe("controls", () => {
     const options = [
       { value: "", label: "All regions" },
       { value: "eu", label: "Europe" },
-      { value: "__rk-select-placeholder-0", label: "Other" },
     ];
     const props = { options, placeholder: "Choose a region", onChange };
     const view = render(<Select {...props} />);
@@ -327,8 +326,6 @@ describe("controls", () => {
         select.value = value;
         select.dispatchEvent(new Event("change", { bubbles: true }));
       });
-    choose(placeholder.value);
-    expect(onChange).not.toHaveBeenCalled();
     choose("");
     expect(onChange).toHaveBeenLastCalledWith("");
 

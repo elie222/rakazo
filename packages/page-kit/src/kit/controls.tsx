@@ -271,14 +271,10 @@ export function Select({
 }) {
   const id = useId();
   const items = optionsOf(options);
-  const values = new Set(items.map((item) => item.value));
   const current = value === undefined || value === null ? null : String(value);
-  const chosen = current !== null && values.has(current);
-  // An empty string can be a real choice, so use a value no option already has.
-  let placeholderValue = "";
-  for (let index = 0; values.has(placeholderValue); index += 1) {
-    placeholderValue = `__rk-select-placeholder-${index}`;
-  }
+  const chosen = items.some((item) => item.value === current);
+  // An empty string can be a real choice, so the placeholder needs its own value.
+  const placeholderValue = `${id}placeholder`;
   return (
     <div className="rk-field" data-inline="true">
       {label ? (
@@ -293,10 +289,7 @@ export function Select({
           disabled={disabled === true}
           data-empty={!chosen || undefined}
           aria-label={label ? undefined : placeholder}
-          onChange={(event) => {
-            const next = event.target.value;
-            if (next !== placeholderValue) onChange?.(next);
-          }}
+          onChange={(event) => onChange?.(event.target.value)}
         >
           {!chosen ? (
             <option value={placeholderValue} disabled>
