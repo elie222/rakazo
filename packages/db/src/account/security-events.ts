@@ -110,7 +110,11 @@ export async function recordSecurityEvent(input: SecurityEventInput): Promise<vo
                 target: { type: "user", id: userId },
               }
             : {
-                actor: { type: "user", id: userId },
+                // The operator acted from the server on the account's behalf, not the account.
+                actor:
+                  by === "operator"
+                    ? { type: "system", label: "operator" }
+                    : { type: "user", id: userId },
                 target: typeof kind === "string" ? { type: kind } : undefined,
               }),
           spaceId: event.spaceId,
