@@ -54,7 +54,6 @@ describePostgres("pausing a routine whose runs keep failing (PostgreSQL)", () =>
     });
     const deps = {
       prisma: system,
-      jobs: { cancel: vi.fn(async () => undefined) },
       events: { notify: vi.fn(async () => undefined), publishSpaceChange: vi.fn() },
     };
     let at = Date.now() - 60 * 60_000;
@@ -102,7 +101,7 @@ describePostgres("pausing a routine whose runs keep failing (PostgreSQL)", () =>
 
     await fail();
     expect(await read()).toEqual({ active: false, nextRunAt: null });
-    expect(deps.jobs.cancel).toHaveBeenCalledTimes(1);
+    expect(deps.events.publishSpaceChange).toHaveBeenCalledTimes(1);
     expect(await pauseMessages()).toBe(1);
 
     await fail();

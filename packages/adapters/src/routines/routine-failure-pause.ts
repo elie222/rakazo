@@ -1,5 +1,3 @@
-import type { JobPublisher } from "@rakazo/adapter-kit";
-import { routineJobKey } from "@rakazo/adapter-kit";
 import { isServerRunError, normalizeRunError } from "@rakazo/core";
 import type { Prisma, PrismaClient, ThreadEvents } from "@rakazo/db";
 import { bestEffort } from "@rakazo/logging";
@@ -15,7 +13,6 @@ export const ROUTINE_FAILURE_PAUSE_AFTER = 5;
 
 type RoutineFailurePauseDeps = {
   prisma: PrismaClient;
-  jobs: Pick<JobPublisher, "cancel">;
   events: Pick<ThreadEvents, "notify" | "publishSpaceChange">;
 };
 
@@ -86,7 +83,6 @@ export async function pauseRoutineAfterRepeatedFailures(
     }),
   );
   if (!paused) return;
-  await bestEffort("routine failure pause wakeup", deps.jobs.cancel(routineJobKey(run.routineId)));
   await bestEffort(
     "routine failure pause change",
     deps.events.publishSpaceChange?.(run.spaceId, "routines"),
