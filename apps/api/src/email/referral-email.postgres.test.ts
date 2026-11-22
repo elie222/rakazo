@@ -2,7 +2,7 @@ import type { TransactionalEmailProvider } from "@rakazo/adapter-kit";
 import { writeEmailCopyDir } from "@rakazo/auth/test-email-copy";
 import type { PrismaClient } from "@rakazo/db";
 import { asSystem, createDb } from "@rakazo/db";
-import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { sendReferralEmails } from "./referral-email.js";
 
 const dbTests =
@@ -19,11 +19,15 @@ dbTests("day-one email eligibility and durable claims", () => {
   const onError = vi.fn();
   let reconcile: () => Promise<void>;
 
+  const copyDir = writeEmailCopyDir({ referral: true });
+  beforeEach(() => {
+    vi.stubEnv("EMAIL_COPY_DIR", copyDir);
+    vi.spyOn(Date, "now").mockReturnValue(now);
+  });
+
   beforeAll(async () => {
     db = createDb(process.env.DATABASE_URL!);
     prisma = asSystem(db.prisma);
-    vi.stubEnv("EMAIL_COPY_DIR", writeEmailCopyDir({ referral: true }));
-    vi.spyOn(Date, "now").mockReturnValue(now);
     reconcile = sendReferralEmails({
       prisma,
       email: { send } as unknown as TransactionalEmailProvider,

@@ -27,7 +27,6 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
-      server: ${{ steps.areas.outputs.server }}
       native: ${{ steps.areas.outputs.native }}
       compose: ${{ steps.areas.outputs.compose }}
       web: ${{ steps.areas.outputs.web }}
@@ -199,6 +198,7 @@ jobs:
               packages/chat-ui \
               packages/contracts \
               packages/core \
+              packages/i18n \
               packages/logging \
               packages/ui-tokens
           )

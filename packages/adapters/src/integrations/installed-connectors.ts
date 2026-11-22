@@ -7,9 +7,8 @@ import type {
   ConnectorTool,
   SecretStore,
 } from "@rakazo/adapter-kit";
-import type { McpSourcePreset } from "@rakazo/contracts";
 import { ConnectionSetupError } from "@rakazo/contracts";
-import { cancelResponseBody } from "@rakazo/core";
+import { cancelResponseBody, MCP_SOURCE_PRESETS } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import { availableInSpace, itemSecretIn } from "@rakazo/db";
 import { parse as parseYaml } from "yaml";
@@ -74,12 +73,6 @@ const McpAuthSchema = z
     name: HeaderName.optional(),
   })
   .default({ type: "none" });
-
-/** MCP services offered as one-step sources. A preset with a URL always connects there. */
-export const MCP_SOURCE_PRESETS: McpSourcePreset[] = [
-  // A self-hosted Executor serves the same endpoint at its own origin, so the URL stays editable.
-  { id: "executor", name: "Executor", defaultUrl: "https://mcp.executor.sh/mcp", signIn: true },
-];
 
 /** Applies a preset named in an MCP install: its fixed URL and bearer auth, so clients send
  * only the id. A sign-in preset is saved as an MCP server instead; older clients that still

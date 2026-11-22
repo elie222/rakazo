@@ -91,11 +91,8 @@ export function filterConnectionCatalogItems(
 ): ConnectionCatalogItem[] {
   const needle = query.trim().toLowerCase();
   if (!needle) {
-    return catalog.filter(
-      (item) =>
-        matchFeaturedConnectorId(item.slug) === null &&
-        matchFeaturedConnectorId(item.name) === null,
-    );
+    const featuredItems = new Set(buildFeaturedConnectorTiles(catalog).map(({ item }) => item));
+    return catalog.filter((item) => !featuredItems.has(item));
   }
   return catalog.filter(
     (item) =>

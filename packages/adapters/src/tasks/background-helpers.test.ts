@@ -312,7 +312,9 @@ describe("starting a background helper", () => {
         modelProvider: "not-a-provider",
         modelId: "nope",
       }),
-    ).resolves.toEqual({ error: 'No model matches "nope".' });
+    ).resolves.toEqual({
+      error: 'No model matches "nope". The user can connect a model provider in Settings.',
+    });
     expect(h.prisma.$transaction).not.toHaveBeenCalled();
     expect(h.createRun).not.toHaveBeenCalled();
     expect(h.enqueue).not.toHaveBeenCalled();

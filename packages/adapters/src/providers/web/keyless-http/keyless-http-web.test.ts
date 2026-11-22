@@ -1,7 +1,9 @@
-import type { AdapterContext } from "@rakazo/adapter-kit";
+import type { AdapterContext, AgentToolExecutionResult } from "@rakazo/adapter-kit";
 import { expectLinearTime } from "@rakazo/contracts/test-timing";
 import { deferred } from "@rakazo/core/test-async";
+import sharp from "sharp";
 import { describe, expect, it } from "vitest";
+import { IMAGE_MODEL_CANNOT_SEE } from "../../../media/tool-result-image.prompt.js";
 import {
   clampMaxChars,
   clampMaxResults,
@@ -236,6 +238,7 @@ describe("keyless HTTP web provider", () => {
         offset,
       });
       if ("error" in result) throw new Error(result.error);
+      if ("kind" in result) throw new Error("expected page text");
       expect(result.text).not.toMatch(/[\uD800-\uDFFF]/u);
       if (!result.truncated) {
         combined += result.text;
@@ -350,6 +353,76 @@ describe("keyless HTTP web provider", () => {
       return `<div class="result"><a class="result__a" href="https://example.test/${i}">T${i}</a><div class="result__snippet">S${i}</div></div>`;
     }).join("");
     expect(parseDuckDuckGoResults(html, 3)).toHaveLength(3);
+  });
+});
+
+describe("keyless HTTP image fetch", () => {
+  const png = () =>
+    sharp({ create: { width: 30, height: 20, channels: 3, background: "#204080" } })
+      .png()
+      .toBuffer();
+  const serving = (body: Uint8Array, contentType: string, maxBufferBytes?: number) =>
+    new KeylessHttpWebProvider({
+      fetch: async () =>
+        new Response(new Uint8Array(body), { headers: { "content-type": contentType } }),
+      resolveHostname: publicResolver,
+      ...(maxBufferBytes ? { maxBufferBytes } : {}),
+    });
+
+  it.each(["image/png", "application/octet-stream"])(
+    "hands a picture served as %s to a vision model as image input",
+    async (contentType) => {
+      const result = (await webFetchFromTool(
+        serving(await png(), contentType),
+        ctx,
+        { url: "https://example.test/chart" },
+        true,
+      )) as AgentToolExecutionResult;
+      expect(result.kind).toBe("agent_tool_result");
+      expect(result.details).toEqual({
+        url: "https://example.test/chart",
+        mimeType: "image/png",
+        width: 30,
+        height: 20,
+      });
+      expect(result.content[1]).toMatchObject({ type: "image", mimeType: "image/png" });
+    },
+  );
+
+  it("tells a text-only model the URL is an image without sending it", async () => {
+    await expect(
+      webFetchFromTool(serving(await png(), "image/png"), ctx, {
+        url: "https://example.test/chart",
+      }),
+    ).resolves.toEqual({
+      url: "https://example.test/chart",
+      mimeType: "image/png",
+      error: IMAGE_MODEL_CANNOT_SEE,
+    });
+  });
+
+  it("refuses an image over the download limit", async () => {
+    const big = await png();
+    const result = await webFetchFromTool(
+      serving(big, "image/png", big.byteLength - 1),
+      ctx,
+      { url: "https://example.test/chart" },
+      true,
+    );
+    expect(result).toEqual({ error: "Response is too large" });
+  });
+
+  it("names an image format it cannot read instead of returning its bytes as text", async () => {
+    const result = await webFetchFromTool(
+      serving(new Uint8Array([0, 0, 0, 28, 102, 116, 121, 112]), "image/avif"),
+      ctx,
+      { url: "https://example.test/photo.avif" },
+      true,
+    );
+    expect(result).toEqual({
+      error:
+        "https://example.test/photo.avif is an image in a format that cannot be read (image/avif).",
+    });
   });
 });
 

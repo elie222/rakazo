@@ -104,4 +104,16 @@ describe("featured connectors", () => {
       "Notion",
     ]);
   });
+
+  it("keeps another provider for the same featured app in browse", () => {
+    const first = item("gmail", "Gmail");
+    const second = { ...item("gmail", "Gmail"), connectorId: "pipedream" };
+    const other = item("linear", "Linear");
+    const catalog = [first, second, other];
+
+    expect(resolveFeaturedCatalogItem("gmail", catalog)).toBe(first);
+    expect(filterConnectionCatalogItems(catalog, "")).toEqual([second, other]);
+    expect(filterConnectionCatalogItems(catalog, "gmail")).toEqual([first, second]);
+    expect(filterConnectionCatalogItems([second, first, other], " ")).toEqual([first, other]);
+  });
 });

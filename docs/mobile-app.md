@@ -72,5 +72,5 @@ On iPhone, Rakazo adds actions to Shortcuts, Siri and the Action button:
 On iOS, open another app's share sheet and choose **Rakazo** to share text, a link, images or files.
 Pick a bot to open the chat with the shared content in the draft, then review it before sending.
 
-On Android, share text, images, audio, video, PDFs or files from another app to Rakazo and pick the
-bot to send them to.
+On Android, share text, images, audio, video, PDFs or files from another app to Rakazo.
+Pick a bot to open the chat with the shared content in the draft, then review it before sending.

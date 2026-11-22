@@ -45,6 +45,14 @@ describe("selectableTextFromMarkdown", () => {
     expect(selectableTextFromMarkdown("| a | b |\n| --- | --- |\n| - | - |")).toBe("a | b\n- | -");
   });
 
+  it("treats CR, CRLF and LF alike as line breaks", () => {
+    const source =
+      "Intro\r\r\n- first\n- second\r\n\r~~~\n  *literal*\r\n  *second*\r~~~\r\n\rEnd.";
+    expect(selectableTextFromMarkdown(source)).toBe(
+      "Intro\n\n• first\n• second\n\n  *literal*\n  *second*\n\nEnd.",
+    );
+  });
+
   it("keeps dash-only data rows with optional edge pipes", () => {
     const source =
       "Name | Value\n:--- | ---:\n--- | ---\n| --- | --- |\n| -- | :---\n--- | -- |\n**Ready** | Yes";

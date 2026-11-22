@@ -2,7 +2,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { INVITED_TRIAL_WEEKS } from "@rakazo/contracts";
-import { beforeAll, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { agentImportEmail } from "./agent-import-email.js";
 import {
   accountDeletionEmail,
@@ -29,16 +29,14 @@ import {
 import { referralEmail } from "./referral-email.js";
 import { welcomeEmail } from "./welcome-email.js";
 
-beforeAll(() => {
-  vi.stubEnv(
-    "EMAIL_COPY_DIR",
-    writeEmailCopyDir({
-      welcome: true,
-      referral: true,
-      "model-connection": true,
-      "agent-import": true,
-    }),
-  );
+const copyDir = writeEmailCopyDir({
+  welcome: true,
+  referral: true,
+  "model-connection": true,
+  "agent-import": true,
+});
+beforeEach(() => {
+  vi.stubEnv("EMAIL_COPY_DIR", copyDir);
 });
 
 describe("account email templates", () => {

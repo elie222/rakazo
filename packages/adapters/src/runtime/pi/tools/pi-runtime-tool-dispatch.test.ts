@@ -15,6 +15,7 @@ const fakeAgentState = vi.hoisted(() => ({
     | "background-subagent"
     | "parent-limit"
     | "parent-parallel"
+    | "parallel-steps"
     | "ask-pause"
     | "nested-ask-pause"
     | "tools-then-empty-failure"
@@ -148,7 +149,12 @@ vi.mock("@earendil-works/pi-agent-core", () => ({
             content: [{ type: "toolCall", id: "call-1", name: target.name, arguments: args }],
           },
         });
-        this.emit({ type: "tool_execution_start", toolName: target.name, args });
+        this.emit({
+          type: "tool_execution_start",
+          toolCallId: "call-1",
+          toolName: target.name,
+          args,
+        });
         const result = await target.execute("call-1", args);
         fakeAgentState.toolResult = result;
         this.emit({
@@ -319,6 +325,30 @@ vi.mock("@earendil-works/pi-agent-core", () => ({
           if (this.aborted) break;
           await shell.execute(`shell-${index}`, args);
         }
+        return;
+      }
+
+      if (fakeAgentState.mode === "parallel-steps") {
+        const result = { content: [] };
+        const start = (toolCallId: string, command: string) =>
+          this.emit({
+            type: "tool_execution_start",
+            toolCallId,
+            toolName: "shell",
+            args: { command },
+          });
+        const end = (toolCallId: string) =>
+          this.emit({
+            type: "tool_execution_end",
+            toolCallId,
+            toolName: "shell",
+            result,
+            isError: false,
+          });
+        start("call-a", "echo a");
+        start("call-b", "echo b");
+        end("call-b");
+        end("call-a");
         return;
       }
 
@@ -2145,6 +2175,68 @@ describe("Pi connector tool dispatch", () => {
       type: "done",
       text: "I stopped after reaching the limit of 80 tool calls in this turn. Send another message to continue.",
     });
+  });
+
+  it("clears the step it showed once the tool ends", async () => {
+    fakeAgentState.mode = "terminating-tool";
+    const runtime = new PiAgentRuntime();
+    const events: Array<{ type: string; text?: string; activity?: boolean }> = [];
+
+    for await (const event of runtime.run(
+      {
+        botId: "b",
+        threadId: "t",
+        runId: "cleared-step",
+        prompt: "change your model",
+        instructions: "Use shell.",
+        history: [],
+        tools: [shellTool],
+        model: { provider: "test", id: "dispatch-test-model" },
+        executeTool: vi.fn(async () => terminatingToolResult(TERMINATING_REPLY, {})),
+      },
+      {
+        operationId: "cleared-step",
+        traceId: "cleared-step",
+        spaceId: "w",
+        userId: "u",
+        signal: new AbortController().signal,
+      },
+    )) {
+      events.push(event as (typeof events)[number]);
+    }
+
+    const steps = events.filter((event) => event.type === "progress" && event.activity);
+    expect(steps.map((event) => Boolean(event.text))).toEqual([true, false]);
+  });
+
+  it("shows a still-running parallel call's step when the shown one ends first", async () => {
+    fakeAgentState.mode = "parallel-steps";
+    const runtime = new PiAgentRuntime();
+    const steps: string[] = [];
+
+    for await (const event of runtime.run(
+      {
+        botId: "b",
+        threadId: "t",
+        runId: "parallel-steps",
+        prompt: "run both",
+        instructions: "Use shell.",
+        history: [],
+        tools: [shellTool],
+        model: { provider: "test", id: "dispatch-test-model" },
+      },
+      {
+        operationId: "parallel-steps",
+        traceId: "parallel-steps",
+        spaceId: "w",
+        userId: "u",
+        signal: new AbortController().signal,
+      },
+    )) {
+      if (event.type === "progress" && event.activity) steps.push(event.text);
+    }
+
+    expect(steps).toEqual(["Running: echo a", "Running: echo b", "Running: echo a", ""]);
   });
 
   it("ends the run with the reply a terminating tool result carries", async () => {

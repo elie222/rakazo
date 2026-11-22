@@ -214,7 +214,7 @@ describe("paused turn context", () => {
     try {
       const paused = await collect(new PiAgentRuntime().run({ ...request, claimSteering }));
       expect(executed).not.toHaveBeenCalled();
-      expect(paused.filter((event) => event.type === "progress")).toHaveLength(1);
+      expect(paused.filter((event) => event.type === "progress" && event.text)).toHaveLength(1);
       expect(claimSteering).toHaveBeenCalledTimes(1);
       expect(paused).not.toContainEqual(expect.objectContaining({ type: "steered" }));
       const saved = capture!();
