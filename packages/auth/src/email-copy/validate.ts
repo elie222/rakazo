@@ -1,4 +1,3 @@
-import { isRecord } from "@rakazo/core";
 // No runtime imports: scripts/check-email-copy.ts runs this file under plain Node.
 import type { EmailCopyId } from "./defaults.js";
 
@@ -56,4 +55,8 @@ export function readCopyFile(
     copy[locale] = kept;
   }
   return { copy, problems, unused };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
