@@ -55,6 +55,15 @@ vi.mock("@rakazo/ui-web", () => {
     InputGroupInput: (props: ComponentProps<"input">) => <input {...props} />,
     Input: (props: ComponentProps<"input">) => <input {...props} />,
     toast,
+    // The real one also tries the desktop bridge and a selection; here only the browser's copy.
+    writeClipboard: async (text: string) => {
+      try {
+        await navigator.clipboard.writeText(text);
+        return true;
+      } catch {
+        return false;
+      }
+    },
   };
 });
 vi.mock("../../lib/query/space-rpc", () => ({
@@ -116,18 +125,21 @@ async function renderWith(members: SpaceMembers, onLeft = vi.fn()) {
   rpc.spaces.members.list.mockResolvedValue(members);
   await act(async () =>
     root.render(
-      <QueryClientProvider client={new QueryClient()}>
+      <QueryClientProvider
+        client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
+      >
         <SpaceMembersSettings space={space} onLeft={onLeft} />
       </QueryClientProvider>,
     ),
   );
+  await vi.waitFor(() => expect(host.querySelector('ul[aria-label="Members"]')).not.toBeNull());
   return onLeft;
 }
 
 it("lets the owner invite and remove members but not leave", async () => {
   await renderWith({ spaceName: "Home", members: [owner, member], canManage: true });
   expect(buttonNamed("Cancel open invites")).toBeUndefined();
-  expect(rpc.spaces.members.list).toHaveBeenCalledWith({ spaceId: space.id });
+  expect(rpc.spaces.members.list).toHaveBeenCalledWith({ spaceId: space.id }, expect.anything());
   const rows = [...host.querySelectorAll('ul[aria-label="Members"] > li')];
   expect(rows.map((row) => row.textContent)).toEqual([
     "AAda LovelaceOwnerada@example.test",
@@ -153,7 +165,7 @@ it("a member cannot invite or remove, and leaves after confirming", async () => 
   expect(rpc.spaces.members.leave).not.toHaveBeenCalled();
   await act(async () => buttonNamed("Leave")?.click());
   expect(rpc.spaces.members.leave).toHaveBeenCalledWith({ spaceId: space.id });
-  expect(onLeft).toHaveBeenCalledWith("space-own");
+  await vi.waitFor(() => expect(onLeft).toHaveBeenCalledWith("space-own"));
 });
 
 it("copies a new invite link, and shows it only when copying fails", async () => {
@@ -168,22 +180,28 @@ it("copies a new invite link, and shows it only when copying fails", async () =>
 
   await act(async () => buttonNamed("Copy invite link")?.click());
   expect(rpc.spaces.invites.create).toHaveBeenCalledWith({ spaceId: space.id });
+  await vi.waitFor(() => expect(toast).toHaveBeenCalledWith("Invite link copied"));
   expect(writeText).toHaveBeenCalledWith("https://rakazo.example/invite/token-1");
-  expect(toast).toHaveBeenCalledWith("Invite link copied");
   expect(linkField()).toBeNull();
 
   writeText.mockRejectedValueOnce(new Error("denied"));
   await act(async () => buttonNamed("Copy invite link")?.click());
-  expect(linkField()?.value).toBe("https://rakazo.example/invite/token-1");
+  await vi.waitFor(() => expect(linkField()?.value).toBe("https://rakazo.example/invite/token-1"));
   expect(linkField()?.readOnly).toBe(true);
 });
 
 it("cancels open invite links only when there are some", async () => {
   await renderWith({ spaceName: "Home", members: [owner], canManage: true, openInvites: 2 });
   rpc.spaces.invites.cancel.mockResolvedValue({ ok: true });
+  rpc.spaces.members.list.mockResolvedValue({
+    spaceName: "Home",
+    members: [owner],
+    canManage: true,
+    openInvites: 0,
+  });
   await act(async () => buttonNamed("Cancel open invites")?.click());
   expect(rpc.spaces.invites.cancel).toHaveBeenCalledWith({ spaceId: space.id });
-  expect(buttonNamed("Cancel open invites")).toBeUndefined();
+  await vi.waitFor(() => expect(buttonNamed("Cancel open invites")).toBeUndefined());
 });
 
 it("removes a member only after confirming", async () => {
@@ -207,8 +225,10 @@ it("removes a member only after confirming", async () => {
     spaceId: space.id,
     userId: member.userId,
   });
-  expect(host.querySelectorAll('ul[aria-label="Members"] > li')).toHaveLength(1);
-  expect(host.querySelector("h2")).toBeNull();
+  await vi.waitFor(() =>
+    expect(host.querySelectorAll('ul[aria-label="Members"] > li')).toHaveLength(1),
+  );
+  await vi.waitFor(() => expect(host.querySelector("h2")).toBeNull());
 });
 
 it("re-reads the people who can be added after removing a member", async () => {
@@ -295,9 +315,11 @@ it("never shows a Space's people once another Space is open, even after an add",
   await act(async () =>
     loading.resolve({ spaceName: "Work", members: [owner, member], canManage: true }),
   );
-  expect(
-    [...host.querySelectorAll('ul[aria-label="Members"] > li')].map((row) => row.textContent),
-  ).toEqual(["AAda LovelaceOwnerada@example.test", "BBob Stonebob@example.testRemove"]);
+  await vi.waitFor(() =>
+    expect(
+      [...host.querySelectorAll('ul[aria-label="Members"] > li')].map((row) => row.textContent),
+    ).toEqual(["AAda LovelaceOwnerada@example.test", "BBob Stonebob@example.testRemove"]),
+  );
 });
 
 it("tags guests, and says before inviting someone by email that they are outside the organization", async () => {
@@ -352,4 +374,70 @@ it("tags guests, and says before inviting someone by email that they are outside
     userId: "user-colleague",
   });
   expect(rpc.spaces.invites.create).toHaveBeenCalledTimes(1);
+});
+
+it("drops a confirmation asked in one Space once another Space is open", async () => {
+  await renderWith({ spaceName: "Home", members: [owner, member], canManage: true });
+  await act(async () => buttonNamed("Remove")?.click());
+  expect(host.querySelector("h2")?.textContent).toBe("Remove Bob Stone?");
+
+  await act(async () =>
+    root.render(
+      <QueryClientProvider client={new QueryClient()}>
+        <SpaceMembersSettings space={{ id: "space-other", name: "Work" }} onLeft={vi.fn()} />
+      </QueryClientProvider>,
+    ),
+  );
+  expect(host.querySelector("h2")).toBeNull();
+  expect(rpc.spaces.members.remove).not.toHaveBeenCalled();
+});
+
+it("never brings back a link whose copy finishes after the invites were cancelled", async () => {
+  const copying = deferred<undefined>();
+  const writeText = vi.fn(() => copying.promise);
+  Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true });
+  await renderWith({ spaceName: "Home", members: [owner], canManage: true, openInvites: 1 });
+  rpc.spaces.invites.create.mockResolvedValue({
+    url: "https://rakazo.example/invite/token-4",
+    expiresAt: new Date().toISOString(),
+  });
+  rpc.spaces.invites.cancel.mockResolvedValue({ ok: true });
+
+  await act(async () => buttonNamed("Copy invite link")?.click());
+  await vi.waitFor(() => expect(writeText).toHaveBeenCalled());
+  await act(async () => buttonNamed("Cancel open invites")?.click());
+  await vi.waitFor(() => expect(rpc.spaces.invites.cancel).toHaveBeenCalled());
+  await act(async () => copying.reject(new Error("denied")));
+
+  expect(host.querySelector('input[aria-label="Invite link"]')).toBeNull();
+});
+
+it("shows the latest failure, not an older one", async () => {
+  await renderWith({ spaceName: "Home", members: [owner], canManage: true, openInvites: 1 });
+  rpc.spaces.invites.create.mockRejectedValueOnce(new Error("link failed"));
+  await act(async () => buttonNamed("Copy invite link")?.click());
+  await vi.waitFor(() => expect(host.textContent).toContain("link failed"));
+
+  rpc.spaces.invites.cancel.mockRejectedValueOnce(new Error("cancel failed"));
+  await act(async () => buttonNamed("Cancel open invites")?.click());
+  await vi.waitFor(() => expect(host.textContent).toContain("cancel failed"));
+  expect(host.textContent).not.toContain("link failed");
+});
+
+it("shows an action's failure over a failed re-read of the list", async () => {
+  const colleague = {
+    userId: "user-colleague",
+    name: "Cy Ray",
+    email: "cy@example.test",
+    image: null,
+  };
+  await renderWith({ spaceName: "Home", members: [owner], canManage: true, addable: [colleague] });
+  rpc.spaces.members.add.mockResolvedValue({ ok: true });
+  rpc.spaces.members.list.mockRejectedValue(new Error("list failed"));
+  await act(async () => buttonNamed("Cy Ray")?.click());
+  await vi.waitFor(() => expect(host.textContent).toContain("list failed"));
+
+  rpc.spaces.invites.create.mockRejectedValueOnce(new Error("link failed"));
+  await act(async () => buttonNamed("Copy invite link")?.click());
+  await vi.waitFor(() => expect(host.textContent).toContain("link failed"));
 });

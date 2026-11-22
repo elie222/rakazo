@@ -70,6 +70,7 @@ import { builtinOffered } from "../assembly/run-instructions.prompt.js";
 import { computerScreenToolResult } from "../lifecycle/run-lifecycle.js";
 import { awaitScreenTurn } from "../turn/screen-turn.js";
 import { DESKTOP_HELD_FOR_TAKEOVER_MESSAGE } from "../turn/takeover-resume.prompt.js";
+import { settleMsArg } from "../turn/tool-text.js";
 import { auditToolCall } from "./run-tool-audit.js";
 import type { ToolCall, ToolHandlers } from "./run-tool-gate.js";
 
@@ -515,7 +516,7 @@ export const computerTools: ToolHandlers = {
         {
           actions,
           observe: args.observe !== false,
-          settleMs: Number(args.settle_ms ?? 350),
+          settleMs: settleMsArg(args.settle_ms),
         },
         context,
       );

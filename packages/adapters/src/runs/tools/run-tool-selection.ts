@@ -233,6 +233,8 @@ export function selectBuiltinToolsForRun(options: {
           ![
             "remember",
             "save_shared_memory",
+            "delete_shared_memory",
+            "remove_mcp_server",
             "save_memory",
             "recall_memory",
             "forget_memory",

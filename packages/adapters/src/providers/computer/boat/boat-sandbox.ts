@@ -14,12 +14,8 @@ import type {
 import type {
   AdapterContext,
   CommandRequest,
-  ComputerActionRequest,
   ComputerFileEntry,
-  ComputerInput,
-  ComputerObservation,
   ComputerRef,
-  ControlLeaseRef,
   PageBrowserCommand,
   PageBrowserResult,
   PortableFile,
@@ -56,7 +52,7 @@ import {
   BaseSnapshotCache,
   computerSnapshotName,
 } from "../../../computers/computer-base-snapshot.js";
-import { PortableFileBatcher } from "../../../computers/computer-workspace.js";
+import { writePortableFilesInBatches } from "../../../computers/computer-workspace.js";
 import {
   deleteUnreferencedMachine,
   recordUnreferencedMachine,
@@ -79,6 +75,7 @@ import {
 } from "../../../computers/screens/computer-support.js";
 import {
   LinuxDesktop,
+  LinuxDesktopSandbox,
   onBotScreen,
   PREPARE_LINUX_DESKTOP,
   VERIFY_LINUX_DESKTOP,
@@ -146,13 +143,13 @@ interface BoatCommandResult {
   timedOut: boolean;
 }
 
-export class BoatSandboxProvider implements SandboxProvider {
+export class BoatSandboxProvider extends LinuxDesktopSandbox implements SandboxProvider {
   billsWhileRunning(): boolean {
     return true;
   }
 
   private readonly client: BoatSandboxSdk;
-  private readonly desktops = new LinuxDesktop({
+  protected readonly desktops = new LinuxDesktop({
     environment: async () => ({
       homeDir: "/home/user",
       workspaceDir: BOAT_WORKSPACE,
@@ -234,6 +231,7 @@ export class BoatSandboxProvider implements SandboxProvider {
     config: { apiKey: string; apiUrl?: string; unreferencedMachines?: UnreferencedMachineRecords },
     api?: BoatSandboxSdk,
   ) {
+    super();
     this.machines = config.unreferencedMachines;
     this.client = createBoatClient(config, api);
   }
@@ -538,14 +536,18 @@ export class BoatSandboxProvider implements SandboxProvider {
     }
   }
 
-  async connectScreen(
+  override async connectScreen(
     computer: ComputerRef,
     request: ScreenRequest,
     context: AdapterContext,
   ): Promise<ScreenSession> {
     return this.authenticatedScreen(await this.desktops.connectScreen(computer, request, context));
   }
-  async connectTerminal(computer: ComputerRef, request: TerminalRequest, context: AdapterContext) {
+  override async connectTerminal(
+    computer: ComputerRef,
+    request: TerminalRequest,
+    context: AdapterContext,
+  ) {
     return this.authenticatedScreen(
       await this.desktops.connectTerminal(computer, request, context),
     );
@@ -564,28 +566,6 @@ export class BoatSandboxProvider implements SandboxProvider {
     socket.searchParams.delete("_token");
     url.searchParams.set("path", `${socket.pathname}${socket.search}`);
     return { ...session, url: url.toString(), headers: { cookie: `_port_auth=${token}` } };
-  }
-  async setScreenControl(
-    computer: ComputerRef,
-    interactive: boolean,
-    context: AdapterContext,
-    controlToken?: string,
-  ): Promise<void> {
-    return this.desktops.setScreenControl(computer, interactive, context, controlToken);
-  }
-  async sendInput(
-    computer: ComputerRef,
-    input: ComputerInput,
-    _lease: ControlLeaseRef,
-    context: AdapterContext,
-  ): Promise<void> {
-    return this.desktops.sendInput(computer, input, context);
-  }
-  async observe(computer: ComputerRef, context: AdapterContext): Promise<ComputerObservation> {
-    return this.desktops.observe(computer, context);
-  }
-  async act(computer: ComputerRef, request: ComputerActionRequest, context: AdapterContext) {
-    return this.desktops.act(computer, request, context);
   }
   async pageBrowser(
     computer: ComputerRef,
@@ -715,24 +695,13 @@ export class BoatSandboxProvider implements SandboxProvider {
     );
     if (writable.timedOut)
       throw new Error("could not prepare Boat workspace for restore (timed out)");
-    const batcher = new PortableFileBatcher<PortableFile>(8, (file) => file.content.byteLength);
-    const flush = async (batch: PortableFile[]) => {
-      if (!batch.length) return;
-      await this.writeFiles(sandbox, batch, context);
-    };
-    for await (const file of files) {
-      if (shouldSkipPortableWorkspaceFile(file.path)) continue;
-      if (context.signal.aborted) throw context.signal.reason ?? new Error("import aborted");
-      const full = batcher.add(file);
-      if (full) await flush(full);
-    }
-    await flush(batcher.take());
+    await writePortableFilesInBatches(
+      files,
+      8,
+      (batch) => this.writeFiles(sandbox, batch, context),
+      context.signal,
+    );
     // Browser profiles are imported without opening a shared browser.
-  }
-
-  async snapshot(computer: ComputerRef, context: AdapterContext) {
-    const observation = await this.observe(computer, context);
-    return { id: observation.frameId, createdAt: observation.capturedAt };
   }
 
   async keepAlive(computer: ComputerRef): Promise<void> {
@@ -740,10 +709,6 @@ export class BoatSandboxProvider implements SandboxProvider {
       sandboxId: this.id(computer),
       updateSandboxRequest: { ttlSeconds: BOAT_TTL_SECONDS },
     });
-  }
-
-  async releaseScreen(computer: ComputerRef, context: AdapterContext): Promise<void> {
-    return this.desktops.releaseScreen(computer, context);
   }
 
   async isRunning(computer: ComputerRef, context: AdapterContext): Promise<boolean> {

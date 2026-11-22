@@ -20,6 +20,9 @@ test("a bot template previews what it adds, then creates a bot with a paused rou
   const briefing = dialog.getByRole("button", { name: "Morning briefing", exact: true });
   await expect(briefing).toHaveAccessibleDescription("Your day at a glance, every weekday morning");
   await expect(briefing.getByText("Needs you", { exact: true })).toBeVisible();
+  await dialog.getByRole("button", { name: "Close bot templates", exact: true }).focus();
+  await page.keyboard.press("Tab");
+  await expect(briefing).toBeFocused();
   await captureScreenshot(page, testInfo, "bot-templates");
 
   await briefing.click();

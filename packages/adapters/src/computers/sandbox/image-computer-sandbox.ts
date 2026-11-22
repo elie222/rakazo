@@ -2,21 +2,15 @@ import type {
   AdapterContext,
   AdapterDescriptor,
   CommandRequest,
-  ComputerActionRequest,
   ComputerFileEntry,
-  ComputerInput,
-  ComputerObservation,
   ComputerRef,
-  ControlLeaseRef,
   PortableFile,
   ProcessEvent,
   SandboxCapabilities,
   SandboxProvider,
-  ScreenRequest,
-  ScreenSession,
   TerminalRequest,
 } from "@rakazo/adapter-kit";
-import { LinuxDesktop, onBotScreen } from "../screens/linux-desktop.js";
+import { LinuxDesktop, LinuxDesktopSandbox, onBotScreen } from "../screens/linux-desktop.js";
 import type { RawExec } from "./exec-computer.js";
 import { ExecComputer, COMPUTER_IMAGE_WORKSPACE as WORKSPACE } from "./exec-computer.js";
 
@@ -33,7 +27,7 @@ type ProvisionRequest = Parameters<SandboxProvider["provision"]>[0];
  * Providers supply the machine lifecycle, the transport, and the address its screens are served
  * on; commands, files, workspace transfer and screens work the same on all of them.
  */
-export abstract class ImageComputerSandbox implements SandboxProvider {
+export abstract class ImageComputerSandbox extends LinuxDesktopSandbox implements SandboxProvider {
   protected readonly shell: ExecComputer;
   protected readonly desktops: LinuxDesktop;
 
@@ -42,6 +36,7 @@ export abstract class ImageComputerSandbox implements SandboxProvider {
     private readonly kind: string,
     label: string,
   ) {
+    super();
     this.shell = new ExecComputer((...exec) => this.execRaw(...exec), label);
     this.desktops = new LinuxDesktop({
       environment: async (computer, context) => ({
@@ -133,15 +128,11 @@ export abstract class ImageComputerSandbox implements SandboxProvider {
     yield* this.shell.execute(computer, onBotScreen(requested, context, DISPLAY_START), context);
   }
 
-  connectScreen(
+  override connectTerminal(
     computer: ComputerRef,
-    request: ScreenRequest,
+    request: TerminalRequest,
     context: AdapterContext,
-  ): Promise<ScreenSession> {
-    return this.desktops.connectScreen(computer, request, context);
-  }
-
-  connectTerminal(computer: ComputerRef, request: TerminalRequest, context: AdapterContext) {
+  ) {
     // The API already holds the human control token. A new run may supersede the bot's screen
     // fence while the human keeps control of the same computer, so the terminal ignores it.
     return this.desktops.connectTerminal(computer, request, {
@@ -150,7 +141,7 @@ export abstract class ImageComputerSandbox implements SandboxProvider {
     });
   }
 
-  async setScreenControl(
+  override async setScreenControl(
     computer: ComputerRef,
     interactive: boolean,
     context: AdapterContext,
@@ -161,27 +152,6 @@ export abstract class ImageComputerSandbox implements SandboxProvider {
     } catch (error) {
       throw await this.screenControlFailure(computer, error, context);
     }
-  }
-
-  sendInput(
-    computer: ComputerRef,
-    input: ComputerInput,
-    _lease: ControlLeaseRef,
-    context: AdapterContext,
-  ): Promise<void> {
-    return this.desktops.sendInput(computer, input, context);
-  }
-
-  observe(computer: ComputerRef, context: AdapterContext): Promise<ComputerObservation> {
-    return this.desktops.observe(computer, context);
-  }
-
-  act(computer: ComputerRef, request: ComputerActionRequest, context: AdapterContext) {
-    return this.desktops.act(computer, request, context);
-  }
-
-  releaseScreen(computer: ComputerRef, context: AdapterContext): Promise<void> {
-    return this.desktops.releaseScreen(computer, context);
   }
 
   listFiles(
@@ -220,10 +190,5 @@ export abstract class ImageComputerSandbox implements SandboxProvider {
   ): Promise<void> {
     await this.desktops.stopBrowsers(computer, context);
     await this.shell.importWorkspace(computer, files, context);
-  }
-
-  async snapshot(computer: ComputerRef, context: AdapterContext) {
-    const observation = await this.observe(computer, context);
-    return { id: observation.frameId, createdAt: observation.capturedAt };
   }
 }

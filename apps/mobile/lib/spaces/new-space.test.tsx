@@ -13,6 +13,7 @@ const state = vi.hoisted(() => ({
   focused: true,
   selectedSpace: "space-1",
   alert: vi.fn(),
+  announce: vi.fn(),
   rpc: vi.fn(),
   selectSpace: vi.fn(),
   hapticSuccess: vi.fn(),
@@ -56,9 +57,12 @@ vi.mock("expo-router", () => ({
   }),
 }));
 vi.mock("react-native", () => ({
+  AccessibilityInfo: { announceForAccessibility: state.announce },
   Alert: { alert: state.alert },
   ScrollView: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
-  Text: ({ children }: { children?: ReactNode }) => <span>{children}</span>,
+  Text: ({ accessibilityRole, children }: { accessibilityRole?: string; children?: ReactNode }) => (
+    <span role={accessibilityRole}>{children}</span>
+  ),
   TextInput: ({
     accessibilityLabel,
     placeholder,
@@ -175,6 +179,50 @@ it("does not confirm a failed space creation and permits retry", async () => {
   expect(state.selectSpace).not.toHaveBeenCalled();
   expect(container.textContent).toContain("Creation failed");
   expect(container.querySelector("button")?.disabled).toBe(false);
+});
+
+it("announces a failed space creation as an alert, again when a retry fails", async () => {
+  state.rpc.mockRejectedValue(new Error("Creation failed"));
+  await type("Work");
+  await act(async () => container.querySelector("button")!.click());
+  expect(container.querySelector('[role="alert"]')?.textContent).toBe("Creation failed");
+  expect(state.announce).toHaveBeenCalledOnce();
+  expect(state.announce).toHaveBeenLastCalledWith("Creation failed");
+  await act(async () => container.querySelector("button")!.click());
+  expect(state.announce).toHaveBeenCalledTimes(2);
+  expect(state.announce).toHaveBeenLastCalledWith("Creation failed");
+});
+
+it("speaks the server's refusal as the same text the screen shows", async () => {
+  state.rpc.mockRejectedValue(new Error("That name is already used"));
+  await type("Work");
+  await act(async () => container.querySelector("button")!.click());
+  expect(container.querySelector('[role="alert"]')?.textContent).toBe("That name is already used");
+  expect(state.announce).toHaveBeenCalledWith("That name is already used");
+});
+
+it("does not announce anything when a retry succeeds", async () => {
+  state.rpc.mockRejectedValueOnce(new Error("Creation failed"));
+  await type("Work");
+  await act(async () => container.querySelector("button")!.click());
+  expect(state.announce).toHaveBeenCalledOnce();
+  await act(async () => container.querySelector("button")!.click());
+  expect(state.selectSpace).toHaveBeenCalledWith("space-new");
+  expect(state.announce).toHaveBeenCalledOnce();
+});
+
+it("announces a failure only once the creation has failed, not while it is pending", async () => {
+  let fail!: Deferred<{ id: string; name: string }>;
+  state.rpc.mockImplementation(() => {
+    fail = deferred<{ id: string; name: string }>();
+    return fail.promise;
+  });
+  await type("Work");
+  await act(async () => container.querySelector("button")!.click());
+  expect(state.announce).not.toHaveBeenCalled();
+  await act(async () => fail.reject(new Error("Creation failed")));
+  expect(state.announce).toHaveBeenCalledOnce();
+  expect(state.announce).toHaveBeenLastCalledWith("Creation failed");
 });
 
 it("does not confirm or submit an empty name", async () => {

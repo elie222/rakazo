@@ -157,7 +157,7 @@ export function ImageLightbox({
                 variant="floating"
                 size="icon-sm"
                 aria-label={t`Close image preview`}
-                className="absolute right-2 top-2"
+                className="absolute end-2 top-2"
               />
             }
           >

@@ -1,6 +1,7 @@
 import { Button, Menu, Section, Text, VStack } from "@expo/ui/swift-ui";
 import {
   contentShape,
+  disabled,
   font,
   foregroundStyle,
   frame,
@@ -16,11 +17,18 @@ import { AccessibilityInfo } from "react-native";
 import { NativeInsetList, useInsetListEdges } from "../../components/native/native-inset-list";
 import { useFloatingHeaderInset } from "../layout/floating-header";
 import { native, useMobileTokens, useResolvedAppearance } from "../native/native";
-import { ticketStatusLabel } from "./board";
+import { boardRefreshFailure, ticketStatusLabel } from "./board";
 import type { BoardListProps } from "./board-list";
 
 /** A SwiftUI inset list: a section per column, and a pull-down menu on each ticket to move it. */
-export function BoardList({ sections, error, onMove, onRefresh }: BoardListProps) {
+export function BoardList({
+  sections,
+  error,
+  refreshFailures,
+  moving = false,
+  onMove,
+  onRefresh,
+}: BoardListProps) {
   const { t } = useLingui();
   const headerInset = useFloatingHeaderInset();
   const edges = useInsetListEdges();
@@ -30,8 +38,8 @@ export function BoardList({ sections, error, onMove, onRefresh }: BoardListProps
   const lastStatus = sections.at(-1)?.status;
   // A failed refresh leaves older tickets on screen, so tell VoiceOver it failed.
   useEffect(() => {
-    if (error) AccessibilityInfo.announceForAccessibility(error);
-  }, [error]);
+    if (error) AccessibilityInfo.announceForAccessibility(boardRefreshFailure(error));
+  }, [error, refreshFailures]);
   return (
     <NativeInsetList
       background={native.groupedPage}
@@ -43,7 +51,11 @@ export function BoardList({ sections, error, onMove, onRefresh }: BoardListProps
           modifiers={edges.modifiers}
           header={edges.header}
           footer={
-            error ? <Text modifiers={[font({ textStyle: "footnote" })]}>{error}</Text> : undefined
+            error ? (
+              <Text modifiers={[font({ textStyle: "footnote" })]}>
+                {boardRefreshFailure(error)}
+              </Text>
+            ) : undefined
           }
         >
           {null}
@@ -58,6 +70,7 @@ export function BoardList({ sections, error, onMove, onRefresh }: BoardListProps
           {section.tickets.map((ticket) => (
             <Menu
               key={ticket.id}
+              modifiers={[disabled(moving)]}
               label={
                 <VStack
                   alignment="leading"

@@ -37,8 +37,8 @@ export interface MessagingMountOptions {
 }
 
 export interface MessagingMountContext extends MessagingMountOptions {
-  /** Public API origin; vendors that push delivery status call back here. */
-  apiUrl?: string | undefined;
+  /** The origin vendors that push delivery status call back to. */
+  inboundOrigin?: string | undefined;
 }
 
 /** One messaging platform: the settings it reads and how it mounts. */
