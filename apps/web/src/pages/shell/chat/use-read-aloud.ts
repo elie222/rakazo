@@ -47,6 +47,13 @@ export function useReadAloud({
 }) {
   const openVoiceSettingsRef = useRef(openVoiceSettings);
   openVoiceSettingsRef.current = openVoiceSettings;
+  // A space switch remounts the shell, so its toast would act on a shell that is gone.
+  useEffect(
+    () => () => {
+      toast.dismiss(READ_ALOUD_TOAST);
+    },
+    [],
+  );
   const [speakingMessageId, setSpeakingMessageId] = useState<string | null>(null);
   const autoSpoken = useRef<string | null>(null);
   const autoSpokenBotId = useRef<string | null>(null);

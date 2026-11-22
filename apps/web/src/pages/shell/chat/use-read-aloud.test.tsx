@@ -24,7 +24,8 @@ vi.mock("../../../lib/calls/tts", () => ({
   voiceNotReadyText: () => NOT_READY,
 }));
 const toastError = vi.hoisted(() => vi.fn());
-vi.mock("@rakazo/ui-web", () => ({ toast: { error: toastError } }));
+const toastDismiss = vi.hoisted(() => vi.fn());
+vi.mock("@rakazo/ui-web", () => ({ toast: { error: toastError, dismiss: toastDismiss } }));
 
 const speaking: Bot = { id: "bot-b", autoSpeak: true } as unknown as Bot;
 
@@ -181,4 +182,11 @@ it("keeps other read-aloud failures as a plain toast", async () => {
   expect(text).toBe("Could not play that clip.");
   // Set explicitly: the shared toast id keeps an earlier toast's action unless it is cleared.
   expect(options).toHaveProperty("action", undefined);
+});
+
+it("dismisses its toast when the shell unmounts", () => {
+  renderRead({ snapshot: snapshot([message("m1", "first reply")]) });
+  act(() => root?.unmount());
+  root = null;
+  expect(toastDismiss).toHaveBeenCalledWith("read-aloud-error");
 });
