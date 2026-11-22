@@ -1,12 +1,17 @@
 import { ph } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
+import {
+  CATALOG_SEARCH_QUERY_MAX_LENGTH,
+  CATALOG_SEARCH_QUERY_MIN_LENGTH,
+} from "@rakazo/contracts";
 import type { SignInMcpServer } from "@rakazo/core";
 import { signInMcpServers } from "@rakazo/core";
 import { useQuery } from "@tanstack/react-query";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Text, View } from "react-native";
 import { errorText } from "../../lib/api/user-error";
 import { finishMcpSignIn } from "../../lib/integrations/mcp-oauth";
+import { announceToScreenReader } from "../../lib/native/announce";
 import { useThemedStyles } from "../../lib/native/native";
 import { queryClient, rpcQuery, useSave } from "../../lib/query/query";
 import { NativeActionButton } from "../native/native-action-button";
@@ -31,8 +36,11 @@ export function IntegrationCatalogSearch({
   const { t } = useLingui();
   const styles = useThemedStyles(createIntegrationsStyles);
   const trimmed = query.trim();
+  const canSearch =
+    trimmed.length >= CATALOG_SEARCH_QUERY_MIN_LENGTH &&
+    trimmed.length <= CATALOG_SEARCH_QUERY_MAX_LENGTH;
   const [asked, setAsked] = useState<string | null>(null);
-  const searching = Boolean(trimmed) && asked === trimmed;
+  const searching = canSearch && asked === trimmed;
   const search = useQuery(
     {
       ...rpcQuery("capabilities/catalogSearch", { query: trimmed, usePublicCatalog: true }),
@@ -54,17 +62,29 @@ export function IntegrationCatalogSearch({
       return added.id;
     },
     onSaved: (serverId) => onChanged(serverId),
-    onFailed: (_error, server) => onChanged(addedIds.current.get(server.endpoint)),
+    // Each failed Connect is read out, in the same text the screen shows below.
+    onFailed: (error, server) => {
+      announceToScreenReader(errorText(error, t`Could not connect`));
+      onChanged(addedIds.current.get(server.endpoint));
+    },
   });
+  // react-query has no per-query error callback, so a failed search is read out here, once per failure.
+  const announcedSearchError = useRef<Error | null>(null);
+  useEffect(() => {
+    if (!searching || !search.error || search.error === announcedSearchError.current) return;
+    announcedSearchError.current = search.error;
+    announceToScreenReader(errorText(search.error, t`Could not connect`));
+  }, [searching, search.error, t]);
   if (!trimmed || hidden) return null;
   const servers = searching && search.data ? signInMcpServers(search.data.results) : null;
   const failure = connect.error ?? (searching ? search.error : null);
+  if (!canSearch && !noLocalMatch && !failure) return null;
   return (
     <View testID="integration-catalog-search" style={styles.catalogStack}>
       {noLocalMatch && !servers?.length ? (
         <Text style={styles.secondary}>{t`No apps match your search.`}</Text>
       ) : null}
-      {servers === null ? (
+      {canSearch && servers === null ? (
         <NativeActionButton
           fill={false}
           label={t`Search more apps`}
@@ -73,7 +93,7 @@ export function IntegrationCatalogSearch({
           prominence="secondary"
         />
       ) : (
-        servers.map((server) => (
+        servers?.map((server) => (
           <View key={server.endpoint} style={styles.row}>
             <ConnectorIcon name={server.name} size={LOGO_SIZE} />
             <Text numberOfLines={1} style={[styles.title, styles.grow]}>
@@ -92,7 +112,9 @@ export function IntegrationCatalogSearch({
         ))
       )}
       {failure ? (
-        <Text style={styles.error}>{errorText(failure, t`Could not connect`)}</Text>
+        <Text accessibilityRole="alert" style={styles.error}>
+          {errorText(failure, t`Could not connect`)}
+        </Text>
       ) : null}
     </View>
   );

@@ -1,4 +1,4 @@
-import { bestEffort } from "@rakazo/logging";
+import { bestEffort } from "@rakazo/logging/best-effort";
 import { Linking } from "react-native";
 
 /**

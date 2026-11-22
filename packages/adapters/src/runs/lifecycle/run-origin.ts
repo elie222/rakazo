@@ -7,6 +7,13 @@ type RunOrigin = Pick<
   "id" | "botId" | "spaceId" | "userId" | "trigger" | "delegatedFromRunId"
 >;
 
+export class RunOriginUnauthorizedError extends Error {
+  constructor() {
+    super("The originating conversation no longer authorizes this task.");
+    this.name = "RunOriginUnauthorizedError";
+  }
+}
+
 export function isDelegatedRun(trigger: string): boolean {
   return trigger === BACKGROUND_HELPER_TRIGGER || trigger === HELPER_RESULT_TRIGGER;
 }

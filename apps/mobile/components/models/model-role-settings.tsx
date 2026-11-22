@@ -16,8 +16,8 @@ import type {
 import {
   backupChoiceKey,
   connectedBackupOptions,
-  connectionDisplayName,
   MAX_MODEL_BACKUPS,
+  modelConnectionNames,
   modelRoleChoiceKey,
   withConnectionName,
 } from "@rakazo/contracts";
@@ -28,7 +28,10 @@ import {
   modelRoleListPatch,
   modelSettingsEditable,
   modelThinkingLevels,
+  sameModelRoleChoice,
 } from "@rakazo/core";
+import { localizeModelEntry } from "@rakazo/i18n/model-provider";
+import { thinkingLevelLabel } from "@rakazo/i18n/thinking-level";
 import type { Href } from "expo-router";
 import type { ReactNode } from "react";
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
@@ -37,7 +40,6 @@ import type { RpcArgs } from "../../lib/api/api";
 import { captureApiRequestContext, currentApiBase, rpc } from "../../lib/api/api";
 import { mobileTokens } from "../../lib/appearance/appearance";
 import type { ModelPickerRequest } from "../../lib/models/model-picker-selection";
-import { thinkingLevelLabel } from "../../lib/models/thinking-level";
 import {
   native,
   useMobileTokens,
@@ -58,10 +60,6 @@ export type ModelConnectIntent = {
 
 /** A row index, the empty first slot, or a new fallback at the end. */
 type Slot = number | "empty" | "add";
-
-/** The same model on another connection is another row. */
-const sameChoice = (left: ModelRoleChoice, right: ModelRoleChoice) =>
-  modelRoleChoiceKey(left) === modelRoleChoiceKey(right);
 
 const connectKey = (provider: ConnectableProvider) =>
   `connect:${provider.id}:${provider.baseUrl ?? ""}`;
@@ -144,30 +142,38 @@ export function ModelRoleSettings({
   const busy = state.busy || state.stale || !settings;
   const entryFor = (choice: ModelRoleChoice) =>
     catalogEntryFor(state.catalog, choice.provider, choice.modelId);
-  const options = connectedBackupOptions(state.catalog, credentials, role === "computer");
+  const options = connectedBackupOptions(
+    state.catalog.map(localizeModelEntry),
+    credentials,
+    role === "computer",
+  );
   const optionFor = (choice: ModelRoleChoice) =>
     options.find((option) => backupChoiceKey(option) === backupChoiceKey(choice));
   const modelLabel = (choice: ModelRoleChoice) =>
     entryFor(choice)?.label ?? optionFor(choice)?.label ?? choice.modelId;
-  const providerName = (choice: ModelRoleChoice) =>
-    entryFor(choice)?.providerName ??
+  const providerNameFallback = (choice: ModelRoleChoice) =>
     optionFor(choice)?.providerName ??
     providers.find((provider) => provider.id === choice.provider)?.name ??
     choice.provider;
+  /** The row's own connection, or the provider's newest for rows that name none. */
+  const connectionFor = (choice: ModelRoleChoice) => connectionForModelChoice(credentials, choice);
+  const namesFor = (choice: ModelRoleChoice) =>
+    modelConnectionNames(
+      localizeModelEntry(
+        entryFor(choice) ?? {
+          provider: choice.provider,
+          providerName: providerNameFallback(choice),
+        },
+      ),
+      choice.credentialId ? connectionFor(choice) : undefined,
+    );
   // What runs when the member chose no first model; named in the empty row.
   const deployment = state.settings?.deploymentPrimary ?? null;
   const deploymentName = deployment ? modelLabel(deployment) : null;
   // The deployment pays for its default, so it reads as included rather than as a provider bill.
   const included = state.settings?.deploymentIncluded ? t`Included` : undefined;
-  /** The row's own connection, or the provider's newest for rows that name none. */
-  const connectionFor = (choice: ModelRoleChoice) => connectionForModelChoice(credentials, choice);
-  const connectionName = (choice: ModelRoleChoice) => {
-    if (choice.creditOfferingId) return t`Rakazo credits`;
-    const connection = choice.credentialId ? connectionFor(choice) : undefined;
-    return connection
-      ? connectionDisplayName(connection, providerName(choice))
-      : providerName(choice);
-  };
+  const connectionName = (choice: ModelRoleChoice) =>
+    choice.creditOfferingId ? t`Rakazo credits` : namesFor(choice).connectionName;
   const isPrimarySlot = (slot: Slot) => slot === "empty" || (slot === 0 && primary !== null);
 
   const thinkingLevels =
@@ -191,7 +197,7 @@ export function ModelRoleSettings({
     save((current) => ({
       primary: choice,
       backups: choice
-        ? current.backups.filter((item) => !sameChoice(item, choice))
+        ? current.backups.filter((item) => !sameModelRoleChoice(item, choice))
         : current.backups,
     }));
   const place = (slot: number | "add", choice: ModelRoleChoice) =>
@@ -199,14 +205,14 @@ export function ModelRoleSettings({
       const list = current.primary ? [current.primary, ...current.backups] : current.backups;
       if (slot === "add")
         return modelRoleListPatch(current, [
-          ...list.filter((item) => !sameChoice(item, choice)),
+          ...list.filter((item) => !sameModelRoleChoice(item, choice)),
           choice,
         ]);
       return modelRoleListPatch(
         current,
         list
           .map((item, index) => (index === slot ? choice : item))
-          .filter((item, index) => index === slot || !sameChoice(item, choice)),
+          .filter((item, index) => index === slot || !sameModelRoleChoice(item, choice)),
       );
     });
   // The first entry becomes the primary; with none, the deployment's default runs.
@@ -231,7 +237,11 @@ export function ModelRoleSettings({
   function pickerRequest(slot: Slot, narrowed?: Narrowed): ModelPickerRequest {
     const primarySlot = isPrimarySlot(slot);
     const all = narrowed
-      ? connectedBackupOptions(narrowed.catalog, narrowed.credentials, role === "computer")
+      ? connectedBackupOptions(
+          narrowed.catalog.map(localizeModelEntry),
+          narrowed.credentials,
+          role === "computer",
+        )
       : options;
     const pool = all.filter(
       (option) => !narrowed || option.credentialId === narrowed.choice.credentialId,
@@ -262,6 +272,7 @@ export function ModelRoleSettings({
     const picks = new Map(pool.map((option) => [modelRoleChoiceKey(option), option]));
     return {
       title: slot === "add" ? t`Add fallback` : title,
+      connectionNotice: narrowed ? t`Provider connected. Choose a model.` : undefined,
       selectedKey: currentKey ?? (offerDefault ? "default" : ""),
       choices: [
         ...(offerDefault
@@ -333,7 +344,7 @@ export function ModelRoleSettings({
           ...(option.creditOfferingId ? { creditOfferingId: option.creditOfferingId } : {}),
           ...(option.credentialId ? { credentialId: option.credentialId } : {}),
         };
-        if (!current || !sameChoice(current, picked)) void fill(slot, picked);
+        if (!current || !sameModelRoleChoice(current, picked)) void fill(slot, picked);
       },
     };
   }
@@ -381,7 +392,7 @@ export function ModelRoleSettings({
           key="empty"
           leading={ordered ? number(0) : undefined}
           title={deploymentName ?? defaultLabel}
-          detail={deployment ? (included ?? providerName(deployment)) : undefined}
+          detail={deployment ? (included ?? namesFor(deployment).providerName) : undefined}
           disabled={busy}
           onPress={() => pick("empty")}
         />

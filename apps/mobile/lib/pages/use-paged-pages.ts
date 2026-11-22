@@ -10,14 +10,21 @@ const PAGE_SIZE = 5;
 type PagedPages =
   | { status: "loading" }
   | { status: "error"; error: unknown }
-  | { status: "ready"; items: PageSummary[]; nextCursor: string | null; generation: number };
+  | {
+      status: "ready";
+      items: PageSummary[];
+      nextCursor: string | null;
+      generation: number;
+      paginationFailed: boolean;
+    };
 
 /**
  * A bot's or group's pages, five at a time, read again each time the list comes back on screen
  * (after Share, or a page a routine changed), as many as were shown, as the web list does.
  * One "Show more" runs at a time, and a page of results that started before a reload (a pin,
  * rename or delete) is dropped. The previous list stays visible during a reload, but its cursor
- * cannot start a new page request.
+ * cannot start a new page request. A failed "Show more" is reported until a retry succeeds or the
+ * list is read again.
  */
 export function usePagedPages(owner: { botId?: string; groupId?: string }) {
   const { botId, groupId } = owner;
@@ -46,7 +53,7 @@ export function usePagedPages(owner: { botId?: string; groupId?: string }) {
     void rpc("pages/list", input(undefined, limit)).then(
       (result) => {
         if (started === generation.current)
-          setListed({ status: "ready", ...result, generation: started });
+          setListed({ status: "ready", ...result, generation: started, paginationFailed: false });
       },
       (error: unknown) => {
         if (started === generation.current) setListed({ status: "error", error });
@@ -65,21 +72,19 @@ export function usePagedPages(owner: { botId?: string; groupId?: string }) {
     loadingMore.current = true;
     const started = generation.current;
     try {
-      const result = await rpc("pages/list", input(listed.nextCursor)).catch((error: unknown) => {
-        // A failure from before a reload is as stale as a success would be.
-        if (started === generation.current) throw error;
-        return null;
+      // Only the request's failure is reported as one; a failure from before a reload is dropped.
+      const result = await rpc("pages/list", input(listed.nextCursor)).catch(() => null);
+      if (started !== generation.current) return;
+      setListed((current) => {
+        if (current.status !== "ready" || current.generation !== started) return current;
+        if (!result) return { ...current, paginationFailed: true };
+        return {
+          ...current,
+          items: uniquePages([...current.items, ...result.items]),
+          nextCursor: result.nextCursor,
+          paginationFailed: false,
+        };
       });
-      if (!result || started !== generation.current) return;
-      setListed((current) =>
-        current.status === "ready" && current.generation === started
-          ? {
-              ...current,
-              items: uniquePages([...current.items, ...result.items]),
-              nextCursor: result.nextCursor,
-            }
-          : current,
-      );
     } finally {
       if (started === generation.current) loadingMore.current = false;
     }

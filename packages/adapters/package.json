@@ -15,7 +15,7 @@
     "./user-device-client": "./src/computers/host/user-device-client.ts"
   },
   "scripts": {
-    "check": "tsc --noEmit -p tsconfig.json",
+    "check": "tsrs --noEmit -p tsconfig.json",
     "test": "vitest run --root ../.. packages/adapters/src"
   },
   "dependencies": {
@@ -37,9 +37,9 @@
     "@darabonba/typescript": "1.0.6",
     "@daytona/sdk": "0.231.0",
     "@e2b/desktop": "2.5.0",
-    "@earendil-works/pi-agent-core": "1.5.2",
-    "@earendil-works/pi-ai": "1.5.2",
-    "@earendil-works/pi-telemetry": "1.5.2",
+    "@earendil-works/pi-agent-core": "1.6.0",
+    "@earendil-works/pi-ai": "1.6.0",
+    "@earendil-works/pi-telemetry": "1.6.0",
     "@insforge/instabox-sdk": "0.9.0",
     "@kubernetes/client-node": "2.0.2",
     "@larksuiteoapi/node-sdk": "1.76.0",
