@@ -21,6 +21,8 @@ export async function queueConnectedRun(
       OR: [
         { botId: input.botId },
         { group: { archivedAt: null, members: { some: { botId: input.botId } } } },
+        // A topic, which opens only in the bot's own chat.
+        { parentMessage: { is: { thread: { botId: input.botId } } } },
       ],
     },
     select: { id: true },

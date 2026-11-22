@@ -112,61 +112,6 @@ export async function waitForConnection<Row extends { status: string }>(
   return stopped() ? { status: "aborted" } : { status: "pending" };
 }
 
-const PROMPT_SIGN_IN_ATTEMPTS = 60;
-const RETURN_READ_ATTEMPTS = 3;
-
-/**
- * Waits for a sign-in without calling a slow one failed. It polls for the time most take; after
- * that `onSlow` lets the caller offer to start over, and this attempt is read again only when
- * `whenBack` says the person came back to the app, which is when a finished sign-in shows.
- */
-export async function waitForSignIn<Row extends { status: string }>(
-  connectionId: string,
-  complete: (input: { connectionId: string }) => Promise<Row>,
-  options: {
-    signal: AbortSignal;
-    onSlow: () => void;
-    /** Calls `read` each time the app regains focus or the foreground; returns how to stop. */
-    whenBack: (read: () => void) => () => void;
-  },
-): Promise<{ status: "connected"; row: Row } | { status: "aborted" }> {
-  const prompt = await waitForConnection(connectionId, complete, {
-    signal: options.signal,
-    attempts: PROMPT_SIGN_IN_ATTEMPTS,
-  });
-  if (prompt.status !== "pending") return prompt;
-  options.onSlow();
-  return new Promise((resolve) => {
-    const settle = (result: { status: "connected"; row: Row } | { status: "aborted" }) => {
-      stop();
-      options.signal.removeEventListener("abort", onAbort);
-      resolve(result);
-    };
-    const onAbort = () => settle({ status: "aborted" });
-    let reading = false;
-    const read = () => {
-      if (reading) return;
-      reading = true;
-      // A few tries, so one failed request does not lose a sign-in that just finished.
-      waitForConnection(connectionId, complete, {
-        signal: options.signal,
-        attempts: RETURN_READ_ATTEMPTS,
-      }).then(
-        (result) => {
-          reading = false;
-          if (result.status !== "pending") settle(result);
-        },
-        // Only an abort rejects, and the abort listener settles that.
-        () => {},
-      );
-    };
-    const stop = options.whenBack(read);
-    options.signal.addEventListener("abort", onAbort, { once: true });
-    // The person may have come back while the last timed read was still in flight.
-    read();
-  });
-}
-
 /** The server's NOT_FOUND code, not any 404 a proxy or an older server might send. */
 function isNotFound(error: unknown) {
   return (error as { code?: unknown } | null)?.code === "NOT_FOUND";

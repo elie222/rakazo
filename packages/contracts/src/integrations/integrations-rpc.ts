@@ -3,6 +3,7 @@ import * as z from "zod";
 import { Id } from "../ids.js";
 import { botId } from "../rpc/inputs.js";
 import { settingsScopeInput } from "../settings-scope.js";
+import { AppConnectClientSchema, AppConnectOriginSchema } from "./app-connect-return.js";
 import {
   ActionApprovalRuleSchema,
   ActionAutoReviewSettingsSchema,
@@ -201,6 +202,9 @@ export const integrationsRpc = {
           connectorId: z.string().optional(),
           provider: z.string(),
           displayName: z.string(),
+          /** The chat card connecting the app, which the server updates once the sign-in ends. */
+          origin: AppConnectOriginSchema.optional(),
+          client: AppConnectClientSchema,
         }),
       )
       .output(z.object({ connectionId: Id, authorizationUrl: z.string().nullable() })),

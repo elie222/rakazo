@@ -318,36 +318,37 @@ export async function markAppConnected(
   connectorId = deps.connectors.defaultConnectorId,
   threadId?: string,
   messageId?: string,
+  /** The server connected the row itself, so the provider is not asked again: a second call
+   * that failed would leave the card waiting with nothing left to retry it. */
+  confirmed = false,
 ): Promise<void> {
   const { bot, thread: ownThread } = await requireBotThread(deps, actor, botId);
   let thread = ownThread;
   if (threadId && threadId !== ownThread.id) {
     const candidate = await deps.prisma.thread.findFirst({
       where: { id: threadId, spaceId: actor.spaceId },
+      select: {
+        id: true,
+        groupId: true,
+        parentMessage: { select: { thread: { select: { id: true } } } },
+      },
     });
-    if (!candidate?.groupId) throw new IsolationError();
-    const target = await resolveThreadTarget(deps.prisma, actor, { groupId: candidate.groupId });
-    if (target.kind !== "group" || !target.memberBotIds.includes(botId)) throw new IsolationError();
-    thread = { ...ownThread, id: target.threadId };
+    if (!candidate) throw new IsolationError();
+    // Topics open only in a bot's own chat.
+    if (candidate.parentMessage) {
+      if (candidate.parentMessage.thread.id !== ownThread.id) throw new IsolationError();
+    } else {
+      if (!candidate.groupId) throw new IsolationError();
+      const target = await resolveThreadTarget(deps.prisma, actor, { groupId: candidate.groupId });
+      if (target.kind !== "group" || !target.memberBotIds.includes(botId))
+        throw new IsolationError();
+    }
+    thread = { ...ownThread, id: candidate.id };
   }
-  const providerAdapter = deps.connectors.managed(connectorId);
-  if (!providerAdapter) return;
-  const catalog = await providerAdapter.catalog(
-    {
-      operationId: "onboarding.appConnected",
-      traceId: "onboarding.appConnected",
-      spaceId: actor.spaceId,
-      userId: actor.userId,
-      botId,
-      signal: AbortSignal.timeout(15_000),
-    },
-    provider,
-  );
-  const entry = matchAppCatalog(
-    catalog.filter((item) => item.connectorId === connectorId),
-    provider,
-  );
-  if (!entry?.connected) return;
+  const slug = confirmed
+    ? provider
+    : await connectedSlug(deps, actor, botId, provider, connectorId);
+  if (!slug) return;
   const target = { spaceId: actor.spaceId, botId: bot.id, threadId: thread.id };
   const { events, runId } = await deps.prisma.$transaction(async (tx) => {
     // Two authorizations may finish together on an onboarding message with multiple cards.
@@ -374,13 +375,21 @@ export async function markAppConnected(
     const events = [];
     // The card connected from, when a run posted it, is the bot waiting on this connection;
     // onboarding's own cards and other copies of the card are not.
-    let botWaiting = false;
+    let waitingFor: string | undefined;
     for (const message of messages) {
-      const next = changeMessageBlocks(message, (block) =>
-        connectedAppBlock(block, connectorId, entry.slug, deps.connectors.defaultConnectorId),
-      );
+      let name: string | undefined;
+      const next = changeMessageBlocks(message, (block) => {
+        const changed = connectedAppBlock(
+          block,
+          connectorId,
+          slug,
+          deps.connectors.defaultConnectorId,
+        );
+        if (changed !== block && block.kind === "app_connect") name = block.name;
+        return changed;
+      });
       if (!next) continue;
-      if (message.id === messageId && message.runId && message.botId === bot.id) botWaiting = true;
+      if (message.id === messageId && message.runId && message.botId === bot.id) waitingFor = name;
       await tx.message.update({ where: { id: message.id }, data: { blocks: next.stored } });
       events.push(
         await appendEventInTransaction(tx, {
@@ -390,17 +399,45 @@ export async function markAppConnected(
         }),
       );
     }
-    const runId = botWaiting
+    const runId = waitingFor
       ? await queueConnectedRun(tx, actor, {
           botId: bot.id,
           threadId: thread.id,
-          prompt: appConnectedPrompt(entry.name),
+          prompt: appConnectedPrompt(waitingFor),
         })
       : null;
     return { events, runId };
   }, THREAD_LOCK_TRANSACTION_OPTIONS);
   for (const event of events) await deps.events.notify(thread.id, event.seq);
   if (runId) await wakeRun(deps.jobs, runId);
+}
+
+/** The app's slug when its provider reports it connected; a client's claim alone is not trusted. */
+async function connectedSlug(
+  deps: OnboardingDeps,
+  actor: Actor,
+  botId: string,
+  provider: string,
+  connectorId: string,
+): Promise<string | undefined> {
+  const providerAdapter = deps.connectors.managed(connectorId);
+  if (!providerAdapter) return undefined;
+  const catalog = await providerAdapter.catalog(
+    {
+      operationId: "onboarding.appConnected",
+      traceId: "onboarding.appConnected",
+      spaceId: actor.spaceId,
+      userId: actor.userId,
+      botId,
+      signal: AbortSignal.timeout(15_000),
+    },
+    provider,
+  );
+  const entry = matchAppCatalog(
+    catalog.filter((item) => item.connectorId === connectorId),
+    provider,
+  );
+  return entry?.connected ? entry.slug : undefined;
 }
 
 function capitalize(value: string): string {

@@ -1,11 +1,6 @@
 import type { ConnectionCatalogItem, MessageBlock } from "@rakazo/contracts";
 import { describe, expect, it } from "vitest";
-import {
-  appConnectCard,
-  appConnectedInput,
-  connectedAppBlock,
-  matchAppCatalog,
-} from "./app-connect.js";
+import { appConnectCard, connectedAppBlock, matchAppCatalog } from "./app-connect.js";
 
 const entry: ConnectionCatalogItem = {
   connectorId: "catalog",
@@ -38,11 +33,5 @@ describe("inline app cards", () => {
     for (const block of [other, text, connected])
       expect(connectedAppBlock(block, "catalog", "gcal", "first")).toBe(block);
     expect(card.description).toBe("Search events and schedule meetings.");
-    expect(appConnectedInput("bot", "group-thread", card)).toEqual({
-      botId: "bot",
-      threadId: "group-thread",
-      connectorId: "catalog",
-      provider: "googlecalendar",
-    });
   });
 });

@@ -2,7 +2,7 @@ import { Trans, useLingui } from "@lingui/react/macro";
 import { useTimeout } from "@rakazo/chat-ui/hooks";
 import type { LinkFavicons } from "@rakazo/chat-ui/web";
 import { LinkFaviconsContext, RemoteImagesContext } from "@rakazo/chat-ui/web";
-import { mobileMcpOAuthReturnUrl } from "@rakazo/contracts";
+import { isAppConnectCallbackPath, mobileMcpOAuthReturnUrl } from "@rakazo/contracts";
 import { analyticsScreen } from "@rakazo/core";
 import { Button } from "@rakazo/ui-web";
 import {
@@ -108,7 +108,7 @@ export function App() {
         <ErrorBoundary fallback={<AppFailed />}>
           {window.location.pathname === SSO_CALLBACK_PATH ? (
             <SsoCallbackPage />
-          ) : window.location.pathname === "/integrations/callback" ? (
+          ) : isAppConnectCallbackPath(window.location.pathname) ? (
             <IntegrationCallbackPage />
           ) : (
             <SessionApp />

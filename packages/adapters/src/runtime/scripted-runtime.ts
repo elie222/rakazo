@@ -221,6 +221,16 @@ export function inferScript(
       },
     ];
   }
+  const connect = /\bcan you connect to ([^?\n]{1,100})\?/i.exec(words);
+  if (connect) {
+    return [
+      {
+        assistant: "Setting that up now.",
+        toolCalls: [{ name: "connect_app", args: { app: connect[1]!.trim() } }],
+        complete: true,
+      },
+    ];
+  }
   if (lower.includes("silent routine fixture")) {
     return [
       {

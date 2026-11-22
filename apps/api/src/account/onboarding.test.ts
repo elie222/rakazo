@@ -179,9 +179,9 @@ it("rejects a thread from another user or space before reading its messages", as
   await expect(
     markAppConnected(deps, actor, "bot", "slack", "pipedream", "other-thread"),
   ).rejects.toThrow();
-  expect(deps.prisma.thread.findFirst).toHaveBeenCalledWith({
-    where: { id: "other-thread", spaceId: actor.spaceId },
-  });
+  expect(deps.prisma.thread.findFirst).toHaveBeenCalledWith(
+    expect.objectContaining({ where: { id: "other-thread", spaceId: actor.spaceId } }),
+  );
   expect(tx.message.update).not.toHaveBeenCalled();
 });
 
@@ -234,6 +234,53 @@ it("updates an accessible group thread and emits its normal update event", async
     }),
   );
   expect(deps.events.notify).toHaveBeenCalledWith("group-thread", 1);
+});
+
+it("updates a card in a topic of the bot's own chat", async () => {
+  const { deps, actor, tx } = fixture([
+    { connectorId: "pipedream", slug: "slack", connected: true },
+  ]);
+  Object.assign(deps.prisma, {
+    thread: {
+      findFirst: vi.fn(async () => ({
+        id: "topic",
+        groupId: null,
+        parentMessage: { thread: { id: "thread", groupId: null } },
+      })),
+    },
+  });
+  tx.message.findMany = vi.fn(async () => [
+    {
+      id: "card",
+      blocks: [
+        { kind: "app_connect", connectorId: "pipedream", provider: "slack", status: "pending" },
+      ],
+    },
+  ]) as never;
+  await markAppConnected(deps, actor, "bot", "slack", "pipedream", "topic");
+  expect(tx.message.findMany).toHaveBeenCalledWith(
+    expect.objectContaining({ where: { threadId: "topic" } }),
+  );
+  expect(tx.message.update).toHaveBeenCalled();
+});
+
+it("rejects a topic of a chat the bot is not in", async () => {
+  const { deps, actor, tx } = fixture([
+    { connectorId: "pipedream", slug: "slack", connected: true },
+  ]);
+  Object.assign(deps.prisma, {
+    thread: {
+      findFirst: vi.fn(async () => ({
+        id: "topic",
+        groupId: null,
+        parentMessage: { thread: { id: "someone-elses", groupId: null } },
+      })),
+    },
+  });
+  await expect(
+    markAppConnected(deps, actor, "bot", "slack", "pipedream", "topic"),
+  ).rejects.toThrow();
+  expect(tx.message.update).not.toHaveBeenCalled();
 });
 
 it("rejects a group the space does not have", async () => {
@@ -308,6 +355,17 @@ describe("after a card connects its app", () => {
     });
     expect(deps.jobs.enqueue).toHaveBeenCalledWith(
       expect.objectContaining({ payload: { runId: "carry-on" } }),
+    );
+  });
+
+  it("takes the server's word for a connection it made itself, without asking the provider", async () => {
+    const { deps, actor } = connected({ runId: "asked" });
+    await markAppConnected(deps, actor, "bot", "slack", "pipedream", "thread", "card", true);
+    expect(deps.connectors.managed).not.toHaveBeenCalled();
+    expect(queueConnectedRun).toHaveBeenCalledWith(
+      expect.anything(),
+      actor,
+      expect.objectContaining({ prompt: expect.stringContaining('"Slack"') }),
     );
   });
 

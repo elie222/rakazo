@@ -21,11 +21,19 @@ import {
   providerScopeKey,
   tryLockProviderConnectionScope,
 } from "@rakazo/adapters";
-import type { Actor } from "@rakazo/contracts";
+import type { Actor, AppConnectClient, AppConnectOrigin } from "@rakazo/contracts";
+import { AppConnectOriginSchema, appConnectCallbackUrl } from "@rakazo/contracts";
 import { ClientError } from "@rakazo/core";
 import { normalizedHttpUrl } from "@rakazo/core/egress";
-import { IsolationError, ProviderTransactionBusyError, recordSecurityEvent } from "@rakazo/db";
-import { getLogger } from "@rakazo/logging";
+import {
+  IsolationError,
+  ProviderTransactionBusyError,
+  readJsonColumn,
+  recordSecurityEvent,
+} from "@rakazo/db";
+import { bestEffort, getLogger } from "@rakazo/logging";
+import * as z from "zod";
+import { markAppConnected } from "../account/onboarding.js";
 import { connectionCreatedEvent } from "../auth/security-audit.js";
 import type { RouterDeps } from "../router.js";
 import { recordToolConnected } from "./tool-connect-analytics.js";
@@ -130,19 +138,27 @@ function cleanupBackupAt(): Date {
 export async function beginConnection(
   deps: RouterDeps,
   context: { actor: Actor; signal?: AbortSignal },
-  request: { connectorId?: string; provider: string; displayName: string },
+  request: {
+    connectorId?: string;
+    provider: string;
+    displayName: string;
+    origin?: AppConnectOrigin;
+    client?: AppConnectClient;
+  },
 ) {
+  // The row belongs to this attempt until a revoke takes it or a later begin reuses it.
+  const attempt = randomUUID();
   const input = {
     ...request,
     connectorId: request.connectorId ?? deps.connectors.defaultConnectorId,
   };
+  // The card stays on the row through both writes, so whichever call connects it updates the card.
+  const pendingMetadata = { attempt, ...(input.origin ? { origin: input.origin } : {}) };
   const connector = deps.integrationSettings?.has(input.connectorId)
     ? await deps.integrationSettings.resolve(input.connectorId)
     : deps.connectors.managed(input.connectorId);
   if (!connector)
     throw new ClientError("BAD_REQUEST", `Connector ${input.connectorId} is not configured`);
-  // The row belongs to this attempt until a revoke takes it or a later begin reuses it.
-  const attempt = randomUUID();
   // Share the revoke scope lock so a slug-wide remote delete cannot miss a
   // row that is inserted after SELECT FOR UPDATE and before remote revoke.
   // Complete and revoke hold that lock across provider calls, so wait as long as they may.
@@ -169,7 +185,7 @@ export async function beginConnection(
             displayName: input.displayName,
             status: "pending",
             providerRef: null,
-            metadata: { attempt },
+            metadata: pendingMetadata,
           },
         });
       }
@@ -181,7 +197,7 @@ export async function beginConnection(
           provider: input.provider,
           displayName: input.displayName,
           status: "pending",
-          metadata: { attempt },
+          metadata: pendingMetadata,
         },
       });
     },
@@ -192,7 +208,7 @@ export async function beginConnection(
     spaceId: context.actor.spaceId,
     userId: context.actor.userId,
     status: "pending",
-    metadata: { equals: { attempt } },
+    metadata: { equals: pendingMetadata },
   };
   /**
    * Marks the row failed while it holds nothing. A row whose save landed, even one that reported
@@ -214,7 +230,7 @@ export async function beginConnection(
     auth = await connector.begin(
       {
         provider: input.provider,
-        redirectUrl: `${deps.env.webOrigin}/integrations/callback`,
+        redirectUrl: appConnectCallbackUrl(deps.env.webOrigin, row.id, input.client),
       },
       connectionContext(context.actor, "connections.begin", context.signal),
     );
@@ -264,7 +280,7 @@ export async function beginConnection(
           data: {
             status: auth.authorizationUrl ? "pending" : "connected",
             providerRef: auth.state || null,
-            metadata: { state: auth.state, attempt },
+            metadata: { ...pendingMetadata, state: auth.state },
           },
         });
         if (updated.count > 0) return true;
@@ -289,6 +305,7 @@ export async function beginConnection(
   if (!auth.authorizationUrl) {
     await recordSecurityEvent(connectionCreatedEvent("connections.begin", row.id, context.actor));
     recordToolConnected(deps.analytics, context.actor.userId, row);
+    await updateOriginCard(deps, context.actor, row);
   }
   return { connectionId: row.id, authorizationUrl: auth.authorizationUrl };
 }
@@ -434,7 +451,24 @@ export async function completeConnection(
             context.actor.spaceId,
           );
         let resolvedAccountId: string | undefined;
-        if (transactionConnector.resolveConnectedAccountId) {
+        // A sign-in request names the one account it created, so it needs no help from siblings;
+        // an abandoned earlier attempt must not hold a retry back.
+        const ownRequest = Boolean(
+          current.providerRef?.trim() && current.providerRef.trim() !== existing.provider,
+        );
+        if (transactionConnector.resolveConnectedAccountId && ownRequest) {
+          try {
+            resolvedAccountId = await resolveAccountId(current.providerRef, []);
+          } catch (error) {
+            getLogger().warn("connections.complete could not resolve the connected account", {
+              error,
+              connectionId: current.id,
+              connectorId: existing.connectorId,
+              provider: existing.provider,
+            });
+            return current;
+          }
+        } else if (transactionConnector.resolveConnectedAccountId) {
           const siblings = await tx.connection.findMany({
             where: {
               spaceId: context.actor.spaceId,
@@ -553,6 +587,7 @@ export async function completeConnection(
       connectionCreatedEvent("connections.complete", row.id, context.actor),
     );
     recordToolConnected(deps.analytics, context.actor.userId, row);
+    await updateOriginCard(deps, context.actor, row);
   }
   return {
     id: row.id,
@@ -563,6 +598,39 @@ export async function completeConnection(
     capabilities: [],
     createdAt: row.createdAt.toISOString(),
   };
+}
+
+const ConnectionMetadataSchema = z.object({ origin: AppConnectOriginSchema.optional() });
+
+/**
+ * Marks the chat card a connection started from as connected, which also lets the bot carry on.
+ * Runs on the call that connects the row, so the card follows however the sign-in came back.
+ */
+export async function updateOriginCard(
+  deps: RouterDeps,
+  actor: Actor,
+  row: { id: string; connectorId: string; provider: string; metadata: unknown },
+) {
+  const { origin } = readJsonColumn(
+    ConnectionMetadataSchema,
+    row.metadata,
+    { table: "connections", column: "metadata", id: row.id },
+    { fallback: {} },
+  );
+  if (!origin) return;
+  await bestEffort(
+    "connections: update the card the app was connected from",
+    markAppConnected(
+      deps,
+      actor,
+      origin.botId,
+      row.provider,
+      row.connectorId,
+      origin.threadId,
+      origin.messageId,
+      true,
+    ),
+  );
 }
 
 /** A removal's provider call ends this long into its transaction, leaving time to commit. */

@@ -71,3 +71,49 @@ test("a group card authorizes in its own thread without duplicate pending cards"
   await expect(card.getByText("Connected", { exact: true })).toBeVisible();
   await captureScreenshot(page, testInfo, "group-app-connect-connected");
 });
+
+test("an app's sign-in finishes in its popup even after the chat tab is gone", async ({
+  page,
+  context,
+}, testInfo) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await signup(page, `callback-connect-${Date.now()}@rakazo.test`, "password12", "Sample");
+  await completeOnboarding(page);
+  const botId = activeBotId(page);
+  await rpc(page, "onboarding/dismissFocus", { botId });
+  const chat = page.url();
+  await page.getByPlaceholder(/Message/).fill("Can you connect to Airtable?");
+  await page.keyboard.press("Enter");
+  const card = page.getByRole("group", { name: "Airtable connection", exact: true });
+  await expect(card).toBeVisible({ timeout: 30_000 });
+  await context.route("https://pipedream.example.test/connect**", (route) =>
+    route.fulfill({ contentType: "text/html", body: "<h1>Fixture provider sign-in</h1>" }),
+  );
+  const begun = page.waitForResponse("**/rpc/connections/begin");
+  const opened = page.waitForEvent("popup");
+  await card.getByRole("button", { name: "Connect", exact: true }).click();
+  const { json } = (await (await begun).json()) as { json: { connectionId: string } };
+  const popup = await opened;
+  await expect(popup.getByText("Fixture provider sign-in")).toBeVisible();
+  // Connect is ready again at once, so an abandoned sign-in can be started over.
+  await expect(card.getByRole("button", { name: "Connect", exact: true })).toBeEnabled();
+  await captureScreenshot(popup, testInfo, "callback-provider-sign-in");
+
+  // The chat closes before the provider sends the sign-in back to the callback.
+  await page.close();
+  const closed = popup.waitForEvent("close");
+  await popup.goto(`/integrations/callback/${json.connectionId}`);
+  await closed;
+
+  const again = await context.newPage();
+  await again.setViewportSize({ width: 1280, height: 900 });
+  await again.goto(chat);
+  const landed = again.getByRole("group", { name: "Airtable connection", exact: true });
+  await expect(landed.getByText("Connected", { exact: true })).toBeVisible({ timeout: 30_000 });
+  await expect(
+    again
+      .getByTestId("message-bot-bubble")
+      .getByText(/i handled: The user just connected "Airtable"/),
+  ).toBeVisible({ timeout: 30_000 });
+  await captureScreenshot(again, testInfo, "callback-connected-after-tab-closed");
+});

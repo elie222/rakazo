@@ -11,19 +11,21 @@ import {
   completeConnection,
   connectionContext,
   revokeConnection,
+  updateOriginCard,
 } from "../integrations/connection-flows.js";
 import { recordToolConnected } from "../integrations/tool-connect-analytics.js";
 import type { RouterDeps } from "../router.js";
 import type { RouterContext } from "./context.js";
 
 async function reconcileConnections(
-  { prisma, analytics }: Pick<RouterDeps, "prisma" | "analytics">,
-  owner: Pick<Actor, "spaceId" | "userId">,
+  deps: RouterDeps,
+  owner: Actor,
   connectorId: string,
   connectedProviders: string[],
   reconnectRefs: string[],
   listConnectedRefs: () => Promise<string[] | undefined>,
 ): Promise<void> {
+  const { prisma, analytics } = deps;
   const connectedProviderKeys = new Set(
     connectedProviders.map((provider) => provider.trim().toLowerCase()),
   );
@@ -43,6 +45,7 @@ async function reconcileConnections(
         updatedAt: true,
         createdAt: true,
         providerRef: true,
+        metadata: true,
       },
       // Breaks a tie between attempts begun at the same moment in favour of the later row.
       orderBy: [{ createdAt: "desc" }, { id: "desc" }],
@@ -110,7 +113,10 @@ async function reconcileConnections(
   for (const id of connectedIds) {
     await recordSecurityEvent(connectionCreatedEvent("connections.catalog", id, owner));
     const row = rows.find((candidate) => candidate.id === id);
-    if (row) recordToolConnected(analytics, owner.userId, row);
+    if (!row) continue;
+    recordToolConnected(analytics, owner.userId, row);
+    // The callback may still be on its way; the card should not wait for it.
+    await updateOriginCard(deps, owner, { ...row, connectorId });
   }
 }
 

@@ -13,12 +13,26 @@ import { deferred } from "@rakazo/core/test-async";
 import type { PrismaClient } from "@rakazo/db";
 import { IsolationError, runProviderTransaction } from "@rakazo/db";
 import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { RouterDeps } from "../router.js";
 import { appHandler, createRouter, handle } from "../router-test-support.js";
 import { beginConnection } from "./connection-flows.js";
 
+const markAppConnected = vi.hoisted(() => vi.fn(async () => undefined));
+vi.mock("../account/onboarding.js", async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  markAppConnected,
+}));
+
+const actor = {
+  spaceId: "workspace-1",
+  userId: "user-1",
+  email: "user@rakazo.test",
+  isDeploymentOwner: true,
+} satisfies Actor;
+
 describe("connections.begin", () => {
+  beforeEach(() => markAppConnected.mockClear());
   it("reuses a revoked row for the same provider instead of inserting a duplicate", async () => {
     const begin = vi.fn().mockResolvedValue({ state: "gmail-state", authorizationUrl: null });
     const update = vi.fn().mockResolvedValue({
@@ -87,7 +101,10 @@ describe("connections.begin", () => {
 
     expect(response.status).toBe(200);
     expect(begin).toHaveBeenCalledWith(
-      { provider: "gmail", redirectUrl: "http://127.0.0.1:5173/integrations/callback" },
+      {
+        provider: "gmail",
+        redirectUrl: "http://127.0.0.1:5173/integrations/callback/conn-old",
+      },
       expect.anything(),
     );
     // Complete and revoke hold the same lock across provider calls; begin must outwait them.
@@ -127,6 +144,68 @@ describe("connections.begin", () => {
     await expect(response.json()).resolves.toMatchObject({
       json: { connectionId: "conn-old" },
     });
+    expect(markAppConnected).not.toHaveBeenCalled();
+  });
+
+  it("keeps the chat card on the row through both writes, and updates it when the app connects at once", async () => {
+    const origin = { botId: "bot-1", threadId: "thread-1" };
+    const begin = vi.fn().mockResolvedValue({ state: "gmail-state", authorizationUrl: null });
+    const create = vi.fn(async ({ data }: { data: object }) => ({
+      ...data,
+      id: "conn-new",
+      createdAt: new Date(0),
+    }));
+    const updateMany = vi.fn().mockResolvedValue({ count: 1 });
+    const tx = {
+      $executeRaw: vi.fn().mockResolvedValue(undefined),
+      connection: { findMany: vi.fn().mockResolvedValue([]), create, updateMany },
+    };
+    const prisma = {
+      $transaction: vi.fn(async (fn: (client: typeof tx) => Promise<unknown>) => fn(tx)),
+    } as unknown as PrismaClient;
+    const client = createRouterClient(
+      createRouter({
+        prisma,
+        connectors: { managed: () => ({ begin }) },
+        env: { webOrigin: "http://127.0.0.1:5173" },
+      } as unknown as RouterDeps),
+      { context: { actor } },
+    );
+
+    await client.connections.begin({
+      connectorId: "composio",
+      provider: "gmail",
+      displayName: "Gmail",
+      origin,
+      client: "mobile",
+    });
+
+    expect(begin).toHaveBeenCalledWith(
+      {
+        provider: "gmail",
+        redirectUrl: "http://127.0.0.1:5173/integrations/callback/conn-new/mobile",
+      },
+      expect.anything(),
+    );
+    const metadata = { attempt: expect.any(String), origin };
+    expect(create).toHaveBeenCalledWith({ data: expect.objectContaining({ metadata }) });
+    expect(updateMany).toHaveBeenCalledWith({
+      where: expect.objectContaining({ metadata: { equals: metadata } }),
+      data: expect.objectContaining({
+        status: "connected",
+        metadata: { ...metadata, state: "gmail-state" },
+      }),
+    });
+    expect(markAppConnected).toHaveBeenCalledWith(
+      expect.anything(),
+      actor,
+      "bot-1",
+      "gmail",
+      "composio",
+      "thread-1",
+      undefined,
+      true,
+    );
   });
 
   it("leaves the removal to its job when its result cannot be saved before the slot frees", async () => {

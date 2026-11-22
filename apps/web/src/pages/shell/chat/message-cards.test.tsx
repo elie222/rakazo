@@ -39,6 +39,7 @@ vi.mock("@lingui/react/macro", () => ({
   Trans: ({ children }: { children: ReactNode }) => children,
 }));
 
+import { takeAppConnectReturn } from "../../../lib/integrations/app-connect";
 import { connectMcpOauth } from "../../../lib/integrations/mcp-connect";
 import { AppConnectCard, ChoiceCard, McpApprovalCard } from "./message-cards";
 
@@ -122,42 +123,98 @@ it("cancels once the popup is closed and the app has focus again", async () => {
   expect(vi.getTimerCount()).toBe(0);
 });
 
-it("authorizes a card in a normal chat and marks its thread connected", async () => {
-  const host = document.createElement("div");
-  document.body.append(host);
-  const root = createRoot(host);
-  try {
+describe("the app connect card", () => {
+  const block = {
+    kind: "app_connect" as const,
+    connectorId: "fake",
+    provider: "gmail",
+    name: "Gmail",
+    description: "",
+    logo: null,
+    status: "pending" as const,
+  };
+
+  async function renderCard() {
+    const host = document.createElement("div");
+    document.body.append(host);
+    const root = createRoot(host);
     await act(async () =>
-      root.render(
-        <AppConnectCard
-          botId="bot"
-          threadId="normal-chat"
-          block={{
-            kind: "app_connect",
-            connectorId: "fake",
-            provider: "gmail",
-            name: "Gmail",
-            description: "",
-            logo: null,
-            status: "pending",
-          }}
-        />,
-      ),
+      root.render(<AppConnectCard botId="bot" threadId="normal-chat" block={block} />),
     );
-    expect(host.querySelector("button")?.textContent).toBe("Connect");
-    await act(async () => host.querySelector("button")?.click());
-    expect(calls.mark).toHaveBeenCalledWith({
-      botId: "bot",
-      threadId: "normal-chat",
-      connectorId: "fake",
-      provider: "gmail",
-    });
-    expect(host.textContent).toContain("Connected");
-    expect(host.querySelector("button")).toBeNull();
-  } finally {
-    await act(async () => root.unmount());
-    host.remove();
+    const button = () => host.querySelector("button");
+    return {
+      host,
+      button,
+      unmount: async () => {
+        await act(async () => root.unmount());
+        host.remove();
+      },
+    };
   }
+
+  it("tells the server which card it connects from", async () => {
+    const card = await renderCard();
+    try {
+      expect(card.button()?.textContent).toBe("Connect");
+      await act(async () => card.button()?.click());
+      expect(calls.begin).toHaveBeenCalledWith(
+        expect.objectContaining({ origin: { botId: "bot", threadId: "normal-chat" } }),
+        expect.anything(),
+      );
+      expect(calls.mark).not.toHaveBeenCalled();
+      expect(card.host.textContent).toContain("Connected");
+      expect(card.button()).toBeNull();
+    } finally {
+      await card.unmount();
+    }
+  });
+
+  it("stays ready to start over while the sign-in is open, and reads it on return", async () => {
+    calls.begin.mockResolvedValue({
+      connectionId: "connection",
+      authorizationUrl: "https://identity.example.test/authorize",
+    } as never);
+    calls.complete.mockResolvedValue({ status: "pending" });
+    vi.spyOn(window, "open").mockReturnValue({} as Window);
+    const card = await renderCard();
+    try {
+      await act(async () => card.button()?.click());
+      await act(async () => card.button()?.click());
+      expect(window.open).toHaveBeenCalledTimes(2);
+      expect(card.button()?.disabled).toBe(false);
+      expect(calls.complete).not.toHaveBeenCalled();
+      calls.complete.mockResolvedValue({ status: "connected" });
+      await act(async () => window.dispatchEvent(new Event("focus")));
+      expect(calls.complete).toHaveBeenCalledOnce();
+      expect(card.host.textContent).toContain("Connected");
+    } finally {
+      await card.unmount();
+      calls.begin
+        .mockReset()
+        .mockResolvedValue({ connectionId: "connection", authorizationUrl: null });
+      calls.complete.mockReset().mockResolvedValue({ status: "connected" });
+    }
+  });
+
+  it("signs in in this tab when the popup is blocked, noting the chat to return to", async () => {
+    calls.begin.mockResolvedValue({
+      connectionId: "connection",
+      authorizationUrl: "https://identity.example.test/authorize",
+    } as never);
+    vi.spyOn(window, "open").mockReturnValue(null);
+    window.history.replaceState(null, "", "/app/bot");
+    const card = await renderCard();
+    try {
+      await act(async () => card.button()?.click());
+      expect(takeAppConnectReturn("connection")).toBe("/app/bot");
+    } finally {
+      await card.unmount();
+      window.history.replaceState(null, "", "/");
+      calls.begin
+        .mockReset()
+        .mockResolvedValue({ connectionId: "connection", authorizationUrl: null });
+    }
+  });
 });
 
 it("links OAuth failures in chat to the shared recovery guide without approving the server", async () => {

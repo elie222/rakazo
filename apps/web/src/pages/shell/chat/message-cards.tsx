@@ -1,13 +1,17 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import { useLinkPrompt } from "@rakazo/chat-ui/web";
 import type { MessageBlock } from "@rakazo/contracts";
-import { appConnectedInput, waitForSignIn } from "@rakazo/core";
+import { bestEffort } from "@rakazo/logging/best-effort";
 import { Button, Dialog, DialogClose, DialogContent, DialogTitle } from "@rakazo/ui-web";
 import { X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { BuiCard, SuccessPop } from "../../../components/ai/primitives";
 import { ErrorNotice } from "../../../components/ErrorNotice";
 import { OptionRow } from "../../../components/messages/OptionRow";
+import {
+  APP_CONNECT_WINDOW_NAME,
+  rememberAppConnectReturn,
+} from "../../../lib/integrations/app-connect";
 import { connectMcpOauth } from "../../../lib/integrations/mcp-connect";
 import type { ArtifactTarget } from "../../../lib/pages/artifact-open";
 import { chartViewport } from "../../../lib/pages/chart-viewport";
@@ -149,56 +153,68 @@ export function AppConnectCard({
   const [busy, setBusy] = useState(false);
   const [localStatus, setLocalStatus] = useState<"pending" | "connected">(block.status);
   const [error, setError] = useState<string | null>(null);
-  const connectionAttempt = useRef<AbortController | null>(null);
-  const readOnReturn = useRef<(() => void) | null>(null);
+  /** The sign-in under way: a new one replaces it, and its connection is read on return. */
+  const attempt = useRef<{ controller: AbortController; connectionId?: string } | null>(null);
   const status = block.status === "connected" ? "connected" : localStatus;
-  useEffect(() => () => connectionAttempt.current?.abort(), []);
-  useEventListener(window, "focus", () => readOnReturn.current?.());
+  useEffect(() => () => attempt.current?.controller.abort(), []);
+  // The callback finishes the sign-in and the server updates this card; reading the connection
+  // once when the popup hands focus back covers a callback that could not finish it.
+  useEventListener(window, "focus", () => void readConnection());
+
+  async function readConnection() {
+    const current = attempt.current;
+    if (!current?.connectionId) return;
+    const row = await bestEffort(
+      "read an app connection",
+      rpc.connections.complete(
+        { connectionId: current.connectionId },
+        { signal: current.controller.signal },
+      ),
+    );
+    if (attempt.current !== current || row?.status !== "connected") return;
+    attempt.current = null;
+    setLocalStatus("connected");
+  }
 
   async function authorize() {
-    connectionAttempt.current?.abort();
-    const controller = new AbortController();
-    connectionAttempt.current = controller;
+    attempt.current?.controller.abort();
+    const current = { controller: new AbortController() };
+    attempt.current = current;
     setBusy(true);
     setError(null);
     try {
-      const started = await rpc.connections.begin({
-        connectorId: block.connectorId,
-        provider: block.provider,
-        displayName: block.name,
-      });
-      if (started.authorizationUrl) {
-        window.open(started.authorizationUrl, "rakazo-app-connect", "popup,width=560,height=720");
-      }
-      const result = await waitForSignIn(
-        started.connectionId,
-        (input) => rpc.connections.complete(input, { signal: controller.signal }),
+      const started = await rpc.connections.begin(
         {
-          signal: controller.signal,
-          onSlow: () => setBusy(false),
-          whenBack: (read) => {
-            readOnReturn.current = read;
-            return () => {
-              if (readOnReturn.current === read) readOnReturn.current = null;
-            };
-          },
+          connectorId: block.connectorId,
+          provider: block.provider,
+          displayName: block.name,
+          origin: { botId, threadId, ...(messageId ? { messageId } : {}) },
         },
+        { signal: current.controller.signal },
       );
-      if (result.status === "connected") {
+      if (attempt.current !== current) return;
+      if (!started.authorizationUrl) {
         setLocalStatus("connected");
-        await rpc.onboarding
-          .appConnected(appConnectedInput(botId, threadId, block, messageId))
-          .catch(() => undefined);
+        return;
+      }
+      attempt.current = { ...current, connectionId: started.connectionId };
+      const popup = window.open(
+        started.authorizationUrl,
+        APP_CONNECT_WINDOW_NAME,
+        "popup,width=560,height=720",
+      );
+      if (!popup) {
+        // A blocked popup signs in in this tab; the callback brings it back to this chat.
+        rememberAppConnectReturn(started.connectionId);
+        window.location.assign(started.authorizationUrl);
       }
     } catch (error) {
-      if (!controller.signal.aborted) {
+      if (!current.controller.signal.aborted) {
         setError(errorText(error, t`Could not authorize this app`));
       }
     } finally {
-      if (connectionAttempt.current === controller) {
-        connectionAttempt.current = null;
-        setBusy(false);
-      }
+      // Connect stays usable while the sign-in is open, so another tap starts over at once.
+      if (attempt.current?.controller === current.controller) setBusy(false);
     }
   }
   return (

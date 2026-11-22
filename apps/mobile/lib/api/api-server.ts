@@ -50,7 +50,23 @@ export function subscribeConfirmedSpaceSwitch(listener: () => void): () => void 
 function noteConfirmedSpaceSwitch(): void {
   for (const listener of [...confirmedSpaceSwitchListeners]) listener();
 }
+let markApiBaseLoaded = () => {};
+const apiBaseLoadedAtLaunch = new Promise<void>((resolve) => {
+  markApiBaseLoaded = resolve;
+});
+/** Settles once launch has restored the saved server and Space, which a request sent before
+ * then would not use. */
+export function apiBaseLoaded(): Promise<void> {
+  return apiBaseLoadedAtLaunch;
+}
 export async function loadApiBase() {
+  try {
+    return await restoreApiBase();
+  } finally {
+    markApiBaseLoaded();
+  }
+}
+async function restoreApiBase() {
   let apiBase = defaultApiBase();
   try {
     const stored = await SecureStore.getItemAsync(ENDPOINT_KEY);

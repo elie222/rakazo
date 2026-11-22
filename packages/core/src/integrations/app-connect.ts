@@ -75,19 +75,3 @@ export function connectedAppBlock(
     ? { ...block, status: "connected" }
     : block;
 }
-
-/** Shared completion input for inline cards on every client. */
-export function appConnectedInput(
-  botId: string,
-  threadId: string,
-  block: AppConnectBlock,
-  messageId?: string,
-) {
-  return {
-    botId,
-    threadId,
-    ...(messageId ? { messageId } : {}),
-    connectorId: block.connectorId,
-    provider: block.provider,
-  };
-}
