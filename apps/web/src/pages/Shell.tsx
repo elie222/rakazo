@@ -646,6 +646,7 @@ function SpaceShell() {
       onCollapsedChange={sidebar.setCollapsedPref}
       onPreviewCollapsedChange={sidebar.setCollapsed}
       computerOpen={computerOpen}
+      reservedWidth={railWidth}
       data-testid="shell-root"
       data-ready={shellReady}
       className="relative flex h-full min-h-0 min-w-0 overflow-hidden bg-background text-foreground/90 [&[data-resizing-sidebar]_*[data-slot=sidebar-gap]]:transition-none [&[data-resizing-sidebar]_*[data-slot=sidebar-container]]:transition-none"
