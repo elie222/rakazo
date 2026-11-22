@@ -34,10 +34,9 @@ export async function notifyRealtime(
   threadId: string,
   cursor: number,
 ): Promise<void> {
-  await bestEffort(
-    "publish thread change",
-    realtime?.publish(threadTopic(threadId), JSON.stringify({ cursor })),
-  );
+  // Async, so a fanout that throws before returning a promise is caught as well.
+  const publish = async () => realtime?.publish(threadTopic(threadId), JSON.stringify({ cursor }));
+  await bestEffort("publish thread change", publish());
 }
 
 export async function eventsAfter(

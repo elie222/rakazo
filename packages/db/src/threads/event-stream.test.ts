@@ -16,6 +16,16 @@ describe("notifyCommittedEvent", () => {
     ).resolves.toBeUndefined();
     expect(realtime.publish).toHaveBeenCalledWith("thread:thread-1", JSON.stringify({ cursor: 3 }));
   });
+
+  it("resolves when the publish throws before returning a promise", async () => {
+    const realtime = {
+      publish: vi.fn(() => {
+        throw new Error("fanout closed");
+      }),
+    } as unknown as RealtimeFanout;
+    const prisma = {} as PrismaClient;
+    await expect(notifyCommittedEvent(prisma, realtime, "thread-1", 4)).resolves.toBeUndefined();
+  });
 });
 
 describe("observeThreadChanges", () => {
