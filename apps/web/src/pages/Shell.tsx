@@ -902,6 +902,7 @@ function SpaceShell() {
     },
     [setPeerConversation],
   );
+  const openAgentImport = useCallback(() => setOverlayRef.current({ kind: "import" }), []);
   const openImportSetup = useCallback(
     (target: ImportSetupTarget) => {
       importSetupOpen.current = true;
@@ -1138,6 +1139,7 @@ function SpaceShell() {
         openSettings={openSettings}
         openIntegrations={() => setOverlay({ kind: "integrations" })}
         openSkills={() => setOverlay({ kind: "skills" })}
+        openAgentImport={() => setOverlay({ kind: "import" })}
         openSpaceChat={openSpaceChat}
       />
 
@@ -1252,6 +1254,7 @@ function SpaceShell() {
               onOpenComputer={computerControls.onOpenComputer}
               onReleaseComputer={computerControls.onReleaseComputer}
               onOpenImportSetup={openImportSetup}
+              onOpenAgentImport={openAgentImport}
               rpc={rpc}
             />
           )}

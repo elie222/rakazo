@@ -363,7 +363,7 @@ class SourcesReadyTest(unittest.TestCase):
 
 
 class CodexConfigTest(unittest.TestCase):
-    def test_browser_only_configuration(self):
+    def test_agent_configuration(self):
         import tomllib
         adapter_spec = importlib.util.spec_from_file_location("adapter", SCRIPT.with_name("pr-screenshot-codex.py"))
         adapter = importlib.util.module_from_spec(adapter_spec)
@@ -372,17 +372,22 @@ class CodexConfigTest(unittest.TestCase):
             root = pathlib.Path(directory)
             mcp = root / "mcp.json"
             mcp.write_text(json.dumps({"mcpServers": {"playwright": {"command": "sudo", "args": ["--isolated"]}}}))
-            adapter.configure(mcp, root)
+            adapter.configure(mcp, root, 18899)
             config = tomllib.loads((root / "config.toml").read_text())
             self.assertEqual(config["permissions"]["screenshots"]["filesystem"][str(root)], "deny")
             self.assertEqual(config["web_search"], "disabled")
+            self.assertEqual(config["project_doc_max_bytes"], 0)
+            provider = config["model_providers"][config["model_provider"]]
+            self.assertEqual(provider["base_url"], "http://127.0.0.1:18899/backend-api/codex")
+            self.assertFalse(provider["requires_openai_auth"])
+            self.assertNotIn("shell_tool", config["features"])
             self.assertTrue(all(value is False for value in config["features"].values()))
             allowed = config["mcp_servers"]["playwright"]["enabled_tools"]
             self.assertIn("browser_take_screenshot", allowed)
             self.assertNotIn("browser_evaluate", allowed)
             self.assertNotIn("browser_file_upload", allowed)
             self.assertEqual(config["mcp_servers"]["playwright"]["default_tools_approval_mode"], "approve")
-            self.assertEqual(json.loads((root / "schema.json").read_text())["required"], ["screenshots", "complete"])
+            self.assertEqual(json.loads((root / "schema.json").read_text())["required"], ["screenshots", "complete", "blocker"])
             output = io.StringIO()
             with contextlib.redirect_stdout(output):
                 self.assertEqual(shots.main(["x", "contract"]), 0)
