@@ -147,6 +147,33 @@ request recovery from an externally deleted sandbox.
 Both providers run the same assertions. This journey does not cover multiple screens, or PTY sessions, which Boat does
 not support. Provider conformance tests remain separate. Live runs retain error logs to diagnose provider failures.
 
+## Weekly exploratory QA
+
+`.github/workflows/exploratory-qa.yml` lets a real model use the web app the way
+a person would, once a week. It builds the pull request preview image (Postgres,
+the app and emulated services, with the public demo account and fake data only),
+starts it on the runner, and gives each of up to six workers one section of
+[PRODUCT.md](../PRODUCT.md), rotating weekly. Each worker drives headless
+Chromium through browser tools that cannot leave the stack, and reports bugs
+with steps, expected and actual behavior, and a screenshot. A second job with no
+model access files one issue per new bug, labeled `exploratory-qa`, and skips any
+whose fingerprint (feature, screen without ids, and the agent's bug key) an open
+issue already carries. Close an issue to let the bug be filed again.
+
+It is off by default and costs nothing until turned on. In the repository's
+Actions settings, add the secrets `MODEL_BASE_URL` (any chat-completions
+compatible endpoint) and `MODEL_API_KEY`, the variables
+`EXPLORATORY_AGENT_MODEL`, `EXPLORATORY_AGENT_INPUT_USD_PER_MTOK` and
+`EXPLORATORY_AGENT_OUTPUT_USD_PER_MTOK` (prices per million tokens), optionally
+`EXPLORATORY_AGENT_BUDGET_USD`, and finally `EXPLORATORY_AGENT_ENABLED=true`.
+Remove that variable to turn it off again.
+
+Every run is capped: a budget priced from the model's reported token usage
+(default $5, at most $25; it can overrun by at most one model call per worker),
+at most 6 workers, 30 minutes and 80 browser actions per worker, 3 bugs per feature and 10
+new issues per run. A manual run takes the budget, workers, minutes and feature
+names as inputs.
+
 ## Live flows
 
 A flow is a goal a simulated person pursues with a fresh bot through real
@@ -251,7 +278,9 @@ version are kept apart.
 With a store, each case's first request is fingerprinted before it is sent. If
 a stored run has the same fingerprint, its trials are taken as they are under
 the same judge, or graded again from their stored evidence under a different
-one, and the request is never sent; otherwise the case runs. Trials that failed
+one, and the request is never sent; otherwise the case runs. The same judge
+means the same provider, model, rubric version and recorded settings; a run
+saved before the settings were recorded is graded again. Trials that failed
 for harness, provider, cleanup or time reasons are never reused. `--fresh`
 runs everything again. Each trial's `origin` and each case's `origin` counts in
 the summary say what was reused or regraded, and `workflowTotals` counts only
@@ -307,6 +336,27 @@ Failures distinguish agent outcomes, product errors, provider failures,
 harness failures and incomplete runs. Read the category and evidence before
 attributing a red run to a prompt change. Several trials establish an initial
 baseline, not a statistically precise reliability estimate.
+
+Compare two saved version 2 workflow Eval reports locally.
+
+```sh
+pnpm test:evals:compare baseline.json candidate.json
+```
+
+The command matches trials by case, strategy, and trial number. It lists
+passed-to-failed transitions and planned trials marked as not run. Reused or
+regraded results are marked on transitions. Workflow cost shows the report's
+recorded spend and displays `unknown` when unavailable. A completed comparison
+exits with status 0. If recorded settings or trial plans differ, the command
+names the differences and exits with status 1. This includes a suite recorded
+on only one side. Legacy reports that both omit the suite can still be compared
+using the other recorded settings.
+
+The check covers settings recorded in the JSON. Reports record the judge's
+output token limit, reasoning settings and a short hash of its endpoint, never
+the URL itself. Reports from before that show these as unknown instead of
+failing, so check them by hand. The bot's own endpoint is not recorded: keep
+its model connection the same when collecting a report pair.
 
 The injection case checks the requested artifact and forbidden service effects.
 It does not grade every claim in free-form explanatory prose; quoted or denied

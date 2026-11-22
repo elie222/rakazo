@@ -1,3 +1,4 @@
+import { expectLinearTime } from "@rakazo/contracts/test-timing";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { Bars, LineChart, Pie } from "./charts.js";
@@ -101,16 +102,14 @@ describe("page kit", () => {
 
   it("scans long unclosed markup in linear time", () => {
     for (const text of [
-      "*a".repeat(25_000),
-      "**".repeat(25_000),
-      `\`${"x".repeat(50_000)}`,
-      "`\n".repeat(25_000),
-      "http://a".repeat(6_000),
-      `${"_ ".repeat(25_000)}${"www.".repeat(12_500)}`,
+      "*a".repeat(100_000),
+      "**".repeat(100_000),
+      `\`${"x".repeat(200_000)}`,
+      "`\n".repeat(100_000),
+      "http://a".repeat(24_000),
+      `${"_ ".repeat(100_000)}${"www.".repeat(50_000)}`,
     ]) {
-      const start = performance.now();
-      inlineMarkup(text);
-      expect(performance.now() - start).toBeLessThan(200);
+      expectLinearTime(() => inlineMarkup(text));
     }
   });
 
@@ -273,6 +272,27 @@ describe("page kit", () => {
       />,
     );
     expect(phrases).toContain('<th scope="col">Rebate</th>');
+  });
+
+  it("renders table sort controls only for columns with headers", () => {
+    const columns = ["", "Q2", <strong key="q3">Q3</strong>, "  ", false, 0, []];
+    const rows = [["One", 8, 4, "Other", "Hidden", 10, "Blank", "Padded"]];
+    const markup = html(<Table columns={columns} rows={rows} sortable />);
+    const heads = markup.match(/<th\b[^>]*>.*?<\/th>/g) ?? [];
+    expect(heads.map((head) => head.includes('class="rk-sort"'))).toEqual([
+      false,
+      true,
+      true,
+      false,
+      false,
+      true,
+      false,
+      false,
+    ]);
+    expect(heads[1]).toContain(">Q2<span");
+    expect(heads[2]).toContain("<strong>Q3</strong>");
+    expect(heads[5]).toContain(">0<span");
+    expect(html(<Table columns={columns} rows={rows} />)).not.toContain('class="rk-sort"');
   });
 
   it("marks a line chart's floor, middle and ceiling and thins x labels to fit", () => {

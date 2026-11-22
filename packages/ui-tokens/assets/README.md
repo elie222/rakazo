@@ -32,7 +32,7 @@ The notification export uses the Android monochrome silhouette so its eyes remai
 transparent. Apple Icon Composer and Android launcher exports remain separate
 because their system masks and safe areas differ.
 
-After exporting, run `pnpm exec tsx apps/www/scripts/render-og.mjs` to refresh the
+After exporting, run `pnpm exec tsx apps/www/src/marketing/scripts/render-og.mjs` to refresh the
 marketing page social cards; set `CHROME_PATH` to a headless Chrome executable when
 it is not available at the script's default location.
 

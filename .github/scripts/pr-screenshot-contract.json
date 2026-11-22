@@ -28,9 +28,12 @@
         "items": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["file", "caption"],
+          "required": ["file", "before", "caption"],
           "properties": {
             "file": {
+              "type": "string"
+            },
+            "before": {
               "type": "string"
             },
             "caption": {

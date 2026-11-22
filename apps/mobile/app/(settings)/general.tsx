@@ -11,25 +11,38 @@ import { useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { Alert, AppState, Platform, ScrollView, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { MenuPicker } from "../../components/menu-picker";
-import { NativeSegmentedControl } from "../../components/native-segmented-control";
+import { NativeSegmentedControl } from "../../components/native/native-segmented-control";
 import {
   SettingsGroup,
   SettingsLabel,
   SettingsRow,
   SettingsSwitch,
   useStackedSettings,
-} from "../../components/settings-group";
-import { currentApiBase, selectedSpaceId } from "../../lib/api";
-import { getCachedAppearancePreference, setAppearancePreference } from "../../lib/appearance";
+} from "../../components/settings/settings-group";
+import { MenuPicker } from "../../components/ui/menu-picker";
+import { currentApiBase, selectedSpaceId } from "../../lib/api/api";
+import type { MobileMe } from "../../lib/api/mobile-types";
+import { loadSessionToken } from "../../lib/api/session";
+import { errorText } from "../../lib/api/user-error";
+import {
+  getCachedAppearancePreference,
+  setAppearancePreference,
+} from "../../lib/appearance/appearance";
+import {
+  getCachedComposerModelPicker,
+  setComposerModelPicker,
+  subscribeComposerModelPicker,
+} from "../../lib/composer/composer-model-picker-preference";
+import { useUiLocale } from "../../lib/i18n/i18n";
+import { useSideInsets } from "../../lib/layout/side-insets";
 import {
   getHapticsEnabled,
   loadHapticsPreference,
   setHapticsEnabled,
   subscribeHaptics,
-} from "../../lib/haptics";
-import { useUiLocale } from "../../lib/i18n";
-import type { LiveNotificationSettings } from "../../lib/live-notifications";
+} from "../../lib/native/haptics";
+import { useThemedStyles } from "../../lib/native/native";
+import type { LiveNotificationSettings } from "../../lib/notifications/live-notifications";
 import {
   canPostPromotedNotifications,
   DEFAULT_LIVE_NOTIFICATION_SETTINGS,
@@ -38,29 +51,24 @@ import {
   openLiveNotificationSettings,
   openPromotedNotificationSettings,
   setLiveNotificationSettings,
-} from "../../lib/live-notifications";
-import type { MobileMe } from "../../lib/mobile-types";
-import { useThemedStyles } from "../../lib/native";
-import { registerPushToken } from "../../lib/push";
-import { accountRpcQuery, queryClient, useSave } from "../../lib/query";
-import { createQueuedSave } from "../../lib/queued-save";
+} from "../../lib/notifications/live-notifications";
+import { registerPushToken } from "../../lib/notifications/push";
 import {
   getCachedRemoteImagesEnabled,
   setRemoteImagesPreference,
   subscribeRemoteImages,
-} from "../../lib/remote-images-preference";
+} from "../../lib/preferences/remote-images-preference";
 import {
   getCachedResponseStreamingEnabled,
   setResponseStreamingPreference,
   subscribeResponseStreaming,
-} from "../../lib/response-streaming";
-import { deviceTimeZone } from "../../lib/routine";
-import { useScreenQuery } from "../../lib/screen-query";
-import { loadSessionToken } from "../../lib/session";
-import { createSettingsPageStyles } from "../../lib/settings-page-styles";
-import { ACCOUNT_SETTINGS } from "../../lib/settings-target";
-import { useSideInsets } from "../../lib/side-insets";
-import { errorText } from "../../lib/user-error";
+} from "../../lib/preferences/response-streaming";
+import { accountRpcQuery, queryClient, useSave } from "../../lib/query/query";
+import { createQueuedSave } from "../../lib/query/queued-save";
+import { useScreenQuery } from "../../lib/query/screen-query";
+import { ACCOUNT_SETTINGS } from "../../lib/query/settings-target";
+import { deviceTimeZone } from "../../lib/routines/routine";
+import { createSettingsPageStyles } from "../../lib/settings/settings-page-styles";
 
 let hapticsSaveVersion = 0;
 
@@ -105,6 +113,11 @@ export default function General() {
   const loadRemoteImages = useSyncExternalStore(
     subscribeRemoteImages,
     getCachedRemoteImagesEnabled,
+    () => false,
+  );
+  const composerModelPicker = useSyncExternalStore(
+    subscribeComposerModelPicker,
+    getCachedComposerModelPicker,
     () => false,
   );
   const hapticsEnabled = useSyncExternalStore(
@@ -359,6 +372,11 @@ export default function General() {
             label={t`Stream replies`}
             value={streamReplies}
             onChange={(checked) => void setResponseStreamingPreference(checked ? "on" : "off")}
+          />
+          <SettingsSwitch
+            label={t`Model picker in chat`}
+            value={composerModelPicker}
+            onChange={(checked) => void setComposerModelPicker(checked)}
           />
           <SettingsSwitch
             label={t`Load web images automatically`}

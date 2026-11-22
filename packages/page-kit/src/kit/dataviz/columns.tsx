@@ -51,16 +51,20 @@ export function Columns({
   const words = useWords();
   const { ref, width } = useWidth(560);
   const shown = (Array.isArray(points) ? points : []).filter((point) => finite(point?.value));
-  const gap = 8;
-  const slot = (width - gap * Math.max(0, shown.length - 1)) / Math.max(1, shown.length);
+  const count = Math.max(1, shown.length);
+  // Dense plots must leave enough room for each column and its matching pointer slot.
+  const gap = Math.min(8, width / (2 * count));
+  const slot = (width - gap * (count - 1)) / count;
   const hover = useActive(shown.length, (x) =>
-    shown.length ? Math.min(shown.length - 1, Math.max(0, Math.floor(x / (slot + gap)))) : null,
+    shown.length && width > 0
+      ? Math.min(shown.length - 1, Math.max(0, Math.floor(x / (slot + gap))))
+      : null,
   );
   if (shown.length === 0) return <EmptyChart />;
   const values = shown.map((point) => point.value);
   const max = Math.max(0, ...values);
   const chosen = emphasis === undefined ? values.indexOf(max) : emphasis;
-  const column = Math.max(2, Math.min(28, slot * 0.7));
+  const column = Math.min(slot, Math.max(2, Math.min(28, slot * 0.7)));
   const baseline = PLOT.height - PLOT.bottom;
   const tallest = baseline - 20;
   const labelWidth = Math.max(...shown.map((point) => textWidth(text(point.label)) + 6));

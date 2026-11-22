@@ -3,14 +3,18 @@ import type { LabFeature } from "@rakazo/contracts";
 import { withLab } from "@rakazo/contracts";
 import { Alert, ScrollView } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { SettingsGroup, SettingsSwitch, useStackedSettings } from "../../components/settings-group";
-import { useThemedStyles } from "../../lib/native";
-import { accountRpcQuery, queryClient, useSave } from "../../lib/query";
-import { useScreenQuery } from "../../lib/screen-query";
-import { createSettingsPageStyles } from "../../lib/settings-page-styles";
-import { ACCOUNT_SETTINGS } from "../../lib/settings-target";
-import { useSideInsets } from "../../lib/side-insets";
-import { errorText } from "../../lib/user-error";
+import {
+  SettingsGroup,
+  SettingsSwitch,
+  useStackedSettings,
+} from "../../components/settings/settings-group";
+import { errorText } from "../../lib/api/user-error";
+import { useSideInsets } from "../../lib/layout/side-insets";
+import { useThemedStyles } from "../../lib/native/native";
+import { accountRpcQuery, queryClient, useSave } from "../../lib/query/query";
+import { useScreenQuery } from "../../lib/query/screen-query";
+import { ACCOUNT_SETTINGS } from "../../lib/query/settings-target";
+import { createSettingsPageStyles } from "../../lib/settings/settings-page-styles";
 
 export default function Labs() {
   const sideInsets = useSideInsets();

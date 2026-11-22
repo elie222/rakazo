@@ -3,19 +3,29 @@ import { ph } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
 import type { OrganizationInvitation, OrganizationMember } from "@rakazo/contracts";
 import { accountDisplay } from "@rakazo/core";
-import { useLocalSearchParams } from "expo-router";
+import { useIsFocused, useLocalSearchParams } from "expo-router";
 import { useState } from "react";
 import { ActivityIndicator, Alert, Platform, ScrollView, Share, StyleSheet } from "react-native";
-import { LoadFailure } from "../../components/load-failure";
-import { NativeSymbol } from "../../components/native-symbol";
-import { SettingsGroup, SettingsInputRow, SettingsRow } from "../../components/settings-group";
-import { native, useMobileTokens, useResolvedAppearance, useThemedStyles } from "../../lib/native";
-import { refreshOrganizations } from "../../lib/organizations";
-import { targetRpcQuery, useSave } from "../../lib/query";
-import { useScreenQuery } from "../../lib/screen-query";
-import { ACCOUNT_SETTINGS } from "../../lib/settings-target";
-import { useSideInsets } from "../../lib/side-insets";
-import { errorText } from "../../lib/user-error";
+import { NativeSymbol } from "../../components/native/native-symbol";
+import {
+  SettingsGroup,
+  SettingsInputRow,
+  SettingsRow,
+} from "../../components/settings/settings-group";
+import { LoadFailure } from "../../components/ui/load-failure";
+import { useLiveStream } from "../../lib/api/roster-signals";
+import { errorText } from "../../lib/api/user-error";
+import { useSideInsets } from "../../lib/layout/side-insets";
+import {
+  native,
+  useMobileTokens,
+  useResolvedAppearance,
+  useThemedStyles,
+} from "../../lib/native/native";
+import { targetRpcQuery, useSave } from "../../lib/query/query";
+import { useScreenQuery } from "../../lib/query/screen-query";
+import { ACCOUNT_SETTINGS } from "../../lib/query/settings-target";
+import { refreshOrganizations } from "../../lib/spaces/organizations";
 
 type Change =
   | { kind: "invite"; email: string }
@@ -33,6 +43,8 @@ export default function OrganizationMembersScreen() {
   const { organizationId } = useLocalSearchParams<{ organizationId: string }>();
   const read = targetRpcQuery(ACCOUNT_SETTINGS, "organizations/members/list", { organizationId });
   const query = useScreenQuery(read, { enabled: Boolean(organizationId) });
+  // Someone else's change to the members reaches this screen as a signal on the live stream.
+  useLiveStream(useIsFocused());
   const members = query.data ?? null;
   const [email, setEmail] = useState("");
   const loadError =

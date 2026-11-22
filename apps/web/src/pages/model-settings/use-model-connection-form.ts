@@ -1,3 +1,5 @@
+import { useLingui } from "@lingui/react/macro";
+import { useCompatibleModelDiscovery } from "@rakazo/chat-ui/model-discovery";
 import type {
   ModelApiProtocol,
   ModelCredential,
@@ -5,35 +7,25 @@ import type {
   ThinkingLevel,
 } from "@rakazo/contracts";
 import {
-  modelHeadersInput,
+  compatibleEndpointPresets,
+  matchCompatibleEndpointPreset,
   modelRoutingForm,
   OPENAI_COMPATIBLE_PROVIDER_ID,
-  openAiCompatibleProbeSuccessMessage,
 } from "@rakazo/contracts";
 import type { ConnectionFormFields } from "@rakazo/core";
 import {
-  createModelProbe,
-  initialModelProbeState,
   modelConnectionFormSecrets,
+  sameCompatibleModelEndpoint,
   sanitizeModelConnectionError,
   savedCompatibleModelIds,
 } from "@rakazo/core";
 import { useMemo, useRef, useState } from "react";
-import type { ModelCatalogEntry } from "../../lib/model-auth";
-import type { ModelPreflightFailure } from "../../lib/model-connection-preflight";
-import {
-  classifyModelConnectionFailure,
-  modelPreflightSuccessMessage,
-  runModelConnectionPreflight,
-  unavailableSelectedModel,
-} from "../../lib/model-connection-preflight";
-import type { RpcClient } from "../../lib/rpc";
-import { errorText } from "../../lib/user-error";
-
-type PreflightOutcome = { success: string } | { failure: ModelPreflightFailure };
+import type { ModelCatalogEntry } from "../../lib/models/model-auth";
+import type { RpcClient } from "../../lib/query/rpc";
+import { errorText } from "../../lib/query/user-error";
 
 /**
- * The fields, endpoint probe and connection test shared by every form that connects a model.
+ * The fields and model discovery shared by the web connection forms.
  * `credential` is the saved connection being edited, if any; the caller owns saving.
  */
 export function useModelConnectionForm({
@@ -48,6 +40,7 @@ export function useModelConnectionForm({
   /** Runs after a current probe lists the endpoint's models, with the id typed before it. */
   onModelsFound?: (models: string[], typedModelId: string) => void;
 }) {
+  const { t } = useLingui();
   const [provider, setProvider] = useState("");
   const [modelId, setModelId] = useState("");
   const modelIdRef = useRef(modelId);
@@ -58,23 +51,14 @@ export function useModelConnectionForm({
   const [gatewayId, setGatewayId] = useState("");
   const [projectId, setProjectId] = useState("");
   const [region, setRegion] = useState("global");
+  const [zeroDataRetention, setZeroDataRetention] = useState(false);
   const [baseUrl, setBaseUrl] = useState("");
+  const [presetBaseUrl, setPresetBaseUrl] = useState<string>();
   const [apiProtocol, setApiProtocol] = useState<ModelApiProtocol>("chat-completions");
   const [headerRows, setHeaderRows] = useState<ModelHeaderRow[] | null>(null);
   const [thinkingLevel, setThinkingLevel] = useState<ThinkingLevel | null>(null);
-  const [{ models: probeModels, probing }, setProbe] = useState(initialModelProbeState);
-  const [modelProbe] = useState(() => createModelProbe(setProbe));
-  const resetOpenAiCompatibleProbe = modelProbe.reset;
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const [preflightTesting, setPreflightTesting] = useState(false);
-  const [preflightTarget, setPreflightTarget] = useState<
-    "api-key" | "sign-in" | "compatible" | null
-  >(null);
-  const [preflightSuccess, setPreflightSuccess] = useState<string | null>(null);
-  const [preflightFailure, setPreflightFailure] = useState<ModelPreflightFailure | null>(null);
-  const preflightRevisionRef = useRef(0);
-
   const modelsForProvider = useMemo(
     () => catalog.filter((entry) => entry.provider === provider),
     [catalog, provider],
@@ -102,50 +86,50 @@ export function useModelConnectionForm({
     setGatewayId(fields.gatewayId);
     setProjectId(fields.projectId ?? "");
     setRegion(fields.region ?? "global");
-  }
-
-  function invalidatePreflight() {
-    preflightRevisionRef.current += 1;
-    setPreflightTesting(false);
-    setPreflightTarget(null);
-    setPreflightSuccess(null);
-    setPreflightFailure(null);
+    setZeroDataRetention(fields.zeroDataRetention ?? false);
   }
 
   /** Points the form at another provider's connection, clearing the key and any results. */
-  function openConnection(nextProvider: string, nextModelId: string, fields: ConnectionFormFields) {
+  function openConnection(
+    nextProvider: string,
+    nextModelId: string,
+    fields: ConnectionFormFields,
+    nextPresetBaseUrl?: string,
+  ) {
     setProvider(nextProvider);
+    setPresetBaseUrl(nextPresetBaseUrl);
     setModelId(nextModelId);
     applyFields(fields);
     setApiKey("");
     setHeaderRows(null);
     resetOpenAiCompatibleProbe();
-    invalidatePreflight();
     setError(null);
     setNotice(null);
   }
 
   function updateBaseUrl(nextBaseUrl: string) {
     setBaseUrl(nextBaseUrl);
+    if (sameCompatibleModelEndpoint(baseUrl, nextBaseUrl)) return;
+    // A typed key belongs to the endpoint it was entered for.
+    if (baseUrl.trim()) setApiKey("");
     setHeaderRows(null);
     // A new endpoint starts with no ticks; the saved endpoint gets its saved list back.
     setEnabledModelIds(savedCompatibleModelIds(credential, nextBaseUrl));
     resetOpenAiCompatibleProbe();
-    invalidatePreflight();
     setError(null);
     setNotice(null);
   }
 
   function updateApiKey(nextApiKey: string) {
     setApiKey(nextApiKey);
-    resetOpenAiCompatibleProbe();
-    invalidatePreflight();
+    if (!matchedEndpoint?.publicModels && nextApiKey.trim() !== apiKey.trim()) {
+      resetOpenAiCompatibleProbe();
+    }
   }
 
   function updateApiProtocol(nextProtocol: ModelApiProtocol) {
     setApiProtocol(nextProtocol);
     resetOpenAiCompatibleProbe();
-    invalidatePreflight();
   }
 
   /** A failed connection's message, without the credentials this form holds. */
@@ -156,90 +140,29 @@ export function useModelConnectionForm({
     );
   }
 
-  async function probeServerModels() {
-    if (!baseUrl.trim()) return;
-    const revision = preflightRevisionRef.current;
-    const stillCurrent = () => revision === preflightRevisionRef.current;
-    setError(null);
-    setNotice(null);
-    setPreflightSuccess(null);
-    setPreflightFailure(null);
-    setPreflightTarget("compatible");
-    await modelProbe.probe({
-      baseUrl,
-      apiKey,
-      request: (input) =>
-        rpc.models.probeOpenAiCompatible({
-          ...input,
-          apiProtocol,
-          headers: modelHeadersInput(headerRows),
-          credentialId: credential?.id,
-        }),
-      onSuccess: (models) => {
-        if (!stillCurrent()) return;
-        const current = modelIdRef.current;
-        const next = current.trim() || models[0] || "";
-        setModelId(next);
-        onModelsFound?.(models, current.trim());
-        const unavailable = unavailableSelectedModel(current, models);
-        if (unavailable) {
-          setPreflightFailure(unavailable);
-          setNotice(null);
-          return;
-        }
-        setPreflightTarget(null);
-        setPreflightFailure(null);
-        setNotice(openAiCompatibleProbeSuccessMessage(models.length));
+  const endpointPresets = useMemo(() => compatibleEndpointPresets(catalog), [catalog]);
+  const endpointPreset = isOpenAiCompatible
+    ? matchCompatibleEndpointPreset(endpointPresets, presetBaseUrl ?? credential?.baseUrl)
+    : undefined;
+  const matchedEndpoint = isOpenAiCompatible
+    ? matchCompatibleEndpointPreset(endpointPresets, baseUrl)
+    : undefined;
+  const compatibleKeyRequired = Boolean(matchedEndpoint);
+  const discovery = useCompatibleModelDiscovery(
+    isOpenAiCompatible
+      ? { baseUrl, apiKey, apiProtocol, headerRows, preset: matchedEndpoint, credential }
+      : null,
+    {
+      request: (input) => rpc.models.probeOpenAiCompatible(input),
+      onModels: (models) => {
+        const current = modelIdRef.current.trim();
+        setModelId(current || models[0] || "");
+        onModelsFound?.(models, current);
       },
-      onError: (err) => {
-        if (!stillCurrent()) return;
-        setPreflightFailure(
-          classifyModelConnectionFailure(err, {
-            modelId,
-            secrets: modelConnectionFormSecrets({ apiKey, headerRows }),
-          }),
-        );
-        setNotice(null);
-      },
-    });
-  }
-
-  /** Shows `test`'s result unless the form changed while it ran; `test` may stop early the same way. */
-  async function runPreflight(
-    target: "api-key" | "sign-in",
-    test: (stillCurrent: () => boolean) => Promise<PreflightOutcome | undefined>,
-  ) {
-    const revision = preflightRevisionRef.current;
-    const stillCurrent = () => revision === preflightRevisionRef.current;
-    setPreflightTarget(target);
-    setPreflightTesting(true);
-    setPreflightSuccess(null);
-    setPreflightFailure(null);
-    setError(null);
-    setNotice(null);
-    const outcome = await test(stillCurrent);
-    if (!outcome || !stillCurrent()) return;
-    setPreflightTesting(false);
-    if ("success" in outcome) setPreflightSuccess(outcome.success);
-    else setPreflightFailure(outcome.failure);
-  }
-
-  async function testApiKeyConnection() {
-    if (!selected?.catalogProbe) return;
-    await runPreflight("api-key", async () => {
-      const result = await runModelConnectionPreflight({
-        authKind: "api-key",
-        provider: selected.provider,
-        apiKey,
-        modelId: selected.id,
-        catalogProbe: true,
-        probeCatalog: rpc.models.probeCatalog,
-      });
-      return result.ok
-        ? { success: modelPreflightSuccessMessage(result.discoveredModels.length) }
-        : { failure: result.failure };
-    });
-  }
+      errorMessage: (err) => connectionErrorText(err, t`Could not reach this model server`),
+    },
+  );
+  const { resetOpenAiCompatibleProbe } = discovery;
 
   return {
     accountId,
@@ -247,34 +170,27 @@ export function useModelConnectionForm({
     apiProtocol,
     applyFields,
     baseUrl,
+    compatibleKeyRequired,
     connectionErrorText,
+    ...discovery,
     routingReady,
     enabledModelIds,
+    endpointPreset,
+    endpointPresets,
     error,
     gatewayId,
     projectId,
     region,
     headerRows,
-    invalidatePreflight,
     needsRouting,
     needsGateway,
     needsProject,
     isOpenAiCompatible,
     modelId,
-    modelProbe,
     modelsForProvider,
     notice,
     openConnection,
-    preflightFailure,
-    preflightSuccess,
-    preflightTarget,
-    preflightTesting,
-    probeModels,
-    probeServerModels,
-    probing,
     provider,
-    resetOpenAiCompatibleProbe,
-    runPreflight,
     selected,
     setAccountId,
     setApiKey,
@@ -283,15 +199,16 @@ export function useModelConnectionForm({
     setGatewayId,
     setProjectId,
     setRegion,
+    setZeroDataRetention,
     setHeaderRows,
     setModelId,
     setNotice,
     setProvider,
     setThinkingLevel,
-    testApiKeyConnection,
     thinkingLevel,
     updateApiKey,
     updateApiProtocol,
     updateBaseUrl,
+    zeroDataRetention,
   };
 }

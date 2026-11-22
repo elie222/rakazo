@@ -1,20 +1,20 @@
 import { useLingui } from "@lingui/react/macro";
 import {
-  compatibleEndpointPresets,
   ModelHeaderRowsSchema,
-  matchCompatibleEndpointPreset,
   modelHeadersInput,
   modelRoutingInput,
   OPENAI_COMPATIBLE_PROVIDER_ID,
   openAiCompatibleConnectReady,
+  providerDisplayName,
 } from "@rakazo/contracts";
 import { connectionFormFields, pickCatalogModelId, popularModelProvidersFirst } from "@rakazo/core";
+import { localizeModelEntry } from "@rakazo/i18n/model-provider";
 import { useMemo, useState } from "react";
 import { useCopyText } from "../../lib/copy-text";
-import { providerDisplayName } from "../../lib/localized-provider-hint";
-import type { ModelCatalogEntry } from "../../lib/model-auth";
-import { rpc } from "../../lib/rpc";
-import { useModelOAuthSignIn } from "../../lib/use-model-oauth-signin";
+import type { ModelCatalogEntry } from "../../lib/models/model-auth";
+import { useModelOAuthSignIn } from "../../lib/models/use-model-oauth-signin";
+import { analyticsSurface } from "../../lib/platform/desktop";
+import { rpc } from "../../lib/query/rpc";
 import { useModelConnectionForm } from "../model-settings/use-model-connection-form";
 
 /** Rakazo credits sit among the providers as the one choice that needs no account of its own. */
@@ -72,6 +72,8 @@ export function useOnboardingModel({
     apiProtocol,
     baseUrl,
     connectionErrorText,
+    compatibleKeyRequired,
+    endpointPreset,
     routingReady,
     gatewayId,
     projectId,
@@ -86,7 +88,7 @@ export function useOnboardingModel({
     setError,
     setProvider,
   } = form;
-  const [codeCopied, copyOAuthCode] = useCopyText();
+  const [codeCopied, copyText] = useCopyText();
 
   const signIn = useModelOAuthSignIn({
     onClearError: () => setError(null),
@@ -96,6 +98,12 @@ export function useOnboardingModel({
     },
   });
   const { oauthPending, cancelOAuthAttempt, startSubscriptionSignIn } = signIn;
+  const copyOAuthCode = (code: string) => {
+    const loginId = signIn.oauth?.loginId;
+    void copyText(code).then((copied) => {
+      if (copied) signIn.reportSignInStep("code_copied", loginId);
+    });
+  };
 
   const providers = useMemo(() => {
     const seen = new Map<string, ModelCatalogEntry>();
@@ -112,16 +120,12 @@ export function useOnboardingModel({
   const subscriptionSignIn = selected?.signIn !== undefined && providerAuth !== "key";
   const acceptsKey = selected?.auth !== "oauth" && providerAuth !== "sign-in";
   const signInLabel = selected?.oauthLabel ?? t`Sign in`;
-  const endpointPresets = useMemo(() => compatibleEndpointPresets(catalog), [catalog]);
-  const endpointPreset = isOpenAiCompatible
-    ? matchCompatibleEndpointPreset(endpointPresets, baseUrl)
-    : undefined;
   const openAiCompatibleReady = openAiCompatibleConnectReady({
     apiKey,
     baseUrl,
     modelId:
       headerRows !== null && !ModelHeaderRowsSchema.safeParse(headerRows).success ? "" : modelId,
-    keyRequired: Boolean(endpointPreset),
+    keyRequired: compatibleKeyRequired,
   });
   const canSaveModel = Boolean(
     selected &&
@@ -137,7 +141,7 @@ export function useOnboardingModel({
     const optionLabel = (id: string, auth?: ProviderAuth) => {
       if (id === "anthropic" && auth === "key") return t`Anthropic API`;
       if (id === "openai") return t`OpenAI API`;
-      return providerDisplayName(id, byId.get(id)?.providerName ?? id, auth);
+      return providerDisplayName(localizeModelEntry(byId.get(id) ?? { provider: id }), auth);
     };
     const main = [
       ...(billingEnabled ? [{ value: CREDITS_OPTION, label: t`Rakazo credits` }] : []),
@@ -186,7 +190,7 @@ export function useOnboardingModel({
 
   function chooseProvider(value: string) {
     if (value === CREDITS_OPTION) {
-      cancelOAuthAttempt();
+      cancelOAuthAttempt("replaced");
       setProvider("");
       setProviderAuth(undefined);
       setCredits(true);
@@ -203,7 +207,7 @@ export function useOnboardingModel({
     if (option === providerOptionValue(provider, providerAuth) && !presetBaseUrl && !endpointPreset)
       return;
     const [nextProvider = option, auth] = option.split(":") as [string, ProviderAuth?];
-    cancelOAuthAttempt();
+    cancelOAuthAttempt("replaced");
     setProviderAuth(auth);
     setManualModelId(false);
     const nextModelId =
@@ -219,6 +223,7 @@ export function useOnboardingModel({
         modelId: nextModelId,
         presetBaseUrl,
       }),
+      presetBaseUrl,
     );
   }
 
@@ -235,6 +240,7 @@ export function useOnboardingModel({
           modelId: modelId.trim(),
           apiKey: apiKey.trim() || undefined,
           label: selected?.providerName ?? provider,
+          surface: analyticsSurface(),
         });
       } else if (apiKey) {
         await rpc.models.connect({
@@ -248,6 +254,7 @@ export function useOnboardingModel({
           }),
           modelId,
           label: selected?.providerName ?? provider,
+          surface: analyticsSurface(),
         });
       }
       onConnected();
@@ -259,7 +266,7 @@ export function useOnboardingModel({
   async function fundWithCredits() {
     setError(null);
     try {
-      await rpc.billing.selectFunding({ funding: "credits" });
+      await rpc.billing.selectFunding({ funding: "credits", surface: analyticsSurface() });
       window.location.assign("/onboarding");
     } catch {
       setError(t`Could not open billing`);

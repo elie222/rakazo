@@ -4,14 +4,14 @@ import { useFocusEffect, useRouter } from "expo-router";
 import { useCallback } from "react";
 import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { BotTemplateIcon } from "../../components/bot-template-icon";
-import { NativeActionButton } from "../../components/native-action-button";
-import { SettingsGroup, SettingsRow } from "../../components/settings-group";
-import { botTemplateCopy } from "../../lib/bot-template-copy";
-import { native, useThemedStyles } from "../../lib/native";
-import { queryClient, rpcQuery } from "../../lib/query";
-import { useSideInsets } from "../../lib/side-insets";
-import { errorText } from "../../lib/user-error";
+import { BotTemplateIcon } from "../../components/bots/bot-template-icon";
+import { NativeActionButton } from "../../components/native/native-action-button";
+import { SettingsGroup, SettingsRow } from "../../components/settings/settings-group";
+import { errorText } from "../../lib/api/user-error";
+import { botTemplateCopy } from "../../lib/bots/bot-template-copy";
+import { useSideInsets } from "../../lib/layout/side-insets";
+import { native, useThemedStyles } from "../../lib/native/native";
+import { queryClient, rpcQuery } from "../../lib/query/query";
 
 /** Ready-made bots; each one's page shows an example of what it sends. */
 export default function BotTemplatesScreen() {

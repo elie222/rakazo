@@ -34,9 +34,27 @@ const TESTKIT = "packages/testkit";
 // The testkit is the integration harness: its tests drive the whole API and the sandbox
 // supervisor, by name and through their exports maps. Tests that need an app live there.
 const TESTKIT_MAY_IMPORT = ["apps/api", "infra/sandboxes/supervisor"];
+// Code that runs on a server or in a desktop main process, beside the browser code of the same app.
+// Server code may import server packages; browser code may import neither.
+const SERVER_DIRS = ["apps/desktop/src/main", "apps/web/server"];
+const BROWSER_CODE = [
+  "apps/desktop/src/preload",
+  "apps/desktop/src/setup-renderer",
+  "apps/mobile",
+  "apps/web/src",
+  "packages/chat-ui",
+  "packages/page-kit",
+  "packages/ui-web",
+];
+// Core's Node-only modules, kept out of its main barrel.
+const SERVER_SUBPATH = /^@rakazo\/core\/node(?:\/|$)/;
 // The desktop build bundles workspace code into its output, and the packager copies every
 // package under "dependencies" into the app, so bundled packages belong in devDependencies.
 const BUNDLED = ["apps/desktop"];
+// Each provider implementation lives in providers/<family>/<provider id>/ and stands alone.
+const PROVIDER_FOLDER = /^packages\/adapters\/src\/providers\/[^/]+\/[^/]+\//;
+
+const under = (dirs, file) => dirs.some((dir) => file.startsWith(`${dir}/`));
 
 /** The one definition of test code: it may import the testkit and use devDependencies. */
 function isTestCode(file) {
@@ -73,9 +91,17 @@ const RULES = {
     title: "imports go through a package's exports map",
     fix: "Import a subpath the package exports; if none fits, add one to its package.json exports deliberately.",
   },
+  runtime: {
+    title: "browser and renderer code never imports server or main-process code",
+    fix: "Code a page loads is bundled for the browser. Move what both sides need out of the server or main-process directory, or reach it over RPC or IPC.",
+  },
   server: {
     title: "UI packages and client apps never import server packages",
     fix: "Client code reaches this through the API: add it in apps/api and call it over RPC, with shared types in @rakazo/contracts.",
+  },
+  vendor: {
+    title: "a provider's folder never imports another provider's folder",
+    fix: "Move what both providers need into shared adapter code outside packages/adapters/src/providers/, and import it from there.",
   },
   undeclared: {
     title: "imported workspace packages are declared dependencies",
@@ -239,11 +265,17 @@ function findViolations(sources, workspaces) {
       const flag = (rule) => violations.push({ rule, file, specifier });
       let target;
       const relative = /^\.\.?(?:\/|$)/.test(specifier);
+      const browser = under(BROWSER_CODE, file) && !testCode;
       if (relative) {
         const resolved = path.posix.join(path.posix.dirname(file), specifier);
         target = resolved.startsWith("..") ? undefined : ownerOf(`${resolved}/`);
         if (target !== owner) flag("relative");
+        const provider = PROVIDER_FOLDER.exec(file)?.[0];
+        const targetProvider = PROVIDER_FOLDER.exec(`${resolved}/`)?.[0];
+        if (provider && targetProvider && provider !== targetProvider) flag("vendor");
+        if (browser && under(SERVER_DIRS, resolved)) flag("runtime");
       } else {
+        if (browser && SERVER_SUBPATH.test(specifier)) flag("runtime");
         const workspace = byName.get(specifier.split("/", 2).join("/"));
         if (!workspace) continue;
         target = workspace.dir;
@@ -268,7 +300,8 @@ function findViolations(sources, workspaces) {
       }
       if (target === TESTKIT && !testCode) flag("testkit");
       // Browser end-to-end specs run in Node and may seed the database.
-      if (SERVER_PACKAGES.includes(target) && CLIENT_CODE.includes(owner) && !testCode) {
+      const client = CLIENT_CODE.includes(owner) && !under(SERVER_DIRS, file);
+      if (SERVER_PACKAGES.includes(target) && client && !testCode) {
         flag("server");
       }
     }
@@ -396,7 +429,11 @@ test("resolves specifiers to packages and reports each rule", () => {
   const workspace = (dir, dependencies = [], extra = {}) =>
     describeWorkspace(dir, {
       name: scoped(dir.split("/").at(-1)),
-      exports: { ".": "./src/index.ts", "./components/*": "./src/components/*.tsx" },
+      exports: {
+        ".": "./src/index.ts",
+        "./components/*": "./src/components/*.tsx",
+        "./node/*": "./src/node/*.ts",
+      },
       dependencies: Object.fromEntries(dependencies.map((name) => [scoped(name), "workspace:*"])),
       ...extra,
     });
@@ -415,7 +452,7 @@ test("resolves specifiers to packages and reports each rule", () => {
   const sources = [
     { file: "apps/api/src/index.ts", specifiers: [scoped("core"), scoped("testkit")] },
     { file: "apps/api/src/index.test.ts", specifiers: [scoped("testkit"), "./index.js"] },
-    { file: "apps/desktop/src/main.ts", specifiers: [scoped("core")] },
+    { file: "apps/desktop/src/main/main.ts", specifiers: [scoped("core")] },
     {
       file: "apps/web/src/app.tsx",
       specifiers: [
@@ -428,6 +465,16 @@ test("resolves specifiers to packages and reports each rule", () => {
       ],
     },
     { file: "apps/web/e2e/seed.spec.ts", specifiers: [scoped("db")] },
+    {
+      file: "apps/web/src/page.tsx",
+      specifiers: ["../server/proxy.js", scoped("core/node/screen"), scoped("core")],
+    },
+    { file: "apps/web/src/page.test.tsx", specifiers: ["../server/proxy.js"] },
+    { file: "apps/desktop/src/preload/preload.cjs", specifiers: ["../main/ipc.js"] },
+    {
+      file: "apps/web/server/proxy.ts",
+      specifiers: [scoped("db"), scoped("core/node/screen"), "../src/shared.js"],
+    },
     { file: "packages/contracts/src/index.ts", specifiers: [scoped("core")] },
     { file: "packages/core/src/index.ts", specifiers: [scoped("contracts"), scoped("db")] },
     { file: "packages/db/src/index.ts", specifiers: [scoped("api")] },
@@ -437,6 +484,10 @@ test("resolves specifiers to packages and reports each rule", () => {
     },
     { file: `${TESTKIT}/src/browser.ts`, specifiers: [scoped("web")] },
     { file: "scripts/build.mjs", specifiers: ["../packages/core/src/index.ts", "./pnpm.mjs"] },
+    {
+      file: "packages/adapters/src/providers/computer/one/one-sandbox.ts",
+      specifiers: ["./one-errors.js", "../../../sandbox-errors.js", "../two/two-sandbox.js"],
+    },
   ];
   assert.deepEqual(
     findViolations(sources, workspaces)
@@ -452,10 +503,14 @@ test("resolves specifiers to packages and reports each rule", () => {
       "relative: apps/web/src/app.tsx -> ../../../packages/contracts/src/index.ts",
       "relative: packages/testkit/src/index.ts -> ../../../apps/api/src/app.ts",
       "relative: scripts/build.mjs -> ../packages/core/src/index.ts",
+      "runtime: apps/desktop/src/preload/preload.cjs -> ../main/ipc.js",
+      "runtime: apps/web/src/page.tsx -> ../server/proxy.js",
+      "runtime: apps/web/src/page.tsx -> @rakazo/core/node/screen",
       "server: apps/web/src/app.tsx -> @rakazo/db",
       "testkit: apps/api/src/index.ts -> @rakazo/testkit",
       "undeclared: apps/web/package.json -> @rakazo/core",
       "unused: packages/ui-web/package.json -> @rakazo/contracts",
+      "vendor: packages/adapters/src/providers/computer/one/one-sandbox.ts -> ../two/two-sandbox.js",
     ],
   );
 });
@@ -473,7 +528,7 @@ test("flags a static import of a package that server code loads with import()", 
     source("apps/web/src/table.tsx", 'import { draw } from "charts";'),
     // A type query loads nothing, so it does not make "pg" a lazily loaded package.
     source("packages/db/src/pool.ts", 'type Pg = typeof import("pg");'),
-    source("packages/db/src/client.ts", 'import { Pool } from "pg";'),
+    source("packages/db/src/database/client.ts", 'import { Pool } from "pg";'),
   ];
   assert.deepEqual(findEagerImports(sources).map(entry), [
     "packages/adapters/src/eager.ts -> @vendor/sdk",

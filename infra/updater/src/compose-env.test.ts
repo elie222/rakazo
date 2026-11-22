@@ -46,6 +46,8 @@ const NOT_PASSED: Record<string, string> = {
   VITEST: "set by the test runner",
   OWNER_EMAIL: "bootstrap-owner CLI input, passed on its own command line",
   OWNER_PASSWORD: "bootstrap-owner CLI input, passed on its own command line",
+  DEMO_ACCOUNT_EMAIL: "publishes a shared login; only throwaway pull request previews set it",
+  DEMO_ACCOUNT_PASSWORD: "publishes a shared login; only throwaway pull request previews set it",
   PM2_HOME: "restart-supervisor detection for PM2 hosts; Compose restarts containers",
   INVOCATION_ID: "restart-supervisor detection for systemd hosts; Compose restarts containers",
   RAKAZO_ALLOW_DEV_SECRETS: "development-only escape hatch for placeholder secrets",
@@ -54,6 +56,8 @@ const NOT_PASSED: Record<string, string> = {
   NODE_USE_ENV_PROXY:
     "Node's own proxy switch, read to match it; Compose sends proxied traffic through HTTP_PROXY",
   NODE_OPTIONS: "Node's own startup flags, read to match its proxy switch; never set by Compose",
+  NODE_TLS_REJECT_UNAUTHORIZED:
+    "Node's own switch, read so a hostname CONNECT stays off while verification is disabled",
   AWS_KMS_PROFILE: "for maintainer laptops; servers use AWS_KMS_ACCESS_KEY_ID and its secret",
   GIT_SHA: "baked into the image at build time; a pass-through entry would unset it",
   SHELL: "host shell for the desktop computer, which only the Electron app runs",
@@ -99,6 +103,7 @@ const INDIRECT = {
   shared: [
     // core/secrets-guard.ts resolves these by name.
     "SANDBOX_SUPERVISOR_TOKEN",
+    "MEETING_SIGNING_KEY",
     // pi-local-provider.ts reads these through a small helper.
     "RAKAZO_LOCAL_CONTEXT_WINDOW",
     "RAKAZO_LOCAL_MAX_TOKENS",
@@ -166,8 +171,14 @@ async function registryEnv(file: string, exportName: string): Promise<string[]> 
  * name through their registries. Bindings that gather a prefix family have no single name.
  */
 const REGISTRY_ENV = [
-  ...(await registryEnv("packages/adapters/src/computer-providers.ts", "computerProviders")),
-  ...(await registryEnv("packages/adapters/src/messaging-platforms.ts", "messagingPlatforms")),
+  ...(await registryEnv(
+    "packages/adapters/src/computers/computer-providers.ts",
+    "computerProviders",
+  )),
+  ...(await registryEnv(
+    "packages/adapters/src/messaging/messaging-platforms.ts",
+    "messagingPlatforms",
+  )),
 ];
 
 function scanEnvReads(dirs: readonly string[]): Set<string> {
@@ -307,4 +318,37 @@ describe("api and worker environment allowlists", () => {
       }
     },
   );
+});
+
+describe("supervisor environment", () => {
+  /** SANDBOX_* settings the supervisor reads for computers, found in its computer spec. */
+  const NOT_OPERATOR_SETTINGS = new Set(["SANDBOX_SCREEN_HOST"]);
+  const supervisorSettings = [
+    ...new Set(
+      readFileSync(
+        path.join(repoRoot, "infra/sandboxes/supervisor/src/computer-spec.ts"),
+        "utf8",
+      ).match(/\bSANDBOX_[A-Z0-9_]+/g),
+    ),
+  ]
+    .filter((name) => !NOT_OPERATOR_SETTINGS.has(name))
+    .sort();
+
+  it("finds the settings it is meant to find", () => {
+    expect(supervisorSettings).toContain("SANDBOX_TEAM_SCREEN_LIMIT");
+    expect(supervisorSettings).toContain("SANDBOX_MAX_COMPUTERS_PER_SPACE");
+  });
+
+  it.each(
+    [
+      ["docker-compose.images.yml"],
+      ["docker-compose.yml"],
+      ["docker-compose.prod.yml", "docker-compose.prod.docker.yml"],
+    ].map((files) => [files.join(" + "), files] as const),
+  )("%s passes the supervisor every setting it reads", (_name, files) => {
+    const environment = stackEnvironment(files, "supervisor");
+    expect(Object.keys(environment).length).toBeGreaterThan(0);
+    const missing = supervisorSettings.filter((name) => !(name in environment));
+    expect(missing).toEqual([]);
+  });
 });
