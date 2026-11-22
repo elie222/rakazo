@@ -20,9 +20,10 @@ export function TeachCaptureOverlay({
   const rootRef = useRef<HTMLDivElement>(null);
   const width = screenWidth ?? DEFAULT_COMPUTER_SCREEN.width;
   const height = screenHeight ?? DEFAULT_COMPUTER_SCREEN.height;
+  const recordingSkillId = enabled && skill?.status === "recording" ? skill.id : null;
 
   useEffect(() => {
-    if (!enabled || !skill || skill.status !== "recording") return;
+    if (!recordingSkillId) return;
     const overlay = rootRef.current;
     if (!overlay) return;
     const target: HTMLDivElement = overlay;
@@ -68,25 +69,26 @@ export function TeachCaptureOverlay({
       });
     }
 
-    function buttonFor(event: PointerEvent): "left" | "right" | null {
-      if (event.button === 0) return "left";
-      if (event.button === 2) return "right";
-      return null;
-    }
+    type Point = ReturnType<typeof pointerAt>;
+    type Button = "left" | "right";
+    // The remote computer has one mouse. Only the pointer that pressed it can move or release it.
+    let activePointer: { id: number; button: Button; point: Point } | null = null;
 
     function onPointerDown(event: PointerEvent) {
       event.preventDefault();
-      const button = buttonFor(event);
-      if (!button) return;
+      const button = event.button === 0 ? "left" : event.button === 2 ? "right" : null;
+      if (!button || activePointer) return;
       target.setPointerCapture(event.pointerId);
-      const { x, y } = pointerAt(event);
+      const point = pointerAt(event);
+      activePointer = { id: event.pointerId, button, point };
+      const { x, y } = point;
       enqueueInput(() => sendPointer("down", x, y, button));
     }
 
     // Each input is one request, one recording write and one sandbox action, so a raw pointer
     // stream would queue faster than it drains. Keep only the newest position and send it once
     // the previous one has landed.
-    let pendingMove: { x: number; y: number; button: "left" | "right" } | null = null;
+    let pendingMove: (Point & { button: Button }) | null = null;
     let moveInFlight = false;
 
     function pumpMove() {
@@ -104,28 +106,46 @@ export function TeachCaptureOverlay({
       });
     }
 
+    function finishPointer(point?: Point) {
+      if (!activePointer) return;
+      const { id, button, point: previous } = activePointer;
+      activePointer = null;
+      const { x, y } = point ?? previous;
+      const needsMove = pendingMove !== null || x !== previous.x || y !== previous.y;
+      pendingMove = null;
+      // The final position has to reach the sandbox before the release; dropped intermediate
+      // moves are fine, a release at a stale position is not.
+      if (needsMove) enqueueInput(() => sendPointer("move", x, y, button));
+      enqueueInput(() => sendPointer("up", x, y, button));
+      if (target.hasPointerCapture(id)) target.releasePointerCapture(id);
+    }
+
     function onPointerMove(event: PointerEvent) {
-      // The buttons bitmask differs from button: bit 1 is left, bit 2 is right.
-      const button = event.buttons & 1 ? "left" : event.buttons & 2 ? "right" : null;
-      if (!button) return;
+      if (activePointer?.id !== event.pointerId) return;
       event.preventDefault();
-      const { x, y } = pointerAt(event);
-      pendingMove = { x, y, button };
+      const { button } = activePointer;
+      const point = pointerAt(event);
+      // Releasing one button while another is still held fires pointermove, not pointerup.
+      if (!(event.buttons & (button === "left" ? 1 : 2))) {
+        finishPointer(point);
+        return;
+      }
+      activePointer.point = point;
+      pendingMove = { ...point, button };
       pumpMove();
     }
 
     function onPointerUp(event: PointerEvent) {
       event.preventDefault();
-      const button = buttonFor(event);
-      if (!button) return;
-      if (target.hasPointerCapture(event.pointerId)) target.releasePointerCapture(event.pointerId);
-      const { x, y } = pointerAt(event);
-      const dragged = pendingMove !== null;
-      pendingMove = null;
-      // The final position has to reach the sandbox before the release; dropped intermediate
-      // moves are fine, a release at a stale position is not.
-      if (dragged) enqueueInput(() => sendPointer("move", x, y, button));
-      enqueueInput(() => sendPointer("up", x, y, button));
+      if (activePointer?.id !== event.pointerId) return;
+      finishPointer(pointerAt(event));
+    }
+
+    function onPointerInterrupted(event: PointerEvent) {
+      // Cancellation and capture loss do not identify a released mouse button. Use the one
+      // we forwarded, at its last known position, and ignore interruptions of other pointers.
+      if (activePointer?.id !== event.pointerId) return;
+      finishPointer();
     }
 
     function onWheel(event: WheelEvent) {
@@ -162,7 +182,8 @@ export function TeachCaptureOverlay({
     target.addEventListener("pointerdown", onPointerDown);
     target.addEventListener("pointermove", onPointerMove);
     target.addEventListener("pointerup", onPointerUp);
-    target.addEventListener("pointercancel", onPointerUp);
+    target.addEventListener("pointercancel", onPointerInterrupted);
+    target.addEventListener("lostpointercapture", onPointerInterrupted);
     target.addEventListener("wheel", onWheel, { passive: false });
     target.addEventListener("contextmenu", onContextMenu);
     window.addEventListener("keydown", onKeyDown);
@@ -170,14 +191,16 @@ export function TeachCaptureOverlay({
       target.removeEventListener("pointerdown", onPointerDown);
       target.removeEventListener("pointermove", onPointerMove);
       target.removeEventListener("pointerup", onPointerUp);
-      target.removeEventListener("pointercancel", onPointerUp);
+      target.removeEventListener("pointercancel", onPointerInterrupted);
+      target.removeEventListener("lostpointercapture", onPointerInterrupted);
       target.removeEventListener("wheel", onWheel);
       target.removeEventListener("contextmenu", onContextMenu);
       window.removeEventListener("keydown", onKeyDown);
+      finishPointer();
     };
-  }, [botId, enabled, height, skill, width]);
+  }, [botId, height, recordingSkillId, width]);
 
-  if (!enabled || !skill || skill.status !== "recording") return null;
+  if (!recordingSkillId) return null;
 
   return (
     <div

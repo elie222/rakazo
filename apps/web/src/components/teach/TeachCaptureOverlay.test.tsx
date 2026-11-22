@@ -6,7 +6,9 @@ import { createRoot } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vitest";
 import { TeachCaptureOverlay } from "./TeachCaptureOverlay";
 
-const computerInput = vi.hoisted(() => vi.fn(async (_event: unknown) => ({ ok: true })));
+const computerInput = vi.hoisted(() =>
+  vi.fn(async (_event: { payload: unknown }) => ({ ok: true })),
+);
 vi.mock("../../lib/query/rpc", () => ({ rpc: { computer: { input: computerInput } } }));
 
 const skill = {
@@ -91,10 +93,7 @@ it("sends a wheel scroll with the screen point it was made at", async () => {
   container.remove();
 });
 
-it.each([
-  { button: 1, buttons: 4 },
-  { button: 3, buttons: 8 },
-])("ignores an unsupported pointer button ($button)", async ({ button, buttons }) => {
+async function withPointerOverlay(run: (overlay: HTMLDivElement) => Promise<void>) {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   const container = document.createElement("div");
   document.body.append(container);
@@ -107,31 +106,119 @@ it.each([
     overlay.setPointerCapture = vi.fn();
     overlay.hasPointerCapture = () => true;
     overlay.releasePointerCapture = vi.fn();
+    overlay.getBoundingClientRect = () => new DOMRect(0, 0, 1280, 800);
+    await run(overlay);
+  } finally {
+    await act(async () => root.unmount());
+    container.remove();
+  }
+}
+
+function pointer(overlay: HTMLDivElement, type: string, init: PointerEventInit = {}) {
+  overlay.dispatchEvent(new PointerEvent(type, { pointerId: 7, ...init }));
+}
+
+function pointerPayloads() {
+  return computerInput.mock.calls.map(([event]) => event.payload);
+}
+
+it.each([
+  { button: 1, buttons: 4 },
+  { button: 3, buttons: 8 },
+])("ignores an unsupported pointer button ($button)", async ({ button, buttons }) => {
+  await withPointerOverlay(async (overlay) => {
     await act(async () => {
-      overlay.dispatchEvent(new MouseEvent("pointerdown", { button, buttons }));
-      overlay.dispatchEvent(new MouseEvent("pointermove", { button: -1, buttons }));
-      overlay.dispatchEvent(new MouseEvent("pointerup", { button }));
+      pointer(overlay, "pointerdown", { button, buttons });
+      pointer(overlay, "pointermove", { button: -1, buttons });
+      pointer(overlay, "pointerup", { button });
+      pointer(overlay, "pointerdown", { button, buttons });
+      pointer(overlay, "pointercancel", { button: -1 });
     });
     expect(computerInput).not.toHaveBeenCalled();
     expect(overlay.setPointerCapture).not.toHaveBeenCalled();
     expect(overlay.releasePointerCapture).not.toHaveBeenCalled();
 
     await act(async () => {
-      overlay.dispatchEvent(new MouseEvent("pointerdown", { button: 0, buttons: 1 }));
-      overlay.dispatchEvent(new MouseEvent("pointerup", { button: 0 }));
-      overlay.dispatchEvent(new MouseEvent("pointerdown", { button: 2, buttons: 2 }));
-      overlay.dispatchEvent(new MouseEvent("pointermove", { button: -1, buttons: 2 }));
-      overlay.dispatchEvent(new MouseEvent("pointerup", { button: 2 }));
+      pointer(overlay, "pointerdown", { button: 0, buttons: 1 });
+      pointer(overlay, "pointerup", { button: 0 });
+      pointer(overlay, "pointerdown", { button: 2, buttons: 2 });
+      pointer(overlay, "pointermove", { button: -1, buttons: 2 });
+      pointer(overlay, "pointerup", { button: 2 });
     });
-    expect(computerInput.mock.calls.map(([event]) => (event as { payload: unknown }).payload)).toMatchObject([
-      { type: "down", button: "left" },
-      { type: "up", button: "left" },
-      { type: "down", button: "right" },
-      { type: "move", button: "right" },
-      { type: "up", button: "right" },
-    ]);
-  } finally {
-    act(() => root.unmount());
-    container.remove();
-  }
+    await vi.waitFor(() =>
+      expect(pointerPayloads()).toMatchObject([
+        { type: "down", button: "left" },
+        { type: "up", button: "left" },
+        { type: "down", button: "right" },
+        { type: "move", button: "right" },
+        { type: "up", button: "right" },
+      ]),
+    );
+  });
+});
+
+it.each([
+  { button: 0, buttons: 1, name: "left", interruption: "pointercancel" },
+  { button: 2, buttons: 2, name: "right", interruption: "pointercancel" },
+  { button: 2, buttons: 2, name: "right", interruption: "lostpointercapture" },
+])(
+  "releases an interrupted $name drag on $interruption",
+  async ({ button, buttons, name, interruption }) => {
+    await withPointerOverlay(async (overlay) => {
+      await act(async () => {
+        pointer(overlay, "pointerdown", { button, buttons, clientX: 10 });
+        pointer(overlay, "pointercancel", { pointerId: 8, button: -1 });
+        pointer(overlay, "pointermove", { button: -1, buttons, clientX: 20 });
+        pointer(overlay, "pointermove", { button: -1, buttons, clientX: 30 });
+        pointer(overlay, interruption, { button: -1 });
+        pointer(overlay, "lostpointercapture", { button: -1 });
+        pointer(overlay, "pointerdown", { button: 0, buttons: 1, clientX: 40 });
+        pointer(overlay, "pointerup", { button: 0, clientX: 40 });
+      });
+      await vi.waitFor(() =>
+        expect(pointerPayloads()).toEqual([
+          { type: "down", button: name, x: 10, y: 0 },
+          { type: "move", button: name, x: 20, y: 0 },
+          { type: "move", button: name, x: 30, y: 0 },
+          { type: "up", button: name, x: 30, y: 0 },
+          { type: "down", button: "left", x: 40, y: 0 },
+          { type: "up", button: "left", x: 40, y: 0 },
+        ]),
+      );
+      expect(overlay.releasePointerCapture).toHaveBeenCalledTimes(2);
+    });
+  },
+);
+
+it("releases a supported button while an unsupported button stays held", async () => {
+  await withPointerOverlay(async (overlay) => {
+    await act(async () => {
+      pointer(overlay, "pointerdown", { button: 2, buttons: 2, clientX: 10 });
+      pointer(overlay, "pointermove", { button: 1, buttons: 6, clientX: 20 });
+      pointer(overlay, "pointermove", { button: 2, buttons: 4, clientX: 30 });
+      pointer(overlay, "pointerup", { button: 1, clientX: 40 });
+    });
+    await vi.waitFor(() =>
+      expect(pointerPayloads()).toEqual([
+        { type: "down", button: "right", x: 10, y: 0 },
+        { type: "move", button: "right", x: 20, y: 0 },
+        { type: "move", button: "right", x: 30, y: 0 },
+        { type: "up", button: "right", x: 30, y: 0 },
+      ]),
+    );
+  });
+});
+
+it("releases a held button when the overlay is removed", async () => {
+  await withPointerOverlay(async (overlay) => {
+    await act(async () => {
+      pointer(overlay, "pointerdown", { button: 0, buttons: 1, clientX: 10 });
+    });
+  });
+  await vi.waitFor(() =>
+    expect(pointerPayloads()).toEqual([
+      { type: "down", button: "left", x: 10, y: 0 },
+      { type: "up", button: "left", x: 10, y: 0 },
+    ]),
+  );
 });
