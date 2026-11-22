@@ -110,6 +110,8 @@ export async function writePortableFilesInBatches(
     const full = batcher.add(file);
     if (full) await flush(full);
   }
+  // A cancelled import that wrote nothing must not read as finished.
+  signal?.throwIfAborted();
   await flush(batcher.take());
 }
 

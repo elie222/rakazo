@@ -186,18 +186,15 @@ for relative in ("Default/Preferences", "Local State"):
  * Python helpers the profile scripts start with. `profile_pids` yields this profile's browser
  * processes as (pid, args, cmdline without the profile flag); renderers carry --type= and do not
  * count. `debug_port` reads one's --remote-debugging-port, and `owns_port` is whether that process
- * holds the port's listening socket.
+ * holds the port's listening socket. An unreadable process list raises, so no script mistakes it
+ * for a profile with no browser.
  */
 const CHROME_PROFILE_PRELUDE = `
 import os
 
 def profile_pids(profile, root="/proc"):
     flag = "--user-data-dir=" + profile
-    try:
-        names = os.listdir(root)
-    except OSError:
-        return
-    for pid in names:
+    for pid in os.listdir(root):
         if not pid.isdigit():
             continue
         try:
