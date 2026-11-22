@@ -151,10 +151,27 @@ final class WatchRelay: NSObject, WCSessionDelegate {
       }
       let entries = list.current.bots.map { (WatchChat.Kind.bot, $0) }
         + list.current.groups.map { (WatchChat.Kind.group, $0) }
-      chats = entries.filter { $0.1.archivedAt == nil }
+      // A watch message carries about 64 KB, and JSON grows avatar bytes by a third.
+      var avatarBudget = 16_000
+      let rows = entries.filter { $0.1.archivedAt == nil }
         .sorted { $0.1.updatedAt > $1.1.updatedAt }
-        .map { WatchChat(kind: $0.0, id: $0.1.id, name: $0.1.name) }
-      return WatchReply(scope: scope, chats: chats)
+        .prefix(60)
+        .map { kind, entry in
+          var row = WatchChatRow(
+            chat: WatchChat(kind: kind, id: entry.id, name: entry.name),
+            preview: String(entry.preview?.prefix(100) ?? ""), updatedAt: entry.updatedAt)
+          if let color = entry.color {
+            row.color = color.range(of: #"^#[0-9a-fA-F]{6}"#, options: .regularExpression)
+              .map { String(color[$0]) }
+            if let avatar = watchAvatar(color), avatar.count <= avatarBudget {
+              avatarBudget -= avatar.count
+              row.avatar = avatar
+            }
+          }
+          return row
+        }
+      chats = rows.map(\.chat)
+      return WatchReply(scope: scope, chats: rows)
     }
 
     guard let scope, request.scope == scope, let scopedSession, sameSession(scopedSession, session),
@@ -213,6 +230,20 @@ final class WatchRelay: NSObject, WCSessionDelegate {
     }
   }
 
+  /// A small copy of a picture avatar; drawn avatars show as their color on the watch.
+  private func watchAvatar(_ value: String) -> Data? {
+    guard value.hasPrefix("data:image/"), let comma = value.firstIndex(of: ","),
+      let data = Data(base64Encoded: String(value[value.index(after: comma)...])),
+      let image = UIImage(data: data)
+    else { return nil }
+    let format = UIGraphicsImageRendererFormat()
+    format.scale = 1
+    let size = CGSize(width: 64, height: 64)
+    return UIGraphicsImageRenderer(size: size, format: format).image { _ in
+      image.draw(in: CGRect(origin: .zero, size: size))
+    }.jpegData(compressionQuality: 0.7)
+  }
+
   private func canAnswer(_ prompt: WatchPrompt, _ answer: String) -> Bool {
     switch prompt.kind {
     case .phone: false
@@ -249,6 +280,8 @@ private struct WatchSpace: Decodable {
   struct Chat: Decodable {
     let id: String
     let name: String
+    let color: String?
+    let preview: String?
     let updatedAt: String
     let archivedAt: String?
   }
