@@ -139,13 +139,19 @@ export function useModelSettings(onClose: () => void, scope: SettingsScope) {
   } = useModelOAuthSignIn({
     onClearError: () => setError(null),
     onError: setError,
-    onFinished: async (_controller, credentialId) => {
+    onFinished: async (_controller, saved) => {
       // A new account's later saves update it rather than adding another.
-      setCredentialId(credentialId);
-      await refresh();
+      setCredentialId(saved.id);
+      // A new subscription can save a stronger model than the one the form showed.
+      await refresh({ modelId: saved.modelId });
       const started = oauthChoiceRef.current;
       oauthChoiceRef.current = null;
-      if (started) await started.intent?.onConnected?.({ ...started.choice, credentialId });
+      if (started)
+        await started.intent?.onConnected?.({
+          ...started.choice,
+          modelId: saved.modelId ?? started.choice.modelId,
+          credentialId: saved.id,
+        });
     },
   });
   const copyOAuthCode = (code: string) => {
@@ -162,9 +168,11 @@ export function useModelSettings(onClose: () => void, scope: SettingsScope) {
   async function refresh({
     keepForm = false,
     reuse = false,
+    modelId: savedModelId,
   }: {
     keepForm?: boolean;
     reuse?: boolean;
+    modelId?: string;
   } = {}) {
     const refreshRevision = ++refreshRevisionRef.current;
     const selectionRevision = keepForm ? -1 : selectionRevisionRef.current;
@@ -174,7 +182,7 @@ export function useModelSettings(onClose: () => void, scope: SettingsScope) {
       fetchFresh(queryClient, meQuery, { reuse }),
     ]);
     if (refreshRevision !== refreshRevisionRef.current) return undefined;
-    applyLoaded(nextCatalog, nextCredentials, nextMe, selectionRevision);
+    applyLoaded(nextCatalog, nextCredentials, nextMe, selectionRevision, savedModelId);
     return nextCredentials;
   }
 
@@ -184,6 +192,7 @@ export function useModelSettings(onClose: () => void, scope: SettingsScope) {
     nextCredentials: typeof credentials,
     nextMe: Me,
     selectionRevision: number,
+    savedModelId?: string,
   ) {
     const nextProvider =
       provider && nextCatalog.some((entry) => entry.provider === provider)
@@ -199,7 +208,7 @@ export function useModelSettings(onClose: () => void, scope: SettingsScope) {
       provider: nextProvider,
       credential: nextCredential,
       defaults: nextMe,
-      current: modelId,
+      current: savedModelId ?? modelId,
     });
     if (selectionRevision === selectionRevisionRef.current) {
       resetOpenAiCompatibleProbe();
