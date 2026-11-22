@@ -1,3 +1,4 @@
+import { AGENT_IMPORT_ASK_ACTION_ID } from "@rakazo/contracts";
 import { isSecretAskBlock } from "../runs/action-approval.js";
 
 type AskSnapshot = {
@@ -78,8 +79,10 @@ export function resolveAskChoice(
   if (!actions?.length) return undefined;
   const trimmed = answer.trim();
   if (!trimmed) return undefined;
-  const byId = actions.find((action) => action.id === trimmed);
+  // Client-only UI actions (such as opening the agent importer) are never bot answer choices.
+  const choices = actions.filter((action) => action.id !== AGENT_IMPORT_ASK_ACTION_ID);
+  const byId = choices.find((action) => action.id === trimmed);
   if (byId) return byId;
   const lower = trimmed.toLowerCase();
-  return actions.find((action) => action.label.trim().toLowerCase() === lower);
+  return choices.find((action) => action.label.trim().toLowerCase() === lower);
 }

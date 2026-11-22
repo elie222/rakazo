@@ -1,5 +1,6 @@
 import type { SandboxProvider } from "@rakazo/adapter-kit";
 import type { Actor, MessageBlock } from "@rakazo/contracts";
+import { AGENT_IMPORT_ASK_ACTION_ID } from "@rakazo/contracts";
 import {
   BACKGROUND_HELPER_TRIGGER,
   ClientError,
@@ -2731,6 +2732,131 @@ describe("sendThreadMessage", () => {
       );
     },
   );
+
+  it("keeps typed text verbatim when it matches the client-only agent-import action label", async () => {
+    const ask = {
+      id: "ask-opening",
+      role: "bot",
+      botId: "bot-a",
+      runId: "run-opening",
+      blocks: [
+        {
+          kind: "ask",
+          text: "How should we begin?",
+          status: "pending",
+          actions: [
+            { id: "choice-1", label: "Start fresh" },
+            { id: AGENT_IMPORT_ASK_ACTION_ID, label: "Move from another assistant" },
+          ],
+        },
+      ],
+    };
+    const tx = {
+      space: { findUnique: vi.fn(async () => null) },
+      externalEffect: { deleteMany: vi.fn(async () => ({ count: 0 })) },
+      user: { findMany: vi.fn().mockResolvedValue([]) },
+      spaceMember: { count: vi.fn().mockResolvedValue(1) },
+      $executeRaw: vi.fn(async () => 0),
+      $queryRaw: vi.fn().mockResolvedValue([{ id: "thread-1" }]),
+      thread: {
+        update: vi.fn(async ({ data }: { data: { nextMessageSeq?: unknown } }) =>
+          data.nextMessageSeq ? { nextMessageSeq: 3 } : { nextEventSeq: 4 },
+        ),
+      },
+      message: {
+        create: vi.fn().mockResolvedValue({
+          id: "msg-opening-answer",
+          threadId: "thread-1",
+          seq: 2,
+          role: "user",
+          blocks: [{ kind: "text", text: "Move from another assistant" }],
+          botId: null,
+          replyToMessageId: "ask-opening",
+          runId: null,
+          createdAt: new Date(),
+        }),
+        findMany: vi.fn().mockResolvedValue([ask]),
+        findFirst: vi.fn().mockResolvedValue(ask),
+        update: vi.fn(),
+      },
+      run: {
+        findMany: vi.fn().mockResolvedValue([
+          {
+            id: "run-opening",
+            taskId: "task-opening",
+            botId: "bot-a",
+            status: "waiting_input",
+            userId: "user-1",
+            updatedAt: new Date("2026-01-01T00:00:00Z"),
+          },
+        ]),
+        findFirst: vi.fn().mockResolvedValue({
+          id: "run-opening",
+          taskId: "task-opening",
+          botId: "bot-a",
+          status: "waiting_input",
+          trigger: "user",
+          userId: "user-1",
+        }),
+        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+        findUnique: vi.fn().mockResolvedValue({ status: "queued" }),
+      },
+      attempt: { updateMany: vi.fn() },
+      secret: { deleteMany: vi.fn() },
+      steeringMessage: { create: vi.fn() },
+      event: { create: vi.fn().mockResolvedValue({ seq: 4, threadId: "thread-1" }) },
+      task: {
+        create: vi.fn(),
+        update: vi.fn().mockResolvedValue({ id: "task-opening" }),
+        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+      },
+    };
+    const prisma = {
+      message: { findUnique: vi.fn().mockResolvedValue(null) },
+      $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
+    } as unknown as PrismaClient;
+
+    await sendThreadMessage(
+      {
+        prisma,
+        sandbox: {} as never,
+        events: { notify: vi.fn().mockResolvedValue(undefined) } as never,
+        jobs: { enqueue: vi.fn().mockResolvedValue(undefined) } as never,
+      },
+      { spaceId: "workspace-1", userId: "user-1" } as Actor,
+      {
+        kind: "bot",
+        botId: "bot-a",
+        threadId: "thread-1",
+        bot: { computer: null },
+      } as ThreadTarget,
+      {
+        text: "Move from another assistant",
+        replyToMessageId: "ask-opening",
+        answersQuestion: true,
+        clientNonce: "nonce-opening-verbatim",
+      },
+    );
+
+    expect(tx.message.update).toHaveBeenCalledWith({
+      where: { id: "ask-opening" },
+      data: {
+        blocks: [
+          expect.objectContaining({
+            status: "answered",
+            answer: "Move from another assistant",
+            answerMessageId: "msg-opening-answer",
+          }),
+        ],
+      },
+    });
+    expect(tx.task.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: "task-opening" },
+        data: { prompt: "Move from another assistant" },
+      }),
+    );
+  });
 
   it.each(["bot", "group"] as const)(
     "refuses a stale or foreign card with QuestionAlreadyAnsweredError without falling back to a newer question (%s)",
