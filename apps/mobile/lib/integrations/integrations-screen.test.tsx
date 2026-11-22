@@ -1402,6 +1402,79 @@ it("does not tell onboarding about an app once another Space is selected", async
   expect(state.rpc).not.toHaveBeenCalledWith("onboarding/appConnected", expect.anything());
 });
 
+it("does not tell onboarding about an app once the screen is left", async () => {
+  cached([{ ...item, connected: false }], []);
+  await render();
+  state.rpc.mockImplementation((proc: string) => {
+    if (proc === "connections/begin")
+      return Promise.resolve({ connectionId: account.id, authorizationUrl: null });
+    if (proc === "connections/complete") return Promise.resolve(account);
+    return Promise.resolve([]);
+  });
+  const lastBotRead = deferred<string>();
+  state.lastBot.mockReturnValue(lastBotRead.promise);
+  await act(async () => button("Add")?.click());
+  await settle();
+  state.focused = false;
+  await render();
+  lastBotRead.resolve("bot-a");
+  await settle();
+  expect(state.rpc).not.toHaveBeenCalledWith("onboarding/appConnected", expect.anything());
+});
+
+it("shows what a partial uninstall revoked without reading the lists again", async () => {
+  const second = { ...account, id: "account-b", displayName: "Second" };
+  cached([item], [account, second]);
+  await render();
+  await act(async () => button("Added")?.click());
+  state.rpc.mockImplementation((proc: string, input?: { connectionId?: string }) =>
+    proc === "connections/revoke" && input?.connectionId === second.id
+      ? Promise.reject(new Error("Operation rejected"))
+      : Promise.resolve(proc === "connections/revoke" ? { ok: true } : []),
+  );
+  const reads = () =>
+    state.rpc.mock.calls.filter(([proc]) => proc === "connections/catalog").length;
+  const before = reads();
+  await act(async () => button("Uninstall")?.click());
+  await settle();
+  expect(container.textContent).toContain("Operation rejected");
+  expect(listed()).toEqual([second, { ...account, status: "revoked" }]);
+  expect(reads()).toBe(before);
+});
+
+it("keeps an app open when its uninstall finishes on a later visit", async () => {
+  cached([item], [account]);
+  await render();
+  await act(async () => button("Added")?.click());
+  const revoked = deferred<unknown>();
+  state.rpc.mockImplementation((proc: string) =>
+    proc === "connections/revoke"
+      ? revoked.promise
+      : Promise.resolve(proc === "connections/catalog" ? [item] : []),
+  );
+  await act(async () => button("Uninstall")?.click());
+  state.focused = false;
+  await render();
+  state.focused = true;
+  await render();
+  await act(async () => revoked.resolve({ ok: true }));
+  await settle();
+  expect(container.querySelector('input[placeholder="Search apps"]')).toBeNull();
+});
+
+it("closes an open app for good when another Space is selected", async () => {
+  cached([item], [account]);
+  await render();
+  await act(async () => button("Added")?.click());
+  expect(container.querySelector('input[placeholder="Search apps"]')).toBeNull();
+  state.space = "space-b";
+  await render();
+  state.space = "space-a";
+  cached([item], [account]);
+  await render();
+  expect(container.querySelector('input[placeholder="Search apps"]')).not.toBeNull();
+});
+
 it("clears a failed add when another type is picked from the header menu", async () => {
   state.headerMenu = true;
   const fallback = state.rpc.getMockImplementation();

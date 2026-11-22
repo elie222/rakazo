@@ -78,8 +78,13 @@ export default function Integrations() {
     slug: string;
     spaceId: string | null;
   } | null>(null);
-  // An app opened in one Space is not left open after switching to another.
-  const detailKey = openApp?.spaceId === selectedSpaceId() ? openApp : null;
+  const spaceId = selectedSpaceId();
+  // An app opened in one Space closes on switching to another, with its unsaved label edits.
+  if (openApp && openApp.spaceId !== spaceId) {
+    setOpenApp(null);
+    setLabelDrafts({});
+  }
+  const detailKey = openApp?.spaceId === spaceId ? openApp : null;
   const [toolsOpen, setToolsOpen] = useState(true);
 
   const catalogRead = rpcQuery("connections/catalog");
@@ -173,6 +178,7 @@ export default function Integrations() {
     lastBotId,
     setLastBotId,
     closeDetail,
+    captureFocus,
   });
   const {
     addOptions,
@@ -187,7 +193,7 @@ export default function Integrations() {
     authorizeMcp,
     setOauthServerId,
     captureFocus,
-    onStart: closeDetail,
+    onStart: () => closeDetail(),
   });
   const pending = accountPending ?? sourcePending;
   const loadFailure = catalogQuery.error ?? connectionsQuery.error;
@@ -296,8 +302,10 @@ export default function Integrations() {
     setOpenApp({ connectorId: item.connectorId, slug: item.slug, spaceId: selectedSpaceId() });
   }
 
-  function closeDetail() {
-    setOpenApp(null);
+  function closeDetail(item?: ConnectionCatalogItem) {
+    setOpenApp((open) =>
+      !item || (open?.connectorId === item.connectorId && open.slug === item.slug) ? null : open,
+    );
   }
 
   function itemConnected(item: ConnectionCatalogItem) {
@@ -521,7 +529,7 @@ export default function Integrations() {
                 toolsLoading={toolsLoading}
                 toolsOpen={toolsOpen}
                 setToolsOpen={setToolsOpen}
-                onBack={closeDetail}
+                onBack={() => closeDetail()}
                 onUninstall={() => uninstall(detailItem)}
                 onRename={renameAccount}
                 onRevoke={revokeAccount}

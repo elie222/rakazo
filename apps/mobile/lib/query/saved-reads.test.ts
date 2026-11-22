@@ -332,6 +332,16 @@ it("writes an answer only when it changed, without rescanning the folder", async
   expect(state.lists).toBe(lists);
 });
 
+it("paints a read that a screen turns on after opening it", async () => {
+  await answerAndSave(catalogRead(), [app]);
+  relaunch();
+  const shown = open({ ...catalogRead(), enabled: false });
+  await flush();
+  expect(shown.getCurrentResult().data).toBeUndefined();
+  shown.setOptions({ ...catalogRead(), enabled: true });
+  await vi.waitFor(() => expect(shown.getCurrentResult().data).toEqual([app]));
+});
+
 it("does not count files the OS removed when making room", async () => {
   const save = (query: string) =>
     answerAndSave(rpcQuery("marketplace/catalog", { query }), {

@@ -32,6 +32,7 @@ export function useConnectionActions({
   lastBotId,
   setLastBotId,
   closeDetail,
+  captureFocus,
 }: {
   catalogRead: Read<ConnectionCatalogItem[]>;
   connectionsRead: Read<Connection[]>;
@@ -41,7 +42,10 @@ export function useConnectionActions({
   setLabelDrafts: Dispatch<SetStateAction<Record<string, string>>>;
   lastBotId: string;
   setLastBotId: (id: string) => void;
-  closeDetail: () => void;
+  /** Closes the open app, or only `item` when it is still the one open. */
+  closeDetail: (item?: ConnectionCatalogItem) => void;
+  /** Whether the screen keeps the focus it has now, as the screen counts its visits. */
+  captureFocus: () => () => boolean;
 }) {
   const { t } = useLingui();
   const connectionAttempt = useRef<AbortController | null>(null);
@@ -79,10 +83,10 @@ export function useConnectionActions({
     );
   }
 
-  async function notifyAppConnected(item: ConnectionCatalogItem) {
+  async function notifyAppConnected(item: ConnectionCatalogItem, focused: () => boolean) {
     const isCurrent = captureSessionScope();
     const botId = lastBotId || (await loadLastBotId());
-    if (!botId || !isCurrent()) return;
+    if (!botId || !isCurrent() || !focused()) return;
     if (botId !== lastBotId) setLastBotId(botId);
     void bestEffort(
       "tell onboarding an app was connected",
@@ -104,6 +108,7 @@ export function useConnectionActions({
     save: async (item: ConnectionCatalogItem, send) => {
       // One attempt at a time: one started in another Space stops the earlier one.
       connectionAttempt.current?.abort();
+      const focused = captureFocus();
       const controller = new AbortController();
       connectionAttempt.current = controller;
       try {
@@ -118,7 +123,7 @@ export function useConnectionActions({
         // reads nothing again, so a queued app starts at once.
         if (result.status === "aborted") throw new ConnectStopped();
         if (result.status === "connected" && result.row) await updateAccount(result.row);
-        return result.status;
+        return { status: result.status, focused };
       } catch (reason) {
         if (controller.signal.aborted) throw new ConnectStopped();
         throw reason;
@@ -127,8 +132,8 @@ export function useConnectionActions({
       }
     },
     stale,
-    onSaved: (status, item) => {
-      if (status === "connected") void notifyAppConnected(item);
+    onSaved: ({ status, focused }, item) => {
+      if (status === "connected") void notifyAppConnected(item, focused);
       if (status === "pending")
         Alert.alert(
           t`Connection pending`,
@@ -159,17 +164,20 @@ export function useConnectionActions({
   });
 
   const uninstall = useSave({
+    // Each account revoked shows as revoked at once, so a failure part way leaves the screen
+    // showing what the server holds without reading the lists again.
     save: async (item: ConnectionCatalogItem, send) => {
+      const focused = captureFocus();
       for (const row of catalogItemAccounts(connections, item)) {
         await send("connections/revoke", { connectionId: row.id });
         await updateAccount({ ...row, status: "revoked" });
       }
+      return focused;
     },
     stale,
-    onSaved: closeDetail,
-    // Some accounts may be gone already, so the screen reads them again.
-    onFailed: () => {
-      for (const queryKey of stale) void queryClient.invalidateQueries({ queryKey });
+    // Closes the app it removed, and only on the visit it was removed in.
+    onSaved: (focused, item) => {
+      if (focused()) closeDetail(item);
     },
   });
 
@@ -235,7 +243,7 @@ export function useConnectionActions({
       rename.run({ row, displayName });
     },
     uninstall(item: ConnectionCatalogItem) {
-      if (catalogItemAccounts(connections, item).length === 0) return closeDetail();
+      if (catalogItemAccounts(connections, item).length === 0) return closeDetail(item);
       resetFailures();
       uninstall.run(item);
     },

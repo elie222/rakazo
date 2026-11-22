@@ -51,6 +51,8 @@ const SavedFileSchema = z.object({ key: z.string(), savedAt: z.number(), data: z
 /** The latest save each read started: an older one that finishes later is dropped. */
 const latestSave = new Map<string, number>();
 let saves = 0;
+/** Reads already painted from disk, or tried: each read is seeded once. */
+const seeded = new WeakSet<Query>();
 /** Seeds in flight. A reset or invalidation of the read meanwhile drops its seed. */
 const seeding = new Map<Query, number>();
 let seeds = 0;
@@ -177,14 +179,17 @@ export function keepSavedReads(client: QueryClient): void {
   client.getQueryCache().subscribe((event) => {
     const meta = readMeta(event.query);
     if (!meta) return;
-    // A screen that opens on a read with nothing in memory paints the saved answer meanwhile.
+    // A screen that opens on a read with nothing in memory, or turns a read on (enabled), paints
+    // the saved answer meanwhile.
     if (
-      event.type === "observerAdded" &&
+      (event.type === "observerAdded" || event.type === "observerOptionsUpdated") &&
       event.query.state.data === undefined &&
-      event.query.isActive()
-    )
+      event.query.isActive() &&
+      !seeded.has(event.query)
+    ) {
+      seeded.add(event.query);
       void bestEffort("show a saved read", seed(event.query, meta));
-    else if (event.type === "updated" && event.action.type === "success")
+    } else if (event.type === "updated" && event.action.type === "success")
       void bestEffort("save a read", save(event.query, meta, event.action.data));
     // A reset or invalidation (consent granted, a change elsewhere) outdates a saved answer.
     else if (
