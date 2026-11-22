@@ -29,7 +29,7 @@ const calendar = {
   accountId: JSON.stringify(["local", "Owner"]),
   calendarId: "12",
 } as const;
-const event: CalendarOperation = {
+const event: Extract<CalendarOperation, { action: "create_calendar_event" }> = {
   action: "create_calendar_event",
   input: {
     calendar,
