@@ -22,7 +22,7 @@ diff --git a/android/src/main/java/com/swmansion/enriched/markdown/segments/Mark
 new file mode 100644
 --- /dev/null
 +++ b/android/src/main/java/com/swmansion/enriched/markdown/segments/MarkdownHorizontalScrollView.kt
-@@ -0,0 +1,76 @@
+@@ -0,0 +1,78 @@
 +package com.swmansion.enriched.markdown.segments
 +
 +import android.content.Context
@@ -70,7 +70,9 @@ new file mode 100644
 +          val dx = abs(event.x - downX)
 +          val dy = abs(event.y - downY)
 +          if (max(dx, dy) > touchSlop) {
-+            drag = if (dx >= dy) Drag.Horizontal else Drag.Vertical
++            // A finger moving left scrolls the content right.
++            val canFollow = canScrollHorizontally(if (event.x < downX) 1 else -1)
++            drag = if (dx >= dy && canFollow) Drag.Horizontal else Drag.Vertical
 +            if (drag == Drag.Vertical) parent?.requestDisallowInterceptTouchEvent(false)
 +          }
 +        }
