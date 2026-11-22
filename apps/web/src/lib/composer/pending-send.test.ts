@@ -1,7 +1,12 @@
 import type { ThreadMessage } from "@rakazo/contracts";
 import { describe, expect, it } from "vitest";
 import type { PendingSend } from "./pending-send";
-import { isPendingSendMessage, withoutDeliveredSends, withPendingSends } from "./pending-send";
+import {
+  isPendingSendMessage,
+  newestMessageSeq,
+  withoutDeliveredSends,
+  withPendingSends,
+} from "./pending-send";
 
 const stored = (seq: number, text: string, authorId?: string): ThreadMessage => ({
   id: `m${seq}`,
@@ -100,5 +105,16 @@ describe("withoutDeliveredSends", () => {
     expect(withoutDeliveredSends(waiting, [stored(3, "new words")], "bot1")).toEqual([waiting[1]]);
     // Another chat's seq numbers say nothing about this send.
     expect(withoutDeliveredSends(waiting, [stored(3, "new words")], "bot2")).toBe(waiting);
+  });
+});
+
+describe("newestMessageSeq", () => {
+  it("ignores live rows that carry no seq", () => {
+    const live = {
+      ...stored(0, "typing"),
+      id: "progress:run-1",
+      seq: undefined,
+    } as unknown as ThreadMessage;
+    expect(newestMessageSeq([stored(4, "hi"), live])).toBe(4);
   });
 });

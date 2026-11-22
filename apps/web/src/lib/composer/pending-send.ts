@@ -25,9 +25,15 @@ function messageText(message: ThreadMessage) {
     .trim();
 }
 
-/** The newest message seq in a chat, the baseline a pending send compares against. */
+/**
+ * The newest message seq in a chat, the baseline a pending send compares against. Rows built
+ * from live events can lack a seq, so only real numbers count.
+ */
 export function newestMessageSeq(messages: readonly ThreadMessage[]) {
-  return messages.reduce((max, message) => Math.max(max, message.seq), 0);
+  return messages.reduce(
+    (max, message) => (Number.isFinite(message.seq) ? Math.max(max, message.seq) : max),
+    0,
+  );
 }
 
 /** A direct chat stores the user's messages without an author; a group names who sent them. */
