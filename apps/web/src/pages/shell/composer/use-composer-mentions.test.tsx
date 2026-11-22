@@ -10,7 +10,7 @@ import { queryClient } from "../../../lib/query/query";
 import { useComposerMentions } from "./use-composer-mentions";
 
 vi.mock("@lingui/react/macro", () => ({ useLingui: () => ({ i18n: { locale: "en" } }) }));
-vi.mock("../../../lib/routines/cron", () => ({ cronLabels: () => undefined }));
+vi.mock("@rakazo/i18n/cron", () => ({ cronLabels: () => undefined }));
 vi.mock("../../../lib/query/query", async () => {
   const { QueryClient } = await import("@tanstack/react-query");
   return {

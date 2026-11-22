@@ -6,6 +6,7 @@ export * from "./account/password-policy.js";
 export * from "./account/product-analytics.js";
 export * from "./account/signup-attribution.js";
 export * from "./account/signup-policy.js";
+export * from "./account/space-availability.js";
 export * from "./account/user-device-client.js";
 export * from "./agent-import/index.js";
 export * from "./agent-import/setup.js";

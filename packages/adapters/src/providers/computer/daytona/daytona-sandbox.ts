@@ -655,7 +655,14 @@ export class DaytonaSandboxProvider implements SandboxProvider {
         undefined,
         300,
       );
-      if (runtime.exitCode !== 0) throw new Error("could not prepare computer desktop tools");
+      if (runtime.exitCode !== 0) {
+        const output = runtime.result?.trim().split("\n").at(-1)?.slice(0, 300);
+        throw new Error("could not prepare computer desktop tools", {
+          cause: new Error(
+            output ? `exit ${runtime.exitCode}: ${output}` : `exit ${runtime.exitCode}`,
+          ),
+        });
+      }
       const pageBrowser = await sandbox.process
         .executeCommand(
           `bash -c ${shellQuote(installPageBrowserCommand())}`,

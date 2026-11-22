@@ -113,6 +113,7 @@ export class LinuxDesktop {
     if (startsScreen && result.code === SCREEN_NOT_READY_EXIT) {
       // Only the first line: the rest is the browser's or display's own log.
       getLogger().warn("computer.screen_not_ready", {
+        "sandbox.id": computer.id,
         provider: computer.kind,
         reason: result.stderr?.trim().split("\n")[0]?.slice(0, 200),
       });
@@ -545,6 +546,9 @@ export const PREPARE_LINUX_DESKTOP = [
   `    $root env DEBIAN_FRONTEND=noninteractive ${APT} install -y -qq --fix-broken --no-remove`,
   `    $root env DEBIAN_FRONTEND=noninteractive ${APT} install -y -qq --reinstall --no-remove $missing`,
   "  fi",
+  // An install APT reports as done can still leave a tool out; the screen would then fail later.
+  ...FIND_MISSING_DESKTOP_TOOLS.map((line) => `  ${line}`),
+  '  if [ -n "$missing" ]; then echo "desktop tools still missing after install:$missing" >&2; exit 1; fi',
   "fi",
   // Bots read pages visually; without a color emoji font every emoji is an empty box. The
   // desktop works without it, so an image whose package manager is broken still runs.
