@@ -34,7 +34,7 @@ const customSecret = JSON.stringify({
   enabledModelIds: ["local-qwen"],
 });
 
-function deps({ withCustomServer = false } = {}): FleetPrepareDeps {
+function deps({ withCustomServer = false, manyServers = 0 } = {}): FleetPrepareDeps {
   const credential = {
     id: "cred-google",
     provider: "google",
@@ -44,7 +44,19 @@ function deps({ withCustomServer = false } = {}): FleetPrepareDeps {
     updatedAt: new Date(0),
     userPreferences: [],
   };
-  const credentials = withCustomServer ? [credential, customServer] : [credential];
+  const servers = Array.from({ length: manyServers }, (_, i) => ({
+    ...customServer,
+    id: `cred-many-${i}`,
+    label: `Server ${i}`,
+    secretId: `secret-many-${i}`,
+  }));
+  const manySecret = (server: string) =>
+    JSON.stringify({
+      kind: "openai_compatible",
+      baseUrl: "http://models.example.test/v1",
+      enabledModelIds: Array.from({ length: 15 }, (_, i) => `local-model-${server}-${i}`),
+    });
+  const credentials = [credential, ...(withCustomServer ? [customServer] : []), ...servers];
   const prisma = {
     userModelCredential: { findMany: vi.fn(async () => credentials) },
     userModelPreference: { findMany: vi.fn(async () => []) },
@@ -59,7 +71,11 @@ function deps({ withCustomServer = false } = {}): FleetPrepareDeps {
     modelChange: {
       secretStore: {
         load: async (ciphertext: string) =>
-          ciphertext === customServer.secretId ? customSecret : "fake-api-key",
+          ciphertext === customServer.secretId
+            ? customSecret
+            : ciphertext.startsWith("secret-many-")
+              ? manySecret(ciphertext)
+              : "fake-api-key",
       },
       refreshExpiredCredential: vi.fn(),
       defaultModel: async () => ({ provider: "google", model: "gemini-3.8-flash" }),
@@ -137,6 +153,14 @@ describe("readOwnBotSettings", () => {
       provider: "Home server",
       ids: ["openai-compatible/local-qwen"],
     });
+  });
+
+  it("bounds the listed models so many connections still leave room for the settings", async () => {
+    const many = await readOwnBotSettings(deps({ manyServers: 40 }), scope, bot);
+    if ("error" in many) throw new Error(many.error);
+    expect(many.instructions).toBe(bot.instructions);
+    expect(many.models.flatMap((group) => group.ids).length).toBeLessThanOrEqual(60);
+    expect(many.models.some((group) => group.more)).toBe(true);
   });
 
   it("pages long instructions, naming the window and the next offset", async () => {

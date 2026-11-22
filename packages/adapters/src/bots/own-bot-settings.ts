@@ -38,6 +38,8 @@ export type OwnBotSettingsRow = {
 
 /** Ids listed per connected provider; the rest are reachable by name. */
 const MODELS_PER_PROVIDER = 15;
+/** Ids listed across all providers, so many connections cannot crowd out the rest of a read. */
+const MODELS_LISTED = 60;
 /** Largest instructions page a settings read returns; the rest come on request by offset. */
 const INSTRUCTIONS_PAGE_SIZE = 8_000;
 /**
@@ -77,6 +79,13 @@ export async function readOwnBotSettings(
     ids.push(`${choice.provider}/${choice.id}`);
     providers.set(choice.providerName, ids);
   }
+  let room = MODELS_LISTED;
+  const models = [...providers].flatMap(([provider, ids]) => {
+    const listed = ids.slice(0, Math.min(MODELS_PER_PROVIDER, room));
+    room -= listed.length;
+    const more = ids.length - listed.length;
+    return listed.length || more ? [{ provider, ids: listed, ...(more ? { more } : {}) }] : [];
+  });
   const settings = (
     instructions: string,
     paging: { length: number; nextOffset: number | null } | null,
@@ -97,11 +106,7 @@ export async function readOwnBotSettings(
     ...(bot.teamChatRules && !paging ? { teamChatRules: bot.teamChatRules } : {}),
     ...(bot.memoryScope ? { memoryScope: bot.memoryScope } : {}),
     disabledTools: bot.disabledBuiltinTools,
-    models: [...providers].map(([provider, ids]) => ({
-      provider,
-      ids: ids.slice(0, MODELS_PER_PROVIDER),
-      ...(ids.length > MODELS_PER_PROVIDER ? { more: ids.length - MODELS_PER_PROVIDER } : {}),
-    })),
+    models,
     thinkingLevels: levels?.allowed ?? ThinkingLevelSchema.options,
     ...(paging
       ? {
