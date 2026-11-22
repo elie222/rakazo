@@ -190,7 +190,7 @@ describe("provider desktop preparation", () => {
       });
       expect(result.status).not.toBe(0);
       expect(readFileSync(calls, "utf8").trim().split("\n")).toEqual(
-        Array.from({ length: 12 }, () => "update -qq"),
+        Array.from({ length: 12 }, () => "update -qq --allow-releaseinfo-change"),
       );
       expect(result.stderr).toContain("Could not get lock");
     } finally {
@@ -198,27 +198,37 @@ describe("provider desktop preparation", () => {
     }
   });
 
-  it("fails when the package index cannot be updated", () => {
+  it("still installs the desktop tools when a package source cannot be refreshed", () => {
     const bin = mkdtempSync(path.join(tmpdir(), "rakazo-prepare-"));
     try {
       const calls = path.join(bin, "calls");
+      const fontPath = path.join(bin, "NotoColorEmoji.ttf");
+      writeFileSync(fontPath, "");
       // PATH holds only these fakes, so every desktop tool is missing and nothing runs as root.
       const fakes = {
         id: "#!/bin/sh\necho 1000\n",
-        sudo: '#!/bin/sh\n[ "$1" = -n ] && shift\nexec "$@"\n',
+        sudo: '#!/bin/sh\n[ "$1" = -n ] && shift\n[ "$1" = sh ] && exit 0\nexec "$@"\n',
+        env: '#!/bin/sh\nshift\nexec "$@"\n',
         // Every call waits for APT's lock; the fake records only what it was asked to do.
-        "apt-get": `#!/bin/sh\n[ "$1" = -o ] && [ "$2" = DPkg::Lock::Timeout=60 ] || exit 2\nshift 2\necho "$*" >> ${JSON.stringify(calls)}\n[ "$1" != update ]\n`,
+        "apt-get": `#!/bin/sh\n[ "$1" = -o ] && [ "$2" = DPkg::Lock::Timeout=60 ] || exit 2\nshift 2\necho "$*" >> ${JSON.stringify(calls)}\n[ "$1" = update ] || exit 0\necho "E: Repository 'https://example.invalid noble InRelease' no longer has a Release file." >&2\nexit 100\n`,
       };
       for (const [name, script] of Object.entries(fakes)) {
         writeFileSync(path.join(bin, name), script);
         chmodSync(path.join(bin, name), 0o755);
       }
-      const result = spawnSync("/bin/sh", ["-c", PREPARE_LINUX_DESKTOP], {
+      const prepare = PREPARE_LINUX_DESKTOP.replaceAll(
+        "/usr/share/fonts/truetype/noto/NotoColorEmoji.ttf",
+        fontPath,
+      );
+      const result = spawnSync("/bin/sh", ["-c", prepare], {
         env: { PATH: bin },
         encoding: "utf8",
       });
-      expect(result.status).not.toBe(0);
-      expect(readFileSync(calls, "utf8").trim()).toBe("update -qq");
+      expect(result.status).toBe(0);
+      expect(result.stderr).toContain("no longer has a Release file");
+      const [update, install] = readFileSync(calls, "utf8").trim().split("\n");
+      expect(update).toBe("update -qq --allow-releaseinfo-change");
+      expect(install).toMatch(/^install .*--reinstall --no-remove .*xvfb/);
     } finally {
       rmSync(bin, { recursive: true, force: true });
     }

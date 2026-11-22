@@ -148,7 +148,7 @@ export const PREPARE_COMPUTER_PROXY = [
   "}",
   `if [ -n "\${${COMPUTER_PROXY_CONFIG_ENV}:-}" ]; then`,
   "  if ! command -v tinyproxy >/dev/null; then",
-  "    $root apt-get update -qq",
+  "    $root apt-get update -qq --allow-releaseinfo-change || true",
   // policy-rc.d keeps the package from starting its own instance. An image's own policy is left
   // alone, and ours is removed whether or not the install succeeds.
   "    own_policy=0",
