@@ -86,7 +86,7 @@ get() {
     case $status in
       200)
         tmp=$(mktemp "$file.XXXXXX") || return 1
-        { header etag "$headers"; awk 'body { print; next } /^\r?$/ { body = 1 }' <<<"$resp"; } >"$tmp"
+        { echo "$(header etag "$headers")"; awk 'body { print; next } /^\r?$/ { body = 1 }' <<<"$resp"; } >"$tmp"
         mv "$tmp" "$file"
         tail -n +2 "$file"
         return 0

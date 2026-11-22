@@ -60,7 +60,7 @@ else if (args[0] === "pr" && args[1] === "view") {
       print("HTTP/2.0 304 Not Modified\n");
       process.exit(1);
     }
-    print("HTTP/2.0 200 OK\nEtag: " + etag + "\n\n" + json);
+    print("HTTP/2.0 200 OK\n" + (fixture.noEtag ? "" : "Etag: " + etag + "\n") + "\n" + json);
   }
 } else process.exit(2);
 `;
@@ -92,6 +92,7 @@ function runDigest(
     statuses?: object[][];
     workflows?: object[][];
     rateLimited?: number;
+    noEtag?: boolean;
     steps?: Record<string, object[]>;
   },
   ...args: string[]
@@ -577,6 +578,11 @@ describe("pr-digest", () => {
       expect(result.stdout).toContain("VERDICT green");
       // Conversation, review and status reads stay the same across polls.
       expect(result.calls.split("304").length - 1).toBeGreaterThan(5);
+    });
+
+    it("reads a response that carries no ETag", () => {
+      const result = runDigest({ noEtag: true, conversation: [comment()] }, "--watch", "1");
+      expect(result.stdout).toContain("Please fix this");
     });
 
     it("waits out a rate limit instead of failing", () => {
