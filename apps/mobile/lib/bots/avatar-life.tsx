@@ -12,6 +12,7 @@ import {
   AVATAR_SETTLE_MS,
   AVATAR_SHARED_WINDOW_SECONDS,
   avatarClipPool,
+  avatarSchedulePose,
   avatarSharedSchedule,
   avatarSharedTimeMs,
 } from "@rakazo/core";
@@ -179,14 +180,32 @@ export function useLife(
     });
     return () => cancelAnimation(seconds);
   }, [moving, seconds]);
-  // Counts the stretches this avatar has planned, so the next one is planned as it begins.
-  const [stretch, setStretch] = useState(0);
+  // Counts the stretches this avatar has planned and how long until the next begins, so
+  // the timer is armed once a stretch, not on every render.
+  const [stretch, setStretch] = useState(() => ({ count: 0, wait: untilNextStretchMs() }));
+  const planned = useRef<{ pool: readonly string[]; identity: string } | null>(null);
   useEffect(() => {
-    if (!moving) return;
+    if (!moving) {
+      planned.current = null;
+      return;
+    }
+    const now = sharedSeconds();
+    // A new state eases from the pose on screen; a new stretch carries straight on.
+    const changed =
+      planned.current !== null &&
+      (planned.current.pool !== pool || planned.current.identity !== identity);
+    const from = changed ? avatarSchedulePose(schedule.value, now) : undefined;
+    planned.current = { pool, identity };
     // The timeline covers this stretch and the next.
-    schedule.value = avatarSharedSchedule(pool, identity, sharedSeconds());
-  }, [moving, pool, identity, schedule, stretch]);
-  useTimeout(() => setStretch((count) => count + 1), moving ? untilNextStretchMs() : null, stretch);
+    schedule.value = avatarSharedSchedule(pool, identity, now, from);
+  }, [moving, pool, identity, schedule, stretch.count]);
+  // A wait worked out before the avatar started moving may be off, but it is never longer
+  // than a stretch and the timeline already covers the next one, so nothing runs out.
+  useTimeout(
+    () => setStretch(({ count }) => ({ count: count + 1, wait: untilNextStretchMs() })),
+    moving ? stretch.wait : null,
+    stretch.count,
+  );
   return { seconds, awake, morph, schedule, poke, pokeProgress };
 }
 

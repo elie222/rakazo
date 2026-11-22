@@ -1,7 +1,7 @@
 import type { LogoAvatarActivity } from "@rakazo/core";
 import type { RefObject } from "react";
 import { useCallback, useLayoutEffect, useRef, useState } from "react";
-import { syncAvatarAnimations } from "./sync-avatar-animations.js";
+import { syncAvatarAnimations } from "../lib/sync-avatar-animations.js";
 
 interface Layer {
   key: number;
@@ -63,9 +63,9 @@ export function useLogoAvatarLayers(
     const element = ref.current;
     // Static avatars have no tracks to sync; skipping avoids a style flush per change.
     if (!element || !animated) return;
-    syncAvatarAnimations(element);
+    const animations = syncAvatarAnimations(element);
     const now = Number(document.timeline?.currentTime ?? 0);
-    for (const animation of element.getAnimations?.({ subtree: true }) ?? []) {
+    for (const animation of animations) {
       if (animation.effect?.getTiming().iterations === Number.POSITIVE_INFINITY) continue;
       if (!knownFades.current.has(animation)) {
         animation.startTime = now;

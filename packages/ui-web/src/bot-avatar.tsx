@@ -22,8 +22,8 @@ import {
 import type { ComponentProps, CSSProperties } from "react";
 import { memo, useLayoutEffect, useMemo, useSyncExternalStore } from "react";
 import { useBotAvatarActivity } from "./bot-avatar-activity.js";
-import { syncAvatarAnimations } from "./hooks/sync-avatar-animations.js";
 import { useAvatarMotionVisibility } from "./hooks/use-avatar-motion-visibility.js";
+import { syncAvatarAnimations } from "./lib/sync-avatar-animations.js";
 import { cn } from "./lib/utils.js";
 import { LogoAvatar } from "./logo-avatar.js";
 import "./styles.css";
@@ -263,7 +263,7 @@ function MascotAvatar({
     }
     svg.unpauseAnimations?.();
     svg.setCurrentTime?.((avatarSharedTimeMs() % morphMs) / 1000);
-  }, [ref, visible, isWorking, reducedMotion, morphMs]);
+  }, [ref, visible, isWorking, reducedMotion, seed, morphMs]);
   const eyeOrigin = `${(eyes.leftCx + eyes.rightCx) / 2}px ${eyes.cy}px`;
   const unit = viewBoxWidth(viewBox) / viewBoxWidth(ORGANIC_AVATAR_VIEWBOX);
 

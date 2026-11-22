@@ -519,6 +519,25 @@ describe("avatarSharedSchedule", () => {
     expect(last.start + last.duration).toBeGreaterThanOrEqual((index + 2) * window);
   });
 
+  it("eases from the pose on screen into the shared timeline", () => {
+    const shown: AvatarPose = { ...AVATAR_REST_POSE, roll: 18, yaw: 370, lid: 0.4 };
+    const seconds = start + 13.37;
+    const shared = avatarSharedSchedule(pool, "bot-a", seconds);
+    const eased = avatarSharedSchedule(pool, "bot-a", seconds, shown);
+    const opening = avatarSchedulePose(eased, seconds);
+    expect(opening.roll).toBeCloseTo(18);
+    expect(opening.lid).toBeCloseTo(0.4);
+    // A whole turn is not undone on the way back.
+    expect(Math.abs(opening.yaw - avatarSchedulePose(shared, seconds).yaw)).toBeLessThan(180);
+    for (const after of [AVATAR_BRIDGE.seconds, AVATAR_BRIDGE.seconds + 0.2, 4, 40]) {
+      const pose = avatarSchedulePose(eased, seconds + after);
+      const expected = avatarSchedulePose(shared, seconds + after);
+      for (const key of Object.keys(expected) as (keyof AvatarPose)[]) {
+        expect(pose[key]).toBeCloseTo(expected[key], 6);
+      }
+    }
+  });
+
   it("moves different bots differently", () => {
     const a = avatarSharedSchedule(pool, "bot-a", start);
     const b = avatarSharedSchedule(pool, "bot-b", start);

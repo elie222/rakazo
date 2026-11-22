@@ -112,7 +112,6 @@ describe("the activity mark's clock", () => {
   const roots: Root[] = [];
   beforeEach(() => {
     vi.useFakeTimers();
-    vi.spyOn(Math, "random").mockReturnValue(0.5);
     vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
     styles.length = 0;
   });
