@@ -92,7 +92,7 @@ export interface AvatarSegment {
   start: number;
   duration: number;
   clip?: AvatarClipName;
-  /** Seconds into the clip this segment starts, when it picks a clip up partway. */
+  /** Seconds into the clip or bridge this segment starts, when it picks one up partway. */
   offset?: number;
   from?: AvatarPose;
   to?: AvatarPose;
@@ -178,7 +178,8 @@ export const AVATAR_SHARED_WINDOW_SECONDS = 60;
  * Each stretch is drawn from the bot and the stretch's number alone, so every copy of the
  * avatar plays the same clips wherever it started. A stretch opens by easing from where the
  * one before left off back to rest, so its clips never depend on that pose. Given `from`,
- * the pose the avatar shows now, it first eases from there into the shared timeline.
+ * the pose the avatar shows now, it first eases from there into the shared timeline when
+ * the two differ.
  */
 export function avatarSharedSchedule(
   pool: readonly AvatarClipName[],
@@ -191,7 +192,9 @@ export function avatarSharedSchedule(
   const current = sharedWindow(pool, identity, index, poseAtWindow(previous, index));
   const next = sharedWindow(pool, identity, index + 1, poseAtWindow(current, index + 1));
   const segments = [...current, ...next];
-  return from ? easedInto(segments, seconds, from) : segments;
+  if (!from) return segments;
+  const shared = avatarSchedulePose(segments, seconds);
+  return differs(unwrap(from, shared), shared) ? easedInto(segments, seconds, from) : segments;
 }
 
 /** `segments` from `seconds`, reached by a bridge from `from` instead of a jump. */
@@ -210,12 +213,12 @@ function easedInto(
   const held = segments[at];
   const into = held ? join - held.start : 0;
   if (held && into < held.duration) {
-    const left = held.duration - into;
-    eased.push(
-      held.clip
-        ? { start: join, duration: left, clip: held.clip, offset: (held.offset ?? 0) + into }
-        : { start: join, duration: left, from: to, to: held.to },
-    );
+    eased.push({
+      ...held,
+      start: join,
+      duration: held.duration - into,
+      offset: (held.offset ?? 0) + into,
+    });
   }
   return [...eased, ...segments.slice(at + 1)];
 }
@@ -266,11 +269,12 @@ export function avatarSchedulePose(
     segment = candidate;
   }
   if (!segment) return AVATAR_REST_POSE;
-  const local = Math.min(Math.max(seconds - segment.start, 0), segment.duration);
-  if (segment.clip) return avatarClipPose(avatarClip(segment.clip), local + (segment.offset ?? 0));
+  const offset = segment.offset ?? 0;
+  const local = Math.min(Math.max(seconds - segment.start, 0), segment.duration) + offset;
+  if (segment.clip) return avatarClipPose(avatarClip(segment.clip), local);
   const from = segment.from ?? AVATAR_REST_POSE;
   const to = segment.to ?? AVATAR_REST_POSE;
-  const eased = avatarEase(AVATAR_BRIDGE.ease, local / segment.duration);
+  const eased = avatarEase(AVATAR_BRIDGE.ease, local / (segment.duration + offset));
   const mix = (a: number, b: number) => a + (b - a) * eased;
   return {
     pitch: mix(from.pitch, to.pitch),

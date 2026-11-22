@@ -183,19 +183,17 @@ export function useLife(
   // Counts the stretches this avatar has planned and how long until the next begins, so
   // the timer is armed once a stretch, not on every render.
   const [stretch, setStretch] = useState(() => ({ count: 0, wait: untilNextStretchMs() }));
-  const planned = useRef<{ pool: readonly string[]; identity: string } | null>(null);
+  // Whether a timeline was planned before, kept through a brief stop (a lazy avatar is
+  // still for a render before it settles), so the next one eases from the pose on screen.
+  // After a long stop that pose is stale, but `awake` eases in from the still picture.
+  const planned = useRef(false);
   useEffect(() => {
-    if (!moving) {
-      planned.current = null;
-      return;
-    }
+    if (!moving) return;
     const now = sharedSeconds();
-    // A new state eases from the pose on screen; a new stretch carries straight on.
-    const changed =
-      planned.current !== null &&
-      (planned.current.pool !== pool || planned.current.identity !== identity);
-    const from = changed ? avatarSchedulePose(schedule.value, now) : undefined;
-    planned.current = { pool, identity };
+    // Easing in also finishes a bridge a new stretch would otherwise cut short; when the
+    // pose on screen already matches the shared one, the timeline carries straight on.
+    const from = planned.current ? avatarSchedulePose(schedule.value, now) : undefined;
+    planned.current = true;
     // The timeline covers this stretch and the next.
     schedule.value = avatarSharedSchedule(pool, identity, now, from);
   }, [moving, pool, identity, schedule, stretch.count]);

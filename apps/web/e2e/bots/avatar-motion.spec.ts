@@ -140,7 +140,10 @@ test("organic avatars hold still while idle and stop working motion while offscr
       svg.querySelector<SVGPathElement>(`.rakazo-mascot-avatar-body-${mode}`)!;
     svg.parentElement!.querySelector("button")!.click();
     await new Promise((resolve) => setTimeout(resolve, 0));
-    const duration = body("working").querySelector("animate")!.getSimpleDuration() * 1000;
+    // Whole milliseconds: the duration comes back as float seconds.
+    const duration = Math.round(
+      body("working").querySelector("animate")!.getSimpleDuration() * 1000,
+    );
     return {
       duration,
       offset: (svg.getCurrentTime() * 1000 - Date.now()) % duration,

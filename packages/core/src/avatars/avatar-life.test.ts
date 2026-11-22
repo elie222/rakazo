@@ -538,6 +538,29 @@ describe("avatarSharedSchedule", () => {
     }
   });
 
+  it("carries straight on when the pose on screen already matches", () => {
+    const seconds = start + 21.5;
+    const shared = avatarSharedSchedule(pool, "bot-a", seconds);
+    const shown = avatarSchedulePose(shared, seconds);
+    expect(avatarSharedSchedule(pool, "bot-a", seconds, shown)).toEqual(shared);
+  });
+
+  it("keeps a bridge's curve when it picks the bridge up partway", () => {
+    const index = Math.floor(start / window);
+    // Each stretch opens with a bridge back to rest; join it partway through.
+    const seconds = index * window + AVATAR_BRIDGE.seconds / 4;
+    const shared = avatarSharedSchedule(pool, "bot-a", seconds);
+    const shown: AvatarPose = { ...AVATAR_REST_POSE, roll: 30 };
+    const eased = avatarSharedSchedule(pool, "bot-a", seconds - AVATAR_BRIDGE.seconds / 2, shown);
+    for (const after of [0.01, 0.1, 0.2]) {
+      const at = seconds + AVATAR_BRIDGE.seconds / 2 + after;
+      expect(avatarSchedulePose(eased, at).roll).toBeCloseTo(
+        avatarSchedulePose(shared, at).roll,
+        6,
+      );
+    }
+  });
+
   it("moves different bots differently", () => {
     const a = avatarSharedSchedule(pool, "bot-a", start);
     const b = avatarSharedSchedule(pool, "bot-b", start);

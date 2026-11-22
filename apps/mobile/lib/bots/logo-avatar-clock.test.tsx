@@ -73,7 +73,15 @@ it("starts at the shared clock's point in the loop", () => {
   expect(clocks.first!.value).toBeCloseTo(1200);
   act(() => vi.advanceTimersByTime(300));
   expect(clocks.first!.value).toBeCloseTo(1500);
-  expect(vi.getTimerCount()).toBe(0);
+  // Only the timer that starts the next run is armed: no frame or interval timers.
+  expect(vi.getTimerCount()).toBe(1);
+});
+
+it("starts a new run from the shared clock when one runs out", () => {
+  mount("first");
+  act(() => vi.advanceTimersByTime(24 * 60 * 60 * 1000 + 700));
+  expect(clocks.first!.value % 24_000).toBeCloseTo(1_900);
+  expect(clocks.first!.value).toBeLessThan(24 * 60 * 60 * 1000);
 });
 
 it("keeps two copies mounted at different times in step", () => {

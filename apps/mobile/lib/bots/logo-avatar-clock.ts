@@ -1,5 +1,6 @@
+import { useTimeout } from "@rakazo/chat-ui/hooks";
 import { avatarSharedTimeMs, LOGO_AVATAR_LOOP_MS } from "@rakazo/core";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import {
   cancelAnimation,
   Easing,
@@ -8,7 +9,7 @@ import {
   withTiming,
 } from "react-native-reanimated";
 
-/** A clock long enough to never run out while an avatar moves. */
+/** How long one run of the clock lasts before it starts again from the shared clock. */
 const RUN_MS = 24 * 60 * 60 * 1000;
 
 /**
@@ -20,6 +21,9 @@ const RUN_MS = 24 * 60 * 60 * 1000;
  */
 export function useLogoAvatarClock(running: boolean) {
   const milliseconds = useSharedValue(0);
+  // Counts runs, so an avatar left on screen past one run starts another.
+  const [run, setRun] = useState(0);
+  useTimeout(() => setRun((count) => count + 1), running ? RUN_MS : null, run);
   useEffect(() => {
     if (!running) return;
     const base = avatarSharedTimeMs() % LOGO_AVATAR_LOOP_MS;
@@ -30,6 +34,6 @@ export function useLogoAvatarClock(running: boolean) {
       reduceMotion: ReduceMotion.Never,
     });
     return () => cancelAnimation(milliseconds);
-  }, [running, milliseconds]);
+  }, [running, milliseconds, run]);
   return milliseconds;
 }
