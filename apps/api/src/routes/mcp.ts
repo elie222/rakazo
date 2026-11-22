@@ -9,7 +9,6 @@ import {
 import type { Actor, McpOAuthClientKind } from "@rakazo/contracts";
 import { MCP_OAUTH_REDIRECT_MISMATCH, McpServerConfigInput } from "@rakazo/contracts";
 import { ClientError, customMcpServerInput } from "@rakazo/core";
-import type { Prisma } from "@rakazo/db";
 import {
   AVAILABILITY_SELECT,
   assertNameFreeWhereAvailable,
@@ -18,6 +17,7 @@ import {
   isUniqueViolation,
   itemSecretIn,
   lockOwner,
+  Prisma,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import {
@@ -519,10 +519,14 @@ export function mcpRoutes(ctx: RouterContext) {
             if (!input.allBots) {
               const requested = [...new Set(input.botIds)];
               // Any bot in the Space can use the member's own servers, as assignments.replace allows.
-              const bots = await tx.bot.findMany({
-                where: { spaceId: owner.spaceId, id: { in: requested } },
-                select: { id: true, archivedAt: true },
-              });
+              // Locked until the save commits, so an archive or restore waits for it instead of
+              // changing what is decided below.
+              const bots = requested.length
+                ? await tx.$queryRaw<{ id: string; archivedAt: Date | null }[]>`
+                    SELECT id, "archivedAt" FROM bots
+                    WHERE "spaceId" = ${owner.spaceId} AND id IN (${Prisma.join(requested)})
+                    FOR SHARE`
+                : [];
               if (bots.length !== requested.length) throw new IsolationError();
               // A bot archived since the choice was loaded is no longer offered, so it gains nothing.
               const botIds = bots.filter((bot) => !bot.archivedAt).map((bot) => bot.id);
