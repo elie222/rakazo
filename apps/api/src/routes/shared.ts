@@ -9,6 +9,7 @@ import {
   hostCredentialSource,
   mcpStdioAvailable,
   resolveMemberMainModel,
+  sandboxKindCapabilities,
   selectConfiguredModel,
 } from "@rakazo/adapters";
 import type { Actor, Me } from "@rakazo/contracts";
@@ -82,7 +83,8 @@ export async function meDto(deps: RouterDeps, actor: Actor): Promise<Me> {
     ),
     computerHost: computerHostFor(setup.settings?.computerHost, sandboxProvider),
     canChooseHostComputer:
-      Boolean(deps.env.desktopHostChoiceEnabled) && sandboxProvider === "docker",
+      Boolean(deps.env.desktopHostChoiceEnabled) &&
+      sandboxKindCapabilities(sandboxProvider).offersHostComputer === true,
     // The deployment's provider: an account's own choice covers only its Team Computers.
     sandboxProvider,
     computerSettingsEnabled: Boolean(deps.env.computerSettingsEnabled),
@@ -110,7 +112,7 @@ function computerHostFor(
   sandboxProvider: string,
 ): "docker" | "this-mac" | null {
   if (sandboxProvider === "desktop") return "this-mac";
-  if (sandboxProvider !== "docker") return null;
+  if (!sandboxKindCapabilities(sandboxProvider).offersHostComputer) return null;
   if (stored === "this-mac" || stored === "docker") return stored;
   return null;
 }

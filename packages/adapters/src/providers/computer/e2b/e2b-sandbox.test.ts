@@ -637,7 +637,7 @@ describe("E2B computer backend", () => {
     const command = vi.fn(async (value: string, _options?: Record<string, unknown>) => {
       const response = respond(value);
       if (response) return response;
-      if (value.includes("hang")) {
+      if (value === "'hang'") {
         throw new TimeoutError(
           "deadline_exceeded: This error is likely due to exceeding 'timeoutMs' — the total time a long running request (like command execution or directory watch) can be active.",
         );

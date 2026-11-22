@@ -415,7 +415,7 @@ describe("remote computer access", () => {
     clients[0]!.revoke();
     answer.resolve(true);
     await turningOn;
-    expect(await readDeviceConsent(userData, origin)).toMatchObject({ consent: "declined" });
+    expect(await readDeviceConsent(userData, origin)).toBeNull();
     expect(access.state(origin)).toEqual({ deviceId: null, allowed: false });
     expect(requests.filter(({ url }) => url.endsWith("/pair"))).toHaveLength(1);
   });
@@ -432,7 +432,7 @@ describe("remote computer access", () => {
     await access.select(origin);
     await expect(access.setAllowed(origin, true)).rejects.toThrow();
     expect(access.state(origin)).toEqual({ deviceId: null, allowed: false });
-    expect(await readDeviceConsent(userData, origin)).toMatchObject({ consent: "declined" });
+    expect(await readDeviceConsent(userData, origin)).toBeNull();
     status = 200;
     await access.setAllowed(origin, true);
     expect(access.state(origin)).toEqual({ deviceId: "device-1", allowed: true });

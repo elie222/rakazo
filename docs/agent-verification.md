@@ -278,7 +278,9 @@ version are kept apart.
 With a store, each case's first request is fingerprinted before it is sent. If
 a stored run has the same fingerprint, its trials are taken as they are under
 the same judge, or graded again from their stored evidence under a different
-one, and the request is never sent; otherwise the case runs. Trials that failed
+one, and the request is never sent; otherwise the case runs. The same judge
+means the same provider, model, rubric version and recorded settings; a run
+saved before the settings were recorded is graded again. Trials that failed
 for harness, provider, cleanup or time reasons are never reused. `--fresh`
 runs everything again. Each trial's `origin` and each case's `origin` counts in
 the summary say what was reused or regraded, and `workflowTotals` counts only

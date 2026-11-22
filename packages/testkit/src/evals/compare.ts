@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { isDeepStrictEqual } from "node:util";
 import { z } from "zod";
+import { judgeDifferences } from "./judge-identity.js";
 
 const positiveInteger = z.number().int().positive();
 const TrialSchema = z.object({
@@ -57,8 +58,6 @@ const ReportSchema = z.looseObject({
   trials: z.array(TrialSchema).nonempty(),
 });
 
-type Report = z.infer<typeof ReportSchema>;
-
 /** Recorded settings that must match for an outcome change to mean anything. */
 const COMPARED_SETTINGS = [
   "suite",
@@ -76,7 +75,6 @@ const COMPARED_SETTINGS = [
   "assistedRetries",
   "spendCapUsd",
   "pricing",
-  "judge",
 ] as const;
 
 async function main(args: string[]) {
@@ -90,22 +88,24 @@ async function main(args: string[]) {
     readReport(baselinePath, "Baseline"),
     readReport(candidatePath, "Candidate"),
   ]);
-  // Judge settings are compared one by one below, since older reports lack them.
-  const setting = (report: Report, key: (typeof COMPARED_SETTINGS)[number]) =>
-    key === "judge" && report.judge ? { ...report.judge, settings: undefined } : report[key];
   const differences: string[] = COMPARED_SETTINGS.filter(
-    (key) => !isDeepStrictEqual(setting(baseline.report, key), setting(candidate.report, key)),
+    (key) => !isDeepStrictEqual(baseline.report[key], candidate.report[key]),
   );
   const judges = { baseline: baseline.report.judge, candidate: candidate.report.judge };
+  // Older reports lack judge settings: noted below rather than refused.
+  differences.push(
+    ...judgeDifferences(judges.baseline, judges.candidate).filter((d) => d !== "judge.settings"),
+  );
+  if (
+    judges.baseline &&
+    judges.candidate &&
+    !isDeepStrictEqual(judges.baseline.pricing, judges.candidate.pricing)
+  ) {
+    differences.push("judge.pricing");
+  }
   const unrecordedJudgeSettings = Object.entries(judges)
     .filter(([, judge]) => judge && !judge.settings)
     .map(([label]) => label);
-  const [before, after] = [judges.baseline?.settings, judges.candidate?.settings];
-  if (before && after) {
-    for (const key of Object.keys(before) as Array<keyof typeof before>) {
-      if (before[key] !== after[key]) differences.push(`judge.${key}`);
-    }
-  }
   for (const key of ["trials", "timeoutMs", "maxToolCalls"] as const) {
     if (baseline.report.controls[key] !== candidate.report.controls[key]) {
       differences.push(`controls.${key}`);

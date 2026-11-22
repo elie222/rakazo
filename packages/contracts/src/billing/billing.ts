@@ -24,6 +24,8 @@ export function computerSizesUpTo(max: ComputerSize): ComputerSize[] {
 export const TRIAL_SANDBOX_ALLOWANCE_CENTS = 300;
 /** The share of a monthly credit plan an organization may also spend on computers. */
 export const CREDITS_SANDBOX_ALLOWANCE_PERCENT = 20;
+/** The share of a plan's monthly price an organization may spend on included speech. */
+export const SPEECH_ALLOWANCE_PERCENT = 20;
 
 /** Computer hours an allowance in cents buys. */
 export function sandboxAllowanceHours(
