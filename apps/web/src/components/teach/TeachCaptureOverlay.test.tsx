@@ -1,13 +1,15 @@
 // @vitest-environment jsdom
 
 import type { TaughtSkill } from "@rakazo/contracts";
+import { deferred } from "@rakazo/core/test-async";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vitest";
 import { TeachCaptureOverlay } from "./TeachCaptureOverlay";
+import { stopAfterTeachInput } from "./teach-computer-input-chain";
 
 const computerInput = vi.hoisted(() =>
-  vi.fn(async (_event: { payload: unknown }) => ({ ok: true })),
+  vi.fn(async (_event: { payload: Record<string, unknown> }) => ({ ok: true })),
 );
 vi.mock("../../lib/query/rpc", () => ({ rpc: { computer: { input: computerInput } } }));
 
@@ -155,21 +157,29 @@ it("sends a wheel scroll with the screen point it was made at", async () => {
   container.remove();
 });
 
-async function withPointerOverlay(run: (overlay: HTMLDivElement) => Promise<void>) {
+async function withPointerOverlay(
+  run: (
+    overlay: HTMLDivElement,
+    renderSkill: (next: TaughtSkill) => Promise<void>,
+  ) => Promise<void>,
+) {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   const container = document.createElement("div");
   document.body.append(container);
   const root = createRoot(container);
   try {
-    await act(async () => {
-      root.render(<TeachCaptureOverlay botId="bot-1" skill={skill} enabled />);
-    });
+    const renderSkill = async (next: TaughtSkill) => {
+      await act(async () =>
+        root.render(<TeachCaptureOverlay botId="bot-1" skill={next} enabled />),
+      );
+    };
+    await renderSkill(skill);
     const overlay = container.firstElementChild as HTMLDivElement;
     overlay.setPointerCapture = vi.fn();
     overlay.hasPointerCapture = () => true;
     overlay.releasePointerCapture = vi.fn();
     overlay.getBoundingClientRect = () => new DOMRect(0, 0, 1280, 800);
-    await run(overlay);
+    await run(overlay, renderSkill);
   } finally {
     await act(async () => root.unmount());
     container.remove();
@@ -181,7 +191,16 @@ function pointer(overlay: HTMLDivElement, type: string, init: PointerEventInit =
 }
 
 function pointerPayloads() {
-  return computerInput.mock.calls.map(([event]) => event.payload);
+  return computerInput.mock.calls.map(
+    ([
+      {
+        payload: { skillId, ...payload },
+      },
+    ]) => {
+      expect(skillId).toBe(skill.id);
+      return payload;
+    },
+  );
 }
 
 it.each([
@@ -283,4 +302,60 @@ it("releases a held button when the overlay is removed", async () => {
       { type: "up", button: "left", x: 10, y: 0 },
     ]),
   );
+});
+
+it("flushes the held button before stopping and does not capture new clicks while stopping", async () => {
+  await withPointerOverlay(async (overlay) => {
+    const release = deferred();
+    computerInput.mockImplementationOnce(async () => ({ ok: true }));
+    computerInput.mockImplementationOnce(async () => {
+      await release.promise;
+      return { ok: true };
+    });
+    await act(async () => pointer(overlay, "pointerdown", { button: 2, buttons: 2, clientX: 10 }));
+    const stop = vi.fn(async () => undefined);
+    const pending = stopAfterTeachInput("bot-1", skill.id, stop);
+    try {
+      await act(async () => pointer(overlay, "pointerdown", { button: 0, buttons: 1 }));
+      expect(stop).not.toHaveBeenCalled();
+      expect(pointerPayloads()).toEqual([
+        { type: "down", button: "right", x: 10, y: 0 },
+        { type: "up", button: "right", x: 10, y: 0 },
+      ]);
+    } finally {
+      release.resolve();
+      await pending;
+    }
+    expect(stop).toHaveBeenCalledTimes(1);
+  });
+  expect(computerInput).toHaveBeenCalledTimes(2);
+});
+
+it("keeps a queued cleanup release scoped to the recording that pressed the button", async () => {
+  await withPointerOverlay(async (overlay, renderSkill) => {
+    const press = deferred();
+    computerInput.mockImplementationOnce(async () => {
+      await press.promise;
+      return { ok: true };
+    });
+    try {
+      await act(async () => pointer(overlay, "pointerdown", { button: 0, buttons: 1 }));
+      await renderSkill({ ...skill, id: "skill-2" });
+      await act(async () => {
+        pointer(overlay, "pointerdown", { button: 2, buttons: 2 });
+        pointer(overlay, "pointerup", { button: 2 });
+      });
+      expect(computerInput).toHaveBeenCalledTimes(1);
+    } finally {
+      press.resolve();
+    }
+    await vi.waitFor(() =>
+      expect(computerInput.mock.calls.map(([{ payload }]) => payload)).toMatchObject([
+        { skillId: skill.id, type: "down", button: "left" },
+        { skillId: skill.id, type: "up", button: "left" },
+        { skillId: "skill-2", type: "down", button: "right" },
+        { skillId: "skill-2", type: "up", button: "right" },
+      ]),
+    );
+  });
 });

@@ -505,6 +505,112 @@ describe("recordTeachingInputEvent", () => {
     expect(JSON.stringify(current().recording)).not.toContain("hunter2");
   });
 
+  it.each([
+    {
+      name: "a different recording",
+      target: "skill-b",
+      lease: "lease-1",
+      scope: "skill-a",
+      result: "stale",
+    },
+    {
+      name: "no current recording",
+      target: null,
+      lease: "lease-1",
+      scope: "skill-a",
+      result: "stale",
+    },
+    {
+      name: "a replaced lease",
+      target: "skill-a",
+      lease: "lease-2",
+      scope: "skill-a",
+      result: "stale",
+    },
+    { name: "no lease", target: "skill-a", lease: null, scope: "skill-a", result: "stale" },
+    {
+      name: "the matching lease",
+      target: "skill-a",
+      lease: "lease-1",
+      scope: "skill-a",
+      result: "recorded",
+    },
+    {
+      name: "a legacy unscoped input",
+      target: "skill-a",
+      lease: "lease-2",
+      scope: undefined,
+      result: "recorded",
+    },
+  ])("handles an ordinary release with $name", async ({ target, lease, scope, result }) => {
+    const { deps, current, tx } = recordingDeps(
+      skillRow({
+        id: target ?? "skill-a",
+        recording: { ...emptyRecording(), controlLeaseId: "lease-1" },
+        status: target ? "recording" : "draft",
+      }),
+    );
+    tx.bot.findUnique.mockResolvedValue({
+      id: "bot-1",
+      computer: {
+        id: "computer-1",
+        homeKey: "bot-1",
+        kind: "e2b",
+        providerRef: "fake",
+        controlLeaseId: lease,
+      },
+    });
+    await expect(
+      recordTeachingInputEvent(
+        deps as never,
+        { spaceId: "workspace-1", userId: "user-1" } as never,
+        "bot-1",
+        { kind: "pointer", type: "up", x: 10, y: 0, button: "right", skillId: scope },
+      ),
+    ).resolves.toBe(result);
+    if (result === "recorded") {
+      expect(deps.sandbox.sendInput).toHaveBeenCalledExactlyOnceWith(
+        expect.anything(),
+        { kind: "pointer", type: "up", x: 10, y: 0, button: "right" },
+        expect.objectContaining({ leaseId: lease }),
+        expect.anything(),
+      );
+      expect(current().recording.events).toMatchObject([{ type: "up", button: "right" }]);
+    } else {
+      expect(deps.sandbox.sendInput).not.toHaveBeenCalled();
+      expect(current().recording.events).toHaveLength(0);
+    }
+  });
+
+  it("rechecks a scoped release if the recording changes before submission", async () => {
+    const { deps, current, tx } = recordingDeps(
+      skillRow({ id: "skill-a", recording: { ...emptyRecording(), controlLeaseId: "lease-1" } }),
+    );
+    tx.bot.findUnique.mockResolvedValue({
+      id: "bot-1",
+      computer: {
+        id: "computer-1",
+        homeKey: "bot-1",
+        kind: "e2b",
+        providerRef: "fake",
+        controlLeaseId: "lease-1",
+      },
+    });
+    deps.prisma.taughtSkill.findFirst
+      .mockResolvedValueOnce(current())
+      .mockResolvedValueOnce(skillRow({ id: "skill-b" }));
+    await expect(
+      recordTeachingInputEvent(
+        deps as never,
+        { spaceId: "workspace-1", userId: "user-1" } as never,
+        "bot-1",
+        { kind: "pointer", type: "up", x: 10, y: 0, button: "left", skillId: "skill-a" },
+      ),
+    ).resolves.toBe("stale");
+    expect(deps.sandbox.sendInput).not.toHaveBeenCalled();
+    expect(current().recording.events).toHaveLength(0);
+  });
+
   it("still types protected input into the sandbox but stores only a marker", async () => {
     const { deps, current, tx } = recordingDeps(skillRow());
     const computer = {

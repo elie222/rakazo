@@ -505,11 +505,11 @@ export async function applyTeachingDesktopInput(
   await deps.sandbox.sendInput(ref, input, lease, context);
 }
 
-function protectedInputMissesRecording(
+function inputMissesRecording(
   mapped: TeachComputerInput,
   activeSkillId: string | undefined,
 ): boolean {
-  return mapped.sensitive === true && Boolean(mapped.skillId) && activeSkillId !== mapped.skillId;
+  return Boolean(mapped.skillId) && activeSkillId !== mapped.skillId;
 }
 
 export async function recordTeachingInputEvent(
@@ -519,8 +519,8 @@ export async function recordTeachingInputEvent(
   mapped: TeachComputerInput,
 ): Promise<"recorded" | "idle" | "stale"> {
   const skill = await getActiveTeachingSession(deps.prisma, actor.spaceId, botId, actor.userId);
-  // Protected input names the recording it was queued for, so a later one cannot receive it.
-  if (protectedInputMissesRecording(mapped, skill?.id)) return "stale";
+  // Scoped input belongs to the recording that queued it, never to a later one.
+  if (inputMissesRecording(mapped, skill?.id)) return "stale";
   if (!skill) return "idle";
   if (skill.expiresAt && skill.expiresAt.getTime() <= Date.now()) {
     await expireTaughtSkillTeaching(deps, skill.id);
@@ -568,16 +568,20 @@ export async function recordTeachingInputEvent(
   }
   if (prepared.kind === "stale") return "stale";
   if (prepared.computer?.providerRef) {
-    // The row lock above does not cover sandbox IO. Only protected input is
-    // bound to a recording, so ordinary events skip this extra read.
-    if (mapped.sensitive === true && mapped.skillId) {
+    // The row lock above does not cover sandbox IO. Recheck named recordings before sending.
+    if (mapped.skillId) {
       const active = await getActiveTeachingSession(
         deps.prisma,
         actor.spaceId,
         botId,
         actor.userId,
       );
-      if (protectedInputMissesRecording(mapped, active?.id)) return "stale";
+      if (active?.id !== mapped.skillId) return "stale";
+      if (mapped.sensitive !== true) {
+        const leaseId = parseRecording(active.recording).controlLeaseId;
+        if (!leaseId || prepared.computer.controlLeaseId !== leaseId) return "stale";
+        if (active.expiresAt && active.expiresAt.getTime() <= Date.now()) return "stale";
+      }
     }
     await applyTeachingDesktopInput(
       deps,

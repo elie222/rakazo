@@ -439,7 +439,9 @@ export function computerRoutes(ctx: RouterContext) {
         if (!computer.providerRef) return { ok: true as const };
         const sensitive = input.payload.sensitive === true;
         const skillId =
-          sensitive && typeof input.payload.skillId === "string" && input.payload.skillId
+          (sensitive || input.kind === "pointer") &&
+          typeof input.payload.skillId === "string" &&
+          input.payload.skillId
             ? input.payload.skillId
             : undefined;
         const mapped = {

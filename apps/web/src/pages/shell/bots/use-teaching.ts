@@ -1,6 +1,10 @@
 import { fetchFresh } from "@rakazo/core/query";
 import type { RefObject } from "react";
 import { useCallback, useState } from "react";
+import {
+  isTeachInputStopping,
+  stopAfterTeachInput,
+} from "../../../components/teach/teach-computer-input-chain";
 import type { spaceQueries } from "../../../lib/query/query";
 import { queryClient } from "../../../lib/query/query";
 import type { createSpaceRpc } from "../../../lib/query/rpc";
@@ -32,12 +36,14 @@ export function useTeaching({
     const recording = thread.taughtSkills.find(
       (skill) => skill.status === "recording" && thread.taughtSkillsBotId === id,
     );
-    if (!recording) return;
+    if (!recording || isTeachInputStopping(recording.id)) return;
     setTeachBusy(true);
     try {
-      await rpc.skills.stop({ skillId: recording.id });
-      await refreshThreadRef.current(id);
-      closeComputer();
+      await stopAfterTeachInput(id, recording.id, async () => {
+        await rpc.skills.stop({ skillId: recording.id });
+        await refreshThreadRef.current(id);
+        closeComputer();
+      });
     } finally {
       setTeachBusy(false);
     }
