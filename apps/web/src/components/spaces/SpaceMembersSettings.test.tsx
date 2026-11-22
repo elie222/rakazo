@@ -373,3 +373,51 @@ it("tags guests, and says before inviting someone by email that they are outside
   });
   expect(rpc.spaces.invites.create).toHaveBeenCalledTimes(1);
 });
+
+it("drops a confirmation asked in one Space once another Space is open", async () => {
+  await renderWith({ spaceName: "Home", members: [owner, member], canManage: true });
+  await act(async () => buttonNamed("Remove")?.click());
+  expect(host.querySelector("h2")?.textContent).toBe("Remove Bob Stone?");
+
+  await act(async () =>
+    root.render(
+      <QueryClientProvider client={new QueryClient()}>
+        <SpaceMembersSettings space={{ id: "space-other", name: "Work" }} onLeft={vi.fn()} />
+      </QueryClientProvider>,
+    ),
+  );
+  expect(host.querySelector("h2")).toBeNull();
+  expect(rpc.spaces.members.remove).not.toHaveBeenCalled();
+});
+
+it("never brings back a link whose copy finishes after the invites were cancelled", async () => {
+  const copying = deferred<undefined>();
+  const writeText = vi.fn(() => copying.promise);
+  Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true });
+  await renderWith({ spaceName: "Home", members: [owner], canManage: true, openInvites: 1 });
+  rpc.spaces.invites.create.mockResolvedValue({
+    url: "https://rakazo.example/invite/token-4",
+    expiresAt: new Date().toISOString(),
+  });
+  rpc.spaces.invites.cancel.mockResolvedValue({ ok: true });
+
+  await act(async () => buttonNamed("Copy invite link")?.click());
+  await vi.waitFor(() => expect(writeText).toHaveBeenCalled());
+  await act(async () => buttonNamed("Cancel open invites")?.click());
+  await vi.waitFor(() => expect(rpc.spaces.invites.cancel).toHaveBeenCalled());
+  await act(async () => copying.reject(new Error("denied")));
+
+  expect(host.querySelector('input[aria-label="Invite link"]')).toBeNull();
+});
+
+it("shows the latest failure, not an older one", async () => {
+  await renderWith({ spaceName: "Home", members: [owner], canManage: true, openInvites: 1 });
+  rpc.spaces.invites.create.mockRejectedValueOnce(new Error("link failed"));
+  await act(async () => buttonNamed("Copy invite link")?.click());
+  await vi.waitFor(() => expect(host.textContent).toContain("link failed"));
+
+  rpc.spaces.invites.cancel.mockRejectedValueOnce(new Error("cancel failed"));
+  await act(async () => buttonNamed("Cancel open invites")?.click());
+  await vi.waitFor(() => expect(host.textContent).toContain("cancel failed"));
+  expect(host.textContent).not.toContain("link failed");
+});
