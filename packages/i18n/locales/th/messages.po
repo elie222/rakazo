@@ -747,6 +747,12 @@ msgstr "{vcpus} vCPU, {memoryGb} GB, คอมพิวเตอร์ {hours} �
 msgid "@{0}"
 msgstr "@{0}"
 
+#. placeholder {0}: mention.name
+#. placeholder {1}: mention.subtitle
+#: apps/web/src/pages/shell/composer/composer-parts.tsx
+msgid "@{0}, {1}"
+msgstr ""
+
 #: apps/mobile/components/composer/thread-composer.tsx
 msgid "@{name}"
 msgstr "@{name}"
@@ -1252,6 +1258,7 @@ msgstr "เพิ่มแล้ว"
 #: apps/mobile/app/(settings)/integrations.tsx
 #: apps/mobile/app/(settings)/plugin.tsx
 #: apps/mobile/app/(settings)/skills.tsx
+#: apps/mobile/components/integrations/integration-catalog-search.tsx
 #: apps/mobile/components/integrations/integration-plugins.tsx
 #: apps/web/src/components/integrations/plugin-marketplace.tsx
 #: apps/web/src/pages/plugins/parts.tsx
@@ -2717,7 +2724,7 @@ msgstr "ปิดคอมพิวเตอร์"
 msgid "Close image"
 msgstr "ปิดรูปภาพ"
 
-#: apps/web/src/pages/shell/chat/message-cards.tsx
+#: apps/web/src/pages/shell/chat/image-gallery.tsx
 msgid "Close image preview"
 msgstr "ปิดตัวอย่างรูปภาพ"
 
@@ -2962,11 +2969,6 @@ msgstr "คอมพิวเตอร์พร้อมใช้งานแล
 msgid "Computers are off on this server."
 msgstr "คอมพิวเตอร์ปิดใช้งานอยู่บนเซิร์ฟเวอร์นี้"
 
-#: apps/mobile/app/(settings)/integrations.tsx
-#: apps/web/src/pages/plugins/plugin-browse.tsx
-msgid "Configure a plugin catalog on the server to connect apps."
-msgstr "ตั้งค่าแคตตาล็อกปลั๊กอินบนเซิร์ฟเวอร์เพื่อเชื่อมต่อแอป"
-
 #: apps/web/src/pages/space/KnowledgeSection.tsx
 msgid "Confirm delete"
 msgstr "ยืนยันการลบ"
@@ -2986,6 +2988,7 @@ msgstr "ยืนยันรหัสผ่าน"
 msgid "Confirm removal"
 msgstr "ยืนยันการนำออก"
 
+#: apps/mobile/app/(settings)/integrations.tsx
 #: apps/mobile/app/(settings)/messaging.tsx
 #: apps/mobile/app/(settings)/plugin.tsx
 #: apps/mobile/app/(settings)/voice.tsx
@@ -3016,6 +3019,7 @@ msgstr "เชื่อมต่อ {0}"
 msgid "Connect {app}"
 msgstr "เชื่อมต่อ {app}"
 
+#: apps/mobile/app/(settings)/integrations.tsx
 #: apps/mobile/app/(settings)/wallet.tsx
 #: apps/mobile/components/cards/AppConnectCard.tsx
 #: apps/mobile/components/integrations/add-custom-integration.tsx
@@ -3708,6 +3712,14 @@ msgstr "ดาวน์โหลด {0} ไม่สำเร็จ ลองอ
 msgid "Could not download {name}. Try again."
 msgstr "ดาวน์โหลด {name} ไม่สำเร็จ ลองอีกครั้ง"
 
+#: apps/mobile/components/media/image-artifact-viewer.tsx
+msgid "Could not download image"
+msgstr ""
+
+#: apps/mobile/app/artifact.tsx
+msgid "Could not download this artifact"
+msgstr ""
+
 #: apps/mobile/app/(settings)/plugin.tsx
 #: apps/web/src/components/integrations/plugin-marketplace.tsx
 msgid "Could not enable tools"
@@ -3756,6 +3768,7 @@ msgid "Could not leave space"
 msgstr "ออกจากสเปซไม่สำเร็จ"
 
 #: apps/mobile/app/(settings)/computers.tsx
+#: apps/mobile/components/ui/app-error-boundary.tsx
 #: apps/mobile/lib/account/user-devices.ts
 #: apps/web/src/components/account/PasskeySettings.tsx
 #: apps/web/src/components/computers/CloudComputerSizes.tsx
@@ -3862,6 +3875,10 @@ msgstr "โหลดการผสานรวมไม่สำเร็จ"
 #: apps/web/src/pages/plugins/use-plugin-connections.ts
 msgid "Could not load MCP servers"
 msgstr "โหลดเซิร์ฟเวอร์ MCP ไม่สำเร็จ"
+
+#: apps/web/src/pages/plugins/plugin-browse.tsx
+msgid "Could not load MCP servers."
+msgstr ""
 
 #: apps/mobile/app/(settings)/organization-members.tsx
 #: apps/mobile/app/space-members.tsx
@@ -4212,6 +4229,7 @@ msgstr "รันรูทีนไม่สำเร็จ"
 #: apps/mobile/app/(settings)/team-conversation.tsx
 #: apps/mobile/components/vault/vault-item-editor.tsx
 #: apps/web/src/pages/integrations/McpServersOverlay.tsx
+#: apps/web/src/pages/settings/AccountSettingsOverlay.tsx
 #: apps/web/src/pages/settings/ExternalConversationSettings.tsx
 #: apps/web/src/pages/shell/bots/bot-panel.tsx
 #: apps/web/src/pages/shell/create-delete-dialogs.tsx
@@ -4619,6 +4637,11 @@ msgstr "ประเทศ"
 #: apps/web/src/pages/space/Board.tsx
 msgid "Create"
 msgstr "สร้าง"
+
+#: apps/mobile/components/integrations/add-custom-integration.tsx
+#: apps/web/src/pages/plugins/source-form.tsx
+msgid "Create a personal access token"
+msgstr ""
 
 #. placeholder {0}: bot.name
 #: apps/web/src/pages/shell/create-delete-dialogs.tsx
@@ -5348,6 +5371,7 @@ msgstr "ลง"
 msgid "Downgrade at renewal"
 msgstr "ดาวน์เกรดเมื่อต่ออายุ"
 
+#: apps/mobile/app/artifact.tsx
 #: apps/web/src/pages/space/Artifacts.tsx
 #: apps/web/src/pages/space/KnowledgeSection.tsx
 msgid "Download"
@@ -5358,6 +5382,7 @@ msgstr "ดาวน์โหลด"
 msgid "Download {0}"
 msgstr "ดาวน์โหลด {0}"
 
+#: apps/mobile/components/media/image-artifact-viewer.tsx
 #: apps/web/src/components/messages/ArtifactFileCard.tsx
 msgid "Download {name}"
 msgstr "ดาวน์โหลด {name}"
@@ -7039,6 +7064,11 @@ msgstr "จัดการบอทอื่น"
 msgid "Manage provider"
 msgstr "จัดการผู้ให้บริการ"
 
+#: apps/mobile/app/(settings)/integrations.tsx
+#: apps/web/src/pages/plugins/plugin-browse.tsx
+msgid "Managed apps haven’t been enabled on this server."
+msgstr ""
+
 #: apps/web/src/pages/plugins/domain-search.tsx
 msgid "Manual"
 msgstr "ด้วยตนเอง"
@@ -7743,6 +7773,10 @@ msgstr "ความคิดเห็นล่าสุด"
 msgid "Next"
 msgstr "ถัดไป"
 
+#: apps/web/src/pages/shell/chat/image-gallery.tsx
+msgid "Next image"
+msgstr ""
+
 #: apps/web/src/pages/shell/chat/chat-find-bar.tsx
 msgid "Next match"
 msgstr "รายการที่ตรงถัดไป"
@@ -7832,8 +7866,13 @@ msgstr "ไม่มีผลแล้ว"
 #: apps/mobile/app/(settings)/approval-rule-add.tsx
 #: apps/web/src/components/settings/ApprovalRulesSettings.tsx
 #: apps/web/src/components/vault/VaultSettings.tsx
+#: apps/web/src/pages/shell/chat/chat-find-bar.tsx
 msgid "No matches"
 msgstr "ไม่มีรายการที่ตรงกัน"
+
+#: apps/web/src/pages/plugins/plugin-browse.tsx
+msgid "No matches in your current catalogs."
+msgstr ""
 
 #: apps/mobile/app/artifacts.tsx
 #: apps/web/src/pages/space/Artifacts.tsx
@@ -8344,6 +8383,10 @@ msgstr "เปิดการตั้งค่า"
 msgid "Open Voice"
 msgstr "เปิดโหมดเสียง"
 
+#: apps/web/src/pages/shell/chat/use-read-aloud.ts
+msgid "Open Voice settings"
+msgstr ""
+
 #: apps/mobile/components/bots/bot-context-cards.tsx
 #: apps/web/src/pages/space/ScratchpadSection.tsx
 msgid "Open work"
@@ -8667,6 +8710,11 @@ msgstr "เปอร์โซนา"
 msgid "Personal"
 msgstr "ส่วนตัว"
 
+#: apps/mobile/components/integrations/add-custom-integration.tsx
+#: apps/web/src/pages/plugins/source-form.tsx
+msgid "Personal access token"
+msgstr ""
+
 #: apps/mobile/components/vault/vault-item-editor.tsx
 #: apps/mobile/components/vault/vault-item-sheet.tsx
 #: apps/web/src/components/vault/VaultItemDetail.tsx
@@ -8820,6 +8868,10 @@ msgstr "ดูตัวอย่างฉบับร่าง"
 #: apps/web/src/pages/space/Artifacts.tsx
 msgid "Preview isn't available for this file type. Download it to view it."
 msgstr "ไม่สามารถดูตัวอย่างไฟล์ประเภทนี้ได้ ดาวน์โหลดเพื่อดูไฟล์"
+
+#: apps/web/src/pages/shell/chat/image-gallery.tsx
+msgid "Previous image"
+msgstr ""
 
 #: apps/web/src/pages/shell/chat/chat-find-bar.tsx
 msgid "Previous match"
@@ -9163,6 +9215,7 @@ msgstr "สรรหาบุคลากรและ HR"
 msgid "Redirect URI"
 msgstr "URI เปลี่ยนเส้นทาง"
 
+#: apps/mobile/app/board.tsx
 #: apps/web/src/App.tsx
 #: apps/web/src/components/ErrorBoundary.tsx
 msgid "Refresh"
@@ -9928,6 +9981,7 @@ msgstr "วันเสาร์"
 msgid "Save"
 msgstr "บันทึก"
 
+#: apps/mobile/components/integrations/add-custom-integration.tsx
 #: apps/web/src/pages/plugins/source-form.tsx
 msgid "Save and sign in"
 msgstr "บันทึกและเข้าสู่ระบบ"
@@ -9966,6 +10020,11 @@ msgstr "บันทึก {name} ไว้ในเครื่องแล้�
 #: apps/web/src/components/computers/ComputerHomeVersions.tsx
 msgid "Saved at"
 msgstr "บันทึกเมื่อ"
+
+#: apps/mobile/app/artifact.tsx
+#: apps/mobile/components/media/image-artifact-viewer.tsx
+msgid "Saved to Photos"
+msgstr ""
 
 #. js-lingui-explicit-id
 #: packages/i18n/src/vault.ts
@@ -10113,10 +10172,6 @@ msgstr "ค้นหาตามโดเมน"
 msgid "Search integrations.sh"
 msgstr "ค้นหา integrations.sh"
 
-#: apps/web/src/pages/plugins/plugin-browse.tsx
-msgid "Search MCP servers for “{query}”"
-msgstr "ค้นหาเซิร์ฟเวอร์ MCP สำหรับ “{query}”"
-
 #: apps/web/src/components/models/FoundModelPicker.tsx
 #: apps/web/src/pages/model-settings/compatible-model-fields.tsx
 #: apps/web/src/pages/model-settings/provider-page.tsx
@@ -10126,8 +10181,12 @@ msgid "Search models"
 msgstr "ค้นหาโมเดล"
 
 #: apps/mobile/components/integrations/integration-catalog-search.tsx
-msgid "Search more apps"
-msgstr "ค้นหาแอปเพิ่มเติม"
+msgid "Search public MCP directory"
+msgstr ""
+
+#: apps/web/src/pages/plugins/plugin-browse.tsx
+msgid "Search public MCP directory for “{term}”"
+msgstr ""
 
 #: apps/web/src/pages/shell/sidebar/shell-sidebar.tsx
 msgid "Search runs"
@@ -10154,6 +10213,7 @@ msgstr "ค้นหา: {0}"
 
 #: apps/mobile/app/search.tsx
 #: apps/web/src/pages/plugins/domain-search.tsx
+#: apps/web/src/pages/plugins/plugin-browse.tsx
 #: apps/web/src/pages/space/SpaceSearch.tsx
 msgid "Searching…"
 msgstr "กำลังค้นหา…"
@@ -10458,6 +10518,11 @@ msgstr "แชร์กับผู้เยี่ยมชมอยู่"
 #: apps/web/src/components/vault/VaultSettings.tsx
 msgid "Show"
 msgstr "แสดง"
+
+#. placeholder {0}: image.name
+#: apps/web/src/pages/shell/chat/image-gallery.tsx
+msgid "Show {0}"
+msgstr ""
 
 #: apps/mobile/components/vault/login-fields-editor.tsx
 msgid "Show {field}"
@@ -11485,6 +11550,11 @@ msgstr "การคิด: {0}"
 msgid "Thinking: {level}"
 msgstr "การคิด: {level}"
 
+#: apps/mobile/components/thread/thread-screen.tsx
+#: apps/web/src/pages/shell/chat/transcript.tsx
+msgid "Thinking…"
+msgstr ""
+
 #: packages/i18n/src/user-error.ts
 msgid "This account is deactivated"
 msgstr "บัญชีนี้ถูกปิดการใช้งาน"
@@ -11773,6 +11843,10 @@ msgstr "สเปซนี้มีห้องนิรภัยเฉพาะ
 #: apps/web/src/pages/model-settings/connection-controls.tsx
 msgid "This subscription sign-in is not available in Rakazo yet. Use a deployment credential or choose another provider."
 msgstr "การเข้าสู่ระบบด้วยการสมัครใช้งานนี้ยังไม่พร้อมใช้งานใน Rakazo ให้ใช้ข้อมูลรับรองสำหรับ deployment หรือเลือกผู้ให้บริการอื่น"
+
+#: apps/mobile/app/(settings)/bot-template.tsx
+msgid "This template is no longer available."
+msgstr ""
 
 #: apps/mobile/app/(settings)/bot-template.tsx
 #: apps/web/src/components/bot-templates/bot-templates-dialog.tsx
@@ -12373,6 +12447,11 @@ msgstr "ใช้ตัวอักษร ตัวเลข จุด ขีด
 msgid "Use main model"
 msgstr "ใช้โมเดลหลัก"
 
+#: apps/mobile/app/routine.tsx
+#: apps/web/src/pages/routines/routine-editor/model-settings.tsx
+msgid "Use my computer"
+msgstr ""
+
 #: apps/web/src/components/billing/ModelCredits.tsx
 msgid "Use my subscription or API key"
 msgstr "ใช้การสมัครใช้งานหรือ API key ของฉัน"
@@ -12795,11 +12874,9 @@ msgstr "คำสั่งการทำงาน"
 #: apps/mobile/app/sign-in.tsx
 #: apps/mobile/components/inbox/inbox-rows.tsx
 #: apps/mobile/components/integrations/integration-detail.tsx
-#: apps/mobile/components/thread/thread-screen.tsx
 #: apps/web/src/components/messages/ToolActivityDisclosure.tsx
 #: apps/web/src/lib/chat/roster-status.ts
 #: apps/web/src/pages/auth/Auth.tsx
-#: apps/web/src/pages/shell/chat/transcript.tsx
 msgid "Working…"
 msgstr "กำลังทำงาน…"
 
