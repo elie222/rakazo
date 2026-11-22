@@ -1,5 +1,9 @@
 import { ph } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
+import {
+  CATALOG_SEARCH_QUERY_MAX_LENGTH,
+  CATALOG_SEARCH_QUERY_MIN_LENGTH,
+} from "@rakazo/contracts";
 import type { SignInMcpServer } from "@rakazo/core";
 import { signInMcpServers } from "@rakazo/core";
 import { useQuery } from "@tanstack/react-query";
@@ -32,8 +36,11 @@ export function IntegrationCatalogSearch({
   const { t } = useLingui();
   const styles = useThemedStyles(createIntegrationsStyles);
   const trimmed = query.trim();
+  const canSearch =
+    trimmed.length >= CATALOG_SEARCH_QUERY_MIN_LENGTH &&
+    trimmed.length <= CATALOG_SEARCH_QUERY_MAX_LENGTH;
   const [asked, setAsked] = useState<string | null>(null);
-  const searching = Boolean(trimmed) && asked === trimmed;
+  const searching = canSearch && asked === trimmed;
   const search = useQuery(
     {
       ...rpcQuery("capabilities/catalogSearch", { query: trimmed, usePublicCatalog: true }),
@@ -71,12 +78,13 @@ export function IntegrationCatalogSearch({
   if (!trimmed || hidden) return null;
   const servers = searching && search.data ? signInMcpServers(search.data.results) : null;
   const failure = connect.error ?? (searching ? search.error : null);
+  if (!canSearch && !noLocalMatch && !failure) return null;
   return (
     <View testID="integration-catalog-search" style={styles.catalogStack}>
       {noLocalMatch && !servers?.length ? (
         <Text style={styles.secondary}>{t`No apps match your search.`}</Text>
       ) : null}
-      {servers === null ? (
+      {canSearch && servers === null ? (
         <NativeActionButton
           fill={false}
           label={t`Search more apps`}
@@ -85,7 +93,7 @@ export function IntegrationCatalogSearch({
           prominence="secondary"
         />
       ) : (
-        servers.map((server) => (
+        servers?.map((server) => (
           <View key={server.endpoint} style={styles.row}>
             <ConnectorIcon name={server.name} size={LOGO_SIZE} />
             <Text numberOfLines={1} style={[styles.title, styles.grow]}>
