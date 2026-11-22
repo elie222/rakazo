@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import type { DeploymentModelSettings as Settings } from "@rakazo/contracts";
-import { deferred } from "@rakazo/core/test-async";
+import { deferred, flush } from "@rakazo/core/test-async";
 import type * as UiWeb from "@rakazo/ui-web";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ComponentProps, ReactNode } from "react";
@@ -64,6 +64,12 @@ const saved: Settings = {
   keySaved: true,
   providers,
 };
+const noProvidersOrKey: Settings = {
+  provider: null,
+  modelId: null,
+  keySaved: false,
+  providers: [],
+};
 
 let host: HTMLDivElement;
 let root: ReturnType<typeof createRoot>;
@@ -120,28 +126,35 @@ function paste(label: string, text: string) {
   input.dispatchEvent(new Event("input", { bubbles: true }));
 }
 
-it("shows nothing where the server offers no providers", async () => {
+it("shows nothing when there are no providers and no saved key", async () => {
   const read = deferred<Settings>();
+  const client = new QueryClient();
   deployment.get.mockReturnValue(read.promise);
   await act(async () =>
     root.render(
-      <QueryClientProvider client={new QueryClient()}>
+      <QueryClientProvider client={client}>
         <DeploymentModelSettings />
       </QueryClientProvider>,
     ),
   );
-  await act(async () => read.resolve({ ...saved, provider: null, providers: [] }));
+  expect(deployment.get).toHaveBeenCalledOnce();
+  await act(async () => read.resolve(noProvidersOrKey));
+  await act(flush);
+  expect(client.isFetching()).toBe(0);
   expect(host.querySelector("form")).toBeNull();
 });
 
 it("offers to remove a saved key whose model no longer runs", async () => {
-  deployment.get.mockResolvedValue({ ...saved, provider: null, modelId: null, providers: [] });
-  deployment.update.mockResolvedValue({ ...saved, provider: null, keySaved: false, providers: [] });
+  deployment.get
+    .mockResolvedValueOnce({ ...noProvidersOrKey, keySaved: true })
+    .mockResolvedValue(noProvidersOrKey);
+  deployment.update.mockResolvedValue(noProvidersOrKey);
   await render();
   expect(field("Provider")?.textContent).toContain("Default");
   expect(host.querySelector<HTMLButtonElement>('button[type="submit"]')?.disabled).toBe(false);
   await act(async () => host.querySelector("form")?.requestSubmit());
   expect(deployment.update).toHaveBeenCalledWith({ provider: null });
+  await act(() => vi.waitFor(() => expect(host.querySelector("form")).toBeNull()));
 });
 
 it("keeps the saved key when only the model changes", async () => {
