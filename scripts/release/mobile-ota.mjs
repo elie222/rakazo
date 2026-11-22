@@ -13,8 +13,9 @@ function neverShips(file) {
   );
 }
 
-// Only mobile bundle inputs may change. index.ts is the bundle entry the manifest's "main" names;
-// the other top-level mobile scripts (app config, metro) shape the native build.
+// Only bundled JavaScript and the translation catalogs Metro compiles into it may change. index.ts
+// is the bundle entry the manifest's "main" names; the other top-level mobile scripts (app config,
+// metro) shape the native build.
 const BUNDLED = [
   {
     prefixes: ["apps/mobile/app/", "apps/mobile/components/", "apps/mobile/lib/"],
@@ -27,28 +28,19 @@ const BUNDLED = [
     extensions: [".ts", ".tsx", ".css"],
   },
   {
-    prefixes: ["packages/contracts/src/", "packages/core/src/", "packages/logging/src/"],
+    prefixes: [
+      "packages/contracts/src/",
+      "packages/core/src/",
+      "packages/i18n/src/",
+      "packages/logging/src/",
+    ],
     files: [],
     extensions: [".ts", ".tsx"],
   },
+  { prefixes: ["packages/i18n/locales/"], files: [], extensions: [".po"] },
 ];
 
-const CATALOGS = "packages/i18n/locales/";
-const CATALOG_IMPORTER = "apps/mobile/lib/i18n/i18n.ts";
-
-function mobileCatalogs() {
-  const source = readFileSync(new URL(`../../${CATALOG_IMPORTER}`, import.meta.url), "utf8");
-  const imports = source
-    .replace(/\/\*[\s\S]*?\*\//g, "")
-    .matchAll(
-      /^import \{ messages as \w+ \} from "@rakazo\/i18n\/(locales\/[\w-]+\/messages\.po)";\r?$/gm,
-    );
-  return new Set(Array.from(imports, ([, file]) => `packages/i18n/${file}`));
-}
-
-function isBundled({ status, file }, catalogs) {
-  if (file.startsWith(CATALOGS)) return status === "M" && catalogs?.has(file);
-  if (status !== "A" && status !== "M") return false;
+function isBundled(file) {
   return BUNDLED.some(
     ({ prefixes, files, extensions }) =>
       (files.includes(file) || prefixes.some((prefix) => file.startsWith(prefix))) &&
@@ -56,28 +48,10 @@ function isBundled({ status, file }, catalogs) {
   );
 }
 
-export function otaEligibility(changes) {
-  const shipped = changes.filter(({ file }) => !neverShips(file));
-  // Only an unchanged importer proves the referenced catalog was already bundled at the base.
-  const catalogs =
-    shipped.some(({ status, file }) => status === "M" && file.startsWith(CATALOGS)) &&
-    !shipped.some(({ file }) => file === CATALOG_IMPORTER)
-      ? mobileCatalogs()
-      : undefined;
-  const blocked = shipped.filter((change) => !isBundled(change, catalogs)).map(({ file }) => file);
+export function otaEligibility(files) {
+  const shipped = files.filter((file) => file !== "" && !neverShips(file));
+  const blocked = shipped.filter((file) => !isBundled(file));
   return { publish: blocked.length === 0 && shipped.length > 0, blocked };
-}
-
-function parseChanges(input) {
-  const parts = input.split("\0");
-  if (parts.pop() !== "" || parts.length % 2 !== 0 || parts.includes("")) {
-    throw new Error("Malformed mobile OTA diff");
-  }
-  const changes = [];
-  for (let i = 0; i < parts.length; i += 2) {
-    changes.push({ status: parts[i], file: parts[i + 1] });
-  }
-  return changes;
 }
 
 export function otaSummary(base, { publish, blocked }) {
@@ -98,7 +72,7 @@ export function otaSummary(base, { publish, blocked }) {
     return [
       "### Mobile OTA eligible",
       "",
-      `Since \`${since}\`, only the mobile bundle's JavaScript, TypeScript, stylesheets, or translation catalogs changed.`,
+      `Since \`${since}\`, only JavaScript, TypeScript, bundled CSS, or translation catalogs used by the mobile client changed.`,
       "",
     ].join("\n");
   }
@@ -110,11 +84,11 @@ export function otaSummary(base, { publish, blocked }) {
   ].join("\n");
 }
 
-// Reads NUL-delimited status/path pairs from `git diff --name-status -z --no-renames` and appends
-// the decision to the step summary file and the step's `publish` output file.
+// Reads the changed files from stdin, one per line, and appends the decision to the step summary
+// file and the step's `publish` output file.
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const [base, summaryFile, outputFile] = process.argv.slice(2);
-  const result = otaEligibility(parseChanges(readFileSync(0, "utf8")));
+  const result = otaEligibility(readFileSync(0, "utf8").split("\n"));
   appendFileSync(summaryFile, otaSummary(base, result));
   appendFileSync(outputFile, `publish=${result.publish}\n`);
 }
