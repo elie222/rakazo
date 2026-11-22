@@ -165,7 +165,6 @@ ALL_CHECKS=0
 required_checks() {
   local branch
   REQUIRED=""
-  [ "$ALL_CHECKS" = 1 ] && return 0
   branch=$(get "repos/$1/branches/$2") || return 0
   REQUIRED=$(jq -c '.protection.required_status_checks.contexts // [] | select(length > 0)' <<<"$branch")
 }
@@ -176,19 +175,24 @@ required_checks() {
 # an agent wait, though a failure in one is still reported. Otherwise every
 # check run, pending status and unfinished workflow counts.
 pending_count() {
+  local required=0 all=0
   if [ -n "$REQUIRED" ]; then
-    jq -n --argjson req "$REQUIRED" --argjson runs "$1" --argjson statuses "$2" '
+    # With --all-checks the count below covers running checks, so only missing ones count here.
+    required=$(jq -n --argjson req "$REQUIRED" --argjson runs "$1" --argjson statuses "$2" \
+      --argjson missing_only "$ALL_CHECKS" '
       [$req[] as $c
        | ([$runs[] | select(.name == $c)]) as $r
        | ([$statuses[] | select(.context == $c)]) as $s
        | select(($r | length) + ($s | length) == 0
-                or ($r | any(.status != "completed"))
-                or ($s | any(.state == "pending")))] | length'
-  else
-    echo $(( $(jq '[.[] | select(.status != "completed")] | length' <<<"$1") +
-             $(jq '[.[] | select(.state == "pending")] | length' <<<"$2") +
-             $(jq '[.[] | select(.status != "completed")] | length' <<<"$3") ))
+                or ($missing_only == 0 and (($r | any(.status != "completed"))
+                                            or ($s | any(.state == "pending")))))] | length')
   fi
+  if [ -z "$REQUIRED" ] || [ "$ALL_CHECKS" = 1 ]; then
+    all=$(( $(jq '[.[] | select(.status != "completed")] | length' <<<"$1") +
+            $(jq '[.[] | select(.state == "pending")] | length' <<<"$2") +
+            $(jq '[.[] | select(.status != "completed")] | length' <<<"$3") ))
+  fi
+  echo $((required + all))
 }
 
 # gh pr view, with gh's hint banner dropped from stderr but its errors kept.
