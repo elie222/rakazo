@@ -178,9 +178,9 @@ export function instanceThemeIndexMiddleware(outDir: string) {
 export function instanceThemeMiddleware(themeFile: string, warn: (reason: string) => void) {
   let parsed: { stamp: string; theme: InstanceTheme } | undefined;
   const loadTheme = (): InstanceTheme => {
-    // Size and mtime together: an edit that keeps the size cannot keep both.
+    // ctime changes on every write or replace and, unlike mtime, cannot be set back by a copy.
     const stat = statSync(themeFile);
-    const stamp = `${stat.size}:${stat.mtimeMs}`;
+    const stamp = `${stat.size}:${stat.ctimeMs}`;
     if (parsed?.stamp === stamp) return parsed.theme;
     const theme = parseInstanceTheme(
       readFileSync(themeFile, "utf8"),
