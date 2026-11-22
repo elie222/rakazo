@@ -1,6 +1,10 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { ConnectionCatalogItem, PluginMarketplaceEntry } from "@rakazo/contracts";
-import { CATALOG_SEARCH_QUERY_MAX_LENGTH, SUBMIT_PLUGIN_URL } from "@rakazo/contracts";
+import {
+  CATALOG_SEARCH_QUERY_MAX_LENGTH,
+  CATALOG_SEARCH_QUERY_MIN_LENGTH,
+  SUBMIT_PLUGIN_URL,
+} from "@rakazo/contracts";
 import {
   CONNECTION_CATALOG_PAGE_SIZE,
   catalogItemKey,
@@ -337,7 +341,7 @@ export function PluginBrowse({
               </Button>
             </div>
           ) : null}
-          {query.trim().length >= 2 &&
+          {query.trim().length >= CATALOG_SEARCH_QUERY_MIN_LENGTH &&
           query.trim().length <= CATALOG_SEARCH_QUERY_MAX_LENGTH &&
           !category
             ? renderPublicCatalogRow(query.trim())

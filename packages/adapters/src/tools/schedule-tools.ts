@@ -1,6 +1,6 @@
 import type { ConnectorProvider, JobPublisher, SecretStore } from "@rakazo/adapter-kit";
 import { routineJobKey, routineWakeupJob } from "@rakazo/adapter-kit";
-import type { RoutineWatch } from "@rakazo/contracts";
+import type { ChatPreferencesPatch, RoutineWatch } from "@rakazo/contracts";
 import {
   ROUTINE_WATCH_MIN_MINUTES,
   RoutineEmailSendersSchema,
@@ -414,7 +414,7 @@ export async function changeUserTimezone(
   },
   userId: string,
   timezone: string | null,
-  other?: {
+  other?: ChatPreferencesPatch & {
     locale?: string;
     botAvatarSet?: string;
     labs?: string[];

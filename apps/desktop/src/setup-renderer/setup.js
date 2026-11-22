@@ -1,6 +1,7 @@
 (() => {
   const bridge = window.rakazoSetup;
   document.documentElement.dataset.platform = bridge?.platform ?? "browser";
+  const lang = bridge?.locale?.lang ?? "en";
   const messages = bridge?.locale?.messages ?? {};
 
   /** Core's `translate`, which this plain page cannot import: English-keyed, `{name}` placeholders. */
@@ -14,7 +15,7 @@
 
   /** The page is written in English; it switches to the app's language before it first paints. */
   function translatePage() {
-    document.documentElement.lang = bridge?.locale?.lang ?? "en";
+    document.documentElement.lang = lang;
     document.documentElement.dir = bridge?.locale?.dir ?? "ltr";
     document.title = t(document.title);
     const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
@@ -144,11 +145,17 @@
     return Object.values(stack.layerBytes ?? {}).reduce((total, bytes) => total + bytes, 0);
   }
 
+  const wholeSize = new Intl.NumberFormat(lang, { maximumFractionDigits: 0 });
+  const gigabytes = new Intl.NumberFormat(lang, {
+    minimumFractionDigits: 1,
+    maximumFractionDigits: 1,
+  });
+
   function formatBytes(bytes) {
-    if (bytes >= 1e9) return `${(bytes / 1e9).toFixed(1)} GB`;
-    if (bytes >= 1e6) return `${Math.round(bytes / 1e6)} MB`;
-    if (bytes >= 1e3) return `${Math.round(bytes / 1e3)} kB`;
-    return `${Math.round(bytes)} B`;
+    if (bytes >= 1e9) return `${gigabytes.format(bytes / 1e9)} GB`;
+    if (bytes >= 1e6) return `${wholeSize.format(bytes / 1e6)} MB`;
+    if (bytes >= 1e3) return `${wholeSize.format(bytes / 1e3)} kB`;
+    return `${wholeSize.format(bytes)} B`;
   }
 
   function progressFor(stack) {

@@ -1,6 +1,7 @@
+import { BOT_MESSAGE_MAX_HOPS } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import { RunHistoryWriteError } from "@rakazo/db";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { ExecutorDeps } from "../runs/executor/executor-deps.js";
 import {
   currentBotMessageHop,
@@ -114,9 +115,6 @@ function deps(
 }
 
 describe("messaging another bot", () => {
-  beforeEach(() => vi.stubEnv("BOT_MESSAGE_MAX_HOPS", undefined));
-  afterEach(() => vi.unstubAllEnvs());
-
   it("starts no run for the target while the Space is being deleted", async () => {
     const harness = deps({ deletingSpace: true });
     const sent = await messageBot(harness.deps, run, sender, {
@@ -407,10 +405,16 @@ describe("messaging another bot", () => {
     expect(harness.enqueue).not.toHaveBeenCalled();
   });
 
-  it("stops a chain that has volleyed too many times", async () => {
+  it("stops a runaway chain at the safety ceiling", async () => {
     const harness = deps({
       hopBlocks: [
-        { kind: "bot_message_received", fromBotId: "b", fromBotName: "B", text: "hi", hop: 6 },
+        {
+          kind: "bot_message_received",
+          fromBotId: "b",
+          fromBotName: "B",
+          text: "hi",
+          hop: BOT_MESSAGE_MAX_HOPS,
+        },
       ],
     });
     const sent = await messageBot(
@@ -431,7 +435,7 @@ describe("messaging another bot", () => {
           fromBotId: "bot-target",
           fromBotName: "Analyst",
           text: "please finish",
-          hop: 6,
+          hop: BOT_MESSAGE_MAX_HOPS,
           intent: "request",
           returnToMessageId: "message-request",
         },
@@ -525,7 +529,7 @@ describe("messaging another bot", () => {
           fromBotId: "bot-target",
           fromBotName: "Analyst",
           text: "finished",
-          hop: 6,
+          hop: BOT_MESSAGE_MAX_HOPS,
           intent: "result",
         },
       ],
@@ -553,7 +557,7 @@ describe("messaging another bot", () => {
           fromBotId: "bot-target",
           fromBotName: "Coordinator",
           text: "please finish",
-          hop: 6,
+          hop: BOT_MESSAGE_MAX_HOPS,
           intent: "request",
         },
       ],
@@ -576,7 +580,7 @@ describe("messaging another bot", () => {
           fromBotId: "bot-target",
           fromBotName: "Coordinator",
           text: "please finish",
-          hop: 6,
+          hop: BOT_MESSAGE_MAX_HOPS,
           intent: "request",
         },
       ],
@@ -590,8 +594,7 @@ describe("messaging another bot", () => {
     expect(sent.ok).toBe(false);
   });
 
-  it("raises the chain limit from BOT_MESSAGE_MAX_HOPS", async () => {
-    vi.stubEnv("BOT_MESSAGE_MAX_HOPS", "10");
+  it("keeps a chain going past six bot-to-bot messages", async () => {
     const harness = deps({
       hopBlocks: [
         { kind: "bot_message_received", fromBotId: "b", fromBotName: "B", text: "hi", hop: 6 },
@@ -604,6 +607,17 @@ describe("messaging another bot", () => {
       { bot_id: "bot-target", message: "again" },
     );
     expect(sent.ok).toBe(true);
+    expect(harness.tx.run.create).toHaveBeenCalledOnce();
+    expect(harness.tx.message.create).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          threadId: "thread-target",
+          blocks: expect.arrayContaining([
+            expect.objectContaining({ kind: "bot_message_received", hop: 7 }),
+          ]),
+        }),
+      }),
+    );
   });
 
   it("keeps a person-started chain going", async () => {
@@ -979,7 +993,7 @@ describe("waiting on the user", () => {
     fromBotId: "bot-target",
     fromBotName: "Coordinator",
     text: "research this",
-    hop: 6,
+    hop: BOT_MESSAGE_MAX_HOPS,
     intent: "request",
     returnToMessageId: "message-request",
   };
