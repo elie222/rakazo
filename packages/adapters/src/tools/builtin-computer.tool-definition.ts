@@ -181,7 +181,7 @@ export const computerTools: ConnectorTool[] = [
   },
   {
     name: "read_file",
-    description: `Read a UTF-8 text file or an image from this bot's home. On a Team Computer, relative paths use the bot folder and shared/... accesses shared work. Open other binary files with open_path. Long files come back in line ranges; follow nextOffset. Over ${READ_FILE_MAX_KB} KB, use shell.`,
+    description: `Read a UTF-8 text file or an image from this bot's home. On a Team Computer, relative paths use the bot folder and shared/... accesses shared work. Open other binary files with open_path. Long text comes in line ranges; follow nextOffset. Text over ${READ_FILE_MAX_KB} KB: use shell.`,
     inputSchema: {
       type: "object",
       properties: {
