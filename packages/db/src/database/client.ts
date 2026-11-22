@@ -1,5 +1,6 @@
 import { PrismaPg } from "@prisma/adapter-pg";
 import type { KeyProvider } from "@rakazo/adapter-kit";
+import { retry } from "@rakazo/core";
 import { resolveContentEncryption } from "@rakazo/core/node/secrets-guard";
 import { bestEffort, getLogger } from "@rakazo/logging";
 import type { PoolClient } from "pg";
@@ -233,16 +234,16 @@ export async function retryOnTooManyConnections<T>(
     sleep?: (ms: number) => Promise<void>;
   } = {},
 ): Promise<T> {
-  const attempts = options.attempts ?? CONNECT_RETRY_ATTEMPTS;
-  const sleep = options.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
-  for (let attempt = 0; ; attempt += 1) {
-    try {
-      return await operation();
-    } catch (error) {
-      if (!isTooManyDatabaseConnections(error) || attempt >= attempts - 1) throw error;
-      await sleep(Math.min(5_000, 200 * 2 ** attempt));
-    }
-  }
+  return retry(operation, {
+    attempts: options.attempts ?? CONNECT_RETRY_ATTEMPTS,
+    delayMs: connectRetryDelayMs,
+    retryable: isTooManyDatabaseConnections,
+    ...(options.sleep ? { delay: options.sleep } : {}),
+  });
+}
+
+function connectRetryDelayMs(attempt: number): number {
+  return Math.min(5_000, 200 * 2 ** attempt);
 }
 
 function installConnectRetry(pool: Pool): void {
@@ -263,7 +264,7 @@ function installConnectRetry(pool: Pool): void {
     const attempt = (n: number) => {
       originalConnect((err, client, done) => {
         if (err && isTooManyDatabaseConnections(err) && n < CONNECT_RETRY_ATTEMPTS - 1) {
-          setTimeout(() => attempt(n + 1), Math.min(5_000, 200 * 2 ** n));
+          setTimeout(() => attempt(n + 1), connectRetryDelayMs(n));
           return;
         }
         callback(err, client, done);
