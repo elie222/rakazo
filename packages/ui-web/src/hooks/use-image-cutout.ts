@@ -100,8 +100,6 @@ function readCornerAlphas(src: string): Promise<number[] | null> {
         return;
       }
 
-      context.drawImage(image, 0, 0);
-
       const corners = [
         [0, 0],
         [width - 1, 0],
@@ -109,7 +107,13 @@ function readCornerAlphas(src: string): Promise<number[] | null> {
         [width - 1, height - 1],
       ] as const;
 
-      resolve(corners.map(([x, y]) => context.getImageData(x, y, 1, 1).data[3] ?? OPAQUE));
+      try {
+        context.drawImage(image, 0, 0);
+        resolve(corners.map(([x, y]) => context.getImageData(x, y, 1, 1).data[3] ?? OPAQUE));
+      } catch {
+        // A picture from another site without CORS taints the canvas, so its pixels cannot be read
+        resolve(null);
+      }
     };
     image.onerror = () => resolve(null);
     image.src = src;
