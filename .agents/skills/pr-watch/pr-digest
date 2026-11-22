@@ -62,6 +62,9 @@ rate_limit_wait() {
   elif [ "$remaining" = 0 ] && [[ $reset =~ ^[0-9]+$ ]]; then
     now=$(date +%s)
     echo $((reset > now ? reset - now + 1 : 1))
+  elif grep -qi 'rate limit' <<<"$2"; then
+    # A secondary limit can come without either header; GitHub asks for a minute.
+    echo 60
   else
     return 1
   fi
@@ -95,7 +98,7 @@ get() {
         if [ -s "$file" ]; then touch "$file"; tail -n +2 "$file"; return 0; fi
         ;;
       403|429)
-        wait=$(rate_limit_wait "$headers") || return 1
+        wait=$(rate_limit_wait "$headers" "$resp") || return 1
         echo "pr-digest: GitHub rate limit, waiting ${wait}s" >&2
         sleep "$wait"
         ;;
@@ -182,6 +185,11 @@ pending_count() {
              $(jq '[.[] | select(.state == "pending")] | length' <<<"$2") +
              $(jq '[.[] | select(.status != "completed")] | length' <<<"$3") ))
   fi
+}
+
+# gh pr view, with gh's hint banner dropped from stderr but its errors kept.
+pr_view() {
+  gh pr view "$@" 2> >(grep -vE '^(hint:|    |  - )' >&2)
 }
 
 logs() {
@@ -392,8 +400,8 @@ digest() {
   local pr=$1 repo=$2 viewer=$3
 
   local meta head state mergeable branch
-  meta=$(gh pr view "$pr" --repo "$repo" \
-    --json headRefOid,state,mergeable,headRefName,reviewDecision 2>/dev/null) || die "no PR $pr"
+  meta=$(pr_view "$pr" --repo "$repo" \
+    --json headRefOid,state,mergeable,headRefName,reviewDecision) || die "no PR $pr"
   head=$(jq -r .headRefOid <<<"$meta")
   state=$(jq -r .state <<<"$meta")
   mergeable=$(jq -r .mergeable <<<"$meta")
@@ -495,7 +503,7 @@ digest() {
   # everything above may already be stale. A failed re-read is an error, not
   # an out-of-sync signal — callers must not push to "reconcile" a blind miss.
   local head_now
-  head_now=$(gh pr view "$pr" --repo "$repo" --json headRefOid --jq .headRefOid 2>/dev/null) \
+  head_now=$(pr_view "$pr" --repo "$repo" --json headRefOid --jq .headRefOid) \
     || die "could not re-read PR $pr head"
   if [ "$head_now" != "$head" ]; then
     echo "VERDICT out-of-sync (head moved during this observation)"
@@ -547,10 +555,12 @@ main() {
     || die "could not resolve authenticated user"
   case $viewer in ''|null|\{*) die "could not resolve authenticated user" ;; esac
   [ -n "$pr" ] || pr=$(gh pr view --json number --jq .number 2>/dev/null) || die "no PR for this branch"
-  required_checks "$repo" "$(get "repos/$repo/pulls/$pr" | jq -r .base.ref)"
+  local pull
+  pull=$(get "repos/$repo/pulls/$pr") || die "could not read PR $pr"
+  required_checks "$repo" "$(jq -r .base.ref <<<"$pull")"
 
   if [ "$watch" -eq 1 ]; then
-    local pull head runs statuses workflows empty=0 baseline="" first=1 seen
+    local head runs statuses workflows empty=0 baseline="" first=1 seen
     seen=$(seen_path "$repo" "$pr")
     while :; do
       pull=$(get "repos/$repo/pulls/$pr") || die "could not read PR $pr"
