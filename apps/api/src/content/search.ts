@@ -25,43 +25,111 @@ const CONVERSATION_HIT_LIMIT = 5;
 const UNINDEXED_SCAN_LIMIT = 200;
 
 /**
- * Encrypted messages match on blind-index prefix tokens, then decrypt and filter
- * in `pushMessageHits`; rows not yet encrypted keep the substring match. Index
- * matches are whole words or word prefixes, so text inside a word only matches
- * on rows that are still plaintext.
- */
-/**
  * A delivery is the bot's prompt, hidden in chat, so it is never a result. Filtered before
  * paging so deliveries can't fill the candidate pages; `kind` stays plaintext when encrypted.
  */
 const NOT_DELIVERY = Prisma.sql`NOT (m.blocks @> ${JSON.stringify([{ kind: "delivery" }])}::jsonb)`;
 
-async function messageMatch(prisma: PrismaClient, spaceId: string, query: string) {
+interface MessageMatch {
+  sql: Prisma.Sql;
+  pairs?: Prisma.Sql;
+  limit: number;
+  pages: number;
+}
+
+async function messageMatch(
+  prisma: PrismaClient,
+  spaceId: string,
+  query: string,
+): Promise<MessageMatch> {
   const plaintext = Prisma.sql`m.blocks::text ILIKE ${`%${escapeJsonSearchWildcards(query)}%`}`;
   const encryption = contentEncryptionOf(prisma);
   if (!encryption) return { sql: plaintext, limit: SEARCH_LIMIT, pages: 1 };
-  const keyTokens = await encryption.messageSearchTokens(spaceId, query, "prefix");
+  const [prefixTokens, pairTokens] = await Promise.all([
+    encryption.messageSearchTokens(spaceId, query, "prefix"),
+    encryption.messageSearchTokens(spaceId, query, "han-pair"),
+  ]);
   // No keys: nothing in the space was ever encrypted (encryption off from the start).
-  if (!keyTokens.length) return { sql: plaintext, limit: SEARCH_LIMIT, pages: 1 };
-  const tokenSets = keyTokens.filter((tokens) => tokens.length);
-  if (!tokenSets.length)
+  if (!prefixTokens.length) return { sql: plaintext, limit: SEARCH_LIMIT, pages: 1 };
+  const indexed = (sets: number[][]) =>
+    sets
+      .filter((tokens) => tokens.length)
+      .map((tokens) => Prisma.sql`m."searchTokens" @> ${tokens}::int[]`);
+  const prefixes = indexed(prefixTokens);
+  const pairs = indexed(pairTokens);
+  if (!prefixes.length && !pairs.length)
     return {
       sql: Prisma.sql`(${INDEXED_MESSAGE} OR ${plaintext})`,
       limit: UNINDEXED_SCAN_LIMIT,
       pages: 1,
     };
-  const encrypted = tokenSets.map((tokens) => Prisma.sql`m."searchTokens" @> ${tokens}::int[]`);
   return {
-    sql: Prisma.sql`(${Prisma.join([...encrypted, Prisma.sql`(${UNINDEXED_MESSAGE} AND ${plaintext})`], " OR ")})`,
+    sql: Prisma.sql`(${Prisma.join([...prefixes, Prisma.sql`(${UNINDEXED_MESSAGE} AND ${plaintext})`], " OR ")})`,
+    pairs: pairs.length ? Prisma.sql`(${Prisma.join(pairs, " OR ")})` : undefined,
     limit: SEARCH_LIMIT * 4,
-    // Candidates can share the query's words without containing the phrase, so
-    // keep fetching until results fill or candidates run out, within a bound.
+    // Candidates can share the query's tokens without containing the phrase.
     pages: 5,
   };
 }
 
-async function openMessages<T extends { id: string }>(prisma: PrismaClient, rows: T[]) {
-  return (await contentEncryptionOf(prisma)?.openRows("Message", rows)) ?? rows;
+interface MessageScope {
+  destination: Prisma.Sql;
+  from: Prisma.Sql;
+}
+
+interface SearchMessage {
+  id: string;
+  threadId: string;
+  seq: number;
+  blocks: Prisma.JsonValue;
+  botId?: string;
+  botName?: string;
+  groupId?: string;
+  groupName?: string;
+}
+
+async function* messagePages(
+  prisma: PrismaClient,
+  match: MessageMatch,
+  scope: MessageScope,
+  signal?: AbortSignal,
+) {
+  const select = Prisma.sql`SELECT m.id, m."threadId", m.seq, m.blocks, ${scope.destination}`;
+  const order = Prisma.sql`ORDER BY m."createdAt" DESC, m.id DESC`;
+  const encryption = contentEncryptionOf(prisma);
+  const open = async (rows: SearchMessage[]) =>
+    (await encryption?.openRows("Message", rows)) ?? rows;
+  if (!match.pairs) {
+    for (let page = 0; page < match.pages; page++) {
+      signal?.throwIfAborted();
+      const rows = await prisma.$queryRaw<SearchMessage[]>(Prisma.sql`
+        ${select} ${scope.from} AND ${match.sql} ${order}
+        LIMIT ${match.limit} OFFSET ${page * match.limit}`);
+      signal?.throwIfAborted();
+      yield await open(rows);
+      if (rows.length < match.limit) break;
+    }
+    return;
+  }
+
+  // Limit both predicates independently, then deduplicate the selected IDs.
+  // A match can be outside the prefix window and inside the pair window.
+  signal?.throwIfAborted();
+  const budget = match.limit * match.pages;
+  const window = (predicate: Prisma.Sql) => Prisma.sql`
+    (SELECT m.id, m."createdAt" ${scope.from} AND ${predicate} ${order} LIMIT ${budget})`;
+  const candidates = await prisma.$queryRaw<Array<{ id: string }>>(Prisma.sql`
+    SELECT id FROM (${window(match.sql)} UNION ${window(match.pairs)}) candidates
+    ORDER BY "createdAt" DESC, id DESC`);
+  for (let offset = 0; offset < candidates.length; offset += match.limit) {
+    signal?.throwIfAborted();
+    const ids = candidates.slice(offset, offset + match.limit).map(({ id }) => id);
+    const rows = await prisma.$queryRaw<SearchMessage[]>(Prisma.sql`
+      ${select} ${scope.from} AND m.id = ANY(${ids}::text[])
+      ORDER BY array_position(${ids}::text[], m.id)`);
+    signal?.throwIfAborted();
+    yield await open(rows);
+  }
 }
 
 async function findArtifactMessages(
@@ -310,81 +378,42 @@ export async function querySpaceSearch(
 
   signal?.throwIfAborted();
   const match = await messageMatch(prisma, actor.spaceId, query);
-  for (let page = 0; page < match.pages && !full(); page += 1) {
-    const messageRows = await openMessages(
-      prisma,
-      await prisma.$queryRaw<
-        Array<{
-          id: string;
-          threadId: string;
-          seq: number;
-          blocks: Prisma.JsonValue;
-          botId: string;
-          botName: string;
-        }>
-      >`
-      SELECT m.id, m."threadId", m.seq, m.blocks, b.id AS "botId", b.name AS "botName"
-      FROM messages m
-      INNER JOIN threads t ON t.id = m."threadId"
-      INNER JOIN bots b ON b.id = t."botId"
-      WHERE t."spaceId" = ${actor.spaceId}
-        AND b."archivedAt" IS NULL
-        AND ${match.sql}
-        AND ${NOT_DELIVERY}
-      ORDER BY m."createdAt" DESC, m.id DESC
-      LIMIT ${match.limit} OFFSET ${page * match.limit}
-    `,
-    );
-    for (const row of messageRows) {
-      pushMessageHits(storedMessageBlocks(row), {
-        botId: row.botId,
-        botName: row.botName,
-        messageId: row.id,
-        seq: row.seq,
-        query,
-        push: (hit) => pushInto(contentHits, hit, contentBudget),
-      });
+  const scopes: MessageScope[] = [
+    {
+      destination: Prisma.sql`b.id AS "botId", b.name AS "botName"`,
+      from: Prisma.sql`
+        FROM messages m
+        INNER JOIN threads t ON t.id = m."threadId"
+        INNER JOIN bots b ON b.id = t."botId" AND b."spaceId" = t."spaceId"
+        WHERE t."spaceId" = ${actor.spaceId} AND b."archivedAt" IS NULL AND ${NOT_DELIVERY}`,
+    },
+    {
+      destination: Prisma.sql`g.id AS "groupId", g.name AS "groupName"`,
+      from: Prisma.sql`
+        FROM messages m
+        INNER JOIN threads t ON t.id = m."threadId"
+        INNER JOIN chat_groups g ON g.id = t."groupId" AND g."spaceId" = t."spaceId"
+        WHERE t."spaceId" = ${actor.spaceId}
+          AND g.id IN (${Prisma.join(openableGroupIds.length ? openableGroupIds : [null])})
+          AND ${NOT_DELIVERY}`,
+    },
+  ];
+  for (const scope of scopes) {
+    for await (const rows of messagePages(prisma, match, scope, signal)) {
+      for (const row of rows) {
+        pushMessageHits(storedMessageBlocks(row), {
+          botId: row.botId,
+          botName: row.botName,
+          groupId: row.groupId,
+          groupName: row.groupName,
+          messageId: row.id,
+          seq: row.seq,
+          query,
+          push: (hit) => pushInto(contentHits, hit, contentBudget),
+        });
+      }
+      if (full()) return [...conversationHits, ...contentHits];
     }
-    if (messageRows.length < match.limit) break;
-  }
-
-  for (let page = 0; page < match.pages && !full(); page += 1) {
-    const groupMessageRows = await openMessages(
-      prisma,
-      await prisma.$queryRaw<
-        Array<{
-          id: string;
-          threadId: string;
-          seq: number;
-          blocks: Prisma.JsonValue;
-          groupId: string;
-          groupName: string;
-        }>
-      >`
-      SELECT m.id, m."threadId", m.seq, m.blocks, g.id AS "groupId", g.name AS "groupName"
-      FROM messages m
-      INNER JOIN threads t ON t.id = m."threadId"
-      INNER JOIN chat_groups g ON g.id = t."groupId"
-      WHERE t."spaceId" = ${actor.spaceId}
-        AND t."groupId" IS NOT NULL
-        AND g.id IN (${Prisma.join(openableGroupIds.length ? openableGroupIds : [null])})
-        AND ${match.sql}
-        AND ${NOT_DELIVERY}
-      ORDER BY m."createdAt" DESC, m.id DESC
-      LIMIT ${match.limit} OFFSET ${page * match.limit}
-    `,
-    );
-    for (const row of groupMessageRows) {
-      pushMessageHits(storedMessageBlocks(row), {
-        groupId: row.groupId,
-        groupName: row.groupName,
-        messageId: row.id,
-        seq: row.seq,
-        query,
-        push: (hit) => pushInto(contentHits, hit, contentBudget),
-      });
-    }
-    if (groupMessageRows.length < match.limit) break;
   }
 
   return [...conversationHits, ...contentHits].slice(0, SEARCH_LIMIT);

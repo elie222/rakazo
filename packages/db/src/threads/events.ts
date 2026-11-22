@@ -143,6 +143,7 @@ export interface ThreadEvents {
   draftRecordingsOfLease(input: { spaceId: string; leaseId: string }): Promise<string[]>;
   finalizeRun(input: FinalizeRunInput): Promise<FinalizeRunResult | false>;
   releaseUserControl(input: ReleaseUserControlInput): Promise<boolean>;
+  /** Tells followers about a committed event. Never rejects: failures are only logged. */
   notify(threadId: string, seq: number, firstResponseRunId?: string): Promise<void>;
   pauseRunForInput(input: PauseRunForInput): Promise<FinalizeRunResult | false>;
   pauseRunForTakeover(input: PauseRunForTakeover): Promise<boolean | { continuationRunId: string }>;

@@ -33,6 +33,7 @@ import {
   lockSpaceSettings,
   newestVoiceCredentialOrder,
   Prisma,
+  remainingSpeechAllowance,
   runAsSystemInTransaction,
   runAsTenant,
   saveVoicePreference,
@@ -123,7 +124,7 @@ export function toVoiceCredential(row: {
   isDefault: boolean;
   voiceId: string;
   speechModel?: string | null;
-  server?: { endpoint: string; sttEndpoint: string; ttsModel: string; sttModel: string };
+  server?: ReturnType<typeof openAiCompatibleVoiceServer>;
   /** False when the connection uses the account's model connection instead of a key. */
   hasKey?: boolean;
 }): VoiceCredential {
@@ -139,11 +140,14 @@ export function toVoiceCredential(row: {
     sttEndpoint: row.server?.sttEndpoint ?? "",
     ttsModel: row.server?.ttsModel ?? "",
     sttModel: row.server?.sttModel ?? "",
+    ...(row.server?.transcriptionVocabulary
+      ? { transcriptionVocabulary: row.server.transcriptionVocabulary }
+      : {}),
   };
 }
 
 /**
- * A self-hosted connection's address and model ids, read from its secret. Undefined for
+ * A self-hosted connection's editable settings, read from its secret. Undefined for
  * hosted providers and for a secret that cannot be read, which still lists the connection.
  */
 export async function voiceCredentialServer(
@@ -209,6 +213,7 @@ export function voiceCredentialPlaintext(input: {
   sttApiKey?: string;
   ttsModel?: string;
   sttModel?: string;
+  transcriptionVocabulary?: string;
   /** The stored secret for this provider; blank fields keep its key and models. */
   previousPlaintext?: string;
   allowPrivateEndpoint?: boolean;
@@ -236,6 +241,7 @@ export function voiceCredentialPlaintext(input: {
         sttApiKey: input.sttApiKey,
         ttsModel: input.ttsModel,
         sttModel: input.sttModel,
+        transcriptionVocabulary: input.transcriptionVocabulary,
       },
       input.previousPlaintext,
       { allowPrivate: input.allowPrivateEndpoint },
@@ -256,7 +262,7 @@ export function speechModelValue(speechModel: string): string | null {
   return trimmed;
 }
 
-/** A configured service is available only after the operator grants an unexpired allowance. */
+/** A configured service is available while the organization's plan has speech allowance left. */
 export async function includedVoice(
   deps: VoiceDeps,
   actor: Pick<Actor, "userId" | "spaceId">,
@@ -266,16 +272,14 @@ export async function includedVoice(
   if (!deployment) return undefined;
   const target = await voicePreferenceTarget(deps.prisma, actor, scope);
   if (target.scope !== "account") return undefined;
-  const allowance = await deps.prisma.speechAllowance.findFirst({
-    where: { userId: actor.userId, expiresAt: { gt: new Date() } },
-  });
-  const remaining = allowance ? allowance.limitMicros - allowance.usedMicros : 0n;
+  const remaining = await remainingSpeechAllowance(deps.prisma, actor.spaceId);
+  const affords = (micros: number) => remaining === null || remaining >= BigInt(micros);
   return {
     deployment,
-    synthesize: remaining >= BigInt(deployment.pricing.synthesize.maxRequestMicros),
+    synthesize: affords(deployment.pricing.synthesize.maxRequestMicros),
     transcribe:
       Boolean(catalogEntry(deployment.provider)?.transcribe) &&
-      remaining >= BigInt(deployment.pricing.transcribe.maxRequestMicros),
+      affords(deployment.pricing.transcribe.maxRequestMicros),
   };
 }
 
@@ -444,6 +448,7 @@ export async function persistVoiceCredential(
     sttApiKey?: string;
     ttsModel?: string;
     sttModel?: string;
+    transcriptionVocabulary?: string;
     /** Which copy the connection becomes the default voice in; omitted is what applies. */
     scope?: SettingsScope;
     signal?: AbortSignal;

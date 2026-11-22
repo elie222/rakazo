@@ -15,6 +15,7 @@ import {
   displayName as safeDisplayName,
   workingRoutineName,
 } from "@rakazo/core";
+import { cronLabels } from "@rakazo/i18n/cron";
 import { useFocusEffect, useIsFocused, useLocalSearchParams, useRouter } from "expo-router";
 import { useHeaderHeight } from "expo-router/react-navigation";
 import { useCallback, useContext, useMemo, useRef, useState } from "react";
@@ -38,7 +39,6 @@ import { useDeviceCalendar } from "../../lib/personal-calendar/use-device-calend
 import { useAppForeground } from "../../lib/platform/app-foreground";
 import { rpcQuery } from "../../lib/query/query";
 import { useScreenQuery } from "../../lib/query/screen-query";
-import { cronLabels } from "../../lib/routines/cron";
 import { useInboxBot } from "../../lib/search/search-inbox";
 import {
   THREAD_HEADER_PILL_BOTTOM_INSET,

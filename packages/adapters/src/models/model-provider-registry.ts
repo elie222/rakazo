@@ -1,5 +1,5 @@
 import type { ModelUsageLookup } from "@rakazo/adapter-kit";
-import type { ModelOAuthSignInMode, ModelRoutingField } from "@rakazo/contracts";
+import type { ModelCatalogEntry, ModelOAuthSignInMode, ModelRoutingField } from "@rakazo/contracts";
 import { bestEffort } from "@rakazo/logging";
 import {
   CLAUDE_CODE_CREDENTIAL_SOURCE,
@@ -28,6 +28,8 @@ export interface ModelProviderDefinition {
     headers(apiKey: string): Record<string, string>;
     rejected(response: Response): Promise<boolean>;
   };
+  /** A connection needs host configuration beyond an API key. */
+  requiresHostConfiguration?: true;
   /** A deployment-wide key operators set in the environment, and the model it runs. */
   deployment?: { keyEnv: string; defaultModel: string };
   /** Optional authenticated recovery of a dispatched request. */
@@ -45,7 +47,7 @@ export interface ModelProviderDefinition {
     hint: string;
     billing: string;
     /** A setting the account must turn on first, or the provider refuses the sign-in. */
-    setup?: { label: string; url: string };
+    setup?: ModelCatalogEntry["signInSetup"];
   };
   /** Ids each connection supplies to route its requests. */
   routingFields?: ModelRoutingField[];
@@ -63,6 +65,7 @@ const subscriptionNames = {
 };
 
 export const modelProviders = {
+  local: { requiresHostConfiguration: true },
   "openai-compatible": { preserveModelOrder: true },
   "openai-codex": {
     displayName: "OpenAI Codex",
@@ -78,6 +81,7 @@ export const modelProviders = {
       setup: {
         label: "Turn on device code sign-in in ChatGPT security settings",
         url: "https://chatgpt.com/#settings/Security",
+        note: "Workspace accounts need an admin to turn this on.",
       },
     },
   },

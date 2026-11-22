@@ -200,6 +200,7 @@ export * from "./providers/web/parallel/parallel-web.js";
 export * from "./routines/release-watch.js";
 export { releaseRoutineBackoffs } from "./routines/routine-backoff.js";
 export * from "./routines/routine-notice.js";
+export { routineGroupThreadId } from "./routines/routine-thread.js";
 export * from "./routines/routine-triggers.js";
 export * from "./routines/routine-watch.js";
 export * from "./routines/strategic-initiative.js";
@@ -293,6 +294,7 @@ export {
   vaultItemsUnderOlderKeys,
 } from "./secrets/vault/vault-values.js";
 export * from "./secrets/wrapped-env.js";
+export * from "./server/server-foundation.js";
 export * from "./storage/artifact-store-factory.js";
 export * from "./storage/artifacts.js";
 export * from "./storage/home.js";

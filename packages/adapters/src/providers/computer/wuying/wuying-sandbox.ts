@@ -35,9 +35,9 @@ import {
   WorkspaceDirectoryError,
   WorkspacePathError,
 } from "../../../computers/screens/computer-support.js";
+import { normalizeDesktopWorkspacePath } from "../../../computers/screens/desktop-sandbox-paths.js";
 import { McpSession } from "../../../mcp/mcp-transport.js";
 import { shouldSkipPortableWorkspaceFile } from "../../../storage/workspace-save-policy.js";
-import { normalizeDesktopWorkspacePath } from "../desktop/desktop-sandbox-paths.js";
 import type { WuyingControlPlane } from "./wuying-openapi.js";
 import { WuyingOpenApi } from "./wuying-openapi.js";
 
