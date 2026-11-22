@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+  APP_WINDOW_MIN_HEIGHT,
+  APP_WINDOW_MIN_WIDTH,
   browserWindowOptions,
   DEFAULT_WARM_WINDOW_TTL_MS,
   developmentIconFile,
@@ -50,6 +52,17 @@ describe("app window size", () => {
     }
     const setup = setupWindowOptions("win32", small);
     expect(setup.minHeight).toBeLessThanOrEqual(setup.height);
+  });
+
+  it("cannot be resized below the phone layout, and never past a small screen", () => {
+    const opts = browserWindowOptions("darwin", laptop);
+    expect(opts.minWidth).toBe(APP_WINDOW_MIN_WIDTH);
+    expect(opts.minHeight).toBe(APP_WINDOW_MIN_HEIGHT);
+    expect(opts.minWidth).toBeLessThanOrEqual(opts.width);
+    expect(opts.minHeight).toBeLessThanOrEqual(opts.height);
+    const tiny = browserWindowOptions("darwin", { width: 300, height: 400 });
+    expect(tiny.minWidth).toBe(300);
+    expect(tiny.minHeight).toBe(400);
   });
 
   it("caps its size on large displays", () => {

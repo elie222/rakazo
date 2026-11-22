@@ -11,6 +11,7 @@ import {
   objectStorageConnectionFromEnv,
   PART_BYTES,
   parts,
+  uploadParts,
 } from "../../../storage/object-storage-common.js";
 
 const DELETE_BATCH = 1000;
@@ -204,9 +205,7 @@ export class S3ObjectStorage implements ObjectStorage {
         client.send(new sdk.CreateMultipartUploadCommand({ Bucket, Key })),
       );
       if (!UploadId) throw new Error("Object storage did not start a multipart upload");
-      const uploaded: Array<{ ETag: string; PartNumber: number }> = [];
-      const upload = async (bytes: Buffer) => {
-        const PartNumber = uploaded.length + 1;
+      const upload = async (bytes: Buffer, PartNumber: number) => {
         const { ETag } = await this.send(
           client.send(
             new sdk.UploadPartCommand({
@@ -220,13 +219,15 @@ export class S3ObjectStorage implements ObjectStorage {
           ),
         );
         if (!ETag) throw new Error("Object storage did not acknowledge an upload part");
-        uploaded.push({ ETag, PartNumber });
+        return { ETag, PartNumber };
       };
       try {
-        await upload((first as IteratorYieldResult<Buffer>).value);
-        await upload(second.value);
-        for (let next = await source.next(); !next.done; next = await source.next())
-          await upload(next.value);
+        // Several parts at a time, so a slow link stays busy.
+        const uploaded = await uploadParts(
+          [(first as IteratorYieldResult<Buffer>).value, second.value],
+          source,
+          upload,
+        );
         await this.send(
           client.send(
             new sdk.CompleteMultipartUploadCommand({
