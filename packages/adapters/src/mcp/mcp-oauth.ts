@@ -624,6 +624,18 @@ export class StoredMcpOAuthProvider implements OAuthClientProvider {
     }
   }
 
+  /**
+   * Whether a held access token is still lapsed only because renewing it failed for now: a
+   * refused refresh drops the grant, so a refresh token still held here can be tried again.
+   */
+  get renewalPending(): boolean {
+    return Boolean(
+      this.options.refresh &&
+        this.material.oauth?.tokens?.refresh_token &&
+        accessTokenExpired(this.material.oauth),
+    );
+  }
+
   get redirectUrl(): string | undefined {
     return this.options.redirectUri ?? this.material.oauth?.redirectUri;
   }

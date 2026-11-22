@@ -49,7 +49,7 @@ export function PageBlockCard({
       failed={viewer.failed || unread}
       updated={updated}
       updatedAt={current.data?.updatedAt}
-      shared={current.data?.visibility === "link"}
+      visibility={current.data?.visibility}
       onOpen={
         deleted
           ? undefined

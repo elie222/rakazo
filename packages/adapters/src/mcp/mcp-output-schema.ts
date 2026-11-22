@@ -6,6 +6,7 @@ import type {
   JsonSchemaValidatorResult,
   jsonSchemaValidator,
 } from "@modelcontextprotocol/sdk/validation/types.js";
+import { isRecord } from "@rakazo/core";
 import { getLogger } from "@rakazo/logging";
 
 const PATTERN_PREVIEW_CHARS = 160;
@@ -237,10 +238,6 @@ function compilesWithUnicodeFlag(pattern: string): boolean {
   } catch {
     return false;
   }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
 function errorText(error: unknown): string {

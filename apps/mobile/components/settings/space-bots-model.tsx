@@ -1,4 +1,4 @@
-import { ph } from "@lingui/core/macro";
+import { ph, plural } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
 import { botsWithOwnModel } from "@rakazo/core";
 import { useState } from "react";
@@ -66,9 +66,7 @@ export function SpaceBotsModel({
 
   function confirm() {
     Alert.alert(
-      count === 1
-        ? t`Switch 1 bot to the space default?`
-        : t`Switch ${count} bots to the space default?`,
+      t`${plural(count, { one: "Switch # bot to the space default?", other: "Switch # bots to the space default?" })}`,
       t`Their own model is cleared. You can pick one again in each bot.`,
       [
         { text: t`Cancel`, style: "cancel" },
@@ -78,13 +76,16 @@ export function SpaceBotsModel({
   }
 
   if (count === 0 && !moved) return null;
-  const summary =
-    count === 1 ? t`1 bot has its own model:` : t`${count} bots have their own model:`;
+  const names = pinned.map((bot) => bot.name).join(", ");
   return (
     <View style={styles.section}>
       <SettingsGroup
         label={t`Bot models`}
-        footer={count ? `${summary} ${pinned.map((bot) => bot.name).join(", ")}` : undefined}
+        footer={
+          count
+            ? t`${plural(count, { one: `# bot has its own model: ${names}`, other: `# bots have their own model: ${names}` })}`
+            : undefined
+        }
       >
         {count ? (
           <SettingsRow
@@ -99,9 +100,7 @@ export function SpaceBotsModel({
       </SettingsGroup>
       {moved ? (
         <Text style={styles.status}>
-          {moved === 1
-            ? t`1 bot now uses the space default.`
-            : t`${ph({ count: moved })} bots now use the space default.`}
+          {t`${plural(moved, { one: "# bot now uses the space default.", other: "# bots now use the space default." })}`}
         </Text>
       ) : null}
       {stillFailed.length ? (

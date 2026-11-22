@@ -5,6 +5,7 @@ import {
   ComputerSizeSchema,
   CREDITS_SANDBOX_ALLOWANCE_PERCENT,
   computerSizesUpTo,
+  SPEECH_ALLOWANCE_PERCENT,
   TRIAL_SANDBOX_ALLOWANCE_CENTS,
 } from "@rakazo/contracts";
 import type { PrismaClient } from "../database/client.js";
@@ -68,17 +69,7 @@ export async function sandboxAllowancePlan(
   ]);
   if (!settings?.modelCreditsEnabled) return null;
   const billing = organization?.billing;
-  const live = hasBillingAccess(billing?.status ?? null);
-  const periodStart =
-    live && billing?.currentPeriodStartsAt && billing.currentPeriodStartsAt <= now
-      ? billing.currentPeriodStartsAt
-      : null;
-  const since = periodStart
-    ? // A yearly plan's allowance still renews monthly, on the day its period began.
-      billing?.byokInterval === "year"
-      ? latestMonthlyAnniversary(periodStart, now)
-      : periodStart
-    : new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+  const { live, periodStart, since } = allowancePeriod(billing, now);
   const tier = byokTierOf(organization?.modelCredits?.mode, billing);
   const creditShare = (cents: number) =>
     Math.floor((cents * CREDITS_SANDBOX_ALLOWANCE_PERCENT) / 100);
@@ -147,6 +138,83 @@ export async function sandboxAllowancePlan(
   return { limitCents, extraCents, since, resetsAt };
 }
 
+/** The monthly allowance period an organization's billing puts it in. */
+function allowancePeriod(
+  billing:
+    | {
+        status: string | null;
+        currentPeriodStartsAt: Date | null;
+        byokInterval: string | null;
+      }
+    | null
+    | undefined,
+  now: Date,
+) {
+  const live = hasBillingAccess(billing?.status ?? null);
+  const periodStart =
+    live && billing?.currentPeriodStartsAt && billing.currentPeriodStartsAt <= now
+      ? billing.currentPeriodStartsAt
+      : null;
+  const since = periodStart
+    ? // A yearly plan's allowance still renews monthly, on the day its period began.
+      billing?.byokInterval === "year"
+      ? latestMonthlyAnniversary(periodStart, now)
+      : periodStart
+    : new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+  return { live, periodStart, since };
+}
+
+/**
+ * What the organization may spend on deployment-funded speech this period, in micros, and when
+ * the period began: a share of its plan's monthly price. Without a live plan or a trial it gets
+ * nothing; a deployment without model-credit billing never limits speech (null).
+ */
+export async function speechAllowancePlan(
+  prisma: Pick<PrismaClient, "deploymentSettings" | "organization">,
+  organizationId: string,
+  now = new Date(),
+): Promise<{ limitMicros: bigint; since: Date } | null> {
+  const [settings, organization] = await Promise.all([
+    prisma.deploymentSettings.findUnique({
+      where: { id: "default" },
+      select: { modelCreditsEnabled: true },
+    }),
+    prisma.organization.findUnique({
+      where: { id: organizationId },
+      select: {
+        billing: {
+          select: {
+            creditAmountCents: true,
+            status: true,
+            cancelAtPeriodEnd: true,
+            currentPeriodStartsAt: true,
+            currentPeriodEndsAt: true,
+            byokInterval: true,
+            byokTier: true,
+            byokPriceCents: true,
+          },
+        },
+      },
+    }),
+  ]);
+  if (!settings?.modelCreditsEnabled) return null;
+  const billing = organization?.billing;
+  const { live, since } = allowancePeriod(billing, now);
+  // A paid tier counts only while its subscription is live; a lapsed one pays for nothing.
+  const tier = byokTierOf(null, billing);
+  const ended = billing?.currentPeriodEndsAt != null && billing.currentPeriodEndsAt <= now;
+  const planCents =
+    !live || ended || (billing?.status === "trialing" && billing.cancelAtPeriodEnd)
+      ? 0
+      : billing?.status === "trialing"
+        ? (BYOK_TIERS.standard.monthlyPriceCents ?? 0)
+        : tier
+          ? (BYOK_TIERS[tier].monthlyPriceCents ?? 0)
+          : (billing?.creditAmountCents ?? 0);
+  // One cent is 10,000 micros, so a percent of it is 100.
+  return { limitMicros: BigInt(planCents) * BigInt(SPEECH_ALLOWANCE_PERCENT) * 100n, since };
+}
+
 async function grantedAllowanceCents(
   prisma: Pick<PrismaClient, "computerAllowanceGrant">,
   organizationId: string,
@@ -187,47 +255,50 @@ export async function grantComputerAllowance(
   );
 }
 
-/**
- * The selected size applies on the next start. If a plan changes or the stored choice is
- * unavailable, use Standard until an owner selects an available size.
- */
-export async function planComputerSize(
-  prisma: Pick<PrismaClient, "space">,
-  spaceId: string,
-): Promise<ComputerSize> {
-  const space = await prisma.space.findUnique({
-    where: { id: spaceId },
-    select: {
-      organization: {
-        select: {
-          modelCredits: { select: { mode: true } },
-          computerSize: true,
-          billing: { select: { status: true, byokTier: true, byokPriceCents: true } },
-        },
-      },
-    },
-  });
-  return computerSizeSettings(space?.organization).size;
+/** What `allowedComputerSizes` reads from an organization. */
+export const COMPUTER_SIZE_PLAN_SELECT = {
+  modelCredits: { select: { mode: true } },
+  billing: { select: { status: true, byokTier: true, byokPriceCents: true } },
+} as const;
+
+type ComputerSizePlan =
+  | {
+      modelCredits: { mode: string | null } | null;
+      billing: {
+        status: string | null;
+        byokTier: string | null;
+        byokPriceCents: number | null;
+      } | null;
+    }
+  | null
+  | undefined;
+
+/** The sizes an organization's plan lets its computers run at, smallest first. */
+export function allowedComputerSizes(organization: ComputerSizePlan): ComputerSize[] {
+  const tier = byokTierOf(organization?.modelCredits?.mode, organization?.billing);
+  return computerSizesUpTo(tier ? BYOK_TIERS[tier].computerSize : "standard");
 }
 
-export function computerSizeSettings(
-  organization:
-    | {
-        computerSize: string;
-        modelCredits: { mode: string | null } | null;
-        billing: {
-          status: string | null;
-          byokTier: string | null;
-          byokPriceCents: number | null;
-        } | null;
-      }
-    | null
-    | undefined,
-) {
-  const tier = byokTierOf(organization?.modelCredits?.mode, organization?.billing);
-  const available = computerSizesUpTo(tier ? BYOK_TIERS[tier].computerSize : "standard");
-  const size = ComputerSizeSchema.catch("standard").parse(organization?.computerSize);
-  return { size: available.includes(size) ? size : ("standard" as const), available };
+/** A stored size the plan no longer allows runs at the largest size it does allow. */
+export function effectiveComputerSize(stored: string, allowed: readonly ComputerSize[]) {
+  const size = ComputerSizeSchema.catch("standard").parse(stored);
+  return allowed.includes(size) ? size : (allowed.at(-1) ?? "standard");
+}
+
+/** The size the computer starts at next: its own choice, within its organization's plan. */
+export async function planComputerSize(
+  prisma: Pick<PrismaClient, "computer">,
+  computerId: string,
+): Promise<ComputerSize> {
+  const computer = await prisma.computer.findUnique({
+    where: { id: computerId },
+    select: {
+      size: true,
+      space: { select: { organization: { select: COMPUTER_SIZE_PLAN_SELECT } } },
+    },
+  });
+  if (!computer) return "standard";
+  return effectiveComputerSize(computer.size, allowedComputerSizes(computer.space.organization));
 }
 
 /** Months between two UTC calendar months, without rounding partial months. */

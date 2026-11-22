@@ -18,6 +18,7 @@ import type { MobileSnapshot } from "../api/mobile-types";
 import { currentSessionGeneration } from "../api/session";
 import { errorText } from "../api/user-error";
 import { getHapticsEnabled, hapticSuccess } from "../native/haptics";
+import { noteRunCompleted } from "../platform/store-review";
 import type { ThreadJumpAnchor } from "./thread-jump";
 import type { PinnedThreadWindow } from "./thread-window";
 
@@ -232,6 +233,9 @@ export function useThreadLiveSubscription({
                 !completedRuns.current.has(event.runId)
               ) {
                 completedRuns.current.add(event.runId);
+                if (newEvent && visible.current && (event.seq ?? -1) > projectionFloor) {
+                  noteRunCompleted();
+                }
                 const boundary = feedbackBoundary.current;
                 if (newEvent && visible.current && boundary) {
                   if (boundary.cursor === null) {

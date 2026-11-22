@@ -114,6 +114,7 @@ describe("computer allowance", () => {
         )
       )?.limitMicros;
     expect(await limit("active", "pro")).toBe(20_000_000);
+    expect(await limit("active", "ultra")).toBe(120_000_000);
     // An overdue plan's tier waits for its payment.
     expect(await limit("past_due", "max")).toBe(5_000_000);
     // Rows synced before tiers existed are Standard.
@@ -121,7 +122,7 @@ describe("computer allowance", () => {
     // A lapsed plan's tier no longer applies.
     expect(await limit("canceled", "max")).toBe(5_000_000);
     // Every tier's trial gets the trial allowance.
-    expect(await limit("trialing", "max")).toBe(3_000_000);
+    expect(await limit("trialing", "ultra")).toBe(3_000_000);
   });
 
   it("adds extra allowance granted this period to a paid own-key tier", async () => {
@@ -502,24 +503,25 @@ describe("plan computer size", () => {
     computerSize = "standard",
   ) {
     const prisma = {
-      space: {
+      computer: {
         findUnique: vi.fn().mockResolvedValue({
-          organization: {
-            computerSize,
-            modelCredits: mode ? { mode } : null,
-            billing: billing && { byokPriceCents: null, ...billing },
+          size: computerSize,
+          space: {
+            organization: {
+              modelCredits: mode ? { mode } : null,
+              billing: billing && { byokPriceCents: null, ...billing },
+            },
           },
         }),
       },
     };
-    return planComputerSize(prisma as unknown as PrismaClient, "space");
+    return planComputerSize(prisma as unknown as PrismaClient, "computer");
   }
 
-  it("defaults to Standard, and honors an explicit choice within the plan's size limit", async () => {
+  it("defaults to Standard, and honors the computer's choice within the plan's size limit", async () => {
     expect(await sizeFor("byok", { status: "active", byokTier: "pro" })).toBe("standard");
     expect(await sizeFor("byok", { status: "active", byokTier: "max" })).toBe("standard");
     expect(await sizeFor("byok", { status: "active", byokTier: "pro" }, "large")).toBe("large");
-    expect(await sizeFor("byok", { status: "active", byokTier: "pro" }, "xlarge")).toBe("standard");
     expect(await sizeFor("byok", { status: "trialing", byokTier: "max" }, "xlarge")).toBe("xlarge");
     expect(await sizeFor("byok", { status: "active", byokTier: "standard" })).toBe("standard");
     expect(
@@ -529,6 +531,13 @@ describe("plan computer size", () => {
         "xlarge",
       ),
     ).toBe("xlarge");
+  });
+
+  it("runs a size above the plan at the largest size it allows", async () => {
+    expect(await sizeFor("byok", { status: "active", byokTier: "pro" }, "xlarge")).toBe("large");
+    expect(await sizeFor("byok", { status: "canceled", byokTier: "max" }, "xlarge")).toBe(
+      "standard",
+    );
   });
 
   it("keeps credits, lapsed plans and plans without a tier standard", async () => {

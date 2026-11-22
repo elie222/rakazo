@@ -68,7 +68,9 @@ function readFileRangeResult(
   text: string,
   args: Record<string, unknown>,
 ): ReadFileRangeResult | { error: string; path: string; totalLines: number } {
-  const lines = text.split("\n");
+  // A trailing newline ends the last line; it does not start another one.
+  const endsWithNewline = text.endsWith("\n");
+  const lines = (endsWithNewline ? text.slice(0, -1) : text).split("\n");
   const totalLines = lines.length;
   const offset = positiveIntegerArg(args.offset) ?? 1;
   const limit = positiveIntegerArg(args.limit);
@@ -83,9 +85,11 @@ function readFileRangeResult(
   const wanted = Math.min(limit ?? totalLines - first, totalLines - first);
   const rangeResult = (count: number): ReadFileRangeResult => {
     const endLine = offset + count - 1;
+    const body = lines.slice(first, first + count).join("\n");
     return {
       path: filePath,
-      content: lines.slice(first, first + count).join("\n"),
+      // A range that reaches the last line keeps the file's trailing newline, so chunks rejoin exactly.
+      content: endLine === totalLines && endsWithNewline ? `${body}\n` : body,
       totalLines,
       startLine: offset,
       endLine,
@@ -320,6 +324,7 @@ export async function renderPlotFromTool(
           prisma: deps.prisma,
           artifacts: deps.artifacts,
           maxUploadSizeBytes: deps.maxUploadSizeBytes,
+          events: deps.events,
         },
         {
           spaceId: run.spaceId,
