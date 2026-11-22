@@ -9,7 +9,6 @@ const nativeState = vi.hoisted(() => ({
 
 vi.mock("react-native", () => ({
   I18nManager: nativeState.direction,
-  Platform: nativeState.platform,
 }));
 
 vi.mock("../../lib/native/native", () => ({
