@@ -576,6 +576,8 @@ export async function resolveRunCapabilities(
     messagingChannelRun: nonOwnerChatRun,
     runUserId: run.userId,
     botUserId: bot.userId,
+    routineId: run.trigger === "routine" ? run.routineId : null,
+    taskPrompt: parts.records.task.prompt,
   });
   let userComputer: UserComputerState;
   let userComputerShell = false;

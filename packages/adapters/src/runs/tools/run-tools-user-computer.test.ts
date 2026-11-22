@@ -2,6 +2,7 @@ import { deferred } from "@rakazo/core/test-async";
 import { describe, expect, it, vi } from "vitest";
 import type { HostComputerRequest } from "../../computers/host/host-computer-protocol.js";
 import type { UserDeviceGateway } from "../../computers/host/user-device-protocol.js";
+import { routineWatchNote } from "../../routines/routine-watch.prompt.js";
 import type { RunContext } from "../assembly/run-context.js";
 import type { ToolCall } from "./run-tool-gate.js";
 import {
@@ -85,6 +86,8 @@ describe("userComputerGate", () => {
   });
 });
 
+const routineTaskWithWatchNote = `Check the backups${routineWatchNote("the inbox", "Run this")}`;
+
 describe("userComputerOwner", () => {
   const own = {
     trigger: "user",
@@ -92,11 +95,24 @@ describe("userComputerOwner", () => {
     messagingChannelRun: false,
     runUserId: "user-1",
     botUserId: "user-1",
+    routineId: null,
+    taskPrompt: "Check the backups",
   };
+  const ownRoutine = { ...own, trigger: "routine", sourceRole: undefined, routineId: "routine-1" };
 
-  it("is the bot owner when their own message started the run", () => {
+  it("is the bot owner when their own message or routine started the run", () => {
     expect(userComputerOwner(own)).toBe("user-1");
     expect(userComputerOwner({ ...own, trigger: "follow_up" })).toBe("user-1");
+    expect(userComputerOwner(ownRoutine)).toBe("user-1");
+  });
+
+  it.each([
+    { routineId: null },
+    { runUserId: "user-2" },
+    { messagingChannelRun: true },
+    { taskPrompt: routineTaskWithWatchNote },
+  ])("is nobody for a routine run with %o", (change) => {
+    expect(userComputerOwner({ ...ownRoutine, ...change })).toBeUndefined();
   });
 
   it.each([

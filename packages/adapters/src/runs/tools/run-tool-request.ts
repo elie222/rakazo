@@ -429,7 +429,7 @@ export async function prepareToolRequest(
       );
     if (isSubagentToolExecution(executionId))
       return refusal("helper_user_computer", "Helpers cannot use the user's computer.");
-    // Routines and webhooks reach no one's computer, including through a run they were handed to.
+    // A webhook or a routine handed to this run is not the run's own words (see receivedOutsideMessage).
     if (
       await deps.prisma.steeringMessage.findFirst({
         where: {

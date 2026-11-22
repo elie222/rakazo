@@ -25,6 +25,7 @@ import type {
   HostScreenObservation,
 } from "../../computers/screens/host-screen.js";
 import { HOST_SCREEN_MAX_ACTIONS, hostScreenAction } from "../../computers/screens/host-screen.js";
+import { ROUTINE_WATCH_NOTE_START } from "../../routines/routine-watch.prompt.js";
 import type { RunContext } from "../assembly/run-context.js";
 import type { ToolCall } from "./run-tool-gate.js";
 
@@ -44,8 +45,9 @@ const USER_COMPUTER_UNAVAILABLE =
   'The user\'s computer is not connected. If the task needs it, ask them to open the Rakazo desktop app and turn on "Let bots use this computer" in its settings.';
 
 /**
- * Whose own computer this run may reach: the person whose message started it, when they own the
- * bot. Routines, webhooks, channels, other bots and other people's messages reach no one's.
+ * Whose own computer this run may reach: the bot owner's, when their own message or one of their
+ * routines started it. A watch's change note quotes what it read, so its runs reach no one's, nor
+ * do check-ins, a routine's helpers, webhooks, channels, other bots and other people's messages.
  */
 export function userComputerOwner(input: {
   trigger: string;
@@ -53,10 +55,16 @@ export function userComputerOwner(input: {
   messagingChannelRun: boolean;
   runUserId: string;
   botUserId: string;
+  /** Set only on the routine's own run, not a helper's. */
+  routineId: string | null;
+  taskPrompt: string;
 }): string | undefined {
-  if (input.trigger !== "user" && input.trigger !== "follow_up") return undefined;
-  if (input.sourceRole !== "user" || input.messagingChannelRun) return undefined;
-  return input.runUserId === input.botUserId ? input.runUserId : undefined;
+  if (input.messagingChannelRun || input.runUserId !== input.botUserId) return undefined;
+  const allowed =
+    input.trigger === "routine"
+      ? Boolean(input.routineId) && !input.taskPrompt.includes(ROUTINE_WATCH_NOTE_START)
+      : (input.trigger === "user" || input.trigger === "follow_up") && input.sourceRole === "user";
+  return allowed ? input.runUserId : undefined;
 }
 
 /**
