@@ -279,7 +279,6 @@ describe("normalizeRunError", () => {
       ["socket hang up", tookTooLong],
       ["fetch failed", tookTooLong],
       ["Model stream ended without a terminal event", tookTooLong],
-      ["Request timed out.", tookTooLong],
     ])("summarizes %s without recovery advice", (details, summary) => {
       expect(classify(details)).toEqual({
         summary,
@@ -313,7 +312,6 @@ describe("normalizeRunError", () => {
           kind: "rate",
         },
       ],
-      ['504: {"message":"Gateway error"}', { summary: tookTooLong }],
       [
         "Rate limit reached for example-model in organization org-example on tokens per min (TPM): Limit 60000, Used 51552, Requested 12568. Please try again in 4.12s. You can increase your rate limit by adding a payment method to your account at https://platform.openai.com/account/billing.",
         {

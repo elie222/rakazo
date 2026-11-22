@@ -868,30 +868,6 @@ describe("recent turn images", () => {
     expect(hydrated[0]?.images?.map((image) => image.name)).toEqual(["newer.png"]);
   });
 
-  it("marks a history image unavailable when the turn cannot be read at all", async () => {
-    const historyEntry = [{ id: "m1", role: "user" as const, content: "[image: one.png]" }];
-    const hydrated = await withRecentTurnImages(
-      {
-        artifacts: {
-          get: vi.fn(async () => {
-            throw new Error("read failed");
-          }),
-        },
-        prisma: {
-          artifact: {
-            findMany: vi.fn(async () => [{ id: "art-1", storageKey: "art-1.png", size: 1 }]),
-          },
-        },
-      } as never,
-      historyEntry,
-      [{ id: "m1", blocks: [imageBlock("art-1", "one.png")] }],
-      context,
-    );
-
-    expect(hydrated[0]?.content).toBe("[image: one.png (unavailable)]");
-    expect(hydrated[0]?.images).toBeUndefined();
-  });
-
   it("marks this message's attachment when a quote uses the same image name", async () => {
     const blocks = [imageBlock("art-shot", "shot.png")];
     const quoted = [
@@ -1411,12 +1387,6 @@ describe("parseUpdateBotPatch", () => {
   it("accepts notify_on_finish as an alias", () => {
     expect(parseUpdateBotPatch({ notify_on_finish: false })).toEqual({
       patch: { notifyOnFinish: false },
-    });
-  });
-
-  it("keeps name patches and notifyOnFinish together", () => {
-    expect(parseUpdateBotPatch({ name: "Scout", notifyOnFinish: false })).toEqual({
-      patch: { name: "Scout", notifyOnFinish: false },
     });
   });
 

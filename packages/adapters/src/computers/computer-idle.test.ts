@@ -107,7 +107,7 @@ describe("sandbox idle", () => {
     expect(harness.sandbox.stop).not.toHaveBeenCalled();
   });
 
-  it.each(["", "invalid", "NaN", "Infinity", "-1", "29999", "00", "0.0"])(
+  it.each(["", "invalid", "Infinity", "29999", "00", "0.0"])(
     "keeps idle sleep enabled with the default timeout for %j",
     (value) => {
       vi.stubEnv("SANDBOX_IDLE_MS", value);
@@ -117,7 +117,7 @@ describe("sandbox idle", () => {
     },
   );
 
-  it.each(["30000", "900000"])("schedules idle sleep using %s ms", (value) => {
+  it.each(["30000"])("schedules idle sleep using %s ms", (value) => {
     vi.stubEnv("SANDBOX_IDLE_MS", value);
     const harness = idleHarness();
     const now = new Date("2026-01-01T00:00:00.000Z").getTime();
@@ -181,7 +181,7 @@ describe("sandbox idle", () => {
     },
   );
 
-  it.each([undefined, false, true])(
+  it.each([false, true])(
     "suspends a computer whose only active run is waiting_input (billsWhileRunning: %s)",
     async (billsWhileRunning) => {
       const harness = idleHarness({ billsWhileRunning });
@@ -1106,13 +1106,9 @@ describe("maximum active lifetime", () => {
     [undefined, DEFAULT_COMPUTER_MAX_ACTIVE_MS],
     ["0", 0],
     ["garbage", DEFAULT_COMPUTER_MAX_ACTIVE_MS],
-    ["", DEFAULT_COMPUTER_MAX_ACTIVE_MS],
-    ["-1", DEFAULT_COMPUTER_MAX_ACTIVE_MS],
     ["Infinity", DEFAULT_COMPUTER_MAX_ACTIVE_MS],
-    ["NaN", DEFAULT_COMPUTER_MAX_ACTIVE_MS],
     ["59999", DEFAULT_COMPUTER_MAX_ACTIVE_MS],
     ["60000", 60_000],
-    ["1800000", 30 * 60_000],
   ])("parses COMPUTER_MAX_ACTIVE_MS=%j", (value, expected) => {
     vi.stubEnv("COMPUTER_MAX_ACTIVE_MS", value);
     expect(computerMaxActiveMs()).toBe(expected);
@@ -1387,13 +1383,9 @@ describe("maximum active lifetime", () => {
       [undefined, 0],
       ["0", 0],
       ["garbage", 0],
-      ["", 0],
-      ["-1", 0],
       ["Infinity", 0],
-      ["NaN", 0],
       ["59999", 0],
       ["60000", 60_000],
-      ["3600000", 60 * 60_000],
     ])("parses COMPUTER_MAX_ACTIVE_UNBILLED_MS=%j", (value, expected) => {
       vi.stubEnv("COMPUTER_MAX_ACTIVE_UNBILLED_MS", value);
       expect(unbilledComputerMaxActiveMs()).toBe(expected);

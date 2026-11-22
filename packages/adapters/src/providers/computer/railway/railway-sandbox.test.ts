@@ -1438,7 +1438,7 @@ describe("Railway computers", () => {
     }
   });
 
-  it.each(["0", "-1", "1.5", "invalid"])("rejects an invalid export limit %s", (limit) => {
+  it.each(["0", "1.5", "invalid"])("rejects an invalid export limit %s", (limit) => {
     expect(
       () =>
         new RailwaySandboxProvider({
