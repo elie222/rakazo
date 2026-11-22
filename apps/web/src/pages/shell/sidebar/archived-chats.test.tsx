@@ -47,6 +47,20 @@ let root: ReturnType<typeof createRoot>;
 const restoreBot = vi.fn<(input: { botId: string }) => Promise<unknown>>();
 const restoreGroup = vi.fn<(input: { groupId: string }) => Promise<unknown>>();
 const refreshBots = vi.fn<(includeArchived?: boolean) => Promise<void>>();
+const archivedGroup: Group = {
+  id: "fixture-group",
+  spaceId: "fixture-space",
+  name: "Sample group",
+  pinned: false,
+  sectionId: null,
+  archivedAt: "2026-11-01T00:00:00.000Z",
+  members: [],
+  threadId: "fixture-group-thread",
+  preview: "",
+  unread: false,
+  updatedAt: "2026-11-01T00:00:00.000Z",
+  createdAt: "2026-10-31T00:00:00.000Z",
+};
 
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
@@ -73,7 +87,7 @@ async function render() {
     root.render(
       <ArchivedChats
         archivedBots={[{ id: "fixture-bot", name: "Sample bot" } as Bot]}
-        archivedGroups={[{ id: "fixture-group", name: "Sample group", members: [] } as Group]}
+        archivedGroups={[archivedGroup]}
         showSpaceSearch={false}
         rpc={rpc}
         refreshBots={refreshBots}
