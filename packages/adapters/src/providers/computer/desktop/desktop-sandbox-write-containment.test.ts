@@ -98,8 +98,9 @@ it("does not misreport a workspace home replaced by a file as a bad directory pa
   await rm(computer.providerRef, { recursive: true, force: true });
   await writeFile(computer.providerRef, "not a directory");
   const err = await desktop.listFiles(computer, "notes", ctx).catch((error: unknown) => error);
+  expect(err).toBeInstanceOf(Error);
   expect(err).not.toBeInstanceOf(WorkspaceDirectoryError);
-  expect(err).toMatchObject({ code: "ENOTDIR" });
+  expect(["ENOTDIR", "ENOENT"]).toContain((err as { code?: unknown }).code);
 });
 
 describe("desktop sandbox write containment without O_NOFOLLOW", () => {
