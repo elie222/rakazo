@@ -107,6 +107,11 @@ async function render() {
 function size(id: string) {
   return host.querySelector<HTMLSelectElement>(`[data-testid="computer-size-${id}"]`);
 }
+
+function savedSize(id: string) {
+  return client.getQueryData(key)?.computers.find((computer) => computer.id === id)?.savedSize;
+}
+
 async function chooseLarge() {
   const select = size("c1");
   if (!select) throw new Error("Missing team computer size");
@@ -128,7 +133,7 @@ it("keeps a confirmed size when the cloud list cannot refresh", async () => {
   expect(cloudComputers.list).toHaveBeenCalledTimes(2);
   expect(size("c1")?.value).toBe("large");
   expect(size("c2")?.value).toBe("standard");
-  expect(client.getQueryData(key)?.computers[0].savedSize).toBe("large");
+  expect(savedSize("c1")).toBe("large");
   expect(host.querySelector('[role="status"]')?.textContent).toBe("Applies on its next start.");
   expect(host.querySelector('[role="alert"]')).toBeNull();
 });
@@ -147,7 +152,10 @@ it("leaves the previous size and shows the error when the save fails", async () 
 });
 
 it("uses a successful refresh as the source of truth", async () => {
-  const refreshed: CloudComputers = { ...cloud, computers: [cloud.computers[1]] };
+  const refreshed: CloudComputers = {
+    ...cloud,
+    computers: cloud.computers.filter((computer) => computer.id !== "c1"),
+  };
   cloudComputers.list.mockResolvedValueOnce(cloud).mockResolvedValue(refreshed);
   cloudComputers.setSize.mockResolvedValue({ ok: true });
   await render();
@@ -175,6 +183,6 @@ it("keeps the effective size allowed by a newer list while remembering the confi
 
   expect(cloudComputers.list).toHaveBeenCalledTimes(3);
   expect(client.getQueryData(key)?.available).toEqual(["standard"]);
-  expect(client.getQueryData(key)?.computers[0].savedSize).toBe("large");
+  expect(savedSize("c1")).toBe("large");
   expect(size("c1")?.value).toBe("standard");
 });

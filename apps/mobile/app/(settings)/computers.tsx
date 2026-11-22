@@ -1,7 +1,12 @@
 import { MenuView } from "@expo/ui/community/menu";
 import { useLingui } from "@lingui/react/macro";
 import type { CloudComputers, ComputerSize, UserDeviceSummary } from "@rakazo/contracts";
-import { ComputerSizeSchema, computerSizeChoice } from "@rakazo/contracts";
+import {
+  applySavedCloudComputerSize,
+  ComputerSizeSchema,
+  computerSizeChoice,
+} from "@rakazo/contracts";
+import { writeSaved } from "@rakazo/core/query";
 import { computerName, computerSizeLabel } from "@rakazo/i18n/computer-usage";
 import { useRouter } from "expo-router";
 import { useState } from "react";
@@ -56,23 +61,9 @@ export default function ComputersSettings() {
     stale: [cloudRead.queryKey],
     save: async ({ computerId, size }: { computerId: string; size: ComputerSize }, send) => {
       const saved = await send("cloudComputers/setSize", { computerId, size });
-      // Keep the confirmed choice if the next read fails, not a list fetched before the save.
-      await queryClient.cancelQueries({ queryKey: cloudRead.queryKey, exact: true });
-      queryClient.setQueryData(cloudRead.queryKey, (listed) => {
-        if (!listed?.computers.some((computer) => computer.id === computerId)) return;
-        return {
-          ...listed,
-          computers: listed.computers.map((computer) =>
-            computer.id === computerId
-              ? {
-                  ...computer,
-                  size: listed.available.includes(size) ? size : computer.size,
-                  savedSize: size,
-                }
-              : computer,
-          ),
-        };
-      });
+      await writeSaved(queryClient, cloudRead.queryKey, (listed) =>
+        applySavedCloudComputerSize(listed, computerId, size),
+      );
       return saved;
     },
     onSaved: (_saved, { computerId }) => setResized(computerId),

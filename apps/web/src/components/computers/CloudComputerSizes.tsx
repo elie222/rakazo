@@ -1,6 +1,11 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { CloudComputers, ComputerSize } from "@rakazo/contracts";
-import { ComputerSizeSchema, computerSizeChoice } from "@rakazo/contracts";
+import {
+  applySavedCloudComputerSize,
+  ComputerSizeSchema,
+  computerSizeChoice,
+} from "@rakazo/contracts";
+import { writeSaved } from "@rakazo/core/query";
 import { computerName, computerSizeLabel } from "@rakazo/i18n/computer-usage";
 import { Button, OptionSelect } from "@rakazo/ui-web";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -76,23 +81,9 @@ function CloudComputerRow({
     stale: [queries.cloudComputers.list.key()],
     save: async (size: ComputerSize, rpc) => {
       const saved = await rpc.cloudComputers.setSize({ computerId: computer.id, size });
-      // Keep the confirmed choice if the next read fails, not a list fetched before the save.
-      await queryClient.cancelQueries({ queryKey: cloudKey, exact: true });
-      queryClient.setQueryData(cloudKey, (listed) => {
-        if (!listed?.computers.some((entry) => entry.id === computer.id)) return;
-        return {
-          ...listed,
-          computers: listed.computers.map((entry) =>
-            entry.id === computer.id
-              ? {
-                  ...entry,
-                  size: listed.available.includes(size) ? size : entry.size,
-                  savedSize: size,
-                }
-              : entry,
-          ),
-        };
-      });
+      await writeSaved(queryClient, cloudKey, (listed) =>
+        applySavedCloudComputerSize(listed, computer.id, size),
+      );
       return saved;
     },
     onSaved: () => setChanged(true),
