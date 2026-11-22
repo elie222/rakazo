@@ -61,6 +61,7 @@ export async function createReplyState(
     assistantTurnText: "",
     midTurnUserTexts: [],
     midTurnProgressCount: 0,
+    openingPosted: false,
     turnStartedAtMs: run.startedAt?.getTime() ?? Date.now(),
     progressBudgetStart: 0,
     steeringReplyPending: false,
@@ -129,7 +130,8 @@ export function canPostLongTaskHeadsUp(ctx: RunContext) {
   const { reply } = ctx.state;
   return (
     reply.computerTaskStarted &&
-    reply.midTurnProgressCount === 0 &&
+    // The opening sentence only says the bot is on it; the heads-up still has its place.
+    reply.midTurnProgressCount - (reply.openingPosted ? 1 : 0) === 0 &&
     isConversationalRun(ctx.run.trigger) &&
     !runAllowsSilentEmpty(ctx.run.trigger)
   );
@@ -299,6 +301,8 @@ export function isOpeningAcknowledgement(ctx: RunContext, openingText: boolean, 
     openingText &&
     text.length <= OPENING_ACKNOWLEDGEMENT_MAX_LENGTH &&
     !text.includes("\n") &&
+    // One sentence: anything more waits for the interim-message rules like other narration.
+    !/[.!?。！？]\s+\S/u.test(text.trim()) &&
     openingAcknowledgementEnabled() &&
     narrationBecomesMessages(ctx) &&
     isConversationalRun(ctx.run.trigger) &&
@@ -342,6 +346,7 @@ export async function publishMidTurnNarration(ctx: RunContext, beforeConnectCard
       isOpeningAcknowledgement(ctx, openingText, text) ||
       (beforeConnectCard && narrationBecomesMessages(ctx)))
   ) {
+    if (isOpeningAcknowledgement(ctx, openingText, text)) reply.openingPosted = true;
     reply.workingNotes.length = 0;
     reply.narrationStatusShowing = false;
     await publishInterimMessage(ctx, text);
@@ -393,7 +398,14 @@ export async function publishNarrationBeforeAsk(ctx: RunContext) {
 export async function showNarrationStatus(
   ctx: RunContext,
   note: string | undefined,
-  { keepLine = false }: { keepLine?: boolean } = {},
+  {
+    keepLine = false,
+    asWritten = false,
+  }: {
+    keepLine?: boolean;
+    /** An update the bot sent to the person, which shows as written even when it narrates live. */
+    asWritten?: boolean;
+  } = {},
 ) {
   const { deps, run, runId, bot, thread } = ctx;
   if (
@@ -412,15 +424,17 @@ export async function showNarrationStatus(
     replyMode: ctx.replyMode,
     maySayNothing: ctx.groupReplyOptional || ctx.allowSilentEmptyRun,
   });
+  // A status still being worded must not land over the bot's own update.
+  if (asWritten) await ctx.statusLive?.supersede();
   let shown: string;
-  if (!live) shown = narrationStatusLine(note);
+  if (!live || asWritten) shown = narrationStatusLine(note);
   // The step brought the model's own status: it stays the line.
   else if (keepLine) shown = ctx.state.reply.lastActivityLine ?? "";
   // A status model is already wording this step; the raw line never shows and its request stays.
   else if (ctx.statusLive?.active()) shown = "";
   // Otherwise the step's own line comes back until a status replaces it.
   else shown = ctx.state.reply.lastActivityLine ?? "";
-  ctx.state.reply.narrationStatusShowing = !live && Boolean(shown);
+  ctx.state.reply.narrationStatusShowing = (!live || asWritten) && Boolean(shown);
   await deps.events.append({
     spaceId: run.spaceId,
     threadId: thread.id,

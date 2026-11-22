@@ -2418,6 +2418,42 @@ describe("live narration (RAKAZO_OPENING_ACKNOWLEDGEMENT=1)", () => {
       )
       .map((event) => (event.payload as { text: string }).text);
 
+  it("posts only a single opening sentence at once", async () => {
+    const { messages } = await runTurn("Done.", false, "I'll check. Give me a moment.");
+    expect(sentTexts(messages)).toEqual([]);
+  });
+
+  it("shows a message_user update it can't post yet as the working line", async () => {
+    const { append, messages } = await runTurn("", false, undefined, [], "fyi", {
+      runtime: async function* (request) {
+        await request.executeTool!("message_user", { message: "On it, checking now." }, "call-1");
+        yield { type: "text", text: "Done." };
+        yield { type: "done", text: "" };
+      },
+    });
+    expect(sentTexts(messages)).toEqual([]);
+    expect(statuses(append)).toContain("On it, checking now.");
+  });
+
+  it("still lets a browser task send its heads-up after the opening sentence", async () => {
+    const { messages } = await runTurn("", false, undefined, [], "fyi", {
+      graphical: true,
+      runtime: async function* (request) {
+        yield { type: "text", text: "I'll look it up." };
+        yield { type: "tool", name: "browser_snapshot", args: {}, executionId: "call-0" };
+        await request.executeTool!("browser_snapshot", {}, "call-0").catch(() => undefined);
+        await request.executeTool!(
+          "message_user",
+          { message: "This will take a few minutes." },
+          "call-1",
+        );
+        yield { type: "text", text: "Done." };
+        yield { type: "done", text: "" };
+      },
+    });
+    expect(sentTexts(messages)).toEqual(["I'll look it up.", "This will take a few minutes."]);
+  });
+
   it("posts the opening sentence at once on a fresh turn", async () => {
     const { finalizeRun, messages } = await runTurn("Checked: all clear.", false);
     expect(sentTexts(messages)).toEqual(["I will check that."]);
