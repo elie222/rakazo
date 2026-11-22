@@ -191,7 +191,7 @@ describe("resolveModelChoice", () => {
 });
 
 /** A custom server connection the user named, serving two ids it lists itself. */
-function customServer() {
+function customServer(load: () => Promise<string> = async () => secret) {
   const credential = {
     id: "cred-custom",
     provider: "openai-compatible",
@@ -208,20 +208,21 @@ function customServer() {
       },
     ],
   };
-  const secret = JSON.stringify({
-    kind: "openai_compatible",
-    baseUrl: "http://models.example.test/v1",
-    enabledModelIds: ["local-llama", "local-qwen"],
-  });
   const prisma = {
     userModelCredential: { findMany: vi.fn(async () => [credential]) },
     secret: { findMany: vi.fn(async () => [{ id: "secret-custom", ciphertext: "fake" }]) },
   };
   return {
     prisma: prisma as unknown as PrismaClient,
-    secretStore: { load: async () => secret },
+    secretStore: { load },
   };
 }
+
+const secret = JSON.stringify({
+  kind: "openai_compatible",
+  baseUrl: "http://models.example.test/v1",
+  enabledModelIds: ["local-llama", "local-qwen"],
+});
 
 describe("custom server models", () => {
   it("lists the ids a custom connection serves under its own name", async () => {
@@ -239,6 +240,24 @@ describe("custom server models", () => {
         label: "local-qwen",
       },
     ]);
+  });
+
+  it("lists nothing from a connection whose secret cannot be read", async () => {
+    const unreadable = customServer(async () => {
+      throw new Error("bad ciphertext");
+    });
+    expect(await connectedModelChoices(unreadable, scope)).toEqual([]);
+  });
+
+  it("skips a provider the deployment does not allow without loading its secret", async () => {
+    vi.stubEnv("RAKAZO_MODEL_PROVIDER_ALLOWLIST", "anthropic");
+    const load = vi.fn(async () => secret);
+    try {
+      expect(await connectedModelChoices(customServer(load), scope)).toEqual([]);
+      expect(load).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 
   it("resolves a custom model by its id alone, as a catalog model is", async () => {

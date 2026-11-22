@@ -5,7 +5,6 @@ import { listAvailablePiCatalog } from "../runtime/pi/models/pi-catalog-availabi
 import type { PiCatalogEntry } from "../runtime/pi/models/pi-models.js";
 import { listPiCatalog, offeredCatalog } from "../runtime/pi/models/pi-models.js";
 import { listModelCredentials } from "./model-credential-list.js";
-import { modelProviderAllowed, modelProviderAllowlist } from "./model-provider-allowlist.js";
 import type { BotModelChangeDeps } from "./model-selection.js";
 import { modelCredentialAuthKindsForSpace, spaceCanRunCatalogModel } from "./model-selection.js";
 
@@ -34,7 +33,7 @@ export async function connectedModelChoices(
 ): Promise<ModelChoice[]> {
   const [auth, credentials] = await Promise.all([
     modelCredentialAuthKindsForSpace(deps.prisma, deps.secretStore, scope, deps.hostedProvider),
-    listModelCredentials(deps, scope),
+    listModelCredentials(deps, scope, { runnable: true }),
   ]);
   const catalog = offeredCatalog(listAvailablePiCatalog(auth.byProvider, auth.byModel)).filter(
     (entry) => {
@@ -50,11 +49,7 @@ export async function connectedModelChoices(
       .filter((entry) => !entry.placeholder)
       .map(choiceKey),
   );
-  const allowlist = modelProviderAllowlist();
-  const own = pickerModelChoices(
-    credentials.filter((credential) => modelProviderAllowed(allowlist, credential.provider)),
-    listPiCatalog(),
-  )
+  const own = pickerModelChoices(credentials, listPiCatalog())
     .filter((choice) => !bundled.has(`${choice.provider}/${choice.modelId}`))
     .map((choice) => ({
       provider: choice.provider,
