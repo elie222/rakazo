@@ -1,4 +1,4 @@
-import { useId, useLayoutEffect, useRef, useState } from "react";
+import { useId } from "react";
 import { objectItems } from "./items.js";
 import { useWords } from "./labels.js";
 
@@ -21,26 +21,9 @@ const MIN_WIDTH = 88;
 const MAX_WIDTH = 208;
 const NODE_GAP = 24;
 const LOOP_ROOM = 36;
-const VIEWBOX_PAD = 2;
-const LABEL_TYPOGRAPHY = [
-  "font-family",
-  "font-size",
-  "font-stretch",
-  "font-style",
-  "font-weight",
-  "font-variant",
-  "font-feature-settings",
-  "font-variation-settings",
-  "font-kerning",
-  "font-optical-sizing",
-  "font-size-adjust",
-  "font-synthesis",
-  "letter-spacing",
-  "word-spacing",
-  "text-transform",
-  "text-rendering",
-  "white-space",
-];
+// Edge labels are 12px with a 5px outline, so half the outline shows past each end.
+const EDGE_LABEL_CHAR = 6.7;
+const EDGE_LABEL_OUTLINE = 2.5;
 /** Node accents for `series` 0 to 4, in chart colour order. */
 const SERIES_COLORS = ["--rk-c1", "--rk-c2", "--rk-c3", "--rk-c4", "--rk-c5"];
 
@@ -253,6 +236,8 @@ export function Diagram({
   edges?: DiagramEdge[];
   direction?: "horizontal" | "vertical";
 }) {
+  const arrow = `rk-arrow-${useId().replace(/[^a-zA-Z0-9]/g, "")}`;
+  const words = useWords();
   const horizontal = direction === "horizontal";
   const links = objectItems(edges);
   const layout = layoutDiagram(
@@ -262,87 +247,43 @@ export function Diagram({
     links.some((edge) => edge.label),
   );
   if (!layout.nodes.length) return null;
-
-  // Rebuild on graph renders, but keep the SVG's measured padding local to the view.
-  return <DiagramSvg layout={layout} horizontal={horizontal} />;
-}
-
-function DiagramSvg({
-  layout,
-  horizontal,
-}: {
-  layout: ReturnType<typeof layoutDiagram>;
-  horizontal: boolean;
-}) {
-  const arrow = `rk-arrow-${useId().replace(/[^a-zA-Z0-9]/g, "")}`;
-  const words = useWords();
-  const svgRef = useRef<SVGSVGElement>(null);
-  const [labelOverflow, setLabelOverflow] = useState({ left: 0, right: 0 });
-  const measureLabels = !horizontal && layout.edges.some(({ edge }) => edge.label);
-
-  useLayoutEffect(() => {
-    const svg = svgRef.current;
-    if (!measureLabels || !svg) return;
-    const labels = svg.querySelectorAll<SVGTextElement>(".rk-diagram-edge-label");
-    const isVisible = () => svg.getClientRects().length > 0;
-    const measure = () => {
-      if (!isVisible()) return;
-      let left = -VIEWBOX_PAD;
-      let right = layout.width + VIEWBOX_PAD;
-      // The SVG box excludes the 5px paint stroke. Round out to keep that outline visible too.
-      for (const label of labels) {
-        const box = label.getBBox?.();
-        if (!box?.width) continue;
-        left = Math.min(left, Math.floor(box.x - 2.5));
-        right = Math.max(right, Math.ceil(box.x + box.width + 2.5));
-      }
-      const extraLeft = -VIEWBOX_PAD - left;
-      const extraRight = right - layout.width - VIEWBOX_PAD;
-      setLabelOverflow((current) =>
-        current.left === extraLeft && current.right === extraRight
-          ? current
-          : { left: extraLeft, right: extraRight },
-      );
-    };
-    measure();
-    const scroller = svg.parentElement;
-    // Every edge label uses the same inherited typography. Read it once per observer batch.
-    const readTypography = () => {
-      const label = labels[0];
-      const style = label && svg.ownerDocument.defaultView?.getComputedStyle(label);
-      return style
-        ? LABEL_TYPOGRAPHY.map((property) => style.getPropertyValue(property)).join("\0")
-        : "";
-    };
-    let wasVisible = isVisible();
-    let typography = readTypography();
-    const onResize = (entries: ResizeObserverEntry[]) => {
-      const visible = isVisible();
-      if (visible && (!wasVisible || entries.some(({ target }) => target !== scroller))) {
-        const next = readTypography();
-        // Even local SVG text bounds can round differently after a viewBox or viewport change.
-        // Only a reveal or typography change may invalidate the measured padding here.
-        if (!wasVisible || next !== typography) measure();
-        typography = next;
-      }
-      wasVisible = visible;
-    };
-    const observer =
-      typeof ResizeObserver === "undefined" ? undefined : new ResizeObserver(onResize);
-    if (observer) {
-      if (scroller) observer.observe(scroller);
-      for (const label of labels) observer.observe(label);
+  const pad = 2;
+  const drawn = layout.edges.map(({ edge, from, to, backward }) => {
+    let points: [Point, Point, Point, Point];
+    if (!backward && horizontal) {
+      const a: Point = [from.x + from.width, from.y + from.height / 2];
+      const d: Point = [to.x, to.y + to.height / 2];
+      const bend = (d[0] - a[0]) / 2;
+      points = [a, [a[0] + bend, a[1]], [d[0] - bend, d[1]], d];
+    } else if (!backward) {
+      const a: Point = [from.x + from.width / 2, from.y + from.height];
+      const d: Point = [to.x + to.width / 2, to.y];
+      const bend = (d[1] - a[1]) / 2;
+      points = [a, [a[0], a[1] + bend], [d[0], d[1] - bend], d];
+    } else if (horizontal) {
+      // Edges that loop back run under the nodes they join.
+      const a: Point = [from.x + from.width / 2, from.y + from.height];
+      const d: Point = [to.x + to.width / 2, to.y + to.height];
+      const low = Math.max(a[1], d[1]) + LOOP_ROOM - 6;
+      points = [a, [a[0], low], [d[0], low], d];
+    } else {
+      const a: Point = [from.x + from.width, from.y + from.height / 2];
+      const d: Point = [to.x + to.width, to.y + to.height / 2];
+      const right = Math.max(a[0], d[0]) + LOOP_ROOM - 6;
+      points = [a, [right, a[1]], [right, d[1]], d];
     }
-    const fonts = svg.ownerDocument.fonts;
-    fonts?.addEventListener("loadingdone", measure);
-    return () => {
-      observer?.disconnect();
-      fonts?.removeEventListener("loadingdone", measure);
-    };
-  }, [layout, measureLabels]);
-
-  const overflow = measureLabels ? labelOverflow : { left: 0, right: 0 };
-  const width = layout.width + VIEWBOX_PAD * 2 + overflow.left + overflow.right;
+    return { edge, points, label: mid(...points) };
+  });
+  // A long edge label can reach past the nodes, so the view widens to keep it on screen.
+  let minX = -pad;
+  let maxX = layout.width + pad;
+  for (const { edge, label } of drawn) {
+    if (!edge.label) continue;
+    const half = (textWidth(edge.label) * EDGE_LABEL_CHAR) / 2 + EDGE_LABEL_OUTLINE;
+    minX = Math.min(minX, Math.floor(label[0] - half));
+    maxX = Math.max(maxX, Math.ceil(label[0] + half));
+  }
+  const width = maxX - minX;
   const name = (id: string) => layout.nodes.find((node) => node.id === id)?.label ?? id;
   const description = [
     layout.nodes.map((node) => node.label).join(", "),
@@ -357,9 +298,8 @@ function DiagramSvg({
   return (
     <div className="rk-diagram">
       <svg
-        ref={svgRef}
         role="img"
-        viewBox={`${-VIEWBOX_PAD - overflow.left} ${-VIEWBOX_PAD} ${width} ${layout.height + VIEWBOX_PAD * 2}`}
+        viewBox={`${minX} ${-pad} ${width} ${layout.height + pad * 2}`}
         // Below 85% its text gets too small to read, so a narrow column scrolls it instead.
         style={{
           maxWidth: width,
@@ -380,32 +320,8 @@ function DiagramSvg({
             <path className="rk-diagram-arrow" d="M1 1L9 5L1 9" />
           </marker>
         </defs>
-        {layout.edges.map(({ edge, from, to, backward }, index) => {
-          let points: [Point, Point, Point, Point];
-          if (!backward && horizontal) {
-            const a: Point = [from.x + from.width, from.y + from.height / 2];
-            const d: Point = [to.x, to.y + to.height / 2];
-            const bend = (d[0] - a[0]) / 2;
-            points = [a, [a[0] + bend, a[1]], [d[0] - bend, d[1]], d];
-          } else if (!backward) {
-            const a: Point = [from.x + from.width / 2, from.y + from.height];
-            const d: Point = [to.x + to.width / 2, to.y];
-            const bend = (d[1] - a[1]) / 2;
-            points = [a, [a[0], a[1] + bend], [d[0], d[1] - bend], d];
-          } else if (horizontal) {
-            // Edges that loop back run under the nodes they join.
-            const a: Point = [from.x + from.width / 2, from.y + from.height];
-            const d: Point = [to.x + to.width / 2, to.y + to.height];
-            const low = Math.max(a[1], d[1]) + LOOP_ROOM - 6;
-            points = [a, [a[0], low], [d[0], low], d];
-          } else {
-            const a: Point = [from.x + from.width, from.y + from.height / 2];
-            const d: Point = [to.x + to.width, to.y + to.height / 2];
-            const right = Math.max(a[0], d[0]) + LOOP_ROOM - 6;
-            points = [a, [right, a[1]], [right, d[1]], d];
-          }
+        {drawn.map(({ edge, points, label }, index) => {
           const [a, b, c, d] = points;
-          const label = mid(a, b, c, d);
           return (
             <g key={index}>
               <path
