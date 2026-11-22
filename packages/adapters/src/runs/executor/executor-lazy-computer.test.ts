@@ -10,6 +10,7 @@ import { COMPUTER_DAMAGED_ERROR, COMPUTER_START_FAILED_ERROR } from "@rakazo/con
 import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type * as ComputerLifecycleModule from "../../computers/computer-lifecycle.js";
+import { ComputerBusyError } from "../../computers/computer-lifecycle.js";
 import { ComputerWaitTimedOutError } from "../../computers/run-computer-wait.js";
 import { VaultKeyUnavailableError } from "../../secrets/bot-secrets.js";
 import * as runMessages from "../assembly/run-messages.js";
@@ -643,6 +644,20 @@ describe("run computer provisioning", () => {
     expect(sink.events).not.toContainEqual(
       expect.objectContaining({ message: "run.setup_failed" }),
     );
+  });
+
+  it("waits out a busy computer inside the tool call instead of failing and replaying the run", async () => {
+    provisionComputer.mockRejectedValueOnce(new ComputerBusyError()).mockResolvedValue(COMPUTER);
+
+    const { finalizeRun, enqueue, runtimeRun, toolResults } = await runRoutine([
+      { name: "list_files", args: { path: "" } },
+    ]);
+
+    expect(provisionComputer).toHaveBeenCalledTimes(2);
+    expect(runtimeRun).toHaveBeenCalledOnce();
+    expect(toolResults).toHaveLength(1);
+    expect(finalizeRun).toHaveBeenCalledWith(expect.objectContaining({ outcome: "completed" }));
+    expect(continueJobs(enqueue)).toEqual([]);
   });
 
   it("keeps setup-failure retry semantics when the computer cannot start", async () => {

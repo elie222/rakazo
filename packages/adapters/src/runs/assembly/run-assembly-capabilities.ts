@@ -20,12 +20,15 @@ import { USER_CLOUD_AGENT_KEY_PREFIX } from "../../cloud-agents/cloud-agent-fact
 import { diskNoteInstruction, recordComputerDisk } from "../../computers/computer-disk.js";
 import { scheduleComputerSleep } from "../../computers/computer-idle.js";
 import {
+  ComputerBusyError,
+  ComputerSpaceDeletingError,
   provisionComputer,
   screenLeaseIdForRun,
   waitForRunComputerLease,
 } from "../../computers/computer-lifecycle.js";
 import { resolveComputerRunModel } from "../../computers/computer-model-settings.js";
 import { checkpointRunComputerWorkspace } from "../../computers/computer-workspace.js";
+import { startComputerWaitingOutBusy } from "../../computers/run-computer-wait.js";
 import { sandboxKindCapabilities } from "../../computers/sandbox/sandbox-kind-capabilities.js";
 import { teamWorkspaceInstruction } from "../../computers/screens/computer-support.prompt.js";
 import { approvedModelCreditOffering } from "../../model-credits/offerings.js";
@@ -282,7 +285,13 @@ export async function prepareRunComputer(
         context.screenLeaseId = screenLeaseIdForRun(hold.computerLease, runId, hold.fence);
       }
       getLogger().info("computer.requested");
-      const computer = await provisionComputer(deps, storedComputer.id, context, "bot");
+      // A busy computer is waited out here, bounded, instead of failing the run and replaying it.
+      const computer = await startComputerWaitingOutBusy(
+        () => provisionComputer(deps, storedComputer.id, context, "bot"),
+        (error) =>
+          error instanceof ComputerBusyError && !(error instanceof ComputerSpaceDeletingError),
+        context.signal,
+      );
       earlierFiles.computerStarted();
       computerUse.screenRelease = { computer, context, keepWarm: false };
       recordComputerDisk(deps, storedComputer.id, computer, context);
