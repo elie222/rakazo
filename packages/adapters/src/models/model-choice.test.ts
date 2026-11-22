@@ -7,6 +7,8 @@ import {
   resolveModelChoice,
   words,
 } from "./model-choice.js";
+import { listModelCredentials } from "./model-credential-list.js";
+import { serializeModelSecret } from "./model-secret.js";
 
 const choice = (provider: string, providerName: string, id: string, label: string) => ({
   provider,
@@ -191,10 +193,13 @@ describe("resolveModelChoice", () => {
 });
 
 /** A custom server connection the user named, serving two ids it lists itself. */
-function customServer(load: () => Promise<string> = async () => secret) {
+function customServer(
+  load: () => Promise<string> = async () => secret,
+  provider = "openai-compatible",
+) {
   const credential = {
     id: "cred-custom",
-    provider: "openai-compatible",
+    provider,
     label: "Home server",
     secretId: "secret-custom",
     createdAt: new Date(0),
@@ -247,6 +252,15 @@ describe("custom server models", () => {
       throw new Error("bad ciphertext");
     });
     expect(await connectedModelChoices(unreadable, scope)).toEqual([]);
+  });
+
+  it("leaves out a connection that must be signed in again, though settings still show it", async () => {
+    const deps = customServer(
+      async () => serializeModelSecret({ kind: "oauth", reconnectRequired: true }),
+      "anthropic",
+    );
+    expect(await listModelCredentials(deps, scope, { runnable: true })).toEqual([]);
+    expect(await listModelCredentials(deps, scope)).toMatchObject([{ reconnectRequired: true }]);
   });
 
   it("skips a provider the deployment does not allow without loading its secret", async () => {

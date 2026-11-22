@@ -95,5 +95,8 @@ export async function listModelCredentials(
       }
     }),
   );
-  return listed.filter((credential) => credential !== null);
+  // A connection waiting to be signed in again cannot run anything until it is.
+  return listed.filter(
+    (credential) => credential !== null && !(runnable && credential.reconnectRequired),
+  );
 }
