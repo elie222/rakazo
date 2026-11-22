@@ -78,9 +78,11 @@ EMAIL_EMULATOR=true
 
 `NODE_ENV=production` 时模拟器被强制禁用，且要求 API 绑定回环地址。在 `NODE_ENV=development` 中，禁用缓存后可从 `http://127.0.0.1:3100/api/dev/emails` 查看捕获邮件；API 只记录投递元数据，不记录重置令牌。测试、预发布和生产环境不会注册收件箱路由。
 
-设置 `WELCOME_EMAIL_ENABLED=true` 后，每个新账号首次登录会收到一封带退订链接的欢迎邮件。它需要上述任一提供商。
+Rakazo 还可以发送带退订链接的产品邮件：新账号首次登录后的欢迎邮件、开启计费推荐时的推荐邮件，以及配置计费后在套餐开始后发送的提醒。本仓库不包含这些邮件的文案，因此只有在你提供对应文案（并配置上述任一提供商）时，每封邮件才会发送。
 
-配置计费后，同一开关还会在套餐开始一天后，向仍未连接模型的组织拥有者发送一封提醒邮件。该提醒由 worker 排队并发送，因此 worker 必须使用与 API 相同的邮件设置（包括这个开关；Compose 文件已经这样做）；没有这些设置的 worker 会丢弃提醒。
+文案是一个文件夹，每封邮件一个 `<email>.json` 文件（`welcome`、`referral`、`model-connection`、`agent-import`），把每种应用语言映射到该邮件各个键的字符串。每个字符串必须恰好使用 `packages/auth/src/email-copy/email-keys.ts` 为该键列出的 `{placeholders}`。只有当文件的英文（`en`）为每个键都提供了有效字符串时，该邮件才会发送；其他语言缺失或无效的字符串会回退到该英文。启动时，API 和 worker 会记录每封被关闭的邮件及原因。
+
+应用从 `EMAIL_COPY_DIR`（镜像中为 `/app/email-copy`）读取该文件夹，因此请为 `api` 和 `worker` 服务挂载它，或把 `EMAIL_COPY_DIR` 指向它。`node packages/auth/scripts/check-email-copy.ts <dir>` 会检查一个文件夹。
 
 ## 密码策略
 
@@ -193,7 +195,7 @@ docker compose --env-file .env -f docker-compose.images.yml exec api \
 
 当 `WEB_ORIGIN` 是 HTTPS 域名（或开发环境的 `localhost`）时，通行密钥自动开启；依赖方是该 origin 的主机，因此 `WEB_ORIGIN` 必须保持同一域名，已有通行密钥才能继续使用。SSO-only 部署关闭密码登录时，通行密钥也关闭。网页上，拥有平台认证器的浏览器会提示使用。macOS 桌面应用使用系统通行密钥面板，它只服务发布版本关联的域名（`app.rakazo.com`），因此对其他服务器会隐藏通行密钥。
 
-原生应用只有在域名为它背书且应用为该域名构建时，才能使用该域名的通行密钥。iOS 应用的关联域名来自构建时的 `EXPO_PUBLIC_API_URL`。macOS 桌面构建来自 `RAKAZO_PASSKEY_RP_ID`（默认 `app.rakazo.com`）：`pnpm build` 和 `scripts/passkey-entitlements.ts` 都要设置为同一域名，然后用该脚本输出作为 electron-builder 的 `-c.mac.entitlements`，并用带 Associated Domains 能力的 App ID profile 作为 `-c.mac.provisioningProfile`，与发布流程相同。缺少任一项，macOS 都会忽略关联，应用会隐藏通行密钥。当 Apple CDN 无法访问服务器（私网或 Tailscale 等 VPN）时，任一构建还要设置 `RAKAZO_PASSKEY_DEVELOPER_MODE=1`：开发签名应用会自行获取关联文件，前提是开启关联域名开发者模式（iOS 在 Settings > Developer，macOS 运行 `sudo swcutil developer-mode -e true`，且应用必须位于 `/Applications`）。要让构建使用这个服务器的通行密钥，请设置：
+原生应用只有在域名为它背书且应用为该域名构建时，才能使用该域名的通行密钥。iOS 应用的关联域名来自构建时的 `EXPO_PUBLIC_API_URL`。macOS 桌面构建来自 `RAKAZO_PASSKEY_RP_ID`（默认 `app.rakazo.com`）：`pnpm build` 和 `apps/desktop/scripts/passkey-entitlements.ts` 都要设置为同一域名，然后用该脚本输出作为 electron-builder 的 `-c.mac.entitlements`，并用带 Associated Domains 能力的 App ID profile 作为 `-c.mac.provisioningProfile`，与发布流程相同。缺少任一项，macOS 都会忽略关联，应用会隐藏通行密钥。当 Apple CDN 无法访问服务器（私网或 Tailscale 等 VPN）时，任一构建还要设置 `RAKAZO_PASSKEY_DEVELOPER_MODE=1`：开发签名应用会自行获取关联文件，前提是开启关联域名开发者模式（iOS 在 Settings > Developer，macOS 运行 `sudo swcutil developer-mode -e true`，且应用必须位于 `/Applications`）。要让构建使用这个服务器的通行密钥，请设置：
 
 ```bash
 # iOS 和 macOS 桌面应用（dev.rakazo.desktop）：<Apple Team ID>.<bundle id>，逗号分隔。

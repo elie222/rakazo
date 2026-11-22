@@ -5,46 +5,34 @@ import type {
   Connection,
   ConnectionCatalogItem,
   McpServer,
-  McpServerConnection,
   McpSourcePreset,
   PluginMarketplaceEntry,
 } from "@rakazo/contracts";
-import { mcpServerConnection, mcpServerNeedsSignIn, SUBMIT_PLUGIN_URL } from "@rakazo/contracts";
-import type { PluginCategory } from "@rakazo/core";
+import { SUBMIT_PLUGIN_URL } from "@rakazo/contracts";
 import {
+  browsablePlugins,
   buildFeaturedConnectorTiles,
   CONNECTION_CATALOG_PAGE_SIZE,
   catalogItemAccounts,
   catalogItemKey,
-  connectCatalogItem,
-  customMcpServerInput,
   filterConnectionCatalogItems,
+  filterPluginBrands,
+  filterPlugins,
   integrationCatalogsReady,
   isCatalogItemConnected,
   matchesWordPrefixes,
-  OTHER_PLUGINS,
+  pluginBrands,
+  pluginCategories,
 } from "@rakazo/core";
+import { pluginCategoryLabel } from "@rakazo/i18n/plugin-catalog";
 import type { NativeStackNavigationOptions } from "expo-router";
 import { useFocusEffect, useLocalSearchParams, useNavigation, useRouter } from "expo-router";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import {
-  Alert,
-  Linking,
-  Pressable,
-  ScrollView,
-  Text,
-  TextInput,
-  useWindowDimensions,
-  View,
-} from "react-native";
+import { Pressable, ScrollView, Text, TextInput, useWindowDimensions, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { BotTemplateIcon } from "../../components/bots/bot-template-icon";
-import type {
-  AddCustomOption,
-  SourceAuth,
-  SourceKind,
-} from "../../components/integrations/add-custom-integration";
 import { AddCustomForm, AddCustomMenu } from "../../components/integrations/add-custom-integration";
+import { ConnectedApps, SavedServerRow } from "../../components/integrations/connected-apps";
 import { ConnectorIcon } from "../../components/integrations/connector-icon";
 import { IntegrationCatalogSearch } from "../../components/integrations/integration-catalog-search";
 import type { ConnectionTool } from "../../components/integrations/integration-detail";
@@ -54,14 +42,13 @@ import {
   createIntegrationsStyles,
   LOGO_SIZE,
 } from "../../components/integrations/integrations-styles";
-import { PluginIcon } from "../../components/integrations/plugin-icon";
+import { useConnectionActions } from "../../components/integrations/use-connection-actions";
+import { useCustomSourceForm } from "../../components/integrations/use-custom-source-form";
 import { NativeActionButton } from "../../components/native/native-action-button";
-import { NativeSymbol } from "../../components/native/native-symbol";
 import { MenuPicker } from "../../components/ui/menu-picker";
 import { Chevron } from "../../components/ui/row-accessories";
 import { rpc } from "../../lib/api/api";
 import { errorText } from "../../lib/api/user-error";
-import { mobileTokens } from "../../lib/appearance/appearance";
 import { loadLastBotId } from "../../lib/inbox/last-bot";
 import type {
   IntegrationsCacheScope,
@@ -74,20 +61,17 @@ import {
   readIntegrationsCache,
   writeIntegrationsCache,
 } from "../../lib/integrations/integrations-cache";
-import { signInToMcpServer } from "../../lib/integrations/mcp-oauth";
 import type { PluginParams } from "../../lib/integrations/plugin-marketplace";
 import {
-  browsablePlugins,
-  filterPlugins,
   gitImportParams,
   hasPluginConnector,
   managedPluginParams,
-  pluginCategories,
   pluginParams,
 } from "../../lib/integrations/plugin-marketplace";
 import { useSideInsets } from "../../lib/layout/side-insets";
 import { native, useThemedStyles } from "../../lib/native/native";
 import { iosAtLeast } from "../../lib/native/native-controls";
+import { openExternalUrl } from "../../lib/platform/open-url";
 
 export default function Integrations() {
   const sideInsets = useSideInsets();
@@ -97,19 +81,6 @@ export default function Integrations() {
   const navigation = useNavigation();
   const styles = useThemedStyles(createIntegrationsStyles);
   const { t } = useLingui();
-  const categoryLabels: Record<PluginCategory, string> = {
-    productivity: t`Productivity`,
-    communication: t`Communication`,
-    sales: t`Sales & CRM`,
-    marketing: t`Marketing`,
-    finance: t`Finance`,
-    people: t`Recruiting & HR`,
-    design: t`Design`,
-    code: t`Developer`,
-    data: t`Data`,
-    ops: t`Security & Ops`,
-  };
-  const categoryLabel = (name: string) => categoryLabels[name as PluginCategory] ?? name;
   const { width } = useWindowDimensions();
   const catalogColumns = width >= 480 ? 2 : 1;
   const [catalog, setCatalog] = useState<ConnectionCatalogItem[]>([]);
@@ -124,20 +95,10 @@ export default function Integrations() {
   const [pluginsState, setPluginsState] = useState<"loading" | "ready" | "partial">("loading");
   const [category, setCategory] = useState("");
   const [pluginCount, setPluginCount] = useState(PLUGIN_PAGE_SIZE);
-  const [gitUrl, setGitUrl] = useState("");
-  const [sourceKind, setSourceKind] = useState<SourceKind | null>(null);
   const [sourcePresets, setSourcePresets] = useState<McpSourcePreset[]>([]);
-  const [sourcePreset, setSourcePreset] = useState<McpSourcePreset | null>(null);
-  const [adding, setAdding] = useState<"github" | "source" | null>(null);
-  const [name, setName] = useState("");
-  const [url, setUrl] = useState("");
-  const [credential, setCredential] = useState("");
-  const [sourceAuth, setSourceAuth] = useState<SourceAuth>("none");
-  const [authHeader, setAuthHeader] = useState("x-api-key");
   const [oauthServerId, setOauthServerId] = useState<string | null>(null);
   const [pending, setPending] = useState<string | null>(null);
   const [catalogError, setCatalogError] = useState<string | null>(null);
-  const [sourceError, setSourceError] = useState<string | null>(null);
   const [lastBotId, setLastBotId] = useState("");
   const [catalogReady, setCatalogReady] = useState(false);
   const [labelDrafts, setLabelDrafts] = useState<Record<string, string>>({});
@@ -232,21 +193,15 @@ export default function Integrations() {
     () => browsablePlugins(pluginEntries, catalog),
     [pluginEntries, catalog],
   );
-  // Managed apps standing in for a plugin keep that plugin's category, so a category lists them too.
-  const mergedBrands = catalog.flatMap((item) => {
-    const entry = pluginForApp.get(catalogItemKey(item));
-    return entry ? [{ item, entry }] : [];
-  });
+  const mergedBrands = pluginBrands(catalog, pluginForApp);
   const categories = pluginCategories([...plugins, ...mergedBrands.map(({ entry }) => entry)]);
-  const brandMatches = category
-    ? mergedBrands.filter(
-        ({ item, entry }) =>
-          entry.category === (category === OTHER_PLUGINS ? null : category) &&
-          (matchesWordPrefixes(item.name, query) ||
-            filterPlugins([entry], query, null, categoryLabel).length > 0),
-      )
-    : [];
-  const pluginMatches = filterPlugins(plugins, query, category || null, categoryLabel);
+  const brandMatches = filterPluginBrands(
+    mergedBrands,
+    query,
+    category || null,
+    pluginCategoryLabel,
+  );
+  const pluginMatches = filterPlugins(plugins, query, category || null, pluginCategoryLabel);
   const filtering = Boolean(query.trim() || category);
   const installedSources = new Set(pluginInstalls.map((install) => install.source));
   const standaloneServers = mcpServers.filter((server) => !server.installId);
@@ -506,177 +461,6 @@ export default function Integrations() {
       : { source: install.source, installedSource: install.source, name: install.name };
   }
 
-  function serverStatus(state: McpServerConnection): string {
-    switch (state) {
-      case "disabled":
-        return t`Disabled`;
-      case "needs_client":
-        return t`Needs an OAuth client ID`;
-      case "needs_sign_in":
-        return t`Needs sign-in`;
-      case "not_working":
-        return t`Not working`;
-      case "connected":
-        return t`Connected`;
-      case "not_connected":
-        return t`Not connected`;
-    }
-  }
-
-  function renderInstalledPlugin(install: CapabilityInstall, summary: string, signIn: boolean) {
-    const params = installedParams(install);
-    return (
-      <Pressable
-        key={install.id}
-        testID="installed-plugin"
-        accessibilityRole="button"
-        accessibilityLabel={params.name}
-        onPress={() => openPlugin(params)}
-        style={({ pressed }) => [styles.row, pressed && styles.pressed]}
-      >
-        <PluginIcon logo={params.logo} name={params.name} site={params.site} size={LOGO_SIZE} />
-        <View style={styles.grow}>
-          <Text numberOfLines={1} style={styles.title}>
-            {params.name}
-          </Text>
-          <Text numberOfLines={1} style={styles.secondary}>
-            {summary}
-          </Text>
-        </View>
-        {signIn ? (
-          <NativeActionButton
-            fill={false}
-            label={t`Sign in`}
-            onPress={() => openPlugin(params)}
-            prominence="secondary"
-          />
-        ) : null}
-      </Pressable>
-    );
-  }
-
-  /** What this account already has: apps it can reach, then skills it follows. */
-  function renderSavedServer(server: McpServer) {
-    const state = mcpServerConnection(server);
-    const tokens = mobileTokens();
-    const warning = state === "needs_sign_in" || state === "needs_client";
-    const color =
-      state === "connected"
-        ? tokens.success
-        : warning
-          ? tokens.warning
-          : state === "not_working"
-            ? tokens.destructive
-            : native.secondaryLabel;
-    const symbol =
-      state === "connected"
-        ? { ios: "checkmark", android: "checkmark" as const }
-        : warning
-          ? { ios: "exclamationmark.triangle", android: "warning-outline" as const }
-          : state === "not_working"
-            ? { ios: "exclamationmark.circle", android: "alert-circle-outline" as const }
-            : null;
-    return (
-      <View key={server.id} testID="registered-mcp-server" style={styles.row}>
-        <ConnectorIcon name={server.name} size={LOGO_SIZE} />
-        <Text numberOfLines={1} style={[styles.title, styles.grow]}>
-          {server.name}
-        </Text>
-        <View style={styles.connectionStatus}>
-          {symbol ? (
-            <View
-              accessible={false}
-              accessibilityElementsHidden
-              importantForAccessibility="no-hide-descendants"
-            >
-              <NativeSymbol {...symbol} size={14} color={color} />
-            </View>
-          ) : null}
-          <Text style={[styles.secondary, { color }]}>{serverStatus(state)}</Text>
-        </View>
-        {server.enabled &&
-        state !== "connected" &&
-        state !== "needs_client" &&
-        (server.oauthStatus === "reconnect" || server.id === oauthServerId) ? (
-          <NativeActionButton
-            label={server.oauthStatus === "reconnect" ? t`Reconnect` : t`Connect`}
-            fill={false}
-            busy={pending === `oauth:${server.id}`}
-            onPress={() => void authorizeMcp(server.id)}
-            prominence="secondary"
-          />
-        ) : null}
-      </View>
-    );
-  }
-
-  function renderConnected() {
-    const apps = connectorPlugins.length + standaloneServers.length + sources.length;
-    return (
-      <>
-        {apps || mcpError ? (
-          <View testID="connected-apps" style={styles.catalogStack}>
-            <Text style={styles.section}>{t`Apps`}</Text>
-            {mcpError ? (
-              <View>
-                <Text style={styles.error}>{mcpError}</Text>
-                <NativeActionButton
-                  label={t`Retry`}
-                  fill={false}
-                  onPress={() => void retryRefresh()}
-                  prominence="secondary"
-                />
-              </View>
-            ) : null}
-            {connectorPlugins.map((install) => {
-              const servers = mcpServers.filter((server) => server.installId === install.id);
-              return renderInstalledPlugin(
-                install,
-                servers.length === 1
-                  ? t`1 connector`
-                  : t`${ph({ count: servers.length })} connectors`,
-                servers.some(mcpServerNeedsSignIn),
-              );
-            })}
-            {standaloneServers.map(renderSavedServer)}
-            {sources.map((source) => (
-              <View key={source.id} testID="tool-source" style={styles.row}>
-                <ConnectorIcon name={source.name} size={LOGO_SIZE} />
-                <View style={styles.grow}>
-                  <Text numberOfLines={1} style={styles.title}>
-                    {source.name}
-                  </Text>
-                  <Text numberOfLines={1} style={styles.secondary}>
-                    {source.kind === "api"
-                      ? "OpenAPI"
-                      : source.kind === "graphql"
-                        ? "GraphQL"
-                        : "MCP"}
-                  </Text>
-                </View>
-                <NativeActionButton
-                  fill={false}
-                  label={pending === source.id ? t`Removing…` : t`Remove`}
-                  onPress={() => void removeSource(source)}
-                  prominence="destructive"
-                />
-              </View>
-            ))}
-          </View>
-        ) : null}
-      </>
-    );
-  }
-
-  function closeAdding() {
-    setAdding(null);
-    setSourceKind(null);
-    setSourceError(null);
-    setName("");
-    setUrl("");
-    setCredential("");
-  }
-
   function openDetail(item: ConnectionCatalogItem) {
     setCatalogError(null);
     setToolsOpen(true);
@@ -688,221 +472,37 @@ export default function Integrations() {
     setTools([]);
   }
 
-  function accountsFor(item: Pick<ConnectionCatalogItem, "connectorId" | "slug">) {
-    return catalogItemAccounts(connections, item);
-  }
-
   function itemConnected(item: ConnectionCatalogItem) {
     return isCatalogItemConnected(connections, item);
   }
 
-  async function notifyAppConnected(item: ConnectionCatalogItem, isCurrent: () => boolean) {
-    const botId = lastBotId || (await loadLastBotId());
-    if (!botId || !isCurrent()) return;
-    if (botId !== lastBotId) setLastBotId(botId);
-    void rpc("onboarding/appConnected", {
-      botId,
-      provider: item.slug,
-      connectorId: item.connectorId,
-    }).catch(() => undefined);
-  }
-
-  async function connect(item: ConnectionCatalogItem) {
-    const isCurrent = captureConnectionScope();
-    if (!isCurrent()) return;
-    connectionAttempt.current?.abort();
-    const controller = new AbortController();
-    connectionAttempt.current = controller;
-    const key = catalogItemKey(item);
-    setPending(key);
-    setCatalogError(null);
-    try {
-      const result = await connectCatalogItem(item, connections, {
-        begin: (input) => rpc("connections/begin", input),
-        complete: (input) => rpc("connections/complete", input),
-        openUrl: (url) => Linking.openURL(url),
-        signal: controller.signal,
-        isCurrent,
-      });
-      if (result.status === "aborted") return;
-      if (result.status === "connected") {
-        if (result.row) updateAccount(result.row);
-        void notifyAppConnected(item, isCurrent);
-        await retryRefresh(isCurrent);
-        if (isCurrent()) setToolsTick((tick) => tick + 1);
-        return;
-      }
-      Alert.alert(
-        t`Connection pending`,
-        t`Finish connecting in the browser, then refresh this page.`,
-      );
-    } catch (reason) {
-      if (controller.signal.aborted || !isCurrent()) return;
-      setCatalogError(errorText(reason, t`Could not connect`));
-    } finally {
-      if (connectionAttempt.current === controller) {
-        connectionAttempt.current = null;
-        if (isCurrent()) setPending(null);
-      }
-    }
-  }
-
-  async function revokeAccount(row: Connection) {
-    const isCurrent = captureConnectionScope();
-    if (!isCurrent()) return;
-    setPending(row.id);
-    setCatalogError(null);
-    try {
-      await rpc("connections/revoke", { connectionId: row.id });
-      if (!isCurrent()) return;
-      updateAccount({ ...row, status: "revoked" });
-      await retryRefresh(isCurrent);
-      if (isCurrent()) setToolsTick((tick) => tick + 1);
-    } catch (reason) {
-      if (!isCurrent()) return;
-      setCatalogError(errorText(reason, t`Could not revoke connection`));
-    } finally {
-      if (isCurrent()) setPending(null);
-    }
-  }
-
-  async function renameAccount(row: Connection) {
-    const displayName = (labelDrafts[row.id] ?? row.displayName).trim();
-    if (!displayName || displayName === row.displayName) return;
-    const isCurrent = captureConnectionScope();
-    if (!isCurrent()) return;
-    setPending(`rename:${row.id}`);
-    setCatalogError(null);
-    try {
-      const updated = await rpc("connections/rename", {
-        connectionId: row.id,
-        displayName,
-      });
-      if (!isCurrent()) return;
-      updateAccount(updated);
-      setLabelDrafts((current) => ({ ...current, [row.id]: updated.displayName }));
-    } catch (reason) {
-      if (!isCurrent()) return;
-      setCatalogError(errorText(reason, t`Could not rename connection`));
-    } finally {
-      if (isCurrent()) setPending(null);
-    }
-  }
-
-  async function uninstall(item: ConnectionCatalogItem) {
-    const isCurrent = captureConnectionScope();
-    if (!isCurrent()) return;
-    const matches = accountsFor(item);
-    const key = catalogItemKey(item);
-    if (matches.length === 0) {
-      closeDetail();
-      return;
-    }
-    setPending(`uninstall:${key}`);
-    setCatalogError(null);
-    try {
-      for (const row of matches) {
-        await rpc("connections/revoke", { connectionId: row.id });
-        if (!isCurrent()) return;
-        updateAccount({ ...row, status: "revoked" });
-      }
-      await retryRefresh(isCurrent);
-      if (isCurrent()) closeDetail();
-    } catch (reason) {
-      if (!isCurrent()) return;
-      await refresh().catch(() => undefined);
-      if (isCurrent()) setCatalogError(errorText(reason, t`Could not revoke connection`));
-    } finally {
-      if (isCurrent()) setPending(null);
-    }
-  }
-
-  function beginSource(kind: SourceKind, preset: McpSourcePreset | null = null) {
-    setAdding("source");
-    setSourceKind(kind);
-    setSourcePreset(preset);
-    setSourceError(null);
-    setName(preset?.name ?? "");
-    setUrl(preset?.url ?? preset?.defaultUrl ?? "");
-    setCredential("");
-    setSourceAuth(preset?.signIn ? "oauth" : preset ? "bearer" : "none");
-    setAuthHeader("x-api-key");
-  }
-
-  async function authorizeMcp(serverId: string) {
-    const isCurrent = captureConnectionScope();
-    if (!isCurrent()) return;
-    setPending(`oauth:${serverId}`);
-    setMcpError(null);
-    try {
-      await signInToMcpServer(rpc, serverId);
-      if (isCurrent()) await retryRefresh(isCurrent);
-    } catch (reason) {
-      if (isCurrent()) setMcpError(errorText(reason, t`Could not start MCP OAuth`));
-    } finally {
-      if (isCurrent()) setPending(null);
-    }
-  }
-
-  async function addSource() {
-    if (!sourceKind) return;
-    const isCurrent = captureConnectionScope();
-    if (!isCurrent()) return;
-    setPending("source");
-    setSourceError(null);
-    const displayName =
-      name.trim() ||
-      (sourcePreset?.name ?? (sourceKind === "graphql" ? "GraphQL" : t`Custom connector`));
-    const auth =
-      sourceAuth === "header"
-        ? { type: "header", name: authHeader.trim() }
-        : { type: sourceAuth === "bearer" ? "bearer" : "none" };
-    let created: McpServer | null = null;
-    try {
-      if (sourceAuth === "oauth") {
-        created = await rpc("mcp/servers/create", customMcpServerInput(displayName, url));
-        if (!isCurrent()) return;
-        setOauthServerId(created.id);
-      } else {
-        await rpc("capabilities/install", {
-          kind: sourceKind,
-          name: displayName,
-          source: url.trim(),
-          credential: (sourceAuth !== "none" && credential.trim()) || undefined,
-          config: sourcePreset
-            ? { preset: sourcePreset.id }
-            : sourceKind === "api"
-              ? { openApi: true, auth }
-              : sourceKind === "graphql"
-                ? { auth }
-                : { preset: "custom", auth },
-        });
-        if (!isCurrent()) return;
-      }
-      setCredential("");
-      setSourceKind(null);
-      setAdding(null);
-      await retryRefresh(isCurrent);
-      if (created) await authorizeMcp(created.id);
-    } catch (reason) {
-      if (isCurrent()) setSourceError(errorText(reason, t`Could not add source`));
-    } finally {
-      if (isCurrent()) setPending(null);
-    }
-  }
-
-  async function removeSource(source: CapabilityInstall) {
-    setPending(source.id);
-    setSourceError(null);
-    try {
-      await rpc("capabilities/remove", { id: source.id });
-      setSources((current) => current.filter((item) => item.id !== source.id));
-    } catch (reason) {
-      setSourceError(errorText(reason, t`Could not remove source`));
-    } finally {
-      setPending(null);
-    }
-  }
+  const { connect, revokeAccount, renameAccount, uninstall, authorizeMcp } = useConnectionActions({
+    connections,
+    labelDrafts,
+    setLabelDrafts,
+    lastBotId,
+    setLastBotId,
+    connectionAttempt,
+    captureConnectionScope,
+    updateAccount,
+    refresh,
+    retryRefresh,
+    setPending,
+    setCatalogError,
+    setMcpError,
+    onToolsChanged: () => setToolsTick((tick) => tick + 1),
+    closeDetail,
+  });
+  const { addOptions, adding, startAdding, removeSource, formProps } = useCustomSourceForm({
+    sourcePresets,
+    captureConnectionScope,
+    retryRefresh,
+    authorizeMcp,
+    setPending,
+    setSources,
+    setOauthServerId,
+    onStart: closeDetail,
+  });
 
   function renderCatalogActions(item: ConnectionCatalogItem, label: string) {
     const key = catalogItemKey(item);
@@ -980,29 +580,6 @@ export default function Integrations() {
     );
   }
 
-  const addOptions: AddCustomOption[] = [
-    { id: "github", label: t`From GitHub`, kind: "github" },
-    { id: "mcp", label: t`MCP server`, kind: "mcp" },
-    { id: "api", label: "OpenAPI", kind: "api" },
-    { id: "graphql", label: "GraphQL", kind: "graphql" },
-    ...sourcePresets.map((preset) => ({
-      id: `preset:${preset.id}`,
-      label: preset.name,
-      kind: "mcp" as const,
-      preset,
-    })),
-  ];
-
-  function startAdding(option: AddCustomOption | undefined) {
-    if (!option) return;
-    closeDetail();
-    setSourceError(null);
-    if (option.kind === "github") {
-      setSourceKind(null);
-      setAdding("github");
-    } else beginSource(option.kind, option.preset);
-  }
-
   useLayoutEffect(() => {
     if (!iosAtLeast(26)) return;
     navigation.setOptions({
@@ -1034,26 +611,10 @@ export default function Integrations() {
       >
         {adding ? (
           <AddCustomForm
+            {...formProps}
             adding={adding}
-            gitUrl={gitUrl}
-            setGitUrl={setGitUrl}
-            onPreviewGit={() => openPlugin(gitImportParams(gitUrl))}
-            sourceError={sourceError}
-            sourceKind={sourceKind}
-            sourcePreset={sourcePreset}
-            name={name}
-            setName={setName}
-            url={url}
-            setUrl={setUrl}
-            sourceAuth={sourceAuth}
-            setSourceAuth={setSourceAuth}
-            authHeader={authHeader}
-            setAuthHeader={setAuthHeader}
-            credential={credential}
-            setCredential={setCredential}
+            onPreviewGit={() => openPlugin(gitImportParams(formProps.gitUrl))}
             busy={pending === "source"}
-            onAdd={() => void addSource()}
-            onClose={closeAdding}
           />
         ) : (
           <>
@@ -1084,7 +645,7 @@ export default function Integrations() {
                   plain
                   choices={[
                     { key: "", label: t`All` },
-                    ...categories.map((name) => ({ key: name, label: categoryLabel(name) })),
+                    ...categories.map((name) => ({ key: name, label: pluginCategoryLabel(name) })),
                   ]}
                   value={category}
                   onChange={(key) => {
@@ -1095,7 +656,22 @@ export default function Integrations() {
               </View>
             ) : null}
 
-            {!detailItem && !filtering ? renderConnected() : null}
+            {!detailItem && !filtering ? (
+              <ConnectedApps
+                connectorPlugins={connectorPlugins}
+                mcpServers={mcpServers}
+                standaloneServers={standaloneServers}
+                sources={sources}
+                mcpError={mcpError}
+                pending={pending}
+                oauthServerId={oauthServerId}
+                pluginParamsFor={installedParams}
+                onOpenPlugin={openPlugin}
+                onAuthorize={(serverId) => void authorizeMcp(serverId)}
+                onRetry={() => void retryRefresh()}
+                onRemoveSource={(source) => void removeSource(source)}
+              />
+            ) : null}
             {!detailItem && !filtering ? (
               <Pressable
                 testID="open-bot-templates"
@@ -1110,7 +686,15 @@ export default function Integrations() {
             ) : null}
             {!detailItem && savedServerMatches.length ? (
               <View testID="connected-apps" style={styles.catalogStack}>
-                {savedServerMatches.map(renderSavedServer)}
+                {savedServerMatches.map((server) => (
+                  <SavedServerRow
+                    key={server.id}
+                    server={server}
+                    pending={pending}
+                    oauthServerId={oauthServerId}
+                    onAuthorize={(serverId) => void authorizeMcp(serverId)}
+                  />
+                ))}
               </View>
             ) : null}
 
@@ -1129,7 +713,7 @@ export default function Integrations() {
             {detailItem ? (
               <IntegrationDetail
                 item={detailItem}
-                accounts={accountsFor(detailItem)}
+                accounts={catalogItemAccounts(connections, detailItem)}
                 pending={pending}
                 labelDrafts={labelDrafts}
                 setLabelDrafts={setLabelDrafts}
@@ -1249,7 +833,7 @@ export default function Integrations() {
                   onShowMore={() => setPluginCount((count) => count + PLUGIN_PAGE_SIZE)}
                   plugins={plugins}
                   categories={categories}
-                  categoryLabel={categoryLabel}
+                  categoryLabel={pluginCategoryLabel}
                   onViewCategory={(name) => {
                     setCategory(name);
                     setPluginCount(PLUGIN_PAGE_SIZE);
@@ -1263,7 +847,7 @@ export default function Integrations() {
                   <NativeActionButton
                     fill={false}
                     label={t`Submit a plugin`}
-                    onPress={() => void Linking.openURL(SUBMIT_PLUGIN_URL)}
+                    onPress={() => void openExternalUrl(SUBMIT_PLUGIN_URL)}
                     prominence="quiet"
                     size="compact"
                     variant="text"

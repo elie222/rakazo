@@ -11,6 +11,7 @@ import { SpaceBotsModel } from "./space-bots-model";
 const mocks = vi.hoisted(() => ({
   rpc: vi.fn(),
   confirm: undefined as (() => void) | undefined,
+  title: "",
 }));
 vi.mock("../../lib/api/api", () => ({
   rpc: mocks.rpc,
@@ -29,7 +30,12 @@ vi.mock("../../lib/native/native", () => ({
   useThemedStyles: (factory: () => unknown) => factory(),
 }));
 vi.mock("./settings-group", () => ({
-  SettingsGroup: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
+  SettingsGroup: ({ children, footer }: { children?: ReactNode; footer?: string }) => (
+    <div>
+      {footer}
+      {children}
+    </div>
+  ),
   SettingsRow: ({
     title,
     onPress,
@@ -51,7 +57,8 @@ vi.mock("react-native", () => {
     Text: ({ children }: { children?: ReactNode }) => <p>{children}</p>,
     StyleSheet: { create: (styles: unknown) => styles },
     Alert: {
-      alert: (_title: string, _body: string, buttons: { text: string; onPress?: () => void }[]) => {
+      alert: (title: string, _body: string, buttons: { text: string; onPress?: () => void }[]) => {
+        mocks.title = title;
         mocks.confirm = buttons.find((button) => button.text === "Switch")?.onPress;
       },
     },
@@ -100,3 +107,21 @@ it("switches each bot in the named Space once, names the ones that failed, then 
   expect(container.textContent).toContain("1 bot now uses the space default.");
   expect(onSwitched).toHaveBeenCalledTimes(1);
 });
+
+it.each([
+  [2, "2 bots have their own model: Bot 1, Bot 2", "Switch 2 bots to the space default?"],
+  [21, "21 bots have their own model: Bot 1, Bot 2", "Switch 21 bots to the space default?"],
+])(
+  "uses the plural form for %i bots in the footer and the switch prompt",
+  async (count, footer, prompt) => {
+    const many = Array.from({ length: count }, (_, index) => ({
+      ...bots[0],
+      id: `bot-${index + 1}`,
+      name: `Bot ${index + 1}`,
+    })) as unknown as MobileBot[];
+    await act(async () => root.render(<SpaceBotsModel bots={many} onSwitched={vi.fn()} />));
+    expect(container.textContent).toContain(footer);
+    container.querySelector("button")?.click();
+    expect(mocks.title).toBe(prompt);
+  },
+);

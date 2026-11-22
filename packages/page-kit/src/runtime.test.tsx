@@ -1,9 +1,25 @@
 // @vitest-environment jsdom
 import { flush } from "@rakazo/core/test-async";
 import { act } from "react";
-import { expect, it, vi } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
 import { pageViewerCode } from "./compile.js";
 import { checkPageSource } from "./validate.js";
+
+afterEach(() => {
+  vi.useRealTimers();
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
+});
+
+function runInlineScripts() {
+  const append = document.head.append.bind(document.head);
+  vi.spyOn(document.head, "append").mockImplementation((...nodes) => {
+    for (const node of nodes) {
+      if (node instanceof HTMLScriptElement) new Function(node.text)();
+    }
+    append(...nodes);
+  });
+}
 
 it("mounts a page and reports its height where the browser has no ResizeObserver", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
@@ -31,13 +47,7 @@ it("runs a saved page that declares its own component under a kit component's na
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   await import("./runtime.js");
   // jsdom runs no inline scripts, so run the page's script the way a browser would.
-  const append = document.head.append.bind(document.head);
-  vi.spyOn(document.head, "append").mockImplementation((...nodes) => {
-    for (const node of nodes) {
-      if (node instanceof HTMLScriptElement) new Function(node.text)();
-    }
-    append(...nodes);
-  });
+  runInlineScripts();
   const checked = checkPageSource(
     "const Steps = () => <p>Own steps</p>;\nconst App = () => <Steps />;\nexport default App;\n",
   );
@@ -49,4 +59,63 @@ it("runs a saved page that declares its own component under a kit component's na
     await flush();
   });
   expect(document.body.textContent).toBe("Own steps");
+});
+
+it("reports repeated headings separately and finds a pending anchor after a reveal", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  await import("./runtime.js");
+  runInlineScripts();
+  const measure = vi.spyOn(Element.prototype, "getClientRects").mockImplementation(function (
+    this: Element,
+  ) {
+    return { length: this.closest(".collapsed") ? 0 : 1 } as DOMRectList;
+  });
+  const scrolled = vi.fn();
+  const posted = vi.spyOn(window.parent, "postMessage").mockImplementation(() => {});
+  document.body.replaceChildren();
+  await act(async () => {
+    window.RakazoPage!.mount({
+      code: pageViewerCode(`
+        export default function Report() {
+          return <><h2>Timeline</h2><div className="collapsed"><h2>Timeline</h2></div></>;
+        }
+      `),
+      theme: "light",
+      errorTitle: "Page error",
+      review: true,
+      reviewAnchor: "Timeline",
+      reviewAnchorOccurrence: 1,
+    });
+    await flush();
+  });
+  const [first, second] = document.querySelectorAll("h2");
+  first!.scrollIntoView = () => scrolled(first);
+  second!.scrollIntoView = () => scrolled(second);
+  const firstAnchor = { section: "Timeline", sectionOccurrence: 0 };
+  expect(posted).toHaveBeenCalledWith(
+    { type: "rakazo-page:sections", sections: ["Timeline"], anchors: [firstAnchor] },
+    "*",
+  );
+  expect(scrolled).not.toHaveBeenCalled();
+
+  vi.useFakeTimers();
+  measure.mockClear();
+  const wrapper = second!.parentElement!;
+  for (let frame = 0; frame < 5; frame++) {
+    wrapper.style.opacity = String(frame / 4);
+    await vi.advanceTimersByTimeAsync(16);
+  }
+  wrapper.classList.remove("collapsed");
+  expect(measure).not.toHaveBeenCalled();
+  await vi.advanceTimersByTimeAsync(100);
+  expect(measure).toHaveBeenCalledTimes(2);
+  expect(scrolled).toHaveBeenCalledExactlyOnceWith(second);
+  expect(posted).toHaveBeenCalledWith(
+    {
+      type: "rakazo-page:sections",
+      sections: ["Timeline", "Timeline"],
+      anchors: [firstAnchor, { section: "Timeline", sectionOccurrence: 1 }],
+    },
+    "*",
+  );
 });
