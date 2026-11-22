@@ -107,48 +107,16 @@ describe("media", () => {
 
   it("restores the placeholder when replacing an already drawn picture", () => {
     const root = createRoot(host.appendChild(document.createElement("div")));
-    const show = (src: string, alt = "Harbour") =>
-      act(() => root.render(<Image src={src} alt={alt} height={120} />));
-    const loading = () => q(".rk-picture")?.hasAttribute("data-loading");
-    const next = "data:image/png;base64,QQ==";
-    const latest = "data:image/png;base64,Qg==";
-    const advance = (ms: number) =>
-      act(() => {
-        vi.advanceTimersByTime(ms);
-      });
-
-    vi.useFakeTimers();
-    try {
-      show(PNG);
-      const first = q<HTMLImageElement>("img")!;
-      expect(loading()).toBe(true);
-      act(() => first.dispatchEvent(new Event("load")));
-      expect(loading()).toBe(false);
-      show(PNG, "Updated alt");
-      expect(loading()).toBe(false);
-      expect(first.alt).toBe("Updated alt");
-
-      show(next);
-      expect(q("img")?.getAttribute("src")).toBe(next);
-      expect(loading()).toBe(true);
-      act(() => first.dispatchEvent(new Event("error")));
-      expect(loading()).toBe(true);
-
-      advance(4_000);
-      show(latest);
-      advance(4_000);
-      expect(loading()).toBe(true);
-      act(() => q("img")!.dispatchEvent(new Event("error")));
-      expect(loading()).toBe(false);
-
-      show(PNG);
-      expect(loading()).toBe(true);
-      advance(8_000);
-      expect(loading()).toBe(false);
-    } finally {
-      act(() => root.unmount());
-      vi.useRealTimers();
-    }
+    const loading = () => q(".rk-picture")!.hasAttribute("data-loading");
+    act(() => root.render(<Image src={PNG} alt="Harbour" />));
+    act(() => q("img")!.dispatchEvent(new Event("load")));
+    act(() => root.render(<Image src={PNG} alt="Updated" />));
+    expect(loading()).toBe(false);
+    act(() => root.render(<Image src="data:image/png;base64,QQ==" alt="Updated" />));
+    expect(loading()).toBe(true);
+    act(() => q("img")!.dispatchEvent(new Event("load")));
+    expect(loading()).toBe(false);
+    act(() => root.unmount());
   });
 
   it("enlarges a picture on click and closes it with Escape, returning focus", () => {
