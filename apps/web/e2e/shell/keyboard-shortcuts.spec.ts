@@ -19,7 +19,10 @@ test("keyboard shortcuts list and focus the composer", async ({ page }, testInfo
 
   // Each chord keeps its key order when the page is right to left.
   await page.locator("html").evaluate((element) => element.setAttribute("dir", "rtl"));
-  const keys = dialog.locator("dl > div").filter({ hasText: "Chat details" }).locator("kbd");
+  const keys = dialog
+    .locator("dl > div")
+    .filter({ hasText: "Chat details" })
+    .locator('[data-slot="kbd"]');
   const order = await keys.evaluateAll((elements) => {
     const left = (element: Element) => element.getBoundingClientRect().left;
     const text = (element: Element) => element.textContent;
