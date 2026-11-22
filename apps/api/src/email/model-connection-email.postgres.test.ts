@@ -10,7 +10,7 @@ import type { Actor } from "@rakazo/contracts";
 import { LIFECYCLE_EMAIL_KINDS } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
 import { asSystem, billingAccountForOrganization, claimProductEmail, createDb } from "@rakazo/db";
-import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { createBillingService } from "../billing/billing.js";
 import {
   AGENT_IMPORT_EMAIL_DELAY_MS,
@@ -39,13 +39,14 @@ dbTests("model connection email", () => {
   let billing: ReturnType<typeof createBillingService>;
   let send: (job: LifecycleJob) => Promise<void>;
 
+  const copyDir = writeEmailCopyDir({ "model-connection": true, "agent-import": true });
+  beforeEach(() => {
+    vi.stubEnv("EMAIL_COPY_DIR", copyDir);
+  });
+
   beforeAll(async () => {
     db = createDb(process.env.DATABASE_URL!);
     prisma = asSystem(db.prisma);
-    vi.stubEnv(
-      "EMAIL_COPY_DIR",
-      writeEmailCopyDir({ "model-connection": true, "agent-import": true }),
-    );
     billing = createBillingService({
       prisma,
       provider,

@@ -35,8 +35,10 @@ import { computerRunError } from "../../../runs/assembly/run-computer.js";
 import { RailwaySandboxProvider } from "./railway-sandbox.js";
 
 const sdk = { connect: Sandbox.connect, create: Sandbox.create };
-vi.spyOn(Sandbox, "connect");
-vi.spyOn(Sandbox, "create");
+beforeEach(() => {
+  vi.spyOn(Sandbox, "connect");
+  vi.spyOn(Sandbox, "create");
+});
 
 const ctx = {
   operationId: "op",
