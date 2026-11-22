@@ -179,8 +179,8 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
     : botId
       ? { botId }
       : undefined;
-  // Re-read on focus so returning from Models settings updates unsent missing-model messages.
-  const uploadConfig = useScreenQuery(rpcQuery("me"), { onForeground: false }).data;
+  // Refresh chat preferences and model availability on focus and when the app returns.
+  const uploadConfig = useScreenQuery(rpcQuery("me")).data;
   const history = useThreadSnapshot(uploadConfig?.chatPreferences?.streamReplies);
   const { snap, composingBots, showingSaved } = history;
   const needsModel = uploadConfig?.needsModel;

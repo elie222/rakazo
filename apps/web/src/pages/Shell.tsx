@@ -16,6 +16,7 @@ import { PageLoading } from "../components/PageLoading";
 import { PageViewHost } from "../components/pages/PageViewHost";
 import { authClient } from "../lib/auth/auth";
 import { peekBootstrapSeed } from "../lib/bootstrap";
+import { composerEnterToSendPreference } from "../lib/composer/composer-enter-to-send-pref";
 import { PagesProvider, usePagesForChat } from "../lib/pages/pages";
 import { desktopBridge } from "../lib/platform/desktop";
 import { usePreloadRecoveryState } from "../lib/platform/preload-recovery";
@@ -167,6 +168,7 @@ function SpaceShell() {
     refetchOnWindowFocus: "always",
   });
   const chatPreferences = useChatPreferences(me?.chatPreferences);
+  const enterToSend = composerEnterToSendPreference.use();
   const thread = useThreadState(chatPreferences.streamReplies);
   const { snapshot } = thread;
   const botsSidebarDensity = botsSidebarDensityPreference.use();
@@ -769,7 +771,7 @@ function SpaceShell() {
             memberName={view.resolveMemberName}
             recordingSkill={Boolean(recordingSkill)}
             running={composerRunning}
-            enterToSend={chatPreferences.sendWithEnter}
+            enterToSend={enterToSend}
             sendColors={userBubble}
             modelPicker={chatPreferences.composerModelPicker ? modelShortcuts.pickerProps : null}
             onBotSaved={(updated) =>

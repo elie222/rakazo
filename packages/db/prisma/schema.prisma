@@ -51,7 +51,6 @@ model User {
   /// Null lets each client keep its previous device preference.
   composerModelPicker          Boolean?
   streamReplies                Boolean?
-  sendWithEnter                Boolean?
   showToolActivity             Boolean?
   /// IANA timezone such as "Pacific/Auckland". Null until set; bots then get UTC only.
   timezone                    String?

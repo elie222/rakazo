@@ -486,7 +486,7 @@ export const fleetTools: ConnectorTool[] = [
   {
     name: "update_preferences",
     description:
-      "Read or change the user's app preferences. Change only what the user asks. Omit fields to read; null for chat preferences uses the device's choice. Use update_bot for the agent's own model. Email, password, sign-in, billing and deletion require the app's settings.",
+      "Read or change the user's app preferences. Change only what the user asks. Omit fields to read. A null result for a chat preference means there is no account override. Use update_bot for the agent's own model. Email, password, sign-in, billing and deletion require the app's settings.",
     inputSchema: {
       type: "object",
       properties: {
@@ -505,10 +505,6 @@ export const fleetTools: ConnectorTool[] = [
         streamReplies: {
           type: "boolean",
           description: "Show replies as they are written.",
-        },
-        sendWithEnter: {
-          type: "boolean",
-          description: "Enter sends instead of inserting a newline in web and desktop chat.",
         },
         showToolActivity: {
           type: "boolean",

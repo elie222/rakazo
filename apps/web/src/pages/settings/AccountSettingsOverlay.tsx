@@ -43,6 +43,7 @@ import { TrustedLinkSitesSettings } from "../../components/settings/TrustedLinkS
 import { authClient } from "../../lib/auth/auth";
 import { fetchAuthCapabilities } from "../../lib/auth/auth-capabilities";
 import { usePasskeysSupported } from "../../lib/auth/passkeys";
+import { composerEnterToSendPreference } from "../../lib/composer/composer-enter-to-send-pref";
 import { getActiveUiLocale, setUiLocale } from "../../lib/locale/i18n";
 import { keepTimezone } from "../../lib/locale/kept-timezone";
 import { timezoneOptions } from "../../lib/locale/local-timezone";
@@ -134,6 +135,7 @@ export function GeneralSettingsPanels({
   const [botStyleError, setBotStyleError] = useState<string | null>(null);
   const streamRepliesId = useId();
   const showToolActivityId = useId();
+  const enterToSend = composerEnterToSendPreference.use();
   const enterToSendId = useId();
   const composerModelId = useId();
   const loadRemoteImages = remoteImagesPreference.use();
@@ -459,9 +461,8 @@ export function GeneralSettingsPanels({
             <Switch
               id={enterToSendId}
               data-testid="composer-enter-to-send-toggle"
-              checked={chat.sendWithEnter}
-              disabled={chatSaveDisabled}
-              onCheckedChange={(checked) => changeChatPreference("sendWithEnter", checked)}
+              checked={enterToSend}
+              onCheckedChange={(checked) => composerEnterToSendPreference.set(checked)}
             />
           }
         />
