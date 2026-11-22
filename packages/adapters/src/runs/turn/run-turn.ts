@@ -118,7 +118,8 @@ export async function consumeRunEvents(
         reply.assistantTurnText = "";
       }
       if (event.type === "text") {
-        if (event.text) ctx.statusLive?.supersede();
+        // A status write already sent lands before the reply's first text, never over it.
+        if (event.text) await ctx.statusLive?.supersede();
         await streamText(ctx, event);
       } else if (event.type === "turn") {
         reply.assistantTurnBreakPending = true;
@@ -246,7 +247,7 @@ async function streamProgress(ctx: RunContext, event: RuntimeEvent<"progress">) 
   if (event.activity && reply.narrationStatusShowing) return;
   // With a status model, a step's technical line is worded for the person instead of shown.
   // The model's own status ends the opening status, even before the status model is known.
-  if (event.activity && event.modelStatus) ctx.statusLive?.supersede();
+  if (event.activity && event.modelStatus) await ctx.statusLive?.supersede();
   else if (event.activity && ctx.statusLive?.active() && event.text.trim()) {
     ctx.statusLive.step(redactSecrets(event.text, ctx.secrets));
     return;

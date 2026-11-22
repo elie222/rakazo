@@ -119,6 +119,29 @@ describe("startStatusLines", () => {
     live.close();
   });
 
+  it("lets the reply write only after a status already being written has landed", async () => {
+    const landing = deferred();
+    const t = target(
+      { opening: async () => undefined, step: async () => "Listing files" },
+      () => landing.promise,
+    );
+    const live = startStatusLines(t.target);
+    live.step("Running: ls");
+    await flush();
+    let replyMayWrite = false;
+    const superseding = live.supersede().then(() => {
+      replyMayWrite = true;
+    });
+    await flush();
+    expect(replyMayWrite).toBe(false);
+    landing.resolve();
+    await superseding;
+    expect(t.shown).toEqual(["Listing files"]);
+    // With nothing under way, the reply goes ahead at once.
+    await live.supersede();
+    live.close();
+  });
+
   it("ends only once a status already being written has landed", async () => {
     const landing = deferred();
     const t = target(

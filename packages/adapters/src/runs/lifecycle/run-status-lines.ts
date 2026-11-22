@@ -13,14 +13,17 @@ export type LiveStatusLines = {
   active(): boolean;
   /** A step the status model words for the person. Without an answer, its own line shows. */
   step(text: string): void;
-  /** Something else now owns the working line: the model's own status, or its reply text. */
-  supersede(): void;
+  /**
+   * Something else now owns the working line: the model's own status, or its reply text. Settles
+   * once the status writes already under way have landed, so the caller's own write comes after
+   * them and no status lands over it.
+   */
+  supersede(): Promise<void>;
   /** Shows the current step's status again, after something else cleared the line. */
   restore(): void;
   /**
    * The turn ended: nothing more is shown and pending requests are cancelled. Settles once the
-   * status writes already under way have landed, or after a time limit, so none lands after
-   * the run's end.
+   * status writes already under way have landed, so none lands after the run's end.
    */
   close(): Promise<void>;
 };
@@ -70,8 +73,10 @@ export function startStatusLines(target: StatusLineTarget): LiveStatusLines {
   const cancelSteps = (keep: number) => {
     while (steps.length > keep) steps.shift()?.abort();
   };
-  // Status writes under way, which the run's end waits for.
+  // Status writes under way, which the run's own writes and its end wait for. A write cannot
+  // be called back once sent, so whatever comes next goes after it.
   const writes = new Set<Promise<boolean>>();
+  const landed = () => Promise.allSettled([...writes]).then(() => undefined);
   // Each status waits for the one before it, so a slow write never lands after a newer one.
   let showing: Promise<unknown> = Promise.resolve();
   /**
@@ -121,13 +126,7 @@ export function startStatusLines(target: StatusLineTarget): LiveStatusLines {
     closed = true;
     abort.abort();
     target.signal?.removeEventListener("abort", onRunAbort);
-    await bestEffort(
-      "finish status line writes",
-      withAbort(
-        Promise.allSettled([showing, ...writes]).then(() => undefined),
-        deadlineSignal(SHOW_TIMEOUT_MS),
-      ),
-    );
+    await landed();
   }
   if (target.signal?.aborted) void close();
   else target.signal?.addEventListener("abort", onRunAbort, { once: true });
@@ -162,11 +161,13 @@ export function startStatusLines(target: StatusLineTarget): LiveStatusLines {
     },
     supersede() {
       // Every streamed text delta supersedes; only the first after a status has work to do.
-      if (supersededAt === generation) return;
-      generation += 1;
-      supersededAt = generation;
-      opening.abort();
-      cancelSteps(0);
+      if (supersededAt !== generation) {
+        generation += 1;
+        supersededAt = generation;
+        opening.abort();
+        cancelSteps(0);
+      }
+      return landed();
     },
     restore() {
       if (lastShown && lastShown.generation > supersededAt)
