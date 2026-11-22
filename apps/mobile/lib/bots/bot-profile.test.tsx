@@ -436,6 +436,20 @@ describe("bot profile", () => {
     expect(button("Computer").textContent).toBe(`Computer${value}`);
   });
 
+  it("shows no computer state from an earlier visit until this one's read answers", async () => {
+    let status = deferred<unknown>();
+    profileRpc(async () => [], { computer: () => status.promise });
+    await render(createElement(BotProfile));
+    await act(async () => status.resolve({ state: "running" }));
+    expect(button("Computer").textContent).toBe("ComputerRunning");
+    await act(async () => root.render(null));
+    status = deferred<unknown>();
+    await render(createElement(BotProfile));
+    expect(button("Computer").textContent).toBe("Computer");
+    await act(async () => status.resolve({ state: "suspended" }));
+    expect(button("Computer").textContent).toBe("ComputerAsleep");
+  });
+
   it.each([
     ["no routines", [], "0 on"],
     [

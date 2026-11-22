@@ -70,6 +70,8 @@ export function useBotSetting<K extends BotSettingKey>(
             await options.onSaved?.(value, updated);
           } catch (error) {
             if (change === changes.current) throw error;
+            // A newer change replaced this write and is written next; the failure is only logged.
+            await bestEffort("save a bot setting a newer change replaced", Promise.reject(error));
           }
         }
         // The control shows the change until the bot is read again; a change made meanwhile is

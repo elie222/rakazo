@@ -43,8 +43,9 @@ function BotProfileScreen() {
   const computerRead = useScreenQuery(rpcQuery("computer/status", { botId }), {
     enabled: Boolean(botId),
   });
-  // A stale Running or Asleep is worse than no state.
-  const computer = computerRead.isError ? null : computerRead.data;
+  // A stale Running or Asleep is worse than no state, so only this visit's answer shows.
+  const computer =
+    computerRead.isFetchedAfterMount && !computerRead.isError ? computerRead.data : null;
   const name = displayName(bot?.name ?? nameParam, t`Bot`);
   const { routines } = useBotRoutines(botId);
   const actions = useBotProfileActions(botId, name);
