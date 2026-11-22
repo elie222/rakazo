@@ -147,6 +147,7 @@ vi.mock("expo-router", () => {
   const router = { push: account.push, back: () => undefined };
   return {
     useFocusEffect: (effect: () => undefined | (() => void)) => useEffect(effect, [effect]),
+    useIsFocused: () => true,
     useLocalSearchParams: () => ({}),
     useRouter: () => router,
   };
@@ -155,6 +156,7 @@ vi.mock("react-native-safe-area-context", () => ({
   SafeAreaView: element("div"),
   useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }),
 }));
+vi.mock("../api/roster-signals", () => ({ useLiveStream: vi.fn() }));
 vi.mock("../../components/ui/app-mark", () => ({ AppMark: () => null }));
 vi.mock("../../components/native/native-symbol", () => ({ NativeSymbol: () => null }));
 vi.mock("../../components/native/native-action-button", () => ({
@@ -458,6 +460,25 @@ it("keeps bot style visible when the account has no saved style", async () => {
   expect(container.textContent).not.toContain("Avatars");
   expect(container.textContent).not.toContain("Robot");
   expect(container.textContent).not.toContain("Organic");
+});
+
+it("reads and saves the account's model picker preference", async () => {
+  account.me = { ...account.me, chatPreferences: { composerModelPicker: true } };
+  const { screen } = await renderAccount(General);
+  const toggle = screen.querySelector<HTMLButtonElement>('[aria-label="Model picker in chat"]')!;
+  expect(toggle.getAttribute("aria-checked")).toBe("true");
+
+  const { saving } = holdPreferenceSave();
+  await act(async () => toggle.click());
+  expect(rpc).toHaveBeenCalledWith(
+    "preferences/update",
+    { chatPreferences: { composerModelPicker: false } },
+    expect.anything(),
+  );
+  account.me = { ...account.me, chatPreferences: { composerModelPicker: false } };
+  await act(async () => saving.resolve(account.me));
+  await act(flush);
+  expect(toggle.getAttribute("aria-checked")).toBe("false");
 });
 
 /** Answers one preference save when the test says so; the account read sees it only then. */

@@ -48,6 +48,11 @@ model User {
   avatarStyle                 String                       @default("organic")
   /// The icon set this user's bots wear unless one is pinned to another: "organic" or "rakazo".
   botAvatarSet                String                       @default("organic")
+  /// Null lets each client keep its previous device preference.
+  composerModelPicker          Boolean?
+  streamReplies                Boolean?
+  sendWithEnter                Boolean?
+  showToolActivity             Boolean?
   /// IANA timezone such as "Pacific/Auckland". Null until set; bots then get UTC only.
   timezone                    String?
   /// The app language last chosen, such as "es" or "pt-BR". Null until an app reports it;

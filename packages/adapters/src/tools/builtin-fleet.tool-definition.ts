@@ -486,7 +486,7 @@ export const fleetTools: ConnectorTool[] = [
   {
     name: "update_preferences",
     description:
-      "Read or change the user's own account preferences: timezone and Rakazo marketing emails. Change them only when the user asks. Call with no fields to read the current values. Email, password, sign-in, billing and account deletion are only in the app's settings.",
+      "Read or change the user's app preferences. Change only what the user asks. Omit fields to read; null for chat preferences uses the device's choice. Use update_bot for the agent's own model. Email, password, sign-in, billing and deletion require the app's settings.",
     inputSchema: {
       type: "object",
       properties: {
@@ -497,6 +497,22 @@ export const fleetTools: ConnectorTool[] = [
         marketingEmails: {
           type: "boolean",
           description: "false unsubscribes from Rakazo's product emails; true resubscribes.",
+        },
+        composerModelPicker: {
+          type: "boolean",
+          description: "Enable inline model switching in the chat composer.",
+        },
+        streamReplies: {
+          type: "boolean",
+          description: "Show replies as they are written.",
+        },
+        sendWithEnter: {
+          type: "boolean",
+          description: "Enter sends instead of inserting a newline in web and desktop chat.",
+        },
+        showToolActivity: {
+          type: "boolean",
+          description: "Show tool activity in web and desktop.",
         },
       },
       additionalProperties: false,

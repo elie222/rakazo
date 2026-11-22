@@ -1,5 +1,11 @@
 import { Trans, useLingui } from "@lingui/react/macro";
-import type { AccountSecurity, BotAvatarSet, SignInProvider } from "@rakazo/contracts";
+import type {
+  AccountSecurity,
+  BotAvatarSet,
+  ChatPreferences,
+  ChatPreferencesPatch,
+  SignInProvider,
+} from "@rakazo/contracts";
 import {
   APP_LOCALE_LABELS,
   accountDisplay,
@@ -20,6 +26,7 @@ import {
   ToggleGroup,
   ToggleGroupItem,
 } from "@rakazo/ui-web";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useId, useRef, useState } from "react";
 import { AccountAccess, LinkSsoRow } from "../../components/account/AccountAccess";
 import { PasskeySettings } from "../../components/account/PasskeySettings";
@@ -36,18 +43,15 @@ import { TrustedLinkSitesSettings } from "../../components/settings/TrustedLinkS
 import { authClient } from "../../lib/auth/auth";
 import { fetchAuthCapabilities } from "../../lib/auth/auth-capabilities";
 import { usePasskeysSupported } from "../../lib/auth/passkeys";
-import { toolActivityPreference } from "../../lib/chat/tool-activity-preference";
-import { composerEnterToSendPreference } from "../../lib/composer/composer-enter-to-send-pref";
 import { getActiveUiLocale, setUiLocale } from "../../lib/locale/i18n";
 import { keepTimezone } from "../../lib/locale/kept-timezone";
 import { timezoneOptions } from "../../lib/locale/local-timezone";
 import type { UiLocale } from "../../lib/locale/ui-locale";
 import { UI_LOCALES } from "../../lib/locale/ui-locale";
-import { composerModelPickerPreference } from "../../lib/models/composer-model-picker-preference";
 import type { BotsSidebarDensity } from "../../lib/preferences/bots-sidebar-density-pref";
 import { botsSidebarDensityPreference } from "../../lib/preferences/bots-sidebar-density-pref";
+import { deviceChatPreferences, useChatPreferences } from "../../lib/preferences/chat-preferences";
 import { remoteImagesPreference } from "../../lib/preferences/remote-images-preference";
-import { responseStreamingPreference } from "../../lib/preferences/response-streaming";
 import type { AppearancePreference } from "../../lib/preferences/ui-appearance";
 import { getUiAppearancePreference, setUiAppearance } from "../../lib/preferences/ui-appearance";
 import { useQueryUserId, useSave, useSpaceQueries } from "../../lib/query/query";
@@ -128,13 +132,9 @@ export function GeneralSettingsPanels({
   const sidebarDensityLabelId = useId();
   const botStyleLabelId = useId();
   const [botStyleError, setBotStyleError] = useState<string | null>(null);
-  const streamReplies = responseStreamingPreference.use();
   const streamRepliesId = useId();
-  const showToolActivity = toolActivityPreference.use();
   const showToolActivityId = useId();
-  const enterToSend = composerEnterToSendPreference.use();
   const enterToSendId = useId();
-  const composerModel = composerModelPickerPreference.use();
   const composerModelId = useId();
   const loadRemoteImages = remoteImagesPreference.use();
   const loadRemoteImagesId = useId();
@@ -164,6 +164,31 @@ export function GeneralSettingsPanels({
   const canLinkSso = Boolean(accountSecurity?.sso && !accountSecurity.ssoLinked);
   const queries = useSpaceQueries();
   const queryUserId = useQueryUserId();
+  const queryClient = useQueryClient();
+  const meRead = queries.me.queryOptions();
+  const { data: me } = useQuery({
+    ...meRead,
+    enabled: Boolean(queryUserId),
+    refetchOnWindowFocus: "always",
+  });
+  const chat = useChatPreferences(me?.chatPreferences);
+  const chatSave = useSave({
+    save: async (chatPreferences: ChatPreferencesPatch, client) => {
+      const saved = await client.preferences.update({ chatPreferences });
+      queryClient.setQueryData(
+        meRead.queryKey,
+        (current) => current && { ...current, chatPreferences: saved.chatPreferences },
+      );
+    },
+    stale: [meRead.queryKey],
+  });
+  const chatSaveDisabled = chatSave.pending || (Boolean(queryUserId) && !me);
+
+  function changeChatPreference(key: keyof ChatPreferences, value: boolean) {
+    if (me?.chatPreferences) chatSave.run({ [key]: value });
+    else deviceChatPreferences[key].set(value);
+  }
+
   const deviceTimezone = localTimezone();
   const timezoneSave = useSave({
     save: async (next: string, client) => {
@@ -434,8 +459,9 @@ export function GeneralSettingsPanels({
             <Switch
               id={enterToSendId}
               data-testid="composer-enter-to-send-toggle"
-              checked={enterToSend}
-              onCheckedChange={(checked) => composerEnterToSendPreference.set(checked)}
+              checked={chat.sendWithEnter}
+              disabled={chatSaveDisabled}
+              onCheckedChange={(checked) => changeChatPreference("sendWithEnter", checked)}
             />
           }
         />
@@ -449,8 +475,9 @@ export function GeneralSettingsPanels({
             <Switch
               id={composerModelId}
               data-testid="composer-model-picker-toggle"
-              checked={composerModel}
-              onCheckedChange={(checked) => composerModelPickerPreference.set(checked)}
+              checked={chat.composerModelPicker}
+              disabled={chatSaveDisabled}
+              onCheckedChange={(checked) => changeChatPreference("composerModelPicker", checked)}
             />
           }
         />
@@ -464,8 +491,9 @@ export function GeneralSettingsPanels({
             <Switch
               id={streamRepliesId}
               data-testid="response-streaming-toggle"
-              checked={streamReplies}
-              onCheckedChange={(checked) => responseStreamingPreference.set(checked)}
+              checked={chat.streamReplies}
+              disabled={chatSaveDisabled}
+              onCheckedChange={(checked) => changeChatPreference("streamReplies", checked)}
             />
           }
         />
@@ -479,8 +507,9 @@ export function GeneralSettingsPanels({
             <Switch
               id={showToolActivityId}
               data-testid="tool-activity-toggle"
-              checked={showToolActivity}
-              onCheckedChange={(checked) => toolActivityPreference.set(checked)}
+              checked={chat.showToolActivity}
+              disabled={chatSaveDisabled}
+              onCheckedChange={(checked) => changeChatPreference("showToolActivity", checked)}
             />
           }
         />
@@ -500,6 +529,10 @@ export function GeneralSettingsPanels({
           }
         />
       </SettingsGroup>
+
+      {chatSave.error ? (
+        <p role="alert" className="text-body-sm text-destructive">{t`Could not save`}</p>
+      ) : null}
 
       <TrustedLinkSitesSettings />
 

@@ -5,6 +5,7 @@ import { chatWoke } from "@rakazo/core";
 import { bestEffort } from "@rakazo/logging/best-effort";
 import { Button } from "@rakazo/ui-web";
 import { useIsMobile } from "@rakazo/ui-web/hooks/use-mobile";
+import { useQuery } from "@tanstack/react-query";
 import { Plus } from "lucide-react";
 import { Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
@@ -15,13 +16,11 @@ import { PageLoading } from "../components/PageLoading";
 import { PageViewHost } from "../components/pages/PageViewHost";
 import { authClient } from "../lib/auth/auth";
 import { peekBootstrapSeed } from "../lib/bootstrap";
-import { toolActivityPreference } from "../lib/chat/tool-activity-preference";
-import { composerEnterToSendPreference } from "../lib/composer/composer-enter-to-send-pref";
-import { composerModelPickerPreference } from "../lib/models/composer-model-picker-preference";
 import { PagesProvider, usePagesForChat } from "../lib/pages/pages";
 import { desktopBridge } from "../lib/platform/desktop";
 import { usePreloadRecoveryState } from "../lib/platform/preload-recovery";
 import { botsSidebarDensityPreference } from "../lib/preferences/bots-sidebar-density-pref";
+import { useChatPreferences } from "../lib/preferences/chat-preferences";
 import {
   lastChatKey,
   lastChatOf,
@@ -160,12 +159,21 @@ function SpaceShell() {
   });
   const { collapsedSidebarSections, toggleSidebarSection } = useSidebarExpansion(userId);
   const search = useSidebarSearch({ rpc, navigate });
-  const thread = useThreadState();
+  const { data: me } = useQuery({
+    ...queries.me.queryOptions(),
+    enabled: Boolean(userId),
+    placeholderData: bootstrapMe ?? undefined,
+    refetchOnWindowFocus: "always",
+  });
+  const {
+    composerModelPicker: showComposerModel,
+    streamReplies,
+    sendWithEnter: enterToSend,
+    showToolActivity,
+  } = useChatPreferences(me?.chatPreferences);
+  const thread = useThreadState(streamReplies);
   const { snapshot } = thread;
-  const showToolActivity = toolActivityPreference.use();
   const botsSidebarDensity = botsSidebarDensityPreference.use();
-  const enterToSend = composerEnterToSendPreference.use();
-  const showComposerModel = composerModelPickerPreference.use();
   const rightPanel = useRightPanel({ searchParams, setSearchParams });
   const { panel, setPanel, modelFocusRequest, setModelFocusRequest } = rightPanel;
   const [peerConversation, setPeerConversation] = usePreloadRecoveryState<{
