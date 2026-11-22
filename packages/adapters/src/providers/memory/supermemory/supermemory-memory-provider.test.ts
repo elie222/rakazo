@@ -2,7 +2,10 @@ import type { AdapterContext } from "@rakazo/adapter-kit";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ResolveHostname } from "../../../network/network-address.js";
 import { MemoryProviderPrivateEndpointRequiredError } from "../serenity/serenity-memory-provider.js";
-import { SUPERMEMORY_DELETE_FORBIDDEN_ERROR } from "./supermemory-client.js";
+import {
+  MAX_MEMORY_CONTENT_CHARS,
+  SUPERMEMORY_DELETE_FORBIDDEN_ERROR,
+} from "./supermemory-client.js";
 import {
   createSupermemoryProvider,
   prepareSupermemoryConnection,
@@ -118,6 +121,42 @@ describe("SupermemoryMemoryProvider", () => {
       "rakazo:workspace:workspace-1",
       "rakazo:bot-1",
     ]);
+  });
+
+  it("saves a fact at the character limit unchanged", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response("", { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const content = "a".repeat(MAX_MEMORY_CONTENT_CHARS);
+
+    await expect(
+      provider().save(
+        { content, scope: "isolated", botId: "bot-1", source: { kind: "durable" } },
+        context,
+      ),
+    ).resolves.toEqual({ ok: true, value: undefined });
+
+    expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body)).content).toBe(content);
+  });
+
+  it("refuses a fact over the character limit instead of cutting it short", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response("", { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(
+      provider().save(
+        {
+          content: "a".repeat(MAX_MEMORY_CONTENT_CHARS + 1),
+          scope: "isolated",
+          botId: "bot-1",
+          source: { kind: "durable" },
+        },
+        context,
+      ),
+    ).resolves.toEqual({
+      ok: false,
+      error: `Supermemory save skipped: memory content is longer than ${MAX_MEMORY_CONTENT_CHARS} characters. Save a shorter fact.`,
+    });
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it("purges only requested history generations", async () => {

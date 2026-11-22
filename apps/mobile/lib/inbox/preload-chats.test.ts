@@ -13,8 +13,8 @@ vi.mock("./chat-rpc", () => ({
   chatRpc: (spaceId: string | undefined, path: string, input: object) =>
     state.rpc(path, input, spaceId),
 }));
-vi.mock("../integrations/integrations-cache", () => ({
-  isIntegrationsScopeCurrent: (scope: { selectionId: string }) => scope.selectionId === state.space,
+vi.mock("../api/verified-scope", () => ({
+  isVerifiedScopeCurrent: (scope: { selectionId: string }) => scope.selectionId === state.space,
 }));
 vi.mock("./saved-chats", () => ({
   currentSavedChatsScope: () => null,

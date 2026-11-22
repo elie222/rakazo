@@ -31,6 +31,9 @@ export const READ_ONLY_AGENT_TOOLS = new Set([
   "read_history",
   READ_MEETING_TRANSCRIPT,
   "read_email",
+  "list_calendars",
+  "list_calendar_events",
+  "list_reminders",
   "search_history",
   "request_takeover",
   "run_subagent",
@@ -230,6 +233,8 @@ export function selectBuiltinToolsForRun(options: {
           ![
             "remember",
             "save_shared_memory",
+            "delete_shared_memory",
+            "remove_mcp_server",
             "save_memory",
             "recall_memory",
             "forget_memory",

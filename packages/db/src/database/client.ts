@@ -1,5 +1,6 @@
 import { PrismaPg } from "@prisma/adapter-pg";
 import type { KeyProvider } from "@rakazo/adapter-kit";
+import { retry } from "@rakazo/core";
 import { resolveContentEncryption } from "@rakazo/core/node/secrets-guard";
 import { bestEffort, getLogger } from "@rakazo/logging";
 import type { PoolClient } from "pg";
@@ -233,43 +234,32 @@ export async function retryOnTooManyConnections<T>(
     sleep?: (ms: number) => Promise<void>;
   } = {},
 ): Promise<T> {
-  const attempts = options.attempts ?? CONNECT_RETRY_ATTEMPTS;
-  const sleep = options.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
-  for (let attempt = 0; ; attempt += 1) {
-    try {
-      return await operation();
-    } catch (error) {
-      if (!isTooManyDatabaseConnections(error) || attempt >= attempts - 1) throw error;
-      await sleep(Math.min(5_000, 200 * 2 ** attempt));
-    }
-  }
+  return retry(operation, {
+    attempts: options.attempts ?? CONNECT_RETRY_ATTEMPTS,
+    delayMs: (attempt) => Math.min(5_000, 200 * 2 ** attempt),
+    retryable: isTooManyDatabaseConnections,
+    ...(options.sleep ? { delay: options.sleep } : {}),
+  });
 }
 
-function installConnectRetry(pool: Pool): void {
+export function installConnectRetry(pool: Pool): void {
   type ConnectCallback = (
-    err: Error,
-    client: PoolClient,
+    err: Error | undefined,
+    client: PoolClient | undefined,
     done: (release?: boolean) => void,
   ) => void;
-  const originalConnect = pool.connect.bind(pool) as {
-    (): Promise<PoolClient>;
-    (callback: ConnectCallback): void;
-  };
+  const originalConnect = pool.connect.bind(pool) as () => Promise<PoolClient>;
 
   function connect(): Promise<PoolClient>;
   function connect(callback: ConnectCallback): void;
   function connect(callback?: ConnectCallback): Promise<PoolClient> | undefined {
-    if (!callback) return retryOnTooManyConnections(() => originalConnect());
-    const attempt = (n: number) => {
-      originalConnect((err, client, done) => {
-        if (err && isTooManyDatabaseConnections(err) && n < CONNECT_RETRY_ATTEMPTS - 1) {
-          setTimeout(() => attempt(n + 1), Math.min(5_000, 200 * 2 ** n));
-          return;
-        }
-        callback(err, client, done);
-      });
-    };
-    attempt(0);
+    const connected = retryOnTooManyConnections(() => originalConnect());
+    if (!callback) return connected;
+    // The pool hands a callback `client.release` as `done`, and a no-op when connecting failed.
+    connected.then(
+      (client) => callback(undefined, client, client.release),
+      (error: Error) => callback(error, undefined, () => {}),
+    );
   }
 
   pool.connect = connect as Pool["connect"];

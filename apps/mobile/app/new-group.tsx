@@ -20,6 +20,7 @@ import type { MobileBot } from "../lib/api/mobile-types";
 import { errorText } from "../lib/api/user-error";
 import { CallKeyboardContext } from "../lib/calls/call-keyboard-context";
 import { useSideInsets } from "../lib/layout/side-insets";
+import { announceToScreenReader } from "../lib/native/announce";
 import { hapticSuccess } from "../lib/native/haptics";
 import { native, useMobileTokens } from "../lib/native/native";
 import { iosAtLeast } from "../lib/native/native-controls";
@@ -51,6 +52,7 @@ export default function NewGroup() {
   const [selected, setSelected] = useState<string[]>([]);
   const valid = selected.length >= GROUP_MEMBER_MIN && selected.length <= GROUP_MEMBER_MAX;
   const picked = selected.flatMap((id) => bots.find((bot) => bot.id === id) ?? []);
+  const creationError = (failure: Error) => errorText(failure, t`Could not create group`);
   const creation = useSave({
     save: async (
       ask: { name: string; botIds: string[]; askedIn: ReturnType<typeof searchInboxSession> },
@@ -65,10 +67,12 @@ export default function NewGroup() {
         params: { groupId: group.id, name: group.name },
       });
     },
+    // Create keeps focus after a failure, so VoiceOver and TalkBack are told as well as shown.
+    onFailed: (failure) => announceToScreenReader(creationError(failure)),
     closesScreen: true,
   });
   const pending = creation.pending;
-  const error = creation.error ? errorText(creation.error, t`Could not create group`) : null;
+  const error = creation.error ? creationError(creation.error) : null;
   const goBack = () => {
     if (!pending) setStep("bots");
   };
@@ -218,7 +222,12 @@ export default function NewGroup() {
                 style={{ marginTop: 24, borderRadius: 28 }}
               />
               {error ? (
-                <Text style={{ color: tokens.destructive, marginTop: 12 }}>{error}</Text>
+                <Text
+                  accessibilityRole="alert"
+                  style={{ color: tokens.destructive, marginTop: 12 }}
+                >
+                  {error}
+                </Text>
               ) : null}
             </View>
           )}
