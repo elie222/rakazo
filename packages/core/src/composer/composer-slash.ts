@@ -20,26 +20,20 @@ export function serializeComposerPrompt(draft: string, skill: { name: string } |
 export function truncateSlashDescription(value: string, max = 72): string {
   if (max < 1) return "";
   const text = value.replace(/\s+/g, " ").trim();
+  // The slash menu already ellipsizes overflowing text on web and mobile.
+  if (typeof Intl.Segmenter !== "function") return text;
+
   const codePoints = Array.from(text);
   if (codePoints.length <= max) return text;
 
   // Reserve a code point for the ellipsis, then find a whole-grapheme boundary.
   const budget = codePoints.slice(0, max - 1).join("").length;
   let end = 0;
-  if (typeof Intl.Segmenter === "function") {
-    const segmenter = new Intl.Segmenter(undefined, { granularity: "grapheme" });
-    for (const { index, segment } of segmenter.segment(text)) {
-      const next = index + segment.length;
-      if (next > budget) break;
-      if (!segment.endsWith(" ")) end = next;
-    }
-  } else {
-    // Without segmentation, only cut between two ASCII characters. Whitespace
-    // has already been collapsed to spaces, which also avoids splitting CRLF.
-    for (end = budget; end > 0; end--) {
-      const before = text.charCodeAt(end - 1);
-      if (before < 0x80 && before !== 0x20 && text.charCodeAt(end) < 0x80) break;
-    }
+  const segmenter = new Intl.Segmenter(undefined, { granularity: "grapheme" });
+  for (const { index, segment } of segmenter.segment(text)) {
+    const next = index + segment.length;
+    if (next > budget) break;
+    if (!segment.endsWith(" ")) end = next;
   }
   return `${text.slice(0, end)}…`;
 }
