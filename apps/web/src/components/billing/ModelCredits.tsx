@@ -3,7 +3,6 @@ import { ORPCError } from "@orpc/client";
 import type { BillingStatus, ByokInterval, ByokTier, HeldCreditAmount } from "@rakazo/contracts";
 import {
   ByokIntervalSchema,
-  ByokTierSchema,
   byokTierChangeOffered,
   byokYearlySavingsPercent,
   byokYearlySwitchSavings,
@@ -15,6 +14,13 @@ import {
   MODEL_CREDIT_AMOUNTS,
   ModelCreditAmountSchema,
 } from "@rakazo/contracts";
+import { ownKeySubscriptionCents, subscribedTier, tierPriceCents } from "@rakazo/core";
+import {
+  billingDateLabel,
+  formatBillingAmount,
+  formatBillingDate,
+  formatBillingPrice,
+} from "@rakazo/i18n/billing";
 import { tierComputerDescription, tierComputerSummary } from "@rakazo/i18n/computer-usage";
 import {
   AlertDialog,
@@ -48,12 +54,6 @@ import { cn } from "@rakazo/ui-web/lib/utils";
 import { Check, RefreshCw } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useSignOut } from "../../lib/auth/sign-out";
-import {
-  billingDateLabel,
-  formatBillingAmount,
-  formatBillingDate,
-  formatBillingPrice,
-} from "../../lib/billing/billing";
 import { analyticsSurface, desktopBridge } from "../../lib/platform/desktop";
 import type { RpcClient } from "../../lib/query/rpc";
 import { rpc } from "../../lib/query/rpc";
@@ -64,15 +64,6 @@ import { ComputerUsage } from "./ComputerUsage";
 
 type CreditAmount = (typeof MODEL_CREDIT_AMOUNTS)[number];
 type TierOffer = NonNullable<BillingStatus["byokTiers"]>[number];
-
-/** Subscription states that still bill: access now, or resumed from the billing portal. */
-const LIVE_STATES: BillingStatus["state"][] = [
-  "trialing",
-  "active",
-  "past_due",
-  "unpaid",
-  "paused",
-];
 
 function formatMonthlyUsd(cents: number, locale: string): string {
   return formatBillingPrice(
@@ -115,11 +106,6 @@ function ByokIntervalToggle({
       </ToggleGroupItem>
     </ToggleGroup>
   );
-}
-
-/** What a tier costs every `interval`; null when it is not offered at that interval. */
-function tierPriceCents(offer: TierOffer, interval: ByokInterval): number | null {
-  return interval === "year" ? offer.annualPriceCents : offer.monthlyPriceCents;
 }
 
 /** The own-key plan's tiers at `interval`, each with its price and computer. */
@@ -674,30 +660,24 @@ export function ModelCreditsSettings({
     ? formatBillingAmount(status.byokAnnualPriceCents, "usd", i18n.locale)
     : null;
   // A live subscription without monthly credits is the own-key plan, at the price it was bought at.
-  const ownKeyPlan =
-    status.funding === "byok" &&
-    status.byokPriceCents &&
-    !status.monthlyAmountCents &&
-    LIVE_STATES.includes(status.state) &&
-    !status.byokFreeUntil
-      ? {
-          price: formatBillingPrice(
-            {
-              amount: status.byokPriceCents,
-              currency: "usd",
-              interval: status.byokInterval ?? "month",
-              intervalCount: 1,
-            },
-            i18n.locale,
-          ),
-          date: billingDateLabel(status, i18n.locale || "en"),
-        }
-      : null;
+  const ownKeyCents = ownKeySubscriptionCents(status);
+  const ownKeyPlan = ownKeyCents
+    ? {
+        price: formatBillingPrice(
+          {
+            amount: ownKeyCents,
+            currency: "usd",
+            interval: status.byokInterval ?? "month",
+            intervalCount: 1,
+          },
+          i18n.locale,
+        ),
+        date: billingDateLabel(status, i18n.locale || "en"),
+      }
+    : null;
   const yearlySavings = byokYearlySwitchSavings(status);
   const tiers = status.byokTiers ?? [];
-  const currentTier = tiers.find(
-    (offer) => offer.tier === ByokTierSchema.catch("standard").parse(status.byokTier),
-  );
+  const currentTier = subscribedTier(status);
   const tierChange = byokTierChangeOffered(status) && currentTier;
   const subscribedInterval = status.byokInterval ?? "month";
   const tierTargetName = tierTarget?.name;

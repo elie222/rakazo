@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 
+import { i18n } from "@lingui/core";
 import { flush } from "@rakazo/core/test-async";
 import type { ComponentProps, ReactNode } from "react";
 import { act } from "react";
@@ -65,6 +66,8 @@ vi.mock("@rakazo/ui-web", () => {
 
 import type { RpcClient } from "../../lib/query/rpc";
 import { PaywallPage } from "./Paywall";
+
+i18n.activate("en");
 
 const pinned = {
   checkout: vi.fn(async () => ({ url: "https://checkout.example/plan" })),
