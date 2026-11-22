@@ -216,7 +216,7 @@ export function SecretAskCard({ block, canAnswer, canDismiss, onAnswer, onDismis
               setEditorOpen(true);
             }}
           >
-            <Trans>Add</Trans>
+            <Trans>Continue</Trans>
           </Button>
         ) : null}
       </div>

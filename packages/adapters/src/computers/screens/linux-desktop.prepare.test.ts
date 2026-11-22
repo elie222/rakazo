@@ -20,7 +20,8 @@ function prepareDesktop({ repairExitCode = 0, installExitCode = 0, broken = true
       "apt-get": `#!/bin/sh
 echo "$*" >> ${JSON.stringify(calls)}
 case " $* " in
-  *" update "*) exit 0 ;;
+  *" update "*" --allow-releaseinfo-change-label "*) exit 0 ;;
+  *" update "*|*" --allow-releaseinfo-change-label "*) exit 100 ;;
 esac
 case " $* " in *" --no-remove "*) ;; *) exit 99 ;; esac
 case " $* " in
@@ -73,6 +74,11 @@ describe("provider desktop preparation", () => {
     expect(result.calls[2]).toMatch(/--fix-broken/);
     expect(result.calls[2]).toMatch(/--no-remove/);
     expect(result.calls[3]).toContain("xvfb");
+  });
+
+  it("reinstalls missing tools, since a restored disk can list a package whose files are gone", () => {
+    const result = prepareDesktop({ broken: false });
+    expect(result.calls[1]).toMatch(/ install .*--reinstall --no-remove .*websockify/);
   });
 
   it("waits for another preparation of the same computer before checking its tools", () => {
@@ -190,7 +196,7 @@ describe("provider desktop preparation", () => {
       });
       expect(result.status).not.toBe(0);
       expect(readFileSync(calls, "utf8").trim().split("\n")).toEqual(
-        Array.from({ length: 12 }, () => "update -qq"),
+        Array.from({ length: 12 }, () => "update -qq --allow-releaseinfo-change-label"),
       );
       expect(result.stderr).toContain("Could not get lock");
     } finally {
@@ -218,7 +224,9 @@ describe("provider desktop preparation", () => {
         encoding: "utf8",
       });
       expect(result.status).not.toBe(0);
-      expect(readFileSync(calls, "utf8").trim()).toBe("update -qq");
+      expect(readFileSync(calls, "utf8").trim()).toBe(
+        "update -qq --allow-releaseinfo-change-label",
+      );
     } finally {
       rmSync(bin, { recursive: true, force: true });
     }

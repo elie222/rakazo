@@ -269,7 +269,7 @@ function dialogButton(name: string) {
 }
 
 async function openEditor() {
-  await act(async () => button("Add")!.click());
+  await act(async () => button("Continue")!.click());
   expect(dialog()).not.toBeNull();
 }
 
@@ -660,7 +660,7 @@ it.each([
     expect(container.textContent).not.toContain("No longer active");
 
     await render(true);
-    if (credential.auth.type === "login") expect(button("Add")).toBeDefined();
+    if (credential.auth.type === "login") expect(button("Continue")).toBeDefined();
     else expect(button("Save")).toBeDefined();
   },
 );
@@ -743,7 +743,7 @@ it("dismisses a login card from its form, sending nothing typed", async () => {
   await render(loginCard, onDismiss, onAnswer);
   await openEditor();
   await typeIn(loginInput("PIN"), "1234");
-  await act(async () => dialogButton("Dismiss")!.click());
+  await act(async () => dialogButton("Dismiss request")!.click());
   expect(onDismiss).toHaveBeenCalledTimes(1);
   expect(onAnswer).not.toHaveBeenCalled();
   expect(dialog()).toBeNull();

@@ -31,6 +31,7 @@ export function SidebarHeader({
   setPanel,
   navigate,
   setNewSpaceOpen,
+  openAgentImport,
   setCreateBotOpen,
 }: {
   title: string;
@@ -47,6 +48,7 @@ export function SidebarHeader({
   setPanel: (panel: Panel) => void;
   navigate: (path: string) => void;
   setNewSpaceOpen: (open: boolean) => void;
+  openAgentImport: () => void;
   setCreateBotOpen: (open: boolean) => void;
 }) {
   const { t } = useLingui();
@@ -114,6 +116,11 @@ export function SidebarHeader({
                   setCreateMenuOpen(false);
                   if (isMobile) onCloseMobile();
                   setCreateBotOpen(true);
+                }}
+                onImportAgent={() => {
+                  setCreateMenuOpen(false);
+                  if (isMobile) onCloseMobile();
+                  openAgentImport();
                 }}
                 onOpenBot={(id) => {
                   setCreateMenuOpen(false);

@@ -1148,6 +1148,7 @@ function SpaceShell() {
             />
           </>
         }
+        openAgentImport={() => setOverlay({ kind: "import" })}
         footer={railOnScreen ? null : sidebarFooter}
       />
       {railOnScreen && railFooterNode ? createPortal(sidebarFooter, railFooterNode) : null}

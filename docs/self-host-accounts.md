@@ -119,6 +119,13 @@ after their plan starts if they have not connected a model yet. That reminder is
 sent by the worker, so give the worker the same mail settings as the API, including this switch
 (the Compose files already do); a worker without them drops the reminder.
 
+To word these emails your own way, write a directory of `<email>.json` files mapping each app
+language to that email's strings. The app reads it from `EMAIL_COPY_DIR` (`/app/email-copy` in the
+image), so mount yours there for the `api` and `worker` services, or point `EMAIL_COPY_DIR` at it. The
+emails, keys and `{placeholders}` are listed in `packages/auth/src/email-copy/defaults.ts`, and
+`node packages/auth/scripts/check-email-copy.ts <dir>` checks a directory. A missing or invalid
+string falls back to the file's English, then to the default.
+
 ## Password policy
 
 New passwords (signup, reset and change) must be 8 to 128 characters, with no composition rules.
