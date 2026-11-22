@@ -110,6 +110,7 @@ export function SidebarRoster({
           ? t`Settings for ${group.spaceName}`
           : null;
         const chatCount = collapsed ? group.bots.length : 0;
+        const tiles = group.tiles && !mini;
         const headerDropTarget: RosterDropTarget | null =
           group.spaceId === bootstrapMe?.spaceId &&
           !group.emptySpaceId &&
@@ -250,7 +251,11 @@ export function SidebarRoster({
                 ) : null}
               </div>
             ) : null}
-            <CollapsibleContent className="flex flex-col gap-0.5">
+            <CollapsibleContent
+              className={
+                tiles ? "grid grid-cols-3 gap-x-1 gap-y-2 pt-1 pb-2" : "flex flex-col gap-0.5"
+              }
+            >
               {group.bots.map((item) => {
                 const selected =
                   (item.kind === "bot" && !inGroup && active?.id === item.chat.id) ||
@@ -296,17 +301,18 @@ export function SidebarRoster({
                     : item.kind === "group"
                       ? item.chat.members
                       : [];
+                const avatarSize = tiles ? 56 : mini ? 40 : compact ? 28 : 38;
                 const avatar =
                   item.kind === "bot" ? (
                     <BotAvatar
                       avatarSet={item.chat.avatarSet}
                       color={item.chat.color}
                       identity={item.chat.id}
-                      size={mini ? 40 : compact ? 28 : 38}
+                      size={avatarSize}
                       status={item.chat.status}
                     />
                   ) : (
-                    <GroupAvatar members={groupMembers} size={mini ? 40 : compact ? 28 : 38} />
+                    <GroupAvatar members={groupMembers} size={avatarSize} />
                   );
                 const chatTrigger = (
                   <ContextMenuTrigger
@@ -318,7 +324,7 @@ export function SidebarRoster({
                     aria-current={selected ? "page" : undefined}
                     aria-label={mini ? item.chat.name : undefined}
                     aria-describedby={
-                      mini
+                      mini || tiles
                         ? [
                             item.chat.unread ? `roster-unread-${item.kind}-${item.chat.id}` : null,
                             compactStatusLabel
@@ -380,18 +386,20 @@ export function SidebarRoster({
                     // Focus the row so closing the menu returns focus here.
                     onContextMenu={(event) => event.currentTarget.focus()}
                     className={`flex items-center ${
-                      mini
-                        ? "mx-auto size-12 justify-center rounded-xl"
-                        : compact
-                          ? "w-full min-h-11 gap-2 rounded-xl px-2.5 py-1.5"
-                          : "w-full gap-3 rounded-xl px-2.5 py-[10px]"
+                      tiles
+                        ? "w-full min-w-0 flex-col gap-1.5 rounded-xl px-1 py-2"
+                        : mini
+                          ? "mx-auto size-12 justify-center rounded-xl"
+                          : compact
+                            ? "w-full min-h-11 gap-2 rounded-xl px-2.5 py-1.5"
+                            : "w-full gap-3 rounded-xl px-2.5 py-[10px]"
                     } text-start ${
                       selected || rosterDropKey === rowDropKey
                         ? "bg-sidebar-accent"
                         : "group-hover/row:bg-accent"
                     }`}
                   >
-                    {mini ? (
+                    {mini || tiles ? (
                       <span className="relative shrink-0">
                         {avatar}
                         {rowError ? (
@@ -427,7 +435,16 @@ export function SidebarRoster({
                     ) : (
                       avatar
                     )}
-                    {!mini ? (
+                    {tiles ? (
+                      <span
+                        dir="auto"
+                        className={`w-full truncate text-center text-body-sm text-foreground ${
+                          item.chat.unread ? "font-semibold" : "font-medium"
+                        }`}
+                      >
+                        {item.chat.name}
+                      </span>
+                    ) : !mini ? (
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center justify-between gap-1.5">
                           <div className="flex min-w-0 items-center gap-1.5 overflow-hidden">
