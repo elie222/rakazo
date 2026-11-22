@@ -63,7 +63,6 @@ x-app-environment: &app-environment # Runtime
   SMTP_URL:
   EMAIL_FROM:
   EMAIL_REPLY_TO:
-  WELCOME_EMAIL_ENABLED:
   EMAIL_COPY_DIR: ${EMAIL_COPY_DIR:-/app/email-copy}
   RAKAZO_SECRETS_ALLOW_PRIVATE_HTTP:
   EXPO_ACCESS_TOKEN:

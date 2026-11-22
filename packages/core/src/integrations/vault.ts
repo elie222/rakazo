@@ -17,6 +17,11 @@ import {
   UNCHOSEN_ITEM_ANSWER,
 } from "@rakazo/contracts";
 
+/** The host a site shows as, without a leading `www.`; the origin itself when it has none. */
+export function siteHost(origin: string): string {
+  return (URL.canParse(origin) && new URL(origin).host.replace(/^www\./, "")) || origin;
+}
+
 /**
  * Which fixed refusal a secret answer's server error is. Its other errors could echo the value,
  * so they are never shown.

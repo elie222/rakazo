@@ -2,7 +2,6 @@
   "apps/api/src/account/account-import.ts": 1,
   "apps/api/src/messaging/messaging-inbound.ts": 1,
   "apps/api/src/threads/thread-target.ts": 1,
-  "apps/desktop/src/main/main.ts": 1,
   "apps/desktop/src/main/this-computer/native-stack.ts": 1,
   "apps/mobile/app/(settings)/integrations.tsx": 1,
   "apps/mobile/lib/calls/call-session.ts": 1,

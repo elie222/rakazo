@@ -27,7 +27,6 @@ import {
   BillingEmulator,
   CodexCatalogCache,
   closeServerFoundation,
-  configuredBotEmailProvider,
   configuredMessaging,
   contentKeyProviderFromEnv,
   createAgentHomeStore,
@@ -45,7 +44,6 @@ import {
   createRunSandbox,
   createTicketChangeNotifier,
   drainRuns,
-  EmailEmulator,
   GraphileJobPublisher,
   InMemoryJobQueue,
   InMemoryRealtimeFanout,
@@ -72,7 +70,7 @@ import {
   verifyModelServesAgents,
   withHostComputerScreen,
 } from "@rakazo/adapters";
-import { createAuth, isBlockedAuthPath } from "@rakazo/auth";
+import { createAuth, emailCopyAvailable, isBlockedAuthPath } from "@rakazo/auth";
 import type { ModelCredential } from "@rakazo/contracts";
 import {
   isLocalhostOrLoopbackIp,
@@ -126,7 +124,7 @@ import { localSignupAdmitter, mountLocalComputerHost } from "./computers/local-s
 import { mountScreenTarget } from "./computers/screen-proxy.js";
 import { storeInboundAttachment } from "./content/artifacts.js";
 import { mountSharedPages } from "./content/shared-pages.js";
-import { configuredEmailProvider, emailErrorLogger } from "./email/email.js";
+import { apiEmail, emailErrorLogger } from "./email/email.js";
 import { mountEmailInboundRoute } from "./email/email-inbound.js";
 import { lifecycleEmailScheduler } from "./email/lifecycle-email.js";
 import { marketingEmailRoutes, sendWelcomeEmail } from "./email/marketing-email.js";
@@ -356,28 +354,10 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
         // This process registers the inbound sink, so it must hold Telegram's getUpdates connection.
         pollInboundMessages: true,
       });
-  const configuredEmail = emailOverride ?? configuredEmailProvider(env);
-  const localEmailEmulator =
-    !configuredEmail && env.emailEmulator
-      ? new EmailEmulator((message) => {
-          getLogger().info("email emulator captured message", {
-            "email.subject": message.subject,
-          });
-        })
-      : undefined;
-  if (localEmailEmulator && !isLocalhostOrLoopbackIp(env.apiHost)) {
-    throw new Error("EMAIL_EMULATOR requires API_HOST to be a loopback host");
-  }
-  const email: TransactionalEmailProvider | undefined = configuredEmail ?? localEmailEmulator;
-  // Our own product mail, behind the same switch as the welcome email. The worker sends it, and
-  // the local emulator lives in this process, so the emulator counts only in single-process mode.
-  const lifecycleEmailsEnabled =
-    env.welcomeEmailEnabled && Boolean(configuredEmail ?? (inMemoryJobs ? email : undefined));
-  const botEmail: TransactionalEmailProvider | undefined =
-    configuredBotEmailProvider({
-      smtpUrl: env.botEmailSmtpUrl,
-      domain: env.inboundEmail?.domain,
-    }) ?? localEmailEmulator;
+  const { email, localEmailEmulator, lifecycleEmailKinds, botEmail } = apiEmail(env, {
+    override: emailOverride,
+    singleProcess: Boolean(inMemoryJobs),
+  });
   const onEmailError = emailErrorLogger("transactional email delivery failed");
   const stripeBilling = stripeBillingConfigFromEnv(env);
   const localBillingEmulator =
@@ -401,15 +381,17 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
         analytics,
         experiments: createExperiments(env.experiments),
         partnerProgram,
-        scheduleLifecycleEmail: lifecycleEmailsEnabled
-          ? lifecycleEmailScheduler({
-              prisma,
-              jobs,
-              webOrigin: env.webOrigin,
-              origin: env.authUrl,
-              secret: env.authSecret,
-            })
-          : undefined,
+        scheduleLifecycleEmail:
+          lifecycleEmailKinds.length > 0
+            ? lifecycleEmailScheduler({
+                kinds: lifecycleEmailKinds,
+                prisma,
+                jobs,
+                webOrigin: env.webOrigin,
+                origin: env.authUrl,
+                secret: env.authSecret,
+              })
+            : undefined,
       })
     : undefined;
   const modelCreditsEnabled = billing?.modelCreditsEnabled ?? false;
@@ -499,7 +481,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     logger: authLibraryLogger("auth.request.failed"),
     onEmailError,
     afterSignIn:
-      email && env.welcomeEmailEnabled
+      email && emailCopyAvailable("welcome")
         ? (userId, headers) =>
             sendWelcomeEmail(
               {
@@ -575,8 +557,14 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
       email: botEmail,
       // Single-process mode answers the job here; otherwise the worker does.
       lifecycleEmail:
-        email && lifecycleEmailsEnabled
-          ? createLifecycleEmailSender({ prisma, email, jobs, analytics })
+        email && lifecycleEmailKinds.length > 0
+          ? createLifecycleEmailSender({
+              kinds: lifecycleEmailKinds,
+              prisma,
+              email,
+              jobs,
+              analytics,
+            })
           : undefined,
       messaging,
       isMessagingInstallationActive: messagingInstallations
@@ -622,7 +610,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     : undefined;
   reconciler?.start();
   const stopReferralEmails =
-    email && env.welcomeEmailEnabled && billing?.referralsEnabled
+    email && billing?.referralsEnabled && emailCopyAvailable("referral")
       ? startHourlySweep(
           sendReferralEmails({
             prisma,

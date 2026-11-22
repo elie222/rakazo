@@ -1,10 +1,10 @@
-// Fails when a deployment's email copy directory would fall back anywhere: a missing email,
-// language or key, or a string whose placeholders differ from its default. Copy this release does
-// not use is listed without failing. The production image build runs it under plain Node:
+// Fails when a deployment's email copy folder would leave an email unsent or falling back: a
+// missing email, language or key, or a string whose placeholders differ from its key's. Copy this
+// release does not use is listed without failing. Runs under plain Node:
 // node packages/auth/scripts/check-email-copy.ts <dir>
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { EMAIL_COPY_DEFAULTS, EMAIL_LOCALES } from "../src/email-copy/defaults.ts";
+import { EMAIL_COPY_KEYS, EMAIL_LOCALES } from "../src/email-copy/email-keys.ts";
 import { readCopyFile } from "../src/email-copy/validate.ts";
 
 const dir = process.argv[2];
@@ -15,7 +15,7 @@ const unused: string[] = [];
 for (const file of files) {
   try {
     const read = readCopyFile(
-      EMAIL_COPY_DEFAULTS,
+      EMAIL_COPY_KEYS,
       EMAIL_LOCALES,
       file.slice(0, -".json".length),
       JSON.parse(readFileSync(join(dir, file), "utf8")),
@@ -26,7 +26,7 @@ for (const file of files) {
     problems.push(`${file}: ${error instanceof Error ? error.message : String(error)}`);
   }
 }
-for (const id of Object.keys(EMAIL_COPY_DEFAULTS))
+for (const id of Object.keys(EMAIL_COPY_KEYS))
   if (!files.includes(`${id}.json`)) problems.push(`${id}: no ${id}.json`);
 for (const entry of unused) console.log(`Unused: ${entry}`);
 for (const problem of problems) console.error(problem);

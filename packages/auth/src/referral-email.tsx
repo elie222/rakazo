@@ -3,7 +3,7 @@ import type { TransactionalEmail } from "@rakazo/adapter-kit";
 import { INVITED_TRIAL_WEEKS } from "@rakazo/contracts";
 import { Link, Text } from "react-email";
 import { emailText, greeting, linkStyle, message } from "./email.js";
-import { emailCopy } from "./email-copy/hosted-copy.js";
+import { emailCopy } from "./email-copy/deployment-copy.js";
 
 export function referralEmail(
   user: { email: string; name: string },
