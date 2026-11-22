@@ -1,6 +1,13 @@
 import { ORPCError } from "@orpc/server";
-import { BUILTIN_AGENT_SKILLS } from "@rakazo/adapters";
+import {
+  BUILTIN_AGENT_SKILLS,
+  MAX_SKILL_FILES,
+  MAX_SKILL_FILES_BYTES,
+  renameSkillInRoutines,
+  signalRenamedRoutines,
+} from "@rakazo/adapters";
 import type { Actor, AgentSkill, AgentSkillSource } from "@rakazo/contracts";
+import { UpdateAgentSkillInput } from "@rakazo/contracts";
 import type { SkillSource } from "@rakazo/core";
 import {
   buildSkillMd,
@@ -10,15 +17,23 @@ import {
   mergeBuiltinSkills,
   parseSkillMd,
 } from "@rakazo/core";
-import type { PrismaClient } from "@rakazo/db";
+import type { PrismaClient, ThreadEvents } from "@rakazo/db";
 import {
   AVAILABILITY_SELECT,
+  assertNameFreeWhereAvailable,
   availableInSpace,
   IsolationError,
   isUniqueViolation,
+  JsonObject,
+  Prisma,
+  readJsonColumn,
+  runAsSystemInTransaction,
   spaceAvailability,
+  TransactionConflictError,
+  withTransactionRetry,
 } from "@rakazo/db";
-import { assertNameFreeWhereAvailable, userAddedAvailability } from "../spaces/name-claims.js";
+import { z } from "zod";
+import { userAddedAvailability } from "../spaces/name-claims.js";
 
 type AgentSkillRow = {
   id: string;
@@ -124,36 +139,113 @@ export function resolveSkillContent(input: {
   };
 }
 
-export function createAgentSkillsService(prisma: PrismaClient) {
-  async function owned(actor: Actor, skillId: string) {
-    const row = await prisma.agentSkill.findFirst({
+// Preserve the original keys. A record parser can silently drop "__proto__".
+const StoredSkillFiles = z.custom<Record<string, string>>((value) => {
+  const parsed = JsonObject.safeParse(value);
+  return (
+    parsed.success &&
+    !Object.hasOwn(parsed.data, "__proto__") &&
+    Object.values(parsed.data).every((content) => typeof content === "string")
+  );
+});
+
+export function createAgentSkillsService(
+  prisma: PrismaClient,
+  events?: Pick<ThreadEvents, "publishSpaceChange">,
+) {
+  async function owned(actor: Actor, skillId: string, db: Prisma.TransactionClient = prisma) {
+    const row = await db.agentSkill.findFirst({
       where: { id: skillId, ...availableInSpace(actor) },
+      omit: { files: true },
       include: { availableIn: AVAILABILITY_SELECT },
     });
     if (!row) throw new IsolationError();
     return row;
   }
 
+  function listAvailableRows(actor: Actor) {
+    return prisma.agentSkill.findMany({
+      where: availableInSpace(actor),
+      omit: { files: true },
+      include: { availableIn: AVAILABILITY_SELECT },
+      orderBy: [{ name: "asc" }, { id: "asc" }],
+    });
+  }
+
+  async function updateFile(
+    actor: Actor,
+    skillId: string,
+    file: NonNullable<UpdateAgentSkillInput["file"]>,
+  ): Promise<AgentSkill> {
+    const where = { id: skillId, ...availableInSpace(actor) };
+    return withTransactionRetry(() =>
+      prisma.$transaction(async (tx) => {
+        const existing = await tx.agentSkill.findFirst({
+          where,
+          include: { availableIn: AVAILABILITY_SELECT },
+        });
+        if (!existing) throw new IsolationError();
+        if (existing.source !== "user") {
+          throw new ClientError("BAD_REQUEST", "Only personal skills can have files updated.");
+        }
+        const current =
+          existing.files === null
+            ? {}
+            : readJsonColumn(
+                StoredSkillFiles,
+                existing.files,
+                { table: "agent_skills", column: "files", id: skillId },
+                "reject",
+              );
+        if (Object.hasOwn(current, file.path) && current[file.path] === file.content) {
+          return mapAgentSkill(existing);
+        }
+
+        const files = { ...current, [file.path]: file.content };
+        const contents = Object.values(files);
+        if (contents.length > MAX_SKILL_FILES) {
+          throw new ClientError(
+            "BAD_REQUEST",
+            `A skill can have at most ${MAX_SKILL_FILES} files.`,
+          );
+        }
+        if (
+          contents.reduce((bytes, text) => bytes + Buffer.byteLength(text), 0) >
+          MAX_SKILL_FILES_BYTES
+        ) {
+          throw new ClientError(
+            "BAD_REQUEST",
+            `Skill files can use at most ${MAX_SKILL_FILES_BYTES} UTF-8 bytes in total.`,
+          );
+        }
+
+        // Compare the file map itself. Document edits can commit without invalidating this write.
+        const updated = await tx.agentSkill.updateMany({
+          where: {
+            ...where,
+            source: "user",
+            files: { equals: existing.files ?? Prisma.AnyNull },
+          },
+          data: { files },
+        });
+        if (updated.count !== 1) {
+          throw new TransactionConflictError("The skill changed while saving its file. Try again.");
+        }
+        return mapAgentSkill(await owned(actor, skillId, tx));
+      }),
+    );
+  }
+
   return {
     async list(actor: Actor): Promise<Omit<AgentSkill, "content">[]> {
-      const rows = await prisma.agentSkill.findMany({
-        where: availableInSpace(actor),
-        omit: { files: true },
-        include: { availableIn: AVAILABILITY_SELECT },
-        orderBy: [{ name: "asc" }, { id: "asc" }],
-      });
+      const rows = await listAvailableRows(actor);
       return mergeBuiltinSkills(builtinCatalog(), rows.map(mapAgentSkill)).map(
         ({ content: _content, ...entry }) => entry,
       );
     },
 
     async listWithContent(actor: Actor): Promise<AgentSkill[]> {
-      const rows = await prisma.agentSkill.findMany({
-        where: availableInSpace(actor),
-        omit: { files: true },
-        include: { availableIn: AVAILABILITY_SELECT },
-        orderBy: [{ name: "asc" }, { id: "asc" }],
-      });
+      const rows = await listAvailableRows(actor);
       return mergeBuiltinSkills(builtinCatalog(), rows.map(mapAgentSkill));
     },
 
@@ -167,11 +259,7 @@ export function createAgentSkillsService(prisma: PrismaClient) {
         return mapAgentSkill(await owned(actor, input.skillId));
       }
       const name = input.name?.trim() ?? "";
-      const rows = await prisma.agentSkill.findMany({
-        where: availableInSpace(actor),
-        include: { availableIn: AVAILABILITY_SELECT },
-        orderBy: [{ name: "asc" }, { id: "asc" }],
-      });
+      const rows = await listAvailableRows(actor);
       const row = findSkillByName(rows, name);
       if (row) return mapAgentSkill(row);
       const builtin = findSkillByName(builtinCatalog(), name);
@@ -217,22 +305,24 @@ export function createAgentSkillsService(prisma: PrismaClient) {
       }
     },
 
-    async update(
-      actor: Actor,
-      input: {
-        skillId: string;
-        content?: string;
-        name?: string;
-        description?: string;
-        body?: string;
-      },
-    ): Promise<AgentSkill> {
+    async update(actor: Actor, input: UpdateAgentSkillInput): Promise<AgentSkill> {
+      if (input.file !== undefined) {
+        const validated = UpdateAgentSkillInput.safeParse(input);
+        if (!validated.success || !validated.data.file) {
+          throw new ClientError(
+            "BAD_REQUEST",
+            validated.error?.issues[0]?.message ?? "Invalid skill file.",
+          );
+        }
+        return updateFile(actor, validated.data.skillId, validated.data.file);
+      }
       const existing = await owned(actor, input.skillId);
       if (isSkillReadOnly(asSource(existing.source) as SkillSource)) {
         throw new ORPCError("BAD_REQUEST", { message: "Builtin and plugin skills are read-only." });
       }
       const resolved = resolveSkillContent({ ...input, prior: existing });
       const renamed = !findSkillByName([existing], resolved.name);
+      const previousName = existing.name;
       if (
         renamed &&
         builtinCatalog().some((s) => s.name.toLowerCase() === resolved.name.toLowerCase())
@@ -240,6 +330,7 @@ export function createAgentSkillsService(prisma: PrismaClient) {
         throw new ORPCError("CONFLICT", { message: "A skill with that name already exists." });
       }
       // Mutate only owner-scoped user rows (never builtin/plugin), even if source was tampered.
+      let renamedRoutineSpaces: string[] = [];
       try {
         const updated = await prisma.$transaction(async (tx) => {
           if (renamed)
@@ -251,14 +342,40 @@ export function createAgentSkillsService(prisma: PrismaClient) {
               spaceAvailability(existing),
               existing.id,
             );
-          return tx.agentSkill.updateMany({
-            where: { id: existing.id, ...availableInSpace(actor), source: "user" },
+          const result = await tx.agentSkill.updateMany({
+            where: {
+              id: existing.id,
+              ...availableInSpace(actor),
+              source: "user",
+              // A rename that lost a race must not leave routines pointing at a stale name.
+              ...(renamed ? { name: previousName } : {}),
+            },
             data: {
               name: resolved.name,
               description: resolved.description,
               content: resolved.content,
             },
           });
+          if (result.count === 0 && renamed) {
+            throw new ClientError("CONFLICT", "This skill changed. Reload and try again.");
+          }
+          if (result.count === 1 && renamed) {
+            const { allSpaces, spaceIds } = spaceAvailability(existing);
+            // The owner's routines in the other spaces the skill is available in sit outside
+            // this request's Space, so read them by owner as the name checks do.
+            renamedRoutineSpaces = await runAsSystemInTransaction(
+              tx,
+              "owner's routines in the spaces a renamed skill is available in",
+              () =>
+                renameSkillInRoutines(
+                  tx,
+                  { userId: existing.userId, spaceIds: allSpaces ? null : spaceIds },
+                  previousName,
+                  resolved.name,
+                ),
+            );
+          }
+          return result;
         });
         if (updated.count !== 1) throw new IsolationError();
       } catch (error) {
@@ -268,6 +385,7 @@ export function createAgentSkillsService(prisma: PrismaClient) {
         }
         throw error;
       }
+      await signalRenamedRoutines(events, renamedRoutineSpaces);
       return mapAgentSkill(await owned(actor, existing.id));
     },
 

@@ -790,7 +790,7 @@ function reactToThread() {
           : ask
             ? t`Say yes or no, or answer in a sentence.`
             : "";
-      const said = instruction ? (rest ? `${rest}. ${instruction}` : instruction) : rest;
+      const said = instruction ? (rest ? thenSay(rest, instruction) : instruction) : rest;
       const options = { botId, messageId: lastBot.id, callId };
       // The rest follows the sentences still playing; with nothing left, the turn ends once
       // they have played.
@@ -864,4 +864,9 @@ function replyFinished(message: ThreadMessage) {
 
 function runActive(snapshot: ThreadSnapshot | null) {
   return isRunWorking(snapshot?.run?.status);
+}
+
+/** One sentence after another, with a full stop only where the first has no ending of its own. */
+function thenSay(first: string, next: string): string {
+  return /[.!?…]["'”’)\]]*\s*$/.test(first) ? `${first.trimEnd()} ${next}` : `${first}. ${next}`;
 }

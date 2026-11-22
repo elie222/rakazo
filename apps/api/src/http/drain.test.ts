@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { createServer, request } from "node:http";
 import type { AddressInfo } from "node:net";
 import { fileURLToPath } from "node:url";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { RUN_DRAIN_SIGNAL, trackConnections } from "./drain.js";
 
 const servers: ReturnType<typeof createServer>[] = [];
@@ -37,7 +37,9 @@ function get(port: number, accept?: string) {
 describe("trackConnections", () => {
   it("lets a slow request finish while a stream closes at once", async () => {
     let release = () => {};
+    let arrived = 0;
     const { port, drain } = await start((req, res) => {
+      arrived += 1;
       if (req.headers.accept === "text/event-stream") {
         res.writeHead(200, { "content-type": "text/event-stream" });
         res.write("data: hello\n\n");
@@ -47,19 +49,22 @@ describe("trackConnections", () => {
     });
     const stream = get(port, "text/event-stream");
     const slow = get(port);
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    await vi.waitFor(() => expect(arrived).toBe(2));
 
     const drained = drain(5_000);
     await expect(stream).rejects.toThrow();
-    setTimeout(() => release(), 100);
+    release();
     await expect(slow).resolves.toEqual({ status: 200, body: "done" });
     await drained;
   });
 
   it("cuts off requests still running when the grace period ends", async () => {
-    const { port, drain } = await start(() => {});
+    let arrived = 0;
+    const { port, drain } = await start(() => {
+      arrived += 1;
+    });
     const hung = get(port);
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    await vi.waitFor(() => expect(arrived).toBe(1));
 
     await drain(100);
     await expect(hung).rejects.toThrow();

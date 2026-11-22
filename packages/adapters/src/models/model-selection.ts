@@ -58,6 +58,7 @@ import {
   modelProviderAllowed,
   modelProviderAllowlist,
 } from "./model-provider-allowlist.js";
+import { modelProviderDefinition } from "./model-provider-registry.js";
 import type { StoredModelSecret } from "./model-secret.js";
 import { parseModelSecret } from "./model-secret.js";
 import { connectionModelSettings } from "./model-settings.js";
@@ -158,8 +159,25 @@ export function defaultCatalogModelId(
   return usableModelId((entries.find((item) => item.recommended) ?? entries[0])?.id);
 }
 
+/**
+ * The model and effort a new subscription sign-in saves. Connect forms preselect the key
+ * default, so that untouched choice becomes the plan's default; another picked model stays.
+ */
+export function subscriptionSignInChoice(
+  provider: string,
+  modelId: string | undefined,
+  thinkingLevel: string | null | undefined,
+): { modelId: string | undefined; thinkingLevel: string | null | undefined } {
+  const definition = modelProviderDefinition(canonicalPiProviderId(provider));
+  const preset = definition?.subscriptionModel;
+  const untouched = !modelId || modelId === definition?.recommendedModel || modelId === preset?.id;
+  if (!preset || !untouched) return { modelId, thinkingLevel };
+  return { modelId: preset.id, thinkingLevel: thinkingLevel || preset.thinkingLevel };
+}
+
 /** A run pinned to a provider the user has no connection for. */
 export const PINNED_PROVIDER_NOT_CONNECTED = "Connect that model provider first";
+export const UNKNOWN_PROVIDER_MODEL = "Unknown model for that provider";
 
 export class UnavailableModelForAuthError extends Error {
   constructor(message = UNAVAILABLE_MODEL_FOR_AUTH_MESSAGE) {
@@ -846,7 +864,7 @@ export async function validateBotModelChange(
       );
       if (error) return { ok: false, error };
     } else if (!inCatalog && credential.defaultModel !== model) {
-      return { ok: false, error: "Unknown model for that provider" };
+      return { ok: false, error: UNKNOWN_PROVIDER_MODEL };
     }
     if (inCatalog) {
       const authError = await validateStoredModelAuth(
@@ -984,7 +1002,7 @@ export async function validateConnectedModelChoice(
         : isCatalogModelChoice(provider, modelId)
     )
       ? undefined
-      : "Unknown model for that provider";
+      : UNKNOWN_PROVIDER_MODEL;
   }
   const credential = await findConnectedModelCredential(
     prisma,
@@ -1015,7 +1033,7 @@ async function validateSelectedModelChoice(
   resolution: ConnectedModelResolution,
 ) {
   if (!credential) return PINNED_PROVIDER_NOT_CONNECTED;
-  if (!usableModelId(modelId)) return "Unknown model for that provider";
+  if (!usableModelId(modelId)) return UNKNOWN_PROVIDER_MODEL;
   // Compatible catalog entries are placeholders, not evidence that this
   // connection enables that id. Only legacy connections keep that exception.
   if (provider !== OPENAI_COMPATIBLE_PROVIDER_ID) {
@@ -1031,7 +1049,7 @@ async function validateSelectedModelChoice(
         resolution.reads,
       ))
       ? undefined
-      : "Unknown model for that provider";
+      : UNKNOWN_PROVIDER_MODEL;
   }
   const savedChoice = await prisma.userModelPreference.findFirst({
     where: {
@@ -1053,7 +1071,7 @@ async function validateSelectedModelChoice(
   if (secret?.kind === "openai_compatible" && secret.enabledModelIds === undefined)
     return undefined;
   const enabled = secret && enabledOpenAiCompatibleModelIds(secret, credential.defaultModel);
-  return enabled?.includes(modelId.trim()) ? undefined : "Unknown model for that provider";
+  return enabled?.includes(modelId.trim()) ? undefined : UNKNOWN_PROVIDER_MODEL;
 }
 
 export type ModelChoice = {
@@ -1135,7 +1153,7 @@ export function pinnedModelCredentialError(
     !liveCatalogEntry(choice.modelProvider, modelId) &&
     credential.defaultModel !== modelId
   ) {
-    return "Unknown model for that provider";
+    return UNKNOWN_PROVIDER_MODEL;
   }
   return undefined;
 }
