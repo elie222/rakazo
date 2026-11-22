@@ -45,7 +45,7 @@ for (const dir of ["ltr", "rtl"]) {
     await page.setViewportSize({ width: 320, height: 720 });
     await page.goto("/e2e/fixtures/gallery.html?embed&scenario=working");
     await page.locator("html").evaluate((element, direction) => {
-      element.dir = direction;
+      element.setAttribute("dir", direction);
     }, dir);
 
     const running = page.getByText("running", { exact: true });
