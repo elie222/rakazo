@@ -236,41 +236,30 @@ export async function retryOnTooManyConnections<T>(
 ): Promise<T> {
   return retry(operation, {
     attempts: options.attempts ?? CONNECT_RETRY_ATTEMPTS,
-    delayMs: connectRetryDelayMs,
+    delayMs: (attempt) => Math.min(5_000, 200 * 2 ** attempt),
     retryable: isTooManyDatabaseConnections,
     ...(options.sleep ? { delay: options.sleep } : {}),
   });
 }
 
-function connectRetryDelayMs(attempt: number): number {
-  return Math.min(5_000, 200 * 2 ** attempt);
-}
-
-function installConnectRetry(pool: Pool): void {
+export function installConnectRetry(pool: Pool): void {
   type ConnectCallback = (
-    err: Error,
-    client: PoolClient,
+    err: Error | undefined,
+    client: PoolClient | undefined,
     done: (release?: boolean) => void,
   ) => void;
-  const originalConnect = pool.connect.bind(pool) as {
-    (): Promise<PoolClient>;
-    (callback: ConnectCallback): void;
-  };
+  const originalConnect = pool.connect.bind(pool) as () => Promise<PoolClient>;
 
   function connect(): Promise<PoolClient>;
   function connect(callback: ConnectCallback): void;
   function connect(callback?: ConnectCallback): Promise<PoolClient> | undefined {
-    if (!callback) return retryOnTooManyConnections(() => originalConnect());
-    const attempt = (n: number) => {
-      originalConnect((err, client, done) => {
-        if (err && isTooManyDatabaseConnections(err) && n < CONNECT_RETRY_ATTEMPTS - 1) {
-          setTimeout(() => attempt(n + 1), connectRetryDelayMs(n));
-          return;
-        }
-        callback(err, client, done);
-      });
-    };
-    attempt(0);
+    const connected = retryOnTooManyConnections(() => originalConnect());
+    if (!callback) return connected;
+    // The pool hands a callback `client.release` as `done`, and a no-op when connecting failed.
+    connected.then(
+      (client) => callback(undefined, client, client.release),
+      (error: Error) => callback(error, undefined, () => {}),
+    );
   }
 
   pool.connect = connect as Pool["connect"];
