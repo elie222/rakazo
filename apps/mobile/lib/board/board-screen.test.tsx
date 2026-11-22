@@ -47,11 +47,13 @@ vi.mock("./board-list", () => ({
   BoardList: ({
     sections,
     error,
+    moving,
     onMove,
     onRefresh,
   }: {
     sections: { tickets: Ticket[] }[];
     error: string;
+    moving?: boolean;
     onMove: (ticket: Ticket, status: "done") => void;
     onRefresh: () => Promise<void>;
   }) =>
@@ -65,7 +67,11 @@ vi.mock("./board-list", () => ({
       ),
       createElement(
         "button",
-        { type: "button", onClick: () => onMove(sections[0]!.tickets[0]!, "done") },
+        {
+          type: "button",
+          disabled: moving,
+          onClick: () => onMove(sections[0]!.tickets[0]!, "done"),
+        },
         "Move",
       ),
       error,
@@ -162,18 +168,15 @@ it("shows a moved ticket in its new column", async () => {
   });
 });
 
-it("sends a move made while another is saving once that one ends", async () => {
+it("offers no other move while one is saving", async () => {
   const first = deferred<Ticket>();
-  const moves = () => rpc.mock.calls.filter(([proc]) => proc === "tickets/move");
-  rpc.mockImplementation(async (proc: string) => {
-    if (proc !== "tickets/move") return { tickets: [ticket] };
-    return moves().length === 1 ? first.promise : { ...ticket, status: "done" };
-  });
+  rpc.mockImplementation(async (proc: string) =>
+    proc === "tickets/move" ? first.promise : { tickets: [ticket] },
+  );
   await render();
   await vi.waitFor(() => expect(button("Move")).toBeDefined());
   await act(async () => button("Move")?.click());
-  await act(async () => button("Move")?.click());
-  expect(moves()).toHaveLength(1);
+  expect(button("Move")?.disabled).toBe(true);
   await act(async () => first.resolve({ ...ticket, status: "done" }));
-  await vi.waitFor(() => expect(moves()).toHaveLength(2));
+  await vi.waitFor(() => expect(button("Move")?.disabled).toBe(false));
 });
