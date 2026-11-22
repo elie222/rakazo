@@ -54,7 +54,11 @@ const DEFAULT_WEB_ORIGIN = "http://127.0.0.1:5173";
  * double-slash redirect URI as a mismatch against the one registered with them.
  */
 export function absoluteHttpOrigin(value: string | undefined, fallback: string, name: string) {
-  const origin = (value?.trim() || fallback).replace(/\/+$/, "");
+  const configured = value?.trim() || fallback;
+  // A loop rather than a trailing-slash regex, which backtracks on a long run of slashes.
+  let end = configured.length;
+  while (end > 0 && configured[end - 1] === "/") end -= 1;
+  const origin = configured.slice(0, end);
   try {
     const url = new URL(origin);
     if (url.protocol !== "http:" && url.protocol !== "https:") throw new Error();

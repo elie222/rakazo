@@ -14,13 +14,14 @@ export type EmailProviderConfig = {
 export function emailProviderConfigFromEnv(
   source: Record<string, string | undefined>,
 ): EmailProviderConfig {
-  const value = (name: string) => source[name]?.trim() || undefined;
+  // Each setting is named in full so the deployment's environment allowlist check can find it.
+  const value = (setting: string | undefined) => setting?.trim() || undefined;
   return {
-    provider: value("EMAIL_PROVIDER"),
-    apiKey: value("EMAIL_API_KEY"),
-    from: value("EMAIL_FROM"),
-    replyTo: value("EMAIL_REPLY_TO"),
-    smtpUrl: value("SMTP_URL"),
+    provider: value(source.EMAIL_PROVIDER),
+    apiKey: value(source.EMAIL_API_KEY),
+    from: value(source.EMAIL_FROM),
+    replyTo: value(source.EMAIL_REPLY_TO),
+    smtpUrl: value(source.SMTP_URL),
   };
 }
 
