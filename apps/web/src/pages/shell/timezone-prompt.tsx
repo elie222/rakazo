@@ -16,6 +16,12 @@ import { useSave, useSpaceQueries } from "../../lib/query/query";
 import { rpc } from "../../lib/query/rpc";
 import { useEventListener } from "../../lib/use-event-listener";
 
+/** The account after a timezone save, where an adoption only fills an empty zone and so never replaces a newer pick. */
+export function withSavedTimezone(prev: Me | null | undefined, me: Me, adopted?: boolean) {
+  if (!prev) return me;
+  return adopted && prev.timezone != null ? prev : { ...prev, timezone: me.timezone };
+}
+
 /**
  * Keeps the account's timezone in step with this device: adopts it for an account without
  * one, and asks before moving an account set to another zone. Checked on load and whenever

@@ -300,6 +300,11 @@ vi.mock("../platform/app-version", () => ({
   formatUpdateLabel: () => "",
   getAppVersionInfo: () => ({ version: "1.0.0", build: "1" }),
 }));
+const storeReview = vi.hoisted(() => ({ url: null as string | null, open: vi.fn() }));
+vi.mock("../platform/store-review", () => ({
+  openWriteReview: storeReview.open,
+  writeReviewUrl: () => storeReview.url,
+}));
 const storeUpdate = vi.hoisted(() => ({ available: false, open: vi.fn() }));
 vi.mock("../platform/store-update", () => ({
   openStoreListing: storeUpdate.open,
@@ -424,6 +429,7 @@ beforeEach(() => {
   account.billing = {};
   haptics.enabled = true;
   storeUpdate.available = false;
+  storeReview.url = null;
   haptics.listeners.clear();
   haptics.save.mockReset().mockResolvedValue(undefined);
   haptics.load.mockReset().mockResolvedValue(undefined);
@@ -588,6 +594,17 @@ it("offers a store update beside the version only when one is available", async 
   const updatable = await renderAccount();
   await updatable.press("Update");
   expect(storeUpdate.open).toHaveBeenCalled();
+});
+
+it("offers rating the app only on store builds", async () => {
+  const view = await renderAccount();
+  expect(view.button("Rate Rakazo")).toBeUndefined();
+  act(() => root?.unmount());
+
+  storeReview.url = "https://apps.apple.com/app/rakazo/id6801531099?action=write-review";
+  const rateable = await renderAccount();
+  await rateable.press("Rate Rakazo");
+  expect(storeReview.open).toHaveBeenCalled();
 });
 
 it("shows a device haptics switch that follows and saves the local preference", async () => {
@@ -842,6 +859,7 @@ it.each([false, true])(
         "Integrations",
         "Skills",
         "Artifacts",
+        "Pages shared with you",
         "General",
         "Models",
         "Approvals",
@@ -858,9 +876,15 @@ it.each([false, true])(
       expect(artifacts.getAttribute("role")).toBe("button");
       expect(artifacts.dataset.chevron).toBe("right");
 
-      // Artifacts lives on the root stack, so it closes the settings sheet first.
-      await view.press("Artifacts");
-      expect(events).toEqual(["close", "/artifacts"]);
+      // These shortcuts close the settings sheet before opening on the root stack.
+      for (const [title, href] of [
+        ["Artifacts", "/artifacts"],
+        ["Pages shared with you", "/shared-pages"],
+      ] as const) {
+        events.length = 0;
+        await view.press(title);
+        expect(events).toEqual(["close", href]);
+      }
       for (const [title, href] of [
         ["tester@example.test", "/profile"],
         ["General", "/general"],

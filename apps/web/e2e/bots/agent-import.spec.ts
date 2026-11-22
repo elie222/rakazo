@@ -122,7 +122,11 @@ test("imports an OpenClaw folder and another assistant's document as new bots", 
   await page.goto("/app");
   await page.waitForURL(/\/app\/[^/]+$/);
 
-  const importPanel = await openImport(page);
+  // The create menu offers it beside New bot, as Settings does.
+  await page.getByTestId("create-menu-trigger").click();
+  await page.getByTestId("bot-create-picker").getByTestId("create-import-agent").click();
+  const importPanel = page.getByTestId("agent-import");
+  await expect(importPanel.getByTestId("agent-import-choose")).toBeVisible();
   await importPanel.getByRole("button", { name: "Close", exact: true }).click();
   await expect(importPanel).toHaveCount(0);
 
