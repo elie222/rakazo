@@ -9,7 +9,8 @@ const DISPLAY_NAME = /(<key>CFBundleDisplayName<\/key>\s*<string>)[^<]*(<\/strin
 /** Gives the extension the app's name, which iOS shows under the icon in the share sheet. */
 function renameShareExtension(infoPlist, name) {
   if (!DISPLAY_NAME.test(infoPlist)) throw new Error(`${TARGET} Info.plist has no display name`);
-  return infoPlist.replace(DISPLAY_NAME, (_, open, close) => `${open}${name}${close}`);
+  const displayName = name.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
+  return infoPlist.replace(DISPLAY_NAME, (_, open, close) => `${open}${displayName}${close}`);
 }
 
 /** expo-sharing's group reuses another extension's `Info.plist` reference, which Xcode rejects. */

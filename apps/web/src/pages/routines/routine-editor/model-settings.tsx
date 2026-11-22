@@ -1,6 +1,7 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { ModelCatalogEntry, ModelCredential } from "@rakazo/contracts";
 import { credentialForModel, modelThinkingLevels } from "@rakazo/core";
+import { thinkingLevelLabel } from "@rakazo/i18n/thinking-level";
 import {
   Button,
   OptionSelect,
@@ -11,11 +12,7 @@ import {
 } from "@rakazo/ui-web";
 import { SlidersHorizontal } from "lucide-react";
 import { useEffect, useState } from "react";
-import {
-  connectedModelOptions,
-  parseModelOptionKey,
-  thinkingLevelLabel,
-} from "../../../lib/models/model-catalog";
+import { connectedModelOptions, parseModelOptionKey } from "../../../lib/models/model-catalog";
 import { rpc } from "../../../lib/query/rpc";
 import type { RoutineDraftState } from "../../../lib/routines/routine-draft";
 

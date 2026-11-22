@@ -634,57 +634,61 @@ export function selectContext<T extends ContextMessage>(
   }
   if (used > available) {
     if (options.truncateToolResults !== false) {
-      let shortenedCount = 0;
       let keptVerbatimWhole = false;
-      const shortened = messages.map((message, index) => {
-        if (!protectedGroupIndexes.has(index) || message.role !== "toolResult") return message;
-        const parts = Array.isArray(message.content) ? message.content : undefined;
-        const images =
-          parts?.filter((part) => part && typeof part === "object" && part.type === "image") ?? [];
-        const serialized = parts?.every(
-          (part) =>
-            part && typeof part === "object" && (part.type === "text" || part.type === "image"),
-        )
-          ? parts
-              .filter((part) => part.type === "text" && typeof part.text === "string")
-              .map((part) => part.text)
-              .join("\n")
-          : typeof message.content === "string"
-            ? message.content
-            : JSON.stringify(message.content);
-        if (!serialized || serialized.length <= 256) return message;
-        const group = groups.find((group) => group.indexes.includes(index));
-        const assistant = group ? messages[group.indexes[0]!] : undefined;
-        const nativeCall = Array.isArray(assistant?.content)
-          ? assistant.content.find(
-              (part) => part?.type === "toolCall" && part.id === message.toolCallId,
-            )
-          : undefined;
-        const call = toolCallIdentity(nativeCall, message.toolName);
-        if (isVerbatimMcpResult(call.name, call.arguments, options.verbatimMcpServers)) {
-          keptVerbatimWhole = true;
-          return message;
+      // Shorten long results first; only when that leaves the protected step over budget, shorten the short ones too.
+      for (const floor of [256, 0]) {
+        let shortenedCount = 0;
+        const shortened = messages.map((message, index) => {
+          if (!protectedGroupIndexes.has(index) || message.role !== "toolResult") return message;
+          const parts = Array.isArray(message.content) ? message.content : undefined;
+          const images =
+            parts?.filter((part) => part && typeof part === "object" && part.type === "image") ??
+            [];
+          const serialized = parts?.every(
+            (part) =>
+              part && typeof part === "object" && (part.type === "text" || part.type === "image"),
+          )
+            ? parts
+                .filter((part) => part.type === "text" && typeof part.text === "string")
+                .map((part) => part.text)
+                .join("\n")
+            : typeof message.content === "string"
+              ? message.content
+              : JSON.stringify(message.content);
+          if (!serialized || serialized.length <= floor) return message;
+          const group = groups.find((group) => group.indexes.includes(index));
+          const assistant = group ? messages[group.indexes[0]!] : undefined;
+          const nativeCall = Array.isArray(assistant?.content)
+            ? assistant.content.find(
+                (part) => part?.type === "toolCall" && part.id === message.toolCallId,
+              )
+            : undefined;
+          const call = toolCallIdentity(nativeCall, message.toolName);
+          if (isVerbatimMcpResult(call.name, call.arguments, options.verbatimMcpServers)) {
+            keptVerbatimWhole = true;
+            return message;
+          }
+          const size = Math.max(
+            128,
+            Math.min(Math.floor(serialized.length / 2), Math.floor(available / 4)),
+          );
+          const text = shortenToolResultText(
+            serialized,
+            size,
+            nativeCall ?? { name: message.toolName },
+            { afterUse: index < latestAssistant },
+          );
+          if (text.length >= serialized.length) return message;
+          shortenedCount += 1;
+          return { ...message, content: [{ type: "text", text }, ...images] } as T;
+        });
+        if (shortenedCount) {
+          const retry = selectContext(shortened, options);
+          return {
+            ...retry,
+            truncatedToolResults: Math.max(retry.truncatedToolResults, shortenedCount),
+          };
         }
-        const size = Math.max(
-          128,
-          Math.min(Math.floor(serialized.length / 2), Math.floor(available / 4)),
-        );
-        const text = shortenToolResultText(
-          serialized,
-          size,
-          nativeCall ?? { name: message.toolName },
-          { afterUse: index < latestAssistant },
-        );
-        if (text.length >= serialized.length) return message;
-        shortenedCount += 1;
-        return { ...message, content: [{ type: "text", text }, ...images] } as T;
-      });
-      if (shortenedCount) {
-        const retry = selectContext(shortened, options);
-        return {
-          ...retry,
-          truncatedToolResults: Math.max(retry.truncatedToolResults, shortenedCount),
-        };
       }
       if (keptVerbatimWhole) {
         // Throws the generic error when shortening the kept results would not make it fit either.

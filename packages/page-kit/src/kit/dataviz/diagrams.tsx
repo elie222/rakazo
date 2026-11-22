@@ -146,11 +146,11 @@ export function Matrix2x2({
   const clamp = (v: number) => Math.min(1, Math.max(0, v));
   const percent = (v: number) => Math.round(v * 10_000) / 100;
   return (
-    <div className="rk-matrix rk-frame">
+    <div className="rk-matrix rk-frame" dir="ltr">
       <div className="rk-matrix-y" aria-hidden="true">
-        <span>{yLow}</span>
+        <span dir="auto">{yLow}</span>
         <span>
-          {yHigh}
+          <bdi>{yHigh}</bdi>
           {yHigh ? <Arrow /> : null}
         </span>
       </div>
@@ -174,7 +174,13 @@ export function Matrix2x2({
           ])}
         >
           {names.map((name, i) => (
-            <span key={i} className="rk-matrix-quadrant" data-corner={i} title={text(name)}>
+            <span
+              key={i}
+              className="rk-matrix-quadrant"
+              dir="auto"
+              data-corner={i}
+              title={text(name)}
+            >
               {name}
             </span>
           ))}
@@ -186,16 +192,16 @@ export function Matrix2x2({
               style={{ left: `${percent(clamp(p.x))}%`, top: `${percent(1 - clamp(p.y))}%` }}
             >
               <span className="rk-matrix-dot" />
-              <span className="rk-matrix-label" title={text(p.label)}>
+              <span className="rk-matrix-label" dir="auto" title={text(p.label)}>
                 {p.label}
               </span>
             </span>
           ))}
         </div>
         <div className="rk-matrix-x" aria-hidden="true">
-          <span>{xLow}</span>
+          <span dir="auto">{xLow}</span>
           <span>
-            {xHigh}
+            <bdi>{xHigh}</bdi>
             {xHigh ? <Arrow /> : null}
           </span>
         </div>

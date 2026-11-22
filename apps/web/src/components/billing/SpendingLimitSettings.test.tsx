@@ -143,6 +143,7 @@ it("removes a limit, and keeps the form when a save fails", async () => {
   rpcMock.spendingLimit.set.mockRejectedValueOnce(new TypeError("Failed to fetch"));
   await act(async () => button(container, "Remove").click());
   expect(container.textContent).toContain("Could not reach the server");
+  expect(container.querySelector('[role="alert"]')?.textContent).toBe("Could not reach the server");
   expect(container.querySelector('input[aria-label="Amount"]')).not.toBeNull();
   rpcMock.spendingLimit.set.mockResolvedValue({ limit: null, spent: 0, shown: true });
   await act(async () => button(container, "Remove").click());

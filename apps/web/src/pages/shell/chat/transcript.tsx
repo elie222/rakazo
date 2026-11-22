@@ -10,6 +10,7 @@ import type {
 } from "@rakazo/contracts";
 import type { ChildBotBlock, FoldedTranscript } from "@rakazo/core";
 import {
+  continuedSenderMessageIds,
   expandPeerReplies,
   groupVoiceChats,
   isPeerReceiptBlocks,
@@ -61,6 +62,7 @@ import { isEditableTarget } from "../shell-shortcuts";
 import { TimeSeparator, UnreadDivider } from "./chat-context";
 import { MessageView } from "./message-view";
 import { QuoteSelectionButton } from "./quote-selection-button";
+import { useReplyAnnouncement } from "./use-reply-announcement";
 
 /** Bubbles stop at a readable line length instead of stretching with wide windows. */
 export function bubbleFrameWidth(role: ThreadMessage["role"]) {
@@ -114,6 +116,7 @@ export const Transcript = memo(function Transcript({
   onOpenComputer,
   onReleaseComputer,
   onOpenImportSetup,
+  onOpenAgentImport,
   rpc,
 }: {
   scrollRef: RefObject<HTMLDivElement | null>;
@@ -173,6 +176,7 @@ export const Transcript = memo(function Transcript({
     reason: ComputerReleaseReason,
   ) => Promise<void>;
   onOpenImportSetup?: (target: ImportSetupTarget) => void;
+  onOpenAgentImport?: () => void;
   rpc: ReturnType<typeof createSpaceRpc>;
 }) {
   const { t } = useLingui();
@@ -202,6 +206,12 @@ export const Transcript = memo(function Transcript({
   const messages = useMemo(
     () => expandPeerReplies(transcript, expandedPeerMarkers),
     [transcript, expandedPeerMarkers],
+  );
+  const announcement = useReplyAnnouncement(
+    messages,
+    (message) =>
+      (message.botId ? (peerBot(message.botId)?.name ?? memberName?.(message.botId)) : undefined) ??
+      t`Bot`,
   );
   const messageById = useMemo(
     () => new Map(messages.map((message) => [message.id, message])),
@@ -279,6 +289,7 @@ export const Transcript = memo(function Transcript({
       item.kind === "voiceChat" || messageHasVisibleBlocks(item.message.blocks, showToolActivity),
   );
   const shownItems = showTail ? items.slice(-FIRST_FRAME_ROWS) : items;
+  const continuedSenderIds = continuedSenderMessageIds(shownItems, separatorIds, unreadDividerId);
   const workingLabel =
     liveActivityLine(messages) ?? (workingRoutine ? t`Running ${workingRoutine}…` : t`Thinking…`);
   const [quoteDraft, setQuoteDraft] = useState<{
@@ -414,8 +425,9 @@ export const Transcript = memo(function Transcript({
   useEventListener(document, "selectionchange", () => {
     if (!selectingWithMouse.current) evaluateSelection();
   });
-  useEventListener(document, "keydown", (event) => {
-    if (event.key === "Escape") setQuoteDraft(null);
+  // On window, so a handler on document (the phone drawer closing) consumes the key first.
+  useEventListener(window, "keydown", (event) => {
+    if (event.key === "Escape" && !event.defaultPrevented) setQuoteDraft(null);
   });
   // A drag that ends outside the window never fires document mouseup; reset
   // the flag on blur so keyboard selections keep working afterwards.
@@ -617,7 +629,7 @@ export const Transcript = memo(function Transcript({
             following.current = false;
           }
         }}
-        className={`rk-scroll isolate flex min-h-0 flex-1 flex-col gap-2 overflow-x-hidden overflow-y-auto scroll-pt-16 scroll-pb-7 pt-20 pb-12 md:pt-[84px] md:pb-13 ${TRANSCRIPT_CONTENT_PADDING}`}
+        className={`rk-scroll isolate flex min-h-0 flex-1 flex-col gap-2 overflow-x-hidden overflow-y-auto scroll-pt-(--chat-top-clearance) scroll-pb-7 pt-(--chat-top-clearance) pb-12 md:pb-13 ${TRANSCRIPT_CONTENT_PADDING}`}
         style={
           userBubble
             ? ({
@@ -698,7 +710,7 @@ export const Transcript = memo(function Transcript({
                                 block.kind === "mcp_approval" ||
                                 block.kind === "tool_question",
                             )
-                          ? "relative w-full min-w-0 max-w-xl"
+                          ? "relative w-full min-w-0 max-w-[min(calc(100%_-_8rem),36rem)] [@media(hover:none)]:max-w-xl"
                           : `relative ${
                               message.blocks.some(
                                 (block) =>
@@ -726,6 +738,7 @@ export const Transcript = memo(function Transcript({
                       onOpenBot={onOpenBot}
                       onOpenPeerMessages={onOpenPeerMessages}
                       peerExchange={exchanges.lines.get(message.id)}
+                      hideSenderLabel={continuedSenderIds.has(message.id)}
                       onAnswer={onAnswer}
                       speakerName={
                         peerReceipt
@@ -752,6 +765,7 @@ export const Transcript = memo(function Transcript({
                       onOpenComputer={onOpenComputer}
                       onReleaseComputer={onReleaseComputer}
                       onOpenImportSetup={onOpenImportSetup}
+                      onOpenAgentImport={onOpenAgentImport}
                       rpc={rpc}
                       showToolActivity={showToolActivity}
                       onReply={onReply}
@@ -790,6 +804,9 @@ export const Transcript = memo(function Transcript({
           <ActiveBotGlyph bots={workingBots} label={workingLabel} />
         ) : null}
       </div>
+      <span role="status" data-testid="reply-announcement" className="sr-only">
+        {announcement}
+      </span>
       {quoteDraft ? <QuoteSelectionButton range={quoteDraft.range} onQuote={applyQuote} /> : null}
       <Button
         ref={jumpButtonRef}
