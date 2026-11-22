@@ -95,14 +95,27 @@ export default function ArtifactsScreen() {
   const loadingMoreRef = useRef(false);
   const loadedPagesRef = useRef(1);
   const generationRef = useRef(0);
+  const mountedRef = useRef(false);
+  const pendingPull = useRef<{ botId: string | null; madeByBots: boolean } | null>(null);
   const loadingPageRef = useRef(false);
   const [loadingPage, setLoadingPage] = useState(false);
   const autoFetchedCursorRef = useRef<string | null>(null);
   const activeBotIdRef = useRef(activeBotId);
   const madeByBotsRef = useRef(madeByBots);
   const didFocusRef = useRef(false);
-  activeBotIdRef.current = activeBotId;
-  madeByBotsRef.current = madeByBots;
+  useLayoutEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      generationRef.current += 1;
+      pendingPull.current = null;
+    };
+  }, []);
+
+  useLayoutEffect(() => {
+    activeBotIdRef.current = activeBotId;
+    madeByBotsRef.current = madeByBots;
+  }, [activeBotId, madeByBots]);
 
   useLayoutEffect(() => {
     navigation.setOptions({
@@ -132,8 +145,25 @@ export default function ArtifactsScreen() {
       madeByBots: boolean,
       mode: "replace" | "refresh" | "live" | "pull-to-refresh",
     ) => {
+      const matchesActiveFilters = () =>
+        activeBotIdRef.current === botId && madeByBotsRef.current === madeByBots;
+      if (!mountedRef.current || !matchesActiveFilters()) return;
+
+      const pull = pendingPull.current;
+      const samePull = pull !== null && pull.botId === botId && pull.madeByBots === madeByBots;
+      if (mode === "pull-to-refresh") {
+        if (samePull) return;
+        pendingPull.current = { botId, madeByBots };
+        setRefreshing(true);
+      } else if (pull && (mode === "replace" || !samePull)) {
+        pendingPull.current = null;
+        setRefreshing(false);
+      }
+      // The latest read for these filters owns the result of an unfinished pull.
+      const fromPullToRefresh = pendingPull.current !== null;
       const pageCount = mode === "live" ? loadedPagesRef.current : 1;
       const generation = ++generationRef.current;
+      const isCurrent = () => generation === generationRef.current && matchesActiveFilters();
       loadingPageRef.current = true;
       setLoadingPage(true);
       loadingMoreRef.current = false;
@@ -155,20 +185,19 @@ export default function ArtifactsScreen() {
         let page = await listSpaceArtifacts(input);
         const nextItems = [...page.items];
         let loaded = 1;
-        while (loaded < pageCount && page.nextCursor && generation === generationRef.current) {
+        while (loaded < pageCount && page.nextCursor && isCurrent()) {
           page = await listSpaceArtifacts({ ...input, cursor: page.nextCursor });
           nextItems.push(...page.items);
           loaded++;
         }
-        if (generation !== generationRef.current) return;
+        if (!isCurrent()) return;
         loadedPagesRef.current = loaded;
         setItems(nextItems);
         setNext(page.nextCursor ? { cursor: page.nextCursor, botId, madeByBots } : null);
         setLoadError(null);
       } catch (error) {
-        if (generation !== generationRef.current) return;
+        if (!isCurrent()) return;
         const message = errorText(error, t`Could not load artifacts.`);
-        const fromPullToRefresh = mode === "pull-to-refresh";
         // A failed background read is silent with cached files and must not erase a visible
         // pull-to-refresh error before the list has actually been updated.
         setLoadError((current) =>
@@ -180,6 +209,10 @@ export default function ArtifactsScreen() {
         if (generation === generationRef.current) {
           loadingPageRef.current = false;
           setLoadingPage(false);
+          if (fromPullToRefresh) {
+            pendingPull.current = null;
+            setRefreshing(false);
+          }
         }
       }
     },
@@ -202,7 +235,8 @@ export default function ArtifactsScreen() {
   );
 
   const loadMore = useCallback(async () => {
-    if (!nextCursor || loadingMoreRef.current || loadingPageRef.current) return;
+    if (!mountedRef.current || !nextCursor || loadingMoreRef.current || loadingPageRef.current)
+      return;
     const generation = generationRef.current;
     loadingMoreRef.current = true;
     setLoadingMore(true);
@@ -227,15 +261,6 @@ export default function ArtifactsScreen() {
       }
     }
   }, [activeBotId, madeByBots, nextCursor]);
-
-  async function refresh() {
-    setRefreshing(true);
-    try {
-      await load(activeBotId, madeByBots, "pull-to-refresh");
-    } finally {
-      setRefreshing(false);
-    }
-  }
 
   function confirmDelete(item: MobileArtifactSummary) {
     Alert.alert(
@@ -382,7 +407,7 @@ export default function ArtifactsScreen() {
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
-            onRefresh={() => void refresh()}
+            onRefresh={() => void load(activeBotId, madeByBots, "pull-to-refresh")}
             tintColor={native.secondaryLabel}
           />
         }

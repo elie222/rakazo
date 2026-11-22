@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 
+import { deferred } from "@rakazo/core/test-async";
 import type { ReactElement, ReactNode } from "react";
 import { act, Fragment } from "react";
 import type { Root } from "react-dom/client";
@@ -39,8 +40,8 @@ vi.mock("react-native", () => {
       </div>
     ),
     Pressable: Container,
-    RefreshControl: ({ onRefresh }: { onRefresh: () => void }) => (
-      <button type="button" onClick={onRefresh}>
+    RefreshControl: ({ onRefresh, refreshing }: { onRefresh: () => void; refreshing: boolean }) => (
+      <button type="button" aria-busy={refreshing} onClick={onRefresh}>
         Refresh
       </button>
     ),
@@ -71,7 +72,11 @@ vi.mock("@lingui/react/macro", () => ({ useLingui: () => ({ t: String.raw }) }))
 vi.mock("@rakazo/core", () => ({ artifactTypeLabel: () => "PDF" }));
 vi.mock("../../components/bots/bot-avatar", () => ({ BotAvatar: () => null }));
 vi.mock("../../components/native/native-segmented-control", () => ({
-  NativeSegmentedControl: () => null,
+  NativeSegmentedControl: ({ onChange }: { onChange: (value: string) => void }) => (
+    <button type="button" onClick={() => onChange("bots")}>
+      Filter to bots
+    </button>
+  ),
 }));
 vi.mock("../../components/native/native-symbol", () => ({ NativeSymbol: () => null }));
 vi.mock("../api/api", () => ({ rpc: async () => [] }));
@@ -115,6 +120,10 @@ function page(name: string) {
   };
 }
 
+const refreshButton = () => container.querySelector("button");
+const refresh = () => act(async () => refreshButton()?.click());
+const liveRead = () => useSpaceChanges.mock.lastCall![1];
+
 it("shows one refresh error with the existing rows and clears it after retry", async () => {
   listSpaceArtifacts
     .mockResolvedValueOnce(page("Cached document"))
@@ -125,7 +134,6 @@ it("shows one refresh error with the existing rows and clears it after retry", a
   expect(container.textContent).toContain("Cached document");
   expect(container.querySelectorAll('[role="alert"]')).toHaveLength(0);
 
-  const refresh = () => act(async () => container.querySelector("button")?.click());
   await refresh();
   expect(container.textContent).toContain("Cached document");
   expect(container.querySelectorAll('[role="alert"]')).toHaveLength(1);
@@ -150,4 +158,114 @@ it("still shows a first-load error once in the existing empty state", async () =
   expect(container.textContent?.match(/Could not load artifacts\./g)).toHaveLength(1);
   expect(container.textContent).not.toContain("No artifacts yet");
   expect(container.querySelectorAll('[role="alert"]')).toHaveLength(0);
+});
+
+it("shows a pull failure when its superseding live read also fails", async () => {
+  const pull = deferred<ReturnType<typeof page>>();
+  const live = deferred<ReturnType<typeof page>>();
+  listSpaceArtifacts
+    .mockResolvedValueOnce(page("Cached document"))
+    .mockReturnValueOnce(pull.promise)
+    .mockReturnValueOnce(live.promise)
+    .mockResolvedValueOnce(page("Updated document"));
+  await act(async () => root.render(<ArtifactsScreen />));
+  await refresh();
+  await act(async () => void liveRead()());
+  expect(listSpaceArtifacts).toHaveBeenCalledTimes(3);
+  await act(async () => pull.reject(new Error("Earlier pull failed.")));
+  const busyDuringLive = refreshButton()?.getAttribute("aria-busy");
+  expect(container.querySelector('[role="alert"]')).toBeNull();
+
+  await act(async () => live.reject(new Error("Could not load artifacts.")));
+  expect(refreshButton()?.getAttribute("aria-busy")).toBe("false");
+  expect(container.textContent).toContain("Cached document");
+  const alerts = container.querySelectorAll('[role="alert"]');
+  expect(alerts).toHaveLength(1);
+  expect(alerts[0]?.textContent).toBe("Could not load artifacts.");
+  expect(busyDuringLive).toBe("true");
+
+  await refresh();
+  expect(container.textContent).toContain("Updated document");
+  expect(container.querySelector('[role="alert"]')).toBeNull();
+});
+
+it("deduplicates repeat pulls while a manual refresh is pending", async () => {
+  const pull = deferred<ReturnType<typeof page>>();
+  listSpaceArtifacts
+    .mockResolvedValueOnce(page("Cached document"))
+    .mockReturnValueOnce(pull.promise);
+  await act(async () => root.render(<ArtifactsScreen />));
+  await refresh();
+  await refresh();
+  expect(listSpaceArtifacts).toHaveBeenCalledTimes(2);
+  await act(async () => pull.resolve(page("Updated document")));
+  expect(container.textContent).toContain("Updated document");
+});
+
+it("does not show a stale pull failure after a newer read succeeds", async () => {
+  const pull = deferred<ReturnType<typeof page>>();
+  listSpaceArtifacts
+    .mockResolvedValueOnce(page("Cached document"))
+    .mockReturnValueOnce(pull.promise)
+    .mockResolvedValueOnce(page("Updated document"));
+  await act(async () => root.render(<ArtifactsScreen />));
+  await refresh();
+  await act(async () => liveRead()());
+
+  expect(refreshButton()?.getAttribute("aria-busy")).toBe("false");
+  await act(async () => pull.reject(new Error("Earlier pull failed.")));
+  expect(container.textContent).toContain("Updated document");
+  expect(container.querySelector('[role="alert"]')).toBeNull();
+});
+
+it("keeps live-only failures silent when files are cached", async () => {
+  listSpaceArtifacts
+    .mockResolvedValueOnce(page("Cached document"))
+    .mockRejectedValueOnce(new Error("Background request failed."));
+  await act(async () => root.render(<ArtifactsScreen />));
+  await act(async () => liveRead()());
+
+  expect(container.textContent).toContain("Cached document");
+  expect(container.querySelector('[role="alert"]')).toBeNull();
+});
+
+it("does not carry a pending pull into a new filter", async () => {
+  const pull = deferred<ReturnType<typeof page>>();
+  const replacement = deferred<ReturnType<typeof page>>();
+  listSpaceArtifacts
+    .mockResolvedValueOnce(page("All files document"))
+    .mockReturnValueOnce(pull.promise)
+    .mockReturnValueOnce(replacement.promise)
+    .mockRejectedValueOnce(new Error("New filter background failure."));
+  await act(async () => root.render(<ArtifactsScreen />));
+  await refresh();
+  await act(async () => container.querySelectorAll("button")[1]?.click());
+  expect(listSpaceArtifacts).toHaveBeenLastCalledWith({
+    botId: undefined,
+    madeByBots: true,
+    limit: 30,
+  });
+  expect(refreshButton()?.getAttribute("aria-busy")).toBe("false");
+
+  await act(async () => replacement.resolve(page("Bot document")));
+  await act(async () => pull.reject(new Error("Old filter pull failed.")));
+  await act(async () => liveRead()());
+  expect(container.textContent).toContain("Bot document");
+  expect(container.querySelector('[role="alert"]')).toBeNull();
+});
+
+it("does not issue another read from a pending callback after unmount", async () => {
+  const pull = deferred<ReturnType<typeof page>>();
+  listSpaceArtifacts
+    .mockResolvedValueOnce(page("Cached document"))
+    .mockReturnValueOnce(pull.promise);
+  await act(async () => root.render(<ArtifactsScreen />));
+  await refresh();
+  const afterLeave = liveRead();
+  await act(async () => root.unmount());
+  await act(async () => {
+    pull.reject(new Error("Late pull failure."));
+    await afterLeave();
+  });
+  expect(listSpaceArtifacts).toHaveBeenCalledTimes(2);
 });
