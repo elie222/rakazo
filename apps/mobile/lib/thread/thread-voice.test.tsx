@@ -349,7 +349,26 @@ describe("read-aloud while a call is active", () => {
     act(() => latestSpeakFrom(message("m2", "second reply")));
     expect(speakQueue).toHaveBeenCalledOnce();
     expect(vi.mocked(speakQueue).mock.calls[0]?.[0]?.[0]).toMatchObject({
-      text: "read from here",
+      text: "second reply",
+      botId: "bot-b",
+      messageId: "m2",
+    });
+  });
+
+  it("manual read speaks the reply text and skips a steps block", () => {
+    const reply = {
+      id: "m2",
+      role: "bot",
+      blocks: [
+        { kind: "steps", steps: [{ label: "Web search", count: 2 }] },
+        { kind: "text", text: "Here is the answer." },
+      ],
+    } as unknown as MobileMessage;
+    act(() => root.render(createElement(ManualReadHarness, { messages: [reply] })));
+    act(() => latestSpeakFrom(reply));
+    expect(speakQueue).toHaveBeenCalledOnce();
+    expect(vi.mocked(speakQueue).mock.calls[0]?.[0]?.[0]).toMatchObject({
+      text: "Here is the answer.",
       botId: "bot-b",
       messageId: "m2",
     });

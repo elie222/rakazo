@@ -519,6 +519,54 @@ describe("DesktopUpdateController", () => {
     },
   );
 
+  it.each([
+    ["manual", true, "Could not reach the update server."],
+    ["background", false, null],
+  ] as const)(
+    "handles a %s offline check only once when the updater both emits and rejects",
+    async (_name, userInitiated, message) => {
+      let now = 1_000;
+      let attempts = 0;
+      const error = new Error("net::ERR_INTERNET_DISCONNECTED");
+      const fake = fakeUpdater({
+        checkForUpdates: vi.fn(async () => {
+          fake.emit("checking-for-update");
+          if (attempts++ === 0) fake.emit("error", error);
+          throw error;
+        }),
+      });
+      const controller = new DesktopUpdateController(packaged, async () => fake.updater, {
+        now: () => now,
+        iso: () => NOW,
+      });
+      const changes: Array<[string, string | null]> = [];
+      controller.subscribe((state) => changes.push([state.phase, state.message]));
+
+      expect(await controller.check(userInitiated)).toMatchObject({
+        phase: "idle",
+        message,
+        checkedAt: NOW,
+      });
+      expect(changes).toEqual([
+        ["checking", null],
+        ["idle", message],
+      ]);
+
+      // Even if the updater reuses the Error object, a later rejection is a different check.
+      changes.length = 0;
+      now += MIN_CHECK_INTERVAL_MS;
+      expect(await controller.check(true)).toMatchObject({
+        phase: "idle",
+        message: "Could not reach the update server.",
+      });
+      expect(changes).toEqual([
+        ["checking", null],
+        ["idle", "Could not reach the update server."],
+      ]);
+      expect(fake.updater.checkForUpdates).toHaveBeenCalledTimes(2);
+    },
+  );
+
   it.each(["loading", "checking"] as const)(
     "reports offline failures when a manual check joins a background check during %s",
     async (joinDuring) => {

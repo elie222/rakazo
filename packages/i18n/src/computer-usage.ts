@@ -1,6 +1,6 @@
 import { i18n } from "@lingui/core";
 import { t } from "@lingui/core/macro";
-import type { BillingStatus, ComputerSize } from "@rakazo/contracts";
+import type { BillingStatus, ComputerMode, ComputerSize } from "@rakazo/contracts";
 import { COMPUTER_SIZE_SPECS, SANDBOX_SIZE_HOURLY_COST_MICROS } from "@rakazo/contracts";
 
 export function tierComputerDescription(offer: NonNullable<BillingStatus["byokTiers"]>[number]) {
@@ -9,6 +9,14 @@ export function tierComputerDescription(offer: NonNullable<BillingStatus["byokTi
   return offer.computerSizeChoice
     ? t`Up to ${vcpus} vCPU and ${memoryGb} GB, ${hours} Standard computer hours a month`
     : t`${vcpus} vCPU, ${memoryGb} GB, ${hours} computer hours a month`;
+}
+
+export function tierComputerSummary(offer: NonNullable<BillingStatus["byokTiers"]>[number]) {
+  if (!offer.computerSizeChoice) return tierComputerDescription(offer);
+  const hours = new Intl.NumberFormat(i18n.locale || "en").format(offer.computerHours);
+  if (offer.computerSize === "standard") return t`${hours} bot computer hours/month`;
+  const size = offer.computerSize === "large" ? t`Large` : t`Extra large`;
+  return t`${hours} bot computer hours/month at Standard size · Up to ${size}`;
 }
 
 /** The size's name with how many times faster than Standard it uses computer hours. */
@@ -29,6 +37,11 @@ export function computerName(computer: { scope: "team" | "dedicated"; botName: s
   return computer.scope === "team"
     ? i18n._({ id: "ZrvL3B", message: "Team Computer" })
     : (computer.botName ?? i18n._({ id: "vNFOXs", message: "Private Computer" }));
+}
+
+/** The computer a bot works on: its own, or the Space's Team Computer. */
+export function computerLabel(mode: ComputerMode | undefined, name: string) {
+  return mode === "dedicated" ? t`${name}’s computer` : t`Team Computer`;
 }
 
 type UsageRead = {

@@ -85,6 +85,7 @@ const inputActions: ContainerAction[] = [
   { kind: "scroll", direction: "left", amount: 2 },
   { kind: "scroll", direction: "right", amount: 2, x: 40, y: 300 },
   { kind: "key", key: "Enter" },
+  { kind: "key", key: "PageDown", modifiers: ["ctrl"] },
 ];
 
 describe.each([undefined, profile])(

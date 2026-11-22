@@ -1,9 +1,11 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { VAULT_ITEM_LIMIT } from "../bots/bot-secrets.js";
 import {
   newVaultImportRows,
   noneSkipped,
   parseVaultCsv,
+  sendVaultImport,
+  VAULT_IMPORT_BATCH_LIMIT,
   VAULT_IMPORT_FILE_LIMIT,
   VaultImportInput,
   vaultImportCounts,
@@ -343,11 +345,11 @@ describe("parseVaultCsv", () => {
   });
 
   it("sends a repeat in the file once, and answers for it as the server did for the first", () => {
-    const distinct = Array.from({ length: 115 }, (_, index) => ({
+    const distinct = Array.from({ length: VAULT_ITEM_LIMIT + 15 }, (_, index) => ({
       ...login,
       origin: `https://d${index}.example.com`,
     }));
-    // The first 15 logins each appear twice: 130 rows into an empty Vault.
+    // The first 15 logins each appear twice: 30 more rows than an empty Vault holds.
     const rows = distinct.flatMap((row, index) => (index < 15 ? [row, { ...row }] : [row]));
     const plan = newVaultImportRows(rows, []);
     expect(plan.rows).toEqual(distinct.slice(0, VAULT_ITEM_LIMIT));
@@ -425,9 +427,12 @@ describe("parseVaultCsv", () => {
     expect(label).toMatchObject({ problems: [{ label: "a".repeat(79) }] });
   });
 
-  it("sends no more logins than a Vault holds, and nothing but logins", () => {
+  it("sends no more logins than a batch holds, and nothing but logins", () => {
     expect(
-      VaultImportInput.safeParse({ rows: Array(VAULT_ITEM_LIMIT + 1).fill(login) }).success,
+      VaultImportInput.safeParse({ rows: Array(VAULT_IMPORT_BATCH_LIMIT).fill(login) }).success,
+    ).toBe(true);
+    expect(
+      VaultImportInput.safeParse({ rows: Array(VAULT_IMPORT_BATCH_LIMIT + 1).fill(login) }).success,
     ).toBe(false);
     expect(VaultImportInput.safeParse({ rows: [{ ...login, url: "x" }] }).success).toBe(false);
   });
@@ -488,5 +493,76 @@ describe("newVaultImportRows", () => {
       { line: 5, label: "Example", reason: "duplicate" },
       { line: 7, label: "Example", reason: "limit" },
     ]);
+  });
+});
+
+describe("sendVaultImport", () => {
+  const rows = (count: number) =>
+    Array.from({ length: count }, (_, index) => ({ ...login, username: `user-${index}` }));
+
+  it("sends a batch at a time and answers by each row's place in the whole list", async () => {
+    const sent: number[] = [];
+    const result = await sendVaultImport(rows(VAULT_IMPORT_BATCH_LIMIT * 2 + 5), async (batch) => {
+      sent.push(batch.length);
+      return {
+        added: batch.length - 1,
+        skipped: { ...noneSkipped(), duplicate: 1 },
+        notSaved: [{ index: 3, reason: "duplicate" }],
+      };
+    });
+    expect(sent).toEqual([VAULT_IMPORT_BATCH_LIMIT, VAULT_IMPORT_BATCH_LIMIT, 5]);
+    expect(result).toEqual({
+      added: VAULT_IMPORT_BATCH_LIMIT * 2 + 2,
+      skipped: { ...noneSkipped(), duplicate: 3 },
+      notSaved: [
+        { index: 3, reason: "duplicate" },
+        { index: VAULT_IMPORT_BATCH_LIMIT + 3, reason: "duplicate" },
+        { index: VAULT_IMPORT_BATCH_LIMIT * 2 + 3, reason: "duplicate" },
+      ],
+    });
+  });
+
+  it("stops sending once the Vault is full and counts the rest as not fitting", async () => {
+    const total = VAULT_IMPORT_BATCH_LIMIT * 2 + 2;
+    let calls = 0;
+    const result = await sendVaultImport(rows(total), async (batch) => {
+      calls++;
+      const full = batch.length - 2;
+      return {
+        added: full,
+        skipped: { ...noneSkipped(), limit: 2 },
+        notSaved: [
+          { index: full, reason: "limit" },
+          { index: full + 1, reason: "limit" },
+        ],
+      };
+    });
+    expect(calls).toBe(1);
+    expect(result.added).toBe(VAULT_IMPORT_BATCH_LIMIT - 2);
+    expect(result.skipped).toEqual({
+      ...noneSkipped(),
+      limit: total - VAULT_IMPORT_BATCH_LIMIT + 2,
+    });
+    expect(result.notSaved.map(({ index }) => index)).toEqual(
+      Array.from(
+        { length: total - VAULT_IMPORT_BATCH_LIMIT + 2 },
+        (_, n) => n + VAULT_IMPORT_BATCH_LIMIT - 2,
+      ),
+    );
+  });
+
+  it("rejects at a failed batch without sending the rest", async () => {
+    const send = vi
+      .fn()
+      .mockResolvedValueOnce({
+        added: VAULT_IMPORT_BATCH_LIMIT,
+        skipped: noneSkipped(),
+        notSaved: [],
+      })
+      .mockRejectedValueOnce(new Error("Internal server error"));
+    await expect(sendVaultImport(rows(VAULT_IMPORT_BATCH_LIMIT * 3), send)).rejects.toThrow(
+      "Internal server error",
+    );
+    expect(send).toHaveBeenCalledTimes(2);
   });
 });

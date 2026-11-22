@@ -1,4 +1,5 @@
 import { setTimeout as delay } from "node:timers/promises";
+import { SandboxRateLimitError } from "@rakazo/adapter-kit";
 import { sandboxIdleMs } from "../../../computers/computer-idle.js";
 import type {
   CommandResult,
@@ -9,6 +10,7 @@ import type {
 import { RemoteDesktopSandboxProvider } from "../../../computers/sandbox/remote-desktop-sandbox.js";
 import {
   isSandboxGoneError,
+  isSandboxUnsafeStopError,
   SandboxUnsafeStopError,
 } from "../../../computers/sandbox/sandbox-errors.js";
 import { NOVITA_COMPUTER_TEMPLATE } from "./novita-template.js";
@@ -137,14 +139,38 @@ export function novitaSdk(
     novitaDesktop(desktop, () => safetyPause(desktop.sandboxId));
   return {
     create: async (template, options) =>
-      wrap(await (await api()).desktop.create(template, options)),
-    connect: async (id, options) => wrap(await (await api()).desktop.connect(id, options)),
-    connectRunning: async (id) => wrap(await runningNovitaDesktop(await api(), id)),
-    keepAlive: async (id, options) => (await api()).sandbox.setTimeout(id, options.timeoutMs),
-    isRunning: async (id) => (await (await api()).sandbox.getInfo(id)).state === "running",
-    pause: async (id) => pauseNovitaComputer(await api(), id),
+      translateRateLimit(async () => wrap(await (await api()).desktop.create(template, options))),
+    connect: async (id, options) =>
+      translateRateLimit(async () => wrap(await (await api()).desktop.connect(id, options))),
+    connectRunning: async (id) =>
+      translateRateLimit(async () => wrap(await runningNovitaDesktop(await api(), id))),
+    keepAlive: async (id, options) =>
+      translateRateLimit(async () => (await api()).sandbox.setTimeout(id, options.timeoutMs)),
+    isRunning: async (id) =>
+      translateRateLimit(async () => (await (await api()).sandbox.getInfo(id)).state === "running"),
+    pause: async (id) => translateRateLimit(async () => pauseNovitaComputer(await api(), id)),
     kill: async (id) => destroyNovitaComputer(await api(), id, safetyPause),
   };
+}
+
+/**
+ * Novita answers a control-plane 429 with a `RateLimitError`, alone or as the cause of the error
+ * `pauseNovitaComputer` throws. That is a computer rate limit, so idle sleep defers it.
+ */
+async function translateRateLimit<T>(call: () => Promise<T>): Promise<T> {
+  try {
+    return await call();
+  } catch (error) {
+    throw rateLimitError(error);
+  }
+}
+
+function rateLimitError(error: unknown): unknown {
+  if (isSandboxUnsafeStopError(error)) return error;
+  const limited =
+    isNamed(error, "RateLimitError") ||
+    (error instanceof Error && isNamed(error.cause, "RateLimitError"));
+  return limited ? new SandboxRateLimitError({ cause: error }) : error;
 }
 
 /** A GET and local handle construction must never resume a paused guest. */
