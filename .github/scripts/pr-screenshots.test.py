@@ -376,6 +376,7 @@ class CodexConfigTest(unittest.TestCase):
             config = tomllib.loads((root / "config.toml").read_text())
             self.assertEqual(config["permissions"]["screenshots"]["filesystem"][str(root)], "deny")
             self.assertEqual(config["web_search"], "disabled")
+            self.assertEqual(config["project_doc_max_bytes"], 0)
             provider = config["model_providers"][config["model_provider"]]
             self.assertEqual(provider["base_url"], "http://127.0.0.1:18899/backend-api/codex")
             self.assertFalse(provider["requires_openai_auth"])

@@ -16,6 +16,8 @@ def configure(mcp_path: Path, home: Path, proxy_port: int):
     config = f'''approval_policy = "never"
 model_provider = "credential-proxy"
 web_search = "disabled"
+# The working directory is empty, but never load instruction files from the pull request.
+project_doc_max_bytes = 0
 default_permissions = "screenshots"
 
 [permissions.screenshots]

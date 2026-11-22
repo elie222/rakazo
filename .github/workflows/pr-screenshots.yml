@@ -276,6 +276,8 @@ jobs:
           gh secret set CODEX_SUBSCRIPTION_AUTH --repo "$GITHUB_REPOSITORY" < "$auth"
           echo "ready=true" >> "$GITHUB_OUTPUT"
           python3 .github/scripts/codex-credential-proxy.py refresh "$auth"
+          # Save a rotated login before anything can interrupt the run.
+          gh secret set CODEX_SUBSCRIPTION_AUTH --repo "$GITHUB_REPOSITORY" < "$auth"
           nohup python3 .github/scripts/codex-credential-proxy.py serve "$auth" 18899 \
             > "$RUNNER_TEMP/screenshot-codex/proxy.log" 2>&1 &
           for _ in $(seq 50); do
@@ -303,7 +305,7 @@ jobs:
           { printf '%s\n\n' "$PROMPT"; cat .github/prompts/pr-screenshots-shell.md; } | timeout --kill-after=30s 30m sudo -n -H -u codex-screenshots env -i \
             PATH="$PATH" HOME=/home/codex-screenshots CODEX_HOME="$CODEX_HOME" \
             "$codex" exec --ephemeral --skip-git-repo-check \
-            -C /srv/pr-checkout "${args[@]}" \
+            -C /srv/pr-screenshot-agent "${args[@]}" \
             --output-schema "$CODEX_HOME/schema.json" --output-last-message /srv/pr-screenshot-agent/result.json - \
             > "$log" 2>&1 || status=$?
           if [[ $status -ne 0 ]]; then
