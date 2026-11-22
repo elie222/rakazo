@@ -15,7 +15,6 @@ type PagedPages =
       items: PageSummary[];
       nextCursor: string | null;
       generation: number;
-      owner: string;
       paginationFailed: boolean;
     };
 
@@ -24,8 +23,8 @@ type PagedPages =
  * (after Share, or a page a routine changed), as many as were shown, as the web list does.
  * One "Show more" runs at a time, and a page of results that started before a reload (a pin,
  * rename or delete) is dropped. The previous list stays visible during a reload, but its cursor
- * cannot start a new page request. Keep a failed pagination visible until a retry succeeds
- * or the list reloads without a remaining page to fetch.
+ * cannot start a new page request. A failed "Show more" is reported until a retry succeeds or the
+ * list is read again.
  */
 export function usePagedPages(owner: { botId?: string; groupId?: string }) {
   const { botId, groupId } = owner;
@@ -53,18 +52,8 @@ export function usePagedPages(owner: { botId?: string; groupId?: string }) {
     const limit = Math.min(Math.max(shown.current.count, PAGE_SIZE), PAGE_LIST_MAX_LIMIT);
     void rpc("pages/list", input(undefined, limit)).then(
       (result) => {
-        if (started !== generation.current) return;
-        setListed((current) => ({
-          status: "ready",
-          ...result,
-          generation: started,
-          owner,
-          paginationFailed:
-            current.status === "ready" &&
-            current.owner === owner &&
-            result.nextCursor !== null &&
-            current.paginationFailed,
-        }));
+        if (started === generation.current)
+          setListed({ status: "ready", ...result, generation: started, paginationFailed: false });
       },
       (error: unknown) => {
         if (started === generation.current) setListed({ status: "error", error });

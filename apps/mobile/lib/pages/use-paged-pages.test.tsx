@@ -103,7 +103,7 @@ it("drops a Show more failure that started before a reload", async () => {
   expect(items()).toEqual(["b"]);
 });
 
-it("drops the pagination alert when a refreshed list has no remaining pages", async () => {
+it("reports a Show more failure until a retry succeeds or the list is read again", async () => {
   const read = vi.mocked(rpc);
   read.mockReset();
   read.mockResolvedValueOnce({ items: [page("a")], nextCursor: "c1" } as never);
@@ -111,11 +111,17 @@ it("drops the pagination alert when a refreshed list has no remaining pages", as
   read.mockRejectedValueOnce(new Error("offline"));
   await act(async () => hook.showMore());
   expect(hook.listed).toMatchObject({ status: "ready", paginationFailed: true });
+  read.mockResolvedValueOnce({ items: [page("b")], nextCursor: "c2" } as never);
+  await act(async () => hook.showMore());
+  expect(read).toHaveBeenLastCalledWith("pages/list", { botId: "b1", limit: 5, cursor: "c1" });
+  expect(hook.listed).toMatchObject({ status: "ready", paginationFailed: false });
+  expect(items()).toEqual(["a", "b"]);
 
-  read.mockResolvedValueOnce({ items: [page("a")], nextCursor: null } as never);
+  read.mockRejectedValueOnce(new Error("offline"));
+  await act(async () => hook.showMore());
+  read.mockResolvedValueOnce({ items: [page("a")], nextCursor: "c1" } as never);
   await act(async () => hook.refresh());
   expect(hook.listed).toMatchObject({ status: "ready", paginationFailed: false });
-  expect(items()).toEqual(["a"]);
 });
 
 it("keeps the pages shown when the list comes back on screen, newest first", async () => {
@@ -170,13 +176,8 @@ it("starts from five again when the screen moves to another bot or a group", asy
   await act(async () => root.render(createElement(Owner, { owner: { botId: "b1" } })));
   await act(async () => hook.refresh());
   expect(read).toHaveBeenLastCalledWith("pages/list", { botId: "b1", limit: 8 });
-  read.mockRejectedValueOnce(new Error("offline"));
-  await act(async () => hook.showMore());
-  expect(hook.listed).toMatchObject({ status: "ready", paginationFailed: true });
-
   await act(async () => root.render(createElement(Owner, { owner: { botId: "b2" } })));
   expect(read).toHaveBeenLastCalledWith("pages/list", { botId: "b2", limit: 5 });
-  expect(hook.listed).toMatchObject({ status: "ready", paginationFailed: false });
   await act(async () => root.render(createElement(Owner, { owner: { groupId: "g1" } })));
   expect(read).toHaveBeenLastCalledWith("pages/list", { groupId: "g1", limit: 5 });
   read.mockReset();
