@@ -354,7 +354,9 @@ function statusFor(
     case "fatal":
       return { status: "failed", error: subCode?.includes("waiting_room") ? "admission" : "join" };
     case "call_ended":
-      return { status: "processing" };
+      return subCode?.includes("waiting_room")
+        ? { status: "failed", error: "admission" }
+        : { status: "processing" };
     case "done":
       return { status: "ended" };
     default:

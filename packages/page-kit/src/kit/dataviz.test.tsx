@@ -19,6 +19,7 @@ import {
   shade,
   Venn,
 } from "./dataviz.js";
+import { wordsFor } from "./labels.js";
 import { Page } from "./layout.js";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -346,6 +347,75 @@ describe("charts", () => {
     );
   });
 
+  it.each([
+    {
+      name: "a narrowed range",
+      from: "2026-03-02",
+      to: "2026-03-03",
+      shades: ["var(--rk-seq2)", "var(--rk-seq5)"],
+      highest: "10",
+    },
+    {
+      name: "the inferred range",
+      shades: ["var(--rk-seq5)", "var(--rk-seq1)", "var(--rk-seq1)", "var(--rk-seq5)"],
+      highest: "1,000",
+    },
+    {
+      name: "an explicit scale",
+      from: "2026-03-02",
+      to: "2026-03-03",
+      max: 20,
+      shades: ["var(--rk-seq1)", "var(--rk-seq3)"],
+      highest: "20",
+    },
+    {
+      name: "a range with no observations",
+      from: "2026-03-05",
+      to: "2026-03-05",
+      shades: ["var(--rk-fill-strong)"],
+      highest: "0",
+    },
+  ])("uses the same calendar heatmap scale for cells and the label in $name", (fixture) => {
+    const root = mount(
+      <CalendarHeatmap
+        from={fixture.from}
+        to={fixture.to}
+        max={fixture.max}
+        days={[
+          { date: "2026-03-01", value: 1000 },
+          { date: "2026-03-02", value: 4 },
+          { date: "2026-03-03", value: 10 },
+          { date: "2026-03-04", value: 1000 },
+        ]}
+      />,
+    );
+    const cells = [...root.querySelectorAll<HTMLElement>(".rk-day")];
+    expect(cells.map((cell) => cell.style.background)).toEqual(fixture.shades);
+    expect(root.querySelector('[role="img"]')?.getAttribute("aria-label")).toMatch(
+      new RegExp(`, highest ${fixture.highest}$`),
+    );
+  });
+
+  it("excludes dates beyond the calendar heatmap's rendering limit from its scale", () => {
+    const root = mount(
+      <CalendarHeatmap
+        from="2026-01-01"
+        to="2027-07-06"
+        days={[
+          { date: "2027-07-05", value: 10 },
+          { date: "2027-07-06", value: 1000 },
+        ]}
+      />,
+    );
+    const cells = [...root.querySelectorAll<HTMLElement>(".rk-day")];
+    expect(cells).toHaveLength(551);
+    expect(cells.at(-1)?.getAttribute("data-cell")).toBe("2027-07-05");
+    expect(cells.at(-1)?.style.background).toBe("var(--rk-seq5)");
+    expect(root.querySelector('[role="img"]')?.getAttribute("aria-label")).toBe(
+      "Daily values from Jan 1, 2026 to Jul 5, 2027, highest 10",
+    );
+  });
+
   it("names up to three sets beside their circles with the shared figure in the middle", () => {
     const root = mount(
       <Venn
@@ -396,6 +466,24 @@ describe("charts", () => {
     expect(root.textContent).toContain("High effort");
     expect(root.textContent).toContain("Low impact");
     expect(root.querySelectorAll(".rk-matrix-quadrant")).toHaveLength(4);
+  });
+
+  it("keeps matrix geometry left to right on an RTL page and lets each label pick its direction", () => {
+    const root = mount(
+      <div dir="rtl">
+        <Matrix2x2
+          axes={{ x: ["מאמץ נמוך", "מאמץ גבוה"], y: ["השפעה נמוכה", "השפעה גבוהה"] }}
+          quadrants={["מהיר", "חשוב", "משני", "מורכב"]}
+          points={[{ label: "תכנון", x: 0.2, y: 0.25 }]}
+        />
+      </div>,
+    );
+    expect(root.querySelector(".rk-matrix")?.getAttribute("dir")).toBe("ltr");
+    const labels = root.querySelectorAll(
+      ".rk-matrix-quadrant, .rk-matrix-label, .rk-matrix-x > span:first-child, .rk-matrix-y > span:first-child",
+    );
+    expect([...labels].map((l) => l.getAttribute("dir"))).toEqual(Array(7).fill("auto"));
+    expect(root.querySelectorAll(".rk-matrix-x bdi, .rk-matrix-y bdi")).toHaveLength(2);
   });
 
   it("dates a source as live, as a snapshot, while updating, or after a failed refresh", () => {
@@ -465,6 +553,15 @@ describe("charts", () => {
         throw new Error("bad");
       }),
     ).toBe("3k");
+  });
+
+  it("puts a currency symbol after the minus sign in every locale", () => {
+    expect(formatValue(1234.5, "$", undefined, wordsFor("en"))).toBe("$1,234.5");
+    expect(formatValue(-1234.5, "$", undefined, wordsFor("en"))).toBe("-$1,234.5");
+    // Hebrew puts a left-to-right mark before the sign; the symbol still follows the sign.
+    expect(formatValue(-1234.5, "$", undefined, wordsFor("he"))).toBe("\u200E-$1,234.5");
+    // Swedish uses a true minus sign and a no-break space as the group separator.
+    expect(formatValue(-1234.5, "$", undefined, wordsFor("sv"))).toBe("\u2212$1\u00A0234,5");
   });
 });
 

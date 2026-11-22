@@ -210,6 +210,92 @@ describe("readFileFromTool ranges", () => {
     expect(result.error).toContain("past the end");
     expect(result.totalLines).toBe(3);
   });
+
+  it("does not count the empty segment after a trailing newline as a line", async () => {
+    const { sandbox, workspace } = fileWorkspace("a\nb\n");
+    const result = (await readFileFromTool(sandbox, workspace, {
+      path: "notes/two.txt",
+      limit: 2,
+    })) as ReadFileResult;
+    expect(result).toEqual({
+      path: "notes/two.txt",
+      content: "a\nb\n",
+      totalLines: 2,
+      startLine: 1,
+      endLine: 2,
+    });
+  });
+
+  it("reassembles a file with a trailing newline exactly when read one line at a time", async () => {
+    const { sandbox, workspace } = fileWorkspace("a\nb\n");
+    const first = (await readFileFromTool(sandbox, workspace, {
+      path: "notes/two.txt",
+      offset: 1,
+      limit: 1,
+    })) as ReadFileResult;
+    const second = (await readFileFromTool(sandbox, workspace, {
+      path: "notes/two.txt",
+      offset: 2,
+      limit: 1,
+    })) as ReadFileResult;
+    expect(first.content).toBe("a");
+    expect(first.nextOffset).toBe(2);
+    expect(second.content).toBe("b\n");
+    expect(second.endLine).toBe(2);
+    expect(second.nextOffset).toBeUndefined();
+    expect(second.note).toBeUndefined();
+    expect([first.content, second.content].join("\n")).toBe("a\nb\n");
+  });
+
+  it("keeps a CRLF file's line endings and counts its lines correctly", async () => {
+    const { sandbox, workspace } = fileWorkspace("a\r\nb\r\n");
+    const result = (await readFileFromTool(sandbox, workspace, {
+      path: "notes/crlf.txt",
+    })) as ReadFileResult;
+    expect(result.content).toBe("a\r\nb\r\n");
+    expect(result.totalLines).toBe(2);
+    expect(result.endLine).toBe(2);
+    expect(result.nextOffset).toBeUndefined();
+  });
+
+  it("leaves a file without a trailing newline unchanged", async () => {
+    const { sandbox, workspace } = fileWorkspace("a\nb");
+    const result = (await readFileFromTool(sandbox, workspace, {
+      path: "notes/no-newline.txt",
+      limit: 2,
+    })) as ReadFileResult;
+    expect(result).toEqual({
+      path: "notes/no-newline.txt",
+      content: "a\nb",
+      totalLines: 2,
+      startLine: 1,
+      endLine: 2,
+    });
+  });
+
+  it("reads an empty file as one empty line, as before", async () => {
+    const { sandbox, workspace } = fileWorkspace("");
+    const result = (await readFileFromTool(sandbox, workspace, {
+      path: "notes/empty.txt",
+    })) as ReadFileResult;
+    expect(result).toEqual({
+      path: "notes/empty.txt",
+      content: "",
+      totalLines: 1,
+      startLine: 1,
+      endLine: 1,
+    });
+  });
+
+  it("reports an offset that points past the real last line, not the phantom line", async () => {
+    const { sandbox, workspace } = fileWorkspace("a\nb\n");
+    const result = (await readFileFromTool(sandbox, workspace, {
+      path: "notes/two.txt",
+      offset: 3,
+    })) as ReadFileResult;
+    expect(result.error).toBe("offset 3 is past the end of the file, which has 2 lines");
+    expect(result.totalLines).toBe(2);
+  });
 });
 
 describe("readFileFromTool size limit", () => {

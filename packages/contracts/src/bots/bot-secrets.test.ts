@@ -390,6 +390,115 @@ describe("login credentials", () => {
     expect(loginCardFields([label])[0]!.hidden).toBe(true);
   });
 
+  it.each([
+    // Chinese, written without spaces.
+    "用户名",
+    "账号",
+    "手机号",
+    "手机号码",
+    "手机号或邮箱",
+    "用户名/邮箱/手机号",
+    "身份证号",
+    "最后4位手机号",
+    "id号",
+    "帳號",
+    "電子郵件",
+    "手機號碼",
+    // Japanese.
+    "ユーザー名",
+    "メールアドレス",
+    "電話番号",
+    "ログインID",
+    // Korean.
+    "아이디",
+    "이메일",
+    "휴대폰 번호",
+    "휴대폰번호",
+    "사용자 이름",
+    "계정 이름",
+    "メール アドレス",
+    "ユーザー名",
+    // Spanish, French and German.
+    "Usuario",
+    "Correo electrónico",
+    "Teléfono",
+    "Identificación",
+    "Identifiant",
+    "Adresse e-mail",
+    "Nom d'utilisateur",
+    "Benutzername",
+    "Telefonnummer",
+    "Kundennummer",
+  ])("starts the localized identifier %j visible", (label) => {
+    expect(loginCardFields([label])[0]!.hidden).toBe(false);
+  });
+
+  it.each([
+    "密码",
+    "密碼",
+    "验证码",
+    "手机号密码",
+    "用户名X",
+    "用户名密",
+    "手机号验证",
+    "パスワード",
+    "ユーザーパスワード",
+    "비밀번호",
+    "아이디 비밀번호",
+    "Contraseña",
+    "Clave",
+    "Mot de passe",
+    "Passwort",
+    "Kennwort",
+    "Código",
+    "PIN",
+    "Usuario clave",
+    "Benutzer Kennwort",
+    // A look-alike letter in a known word.
+    "usеr",
+    "usεr",
+    "ｕｓｅｒ密码",
+    // Japanese and Korean secret names, and words made of known words that are not.
+    "パス",
+    "パスコード",
+    "暗証番号",
+    "認証コード",
+    "ワンタイム",
+    "ワンタイムパスワード",
+    "인증번호",
+    "코드",
+    "비밀 번호",
+    "암호",
+    "계정암호",
+    // A known word with its voiced mark dropped or added is another word.
+    "アトレス",
+    "アドレス",
+    "メール暗証",
+    // Chinese secret names that stitch known fillers.
+    "账号密码",
+    "登录密码",
+    "口令",
+    "验证码",
+    "账号口令",
+    "用户名后六位密码",
+    "暗号",
+    "电子密钥",
+    "个人密码",
+    // Spanish, French and German secret names beside an identifier.
+    "Usuario código",
+    "Cuenta PIN",
+    "Compte clé",
+    "Konto Schlüssel",
+    "Geheimzahl",
+    "Telefon Kennwort",
+  ])("starts the localized label %j hidden", (label) => {
+    expect(loginCardFields([label])[0]!.hidden).toBe(true);
+  });
+
+  it("starts a Chinese username visible and its password hidden", () => {
+    expect(loginCardFields(["用户名", "密码"]).map((field) => field.hidden)).toEqual([false, true]);
+  });
+
   it.each([[["Username", "Password"]], [["ID", "Phone", "Code"]]])(
     "accepts requested labels %j",
     (labels) => {

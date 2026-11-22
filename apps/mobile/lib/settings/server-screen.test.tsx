@@ -22,6 +22,7 @@ const api = vi.hoisted(() => ({
   reset: vi.fn(),
   save: vi.fn(),
 }));
+const announce = vi.hoisted(() => vi.fn());
 const saved = vi.hoisted(() => ({
   list: [] as Array<{ apiBase: string; headers: Record<string, string> }>,
   remove: vi.fn(),
@@ -130,6 +131,7 @@ vi.mock("../api/endpoint", async () => {
     usesCustomApiBase: () => server.custom,
   };
 });
+vi.mock("../native/announce", () => ({ announceToScreenReader: announce }));
 vi.mock("../native/native", () => ({
   useMobileTokens: () => ({}),
   useResolvedAppearance: () => "light",
@@ -406,4 +408,56 @@ it("tells an http server from an https one on the same host", async () => {
   const labels = Array.from(container!.querySelectorAll("button")).map((node) => node.textContent);
   expect(labels).toContain("http://10.0.0.8");
   expect(labels).toContain("10.0.0.8");
+});
+
+it("announces a failed check once, with the words the screen shows", async () => {
+  api.probe.mockResolvedValueOnce({ ok: false, error: "No server" });
+  await renderServer("https://two.example.test");
+  await pressSave();
+  expect(container?.textContent).toContain("No server");
+  expect(announce).toHaveBeenCalledExactlyOnceWith("No server");
+});
+
+it("announces a failed save", async () => {
+  api.save.mockResolvedValueOnce({ ok: false, error: "Could not save the server" });
+  await renderServer();
+  await pressSave();
+  expect(container?.textContent).toContain("Could not save the server");
+  expect(announce).toHaveBeenCalledExactlyOnceWith("Could not save the server");
+});
+
+it("announces a failed return to the default server", async () => {
+  server.custom = true;
+  api.reset.mockResolvedValueOnce({ ok: false, error: "Could not restore the default" });
+  await renderServer();
+  await pressButton("Use default server");
+  expect(container?.textContent).toContain("Could not restore the default");
+  expect(announce).toHaveBeenCalledExactlyOnceWith("Could not restore the default");
+});
+
+it("announces a failed removal of a recent server", async () => {
+  saved.list = [{ apiBase: "https://two.example.test", headers: {} }];
+  saved.remove.mockResolvedValueOnce(false);
+  await renderServer();
+  await pressButton("Remove two.example.test");
+  expect(container?.textContent).toContain("Could not remove the server");
+  expect(announce).toHaveBeenCalledExactlyOnceWith("Could not remove the server");
+});
+
+it("announces a repeated failure again", async () => {
+  api.probe
+    .mockResolvedValueOnce({ ok: false, error: "No server" })
+    .mockResolvedValueOnce({ ok: false, error: "No server" });
+  await renderServer("https://two.example.test");
+  await pressSave();
+  await pressSave();
+  expect(announce).toHaveBeenCalledTimes(2);
+  expect(announce).toHaveBeenNthCalledWith(2, "No server");
+});
+
+it("announces nothing when the switch succeeds", async () => {
+  await renderServer("https://two.example.test");
+  await pressSave();
+  expect(api.save).toHaveBeenCalled();
+  expect(announce).not.toHaveBeenCalled();
 });

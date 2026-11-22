@@ -1,8 +1,8 @@
 import type { AppBootstrap, LabFeature, Me } from "@rakazo/contracts";
 import { ATTACHMENT_MAX_BYTES, attachmentMaxBytes, parseLabs } from "@rakazo/contracts";
 import { displayIdentityResult } from "@rakazo/core";
+import { identityLabels } from "@rakazo/i18n/identity-display";
 import { initialBootstrapTarget } from "./bootstrap-target";
-import { identityLabels } from "./bots/identity-display";
 import { markOnce } from "./platform/performance";
 import { rpc, selectedSpaceId } from "./query/rpc";
 

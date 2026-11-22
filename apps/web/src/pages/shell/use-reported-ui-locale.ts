@@ -1,4 +1,5 @@
 import { reportUiLocale } from "@rakazo/core";
+import { bestEffort } from "@rakazo/logging/best-effort";
 import { useEffect, useRef } from "react";
 import { i18n } from "../../lib/locale/i18n";
 import { normalizeUiLocale } from "../../lib/locale/ui-locale";
@@ -23,13 +24,15 @@ export function useReportedUiLocale(
       if (last ? last.locale === locale && !last.failed : locale === saved) return;
       const attempt = { locale, failed: false };
       reported.current = attempt;
-      void reportUiLocale(
+      const save = reportUiLocale(
         () => normalizeUiLocale(i18n.locale),
         (locale) => rpc.preferences.update({ locale }),
-      ).catch(() => {
+      ).catch((error: unknown) => {
         // A later report can retry; an older failure cannot mark a newer attempt as failed.
         attempt.failed = true;
+        throw error;
       });
+      void bestEffort("save the reported UI locale", save);
     };
     report();
     let active = true;

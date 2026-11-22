@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { deferred } from "@rakazo/core/test-async";
+import { installConsoleLogger } from "@rakazo/logging/console-logger";
 import { act } from "react";
 import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
@@ -21,6 +22,8 @@ function Reporter({ saved }: { saved: string | null | undefined }) {
 
 beforeEach(async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  vi.spyOn(console, "warn").mockImplementation(() => {});
+  installConsoleLogger("web");
   setCatalogLoadersForTests(
     Object.fromEntries(
       UI_LOCALES.map((locale) => [locale, async () => ({ messages: {} })]),
@@ -37,6 +40,7 @@ afterEach(() => {
   act(() => root.unmount());
   container.remove();
   setCatalogLoadersForTests(null);
+  vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
 
@@ -56,13 +60,28 @@ it("leaves a matching account and an older server alone", async () => {
   expect(update).not.toHaveBeenCalled();
 });
 
-it("retries a failed save on a later report of the same language", async () => {
+it("logs a failed save and retries on a later report of the same language", async () => {
   update.mockRejectedValueOnce(new Error("offline"));
   await act(async () => root.render(<Reporter saved="en" />));
   expect(update).toHaveBeenCalledExactlyOnceWith({ locale: "es" });
+  expect(console.warn).toHaveBeenCalledExactlyOnceWith(
+    expect.stringMatching(/best effort failed: save the reported UI locale.*error=Error: offline/),
+  );
 
   await act(async () => i18n.activate("es"));
   expect(update.mock.calls).toEqual([[{ locale: "es" }], [{ locale: "es" }]]);
+  expect(console.warn).toHaveBeenCalledTimes(1);
+});
+
+it("retries a cancelled save without logging a failure", async () => {
+  update.mockRejectedValueOnce(Object.assign(new Error("cancelled"), { name: "AbortError" }));
+  await act(async () => root.render(<Reporter saved="en" />));
+  expect(update).toHaveBeenCalledExactlyOnceWith({ locale: "es" });
+  expect(console.warn).not.toHaveBeenCalled();
+
+  await act(async () => i18n.activate("es"));
+  expect(update.mock.calls).toEqual([[{ locale: "es" }], [{ locale: "es" }]]);
+  expect(console.warn).not.toHaveBeenCalled();
 });
 
 it("deduplicates the same language while pending and after success", async () => {
