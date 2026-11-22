@@ -187,7 +187,7 @@ export function useComposerDictation({
       await ensureVoiceConsent(requestContext);
       if (session.current !== mine) return;
       // Ask for the microphone first: on Android its prompt reads as leaving the app.
-      await microphonePermission();
+      await microphonePermission(mine.cancel.signal);
       if (!(await goLive(mine))) return;
       const stopped = new AbortController();
       mine.finish = () => {

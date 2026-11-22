@@ -37,10 +37,12 @@ const MAX_DICTATION_MS = 5 * 60_000;
  * Asks only when the microphone is not allowed yet: Android opens its prompt even for a granted
  * permission, and the app leaving for it ends a dictation already listening.
  */
-export async function microphonePermission(): Promise<{ granted: boolean }> {
+export async function microphonePermission(signal: AbortSignal): Promise<{ granted: boolean }> {
   const { AudioModule } = await import("expo-audio");
   const current = await AudioModule.getRecordingPermissionsAsync();
-  return current.granted ? current : AudioModule.requestRecordingPermissionsAsync();
+  // A session that ended meanwhile must not open the prompt.
+  if (current.granted || signal.aborted) return current;
+  return AudioModule.requestRecordingPermissionsAsync();
 }
 
 // A dictation that finishes late must not switch recording off under the next one's recorder.
@@ -58,7 +60,7 @@ export async function recordClip(
 ): Promise<VoiceClip | null> {
   const { AudioModule, RecordingPresets } = await import("expo-audio");
   if (signal.aborted) return null;
-  const permission = await microphonePermission();
+  const permission = await microphonePermission(signal);
   // The call can end while the microphone prompt is open.
   if (signal.aborted) return null;
   if (!permission.granted)

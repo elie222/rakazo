@@ -49,7 +49,17 @@ describe("transcribeClip", () => {
 describe("microphonePermission", () => {
   // Android opens its prompt even when access is granted, and leaving for it ends a dictation.
   it("does not open the prompt when the microphone is already allowed", async () => {
-    expect(await microphonePermission()).toEqual({ granted: true });
+    expect(await microphonePermission(new AbortController().signal)).toEqual({ granted: true });
+    expect(permissions.request).not.toHaveBeenCalled();
+  });
+
+  it("does not open the prompt for a session that ended during the lookup", async () => {
+    const ended = new AbortController();
+    permissions.get.mockImplementationOnce(async () => {
+      ended.abort();
+      return { granted: false };
+    });
+    expect(await microphonePermission(ended.signal)).toEqual({ granted: false });
     expect(permissions.request).not.toHaveBeenCalled();
   });
 });
