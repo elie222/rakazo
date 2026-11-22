@@ -1,5 +1,6 @@
 import { ph } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
+import { useListSearch } from "@rakazo/chat-ui/hooks";
 import { useCompatibleModelDiscovery } from "@rakazo/chat-ui/model-discovery";
 import type { ModelApiProtocol, ModelHeaderRow, ThinkingLevel } from "@rakazo/contracts";
 import {
@@ -34,7 +35,6 @@ import {
   Alert,
   Keyboard,
   Linking,
-  Pressable,
   ScrollView,
   Text,
   TextInput,
@@ -46,7 +46,12 @@ import { ConnectionModelList } from "../../components/models/connection-model-li
 import { DisclosureRow } from "../../components/models/model-connection-fields";
 import { createModelsStyles } from "../../components/models/model-connection-styles";
 import { NativeActionButton } from "../../components/native/native-action-button";
-import { SettingsGroup, SettingsSwitch } from "../../components/settings/settings-group";
+import { NativeSymbol } from "../../components/native/native-symbol";
+import {
+  SettingsGroup,
+  SettingsRow,
+  SettingsSwitch,
+} from "../../components/settings/settings-group";
 import { MenuPicker } from "../../components/ui/menu-picker";
 import type { MobileMe, MobileModel, MobileModelCredential } from "../../lib/api/mobile-types";
 import { errorText } from "../../lib/api/user-error";
@@ -59,7 +64,6 @@ import { analyticsSurface } from "../../lib/native/analytics-surface";
 import { native, useThemedStyles } from "../../lib/native/native";
 import { useScreenHeader } from "../../lib/navigation/screen-header";
 import { ACCOUNT_SETTINGS, settingsRpc } from "../../lib/query/settings-target";
-import { useListSearch } from "../../lib/search/use-list-search";
 
 type ModelSelection = {
   modelId?: string;
@@ -148,7 +152,7 @@ export default function ModelConnection() {
     const nextError = next.error ?? null;
     setFeedbackAnchor(anchor);
     setError(nextError);
-    setSavedNotice(next.notice === t`Saved.` ? next.notice : null);
+    setSavedNotice(next.notice ?? null);
     const message = nextError ?? next.notice ?? null;
     // VoiceOver keeps focus on the tapped button, so speak the result from here.
     if (message) AccessibilityInfo.announceForAccessibility(message);
@@ -243,6 +247,15 @@ export default function ModelConnection() {
     publishFeedback,
     clearFeedback,
   });
+
+  async function openSignInSetup(url: string) {
+    clearFeedback();
+    try {
+      await Linking.openURL(url);
+    } catch {
+      publishFeedback("connection", { error: t`Could not open security settings. Try again.` });
+    }
+  }
 
   const cancelInFlightWork = useCallback(() => {
     modelProbe.invalidate();
@@ -557,20 +570,29 @@ export default function ModelConnection() {
   ) : null;
 
   const signInHost = oauth?.mode === "auth-url" ? new URL(oauth.verificationUri).hostname : "";
+  const deviceCodeInstructions = t`In your browser, sign in and paste this code when asked. Then return to Rakazo.`;
   const catalogConnectionControls =
     !isOpenAiCompatible && selected ? (
       <>
         {subscriptionSignIn &&
         signInSetup &&
         (oauth || credential?.authKind !== "oauth" || credential.reconnectRequired) ? (
-          <Pressable
-            accessibilityRole="link"
-            onPress={() => void Linking.openURL(signInSetup.url)}
-            style={{ marginTop: 12 }}
-          >
-            <Text style={styles.link}>{`1. ${signInSetup.label}`}</Text>
-            {signInSetup.note ? <Text style={styles.secondary}>{signInSetup.note}</Text> : null}
-          </Pressable>
+          <SettingsGroup>
+            <SettingsRow
+              accessibilityRole="link"
+              title={`1. ${signInSetup.label}`}
+              detail={signInSetup.note}
+              trailing={
+                <NativeSymbol
+                  ios="arrow.up.right"
+                  android="open-outline"
+                  size={16}
+                  color={native.secondaryLabel}
+                />
+              }
+              onPress={() => void openSignInSetup(signInSetup.url)}
+            />
+          </SettingsGroup>
         ) : null}
         {subscriptionSignIn ? (
           oauth ? (
@@ -608,9 +630,7 @@ export default function ModelConnection() {
               ) : (
                 <>
                   <Text style={styles.secondary}>
-                    {signInSetup
-                      ? t`2. Enter this code at ${ph({ host: oauth.verificationUri.replace(/^https:\/\//, "") })}`
-                      : t`Enter this code at ${ph({ host: oauth.verificationUri.replace(/^https:\/\//, "") })}`}
+                    {signInSetup ? `2. ${deviceCodeInstructions}` : deviceCodeInstructions}
                   </Text>
                   <Text style={styles.code}>{oauth.userCode}</Text>
                   <NativeActionButton
@@ -644,10 +664,12 @@ export default function ModelConnection() {
                   ? t`Starting…`
                   : credential?.authKind === "oauth"
                     ? t`Sign in again`
-                    : (selected.oauthLabel ?? t`Sign in`)
+                    : signInSetup
+                      ? t`2. Get a sign-in code`
+                      : (selected.oauthLabel ?? t`Sign in`)
               }
               onPress={() => void startSubscriptionSignIn()}
-              prominence="secondary"
+              prominence={signInSetup ? "primary" : "secondary"}
               style={{ marginTop: 12 }}
             />
           ) : null

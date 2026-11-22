@@ -4,16 +4,7 @@ import type {
   PluginMarketplaceEntry,
 } from "@rakazo/contracts";
 import { PluginPreviewSchema } from "@rakazo/contracts";
-import type { PluginCategory } from "@rakazo/core";
-import {
-  catalogItemKey,
-  installedPluginParts,
-  managedAppFor,
-  matchesPluginQuery,
-  OTHER_PLUGINS,
-  PLUGIN_CATEGORIES,
-  pluginSite,
-} from "@rakazo/core";
+import { installedPluginParts, matchesPluginQuery, pluginSite } from "@rakazo/core";
 
 /** What the plugin screen needs, from a catalog entry or a pasted GitHub URL. */
 export type PluginParams = {
@@ -46,26 +37,6 @@ export function gitImportParams(url: string): PluginParams {
   return { source, installedSource: source, name: source.split("/").pop() || source };
 }
 
-/**
- * One row per brand: a plugin for a managed app lends that app its skills instead of being
- * listed again, and skill packs with nothing to connect belong to Skills, not Integrations.
- */
-export function browsablePlugins(
-  entries: PluginMarketplaceEntry[],
-  managed: ConnectionCatalogItem[],
-): { plugins: PluginMarketplaceEntry[]; pluginForApp: Map<string, PluginMarketplaceEntry> } {
-  const pluginForApp = new Map<string, PluginMarketplaceEntry>();
-  const plugins: PluginMarketplaceEntry[] = [];
-  for (const entry of entries) {
-    const app = managedAppFor(entry, managed);
-    if (app) {
-      if (entry.skillCount && !pluginForApp.has(catalogItemKey(app)))
-        pluginForApp.set(catalogItemKey(app), entry);
-    } else if (entry.hasConnector) plugins.push(entry);
-  }
-  return { plugins, pluginForApp };
-}
-
 export function skillPacks(entries: PluginMarketplaceEntry[], query: string) {
   return entries.filter((entry) => !entry.hasConnector && matchesPluginQuery(entry, query));
 }
@@ -82,23 +53,6 @@ export function managedPluginParams(
     managedConnectorId: app.connectorId,
     managedSlug: app.slug,
   };
-}
-
-export function pluginCategories(entries: PluginMarketplaceEntry[]): PluginCategory[] {
-  return PLUGIN_CATEGORIES.filter((name) => entries.some((entry) => entry.category === name));
-}
-
-export function filterPlugins(
-  entries: PluginMarketplaceEntry[],
-  query: string,
-  category: string | null,
-  categoryLabel: (name: string) => string,
-): PluginMarketplaceEntry[] {
-  return entries.filter(
-    (entry) =>
-      (!category || entry.category === (category === OTHER_PLUGINS ? null : category)) &&
-      matchesPluginQuery(entry, query, entry.category ? categoryLabel(entry.category) : ""),
-  );
 }
 
 /** Skills an install added; none when only its connector was added. */

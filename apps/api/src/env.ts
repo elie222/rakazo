@@ -138,7 +138,6 @@ export interface AppEnv extends MessagingEnvironmentValues {
   smtpUrl: string | undefined;
   botEmailSmtpUrl?: string;
   emailProvider?: string;
-  welcomeEmailEnabled?: boolean;
   emailApiKey?: string;
   emailFrom: string | undefined;
   emailReplyTo?: string;
@@ -352,7 +351,6 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
     emailFrom: optional(source.EMAIL_FROM),
     emailReplyTo: optional(source.EMAIL_REPLY_TO),
     inboundEmail: inboundEmailFromEnv(source),
-    welcomeEmailEnabled: source.WELCOME_EMAIL_ENABLED === "true",
     stripeSecretKey: optional(source.STRIPE_SECRET_KEY),
     stripeWebhookSecret: optional(source.STRIPE_WEBHOOK_SECRET),
     stripePriceId: optional(source.STRIPE_PRICE_ID),

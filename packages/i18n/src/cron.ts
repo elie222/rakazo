@@ -1,10 +1,10 @@
 import { ph, t } from "@lingui/core/macro";
 import type { CronLabels, CronUnit } from "@rakazo/core";
 import { ENGLISH_CRON_LABELS, localizedClock, polishInterval, russianInterval } from "@rakazo/core";
-import { getActiveUiLocale } from "../i18n/i18n";
-import type { UiLocale } from "../i18n/ui-locale";
 
-function unitLabelPlural(unit: CronUnit): string {
+const SUFFIX_INTERVAL_LOCALES = new Set(["ja", "zh-CN", "zh-TW"]);
+
+export function cronUnitLabel(unit: CronUnit): string {
   switch (unit) {
     case "minutes":
       return t`minutes`;
@@ -17,7 +17,7 @@ function unitLabelPlural(unit: CronUnit): string {
   }
 }
 
-function unitLabelSingular(unit: CronUnit): string {
+export function cronUnitLabelSingular(unit: CronUnit): string {
   switch (unit) {
     case "minutes":
       return t`minute`;
@@ -31,13 +31,15 @@ function unitLabelSingular(unit: CronUnit): string {
 }
 
 /**
- * Schedule words for `formatCron` — routine rows, the status line, the `@`
- * picker. Polish and Russian intervals need case forms, so they share the core helpers
- * instead of a catalog string.
+ * Schedule words for `formatCron` in `locale`: routine rows, the status line, the `@` picker.
+ * Polish and Russian intervals need case forms, so they share the core helpers instead of a
+ * catalog string.
  */
-export function cronLabels(locale: UiLocale = getActiveUiLocale()): CronLabels {
+export function cronLabels(locale: string): CronLabels {
   if (locale === "en") return ENGLISH_CRON_LABELS;
-  const listSeparator = locale === "ja" || locale === "zh-CN" || locale === "zh-TW" ? "、" : ", ";
+  // zh/ja list days with "、" and read an interval as one suffix phrase ("每5分钟", "5分ごと").
+  const suffixInterval = SUFFIX_INTERVAL_LOCALES.has(locale);
+  const listSeparator = suffixInterval ? "、" : ", ";
   return {
     oneTime: t`One-time`,
     everyHour: t`Every hour`,
@@ -59,11 +61,8 @@ export function cronLabels(locale: UiLocale = getActiveUiLocale()): CronLabels {
     interval: (n, unit) => {
       if (locale === "ru") return russianInterval(n, unit);
       if (locale === "pl") return polishInterval(n, unit);
-      const unitLabel = n === 1 ? unitLabelSingular(unit) : unitLabelPlural(unit);
-      // zh/ja read most naturally as one suffix phrase ("每5分钟", "5分ごと").
-      if (locale === "zh-CN" || locale === "zh-TW" || locale === "ja") {
-        return { lead: "", detail: t`every ${n} ${ph({ unit: unitLabel })}` };
-      }
+      const unitLabel = n === 1 ? cronUnitLabelSingular(unit) : cronUnitLabel(unit);
+      if (suffixInterval) return { lead: "", detail: t`every ${n} ${ph({ unit: unitLabel })}` };
       return { lead: t`Every`, detail: t`${n} ${ph({ unit: unitLabel })}` };
     },
     atTime: (time) => t`at ${ph({ time: localizedClock(time, locale) })}`,

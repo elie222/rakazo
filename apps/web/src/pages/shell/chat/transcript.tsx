@@ -116,6 +116,7 @@ export const Transcript = memo(function Transcript({
   onOpenComputer,
   onReleaseComputer,
   onOpenImportSetup,
+  onOpenAgentImport,
   rpc,
 }: {
   scrollRef: RefObject<HTMLDivElement | null>;
@@ -175,6 +176,7 @@ export const Transcript = memo(function Transcript({
     reason: ComputerReleaseReason,
   ) => Promise<void>;
   onOpenImportSetup?: (target: ImportSetupTarget) => void;
+  onOpenAgentImport?: () => void;
   rpc: ReturnType<typeof createSpaceRpc>;
 }) {
   const { t } = useLingui();
@@ -763,6 +765,7 @@ export const Transcript = memo(function Transcript({
                       onOpenComputer={onOpenComputer}
                       onReleaseComputer={onReleaseComputer}
                       onOpenImportSetup={onOpenImportSetup}
+                      onOpenAgentImport={onOpenAgentImport}
                       rpc={rpc}
                       showToolActivity={showToolActivity}
                       onReply={onReply}

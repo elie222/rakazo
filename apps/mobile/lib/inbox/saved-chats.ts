@@ -1,4 +1,5 @@
 import { displayIdentityResult, identitySource } from "@rakazo/core";
+import { identityLabels } from "@rakazo/i18n/identity-display";
 import { Directory, File, Paths } from "expo-file-system";
 import { currentApiBase, selectedSpaceId } from "../api/api";
 import type {
@@ -17,7 +18,6 @@ import {
   saveVerifiedIntegrationsScope,
 } from "../api/session";
 import { artifactCacheSession } from "../artifacts/artifact-cache-session";
-import { identityLabels } from "../bots/identity-display";
 import type { IntegrationsCacheScope } from "../integrations/integrations-cache";
 import {
   integrationsCacheScope,

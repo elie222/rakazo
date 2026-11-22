@@ -75,6 +75,7 @@ export function ShellSidebar({
   setPanel,
   navigate,
   setNewSpaceOpen,
+  openAgentImport,
   setCreateBotOpen,
   chatMenu,
   roster,
@@ -105,6 +106,7 @@ export function ShellSidebar({
   setPanel: (panel: Panel) => void;
   navigate: (path: string) => void;
   setNewSpaceOpen: (open: boolean) => void;
+  openAgentImport: () => void;
   setCreateBotOpen: (open: boolean) => void;
   chatMenu: ChatMenuState;
   roster: ReactNode;
@@ -192,6 +194,7 @@ export function ShellSidebar({
           setPanel={setPanel}
           navigate={navigate}
           setNewSpaceOpen={setNewSpaceOpen}
+          openAgentImport={openAgentImport}
           setCreateBotOpen={setCreateBotOpen}
         />
         {mini ||

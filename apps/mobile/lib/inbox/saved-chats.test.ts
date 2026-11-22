@@ -1,7 +1,7 @@
 import { chatListed, displayIdentityResult, displayMessageBlock } from "@rakazo/core";
+import { identityLabels } from "@rakazo/i18n/identity-display";
 import { beforeEach, expect, it, vi } from "vitest";
 import type { MobileMe, MobileSnapshot, MobileSpaceNavigation } from "../api/mobile-types";
-import { identityLabels } from "../bots/identity-display";
 import { resetI18nForTests } from "../i18n/i18n";
 import type { SavedChatsScope } from "./saved-chats";
 import {

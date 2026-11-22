@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { i18n } from "@lingui/core";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactElement, ReactNode } from "react";
 import { act, cloneElement } from "react";
@@ -118,6 +119,9 @@ let host: HTMLDivElement;
 let root: ReturnType<typeof createRoot>;
 
 beforeEach(() => {
+  // The plugin catalog text both apps share is translated at run time, so it needs a locale.
+  i18n.load("en", {});
+  i18n.activate("en");
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   api.connections.catalog.mockReset().mockResolvedValue([]);

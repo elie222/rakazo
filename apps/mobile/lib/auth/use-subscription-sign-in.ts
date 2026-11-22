@@ -144,7 +144,7 @@ export function useSubscriptionSignIn({
     if (await finishConnecting(selected?.id ?? modelId, saved.id)) return;
     await load({ modelId });
     if (controller.signal.aborted) return;
-    publishFeedback("connection", { notice: t`Saved.` });
+    publishFeedback("connection", { notice: t`Subscription connected.` });
   }
 
   async function startSubscriptionSignIn() {

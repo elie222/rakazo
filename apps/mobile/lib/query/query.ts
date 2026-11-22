@@ -128,13 +128,28 @@ export function formRead<T>(read: {
   };
 }
 
-/** One rpc write of a save. It is refused once the save's server, session or Space is no longer current. */
-export type SaveSend = <P extends RpcPath>(proc: P, input: RpcInput<P>) => Promise<RpcOutput<P>>;
+/**
+ * One rpc write of a save. It is refused once the save's server, session or Space is no longer
+ * current. A write the server takes long over, such as starting a computer, names its own timeout.
+ */
+export type SaveSend = <P extends RpcPath>(
+  proc: P,
+  input: RpcInput<P>,
+  options?: { timeoutMs?: number },
+) => Promise<RpcOutput<P>>;
 
 /** Writes with this request context, or with the current one when there is none. */
 export function sendWith(requestContext: ApiRequestContext | undefined): SaveSend {
-  return (proc, body) =>
-    rpc(proc, ...([body, requestContext && { requestContext }] as RpcArgs<typeof proc>));
+  return (proc, body, options) =>
+    rpc(
+      proc,
+      ...([
+        body,
+        options || requestContext
+          ? { ...options, ...(requestContext && { requestContext }) }
+          : undefined,
+      ] as RpcArgs<typeof proc>),
+    );
 }
 
 /**
@@ -210,14 +225,14 @@ export function useSave<Input = void, Saved = unknown>(options: {
         (requestContext) => ({ requestContext }),
         (failure: Error) => ({ failure }),
       );
-      const send: SaveSend = async (proc, body) => {
+      const send: SaveSend = async (proc, body, sendOptions) => {
         const pin = await pinned;
         if ("failure" in pin) throw pin.failure;
         const { requestContext } = pin;
         const sent = requestScope(requestContext, account);
         if (sent !== scope || sent !== scopeKey())
           throw new Error(t`Something went wrong. Try again.`);
-        return sendWith(requestContext)(proc, body);
+        return sendWith(requestContext)(proc, body, sendOptions);
       };
       void (async () => {
         const saved = await save(input, send);
