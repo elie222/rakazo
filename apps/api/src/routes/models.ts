@@ -21,6 +21,7 @@ import {
   serializeModelSecret,
   storedOpenAiCompatibleProbeHeaders,
   storedOpenAiCompatibleProbeKey,
+  subscriptionSignInChoice,
   UNAVAILABLE_MODEL_FOR_AUTH_MESSAGE,
 } from "@rakazo/adapters";
 import type { Actor, ModelCredential, ThinkingLevel } from "@rakazo/contracts";
@@ -38,6 +39,7 @@ import {
   comparePreferenceOrder,
   defaultModelCredentialCandidates,
   deleteUnreferencedCredentialSecret,
+  deploymentModelChangesScope,
   findModelCredential,
   getModelRole,
   modelCredentialProviderFilter,
@@ -54,6 +56,10 @@ import { getLogger } from "@rakazo/logging";
 import { markExpectedFailure } from "@rakazo/logging/hono";
 import { assertCompatibleDefaultChange } from "../bots/model-pins.js";
 import { mayUsePrivateEndpoint } from "../integrations/mcp-servers.js";
+import {
+  getDeploymentModelSettings,
+  updateDeploymentModelSettings,
+} from "../models/deployment-model-settings.js";
 import {
   recordSignInStep,
   signInDurationMs,
@@ -113,6 +119,9 @@ export function modelsRoutes(ctx: RouterContext) {
         const record = signInRecorder(deps.analytics, actor.userId, login.measure);
         const target = await modelConnectionTarget(deps, actor, login.provider, login.credentialId);
         const retained = await prepareModelReconnectSettings(deps, actor, target);
+        const choice = target
+          ? { modelId: login.modelId, thinkingLevel: login.thinkingLevel }
+          : subscriptionSignInChoice(login.provider, login.modelId, login.thinkingLevel);
         const saved = await persistModelCredential(
           deps,
           actor,
@@ -130,8 +139,8 @@ export function modelsRoutes(ctx: RouterContext) {
               oauthCredentialEmail(login.credential) ??
               login.label ??
               listPiCatalog().find((entry) => entry.provider === login.provider)?.providerName,
-            modelId: login.modelId,
-            thinkingLevel: login.thinkingLevel,
+            modelId: choice.modelId,
+            thinkingLevel: choice.thinkingLevel,
             makeDefault: login.makeDefault,
             scope: login.settingsScope,
             signal: login.signal,
@@ -238,13 +247,13 @@ export function modelsRoutes(ctx: RouterContext) {
           throw new ORPCError("FORBIDDEN");
         const { actor } = context;
         const { role, scope } = input;
-        const [settings, deploymentPrimary] = await Promise.all([
+        const [settings, deployment] = await Promise.all([
           modelRoleTarget(deps.prisma, actor, scope).then((target) =>
             getModelRole(deps.prisma, target, role),
           ),
           deploymentDefault(actor, role),
         ]);
-        return withImageInput(actor, role, { ...settings, deploymentPrimary });
+        return withImageInput(actor, role, { ...settings, ...deployment });
       }),
       setRole: authed.models.setRole.handler(async ({ context, input }) => {
         if (input.expectedUserId && input.expectedUserId !== context.actor.userId)
@@ -257,14 +266,14 @@ export function modelsRoutes(ctx: RouterContext) {
           [...(primary ? [primary] : []), ...(backups ?? [])],
           reads,
         );
-        const deploymentPrimary = await deploymentDefault(context.actor, role);
+        const deployment = await deploymentDefault(context.actor, role);
         const settings = await updateModelRole(
           deps.prisma,
           { userId: context.actor.userId, spaceId: context.actor.spaceId, scope },
           role,
           { primary, backups },
         );
-        return withImageInput(context.actor, role, { ...settings, deploymentPrimary }, reads);
+        return withImageInput(context.actor, role, { ...settings, ...deployment }, reads);
       }),
       backups: authed.models.backups.handler(async ({ context }) =>
         (await appliedModelRole(deps.prisma, context.actor, "main")).backups.map(
@@ -321,9 +330,10 @@ export function modelsRoutes(ctx: RouterContext) {
       probeOpenAiCompatible: authed.models.probeOpenAiCompatible.handler(
         async ({ context, input }) => {
           assertModelProviderAllowed(OPENAI_COMPATIBLE_PROVIDER_ID);
+          const preset = compatibleEndpointPreset(input.baseUrl);
           let apiKey = input.apiKey;
           let headers = input.headers;
-          if (!apiKey?.trim() || headers === undefined) {
+          if (!preset?.publicModels && (!apiKey?.trim() || headers === undefined)) {
             try {
               const preferred = await findModelCredential(
                 deps.prisma,
@@ -375,7 +385,7 @@ export function modelsRoutes(ctx: RouterContext) {
           try {
             const models = await probeOpenAiCompatibleModels(
               { ...input, apiKey, headers },
-              compatibleEndpointPreset(input.baseUrl) ? deps.modelConnectionFetch : undefined,
+              preset ? deps.modelConnectionFetch : undefined,
               context.signal,
               { allowPrivate: mayUsePrivateEndpoint(deps) },
             );
@@ -472,11 +482,8 @@ export function modelsRoutes(ctx: RouterContext) {
       }),
       completeOAuth: authed.models.completeOAuth.handler(async ({ context, input }) => {
         const result = await deps.oauthLogins.complete(input.loginId, context.actor);
-        if (result.status === "error") {
-          const record = signInRecorder(deps.analytics, context.actor.userId, result.measure);
-          record(result.provider, { name: "model_connect_failed", error: new Error(result.error) });
-          return { status: "error" as const, error: result.error };
-        }
+        // The sign-in already reported how it ended, as model_connect_ended.
+        if (result.status === "error") return { status: "error" as const, error: result.error };
         return result.status === "connected" ? { status: "ready" as const } : result;
       }),
       finishOAuth: authed.models.finishOAuth.handler(async ({ context, input }) => {
@@ -485,16 +492,12 @@ export function modelsRoutes(ctx: RouterContext) {
         if (result.status === "pending") {
           throw new ORPCError("CONFLICT", { message: "Sign-in has not finished yet." });
         }
-        if (result.status === "error") {
-          const record = signInRecorder(deps.analytics, context.actor.userId, result.measure);
-          record(result.provider, { name: "model_connect_failed", error: new Error(result.error) });
-          throw new ORPCError("NOT_FOUND", { message: result.error });
-        }
+        if (result.status === "error") throw new ORPCError("NOT_FOUND", { message: result.error });
         // The save already counted the connection.
         return result.value;
       }),
       cancelOAuth: authed.models.cancelOAuth.handler(async ({ context, input }) => {
-        await deps.oauthLogins.cancel(input.loginId, context.actor);
+        await deps.oauthLogins.cancel(input.loginId, context.actor, input.reason);
         return { ok: true as const };
       }),
       setDefault: authed.models.setDefault.handler(async ({ context, input }) => {
@@ -758,6 +761,21 @@ export function modelsRoutes(ctx: RouterContext) {
         );
         return { ok: true as const };
       }),
+      deployment: {
+        get: authed.models.deployment.get.handler(({ context }) =>
+          getDeploymentModelSettings(deps, context.actor),
+        ),
+        update: authed.models.deployment.update.handler(async ({ context, input }) => {
+          const saved = await updateDeploymentModelSettings(
+            deps,
+            context.actor,
+            input,
+            context.signal,
+          );
+          void deps.events?.publishSpaceChange?.(deploymentModelChangesScope, "deploymentModel");
+          return saved;
+        }),
+      },
     },
   };
 }

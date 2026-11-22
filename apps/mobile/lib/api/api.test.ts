@@ -2,7 +2,10 @@ import type { Deferred } from "@rakazo/core/test-async";
 import { deferred } from "@rakazo/core/test-async";
 import { getArtifactById } from "../artifacts/artifacts";
 
-vi.mock("../settings/ai-consent", () => ({ promptAiConsent: vi.fn() }));
+vi.mock("../settings/ai-consent", () => ({
+  promptAiConsent: vi.fn(),
+  promptPageRevisionConsent: vi.fn(),
+}));
 vi.mock("react-native", () => ({ Platform: { OS: "ios" } }));
 
 import type { RpcInput } from "@rakazo/contracts";
@@ -12,7 +15,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { listUserDevices, removeUserDevice } from "../account/user-devices";
 import { changePassword } from "../auth/api-auth.js";
 import { resumeLiveNotifications } from "../notifications/live-notifications.js";
-import { promptAiConsent } from "../settings/ai-consent";
+import { promptAiConsent, promptPageRevisionConsent } from "../settings/ai-consent";
 import type { UnsentDisk } from "../thread/send/thread-feedback.js";
 import { configureUnsentSends } from "../thread/send/thread-feedback.js";
 import {
@@ -561,6 +564,54 @@ describe("mobile API requests", () => {
       { uses: ["model", "memory"], botId: "bot-1" },
       { uses: ["model", "memory"], routineId: "routine-active" },
       { uses: ["model", "memory"], routineId: "routine-paused" },
+    ]);
+  });
+
+  it("asks for the Page revision recipient before sending, and blocks when declined", async () => {
+    const recipient = {
+      key: "page-model",
+      name: "Example AI",
+      use: "model",
+      detail: "",
+      allowed: false,
+    };
+    const calls: { path: string; input: unknown }[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
+        const path = new URL(String(url)).pathname;
+        calls.push({ path, input: JSON.parse(String(init?.body)).json });
+        return jsonResponse({
+          json: path.endsWith("/status")
+            ? { scope: "page-scope", version: "test-version", recipients: [recipient] }
+            : { ok: true },
+        });
+      }),
+    );
+    const input = { pageId: "page-a", commentId: "comment-a" };
+    vi.mocked(promptPageRevisionConsent).mockResolvedValueOnce(false);
+    await expect(rpc("pageReviews/askRevision", input)).rejects.toThrow("AI data sharing");
+    const status = {
+      path: "/rpc/aiConsent/status",
+      input: { pageId: input.pageId, uses: ["model"] },
+    };
+    expect(calls).toEqual([status]);
+    calls.length = 0;
+
+    vi.mocked(promptPageRevisionConsent).mockResolvedValueOnce(true);
+    await expect(rpc("pageReviews/askRevision", input)).resolves.toEqual({ ok: true });
+    expect(calls).toEqual([
+      status,
+      {
+        path: "/rpc/aiConsent/allow",
+        input: {
+          pageId: input.pageId,
+          scope: "page-scope",
+          version: "test-version",
+          keys: ["page-model"],
+        },
+      },
+      { path: "/rpc/pageReviews/askRevision", input },
     ]);
   });
 

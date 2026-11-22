@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { PrismaClient } from "../database/client.js";
 import { Prisma } from "../generated/prisma/client.js";
-import { creditAccount } from "./model-credits.js";
+import { creditAccount, hasFinalModelCost } from "./model-credits.js";
 
 describe("creditAccount", () => {
   const organizationId = "credit-race-fixture";
@@ -49,5 +49,16 @@ describe("creditAccount", () => {
 
     await expect(creditAccount(prisma, organizationId)).rejects.toBe(error);
     expect(findUniqueOrThrow).not.toHaveBeenCalled();
+  });
+});
+
+describe("hasFinalModelCost", () => {
+  it("treats a free local call as final, but not a catalog estimate", () => {
+    expect(
+      hasFinalModelCost({ costUsd: 0, costSource: "free-endpoint", usageSource: "provider" }),
+    ).toBe(true);
+    expect(
+      hasFinalModelCost({ costUsd: 0, costSource: "pi-catalog-estimate", usageSource: "provider" }),
+    ).toBe(false);
   });
 });

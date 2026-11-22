@@ -1,5 +1,6 @@
 import type { AgentToolResultContent } from "@rakazo/adapter-kit";
 import { AttachmentValidationError, decodeAttachmentBase64 } from "@rakazo/core";
+import { imageHeaderDimensions } from "../media/image-dimensions.js";
 import { detectImageMimeType } from "../media/image-mime-type.js";
 import { MCP_IMAGE_ATTACHED, MCP_IMAGE_NOT_ATTACHED } from "./mcp-result-images.prompt.js";
 
@@ -47,7 +48,18 @@ function toolResultImage(data: string): ToolResultImage | undefined {
     throw error;
   }
   const mimeType = detectImageMimeType(bytes);
-  return mimeType === "image/png" || mimeType === "image/jpeg"
-    ? { type: "image", data: base64, mimeType }
-    : undefined;
+  if (mimeType !== "image/png" && mimeType !== "image/jpeg") return undefined;
+  return isStillImage(base64, mimeType) ? { type: "image", data: base64, mimeType } : undefined;
+}
+
+/**
+ * Only a single frame whose header gives a usable size: an unreadable header is budgeted by its
+ * bytes, and a declared animation by its frame count, either of which the server can inflate past
+ * the whole context window.
+ */
+function isStillImage(base64: string, mimeType: string): boolean {
+  const dimensions = imageHeaderDimensions(base64, mimeType);
+  if (!dimensions) return false;
+  const [width, height, frames] = dimensions;
+  return frames === 1 && Number.isSafeInteger(width * height);
 }

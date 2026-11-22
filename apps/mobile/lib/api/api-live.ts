@@ -7,7 +7,7 @@ import {
   isServerUnreachable,
   isUnreachableStatus,
 } from "@rakazo/core";
-import { identityLabels } from "../bots/identity-display";
+import { identityLabels } from "@rakazo/i18n/identity-display";
 import {
   beginMobileAvatarFeed,
   mobileLogoAvatarActivity,

@@ -1,7 +1,8 @@
 import type { ReactNode } from "react";
-import { Component, useState } from "react";
+import { Component, useEffect, useEffectEvent, useMemo, useState } from "react";
 import { Image, StyleSheet, Text, View } from "react-native";
-import { SvgUri } from "react-native-svg";
+import { fetchText, parse, SvgAst } from "react-native-svg";
+import { catalogSvgStyles, MAX_CATALOG_SVG_LENGTH } from "../../lib/integrations/catalog-svg";
 import { native, useThemedStyles } from "../../lib/native/native";
 
 /** Use the catalog artwork, matching web, with a local fallback for missing logos. */
@@ -32,13 +33,11 @@ export function ConnectorIcon({
       {uri ? (
         svg ? (
           <ArtworkBoundary key={uri} onError={() => setFailure({ logo: uri, svgFailed: true })}>
-            <SvgUri
+            <CatalogSvg
               uri={uri}
               width={art}
               height={art}
               onError={() => setFailure({ logo: uri, svgFailed: true })}
-              // SvgUri does not report XML parse errors, only renders this fallback.
-              fallback={initial}
             />
           </ArtworkBoundary>
         ) : (
@@ -54,6 +53,39 @@ export function ConnectorIcon({
       )}
     </View>
   );
+}
+
+/** Read artwork before handing CSS lengths to the native renderer. */
+function CatalogSvg({
+  uri,
+  onError,
+  ...size
+}: {
+  uri: string;
+  onError: () => void;
+  width: number;
+  height: number;
+}) {
+  const [xml, setXml] = useState<string | null>(null);
+  const fail = useEffectEvent(onError);
+  useEffect(() => {
+    let current = true;
+    void fetchText(uri).then(
+      (value) => {
+        if (!current) return;
+        if (!value || value.length > MAX_CATALOG_SVG_LENGTH) fail();
+        else setXml(value);
+      },
+      () => {
+        if (current) fail();
+      },
+    );
+    return () => {
+      current = false;
+    };
+  }, [uri]);
+  const ast = useMemo(() => (xml === null ? null : parse(xml, catalogSvgStyles)), [xml]);
+  return ast ? <SvgAst ast={ast} override={size} /> : null;
 }
 
 /** Catalog SVGs are untrusted; one that react-native-svg cannot render, such as a

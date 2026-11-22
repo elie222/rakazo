@@ -6,9 +6,14 @@ const ERROR_GUIDES: Readonly<Record<string, string>> = {
     "https://rakazo.com/docs/troubleshooting/#mcp-oauth-redirect-mismatch",
 };
 
+/** The `code` an error or response body carries, if any. */
+export function errorCode(error: unknown): unknown {
+  return error && typeof error === "object" && "code" in error ? error.code : undefined;
+}
+
 /** A stable error code opts into troubleshooting without depending on message wording. */
 export function errorHelpUrl(error: unknown): string | undefined {
-  const code = error && typeof error === "object" && "code" in error ? error.code : undefined;
+  const code = errorCode(error);
   return typeof code === "string" && Object.hasOwn(ERROR_GUIDES, code)
     ? ERROR_GUIDES[code]
     : undefined;

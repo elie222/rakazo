@@ -34,11 +34,17 @@ export function VoiceChatCard({
     group.messages.some((message) => selectedIds?.has(message.id)),
   );
   const summary = voiceChatSummary(group);
+  const title = t`Voice chat`;
+  const duration = clock(voiceChatDuration(group));
   return (
     <View style={[styles.card, { backgroundColor: native.fill }]}>
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel={open ? t`Hide transcript` : t`Show transcript`}
+        accessibilityLabel={
+          open
+            ? t`Hide transcript: ${title}, ${duration}`
+            : t`Show transcript: ${title}, ${duration}`
+        }
         accessibilityState={{ expanded: open }}
         onPress={() => {
           // Turns that are no longer shown must not stay chosen for the copy.
@@ -52,10 +58,8 @@ export function VoiceChatCard({
         style={styles.header}
       >
         <NativeSymbol ios="waveform" android="pulse-outline" size={16} color={tokens.foreground} />
-        <Text style={[styles.title, { color: tokens.foreground }]}>{t`Voice chat`}</Text>
-        <Text style={[styles.duration, { color: tokens.mutedForeground }]}>
-          {clock(voiceChatDuration(group))}
-        </Text>
+        <Text style={[styles.title, { color: tokens.foreground }]}>{title}</Text>
+        <Text style={[styles.duration, { color: tokens.mutedForeground }]}>{duration}</Text>
         <View style={styles.chevron}>
           <NativeSymbol
             ios={open ? "chevron.up" : "chevron.down"}

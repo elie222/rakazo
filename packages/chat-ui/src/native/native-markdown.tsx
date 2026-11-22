@@ -1,3 +1,4 @@
+import { linkLabel } from "@rakazo/contracts";
 import type { ColorTokens, ResolvedAppearance } from "@rakazo/ui-tokens";
 import { fontWeight, MAX_FONT_SCALE, typeScale } from "@rakazo/ui-tokens";
 import type { ReactElement } from "react";
@@ -16,7 +17,6 @@ import {
   inlineMarkdownImageSrc,
   isProseFence,
   linkFaviconOrigin,
-  linkLabel,
   markdownMentionId,
   markdownPageId,
   RemoteImagesContext,
@@ -132,6 +132,9 @@ function nativeMarkdownStyle(
       fontSize: typeScale.caption.fontSize,
       color: palette.mutedForeground,
       headerTextColor: palette.foreground,
+      headerBackgroundColor: "transparent",
+      rowEvenBackgroundColor: "transparent",
+      rowOddBackgroundColor: "transparent",
       borderColor: palette.input,
       borderWidth: 0.5,
     },
