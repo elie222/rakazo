@@ -967,7 +967,9 @@ export class MessagingDelivery {
     const rowsByMessage = messages.map((message) => {
       const body = extractText(onlyAsks ? askBlocks(message) : message.blocks, linkedPages, {
         asks,
-        appUrl: botChatUrl(this.deps.webOrigin, run.botId),
+        appUrl:
+          this.deps.webOrigin &&
+          new URL(`/app/${encodeURIComponent(run.botId)}`, this.deps.webOrigin).href,
       });
       const parts = body ? splitOutboundBody(identity.provider, body) : [];
       return {
@@ -1503,12 +1505,6 @@ function linkedPageIds(messages: readonly { blocks: unknown }[]): Set<string> {
   return ids;
 }
 
-/** The bot's chat in the web app, or nothing without an http(s) web origin. */
-export function botChatUrl(webOrigin: string | undefined, botId: string): string | undefined {
-  const url = webOrigin ? URL.parse(`/app/${encodeURIComponent(botId)}`, webOrigin) : null;
-  return url?.protocol === "https:" || url?.protocol === "http:" ? url.href : undefined;
-}
-
 /**
  * The text other channels get. A page card cannot travel, so a page the reply does not name goes
  * as its title. With `asks`, for a 1:1 chat, a pending question or takeover request goes as text
@@ -1517,7 +1513,7 @@ export function botChatUrl(webOrigin: string | undefined, botId: string): string
 function extractText(
   blocks: unknown,
   linkedPages: ReadonlySet<string>,
-  options: { asks?: boolean; appUrl?: string } = {},
+  options: { asks?: boolean; appUrl?: string | undefined } = {},
 ): string {
   if (!Array.isArray(blocks)) return "";
   return blocks
@@ -1526,7 +1522,7 @@ function extractText(
         if (block?.kind === "text" && typeof block.text === "string")
           return [pageLinksAsTitles(block.text)];
         if (options.asks && block?.kind === "ask") {
-          const ask = chatAppAskText(block as MessageBlock, { appUrl: options.appUrl });
+          const ask = chatAppAskText(block as MessageBlock, options.appUrl);
           return ask ? [ask] : [];
         }
         if (options.asks && block?.kind === "computer") {

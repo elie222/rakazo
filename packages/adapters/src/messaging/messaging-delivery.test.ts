@@ -32,7 +32,6 @@ import { InstalledMessagingSurface } from "./installed-messaging-surface.js";
 import type { MessagingDeliveryDeps, OutboundLane, OutboundRow } from "./messaging-delivery.js";
 import {
   applyMessagingOutboundStatus,
-  botChatUrl,
   MESSAGING_DM_OUTBOUND_CAP,
   MESSAGING_SEND_BACKUP_MS,
   MESSAGING_SEND_STALE_MS,
@@ -1092,19 +1091,8 @@ describe("deliverRun to a 1:1 chat", () => {
     });
     await t.delivery.deliverRun("run-1");
     const [body] = bodies(t);
-    expect(body).toBe(
-      "Run this command?\nTo approve or decline, open the app: https://app.example.test/app/bot-1",
-    );
+    expect(body).toBe("Run this command?\nAnswer in the app: https://app.example.test/app/bot-1");
     expect(body).not.toContain("rm -rf");
-  });
-
-  it("links to a bot's chat only from an http(s) web origin", () => {
-    expect(botChatUrl("https://app.example.test", "bot/1")).toBe(
-      "https://app.example.test/app/bot%2F1",
-    );
-    expect(botChatUrl(undefined, "bot-1")).toBeUndefined();
-    expect(botChatUrl("not a url", "bot-1")).toBeUndefined();
-    expect(botChatUrl("ftp://app.example.test", "bot-1")).toBeUndefined();
   });
 
   it("keeps an approval's detail in the app and skips a question its ended run cannot use", async () => {

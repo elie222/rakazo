@@ -9,12 +9,10 @@ export const CHAT_APP_ASK_NOTE = "(Answer in the app.)";
  * How a still-pending question reads in a 1:1 chat app, which cannot show cards: the question,
  * its detail, and its options numbered in order, then where to answer it. Any other request, such
  * as an approval, a secret or an instruction change, keeps to its title: only its card can answer
- * it, and its detail can hold a command, a diff or tool input. An answered one adds nothing.
+ * it, and its detail can hold a command, a diff or tool input. An answered one adds nothing. With
+ * `appUrl`, the bot's chat in the app, the note ends with that link so chat apps make it tappable.
  */
-export function chatAppAskText(
-  block: MessageBlock,
-  options: { appUrl?: string } = {},
-): string | undefined {
+export function chatAppAskText(block: MessageBlock, appUrl?: string): string | undefined {
   if (block.kind !== "ask" || block.status === "answered") return undefined;
   const lines = isQuestionAskBlock(block)
     ? [
@@ -22,20 +20,8 @@ export function chatAppAskText(
         ...(block.actions ?? []).map((action, index) => `${index + 1}. ${action.label}`),
       ]
     : [];
-  const note = chatAppAskNote(options.appUrl, isQuestionAskBlock(block));
+  const note = appUrl ? `Answer in the app: ${appUrl}` : CHAT_APP_ASK_NOTE;
   return [block.text.trim(), ...lines, note].filter(Boolean).join("\n");
-}
-
-/**
- * Where to answer an ask. With the bot's chat in the app, the note links to it, so an ask sent
- * to a chat app is one tap from its card. Only an http(s) link is used.
- */
-export function chatAppAskNote(appUrl?: string, question = false): string {
-  if (!appUrl || !/^https?:\/\//.test(appUrl)) return CHAT_APP_ASK_NOTE;
-  // The link ends the line on its own, so chat apps make it tappable.
-  return question
-    ? `To answer, open the app: ${appUrl}`
-    : `To approve or decline, open the app: ${appUrl}`;
 }
 
 /** What a chat app adds to a request to take over the bot's computer screen. */

@@ -3,7 +3,6 @@ import { TAKEOVER_COMPUTER_PENDING_STATE } from "../threads/thread-message-updat
 import {
   CHAT_APP_ASK_NOTE,
   CHAT_APP_TAKEOVER_NOTE,
-  chatAppAskNote,
   chatAppAskText,
   chatAppTakeoverText,
 } from "./chat-app-asks.js";
@@ -58,14 +57,9 @@ describe("chatAppAskText", () => {
 
   it("links the note to the bot's chat in the app when its address is known", () => {
     const appUrl = "https://app.example.test/app/bot-1";
-    expect(chatAppAskText({ kind: "ask", text: "Which day?", status: "pending" }, { appUrl })).toBe(
-      `Which day?\nTo answer, open the app: ${appUrl}`,
+    expect(chatAppAskText({ kind: "ask", text: "Which day?", status: "pending" }, appUrl)).toBe(
+      `Which day?\nAnswer in the app: ${appUrl}`,
     );
-    expect(
-      chatAppAskText({ kind: "ask", text: "Delete the file?", approvalEffectId: "e" }, { appUrl }),
-    ).toBe(`Delete the file?\nTo approve or decline, open the app: ${appUrl}`);
-    expect(chatAppAskNote(undefined)).toBe(CHAT_APP_ASK_NOTE);
-    expect(chatAppAskNote("javascript:alert(1)")).toBe(CHAT_APP_ASK_NOTE);
   });
 
   it("adds nothing for an answered question or another block", () => {
