@@ -66,12 +66,16 @@ export function typesafeApiKey(env: NodeJS.ProcessEnv = process.env): string | u
   return value || undefined;
 }
 
-/** The operator's confidence floor for every decision model; unset, each model's calibration decides. */
+/**
+ * The operator's confidence floor for every decision model; unset, each model's calibration decides.
+ * An unreadable value throws rather than falling back, since a typo would quietly loosen the floor.
+ */
 export function autoReviewMinConfidence(env: NodeJS.ProcessEnv = process.env): number | undefined {
   const raw = env.RAKAZO_AUTO_REVIEW_MIN_CONFIDENCE?.trim();
   if (!raw) return undefined;
   const value = Number(raw);
-  if (!Number.isFinite(value) || value < 0 || value > 1) return undefined;
+  if (!Number.isFinite(value) || value < 0 || value > 1)
+    throw new Error("RAKAZO_AUTO_REVIEW_MIN_CONFIDENCE must be a number from 0 to 1");
   return value;
 }
 
@@ -322,6 +326,9 @@ function shortAddress(address: string): string {
   return `${scheme}${authority.includes("@") ? "…@" : ""}${host}…`;
 }
 
+// Beside the computer reshaping below, for the eval CLI, which reads the review args from here.
+export { changedTextReviewArgs } from "./changed-text-review-args.js";
+
 /**
  * What Auto Review sees of a call on the bot's own computer, from arguments already redacted for
  * review: a browser action also names the page it acts on (`pageUrl`, the browser's own report),
@@ -504,6 +511,7 @@ export async function runAutoReviewJudge(
             thinkingLevel: input.checker.thinkingLevel ?? null,
             oauth: input.oauth,
             callObserver: input.callObserver,
+            billing: input.billing,
           },
         },
         {
@@ -592,6 +600,7 @@ export type LlmAutoReviewOptions = {
   reasoning?: boolean;
   oauth?: AgentRunModel["oauth"];
   callObserver?: AgentRunModel["callObserver"];
+  billing?: AgentRunModel["billing"];
   runId: string;
   spaceId: string;
   userId: string;

@@ -19,6 +19,11 @@ export function boardSections(tickets: readonly Ticket[]): BoardSection[] {
   })).filter((section) => section.tickets.length > 0);
 }
 
+/** The shown and announced copy for a failed Board refresh. `detail` is the translated reason. */
+export function boardRefreshFailure(detail: string): string {
+  return t`Could not refresh the board. ${detail}`;
+}
+
 /** A ticket's status as the board names it, matching the web board's wording. */
 export function ticketStatusLabel(status: TicketStatus): string {
   switch (status) {

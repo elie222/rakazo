@@ -278,7 +278,9 @@ version are kept apart.
 With a store, each case's first request is fingerprinted before it is sent. If
 a stored run has the same fingerprint, its trials are taken as they are under
 the same judge, or graded again from their stored evidence under a different
-one, and the request is never sent; otherwise the case runs. Trials that failed
+one, and the request is never sent; otherwise the case runs. The same judge
+means the same provider, model, rubric version and recorded settings; a run
+saved before the settings were recorded is graded again. Trials that failed
 for harness, provider, cleanup or time reasons are never reused. `--fresh`
 runs everything again. Each trial's `origin` and each case's `origin` counts in
 the summary say what was reused or regraded, and `workflowTotals` counts only
@@ -334,6 +336,27 @@ Failures distinguish agent outcomes, product errors, provider failures,
 harness failures and incomplete runs. Read the category and evidence before
 attributing a red run to a prompt change. Several trials establish an initial
 baseline, not a statistically precise reliability estimate.
+
+Compare two saved version 2 workflow Eval reports locally.
+
+```sh
+pnpm test:evals:compare baseline.json candidate.json
+```
+
+The command matches trials by case, strategy, and trial number. It lists
+passed-to-failed transitions and planned trials marked as not run. Reused or
+regraded results are marked on transitions. Workflow cost shows the report's
+recorded spend and displays `unknown` when unavailable. A completed comparison
+exits with status 0. If recorded settings or trial plans differ, the command
+names the differences and exits with status 1. This includes a suite recorded
+on only one side. Legacy reports that both omit the suite can still be compared
+using the other recorded settings.
+
+The check covers settings recorded in the JSON. Reports record the judge's
+output token limit, reasoning settings and a short hash of its endpoint, never
+the URL itself. Reports from before that show these as unknown instead of
+failing, so check them by hand. The bot's own endpoint is not recorded: keep
+its model connection the same when collecting a report pair.
 
 The injection case checks the requested artifact and forbidden service effects.
 It does not grade every claim in free-form explanatory prose; quoted or denied

@@ -2,6 +2,7 @@ import type { BotSecretMetadata, LoginFieldInput, VaultPolicy } from "@rakazo/co
 import {
   BLOCKED_ITEM_ANSWER,
   encodeLoginSecret,
+  FULL_VAULT_ANSWER,
   UNCHOSEN_ITEM_ANSWER,
   VAULT_ALSO_ON_LIMIT,
 } from "@rakazo/contracts";
@@ -9,6 +10,7 @@ import { describe, expect, it } from "vitest";
 import type { VaultBots } from "./vault.js";
 import {
   secretAnswerRefusal,
+  siteHost,
   vaultAccessControls,
   vaultBotChoices,
   vaultBotsChoosable,
@@ -23,11 +25,13 @@ const fields = [{ label: "Password", value: "saved-password-1", hidden: true }];
 const withKey = encodeLoginSecret({ fields, otp: TEST_KEY });
 
 describe("secretAnswerRefusal", () => {
-  it("names only the server's two fixed refusals", () => {
+  it("names only the server's three fixed refusals", () => {
     expect(secretAnswerRefusal(new Error(BLOCKED_ITEM_ANSWER))).toBe("blocked");
     expect(secretAnswerRefusal({ message: UNCHOSEN_ITEM_ANSWER })).toBe("unchosen");
+    expect(secretAnswerRefusal(new Error(FULL_VAULT_ANSWER))).toBe("full");
     for (const error of [
       new Error(`${BLOCKED_ITEM_ANSWER} saved-password-1`),
+      new Error(`${FULL_VAULT_ANSWER} saved-password-1`),
       new Error("Could not save saved-password-1"),
       BLOCKED_ITEM_ANSWER,
       { message: 3 },
@@ -292,5 +296,14 @@ describe("vaultBotsChoosable", () => {
     ["a server that lists none", [{}, {}], false],
   ])("for %s: %s", (_, items, choosable) => {
     expect(vaultBotsChoosable(items)).toBe(choosable);
+  });
+});
+
+describe("siteHost", () => {
+  it("shows a site's host without www, or the text itself when it has no host", () => {
+    expect(siteHost("https://www.example.com")).toBe("example.com");
+    expect(siteHost("https://login.example.test:8443")).toBe("login.example.test:8443");
+    expect(siteHost("mailto:someone@example.com")).toBe("mailto:someone@example.com");
+    expect(siteHost("not a url")).toBe("not a url");
   });
 });
