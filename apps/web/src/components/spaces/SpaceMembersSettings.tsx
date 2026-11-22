@@ -110,8 +110,8 @@ export function SpaceMembersSettings({
   const cancellingError = failed(cancelling);
   const addingError = failed(adding);
   const emailingError = failed(emailing);
+  // An action's failure is newer than a failed re-read, which keeps showing the list it had.
   const error =
-    loadError ??
     (linkingError
       ? errorText(linkingError, t`Could not create invite link`)
       : cancellingError
@@ -120,7 +120,7 @@ export function SpaceMembersSettings({
           ? errorText(addingError, t`Could not add member`)
           : emailingError
             ? errorText(emailingError, t`Could not invite`)
-            : null);
+            : null) ?? loadError;
   const confirmError = confirming.error
     ? errorText(
         confirming.error,

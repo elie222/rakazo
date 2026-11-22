@@ -125,7 +125,9 @@ async function renderWith(members: SpaceMembers, onLeft = vi.fn()) {
   rpc.spaces.members.list.mockResolvedValue(members);
   await act(async () =>
     root.render(
-      <QueryClientProvider client={new QueryClient()}>
+      <QueryClientProvider
+        client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
+      >
         <SpaceMembersSettings space={space} onLeft={onLeft} />
       </QueryClientProvider>,
     ),
@@ -420,4 +422,22 @@ it("shows the latest failure, not an older one", async () => {
   await act(async () => buttonNamed("Cancel open invites")?.click());
   await vi.waitFor(() => expect(host.textContent).toContain("cancel failed"));
   expect(host.textContent).not.toContain("link failed");
+});
+
+it("shows an action's failure over a failed re-read of the list", async () => {
+  const colleague = {
+    userId: "user-colleague",
+    name: "Cy Ray",
+    email: "cy@example.test",
+    image: null,
+  };
+  await renderWith({ spaceName: "Home", members: [owner], canManage: true, addable: [colleague] });
+  rpc.spaces.members.add.mockResolvedValue({ ok: true });
+  rpc.spaces.members.list.mockRejectedValue(new Error("list failed"));
+  await act(async () => buttonNamed("Cy Ray")?.click());
+  await vi.waitFor(() => expect(host.textContent).toContain("list failed"));
+
+  rpc.spaces.invites.create.mockRejectedValueOnce(new Error("link failed"));
+  await act(async () => buttonNamed("Copy invite link")?.click());
+  await vi.waitFor(() => expect(host.textContent).toContain("link failed"));
 });
