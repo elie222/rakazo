@@ -306,33 +306,20 @@ export async function installContainerRuntime(
   return path.join(root, "bin", "container");
 }
 
-// Preserve the existing two-part form in runtime status reports as major.minor.0.
-const RUNTIME_VERSION =
-  /^(0|[1-9]\d*)\.(0|[1-9]\d*)(?:\.(0|[1-9]\d*)(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?)?$/;
-
-function parseRuntimeVersion(value: string | undefined) {
-  if (typeof value !== "string") return null;
-  const match = RUNTIME_VERSION.exec(value);
-  if (!match) return null;
-  const [, major = "0", minor = "0", patch = "0", prerelease] = match;
-  if (prerelease?.split(".").some((part) => /^0\d+$/.test(part))) return null;
-  return {
-    parts: [BigInt(major), BigInt(minor), BigInt(patch)],
-    prerelease: prerelease !== undefined,
-  };
-}
-
-/** Compare against a stable minimum. Unparsable versions count as too old. */
+/**
+ * Numeric comparison of dotted versions; anything unparsable counts as too old, and so does a
+ * prerelease (`1.7.0-rc.1`) of the minimum itself.
+ */
 export function versionAtLeast(version: string | undefined, minimum: string): boolean {
-  const have = parseRuntimeVersion(version);
-  const want = parseRuntimeVersion(minimum);
-  if (!have || !want || want.prerelease) return false;
-  for (const [index, expected] of want.parts.entries()) {
-    const actual = have.parts[index] ?? 0n;
-    if (actual !== expected) return actual > expected;
+  const match = version ? /^(\d+)\.(\d+)(?:\.(\d+))?(-)?/.exec(version) : null;
+  if (!match) return false;
+  const have = match.slice(1, 4).map((part) => Number(part ?? 0));
+  const want = minimum.split(".").map(Number);
+  for (let index = 0; index < want.length; index += 1) {
+    const difference = (have[index] ?? 0) - (want[index] ?? 0);
+    if (difference !== 0) return difference > 0;
   }
-  // Build metadata does not affect precedence; a same-number prerelease is older.
-  return !have.prerelease;
+  return match[4] === undefined;
 }
 
 export interface ContainerRuntime {

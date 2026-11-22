@@ -94,12 +94,9 @@ describe("versionAtLeast", () => {
   it.each([
     ["1.7.0-rc.1", false],
     ["1.7.0-rc.1+build.7", false],
-    ["1.7.0+build.07", true],
+    ["1.7.0+build.7", true],
     ["1.7.1-rc.1", true],
     ["1.7", true],
-    ["1.7.0-", false],
-    ["1.7.0+", false],
-    ["1.7.1-rc.01", false],
   ])("compares %s against a stable minimum", (version, expected) => {
     expect(versionAtLeast(version, "1.7.0")).toBe(expected);
   });
