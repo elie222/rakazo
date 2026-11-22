@@ -199,6 +199,7 @@ jobs:
               packages/chat-ui \
               packages/contracts \
               packages/core \
+              packages/i18n \
               packages/logging \
               packages/ui-tokens
           )
