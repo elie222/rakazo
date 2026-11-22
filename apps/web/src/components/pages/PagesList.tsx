@@ -95,7 +95,7 @@ function OwnerPages({
   }
   const items = uniquePages((pages.data?.pages ?? []).flatMap((read) => read.items));
   // Keep an active search editable when its results cannot be loaded.
-  if (pages.isError && items.length === 0 && (preview || !query)) {
+  if (pages.isError && items.length === 0 && !query) {
     return (
       <div role="alert" className="flex flex-col items-start gap-2 px-1 py-2">
         <p className="text-body-sm text-muted-foreground">
