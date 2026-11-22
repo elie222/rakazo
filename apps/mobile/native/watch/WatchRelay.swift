@@ -2,6 +2,7 @@ import Foundation
 import OSLog
 import Security
 import UIKit
+import ImageIO
 import WatchConnectivity
 
 /// Uses the phone's existing session and server. Credentials never cross WatchConnectivity.
@@ -188,10 +189,33 @@ final class WatchRelay: NSObject, WCSessionDelegate {
       }
       let entries = list.current.bots.map { (WatchChat.Kind.bot, $0) }
         + list.current.groups.map { (WatchChat.Kind.group, $0) }
-      chats = entries.filter { $0.1.archivedAt == nil }
+      var avatarBudget = 16_000
+      var rows = entries.filter { $0.1.archivedAt == nil }
         .sorted { $0.1.updatedAt > $1.1.updatedAt }
-        .map { WatchChat(kind: $0.0, id: $0.1.id, name: $0.1.name) }
-      return WatchReply(scope: scope, chats: chats)
+        .prefix(60)
+        .map { kind, entry in
+          var row = WatchChatRow(
+            chat: WatchChat(kind: kind, id: entry.id, name: entry.name),
+            preview: String(entry.preview?.prefix(100) ?? ""), updatedAt: entry.updatedAt)
+          if let color = entry.color {
+            row.color = watchColor(color)
+            if let avatar = watchAvatar(color), avatar.count <= avatarBudget {
+              avatarBudget -= avatar.count
+              row.avatar = avatar
+            }
+          }
+          return row
+        }
+      // A watch message carries about 64 KB: drop pictures, then the oldest chats, to fit.
+      let encoder = JSONEncoder()
+      while let data = try? encoder.encode(WatchReply(scope: scope, chats: rows)),
+        data.count > 60_000, !rows.isEmpty
+      {
+        if let index = rows.lastIndex(where: { $0.avatar != nil }) { rows[index].avatar = nil }
+        else { rows.removeLast() }
+      }
+      chats = rows.map(\.chat)
+      return WatchReply(scope: scope, chats: rows)
     }
 
     guard let scope, request.scope == scope, let scopedSession, sameSession(scopedSession, session),
@@ -250,6 +274,30 @@ final class WatchRelay: NSObject, WCSessionDelegate {
     }
   }
 
+  /// The six-digit hex a bot's color starts with, if it is a color.
+  private func watchColor(_ value: String) -> String? {
+    guard let match = value.range(of: #"^#([0-9a-fA-F]{6}|[0-9a-fA-F]{3})(?![0-9a-fA-F])"#,
+      options: .regularExpression)
+    else { return nil }
+    let digits = value[match].dropFirst()
+    return "#" + (digits.count == 3 ? digits.map { "\($0)\($0)" }.joined() : String(digits))
+  }
+
+  /// A small copy of a picture avatar; drawn avatars show as their color on the watch.
+  private func watchAvatar(_ value: String) -> Data? {
+    guard value.hasPrefix("data:image/"), let comma = value.firstIndex(of: ","),
+      let data = Data(base64Encoded: String(value[value.index(after: comma)...])),
+      let source = CGImageSourceCreateWithData(data as CFData, nil),
+      // Decodes straight to the small size, whatever the picture's own dimensions.
+      let thumbnail = CGImageSourceCreateThumbnailAtIndex(source, 0, [
+        kCGImageSourceCreateThumbnailFromImageAlways: true,
+        kCGImageSourceCreateThumbnailWithTransform: true,
+        kCGImageSourceThumbnailMaxPixelSize: 64,
+      ] as CFDictionary)
+    else { return nil }
+    return UIImage(cgImage: thumbnail).jpegData(compressionQuality: 0.7)
+  }
+
   private func canAnswer(_ prompt: WatchPrompt, _ answer: String) -> Bool {
     switch prompt.kind {
     case .phone: false
@@ -286,6 +334,8 @@ private struct WatchSpace: Decodable {
   struct Chat: Decodable {
     let id: String
     let name: String
+    let color: String?
+    let preview: String?
     let updatedAt: String
     let archivedAt: String?
   }
