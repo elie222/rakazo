@@ -22,6 +22,9 @@ describe("attachmentPickerAccept", () => {
     expect(accept).toContain("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
     expect(accept).toContain(".xls");
     expect(accept).toContain(".xlsx");
+    expect(accept).toContain(".docx");
+    expect(accept).toContain(".pptx");
+    expect(accept).not.toContain(".docm");
     expect(accept).not.toBe("*/*");
   });
 });

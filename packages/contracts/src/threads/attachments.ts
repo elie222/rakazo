@@ -69,6 +69,9 @@ export const ATTACHMENT_FILE_MIME_TYPES = [
   "text/csv",
   "application/vnd.ms-excel",
   "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  // Word and PowerPoint files. Macro-free formats only: .docm, .pptm, .doc and .ppt are not added.
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "application/vnd.openxmlformats-officedocument.presentationml.presentation",
   "text/html",
   "application/json",
   ...ATTACHMENT_ARCHIVE_MIME_TYPES,

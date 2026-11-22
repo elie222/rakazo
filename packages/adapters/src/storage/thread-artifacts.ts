@@ -19,6 +19,7 @@ import {
 } from "@rakazo/contracts";
 import {
   attachmentComputerPath,
+  attachmentStoredName,
   inferAttachmentMimeType,
   messageBlockForArtifact,
   validateAttachmentMimeType,
@@ -67,7 +68,11 @@ export async function attachWorkspaceFileToThread(
   if (!mimeType) {
     throw new Error(`Unsupported attachment type for ${fileName}`);
   }
-  const name = (input.name?.trim() || fileName).slice(0, ARTIFACT_NAME_MAX_LENGTH);
+  // An Office file keeps its type's own extension (attachmentStoredName).
+  const name = attachmentStoredName(
+    (input.name?.trim() || fileName).slice(0, ARTIFACT_NAME_MAX_LENGTH),
+    mimeType,
+  );
   validateAttachmentMimeType(mimeType);
   if (input.bytes.byteLength > (deps.maxUploadSizeBytes ?? ATTACHMENT_MAX_BYTES)) {
     throw new Error(
