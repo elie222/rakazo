@@ -189,3 +189,53 @@ test("Page diagrams reflect edits to the same node and edge arrays", async ({ pa
   await expect(svg.locator(".rk-diagram-label").first()).toHaveText("Draft ready");
   await expectOutlineInside(svg);
 });
+
+test("a visible Page diagram remeasures after an installed font changes", async ({
+  page,
+  request,
+}) => {
+  await mountPage(
+    page,
+    request,
+    `
+      document.documentElement.style.setProperty("--rk-font", '"Times New Roman", serif');
+      let renders = 0;
+      exports.default = function Fixture() {
+        const h = React.createElement;
+        return h("div", { id: "workflow", "data-renders": ++renders, style: { width: 320 } },
+          h(Diagram, {
+            nodes: [{ id: "sent", label: "Sent" }, { id: "done", label: "Done" }],
+            edges: [{ from: "sent", to: "done", label: ${JSON.stringify(longLabel)} }],
+          }));
+      };
+    `,
+  );
+  const diagram = page.locator("#workflow");
+  const svg = diagram.locator("svg");
+  const label = svg.locator(".rk-diagram-edge-label");
+  await expect(svg).toBeVisible();
+  await expectOutlineInside(svg);
+  const initialViewBox = (await svg.getAttribute("viewBox"))!;
+  const initialRenders = (await diagram.getAttribute("data-renders"))!;
+  const width = () => label.evaluate((text: SVGTextElement) => text.getBBox().width);
+  const initialWidth = await width();
+
+  await page.evaluate(() => {
+    const root = document.documentElement;
+    root.dataset.fontLoads = "0";
+    document.fonts.addEventListener("loadingdone", () => {
+      root.dataset.fontLoads = String(Number(root.dataset.fontLoads) + 1);
+    });
+    root.style.setProperty("--rk-font", '"Courier New", monospace');
+  });
+  await expect.poll(width).toBeGreaterThan(initialWidth + 5);
+  await expectOutlineInside(svg);
+  await expect(svg).not.toHaveAttribute("viewBox", initialViewBox);
+
+  await page.evaluate(() =>
+    document.documentElement.style.setProperty("--rk-font", '"Times New Roman", serif'),
+  );
+  await expect(svg).toHaveAttribute("viewBox", initialViewBox);
+  await expect(diagram).toHaveAttribute("data-renders", initialRenders);
+  await expect(page.locator("html")).toHaveAttribute("data-font-loads", "0");
+});

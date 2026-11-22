@@ -264,13 +264,14 @@ function DiagramSvg({
   useLayoutEffect(() => {
     const svg = svgRef.current;
     if (!measureLabels || !svg) return;
+    const labels = svg.querySelectorAll<SVGTextElement>(".rk-diagram-edge-label");
     const isVisible = () => svg.getClientRects().length > 0;
     const measure = () => {
       if (!isVisible()) return;
       let left = -VIEWBOX_PAD;
       let right = layout.width + VIEWBOX_PAD;
       // The SVG box excludes the 5px paint stroke. Round out to keep that outline visible too.
-      for (const label of svg.querySelectorAll<SVGTextElement>(".rk-diagram-edge-label")) {
+      for (const label of labels) {
         const box = label.getBBox?.();
         if (!box?.width) continue;
         left = Math.min(left, Math.floor(box.x - 2.5));
@@ -286,15 +287,34 @@ function DiagramSvg({
     };
     measure();
     let wasVisible = isVisible();
-    const onResize = () => {
+    const labelFonts = new Map<Element, string>();
+    const fontFamily = (label: Element) =>
+      svg.ownerDocument.defaultView?.getComputedStyle(label).fontFamily ?? "";
+    const onResize = (entries: ResizeObserverEntry[]) => {
+      let changedFont = false;
+      for (const { target } of entries) {
+        const previous = labelFonts.get(target);
+        if (previous === undefined) continue;
+        const next = fontFamily(target);
+        if (previous === next) continue;
+        labelFonts.set(target, next);
+        changedFont = true;
+      }
       const visible = isVisible();
-      // Only a reveal needs a new measurement. Padding changes must not trigger more measurements.
-      if (visible && !wasVisible) measure();
+      // An installed font can change text metrics without loading a font or rendering the graph.
+      // A geometry-only resize (including our own padding) must not trigger another measure.
+      if (visible && (!wasVisible || changedFont)) measure();
       wasVisible = visible;
     };
     const observer =
       typeof ResizeObserver === "undefined" ? undefined : new ResizeObserver(onResize);
-    if (svg.parentElement) observer?.observe(svg.parentElement);
+    if (observer) {
+      if (svg.parentElement) observer.observe(svg.parentElement);
+      for (const label of labels) {
+        labelFonts.set(label, fontFamily(label));
+        observer.observe(label);
+      }
+    }
     const fonts = svg.ownerDocument.fonts;
     fonts?.addEventListener("loadingdone", measure);
     return () => {
