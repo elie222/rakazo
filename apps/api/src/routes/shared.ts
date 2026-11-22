@@ -2,7 +2,6 @@ import { ORPCError } from "@orpc/server";
 import type { SavedDeploymentModel } from "@rakazo/adapters";
 import {
   adminDeploymentModel,
-  appliedSavedDefault,
   deploymentModelRole,
   findConnectedModelCredential,
   hasHostedModelCredits,
@@ -77,7 +76,8 @@ export async function meDto(deps: RouterDeps, actor: Actor): Promise<Me> {
     // Set only while the active default is the deployment's own, running on host credentials.
     ...hostCredentials(
       !setup.main &&
-        !appliedSavedDefault(setup.settings)?.defaultModelProvider &&
+        !adminDeploymentModel(setup.settings) &&
+        !setup.settings?.defaultModelProvider &&
         Boolean(deps.env.deploymentModelHostCredentials),
       deps.env.defaultProvider,
     ),
@@ -121,19 +121,14 @@ function computerHostFor(
 export async function deploymentModelAccess(
   deps: RouterDeps,
   actor: Actor,
-  settings?: SavedDeploymentModel | null,
+  settings: SavedDeploymentModel | null,
 ) {
-  const [funding, saved] = await Promise.all([
-    deps.billing ? deps.billing.status(actor) : null,
-    settings === undefined
-      ? deps.prisma.deploymentSettings.findUnique({ where: { id: "default" } })
-      : settings,
-  ]);
+  const funding = deps.billing ? await deps.billing.status(actor) : null;
   const creditsAvailable = modelCreditsUsd(funding) !== null;
   return {
     creditsAvailable,
     hasDeployment:
-      (Boolean(deps.env.deploymentModelConfigured) || Boolean(adminDeploymentModel(saved))) &&
+      (Boolean(deps.env.deploymentModelConfigured) || Boolean(adminDeploymentModel(settings))) &&
       (!funding?.creditPurchasesEnabled || creditsAvailable),
   };
 }

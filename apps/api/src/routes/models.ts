@@ -38,6 +38,7 @@ import {
   comparePreferenceOrder,
   defaultModelCredentialCandidates,
   deleteUnreferencedCredentialSecret,
+  deploymentModelChangesScope,
   findModelCredential,
   getModelRole,
   modelCredentialProviderFilter,
@@ -760,9 +761,16 @@ export function modelsRoutes(ctx: RouterContext) {
         get: authed.models.deployment.get.handler(({ context }) =>
           getDeploymentModelSettings(deps, context.actor),
         ),
-        update: authed.models.deployment.update.handler(({ context, input }) =>
-          updateDeploymentModelSettings(deps, context.actor, input, context.signal),
-        ),
+        update: authed.models.deployment.update.handler(async ({ context, input }) => {
+          const saved = await updateDeploymentModelSettings(
+            deps,
+            context.actor,
+            input,
+            context.signal,
+          );
+          void deps.events?.publishSpaceChange?.(deploymentModelChangesScope, "deploymentModel");
+          return saved;
+        }),
       },
     },
   };

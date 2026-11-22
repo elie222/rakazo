@@ -1,9 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   adminDeploymentModel,
-  DEPLOYMENT_MODEL_RECORD,
-  deploymentModelKey,
   deploymentModelProviders,
+  matchingAdminDeploymentModel,
   resolveDeploymentModel,
 } from "./deployment-model.js";
 
@@ -173,27 +172,11 @@ describe("resolveDeploymentModel", () => {
 
 describe("an admin's default for everyone", () => {
   const saved = {
-    defaultModelProvider: "anthropic",
-    defaultModelId: "claude-sonnet-5",
+    deploymentModelProvider: "anthropic",
+    deploymentModelId: "claude-sonnet-5",
     deploymentModelCredentialCipher: "sealed-admin-key",
     modelCreditsEnabled: false,
   };
-  const environment = {
-    provider: "openrouter",
-    key: "fake-operator-key",
-    adminModelId: "claude-sonnet-5",
-  };
-  function deps(row: typeof saved | null = saved) {
-    const load = vi.fn(async (_ref: string, _context: unknown) =>
-      JSON.stringify({ kind: "api_key", key: "fake-admin-key" }),
-    );
-    const findUnique = vi.fn(async () => row);
-    return {
-      deps: { prisma: { deploymentSettings: { findUnique } }, secretStore: { load } } as never,
-      load,
-      findUnique,
-    };
-  }
   afterEach(() => vi.unstubAllEnvs());
 
   it("applies only with its key, without credits and while the allowlist offers it", () => {
@@ -214,33 +197,12 @@ describe("an admin's default for everyone", () => {
     expect(adminDeploymentModel(saved)).toBeNull();
   });
 
-  it("hands out the admin's key for its provider and the environment's for its own", async () => {
-    const { deps: withAdmin, load } = deps();
-    await expect(deploymentModelKey(withAdmin, "anthropic", environment)).resolves.toBe(
-      "fake-admin-key",
-    );
-    expect(load).toHaveBeenCalledWith("sealed-admin-key", DEPLOYMENT_MODEL_RECORD);
-    await expect(deploymentModelKey(withAdmin, "openrouter", environment)).resolves.toBe(
-      "fake-operator-key",
-    );
-    await expect(deploymentModelKey(withAdmin, "deepseek", environment)).resolves.toBeUndefined();
-    // Only the model it was saved for: another model of the provider is not the default.
-    await expect(
-      deploymentModelKey(withAdmin, "anthropic", { ...environment, adminModelId: "claude-opus-5" }),
-    ).resolves.toBeUndefined();
-  });
-
-  it("never hands out the admin's key to a call the operator pays for or one on credits", async () => {
-    const { deps: operator, load } = deps();
-    await expect(
-      deploymentModelKey(operator, "anthropic", { ...environment, adminModelId: null }),
-    ).resolves.toBeUndefined();
-    await expect(
-      deploymentModelKey(operator, "openrouter", { ...environment, adminModelId: null }),
-    ).resolves.toBe("fake-operator-key");
-    const { deps: credits } = deps({ ...saved, modelCreditsEnabled: true });
-    await expect(deploymentModelKey(credits, "anthropic", environment)).resolves.toBeUndefined();
-    expect(load).not.toHaveBeenCalled();
+  it("matches only the provider and model the admin selected", () => {
+    expect(matchingAdminDeploymentModel(saved, "anthropic", "claude-sonnet-5")).toMatchObject({
+      cipher: "sealed-admin-key",
+    });
+    expect(matchingAdminDeploymentModel(saved, "openrouter", "claude-sonnet-5")).toBeNull();
+    expect(matchingAdminDeploymentModel(saved, "anthropic", "claude-opus-5")).toBeNull();
   });
 
   it("offers only providers that connect with a key alone", () => {

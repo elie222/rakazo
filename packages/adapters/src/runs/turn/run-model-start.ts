@@ -6,6 +6,7 @@ import { MISSING_MODEL_RUN_ERROR, MODEL_ACCESS_REQUIRED_RUN_ERROR } from "@rakaz
 import { memberHasModelAccess } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { HostedModelCreditsRequiredError } from "../../models/credits/model-credit-observer.js";
+import type { SavedDeploymentModel } from "../../models/deployment-model.js";
 import type { DeploymentModelDefaults } from "../../models/model-roles.js";
 import { effectiveModelRole } from "../../models/model-roles.js";
 import { isRetiredModelCredentialError } from "../../runtime/pi/models/pi-oauth.js";
@@ -90,6 +91,7 @@ export async function startRunModel(
     credential: Awaited<ReturnType<typeof resolveConnectedModelKey>>["credential"];
     thinkingLevel: AgentRunRequest["model"]["thinkingLevel"];
     connectionId?: string;
+    adminSettings?: SavedDeploymentModel | null;
   },
   pinned: Awaited<ReturnType<typeof restoreComputerModels>>["main"] | undefined,
   backups: ReturnType<typeof runModelBackups>,
@@ -131,6 +133,7 @@ export async function startRunModel(
               selected.id,
               registerSecrets,
               {
+                adminSettings: selected.adminSettings,
                 creditOfferingId: creditOfferingFromConnectionId(selected.connectionId),
                 requireStoredSecret: Boolean(
                   selected.connectionId && !creditOfferingFromConnectionId(selected.connectionId),

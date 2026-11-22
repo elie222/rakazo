@@ -454,9 +454,7 @@ export function ModelSettingsOverlay({
               panel={connectionAt === "providers:add" ? panelFor(true) : null}
             />
           )}
-          {scope === "account" && me.isAdmin ? (
-            <DeploymentModelSettings onSaved={() => void refresh()} />
-          ) : null}
+          {scope === "account" && me.isAdmin ? <DeploymentModelSettings /> : null}
         </>
       ) : loading ? (
         <div className="grid place-items-center py-10">

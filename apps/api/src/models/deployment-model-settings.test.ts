@@ -15,8 +15,8 @@ const admin: Actor = {
 const member: Actor = { ...admin, userId: "member-user", email: "member@rakazo.test" };
 
 type Row = {
-  defaultModelProvider: string | null;
-  defaultModelId: string | null;
+  deploymentModelProvider: string | null;
+  deploymentModelId: string | null;
   deploymentModelCredentialCipher: string | null;
 };
 
@@ -97,8 +97,8 @@ describe("the model an admin sets for everyone", () => {
       { recordId: "deployment-model" },
     );
     expect(row()).toEqual({
-      defaultModelProvider: "anthropic",
-      defaultModelId: "claude-sonnet-5",
+      deploymentModelProvider: "anthropic",
+      deploymentModelId: "claude-sonnet-5",
       deploymentModelCredentialCipher: "sealed-1",
     });
     expect(settings).toMatchObject({ ...choice, keySaved: true });
@@ -109,8 +109,8 @@ describe("the model an admin sets for everyone", () => {
   it("keeps the saved key for another model of the same provider only", async () => {
     const { deps, secrets, row, modelConnectionCheck } = setup({
       row: {
-        defaultModelProvider: "anthropic",
-        defaultModelId: "claude-sonnet-5",
+        deploymentModelProvider: "anthropic",
+        deploymentModelId: "claude-sonnet-5",
         deploymentModelCredentialCipher: "sealed-earlier",
       },
     });
@@ -126,7 +126,7 @@ describe("the model an admin sets for everyone", () => {
       expect.anything(),
     );
     expect(row()).toMatchObject({
-      defaultModelId: "claude-haiku-5-5",
+      deploymentModelId: "claude-haiku-5-5",
       deploymentModelCredentialCipher: "sealed-earlier",
     });
     await expect(
@@ -202,8 +202,8 @@ describe("the model an admin sets for everyone", () => {
 
   it("shows a saved model credits or the allowlist set aside as the environment's", async () => {
     const row = {
-      defaultModelProvider: "anthropic",
-      defaultModelId: "claude-sonnet-5",
+      deploymentModelProvider: "anthropic",
+      deploymentModelId: "claude-sonnet-5",
       deploymentModelCredentialCipher: "sealed-earlier",
     };
     expect(await getDeploymentModelSettings(setup({ row }).deps, admin)).toMatchObject({
@@ -224,33 +224,18 @@ describe("the model an admin sets for everyone", () => {
   it("goes back to the environment's model and removes the key", async () => {
     const { deps, secrets, row } = setup({
       row: {
-        defaultModelProvider: "anthropic",
-        defaultModelId: "claude-sonnet-5",
+        deploymentModelProvider: "anthropic",
+        deploymentModelId: "claude-sonnet-5",
         deploymentModelCredentialCipher: "sealed-earlier",
       },
     });
     const settings = await updateDeploymentModelSettings(deps, admin, { provider: null });
     expect(row()).toEqual({
-      defaultModelProvider: null,
-      defaultModelId: null,
+      deploymentModelProvider: null,
+      deploymentModelId: null,
       deploymentModelCredentialCipher: null,
     });
     expect(secrets.delete).toHaveBeenCalledWith("sealed-earlier", "deployment-model");
     expect(settings).toMatchObject({ provider: null, modelId: null, keySaved: false });
-  });
-
-  it("leaves a default the environment saved without a key alone", async () => {
-    const keyless = {
-      defaultModelProvider: "openrouter",
-      defaultModelId: "anthropic/claude-haiku-5.5",
-      deploymentModelCredentialCipher: null,
-    };
-    const { deps, row } = setup({ row: keyless });
-    expect(await getDeploymentModelSettings(deps, admin)).toMatchObject({
-      provider: null,
-      keySaved: false,
-    });
-    await updateDeploymentModelSettings(deps, admin, { provider: null });
-    expect(row()).toEqual(keyless);
   });
 });

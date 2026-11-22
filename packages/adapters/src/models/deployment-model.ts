@@ -1,7 +1,6 @@
 import { getEnvApiKey } from "@earendil-works/pi-ai/compat";
 import type { ModelUsageLookup, SecretStore } from "@rakazo/adapter-kit";
 import { canonicalPiProviderId, OPENAI_COMPATIBLE_PROVIDER_ID } from "@rakazo/contracts";
-import type { PrismaClient } from "@rakazo/db";
 import { modelCreditOfferings } from "../model-credits/offerings.js";
 import { LOCAL_PROVIDER_ID, localModelIds } from "../runtime/pi/models/pi-local-provider-id.js";
 import { hiddenCatalogModel, listPiCatalog } from "../runtime/pi/models/pi-models.js";
@@ -79,8 +78,10 @@ export const DEPLOYMENT_MODEL_RECORD = "deployment-model";
 
 /** The deployment settings row's fields that hold an admin's default model for everyone. */
 export type SavedDeploymentModel = {
-  defaultModelProvider: string | null;
-  defaultModelId: string | null;
+  defaultModelProvider?: string | null;
+  defaultModelId?: string | null;
+  deploymentModelProvider?: string | null;
+  deploymentModelId?: string | null;
   deploymentModelCredentialCipher?: string | null;
   modelCreditsEnabled?: boolean;
 };
@@ -94,8 +95,8 @@ export function adminDeploymentModel(
   settings: SavedDeploymentModel | null | undefined,
   env: NodeJS.ProcessEnv = process.env,
 ): { provider: string; modelId: string; cipher: string } | null {
-  const provider = settings?.defaultModelProvider?.trim();
-  const modelId = settings?.defaultModelId?.trim();
+  const provider = settings?.deploymentModelProvider?.trim();
+  const modelId = settings?.deploymentModelId?.trim();
   const cipher = settings?.deploymentModelCredentialCipher;
   if (!provider || !modelId || !cipher) return null;
   if (settings.modelCreditsEnabled || modelCreditOfferings(env)) return null;
@@ -103,50 +104,26 @@ export function adminDeploymentModel(
   return { provider, modelId, cipher };
 }
 
-/**
- * The key that serves a provider for a member without a connection of their own: the admin's for
- * the provider they connected, else the environment's for its provider. Never another vendor's.
- */
-export async function deploymentModelKey(
-  deps: {
-    prisma: Pick<PrismaClient, "deploymentSettings">;
-    secretStore: Pick<SecretStore, "load">;
-  },
+export function matchingAdminDeploymentModel(
+  settings: SavedDeploymentModel | null | undefined,
   provider: string,
-  environment: {
-    provider: string;
-    key: string | undefined;
-    /**
-     * The model the call runs, when it may be the default an admin saved. Credit-funded and
-     * operator-paid calls pass null: they use the operator's own key, never an admin's.
-     */
-    adminModelId: string | null;
-  },
-): Promise<string | undefined> {
-  const saved = !environment.adminModelId
-    ? null
-    : adminDeploymentModel(
-        await deps.prisma.deploymentSettings.findUnique({
-          where: { id: "default" },
-          select: {
-            defaultModelProvider: true,
-            defaultModelId: true,
-            deploymentModelCredentialCipher: true,
-            modelCreditsEnabled: true,
-          },
-        }),
-      );
-  if (
-    saved &&
+  modelId: string,
+) {
+  const saved = adminDeploymentModel(settings);
+  return saved &&
     canonicalPiProviderId(saved.provider) === canonicalPiProviderId(provider) &&
-    saved.modelId === environment.adminModelId
-  ) {
-    const secret = parseModelSecret(
-      await deps.secretStore.load(saved.cipher, DEPLOYMENT_MODEL_RECORD),
-    );
-    return secret.kind === "api_key" ? secret.key : undefined;
-  }
-  return environment.key && provider === environment.provider ? environment.key : undefined;
+    saved.modelId === modelId
+    ? saved
+    : null;
+}
+
+export async function loadAdminDeploymentModelKey(
+  secretStore: Pick<SecretStore, "load">,
+  cipher: string,
+): Promise<string> {
+  const secret = parseModelSecret(await secretStore.load(cipher, DEPLOYMENT_MODEL_RECORD));
+  if (secret.kind !== "api_key") throw new Error("Invalid deployment model credential");
+  return secret.key;
 }
 
 /**

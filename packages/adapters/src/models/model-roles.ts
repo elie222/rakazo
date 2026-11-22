@@ -25,19 +25,6 @@ export type DeploymentModelDefaults = {
   includedApproval?: boolean;
 };
 
-/**
- * The saved default that stands ahead of the environment's, if any. An admin's saved model that
- * no longer applies leaves the environment's in charge.
- */
-export function appliedSavedDefault(
-  settings: SavedDeploymentModel | null | undefined,
-  env?: NodeJS.ProcessEnv,
-): SavedDeploymentModel | null {
-  if (settings?.deploymentModelCredentialCipher && !adminDeploymentModel(settings, env))
-    return null;
-  return settings ?? null;
-}
-
 /** What runs for a purpose without a member's choice, in the same shape as one. */
 export function deploymentModelRole(
   role: ModelRole,
@@ -52,9 +39,13 @@ export function deploymentModelRole(
   }
   // No computer model means the main model works the screen itself.
   if (role === "computer") return { primary: null, backups: [] };
-  const saved = appliedSavedDefault(defaults.settings, defaults.env);
-  const provider = saved?.defaultModelProvider ?? defaults.deployment?.provider;
-  const modelId = usableModelId(saved?.defaultModelId) ?? usableModelId(defaults.deployment?.model);
+  const admin = adminDeploymentModel(defaults.settings, defaults.env);
+  const provider =
+    admin?.provider ?? defaults.settings?.defaultModelProvider ?? defaults.deployment?.provider;
+  const modelId =
+    admin?.modelId ??
+    usableModelId(defaults.settings?.defaultModelId) ??
+    usableModelId(defaults.deployment?.model);
   const offerings = modelCreditOfferings(defaults.env);
   if (
     offerings &&

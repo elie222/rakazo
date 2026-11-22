@@ -6,10 +6,10 @@ import {
   DEPLOYMENT_MODEL_RECORD,
   deploymentModelProviders,
   finishSecretCleanup,
+  loadAdminDeploymentModelKey,
   modelCreditOfferings,
   modelProviderAllowed,
   modelProviderAllowlist,
-  parseModelSecret,
   recordSecretCleanup,
   savedSecretIn,
   verifyCatalogProviderApiKey,
@@ -28,35 +28,35 @@ export type DeploymentModelSettingsDeps = Pick<
 > & { env: Pick<RouterDeps["env"], "adminEmails"> };
 
 const SAVED = {
-  defaultModelProvider: true,
-  defaultModelId: true,
+  deploymentModelProvider: true,
+  deploymentModelId: true,
   deploymentModelCredentialCipher: true,
+  modelCreditsEnabled: true,
 } as const;
 
-/** Credits always run on the operator's own connection, so there is nothing for an admin to set. */
-function available(deps: DeploymentModelSettingsDeps) {
-  return !deps.billing?.modelCreditsEnabled && !modelCreditOfferings();
+type SavedSettings = Prisma.DeploymentSettingsGetPayload<{ select: typeof SAVED }>;
+
+function available(
+  deps: DeploymentModelSettingsDeps,
+  saved: Pick<SavedSettings, "modelCreditsEnabled"> | null,
+) {
+  return (
+    !deps.billing?.modelCreditsEnabled && !saved?.modelCreditsEnabled && !modelCreditOfferings()
+  );
 }
 
 function view(
   deps: DeploymentModelSettingsDeps,
-  saved: {
-    defaultModelProvider: string | null;
-    defaultModelId: string | null;
-    deploymentModelCredentialCipher: string | null;
-  } | null,
+  saved: SavedSettings | null,
 ): DeploymentModelSettings {
-  // Only a default saved with its key is an admin's; one without belongs to the environment.
-  const own = saved?.deploymentModelCredentialCipher ? saved : null;
-  // One that credits or the allowlist set aside shows as the environment's, which is what runs,
-  // while its key stays saved until an admin removes it.
-  const active = own && available(deps) ? adminDeploymentModel(own) : null;
+  const canSet = available(deps, saved);
+  const active = canSet ? adminDeploymentModel(saved) : null;
   const allowlist = modelProviderAllowlist();
   return {
-    provider: active ? own!.defaultModelProvider : null,
-    modelId: active ? own!.defaultModelId : null,
-    keySaved: Boolean(own),
-    providers: available(deps)
+    provider: active?.provider ?? null,
+    modelId: active?.modelId ?? null,
+    keySaved: Boolean(saved?.deploymentModelCredentialCipher),
+    providers: canSet
       ? deploymentModelProviders().filter((provider) =>
           modelProviderAllowed(allowlist, provider.id),
         )
@@ -89,38 +89,72 @@ export async function updateDeploymentModelSettings(
   signal?: AbortSignal,
 ): Promise<DeploymentModelSettings> {
   await requireAdmin(deps, actor.userId);
-  if (input.provider === null) {
-    // Serializable like a save, so a save that lands meanwhile is never cleared unrecorded.
-    const dropped = await withTransactionRetry(() =>
-      runAsSystem("an admin goes back to the environment's model", () =>
-        deps.prisma.$transaction(
-          async (tx) => {
-            const current = await tx.deploymentSettings.findUnique({
-              where: { id: "default" },
-              select: SAVED,
-            });
-            // A default saved without a key is the environment's own and stays.
-            if (!current?.deploymentModelCredentialCipher) return undefined;
-            await tx.deploymentSettings.update({
-              where: { id: "default" },
-              data: {
-                defaultModelProvider: null,
-                defaultModelId: null,
-                deploymentModelCredentialCipher: null,
-              },
-            });
-            const cleanup = deploymentSecret(current.deploymentModelCredentialCipher);
-            await recordSecretCleanup(deps, tx, cleanup);
-            return cleanup;
-          },
-          { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
-        ),
+  const data =
+    input.provider === null
+      ? {
+          deploymentModelProvider: null,
+          deploymentModelId: null,
+          deploymentModelCredentialCipher: null,
+        }
+      : await prepareModel(deps, actor, input, signal);
+  const newSecret =
+    input.provider !== null && input.apiKey
+      ? deploymentSecret(data.deploymentModelCredentialCipher!)
+      : undefined;
+  const keptSecret =
+    input.provider !== null && !input.apiKey ? data.deploymentModelCredentialCipher : null;
+
+  const result = await withTransactionRetry(() =>
+    runAsSystem("update the deployment model", () =>
+      deps.prisma.$transaction(
+        async (tx) => {
+          const current = await tx.deploymentSettings.findUnique({
+            where: { id: "default" },
+            select: SAVED,
+          });
+          const before = current?.deploymentModelCredentialCipher;
+          if (input.provider === null && !before) return { saved: current };
+          if (input.provider !== null && !available(deps, current)) {
+            throw new ClientError("BAD_REQUEST", "This server's model is set by its operator");
+          }
+          if (keptSecret && before !== keptSecret) {
+            throw new ClientError("CONFLICT", "The model settings changed. Try again.");
+          }
+          await tx.deploymentSettings.upsert({
+            where: { id: "default" },
+            create: { id: "default", ...data },
+            update: data,
+          });
+          if (newSecret) await savedSecretIn(deps, tx, newSecret.ref);
+          const cleanup =
+            before && before !== data.deploymentModelCredentialCipher
+              ? deploymentSecret(before)
+              : undefined;
+          if (cleanup) await recordSecretCleanup(deps, tx, cleanup);
+          return {
+            saved: { ...data, modelCreditsEnabled: current?.modelCreditsEnabled ?? false },
+            cleanup,
+          };
+        },
+        { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
       ),
-    );
-    if (dropped) await finishSecretCleanup(deps, dropped);
-    return view(deps, null);
-  }
-  if (!available(deps))
+    ),
+  ).catch(async (error: unknown) => {
+    if (newSecret) await cleanUpUnsavedSecret(deps, newSecret);
+    throw error;
+  });
+  if (result.cleanup) await finishSecretCleanup(deps, result.cleanup);
+  return view(deps, result.saved);
+}
+
+async function prepareModel(
+  deps: DeploymentModelSettingsDeps,
+  actor: Actor,
+  input: Exclude<DeploymentModelUpdate, { provider: null }>,
+  signal?: AbortSignal,
+) {
+  const previous = await readSaved(deps);
+  if (!available(deps, previous))
     throw new ClientError("BAD_REQUEST", "This server's model is set by its operator");
   assertModelProviderAllowed(input.provider);
   const provider = deploymentModelProviders().find(
@@ -129,82 +163,39 @@ export async function updateDeploymentModelSettings(
   if (!provider) throw new ClientError("BAD_REQUEST", "Choose a provider that connects with a key");
   if (!provider.models.some((model) => model.id === input.modelId))
     throw new ClientError("BAD_REQUEST", "Unknown model for this provider");
-  const previous = await readSaved(deps);
-  const keepsKey =
-    !input.apiKey &&
-    Boolean(previous?.deploymentModelCredentialCipher) &&
-    previous?.defaultModelProvider === provider.id;
-  if (!input.apiKey && !keepsKey) throw new ClientError("BAD_REQUEST", "Enter an API key");
-  let ciphertext = previous?.deploymentModelCredentialCipher ?? null;
-  // A kept key is checked against a newly chosen model too, which it may not reach.
-  if (keepsKey && previous?.defaultModelId !== input.modelId) {
-    const saved = parseModelSecret(await deps.secrets.load(ciphertext!, DEPLOYMENT_MODEL_RECORD));
-    if (saved.kind === "api_key")
-      await verifyKey(deps, provider.id, input.modelId, saved.key, signal);
-  }
+
+  let cipher: string;
   if (input.apiKey) {
     await verifyKey(deps, provider.id, input.modelId, input.apiKey, signal);
-    // Owned by the deployment row, not a user or space, so no account deletion removes it.
-    ciphertext = (
-      await deps.secrets.put(
-        JSON.stringify({ kind: "api_key", key: input.apiKey }),
-        {
-          operationId: "deployment-model",
-          traceId: "deployment-model",
-          spaceId: actor.spaceId,
-          userId: actor.userId,
-          signal: signal ?? new AbortController().signal,
-        },
-        { recordId: DEPLOYMENT_MODEL_RECORD },
-      )
-    ).ciphertext;
-  }
-  const stored = ciphertext!;
-  let replaced: SecretCleanup | undefined;
-  try {
-    // Read what this save replaces in the same transaction, so concurrent saves each remove theirs.
-    replaced = await withTransactionRetry(() =>
-      runAsSystem("an admin sets the deployment's default model", () =>
-        deps.prisma.$transaction(
-          async (tx) => {
-            const current = await tx.deploymentSettings.findUnique({
-              where: { id: "default" },
-              select: SAVED,
-            });
-            // The kept key must still be the one this save read, or it was replaced meanwhile.
-            if (!input.apiKey && current?.deploymentModelCredentialCipher !== stored)
-              throw new ClientError("CONFLICT", "The model settings changed. Try again.");
-            const data = {
-              defaultModelProvider: provider.id,
-              defaultModelId: input.modelId,
-              deploymentModelCredentialCipher: stored,
-            };
-            await tx.deploymentSettings.upsert({
-              where: { id: "default" },
-              create: { id: "default", ...data },
-              update: data,
-            });
-            await savedSecretIn(deps, tx, stored);
-            const before = current?.deploymentModelCredentialCipher;
-            if (!before || before === stored) return undefined;
-            const cleanup = deploymentSecret(before);
-            await recordSecretCleanup(deps, tx, cleanup);
-            return cleanup;
-          },
-          { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
-        ),
-      ),
+    const sealed = await deps.secrets.put(
+      JSON.stringify({ kind: "api_key", key: input.apiKey }),
+      {
+        operationId: "deployment-model",
+        traceId: "deployment-model",
+        spaceId: actor.spaceId,
+        userId: actor.userId,
+        signal: signal ?? new AbortController().signal,
+      },
+      { recordId: DEPLOYMENT_MODEL_RECORD },
     );
-  } catch (error) {
-    if (input.apiKey) await cleanUpUnsavedSecret(deps, deploymentSecret(stored));
-    throw error;
+    cipher = sealed.ciphertext;
+  } else {
+    if (
+      previous?.deploymentModelProvider !== provider.id ||
+      !previous.deploymentModelCredentialCipher
+    )
+      throw new ClientError("BAD_REQUEST", "Enter an API key");
+    cipher = previous.deploymentModelCredentialCipher;
+    if (previous.deploymentModelId !== input.modelId) {
+      const key = await loadAdminDeploymentModelKey(deps.secrets, cipher);
+      await verifyKey(deps, provider.id, input.modelId, key, signal);
+    }
   }
-  if (replaced) await finishSecretCleanup(deps, replaced);
-  return view(deps, {
-    defaultModelProvider: provider.id,
-    defaultModelId: input.modelId,
-    deploymentModelCredentialCipher: stored,
-  });
+  return {
+    deploymentModelProvider: provider.id,
+    deploymentModelId: input.modelId,
+    deploymentModelCredentialCipher: cipher,
+  };
 }
 
 /** The same checks a member's own key gets before it is saved. */

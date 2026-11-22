@@ -31,6 +31,7 @@ import {
   auditLogAccess,
   auditLogScope,
   commitBotUpdate,
+  deploymentModelChangesScope,
   findAutoReviewPreference,
   findDefaultVoiceCredential,
   findModelCredential,
@@ -423,7 +424,7 @@ export function accountRoutes(ctx: RouterContext) {
         };
         const spaceChanges = async function* (
           signal: AbortSignal,
-          special?: "meetingCalendar" | "nativeCalendar" | "pages",
+          special?: "meetingCalendar" | "nativeCalendar" | "pages" | "deploymentModel",
         ): AsyncGenerator<{ spaceChange: SpaceChangeKind }> {
           if (!followSpaceChanges) return;
           let scope = spaceId;
@@ -435,6 +436,8 @@ export function accountRoutes(ctx: RouterContext) {
             scope = nativeCalendarScope({ spaceId, userId, sessionId: context.nativeSessionId });
           } else if (special === "pages") {
             scope = pageChangesScope(userId);
+          } else if (special === "deploymentModel") {
+            scope = deploymentModelChangesScope;
           }
           // The app re-reads what these cover only on signals, so a failure ends the stream and
           // the app reconnects and re-reads. Alerts keep flowing for a while first, so a lasting
@@ -446,7 +449,8 @@ export function accountRoutes(ctx: RouterContext) {
                   ? spaceChange === special
                   : spaceChange !== "meetingCalendar" &&
                     spaceChange !== "nativeCalendar" &&
-                    spaceChange !== "pages"
+                    spaceChange !== "pages" &&
+                    spaceChange !== "deploymentModel"
               )
                 yield { spaceChange };
             }
@@ -475,6 +479,7 @@ export function accountRoutes(ctx: RouterContext) {
             spaceChanges(signal, "meetingCalendar"),
             spaceChanges(signal, "nativeCalendar"),
             spaceChanges(signal, "pages"),
+            spaceChanges(signal, "deploymentModel"),
             organizationChanges(signal),
           ),
         );

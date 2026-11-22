@@ -45,8 +45,8 @@ describe("model setup gate", () => {
         findUnique: vi.fn().mockResolvedValue(
           options.adminDeploymentModel
             ? {
-                defaultModelProvider: "anthropic",
-                defaultModelId: "claude-sonnet-5",
+                deploymentModelProvider: "anthropic",
+                deploymentModelId: "claude-sonnet-5",
                 deploymentModelCredentialCipher: "sealed-admin-key",
                 modelCreditsEnabled: options.adminDeploymentModel === "credits",
               }

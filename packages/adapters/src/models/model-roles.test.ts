@@ -451,8 +451,8 @@ it("uses the approved default when owner settings name an unapproved model", () 
 
 describe("an admin's default for everyone", () => {
   const saved = {
-    defaultModelProvider: "anthropic",
-    defaultModelId: "claude-sonnet-5",
+    deploymentModelProvider: "anthropic",
+    deploymentModelId: "claude-sonnet-5",
     deploymentModelCredentialCipher: "sealed-admin-key",
     modelCreditsEnabled: false,
   };

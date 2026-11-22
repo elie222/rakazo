@@ -25,7 +25,7 @@ function draftFrom(settings: Settings): Draft {
  * An admin's choice of the model members without their own run on, and the key that pays for
  * it. "Default" goes back to the server's own. The key never comes back from the server.
  */
-export function DeploymentModelSettings({ onSaved }: { onSaved?: () => void }) {
+export function DeploymentModelSettings() {
   const { t } = useLingui();
   const providerId = useId();
   const keyId = useId();
@@ -52,7 +52,6 @@ export function DeploymentModelSettings({ onSaved }: { onSaved?: () => void }) {
     onSaved: () => {
       setEdited(null);
       setSaved(true);
-      onSaved?.();
     },
   });
 

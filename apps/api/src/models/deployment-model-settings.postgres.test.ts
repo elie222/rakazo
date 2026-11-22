@@ -1,5 +1,9 @@
 import { randomUUID } from "node:crypto";
-import { deploymentModelKey, EncryptedSecretStore } from "@rakazo/adapters";
+import {
+  EncryptedSecretStore,
+  loadAdminDeploymentModelKey,
+  matchingAdminDeploymentModel,
+} from "@rakazo/adapters";
 import type { Actor } from "@rakazo/contracts";
 import { asSystem, createDb } from "@rakazo/db";
 import { expect, it, vi } from "vitest";
@@ -27,13 +31,14 @@ it.skipIf(!databaseUrl)(
       env: { adminEmails: [email] },
     } as unknown as DeploymentModelSettingsDeps;
     const admin: Actor = { userId, spaceId: "unused-space", email, isDeploymentOwner: false };
-    const environment = {
-      provider: "openrouter",
-      key: "fake-operator-key",
-      adminModelId: "claude-sonnet-5",
-    };
     const before = await system.deploymentSettings.findUnique({ where: { id: "default" } });
     try {
+      const legacyModel = { defaultModelProvider: "local", defaultModelId: "existing-model" };
+      await system.deploymentSettings.upsert({
+        where: { id: "default" },
+        create: { id: "default", ...legacyModel },
+        update: legacyModel,
+      });
       await system.user.create({
         data: { id: userId, name: "Admin", email, emailVerified: true },
       });
@@ -44,13 +49,17 @@ it.skipIf(!databaseUrl)(
       });
       const row = await system.deploymentSettings.findUnique({ where: { id: "default" } });
       expect(row).toMatchObject({
-        defaultModelProvider: "anthropic",
-        defaultModelId: "claude-sonnet-5",
+        ...legacyModel,
+        deploymentModelProvider: "anthropic",
+        deploymentModelId: "claude-sonnet-5",
       });
       expect(row?.deploymentModelCredentialCipher).toBeTruthy();
       expect(row?.deploymentModelCredentialCipher).not.toContain("fake-admin-key");
       await expect(
-        deploymentModelKey({ prisma: db.prisma, secretStore: secrets }, "anthropic", environment),
+        loadAdminDeploymentModelKey(
+          secrets,
+          matchingAdminDeploymentModel(row, "anthropic", "claude-sonnet-5")!.cipher,
+        ),
       ).resolves.toBe("fake-admin-key");
       expect(await getDeploymentModelSettings(deps, admin)).toMatchObject({
         provider: "anthropic",
@@ -59,22 +68,22 @@ it.skipIf(!databaseUrl)(
       });
 
       await updateDeploymentModelSettings(deps, admin, { provider: null });
-      expect(
-        await system.deploymentSettings.findUnique({ where: { id: "default" } }),
-      ).toMatchObject({
-        defaultModelProvider: null,
-        defaultModelId: null,
+      const reset = await system.deploymentSettings.findUnique({ where: { id: "default" } });
+      expect(reset).toMatchObject({
+        ...legacyModel,
+        deploymentModelProvider: null,
+        deploymentModelId: null,
         deploymentModelCredentialCipher: null,
       });
-      await expect(
-        deploymentModelKey({ prisma: db.prisma, secretStore: secrets }, "anthropic", environment),
-      ).resolves.toBeUndefined();
+      expect(matchingAdminDeploymentModel(reset, "anthropic", "claude-sonnet-5")).toBeNull();
     } finally {
       await system.deploymentSettings.update({
         where: { id: "default" },
         data: {
           defaultModelProvider: before?.defaultModelProvider ?? null,
           defaultModelId: before?.defaultModelId ?? null,
+          deploymentModelProvider: before?.deploymentModelProvider ?? null,
+          deploymentModelId: before?.deploymentModelId ?? null,
           deploymentModelCredentialCipher: before?.deploymentModelCredentialCipher ?? null,
         },
       });
