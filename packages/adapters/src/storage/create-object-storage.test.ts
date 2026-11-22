@@ -41,13 +41,13 @@ describe("createObjectStorage", () => {
         ...base,
         OBJECT_STORAGE_AUTH: "managed-identity",
       }),
-    ).toThrow(/OBJECT_STORAGE_AUTH needs OBJECT_STORAGE_PROTOCOL=azure-blob/);
+    ).toThrow(/OBJECT_STORAGE_AUTH applies only with OBJECT_STORAGE_PROTOCOL=azure-blob/);
     expect(() =>
       createObjectStorage({
         ...base,
         OBJECT_STORAGE_AUTH: "CLIENT-SECRET",
       }),
-    ).toThrow(/OBJECT_STORAGE_AUTH needs OBJECT_STORAGE_PROTOCOL=azure-blob/);
+    ).toThrow(/OBJECT_STORAGE_AUTH applies only with OBJECT_STORAGE_PROTOCOL=azure-blob/);
     expect(createObjectStorage({ ...base, OBJECT_STORAGE_AUTH: "account-key" })).toBeInstanceOf(
       S3ObjectStorage,
     );

@@ -37,7 +37,9 @@ const KINDS =
 export function refuseEntraAuthUnderOtherProtocol(env: NodeJS.ProcessEnv): void {
   const auth = env.OBJECT_STORAGE_AUTH?.trim().toLowerCase() || "account-key";
   if (auth !== "account-key" && env.OBJECT_STORAGE_BUCKET?.trim())
-    throw new Error("OBJECT_STORAGE_AUTH needs OBJECT_STORAGE_PROTOCOL=azure-blob");
+    throw new Error(
+      "OBJECT_STORAGE_AUTH applies only with OBJECT_STORAGE_PROTOCOL=azure-blob; unset it for S3",
+    );
 }
 
 /**
