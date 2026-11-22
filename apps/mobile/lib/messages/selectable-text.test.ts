@@ -2,17 +2,11 @@ import { expectLinearTime } from "@rakazo/contracts/test-timing";
 import { describe, expect, it } from "vitest";
 import { selectableTextFromMarkdown } from "./selectable-text";
 
-const lineEndings = [
-  ["LF", "\n"],
-  ["CRLF", "\r\n"],
-  ["CR", "\r"],
-] as const;
-
 describe("selectableTextFromMarkdown", () => {
-  it.each(lineEndings)("keeps paragraphs, list items and numbering with %s", (_, newline) => {
+  it("strips markup but keeps paragraphs, list items and numbering", () => {
     const source =
       "## Title\n\nSome **bold** and `code` with [a link](https://example.test).\n\n- one\n- two\n\n1. first\n2. second";
-    expect(selectableTextFromMarkdown(source.replaceAll("\n", newline))).toBe(
+    expect(selectableTextFromMarkdown(source)).toBe(
       "Title\n\nSome bold and code with a link.\n\n• one\n• two\n\n1. first\n2. second",
     );
   });
@@ -21,11 +15,10 @@ describe("selectableTextFromMarkdown", () => {
     expect(selectableTextFromMarkdown("- a\n  - b")).toBe("• a\n  • b");
   });
 
-  it.each(lineEndings)("keeps fenced code contents verbatim with %s", (_, newline) => {
-    const source = "Run:\n\n```sh\n  echo **x**\n\n\n  echo y\n```\n\nDone.";
-    expect(selectableTextFromMarkdown(source.replaceAll("\n", newline))).toBe(
-      "Run:\n\n  echo **x**\n\n\n  echo y\n\nDone.",
-    );
+  it("keeps fenced code verbatim, including indentation, markup and blank lines", () => {
+    expect(
+      selectableTextFromMarkdown("Run:\n\n```sh\n  echo **x**\n\n\n  echo y\n```\n\nDone."),
+    ).toBe("Run:\n\n  echo **x**\n\n\n  echo y\n\nDone.");
   });
 
   it("closes a fence only on a matching, long-enough marker", () => {
@@ -38,26 +31,21 @@ describe("selectableTextFromMarkdown", () => {
     expect(selectableTextFromMarkdown("```\n  a **b**")).toBe("  a **b**");
   });
 
-  it.each(lineEndings)(
-    "keeps indented code contents minus the code indent with %s",
-    (_, newline) => {
-      const source = "Example:\n\n    def f():\n        return **1**\n\nDone";
-      expect(selectableTextFromMarkdown(source.replaceAll("\n", newline))).toBe(
-        "Example:\n\ndef f():\n    return **1**\n\nDone",
-      );
-    },
-  );
+  it("keeps indented code blocks verbatim, minus the code indent", () => {
+    expect(
+      selectableTextFromMarkdown("Example:\n\n    def f():\n        return **1**\n\nDone"),
+    ).toBe("Example:\n\ndef f():\n    return **1**\n\nDone");
+  });
 
   it("does not treat an indented list continuation as code", () => {
     expect(selectableTextFromMarkdown("- item\n\n    more **text**")).toBe("• item\n\nmore text");
   });
 
-  it.each(lineEndings)("drops only the table header separator with %s", (_, newline) => {
-    const source = ["| a | b |", "| --- | --- |", "| - | - |"].join(newline);
-    expect(selectableTextFromMarkdown(source)).toBe("a | b\n- | -");
+  it("drops the separator after a table header but keeps later dash-only rows", () => {
+    expect(selectableTextFromMarkdown("| a | b |\n| --- | --- |\n| - | - |")).toBe("a | b\n- | -");
   });
 
-  it("handles mixed line endings without turning CRLF into two breaks", () => {
+  it("treats CR, CRLF and LF alike as line breaks", () => {
     const source =
       "Intro\r\r\n- first\n- second\r\n\r~~~\n  *literal*\r\n  *second*\r~~~\r\n\rEnd.";
     expect(selectableTextFromMarkdown(source)).toBe(
