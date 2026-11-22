@@ -179,5 +179,6 @@ it("keeps other read-aloud failures as a plain toast", async () => {
   await vi.waitFor(() => expect(toastError).toHaveBeenCalledTimes(1));
   const [text, options] = toastError.mock.calls[0] as [string, ToastOptions];
   expect(text).toBe("Could not play that clip.");
-  expect(options.action).toBeUndefined();
+  // Set explicitly: the shared toast id keeps an earlier toast's action unless it is cleared.
+  expect(options).toHaveProperty("action", undefined);
 });

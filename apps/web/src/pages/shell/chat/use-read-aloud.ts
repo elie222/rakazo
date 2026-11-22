@@ -22,9 +22,11 @@ function readAloud(
     if (!error) return;
     toast.error(error, {
       id: READ_ALOUD_TOAST,
-      ...(error === voiceNotReadyText()
-        ? { action: { label: t`Open Voice settings`, onClick: () => openVoiceSettings.current() } }
-        : {}),
+      // The toast id is shared and an update keeps unset options, so other failures clear the action.
+      action:
+        error === voiceNotReadyText()
+          ? { label: t`Open Voice settings`, onClick: () => openVoiceSettings.current() }
+          : undefined,
     });
   });
 }
