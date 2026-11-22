@@ -9,16 +9,30 @@ The easiest way is to ask: "connect my Google Calendar". The bot posts a card in
 
 ## Connect from Integrations
 
-Choose **Connect apps** at the bottom of the sidebar to open **Integrations**. Search or browse
-**Apps** by category, choose one, and then **Connect**.
+On web and desktop, choose **Connect apps** at the bottom of the sidebar to open **Integrations**.
+Search or browse **Apps** by category. For a catalog app such as Gmail, choose **Add**.
 
 Once an app is connected, every bot in the [space](./spaces.md) can use it. You don't set it up per
-bot. From an app's page you can **Reconnect** it, rename an account, or **Uninstall** it.
+bot. Choose **Added** to open the app's details, then **Add another** to connect another account.
+To rename an account, edit its label and press Enter. Choose **Remove** next to an account to
+disconnect only that account, or **Uninstall** to remove the whole app.
 
 > [!NOTE]
 > The app catalog depends on your server. A self-hosted server shows it only when the operator has
 > configured an app catalog. See [Self-hosting](./self-host.md). Custom sources, below, work on any
 > server.
+
+## Use your phone's calendar and reminders
+
+In the mobile app, open a private text chat with a bot and ask what's on your phone's calendar or
+ask to add an event. Keep that chat open and the app in the foreground while the bot works.
+Calendar events work on iOS and Android. On iOS, you can also ask the bot to read, add, or complete
+reminders. You don't need to connect a calendar account in **Integrations** to use your phone's
+calendar.
+
+If your phone asks for Calendar or Reminders access, allow it only if you want to use the feature.
+Review any approval request in chat, and check the calendar or reminder list shown on your phone
+before confirming the request there.
 
 ## Add your own tools
 

@@ -1,7 +1,5 @@
-import { redactSecrets } from "../messages/events.js";
+import { REDACTED_MARKER } from "../messages/events.js";
 
-/** What redaction writes in place of a secret, taken from redaction itself so they cannot drift. */
-const REDACTED_MARKER = redactSecrets("a", ["a"]);
 const CONTEXT_LINES = 2;
 /** Past this many removed plus added lines, the changed middle is shown as fully replaced. */
 const MAX_CHANGED_LINES = 500;

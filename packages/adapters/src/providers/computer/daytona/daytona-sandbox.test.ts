@@ -15,6 +15,7 @@ import {
   DaytonaTimeoutError,
 } from "@daytona/sdk";
 import type { PageBrowserCommand } from "@rakazo/adapter-kit";
+import { SandboxRateLimitError, WorkspaceTooLargeError } from "@rakazo/adapter-kit";
 import { shellQuote } from "@rakazo/core/node/desktop-runtime";
 import { deferred } from "@rakazo/core/test-async";
 import { parse } from "shell-quote";
@@ -307,6 +308,64 @@ describe("DaytonaSandboxProvider", () => {
     expect(visited).not.toContain("/home/daytona/rakazo-home/.cache");
     expect(visited).not.toContain("/home/daytona/rakazo-home/.yarn/cache");
     expect(visited).not.toContain("/home/daytona/rakazo-home/.browser-profiles/chromium/Cache");
+  });
+
+  it("refuses an over-limit home before downloading any of its files", async () => {
+    const fixture = daytonaFixture();
+    const provider = new DaytonaSandboxProvider({}, fixture.client);
+    const computer = await provider.provision({ botId: "bot-a", homePath: "/unused" }, context);
+    await provider.writeFile(computer, { path: "notes.txt", content: Buffer.from("ok") }, context);
+    await provider.writeFile(computer, { path: "model.bin", content: Buffer.alloc(10) }, context);
+    await provider.writeFile(
+      computer,
+      { path: ".cache/uv/data", content: Buffer.alloc(100) },
+      context,
+    );
+    const download = vi.spyOn(fixture.sandbox.fs, "downloadFile");
+    const exportWith = async (limits: { maxBytes: number; maxFiles: number }) => {
+      const files = [];
+      for await (const file of provider.exportWorkspace(computer, context, limits)) {
+        files.push(file.path);
+      }
+      return files;
+    };
+
+    await expect(exportWith({ maxBytes: 4, maxFiles: 10 })).rejects.toEqual(
+      new WorkspaceTooLargeError("bytes"),
+    );
+    await expect(exportWith({ maxBytes: 100, maxFiles: 1 })).rejects.toEqual(
+      new WorkspaceTooLargeError("files"),
+    );
+    expect(download).not.toHaveBeenCalled();
+    // Exactly at both limits is allowed; the skipped cache does not count.
+    expect((await exportWith({ maxBytes: 12, maxFiles: 2 })).sort()).toEqual([
+      "model.bin",
+      "notes.txt",
+    ]);
+  });
+
+  it("counts files in every folder before downloading a folder past the limit", async () => {
+    const fixture = daytonaFixture();
+    const provider = new DaytonaSandboxProvider({}, fixture.client);
+    const computer = await provider.provision({ botId: "bot-a", homePath: "/unused" }, context);
+    await provider.writeFile(computer, { path: "notes.txt", content: Buffer.from("ok") }, context);
+    await provider.writeFile(
+      computer,
+      { path: "models/model.bin", content: Buffer.alloc(10) },
+      context,
+    );
+    const download = vi.spyOn(fixture.sandbox.fs, "downloadFile");
+    const limits = { maxBytes: 4, maxFiles: 10 };
+    const exporting = async () => {
+      const files = [];
+      for await (const file of provider.exportWorkspace(computer, context, limits)) {
+        files.push(file.path);
+      }
+      return files;
+    };
+
+    await expect(exporting()).rejects.toEqual(new WorkspaceTooLargeError("bytes"));
+    expect(download.mock.calls.map(([target]) => target.split("/").at(-1))).toEqual(["notes.txt"]);
   });
 
   it("omits snapshot from create() when unset", async () => {
@@ -644,9 +703,9 @@ describe("DaytonaSandboxProvider", () => {
         expected: unauthorized,
       },
       {
-        name: "429 is surfaced",
+        name: "429 is a computer rate limit",
         arrange: (fixture) => fixture.start.mockRejectedValueOnce(rateLimited),
-        expected: rateLimited,
+        expected: new SandboxRateLimitError(),
       },
       {
         name: "a transition that never settles times out instead of hanging",
@@ -782,9 +841,9 @@ describe("DaytonaSandboxProvider", () => {
           }),
       },
       {
-        name: "429 is surfaced",
+        name: "429 is a computer rate limit",
         arrange: (fixture) => fixture.stop.mockRejectedValueOnce(rateLimited),
-        expected: rateLimited,
+        expected: new SandboxRateLimitError(),
       },
       {
         name: "a stop that never settles times out instead of hanging",
@@ -922,16 +981,102 @@ describe("DaytonaSandboxProvider", () => {
     expect(fixture.remote.missing).toBe(true);
   });
 
-  it("surfaces a create that Daytona rejected without leaving anything to delete", async () => {
-    const fixture = daytonaFixture();
-    const rejected = new DaytonaRateLimitError("Too many requests", 429);
-    fixture.create.mockRejectedValueOnce(rejected);
-    const provider = new DaytonaSandboxProvider({}, fixture.client);
+  describe("Daytona rate limits", () => {
+    /** Daytona's error headers are axios headers; a plain record stands in for them here. */
+    const retryAfter = (value: string) =>
+      ({ "retry-after": value }) as unknown as DaytonaError["headers"];
+    const computer = {
+      id: "existing",
+      botId: "bot-a",
+      kind: "daytona" as const,
+      providerRef: "existing",
+      fresh: false,
+    };
 
-    await expect(provider.provision({ botId: "bot-a", homePath: "/unused" }, context)).rejects.toBe(
-      rejected,
-    );
-    expect(fixture.deleteSandbox).not.toHaveBeenCalled();
+    function expectRateLimit(error: unknown, cause: DaytonaRateLimitError) {
+      expect(error).toBeInstanceOf(SandboxRateLimitError);
+      expect((error as SandboxRateLimitError).cause).toBe(cause);
+      expect((error as SandboxRateLimitError).retryAfterMs).toBe(30_000);
+    }
+
+    it("reports a refused create as a rate limit and skips deleting the sandbox", async () => {
+      const fixture = daytonaFixture();
+      const rejected = new DaytonaRateLimitError("Too many requests", 429, retryAfter("30"));
+      fixture.create.mockRejectedValueOnce(rejected);
+      const provider = new DaytonaSandboxProvider({}, fixture.client);
+
+      const error = await provider
+        .provision({ botId: "bot-a", homePath: "/unused" }, context)
+        .catch((failure: unknown) => failure);
+
+      expectRateLimit(error, rejected);
+      expect(fixture.deleteSandbox).not.toHaveBeenCalled();
+    });
+
+    const existing = {
+      botId: "bot-a",
+      homePath: "/unused",
+      providerRef: "existing",
+      providerKind: "daytona" as const,
+    };
+    const cases: {
+      name: string;
+      state: SandboxState;
+      arrange: (fixture: DaytonaFixture, cause: DaytonaRateLimitError) => void;
+      call: (provider: DaytonaSandboxProvider) => Promise<unknown>;
+    }[] = [
+      {
+        name: "reading an existing sandbox while provisioning",
+        state: "started",
+        arrange: (fixture, cause) => fixture.get.mockRejectedValueOnce(cause),
+        call: (provider) => provider.provision(existing, context),
+      },
+      {
+        name: "starting an existing sandbox while provisioning",
+        state: "stopped",
+        arrange: (fixture, cause) => fixture.start.mockRejectedValueOnce(cause),
+        call: (provider) => provider.provision(existing, context),
+      },
+      {
+        name: "reading a sandbox to check it is running",
+        state: "started",
+        arrange: (fixture, cause) => fixture.get.mockRejectedValueOnce(cause),
+        call: (provider) => provider.isRunning(computer, context),
+      },
+      {
+        name: "stopping a sandbox",
+        state: "started",
+        arrange: (fixture, cause) => fixture.stop.mockRejectedValueOnce(cause),
+        call: (provider) => provider.stop(computer, context),
+      },
+      {
+        name: "deleting a sandbox on destroy",
+        state: "started",
+        arrange: (fixture, cause) => fixture.deleteSandbox.mockRejectedValueOnce(cause),
+        call: (provider) => provider.destroy(computer, context),
+      },
+      {
+        name: "deleting a sandbox in background cleanup",
+        state: "started",
+        arrange: (fixture, cause) => fixture.get.mockRejectedValueOnce(cause),
+        call: (provider) =>
+          provider.deleteMachine(
+            { provider: "daytona", machineId: "existing" },
+            AbortSignal.timeout(5_000),
+          ),
+      },
+    ];
+
+    it.each(cases)("reports a Daytona 429 from $name as a rate limit", async (testCase) => {
+      const fixture = daytonaFixture({ id: "existing", state: testCase.state });
+      const cause = new DaytonaRateLimitError("Too many requests", 429, retryAfter("30"));
+      testCase.arrange(fixture, cause);
+      const provider = new DaytonaSandboxProvider({}, fixture.client);
+
+      const error = await testCase.call(provider).catch((failure: unknown) => failure);
+
+      expectRateLimit(error, cause);
+    });
   });
 
   it("drops a cached handle once Daytona reports the sandbox gone", async () => {

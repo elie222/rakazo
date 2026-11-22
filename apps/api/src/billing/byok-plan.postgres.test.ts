@@ -221,6 +221,13 @@ dbTests("own-key plan", () => {
         { tier: "standard", monthlyPriceCents: 1500, computerSize: "standard", computerHours: 25 },
         { tier: "pro", monthlyPriceCents: 4900, computerSize: "large", computerHours: 100 },
         { tier: "max", monthlyPriceCents: 9900, computerSize: "xlarge", computerHours: 200 },
+        {
+          tier: "ultra",
+          monthlyPriceCents: 19900,
+          annualPriceCents: 190800,
+          computerSize: "xlarge",
+          computerHours: 600,
+        },
       ],
     });
     await service.checkout(actor, undefined, "year", "pro");
@@ -279,6 +286,12 @@ dbTests("own-key plan", () => {
     expect(await planComputerSize(prisma, computer.id)).toBe("large");
     await sized.setComputerSize(actor, computer.id, "xlarge");
     expect(await planComputerSize(prisma, computer.id)).toBe("xlarge");
+    await service.changeTier(actor, "ultra");
+    await expect(service.status(actor)).resolves.toMatchObject({
+      byokTier: "ultra",
+      byokPriceCents: 190800,
+      byokInterval: "year",
+    });
     await service.changeTier(actor, "pro");
     await expect(service.status(actor)).resolves.toMatchObject({
       byokTier: "pro",

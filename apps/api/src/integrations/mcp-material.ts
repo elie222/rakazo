@@ -41,17 +41,27 @@ export type McpMaterialUpdate =
 /** An empty "store" material means credentials were cleared: the caller deletes the secret
  * row and nulls `secretId` instead of storing an empty object. env/headers are full-replace;
  * files are kept when omitted, and stdio arguments when none are sent for the same command.
- * OAuth state is dropped when the endpoint changed, since tokens issued for one endpoint must
- * never be sent to another server. */
+ * OAuth state, the stored token, the stored values of the headers sent, the credentials of the
+ * transport left behind and an OAuth client not yet bound to an authorization server are dropped
+ * when the endpoint changed, since credentials entered for one endpoint must never be sent to
+ * another server. */
 export function buildMcpUpdateMaterial(
   existing: McpSecretMaterial,
   config: McpServerConfigInput,
   options: { clearOAuth?: boolean; endpointChanged?: boolean; commandChanged?: boolean } = {},
 ): McpMaterialUpdate {
-  const client = nextOAuthClient(
-    existing.oauthClient,
-    "oauthClient" in config ? config.oauthClient : undefined,
-  );
+  const input = "oauthClient" in config ? config.oauthClient : undefined;
+  // On a move, a client typed again starts afresh and binds at the new endpoint's authorization
+  // server. One left out stays only if it is bound to its own server: an unbound one would bind
+  // to the new endpoint's server, which never issued it.
+  const moved = Boolean(options.endpointChanged && existing.oauthClient);
+  const client = !moved
+    ? nextOAuthClient(existing.oauthClient, input)
+    : input
+      ? { next: nextOAuthClient(undefined, input).next, changed: true }
+      : input === null || !existing.oauthClient?.authorization_server
+        ? { changed: true }
+        : { next: existing.oauthClient, changed: false };
   // Tokens are issued to one client, so a different client must authorize again.
   const clearOAuth = options.clearOAuth === true || client.changed;
   const material = clearOAuth ? { ...existing } : existing;
@@ -62,6 +72,12 @@ export function buildMcpUpdateMaterial(
     else delete material.oauthClient;
   }
   const { files: storedFiles, args: storedArgs, ...rest } = material;
+  if (options.endpointChanged) {
+    delete rest.secret;
+    // A transport switch moves the endpoint too; the old transport's credentials do not apply.
+    if (config.transport === "stdio") delete rest.headers;
+    else delete rest.env;
+  }
   const args =
     config.transport !== "stdio"
       ? []
@@ -90,7 +106,13 @@ export function buildMcpUpdateMaterial(
           Object.entries(next).map(([name, value]) => [name, value || (stored[name] ?? "")]),
         );
   const env = "env" in config ? keepBlank(config.env, material.env) : undefined;
-  const headers = "headers" in config ? keepBlank(config.headers, material.headers) : undefined;
+  // A header sent blank to keep a value that cannot follow it to a new endpoint has none left.
+  const headers =
+    "headers" in config
+      ? options.endpointChanged
+        ? Object.fromEntries(Object.entries(config.headers).filter(([, value]) => value))
+        : keepBlank(config.headers, material.headers)
+      : undefined;
   const files =
     config.transport === "stdio"
       ? config.files
@@ -122,7 +144,9 @@ export function buildMcpUpdateMaterial(
     if ("env" in existing || "headers" in existing || "files" in existing) {
       return { action: "store", material: {} };
     }
-    return clearedOAuth ? { action: "store", material } : { action: "keep" };
+    // Leftover empty arguments are not a credential either.
+    const { args: _emptyArgs, ...kept } = material;
+    return clearedOAuth ? { action: "store", material: kept } : { action: "keep" };
   }
   const stored: McpSecretMaterial = {
     ...rest,
@@ -144,8 +168,10 @@ export function buildMcpUpdateMaterial(
   return { action: "store", material: stored };
 }
 
-/** Resolve the client an update asks for. A resent client ID without a secret
- * keeps the stored secret; a different client ID never inherits it. Any
+/** Resolve the client an update asks for. A resent client ID at the same authorization server
+ * keeps the stored secret, scope and authorization parameters it leaves out, since clients never
+ * read them back; an empty scope or parameters clears them, and a different client ID or
+ * authorization server never inherits them. Any
  * difference in client, secret, scope, or authorization server is a change, and
  * an unchanged resend keeps the stored object, including a first-use binding. */
 function nextOAuthClient(
@@ -164,12 +190,24 @@ function nextOAuthClient(
   if (input === undefined) return { next: existing, changed: false };
   if (input === null) return { changed: existing !== undefined };
   const sameClient = existing?.client_id === input.clientId;
-  const secret = input.clientSecret ?? (sameClient ? existing?.client_secret : undefined);
-  const scope = input.scope || undefined;
-  const authorizationParams = input.authorizationParams || undefined;
   const authorizationServer = input.authorizationServer
     ? new URL(input.authorizationServer).href
     : undefined;
+  // Client IDs belong to their authorization server, so one moved to another starts afresh, and
+  // one that inherits stays bound to the server it was bound to.
+  const inherits =
+    sameClient &&
+    (authorizationServer === undefined || authorizationServer === existing?.authorization_server);
+  const boundTo = authorizationServer ?? (inherits ? existing?.authorization_server : undefined);
+  const secret = input.clientSecret ?? (inherits ? existing?.client_secret : undefined);
+  const scope =
+    input.scope === undefined ? (inherits ? existing?.scope : undefined) : input.scope || undefined;
+  const authorizationParams =
+    input.authorizationParams === undefined
+      ? inherits
+        ? existing?.authorization_params
+        : undefined
+      : input.authorizationParams || undefined;
   const unchanged =
     existing !== undefined &&
     sameClient &&
@@ -184,7 +222,7 @@ function nextOAuthClient(
       ...(secret ? { client_secret: secret } : {}),
       ...(scope ? { scope } : {}),
       ...(authorizationParams ? { authorization_params: authorizationParams } : {}),
-      ...(authorizationServer ? { authorization_server: authorizationServer } : {}),
+      ...(boundTo ? { authorization_server: boundTo } : {}),
     },
     changed: true,
   };
