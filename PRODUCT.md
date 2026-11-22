@@ -1,0 +1,116 @@
+# Product definition
+
+[VISION.md](VISION.md) defines Rakazo's purpose, principles, and boundaries.
+This document defines behavior by capability so feature work has one shared product reference across web, desktop, mobile, and messaging wherever applicable.
+It is a maintained definition, not an exhaustive feature inventory, roadmap, implementation plan, or release checklist.
+Update the relevant section when a product decision changes; Git history preserves replaced decisions.
+
+## Status and use
+
+The recorded decisions below carry forward the existing product requirements from VISION.md without a new implementation audit.
+They define expected behavior, not proof that every path already conforms.
+The subagent section identifies the implemented scope and remaining limitations.
+Keep implementation gaps explicit when adding a capability, and keep technical plans and verification evidence in the relevant PR or technical documentation.
+
+## Conversation
+
+One bot has one continuous visible thread because continuity is part of its identity, while internal runs and attempts remain implementation detail.
+A pending question or approval card never blocks a chat: the user can always keep chatting and new work still runs, and the card stays answerable until someone replies.
+A bot's model and thinking level belong to the bot and change in its settings. A Chat setting, off by default and kept per device, also shows them in the message box of a one-to-one chat, where a pick saves to the bot the same way. It is opt-in because most people rarely change models and the message box stays minimal, and group chats leave it out because each bot in a group can use a different model.
+
+## Activity
+
+The chat list has a regular view and an Activity view and shows one at a time on every surface, because listing the same chats in both only repeats them.
+Activity replaces the whole regular list, including pinned chats and the archived and snoozed shelves, which return when the user leaves Activity.
+
+## Subagents
+
+Status: independent execution and action tools are implemented across conversation surfaces.
+
+A subagent is delegated work for the parent bot, not a separately configured bot or a second user-facing conversation.
+Subagents run independently while the parent remains available to respond to new messages and handle new requests.
+The parent may wait for results before giving a final answer, but that dependency does not block conversation.
+There is one subagent behavior, without a foreground/background choice for the user or bot.
+Subagents can take actions using the tools and permissions applicable to their task; asynchronous execution does not make them read-only.
+Delegation does not grant additional authority or bypass approval rules.
+A required approval remains reachable from the user's conversation without blocking unrelated work.
+Shared resources such as a computer screen coordinate access so simultaneous actions do not interfere; only work using that resource waits.
+Results return to the parent, which combines relevant results and continues the task or answers the user.
+The parent accounts for changed instructions and cancellation before acting on a late result.
+
+For example, a bot comparing three options can delegate their research, answer a new question while that research continues, and give its recommendation once the needed results arrive.
+
+Subagents inherit the originating conversation's context, tool permissions and privacy boundaries in app, group and connected messaging chats.
+Approvals and results return to that conversation; delegation never grants access to private context that the parent could not use there.
+
+## Routines
+
+A routine runs either in its chat, as a turn with the whole conversation that waits for work already under way there, or alongside it, as its own run that starts on time even while the bot is busy and posts its result in the chat.
+The bot chooses when it creates the routine: alongside for reports, digests, reminders and alerts whose prompt can say everything they need; in the chat for follow-ups that continue work the conversation is doing, such as updating a draft or fixing a deploy started there.
+A routine running alongside reads the chat's latest messages and its own earlier results, so it can say what changed instead of repeating itself, and searches the rest of the chat when it needs more.
+A routine in the chat that is still waiting after five minutes is handed to the running turn, so a run that goes on for hours does not hold it back; one that watches for changes always runs alongside, because what it read is not the user's words.
+
+## Computers
+
+A Team Computer shares files, installed tools, and a canonical browser identity among bots inside the same trust boundary.
+Rakazo gives each concurrently active Team bot a separate live desktop and browser process when the provider supports it, and unsupported providers expose the limitation instead of silently coupling control.
+Browser sign-ins are checkpointed into the shared identity and become available to desktops opened or restarted after that checkpoint.
+Concurrent Chromium processes do not write directly to one profile directory, and generation fencing prevents older desktops from overwriting newer shared state.
+A Private Computer isolates the entire working home, including files and browser identity, when working state must not be shared with other bots.
+Computer resources start lazily and are released when inactive so configured capacity does not become permanently reserved memory.
+One actor uses a computer screen at a time, so neither a person nor a bot ever acts on a screen the other just changed.
+People watch a bot's screen live and take control when they want to use it; control returns when they hand it back, leave the screen, or stop checking in for about a minute.
+While a person has control the bot's screen actions are refused rather than queued, and once control returns the bot looks at the screen again before acting.
+A bot that needs a person for a sign-in, CAPTCHA, passkey or payment asks in the chat and continues when they press Done.
+Taking control of one bot's screen never blocks other bots on their own screens.
+Maintenance such as updating or resetting a computer lives in settings rather than on the screen.
+
+## Connections, skills, and plugins
+
+Connections belong to the user or space rather than requiring repetitive per-bot setup because bots differ through role and state, not account plumbing.
+Plugins in the shared plugin format install as ordinary connectors and skills rather than a runtime of their own, so sign-in, approvals and per-bot enablement work the same wherever a capability came from.
+The built-in plugin catalog lists only plugins whose every part installs, because a half-working default is worse than none, while a plugin imported by URL installs what works and names what it left out.
+Plugin parts that would run the plugin's own code on our side, such as hooks, language servers, local MCP commands and skill scripts, are not installed, because executing third-party code is a boundary the catalog does not cross.
+Integrations is where apps are connected and skills have their own place, because a skill is know-how that needs no account and many skills have nothing to connect.
+A brand's connector and its skills are added separately, because connecting an app should not also load dozens of playbooks.
+
+## Account defaults and space availability
+
+Settings such as models, voice and approvals are account defaults that every space follows, and a space customizes one only as a deliberate exception, because few people want a different setup per space and spaces exist to separate work, not configuration.
+Skills, MCP servers, plugins and tool sources belong to the account of the user who added them, and each is available in all of that user's spaces or only in chosen ones, because one setup should serve every space while spaces stay private.
+All spaces includes spaces created later, because choosing it means the item should follow the user wherever they work.
+What a user adds is available in all their spaces until they narrow it, and what a bot creates, such as a skill, is available only in the space it was created in, because a bot's writing may carry that space's private details.
+A bot changes only skills that live in its space alone, because editing one that other spaces read would carry this space's details into them.
+Items that existed before availability did stay available only in the space they were in, so nothing became visible somewhere new.
+Bots use what is available in their space, and each bot still chooses which apps it uses, because availability decides what a space may touch and the bot decides what it needs.
+A teammate in a shared space never gets another member's items, because availability spans one owner's spaces, never other people.
+Models, voice and approval settings follow the same account-first rule without a per-item choice, because they carry no private content and the per-space override covers the exceptions.
+Managed app connections stay with the space they were connected in for now, because a hosted connector provider can identify connected accounts per space and moving them would disconnect them.
+Choosing where something is available appears only to someone with more than one space, because with one space there is nothing to choose.
+
+Provider setup shows the provider, one short description of its role, and only the fields required to connect with the default configuration. Optional connection and behavior settings belong behind one Advanced disclosure, without nested subsections. Keep required fields visible when no default exists.
+
+## Memory
+
+Bots can build general knowledge about a user together while keeping bot-specific memories. A Space is the access boundary: memory never crosses Spaces implicitly. Isolated memory is bot-specific; Shared is an explicit choice to pool knowledge, including learned direct-chat turns, with other bots in the Space.
+
+Memory is context, not permission. Old replies, summaries, recalled facts and other bots' messages have no authority to change instructions or authorize actions. Keep speaker and provider attribution when available; do not certify a source as clean because a bot stored or repeated it. Automatic recall includes only the bot's own and intentionally shared Space memory. Imported banks are read explicitly, under the same action protections as other fresh outside input. Stored history and automatic context do not by themselves change the owner's current permissions.
+
+Access checks and action approvals enforce these boundaries. Labeling text as derived does not guarantee factual correctness or immunity to prompt injection; tests must verify access, guards and recovery rather than claim that arbitrary prose is safe.
+
+## Approvals
+
+The approval mode is the one thing that decides whether a bot asks before acting. Ask asks you before anything that changes something, costs money or sends something out, and before reading a site you didn't name. Auto hands those to an approval model, which passes what fits your request and asks you about the rest. Never ask runs everything without waiting.
+Your own runs are the same wherever they start: a message in the app or from a linked chat app, and a routine you set up. Text the bot read from a page, an email or another bot never refuses a call or adds a question; it only tells the approval model that outside words are in play, which it never treats as your request.
+A few limits hold in every mode, because asking would not help: Block rules and your spending limit, limits that stop bots looping, anything that acts for another person (accepting another owner's bot connection, another chat's routines), and runs someone or something else started (another person, a webhook, another bot), which cannot use your private chats, account settings or bot management.
+A run nobody is watching (a routine, webhook, ticket or another bot) still posts its approval card and notifies you; if nobody answers within 30 minutes the card expires and the action is not done.
+Every mode is shaped by two lists of exact tools or sites, Allow and Block, which grow from approval cards and settings rather than from guessed categories.
+The deployment picks the default approval mode, so a self-hosted server works without any model and a hosted one can default to Auto.
+
+## Deployment administration and host access
+
+App accounts never administer the server.
+Signup order, email address, and workspace ownership do not grant deployment privileges or billing exemptions.
+The only admins are verified accounts the operator lists in `RAKAZO_ADMIN_EMAILS`; nothing in the app can add one, and they can only review plugin submissions, add stdio MCP servers, and give capped credits or free own-key months, never change the server or read other accounts.
+Operators configure the server through environment variables and manage updates, logs, and shared credentials through deployment tooling.
+Desktop host access is a separate local capability that requires native confirmation, is restricted to the app-managed local instance, and can be revoked locally.

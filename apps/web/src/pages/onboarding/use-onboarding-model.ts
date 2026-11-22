@@ -1,32 +1,20 @@
 import { useLingui } from "@lingui/react/macro";
-import type { ThinkingLevel } from "@rakazo/contracts";
 import {
-  compatibleEndpointPresets,
-  MAX_MODEL_CONTEXT_WINDOW,
-  MAX_MODEL_MAX_TOKENS,
   ModelHeaderRowsSchema,
-  matchCompatibleEndpointPreset,
   modelHeadersInput,
+  modelRoutingInput,
   OPENAI_COMPATIBLE_PROVIDER_ID,
   openAiCompatibleConnectReady,
-  parseModelContextWindow,
-  parseModelMaxImagesPerPrompt,
-  parseModelMaxTokens,
+  providerDisplayName,
 } from "@rakazo/contracts";
-import {
-  clampCatalogThinkingLevel,
-  compatibleThinkingLevels,
-  connectionFormFields,
-  pickCatalogModelId,
-  popularModelProvidersFirst,
-} from "@rakazo/core";
+import { connectionFormFields, pickCatalogModelId, popularModelProvidersFirst } from "@rakazo/core";
+import { localizeModelEntry } from "@rakazo/i18n/model-provider";
 import { useMemo, useState } from "react";
 import { useCopyText } from "../../lib/copy-text";
-import { providerDisplayName } from "../../lib/localized-provider-hint";
-import type { ModelCatalogEntry } from "../../lib/model-auth";
-import { rpc } from "../../lib/rpc";
-import { useModelOAuthSignIn } from "../../lib/use-model-oauth-signin";
-import { errorText } from "../../lib/user-error";
+import type { ModelCatalogEntry } from "../../lib/models/model-auth";
+import { useModelOAuthSignIn } from "../../lib/models/use-model-oauth-signin";
+import { analyticsSurface } from "../../lib/platform/desktop";
+import { rpc } from "../../lib/query/rpc";
 import { useModelConnectionForm } from "../model-settings/use-model-connection-form";
 
 /** Rakazo credits sit among the providers as the one choice that needs no account of its own. */
@@ -83,26 +71,24 @@ export function useOnboardingModel({
     apiKey,
     apiProtocol,
     baseUrl,
+    connectionErrorText,
+    compatibleKeyRequired,
+    endpointPreset,
     routingReady,
-    contextWindow,
     gatewayId,
+    projectId,
+    region,
     headerRows,
-    needsRouting,
     isOpenAiCompatible,
-    maxImagesPerPrompt,
-    maxTokens,
     modelId,
     modelsForProvider,
     openConnection,
     provider,
-    reasoning,
     selected,
     setError,
     setProvider,
-    supportsImages,
-    thinkingLevel,
   } = form;
-  const [codeCopied, copyOAuthCode] = useCopyText();
+  const [codeCopied, copyText] = useCopyText();
 
   const signIn = useModelOAuthSignIn({
     onClearError: () => setError(null),
@@ -112,6 +98,12 @@ export function useOnboardingModel({
     },
   });
   const { oauthPending, cancelOAuthAttempt, startSubscriptionSignIn } = signIn;
+  const copyOAuthCode = (code: string) => {
+    const loginId = signIn.oauth?.loginId;
+    void copyText(code).then((copied) => {
+      if (copied) signIn.reportSignInStep("code_copied", loginId);
+    });
+  };
 
   const providers = useMemo(() => {
     const seen = new Map<string, ModelCatalogEntry>();
@@ -128,16 +120,12 @@ export function useOnboardingModel({
   const subscriptionSignIn = selected?.signIn !== undefined && providerAuth !== "key";
   const acceptsKey = selected?.auth !== "oauth" && providerAuth !== "sign-in";
   const signInLabel = selected?.oauthLabel ?? t`Sign in`;
-  const endpointPresets = useMemo(() => compatibleEndpointPresets(catalog), [catalog]);
-  const endpointPreset = isOpenAiCompatible
-    ? matchCompatibleEndpointPreset(endpointPresets, baseUrl)
-    : undefined;
   const openAiCompatibleReady = openAiCompatibleConnectReady({
     apiKey,
     baseUrl,
     modelId:
       headerRows !== null && !ModelHeaderRowsSchema.safeParse(headerRows).success ? "" : modelId,
-    keyRequired: Boolean(endpointPreset),
+    keyRequired: compatibleKeyRequired,
   });
   const canSaveModel = Boolean(
     selected &&
@@ -153,7 +141,7 @@ export function useOnboardingModel({
     const optionLabel = (id: string, auth?: ProviderAuth) => {
       if (id === "anthropic" && auth === "key") return t`Anthropic API`;
       if (id === "openai") return t`OpenAI API`;
-      return providerDisplayName(id, byId.get(id)?.providerName ?? id, auth);
+      return providerDisplayName(localizeModelEntry(byId.get(id) ?? { provider: id }), auth);
     };
     const main = [
       ...(billingEnabled ? [{ value: CREDITS_OPTION, label: t`Rakazo credits` }] : []),
@@ -202,7 +190,7 @@ export function useOnboardingModel({
 
   function chooseProvider(value: string) {
     if (value === CREDITS_OPTION) {
-      cancelOAuthAttempt();
+      cancelOAuthAttempt("replaced");
       setProvider("");
       setProviderAuth(undefined);
       setCredits(true);
@@ -219,7 +207,7 @@ export function useOnboardingModel({
     if (option === providerOptionValue(provider, providerAuth) && !presetBaseUrl && !endpointPreset)
       return;
     const [nextProvider = option, auth] = option.split(":") as [string, ProviderAuth?];
-    cancelOAuthAttempt();
+    cancelOAuthAttempt("replaced");
     setProviderAuth(auth);
     setManualModelId(false);
     const nextModelId =
@@ -235,14 +223,8 @@ export function useOnboardingModel({
         modelId: nextModelId,
         presetBaseUrl,
       }),
+      presetBaseUrl,
     );
-  }
-
-  function stagedThinkingLevel(): ThinkingLevel | null {
-    return clampCatalogThinkingLevel(
-      thinkingLevel,
-      reasoning ? compatibleThinkingLevels(apiProtocol) : [],
-    ) as ThinkingLevel | null;
   }
 
   async function saveModel() {
@@ -250,65 +232,41 @@ export function useOnboardingModel({
     setError(null);
     try {
       if (isOpenAiCompatible) {
-        const parsedMaxImagesPerPrompt = parseModelMaxImagesPerPrompt(
-          maxImagesPerPrompt,
-          supportsImages,
-        );
-        if (supportsImages && maxImagesPerPrompt.trim() && parsedMaxImagesPerPrompt === undefined) {
-          setError(t`Enter a whole number from 1 to 1000 for the image limit.`);
-          return;
-        }
-        const maxImagesPerPromptInput =
-          supportsImages && !maxImagesPerPrompt.trim() ? null : parsedMaxImagesPerPrompt;
-
-        const parsedMaxTokens = parseModelMaxTokens(maxTokens);
-        if (parsedMaxTokens === undefined) {
-          setError(
-            t`Enter a whole number from 1 to ${MAX_MODEL_MAX_TOKENS} for maximum output tokens.`,
-          );
-          return;
-        }
-        const parsedContextWindow = parseModelContextWindow(contextWindow);
-        if (parsedContextWindow === undefined) {
-          setError(
-            t`Enter a whole number from 1 to ${MAX_MODEL_CONTEXT_WINDOW} for the context limit.`,
-          );
-          return;
-        }
         await rpc.models.connect({
           provider,
           baseUrl: baseUrl.trim(),
           apiProtocol,
           headers: modelHeadersInput(headerRows),
           modelId: modelId.trim(),
-          reasoning,
-          thinkingLevel: stagedThinkingLevel(),
-          maxTokens: parsedMaxTokens,
-          contextWindow: parsedContextWindow,
-          supportsImages,
-          maxImagesPerPrompt: maxImagesPerPromptInput,
           apiKey: apiKey.trim() || undefined,
           label: selected?.providerName ?? provider,
+          surface: analyticsSurface(),
         });
       } else if (apiKey) {
         await rpc.models.connect({
           provider,
           apiKey,
-          ...(needsRouting ? { accountId: accountId.trim(), gatewayId: gatewayId.trim() } : {}),
+          ...modelRoutingInput(selected?.routingFields, {
+            accountId,
+            gatewayId,
+            projectId,
+            region,
+          }),
           modelId,
           label: selected?.providerName ?? provider,
+          surface: analyticsSurface(),
         });
       }
       onConnected();
     } catch (err) {
-      setError(errorText(err, t`Could not save model`));
+      setError(connectionErrorText(err, t`Could not save model`));
     }
   }
 
   async function fundWithCredits() {
     setError(null);
     try {
-      await rpc.billing.selectFunding({ funding: "credits" });
+      await rpc.billing.selectFunding({ funding: "credits", surface: analyticsSurface() });
       window.location.assign("/onboarding");
     } catch {
       setError(t`Could not open billing`);

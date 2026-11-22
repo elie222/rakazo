@@ -12,9 +12,13 @@ Download it from [rakazo.com](https://rakazo.com). The Linux AppImage needs FUSE
 The first time it opens, the app asks which server to use:
 
 - **Rakazo Cloud**: sign in to your rakazo.com account.
-- **This computer**: run your own Rakazo locally in Docker. If Docker isn't installed, the app links
-  to Docker Desktop, OrbStack and Docker Engine. Everything, including your bots' computers, then
-  runs on your machine. It is yours alone: once you create your account, it accepts no other.
+- **This computer**: run your own Rakazo locally in Docker. If Docker isn't installed, the app offers
+  the Docker Desktop download (Docker Engine on Linux) and carries on by itself once Docker is
+  installed and open; if Docker is installed but stopped, the app opens it. Everything, including
+  your bots' computers, then
+  runs on your machine. It is yours alone: once you create your account, it accepts no other, and
+  only this computer can reach it, so the mobile app can't connect to it
+  ([details](./self-host-clients.md#desktop-this-computer-servers)).
 - **Existing instance**: connect to a Rakazo server you or your team already run. Enter its
   **Server address** and choose **Check connection**.
 
@@ -23,7 +27,7 @@ Windows and Linux).
 
 > [!NOTE]
 > A local server keeps running after you quit the app, so routines still run. Choose
-> **Stop Local Stack** in the app menu to shut it down.
+> **Quit and Stop Bots** in the app menu to shut it down.
 
 ## Let bots use this computer
 
@@ -34,10 +38,11 @@ files.
   their own isolated computers, or **Use this Mac** (**Use this computer** on Windows and Linux) to
   let them work directly on yours. **Computer Access…** in the app menu changes this later, and
   **Revoke Local Computer Access** turns it off.
-- With any server, turn on **Let bots use this computer** in **Settings → General** under
-  **Computers**. Your computer then shows as **Connected** or **Offline** there. Access belongs to
-  the account that turned it on and ends when that account signs out, resets its password or signs
-  out everywhere. Signing back in to the same account restores it without asking again.
+- With any HTTPS server, or a loopback server, turn on **Let bots use this computer**
+  in **Settings → Computers** under **Your devices**. Your computer then shows as **Connected** or
+  **Offline** there. Access belongs to the account that turned it on and ends when that account
+  signs out, resets its password or signs out everywhere. Signing back in to the same account
+  restores it without asking again.
 
 Either way, the app asks **Allow bots to use this computer?** before access is granted. See
 [The bot's computer](./computer.md#use-your-own-computer).
@@ -66,7 +71,9 @@ you are.
 - Cmd+N: create a bot, group or space.
 - Cmd+Shift+N (desktop app): start a group chat.
 - Cmd+K: open the command menu to jump to a bot, page or setting, or run an action.
-- Cmd+Shift+M: connect apps.
+- Cmd+Shift+A (desktop app): connect apps.
+- Cmd+Shift+M: choose the chat's model, when the model shows beside Send.
+- Cmd+Shift+E: switch to the model's next thinking level.
 - Cmd+Shift+, : open the chat's details.
 - Cmd+I: jump to the message box.
 - Cmd+D in an empty message box: dictate. Press it again to send.
@@ -74,7 +81,8 @@ you are.
 - Ctrl+Tab / Ctrl+Shift+Tab (desktop app): switch to the next or previous bot.
 - Cmd/Ctrl+Shift+Down / Cmd/Ctrl+Shift+Up (browser): switch to the next or previous bot.
 - Cmd+[ / Cmd+] (Alt+Left / Alt+Right on Windows and Linux, desktop app): go back or forward.
-- Cmd+F (desktop app): search.
+- Cmd+F (desktop app): find text in the open chat.
+- Cmd+Shift+F (desktop app): search for bots in the sidebar.
 - Cmd+B: show or hide the sidebar.
 - Cmd+, (desktop app): open Settings.
 - Esc in the message box: stop the bot's reply.

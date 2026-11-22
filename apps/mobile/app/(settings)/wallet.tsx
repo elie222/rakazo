@@ -1,91 +1,76 @@
-import type { Me, PaymentWalletStatus } from "@rakazo/contracts";
+import { ph } from "@lingui/core/macro";
+import { useLingui } from "@lingui/react/macro";
+import { writeSaved } from "@rakazo/core/query";
 import { useFocusEffect } from "expo-router";
-import { useCallback, useRef, useState } from "react";
-import { Alert, AppState, Linking, ScrollView, StyleSheet } from "react-native";
-import { LoadFailure } from "../../components/load-failure";
-import { SettingsGroup, SettingsRow, useStackedSettings } from "../../components/settings-group";
-import { rpc } from "../../lib/api";
-import { useI18n } from "../../lib/i18n";
-import { useSideInsets } from "../../lib/side-insets";
-import { errorText } from "../../lib/user-error";
+import { useCallback, useEffect, useState } from "react";
+import { Alert, Linking, ScrollView, StyleSheet } from "react-native";
+import {
+  SettingsGroup,
+  SettingsRow,
+  useStackedSettings,
+} from "../../components/settings/settings-group";
+import { LoadFailure } from "../../components/ui/load-failure";
+import { errorText } from "../../lib/api/user-error";
+import { useSideInsets } from "../../lib/layout/side-insets";
+import { openExternalUrl } from "../../lib/platform/open-url";
+import { accountRpcQuery, formRead, queryClient, useSave } from "../../lib/query/query";
+import { useScreenQuery } from "../../lib/query/screen-query";
+import { ACCOUNT_SETTINGS } from "../../lib/query/settings-target";
 
 /** How often an open sign-in asks whether the provider finished it. */
 export const WALLET_POLL_MS = 3_000;
 
-type Provider = NonNullable<Me["paymentWalletProvider"]>;
-
 /** Connects the wallet the user's bots spend from. */
 export default function WalletSettings() {
-  const { t } = useI18n();
+  const { t } = useLingui();
   const sideInsets = useSideInsets();
   const stacked = useStackedSettings();
-  const [provider, setProvider] = useState<Provider | null>(null);
-  const [status, setStatus] = useState<PaymentWalletStatus | null>(null);
-  const [loadError, setLoadError] = useState<string | null>(null);
-  const [pending, setPending] = useState(false);
-  // Bumped by connect and disconnect, so a read started before one cannot overwrite its result.
-  const generation = useRef(0);
-
-  const load = useCallback(async () => {
-    const started = generation.current;
-    const [me, next] = await Promise.all([rpc("me"), rpc("paymentWallet/status")]);
-    setProvider(me.paymentWalletProvider ?? null);
-    if (started === generation.current) setStatus(next);
-    setLoadError(null);
-  }, []);
-  const reload = useCallback(
-    () => void load().catch((err) => setLoadError(errorText(err, t("Could not load wallet")))),
-    [load, t],
-  );
-
-  // Returning from the provider's page reads again, which also finishes the sign-in.
-  useFocusEffect(
-    useCallback(() => {
-      reload();
-      const subscription = AppState.addEventListener("change", (state) => {
-        if (state === "active") reload();
-      });
-      return () => subscription.remove();
-    }, [reload]),
-  );
+  // Connect, cancel and disconnect are offered from the status on screen, so each visit reads it
+  // afresh. Returning from the provider's page reads again, which also finishes the sign-in.
+  const statusRead = formRead(accountRpcQuery("paymentWallet/status"));
+  const meQuery = useScreenQuery(formRead(accountRpcQuery("me")));
+  const statusQuery = useScreenQuery(statusRead);
+  const me = meQuery.data;
+  const provider = me?.paymentWalletProvider ?? null;
+  // A copy an earlier visit left is not what an action may be offered from.
+  const status = (statusQuery.isFetchedAfterMount && statusQuery.data) || null;
+  const readError = meQuery.error ?? statusQuery.error;
+  const loaded = Boolean(me && status);
+  // A failed read stays on screen while its retry is in flight, until that one answers.
+  const [loadFailure, setLoadFailure] = useState<Error | null>(null);
+  useEffect(() => {
+    if (readError) setLoadFailure(readError);
+    else if (loaded) setLoadFailure(null);
+  }, [readError, loaded]);
+  const { refetch: readMe } = meQuery;
+  const { refetch: readStatus } = statusQuery;
+  const reload = () => {
+    void readMe();
+    void readStatus();
+  };
 
   // Each read of an open sign-in advances it; stops once it settles or the screen closes.
   const connecting = status?.status === "connecting";
   useFocusEffect(
     useCallback(() => {
       if (!connecting) return;
-      let active = true;
-      const timer = setInterval(() => {
-        const started = generation.current;
-        void rpc("paymentWallet/status")
-          .then((next) => {
-            if (active && started === generation.current) setStatus(next);
-          })
-          .catch(() => undefined);
-      }, WALLET_POLL_MS);
-      return () => {
-        active = false;
-        clearInterval(timer);
-      };
-    }, [connecting]),
+      const timer = setInterval(() => void readStatus({ cancelRefetch: false }), WALLET_POLL_MS);
+      return () => clearInterval(timer);
+    }, [connecting, readStatus]),
   );
 
-  async function act(action: () => Promise<PaymentWalletStatus>) {
-    if (pending) return;
-    setPending(true);
-    generation.current += 1;
-    try {
-      const next = await action();
-      setStatus(next);
+  const change = useSave({
+    target: ACCOUNT_SETTINGS,
+    save: async (action: "connect" | "disconnect", send) => {
+      const next = await send(`paymentWallet/${action}`, undefined);
+      // A read that started before the change never puts back what it replaced.
+      await writeSaved(queryClient, statusRead.queryKey, () => next);
       if (next.status === "connecting") await Linking.openURL(next.verificationUrl);
-    } catch (err) {
-      Alert.alert(errorText(err, t("Could not update wallet")));
-    } finally {
-      setPending(false);
-    }
-  }
-
-  const disconnect = () => void act(() => rpc("paymentWallet/disconnect"));
+    },
+    onFailed: (err) => Alert.alert(errorText(err, t`Could not update wallet`)),
+  });
+  const pending = change.pending;
+  const disconnect = () => change.run("disconnect");
 
   return (
     <ScrollView
@@ -93,15 +78,17 @@ export default function WalletSettings() {
       contentContainerStyle={[styles.content, stacked && styles.compactContent]}
       contentInsetAdjustmentBehavior="automatic"
     >
-      {loadError && !status ? <LoadFailure message={loadError} onRetry={reload} /> : null}
+      {loadFailure && !loaded ? (
+        <LoadFailure message={errorText(loadFailure, t`Could not load wallet`)} onRetry={reload} />
+      ) : null}
       {provider && status ? (
         <SettingsGroup>
           {status.status === "disconnected" ? (
             <SettingsRow
               accessibilityRole="button"
               disabled={pending}
-              onPress={() => void act(() => rpc("paymentWallet/connect"))}
-              title={t("Connect {name}", { name: provider.name })}
+              onPress={() => change.run("connect")}
+              title={t`Connect ${ph({ name: provider.name })}`}
             />
           ) : (
             <SettingsRow
@@ -114,14 +101,14 @@ export default function WalletSettings() {
               <SettingsRow
                 accessibilityRole="button"
                 disabled={pending}
-                onPress={() => void Linking.openURL(status.verificationUrl)}
-                title={t("Open")}
+                onPress={() => void openExternalUrl(status.verificationUrl)}
+                title={t`Open`}
               />
               <SettingsRow
                 accessibilityRole="button"
                 disabled={pending}
                 onPress={disconnect}
-                title={t("Cancel")}
+                title={t`Cancel`}
               />
             </>
           ) : null}
@@ -131,12 +118,12 @@ export default function WalletSettings() {
               destructive
               disabled={pending}
               onPress={() =>
-                Alert.alert(t("Disconnect {name}?", { name: provider.name }), undefined, [
-                  { text: t("Cancel"), style: "cancel" },
-                  { text: t("Disconnect"), style: "destructive", onPress: disconnect },
+                Alert.alert(t`Disconnect ${ph({ name: provider.name })}?`, undefined, [
+                  { text: t`Cancel`, style: "cancel" },
+                  { text: t`Disconnect`, style: "destructive", onPress: disconnect },
                 ])
               }
-              title={t("Disconnect")}
+              title={t`Disconnect`}
             />
           ) : null}
         </SettingsGroup>

@@ -48,6 +48,17 @@ export function ChartTip({ tip, width }: { tip: TipState | null; width: number }
  */
 export function useActive(count: number, indexAt: (x: number, y: number) => number | null) {
   const [active, setActive] = useState<number | null>(null);
+  const [pointerTarget, setPointerTarget] = useState<Element | null>(null);
+  useEffect(() => {
+    const target = pointerTarget;
+    if (active === null || !target) return;
+    const dismissOutside = (event: globalThis.PointerEvent) => {
+      if (!event.composedPath().includes(target)) setActive(null);
+    };
+    const document = target.ownerDocument;
+    document.addEventListener("pointerdown", dismissOutside, true);
+    return () => document.removeEventListener("pointerdown", dismissOutside, true);
+  }, [active, pointerTarget]);
   const current = active !== null && active < count ? active : null;
   const onPointerMove = (event: PointerEvent<Element>) => {
     const box = event.currentTarget.getBoundingClientRect();
@@ -79,8 +90,15 @@ export function useActive(count: number, indexAt: (x: number, y: number) => numb
       tabIndex: count > 0 ? 0 : undefined,
       onPointerMove,
       // A tap on a touch screen picks the item under the finger, as hovering does.
-      onPointerDown: onPointerMove,
-      onPointerLeave: () => setActive(null),
+      onPointerDown: (event: PointerEvent<Element>) => {
+        setPointerTarget(event.currentTarget);
+        onPointerMove(event);
+      },
+      onPointerLeave: (event: PointerEvent<Element>) => {
+        // Touch pointers leave when the finger lifts, not just when leaving the chart.
+        if (event.pointerType !== "touch") setActive(null);
+      },
+      onPointerCancel: () => setActive(null),
       onKeyDown,
       onBlur: () => setActive(null),
     },
@@ -144,20 +162,29 @@ export function formatValue(
       // A broken formatter falls back to the plain figure rather than losing the chart.
     }
   }
-  const text = words.number(
-    value,
-    Math.abs(value) >= 100_000
-      ? { notation: "compact", maximumFractionDigits: 1 }
-      : { maximumFractionDigits: 2 },
-  );
+  const magnitude = Math.abs(value);
+  let options: Intl.NumberFormatOptions = { maximumFractionDigits: 2 };
+  if (magnitude >= 100_000) {
+    options = { notation: "compact", maximumFractionDigits: 1 };
+  } else if (magnitude > 0 && magnitude < 0.01) {
+    // Keep tiny values distinct from zero without letting their leading zeros fill the axis.
+    options = {
+      notation: magnitude < 0.000001 ? "scientific" : "standard",
+      maximumSignificantDigits: 3,
+    };
+  }
+  const text = words.number(value, options);
   return unit ? withUnit(text, unit) : text;
 }
 
 // Currency symbols lead the figure, short scale and percent marks follow it closely, and words
-// ("ms", "users") follow after a space: $12, 40%, 80K, 120 ms.
+// ("ms", "users") follow after a space: $12, 40%, 80K, 120 ms. A currency goes after any sign
+// the locale puts first, including bidi marks and a true minus: -$12, \u200E-$12 (he), \u2212$12 (sv).
 function withUnit(text: string, unit: string): string {
-  if (/^\p{Sc}$/u.test(unit))
-    return text.startsWith("-") ? `-${unit}${text.slice(1)}` : `${unit}${text}`;
+  if (/^\p{Sc}$/u.test(unit)) {
+    const sign = /^[\u200E\u200F\u061C]*[-\u2212]/.exec(text)?.[0];
+    return sign ? `${sign}${unit}${text.slice(sign.length)}` : `${unit}${text}`;
+  }
   if (/^(?:%|‰|[kKMBT]|bn)$/.test(unit)) return `${text}${unit}`;
   return `${text} ${unit}`;
 }

@@ -1,6 +1,8 @@
 // @vitest-environment jsdom
+
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { expectLinearTime } from "@rakazo/contracts/test-timing";
 import { pageKitPalette } from "@rakazo/ui-tokens";
 import type { ReactElement } from "react";
 import { act } from "react";
@@ -23,6 +25,7 @@ import {
   ProsCons,
   Quote,
   Sum,
+  slugify,
   TableOfContents,
 } from "./text.js";
 import { computeDAGLayout, useSource, useTheme } from "./theme.js";
@@ -165,6 +168,46 @@ describe("structure", () => {
     expect(plain.indexOf("Read first")).toBeLessThan(plain.indexOf("board"));
   });
 
+  it("allows keyboard clicks with selected text while preserving pointer selection protection", () => {
+    const host = mount(
+      <Page title="t">
+        <Text>Select this text</Text>
+        <Section heading="Details" collapsible>
+          <Text>hidden body</Text>
+        </Section>
+      </Page>,
+    );
+    const toggle = host.querySelector<HTMLButtonElement>(".rk-section-toggle")!;
+    const fold = host.querySelector(".rk-section-fold")!;
+    toggle.focus();
+    const selection = window.getSelection()!;
+    const range = document.createRange();
+    range.selectNodeContents(host.querySelector("p")!);
+    selection.removeAllRanges();
+    selection.addRange(range);
+    try {
+      expect(selection.toString()).toBe("Select this text");
+      // Native Enter/Space activation dispatches a click with detail zero.
+      act(() => toggle.dispatchEvent(new MouseEvent("click", { bubbles: true, detail: 0 })));
+      expect(toggle.getAttribute("aria-expanded")).toBe("true");
+      expect(fold.hasAttribute("inert")).toBe(false);
+      act(() => toggle.dispatchEvent(new MouseEvent("click", { bubbles: true, detail: 0 })));
+      expect(toggle.getAttribute("aria-expanded")).toBe("false");
+      expect(fold.hasAttribute("inert")).toBe(true);
+
+      range.selectNodeContents(toggle.querySelector("span")!);
+      selection.removeAllRanges();
+      selection.addRange(range);
+      act(() => toggle.dispatchEvent(new MouseEvent("click", { bubbles: true, detail: 1 })));
+      expect(toggle.getAttribute("aria-expanded")).toBe("false");
+      selection.removeAllRanges();
+      act(() => toggle.dispatchEvent(new MouseEvent("click", { bubbles: true, detail: 1 })));
+      expect(toggle.getAttribute("aria-expanded")).toBe("true");
+    } finally {
+      selection.removeAllRanges();
+    }
+  });
+
   it("folds a collapsible section from its heading button and starts open only on request", () => {
     const host = mount(
       <Page title="t">
@@ -187,6 +230,30 @@ describe("structure", () => {
     expect(host.querySelectorAll(".rk-section-fold[inert]")).toHaveLength(0);
     // A plain section has no toggle.
     expect(html(<Section heading="Plain">x</Section>)).not.toContain("rk-section-toggle");
+  });
+});
+
+describe("slugify", () => {
+  it.each([
+    ["ダッシュボード", "ダッシュボード"],
+    ["नमस्ते", "नमस्ते"],
+    ["สวัสดี", "สวัสดี"],
+    ["ガ", "ガ"],
+    ["Café", "cafe"],
+    ["Hello 世界", "hello-世界"],
+  ])("keeps the anchor for %s readable", (heading, slug) => {
+    expect(slugify(heading)).toBe(slug);
+  });
+
+  it("keeps a composed kana distinct from its base character", () => {
+    expect(slugify("ガ")).not.toBe(slugify("カ"));
+  });
+
+  it("caps a long astral heading by code point, leaving it well formed", () => {
+    const slug = slugify("𠀀".repeat(70));
+    // encodeURIComponent throws on a lone surrogate, so this checks well-formedness.
+    expect(() => encodeURIComponent(slug)).not.toThrow();
+    expect(Array.from(slug)).toHaveLength(64);
   });
 });
 
@@ -220,7 +287,9 @@ describe("TableOfContents", () => {
     const host = mount(<TableOfContents items={items.slice(0, 5)} title="Contents" />);
     expect(host.querySelector("nav")!.getAttribute("aria-label")).toBe("Contents");
     expect(host.querySelector('a[aria-current="location"]')!.textContent).toBe("Part 1");
-    expect(host.querySelector<HTMLAnchorElement>('a[href="#p5"]')!.style.paddingLeft).toBe("22px");
+    expect(host.querySelector<HTMLAnchorElement>('a[href="#p5"]')!.style.paddingInlineStart).toBe(
+      "22px",
+    );
     act(() => host.querySelector<HTMLAnchorElement>('a[href="#p2"]')!.click());
     expect(target.scrollIntoView).toHaveBeenCalledOnce();
     target.remove();
@@ -429,21 +498,55 @@ describe("helpers", () => {
 });
 
 describe("inline links", () => {
+  it.each([
+    [
+      "https://en.wikipedia.org/wiki/Rust_(programming_language)",
+      "https://en.wikipedia.org/wiki/Rust_(programming_language)",
+    ],
+    ["https://example.org/a_(b_(c))", "https://example.org/a_(b_(c))"],
+    ["https://[2001:db8::1]", "https://[2001:db8::1]/"],
+    ["https://example.org/items[0]", "https://example.org/items[0]"],
+    ["https://example.org/a)b(c)", "https://example.org/a)b(c)"],
+    ["www.example.org/a_(b)", "https://www.example.org/a_(b)"],
+  ])("preserves paired URL delimiters in %s", (url, href) => {
+    const host = mount(<Text>{`See (${url}).`}</Text>);
+    const link = host.querySelector("a");
+    expect(link?.getAttribute("href")).toBe(href);
+    expect(link?.textContent).toBe(url);
+    expect(host.textContent).toBe(`See (${url}).`);
+  });
+
+  it("leaves unmatched closing brackets and sentence punctuation outside links", () => {
+    const host = mount(
+      <Text>{"See [https://example.org/a_(b)]., and https://example.org/plain)."}</Text>,
+    );
+    expect([...host.querySelectorAll("a")].map((link) => link.textContent)).toEqual([
+      "https://example.org/a_(b)",
+      "https://example.org/plain",
+    ]);
+  });
+
+  it("opens the full paired URL through the host", () => {
+    const url = "https://en.wikipedia.org/wiki/Rust_(programming_language)";
+    const postMessage = vi.spyOn(window.parent, "postMessage").mockImplementation(() => {});
+    try {
+      const host = mount(<Text>{url}</Text>);
+      act(() => host.querySelector("a")!.click());
+      expect(postMessage).toHaveBeenCalledWith({ type: "rakazo-page:open-link", url }, "*");
+    } finally {
+      postMessage.mockRestore();
+    }
+  });
+
   it("trims a link's trailing punctuation in linear time, however long the run", () => {
     const html = (text: string) => renderToStaticMarkup(<span>{inlineMarkup(text)}</span>);
     expect(html("See https://example.com/a).")).toContain('href="https://example.com/a"');
     for (const input of [
-      `https://a.co/${".".repeat(50_000)}x`,
-      `https://a.co/${"]".repeat(50_000)}x`,
-      `https://a.co/${".)".repeat(25_000)}x`,
+      `https://a.co/${".".repeat(500_000)}x`,
+      `https://a.co/${"]".repeat(500_000)}x`,
+      `https://a.co/${".)".repeat(250_000)}x`,
     ]) {
-      // Best of three, so a busy machine cannot fail it; the quadratic trim took seconds.
-      const runs = [0, 1, 2].map(() => {
-        const started = performance.now();
-        inlineMarkup(input);
-        return performance.now() - started;
-      });
-      expect(Math.min(...runs)).toBeLessThan(50);
+      expectLinearTime(() => inlineMarkup(input));
     }
   });
 });

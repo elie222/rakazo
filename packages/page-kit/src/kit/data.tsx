@@ -1,5 +1,5 @@
 import type { CSSProperties, ReactNode } from "react";
-import { isValidElement, useContext, useEffect, useRef, useState } from "react";
+import { isValidElement, useCallback, useContext, useState } from "react";
 import { finite } from "./dataviz.js";
 import { Inline } from "./inline.js";
 import { objectItems } from "./items.js";
@@ -274,7 +274,9 @@ export type TableCell =
   | { text: ReactNode; tone?: Tone };
 
 function cellContent(cell: TableCell): ReactNode {
-  if (cell === null || typeof cell !== "object" || isValidElement(cell)) return cell as ReactNode;
+  if (cell === null || typeof cell !== "object" || isValidElement(cell) || Array.isArray(cell)) {
+    return cell as ReactNode;
+  }
   if (!("text" in cell)) return null;
   const tone = toneClass(cell.tone);
   return tone ? <span className={tone}>{cell.text}</span> : cell.text;
@@ -303,51 +305,76 @@ const LONG_TABLE = 15;
 const PAGE_ROWS = 200;
 
 function cellText(cell: TableCell): string {
+  if (Array.isArray(cell)) return cell.map((item) => cellText(item)).join("");
   if (typeof cell === "string" || typeof cell === "number") return String(cell);
   if (cell && typeof cell === "object" && !isValidElement(cell) && "text" in cell) {
     return cellText(cell.text as TableCell);
   }
   if (isValidElement(cell)) {
     const children = (cell.props as { children?: unknown }).children;
-    return typeof children === "string" || typeof children === "number" ? String(children) : "";
+    return cellText(children as TableCell);
   }
   return "";
 }
 
 /** "$1,200", "-4.5%" and "12k" sort as the numbers they show. */
-function sortKey(cell: TableCell): number | string {
+function sortKey(cell: TableCell, usesDecimalComma: boolean): number | string {
   if (typeof cell === "number") return cell;
   const raw = cellText(cell).trim();
   if (FIGURE.test(raw)) {
     const scale = /k$/i.test(raw) ? 1e3 : /M$/.test(raw) ? 1e6 : /B$/.test(raw) ? 1e9 : 1;
-    const number = Number.parseFloat(raw.replace(/[^\d.\-\u2212]/g, "").replace("\u2212", "-"));
+    const literal = raw.replace(/[^\d,.\-\u2212]/g, "").replace("\u2212", "-");
+    // Keep a lone three-digit group such as "1,234" as thousands; only flip clear decimals.
+    const decimalComma =
+      usesDecimalComma && /^-?(?:\d+,\d{1,2}|\d{1,3}(?:\.\d{3})+,\d+)$/.test(literal);
+    const normalized = decimalComma
+      ? literal.replaceAll(".", "").replace(",", ".")
+      : literal.replaceAll(",", "");
+    const number = Number.parseFloat(normalized);
     if (Number.isFinite(number)) return number * scale;
   }
   return raw.toLowerCase();
 }
 
 /** Fades the edge a wide table can still scroll towards. */
-function useScrollEdges() {
-  const ref = useRef<HTMLDivElement>(null);
+function useScrollEdges(direction: string) {
   const [edges, setEdges] = useState({ start: false, end: false });
-  useEffect(() => {
-    const element = ref.current;
-    if (!element) return;
-    const update = () => {
-      const start = element.scrollLeft > 1;
-      const end = element.scrollLeft + element.clientWidth < element.scrollWidth - 1;
-      setEdges((old) => (old.start === start && old.end === end ? old : { start, end }));
-    };
-    update();
-    element.addEventListener("scroll", update, { passive: true });
-    const observer = typeof ResizeObserver === "undefined" ? undefined : new ResizeObserver(update);
-    observer?.observe(element);
-    return () => {
-      element.removeEventListener("scroll", update);
-      observer?.disconnect();
-    };
-  }, []);
+  const ref = useCallback(
+    (element: HTMLDivElement | null) => {
+      if (!element) return;
+      const update = () => {
+        const max = Math.max(0, element.scrollWidth - element.clientWidth);
+        // The mask fades physical left/right edges. RTL offsets run from -max to zero.
+        const left = Math.min(
+          max,
+          Math.max(
+            0,
+            element.scrollLeft + (getComputedStyle(element).direction === "rtl" ? max : 0),
+          ),
+        );
+        const start = left > 1;
+        const end = left < max - 1;
+        setEdges((old) => (old.start === start && old.end === end ? old : { start, end }));
+      };
+      update();
+      element.addEventListener("scroll", update, { passive: true });
+      const observer =
+        typeof ResizeObserver === "undefined" ? undefined : new ResizeObserver(update);
+      observer?.observe(element);
+      return () => {
+        element.removeEventListener("scroll", update);
+        observer?.disconnect();
+      };
+    },
+    [direction],
+  );
   return { ref, edges };
+}
+
+function hasColumnHeader(column: ReactNode): boolean {
+  if (Array.isArray(column)) return column.some(hasColumnHeader);
+  if (typeof column === "string") return column.trim() !== "";
+  return column != null && typeof column !== "boolean";
 }
 
 export function Table({
@@ -371,7 +398,7 @@ export function Table({
   const [sort, setSort] = useState<{ column: number; descending: boolean } | null>(null);
   const [query, setQuery] = useState("");
   const [limit, setLimit] = useState(PAGE_ROWS);
-  const scroll = useScrollEdges();
+  const scroll = useScrollEdges(words.dir);
   if (heads.length === 0 && body.length === 0) return null;
   const width = Math.max(heads.length, ...body.map((row) => row.length));
   const indexes = Array.from({ length: width }, (_, index) => index);
@@ -408,11 +435,15 @@ export function Table({
       row.some((cell) => cellText(cell).toLowerCase().includes(needle)),
     );
   }
-  if (sort) {
-    const direction = sort.descending ? -1 : 1;
+  const activeSort = sortable && sort && hasColumnHeader(heads[sort.column]) ? sort : null;
+  if (activeSort) {
+    const direction = activeSort.descending ? -1 : 1;
+    const usesDecimalComma = new Intl.NumberFormat(words.intl)
+      .formatToParts(1.5)
+      .some(({ type, value }) => type === "decimal" && value === ",");
     shown = [...shown].sort((a, b) => {
-      const x = sortKey(a.row[sort.column]);
-      const y = sortKey(b.row[sort.column]);
+      const x = sortKey(a.row[activeSort.column], usesDecimalComma);
+      const y = sortKey(b.row[activeSort.column], usesDecimalComma);
       if (typeof x === "number" && typeof y === "number") return (x - y) * direction;
       // Figures come before words, and after them when the order is reversed.
       if (typeof x === "number") return -direction;
@@ -463,17 +494,18 @@ export function Table({
               <tr>
                 {indexes.map((index) => {
                   const column = heads[index];
-                  const sorted = sort?.column === index;
+                  const canSort = sortable && hasColumnHeader(column);
+                  const sorted = activeSort?.column === index;
                   return (
                     <th
                       key={index}
                       scope="col"
                       className={aligns[index] ? `rk-align-${aligns[index]}` : undefined}
                       aria-sort={
-                        sorted ? (sort.descending ? "descending" : "ascending") : undefined
+                        sorted ? (activeSort.descending ? "descending" : "ascending") : undefined
                       }
                     >
-                      {sortable ? (
+                      {canSort ? (
                         <button type="button" className="rk-sort" onClick={() => press(index)}>
                           {column}
                           <span
@@ -481,7 +513,7 @@ export function Table({
                             aria-hidden="true"
                             data-on={sorted || undefined}
                           >
-                            {sorted && sort.descending ? "\u2193" : "\u2191"}
+                            {sorted && activeSort.descending ? "\u2193" : "\u2191"}
                           </span>
                         </button>
                       ) : (
@@ -527,7 +559,8 @@ export function Table({
 
 export type SegmentedOption =
   | string
-  | { value: string; label?: ReactNode; count?: number | string };
+  | number
+  | { value: string | number; label?: ReactNode; count?: number | string };
 
 /** More options than this is a list, not tabs; the chosen one is always kept. */
 const SEGMENTED_MAX = 200;
@@ -538,10 +571,11 @@ export function Segmented({
   onChange,
 }: {
   options?: SegmentedOption[];
-  value?: string;
+  value?: string | number;
   onChange?: (value: string) => void;
 }) {
   type Item = { value: string; label: ReactNode; count?: number | string };
+  const current = value === undefined || value === null ? undefined : String(value);
   const items = (Array.isArray(options) ? options : []).flatMap((option): Item[] =>
     typeof option === "string" || typeof option === "number"
       ? [{ value: String(option), label: String(option) }]
@@ -550,7 +584,7 @@ export function Segmented({
         : [],
   );
   const shown = items.slice(0, SEGMENTED_MAX);
-  const chosen = items.findIndex((item) => item.value === value);
+  const chosen = items.findIndex((item) => item.value === current);
   if (chosen >= SEGMENTED_MAX) shown[SEGMENTED_MAX - 1] = items[chosen]!;
   return (
     <fieldset className="rk-segmented">
@@ -558,7 +592,7 @@ export function Segmented({
         <button
           key={item.value}
           type="button"
-          aria-pressed={item.value === value}
+          aria-pressed={item.value === current}
           onClick={() => onChange?.(item.value)}
         >
           <span className="rk-segment">

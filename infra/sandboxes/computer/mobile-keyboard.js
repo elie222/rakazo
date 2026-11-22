@@ -1,23 +1,32 @@
 const DEFAULT_INPUT_LENGTH = 100;
 
-/** Return the remote key changes represented by a mobile input event. */
+const isHighSurrogate = (code) => code >= 0xd800 && code <= 0xdbff;
+const isLowSurrogate = (code) => code >= 0xdc00 && code <= 0xdfff;
+
+/**
+ * Return the remote key changes represented by a mobile input event. The remote receives one key
+ * per code point, so Backspaces are counted in code points (one emoji is one Backspace) and the
+ * changed text never starts with half of a surrogate pair.
+ */
 export function mobileInputChanges(oldValue, newValue, selectionStart = newValue.length) {
   const newLength = Math.max(selectionStart ?? newValue.length, newValue.length);
-  const oldLength = oldValue.length;
-  let inputCount = newLength - oldLength;
-  let backspaces = inputCount < 0 ? -inputCount : 0;
-
-  for (let index = 0; index < Math.min(oldLength, newLength); index += 1) {
-    if (newValue.charAt(index) !== oldValue.charAt(index)) {
-      inputCount = newLength - index;
-      backspaces = oldLength - index;
-      break;
-    }
+  const limit = Math.min(oldValue.length, newLength);
+  let prefix = 0;
+  while (prefix < limit && oldValue.charCodeAt(prefix) === newValue.charCodeAt(prefix)) {
+    prefix += 1;
+  }
+  // A change that starts between the halves of a pair keeps the whole pair in the change.
+  if (
+    prefix > 0 &&
+    isHighSurrogate(oldValue.charCodeAt(prefix - 1)) &&
+    (isLowSurrogate(oldValue.charCodeAt(prefix)) || isLowSurrogate(newValue.charCodeAt(prefix)))
+  ) {
+    prefix -= 1;
   }
 
   return {
-    backspaces,
-    text: newValue.slice(newLength - inputCount, newLength),
+    backspaces: Array.from(oldValue.slice(prefix)).length,
+    text: newValue.slice(prefix, newLength),
   };
 }
 
@@ -26,30 +35,119 @@ export function isTouchBrowser(navigatorLike = globalThis.navigator, windowLike 
   return Boolean(navigatorLike?.maxTouchPoints > 0 || "ontouchstart" in windowLike);
 }
 
+const ZOOM_STEPS = [1, 1.5, 2, 3];
+// One button press scrolls three noVNC wheel steps (50px each).
+const SCROLL_STEP = 150;
+const VIEW_MARGIN = 32;
+
 /**
- * Add a relative touch trackpad that drives noVNC's mouse canvas.
+ * Local zoom of the desktop view: a CSS transform on the surface that noVNC does not know
+ * about, so callers convert pointer coordinates with toCanvas() before handing them to noVNC.
+ */
+function createViewZoom(surface) {
+  let zoom = 1;
+  let panX = 0;
+  let panY = 0;
+  // The surface's untransformed box, in client coordinates.
+  const box = () => {
+    const rect = surface.getBoundingClientRect();
+    return {
+      left: rect.left - panX,
+      top: rect.top - panY,
+      width: surface.clientWidth,
+      height: surface.clientHeight,
+    };
+  };
+  const apply = () => {
+    const { width, height } = box();
+    panX = Math.min(0, Math.max(width * (1 - zoom), panX));
+    panY = Math.min(0, Math.max(height * (1 - zoom), panY));
+    surface.style.transformOrigin = "0 0";
+    surface.style.transform = zoom === 1 ? "" : `translate(${panX}px, ${panY}px) scale(${zoom})`;
+  };
+  return {
+    refresh: apply,
+    // Zoom around a client point so what is under it stays put.
+    step(direction, x, y) {
+      const index = ZOOM_STEPS.indexOf(zoom) + direction;
+      const next = ZOOM_STEPS[Math.max(0, Math.min(ZOOM_STEPS.length - 1, index))];
+      if (next === zoom) return;
+      const { left, top } = box();
+      panX = x - left - (x - left - panX) * (next / zoom);
+      panY = y - top - (y - top - panY) * (next / zoom);
+      zoom = next;
+      apply();
+    },
+    // Pan so a client point stays in view; returns the point moved with the content.
+    follow(x, y, bounds) {
+      if (zoom === 1) return { x, y };
+      const { left, top, width, height } = box();
+      const before = { x: panX, y: panY };
+      const overflow = (value, start, size) =>
+        Math.min(0, value - start - VIEW_MARGIN) + Math.max(0, value - start - size + VIEW_MARGIN);
+      const visibleLeft = Math.max(left, bounds.left);
+      const visibleTop = Math.max(top, bounds.top);
+      const visibleRight = Math.min(left + width, bounds.right);
+      const visibleBottom = Math.min(top + height, bounds.bottom);
+      panX -= overflow(x, visibleLeft, visibleRight - visibleLeft);
+      panY -= overflow(y, visibleTop, visibleBottom - visibleTop);
+      apply();
+      return { x: x + panX - before.x, y: y + panY - before.y };
+    },
+    // noVNC maps a client point with the canvas's on-screen box but its own unzoomed scale.
+    toCanvas(x, y, bounds) {
+      return { x: bounds.left + (x - bounds.left) / zoom, y: bounds.top + (y - bounds.top) / zoom };
+    },
+    reset() {
+      zoom = 1;
+      panX = 0;
+      panY = 0;
+      surface.style.transform = "";
+    },
+  };
+}
+
+/**
+ * Add a relative touch trackpad that drives noVNC's mouse canvas. It starts on.
  *
- * Touches that begin on the desktop itself stay with noVNC (tap = move the pointer there and
- * click), which is the only way to reach some spots; the trackpad only keeps its cursor in sync.
- * Touches that begin in the free area around the desktop are consumed here: dragging moves the
- * pointer relative to where it is, a tap clicks where the pointer is. They are consumed at the
- * touch level (not pointer capture) so iOS never turns them into compatibility mouse events
- * that noVNC would clamp to the nearest desktop edge.
+ * While it is on, every touch belongs to the trackpad, on the desktop or around it: one finger
+ * drags the pointer relative to where it is, a tap clicks where it is, two fingers scroll, and a
+ * two-finger tap right-clicks. The finger never covers the target. The pointer is drawn here as
+ * a large arrow moved on every touchmove, so it stays smooth whatever the network latency.
+ * Touches are consumed at the touch level (not pointer capture) so iOS never turns them into
+ * compatibility mouse events that noVNC would handle as direct touches. Optional view controls
+ * (buttons with data-view="zoom-in|zoom-out|scroll-up|scroll-down") zoom
+ * around the pointer, scroll at it; a zoomed view follows the pointer.
  */
 export function attachMobileTrackpad(
   rfb,
-  { button, surface, documentTarget = globalThis.document, sensitivity = 1.5 },
+  {
+    button,
+    surface,
+    pointer,
+    viewControls,
+    documentTarget = globalThis.document,
+    sensitivity = 1.5,
+  },
 ) {
   if (!button || !surface || !documentTarget || rfb.viewOnly) return () => {};
 
   let enabled = false;
   let touchId = null;
-  let desktopTouchId = null;
   let lastX = 0;
   let lastY = 0;
+  let startX = 0;
+  let startY = 0;
+  let scrollStartY = 0;
+  let twoFingerStart = [];
   let cursorX = null;
   let cursorY = null;
   let moved = false;
+  let twoFinger = false;
+  let scrollY = 0;
+  let scrolled = false;
+  let previousBounds = null;
+  const view = createViewZoom(surface);
 
   const canvas = () => surface.querySelector("canvas");
   const clampToCanvas = (x, y) => {
@@ -60,12 +158,6 @@ export function attachMobileTrackpad(
       y: Math.max(bounds.top, Math.min(bounds.bottom - 1, y)),
     };
   };
-  const onCanvas = (x, y) => {
-    const bounds = canvas()?.getBoundingClientRect();
-    return Boolean(
-      bounds && x >= bounds.left && x < bounds.right && y >= bounds.top && y < bounds.bottom,
-    );
-  };
   // While a button is down, noVNC covers the page with a capture overlay and only releases it
   // when a mouseup reaches that overlay (the canvas handler stops propagation). A synthetic
   // mouseup must therefore go to the overlay, which forwards it to the canvas and releases.
@@ -73,138 +165,252 @@ export function attachMobileTrackpad(
     const overlay = documentTarget.getElementById?.("noVNC_mouse_capture_elem");
     return overlay && overlay.style?.display !== "none" ? overlay : null;
   };
+  const canvasPoint = () => {
+    const bounds = canvas()?.getBoundingClientRect();
+    if (!bounds || cursorX == null || cursorY == null) return null;
+    return view.toCanvas(cursorX, cursorY, bounds);
+  };
   const mouse = (type, buttonNumber = 0) => {
     const target = (type === "mouseup" && captureOverlay()) || canvas();
-    if (!target || cursorX == null || cursorY == null) return;
+    const point = canvasPoint();
+    if (!target || !point) return;
     target.dispatchEvent(
       new MouseEvent(type, {
         bubbles: true,
         cancelable: true,
-        clientX: cursorX,
-        clientY: cursorY,
+        clientX: point.x,
+        clientY: point.y,
         button: buttonNumber,
-        buttons: type === "mousedown" ? 1 : 0,
+        buttons: type === "mousedown" ? (buttonNumber === 2 ? 2 : 1) : 0,
       }),
     );
+  };
+  const click = (buttonNumber) => {
+    mouse("mousedown", buttonNumber);
+    mouse("mouseup", buttonNumber);
+  };
+  // noVNC turns every 50px of wheel delta into one scroll step at the pointer.
+  const wheel = (deltaY) => {
+    const target = canvas();
+    const point = canvasPoint();
+    if (!target || !point) return;
+    target.dispatchEvent(
+      new WheelEvent("wheel", {
+        bubbles: true,
+        cancelable: true,
+        clientX: point.x,
+        clientY: point.y,
+        deltaY,
+        deltaMode: 0,
+      }),
+    );
+  };
+  const showPointer = () => {
+    if (!pointer) return;
+    const hidden = !enabled || cursorX == null;
+    pointer.toggleAttribute("hidden", hidden);
+    if (!hidden) pointer.style.transform = `translate(${cursorX}px, ${cursorY}px)`;
   };
   const positionCursor = (deltaX = 0, deltaY = 0) => {
     const target = canvas();
     if (!target) return;
     const bounds = target.getBoundingClientRect();
+    if (bounds.width <= 0 || bounds.height <= 0) return;
     cursorX ??= bounds.left + bounds.width / 2;
     cursorY ??= bounds.top + bounds.height / 2;
-    const next = clampToCanvas(cursorX + deltaX * sensitivity, cursorY + deltaY * sensitivity);
+    const shown = view.follow(
+      cursorX + deltaX * sensitivity,
+      cursorY + deltaY * sensitivity,
+      bounds,
+    );
+    const next = clampToCanvas(shown.x, shown.y);
     if (!next) return;
     cursorX = next.x;
     cursorY = next.y;
+    previousBounds = target.getBoundingClientRect();
+    showPointer();
     mouse("mousemove");
   };
   const setEnabled = (next) => {
     enabled = next;
     touchId = null;
-    desktopTouchId = null;
+    twoFinger = false;
     const label = enabled ? "Use direct touch" : "Use trackpad";
     button.setAttribute("aria-pressed", String(enabled));
     button.setAttribute("aria-label", label);
     button.setAttribute("title", label);
     button.classList.toggle("active", enabled);
     surface.classList.toggle("trackpad-active", enabled);
-    rfb.showDotCursor = enabled;
+    if (viewControls) viewControls.hidden = !enabled;
+    // noVNC's own touch handling does not know about the zoom.
+    if (!enabled) view.reset();
     if (enabled) positionCursor();
+    showPointer();
   };
   const onButtonClick = () => setEnabled(!enabled);
+  const onViewClick = (event) => {
+    const action = event.target?.closest?.("[data-view]")?.dataset.view;
+    if (!enabled || cursorX == null || cursorY == null) return;
+    if (action === "scroll-up" || action === "scroll-down") {
+      wheel(action === "scroll-up" ? -SCROLL_STEP : SCROLL_STEP);
+    } else if (action === "zoom-in" || action === "zoom-out") {
+      view.step(action === "zoom-in" ? 1 : -1, cursorX, cursorY);
+      positionCursor();
+    }
+  };
+  // The canvas only exists once noVNC connects; show the pointer then.
+  const onConnect = () => {
+    const target = canvas();
+    if (target) resizeObserver?.observe(target);
+    if (enabled) positionCursor();
+  };
   const consume = (event) => {
     event.preventDefault();
     event.stopPropagation();
   };
   const changedTouch = (event, identifier) =>
     Array.from(event.changedTouches ?? []).find((touch) => touch.identifier === identifier);
-  const stillDown = (event, identifier) =>
-    Array.from(event.touches ?? []).some((touch) => touch.identifier === identifier);
-  const followDesktopTouch = (touch) => {
-    // Direct touch on the desktop: noVNC moves the pointer there; keep the trackpad in step.
-    const next = clampToCanvas(touch.clientX, touch.clientY);
-    if (next) {
-      cursorX = next.x;
-      cursorY = next.y;
-    }
-  };
+  const surfaceTouches = (event) =>
+    typeof surface.contains === "function"
+      ? Array.from(event.touches ?? []).filter((touch) => surface.contains(touch.target))
+      : Array.from(event.targetTouches ?? event.touches ?? []);
+  const averageY = (touches) => (touches[0].clientY + touches[1].clientY) / 2;
   const onTouchStart = (event) => {
     if (!enabled) return;
-    // A touchstart can carry several new touches; classify each one.
-    let freeArea = false;
-    for (const touch of Array.from(event.changedTouches ?? [])) {
-      if (onCanvas(touch.clientX, touch.clientY)) {
-        if (desktopTouchId === null || !stillDown(event, desktopTouchId)) {
-          desktopTouchId = touch.identifier;
-          followDesktopTouch(touch);
-        }
-        continue;
+    consume(event);
+    const touches = surfaceTouches(event);
+    if (touches.length >= 2) {
+      // A second finger turns the gesture into a scroll; it never moves or clicks.
+      if (!twoFinger) {
+        scrolled = moved && touches.some((touch) => touch.identifier === touchId);
+        twoFingerStart = touches.map(({ identifier, clientX, clientY }) => ({
+          identifier,
+          clientX,
+          clientY,
+        }));
       }
-      freeArea = true;
-      // Extra fingers never take over a live gesture; a touch whose end was lost does not block it.
-      if (touchId !== null && stillDown(event, touchId)) continue;
-      touchId = touch.identifier;
-      lastX = touch.clientX;
-      lastY = touch.clientY;
-      moved = false;
+      if (touches.length > 2) scrolled = true;
+      twoFinger = true;
+      scrollY = averageY(touches);
+      scrollStartY = scrollY;
+      return;
     }
-    // Any free-area touch is consumed so iOS never turns it into compatibility mouse events.
-    if (freeArea) consume(event);
+    const touch = event.changedTouches?.[0];
+    if (!touch) return;
+    // A touch whose end was lost never blocks the next one.
+    twoFinger = false;
+    touchId = touch.identifier;
+    lastX = touch.clientX;
+    lastY = touch.clientY;
+    startX = lastX;
+    startY = lastY;
+    moved = false;
   };
   const onTouchMove = (event) => {
     if (!enabled) return;
-    const desktopTouch = desktopTouchId === null ? null : changedTouch(event, desktopTouchId);
-    if (desktopTouch) followDesktopTouch(desktopTouch);
+    consume(event);
+    if (twoFinger) {
+      const touches = surfaceTouches(event);
+      if (touches.length < 2) {
+        scrolled = true;
+        return;
+      }
+      const y = averageY(touches);
+      if (
+        Math.abs(scrollStartY - y) > 5 ||
+        touches.some((touch) => {
+          const start = twoFingerStart.find((item) => item.identifier === touch.identifier);
+          return (
+            !start || Math.hypot(touch.clientX - start.clientX, touch.clientY - start.clientY) > 5
+          );
+        })
+      )
+        scrolled = true;
+      if (scrolled) wheel(scrollY - y);
+      scrollY = y;
+      return;
+    }
     if (touchId === null) return;
     const touch = changedTouch(event, touchId);
     if (!touch) return;
-    consume(event);
     const deltaX = touch.clientX - lastX;
     const deltaY = touch.clientY - lastY;
-    if (Math.abs(deltaX) + Math.abs(deltaY) > 1) moved = true;
+    if (Math.hypot(touch.clientX - startX, touch.clientY - startY) > 5) moved = true;
     positionCursor(deltaX, deltaY);
     lastX = touch.clientX;
     lastY = touch.clientY;
   };
-  const finishTouch = (event, click) => {
+  const finishTouch = (event, clicks) => {
     if (!enabled) return;
-    if (desktopTouchId !== null && changedTouch(event, desktopTouchId)) desktopTouchId = null;
-    if (touchId === null) return;
-    const touch = changedTouch(event, touchId);
-    if (!touch) {
-      // Another finger lifted: swallow it so it cannot become a compatibility click.
-      if (!onCanvas(event.changedTouches?.[0]?.clientX, event.changedTouches?.[0]?.clientY)) {
-        consume(event);
-      }
+    consume(event);
+    if (twoFinger) {
+      if (!clicks) scrolled = true;
+      if (surfaceTouches(event).length > 0) return;
+      twoFinger = false;
+      touchId = null;
+      if (clicks && !scrolled) click(2);
       return;
     }
-    consume(event);
+    if (touchId === null || !changedTouch(event, touchId)) return;
     touchId = null;
-    if (click && !moved) {
-      mouse("mousedown");
-      mouse("mouseup");
-    }
+    if (clicks && !moved) click(0);
   };
   const onTouchEnd = (event) => finishTouch(event, true);
   const onTouchCancel = (event) => finishTouch(event, false);
+  // A real mouse moving means the person has one, so hand them direct control. Browsers also
+  // send still moves of their own (Chromium does after a page lays out), which mean nothing.
+  const onMouseMove = (event) => {
+    if (event.isTrusted && enabled && (event.movementX || event.movementY)) setEnabled(false);
+  };
+  const onResize = () => {
+    const x =
+      previousBounds?.width > 0 && cursorX != null
+        ? (cursorX - previousBounds.left) / previousBounds.width
+        : 0.5;
+    const y =
+      previousBounds?.height > 0 && cursorY != null
+        ? (cursorY - previousBounds.top) / previousBounds.height
+        : 0.5;
+    view.refresh();
+    const bounds = canvas()?.getBoundingClientRect();
+    if (!bounds || bounds.width <= 0 || bounds.height <= 0) return;
+    cursorX = bounds.left + x * bounds.width;
+    cursorY = bounds.top + y * bounds.height;
+    previousBounds = bounds;
+    showPointer();
+  };
+  const resizeObserver =
+    typeof ResizeObserver === "undefined" ? null : new ResizeObserver(onResize);
+  resizeObserver?.observe(surface);
+  const initialCanvas = canvas();
+  if (initialCanvas) resizeObserver?.observe(initialCanvas);
   const listen = { capture: true, passive: false };
 
   button.hidden = false;
   button.addEventListener("click", onButtonClick);
+  viewControls?.addEventListener("click", onViewClick);
+  surface.addEventListener("mousemove", onMouseMove, true);
   surface.addEventListener("touchstart", onTouchStart, listen);
   surface.addEventListener("touchmove", onTouchMove, listen);
   surface.addEventListener("touchend", onTouchEnd, listen);
   surface.addEventListener("touchcancel", onTouchCancel, listen);
+  rfb.addEventListener?.("connect", onConnect);
+  setEnabled(true);
 
   return () => {
+    resizeObserver?.disconnect();
+    surface.removeEventListener("mousemove", onMouseMove, true);
     button.removeEventListener("click", onButtonClick);
+    viewControls?.removeEventListener("click", onViewClick);
     surface.removeEventListener("touchstart", onTouchStart, listen);
     surface.removeEventListener("touchmove", onTouchMove, listen);
     surface.removeEventListener("touchend", onTouchEnd, listen);
     surface.removeEventListener("touchcancel", onTouchCancel, listen);
+    rfb.removeEventListener?.("connect", onConnect);
     surface.classList.remove("trackpad-active");
-    rfb.showDotCursor = false;
+    view.reset();
+    if (viewControls) viewControls.hidden = true;
+    pointer?.toggleAttribute("hidden", true);
   };
 }
 
@@ -219,6 +425,9 @@ const MOBILE_KEYS = {
   ArrowRight: [0xff53, "ArrowRight"],
   ArrowDown: [0xff54, "ArrowDown"],
 };
+
+// Shift, Control, Alt, Meta, Super and Hyper: a latched Ctrl waits for the next other key.
+const isModifierKeysym = (keysym) => keysym >= 0xffe1 && keysym <= 0xffee;
 
 function keyNameFromEvent(event) {
   const target = event?.target?.closest?.("[data-key]") || event?.target;
@@ -310,6 +519,30 @@ export function attachMobileKeyboard(
     if (control) rfb.sendKey(CONTROL_KEYSYM, CONTROL_CODE, false);
     if (latched) setControlLatched(false);
   };
+  // Keys that noVNC turns into keysyms on keydown. A latched Ctrl is held from the press until the
+  // key is released, as on a physical keyboard, so noVNC's keyup releases both.
+  const heldControlKeys = new Set();
+  // A keyup that never arrives must not leave Ctrl pressed on the remote past the keyboard.
+  const releaseHeldControl = () => {
+    if (heldControlKeys.size === 0) return;
+    heldControlKeys.clear();
+    rfb.sendKey(CONTROL_KEYSYM, CONTROL_CODE, false);
+  };
+  const sendKeyEvent = (keysym, code, down) => {
+    if (!down) {
+      rfb.sendKey(keysym, code, false);
+      if (heldControlKeys.delete(keysym) && heldControlKeys.size === 0) {
+        rfb.sendKey(CONTROL_KEYSYM, CONTROL_CODE, false);
+      }
+      return;
+    }
+    if (controlLatched && !isModifierKeysym(keysym)) {
+      setControlLatched(false);
+      if (heldControlKeys.size === 0) rfb.sendKey(CONTROL_KEYSYM, CONTROL_CODE, true);
+      heldControlKeys.add(keysym);
+    }
+    rfb.sendKey(keysym, code, true);
+  };
   const insertText = (text, explicitControl) => {
     if (typeof text !== "string" || !text) return;
     for (const character of text) {
@@ -325,7 +558,7 @@ export function attachMobileKeyboard(
     const times = Number(count);
     if (!Number.isInteger(times) || times < 1) return;
     const capped = Math.min(times, 500);
-    for (let index = 0; index < capped; index += 1) rfb.sendKey(backspaceKeysym, "Backspace");
+    for (let index = 0; index < capped; index += 1) sendTap(backspaceKeysym, "Backspace");
   };
   const run = (command) => {
     if (!command || typeof command !== "object") return;
@@ -372,7 +605,10 @@ export function attachMobileKeyboard(
     toggleKeyboard();
   };
   const onFocus = () => setOpen(true);
-  const onBlur = () => setOpen(false);
+  const onBlur = () => {
+    releaseHeldControl();
+    setOpen(false);
+  };
   const onInput = (event) => {
     if (!lastValue) resetInput();
     const newValue = event.target.value;
@@ -442,7 +678,7 @@ export function attachMobileKeyboard(
 
   resetInput();
   const keyboard = new Keyboard(input);
-  keyboard.onkeyevent = (keysym, code, down) => rfb.sendKey(keysym, code, down);
+  keyboard.onkeyevent = sendKeyEvent;
   keyboard.grab();
   if (pageChrome) {
     button.hidden = false;
@@ -471,6 +707,7 @@ export function attachMobileKeyboard(
   }
 
   return () => {
+    releaseHeldControl();
     keyboard.ungrab?.();
     for (const type of keepOpenEvents) button.removeEventListener(type, onButtonPressStart);
     button.removeEventListener("touchend", onKeyboardTouchEnd);

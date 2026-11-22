@@ -1,27 +1,27 @@
+import { useLingui } from "@lingui/react/macro";
 import { useQuery } from "@tanstack/react-query";
 import { useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useState } from "react";
 import { ActivityIndicator, RefreshControl, ScrollView, StyleSheet, Text } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { NativeActionButton } from "../../components/native-action-button";
-import { SettingsGroup, SettingsRow } from "../../components/settings-group";
-import { mobileTokens } from "../../lib/appearance";
-import { useI18n } from "../../lib/i18n";
-import { native, useThemedStyles } from "../../lib/native";
-import { queryClient, rpcQuery } from "../../lib/query";
-import { useSideInsets } from "../../lib/side-insets";
-import { errorText } from "../../lib/user-error";
+import { NativeActionButton } from "../../components/native/native-action-button";
+import { SettingsGroup, SettingsRow } from "../../components/settings/settings-group";
+import { errorText } from "../../lib/api/user-error";
+import { mobileTokens } from "../../lib/appearance/appearance";
+import { useSideInsets } from "../../lib/layout/side-insets";
+import { native, useThemedStyles } from "../../lib/native/native";
+import { queryClient, rpcQuery } from "../../lib/query/query";
 
 /** The notes every bot in this space shares. A bot's own notes live in its chat settings. */
 export default function MemoryScreen() {
   const router = useRouter();
   const sideInsets = useSideInsets();
   const styles = useThemedStyles(createStyles);
-  const { t } = useI18n();
+  const { t } = useLingui();
   const read = rpcQuery("memory/list", { scope: "user" });
   // A refetch replaces one still running, so a slow earlier read cannot bring back a deleted note.
   const { data: notes, error: failure, refetch } = useQuery(read, queryClient);
-  const error = failure ? errorText(failure, t("Could not load memory")) : null;
+  const error = failure ? errorText(failure, t`Could not load memory`) : null;
   const [refreshing, setRefreshing] = useState(false);
 
   // Bots write memory as they run, and a note may have changed in its editor.
@@ -46,10 +46,10 @@ export default function MemoryScreen() {
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} />}
       >
         {!notes && !error ? (
-          <ActivityIndicator color={native.secondaryLabel} accessibilityLabel={t("Loading…")} />
+          <ActivityIndicator color={native.secondaryLabel} accessibilityLabel={t`Loading…`} />
         ) : null}
         {notes?.length === 0 ? (
-          <Text style={styles.secondary}>{t("Nothing remembered yet")}</Text>
+          <Text style={styles.secondary}>{t`Nothing remembered yet`}</Text>
         ) : null}
         {notes?.length ? (
           <SettingsGroup>
@@ -72,7 +72,7 @@ export default function MemoryScreen() {
         {error && !notes ? (
           <NativeActionButton
             fill={false}
-            label={t("Retry")}
+            label={t`Retry`}
             // Back to the spinner while it reads again.
             onPress={() => void queryClient.resetQueries({ queryKey: read.queryKey })}
             prominence="secondary"

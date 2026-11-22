@@ -1,4 +1,5 @@
 import type { AdapterContext, MemoryCommitRequest } from "@rakazo/adapter-kit";
+import { deferred } from "@rakazo/core/test-async";
 import type { PrismaClient } from "@rakazo/db";
 import { asSystem, createDb, runAsSystem } from "@rakazo/db";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -7,8 +8,7 @@ import { MarkdownMemoryStore } from "./index.js";
 const databaseUrl = process.env.DATABASE_URL;
 // Agent runs save memory in the worker, outside any request.
 const MEMORY_SAVE = "agent run memory save";
-const describePostgres =
-  process.env.VERIFY_DATABASE && databaseUrl ? describe.sequential : describe.skip;
+const describePostgres = process.env.VERIFY_DATABASE && databaseUrl ? describe : describe.skip;
 
 describePostgres("memory commits (PostgreSQL)", () => {
   const context: AdapterContext = {
@@ -92,10 +92,7 @@ describePostgres("memory commits (PostgreSQL)", () => {
         });
         const initial = await store.commit(write("initial"), context);
         let reads = 0;
-        let release!: () => void;
-        const bothRead = new Promise<void>((resolve) => {
-          release = resolve;
-        });
+        const bothRead = deferred();
         const concurrentStore = new MarkdownMemoryStore(
           prisma.$extends({
             query: {
@@ -104,8 +101,8 @@ describePostgres("memory commits (PostgreSQL)", () => {
                   const result = await query(args);
                   reads += 1;
                   // Both first attempts see revision 1 before either can write.
-                  if (reads === 2) release();
-                  if (reads <= 2) await bothRead;
+                  if (reads === 2) bothRead.resolve();
+                  if (reads <= 2) await bothRead.promise;
                   return result;
                 },
               },

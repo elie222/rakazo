@@ -28,6 +28,7 @@ export const DOCS_NAV = [
       { slug: "approvals", label: "Approvals" },
       { slug: "groups", label: "Groups and teamwork" },
       { slug: "voice-and-calls", label: "Voice and calls" },
+      { slug: "meetings", label: "Meetings" },
       { slug: "messaging-apps", label: "Chat apps" },
     ],
   },
@@ -35,6 +36,7 @@ export const DOCS_NAV = [
     title: "Settings",
     pages: [
       { slug: "models", label: "Models" },
+      { slug: "model-subscriptions", label: "Model subscriptions" },
       { slug: "spaces", label: "Spaces" },
       { slug: "bot-secrets", label: "Reusable credentials" },
       { slug: "account", label: "Account and billing" },
@@ -73,6 +75,7 @@ export const DOCS_NAV = [
       { slug: "self-host-models", label: "Models" },
       { slug: "self-host-integrations", label: "Tools and integrations" },
       { slug: "self-host-inbound-email", label: "Bot email addresses" },
+      { slug: "self-host-meetings", label: "Meeting bots" },
       { slug: "self-host-sandbox-providers", label: "Computer providers" },
       { slug: "self-host-docker-computers", label: "Docker computers" },
       { slug: "computer-runtime", label: "Computer runtime" },

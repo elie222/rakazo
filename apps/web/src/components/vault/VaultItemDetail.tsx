@@ -1,21 +1,33 @@
 import { Trans, useLingui } from "@lingui/react/macro";
-import type { BotSecretMetadata, VaultRevealed } from "@rakazo/contracts";
-import { BotSecretName, cardExpiry, commandVariableName, vaultKind } from "@rakazo/contracts";
+import { useTimeout } from "@rakazo/chat-ui/hooks";
+import type { BotSecretMetadata, SettingsScope, VaultRevealed } from "@rakazo/contracts";
+import {
+  BotSecretName,
+  cardExpiry,
+  commandVariableName,
+  hasVaultAccess,
+  otherSitesText,
+  vaultKind,
+} from "@rakazo/contracts";
+import { siteHost } from "@rakazo/core";
+import { vaultBotsLine } from "@rakazo/i18n/vault";
 import { Button } from "@rakazo/ui-web";
 import { Check, Copy, Eye, EyeOff } from "lucide-react";
 import type { ReactNode } from "react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { useCopyText } from "../../lib/copy-text";
+import { SettingsPageHeader } from "../settings/SettingsPageHeader";
 import type { VaultAuth } from "./kinds";
-import { siteHost, useVaultKindLabels, VaultTile } from "./kinds";
-import { VaultPageHeader } from "./VaultPageHeader";
+import { useVaultKindLabels, VaultTile } from "./kinds";
+import { useVaultBots } from "./VaultItemAccess";
+import { VaultItemActivity, VaultItemUses } from "./VaultItemActivity";
 
 /** How long a shown value stays on screen. */
 export const REVEAL_MS = 30_000;
 
 const MASK = "••••••••";
 
-function CopyButton({ text }: { text: string }) {
+function CopyButton({ text, describedBy }: { text: string; describedBy: string }) {
   const { t } = useLingui();
   const [copied, copy] = useCopyText();
   return (
@@ -24,6 +36,7 @@ function CopyButton({ text }: { text: string }) {
       variant="ghost"
       size="icon-xs"
       aria-label={copied ? t`Copied` : t`Copy`}
+      aria-describedby={describedBy}
       className="shrink-0 text-muted-foreground"
       onClick={() => copy(text)}
     >
@@ -46,15 +59,18 @@ function DetailRow({
   action?: ReactNode;
   testId?: string;
 }) {
+  const labelId = useId();
   return (
     <div
       data-testid={testId}
       className="flex min-h-11 items-center gap-3 border-t border-border py-2 first:border-t-0"
     >
-      <span className="w-28 shrink-0 text-body-sm text-muted-foreground">{label}</span>
+      <span id={labelId} className="w-28 shrink-0 text-body-sm text-muted-foreground">
+        {label}
+      </span>
       <span className="min-w-0 flex-1 whitespace-pre-line break-words text-body">{children}</span>
       {action}
-      {copy ? <CopyButton text={copy} /> : null}
+      {copy ? <CopyButton text={copy} describedBy={labelId} /> : null}
     </div>
   );
 }
@@ -71,6 +87,8 @@ function addressLines(contact: NonNullable<NonNullable<BotSecretMetadata["previe
  * owner confirms it's them, and Edit and Remove.
  */
 export function VaultItemDetail({
+  scope,
+  ownVault,
   item,
   contactTitles,
   busy,
@@ -80,6 +98,9 @@ export function VaultItemDetail({
   onEdit,
   onRemove,
 }: {
+  scope: SettingsScope;
+  /** An account item seen from a Space that keeps its own vault, whose bots never use it. */
+  ownVault: boolean;
   item: BotSecretMetadata;
   /** Saved contacts' titles by name, for a card's billing address. */
   contactTitles: ReadonlyMap<string, string>;
@@ -95,6 +116,7 @@ export function VaultItemDetail({
 }) {
   const { t } = useLingui();
   const { one } = useVaultKindLabels();
+  const bots = useVaultBots(item.allBots === false && !ownVault, item.botIds);
   // An item saved under a name the current rules refuse can only be removed.
   const auth: VaultAuth | null =
     item.auth && BotSecretName.safeParse(item.name).success ? item.auth : null;
@@ -102,20 +124,19 @@ export function VaultItemDetail({
   const [revealed, setRevealed] = useState<VaultRevealed | null>(null);
   const [revealing, setRevealing] = useState(false);
   const [confirmingRemove, setConfirmingRemove] = useState(false);
-  const hideTimer = useRef<number | undefined>(undefined);
+  const [usesOpen, setUsesOpen] = useState(false);
   const attempt = useRef(0);
+  useTimeout(hide, revealed ? REVEAL_MS : null, revealed);
 
   useEffect(
     () => () => {
       attempt.current += 1;
-      window.clearTimeout(hideTimer.current);
     },
     [],
   );
 
   function hide() {
     attempt.current += 1;
-    window.clearTimeout(hideTimer.current);
     setRevealed(null);
     setRevealing(false);
   }
@@ -126,11 +147,8 @@ export function VaultItemDetail({
     try {
       const shown = await onReveal();
       if (current !== attempt.current) return null;
-      if (shown) {
-        setRevealed(shown);
-        window.clearTimeout(hideTimer.current);
-        hideTimer.current = window.setTimeout(hide, REVEAL_MS);
-      }
+      // A copy, so revealing again restarts the hide timer.
+      if (shown) setRevealed({ ...shown });
       return shown;
     } finally {
       if (current === attempt.current) setRevealing(false);
@@ -173,6 +191,12 @@ export function VaultItemDetail({
         {siteHost(item.origin)}
       </DetailRow>,
     );
+    if (item.alsoOn?.length)
+      rows.push(
+        <DetailRow key="also-on" label={t`Also on`}>
+          {otherSitesText(item.alsoOn)}
+        </DetailRow>,
+      );
     if (revealed && "fields" in revealed) {
       rows.push(
         ...revealed.fields.map((field, index) => (
@@ -202,6 +226,14 @@ export function VaultItemDetail({
         </DetailRow>,
       );
     }
+    // Shown and hidden with the password: the same reveal holds both.
+    const otp = revealed && "fields" in revealed ? revealed.otp : undefined;
+    if (item.preview?.otp || otp)
+      rows.push(
+        <DetailRow key="otp" label={t`Authenticator key`} copy={otp} testId="vault-item-otp">
+          <span className="font-mono text-body-sm">{otp ?? MASK}</span>
+        </DetailRow>,
+      );
   }
   if (auth && kind === "card" && card) {
     const number = revealedCard?.number.replace(/(\d{4})(?=\d)/g, "$1 ");
@@ -312,13 +344,41 @@ export function VaultItemDetail({
         {item.note}
       </DetailRow>,
     );
+  // The bots it is limited to are named once the list has loaded, never as No bots before, nor as
+  // every bot when it can't be read.
+  const chosen = (bots ?? []).filter((bot) => item.botIds?.includes(bot.id)).map((bot) => bot.name);
+  const access = kind
+    ? vaultBotsLine({
+        blockable: hasVaultAccess(kind),
+        policy: item.policy,
+        allBots: item.allBots,
+        botIds: item.botIds,
+        unusedHere: ownVault,
+        chosen: bots === null ? "failed" : bots ? chosen : "loading",
+      })
+    : "";
+  if (access)
+    rows.push(
+      <DetailRow key="access" label={t`Bots`} testId="vault-item-access-detail">
+        {access}
+      </DetailRow>,
+    );
 
   const secretName = item.title;
+  if (usesOpen)
+    return (
+      <VaultItemUses
+        scope={scope}
+        name={item.name}
+        title={item.title}
+        onBack={() => setUsesOpen(false)}
+      />
+    );
   return (
     <div data-testid="vault-item-detail" className="flex flex-col gap-4">
-      <VaultPageHeader
+      <SettingsPageHeader
         title={item.title}
-        leading={<VaultTile kind={kind} title={item.title} />}
+        leading={<VaultTile kind={kind} title={item.title} origin={item.origin} />}
         subtitle={
           kind ? (
             one[kind]
@@ -329,6 +389,7 @@ export function VaultItemDetail({
         onBack={() => !busy && onClose()}
       />
       {rows.length ? <div>{rows}</div> : null}
+      <VaultItemActivity scope={scope} name={item.name} onOpen={() => setUsesOpen(true)} />
       {error ? (
         <p role="alert" className="text-body-sm text-destructive">
           {error}

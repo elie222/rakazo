@@ -2,6 +2,7 @@ import { pageKitPalette } from "@rakazo/ui-tokens";
 import type { CSSProperties, ReactNode } from "react";
 import { Children, useEffect, useId, useRef, useState } from "react";
 import { LinkButton, linkUrl, ReplyButton } from "./controls.js";
+import { graphemes } from "./graphemes.js";
 import { openViaHost } from "./inline.js";
 import type { Words } from "./labels.js";
 import { useWords } from "./labels.js";
@@ -36,23 +37,24 @@ export function aspectRatio(value: unknown): number | undefined {
 const px = (value: unknown) =>
   typeof value === "number" && value > 0 && Number.isFinite(value) ? value : undefined;
 
-/** A soft fill shows until the picture has drawn, then it fades in; it never waits forever. */
-function Picture({
-  src,
-  alt,
-  fit,
-  style,
-}: {
+type PictureProps = {
   src: string;
   alt: string;
   fit?: "contain" | "cover";
   style?: CSSProperties;
-}) {
+};
+
+/** A soft fill shows until the current picture has drawn, then it fades in. */
+function Picture(props: PictureProps) {
+  return <PictureSource key={props.src} {...props} />;
+}
+
+function PictureSource({ src, alt, fit, style }: PictureProps) {
   const [loaded, setLoaded] = useState(false);
   useEffect(() => {
     const timer = setTimeout(() => setLoaded(true), 8000);
     return () => clearTimeout(timer);
-  }, [src]);
+  }, []);
   return (
     <div className="rk-picture" data-loading={!loaded || undefined} style={style}>
       <img
@@ -296,11 +298,16 @@ export function Gallery({
   if (items.length === 0) return null;
   // Fewer photos on a later render keep the last one marked rather than none.
   const current = Math.min(chosen, items.length - 1);
+  // A right-to-left track starts at zero and scrolls to negative offsets towards later photos.
+  const side = (node: HTMLElement) => (getComputedStyle(node).direction === "rtl" ? -1 : 1);
   const show = (index: number) => {
     const node = track.current;
     if (!node) return;
     const reduced = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
-    node.scrollTo({ left: index * node.clientWidth, behavior: reduced ? "auto" : "smooth" });
+    node.scrollTo({
+      left: side(node) * index * node.clientWidth,
+      behavior: reduced ? "auto" : "smooth",
+    });
     setCurrent(index);
   };
   return (
@@ -319,13 +326,16 @@ export function Gallery({
         onKeyDown={(event) => {
           if (event.key === "ArrowRight" || event.key === "ArrowLeft") {
             event.preventDefault();
-            const step = event.key === "ArrowRight" ? 1 : -1;
+            const step = (event.key === "ArrowRight" ? 1 : -1) * side(event.currentTarget);
             show(Math.min(items.length - 1, Math.max(0, current + step)));
           }
         }}
         onScroll={(event) => {
           const node = event.currentTarget;
-          if (node.clientWidth > 0) setCurrent(Math.round(node.scrollLeft / node.clientWidth));
+          if (node.clientWidth > 0) {
+            const index = Math.round((side(node) * node.scrollLeft) / node.clientWidth);
+            setCurrent(Math.min(items.length - 1, Math.max(0, index)));
+          }
         }}
       >
         {items.map((photo, index) => (
@@ -521,13 +531,13 @@ function StoreLine({ item }: { item: ProductItem }) {
     .filter(Boolean)
     .join(", ")
     .replace(", Rated", ", rated");
-  const mark = text(item.storeMark) || store.slice(0, 1).toUpperCase();
+  const mark = text(item.storeMark) || (graphemes(store)[0] ?? "").toUpperCase();
   return (
     <div className="rk-store" role="img" aria-label={label}>
       {store ? (
         <>
           <span className="rk-store-mark" aria-hidden="true">
-            {mark.slice(0, 2)}
+            {graphemes(mark).slice(0, 2).join("")}
           </span>
           <span>{store}</span>
         </>

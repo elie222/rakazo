@@ -1,11 +1,15 @@
 import type { DesktopMenuCommand } from "@rakazo/contracts";
 import { isDesktopMenuCommand } from "@rakazo/contracts";
-import { useEffect, useRef } from "react";
-import { desktopBridge } from "../../lib/desktop";
+import { useEffect, useEffectEvent } from "react";
+import { desktopBridge } from "../../lib/platform/desktop";
+import { useEventListener } from "../../lib/use-event-listener";
 
 export type ShellShortcut =
   | { type: DesktopMenuCommand }
   | { type: "focus-composer" }
+  | { type: "quote-selection" }
+  | { type: "model-picker" }
+  | { type: "thinking-level" }
   | { type: "bot"; index: number };
 
 /**
@@ -36,13 +40,56 @@ export function primaryModifier(event: Pick<KeyboardEvent, "metaKey" | "ctrlKey"
 }
 
 /**
+ * Browsers keep the plain chord for their address bar, so on the web the page answers Shift instead.
+ * The desktop app has no address bar, so it answers the plain chord. Neither consumes the key on its
+ * own: the shell only takes it while a transcript selection is armed.
+ */
+function quoteChord(host: ShortcutHost) {
+  return { key: "L", shift: !host.desktop };
+}
+
+/** A Cmd/Ctrl chord's keys as the platform writes them. */
+export function chordKeys(host: Pick<ShortcutHost, "apple">, key: string, shift = false) {
+  return [host.apple ? "⌘" : "Ctrl", ...(shift ? [host.apple ? "⇧" : "Shift"] : []), key];
+}
+
+/** A chord's keys as one label, the way Apple writes them run together and others join with +. */
+export function chordLabel(host: Pick<ShortcutHost, "apple">, keys: readonly string[]) {
+  return keys.join(host.apple ? "" : "+");
+}
+
+export function quoteShortcutKeys(host: ShortcutHost) {
+  const chord = quoteChord(host);
+  return chordKeys(host, chord.key, chord.shift);
+}
+
+export function isQuoteShortcut(event: KeyboardEvent, host: ShortcutHost) {
+  if (!primaryModifier(event, host.apple) || event.altKey || event.repeat) return false;
+  const chord = quoteChord(host);
+  return event.key.toUpperCase() === chord.key && event.shiftKey === chord.shift;
+}
+
+/** The chord `isQuoteShortcut` answers, written the way the pill shows it. */
+export function quoteShortcutLabel(host: ShortcutHost) {
+  return chordLabel(host, quoteShortcutKeys(host));
+}
+
+export function isComposingKey(event: KeyboardEvent) {
+  // The legacy IME key code also covers composition-boundary keydowns.
+  return event.isComposing || event.keyCode === 229;
+}
+
+/**
  * The shell shortcut a key press asks for. Next and previous bot are Ctrl-Tab in the desktop app and
  * Cmd/Ctrl-Shift-ArrowDown/Up in a browser, which owns Ctrl-Tab; arrows rather than brackets because
  * Safari claims Cmd-Shift-] and Cmd-Shift-[ for its own tabs, and not while typing, where they select.
  */
 export function shellShortcut(event: KeyboardEvent, host: ShortcutHost): ShellShortcut | null {
-  if (event.repeat || !event.key) return null;
+  if (event.repeat || !event.key || isComposingKey(event)) return null;
   const key = event.key.toLowerCase();
+  if (key === "l" && isQuoteShortcut(event, host)) {
+    return { type: "quote-selection" };
+  }
   if ((event.metaKey || event.ctrlKey) && !event.altKey && !event.shiftKey) {
     if (key === "k") return { type: "command-menu" };
     if (key === "n") return { type: "new" };
@@ -63,7 +110,10 @@ export function shellShortcut(event: KeyboardEvent, host: ShortcutHost): ShellSh
     // Browsers open a private window on this chord before the page sees it.
     if (host.desktop && key === "n") return { type: "new-group" };
     if (host.desktop && key === "f") return { type: "search" };
-    if (key === "m") return { type: "integrations" };
+    // Chrome opens its tab search on this chord before the page sees it.
+    if (host.desktop && key === "a") return { type: "integrations" };
+    if (key === "m") return { type: "model-picker" };
+    if (key === "e") return { type: "thinking-level" };
     // The code, because Shift turns the comma into another character on most layouts.
     if (event.code === "Comma") return { type: "chat-panel" };
   }
@@ -93,6 +143,19 @@ export function shellShortcut(event: KeyboardEvent, host: ShortcutHost): ShellSh
   return null;
 }
 
+/**
+ * What Find does about the side panel. A panel that floats over the chat would hide the bar, so a
+ * details panel closes first; a panel holding a form keeps its unsaved input and Find waits.
+ */
+export function findPanelAction(
+  overlaysChat: boolean,
+  panelOpen: boolean,
+  chatPanelOpen: boolean,
+): "open" | "close-panel" | "refuse" {
+  if (!overlaysChat || !panelOpen) return "open";
+  return chatPanelOpen ? "close-panel" : "refuse";
+}
+
 /** A printable key pressed outside any text field, which belongs in the composer. */
 export function startsTyping(event: KeyboardEvent) {
   return (
@@ -101,7 +164,7 @@ export function startsTyping(event: KeyboardEvent) {
     !event.metaKey &&
     !event.ctrlKey &&
     !event.altKey &&
-    !event.isComposing &&
+    !isComposingKey(event) &&
     !isEditableTarget(event.target)
   );
 }
@@ -131,27 +194,22 @@ export function useShellShortcuts({
   run: (shortcut: ShellShortcut) => boolean;
   onTyping: () => void;
 }) {
-  const handlers = useRef({ run, onTyping });
-  handlers.current = { run, onTyping };
-  useEffect(() => {
-    const desktop = desktopBridge();
-    const host: ShortcutHost = { desktop: Boolean(desktop), apple: isApplePlatform() };
-    function onKey(event: KeyboardEvent) {
-      if (event.defaultPrevented) return;
-      const shortcut = shellShortcut(event, host);
-      if (shortcut) {
-        if (handlers.current.run(shortcut)) event.preventDefault();
-      } else if (startsTyping(event)) {
-        handlers.current.onTyping();
-      }
+  const runLatest = useEffectEvent(run);
+  useEventListener(window, "keydown", (event) => {
+    if (event.defaultPrevented) return;
+    const host: ShortcutHost = { desktop: Boolean(desktopBridge()), apple: isApplePlatform() };
+    const shortcut = shellShortcut(event, host);
+    if (shortcut) {
+      if (run(shortcut)) event.preventDefault();
+    } else if (startsTyping(event)) {
+      onTyping();
     }
-    window.addEventListener("keydown", onKey);
-    const stopMenu = desktop?.menu?.onCommand((command) => {
-      if (isDesktopMenuCommand(command)) handlers.current.run({ type: command });
-    });
-    return () => {
-      window.removeEventListener("keydown", onKey);
-      stopMenu?.();
-    };
-  }, []);
+  });
+  useEffect(
+    () =>
+      desktopBridge()?.menu?.onCommand((command) => {
+        if (isDesktopMenuCommand(command)) runLatest({ type: command });
+      }),
+    [],
+  );
 }

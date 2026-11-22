@@ -203,6 +203,51 @@ describe("parseNumericText", () => {
     expect(parseNumericText("(-12)")).toBe(-12);
   });
 
+  it("parses decimals without a leading zero", () => {
+    for (const [text, expected] of [
+      [".5", 0.5],
+      [".25", 0.25],
+      ["-.5", -0.5],
+      ["(.25)", -0.25],
+      ["$.50", 0.5],
+      [".5%", 0.5],
+    ] as const) {
+      expect(parseNumericText(text)).toBe(expected);
+    }
+  });
+
+  it("parses an explicit plus sign and the typographic minus", () => {
+    for (const [text, expected] of [
+      ["+5", 5],
+      ["+12%", 12],
+      ["+$5", 5],
+      ["+1,234.5", 1234.5],
+      ["+.5", 0.5],
+      ["\u22125", -5],
+      ["\u22123.2%", -3.2],
+      ["$\u22125", -5],
+    ] as const) {
+      expect(parseNumericText(text)).toBe(expected);
+    }
+  });
+
+  it("treats a delta column with signs as numeric", () => {
+    const rows = [["+12%"], ["-3%"], ["+5%"], ["\u22122%"]];
+    expect(isNumericColumn(rows, 0)).toBe(true);
+  });
+
+  it("rejects a stray or doubled sign", () => {
+    for (const text of ["+", "++5", "+-5", "-+5", "5+", "\u2212", "+(5)"]) {
+      expect(parseNumericText(text)).toBeNull();
+    }
+  });
+
+  it("rejects incomplete or malformed decimals", () => {
+    for (const text of [".", "-.", "(.)", "1.", "..5", ".5.0", "1,23.5"]) {
+      expect(parseNumericText(text)).toBeNull();
+    }
+  });
+
   it("rejects non-numeric text", () => {
     for (const value of ["", "  ", "abc", "1,2,3,4,5", "NaN", "1.2.3", "-", "$", "12px"]) {
       expect(parseNumericText(value)).toBeNull();
@@ -219,6 +264,10 @@ describe("isNumericColumn", () => {
 
   it("is true when every non-empty cell is numeric", () => {
     expect(isNumericColumn(rows, 0)).toBe(true);
+  });
+
+  it("recognizes leading-dot decimals in numeric columns", () => {
+    expect(isNumericColumn([[".5"], ["-.25"], [""], ["1"]], 0)).toBe(true);
   });
 
   it("is false when a cell is not numeric or all cells are empty", () => {
@@ -242,6 +291,33 @@ describe("sortRows", () => {
   it("keeps empty cells at the bottom in both directions", () => {
     expect(sortRows(rows, 1, "desc").map((r) => r[0])).toEqual(["Beta", "Alpha", "Delta", "Gamma"]);
     expect(sortRows(rows, 1, "asc").at(-1)).toEqual(["Gamma", ""]);
+  });
+
+  it("sorts leading-dot decimals with other numbers in both directions", () => {
+    const values = [[".5"], [""], ["2"], ["-.5"], [".25"], ["0.1"]];
+    expect(sortRows(values, 0, "asc")).toEqual([["-.5"], ["0.1"], [".25"], [".5"], ["2"], [""]]);
+    expect(sortRows(values, 0, "desc")).toEqual([["2"], [".5"], [".25"], ["0.1"], ["-.5"], [""]]);
+  });
+
+  it.each(
+    [
+      ["(3)", "-2", "—"],
+      ["(3)", "—", "-2"],
+      ["-2", "(3)", "—"],
+      ["-2", "—", "(3)"],
+      ["—", "(3)", "-2"],
+      ["—", "-2", "(3)"],
+    ].map((values) => ({ values })),
+  )("sorts mixed numbers and text consistently from $values", ({ values }) => {
+    const rows = [[], ...values.map((value) => [value]), [""]];
+    expect(sortRows(rows, 0, "asc")).toEqual([["(3)"], ["-2"], ["—"], [], [""]]);
+    expect(sortRows(rows, 0, "desc")).toEqual([["—"], ["-2"], ["(3)"], [], [""]]);
+  });
+
+  it("keeps natural text order and stable numeric ties in a mixed column", () => {
+    const rows = [["phase 10"], ["$5"], ["Phase 2"], ["5"]];
+    expect(sortRows(rows, 0, "asc")).toEqual([["$5"], ["5"], ["Phase 2"], ["phase 10"]]);
+    expect(sortRows(rows, 0, "desc")).toEqual([["phase 10"], ["Phase 2"], ["$5"], ["5"]]);
   });
 
   it("sorts text columns with locale compare", () => {
@@ -317,10 +393,31 @@ describe("serialization", () => {
       ["=Name", "+Note"],
       [
         ["=1+1", "+SUM(A1)"],
-        ["@lookup", "-9"],
+        ["@lookup", "-@x"],
       ],
     );
     for (const cell of csv.split(/[,\n]/)) expect(cell.startsWith("'")).toBe(true);
+  });
+
+  it("keeps plain numbers and a lone dash unquoted but still neutralizes formulas", () => {
+    expect(tableToCsv(["A"], [["-12.5"], ["-3%"], ["+4"], ["-1,234.5"], ["-"], [" -7"]])).toBe(
+      'A\n-12.5\n-3%\n+4\n"-1,234.5"\n-\n -7',
+    );
+    expect(tableToTsv(["A"], [["-12.5"], ["-"]])).toBe("A\n-12.5\n-");
+    for (const value of [
+      "-1+cmd|' /C calc'!A0",
+      "+SUM(1)",
+      "-@x",
+      "=1+1",
+      "+1 1",
+      "- 5",
+      "-$5",
+      "-5 5",
+      "-1e5",
+      "+1-1",
+    ]) {
+      expect(tableToCsv(["A"], [[value]])).toBe(`A\n'${value}`);
+    }
   });
 
   it("quotes CSV cells containing carriage returns", () => {
@@ -367,7 +464,7 @@ describe("serialization", () => {
     expect(tsv.split("\n")).toHaveLength(3);
     expect(tsv).toContain('a,b\t"say ""hi"""');
     expect(tsv).toContain("'=cmd\tline break");
-    expect(tableToTsv(["=A", "+B"], [["@x", "-9"]])).toBe("'=A\t'+B\n'@x\t'-9");
+    expect(tableToTsv(["=A", "+B"], [["@x", "-@y"]])).toBe("'=A\t'+B\n'@x\t'-@y");
   });
 
   it("pads short rows to the column count", () => {

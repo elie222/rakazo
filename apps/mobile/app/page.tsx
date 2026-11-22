@@ -1,19 +1,19 @@
+import { useLingui } from "@lingui/react/macro";
 import { useNativeLinkConfirm } from "@rakazo/chat-ui/native";
 import type { PageDetail } from "@rakazo/contracts";
 import { pageCopyRequest, pageCopyResult, pageLinkRequest, pageReplyText } from "@rakazo/core";
 import { webTokensForAppearance } from "@rakazo/ui-tokens";
 import * as Clipboard from "expo-clipboard";
-import { useLocalSearchParams, useNavigation, useRouter } from "expo-router";
+import { useFocusEffect, useLocalSearchParams, useNavigation, useRouter } from "expo-router";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Platform, StyleSheet, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { NativeActionButton } from "../components/native-action-button";
-import { PageLoadFailure } from "../components/pages/page-load-failure";
-import { SandboxedHtmlPreview } from "../components/sandboxed-html-preview";
-import { currentApiBase } from "../lib/api";
-import { useI18n } from "../lib/i18n";
-import { useMobileTokens, useResolvedAppearance } from "../lib/native";
-import { HEADER_CONTROL_SIZE } from "../lib/native-controls";
+import { SandboxedHtmlPreview } from "../components/media/sandboxed-html-preview";
+import { NativeActionButton } from "../components/native/native-action-button";
+import { currentApiBase } from "../lib/api/api";
+import { useMobileTokens, useResolvedAppearance } from "../lib/native/native";
+import { HEADER_CONTROL_SIZE } from "../lib/native/native-controls";
+import { PageLoadFailure } from "../lib/pages/page-load-failure";
 import {
   getLatestPage,
   offerPageReply,
@@ -22,7 +22,7 @@ import {
   pageDocument,
   pageMessage,
   pageTapStart,
-} from "../lib/pages";
+} from "../lib/pages/pages";
 
 type Loaded =
   | { status: "loading" }
@@ -35,13 +35,21 @@ export default function PageScreen() {
   const router = useRouter();
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
-  const { t } = useI18n();
+  const { t } = useLingui();
   const tokens = useMobileTokens();
   const theme = useResolvedAppearance();
   // Pages paint the web palette's background; the screen around them matches it.
   const pageBackground = webTokensForAppearance(theme).background;
   const [loaded, setLoaded] = useState<Loaded>({ status: "loading" });
   const [attempt, setAttempt] = useState(0);
+  const focusedOnce = useRef(false);
+  useFocusEffect(
+    useCallback(() => {
+      if (focusedOnce.current) setAttempt((count) => count + 1);
+      focusedOnce.current = true;
+    }, []),
+  );
+
   // iOS keeps the native glass button as it is; Android's bordered button becomes a card circle.
   const round =
     Platform.OS === "ios" ? undefined : [styles.round, { backgroundColor: tokens.card }];
@@ -57,7 +65,7 @@ export default function PageScreen() {
           currentApiBase(),
           page.code,
           theme,
-          t("This page couldn't be shown."),
+          t`This page couldn't be shown.`,
           { reply: pageChat(page) !== null },
         );
         if (!active) return;
@@ -141,8 +149,8 @@ export default function PageScreen() {
         <View style={styles.center}>
           <PageLoadFailure
             error={loaded.error}
-            fallback={t("Could not load this page.")}
-            gone={t("This page isn't available")}
+            fallback={t`Could not load this page.`}
+            gone={t`This page isn't available`}
             onRetry={() => setAttempt((count) => count + 1)}
           />
         </View>
@@ -153,20 +161,29 @@ export default function PageScreen() {
       )}
       <View pointerEvents="box-none" style={[styles.controls, { top: insets.top + 6 }]}>
         <NativeActionButton
-          accessibilityLabel={t("Close")}
+          accessibilityLabel={t`Close`}
           icon={{ ios: "xmark", android: "close", size: 20 }}
           prominence="secondary"
           style={round}
           onPress={() => (router.canGoBack() ? router.back() : router.replace("/"))}
         />
         {loaded.status === "ready" ? (
-          <NativeActionButton
-            accessibilityLabel={t("Share")}
-            icon={{ ios: "square.and.arrow.up", android: "share-outline", size: 20 }}
-            prominence="secondary"
-            style={round}
-            onPress={() => router.push({ pathname: "/page-share", params: { pageId } })}
-          />
+          <View style={styles.actions}>
+            <NativeActionButton
+              accessibilityLabel={t`Review page`}
+              icon={{ ios: "bubble", android: "chatbubble-outline", size: 20 }}
+              prominence="secondary"
+              style={round}
+              onPress={() => router.push({ pathname: "/page-review", params: { pageId } })}
+            />
+            <NativeActionButton
+              accessibilityLabel={t`Share`}
+              icon={{ ios: "square.and.arrow.up", android: "share-outline", size: 20 }}
+              prominence="secondary"
+              style={round}
+              onPress={() => router.push({ pathname: "/page-share", params: { pageId } })}
+            />
+          </View>
         ) : null}
       </View>
     </View>
@@ -183,6 +200,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
   },
+  actions: { flexDirection: "row", gap: 8 },
   round: {
     width: HEADER_CONTROL_SIZE,
     minHeight: HEADER_CONTROL_SIZE,

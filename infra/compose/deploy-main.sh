@@ -19,11 +19,14 @@ APP_DIR="${RAKAZO_DEPLOY_DIR:-/srv/rakazo}"
 COMPOSE_FILE="infra/compose/docker-compose.prod.yml"
 # CI allows 140 minutes: 5m pull + 15m fallback build + 5m start + ~1m of health retries + 8m
 # rollback, which only pulls or builds when the previous image is gone, + up to 50m (the worker's
-# stop_grace_period) twice: for a worker an earlier deploy left draining, then for this one's.
+# stop_grace_period) twice: for a worker an earlier deploy left draining, then for this one's. The
+# replaced API's few minutes of draining run alongside the worker's.
 PULL_TIMEOUT="${RAKAZO_DEPLOY_PULL_TIMEOUT:-5m}"
 BUILD_TIMEOUT="${RAKAZO_DEPLOY_BUILD_TIMEOUT:-15m}"
 UP_TIMEOUT="${RAKAZO_DEPLOY_UP_TIMEOUT:-5m}"
 ROLLBACK_TIMEOUT="${RAKAZO_DEPLOY_ROLLBACK_TIMEOUT:-8m}"
+# Longer than a replaced API takes to stop: its HTTP drain, RUN_DRAIN_MS, then handing back.
+API_DRAIN_TIMEOUT=6m
 # Free disk a deploy needs before it pulls or builds.
 MIN_FREE_GB="${RAKAZO_DEPLOY_MIN_FREE_GB:-5}"
 BUILD_CACHE_GB="${RAKAZO_DEPLOY_BUILD_CACHE_GB:-8}"
@@ -46,6 +49,18 @@ if [[ -z "${RAKAZO_HEALTH_URL:-}" ]]; then
   [[ -n "${host}" ]] || { echo "Set RAKAZO_HOST in .env or RAKAZO_HEALTH_URL" >&2; exit 1; }
   RAKAZO_HEALTH_URL="https://${host}/health"
 fi
+
+# How many API and worker containers to run, the same .env settings Compose reads.
+replicas() {
+  local count
+  count="$(sed -n "s/^$1=//p" .env | tail -n 1)"
+  echo "${count:-1}"
+}
+API_REPLICAS="$(replicas RAKAZO_API_REPLICAS)"
+WORKER_REPLICAS="$(replicas RAKAZO_WORKER_REPLICAS)"
+for count in "${API_REPLICAS}" "${WORKER_REPLICAS}"; do
+  [[ "${count}" =~ ^[1-9][0-9]*$ ]] || { echo "RAKAZO_API_REPLICAS and RAKAZO_WORKER_REPLICAS must be whole numbers of at least 1" >&2; exit 1; }
+done
 
 compose() {
   local limit="$1"
@@ -80,7 +95,7 @@ use_revision_image() {
       echo "Using the published image ${published}."
       return 0
     fi
-    echo "::warning::Could not pull ${published}; building ${revision} on this host instead." >&2
+    echo "::warning::Could not pull ${published}; building ${revision} on this host instead, with the default email copy." >&2
   fi
   compose "${limit}" build --build-arg "GIT_SHA=${revision}"
 }
@@ -106,77 +121,121 @@ container_healthy() {
   return 1
 }
 
-# Starts one more container of a service beside the given ones and waits for its health check.
+# Starts the given number of new containers of a service beside the running ones and waits for
+# their health checks.
 start_beside() {
-  local service="$1" running="$2" new
+  local service="$1" running="$2" count="$3" new container
   compose "${UP_TIMEOUT}" up -d --no-deps --no-recreate \
-    --scale "${service}=$(($(wc -w <<<"${running}") + 1))" "${service}"
+    --scale "${service}=$(($(wc -w <<<"${running}") + count))" "${service}"
   new="$(compose 1m ps --all --quiet "${service}" | grep -vxF "${running}")"
-  container_healthy "${new}"
+  for container in ${new}; do
+    container_healthy "${container}"
+  done
 }
 
-# A replaced worker is not stopped like the API. It stops claiming jobs and finishes the ones it
-# is running, which can take as long as the slowest job (JOB_DRAIN_TIMEOUT_MS), while the new
-# worker takes new ones; killing it would leave each job locked for hours. A restart policy of
-# "no" keeps Docker from starting it again and marks it as draining for later runs. Prints the
-# worker containers that are live, or draining (still finishing, or exited and not yet removed).
-worker_containers() {
+# A replaced worker is not stopped like the web container. It stops claiming jobs and finishes the
+# ones it is running, which can take as long as the slowest job (JOB_DRAIN_TIMEOUT_MS), while the
+# new worker takes new ones; killing it would leave each job locked for hours. The runs it is
+# executing get a few minutes to end their turn (RUN_DRAIN_MS). A replaced API does the same with
+# its chat turns once it has stopped taking requests (see retire_api). A restart policy of "no"
+# keeps Docker from starting one again and marks it as draining for later runs. Prints the
+# containers of a service that are live (not draining), serving (live and running), or draining
+# (still finishing, or exited and not yet removed).
+service_containers() {
   local ids
-  ids="$(compose 1m ps --all --quiet worker)"
+  ids="$(compose 1m ps --all --quiet "$1")"
   [[ -n "${ids}" ]] || return 0
   # shellcheck disable=SC2086 # one container ID per word
-  sudo docker inspect --format '{{.Id}} {{.HostConfig.RestartPolicy.Name}}' ${ids} |
-    awk -v wanted="$1" '($2 == "no" ? "draining" : "live") == wanted { print $1 }'
+  sudo docker inspect --format '{{.Id}} {{.HostConfig.RestartPolicy.Name}} {{.State.Running}}' ${ids} |
+    awk -v wanted="$2" '
+      $2 == "no" && wanted == "draining" { print $1 }
+      $2 != "no" && wanted == "live" { print $1 }
+      $2 != "no" && $3 == "true" && wanted == "serving" { print $1 }'
 }
 
-# Waits for draining workers to exit and removes them. docker stop gives each the rest of the
-# worker's stop_grace_period before it kills one.
+# Waits for draining containers to exit and removes them, the worker's and then the API's unless
+# one service is named. docker stop gives a worker the rest of its stop_grace_period before it
+# kills one. An API hands back what is still running at RUN_DRAIN_MS and exits by itself; one still
+# there after API_DRAIN_TIMEOUT is stopped as before.
 finish_draining() {
-  local workers
-  workers="$(worker_containers draining)"
-  [[ -n "${workers}" ]] || return 0
-  echo "Waiting for the previous worker to finish its running jobs."
-  # shellcheck disable=SC2086
-  sudo docker stop ${workers} >/dev/null
-  # shellcheck disable=SC2086
-  sudo docker rm ${workers} >/dev/null
+  local workers="" apis=""
+  [[ "${1:-worker}" != worker ]] || workers="$(service_containers worker draining)"
+  if [[ -n "${workers}" ]]; then
+    echo "Waiting for the previous worker to finish its running jobs."
+    # shellcheck disable=SC2086
+    sudo docker stop ${workers} >/dev/null
+    # shellcheck disable=SC2086
+    sudo docker rm ${workers} >/dev/null
+  fi
+  [[ "${1:-api}" != api ]] || apis="$(service_containers api draining)"
+  if [[ -n "${apis}" ]]; then
+    echo "Waiting for the previous API to finish its chat turns."
+    # shellcheck disable=SC2086
+    timeout "${API_DRAIN_TIMEOUT}" sudo docker wait ${apis} >/dev/null || true
+    stop_containers "${apis}"
+  fi
 }
 
-drain_workers() {
+# Stops containers the way a deploy always has: whatever runs they hold is handed back at once.
+stop_containers() {
+  # shellcheck disable=SC2086 # one container ID per word
+  sudo docker stop --time 30 $1 >/dev/null
+  # shellcheck disable=SC2086
+  sudo docker rm $1 >/dev/null
+}
+
+drain_containers() {
   # shellcheck disable=SC2086 # one container ID per word
   sudo docker update --restart no $1 >/dev/null
   # One that is not running has nothing to finish; finish_draining removes it.
   # shellcheck disable=SC2086
-  sudo docker kill --signal SIGTERM $1 >/dev/null 2>&1 || true
+  sudo docker kill --signal "$2" $1 >/dev/null 2>&1 || true
+}
+
+# A replaced API stops taking requests at once (Caddy sets aside an upstream that refuses
+# connections and retries another) but lets the chat turns it is running end, on the signal its
+# image names. One from a release without that label is stopped as before.
+retire_api() {
+  local container signal
+  for container in $1; do
+    signal="$(sudo docker inspect --format '{{index .Config.Labels "org.rakazo.run-drain-signal"}}' "${container}")"
+    if [[ -n "${signal}" ]]; then
+      drain_containers "${container}" "${signal}"
+    else
+      stop_containers "${container}"
+    fi
+  done
 }
 
 replace_worker() {
   local live
-  live="$(worker_containers live)"
-  if [[ -n "$(worker_containers draining)" ]]; then
+  live="$(service_containers worker live)"
+  if [[ -n "$(service_containers worker draining)" ]]; then
     # Only a rollback finds a worker still draining: the one its deploy replaced. The failed
     # release's worker stops claiming jobs too, and the restored one starts once both exit,
     # because a scale-up would also start a drained worker that exited in the meantime.
-    [[ -z "${live}" ]] || drain_workers "${live}"
-    finish_draining
+    [[ -z "${live}" ]] || drain_containers "${live}" SIGTERM
+    finish_draining worker
     live=""
   fi
+  # No bare return: inside the rollback, which runs from the ERR trap, bash before 5.3 returns the
+  # status of the command that failed the deploy, and errexit then ends the rollback here.
   if [[ -z "${live}" ]]; then
     compose "${UP_TIMEOUT}" up -d --no-deps --wait worker
-    return
+  else
+    start_beside worker "${live}" "${WORKER_REPLICAS}"
+    drain_containers "${live}" SIGTERM
   fi
-  start_beside worker "${live}"
-  drain_workers "${live}"
 }
 
-# Replaces the API, web and worker without a gap: one new container starts beside the running
-# ones, and the old ones stop only once it passes its health check. Caddy dials whichever container
-# answers, so requests keep flowing through a deploy, and the new worker picks up chat runs while
-# the old one hands back the runs it was executing. Every other service is then reconciled
+# Replaces the API, web and worker without a gap: new containers start beside the running
+# ones, and the old ones stop only once those pass their health checks. Caddy dials whichever container
+# answers, so requests keep flowing through a deploy. The old API and worker end the turns they
+# were executing or, past RUN_DRAIN_MS, hand them back. Every other service is then reconciled
 # normally; the replaced containers already match the new configuration and stay as they are.
-# Compose leaves the worker alone there, since it would stop a draining one.
+# Compose leaves the API and worker alone there, since it would stop a draining one.
 roll_out() {
-  local service old services
+  local service old services draining others
   # Migrations run first, from their own container: it is the only one given the owner login.
   # The old API keeps serving meanwhile, so each migration must work with the previous release.
   # On older releases the API migrates on start, so only start its database here.
@@ -188,22 +247,32 @@ roll_out() {
     compose "${UP_TIMEOUT}" up -d --wait postgres
   fi
   for service in api web; do
+    if [[ "${service}" == api ]]; then
+      # Only a rollback finds an API still draining: the one its deploy replaced, which Compose
+      # would count, or start again if it has exited. Its turns are handed back now.
+      draining="$(service_containers api draining)"
+      [[ -z "${draining}" ]] || stop_containers "${draining}"
+    fi
     old="$(compose 1m ps --all --quiet "${service}")"
     if [[ -z "${old}" ]]; then
       # The migration run already started the database; do not rerun it through dependencies.
       compose "${UP_TIMEOUT}" up -d --no-deps --wait "${service}"
       continue
     fi
-    start_beside "${service}" "${old}"
-    # shellcheck disable=SC2086 # one container ID per word
-    sudo docker stop --time 30 ${old} >/dev/null
-    # shellcheck disable=SC2086
-    sudo docker rm ${old} >/dev/null
+    if [[ "${service}" == api ]]; then
+      start_beside api "${old}" "${API_REPLICAS}"
+      retire_api "${old}"
+    else
+      start_beside "${service}" "${old}" 1
+      stop_containers "${old}"
+    fi
   done
   replace_worker
-  # shellcheck disable=SC2046 # one service name per word
   # A second migration run would consume a deferred drop before the old worker has drained.
-  compose "${UP_TIMEOUT}" up -d --no-deps --remove-orphans $(compose 1m config --services | grep -Ev '^(worker|migrate)$')
+  others="$(grep -Ev '^(api|worker|migrate)$' <<<"${services}" || true)"
+  # Without services, Compose would reconcile all of them, the draining ones too.
+  # shellcheck disable=SC2086 # one service name per word
+  [[ -z "${others}" ]] || compose "${UP_TIMEOUT}" up -d --no-deps --remove-orphans ${others}
 }
 
 # Caddy mounts its config as a single file, which keeps the old inode after a git checkout, so a
@@ -261,7 +330,7 @@ app_image=""
 # The image the running API uses, which can differ from the configured tag if someone pulled a
 # newer one without recreating the containers.
 previous_app_image=""
-api_container="$(compose 1m ps --quiet api 2>/dev/null | head -n 1 || true)"
+api_container="$(service_containers api serving 2>/dev/null | head -n 1 || true)"
 if [[ -n "${api_container}" ]]; then
   previous_app_image="$(sudo docker inspect --format '{{.Image}}' "${api_container}" 2>/dev/null || true)"
 fi

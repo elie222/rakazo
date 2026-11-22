@@ -1,33 +1,25 @@
-import { Trans, useLingui } from "@lingui/react/macro";
-import type { Bot, BotAvatarSet, BotSection, Group, Space } from "@rakazo/contracts";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@rakazo/ui-web";
+import { Trans } from "@lingui/react/macro";
+import type { Bot, BotAvatarSet, BotSection, Group } from "@rakazo/contracts";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
-import { Settings, Trash2 } from "lucide-react";
 import type { ComponentProps, RefObject } from "react";
-import { useCallback, useDeferredValue, useEffect, useRef, useState } from "react";
-import { PAGE_PARAM } from "../../lib/pages";
-import { useSpaceQueries } from "../../lib/query";
-import type { Panel } from "../../lib/right-panel-state";
-import type { createSpaceRpc } from "../../lib/rpc";
-import { selectSpace } from "../../lib/rpc";
+import { useDeferredValue, useState } from "react";
+import { PAGE_PARAM } from "../../lib/pages/pages";
+import { useSpaceQueries } from "../../lib/query/query";
+import type { createSpaceRpc, RpcClient } from "../../lib/query/rpc";
+import { selectSpace } from "../../lib/query/rpc";
+import type { CreateBotDialogInput } from "./bots/create-bot-dialog";
+import { CreateBotDialog } from "./bots/create-bot-dialog";
 import type { CommandPaletteAction } from "./command-palette";
 import { CommandPalette } from "./command-palette";
-import type { CreateBotDialogInput } from "./create-bot-dialog";
-import { CreateBotDialog } from "./create-bot-dialog";
 import {
   ClearConversationDialog,
   DeleteBotDialog,
   DeleteItemDialog,
-  DeleteSpaceDialog,
   NewBotSectionDialog,
   NewSpaceDialog,
   RenameBotSectionDialog,
-} from "./dialogs";
+} from "./create-delete-dialogs";
+import type { Panel } from "./right-panel-state";
 
 type ChatTarget = { kind: "bot"; chat: Bot } | { kind: "group"; chat: Group };
 type SectionTarget = { section: BotSection; spaceId: string };
@@ -36,18 +28,6 @@ type SectionTarget = { section: BotSection; spaceId: string };
 export function useShellDialogs() {
   const [deleteTarget, setDeleteTarget] = useState<Bot | null>(null);
   const [deleteGroupTarget, setDeleteGroupTarget] = useState<Group | null>(null);
-  const [deleteSpaceTarget, setDeleteSpaceTarget] = useState<Space | null>(null);
-  const [spaceMenu, setSpaceMenu] = useState<{
-    id: string;
-    position: { x: number; y: number };
-  } | null>(null);
-  const spaceMenuAnchor = useRef<HTMLElement | null>(null);
-  useEffect(() => {
-    if (spaceMenu || !spaceMenuAnchor.current) return;
-    spaceMenuAnchor.current.focus();
-    spaceMenuAnchor.current = null;
-  }, [spaceMenu]);
-  const closeSpaceMenu = useCallback(() => setSpaceMenu(null), []);
   const [clearTarget, setClearTarget] = useState<ChatTarget | null>(null);
   const [newSectionTarget, setNewSectionTarget] = useState<ChatTarget | null>(null);
   const [renameSectionTarget, setRenameSectionTarget] = useState<SectionTarget | null>(null);
@@ -60,12 +40,6 @@ export function useShellDialogs() {
     setDeleteTarget,
     deleteGroupTarget,
     setDeleteGroupTarget,
-    deleteSpaceTarget,
-    setDeleteSpaceTarget,
-    spaceMenu,
-    setSpaceMenu,
-    spaceMenuAnchor,
-    closeSpaceMenu,
     clearTarget,
     setClearTarget,
     newSectionTarget,
@@ -85,11 +59,10 @@ export function useShellDialogs() {
 
 export type ShellDialogsState = ReturnType<typeof useShellDialogs>;
 
-/** The shell's confirmation dialogs, the space menu, and the command palette. */
+/** The shell's confirmation dialogs and command palette. */
 export function ShellDialogs({
   dialogs,
   rpc,
-  spaces,
   bots,
   activeId,
   activeGroupId,
@@ -97,8 +70,6 @@ export function ShellDialogs({
   navigate,
   setPanel,
   refreshBots,
-  removeSpace,
-  openSpaceSettings,
   closeMobileSidebar,
   createBot,
   botAvatarSet,
@@ -109,7 +80,6 @@ export function ShellDialogs({
 }: {
   dialogs: ShellDialogsState;
   rpc: ReturnType<typeof createSpaceRpc>;
-  spaces: Space[];
   bots: Bot[];
   activeId: string | undefined;
   activeGroupId: string | undefined;
@@ -117,10 +87,8 @@ export function ShellDialogs({
   navigate: (path: string) => void;
   setPanel: (panel: Panel) => void;
   refreshBots: (includeArchived?: boolean) => Promise<void>;
-  removeSpace: (spaceId: string) => Promise<void>;
-  openSpaceSettings: (spaceId: string) => void;
   closeMobileSidebar: () => void;
-  createBot: (input: CreateBotDialogInput) => Promise<void>;
+  createBot: (input: CreateBotDialogInput, client: RpcClient) => Promise<void>;
   /** The account's set, which a new bot takes. */
   botAvatarSet: BotAvatarSet;
   clearOpenThread: () => void;
@@ -129,17 +97,11 @@ export function ShellDialogs({
   deleteRoutineDialogProps: ComponentProps<typeof DeleteItemDialog> | null;
   paletteActions: CommandPaletteAction[];
 }) {
-  const { t } = useLingui();
   const {
     deleteTarget,
     setDeleteTarget,
     deleteGroupTarget,
     setDeleteGroupTarget,
-    deleteSpaceTarget,
-    setDeleteSpaceTarget,
-    spaceMenu,
-    setSpaceMenu,
-    closeSpaceMenu,
     clearTarget,
     setClearTarget,
     newSectionTarget,
@@ -155,9 +117,6 @@ export function ShellDialogs({
     commandPaletteOpen,
     setCommandPaletteOpen,
   } = dialogs;
-  const spaceMenuTarget = spaceMenu
-    ? (spaces.find((space) => space.id === spaceMenu.id) ?? null)
-    : null;
   const queries = useSpaceQueries();
   const [pageSearch, setPageSearch] = useState("");
   const pageQuery = useDeferredValue(pageSearch.trim());
@@ -168,58 +127,6 @@ export function ShellDialogs({
   });
   return (
     <>
-      {spaceMenu ? (
-        <DropdownMenu
-          open
-          onOpenChange={(open) => {
-            if (!open) closeSpaceMenu();
-          }}
-        >
-          {/* Invisible anchor at the pointer position, mirroring the bot menu. */}
-          <DropdownMenuTrigger
-            render={
-              <button
-                type="button"
-                tabIndex={-1}
-                aria-hidden
-                className="fixed size-0 p-0 opacity-0"
-                style={{ left: spaceMenu.position.x, top: spaceMenu.position.y }}
-              />
-            }
-          />
-          <DropdownMenuContent
-            aria-label={t`Actions for space`}
-            align="start"
-            sideOffset={0}
-            className="w-[220px]"
-          >
-            {spaceMenuTarget ? (
-              <DropdownMenuItem
-                onClick={() => {
-                  setSpaceMenu(null);
-                  openSpaceSettings(spaceMenuTarget.id);
-                }}
-              >
-                <Settings />
-                {t`Settings`}
-              </DropdownMenuItem>
-            ) : null}
-            {spaceMenuTarget?.canDelete ? (
-              <DropdownMenuItem
-                variant="destructive"
-                onClick={() => {
-                  setDeleteSpaceTarget(spaceMenuTarget);
-                  setSpaceMenu(null);
-                }}
-              >
-                <Trash2 />
-                {t`Delete space`}
-              </DropdownMenuItem>
-            ) : null}
-          </DropdownMenuContent>
-        </DropdownMenu>
-      ) : null}
-
       {deleteTarget ? (
         <DeleteBotDialog
           bot={deleteTarget}
@@ -249,23 +156,12 @@ export function ShellDialogs({
         />
       ) : null}
 
-      {deleteSpaceTarget ? (
-        <DeleteSpaceDialog
-          space={deleteSpaceTarget}
-          onCancel={() => setDeleteSpaceTarget(null)}
-          onConfirm={async () => {
-            await removeSpace(deleteSpaceTarget.id);
-            setDeleteSpaceTarget(null);
-          }}
-        />
-      ) : null}
-
       {newSectionTarget ? (
         <NewBotSectionDialog
           bot={newSectionTarget.chat}
           onCancel={() => setNewSectionTarget(null)}
-          onConfirm={async (name) => {
-            await rpc.botSections.create(
+          onConfirm={async (name, client) => {
+            await client.botSections.create(
               newSectionTarget.kind === "bot"
                 ? { botId: newSectionTarget.chat.id, name }
                 : { groupId: newSectionTarget.chat.id, name },
@@ -280,8 +176,8 @@ export function ShellDialogs({
         <RenameBotSectionDialog
           section={renameSectionTarget.section}
           onCancel={() => setRenameSectionTarget(null)}
-          onConfirm={async (name) => {
-            await rpc.botSections.update(
+          onConfirm={async (name, client) => {
+            await client.botSections.update(
               {
                 sectionId: renameSectionTarget.section.id,
                 name,
@@ -346,10 +242,10 @@ export function ShellDialogs({
       {newSpaceOpen ? (
         <NewSpaceDialog
           onCancel={() => setNewSpaceOpen(false)}
-          onCreate={async (name) => (await rpc.spaces.create({ name })).id}
+          onCreate={async (name, client) => (await client.spaces.create({ name })).id}
           loadItems={() => rpc.availability.items()}
-          chooseItems={async (spaceId, items) => {
-            await rpc.availability.chooseForSpace({
+          chooseItems={async (spaceId, items, client) => {
+            await client.availability.chooseForSpace({
               spaceId,
               items: items.map(({ kind, id }) => ({ kind, id })),
             });

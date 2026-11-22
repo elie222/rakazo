@@ -1,6 +1,8 @@
 import { Trans, useLingui } from "@lingui/react/macro";
+import { useTimeout } from "@rakazo/chat-ui/hooks";
 import type { LinkFavicons } from "@rakazo/chat-ui/web";
 import { LinkFaviconsContext, RemoteImagesContext } from "@rakazo/chat-ui/web";
+import { mobileMcpOAuthReturnUrl } from "@rakazo/contracts";
 import { analyticsScreen } from "@rakazo/core";
 import { Button } from "@rakazo/ui-web";
 import {
@@ -13,70 +15,80 @@ import {
 } from "react";
 import { Navigate, Outlet, Route, Routes, useLocation, useSearchParams } from "react-router-dom";
 import { LoadingState } from "./components/ai/primitives";
+import { SubscriptionGate } from "./components/billing/SubscriptionGate";
+import { AiDataConsentPrompt } from "./components/call/AiDataConsentPrompt";
 import { CallLayout } from "./components/call/CallLayout";
 import { ErrorBoundary } from "./components/ErrorBoundary";
-import { MarkdownLinkPrompt } from "./components/markdown-link-prompt";
+import { MarkdownLinkPrompt } from "./components/messages/markdown-link-prompt";
 import { PageLoading } from "./components/PageLoading";
-import { SubscriptionGate } from "./components/SubscriptionGate";
-import { authClient } from "./lib/auth";
-import { getTicketBoardEnabled, subscribeTicketBoardEnabled } from "./lib/bootstrap";
-import { syncCallIdentity } from "./lib/call-session";
-import { desktopBridge } from "./lib/desktop";
-import { syncWebLogoAvatarIdentity } from "./lib/logo-avatar-activity";
-import { identifyMonitoringUser } from "./lib/monitoring";
-import { markAfterPaint, markOnce } from "./lib/performance";
-import { lazyComponent } from "./lib/preload-recovery";
-import { QueryUserProvider, setQueryUser } from "./lib/query";
-import { remoteImagesPreference } from "./lib/remote-images-preference";
-import { hasSignedInBefore, rememberSignedIn } from "./lib/returning-user";
-import { rpc } from "./lib/rpc";
+import { authClient } from "./lib/auth/auth";
+import { hasSignedInBefore, rememberSignedIn } from "./lib/auth/returning-user";
 import {
   holdAnonymousGate,
   holdUnreachableGate,
   sessionGate,
   sessionRetryDelayMs,
   showSessionUnavailable,
-} from "./lib/session-gate";
+} from "./lib/auth/session-gate";
 import {
   MCP_OAUTH_CALLBACK_PATH,
   newAccountDestination,
   SLACK_INSTALL_CALLBACK_PATH,
   signInNext,
-} from "./lib/sign-in-next";
-import { syncLogOutFailure } from "./lib/sign-out";
-import { completeSsoCallback, SSO_CALLBACK_PATH } from "./lib/sso-flow";
-import { IntegrationCallbackPage } from "./pages/IntegrationCallback";
-import { IntegrationSetupPage } from "./pages/IntegrationSetup";
-import { McpOAuthCallbackPage } from "./pages/McpOAuthCallback";
+} from "./lib/auth/sign-in-next";
+import { syncLogOutFailure } from "./lib/auth/sign-out";
+import { completeSsoCallback, SSO_CALLBACK_PATH } from "./lib/auth/sso-flow";
+import { getLabs, subscribeLabs } from "./lib/bootstrap";
+import { syncWebLogoAvatarIdentity } from "./lib/bots/logo-avatar-activity";
+import { syncCallIdentity } from "./lib/calls/call-session";
+import { analyticsSurface } from "./lib/platform/desktop";
+import { identifyMonitoringUser } from "./lib/platform/monitoring";
+import { markAfterPaint, markOnce } from "./lib/platform/performance";
+import { lazyComponent } from "./lib/platform/preload-recovery";
+import { remoteImagesPreference } from "./lib/preferences/remote-images-preference";
+import { QueryUserProvider, setQueryUser } from "./lib/query/query";
+import { rpc } from "./lib/query/rpc";
+import { IntegrationCallbackPage } from "./pages/integrations/IntegrationCallback";
+import { IntegrationSetupPage } from "./pages/integrations/IntegrationSetup";
+import { McpOAuthCallbackPage } from "./pages/integrations/McpOAuthCallback";
+import { SlackInstallCallbackPage } from "./pages/integrations/SlackInstallCallback";
 import { SharedPagePage } from "./pages/SharedPage";
 import { ShellPage } from "./pages/Shell";
-import { SlackInstallCallbackPage } from "./pages/SlackInstallCallback";
+import { AppRailLayout } from "./pages/shell/app-rail";
 
-const AuthPage = lazyComponent(() => import("./pages/Auth").then((module) => module.AuthPage));
+const PageReviewHost = lazyComponent(() =>
+  import("./components/pages/PageReviewHost").then((module) => module.default),
+);
+const AuthPage = lazyComponent(() => import("./pages/auth/Auth").then((module) => module.AuthPage));
 const PasswordResetPage = lazyComponent(() =>
-  import("./pages/Auth").then((module) => module.PasswordResetPage),
+  import("./pages/auth/Auth").then((module) => module.PasswordResetPage),
 );
 const OnboardingPage = lazyComponent(() =>
-  import("./pages/Onboarding").then((module) => module.OnboardingPage),
+  import("./pages/onboarding/Onboarding").then((module) => module.OnboardingPage),
 );
 const NotFoundPage = lazyComponent(() =>
   import("./pages/NotFound").then((module) => module.NotFoundPage),
 );
 const ArtifactsPage = lazyComponent(() =>
-  import("./pages/Artifacts").then((module) => module.ArtifactsPage),
+  import("./pages/space/Artifacts").then((module) => module.ArtifactsPage),
 );
-const BoardPage = lazyComponent(() => import("./pages/Board").then((module) => module.BoardPage));
+const BoardPage = lazyComponent(() =>
+  import("./pages/space/Board").then((module) => module.BoardPage),
+);
 const AdminPluginsPage = lazyComponent(() =>
-  import("./pages/AdminPluginsPage").then((module) => module.AdminPluginsPage),
+  import("./pages/plugins/AdminPluginsPage").then((module) => module.AdminPluginsPage),
 );
 const AdminAccessPage = lazyComponent(() =>
-  import("./pages/AdminAccessPage").then((module) => module.AdminAccessPage),
+  import("./pages/auth/AdminAccessPage").then((module) => module.AdminAccessPage),
 );
 const NavLinkPage = lazyComponent(() =>
   import("./pages/NavLinkPage").then((module) => module.NavLinkPage),
 );
 const InvitePage = lazyComponent(() =>
-  import("./pages/Invite").then((module) => module.InvitePage),
+  import("./pages/auth/Invite").then((module) => module.InvitePage),
+);
+const JoinOrganizationPage = lazyComponent(() =>
+  import("./pages/auth/JoinOrganization").then((module) => module.JoinOrganizationPage),
 );
 
 function SsoCallbackPage() {
@@ -113,9 +125,9 @@ export function App() {
 function SessionApp() {
   const [searchParams] = useSearchParams();
   const next = signInNext(searchParams.get("next"));
-  const ticketBoardEnabled = useSyncExternalStore(
-    subscribeTicketBoardEnabled,
-    getTicketBoardEnabled,
+  const boardEnabled = useSyncExternalStore(
+    subscribeLabs,
+    () => getLabs().includes("board"),
     () => false,
   );
   const session = authClient.useSession();
@@ -138,7 +150,7 @@ function SessionApp() {
     if (lastScreen.current === key) return;
     lastScreen.current = key;
     void Promise.resolve()
-      .then(() => rpc.analytics.screen({ screen, surface: desktopBridge() ? "desktop" : "web" }))
+      .then(() => rpc.analytics.screen({ screen, surface: analyticsSurface() }))
       .catch(() => undefined);
   }, [analyticsUserId, screen]);
   const gate = sessionGate(session);
@@ -175,6 +187,7 @@ function SessionApp() {
   const user = session.data?.user;
   return (
     <QueryUserProvider value={user?.id ?? null}>
+      <AiDataConsentPrompt key={user?.id ?? "anonymous"} />
       <MarkdownLinkPrompt>
         <div className="h-full" data-rakazo-app-state="ready">
           <Suspense fallback={<PageLoading />}>
@@ -188,22 +201,32 @@ function SessionApp() {
                   />
                 }
               />
-              <Route
-                path="/sign-in"
-                element={
-                  user ? <Navigate to={next ?? "/app"} replace /> : <AuthPage key="in" mode="in" />
-                }
-              />
-              <Route
-                path="/sign-up"
-                element={
-                  user ? (
-                    <Navigate to={newAccountDestination(next)} replace />
-                  ) : (
-                    <AuthPage key="up" mode="up" />
-                  )
-                }
-              />
+              {["/sign-in", "/sign-in/email"].map((path) => (
+                <Route
+                  key={path}
+                  path={path}
+                  element={
+                    user ? (
+                      <Navigate to={next ?? "/app"} replace />
+                    ) : (
+                      <AuthPage key={path} mode="in" />
+                    )
+                  }
+                />
+              ))}
+              {["/sign-up", "/sign-up/email"].map((path) => (
+                <Route
+                  key={path}
+                  path={path}
+                  element={
+                    user ? (
+                      <Navigate to={newAccountDestination(next)} replace />
+                    ) : (
+                      <AuthPage key={path} mode="up" />
+                    )
+                  }
+                />
+              ))}
               <Route
                 path="/forgot-password"
                 element={
@@ -213,9 +236,20 @@ function SessionApp() {
               <Route path="/reset-password" element={<PasswordResetPage />} />
               <Route path="/p/:slugToken" element={<SharedPagePage />} />
               <Route
-                path={MCP_OAUTH_CALLBACK_PATH}
+                path="/review/:pageId?"
                 element={
                   user ? (
+                    <PageReviewHost />
+                  ) : (
+                    <Navigate to={`/sign-in?next=${encodeURIComponent(pathname)}`} replace />
+                  )
+                }
+              />
+              <Route
+                path={MCP_OAUTH_CALLBACK_PATH}
+                element={
+                  // A sign-in the mobile app started goes back to the app, signed in here or not.
+                  user || mobileMcpOAuthReturnUrl(new URLSearchParams(search)) ? (
                     <McpOAuthCallbackPage />
                   ) : (
                     <Navigate
@@ -259,6 +293,16 @@ function SessionApp() {
                 }
               />
               <Route
+                path="/join/:invitationId"
+                element={
+                  user ? (
+                    <JoinOrganizationPage />
+                  ) : (
+                    <Navigate to={`/sign-in?next=${encodeURIComponent(pathname)}`} replace />
+                  )
+                }
+              />
+              <Route
                 path="/invite/:token"
                 element={
                   user ? (
@@ -285,14 +329,20 @@ function SessionApp() {
                   )
                 }
               >
-                <Route path="/app" element={<ShellPage />} />
-                <Route path="/app/g/:groupId" element={<ShellPage />} />
-                <Route path="/app/:botId" element={<ShellPage />} />
+                <Route element={<AppRailLayout enabled={boardEnabled} />}>
+                  <Route path="/app" element={<ShellPage />} />
+                  <Route path="/app/g/:groupId" element={<ShellPage />} />
+                  <Route path="/app/:botId" element={<ShellPage />} />
+                  {boardEnabled ? (
+                    <Route element={<CallLayout />}>
+                      <Route path="/app/board" element={<BoardPage />} />
+                    </Route>
+                  ) : null}
+                </Route>
                 <Route element={<CallLayout />}>
                   <Route path="/onboarding/:step?" element={<OnboardingPage />} />
                   <Route path="/app/artifacts" element={<ArtifactsPage />} />
                   <Route path="/app/artifacts/:artifactId" element={<ArtifactsPage />} />
-                  {ticketBoardEnabled ? <Route path="/app/board" element={<BoardPage />} /> : null}
                   <Route path="/app/x/:linkId" element={<NavLinkPage />} />
                 </Route>
               </Route>
@@ -312,26 +362,22 @@ function SessionApp() {
  */
 function SessionUnavailable({ refetch }: { refetch: () => Promise<void> }) {
   const { t } = useLingui();
-  const [attempt, setAttempt] = useState(0);
-  const [retryKey, setRetryKey] = useState(0);
-  const retryImmediately = useRef(false);
-  const refetchRef = useRef(refetch);
-  refetchRef.current = refetch;
-
-  useEffect(() => {
-    let cancelled = false;
-    const delay = retryImmediately.current ? 0 : sessionRetryDelayMs(attempt);
-    retryImmediately.current = false;
-    const timer = setTimeout(() => {
-      void refetchRef.current().finally(() => {
-        if (!cancelled) setAttempt((value) => value + 1);
-      });
-    }, delay);
-    return () => {
-      cancelled = true;
-      clearTimeout(timer);
-    };
-  }, [attempt, retryKey]);
+  // Each retry is a new object, so a lookup that answers after Retry now cannot advance it.
+  const [retry, setRetry] = useState({ attempt: 0, delay: sessionRetryDelayMs(0) });
+  useTimeout(
+    () => {
+      const started = retry;
+      void refetch().finally(() =>
+        setRetry((current) =>
+          current === started
+            ? { attempt: started.attempt + 1, delay: sessionRetryDelayMs(started.attempt + 1) }
+            : current,
+        ),
+      );
+    },
+    retry.delay,
+    retry,
+  );
 
   return (
     <div className="grid h-full place-items-center bg-background px-6 text-center">
@@ -341,14 +387,7 @@ function SessionUnavailable({ refetch }: { refetch: () => Promise<void> }) {
           <Trans>Can&apos;t reach the server.</Trans>
         </p>
         <div className="mt-4">
-          <Button
-            variant="secondary"
-            onClick={() => {
-              retryImmediately.current = true;
-              setAttempt(0);
-              setRetryKey((key) => key + 1);
-            }}
-          >
+          <Button variant="secondary" onClick={() => setRetry({ attempt: 0, delay: 0 })}>
             <Trans>Retry now</Trans>
           </Button>
         </div>

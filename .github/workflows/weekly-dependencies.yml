@@ -9,7 +9,8 @@ permissions: {}
 
 # One serialized auth stream preserves Codex's rotating refresh token.
 concurrency:
-  group: weekly-dependencies
+  group: codex-subscription
+  queue: max
   cancel-in-progress: false
 
 jobs:
@@ -45,7 +46,7 @@ jobs:
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         if: steps.existing.outputs.count == '0'
         with:
-          node-version: 22
+          node-version: 24
       - name: Prepare isolated Codex user
         id: prepare
         if: steps.existing.outputs.count == '0'
@@ -53,8 +54,13 @@ jobs:
           set -euo pipefail
           npm install --global @openai/codex@0.164.0
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends age
+          sudo apt-get install -y --no-install-recommends acl age
           sudo useradd --create-home --shell /bin/bash codex-updater
+          # The runner's home is private (750); let only the agent traverse to the checkout.
+          dir="$GITHUB_WORKSPACE"
+          while dir="$(dirname "$dir")" && [ "$dir" != / ]; do
+            sudo setfacl -m u:codex-updater:x "$dir"
+          done
           # Bubblewrap needs user namespaces on GitHub's Ubuntu image.
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
           control="$RUNNER_TEMP/dependency-updater-control"
@@ -97,6 +103,8 @@ jobs:
           umask 077
           # Neither Codex nor package lifecycle scripts can read the runner user's
           # later secret-write/publishing token. Keep session logs private, too.
+          log="$RUNNER_TEMP/dependency-updater-control/session.log"
+          status=0
           timeout --kill-after=30s 40m sudo -n -H -u codex-updater env \
             -u OPENAI_API_KEY -u CODEX_API_KEY -u CODEX_ACCESS_TOKEN -u GH_TOKEN -u GITHUB_TOKEN \
             PATH="$PATH" VALIDATION_NODE="$(command -v node)" \
@@ -105,7 +113,20 @@ jobs:
             -c 'forced_login_method="chatgpt"' -c 'cli_auth_credentials_store="file"' \
             --output-last-message /home/codex-updater/pr.md \
             - < .github/prompts/weekly-dependencies.md \
-            > "$RUNNER_TEMP/dependency-updater-control/session.log" 2>&1
+            > "$log" 2>&1 || status=$?
+          if [ "$status" -ne 0 ]; then
+            echo "::error::Codex exited with status $status"
+            # The log may hold the refreshed login: show only Codex's own error
+            # lines, minus anything that could carry a credential. Package output can
+            # reach the log, so workflow commands stay off while it prints.
+            resume="$(openssl rand -hex 16)"
+            echo "::stop-commands::$resume"
+            grep -E '^(ERROR|Error|error)[: ]|^[0-9-]+T[0-9:.]+Z +ERROR |^Not inside a trusted directory' "$log" \
+              | grep -viE '[A-Za-z0-9+_=-]{24,}|token|bearer|secret|authoriz|cookie|password|eyJ' \
+              | tail -n 20 | cut -c1-300 || true
+            echo "::$resume::"
+            exit "$status"
+          fi
       - name: Persist refreshed subscription login
         if: always() && steps.auth.outcome == 'success'
         env:

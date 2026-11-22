@@ -7,7 +7,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 const run = promisify(execFile);
 const databaseUrl = process.env.VERIFY_DATABASE === "1" ? process.env.DATABASE_URL : undefined;
-const describePostgres = databaseUrl ? describe.sequential : describe.skip;
+const describePostgres = databaseUrl ? describe : describe.skip;
 
 describePostgres("the operator's account status command (PostgreSQL)", { timeout: 120_000 }, () => {
   let db: ReturnType<typeof createDb>;
@@ -36,10 +36,7 @@ describePostgres("the operator's account status command (PostgreSQL)", { timeout
     const user = await system.user.create({
       data: { id: randomUUID(), name: "Erin", email, emailVerified: true },
     });
-    const { spaceId } = await bootstrapUserSpace(system, user, {
-      signupsEnabled: "true",
-      signupAllowlist: "",
-    });
+    const { spaceId } = await bootstrapUserSpace(system, user);
     const bot = await createRepos(system).createBot(
       { userId: user.id, spaceId, email, isDeploymentOwner: false },
       { name: "Helper", description: "", instructions: "", notifyOnFinish: false },

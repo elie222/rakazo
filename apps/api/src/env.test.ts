@@ -1,5 +1,10 @@
-import { describe, expect, it } from "vitest";
-import { loadEnv } from "./env.js";
+import { generateKeyPairSync } from "node:crypto";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
+import { afterEach, describe, expect, it } from "vitest";
+import { loadEnv, parseExtraAuthOrigins, withEnvOverrides } from "./env.js";
 
 const base = {
   DATABASE_URL: "postgres://rakazo:rakazo@127.0.0.1:5433/rakazo",
@@ -48,11 +53,27 @@ describe("loadEnv", () => {
   it.each(["0", "1e3", "9007199254740991"])("rejects invalid upload limit %s", (value) => {
     expect(() => loadEnv({ ...base, MAX_UPLOAD_SIZE_MB: value })).toThrow("MAX_UPLOAD_SIZE_MB");
   });
+  it("keeps the 5 GiB computer save limit unless configured", () => {
+    expect(loadEnv(base).workspaceSaveLimits).toEqual({
+      maxBytes: 5 * 1024 ** 3,
+      maxFiles: 1_000_000,
+    });
+    expect(loadEnv({ ...base, WORKSPACE_SAVE_MAX_GB: "20" }).workspaceSaveLimits.maxBytes).toBe(
+      20 * 1024 ** 3,
+    );
+  });
+
+  it.each(["0", "-1", "abc", "1e3"])("rejects invalid computer save limit %s", (value) => {
+    expect(() => loadEnv({ ...base, WORKSPACE_SAVE_MAX_GB: value })).toThrow(
+      "WORKSPACE_SAVE_MAX_GB",
+    );
+  });
+
   it("keeps the ticket board off unless explicitly enabled", () => {
-    expect(loadEnv(base).ticketBoardEnabled).toBe(false);
+    expect(loadEnv(base).deploymentLabs).toEqual([]);
     for (const value of ["false", "1", ""])
-      expect(loadEnv({ ...base, TICKET_BOARD_ENABLED: value }).ticketBoardEnabled).toBe(false);
-    expect(loadEnv({ ...base, TICKET_BOARD_ENABLED: "true" }).ticketBoardEnabled).toBe(true);
+      expect(loadEnv({ ...base, TICKET_BOARD_ENABLED: value }).deploymentLabs).toEqual([]);
+    expect(loadEnv({ ...base, TICKET_BOARD_ENABLED: "true" }).deploymentLabs).toEqual(["board"]);
   });
   it("loads operator menu links and refuses to start on a bad value", () => {
     expect(loadEnv(base).navLinks).toEqual([]);
@@ -109,33 +130,6 @@ describe("loadEnv", () => {
     ).toBe("https://catalog.example.test/feed");
   });
 
-  it("falls back to none when a remote provider key is missing", () => {
-    expect(
-      loadEnv({
-        ...base,
-        SANDBOX_PROVIDER: "e2b",
-      }).sandboxProvider,
-    ).toBe("none");
-    expect(
-      loadEnv({
-        ...base,
-        SANDBOX_PROVIDER: "createos",
-      }).sandboxProvider,
-    ).toBe("none");
-    expect(
-      loadEnv({
-        ...base,
-        SANDBOX_PROVIDER: "none",
-      }).sandboxProvider,
-    ).toBe("none");
-    expect(
-      loadEnv({
-        ...base,
-        SANDBOX_PROVIDER: "",
-      }).sandboxProvider,
-    ).toBe("none");
-  });
-
   it("loads provider-specific Daytona configuration", () => {
     const env = loadEnv({
       ...base,
@@ -146,28 +140,12 @@ describe("loadEnv", () => {
     });
     expect(env).toMatchObject({
       sandboxProvider: "daytona",
-      daytonaApiKey: "test-daytona-key",
-      daytonaApiUrl: "https://daytona.test/api",
-      daytonaTarget: "test-target",
+      sandboxOptions: {
+        daytonaApiKey: "test-daytona-key",
+        daytonaApiUrl: "https://daytona.test/api",
+        daytonaTarget: "test-target",
+      },
     });
-  });
-
-  it("loads Novita credentials and the shared sandbox template", () => {
-    expect(
-      loadEnv({
-        ...base,
-        SANDBOX_PROVIDER: "novita",
-        NOVITA_API_KEY: "test-novita-key",
-        SANDBOX_TEMPLATE: "custom-desktop",
-      }),
-    ).toMatchObject({
-      sandboxProvider: "novita",
-      novitaApiKey: "test-novita-key",
-      sandboxTemplate: "custom-desktop",
-    });
-    expect(
-      loadEnv({ ...base, SANDBOX_PROVIDER: "novita", E2B_API_KEY: "test-e2b-key" }).sandboxProvider,
-    ).toBe("none");
   });
 
   it("loads provider-specific Boat configuration", () => {
@@ -179,9 +157,27 @@ describe("loadEnv", () => {
     });
     expect(env).toMatchObject({
       sandboxProvider: "boat",
-      boatApiKey: "test-boat-key",
-      boatApiUrl: "https://boat.test/api/v1",
+      sandboxOptions: { boatApiKey: "test-boat-key", boatApiUrl: "https://boat.test/api/v1" },
     });
+  });
+
+  it("starts without reading a malformed computer setting until a computer is built", () => {
+    const env = loadEnv({ ...base, KUBERNETES_SANDBOX_POD_ANNOTATIONS: "{" });
+    expect(env.databaseUrl).toBe(base.DATABASE_URL);
+    expect(() => env.sandboxOptions).toThrow(/KUBERNETES_SANDBOX_POD_ANNOTATIONS/);
+  });
+
+  it("keeps environment computer options a partial override leaves out", () => {
+    const env = loadEnv({
+      ...base,
+      SANDBOX_PROVIDER: "daytona",
+      DAYTONA_API_KEY: "test-daytona-key",
+      DAYTONA_TARGET: "env-target",
+    });
+    expect(
+      withEnvOverrides(env, { sandboxOptions: { daytonaTarget: "override-target" } })
+        .sandboxOptions,
+    ).toMatchObject({ daytonaApiKey: "test-daytona-key", daytonaTarget: "override-target" });
   });
 
   it("throws when production omits secrets", () => {
@@ -375,6 +371,53 @@ describe("OIDC environment", () => {
       "AUTH_BREACHED_PASSWORD_CHECK_ENABLED must be true or false",
     );
   });
+  it("refuses an Auto Review confidence floor it can't read at startup", () => {
+    expect(() => loadEnv({ ...base, RAKAZO_AUTO_REVIEW_MIN_CONFIDENCE: "90" })).toThrow(
+      "RAKAZO_AUTO_REVIEW_MIN_CONFIDENCE must be a number from 0 to 1",
+    );
+    expect(() => loadEnv({ ...base, RAKAZO_AUTO_REVIEW_MIN_CONFIDENCE: "0.9" })).not.toThrow();
+    expect(() => loadEnv({ ...base, RAKAZO_AUTO_REVIEW_MIN_CONFIDENCE: "" })).not.toThrow();
+  });
+  it("refuses a SIGNUPS_ENABLED value it can't read", () => {
+    for (const value of ["false", "FALSE", " true ", "0", "1", ""]) {
+      expect(loadEnv({ ...base, SIGNUPS_ENABLED: value }).signupsEnabled).toBe(value);
+    }
+    for (const value of ["no", "off", "flase"]) {
+      expect(() => loadEnv({ ...base, SIGNUPS_ENABLED: value })).toThrow(
+        "SIGNUPS_ENABLED must be true or false",
+      );
+    }
+  });
+  it("refuses a RAKAZO_LIVE_MODEL_CATALOG value it can't read at startup", () => {
+    for (const value of ["off", "false", "0", "no", "on", ""]) {
+      expect(() => loadEnv({ ...base, RAKAZO_LIVE_MODEL_CATALOG: value })).not.toThrow();
+    }
+    expect(() => loadEnv({ ...base, RAKAZO_LIVE_MODEL_CATALOG: "disabled" })).toThrow(
+      "RAKAZO_LIVE_MODEL_CATALOG must be on or off",
+    );
+  });
+  it("reads USER_DEVICES_ENABLED strictly and refuses a value it can't read", () => {
+    expect(loadEnv(base).userDevicesEnabled).toBe(true);
+    for (const value of ["", "  ", "true", "TRUE", "1"]) {
+      expect(loadEnv({ ...base, USER_DEVICES_ENABLED: value }).userDevicesEnabled).toBe(true);
+    }
+    for (const value of ["false", "FALSE", "False", " false ", "0"]) {
+      expect(loadEnv({ ...base, USER_DEVICES_ENABLED: value }).userDevicesEnabled).toBe(false);
+    }
+    for (const value of ["no", "off", "flase"]) {
+      expect(() => loadEnv({ ...base, USER_DEVICES_ENABLED: value })).toThrow(
+        "USER_DEVICES_ENABLED must be true or false",
+      );
+    }
+  });
+  it("refuses a RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC value it can't read", () => {
+    for (const value of ["", "0", "false", "1", "TRUE"]) {
+      expect(() => loadEnv({ ...base, RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC: value })).not.toThrow();
+    }
+    expect(() => loadEnv({ ...base, RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC: "no" })).toThrow(
+      "RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC must be true or false",
+    );
+  });
   it("defaults to SSO with no policy bypass", () => {
     expect(loadEnv({ ...base, ...oidc }).oidc).toMatchObject({
       name: "SSO",
@@ -384,6 +427,76 @@ describe("OIDC environment", () => {
     expect(
       loadEnv({ ...base, ...oidc, OIDC_ALLOW_SIGNUP_BYPASS: "true" }).oidc?.allowSignupBypass,
     ).toBe(true);
+  });
+});
+
+describe("social sign-in environment", () => {
+  const privateKey = generateKeyPairSync("ec", { namedCurve: "prime256v1" })
+    .privateKey.export({
+      type: "pkcs8",
+      format: "pem",
+    })
+    .toString();
+  const apple = {
+    APPLE_CLIENT_ID: "com.example.service",
+    APPLE_TEAM_ID: "TEAMID1234",
+    APPLE_KEY_ID: "KEYID12345",
+    APPLE_PRIVATE_KEY: privateKey,
+  };
+
+  it("leaves sign-in unchanged when no provider is configured", () => {
+    expect(loadEnv(base).social).toBeUndefined();
+  });
+
+  it("enables a provider only when its credentials are complete", () => {
+    expect(() => loadEnv({ ...base, GOOGLE_CLIENT_ID: "client" })).toThrow(/configured together/);
+    expect(() => loadEnv({ ...base, ...apple, APPLE_KEY_ID: undefined })).toThrow(
+      /configured together/,
+    );
+    expect(
+      loadEnv({ ...base, GOOGLE_CLIENT_ID: "client", GOOGLE_CLIENT_SECRET: "secret" }).social,
+    ).toEqual({
+      providers: [{ id: "google", name: "Google", clientId: "client", clientSecret: "secret" }],
+    });
+    expect(loadEnv({ ...base, ...apple }).social).toMatchObject({
+      providers: [
+        expect.objectContaining({
+          id: "apple",
+          clientId: "com.example.service",
+        }),
+      ],
+    });
+  });
+
+  it("reads the Apple private key from a file", () => {
+    const dir = mkdtempSync(join(tmpdir(), "rakazo-apple-"));
+    const file = join(dir, "key.p8");
+    try {
+      writeFileSync(file, privateKey);
+      expect(
+        loadEnv({ ...base, ...apple, APPLE_PRIVATE_KEY: undefined, APPLE_PRIVATE_KEY_FILE: file })
+          .social?.providers[0],
+      ).toMatchObject({ id: "apple" });
+      expect(() => loadEnv({ ...base, ...apple, APPLE_PRIVATE_KEY_FILE: file })).toThrow(
+        /not both/,
+      );
+      try {
+        loadEnv({
+          ...base,
+          ...apple,
+          APPLE_PRIVATE_KEY: undefined,
+          APPLE_PRIVATE_KEY_FILE: join(dir, "missing.p8"),
+        });
+        expect.unreachable("Missing private key must fail startup");
+      } catch (error) {
+        expect(error).toMatchObject({
+          message: "APPLE_PRIVATE_KEY_FILE could not be read",
+          cause: { code: "ENOENT", path: join(dir, "missing.p8") },
+        });
+      }
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
 
@@ -469,4 +582,53 @@ describe("directory provisioning environment", () => {
       expect(() => loadEnv({ ...base, SCIM_BEARER_TOKEN: token })).toThrow("SCIM_BEARER_TOKEN");
     },
   );
+});
+
+describe("RAKAZO_EXTRA_AUTH_ORIGINS", () => {
+  it("is empty when unset or blank", () => {
+    expect(loadEnv(base).extraAuthOrigins).toEqual([]);
+    expect(parseExtraAuthOrigins(" , ")).toEqual([]);
+  });
+
+  it("keeps https origins and http on loopback or a private network, normalized", () => {
+    expect(
+      parseExtraAuthOrigins(
+        "https://host.tailnet.ts.net/, http://192.168.1.20:5173 ,http://100.64.1.2,http://localhost:5173,https://host.tailnet.ts.net",
+      ),
+    ).toEqual([
+      "https://host.tailnet.ts.net",
+      "http://192.168.1.20:5173",
+      "http://100.64.1.2",
+      "http://localhost:5173",
+    ]);
+  });
+
+  it("drops invalid entries", () => {
+    expect(
+      parseExtraAuthOrigins(
+        "http://example.com,ftp://host,rakazo://,not a url,https://host/path,https://u:p@host,*",
+      ),
+    ).toEqual([]);
+  });
+});
+
+describe("SANDBOX_COMMAND_TIMEOUT_MS", () => {
+  afterEach(() => {
+    installLogger(createLogger({ service: "rakazo-api", level: "off", sinks: [] }));
+  });
+
+  it("warns at startup when the value is above the maximum", () => {
+    const sink = createTestSink();
+    installLogger(createLogger({ service: "rakazo-api", sinks: [sink] }));
+    loadEnv({ ...base, SANDBOX_COMMAND_TIMEOUT_MS: "7200000" });
+    expect(sink.events).toHaveLength(1);
+    expect(sink.events[0]).toMatchObject({ level: "warn", maximumMs: 3_600_000 });
+  });
+
+  it.each([undefined, "300000", "3600000", "0", "invalid"])("stays quiet for %s", (value) => {
+    const sink = createTestSink();
+    installLogger(createLogger({ service: "rakazo-api", sinks: [sink] }));
+    loadEnv({ ...base, SANDBOX_COMMAND_TIMEOUT_MS: value });
+    expect(sink.events).toEqual([]);
+  });
 });

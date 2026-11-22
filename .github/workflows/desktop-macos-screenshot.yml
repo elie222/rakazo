@@ -9,9 +9,11 @@ on:
       - "apps/desktop/assets/**"
       - "packages/ui-tokens/assets/**"
       - "apps/desktop/scripts/copy-static.mjs"
-      - "apps/desktop/src/setup*"
-      - "apps/desktop/src/window-options.ts"
-      - "packages/contracts/src/desktop.ts"
+      - "apps/desktop/src/setup-renderer/**"
+      - "apps/desktop/src/main/setup/**"
+      - "apps/desktop/src/preload/setup*"
+      - "apps/desktop/src/main/windows/window-options.ts"
+      - "packages/contracts/src/clients/desktop.ts"
   pull_request:
     paths: *desktop-setup-paths
 
@@ -31,12 +33,7 @@ jobs:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           persist-credentials: false
-      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
-        with:
-          node-version: 22
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
+      - uses: ./.github/actions/setup-workspace
       - run: pnpm --filter @rakazo/desktop build
       - name: Verify packaged Tahoe icon and legacy fallback
         run: |

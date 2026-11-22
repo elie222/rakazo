@@ -45,7 +45,7 @@
     "id": "compose",
     "title": "Compose",
     "flow": "flows/compose.yaml",
-    "screens": ["new-space", "new-group"]
+    "screens": ["new-space", "new-bot", "new-group"]
   },
   {
     "id": "split-view",
@@ -59,11 +59,15 @@
     "flow": "flows/settings.yaml",
     "screens": [
       "account",
+      "computers",
+      "general",
+      "profile",
       "change-password",
       "models",
       "integrations",
       "voice",
       "ai-data-sharing",
+      "labs",
       "routine",
       "routine-runs",
       "bot-settings",
@@ -83,7 +87,7 @@
     "id": "bots",
     "title": "Bots",
     "flow": "flows/bots.yaml",
-    "screens": ["bot-profile", "routines", "bot-model", "peer-chat", "routine"]
+    "screens": ["bot-profile", "routines", "bot-model", "chat-model", "peer-chat", "routine"]
   },
   {
     "id": "files",
@@ -113,9 +117,16 @@
       "approval-rule-add",
       "vault",
       "archived-bots",
+      "spaces",
       "space",
       "space-members"
     ]
+  },
+  {
+    "id": "vault",
+    "title": "Vault logins",
+    "flow": "flows/vault.yaml",
+    "screens": ["vault"]
   },
   {
     "id": "messaging",
@@ -139,12 +150,19 @@
     "id": "pages",
     "title": "Pages",
     "flow": "flows/pages.yaml",
-    "screens": ["page", "page-share", "pages"]
+    "screens": ["page", "page-share", "page-review", "pages", "shared-pages"]
   },
   {
     "id": "organizations",
     "title": "Organizations",
     "flow": "flows/organizations.yaml",
-    "screens": ["account", "new-organization", "paywall", "index", "organization"]
+    "screens": [
+      "account",
+      "new-organization",
+      "paywall",
+      "index",
+      "organization",
+      "organization-members"
+    ]
   }
 ]

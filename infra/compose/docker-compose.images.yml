@@ -2,8 +2,7 @@
 # Drop this file and .env into any directory, then:
 #   docker compose --env-file .env -f docker-compose.images.yml up -d
 #
-# Tag contract matches docs/self-host-upgrading.md (edge from main; release tags when published).
-# Default is edge because that tag is published on every main build (linux/amd64 + linux/arm64).
+# Defaults follow stable releases only; no fallback to main or prerelease builds.
 # Pin a published vX.Y.Z tag for a fixed version; `latest` moves to each new stable release.
 # Default SANDBOX_PROVIDER=docker boots a local computer via the in-stack supervisor (no E2B key).
 # Optional: set e2b / daytona / boat plus the matching API key for remote computers.
@@ -13,8 +12,7 @@ name: rakazo
 # only sees what it uses instead of the whole .env. A key with no value is passed through
 # when .env (or the shell) sets it and left unset otherwise. Keep in sync with the code:
 # infra/updater/src/compose-env.test.ts fails when a read is missing here or a key is unused.
-x-app-environment: &app-environment
-  # Runtime
+x-app-environment: &app-environment # Runtime
   NODE_ENV: production
   # The app's own login, subject to row-level security (docs/self-host-configuration.md#database-roles).
   DATABASE_URL: postgres://rakazo_app:${POSTGRES_APP_PASSWORD:?Set POSTGRES_APP_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-rakazo}
@@ -29,35 +27,47 @@ x-app-environment: &app-environment
   AWS_KMS_SECRET_ACCESS_KEY:
   # on encrypts new content at rest; off stores it readable (docs/self-host-storage.md#content-encryption).
   CONTENT_ENCRYPTION: ${CONTENT_ENCRYPTION:-on}
-  # Optional: keep computer homes and artifacts in S3-compatible storage (docs/self-host-storage.md#shared-storage-migration).
+  # Optional: keep computer homes and artifacts in S3-compatible or Azure Blob storage (docs/self-host-storage.md#shared-storage-migration).
   OBJECT_STORAGE_BUCKET:
+  OBJECT_STORAGE_PROTOCOL:
   OBJECT_STORAGE_ENDPOINT:
   OBJECT_STORAGE_REGION:
   OBJECT_STORAGE_ACCESS_KEY_ID:
   OBJECT_STORAGE_SECRET_ACCESS_KEY:
   OBJECT_STORAGE_PREFIX:
   OBJECT_STORAGE_PATH_STYLE:
+  OBJECT_STORAGE_AUTH:
+  OBJECT_STORAGE_TENANT:
+  OBJECT_STORAGE_CLIENT_ID:
+  OBJECT_STORAGE_CERTIFICATE:
+  OBJECT_STORAGE_FEDERATED_TOKEN_FILE:
   WAKEUP_DRIVER: graphile
   AGENT_RUNTIME: pi
   API_URL: ${API_URL:-http://127.0.0.1:5173}
   MAX_UPLOAD_SIZE_MB:
   MAX_ATTACHMENTS_PER_MESSAGE:
+  WORKSPACE_SAVE_MAX_GB:
   RAKAZO_UPDATE_RESTART_SUPERVISOR:
   TICKET_BOARD_ENABLED:
   USER_DEVICES_ENABLED:
-  BOT_MESSAGE_MAX_HOPS:
   RAKAZO_MESSAGE_USER_MAX_CHARS:
   TEACH_RECORDING_TTL_MS:
+  STUCK_WORK_NOTIFY_AFTER_MS:
+  STUCK_WORK_EXPIRE_AFTER_MS:
+  UNATTENDED_APPROVAL_EXPIRE_AFTER_MS:
   PHONE_CALLS_ENABLED:
   PHONE_CALL_RING_SECONDS:
   PHONE_CALL_COOLDOWN_MINUTES:
   # The worker names each bot's address to it and sends its email; the API receives the mail.
   INBOUND_EMAIL_DOMAIN:
+  BOT_EMAIL_SMTP_URL:
+  # Account mail: the API sends sign-in and account messages, the worker the ones queued for later.
   EMAIL_PROVIDER:
   EMAIL_API_KEY:
   SMTP_URL:
   EMAIL_FROM:
   EMAIL_REPLY_TO:
+  EMAIL_COPY_DIR: ${EMAIL_COPY_DIR:-/app/email-copy}
   RAKAZO_SECRETS_ALLOW_PRIVATE_HTTP:
   EXPO_ACCESS_TOKEN:
   APNS_VOIP_KEY_ID:
@@ -76,8 +86,10 @@ x-app-environment: &app-environment
   INFISICAL_FOLDER: ${INFISICAL_FOLDER:-}
   # Logs, errors, traces and analytics
   LOG_LEVEL:
+  GRAPHILE_LOGGER_DEBUG:
   SECURITY_EVENT_RETENTION_DAYS:
   AUDIT_EVENT_RETENTION_DAYS:
+  CHAT_HISTORY_RETENTION_DAYS:
   AUDIT_LOG_WEBHOOK_URL:
   AUDIT_LOG_WEBHOOK_AUTHORIZATION:
   LOG_FORMAT:
@@ -111,16 +123,23 @@ x-app-environment: &app-environment
   MODEL_STREAM_MAX_RETRIES:
   MODEL_STREAM_TIMEOUT_MS:
   MODEL_CONNECT_TIMEOUT_MS:
+  MODEL_CREDIT_OFFERINGS:
   MODEL_STREAM_IDLE_TIMEOUT_MS:
   RAKAZO_LOCAL_MODELS:
   RAKAZO_LOCAL_MODELS_URL:
+  RAKAZO_LOCAL_MODELS_API_KEY:
+  # Where a localhost model or speech URL goes: the computer running Docker.
+  RAKAZO_LOOPBACK_HOST: host.docker.internal
   RAKAZO_LOCAL_VISION_MODELS:
   RAKAZO_LOCAL_REASONING_MODELS:
   RAKAZO_LOCAL_CONTEXT_WINDOW:
   RAKAZO_LOCAL_MAX_TOKENS:
+  RAKAZO_LOCAL_TOKENS_PER_MINUTE:
+  RAKAZO_LOCAL_PROMPT_CACHE:
   RAKAZO_OPENAI_COMPATIBLE_VISION_MODELS:
   RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC:
   RAKAZO_OPENAI_COMPAT_PRIVATE_HOSTS:
+  RAKAZO_MODEL_PROVIDER_ALLOWLIST:
   RAKAZO_AUTO_REVIEW_PROVIDER:
   RAKAZO_AUTO_REVIEW_MODEL:
   RAKAZO_AUTO_REVIEW_MIN_CONFIDENCE:
@@ -133,6 +152,30 @@ x-app-environment: &app-environment
   MEDIA_GENERATION_API_KEY:
   MEDIA_GENERATION_IMAGE_MODEL:
   MEDIA_GENERATION_VIDEO_MODEL:
+  # Optional: publish only webhooks and other inbound deliveries at a public address, so the app
+  # can stay private. Off unless INGRESS_PROVIDER is set (docs/self-host-webhooks.md).
+  INGRESS_PROVIDER:
+  INGRESS_PUBLIC_URL:
+  INGRESS_PORT:
+  TAILSCALE_INGRESS_HOSTNAME:
+  TAILSCALE_INGRESS_TAILNET:
+  TAILSCALE_INGRESS_SERVE_CONFIG:
+  TAILSCALE_INGRESS_SOCKET:
+  MEETING_PROVIDER:
+  MEETING_API_KEY:
+  MEETING_REGION:
+  MEETING_SPACE_IDS:
+  MEETING_WEBHOOK_SECRET:
+  MEETING_WEBHOOK_SIGNATURE:
+  MEETING_SIGNING_KEY:
+  MEETING_PUBLIC_ORIGIN:
+  MEETING_LIVE_VOICE:
+  MEETING_CALENDAR_CLIENT_ID:
+  MEETING_CALENDAR_CLIENT_SECRET:
+  MEETING_CALENDAR_WEBHOOK_SECRET:
+  PAID_SERVICES_PROVIDER:
+  PAID_SERVICES_API_KEY:
+  PAID_SERVICES_BASE_URL:
   # Provider keys Pi reads itself when a model has no stored credential
   AI_GATEWAY_API_KEY:
   ANTHROPIC_AUTH_TOKEN:
@@ -165,6 +208,10 @@ x-app-environment: &app-environment
   OPENCODE_API_KEY:
   QWEN_TOKEN_PLAN_API_KEY:
   QWEN_TOKEN_PLAN_CN_API_KEY:
+  QWEN_TOKEN_PLAN_INDIVIDUAL_API_KEY:
+  QWEN_TOKEN_PLAN_INDIVIDUAL_CN_API_KEY:
+  QWEN_TOKEN_PLAN_TEAM_API_KEY:
+  QWEN_TOKEN_PLAN_TEAM_CN_API_KEY:
   RADIUS_API_KEY:
   TOGETHER_API_KEY:
   XAI_API_KEY:
@@ -199,9 +246,9 @@ x-app-environment: &app-environment
   SANDBOX_COMMAND_TIMEOUT_MS:
   SANDBOX_IDLE_MS:
   SANDBOX_MAX_COMPUTERS_PER_USER:
+  COMPUTER_DEFAULT_MODE:
   COMPUTER_MAX_ACTIVE_MS:
   COMPUTER_MAX_ACTIVE_UNBILLED_MS:
-  COMPUTER_TAKEOVER_TTL_MS:
   BROWSER_PROVIDER:
   NOVITA_API_KEY:
   SANDBOX_TEMPLATE:
@@ -214,10 +261,12 @@ x-app-environment: &app-environment
   BOAT_API_URL:
   BOXD_API_KEY:
   BOXD_ORG:
+  INSTABOX_API_KEY:
   RAILWAY_API_TOKEN:
   RAILWAY_ENVIRONMENT_ID:
   RAILWAY_SANDBOX_REGION:
   RAILWAY_MAX_WORKSPACE_FILE_BYTES:
+  RAKAZO_COMPUTER_PROXY:
   WUYING_ACCESS_KEY_ID:
   WUYING_ACCESS_KEY_SECRET:
   WUYING_DESKTOP_ID:
@@ -269,14 +318,22 @@ x-app-environment: &app-environment
   SENDBLUE_PHONE_NUMBER:
   SLACK_CLIENT_ID:
   SLACK_CLIENT_SECRET:
+  TEAMS_APP_ID:
+  TEAMS_APP_PASSWORD:
+  TEAMS_APP_TENANT_ID:
   SLACK_BOT_TOKEN:
   SLACK_SIGNING_SECRET:
+  TEAM_CHAT_JUDGE_PROVIDER:
+  TEAM_CHAT_JUDGE_MODEL:
   WHATSAPP_ACCESS_TOKEN:
   WHATSAPP_PHONE_NUMBER_ID:
   WHATSAPP_APP_SECRET:
   WHATSAPP_VERIFY_TOKEN:
+  WHATSAPP_API_URL:
+  WHATSAPP_BOT_USERNAME:
   TELEGRAM_BOT_TOKEN:
   TELEGRAM_WEBHOOK_SECRET_TOKEN:
+  TELEGRAM_GROUPS:
   LARK_APP_ID:
   LARK_APP_SECRET:
   LARK_VERIFICATION_TOKEN:
@@ -292,6 +349,8 @@ x-app-environment: &app-environment
   http_proxy: ${http_proxy:-${HTTP_PROXY:-}}
   https_proxy: ${https_proxy:-${HTTPS_PROXY:-}}
   no_proxy: ${no_proxy:-${NO_PROXY:-}}
+  # Hosts the proxy must be asked for by name instead of the checked address.
+  RAKAZO_PROXY_CONNECT_BY_HOSTNAME_HOSTS:
 
 services:
   postgres:
@@ -318,7 +377,9 @@ services:
 
   # Pull-only stub so `compose up` fetches the published desktop image without a checkout.
   computer:
-    image: ${RAKAZO_COMPUTER_IMAGE:-ghcr.io/elie222/rakazo/computer}:${RAKAZO_COMPUTER_IMAGE_TAG:-edge}
+    image: ${RAKAZO_COMPUTER_IMAGE:-ghcr.io/elie222/rakazo/computer}:${RAKAZO_COMPUTER_IMAGE_TAG:-latest}
+    # Keep locally cached rollback images; latest still refreshes when explicitly pulled.
+    pull_policy: missing
     command: ["true"]
     network_mode: none
     restart: "no"
@@ -326,7 +387,26 @@ services:
   data-init:
     # Optional Hub override; unset keeps busybox:1.
     image: ${BUSYBOX_IMAGE:-busybox:1}
-    command: ["chown", "-R", "1000:1000", "/data"]
+    # Chown only entries with the wrong owner, so recreating the app does not rewrite every inode
+    # in the volume; -h changes a symlink itself, never its target.
+    command:
+      [
+        "find",
+        "/data",
+        "!",
+        "(",
+        "-user",
+        "1000",
+        "-group",
+        "1000",
+        ")",
+        "-exec",
+        "chown",
+        "-h",
+        "1000:1000",
+        "{}",
+        "+",
+      ]
     network_mode: none
     restart: "no"
     volumes:
@@ -335,7 +415,7 @@ services:
   # Runs from the app image. Not published as its own image and not exposed on the host:
   # access to the supervisor is equivalent to control of the Docker host.
   supervisor:
-    image: ${RAKAZO_IMAGE:-ghcr.io/elie222/rakazo/app}:${RAKAZO_IMAGE_TAG:-edge}
+    image: ${RAKAZO_IMAGE:-ghcr.io/elie222/rakazo/app}:${RAKAZO_IMAGE_TAG:-latest}
     restart: unless-stopped
     command: ["pnpm", "--filter", "@rakazo/sandbox-supervisor", "start"]
     init: true
@@ -351,16 +431,20 @@ services:
       SUPERVISOR_HOST: "0.0.0.0"
       SUPERVISOR_PORT: "7091"
       DOCKER_SOCKET: /var/run/docker.sock
-      RAKAZO_COMPUTER_IMAGE: ${RAKAZO_COMPUTER_IMAGE:-ghcr.io/elie222/rakazo/computer}:${RAKAZO_COMPUTER_IMAGE_TAG:-edge}
+      RAKAZO_COMPUTER_IMAGE: ${RAKAZO_COMPUTER_IMAGE:-ghcr.io/elie222/rakazo/computer}:${RAKAZO_COMPUTER_IMAGE_TAG:-latest}
       RAKAZO_COMPUTER_MEMORY: ${RAKAZO_COMPUTER_MEMORY:-2g}
       RAKAZO_COMPUTER_CPUS: ${RAKAZO_COMPUTER_CPUS:-2}
       RAKAZO_COMPUTER_PIDS_LIMIT: ${RAKAZO_COMPUTER_PIDS_LIMIT:-2048}
       SANDBOX_COMMAND_TIMEOUT_MS: ${SANDBOX_COMMAND_TIMEOUT_MS:-300000}
+      SANDBOX_TEAM_SCREEN_LIMIT: ${SANDBOX_TEAM_SCREEN_LIMIT:-0}
+      SANDBOX_MAX_COMPUTERS_PER_SPACE: ${SANDBOX_MAX_COMPUTERS_PER_SPACE:-0}
       SANDBOX_SUPERVISOR_TOKEN: ${SANDBOX_SUPERVISOR_TOKEN:?Set SANDBOX_SUPERVISOR_TOKEN in .env}
       SANDBOX_SCREEN_NETWORK: isolated
       SANDBOX_COMPUTER_EGRESS: ${SANDBOX_COMPUTER_EGRESS:-auto}
       SANDBOX_COMPUTER_DNS: ${SANDBOX_COMPUTER_DNS:-}
       SANDBOX_COMPUTER_MOUNTS: ${SANDBOX_COMPUTER_MOUNTS:-}
+      SANDBOX_COMPUTER_COMPUTE_GPUS: ${SANDBOX_COMPUTER_COMPUTE_GPUS:-}
+      SANDBOX_COMPUTER_BROWSER_PROXY_PAC_URL: ${SANDBOX_COMPUTER_BROWSER_PROXY_PAC_URL:-}
       LOG_LEVEL: ${LOG_LEVEL:-info}
       LOG_FORMAT: ${LOG_FORMAT:-}
       AXIOM_TOKEN: ${AXIOM_TOKEN:-}
@@ -394,7 +478,7 @@ services:
   # container gets the owner login: the API and worker connect as rakazo_app, which row-level
   # security binds, so code running in either cannot find a login that bypasses it.
   migrate:
-    image: ${RAKAZO_IMAGE:-ghcr.io/elie222/rakazo/app}:${RAKAZO_IMAGE_TAG:-edge}
+    image: ${RAKAZO_IMAGE:-ghcr.io/elie222/rakazo/app}:${RAKAZO_IMAGE_TAG:-latest}
     working_dir: /app/apps/api
     command: ["pnpm", "db:deploy"]
     restart: "no"
@@ -414,7 +498,7 @@ services:
         condition: service_healthy
 
   api:
-    image: ${RAKAZO_IMAGE:-ghcr.io/elie222/rakazo/app}:${RAKAZO_IMAGE_TAG:-edge}
+    image: ${RAKAZO_IMAGE:-ghcr.io/elie222/rakazo/app}:${RAKAZO_IMAGE_TAG:-latest}
     restart: unless-stopped
     # Node runs directly, not through pnpm: pnpm does not pass SIGTERM on, so a stop would kill the
     # process before its graceful shutdown finishes in-flight requests and jobs.
@@ -432,11 +516,14 @@ services:
     environment:
       <<: *app-environment
       # Sign-in, sessions, billing and inbound webhooks: API only.
+      # Where the ingress forwards to: the inbound listener, never the app port.
+      INGRESS_UPSTREAM_URL: http://api:${INGRESS_PORT:-3101}
       API_HOST: "0.0.0.0"
       API_PORT:
       BETTER_AUTH_SECRET:
       BETTER_AUTH_URL: ${BETTER_AUTH_URL:-http://127.0.0.1:5173}
       WEB_ORIGIN: ${WEB_ORIGIN:-http://127.0.0.1:5173}
+      RAKAZO_EXTRA_AUTH_ORIGINS:
       AUTH_PASSWORD_ENABLED: ${AUTH_PASSWORD_ENABLED:-true}
       AUTH_BREACHED_PASSWORD_CHECK_ENABLED: ${AUTH_BREACHED_PASSWORD_CHECK_ENABLED:-false}
       PASSKEY_APPLE_APP_IDS:
@@ -452,6 +539,13 @@ services:
       OIDC_NAME: ${OIDC_NAME:-SSO}
       OIDC_SCOPES: ${OIDC_SCOPES:-openid email profile}
       OIDC_ALLOW_SIGNUP_BYPASS: ${OIDC_ALLOW_SIGNUP_BYPASS:-false}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      APPLE_CLIENT_ID: ${APPLE_CLIENT_ID:-}
+      APPLE_TEAM_ID: ${APPLE_TEAM_ID:-}
+      APPLE_KEY_ID: ${APPLE_KEY_ID:-}
+      APPLE_PRIVATE_KEY: ${APPLE_PRIVATE_KEY:-}
+      APPLE_PRIVATE_KEY_FILE: ${APPLE_PRIVATE_KEY_FILE:-}
       SCIM_BEARER_TOKEN: ${SCIM_BEARER_TOKEN:-}
       SIGNUPS_ENABLED:
       SIGNUP_ALLOWLIST:
@@ -461,25 +555,26 @@ services:
       SENTRY_BROWSER_DSN: ${SENTRY_BROWSER_DSN:-}
       PRIVACY_POLICY_URL:
       INBOUND_EMAIL_SECRET:
-      WELCOME_EMAIL_ENABLED:
+      EXPERIMENTS:
       STRIPE_SECRET_KEY:
       STRIPE_WEBHOOK_SECRET:
       STRIPE_PRICE_ID:
+      DUB_API_KEY:
       CRISP_WEBSITE_ID:
       INTEGRATIONS_CATALOG_URL:
       TEAM_CHAT_BOT_ID:
       SLACK_RAKAZO_BOT_ID:
-      TEAM_CHAT_JUDGE_PROVIDER:
-      TEAM_CHAT_JUDGE_MODEL:
       SPACE_TEARDOWN_TIMEOUT_MS:
       RAKAZO_MIN_CLIENT_BUILD:
       RAKAZO_NAV_LINKS:
       RAKAZO_ADMIN_EMAILS:
+      DEPLOYMENT_VOICE:
       VOICE_SUMMARY_MIN_CHARS:
     ports:
       - "127.0.0.1:${RAKAZO_API_PORT:-3100}:3100"
     volumes:
       - appdata:/data
+      - ingress:/run/ingress
     networks:
       - app
       - data
@@ -503,13 +598,15 @@ services:
       retries: 20
 
   worker:
-    image: ${RAKAZO_IMAGE:-ghcr.io/elie222/rakazo/app}:${RAKAZO_IMAGE_TAG:-edge}
+    image: ${RAKAZO_IMAGE:-ghcr.io/elie222/rakazo/app}:${RAKAZO_IMAGE_TAG:-latest}
     restart: unless-stopped
     # Directly, not through pnpm, so a stop reaches it (see the api command).
     working_dir: /app/apps/worker
-    command: ["node", "--enable-source-maps", "dist/index.js"]
+    # Busy runs allocate fast; a larger young generation cuts the garbage collection that otherwise
+    # takes most of the worker's CPU.
+    command: ["node", "--enable-source-maps", "--max-semi-space-size=64", "dist/index.js"]
     # A stop lets the running jobs finish rather than killing them mid-way, which would leave each
-    # locked for hours. Above JOB_DRAIN_TIMEOUT_MS in packages/adapters/src/wakeup.ts.
+    # locked for hours. Above JOB_DRAIN_TIMEOUT_MS in packages/adapters/src/runs/wakeups/wakeup.ts.
     stop_grace_period: 50m
     healthcheck:
       test: ["CMD", "node", "dist/health-check.js"]
@@ -528,7 +625,9 @@ services:
       - "host.docker.internal:host-gateway"
     environment:
       <<: *app-environment
+      WEB_ORIGIN: ${WEB_ORIGIN:-http://127.0.0.1:5173}
       GRAPHILE_WORKER_CONCURRENCY:
+      RUN_DRAIN_ENABLED:
     volumes:
       - appdata:/data
     networks:
@@ -545,7 +644,7 @@ services:
         condition: service_healthy
 
   web:
-    image: ${RAKAZO_IMAGE:-ghcr.io/elie222/rakazo/app}:${RAKAZO_IMAGE_TAG:-edge}
+    image: ${RAKAZO_IMAGE:-ghcr.io/elie222/rakazo/app}:${RAKAZO_IMAGE_TAG:-latest}
     restart: unless-stopped
     # Directly, not through pnpm, so a stop reaches it (see the api command).
     working_dir: /app/apps/web
@@ -567,10 +666,11 @@ services:
       RAYON_NUM_THREADS: "4"
       API_PROXY_TARGET: http://api:3100
       RAKAZO_HOST: ${RAKAZO_HOST:-localhost}
+      RAKAZO_ALLOWED_HOSTS: ${RAKAZO_ALLOWED_HOSTS:-}
       # Set only by the packaged desktop app. Its authenticated probe prevents a
       # source dev server on the same host port from impersonating this stack.
       RAKAZO_DESKTOP_STACK_TOKEN: ${RAKAZO_DESKTOP_STACK_TOKEN:-}
-      RAKAZO_IMAGE_TAG: ${RAKAZO_IMAGE_TAG:-edge}
+      RAKAZO_IMAGE_TAG: ${RAKAZO_IMAGE_TAG:-latest}
       SCREEN_PROXY_SECRET: ${SCREEN_PROXY_SECRET:?Set SCREEN_PROXY_SECRET in .env}
       RAKAZO_CSP_SCRIPT_SRC: ${RAKAZO_CSP_SCRIPT_SRC:-}
       RAKAZO_CSP_CONNECT_SRC: ${RAKAZO_CSP_CONNECT_SRC:-}
@@ -584,12 +684,84 @@ services:
       api:
         condition: service_healthy
 
+  # Opt-in (COMPOSE_PROFILES=tailscale-ingress with INGRESS_PROVIDER=tailscale): a tailnet node of
+  # its own that publishes only the API's inbound listener through Funnel. The app keeps its
+  # private name; this node's name is public (docs/self-host-webhooks.md).
+  tailscale-ingress:
+    image: ${TAILSCALE_IMAGE:-tailscale/tailscale:v1.94.2@sha256:95e528798bebe75f39b10e74e7051cf51188ee615934f232ba7ad06a3390ffa1}
+    profiles: [tailscale-ingress]
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      TS_AUTHKEY: ${TAILSCALE_INGRESS_AUTH_KEY:-}
+      TS_HOSTNAME: ${TAILSCALE_INGRESS_HOSTNAME:-}
+      TS_STATE_DIR: /var/lib/tailscale
+      TS_USERSPACE: "true"
+      # Shared with the API, which writes the serve config and reads the node's status here.
+      TS_SOCKET: /var/run/tailscale/tailscaled.sock
+      TS_SERVE_CONFIG: /var/run/tailscale/serve.json
+    volumes:
+      - tailscale-ingress-state:/var/lib/tailscale
+      - ingress:/var/run/tailscale
+    networks:
+      - app
+    depends_on:
+      api:
+        condition: service_healthy
+
+  # Opt-in only: this process has root-equivalent Docker access, never a published port.
+  updater:
+    profiles: [updater]
+    image: ${RAKAZO_UPDATER_IMAGE:-ghcr.io/elie222/rakazo/updater}:${RAKAZO_UPDATER_IMAGE_TAG:-latest}
+    restart: unless-stopped
+    # Allow a 10-minute pull, 90-minute recreate and 90-minute recovery, plus checks.
+    stop_grace_period: 4h
+    init: true
+    user: root
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 256
+    mem_limit: 1g
+    environment:
+      NODE_ENV: production
+      RAKAZO_UPDATER_TOKEN: ${RAKAZO_UPDATER_TOKEN:-}
+      RAKAZO_UPDATER_HOST: "0.0.0.0"
+      RAKAZO_UPDATER_PORT: "7092"
+      RAKAZO_IMAGE: ${RAKAZO_IMAGE:-ghcr.io/elie222/rakazo/app}
+      RAKAZO_COMPUTER_IMAGE: ${RAKAZO_COMPUTER_IMAGE:-ghcr.io/elie222/rakazo/computer}
+      COMPOSE_PROJECT_NAME: ${COMPOSE_PROJECT_NAME:-rakazo}
+      RAKAZO_DEPLOY_DIR: ${RAKAZO_DEPLOY_DIR:-/srv/rakazo}
+      RAKAZO_COMPOSE_FILE: ${RAKAZO_COMPOSE_FILE:-docker-compose.images.yml}
+      RAKAZO_UPDATE_SERVICES: ${RAKAZO_UPDATE_SERVICES:-supervisor,computer}
+      COMPOSE_PATH_SEPARATOR: ${COMPOSE_PATH_SEPARATOR:-}
+      # Starting the updater does not enable scheduling. Set 6 to check every six hours.
+      RAKAZO_AUTO_UPDATE_INTERVAL_HOURS: ${RAKAZO_AUTO_UPDATE_INTERVAL_HOURS:-0}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ${RAKAZO_DEPLOY_DIR:-/srv/rakazo}:${RAKAZO_DEPLOY_DIR:-/srv/rakazo}
+    networks:
+      - control
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - fetch('http://127.0.0.1:7092/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))
+      interval: 15s
+      timeout: 5s
+      retries: 10
+
 volumes:
+  ingress:
+  tailscale-ingress-state:
   pgdata:
   appdata:
   webassets:
 
 networks:
+  control:
   app:
   data:
     internal: true

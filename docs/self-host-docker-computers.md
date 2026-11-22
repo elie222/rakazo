@@ -15,11 +15,11 @@ Each Docker computer runs Xvfb, a window manager and a full Chromium driven by a
 decides for itself what to open, so it is capped. These defaults provide a starting point for the
 Docker computer topology:
 
-| Variable | Default | Accepts |
-| --- | --- | --- |
-| `RAKAZO_COMPUTER_MEMORY` | `2g` | `2g`, `1536m`, a byte count. Minimum `6m`, Docker's own floor. Also caps swap, so the ceiling holds. |
-| `RAKAZO_COMPUTER_CPUS` | `2` | Whole or fractional cores, e.g. `1.5` |
-| `RAKAZO_COMPUTER_PIDS_LIMIT` | `2048` | A positive integer |
+| Variable                     | Default | Accepts                                                                                              |
+| ---------------------------- | ------- | ---------------------------------------------------------------------------------------------------- |
+| `RAKAZO_COMPUTER_MEMORY`     | `2g`    | `2g`, `1536m`, a byte count. Minimum `6m`, Docker's own floor. Also caps swap, so the ceiling holds. |
+| `RAKAZO_COMPUTER_CPUS`       | `2`     | Whole or fractional cores, e.g. `1.5`                                                                |
+| `RAKAZO_COMPUTER_PIDS_LIMIT` | `2048`  | A positive integer                                                                                   |
 
 Set any of them to `0`, `none` or `unlimited` to remove that ceiling. A malformed value fails the
 supervisor at startup naming the variable, rather than surfacing later as a failed bot.
@@ -33,6 +33,13 @@ The supervisor reaches Docker at `/var/run/docker.sock` (or `//./pipe/docker_eng
 `DOCKER_SOCKET` for rootless Docker, Colima or another path; `DOCKER_HOST` wins when both are set.
 
 ## Restricted computer egress
+
+On a cloud VM, explicitly choose `SANDBOX_COMPUTER_EGRESS=restricted` after installing
+the host rules. This refuses to start computers if enforcement is missing. The default
+`auto` preserves compatibility on hosts without those rules and can allow access to
+cloud metadata and internal networks. Restricted egress also blocks intentional access
+to local models, private repositories and other LAN services. Choose `open` only when
+that network access is intended and the host is appropriately isolated.
 
 Restricted egress gives Docker computers the public internet (browsing, DNS, apt, git
 over SSH) but not the Docker host, the LAN, or link-local cloud metadata such as
@@ -72,6 +79,17 @@ installing the ruleset, recreate the supervisor, or set `restricted` to refuse c
 whenever the rules are missing. A host-run supervisor (`pnpm dev`) and the desktop app's
 **This computer** stack default to open: Docker Desktop keeps its bridges in a VM the host
 rules cannot reach.
+
+To see the supervisor's current egress decision, run this from the Compose install directory:
+
+```bash
+docker compose -f docker-compose.images.yml exec supervisor pnpm --filter @rakazo/sandbox-supervisor egress
+```
+
+Use the same Compose files and project options you used to start the stack. The report shows
+whether the firewall check is pending, verified, or failed, and explains when `auto` fell back to
+open egress. It reports the supervisor's last check for new computer starts. Recreate the
+supervisor after changing the host rules to run that check again.
 
 Screen streaming is unaffected: the supervisor and web proxy join each computer's bridge,
 and the ruleset exempts traffic whose in- and out-interface are both `rakazo-c*` before
@@ -188,6 +206,57 @@ keeps a share already mounted below the source visible. Repeat it at boot, befor
 mounts, for example from a systemd mount unit the share's unit depends on). The source must
 exist on the Docker host. Recreate the supervisor after a change; each computer picks the new
 set up on its next provision, which replaces it.
+
+## GPUs for programs
+
+`SANDBOX_COMPUTER_COMPUTE_GPUS` lets programs inside every bot computer compute on the host's
+GPUs (Docker sandboxes only): `all`, or a count such as `1`, with the same meaning as
+`docker run --gpus`. A bot can then run GPU software in its own computer, such as speech
+recognition, image generation or model training. Leave it unset and computers get no GPU.
+
+The Docker host needs a GPU driver that Docker can hand to containers, which for most GPUs
+means installing the vendor's container toolkit and checking that
+`docker run --rm --gpus all <image> <the vendor's status tool>` works. The supervisor asks Docker
+for GPUs without naming a driver, so any driver Docker offers for `--gpus` is used. The computer
+image ships no GPU libraries of its own: the driver adds its own at start, and a bot installs
+the frameworks it needs in its home. When the host cannot provide the GPUs, Docker refuses to
+create the computer and the bot's computer fails to start until the setting or the host is fixed.
+
+Changing the setting replaces each computer the next time it starts; the home is kept. It does
+not change the browser, which keeps rendering pages in software.
+
+WARNING: the setting is deployment-wide, and a GPU is shared hardware. Every bot in every Space
+reaches the host's GPU driver directly, which is a larger attack surface than the rest of the
+sandbox, and nothing limits how much GPU memory or time one computer takes from the others or
+from other GPU software on the host. Enable it only when you trust every bot on the deployment
+with that.
+
+## Browser proxy
+
+Some public sites refuse connections from datacenter addresses. With
+`SANDBOX_COMPUTER_BROWSER_PROXY_PAC_URL` the bot browser sends selected sites through an HTTP
+proxy you run, and every other site connects directly as before (Docker sandboxes only). The
+value is a [proxy auto-config](https://developer.mozilla.org/en-US/docs/Web/HTTP/Guides/Proxy_servers_and_tunneling/Proxy_Auto-Configuration_PAC_file)
+(PAC) script: an absolute `http://` or `https://` URL the browser downloads it from, or the whole
+script as a base64 `data:` URL of at most 64 KiB, for example:
+
+```sh
+pac='function FindProxyForURL(url, host) {
+  if (dnsDomainIs(host, ".example.com")) return "PROXY proxy.example.net:3128";
+  return "DIRECT";
+}'
+echo "SANDBOX_COMPUTER_BROWSER_PROXY_PAC_URL=data:application/x-ns-proxy-autoconfig;base64,$(printf '%s' "$pac" | base64 | tr -d '\n')"
+```
+
+The supervisor refuses to start with any other kind of value, or one containing spaces. It hands
+the value to every computer, whose browser starts with `--proxy-pac-url`; page reading and the
+bot's browser actions use that same browser, so they follow the script too. Programs the bot
+runs in its terminal do not. Unset, nothing changes.
+
+Under restricted egress the computer reaches only public addresses, so the PAC URL and the
+proxy must be on public addresses as well; a proxy on the Docker host or the LAN is blocked.
+Recreate the supervisor after a change; each computer picks it up on its next start, which
+replaces it. The home and saved browser profiles are kept.
 
 ## Time zone and language
 

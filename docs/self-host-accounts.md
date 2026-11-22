@@ -18,7 +18,8 @@ server integration credentials, or deployment updates, and cannot read deploymen
 There is no app-admin role, first-user privilege, or `ADMINS` list. Workspace owners manage only their own workspace.
 
 `RAKAZO_ADMIN_EMAILS` names accounts, comma-separated, that review plugin submissions, add stdio
-MCP servers ([integrations](self-host-integrations.md)), and, on deployments that sell model
+MCP servers ([integrations](self-host-integrations.md)), choose the model for everyone
+([models](self-host-models.md#default-for-everyone)), and, on deployments that sell model
 credits, give free access at `/admin/access`. An account counts only once its email is verified.
 It grants nothing else.
 
@@ -111,8 +112,33 @@ loopback host. In `NODE_ENV=development`, captured messages are available from
 `http://127.0.0.1:3100/api/dev/emails` with cache disabled; the API logs only delivery
 metadata, never reset tokens. The inbox route is not registered in test, staging, or production.
 
-Set `WELCOME_EMAIL_ENABLED=true` to send each new account one welcome email, with an unsubscribe
-link, after it first signs in. It needs one of the providers above.
+Rakazo can also send product emails, each with an unsubscribe link: a welcome email after a new
+account first signs in, a referral email when billing referrals are on, and, with billing
+configured, reminders after a plan starts (connect a model, import an agent). This repository
+holds no wording for them, so each one goes out only when you supply its copy, and only with one
+of the providers above.
+
+Copy is a folder with one `<email>.json` file per email (`welcome`, `referral`,
+`model-connection`, `agent-import`). Each file maps an app language (`en`, `de`, `pt-BR`, ...) to
+that email's strings by key:
+
+```json
+{
+  "en": { "subject": "...", "body": "... {weeks} ..." },
+  "de": { "subject": "...", "body": "... {weeks} ..." }
+}
+```
+
+Every key must be present, and a string must use exactly the `{placeholders}` its key lists in
+`packages/auth/src/email-copy/email-keys.ts`. An email is sent only when its file's English has a
+valid string for every key; a missing or invalid string in another language falls back to that
+English. At startup the API and worker log each email that is off and why.
+
+The app reads the folder from `EMAIL_COPY_DIR` (`/app/email-copy` in the image), so mount yours
+there for both the `api` and `worker` services, or point `EMAIL_COPY_DIR` at it. The worker sends
+the reminders, so give it the same mail settings as the API (the Compose files already do).
+`node packages/auth/scripts/check-email-copy.ts <dir>` checks a folder and fails on anything that
+would leave an email unsent or falling back.
 
 ## Password policy
 
@@ -205,12 +231,79 @@ on first use, refreshed in the background, and failures back off up to one minut
 reflects discovery, not a guarantee that the provider's token endpoint is currently reachable.
 
 Account deletion keeps the existing password confirmation for password users. Users without a
-password may delete after explicit provider reauthentication within five minutes; **Sign in again** starts a fresh
+password may delete after explicit organization SSO reauthentication within five minutes; **Sign in again** starts a fresh
 provider round-trip bound to the signed-in account. Choosing a different identity cannot confirm
 deletion or create another account in that flow. A stale or borrowed session alone cannot authorize deletion. With transactional
 email configured, **Send deletion code** sends a single-use code to the account email, valid for ten
 minutes. Enter it in account settings to confirm deletion. Email-code requests are rate-limited;
 invalid, expired or wrong-account codes fail. No password needs to be created for deletion.
+
+## Google and Apple sign-in
+
+Google and Apple sign-in are off until you set their credentials on the API. With nothing set,
+sign-in stays email and password (and any OpenID Connect provider you already configured). Each
+provider turns on only when its own values are complete. Email and password stay available next
+to the buttons.
+
+```env
+GOOGLE_CLIENT_ID=replace-with-client-id
+GOOGLE_CLIENT_SECRET=replace-with-client-secret
+
+APPLE_CLIENT_ID=replace-with-services-id
+APPLE_TEAM_ID=replace-with-team-id
+APPLE_KEY_ID=replace-with-key-id
+APPLE_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\nreplace-with-key\n-----END PRIVATE KEY-----"
+```
+
+Leave a pair empty to keep that provider off. `APPLE_PRIVATE_KEY` is the contents of the Sign in
+with Apple `.p8` file. A line break in the env value can be a real newline or the two characters
+`\n`. To mount the file instead, set `APPLE_PRIVATE_KEY_FILE` to its path and leave
+`APPLE_PRIVATE_KEY` empty. Set one of them, not both. In every Compose variant, this path is
+inside the API container: add an override for the `api` service with a read-only bind mount,
+for example `./secrets/apple.p8:/run/secrets/apple.p8:ro`, and set
+`APPLE_PRIVATE_KEY_FILE=/run/secrets/apple.p8`. The base Compose files do not mount host keys.
+
+The API signs Apple's client secret itself (ES256, from the key, team id, and key id), caches
+it, and signs a new one before it expires. Apple refuses a secret dated more than six months
+ahead, so there is nothing to rotate by hand and no client-secret JWT to paste in.
+
+Register these redirect URIs, using your public `BETTER_AUTH_URL` origin:
+
+```text
+https://app.example.com/api/auth/callback/google
+https://app.example.com/api/auth/callback/apple
+```
+
+For Google, create a web OAuth client and add that redirect URI. For Apple, create a Services ID
+(that value is `APPLE_CLIENT_ID`), enable Sign in with Apple on it, and return to the same
+redirect URI. The key is created under Keys with Sign in with Apple enabled; its id is
+`APPLE_KEY_ID`, and the team id is on the account page. Download the `.p8` once and store it
+with the API's other secrets.
+
+Web, desktop, and mobile use browser OAuth with the same callback URLs. iOS renders the native
+Apple button when available; it starts browser authorization rather than acquiring a bare identity
+token. Native token submission is not supported: the browser flow binds authorization to one-use
+server state and a nonce. The App Store requires an Apple option on a build that offers Google.
+
+Existing accounts connect Google, Apple, or generic OpenID Connect through authenticated
+linking in account settings. Matching provider and account emails never implicitly link them:
+historical provider verification does not prove current control of a mailbox hosted elsewhere.
+
+Linking requires the provider's verified email to match the verified Rakazo email. A different
+provider address, including Apple's Hide My Email relay address, cannot be linked to that account.
+
+Signup through Google or Apple follows the same closed registration and allowlist as email
+signup. The provider email must be verified before any social account is created. Google verification
+counts only for Gmail or a matching verified Workspace domain. Apple verification counts only for
+Apple-managed mailboxes and relay addresses. Other provider mailboxes cannot
+create an account through social signup; verify an account through email and link it in settings.
+
+Google and Apple sign-in and linking do not confirm sensitive actions. Their browser sessions
+may be cached; an account chooser, consent screen, or nonce does not prove fresh authentication.
+Use a password, an emailed confirmation code, or organization OIDC with verified fresh `auth_time`.
+Social-only accounts on servers without a supported confirmation method or email delivery cannot
+self-confirm sensitive actions, including account deletion. The operator must configure a supported
+method; the interface hides unavailable confirmation options.
 
 ## Directory provisioning (SCIM)
 
@@ -277,7 +370,7 @@ associated with (`app.rakazo.com`), so it hides passkeys for other servers.
 Native apps can use a domain's passkeys only when the domain vouches for them and the app was
 built for that domain. The iOS app's associated domain comes from `EXPO_PUBLIC_API_URL` at build
 time. A macOS desktop build takes it from `RAKAZO_PASSKEY_RP_ID` (default `app.rakazo.com`): set
-it to the same domain for `pnpm build` and for `scripts/passkey-entitlements.ts`, then package with
+it to the same domain for `pnpm build` and for `apps/desktop/scripts/passkey-entitlements.ts`, then package with
 electron-builder's `-c.mac.entitlements` set to that script's output and `-c.mac.provisioningProfile`
 set to a profile for your App ID with the Associated Domains capability, as the release workflow
 does. Without both, macOS ignores the association and the app hides passkeys. When Apple's CDN

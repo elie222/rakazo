@@ -51,17 +51,32 @@ if [[ -e "$SRC/homes.tgz" || -L "$SRC/homes.tgz" ]]; then
 fi
 STOP_ON_FAILURE=1
 "${compose[@]}" stop api worker supervisor
-"${compose[@]}" up -d postgres
-until "${compose[@]}" exec -T postgres pg_isready -U rakazo >/dev/null 2>&1; do
-  sleep 1
-done
+wait_for_postgres() {
+  "${compose[@]}" up -d postgres || return $?
+  local deadline=$((SECONDS + 60))
+  until "${compose[@]}" exec -T postgres sh -c \
+    'exec pg_isready -q -h 127.0.0.1 -t 1 -U "$POSTGRES_USER" -d "$POSTGRES_DB"' 2>/dev/null; do
+    if (( SECONDS >= deadline )); then
+      echo "Timed out waiting for Postgres after 60 seconds." >&2
+      return 1
+    fi
+    sleep 1
+  done
+}
+wait_for_postgres || {
+  status=$?
+  printf 'Postgres failed to become healthy. Check logs with:' >&2
+  printf ' %q' "${compose[@]}" logs postgres >&2
+  printf '\n' >&2
+  exit "$status"
+}
 # Roles live outside the dump, and its grants name the runtime role. The API's
 # start (its migration step) gives that role its login and grants afterwards.
-"${compose[@]}" exec -T postgres psql -X -U rakazo -d rakazo --set=ON_ERROR_STOP=on -c \
+"${compose[@]}" exec -T postgres sh -c 'exec psql -X -U "$POSTGRES_USER" -d "$POSTGRES_DB" "$@"' sh --set=ON_ERROR_STOP=on -c \
   "DO \$\$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'rakazo_app') THEN CREATE ROLE rakazo_app NOLOGIN; END IF; END \$\$"
 # Stop on SQL errors and roll back the dump before restoring files or starting
 # the application. -f is required for psql's single-transaction mode.
-"${compose[@]}" exec -T postgres psql -X -U rakazo -d rakazo \
+"${compose[@]}" exec -T postgres sh -c 'exec psql -X -U "$POSTGRES_USER" -d "$POSTGRES_DB" "$@"' sh \
   --set=ON_ERROR_STOP=on --single-transaction --file=- < "$SRC/rakazo.sql"
 if [[ -n "$STAGE" && -d "$STAGE/data" ]]; then
   if [[ -e "$ROOT/data" ]]; then

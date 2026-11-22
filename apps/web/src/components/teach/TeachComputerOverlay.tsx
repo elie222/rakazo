@@ -2,8 +2,9 @@ import { Trans, useLingui } from "@lingui/react/macro";
 import type { ComputerStatus } from "@rakazo/contracts";
 import { Button, Label, Popover, PopoverContent, PopoverTrigger, Textarea } from "@rakazo/ui-web";
 import { useEffect, useRef, useState } from "react";
-import { rpc } from "../../lib/rpc";
-import { errorText } from "../../lib/user-error";
+import { runsOnUserMachine } from "../../lib/computers/computer-sandbox";
+import { rpc } from "../../lib/query/rpc";
+import { errorText } from "../../lib/query/user-error";
 
 /**
  * Mount with key={botId} so a bot switch remounts clean state. Async completions still check
@@ -88,7 +89,7 @@ export function TeachComputerOverlayControl({
   }, [botId, onRefresh]); // t omitted: identity churn must not re-lock Start
 
   // Hide only for desktop-host bots. Null computer still shows the control so teaching can boot.
-  if (computer?.kind === "desktop") return null;
+  if (runsOnUserMachine(computer)) return null;
 
   async function refreshView() {
     const requestBotId = botId;

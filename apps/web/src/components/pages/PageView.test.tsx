@@ -27,8 +27,10 @@ afterEach(() => {
 
 function mount(props: {
   document: string;
+  title?: string;
   onOpenChange?: (open: boolean) => void;
   compact?: boolean;
+  onRename?: (title: string) => void;
 }) {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   const root = createRoot(document.body.appendChild(document.createElement("div")));
@@ -39,7 +41,8 @@ function mount(props: {
           open
           onOpenChange={next.onOpenChange ?? (() => {})}
           compact={next.compact}
-          title="Plan"
+          onRename={next.onRename}
+          title={next.title ?? "Plan"}
           document={next.document}
           share={<button type="button">Share</button>}
         />,
@@ -59,6 +62,64 @@ it("waits for an updated page to draw, and offers a retry when it never does", a
   await act(async () => vi.advanceTimersByTime(16_000));
   expect(document.body.textContent).toContain("This page couldn't load");
   await view.unmount();
+});
+
+it("gives a replacement document and a manual retry their own full drawing timeout", async () => {
+  vi.useFakeTimers();
+  const v1 = { document: "<p>v1</p>" };
+  const v2 = { document: "<p>v2</p>" };
+  const view = mount(v1);
+  const advance = (ms: number) => act(async () => vi.advanceTimersByTime(ms));
+  const loading = () => document.querySelector('[data-testid="page-loading"]');
+  const failure = () => document.body.textContent?.includes("This page couldn't load");
+  try {
+    await view.render(v1);
+    await advance(14_000);
+    await view.render(v2);
+    const replacement = document.querySelector("iframe");
+    await advance(1_000);
+    expect(loading()).not.toBeNull();
+    expect(document.querySelector("iframe")).toBe(replacement);
+    expect(failure()).toBe(false);
+
+    await advance(13_999);
+    expect(failure()).toBe(false);
+    await advance(1);
+    expect(failure()).toBe(true);
+    expect(document.querySelector("iframe")).toBeNull();
+
+    const retry = [...document.querySelectorAll("button")].find(
+      (b) => b.textContent === "Try again",
+    );
+    expect(retry).toBeDefined();
+    await act(async () => retry?.click());
+    expect(document.querySelector("iframe")).not.toBeNull();
+    expect(document.querySelector("iframe")).not.toBe(replacement);
+    expect(loading()).not.toBeNull();
+    await advance(14_999);
+    expect(failure()).toBe(false);
+    await advance(1);
+    expect(failure()).toBe(true);
+  } finally {
+    await view.unmount();
+  }
+});
+
+it("does not extend the drawing timeout when a title changes without changing the document", async () => {
+  vi.useFakeTimers();
+  const props = { document: "<p>v1</p>" };
+  const view = mount(props);
+  try {
+    await view.render(props);
+    await act(async () => vi.advanceTimersByTime(7_000));
+    await view.render({ ...props, title: "Renamed" });
+    await act(async () => vi.advanceTimersByTime(7_999));
+    expect(document.body.textContent).not.toContain("This page couldn't load");
+    await act(async () => vi.advanceTimersByTime(1));
+    expect(document.body.textContent).toContain("This page couldn't load");
+  } finally {
+    await view.unmount();
+  }
 });
 
 it("closes on Escape unless the key landed in a popup", async () => {
@@ -125,4 +186,40 @@ it("starts its top row below the macOS window controls in the desktop app", asyn
   expect(browserClose.className).toContain("top-[6px]");
   expect(browserClose.style.left).toBe("11px");
   await browser.unmount();
+});
+
+it.each([
+  { key: "Enter", isComposing: true },
+  { key: "Escape", isComposing: true },
+  { key: "Enter", keyCode: 229 },
+  { key: "Escape", keyCode: 229 },
+])("keeps title editing open during IME composition (%o)", async (keyboard) => {
+  const onRename = vi.fn();
+  const onOpenChange = vi.fn();
+  const props = { document: "<p>v1</p>", onRename, onOpenChange };
+  const view = mount(props);
+  await view.render(props);
+  await act(async () => {
+    document.querySelector<HTMLButtonElement>('[title="Rename"]')!.click();
+  });
+  const input = document.querySelector<HTMLInputElement>('[aria-label="Page title"]')!;
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, "计划");
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await act(async () => {
+    input.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, ...keyboard }));
+  });
+  expect(document.querySelector('[aria-label="Page title"]')).toBe(input);
+  expect(input.value).toBe("计划");
+  expect(onRename).not.toHaveBeenCalled();
+  expect(onOpenChange).not.toHaveBeenCalled();
+  await act(async () => {
+    input.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, key: keyboard.key }));
+  });
+  expect(document.querySelector('[aria-label="Page title"]')).toBeNull();
+  if (keyboard.key === "Enter") expect(onRename).toHaveBeenCalledWith("计划");
+  else expect(onRename).not.toHaveBeenCalled();
+  expect(onOpenChange).not.toHaveBeenCalled();
+  await view.unmount();
 });

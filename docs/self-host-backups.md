@@ -13,17 +13,23 @@ English | [简体中文](./zh-CN/self-host-backups.md)
 
 This dumps Postgres (`pg_dump`) and archives `data/` into `backups/<stamp>/`. Backup
 directories have mode `0700`, and both artifacts have mode `0600`, including on reused paths.
-A missing `data/` or `RAKAZO_BACKUP_SKIP_HOMES=1` produces an empty archive that restore treats
-as omitted homes. Database or archive errors fail the backup. Discard the output directory of
-any failed run.
+A missing `data/` fails the backup; `RAKAZO_BACKUP_SKIP_HOMES=1` backs up only the database and
+writes an empty archive that restore treats as omitted homes. A failed dump or archive leaves a
+previous backup under the same stamp intact. Use a fresh stamp if the destination contains other
+files. The script reserves `backups/.pending/` for work in progress. If a run is killed during
+publication, check that no backup is running and recover `.pending/<stamp>/previous` if the
+original stamp is missing before clearing that stamp's staging directory.
 
 ## Restore
 
-For backups created by `scripts/backup.sh`, use an empty `rakazo` database in the development
-Compose stack. The script validates and extracts the homes archive in a clean sibling directory
+For backups created by `scripts/backup.sh`, use an empty database in the development
+Compose stack. Both scripts use the Postgres container’s `POSTGRES_USER` and `POSTGRES_DB` settings
+(defaulting to `rakazo` in Compose). The script validates and extracts the homes archive in a clean sibling directory
 before touching the database, then stops the API, worker, and supervisor. It rejects a `data/`
 path that is a symlink or a non-directory. Stop bot computers and any other processes that
 write to this database or tree before running the script.
+The script waits up to 60 seconds for Postgres to accept connections. If it fails, the script prints
+the command to read the Postgres logs and leaves the writers stopped.
 
 The SQL import runs in one transaction and stops on the first error, including conflicts with
 existing tables. An invalid archive or failed import leaves the current data tree unchanged.
@@ -71,6 +77,52 @@ checkout's `.env` and production Compose file. If the stack was started with a c
 set the same `COMPOSE_PROJECT_NAME` in that file. Set the retention and space settings there too.
 When updating an existing installation, reinstall the script and units, then run
 `systemctl daemon-reload`; pulling the repository does not update `/usr/local/sbin` copies.
+
+### Published-images installs
+
+The same script backs up an install made with `install-images.sh`, which has no checkout. Set
+`RAKAZO_DEPLOY_DIR` to the directory holding `docker-compose.images.yml` and `.env`; with no
+production Compose file there, the script uses `docker-compose.images.yml` and, when present,
+`docker-compose.override.yml`. For any other set of files, list them in `RAKAZO_COMPOSE_FILE`, in
+order, as paths inside the deployment directory, separated the way the
+[updater](./self-host-upgrading.md#deployments-that-layer-a-compose-overlay) takes them. A list
+already set in the deployment's `.env` for the updater is used as it is; a value in
+`/etc/rakazo/backup.env` takes its place.
+
+Fetch the script and units for the release you run, then enable the timer:
+
+```bash
+base=https://raw.githubusercontent.com/elie222/rakazo/vX.Y.Z/infra
+sudo curl -fsSL "$base/compose/backup-prod.sh" -o /usr/local/sbin/rakazo-backup
+sudo chmod 755 /usr/local/sbin/rakazo-backup
+for unit in rakazo-backup.service rakazo-backup.timer; do
+  sudo curl -fsSL "$base/systemd/$unit" -o "/etc/systemd/system/$unit"
+done
+sudo install -d -m 700 /etc/rakazo
+printf '\nRAKAZO_DEPLOY_DIR=%s\n' "$PWD" | sudo tee -a /etc/rakazo/backup.env >/dev/null
+sudo chmod 600 /etc/rakazo/backup.env
+sudo systemctl daemon-reload
+sudo systemctl enable --now rakazo-backup.timer
+sudo systemctl start rakazo-backup.service
+```
+
+Run it from the deployment directory. The deployment directory is added to
+`/etc/rakazo/backup.env` on a line of its own, without replacing settings already there. The
+last command takes the first backup now, so a misconfiguration shows at once in
+`journalctl -u rakazo-backup.service`. The restore steps below apply with your own Compose file
+and volume names. That first backup is plaintext until you set recipients as described under
+[encrypted and off-site backups](#encrypted-and-off-site-backups); the drill reads encrypted
+snapshots only. Its script is not part of this install. Where you keep the identity file, fetch
+it and run it on an encrypted snapshot you copied there:
+
+```bash
+curl -fsSLO https://raw.githubusercontent.com/elie222/rakazo/vX.Y.Z/infra/compose/backup-drill.sh
+bash backup-drill.sh ./<stamp> rakazo-backup.key
+```
+
+This stack runs Postgres 16, so the drill needs `pg_restore` 16 or newer. A file list in `.env`
+that uses a `$` reference is refused, since the script does not expand it: set the plain list
+in `/etc/rakazo/backup.env`.
 
 For a dedicated backup disk, mount it persistently and bind its `backups` directory onto
 `/var/backups` in `/etc/fstab`. Add `x-systemd.requires-mounts-for=/mnt/your-backup-volume` to the bind
@@ -303,7 +355,11 @@ ssh deploy@app.example.com "cd /srv/rakazo && $COMPOSE up -d --wait"
 The restore uses the newest base backup that finished before the target, replays WAL up to it, and
 promotes the result, which starts a new timeline; the sidecar takes a fresh base backup for it. Pause
 CI deploys during recovery. Once the restored database checks out, remove the old cluster:
-`$COMPOSE run --rm --no-deps --entrypoint sh postgres -c 'rm -rf "$PGDATA".before-restore-*'`.
+
+```bash
+ssh deploy@app.example.com \
+  "cd /srv/rakazo && $COMPOSE run --rm --no-deps --entrypoint sh postgres -c 'rm -rf \"\$PGDATA\".before-restore-*'"
+```
 
 To turn it off, remove `pitr` from `COMPOSE_PROFILES`, then run `sudo infra/compose/pitr.sh disable`.
 It removes the sidecar, the slot (so Postgres stops keeping WAL for it), the login and the

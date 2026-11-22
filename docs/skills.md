@@ -19,8 +19,9 @@ Open the account menu (your avatar at the bottom of the sidebar) and choose **Sk
 Skills you add are available to all your bots. Choose **New skill** to write one yourself: a name,
 a short description of when to use it, and the steps.
 
-You can also add skills from a GitHub repository: choose **From GitHub**, paste the repository URL,
-then **Preview** and **Add**.
+You can add a skill catalog or one skill folder from GitHub: choose **From GitHub**, paste the
+repository or folder URL, then **Preview** and **Add**. Adding a catalog installs all supported
+skills in one action.
 
 > [!NOTE]
 > Skills added from GitHub or a plugin are instructions only. Any scripts they include are not run.
@@ -35,7 +36,8 @@ was made in.
 
 Some tasks are easier to show than describe.
 
-1. Open the bot's computer with **Agent computer**.
+1. In the bot's chat, select its name in the header to open the bot panel. Under **Computer**,
+   choose **Open** on the preview (shown on hover or keyboard focus), or **Wake** if it is asleep.
 2. Choose **Teach a task** and describe the result you will demonstrate, such as "Export this week's
    list from the CRM and drop it in the shared folder".
 3. Choose **Start recording** and do the task on the bot's screen. The bot watches but does not act.

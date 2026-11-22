@@ -7,14 +7,13 @@ import { describe, expect, it } from "vitest";
 
 const script = fileURLToPath(new URL("./pr-digest", import.meta.url));
 const mockGh = String.raw`#!/usr/bin/env node
-const { readFileSync, appendFileSync } = require("node:fs");
+const { readFileSync, appendFileSync, existsSync } = require("node:fs");
 const args = process.argv.slice(2);
 const fixture = JSON.parse(readFileSync(process.env.FIXTURE, "utf8"));
 const print = (value) => console.log(typeof value === "string" ? value : JSON.stringify(value));
 if (args[0] === "repo" && args[1] === "view") print("example/project");
 else if (args[0] === "pr" && args[1] === "view") {
-  if (args.includes("isCrossRepository")) print(fixture.fork ?? false);
-  else if (args.includes("--jq")) print("abc");
+  if (args.includes("--jq")) print("abc");
   else print({ headRefOid: "abc", state: "OPEN", mergeable: "MERGEABLE", headRefName: "topic", reviewDecision: "" });
 } else if (args[0] === "api") {
   const endpoint = args.find((arg) => arg === "graphql" || arg.startsWith("repos/"));
@@ -23,14 +22,6 @@ else if (args[0] === "pr" && args[1] === "view") {
     appendFileSync(process.env.CALLS, "POST\n");
     process.exit(1);
   } else if (endpoint.includes("/pulls/comments/")) print("1");
-  else if (endpoint.includes("/check-runs?")) {
-    // A sequence plays one entry per poll, then repeats its last entry.
-    const polls = fixture.checks ?? [fixture.check ?? { name: "tests", status: "completed", conclusion: "success", html_url: "" }];
-    appendFileSync(process.env.POLLS, "x");
-    const count = readFileSync(process.env.POLLS, "utf8").length;
-    const poll = polls[Math.min(count, polls.length) - 1];
-    for (const run of Array.isArray(poll) ? poll : [poll]) print(run);
-  }
   else if (endpoint.includes("/actions/jobs/")) {
     const result = require("node:child_process").spawnSync("jq", ["-r", args[args.indexOf("--jq") + 1]], {
       input: JSON.stringify({ steps: fixture.steps?.[endpoint.split("/").pop()] ?? [] }), encoding: "utf8"
@@ -38,16 +29,41 @@ else if (args[0] === "pr" && args[1] === "view") {
     process.stdout.write(result.stdout);
     process.stderr.write(result.stderr);
     process.exit(result.status);
+  } else {
+    // Sequences play one entry per poll (counted on the check-runs fetch), then repeat their last entry.
+    const at = (polls) => polls[Math.min(readFileSync(process.env.POLLS, "utf8").length, polls.length) - 1];
+    let body;
+    if (endpoint.includes("/check-runs?")) {
+      appendFileSync(process.env.POLLS, "x");
+      const poll = at(fixture.checks ?? [fixture.check ?? { name: "tests", status: "completed", conclusion: "success", html_url: "" }]);
+      body = { check_runs: Array.isArray(poll) ? poll : [poll] };
+    } else if (endpoint.includes("/status?")) body = { statuses: at(fixture.statuses ?? [[]]) };
+    else if (endpoint.includes("/actions/runs?"))
+      body = { workflow_runs: at(fixture.workflows ?? [[]]).map((run) => ({ event: "pull_request", ...run })) };
+    else if (endpoint.includes("/issues/")) body = fixture.conversation ?? [];
+    else if (endpoint.includes("/reviews?")) body = fixture.reviews ?? [];
+    else if (endpoint.includes("/comments?")) body = fixture.inline ?? [];
+    else if (/\/pulls\/\d+$/.test(endpoint)) body = { head: { sha: "abc" }, base: { ref: "main" } };
+    else if (endpoint.endsWith("/branches/main"))
+      body = fixture.required ? { protection: { required_status_checks: { contexts: fixture.required } } } : {};
+    else process.exit(2);
+    // Answer the way gh api -i does, honouring If-None-Match like GitHub.
+    const limited = Number(fixture.rateLimited ?? 0);
+    if (limited > (existsSync(process.env.LIMITED) ? readFileSync(process.env.LIMITED, "utf8").length : 0)) {
+      appendFileSync(process.env.LIMITED, "x");
+      print("HTTP/2.0 403 Forbidden\nX-Ratelimit-Remaining: 0\nX-Ratelimit-Reset: " + Math.floor(Date.now() / 1000) + "\n\n{}");
+      process.exit(1);
+    }
+    const json = JSON.stringify(body);
+    const etag = 'W/"' + require("node:crypto").createHash("sha1").update(json).digest("hex") + '"';
+    const sent = args[args.indexOf("-H") + 1];
+    if (args.includes("-H") && sent === "If-None-Match: " + etag) {
+      appendFileSync(process.env.CALLS, "304\n");
+      print("HTTP/2.0 304 Not Modified\n");
+      process.exit(1);
+    }
+    print("HTTP/2.0 200 OK\n" + (fixture.noEtag ? "" : "Etag: " + etag + "\n") + "\n" + json);
   }
-  else if (endpoint.includes("/status?")) {
-    const polls = fixture.statuses ?? [[]];
-    const count = readFileSync(process.env.POLLS, "utf8").length;
-    for (const status of polls[Math.min(count, polls.length) - 1]) print(status);
-  }
-  else if (endpoint.includes("/issues/")) print(fixture.conversation ?? []);
-  else if (endpoint.includes("/reviews?")) print(fixture.reviews ?? []);
-  else if (endpoint.includes("/comments?")) print(fixture.inline ?? []);
-  else process.exit(2);
 } else process.exit(2);
 `;
 
@@ -76,9 +92,11 @@ function runDigest(
     check?: object;
     checks?: object[];
     statuses?: object[][];
-    fork?: boolean;
+    workflows?: object[][];
+    rateLimited?: number;
+    noEtag?: boolean;
+    required?: string[];
     steps?: Record<string, object[]>;
-    deadline?: number;
   },
   ...args: string[]
 ) {
@@ -95,9 +113,8 @@ function runDigest(
         FIXTURE: join(root, "fixture"),
         CALLS: callsPath,
         POLLS: join(root, "polls"),
+        LIMITED: join(root, "limited"),
         PR_DIGEST_POLL: "1",
-        // Longer than the spawn timeout, so a watch that fails to wake errors out.
-        PR_DIGEST_DEADLINE: String(fixture.deadline ?? 60),
         PR_DIGEST_SEEN_DIR: join(root, "seen"),
       },
       encoding: "utf8",
@@ -191,6 +208,18 @@ describe("pr-digest", () => {
       conversation: [
         comment({ id: 41, user: "vercel[bot]", kind: "Bot", body: "[vc]: generated deployment" }),
         comment({
+          id: 52,
+          user: "vercel[bot]",
+          kind: "Bot",
+          body: "@someone is attempting to deploy",
+        }),
+        comment({
+          id: 53,
+          user: "github-actions[bot]",
+          kind: "Bot",
+          body: "<!-- rakazo-playwright-screenshots -->\n<!-- screenshot-commit:abc -->\n### Playwright screenshots\n",
+        }),
+        comment({
           id: 42,
           user: "github-actions[bot]",
           kind: "Bot",
@@ -248,7 +277,130 @@ describe("pr-digest", () => {
       ],
     });
     expect(result.status).toBe(0);
-    expect(result.stdout).toContain("(11 noise)");
+    expect(result.stdout).toContain("(13 noise)");
+  });
+
+  describe("Qodo review comment", () => {
+    const finding = (n: number, title: string, tags: string[], detail = `Details for ${n}.`) =>
+      `<details>\n<summary>  ${n}.  ${title} ${tags.map((t) => `<code>${t}</code>`).join(" ")}</summary>\n\n<br/>\n\n> <details open>\n><summary>Description</summary>\n><br/>\n>\n><pre>\n>${detail}\n></pre>\n></details>\n\n<hr/>\n</details>\n`;
+    const sticky = (current: string[], previous: string[] = [], id = 60) =>
+      comment({
+        id,
+        user: "qodo-free-for-open-source-projects[bot]",
+        kind: "Bot",
+        body: [
+          "<h3>Code Review by Qodo</h3>\n\n<code>🐞 Bugs (3)</code>\n",
+          ...current,
+          "<!-- https://github.com/example/project/commit/abc0000000000000000000000000000000000000 -->\n",
+          ...(previous.length
+            ? [
+                "<details>\n<summary><strong>Previous reviews</strong></summary>\n",
+                ...previous,
+                "</details>",
+              ]
+            : []),
+        ].join("\n"),
+      });
+    const bug = ["🐞 Bug", "≡ Correctness"];
+
+    it("lists unresolved findings from the latest review and blocks on them", () => {
+      const result = runDigest({
+        conversation: [
+          sticky(
+            [
+              finding(1, "Cache misses a key", [...bug, "⭐ New"], "<b><i>lookup</i></b> skips it"),
+              finding(2, "Retry can loop", bug),
+              finding(3, "<s>Fixed earlier</s>", ["✓ Resolved"]),
+              finding(4, "<s>Code moved</s>", ["⊘ Outdated"]),
+              finding(5, "Escape \x1b]0;title\x07here", ["🐞 Bug\x1b[31m"]),
+              "<details>\n<summary>  6.  No description <code>🐞 Bug</code></summary>\n</details>\n",
+            ],
+            [finding(1, "Only in an older review", bug)],
+          ),
+          comment({
+            id: 61,
+            user: "qodo-free-for-open-source-projects[bot]",
+            kind: "Bot",
+            body: "<h3>PR Summary by Qodo</h3>\n\nAdds a cache",
+          }),
+        ],
+      });
+      expect(result.status).toBe(11);
+      expect(result.stdout).toContain("qodo reviewed head · 4 open · 0 answered");
+      expect(result.stdout).toContain(
+        "(qodo 1):0\n  Cache misses a key [🐞 Bug, ≡ Correctness, new] lookup skips it",
+      );
+      expect(result.stdout).toContain("Retry can loop [🐞 Bug, ≡ Correctness] Details for 2.");
+      for (const gone of [
+        "Fixed earlier",
+        "Code moved",
+        "Only in an older review",
+        "Adds a cache",
+      ]) {
+        expect(result.stdout).not.toContain(gone);
+      }
+      expect(result.stdout).toContain("(2 noise)");
+      expect(result.stdout).toContain("Escape ]0;titlehere [🐞 Bug[31m]");
+      expect(result.stdout).toContain("(qodo 6):0\n  No description [🐞 Bug] \n");
+      expect(result.stdout).not.toContain("\x1b");
+      expect(result.stdout).not.toContain("\x07");
+    });
+
+    it("stops blocking on a finding your reply quotes, even after Qodo edits the comment", () => {
+      const current = sticky([
+        finding(1, "Don&#x27;t drop the key", bug),
+        finding(2, "Retry can loop", bug),
+        finding(3, "Retry", bug),
+      ]);
+      const edited = { ...current, updated_at: "2026-01-05T00:00:00Z" };
+      const answer = reply(
+        70,
+        `Declined [Don't drop the key](${current.html_url}): the key is rebuilt on read.`,
+      );
+      const both = reply(71, `${current.html_url} don't drop the key, retry can loop: intended.`);
+      const unlinked = reply(72, "Retry can loop is intended.");
+
+      const partial = runDigest({ conversation: [edited, answer, unlinked] });
+      expect(partial.status).toBe(11);
+      expect(partial.stdout).toContain("2 open · 1 answered");
+      expect(partial.stdout).toContain("answered (qodo 1) Don't drop the key");
+      expect(partial.stdout).toContain("Retry can loop [");
+
+      // Quoting "Retry can loop" does not also answer "Retry".
+      const longer = runDigest({ conversation: [edited, both] });
+      expect(longer.status).toBe(11);
+      expect(longer.stdout).toContain("1 open · 2 answered");
+      expect(longer.stdout).toContain("Retry [");
+
+      const retry = reply(73, `${current.html_url} Retry: intended too.`);
+      const done = runDigest({ conversation: [edited, both, retry] });
+      expect(done.status).toBe(0);
+      expect(done.stdout).toContain("0 open · 3 answered");
+    });
+
+    it("says when Qodo has not reviewed the head yet", () => {
+      const old = sticky([]);
+      old.body = old.body.replace("abc0000", "def0000");
+      const restarting = sticky([], [], 62);
+      restarting.body = "\n<h3>Code Review by Qodo</h3>\n<h3>New Review Started</h3>\n";
+      const result = runDigest({ conversation: [old, restarting] });
+      expect(result.status).toBe(0);
+      expect(result.stdout).toContain("qodo reviewed def00000, not the head yet");
+    });
+
+    it("wakes the watch when an edit adds a finding", () => {
+      const running = { name: "e2e", status: "in_progress", conclusion: null, html_url: "" };
+      const result = runDigest(
+        {
+          check: running,
+          conversation: [sticky([finding(1, "Retry can loop", [...bug, "⭐ New"])])],
+        },
+        "--watch",
+        "1",
+      );
+      expect(result.stdout).toContain("VERDICT open-comments");
+      expect(result.stdout).toContain("Retry can loop");
+    });
   });
 
   it("only blocks effective change requests", () => {
@@ -309,18 +461,91 @@ describe("pr-digest", () => {
     expect(result.calls).toBe("POST\n");
   });
 
+  describe("workflow runs", () => {
+    const passed = {
+      name: "lint",
+      status: "completed",
+      conclusion: "success",
+      html_url: "https://github.com/example/project/actions/runs/9/job/1",
+    };
+    const workflow = {
+      name: "ci",
+      status: "queued",
+      conclusion: null,
+      html_url: "https://github.com/example/project/actions/runs/7",
+    };
+
+    it("counts a queued workflow with no jobs as pending and names it", () => {
+      const result = runDigest({ check: passed, workflows: [[workflow]] });
+      expect(result.status).toBe(12);
+      expect(result.stdout).toContain("checks 1 success · 1 workflow queued");
+    });
+
+    it("ignores a manually dispatched workflow on the same commit", () => {
+      const result = runDigest({
+        check: passed,
+        workflows: [[{ ...workflow, event: "workflow_dispatch" }]],
+      });
+      expect(result.status).toBe(0);
+      expect(result.stdout).not.toContain("workflow queued");
+    });
+
+    it("fails on a workflow that ended without a failed job of its own", () => {
+      const result = runDigest({
+        check: passed,
+        workflows: [[{ ...workflow, status: "completed", conclusion: "startup_failure" }]],
+      });
+      expect(result.status).toBe(10);
+      expect(result.stdout).toContain("FAIL workflow ci [startup_failure]");
+    });
+
+    it("judges a workflow by its newest run on the commit", () => {
+      const older = {
+        ...workflow,
+        workflow_id: 1,
+        status: "completed",
+        conclusion: "startup_failure",
+        id: 1,
+      };
+      const newer = {
+        ...older,
+        conclusion: "success",
+        id: 2,
+        html_url: `${workflow.html_url}0`,
+      };
+      const result = runDigest({ check: passed, workflows: [[newer, older]] });
+      expect(result.status).toBe(0);
+    });
+
+    it("does not count a failed workflow twice when its job failed", () => {
+      const job = {
+        ...passed,
+        conclusion: "failure",
+        html_url: "https://github.com/example/project/actions/runs/7/job/2",
+      };
+      const result = runDigest({
+        check: job,
+        workflows: [[{ ...workflow, status: "completed", conclusion: "failure" }]],
+      });
+      expect(result.status).toBe(10);
+      expect(result.stdout).not.toContain("FAIL workflow");
+    });
+  });
+
   describe("--watch", () => {
     const running = { name: "e2e", status: "in_progress", conclusion: null, html_url: "" };
     const failed = { ...running, status: "completed", conclusion: "failure" };
 
     it("wakes for an unseen finding while checks are still running", () => {
       const result = runDigest({ check: running, conversation: [comment()] }, "--watch", "1");
-      expect(result.status).toBe(11);
+      expect(result.status).toBe(0);
+      expect(result.stdout).toContain("VERDICT open-comments");
       expect(result.stdout).toContain("Please fix this");
     });
     it("wakes when a check fails while others are still running", () => {
       const result = runDigest({ checks: [running, [failed, running]] }, "--watch", "1");
-      expect(result.status).toBe(10);
+      expect(result.status).toBe(0);
+      expect(result.stdout).toContain("VERDICT failures");
     });
 
     it("wakes when a commit status fails while checks are still running", () => {
@@ -329,7 +554,8 @@ describe("pr-digest", () => {
         "--watch",
         "1",
       );
-      expect(result.status).toBe(10);
+      expect(result.status).toBe(0);
+      expect(result.stdout).toContain("VERDICT failures");
     });
 
     const deployAuth = {
@@ -338,30 +564,116 @@ describe("pr-digest", () => {
       description: "Authorization required to deploy.",
     };
 
-    it("ignores the deploy authorization failure fork PRs always get", () => {
+    it("never waits on or wakes for the marketing site's deploy status", () => {
       const passed = { ...running, status: "completed", conclusion: "success" };
       const result = runDigest(
-        { checks: [running, running, passed], statuses: [[], [deployAuth]], fork: true },
+        { checks: [running, running, passed], statuses: [[], [deployAuth]] },
+        "--watch",
+        "1",
+      );
+      expect(result.stdout).toContain("VERDICT green");
+      expect(result.stdout).not.toContain("STATUS Vercel");
+    });
+
+    it("re-reads unchanged data from its cache without spending rate limit", () => {
+      const passed = { ...running, status: "completed", conclusion: "success" };
+      const result = runDigest({ checks: [running, running, passed] }, "--watch", "1");
+      expect(result.stdout).toContain("VERDICT green");
+      // Conversation, review and status reads stay the same across polls.
+      expect(result.calls.split("304").length - 1).toBeGreaterThan(5);
+    });
+
+    it("waits only for the checks the base branch requires", () => {
+      const passed = { ...running, name: "tests", status: "completed", conclusion: "success" };
+      const result = runDigest(
+        { required: ["tests"], checks: [[passed, { ...running, name: "image" }]] },
+        "--watch",
+        "1",
+      );
+      expect(result.stdout).toContain("VERDICT green");
+    });
+
+    it("waits for checks the base does not require when asked to", () => {
+      const passed = { ...running, name: "tests", status: "completed", conclusion: "success" };
+      const result = runDigest(
+        { required: ["tests"], checks: [[passed, { ...running, name: "image" }]] },
+        "--all-checks",
+        "1",
+      );
+      expect(result.stdout).toContain("VERDICT pending (1)");
+    });
+
+    it("still waits for a missing required check when waiting for every check", () => {
+      const result = runDigest(
+        {
+          required: ["tests", "e2e"],
+          check: { ...running, name: "tests", status: "completed", conclusion: "success" },
+        },
+        "--all-checks",
+        "1",
+      );
+      expect(result.stdout).toContain("VERDICT pending (1)");
+    });
+
+    it("waits for a required check that has not appeared yet", () => {
+      const result = runDigest({
+        required: ["tests", "e2e"],
+        check: { ...running, name: "tests", status: "completed", conclusion: "success" },
+      });
+      expect(result.stdout).toContain("VERDICT pending (1)");
+    });
+
+    it("reads a response that carries no ETag", () => {
+      const result = runDigest({ noEtag: true, conversation: [comment()] }, "--watch", "1");
+      expect(result.stdout).toContain("Please fix this");
+    });
+
+    it("waits out a rate limit instead of failing", () => {
+      const result = runDigest({ rateLimited: 2 }, "--watch", "1");
+      expect(result.stdout).toContain("VERDICT green");
+      expect(result.stderr).toContain("rate limit, waiting");
+    });
+
+    it("keeps waiting on a workflow queued before it has any jobs", () => {
+      const passed = { ...running, status: "completed", conclusion: "success" };
+      const workflow = {
+        name: "ci",
+        status: "queued",
+        conclusion: null,
+        html_url: "https://github.com/example/project/actions/runs/9",
+      };
+      const result = runDigest(
+        {
+          check: passed,
+          workflows: [
+            [workflow],
+            [workflow],
+            [{ ...workflow, status: "completed", conclusion: "success" }],
+          ],
+        },
         "--watch",
         "1",
       );
       expect(result.status).toBe(0);
-      expect(result.stdout).not.toContain("STATUS Vercel");
-    });
-
-    it("still wakes for that failure on a same-repo PR", () => {
-      const result = runDigest(
-        { check: running, statuses: [[], [deployAuth]], fork: false },
-        "--watch",
-        "1",
-      );
-      expect(result.status).toBe(10);
+      expect(result.stdout).toContain("VERDICT green");
     });
 
     it("keeps waiting on a failure that was already there", () => {
       const started = Date.now();
-      const result = runDigest({ checks: [[failed, running]], deadline: 3 }, "--watch", "1");
-      expect(result.status).toBe(10);
+      const passed = { ...running, status: "completed", conclusion: "success" };
+      const result = runDigest(
+        {
+          checks: [
+            [failed, running],
+            [failed, running],
+            [failed, passed],
+          ],
+        },
+        "--watch",
+        "1",
+      );
+      expect(result.status).toBe(0);
+      expect(result.stdout).toContain("VERDICT failures");
       expect(Date.now() - started).toBeGreaterThanOrEqual(2_000);
     });
   });

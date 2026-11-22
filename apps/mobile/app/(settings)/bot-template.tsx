@@ -1,28 +1,35 @@
+import { ph } from "@lingui/core/macro";
+import { useLingui } from "@lingui/react/macro";
 import { ChatMarkdown } from "@rakazo/chat-ui/native";
 import type { Bot, BotTemplateListing } from "@rakazo/contracts";
 import { isBotTemplateChanged } from "@rakazo/contracts";
 import { botTemplateApps, formatCron } from "@rakazo/core";
+import { cronLabels } from "@rakazo/i18n/cron";
 import { useQuery } from "@tanstack/react-query";
-import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
+import { useLocalSearchParams, useNavigation, useRouter } from "expo-router";
 import type { ReactNode } from "react";
-import { useCallback, useRef, useState } from "react";
+import { useState } from "react";
 import { ActivityIndicator, Alert, ScrollView, StyleSheet, Text, View } from "react-native";
-import { BotTemplateIcon } from "../../components/bot-template-icon";
-import { ConnectorIcon } from "../../components/connector-icon";
-import { NativeActionButton } from "../../components/native-action-button";
-import { NativeSymbol } from "../../components/native-symbol";
-import { SettingsGroup, SettingsRow } from "../../components/settings-group";
-import { SkillSymbol } from "../../components/skill-symbol";
-import { rpc } from "../../lib/api";
-import { botTemplateCopy } from "../../lib/bot-template-copy";
-import { cronLabels } from "../../lib/cron";
-import { useI18n } from "../../lib/i18n";
-import { native, useMobileTokens, useResolvedAppearance, useThemedStyles } from "../../lib/native";
-import { queryClient, rpcQuery } from "../../lib/query";
-import { addToSearchInbox, searchInboxSession } from "../../lib/search-inbox";
-import { openFromSettingsSheet } from "../../lib/settings-sheet";
-import { useSideInsets } from "../../lib/side-insets";
-import { errorText } from "../../lib/user-error";
+import { BotTemplateIcon } from "../../components/bots/bot-template-icon";
+import { ConnectorIcon } from "../../components/integrations/connector-icon";
+import { SkillSymbol } from "../../components/integrations/skill-symbol";
+import { NativeActionButton } from "../../components/native/native-action-button";
+import { NativeSymbol } from "../../components/native/native-symbol";
+import { SettingsGroup, SettingsRow } from "../../components/settings/settings-group";
+import { errorText } from "../../lib/api/user-error";
+import { botTemplateCopy } from "../../lib/bots/bot-template-copy";
+import { useUiLocale } from "../../lib/i18n/i18n";
+import { useSideInsets } from "../../lib/layout/side-insets";
+import {
+  native,
+  useMobileTokens,
+  useResolvedAppearance,
+  useThemedStyles,
+} from "../../lib/native/native";
+import { queryClient, rpcQuery, useSave } from "../../lib/query/query";
+import type { SearchInboxSession } from "../../lib/search/search-inbox";
+import { addToSearchInbox, searchInboxSession } from "../../lib/search/search-inbox";
+import { openFromSettingsSheet } from "../../lib/settings/settings-sheet";
 
 /** One template: what it sends, what it adds, and the apps it works with. */
 export default function BotTemplateScreen() {
@@ -30,7 +37,7 @@ export default function BotTemplateScreen() {
   const sideInsets = useSideInsets();
   const styles = useThemedStyles(createStyles);
   const tokens = useMobileTokens();
-  const { t } = useI18n();
+  const { t } = useLingui();
   const templates = useQuery(rpcQuery("bots/templates"), queryClient);
   const template = templates.data?.find((item) => item.id === id);
 
@@ -43,19 +50,21 @@ export default function BotTemplateScreen() {
       {template ? (
         <TemplateDetail template={template} onChanged={() => void templates.refetch()} />
       ) : templates.isPending ? (
-        <ActivityIndicator color={tokens.mutedForeground} accessibilityLabel={t("Loading…")} />
-      ) : (
+        <ActivityIndicator color={tokens.mutedForeground} accessibilityLabel={t`Loading…`} />
+      ) : templates.isError ? (
         <View style={styles.failure}>
           <Text style={styles.secondary}>
-            {errorText(templates.error, t("Could not load templates"))}
+            {errorText(templates.error, t`Could not load templates`)}
           </Text>
           <NativeActionButton
             fill={false}
-            label={t("Retry")}
+            label={t`Retry`}
             onPress={() => void templates.refetch()}
             prominence="secondary"
           />
         </View>
+      ) : (
+        <Text style={styles.secondary}>{t`This template is no longer available.`}</Text>
       )}
     </ScrollView>
   );
@@ -71,25 +80,15 @@ function TemplateDetail({
   onChanged: () => void;
 }) {
   const router = useRouter();
+  const navigation = useNavigation();
   const styles = useThemedStyles(createStyles);
   const tokens = useMobileTokens();
   const colorScheme = useResolvedAppearance();
-  const { t, locale } = useI18n();
+  const { t } = useLingui();
+  const locale = useUiLocale();
   const { name, summary, sample } = botTemplateCopy(template);
   const { botId } = template;
-  const [pending, setPending] = useState(false);
   const [expanded, setExpanded] = useState<string | null>(null);
-  // Bumped on leaving, so a request that finishes later doesn't open its bot from elsewhere.
-  const focusGeneration = useRef(0);
-  useFocusEffect(
-    useCallback(
-      () => () => {
-        focusGeneration.current += 1;
-        setPending(false);
-      },
-      [],
-    ),
-  );
   const catalog = useQuery(
     { ...rpcQuery("connections/catalog", {}), enabled: template.apps.length > 0 },
     queryClient,
@@ -100,23 +99,21 @@ function TemplateDetail({
     {
       key: "bot",
       title: name,
-      detail: t("Instructions"),
+      detail: t`Instructions`,
       body: template.instructions,
       icon: <NativeSymbol ios="text.alignleft" android="reader-outline" size={16} />,
     },
     ...template.skills.map((skill) => ({
       key: `skill:${skill.name}`,
       title: skill.name,
-      detail: t("Skill"),
+      detail: t`Skill`,
       body: skill.body,
       icon: <SkillSymbol size={16} />,
     })),
     ...template.routines.map((routine, index) => ({
       key: `routine:${index}`,
       title: routine.name,
-      detail: t("{schedule}, paused until you turn it on", {
-        schedule: routine.crons.map((cron) => formatCron(cron, labels)).join(", "),
-      }),
+      detail: t`${ph({ schedule: routine.crons.map((cron) => formatCron(cron, labels)).join(", ") })}, paused until you turn it on`,
       body: routine.prompt,
       icon: <NativeSymbol ios="clock" android="time-outline" size={16} />,
     })),
@@ -130,50 +127,35 @@ function TemplateDetail({
     });
   }
 
-  async function create() {
-    if (pending) return;
-    setPending(true);
-    const generation = focusGeneration.current;
-    const askedIn = searchInboxSession();
-    try {
-      const { bot } = await rpc("bots/createFromTemplate", {
-        templateId: template.id,
-        version: template.version,
-        name,
-      });
-      if (generation !== focusGeneration.current) return;
+  const open = useSave({
+    save: async (
+      { existingId }: { existingId: string | null; askedIn: SearchInboxSession },
+      send,
+    ) =>
+      existingId
+        ? queryClient.fetchQuery({ ...rpcQuery("bots/get", { botId: existingId }), staleTime: 0 })
+        : (
+            await send("bots/createFromTemplate", {
+              templateId: template.id,
+              version: template.version,
+              name,
+            })
+          ).bot,
+    onSaved: (bot, { askedIn }) => {
+      // An answer that lands once the screen is covered doesn't open its bot from elsewhere.
+      if (!navigation.isFocused()) return;
       addToSearchInbox({ kind: "bot", bot }, askedIn);
       openBot(bot);
-    } catch (cause) {
-      if (generation !== focusGeneration.current) return;
-      if (isBotTemplateChanged(cause)) {
-        Alert.alert(t("This template was just updated. Check it again."));
+    },
+    onFailed: (cause, { existingId }) => {
+      if (!navigation.isFocused()) return;
+      if (existingId) Alert.alert(t`Could not load bot`, errorText(cause, t`Try again.`));
+      else if (isBotTemplateChanged(cause)) {
+        Alert.alert(t`This template was just updated. Check it again.`);
         onChanged();
-      } else {
-        Alert.alert(t("Could not create the bot"), errorText(cause, t("Try again.")));
-      }
-    } finally {
-      if (generation === focusGeneration.current) setPending(false);
-    }
-  }
-
-  async function openExisting(existingId: string) {
-    if (pending) return;
-    setPending(true);
-    const generation = focusGeneration.current;
-    const askedIn = searchInboxSession();
-    try {
-      const bot = await rpc("bots/get", { botId: existingId });
-      if (generation !== focusGeneration.current) return;
-      addToSearchInbox({ kind: "bot", bot }, askedIn);
-      openBot(bot);
-    } catch (cause) {
-      if (generation !== focusGeneration.current) return;
-      Alert.alert(t("Could not load bot"), errorText(cause, t("Try again.")));
-    } finally {
-      if (generation === focusGeneration.current) setPending(false);
-    }
-  }
+      } else Alert.alert(t`Could not create the bot`, errorText(cause, t`Try again.`));
+    },
+  });
 
   return (
     <>
@@ -187,16 +169,16 @@ function TemplateDetail({
         </View>
       </View>
       <NativeActionButton
-        label={botId ? t("Open") : t("Create bot")}
-        busy={pending}
-        onPress={() => void (botId ? openExisting(botId) : create())}
+        label={botId ? t`Open` : t`Create bot`}
+        busy={open.pending}
+        onPress={() => open.run({ existingId: botId, askedIn: searchInboxSession() })}
       />
       <View style={styles.sample}>
         <ChatMarkdown palette={tokens} colorScheme={colorScheme}>
           {sample}
         </ChatMarkdown>
       </View>
-      <SettingsGroup label={t("Adds")}>
+      <SettingsGroup label={t`Adds`}>
         {rows.flatMap((row) => {
           const open = expanded === row.key;
           return [
@@ -223,7 +205,7 @@ function TemplateDetail({
         })}
       </SettingsGroup>
       {apps.length ? (
-        <SettingsGroup label={t("Works with")}>
+        <SettingsGroup label={t`Works with`}>
           {apps.map((app) => (
             <SettingsRow
               key={app.slug}
@@ -231,7 +213,7 @@ function TemplateDetail({
               leading={<ConnectorIcon name={app.name} logo={app.logo} size={28} />}
               trailing={
                 app.connected ? (
-                  <View accessible accessibilityLabel={t("Connected")}>
+                  <View accessible accessibilityLabel={t`Connected`}>
                     <NativeSymbol
                       ios="checkmark.circle.fill"
                       android="checkmark-circle"

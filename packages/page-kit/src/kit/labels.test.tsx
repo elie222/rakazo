@@ -3,7 +3,7 @@ import { readdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { ReactElement } from "react";
-import { act } from "react";
+import { act, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, describe, expect, it } from "vitest";
 import { MonthView } from "./calendar.js";
@@ -45,7 +45,7 @@ const longRows = Array.from({ length: 250 }, (_, index) => [`Row ${index}`, inde
 describe("page words", () => {
   it("cover the app's shipped web languages", () => {
     const here = dirname(fileURLToPath(import.meta.url));
-    const shipped = readdirSync(join(here, "../../../../apps/web/src/locales"), {
+    const shipped = readdirSync(join(here, "../../../../packages/i18n/locales"), {
       withFileTypes: true,
     })
       .filter((entry) => entry.isDirectory())
@@ -211,6 +211,93 @@ describe("page words", () => {
     // Outside a page, a language already on the document still applies.
     document.documentElement.lang = "ja";
     expect(mount(<EmptyChart />).textContent).toBe("データなし");
+  });
+
+  it.each([
+    { reader: "en", hostLang: "en", hostDir: null },
+    { reader: undefined, hostLang: "en-GB", hostDir: "ltr" },
+    { reader: undefined, hostLang: null, hostDir: null },
+    { reader: undefined, hostLang: "", hostDir: "rtl" },
+  ])(
+    "restores host metadata and words after clearing a language override ($hostLang)",
+    ({ reader, hostLang, hostDir }) => {
+      const html = document.documentElement;
+      if (hostLang !== null) html.setAttribute("lang", hostLang);
+      if (hostDir !== null) html.setAttribute("dir", hostDir);
+
+      function Fixture() {
+        const [lang, setLang] = useState<string | undefined>();
+        const content = (
+          <>
+            <button type="button" onClick={() => setLang("  he  ")}>
+              Hebrew
+            </button>
+            <button type="button" onClick={() => setLang("de")}>
+              German
+            </button>
+            <button type="button" onClick={() => setLang(" ")}>
+              Follow reader
+            </button>
+            <Page title="Report" lang={lang}>
+              <EmptyChart />
+            </Page>
+          </>
+        );
+        return reader ? (
+          <PageLanguage.Provider value={reader}>{content}</PageLanguage.Provider>
+        ) : (
+          content
+        );
+      }
+      const root = mount(<Fixture />);
+      const [he, de, clear] = root.querySelectorAll("button");
+      const main = root.querySelector("main")!;
+      const checkHost = () => {
+        expect(html.getAttribute("lang")).toBe(hostLang);
+        expect(html.getAttribute("dir")).toBe(hostDir);
+        expect(main.getAttribute("lang")).toBeNull();
+        expect(main.getAttribute("dir")).toBeNull();
+        expect(root.querySelector(".rk-chart-empty")!.textContent).toBe("No data");
+      };
+
+      checkHost(); // A Page with no override must leave the host alone.
+      act(() => he!.click());
+      expect(html.getAttribute("lang")).toBe("he");
+      expect(main.getAttribute("dir")).toBe("rtl");
+      expect(root.querySelector(".rk-chart-empty")!.textContent).toBe(PAGE_MESSAGES.he.noData);
+      act(() => clear!.click());
+      checkHost();
+
+      act(() => he!.click());
+      act(() => de!.click());
+      expect(html.getAttribute("lang")).toBe("de");
+      expect(main.getAttribute("dir")).toBe("ltr");
+      expect(root.querySelector(".rk-chart-empty")!.textContent).toBe("Keine Daten");
+      act(() => clear!.click());
+      checkHost();
+    },
+  );
+
+  it("restores host metadata when an overriding Page unmounts", () => {
+    const html = document.documentElement;
+    html.setAttribute("lang", "ja");
+    html.setAttribute("dir", "auto");
+    mount(<Page title="Report" lang="he" />);
+    cleanups.pop()!();
+    expect(html.getAttribute("lang")).toBe("ja");
+    expect(html.getAttribute("dir")).toBe("auto");
+  });
+
+  it("does not overwrite a newer host language when an overriding Page unmounts", () => {
+    const html = document.documentElement;
+    html.setAttribute("lang", "en");
+    html.setAttribute("dir", "ltr");
+    mount(<Page title="Report" lang="he" />);
+    // Another owner can change the root metadata while the Page is mounted.
+    html.setAttribute("lang", "ar");
+    cleanups.pop()!();
+    expect(html.getAttribute("lang")).toBe("ar");
+    expect(html.getAttribute("dir")).toBe("rtl");
   });
 
   it("lays a right-to-left page out right to left", () => {

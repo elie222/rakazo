@@ -1,7 +1,9 @@
+import { expectLinearTime } from "@rakazo/contracts/test-timing";
 import { describe, expect, it } from "vitest";
 import {
   isModelCredentialRejected,
   isRetryableProviderUnavailable,
+  isSignInRetryRequest,
   isTransientModelError,
 } from "./model-errors.js";
 
@@ -38,6 +40,12 @@ describe("transient model errors", () => {
     ["service unavailable", { status: 503, message: "service unavailable" }],
     ["bad gateway", new Error("502 Bad Gateway")],
     ["empty truncated stream", new Error("Stream ended without finish_reason")],
+    [
+      "stream ended without a finish reason",
+      new Error("Example stream ended without a finish reason"),
+    ],
+    ["stream ended before its stop event", new Error("Anthropic stream ended before message_stop")],
+    ["error injected into the stream", new Error("JSON error injected into SSE stream")],
     ["dropped fetch body", new TypeError("terminated")],
     [
       "interrupted upstream stream",
@@ -60,6 +68,7 @@ describe("transient model errors", () => {
       "server-side processing failure",
       "Codex error: An error occurred while processing your request. You can retry your request, or contact us through our help center at help.openai.com if the error persists. Please include the request ID 00000000-0000-0000-0000-000000000000 in your message.",
     ],
+    ["generation failure on the provider", new Error("Internal error during token generation")],
     [
       "per-minute token limit that links to billing",
       "Rate limit reached for example-model in organization org-example on tokens per min (TPM): Limit 60000, Used 51552, Requested 12568. Please try again in 4.12s. Visit https://platform.openai.com/account/rate-limits to learn more. You can increase your rate limit by adding a payment method to your account at https://platform.openai.com/account/billing.",
@@ -435,6 +444,33 @@ describe("provider availability classification", () => {
   });
 });
 
+describe("OpenAI prepaid credit exhaustion", () => {
+  const noCredits = [
+    "You have no credits remaining. Add credits to continue using the API at",
+    "https://example.test/credits.",
+  ].join(" ");
+
+  it.each([
+    ["statusless no-credits message", new Error(noCredits)],
+    [
+      "statusless credit_balance_exhausted text",
+      new Error(`credit_balance_exhausted: ${noCredits}`),
+    ],
+    ["code only", { code: "credit_balance_exhausted" }],
+    ["HTTP 429 credit_balance_exhausted", { status: 429, code: "credit_balance_exhausted" }],
+  ])("moves to a backup without retrying the same model: %s", (_label, error) => {
+    expect(isRetryableProviderUnavailable(error)).toBe(true);
+    expect(isTransientModelError(error)).toBe(false);
+  });
+
+  it.each([`401 invalid_api_key: ${noCredits}`, `${noCredits} invalid api key`])(
+    "does not treat a credit message with an auth marker as fallback-eligible: %s",
+    (error) => {
+      expect(isRetryableProviderUnavailable(new Error(error))).toBe(false);
+    },
+  );
+});
+
 describe("rejected model credentials", () => {
   it.each([
     '401 {"type":"error","error":{"type":"authentication_error","message":"OAuth access token has been revoked."}}',
@@ -498,5 +534,35 @@ describe("postfixed credential failures", () => {
         message: "credential expired; quota exhausted",
       }),
     ).toBe(false);
+  });
+});
+
+describe("sign-in retry requests", () => {
+  it("recognises a sign-in service asking for a retry", () => {
+    const error = new Error(
+      '400 Bad Request: {"error":"request_failed","error_description":"The request failed to be processed, please try again"}',
+    );
+    expect(isSignInRetryRequest(error)).toBe(true);
+    expect(isTransientModelError(error)).toBe(false);
+  });
+
+  it("recognises a sign-in error that carries the OAuth code itself", () => {
+    const error = Object.assign(new Error("Device sign-in failed (status 400)."), {
+      code: "request_failed",
+    });
+    expect(isSignInRetryRequest(error)).toBe(true);
+  });
+});
+
+describe("status codes in long messages", () => {
+  it("reads a status after spacing and a separator", () => {
+    expect(isModelCredentialRejected("status code =  401 invalid api key")).toBe(true);
+  });
+
+  it("stays fast on long runs of spacing after a status word", () => {
+    expectLinearTime(() => {
+      isTransientModelError(`status${"\t".repeat(200_000)}x`);
+      isModelCredentialRejected(`http status${"\t".repeat(200_000)}x`);
+    });
   });
 });

@@ -1,30 +1,35 @@
 import { useLingui } from "@lingui/react/macro";
+import { useTimeout } from "@rakazo/chat-ui/hooks";
 import type { Bot, Routine, ThinkingLevel, ThreadSnapshot } from "@rakazo/contracts";
-import { cronFromPreset } from "@rakazo/core";
+import { isIdentityConfirmationRequired } from "@rakazo/contracts";
+import { cronFromPreset, localTimezone, routineCopy } from "@rakazo/core";
 import type { ComponentProps, Dispatch, RefObject, SetStateAction } from "react";
-import { useCallback, useRef, useState } from "react";
-import { localTimezone } from "../../lib/local-timezone";
-import { parseModelOptionKey } from "../../lib/model-catalog";
-import type { Panel } from "../../lib/right-panel-state";
-import type { RoutineDraftState } from "../../lib/routine-draft";
+import { useCallback, useMemo, useRef, useState } from "react";
+import { REVEAL_MS } from "../../components/vault/VaultItemDetail";
+import { parseModelOptionKey } from "../../lib/models/model-catalog";
+import type { createSpaceRpc } from "../../lib/query/rpc";
+import { sharedInflight } from "../../lib/query/shared-inflight";
+import { errorCode, errorText } from "../../lib/query/user-error";
+import { appBotInboundUrl } from "../../lib/routines/inbound-url";
+import type { RoutineDraftState } from "../../lib/routines/routine-draft";
 import {
   draftStateFromRoutine,
   emptyRoutineDraftState,
   routineNeedsOneShotArm,
   watchFromDraft,
-} from "../../lib/routine-draft";
-import type { createSpaceRpc } from "../../lib/rpc";
-import { sharedInflight } from "../../lib/shared-inflight";
-import { errorCode, errorText } from "../../lib/user-error";
-import type { RoutineEditor } from "../RoutineEditor";
+} from "../../lib/routines/routine-draft";
+import type { RoutineEditor } from "../routines/RoutineEditor";
+import type { Panel } from "./right-panel-state";
 
 export function useRoutineEditor({
   rpc,
   active,
   activeBotId,
   timezone,
+  inboundOrigin,
   setBots,
   refreshThread,
+  openGroup,
   setPanel,
   messageProviders,
 }: {
@@ -32,15 +37,40 @@ export function useRoutineEditor({
   active: Bot | undefined;
   activeBotId: RefObject<string | undefined>;
   timezone: string | null | undefined;
+  /** The deployment's published inbound origin; unset means the app's own. */
+  inboundOrigin?: string;
   messageProviders: string[];
   setBots: Dispatch<SetStateAction<Bot[]>>;
   refreshThread: (botId: string) => Promise<ThreadSnapshot>;
+  openGroup: (groupId: string) => void;
   setPanel: (panel: Panel) => void;
 }) {
   const { t } = useLingui();
   const [routineDraft, setRoutineDraft] = useState<RoutineDraftState>(emptyRoutineDraftState());
-  const [revealedWebhookSecrets, setRevealedWebhookSecrets] = useState<Record<string, string>>({});
-  const routineWebhookSecret = (active && revealedWebhookSecrets[active.id]) || null;
+  const [revealedWebhookSecrets, setRevealedWebhookSecrets] = useState<
+    Record<string, { secret: string; hideAt: number }>
+  >({});
+  const routineWebhookSecret = (active && revealedWebhookSecrets[active.id]?.secret) || null;
+  const nextHide = Object.values(revealedWebhookSecrets).reduce<number | null>(
+    (soonest, { hideAt }) => (soonest === null || hideAt < soonest ? hideAt : soonest),
+    null,
+  );
+  const untilNextHide = useMemo(
+    () => (nextHide === null ? null : Math.max(nextHide - performance.now(), 0)),
+    [nextHide],
+  );
+  useTimeout(
+    () =>
+      setRevealedWebhookSecrets((current) =>
+        Object.fromEntries(
+          Object.entries(current).filter(
+            ([, { hideAt }]) => hideAt !== nextHide && hideAt > performance.now(),
+          ),
+        ),
+      ),
+    untilNextHide,
+    nextHide,
+  );
   const [editingRoutine, setEditingRoutine] = useState<Routine | null>(null);
   const [deleteRoutineTarget, setDeleteRoutineTarget] = useState<Routine | null>(null);
   const [savingRoutine, setSavingRoutine] = useState(false);
@@ -48,15 +78,37 @@ export function useRoutineEditor({
   const [routineError, setRoutineError] = useState<string | null>(null);
   const routineSavePending = useRef(false);
   const webhookSecretProvisionRef = useRef(new Map<string, Promise<string>>());
+  // Bumped when a bot's key rotates or the person hides it, so a reveal that started before
+  // never shows a revoked key or brings back one they hid.
+  const webhookKeyGenerations = useRef(new Map<string, number>());
+  const bumpWebhookKeyGeneration = (botId: string) =>
+    webhookKeyGenerations.current.set(botId, (webhookKeyGenerations.current.get(botId) ?? 0) + 1);
   const ensureWebhookSecret = (botId: string) =>
     sharedInflight(webhookSecretProvisionRef.current, botId, async () => {
       const result = await rpc.bots.rotateWebhookSecret({ botId });
-      setRevealedWebhookSecrets((current) => ({ ...current, [botId]: result.secret }));
+      bumpWebhookKeyGeneration(botId);
+      showWebhookSecret(botId, result.secret);
       setBots((current) =>
         current.map((bot) => (bot.id === botId ? { ...bot, webhookConfigured: true } : bot)),
       );
       return result.secret;
     });
+  // A key on screen, new or read back, hides again after a while, as the Vault's values do.
+  // Each bot's key keeps its own hide time, on a clock a system time change cannot move, and one
+  // timer hides whichever is due first, so a late result for one bot never cancels another's.
+  function showWebhookSecret(botId: string, secret: string) {
+    setRevealedWebhookSecrets((current) => ({
+      ...current,
+      [botId]: { secret, hideAt: performance.now() + REVEAL_MS },
+    }));
+  }
+  function hideWebhookSecret(botId: string) {
+    setRevealedWebhookSecrets((current) => {
+      if (!(botId in current)) return current;
+      const { [botId]: _hidden, ...rest } = current;
+      return rest;
+    });
+  }
   const webhookErrorText = (error: unknown, fallback: string) =>
     errorCode(error) === "FORBIDDEN"
       ? t`Only the bot's creator can set its webhook key.`
@@ -103,22 +155,16 @@ export function useRoutineEditor({
         editing: editingRoutine,
         timezone: editingRoutine?.timezone ?? timezone ?? localTimezone(),
         webhook: {
-          path:
-            typeof window !== "undefined"
-              ? `${window.location.origin}/api/v1/bots/${active.id}/webhook`
-              : `/api/v1/bots/${active.id}/webhook`,
+          path: appBotInboundUrl(inboundOrigin, active.id, "webhook"),
           secret: routineWebhookSecret,
           configured: active.webhookConfigured || Boolean(routineWebhookSecret),
         },
-        githubPath:
-          typeof window !== "undefined"
-            ? `${window.location.origin}/api/v1/bots/${active.id}/github`
-            : `/api/v1/bots/${active.id}/github`,
+        githubPath: appBotInboundUrl(inboundOrigin, active.id, "github"),
         messageProviders,
         saving: savingRoutine,
         running: runningRoutine,
         error: routineError,
-        onBack: () => setPanel("routines"),
+        onBack: () => setPanel("settings"),
         onClose: () => setPanel(null),
         onEnsureWebhook: async () => {
           const targetBotId = active.id;
@@ -131,6 +177,34 @@ export function useRoutineEditor({
             }
             setRoutineError(webhookErrorText(error, t`Could not create the webhook key`));
           }
+        },
+        onRevealWebhook: async () => {
+          const targetBotId = active.id;
+          const request = routineSaveRequest.current;
+          const generation = webhookKeyGenerations.current.get(targetBotId) ?? 0;
+          // A reveal that lands after the person left this routine, or after a rotation, shows nothing.
+          const stale = () =>
+            routineSaveRequest.current !== request ||
+            activeBotId.current !== targetBotId ||
+            (webhookKeyGenerations.current.get(targetBotId) ?? 0) !== generation;
+          try {
+            const { secret } = await rpc.bots.revealWebhookSecret({ botId: targetBotId });
+            if (stale()) return;
+            showWebhookSecret(targetBotId, secret);
+          } catch (error) {
+            // The editor asks the person to confirm it's them and tries again.
+            if (isIdentityConfirmationRequired(error)) throw error;
+            if (stale()) return;
+            setRoutineError(
+              errorCode(error) === "FORBIDDEN"
+                ? t`Only the bot's creator can see its webhook key.`
+                : errorText(error, t`Could not show the webhook key`),
+            );
+          }
+        },
+        onHideWebhook: () => {
+          bumpWebhookKeyGeneration(active.id);
+          hideWebhookSecret(active.id);
         },
         onSave: async () => {
           if (routineSavePending.current) return;
@@ -208,6 +282,9 @@ export function useRoutineEditor({
                 messageProvider: routineDraft.messageProvider,
                 emailSenders: routineDraft.emailSenders,
                 watch,
+                ...(routineDraft.inChat !== targetRoutine.inChat
+                  ? { inChat: routineDraft.inChat }
+                  : {}),
                 ...(routineModel.modelProvider !== targetRoutine.modelProvider ||
                 routineModel.modelId !== targetRoutine.modelId ||
                 routineModel.thinkingLevel !== targetRoutine.thinkingLevel
@@ -229,6 +306,7 @@ export function useRoutineEditor({
                 messageProvider: routineDraft.messageProvider,
                 emailSenders: routineDraft.emailSenders,
                 watch,
+                inChat: routineDraft.inChat,
                 ...routineModel,
               });
             }
@@ -261,6 +339,44 @@ export function useRoutineEditor({
           }
           await refreshThread(targetBotId).catch(() => undefined);
         },
+        onSetActive: async (on) => {
+          const targetBotId = active.id;
+          const targetRoutine = editingRoutine;
+          if (!targetRoutine || targetRoutine.botId !== targetBotId) return;
+          if (routineSavePending.current) return;
+          const saveRequest = ++routineSaveRequest.current;
+          routineSavePending.current = true;
+          setSavingRoutine(true);
+          setRoutineError(null);
+          setRoutineDraft((current) => ({ ...current, active: on }));
+          try {
+            const saved = await rpc.routines.update({ routineId: targetRoutine.id, active: on });
+            if (routineSaveRequest.current === saveRequest && activeBotId.current === targetBotId) {
+              setEditingRoutine(saved);
+              setRoutineDraft((current) => ({ ...current, active: saved.active }));
+            }
+          } catch (error) {
+            if (routineSaveRequest.current !== saveRequest || activeBotId.current !== targetBotId) {
+              return;
+            }
+            setRoutineDraft((current) => ({ ...current, active: targetRoutine.active }));
+            setRoutineError(errorText(error, t`Could not save routine`));
+            return;
+          } finally {
+            routineSavePending.current = false;
+            setSavingRoutine(false);
+          }
+          await refreshThread(targetBotId).catch(() => undefined);
+        },
+        onCopy: () => {
+          if (!editingRoutine) return;
+          const name = editingRoutine.name;
+          const copy = routineCopy(editingRoutine, t`${name} (copy)`);
+          if (!copy) return;
+          setRoutineDraft(draftStateFromRoutine(copy));
+          setEditingRoutine(null);
+          setRoutineError(null);
+        },
         onTestRun: async () => {
           if (routineRunPending.current) return;
           const targetBotId = active.id;
@@ -270,8 +386,13 @@ export function useRoutineEditor({
           setRunningRoutine(true);
           setRoutineError(null);
           try {
-            await rpc.routines.testRun({ routineId: targetRoutine.id });
-            await refreshThread(targetBotId);
+            const { groupId } = await rpc.routines.testRun({ routineId: targetRoutine.id });
+            // A group routine runs in its group; follow it there unless they've moved on.
+            if (groupId) {
+              if (activeBotId.current === targetBotId) openGroup(groupId);
+            } else {
+              await refreshThread(targetBotId);
+            }
           } catch (error) {
             if (activeBotId.current === targetBotId) {
               setRoutineError(errorText(error, t`Could not run routine`));
@@ -286,7 +407,7 @@ export function useRoutineEditor({
             setDeleteRoutineTarget(editingRoutine);
             return;
           }
-          setPanel("routines");
+          setPanel("settings");
         },
       } satisfies ComponentProps<typeof RoutineEditor>)
     : null;
@@ -302,7 +423,7 @@ export function useRoutineEditor({
           setEditingRoutine((current) => (current?.id === target.id ? null : current));
           if (activeBotId.current !== target.botId) return;
           await refreshThread(target.botId);
-          if (activeBotId.current === target.botId) setPanel("routines");
+          if (activeBotId.current === target.botId) setPanel("settings");
         },
       }
     : null;

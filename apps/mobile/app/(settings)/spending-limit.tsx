@@ -1,86 +1,93 @@
-import type {
-  SpendingCurrency,
-  SpendingLimit,
-  SpendingPayment,
-  SpendingPeriod,
-  SpendingStatus,
-} from "@rakazo/contracts";
+import { useLingui } from "@lingui/react/macro";
+import type { SpendingCurrency, SpendingLimit, SpendingPeriod } from "@rakazo/contracts";
 import { SPENDING_CURRENCIES } from "@rakazo/contracts";
 import { formatMinorAmount, parseLimitInput } from "@rakazo/core";
+import { writeSaved } from "@rakazo/core/query";
 import { useFocusEffect } from "expo-router";
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Alert, Platform, ScrollView, StyleSheet, View } from "react-native";
-import { LoadFailure } from "../../components/load-failure";
-import { MenuPickerMenu } from "../../components/menu-picker";
-import { TextFieldDialog } from "../../components/name-dialog";
-import { NativeSymbol } from "../../components/native-symbol";
-import { SettingsGroup, SettingsRow, useStackedSettings } from "../../components/settings-group";
-import { formatActivityRelativeTime } from "../../lib/activity";
-import { rpc } from "../../lib/api";
-import { dateLocaleForUi, useI18n } from "../../lib/i18n";
-import { native } from "../../lib/native";
-import { useSideInsets } from "../../lib/side-insets";
-import { spendingSpentSummary } from "../../lib/spending-limit";
-import { errorText } from "../../lib/user-error";
+import { NativeSymbol } from "../../components/native/native-symbol";
+import {
+  SettingsGroup,
+  SettingsRow,
+  useStackedSettings,
+} from "../../components/settings/settings-group";
+import { LoadFailure } from "../../components/ui/load-failure";
+import { MenuPickerMenu } from "../../components/ui/menu-picker";
+import { TextFieldDialog } from "../../components/ui/name-dialog";
+import { spendingSpentSummary } from "../../lib/account/spending-limit";
+import { errorText } from "../../lib/api/user-error";
+import { dateLocaleForUi, useUiLocale } from "../../lib/i18n/i18n";
+import { formatActivityRelativeTime } from "../../lib/inbox/activity";
+import { useSideInsets } from "../../lib/layout/side-insets";
+import { native } from "../../lib/native/native";
+import { accountRpcQuery, formRead, queryClient, useSave } from "../../lib/query/query";
+import { useScreenQuery } from "../../lib/query/screen-query";
+import { ACCOUNT_SETTINGS } from "../../lib/query/settings-target";
 
 /** The most the user's bots may spend, across every bot and Space. */
 export default function SpendingLimitSettings() {
-  const { t, locale } = useI18n();
+  const { t } = useLingui();
+  const locale = useUiLocale();
   const sideInsets = useSideInsets();
   const stacked = useStackedSettings();
-  const [status, setStatus] = useState<SpendingStatus | null>(null);
-  const [payments, setPayments] = useState<SpendingPayment[]>([]);
-  const [loadError, setLoadError] = useState<string | null>(null);
-  const [pending, setPending] = useState(false);
+  // A change is built from the limit on screen, so each visit reads it afresh.
+  const statusRead = formRead(accountRpcQuery("spendingLimit/get"));
+  const paymentsRead = accountRpcQuery("spendingLimit/payments");
+  const statusQuery = useScreenQuery(statusRead);
+  // The list is extra: without it the limit can still be set.
+  const paymentsQuery = useScreenQuery(paymentsRead);
+  // A copy an earlier visit left is not what a change may be built from.
+  const status = (statusQuery.isFetchedAfterMount && statusQuery.data) || null;
+  const payments = paymentsQuery.data ?? [];
+  // A failed read stays on screen while its retry is in flight, until that one answers.
+  const [loadFailure, setLoadFailure] = useState<Error | null>(null);
+  useEffect(() => {
+    if (statusQuery.error) setLoadFailure(statusQuery.error);
+    else if (statusQuery.data) setLoadFailure(null);
+  }, [statusQuery.error, statusQuery.data]);
+  const reads = useRef([statusRead, paymentsRead]);
+  reads.current = [statusRead, paymentsRead];
+  // A read still in flight when the screen is covered is dropped, so the return reads afresh.
+  useFocusEffect(
+    useCallback(
+      () => () => {
+        for (const { queryKey } of reads.current)
+          void queryClient.cancelQueries({ queryKey, exact: true });
+      },
+      [],
+    ),
+  );
+  // Starts each read over, so the answer comes from the latest tap.
+  const reload = () => {
+    for (const { queryKey } of reads.current)
+      void queryClient.resetQueries({ queryKey, exact: true });
+  };
   // The Android field's text while it is open; iOS uses the system prompt.
   const [draft, setDraft] = useState<string | null>(null);
-  // Bumped by saves, so a read started before one cannot overwrite its result.
-  const generation = useRef(0);
-  // Bumped by each read, so a slower earlier list cannot replace a newer one.
-  const listReads = useRef(0);
-
-  const reload = useCallback(() => {
-    const started = generation.current;
-    const read = ++listReads.current;
-    void rpc("spendingLimit/get")
-      .then((next) => {
-        if (started !== generation.current) return;
-        setStatus(next);
-        setLoadError(null);
-      })
-      .catch((err) => setLoadError(errorText(err, t("Something went wrong. Try again."))));
-    // The list is extra: without it the limit can still be set.
-    void rpc("spendingLimit/payments")
-      .then((next) => {
-        if (read === listReads.current) setPayments(next);
-      })
-      .catch(() => undefined);
-  }, [t]);
-  useFocusEffect(reload);
 
   const limit = status?.limit ?? null;
 
-  async function save(next: SpendingLimit | null) {
-    if (pending) return;
-    setPending(true);
-    generation.current += 1;
-    try {
-      setStatus(await rpc("spendingLimit/set", { limit: next }));
-      setDraft(null);
-    } catch (err) {
-      Alert.alert(errorText(err, t("Could not save that preference")));
-    } finally {
-      setPending(false);
-    }
-  }
+  const change = useSave({
+    target: ACCOUNT_SETTINGS,
+    save: async (next: SpendingLimit | null, send) => {
+      const saved = await send("spendingLimit/set", { limit: next });
+      // A read that started before the change never puts back what it replaced.
+      await writeSaved(queryClient, statusRead.queryKey, () => saved);
+    },
+    onSaved: () => setDraft(null),
+    onFailed: (err) => Alert.alert(errorText(err, t`Could not save that preference`)),
+  });
+  const pending = change.pending;
+  const save = change.run;
 
   function saveAmount(text: string) {
     const amount = parseLimitInput(text);
     if (amount === null) {
-      Alert.alert(t("Enter an amount"));
+      Alert.alert(t`Enter an amount`);
       return;
     }
-    void save({ amount, currency: limit?.currency ?? "usd", period: limit?.period ?? "month" });
+    save({ amount, currency: limit?.currency ?? "usd", period: limit?.period ?? "month" });
   }
 
   function askAmount() {
@@ -90,11 +97,11 @@ export default function SpendingLimitSettings() {
       return;
     }
     Alert.prompt(
-      t("Spending limit"),
+      t`Spending limit`,
       undefined,
       [
-        { text: t("Cancel"), style: "cancel" },
-        { text: t("Save"), onPress: (entered?: string) => saveAmount(entered ?? "") },
+        { text: t`Cancel`, style: "cancel" },
+        { text: t`Save`, onPress: (entered?: string) => saveAmount(entered ?? "") },
       ],
       "plain-text",
       current,
@@ -103,10 +110,10 @@ export default function SpendingLimitSettings() {
   }
 
   const periods: Array<{ key: SpendingPeriod; label: string }> = [
-    { key: "day", label: t("Daily") },
-    { key: "week", label: t("Weekly") },
-    { key: "month", label: t("Monthly") },
-    { key: "none", label: t("No reset") },
+    { key: "day", label: t`Daily` },
+    { key: "week", label: t`Weekly` },
+    { key: "month", label: t`Monthly` },
+    { key: "none", label: t`No reset` },
   ];
   const currencies = SPENDING_CURRENCIES.map((key) => ({ key, label: key.toUpperCase() }));
   const chooser = (
@@ -150,35 +157,34 @@ export default function SpendingLimitSettings() {
         contentContainerStyle={[styles.content, stacked && styles.compactContent]}
         contentInsetAdjustmentBehavior="automatic"
       >
-        {loadError && !status ? <LoadFailure message={loadError} onRetry={reload} /> : null}
+        {loadFailure && !status ? (
+          <LoadFailure
+            message={errorText(loadFailure, t`Something went wrong. Try again.`)}
+            onRetry={reload}
+          />
+        ) : null}
         {status ? (
           <SettingsGroup>
             <SettingsRow
               accessibilityRole="button"
-              detail={limit ? spendingSpentSummary(t, locale, status.spent, limit) : undefined}
+              detail={limit ? spendingSpentSummary(locale, status.spent, limit) : undefined}
               dimmed={pending}
               onPress={askAmount}
-              title={t("Amount")}
+              title={t`Amount`}
               value={
                 limit
                   ? formatMinorAmount(limit.amount, limit.currency, dateLocaleForUi(locale))
-                  : t("None")
+                  : t`None`
               }
             />
             {limit
-              ? chooser(
-                  t("Currency"),
-                  limit.currency,
-                  currencies,
-                  (key) => void save({ ...limit, currency: key as SpendingCurrency }),
+              ? chooser(t`Currency`, limit.currency, currencies, (key) =>
+                  save({ ...limit, currency: key as SpendingCurrency }),
                 )
               : null}
             {limit
-              ? chooser(
-                  t("Resets"),
-                  limit.period,
-                  periods,
-                  (key) => void save({ ...limit, period: key as SpendingPeriod }),
+              ? chooser(t`Resets`, limit.period, periods, (key) =>
+                  save({ ...limit, period: key as SpendingPeriod }),
                 )
               : null}
           </SettingsGroup>
@@ -189,13 +195,13 @@ export default function SpendingLimitSettings() {
               accessibilityRole="button"
               destructive
               disabled={pending}
-              onPress={() => void save(null)}
-              title={t("Remove")}
+              onPress={() => save(null)}
+              title={t`Remove`}
             />
           </SettingsGroup>
         ) : null}
         {status && payments.length ? (
-          <SettingsGroup label={t("Recent payments")}>
+          <SettingsGroup label={t`Recent payments`}>
             {payments.map((payment) => (
               <SettingsRow
                 key={payment.id}
@@ -211,9 +217,9 @@ export default function SpendingLimitSettings() {
       </ScrollView>
       {draft !== null ? (
         <TextFieldDialog
-          title={t("Spending limit")}
-          label={t("Amount")}
-          submitLabel={t("Save")}
+          title={t`Spending limit`}
+          label={t`Amount`}
+          submitLabel={t`Save`}
           value={draft}
           error={null}
           saving={pending}

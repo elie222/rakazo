@@ -1,16 +1,24 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect } from "react";
-import type { PageBlock } from "../../lib/page-cards";
-import { useOpenPage, usePageDocument } from "../../lib/pages";
-import { useSpaceQueries } from "../../lib/query";
-import { errorCode } from "../../lib/user-error";
+import type { PageBlock } from "../../lib/pages/page-cards";
+import { useOpenPage, usePageDocument } from "../../lib/pages/pages";
+import { useSpaceQueries } from "../../lib/query/query";
+import { errorCode } from "../../lib/query/user-error";
 import { PageCard } from "./PageCard";
 
 /**
  * A page saved in this chat. The newest card for a page draws its current version and title;
  * an older one keeps the version it was saved with and opens the latest.
  */
-export function PageBlockCard({ block, updated }: { block: PageBlock; updated: boolean }) {
+export function PageBlockCard({
+  block,
+  updated,
+  onOpen,
+}: {
+  block: PageBlock;
+  updated: boolean;
+  onOpen?: () => void;
+}) {
   const queries = useSpaceQueries();
   const queryClient = useQueryClient();
   const openPage = useOpenPage();
@@ -41,8 +49,15 @@ export function PageBlockCard({ block, updated }: { block: PageBlock; updated: b
       failed={viewer.failed || unread}
       updated={updated}
       updatedAt={current.data?.updatedAt}
-      shared={current.data?.visibility === "link"}
-      onOpen={deleted ? undefined : () => openPage(block.pageId)}
+      visibility={current.data?.visibility}
+      onOpen={
+        deleted
+          ? undefined
+          : () => {
+              onOpen?.();
+              openPage(block.pageId);
+            }
+      }
     />
   );
 }

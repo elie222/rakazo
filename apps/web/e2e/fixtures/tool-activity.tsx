@@ -2,11 +2,11 @@ import { I18nProvider } from "@lingui/react";
 import type { MessageBlock, ThreadMessage } from "@rakazo/contracts";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { createRoot } from "react-dom/client";
-import { bootstrapI18n, i18n } from "../../src/lib/i18n";
-import { queryClient } from "../../src/lib/query";
-import { rpc } from "../../src/lib/rpc";
-import { toolActivityPreference } from "../../src/lib/tool-activity-preference";
-import { SettingsOverlay } from "../../src/pages/SettingsOverlay";
+import { toolActivityPreference } from "../../src/lib/chat/tool-activity-preference";
+import { bootstrapI18n, i18n } from "../../src/lib/locale/i18n";
+import { queryClient } from "../../src/lib/query/query";
+import { rpc } from "../../src/lib/query/rpc";
+import { SettingsOverlay } from "../../src/pages/settings/SettingsOverlay";
 import "../../src/styles.css";
 import { FixtureTranscript } from "./thread-fixture";
 
@@ -80,9 +80,11 @@ function SettingsFixture() {
         name="Owner"
         memoryConfig={null}
         onMemoryConfigChange={() => {}}
-        onUsageOpen={() => {}}
         timezone="UTC"
         onTimezoneChange={async () => {}}
+        labs={[]}
+        labsAvailable={[]}
+        onLabsChange={async () => {}}
         onClose={() => {}}
         section="general"
         onSectionChange={() => {}}

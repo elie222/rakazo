@@ -4,12 +4,21 @@ Talk to your bots instead of typing, have them read replies aloud, or call them.
 
 ## Set up a voice provider
 
-Open **Settings → Voice**, pick a **Provider** and add its **API key**:
+Your server may supply a default voice connection. To use your own, open **Settings → Voice**,
+pick a **Provider** and add its **API key**:
 
-- **ElevenLabs**, **OpenAI** and **Fish Audio** can speak and transcribe.
+- **ElevenLabs**, **OpenAI**, **Fish Audio** and **xAI** can speak and transcribe. If xAI is
+  connected in **Models**, with a SuperGrok or X Premium sign-in or a key, leave the **API key**
+  empty to use that connection.
+- **OpenRouter** speaks and transcribes with models from many providers. If OpenRouter is
+  connected in **Models**, leave the **API key** empty to use that connection. **Speech model**
+  suggests the models OpenRouter lists, and each model has its own voices. A model that returns
+  only raw audio is converted to WAV, so it still plays. Speech is billed on your OpenRouter
+  account; Rakazo does not track that spend.
 - **Cartesia** speaks only.
 - **Self-hosted** uses your own OpenAI-compatible speech server, such as Kokoro or Whisper. Enter its
-  **Server URL**.
+  **Server URL**. If another server transcribes, enter it as **Transcription server URL**, with its own
+  **Transcription API key** if it needs one.
 - **macOS** uses the voices installed on the Mac running your server, with no key. It appears only
   when the server runs on a Mac.
 
@@ -20,8 +29,11 @@ Voice settings apply to every [space](./spaces.md). A space can customize them i
 
 ## Talk instead of typing
 
-Hold the microphone in the composer and speak; release to send. Slide up to lock recording so you
-don't have to keep holding.
+On web and desktop, hold the microphone in the composer and speak; release to send. Slide up to
+lock recording so you don't have to keep holding.
+
+On mobile, tap the microphone to dictate into the message box. Tap **Stop dictating** to finish,
+then review or send the text.
 
 ## Hear replies
 
@@ -31,7 +43,9 @@ don't have to keep holding.
 
 ## Call a bot
 
-Choose **Call** at the top of the chat to talk with the bot in real time. During a call you can
+On web and desktop, choose **Call** at the top of the chat. On mobile, open a one-to-one bot chat
+and tap the waveform **Call** button beside the empty message box. **Send** appears there instead
+when there's something to send. During a call you can
 **Mute**, open the **Transcript**, minimize the call and keep using the app, or **Hang up**. The
 transcript stays in the chat afterwards.
 
@@ -43,3 +57,7 @@ missed call shows **Call back** in the chat.
 
 The mobile app uses your phone's own speech recognition and voices for calls. Pick a
 **Device voice** in a bot's settings. On Android, a call keeps going with the screen off.
+
+## Join a meeting
+
+Open **Meetings** in a bot chat to send the bot to Zoom, Google Meet, or a Microsoft Teams work meeting and get a speaker-labeled transcript. See [Meetings](./meetings.md) to join a call, find the transcript, and ask about it.

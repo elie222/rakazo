@@ -3,6 +3,7 @@ import { ChatMarkdown } from "@rakazo/chat-ui/web";
 import type { Bot, BotTemplateListing, ConnectionCatalogItem } from "@rakazo/contracts";
 import { isBotTemplateChanged } from "@rakazo/contracts";
 import { botTemplateApps, formatCron } from "@rakazo/core";
+import { cronLabels } from "@rakazo/i18n/cron";
 import {
   Button,
   Dialog,
@@ -29,12 +30,9 @@ import {
   Telescope,
   X,
 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
-import { cronLabels } from "../../lib/cron";
-import { useSpaceQueries } from "../../lib/query";
-import { rpc } from "../../lib/rpc";
-import type { ErrorDetails } from "../../lib/user-error";
-import { errorDetails } from "../../lib/user-error";
+import { useId, useState } from "react";
+import { useSave, useSpaceQueries } from "../../lib/query/query";
+import { errorDetails } from "../../lib/query/user-error";
 import { ErrorNotice } from "../ErrorNotice";
 import { PluginLogo, ROW_HOVER } from "../integrations/plugin-marketplace";
 import { useBotTemplateCopy } from "./bot-template-copy";
@@ -79,6 +77,7 @@ export function BotTemplatesDialog({
   const { t } = useLingui();
   const queries = useSpaceQueries();
   const copy = useBotTemplateCopy();
+  const cardId = useId();
   // Read afresh each time it opens: a template's bot may have been made or deleted since.
   const templates = useQuery({ ...queries.bots.templates.queryOptions(), staleTime: 0 });
   const [openId, setOpenId] = useState<string | null>(null);
@@ -110,23 +109,33 @@ export function BotTemplatesDialog({
       );
     return (
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-        {templates.data.map((template) => {
+        {templates.data.map((template, index) => {
           const { name, summary, sample } = copy(template);
+          const titleId = `${cardId}-${index}-title`;
+          const summaryId = `${cardId}-${index}-summary`;
           return (
             <button
               key={template.id}
               type="button"
               data-testid="bot-template-card"
+              aria-labelledby={titleId}
+              aria-describedby={summaryId}
               onClick={() => setOpenId(template.id)}
-              className={`flex min-w-0 flex-col gap-3 rounded-2xl border border-border/70 p-4 text-start focus-visible:outline-none ${ROW_HOVER}`}
+              className={`flex min-w-0 flex-col gap-3 rounded-2xl border border-border/70 p-4 text-start focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50 ${ROW_HOVER}`}
             >
               <span className="flex min-w-0 items-center gap-3">
                 <TemplateIcon id={template.id} />
                 <span className="min-w-0 flex-1">
-                  <span className="block truncate text-body-lg font-medium text-foreground">
+                  <span
+                    id={titleId}
+                    className="block truncate text-body-lg font-medium text-foreground"
+                  >
                     {name}
                   </span>
-                  <span className="block truncate text-body-sm text-muted-foreground">
+                  <span
+                    id={summaryId}
+                    className="block truncate text-body-sm text-muted-foreground"
+                  >
                     {summary}
                   </span>
                 </span>
@@ -185,17 +194,35 @@ function TemplateDetail({
   const { t, i18n } = useLingui();
   const queries = useSpaceQueries();
   const { name, summary, sample } = useBotTemplateCopy()(template);
-  const [pending, setPending] = useState(false);
-  const [error, setError] = useState<ErrorDetails | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
-  // Set when the preview closes, so a request that finishes later doesn't open its bot.
-  const left = useRef(false);
-  useEffect(() => {
-    left.current = false;
-    return () => {
-      left.current = true;
-    };
-  }, []);
+  const open = useSave({
+    save: async (input: { create: true } | { botId: string }, rpc) =>
+      "botId" in input
+        ? rpc.bots.get({ botId: input.botId })
+        : (
+            await rpc.bots.createFromTemplate({
+              templateId: template.id,
+              version: template.version,
+              name,
+            })
+          ).bot,
+    stale: (input) => ("botId" in input ? [] : [queries.bots.list.key()]),
+    closesScreen: true,
+    onSaved: (bot) => onOpenBot(bot),
+    onFailed: (error, input) => {
+      if (!("botId" in input) && isBotTemplateChanged(error)) onChanged();
+    },
+  });
+  const pending = open.pending;
+  const creating = !(open.input && "botId" in open.input);
+  const error = open.error
+    ? errorDetails(
+        creating && isBotTemplateChanged(open.error)
+          ? t`This template was just updated. Check it again.`
+          : open.error,
+        creating ? t`Could not create the bot` : t`Could not open the bot`,
+      )
+    : null;
   const catalog = useQuery({
     ...queries.connections.catalog.queryOptions({ input: {} }),
     enabled: template.apps.length > 0,
@@ -203,42 +230,6 @@ function TemplateDetail({
   const apps = botTemplateApps(template, catalog.data ?? []);
   const schedule = (crons: string[]) =>
     crons.map((cron) => formatCron(cron, cronLabels(i18n.locale))).join(", ");
-
-  async function create() {
-    setPending(true);
-    setError(null);
-    try {
-      const { bot } = await rpc.bots.createFromTemplate({
-        templateId: template.id,
-        version: template.version,
-        name,
-      });
-      if (!left.current) onOpenBot(bot);
-    } catch (err) {
-      if (left.current) return;
-      const changed = isBotTemplateChanged(err);
-      setError(
-        errorDetails(
-          changed ? t`This template was just updated. Check it again.` : err,
-          t`Could not create the bot`,
-        ),
-      );
-      if (changed) onChanged();
-      setPending(false);
-    }
-  }
-
-  async function openExisting(botId: string) {
-    setPending(true);
-    try {
-      const bot = await rpc.bots.get({ botId });
-      if (!left.current) onOpenBot(bot);
-    } catch (err) {
-      if (left.current) return;
-      setError(errorDetails(err, t`Could not open the bot`));
-      setPending(false);
-    }
-  }
 
   const rows: { key: string; icon: LucideIcon; title: string; detail: string; body?: string }[] = [
     {
@@ -288,12 +279,17 @@ function TemplateDetail({
             <Button
               variant="secondary"
               disabled={pending}
-              onClick={() => void openExisting(template.botId!)}
+              onClick={() => open.run({ botId: template.botId! })}
             >
               <Trans>Open</Trans>
             </Button>
           ) : (
-            <Button size="lg" className="px-5" disabled={pending} onClick={() => void create()}>
+            <Button
+              size="lg"
+              className="px-5"
+              disabled={pending}
+              onClick={() => open.run({ create: true })}
+            >
               {pending ? <Trans>Creating…</Trans> : <Trans>Create bot</Trans>}
             </Button>
           )}
@@ -318,7 +314,7 @@ function TemplateDetail({
                   type="button"
                   aria-expanded={isOpen}
                   onClick={() => setExpanded(isOpen ? null : row.key)}
-                  className="flex w-full items-center gap-3 px-4 py-3 text-start focus-visible:outline-none"
+                  className="flex w-full items-center gap-3 px-4 py-3 text-start focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-inset focus-visible:ring-ring/50"
                 >
                   <Icon size={16} className="shrink-0 text-muted-foreground" />
                   <span className="min-w-0 flex-1">

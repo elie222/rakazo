@@ -258,8 +258,8 @@ create_env() {
       "SCREEN_PROXY_SECRET=")
         printf 'SCREEN_PROXY_SECRET=%s\n' "$(openssl rand -hex 32)"
         ;;
-      "SANDBOX_SUPERVISOR_TOKEN=")
-        printf 'SANDBOX_SUPERVISOR_TOKEN=%s\n' "$(openssl rand -hex 32)"
+      "SANDBOX_SUPERVISOR_TOKEN="|"RAKAZO_UPDATER_TOKEN=")
+        printf '%s=%s\n' "${line%%=*}" "$(openssl rand -hex 32)"
         ;;
       *)
         printf '%s\n' "$line"
@@ -334,7 +334,11 @@ YAML
 warn_unpassed_settings() {
   local key unpassed=""
   while IFS= read -r key; do
-    [[ "$key" == COMPOSE_* ]] || grep -qw -e "$key" "$COMPOSE_FILE" ${override_present:+"$OVERRIDE_FILE"} || unpassed+=" $key"
+    # Deployment tooling consumes these; they are deliberately absent from container environments.
+    case "$key" in
+      COMPOSE_*|RAKAZO_IMAGE_TAG_PREVIOUS|RAKAZO_COMPUTER_IMAGE_TAG_PREVIOUS) continue ;;
+    esac
+    grep -qw -e "$key" "$COMPOSE_FILE" ${override_present:+"$OVERRIDE_FILE"} || unpassed+=" $key"
   done < <(sed -nE 's/^[[:space:]]*(export[[:space:]]+)?([A-Za-z_][A-Za-z0-9_]*)=.*/\2/p' "$ENV_FILE" | sort -u)
   [[ -n "$unpassed" ]] || return 0
   echo "Warning: no container receives these .env settings:${unpassed}." >&2
@@ -377,6 +381,16 @@ configure_computer_egress() {
   printf '\nSANDBOX_COMPUTER_EGRESS=open\n' >>"$ENV_FILE"
   echo "Warning: bot computers can reach this host, its LAN and cloud metadata ($reason)." >&2
   echo "See Restricted computer egress in docs/self-host-docker-computers.md." >&2
+}
+
+remove_replaced_images() {
+  local ref origin origins=" "
+  while IFS= read -r ref; do
+    origin=$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.source"}}' "$ref" 2>/dev/null) || continue
+    [[ -n "$origin" && "$origins" != *" ${origin} "* ]] || continue
+    origins+="${origin} "
+    docker image prune --force --filter "label=org.opencontainers.image.source=${origin}" >/dev/null 2>&1 || true
+  done < <(docker compose --env-file "$ENV_FILE" "${compose_files[@]}" config --images 2>/dev/null)
 }
 
 for filename in "${required_files[@]}"; do
@@ -434,5 +448,6 @@ if grep -q -- '--wait-timeout' <<<"$compose_up_help"; then
 else
   docker compose --env-file "$ENV_FILE" "${compose_files[@]}" up -d ${up_pull_args[@]+"${up_pull_args[@]}"}
 fi
+remove_replaced_images
 
 echo "Rakazo is starting at http://127.0.0.1:5173"

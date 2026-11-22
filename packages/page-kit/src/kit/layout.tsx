@@ -6,6 +6,7 @@ import {
   isValidElement,
   useContext,
   useEffect,
+  useLayoutEffect,
   useState,
 } from "react";
 import { ErrorBoundary } from "./boundary.js";
@@ -61,11 +62,28 @@ export function Page({
   const inherited = useContext(PageLanguage);
   const language = own ?? inherited ?? documentLanguage();
   const words = wordsFor(language);
-  useEffect(() => {
-    if (!own) return;
-    document.documentElement.lang = own;
-    document.documentElement.dir = wordsFor(own).dir;
-  }, [own]);
+  const direction = own ? words.dir : undefined;
+  // Restoring the host language happens after the render that cleared the override, which
+  // still read the override from the document, so render once more.
+  const [, rerender] = useState(0);
+  useLayoutEffect(() => {
+    if (!own || !direction) return;
+    const html = document.documentElement;
+    const originalLang = html.getAttribute("lang");
+    const originalDir = html.getAttribute("dir");
+    html.lang = own;
+    html.dir = direction;
+    return () => {
+      // A newer owner may have changed this document's language or direction.
+      if (html.getAttribute("lang") !== own) return;
+      if (originalLang === null) html.removeAttribute("lang");
+      else html.setAttribute("lang", originalLang);
+      rerender((count) => count + 1);
+      if (html.getAttribute("dir") !== direction) return;
+      if (originalDir === null) html.removeAttribute("dir");
+      else html.setAttribute("dir", originalDir);
+    };
+  }, [own, direction]);
   const links = Array.isArray(sources)
     ? sources.filter((source) => typeof source === "string")
     : [];
@@ -89,7 +107,7 @@ export function Page({
           className="rk-page"
           data-width={WIDTHS.has(width) ? width : "column"}
           lang={own}
-          dir={own ? words.dir : undefined}
+          dir={direction}
           style={colors as CSSProperties}
         >
           <header className="rk-header">
@@ -148,9 +166,9 @@ export function Section({
       type="button"
       className="rk-section-toggle"
       aria-expanded={open}
-      onClick={() => {
-        // Selecting text in the heading should not fold the section.
-        if (!window.getSelection()?.toString()) setOpen(!open);
+      onClick={(event) => {
+        // Preserve pointer text selection without blocking keyboard activation.
+        if (event.detail === 0 || !window.getSelection()?.toString()) setOpen(!open);
       }}
     >
       <svg width="16" height="16" viewBox="-2 -2 16 16" aria-hidden="true">

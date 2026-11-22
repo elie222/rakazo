@@ -1,25 +1,29 @@
-import type { ChatModelChoice } from "@rakazo/core";
+import { useLingui } from "@lingui/react/macro";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { useEffect, useState } from "react";
-import { ModelPickerList } from "../components/model-picker-list";
-import { rpc } from "../lib/api";
-import { chatModelPickerChoices } from "../lib/chat-model";
-import { useI18n } from "../lib/i18n";
-import { errorText } from "../lib/user-error";
+import { useMemo } from "react";
+import { ModelPickerList } from "../components/models/model-picker-list";
+import { errorText } from "../lib/api/user-error";
+import { chatModelPickerChoices } from "../lib/models/chat-model";
+import { rpcQuery } from "../lib/query/query";
+import { useScreenQuery } from "../lib/query/screen-query";
 
 export default function BotModelScreen() {
-  const { t } = useI18n();
+  const { t } = useLingui();
   const router = useRouter();
   const { botId, value = "" } = useLocalSearchParams<{ botId: string; value?: string }>();
-  const [choices, setChoices] = useState<ChatModelChoice[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  useEffect(() => {
-    void Promise.all([rpc("me"), rpc("models/list"), rpc("models/credentials")])
-      .then(([me, catalog, credentials]) =>
-        setChoices(chatModelPickerChoices(me, catalog, credentials, value, t)),
-      )
-      .catch((err) => setError(errorText(err, t("Could not load model settings"))));
-  }, [t, value]);
+  // The "Space default" row names the selected Space's model, so this read is the Space's.
+  const me = useScreenQuery(rpcQuery("me"));
+  const catalog = useScreenQuery(rpcQuery("models/list"));
+  const credentials = useScreenQuery(rpcQuery("models/credentials"));
+  const choices = useMemo(
+    () =>
+      me.data && catalog.data && credentials.data
+        ? chatModelPickerChoices(me.data, catalog.data, credentials.data, value)
+        : null,
+    [me.data, catalog.data, credentials.data, value],
+  );
+  const failure = me.error ?? catalog.error ?? credentials.error;
+  const error = failure && !choices ? errorText(failure, t`Could not load model settings`) : null;
 
   return (
     <ModelPickerList

@@ -5,11 +5,13 @@ that needs more than a chat.
 
 ## Watch it work
 
-Choose **Agent computer** at the top of the chat to open the bot's screen beside the conversation.
-Choose **Open in full window** for a larger view. The computer starts when a bot needs it and goes
-to sleep when idle; opening it wakes it.
+On web and desktop, select the bot's name at the top of its chat and find **Computer** in the bot
+panel. The preview shows the running screen beside the chat. Choose **Open** on the preview for a
+full-window view, or **Wake** if the computer is asleep. The computer also starts when the bot needs
+it and goes to sleep when idle. In the full-window view, choose **Save screenshot** to download a
+picture of what the screen shows right now, such as a code or an error you want to keep.
 
-On mobile, open the bot's profile and choose **Open computer**.
+On mobile, tap the bot's name at the top of its chat to open its profile, then tap **Computer**.
 
 ## Take control
 
@@ -43,20 +45,28 @@ To have a bot react to files changing, use a [routine](./routines.md) that watch
 
 ## Fix a computer
 
-Open the computer and choose **More computer actions**:
+On web and desktop, open the bot's computer. If the screen cannot connect, try **Retry screen**.
+If a repair is available, its button appears with the error.
 
-- **Stop computer**: shut it down now. It starts again when needed.
-- **Update computer**: save the workspace and install current software.
-- **Recover computer**: recreate a computer that is not working.
-- **Reset computer**: go back to the last saved workspace. Unsaved work on the computer is lost.
+On mobile, open the bot's profile and choose **Edit**, then **Advanced**. A repair action appears
+when the computer is in an error state.
+
+- **Recover computer** rebuilds the computer and restores the last saved workspace. Unsaved work may be lost.
+- **Reset computer** restores the last saved workspace. Unsaved work is lost.
 
 ## Use your own computer
 
-In the [desktop app](./desktop-app.md), bots can also run commands on the computer the app is
-installed on. Turn on **Let bots use this computer** in **Settings → General** under **Computers**.
-In every [approval mode](./approvals.md), a bot asks before its first command in a space and before
-it first uses each app there, unless a Block rule refuses it. **Allow in this space** covers the
-rest of that space, in any chat, until you remove the computer from the same list.
+In the [desktop app](./desktop-app.md), bots can also run commands and use apps on the computer the
+app is installed on. Turn on **Let bots use this computer** in **Settings → Computers** under
+**Your devices**. This works with Rakazo Cloud, an HTTPS server you connect to, and a
+loopback server.
+Using apps on screen works on Mac and Windows; on a Mac, allow Rakazo under **Accessibility** and
+**Screen Recording** in System Settings.
+
+In every [approval mode](./approvals.md), a bot asks before it first uses each app in a space, and
+on a connected server before its first command there too, unless a Block rule refuses it. **Allow
+in this space** covers the rest of that space, in any chat. Bots use your apps only in chats you
+start with your own bots, never from routines or other people's messages.
 
 > [!WARNING]
 > A bot with access to your computer can read your files and run programs as you. Only turn it on

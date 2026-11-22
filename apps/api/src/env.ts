@@ -1,46 +1,65 @@
+import { readFileSync } from "node:fs";
+import type { WorkspaceExportLimits } from "@rakazo/adapter-kit";
 import type {
   ApnsVoipConfig,
-  PhotonProjectCredentials,
-  TelegramBotCredentials,
+  MessagingEnvironmentValues,
+  SandboxProviderOptions,
 } from "@rakazo/adapters";
 import {
+  absoluteHttpOrigin,
   apnsVoipConfig,
-  boatApiKeyFromEnv,
-  boatApiUrlFromEnv,
+  autoReviewMinConfidence,
+  deploymentLabsFromEnv,
+  inboundOrigin,
+  liveModelCatalogEnabled,
   mcpStdioOptionsFromEnv,
-  photonProjectsFromEnv,
+  messagingEnvFromProcess,
+  openAiCompatAllowPublicHosts,
   resolveCloudAgentProvider,
   resolveDeploymentModel,
   resolveSandboxProvider,
+  sandboxProviderOptionsFromEnv,
   secretStoreOptionsFromEnv,
-  telegramBotsFromEnv,
+  webOriginFromEnv,
+  workspaceSaveLimits,
 } from "@rakazo/adapters";
-import type { OidcConfig } from "@rakazo/auth";
-import type { MinimumClientBuilds, NavLink } from "@rakazo/contracts";
-import { parseMinimumClientBuilds, parseNavLinks } from "@rakazo/contracts";
+import type { OidcConfig, SocialAuthConfig } from "@rakazo/auth";
+import { socialAuthFromFields } from "@rakazo/auth";
+import type { LabFeature, MinimumClientBuilds, NavLink } from "@rakazo/contracts";
+import { isPrivateNetworkHost, parseMinimumClientBuilds, parseNavLinks } from "@rakazo/contracts";
 import { parseCrispWebsiteId } from "@rakazo/contracts/content-security-policy";
 import {
   attachmentCountFromEnv,
+  parseEnvFlag,
   phoneCallSettings,
+  SIGNUPS_ENABLED_VALUES,
+  uploadSizeFromEnv,
+} from "@rakazo/core";
+import {
+  MAX_SANDBOX_COMMAND_TIMEOUT_MS,
+  sandboxCommandTimeoutExceedsMax,
+} from "@rakazo/core/node/sandbox-command";
+import {
   resolveAuthSecret,
   resolveContentEncryption,
   resolveEncryptionKey,
   resolveScreenProxySecret,
   resolveSupervisorToken,
-  uploadSizeFromEnv,
-} from "@rakazo/core";
-import { monitoringPseudonymSecret } from "@rakazo/logging";
+} from "@rakazo/core/node/secrets-guard";
+import { getLogger, monitoringPseudonymSecret } from "@rakazo/logging";
+import type { DeploymentVoice } from "./voice/deployment-config.js";
+import { deploymentVoiceFromEnv } from "./voice/deployment-config.js";
 
 export { resolveCloudAgentProvider, resolveSandboxProvider } from "@rakazo/adapters";
 
-/** Where a local development stack serves the web client. */
-const DEFAULT_WEB_ORIGIN = "http://127.0.0.1:5173";
-
-export interface AppEnv {
+export interface AppEnv extends MessagingEnvironmentValues {
+  deploymentVoice?: DeploymentVoice;
   passwordAuth?: boolean;
   /** Opt-in Have I Been Pwned check for new passwords. Default off: it calls an outside service. */
   breachedPasswordCheck?: boolean;
   oidc?: OidcConfig;
+  /** Google and Apple sign-in. Absent when neither provider is configured. */
+  social?: SocialAuthConfig;
   /** Bearer token the identity provider presents to provision accounts over SCIM. */
   scimBearerToken?: string;
   nodeEnv: string;
@@ -50,12 +69,16 @@ export interface AppEnv {
   authSecret: string;
   authUrl: string;
   webOrigin: string;
+  /** Extra browser origins trusted for sign-in and CORS, from `RAKAZO_EXTRA_AUTH_ORIGINS`. */
+  extraAuthOrigins: string[];
   /** `<TEAM_ID>.<bundle id>` of iOS apps that may use this domain's passkeys. */
   passkeyAppleAppIds: string[];
   /** SHA-256 signing certificate fingerprints of Android apps that may use this domain's passkeys. */
   passkeyAndroidCertFingerprints: string[];
   privacyPolicyUrl?: string;
   apiUrl: string;
+  /** The public origin outside services post webhooks to, when an ingress provider publishes one. */
+  publishedInboundOrigin?: string;
   apiHost: string;
   /** Proxies whose forwarded client address is believed; empty means local networks. */
   trustedProxies: string[];
@@ -67,7 +90,8 @@ export interface AppEnv {
   dataDir: string;
   /** Opt-in Pi JSONL session recording under DATA_DIR/pi-sessions. Default off. */
   piSessionRecording: boolean;
-  ticketBoardEnabled: boolean;
+  /** Labs features this deployment turns on for every account. */
+  deploymentLabs: LabFeature[];
   /** USER_DEVICES_ENABLED=false stops users connecting their own computers. Default on. */
   userDevicesEnabled: boolean;
   /** COMPUTER_SETTINGS_ENABLED=true lets Settings choose where computers run. Default off. */
@@ -81,6 +105,8 @@ export interface AppEnv {
   phoneCallRingSeconds: number;
   phoneCallCooldownMinutes: number;
   maxUploadSizeBytes: number;
+  /** What one computer save may copy; the worker reads the same setting. */
+  workspaceSaveLimits: WorkspaceExportLimits;
   maxAttachmentsPerMessage: number;
   /** Bot replies longer than this are read aloud as a summary; unset reads every reply in full. */
   voiceSummaryMinChars: number | undefined;
@@ -100,14 +126,8 @@ export interface AppEnv {
   deploymentModelConfigured: boolean;
   /** The deployment default model runs on the host's credentials rather than a key. */
   deploymentModelHostCredentials: boolean;
-  e2bApiKey: string | undefined;
-  novitaApiKey: string | undefined;
-  sandboxTemplate: string | undefined;
-  daytonaApiKey: string | undefined;
-  daytonaApiUrl: string | undefined;
-  daytonaTarget: string | undefined;
-  boatApiKey: string | undefined;
-  boatApiUrl: string | undefined;
+  /** Every computer provider's options, read through the provider's own environment bindings. */
+  sandboxOptions: SandboxProviderOptions;
   composioApiKey: string | undefined;
   /** Optional integrations.sh-compatible catalog base URL. */
   integrationsCatalogUrl: string | undefined;
@@ -115,15 +135,11 @@ export interface AppEnv {
   pipedreamClientSecret: string | undefined;
   pipedreamProjectId: string | undefined;
   pipedreamEnvironment: "development" | "production";
-  sendblueApiKeyId: string | undefined;
-  sendblueApiSecret: string | undefined;
-  sendblueSigningSecret: string | undefined;
-  sendbluePhoneNumber: string | undefined;
   expoAccessToken: string | undefined;
   apnsVoip?: ApnsVoipConfig;
   smtpUrl: string | undefined;
+  botEmailSmtpUrl?: string;
   emailProvider?: string;
-  welcomeEmailEnabled?: boolean;
   emailApiKey?: string;
   emailFrom: string | undefined;
   emailReplyTo?: string;
@@ -133,29 +149,14 @@ export interface AppEnv {
   stripeSecretKey: string | undefined;
   stripeWebhookSecret: string | undefined;
   stripePriceId: string | undefined;
+  /** Reports signups and plan payments to the affiliate program; off when unset. */
+  dubApiKey: string | undefined;
   emailEmulator: boolean;
+  billingEmulator: boolean;
+  /** A/B tests this deployment runs, by key; none by default. */
+  experiments: string | undefined;
   slackClientId?: string;
   slackClientSecret?: string;
-  slackBotToken: string | undefined;
-  slackSigningSecret: string | undefined;
-  whatsappAccessToken: string | undefined;
-  whatsappPhoneNumberId: string | undefined;
-  whatsappAppSecret: string | undefined;
-  whatsappVerifyToken: string | undefined;
-  telegramBotToken: string | undefined;
-  telegramWebhookSecret: string | undefined;
-  /** Extra named Telegram bots (TELEGRAM_BOT_TOKEN_<NAME>), e.g. one per space. */
-  telegramBots?: TelegramBotCredentials[];
-  larkAppId: string | undefined;
-  larkAppSecret: string | undefined;
-  larkVerificationToken: string | undefined;
-  larkEncryptKey: string | undefined;
-  larkDomain: string | undefined;
-  photonProjectId: string | undefined;
-  photonProjectSecret: string | undefined;
-  photonWebhookSecret: string | undefined;
-  /** Extra named Photon projects (PHOTON_PROJECT_ID_<NAME>), each with its own number. */
-  photonProjects?: PhotonProjectCredentials[];
   /** Unknown chat senders auto-provision their own accounts when true. */
   messagingOpenSignup: boolean;
   /** Bot that owns team/external chat rooms on the messaging surface. */
@@ -181,10 +182,26 @@ export interface AppEnv {
     | undefined;
   /** Crisp chat on the paywall, for the hosted service; self-hosted installs leave it unset. */
   crispWebsiteId?: string | null;
+  /** DEMO_ACCOUNT_EMAIL and DEMO_ACCOUNT_PASSWORD, published to sign-in; only for throwaway demo servers. */
+  demoAccount?: { email: string; password: string } | null;
+}
+
+/** Overrides win key by key inside `sandboxOptions`, so a partial one keeps the rest of the environment's. */
+export function withEnvOverrides(env: AppEnv, overrides: Partial<AppEnv>): AppEnv {
+  return {
+    ...env,
+    ...overrides,
+    sandboxOptions: { ...env.sandboxOptions, ...overrides.sandboxOptions },
+  };
 }
 
 export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
   secretStoreOptionsFromEnv(source);
+  if (sandboxCommandTimeoutExceedsMax(source)) {
+    getLogger().warn("SANDBOX_COMMAND_TIMEOUT_MS is above the maximum; using the maximum", {
+      maximumMs: MAX_SANDBOX_COMMAND_TIMEOUT_MS,
+    });
+  }
   const issuer = optional(source.OIDC_ISSUER);
   const clientId = optional(source.OIDC_CLIENT_ID);
   const clientSecret = optional(source.OIDC_CLIENT_SECRET);
@@ -212,6 +229,16 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
     if (value && !["true", "false"].includes(value))
       throw new Error(`${key} must be true or false`);
   }
+  // A typo that read as "open" would expose registration, so refuse anything unrecognized.
+  // Empty means unset, as before.
+  const signupsEnabled = source.SIGNUPS_ENABLED?.trim().toLowerCase();
+  if (signupsEnabled && !(SIGNUPS_ENABLED_VALUES as readonly string[]).includes(signupsEnabled))
+    throw new Error("SIGNUPS_ENABLED must be true or false");
+  // Same for the model endpoint switch: read at request time, so refuse a bad value at boot.
+  openAiCompatAllowPublicHosts(source);
+  // Fail at boot rather than on the first review, which would quietly ask every time.
+  autoReviewMinConfidence(source);
+  liveModelCatalogEnabled(source);
   const passwordAuth = source.AUTH_PASSWORD_ENABLED !== "false";
   if (!passwordAuth && !issuer)
     throw new Error("AUTH_PASSWORD_ENABLED=false requires OIDC configuration");
@@ -228,30 +255,43 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
           allowSignupBypass: source.OIDC_ALLOW_SIGNUP_BYPASS === "true",
         }
       : undefined;
+  const social = socialAuthFromFields({
+    googleClientId: optional(source.GOOGLE_CLIENT_ID),
+    googleClientSecret: optional(source.GOOGLE_CLIENT_SECRET),
+    appleClientId: optional(source.APPLE_CLIENT_ID),
+    appleTeamId: optional(source.APPLE_TEAM_ID),
+    appleKeyId: optional(source.APPLE_KEY_ID),
+    applePrivateKey: applePrivateKey(source),
+  });
   const scimBearerToken = optional(source.SCIM_BEARER_TOKEN);
   if (scimBearerToken && (scimBearerToken.length < 32 || /\s/.test(scimBearerToken)))
     throw new Error("SCIM_BEARER_TOKEN must be at least 32 characters with no spaces");
   const authSecret = resolveAuthSecret(source);
-  const webOrigin = resolveWebOrigin(source.WEB_ORIGIN, DEFAULT_WEB_ORIGIN, "WEB_ORIGIN");
+  const webOrigin = webOriginFromEnv(source);
   const sandboxProvider = resolveSandboxProvider(source);
   const cloudAgentProvider = resolveCloudAgentProvider(source);
   const deploymentModel = resolveDeploymentModel(source);
+  let sandboxOptions: SandboxProviderOptions | undefined;
   return {
     passwordAuth,
     breachedPasswordCheck: source.AUTH_BREACHED_PASSWORD_CHECK_ENABLED === "true",
     oidc,
+    social,
     scimBearerToken,
     nodeEnv: source.NODE_ENV ?? "",
     databaseUrl: required(source, "DATABASE_URL"),
     realtimeDatabaseUrl: source.REALTIME_DATABASE_URL ?? required(source, "DATABASE_URL"),
     desktopStackToken: optional(source.RAKAZO_DESKTOP_STACK_TOKEN),
     authSecret,
-    authUrl: resolveWebOrigin(source.BETTER_AUTH_URL, webOrigin, "BETTER_AUTH_URL"),
+    authUrl: absoluteHttpOrigin(source.BETTER_AUTH_URL, webOrigin, "BETTER_AUTH_URL"),
     webOrigin,
+    extraAuthOrigins: parseExtraAuthOrigins(source.RAKAZO_EXTRA_AUTH_ORIGINS),
     passkeyAppleAppIds: list(source.PASSKEY_APPLE_APP_IDS),
     passkeyAndroidCertFingerprints: androidCertFingerprints(source.PASSKEY_ANDROID_CERT_SHA256),
     privacyPolicyUrl: optional(source.PRIVACY_POLICY_URL),
+    ...messagingEnvFromProcess(source),
     apiUrl: source.API_URL ?? "http://127.0.0.1:3100",
+    publishedInboundOrigin: inboundOrigin(source),
     apiHost: source.API_HOST ?? "127.0.0.1",
     trustedProxies: (source.TRUSTED_PROXIES ?? "")
       .split(/[\s,]+/)
@@ -264,14 +304,19 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
     contentEncryption: resolveContentEncryption(source),
     dataDir: source.DATA_DIR ?? "./data",
     piSessionRecording: source.PI_SESSION_RECORDING === "true",
-    ticketBoardEnabled: source.TICKET_BOARD_ENABLED === "true",
-    userDevicesEnabled: source.USER_DEVICES_ENABLED !== "false",
+    deploymentLabs: deploymentLabsFromEnv(source),
+    userDevicesEnabled: parseEnvFlag("USER_DEVICES_ENABLED", source.USER_DEVICES_ENABLED, true),
     computerSettingsEnabled: source.COMPUTER_SETTINGS_ENABLED === "true",
     navLinks: parseNavLinks(source.RAKAZO_NAV_LINKS),
     adminEmails: list(source.RAKAZO_ADMIN_EMAILS).map((email) => email.toLowerCase()),
     ...phoneCallSettings(source),
     maxUploadSizeBytes: uploadSizeFromEnv(source),
+    workspaceSaveLimits: workspaceSaveLimits(source),
     maxAttachmentsPerMessage: attachmentCountFromEnv(source),
+    deploymentVoice: deploymentVoiceFromEnv(
+      source.DEPLOYMENT_VOICE,
+      source.MCP_ALLOW_PRIVATE_ENDPOINT === "true",
+    ),
     voiceSummaryMinChars: voiceSummaryMinCharsFromEnv(source.VOICE_SUMMARY_MIN_CHARS),
     sandboxSupervisorUrl: source.SANDBOX_SUPERVISOR_URL ?? "http://127.0.0.1:7091",
     sandboxSupervisorToken:
@@ -288,14 +333,11 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
     deploymentModelKey: deploymentModel.key,
     deploymentModelConfigured: deploymentModel.configured,
     deploymentModelHostCredentials: deploymentModel.hostCredentials,
-    e2bApiKey: source.E2B_API_KEY,
-    novitaApiKey: source.NOVITA_API_KEY,
-    sandboxTemplate: source.SANDBOX_TEMPLATE,
-    daytonaApiKey: source.DAYTONA_API_KEY,
-    daytonaApiUrl: source.DAYTONA_API_URL,
-    daytonaTarget: source.DAYTONA_TARGET,
-    boatApiKey: boatApiKeyFromEnv(source),
-    boatApiUrl: boatApiUrlFromEnv(source),
+    // Read on first use, so a malformed computer setting stops only the services that build one.
+    get sandboxOptions() {
+      sandboxOptions ??= sandboxProviderOptionsFromEnv(source);
+      return sandboxOptions;
+    },
     composioApiKey: source.COMPOSIO_API_KEY,
     integrationsCatalogUrl: optional(source.INTEGRATIONS_CATALOG_URL),
     pipedreamClientId: optional(source.PIPEDREAM_CLIENT_ID),
@@ -303,43 +345,24 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
     pipedreamProjectId: optional(source.PIPEDREAM_PROJECT_ID),
     pipedreamEnvironment:
       source.PIPEDREAM_ENVIRONMENT === "production" ? "production" : "development",
-    sendblueApiKeyId: optional(source.SENDBLUE_API_KEY_ID),
-    sendblueApiSecret: optional(source.SENDBLUE_API_SECRET),
-    sendblueSigningSecret: optional(source.SENDBLUE_SIGNING_SECRET),
-    sendbluePhoneNumber: optional(source.SENDBLUE_PHONE_NUMBER),
     expoAccessToken: optional(source.EXPO_ACCESS_TOKEN),
     apnsVoip: apnsVoipConfig(source),
     smtpUrl: optional(source.SMTP_URL),
+    botEmailSmtpUrl: optional(source.BOT_EMAIL_SMTP_URL),
     emailProvider: optional(source.EMAIL_PROVIDER),
     emailApiKey: optional(source.EMAIL_API_KEY),
     emailFrom: optional(source.EMAIL_FROM),
     emailReplyTo: optional(source.EMAIL_REPLY_TO),
     inboundEmail: inboundEmailFromEnv(source),
-    welcomeEmailEnabled: source.WELCOME_EMAIL_ENABLED === "true",
     stripeSecretKey: optional(source.STRIPE_SECRET_KEY),
     stripeWebhookSecret: optional(source.STRIPE_WEBHOOK_SECRET),
     stripePriceId: optional(source.STRIPE_PRICE_ID),
+    dubApiKey: optional(source.DUB_API_KEY),
     emailEmulator: source.EMAIL_EMULATOR === "true" && source.NODE_ENV !== "production",
+    experiments: optional(source.EXPERIMENTS),
+    billingEmulator: source.BILLING_EMULATOR === "true" && source.NODE_ENV !== "production",
     slackClientId: optional(source.SLACK_CLIENT_ID),
     slackClientSecret: optional(source.SLACK_CLIENT_SECRET),
-    slackBotToken: optional(source.SLACK_BOT_TOKEN),
-    slackSigningSecret: optional(source.SLACK_SIGNING_SECRET),
-    whatsappAccessToken: optional(source.WHATSAPP_ACCESS_TOKEN),
-    whatsappPhoneNumberId: optional(source.WHATSAPP_PHONE_NUMBER_ID),
-    whatsappAppSecret: optional(source.WHATSAPP_APP_SECRET),
-    whatsappVerifyToken: optional(source.WHATSAPP_VERIFY_TOKEN),
-    telegramBotToken: optional(source.TELEGRAM_BOT_TOKEN),
-    telegramWebhookSecret: optional(source.TELEGRAM_WEBHOOK_SECRET_TOKEN),
-    telegramBots: telegramBotsFromEnv(source),
-    larkAppId: optional(source.LARK_APP_ID),
-    larkAppSecret: optional(source.LARK_APP_SECRET),
-    larkVerificationToken: optional(source.LARK_VERIFICATION_TOKEN),
-    larkEncryptKey: optional(source.LARK_ENCRYPT_KEY),
-    larkDomain: optional(source.LARK_DOMAIN),
-    photonProjectId: optional(source.PHOTON_PROJECT_ID),
-    photonProjectSecret: optional(source.PHOTON_PROJECT_SECRET),
-    photonWebhookSecret: optional(source.PHOTON_WEBHOOK_SECRET),
-    photonProjects: photonProjectsFromEnv(source),
     messagingOpenSignup: source.MESSAGING_OPEN_SIGNUP === "true",
     teamChatBotId: optional(source.TEAM_CHAT_BOT_ID) ?? optional(source.SLACK_RAKAZO_BOT_ID),
     teamChatJudgeProvider: optional(source.TEAM_CHAT_JUDGE_PROVIDER),
@@ -359,23 +382,33 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
     minimumClientBuilds: parseMinimumClientBuilds(source.RAKAZO_MIN_CLIENT_BUILD),
     browserMonitoring: browserMonitoringFromEnv(source),
     crispWebsiteId: parseCrispWebsiteId(source.CRISP_WEBSITE_ID),
+    demoAccount: demoAccountFromEnv(source),
   };
 }
 
 /**
- * An origin used to build absolute links. Trailing slashes are dropped so
- * `${webOrigin}/path` cannot produce `https://host//path`; providers reject a
- * double-slash redirect URI as a mismatch against the one registered with them.
+ * Comma-separated origins an operator adds for a second address of the same install (a tailnet
+ * or LAN URL). Only bare `https://` origins, or `http://` on loopback or a private network, are
+ * kept; anything else is dropped with a warning so a typo cannot widen trust.
  */
-function resolveWebOrigin(value: string | undefined, fallback: string, name: string): string {
-  const origin = (optional(value) ?? fallback).replace(/\/+$/, "");
-  try {
-    const url = new URL(origin);
-    if (url.protocol !== "http:" && url.protocol !== "https:") throw new Error();
-  } catch {
-    throw new Error(`${name} must be an absolute http(s) URL`);
+export function parseExtraAuthOrigins(value: string | undefined): string[] {
+  const origins = new Set<string>();
+  for (const raw of (value ?? "").split(/[\s,]+/).filter(Boolean)) {
+    try {
+      const url = new URL(raw);
+      const bare =
+        url.pathname === "/" && !url.search && !url.hash && !url.username && !url.password;
+      const allowed =
+        url.protocol === "https:" ||
+        (url.protocol === "http:" && isPrivateNetworkHost(url.hostname));
+      if (!bare || !allowed) throw new Error();
+      origins.add(url.origin);
+    } catch {
+      // The entry is not logged: it may carry credentials.
+      getLogger().warn("ignoring invalid RAKAZO_EXTRA_AUTH_ORIGINS entry");
+    }
   }
-  return origin;
+  return [...origins];
 }
 
 function required(source: NodeJS.ProcessEnv, key: string): string {
@@ -419,6 +452,18 @@ function inboundEmailFromEnv(source: NodeJS.ProcessEnv): AppEnv["inboundEmail"] 
   return { domain, secret };
 }
 
+function applePrivateKey(source: NodeJS.ProcessEnv): string | undefined {
+  const inline = optional(source.APPLE_PRIVATE_KEY);
+  const file = optional(source.APPLE_PRIVATE_KEY_FILE);
+  if (inline && file) throw new Error("Set APPLE_PRIVATE_KEY or APPLE_PRIVATE_KEY_FILE, not both");
+  if (!file) return inline;
+  try {
+    return readFileSync(file, "utf8");
+  } catch (cause) {
+    throw new Error("APPLE_PRIVATE_KEY_FILE could not be read", { cause });
+  }
+}
+
 function optional(value: string | undefined): string | undefined {
   const trimmed = value?.trim();
   return trimmed || undefined;
@@ -437,4 +482,10 @@ function androidCertFingerprints(value: string | undefined): string[] {
     }
     return hex.toUpperCase().match(/../g)!.join(":");
   });
+}
+
+function demoAccountFromEnv(source: NodeJS.ProcessEnv) {
+  const email = optional(source.DEMO_ACCOUNT_EMAIL);
+  const password = source.DEMO_ACCOUNT_PASSWORD;
+  return email && password ? { email, password } : null;
 }

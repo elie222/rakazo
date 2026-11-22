@@ -10,7 +10,8 @@
   "scripts": {
     "dev": "node ../../../scripts/dev-watch.mjs src/index.ts",
     "start": "tsx src/index.ts",
-    "check": "tsc --noEmit -p tsconfig.json",
+    "egress": "tsx src/egress-report.ts",
+    "check": "tsrs --noEmit -p tsconfig.json",
     "test": "vitest run --root ../../.. infra/sandboxes/supervisor/src"
   },
   "dependencies": {
@@ -18,13 +19,13 @@
     "@rakazo/core": "workspace:*",
     "@rakazo/logging": "workspace:*",
     "dockerode": "5.0.1",
-    "hono": "4.13.16",
+    "hono": "4.13.17",
     "tsx": "4.23.15",
     "zod": "4.6.7"
   },
   "devDependencies": {
     "@types/dockerode": "4.0.2",
     "typescript": "7.0.2",
-    "vitest": "4.1.12"
+    "vitest": "5.1.0"
   }
 }

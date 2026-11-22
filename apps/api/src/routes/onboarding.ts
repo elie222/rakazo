@@ -1,16 +1,25 @@
 import { ORPCError } from "@orpc/server";
+import type { Actor, Bot } from "@rakazo/contracts";
 import { signupSurveyAsksTeamSize } from "@rakazo/contracts";
+import { ensureFirstBot } from "../account/first-bot.js";
 import {
   chooseFocus,
   dismissFocus,
   markAppConnected,
   promptFocus,
   startOnboarding,
-} from "../onboarding.js";
+} from "../account/onboarding.js";
+import { enqueueBotIntroRun } from "./bots.js";
 import type { RouterContext } from "./context.js";
 
 export function onboardingRoutes(ctx: RouterContext) {
-  const { deps, onboardingDeps, authed } = ctx;
+  const { deps, onboardingDeps, repos, authed } = ctx;
+  const firstBotDeps = {
+    prisma: deps.prisma,
+    createBot: repos.createBot,
+    introduce: (actor: Actor, bot: Bot) => enqueueBotIntroRun(deps, actor, bot),
+    promptFocus: (actor: Actor, botId: string) => promptFocus(onboardingDeps, actor, botId),
+  };
   return {
     onboarding: {
       signupSurvey: authed.onboarding.signupSurvey.handler(async ({ context, input }) => {
@@ -38,6 +47,9 @@ export function onboardingRoutes(ctx: RouterContext) {
         );
         return { ok: true as const };
       }),
+      firstBot: authed.onboarding.firstBot.handler(async ({ context }) =>
+        ensureFirstBot(firstBotDeps, context.actor),
+      ),
       start: authed.onboarding.start.handler(async ({ context, input }) => {
         await startOnboarding(onboardingDeps, context.actor, input.botId);
         return { ok: true as const };

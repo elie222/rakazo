@@ -4,7 +4,8 @@ import http from "node:http";
 import net from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { resolveSupervisorToken } from "@rakazo/core";
+import { resolveSupervisorToken } from "@rakazo/core/node/secrets-guard";
+import { deferred } from "@rakazo/core/test-async";
 import type Docker from "dockerode";
 import { describe, expect, it, vi } from "vitest";
 import { resolveDockerSocketPath } from "./context.js";
@@ -16,6 +17,7 @@ import {
   supervisorFileWriteSchema,
   supervisorRequestBodyLimit,
 } from "./request-limits.js";
+import { SUPERVISOR_PUBLIC_PATHS } from "./routes.js";
 import type { ScreenAssignment } from "./supervisor-logic.js";
 import {
   AIMED_SCROLL_CONTROL_LABEL,
@@ -168,32 +170,29 @@ describe("sandbox supervisor Docker endpoint", () => {
 });
 
 describe("sandbox supervisor HTTP boundary", () => {
-  it("keeps health public while every computer route requires the service token", async () => {
+  it("keeps health public while every other registered route requires the service token", async () => {
     const health = await supervisorApp.request("/health");
     expect(health.status).toBe(200);
     await expect(health.json()).resolves.toMatchObject({ ok: true });
+    // A route joins this list only on purpose: anything else answers 401 without the token.
+    expect([...SUPERVISOR_PUBLIC_PATHS]).toEqual(["/health"]);
 
-    const protectedRequests: Array<[string, string]> = [
-      ["POST", "/computers"],
-      ["GET", "/computers/id"],
-      ["POST", "/computers/id/exec"],
-      ["POST", "/computers/id/observe"],
-      ["POST", "/computers/id/actions"],
-      ["POST", "/computers/id/browser"],
-      ["GET", "/computers/id/files"],
-      ["POST", "/computers/id/files"],
-      ["GET", "/computers/id/screen"],
-      ["POST", "/computers/id/screen-mode"],
-      ["POST", "/computers/id/terminal"],
-      ["DELETE", "/computers/id/screen"],
-      ["POST", "/computers/id/input"],
-      ["POST", "/computers/id/stop"],
-      ["DELETE", "/computers/id"],
-    ];
+    // Every pattern the app registers, middleware included, as one concrete request.
+    const protectedRequests = [
+      ...new Set(
+        supervisorApp.routes.map(({ method, path }) => {
+          const pathname = path.replace(/:[^/]+/g, "id").replace(/\*/g, "any");
+          return `${method === "ALL" ? "GET" : method} ${pathname}`;
+        }),
+      ),
+    ].filter((request) => !SUPERVISOR_PUBLIC_PATHS.has(request.split(" ")[1]!));
+    expect(protectedRequests).toContain("POST /computers/id/exec");
+    expect(protectedRequests).toContain("DELETE /computers/id");
 
-    for (const [method, pathname] of protectedRequests) {
+    for (const request of protectedRequests) {
+      const [method, pathname] = request.split(" ") as [string, string];
       const response = await supervisorApp.request(pathname, { method });
-      expect(response.status, `${method} ${pathname}`).toBe(401);
+      expect(response.status, request).toBe(401);
       await expect(response.json()).resolves.toEqual({ error: "unauthorized" });
     }
   });
@@ -319,8 +318,15 @@ describe("sandbox supervisor input containment", () => {
     expect(normalizeWorkspaceRelative("/notes\\result.txt")).toBe("notes/result.txt");
     expect(normalizeWorkspaceRelative("//notes///result.txt")).toBe("notes/result.txt");
     expect(() => normalizeWorkspaceRelative("../outside")).toThrow(/escapes/);
-    expect(() => normalizeWorkspaceRelative("notes/./result.txt")).toThrow(/escapes/);
     expect(() => normalizeWorkspaceRelative("notes/../outside")).toThrow(/escapes/);
+    expect(() => normalizeWorkspaceRelative("a/../../x")).toThrow(/escapes/);
+  });
+
+  it("drops current-directory segments the way the adapter does", () => {
+    expect(normalizeWorkspaceRelative("./report.html")).toBe("report.html");
+    expect(normalizeWorkspaceRelative("a/./b")).toBe("a/b");
+    expect(normalizeWorkspaceRelative(".")).toBe("");
+    expect(normalizeWorkspaceRelative("./")).toBe("");
   });
 
   it("requires both bot and workspace identities to match", () => {
@@ -739,13 +745,10 @@ describe("sandbox supervisor input containment", () => {
   it("serializes screen lifecycle operations by container", async () => {
     const locks = new Map<string, Promise<void>>();
     const events: string[] = [];
-    let releaseFirst!: () => void;
-    const firstBlocked = new Promise<void>((resolve) => {
-      releaseFirst = resolve;
-    });
+    const firstBlocked = deferred();
     const first = withKeyedLock(locks, "container-1", async () => {
       events.push("ensure:start");
-      await firstBlocked;
+      await firstBlocked.promise;
       events.push("ensure:end");
     });
     const release = withKeyedLock(locks, "container-1", async () => {
@@ -754,7 +757,7 @@ describe("sandbox supervisor input containment", () => {
 
     await new Promise<void>((resolve) => setImmediate(resolve));
     expect(events).toEqual(["ensure:start"]);
-    releaseFirst();
+    firstBlocked.resolve();
     await Promise.all([first, release]);
     expect(events).toEqual(["ensure:start", "ensure:end", "release"]);
     expect(locks.size).toBe(0);

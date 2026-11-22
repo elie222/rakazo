@@ -7,5 +7,5 @@
     "types": ["node"]
   },
   "include": ["src/**/*.ts"],
-  "exclude": ["src/app-document-state.test.ts", "src/setup.test.ts"]
+  "exclude": ["src/main/windows/app-document-state.test.ts", "src/setup-renderer/setup.test.ts"]
 }

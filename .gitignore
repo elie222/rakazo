@@ -32,6 +32,8 @@ infra/sandboxes/supervisor/dist
 .vercel
 .cache
 artifacts
+!apps/mobile/lib/artifacts
+!packages/contracts/src/artifacts
 backups
 test-report
 verify-report
@@ -41,14 +43,17 @@ verify-report
 design/
 PRODUCT_PLAN.md
 
-# Lingui compiled catalogs — Vite plugin compiles .po at build time
-apps/web/src/locales/**/*.mjs
-apps/web/src/locales/**/*.js
+# Lingui compiled catalogs — the Vite plugin and Metro compile .po at build time
+packages/i18n/locales/**/*.mjs
+packages/i18n/locales/**/*.js
 # Every string in the source, extracted before each production build
-apps/web/src/locales/messages.pot
+packages/i18n/locales/messages.pot
 apps/web/scripts/msgids.json
 playwright-report-www
 
 # Downloaded embedded computer screen SDK files
 apps/web/public/computer-screen/*.js
 apps/web/public/computer-screen/sdk/
+
+# Private marketing pages, cloned in by apps/www/scripts/clone-marketing.sh
+apps/www/src/marketing/

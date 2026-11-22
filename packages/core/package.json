@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "license": "Apache-2.0",
   "type": "module",
+  "sideEffects": false,
   "exports": {
     ".": {
       "types": "./src/index.ts",
@@ -10,19 +11,24 @@
       "default": "./src/index.ts"
     },
     "./user-error": {
-      "types": "./src/user-error.ts",
-      "development": "./src/user-error.ts",
-      "default": "./src/user-error.ts"
+      "types": "./src/primitives/user-error.ts",
+      "development": "./src/primitives/user-error.ts",
+      "default": "./src/primitives/user-error.ts"
     },
     "./message-quote": {
-      "types": "./src/message-quote.ts",
-      "development": "./src/message-quote.ts",
-      "default": "./src/message-quote.ts"
+      "types": "./src/messages/message-quote.ts",
+      "development": "./src/messages/message-quote.ts",
+      "default": "./src/messages/message-quote.ts"
     },
     "./screen-reconnect": {
-      "types": "./src/screen-reconnect.ts",
-      "development": "./src/screen-reconnect.ts",
-      "default": "./src/screen-reconnect.ts"
+      "types": "./src/computers/screen-reconnect.ts",
+      "development": "./src/computers/screen-reconnect.ts",
+      "default": "./src/computers/screen-reconnect.ts"
+    },
+    "./test-async": {
+      "types": "./src/primitives/async.test-support.ts",
+      "development": "./src/primitives/async.test-support.ts",
+      "default": "./src/primitives/async.test-support.ts"
     },
     "./node/load-root-env": {
       "types": "./src/node/load-root-env.ts",
@@ -34,15 +40,30 @@
       "development": "./src/node/shutdown-signals.ts",
       "default": "./src/node/shutdown-signals.ts"
     },
+    "./node/aes-gcm": {
+      "types": "./src/node/aes-gcm.ts",
+      "development": "./src/node/aes-gcm.ts",
+      "default": "./src/node/aes-gcm.ts"
+    },
+    "./node/sealed-box": {
+      "types": "./src/node/sealed-box.ts",
+      "development": "./src/node/sealed-box.ts",
+      "default": "./src/node/sealed-box.ts"
+    },
     "./node/approval-effect-key": {
-      "types": "./src/approval-effect-key.ts",
-      "development": "./src/approval-effect-key.ts",
-      "default": "./src/approval-effect-key.ts"
+      "types": "./src/node/approval-effect-key.ts",
+      "development": "./src/node/approval-effect-key.ts",
+      "default": "./src/node/approval-effect-key.ts"
     },
     "./node/screen-proxy-response": {
       "types": "./src/node/screen-proxy-response.ts",
       "development": "./src/node/screen-proxy-response.ts",
       "default": "./src/node/screen-proxy-response.ts"
+    },
+    "./node/test-runtime": {
+      "types": "./src/node/test-runtime.ts",
+      "development": "./src/node/test-runtime.ts",
+      "default": "./src/node/test-runtime.ts"
     },
     "./plot": {
       "types": "./src/plot/plot-spec.ts",
@@ -59,31 +80,81 @@
       "development": "./src/node/desktop-runtime.ts",
       "default": "./src/node/desktop-runtime.ts"
     },
+    "./node/local-signup": {
+      "types": "./src/node/local-signup.ts",
+      "development": "./src/node/local-signup.ts",
+      "default": "./src/node/local-signup.ts"
+    },
     "./node/screen-capability": {
       "types": "./src/node/screen-capability.ts",
       "development": "./src/node/screen-capability.ts",
       "default": "./src/node/screen-capability.ts"
     },
     "./egress": {
-      "types": "./src/egress.ts",
-      "development": "./src/egress.ts",
-      "default": "./src/egress.ts"
+      "types": "./src/primitives/egress.ts",
+      "development": "./src/primitives/egress.ts",
+      "default": "./src/primitives/egress.ts"
+    },
+    "./signup-attribution": {
+      "types": "./src/account/browser-signup-attribution.ts",
+      "development": "./src/account/browser-signup-attribution.ts",
+      "default": "./src/account/browser-signup-attribution.ts"
     },
     "./query": {
-      "types": "./src/query.ts",
-      "development": "./src/query.ts",
-      "default": "./src/query.ts"
+      "types": "./src/primitives/query.ts",
+      "development": "./src/primitives/query.ts",
+      "default": "./src/primitives/query.ts"
+    },
+    "./retry": {
+      "types": "./src/primitives/retry.ts",
+      "development": "./src/primitives/retry.ts",
+      "default": "./src/primitives/retry.ts"
+    },
+    "./translate": {
+      "types": "./src/locale/translate.ts",
+      "development": "./src/locale/translate.ts",
+      "default": "./src/locale/translate.ts"
+    },
+    "./text-direction": {
+      "types": "./src/locale/text-direction.ts",
+      "development": "./src/locale/text-direction.ts",
+      "default": "./src/locale/text-direction.ts"
+    },
+    "./ui-locale": {
+      "types": "./src/locale/ui-locale.ts",
+      "development": "./src/locale/ui-locale.ts",
+      "default": "./src/locale/ui-locale.ts"
+    },
+    "./node/prompt-source-version": {
+      "types": "./src/node/prompt-source-version.ts",
+      "development": "./src/node/prompt-source-version.ts",
+      "default": "./src/node/prompt-source-version.ts"
+    },
+    "./node/secrets-guard": {
+      "types": "./src/node/secrets-guard.ts",
+      "development": "./src/node/secrets-guard.ts",
+      "default": "./src/node/secrets-guard.ts"
+    },
+    "./node/screen-lease": {
+      "types": "./src/node/screen-lease.ts",
+      "development": "./src/node/screen-lease.ts",
+      "default": "./src/node/screen-lease.ts"
+    },
+    "./node/sandbox-command": {
+      "types": "./src/node/sandbox-command.ts",
+      "development": "./src/node/sandbox-command.ts",
+      "default": "./src/node/sandbox-command.ts"
     }
   },
   "scripts": {
-    "check": "tsc --noEmit -p tsconfig.json",
+    "check": "tsrs --noEmit -p tsconfig.json",
     "test": "vitest run --root ../.. packages/core/src"
   },
   "dependencies": {
-    "@observablehq/plot": "0.6.17",
+    "@observablehq/plot": "0.6.19",
     "@rakazo/contracts": "workspace:*",
     "@rakazo/ui-tokens": "workspace:*",
-    "@tanstack/query-core": "5.105.3",
+    "@tanstack/query-core": "5.107.1",
     "croner": "10.0.1",
     "d3-dsv": "3.0.2",
     "dotenv": "17.4.2",
@@ -94,6 +165,7 @@
     "remark-gfm": "4.0.1",
     "remark-parse": "11.0.0",
     "tldts": "7.4.19",
+    "unicode-segmenter": "0.17.1",
     "unified": "11.0.5",
     "yaml": "2.9.1"
   },
@@ -101,6 +173,6 @@
     "@types/d3-dsv": "3.0.7",
     "fast-check": "4.10.2",
     "typescript": "7.0.2",
-    "vitest": "4.1.12"
+    "vitest": "5.1.0"
   }
 }

@@ -1,5 +1,7 @@
 import { Trans, useLingui } from "@lingui/react/macro";
-import { modelCatalogSearchText } from "@rakazo/core";
+import { useListSearch } from "@rakazo/chat-ui/hooks";
+import { canonicalPiProviderId } from "@rakazo/contracts";
+import { modelCatalogSearchText, newestModelsFirst } from "@rakazo/core";
 import {
   Command,
   CommandEmpty,
@@ -15,17 +17,19 @@ import {
 } from "@rakazo/ui-web";
 import type { ReactElement } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { ModelCatalogEntry } from "../../lib/model-auth";
-import { useListSearch } from "../../lib/use-list-search";
+import type { ModelCatalogEntry } from "../../lib/models/model-auth";
 
 /** `baseUrl` presets an OpenAI-compatible server, such as a hosted preset. */
 export type ConnectableProvider = { id: string; name: string; baseUrl?: string };
 
 /** A model on one connection; `providerName` is that connection's name. */
-export type RoleModelOption = ModelCatalogEntry & { credentialId?: string };
+export type RoleModelOption = ModelCatalogEntry & {
+  credentialId?: string;
+  creditOfferingId?: string;
+};
 
 const optionValue = (option: RoleModelOption) =>
-  `${option.provider}:${option.id}:${option.credentialId ?? ""}`;
+  `${option.provider}:${option.id}:${option.creditOfferingId ? `credits:${option.creditOfferingId}` : (option.credentialId ?? "")}`;
 
 /**
  * One picker for every model a role can use: connected models pick directly, and
@@ -37,6 +41,7 @@ export function RoleModelPicker({
   options,
   providers,
   defaultOption,
+  current,
   disabled,
   onPick,
   onConnect,
@@ -47,8 +52,10 @@ export function RoleModelPicker({
   label: string;
   options: RoleModelOption[];
   providers: ConnectableProvider[];
-  /** The deployment's model, offered to clear the slot back to it. */
-  defaultOption?: string;
+  /** The deployment's model, offered to clear the slot back to it; `included` when it pays. */
+  defaultOption?: { label: string; included?: boolean };
+  /** The model in use; its row is checked and active when the picker opens, and picking it only closes. */
+  current?: { provider: string; modelId: string; credentialId?: string; creditOfferingId?: string };
   disabled?: boolean;
   onPick: (option: RoleModelOption | null) => void;
   onConnect: (provider: ConnectableProvider) => void;
@@ -67,9 +74,20 @@ export function RoleModelPicker({
     ...options.map((option) => ({ option, provider: undefined })),
     ...providers.map((provider) => ({ option: undefined, provider })),
   ];
-  const { query, setQuery, showSearch, visible } = useListSearch(rows, {
+  // Set when the search changes, until cmdk's own answer to it (or the next key) is handled.
+  const searched = useRef(false);
+  const {
+    query,
+    setQuery: setSearch,
+    showSearch,
+    visible,
+  } = useListSearch(rows, {
     text: (row) => (row.option ? modelCatalogSearchText(row.option) : row.provider!.name),
   });
+  const setQuery = (next: string) => {
+    searched.current = true;
+    setSearch(next);
+  };
   const groups = useMemo(() => {
     const grouped = new Map<string, RoleModelOption[]>();
     for (const row of visible) {
@@ -78,7 +96,7 @@ export function RoleModelPicker({
       const name = option.providerName ?? option.provider;
       grouped.set(name, [...(grouped.get(name) ?? []), option]);
     }
-    return [...grouped];
+    return [...grouped].map(([name, entries]) => [name, newestModelsFirst(entries)] as const);
   }, [visible]);
   const needle = query.trim();
   const matchingProviders = visible.flatMap((row) => (row.provider ? [row.provider] : []));
@@ -87,12 +105,26 @@ export function RoleModelPicker({
     ...groups.flatMap(([, entries]) => entries.map(optionValue)),
     ...matchingProviders.map((provider) => `connect:${provider.id}:${provider.baseUrl ?? ""}`),
   ];
-  // The first row is active whenever the list changes, so Enter always picks something.
+  // The model in use is the row with the same connection or credit offering; no connection
+  // matches only a row with none, so an included model never marks someone's own connection.
+  // Provider ids compare canonically, so a choice saved under a provider's older id still matches.
+  const currentOption =
+    current &&
+    options.find(
+      (option) =>
+        canonicalPiProviderId(option.provider) === canonicalPiProviderId(current.provider) &&
+        option.id === current.modelId &&
+        option.credentialId === current.credentialId &&
+        option.creditOfferingId === current.creditOfferingId,
+    );
+  const currentValue = currentOption ? optionValue(currentOption) : undefined;
+  // The model in use is active when opened, else the first row, so Enter always picks something;
+  // searching moves it to the first match.
   const [activeValue, setActiveValue] = useState("");
-  const firstValue = values[0] ?? "";
+  const startValue = (!needle && currentValue) || values[0] || "";
   useEffect(() => {
-    setActiveValue(firstValue);
-  }, [firstValue]);
+    if (open) setActiveValue(startValue);
+  }, [startValue, open]);
   const fromReopen = useRef(false);
   const close = () => {
     setOpen(false);
@@ -144,7 +176,16 @@ export function RoleModelPicker({
           shouldFilter={false}
           loop
           value={activeValue}
-          onValueChange={setActiveValue}
+          onKeyDown={() => {
+            searched.current = false;
+          }}
+          onValueChange={(value) => {
+            // cmdk moves the active row to its first row after a search changes, which would
+            // lose the model in use when the box is cleared; the first answer is ours to replace.
+            const settled = searched.current;
+            searched.current = false;
+            setActiveValue(settled ? startValue : value);
+          }}
         >
           {showSearch ? (
             <ListSearchInput
@@ -169,9 +210,9 @@ export function RoleModelPicker({
                     close();
                   }}
                 >
-                  <span className="min-w-0 truncate">{defaultOption}</span>
+                  <span className="min-w-0 truncate">{defaultOption.label}</span>
                   <CommandShortcut className="text-body-sm tracking-normal">
-                    <Trans>Default</Trans>
+                    {defaultOption.included ? <Trans>Included</Trans> : <Trans>Default</Trans>}
                   </CommandShortcut>
                 </CommandItem>
               </CommandGroup>
@@ -182,8 +223,10 @@ export function RoleModelPicker({
                   <CommandItem
                     key={optionValue(option)}
                     value={optionValue(option)}
+                    data-checked={optionValue(option) === currentValue}
                     onSelect={() => {
-                      onPick(option);
+                      // The model in use is already saved; picking it again changes nothing.
+                      if (optionValue(option) !== currentValue) onPick(option);
                       close();
                     }}
                   >

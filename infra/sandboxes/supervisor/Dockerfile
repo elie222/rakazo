@@ -1,8 +1,11 @@
-FROM node:24.22.1-bookworm-slim@sha256:55fb5f5a527ea2c5c4a95f963e48ef90aa38c7b346054fdc8ee9957a2b55d205
+FROM node:24.22.3-bookworm-slim@sha256:dc26ae92c9fb15cf6b1d63e20f0944b2efe0f115b20e00be48fb23fceb061c54
 COPY infra/sandboxes/computer/apt-security.sh /tmp/apt-security.sh
-RUN /tmp/apt-security.sh
+RUN /tmp/apt-security.sh \
+  && apt-get update && apt-get upgrade -y --no-install-recommends \
+  && rm -rf /var/lib/apt/lists/*
+RUN npm install --global --ignore-scripts npm@11.21.2 && npm cache clean --force
 WORKDIR /app
-COPY pnpm-workspace.yaml pnpm-lock.yaml package.json ./
+COPY pnpm-workspace.yaml pnpm-lock.yaml package.json .pnpmfile.cjs ./
 COPY patches patches
 COPY packages/contracts packages/contracts
 COPY packages/core packages/core

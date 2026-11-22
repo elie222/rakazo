@@ -1,13 +1,23 @@
+import { LifecycleEmailKind } from "@rakazo/contracts";
 import { z } from "zod";
 import type {
   BackgroundJob,
+  BackgroundJobAttempt,
   BackgroundJobExecution,
   BackgroundJobHandlers,
   BackgroundJobName,
   BackgroundJobPayloads,
+  UnreferencedMachine,
 } from "./types.js";
 
+/**
+ * Files one direct message's backup settle lists by name, those past the attachment cap
+ * included, so its message and the sender's notice account for each; more are left out.
+ */
+export const MESSAGING_INBOUND_SETTLE_MAX_ATTACHMENTS = 20;
+
 const payloadSchemas = {
+  "page.revise": z.object({ requestId: z.string().min(1) }),
   "run.continue": z.object({ runId: z.string().min(1) }),
   "routine.wakeup": z.object({
     routineId: z.string().min(1),
@@ -21,25 +31,136 @@ const payloadSchemas = {
     leaseId: z.string().min(1),
   }),
   "skill.teaching-expire": z.object({ skillId: z.string().min(1) }),
+  "run.forget-secrets": z.object({ runId: z.string().min(1) }),
+  "approval.expire": z.object({ runId: z.string().min(1), effectId: z.string().min(1) }),
   "call.expire": z.object({ threadId: z.string().min(1), callId: z.string().min(1) }),
   // The member whose turn asked for it, who pays; older jobs name only the thread.
   "history.compact": z.object({
     threadId: z.string().min(1),
     userId: z.string().min(1).optional(),
   }),
+  "memory.purge-history": z.object({
+    spaceId: z.string().min(1),
+    userId: z.string().min(1),
+    botId: z.string().min(1),
+    threadId: z.string().min(1),
+    generations: z.array(z.number().int().min(0)).min(1),
+    connectionIdentity: z.string().min(1),
+  }),
+  "memory.retain-turn": z.object({
+    runId: z.string().min(1),
+    messageIds: z.array(z.string().min(1)).optional(),
+    pending: z
+      .object({
+        token: z.string().min(1).optional(),
+        unconfirmed: z.literal(true).optional(),
+        generation: z.number().int().min(0),
+        checks: z.number().int().min(0),
+        connectionIdentity: z.string().min(1),
+        source: z.object({
+          spaceId: z.string().min(1),
+          userId: z.string().min(1),
+          botId: z.string().min(1),
+          threadId: z.string().min(1),
+        }),
+      })
+      .optional(),
+  }),
+  "messaging.send": z.object({ outboundId: z.string().min(1) }),
+  "messaging.inbound_settle": z.object({
+    provider: z.string().min(1),
+    handle: z.string().min(1),
+    identityId: z.string().min(1),
+    spaceId: z.string().min(1),
+    botId: z.string().min(1),
+    receivedAt: z.number().int().nonnegative(),
+    text: z.string(),
+    attachments: z
+      .array(
+        z.object({
+          name: z.string(),
+          mimeType: z.string(),
+          size: z.number().int().nonnegative().optional(),
+        }),
+      )
+      .max(MESSAGING_INBOUND_SETTLE_MAX_ATTACHMENTS),
+    follower: z.boolean().optional(),
+  }),
+  "messaging.reply": z.object({ runId: z.string().min(1) }),
   "messaging.deliver": z.object({ runId: z.string().min(1).optional() }),
   "messaging.progress": z.object({ runId: z.string().min(1) }),
+  "secret.cleanup": z.object({
+    kind: z.enum([
+      "secret_row",
+      "secret_tables",
+      "messaging_installation",
+      "deployment_computer_provider",
+      "deployment_model",
+      "purchase_request",
+      "purchase_card",
+      "purchase_token",
+      "payment_wallet",
+      "store_write",
+    ]),
+    recordId: z.string().min(1),
+    ref: z.string().min(1),
+  }),
   "messaging.credential-cleanup": z.object({
     installationId: z.string().min(1),
     ref: z.string().min(1),
   }),
+  "connection.cleanup": z.object({
+    spaceId: z.string().min(1),
+    userId: z.string().min(1),
+    connectorId: z.string().min(1),
+    provider: z.string().min(1),
+    ref: z.string().min(1).optional(),
+  }),
+  "computer.machine-cleanup": z.object({
+    provider: z.string().min(1),
+    machineId: z.string().min(1),
+    homeKey: z.string().min(1).optional(),
+  }),
+  "team_chat.engage": z.object({ externalMessageId: z.string().min(1) }),
+  "team_chat.ambient": z.object({ conversationId: z.string().min(1) }),
   "cloud_agent.poll": z.object({ agentId: z.string().min(1) }),
+  "meeting.calendar-sync": z.object({ connectionId: z.string().min(1) }),
+  "meeting.work": z.object({
+    sessionId: z.string().min(1),
+    action: z.enum([
+      "join",
+      "leave",
+      "expire",
+      "reconcile",
+      "transcript",
+      "transcript-check",
+      "cleanup",
+    ]),
+    detached: z
+      .object({
+        provider: z.string().min(1),
+        externalId: z.string().min(1).optional(),
+        recordingId: z.string().min(1).optional(),
+      })
+      .optional(),
+  }),
   "purchase.poll": z.object({ purchaseId: z.string().min(1) }),
   "media.poll": z.object({ jobId: z.string().min(1) }),
   "push.receipt": z.object({
     userId: z.string().min(1),
     ticketId: z.string().min(1),
     tokenDigest: z.string().min(1),
+  }),
+  "email.lifecycle": z.object({
+    kind: LifecycleEmailKind,
+    organizationId: z.string().min(1),
+    userId: z.string().min(1),
+    message: z.object({
+      subject: z.string().min(1),
+      text: z.string().min(1),
+      html: z.string().optional(),
+      headers: z.record(z.string(), z.string()).optional(),
+    }),
   }),
 } satisfies { [Name in BackgroundJobName]: z.ZodType<BackgroundJobPayloads[Name]> };
 
@@ -55,14 +176,28 @@ export async function dispatchBackgroundJob(
   name: string,
   payload: unknown,
   execution?: BackgroundJobExecution,
+  attempt?: BackgroundJobAttempt,
 ): Promise<void> {
   const job = parseBackgroundJob(name, payload);
   const handler = handlers[job.name] as (
     payload: typeof job.payload,
     execution?: BackgroundJobExecution,
+    attempt?: BackgroundJobAttempt,
   ) => Promise<void>;
-  if (execution) await handler(job.payload, execution);
+  if (attempt) await handler(job.payload, execution, attempt);
+  else if (execution) await handler(job.payload, execution);
   else await handler(job.payload);
+}
+
+/** Thrown by a job to be tried again no sooner than `delayMs`, such as a provider's retry-after. */
+export class RetryJobLaterError extends Error {
+  override readonly name = "RetryJobLaterError";
+  constructor(
+    readonly delayMs: number,
+    options?: { cause?: unknown },
+  ) {
+    super(`Retry no sooner than ${delayMs}ms`, options);
+  }
 }
 
 export function runJobKey(runId: string): string {
@@ -145,6 +280,30 @@ export function skillTeachingExpireJob(skillId: string, availableAt: Date): Back
   };
 }
 
+/** Keyed to the run, so each new pause moves the one pending cleanup. */
+export function runForgetSecretsJob(runId: string, availableAt: Date): BackgroundJob {
+  return {
+    name: "run.forget-secrets",
+    payload: { runId },
+    availableAt,
+    replaceKey: `run.forget-secrets:${runId}`,
+  };
+}
+
+/** Ends an unattended run's approval card that is still unanswered at `availableAt`. */
+export function approvalExpireJob(
+  runId: string,
+  effectId: string,
+  availableAt: Date,
+): BackgroundJob {
+  return {
+    name: "approval.expire",
+    payload: { runId, effectId },
+    availableAt,
+    replaceKey: `approval.expire:${effectId}`,
+  };
+}
+
 export function callExpireJob(threadId: string, callId: string, availableAt: Date): BackgroundJob {
   return {
     name: "call.expire",
@@ -166,25 +325,98 @@ export function historyCompactJobKey(threadId: string): string {
  */
 export const HISTORY_COMPACT_MAX_ATTEMPTS = 4;
 
+export function messagingSendJobKey(outboundId: string): string {
+  return `messaging.send:${outboundId}`;
+}
+
+/** Tries of one outgoing chat message's backup job before the message is declared lost. */
+export const MESSAGING_SEND_MAX_ATTEMPTS = 5;
+
 /**
- * Delivers the interim messages of a run a chat app started, while the run is still going. Few
- * attempts: each one drains the whole outbox, and the end-of-run mirror sends them anyway.
+ * Backup for one outgoing chat message, due once the send that recorded it has had its time.
+ * A clean failure moves it up; the job's retries carry on from there.
  */
-export function messagingProgressJob(runId: string): BackgroundJob {
+export function messagingSendJob(outboundId: string, availableAt: Date): BackgroundJob {
   return {
-    name: "messaging.progress",
-    payload: { runId },
-    replaceKey: `messaging.progress:${runId}`,
-    maxAttempts: 3,
+    name: "messaging.send",
+    payload: { outboundId },
+    availableAt,
+    replaceKey: messagingSendJobKey(outboundId),
+    maxAttempts: MESSAGING_SEND_MAX_ATTEMPTS,
   };
 }
 
-export function messagingDeliverJob(runId?: string, availableAt?: Date): BackgroundJob {
+export function messagingInboundSettleJobKey(provider: string, handle: string): string {
+  return `messaging.inbound_settle:${JSON.stringify([provider, handle])}`;
+}
+
+/**
+ * Tries of one direct message's backup settle. Its work is a few keyed writes, so a handful rides
+ * out a brief outage, and a job that cannot settle is given up within minutes, not days.
+ */
+export const MESSAGING_INBOUND_SETTLE_MAX_ATTEMPTS = 5;
+
+/** The queue one sender's direct-message settles share, so their jobs run one at a time. */
+export function messagingInboundSettleQueue(identityId: string): string {
+  return `messaging.inbound:${identityId}`;
+}
+
+/**
+ * Backup for settling one direct message whose files download after its webhook was answered.
+ * One sender's jobs share a queue, so after a restart they still settle in the order they came.
+ */
+export function messagingInboundSettleJob(
+  payload: BackgroundJobPayloads["messaging.inbound_settle"],
+  availableAt: Date,
+): BackgroundJob {
   return {
-    name: "messaging.deliver",
-    payload: runId ? { runId } : {},
-    replaceKey: `messaging.deliver:${runId ?? "drain"}`,
+    name: "messaging.inbound_settle",
+    payload,
+    availableAt,
+    replaceKey: messagingInboundSettleJobKey(payload.provider, payload.handle),
+    queueName: messagingInboundSettleQueue(payload.identityId),
+    maxAttempts: MESSAGING_INBOUND_SETTLE_MAX_ATTEMPTS,
+  };
+}
+
+export function messagingReplyJobKey(runId: string): string {
+  return `messaging.reply:${runId}`;
+}
+
+export function messagingReplyJob(runId: string, availableAt?: Date): BackgroundJob {
+  return {
+    name: "messaging.reply",
+    payload: { runId },
+    replaceKey: messagingReplyJobKey(runId),
     ...(availableAt ? { availableAt } : {}),
+  };
+}
+
+export function teamChatEngageJobKey(externalMessageId: string): string {
+  return `team_chat.engage:${externalMessageId}`;
+}
+
+/** Backup for answering an inbound team-chat message, or the end of its routine routing. */
+export function teamChatEngageJob(externalMessageId: string, availableAt: Date): BackgroundJob {
+  return {
+    name: "team_chat.engage",
+    payload: { externalMessageId },
+    availableAt,
+    replaceKey: teamChatEngageJobKey(externalMessageId),
+  };
+}
+
+/**
+ * One conversation's ambient decision, due once it has been quiet. Each new message moves it
+ * later, and the queue keeps two decisions for one conversation from running at once.
+ */
+export function teamChatAmbientJob(conversationId: string, availableAt: Date): BackgroundJob {
+  return {
+    name: "team_chat.ambient",
+    payload: { conversationId },
+    availableAt,
+    replaceKey: `team_chat.ambient:${conversationId}`,
+    queueName: `team_chat.ambient:${conversationId}`,
   };
 }
 
@@ -194,6 +426,94 @@ export function historyCompactJob(threadId: string, userId?: string): Background
     payload: userId ? { threadId, userId } : { threadId },
     replaceKey: historyCompactJobKey(threadId),
     maxAttempts: HISTORY_COMPACT_MAX_ATTEMPTS,
+  };
+}
+
+export function memoryPurgeHistoryJob(
+  payload: BackgroundJobPayloads["memory.purge-history"],
+): BackgroundJob {
+  return {
+    name: "memory.purge-history",
+    payload,
+    replaceKey: `memory.purge-history:${JSON.stringify([payload.spaceId, payload.botId, payload.threadId, payload.generations, payload.connectionIdentity])}`,
+    maxAttempts: 12,
+  };
+}
+
+export function connectionCleanupJobKey(
+  payload: BackgroundJobPayloads["connection.cleanup"],
+): string {
+  return `connection.cleanup:${JSON.stringify([payload.spaceId, payload.userId, payload.connectorId, payload.provider, payload.ref ?? null])}`;
+}
+
+/**
+ * Tries of one cleanup before it is given up and reported. An authorization nobody removes
+ * stays active at the provider, so the job has to outlast a long provider outage: the queue's
+ * backoff grows to about six hours between tries, which makes this many span about a month.
+ */
+export const CONNECTION_CLEANUP_MAX_ATTEMPTS = 125;
+
+/** Without `availableAt` it runs now, which is how a failed direct attempt hands over. */
+export function connectionCleanupJob(
+  payload: BackgroundJobPayloads["connection.cleanup"],
+  availableAt?: Date,
+): BackgroundJob {
+  return {
+    name: "connection.cleanup",
+    payload,
+    ...(availableAt ? { availableAt } : {}),
+    replaceKey: connectionCleanupJobKey(payload),
+    maxAttempts: CONNECTION_CLEANUP_MAX_ATTEMPTS,
+  };
+}
+
+export function machineCleanupJobKey(provider: string, machineId: string): string {
+  return `computer.machine-cleanup:${JSON.stringify([provider, machineId])}`;
+}
+
+/**
+ * The queue's backoff spreads these tries over almost three days, which outlasts a long provider
+ * outage; the last one to fail reports the machine.
+ */
+export const MACHINE_CLEANUP_MAX_ATTEMPTS = 20;
+
+/** The record of one machine no stored computer points at: its delete, due at `availableAt`. */
+export function machineCleanupJob(machine: UnreferencedMachine, availableAt: Date): BackgroundJob {
+  return {
+    name: "computer.machine-cleanup",
+    payload: machine,
+    availableAt,
+    replaceKey: machineCleanupJobKey(machine.provider, machine.machineId),
+    maxAttempts: MACHINE_CLEANUP_MAX_ATTEMPTS,
+  };
+}
+
+export function memoryRetainTurnRecoveryJobKey(runId: string): string {
+  return `memory.retain-turn:${runId}:recover`;
+}
+
+/** Retries reuse the run's operation id, so the memory service never stores a turn twice. */
+export function memoryRetainTurnJob(
+  runId: string,
+  messageIds: string[] = [],
+  options: {
+    pending?: BackgroundJobPayloads["memory.retain-turn"]["pending"];
+    availableAt?: Date;
+  } = {},
+): BackgroundJob {
+  return {
+    name: "memory.retain-turn",
+    payload: {
+      runId,
+      ...(messageIds.length ? { messageIds } : {}),
+      ...(options.pending ? { pending: options.pending } : {}),
+    },
+    // A slow recovery check must not overwrite a subsequently confirmed operation token.
+    replaceKey: options.pending?.unconfirmed
+      ? memoryRetainTurnRecoveryJobKey(runId)
+      : `memory.retain-turn:${runId}${options.pending ? ":settle" : ""}`,
+    ...(options.availableAt ? { availableAt: options.availableAt } : {}),
+    maxAttempts: 4,
   };
 }
 
@@ -236,5 +556,27 @@ export function mediaPollJob(jobId: string, availableAt?: Date): BackgroundJob {
     payload: { jobId },
     replaceKey: `media.poll:${jobId}`,
     ...(availableAt ? { availableAt } : {}),
+  };
+}
+
+/** A few tries ride out a database or queue blip; a send that was claimed is never repeated. */
+const LIFECYCLE_EMAIL_MAX_ATTEMPTS = 5;
+
+/**
+ * One lifecycle mail for one owner of one organization, due at `availableAt`. Keyed by kind,
+ * person and organization, so scheduling it again moves the one job, and a person's mails share
+ * a queue, so two that are due together run one after the other.
+ */
+export function lifecycleEmailJob(
+  payload: BackgroundJobPayloads["email.lifecycle"],
+  availableAt: Date,
+): BackgroundJob {
+  return {
+    name: "email.lifecycle",
+    payload,
+    availableAt,
+    replaceKey: `email.lifecycle:${payload.kind}:${payload.userId}:${payload.organizationId}`,
+    queueName: `email.lifecycle:${payload.userId}`,
+    maxAttempts: LIFECYCLE_EMAIL_MAX_ATTEMPTS,
   };
 }

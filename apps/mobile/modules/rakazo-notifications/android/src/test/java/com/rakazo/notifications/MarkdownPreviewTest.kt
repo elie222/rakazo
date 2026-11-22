@@ -5,6 +5,65 @@ import org.junit.Test
 
 class MarkdownPreviewTest {
   @Test
+  fun `strips only closing ATX heading markers`() {
+    val cases = listOf(
+      "## Weekly report ##\nReady to review." to "Weekly report Ready to review.",
+      "   ###\tTitle\t######## \t" to "Title",
+      "## ##\nAfter" to "After",
+      "## C#\nKeep C# and the tag #" to "C# Keep C# and the tag #",
+      "## Ticket #42 \t#" to "Ticket #42",
+      "## Keep # suffix" to "Keep # suffix",
+      "## Keep #\u00a0" to "Keep #",
+      "## Keep \\#" to "Keep #",
+      "## Keep `#`" to "Keep #",
+      "## Keep `a\nb` ##" to "Keep a b ##",
+      "## [Keep #](https://example.test)" to "Keep #",
+      "## Keep # <!-- note -->" to "Keep #",
+      "    ## Keep ##" to "## Keep ##",
+      "####### Keep ##" to "####### Keep ##",
+      "```\n## Keep ##\n```" to "## Keep ##",
+    )
+    for ((source, expected) in cases) assertEquals(expected, markdownToPreview(source))
+  }
+
+  @Test
+  fun `does not remove a hash at a preview cut in the middle of heading text`() {
+    val heading = "## " + "x".repeat(4_091) + " #"
+    assertEquals(heading.removePrefix("## "), markdownToPreview("$heading continued"))
+  }
+
+  @Test
+  fun `normalizes CR LF and CRLF before reading Markdown blocks`() {
+    val cases = listOf(
+      "# Heading\n## Subheading" to "Heading Subheading",
+      "- first\n- second\n1. third" to "first second third",
+      "```ts\nconst x = 1;\n```\nAfter" to "const x = 1; After",
+      "| A | B |\n| --- | --- |\n| 1 | 2 |" to "A, B 1, 2",
+    )
+    for (eol in listOf("\n", "\r\n", "\r")) {
+      for ((source, expected) in cases) {
+        assertEquals(expected, markdownToPreview(source.replace("\n", eol)))
+      }
+    }
+    assertEquals("A B C D", markdownToPreview("# A\r\n- B\r> C\n## D"))
+  }
+
+  @Test
+  fun `removes complete and unfinished HTML comments`() {
+    for (source in listOf(
+      "a <!-- x > hidden --> b",
+      "a <!-- x > hidden\nmore --> b",
+      "a <!-- an unmatched ' quote > hidden --> b",
+      "a <!-- <b>hidden</b> --> b",
+      "a <!-- x > hidden --> <!-- more > hidden --> b",
+    )) assertEquals("a b", markdownToPreview(source))
+    assertEquals("a", markdownToPreview("a <!-- hidden"))
+    assertEquals("a", markdownToPreview("a <!-- x > hidden"))
+    assertEquals("<!-- x > hidden -->", markdownToPreview("`<!-- x > hidden -->`"))
+    assertEquals("<!-- x > hidden -->", markdownToPreview("\\<!-- x > hidden -->"))
+  }
+
+  @Test
   fun `flattens common markdown into one notification line`() {
     assertEquals("bold and italic", markdownToPreview("**bold** and _italic_"))
     assertEquals("label", markdownToPreview("[label](https://example.test/path)"))

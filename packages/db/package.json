@@ -14,7 +14,7 @@
     "generate": "prisma generate",
     "migrate": "prisma migrate deploy",
     "migrate:dev": "prisma migrate dev",
-    "check": "tsc --noEmit -p tsconfig.json",
+    "check": "tsrs --noEmit -p tsconfig.json",
     "test": "vitest run --root ../.. packages/db/src"
   },
   "dependencies": {
@@ -25,12 +25,13 @@
     "@rakazo/core": "workspace:*",
     "@rakazo/logging": "workspace:*",
     "pg": "8.23.1",
-    "dotenv": "17.4.2"
+    "dotenv": "17.4.2",
+    "prisma": "7.10.1",
+    "zod": "4.6.7"
   },
   "devDependencies": {
     "@types/pg": "8.23.1",
-    "prisma": "7.10.1",
     "typescript": "7.0.2",
-    "vitest": "4.1.12"
+    "vitest": "5.1.0"
   }
 }

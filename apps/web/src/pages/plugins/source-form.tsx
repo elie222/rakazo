@@ -1,22 +1,13 @@
-import { Trans } from "@lingui/react/macro";
-import type {
-  IntegrationCatalogResult,
-  IntegrationCatalogSurface,
-  McpSourcePreset,
-} from "@rakazo/contracts";
-import {
-  Button,
-  Field,
-  FieldDescription,
-  FieldLabel,
-  Input,
-  NativeSelect,
-  NativeSelectOption,
-} from "@rakazo/ui-web";
+import { Trans, useLingui } from "@lingui/react/macro";
+import type { IntegrationCatalogSurface, McpSourcePreset } from "@rakazo/contracts";
+import { Button, Field, FieldDescription, FieldLabel, Input, OptionSelect } from "@rakazo/ui-web";
 import { useState } from "react";
 import { ViewTitle } from "./parts";
 
 export type SourceKind = "mcp" | "api" | "graphql";
+
+/** How a custom source authenticates. OAuth is a remote MCP server's browser sign-in. */
+export type SourceAuth = "none" | "bearer" | "header" | "oauth";
 
 export type SourceForm = ReturnType<typeof useSourceForm>;
 
@@ -27,7 +18,7 @@ export function useSourceForm() {
   const [sourceName, setSourceName] = useState("");
   const [sourceUrl, setSourceUrl] = useState("");
   const [credential, setCredential] = useState("");
-  const [authType, setAuthType] = useState<"none" | "bearer" | "header">("bearer");
+  const [authType, setAuthType] = useState<SourceAuth>("bearer");
   const [authName, setAuthName] = useState("x-api-key");
   const [sourceHint, setSourceHint] = useState<string | null>(null);
 
@@ -36,26 +27,27 @@ export function useSourceForm() {
     setSourcePreset(preset);
     setSourceHint(null);
     setSourceName(preset?.name ?? "");
-    setSourceUrl(preset?.url ?? "");
+    setSourceUrl(preset?.url ?? preset?.defaultUrl ?? "");
     setCredential("");
-    setAuthType(preset ? "bearer" : "none");
+    setAuthType(preset?.signIn ? "oauth" : preset ? "bearer" : "none");
     setAuthName("x-api-key");
   }
 
   /** A domain search result prefills the form with what it found. */
   function startFromCatalog(
-    result: IntegrationCatalogResult,
-    surface: IntegrationCatalogSurface,
+    kind: "mcp" | "openapi",
+    name: string,
     source: string,
+    auth: IntegrationCatalogSurface["auth"],
   ) {
-    setSourceKind(surface.kind === "mcp" ? "mcp" : "api");
+    setSourceKind(kind === "mcp" ? "mcp" : "api");
     setSourcePreset(null);
-    setSourceName(result.name);
+    setSourceName(name);
     setSourceUrl(source);
     setCredential("");
-    setAuthType(surface.auth?.type ?? "none");
-    setAuthName(surface.auth?.headerName ?? "x-api-key");
-    setSourceHint(surface.auth?.note ?? null);
+    setAuthType(auth?.type ?? "none");
+    setAuthName(auth?.headerName ?? "x-api-key");
+    setSourceHint(auth?.note ?? null);
   }
 
   function close() {
@@ -97,6 +89,7 @@ export function SourceFormView({
   onBack: () => void;
   onSubmit: () => void;
 }) {
+  const { t } = useLingui();
   const {
     sourceKind,
     sourcePreset,
@@ -114,6 +107,19 @@ export function SourceFormView({
   } = form;
   if (!sourceKind) return null;
   const custom = !sourcePreset;
+  // OAuth saves the server before the browser sign-in, so it is not a check of typed credentials.
+  const oauth = authType === "oauth";
+  const submitLabel = installing ? (
+    oauth ? (
+      <Trans>Connecting…</Trans>
+    ) : (
+      <Trans>Verifying…</Trans>
+    )
+  ) : oauth ? (
+    <Trans>Save and sign in</Trans>
+  ) : (
+    <Trans>Verify and add</Trans>
+  );
   return (
     <div data-testid="integrations-source-form" className="max-w-xl space-y-6">
       <ViewTitle
@@ -137,17 +143,19 @@ export function SourceFormView({
           onSubmit();
         }}
       >
-        <Field>
-          <FieldLabel htmlFor="source-name">
-            <Trans>Name</Trans>
-          </FieldLabel>
-          <Input
-            id="source-name"
-            value={sourceName}
-            onChange={(event) => setSourceName(event.target.value)}
-            autoFocus
-          />
-        </Field>
+        {!sourcePreset?.featured ? (
+          <Field>
+            <FieldLabel htmlFor="source-name">
+              <Trans>Name</Trans>
+            </FieldLabel>
+            <Input
+              id="source-name"
+              value={sourceName}
+              onChange={(event) => setSourceName(event.target.value)}
+              autoFocus
+            />
+          </Field>
+        ) : null}
         {!sourcePreset?.url ? (
           <Field>
             <FieldLabel htmlFor="source-url">URL</FieldLabel>
@@ -171,22 +179,17 @@ export function SourceFormView({
             <FieldLabel htmlFor="source-auth">
               <Trans>Authentication</Trans>
             </FieldLabel>
-            <NativeSelect
+            <OptionSelect<SourceAuth>
               id="source-auth"
-              className="w-full"
               value={authType}
-              onChange={(event) => setAuthType(event.target.value as typeof authType)}
-            >
-              <NativeSelectOption value="none">
-                <Trans>No authentication</Trans>
-              </NativeSelectOption>
-              <NativeSelectOption value="bearer">
-                <Trans>Bearer token</Trans>
-              </NativeSelectOption>
-              <NativeSelectOption value="header">
-                <Trans>API key header</Trans>
-              </NativeSelectOption>
-            </NativeSelect>
+              options={[
+                { value: "none", label: t`No authentication` },
+                { value: "bearer", label: t`Bearer token` },
+                { value: "header", label: t`API key header` },
+                ...(sourceKind === "mcp" ? [{ value: "oauth" as const, label: t`OAuth` }] : []),
+              ]}
+              onValueChange={setAuthType}
+            />
           </Field>
         ) : null}
         {custom && authType === "header" ? (
@@ -201,20 +204,38 @@ export function SourceFormView({
             />
           </Field>
         ) : null}
-        {!custom || authType !== "none" ? (
+        {(!custom || authType !== "none") && authType !== "oauth" ? (
           <Field>
             <FieldLabel htmlFor="source-credential">
-              {sourcePreset ? <Trans>Bearer token</Trans> : <Trans>Credential</Trans>}
+              {sourcePreset?.credentialHelpUrl ? (
+                <Trans>Personal access token</Trans>
+              ) : sourcePreset ? (
+                <Trans>Bearer token</Trans>
+              ) : (
+                <Trans>Credential</Trans>
+              )}
             </FieldLabel>
             <Input
               id="source-credential"
               type="password"
               autoComplete="new-password"
+              autoFocus={sourcePreset?.featured}
               value={credential}
               onChange={(event) => setCredential(event.target.value)}
             />
             <FieldDescription>
-              <Trans>Credentials are encrypted and never sent to the model.</Trans>
+              {sourcePreset?.credentialHelpUrl ? (
+                <a
+                  href={sourcePreset.credentialHelpUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="underline"
+                >
+                  <Trans>Create a personal access token</Trans>
+                </a>
+              ) : (
+                <Trans>Credentials are encrypted and never sent to the model.</Trans>
+              )}
             </FieldDescription>
           </Field>
         ) : null}
@@ -225,7 +246,7 @@ export function SourceFormView({
           </p>
         ) : null}
         <Button type="submit" disabled={installing}>
-          {installing ? <Trans>Verifying…</Trans> : <Trans>Verify and add</Trans>}
+          {submitLabel}
         </Button>
       </form>
     </div>

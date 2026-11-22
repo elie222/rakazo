@@ -10,15 +10,16 @@ monthly model credits in USD: $10, $20, $50, $100, $200, or $500. One-time top-u
 amounts. Monthly credits expire at the end of their service period; one-time top-ups do not expire.
 The hosted computer is included in both paths, and monthly credits include the own-key plan.
 
-`BYOK_TIERS` in `@rakazo/contracts` sets the own-key plan's tiers: Standard, Pro and Max, each with
-a monthly and yearly price, a monthly computer allowance and a computer size. New organizations
+`BYOK_TIERS` in `@rakazo/contracts` sets the own-key plan's tiers: Standard, Pro, Max and Ultra, each with
+a monthly and yearly price, a monthly computer allowance and a maximum computer size. New organizations
 start on Standard; existing subscribers keep the price they signed up at. A `null` Standard monthly
 price makes the plan free, hides the other tiers, and ends paid own-key subscriptions at their
-period end; a `null` yearly price offers that tier monthly only, and a `null` monthly price on Pro
-or Max hides it. Billing reads a plan's tier from its price's lookup key, which Rakazo creates as
+period end; a `null` yearly price offers that tier monthly only, and a `null` monthly price on another
+tier hides it. Billing reads a plan's tier from its price's lookup key, which Rakazo creates as
 `rakazo_byok_<tier>_<monthly|yearly>_<cents>` (Standard's keys name no tier), so keep those keys
-on any price you create by hand. Before selling a tier, make sure the sandbox account can run its
-computer size; a computer that cannot start at its size starts at its current one.
+on any price you create by hand. Computers default to Standard and apply the organization's
+selection on the next start. Before selling a tier, make sure the sandbox account can run its
+larger sizes. If a computer cannot resize, it starts at its current size.
 
 Subscribers can change tier from Billing at the same interval, and monthly subscribers can switch
 to yearly, which charges the yearly price less the unused part of the month. A tier change charges
@@ -33,9 +34,9 @@ access on the server, so a lapsed organization's bots and routines stop until it
 
 ## Model credits
 
-Configure the managed default model through the existing model connection settings. The default
-OpenRouter model is Luna 6; customers can choose another available model, with its usage deducted
-at model cost. In credit mode, the configured hosted provider uses Rakazo's key even when a personal
+Configure the managed default model through the existing [model connection settings](./self-host-models.md#deployment-model).
+Customers can choose another available model, with its usage deducted at model cost.
+In credit mode, the configured hosted provider uses Rakazo's key even when a personal
 key for that provider is saved. Switching back to BYOK restores that connection. Personal connections
 to other providers continue to use their own keys and never debit Rakazo credits. Hosted calls reserve an upper cost estimate atomically before starting, then settle
 to reported or catalog-priced usage. Unknown usage retains its reservation for reconciliation.
@@ -52,6 +53,57 @@ retain their funding source across renewal: unused monthly holds expire when rel
 purchased top-ups remain available. Prorated upgrades share the original period end. Expiration
 creates a financial journal delta and runs before balance reads, reservations, settlements, and
 background recovery. Unclassified legacy balances are preserved as non-expiring funds.
+
+## Reviewing an account's credit usage
+
+An operator can cap a person's total hosted model-credit usage without deactivating their
+account. From the API container, run:
+
+```sh
+node dist/cli/model-credit-cap.js set customer@example.test 2
+node dist/cli/model-credit-cap.js status customer@example.test
+node dist/cli/model-credit-cap.js clear customer@example.test
+```
+
+The amount is a **total recorded USD ceiling**, not an additional allowance. It counts model
+spend and outstanding reservations across all their organizations, bots and runs. For example,
+a person who has used $1.50 has $0.50 left under a $2 cap. Set zero to stop new hosted model
+calls. Setting or clearing a cap is audited; it does not reactivate an account, change its
+balance, cancel renewal, or refund a payment. Reactivate a deactivated person separately after
+setting their cap.
+
+Only hosted charges recorded with per-user attribution in the credit journal count. Earlier
+baseline records do not reliably identify whose hosted credits were spent; usage baselines
+also include personal-key activity. Those records are excluded rather than guessed. This is
+not a complete lifetime-spend total for people who used credits before per-user journaling.
+The operator command reports this boundary alongside the allowance.
+
+The cap has no automatic reset or expiry, and credit purchases cannot lift it. At the limit,
+new hosted calls fail with “Usage limit reached. Contact support to continue.” Sign-in and
+personal model connections remain available. Reservations may stop a call before the displayed
+remaining amount reaches zero because its maximum estimated cost must fit. Calls already
+admitted can finish; actual provider charges above their reserved estimate can exceed the cap.
+Unknown usage keeps its hold until reconciled. Deleting an organization does not erase usage
+from the cap, because it is counted from the durable journal.
+
+Uncapped calls read only the nullable user setting alongside their existing credit account
+lock, with no added database round trips or history scans. Only capped calls lock the person's
+row and sum their indexed journal. Automatic assignment and timed caps are not enabled.
+Deploy the API and worker changes before relying on enforcement; the previous release ignores
+the new nullable setting while a rolling deployment finishes.
+
+## Extra computer allowance
+
+An operator can give an organization extra computer allowance, in US dollars, for its current
+period only. It adds to whatever its plan includes, is recorded in the billing journal, and does
+not carry into the next period. From the API container, run:
+
+```sh
+node dist/cli/computer-allowance.js grant <organization-id> 10
+node dist/cli/computer-allowance.js status <organization-id>
+```
+
+Both print the period's allowance, the extra granted, and when it resets. Billing shows the hours left.
 
 ## Accounting
 
@@ -80,9 +132,15 @@ deployment credential; no Redis or external accounting service is required.
 The adapter pins Stripe API `2026-09-30.endive`. Configure webhook destinations for your own account,
 using snapshot payloads on the same API version. Subscribe to all `customer.subscription` events,
 `customer.deleted`, `checkout.session.completed`, `checkout.session.async_payment_succeeded`,
-`invoice.paid`, `invoice.payment_failed`, `charge.refunded`, `charge.dispute.created`, and
-`charge.dispute.closed`. Credit Checkout restricts payment methods to cards. New subscriptions
+`invoice.paid`, `invoice.payment_failed`, `charge.refunded`, `charge.dispute.created`,
+`charge.dispute.closed`, `charge.dispute.funds_withdrawn`, and `charge.dispute.funds_reinstated`.
+Credits a dispute holds back return if it is won. Credit Checkout restricts payment methods to cards. New subscriptions
 explicitly retain classic billing mode so API upgrades do not change invoice/proration behavior.
+
+A subscription whose charge failed (past due, unpaid or paused) has no access until the payment
+goes through; its owner is sent to the billing portal to update the card, and Stripe's own retry
+and cancellation settings decide when it ends. A plan counts as paid once an invoice that charged
+something is paid, not when a trial turns active.
 
 For local testing, forward Stripe test events to `/api/v1/billing/webhook`. Use the signing secret
 from `stripe listen` and test API credentials; keep them in an ignored environment file.

@@ -178,11 +178,13 @@ describe("contracts", () => {
     expect(modelRoutingForm(undefined, {})).toEqual({
       needsRouting: false,
       needsGateway: false,
+      needsProject: false,
       routingReady: true,
     });
     expect(modelRoutingForm(["accountId", "gatewayId"], { accountId: "acct" })).toEqual({
       needsRouting: true,
       needsGateway: true,
+      needsProject: false,
       routingReady: false,
     });
     expect(modelRoutingReady(["accountId"], { accountId: " acct " })).toBe(true);
@@ -203,6 +205,27 @@ describe("contracts", () => {
     ).toBe(false);
   });
 
+  it.each(["accountId", "gatewayId", "projectId", "region"])(
+    "accepts a routing-only %s update only for a targeted connection",
+    (field) => {
+      const input = { provider: "example-provider", [field]: "example-route" };
+      expect(
+        ModelConnectInputSchema.safeParse({ ...input, credentialId: "credential-fixture" }).success,
+      ).toBe(true);
+      expect(ModelConnectInputSchema.safeParse(input).success).toBe(false);
+      expect(ModelConnectInputSchema.safeParse({ ...input, credentialId: null }).success).toBe(
+        false,
+      );
+      expect(
+        ModelConnectInputSchema.safeParse({
+          ...input,
+          credentialId: "credential-fixture",
+          [field]: "../invalid",
+        }).success,
+      ).toBe(false);
+    },
+  );
+
   it("accepts optional persisted duration only on valid steps blocks", () => {
     expect(
       MessageBlock.parse({
@@ -216,10 +239,11 @@ describe("contracts", () => {
     );
   });
 
-  it("keeps a note on a step and still reads steps saved without one", () => {
+  it("keeps a step's note and outcomes and still reads steps saved without them", () => {
     const steps = [
       { label: "Read file", count: 1, note: "The meeting is with Anna." },
-      { label: "Save", count: 1 },
+      { label: "Save", count: 2, outcomes: { succeeded: 1, failed: 1 } },
+      { label: "Shell", count: 1 },
     ];
     expect(MessageBlock.parse({ kind: "steps", steps })).toEqual({ kind: "steps", steps });
   });
@@ -252,6 +276,10 @@ describe("contracts", () => {
     const parsed = CreateBotInput.parse({ name: "Chief" });
     expect(parsed.notifyOnFinish).toBe(true);
     expect(parsed.avatarFamily).toBeUndefined();
+    expect(parsed.computerMode).toBeUndefined();
+    expect(CreateBotInput.parse({ name: "Chief", computerMode: "dedicated" }).computerMode).toBe(
+      "dedicated",
+    );
   });
 
   it("accepts an organic avatar family from 0 to 9 when creating a bot", () => {
@@ -445,21 +473,6 @@ describe("contracts", () => {
       }).success,
     ).toBe(true);
     expect(RunSchema.safeParse({ ...run, trigger: "webhook" }).success).toBe(true);
-  });
-
-  it("caps remote MCP headers", () => {
-    const headers = Object.fromEntries(
-      Array.from({ length: 33 }, (_, index) => [`X-Test-${index}`, "value"]),
-    );
-    expect(
-      McpServerConfigInput.safeParse({
-        slug: "demo",
-        name: "Demo",
-        transport: "streamable_http",
-        endpoint: "https://mcp.example.test",
-        headers,
-      }).success,
-    ).toBe(false);
   });
 
   it("allows localhost HTTP MCP endpoints and other HTTP(S) URLs without credentials", () => {

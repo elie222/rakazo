@@ -1,9 +1,10 @@
 // @vitest-environment jsdom
 
+import { deferred } from "@rakazo/core/test-async";
 import type { ComponentProps, ReactNode } from "react";
 import { act } from "react";
-import { createRoot } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vitest";
+import { createQueryRoot as createRoot } from "../../lib/query/query-root.test-support";
 
 const { bots, client, toast } = vi.hoisted(() => {
   const bots = { list: vi.fn(), update: vi.fn() };
@@ -11,7 +12,15 @@ const { bots, client, toast } = vi.hoisted(() => {
   return { bots, client: { bots }, toast };
 });
 
-vi.mock("../../lib/space-rpc", () => ({ useSpaceRpc: () => client }));
+vi.mock("../../lib/query/space-rpc", () => ({
+  useSpaceRpc: () => client,
+  useBoundSpaceId: () => "space-a",
+}));
+vi.mock("../../lib/query/rpc", () => ({
+  rpcForSpace: () => client,
+  createSpaceRpc: () => client,
+  selectedSpaceId: () => "space-a",
+}));
 vi.mock("@lingui/react/macro", () => {
   const t = (parts: TemplateStringsArray, ...values: unknown[]) =>
     String.raw({ raw: parts }, ...values);
@@ -57,18 +66,20 @@ function button(label: string) {
   return [...document.body.querySelectorAll("button")].find((node) => node.textContent === label);
 }
 
+const view = (mainModelKey: string) => <SpaceBotsModelButton mainModelKey={mainModelKey} />;
+
 async function render(mainModelKey = "s:a:one") {
   const host = document.createElement("div");
   document.body.append(host);
   const root = createRoot(host);
   await act(async () => {
-    root.render(<SpaceBotsModelButton mainModelKey={mainModelKey} />);
+    root.render(view(mainModelKey));
   });
   return {
     host,
     rerender: (key: string) =>
       act(async () => {
-        root.render(<SpaceBotsModelButton mainModelKey={key} />);
+        root.render(view(key));
       }),
     unmount: () => act(() => root.unmount()),
   };
@@ -124,6 +135,14 @@ it("asks only when the main model changes and some bots would not follow", async
   expect(toast.dismiss).toHaveBeenCalledWith("space-bots-model");
 });
 
+it("uses the singular verb when one bot keeps its own model", async () => {
+  bots.list.mockResolvedValue([list[0]]);
+  const { rerender, unmount } = await render();
+  await rerender("s:a:two");
+  expect(toast).toHaveBeenCalledWith("Archie keeps its own model", expect.anything());
+  await unmount();
+});
+
 it("still names the bots when the list fails right after the main model changes", async () => {
   bots.list.mockResolvedValueOnce(list).mockRejectedValue(new Error("offline"));
   const { rerender, unmount } = await render();
@@ -144,13 +163,11 @@ it("drops switched bots even when the refresh after the switch fails", async () 
 });
 
 it("ignores a bot list that a newer one replaced", async () => {
-  let finishFirst: (value: typeof list) => void = () => {};
-  bots.list
-    .mockImplementationOnce(() => new Promise((resolve) => (finishFirst = resolve)))
-    .mockResolvedValue(following);
+  const finishFirst = deferred<typeof list>();
+  bots.list.mockImplementationOnce(() => finishFirst.promise).mockResolvedValue(following);
   const { host, rerender, unmount } = await render();
   await rerender("s:a:two");
-  await act(async () => finishFirst(list));
+  await act(async () => finishFirst.resolve(list));
   expect(host.textContent).toBe("");
   expect(toast).not.toHaveBeenCalled();
   unmount();

@@ -25,6 +25,8 @@ import {
   COMPUTER_IMAGE,
   COMPUTER_IMAGE_CONTEXT_FILES,
   computerBridgeNameFor,
+  computerBrowserProxyPacMatches,
+  computerComputeGpusMatch,
   computerDnsMatches,
   computerHomeStorage,
   computerMountsMatch,
@@ -42,6 +44,8 @@ import {
   legacyNetworkOwnedSolelyBy,
   parseMemoryBytes,
   publishedLoopbackControlHostPort,
+  resolveComputerBrowserProxyPacUrl,
+  resolveComputerComputeGpus,
   resolveComputerControlEndpoint,
   resolveComputerDns,
   resolveComputerEgressMode,
@@ -206,6 +210,107 @@ describe("graphical computer spec", () => {
     expect(containerCreateOptions({ ...base, dns: ["1.1.1.1"] }).HostConfig).toMatchObject({
       Dns: ["1.1.1.1"],
     });
+  });
+
+  it("parses the browser PAC URL, with none when unset", () => {
+    expect(resolveComputerBrowserProxyPacUrl(undefined)).toBeUndefined();
+    expect(resolveComputerBrowserProxyPacUrl("  ")).toBeUndefined();
+    expect(resolveComputerBrowserProxyPacUrl(" https://proxy.example.com/proxy.pac ")).toBe(
+      "https://proxy.example.com/proxy.pac",
+    );
+    expect(resolveComputerBrowserProxyPacUrl("http://proxy.example.com:8080/p.pac")).toBe(
+      "http://proxy.example.com:8080/p.pac",
+    );
+    const pac = `data:application/x-ns-proxy-autoconfig;base64,${Buffer.from(
+      'function FindProxyForURL(url, host) { return shExpMatch(host, "*.example.com") ? "PROXY proxy.example.com:3128" : "DIRECT"; }',
+    ).toString("base64")}`;
+    expect(resolveComputerBrowserProxyPacUrl(pac)).toBe(pac);
+    for (const value of [
+      "proxy.example.com/proxy.pac",
+      "/etc/proxy.pac",
+      "file:///etc/proxy.pac",
+      "ftp://proxy.example.com/proxy.pac",
+      "javascript:alert(1)",
+      "https://proxy.example.com/a b.pac",
+      "https://proxy.example.com/\tproxy.pac",
+      "https://proxy.example.com/\u0000proxy.pac",
+      "https://proxy.example.com/\u007fproxy.pac",
+      "data:application/x-ns-proxy-autoconfig,function FindProxyForURL() {}",
+      `data:application/x-ns-proxy-autoconfig;base64,${"A".repeat(64 * 1024)}`,
+    ])
+      expect(() => resolveComputerBrowserProxyPacUrl(value)).toThrow(
+        /SANDBOX_COMPUTER_BROWSER_PROXY_PAC_URL/,
+      );
+  });
+
+  it("hands computers the browser PAC URL only when configured", () => {
+    const base = {
+      name: "rakazo-bot-x",
+      image: "img",
+      botId: "x",
+      spaceId: "s",
+      homePath: "/data/x",
+    };
+    const pac = "https://proxy.example.com/proxy.pac";
+    const unset = containerCreateOptions(base).Env;
+    expect(unset.some((entry) => entry.startsWith("RAKAZO_BROWSER_PROXY_PAC_URL="))).toBe(false);
+    const env = containerCreateOptions({ ...base, browserProxyPacUrl: pac }).Env;
+    expect(env).toContain(`RAKAZO_BROWSER_PROXY_PAC_URL=${pac}`);
+
+    // The environment is fixed at creation, so adding, changing or removing it replaces a computer.
+    expect(computerBrowserProxyPacMatches(unset, undefined)).toBe(true);
+    expect(computerBrowserProxyPacMatches(null, undefined)).toBe(true);
+    expect(computerBrowserProxyPacMatches(env, pac)).toBe(true);
+    expect(computerBrowserProxyPacMatches(unset, pac)).toBe(false);
+    expect(computerBrowserProxyPacMatches(env, undefined)).toBe(false);
+    expect(computerBrowserProxyPacMatches(env, "https://proxy.example.com/other.pac")).toBe(false);
+  });
+
+  it("gives computers host GPUs only when configured", () => {
+    const base = {
+      name: "rakazo-bot-x",
+      image: "img",
+      botId: "x",
+      spaceId: "s",
+      homePath: "/data/x",
+    };
+    expect(resolveComputerComputeGpus(undefined)).toBeUndefined();
+    expect(resolveComputerComputeGpus("  ")).toBeUndefined();
+    expect(resolveComputerComputeGpus(" all ")).toBe(-1);
+    expect(resolveComputerComputeGpus("2")).toBe(2);
+    // Counts too large to hold exactly, including ones that would become Infinity.
+    const huge = ["9007199254740993", "9".repeat(400)];
+    for (const value of ["0", "-1", "1.5", "ALL", "all,1", "device=0", "two", ...huge])
+      expect(() => resolveComputerComputeGpus(value)).toThrow(/SANDBOX_COMPUTER_COMPUTE_GPUS/);
+
+    expect(containerCreateOptions(base).HostConfig).not.toHaveProperty("DeviceRequests");
+    const all = containerCreateOptions({ ...base, computeGpus: -1 }).HostConfig;
+    // No driver: Docker selects the host's GPU driver, so no vendor is named here.
+    expect(all.DeviceRequests).toEqual([{ Count: -1, Capabilities: [["gpu"]] }]);
+    // The GPU does not loosen the rest of the sandbox.
+    expect(all).toMatchObject({ CapDrop: ["ALL"], SecurityOpt: ["no-new-privileges:true"] });
+  });
+
+  it("matches a computer's GPUs to the configured ones", () => {
+    // As Docker reports a request after creation, with the fields it fills in.
+    const reported = (count: number) => ({
+      Driver: "",
+      Count: count,
+      DeviceIDs: null,
+      Capabilities: [["gpu"]],
+      Options: {},
+    });
+    expect(computerComputeGpusMatch(undefined, undefined)).toBe(true);
+    expect(computerComputeGpusMatch(null, undefined)).toBe(true);
+    expect(computerComputeGpusMatch([], undefined)).toBe(true);
+    expect(computerComputeGpusMatch([reported(-1)] as never, -1)).toBe(true);
+    expect(computerComputeGpusMatch([reported(2)] as never, 2)).toBe(true);
+    // A computer created before the setting was turned on, or after it was turned off, is replaced.
+    expect(computerComputeGpusMatch(undefined, -1)).toBe(false);
+    expect(computerComputeGpusMatch([reported(-1)] as never, undefined)).toBe(false);
+    // So is one created with a different count.
+    expect(computerComputeGpusMatch([reported(1)] as never, 2)).toBe(false);
+    expect(computerComputeGpusMatch([reported(-1)] as never, 1)).toBe(false);
   });
 
   it("parses computer host mounts, with none when unset", () => {
@@ -546,7 +651,7 @@ describe("graphical computer spec", () => {
     expect(start).toMatch(/failed to set default web browser/);
     expect(start).toMatch(/xdg-settings set default-web-browser rakazo-browser\.desktop/);
     expect(start).not.toMatch(/xdg-mime default rakazo-browser\.desktop .*\|\| true/);
-    expect(start).toMatch(/x11vnc .* -viewonly /);
+    expect(start).toMatch(/x11vnc .* -viewonly -repeat /);
     expect(browser).toMatch(/\.browser-profiles\/chromium/);
     expect(browser).toMatch(/chromium-screen-\$DISPLAY_NUM/);
     expect(browser).toMatch(/USER_DATA_DIR_SET/);
@@ -600,7 +705,7 @@ describe("graphical computer spec", () => {
       for (const [name, body] of [
         ["dpkg", 'printf "%s\\n" "$RAKAZO_TEST_ARCH"'],
         ["apt-security.sh", 'printf "apt-security\\n" >> "$RAKAZO_TEST_CALLS"'],
-        ["apt-get", 'printf "apt-get\\n" >> "$RAKAZO_TEST_CALLS"'],
+        ["apt-get", 'printf "apt-get %s\\n" "$*" >> "$RAKAZO_TEST_CALLS"'],
         ["curl", 'printf "curl\\n" >> "$RAKAZO_TEST_CALLS"; exit 7'],
         ["gpg", 'printf "gpg\\n" >> "$RAKAZO_TEST_CALLS"'],
       ] as const) {
@@ -648,7 +753,13 @@ describe("graphical computer spec", () => {
         expect(arm.stderr).toMatch(/amd64 only/);
         expect(build("chrome", "amd64")).toMatchObject({
           status: 7,
-          calls: ["apt-security", "apt-get", "apt-get", "curl"],
+          calls: [
+            "apt-security",
+            "apt-get update",
+            "apt-get upgrade -y --no-install-recommends",
+            "apt-get install -y --no-install-recommends ca-certificates curl gnupg",
+            "curl",
+          ],
         });
       } finally {
         rmSync(temp, { recursive: true, force: true });
@@ -727,6 +838,37 @@ describe("graphical computer spec", () => {
     expect(dockerfile).toMatch(/gh --version/);
   });
 
+  it("ships file search, identification, and SQLite commands", () => {
+    const dockerfile = readFileSync(
+      path.resolve(import.meta.dirname, "../../computer/Dockerfile"),
+      "utf8",
+    );
+    const runtimeStage = dockerfile.slice(dockerfile.lastIndexOf("FROM debian:"));
+    const install = runtimeStage.match(
+      /apt-get install -y --no-install-recommends ([\s\S]*?)&& rm -rf \/var\/lib\/apt\/lists\/\*/,
+    )?.[1];
+    expect(install).toBeDefined();
+    const packages = install?.split(/\s+/);
+    // Every apt package behind a command the shell environment map names.
+    for (const name of [
+      "curl",
+      "git",
+      "jq",
+      "openssh-client",
+      "unzip",
+      "ripgrep",
+      "fd-find",
+      "file",
+      "sqlite3",
+    ]) {
+      expect(packages).toContain(name);
+    }
+    expect(runtimeStage).toContain("ln -s /usr/bin/fdfind /usr/local/bin/fd");
+    for (const command of ["rg", "fd", "file", "sqlite3"]) {
+      expect(runtimeStage).toContain(`&& ${command} --version`);
+    }
+  });
+
   it("ships document text extractors", () => {
     const root = path.resolve(import.meta.dirname, "../../computer");
     const dockerfile = readFileSync(path.join(root, "Dockerfile"), "utf8");
@@ -739,6 +881,22 @@ describe("graphical computer spec", () => {
     expect(dockerfile).toMatch(/pdfinfo -v/);
     expect(dockerfile).toMatch(/pandoc --version/);
     expect(dockerfile).toMatch(/import openpyxl/);
+  });
+
+  it("ships search and inspection tools agents reach for", () => {
+    const root = path.resolve(import.meta.dirname, "../../computer");
+    const dockerfile = readFileSync(path.join(root, "Dockerfile"), "utf8");
+    expect(dockerfile).toMatch(/\bripgrep\b/);
+    expect(dockerfile).toMatch(/\bfd-find\b/);
+    // "file" is a common word in the Dockerfile; anchor it to the package list.
+    expect(dockerfile).toMatch(/^ {4}file \\/m);
+    expect(dockerfile).toMatch(/\bsqlite3\b/);
+    // Debian names fd-find's binary fdfind; the image exposes it as fd.
+    expect(dockerfile).toMatch(/ln -s \/usr\/bin\/fdfind \/usr\/local\/bin\/fd/);
+    expect(dockerfile).toMatch(/rg --version/);
+    expect(dockerfile).toMatch(/fd --version/);
+    expect(dockerfile).toMatch(/file --version/);
+    expect(dockerfile).toMatch(/sqlite3 --version/);
   });
 
   it.skipIf(process.platform === "win32")(
@@ -816,7 +974,10 @@ describe("graphical computer spec", () => {
           "[begin] (Desktop)\n[exec] (Browser) {/tmp/rakazo/browser-launch-1}\n[end]\n",
         );
         writeFileSync(initPath, init);
-        const lines = generated.replaceAll("/tmp/fluxbox-home-1", fluxHome).split("\n");
+        const lines = generated
+          .replaceAll("/tmp/fluxbox-home-1", fluxHome)
+          .replaceAll("/etc/rakazo/fluxbox/menu", path.join(temp, "no-image-menu"))
+          .split("\n");
         const start = lines.indexOf(`mkdir -p ${fluxHome}/.fluxbox`);
         const end = lines.findIndex((line, index) => index > start && line === "fi");
         expect(start).toBeGreaterThanOrEqual(0);
@@ -996,6 +1157,57 @@ describe("graphical computer spec", () => {
         expect(run("pt_BR:pt").accept).toEqual(["--accept-lang=pt-BR,pt,en-US,en"]);
         expect(run("en-GB").accept).toEqual(["--accept-lang=en-GB,en"]);
         for (const value of ["", "pl;id", "-x", "pl pl"]) expect(run(value).accept).toEqual([]);
+      } finally {
+        rmSync(temp, { recursive: true, force: true });
+      }
+    },
+  );
+
+  it.skipIf(process.platform === "win32")(
+    "passes the operator's PAC URL to the browser as one flag, and nothing when unset",
+    () => {
+      const root = path.resolve(import.meta.dirname, "../../computer");
+      const temp = mkdtempSync(path.join(tmpdir(), "rakazo-browser-proxy-pac-"));
+      const bin = path.join(temp, "bin");
+      const capture = path.join(temp, "args");
+      mkdirSync(bin);
+      // A path the unquoted flag list would glob a data: URL's * into.
+      mkdirSync(path.join(temp, "data:text"));
+      writeFileSync(path.join(temp, "data:text", "plain"), "");
+      const chromium = path.join(bin, "chromium");
+      writeFileSync(chromium, '#!/bin/sh\nprintf "%s\\n" "$@" > "$RAKAZO_TEST_ARGS"\n');
+      chmodSync(chromium, 0o755);
+      const run = (pac: string | undefined, args: string[] = []) => {
+        const { RAKAZO_BROWSER_PROXY_PAC_URL: _host, ...env } = process.env;
+        const result = spawnSync("sh", [path.join(root, "rakazo-browser"), ...args], {
+          cwd: temp,
+          env: {
+            ...env,
+            ...(pac === undefined ? {} : { RAKAZO_BROWSER_PROXY_PAC_URL: pac }),
+            DISPLAY: ":1",
+            HOME: path.join(temp, "home"),
+            PATH: `${bin}${path.delimiter}${process.env.PATH ?? ""}`,
+            RAKAZO_TEST_ARGS: capture,
+          },
+          encoding: "utf8",
+        });
+        expect(result.status, result.error?.message ?? result.stderr).toBe(0);
+        return readFileSync(capture, "utf8")
+          .trim()
+          .split(/\r?\n/)
+          .filter((arg) => arg.startsWith("--proxy-pac-url"));
+      };
+      try {
+        expect(run(undefined)).toEqual([]);
+        expect(run("")).toEqual([]);
+        const url = "https://proxy.example.com/proxy.pac";
+        expect(run(url)).toEqual([`--proxy-pac-url=${url}`]);
+        expect(run(url, [`--user-data-dir=${path.join(temp, "custom")}`])).toEqual([
+          `--proxy-pac-url=${url}`,
+        ]);
+        expect(run("data:text/*")).toEqual(["--proxy-pac-url=data:text/*"]);
+        for (const value of [`${url} --no-sandbox`, `${url}\tx`, `${url}\nx`])
+          expect(run(value)).toEqual([]);
       } finally {
         rmSync(temp, { recursive: true, force: true });
       }
@@ -1758,6 +1970,8 @@ describe("graphical computer spec", () => {
               "spec = importlib.util.spec_from_file_location('control', sys.argv[1])",
               "module = importlib.util.module_from_spec(spec)",
               "spec.loader.exec_module(module)",
+              // The fixture launcher lives outside the image's trusted command folders.
+              "module.CHILD_PATH = sys.argv[3] + ':' + module.CHILD_PATH",
               "argv = ['env', 'DISPLAY=:1', 'rakazo-browser', sys.argv[2]]",
               "try:",
               "    module.run_control_argv(argv, ':1')",
@@ -1769,6 +1983,7 @@ describe("graphical computer spec", () => {
             ].join("\n"),
             path.join(root, "control.py"),
             "https://example.com/unanswered",
+            bin,
           ],
           { env: launchEnv, encoding: "utf8" },
         );
@@ -2119,6 +2334,39 @@ describe("graphical computer spec", () => {
       "20",
       "click",
       "1",
+    ]);
+  });
+
+  it("maps DOM key names to X11 keysyms for xdotool", () => {
+    expect(xdotoolCommand({ kind: "key", key: "PageDown" })).toEqual([
+      "xdotool",
+      "key",
+      "--clearmodifiers",
+      "Page_Down",
+    ]);
+    expect(xdotoolCommand({ kind: "key", key: "ArrowDown" })).toEqual([
+      "xdotool",
+      "key",
+      "--clearmodifiers",
+      "Down",
+    ]);
+    expect(xdotoolCommand({ kind: "key", key: "ArrowLeft", modifiers: ["ctrl"] })).toEqual([
+      "xdotool",
+      "key",
+      "--clearmodifiers",
+      "ctrl+Left",
+    ]);
+    expect(xdotoolCommand({ kind: "key", key: "a" })).toEqual([
+      "xdotool",
+      "key",
+      "--clearmodifiers",
+      "a",
+    ]);
+    expect(xdotoolCommand({ kind: "key", key: "F5" })).toEqual([
+      "xdotool",
+      "key",
+      "--clearmodifiers",
+      "F5",
     ]);
   });
 });

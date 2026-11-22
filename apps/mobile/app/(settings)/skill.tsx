@@ -1,7 +1,8 @@
-import type { AgentSkill } from "@rakazo/contracts";
-import type { NativeStackNavigationOptions } from "expo-router";
-import { useLocalSearchParams, useNavigation, useRouter } from "expo-router";
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { ph } from "@lingui/core/macro";
+import { useLingui } from "@lingui/react/macro";
+import { useQuery } from "@tanstack/react-query";
+import { useLocalSearchParams, useRouter } from "expo-router";
+import { useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -12,14 +13,14 @@ import {
   TextInput,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { NativeActionButton } from "../../components/native-action-button";
-import { rpc } from "../../lib/api";
-import { mobileTokens } from "../../lib/appearance";
-import { useI18n } from "../../lib/i18n";
-import { native, useThemedStyles } from "../../lib/native";
-import { iosAtLeast } from "../../lib/native-controls";
-import { useSideInsets } from "../../lib/side-insets";
-import { errorText } from "../../lib/user-error";
+import { NativeActionButton } from "../../components/native/native-action-button";
+import { errorText } from "../../lib/api/user-error";
+import { mobileTokens } from "../../lib/appearance/appearance";
+import { useSideInsets } from "../../lib/layout/side-insets";
+import { announceToScreenReader } from "../../lib/native/announce";
+import { native, useThemedStyles } from "../../lib/native/native";
+import { useScreenHeader } from "../../lib/navigation/screen-header";
+import { formRead, queryClient, rpcQuery, useSave } from "../../lib/query/query";
 
 const NEW_SKILL_TEMPLATE = `---
 name: my-skill
@@ -31,120 +32,86 @@ Steps the agent should follow.
 
 /** One skill's SKILL.md: your own skills are edited here, built-in and plugin skills only read. */
 export default function SkillScreen() {
-  const params = useLocalSearchParams<{ id?: string }>();
-  const navigation = useNavigation();
+  const { id } = useLocalSearchParams<{ id?: string }>();
+  // A different skill in the same screen starts from its own content, never the previous one's.
+  return <SkillEditor key={id ?? ""} id={id} />;
+}
+
+function SkillEditor({ id }: { id?: string }) {
   const router = useRouter();
   const sideInsets = useSideInsets();
   const styles = useThemedStyles(createStyles);
-  const { t } = useI18n();
-  const [skill, setSkill] = useState<AgentSkill | null>(null);
-  const [draft, setDraft] = useState(params.id ? "" : NEW_SKILL_TEMPLATE);
-  const [loading, setLoading] = useState(Boolean(params.id));
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const live = useRef(true);
-  const [attempt, setAttempt] = useState(0);
+  const { t } = useLingui();
+  const skillRead = formRead(rpcQuery("agentSkills/get", { skillId: id ?? "" }));
+  const skillQuery = useQuery({ ...skillRead, enabled: Boolean(id) }, queryClient);
+  const skill = skillQuery.data ?? null;
+  const loading = skillQuery.isFetching && !skill;
+  const [edited, setDraft] = useState<string | null>(null);
+  const draft = edited ?? skill?.content ?? (id ? "" : NEW_SKILL_TEMPLATE);
+  const saveFailure = (failure: Error) => errorText(failure, t`Could not save skill`);
+  const deleteFailure = (failure: Error) => errorText(failure, t`Could not delete skill`);
 
-  useEffect(() => {
-    live.current = true;
-    if (params.id) {
-      setLoading(true);
-      setError(null);
-      rpc("agentSkills/get", { skillId: params.id })
-        .then((found) => {
-          if (!live.current) return;
-          setSkill(found);
-          setDraft(found.content);
-        })
-        .catch((reason) => {
-          if (live.current) setError(errorText(reason, t("Could not load skill")));
-        })
-        .finally(() => {
-          if (live.current) setLoading(false);
-        });
-    }
-    return () => {
-      live.current = false;
-    };
-  }, [params.id, t, attempt]);
+  const save = useSave({
+    save: async (content: string, send) => {
+      if (skill) return send("agentSkills/update", { skillId: skill.id, content });
+      await send("agentSkills/create", { content });
+      return null;
+    },
+    onSaved: (saved) => {
+      if (saved) queryClient.setQueryData(skillRead.queryKey, saved);
+      else router.back();
+    },
+    onFailed: (failure) => announceToScreenReader(saveFailure(failure)),
+  });
+  const remove = useSave({
+    save: (skillId: string, send) => send("agentSkills/remove", { skillId }),
+    onSaved: () => router.back(),
+    onFailed: (failure) => announceToScreenReader(deleteFailure(failure)),
+    closesScreen: true,
+  });
+  const busy = save.pending || remove.pending;
+  const error = save.error
+    ? saveFailure(save.error)
+    : remove.error
+      ? deleteFailure(remove.error)
+      : skillQuery.error
+        ? errorText(skillQuery.error, t`Could not load skill`)
+        : null;
 
   // An existing skill that failed to load must not be saved as a new one.
-  const unloaded = Boolean(params.id) && !skill;
+  const unloaded = Boolean(id) && !skill;
   const readOnly = Boolean(skill?.readOnly);
-  const canSave =
-    !readOnly && !unloaded && !busy && Boolean(draft.trim()) && draft !== (skill?.content ?? "");
-
-  async function save() {
-    setBusy(true);
-    setError(null);
-    try {
-      if (skill) setSkill(await rpc("agentSkills/update", { skillId: skill.id, content: draft }));
-      else {
-        await rpc("agentSkills/create", { content: draft });
-        router.back();
-      }
-    } catch (reason) {
-      if (live.current) setError(errorText(reason, t("Could not save skill")));
-    } finally {
-      if (live.current) setBusy(false);
-    }
-  }
-  const saveRef = useRef(save);
-  saveRef.current = save;
+  const canSave = !unloaded && Boolean(draft.trim()) && draft !== (skill?.content ?? "");
 
   function confirmDelete() {
     if (!skill) return;
-    Alert.alert(t("Delete {name}?", { name: skill.name }), undefined, [
-      { text: t("Cancel"), style: "cancel" },
+    Alert.alert(t`Delete ${ph({ name: skill.name })}?`, undefined, [
+      { text: t`Cancel`, style: "cancel" },
       {
-        text: t("Delete"),
+        text: t`Delete`,
         style: "destructive",
         onPress: () => {
-          setBusy(true);
-          setError(null);
-          rpc("agentSkills/remove", { skillId: skill.id })
-            .then(() => router.back())
-            .catch((reason) => {
-              if (!live.current) return;
-              setError(errorText(reason, t("Could not delete skill")));
-              setBusy(false);
-            });
+          save.reset();
+          remove.run(skill.id);
         },
       },
     ]);
   }
 
-  useLayoutEffect(() => {
-    const title = skill?.name ?? (params.id ? "" : t("New skill"));
-    navigation.setOptions({
-      title,
-      ...(readOnly
-        ? { headerRight: undefined, unstable_headerRightItems: undefined }
-        : iosAtLeast(26)
-          ? {
-              unstable_headerRightItems: () => [
-                {
-                  type: "button" as const,
-                  label: t("Save"),
-                  variant: "prominent" as const,
-                  tintColor: mobileTokens().primary,
-                  disabled: !canSave,
-                  onPress: () => void saveRef.current(),
-                },
-              ],
-            }
-          : {
-              headerRight: () => (
-                <NativeActionButton
-                  disabled={!canSave}
-                  fill={false}
-                  label={t("Save")}
-                  onPress={() => void saveRef.current()}
-                />
-              ),
-            }),
-    } satisfies NativeStackNavigationOptions);
-  }, [navigation, skill?.name, params.id, readOnly, canSave, t]);
+  useScreenHeader({
+    title: skill?.name ?? (id ? "" : t`New skill`),
+    action: readOnly
+      ? null
+      : {
+          label: t`Save`,
+          disabled: !canSave,
+          busy,
+          onPress: () => {
+            remove.reset();
+            save.run(draft);
+          },
+        },
+  });
 
   return (
     <SafeAreaView edges={["bottom"]} style={styles.screen}>
@@ -155,7 +122,7 @@ export default function SkillScreen() {
         keyboardShouldPersistTaps="handled"
       >
         {loading ? (
-          <ActivityIndicator color={native.secondaryLabel} accessibilityLabel={t("Loading…")} />
+          <ActivityIndicator color={native.secondaryLabel} accessibilityLabel={t`Loading…`} />
         ) : unloaded ? null : (
           <TextInput
             value={draft}
@@ -178,8 +145,8 @@ export default function SkillScreen() {
         {unloaded && !loading ? (
           <NativeActionButton
             fill={false}
-            label={t("Retry")}
-            onPress={() => setAttempt((count) => count + 1)}
+            label={t`Retry`}
+            onPress={() => void skillQuery.refetch()}
             prominence="secondary"
           />
         ) : null}
@@ -187,7 +154,7 @@ export default function SkillScreen() {
           <NativeActionButton
             disabled={busy}
             fill={false}
-            label={t("Delete")}
+            label={t`Delete`}
             onPress={confirmDelete}
             prominence="destructive"
           />

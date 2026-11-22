@@ -20,7 +20,7 @@ export function CollaborationMarker({
 }) {
   const parts = splitPeerLabel(label, peerName);
   return (
-    <div className="flex min-w-0 max-w-full justify-center py-1">
+    <div className="flex min-w-0 max-w-full justify-center">
       <button
         type="button"
         data-testid="peer-receipt-chip"
@@ -46,8 +46,12 @@ export function ActiveBotGlyph({ bots, label }: { bots: GroupAvatarMember[]; lab
   return (
     <div role="status" className="flex min-h-10 min-w-0 items-center gap-2.5 px-1">
       <GroupAvatar members={bots} size={28} />
-      <span dir="auto" className="min-w-0 truncate text-body-lg text-muted-foreground text-shimmer">
-        {label}
+      <span
+        key={label}
+        dir="auto"
+        className="block min-w-0 truncate text-body-lg text-muted-foreground animate-in fade-in-0 slide-in-from-bottom-1 duration-150 motion-reduce:animate-none"
+      >
+        <span className="text-shimmer">{label}</span>
       </span>
     </div>
   );

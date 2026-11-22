@@ -1,9 +1,9 @@
-import { Plural, Trans, useLingui } from "@lingui/react/macro";
-import type { ThinkingLevel } from "@rakazo/contracts";
+import { Trans, useLingui } from "@lingui/react/macro";
+import { isUnlistedCompatibleModel } from "@rakazo/core";
 import {
   Button,
+  Disclosure,
   Input,
-  ModelThinkingOptions,
   Select,
   SelectContent,
   SelectGroup,
@@ -12,13 +12,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@rakazo/ui-web";
-import { Check, Copy } from "lucide-react";
-import { FoundModelPicker } from "../../components/FoundModelPicker";
-import {
-  ModelPreflightFeedback,
-  modelPreflightTestingLabel,
-} from "../../components/ModelConnectionPreflightNotice";
-import { ModelHeadersEditor } from "../../components/ModelHeadersEditor";
+import { FoundModelPicker } from "../../components/models/FoundModelPicker";
+import { ModelHeadersEditor } from "../../components/models/ModelHeadersEditor";
+import { SubscriptionSignInSteps } from "../../components/models/SubscriptionSignInSteps";
 import { CompatibleKeyField } from "../model-settings/compatible-key-field";
 import type { OnboardingModel } from "./use-onboarding-model";
 
@@ -32,24 +28,23 @@ export function ModelStep({ model, fieldId }: { model: OnboardingModel; fieldId:
     apiKey,
     cancelOAuthAttempt,
     canSaveModel,
+    compatibleKeyRequired,
     chooseProvider,
     credits,
     endpointPreset,
     error,
     fundWithCredits,
     gatewayId,
-    invalidatePreflight,
+    projectId,
+    region,
     isOpenAiCompatible,
     modelId,
     modelItems,
     modelsForProvider,
     needsGateway,
+    needsProject,
     needsRouting,
     notice,
-    preflightFailure,
-    preflightSuccess,
-    preflightTarget,
-    preflightTesting,
     provider,
     providerItems,
     providerOptions,
@@ -58,10 +53,11 @@ export function ModelStep({ model, fieldId }: { model: OnboardingModel; fieldId:
     selected,
     setAccountId,
     setGatewayId,
+    setProjectId,
+    setRegion,
     setModelId,
     setThinkingLevel,
     subscriptionSignIn,
-    testApiKeyConnection,
     updateApiKey,
   } = model;
 
@@ -108,7 +104,9 @@ export function ModelStep({ model, fieldId }: { model: OnboardingModel; fieldId:
       </div>
       {provider ? (
         <>
-          {isOpenAiCompatible ? <CompatibleServerFields model={model} fieldId={fieldId} /> : null}
+          {isOpenAiCompatible && !endpointPreset ? (
+            <CompatibleServerUrl model={model} fieldId={fieldId} />
+          ) : null}
           {subscriptionSignIn ? <SubscriptionSignIn model={model} /> : null}
           {needsRouting && acceptsKey ? (
             <div className="mt-4 grid gap-4">
@@ -116,26 +114,30 @@ export function ModelStep({ model, fieldId }: { model: OnboardingModel; fieldId:
                 htmlFor={`${fieldId}-account-id`}
                 className="block text-body font-medium text-foreground"
               >
-                <Trans>Account ID</Trans>
+                {needsProject ? <Trans>Project ID</Trans> : <Trans>Account ID</Trans>}
                 <Input
                   id={`${fieldId}-account-id`}
-                  value={accountId}
-                  onChange={(event) => setAccountId(event.target.value)}
+                  value={needsProject ? projectId : accountId}
+                  onChange={(event) =>
+                    (needsProject ? setProjectId : setAccountId)(event.target.value)
+                  }
                   autoComplete="off"
                   spellCheck={false}
                   className="mt-2"
                 />
               </label>
-              {needsGateway ? (
+              {needsGateway || needsProject ? (
                 <label
                   htmlFor={`${fieldId}-gateway-id`}
                   className="block text-body font-medium text-foreground"
                 >
-                  <Trans>Gateway ID</Trans>
+                  {needsProject ? <Trans>Region</Trans> : <Trans>Gateway ID</Trans>}
                   <Input
                     id={`${fieldId}-gateway-id`}
-                    value={gatewayId}
-                    onChange={(event) => setGatewayId(event.target.value)}
+                    value={needsProject ? region : gatewayId}
+                    onChange={(event) =>
+                      (needsProject ? setRegion : setGatewayId)(event.target.value)
+                    }
                     autoComplete="off"
                     spellCheck={false}
                     className="mt-2"
@@ -148,14 +150,14 @@ export function ModelStep({ model, fieldId }: { model: OnboardingModel; fieldId:
             isOpenAiCompatible ? (
               <CompatibleKeyField
                 className="mt-4 block text-body text-muted-foreground"
-                keyRequired={Boolean(endpointPreset)}
+                keyRequired={compatibleKeyRequired}
               >
                 <Input
                   aria-label={t`API key`}
                   value={apiKey}
                   onChange={(e) => updateApiKey(e.target.value)}
-                  required={Boolean(endpointPreset)}
-                  placeholder={endpointPreset ? undefined : t`Optional`}
+                  required={compatibleKeyRequired}
+                  placeholder={compatibleKeyRequired ? undefined : t`Optional`}
                   type="password"
                   autoComplete="new-password"
                   className="mt-2"
@@ -179,27 +181,8 @@ export function ModelStep({ model, fieldId }: { model: OnboardingModel; fieldId:
               </label>
             )
           ) : null}
-          {acceptsKey && !isOpenAiCompatible && selected?.catalogProbe ? (
-            <>
-              <Button
-                type="button"
-                variant="outline"
-                className="mt-3"
-                disabled={preflightTesting || apiKey.trim().length < 8}
-                onClick={() => void testApiKeyConnection()}
-              >
-                {modelPreflightTestingLabel(
-                  preflightTesting && preflightTarget === "api-key",
-                  "api-key",
-                )}
-              </Button>
-              {preflightTarget === "api-key" ? (
-                <ModelPreflightFeedback success={preflightSuccess} failure={preflightFailure} />
-              ) : null}
-            </>
-          ) : null}
-          {/* The model is chosen once the account is connected; sign-in uses the default. */}
-          {!isOpenAiCompatible && acceptsKey && apiKey.trim() ? (
+          {isOpenAiCompatible ? <CompatibleModelSelection model={model} /> : null}
+          {!isOpenAiCompatible && acceptsKey && modelItems.length ? (
             <div className="mt-6 block text-body text-foreground">
               <span className="font-medium">
                 <Trans>Model</Trans>
@@ -209,10 +192,9 @@ export function ModelStep({ model, fieldId }: { model: OnboardingModel; fieldId:
                 onValueChange={(value) => {
                   if (typeof value !== "string" || !value) return;
                   if (value === modelId) return;
-                  cancelOAuthAttempt();
+                  cancelOAuthAttempt("replaced");
                   setModelId(value);
                   setThinkingLevel(null);
-                  invalidatePreflight();
                 }}
                 items={modelItems}
               >
@@ -250,65 +232,46 @@ export function ModelStep({ model, fieldId }: { model: OnboardingModel; fieldId:
   );
 }
 
-/** Server URL, found or typed model id, and advanced options for an OpenAI-compatible server. */
-function CompatibleServerFields({ model, fieldId }: { model: OnboardingModel; fieldId: string }) {
+function CompatibleServerUrl({ model, fieldId }: { model: OnboardingModel; fieldId: string }) {
+  const { t } = useLingui();
+  return (
+    <label
+      htmlFor={`${fieldId}-base-url`}
+      className="mt-4 block text-body font-medium text-foreground"
+    >
+      <Trans>Server URL</Trans>
+      <Input
+        id={`${fieldId}-base-url`}
+        value={model.baseUrl}
+        onChange={(e) => model.updateBaseUrl(e.target.value)}
+        aria-label={t`OpenAI-compatible server URL`}
+        placeholder="http://127.0.0.1:8000/v1"
+        autoComplete="off"
+        className="mt-2"
+      />
+    </label>
+  );
+}
+
+function CompatibleModelSelection({ model }: { model: OnboardingModel }) {
   const { t } = useLingui();
   const {
-    baseUrl,
-    contextWindow,
+    endpointPreset,
     headerRows,
-    invalidatePreflight,
     manualModelId,
-    maxImagesPerPrompt,
-    maxTokens,
     modelId,
-    preflightFailure,
-    preflightTarget,
+    discoverModels,
+    probeError,
     probeModels,
-    probeServerModels,
     probing,
-    reasoning,
     resetOpenAiCompatibleProbe,
-    setContextWindow,
     setHeaderRows,
     setManualModelId,
-    setMaxImagesPerPrompt,
-    setMaxTokens,
     setModelId,
-    setReasoning,
-    setSupportsImages,
-    setThinkingLevel,
-    supportsImages,
-    thinkingLevel,
-    updateBaseUrl,
   } = model;
 
   return (
-    <div className="mt-6 block text-body text-foreground">
-      <label htmlFor={`${fieldId}-base-url`} className="block font-medium">
-        <Trans>Server URL</Trans>
-        <Input
-          id={`${fieldId}-base-url`}
-          value={baseUrl}
-          onChange={(e) => updateBaseUrl(e.target.value)}
-          aria-label={t`OpenAI-compatible server URL`}
-          placeholder="http://127.0.0.1:8000/v1"
-          autoComplete="off"
-          className="mt-2"
-        />
-      </label>
-      <div className="mt-3">
-        <Button
-          variant="outline"
-          disabled={probing || !baseUrl.trim()}
-          onClick={() => void probeServerModels()}
-        >
-          {probing ? <Trans>Finding…</Trans> : <Trans>Find models</Trans>}
-        </Button>
-        {preflightTarget === "compatible" ? (
-          <ModelPreflightFeedback success={null} failure={preflightFailure} />
-        ) : null}
-      </div>
+    <div className="mt-4 block text-body text-foreground">
       <div className="mt-4 block">
         <span className="font-medium">
           <Trans>Model</Trans>
@@ -318,7 +281,6 @@ function CompatibleServerFields({ model, fieldId }: { model: OnboardingModel; fi
             models={probeModels}
             value={modelId}
             onChange={(next) => {
-              invalidatePreflight();
               setManualModelId(next === CUSTOM_MODEL_OPTION);
               setModelId(next === CUSTOM_MODEL_OPTION ? "" : next);
             }}
@@ -330,7 +292,6 @@ function CompatibleServerFields({ model, fieldId }: { model: OnboardingModel; fi
             onChange={(e) => {
               setManualModelId(true);
               setModelId(e.target.value);
-              invalidatePreflight();
             }}
             aria-label={t`Model id`}
             placeholder="exact-model-id"
@@ -345,71 +306,59 @@ function CompatibleServerFields({ model, fieldId }: { model: OnboardingModel; fi
             onClick={() => {
               setManualModelId(false);
               setModelId(probeModels[0] ?? "");
-              invalidatePreflight();
             }}
           >
             <Trans>Use a found model</Trans>
           </Button>
         ) : null}
       </div>
-      <ModelThinkingOptions
-        reasoning={reasoning}
-        onReasoningChange={(value) => {
-          setReasoning(value);
-          if (!value) setThinkingLevel(null);
-        }}
-        advancedLabel={t`Advanced`}
-        thinkingLabel={t`Supports thinking`}
-        thinkingLevel={thinkingLevel}
-        onThinkingLevelChange={(value) => setThinkingLevel(value as ThinkingLevel | null)}
-        thinkingLevelOptions={[
-          { value: "minimal", label: t`Minimal` },
-          { value: "low", label: t`Low` },
-          { value: "medium", label: t`Medium` },
-          { value: "high", label: t`High` },
-          { value: "xhigh", label: t`Extra high` },
-          { value: "max", label: t`Max` },
-        ]}
-        thinkingLevelLabel={t`Reasoning effort`}
-        thinkingLevelDefaultLabel={t`Default`}
-        maxTokens={maxTokens}
-        onMaxTokensChange={setMaxTokens}
-        maxTokensLabel={t`Maximum output tokens`}
-        contextWindow={contextWindow}
-        onContextWindowChange={setContextWindow}
-        contextWindowLabel={t`Context limit`}
-        supportsImages={supportsImages}
-        onSupportsImagesChange={setSupportsImages}
-        imagesLabel={t`Supports images`}
-        maxImagesPerPrompt={maxImagesPerPrompt}
-        onMaxImagesPerPromptChange={setMaxImagesPerPrompt}
-        maxImagesLabel={t`Maximum images per request`}
-      >
-        <ModelHeadersEditor
-          rows={headerRows}
-          onChange={(rows) => {
-            setHeaderRows(rows);
-            resetOpenAiCompatibleProbe();
-            invalidatePreflight();
-          }}
-        />
-      </ModelThinkingOptions>
+      {isUnlistedCompatibleModel(modelId, probeModels) ? (
+        <p className="mt-2 text-muted-foreground" role="status">
+          <Trans>The server didn’t list this model.</Trans>
+        </p>
+      ) : null}
+      {probing ? (
+        <p className="mt-2 text-muted-foreground" role="status">
+          <Trans>Finding…</Trans>
+        </p>
+      ) : null}
+      {probeError ? (
+        <div className="mt-2 flex flex-wrap items-center gap-2">
+          <p className="text-destructive" role="status">
+            {probeError}
+          </p>
+          <Button type="button" variant="outline" size="xs" onClick={discoverModels}>
+            <Trans>Try again</Trans>
+          </Button>
+        </div>
+      ) : null}
+      {endpointPreset ? null : (
+        <Disclosure className="mt-4 text-body text-muted-foreground" summary={t`Advanced`}>
+          <ModelHeadersEditor
+            rows={headerRows}
+            onChange={(rows) => {
+              setHeaderRows(rows);
+              resetOpenAiCompatibleProbe();
+            }}
+          />
+        </Disclosure>
+      )}
     </div>
   );
 }
 
 /** Signing in with a subscription: the start button, then the code or link to finish. */
 function SubscriptionSignIn({ model }: { model: OnboardingModel }) {
-  const { t } = useLingui();
   const {
     beginSelectedSubscriptionSignIn,
     cancelOAuthAttempt,
     codeCopied,
     copyOAuthCode,
+    reportSignInStep,
     oauth,
     oauthPending,
     pasteCode,
-    popupBlocked,
+    selected,
     setPasteCode,
     signInLabel,
     submitOAuthCode,
@@ -417,111 +366,23 @@ function SubscriptionSignIn({ model }: { model: OnboardingModel }) {
 
   return (
     <div className="mt-4">
-      {oauth ? (
-        <div className="rounded-lg border border-border px-3.5 py-3">
-          {oauth.mode === "auth-url" ? (
-            <>
-              <p className="text-body text-muted-foreground">
-                <Trans>
-                  Sign in at{" "}
-                  <a
-                    href={oauth.verificationUri}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="text-foreground underline"
-                  >
-                    {new URL(oauth.verificationUri).hostname}
-                  </a>
-                  , then paste the code here.
-                </Trans>
-              </p>
-              <div className="mt-3 flex items-center gap-2">
-                <Input
-                  value={pasteCode}
-                  onChange={(e) => setPasteCode(e.target.value)}
-                  aria-label={t`Authorization code`}
-                  autoComplete="off"
-                  spellCheck={false}
-                />
-                <Button disabled={!pasteCode.trim()} onClick={() => void submitOAuthCode()}>
-                  <Trans>Submit</Trans>
-                </Button>
-              </div>
-              <p className="mt-2 text-body text-muted-foreground">
-                <Plural
-                  value={Math.ceil(oauth.expiresInSeconds / 60)}
-                  one="Waiting for sign-in — the link expires in about # minute."
-                  other="Waiting for sign-in — the link expires in about # minutes."
-                />
-              </p>
-            </>
-          ) : (
-            <>
-              <p className="text-body text-muted-foreground">
-                {popupBlocked ? (
-                  <Trans>
-                    Open{" "}
-                    <a
-                      href={oauth.verificationUri}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="text-foreground underline"
-                    >
-                      {oauth.verificationUri.replace(/^https:\/\//, "")}
-                    </a>{" "}
-                    and enter this code:
-                  </Trans>
-                ) : (
-                  <Trans>
-                    A sign-in tab opened at{" "}
-                    <a
-                      href={oauth.verificationUri}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="text-foreground underline"
-                    >
-                      {oauth.verificationUri.replace(/^https:\/\//, "")}
-                    </a>
-                    . Enter this code there — this window keeps waiting:
-                  </Trans>
-                )}
-              </p>
-              <div className="mt-2 flex items-center gap-3">
-                <p className="font-mono text-heading2 tracking-[0.2em] text-foreground">
-                  {oauth.userCode}
-                </p>
-                <Button variant="outline" size="sm" onClick={() => copyOAuthCode(oauth.userCode)}>
-                  {codeCopied ? (
-                    <Check size={14} strokeWidth={1.8} aria-hidden="true" />
-                  ) : (
-                    <Copy size={14} strokeWidth={1.8} aria-hidden="true" />
-                  )}
-                  {codeCopied ? <Trans>Copied</Trans> : <Trans>Copy</Trans>}
-                </Button>
-              </div>
-              <p className="mt-2 text-body text-muted-foreground">
-                <Plural
-                  value={Math.ceil(oauth.expiresInSeconds / 60)}
-                  one="Waiting for sign-in — the code expires in about # minute."
-                  other="Waiting for sign-in — the code expires in about # minutes."
-                />
-              </p>
-            </>
-          )}
-          <Button
-            variant="ghost"
-            size="sm"
-            className="mt-2 -ml-2 text-muted-foreground"
-            onClick={() => cancelOAuthAttempt()}
-          >
-            <Trans>Cancel</Trans>
-          </Button>
-        </div>
-      ) : (
-        <Button disabled={oauthPending} onClick={() => beginSelectedSubscriptionSignIn()}>
-          {oauthPending ? <Trans>Starting…</Trans> : signInLabel}
-        </Button>
-      )}
+      <SubscriptionSignInSteps
+        oauth={oauth}
+        setup={selected?.signInSetup}
+        startLabel={signInLabel}
+        starting={oauthPending}
+        onStart={() => beginSelectedSubscriptionSignIn()}
+        onRestart={() => {
+          cancelOAuthAttempt("replaced");
+          beginSelectedSubscriptionSignIn();
+        }}
+        codeCopied={codeCopied}
+        onCopyCode={copyOAuthCode}
+        pasteCode={pasteCode}
+        onPasteCodeChange={setPasteCode}
+        onSubmitCode={() => void submitOAuthCode()}
+        onPageOpened={() => reportSignInStep("page_opened")}
+      />
     </div>
   );
 }

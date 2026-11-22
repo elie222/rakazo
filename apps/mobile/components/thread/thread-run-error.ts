@@ -1,17 +1,15 @@
-import type { BillingStatus } from "@rakazo/contracts";
 import { computerHoursOut } from "@rakazo/contracts";
+import { useQuery } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
 import { useEffect, useState } from "react";
-import { rpc } from "../../lib/api";
-import { useI18n } from "../../lib/i18n";
-import type { MobileSnapshot } from "../../lib/mobile-types";
-import { openModelSettings } from "../../lib/model-settings";
-import { computerHoursOutCopy, runErrorActionLabel } from "../../lib/run-error-presentation";
-import { useRunError } from "../run-error-sheet";
+import type { MobileSnapshot } from "../../lib/api/mobile-types";
+import { computerHoursOutCopy, runErrorActionLabel } from "../../lib/cards/run-error-presentation";
+import { openModelSettings } from "../../lib/models/model-settings";
+import { queryClient, rpcQuery } from "../../lib/query/query";
+import { useRunError } from "../cards/run-error-sheet";
 
 /** The chat's failed run: its error, the recovery action, and whether its details are open. */
 export function useThreadRunError(run: MobileSnapshot["run"] | undefined, botId?: string) {
-  const { t } = useI18n();
   const router = useRouter();
   const [detailsOpen, setDetailsOpen] = useState(false);
   const runError = run?.status === "failed" ? (run.error ?? null) : null;
@@ -19,20 +17,18 @@ export function useThreadRunError(run: MobileSnapshot["run"] | undefined, botId?
   const failedRunId = runError ? run?.id : null;
   useEffect(() => setDetailsOpen(false), [failedRunId]);
   const needsPlan = classified?.recovery === "plan";
-  const [billing, setBilling] = useState<BillingStatus | null>(null);
+  const asksBilling = needsPlan && Boolean(failedRunId);
+  const billingQuery = useQuery(
+    { ...rpcQuery("billing/status"), enabled: asksBilling },
+    queryClient,
+  );
+  const { refetch } = billingQuery;
+  // Each failed run reads the plan again, since it may have changed since the last one.
   useEffect(() => {
-    if (!needsPlan || !failedRunId) return;
-    let active = true;
-    void rpc("billing/status")
-      .then((status) => {
-        if (active) setBilling(status);
-      })
-      .catch(() => undefined);
-    return () => {
-      active = false;
-    };
-  }, [needsPlan, failedRunId]);
-  const hoursOut = needsPlan && billing ? computerHoursOutCopy(t, computerHoursOut(billing)) : null;
+    if (asksBilling) void refetch({ cancelRefetch: false });
+  }, [asksBilling, failedRunId, refetch]);
+  const billing = billingQuery.data ?? null;
+  const hoursOut = needsPlan && billing ? computerHoursOutCopy(computerHoursOut(billing)) : null;
   const normalizedRunError =
     classified && hoursOut ? { ...classified, summary: hoursOut.summary } : classified;
   const label = needsPlan
@@ -40,7 +36,7 @@ export function useThreadRunError(run: MobileSnapshot["run"] | undefined, botId?
       ? (hoursOut?.action ?? null)
       : null
     : normalizedRunError
-      ? runErrorActionLabel(t, normalizedRunError)
+      ? runErrorActionLabel(normalizedRunError)
       : null;
   const runBotId = run?.botId ?? botId;
   const runErrorAction = label

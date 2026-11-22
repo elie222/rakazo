@@ -1,91 +1,81 @@
-import type { AiConsentStatus } from "@rakazo/contracts";
-import { AI_DATA_DISCLOSURES, AI_PRIVACY_URL } from "@rakazo/contracts";
-import { useEffect, useState } from "react";
-import { ActivityIndicator, Alert, Linking, ScrollView, StyleSheet } from "react-native";
+import { ph } from "@lingui/core/macro";
+import { useLingui } from "@lingui/react/macro";
+import type { AiRecipient } from "@rakazo/contracts";
+import { AI_PRIVACY_URL } from "@rakazo/contracts";
+import { writeSaved } from "@rakazo/core/query";
+import { useIsFocused } from "expo-router";
+import { useEffect } from "react";
+import { ActivityIndicator, Alert, ScrollView, StyleSheet } from "react-native";
 import {
   SettingsFooter,
   SettingsGroup,
   SettingsRow,
   SettingsSwitch,
   useStackedSettings,
-} from "../../components/settings-group";
-import { promptAiConsent } from "../../lib/ai-consent";
+} from "../../components/settings/settings-group";
+import { errorText } from "../../lib/api/user-error";
+import { useSideInsets } from "../../lib/layout/side-insets";
+import { native, useThemedStyles } from "../../lib/native/native";
+import { openExternalUrl } from "../../lib/platform/open-url";
+import { queryClient, rpcQuery, useSave } from "../../lib/query/query";
+import { useScreenQuery } from "../../lib/query/screen-query";
+import { aiDataDisclosure, promptAiConsent } from "../../lib/settings/ai-consent";
 import {
   aiDataSharingPlaceholder,
   aiPrivacyLinks,
   groupAiRecipients,
-} from "../../lib/ai-data-sharing";
-import { rpc } from "../../lib/api";
-import { useI18n } from "../../lib/i18n";
-import { native, useThemedStyles } from "../../lib/native";
-import { useSideInsets } from "../../lib/side-insets";
-import { errorText } from "../../lib/user-error";
+} from "../../lib/settings/ai-data-sharing";
 
 export default function AiDataSharing() {
   const sideInsets = useSideInsets();
-  const { t } = useI18n();
-  const [status, setStatus] = useState<AiConsentStatus | null>(null);
-  const [pending, setPending] = useState(false);
-  const [loadFailed, setLoadFailed] = useState(false);
-  const placeholder = aiDataSharingPlaceholder(status, loadFailed);
+  const { t } = useLingui();
+  const statusRead = rpcQuery("aiConsent/status");
+  // Read on every visit: a consent prompt elsewhere, or another device, can change it meanwhile.
+  const { data, error: loadError, refetch } = useScreenQuery(statusRead);
+  const status = data ?? null;
+  const placeholder = aiDataSharingPlaceholder(status, Boolean(loadError));
   const styles = useThemedStyles(createStyles);
   const stacked = useStackedSettings();
-  const error = (cause: unknown) =>
-    Alert.alert(t("AI data sharing"), errorText(cause, t("Could not load permissions.")));
+  // A read can fail while another screen covers this one; its alert waits for the return.
+  const focused = useIsFocused();
   useEffect(() => {
-    reload();
-  }, []);
+    if (!loadError || !focused) return;
+    Alert.alert(t`AI data sharing`, errorText(loadError, t`Could not load permissions.`), [
+      { text: t`Cancel`, style: "cancel" },
+      { text: t`Retry`, onPress: () => void refetch() },
+    ]);
+  }, [loadError, focused, refetch, t]);
 
-  function reload() {
-    setLoadFailed(false);
-    void rpc("aiConsent/status")
-      .then(setStatus)
-      .catch((cause: unknown) => {
-        setLoadFailed(true);
-        Alert.alert(t("AI data sharing"), errorText(cause, t("Could not load permissions.")), [
-          { text: t("Cancel"), style: "cancel" },
-          { text: t("Retry"), onPress: reload },
-        ]);
-      });
-  }
-
-  function setAllowed(recipient: AiConsentStatus["recipients"][number], allowed: boolean) {
-    if (!status) return;
-    setPending(true);
-    void (async () => {
-      if (!allowed) setStatus(await rpc("aiConsent/revoke", { key: recipient.key }));
-      else if (await promptAiConsent(recipient, status.privacyUrl))
-        setStatus(
-          await rpc("aiConsent/allow", {
-            scope: status.scope,
-            version: status.version,
-            keys: [recipient.key],
-          }),
-        );
-    })()
-      .catch(error)
-      .finally(() => setPending(false));
-  }
+  const change = useSave({
+    save: async (ask: { recipient: AiRecipient; allowed: boolean } | "withdraw", send) => {
+      if (!status) return;
+      const saved =
+        ask === "withdraw"
+          ? await send("aiConsent/revoke", { key: null })
+          : !ask.allowed
+            ? await send("aiConsent/revoke", { key: ask.recipient.key })
+            : (await promptAiConsent(ask.recipient))
+              ? await send("aiConsent/allow", {
+                  scope: status.scope,
+                  version: status.version,
+                  keys: [ask.recipient.key],
+                })
+              : null;
+      // A read that started before the change never puts back what it replaced.
+      if (saved) await writeSaved(queryClient, statusRead.queryKey, () => saved);
+    },
+    onFailed: (cause) =>
+      Alert.alert(t`AI data sharing`, errorText(cause, t`Could not load permissions.`)),
+  });
+  const pending = change.pending;
 
   function requestWithdrawal() {
     Alert.alert(
-      t("Withdraw all permissions?"),
-      t(
-        "New mobile actions won't send data to these services. Runs already in progress and routines keep going until you stop them.",
-      ),
+      t`Withdraw all permissions?`,
+      t`New mobile actions won't send data to these services. Runs already in progress and routines keep going until you stop them.`,
       [
-        { text: t("Cancel"), style: "cancel" },
-        {
-          text: t("Withdraw"),
-          style: "destructive",
-          onPress: () => {
-            setPending(true);
-            void rpc("aiConsent/revoke", { key: null })
-              .then(setStatus)
-              .catch(error)
-              .finally(() => setPending(false));
-          },
-        },
+        { text: t`Cancel`, style: "cancel" },
+        { text: t`Withdraw`, style: "destructive", onPress: () => change.run("withdraw") },
       ],
     );
   }
@@ -98,47 +88,45 @@ export default function AiDataSharing() {
     >
       {placeholder === "loading" && <ActivityIndicator />}
       {placeholder === "failed" && (
-        <SettingsFooter>{t("Could not load permissions.")}</SettingsFooter>
+        <SettingsFooter>{t`Could not load permissions.`}</SettingsFooter>
       )}
-      {placeholder === "empty" && (
-        <SettingsFooter>{t("No AI services configured.")}</SettingsFooter>
-      )}
+      {placeholder === "empty" && <SettingsFooter>{t`No AI services configured.`}</SettingsFooter>}
       {status && (
         <>
           {groupAiRecipients(status.recipients).map(({ use, recipients }) => (
             <SettingsGroup
               key={use}
-              label={use === "model" ? t("AI models") : use === "voice" ? t("Voice") : t("Memory")}
-              footer={t(AI_DATA_DISCLOSURES[use])}
+              label={use === "model" ? t`AI models` : use === "voice" ? t`Voice` : t`Memory`}
+              footer={aiDataDisclosure(use)}
             >
               {recipients.map((recipient) => (
                 <SettingsSwitch
                   key={recipient.key}
                   label={recipient.name}
                   detail={recipient.detail}
-                  accessibilityLabel={t("Allow {name} on mobile", { name: recipient.name })}
+                  accessibilityLabel={t`Allow ${ph({ name: recipient.name })} on mobile`}
                   disabled={pending}
-                  onChange={(allowed) => setAllowed(recipient, allowed)}
+                  onChange={(allowed) => change.run({ recipient, allowed })}
                   value={recipient.allowed}
                 />
               ))}
             </SettingsGroup>
           ))}
-          <SettingsGroup label={t("Privacy policies")}>
+          <SettingsGroup label={t`Privacy policies`}>
             {aiPrivacyLinks(status.recipients).map(({ name, url }) => (
               <SettingsRow
                 key={JSON.stringify([name, url])}
                 title={name}
                 accessibilityRole="link"
                 chevron="right"
-                onPress={() => void Linking.openURL(url)}
+                onPress={() => void openExternalUrl(url)}
               />
             ))}
             <SettingsRow
-              title={t("Rakazo")}
+              title={t`Rakazo`}
               accessibilityRole="link"
               chevron="right"
-              onPress={() => void Linking.openURL(status.privacyUrl ?? AI_PRIVACY_URL)}
+              onPress={() => void openExternalUrl(status.privacyUrl ?? AI_PRIVACY_URL)}
             />
           </SettingsGroup>
           <SettingsGroup>
@@ -148,7 +136,7 @@ export default function AiDataSharing() {
               dimmed={pending}
               disabled={pending}
               onPress={requestWithdrawal}
-              title={t("Withdraw all permissions")}
+              title={t`Withdraw all permissions`}
             />
           </SettingsGroup>
         </>

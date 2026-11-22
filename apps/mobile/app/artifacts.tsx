@@ -1,8 +1,16 @@
+import { ph } from "@lingui/core/macro";
+import { useLingui } from "@lingui/react/macro";
 import { artifactTypeLabel } from "@rakazo/core";
-import { useFocusEffect, useLocalSearchParams, useNavigation, useRouter } from "expo-router";
+import {
+  useFocusEffect,
+  useIsFocused,
+  useLocalSearchParams,
+  useNavigation,
+  useRouter,
+} from "expo-router";
 import type { ReactNode } from "react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import type { LayoutChangeEvent } from "react-native";
+import type { LayoutChangeEvent, ScrollViewInstance } from "react-native";
 import {
   ActivityIndicator,
   Alert,
@@ -14,20 +22,26 @@ import {
   Text,
   View,
 } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { BotAvatar } from "../components/bot-avatar";
-import { NativeSegmentedControl } from "../components/native-segmented-control";
-import { NativeSymbol } from "../components/native-symbol";
-import { formatActivityRelativeTime } from "../lib/activity";
-import { rpc } from "../lib/api";
-import { mobileTokens } from "../lib/appearance";
-import type { MobileArtifactSummary } from "../lib/artifacts";
-import { listSpaceArtifacts, matchesArtifactQuery, removeArtifact } from "../lib/artifacts";
-import { useI18n } from "../lib/i18n";
-import type { MobileBot } from "../lib/mobile-types";
-import { native, useThemedStyles } from "../lib/native";
-import { useSideInsets } from "../lib/side-insets";
-import { errorText } from "../lib/user-error";
+import { BotAvatar } from "../components/bots/bot-avatar";
+import { NativeSegmentedControl } from "../components/native/native-segmented-control";
+import { NativeSymbol } from "../components/native/native-symbol";
+import type { MobileBot } from "../lib/api/mobile-types";
+import { useSpaceChanges } from "../lib/api/roster-signals";
+import { errorText } from "../lib/api/user-error";
+import { mobileTokens } from "../lib/appearance/appearance";
+import { isMediaArtifact, mediaArtifactGallery } from "../lib/artifacts/artifact-gallery";
+import type { MobileArtifactSummary } from "../lib/artifacts/artifacts";
+import {
+  listSpaceArtifacts,
+  matchesArtifactQuery,
+  removeArtifact,
+} from "../lib/artifacts/artifacts";
+import { formatActivityRelativeTime } from "../lib/inbox/activity";
+import { useContentBottomInset } from "../lib/layout/content-bottom-inset";
+import { useSideInsets } from "../lib/layout/side-insets";
+import { native, useThemedStyles } from "../lib/native/native";
+import { rpcQuery } from "../lib/query/query";
+import { useScreenQuery } from "../lib/query/screen-query";
 
 const PAGE_SIZE = 30;
 
@@ -35,15 +49,16 @@ export default function ArtifactsScreen() {
   const sideInsets = useSideInsets();
   const navigation = useNavigation();
   const router = useRouter();
-  const { t } = useI18n();
+  const focused = useIsFocused();
+  const { t } = useLingui();
   const styles = useThemedStyles(createStyles);
-  const insets = useSafeAreaInsets();
+  const contentBottomInset = useContentBottomInset();
 
-  const [bots, setBots] = useState<MobileBot[]>([]);
+  const bots = useScreenQuery(rpcQuery("bots/list")).data;
   const { botId } = useLocalSearchParams<{ botId?: string }>();
   const [activeBotId, setActiveBotId] = useState<string | null>(botId || null);
   const [madeByBots, setMadeByBots] = useState(false);
-  const chipsScrollRef = useRef<ScrollView>(null);
+  const chipsScrollRef = useRef<ScrollViewInstance>(null);
   const initialChipLayout = useRef({
     viewportWidth: 0,
     contentWidth: 0,
@@ -74,10 +89,15 @@ export default function ArtifactsScreen() {
   const [loadingMore, setLoadingMore] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [refreshError, setRefreshError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [searchPageFailed, setSearchPageFailed] = useState(false);
   const loadingMoreRef = useRef(false);
+  const pullingRef = useRef(false);
+  const loadedPagesRef = useRef(1);
   const generationRef = useRef(0);
+  const loadingPageRef = useRef(false);
+  const [loadingPage, setLoadingPage] = useState(false);
   const autoFetchedCursorRef = useRef<string | null>(null);
   const activeBotIdRef = useRef(activeBotId);
   const madeByBotsRef = useRef(madeByBots);
@@ -88,7 +108,7 @@ export default function ArtifactsScreen() {
   useLayoutEffect(() => {
     navigation.setOptions({
       headerSearchBarOptions: {
-        placeholder: t("Search artifacts…"),
+        placeholder: t`Search artifacts…`,
         hideWhenScrolling: false,
         autoCapitalize: "none",
         onChangeText: (event: { nativeEvent: { text: string } }) =>
@@ -99,39 +119,53 @@ export default function ArtifactsScreen() {
     });
   }, [navigation, t]);
 
-  useFocusEffect(
-    useCallback(() => {
-      rpc("bots/list")
-        .then(setBots)
-        .catch(() => undefined);
-    }, []),
-  );
-
   const load = useCallback(
-    async (botId: string | null, madeByBots: boolean, mode: "replace" | "refresh") => {
+    async (botId: string | null, madeByBots: boolean, mode: "replace" | "refresh" | "live") => {
+      // A read that starts during a pull-to-refresh supersedes it, so it reports its failure.
+      const forPull = pullingRef.current;
+      const pageCount = mode === "live" ? loadedPagesRef.current : 1;
       const generation = ++generationRef.current;
+      loadingPageRef.current = true;
+      setLoadingPage(true);
       loadingMoreRef.current = false;
       setLoadingMore(false);
       autoFetchedCursorRef.current = null;
       setSearchPageFailed(false);
       setLoadError(null);
       if (mode === "replace") {
+        setRefreshError(null);
+        loadedPagesRef.current = 1;
         setItems(null);
         setNext(null);
       }
       try {
-        const page = await listSpaceArtifacts({
+        const input = {
           botId: botId ?? undefined,
           madeByBots,
           limit: PAGE_SIZE,
-        });
+        };
+        let page = await listSpaceArtifacts(input);
+        const nextItems = [...page.items];
+        let loaded = 1;
+        while (loaded < pageCount && page.nextCursor && generation === generationRef.current) {
+          page = await listSpaceArtifacts({ ...input, cursor: page.nextCursor });
+          nextItems.push(...page.items);
+          loaded++;
+        }
         if (generation !== generationRef.current) return;
-        setItems(page.items);
+        loadedPagesRef.current = loaded;
+        setItems(nextItems);
         setNext(page.nextCursor ? { cursor: page.nextCursor, botId, madeByBots } : null);
+        setRefreshError(null);
       } catch (error) {
         if (generation !== generationRef.current) return;
-        if (mode === "replace") {
-          setLoadError(errorText(error, t("Could not load artifacts.")));
+        const message = errorText(error, t`Could not load artifacts.`);
+        setLoadError(message);
+        if (forPull) setRefreshError(message);
+      } finally {
+        if (generation === generationRef.current) {
+          loadingPageRef.current = false;
+          setLoadingPage(false);
         }
       }
     },
@@ -147,9 +181,14 @@ export default function ArtifactsScreen() {
       void load(activeBotIdRef.current, madeByBotsRef.current, "refresh");
     }, [load]),
   );
+  useSpaceChanges(
+    "artifacts",
+    () => load(activeBotIdRef.current, madeByBotsRef.current, "live"),
+    focused,
+  );
 
   const loadMore = useCallback(async () => {
-    if (!nextCursor || loadingMoreRef.current) return;
+    if (!nextCursor || loadingMoreRef.current || loadingPageRef.current) return;
     const generation = generationRef.current;
     loadingMoreRef.current = true;
     setLoadingMore(true);
@@ -161,6 +200,7 @@ export default function ArtifactsScreen() {
         limit: PAGE_SIZE,
       });
       if (generation !== generationRef.current) return;
+      loadedPagesRef.current++;
       setItems((current) => (current ?? []).concat(page.items));
       setNext(page.nextCursor ? { cursor: page.nextCursor, botId: activeBotId, madeByBots } : null);
       setSearchPageFailed(false);
@@ -175,34 +215,36 @@ export default function ArtifactsScreen() {
   }, [activeBotId, madeByBots, nextCursor]);
 
   async function refresh() {
+    if (pullingRef.current) return;
     setRefreshing(true);
+    pullingRef.current = true;
     try {
       await load(activeBotId, madeByBots, "refresh");
     } finally {
+      pullingRef.current = false;
       setRefreshing(false);
     }
   }
 
   function confirmDelete(item: MobileArtifactSummary) {
     Alert.alert(
-      t('Delete "{name}"?', { name: item.name }),
+      t`Delete "${ph({ name: item.name })}"?`,
       item.versionCount > 1
-        ? t("This deletes all {count} versions of this artifact. This can't be undone.", {
-            count: item.versionCount,
-          })
-        : t("This can't be undone."),
+        ? t`This deletes all ${ph({ count: item.versionCount })} versions of this artifact. This can't be undone.`
+        : t`This can't be undone.`,
       [
-        { text: t("Cancel"), style: "cancel" },
+        { text: t`Cancel`, style: "cancel" },
         {
-          text: t("Delete"),
+          text: t`Delete`,
           style: "destructive",
           onPress: () =>
             void removeArtifact(item.id)
-              .then(() =>
-                setItems((current) => current?.filter((row) => row.id !== item.id) ?? current),
-              )
+              .then(() => {
+                setItems((current) => current?.filter((row) => row.id !== item.id) ?? current);
+                void load(activeBotIdRef.current, madeByBotsRef.current, "refresh");
+              })
               .catch((error: unknown) =>
-                Alert.alert(t("Could not delete this artifact"), errorText(error, t("Try again."))),
+                Alert.alert(t`Could not delete this artifact`, errorText(error, t`Try again.`)),
               ),
         },
       ],
@@ -215,7 +257,12 @@ export default function ArtifactsScreen() {
     if (!queryActive) return items;
     return items.filter((item) => matchesArtifactQuery(item, query));
   }, [items, query, queryActive]);
-  const botsById = useMemo(() => new Map(bots.map((bot) => [bot.id, bot])), [bots]);
+  const mediaGallery = useMemo(() => mediaArtifactGallery(filtered ?? []), [filtered]);
+  const mediaGalleryParam = useMemo(
+    () => (mediaGallery.length > 1 ? JSON.stringify(mediaGallery) : undefined),
+    [mediaGallery],
+  );
+  const botsById = useMemo(() => new Map((bots ?? []).map((bot) => [bot.id, bot])), [bots]);
 
   useEffect(() => {
     autoFetchedCursorRef.current = null;
@@ -223,30 +270,47 @@ export default function ArtifactsScreen() {
   }, [query, activeBotId, madeByBots]);
 
   useEffect(() => {
-    if (searchPageFailed || !queryActive || !nextCursor || loadingMore || items === null) return;
+    if (
+      loadingPage ||
+      searchPageFailed ||
+      !queryActive ||
+      !nextCursor ||
+      loadingMore ||
+      items === null
+    )
+      return;
     if (filtered && filtered.length > 0) return;
     if (autoFetchedCursorRef.current === nextCursor) return;
     autoFetchedCursorRef.current = nextCursor;
     void loadMore();
-  }, [filtered, items, loadMore, loadingMore, nextCursor, queryActive, searchPageFailed]);
+  }, [
+    filtered,
+    items,
+    loadMore,
+    loadingMore,
+    loadingPage,
+    nextCursor,
+    queryActive,
+    searchPageFailed,
+  ]);
 
   useEffect(() => {
     void load(activeBotId, madeByBots, "replace");
   }, [activeBotId, madeByBots, load]);
 
   return (
-    <View style={[styles.screen, { paddingBottom: insets.bottom }]}>
+    <View style={[styles.screen, { paddingBottom: contentBottomInset }]}>
       <FlatList<MobileArtifactSummary>
         ListHeaderComponent={
           <View>
             <View style={styles.sourceControl}>
               <NativeSegmentedControl
-                accessibilityLabel={t("Filter by who made it")}
+                accessibilityLabel={t`Filter by who made it`}
                 value={madeByBots ? "bots" : "all"}
                 onChange={(value) => setMadeByBots(value === "bots")}
                 options={[
-                  { value: "all" as const, label: t("All files") },
-                  { value: "bots" as const, label: t("Made by bots") },
+                  { value: "all" as const, label: t`All files` },
+                  { value: "bots" as const, label: t`Made by bots` },
                 ]}
               />
             </View>
@@ -267,11 +331,11 @@ export default function ArtifactsScreen() {
               contentContainerStyle={styles.chipsRow}
             >
               <Chip
-                label={t("All bots")}
+                label={t`All bots`}
                 active={activeBotId === null}
                 onPress={() => setActiveBotId(null)}
               />
-              {bots.map((bot) => (
+              {(bots ?? []).map((bot) => (
                 <Chip
                   key={bot.id}
                   onLayout={
@@ -296,6 +360,11 @@ export default function ArtifactsScreen() {
                 />
               ))}
             </ScrollView>
+            {items !== null && refreshError ? (
+              <Text accessibilityRole="alert" style={[styles.empty, styles.refreshError]}>
+                {refreshError}
+              </Text>
+            ) : null}
           </View>
         }
         style={[styles.listView, sideInsets]}
@@ -331,8 +400,8 @@ export default function ArtifactsScreen() {
               }}
               style={styles.centered}
             >
-              <Text style={styles.empty}>{t("Could not load artifacts.")}</Text>
-              <Text style={styles.empty}>{t("Try again.")}</Text>
+              <Text style={styles.empty}>{t`Could not load artifacts.`}</Text>
+              <Text style={styles.empty}>{t`Try again.`}</Text>
             </Pressable>
           ) : queryActive &&
             filtered?.length === 0 &&
@@ -343,7 +412,7 @@ export default function ArtifactsScreen() {
             </View>
           ) : (
             <Text style={styles.empty}>
-              {queryActive || madeByBots ? t("No matching artifacts") : t("No artifacts yet")}
+              {queryActive || madeByBots ? t`No matching artifacts` : t`No artifacts yet`}
             </Text>
           )
         }
@@ -352,13 +421,23 @@ export default function ArtifactsScreen() {
             <View style={styles.footer}>
               <ActivityIndicator color={native.secondaryLabel} />
             </View>
-          ) : null
+          ) : undefined
         }
         renderItem={({ item }) => (
           <ArtifactRow
             item={item}
             bot={activeBotId === null && item.botId ? botsById.get(item.botId) : undefined}
-            onPress={() => router.push({ pathname: "/artifact", params: { artifactId: item.id } })}
+            onPress={() =>
+              router.push({
+                pathname: "/artifact",
+                params: {
+                  artifactId: item.id,
+                  ...(mediaGalleryParam && isMediaArtifact(item)
+                    ? { gallery: mediaGalleryParam }
+                    : {}),
+                },
+              })
+            }
             onLongPress={() => confirmDelete(item)}
           />
         )}
@@ -409,13 +488,13 @@ function ArtifactRow({
   onLongPress: () => void;
 }) {
   const styles = useThemedStyles(createStyles);
-  const { t } = useI18n();
+  const { t } = useLingui();
   const isCode = item.mimeType === "text/html";
   return (
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={bot ? `${item.name}, ${bot.name}` : item.name}
-      accessibilityHint={t("Long press to delete")}
+      accessibilityHint={t`Long press to delete`}
       onPress={onPress}
       onLongPress={onLongPress}
       style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
@@ -494,6 +573,7 @@ function createStyles() {
       paddingHorizontal: 24,
       paddingTop: 8,
     },
+    refreshError: { color: tokens.destructive, paddingBottom: 8 },
     footer: { paddingVertical: 20 },
     row: { flexDirection: "row", gap: 12, paddingHorizontal: 16, paddingVertical: 12 },
     rowPressed: { opacity: 0.6 },

@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/python3 -I
 """Token-auth desktop control for the Rakazo supervisor."""
 
 import base64
@@ -13,6 +13,14 @@ import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 TOKEN = os.environ.get("RAKAZO_COMPUTER_CONTROL_TOKEN", "")
+# Commands this server starts are found only in the image's folders, never in the user's
+# ~/.local/bin, and never get the control token.
+CHILD_PATH = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+
+
+def child_env(display):
+    env = {key: value for key, value in os.environ.items() if key != "RAKAZO_COMPUTER_CONTROL_TOKEN"}
+    return {**env, "PATH": CHILD_PATH, "DISPLAY": display}
 MAX_BODY_BYTES = 256 * 1024
 MAX_ARGV = 32
 MAX_ARG_LEN = 16_384
@@ -258,7 +266,7 @@ def launch_spawn_poll_sec(argv):
 
 def run_control_argv(argv, display):
     """Run a fallback control command without holding the lock forever."""
-    env = {**os.environ, "DISPLAY": display}
+    env = child_env(display)
     if argv[control_command_index(argv)] == FOCUS_OR_LAUNCH:
         try:
             result = subprocess.run(argv, env=env, timeout=FOCUS_COMPLETION_SEC)
@@ -301,7 +309,7 @@ def run_computer_step(display, argv):
 
 
 def capture(display):
-    env = {**os.environ, "DISPLAY": display}
+    env = child_env(display)
 
     def output(argv, fallback=""):
         return subprocess.run(argv, env=env, capture_output=True, text=True).stdout.strip() or fallback

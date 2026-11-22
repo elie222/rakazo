@@ -1,5 +1,6 @@
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 import { describe, expect, it } from "vitest";
 import { parse } from "yaml";
 
@@ -40,14 +41,25 @@ const KUBERNETES_SANDBOX =
   "SANDBOX_PROVIDER=kubernetes runs the api and worker in a cluster, not Compose";
 
 /** Read by code but never passed to the api or worker containers, with the reason. */
+const LOCAL_VM = "Mac VM computers, which only the desktop app's native stack runs";
 const NOT_PASSED: Record<string, string> = {
   VITEST: "set by the test runner",
   OWNER_EMAIL: "bootstrap-owner CLI input, passed on its own command line",
   OWNER_PASSWORD: "bootstrap-owner CLI input, passed on its own command line",
+  DEMO_ACCOUNT_EMAIL: "publishes a shared login; only throwaway pull request previews set it",
+  DEMO_ACCOUNT_PASSWORD: "publishes a shared login; only throwaway pull request previews set it",
   PM2_HOME: "restart-supervisor detection for PM2 hosts; Compose restarts containers",
   INVOCATION_ID: "restart-supervisor detection for systemd hosts; Compose restarts containers",
   RAKAZO_ALLOW_DEV_SECRETS: "development-only escape hatch for placeholder secrets",
+  RAKAZO_CLAUDE_CODE_SETUP_TOKEN:
+    "the Claude Code CLI runs only from a source checkout; the images do not include it",
   EMAIL_EMULATOR: "ignored when NODE_ENV=production",
+  BILLING_EMULATOR: "ignored when NODE_ENV=production",
+  NODE_USE_ENV_PROXY:
+    "Node's own proxy switch, read to match it; Compose sends proxied traffic through HTTP_PROXY",
+  NODE_OPTIONS: "Node's own startup flags, read to match its proxy switch; never set by Compose",
+  NODE_TLS_REJECT_UNAUTHORIZED:
+    "Node's own switch, read so a hostname CONNECT stays off while verification is disabled",
   AWS_KMS_PROFILE: "for maintainer laptops; servers use AWS_KMS_ACCESS_KEY_ID and its secret",
   GIT_SHA: "baked into the image at build time; a pass-through entry would unset it",
   SHELL: "host shell for the desktop computer, which only the Electron app runs",
@@ -55,9 +67,16 @@ const NOT_PASSED: Record<string, string> = {
   CLOUDFLARE_GATEWAY_ID: "written into Pi's environment from stored gateway settings",
   COMPOSE_PROJECT_NAME: "read by the updater sidecar, which has its own environment",
   RAKAZO_COMPOSE_PROJECT_NAME: "read by the updater sidecar, which has its own environment",
+  RAKAZO_COMPUTER_PROXY_CONFIG: "built by the API and passed only to the computer prepare command",
   RAKAZO_IMAGE_TAG: "read by deployment tooling and the updater sidecar, not app processes",
   RAKAZO_DEPLOYED_MIGRATIONS: "passed only to the migration CLI by the production deploy script",
   RAKAZO_IMAGE_TAG_PREVIOUS: "read by the updater sidecar, which has its own environment",
+  RAKAZO_DB_PACKAGE_DIR: "passed only to the migration CLI by the desktop app's native stack",
+  RAKAZO_ENV_FILE: "set by the desktop app's native stack so no stray .env is read",
+  LOCAL_VM_CLI: LOCAL_VM,
+  LOCAL_VM_COMPUTER_IMAGE: LOCAL_VM,
+  LOCAL_VM_CPUS: LOCAL_VM,
+  LOCAL_VM_MEMORY: LOCAL_VM,
   KUBERNETES_SANDBOX_COMPUTER_IMAGE: KUBERNETES_SANDBOX,
   KUBERNETES_SANDBOX_HOME_CLAIM: KUBERNETES_SANDBOX,
   KUBERNETES_SANDBOX_HOME_COLOCATE_LABELS: KUBERNETES_SANDBOX,
@@ -86,6 +105,7 @@ const INDIRECT = {
   shared: [
     // core/secrets-guard.ts resolves these by name.
     "SANDBOX_SUPERVISOR_TOKEN",
+    "MEETING_SIGNING_KEY",
     // pi-local-provider.ts reads these through a small helper.
     "RAKAZO_LOCAL_CONTEXT_WINDOW",
     "RAKAZO_LOCAL_MAX_TOKENS",
@@ -136,8 +156,35 @@ function sourceFiles(dir: string): string[] {
   });
 }
 
+type EnvRegistry = Record<string, { env?: Record<string, { name?: string }> }>;
+
+async function registryEnv(file: string, exportName: string): Promise<string[]> {
+  const module = (await import(pathToFileURL(path.join(repoRoot, file)).href)) as Record<
+    string,
+    EnvRegistry
+  >;
+  return Object.values(module[exportName] ?? {}).flatMap(({ env = {} }) =>
+    Object.values(env).flatMap((binding) => (binding.name ? [binding.name] : [])),
+  );
+}
+
+/**
+ * Computer providers and messaging platforms declare their settings as env bindings, read by
+ * name through their registries. Bindings that gather a prefix family have no single name.
+ */
+const REGISTRY_ENV = [
+  ...(await registryEnv(
+    "packages/adapters/src/computers/computer-providers.ts",
+    "computerProviders",
+  )),
+  ...(await registryEnv(
+    "packages/adapters/src/messaging/messaging-platforms.ts",
+    "messagingPlatforms",
+  )),
+];
+
 function scanEnvReads(dirs: readonly string[]): Set<string> {
-  const names = new Set<string>();
+  const names = new Set<string>(dirs.includes("packages/adapters/src") ? REGISTRY_ENV : []);
   for (const dir of dirs) {
     for (const file of sourceFiles(path.join(repoRoot, dir))) {
       const text = readFileSync(file, "utf8");
@@ -273,4 +320,37 @@ describe("api and worker environment allowlists", () => {
       }
     },
   );
+});
+
+describe("supervisor environment", () => {
+  /** SANDBOX_* settings the supervisor reads for computers, found in its computer spec. */
+  const NOT_OPERATOR_SETTINGS = new Set(["SANDBOX_SCREEN_HOST"]);
+  const supervisorSettings = [
+    ...new Set(
+      readFileSync(
+        path.join(repoRoot, "infra/sandboxes/supervisor/src/computer-spec.ts"),
+        "utf8",
+      ).match(/\bSANDBOX_[A-Z0-9_]+/g),
+    ),
+  ]
+    .filter((name) => !NOT_OPERATOR_SETTINGS.has(name))
+    .sort();
+
+  it("finds the settings it is meant to find", () => {
+    expect(supervisorSettings).toContain("SANDBOX_TEAM_SCREEN_LIMIT");
+    expect(supervisorSettings).toContain("SANDBOX_MAX_COMPUTERS_PER_SPACE");
+  });
+
+  it.each(
+    [
+      ["docker-compose.images.yml"],
+      ["docker-compose.yml"],
+      ["docker-compose.prod.yml", "docker-compose.prod.docker.yml"],
+    ].map((files) => [files.join(" + "), files] as const),
+  )("%s passes the supervisor every setting it reads", (_name, files) => {
+    const environment = stackEnvironment(files, "supervisor");
+    expect(Object.keys(environment).length).toBeGreaterThan(0);
+    const missing = supervisorSettings.filter((name) => !(name in environment));
+    expect(missing).toEqual([]);
+  });
 });

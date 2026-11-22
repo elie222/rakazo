@@ -1,0 +1,26 @@
+import { useSyncExternalStore } from "react";
+import { AppState } from "react-native";
+
+/** iOS passes through "inactive" for system overlays; only a real background pauses work. */
+export function isForegroundState(state: string | null | undefined): boolean {
+  return state !== "background";
+}
+
+function subscribe(listener: () => void) {
+  const subscription = AppState.addEventListener("change", listener);
+  return () => subscription.remove();
+}
+
+const currentForeground = () => isForegroundState(AppState.currentState);
+
+/** Whether the app is on screen, for live work that should stop while it is backgrounded. */
+export function useAppForeground(): boolean {
+  return useSyncExternalStore(subscribe, currentForeground, currentForeground);
+}
+
+/** Wait for the app to become active again after an OS permission dialog. */
+export function useAppActive(): boolean {
+  return useSyncExternalStore(subscribe, currentActive, currentActive);
+}
+
+const currentActive = () => AppState.currentState === "active";

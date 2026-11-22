@@ -1,6 +1,6 @@
 import { ORPCError } from "@orpc/server";
-import { messagingDeliverJob } from "@rakazo/adapter-kit";
-import { displayName } from "@rakazo/core";
+import { MessagingInstallRefusedError } from "@rakazo/adapter-kit";
+import { ClientError, displayName } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import {
   crossSpaceCommunicationAllowed,
@@ -10,7 +10,6 @@ import {
   runAsSystem,
   spaceIsShared,
 } from "@rakazo/db";
-import { getLogger } from "@rakazo/logging";
 import type { RouterContext } from "./context.js";
 
 export function messagingRoutes(ctx: RouterContext) {
@@ -35,8 +34,10 @@ export function messagingRoutes(ctx: RouterContext) {
           if (!deps.messagingInstallations) throw new ORPCError("BAD_REQUEST");
           try {
             await deps.messagingInstallations.complete(context.actor, input.state, input.code);
-          } catch {
-            throw new ORPCError("BAD_REQUEST");
+          } catch (error) {
+            if (error instanceof MessagingInstallRefusedError)
+              throw new ClientError("BAD_REQUEST", "Bad Request");
+            throw error;
           }
           return { ok: true as const };
         }),
@@ -56,7 +57,10 @@ export function messagingRoutes(ctx: RouterContext) {
         return {
           enabled: deps.messaging?.enabled ?? false,
           providers: deps.messaging?.providers ?? [],
-          addresses: deps.messaging?.addresses ?? {},
+          addresses:
+            (await deps.messaging?.resolveAddresses?.(context.signal)) ??
+            deps.messaging?.addresses ??
+            {},
           openSignup: deps.messaging?.openSignup ?? false,
           identities: await Promise.all(
             identities.map((identity) => messagingIdentityDto(deps.prisma, identity)),
@@ -92,11 +96,15 @@ export function messagingRoutes(ctx: RouterContext) {
               message: "That bot is already linked to a chat app; unlink it first.",
             });
           }
-          const issued = await issueMessagingLinkCode(deps.prisma, {
-            userId: context.actor.userId,
-            spaceId: bot.spaceId,
-            botId: bot.id,
-          });
+          const issued = await issueMessagingLinkCode(
+            deps.prisma,
+            {
+              userId: context.actor.userId,
+              spaceId: bot.spaceId,
+              botId: bot.id,
+            },
+            { signal: context.signal },
+          );
           const shared = await spaceIsShared(deps.prisma, bot.spaceId);
           return {
             code: formatMessagingLinkCode(issued.code),
@@ -143,9 +151,7 @@ export function messagingRoutes(ctx: RouterContext) {
           } catch (error) {
             // botId is unique: the target bot is already linked elsewhere.
             if (isUniqueViolation(error)) {
-              throw new ORPCError("BAD_REQUEST", {
-                message: "That bot is already linked to a chat app.",
-              });
+              throw new ClientError("BAD_REQUEST", "That bot is already linked to a chat app.");
             }
             throw error;
           }
@@ -249,7 +255,7 @@ export function messagingRoutes(ctx: RouterContext) {
               })
             : null;
           if (!connection) throw new ORPCError("NOT_FOUND");
-          const { updated, notifyRequester } = await acrossChatIdentities(() =>
+          const { updated, requesterToNotify } = await acrossChatIdentities(() =>
             deps.prisma.$transaction(async (tx) => {
               // The claim holds the connection row lock through commit, so a
               // revoke either beats it or waits — it can never interleave with
@@ -275,35 +281,34 @@ export function messagingRoutes(ctx: RouterContext) {
               const row = await tx.agentConnection.findUniqueOrThrow({
                 where: { id: connection.id },
               });
-              if (!input.accept) return { updated: row, notifyRequester: false };
+              if (!input.accept) return { updated: row, requesterToNotify: null };
               // Parity with the text-command path: the requester hears about it.
               const requesterIdentity = await tx.messagingIdentity.findUnique({
                 where: { botId: connection.requesterBotId },
               });
-              if (!requesterIdentity) return { updated: row, notifyRequester: false };
-              const key = `command:connected:${connection.id}`;
-              // A re-approved pair starts a fresh cycle; clear the stale row or
-              // skipDuplicates would swallow the new confirmation.
-              await tx.messagingOutbound.deleteMany({ where: { idempotencyKey: key } });
-              await tx.messagingOutbound.createMany({
-                data: [
+              if (!requesterIdentity) return { updated: row, requesterToNotify: null };
+              const delivery = deps.messagingDelivery;
+              if (!delivery) return { updated: row, requesterToNotify: null };
+              // A re-approved pair starts a fresh cycle; the stale row would swallow the
+              // new confirmation.
+              await delivery.recordIn(
+                tx,
+                { identityId: requesterIdentity.id },
+                [
                   {
-                    idempotencyKey: key,
+                    idempotencyKey: `command:connected:${connection.id}`,
                     kind: "dm",
                     identityId: requesterIdentity.id,
                     body: "Your connection request was accepted. Your agents can now message each other.",
                   },
                 ],
-                skipDuplicates: true,
-              });
-              return { updated: row, notifyRequester: true };
+                { replace: true },
+              );
+              return { updated: row, requesterToNotify: requesterIdentity.id };
             }),
           );
-          if (notifyRequester) {
-            await deps.jobs.enqueue(messagingDeliverJob()).catch((error) => {
-              getLogger().error("messaging connection confirmation enqueue error", error);
-            });
-          }
+          if (requesterToNotify)
+            await deps.messagingDelivery?.send([{ identityId: requesterToNotify }]);
           return messagingConnectionDto(deps.prisma, myBotIds, updated);
         }),
         revoke: authed.messaging.connections.revoke.handler(async ({ context, input }) => {
@@ -331,15 +336,17 @@ export function messagingRoutes(ctx: RouterContext) {
                 data: { status: "revoked" },
               });
               if (count === 0) throw new ORPCError("NOT_FOUND");
-              // Cancel undelivered invites, including rows the drain already
-              // claimed (status sent, no providerHandle yet). Connect-invite
-              // delivery holds this connection row FOR UPDATE through
-              // sendDirect, so revoke either waits until the DM is sent or
-              // deletes the claim before send starts.
+              // Cancel undelivered invites, including one a sender already claimed.
+              // Connect-invite delivery holds this connection row FOR UPDATE through
+              // the send, so revoke either waits until the DM is sent or deletes the
+              // row before the send starts.
               await tx.messagingOutbound.deleteMany({
                 where: {
                   idempotencyKey: `connect:${connection.requesterBotId}:${connection.targetBotId}`,
-                  OR: [{ status: "pending" }, { status: "sent", providerHandle: null }],
+                  OR: [
+                    { status: { in: ["pending", "retry"] } },
+                    { status: "sent", providerHandle: null },
+                  ],
                 },
               });
             }),
@@ -434,10 +441,12 @@ async function messagingConnectionDto(
   },
 ) {
   const incoming = myBotIds.has(connection.targetBotId);
+  const botId = incoming ? connection.targetBotId : connection.requesterBotId;
   // The target's identity stays opaque until they approve (mirrors connect_agent).
   if (!incoming && connection.status !== "approved") {
     return {
       id: connection.id,
+      botId,
       peerBotName: "agent",
       peerOwnerLabel: "owner",
       status: connection.status as "pending" | "approved" | "declined" | "revoked",
@@ -462,6 +471,7 @@ async function messagingConnectionDto(
     : null;
   return {
     id: connection.id,
+    botId,
     peerBotName: peerBot?.name ?? "",
     peerOwnerLabel: displayName(peerOwner?.name, "").split(/\s+/)[0] ?? "",
     status: connection.status as "pending" | "approved" | "declined" | "revoked",

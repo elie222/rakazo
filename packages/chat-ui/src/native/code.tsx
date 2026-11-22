@@ -1,6 +1,5 @@
 import type { ColorTokens, ResolvedAppearance } from "@rakazo/ui-tokens";
 import { darkTokens } from "@rakazo/ui-tokens";
-import type { MarkdownStyleMap } from "@ronradtke/react-native-markdown-display";
 import { Highlight, themes } from "prism-react-renderer";
 import type { ComponentType, ReactNode } from "react";
 import { createContext, useContext } from "react";
@@ -8,6 +7,7 @@ import type { TextStyle } from "react-native";
 import { Text, View } from "react-native";
 import { contraryDirection } from "./direction";
 import { SidewaysScrollView } from "./sideways-scroll";
+import type { FenceStyles } from "./styles";
 import { layout } from "./styles";
 
 export type MermaidDiagramProps = {
@@ -67,53 +67,60 @@ export function CodeFence({
   code,
   language,
   colorScheme,
-  styleMap,
+  styles,
 }: {
   code: string;
   language: string;
   colorScheme: ResolvedAppearance;
-  styleMap: MarkdownStyleMap;
+  styles: FenceStyles;
 }) {
   const theme = colorScheme === "dark" ? themes.oneDark : themes.oneLight;
   return (
-    <View style={styleMap._VIEW_SAFE_fence}>
-      <FenceHeader language={language} styleMap={styleMap} />
+    <View style={styles.fence}>
+      <FenceHeader language={language} styles={styles} />
       <CodeScrollView code={code}>
         <Highlight theme={theme} code={code} language={language || "text"}>
           {({ tokens, getTokenProps }) => (
-            <View style={styleMap._VIEW_SAFE_fence_code}>
-              {tokens.map((line, lineIndex) => (
-                <View key={lineIndex} style={layout.codeLine}>
-                  {line.every((token) => token.empty) ? (
-                    <Text style={[{ color: theme.plain.color }, styleMap.fence_token]}> </Text>
-                  ) : null}
-                  {line
-                    .filter((token) => !token.empty)
-                    .map((token, tokenIndex) => {
-                      const tokenStyle = getTokenProps({ token }).style;
-                      return (
-                        <Text
-                          key={tokenIndex}
-                          style={[
-                            // Prism leaves plain text to inherit the line's colour, which
-                            // React Native text doesn't. A colour set on fence_token wins.
-                            { color: theme.plain.color },
-                            styleMap.fence_token,
-                            tokenStyle?.color != null ? { color: tokenStyle.color } : null,
-                            tokenStyle?.fontStyle != null
-                              ? { fontStyle: tokenStyle.fontStyle as TextStyle["fontStyle"] }
-                              : null,
-                            tokenStyle?.fontWeight != null
-                              ? { fontWeight: tokenStyle.fontWeight as TextStyle["fontWeight"] }
-                              : null,
-                          ]}
-                        >
-                          {token.content}
-                        </Text>
-                      );
-                    })}
-                </View>
-              ))}
+            <View style={styles.fence_code}>
+              {tokens.map((line, lineIndex) => {
+                const visible = line.filter((token) => !token.empty);
+                // One Text per line, its tokens as spans: a Text per token made a long block
+                // thousands of separately measured paragraphs.
+                return (
+                  <View key={lineIndex} style={layout.codeLine}>
+                    <Text style={[{ color: theme.plain.color }, styles.fence_token]}>
+                      {visible.length === 0
+                        ? " "
+                        : visible.map((token, tokenIndex) => {
+                            const tokenStyle = getTokenProps({ token }).style;
+                            return (
+                              <Text
+                                key={tokenIndex}
+                                style={[
+                                  // Prism leaves plain text to inherit the line's colour, which
+                                  // React Native text doesn't. A colour set on fence_token wins.
+                                  { color: theme.plain.color },
+                                  styles.fence_token,
+                                  tokenStyle?.color != null ? { color: tokenStyle.color } : null,
+                                  tokenStyle?.fontStyle != null
+                                    ? { fontStyle: tokenStyle.fontStyle as TextStyle["fontStyle"] }
+                                    : null,
+                                  tokenStyle?.fontWeight != null
+                                    ? {
+                                        fontWeight:
+                                          tokenStyle.fontWeight as TextStyle["fontWeight"],
+                                      }
+                                    : null,
+                                ]}
+                              >
+                                {token.content}
+                              </Text>
+                            );
+                          })}
+                    </Text>
+                  </View>
+                );
+              })}
             </View>
           )}
         </Highlight>
@@ -123,11 +130,11 @@ export function CodeFence({
 }
 
 /** A fence's language label, above its code. */
-function FenceHeader({ language, styleMap }: { language: string; styleMap: MarkdownStyleMap }) {
+function FenceHeader({ language, styles }: { language: string; styles: FenceStyles }) {
   if (!language) return null;
   return (
-    <View style={styleMap._VIEW_SAFE_fence_header}>
-      <Text style={styleMap.fence_language_label}>{language}</Text>
+    <View style={styles.fence_header}>
+      <Text style={styles.fence_language_label}>{language}</Text>
     </View>
   );
 }
@@ -139,21 +146,21 @@ function FenceHeader({ language, styleMap }: { language: string; styleMap: Markd
 export function ProseFence({
   code,
   language,
-  styleMap,
+  styles,
 }: {
   code: string;
   language: string;
-  styleMap: MarkdownStyleMap;
+  styles: FenceStyles;
 }) {
   const CopyButton = useContext(CodeCopyButtonContext);
   const prose = (
-    <View style={[styleMap._VIEW_SAFE_fence_code, layout.proseCode]}>
+    <View style={[styles.fence_code, layout.proseCode]}>
       {code.split("\n").map((line, index) => (
         // An empty line keeps its height through a space, as a blank code line does. Each line
         // aligns by its own direction, as a paragraph does.
         <Text
           key={index}
-          style={[styleMap.fence_prose, contraryDirection(line) && layout.farSideText]}
+          style={[styles.fence_prose, contraryDirection(line) && layout.farSideText]}
         >
           {line || " "}
         </Text>
@@ -161,8 +168,8 @@ export function ProseFence({
     </View>
   );
   return (
-    <View style={styleMap._VIEW_SAFE_fence}>
-      <FenceHeader language={language} styleMap={styleMap} />
+    <View style={styles.fence}>
+      <FenceHeader language={language} styles={styles} />
       {CopyButton && /\S/.test(code) ? (
         <View style={layout.codeRow}>
           {prose}
