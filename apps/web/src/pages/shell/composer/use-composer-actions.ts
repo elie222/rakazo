@@ -20,6 +20,7 @@ import type { ComposerMention } from "@rakazo/core";
 import {
   applyThreadSendReceipt,
   attachmentsForThread,
+  foldPeerReplies,
   inferAttachmentMimeType,
   isImageInputConfirmation,
   newClientId,
@@ -35,6 +36,12 @@ import {
   revokePendingAttachmentPreviews,
   usePendingAttachmentPreviewCleanup,
 } from "../../../lib/composer/pending-attachments";
+import type { PendingSend } from "../../../lib/composer/pending-send";
+import {
+  newestMessageSeq,
+  withoutDeliveredSends,
+  withPendingSends,
+} from "../../../lib/composer/pending-send";
 import { canPrepareImage, prepareImage } from "../../../lib/composer/prepare-image";
 import type { PageSession } from "../../../lib/pages/pages";
 import { requestBrowserNotificationPermission } from "../../../lib/platform/browser-notifications";
@@ -103,6 +110,23 @@ export function useComposerActions({
   const [replyTarget, setReplyTarget] = useState<ThreadMessage | null>(null);
   const [replyQuote, setReplyQuote] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
+  const [pendingSends, setPendingSends] = useState<PendingSend[]>([]);
+  const activeThreadKey = inGroup ? groupId : activeId;
+  const activeMessages = activeSnapshot?.messages;
+  // A send stays shown until the chat holds its stored message, whichever update brings it;
+  // a seq that lands after its message arrived is checked against the messages already here.
+  useEffect(() => {
+    if (activeMessages)
+      setPendingSends((current) => withoutDeliveredSends(current, activeMessages, activeThreadKey));
+  }, [activeMessages, activeThreadKey, pendingSends]);
+  // The open chat's transcript with its unconfirmed text sends shown last, or null with none.
+  const meId = bootstrapMe?.userId;
+  const pendingTranscript = useMemo(() => {
+    if (!pendingSends.length || !activeSnapshot) return null;
+    const { messages, threadId } = activeSnapshot;
+    const shown = withPendingSends(messages, pendingSends, activeThreadKey, threadId, meId);
+    return shown === messages ? null : foldPeerReplies(shown, { includePeerReceipts: true });
+  }, [activeSnapshot, activeThreadKey, meId, pendingSends]);
   const [sentCount, setSentCount] = useState(0);
   // Sends that produced no message of yours: a routine-only submission or a failed send.
   const [unsentCount, setUnsentCount] = useState(0);
@@ -395,6 +419,36 @@ export function useComposerActions({
       clearReadBoundary();
       setSentTexts((texts) => [...texts.slice(-(RECENT_SENDS - 1)), trimmed]);
       setSentCount((count) => count + 1);
+      // Plain text shows in the chat at once; the stored message replaces it when it arrives.
+      if (
+        plan.shouldSend &&
+        !reroutedToGroup &&
+        attachments.length === 0 &&
+        trimmed &&
+        messageTextFits(trimmed)
+      ) {
+        const send = {
+          threadKey: originThreadKey!,
+          clientNonce,
+          text: trimmed,
+          afterSeq: newestMessageSeq(activeSnapshot?.messages ?? []),
+          replyToMessageId: replyToMessageId ?? replyAtSend?.id,
+          replyQuote: replyToMessageId ? undefined : (replyQuoteAtSend ?? undefined),
+        };
+        setPendingSends((current) => [
+          ...current.filter((pending) => pending.clientNonce !== clientNonce),
+          send,
+        ]);
+      }
+      // Without a seq the stored message cannot be told apart, so the refresh shows it instead.
+      const settlePendingSend = (acceptedSeq?: number) =>
+        setPendingSends((current) =>
+          acceptedSeq === undefined
+            ? current.filter((pending) => pending.clientNonce !== clientNonce)
+            : current.map((pending) =>
+                pending.clientNonce === clientNonce ? { ...pending, acceptedSeq } : pending,
+              ),
+        );
       const dropDelayedSetup = () => {
         // Only after successful engagement so a failed upload/send keeps the setup card.
         if (initialBotTarget && focusPromptBotIdRef.current === initialBotTarget) {
@@ -499,6 +553,7 @@ export function useComposerActions({
           ? (await rpc.threads.sendWithRoutines({ ...payload, routineIds: plan.routineIds })).send
           : await rpc.threads.send(payload);
         accepted = true;
+        settlePendingSend(sent?.seq);
         if (sent && botTarget && activeBotId.current === botTarget) {
           updateSnapshot((current) =>
             applyThreadSendReceipt(
@@ -536,6 +591,7 @@ export function useComposerActions({
           setUnsentTexts((texts) => [...texts.slice(-(RECENT_SENDS - 1)), trimmed]);
           setUnsentCount((count) => count + 1);
         }
+        settlePendingSend();
         const isConfirmation = isImageInputConfirmation(error);
         // Offer the file resend only for the unchanged draft this send carried.
         const confirmation = isConfirmation && draftEdits.current === editsAtSend;
@@ -652,9 +708,19 @@ export function useComposerActions({
     setReplyQuote,
     clearReply,
     sending,
+    pendingSends,
     sentCount,
-    /** What the transcript follows this tab's sends by: to scroll to them and animate them in. */
-    sendEntrance: { followRequest: sentCount, sentTexts, unsentRequests: unsentCount, unsentTexts },
+    /**
+     * Laid over the transcript's own props: scroll on send, the sends not stored yet, and the
+     * sends this tab made, so each animates in as it arrives.
+     */
+    transcriptProps: {
+      followRequest: sentCount,
+      sentTexts,
+      unsentRequests: unsentCount,
+      unsentTexts,
+      ...(pendingTranscript ? { transcript: pendingTranscript } : {}),
+    },
     sendMessage,
     stopRun,
     answerMessage,

@@ -2,7 +2,7 @@
 
 import type { Bot, ComputerStatus, Me, ThreadMessage, ThreadSnapshot } from "@rakazo/contracts";
 import { THREAD_MESSAGE_TEXT_MAX_LENGTH } from "@rakazo/contracts";
-import { flush as flushTimer } from "@rakazo/core/test-async";
+import { deferred, flush as flushTimer } from "@rakazo/core/test-async";
 import { act } from "react";
 import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
@@ -572,6 +572,64 @@ it("clears a quoted reply re-picked as a fresh object after a thread refresh", a
   expect(latest.replyQuote).toBeNull();
 });
 
+it("shows a text send at once and keeps it when the follow-up refresh fails", async () => {
+  const reply = deferred<{ runId: string; taskId: string; seq: number }>();
+  rpc.threads.send.mockReturnValue(reply.promise);
+  activeSnapshot = { threadId: "t-1", messages: [] } as unknown as ThreadSnapshot;
+  refreshThread = () => Promise.reject(new Error("offline"));
+  let sent!: Promise<boolean>;
+  act(() => {
+    sent = latest.sendMessage("hello there", [], "nonce-1");
+  });
+  expect(latest.pendingSends).toEqual([
+    { threadKey: "bot-1", clientNonce: "nonce-1", text: "hello there", afterSeq: 0 },
+  ]);
+  expect(latest.transcriptProps.transcript?.messages.map((message) => message.id)).toEqual([
+    "pending:nonce-1",
+  ]);
+
+  reply.resolve({ runId: "run-1", taskId: "task-1", seq: 7 });
+  await act(async () => void (await sent));
+  await act(flushTimer);
+  // Accepted but not yet in the chat: it stays until the stored message arrives.
+  expect(latest.pendingSends).toEqual([
+    {
+      threadKey: "bot-1",
+      clientNonce: "nonce-1",
+      text: "hello there",
+      afterSeq: 0,
+      acceptedSeq: 7,
+    },
+  ]);
+});
+
+it("keeps every send of a quick run pending", async () => {
+  rpc.threads.send
+    .mockResolvedValueOnce({ runId: "run-1", taskId: "task-1", seq: 1 })
+    .mockResolvedValueOnce({ runId: "run-2", taskId: "task-2", seq: 2 });
+  await act(async () => void (await latest.sendMessage("first", [], "nonce-1")));
+  await act(async () => void (await latest.sendMessage("second", [], "nonce-2")));
+  expect(latest.pendingSends.map((pending) => [pending.text, pending.acceptedSeq])).toEqual([
+    ["first", 1],
+    ["second", 2],
+  ]);
+});
+
+it("drops a text send that fails", async () => {
+  const reply = deferred<never>();
+  rpc.threads.send.mockReturnValue(reply.promise);
+  let sent!: Promise<boolean>;
+  act(() => {
+    sent = latest.sendMessage("hello there", [], "nonce-1");
+  });
+  expect(latest.pendingSends.map((pending) => pending.text)).toEqual(["hello there"]);
+
+  reply.reject(new Error("offline"));
+  await act(async () => void (await sent));
+  expect(await sent).toBe(false);
+  expect(latest.pendingSends).toEqual([]);
+});
+
 it("refuses text over the message limit before any request and keeps the draft", async () => {
   rpc.threads.send.mockResolvedValue({ runId: "run-1", taskId: "task-1" });
   let accepted!: boolean;
@@ -581,6 +639,7 @@ it("refuses text over the message limit before any request and keeps the draft",
   expect(accepted).toBe(false);
   expect(rpc.threads.send).not.toHaveBeenCalled();
   expect(latest.sendError).toBe("Messages can be up to 100,000 characters.");
+  expect(latest.pendingSends).toEqual([]);
 
   await act(async () => {
     accepted = await latest.sendMessage("a".repeat(THREAD_MESSAGE_TEXT_MAX_LENGTH), [], "n-2");
