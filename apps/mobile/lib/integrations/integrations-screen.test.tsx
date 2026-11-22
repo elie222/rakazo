@@ -627,7 +627,7 @@ it("keeps loaded plugins showing while the screen reads them again", async () =>
 });
 
 it("waits for the new Space's plugins after a switch with a cached empty catalog", async () => {
-  const guidance = "Configure a plugin catalog on the server to connect apps.";
+  const guidance = "Managed apps haven’t been enabled on this server.";
   await render();
   await act(async () => catalog.resolve([]));
   await settle();
@@ -1640,7 +1640,7 @@ it("shows a catalog server added while another category was open", async () => {
   );
 });
 
-it("does not offer a catalog server that needs a key", async () => {
+it("opens the credential form for a catalog server that needs a token", async () => {
   const fallback = state.rpc.getMockImplementation();
   state.rpc.mockImplementation((proc: string, args: unknown) =>
     proc === "capabilities/catalogSearch"
@@ -1653,10 +1653,14 @@ it("does not offer a catalog server that needs a key", async () => {
   await searchFor("tracker");
   await press("Search more apps");
 
-  expect(container.querySelector('[data-testid="integration-catalog-search"]')?.textContent).toBe(
-    "No apps match your search.",
+  await press("Connect");
+  expect(container.querySelector('input[placeholder="Bearer token"]')).not.toBeNull();
+  expect(container.querySelector('input[value="https://mcp.tracker.example/mcp"]')).not.toBeNull();
+  expect(state.rpc).not.toHaveBeenCalledWith(
+    "mcp/servers/connect",
+    expect.anything(),
+    expect.anything(),
   );
-  expect(container.textContent?.match(/No apps match your search\./g)).toHaveLength(1);
 });
 
 it("does not say nothing matched when the screen lists a match but the catalog finds none", async () => {

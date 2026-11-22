@@ -187,12 +187,12 @@ function publicCatalogRow() {
 }
 
 function publicSearches() {
-  return api.capabilities.catalogSearch.mock.calls.filter(
-    (call) => (call[0] as { usePublicCatalog?: boolean }).usePublicCatalog,
-  );
+  return api.capabilities.catalogSearch.mock.calls
+    .map(([input]) => input as { usePublicCatalog?: boolean })
+    .filter((input) => input.usePublicCatalog);
 }
 
-it("offers the public catalog for a search and sends nothing there until it is picked", async () => {
+it("shows public catalog results inline and sends nothing there until asked", async () => {
   await act(async () =>
     root.render(
       <QueryClientProvider client={client}>
@@ -210,16 +210,15 @@ it("offers the public catalog for a search and sends nothing there until it is p
   expect(publicCatalogRow()).toBeUndefined();
 
   await type(searchBox(), " canva ");
-  expect(host.textContent).toContain("No apps match your search.");
-  expect(host.querySelector('[role="status"]')?.textContent).toBe("No apps match your search.");
+  expect(host.textContent).toContain("No matches in your current catalogs.");
   expect(publicCatalogRow()?.textContent).toBe("Search MCP servers for “canva”");
   expect(publicSearches()).toHaveLength(0);
 
   await act(async () => publicCatalogRow()?.click());
   await vi.waitFor(() => expect(host.textContent).toContain("Canva"));
-  expect(host.textContent).toContain("Add MCP server");
-  expect(searchBox().value).toBe("canva");
-  expect(publicSearches()).toEqual([[{ query: "canva", usePublicCatalog: true }]]);
+  expect(host.textContent).not.toContain("No matches in your current catalogs.");
+  expect(searchBox().value).toBe(" canva ");
+  expect(publicSearches()).toEqual([{ query: "canva", usePublicCatalog: true }]);
 });
 
 it("keeps complete Unicode initials in the connected-app marks", async () => {

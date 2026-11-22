@@ -86,6 +86,7 @@ function view(props: { hidden?: boolean } = {}) {
     hidden: props.hidden ?? false,
     noLocalMatch: true,
     onChanged,
+    onOpenMcp: vi.fn(),
   });
 }
 

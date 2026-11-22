@@ -1,19 +1,44 @@
-import type { IntegrationCatalogResult } from "@rakazo/contracts";
+import type {
+  IntegrationCatalogResult,
+  IntegrationCatalogSurface,
+  McpSourcePreset,
+} from "@rakazo/contracts";
 import { McpRemoteEndpointSchema } from "@rakazo/contracts";
 
 export type SignInMcpServer = { name: string; endpoint: string };
 
 /** Remote MCP servers a person can connect by signing in, without pasting a key first. */
 export function signInMcpServers(results: readonly IntegrationCatalogResult[]): SignInMcpServer[] {
-  const servers = new Map<string, SignInMcpServer>();
-  for (const result of results) {
-    for (const surface of result.surfaces) {
-      if (surface.kind !== "mcp" || !surface.source?.startsWith("https://")) continue;
-      if (!McpRemoteEndpointSchema.safeParse(surface.source).success) continue;
-      if (surface.auth?.type === "bearer" || surface.auth?.type === "header") continue;
-      if (!servers.has(surface.source))
-        servers.set(surface.source, { name: result.name, endpoint: surface.source });
+  return catalogMcpServers(results, { signInOnly: true }).map(({ name, source }) => ({
+    name,
+    endpoint: source,
+  }));
+}
+
+export type CatalogMcpServer = {
+  name: string;
+  source: string;
+  auth: IntegrationCatalogSurface["auth"];
+};
+
+export function catalogMcpServers(
+  results: readonly IntegrationCatalogResult[],
+  { signInOnly = false } = {},
+): CatalogMcpServer[] {
+  const servers = new Map<string, CatalogMcpServer>();
+  for (const { name, surfaces } of results) {
+    for (const { kind, source, auth } of surfaces) {
+      if (kind !== "mcp" || !source?.startsWith("https://")) continue;
+      if (!McpRemoteEndpointSchema.safeParse(source).success || servers.has(source)) continue;
+      if (signInOnly && (auth?.type === "bearer" || auth?.type === "header")) continue;
+      if (auth?.type === "header" && !auth.headerName) continue;
+      servers.set(source, { name, source, auth });
     }
   }
   return [...servers.values()];
+}
+
+export function featuredMcpPresets(presets: readonly McpSourcePreset[], query: string) {
+  const term = query.trim().toLowerCase();
+  return presets.filter((preset) => preset.featured && preset.name.toLowerCase().includes(term));
 }

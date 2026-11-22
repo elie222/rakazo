@@ -8,6 +8,7 @@ import {
   CONNECTION_CATALOG_PAGE_SIZE,
   catalogItemAccounts,
   catalogItemKey,
+  featuredMcpPresets,
   filterConnectionCatalogItems,
   filterPluginBrands,
   filterPlugins,
@@ -184,6 +185,7 @@ export default function Integrations() {
     addOptions,
     adding,
     startAdding,
+    startCatalogMcp,
     removeSource,
     pending: sourcePending,
     formProps,
@@ -237,6 +239,11 @@ export default function Integrations() {
     pluginsUnavailable: pluginsState === "partial",
   });
   const featuredTiles = useMemo(() => buildFeaturedConnectorTiles(catalog), [catalog]);
+  const directPresets = category
+    ? []
+    : featuredMcpPresets(sourcePresets, query).filter(
+        ({ name }) => !catalog.some((item) => item.name.toLowerCase() === name.toLowerCase()),
+      );
   const showFeatured = !query.trim();
   const catalogApps = useMemo(() => filterConnectionCatalogItems(catalog, query), [catalog, query]);
   const renderedApps = catalogApps.slice(0, visibleCount);
@@ -563,14 +570,34 @@ export default function Integrations() {
                 {catalogsReady && catalog.length === 0 && plugins.length === 0 && !filtering ? (
                   <Text
                     style={styles.secondary}
-                  >{t`Configure a plugin catalog on the server to connect apps.`}</Text>
+                  >{t`Managed apps haven’t been enabled on this server.`}</Text>
                 ) : null}
+
+                {directPresets.map((preset) => (
+                  <View key={preset.id} style={styles.row}>
+                    <ConnectorIcon name={preset.name} size={LOGO_SIZE} />
+                    <Text numberOfLines={1} style={[styles.title, styles.grow]}>
+                      {preset.name}
+                    </Text>
+                    <NativeActionButton
+                      fill={false}
+                      label={t`Connect`}
+                      accessibilityLabel={t`Connect ${ph({ name: preset.name })}`}
+                      onPress={() =>
+                        startAdding({ id: preset.id, label: preset.name, kind: "mcp", preset })
+                      }
+                      prominence="secondary"
+                    />
+                  </View>
+                ))}
 
                 {catalogReady && catalog.length > 0 && !category ? (
                   <View style={catalogColumns === 2 ? styles.catalogGrid : styles.catalogStack}>
                     {showFeatured
                       ? featuredTiles.map((tile) => {
                           const item = tile.item;
+                          if (!item && directPresets.some(({ name }) => name === tile.label))
+                            return null;
                           const key = item ? catalogItemKey(item) : tile.id;
                           const disabled = tile.missing || !item;
                           if (item && !tile.missing) {
@@ -611,7 +638,11 @@ export default function Integrations() {
                   <IntegrationCatalogSearch
                     query={query}
                     hidden={Boolean(category)}
-                    noLocalMatch={noMatch}
+                    noLocalMatch={noMatch && directPresets.length === 0}
+                    excludedNames={[...catalog, ...directPresets].map(({ name }) =>
+                      name.toLowerCase(),
+                    )}
+                    onOpenMcp={startCatalogMcp}
                     onChanged={(serverId) => {
                       if (serverId) setOauthServerId(serverId);
                       refresh();

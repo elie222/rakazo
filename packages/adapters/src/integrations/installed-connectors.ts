@@ -77,6 +77,15 @@ const McpAuthSchema = z
 
 /** MCP services offered as one-step sources. A preset with a URL always connects there. */
 export const MCP_SOURCE_PRESETS: McpSourcePreset[] = [
+  {
+    id: "github",
+    name: "GitHub",
+    url: "https://api.githubcopilot.com/mcp/readonly",
+    featured: true,
+    credentialHelpUrl: "https://github.com/settings/personal-access-tokens/new",
+  },
+  { id: "linear", name: "Linear", url: "https://mcp.linear.app/mcp", signIn: true, featured: true },
+  { id: "notion", name: "Notion", url: "https://mcp.notion.com/mcp", signIn: true, featured: true },
   // A self-hosted Executor serves the same endpoint at its own origin, so the URL stays editable.
   { id: "executor", name: "Executor", defaultUrl: "https://mcp.executor.sh/mcp", signIn: true },
 ];
