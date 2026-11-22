@@ -1,6 +1,7 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { Bot, Group, NavLink } from "@rakazo/contracts";
 import { accountDisplay } from "@rakazo/core";
+import { formatBillingDate } from "@rakazo/i18n/billing";
 import {
   Button,
   InputGroup,
@@ -18,7 +19,6 @@ import { useBilling } from "../../../components/billing/SubscriptionGate";
 import { CreateOrganizationDialog } from "../../../components/spaces/CreateOrganizationDialog";
 import { InviteDialog } from "../../../components/spaces/InviteDialog";
 import { useSignOut } from "../../../lib/auth/sign-out";
-import { formatBillingDate } from "../../../lib/billing/billing";
 import type { BotsSidebarDensity } from "../../../lib/preferences/bots-sidebar-density-pref";
 import { useQueryUserId } from "../../../lib/query/query";
 import { switchOrganization, useOrganizations } from "../../../lib/spaces/organizations";
