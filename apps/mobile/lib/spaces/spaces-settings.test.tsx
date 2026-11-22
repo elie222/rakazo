@@ -13,7 +13,7 @@ import { registerSettingsSheet } from "../settings/settings-sheet";
 const state = vi.hoisted(() => ({
   events: [] as unknown[],
   spaces: [] as { id: string; name: string }[],
-  overrides: [] as string[],
+  overrides: [] as string[] | Error,
 }));
 const { element } = vi.hoisted(() => ({
   element:
@@ -32,7 +32,10 @@ vi.mock("../api/user-error", () => ({ errorText: (_: unknown, fallback = "Failed
 vi.mock("../api/api", () => ({
   rpc: vi.fn(async (proc: string) => {
     if (proc === "spaces/list") return { spaces: state.spaces };
-    if (proc === "spaceSettings/overrides") return state.overrides;
+    if (proc === "spaceSettings/overrides") {
+      if (state.overrides instanceof Error) throw state.overrides;
+      return state.overrides;
+    }
     throw new Error(`Unexpected RPC: ${proc}`);
   }),
   currentApiBase: () => "https://app.example.test",
@@ -127,6 +130,15 @@ it("keeps a lone Space's customized settings reachable", async () => {
   expect(state.events).toEqual([
     { pathname: "/space", params: { spaceId: "space-1", name: "Personal" } },
   ]);
+});
+
+it("keeps a lone Space's settings reachable when its overrides cannot be read", async () => {
+  state.spaces = [{ id: "space-1", name: "Personal" }];
+  state.overrides = new Error("offline");
+  await render();
+  await vi.waitFor(() =>
+    expect(rows()).toEqual(["Members", "Settings for this Space", "New private space"]),
+  );
 });
 
 it("lists each of several Spaces, opening its settings in place", async () => {

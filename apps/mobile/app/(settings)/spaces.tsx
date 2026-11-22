@@ -1,5 +1,4 @@
 import { useLingui } from "@lingui/react/macro";
-import { useQuery } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
 import { ActivityIndicator, ScrollView, StyleSheet } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -8,7 +7,7 @@ import { LoadFailure } from "../../components/ui/load-failure";
 import { errorText } from "../../lib/api/user-error";
 import { useSideInsets } from "../../lib/layout/side-insets";
 import { native, useThemedStyles } from "../../lib/native/native";
-import { queryClient, rpcQuery } from "../../lib/query/query";
+import { rpcQuery } from "../../lib/query/query";
 import { useScreenQuery } from "../../lib/query/screen-query";
 import { openFromSettingsSheet } from "../../lib/settings/settings-sheet";
 
@@ -24,11 +23,11 @@ export default function SpacesSettings() {
   const query = useScreenQuery(rpcQuery("spaces/list"));
   const spaces = query.data?.spaces;
   const only = spaces?.length === 1 ? spaces[0] : undefined;
-  const overrides = useQuery(
-    { ...rpcQuery("spaceSettings/overrides", undefined, only?.id), enabled: Boolean(only) },
-    queryClient,
-  );
-  const customized = (overrides.data?.length ?? 0) > 0;
+  const overrides = useScreenQuery(rpcQuery("spaceSettings/overrides", undefined, only?.id), {
+    enabled: Boolean(only),
+  });
+  // A failed read keeps the row, whose screen shows the failure and a retry.
+  const customized = (overrides.data?.length ?? 0) > 0 || overrides.isError;
 
   return (
     <SafeAreaView edges={["bottom"]} style={styles.screen}>
