@@ -2,7 +2,7 @@ import { deferred, flush } from "@rakazo/core/test-async";
 import type { FetchQueryOptions, QueryObserverOptions } from "@tanstack/react-query";
 import { QueryObserver } from "@tanstack/react-query";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { accountRpcQuery, formRead, queryClient, rpcQuery } from "./query";
+import { accountRpcQuery, formRead, queryClient, resetRpcQueries, rpcQuery } from "./query";
 import {
   clearSavedReads,
   keepSavedReads,
@@ -208,11 +208,44 @@ it("treats a saved answer that no longer matches the contract as a cold miss", a
   await vi.waitFor(() => expect(state.loadVerified).toHaveBeenCalled());
   await flush();
   expect(shown.getCurrentResult().data).toBeUndefined();
-  state.files.set(path, "{");
-  relaunch();
-  const again = open(catalogRead());
+  for (const broken of ["{", JSON.stringify({ ...JSON.parse(text), savedAt: "yesterday" })]) {
+    state.files.set(path, broken);
+    relaunch();
+    const again = open(catalogRead());
+    await flush();
+    await flush();
+    expect(again.getCurrentResult().data).toBeUndefined();
+  }
+});
+
+it("keeps the newer answer on disk when an older save finishes after it", async () => {
+  const verify = deferred<typeof state.verified>();
+  state.loadVerified.mockReturnValueOnce(verify.promise);
+  state.rpc.mockResolvedValueOnce([app]);
+  await queryClient.fetchQuery({ ...catalogRead(), staleTime: 0 });
+  const refreshed = [{ ...app, name: "Refreshed app" }];
+  await answerAndSave({ ...catalogRead(), staleTime: 0 }, refreshed);
+  const writes = state.writes;
+  verify.resolve(state.verified);
   await flush();
-  expect(again.getCurrentResult().data).toBeUndefined();
+  await flush();
+  expect(state.writes).toBe(writes);
+  expect(JSON.parse([...state.files.values()][0]!).data).toEqual(refreshed);
+});
+
+it("drops a saved answer that arrives after the read was reset", async () => {
+  await answerAndSave(catalogRead(), [app]);
+  relaunch();
+  const verify = deferred<typeof state.verified>();
+  state.loadVerified.mockReturnValueOnce(verify.promise);
+  const shown = open(catalogRead());
+  await vi.waitFor(() => expect(state.loadVerified).toHaveBeenCalled());
+  // The reset reads again, and the network never answers here.
+  void resetRpcQueries("connections/catalog");
+  verify.resolve(state.verified);
+  await flush();
+  await flush();
+  expect(shown.getCurrentResult().data).toBeUndefined();
 });
 
 it("never touches the disk for a procedure that is not saved", async () => {

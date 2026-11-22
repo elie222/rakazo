@@ -5,6 +5,7 @@ import { identityLabels } from "@rakazo/i18n/identity-display";
 import { bestEffort } from "@rakazo/logging/best-effort";
 import type { Query, QueryClient } from "@tanstack/react-query";
 import { Directory, File, Paths } from "expo-file-system";
+import { z } from "zod";
 import { currentApiBase } from "../api/api";
 import type { SavedVerifiedScope } from "../api/session";
 import { currentSessionGeneration, loadVerifiedScope } from "../api/session";
@@ -24,7 +25,9 @@ export type RpcReadMeta = {
 /**
  * The reads whose last answer is kept on disk, so a cold launch paints it before the network
  * answers, whichever screen reads them. Only answers that hold no secrets (tokens, credentials,
- * sealed values, or addresses and settings people type in, which can carry keys) belong here.
+ * sealed values, or addresses and settings people type in, which can carry keys) belong here, and
+ * only answers no write is built from unless the server checks it again: consent (sent back by
+ * version) and `me` (Labs sends its whole list back) stay in memory.
  */
 const SAVED_PROCEDURES: ReadonlySet<RpcPath> = new Set<RpcPath>([
   // Integrations
@@ -32,10 +35,6 @@ const SAVED_PROCEDURES: ReadonlySet<RpcPath> = new Set<RpcPath>([
   "connections/list",
   "capabilities/sourcePresets",
   "marketplace/catalog",
-  // General, Profile and Labs
-  "me",
-  // AI data sharing
-  "aiConsent/status",
 ]);
 
 const ROOT = "saved-reads-v1";
@@ -47,6 +46,14 @@ const MAX_NAME = 200;
 const folder = cacheFolder(ROOT);
 /** Each file's answer as last written or read, so an unchanged answer is not written again. */
 const onDisk = new Map<string, string>();
+/** What a saved file holds around the answer; anything else is a cold miss. */
+const SavedFileSchema = z.object({ key: z.string(), savedAt: z.number(), data: z.unknown() });
+/** The latest save each read started: an older one that finishes later is dropped. */
+const latestSave = new Map<string, number>();
+let saves = 0;
+/** Seeds in flight. A reset or invalidation of the read meanwhile drops its seed. */
+const seeding = new Map<Query, number>();
+let seeds = 0;
 
 type Checked = { value?: unknown; issues?: unknown };
 type Schema = {
@@ -106,6 +113,16 @@ async function verifiedUser(meta: RpcReadMeta, ask: boolean): Promise<SavedVerif
 
 /** Paints a saved answer into a read that has none yet; the read's own fetch still replaces it. */
 async function seed(query: Query, meta: RpcReadMeta): Promise<void> {
+  const started = ++seeds;
+  seeding.set(query, started);
+  try {
+    await paint(query, meta, () => seeding.get(query) === started);
+  } finally {
+    if (seeding.get(query) === started) seeding.delete(query);
+  }
+}
+
+async function paint(query: Query, meta: RpcReadMeta, undisturbed: () => boolean) {
   const schema = outputSchema(meta.proc);
   const user = schema && (await verifiedUser(meta, false));
   if (!schema || !user || query.state.data !== undefined || !isCurrent(meta)) return;
@@ -114,17 +131,14 @@ async function seed(query: Query, meta: RpcReadMeta): Promise<void> {
   clearLegacy();
   const target = savedFile(meta, user, space);
   if (!target?.file.exists || target.file.size > SAVED_READ_MAX_BYTES) return;
-  const saved = JSON.parse(target.file.textSync()) as {
-    key?: unknown;
-    savedAt?: unknown;
-    data?: unknown;
-  };
-  if (saved?.key !== target.key || typeof saved.savedAt !== "number") return;
+  const envelope = SavedFileSchema.safeParse(JSON.parse(target.file.textSync()));
+  if (!envelope.success || envelope.data.key !== target.key) return;
+  const saved = envelope.data;
   // An answer saved by an older app, or from a server that changed, is a cold miss.
   const checked = await schema["~standard"].validate(saved.data);
   if (checked.issues) return;
   // The fetch that opened the read may have answered while the file was read.
-  if (query.state.data !== undefined || !isCurrent(meta)) return;
+  if (query.state.data !== undefined || !isCurrent(meta) || !undisturbed()) return;
   onDisk.set(target.file.uri, JSON.stringify(saved.data));
   query.setState({
     data: displayIdentityResult(meta.proc.split("/"), checked.value, identityLabels()),
@@ -135,8 +149,10 @@ async function seed(query: Query, meta: RpcReadMeta): Promise<void> {
   });
 }
 
-async function save(meta: RpcReadMeta, data: unknown): Promise<void> {
+async function save(query: Query, meta: RpcReadMeta, data: unknown): Promise<void> {
   if (!outputSchema(meta.proc)) return;
+  const started = ++saves;
+  latestSave.set(query.queryHash, started);
   const user = await verifiedUser(meta, true);
   if (!user || !isCurrent(meta)) return;
   const space = resolvedSpace(meta, user);
@@ -148,7 +164,7 @@ async function save(meta: RpcReadMeta, data: unknown): Promise<void> {
   const text = `{"key":${JSON.stringify(target.key)},"savedAt":${Date.now()},"data":${answer}}`;
   if (new TextEncoder().encode(text).length > SAVED_READ_MAX_BYTES) return;
   clearLegacy();
-  if (!isCurrent(meta)) return;
+  if (!isCurrent(meta) || latestSave.get(query.queryHash) !== started) return;
   if (!target.directory.exists) target.directory.create({ intermediates: true, idempotent: true });
   // The reads seen longest ago make room for this one.
   folder.write(target.file, text, { totalBytes: SAVED_READS_MAX_BYTES });
@@ -172,7 +188,13 @@ export function keepSavedReads(client: QueryClient): void {
     )
       void bestEffort("show a saved read", seed(event.query, meta));
     else if (event.type === "updated" && event.action.type === "success")
-      void bestEffort("save a read", save(meta, event.action.data));
+      void bestEffort("save a read", save(event.query, meta, event.action.data));
+    // A reset or invalidation (consent granted, a change elsewhere) outdates a saved answer.
+    else if (
+      event.type === "updated" &&
+      (event.action.type === "setState" || event.action.type === "invalidate")
+    )
+      seeding.delete(event.query);
   });
 }
 
@@ -180,6 +202,7 @@ export function keepSavedReads(client: QueryClient): void {
 export function clearSavedReads(): void {
   clearLegacy();
   onDisk.clear();
+  latestSave.clear();
   folder.clear();
 }
 
