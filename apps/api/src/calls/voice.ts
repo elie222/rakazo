@@ -48,7 +48,7 @@ import { readBoundedBody } from "../http/http-body.js";
 import type { DeploymentVoice } from "../voice/deployment-config.js";
 import { hasDeploymentVoiceConsent } from "../voice/deployment-consent.js";
 import { voiceHttpError } from "../voice/http-errors.js";
-import { withSpeechCost } from "../voice/operator-cost.js";
+import { TRANSCRIBE, withSpeechCost } from "../voice/operator-cost.js";
 import type { SpeechSummarizer } from "./speech-summary.js";
 
 export interface VoiceDeps {
@@ -789,7 +789,8 @@ export async function synthesizeVoice(
     throw new ORPCError("BAD_REQUEST", { message: "That utterance is too long to speak." });
   }
   const provider = await voiceProviderFor(deps, target.cred.provider);
-  return withSpeechCost(deps, { ...actor, callId: input.callId }, target, "synthesize", () =>
+  const speech = { operation: "synthesize" as const, text };
+  return withSpeechCost(deps, { ...actor, callId: input.callId }, target, speech, () =>
     withVoiceConnection(target.cred.provider, target.linked, () =>
       provider.synthesize(
         {
@@ -834,7 +835,7 @@ export async function transcribeVoice(
   if (input.audio.byteLength === 0 || input.audio.byteLength > MAX_TRANSCRIBE_BYTES) {
     throw new ORPCError("BAD_REQUEST", { message: "That recording is empty or too large." });
   }
-  return withSpeechCost(deps, { ...actor, callId: input.callId }, loaded, "transcribe", () =>
+  return withSpeechCost(deps, { ...actor, callId: input.callId }, loaded, TRANSCRIBE, () =>
     withVoiceConnection(loaded.cred.provider, loaded.linked, () =>
       provider.transcribe!(
         {
@@ -886,7 +887,7 @@ export async function transcribeInboundVoice(
   }
   const provider = await voiceProviderFor(deps, loaded.cred.provider);
   if (!provider.transcribe) return null;
-  const { text } = await withSpeechCost(deps, owner, loaded, "transcribe", () =>
+  const { text } = await withSpeechCost(deps, owner, loaded, TRANSCRIBE, () =>
     withVoiceConnection(loaded.cred.provider, loaded.linked, () =>
       provider.transcribe!(
         {

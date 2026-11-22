@@ -201,8 +201,8 @@ describe("OpenRouterVoiceProvider", () => {
     expect(String(fetch.mock.calls[0]![0])).toBe("https://openrouter.ai/api/v1/key");
   });
 
-  it("can use the account's Models connection and has no deployment usage unit", () => {
+  it("can use the account's Models connection and meters transcription in seconds", () => {
     expect(openRouterVoice.catalog).toMatchObject({ modelConnection: true, speechModels: true });
-    expect(openRouterVoice.deploymentUsageUnit).toBeUndefined();
+    expect(openRouterVoice.transcriptionUsageUnit?.("x-ai/grok-stt-2.0")).toBe("seconds");
   });
 });

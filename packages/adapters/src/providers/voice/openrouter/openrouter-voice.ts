@@ -190,6 +190,7 @@ export class OpenRouterVoiceProvider implements VoiceProvider {
 }
 
 export const openRouterVoice: VoiceProviderDefinition = {
+  transcriptionUsageUnit: () => "seconds",
   catalog: {
     name: "OpenRouter",
     description: "Speech and transcription from many providers, with one key.",
