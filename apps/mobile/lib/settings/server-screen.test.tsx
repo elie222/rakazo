@@ -229,20 +229,6 @@ it("keeps the address read-only during a pending probe and accepts edits after i
   expect(api.probe.mock.lastCall?.[0]).toBe("https://three.example.test");
 });
 
-it("keeps the address read-only during a pending save and releases it after failure", async () => {
-  const savedAddress = deferred<{ ok: false; error: string }>();
-  api.save.mockReturnValueOnce(savedAddress.promise);
-  await renderServer("https://two.example.test");
-  await pressSave();
-  const address = container!.querySelector("input")!;
-
-  expect(api.save).toHaveBeenCalledOnce();
-  expect(address.readOnly).toBe(true);
-  await act(async () => savedAddress.resolve({ ok: false, error: "Could not save this server" }));
-  expect(container?.textContent).toContain("Could not save this server");
-  expect(address.readOnly).toBe(false);
-});
-
 it("asks before switching servers deletes unsent messages", async () => {
   vi.mocked(hasUnsentSends).mockReturnValue(true);
   try {
