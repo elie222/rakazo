@@ -1,6 +1,7 @@
 import { ph } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
 import { mcpServerConnection } from "@rakazo/contracts";
+import { mcpHeaderEditValid } from "@rakazo/core";
 import { mcpServerStatusLabel } from "@rakazo/i18n/plugin-catalog";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useState } from "react";
@@ -20,7 +21,6 @@ import { mobileTokens } from "../../lib/appearance/appearance";
 import type { McpServerAccess, RemoteMcpServerEdit } from "../../lib/integrations/mcp-server-edit";
 import {
   mcpAdvancedInUse,
-  mcpHeaderEditValid,
   remoteMcpServerChanged,
   remoteMcpServerEdit,
   remoteMcpServerUpdate,
@@ -30,7 +30,7 @@ import { useSideInsets } from "../../lib/layout/side-insets";
 import { announceToScreenReader } from "../../lib/native/announce";
 import { native, useThemedStyles } from "../../lib/native/native";
 import { useScreenHeader } from "../../lib/navigation/screen-header";
-import { formRead, rpcQuery, useSave } from "../../lib/query/query";
+import { formRead, refreshRpcQueries, rpcQuery, useSave } from "../../lib/query/query";
 import { useScreenQuery } from "../../lib/query/screen-query";
 
 type Draft = RemoteMcpServerEdit & { access: McpServerAccess };
@@ -91,9 +91,16 @@ function McpServerScreen({ id }: { id: string }) {
   const save = useSave({
     save: async (next: Draft, send) => {
       if (!server) return;
-      const config = remoteMcpServerUpdate(server, next);
-      if (config && configChanged) await send("mcp/servers/update", { id, config });
-      if (accessChanged) await send("mcp/servers/agents", { id, ...next.access });
+      const config = configChanged ? remoteMcpServerUpdate(server, next) : null;
+      if (config) await send("mcp/servers/update", { id, config });
+      if (!accessChanged) return;
+      try {
+        await send("mcp/servers/agents", { id, ...next.access });
+      } catch (failure) {
+        // The settings saved above stay saved, so show them before reporting the failure.
+        if (config) await refreshRpcQueries("mcp/servers/list");
+        throw failure;
+      }
     },
     stale: [serversRead.queryKey, assignmentsRead.queryKey],
     onSaved: () => setEdits({}),
@@ -109,8 +116,9 @@ function McpServerScreen({ id }: { id: string }) {
     closesScreen: true,
   });
   const busy = save.pending || test.pending || remove.pending;
-  // A server deleted elsewhere leaves nothing to show or edit.
-  const gone = Boolean(servers.data) && !server && !remove.pending;
+  // A server deleted elsewhere leaves nothing to show or edit; a list still being read again
+  // may not have the server yet.
+  const gone = Boolean(servers.data) && !servers.isFetching && !server && !remove.pending;
   useEffect(() => {
     if (gone) router.back();
   }, [gone, router]);
@@ -128,7 +136,10 @@ function McpServerScreen({ id }: { id: string }) {
   const ready = Boolean(server && botsQuery.data && assignments.data);
   const valid =
     Boolean(draft.name.trim()) &&
-    (!remote || (Boolean(draft.endpoint.trim()) && !!server && mcpHeaderEditValid(server, draft)));
+    (!remote ||
+      (Boolean(draft.endpoint.trim()) &&
+        !!server &&
+        mcpHeaderEditValid(server.headerKeys, draft.headerName, draft.headerValue)));
 
   useScreenHeader({
     title: server?.name ?? "",
@@ -288,7 +299,7 @@ function McpServerScreen({ id }: { id: string }) {
                 <SettingsInputRow
                   key="client-id"
                   accessibilityLabel={t`OAuth client ID (optional)`}
-                  placeholder={server.oauthClientId ?? t`OAuth client ID (optional)`}
+                  placeholder={t`OAuth client ID (optional)`}
                   editable={!busy}
                   autoCapitalize="none"
                   autoCorrect={false}

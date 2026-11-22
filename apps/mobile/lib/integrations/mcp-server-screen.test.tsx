@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { i18n } from "@lingui/core";
-import { flush } from "@rakazo/core/test-async";
+import { deferred, flush } from "@rakazo/core/test-async";
 import { useQuery } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { act } from "react";
@@ -10,7 +10,7 @@ import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import McpServerRoute from "../../app/(settings)/mcp-server";
 import { rpc } from "../api/api";
-import { queryClient } from "../query/query";
+import { formRead, queryClient, rpcQuery } from "../query/query";
 
 const back = vi.fn();
 const alert = vi.hoisted(() => vi.fn());
@@ -88,15 +88,18 @@ vi.mock("../../components/settings/settings-group", () => ({
   SettingsGroup: ({ children }: { children?: ReactNode }) => <section>{children}</section>,
   SettingsInputRow: ({
     accessibilityLabel,
+    placeholder,
     value,
     onChangeText,
   }: {
     accessibilityLabel?: string;
+    placeholder?: string;
     value?: string;
     onChangeText?: (text: string) => void;
   }) => (
     <input
       aria-label={accessibilityLabel}
+      placeholder={placeholder}
       value={value ?? ""}
       onChange={(event) => onChangeText?.(event.target.value)}
     />
@@ -396,4 +399,52 @@ it("marks Advanced only when the server uses one of its settings", async () => {
   await render();
   expect(container.textContent).toContain("Advanced");
   expect(container.textContent).not.toContain("In use");
+});
+
+it("drops stored header values when the URL changes", async () => {
+  await render();
+  await type("Server URL", "https://other.example.test/mcp");
+  expect(await save()).toBe(true);
+  expect(updates()).toEqual([
+    expect.objectContaining({ endpoint: "https://other.example.test/mcp", headers: {} }),
+  ]);
+});
+
+it("does not show the stored OAuth client ID", async () => {
+  server = { ...remote, oauthClientId: "stored-client" };
+  await render();
+  await tap("Advanced: In use");
+  expect(container.innerHTML).not.toContain("stored-client");
+});
+
+it("reads the server again when its settings saved but bot access did not", async () => {
+  await render();
+  const read = vi.mocked(rpc).getMockImplementation();
+  vi.mocked(rpc).mockImplementation(((path: string, ...rest: unknown[]) =>
+    path === "mcp/servers/agents"
+      ? Promise.reject(new Error("Could not change bots"))
+      : read?.(path as never, ...(rest as []))) as never);
+  await type("Name", "Issue tracker");
+  await tap("Chosen bots");
+  await tap("Scout");
+  const listReads = () => vi.mocked(rpc).mock.calls.filter(([path]) => path === "mcp/servers/list");
+  const before = listReads().length;
+  await save();
+  expect(updates()).toHaveLength(1);
+  expect(listReads().length).toBeGreaterThan(before);
+});
+
+it("waits for the server list to be read again before deciding the server is gone", async () => {
+  const list = deferred<unknown[]>();
+  const read = vi.mocked(rpc).getMockImplementation();
+  vi.mocked(rpc).mockImplementation(((path: string, ...rest: unknown[]) =>
+    path === "mcp/servers/list" ? list.promise : read?.(path as never, ...(rest as []))) as never);
+  // A list read before this server was added.
+  queryClient.setQueryData(formRead(rpcQuery("mcp/servers/list")).queryKey, []);
+  await render();
+  expect(back).not.toHaveBeenCalled();
+  await act(async () => list.resolve([server]));
+  await act(flush);
+  expect(back).not.toHaveBeenCalled();
+  expect(container.textContent).toContain("Status: Connected");
 });

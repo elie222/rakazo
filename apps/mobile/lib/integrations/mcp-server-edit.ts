@@ -1,4 +1,5 @@
 import type { McpServer, McpServerConfigInput } from "@rakazo/contracts";
+import { mcpEditedHeaderName, mcpOAuthClientInput, mcpServerHeaders } from "@rakazo/core";
 
 /** Which bots can use a server: every bot, or only `botIds`. */
 export type McpServerAccess = { allBots: boolean; botIds: string[] };
@@ -48,21 +49,6 @@ export function mcpAdvancedInUse(server: McpServer): boolean {
   );
 }
 
-/** The edited header's name: a value typed without one goes in Authorization, as on web. */
-function editedHeaderName(edit: RemoteMcpServerEdit): string {
-  return edit.headerName.trim() || (edit.headerValue.trim() ? "Authorization" : "");
-}
-
-/**
- * Whether the edited header can be saved. Its value is never read back, so renaming the
- * stored header needs a new value; clearing the name and value removes it.
- */
-export function mcpHeaderEditValid(server: McpServer, edit: RemoteMcpServerEdit): boolean {
-  const stored = server.headerKeys[0];
-  const name = editedHeaderName(edit);
-  return !stored || !name || name === stored || Boolean(edit.headerValue.trim());
-}
-
 export function remoteMcpServerChanged(server: McpServer, edit: RemoteMcpServerEdit): boolean {
   const stored = server.headerKeys[0];
   return (
@@ -71,32 +57,19 @@ export function remoteMcpServerChanged(server: McpServer, edit: RemoteMcpServerE
     Boolean(edit.token) ||
     edit.transport !== server.transport ||
     Boolean(edit.headerValue.trim()) ||
-    (stored !== undefined && editedHeaderName(edit) !== stored) ||
+    (stored !== undefined && mcpEditedHeaderName(edit.headerName, edit.headerValue) !== stored) ||
     Boolean(edit.oauthClientId.trim()) ||
     edit.verbatimResults !== server.verbatimResults
   );
 }
 
-/**
- * A remote server's saved settings with the edits applied. Stored headers are sent blank,
- * which keeps them, and a blank token keeps the stored one. The OAuth client is sent only
- * when a client ID is entered, since its stored scope is never read back. A stdio server has
- * none.
- */
+/** A remote server's saved settings with the edits applied; a stdio server has none. */
 export function remoteMcpServerUpdate(
   server: McpServer,
   edit: RemoteMcpServerEdit,
 ): McpServerConfigInput | null {
   if (server.transport === "stdio") return null;
-  const stored = server.headerKeys[0];
-  const headerName = editedHeaderName(edit);
-  const headerValue = edit.headerValue.trim();
-  const headers: Record<string, string> = Object.fromEntries(
-    server.headerKeys.map((key) => [key, ""]),
-  );
-  if (stored && headerName !== stored) delete headers[stored];
-  if (headerName && headerValue) headers[headerName] = headerValue;
-  const clientId = edit.oauthClientId.trim();
+  const endpoint = edit.endpoint.trim();
   return {
     slug: server.slug,
     name: edit.name.trim(),
@@ -104,16 +77,20 @@ export function remoteMcpServerUpdate(
     enabled: server.enabled,
     verbatimResults: edit.verbatimResults,
     transport: edit.transport,
-    endpoint: edit.endpoint.trim(),
-    headers,
+    endpoint,
+    headers: mcpServerHeaders({
+      storedKeys: server.headerKeys,
+      name: edit.headerName,
+      value: edit.headerValue,
+      endpointChanged: endpoint !== server.endpoint,
+    }),
+    // A blank token keeps the stored one.
     secret: edit.token || undefined,
-    oauthClient: clientId
-      ? {
-          clientId,
-          clientSecret: edit.oauthClientSecret || undefined,
-          scope: edit.oauthScope.trim() || undefined,
-          authorizationParams: edit.oauthParams.trim() || undefined,
-        }
-      : undefined,
+    oauthClient: mcpOAuthClientInput({
+      clientId: edit.oauthClientId,
+      clientSecret: edit.oauthClientSecret,
+      scope: edit.oauthScope,
+      params: edit.oauthParams,
+    }),
   };
 }
