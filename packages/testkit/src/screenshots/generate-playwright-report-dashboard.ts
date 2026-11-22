@@ -7,7 +7,6 @@ import {
   classifyPlaywrightScreenshot,
   compareScreenshotsWithBaseline,
   createScreenshotManifest,
-  renderPlaywrightDashboard,
   renderScreenshotGallery,
   screenshotTitleFromFileName,
   shouldPublishStableMainBaseline,
@@ -16,14 +15,14 @@ import {
 } from "./playwright-report-dashboard.js";
 import { MAX_PNG_SCREENSHOT_BYTES, validatePngScreenshot } from "./png-validation.js";
 
-const [historyPath, dashboardPath, testResultsPath, galleryPath, baselineManifestPath] =
+const [historyPath, historyEntryPath, testResultsPath, galleryPath, baselineManifestPath] =
   process.argv.slice(2);
 const MAX_ARTIFACT_ENTRIES = 2_000;
 const MAX_ARTIFACT_DEPTH = 12;
 
-if (!historyPath || !dashboardPath || !testResultsPath || !galleryPath) {
+if (!historyPath || !historyEntryPath || !testResultsPath || !galleryPath) {
   throw new Error(
-    "Usage: generate-playwright-report-dashboard <history-path> <dashboard-path> <test-results-path> <gallery-path>",
+    "Usage: generate-playwright-report-dashboard <history-path> <history-entry-path> <test-results-path> <gallery-path>",
   );
 }
 
@@ -47,7 +46,7 @@ const runIdentity = {
   attempt: getRequiredNumber("PLAYWRIGHT_RUN_ATTEMPT"),
   id: getRequiredEnvironmentVariable("PLAYWRIGHT_RUN_ID"),
 };
-const history = updatePlaywrightHistory(existingHistory, {
+const historyEntry = {
   ...runIdentity,
   branch: getRequiredEnvironmentVariable("PLAYWRIGHT_BRANCH"),
   createdAt,
@@ -61,13 +60,14 @@ const history = updatePlaywrightHistory(existingHistory, {
   screenshotCount: screenshots.length,
   screenshotsUrl,
   sha,
-});
+};
+// Only the serialized history step writes the shared history; this run's view
+// of it decides whether a main run is still the newest baseline.
+const history = updatePlaywrightHistory(existingHistory, historyEntry);
 
-await mkdir(path.dirname(historyPath), { recursive: true });
-await mkdir(path.dirname(dashboardPath), { recursive: true });
+await mkdir(path.dirname(historyEntryPath), { recursive: true });
 await mkdir(galleryPath, { recursive: true });
-await writeFile(historyPath, `${JSON.stringify(history, null, 2)}\n`);
-await writeFile(dashboardPath, renderPlaywrightDashboard(history));
+await writeFile(historyEntryPath, `${JSON.stringify(historyEntry)}\n`);
 await writeFile(
   path.join(galleryPath, "manifest.json"),
   `${JSON.stringify(createScreenshotManifest(screenshots, runIdentity), null, 2)}\n`,
@@ -101,9 +101,7 @@ await writeFile(
   `${JSON.stringify({ screenshots, screenshotsUrl }, null, 2)}\n`,
 );
 
-console.log(
-  `Playwright dashboard generated with ${history.length} runs and ${screenshots.length} screenshots.`,
-);
+console.log(`Playwright gallery generated with ${screenshots.length} screenshots.`);
 
 async function collectScreenshots(
   resultsPath: string,

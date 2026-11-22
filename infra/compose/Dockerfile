@@ -82,6 +82,7 @@ RUN install -d -m 750 -o node -g node /data /app/apps/web/node_modules/.vite-tem
 RUN /tmp/apt-security.sh --check && rm -f /tmp/apt-security.sh
 ARG GIT_SHA
 ENV NODE_ENV=production
+ENV EMAIL_COPY_DIR=/app/email-copy
 ENV GIT_SHA=$GIT_SHA
 EXPOSE 3100 5173 7091
 # The signal on which a replaced API lets its chat turns end before it exits (apps/api/src/http/drain.ts).

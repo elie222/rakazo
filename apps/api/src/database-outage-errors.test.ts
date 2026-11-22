@@ -6,7 +6,7 @@ import { createLogger, createTestSink, installLogger, runWithLogContext } from "
 import { requestLogging } from "@rakazo/logging/hono";
 import { Hono } from "hono";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { authLibraryLogger, withAuthLibraryFailures } from "./app.js";
+import { authLibraryLogger, withAuthLibraryFailures } from "./auth/auth-library-failures.js";
 import { handleHttpError, handleRpcError, requestHitDatabaseOutage } from "./rpc-errors.js";
 
 let sink: TestSink;

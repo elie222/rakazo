@@ -97,10 +97,13 @@ vi.mock("../../lib/native/native", () => ({
   useResolvedAppearance: () => "light",
 }));
 
+const linkConfirm = vi.hoisted(() => vi.fn());
+
 vi.mock("@rakazo/chat-ui/native", () => ({
   MarkdownLongPressContext: createContext(undefined),
   ChatMarkdown: ({ children }: { children: string }) => <p>{children}</p>,
   withBlockMentions: <T,>(blocks: T) => blocks,
+  useNativeLinkConfirm: () => linkConfirm,
 }));
 
 vi.mock("../messages/message-caption", () => ({
@@ -397,7 +400,8 @@ describe("thread cards", () => {
     const link = container.querySelector('[role="link"]');
     expect(link?.getAttribute("aria-label")).toBe("Remote task: finished");
     act(() => (link as HTMLElement).click());
-    expect(Linking.openURL).toHaveBeenCalledWith("https://example.test/task");
+    expect(linkConfirm).toHaveBeenCalledWith("https://example.test/task");
+    expect(Linking.openURL).not.toHaveBeenCalled();
     act(() => link!.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true })));
     expect(onLongPress).toHaveBeenCalledTimes(1);
   });

@@ -8,6 +8,7 @@ import {
   ContextMenuItem,
   ContextMenuTrigger,
   GroupAvatar,
+  toast,
 } from "@rakazo/ui-web";
 import { ArchiveRestore, Trash2 } from "lucide-react";
 import type { ReactNode } from "react";
@@ -41,7 +42,19 @@ export function ArchivedChats({
     restore: () => Promise<unknown>,
     remove: () => void,
   ) => {
-    const onRestore = () => void restore().then(() => refreshBots(true));
+    const onRestore = async () => {
+      try {
+        await restore();
+      } catch {
+        toast.error(t`Could not restore chat. Try again.`);
+        return;
+      }
+      try {
+        await refreshBots(true);
+      } catch {
+        toast.error(t`Chat restored, but the list could not refresh.`);
+      }
+    };
     return (
       <ContextMenu key={key}>
         <ContextMenuTrigger className="group/shelf flex items-center gap-2 rounded-lg px-2.5 py-2 hover:bg-sidebar-accent">

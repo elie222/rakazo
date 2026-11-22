@@ -91,15 +91,29 @@ export function spendingPeriodStart(
   return zonedDateTime(first.toISOString().slice(0, 10), zone) ?? first;
 }
 
-/** An amount in minor units as money, such as "$12.50". */
-export function formatMinorAmount(amount: number, currency: string, locale = "en-US"): string {
+/**
+ * An amount in minor units as money, such as "$12.50". With `wholeWithoutCents`, a whole amount
+ * drops its cents, as prices show: "$12".
+ */
+export function formatMinorAmount(
+  amount: number,
+  currency: string,
+  locale = "en-US",
+  { wholeWithoutCents = false }: { wholeWithoutCents?: boolean } = {},
+): string {
   try {
     const formatter = new Intl.NumberFormat(locale, {
       style: "currency",
       currency: currency.toUpperCase(),
     });
     const digits = formatter.resolvedOptions().maximumFractionDigits ?? 2;
-    return formatter.format(amount / 10 ** digits);
+    const value = amount / 10 ** digits;
+    if (!wholeWithoutCents || !Number.isInteger(value)) return formatter.format(value);
+    return new Intl.NumberFormat(locale, {
+      style: "currency",
+      currency: currency.toUpperCase(),
+      minimumFractionDigits: 0,
+    }).format(value);
   } catch {
     return `${(amount / 100).toFixed(2)} ${currency.toUpperCase()}`;
   }

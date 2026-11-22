@@ -133,6 +133,21 @@ describe("plainTextFromMarkdown", () => {
     );
   });
 
+  it.each([
+    ["x = 2 * y + 3 * z", "x = 2 * y + 3 * z"],
+    ["2 ** 3 ** 4", "2 ** 3 ** 4"],
+    ["cost * 5 and 6* items", "cost * 5 and 6* items"],
+    ["**total** = 2 * 3", "total = 2 * 3"],
+    ["**bold**", "bold"],
+    ["*it*", "it"],
+    ["*a*", "a"],
+    ["**bold** and *it*", "bold and it"],
+    ["**a** * b", "a * b"],
+    ["**a** **b**", "a b"],
+  ])("keeps operators and strips only emphasis that is flanked: %s", (source, expected) => {
+    expect(plainTextFromMarkdown(source)).toBe(expected);
+  });
+
   it("keeps link labels and heading or list words", () => {
     expect(plainTextFromMarkdown("# Status\n- see [the report](https://example.com)")).toBe(
       "Status see the report",
@@ -366,7 +381,9 @@ describe("plainTextFromMarkdown", () => {
 
   it("returns empty when only markers remain", () => {
     expect(plainTextFromMarkdown("")).toBe("");
+    expect(plainTextFromMarkdown("   **a**   ")).toBe("a");
     expect(plainTextFromMarkdown("   **  **   ")).toBe("");
+    expect(plainTextFromMarkdown("****")).toBe("");
   });
 });
 
@@ -501,5 +518,34 @@ describe("plain text truncation properties", () => {
       }),
       { seed: 42, numRuns: 200 },
     );
+  });
+});
+
+describe("plainTextFromMarkdown task markers and entities", () => {
+  it.each([
+    ["- [ ] todo item", "todo item"],
+    ["- [x] done", "done"],
+    ["* [X] done", "done"],
+    ["1. [ ] first", "first"],
+    ["- [ ] a\n- [x] b", "a b"],
+    ["- [link](https://example.com)", "link"],
+    ["- [ ]", ""],
+    ["Remember [ ] not a task", "Remember [ ] not a task"],
+    ["[ ] no list marker", "[ ] no list marker"],
+    ["- [y] not a task", "[y] not a task"],
+  ])("previews %j as %j", (source, preview) => {
+    expect(plainTextFromMarkdown(source)).toBe(preview);
+  });
+
+  it.each([
+    ["Tom &amp; Jerry &lt;3", "Tom & Jerry <3"],
+    ["caf&#233; &#x1F600;", "café 😀"],
+    ["&lt;b&gt;not a tag&lt;/b&gt;", "<b>not a tag</b>"],
+    ["a &unknown; b", "a &unknown; b"],
+    ["`&amp;` stays", "&amp; stays"],
+    ["```\n&lt;\n```", "&lt;"],
+    ["&#xE000;0&#xE000; end", "\uE000" + "0" + "\uE000 end"],
+  ])("previews %j as %j", (source, preview) => {
+    expect(plainTextFromMarkdown(source)).toBe(preview);
   });
 });
