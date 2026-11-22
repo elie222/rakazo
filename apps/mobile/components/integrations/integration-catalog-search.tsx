@@ -79,6 +79,7 @@ export function IntegrationCatalogSearch({
   const servers =
     searching && search.data ? catalogMcpServers(search.data.results, { excludedNames }) : [];
   const failure = connect.error ?? (searching ? search.error : null);
+  if (!lookup.eligible && !noLocalMatch && !failure) return null;
   return (
     <View testID="integration-catalog-search" style={styles.catalogStack}>
       {noLocalMatch && !servers.length && (!searching || search.isSuccess) ? (

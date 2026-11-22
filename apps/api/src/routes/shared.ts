@@ -15,12 +15,14 @@ import type { Actor, Me } from "@rakazo/contracts";
 import {
   attachmentMaxBytes,
   attachmentMaxCount,
+  ChatPreferencesSchema,
   canonicalPiProviderId,
   LAB_FEATURES,
   modelCreditsUsd,
   resolveBotAvatarSet,
   resolveLabs,
 } from "@rakazo/contracts";
+import { chatPreferencesSelect } from "@rakazo/db";
 import { isAdmin } from "../auth/admins.js";
 import { effectiveSandboxProvider } from "../computers/computer-provider-config.js";
 import type { RouterDeps } from "../router.js";
@@ -43,6 +45,7 @@ export async function meDto(deps: RouterDeps, actor: Actor): Promise<Me> {
         timezone: true,
         locale: true,
         botAvatarSet: true,
+        ...chatPreferencesSelect,
         labs: true,
         signupSurvey: { select: { userId: true } },
       },
@@ -97,6 +100,7 @@ export async function meDto(deps: RouterDeps, actor: Actor): Promise<Me> {
       }),
     avatarStyle: "organic",
     botAvatarSet: resolveBotAvatarSet(user.botAvatarSet),
+    chatPreferences: ChatPreferencesSchema.parse(user),
     timezone: user.timezone ?? null,
     locale: user.locale ?? null,
     billingEnabled: Boolean(deps.billing),

@@ -21,7 +21,6 @@ import { appHandler, createRouter, handle } from "./router-test-support.js";
 
 describe("account preferences", () => {
   function preferencesDeps(avatarStyle: string, timezone: string | null = null) {
-    const update = vi.fn().mockResolvedValue({});
     const user = {
       email: "user@rakazo.test",
       name: "Test User",
@@ -29,6 +28,7 @@ describe("account preferences", () => {
       timezone,
       secrets: [],
     };
+    const update = vi.fn(async ({ data }: { data: object }) => Object.assign(user, data));
     const updateMany = vi.fn(
       async ({ where, data }: { where: { timezone: null }; data: { timezone: string } }) => {
         if (user.timezone !== where.timezone) return { count: 0 };
@@ -90,6 +90,7 @@ describe("account preferences", () => {
     } as unknown as PrismaClient;
     const deps = {
       prisma,
+      events: { publishSpaceChange: vi.fn(async () => undefined) },
       jobs: { enqueue: vi.fn(async () => undefined), cancel: vi.fn(async () => undefined) },
       env: {
         defaultProvider: "fake",
@@ -403,6 +404,27 @@ describe("account preferences", () => {
     expect(setup.update).toHaveBeenCalledWith({
       where: { id: "user-1" },
       data: { timezone: "Pacific/Auckland" },
+    });
+  });
+
+  it("saves a partial chat preference patch for the authenticated account", async () => {
+    const { deps, actor, update } = preferencesDeps("organic");
+    const client = createRouterClient(createRouter(deps), { context: { actor } as never });
+    await expect(
+      client.preferences.update({ chatPreferences: { composerModelPicker: false } }),
+    ).resolves.toMatchObject({
+      chatPreferences: { composerModelPicker: false, streamReplies: null },
+    });
+    expect(update).toHaveBeenCalledWith({
+      where: { id: actor.userId },
+      data: { composerModelPicker: false },
+    });
+    expect(deps.events.publishSpaceChange).toHaveBeenCalledWith(
+      `preferences:${actor.userId}`,
+      "preferences",
+    );
+    await expect(client.me()).resolves.toMatchObject({
+      chatPreferences: { composerModelPicker: false },
     });
   });
 

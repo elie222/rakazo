@@ -5,7 +5,11 @@ import type {
   McpServer,
   McpSourcePreset,
 } from "@rakazo/contracts";
-import { CATALOG_SEARCH_QUERY_MAX_LENGTH, McpRemoteEndpointSchema } from "@rakazo/contracts";
+import {
+  CATALOG_SEARCH_QUERY_MAX_LENGTH,
+  CATALOG_SEARCH_QUERY_MIN_LENGTH,
+  McpRemoteEndpointSchema,
+} from "@rakazo/contracts";
 
 /** MCP services offered as one-step sources. A preset with a URL always connects there. */
 export const MCP_SOURCE_PRESETS: McpSourcePreset[] = [
@@ -78,7 +82,9 @@ export function addedMcpEndpoints(
 
 export function publicMcpCatalogQuery(value: string, requestedQuery: string | null) {
   const query = value.trim();
-  const eligible = query.length >= 2 && query.length <= CATALOG_SEARCH_QUERY_MAX_LENGTH;
+  const eligible =
+    query.length >= CATALOG_SEARCH_QUERY_MIN_LENGTH &&
+    query.length <= CATALOG_SEARCH_QUERY_MAX_LENGTH;
   return {
     input: { query, usePublicCatalog: true },
     eligible,

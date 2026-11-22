@@ -88,6 +88,7 @@ export default function SpaceSettings() {
         key={setting}
         accessibilityRole={opens ? "button" : undefined}
         title={title}
+        detail={overrides && !customized ? t`Same as your account` : undefined}
         chevron={opens ? "right" : undefined}
         onPress={opens ? () => open(opens) : undefined}
         trailing={
@@ -142,7 +143,10 @@ export default function SpaceSettings() {
             {shownError}
           </Text>
         ) : null}
-        <SettingsGroup accessibilityLabel={t`Customize`} label={t`Customize`}>
+        <SettingsGroup
+          accessibilityLabel={t`Settings for this Space`}
+          label={t`Settings for this Space`}
+        >
           {row("models", t`Models`)}
           {row("voice", t`Voice`)}
           {row("confirmations", t`Approvals`)}

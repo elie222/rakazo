@@ -80,6 +80,14 @@ test("a new space starts empty, is renamed in its settings, and is deleted with 
   await expect(sidebar.getByText("Temporary", { exact: true })).toBeVisible();
   await expect(sidebar.getByText("Typo space", { exact: true })).toHaveCount(0);
 
+  // Back leads to Spaces, which lists every Space and explains what one is.
+  await settings.getByRole("button", { name: "Back", exact: true }).click();
+  await expect(settings).toHaveAttribute("data-settings-section", "spaces");
+  await expect(settings.getByTestId("settings-nav-spaces")).toHaveAttribute("aria-current", "page");
+  await captureScreenshot(page, testInfo, "settings-spaces");
+  await settings.getByRole("button", { name: "Manage Temporary" }).click();
+  await expect(settings).toHaveAttribute("data-settings-section", "space");
+
   // An occupied space is deleted with its bots after one confirmation naming them.
   await settings.getByRole("button", { name: "Delete space" }).click();
   const deleteSpaceDialog = page.getByRole("alertdialog", {
@@ -99,6 +107,15 @@ test("a new space starts empty, is renamed in its settings, and is deleted with 
   await page.waitForURL(/\/app/);
   await expect(page).not.toHaveURL(/\/onboarding/);
   await expect(sidebar.getByRole("button", { name: /^Chief/ })).toHaveCount(1);
+
+  // With one Space left, Spaces shows its members and a way to start another, not a page of its own.
+  await page.goto("/app?settings=spaces");
+  const single = page.getByTestId("user-settings");
+  await expect(single.getByTestId("space-members-settings")).toBeVisible();
+  await expect(single.getByRole("button", { name: "Invite" })).toBeVisible();
+  await expect(single.getByRole("button", { name: "New private space" })).toBeVisible();
+  await expect(single.getByRole("button", { name: /^Manage / })).toHaveCount(0);
+  await captureScreenshot(page, testInfo, "settings-spaces-single");
 });
 
 test("deleting the last bot in a space stays in the app after first use", {

@@ -66,7 +66,7 @@ function convert(line: string): string {
  * code is kept verbatim, and nothing is truncated.
  */
 export function selectableTextFromMarkdown(markdown: string): string {
-  const source = markdown.replace(/\r\n/g, "\n").split("\n");
+  const source = markdown.split(/\r\n?|\n/);
   const lines: Line[] = [];
   let fence: { char: string; length: number } | null = null;
   let inList = false;
