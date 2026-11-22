@@ -104,7 +104,7 @@ export function SpaceSettingOverrides({
 
   return (
     <div className="space-y-3">
-      <SettingsGroup data-testid="space-setting-overrides">
+      <SettingsGroup title={t`Settings for this Space`} data-testid="space-setting-overrides">
         {settings.map(({ id, label, panel, resetConfirmation, busy }) => {
           const custom = customized.includes(id);
           return (
@@ -114,7 +114,7 @@ export function SpaceSettingOverrides({
                   <>
                     <p>{label}</p>
                     {custom ? null : (
-                      <p className="text-body-sm text-muted-foreground">{t`Your defaults`}</p>
+                      <p className="text-body-sm text-muted-foreground">{t`Same as your account`}</p>
                     )}
                   </>
                 }
@@ -123,7 +123,9 @@ export function SpaceSettingOverrides({
                     variant="ghost"
                     size="sm"
                     className="rounded-full"
-                    aria-label={custom ? t`Use defaults for ${label}` : t`Customize ${label}`}
+                    aria-label={
+                      custom ? t`Use account settings for ${label}` : t`Customize ${label}`
+                    }
                     disabled={override.pending || busy}
                     onClick={() =>
                       custom && resetConfirmation
@@ -131,7 +133,7 @@ export function SpaceSettingOverrides({
                         : override.run({ setting: id, enabled: !custom })
                     }
                   >
-                    {custom ? t`Use defaults` : t`Customize`}
+                    {custom ? t`Use account settings` : t`Customize`}
                   </Button>
                 }
               >
