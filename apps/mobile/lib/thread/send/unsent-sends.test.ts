@@ -3,7 +3,7 @@ import { deferred, flush } from "@rakazo/core/test-async";
 import { router } from "expo-router";
 import { Alert } from "react-native";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { loadVerifiedIntegrationsScope, snapshotSessionToken } from "../../api/session";
+import { loadVerifiedScope, snapshotSessionToken } from "../../api/session";
 import { hasSavedUnsentSends } from "./outbox-disk";
 import type { SendAttempt } from "./thread-feedback";
 import {
@@ -31,13 +31,13 @@ vi.mock("../../api/api", () => ({
 vi.mock("../../artifacts/artifact-cache-session", () => ({
   artifactCacheSession: async () => "ns-a",
 }));
-vi.mock("../../integrations/integrations-cache", () => ({}));
+vi.mock("../../api/verified-scope", () => ({}));
 vi.mock("./outbox-disk", () => ({ outboxDisk: {}, hasSavedUnsentSends: vi.fn(() => false) }));
 vi.mock("../../api/session", () => ({
   currentReadySessionGeneration: () => session.ready,
   currentSessionGeneration: () => session.generation,
   loadSessionToken: async () => "fake-token",
-  loadVerifiedIntegrationsScope: vi.fn(async () => ({
+  loadVerifiedScope: vi.fn(async () => ({
     apiBase: "https://api.example.test",
     userId: "user-a",
     spaceId: "space-a",
@@ -112,9 +112,9 @@ describe("startUnsentSends", () => {
   it("restores again after a sign-in, so a signed-out launch's failure does not linger", async () => {
     session.generation = session.ready = 40;
     vi.mocked(hasUnsentSends).mockReturnValue(false);
-    vi.mocked(loadVerifiedIntegrationsScope).mockRejectedValueOnce(new Error("signed out"));
+    vi.mocked(loadVerifiedScope).mockRejectedValueOnce(new Error("signed out"));
     const stop = startUnsentSends();
-    await vi.waitFor(() => expect(loadVerifiedIntegrationsScope).toHaveBeenCalled());
+    await vi.waitFor(() => expect(loadVerifiedScope).toHaveBeenCalled());
     await expect(unsentSendsRestored()).resolves.toBe(false);
     // Sign-in: the new session cleared the queue and is ready.
     session.generation = session.ready = 41;
@@ -128,7 +128,7 @@ describe("unsentSendsRestored", () => {
   it("resolves only after the disk queue is restored", async () => {
     session.generation = 20;
     let unblockRestore!: () => void;
-    vi.mocked(loadVerifiedIntegrationsScope).mockImplementationOnce(
+    vi.mocked(loadVerifiedScope).mockImplementationOnce(
       () =>
         new Promise((resolve) => {
           unblockRestore = () =>
@@ -157,7 +157,7 @@ describe("unsentSendsRestored", () => {
 
   it("reports an unknown queue when a signed-in restore fails", async () => {
     session.generation = 21;
-    vi.mocked(loadVerifiedIntegrationsScope).mockRejectedValueOnce(new Error("store unreadable"));
+    vi.mocked(loadVerifiedScope).mockRejectedValueOnce(new Error("store unreadable"));
     await expect(prepareUnsentSends()).rejects.toThrow("store unreadable");
     await expect(unsentSendsRestored()).resolves.toBe(false);
   });
@@ -180,7 +180,7 @@ describe("unsentSendsRestored", () => {
 
   it("treats a failed restore as known once the session is gone", async () => {
     session.generation = 27;
-    vi.mocked(loadVerifiedIntegrationsScope).mockRejectedValueOnce(new Error("store unreadable"));
+    vi.mocked(loadVerifiedScope).mockRejectedValueOnce(new Error("store unreadable"));
     await expect(prepareUnsentSends()).rejects.toThrow("store unreadable");
     await expect(unsentSendsRestored()).resolves.toBe(false);
     vi.mocked(snapshotSessionToken).mockResolvedValueOnce({ ok: true, value: "" });
@@ -189,7 +189,7 @@ describe("unsentSendsRestored", () => {
 
   it("follows a restore that starts while the session is read", async () => {
     session.generation = 28;
-    vi.mocked(loadVerifiedIntegrationsScope).mockRejectedValueOnce(new Error("store unreadable"));
+    vi.mocked(loadVerifiedScope).mockRejectedValueOnce(new Error("store unreadable"));
     await expect(prepareUnsentSends()).rejects.toThrow("store unreadable");
     const sessionRead = deferred<{ ok: true; value: string }>();
     vi.mocked(snapshotSessionToken).mockReturnValueOnce(sessionRead.promise);
@@ -203,7 +203,7 @@ describe("unsentSendsRestored", () => {
 
   it("treats a failed restore while signed out as an empty queue", async () => {
     session.generation = 22;
-    vi.mocked(loadVerifiedIntegrationsScope).mockRejectedValueOnce(new Error("signed out"));
+    vi.mocked(loadVerifiedScope).mockRejectedValueOnce(new Error("signed out"));
     vi.mocked(snapshotSessionToken).mockResolvedValueOnce({ ok: true, value: "" });
     await expect(prepareUnsentSends()).rejects.toThrow("signed out");
     await expect(unsentSendsRestored()).resolves.toBe(true);
@@ -211,7 +211,7 @@ describe("unsentSendsRestored", () => {
 
   it("reports an unknown queue when signed out with messages a rejected session left on disk", async () => {
     session.generation = 29;
-    vi.mocked(loadVerifiedIntegrationsScope).mockRejectedValueOnce(new Error("signed out"));
+    vi.mocked(loadVerifiedScope).mockRejectedValueOnce(new Error("signed out"));
     vi.mocked(snapshotSessionToken).mockResolvedValueOnce({ ok: true, value: "" });
     vi.mocked(hasSavedUnsentSends).mockReturnValueOnce(true);
     await expect(prepareUnsentSends()).rejects.toThrow("signed out");
@@ -220,7 +220,7 @@ describe("unsentSendsRestored", () => {
 
   it("reports an unknown queue when signed out and the saved queue cannot be read", async () => {
     session.generation = 30;
-    vi.mocked(loadVerifiedIntegrationsScope).mockRejectedValueOnce(new Error("signed out"));
+    vi.mocked(loadVerifiedScope).mockRejectedValueOnce(new Error("signed out"));
     vi.mocked(snapshotSessionToken).mockResolvedValueOnce({ ok: true, value: "" });
     vi.mocked(hasSavedUnsentSends).mockImplementationOnce(() => {
       throw new Error("OUTBOX_STORAGE_UNAVAILABLE");
@@ -239,7 +239,7 @@ describe("unsentSendsRestored", () => {
     };
     const scopeA = deferred<typeof scope>();
     const scopeB = deferred<typeof scope>();
-    vi.mocked(loadVerifiedIntegrationsScope)
+    vi.mocked(loadVerifiedScope)
       .mockImplementationOnce(() => scopeA.promise)
       .mockImplementationOnce(() => scopeB.promise);
     const first = prepareUnsentSends().catch(() => undefined);

@@ -2,6 +2,7 @@ import { t } from "@lingui/core/macro";
 import type { CSSProperties, PointerEvent, ReactNode } from "react";
 import { useEffect, useRef, useState } from "react";
 import { useEventListener } from "../../lib/use-event-listener";
+import { isComposingKey } from "./shell-shortcuts";
 import { useBotsSidebarWidth } from "./sidebar/sidebar-layout";
 
 const STORAGE_KEY = "rakazo:right-panel-width";
@@ -9,6 +10,9 @@ const MIN_WIDTH = 320;
 const DEFAULT_WIDTH = 384;
 const ABSOLUTE_MAX = 1000;
 const MIN_CHAT_WIDTH = 320;
+const MD_BREAKPOINT = 768;
+const MOBILE_PANEL_MAX_WIDTH = 384; // Matches max-w-[384px] below.
+const MAX_VISIBLE_CHAT_WIDTH = 48;
 
 function maximumWidth(reservedLeadingPx: number, viewportWidth = window.innerWidth) {
   return Math.max(
@@ -31,9 +35,18 @@ export function ResizableSidePanel({
   open,
   panel,
   children,
+  onCoversChat,
+  onOverlays,
+  onEscape,
 }: {
   open: boolean;
   panel: string;
+  /** Tells the shell when the open panel covers nearly all of the chat, so it can make the chat inert. */
+  onCoversChat?: (covers: boolean) => void;
+  /** Tells the shell when the open panel floats over the chat instead of sitting beside it. */
+  onOverlays?: (overlays: boolean) => void;
+  /** Closes the panel on Escape; left out for panels that may hold unsaved input. */
+  onEscape?: () => void;
   children: ReactNode;
 }) {
   const reservedLeadingPx = useBotsSidebarWidth();
@@ -42,6 +55,7 @@ export function ResizableSidePanel({
   const maxWidth = maximumWidth(reservedLeadingPx, viewportWidth);
   const overlay = viewportWidth - reservedLeadingPx < MIN_CHAT_WIDTH + MIN_WIDTH;
   const [dragging, setDragging] = useState(false);
+  const panelRef = useRef<HTMLElement>(null);
   const drag = useRef<{ x: number; width: number; direction: number } | null>(null);
   const width = Math.max(MIN_WIDTH, Math.min(maxWidth, preferredWidth));
 
@@ -56,6 +70,57 @@ export function ResizableSidePanel({
   useEffect(() => {
     setViewportWidth(window.innerWidth);
   }, []);
+
+  const belowMd = viewportWidth < MD_BREAKPOINT;
+  const chatWidth = belowMd ? viewportWidth : viewportWidth - reservedLeadingPx;
+  const panelWidth = belowMd ? Math.min(viewportWidth, MOBILE_PANEL_MAX_WIDTH) : width;
+  const opener = useRef<Element | null>(null);
+  useEffect(() => {
+    if (open) {
+      opener.current = document.activeElement;
+      return () => {
+        // The panel is gone by now, so focus left inside it has fallen back to the page.
+        const focused = document.activeElement;
+        const target = opener.current;
+        opener.current = null;
+        if (
+          target instanceof HTMLElement &&
+          target !== document.body &&
+          target.isConnected &&
+          (!focused || focused === document.body || panelRef.current?.contains(focused))
+        )
+          target.focus({ preventScroll: true });
+      };
+    }
+  }, [open]);
+  useEventListener(open && onEscape ? document : null, "keydown", (event) => {
+    if (!onEscape) return;
+    if (event.key !== "Escape" || event.defaultPrevented || isComposingKey(event)) return;
+    const focused = document.activeElement;
+    if (focused && focused !== document.body && !panelRef.current?.contains(focused)) return;
+    // A field saves when it loses focus, and closing the panel would unmount it before that.
+    if (focused?.matches("input, textarea, select, [contenteditable]:not([contenteditable=false])"))
+      return;
+    event.preventDefault();
+    onEscape();
+  });
+  const covering = open && overlay && chatWidth - panelWidth < MAX_VISIBLE_CHAT_WIDTH;
+  useEffect(() => {
+    if (!covering) return;
+    const focused = document.activeElement;
+    if (!focused || focused === document.body || focused.closest('[data-space-switch="main"]')) {
+      panelRef.current?.focus({ preventScroll: true });
+    }
+  }, [covering]);
+  useEffect(() => {
+    onCoversChat?.(covering);
+    return () => onCoversChat?.(false);
+  }, [covering, onCoversChat]);
+  const overlays = open && overlay;
+  useEffect(() => {
+    onOverlays?.(overlays);
+    return () => onOverlays?.(false);
+  }, [overlays, onOverlays]);
   useEventListener(window, "resize", () => setViewportWidth(window.innerWidth));
 
   function stopDrag(event: PointerEvent<HTMLHRElement>) {
@@ -71,11 +136,13 @@ export function ResizableSidePanel({
 
   return (
     <aside
+      ref={panelRef}
+      tabIndex={-1}
       data-testid="side-panel"
       data-panel={panel}
       data-overlay={overlay || undefined}
       style={{ "--panel-width": `${width}px` } as CSSProperties}
-      className={`absolute inset-y-0 end-0 z-20 flex min-h-0 shrink-0 flex-col overflow-hidden bg-background ${overlay ? "md:absolute" : "md:relative"} ${dragging ? "" : "transition-[width] duration-150 ease-out"} ${open ? "w-full max-w-[384px] border-s border-sidebar-border md:w-(--panel-width) md:max-w-none" : "pointer-events-none w-0"}`}
+      className={`absolute inset-y-0 end-0 z-20 flex min-h-0 shrink-0 flex-col overflow-hidden bg-background focus:outline-none ${overlay ? "md:absolute" : "md:relative"} ${dragging ? "" : "transition-[width] duration-150 ease-out motion-reduce:transition-none"} ${open ? "w-full max-w-[384px] border-s border-sidebar-border md:w-(--panel-width) md:max-w-none" : "pointer-events-none w-0"}`}
     >
       {open ? (
         <hr

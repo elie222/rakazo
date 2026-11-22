@@ -4,8 +4,8 @@ import { replyAttachment } from "@rakazo/core";
 import type { ReactNode } from "react";
 import { useContext, useEffect, useRef } from "react";
 import { Image, Platform, Pressable, Text, View } from "react-native";
-import { KeyboardController, useKeyboardHandler } from "react-native-keyboard-controller";
-import Animated, { interpolate, useAnimatedStyle, useSharedValue } from "react-native-reanimated";
+import type { SharedValue } from "react-native-reanimated";
+import Animated, { interpolate, useAnimatedStyle } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { MobileMessage } from "../../lib/api/mobile-types";
 import { mobileTokens } from "../../lib/appearance/appearance";
@@ -26,6 +26,7 @@ import { ThreadEdgeFade } from "./thread-edge-fade";
  */
 export function ThreadComposerDock({
   hidden,
+  keyboardProgress,
   columnPadding,
   notice,
   onHeight,
@@ -41,6 +42,8 @@ export function ThreadComposerDock({
   children,
 }: {
   hidden: boolean;
+  /** Frame by frame, including a swipe that drags the keyboard down. */
+  keyboardProgress: SharedValue<number>;
   columnPadding: ThreadColumnPadding;
   /** Shown above the reply, as part of the dock. */
   notice: ReactNode;
@@ -62,25 +65,6 @@ export function ThreadComposerDock({
   const { t } = useLingui();
   const insets = useSafeAreaInsets();
   const rootOwnsBottom = useContext(CallKeyboardContext);
-  // Frame by frame, including a swipe that drags the keyboard down.
-  const keyboardProgress = useSharedValue(KeyboardController.isVisible() ? 1 : 0);
-  useKeyboardHandler(
-    {
-      onMove: (event) => {
-        "worklet";
-        keyboardProgress.value = event.progress;
-      },
-      onInteractive: (event) => {
-        "worklet";
-        keyboardProgress.value = event.progress;
-      },
-      onEnd: (event) => {
-        "worklet";
-        keyboardProgress.value = event.progress;
-      },
-    },
-    [],
-  );
   // On iOS the input rests just above the home indicator rather than a full safe area up.
   const composerRestingPadding = rootOwnsBottom
     ? 12

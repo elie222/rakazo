@@ -70,6 +70,9 @@ const OUTSIDE_RUN_SAFE_BUILTIN_TOOLS = new Set([
 ]);
 
 const APPROVAL_REQUIRED_BUILTIN_TOOLS = new Set([
+  "create_calendar_event",
+  "create_reminder",
+  "complete_reminder",
   "generate_image",
   "generate_video",
   "service_call",
@@ -77,6 +80,9 @@ const APPROVAL_REQUIRED_BUILTIN_TOOLS = new Set([
   "secret_request",
   "forget_secret",
   "forget_memory",
+  "delete_shared_memory",
+  "skill_delete",
+  "remove_mcp_server",
   // Permanent, and only for mail the bot received; its owner may still want it.
   "delete_email",
   "cloud_agent_launch",
@@ -305,6 +311,7 @@ const OWN_STATE_RESULT_TOOLS = new Set([
   "save_memory",
   "save_page",
   "save_shared_memory",
+  "delete_shared_memory",
   "schedule_cancel",
   "schedule_create",
   "schedule_list",
@@ -357,6 +364,48 @@ export async function savedContextWriteNeedsReview(
   return (
     (MEMORY_WRITE_TOOLS.has(toolName) || SKILL_WRITE_TOOLS.has(toolName)) && (await actionTainted())
   );
+}
+
+export type LastingWrite = "memory" | "routine" | "instructions";
+
+/** Providers send omitted optional fields as null or blank; only anything else counts as given. */
+export function argumentGiven(value: unknown): boolean {
+  if (value === undefined || value === null) return false;
+  return typeof value !== "string" || value.trim().length > 0;
+}
+
+/**
+ * The write that outlives the run an Auto Review is about, which gets its own narrow question:
+ * a memory or skill save after outside content, a routine's words, or the bot's own instructions.
+ * A routine update writes its words only when it changes its prompt or events; a pause or a new
+ * time does not. A child bot's instructions always ask its owner, unreviewed. Each is judged on the
+ * owner's own words only.
+ */
+export function lastingWriteKind(input: {
+  toolName: string;
+  args: Record<string, unknown>;
+  newSite?: boolean;
+  savedContextWrite?: boolean;
+  ownComputerAction?: boolean;
+}): LastingWrite | undefined {
+  if (input.newSite || input.ownComputerAction) return undefined;
+  if (input.savedContextWrite) return "memory";
+  if (input.toolName === "schedule_create" || input.toolName === "create_child_routine")
+    return "routine";
+  if (
+    input.toolName === "schedule_update" &&
+    (argumentGiven(input.args.prompt) || argumentGiven(input.args.on))
+  )
+    return "routine";
+  // A blank value leaves the instructions as they are, and a paged read (an offset) only returns
+  // the settings, as the update reads its arguments.
+  if (
+    input.toolName === "update_bot" &&
+    argumentGiven(input.args.instructions) &&
+    !argumentGiven(input.args.instructions_offset ?? input.args.instructionsOffset)
+  )
+    return "instructions";
+  return undefined;
 }
 
 /** What open_path opens as a page rather than a workspace file, as its handler decides. */

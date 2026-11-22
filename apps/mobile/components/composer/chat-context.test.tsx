@@ -39,12 +39,14 @@ vi.mock("react-native", () => ({
     onPress,
     accessibilityRole,
     selectable,
+    numberOfLines,
     style,
   }: {
     children?: ReactNode;
     onPress?: () => void;
     accessibilityRole?: string;
     selectable?: boolean;
+    numberOfLines?: number;
     style?: { color?: string };
   }) =>
     createElement(
@@ -53,6 +55,7 @@ vi.mock("react-native", () => ({
         onClick: onPress,
         role: accessibilityRole,
         "data-selectable": selectable,
+        "data-number-of-lines": numberOfLines,
         "data-color": style?.color,
       },
       children,
@@ -111,6 +114,21 @@ it("exposes deleted targets as static text", () => {
   expect(container.firstElementChild?.getAttribute("role")).toBe("text");
   act(() => (container.firstElementChild as HTMLElement).click());
   expect(onJump).not.toHaveBeenCalled();
+});
+
+it("keeps the composer reply author on one line without shortening its text", () => {
+  const author = "The Coordinating Teammate for Product Research and Daily Release Planning";
+  const quote = "Selected excerpt";
+  act(() =>
+    root.render(<ComposerReplyPreview author={author} quote={quote} text="Full original reply" />),
+  );
+  const lines = [...container.querySelectorAll("span")];
+  expect(
+    lines.map((line) => [line.textContent, line.getAttribute("data-number-of-lines")]),
+  ).toEqual([
+    [author, "1"],
+    [quote, "1"],
+  ]);
 });
 
 const photo = { kind: "image" as const, artifactId: "photo", mimeType: "image/png", name: "" };
