@@ -24,7 +24,13 @@ import { rpcQuery } from "../lib/query/query";
 import { useScreenQuery } from "../lib/query/screen-query";
 import { useBotRoutines } from "../lib/routines/routine-store";
 
+/** Keyed by the bot, so a switch saving for one bot never takes a tap meant for another. */
 export default function BotProfile() {
+  const { botId } = useLocalSearchParams<{ botId?: string }>();
+  return <BotProfileScreen key={botId} />;
+}
+
+function BotProfileScreen() {
   const sideInsets = useSideInsets();
   const { t } = useLingui();
   const router = useRouter();

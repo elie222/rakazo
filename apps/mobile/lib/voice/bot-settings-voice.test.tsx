@@ -596,19 +596,17 @@ describe("bot settings device voice menu", () => {
     mocks.rpc.mockReturnValue(save.promise);
     mocks.autoSpeak = true;
     await render();
-    const history = container.querySelector('[data-menu="Instruction history"]')!;
-    await act(async () => history.querySelector<HTMLButtonElement>("button")!.click());
-    const confirm = mocks.alert.mock.calls.at(-1)![2][1].onPress;
     await act(async () =>
       container.querySelector<HTMLButtonElement>('[aria-label="Read replies aloud"]')!.click(),
     );
     const button = [...container.querySelectorAll<HTMLButtonElement>("button")].find(
       (node) => node.textContent === "Save",
     )!;
-    await act(async () => {
-      button.click();
-      confirm();
-    });
+    await act(async () => button.click());
+    // The restore asks first in a modal alert, so it can only be started from the menu.
+    const history = container.querySelector('[data-menu="Instruction history"]')!;
+    await act(async () => history.querySelector<HTMLButtonElement>("button")!.click());
+    expect(mocks.alert).not.toHaveBeenCalled();
     expect(mocks.rpc).toHaveBeenCalledTimes(1);
     expect(mocks.rpc).toHaveBeenCalledWith("bots/update", expect.any(Object));
     await act(async () => save.resolve());

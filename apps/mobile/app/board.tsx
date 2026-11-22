@@ -1,5 +1,6 @@
 import { useLingui } from "@lingui/react/macro";
 import type { Ticket, TicketStatus } from "@rakazo/contracts";
+import { useRef } from "react";
 import { ActivityIndicator, Alert, StyleSheet, Text, View } from "react-native";
 import { LoadFailure } from "../components/ui/load-failure";
 import { errorText } from "../lib/api/user-error";
@@ -17,20 +18,36 @@ export default function BoardScreen() {
   const sideInsets = useSideInsets();
   const listRead = rpcQuery("tickets/list", {});
   const list = useScreenQuery(listRead);
+  // Moves made while one saves wait their turn, so a second ticket's move is never dropped.
+  const queued = useRef<{ ticket: Ticket; status: TicketStatus }[]>([]);
   const move = useSave({
-    save: async (change: { ticket: Ticket; status: TicketStatus }, send) => {
-      const updated = await send("tickets/move", { id: change.ticket.id, status: change.status });
-      // The moved row stays moved even if the read after it fails.
-      queryClient.setQueryData(
-        listRead.queryKey,
-        (current) =>
-          current && {
-            ...current,
-            tickets: [updated, ...current.tickets.filter((row) => row.id !== updated.id)],
-          },
-      );
+    save: async (_, send) => {
+      while (queued.current.length) {
+        while (queued.current.length) {
+          const change = queued.current.shift()!;
+          try {
+            const updated = await send("tickets/move", {
+              id: change.ticket.id,
+              status: change.status,
+            });
+            // The moved row stays moved even if the read after it fails.
+            queryClient.setQueryData(
+              listRead.queryKey,
+              (current) =>
+                current && {
+                  ...current,
+                  tickets: [updated, ...current.tickets.filter((row) => row.id !== updated.id)],
+                },
+            );
+          } catch (cause) {
+            queued.current = [];
+            throw cause;
+          }
+        }
+        // A move made while the list is read again is sent next.
+        await queryClient.invalidateQueries({ queryKey: listRead.queryKey });
+      }
     },
-    stale: [listRead.queryKey],
     onFailed: (cause) => Alert.alert(t`Could not move the ticket`, errorText(cause, t`Try again.`)),
   });
   const tickets = list.data?.tickets;
@@ -55,7 +72,10 @@ export default function BoardScreen() {
       sections={boardSections(tickets)}
       error={error}
       refreshFailures={list.errorUpdateCount}
-      onMove={(ticket, status) => move.run({ ticket, status })}
+      onMove={(ticket, status) => {
+        queued.current.push({ ticket, status });
+        move.run();
+      }}
       onRefresh={async () => {
         await list.refetch();
       }}

@@ -45,7 +45,7 @@ import { MenuPicker, MenuPickerMenu } from "../components/ui/menu-picker";
 import { Chevron } from "../components/ui/row-accessories";
 import type { MobileModel, MobileModelCredential } from "../lib/api/mobile-types";
 import { errorText } from "../lib/api/user-error";
-import { patchBotReads, useBotSetting, useNotifyOnFinish } from "../lib/bots/bot-setting";
+import { botReadsIn, useBotSetting, useNotifyOnFinish } from "../lib/bots/bot-setting";
 import { CallKeyboardContext } from "../lib/calls/call-keyboard-context";
 import { COMPUTER_LIFECYCLE_TIMEOUT_MS } from "../lib/computers/computer";
 import { dateLocaleForUi, useUiLocale } from "../lib/i18n/i18n";
@@ -60,11 +60,13 @@ import { deviceVoices, setVoiceForBot, voiceForBot, voiceLabel } from "../lib/vo
 import { loadDeviceVoiceEnabled } from "../lib/voice/device-voice";
 import { stopVoicePlayback } from "../lib/voice/voice";
 
-type BotSettingsAction =
-  | { kind: "save" }
-  | { kind: "restore"; versionId: string; expectedInstructions: string };
-
+/** Keyed by the bot, so nothing edited or saving for one bot reaches another opened in place. */
 export default function BotSettingsScreen() {
+  const { botId } = useLocalSearchParams<{ botId: string }>();
+  return <BotSettings key={botId} />;
+}
+
+function BotSettings() {
   const rootAvoidsKeyboard = useContext(CallKeyboardContext);
   const sideInsets = useSideInsets();
   const tokens = useMobileTokens();
@@ -338,17 +340,16 @@ export default function BotSettingsScreen() {
     }
   }
 
-  const action = useSave({
-    save: async (input: BotSettingsAction, send) => {
-      if (input.kind === "restore") {
-        const updated = await send("bots/restoreInstructions", {
-          botId,
-          versionId: input.versionId,
-          expectedInstructions: input.expectedInstructions,
-        });
-        patchBotReads(botId, updated);
-        return;
-      }
+  const restoring = useSave({
+    save: async (input: { versionId: string; expectedInstructions: string }, send) => {
+      const reads = botReadsIn(botId);
+      reads.patch(await send("bots/restoreInstructions", { botId, ...input }));
+    },
+    onFailed: (failure) => setError(errorText(failure)),
+  });
+  const saving = useSave({
+    save: async (_, send) => {
+      const reads = botReadsIn(botId);
       if (!bot) return;
       const selected = selectedModel;
       const update: {
@@ -390,29 +391,25 @@ export default function BotSettingsScreen() {
           { botId, mode: computerMode },
           { timeoutMs: COMPUTER_LIFECYCLE_TIMEOUT_MS },
         );
-        patchBotReads(botId, { computerMode });
+        reads.patch({ computerMode });
       }
       // Use key presence so clearing description to "" still persists.
       if (Object.keys(update).length > 1) {
         const updated = await send("bots/update", update);
         // Saved edits and their history become the baseline, so a retry does not resend them.
         const { botId: _botId, expectedInstructions: _expected, ...saved } = update;
-        patchBotReads(botId, { ...saved, ...updated });
+        reads.patch({ ...saved, ...updated });
       }
     },
-    onSaved: (_, input) => {
-      if (input.kind === "save") router.back();
-    },
-    onFailed: (failure, input) =>
-      setError(
-        input.kind === "restore" ? errorText(failure) : errorText(failure, t`Could not save bot`),
-      ),
+    onSaved: () => router.back(),
+    onFailed: (failure) => setError(errorText(failure, t`Could not save bot`)),
+    closesScreen: true,
   });
-  const pending = action.pending;
+  const pending = saving.pending || restoring.pending;
   function save() {
-    if (!botId || !bot || settingsSaving) return;
+    if (!botId || !bot || pending || settingsSaving) return;
     setError(null);
-    action.run({ kind: "save" });
+    saving.run();
   }
   const exportBot = useSave({
     save: async (_, send) => {
@@ -428,6 +425,7 @@ export default function BotSettingsScreen() {
     },
     onSaved: () => router.back(),
     onFailed: (failure) => setError(errorText(failure)),
+    closesScreen: true,
   });
 
   const dirty =
@@ -534,7 +532,7 @@ export default function BotSettingsScreen() {
             maxLength={BOT_NAME_MAX_LENGTH}
             large
             onCommit={async (value) => {
-              if (value && botId) nameSetting.set(value);
+              if (value && botId && !saving.pending) nameSetting.set(value);
             }}
           />
         </View>
@@ -543,6 +541,7 @@ export default function BotSettingsScreen() {
             <SettingsSwitch
               label={t`When it finishes or needs input`}
               value={notify.value}
+              disabled={saving.pending}
               onChange={notify.set}
             />
           </SettingsGroup>
@@ -633,6 +632,7 @@ export default function BotSettingsScreen() {
                   <SettingsSwitch
                     label={t`Daily check-ins on unfinished work`}
                     value={dailyCheckIns.value}
+                    disabled={saving.pending}
                     onChange={(value) => {
                       if (!botId) return;
                       setError(null);
@@ -644,6 +644,7 @@ export default function BotSettingsScreen() {
                   <SettingsSwitch
                     label={t`Allow cross-space bot communication`}
                     value={crossSpace.value}
+                    disabled={saving.pending}
                     onChange={(value) => {
                       if (!botId) return;
                       setError(null);
@@ -660,6 +661,7 @@ export default function BotSettingsScreen() {
                       fleet.set(value);
                     }}
                     value={fleet.value}
+                    disabled={saving.pending}
                   />
                 ) : null}
               </SettingsGroup>
@@ -695,8 +697,8 @@ export default function BotSettingsScreen() {
                               text: t`Restore`,
                               onPress: () => {
                                 setError(null);
-                                action.run({
-                                  kind: "restore",
+                                if (saving.pending) return;
+                                restoring.run({
                                   versionId,
                                   expectedInstructions: bot.instructions ?? "",
                                 });

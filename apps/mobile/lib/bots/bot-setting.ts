@@ -13,12 +13,23 @@ type BotSettingKey =
   | "crossSpaceCommunication"
   | "fleetManagement";
 
-/** Writes saved fields into every cached read of the bot, its settings form's among them. */
-export function patchBotReads(botId: string, patch: Partial<Bot>) {
-  queryClient.setQueriesData<Bot>(
-    { queryKey: rpcQuery("bots/get", { botId }).queryKey },
-    (current) => current && { ...current, ...patch },
-  );
+/**
+ * The bot's reads in the Space a save was started in, its settings form's among them. A save
+ * calls this as it starts, in the same tick `useSave` pins its writes to the selected Space.
+ */
+export function botReadsIn(botId: string, spaceId = selectedSpaceId() ?? undefined) {
+  const { queryKey } = rpcQuery("bots/get", { botId }, spaceId);
+  return {
+    /** Writes saved fields into those reads. */
+    patch(patch: Partial<Bot>) {
+      queryClient.setQueriesData<Bot>(
+        { queryKey },
+        (current) => current && { ...current, ...patch },
+      );
+    },
+    /** Reads them again. */
+    refresh: () => queryClient.invalidateQueries({ queryKey }),
+  };
 }
 
 /**
@@ -43,6 +54,7 @@ export function useBotSetting<K extends BotSettingKey>(
   const [, showChange] = useState(saved);
   const save = useSave({
     save: async ({ from }: { from: Value }, send) => {
+      const reads = botReadsIn(botId);
       let confirmed = from;
       while (latest.current !== confirmed) {
         while (latest.current !== confirmed) {
@@ -54,7 +66,7 @@ export function useBotSetting<K extends BotSettingKey>(
               [key]: value,
             } as RpcInput<"bots/update">);
             confirmed = value;
-            patchBotReads(botId, { [key]: value });
+            reads.patch({ [key]: value });
             await options.onSaved?.(value, updated);
           } catch (error) {
             if (change === changes.current) throw error;
@@ -62,7 +74,7 @@ export function useBotSetting<K extends BotSettingKey>(
         }
         // The control shows the change until the bot is read again; a change made meanwhile is
         // written next.
-        await queryClient.invalidateQueries({ queryKey: rpcQuery("bots/get", { botId }).queryKey });
+        await reads.refresh();
       }
     },
     onFailed: (error) => options.onFailed(error),

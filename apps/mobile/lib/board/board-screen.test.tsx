@@ -161,3 +161,19 @@ it("shows a moved ticket in its new column", async () => {
     status: "done",
   });
 });
+
+it("sends a move made while another is saving once that one ends", async () => {
+  const first = deferred<Ticket>();
+  const moves = () => rpc.mock.calls.filter(([proc]) => proc === "tickets/move");
+  rpc.mockImplementation(async (proc: string) => {
+    if (proc !== "tickets/move") return { tickets: [ticket] };
+    return moves().length === 1 ? first.promise : { ...ticket, status: "done" };
+  });
+  await render();
+  await vi.waitFor(() => expect(button("Move")).toBeDefined());
+  await act(async () => button("Move")?.click());
+  await act(async () => button("Move")?.click());
+  expect(moves()).toHaveLength(1);
+  await act(async () => first.resolve({ ...ticket, status: "done" }));
+  await vi.waitFor(() => expect(moves()).toHaveLength(2));
+});
