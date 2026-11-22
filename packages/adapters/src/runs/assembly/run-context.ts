@@ -445,7 +445,8 @@ export async function neverAsks(ctx: RunContext) {
 
 export async function isRunTainted(ctx: RunContext) {
   const { state } = ctx;
-  if (state.tainted) return true;
+  // Own-computer output alone still leaves outside messages to check for.
+  if (state.taintedBeyondOwnComputer) return true;
   state.earlierAttempt ??= ctx.deps.prisma.attempt
     .count({ where: { runId: ctx.runId } })
     .then((count) => count > 1);

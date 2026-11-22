@@ -158,6 +158,7 @@ describe("gateToolCall: typing into a page after outside content, in Auto", () =
       state: {
         ...state,
         tainted: true,
+        taintedBeyondOwnComputer: true,
         effects: { consumedIds: new Set(), counts: new Map(), occurrences: [] },
       },
       trust: {
