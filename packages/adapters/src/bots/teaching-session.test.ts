@@ -474,6 +474,24 @@ describe("recordTeachingInputEvent", () => {
     expect(JSON.stringify(current().recording)).not.toContain("hunter2");
   });
 
+  it("does not apply input queued for an earlier recording", async () => {
+    const { deps, current, tx } = recordingDeps(skillRow({ id: "skill-b" }));
+    tx.bot.findUnique = vi.fn(async () => ({
+      id: "bot-1",
+      computer: { id: "computer-1", homeKey: "bot-1", kind: "e2b", providerRef: "boat-1" },
+    }));
+    await expect(
+      recordTeachingInputEvent(
+        deps as never,
+        { spaceId: "workspace-1", userId: "user-1" } as never,
+        "bot-1",
+        { kind: "pointer", type: "up", x: 10, y: 20, button: "left", skillId: "skill-a" },
+      ),
+    ).resolves.toBe("stale");
+    expect(deps.sandbox.sendInput).not.toHaveBeenCalled();
+    expect(current().recording.events).toHaveLength(0);
+  });
+
   it("drops protected input when the recording changes before it is typed", async () => {
     const { deps, current, tx } = recordingDeps(skillRow({ id: "skill-a" }));
     const computer = {

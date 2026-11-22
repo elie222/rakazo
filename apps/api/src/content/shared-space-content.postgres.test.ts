@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { onError } from "@orpc/server";
 import { RPCHandler } from "@orpc/server/fetch";
+import { skillReadFromTool } from "@rakazo/adapters";
 import type { Actor } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
 import { asSystem, createDb, createGroupRepos, createRepos, runAsTenant } from "@rakazo/db";
@@ -287,5 +288,57 @@ describePostgres("shared space content (PostgreSQL)", () => {
         })
       ).status,
     ).toBe(403);
+  });
+
+  it("keeps simultaneous file edits to an account skill owned by one member", async () => {
+    const owner = await person("skill-owner");
+    const other = await person("skill-other");
+    // Organization membership also grants access to its default Space.
+    await system.member.createMany({
+      data: [
+        {
+          id: randomUUID(),
+          organizationId: owner.spaceId,
+          userId: other.userId,
+          role: "member",
+          createdAt: new Date(),
+        },
+        {
+          id: randomUUID(),
+          organizationId: other.spaceId,
+          userId: owner.userId,
+          role: "member",
+          createdAt: new Date(),
+        },
+      ],
+    });
+
+    const created = await call(owner, "agentSkills/create", {
+      name: "Review checklist",
+      description: "Review fictitious notes",
+      body: "Read the checklist.",
+    });
+    expect(created.status).toBe(200);
+    const { id: skillId } = created.json as { id: string };
+    const first = { path: "references/one.md", content: "First note." };
+    const second = { path: "references/two.md", content: "Second note." };
+    const sameAccount = { ...owner, spaceId: other.spaceId };
+    const peer = { ...other, spaceId: owner.spaceId };
+    expect((await call(peer, "agentSkills/update", { skillId, file: first })).status).toBe(404);
+    const writes = await Promise.all([
+      call(owner, "agentSkills/update", { skillId, file: first }),
+      call(sameAccount, "agentSkills/update", { skillId, file: second }),
+      call(owner, "agentSkills/update", { skillId, body: "Use both notes." }),
+    ]);
+    expect(writes.map((response) => response.status)).toEqual([200, 200, 200]);
+    const saved = await call(owner, "agentSkills/get", { skillId });
+    expect(saved.json).toMatchObject({ content: expect.stringContaining("Use both notes.") });
+    expect(saved.json).not.toHaveProperty("files");
+    for (const file of [first, second]) {
+      const read = (actor: Actor) =>
+        runAsTenant(actor, () => skillReadFromTool(prisma, actor, { skillId, file: file.path }));
+      expect(await read(sameAccount)).toMatchObject({ content: file.content });
+      expect(await read(peer)).toEqual({ error: "Skill not found." });
+    }
   });
 });

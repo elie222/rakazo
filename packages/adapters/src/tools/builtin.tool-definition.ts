@@ -1,6 +1,7 @@
 import type { ConnectorTool } from "@rakazo/adapter-kit";
 import { FLEET_TOOL_NAMES } from "@rakazo/contracts";
 import { meetingTranscriptTool } from "../meetings/meeting-chat.tool-definition.js";
+import { personalCalendarTools } from "../personal-calendar/personal-calendar.tool-definition.js";
 import { computerTools } from "./builtin-computer.tool-definition.js";
 import { conversationTools } from "./builtin-conversation.tool-definition.js";
 import { fleetTools } from "./builtin-fleet.tool-definition.js";
@@ -24,6 +25,7 @@ export const builtinAgentTools: ConnectorTool[] = [
   ...serviceTools,
   ...memoryTools,
   ...workTools,
+  ...personalCalendarTools,
   ...fleetTools,
 ];
 
@@ -35,7 +37,7 @@ export function bridgeToolDefinitions(nameIndex: string): ConnectorTool[] {
   return [
     {
       name: FIND_TOOL,
-      description: `Get the parameters of built-in tools not in your tool list, including ones your instructions name. Call this before use_tool. Pass names for exact tools or query to search.\n${nameIndex}`,
+      description: `Find deferred tool parameters by name or query before calling use_tool.\n${nameIndex}`,
       inputSchema: {
         type: "object",
         properties: {
@@ -47,7 +49,7 @@ export function bridgeToolDefinitions(nameIndex: string): ConnectorTool[] {
     },
     {
       name: USE_TOOL,
-      description: "Run a built-in tool whose parameters find_tool returned in this turn.",
+      description: "Run a tool returned by find_tool this turn.",
       inputSchema: {
         type: "object",
         properties: {

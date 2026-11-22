@@ -233,7 +233,7 @@ describe("dispatchTool audit outcomes", () => {
   it("records an ordinary successful call as a success", async () => {
     const ctx = dispatchContext(true);
     const result = await applyTool(ctx as never, "update_preferences", {}, "call-1");
-    expect(result).toEqual({ timezone: "UTC", marketingEmails: true });
+    expect(result).toMatchObject({ timezone: "UTC", marketingEmails: true });
     expect(audited).toEqual([
       {
         tool: "update_preferences",

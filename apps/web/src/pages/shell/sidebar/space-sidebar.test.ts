@@ -101,14 +101,13 @@ describe("sidebarGroupsForSpaces", () => {
     ]);
   });
 
-  it("names the only space on the header that holds its menu", () => {
+  it("names the only space on the header that holds its settings", () => {
     const [group] = sidebarGroupsForSpaces([space("space-1", "Personal", { canRename: true })], "");
 
     expect(group).toMatchObject({
       title: "Personal",
       spaceName: "Personal",
-      canRenameSpace: true,
-      canDeleteSpace: false,
+      canOpenSpaceSettings: true,
       showLock: false,
     });
     expect(group?.bots).toHaveLength(1);
@@ -124,15 +123,14 @@ describe("sidebarGroupsForSpaces", () => {
     );
 
     expect(groups.map((group) => group.title)).toEqual(["Personal", "Support"]);
-    expect(groups[0]).toMatchObject({ canRenameSpace: true, canDeleteSpace: false });
+    expect(groups[0]).toMatchObject({ canOpenSpaceSettings: true });
     expect(groups[1]).toMatchObject({
-      canRenameSpace: true,
-      canDeleteSpace: true,
+      canOpenSpaceSettings: true,
       emptySpaceId: "space-2",
     });
   });
 
-  it("keeps the space menu for a member who cannot rename or delete, for Settings", () => {
+  it("keeps settings reachable for a member who cannot rename or delete", () => {
     const groups = sidebarGroupsForSpaces(
       [space("space-1", "Personal", { canRename: true }), space("space-2", "Shared")],
       "",
@@ -140,8 +138,6 @@ describe("sidebarGroupsForSpaces", () => {
 
     expect(groups[1]).toMatchObject({
       title: "Shared",
-      canRenameSpace: false,
-      canDeleteSpace: false,
       canOpenSpaceSettings: true,
     });
   });
@@ -151,8 +147,6 @@ describe("sidebarGroupsForSpaces", () => {
       expect.objectContaining({
         title: "Shared",
         spaceName: "Shared",
-        canRenameSpace: false,
-        canDeleteSpace: false,
         canOpenSpaceSettings: true,
       }),
     ]);

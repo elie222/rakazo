@@ -157,6 +157,26 @@ describe("Pi usage accounting", () => {
     expect(events).toHaveLength(1);
     expect(events[0]).toMatchObject({ operationKind: "retrieval", totalTokens: 12 });
   });
+  it("labels usage with who paid for the call", async () => {
+    const reply = `data: ${JSON.stringify({ id: "fixture", choices: [{ index: 0, delta: { role: "assistant", content: "ok" }, finish_reason: "stop" }] })}\n\ndata: ${JSON.stringify({ choices: [], usage: { prompt_tokens: 10, completion_tokens: 2, total_tokens: 12 } })}\n\ndata: [DONE]\n\n`;
+    const events: AgentRuntimeEvent[] = [];
+    const stream = await observedPiStream(
+      builtinModels(),
+      model,
+      { messages: [] },
+      {
+        apiKey: "fake-fixture-key",
+        fetch: async () =>
+          new Response(reply, { headers: { "content-type": "text/event-stream" } }),
+      },
+      (event) => events.push(event),
+      undefined,
+      { operationKind: "answer", billing: "subscription" },
+    );
+    for await (const _event of stream) {
+    }
+    expect(events).toEqual([expect.objectContaining({ type: "usage", billing: "subscription" })]);
+  });
   it("accounts a cancelled model call even when the event consumer closes before usage arrives", async () => {
     const onUsage = vi.fn();
     const server = createServer((_request, response) => {
@@ -284,6 +304,18 @@ describe("Pi usage accounting", () => {
       expect(normalizePiUsage(undefined, model, fields)).toMatchObject({ costUsd, costSource });
     },
   );
+  it("records a local model call as free, but not an unpriced hosted one", () => {
+    const unpriced = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
+    expect(
+      normalizePiUsage({ input: 5, output: 2 }, { provider: "local", cost: unpriced }),
+    ).toMatchObject({ costUsd: 0, costSource: "free-endpoint" });
+    expect(normalizePiUsage(undefined, { provider: "local", cost: unpriced })).toMatchObject({
+      costUsd: 0,
+    });
+    expect(
+      normalizePiUsage({ input: 5, output: 2 }, { provider: "openrouter", cost: unpriced }),
+    ).toMatchObject({ costUsd: null, costSource: null });
+  });
   it("retains a provider cost receipt when a stream throws after reporting it", async () => {
     const afterCall = vi.fn();
     const events: AgentRuntimeEvent[] = [];
@@ -1254,7 +1286,7 @@ describe("Pi usage accounting", () => {
           output: 2,
           cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
         },
-        { cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } },
+        { provider: "openrouter", cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } },
       ).costUsd,
     ).toBeNull();
   });

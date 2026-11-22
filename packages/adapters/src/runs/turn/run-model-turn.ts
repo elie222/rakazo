@@ -132,7 +132,7 @@ function modelTurnRequest(
     sourceMessage,
     userComputer,
   } = turn.capabilities;
-  const { strategicBuiltins, taskCatalogInstruction, tools } = turn.tools;
+  const { strategicBuiltins, taskCatalogInstruction, tools, unavailableToolReasons } = turn.tools;
   const { computerInstruction, workspaceInstruction } = turn.computerInstructions;
   const {
     agentSkillsLine,
@@ -141,6 +141,8 @@ function modelTurnRequest(
     pluginLine,
     prompt,
     runtimeHistory,
+    resumeHistoryMessageIds,
+    resumeAnswerReplyContexts,
     taskPrompt,
     taughtSkillsLine,
     turnCheckpoint,
@@ -258,6 +260,7 @@ function modelTurnRequest(
         !turnBlocks?.some((block) => block.kind === "image" && block.imageHandling === "confirm"),
     ),
     tools,
+    unavailableToolReasons,
     // The live array: secrets learned later in the run redact too.
     secrets: runSecrets,
     model: mainRunModel,
@@ -325,6 +328,7 @@ function modelTurnRequest(
       effects.pendingTurnCheckpoints.set(executionId, capture);
     },
     resumeToolResult: {
+      historyMessageIds: resumeHistoryMessageIds,
       content: [{ type: "text", text: takeoverResume?.promptNote ?? taskPrompt }],
     },
     script,
@@ -378,6 +382,7 @@ function modelTurnRequest(
         {
           messageId: currentTurnMessage?.id,
           hasImages: Boolean(currentTurnImages?.length),
+          resumeAnswerReplyContexts,
         },
       ),
   };

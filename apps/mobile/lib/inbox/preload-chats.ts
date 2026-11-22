@@ -1,7 +1,7 @@
 import { isRetryableError } from "@rakazo/core";
 import { selectedSpaceId } from "../api/api";
 import type { MobileSnapshot } from "../api/mobile-types";
-import { isIntegrationsScopeCurrent } from "../integrations/integrations-cache";
+import { isVerifiedScopeCurrent } from "../api/verified-scope";
 import { onConversationCleared } from "../thread/conversation-cleared";
 import { chatRpc } from "./chat-rpc";
 import type { InboxItem } from "./inbox-spaces";
@@ -59,7 +59,7 @@ export function preloadChats(chats: readonly ChatTarget[]): Promise<void> {
 async function preloadInto(scope: SavedChatsScope, targets: readonly ChatTarget[]) {
   for (const chat of targets) {
     // After a Space switch these chats belong to another Space; the new one gets its own pass.
-    if (!isIntegrationsScopeCurrent(scope)) return;
+    if (!isVerifiedScopeCurrent(scope)) return;
     // A copy saved under the chat's own Space is the one opening it there reads.
     const chatScope = { ...scope, spaceId: chat.spaceId ?? scope.spaceId };
     const target = savedChatTarget(chat);

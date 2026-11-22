@@ -10,7 +10,7 @@ import {
 } from "@rakazo/core";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useRef, useState } from "react";
-import { BackHandler, ScrollView, Text, TextInput, View } from "react-native";
+import { AccessibilityInfo, BackHandler, ScrollView, Text, TextInput, View } from "react-native";
 import { BotAvatar } from "../components/bots/bot-avatar";
 import { BotLookPicker } from "../components/bots/bot-look-picker";
 import { NativeActionButton } from "../components/native/native-action-button";
@@ -87,7 +87,13 @@ export default function NewBot() {
     closesScreen: true,
   });
   const pending = creation.pending;
-  const error = creation.error ? errorText(creation.error, t`Could not create bot`) : null;
+  const failure = creation.error;
+  const error = failure ? errorText(failure, t`Could not create bot`) : null;
+
+  // Create keeps focus after a failure, so speak it. A retry that fails again is a new Error.
+  useEffect(() => {
+    if (error) AccessibilityInfo.announceForAccessibility(error);
+  }, [failure, error]);
 
   // The logo has no studio shapes; drop one picked while the Original set was shown.
   useEffect(() => {
@@ -180,7 +186,11 @@ export default function NewBot() {
             }}
           />
         </View>
-        {error ? <Text style={{ color: tokens.destructive, marginTop: 16 }}>{error}</Text> : null}
+        {error ? (
+          <Text accessibilityRole="alert" style={{ color: tokens.destructive, marginTop: 16 }}>
+            {error}
+          </Text>
+        ) : null}
         <NativeActionButton
           fill
           label={pending ? t`Creating…` : t`Create`}

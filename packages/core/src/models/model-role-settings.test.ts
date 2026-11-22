@@ -1,7 +1,11 @@
 import type { ModelRoleSettings } from "@rakazo/contracts";
 import { describe, expect, it, vi } from "vitest";
 import { deferred } from "../primitives/async.test-support.js";
-import { createModelRoleSettings, modelRoleListPatch } from "./model-role-settings.js";
+import {
+  createModelRoleSettings,
+  modelRoleListPatch,
+  sameModelRoleChoice,
+} from "./model-role-settings.js";
 
 const empty: ModelRoleSettings = { primary: null, backups: [] };
 const saved: ModelRoleSettings = {
@@ -168,5 +172,13 @@ describe("modelRoleListPatch", () => {
       primary: null,
       backups: [],
     });
+  });
+});
+
+describe("sameModelRoleChoice", () => {
+  it("treats the same model on another connection as another row", () => {
+    const model = { provider: "openrouter", modelId: "typesafe/jev-1.14" };
+    expect(sameModelRoleChoice(model, { ...model })).toBe(true);
+    expect(sameModelRoleChoice(model, { ...model, credentialId: "key-2" })).toBe(false);
   });
 });

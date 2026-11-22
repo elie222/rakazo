@@ -1,8 +1,10 @@
 // @vitest-environment jsdom
 import type { MessageBlock } from "@rakazo/contracts";
+import { THREAD_MESSAGE_TEXT_MAX_LENGTH } from "@rakazo/contracts";
 import { deferred } from "@rakazo/core/test-async";
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
+import { Alert } from "react-native";
 import { expect, it, vi } from "vitest";
 import { rpc } from "../../api/api";
 import { hapticImpact, hapticSuccess } from "../../native/haptics";
@@ -296,4 +298,27 @@ it("forgets the page once the user clears its reply from the composer", async ()
   await act(async () => cleared.sender().composerRef.current?.addReply("now"));
   expect(await cleared.sent()).toMatchObject({ replyToMessageId: "m1", fromPage: true });
   await act(async () => cleared.root.unmount());
+});
+
+it("refuses text over the message limit with an alert and keeps the draft", async () => {
+  const view = await chat([]);
+  try {
+    view.sender().composerRef.current?.addReply("a".repeat(THREAD_MESSAGE_TEXT_MAX_LENGTH + 1));
+    await act(async () => view.sender().send());
+    expect(Alert.alert).toHaveBeenCalledWith(
+      "Failed to send message",
+      "Messages can be up to 100,000 characters.",
+    );
+    // The draft is still in the composer: nothing was reset or queued.
+    expect(view.sender().composerRef.current?.snapshot().promptText).toHaveLength(
+      THREAD_MESSAGE_TEXT_MAX_LENGTH + 1,
+    );
+
+    view.sender().composerRef.current?.reset();
+    view.sender().composerRef.current?.addReply("a".repeat(THREAD_MESSAGE_TEXT_MAX_LENGTH));
+    expect(await view.sent()).toMatchObject({ text: "a".repeat(THREAD_MESSAGE_TEXT_MAX_LENGTH) });
+    expect(Alert.alert).toHaveBeenCalledTimes(1);
+  } finally {
+    await act(async () => view.root.unmount());
+  }
 });

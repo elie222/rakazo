@@ -54,11 +54,7 @@ describe("MCP server deletion", () => {
     await expect(response.json()).resolves.toEqual({ json: { ok: true } });
     expect(deleteServer).toHaveBeenCalledWith({ where: { id: "server-1" } });
     expect(deleteSecrets).toHaveBeenCalledWith({
-      where: {
-        id: "old-secret",
-        userId: "user-1",
-        OR: [{ spaceId: "workspace-1" }, { spaceId: null }],
-      },
+      where: { id: "old-secret", userId: "user-1" },
     });
   });
 });
@@ -330,6 +326,161 @@ describe("MCP pre-registered OAuth client", () => {
     expect(material()).toMatchObject({
       oauthClient: { client_id: "client-1.apps.example.test", client_secret: "client-secret" },
     });
+  });
+
+  it("forgets stored header names and the token when the URL changes and none are typed", async () => {
+    const { client, server } = harness();
+    const remote = {
+      transport: "streamable_http" as const,
+      slug: "tracker",
+      name: "Tracker",
+      endpoint: "http://localhost:3100/mcp",
+      headers: { "X-Api-Key": "stored-header" },
+      secret: "stored-token",
+    };
+    await client.mcp.servers.create(remote);
+
+    const updated = await client.mcp.servers.update({
+      id: "server-1",
+      config: {
+        ...remote,
+        endpoint: "http://localhost:3200/mcp",
+        headers: { "X-Api-Key": "" },
+        secret: undefined,
+      },
+    });
+
+    expect(updated).toMatchObject({ headerKeys: [], hasSecret: false });
+    expect(server()?.headers).toEqual({});
+  });
+
+  it("keeps the token when the URL is only spelled differently", async () => {
+    const { client, secrets, prisma } = harness();
+    const remote = {
+      transport: "streamable_http" as const,
+      slug: "tracker",
+      name: "Tracker",
+      endpoint: "http://localhost:3100",
+      headers: {},
+      secret: "stored-token",
+    };
+    await client.mcp.servers.create(remote);
+
+    const updated = await client.mcp.servers.update({
+      id: "server-1",
+      config: { ...remote, endpoint: "http://localhost:3100/", secret: undefined },
+    });
+
+    expect(updated.endpoint).toBe("http://localhost:3100/");
+    // The create stored the token once and the update stored it again.
+    expect(secrets.put).toHaveBeenCalledTimes(2);
+    expect(JSON.parse(secrets.put.mock.calls[1]![0])).toEqual({ secret: "stored-token" });
+    expect(prisma.secret.deleteMany).toHaveBeenCalledTimes(1);
+  });
+
+  it("drops a malformed credential when the URL changes", async () => {
+    const { client, server, secrets } = harness();
+    const remote = {
+      transport: "streamable_http" as const,
+      slug: "tracker",
+      name: "Tracker",
+      endpoint: "http://localhost:3100/mcp",
+      headers: {},
+      secret: "stored-token",
+    };
+    await client.mcp.servers.create(remote);
+    secrets.load.mockResolvedValueOnce("not json");
+
+    const updated = await client.mcp.servers.update({
+      id: "server-1",
+      config: { ...remote, endpoint: "http://localhost:3200/mcp", secret: undefined },
+    });
+
+    expect(updated.hasSecret).toBe(false);
+    expect(server()?.secretId).toBeNull();
+  });
+
+  it("refuses to move a server while its credential cannot be loaded", async () => {
+    const { client, server, secrets } = harness();
+    const remote = {
+      transport: "streamable_http" as const,
+      slug: "tracker",
+      name: "Tracker",
+      endpoint: "http://localhost:3100/mcp",
+      headers: {},
+      secret: "stored-token",
+    };
+    await client.mcp.servers.create(remote);
+    secrets.load.mockRejectedValueOnce(new Error("store unavailable"));
+
+    await expect(
+      client.mcp.servers.update({
+        id: "server-1",
+        config: { ...remote, endpoint: "http://localhost:3200/mcp", secret: undefined },
+      }),
+    ).rejects.toThrow();
+    expect(server()).toMatchObject({ endpoint: "http://localhost:3100/mcp", secretId: "secret-1" });
+  });
+
+  it("deletes the credential of a moved server whose only one was an unbound client", async () => {
+    const { client, server } = harness();
+    const remote = {
+      transport: "streamable_http" as const,
+      slug: "tracker",
+      name: "Tracker",
+      endpoint: "http://localhost:3100/mcp",
+      headers: {},
+      oauthClient: { clientId: "client-a", clientSecret: "secret-a" },
+    };
+    await client.mcp.servers.create(remote);
+
+    const updated = await client.mcp.servers.update({
+      id: "server-1",
+      config: { ...remote, endpoint: "http://localhost:3200/mcp", oauthClient: undefined },
+    });
+
+    expect(updated).toMatchObject({ hasSecret: false, oauthClientId: null });
+    expect(server()?.secretId).toBeNull();
+  });
+
+  it("lists no header for a server without credentials moved with a blank one", async () => {
+    const { client } = harness();
+    const remote = {
+      transport: "streamable_http" as const,
+      slug: "tracker",
+      name: "Tracker",
+      endpoint: "http://localhost:3100/mcp",
+      headers: {},
+    };
+    await client.mcp.servers.create(remote);
+
+    const updated = await client.mcp.servers.update({
+      id: "server-1",
+      config: { ...remote, endpoint: "http://localhost:3200/mcp", headers: { "X-Api-Key": "" } },
+    });
+
+    expect(updated.headerKeys).toEqual([]);
+  });
+
+  it("refuses to replace a credential it cannot load on an ordinary edit", async () => {
+    const { client, server, secrets } = harness();
+    const remote = {
+      transport: "streamable_http" as const,
+      slug: "tracker",
+      name: "Tracker",
+      endpoint: "http://localhost:3100/mcp",
+      headers: { "X-Api-Key": "stored-header" },
+    };
+    await client.mcp.servers.create(remote);
+    secrets.load.mockRejectedValueOnce(new Error("store unavailable"));
+
+    await expect(
+      client.mcp.servers.update({
+        id: "server-1",
+        config: { ...remote, name: "Renamed", headers: { "X-Api-Key": "" } },
+      }),
+    ).rejects.toThrow();
+    expect(server()).toMatchObject({ name: "Tracker", secretId: "secret-1" });
   });
 
   it("reports a second server with the same name as a conflict", async () => {
