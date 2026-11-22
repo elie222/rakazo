@@ -295,16 +295,21 @@ function PrimaryRail({
           expanded ? "items-start" : "items-center",
         )}
       >
-        {onChatShell ? null : <RailFooter boardEnabled={boardEnabled} />}
+        {onChatShell ? null : <RailFooter boardEnabled={boardEnabled} openOverlay={openOverlay} />}
       </div>
     </nav>
   );
 }
 
 /** The account entry stays in the layout, so every page beside the rail keeps it. */
-function RailFooter({ boardEnabled }: { boardEnabled: boolean }) {
+function RailFooter({
+  boardEnabled,
+  openOverlay,
+}: {
+  boardEnabled: boolean;
+  openOverlay: (overlay: ShellOverlay) => void;
+}) {
   const { data } = authClient.useSession();
-  const { pathname, search } = useLocation();
   const navigate = useNavigate();
   // The desktop renderer is not served from the deployment's origin, so custom pages are web-only.
   const desktop = Boolean(desktopBridge());
@@ -313,13 +318,6 @@ function RailFooter({ boardEnabled }: { boardEnabled: boolean }) {
     queryFn: () => rpc.me(),
     enabled: !desktop,
   });
-  function openOverlay(overlay: ShellOverlay) {
-    const params = withShellOverlay(new URLSearchParams(search), overlay);
-    navigate({
-      pathname: isChatShellPath(pathname) ? pathname : "/app",
-      search: params.toString(),
-    });
-  }
   return (
     <ShellSidebarFooter
       mini
