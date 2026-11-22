@@ -52,7 +52,6 @@ function resetFadeWhenUnscrollable(event: UIEvent<HTMLDivElement>) {
 export function ShellSidebar({
   isMobile,
   mobileOpen,
-  setMobileOpen,
   onCloseMobile,
   density,
   collapsed,
@@ -75,7 +74,6 @@ export function ShellSidebar({
 }: {
   isMobile: boolean;
   mobileOpen: boolean;
-  setMobileOpen: (open: boolean) => void;
   onCloseMobile: () => void;
   density: BotsSidebarDensity;
   collapsed: boolean;
@@ -295,11 +293,11 @@ export function ShellSidebar({
               toggledSections={collapsedSidebarSections}
               onToggleSection={toggleSidebarSection}
               onOpenBot={(bot) => {
-                setMobileOpen(false);
+                onCloseMobile();
                 navigate(`/app/${bot.id}`);
               }}
               onOpenGroup={(group) => {
-                setMobileOpen(false);
+                onCloseMobile();
                 navigate(`/app/g/${group.id}`);
               }}
               filters={activityFilters}
@@ -307,7 +305,7 @@ export function ShellSidebar({
               filtersExpanded={activityFiltersExpanded}
               filtersId={activityFiltersId}
               onOpenRun={(run) => {
-                setMobileOpen(false);
+                onCloseMobile();
                 if (run.groupId) navigate(`/app/g/${run.groupId}`);
                 else navigate(`/app/${run.botId}`);
               }}

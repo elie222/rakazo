@@ -1075,7 +1075,6 @@ function SpaceShell() {
       <ShellSidebar
         isMobile={isMobileSidebar}
         mobileOpen={mobileSidebarOpen}
-        setMobileOpen={setMobileSidebarOpen}
         onCloseMobile={closeMobileSidebar}
         density={botsSidebarDensity}
         collapsed={botsSidebarCollapsed}
