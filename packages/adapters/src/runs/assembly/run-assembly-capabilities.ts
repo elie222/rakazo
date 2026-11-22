@@ -40,6 +40,7 @@ import { modelAcceptsImageInput } from "../../models/model-vision.js";
 import { paymentWalletConnected } from "../../payments/payment-wallets.js";
 import { desktopGuardApplies } from "../../providers/computer/desktop/desktop-command-guard.js";
 import { backOffRoutineAfterAccountError } from "../../routines/routine-backoff.js";
+import { pauseRoutineAfterRepeatedFailures } from "../../routines/routine-failure-pause.js";
 import { filterStrategicInitiativeTools } from "../../routines/strategic-initiative.js";
 import {
   createEarlierFileQueue,
@@ -162,9 +163,13 @@ export async function startTurnModel(
       message,
     );
     if (failed && accountFailure && run.trigger === "routine" && run.routineId) {
-      await backOffRoutineAfterAccountError(deps, {
-        routineId: run.routineId,
-        userId: run.userId,
+      const ref = { routineId: run.routineId, userId: run.userId };
+      await backOffRoutineAfterAccountError(deps, ref);
+      await pauseRoutineAfterRepeatedFailures(deps, {
+        ...ref,
+        spaceId: run.spaceId,
+        botId: run.botId,
+        threadId: run.threadId,
       });
     }
   };

@@ -986,7 +986,7 @@ export async function tickRoutineWatch(
 
 /** A line in the routine's thread without a model run. */
 export async function postRoutineWatchMessage(
-  deps: Pick<RoutineWatchDeps, "prisma" | "events">,
+  deps: { prisma: PrismaClient; events: Pick<ThreadEvents, "notify"> },
   input: {
     spaceId: string;
     threadId: string;
