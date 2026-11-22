@@ -6,7 +6,12 @@ const NOW = new Date("2026-03-20T12:00:00.000Z");
 function catalogEntry(
   provider: string,
   id: string,
-  extras: { label?: string; providerName?: string; placeholder?: boolean; recommended?: boolean } = {},
+  extras: {
+    label?: string;
+    providerName?: string;
+    placeholder?: boolean;
+    recommended?: boolean;
+  } = {},
 ) {
   return {
     provider,
@@ -34,13 +39,9 @@ function credential(
     label: provider,
     hasKey: true,
     isDefault: false,
-    ...(extras.modelId !== undefined && extras.modelId !== null
-      ? { modelId: extras.modelId }
-      : {}),
+    ...(extras.modelId !== undefined && extras.modelId !== null ? { modelId: extras.modelId } : {}),
     ...(extras.enabledModelIds ? { enabledModelIds: extras.enabledModelIds } : {}),
-    ...(extras.preferenceRank !== undefined
-      ? { preferenceRank: extras.preferenceRank }
-      : {}),
+    ...(extras.preferenceRank !== undefined ? { preferenceRank: extras.preferenceRank } : {}),
   };
 }
 
@@ -145,7 +146,8 @@ describe("buildModelSuggestions", () => {
   });
 
   it("returns nothing when the Space has no runnable models", async () => {
-    const prisma = { run: { findMany: vi.fn() } } as never;
+    const findMany = vi.fn();
+    const prisma = { run: { findMany } } as never;
     const suggestions = await buildModelSuggestions(
       prisma,
       { userId: "user-1", spaceId: "space-1" },
@@ -154,6 +156,6 @@ describe("buildModelSuggestions", () => {
       { now: NOW },
     );
     expect(suggestions).toEqual([]);
-    expect(prisma.run.findMany).not.toHaveBeenCalled();
+    expect(findMany).not.toHaveBeenCalled();
   });
 });
