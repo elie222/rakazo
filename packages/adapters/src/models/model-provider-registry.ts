@@ -28,6 +28,8 @@ export interface ModelProviderDefinition {
     headers(apiKey: string): Record<string, string>;
     rejected(response: Response): Promise<boolean>;
   };
+  /** A connection needs host configuration beyond an API key. */
+  requiresHostConfiguration?: true;
   /** A deployment-wide key operators set in the environment, and the model it runs. */
   deployment?: { keyEnv: string; defaultModel: string };
   /** Optional authenticated recovery of a dispatched request. */
@@ -63,6 +65,7 @@ const subscriptionNames = {
 };
 
 export const modelProviders = {
+  local: { requiresHostConfiguration: true },
   "openai-compatible": { preserveModelOrder: true },
   "openai-codex": {
     displayName: "OpenAI Codex",

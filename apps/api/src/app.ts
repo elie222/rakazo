@@ -159,7 +159,6 @@ import { handleHttpError } from "./rpc-errors.js";
 import type { SpaceDeletionDeps } from "./spaces/space-deletion.js";
 import { afterSpaceDeparture } from "./spaces/space-departure.js";
 import { cspReportRoutes } from "./telemetry/csp-report.js";
-import { createExperiments } from "./telemetry/experiments.js";
 import { monitoringRoutes } from "./telemetry/monitoring.js";
 import { mountWebhookHttpRoutes } from "./webhooks/webhook.js";
 
@@ -379,7 +378,6 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
         webOrigin: env.webOrigin,
         managedModelsAvailable: resolveDeploymentModel().configured,
         analytics,
-        experiments: createExperiments(env.experiments),
         partnerProgram,
         scheduleLifecycleEmail:
           lifecycleEmailKinds.length > 0
