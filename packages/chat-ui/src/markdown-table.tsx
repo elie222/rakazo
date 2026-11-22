@@ -89,6 +89,7 @@ export const TableCard = memo(function TableCard({
   const announceTimer = useRef<number | undefined>(undefined);
   const expandButtonRef = useRef<HTMLButtonElement>(null);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
+  const dialogScrollRef = useRef<HTMLElement>(null);
 
   const copied = copiedNow && copiedSignature === dataSignature;
 
@@ -175,40 +176,23 @@ export const TableCard = memo(function TableCard({
     />
   );
 
+  const goToPage = (next: number) => {
+    setPage(next);
+    if (expanded && dialogScrollRef.current) dialogScrollRef.current.scrollTop = 0;
+    announce(copy.pageOf(next + 1, pageCount));
+  };
+
   const pager = showPagination ? (
-    <div className="rk-table-footer">
-      <span className="rk-table-range">
-        {copy.rowRange(
-          safePage * TABLE_PAGE_SIZE + 1,
-          Math.min((safePage + 1) * TABLE_PAGE_SIZE, sortedRows.length),
-          sortedRows.length,
-        )}
-      </span>
-      <button
-        type="button"
-        className="rk-table-tool"
-        aria-label={copy.previousPage}
-        disabled={safePage === 0}
-        onClick={() => {
-          setPage(safePage - 1);
-          announce(copy.pageOf(safePage, pageCount));
-        }}
-      >
-        <ChevronLeftIcon />
-      </button>
-      <button
-        type="button"
-        className="rk-table-tool"
-        aria-label={copy.nextPage}
-        disabled={safePage >= pageCount - 1}
-        onClick={() => {
-          setPage(safePage + 1);
-          announce(copy.pageOf(safePage + 2, pageCount));
-        }}
-      >
-        <ChevronRightIcon />
-      </button>
-    </div>
+    <TablePager
+      range={copy.rowRange(
+        safePage * TABLE_PAGE_SIZE + 1,
+        Math.min((safePage + 1) * TABLE_PAGE_SIZE, sortedRows.length),
+        sortedRows.length,
+      )}
+      page={safePage}
+      pageCount={pageCount}
+      onPage={goToPage}
+    />
   ) : (
     <div className="rk-table-footer">
       <span className="rk-table-range">{copy.rowCount(sortedRows.length)}</span>
@@ -292,6 +276,7 @@ export const TableCard = memo(function TableCard({
         {/* biome-ignore-start lint/a11y/noNoninteractiveTabindex: a scrollable region must
             be keyboard-focusable (WCAG 2.1.1 / axe scrollable-region-focusable). */}
         <section
+          ref={dialogScrollRef}
           className="rk-table-scroll rk-table-dialog-scroll"
           aria-label={copy.table}
           tabIndex={0}
@@ -304,6 +289,65 @@ export const TableCard = memo(function TableCard({
     </Dialog>
   );
 });
+
+/**
+ * Previous and Next disable at the ends of the table. The pressed button can disable on the page it
+ * turns to, and the other one may only enable then, so focus moves after that page renders.
+ */
+function TablePager({
+  range,
+  page,
+  pageCount,
+  onPage,
+}: {
+  range: string;
+  page: number;
+  pageCount: number;
+  onPage: (page: number) => void;
+}) {
+  const copy = useMarkdownCopy();
+  const previousRef = useRef<HTMLButtonElement>(null);
+  const nextRef = useRef<HTMLButtonElement>(null);
+  const pressed = useRef<"previous" | "next" | null>(null);
+  useEffect(() => {
+    if (pressed.current === "previous" && previousRef.current?.disabled) {
+      nextRef.current?.focus();
+    }
+    if (pressed.current === "next" && nextRef.current?.disabled) {
+      previousRef.current?.focus();
+    }
+    pressed.current = null;
+  });
+  const turnTo = (next: number, which: "previous" | "next") => {
+    pressed.current = which;
+    onPage(next);
+  };
+  return (
+    <div className="rk-table-footer">
+      <span className="rk-table-range">{range}</span>
+      <button
+        ref={previousRef}
+        type="button"
+        className="rk-table-tool"
+        aria-label={copy.previousPage}
+        disabled={page === 0}
+        onClick={() => turnTo(page - 1, "previous")}
+      >
+        <ChevronLeftIcon />
+      </button>
+      <button
+        ref={nextRef}
+        type="button"
+        className="rk-table-tool"
+        aria-label={copy.nextPage}
+        disabled={page >= pageCount - 1}
+        onClick={() => turnTo(page + 1, "next")}
+      >
+        <ChevronRightIcon />
+      </button>
+    </div>
+  );
+}
 
 function TableView({
   columns,

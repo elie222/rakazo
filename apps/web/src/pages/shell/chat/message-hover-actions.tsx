@@ -1,7 +1,8 @@
+import { i18n } from "@lingui/core";
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { MessageReaction, ThreadMessage } from "@rakazo/contracts";
 import { canReactToThreadMessage, MESSAGE_REACTIONS } from "@rakazo/contracts";
-import { canMarkMessageUnread, copyableMessageText } from "@rakazo/core";
+import { canMarkMessageUnread, copyableMessageText, formatTimeSeparator } from "@rakazo/core";
 import {
   CopyTextFallback,
   DropdownMenu,
@@ -20,6 +21,7 @@ import { MessageHoverMetadata } from "../../../components/messages/MessageHoverM
 export function MessageHoverActions({
   message,
   side,
+  speakerName,
   onReply,
   onMarkUnread,
   markedUnread = false,
@@ -27,6 +29,8 @@ export function MessageHoverActions({
 }: {
   message: ThreadMessage;
   side: "start" | "end";
+  /** Names whose message this is, when the chat names speakers. */
+  speakerName?: string;
   onReply: (message: ThreadMessage) => void;
   onMarkUnread: (message: ThreadMessage) => void;
   markedUnread?: boolean;
@@ -43,6 +47,14 @@ export function MessageHoverActions({
   // Streaming progress bubbles keep hover free for selection / stop clicks.
   if (message.id.startsWith("progress:")) return null;
 
+  const when = formatTimeSeparator(message.createdAt, i18n.locale || "en", {
+    today: t`Today`,
+    yesterday: t`Yesterday`,
+  });
+  let groupLabel = t`Message actions`;
+  if (speakerName && when) groupLabel = t`Message actions, ${speakerName}, ${when}`;
+  else if (speakerName) groupLabel = t`Message actions, ${speakerName}`;
+  else if (when) groupLabel = t`Message actions, ${when}`;
   const copied = copiedNow && copiedText === copyableMessageText(message);
 
   function copyMessage() {
@@ -58,7 +70,13 @@ export function MessageHoverActions({
 
   return (
     <MessageHoverMetadata pinned={moreOpen || reactionsOpen || copied} side={side}>
-      <div data-testid="message-hover-actions" className="flex items-center gap-0.5">
+      {/* biome-ignore lint/a11y/useSemanticElements: a fieldset brings form styling the rail does not want */}
+      <div
+        data-testid="message-hover-actions"
+        role="group"
+        aria-label={groupLabel}
+        className="flex items-center gap-0.5"
+      >
         {canReactToThreadMessage(message) ? (
           <Popover open={reactionsOpen} onOpenChange={setReactionsOpen}>
             <PopoverTrigger aria-label={t`React`} className={iconButtonClass}>
@@ -95,10 +113,7 @@ export function MessageHoverActions({
           <Reply size={15} strokeWidth={1.7} />
         </button>
         <DropdownMenu open={moreOpen} onOpenChange={setMoreOpen}>
-          <DropdownMenuTrigger
-            aria-label={copied ? t`Copied` : t`More`}
-            className={iconButtonClass}
-          >
+          <DropdownMenuTrigger aria-label={t`More`} className={iconButtonClass}>
             {copied ? (
               <Check size={15} strokeWidth={1.7} />
             ) : (
@@ -132,6 +147,9 @@ export function MessageHoverActions({
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
+        <span role="status" className="sr-only">
+          {copied ? t`Copied` : null}
+        </span>
       </div>
       <CopyTextFallback
         open={copyFailed}

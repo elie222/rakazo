@@ -53,3 +53,37 @@ test("routine changes leave one-line rows in the chat", async ({ page }, testInf
   await expect(rows).toHaveCount(5);
   await captureScreenshot(page, testInfo, "routine-change-rows");
 });
+
+test("a webhook routine's row shows its URL and key to the creator", async ({ page }, testInfo) => {
+  await signup(page, `routine-key-${Date.now()}@rakazo.test`, "password12", "Routine key");
+  await completeOnboarding(page);
+  const botId = activeBotId(page);
+  const hook = await rpc<{ secret: string; path: string }>(page, "bots/rotateWebhookSecret", {
+    botId,
+  });
+  await rpc(page, "routines/create", {
+    botId,
+    name: "Deploy check",
+    prompt: "Check the deploy.",
+    webhookEnabled: true,
+    active: true,
+    notify: false,
+  });
+  const row = page.getByTestId("routine-event-row").last();
+  await expect(row).toContainText('Created routine "Deploy check"');
+
+  await row.getByRole("button", { name: "Show webhook key" }).click();
+  const header = row.getByText(`Authorization: Bearer ${hook.secret}`);
+  const confirm = page.getByRole("dialog", { name: "Confirm it's you" });
+  await expect(header.or(confirm)).toBeVisible();
+  if (await confirm.isVisible()) {
+    await confirm.getByLabel("Password", { exact: true }).fill("password12");
+    await confirm.getByRole("button", { name: "Continue" }).click();
+  }
+  await expect(header).toBeVisible();
+  await expect(row.getByText(hook.path)).toBeVisible();
+  await captureScreenshot(page, testInfo, "routine-webhook-key");
+
+  await row.getByRole("button", { name: "Hide webhook key" }).click();
+  await expect(page.getByText(hook.secret)).toHaveCount(0);
+});

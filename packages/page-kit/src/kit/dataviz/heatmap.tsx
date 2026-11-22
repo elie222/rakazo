@@ -213,7 +213,8 @@ export function CalendarHeatmap({
     return <EmptyChart />;
   // At most about a year and a half, so a stray far date cannot draw thousands of cells.
   const last = Math.min(end, start + 550 * DAY);
-  const top = finite(max) && max > 0 ? max : Math.max(0, ...byDay.values());
+  const shown = [...byDay].filter(([time]) => time >= start && time <= last);
+  const top = finite(max) && max > 0 ? max : Math.max(0, ...shown.map(([, value]) => value));
   const weekday = (time: number) => (new Date(time).getUTCDay() + 6) % 7;
   const firstWeek = start - weekday(start) * DAY;
   const weeks = Math.floor((last - firstWeek) / DAY / 7) + 1;

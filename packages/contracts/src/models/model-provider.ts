@@ -2,6 +2,9 @@ import { ConnectionSetupError } from "../integrations/connection-setup-error.js"
 
 export const MODEL_KEY_REJECTED_ERROR = "API key was rejected by the provider.";
 
+/** A subscription sign-in whose code ran out before the person finished. */
+export const MODEL_SIGN_IN_EXPIRED_ERROR = "This code expired. Start again.";
+
 export const MODEL_KEY_FORMAT_ERROR = "That doesn't look like an API key. Paste only the key.";
 
 /**

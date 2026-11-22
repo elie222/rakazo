@@ -1,14 +1,6 @@
 import { t } from "@lingui/core/macro";
 import { commandVariableName } from "@rakazo/contracts";
-
-/** The host a site card shows, or the origin when it does not parse. */
-export function siteHost(origin: string): string {
-  try {
-    return new URL(origin).host || origin;
-  } catch {
-    return origin;
-  }
-}
+import { siteHost } from "@rakazo/core";
 
 /**
  * The destination line a credential request card shows beneath its prompt. A command variable has

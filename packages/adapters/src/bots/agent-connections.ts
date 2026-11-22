@@ -485,8 +485,8 @@ async function deliverToConnectedAgent(
     return { ok: false as const, error: committed.error ?? "delivery failed" };
   }
 
-  await deps.events.notify(targetThreadId, committed.targetEventSeq).catch(() => undefined);
-  await deps.events.notify(run.threadId, committed.senderEventSeq).catch(() => undefined);
+  await deps.events.notify(targetThreadId, committed.targetEventSeq);
+  await deps.events.notify(run.threadId, committed.senderEventSeq);
   await wakeRun(deps.jobs, committed.runId);
   return {
     ok: true,

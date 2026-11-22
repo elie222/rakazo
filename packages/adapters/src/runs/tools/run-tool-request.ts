@@ -18,7 +18,13 @@ import {
   catalogApprovalRequest,
 } from "../../approvals/approval-effect.js";
 import { prepareAgentConnectionResponse } from "../../bots/agent-connections.js";
-import { argumentGiven, dropUnchangedOwnBotArgs } from "../../bots/update-bot-patch.js";
+import { childSettingsGiven, prepareChildBotUpdate } from "../../bots/child-bot-settings.js";
+import { listDefaultVoices } from "../../bots/own-bot-settings.js";
+import {
+  argumentGiven,
+  BOT_SETTING_ARGS,
+  dropUnchangedOwnBotArgs,
+} from "../../bots/update-bot-patch.js";
 import { validCloudAgentArgs } from "../../cloud-agents/cloud-agent-tools.js";
 import { sanitizeConnectorError } from "../../integrations/connector-safety.js";
 import { paidRequestEffect, restorePaidRequest } from "../../payments/paid-request.js";
@@ -29,6 +35,7 @@ import {
   purchaseApprovalOf,
   purchaseCardSummary,
 } from "../../payments/purchase-gate.js";
+import { reachesManagedRoutines } from "../../routines/routine-target.js";
 import { canonicalToolEvents } from "../../routines/routine-triggers.js";
 import { listVaultItems } from "../../secrets/bot-secrets.js";
 import type { VaultCardUse, VaultLoginUse } from "../../secrets/vault/vault-card-use.js";
@@ -40,7 +47,12 @@ import {
   vaultCardUseOf,
   vaultLoginUseOf,
 } from "../../secrets/vault/vault-card-use.js";
-import { isFleetApprovalTool, modelLabel, prepareFleetRequest } from "../../tools/fleet-tools.js";
+import {
+  isFleetApprovalTool,
+  modelLabel,
+  prepareFleetRequest,
+  resolveBot,
+} from "../../tools/fleet-tools.js";
 import { assertConnectorToolArgs, CATALOG_EXECUTE } from "../../tools/lazy-tool-catalog.js";
 import { SCHEDULE_TOOL_NAMES } from "../../tools/schedule-tools.js";
 import { SKILL_TOOL_NAMES } from "../../tools/skill-tools.js";
@@ -392,7 +404,7 @@ export async function prepareToolRequest(
   const { name, executionId, nextApprovedTool } = request;
   let { args } = request;
   if (
-    (SCHEDULE_TOOL_NAMES.has(name) || SKILL_TOOL_NAMES.has(name)) &&
+    (SCHEDULE_TOOL_NAMES.has(name) || SKILL_TOOL_NAMES.has(name) || name === "remove_mcp_server") &&
     (ctx.source.messagingChannelRun ||
       (await deps.prisma.steeringMessage.findFirst({
         where: {
@@ -445,11 +457,19 @@ export async function prepareToolRequest(
     const refused = await scheduleCreateRefusal(ctx, args);
     if (refused) return refusal("schedule_create_refused", refused.error);
   }
+  // A bot passing its own id is working on its own routines, which need no bot management. A
+  // name may be shared, so it goes through the lookup below.
+  if (reachesManagedRoutines(name, args) && String(args.bot_id ?? "").trim() === bot.id) {
+    const { bot_id: _id, bot_name: _name, ...rest } = args;
+    args = rest;
+  }
+  const managedRoutines = reachesManagedRoutines(name, args);
   const fleetWrite =
     FLEET_WRITE_TOOL_NAMES_SET.has(name) ||
     name === "archive_bot" ||
-    (name === "update_bot" && argumentGiven(args.bot_id));
-  if (fleetWrite || name === "list_fleet") {
+    (name === "update_bot" && argumentGiven(args.bot_id)) ||
+    (managedRoutines && name !== "schedule_list");
+  if (fleetWrite || name === "list_fleet" || managedRoutines) {
     if (isSubagentToolExecution(executionId))
       return refusal("helper_bot_management", "Helpers cannot use bot management tools.");
     // The run-start snapshot is not enough: the owner can turn the switch off mid-run.
@@ -458,7 +478,12 @@ export async function prepareToolRequest(
       select: { fleetManagement: true },
     });
     if (!live?.fleetManagement)
-      return refusal("tool_disabled", "This tool is disabled for this bot.");
+      return refusal(
+        "tool_disabled",
+        managedRoutines
+          ? "Bot management is off for this bot, so it reaches only its own routines."
+          : "This tool is disabled for this bot.",
+      );
     if (!ctx.source.ownerStartedRun)
       return refusal("run_not_owner_started", "Bot management tools need a run you started.");
     // Text from a channel or webhook may have asked for it, so it goes through the approval mode,
@@ -466,6 +491,40 @@ export async function prepareToolRequest(
     if (fleetWrite && (await ctx.trust.receivedOutsideMessage())) {
       request.heldForApproval = true;
       request.ignoresAllowRules = true;
+    }
+    // The card names the bot, and an approved replay acts on its id, not a name another bot
+    // could take by then.
+    if (managedRoutines && nextApprovedTool !== name) {
+      const target = await resolveBot(deps.prisma, ctx.fleetRun, args);
+      if ("error" in target) return refusal("bot_management_request_invalid", target.error);
+      const { bot_id: _id, bot_name: _name, ...rest } = args;
+      args = target.id === bot.id ? rest : { ...rest, bot_id: target.id, bot_name: target.name };
+    }
+  }
+  if (name === "update_bot" && argumentGiven(args.bot_id)) {
+    // An approved replay runs the stored request, whose settings were checked before the card.
+    if (nextApprovedTool === name) request.heldForApproval = args.settings !== undefined;
+    else {
+      const { settings: _stored, ...given } = args;
+      args = given;
+      if (childSettingsGiven(given)) {
+        const prepared = await prepareChildBotUpdate(
+          {
+            ...(await fleetPrepareDeps(deps, run)),
+            listVoices: () => listDefaultVoices(deps, run, ctx.context),
+          },
+          ctx.fleetRun,
+          given,
+          ctx.secrets,
+        );
+        if ("error" in prepared) return refusal("bot_management_request_invalid", prepared.error);
+        args = prepared.canonical;
+        // A call that repeats every setting is only a profile edit, which needs no card.
+        if (args.settings !== undefined) {
+          request.fleetSummary = prepared.summary;
+          request.heldForApproval = true;
+        }
+      }
     }
   }
   if (name === "update_preferences") request.settingsChange = true;
@@ -654,10 +713,16 @@ function uncheckedPress(why: UncheckedPress): { error: string } {
   }
 }
 
-/** Settings that change what this bot runs on or how it speaks; only the owner's chat sets them. */
-const OWNER_SETTINGS = ["model", "thinkingLevel", "voice", "readAloud"];
+/**
+ * Settings that change what this bot runs on, how it speaks or how it works; only the owner's chat
+ * sets them, and Auto Review checks them after outside content.
+ */
+const OWNER_SETTINGS = ["model", "thinkingLevel", "voice", "readAloud", ...BOT_SETTING_ARGS];
 
-/** Everything a bot may change on itself. Credentials, tools and access stay in Settings. */
+/**
+ * Everything a bot may change on itself. Credentials, access, approvals and turning tools back
+ * on stay in Settings.
+ */
 const OWN_FIELDS = new Set([
   ...OWNER_SETTINGS,
   "name",
@@ -727,6 +792,11 @@ async function prepareOwnBotUpdate(
       thinkingLevel: true,
       autoSpeak: true,
       voiceId: true,
+      replyMode: true,
+      teamChatAmbientEnabled: true,
+      teamChatRules: true,
+      memoryScope: true,
+      disabledBuiltinTools: true,
     },
   });
   const args = current
@@ -749,12 +819,23 @@ async function prepareOwnBotUpdate(
       "owner_only_settings",
       `Only the owner can change ${settingsOnly.join(", ")}, in Settings.`,
     );
+  if (
+    typeof args.teamChatRules === "string" &&
+    redactSecrets(args.teamChatRules, ctx.secrets) !== args.teamChatRules
+  )
+    return refusal(
+      "team_chat_rules_contain_credentials",
+      "teamChatRules cannot contain credentials.",
+    );
+  // Shared memory widens what this bot reads, so only the owner grants it.
+  if (args.memoryScope === "shared")
+    return refusal("owner_only_settings", "Only the owner can share your memory, in Settings.");
   const unguarded = await neverAsks(ctx);
   if (OWNER_SETTINGS.some((key) => argumentGiven(args[key]))) {
     if (isSubagentToolExecution(executionId) || (!unguarded && !ctx.source.ownerStartedRun))
       return refusal(
         "owner_only_model_settings",
-        "Only the owner can change your model, thinking, voice or read-aloud, from their own chat.",
+        "Only the owner can change your settings, from their own chat.",
       );
     request.settingsChange = true;
   }

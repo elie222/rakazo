@@ -921,5 +921,15 @@ function mapKey(key: string) {
   if (lower === "alt") return "alt";
   if (lower === "shift") return "shift";
   if (lower === "meta" || lower === "cmd" || lower === "super") return "super";
+  if (lower === "pagedown" || lower === "page_down" || lower === "pgdn") return "Page_Down";
+  if (lower === "pageup" || lower === "page_up" || lower === "pgup") return "Page_Up";
+  if (lower === "arrowup" || lower === "up") return "Up";
+  if (lower === "arrowdown" || lower === "down") return "Down";
+  if (lower === "arrowleft" || lower === "left") return "Left";
+  if (lower === "arrowright" || lower === "right") return "Right";
+  if (lower === "delete" || lower === "del") return "Delete";
+  if (lower === "home") return "Home";
+  if (lower === "end") return "End";
+  if (lower === "insert" || lower === "ins") return "Insert";
   return key;
 }

@@ -6,6 +6,9 @@ import { ChangeLatch } from "../threads/event-stream.js";
 
 const IDLE_WAIT_MS = 60_000;
 
+export const deploymentModelChangesScope = "deployment:model";
+export const accountPreferencesChangesScope = (userId: string) => `preferences:${userId}`;
+
 const spaceChangesTopic = (spaceId: string) => `space-changes:${spaceId}`;
 
 const PUBLISH_RETRY_MS = 15_000;
