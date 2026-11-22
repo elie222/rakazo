@@ -16,9 +16,9 @@ and out of those logs, and give the public ingress a meaningless name that tells
 ## How it works
 
 With `INGRESS_PROVIDER` set, the API opens a second port, `3101` (`INGRESS_PORT`), that answers
-only inbound deliveries and returns `404` for every other path. The list of inbound routes is the
-one the API already keeps of routes that answer without a session, so a new webhook is covered as
-soon as it is added there. An ingress provider then forwards a public address to that port, never
+only inbound deliveries and returns `404` for every other path. The inbound routes are a marked
+section of the API's list of routes that answer without a session, and a test fails if a webhook
+is added to that list outside the section. An ingress provider then forwards a public address to that port, never
 to the app port.
 
 Once a public address is published, the routine editor, a webhook routine's chat row and
