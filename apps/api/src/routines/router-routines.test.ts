@@ -234,11 +234,12 @@ describe("routines.list", () => {
 
   it("answers a new routine with who it runs as", async () => {
     const created = row("new", "user-1");
+    const create = vi.fn(async (_query: { data: Record<string, unknown> }) => created);
     const client = createRouterClient(
       createRouter({
         prisma: {
           bot: { findFirst: vi.fn(async () => ({ id: "bot-1", thread: null, computer: null })) },
-          routine: { create: vi.fn(async () => created), count: vi.fn(async () => 0) },
+          routine: { create, count: vi.fn(async () => 0) },
           spaceMember: {
             findMany: vi.fn(async () => [
               { userId: "user-1", member: { user: { name: "Riley", email: "r@example.test" } } },
@@ -257,6 +258,8 @@ describe("routines.list", () => {
       crons: ["0 9 * * *"],
     });
     expect(saved.runsAs).toEqual({ name: "Riley", isViewer: true });
+    // The owner wrote it in the app, so its runs may reach their computer.
+    expect(create.mock.calls[0]![0].data.promptByOwner).toBe(true);
   });
 
   it("reads nothing for a bot without routines", async () => {
@@ -417,6 +420,14 @@ describe("routines.update", () => {
     expect(data).not.toHaveProperty("userId");
     expect(data).not.toHaveProperty("watchState");
     expect(data.active).toBe(false);
+  });
+
+  it("counts a prompt the owner saves as their own, and nothing else as a rewrite", async () => {
+    const { call, update } = fixture(false);
+    expect((await call({ prompt: "Check the backups" })).status).toBe(200);
+    expect(update.mock.calls[0]![0].data.promptByOwner).toBe(true);
+    expect((await call({ active: false, runAt: undefined })).status).toBe(200);
+    expect(update.mock.calls[1]![0].data).not.toHaveProperty("promptByOwner");
   });
 
   it("keeps its watch baseline when the owner edits it", async () => {

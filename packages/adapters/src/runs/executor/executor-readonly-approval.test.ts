@@ -114,6 +114,7 @@ function fixture({
   userDevices,
   botUserId = "user-1",
   routineId,
+  routineRow,
   batch,
   browser,
   spendingLimit = null,
@@ -133,6 +134,8 @@ function fixture({
   botUserId?: string;
   /** The routine a routine run belongs to; none is a check-in. */
   routineId?: string;
+  /** The saved routine; by default user-1's, with the run's prompt, written by them. */
+  routineRow?: { userId?: string; promptByOwner?: boolean; prompt?: string };
   connectedApps?: string[];
   routines?: { name: string; prompt: string }[];
   /** Adds `demo_get_other`, a read on a separate installed resource with the same name prefix. */
@@ -500,7 +503,9 @@ function fixture({
     userActionApprovalRule: { findMany: vi.fn(async () => (confirmationsOverride ? [] : rules)) },
     routine: {
       findMany: vi.fn(async () => routines),
-      findUnique: vi.fn(async () => null),
+      findUnique: vi.fn(async () =>
+        routineId ? { userId: "user-1", promptByOwner: true, prompt, ...routineRow } : null,
+      ),
       count: vi.fn(async () => 0),
       deleteMany: vi.fn(async () => ({ count: 0 })),
     },
@@ -4460,7 +4465,10 @@ describe("user_computer_shell", () => {
     });
 
     it.each<[string, Parameters<typeof fixture>[0]]>([
-      ["another member's routine", { botUserId: "user-2" }],
+      ["another member's run", { botUserId: "user-2" }],
+      ["another member's routine the owner ran", { routineRow: { userId: "user-2" } }],
+      ["a routine prompt the owner did not write", { routineRow: { promptByOwner: false } }],
+      ["a routine edited after it fired", { routineRow: { prompt: "Wipe the backups" } }],
       ["a check-in", { routineId: undefined }],
       ["a watch's change", { prompt: `Check the backups${ROUTINE_WATCH_NOTE_START}the inbox).` }],
     ])("is not offered for %s", async (_label, options) => {

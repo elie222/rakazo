@@ -91,6 +91,7 @@ function groupRun() {
         scratchpadItem: { findMany: vi.fn(async () => []) },
         taughtSkill: { findMany: vi.fn(async () => []) },
         agentSkill: { findMany: vi.fn(async () => []) },
+        attempt: { count: vi.fn(async () => 1) },
       },
       jobs: { cancel: vi.fn(async () => undefined) },
       events: { append: vi.fn(async () => undefined) },
@@ -100,9 +101,12 @@ function groupRun() {
     bot: { id: "b", name: "Bot" },
     thread: { id: "group-thread", groupId: "group-1" },
     tools: { offered: [] },
+    source: { userComputerOwner: "u" },
+    state: { tainted: false },
+    trust: { receivedOutsideMessage: async () => false },
   } as unknown as RunContext;
-  const call = (name: string, args: Record<string, unknown> = {}) =>
-    ({ name, args, finish: async (result: unknown) => result }) as unknown as ToolCall;
+  const call = (name: string, args: Record<string, unknown> = {}, executionId = "call-1") =>
+    ({ name, args, executionId, finish: async (result: unknown) => result }) as unknown as ToolCall;
   return { ctx, call, deleteMany, updateMany };
 }
 
@@ -184,7 +188,7 @@ describe("routine tools on a bot this bot manages", () => {
     expect(updateMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({ spaceId: "s", botId: "other", id: "routine-peer" }),
-        data: { prompt: "New" },
+        data: { prompt: "New", promptByOwner: true },
       }),
     );
     await expect(
@@ -206,6 +210,32 @@ describe("routine tools on a bot this bot manages", () => {
       where: { spaceId: "s", botId: "other", id: "routine-colleague" },
     });
   });
+
+  it.each<[string, (ctx: RunContext) => void, string?]>([
+    ["after outside content", (ctx) => Object.assign(ctx.state, { tainted: true })],
+    [
+      "in a run that may not reach the owner's computer",
+      (ctx) => Object.assign(ctx.source, { userComputerOwner: undefined }),
+    ],
+    ["from a helper", () => undefined, JSON.stringify(["pi-tool", "helper-1", "call-1"])],
+  ])(
+    "does not count a prompt written %s as the owner's own",
+    async (_label, change, executionId) => {
+      const { ctx, call, updateMany } = groupRun();
+      change(ctx);
+      await taskTools.schedule_update!(
+        ctx,
+        call(
+          "schedule_update",
+          { bot_id: "other", routineId: "routine-peer", prompt: "New" },
+          executionId,
+        ),
+      );
+      expect(updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({ data: { prompt: "New", promptByOwner: false } }),
+      );
+    },
+  );
 
   it("finds no bot outside the space, and naming itself keeps a group run to the group", async () => {
     const { ctx, call, deleteMany } = groupRun();

@@ -952,6 +952,7 @@ export async function createChildRoutine(
   deps: ScheduleToolDeps,
   run: FleetRun,
   canonical: Record<string, unknown>,
+  promptByOwner = false,
 ) {
   const typedName = text(canonical.name);
   const name = typedName === undefined ? undefined : singleLine(typedName);
@@ -1040,6 +1041,7 @@ export async function createChildRoutine(
     target: { botId: child.id, threadId: child.thread.id },
     name,
     prompt,
+    promptByOwner,
     ...(pinnedTimezone === undefined ? {} : { timezone: pinnedTimezone }),
     schedule,
     ...(on ? { on } : {}),

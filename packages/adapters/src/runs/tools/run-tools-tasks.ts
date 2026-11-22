@@ -39,6 +39,7 @@ import {
 } from "../../tools/skill-tools.js";
 import type { RunContext } from "../assembly/run-context.js";
 import type { ToolHandlers } from "./run-tool-gate.js";
+import { ownerWritesRoutinePrompt } from "./run-tools-user-computer.js";
 
 /** A command watch may not run what the desktop guard keeps the bot from running itself. */
 function commandWatchGuardError(ctx: RunContext, watch: unknown): string | undefined {
@@ -218,6 +219,7 @@ export const taskTools: ToolHandlers = {
       userId: run.userId,
       threadId: thread.id,
       ...scheduleCreateFields(args),
+      promptByOwner: await ownerWritesRoutinePrompt(ctx, call.executionId),
     });
     return call.finish(created);
   },
@@ -236,6 +238,7 @@ export const taskTools: ToolHandlers = {
         routineId: String(args.routineId ?? ""),
         name: isScheduleValueProvided(args.name) ? String(args.name) : undefined,
         prompt: isScheduleValueProvided(args.prompt) ? String(args.prompt) : undefined,
+        promptByOwner: await ownerWritesRoutinePrompt(ctx, call.executionId),
         inChat: typeof args.inChat === "boolean" ? args.inChat : undefined,
         active: typeof args.active === "boolean" ? args.active : undefined,
         timezone: isScheduleValueProvided(args.timezone) ? String(args.timezone) : undefined,

@@ -1606,6 +1606,9 @@ model Routine {
   thread         Thread?   @relation(fields: [threadId], references: [id], onDelete: SetNull)
   name           String
   prompt         String
+  /// The owner wrote the current prompt themselves, in the app or in a run of their own that read
+  /// no outside content. Only then may its runs reach the owner's own computer.
+  promptByOwner  Boolean   @default(false)
   crons          String[]
   timezone       String    @default("UTC")
   active         Boolean   @default(false)

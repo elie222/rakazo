@@ -4,6 +4,7 @@ import { disabledBuiltinToolSet, modelRoleConnectionId } from "@rakazo/contracts
 import {
   BACKGROUND_HELPER_TRIGGER,
   chatAppConnectNote,
+  expandSkillReferencesInPrompt,
   HELPER_RESULT_TRIGGER,
   isCallClientNonce,
   isOwnerStartedRun,
@@ -570,13 +571,30 @@ export async function resolveRunCapabilities(
     run.trigger !== "bot_message" &&
     !conversationThread.groupId &&
     !nonOwnerChatRun;
+  const ownRoutine =
+    run.trigger === "routine" && run.routineId && run.userId === bot.userId
+      ? await deps.prisma.routine.findUnique({
+          where: { id: run.routineId },
+          select: { userId: true, promptByOwner: true, prompt: true },
+        })
+      : null;
   const userComputerOwnerId = userComputerOwner({
     trigger: conversationRun.trigger,
     sourceRole: (origin?.sourceMessage ?? sourceMessage)?.role,
     messagingChannelRun: nonOwnerChatRun,
     runUserId: run.userId,
     botUserId: bot.userId,
-    routineId: run.trigger === "routine" ? run.routineId : null,
+    routine: ownRoutine
+      ? {
+          userId: ownRoutine.userId,
+          promptByOwner: ownRoutine.promptByOwner,
+          // As it fired: a run queued before an edit carries the prompt it fired with.
+          expandedPrompt: expandSkillReferencesInPrompt(
+            ownRoutine.prompt,
+            parts.records.agentSkills,
+          ),
+        }
+      : null,
     taskPrompt: parts.records.task.prompt,
   });
   let userComputer: UserComputerState;

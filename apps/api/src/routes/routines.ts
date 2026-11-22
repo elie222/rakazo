@@ -93,7 +93,10 @@ export function routinesRoutes(ctx: RouterContext) {
         }
         await assertRoutineModel(deps, context.actor, input, codexCatalog);
         const row = await deps.prisma.routine.create({
-          data: routineRowData(context.actor, input, routineNextRunAt(input)),
+          data: {
+            ...routineRowData(context.actor, input, routineNextRunAt(input)),
+            promptByOwner: true,
+          },
         });
         await announceRoutine(context.actor, bot, row);
         await postRoutineNotice(deps, {
@@ -275,6 +278,8 @@ export function routinesRoutes(ctx: RouterContext) {
             data: {
               name: input.name,
               prompt: input.prompt,
+              // Only the owner may send a prompt (checked above).
+              ...(input.prompt !== undefined ? { promptByOwner: true } : {}),
               crons: input.crons,
               timezone: input.timezone,
               active: input.active,

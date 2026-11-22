@@ -95,10 +95,11 @@ describe("userComputerOwner", () => {
     messagingChannelRun: false,
     runUserId: "user-1",
     botUserId: "user-1",
-    routineId: null,
+    routine: null,
     taskPrompt: "Check the backups",
   };
-  const ownRoutine = { ...own, trigger: "routine", sourceRole: undefined, routineId: "routine-1" };
+  const routine = { userId: "user-1", promptByOwner: true, expandedPrompt: "Check the backups" };
+  const ownRoutine = { ...own, trigger: "routine", sourceRole: undefined, routine };
 
   it("is the bot owner when their own message or routine started the run", () => {
     expect(userComputerOwner(own)).toBe("user-1");
@@ -107,11 +108,16 @@ describe("userComputerOwner", () => {
   });
 
   it.each([
-    { routineId: null },
-    { runUserId: "user-2" },
-    { messagingChannelRun: true },
-    { taskPrompt: routineTaskWithWatchNote },
-  ])("is nobody for a routine run with %o", (change) => {
+    ["a check-in or a helper", { routine: null }],
+    ["a run another member started", { runUserId: "user-2" }],
+    ["a channel", { messagingChannelRun: true }],
+    ["a watch's change note", { taskPrompt: routineTaskWithWatchNote }],
+    // A run with outside content wrote it, or it moved to the owner when its author left.
+    ["a prompt the owner did not write", { routine: { ...routine, promptByOwner: false } }],
+    // Run now on another member's routine creates the run as the owner who pressed it.
+    ["another member's routine", { routine: { ...routine, userId: "user-2" } }],
+    ["a prompt that changed after it fired", { routine: { ...routine, expandedPrompt: "New" } }],
+  ])("is nobody for a routine run with %s", (_label, change) => {
     expect(userComputerOwner({ ...ownRoutine, ...change })).toBeUndefined();
   });
 

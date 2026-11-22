@@ -810,6 +810,8 @@ async function departSpace(
             // Backoff earned on their accounts does not hold the owner back either.
             data: {
               userId: ownerId,
+              // Their prompt is not the owner's own words.
+              promptByOwner: false,
               active: false,
               nextRunAt: null,
               watchState: Prisma.DbNull,

@@ -1,0 +1,1 @@
+ALTER TABLE "routines" ADD COLUMN "promptByOwner" BOOLEAN NOT NULL DEFAULT false;

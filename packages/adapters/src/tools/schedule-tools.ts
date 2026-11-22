@@ -594,6 +594,8 @@ export async function createScheduleFromTool(
     name: string;
     prompt: string;
     inChat?: boolean;
+    /** The routine's owner wrote this prompt themselves (see Routine.promptByOwner). */
+    promptByOwner?: boolean;
     timezone?: string;
     schedule: Record<string, unknown>;
     /** The tool's `on`: events that start the routine besides its timing, or instead of it. */
@@ -670,6 +672,7 @@ export async function createScheduleFromTool(
         threadId: routineThreadId,
         name,
         prompt,
+        promptByOwner: input.promptByOwner === true,
         crons: eventsOnly ? [] : [resolved.cron],
         timezone,
         notify: true,
@@ -835,6 +838,7 @@ async function createWatchFromTool(
     threadId: string;
     name: string;
     prompt: string;
+    promptByOwner?: boolean;
     timezone?: string;
     schedule: Record<string, unknown>;
     events: RoutineEvents;
@@ -867,6 +871,7 @@ async function createWatchFromTool(
         threadId: input.threadId,
         name: input.name,
         prompt: input.prompt,
+        promptByOwner: input.promptByOwner === true,
         crons: [],
         timezone,
         notify: true,
@@ -1015,6 +1020,8 @@ export async function updateScheduleFromTool(
     routineId: string;
     name?: string;
     prompt?: string;
+    /** See createScheduleFromTool; a prompt written any other way loses the owner's computer. */
+    promptByOwner?: boolean;
     inChat?: boolean;
     active?: boolean;
     timezone?: string;
@@ -1207,7 +1214,7 @@ export async function updateScheduleFromTool(
     },
     data: {
       ...(name === undefined ? {} : { name }),
-      ...(prompt === undefined ? {} : { prompt }),
+      ...(prompt === undefined ? {} : { prompt, promptByOwner: input.promptByOwner === true }),
       ...(inChat === undefined ? {} : { inChat }),
       ...(timingChanged ? { crons, timezone, active, nextRunAt } : {}),
       ...(watchChanged && watch ? { watch: watch as Prisma.InputJsonValue } : {}),

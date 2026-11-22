@@ -27,6 +27,8 @@ import type {
 import { HOST_SCREEN_MAX_ACTIONS, hostScreenAction } from "../../computers/screens/host-screen.js";
 import { ROUTINE_WATCH_NOTE_START } from "../../routines/routine-watch.prompt.js";
 import type { RunContext } from "../assembly/run-context.js";
+import { isRunTainted } from "../assembly/run-context.js";
+import { isSubagentToolExecution } from "../lifecycle/run-effects.js";
 import type { ToolCall } from "./run-tool-gate.js";
 
 export {
@@ -46,8 +48,10 @@ const USER_COMPUTER_UNAVAILABLE =
 
 /**
  * Whose own computer this run may reach: the bot owner's, when their own message or one of their
- * routines started it. A watch's change note quotes what it read, so its runs reach no one's, nor
- * do check-ins, a routine's helpers, webhooks, channels, other bots and other people's messages.
+ * routines started it. A routine counts only while its owner wrote its prompt themselves and the
+ * run carries that prompt as it stands, since anything else may be text the owner never wrote. A
+ * watch's change note quotes what it read, so its runs reach no one's, nor do check-ins, a
+ * routine's helpers, webhooks, channels, other bots and other people's messages.
  */
 export function userComputerOwner(input: {
   trigger: string;
@@ -55,16 +59,36 @@ export function userComputerOwner(input: {
   messagingChannelRun: boolean;
   runUserId: string;
   botUserId: string;
-  /** Set only on the routine's own run, not a helper's. */
-  routineId: string | null;
+  /** The routine of the routine's own run (not a helper's), its prompt expanded as at firing. */
+  routine: { userId: string; promptByOwner: boolean; expandedPrompt: string } | null;
   taskPrompt: string;
 }): string | undefined {
   if (input.messagingChannelRun || input.runUserId !== input.botUserId) return undefined;
+  const { routine } = input;
   const allowed =
     input.trigger === "routine"
-      ? Boolean(input.routineId) && !input.taskPrompt.includes(ROUTINE_WATCH_NOTE_START)
+      ? routine !== null &&
+        routine.userId === input.runUserId &&
+        routine.promptByOwner &&
+        routine.expandedPrompt === input.taskPrompt &&
+        !input.taskPrompt.includes(ROUTINE_WATCH_NOTE_START)
       : (input.trigger === "user" || input.trigger === "follow_up") && input.sourceRole === "user";
   return allowed ? input.runUserId : undefined;
+}
+
+/**
+ * Whether a routine prompt this call writes is its owner's own words: written in a run that may
+ * reach the owner's computer, before any outside content entered it.
+ */
+export async function ownerWritesRoutinePrompt(
+  ctx: RunContext,
+  executionId: string,
+): Promise<boolean> {
+  return (
+    Boolean(ctx.source.userComputerOwner) &&
+    !isSubagentToolExecution(executionId) &&
+    !(await isRunTainted(ctx))
+  );
 }
 
 /**

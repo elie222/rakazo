@@ -46,6 +46,7 @@ import { publishMessage } from "../assembly/run-messages.js";
 import { mayOpenModelStream } from "../lifecycle/run-lifecycle.js";
 import { fleetPrepareDeps } from "../turn/run-model.js";
 import type { ToolCall, ToolHandlers } from "./run-tool-gate.js";
+import { ownerWritesRoutinePrompt } from "./run-tools-user-computer.js";
 
 async function archiveBot(ctx: RunContext, call: ToolCall) {
   const { deps, run, bot, thread, context } = ctx;
@@ -270,7 +271,8 @@ export const fleetTools: ToolHandlers = {
   async create_child_routine(ctx, call) {
     const { deps } = ctx;
     const { args } = call;
-    return call.finish(await createChildRoutine(deps, ctx.fleetRun, args));
+    const promptByOwner = await ownerWritesRoutinePrompt(ctx, call.executionId);
+    return call.finish(await createChildRoutine(deps, ctx.fleetRun, args, promptByOwner));
   },
   async update_bot(ctx, call) {
     const { deps, run, bot, thread, context } = ctx;
