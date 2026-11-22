@@ -58,6 +58,7 @@ import {
 import { analyticsSurface } from "../../lib/native/analytics-surface";
 import { native, useThemedStyles } from "../../lib/native/native";
 import { useScreenHeader } from "../../lib/navigation/screen-header";
+import { queryClient, rpcQuery } from "../../lib/query/query";
 import { ACCOUNT_SETTINGS, settingsRpc } from "../../lib/query/settings-target";
 import { useListSearch } from "../../lib/search/use-list-search";
 
@@ -369,6 +370,10 @@ export default function ModelConnection() {
     setPending("disconnect");
     try {
       await rpc("models/disconnect", { provider: selected.provider, credentialId: credential.id });
+      // Connections change which models are runnable for suggestions.
+      await queryClient.invalidateQueries({
+        queryKey: rpcQuery("models/suggested").queryKey,
+      });
       publishFeedback("connection", {
         notice: t`Disconnected ${ph({ provider: selectedProviderLabel })}.`,
       });
@@ -415,6 +420,10 @@ export default function ModelConnection() {
         { ...connect.input, surface: analyticsSurface() },
         { timeoutMs: MODEL_CONNECT_TIMEOUT_MS },
       );
+      // Connections change which models are runnable for suggestions.
+      await queryClient.invalidateQueries({
+        queryKey: rpcQuery("models/suggested").queryKey,
+      });
       adoptSavedCredential(saved);
       credentialIdRef.current = saved.id;
       setCredentialId(saved.id);

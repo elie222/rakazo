@@ -23,10 +23,55 @@ vi.mock("@rakazo/ui-web/components/ui/popover", async (importOriginal) => {
   };
 });
 
-vi.mock("@lingui/react/macro", () => {
-  const t = (parts: TemplateStringsArray, ...values: unknown[]) =>
-    parts.reduce((text, part, index) => `${text}${index > 0 ? values[index - 1] : ""}${part}`, "");
-  return { useLingui: () => ({ t }), Trans: ({ children }: { children: ReactNode }) => children };
+const { linguiExports, linguiT } = vi.hoisted(() => {
+  // Macro transform turns t`Hello ${name}` into _t({ message: "Hello {0}", values: { 0: name } })
+  // (via useLingui's `_`) or leaves a template tag; accept both shapes.
+  const linguiT = (
+    parts:
+      | TemplateStringsArray
+      | string
+      | { message?: string; id?: string; values?: Record<string, unknown> },
+    ...values: unknown[]
+  ) => {
+    if (typeof parts === "string") {
+      return values.length
+        ? parts.replace(/\{(\d+)\}/g, (_, i) => String(values[Number(i)] ?? ""))
+        : parts;
+    }
+    if (parts && typeof parts === "object" && !Array.isArray(parts) && "message" in parts) {
+      const message = parts.message ?? parts.id ?? "";
+      const vars = parts.values ?? {};
+      return message.replace(/\{(\w+)\}/g, (_, key) => String(vars[key] ?? ""));
+    }
+    return (parts as TemplateStringsArray).reduce(
+      (text, part, index) => `${text}${index > 0 ? values[index - 1] : ""}${part}`,
+      "",
+    );
+  };
+  const Trans = ({
+    children,
+    message,
+    id,
+  }: {
+    children?: ReactNode;
+    message?: string;
+    id?: string;
+  }) => children ?? message ?? id ?? null;
+  return {
+    linguiT,
+    linguiExports: {
+      t: linguiT,
+      useLingui: () => ({ t: linguiT, _: linguiT, i18n: { _: linguiT } }),
+      Trans,
+    },
+  };
+});
+vi.mock("@lingui/react/macro", () => linguiExports);
+vi.mock("@lingui/react", () => linguiExports);
+vi.mock("@lingui/core/macro", () => ({ t: linguiT }));
+vi.mock("@lingui/core", async (importOriginal) => {
+  const actual = await importOriginal<Record<string, unknown>>();
+  return { ...actual, t: linguiT };
 });
 
 function choices(count: number): ChatModelChoice[] {
@@ -219,10 +264,10 @@ describe("ChatModelPicker", () => {
         provider: "openrouter",
         modelId: "vendor/model-2",
         label: "Model 2",
-        reason: "available",
-        recentRuns: 0,
-        successRatePct: 0,
-        lastUsedAt: null,
+        reason: "recent",
+        recentRuns: 3,
+        successRatePct: 100,
+        lastUsedAt: new Date().toISOString(),
       },
     ];
     render(choices(11), "openrouter::vendor/model-2", suggested);

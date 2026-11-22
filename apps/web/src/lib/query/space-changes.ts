@@ -15,6 +15,8 @@ const READS: Record<ReadChangeKind, readonly Procedure[]> = {
     ["runs", "list"],
     ["routines", "history"],
     ["usage", "breakdown"],
+    // Finished runs change which models rank as suggested.
+    ["models", "suggested"],
   ],
   routines: [["routines", "list"]],
   nativeCalendar: [],

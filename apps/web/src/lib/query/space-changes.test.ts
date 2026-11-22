@@ -17,6 +17,7 @@ it("marks only the reads a change kind covers as stale", async () => {
     runs: key("runs", "list"),
     history: key("routines", "history"),
     usage: key("usage", "breakdown"),
+    suggested: key("models", "suggested"),
     routines: key("routines", "list"),
     bots: key("bots", "list"),
   };
@@ -27,9 +28,9 @@ it("marks only the reads a change kind covers as stale", async () => {
       .map(([name]) => name);
 
   await spaceChanged("runs", client);
-  expect(invalidated()).toEqual(["runs", "history", "usage"]);
+  expect(invalidated()).toEqual(["runs", "history", "usage", "suggested"]);
   await spaceChanged("routines", client);
-  expect(invalidated()).toEqual(["runs", "history", "usage", "routines"]);
+  expect(invalidated()).toEqual(["runs", "history", "usage", "suggested", "routines"]);
 });
 
 it("knows which frames are read changes", () => {

@@ -49,6 +49,8 @@ export function ComposerModelPicker({
   const credentials = useQuery(queries.models.credentials.queryOptions()).data;
   const catalog = useQuery(queries.models.list.queryOptions()).data;
   const me = useQuery(queries.me.queryOptions()).data;
+  // Refreshed by spaceChanged("runs") when runs finish.
+  const suggestions = useQuery(queries.models.suggested.queryOptions()).data?.suggestions;
   const onFailed = (error: Error) => toast.error(errorText(error, t`Could not change the model`));
   const saveModel = useSave({
     save: (key: string, client) => client.bots.update({ botId: bot.id, ...botModelPick(key) }),
@@ -138,6 +140,7 @@ export function ComposerModelPicker({
       compact
       choices={choices}
       value={selectedModelKey}
+      suggestions={suggestions}
       // The button names the model alone (the one behind the Space default when the bot follows
       // it); the list keeps each row's full name.
       selectedLabel={selectedName}

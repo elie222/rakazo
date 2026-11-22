@@ -94,7 +94,7 @@ export function ConnectionNameField({
   const [name, setName] = useState<string | null>(null);
   const rename = useSave({
     save: (label: string, rpc) => rpc.models.rename({ credentialId: credential.id, label }),
-    stale: [queries.models.credentials.key()],
+    stale: [queries.models.credentials.key(), queries.models.suggested.key()],
     onSaved: () => setName(null),
   });
   const saving = rename.pending;

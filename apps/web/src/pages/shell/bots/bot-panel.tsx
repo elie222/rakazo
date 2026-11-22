@@ -208,12 +208,10 @@ export function BotSettings({
   const voices = useQuery({ ...queries.voice.voices.queryOptions({ input: {} }), ...refresh }).data;
   const credentialsQuery = useQuery({ ...queries.models.credentials.queryOptions(), ...refresh });
   const catalogQuery = useQuery({ ...queries.models.list.queryOptions(), ...refresh });
-  // Refreshed on a timer while settings are open: the suggested rows re-rank when a
-  // provider starts failing or recovers, without reopening the picker.
+  // Refreshed by spaceChanged("runs") when runs finish; connect/disconnect also invalidate it.
   const suggestionsQuery = useQuery({
     ...queries.models.suggested.queryOptions(),
     ...refresh,
-    refetchInterval: 30_000,
   });
   const meQuery = useQuery({ ...queries.me.queryOptions(), ...refresh });
   const credentials = credentialsQuery.data ?? NO_CREDENTIALS;

@@ -468,7 +468,7 @@ export const ModelSuggestionSchema = z.object({
   modelId: z.string(),
   label: z.string(),
   providerName: z.string().optional(),
-  reason: z.enum(["recent", "available"]),
+  reason: z.enum(["recent"]),
   recentRuns: z.number().int().min(0),
   successRatePct: z.number().min(0).max(100),
   lastUsedAt: z.string().nullable(),

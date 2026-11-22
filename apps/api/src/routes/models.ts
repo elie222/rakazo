@@ -93,6 +93,88 @@ function probeRefusal(
     : error;
 }
 
+/**
+ * Connections the member can run models on, with preference ranks and the main
+ * model shown on the connection that currently serves it. Shared by the
+ * credentials list and the suggestions builder so both see the same runnable set.
+ */
+async function listMemberModelCredentials(
+  deps: RouterContext["deps"],
+  actor: Actor,
+): Promise<ModelCredential[]> {
+  const [rows, main] = await Promise.all([
+    deps.prisma.userModelCredential.findMany({
+      where: { userId: actor.userId },
+      include: { userPreferences: { where: { userId: actor.userId } } },
+      orderBy: newestModelCredentialOrder,
+    }),
+    resolveMemberMainModel({ prisma: deps.prisma, secretStore: deps.secrets }, actor),
+  ]);
+  const secrets = rows.length
+    ? await deps.prisma.secret.findMany({
+        where: {
+          id: { in: rows.map((row) => row.secretId) },
+          userId: actor.userId,
+          spaceId: null,
+        },
+        select: { id: true, ciphertext: true },
+      })
+    : [];
+  const ciphertextById = new Map(secrets.map((secret) => [secret.id, secret.ciphertext]));
+  const preferenceRanks = new Map(
+    rows
+      .flatMap((row) => row.userPreferences)
+      .sort(comparePreferenceOrder)
+      .map((preference, index) => [preference.credentialId, index]),
+  );
+  return Promise.all(
+    rows.map(async ({ userPreferences, ...row }) => {
+      const preference = userPreferences[0];
+      const own = {
+        ...row,
+        defaultModel: preference?.modelId ?? null,
+        thinkingLevel: preference?.thinkingLevel ?? null,
+      };
+      const runsMain = main?.credential && main.credential.id === row.id;
+      const dto = (plaintext?: string) => {
+        const listed = modelCredentialDto(own, plaintext);
+        // The connection running the main model shows that model, as apps read it,
+        // while its own model stays enabled.
+        const shown = runsMain
+          ? modelCredentialDto(
+              {
+                ...row,
+                isDefault: true,
+                defaultModel: main.modelId,
+                thinkingLevel: main.thinkingLevel ?? null,
+              },
+              plaintext,
+            )
+          : listed;
+        return {
+          ...shown,
+          ...(shown.enabledModelIds
+            ? {
+                enabledModelIds: [
+                  ...new Set([...shown.enabledModelIds, ...(listed.enabledModelIds ?? [])]),
+                ],
+              }
+            : {}),
+          ...(preference ? { preferenceRank: preferenceRanks.get(preference.credentialId) } : {}),
+        };
+      };
+      const ciphertext = ciphertextById.get(row.secretId);
+      if (!ciphertext) return dto();
+      try {
+        return dto(await deps.secrets.load(ciphertext, row.secretId));
+      } catch (error) {
+        if (error instanceof SecretStoreUnavailableError) throw secretStoreOutage(error);
+        return dto();
+      }
+    }),
+  );
+}
+
 export function modelsRoutes(ctx: RouterContext) {
   const {
     deps,
@@ -156,92 +238,26 @@ export function modelsRoutes(ctx: RouterContext) {
       list: authed.models.list.handler(async ({ context }) =>
         withServingConnections(context.actor, await chatCatalog(context.actor)),
       ),
-      suggested: authed.models.suggested.handler(async ({ context }) =>
-        buildModelSuggestions(
+      suggested: authed.models.suggested.handler(async ({ context }) => {
+        const [catalog, credentials] = await Promise.all([
+          chatCatalog(context.actor),
+          listMemberModelCredentials(deps, context.actor),
+        ]);
+        const suggestions = await buildModelSuggestions(
           deps.prisma,
-          context.actor.userId,
-          await chatCatalog(context.actor),
-        ).then((suggestions) => ({
+          context.actor,
+          catalog,
+          credentials,
+        );
+        return {
           checkedAt: new Date().toISOString(),
           windowDays: SUGGESTION_WINDOW_DAYS,
           suggestions,
-        })),
-      ),
-      credentials: authed.models.credentials.handler(async ({ context }) => {
-        const [rows, main] = await Promise.all([
-          deps.prisma.userModelCredential.findMany({
-            where: { userId: context.actor.userId },
-            include: { userPreferences: { where: { userId: context.actor.userId } } },
-            orderBy: newestModelCredentialOrder,
-          }),
-          resolveMemberMainModel({ prisma: deps.prisma, secretStore: deps.secrets }, context.actor),
-        ]);
-        const secrets = rows.length
-          ? await deps.prisma.secret.findMany({
-              where: {
-                id: { in: rows.map((row) => row.secretId) },
-                userId: context.actor.userId,
-                spaceId: null,
-              },
-              select: { id: true, ciphertext: true },
-            })
-          : [];
-        const ciphertextById = new Map(secrets.map((secret) => [secret.id, secret.ciphertext]));
-        const preferenceRanks = new Map(
-          rows
-            .flatMap((row) => row.userPreferences)
-            .sort(comparePreferenceOrder)
-            .map((preference, index) => [preference.credentialId, index]),
-        );
-        return Promise.all(
-          rows.map(async ({ userPreferences, ...row }) => {
-            const preference = userPreferences[0];
-            const own = {
-              ...row,
-              defaultModel: preference?.modelId ?? null,
-              thinkingLevel: preference?.thinkingLevel ?? null,
-            };
-            const runsMain = main?.credential && main.credential.id === row.id;
-            const dto = (plaintext?: string) => {
-              const listed = modelCredentialDto(own, plaintext);
-              // The connection running the main model shows that model, as apps read it,
-              // while its own model stays enabled.
-              const shown = runsMain
-                ? modelCredentialDto(
-                    {
-                      ...row,
-                      isDefault: true,
-                      defaultModel: main.modelId,
-                      thinkingLevel: main.thinkingLevel ?? null,
-                    },
-                    plaintext,
-                  )
-                : listed;
-              return {
-                ...shown,
-                ...(shown.enabledModelIds
-                  ? {
-                      enabledModelIds: [
-                        ...new Set([...shown.enabledModelIds, ...(listed.enabledModelIds ?? [])]),
-                      ],
-                    }
-                  : {}),
-                ...(preference
-                  ? { preferenceRank: preferenceRanks.get(preference.credentialId) }
-                  : {}),
-              };
-            };
-            const ciphertext = ciphertextById.get(row.secretId);
-            if (!ciphertext) return dto();
-            try {
-              return dto(await deps.secrets.load(ciphertext, row.secretId));
-            } catch (error) {
-              if (error instanceof SecretStoreUnavailableError) throw secretStoreOutage(error);
-              return dto();
-            }
-          }),
-        );
+        };
       }),
+      credentials: authed.models.credentials.handler(async ({ context }) =>
+        listMemberModelCredentials(deps, context.actor),
+      ),
       forRole: authed.models.forRole.handler(async ({ context, input }) =>
         modelRoleCatalog(context.actor, input.role),
       ),

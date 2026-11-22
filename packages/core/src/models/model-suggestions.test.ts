@@ -23,8 +23,8 @@ const usage = (overrides = {}) => ({
 });
 
 describe("rankModelSuggestions", () => {
-  it("puts a recently used model above an unused one", () => {
-    const [top] = rankModelSuggestions(
+  it("ranks a recently used model and omits unused catalog rows", () => {
+    const ranked = rankModelSuggestions(
       [
         candidate({ provider: "openai", modelId: "gpt-6", label: "GPT-6", recommended: true }),
         candidate(),
@@ -32,24 +32,51 @@ describe("rankModelSuggestions", () => {
       [usage()],
       { now: NOW, limit: 2 },
     );
-    expect(top?.modelId).toBe("deepseek-v4-pro");
-    expect(top?.reason).toBe("recent");
-    expect(top?.recentRuns).toBe(40);
+    expect(ranked).toHaveLength(1);
+    expect(ranked[0]?.modelId).toBe("deepseek-v4-pro");
+    expect(ranked[0]?.reason).toBe("recent");
+    expect(ranked[0]?.recentRuns).toBe(40);
   });
 
-  it("labels use outside the window as available, not recent", () => {
-    const [top] = rankModelSuggestions([candidate()], [usage({ lastUsedAt: hoursAgo(24 * 30) })], {
+  it("omits use outside the window instead of filling Suggested with unused models", () => {
+    const ranked = rankModelSuggestions([candidate()], [usage({ lastUsedAt: hoursAgo(24 * 30) })], {
       now: NOW,
       windowDays: 14,
     });
-    expect(top?.reason).toBe("available");
-    expect(top?.lastUsedAt).toBeNull();
+    expect(ranked).toEqual([]);
+  });
+
+  it("omits unused catalog models from Suggested", () => {
+    const ranked = rankModelSuggestions(
+      [candidate({ provider: "openai", modelId: "gpt-6", label: "GPT-6", recommended: true })],
+      [],
+      { now: NOW },
+    );
+    expect(ranked).toEqual([]);
   });
 
   it("drops a model whose recent attempts all failed", () => {
     const ranked = rankModelSuggestions(
       [candidate()],
       [usage({ runs: 2, successes: 0, failures: 2, lastFailedAt: hoursAgo(0.5) })],
+      { now: NOW },
+    );
+    expect(ranked).toEqual([]);
+  });
+
+  it("drops a previously successful model after recent failures with no later success", () => {
+    // Totals still favor success (38 > 2), but the latest outcomes failed.
+    const ranked = rankModelSuggestions(
+      [candidate()],
+      [
+        usage({
+          runs: 40,
+          successes: 38,
+          failures: 2,
+          lastUsedAt: hoursAgo(2),
+          lastFailedAt: hoursAgo(0.25),
+        }),
+      ],
       { now: NOW },
     );
     expect(ranked).toEqual([]);
@@ -64,29 +91,40 @@ describe("rankModelSuggestions", () => {
     expect(ranked).toHaveLength(1);
   });
 
-  it("keeps a model whose failures are older than the failure window", () => {
+  it("keeps a recently used model whose failures are older than the failure window", () => {
+    // Failures six hours ago are outside the one-hour exhaustion window; a
+    // later success (default lastUsedAt) keeps the model suggested.
     const ranked = rankModelSuggestions(
       [candidate()],
-      [usage({ runs: 2, successes: 0, failures: 2, lastFailedAt: hoursAgo(6) })],
-      { now: NOW, failureWindowMinutes: 60 },
+      [usage({ runs: 4, successes: 2, failures: 2, lastFailedAt: hoursAgo(6) })],
+      { now: NOW },
     );
     expect(ranked).toHaveLength(1);
+    expect(ranked[0]?.reason).toBe("recent");
   });
 
   it("caps the list and never repeats a model", () => {
     const ranked = rankModelSuggestions(
-      [candidate(), candidate(), candidate({ provider: "a", modelId: "a", label: "A" })],
-      [],
+      [
+        candidate(),
+        candidate(),
+        candidate({ provider: "openai", modelId: "gpt-6", label: "GPT-6" }),
+      ],
+      [
+        usage(),
+        usage({
+          provider: "openai",
+          modelId: "gpt-6",
+          runs: 10,
+          successes: 10,
+          failures: 0,
+          lastFailedAt: null,
+        }),
+      ],
       { now: NOW, limit: 1 },
     );
     expect(ranked).toHaveLength(1);
+    expect(ranked[0]?.modelId).toBe("deepseek-v4-pro");
   });
 
-  it("respects excluded providers", () => {
-    const ranked = rankModelSuggestions([candidate()], [], {
-      now: NOW,
-      excludeProviders: ["DeepSeek"],
-    });
-    expect(ranked).toEqual([]);
-  });
 });

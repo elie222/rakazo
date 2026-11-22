@@ -243,7 +243,13 @@ export default function Models() {
     ) => {
       await input.action(send);
     },
-    onSaved: () => load(),
+    onSaved: async () => {
+      // Connections change which models are runnable for suggestions.
+      await queryClient.invalidateQueries({
+        queryKey: rpcQuery("models/suggested").queryKey,
+      });
+      await load();
+    },
     onFailed: () => load(),
   });
   const error = connectionChange.error
