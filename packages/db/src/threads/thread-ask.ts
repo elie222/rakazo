@@ -218,7 +218,7 @@ async function commitAnswerRunInput(
 ): Promise<{
   threadId: string;
   seq: number;
-  approval?: { decision: string; effectKind: string };
+  approval?: { decision: string; effectKind: string; effectId: string };
 } | null> {
   // Thread row first, then run rows — the same order as clearThread and finalizeRun, so a
   // concurrent clear cannot deadlock against this transaction.
@@ -242,6 +242,7 @@ async function commitAnswerRunInput(
       checkpoint: true,
       trigger: true,
       clientNonce: true,
+      taskId: true,
       task: { select: { prompt: true } },
     },
   });
@@ -462,11 +463,11 @@ async function commitAnswerRunInput(
       where: secretRequest,
       data: { status: "completed", result: DISMISSED_SECRET_RESULT },
     });
-    const task = await tx.task.updateMany({
-      where: { runs: { some: { id: input.runId } } },
+    await tx.task.update({
+      where: { id: run.taskId },
       data: { prompt: resumePrompt(run, pendingAsk.text, DISMISSED_SECRET_PROMPT) },
+      select: { id: true },
     });
-    if (task.count !== 1) throw new Error("Run task was not available to answer");
   } else if (secretAsk) {
     await runSecretWriter!.store({
       botId: run.botId,
@@ -495,8 +496,8 @@ async function commitAnswerRunInput(
     const resumeLabel = selectedChoice
       ? resumeChoiceLabel(selectedChoice, run.checkpoint)
       : undefined;
-    const task = await tx.task.updateMany({
-      where: { runs: { some: { id: input.runId } } },
+    await tx.task.update({
+      where: { id: run.taskId },
       data: {
         prompt: resumePrompt(
           { ...run, trigger: resumedTrigger },
@@ -504,8 +505,8 @@ async function commitAnswerRunInput(
           selectedChoice ? `Selected choice ${selectedChoice.id}: ${resumeLabel}` : input.answer,
         ),
       },
+      select: { id: true },
     });
-    if (task.count !== 1) throw new Error("Run task was not available to answer");
   }
 
   // Only the answered block is replaced: entries a read drops, or that a later release stored,
@@ -551,7 +552,13 @@ async function commitAnswerRunInput(
     threadId: updated.threadId,
     seq: updated.seq,
     ...(approvalEffect
-      ? { approval: { decision: approvalAnswer, effectKind: approvalEffect.kind } }
+      ? {
+          approval: {
+            decision: approvalAnswer,
+            effectKind: approvalEffect.kind,
+            effectId: approvalEffect.id,
+          },
+        }
       : {}),
   };
 }
@@ -584,6 +591,7 @@ export async function answerRunInput(
       metadata: {
         decision: committed.approval.decision,
         effectKind: committed.approval.effectKind,
+        effectId: committed.approval.effectId,
         runId: input.runId,
       },
     });

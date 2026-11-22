@@ -53,6 +53,7 @@ export function ChatHeader({
         <Button
           variant="floating"
           size="icon-lg"
+          data-navigation-trigger=""
           aria-label={t`Open navigation`}
           onClick={onOpenNavigation}
           className="app-no-drag md:hidden"
@@ -60,32 +61,40 @@ export function ChatHeader({
           <Menu strokeWidth={1.75} className="size-4.5" />
         </Button>
       </div>
-      <Button
-        variant="floating"
-        data-testid="bot-settings-trigger"
-        aria-expanded={panelOpen}
-        onClick={onTogglePanel}
-        className="app-no-drag h-auto min-w-0 gap-2 py-1 ps-1 pe-3.5"
-      >
-        {inGroup ? (
-          <GroupAvatar members={activeSnapshot?.members ?? activeGroup?.members ?? []} size={26} />
-        ) : active ? (
-          <BotAvatar
-            avatarSet={active.avatarSet}
-            color={active.color}
-            identity={active.id}
-            size={26}
-            status={active.status}
-          />
-        ) : null}
-        <span className="min-w-0">
-          <span className="block truncate text-body-lg font-medium text-foreground" dir="auto">
-            {inGroup
-              ? (activeGroup?.name ?? activeSnapshot?.groupName ?? t`Group`)
-              : (active?.name ?? t`Select a bot`)}
+      {/* With no bot or group the chip has nothing to open, so it is left out. */}
+      {inGroup || active ? (
+        <Button
+          variant="floating"
+          data-testid="bot-settings-trigger"
+          aria-expanded={panelOpen}
+          onClick={onTogglePanel}
+          className="app-no-drag h-auto min-w-0 gap-2 py-1 ps-1 pe-3.5"
+        >
+          {inGroup ? (
+            <GroupAvatar
+              members={activeSnapshot?.members ?? activeGroup?.members ?? []}
+              size={26}
+            />
+          ) : active ? (
+            <BotAvatar
+              avatarSet={active.avatarSet}
+              color={active.color}
+              identity={active.id}
+              size={26}
+              status={active.status}
+            />
+          ) : null}
+          <span className="min-w-0">
+            <span className="block truncate text-body-lg font-medium text-foreground" dir="auto">
+              {inGroup
+                ? (activeGroup?.name ?? activeSnapshot?.groupName ?? t`Group`)
+                : active?.name}
+            </span>
           </span>
-        </span>
-      </Button>
+        </Button>
+      ) : (
+        <div />
+      )}
       <div className="flex items-center justify-self-end gap-2">
         {phoneCallsEnabled && !inGroup && active ? (
           <IconTooltip label={inCall ? t`Open call` : t`Call`}>

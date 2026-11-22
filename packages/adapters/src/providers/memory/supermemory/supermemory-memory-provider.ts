@@ -21,6 +21,7 @@ import type { ResolveHostname } from "../../../network/network-address.js";
 import type { SupermemoryConnectionConfig } from "./supermemory-client.js";
 import {
   deleteSupermemoryContainer,
+  MAX_MEMORY_CONTENT_CHARS,
   probeSupermemory,
   SUPERMEMORY_CLOUD_BASE_URL,
   saveSupermemoryMemoryToContainers,
@@ -216,6 +217,15 @@ export class SupermemoryMemoryProvider implements SemanticMemoryProvider {
   ): Promise<SemanticMemoryResponse> {
     const blocked = await this.localBaseUrlBlock();
     if (blocked) return { ok: false, error: blocked };
+    if (
+      request.source.kind !== "history" &&
+      request.content.trim().length > MAX_MEMORY_CONTENT_CHARS
+    ) {
+      return {
+        ok: false,
+        error: `Supermemory save skipped: memory content is longer than ${MAX_MEMORY_CONTENT_CHARS} characters. Save a shorter fact.`,
+      };
+    }
     const tags =
       request.source.kind === "history"
         ? [historyContainerTag(request.botId, request.source.generation)]

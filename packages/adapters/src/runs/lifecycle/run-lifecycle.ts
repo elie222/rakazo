@@ -1,6 +1,7 @@
 import {
   SandboxDamagedError,
   SandboxDiskTooLargeError,
+  SandboxRateLimitError,
   SandboxUnavailableError,
   SandboxUnresponsiveError,
 } from "@rakazo/adapter-kit";
@@ -27,10 +28,6 @@ import {
 } from "../../computers/computer-lifecycle.js";
 import { withComputerScreenAvailability } from "../../computers/screens/computer-screens.js";
 import { returnBotMessageOutcome } from "../../messaging/bot-messages.js";
-import {
-  routineClaimWaitsForConversation,
-  startRoutineRunsWaitingOn,
-} from "../../routines/routine-conversation.js";
 import { VaultKeyUnavailableError } from "../../secrets/bot-secrets.js";
 import { returnHelperOutcome } from "../../tasks/background-helpers.js";
 import {
@@ -43,7 +40,9 @@ import type { ExecutorDeps } from "../executor/executor-deps.js";
 import type { TakeoverResumeCheckpoint } from "../turn/takeover-resume.js";
 import { continueRunClaimFence, TAKEOVER_RESUME_CHECKPOINTS } from "../turn/takeover-resume.js";
 import { wakeRun } from "../wakeups/wake-run.js";
+import { claimWaitsForChat, startRunsWaitingOnChat } from "./chat-wait.js";
 import { notifyRun } from "./run-notifications.js";
+import { RunOriginUnauthorizedError } from "./run-origin.js";
 
 /**
  * Avoid an expensive remote workspace export when a turn never touched the computer. A failed
@@ -429,7 +428,7 @@ export async function claimRun(
             ...continueRunClaimFence(run),
             AND: [
               { OR: [{ wakeAt: null }, { wakeAt: { lte: now } }] },
-              routineClaimWaitsForConversation(run, now),
+              claimWaitsForChat(run, now),
             ],
             OR: [
               { status: { in: ["queued", "waiting_input", "waiting_takeover"] } },
@@ -519,13 +518,14 @@ export async function retryRunSetup(
   // offline, is retried like any setup failure, but is not a Rakazo bug to report.
   const providerOutage =
     setupError instanceof SandboxUnavailableError ||
+    setupError instanceof SandboxRateLimitError ||
     setupError instanceof SandboxUnresponsiveError ||
     setupError instanceof PausedTurnToolsUnavailableError ||
     setupError instanceof PausedTurnModelUnlistedError ||
     setupError instanceof VaultKeyUnavailableError;
-  // A damaged computer, or one whose disk outgrew every machine, stays that way until someone
-  // recovers it, so the run ends now with the message that says so instead of retrying.
-  const needsRecovery = recoveryRequired || diskTooLarge;
+  // Computer recovery needs user action, and a task without authorization must end.
+  const cannotContinue =
+    recoveryRequired || diskTooLarge || setupError instanceof RunOriginUnauthorizedError;
   // Named here, not left to the log context, so the line is found by run wherever it is written.
   const runFields = {
     "run.id": runId,
@@ -536,7 +536,7 @@ export async function retryRunSetup(
   // A lost lease aborted setup on purpose; whatever that interrupted is not a failure.
   if (databaseDown) {
     // Logged by the outage.
-  } else if (providerOutage || needsRecovery || !plan.leaseValid) {
+  } else if (providerOutage || cannotContinue || !plan.leaseValid) {
     getLogger().warn("run.setup_failed", { ...runFields, error: reportedSetupError });
   } else if (!computerBusy) {
     getLogger().error("run.setup_failed", reportedSetupError, runFields);
@@ -545,12 +545,12 @@ export async function retryRunSetup(
   const whileDatabaseDown = <T>(source: string, write: () => Promise<T>) =>
     retryWhileDatabaseUnavailable(write, { source, signal: deps.shutdownSignal });
   const priorFailures =
-    retryForever || needsRecovery
+    retryForever || cannotContinue
       ? 0
       : await whileDatabaseDown("run setup", () => setupFailureStreak(deps.prisma, runId));
   // The job reconciler re-enqueues a queued run whose job ran out of attempts, so a
   // setup that fails every time would retry forever. End the run instead.
-  if (!retryForever && (needsRecovery || priorFailures >= RUN_SETUP_FAILURE_LIMIT - 1)) {
+  if (!retryForever && (cannotContinue || priorFailures >= RUN_SETUP_FAILURE_LIMIT - 1)) {
     const bot = await whileDatabaseDown("run setup", () =>
       deps.prisma.bot.findUnique({ where: { id: run.botId }, select: { name: true } }),
     );
@@ -649,10 +649,7 @@ export async function finishRunAttempt(
     }
   }
   if (!deps.shutdownSignal?.aborted && !lease.handedBack) {
-    await bestEffort(
-      "start routine runs waiting on the chat",
-      startRoutineRunsWaitingOn(deps, run),
-    );
+    await bestEffort("start runs waiting on the chat", startRunsWaitingOnChat(deps, run));
   }
   if (deps.shutdownSignal?.aborted) {
     // A renewal still in flight must not treat this release as a lost lease.

@@ -17,6 +17,7 @@ export const JA_MESSAGES: Record<string, string> = {
   Redo: "やり直す",
   Cut: "カット",
   Copy: "コピー",
+  "Copy Link Address": "リンクアドレスをコピー",
   Paste: "ペースト",
   "Paste and Match Style": "ペーストしてスタイルを合わせる",
   Delete: "削除",

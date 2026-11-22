@@ -1,4 +1,5 @@
 import { Plural, Trans, useLingui } from "@lingui/react/macro";
+import { useListSearch } from "@rakazo/chat-ui/hooks";
 import { isUnlistedCompatibleModel, toggleEnabledModelId } from "@rakazo/core";
 import {
   Button,
@@ -11,7 +12,6 @@ import {
 } from "@rakazo/ui-web";
 import type { ReactNode } from "react";
 import { ModelHeadersEditor } from "../../components/models/ModelHeadersEditor";
-import { useListSearch } from "../../lib/use-list-search";
 
 import type { ModelSettingsState } from "./use-model-settings";
 
@@ -109,7 +109,7 @@ export function CompatibleModelFields({
             className="mt-2 text-foreground"
             value={modelId}
             onValueChange={(value) => {
-              cancelOAuthAttempt();
+              cancelOAuthAttempt("replaced");
               selectionRevisionRef.current += 1;
               setModelId(value);
               setError(null);
@@ -125,7 +125,7 @@ export function CompatibleModelFields({
           <Input
             value={modelId}
             onChange={(event) => {
-              cancelOAuthAttempt();
+              cancelOAuthAttempt("replaced");
               selectionRevisionRef.current += 1;
               setModelId(event.target.value);
               setError(null);

@@ -1,6 +1,7 @@
 import { t } from "@lingui/core/macro";
 import type { SearchHit, SpaceBot, SpaceGroup } from "@rakazo/contracts";
 import { dedupeSearchHits, searchHitListKey } from "@rakazo/core";
+import { searchKindLabel } from "@rakazo/i18n/search";
 import type { MobileBot, MobileGroup } from "../api/mobile-types";
 import { filterBots } from "../inbox/inbox";
 import type { InboxSpace } from "../inbox/inbox-spaces";
@@ -19,21 +20,6 @@ export type SearchSheetRow = {
   spaceId?: string;
   destination: ReturnType<typeof mobileSearchDestination>;
 };
-
-export function searchKindLabel(hit: SearchHit): string {
-  switch (hit.kind) {
-    case "conversation":
-      return hit.groupId ? t`Group` : t`Bot`;
-    case "message":
-      return t`Message`;
-    case "file":
-      return t`File`;
-    case "link":
-      return t`Link`;
-    case "routine":
-      return t`Routine`;
-  }
-}
 
 export function searchSheetRows(
   spaces: readonly InboxSpace[],

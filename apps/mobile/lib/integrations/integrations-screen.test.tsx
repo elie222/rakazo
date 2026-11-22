@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { i18n } from "@lingui/core";
 import { MCP_OAUTH_CLIENT_REQUIRED } from "@rakazo/contracts";
 import type { Deferred } from "@rakazo/core/test-async";
 import { deferred, flush } from "@rakazo/core/test-async";
@@ -69,6 +70,7 @@ vi.mock("../native/native", () => ({
   useResolvedAppearance: () => "light",
   useThemedStyles: (factory: () => unknown) => factory(),
 }));
+vi.mock("../native/announce", () => ({ announceToScreenReader: vi.fn() }));
 vi.mock("../native/native-controls", () => ({ iosAtLeast: () => state.headerMenu }));
 vi.mock("@expo/ui/community/menu", () => ({
   MenuView: ({
@@ -237,6 +239,9 @@ let container: HTMLDivElement;
 let catalog: Deferred<(typeof item)[]>;
 beforeEach(() => {
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+  // The plugin catalog text both apps share is translated at run time, so it needs a locale.
+  i18n.load("en", {});
+  i18n.activate("en");
   state.current = true;
   state.focused = true;
   state.authSession.mockReset().mockResolvedValue({ type: "cancel" });

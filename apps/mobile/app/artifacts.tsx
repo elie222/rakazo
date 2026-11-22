@@ -25,7 +25,6 @@ import {
 import { BotAvatar } from "../components/bots/bot-avatar";
 import { NativeSegmentedControl } from "../components/native/native-segmented-control";
 import { NativeSymbol } from "../components/native/native-symbol";
-import { rpc } from "../lib/api/api";
 import type { MobileBot } from "../lib/api/mobile-types";
 import { useSpaceChanges } from "../lib/api/roster-signals";
 import { errorText } from "../lib/api/user-error";
@@ -40,6 +39,8 @@ import { formatActivityRelativeTime } from "../lib/inbox/activity";
 import { useContentBottomInset } from "../lib/layout/content-bottom-inset";
 import { useSideInsets } from "../lib/layout/side-insets";
 import { native, useThemedStyles } from "../lib/native/native";
+import { rpcQuery } from "../lib/query/query";
+import { useScreenQuery } from "../lib/query/screen-query";
 
 const PAGE_SIZE = 30;
 
@@ -52,7 +53,7 @@ export default function ArtifactsScreen() {
   const styles = useThemedStyles(createStyles);
   const contentBottomInset = useContentBottomInset();
 
-  const [bots, setBots] = useState<MobileBot[]>([]);
+  const bots = useScreenQuery(rpcQuery("bots/list")).data;
   const { botId } = useLocalSearchParams<{ botId?: string }>();
   const [activeBotId, setActiveBotId] = useState<string | null>(botId || null);
   const [madeByBots, setMadeByBots] = useState(false);
@@ -130,14 +131,6 @@ export default function ArtifactsScreen() {
       },
     });
   }, [navigation, t]);
-
-  useFocusEffect(
-    useCallback(() => {
-      rpc("bots/list")
-        .then(setBots)
-        .catch(() => undefined);
-    }, []),
-  );
 
   const load = useCallback(
     async (
@@ -293,7 +286,7 @@ export default function ArtifactsScreen() {
     if (!queryActive) return items;
     return items.filter((item) => matchesArtifactQuery(item, query));
   }, [items, query, queryActive]);
-  const botsById = useMemo(() => new Map(bots.map((bot) => [bot.id, bot])), [bots]);
+  const botsById = useMemo(() => new Map((bots ?? []).map((bot) => [bot.id, bot])), [bots]);
 
   useEffect(() => {
     autoFetchedCursorRef.current = null;
@@ -366,7 +359,7 @@ export default function ArtifactsScreen() {
                 active={activeBotId === null}
                 onPress={() => setActiveBotId(null)}
               />
-              {bots.map((bot) => (
+              {(bots ?? []).map((bot) => (
                 <Chip
                   key={bot.id}
                   onLayout={

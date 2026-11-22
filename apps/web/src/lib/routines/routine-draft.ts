@@ -151,3 +151,22 @@ export function draftStateFromRoutine(routine: Routine): RoutineDraftState {
     watch: watchDraftFromRoutine(routine.watch),
   };
 }
+
+/**
+ * Whether the draft differs from what the editor opened with: the saved routine, or a blank draft.
+ * The suggested run time of a one-time routine is made from the clock each time a draft is built,
+ * so it is compared with `openedRunAtLocal`, the value the open draft started with.
+ */
+export function routineDraftDirty(
+  draft: RoutineDraftState,
+  editing: Routine | null,
+  openedRunAtLocal: string,
+): boolean {
+  const initial = {
+    ...(editing ? draftStateFromRoutine(editing) : emptyRoutineDraftState()),
+    runAtLocal: openedRunAtLocal,
+  };
+  return (Object.keys(initial) as (keyof RoutineDraftState)[]).some(
+    (key) => JSON.stringify(draft[key]) !== JSON.stringify(initial[key]),
+  );
+}
