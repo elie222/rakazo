@@ -151,9 +151,8 @@ final class WatchRelay: NSObject, WCSessionDelegate {
       }
       let entries = list.current.bots.map { (WatchChat.Kind.bot, $0) }
         + list.current.groups.map { (WatchChat.Kind.group, $0) }
-      // A watch message carries about 64 KB, and JSON grows avatar bytes by a third.
       var avatarBudget = 16_000
-      let rows = entries.filter { $0.1.archivedAt == nil }
+      var rows = entries.filter { $0.1.archivedAt == nil }
         .sorted { $0.1.updatedAt > $1.1.updatedAt }
         .prefix(60)
         .map { kind, entry in
@@ -161,8 +160,7 @@ final class WatchRelay: NSObject, WCSessionDelegate {
             chat: WatchChat(kind: kind, id: entry.id, name: entry.name),
             preview: String(entry.preview?.prefix(100) ?? ""), updatedAt: entry.updatedAt)
           if let color = entry.color {
-            row.color = color.range(of: #"^#[0-9a-fA-F]{6}"#, options: .regularExpression)
-              .map { String(color[$0]) }
+            row.color = watchColor(color)
             if let avatar = watchAvatar(color), avatar.count <= avatarBudget {
               avatarBudget -= avatar.count
               row.avatar = avatar
@@ -170,6 +168,14 @@ final class WatchRelay: NSObject, WCSessionDelegate {
           }
           return row
         }
+      // A watch message carries about 64 KB: drop pictures, then the oldest chats, to fit.
+      let encoder = JSONEncoder()
+      while let data = try? encoder.encode(WatchReply(scope: scope, chats: rows)),
+        data.count > 60_000, !rows.isEmpty
+      {
+        if let index = rows.lastIndex(where: { $0.avatar != nil }) { rows[index].avatar = nil }
+        else { rows.removeLast() }
+      }
       chats = rows.map(\.chat)
       return WatchReply(scope: scope, chats: rows)
     }
@@ -228,6 +234,15 @@ final class WatchRelay: NSObject, WCSessionDelegate {
     } catch MessageBotError.rejected(let status, _) where status == 403 || status == 404 {
       throw WatchFailure.reload
     }
+  }
+
+  /// The six-digit hex a bot's color starts with, if it is a color.
+  private func watchColor(_ value: String) -> String? {
+    guard let match = value.range(of: #"^#([0-9a-fA-F]{6}|[0-9a-fA-F]{3})(?![0-9a-fA-F])"#,
+      options: .regularExpression)
+    else { return nil }
+    let digits = value[match].dropFirst()
+    return "#" + (digits.count == 3 ? digits.map { "\($0)\($0)" }.joined() : String(digits))
   }
 
   /// A small copy of a picture avatar; drawn avatars show as their color on the watch.

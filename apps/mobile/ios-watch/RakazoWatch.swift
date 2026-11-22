@@ -271,6 +271,7 @@ private struct WatchConversation: View {
       }
       .defaultScrollAnchor(.bottom)
       .onChange(of: messages.last?.id) { proxy.scrollTo(Self.composer, anchor: .bottom) }
+      .onChange(of: botWorking) { proxy.scrollTo(Self.composer, anchor: .bottom) }
     }
     .onChange(of: connection.chatRevision) {
       guard phase == .active else { return }
