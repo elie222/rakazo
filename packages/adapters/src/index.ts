@@ -136,6 +136,7 @@ export * from "./models/endpoints/openai-compatible-url.js";
 export * from "./models/endpoints/openrouter-usage.js";
 export * from "./models/model-connect.js";
 export * from "./models/model-connect-check.js";
+export * from "./models/model-credential-list.js";
 export * from "./models/model-credential-refresh.js";
 export * from "./models/model-provider-allowlist.js";
 export * from "./models/model-roles.js";

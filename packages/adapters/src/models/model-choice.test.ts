@@ -1,7 +1,12 @@
 import type { PrismaClient } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
 import type { ModelChoice } from "./model-choice.js";
-import { matchModelChoice, resolveModelChoice, words } from "./model-choice.js";
+import {
+  connectedModelChoices,
+  matchModelChoice,
+  resolveModelChoice,
+  words,
+} from "./model-choice.js";
 
 const choice = (provider: string, providerName: string, id: string, label: string) => ({
   provider,
@@ -164,7 +169,7 @@ describe("resolveModelChoice", () => {
   it("says when no model anywhere matches", async () => {
     expect(await resolveModelChoice(connected([]), scope, { model: "zzz-unknown" })).toEqual({
       ok: false,
-      error: 'No model matches "zzz-unknown".',
+      error: 'No model matches "zzz-unknown". The user can connect a model provider in Settings.',
     });
   });
 
@@ -182,5 +187,65 @@ describe("resolveModelChoice", () => {
     });
     expect(nowhere).toMatchObject({ ok: false });
     if (!nowhere.ok) expect(nowhere.error.length).toBeLessThan(400);
+  });
+});
+
+/** A custom server connection the user named, serving two ids it lists itself. */
+function customServer() {
+  const credential = {
+    id: "cred-custom",
+    provider: "openai-compatible",
+    label: "Home server",
+    secretId: "secret-custom",
+    createdAt: new Date(0),
+    updatedAt: new Date(0),
+    userPreferences: [
+      {
+        credentialId: "cred-custom",
+        modelId: "local-llama",
+        thinkingLevel: null,
+        updatedAt: new Date(0),
+      },
+    ],
+  };
+  const secret = JSON.stringify({
+    kind: "openai_compatible",
+    baseUrl: "http://models.example.test/v1",
+    enabledModelIds: ["local-llama", "local-qwen"],
+  });
+  const prisma = {
+    userModelCredential: { findMany: vi.fn(async () => [credential]) },
+    secret: { findMany: vi.fn(async () => [{ id: "secret-custom", ciphertext: "fake" }]) },
+  };
+  return {
+    prisma: prisma as unknown as PrismaClient,
+    secretStore: { load: async () => secret },
+  };
+}
+
+describe("custom server models", () => {
+  it("lists the ids a custom connection serves under its own name", async () => {
+    expect(await connectedModelChoices(customServer(), scope)).toEqual([
+      {
+        provider: "openai-compatible",
+        providerName: "Home server",
+        id: "local-llama",
+        label: "local-llama",
+      },
+      {
+        provider: "openai-compatible",
+        providerName: "Home server",
+        id: "local-qwen",
+        label: "local-qwen",
+      },
+    ]);
+  });
+
+  it("resolves a custom model by its id alone, as a catalog model is", async () => {
+    expect(await resolveModelChoice(customServer(), scope, { model: "local-qwen" })).toEqual({
+      ok: true,
+      provider: "openai-compatible",
+      model: "local-qwen",
+    });
   });
 });
