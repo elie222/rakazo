@@ -767,15 +767,11 @@ app.whenReady().then(async () => {
   const useStack = async (selected: StackChoice) => {
     const bundle = selected === "native" ? serverBundle : null;
     const moving = bundle !== null && moveAccepted(await stackFacts());
-    try {
-      desktop.hostComputer = await prepareHostComputer(
-        userDataDir,
-        bundle === null ? "docker" : "native",
-        hostScreen,
-      );
-    } catch {
-      /* Local access fails closed; the stack remains available. */
-    }
+    // The stack can still run with local computer access disabled.
+    desktop.hostComputer = await bestEffort(
+      "start the desktop computer bridge",
+      prepareHostComputer(userDataDir, bundle === null ? "docker" : "native", hostScreen),
+    );
     desktop.localStack = bundle === null ? dockerStack() : nativeStack(bundle, moving);
   };
   // Setup can read the Docker controller's idle state while the move choice is pending.
