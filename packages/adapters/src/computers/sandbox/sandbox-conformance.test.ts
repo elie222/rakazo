@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSyn
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type { ComputerRef, ProcessEvent, SandboxProvider } from "@rakazo/adapter-kit";
-import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   fakeBoatProvider as fakeBoat,
   routeFakeBoatDownloads,
@@ -33,15 +33,15 @@ import { createSandboxProvider } from "./sandbox-factory.js";
 import type { KnownSandboxKind } from "./sandbox-kind-capabilities.js";
 import { assertSandboxWorkspaceContract, provisionPrepared } from "./sandbox-test-support.js";
 
-let restoreFetch: () => void;
 let supervisor: Awaited<ReturnType<typeof emulatedDockerSupervisor>>;
 beforeAll(async () => {
-  restoreFetch = routeFakeBoatDownloads();
   supervisor = await emulatedDockerSupervisor();
 });
 afterAll(async () => {
-  restoreFetch();
   await supervisor.close();
+});
+beforeEach(() => {
+  routeFakeBoatDownloads();
 });
 
 const ctx = {

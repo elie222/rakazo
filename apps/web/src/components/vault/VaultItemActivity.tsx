@@ -1,12 +1,12 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { SettingsScope } from "@rakazo/contracts";
+import { siteHost } from "@rakazo/core";
 import { Button } from "@rakazo/ui-web";
 import { useQuery } from "@tanstack/react-query";
 import { ChevronRight } from "lucide-react";
 import { formatRelativeTime } from "../../lib/locale/relative-time";
 import { useSpaceQueries } from "../../lib/query/query";
 import { SettingsPageHeader } from "../settings/SettingsPageHeader";
-import { siteHost } from "./kinds";
 
 function useVaultItemUses(scope: SettingsScope, name: string) {
   const queries = useSpaceQueries();

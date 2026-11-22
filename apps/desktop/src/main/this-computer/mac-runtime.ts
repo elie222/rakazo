@@ -306,17 +306,20 @@ export async function installContainerRuntime(
   return path.join(root, "bin", "container");
 }
 
-/** Numeric comparison of dotted versions; anything unparsable counts as too old. */
+/**
+ * Numeric comparison of dotted versions; anything unparsable counts as too old, and so does a
+ * prerelease (`1.7.0-rc.1`) of the minimum itself.
+ */
 export function versionAtLeast(version: string | undefined, minimum: string): boolean {
-  const parse = (value: string) => value.split(".").map((part) => Number.parseInt(part, 10));
-  if (!version || !/^\d+\.\d+(\.\d+)?/.test(version)) return false;
-  const have = parse(version);
-  const want = parse(minimum);
+  const match = version ? /^(\d+)\.(\d+)(?:\.(\d+))?(-)?/.exec(version) : null;
+  if (!match) return false;
+  const have = match.slice(1, 4).map((part) => Number(part ?? 0));
+  const want = minimum.split(".").map(Number);
   for (let index = 0; index < want.length; index += 1) {
     const difference = (have[index] ?? 0) - (want[index] ?? 0);
     if (difference !== 0) return difference > 0;
   }
-  return true;
+  return match[4] === undefined;
 }
 
 export interface ContainerRuntime {
@@ -399,7 +402,7 @@ async function cliVersion(deps: ResolveRuntimeDeps, cli: string): Promise<string
     timeoutMs: CLI_TIMEOUT_MS,
     signal: deps.signal,
   });
-  return result.code === 0 ? /version (\d+\.\d+\.\d+)/.exec(result.stdout)?.[1] : undefined;
+  return result.code === 0 ? /version (\d+\.\d+\.\d+\S*)/.exec(result.stdout)?.[1] : undefined;
 }
 
 /** The runtime reports its root resolved (`/private/var/…`), which a plain path may not be. */
