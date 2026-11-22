@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 
+import { deferred } from "@rakazo/core/test-async";
 import type { ReactNode } from "react";
 import { act, createElement } from "react";
 import type { Root } from "react-dom/client";
@@ -13,7 +14,9 @@ const state = vi.hoisted(() => ({
   alert: vi.fn(),
   copy: vi.fn(async () => true),
   confirmIdentity: vi.fn(async () => true),
+  focused: true,
 }));
+vi.mock("expo-router", () => ({ useIsFocused: () => state.focused }));
 
 vi.mock("react-native", () => ({
   Alert: { alert: state.alert },
@@ -71,6 +74,7 @@ beforeEach(() => {
   state.alert.mockReset();
   state.copy.mockClear();
   state.confirmIdentity.mockReset().mockResolvedValue(true);
+  state.focused = true;
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
@@ -120,4 +124,15 @@ it("tells another member only the creator can see the key", async () => {
   await press();
   await vi.waitFor(() => expect(state.alert).toHaveBeenCalled());
   expect(state.alert).toHaveBeenCalledWith("Only the bot's creator can see its webhook key.");
+});
+
+it("never shows a key that arrives after the person left the chat", async () => {
+  const pending = deferred<{ secret: string }>();
+  state.rpc.mockReturnValue(pending.promise);
+  await press();
+  await vi.waitFor(() => expect(state.rpc).toHaveBeenCalled());
+  state.focused = false;
+  act(() => root.render(<WebhookKeyButton botId="bot-1" title="Deploy check" color="gray" />));
+  await act(async () => pending.resolve({ secret: "key-123" }));
+  expect(state.alert).not.toHaveBeenCalled();
 });

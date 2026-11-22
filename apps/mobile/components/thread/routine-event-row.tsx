@@ -3,6 +3,8 @@ import { botInboundPath, isIdentityConfirmationRequired } from "@rakazo/contract
 import { errorCode } from "@rakazo/core";
 import { bestEffort } from "@rakazo/logging/best-effort";
 import * as Clipboard from "expo-clipboard";
+import { useIsFocused } from "expo-router";
+import { useRef } from "react";
 import { Alert, Pressable, StyleSheet, Text, View } from "react-native";
 import { currentApiBase } from "../../lib/api/api";
 import { errorText } from "../../lib/api/user-error";
@@ -69,10 +71,14 @@ export function WebhookKeyButton({
 }) {
   const { t } = useLingui();
   const { withIdentityConfirmation, identityDialog } = useIdentityConfirmation();
+  // A key that arrives after the person left this chat is never shown over another one.
+  const focused = useRef(false);
+  focused.current = useIsFocused();
   const reveal = useSave({
     save: (_input, send) =>
       withIdentityConfirmation(() => send("bots/revealWebhookSecret", { botId })),
     onSaved: ({ secret }) => {
+      if (!focused.current) return;
       const url = `${currentApiBase()}${botInboundPath(botId, "webhook")}`;
       const copy = (text: string) =>
         void bestEffort("copy webhook", Clipboard.setStringAsync(text));
