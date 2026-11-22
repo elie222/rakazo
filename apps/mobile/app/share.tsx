@@ -9,6 +9,7 @@ import { NativeSymbol } from "../components/native/native-symbol";
 import type { MobileBot } from "../lib/api/mobile-types";
 import {
   cancelIncomingShare,
+  chooseIncomingShareThread,
   getIncomingShare,
   subscribeIncomingShare,
 } from "../lib/composer/incoming-share";
@@ -58,8 +59,8 @@ export default function ShareRoute() {
   }, [share]);
 
   const open = (bot: Pick<MobileBot, "id" | "name">) => {
-    // Removal must preserve the share for thread.tsx to claim it.
-    if (!getIncomingShare()) return;
+    // Removal must preserve the share for thread.tsx to claim it, and only that chat may.
+    if (leaving.current || !chooseIncomingShareThread(bot.id)) return;
     leave(() =>
       navigation.dispatch({
         type: "RESET",

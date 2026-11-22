@@ -139,6 +139,31 @@ test("a deactivated account's sign-in says so", async ({ page }, testInfo) => {
   await captureScreenshot(page, testInfo, "sign-in-account-deactivated");
 });
 
+test("a browser outside the desktop app opens sign-in on its local server", async ({
+  page,
+}, testInfo) => {
+  await page.route("**/api/auth/get-session**", (route) => route.fulfill({ json: null }));
+  await page.route("**/api/auth/capabilities", (route) =>
+    route.fulfill({
+      json: {
+        passwordAuth: true,
+        sso: null,
+        passwordReset: false,
+        resetUrl: null,
+        registrationOpen: false,
+      },
+    }),
+  );
+  await page.goto("/");
+  await expect(page).toHaveURL(/\/sign-in$/);
+  await expect(page.getByRole("heading", { name: "Sign in to Rakazo" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Sign up", exact: true })).toHaveCount(0);
+  await captureScreenshot(page, testInfo, "local-account-sign-in");
+
+  await page.goto("/sign-up/email?next=%2Fintegrations%2Fsetup");
+  await expect(page).toHaveURL(/\/sign-in\?next=%2Fintegrations%2Fsetup$/);
+});
+
 test("an unknown page offers a way home", async ({ page }, testInfo) => {
   await page.route("**/api/auth/get-session**", (route) => route.fulfill({ json: null }));
   await page.goto("/no-such-page");

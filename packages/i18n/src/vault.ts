@@ -20,6 +20,11 @@ export function secretAnswerErrorText(error: unknown, fallback: string): string 
         id: "This bot can't use this item. Change it in the Vault, or dismiss the request.",
         message: "This bot can't use this item. Change it in the Vault, or dismiss the request.",
       });
+    case "full":
+      return i18n._({
+        id: "Your Vault is full. Remove items you no longer need, then try again.",
+        message: "Your Vault is full. Remove items you no longer need, then try again.",
+      });
     default:
       return fallback;
   }

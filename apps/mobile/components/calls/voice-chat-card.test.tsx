@@ -26,6 +26,7 @@ vi.mock("react-native", async () => {
       onLongPress,
       onAccessibilityAction,
       accessibilityRole,
+      accessibilityLabel,
       accessibilityState,
     }: {
       children?: ReactNode;
@@ -34,13 +35,16 @@ vi.mock("react-native", async () => {
       onLongPress?: () => void;
       onAccessibilityAction?: (event: { nativeEvent: { actionName: string } }) => void;
       accessibilityRole?: string;
-      accessibilityState?: { checked?: boolean };
+      accessibilityLabel?: string;
+      accessibilityState?: { checked?: boolean; expanded?: boolean };
     }) =>
       createElement(
         "button",
         {
           "data-style": JSON.stringify(Object.assign({}, ...[style].flat())),
           "data-role": accessibilityRole,
+          "aria-label": accessibilityLabel,
+          "aria-expanded": accessibilityState?.expanded,
           "data-checked":
             accessibilityState?.checked === undefined
               ? undefined
@@ -84,6 +88,73 @@ describe("VoiceChatCard", () => {
     expect(header.height).toBeUndefined();
     expect(header.minHeight).toBe(40);
     expect(Number(header.paddingVertical) * 2 + Number(title.lineHeight)).toBe(40);
+  });
+
+  it("includes each visible duration in the transcript button name when closed and open", async () => {
+    (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+    const marker = {
+      id: "marker",
+      role: "bot",
+      blocks: [{ kind: "voice_call", title: "First recap", durationSeconds: 44 }],
+    };
+    const recorded = {
+      kind: "voiceChat",
+      key: "call:1",
+      callId: "1",
+      marker,
+      messages: [marker],
+    } as unknown as VoiceChatGroup<MobileMessage>;
+    const inferred = {
+      kind: "voiceChat",
+      key: "call:2",
+      callId: "2",
+      messages: [
+        {
+          id: "turn-1",
+          role: "user",
+          createdAt: "2026-01-01T00:00:00Z",
+          blocks: [{ kind: "text", text: "A synthetic transcript turn" }],
+        },
+        {
+          id: "turn-2",
+          role: "bot",
+          createdAt: "2026-01-01T00:02:03Z",
+          blocks: [{ kind: "text", text: "Second recap." }],
+        },
+      ],
+    } as unknown as VoiceChatGroup<MobileMessage>;
+    const container = document.createElement("div");
+    const root = createRoot(container);
+    try {
+      await act(async () => {
+        root.render(
+          <>
+            <VoiceChatCard group={recorded} />
+            <VoiceChatCard group={inferred} />
+          </>,
+        );
+      });
+      const [first, second] = [...container.querySelectorAll<HTMLButtonElement>("button")];
+      expect(first?.textContent).toBe("Voice chat0:44");
+      expect(second?.textContent).toBe("Voice chat2:03");
+      expect(first?.getAttribute("aria-label")).toBe("Show transcript: Voice chat, 0:44");
+      expect(second?.getAttribute("aria-label")).toBe("Show transcript: Voice chat, 2:03");
+      expect(second?.getAttribute("aria-expanded")).toBe("false");
+      expect(container.textContent).not.toContain("A synthetic transcript turn");
+
+      await act(async () => second?.click());
+      expect(first?.getAttribute("aria-expanded")).toBe("false");
+      expect(second?.getAttribute("aria-label")).toBe("Hide transcript: Voice chat, 2:03");
+      expect(second?.getAttribute("aria-expanded")).toBe("true");
+      expect(container.textContent).toContain("A synthetic transcript turn");
+
+      await act(async () => second?.click());
+      expect(second?.getAttribute("aria-label")).toBe("Show transcript: Voice chat, 2:03");
+      expect(second?.getAttribute("aria-expanded")).toBe("false");
+      expect(container.textContent).not.toContain("A synthetic transcript turn");
+    } finally {
+      await act(async () => root.unmount());
+    }
   });
 
   it("opens with its chosen turns and lets each turn be chosen while selecting", async () => {

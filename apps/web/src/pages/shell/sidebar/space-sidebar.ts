@@ -21,15 +21,6 @@ type SidebarSpace<TBot extends SidebarChat, TGroup extends SidebarChat> = {
   botSections: readonly { id: string; name: string }[];
 };
 
-function spaceHeaderMenu(space: { canRename?: boolean; canDelete?: boolean }, hostsMenu: boolean) {
-  return {
-    canRenameSpace: hostsMenu && space.canRename === true,
-    canDeleteSpace: hostsMenu && space.canDelete === true,
-    // Every member can open a space's settings, so the menu does not depend on rename or delete.
-    canOpenSpaceSettings: hostsMenu,
-  };
-}
-
 export async function commitSpaceRename(input: {
   rename: () => Promise<void>;
   apply: () => void;
@@ -93,7 +84,7 @@ export function sidebarGroupsForSpaces<TBot extends SidebarChat, TGroup extends 
       ...group,
       sectionId: group.key.startsWith("section:") ? group.key.slice("section:".length) : null,
       key: showSpaceNames ? `space:${space.id}:${group.key}` : group.key,
-      // A header holding the space menu is never blank, even for the only space.
+      // The first header needs a title so it can host the Space settings button.
       title: showSpaceNames ? space.name : index === 0 && !group.title ? space.name : group.title,
       subtitle: showSpaceNames && group.title ? group.title : undefined,
       showLock: showSpaceNames,
@@ -103,7 +94,7 @@ export function sidebarGroupsForSpaces<TBot extends SidebarChat, TGroup extends 
       emptySpaceId: undefined as string | undefined,
       spaceId: space.id,
       spaceName: space.name,
-      ...spaceHeaderMenu(space, index === 0),
+      canOpenSpaceSettings: index === 0,
     }));
     if (sections.length > 0) return sections;
     // Keep empty spaces selectable; chat clicks are the only switch control.
@@ -124,7 +115,7 @@ export function sidebarGroupsForSpaces<TBot extends SidebarChat, TGroup extends 
           emptySpaceId: undefined as string | undefined,
           spaceId: space.id,
           spaceName: space.name,
-          ...spaceHeaderMenu(space, false),
+          canOpenSpaceSettings: false,
         }));
     // A lone space is the selected one, so its settings stay in the account menu too.
     const lone = !showSpaceNames && !space.canRename && !space.canDelete;
@@ -144,7 +135,7 @@ export function sidebarGroupsForSpaces<TBot extends SidebarChat, TGroup extends 
         emptySpaceId: showSpaceNames ? space.id : undefined,
         spaceId: space.id,
         spaceName: space.name,
-        ...spaceHeaderMenu(space, true),
+        canOpenSpaceSettings: true,
       },
       ...emptySections,
     ];
