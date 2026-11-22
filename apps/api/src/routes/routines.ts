@@ -1,6 +1,7 @@
 import { ORPCError } from "@orpc/server";
 import { routineJobKey, routineWakeupJob } from "@rakazo/adapter-kit";
 import {
+  botEventRoutines,
   firstWatchCheck,
   listAgentSkillRecords,
   parseRoutineWatch,
@@ -59,19 +60,24 @@ export function routinesRoutes(ctx: RouterContext) {
   const { deps, repos, announceRoutine, codexCatalog, agentSkills, authed } = ctx;
 
   /**
-   * "Use my computer" on: the fingerprint of the prompt as its runs will get it. Only the owner of
-   * the routine and its bot, with a computer paired, may turn it on, and never for a routine that
-   * runs in its chat or watches, whose runs read more than its own prompt.
+   * "Use my computer" on: the fingerprint of the prompt the owner's editor showed, which this same
+   * update stores. Only the owner of the routine and its bot, with a computer paired, may turn it
+   * on, and never for a routine that runs in its chat, watches or names a skill, or on a bot that
+   * outside events start, whose runs read or leave more than its own prompt.
    */
   async function approveComputerPrompt(routine: {
+    id: string;
     spaceId: string;
     userId: string;
+    botId: string;
     botUserId: string;
-    prompt: string;
+    prompt: string | undefined;
     inChat: boolean;
     watch: RoutineWatch | null;
+    eventTriggered: boolean;
   }): Promise<string> {
     if (
+      routine.prompt === undefined ||
       routine.botUserId !== routine.userId ||
       routine.inChat ||
       routine.watch ||
@@ -79,10 +85,23 @@ export function routinesRoutes(ctx: RouterContext) {
     ) {
       throw new ClientError("BAD_REQUEST", "This routine can't use your computer.");
     }
-    return routineComputerFingerprint(
+    const otherEventRoutines = await deps.prisma.routine.count({
+      where: { ...botEventRoutines([routine.botId]), id: { not: routine.id } },
+    });
+    if (routine.eventTriggered || otherEventRoutines > 0) {
+      throw new ClientError(
+        "BAD_REQUEST",
+        "A bot with webhook, email, git or chat app triggers can't use your computer.",
+      );
+    }
+    const fingerprint = routineComputerFingerprint(
       routine.prompt,
       await listAgentSkillRecords(deps.prisma, routine),
     );
+    if (!fingerprint) {
+      throw new ClientError("BAD_REQUEST", "A routine that uses a skill can't use your computer.");
+    }
+    return fingerprint;
   }
 
   return {
@@ -284,10 +303,14 @@ export function routinesRoutes(ctx: RouterContext) {
             : input.useComputer
               ? await approveComputerPrompt({
                   ...existing,
-                  prompt: input.prompt ?? existing.prompt,
+                  // The text the owner's editor showed, never a stored one they may not have seen.
+                  prompt: input.prompt,
                   inChat: inChat ?? existing.inChat,
                   watch,
                   botUserId: bot.userId,
+                  eventTriggered: Boolean(
+                    webhookEnabled || githubEnabled || messageProvider || emailSenders,
+                  ),
                 })
               : null;
         const writesSchedule = nextRunAt?.getTime() !== existing.nextRunAt?.getTime();

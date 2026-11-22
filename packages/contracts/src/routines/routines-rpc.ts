@@ -45,7 +45,10 @@ export const routinesRpc = {
             active: z.boolean().optional(),
             notify: z.boolean().optional(),
             inChat: z.boolean().optional(),
-            /** Only the owner of the routine and its bot, with a computer paired, may send it. */
+            /**
+             * Only the owner of the routine and its bot, with a computer paired, may send it. Turning
+             * it on approves `prompt`, the text the editor shows, so it must come with it.
+             */
             useComputer: z.boolean().optional(),
             webhookEnabled: z.boolean().optional(),
             githubEnabled: z.boolean().optional(),

@@ -55,7 +55,11 @@ function routineChanges(draft: MobileRoutineDraft, routine: Routine) {
     ...(routine.useComputer !== undefined &&
     draft.useComputer !== undefined &&
     draft.useComputer !== routine.useComputer
-      ? { useComputer: draft.useComputer }
+      ? // Turning it on approves the prompt shown here, so it always goes with it.
+        {
+          useComputer: draft.useComputer,
+          ...(draft.useComputer ? { prompt: draft.prompt.trim() } : {}),
+        }
       : {}),
   };
 }

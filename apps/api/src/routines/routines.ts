@@ -1,6 +1,7 @@
 import { ORPCError } from "@orpc/server";
 import { routineWakeupJob } from "@rakazo/adapter-kit";
 import {
+  botEventRoutines,
   firstWatchCheck,
   listAgentSkillRecords,
   parseRoutineWatch,
@@ -166,15 +167,24 @@ async function computerSwitches(
   if (!pairedSince) return new Map();
   const ownBots = new Set(bots.map((bot) => bot.id));
   const offered = own.filter((row) => ownBots.has(row.botId));
-  const skills = offered.some((row) => row.computerPromptHash)
-    ? await listAgentSkillRecords(deps.prisma, actor)
-    : [];
+  const approved = offered.filter((row) => row.computerPromptHash);
+  const [skills, eventRoutines] = approved.length
+    ? await Promise.all([
+        listAgentSkillRecords(deps.prisma, actor),
+        deps.prisma.routine.findMany({
+          where: botEventRoutines([...new Set(approved.map((row) => row.botId))]),
+          select: { botId: true },
+        }),
+      ])
+    : [[], []];
+  const eventBots = new Set(eventRoutines.map((routine) => routine.botId));
   return new Map(
     offered.map((row) => [
       row.id,
       Boolean(row.computerPromptHash) &&
         !row.inChat &&
         row.watch === null &&
+        !eventBots.has(row.botId) &&
         row.computerPromptHash === routineComputerFingerprint(row.prompt, skills),
     ]),
   );

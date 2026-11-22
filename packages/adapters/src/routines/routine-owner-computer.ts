@@ -8,18 +8,42 @@ function promptFingerprint(text: string): string {
 }
 
 /**
- * What turning on "Use my computer" approves: the routine's prompt with its skills expanded, as
- * a timed run, Run now or an @mention gets it. A skill edit or a newly matching skill changes it.
+ * What turning on "Use my computer" approves: the routine's prompt exactly as the owner saw it.
+ * Null when the prompt names a skill, whose text the owner never sees, so a newly matching skill
+ * changes what a run gets and it no longer matches.
  */
-export function routineComputerFingerprint(prompt: string, skills: readonly SkillRecord[]): string {
-  return promptFingerprint(expandSkillReferencesInPrompt(prompt, skills));
+export function routineComputerFingerprint(
+  prompt: string,
+  skills: readonly SkillRecord[],
+): string | null {
+  return expandSkillReferencesInPrompt(prompt, skills) === prompt
+    ? promptFingerprint(prompt)
+    : null;
+}
+
+/**
+ * The bot's routines that outside events start (a webhook, email, git push or chat-app message).
+ * Those runs can leave text the bot's later runs read, so while any is on, no routine of that bot
+ * gets its owner's computer.
+ */
+export function botEventRoutines(botIds: string[]) {
+  return {
+    botId: { in: botIds },
+    OR: [
+      { webhookEnabled: true },
+      { githubEnabled: true },
+      { messageProvider: { not: null } },
+      { emailSenders: { not: null } },
+    ],
+  };
 }
 
 /**
  * Whether a routine run may use its owner's own computer: the owner turned it on for this routine
  * in the app, the routine, its bot and the run are all theirs, and the run carries exactly the text
- * they approved. Webhook, email, git and chat-app runs are not routine runs, and a watch's change
- * note or any edit changes the text. Such a run reads only its own prompt.
+ * they approved. Webhook, email, git and chat-app runs are not routine runs, and while the bot has
+ * any, none of its routines qualify. A watch's change note or any edit changes the text. Such a run
+ * reads only its own prompt.
  */
 export async function routineRunUsesOwnerComputer(
   prisma: PrismaClient,
@@ -46,9 +70,13 @@ export async function routineRunUsesOwnerComputer(
     routine.bot.userId !== run.userId
   )
     return false;
-  const task = await prisma.task.findUnique({
-    where: { id: run.taskId },
-    select: { prompt: true },
-  });
-  return task ? promptFingerprint(task.prompt) === routine.computerPromptHash : false;
+  const [task, eventRoutines] = await Promise.all([
+    prisma.task.findUnique({ where: { id: run.taskId }, select: { prompt: true } }),
+    prisma.routine.count({ where: botEventRoutines([run.botId]) }),
+  ]);
+  return (
+    eventRoutines === 0 &&
+    task !== null &&
+    promptFingerprint(task.prompt) === routine.computerPromptHash
+  );
 }

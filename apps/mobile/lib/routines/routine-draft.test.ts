@@ -34,9 +34,18 @@ describe("routineSaveRequest", () => {
     expect(routineSaveRequest({ ...draft, name: "Mail" }, own, "bot-1", "UTC")).toEqual({
       update: { routineId: own.id, name: "Mail" },
     });
+    // Turning it on approves the prompt shown, so it goes with it.
     expect(routineSaveRequest({ ...draft, useComputer: true }, own, "bot-1", "UTC")).toEqual({
-      update: { routineId: own.id, useComputer: true },
+      update: { routineId: own.id, useComputer: true, prompt: own.prompt.trim() },
     });
+    expect(
+      routineSaveRequest(
+        { ...draft, useComputer: false },
+        { ...own, useComputer: true },
+        "bot-1",
+        "UTC",
+      ),
+    ).toEqual({ update: { routineId: own.id, useComputer: false } });
     // A routine the server doesn't offer it for never sends it.
     expect(
       routineSaveRequest(

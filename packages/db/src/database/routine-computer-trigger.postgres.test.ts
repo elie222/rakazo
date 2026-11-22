@@ -102,6 +102,48 @@ describePostgres("a routine's computer approval (PostgreSQL)", () => {
     expect(await afterChange(change)).toBeNull();
   });
 
+  /** Turns it on, then pairs or unpairs a computer as any code would. */
+  async function afterDeviceChange(change: () => Promise<unknown>) {
+    await afterChange({});
+    await runAsSystem("test", change);
+    return (
+      await runAsSystem("test", () =>
+        prisma.routine.findUniqueOrThrow({
+          where: { id: ids.routineId },
+          select: { computerPromptHash: true },
+        }),
+      )
+    ).computerPromptHash;
+  }
+  const device = (userId: string, tokenHash: string) =>
+    prisma.userDevice.create({ data: { userId, name: "Laptop", platform: "darwin", tokenHash } });
+
+  it("clears it when the owner pairs another computer or unpairs one", async () => {
+    expect(await afterDeviceChange(() => device(ids.userId, `pair-${suffix}`))).toBeNull();
+    expect(
+      await afterDeviceChange(() =>
+        prisma.userDevice.updateMany({
+          where: { tokenHash: `pair-${suffix}` },
+          data: { revokedAt: new Date(), revokedBy: "owner" },
+        }),
+      ),
+    ).toBeNull();
+  });
+
+  it("keeps it when another member pairs a computer or a device only reports in", async () => {
+    expect(await afterDeviceChange(() => device(ids.otherUserId, `other-${suffix}`))).toBe(
+      "approved",
+    );
+    expect(
+      await afterDeviceChange(() =>
+        prisma.userDevice.updateMany({
+          where: { tokenHash: `pair-${suffix}` },
+          data: { lastSeenAt: new Date() },
+        }),
+      ),
+    ).toBe("approved");
+  });
+
   it("keeps it for a save of the same prompt, other edits and the route's own approval", async () => {
     expect(await afterChange({ prompt: "Check the backups", name: "Nightly" })).toBe("approved");
     expect(await afterChange({ prompt: "Back up", computerPromptHash: "re-approved" })).toBe(

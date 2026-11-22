@@ -21,3 +21,23 @@ $clear$;
 DROP TRIGGER IF EXISTS routines_clear_computer_prompt_hash ON routines;
 CREATE TRIGGER routines_clear_computer_prompt_hash BEFORE UPDATE ON routines
 FOR EACH ROW EXECUTE FUNCTION clear_routine_computer_prompt_hash();
+
+-- Pairing another computer or unpairing one turns "Use my computer" off for all of that person's
+-- routines, so a computer they pair later never gets a routine they approved for another. Runs as
+-- the owner because a revoke happens outside any Space, where row security hides routines.
+CREATE OR REPLACE FUNCTION clear_routine_computer_on_device_change() RETURNS trigger
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp AS $clear$
+BEGIN
+  UPDATE routines SET "computerPromptHash" = NULL
+  WHERE "userId" = COALESCE(NEW."userId", OLD."userId") AND "computerPromptHash" IS NOT NULL;
+  RETURN NULL;
+END;
+$clear$;
+REVOKE EXECUTE ON FUNCTION clear_routine_computer_on_device_change() FROM PUBLIC;
+DROP TRIGGER IF EXISTS user_devices_pair_clears_routine_computer ON user_devices;
+CREATE TRIGGER user_devices_pair_clears_routine_computer AFTER INSERT OR DELETE ON user_devices
+FOR EACH ROW EXECUTE FUNCTION clear_routine_computer_on_device_change();
+DROP TRIGGER IF EXISTS user_devices_revoke_clears_routine_computer ON user_devices;
+CREATE TRIGGER user_devices_revoke_clears_routine_computer AFTER UPDATE OF "revokedAt" ON user_devices
+FOR EACH ROW WHEN (OLD."revokedAt" IS NULL AND NEW."revokedAt" IS NOT NULL)
+EXECUTE FUNCTION clear_routine_computer_on_device_change();

@@ -60,6 +60,10 @@ const OWN_PROMPT_ONLY_HIDDEN_TOOLS = new Set([
   "search_history",
   "schedule_list",
   "skill_read",
+  "recall_memory",
+  "reflect_memory",
+  "board_tickets",
+  "ticket_get",
 ]);
 
 /** The bot's own inbox, offered only in its owner's runs outside groups and channels. */
@@ -236,7 +240,8 @@ export function selectBuiltinToolsForRun(options: {
         tool.name !== "call_user") &&
       (options.historyRetrievalEnabled ||
         !["search_history", "read_history"].includes(tool.name)) &&
-      (!options.ownPromptOnly || !OWN_PROMPT_ONLY_HIDDEN_TOOLS.has(tool.name)) &&
+      (!options.ownPromptOnly ||
+        (!OWN_PROMPT_ONLY_HIDDEN_TOOLS.has(tool.name) && !tool.name.startsWith("scratchpad_"))) &&
       (options.meetingTranscriptsAvailable || tool.name !== READ_MEETING_TRANSCRIPT) &&
       (!options.messagingChannelRun ||
         (!SCHEDULE_TOOL_NAMES.has(tool.name) &&
