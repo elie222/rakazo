@@ -5,6 +5,8 @@
 #   pr-digest --watch [PR]    poll until checks settle, a check newly fails, or
 #                             an unseen review finding arrives; then digest
 #   pr-digest --all [PR]      re-print findings already shown once
+#   pr-digest --all-checks    with --watch, also wait for checks the base does
+#                             not require (Web E2E)
 #   pr-digest --logs JOB_ID   failing CI log, stripped of timestamp noise
 #   pr-digest --reply ID BODY reply to a review comment thread
 #
@@ -159,9 +161,11 @@ commit_statuses() {
 # The checks the base branch requires, as a JSON array, or empty when none are
 # named or they cannot be read.
 REQUIRED=""
+ALL_CHECKS=0
 required_checks() {
   local branch
   REQUIRED=""
+  [ "$ALL_CHECKS" = 1 ] && return 0
   branch=$(get "repos/$1/branches/$2") || return 0
   REQUIRED=$(jq -c '.protection.required_status_checks.contexts // [] | select(length > 0)' <<<"$branch")
 }
@@ -526,6 +530,7 @@ main() {
     case $1 in
       --watch) watch=1 ;;
       --all) SHOW_ALL=1 ;;
+      --all-checks) ALL_CHECKS=1 ;;
       --logs)
         shift
         command -v perl >/dev/null || die "perl not found"

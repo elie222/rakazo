@@ -593,6 +593,16 @@ describe("pr-digest", () => {
       expect(result.stdout).toContain("VERDICT green");
     });
 
+    it("waits for checks the base does not require when asked to", () => {
+      const passed = { ...running, name: "tests", status: "completed", conclusion: "success" };
+      const result = runDigest(
+        { required: ["tests"], checks: [[passed, { ...running, name: "image" }]] },
+        "--all-checks",
+        "1",
+      );
+      expect(result.stdout).toContain("VERDICT pending (1)");
+    });
+
     it("waits for a required check that has not appeared yet", () => {
       const result = runDigest({
         required: ["tests", "e2e"],
