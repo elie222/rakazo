@@ -644,7 +644,7 @@ function SpaceShell() {
       userId={userId}
       collapsed={sidebar.collapsed}
       onCollapsedChange={sidebar.setCollapsedPref}
-      onPreviewCollapsedChange={sidebar.setCollapsed}
+      onPreviewCollapsedChange={sidebar.previewCollapsed}
       computerOpen={computerOpen}
       reservedWidth={railWidth}
       data-testid="shell-root"

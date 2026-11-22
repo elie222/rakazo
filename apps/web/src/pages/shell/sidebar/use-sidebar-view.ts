@@ -34,7 +34,11 @@ export function useSidebarView({
 }) {
   const { t } = useLingui();
   // The rail layout owns the collapse state, so the rail and the list never disagree.
-  const { listCollapsed: collapsed, setListCollapsed: setCollapsedPref } = useAppSidebar();
+  const {
+    listCollapsed: collapsed,
+    setListCollapsed: setCollapsedPref,
+    previewListCollapsed,
+  } = useAppSidebar();
   const mini = collapsed && !isMobile;
 
   const sidebarSpaces = useMemo(
@@ -87,7 +91,7 @@ export function useSidebarView({
 
   return {
     collapsed,
-    setCollapsed: setCollapsedPref,
+    previewCollapsed: previewListCollapsed,
     setCollapsedPref,
     mini,
     sidebarGroups,
