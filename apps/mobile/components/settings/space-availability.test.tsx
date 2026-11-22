@@ -108,6 +108,23 @@ it("sends one change at a time and reads the item again after it", async () => {
   expect(invalidate).toHaveBeenCalledWith({ queryKey: stale[0] });
 });
 
+const renderSeveral = () =>
+  act(async () =>
+    root.render(
+      <SpaceAvailabilityPicker
+        kind="install"
+        id="install-1"
+        availability={{ allSpaces: false, spaceIds: ["space-1", "space-2"] }}
+        stale={stale}
+      />,
+    ),
+  );
+
+it("labels several spaces as a count in English", async () => {
+  await renderSeveral();
+  expect(container.textContent).toContain("2 spaces");
+});
+
 it("says why a choice was refused", async () => {
   await render();
   await act(async () => button("Work").click());

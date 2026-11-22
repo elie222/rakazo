@@ -818,9 +818,12 @@ function renderEnsureScreenCommand(
   const socket = `/tmp/rakazo/sockets/view-${layout.displayNumber}-\${desktop_view_token}`;
   const setupView = [
     `mkdir -p ${TARGETS} /tmp/rakazo/sockets`,
-    `if [ ! -S ${socket} ] || ! pgrep -f ${quoteLayout(`^([^ ]*/)?x11vnc .* -unixsock ${socket}( |$)`)} >/dev/null; then`,
+    // The viewer takes no keys: -repeat leaves X key autorepeat to the control process, which
+    // turns it off while a person types. Without it the viewer turns autorepeat back on, and a
+    // key-up delayed on the network repeats the key. Replace a viewer started without it.
+    `if [ ! -S ${socket} ] || ! pgrep -f ${quoteLayout(`^([^ ]*/)?x11vnc .* -viewonly -repeat .* -unixsock ${socket}( |$)`)} >/dev/null; then`,
     stopVncCommand("view", layout),
-    `  nohup x11vnc -display ${layout.display} -forever -shared -viewonly -nopw -rfbport 0 -unixsock ${socket} -xkb -ncache 0 8>&- 9>&- </dev/null >${log}-x11vnc.log 2>&1 &`,
+    `  nohup x11vnc -display ${layout.display} -forever -shared -viewonly -repeat -nopw -rfbport 0 -unixsock ${socket} -xkb -ncache 0 8>&- 9>&- </dev/null >${log}-x11vnc.log 2>&1 &`,
     "fi",
     `for i in $(seq 1 50); do [ -S ${socket} ] && break; sleep 0.1; done`,
     `if [ ! -S ${socket} ]; then echo 'screen viewer did not start' >&2; tail -c 2000 ${log}-x11vnc.log >&2 || true; exit ${SCREEN_NOT_READY_EXIT}; fi`,

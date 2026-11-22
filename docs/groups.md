@@ -37,7 +37,8 @@ carries on with it. The chat shows **Messaged** or **Message from** with the oth
 exchange; it is view-only.
 
 Bots decide whom to ask from each bot's **How other bots see it** description in its settings
-under **Advanced**. Keep it to one line about what the bot is for.
+under **Settings** on web and desktop, or **Advanced** on mobile. Keep it to one line about what
+the bot is for.
 
 A bot messages your other bots (**Messaged** / **Message from**) only inside its own
 [space](./spaces.md).

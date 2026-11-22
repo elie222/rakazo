@@ -141,6 +141,8 @@ function modelTurnRequest(
     pluginLine,
     prompt,
     runtimeHistory,
+    resumeHistoryMessageIds,
+    resumeAnswerReplyContexts,
     taskPrompt,
     taughtSkillsLine,
     turnCheckpoint,
@@ -326,6 +328,7 @@ function modelTurnRequest(
       effects.pendingTurnCheckpoints.set(executionId, capture);
     },
     resumeToolResult: {
+      historyMessageIds: resumeHistoryMessageIds,
       content: [{ type: "text", text: takeoverResume?.promptNote ?? taskPrompt }],
     },
     script,
@@ -379,6 +382,7 @@ function modelTurnRequest(
         {
           messageId: currentTurnMessage?.id,
           hasImages: Boolean(currentTurnImages?.length),
+          resumeAnswerReplyContexts,
         },
       ),
   };

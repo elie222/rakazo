@@ -704,7 +704,7 @@ export const VaultItemNote = z.string().trim().max(200);
 
 export const VAULT_ALSO_ON_LIMIT = 10;
 /** The most items one vault holds. */
-export const VAULT_ITEM_LIMIT = 100;
+export const VAULT_ITEM_LIMIT = 1_000;
 
 // A blocked item's value is still hidden in every run; a saved card still asks before each use.
 // "ask" is for a website login: each browser_act call that signs in with it asks the user first.
@@ -817,6 +817,11 @@ export const BLOCKED_ITEM_ANSWER =
 /** As BLOCKED_ITEM_ANSWER, for an item allowed but limited to other bots. */
 export const UNCHOSEN_ITEM_ANSWER =
   "This bot can't use this item. Change it in the Vault, or dismiss the request.";
+/**
+ * As BLOCKED_ITEM_ANSWER, for an answer whose new item doesn't fit in a full vault. Bots read this
+ * error too, so it stays the server's short text and the card shows its own removal guidance.
+ */
+export const FULL_VAULT_ANSWER = "Credential limit reached";
 
 export const SecretHttpRequest = z
   .object({

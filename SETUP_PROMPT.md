@@ -68,7 +68,7 @@ Verification:
 
 - Request `http://127.0.0.1:3100/internal/health`. Require `ok: true` and `sandbox: "docker"` (or the remote provider you configured). A missing `SANDBOX_SUPERVISOR_TOKEN` is a setup failure: Compose will not start the supervisor; restore the token and recreate the stack. Do not treat `sandbox: "none"` as success for this path.
 - Open `http://127.0.0.1:5173`, sign in to the intended account (or create a nonprivileged test account with fake data only if registration is deliberately enabled), and complete first-run onboarding.
-- If a model is connected, send a harmless test message. Open the Agent computer pane and confirm the Docker computer reaches `running` and renders its desktop.
+- If a model is connected, send a harmless test message. In the bot's chat, select its name in the header to open the bot panel. Under **Computer**, choose **Open** on the preview (or **Wake** if it is asleep), then confirm the Docker computer reaches `running` and renders its desktop.
 
 When finished, report the directory path, effective Docker/Compose versions, configured options without secrets, app URL, health result, and how to stop without deleting volumes (`docker compose … down` without `-v`).
 ```
@@ -149,7 +149,7 @@ Verification:
 - Open `http://127.0.0.1:5173` in a browser. If browser automation is available, use it for non-sensitive steps; otherwise give me the exact UI steps.
 - Sign in to the intended account, complete first-run onboarding, and create a test bot. Create a fake test account only if registration is deliberately enabled.
 - If a model is connected, send a harmless test message and confirm the bot replies. If model setup was deferred, explicitly report that the stack is healthy but a first message will fail until a provider is configured; do not call the setup fully usable without that caveat.
-- Open the Agent computer pane and confirm the Docker computer reaches `running` and renders its desktop.
+- In the bot's chat, select its name in the header to open the bot panel. Under **Computer**, choose **Open** on the preview (or **Wake** if it is asleep), then confirm the Docker computer reaches `running` and renders its desktop.
 - Open Integrations. If neither managed catalog was configured, confirm the view still offers HTTPS MCP and OpenAPI sources. If one was configured, verify its app catalog loads without exposing any key or client secret.
 - Run `pnpm test` and `pnpm check`. Report failures with the relevant output; do not claim success if either fails.
 - If I requested Electron, leave the web stack running and then launch `pnpm --filter @rakazo/desktop dev`. Verify the shell loads the same app. Let me make the Docker-versus-This-Mac choice because This Mac grants bots access under my OS account.

@@ -12,12 +12,13 @@ import { queryClient } from "../query/query";
 const mocks = vi.hoisted(() => ({
   selectedSpace: "space-1",
   focused: true,
+  locale: "en-US",
   rpc: vi.fn(),
   alert: vi.fn(),
   openAuthSessionAsync: vi.fn(async () => ({ type: "dismiss" })),
 }));
 vi.mock("../layout/side-insets", () => ({ useSideInsets: () => ({}) }));
-vi.mock("../i18n/i18n", () => ({ dateLocaleForUi: () => "en-US" }));
+vi.mock("../i18n/i18n", () => ({ dateLocaleForUi: () => mocks.locale }));
 vi.mock("./referral", () => ({ rememberReferral: vi.fn() }));
 vi.mock("../settings/settings-sheet", () => ({ openFromSettingsSheet: vi.fn() }));
 vi.mock("expo-web-browser", () => ({ openAuthSessionAsync: mocks.openAuthSessionAsync }));
@@ -48,10 +49,12 @@ vi.mock("../../components/settings/settings-group", () => ({
   SettingsGroup: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
   SettingsRow: ({
     title,
+    value,
     onPress,
     disabled,
   }: {
     title: string;
+    value?: string;
     onPress?: () => void;
     disabled?: boolean;
   }) =>
@@ -60,7 +63,10 @@ vi.mock("../../components/settings/settings-group", () => ({
         {title}
       </button>
     ) : (
-      <p>{title}</p>
+      <p>
+        {title}
+        {value == null ? null : ` ${value}`}
+      </p>
     ),
 }));
 vi.mock("react-native", () => {
@@ -96,6 +102,7 @@ beforeEach(() => {
   queryClient.clear();
   mocks.selectedSpace = "space-1";
   mocks.focused = true;
+  mocks.locale = "en-US";
   container = document.createElement("div");
   document.body.appendChild(container);
   root = createRoot(container);
@@ -116,6 +123,23 @@ function button(label: string) {
   return match;
 }
 const sent = (method: string) => mocks.rpc.mock.calls.filter(([name]) => name === method);
+
+it.each([
+  ["de-DE", 1234.5, "1.234,50\u00a0$"],
+  ["en-US", 1234.5, "$1,234.50"],
+  ["de-DE", undefined, "0,00\u00a0$"],
+])("formats available credits in %s for %s", async (locale, balanceUsd, amount) => {
+  mocks.locale = locale;
+  mocks.rpc.mockImplementation(async (method: string) => {
+    if (method === "billing/status") return { ...status, balanceUsd };
+    throw new Error(`Unexpected ${method}`);
+  });
+
+  await render();
+
+  const rows = [...container.querySelectorAll("p")].map((row) => row.textContent);
+  expect(rows).toContain(`Available credits ${amount}`);
+});
 
 it("opens the portal once for a double tap and refreshes the status in the Space it opened in", async () => {
   const portal = deferred<{ url: string }>();

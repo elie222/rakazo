@@ -1,3 +1,4 @@
+import type { PageSectionAnchor } from "@rakazo/contracts";
 import type { ComponentType } from "react";
 import * as React from "react";
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
@@ -15,7 +16,15 @@ import { PageLanguage } from "./kit/labels.js";
 import { PAGE_STYLES } from "./kit/styles.js";
 
 /** What the host's boot script passes to `RakazoPage.mount`; `code` comes from `pageViewerCode`. */
-type PageBoot = { code: string; theme: "light" | "dark"; errorTitle: string; lang?: string };
+type PageBoot = {
+  code: string;
+  theme: "light" | "dark";
+  errorTitle: string;
+  lang?: string;
+  review?: boolean;
+  reviewAnchor?: string;
+  reviewAnchorOccurrence?: number;
+};
 
 type PageFactory = (exports: { default?: unknown }, ...globals: unknown[]) => void;
 
@@ -86,11 +95,62 @@ function reportHeight() {
   new ResizeObserver(post).observe(document.body);
 }
 
+/** Count same-name headings before filtering visibility so a reveal keeps their anchors stable. */
+function reportSections(host: HTMLElement, anchor?: string, anchorOccurrence?: number) {
+  let previous = "";
+  let destination = anchor;
+  let scheduled = false;
+  const report = () => {
+    const headings = [...host.querySelectorAll("h1,h2,h3,h4,h5,h6,[role=heading]")].slice(0, 80);
+    const occurrences = new Map<string, number>();
+    const anchors: PageSectionAnchor[] = [];
+    for (const heading of headings) {
+      const section = heading.textContent?.replace(/\s+/g, " ").trim().slice(0, 200).trimEnd();
+      if (!section) continue;
+      const sectionOccurrence = occurrences.get(section) ?? 0;
+      occurrences.set(section, sectionOccurrence + 1);
+      if (!heading.getClientRects().length) continue;
+      const { visibility } = getComputedStyle(heading);
+      if (visibility === "hidden" || visibility === "collapse") continue;
+      anchors.push({ section, sectionOccurrence });
+      if (
+        section === destination &&
+        (anchorOccurrence === undefined || anchorOccurrence === sectionOccurrence)
+      ) {
+        heading.scrollIntoView();
+        destination = undefined;
+      }
+    }
+    const next = JSON.stringify(anchors);
+    if (next === previous) return;
+    previous = next;
+    // Older clients read the label list; newer clients use the paired anchors.
+    window.parent?.postMessage(
+      { type: "rakazo-page:sections", sections: anchors.map(({ section }) => section), anchors },
+      "*",
+    );
+  };
+  new MutationObserver(() => {
+    if (!previous) {
+      report();
+      return;
+    }
+    if (scheduled) return;
+    scheduled = true;
+    // A review picker can wait briefly for changes. Coalesce animations without missing a reveal.
+    setTimeout(() => {
+      scheduled = false;
+      report();
+    }, 100);
+  }).observe(host, { childList: true, characterData: true, subtree: true, attributes: true });
+}
+
 function mount(boot: PageBoot) {
   document.documentElement.dataset.theme = boot.theme === "light" ? "light" : "dark";
   reportHeight();
   const host =
     document.getElementById("root") ?? document.body.appendChild(document.createElement("div"));
+  if (boot.review) reportSections(host, boot.reviewAnchor, boot.reviewAnchorOccurrence);
   const root = createRoot(host);
   let Page: ComponentType;
   try {

@@ -33,6 +33,7 @@ import {
   lockSpaceSettings,
   newestVoiceCredentialOrder,
   Prisma,
+  remainingSpeechAllowance,
   runAsSystemInTransaction,
   runAsTenant,
   saveVoicePreference,
@@ -256,7 +257,7 @@ export function speechModelValue(speechModel: string): string | null {
   return trimmed;
 }
 
-/** A configured service is available only after the operator grants an unexpired allowance. */
+/** A configured service is available while the organization's plan has speech allowance left. */
 export async function includedVoice(
   deps: VoiceDeps,
   actor: Pick<Actor, "userId" | "spaceId">,
@@ -266,16 +267,14 @@ export async function includedVoice(
   if (!deployment) return undefined;
   const target = await voicePreferenceTarget(deps.prisma, actor, scope);
   if (target.scope !== "account") return undefined;
-  const allowance = await deps.prisma.speechAllowance.findFirst({
-    where: { userId: actor.userId, expiresAt: { gt: new Date() } },
-  });
-  const remaining = allowance ? allowance.limitMicros - allowance.usedMicros : 0n;
+  const remaining = await remainingSpeechAllowance(deps.prisma, actor.spaceId);
+  const affords = (micros: number) => remaining === null || remaining >= BigInt(micros);
   return {
     deployment,
-    synthesize: remaining >= BigInt(deployment.pricing.synthesize.maxRequestMicros),
+    synthesize: affords(deployment.pricing.synthesize.maxRequestMicros),
     transcribe:
       Boolean(catalogEntry(deployment.provider)?.transcribe) &&
-      remaining >= BigInt(deployment.pricing.transcribe.maxRequestMicros),
+      affords(deployment.pricing.transcribe.maxRequestMicros),
   };
 }
 
