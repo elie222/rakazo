@@ -1,5 +1,7 @@
-/** Where a sender posts to start a bot's routines: its webhook or its Git events. */
+import { botInboundPath } from "@rakazo/contracts";
+
+/** The full address a sender posts to, on the server this app talks to. */
 export function botInboundUrl(botId: string, kind: "webhook" | "github"): string {
-  const path = `/api/v1/bots/${botId}/${kind}`;
+  const path = botInboundPath(botId, kind);
   return typeof window === "undefined" ? path : `${window.location.origin}${path}`;
 }

@@ -15,9 +15,11 @@ vi.mock("@lingui/react/macro", () => ({
   }),
 }));
 
+const cancelIdentity = vi.hoisted(() => vi.fn());
 vi.mock("../../../components/account/ConfirmIdentityDialog", () => ({
   useIdentityConfirmation: () => ({
     withIdentityConfirmation: <T,>(action: () => Promise<T>) => action(),
+    cancel: cancelIdentity,
     identityDialog: null,
   }),
 }));
@@ -88,6 +90,7 @@ it("reads the key back for the bot and hides it again when closed", async () => 
   expect(container.textContent).toContain("/api/v1/bots/bot-1/webhook");
   expect(container.textContent).toContain("Authorization: Bearer key-123");
   await act(async () => button("Hide webhook key")!.click());
+  expect(cancelIdentity).toHaveBeenCalled();
   expect(container.textContent).not.toContain("key-123");
   expect(container.textContent).not.toContain("/api/v1/bots/bot-1/webhook");
 });

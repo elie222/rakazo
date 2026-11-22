@@ -50,6 +50,7 @@ function client(saved: Record<string, unknown> = routine) {
             id: "bot-1",
             thread: { id: "bot-thread" },
             computer: null,
+            webhookSecretId: "secret-1",
           })),
         },
         routine: {
@@ -103,6 +104,11 @@ describe("routine rows from the routines API", () => {
       name: "Deploy hook",
     });
     expect(lastNotice()).toMatchObject({ change: "updated", webhook: true });
+    await client({ ...routine, webhookEnabled: true, active: false }).routines.update({
+      routineId: "routine-1",
+      name: "Deploy hook",
+    });
+    expect(lastNotice()).toMatchObject({ change: "updated", webhook: false });
   });
 
   it("a routine saved in a group posts to that group's chat", async () => {

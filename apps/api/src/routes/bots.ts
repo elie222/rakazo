@@ -39,6 +39,7 @@ import type {
 } from "@rakazo/contracts";
 import {
   BotSecretAuth,
+  botInboundPath,
   noneSkipped,
   resolveBotAvatarSet,
   VaultPolicy,
@@ -622,7 +623,7 @@ export function botsRoutes(ctx: RouterContext) {
         if (!plaintext) throw new ClientError("NOT_FOUND", "Not Found");
         return {
           secret: plaintext,
-          path: `/api/v1/bots/${bot.id}/webhook`,
+          path: botInboundPath(bot.id, "webhook"),
           webhookConfigured: true as const,
         };
       }),

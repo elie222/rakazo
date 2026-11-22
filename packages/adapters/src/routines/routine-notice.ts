@@ -17,7 +17,7 @@ export type RoutineNoticeInput = {
   botId: string;
   change: RoutineEventChange;
   name: string;
-  /** Whether a webhook starts the saved routine. */
+  /** Whether a webhook starts the saved routine now, with a key the bot already holds. */
   webhook?: boolean;
 };
 

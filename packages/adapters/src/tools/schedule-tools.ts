@@ -722,7 +722,7 @@ export async function createScheduleFromTool(
     botId: routineBotId,
     change: "created",
     name: row.name,
-    webhook: row.webhookEnabled,
+    webhook: row.webhookEnabled && row.active,
   });
 
   return {
@@ -909,7 +909,7 @@ async function createWatchFromTool(
     botId: input.botId,
     change: "created",
     name: row.name,
-    webhook: row.webhookEnabled,
+    webhook: row.webhookEnabled && row.active,
   });
   return {
     ok: true as const,
@@ -1254,7 +1254,7 @@ export async function updateScheduleFromTool(
       botId: input.botId,
       change: routineEditChange(existing, saved),
       name: saved.name,
-      webhook: saved.webhookEnabled,
+      webhook: saved.webhookEnabled && saved.active,
     });
   }
 

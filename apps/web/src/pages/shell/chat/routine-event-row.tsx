@@ -71,7 +71,7 @@ function WebhookKey({
   children: ReactNode;
 }) {
   const { t } = useLingui();
-  const { withIdentityConfirmation, identityDialog } = useIdentityConfirmation();
+  const { withIdentityConfirmation, cancel, identityDialog } = useIdentityConfirmation();
   const [open, setOpen] = useState(false);
   const [secret, setSecret] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -92,6 +92,7 @@ function WebhookKey({
   function toggle() {
     if (open) {
       hide();
+      cancel();
       setError(null);
       setOpen(false);
       return;
