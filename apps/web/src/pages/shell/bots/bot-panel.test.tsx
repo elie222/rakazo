@@ -45,11 +45,11 @@ vi.mock("@lingui/react/macro", () => {
   return { useLingui: () => ({ t }), Trans: ({ children }: { children: ReactNode }) => children };
 });
 vi.mock("@rakazo/ui-web", async (importOriginal) => {
-  const { OptionSelect } = await importOriginal<typeof UiWeb>();
+  const { CopyTextFallback, OptionSelect, useCopyText } = await importOriginal<typeof UiWeb>();
   const { createContext, useContext } = await import("react");
   const PopoverOpen = createContext<(open: boolean) => void>(() => undefined);
   return {
-    useCopyText: () => [false, () => {}],
+    useCopyText,
     SectionHeading: ({
       variant: _variant,
       ...props
@@ -61,6 +61,7 @@ vi.mock("@rakazo/ui-web", async (importOriginal) => {
     }: ComponentProps<"button"> & { variant?: string; size?: string }) => (
       <button type="button" {...props} />
     ),
+    CopyTextFallback,
     Input: (props: ComponentProps<"input">) => <input {...props} />,
     Textarea: (props: ComponentProps<"textarea">) => <textarea {...props} />,
     OptionSelect,
