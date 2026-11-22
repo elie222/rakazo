@@ -54,8 +54,13 @@ export default function MeetingsScreen() {
   const actionError = join.error ?? leave.error;
   const error = actionError ?? list.error;
   const errorMessage = error ? errorText(error, t`Could not update meetings`) : null;
-  const firstReadFailed =
-    Boolean(botId) && !actionError && !list.data && Boolean(list.error) && !list.isFetching;
+  const retryPending = list.fetchStatus !== "idle";
+  // An empty query drops its error while retrying, but keeps the time of its last failure.
+  const showFirstReadRetry =
+    Boolean(botId) &&
+    !actionError &&
+    !list.data &&
+    (Boolean(list.error) || (retryPending && list.errorUpdatedAt > 0));
   useScreenHeader({ title: t`Meetings` });
 
   return (
@@ -97,9 +102,10 @@ export default function MeetingsScreen() {
       ) : list.data || !botId ? (
         <Text style={styles.note}>{t`Meeting joins are unavailable.`}</Text>
       ) : null}
-      {firstReadFailed && errorMessage ? (
+      {showFirstReadRetry ? (
         <LoadFailure
           message={errorMessage}
+          retryDisabled={retryPending}
           onRetry={() => void list.refetch({ cancelRefetch: false })}
         />
       ) : errorMessage ? (

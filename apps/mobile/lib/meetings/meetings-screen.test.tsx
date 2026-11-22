@@ -1,3 +1,6 @@
+import { deferred } from "@rakazo/core/test-async";
+import type { RefetchOptions } from "@tanstack/react-query";
+import { QueryClient, QueryObserver } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, expect, it, vi } from "vitest";
@@ -19,12 +22,15 @@ const mocks = vi.hoisted(() => ({
   list: {
     data: undefined as Meetings | undefined,
     error: null as Error | null,
+    errorUpdatedAt: 0,
+    fetchStatus: "idle" as "idle" | "fetching" | "paused",
     isFetching: false,
     refetch: vi.fn(),
   },
   calendar: { isFetching: false, refetch: vi.fn() },
   calendarRetry: false,
   joinError: null as Error | null,
+  leaveError: null as Error | null,
   actions: new Map<string, () => void>(),
 }));
 
@@ -62,13 +68,31 @@ vi.mock("react-native", () => {
   };
 });
 vi.mock("../../components/native/native-action-button", () => ({
-  NativeActionButton: ({ label, onPress }: { label: string; onPress: () => void }) => {
-    mocks.actions.set(label, onPress);
-    return <button type="button">{label}</button>;
+  NativeActionButton: ({
+    label,
+    onPress,
+    disabled,
+  }: {
+    label: string;
+    onPress: () => void;
+    disabled?: boolean;
+  }) => {
+    if (!disabled) mocks.actions.set(label, onPress);
+    return (
+      <button type="button" disabled={disabled}>
+        {label}
+      </button>
+    );
   },
 }));
 vi.mock("../../components/settings/settings-group", () => ({
-  SettingsGroup: ({ children }: { children?: ReactNode }) => <section>{children}</section>,
+  SettingsGroup: ({
+    children,
+    accessibilityLabel,
+  }: {
+    children?: ReactNode;
+    accessibilityLabel?: string;
+  }) => <section aria-label={accessibilityLabel}>{children}</section>,
   SettingsInputRow: () => null,
   SettingsRow: ({
     title,
@@ -94,7 +118,9 @@ vi.mock("../native/native", () => ({
 vi.mock("../navigation/screen-header", () => ({ useScreenHeader: () => undefined }));
 vi.mock("../query/query", () => ({
   rpcQuery: (method: string) => ({ queryKey: [method] }),
-  useSave: ({ onSaved }: { onSaved?: () => void }) => ({ error: onSaved ? mocks.joinError : null }),
+  useSave: ({ onSaved }: { onSaved?: () => void }) => ({
+    error: onSaved ? mocks.joinError : mocks.leaveError,
+  }),
 }));
 vi.mock("../query/screen-query", () => ({
   useScreenQuery: ({ queryKey: [method] }: { queryKey: string[] }) =>
@@ -110,46 +136,91 @@ beforeEach(() => {
   mocks.botId = "bot-1";
   mocks.list.data = undefined;
   mocks.list.error = null;
+  mocks.list.errorUpdatedAt = 0;
+  mocks.list.fetchStatus = "idle";
   mocks.list.isFetching = false;
   mocks.list.refetch.mockReset();
   mocks.calendar.refetch.mockReset();
   mocks.calendarRetry = false;
   mocks.joinError = null;
+  mocks.leaveError = null;
 });
 
-it("retries only the first meetings read and shows the recovered list", () => {
-  mocks.list.error = new Error("Could not reach the server");
-  mocks.list.refetch.mockImplementation(() => {
-    mocks.list.isFetching = true;
+it("does not offer Retry while the first read is pending without a prior error", () => {
+  mocks.list.fetchStatus = "fetching";
+  mocks.list.isFetching = true;
+  const loading = render();
+  expect(loading).toContain('role="progressbar"');
+  expect(loading).not.toContain("Retry");
+});
+
+it("keeps Retry disabled while a request is pending, then re-enables it on failure", async () => {
+  const retry = deferred<Meetings>();
+  const recovery = deferred<Meetings>();
+  const read = vi
+    .fn<() => Promise<Meetings>>()
+    .mockRejectedValueOnce(new Error("Could not reach the server"))
+    .mockImplementationOnce(() => retry.promise)
+    .mockImplementationOnce(() => recovery.promise);
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const observer = new QueryObserver(client, {
+    queryKey: ["meetings/list"],
+    queryFn: read,
+    enabled: false,
+  });
+  const unsubscribe = observer.subscribe(
+    ({ data, error, errorUpdatedAt, fetchStatus, isFetching }) =>
+      Object.assign(mocks.list, { data, error, errorUpdatedAt, fetchStatus, isFetching }),
+  );
+  const attempts: ReturnType<typeof observer.refetch>[] = [];
+  mocks.list.refetch.mockImplementation((options: RefetchOptions) => {
+    const attempt = observer.refetch(options);
+    attempts.push(attempt);
+    return attempt;
   });
 
-  const failed = render();
-  expect(failed).toContain('role="alert">Could not reach the server');
-  expect(mocks.actions.has("Retry")).toBe(true);
-  mocks.actions.get("Retry")?.();
-  expect(mocks.list.refetch).toHaveBeenCalledExactlyOnceWith({ cancelRefetch: false });
-  expect(mocks.calendar.refetch).not.toHaveBeenCalled();
-  expect(render()).toContain('role="progressbar"');
-  expect(mocks.actions.has("Retry")).toBe(false);
+  try {
+    await observer.refetch();
+    expect(render()).toContain('role="alert">Could not reach the server');
+    const tapRetry = mocks.actions.get("Retry");
+    expect(tapRetry).toBeDefined();
+    tapRetry?.();
+    tapRetry?.();
+    expect(mocks.list.refetch.mock.calls).toEqual([
+      [{ cancelRefetch: false }],
+      [{ cancelRefetch: false }],
+    ]);
+    expect(read).toHaveBeenCalledTimes(2);
+    expect(observer.getCurrentResult().error).toBeNull();
 
-  mocks.list.data = {
-    enabled: true,
-    meetings: [
-      {
-        id: "meeting-1",
-        platform: "google_meet",
-        status: "completed",
-        transcriptAvailable: false,
-        createdAt: "2026-01-01T10:00:00Z",
-      },
-    ],
-  };
-  mocks.list.error = null;
-  mocks.list.isFetching = false;
-  const recovered = render();
-  expect(recovered).toContain("Example meeting");
-  expect(recovered).not.toContain('role="alert"');
-  expect(mocks.actions.has("Retry")).toBe(false);
+    const loading = render();
+    expect(loading).toContain('role="progressbar"');
+    expect(loading).toContain('<button type="button" disabled="">Retry</button>');
+    expect(loading).not.toContain('role="alert"');
+    expect(mocks.actions.has("Retry")).toBe(false);
+    expect(mocks.calendar.refetch).not.toHaveBeenCalled();
+
+    retry.reject(new Error("Still offline"));
+    await Promise.all(attempts);
+    expect(render()).toContain('role="alert">Still offline');
+    expect(mocks.actions.has("Retry")).toBe(true);
+
+    // Focus triggers the same refetch directly, without pressing Retry.
+    const focused = observer.refetch({ cancelRefetch: false });
+    expect(render()).toContain('<button type="button" disabled="">Retry</button>');
+    expect(mocks.actions.has("Retry")).toBe(false);
+    recovery.resolve({ enabled: true, meetings: [] });
+    await focused;
+    const recovered = render();
+    expect(recovered).toContain("Join meeting");
+    expect(recovered).not.toContain("Recent meetings");
+    expect(recovered).not.toContain('role="alert"');
+    expect(recovered).not.toContain("Retry");
+    expect(read).toHaveBeenCalledTimes(3);
+  } finally {
+    unsubscribe();
+    client.clear();
+  }
 });
 
 it("does not offer first-read retry for cached data or a join failure", () => {
@@ -160,6 +231,10 @@ it("does not offer first-read retry for cached data or a join failure", () => {
 
   mocks.joinError = new Error("Join failed");
   expect(render()).toContain('role="alert">Join failed');
+  expect(mocks.actions.has("Retry")).toBe(false);
+  mocks.joinError = null;
+  mocks.leaveError = new Error("Leave failed");
+  expect(render()).toContain('role="alert">Leave failed');
   expect(mocks.actions.has("Retry")).toBe(false);
 });
 
