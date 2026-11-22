@@ -638,6 +638,7 @@ export function accountRoutes(ctx: RouterContext) {
           sttApiKey: input.sttApiKey,
           ttsModel: input.ttsModel,
           sttModel: input.sttModel,
+          transcriptionVocabulary: input.transcriptionVocabulary,
           scope: input.scope,
           signal: context.signal,
         }),

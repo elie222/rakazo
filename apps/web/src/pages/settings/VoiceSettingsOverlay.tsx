@@ -10,6 +10,7 @@ import type {
 import {
   DEFAULT_COMPATIBLE_STT_MODEL,
   DEFAULT_COMPATIBLE_TTS_MODEL,
+  MAX_TRANSCRIPTION_VOCABULARY_LENGTH,
   OPENAI_COMPATIBLE_PROVIDER_ID,
   voiceConnectionForm,
 } from "@rakazo/contracts";
@@ -78,6 +79,7 @@ export function VoiceSettingsOverlay({
   const baseUrlId = useId();
   const ttsModelId = useId();
   const sttModelId = useId();
+  const transcriptionVocabularyId = useId();
   const sttBaseUrlId = useId();
   const sttApiKeyId = useId();
   const providerSelectId = useId();
@@ -107,6 +109,9 @@ export function VoiceSettingsOverlay({
   const [speechModel, setSpeechModel] = useState(cached?.credential?.speechModel ?? "");
   const [baseUrl, setBaseUrl] = useState(cached?.credential?.endpoint ?? "");
   const [ttsModel, setTtsModel] = useState(cached?.credential?.ttsModel ?? "");
+  const [transcriptionVocabulary, setTranscriptionVocabulary] = useState(
+    cached?.credential?.transcriptionVocabulary ?? "",
+  );
   const [sttModel, setSttModel] = useState(cached?.credential?.sttModel ?? "");
   const [sttBaseUrl, setSttBaseUrl] = useState(cached?.credential?.sttEndpoint ?? "");
   const [sttApiKey, setSttApiKey] = useState("");
@@ -116,6 +121,7 @@ export function VoiceSettingsOverlay({
     baseUrl,
     ttsModel,
     sttModel,
+    transcriptionVocabulary,
     sttBaseUrl,
     apiKey,
     sttApiKey,
@@ -125,6 +131,7 @@ export function VoiceSettingsOverlay({
     baseUrl,
     ttsModel,
     sttModel,
+    transcriptionVocabulary,
     sttBaseUrl,
     apiKey,
     sttApiKey,
@@ -172,6 +179,8 @@ export function VoiceSettingsOverlay({
     if (!keep("baseUrl")) setBaseUrl(cred?.endpoint ?? "");
     if (!keep("ttsModel")) setTtsModel(cred?.ttsModel ?? "");
     if (!keep("sttModel")) setSttModel(cred?.sttModel ?? "");
+    if (!keep("transcriptionVocabulary"))
+      setTranscriptionVocabulary(cred?.transcriptionVocabulary ?? "");
     if (!keep("sttBaseUrl")) setSttBaseUrl(cred?.sttEndpoint ?? "");
     if (!cred) return Promise.resolve();
     return queryClient
@@ -318,6 +327,10 @@ export function VoiceSettingsOverlay({
                 baseUrl: baseUrl.trim(),
                 ttsModel: ttsModel.trim() || undefined,
                 sttModel: sttModel.trim() || undefined,
+                ...(selected.transcriptionVocabulary &&
+                edited.current.has("transcriptionVocabulary")
+                  ? { transcriptionVocabulary }
+                  : {}),
                 sttBaseUrl: sttBaseUrl.trim(),
                 sttApiKey: sentSttApiKey.trim(),
               }
@@ -617,6 +630,25 @@ export function VoiceSettingsOverlay({
                       placeholder={DEFAULT_COMPATIBLE_STT_MODEL}
                     />
                   </Field>
+                  {selected.transcriptionVocabulary ? (
+                    <Field className="mt-5">
+                      <FieldLabel htmlFor={transcriptionVocabularyId}>
+                        <Trans>Transcription vocabulary</Trans>
+                      </FieldLabel>
+                      <Input
+                        id={transcriptionVocabularyId}
+                        autoComplete="off"
+                        spellCheck={false}
+                        maxLength={MAX_TRANSCRIPTION_VOCABULARY_LENGTH}
+                        placeholder={t`Names and terms (optional)`}
+                        value={transcriptionVocabulary}
+                        onChange={(event) => {
+                          edited.current.add("transcriptionVocabulary");
+                          setTranscriptionVocabulary(event.target.value);
+                        }}
+                      />
+                    </Field>
+                  ) : null}
                   <Field className="mt-5">
                     <FieldLabel htmlFor={sttBaseUrlId}>
                       <Trans>Transcription server URL</Trans>
@@ -867,6 +899,13 @@ function selectedProvider(
 const NO_VOICES: VoiceInfo[] = [];
 const NO_MODELS: VoiceModelInfo[] = [];
 
-const CONNECTION_FIELDS = ["speechModel", "baseUrl", "ttsModel", "sttModel", "sttBaseUrl"] as const;
+const CONNECTION_FIELDS = [
+  "speechModel",
+  "baseUrl",
+  "ttsModel",
+  "sttModel",
+  "sttBaseUrl",
+  "transcriptionVocabulary",
+] as const;
 
 type EditableField = "voiceId" | (typeof CONNECTION_FIELDS)[number];

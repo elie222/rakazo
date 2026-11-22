@@ -174,6 +174,23 @@ describe("serializeOpenAiCompatibleVoiceSecret", () => {
     expect(backToMain.sttModel).toBe(DEFAULT_COMPATIBLE_STT_MODEL);
   });
 
+  it("keeps vocabulary only for the same transcription server and lets the user clear it", () => {
+    const connection = {
+      baseUrl: "http://192.168.1.20:8880",
+      sttBaseUrl: "http://192.168.1.30:9000",
+    };
+    const saved = serializeAsOwner({ ...connection, transcriptionVocabulary: " Acme, Xyla " });
+    const savedHint = (value: string) =>
+      openAiCompatibleVoiceServer(value)?.transcriptionVocabulary;
+
+    expect(savedHint(saved)).toBe("Acme, Xyla");
+    expect(savedHint(serializeAsOwner(connection, saved))).toBe("Acme, Xyla");
+    expect(
+      savedHint(serializeAsOwner({ ...connection, transcriptionVocabulary: "" }, saved)),
+    ).toBeUndefined();
+    expect(savedHint(serializeAsOwner({ ...connection, sttBaseUrl: "" }, saved))).toBeUndefined();
+  });
+
   it("keeps a transcription key when both servers use the same address", () => {
     const secret = serializeAsOwner({
       baseUrl: "https://speech.example.com/v1",
@@ -766,8 +783,27 @@ describe("OpenAiCompatibleVoiceProvider", () => {
     const form = calledInit(fetchMock).body as FormData;
     expect(form.get("model")).toBe(DEFAULT_COMPATIBLE_STT_MODEL);
     expect(form.get("response_format")).toBe("json");
+    expect(form.has("prompt")).toBe(false);
     expect(form.get("language")).toBe("en");
     expect((form.get("file") as File).name).toBe("speech.m4a");
+  });
+
+  it("redacts vocabulary echoed in a transcription error", async () => {
+    const apiKey = serializeAsOwner({
+      baseUrl: "http://192.168.1.20:8880",
+      transcriptionVocabulary: "Acme, Xyla",
+    });
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(
+        Response.json({ detail: 'Unsupported prompt "Acme, Xyla"' }, { status: 400 }),
+      );
+    await expect(
+      provider(fetchMock).transcribe(
+        { audio: new Uint8Array([1]), mimeType: "audio/webm", apiKey },
+        ctx,
+      ),
+    ).rejects.toThrow('Unsupported prompt "[redacted]"');
   });
 
   it("transcribes on the separate transcription server and speaks on the main one", async () => {
@@ -776,6 +812,7 @@ describe("OpenAiCompatibleVoiceProvider", () => {
       sttBaseUrl: "http://192.168.1.30:9000",
       apiKey: "main-test-key",
       sttApiKey: "stt-test-key",
+      transcriptionVocabulary: "Acme, Xyla",
     });
     const fetchMock = vi
       .fn()
@@ -790,6 +827,8 @@ describe("OpenAiCompatibleVoiceProvider", () => {
     await provider(fetchMock).synthesize({ text: "hi", voiceId: "af_heart", apiKey: split }, ctx);
     expect(calledUrl(fetchMock, 0)).toBe("http://192.168.1.30:9000/v1/audio/transcriptions");
     expect(calledInit(fetchMock, 0).headers).toEqual({ authorization: "Bearer stt-test-key" });
+    expect((calledInit(fetchMock, 0).body as FormData).get("prompt")).toBe("Acme, Xyla");
+    expect(JSON.parse(calledInit(fetchMock, 1).body as string)).not.toHaveProperty("prompt");
     expect(calledUrl(fetchMock, 1)).toBe("http://192.168.1.20:8880/v1/audio/speech");
     expect(calledInit(fetchMock, 1).headers).toMatchObject({
       authorization: "Bearer main-test-key",
@@ -844,173 +883,6 @@ describe("OpenAiCompatibleVoiceProvider", () => {
         ctx,
       ),
     ).rejects.toThrow("The speech server did not return a transcript.");
-  });
-
-  it("sends a vocabulary prompt only when one is given", async () => {
-    const fetchMock = vi.fn().mockImplementation(async () => new Response('{"text":"hi"}'));
-    const audio = { audio: new Uint8Array([1]), mimeType: "audio/webm", apiKey: keyless };
-    await provider(fetchMock).transcribe({ ...audio, prompt: "Rakazo, Kokoro" }, ctx);
-    await provider(fetchMock).transcribe(audio, ctx);
-    expect((calledInit(fetchMock, 0).body as FormData).get("prompt")).toBe("Rakazo, Kokoro");
-    expect((calledInit(fetchMock, 1).body as FormData).has("prompt")).toBe(false);
-  });
-
-  it("drops short unsure segments and keeps confident short replies and long speech", async () => {
-    const long = " Please send the warehouse an update by the end of the day.";
-    const fetchMock = vi.fn().mockResolvedValue(
-      Response.json({
-        text: "ignored",
-        segments: [
-          { text: " Thank you.", avg_logprob: -0.61 },
-          { text: long, avg_logprob: -0.9 },
-          { text: " No?", avg_logprob: -0.34 },
-          { text: " Thank you.", avg_logprob: -0.8 },
-          { text: " Okay.", avg_logprob: -0.03 },
-        ],
-      }),
-    );
-    const result = await provider(fetchMock).transcribe(
-      {
-        audio: new Uint8Array([1]),
-        mimeType: "audio/webm",
-        apiKey: keyless,
-        minShortSegmentLogprob: -0.5,
-      },
-      ctx,
-    );
-    expect(result).toEqual({ text: `${long.trim()} No? Okay.` });
-    expect((calledInit(fetchMock).body as FormData).get("response_format")).toBe("verbose_json");
-  });
-
-  it("returns an empty transcript when every segment is noise", async () => {
-    const fetchMock = vi.fn().mockImplementation(async () =>
-      Response.json({
-        text: "Thank you.",
-        segments: [{ text: " Thank you.", avg_logprob: -0.7 }],
-      }),
-    );
-    const audio = { audio: new Uint8Array([1]), mimeType: "audio/webm", apiKey: keyless };
-    await expect(
-      provider(fetchMock).transcribe({ ...audio, minShortSegmentLogprob: -0.5 }, ctx),
-    ).resolves.toEqual({ text: "" });
-    // Without the option nothing is filtered and plain json is asked for, as before.
-    await expect(provider(fetchMock).transcribe(audio, ctx)).resolves.toEqual({
-      text: "Thank you.",
-    });
-    expect((calledInit(fetchMock, 1).body as FormData).get("response_format")).toBe("json");
-  });
-
-  it.each([
-    ["a JSON reply without segments", Response.json({ text: " Thank you. " })],
-    ["a plain-text reply", new Response("Thank you.\n")],
-  ])("keeps %s whole when the filter is on", async (_name, reply) => {
-    const fetchMock = vi.fn().mockResolvedValue(reply);
-    await expect(
-      provider(fetchMock).transcribe(
-        {
-          audio: new Uint8Array([1]),
-          mimeType: "audio/webm",
-          apiKey: keyless,
-          minShortSegmentLogprob: -0.5,
-        },
-        ctx,
-      ),
-    ).resolves.toEqual({ text: "Thank you." });
-  });
-
-  it("asks again for plain json when the server refuses verbose_json", async () => {
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce(
-        Response.json(
-          {
-            error: {
-              message: "response_format 'verbose_json' is not compatible with this model.",
-            },
-          },
-          { status: 400 },
-        ),
-      )
-      .mockResolvedValueOnce(Response.json({ text: "Thank you." }));
-    await expect(
-      provider(fetchMock).transcribe(
-        {
-          audio: new Uint8Array([1]),
-          mimeType: "audio/webm",
-          apiKey: keyless,
-          prompt: "Rakazo",
-          minShortSegmentLogprob: -0.5,
-        },
-        ctx,
-      ),
-    ).resolves.toEqual({ text: "Thank you." });
-    const forms = [0, 1].map((call) => calledInit(fetchMock, call).body as FormData);
-    expect(forms.map((form) => form.get("response_format"))).toEqual(["verbose_json", "json"]);
-    expect(forms[1]!.get("prompt")).toBe("Rakazo");
-  });
-
-  it("asks again for plain json when the refusal is plain text", async () => {
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce(
-        new Response("unsupported response_format: verbose_json", { status: 422 }),
-      )
-      .mockResolvedValueOnce(Response.json({ text: "Thank you." }));
-    await expect(
-      provider(fetchMock).transcribe(
-        {
-          audio: new Uint8Array([1]),
-          mimeType: "audio/webm",
-          apiKey: keyless,
-          minShortSegmentLogprob: -0.5,
-        },
-        ctx,
-      ),
-    ).resolves.toEqual({ text: "Thank you." });
-    expect(fetchMock).toHaveBeenCalledTimes(2);
-  });
-
-  it.each([
-    ["an empty segment list", []],
-    ["segments without text", [null, { avg_logprob: -0.9 }]],
-    [
-      "unspaced segments none of which is noise",
-      [
-        { text: "你好，", avg_logprob: -0.1 },
-        { text: "世界。", avg_logprob: -0.1 },
-      ],
-    ],
-  ])("keeps the server transcript for %s", async (_name, segments) => {
-    const fetchMock = vi.fn().mockResolvedValue(Response.json({ text: "你好，世界。", segments }));
-    await expect(
-      provider(fetchMock).transcribe(
-        {
-          audio: new Uint8Array([1]),
-          mimeType: "audio/webm",
-          apiKey: keyless,
-          minShortSegmentLogprob: -0.5,
-        },
-        ctx,
-      ),
-    ).resolves.toEqual({ text: "你好，世界。" });
-  });
-
-  it("does not retry other refusals while filtering", async () => {
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValue(Response.json({ detail: "Model not found" }, { status: 400 }));
-    await expect(
-      provider(fetchMock).transcribe(
-        {
-          audio: new Uint8Array([1]),
-          mimeType: "audio/webm",
-          apiKey: keyless,
-          minShortSegmentLogprob: -0.5,
-        },
-        ctx,
-      ),
-    ).rejects.toThrow("transcribing failed: Model not found");
-    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   it("refuses a saved base URL that now points somewhere blocked", async () => {

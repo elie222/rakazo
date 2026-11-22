@@ -72,6 +72,7 @@ export interface OpenAiCompatibleVoiceSecret {
   sttApiKey?: string;
   ttsModel: string;
   sttModel: string;
+  transcriptionVocabulary?: string;
 }
 
 /** Names the field a refused transcription URL came from; any other failure passes through. */
@@ -106,6 +107,7 @@ export function serializeOpenAiCompatibleVoiceSecret(
     sttApiKey?: string;
     ttsModel?: string;
     sttModel?: string;
+    transcriptionVocabulary?: string;
   },
   previousPlaintext?: string,
   policy?: { allowPrivate?: boolean },
@@ -145,12 +147,15 @@ export function serializeOpenAiCompatibleVoiceSecret(
       throw transcriptionUrlError(error);
     }
   }
+  const transcriptionVocabulary =
+    input.transcriptionVocabulary?.trim() ?? sameStt?.transcriptionVocabulary;
   const secret: OpenAiCompatibleVoiceSecret = {
     kind: "openai_compatible",
     baseUrl,
     ...(sttBaseUrl ? { sttBaseUrl: sttBaseUrl } : {}),
     ...(apiKey ? { apiKey } : {}),
     ...(sttApiKey ? { sttApiKey } : {}),
+    ...(transcriptionVocabulary ? { transcriptionVocabulary } : {}),
     ttsModel: modelIdOrDefault(
       input.ttsModel || same?.ttsModel,
       DEFAULT_COMPATIBLE_TTS_MODEL,
@@ -194,6 +199,10 @@ export function parseOpenAiCompatibleVoiceSecret(plaintext: string): OpenAiCompa
     ...(typeof record.sttApiKey === "string" && record.sttApiKey
       ? { sttApiKey: record.sttApiKey }
       : {}),
+    transcriptionVocabulary:
+      typeof record.transcriptionVocabulary === "string"
+        ? record.transcriptionVocabulary
+        : undefined,
     ttsModel: typeof record.ttsModel === "string" ? record.ttsModel : DEFAULT_COMPATIBLE_TTS_MODEL,
     sttModel: typeof record.sttModel === "string" ? record.sttModel : DEFAULT_COMPATIBLE_STT_MODEL,
   };
@@ -206,6 +215,7 @@ export interface OpenAiCompatibleVoiceServer {
   sttEndpoint: string;
   ttsModel: string;
   sttModel: string;
+  transcriptionVocabulary?: string;
 }
 
 /** Undefined when the saved secret is unreadable. Never includes the key. */
@@ -220,6 +230,7 @@ export function openAiCompatibleVoiceServer(
       sttEndpoint: secret.sttBaseUrl ? normalizeOpenAiCompatibleBaseUrl(secret.sttBaseUrl) : "",
       ttsModel: secret.ttsModel,
       sttModel: secret.sttModel,
+      transcriptionVocabulary: secret.transcriptionVocabulary,
     };
   } catch {
     return undefined;
@@ -230,9 +241,16 @@ export function openAiCompatibleVoiceServer(
  * Any private address is allowed, so echo only a short, single-line error from the
  * server: enough for "model not found", too little to read another service through it.
  */
-function serverError(status: number, what: string, body: unknown, apiKey?: string): Error {
-  const raw = voiceErrorDetail(body);
-  const redacted = apiKey ? raw.replaceAll(apiKey, "[redacted]") : raw;
+function serverError(
+  status: number,
+  what: string,
+  body: unknown,
+  ...privateValues: (string | undefined)[]
+): Error {
+  let redacted = voiceErrorDetail(body);
+  for (const value of privateValues) {
+    if (value) redacted = redacted.replaceAll(value, "[redacted]");
+  }
   const short = redacted
     .replace(/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]+/gu, " ")
     .trim()
@@ -545,43 +563,41 @@ export class OpenAiCompatibleVoiceProvider implements VoiceProvider {
   ): Promise<{ text: string }> {
     const secret = parseOpenAiCompatibleVoiceSecret(request.apiKey);
     const apiKey = secret.sttBaseUrl ? secret.sttApiKey : secret.apiKey;
+    const form = new FormData();
+    form.set("model", secret.sttModel);
+    // mlx-audio streams NDJSON unless asked for the OpenAI shape.
+    form.set("response_format", "json");
     const language = voiceLanguageHint(request.language);
+    if (language) form.set("language", language);
+    if (secret.transcriptionVocabulary) form.set("prompt", secret.transcriptionVocabulary);
+    form.set(
+      "file",
+      new Blob([new Uint8Array(request.audio)], { type: request.mimeType || "audio/webm" }),
+      speechUploadName(request.mimeType),
+    );
     const url = endpoint(secret, "audio/transcriptions", secret.sttBaseUrl);
-    const signal = deadlineSignal(TRANSCRIBE_DEADLINE_MS, request.signal ?? context.signal);
-    const send = (format: "json" | "verbose_json") => {
-      const form = new FormData();
-      form.set("model", secret.sttModel);
-      // mlx-audio streams NDJSON unless asked for the OpenAI shape.
-      form.set("response_format", format);
-      if (language) form.set("language", language);
-      if (request.prompt) form.set("prompt", request.prompt);
-      form.set(
-        "file",
-        new Blob([new Uint8Array(request.audio)], { type: request.mimeType || "audio/webm" }),
-        speechUploadName(request.mimeType),
-      );
-      return this.fetch(url, { method: "POST", headers: bearer(apiKey), body: form, signal });
-    };
-    // The noise filter needs segment scores, which only verbose_json carries. A server or model
-    // that refuses that format is asked once more for plain json, and the transcript stays whole.
-    let minLogprob = request.minShortSegmentLogprob;
-    let res = await send(minLogprob === undefined ? "json" : "verbose_json");
-    let raw = await readVoiceText(res);
-    if (minLogprob !== undefined && isRefusal(res) && refusesVerboseJson(parseJson(raw), raw)) {
-      minLogprob = undefined;
-      res = await send("json");
-      raw = await readVoiceText(res);
-    }
+    const res = await this.fetch(url, {
+      method: "POST",
+      headers: bearer(apiKey),
+      body: form,
+      signal: deadlineSignal(TRANSCRIBE_DEADLINE_MS, request.signal ?? context.signal),
+    });
+    const raw = await readVoiceText(res);
     const type = mediaType(res);
     if (!res.ok) {
-      throw serverError(res.status, "transcribing", parseJson(raw), apiKey);
+      throw serverError(
+        res.status,
+        "transcribing",
+        parseJson(raw),
+        apiKey,
+        secret.transcriptionVocabulary,
+      );
     }
     if (type && type !== "text/plain" && type !== "application/json") {
       throw new Error(`${PROVIDER_NAME} did not return a transcript.`);
     }
     const parsed = parseJson(raw);
     if (parsed && typeof parsed === "object") {
-      if (minLogprob !== undefined) return { text: withoutNoisePhrases(parsed, minLogprob) };
       return { text: String((parsed as { text?: unknown }).text ?? "").trim() };
     }
     // Anything else that is not labelled JSON is the transcript itself, even "1234" or "null".
@@ -594,43 +610,6 @@ export class OpenAiCompatibleVoiceProvider implements VoiceProvider {
 
 function isRefusal(res: Response): boolean {
   return res.status === 400 || res.status === 422;
-}
-
-function refusesVerboseJson(body: unknown, raw: string | null): boolean {
-  const text = `${JSON.stringify(body ?? null)} ${raw ?? ""}`;
-  return text.includes("verbose_json") || text.includes("response_format");
-}
-
-/** Segments this short are where recognisers put the stock phrases they invent for noise. */
-const NOISE_PHRASE_MAX_WORDS = 4;
-
-/**
- * The transcript without short segments the recogniser was unsure of (see
- * `minShortSegmentLogprob`). A reply without segments keeps its text as is.
- */
-function withoutNoisePhrases(body: object, minLogprob: number): string {
-  const { text, segments } = body as { text?: unknown; segments?: unknown };
-  const whole = String(text ?? "").trim();
-  if (!Array.isArray(segments)) return whole;
-  let dropped = 0;
-  const kept = segments
-    .filter(
-      (segment): segment is { text: string; avg_logprob?: unknown } =>
-        Boolean(segment) && typeof (segment as { text?: unknown }).text === "string",
-    )
-    .filter((segment) => {
-      const words = segment.text.trim().split(/\s+/).filter(Boolean).length;
-      const logprob = typeof segment.avg_logprob === "number" ? segment.avg_logprob : 0;
-      const noise = words <= NOISE_PHRASE_MAX_WORDS && logprob < minLogprob;
-      if (noise) dropped += 1;
-      return !noise;
-    })
-    .map((segment) => segment.text.trim())
-    .filter(Boolean)
-    .join(" ");
-  // Nothing was identified as noise (also for an empty or unusable segment list), so the server's
-  // own transcript is the better text: it keeps its spacing and anything the segments omit.
-  return dropped === 0 && whole ? whole : kept;
 }
 
 /** mp3 was requested; servers label it audio/mpeg or audio/mp3. Anything else is not a clip. */
@@ -681,6 +660,7 @@ export const openAiCompatibleVoice: VoiceProviderDefinition = {
     name: "Self-hosted",
     description: "Any OpenAI-compatible speech server, like Kokoro or Whisper.",
     transcribe: true,
+    transcriptionVocabulary: true,
     freeformVoice: true,
   },
   listed: ({ allowPrivateEndpoint }) =>

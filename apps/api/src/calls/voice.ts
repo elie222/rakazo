@@ -124,7 +124,7 @@ export function toVoiceCredential(row: {
   isDefault: boolean;
   voiceId: string;
   speechModel?: string | null;
-  server?: { endpoint: string; sttEndpoint: string; ttsModel: string; sttModel: string };
+  server?: ReturnType<typeof openAiCompatibleVoiceServer>;
   /** False when the connection uses the account's model connection instead of a key. */
   hasKey?: boolean;
 }): VoiceCredential {
@@ -140,11 +140,14 @@ export function toVoiceCredential(row: {
     sttEndpoint: row.server?.sttEndpoint ?? "",
     ttsModel: row.server?.ttsModel ?? "",
     sttModel: row.server?.sttModel ?? "",
+    ...(row.server?.transcriptionVocabulary
+      ? { transcriptionVocabulary: row.server.transcriptionVocabulary }
+      : {}),
   };
 }
 
 /**
- * A self-hosted connection's address and model ids, read from its secret. Undefined for
+ * A self-hosted connection's editable settings, read from its secret. Undefined for
  * hosted providers and for a secret that cannot be read, which still lists the connection.
  */
 export async function voiceCredentialServer(
@@ -210,6 +213,7 @@ export function voiceCredentialPlaintext(input: {
   sttApiKey?: string;
   ttsModel?: string;
   sttModel?: string;
+  transcriptionVocabulary?: string;
   /** The stored secret for this provider; blank fields keep its key and models. */
   previousPlaintext?: string;
   allowPrivateEndpoint?: boolean;
@@ -237,6 +241,7 @@ export function voiceCredentialPlaintext(input: {
         sttApiKey: input.sttApiKey,
         ttsModel: input.ttsModel,
         sttModel: input.sttModel,
+        transcriptionVocabulary: input.transcriptionVocabulary,
       },
       input.previousPlaintext,
       { allowPrivate: input.allowPrivateEndpoint },
@@ -443,6 +448,7 @@ export async function persistVoiceCredential(
     sttApiKey?: string;
     ttsModel?: string;
     sttModel?: string;
+    transcriptionVocabulary?: string;
     /** Which copy the connection becomes the default voice in; omitted is what applies. */
     scope?: SettingsScope;
     signal?: AbortSignal;

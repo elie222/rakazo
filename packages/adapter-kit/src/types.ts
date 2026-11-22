@@ -1009,14 +1009,6 @@ export interface VoiceTranscribeRequest {
    * one language into lookalike words of another.
    */
   language?: string;
-  /** Vocabulary hint (names, terms) for providers that accept a transcription prompt; others ignore it. */
-  prompt?: string;
-  /**
-   * Drop short, low-confidence pieces of the transcript: a segment of at most 4 words whose average token
-   * log-probability is below this value. Speech recognisers invent stock phrases ("Thank you.") for background noise
-   * with no speech in it; real short replies score far higher. Providers that can't report segments ignore it.
-   */
-  minShortSegmentLogprob?: number;
   signal?: AbortSignal;
 }
 
