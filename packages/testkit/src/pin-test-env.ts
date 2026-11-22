@@ -1,6 +1,11 @@
 import { randomUUID } from "node:crypto";
-import { afterAll } from "vitest";
+import { afterAll, afterEach, vi } from "vitest";
 import { pinLocalSecretStore } from "./pin-secret-store.js";
+
+// Files that share loaded modules must not leave fake timers behind for the next file.
+afterEach(() => {
+  vi.useRealTimers();
+});
 
 const dom = (
   globalThis as typeof globalThis & {
