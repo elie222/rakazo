@@ -149,6 +149,8 @@ export const BotAvatar = memo(function BotAvatar({
     const Avatar = activity === undefined ? LiveLogoAvatar : LogoAvatar;
     return (
       <Avatar
+        // Another bot brings new CSS loops; a fresh avatar joins them to the shared clock.
+        key={effectiveId}
         avatarValue={color ? colorDef.hex : undefined}
         identity={effectiveId}
         size={size}
