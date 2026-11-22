@@ -98,12 +98,14 @@ import {
   CLIENT_IP_HEADER,
   createAuth,
   createDirectory,
+  emailCopyAvailable,
   isBlockedAuthPath,
   publicSignInProviders,
 } from "@rakazo/auth";
 import type { Actor, AuthCapabilities, ModelCredential } from "@rakazo/contracts";
 import {
   isLocalhostOrLoopbackIp,
+  LIFECYCLE_EMAIL_KINDS,
   PLUGIN_SUBMISSIONS_PATH,
   SERVER_BUILD_HEADER,
 } from "@rakazo/contracts";
@@ -455,10 +457,12 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     throw new Error("EMAIL_EMULATOR requires API_HOST to be a loopback host");
   }
   const email: TransactionalEmailProvider | undefined = configuredEmail ?? localEmailEmulator;
-  // Our own product mail, behind the same switch as the welcome email. The worker sends it, and
+  // Lifecycle mail goes out only where the deployment supplies its copy. The worker sends it, and
   // the local emulator lives in this process, so the emulator counts only in single-process mode.
-  const lifecycleEmailsEnabled =
-    env.welcomeEmailEnabled && Boolean(configuredEmail ?? (inMemoryJobs ? email : undefined));
+  const lifecycleEmailKinds =
+    (configuredEmail ?? (inMemoryJobs ? email : undefined))
+      ? LIFECYCLE_EMAIL_KINDS.filter((kind) => emailCopyAvailable(kind))
+      : [];
   const botEmail: TransactionalEmailProvider | undefined =
     configuredBotEmailProvider({
       smtpUrl: env.botEmailSmtpUrl,
@@ -492,15 +496,17 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
         analytics,
         experiments: createExperiments(env.experiments),
         partnerProgram,
-        scheduleLifecycleEmail: lifecycleEmailsEnabled
-          ? lifecycleEmailScheduler({
-              prisma,
-              jobs,
-              webOrigin: env.webOrigin,
-              origin: env.authUrl,
-              secret: env.authSecret,
-            })
-          : undefined,
+        scheduleLifecycleEmail:
+          lifecycleEmailKinds.length > 0
+            ? lifecycleEmailScheduler({
+                kinds: lifecycleEmailKinds,
+                prisma,
+                jobs,
+                webOrigin: env.webOrigin,
+                origin: env.authUrl,
+                secret: env.authSecret,
+              })
+            : undefined,
       })
     : undefined;
   const modelCreditsEnabled = billing?.modelCreditsEnabled ?? false;
@@ -625,7 +631,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     logger: authLibraryLogger("auth.request.failed"),
     onEmailError,
     afterSignIn:
-      email && env.welcomeEmailEnabled
+      email && emailCopyAvailable("welcome")
         ? (userId, headers) =>
             sendWelcomeEmail(
               {
@@ -739,8 +745,14 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
       email: botEmail,
       // Single-process mode answers the job here; otherwise the worker does.
       lifecycleEmail:
-        email && lifecycleEmailsEnabled
-          ? createLifecycleEmailSender({ prisma, email, jobs, analytics })
+        email && lifecycleEmailKinds.length > 0
+          ? createLifecycleEmailSender({
+              kinds: lifecycleEmailKinds,
+              prisma,
+              email,
+              jobs,
+              analytics,
+            })
           : undefined,
       messaging,
       isMessagingInstallationActive: messagingInstallations
@@ -786,7 +798,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     : undefined;
   reconciler?.start();
   const stopReferralEmails =
-    email && env.welcomeEmailEnabled && billing?.referralsEnabled
+    email && billing?.referralsEnabled && emailCopyAvailable("referral")
       ? startHourlySweep(
           sendReferralEmails({
             prisma,

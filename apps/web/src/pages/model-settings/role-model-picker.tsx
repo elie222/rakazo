@@ -1,4 +1,5 @@
 import { Trans, useLingui } from "@lingui/react/macro";
+import { useListSearch } from "@rakazo/chat-ui/hooks";
 import { canonicalPiProviderId } from "@rakazo/contracts";
 import { modelCatalogSearchText, newestModelsFirst } from "@rakazo/core";
 import {
@@ -17,7 +18,6 @@ import {
 import type { ReactElement } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ModelCatalogEntry } from "../../lib/models/model-auth";
-import { useListSearch } from "../../lib/use-list-search";
 
 /** `baseUrl` presets an OpenAI-compatible server, such as a hosted preset. */
 export type ConnectableProvider = { id: string; name: string; baseUrl?: string };

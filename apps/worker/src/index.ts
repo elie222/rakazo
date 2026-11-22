@@ -74,6 +74,8 @@ import {
   withSecretPersistence,
   withSecretWriteAhead,
 } from "@rakazo/adapters";
+import { emailCopyAvailable } from "@rakazo/auth/email-copy";
+import { LIFECYCLE_EMAIL_KINDS } from "@rakazo/contracts";
 import { abortableDelay, parseEnvFlag } from "@rakazo/core";
 import {
   MAX_SANDBOX_COMMAND_TIMEOUT_MS,
@@ -250,12 +252,12 @@ async function main() {
     smtpUrl: process.env.BOT_EMAIL_SMTP_URL?.trim() || undefined,
     domain: process.env.INBOUND_EMAIL_DOMAIN?.trim() || undefined,
   });
-  // Account mail, for the lifecycle mails the queue holds. Without it, or with product mail
-  // switched off since they were queued, those jobs are dropped.
-  // Read only when product mail is on, so incomplete mail settings never stop a worker that
-  // sends none.
+  // Account mail, for the lifecycle mails the queue holds. A job whose mail has no copy here, or
+  // with no account mail at all, is dropped. Read only when some lifecycle mail has copy, so
+  // incomplete mail settings never stop a worker that sends none.
+  const lifecycleEmailKinds = LIFECYCLE_EMAIL_KINDS.filter((kind) => emailCopyAvailable(kind));
   const accountEmail =
-    process.env.WELCOME_EMAIL_ENABLED === "true"
+    lifecycleEmailKinds.length > 0
       ? configuredEmailProvider({
           provider: process.env.EMAIL_PROVIDER?.trim() || undefined,
           apiKey: process.env.EMAIL_API_KEY?.trim() || undefined,
@@ -265,7 +267,13 @@ async function main() {
         })
       : undefined;
   const lifecycleEmail = accountEmail
-    ? createLifecycleEmailSender({ prisma, email: accountEmail, jobs, analytics })
+    ? createLifecycleEmailSender({
+        kinds: lifecycleEmailKinds,
+        prisma,
+        email: accountEmail,
+        jobs,
+        analytics,
+      })
     : undefined;
   const { meeting: meetingProvider, calendar: calendarProvider } =
     await configuredMeetingProviders();

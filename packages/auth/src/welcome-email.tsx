@@ -3,7 +3,7 @@ import type { TransactionalEmail } from "@rakazo/adapter-kit";
 import { ANDROID_APP_STORE_URL, IOS_APP_STORE_URL } from "@rakazo/contracts";
 import { Link, Text } from "react-email";
 import { emailText, greeting, linkStyle, message, withNodes } from "./email.js";
-import { emailCopy } from "./email-copy/hosted-copy.js";
+import { emailCopy } from "./email-copy/deployment-copy.js";
 
 const APPS: Readonly<Record<string, string>> = {
   iPhone: IOS_APP_STORE_URL,
