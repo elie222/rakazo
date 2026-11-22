@@ -732,40 +732,35 @@ app.whenReady().then(async () => {
     run: runDocker,
     sleep: defaultSleep,
   };
+  const stackDeps = {
+    stackDir: userStackDir,
+    resourceDir,
+    localWebUrl,
+    imageTag,
+    run: runDocker,
+    exists: existsSync,
+    probe,
+    randomHex,
+    onState,
+  };
   const nativeStack = (bundle: ServerBundle, moving: boolean) =>
     new NativeStackController({
+      ...stackDeps,
       hostComputer: desktop.hostComputer?.connection,
-      stackDir: userStackDir,
-      resourceDir,
-      localWebUrl,
-      imageTag,
       serverBundle: bundle,
       nodeBinary: process.execPath,
       env: process.env,
       uid: process.getuid?.() ?? 0,
-      run: runDocker,
       fetch: (url, init) => net.fetch(url, { ...init, bypassCustomProtocolHandlers: true }),
-      exists: existsSync,
-      probe,
-      randomHex,
-      onState,
       importFromDocker: moving ? (target) => moveDockerStack(moveDeps, target) : undefined,
     });
   const dockerStack = () =>
     new LocalStackController({
+      ...stackDeps,
       hostComputer: desktop.hostComputer?.connection,
       platform: process.platform,
       env: process.env,
-      exists: existsSync,
-      run: runDocker,
       launchDockerApp: (binary) => launchDockerApp(process.platform, binary),
-      stackDir: userStackDir,
-      resourceDir,
-      localWebUrl,
-      imageTag,
-      probe,
-      randomHex,
-      onState,
       // A confirmed reuse changes no phase; the menu must hear about it separately.
       onReuseConfirmed: () => stopStackMenu.reuseConfirmed(),
     });
