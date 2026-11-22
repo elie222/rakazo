@@ -158,6 +158,14 @@ export function resolveDefaultComputerMode(
   return mode.data;
 }
 
+/**
+ * A new bot's computer runs on the host machine once someone chose "this Mac". Only the local
+ * route saves that choice, and the API clears it under a provider that cannot offer it.
+ */
+export function newComputerKind(envKind: string, computerHost: string | null | undefined) {
+  return computerHost === "this-mac" ? "desktop" : envKind;
+}
+
 export class ComputerLimitError extends ClientError {
   constructor(limit: number) {
     super("BAD_REQUEST", `User computer limit (${limit}) reached`);
