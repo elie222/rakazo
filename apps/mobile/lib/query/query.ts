@@ -12,8 +12,9 @@ import type { SettingsTarget } from "./settings-target";
 
 /**
  * Screens paint what they last saw and refresh it in the background, so reopening a settings
- * screen does not wait on the network again. Reads marked `persisted` also keep their last answer
- * on disk, so a cold launch paints it too; the rest stay in memory.
+ * screen does not wait on the network again. The reads `saved-reads.ts` lists also keep their
+ * last answer on disk, so a cold launch paints it too; the rest stay in memory. A form's read
+ * (`formRead`) carries no read meta, so it is never seeded from disk.
  */
 export const queryClient = new QueryClient({
   defaultOptions: {
@@ -90,15 +91,6 @@ export function rpcQuery<P extends RpcPath>(proc: P, input?: RpcInput<P>, spaceI
 /** One rpc read of the signed-in user's own data, the same in every space: cached once per session. */
 export function accountRpcQuery<P extends RpcPath>(proc: P, input?: RpcInput<P>) {
   return scopedRpcQuery(sessionScope, proc, input, null);
-}
-
-/**
- * An rpc read whose last answer is also kept on disk, filed under the server, the verified user
- * and the Space, so a cold launch paints it before the network answers. Only for answers that hold
- * no secrets (tokens, credentials, sealed values); a form's read is never seeded this way.
- */
-export function persisted<R extends { meta: { rpc: RpcReadMeta } }>(read: R): R {
-  return { ...read, meta: { rpc: { ...read.meta.rpc, persist: true } } } as R;
 }
 
 /**

@@ -20,6 +20,7 @@ import {
 import type { VerifiedScope } from "../api/verified-scope";
 import { isVerifiedScopeCurrent, verifiedScope } from "../api/verified-scope";
 import { artifactCacheSession } from "../artifacts/artifact-cache-session";
+import { cacheFolder } from "../platform/cache-folder";
 import { onConversationCleared } from "../thread/conversation-cleared";
 
 export type SavedChatsScope = VerifiedScope & { namespace: string };
@@ -40,6 +41,7 @@ const ROOT = "saved-chats-v2";
 export const SAVED_CHAT_MAX_BYTES = 1024 * 1024;
 export const SAVED_CHATS_MAX_BYTES = 20 * 1024 * 1024;
 const SAVED_INBOX_ROWS = 200;
+const folder = cacheFolder(ROOT);
 
 export function savedChatTarget(target: { botId?: string; groupId?: string }): string {
   return target.groupId ? `group:${target.groupId}` : `bot:${target.botId}`;
@@ -297,36 +299,16 @@ function writeSavedFile(
   const text = JSON.stringify(data);
   const bytes = new TextEncoder().encode(text).length;
   if (bytes > SAVED_CHAT_MAX_BYTES) return;
-  const file = spaceFile(scope, target);
-  const files: File[] = [];
-  const collect = (directory: Directory) => {
-    for (const entry of directory.list()) {
-      if (entry instanceof File) {
-        if (entry.uri !== file.uri) files.push(entry);
-      } else collect(entry);
-    }
-  };
-  collect(new Directory(Paths.cache, ROOT));
-  let total = bytes + files.reduce((sum, entry) => sum + entry.size, 0);
-  files.sort((a, b) => (a.lastModified ?? 0) - (b.lastModified ?? 0));
-  const inboxes = files.filter((entry) => entry.name === "inbox.json");
-  const threads = files.filter((entry) => entry.name !== "inbox.json");
-  const evict = (entries: File[]) => {
-    const oldest = entries.shift();
-    if (!oldest) throw new Error("Saved cache budget unavailable");
-    const size = oldest.size;
-    oldest.delete();
-    total -= size;
-  };
-  if (target === "inbox") {
-    while (inboxes.length >= SAVED_INBOXES) evict(inboxes);
-  } else {
-    while (threads.length >= SAVED_CHATS) evict(threads);
-  }
-
-  while (total > SAVED_CHATS_MAX_BYTES) evict(threads);
-  file.create({ overwrite: true });
-  file.writeSync(text);
+  const isInbox = (name: string) => name === "inbox.json";
+  // An inbox makes room among inboxes and a chat among chats; only chats give way to bytes.
+  folder.write(spaceFile(scope, target), text, {
+    totalBytes: SAVED_CHATS_MAX_BYTES,
+    evictable: (name) => !isInbox(name),
+    counts: [
+      { matches: isInbox, max: SAVED_INBOXES },
+      { matches: (name) => !isInbox(name), max: SAVED_CHATS },
+    ],
+  });
 }
 
 export function writeSavedThread(
@@ -355,21 +337,19 @@ function forgetSavedThread(target: { botId?: string; groupId?: string }) {
   const remove = (directory: Directory) => {
     for (const entry of directory.list()) {
       if (entry instanceof File) {
-        if (entry.name === name) entry.delete();
+        if (entry.name === name) folder.remove(entry);
       } else remove(entry);
     }
   };
   try {
-    const root = new Directory(Paths.cache, ROOT);
-    if (root.exists) remove(root);
+    if (folder.root.exists) remove(folder.root);
   } catch {}
 }
 
 export function clearSavedChats(): void {
   clearLegacySavedChats();
   try {
-    const root = new Directory(Paths.cache, ROOT);
-    if (root.exists) root.delete();
+    folder.clear();
   } catch {}
 }
 

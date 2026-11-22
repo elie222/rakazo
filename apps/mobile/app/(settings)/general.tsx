@@ -56,7 +56,7 @@ import {
   setResponseStreamingPreference,
   subscribeResponseStreaming,
 } from "../../lib/preferences/response-streaming";
-import { accountRpcQuery, persisted, queryClient, useSave } from "../../lib/query/query";
+import { accountRpcQuery, queryClient, useSave } from "../../lib/query/query";
 import { createQueuedSave } from "../../lib/query/queued-save";
 import { useScreenQuery } from "../../lib/query/screen-query";
 import { ACCOUNT_SETTINGS } from "../../lib/query/settings-target";
@@ -72,7 +72,7 @@ export default function General() {
   const styles = useThemedStyles(createSettingsPageStyles);
   const stacked = useStackedSettings();
   // Read on every visit, so a failed read retries when the page is shown again.
-  const meRead = persisted(accountRpcQuery("me"));
+  const meRead = accountRpcQuery("me");
   const me = useScreenQuery(meRead).data;
   const botStyle = useSave({
     target: ACCOUNT_SETTINGS,

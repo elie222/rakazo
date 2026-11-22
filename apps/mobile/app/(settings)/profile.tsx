@@ -34,7 +34,7 @@ import { continueWithSso } from "../../lib/auth/sso";
 import { dateLocaleForUi, useUiLocale } from "../../lib/i18n/i18n";
 import { useSideInsets } from "../../lib/layout/side-insets";
 import { useResolvedAppearance, useThemedStyles } from "../../lib/native/native";
-import { accountRpcQuery, persisted, queryClient } from "../../lib/query/query";
+import { accountRpcQuery, queryClient } from "../../lib/query/query";
 import { useScreenQuery } from "../../lib/query/screen-query";
 import { createSettingsPageStyles } from "../../lib/settings/settings-page-styles";
 import {
@@ -54,7 +54,7 @@ export default function Profile() {
   const colorScheme = useResolvedAppearance();
   const [providers, setProviders] = useState<SignInProvider[]>([]);
 
-  const meRead = persisted(accountRpcQuery("me"));
+  const meRead = accountRpcQuery("me");
   const me = useScreenQuery(meRead).data;
   const account = accountDisplay(me ?? {}, t`Your account`);
   const [nameDialogOpen, setNameDialogOpen] = useState(false);

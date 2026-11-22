@@ -9,11 +9,9 @@ import { currentApiBase } from "../api/api";
 import type { SavedVerifiedScope } from "../api/session";
 import { currentSessionGeneration, loadVerifiedScope } from "../api/session";
 import { verifiedScope } from "../api/verified-scope";
+import { cacheFolder } from "../platform/cache-folder";
 
-/**
- * Where an rpc read was sent, carried in its query's meta. `persist` is set only by `persisted`:
- * those reads also keep their last answer on disk, so a cold launch paints it at once.
- */
+/** Where an rpc read was sent, carried in its query's meta. */
 export type RpcReadMeta = {
   proc: RpcPath;
   input: unknown;
@@ -21,8 +19,24 @@ export type RpcReadMeta = {
   sessionGeneration: number;
   /** Null for the account's own data, which is the same in every Space. */
   space: { id: string | null } | null;
-  persist?: true;
 };
+
+/**
+ * The reads whose last answer is kept on disk, so a cold launch paints it before the network
+ * answers, whichever screen reads them. Only answers that hold no secrets (tokens, credentials,
+ * sealed values, or addresses and settings people type in, which can carry keys) belong here.
+ */
+const SAVED_PROCEDURES: ReadonlySet<RpcPath> = new Set<RpcPath>([
+  // Integrations
+  "connections/catalog",
+  "connections/list",
+  "capabilities/sourcePresets",
+  "marketplace/catalog",
+  // General, Profile and Labs
+  "me",
+  // AI data sharing
+  "aiConsent/status",
+]);
 
 const ROOT = "saved-reads-v1";
 /** The Integrations screen kept its own copy here before every settings read could. */
@@ -30,6 +44,9 @@ const LEGACY_ROOT = "integrations-v1";
 export const SAVED_READ_MAX_BYTES = 2 * 1024 * 1024;
 export const SAVED_READS_MAX_BYTES = 10 * 1024 * 1024;
 const MAX_NAME = 200;
+const folder = cacheFolder(ROOT);
+/** Each file's answer as last written or read, so an unchanged answer is not written again. */
+const onDisk = new Map<string, string>();
 
 type Checked = { value?: unknown; issues?: unknown };
 type Schema = {
@@ -47,7 +64,7 @@ function outputSchema(proc: RpcPath): Schema | undefined {
 
 function readMeta(query: Query): RpcReadMeta | null {
   const meta = query.meta?.rpc as RpcReadMeta | undefined;
-  return meta?.persist ? meta : null;
+  return meta && SAVED_PROCEDURES.has(meta.proc) ? meta : null;
 }
 
 /** The read's scope is still the one shown: same server and session. */
@@ -65,8 +82,7 @@ function savedFile(meta: RpcReadMeta, user: Pick<SavedVerifiedScope, "userId">, 
   if (name.length > MAX_NAME) return null;
   const key = JSON.stringify([meta.apiBase, user.userId, spaceId ?? null, meta.proc, input]);
   const directory = new Directory(
-    Paths.cache,
-    ROOT,
+    folder.root,
     encodeURIComponent(meta.apiBase),
     `user-${encodeURIComponent(user.userId)}`,
     spaceId === undefined ? "account" : `space-${encodeURIComponent(spaceId)}`,
@@ -109,6 +125,7 @@ async function seed(query: Query, meta: RpcReadMeta): Promise<void> {
   if (checked.issues) return;
   // The fetch that opened the read may have answered while the file was read.
   if (query.state.data !== undefined || !isCurrent(meta)) return;
+  onDisk.set(target.file.uri, JSON.stringify(saved.data));
   query.setState({
     data: displayIdentityResult(meta.proc.split("/"), checked.value, identityLabels()),
     dataUpdatedAt: saved.savedAt,
@@ -126,44 +143,33 @@ async function save(meta: RpcReadMeta, data: unknown): Promise<void> {
   if (space === null) return;
   const target = savedFile(meta, user, space);
   if (!target) return;
-  const text = JSON.stringify({ key: target.key, savedAt: Date.now(), data: identitySource(data) });
-  const bytes = new TextEncoder().encode(text).length;
-  if (bytes > SAVED_READ_MAX_BYTES) return;
+  const answer = JSON.stringify(identitySource(data));
+  if (onDisk.get(target.file.uri) === answer && target.file.exists) return;
+  const text = `{"key":${JSON.stringify(target.key)},"savedAt":${Date.now()},"data":${answer}}`;
+  if (new TextEncoder().encode(text).length > SAVED_READ_MAX_BYTES) return;
   clearLegacy();
-  // Oldest first, so the reads seen longest ago make room for this one.
-  const others: File[] = [];
-  const collect = (directory: Directory) => {
-    for (const entry of directory.list()) {
-      if (entry instanceof File) {
-        if (entry.uri !== target.file.uri) others.push(entry);
-      } else collect(entry);
-    }
-  };
-  const root = new Directory(Paths.cache, ROOT);
-  if (root.exists) collect(root);
-  others.sort((a, b) => (a.lastModified ?? 0) - (b.lastModified ?? 0));
-  let total = bytes + others.reduce((sum, file) => sum + file.size, 0);
-  for (const oldest of others) {
-    if (total <= SAVED_READS_MAX_BYTES) break;
-    total -= oldest.size;
-    oldest.delete();
-  }
   if (!isCurrent(meta)) return;
   if (!target.directory.exists) target.directory.create({ intermediates: true, idempotent: true });
-  target.file.create({ overwrite: true });
-  target.file.writeSync(text);
+  // The reads seen longest ago make room for this one.
+  folder.write(target.file, text, { totalBytes: SAVED_READS_MAX_BYTES });
+  onDisk.set(target.file.uri, answer);
 }
 
 /**
- * Keeps the answers of the reads marked `persisted` on disk and paints them into a fresh client.
- * Only answers are saved: what shows from disk is refreshed at once and never decides access.
+ * Keeps the answers of the reads in `SAVED_PROCEDURES` on disk and paints them into a fresh
+ * client. Only answers are saved: what shows from disk is refreshed at once and never decides
+ * access, and a read nothing shows (a disabled one) is not painted.
  */
 export function keepSavedReads(client: QueryClient): void {
   client.getQueryCache().subscribe((event) => {
     const meta = readMeta(event.query);
     if (!meta) return;
     // A screen that opens on a read with nothing in memory paints the saved answer meanwhile.
-    if (event.type === "observerAdded" && event.query.state.data === undefined)
+    if (
+      event.type === "observerAdded" &&
+      event.query.state.data === undefined &&
+      event.query.isActive()
+    )
       void bestEffort("show a saved read", seed(event.query, meta));
     else if (event.type === "updated" && event.action.type === "success")
       void bestEffort("save a read", save(meta, event.action.data));
@@ -173,8 +179,8 @@ export function keepSavedReads(client: QueryClient): void {
 /** Forgets every saved read; the session registers this so sign-out leaves none behind. */
 export function clearSavedReads(): void {
   clearLegacy();
-  const root = new Directory(Paths.cache, ROOT);
-  if (root.exists) root.delete();
+  onDisk.clear();
+  folder.clear();
 }
 
 function clearLegacy(): void {

@@ -17,7 +17,7 @@ import { errorText } from "../../lib/api/user-error";
 import { useSideInsets } from "../../lib/layout/side-insets";
 import { native, useThemedStyles } from "../../lib/native/native";
 import { openExternalUrl } from "../../lib/platform/open-url";
-import { persisted, queryClient, rpcQuery, useSave } from "../../lib/query/query";
+import { queryClient, rpcQuery, useSave } from "../../lib/query/query";
 import { useScreenQuery } from "../../lib/query/screen-query";
 import { aiDataDisclosure, promptAiConsent } from "../../lib/settings/ai-consent";
 import {
@@ -29,7 +29,7 @@ import {
 export default function AiDataSharing() {
   const sideInsets = useSideInsets();
   const { t } = useLingui();
-  const statusRead = persisted(rpcQuery("aiConsent/status"));
+  const statusRead = rpcQuery("aiConsent/status");
   // Read on every visit: a consent prompt elsewhere, or another device, can change it meanwhile.
   const { data, error: loadError, refetch } = useScreenQuery(statusRead);
   const status = data ?? null;

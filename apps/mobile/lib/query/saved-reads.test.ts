@@ -2,7 +2,7 @@ import { deferred, flush } from "@rakazo/core/test-async";
 import type { FetchQueryOptions, QueryObserverOptions } from "@tanstack/react-query";
 import { QueryObserver } from "@tanstack/react-query";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { accountRpcQuery, persisted, queryClient, rpcQuery } from "./query";
+import { accountRpcQuery, formRead, queryClient, rpcQuery } from "./query";
 import {
   clearSavedReads,
   keepSavedReads,
@@ -13,6 +13,8 @@ import {
 const state = vi.hoisted(() => ({
   files: new Map<string, string>(),
   written: new Map<string, number>(),
+  lists: 0,
+  writes: 0,
   base: "https://api.example.test",
   space: "space-a" as string | null,
   generation: 1,
@@ -52,6 +54,7 @@ vi.mock("expo-file-system", () => {
     }
     create() {}
     list() {
+      state.lists += 1;
       const names = new Set(
         [...state.files.keys()]
           .filter((path) => path.startsWith(`${this.uri}/`))
@@ -86,7 +89,8 @@ vi.mock("expo-file-system", () => {
     }
     writeSync(value: string) {
       state.files.set(this.uri, value);
-      state.written.set(this.uri, state.written.size + 1);
+      state.writes += 1;
+      state.written.set(this.uri, state.writes);
     }
   }
   return { Directory, File, Paths: { cache: "cache" } };
@@ -102,7 +106,7 @@ const app = {
   connected: true,
   noAuth: false,
 };
-const catalogRead = () => persisted(rpcQuery("connections/catalog"));
+const catalogRead = () => rpcQuery("connections/catalog");
 const unsubscribes: Array<() => void> = [];
 
 /** Opens a read the way a screen does, and returns what it shows. */
@@ -115,9 +119,9 @@ function open(read: QueryObserverOptions) {
 /** Answers once, then lets the answer reach the disk. */
 async function answerAndSave(read: FetchQueryOptions, answer: unknown) {
   state.rpc.mockResolvedValueOnce(answer);
-  const writes = state.written.size;
+  const writes = state.writes;
   await queryClient.fetchQuery(read);
-  await vi.waitFor(() => expect(state.written.size).toBeGreaterThan(writes));
+  await vi.waitFor(() => expect(state.writes).toBeGreaterThan(writes));
 }
 
 /** A new launch: nothing in memory, and the network has not answered yet. */
@@ -186,7 +190,7 @@ it.each([
 });
 
 it("files account reads apart from any Space", async () => {
-  const listRead = () => persisted(accountRpcQuery("connections/list"));
+  const listRead = () => accountRpcQuery("connections/list");
   await answerAndSave(listRead(), []);
   expect([...state.files.keys()][0]).toContain("/account/");
   relaunch();
@@ -211,11 +215,11 @@ it("treats a saved answer that no longer matches the contract as a cold miss", a
   expect(again.getCurrentResult().data).toBeUndefined();
 });
 
-it("never touches the disk for a read that is not persisted", async () => {
+it("never touches the disk for a procedure that is not saved", async () => {
   state.rpc.mockResolvedValue([app]);
-  await queryClient.fetchQuery(rpcQuery("connections/catalog"));
+  await queryClient.fetchQuery(rpcQuery("capabilities/list"));
   relaunch();
-  open(rpcQuery("connections/catalog"));
+  open(rpcQuery("capabilities/list"));
   await flush();
   expect(state.files.size).toBe(0);
   expect(state.loadVerified).not.toHaveBeenCalled();
@@ -234,7 +238,7 @@ it("forgets every saved answer, and the old Integrations copy, on a session chan
 
 it("skips an oversized answer and drops the oldest to stay within the total", async () => {
   const big = (query: string, bytes: number) => ({
-    read: persisted(rpcQuery("marketplace/catalog", { query })),
+    read: rpcQuery("marketplace/catalog", { query }),
     answer: { entries: [], unavailableRegistries: ["x".repeat(bytes)], skippedEntries: 0 },
   });
   const tooBig = big("huge", SAVED_READ_MAX_BYTES);
@@ -252,4 +256,44 @@ it("skips an oversized answer and drops the oldest to stay within the total", as
   expect(total).toBeLessThanOrEqual(SAVED_READS_MAX_BYTES);
   expect([...state.files.keys()].some((path) => path.includes("q0"))).toBe(false);
   expect([...state.files.keys()].some((path) => path.includes(`q${count - 1}`))).toBe(true);
+});
+
+it("saves a listed read whichever screen observes it, through a refresh and a restart", async () => {
+  state.rpc.mockResolvedValue([app]);
+  const first = open(catalogRead());
+  await vi.waitFor(() => expect(state.files.size).toBe(1));
+  // Another screen reads the same procedure on its own and refreshes it.
+  const second = open(catalogRead());
+  const refreshed = [{ ...app, name: "Refreshed app" }];
+  const writes = state.writes;
+  state.rpc.mockResolvedValue(refreshed);
+  await second.refetch();
+  await vi.waitFor(() => expect(state.writes).toBeGreaterThan(writes));
+  expect(first.getCurrentResult().data).toEqual(refreshed);
+  relaunch();
+  const shown = open(catalogRead());
+  await vi.waitFor(() => expect(shown.getCurrentResult().data).toEqual(refreshed));
+});
+
+it("paints neither a disabled read nor a form's read", async () => {
+  await answerAndSave(catalogRead(), [app]);
+  relaunch();
+  const disabled = open({ ...catalogRead(), enabled: false });
+  const form = open(formRead(catalogRead()));
+  await flush();
+  await flush();
+  expect(disabled.getCurrentResult().data).toBeUndefined();
+  expect(form.getCurrentResult().data).toBeUndefined();
+});
+
+it("writes an answer only when it changed, without rescanning the folder", async () => {
+  await answerAndSave(catalogRead(), [app]);
+  const lists = state.lists;
+  const writes = state.writes;
+  state.rpc.mockResolvedValue([app]);
+  await queryClient.fetchQuery({ ...catalogRead(), staleTime: 0 });
+  await flush();
+  expect(state.writes).toBe(writes);
+  await answerAndSave({ ...catalogRead(), staleTime: 0 }, [{ ...app, name: "Changed app" }]);
+  expect(state.lists).toBe(lists);
 });

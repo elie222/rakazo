@@ -53,7 +53,7 @@ import { useSideInsets } from "../../lib/layout/side-insets";
 import { native, useThemedStyles } from "../../lib/native/native";
 import { iosAtLeast } from "../../lib/native/native-controls";
 import { openExternalUrl } from "../../lib/platform/open-url";
-import { persisted, queryClient, rpcQuery } from "../../lib/query/query";
+import { queryClient, rpcQuery } from "../../lib/query/query";
 import { useScreenQuery } from "../../lib/query/screen-query";
 
 export default function Integrations() {
@@ -82,10 +82,8 @@ export default function Integrations() {
   const detailKey = openApp?.spaceId === selectedSpaceId() ? openApp : null;
   const [toolsOpen, setToolsOpen] = useState(true);
 
-  // The app catalog, accounts, presets and plugin catalog hold no secrets, so a cold launch paints
-  // them from disk. Servers and installs keep their addresses and settings in memory only.
-  const catalogRead = persisted(rpcQuery("connections/catalog"));
-  const listRead = persisted(rpcQuery("connections/list"));
+  const catalogRead = rpcQuery("connections/catalog");
+  const listRead = rpcQuery("connections/list");
   const connectionsRead = {
     ...listRead,
     queryFn: async (context: Parameters<typeof listRead.queryFn>[0]) => {
@@ -96,8 +94,8 @@ export default function Integrations() {
   };
   const serversRead = rpcQuery("mcp/servers/list");
   const installsRead = rpcQuery("capabilities/list");
-  const presetsRead = persisted(rpcQuery("capabilities/sourcePresets"));
-  const marketplaceRead = persisted(rpcQuery("marketplace/catalog", { query: "" }));
+  const presetsRead = rpcQuery("capabilities/sourcePresets");
+  const marketplaceRead = rpcQuery("marketplace/catalog", { query: "" });
   const toolsRead = rpcQuery(
     "connections/tools",
     detailKey
