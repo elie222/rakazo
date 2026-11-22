@@ -2,6 +2,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { EmailEmulator, FakeSandboxProvider } from "@rakazo/adapters";
+import { writeEmailCopyDir } from "@rakazo/auth/test-email-copy";
 import { runAsSystem } from "@rakazo/db";
 import { expect, it, vi } from "vitest";
 import { createApp } from "../app.js";
@@ -14,6 +15,7 @@ it.skipIf(!databaseUrl)(
   async () => {
     const dataDir = await mkdtemp(join(tmpdir(), "rakazo-welcome-"));
     const email = new EmailEmulator();
+    vi.stubEnv("EMAIL_COPY_DIR", writeEmailCopyDir({ welcome: true }));
     const handles = await createApp({
       databaseUrl: databaseUrl!,
       dataDir,
@@ -25,7 +27,6 @@ it.skipIf(!databaseUrl)(
       signupAllowlist: "",
       webOrigin,
       authUrl: webOrigin,
-      welcomeEmailEnabled: true,
       email,
     });
     const address = `welcome-${Date.now()}@example.test`;
@@ -36,7 +37,7 @@ it.skipIf(!databaseUrl)(
         headers: { "content-type": "application/json", origin: webOrigin },
         body: JSON.stringify(body),
       });
-    const welcomes = () => email.sent.filter((message) => message.subject === "Welcome to Rakazo");
+    const welcomes = () => email.sent.filter((message) => message.subject === "Test subject");
     try {
       expect((await post("/api/auth/sign-up/email", { ...credentials, name: "New" })).status).toBe(
         200,

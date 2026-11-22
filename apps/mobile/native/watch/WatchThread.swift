@@ -71,9 +71,15 @@ struct WatchThread: Decodable {
       }
     }
 
+    struct Author: Decodable {
+      let id: String
+      let name: String
+    }
+
     let id: String
     let role: String
     let runId: String?
+    let author: Author?
     let blocks: [Block]
 
     var pendingAsk: Block? {
@@ -116,8 +122,10 @@ struct WatchThread: Decodable {
       let ownsRun = activeRuns?.contains { $0.id == message.runId && $0.userId == userId } == true
       let prompt = ask ?? (ownsRun && message.hasPhoneOnlyCard ? handoff : nil)
       guard !text.isEmpty || prompt != nil else { return nil }
+      let fromUser = message.role == "user" && (message.author.map { $0.id == userId } ?? true)
       return WatchMessage(
-        id: message.id, fromUser: message.role == "user",
+        id: message.id, fromUser: fromUser,
+        author: message.role == "user" && !fromUser ? message.author?.name : nil,
         text: text.count > 1000 ? String(text.prefix(999)) + "…" : text, prompt: prompt)
     }
     // Keep pending cards before filling the remaining transfer budget with recent messages.

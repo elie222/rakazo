@@ -22,6 +22,7 @@ type Row = [
   storedHomeIsBackup: boolean,
   readStoppedFiles?: true,
   sizedUsage?: true,
+  maxFileBytes?: number,
 ];
 
 // What the per-kind id lists in shared code answered before providers declared these themselves,
@@ -41,9 +42,22 @@ const EXPECTED: Record<KnownSandboxKind, Row> = {
   incus: [true, true, false, false, DEFAULT_SCREEN, "never", true, false],
   "local-vm": [true, true, false, false, DEFAULT_SCREEN, "never", true, false],
   wuying: [false, false, true, false, DEFAULT_SCREEN, "never", false, true],
-  desktop: [false, false, true, true, DEFAULT_SCREEN, "never", false, true],
+  desktop: [
+    false,
+    false,
+    true,
+    true,
+    DEFAULT_SCREEN,
+    "never",
+    false,
+    true,
+    undefined,
+    undefined,
+    8 * 1024 * 1024,
+  ],
   fake: [true, true, false, false, DEFAULT_SCREEN, "never", false, false],
 };
+const OFFERS_HOST_COMPUTER: string[] = ["docker", "local-vm"];
 const UNDECLARED: Row = [false, true, false, false, DEFAULT_SCREEN, "never", false, false];
 
 function capabilities([
@@ -57,6 +71,7 @@ function capabilities([
   storedHomeIsBackup,
   readStoppedFiles,
   sizedUsage,
+  maxFileBytes,
 ]: Row): SandboxKindCapabilities {
   return {
     terminal,
@@ -69,6 +84,7 @@ function capabilities([
     storedHomeIsBackup,
     ...(readStoppedFiles ? { readStoppedFiles } : {}),
     ...(sizedUsage ? { sizedUsage } : {}),
+    ...(maxFileBytes ? { maxFileBytes } : {}),
   };
 }
 
@@ -78,7 +94,10 @@ describe("sandbox kind capabilities", () => {
   });
 
   it.each(knownSandboxKinds)("%s declares the pinned values", (kind) => {
-    expect(sandboxKindCapabilities(kind)).toEqual(capabilities(EXPECTED[kind]));
+    expect(sandboxKindCapabilities(kind)).toEqual({
+      ...capabilities(EXPECTED[kind]),
+      ...(OFFERS_HOST_COMPUTER.includes(kind) ? { offersHostComputer: true } : {}),
+    });
   });
 
   it.each(["unknown", "", null, undefined])("reads undeclared kind %j as before", (kind) => {
@@ -98,5 +117,8 @@ describe("sandbox kind capabilities", () => {
       "wuying",
     ]);
     expect(sandboxKindsWhere((entry) => entry.runsOnUserMachine)).toEqual(["desktop"]);
+    expect(sandboxKindsWhere((entry) => entry.offersHostComputer === true).sort()).toEqual(
+      OFFERS_HOST_COMPUTER,
+    );
   });
 });

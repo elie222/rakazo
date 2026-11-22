@@ -4,6 +4,7 @@ import {
   applyJudgeDecision,
   BACKGROUND_HELPER_TRIGGER,
   HELPER_RESULT_TRIGGER,
+  lastingWriteKind,
   redactSecrets,
 } from "@rakazo/core";
 import { bestEffort } from "@rakazo/logging";
@@ -11,10 +12,11 @@ import type { AutoReviewChecker } from "../../approvals/auto-review.js";
 import { ownComputerReviewArgs, redactToolArgsForReview } from "../../approvals/auto-review.js";
 import type { AutoReviewCandidate } from "../../approvals/auto-review-backups.js";
 import { reviewWithBackups } from "../../approvals/auto-review-backups.js";
+import { changedTextReviewArgs } from "../../approvals/changed-text-review-args.js";
 import type { RunContext, RunTrust } from "../assembly/run-context.js";
 import type { ExecutorDeps } from "../executor/executor-deps.js";
 import { autoReviewCheckerProvider, includedAutoReviewChecker } from "../turn/run-auto-review.js";
-import { reviewOwnerContext } from "./run-review-context.js";
+import { currentRoutinePrompt, reviewOwnerContext } from "./run-review-context.js";
 import { auditToolCall } from "./run-tool-audit.js";
 import type { AppliedEffect } from "./run-tool-gate.js";
 
@@ -37,6 +39,9 @@ export type ToolReview = {
   reviewSettings: Awaited<ReturnType<RunTrust["loadApprovalModel"]>> | null;
   memberChecker: boolean;
 };
+
+/** Runs whose task is the product's own prompt: a new bot's intro, and the wrap-up after a call. */
+const PRODUCT_PROMPT_TRIGGERS = new Set(["created", "call_end"]);
 
 /**
  * Run the configured reviewer (and its backups) on a call and store its verdict on the
@@ -66,20 +71,34 @@ export async function reviewToolCall(
     const outsideRun = run.trigger === "webhook";
     const ownerWords = outsideRun ? await ctx.trust.loadOwnerWords() : "";
     if (outsideRun && !ownerWords.trim()) return { reason: undefined, decision: "ask" };
-    // A new site, a memory or skill save after outside content, or an action on the bot's own
-    // computer after it, is judged on the owner's own words only: the task prompt of a webhook or
-    // bot-started run carries text someone else wrote.
+    // A new site, a write that outlives the run (a memory or skill save, a routine, the bot's own
+    // instructions), or an action on the bot's own computer after outside content, is judged on the
+    // owner's own words only: the task prompt of a webhook or bot-started run carries text someone
+    // else wrote, which must not authorize a write that later runs with the owner's trust. A new
+    // bot's intro and a call's wrap-up keep their task, the product's own prompt, which no one else
+    // wrote and which the owner's words do not reach.
     const ownerWordsOnly =
-      Boolean(newSiteUrl) || review.savedContextWrite || review.ownComputerAction;
-    const reviewArgs = newSiteUrl
+      Boolean(newSiteUrl) ||
+      review.ownComputerAction ||
+      (!PRODUCT_PROMPT_TRIGGERS.has(run.trigger) &&
+        Boolean(
+          lastingWriteKind({ toolName: name, args, savedContextWrite: review.savedContextWrite }),
+        ));
+    const redacted = redactToolArgsForReview(args, ctx.secrets);
+    // Targets come from the whole call: an edit's changes list addresses it removes or keeps too.
+    const targetArgs = newSiteUrl
       ? { url: redactSecrets(newSiteUrl, ctx.secrets) }
       : review.ownComputerAction
         ? ownComputerReviewArgs(
             name,
-            redactToolArgsForReview(args, ctx.secrets),
+            redacted,
             review.pageUrl && redactSecrets(review.pageUrl, ctx.secrets),
           )
-        : redactToolArgsForReview(args, ctx.secrets);
+        : redacted;
+    const reviewArgs =
+      targetArgs === redacted
+        ? changedTextReviewArgs(name, redacted, await currentRoutinePrompt(ctx, name, args))
+        : targetArgs;
     const reviewRequest: AutoReviewRequest = {
       toolName: name,
       connectorKind,
@@ -93,7 +112,7 @@ export async function reviewToolCall(
       ...(newSiteUrl ? { newSite: true } : {}),
       ...(review.savedContextWrite ? { savedContextWrite: true } : {}),
       ...(review.ownComputerAction ? { ownComputerAction: true } : {}),
-      ...(await reviewOwnerContext(ctx, reviewArgs, !newSiteUrl && !review.savedContextWrite)),
+      ...(await reviewOwnerContext(ctx, targetArgs, !newSiteUrl && !review.savedContextWrite)),
     };
     // The usage names the reviewed action, so a run's reviews are counted and priced one by one.
     const operationId = applied
@@ -118,7 +137,6 @@ export async function reviewToolCall(
           botId: bot.id,
           threadId: thread.id,
           operationId,
-          effectId: applied?.effect.id,
         },
         {
           injectedReview,

@@ -832,6 +832,219 @@ describe("OpenAPI connector import", () => {
     expect(String(fetch.mock.calls[0]![0])).toBe("https://93.184.216.34/v1/items");
   });
 
+  describe("real-world OpenAPI documents", () => {
+    const listPaths = { "/items": { get: { operationId: "listItems" } } };
+    const importFrom = (document: Record<string, unknown>, url?: string) =>
+      importOpenApiDocument({ openapi: "3.0.3", paths: listPaths, ...document }, url);
+
+    it("resolves a relative server URL against the document URL", () => {
+      expect(
+        importFrom({ servers: [{ url: "/api/v3" }] }, "https://api.example.test/docs/openapi.json")
+          .baseUrl,
+      ).toBe("https://api.example.test/api/v3");
+      expect(
+        importFrom({ servers: [{ url: "v2" }] }, "https://api.example.test/docs/openapi.json")
+          .baseUrl,
+      ).toBe("https://api.example.test/docs/v2");
+    });
+
+    it("uses the document origin when servers is absent or empty", () => {
+      for (const servers of [undefined, []]) {
+        expect(importFrom({ servers }, "https://api.example.test/docs/openapi.json").baseUrl).toBe(
+          "https://api.example.test/",
+        );
+      }
+    });
+
+    it("asks for a full server URL when a pasted document has none", () => {
+      for (const servers of [undefined, [{ url: "/api/v3" }]]) {
+        expect(() => importFrom({ servers })).toThrow(/full server URL/);
+      }
+    });
+
+    it("keeps a path-only prepared source inside the document origin", async () => {
+      const { prepared } = prepareOpenApiFrom(
+        JSON.stringify({ openapi: "3.0.3", paths: listPaths }),
+      );
+      await expect(prepared).resolves.toMatchObject({ source: "https://api.example.test/" });
+    });
+
+    it.each([
+      "application/json; charset=utf-8",
+      "application/problem+json",
+      "application/vnd.api+json",
+    ])("keeps request body fields for %s", (mediaType) => {
+      const imported = importFrom({
+        servers: [{ url: "https://api.example.test" }],
+        paths: {
+          "/items": {
+            post: {
+              operationId: "createItem",
+              requestBody: {
+                required: true,
+                content: {
+                  "text/plain": { schema: { type: "string" } },
+                  [mediaType]: {
+                    schema: { type: "object", properties: { name: { type: "string" } } },
+                  },
+                },
+              },
+            },
+          },
+        },
+      });
+      expect(imported.operations[0]!.inputSchema).toMatchObject({
+        properties: { body: { properties: { name: { type: "string" } } } },
+        required: ["body"],
+      });
+      expect(imported.operations[0]!.bodyMediaType).toBe(
+        mediaType.startsWith("application/json") ? undefined : mediaType,
+      );
+    });
+
+    it("sends the body in the media type the document declares", async () => {
+      const prepared = importFrom({
+        servers: [{ url: "https://93.184.216.34/v1" }],
+        paths: {
+          "/items": {
+            post: {
+              operationId: "createItem",
+              requestBody: {
+                content: {
+                  "application/vnd.api+json; charset=utf-8": {
+                    schema: { type: "object", properties: { name: { type: "string" } } },
+                  },
+                },
+              },
+            },
+          },
+        },
+      });
+      const install = {
+        id: "api-media",
+        kind: "api",
+        source: prepared.baseUrl,
+        secretId: null,
+        createdAt: new Date(0),
+        config: { auth: { type: "none" }, operations: prepared.operations },
+      };
+      const prisma = { capabilityInstall: { findFirst: vi.fn().mockResolvedValue(install) } };
+      const fetch = vi.fn(async (_url: string | URL | Request, _init?: RequestInit) =>
+        Response.json({ ok: true }),
+      );
+      const provider = new InstalledConnectorProvider(prisma as never, {} as never, { fetch });
+      for await (const _event of provider.execute(
+        {
+          tool: "createItem",
+          args: { body: { name: "a" } },
+          executionId: "createItem",
+          route: { connectorId: "installed", resourceId: install.id, toolName: "createItem" },
+        },
+        { spaceId: "space-1", userId: "user-1", signal: AbortSignal.timeout(5_000) } as never,
+      )) {
+        // drain
+      }
+      expect(new Headers(fetch.mock.calls[0]![1]?.headers).get("content-type")).toBe(
+        "application/vnd.api+json",
+      );
+    });
+
+    it("prefers plain application/json over other JSON types", () => {
+      const imported = importFrom({
+        servers: [{ url: "https://api.example.test" }],
+        paths: {
+          "/items": {
+            post: {
+              operationId: "createItem",
+              requestBody: {
+                content: {
+                  "application/problem+json": {
+                    schema: { type: "object", properties: { other: { type: "string" } } },
+                  },
+                  "application/json": {
+                    schema: { type: "object", properties: { name: { type: "string" } } },
+                  },
+                },
+              },
+            },
+          },
+        },
+      });
+      expect(imported.operations[0]!.inputSchema).toMatchObject({
+        properties: { body: { properties: { name: { type: "string" } } } },
+      });
+    });
+
+    it("requires path parameters and does not expose cookie parameters", () => {
+      const imported = importFrom({
+        servers: [{ url: "https://api.example.test" }],
+        paths: {
+          "/items/{id}": {
+            get: {
+              operationId: "getItem",
+              parameters: [
+                { name: "id", in: "path", schema: { type: "string" } },
+                { name: "session", in: "cookie", schema: { type: "string" } },
+                { name: "q", in: "query", schema: { type: "string" } },
+              ],
+            },
+          },
+        },
+      });
+      const schema = imported.operations[0]!.inputSchema as {
+        properties: Record<string, unknown>;
+        required: string[];
+      };
+      expect(schema.required).toEqual(["id"]);
+      expect(Object.keys(schema.properties)).toEqual(["id", "q"]);
+    });
+
+    it("rejects dot-segment path values and keeps ordinary ones", async () => {
+      const prepared = importFrom({
+        servers: [{ url: "https://93.184.216.34/v1" }],
+        paths: { "/items/{id}": { get: { operationId: "getItem" } } },
+      });
+      const install = {
+        id: "api-dots",
+        kind: "api",
+        source: prepared.baseUrl,
+        secretId: null,
+        createdAt: new Date(0),
+        config: { auth: { type: "none" }, operations: prepared.operations },
+      };
+      const prisma = { capabilityInstall: { findFirst: vi.fn().mockResolvedValue(install) } };
+      const fetch = vi.fn(async (_url: string | URL | Request) => Response.json({ ok: true }));
+      const provider = new InstalledConnectorProvider(prisma as never, {} as never, { fetch });
+      const run = async (id: string) => {
+        const events = [];
+        for await (const event of provider.execute(
+          {
+            tool: "getItem",
+            args: { id },
+            executionId: "getItem",
+            route: { connectorId: "installed", resourceId: install.id, toolName: "getItem" },
+          },
+          { spaceId: "space-1", userId: "user-1", signal: AbortSignal.timeout(5_000) } as never,
+        )) {
+          events.push(event);
+        }
+        return events;
+      };
+
+      for (const id of [".", ".."]) {
+        const events = await run(id);
+        expect(events).not.toContainEqual(expect.objectContaining({ type: "result" }));
+      }
+      expect(fetch).not.toHaveBeenCalled();
+      await run("%2e%2e");
+      await run("abc");
+      expect(fetch.mock.calls.map(([url]) => String(url))).toEqual([
+        "https://93.184.216.34/v1/items/%252e%252e",
+        "https://93.184.216.34/v1/items/abc",
+      ]);
+    });
+  });
+
   it("refuses ambiguous specs without stable operation ids", () => {
     expect(() =>
       importOpenApiDocument({

@@ -216,3 +216,19 @@ it.each(["Build a plan", "👍"])(
     ).toBeNull();
   },
 );
+
+// jsdom has no layout, so this checks the card frame reserves the same room for
+// the hover actions as a text bubble rather than measuring where they land.
+it("reserves the hover actions' room beside a full-width question card", () => {
+  const bubble = message("bubble", "Hello");
+  const card: ThreadMessage = {
+    ...message("card", ""),
+    blocks: [{ kind: "ask", text: "What next?", status: "pending" }],
+  };
+  act(() => root.render(<Host messages={[bubble, card]} />));
+  const [bubbleFrame, cardFrame] = container.querySelectorAll(
+    '[data-testid="message-bubble-frame"]',
+  );
+  expect(bubbleFrame?.className).toContain("calc(100%_-_8rem)");
+  expect(cardFrame?.className).toContain("calc(100%_-_8rem)");
+});
