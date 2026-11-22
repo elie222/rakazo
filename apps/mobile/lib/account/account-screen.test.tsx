@@ -903,7 +903,7 @@ it.each([false, true])(
         "Voice",
         "Messaging",
         "Labs",
-        "Members",
+        "Spaces",
       ];
       expect(titles).toEqual(["tester@example.test", "Usage", ...links]);
       const artifacts = view.button("Artifacts")!;
@@ -927,6 +927,7 @@ it.each([false, true])(
         ["Computers", "/computers"],
         ["Memory", "/memory"],
         ["Messaging", "/messaging"],
+        ["Spaces", "/spaces"],
       ]) {
         events.length = 0;
         await view.press(title!);

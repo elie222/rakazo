@@ -949,6 +949,7 @@ function SpaceShell() {
           setPeerConversation={setPeerConversation}
           active={active}
           peerBot={view.resolveBot}
+          openNewSpace={() => dialogs.setNewSpaceOpen(true)}
         />
       </Suspense>
 
