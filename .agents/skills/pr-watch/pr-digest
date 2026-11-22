@@ -158,6 +158,7 @@ commit_statuses() {
 REQUIRED=""
 required_checks() {
   local branch
+  REQUIRED=""
   branch=$(get "repos/$1/branches/$2") || return 0
   REQUIRED=$(jq -c '.protection.required_status_checks.contexts // [] | select(length > 0)' <<<"$branch")
 }
@@ -554,6 +555,8 @@ main() {
     while :; do
       pull=$(get "repos/$repo/pulls/$pr") || die "could not read PR $pr"
       head=$(jq -r .head.sha <<<"$pull")
+      # Re-read each poll (free while unchanged) in case the PR was retargeted.
+      required_checks "$repo" "$(jq -r .base.ref <<<"$pull")"
       runs=$(check_runs "$repo" "$head") || die "could not read check runs"
       statuses=$(commit_statuses "$repo" "$head") || die "could not read commit statuses"
       workflows=$(workflow_runs "$repo" "$head") || die "could not read workflow runs"
