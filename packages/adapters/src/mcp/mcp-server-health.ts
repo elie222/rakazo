@@ -64,21 +64,20 @@ export function mcpServerHealthDto(
     healthToolCount: number | null;
     healthCheckedAt: Date | null;
   },
-  /** An operator default client covers the server, so a recorded "needs a client" is out of date. */
+  /** An operator default client can supply the client, so a recorded "needs a client" is out of date. */
   defaultClient = false,
 ): McpServerHealth {
   const status = (["unknown", "installing", "ok", "error"] as const).find(
     (value) => value === row.healthStatus,
   );
+  const needsClient =
+    status === "error" && row.healthMessage?.includes(MCP_DYNAMIC_REGISTRATION_UNSUPPORTED);
+  if (needsClient && defaultClient)
+    return { status: "unknown", message: null, code: null, toolCount: null, checkedAt: null };
   return {
     status: status ?? "unknown",
     message: row.healthMessage ?? null,
-    code:
-      !defaultClient &&
-      status === "error" &&
-      row.healthMessage?.includes(MCP_DYNAMIC_REGISTRATION_UNSUPPORTED)
-        ? MCP_OAUTH_CLIENT_REQUIRED
-        : null,
+    code: needsClient ? MCP_OAUTH_CLIENT_REQUIRED : null,
     toolCount: row.healthToolCount ?? null,
     checkedAt: row.healthCheckedAt?.toISOString() ?? null,
   };

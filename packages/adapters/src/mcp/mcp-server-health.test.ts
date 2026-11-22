@@ -140,14 +140,36 @@ describe("mcpServerHealthDto", () => {
     expect(mcpServerHealthDto({ ...row, healthMessage: "fetch failed" }).code).toBeNull();
   });
 
-  it("does not ask for a client when a default client covers the server", () => {
+  it("shows a server a default client covers as not yet checked, not as broken", () => {
     const row = {
       healthStatus: "error",
       healthMessage: MCP_DYNAMIC_REGISTRATION_UNSUPPORTED,
-      healthToolCount: null,
-      healthCheckedAt: null,
+      healthToolCount: 3,
+      healthCheckedAt: new Date("2026-10-21T10:00:00.000Z"),
     };
-    expect(mcpServerHealthDto(row, true).code).toBeNull();
+    expect(mcpServerHealthDto(row, true)).toEqual({
+      status: "unknown",
+      message: null,
+      code: null,
+      toolCount: null,
+      checkedAt: null,
+    });
     expect(mcpServerHealthDto(row, false).code).toBe(MCP_OAUTH_CLIENT_REQUIRED);
+  });
+
+  it("keeps any other recorded error when a default client covers the server", () => {
+    const row = {
+      healthStatus: "error",
+      healthMessage: "HTTP 401",
+      healthToolCount: null,
+      healthCheckedAt: new Date("2026-10-21T10:00:00.000Z"),
+    };
+    expect(mcpServerHealthDto(row, true)).toEqual({
+      status: "error",
+      message: "HTTP 401",
+      code: null,
+      toolCount: null,
+      checkedAt: "2026-10-21T10:00:00.000Z",
+    });
   });
 });

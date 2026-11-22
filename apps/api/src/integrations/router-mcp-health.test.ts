@@ -272,7 +272,7 @@ describe("MCP server health", () => {
     };
 
     expect((await listed(false))?.code).toBe(MCP_OAUTH_CLIENT_REQUIRED);
-    expect((await listed(true))?.code).toBeNull();
+    expect(await listed(true)).toMatchObject({ status: "unknown", message: null, code: null });
   });
 
   describe("test", () => {
