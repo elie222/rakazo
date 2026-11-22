@@ -5,6 +5,7 @@ import {
   isDeletableMemoryDocument,
   MEMORY_INDEX_PATH,
 } from "@rakazo/contracts";
+import { isRoutineRunTrigger } from "@rakazo/core";
 import { readHistory, searchHistory } from "@rakazo/db";
 import { redactConnectorPayload } from "../../integrations/connector-safety.js";
 import { editMemory } from "../../memory/memory-tools.js";
@@ -60,7 +61,7 @@ async function readHistoryTool(ctx: RunContext, call: ToolCall) {
     searchBeforeSeq: ctx.source.historySearchBeforeSeq,
     allowMyChats,
     searchAt: run.createdAt,
-    ...(run.trigger === "routine" ? { ownerOnly: run.userId } : {}),
+    ...(isRoutineRunTrigger(run.trigger) ? { ownerOnly: run.userId } : {}),
   };
   const given = withoutBlankFields(args);
   let response: Awaited<ReturnType<typeof searchHistory | typeof readHistory>>;

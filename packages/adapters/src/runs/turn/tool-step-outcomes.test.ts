@@ -230,6 +230,7 @@ describe("tool step outcomes", () => {
       follow_up: true,
       messaging: true,
       routine: false,
+      silent_routine: false,
       resume: false,
       reaction: false,
       spawn: false,

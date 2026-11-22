@@ -10,13 +10,15 @@ import {
   BACKGROUND_HELPER_TRIGGER,
   containsSecret,
   displayName,
+  isRoutineRunTrigger,
   MISSING_TOOL_FINAL_RESPONSE_ERROR,
   normalizeRunError,
   redactSecrets,
+  SILENT_ROUTINE_TRIGGER,
   userRunError,
 } from "@rakazo/core";
 import { isDatabaseUnavailable, retryWhileDatabaseUnavailable } from "@rakazo/db";
-import { getLogger } from "@rakazo/logging";
+import { bestEffort, getLogger } from "@rakazo/logging";
 import { sanitizedError } from "@rakazo/logging/monitoring";
 import { returnBotMessageOutcome } from "../../messaging/bot-messages.js";
 import {
@@ -34,7 +36,7 @@ import {
 } from "../assembly/run-computer.js";
 import type { RunContext, RunState } from "../assembly/run-context.js";
 import { runPromotesMidTurnNarration } from "../assembly/run-replies.prompt.js";
-import { scheduleRoutineRetry } from "../assembly/run-routines.js";
+import { notifyFailedRoutineRun, scheduleRoutineRetry } from "../assembly/run-routines.js";
 import {
   computerRetryDelay,
   enqueueSteeringContinuation,
@@ -218,11 +220,13 @@ export async function failRun(
   }
   // A refusal of the deployment's own key is the operator's problem, not the user's.
   const refusal =
-    run.trigger === "routine" && model.ownCredential ? modelAccountRefusal(error) : undefined;
+    isRoutineRunTrigger(run.trigger) && model.ownCredential
+      ? modelAccountRefusal(error)
+      : undefined;
   // A spent computer allowance or an unusable provider account refuses every run that needs the
   // computer until someone fixes it.
   if (
-    run.trigger === "routine" &&
+    isRoutineRunTrigger(run.trigger) &&
     run.routineId &&
     (refusal ||
       error instanceof SandboxAllowanceUsedError ||
@@ -236,12 +240,12 @@ export async function failRun(
     );
   }
   const retrying = !failed.continuationRunId && (await scheduleRoutineRetry(deps, run, error));
+  if (retrying) return;
   // The user's own model connection failing, or a spent allowance, is theirs to fix; a retry
   // still due gets its chance first.
   if (
-    run.trigger === "routine" &&
+    isRoutineRunTrigger(run.trigger) &&
     run.routineId &&
-    !retrying &&
     ((model.ownCredential &&
       (error instanceof TransientModelError ||
         error instanceof ModelAccountError ||
@@ -255,12 +259,22 @@ export async function failRun(
       botId: bot.id,
     });
   }
+  if (run.trigger === SILENT_ROUTINE_TRIGGER) {
+    await bestEffort(
+      "silent routine failure notice",
+      notifyFailedRoutineRun(
+        deps,
+        { ...run, error: message },
+        { inChat: Boolean(failed.continuationRunId) },
+      ),
+    );
+    return;
+  }
   // Nobody asked for a check-in, so its failure is not news to the user.
   if (
     runSendsFinishNotification(run.trigger) &&
     !isStrategicInitiativeRun(run) &&
-    !failed.continuationRunId &&
-    !retrying
+    !failed.continuationRunId
   ) {
     await notifyRun(deps, run, {
       kind: "failure",

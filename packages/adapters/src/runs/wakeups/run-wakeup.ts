@@ -10,17 +10,22 @@ import type {
   RealtimeFanout,
 } from "@rakazo/adapter-kit";
 import { dispatchBackgroundJob } from "@rakazo/adapter-kit";
-import type { DatabaseOutage, Prisma, PrismaClient } from "@rakazo/db";
+import { SILENT_ROUTINE_TRIGGER } from "@rakazo/core";
+import type { DatabaseOutage, PrismaClient } from "@rakazo/db";
 import {
   databaseOutage,
   endTakeoverWaits,
   isTooManyDatabaseConnections,
+  Prisma,
   runAsSystem,
 } from "@rakazo/db";
 import { getLogger, runCorrelatedJob } from "@rakazo/logging";
 import type { Pool } from "pg";
 import { RunExecutionHost } from "../lifecycle/run-execution.js";
 import { findRunRecoveryBlockers } from "../lifecycle/run-recovery.js";
+
+/** Runs nobody is waiting on start after the interactive lane's: routines and reactions. */
+const BACKGROUND_LANE_TRIGGERS = ["routine", SILENT_ROUTINE_TRIGGER, "reaction"];
 
 const RUN_READY_TOPIC = "runs:ready";
 const INTERACTIVE_QUEUE_WARNING_MS = 30_000;
@@ -347,7 +352,7 @@ export class RunWorkerHost implements JobWorkerHost {
                  AS "oldestRunId"
         FROM runs
         JOIN bots bot ON bot.id = runs."botId"
-        WHERE runs.status = 'queued' AND runs.trigger NOT IN ('routine', 'reaction')
+        WHERE runs.status = 'queued' AND runs.trigger NOT IN (${Prisma.join(BACKGROUND_LANE_TRIGGERS)})
           AND runs."updatedAt" <= ${cutoff}
           AND (runs."wakeAt" IS NULL OR runs."wakeAt" <= ${cutoff})
           AND NOT EXISTS (
@@ -426,8 +431,8 @@ export class RunWorkerHost implements JobWorkerHost {
       where: {
         trigger:
           lane === "background"
-            ? { in: ["routine", "reaction"] }
-            : { notIn: ["routine", "reaction"] },
+            ? { in: BACKGROUND_LANE_TRIGGERS }
+            : { notIn: BACKGROUND_LANE_TRIGGERS },
         ...(cursor
           ? {
               AND: [

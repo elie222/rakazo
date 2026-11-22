@@ -1,6 +1,7 @@
 import type { ConnectedCalendarOperation } from "@rakazo/adapter-kit";
 import type { CalendarResponse } from "@rakazo/contracts";
 import { CalendarOperation, CalendarResults, calendarOperationSource } from "@rakazo/contracts";
+import { isRoutineRunTrigger } from "@rakazo/core";
 import { connectedContext } from "../integrations/connection-context.js";
 import type { RunContext } from "../runs/assembly/run-context.js";
 import type { ToolHandler } from "../runs/tools/run-tool-gate.js";
@@ -13,7 +14,7 @@ async function connectedCalendar(
 ): Promise<CalendarResponse> {
   const { run, thread, bot, deps } = ctx;
   const eligible =
-    ctx.source.ownerStartedRun && (run.trigger !== "routine" || Boolean(run.routineId));
+    ctx.source.ownerStartedRun && (!isRoutineRunTrigger(run.trigger) || Boolean(run.routineId));
   if (
     !eligible ||
     run.userId !== bot.userId ||

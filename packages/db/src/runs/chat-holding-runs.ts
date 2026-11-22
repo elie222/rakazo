@@ -1,3 +1,4 @@
+import { isRoutineRunTrigger, SILENT_ROUTINE_TRIGGER } from "@rakazo/core";
 import type { Prisma } from "../database/client.js";
 
 /**
@@ -5,7 +6,7 @@ import type { Prisma } from "../database/client.js";
  * turn or a routine that runs in the chat wait for it. Every other active run does.
  */
 export const HOLDS_CHAT: Prisma.RunWhereInput = {
-  NOT: { trigger: "routine", routine: { is: { inChat: false } } },
+  NOT: { trigger: { in: ["routine", SILENT_ROUTINE_TRIGGER] }, routine: { is: { inChat: false } } },
 };
 
 /** The same rule for a run already read with its routine's `inChat`. */
@@ -13,5 +14,5 @@ export function runHoldsChat(run: {
   trigger: string | null;
   routine?: { inChat: boolean } | null;
 }): boolean {
-  return !(run.trigger === "routine" && run.routine && !run.routine.inChat);
+  return !(isRoutineRunTrigger(run.trigger) && run.routine && !run.routine.inChat);
 }

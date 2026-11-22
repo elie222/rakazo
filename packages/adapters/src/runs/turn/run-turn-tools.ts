@@ -1,4 +1,9 @@
-import { humanizeToolName, isBackgroundRunTrigger } from "@rakazo/core";
+import {
+  humanizeToolName,
+  isBackgroundRunTrigger,
+  isRoutineRunTrigger,
+  SILENT_ROUTINE_TRIGGER,
+} from "@rakazo/core";
 import { getLogger } from "@rakazo/logging";
 import { isToolPauseResult } from "../../approvals/approval-effect.js";
 import { returnBotMessageOutcome } from "../../messaging/bot-messages.js";
@@ -202,6 +207,9 @@ async function stopStuckToolLoop(ctx: RunContext, toolName: string, refusal?: To
     leaseFence: fence,
     outcome: "completed",
     blocks: isBackgroundRunTrigger(run.trigger) ? [] : [{ kind: "text", text: stuckText }],
+    ...(run.trigger === SILENT_ROUTINE_TRIGGER
+      ? { heldReply: [{ kind: "text" as const, text: stuckText }] }
+      : {}),
   });
   if (!stopped) return;
   await enqueueConversationRetention(ctx, answeredMessageIds);
@@ -229,7 +237,7 @@ async function stopStuckToolLoop(ctx: RunContext, toolName: string, refusal?: To
     ctx.secrets,
   );
   ctx.stopHeartbeatAfterCompletion();
-  if (run.trigger === "routine" && run.routineId) {
+  if (isRoutineRunTrigger(run.trigger) && run.routineId) {
     await clearRoutineBackoff(deps, { routineId: run.routineId, userId: run.userId });
   }
   await enqueueSteeringContinuation(deps, stopped.continuationRunId);

@@ -44,6 +44,7 @@ function routineChanges(draft: MobileRoutineDraft, routine: Routine) {
     ...(!routineScheduleLocked(routine) && !sameCrons(crons, savedCrons) ? { crons } : {}),
     ...(draft.emailSenders !== routine.emailSenders ? { emailSenders: draft.emailSenders } : {}),
     ...(draft.active !== routine.active ? { active: draft.active } : {}),
+    ...(draft.silent !== (routine.silent ?? false) ? { silent: draft.silent } : {}),
     ...(draft.webhookEnabled === false && routine.webhookEnabled ? { webhookEnabled: false } : {}),
     ...(draft.githubEnabled === false && routine.githubEnabled ? { githubEnabled: false } : {}),
     ...(draft.messageProvider === null && routine.messageProvider ? { messageProvider: null } : {}),
@@ -104,6 +105,7 @@ export function routineSaveRequest(
         timezone,
         active: draft.active,
         notify: kept?.notify ?? true,
+        ...(draft.silent ? { silent: true } : {}),
         ...(draft.emailSenders ? { emailSenders: draft.emailSenders } : {}),
         ...(kept
           ? {

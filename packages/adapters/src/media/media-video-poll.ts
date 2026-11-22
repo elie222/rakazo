@@ -5,9 +5,12 @@ import type {
   MediaGenerationProvider,
 } from "@rakazo/adapter-kit";
 import { mediaPollJob } from "@rakazo/adapter-kit";
-import type { Prisma, PrismaClient, ThreadEvents } from "@rakazo/db";
+import type { Prisma, PrismaClient, RunLease, ThreadEvents } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
-import { persistMessageInTransaction } from "../runs/assembly/run-messages.js";
+import {
+  holdRunReplyInTransaction,
+  persistMessageInTransaction,
+} from "../runs/assembly/run-messages.js";
 import { wakeRun } from "../runs/wakeups/wake-run.js";
 import { mediaVideoWakePrompt } from "../runs/wakeups/wakes.prompt.js";
 import { attachWorkspaceFileToThread } from "../storage/thread-artifacts.js";
@@ -69,6 +72,10 @@ export function mediaDelivery(
     afterRun?: boolean;
     /** Commits with the job's final state, so what follows it cannot be lost to a crash. */
     onSettled?: (tx: Prisma.TransactionClient, status: Settled) => Promise<void>;
+    /** A silent routine's media goes to its run history, not the chat. */
+    holdReply?: boolean;
+    /** The attempt's lease, so a superseded attempt can't write the run's history. */
+    lease?: RunLease;
   },
 ) {
   return {
@@ -125,6 +132,11 @@ export function mediaDelivery(
           },
         });
         if (!claimed.count) return null;
+        if (options.holdReply) {
+          await holdRunReplyInTransaction(tx, run, [block], options.lease);
+          await options.onSettled?.(tx, "completed");
+          return null;
+        }
         const message = await persistMessageInTransaction(
           tx,
           run,

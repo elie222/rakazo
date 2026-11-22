@@ -171,6 +171,7 @@ function RoutineShot() {
     messageProvider: null,
     emailSenders: null,
     active: true,
+    silent: false,
     runAtLocal: "",
     modelKey: "",
     thinkingLevel: "",

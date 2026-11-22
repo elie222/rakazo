@@ -221,6 +221,7 @@ describe("isOwnerStartedRun", () => {
     ["follow_up", true, true],
     ["follow_up", false, false],
     ["routine", false, true],
+    ["silent_routine", false, true],
     ["messaging", false, true],
     ["bot_message", true, false],
     ["spawn", true, false],
@@ -240,6 +241,7 @@ describe("isOwnerStartedRun", () => {
 describe("approvalCardExpires", () => {
   it.each([
     ["routine", true],
+    ["silent_routine", true],
     ["webhook", true],
     ["bot_message", true],
     ["spawn", true],

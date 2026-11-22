@@ -1,4 +1,8 @@
-import { BACKGROUND_HELPER_TRIGGER, HELPER_RESULT_TRIGGER } from "@rakazo/core";
+import {
+  BACKGROUND_HELPER_TRIGGER,
+  HELPER_RESULT_TRIGGER,
+  isRoutineRunTrigger,
+} from "@rakazo/core";
 import { sitesInText, urlSite } from "@rakazo/core/egress";
 
 /**
@@ -165,7 +169,7 @@ export function outsideTextOf(content: unknown): string {
 export function taskPromptIsOutside(run: { trigger: string }, ownerStartedRun: boolean): boolean {
   return (
     !ownerStartedRun ||
-    run.trigger === "routine" ||
+    isRoutineRunTrigger(run.trigger) ||
     run.trigger === BACKGROUND_HELPER_TRIGGER ||
     run.trigger === HELPER_RESULT_TRIGGER
   );

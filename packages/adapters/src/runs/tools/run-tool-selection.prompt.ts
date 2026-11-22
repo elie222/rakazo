@@ -13,6 +13,10 @@ export function backgroundRunToolUnavailableReason(name: string): string {
   return `${name} is not available in a background run. Report through ticket_comment instead.`;
 }
 
+export function silentRoutineToolUnavailableReason(name: string): string {
+  return `${name} is not available to a silent routine, as it would post in a chat. Don't retry; put it in your reply, which the routine's run history keeps.`;
+}
+
 export function disabledBuiltinToolUnavailableReason(name: string): string {
   return `${name} is turned off for this bot.`;
 }

@@ -1,9 +1,9 @@
-import { isServerRunError, normalizeRunError } from "@rakazo/core";
+import { isServerRunError, normalizeRunError, SILENT_ROUTINE_TRIGGER } from "@rakazo/core";
 import type { Prisma, PrismaClient, ThreadEvents } from "@rakazo/db";
 import { bestEffort } from "@rakazo/logging";
 import type { RoutineRunRef } from "./routine-backoff.js";
+import { postRoutineMessage } from "./routine-message.js";
 import { routineGroupThreadId } from "./routine-thread.js";
-import { postRoutineWatchMessage } from "./routine-watch.js";
 
 /**
  * Failed runs in a row that pause a routine. A passing outage rarely fails more than a run or
@@ -42,7 +42,7 @@ async function failingStreak(
     where: {
       routineId: run.routineId,
       userId: routine.userId,
-      trigger: "routine",
+      trigger: { in: ["routine", SILENT_ROUTINE_TRIGGER] },
       status: { in: ["completed", "failed"] },
       ...(routine.failurePausedAt ? { createdAt: { gt: routine.failurePausedAt } } : {}),
     },
@@ -109,7 +109,7 @@ export async function pauseRoutineAfterRepeatedFailures(
       })
     )?.thread?.id;
   if (!threadId) return;
-  await postRoutineWatchMessage(deps, {
+  await postRoutineMessage(deps, {
     spaceId: run.spaceId,
     threadId,
     botId: run.botId,

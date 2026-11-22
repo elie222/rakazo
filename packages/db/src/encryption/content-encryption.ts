@@ -25,13 +25,14 @@ import { ROW_OWNER } from "./content-keys.js";
  * including these values, is only authoritative inside the sealed copy.
  */
 const MESSAGE_BLOCK_PLAIN_KEYS = new Set(["kind", "status", "channelId", "serverId", "artifactId"]);
-/** Event payload keys that event queries filter on. */
+/** Event payload keys that event queries filter on, a silent run's reply by its `clientNonce`. */
 const EVENT_PAYLOAD_PLAIN_KEYS = new Set([
   "messageId",
   "notice",
   "state",
   "updatedAt",
   "streaming",
+  "clientNonce",
 ]);
 
 const NO_PLAINTEXT_KEYS = new Set<string>();

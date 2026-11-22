@@ -36,11 +36,14 @@ import type { RoutineWatchDraft } from "../../../lib/routines/routine-draft";
 export function WatchTriggerCard({
   watch,
   state,
+  silent,
   onChange,
   onRemove,
 }: {
   watch: RoutineWatchDraft;
   state: Routine["watchState"];
+  /** A silent routine posts nothing in the chat, so it offers no "No changes" line. */
+  silent: boolean;
   onChange: (watch: RoutineWatchDraft) => void;
   onRemove: () => void;
 }) {
@@ -176,22 +179,24 @@ export function WatchTriggerCard({
             />
           </label>
         ) : null}
-        <div className="flex items-center gap-2">
-          <label
-            htmlFor={`${id}-loud`}
-            className="flex items-center gap-2 text-body text-muted-foreground"
-          >
-            <Switch
-              id={`${id}-loud`}
-              checked={watch.loud}
-              onCheckedChange={(loud) => onChange({ ...watch, loud })}
-            />
-            <Trans>Report unchanged checks</Trans>
-          </label>
-          <InfoTooltip label={t`Report unchanged checks`}>
-            {t`Post a chat message when a check finds no changes. The routine won't run.`}
-          </InfoTooltip>
-        </div>
+        {silent ? null : (
+          <div className="flex items-center gap-2">
+            <label
+              htmlFor={`${id}-loud`}
+              className="flex items-center gap-2 text-body text-muted-foreground"
+            >
+              <Switch
+                id={`${id}-loud`}
+                checked={watch.loud}
+                onCheckedChange={(loud) => onChange({ ...watch, loud })}
+              />
+              <Trans>Report unchanged checks</Trans>
+            </label>
+            <InfoTooltip label={t`Report unchanged checks`}>
+              {t`Post a chat message when a check finds no changes. The routine won't run.`}
+            </InfoTooltip>
+          </div>
+        )}
         {status ? (
           <p
             data-testid="routine-watch-status"

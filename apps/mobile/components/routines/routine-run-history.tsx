@@ -4,10 +4,14 @@ import { formatRoutineRunAt } from "@rakazo/core";
 import { routineRunLateLabel, runStatusLabel } from "@rakazo/i18n/activity";
 import { useRouter } from "expo-router";
 import { useState } from "react";
-import { ActivityIndicator } from "react-native";
+import { ActivityIndicator, Alert } from "react-native";
 import { dateLocaleForUi, useUiLocale } from "../../lib/i18n/i18n";
 import { native } from "../../lib/native/native";
-import { routineRunDestination, useRoutineRuns } from "../../lib/routines/routine-runs";
+import {
+  routineRunDestination,
+  routineRunReplyText,
+  useRoutineRuns,
+} from "../../lib/routines/routine-runs";
 import { RunErrorSheet, useRunError } from "../cards/run-error-sheet";
 import { NativeActionButton } from "../native/native-action-button";
 import { SettingsGroup, SettingsRow } from "../settings/settings-group";
@@ -20,6 +24,7 @@ export function RoutineRunHistory({
   botName: string | undefined;
 }) {
   const { t } = useLingui();
+  const locale = useUiLocale();
   const router = useRouter();
   const history = useRoutineRuns(routineId);
   const [errorDetails, setErrorDetails] = useState<string | null>(null);
@@ -48,17 +53,22 @@ export function RoutineRunHistory({
           history.runs.map((run) => {
             const destination = routineRunDestination(run, botName);
             const error = run.status === "failed" ? run.error : null;
+            // A silent run kept its reply out of the chat, so it opens here. A failed run shows
+            // why it failed instead, as the row has room for only one.
+            const reply = error ? "" : routineRunReplyText(run.reply);
             return (
               <RunRow
                 key={run.id}
                 run={run}
                 error={error}
                 onPress={
-                  destination
-                    ? () => router.push(destination)
-                    : error
-                      ? () => setErrorDetails(error)
-                      : undefined
+                  reply
+                    ? () => Alert.alert(formatRoutineRunAt(run, dateLocaleForUi(locale)), reply)
+                    : destination
+                      ? () => router.push(destination)
+                      : error
+                        ? () => setErrorDetails(error)
+                        : undefined
                 }
               />
             );
@@ -103,7 +113,7 @@ function RunRow({
       value={
         run.status !== "completed"
           ? runStatusLabel(run.status)
-          : run.messageId
+          : run.messageId || run.reply?.length
             ? undefined
             : t`No reply`
       }

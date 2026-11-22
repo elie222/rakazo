@@ -12,6 +12,7 @@ import {
   formatCron,
   isOneShotRoutineCron,
   isOneShotRoutineCrons,
+  isRoutineRunTrigger,
   nextCronDate,
   nextCronDateAcross,
   ONCE_ROUTINE_CRON,
@@ -62,7 +63,7 @@ export function filterBuiltinToolsForRun<T extends { name: string }>(
   tools: T[],
   runTrigger: string,
 ): T[] {
-  return runTrigger === "routine"
+  return isRoutineRunTrigger(runTrigger)
     ? tools.filter((tool) => !ROUTINE_RUN_HIDDEN_TOOLS.has(tool.name))
     : tools;
 }
@@ -595,6 +596,7 @@ export async function createScheduleFromTool(
     prompt: string;
     inChat?: boolean;
     timezone?: string;
+    silent?: boolean;
     schedule: Record<string, unknown>;
     /** The tool's `on`: events that start the routine besides its timing, or instead of it. */
     on?: unknown;
@@ -674,6 +676,7 @@ export async function createScheduleFromTool(
         timezone,
         notify: true,
         inChat: input.inChat ?? false,
+        silent: input.silent ?? false,
         active: true,
         ...events,
         nextRunAt: eventsOnly ? null : resolved.nextRunAt,
@@ -731,6 +734,7 @@ export async function createScheduleFromTool(
     cron: row.crons[0],
     nextRunAt: row.nextRunAt?.toISOString() ?? null,
     oneShot: isOneShotRoutineCrons(row.crons),
+    ...(row.silent ? { silent: true } : {}),
     ...describeRoutineTiming(row),
     ...eventsResult(events),
   };
@@ -743,6 +747,7 @@ export function scheduleCreateFields(args: Record<string, unknown>) {
     prompt: String(args.prompt ?? ""),
     inChat: args.inChat === true,
     timezone: args.timezone ? String(args.timezone) : undefined,
+    silent: args.silent === true,
     schedule: compactScheduleInput({ ...scheduleTimingArgs(args), watch: args.watch }),
     on: isScheduleValueProvided(args.on) ? args.on : undefined,
   };
@@ -835,6 +840,7 @@ async function createWatchFromTool(
     name: string;
     prompt: string;
     timezone?: string;
+    silent?: boolean;
     schedule: Record<string, unknown>;
     events: RoutineEvents;
   },
@@ -869,6 +875,7 @@ async function createWatchFromTool(
         crons: [],
         timezone,
         notify: true,
+        silent: input.silent ?? false,
         active: true,
         watch: parsed.data as Prisma.InputJsonValue,
         ...input.events,
@@ -914,6 +921,7 @@ async function createWatchFromTool(
     routineId: row.id,
     name: row.name,
     watch: parsed.data,
+    ...(row.silent ? { silent: true } : {}),
     note: `Takes a first reading now, then checks every ${parsed.data.everyMinutes} minutes and runs only when it changes.`,
     ...eventsResult(input.events),
   };
@@ -940,6 +948,7 @@ export async function listSchedulesFromTool(
       crons: row.crons,
       inChat: row.inChat,
       active: row.active,
+      ...(row.silent ? { silent: true } : {}),
       nextRunAt: row.nextRunAt?.toISOString() ?? null,
       oneShot: isOneShotRoutineCrons(row.crons),
       ...describeRoutineTiming(row),
@@ -997,7 +1006,7 @@ const WATCH_RETIME_ERROR =
 
 /**
  * Edit one of this bot's routines in place: name, prompt, whether it runs in its chat, timing
- * (with startAt), a watch's interval, or active.
+ * (with startAt), a watch's interval, active or silent.
  * Scoped like cancel, so another bot's or another thread's routine reads as not found.
  */
 export async function updateScheduleFromTool(
@@ -1015,6 +1024,7 @@ export async function updateScheduleFromTool(
     prompt?: string;
     inChat?: boolean;
     active?: boolean;
+    silent?: boolean;
     timezone?: string;
     schedule: Record<string, unknown>;
     /** A watch's new check interval, in minutes. */
@@ -1055,6 +1065,7 @@ export async function updateScheduleFromTool(
     (input.name !== undefined ||
       input.prompt !== undefined ||
       input.inChat !== undefined ||
+      input.silent !== undefined ||
       input.timezone !== undefined ||
       input.on !== undefined ||
       input.everyMinutes !== undefined ||
@@ -1095,6 +1106,7 @@ export async function updateScheduleFromTool(
     prompt === undefined &&
     inChat === undefined &&
     input.active === undefined &&
+    input.silent === undefined &&
     input.on === undefined
   ) {
     return { error: "Nothing to update." };
@@ -1207,6 +1219,7 @@ export async function updateScheduleFromTool(
       ...(name === undefined ? {} : { name }),
       ...(prompt === undefined ? {} : { prompt }),
       ...(inChat === undefined ? {} : { inChat }),
+      ...(input.silent === undefined ? {} : { silent: input.silent }),
       ...(timingChanged ? { crons, timezone, active, nextRunAt } : {}),
       ...(watchChanged && watch ? { watch: watch as Prisma.InputJsonValue } : {}),
       ...(eventsChanged ? events : {}),
@@ -1241,6 +1254,7 @@ export async function updateScheduleFromTool(
     ...(name === undefined ? {} : { name }),
     ...(prompt === undefined ? {} : { prompt }),
     ...(inChat === undefined ? {} : { inChat }),
+    ...(input.silent === undefined ? {} : { silent: input.silent }),
     ...(timingChanged ? { crons, timezone, active, nextRunAt } : {}),
     ...(watchChanged ? { watch } : {}),
     ...(eventsChanged ? events : {}),
@@ -1261,6 +1275,7 @@ export async function updateScheduleFromTool(
     routineId: existing.id,
     name: name ?? existing.name,
     active,
+    silent: input.silent ?? existing.silent,
     crons,
     nextRunAt: nextRunAt?.toISOString() ?? null,
     oneShot: isOneShotRoutineCrons(crons),
@@ -1273,6 +1288,7 @@ export async function updateScheduleFromTool(
         name: existing.name,
         prompt: existing.prompt,
         inChat: existing.inChat,
+        silent: existing.silent,
         active: existing.active,
         ...describeRoutineTiming(existing),
         everyMinutes: existingWatch?.everyMinutes,
@@ -1282,6 +1298,7 @@ export async function updateScheduleFromTool(
         name: name ?? existing.name,
         prompt: prompt ?? existing.prompt,
         inChat: inChat ?? existing.inChat,
+        silent: input.silent ?? existing.silent,
         active,
         ...timing,
         everyMinutes: watch?.everyMinutes,
@@ -1295,6 +1312,7 @@ type RoutineView = {
   name: string;
   prompt: string;
   inChat: boolean;
+  silent: boolean;
   active: boolean;
   timezone: string;
   schedule?: string;
@@ -1310,6 +1328,7 @@ function routineChanges(before: RoutineView, after: RoutineView) {
     "name",
     "prompt",
     "inChat",
+    "silent",
     "active",
     "timezone",
     "schedule",

@@ -3,7 +3,13 @@ import {
   FLEET_TOOL_NAMES,
   FLEET_WRITE_TOOL_NAMES,
 } from "@rakazo/contracts";
-import { BACKGROUND_HELPER_TRIGGER, isBackgroundRunTrigger, isOwnerStartedRun } from "@rakazo/core";
+import {
+  BACKGROUND_HELPER_TRIGGER,
+  isOwnerStartedRun,
+  isRoutineRunTrigger,
+  isTicketRunTrigger,
+  SILENT_ROUTINE_TRIGGER,
+} from "@rakazo/core";
 import { selectCloudAgentTools } from "../../cloud-agents/cloud-agent-tools-select.js";
 import { READ_MEETING_TRANSCRIPT } from "../../meetings/meeting-chat.tool-definition.js";
 import { selectMemoryTools } from "../../memory/memory-tools.js";
@@ -20,6 +26,7 @@ import {
   createdRunToolUnavailableReason,
   disabledBuiltinToolUnavailableReason,
   groupMessageBotUnavailableReason,
+  silentRoutineToolUnavailableReason,
 } from "./run-tool-selection.prompt.js";
 import { USER_COMPUTER_SCREEN_TOOLS } from "./run-tools-user-computer.js";
 
@@ -75,7 +82,7 @@ export const FLEET_WRITE_TOOL_NAMES_SET: ReadonlySet<string> = new Set(FLEET_WRI
  */
 const CREATED_RUN_TOOL_NAMES = new Set(["ask_user", "update_bot"]);
 
-/** Messaging and media tools a background run is not offered (see selectBuiltinToolsForRun). */
+/** Messaging and media tools ticket work is not offered (see selectBuiltinToolsForRun). */
 const BACKGROUND_DROPPED_TOOL_NAMES: ReadonlySet<string> = new Set([
   "message_user",
   "message_bot",
@@ -98,6 +105,18 @@ export const SUBAGENT_HIDDEN_TOOLS: ReadonlySet<string> = new Set([
   "feedback",
 ]);
 
+/**
+ * Tools a silent routine never gets, as each would post in a chat: messaging or calling the
+ * person, handing a group's conversation to a bot that answers there, or a video, which arrives
+ * after the run with a turn of its own.
+ */
+export const SILENT_ROUTINE_WITHHELD_TOOLS: ReadonlySet<string> = new Set([
+  "message_user",
+  "call_user",
+  "handoff_to_bot",
+  "generate_video",
+]);
+
 /** Cross-owner agent connections only exist for chat-linked bots, in turns that can talk. */
 export function offersAgentConnectionTools(options: {
   hasMessagingIdentity: boolean;
@@ -107,7 +126,7 @@ export function offersAgentConnectionTools(options: {
   return (
     options.hasMessagingIdentity &&
     options.crossSpaceCommunication &&
-    !isBackgroundRunTrigger(options.trigger) &&
+    !isTicketRunTrigger(options.trigger) &&
     options.trigger !== "created" &&
     options.trigger !== BACKGROUND_HELPER_TRIGGER
   );
@@ -209,7 +228,9 @@ export function selectBuiltinToolsForRun(options: {
       (options.hasGroups === true || tool.name !== "post_to_group") &&
       (options.ticketBoardEnabled ||
         (tool.name !== "board_tickets" && !tool.name.startsWith("ticket_"))) &&
-      (!isBackgroundRunTrigger(options.trigger) || !BACKGROUND_DROPPED_TOOL_NAMES.has(tool.name)) &&
+      (!isTicketRunTrigger(options.trigger) || !BACKGROUND_DROPPED_TOOL_NAMES.has(tool.name)) &&
+      (options.trigger !== SILENT_ROUTINE_TRIGGER ||
+        !SILENT_ROUTINE_WITHHELD_TOOLS.has(tool.name)) &&
       (options.voiceCall || tool.name !== "end_call") &&
       (emailMailbox || !EMAIL_INBOX_TOOL_NAMES.has(tool.name)) &&
       ((emailMailbox && options.emailSend) || tool.name !== "send_email") &&
@@ -222,7 +243,7 @@ export function selectBuiltinToolsForRun(options: {
         !options.groupId &&
         !options.voiceCall &&
         !options.messagingChannelRun &&
-        !isBackgroundRunTrigger(options.trigger)) ||
+        !isTicketRunTrigger(options.trigger)) ||
         tool.name !== "call_user") &&
       (options.historyRetrievalEnabled ||
         !["search_history", "read_history"].includes(tool.name)) &&
@@ -270,8 +291,13 @@ export function unavailableBuiltinToolReasons(
       reasons[name] = disabledBuiltinToolUnavailableReason(name);
     } else if (options.groupId && name === "message_bot") {
       reasons[name] = groupMessageBotUnavailableReason(offeredNames.has("handoff_to_bot"));
-    } else if (isBackgroundRunTrigger(options.trigger) && BACKGROUND_DROPPED_TOOL_NAMES.has(name)) {
+    } else if (isTicketRunTrigger(options.trigger) && BACKGROUND_DROPPED_TOOL_NAMES.has(name)) {
       reasons[name] = backgroundRunToolUnavailableReason(name);
+    } else if (
+      options.trigger === SILENT_ROUTINE_TRIGGER &&
+      SILENT_ROUTINE_WITHHELD_TOOLS.has(name)
+    ) {
+      reasons[name] = silentRoutineToolUnavailableReason(name);
     }
   }
   return reasons;
@@ -315,7 +341,7 @@ export function followUpsOffered(
 ): boolean {
   return (
     ownerStartedRun &&
-    trigger !== "routine" &&
+    !isRoutineRunTrigger(trigger) &&
     FOLLOW_UP_TOOL_NAMES.every((name) => tools.some((tool) => tool.name === name))
   );
 }

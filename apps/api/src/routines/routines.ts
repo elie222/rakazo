@@ -15,6 +15,7 @@ import {
   hasMixedOneShotSchedule,
   isOneShotRoutineCrons,
   nextCronDateAcrossStrict,
+  routineRunTrigger,
   routineScheduleDelayed,
 } from "@rakazo/core";
 import type { Prisma, PrismaClient } from "@rakazo/db";
@@ -59,6 +60,7 @@ export function routineRowData(actor: Actor, input: CreateRoutineInput, nextRunA
     notify: input.notify,
     // What a watch read is not the owner's words, so it never runs as a turn in the chat.
     inChat: input.inChat && !input.watch,
+    silent: input.silent,
     active: input.active,
     webhookEnabled: input.webhookEnabled,
     githubEnabled: input.githubEnabled,
@@ -94,6 +96,7 @@ export function mapRoutine(row: {
   active: boolean;
   notify: boolean;
   inChat: boolean;
+  silent: boolean;
   webhookEnabled: boolean;
   githubEnabled: boolean;
   messageProvider: string | null;
@@ -117,6 +120,7 @@ export function mapRoutine(row: {
     active: row.active,
     notify: row.notify,
     inChat: row.inChat,
+    silent: row.silent,
     webhookEnabled: row.webhookEnabled,
     githubEnabled: row.githubEnabled,
     messageProvider: row.messageProvider,
@@ -281,13 +285,17 @@ export async function findRoutineTestRun(
   });
 }
 
-/** Task + run commit together; a run already saved under the nonce fails the insert. */
+/**
+ * Task + run commit together; a run already saved under the nonce fails the insert. Run now runs
+ * the routine as it is set up, silent or not; a routine named in a chat message answers there.
+ */
 export async function createRoutineTestRun(
   tx: Prisma.TransactionClient,
   actor: Actor,
   target: Awaited<ReturnType<typeof routineTestTarget>>,
   prompt: string,
   nonce: string | undefined,
+  asSetUp = false,
 ) {
   const { routine, botId, threadId } = target;
   const task = await tx.task.create({
@@ -300,11 +308,12 @@ export async function createRoutineTestRun(
       status: "queued",
     },
   });
-  const currentModel = await tx.routine.findUnique({
+  // Read with the run, so a model or Silent change saved since the request applies to it.
+  const current = await tx.routine.findUnique({
     where: { id: routine.id },
-    select: { modelProvider: true, modelId: true, thinkingLevel: true },
+    select: { modelProvider: true, modelId: true, thinkingLevel: true, silent: true },
   });
-  if (!currentModel) throw new IsolationError();
+  if (!current) throw new IsolationError();
   return tx.run.create({
     data: {
       spaceId: actor.spaceId,
@@ -313,9 +322,9 @@ export async function createRoutineTestRun(
       taskId: task.id,
       userId: actor.userId,
       status: "queued",
-      trigger: "routine",
+      trigger: asSetUp ? routineRunTrigger(current) : "routine",
       routineId: routine.id,
-      ...routineRunModelPin(currentModel),
+      ...routineRunModelPin(current),
       clientNonce: nonce,
     },
     select: { ...testRunSelect, status: true },

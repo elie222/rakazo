@@ -382,6 +382,8 @@ async function prepareChildRoutine(
     : [];
 
   const when = resolved ? formatTime(resolved.nextRunAt, timezone) : "";
+  // Only a schedule's own runs can be silent; runs that events start post in the chat.
+  const silent = args.silent === true && Boolean(resolved);
   return {
     ok: true,
     canonical: {
@@ -391,6 +393,7 @@ async function prepareChildRoutine(
       name,
       prompt,
       timezone,
+      ...(silent ? { silent: true } : {}),
       // A zone the bot did not name is the account's, re-read when the approved routine
       // is created, so a zone change between approval and creation does not strand the
       // routine in the old zone.
@@ -421,6 +424,7 @@ async function prepareChildRoutine(
             ]),
         ...eventLine,
         `Prompt: ${prompt}`,
+        ...(silent ? ["Silent: its runs post nothing in the chat"] : []),
       ],
     },
   };
@@ -958,6 +962,7 @@ export async function createChildRoutine(
   const prompt = text(canonical.prompt);
   const timezone = text(canonical.timezone) ?? "UTC";
   const schedule = asRecord(canonical.schedule);
+  const silent = canonical.silent === true;
   if (!name || !prompt || !schedule) return { error: "The approved routine is incomplete." };
   const child = await resolveBot(deps.prisma, run, { bot_id: canonical.botId });
   if ("error" in child) return { error: child.error };
@@ -999,6 +1004,7 @@ export async function createChildRoutine(
       prompt,
       timezone: replayTimezone,
       crons: { equals: cron ? [cron] : [] },
+      silent,
       active: true,
       ...(runAt ? { nextRunAt: new Date(runAt) } : {}),
       // The identical routine has the approved events too, so a retry returns it instead of a
@@ -1042,6 +1048,7 @@ export async function createChildRoutine(
     prompt,
     ...(pinnedTimezone === undefined ? {} : { timezone: pinnedTimezone }),
     schedule,
+    silent,
     ...(on ? { on } : {}),
   });
   return "error" in created ? created : { ...created, ...target };

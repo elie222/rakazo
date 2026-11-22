@@ -476,6 +476,21 @@ describePostgres("content encryption (PostgreSQL)", () => {
       expect(byPath.map((row) => row.payload)).toEqual([
         { messageId: "m-1", notice: "stuck", blocks: [{ kind: "text", text: "quokka" }] },
       ]);
+      // A silent run's reply is found again by its nonce, so a replayed turn keeps it once.
+      await prisma.$transaction((tx) =>
+        appendEventInTransaction(tx, {
+          spaceId,
+          threadId,
+          botId,
+          type: "run.reply",
+          payload: { clientNonce: "nonce-1", blocks: [{ kind: "text", text: "numbat" }] },
+        }),
+      );
+      await expect(
+        prisma.event.count({
+          where: { threadId, payload: { path: ["clientNonce"], equals: "nonce-1" } },
+        }),
+      ).resolves.toBe(1);
 
       await prisma.thread.update({
         where: { id: threadId },

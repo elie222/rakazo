@@ -21,6 +21,7 @@ import {
   clearThread,
   completedRunBlocks,
   finalizeRun,
+  runReplyEvent,
   sendUserMessage,
 } from "./events.js";
 import { partialReplyClientNonce, RunHistoryWriteError } from "./messages.js";
@@ -5940,4 +5941,33 @@ it("checks cross-space peer permission inside the message transaction before cre
   ).rejects.toBeInstanceOf(CrossSpaceCommunicationBlockedError);
   expect(tx.task.create).not.toHaveBeenCalled();
   expect(tx.run.create).not.toHaveBeenCalled();
+});
+
+describe("a silent run's kept reply", () => {
+  it("keeps what Run history shows and none of the steps' tool calls", () => {
+    const event = runReplyEvent(
+      { id: "run-1", spaceId: "space-1", threadId: "thread-1", botId: "bot-1" },
+      [
+        {
+          kind: "steps",
+          steps: [
+            {
+              label: "Shell",
+              count: 1,
+              tool: "shell",
+              calls: [{ arguments: '{"command":"ls"}', result: "secret-notes.txt" }],
+            },
+          ],
+        },
+        { kind: "text", text: "Done." },
+      ],
+    );
+    expect(event.payload).toEqual({
+      blocks: [
+        { kind: "steps", steps: [{ label: "Shell", count: 1 }] },
+        { kind: "text", text: "Done." },
+      ],
+    });
+    expect(JSON.stringify(event.payload)).not.toContain("secret-notes.txt");
+  });
 });

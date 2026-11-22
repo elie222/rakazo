@@ -3,6 +3,7 @@ import {
   expandSkillReferencesInPrompt,
   formatSkillRunPrompt,
   formatSkillsCatalogInstruction,
+  isRoutineRunTrigger,
   promptInvokesSkill,
   redactSecrets,
   renderBotDirectory,
@@ -313,7 +314,7 @@ export async function buildTurnPrompt(
     (skill) =>
       // Taught skills are the space's. Only a person's own message may pull in one someone
       // else taught; any other run, a routine included, follows only those its own person taught.
-      ((ownerStartedRun && run.trigger !== "routine") || skill.userId === run.userId) &&
+      ((ownerStartedRun && !isRoutineRunTrigger(run.trigger)) || skill.userId === run.userId) &&
       promptInvokesSkill(taskPrompt, skill.name || skill.goal),
   );
   const basePrompt = invokedSkill
@@ -358,7 +359,7 @@ export async function buildTurnPrompt(
   let lateRoutineNote: string | undefined;
   const lateSince = current.lateSince ?? firstLateSince;
   // Daily check-ins share the routine trigger but belong to no routine.
-  if (run.trigger === "routine" && run.routineId) {
+  if (isRoutineRunTrigger(run.trigger) && run.routineId) {
     const routine = await bestEffort(
       "load the routine for its run's prompt",
       deps.prisma.routine.findUnique({

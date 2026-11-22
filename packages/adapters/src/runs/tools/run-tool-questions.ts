@@ -1,7 +1,7 @@
 import type { ToolAsk } from "@rakazo/adapter-kit";
 import type { ToolQuestion, ToolQuestionAnswer } from "@rakazo/contracts";
 import { checkToolQuestionValues } from "@rakazo/contracts";
-import { deadlineSignal, displayName } from "@rakazo/core";
+import { deadlineSignal, displayName, isRoutineRunTrigger } from "@rakazo/core";
 import { createSealedBoxKey } from "@rakazo/core/node/sealed-box";
 import { takeToolQuestionAnswer } from "@rakazo/db";
 import { bestEffort, getLogger } from "@rakazo/logging";
@@ -26,7 +26,7 @@ export function toolAskFor(ctx: RunContext): ToolAsk | undefined {
   if (
     !ctx.source?.ownerStartedRun ||
     ctx.source.messagingChannelRun ||
-    ctx.run.trigger === "routine" ||
+    isRoutineRunTrigger(ctx.run.trigger) ||
     ctx.run.trigger === "messaging"
   )
     return undefined;

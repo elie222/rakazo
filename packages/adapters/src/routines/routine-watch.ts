@@ -25,12 +25,7 @@ import {
   watchToolRefusal,
 } from "@rakazo/core";
 import type { ComputerMode, PrismaClient, ThreadEvents } from "@rakazo/db";
-import {
-  appendEventInTransaction,
-  createThreadMessageInTransaction,
-  listApprovalRules,
-  parseComputerMode,
-} from "@rakazo/db";
+import { listApprovalRules, parseComputerMode } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { scheduleComputerSleep } from "../computers/computer-idle.js";
 import { ComputerBusyError, provisionComputer } from "../computers/computer-lifecycle.js";
@@ -51,6 +46,7 @@ import {
 import { recordVaultItemUse } from "../secrets/vault/vault-activity.js";
 import type { SafeWebFetchOptions } from "../web/web-ssrf.js";
 import { fetchSafeHttpRequest } from "../web/web-ssrf.js";
+import { postRoutineMessage } from "./routine-message.js";
 import { ROUTINE_WATCH_NOTE_START, routineWatchNote } from "./routine-watch.prompt.js";
 import { resolveWatchArgs } from "./routine-watch-args.js";
 
@@ -854,7 +850,7 @@ export type RoutineWatchTickDeps = RoutineWatchDeps & {
   jobs: JobPublisher;
 };
 
-type TickRoutine = RoutineWatchTarget & { name: string };
+type TickRoutine = RoutineWatchTarget & { name: string; silent?: boolean };
 
 export type RoutineWatchTick =
   | { run: false }
@@ -916,7 +912,7 @@ export async function tickRoutineWatch(
       if (deferred.count === 1) {
         await deps.jobs.enqueue(routineWakeupJob(routine.id, retryAt));
         if (watch?.kind === "http" && previous?.retrying !== true) {
-          await postRoutineWatchMessage(deps, {
+          await postRoutineMessage(deps, {
             spaceId: routine.spaceId,
             ...target,
             role: "system",
@@ -943,7 +939,7 @@ export async function tickRoutineWatch(
     });
     if (paused.count === 1) {
       await deps.jobs.cancel(routineJobKey(routine.id)).catch(() => undefined);
-      await postRoutineWatchMessage(deps, {
+      await postRoutineMessage(deps, {
         spaceId: routine.spaceId,
         ...target,
         role: "bot",
@@ -969,8 +965,19 @@ export async function tickRoutineWatch(
     data: { nextRunAt, watchState: outcome.state },
   });
   if (claimed.count !== 1) return { run: false };
-  if (watch.loud) {
-    await postRoutineWatchMessage(deps, {
+  // Silent is read again now, not taken from before the check, so turning it on meanwhile keeps
+  // this line out of the chat too.
+  const posts =
+    watch.loud &&
+    !routine.silent &&
+    !(
+      await deps.prisma.routine.findUnique({
+        where: { id: routine.id },
+        select: { silent: true },
+      })
+    )?.silent;
+  if (posts) {
+    await postRoutineMessage(deps, {
       spaceId: routine.spaceId,
       ...target,
       role: "system",
@@ -982,44 +989,6 @@ export async function tickRoutineWatch(
   }
   await deps.jobs.enqueue(routineWakeupJob(routine.id, nextRunAt));
   return { run: false };
-}
-
-/** A line in the routine's thread without a model run. */
-export async function postRoutineWatchMessage(
-  deps: { prisma: PrismaClient; events: Pick<ThreadEvents, "notify"> },
-  input: {
-    spaceId: string;
-    threadId: string;
-    botId: string;
-    role: "bot" | "system";
-    text: string;
-  },
-): Promise<void> {
-  const blocks =
-    input.role === "bot"
-      ? [{ kind: "text" as const, text: input.text }]
-      : [{ kind: "meta" as const, text: input.text }];
-  try {
-    const seq = await deps.prisma.$transaction(async (tx) => {
-      const message = await createThreadMessageInTransaction(tx, {
-        threadId: input.threadId,
-        botId: input.botId,
-        role: input.role,
-        blocks,
-      });
-      const event = await appendEventInTransaction(tx, {
-        spaceId: input.spaceId,
-        threadId: input.threadId,
-        botId: input.botId,
-        type: "thread.message.created",
-        payload: { messageId: message.id, role: input.role, blocks },
-      });
-      return event.seq;
-    });
-    if (seq !== undefined) await deps.events.notify(input.threadId, seq);
-  } catch {
-    // Best effort: the routine's state is already saved.
-  }
 }
 
 export function assertWatchToolReadOnly(tool: string, readOnly: boolean | undefined): void {

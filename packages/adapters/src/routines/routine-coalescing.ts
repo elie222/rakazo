@@ -26,6 +26,8 @@ const PAGE = 100;
 export async function findPendingRoutineTick(
   tx: Prisma.TransactionClient,
   config: {
+    /** A tick folds only into a run as loud or silent as the one it would start. */
+    trigger: string;
     routineId: string;
     spaceId: string;
     botId: string;
@@ -47,7 +49,7 @@ export async function findPendingRoutineTick(
     botId: config.botId,
     userId: config.userId,
     threadId: config.threadId,
-    trigger: "routine",
+    trigger: config.trigger,
     status: "queued",
     retryOfRunId: null,
     sourceMessageId: null,

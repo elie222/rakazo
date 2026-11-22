@@ -1,5 +1,5 @@
 import type { MessageAuthor, MessageBlock, ToolHistory } from "@rakazo/contracts";
-import { splitToolHistory } from "@rakazo/core";
+import { SILENT_ROUTINE_TRIGGER, splitToolHistory } from "@rakazo/core";
 import type { PrismaClient } from "../database/client.js";
 import { Prisma } from "../database/client.js";
 import {
@@ -39,7 +39,7 @@ const HISTORY_MESSAGE_SELECT = (botId: string) =>
  * reply to anyone else, a connected channel or another bot can carry their words, so a routine
  * run leaves it out.
  */
-const OWNER_TURN_TRIGGERS = ["user", "follow_up", "routine"];
+const OWNER_TURN_TRIGGERS = ["user", "follow_up", "routine", SILENT_ROUTINE_TRIGGER];
 
 /**
  * What a routine run may read of its chat (messages aliased `m`): its owner's own messages and this

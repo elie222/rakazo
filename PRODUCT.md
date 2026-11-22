@@ -49,6 +49,7 @@ A routine runs either in its chat, as a turn with the whole conversation that wa
 The bot chooses when it creates the routine: alongside for reports, digests, reminders and alerts whose prompt can say everything they need; in the chat for follow-ups that continue work the conversation is doing, such as updating a draft or fixing a deploy started there.
 A routine running alongside reads the chat's latest messages and its own earlier results, so it can say what changed instead of repeating itself, and searches the rest of the chat when it needs more.
 A routine in the chat that is still waiting after five minutes is handed to the running turn, so a run that goes on for hours does not hold it back; one that watches for changes always runs alongside, because what it read is not the user's words.
+A silent routine reads the chat as other routines do but posts nothing there: the runs it starts itself keep their reply in its run history, where later runs do not read it, and in the chat it only asks when it needs the person and says when a run failed. In the chat it still waits for work under way, but is never handed to the running turn, which would post its result.
 
 ## Computers
 

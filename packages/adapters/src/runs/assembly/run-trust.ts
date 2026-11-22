@@ -5,6 +5,7 @@ import {
   connectorKindFromToolName,
   HELPER_RESULT_TRIGGER,
   inboundRoutinePrompts,
+  isRoutineRunTrigger,
   SITE_SENDING_TOOLS,
   siteAlwaysAllowed,
 } from "@rakazo/core";
@@ -171,7 +172,7 @@ export function createRunTrustLoaders(
           .join("\n");
       }
       // Saved when the routine fired, so a later edit cannot change what this run judges.
-      if (run.trigger === "routine") return routineTaskInstructions(taskPrompt);
+      if (isRoutineRunTrigger(run.trigger)) return routineTaskInstructions(taskPrompt);
       if (run.trigger === "webhook") {
         const routines = await deps.prisma.routine.findMany({
           where: { botId: botId, spaceId: run.spaceId, userId: run.userId },

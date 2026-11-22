@@ -282,6 +282,7 @@ export function routinesRoutes(ctx: RouterContext) {
               notify: input.notify,
               // What a watch read is not the owner's words, so it never runs as a turn in the chat.
               inChat: watch ? false : input.inChat,
+              silent: input.silent,
               webhookEnabled: input.webhookEnabled,
               githubEnabled: input.githubEnabled,
               messageProvider: input.messageProvider,
@@ -390,7 +391,7 @@ export function routinesRoutes(ctx: RouterContext) {
           // Task + run must commit together so a nonce collision cannot leave an orphan queued Task.
           run = await deps.prisma.$transaction(async (tx) => {
             const existing = await findExisting(tx);
-            return existing ?? createRoutineTestRun(tx, context.actor, target, prompt, nonce);
+            return existing ?? createRoutineTestRun(tx, context.actor, target, prompt, nonce, true);
           });
         } catch (error) {
           const existing = await findExisting();

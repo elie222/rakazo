@@ -8,6 +8,7 @@ import {
   emptyRoutineDraft,
   isOneShotRoutineCrons,
   routineCopy,
+  routineOffersSilent,
 } from "@rakazo/core";
 import { Stack, useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
@@ -593,6 +594,16 @@ function RoutineEditor({
           onChange={(emailSenders) => update({ emailSenders })}
           onRemove={() => update({ emailSenders: null })}
         />
+      ) : null}
+      {routineOffersSilent({ ...draft, watch: kept?.watch }) ? (
+        <SettingsGroup>
+          <SettingsSwitch
+            key="silent"
+            label={t`Silent`}
+            value={draft.silent}
+            onChange={(silent) => update({ silent })}
+          />
+        </SettingsGroup>
       ) : null}
       {base ? (
         <SettingsGroup>

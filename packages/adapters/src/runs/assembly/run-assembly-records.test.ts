@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { connectRun } from "./run-assembly-records.js";
+import { connectRun, runHistoryReach } from "./run-assembly-records.js";
 
 type ConnectRunInput = Parameters<typeof connectRun>;
 
@@ -41,6 +41,16 @@ describe("connecting a run", () => {
       await expect(connected.discoveredPromise).rejects.toThrow("discovery failed");
     } finally {
       process.off("unhandledRejection", unhandled);
+    }
+  });
+});
+
+describe("runHistoryReach", () => {
+  it("reads a silent routine's chat as any routine's: recent alongside, all in the chat", () => {
+    for (const trigger of ["routine", "silent_routine"]) {
+      expect(runHistoryReach({ trigger, routine: { inChat: false } })).toBe("recent");
+      expect(runHistoryReach({ trigger, routine: { inChat: true } })).toBe("all");
+      expect(runHistoryReach({ trigger, routine: null })).toBe("none");
     }
   });
 });

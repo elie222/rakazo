@@ -1,4 +1,8 @@
-import { QUEUE_HOLDING_RUN_STATUSES } from "@rakazo/core";
+import {
+  isRoutineRunTrigger,
+  QUEUE_HOLDING_RUN_STATUSES,
+  SILENT_ROUTINE_TRIGGER,
+} from "@rakazo/core";
 import type { Prisma } from "@rakazo/db";
 import { HOLDS_CHAT, handQueuedRunToWorkingRun } from "@rakazo/db";
 import { bestEffort, getLogger } from "@rakazo/logging";
@@ -10,7 +14,7 @@ import { wakeRun } from "../wakeups/wake-run.js";
 /** How long a run waits for its busy chat before it looks again, or a scheduled task hands over. */
 export const CHAT_WAIT_MS = 5 * 60_000;
 
-const CHAT_WAITING_TRIGGERS: readonly string[] = ["routine", "bot_message"];
+const CHAT_WAITING_TRIGGERS: readonly string[] = ["routine", SILENT_ROUTINE_TRIGGER, "bot_message"];
 
 interface ChatWaitingRun {
   id: string;
@@ -39,7 +43,7 @@ export function claimWaitsForChat(
 ): Prisma.RunWhereInput {
   if (!CHAT_WAITING_TRIGGERS.includes(run.trigger) || run.startedAt) return {};
   const chatFree: Prisma.RunWhereInput = { thread: { runs: { none: busyRunWhere(run, now) } } };
-  if (run.trigger !== "routine") return chatFree;
+  if (!isRoutineRunTrigger(run.trigger)) return chatFree;
   return { OR: [{ routine: { is: { inChat: false } } }, chatFree] };
 }
 
@@ -92,6 +96,7 @@ export async function holdRunForChat(deps: ExecutorDeps, run: ChatWaitingRun): P
     })) !== null;
   if (!(await chatBusy())) return;
   const waitEnds = new Date(run.createdAt.getTime() + CHAT_WAIT_MS);
+  // A silent routine keeps waiting: handed to the working run, its task would post in the chat.
   if (run.trigger === "routine" && now >= waitEnds) {
     const task = await deps.prisma.task.findUnique({
       where: { id: run.taskId },

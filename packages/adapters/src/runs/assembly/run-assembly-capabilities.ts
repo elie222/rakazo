@@ -7,6 +7,7 @@ import {
   HELPER_RESULT_TRIGGER,
   isCallClientNonce,
   isOwnerStartedRun,
+  isRoutineRunTrigger,
   messagingChannelPrivacyBlock,
   messagingDmSurfaceNote,
   nonOwnerChatPrivacyBlock,
@@ -162,7 +163,7 @@ export async function startTurnModel(
       { attemptId: attempt.id, workerId, fence },
       message,
     );
-    if (failed && run.trigger === "routine" && run.routineId) {
+    if (failed && isRoutineRunTrigger(run.trigger) && run.routineId) {
       const ref = { routineId: run.routineId, userId: run.userId };
       if (accountFailure) await backOffRoutineAfterAccountError(deps, ref);
       // The model setup the user chose cannot start, which only they can change.

@@ -4,6 +4,7 @@ import { BUILTIN_TOOL_NAMES } from "@rakazo/contracts";
 export { isSecretAskBlock } from "../asks/ask-kind.js";
 
 import { humanizeToolName } from "../messages/events.js";
+import { isRoutineRunTrigger, SILENT_ROUTINE_TRIGGER } from "./run-state.js";
 
 const APPROVAL_EXEMPT_TOOLS = new Set([
   "computer_observe",
@@ -242,7 +243,7 @@ export function isOwnerStartedRun(
 ): boolean {
   if (trigger === "follow_up") return followUpFromUser;
   if (trigger === "messaging") return !otherPersonChat;
-  return trigger === "user" || trigger === "call_end" || trigger === "routine";
+  return trigger === "user" || trigger === "call_end" || isRoutineRunTrigger(trigger);
 }
 
 /**
@@ -273,7 +274,14 @@ export function unattendedApprovalExpireAfterMs(
     : UNATTENDED_APPROVAL_EXPIRE_AFTER_MS;
 }
 
-const UNATTENDED_TRIGGERS = new Set(["routine", "webhook", "bot_message", "spawn", "tickets"]);
+const UNATTENDED_TRIGGERS = new Set([
+  "routine",
+  SILENT_ROUTINE_TRIGGER,
+  "webhook",
+  "bot_message",
+  "spawn",
+  "tickets",
+]);
 
 export function approvalCardExpires(trigger: string): boolean {
   return UNATTENDED_TRIGGERS.has(trigger);

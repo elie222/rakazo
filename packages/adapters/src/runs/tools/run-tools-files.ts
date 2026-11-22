@@ -2,8 +2,9 @@ import type { MessageBlock } from "@rakazo/contracts";
 import { ATTACHMENT_MAX_BYTES } from "@rakazo/contracts";
 import {
   inferAttachmentMimeType,
-  isBackgroundRunTrigger,
+  isTicketRunTrigger,
   messageBlockForArtifact,
+  SILENT_ROUTINE_TRIGGER,
 } from "@rakazo/core";
 import type { Artifact, Prisma } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
@@ -23,7 +24,11 @@ import {
   renderPlotFromTool,
 } from "../../tools/workspace-file-tools.js";
 import type { RunContext } from "../assembly/run-context.js";
-import { persistMessageInTransaction, runLeaseFor } from "../assembly/run-messages.js";
+import {
+  holdRunReplyInTransaction,
+  persistMessageInTransaction,
+  runLeaseFor,
+} from "../assembly/run-messages.js";
 import { textContentArg } from "../turn/tool-text.js";
 import { readStoppedRunFile } from "./run-stopped-file.js";
 import type { ToolCall, ToolHandlers } from "./run-tool-gate.js";
@@ -57,9 +62,10 @@ export async function callMediaTool(ctx: RunContext, call: ToolCall, recoverOnly
   const { deps, run, thread, context } = ctx;
   const { name, args, executionId, applied } = call;
   const mediaGeneration = ctx.providers.mediaGeneration;
+  const silent = run.trigger === SILENT_ROUTINE_TRIGGER;
   if (
     (name !== "generate_image" && name !== "generate_video") ||
-    isBackgroundRunTrigger(run.trigger) ||
+    isTicketRunTrigger(run.trigger) ||
     !mediaGeneration ||
     !deps.artifacts
   )
@@ -78,6 +84,8 @@ export async function callMediaTool(ctx: RunContext, call: ToolCall, recoverOnly
       providerId: mediaGeneration.id,
       groupId: await artifactGroupId(ctx),
       operationId: executionId,
+      holdReply: silent,
+      lease: runLeaseFor(deps, run.id),
     }),
   });
   // The run may end before the video does, so a background poll posts it when it is ready.
@@ -157,8 +165,8 @@ export const fileTools: ToolHandlers = {
     const read = await readWorkspaceFile(ctx, call, filePath);
     if ("error" in read) return fail(read.error);
     try {
-      // Background runs post no message (publishMessage drops attachment blocks).
-      const background = isBackgroundRunTrigger(run.trigger);
+      // Ticket work posts no message; a silent routine keeps the file in its run history.
+      const silent = run.trigger === SILENT_ROUTINE_TRIGGER;
       const lease = runLeaseFor(deps, run.id);
       let committed: Awaited<ReturnType<typeof persistMessageInTransaction>> | undefined;
       const saved = await saveWorkspaceFile(
@@ -174,14 +182,19 @@ export const fileTools: ToolHandlers = {
         },
         // The message commits with the artifact row, so a post that fails leaves no artifact
         // the user was never shown.
-        background
+        isTicketRunTrigger(run.trigger)
           ? undefined
           : async (tx, artifact) => {
+              const block = messageBlockForArtifact(artifact);
+              if (silent) {
+                await holdRunReplyInTransaction(tx, run, [block], lease);
+                return;
+              }
               committed = await persistMessageInTransaction(
                 tx,
                 run,
                 "bot",
-                [messageBlockForArtifact(artifact)],
+                [block],
                 run.trigger === "bot_message" ? false : undefined,
                 undefined,
                 false,

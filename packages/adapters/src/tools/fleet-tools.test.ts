@@ -1615,6 +1615,40 @@ describe("setChildBotModel", () => {
   });
 });
 
+describe("a silent child routine", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-10-18T08:00:00Z"));
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("asks for approval as silent and is created silent", async () => {
+    const { deps, prisma } = fakeFleet(fleet);
+    const prepared = await prepareFleetRequest(deps, run, "create_child_routine", {
+      bot_name: "Writer",
+      name: "Tidy",
+      prompt: "Tidy the board",
+      every: 1,
+      unit: "days",
+      timezone: "UTC",
+      silent: true,
+    });
+    if (!prepared.ok) throw new Error(prepared.error);
+    expect(prepared.canonical).toMatchObject({ silent: true });
+    expect(prepared.summary.lines).toContain("Silent: its runs post nothing in the chat");
+    await createChildRoutine(writeDeps(prisma), run, prepared.canonical);
+    // An identical routine that posts in the chat is not reused for it.
+    expect(prisma.routine.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({ where: expect.objectContaining({ silent: true }) }),
+    );
+    expect(prisma.routine.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ silent: true }) }),
+    );
+  });
+});
+
 describe("createChildRoutine", () => {
   beforeEach(() => {
     vi.useFakeTimers();

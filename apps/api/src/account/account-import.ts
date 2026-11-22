@@ -790,6 +790,7 @@ class AccountImporter implements ArchiveSink {
             notify: record.notify,
             // What a watch read is not the owner's words, so it never runs as a turn in the chat.
             inChat: record.inChat && !record.watch,
+            silent: record.silent ?? false,
             messageProvider: record.messageProvider,
             ...carriedRoutineModelPin(record),
             watch: jsonValue(record.watch),

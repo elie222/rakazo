@@ -41,7 +41,7 @@ describePostgres("pausing a routine whose runs keep failing (PostgreSQL)", () =>
     }
   });
 
-  async function fixture() {
+  async function fixture(trigger = "routine") {
     const routine = await system.routine.create({
       data: {
         ...identity,
@@ -67,7 +67,7 @@ describePostgres("pausing a routine whose runs keep failing (PostgreSQL)", () =>
           ...identity,
           routineId: routine.id,
           taskId: task.id,
-          trigger: "routine",
+          trigger,
           status,
           error: error ?? null,
           createdAt: new Date(at),
@@ -105,6 +105,13 @@ describePostgres("pausing a routine whose runs keep failing (PostgreSQL)", () =>
     expect(await pauseMessages()).toBe(1);
 
     await fail();
+    expect(await pauseMessages()).toBe(1);
+  });
+
+  it("pauses a silent routine's failing runs the same way", async () => {
+    const { fail, read, pauseMessages } = await fixture("silent_routine");
+    for (let index = 0; index < ROUTINE_FAILURE_PAUSE_AFTER; index += 1) await fail();
+    expect(await read()).toEqual({ active: false, nextRunAt: null });
     expect(await pauseMessages()).toBe(1);
   });
 

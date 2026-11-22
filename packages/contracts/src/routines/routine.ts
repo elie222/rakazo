@@ -54,6 +54,8 @@ export const RoutineSchema = z.object({
   notify: z.boolean(),
   /** Runs as a turn in its chat instead of alongside it. Absent on older servers. */
   inChat: z.boolean().default(false),
+  /** Runs it starts itself (schedule, change check, Run now) post nothing to the chat. Absent on older servers. */
+  silent: z.boolean().optional(),
   webhookEnabled: z.boolean(),
   githubEnabled: z.boolean(),
   messageProvider: z
@@ -100,6 +102,7 @@ export const CreateRoutineInput = z
     timezone: TimeZoneSchema.default("UTC"),
     notify: z.boolean().default(true),
     inChat: z.boolean().default(false),
+    silent: z.boolean().default(false),
     active: z.boolean().default(false),
     webhookEnabled: z.boolean().default(false),
     githubEnabled: z.boolean().default(false),

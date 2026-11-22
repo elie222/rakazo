@@ -13,6 +13,7 @@ import {
   isTerminal,
   nextFence,
   redactSecrets,
+  SILENT_ROUTINE_TRIGGER,
   truncatePlainText,
   userRunError,
 } from "@rakazo/core";
@@ -36,6 +37,7 @@ import {
   RunComputerFailedError,
 } from "../assembly/run-computer.js";
 import type { RunComputerUseState, RunLeaseState } from "../assembly/run-context.js";
+import { notifyFailedRoutineRun } from "../assembly/run-routines.js";
 import type { ExecutorDeps } from "../executor/executor-deps.js";
 import type { TakeoverResumeCheckpoint } from "../turn/takeover-resume.js";
 import { continueRunClaimFence, TAKEOVER_RESUME_CHECKPOINTS } from "../turn/takeover-resume.js";
@@ -137,6 +139,15 @@ export async function failRunBeforeTurn(
     // The chat that started the helper hears about its failure there, so it sends no push.
     await returnHelperOutcome(deps, run, { status: "failed", text: message }).catch((error) =>
       getLogger().error("background helper failure return", error),
+    );
+  } else if (run.trigger === SILENT_ROUTINE_TRIGGER) {
+    await bestEffort(
+      "silent routine failure notice",
+      notifyFailedRoutineRun(
+        deps,
+        { ...run, error: message },
+        { inChat: Boolean(failed.continuationRunId) },
+      ),
     );
   } else if (!failed.continuationRunId) {
     await notifyRun(deps, run, {

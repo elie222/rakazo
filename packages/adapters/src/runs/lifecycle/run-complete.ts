@@ -8,7 +8,9 @@ import {
   containsSecret,
   displayName,
   isBackgroundRunTrigger,
+  isRoutineRunTrigger,
   redactSecrets,
+  SILENT_ROUTINE_TRIGGER,
   withoutLastToolStepNotes,
 } from "@rakazo/core";
 import { getLogger } from "@rakazo/logging";
@@ -148,18 +150,21 @@ export async function completeRun(ctx: RunContext) {
     leaseOwner: ctx.workerId,
     leaseFence: ctx.fence,
     outcome: "completed",
-    blocks,
+    ...(run.trigger === SILENT_ROUTINE_TRIGGER ? { blocks: [], heldReply: blocks } : { blocks }),
     markUnread: !groupSilentEnd && marksUnread,
   });
   if (!completed) return;
   ctx.stopHeartbeatAfterCompletion();
-  if (run.trigger === "routine" && run.routineId) {
+  if (isRoutineRunTrigger(run.trigger) && run.routineId) {
     await clearRoutineBackoff(deps, { routineId: run.routineId, userId: run.userId });
-    await deleteSpentOneShotRoutine(deps, {
-      spaceId: run.spaceId,
-      routineId: run.routineId,
-      userId: run.userId,
-    });
+    // A silent one-time routine stays: its reply is kept only in its run history.
+    if (run.trigger !== SILENT_ROUTINE_TRIGGER) {
+      await deleteSpentOneShotRoutine(deps, {
+        spaceId: run.spaceId,
+        routineId: run.routineId,
+        userId: run.userId,
+      });
+    }
   }
   const { screenRelease } = ctx.state.computerUse;
   if (screenRelease) screenRelease.keepWarm = true;
@@ -250,12 +255,14 @@ async function finalReply(ctx: RunContext) {
   // model supplies none, unless it chose silence or its last interim message already says it.
   // Persisting peer results here also lets outcome delivery retry after completion.
   recordExplicitNoResponse(reply, reply.lastDiscardedMidTurnNarration);
+  // Ticket work drops its reply; a silent routine keeps it for its run history, not the chat.
+  const dropsReply = isBackgroundRunTrigger(run.trigger) && run.trigger !== SILENT_ROUTINE_TRIGGER;
   // When nothing follows the last step, the notes since the last interim message are the reply.
   // Messages mode keeps only the latest one; the earlier ones were private working.
   const fallbackNotes =
     ctx.replyMode === "messages" ? reply.workingNotes.slice(-1) : reply.workingNotes;
   if (
-    !isBackgroundRunTrigger(run.trigger) &&
+    !dropsReply &&
     !ctx.state.handedOff &&
     !reply.explicitNoResponse &&
     reply.workingNotes.length > 0 &&
@@ -270,7 +277,7 @@ async function finalReply(ctx: RunContext) {
   }
   // Runs that hold their narration back keep only the last held-back preview.
   if (
-    !isBackgroundRunTrigger(run.trigger) &&
+    !dropsReply &&
     !ctx.state.handedOff &&
     !reply.explicitNoResponse &&
     !reply.assembled.trim() &&
@@ -308,14 +315,14 @@ async function finalReply(ctx: RunContext) {
         ? peerReplyWithoutSentinel(reply.assembled, reply.messageSegments)
         : stripStrayNoResponse(reply.assembled, reply.messageSegments);
   let completionBlocks = silentReply.blocks;
-  if (!silentReply.assembled || isBackgroundRunTrigger(run.trigger)) {
+  if (!silentReply.assembled || dropsReply) {
     // Mid-turn progress already posted durable chat messages; skip the empty
     // "…" fallback so we do not add a junk final bubble.
     completionBlocks = completionMessageSegments(completionBlocks, {
       allowSilentEmpty:
         ctx.allowSilentEmptyRun || reply.publishedMidTurnUserMessage || groupSilentEnd,
       emptyResponseText: ctx.emptyResponseText,
-      suppressOutput: ctx.state.handedOff || isBackgroundRunTrigger(run.trigger),
+      suppressOutput: ctx.state.handedOff || dropsReply,
       skipEmptyFallback: reply.publishedTerminalSubagent || reply.publishedMidTurnUserMessage,
     });
   }

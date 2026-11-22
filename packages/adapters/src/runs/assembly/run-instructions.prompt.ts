@@ -1,5 +1,9 @@
 import { FLEET_WRITE_TOOL_NAMES } from "@rakazo/contracts";
-import { runReadsThreadHistory, toolRequiresExplicitApproval } from "@rakazo/core";
+import {
+  isRoutineRunTrigger,
+  runReadsThreadHistory,
+  toolRequiresExplicitApproval,
+} from "@rakazo/core";
 import { MODEL_CANNOT_SEE_MESSAGE } from "../../models/model-vision.prompt.js";
 import { SCHEDULE_TOOL_NAMES } from "../../tools/schedule-tools.js";
 import type { UserComputerState } from "../tools/run-tools-user-computer.js";
@@ -560,7 +564,7 @@ export function threadContextForRun<T extends { id?: string; role: string; waiti
   }
   // A routine reads only its owner's and the bot's messages; a summary of the whole chat would
   // bring everyone else's back in.
-  return messagingChannelRun || trigger === "routine"
+  return messagingChannelRun || isRoutineRunTrigger(trigger)
     ? { ...context, summary: null, historyCompactedUpToSeq: null, includeSemanticRecall: false }
     : { ...context, includeSemanticRecall: true };
 }

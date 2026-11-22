@@ -1,6 +1,11 @@
 import type { SemanticMemoryProvider } from "@rakazo/adapter-kit";
 import { hasLab, resolveLabs } from "@rakazo/contracts";
-import { BACKGROUND_HELPER_TRIGGER, isMessagingChannelRun, messagingChannelId } from "@rakazo/core";
+import {
+  BACKGROUND_HELPER_TRIGGER,
+  isMessagingChannelRun,
+  isRoutineRunTrigger,
+  messagingChannelId,
+} from "@rakazo/core";
 import {
   effectiveMemoryScope,
   expireRunToolQuestions,
@@ -142,7 +147,7 @@ export function runHistoryReach(run: {
   routine?: { inChat: boolean } | null;
 }): HistoryReach {
   if (run.trigger === "created") return "none";
-  if (run.trigger !== "routine") return "all";
+  if (!isRoutineRunTrigger(run.trigger)) return "all";
   if (!run.routine) return "none";
   return run.routine.inChat ? "all" : "recent";
 }
@@ -227,7 +232,7 @@ export async function loadRunRecords(
           : unknownChannelSourceId
             ? { sourceMessageId: unknownChannelSourceId }
             : undefined,
-      run.trigger === "routine" && run.routineId
+      isRoutineRunTrigger(run.trigger) && run.routineId
         ? {
             routineId: run.routineId,
             earlierResults: historyReach === "recent" ? ROUTINE_EARLIER_RESULTS : 0,
