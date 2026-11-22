@@ -68,12 +68,9 @@ export function MentionPicker({
   onHighlight: (mention: ComposerMention) => void;
 }) {
   const { t } = useLingui();
-  const botNames = new Set<string>();
-  const groupNames = new Set<string>();
-  for (const mention of options) {
-    if (mention.kind === "bot") botNames.add(mention.name);
-    if (mention.kind === "group") groupNames.add(mention.name);
-  }
+  // Options sharing a name (a bot and a group, say) are told apart by their visible subtitle.
+  const nameCounts = new Map<string, number>();
+  for (const { name } of options) nameCounts.set(name, (nameCounts.get(name) ?? 0) + 1);
   return (
     <div
       id={listboxId}
@@ -85,13 +82,8 @@ export function MentionPicker({
       {options.map((mention, index) => {
         const optionId = `${listboxId}-option-${index}`;
         const highlighted = index === activeIndex;
-        const labelWithType = Boolean(
-          mention.subtitle &&
-            ((mention.kind === "bot" && groupNames.has(mention.name)) ||
-              (mention.kind === "group" && botNames.has(mention.name))),
-        );
-        const nameId = `${optionId}-name`;
-        const typeId = `${optionId}-type`;
+        const labelWithSubtitle =
+          Boolean(mention.subtitle) && (nameCounts.get(mention.name) ?? 0) > 1;
         return (
           <button
             id={optionId}
@@ -99,8 +91,10 @@ export function MentionPicker({
             type="button"
             role="option"
             aria-selected={highlighted}
-            aria-label={labelWithType ? undefined : t`@${mention.name}`}
-            aria-labelledby={labelWithType ? `${nameId} ${typeId}` : undefined}
+            aria-label={labelWithSubtitle ? undefined : t`@${mention.name}`}
+            aria-labelledby={
+              labelWithSubtitle ? `${optionId}-name ${optionId}-subtitle` : undefined
+            }
             onMouseDown={(event) => event.preventDefault()}
             onClick={() => onPick(mention)}
             // Opening the list under a stationary pointer must not steal the keyboard highlight.
@@ -111,16 +105,12 @@ export function MentionPicker({
           >
             <MentionOptionIcon mention={mention} />
             <span className="min-w-0">
-              <span
-                id={labelWithType ? nameId : undefined}
-                dir="auto"
-                className="block text-body text-foreground"
-              >
+              <span id={`${optionId}-name`} dir="auto" className="block text-body text-foreground">
                 @{mention.name}
               </span>
               {mention.subtitle ? (
                 <span
-                  id={labelWithType ? typeId : undefined}
+                  id={`${optionId}-subtitle`}
                   dir="auto"
                   className="block truncate text-body-sm text-muted-foreground"
                 >
