@@ -17,7 +17,7 @@ describe("desktop local computer consent", () => {
   let computer: Awaited<ReturnType<typeof prepareHostComputer>>;
   beforeEach(async () => {
     root = await mkdtemp(path.join(tmpdir(), "rakazo-native-consent-"));
-    computer = await prepareHostComputer(root);
+    computer = await prepareHostComputer(root, "docker");
   });
   afterEach(async () => {
     vi.restoreAllMocks();
@@ -33,13 +33,37 @@ describe("desktop local computer consent", () => {
     const occupied = createServer();
     await new Promise<void>((resolve) => occupied.listen(port, "0.0.0.0", resolve));
     try {
-      computer = await prepareHostComputer(root);
+      computer = await prepareHostComputer(root, "docker");
       expect(computer.connection.token).not.toBe(previous.token);
       computer.activate(true);
       expect(computer.isEnabled()).toBe(false);
     } finally {
       await new Promise<void>((resolve) => occupied.close(() => resolve()));
     }
+  });
+
+  it("uses loopback after moving from Docker and keeps the saved credential and consent", async () => {
+    const previous = computer.connection;
+    const dockerUrl = new URL(previous.url);
+    expect(dockerUrl.hostname).toBe("host.docker.internal");
+    await computer.grant();
+    await computer.close();
+
+    const start = vi.spyOn(hostComputerServer, "startHostComputerServer");
+    computer = await prepareHostComputer(root, "native");
+    expect(start).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ hostname: "127.0.0.1", port: Number(dockerUrl.port) }),
+    );
+    expect(computer.connection).toEqual({
+      url: `http://127.0.0.1:${dockerUrl.port}`,
+      token: previous.token,
+    });
+    computer.activate(true);
+    expect(computer.isEnabled()).toBe(true);
+    const response = await fetch(computer.connection.url, {
+      headers: { authorization: `Bearer ${computer.connection.token}` },
+    });
+    expect(response.status).toBe(404);
   });
 
   it("replaces a reserved saved port and revokes the old credential and consent", async () => {
@@ -49,13 +73,14 @@ describe("desktop local computer consent", () => {
     await computer.close();
     const start = vi.spyOn(hostComputerServer, "startHostComputerServer");
     start.mockRejectedValueOnce(Object.assign(new Error("Reserved port"), { code: "EACCES" }));
-    computer = await prepareHostComputer(root);
+    computer = await prepareHostComputer(root, "docker");
     expect(start).toHaveBeenNthCalledWith(
       1,
-      expect.objectContaining({ port, token: previous.token }),
+      expect.objectContaining({ hostname: "0.0.0.0", port, token: previous.token }),
     );
     expect(start).toHaveBeenNthCalledWith(2, {
       root: path.join(root, "computers"),
+      hostname: "0.0.0.0",
       token: computer.connection.token,
     });
     expect(computer.connection.token).not.toBe(previous.token);
@@ -79,7 +104,7 @@ describe("desktop local computer consent", () => {
     const config = await readFile(configFile, "utf8");
     const consent = await readFile(consentFile, "utf8");
     const start = vi.spyOn(hostComputerServer, "startHostComputerServer").mockRejectedValue(error);
-    await expect(prepareHostComputer(root)).rejects.toBe(error);
+    await expect(prepareHostComputer(root, "docker")).rejects.toBe(error);
     expect(start).toHaveBeenCalledTimes(1);
     expect(await readFile(configFile, "utf8")).toBe(config);
     expect(await readFile(consentFile, "utf8")).toBe(consent);
@@ -90,7 +115,7 @@ describe("desktop local computer consent", () => {
     await Promise.all([computer.grant(), computer.revoke()]);
     expect(computer.isEnabled()).toBe(false);
     await computer.close();
-    computer = await prepareHostComputer(root);
+    computer = await prepareHostComputer(root, "docker");
     computer.activate(true);
     expect(computer.isEnabled()).toBe(false);
   });
@@ -102,7 +127,7 @@ describe("desktop local computer consent", () => {
     await computer.revoke();
     expect(computer.isEnabled()).toBe(false);
     await computer.close();
-    computer = await prepareHostComputer(root);
+    computer = await prepareHostComputer(root, "docker");
     computer.activate(true);
     expect(computer.isEnabled()).toBe(false);
   });
@@ -116,7 +141,7 @@ describe("desktop local computer consent", () => {
     expect(computer.isEnabled()).toBe(false);
     const connection = computer.connection;
     await computer.close();
-    computer = await prepareHostComputer(root);
+    computer = await prepareHostComputer(root, "docker");
     expect(computer.connection).toEqual(connection);
     expect(computer.isEnabled()).toBe(false);
     computer.activate(true);
@@ -127,7 +152,7 @@ describe("desktop local computer consent", () => {
     computer.activate(true);
     expect(computer.isEnabled()).toBe(false);
     await computer.close();
-    computer = await prepareHostComputer(root);
+    computer = await prepareHostComputer(root, "docker");
     computer.activate(true);
     expect(computer.isEnabled()).toBe(false);
   });

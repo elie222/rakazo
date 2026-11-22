@@ -5,11 +5,13 @@ import { FetchError, ResponseError } from "@boatdev/sdk";
 import type { ComputerRef, PortableFile, StreamedPortableFile } from "@rakazo/adapter-kit";
 import {
   SandboxDamagedError,
+  SandboxDiskTooLargeError,
   SandboxFileTooLargeError,
   SandboxRateLimitError,
   SandboxSizeUnavailableError,
   SandboxUnavailableError,
   SandboxUnresponsiveError,
+  WorkspaceSaveFailedError,
   WorkspaceTooLargeError,
 } from "@rakazo/adapter-kit";
 import {
@@ -17,6 +19,7 @@ import {
   screenDisplayArgv,
   shellQuote,
 } from "@rakazo/core/node/desktop-runtime";
+import { deferred } from "@rakazo/core/test-async";
 import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
 import { parse } from "shell-quote";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -133,11 +136,133 @@ describe("stopped workspace files", () => {
         savedAt: new Date(),
       }),
     ).resolves.toBeUndefined();
+    expect(download).not.toHaveBeenCalled();
     await api.stop({ sandboxId: computer.id, stopRequest: { force: true } });
+    // The file is requested while the stop is checked, but an unverified snapshot never returns it.
     await expect(
       provider.readStoppedFile(computer, "notes.txt", context, { maxBytes: 100 }),
     ).resolves.toBeUndefined();
-    expect(download).not.toHaveBeenCalled();
+  });
+
+  it("checks the stop while the file downloads, and returns the file only once it passes", async () => {
+    const stopCheck = deferred<Awaited<ReturnType<FakeBoatApi["getStop"]>>>();
+    const checkStop = FakeBoatApi.prototype.getStop;
+    const getStop = vi.spyOn(FakeBoatApi.prototype, "getStop");
+    const download = vi.spyOn(FakeBoatApi.prototype, "getSnapshotFileRaw");
+    const { computer, provider } = await boat();
+    const bytes = new TextEncoder().encode("last saved content");
+    await provider.writeFile(computer, { path: "notes.txt", content: bytes }, context);
+    await provider.stop(computer, context);
+    getStop.mockClear();
+    getStop.mockImplementationOnce(async function (this: FakeBoatApi, request) {
+      const operation = await checkStop.call(this, request);
+      await stopCheck.promise;
+      return operation;
+    });
+
+    const read = provider.readStoppedFile(computer, "notes.txt", context, { maxBytes: 100 });
+    await vi.waitUntil(() => download.mock.calls.length > 0);
+    expect(getStop).toHaveBeenCalledOnce();
+    stopCheck.resolve(undefined as never);
+    expect(await read).toEqual(bytes);
+  });
+
+  it("logs each read with how long every step took", async () => {
+    const sink = createTestSink();
+    installLogger(createLogger({ service: "test", sinks: [sink] }));
+    const { computer, provider } = await boat();
+    const bytes = new TextEncoder().encode("last saved content");
+    await provider.writeFile(computer, { path: "notes.txt", content: bytes }, context);
+    await provider.stop(computer, context);
+
+    await provider.readStoppedFile(computer, "notes.txt", context, { maxBytes: 100 });
+    await provider.readStoppedFile(computer, "missing.txt", context, { maxBytes: 100 });
+
+    const reads = sink.events.filter((event) => event.message === "computer.stopped_file_read");
+    expect(reads).toEqual([
+      expect.objectContaining({
+        level: "info",
+        provider: "boat",
+        outcome: "read",
+        bytes: bytes.byteLength,
+        stepMs: expect.objectContaining({ get: 0, latest: 0, stop: 0, file: 0, read: 0 }),
+      }),
+      expect.objectContaining({
+        outcome: "fallback",
+        reason: "snapshot_request_refused",
+        status: 404,
+      }),
+    ]);
+    expect(reads[0]).toHaveProperty("totalMs");
+    expect(sink.events.filter((event) => event.level === "warn")).toEqual([]);
+  });
+
+  it("falls back without waiting for a file request that never answers", async () => {
+    const download = vi.spyOn(FakeBoatApi.prototype, "getSnapshotFileRaw");
+    const { api, computer, provider } = await boat();
+    await provider.stop(computer, context);
+    vi.setSystemTime(Date.now() + 1);
+    await api.stop({ sandboxId: computer.id, stopRequest: { force: true } });
+    download.mockImplementationOnce(() => new Promise(() => {}));
+
+    await expect(
+      provider.readStoppedFile(computer, "notes.txt", context, { maxBytes: 100 }),
+    ).resolves.toBeUndefined();
+    expect(download).toHaveBeenCalledOnce();
+  });
+
+  it("does not call a caller's cancellation a deadline", async () => {
+    const cancelled = new AbortController();
+    const sink = createTestSink();
+    installLogger(createLogger({ service: "test", sinks: [sink] }));
+    const getStop = vi.spyOn(FakeBoatApi.prototype, "getStop");
+    const { computer, provider } = await boat();
+    await provider.stop(computer, context);
+    getStop.mockImplementationOnce(async () => {
+      cancelled.abort(new Error("cancelled"));
+      throw cancelled.signal.reason;
+    });
+
+    await expect(
+      provider.readStoppedFile(
+        computer,
+        "notes.txt",
+        { ...context, signal: cancelled.signal },
+        { maxBytes: 100 },
+      ),
+    ).rejects.toThrow("cancelled");
+    const read = sink.events.find((event) => event.message === "computer.stopped_file_read");
+    expect(read).toMatchObject({ outcome: "aborted" });
+  });
+
+  it("names the step that was still running when the deadline passed", async () => {
+    const deadline = new AbortController();
+    vi.spyOn(AbortSignal, "timeout").mockReturnValue(deadline.signal);
+    const download = vi.spyOn(FakeBoatApi.prototype, "getSnapshotFileRaw");
+    const getStop = vi.spyOn(FakeBoatApi.prototype, "getStop");
+    const sink = createTestSink();
+    installLogger(createLogger({ service: "test", sinks: [sink] }));
+    const { computer, provider } = await boat();
+    await provider.writeFile(computer, { path: "notes.txt", content: Uint8Array.of(1) }, context);
+    await provider.stop(computer, context);
+    getStop.mockImplementationOnce(async () => {
+      await vi.waitUntil(() => download.mock.results.length > 0);
+      await download.mock.results[0]?.value;
+      deadline.abort(new DOMException("timed out", "TimeoutError"));
+      throw deadline.signal.reason;
+    });
+
+    await expect(
+      provider.readStoppedFile(computer, "notes.txt", context, { maxBytes: 100 }),
+    ).resolves.toBeUndefined();
+    expect(sink.events).toContainEqual(
+      expect.objectContaining({
+        message: "computer.stopped_file_read",
+        outcome: "fallback",
+        reason: "deadline",
+        unfinishedSteps: ["stop"],
+      }),
+    );
   });
 });
 
@@ -204,7 +329,9 @@ describe("BoatSandboxProvider", () => {
     it("creates a new computer on the machine type for its size", async () => {
       const api = new FakeBoatApi();
       const provider = new BoatSandboxProvider({ apiKey: "test-key" }, api);
-      await provider.provision({ botId: "bot-a", homePath: "/unused", size: "large" }, context);
+      await expect(
+        provider.provision({ botId: "bot-a", homePath: "/unused", size: "large" }, context),
+      ).resolves.toMatchObject({ size: "large" });
       expect(api.creates.at(-1)?.type).toBe("large");
       await provider.provision({ botId: "bot-b", homePath: "/unused" }, context);
       expect(api.creates.at(-1)?.type).toBeUndefined();
@@ -224,12 +351,14 @@ describe("BoatSandboxProvider", () => {
 
       await expect(provider.provision(request, context)).resolves.toMatchObject({
         started: false,
+        size: "standard",
       });
       expect(resume).not.toHaveBeenCalled();
 
       api.setState(computer.id, "archived");
       await expect(provider.provision(request, context)).resolves.toMatchObject({
         started: true,
+        size: "xlarge",
       });
       expect(resume).toHaveBeenCalledWith(
         {
@@ -292,6 +421,130 @@ describe("BoatSandboxProvider", () => {
       await expect(
         provider.provision({ botId: "bot-b", homePath: "/unused", size: "xlarge" }, context),
       ).rejects.toBeInstanceOf(SandboxSizeUnavailableError);
+    });
+
+    it("wakes a stopped computer at the reference's size on any call", async () => {
+      const resume = vi.spyOn(FakeBoatApi.prototype, "resume");
+      const { api, provider, computer } = await boat();
+      api.availableTypes.add("xlarge");
+      const sized = { ...computer, startSize: "xlarge" as const };
+      await provider.prepare(sized, context);
+      await provider.writeFile(sized, { path: "kept.txt", content: Uint8Array.of(1) }, context);
+      api.setState(computer.id, "archived");
+
+      expect(await provider.readFile(sized, "kept.txt", context)).toEqual(Uint8Array.of(1));
+      expect(resume).toHaveBeenCalledWith(
+        {
+          sandboxId: computer.id,
+          resumeRequest: { noEnv: true, ttlSeconds: 7200, type: "xlarge" },
+        },
+        { signal: expect.any(AbortSignal) },
+      );
+    });
+
+    it("reads no status for a call on a running computer", async () => {
+      const get = vi.spyOn(FakeBoatApi.prototype, "get");
+      const { provider, computer } = await boat();
+      const sized = { ...computer, startSize: "xlarge" as const };
+      await provider.prepare(sized, context);
+      get.mockClear();
+
+      await provider.writeFile(sized, { path: "kept.txt", content: Uint8Array.of(1) }, context);
+      await provider.readFile(sized, "kept.txt", context);
+
+      expect(get).not.toHaveBeenCalled();
+    });
+
+    it("keeps a call's wake size while unsized calls run on the same computer", async () => {
+      const resume = vi.spyOn(FakeBoatApi.prototype, "resume");
+      const get = FakeBoatApi.prototype.get;
+      const reading = deferred();
+      const read = deferred();
+      let hold = false;
+      vi.spyOn(FakeBoatApi.prototype, "get").mockImplementation(async function (
+        this: FakeBoatApi,
+        request,
+      ) {
+        if (hold) {
+          hold = false;
+          reading.resolve();
+          await read.promise;
+        }
+        return get.call(this, request);
+      });
+      const { api, provider, computer } = await boat();
+      api.availableTypes.add("xlarge");
+      const sized = { ...computer, startSize: "xlarge" as const };
+      await provider.prepare(sized, context);
+      await provider.writeFile(sized, { path: "kept.txt", content: Uint8Array.of(1) }, context);
+      api.setState(computer.id, "archived");
+
+      hold = true;
+      const woken = provider.readFile(sized, "kept.txt", context);
+      await reading.promise;
+      const unsized = [provider.keepAlive(computer), provider.isStopped(computer, context)];
+      read.resolve();
+
+      expect(await woken).toEqual(Uint8Array.of(1));
+      await Promise.all(unsized);
+      expect(resume.mock.calls.map(([request]) => request.resumeRequest?.type)).toEqual(["xlarge"]);
+    });
+
+    it("wakes a computer at the size it has when Boat refuses the reference's size", async () => {
+      const resume = vi.spyOn(FakeBoatApi.prototype, "resume");
+      const { api, provider, computer } = await boat();
+      api.tooSmallTypes.add("default");
+      const sized = { ...computer, startSize: "standard" as const };
+      await provider.prepare(sized, context);
+      await provider.writeFile(sized, { path: "kept.txt", content: Uint8Array.of(1) }, context);
+      api.setState(computer.id, "archived");
+
+      const sink = createTestSink();
+      installLogger(createLogger({ service: "test", sinks: [sink] }));
+      try {
+        expect(await provider.readFile(sized, "kept.txt", context)).toEqual(Uint8Array.of(1));
+      } finally {
+        installLogger(createLogger({ service: "test", level: "off", sinks: [] }));
+      }
+      expect(resume.mock.calls.map(([request]) => request.resumeRequest?.type)).toEqual([
+        "default",
+        undefined,
+      ]);
+      expect(sink.events).toContainEqual(
+        expect.objectContaining({
+          message: "sandbox.size_unavailable",
+          size: "standard",
+          reason: "too_small",
+        }),
+      );
+    });
+
+    it("wakes a computer at the size it has on a call whose reference names none", async () => {
+      const resume = vi.spyOn(FakeBoatApi.prototype, "resume");
+      const { api, provider, computer } = await boat();
+      api.availableTypes.add("xlarge");
+      const sized = { ...computer, startSize: "xlarge" as const };
+      await provider.prepare(sized, context);
+      await provider.writeFile(sized, { path: "kept.txt", content: Uint8Array.of(1) }, context);
+      api.setState(computer.id, "archived");
+
+      expect(await provider.readFile(computer, "kept.txt", context)).toEqual(Uint8Array.of(1));
+      expect(resume.mock.calls.map(([request]) => request.resumeRequest?.type)).toEqual([
+        undefined,
+      ]);
+    });
+
+    it("resumes a computer whose machine Boat lost at the reference's size", async () => {
+      const resume = vi.spyOn(FakeBoatApi.prototype, "resume");
+      const { api, provider, computer } = await boat();
+      api.availableTypes.add("xlarge");
+      const sized = { ...computer, startSize: "xlarge" as const };
+      await provider.prepare(sized, context);
+      await provider.writeFile(sized, { path: "kept.txt", content: Uint8Array.of(1) }, context);
+      api.fail(computer.id, "no_machine");
+
+      expect(await provider.readFile(sized, "kept.txt", context)).toEqual(Uint8Array.of(1));
+      expect(resume.mock.calls.map(([request]) => request.resumeRequest?.type)).toEqual(["xlarge"]);
     });
   });
 
@@ -473,6 +726,55 @@ describe("BoatSandboxProvider", () => {
     await expect(run()).rejects.toThrow("invalid environment variable name");
     expect(writeFile).not.toHaveBeenCalled();
     expect(command).not.toHaveBeenCalled();
+  });
+
+  it("keeps the output a command wrote before it timed out", async () => {
+    const command = FakeBoatApi.prototype.command;
+    vi.spyOn(FakeBoatApi.prototype, "command").mockImplementation(async function (
+      this: FakeBoatApi,
+      request,
+    ) {
+      const text = request.commandRequest.command;
+      if (text.startsWith("test -f") && text.includes("completed-124")) {
+        return {
+          ok: true,
+          type: "command.finished",
+          success: false,
+          exitCode: 1,
+          stdout: "",
+          stderr: "",
+          timedOut: false,
+        };
+      }
+      return text.includes("still-working")
+        ? {
+            ok: true,
+            type: "command.finished",
+            success: false,
+            exitCode: 124,
+            stdout: "step 1\n",
+            stderr: "warning\n",
+            timedOut: false,
+          }
+        : command.call(this, request);
+    });
+    const { provider, computer } = await boat();
+
+    const events = [];
+    for await (const event of provider.execute(
+      computer,
+      { argv: ["still-working"], timeoutMs: 1_000 },
+      context,
+    )) {
+      events.push(event);
+    }
+
+    expect(events).toEqual([
+      { type: "stdout", data: "step 1\n" },
+      { type: "stderr", data: "warning\n" },
+      { type: "stderr", data: "command timed out after 1000 ms\n" },
+      { type: "exit", code: 124 },
+    ]);
   });
 
   it("reports a timed out command that has no env file", async () => {
@@ -766,6 +1068,25 @@ describe("BoatSandboxProvider", () => {
       ]);
     },
   );
+
+  it("reports a stopped sandbox whose disk fits no machine as too large to start", async () => {
+    const resume = vi.spyOn(FakeBoatApi.prototype, "resume");
+    const { api, provider, computer } = await boat();
+    await provider.prepare(computer, context);
+    api.setState(computer.id, "archived");
+    resume.mockRejectedValue(
+      boatError(
+        409,
+        "resume_failed",
+        "This sandbox uses 83.8 GB of disk, which does not fit any available 'default' machine (largest budget: 76.0 GB).",
+      ),
+    );
+
+    await expect(provider.readFile(computer, "kept.txt", context)).rejects.toBeInstanceOf(
+      SandboxDiskTooLargeError,
+    );
+    expect(resume).toHaveBeenCalledOnce();
+  });
 
   it("retries a request that never reached Boat once, whatever the call", async () => {
     const run = vi.spyOn(FakeBoatApi.prototype, "command");
@@ -1091,10 +1412,35 @@ describe("BoatSandboxProvider", () => {
     });
   });
 
+  it("reports desktop tool setup that outlasts its timeout as unresponsive", async () => {
+    const run = FakeBoatApi.prototype.command;
+    vi.spyOn(FakeBoatApi.prototype, "command").mockImplementation(async function (
+      this: FakeBoatApi,
+      request,
+    ) {
+      if (!request.commandRequest.command.includes("apt-get")) return run.call(this, request);
+      return {
+        ok: true,
+        type: "command.finished",
+        success: false,
+        exitCode: 124,
+        stdout: "",
+        stderr: "",
+        timedOut: true,
+      };
+    });
+    const { provider, computer } = await boat();
+
+    await expect(provider.prepare(computer, context)).rejects.toBeInstanceOf(
+      SandboxUnresponsiveError,
+    );
+  });
+
   it.each([
     'Executable not found in $PATH: "systemd-run"',
     "ENOENT: no such file or directory, posix_spawn 'systemd-run'",
     "environment: line 7: /usr/bin/grep: cannot execute: required file not found\nenvironment: line 8: /usr/bin/grep: cannot execute: required file not found",
+    "sudo: you do not exist in the passwd database",
   ])("reports a machine that cannot start programs as damaged: %s", async (stderr) => {
     vi.spyOn(FakeBoatApi.prototype, "command").mockResolvedValue({
       ok: true,
@@ -1774,6 +2120,22 @@ describe("BoatSandboxProvider", () => {
     expect(polledAt.length).toBeLessThanOrEqual(125);
   });
 
+  it("reports a machine that stopped under a running command as unavailable", async () => {
+    vi.spyOn(FakeBoatApi.prototype, "commandStatus").mockRejectedValue(
+      boatError(409, "machine_not_running", "Sandbox is stopped."),
+    );
+    const { api, provider, computer } = await boat();
+    await provider.prepare(computer, context);
+    api.attachOutdated = true;
+    api.detachedRunMs = 60_000;
+
+    await expect(
+      drain(
+        provider.execute(computer, { argv: ["echo", "polled"], timeoutMs: 20 * 60_000 }, context),
+      ),
+    ).rejects.toBeInstanceOf(SandboxUnavailableError);
+  });
+
   it("keeps the sandbox when Boat rejects the credentials", async () => {
     const { api, provider, computer } = await boat();
     api.unauthorized();
@@ -2158,15 +2520,109 @@ describe("BoatSandboxProvider", () => {
 
     const error = await exportAll(provider, computer).catch((failure: Error) => failure);
 
-    expect((error as Error).message).toBe(
-      "could not archive Boat workspace (exit 1: No space left on device; Input/output error)",
-    );
+    expect(error).toBeInstanceOf(WorkspaceSaveFailedError);
+    expect(error).toMatchObject({
+      reason: "disk_full",
+      cause: {
+        message:
+          "could not archive Boat workspace (exit 1: No space left on device; Input/output error)",
+      },
+    });
   });
+
+  it("does not read a disk failure from a file name in the archive's errors", async () => {
+    const run = FakeBoatApi.prototype.command;
+    vi.spyOn(FakeBoatApi.prototype, "command").mockImplementation(async function (
+      this: FakeBoatApi,
+      request,
+    ) {
+      if (!request.commandRequest.command.includes("archive=")) return run.call(this, request);
+      return {
+        ok: true,
+        type: "command.finished",
+        success: false,
+        stdout: "",
+        stderr: "tar: ./No space left on device.txt: Cannot open: Permission denied\n",
+        exitCode: 2,
+        timedOut: false,
+      };
+    });
+    const { provider, computer } = await boat();
+
+    const error = await exportAll(provider, computer).catch((failure: Error) => failure);
+
+    expect(error).not.toBeInstanceOf(WorkspaceSaveFailedError);
+  });
+
+  it("reads a disk failure that follows other archive errors", async () => {
+    const run = FakeBoatApi.prototype.command;
+    vi.spyOn(FakeBoatApi.prototype, "command").mockImplementation(async function (
+      this: FakeBoatApi,
+      request,
+    ) {
+      if (!request.commandRequest.command.includes("archive=")) return run.call(this, request);
+      return {
+        ok: true,
+        type: "command.finished",
+        success: false,
+        stdout: "",
+        stderr: [
+          "tar: ./a: Cannot stat: Stale file handle",
+          "tar: ./b: Cannot open: Too many open files",
+          "tar: ./c: Cannot read: Bad message",
+          "gzip: stdout: No space left on device",
+          "",
+        ].join("\n"),
+        exitCode: 2,
+        timedOut: false,
+      };
+    });
+    const { provider, computer } = await boat();
+
+    const error = await exportAll(provider, computer).catch((failure: Error) => failure);
+
+    expect(error).toMatchObject({ reason: "disk_full" });
+  });
+
+  it.each([
+    ["Input/output error", "disk_error"],
+    ["Transport endpoint is not connected", "disk_error"],
+    ["No space left on device", "disk_full"],
+  ])(
+    "reports a workspace whose disk failed the save before archiving (%s)",
+    async (failure, reason) => {
+      const run = FakeBoatApi.prototype.command;
+      vi.spyOn(FakeBoatApi.prototype, "command").mockImplementation(async function (
+        this: FakeBoatApi,
+        request,
+      ) {
+        if (request.commandRequest.command.includes("archive=")) return run.call(this, request);
+        if (!request.commandRequest.command.includes("chromium-bot-*"))
+          return run.call(this, request);
+        return {
+          ok: true,
+          type: "command.finished",
+          success: false,
+          stdout: "",
+          stderr: `mkdir: cannot create directory '/tmp/rakazo': ${failure}\n`,
+          exitCode: 1,
+          timedOut: false,
+        };
+      });
+      const { provider, computer } = await boat();
+      await provider.prepare(computer, context);
+
+      const error = await exportAll(provider, computer).catch((thrown: Error) => thrown);
+
+      expect(error).toBeInstanceOf(WorkspaceSaveFailedError);
+      expect(error).toMatchObject({ reason });
+    },
+  );
 
   it.each([
     ["timed out", { exitCode: 124, timedOut: true }, "timed out"],
     ["met an unreadable file", { exitCode: 3, timedOut: false }, "an entry could not be read"],
-  ])("reports a workspace archive that %s without its output", async (_, ending, status) => {
+  ])("reports a workspace archive that %s without its output", async (name, ending, status) => {
     const output = "/home/user/rakazo-home/private.txt\n";
     const run = FakeBoatApi.prototype.command;
     vi.spyOn(FakeBoatApi.prototype, "command").mockImplementation(async function (
@@ -2188,7 +2644,9 @@ describe("BoatSandboxProvider", () => {
 
     const error = await exportAll(provider, computer).catch((failure: Error) => failure);
 
-    expect((error as Error).message).toBe(`could not archive Boat workspace (${status})`);
+    const failure = error instanceof WorkspaceSaveFailedError ? error.cause : error;
+    expect(error instanceof WorkspaceSaveFailedError).toBe(name === "timed out");
+    expect((failure as Error).message).toBe(`could not archive Boat workspace (${status})`);
     expect(createDownloadUrl).not.toHaveBeenCalled();
   });
 
@@ -2905,7 +3363,7 @@ describe("Boat computer snapshot", () => {
     });
     expect(api.creates).toEqual([{ ttlSeconds: 1800, noEnv: true }]);
     const commands = command.mock.calls.map(([request]) => request.commandRequest.command);
-    expect(commands.some((line) => line.includes("apt-get install"))).toBe(true);
+    expect(commands.some((line) => /apt-get .*install/.test(line))).toBe(true);
     expect(commands.some((line) => line.includes("xdpyinfo -display :99"))).toBe(true);
     expect(commands.join("\n")).not.toContain("RAKAZO_BOT_ID");
 

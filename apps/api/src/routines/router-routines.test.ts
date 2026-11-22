@@ -1,6 +1,5 @@
 import { createRouterClient } from "@orpc/server";
 import type { Actor } from "@rakazo/contracts";
-import { Prisma } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
 import type { RouterDeps } from "../router.js";
 import { appHandler, createRouter, handle } from "../router-test-support.js";
@@ -15,6 +14,7 @@ describe("routine live Codex model validation", () => {
       const row = {
         id: "routine-1",
         botId: "bot-1",
+        userId: "user-1",
         name: "Check",
         prompt: "Check changes",
         crons: ["0 9 * * *"],
@@ -46,6 +46,14 @@ describe("routine live Codex model validation", () => {
       const client = createRouterClient(
         createRouter({
           prisma: {
+            spaceMember: {
+              findMany: vi.fn(async () => [
+                {
+                  userId: "user-1",
+                  member: { user: { name: "Riley", email: "riley@example.test" } },
+                },
+              ]),
+            },
             bot: { findFirst: vi.fn(async () => ({ id: "bot-1", computer: null })) },
             routine: {
               findFirst: vi.fn(async () => row),
@@ -124,51 +132,137 @@ describe("routine live Codex model validation", () => {
 });
 
 describe("routines.list", () => {
-  it("lets every Space member change a routine, whoever created it", async () => {
-    const actor = { userId: "user-1", spaceId: "space-1" };
-    const row = (id: string, userId: string) => ({
-      id,
-      botId: "bot-1",
-      spaceId: "space-1",
-      userId,
-      name: id,
-      prompt: "Check changes",
-      crons: ["0 9 * * *"],
-      timezone: "UTC",
-      active: true,
-      notify: false,
-      webhookEnabled: false,
-      githubEnabled: false,
-      messageProvider: null,
-      modelProvider: null,
-      modelId: null,
-      thinkingLevel: null,
-      watch: null,
-      watchState: null,
-      lastRunAt: null,
-      nextRunAt: null,
-      createdAt: new Date("2026-09-01T00:00:00.000Z"),
-    });
+  const actor = { userId: "user-1", spaceId: "space-1" };
+  const row = (id: string, userId: string) => ({
+    id,
+    botId: "bot-1",
+    spaceId: "space-1",
+    userId,
+    name: id,
+    prompt: "Check changes",
+    crons: ["0 9 * * *"],
+    timezone: "UTC",
+    active: true,
+    notify: false,
+    webhookEnabled: false,
+    githubEnabled: false,
+    messageProvider: null,
+    modelProvider: null,
+    modelId: null,
+    thinkingLevel: null,
+    watch: null,
+    watchState: null,
+    lastRunAt: null,
+    nextRunAt: null,
+    createdAt: new Date("2026-09-01T00:00:00.000Z"),
+  });
+  const list = async (rows: ReturnType<typeof row>[], names: Record<string, string>) => {
+    const findOwners = vi.fn(async ({ where }: { where: { userId: { in: string[] } } }) =>
+      where.userId.in
+        .filter((userId) => userId in names)
+        .map((userId) => ({
+          userId,
+          member: { user: { name: names[userId], email: `${userId}@example.test` } },
+        })),
+    );
     const client = createRouterClient(
       createRouter({
         prisma: {
           bot: { findFirst: vi.fn(async () => ({ id: "bot-1", thread: null, computer: null })) },
-          routine: {
-            findMany: vi.fn(async () => [row("mine", "user-1"), row("theirs", "user-2")]),
-          },
+          routine: { findMany: vi.fn(async () => rows) },
+          spaceMember: { findMany: findOwners },
         },
         env: { sandboxProvider: "fake" },
       } as unknown as RouterDeps),
       { context: { actor } as never },
     );
+    return { routines: await client.routines.list({ botId: "bot-1" }), findOwners };
+  };
 
-    const routines = await client.routines.list({ botId: "bot-1" });
-    // Nothing marks either one read-only: any member may change it.
+  it("lets only a routine's owner change it", async () => {
+    const { routines } = await list([row("mine", "user-1"), row("theirs", "user-2")], {
+      "user-1": "Riley",
+      "user-2": "Dana",
+    });
     expect(routines.map(({ id, editable }) => ({ id, editable }))).toEqual([
-      { id: "mine", editable: undefined },
-      { id: "theirs", editable: undefined },
+      { id: "mine", editable: true },
+      { id: "theirs", editable: false },
     ]);
     expect(routines[0]).not.toHaveProperty("userId");
+  });
+
+  it("says whose accounts each routine runs with, by name and never by id", async () => {
+    const { routines, findOwners } = await list(
+      [row("mine", "user-1"), row("theirs", "user-2"), row("also-theirs", "user-2")],
+      { "user-1": "Riley", "user-2": "Dana" },
+    );
+    expect(routines.map(({ id, runsAs }) => ({ id, runsAs }))).toEqual([
+      { id: "mine", runsAs: { name: "Riley", isViewer: true } },
+      { id: "theirs", runsAs: { name: "Dana", isViewer: false } },
+      { id: "also-theirs", runsAs: { name: "Dana", isViewer: false } },
+    ]);
+    expect(JSON.stringify(routines)).not.toContain("user-2");
+    // One read of the owners, in the viewer's Space, however many routines there are.
+    expect(findOwners).toHaveBeenCalledExactlyOnceWith({
+      where: { spaceId: "space-1", userId: { in: ["user-1", "user-2"] } },
+      select: {
+        userId: true,
+        member: { select: { user: { select: { name: true, email: true } } } },
+      },
+    });
+  });
+
+  it("leaves it unnamed when the owner left the Space, and hides an opaque account name", async () => {
+    const { routines } = await list(
+      [row("gone", "user-9"), row("opaque", "user-2"), row("blank", "user-3")],
+      { "user-2": "c4kd9x2m1p0q8r7s6t5u4v3w2", "user-3": "  " },
+    );
+    expect(routines.map(({ id, runsAs }) => ({ id, runsAs }))).toEqual([
+      { id: "gone", runsAs: null },
+      { id: "opaque", runsAs: { name: "Member", isViewer: false } },
+      { id: "blank", runsAs: { name: "Member", isViewer: false } },
+    ]);
+  });
+
+  it("never shows an account's email address as its name", async () => {
+    for (const name of ["user-2@example.test", "Dana <USER-2@example.test>"]) {
+      const { routines } = await list([row("theirs", "user-2")], { "user-2": name });
+      expect(routines[0]?.runsAs).toEqual({ name: "Member", isViewer: false });
+      expect(JSON.stringify(routines).toLowerCase()).not.toContain("example.test");
+    }
+  });
+
+  it("answers a new routine with who it runs as", async () => {
+    const created = row("new", "user-1");
+    const client = createRouterClient(
+      createRouter({
+        prisma: {
+          bot: { findFirst: vi.fn(async () => ({ id: "bot-1", thread: null, computer: null })) },
+          routine: { create: vi.fn(async () => created), count: vi.fn(async () => 0) },
+          spaceMember: {
+            findMany: vi.fn(async () => [
+              { userId: "user-1", member: { user: { name: "Riley", email: "r@example.test" } } },
+            ]),
+          },
+        },
+        jobs: { enqueue: vi.fn(async () => undefined) },
+        env: { sandboxProvider: "fake" },
+      } as unknown as RouterDeps),
+      { context: { actor } as never },
+    );
+    const saved = await client.routines.create({
+      botId: "bot-1",
+      name: "new",
+      prompt: "p",
+      crons: ["0 9 * * *"],
+    });
+    expect(saved.runsAs).toEqual({ name: "Riley", isViewer: true });
+  });
+
+  it("reads nothing for a bot without routines", async () => {
+    const { routines, findOwners } = await list([], {});
+    expect(routines).toEqual([]);
+    expect(findOwners).not.toHaveBeenCalled();
   });
 });
 
@@ -220,8 +314,12 @@ describe("routines.update", () => {
     );
     const enqueue = vi.fn(async () => undefined);
     const cancel = vi.fn(async () => undefined);
-    const moveQueued = vi.fn(async (_args: unknown) => [] as Array<{ taskId: string }>);
     const prisma = {
+      spaceMember: {
+        findMany: vi.fn(async () => [
+          { userId: "user-1", member: { user: { name: "Riley", email: "riley@example.test" } } },
+        ]),
+      },
       secret: { findFirst: vi.fn(async () => null) },
       userModelPreference: {
         findMany: vi.fn(async () => []),
@@ -244,7 +342,6 @@ describe("routines.update", () => {
         update,
         count: vi.fn(async () => 0),
       },
-      run: { updateManyAndReturn: moveQueued },
       bot: {
         findFirst: vi.fn(async () =>
           botArchived ? null : { id: "bot-1", thread: { id: "thread-1" }, computer: null },
@@ -274,7 +371,7 @@ describe("routines.update", () => {
         }),
         { prefix: "/rpc", context: { actor } },
       );
-    return { update, enqueue, cancel, call, moveQueued, findFirst: prisma.routine.findFirst };
+    return { update, enqueue, cancel, call, findFirst: prisma.routine.findFirst };
   }
 
   it("refuses to re-arm a routine on an archived bot without writing", async () => {
@@ -306,24 +403,20 @@ describe("routines.update", () => {
     expect(enqueue).not.toHaveBeenCalled();
   });
 
-  it("takes over a routine and restarts its watch baseline when someone else edits it", async () => {
-    const { call, update, moveQueued } = fixture(false, false, { userId: "user-2" });
-    expect((await call({ name: "Renamed" })).status).toBe(200);
+  it("refuses another member's change to what a routine does", async () => {
+    const { call, update } = fixture(false, false, { userId: "user-2" });
+    expect((await call({ name: "Renamed", active: undefined, runAt: undefined })).status).toBe(403);
+    expect(update).not.toHaveBeenCalled();
+  });
+
+  it("lets another member turn a routine off without taking it over", async () => {
+    const { call, update } = fixture(false, false, { userId: "user-2" });
+    const response = await call({ active: false, runAt: undefined });
+    expect(response.status).toBe(200);
     const data = update.mock.calls[0]![0].data;
-    expect(data.userId).toBe("user-1");
-    expect(data).toHaveProperty("watchState", Prisma.DbNull);
-    // An occurrence already queued runs with the new owner's accounts.
-    expect(moveQueued).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: {
-          routineId: routine.id,
-          userId: "user-2",
-          status: "queued",
-          routine: { userId: "user-1" },
-        },
-        data: { userId: "user-1" },
-      }),
-    );
+    expect(data).not.toHaveProperty("userId");
+    expect(data).not.toHaveProperty("watchState");
+    expect(data.active).toBe(false);
   });
 
   it("keeps its watch baseline when the owner edits it", async () => {
@@ -574,6 +667,7 @@ describe("routine watch creation boundaries", () => {
     const findRoutine = vi.fn(async () => ({
       id: "routine-1",
       botId: "bot-1",
+      userId: "user-1",
       crons: [],
       watch: null,
     }));

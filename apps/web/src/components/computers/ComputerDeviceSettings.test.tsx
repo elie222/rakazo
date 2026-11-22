@@ -2,6 +2,8 @@
 import { i18n } from "@lingui/core";
 import { I18nProvider } from "@lingui/react";
 import type { RakazoDesktop } from "@rakazo/contracts";
+import { flush } from "@rakazo/core/test-async";
+import { QueryClient } from "@tanstack/react-query";
 import type { ComponentProps, ReactNode } from "react";
 import { act } from "react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -68,7 +70,8 @@ beforeEach(() => {
   vi.clearAllMocks();
   host = document.createElement("div");
   document.body.append(host);
-  root = createRoot(host);
+  // A failed read settles at once instead of retrying on the library's backoff.
+  root = createRoot(host, new QueryClient({ defaultOptions: { queries: { retry: false } } }));
 });
 
 afterEach(async () => {
@@ -87,20 +90,37 @@ function desktopWith(device: NonNullable<RakazoDesktop["device"]>) {
 }
 
 /** The web build compiles macros onto the real hook, which throws without this provider. */
-function renderSettings() {
-  return act(async () =>
+async function renderSettings() {
+  await act(async () =>
     root.render(
       <I18nProvider i18n={i18n}>
         <ComputerDeviceSettings />
       </I18nProvider>,
     ),
   );
+  // The device list arrives through the query cache, which notifies on a timer.
+  await act(flush);
 }
 
 it("stays hidden without any computer", async () => {
   vi.mocked(listUserDevices).mockResolvedValue([]);
   await renderSettings();
   expect(host.innerHTML).toBe("");
+});
+
+it("says the devices could not be read and reads them again on Retry", async () => {
+  vi.mocked(listUserDevices)
+    .mockRejectedValueOnce(new Error("offline"))
+    .mockResolvedValueOnce([laptop]);
+  await renderSettings();
+  await vi.waitFor(() => expect(host.textContent).toContain("Could not load"));
+
+  await act(async () =>
+    [...host.querySelectorAll("button")].find((button) => button.textContent === "Retry")?.click(),
+  );
+  await act(flush);
+  await vi.waitFor(() => expect(host.textContent).toContain("LaptopConnected"));
+  expect(host.textContent).not.toContain("Could not load");
 });
 
 it("lists computers with their status and removes one", async () => {
@@ -149,6 +169,8 @@ it("reports a failed removal", async () => {
     host.querySelector<HTMLButtonElement>('[aria-label="Remove Laptop"]')?.click(),
   );
   expect(host.querySelector('[role="alert"]')?.textContent).toBe("Could not remove");
+  // The removal may still have happened, so the list is read again.
+  await vi.waitFor(() => expect(vi.mocked(listUserDevices).mock.calls.length).toBeGreaterThan(1));
 });
 
 it("shows every connected computer as connected", async () => {
@@ -247,6 +269,7 @@ it("keeps the local switch when a later profile read fails", async () => {
   await act(async () =>
     host.querySelector<HTMLInputElement>('[data-testid="this-computer-toggle"]')!.click(),
   );
+  await act(flush);
   const toggle = host.querySelector<HTMLInputElement>('[data-testid="this-computer-toggle"]');
   expect(toggle?.checked).toBe(true);
   expect(host.querySelector('[role="alert"]')?.textContent).toBe("Could not change");

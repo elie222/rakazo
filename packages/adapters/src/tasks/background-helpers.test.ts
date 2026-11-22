@@ -4,7 +4,11 @@ import type * as Db from "@rakazo/db";
 import { appendEventInTransaction, createThreadMessageInTransaction } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
 import type { RunContext } from "../runs/assembly/run-context.js";
+import type { ToolCall } from "../runs/tools/run-tool-gate.js";
+import { messagingTools } from "../runs/tools/run-tools-messaging.js";
+import { fleetTools } from "../tools/builtin-fleet.tool-definition.js";
 import { returnHelperOutcome, startBackgroundHelper } from "./background-helpers.js";
+import { startedNote } from "./background-helpers.prompt.js";
 
 vi.mock("@rakazo/db", async (original) => ({
   ...(await original<typeof Db>()),
@@ -23,8 +27,35 @@ const START = {
   effectKey: "effect-1",
 };
 
-function harness(overrides: { trigger?: string; threadBotId?: string | null } = {}) {
+function providerIds(provider: unknown): string[] | null {
+  if (typeof provider === "string") return [provider];
+  if (provider && typeof provider === "object" && "in" in provider) {
+    const ids = provider.in;
+    return Array.isArray(ids) ? ids.filter((id): id is string => typeof id === "string") : null;
+  }
+  return null;
+}
+
+function harness(
+  overrides: { trigger?: string; threadBotId?: string | null; providers?: string[] } = {},
+) {
   const createRun = vi.fn(async (_args: unknown) => ({ id: "helper-run" }));
+  const credentials = (overrides.providers ?? []).map((provider) => ({
+    id: `credential-${provider}`,
+    userId: "user",
+    provider,
+    label: provider,
+    secretId: `secret-${provider}`,
+    createdAt: new Date(0),
+    updatedAt: new Date(0),
+    defaultModel: null,
+    thinkingLevel: null,
+    userPreferences: [],
+  }));
+  const secrets = credentials.map((credential) => ({
+    id: credential.secretId,
+    ciphertext: credential.secretId,
+  }));
   const tx = {
     $queryRaw: vi.fn(async () => []),
     message: {
@@ -40,13 +71,42 @@ function harness(overrides: { trigger?: string; threadBotId?: string | null } = 
   };
   const prisma = {
     $transaction: vi.fn(async (work: (client: typeof tx) => Promise<unknown>) => work(tx)),
+    userModelCredential: {
+      findMany: vi.fn(async (args?: { where?: { provider?: unknown } }) => {
+        const ids = providerIds(args?.where?.provider);
+        if (!ids) return credentials;
+        return credentials.filter((row) => ids.includes(row.provider));
+      }),
+      findFirst: vi.fn(async (args?: { where?: { provider?: unknown } }) => {
+        const ids = providerIds(args?.where?.provider);
+        if (!ids) return credentials[0] ?? null;
+        return credentials.find((row) => ids.includes(row.provider)) ?? null;
+      }),
+    },
+    userModelPreference: {
+      findMany: vi.fn(async () => []),
+      findFirst: vi.fn(async () => null),
+    },
+    secret: {
+      findMany: vi.fn(async () => secrets),
+      findFirst: vi.fn(async (args?: { where?: { id?: string } }) => {
+        return secrets.find((secret) => secret.id === args?.where?.id) ?? null;
+      }),
+    },
   };
   const enqueue = vi.fn(async () => undefined);
   const ctx = {
-    deps: { prisma, events: { notify: vi.fn(async () => undefined) }, jobs: { enqueue } },
+    deps: {
+      prisma,
+      events: { notify: vi.fn(async () => undefined) },
+      jobs: { enqueue },
+      secretStore: { load: vi.fn(async () => "fake-api-key") },
+      billingEnabled: false,
+    },
     run: { id: "run-1", spaceId: "space", userId: "user", trigger: overrides.trigger ?? "user" },
     runId: "run-1",
     bot: { id: "bot" },
+    secrets: [],
     thread: {
       id: "chat",
       botId: overrides.threadBotId === undefined ? "bot" : overrides.threadBotId,
@@ -169,12 +229,18 @@ describe("starting a background helper", () => {
   });
 
   it("pins the model it was asked for, and needs both halves of it", async () => {
-    const h = harness();
-    await startBackgroundHelper(h.ctx, { ...START, modelProvider: "openai", modelId: "gpt-x" });
+    const h = harness({ providers: ["opencode-go"] });
+    await expect(
+      startBackgroundHelper(h.ctx, {
+        ...START,
+        modelProvider: "opencode-go",
+        modelId: "claude-haiku-5-5",
+      }),
+    ).resolves.toEqual({ ok: true, name: "scout", note: startedNote("scout") });
     expect(h.createRun).toHaveBeenCalledWith({
       data: expect.objectContaining({
-        modelProvider: "openai",
-        modelId: "gpt-x",
+        modelProvider: "opencode-go",
+        modelId: "claude-haiku-5-5",
         modelPinned: true,
       }),
       select: { id: true },
@@ -184,6 +250,96 @@ describe("starting a background helper", () => {
       startBackgroundHelper(half.ctx, { ...START, modelProvider: "openai" }),
     ).resolves.toEqual({ error: "model_provider and model_id must both be set" });
     expect(half.prisma.$transaction).not.toHaveBeenCalled();
+    expect(half.createRun).not.toHaveBeenCalled();
+  });
+
+  it("run-subagent-label-prefixed-pair starts pinned to the canonical provider and model", async () => {
+    const h = harness({ providers: ["opencode-go"] });
+    await expect(
+      startBackgroundHelper(h.ctx, {
+        ...START,
+        modelProvider: "OpenCode Go",
+        modelId: "opencode-go/claude-haiku-5-5",
+      }),
+    ).resolves.toEqual({ ok: true, name: "scout", note: startedNote("scout") });
+    expect(h.createRun).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        modelProvider: "opencode-go",
+        modelId: "claude-haiku-5-5",
+        modelPinned: true,
+      }),
+      select: { id: true },
+    });
+    expect(h.enqueue).toHaveBeenCalledExactlyOnceWith(runContinueJob("helper-run"));
+  });
+
+  it("run-subagent-label-prefixed-pair trims the tool fields before pinning the canonical model", async () => {
+    // The same model id is offered by two connected providers. Only the trimmed provider id
+    // selects one of them.
+    const h = harness({ providers: ["opencode", "opencode-go"] });
+    const call = {
+      name: "run_subagent",
+      args: {
+        name: "scout",
+        task: "compare the venues",
+        model_provider: "  opencode-go  ",
+        model_id: "  claude-haiku-5-5  ",
+      },
+      executionId: "call-1",
+      effectKey: "effect-1",
+      finish: async (result: unknown) => result,
+    } as unknown as ToolCall;
+    await expect(messagingTools.run_subagent!(h.ctx, call)).resolves.toEqual({
+      ok: true,
+      name: "scout",
+      note: startedNote("scout"),
+    });
+    expect(h.createRun).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        modelProvider: "opencode-go",
+        modelId: "claude-haiku-5-5",
+        modelPinned: true,
+      }),
+      select: { id: true },
+    });
+  });
+
+  it("returns an error and starts nothing when the model pair cannot be resolved", async () => {
+    const h = harness({ providers: ["opencode-go"] });
+    await expect(
+      startBackgroundHelper(h.ctx, {
+        ...START,
+        modelProvider: "not-a-provider",
+        modelId: "nope",
+      }),
+    ).resolves.toEqual({ error: 'No model matches "nope".' });
+    expect(h.prisma.$transaction).not.toHaveBeenCalled();
+    expect(h.createRun).not.toHaveBeenCalled();
+    expect(h.enqueue).not.toHaveBeenCalled();
+  });
+
+  it("returns the connection error and starts nothing when resolve accepts a disconnected provider", async () => {
+    const h = harness({ providers: ["opencode-go"] });
+    await expect(
+      startBackgroundHelper(h.ctx, { ...START, modelProvider: "openai", modelId: "gpt-x" }),
+    ).resolves.toEqual({ error: "Connect that model provider first" });
+    expect(h.prisma.$transaction).not.toHaveBeenCalled();
+    expect(h.createRun).not.toHaveBeenCalled();
+    expect(h.enqueue).not.toHaveBeenCalled();
+  });
+
+  it("describes model_provider as a provider id and model_id as an id or provider/id", () => {
+    const tool = fleetTools.find((entry) => entry.name === "run_subagent");
+    expect(tool?.inputSchema).toMatchObject({
+      properties: {
+        model_provider: {
+          description: "Provider id (e.g. opencode-go). Set together with model_id.",
+        },
+        model_id: {
+          description: "Model id or provider/id. Set together with model_provider.",
+        },
+      },
+    });
   });
 });
 

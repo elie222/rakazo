@@ -148,8 +148,29 @@ test("create group from + and see two bots in one transcript", async ({ page }, 
   ).toBeVisible();
   await composer.pressSequentially("turn the sources into a draft. @Res");
   await page.getByRole("option", { name: "@Researcher", exact: true }).click();
-  await expect(page.getByTestId("mention-chip").filter({ hasText: "Researcher" })).toBeVisible();
+  const mention = page.getByTestId("mention-chip").filter({ hasText: "Researcher" });
+  await expect(mention).toBeVisible();
   await captureScreenshot(page, testInfo, "group-inline-mentions");
+
+  // Start browser composition without depending on the runner's OS input method.
+  const draft = await composer.inputValue();
+  const cdp = await page.context().newCDPSession(page);
+  await composer.focus();
+  await cdp.send("Input.imeSetComposition", {
+    text: "にほんご",
+    selectionStart: 4,
+    selectionEnd: 4,
+  });
+  await expect(composer).toHaveValue(`${draft}にほんご`);
+  await expect(composer).not.toHaveCSS("color", "rgba(0, 0, 0, 0)");
+  await expect(mention).toBeHidden();
+  await captureScreenshot(page, testInfo, "group-composer-ime");
+  await cdp.send("Input.imeSetComposition", { text: "", selectionStart: 0, selectionEnd: 0 });
+  await cdp.detach();
+  await expect(composer).toHaveValue(draft);
+  await expect(composer).toHaveCSS("color", "rgba(0, 0, 0, 0)");
+  await expect(mention).toBeVisible();
+
   await composer.fill(`${await composer.inputValue()}gather sources.`);
   await composer.press("Enter");
 
@@ -262,6 +283,24 @@ test("create group from + and see two bots in one transcript", async ({ page }, 
   const markdownDialog = page.getByRole("dialog", { name: "group-preview.md" });
   await expect(markdownDialog.getByRole("heading", { name: "Group artifact" })).toBeVisible();
   await markdownDialog.getByRole("button", { name: "Close preview" }).click();
+
+  await expect(page.getByTestId("chat-top-fade")).toBeVisible();
+  await transcript.evaluate((element) => {
+    element.scrollTop = element.scrollHeight;
+  });
+  await expect.poll(() => transcript.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
+  const originalTheme = await page.locator("html").getAttribute("data-theme");
+  for (const theme of ["light", "dark"]) {
+    await page.evaluate(
+      (value) => document.documentElement.setAttribute("data-theme", value),
+      theme,
+    );
+    await captureScreenshot(page, testInfo, `chat-top-fade-scrolled-${theme}`);
+  }
+  await page.evaluate((theme) => {
+    if (theme === null) document.documentElement.removeAttribute("data-theme");
+    else document.documentElement.setAttribute("data-theme", theme);
+  }, originalTheme);
 
   await page.setViewportSize({ width: 390, height: 844 });
   await expect(page.getByRole("button", { name: "Open navigation" })).toBeVisible();
