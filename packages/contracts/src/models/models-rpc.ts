@@ -24,6 +24,7 @@ import {
   ModelRoleViewSchema,
 } from "./model-roles.js";
 import {
+  MAX_TRANSCRIPTION_VOCABULARY_LENGTH,
   VoiceCatalogEntrySchema,
   VoiceCredentialSchema,
   VoiceInfoSchema,
@@ -162,6 +163,12 @@ export const modelsRpc = {
             sttApiKey: z.string().max(4096).optional(),
             ttsModel: z.string().max(200).optional(),
             sttModel: z.string().max(200).optional(),
+            /** Omitted keeps the hint for the same server. Blank clears it. */
+            transcriptionVocabulary: z
+              .string()
+              .trim()
+              .max(MAX_TRANSCRIPTION_VOCABULARY_LENGTH)
+              .optional(),
             /** Where the connection becomes the default voice. */
             scope: SettingsScopeSchema.optional(),
           })
