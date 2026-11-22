@@ -25,7 +25,7 @@
   "apps/web/src/components/DesktopUpdates.tsx": 1,
   "apps/web/src/components/account/ConfirmIdentityDialog.tsx": 1,
   "apps/web/src/components/account/PasskeySignIn.tsx": 1,
-  "apps/web/src/components/billing/ModelCredits.tsx": 2,
+  "apps/web/src/components/billing/CreditChoice.tsx": 1,
   "apps/web/src/components/call/IncomingCall.tsx": 1,
   "apps/web/src/components/integrations/IntegrationSetup.tsx": 1,
   "apps/web/src/components/integrations/plugin-marketplace.tsx": 1,

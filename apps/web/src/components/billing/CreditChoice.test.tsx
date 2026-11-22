@@ -75,7 +75,7 @@ vi.mock("@rakazo/ui-web", () => {
   };
 });
 
-import { CreditChoice } from "./ModelCredits";
+import { CreditChoice } from "./CreditChoice";
 
 i18n.activate("en");
 
