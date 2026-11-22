@@ -35,7 +35,7 @@ import {
   THREAD_LOCK_TRANSACTION_OPTIONS,
   withTransactionRetry,
 } from "../database/transaction-retry.js";
-import { contentEncryptionOf } from "../encryption/content-encryption.js";
+import { contentEncryptionOf, loadSpaceContentKeys } from "../encryption/content-encryption.js";
 import { cancelRunsInTransaction, conversationRunsWhere } from "../runs/cancel-runs.js";
 import { HOLDS_CHAT } from "../runs/chat-holding-runs.js";
 import { deleteRunSecretsInTransaction } from "../runs/run-secrets.js";
@@ -143,6 +143,7 @@ export interface ThreadEvents {
   draftRecordingsOfLease(input: { spaceId: string; leaseId: string }): Promise<string[]>;
   finalizeRun(input: FinalizeRunInput): Promise<FinalizeRunResult | false>;
   releaseUserControl(input: ReleaseUserControlInput): Promise<boolean>;
+  /** Tells followers about a committed event. Never rejects: failures are only logged. */
   notify(threadId: string, seq: number, firstResponseRunId?: string): Promise<void>;
   pauseRunForInput(input: PauseRunForInput): Promise<FinalizeRunResult | false>;
   pauseRunForTakeover(input: PauseRunForTakeover): Promise<boolean | { continuationRunId: string }>;
@@ -477,6 +478,7 @@ export async function sendUserMessage(
   const existing = await replay();
   if (existing) return existing;
 
+  await loadSpaceContentKeys(prisma, input.spaceId);
   const commit = () =>
     prisma.$transaction(async (tx: Prisma.TransactionClient) => {
       // Webhooks, texts and other bots can reach a Space until its teardown finishes; one being
@@ -820,6 +822,7 @@ async function finalizeRunOnce(
   continuationRunId: string | null;
   firstResponse: boolean;
 } | null> {
+  await loadSpaceContentKeys(prisma, input.spaceId);
   return prisma.$transaction(async (tx: Prisma.TransactionClient) => {
     await tx.$queryRaw`SELECT id FROM threads WHERE id = ${input.threadId} FOR UPDATE`;
     let writableRun: { startedAt: Date | null; userId: string } | undefined;

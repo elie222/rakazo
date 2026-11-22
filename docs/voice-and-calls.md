@@ -43,7 +43,9 @@ then review or send the text.
 
 ## Call a bot
 
-Choose **Call** at the top of the chat to talk with the bot in real time. During a call you can
+On web and desktop, choose **Call** at the top of the chat. On mobile, open a one-to-one bot chat
+and tap the waveform **Call** button beside the empty message box. **Send** appears there instead
+when there's something to send. During a call you can
 **Mute**, open the **Transcript**, minimize the call and keep using the app, or **Hang up**. The
 transcript stays in the chat afterwards.
 

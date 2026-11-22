@@ -1,4 +1,6 @@
+import { ConnectionSetupError } from "../integrations/connection-setup-error.js";
 import { OPENAI_COMPATIBLE_PROVIDER_ID } from "./model-connections.js";
+import { normalizeOpenAiCompatibleBaseUrl } from "./openai-compatible-ui.js";
 import type { VoiceCatalogEntry, VoiceCredential } from "./voice.js";
 
 /**
@@ -20,4 +22,25 @@ export function voiceConnectionForm(input: {
       ? Boolean(input.baseUrl.trim())
       : typedKey.length >= 8 || (keyOptional && !typedKey));
   return { keyOptional, linked: input.credential?.hasKey === false, canConnect };
+}
+
+/** The saved vocabulary belongs to the server that receives the recording. */
+export function savedVoiceTranscriptionVocabulary(
+  credential:
+    | Pick<VoiceCredential, "endpoint" | "sttEndpoint" | "transcriptionVocabulary">
+    | undefined,
+  baseUrl: string,
+  sttBaseUrl: string,
+): string {
+  if (!credential?.transcriptionVocabulary) return "";
+  const savedEndpoint = credential.sttEndpoint || credential.endpoint;
+  try {
+    return normalizeOpenAiCompatibleBaseUrl(sttBaseUrl.trim() || baseUrl) === savedEndpoint
+      ? credential.transcriptionVocabulary
+      : "";
+  } catch (error) {
+    // The user may still be typing the address.
+    if (error instanceof ConnectionSetupError) return "";
+    throw error;
+  }
 }

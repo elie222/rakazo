@@ -318,6 +318,7 @@ export function hasFinalModelCost(
     usage.costUsd >= 0 &&
     (usage.costSource === "provider-reported" ||
       usage.costSource === "deployment-tariff" ||
+      usage.costSource === "free-endpoint" ||
       usage.costSource === RECONCILED_ESTIMATE_COST_SOURCE ||
       (usage.costUsd === 0 &&
         ["not-started", "provider-rejected"].includes(usage.usageSource ?? "")))

@@ -294,6 +294,7 @@ async function teamChatRun(input: {
       ]),
     },
     scratchpadItem: {
+      count: vi.fn(async () => 0),
       findMany: vi.fn(async () => [
         {
           id: "scratch-1",

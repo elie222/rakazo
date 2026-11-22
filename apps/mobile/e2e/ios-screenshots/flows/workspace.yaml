@@ -59,13 +59,20 @@ name: Workspace
 - waitForAnimationToEnd:
     timeout: 3000
 - takeScreenshot: 08-archived-bots
-- openLink: "rakazo:///space?spaceId=${RAKAZO_SCREENSHOT_TEAM_SPACE_ID}"
+- openLink: "rakazo:///spaces"
 - extendedWaitUntil:
-    visible: ".*Customize.*"
+    visible: "New private space"
     timeout: 15000
 - waitForAnimationToEnd:
     timeout: 3000
-- takeScreenshot: 09-space-settings
+- takeScreenshot: 09-spaces
+- openLink: "rakazo:///space?spaceId=${RAKAZO_SCREENSHOT_TEAM_SPACE_ID}"
+- extendedWaitUntil:
+    visible: "Settings for this Space"
+    timeout: 15000
+- waitForAnimationToEnd:
+    timeout: 3000
+- takeScreenshot: 09b-space-settings
 - openLink: "rakazo:///space-members?spaceId=${RAKAZO_SCREENSHOT_TEAM_SPACE_ID}"
 - extendedWaitUntil:
     visible: "Owner"

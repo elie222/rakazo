@@ -14,9 +14,12 @@ export const ScratchpadItemSchema = z.object({
 });
 export type ScratchpadItem = z.infer<typeof ScratchpadItemSchema>;
 
+/** Trimmed like the bot name, so a blank title is refused instead of stored. */
+export const ScratchpadItemTitle = z.string().trim().min(1).max(200);
+
 export const CreateScratchpadItemInput = z.object({
   botId: Id,
-  title: z.string().min(1).max(200),
+  title: ScratchpadItemTitle,
   status: ScratchpadItemStatusSchema.default("open"),
   notes: z.string().max(4_000).default(""),
 });

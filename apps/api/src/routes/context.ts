@@ -2,6 +2,7 @@ import { implement, ORPCError } from "@orpc/server";
 import { SecretStoreUnavailableError } from "@rakazo/adapter-kit";
 import type { CatalogReads } from "@rakazo/adapters";
 import {
+  adminDeploymentModel,
   applyCodexLiveCatalog,
   applyProviderLiveCatalog,
   approvedModelCreditCatalogEntry,
@@ -104,6 +105,7 @@ export function createRouterContext(deps: RouterDeps) {
     actor: Actor | null;
     /** The signed-in session, so a push token ends with the session that registered it. */
     sessionId?: string;
+    nativeSessionId?: string;
     signal?: AbortSignal;
     /** Re-runs the request's auth so a long-lived stream notices sign-out and revocation. */
     stillAuthorized?: () => Promise<boolean>;
@@ -122,7 +124,7 @@ export function createRouterContext(deps: RouterDeps) {
     prepareMcpServer,
     insertMcpServer,
     announceMcpServer,
-  } = createMcpServers(deps, onboardingDeps, mcpOAuth);
+  } = createMcpServers(deps, mcpOAuth);
   const announceRoutine = createRoutineAnnouncer(deps);
   const codexCatalog = deps.codexCatalog ?? new CodexCatalogCache();
   const { verifyModelConnection, connectModelCredential } = createModelConnector(
@@ -309,17 +311,19 @@ export function createRouterContext(deps: RouterDeps) {
     role: ModelRole,
   ): Promise<Pick<ModelRoleView, "deploymentPrimary" | "deploymentIncluded">> => {
     if (role === "main") {
-      if (!deps.env.deploymentModelConfigured) return { deploymentPrimary: null };
+      const settings = await deps.prisma.deploymentSettings.findUnique({
+        where: { id: "default" },
+      });
+      if (!deps.env.deploymentModelConfigured && !adminDeploymentModel(settings))
+        return { deploymentPrimary: null };
       const access = await bestEffort(
         "read main model default funding",
-        deploymentModelAccess(deps, actor),
+        deploymentModelAccess(deps, actor, settings),
       );
       return {
         deploymentPrimary: access?.hasDeployment
           ? deploymentModelRole(role, {
-              settings: await deps.prisma.deploymentSettings.findUnique({
-                where: { id: "default" },
-              }),
+              settings,
               deployment: { provider: deps.env.defaultProvider, model: deps.env.defaultModel },
             }).primary
           : null,
@@ -610,7 +614,7 @@ export function createRouterContext(deps: RouterDeps) {
     home: deps.home,
     dataDir: deps.dataDir,
   });
-  const agentSkills = createAgentSkillsService(deps.prisma);
+  const agentSkills = createAgentSkillsService(deps.prisma, deps.events);
 
   const signedIn = os.middleware(async ({ context, next }) => {
     const actor = context.actor;

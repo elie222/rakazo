@@ -1,10 +1,23 @@
+// @vitest-environment jsdom
+
 import type { ReactNode } from "react";
+import { act } from "react";
+import type { Root } from "react-dom/client";
+import { createRoot } from "react-dom/client";
 import { renderToStaticMarkup } from "react-dom/server";
-import { beforeEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import ComposeNameDialog from "./name-dialog-compose";
 
-const capture = vi.hoisted(() => ({ field: vi.fn(), buttons: vi.fn(), host: vi.fn() }));
+const capture = vi.hoisted(() => ({
+  field: vi.fn(),
+  buttons: vi.fn(),
+  host: vi.fn(),
+  announce: vi.fn(),
+}));
 vi.mock("../../lib/native/native", () => ({ useResolvedAppearance: () => "dark" }));
+vi.mock("react-native", () => ({
+  AccessibilityInfo: { announceForAccessibility: capture.announce },
+}));
 vi.mock("@expo/ui/jetpack-compose", () => {
   const slot = ({ children }: { children: ReactNode }) => children;
   return {
@@ -34,7 +47,55 @@ vi.mock("@expo/ui/jetpack-compose", () => {
   };
 });
 
-beforeEach(() => vi.clearAllMocks());
+let root: Root;
+let container: HTMLDivElement;
+beforeEach(() => {
+  vi.clearAllMocks();
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  container = document.createElement("div");
+  root = createRoot(container);
+});
+afterEach(async () => {
+  await act(async () => root.unmount());
+  container.remove();
+  vi.unstubAllGlobals();
+});
+
+function dialog(error: string | null) {
+  return (
+    <ComposeNameDialog
+      draft="Draft"
+      error={error}
+      saving={false}
+      onSave={vi.fn()}
+      onChange={vi.fn()}
+      onClose={vi.fn()}
+    />
+  );
+}
+
+it("announces a save error once when it appears, not again on re-render", async () => {
+  await act(async () => root.render(dialog(null)));
+  expect(capture.announce).not.toHaveBeenCalled();
+  await act(async () => root.render(dialog("Could not update name")));
+  expect(capture.announce).toHaveBeenCalledOnce();
+  expect(capture.announce).toHaveBeenLastCalledWith("Could not update name");
+  await act(async () => root.render(dialog("Could not update name")));
+  expect(capture.announce).toHaveBeenCalledOnce();
+});
+it("announces a retry that fails with the same message again", async () => {
+  // A new save clears the error first, so the same message reappears as a change.
+  await act(async () => root.render(dialog("Could not update name")));
+  await act(async () => root.render(dialog(null)));
+  await act(async () => root.render(dialog("Could not update name")));
+  expect(capture.announce).toHaveBeenCalledTimes(2);
+  expect(capture.announce).toHaveBeenLastCalledWith("Could not update name");
+});
+it("announces nothing without an error", async () => {
+  await act(async () => root.render(dialog(null)));
+  expect(capture.announce).not.toHaveBeenCalled();
+});
+
 it("prefills and focuses a single-line limited field, and saves the IME value", () => {
   const onSave = vi.fn();
   const onChange = vi.fn();
