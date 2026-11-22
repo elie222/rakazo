@@ -157,7 +157,7 @@ describe("screen startup", () => {
         expect.objectContaining({
           level: "warn",
           message: "computer.screen_not_ready",
-          "computer.id": computer.id,
+          "sandbox.id": computer.id,
           reason: "computer browser CDP not ready on 9241 (running=yes)",
         }),
       ]);
