@@ -376,7 +376,9 @@ private struct WatchBubble: View {
       if let author = message.author {
         Text(author).font(.caption2).foregroundStyle(.secondary)
       }
-      Text(WatchMarkdown.render(message.text))
+      // People's messages show as typed, the way the phone shows them.
+      Text(message.fromUser || message.author != nil
+        ? AttributedString(message.text) : WatchMarkdown.render(message.text))
         .padding(.horizontal, 10)
         .padding(.vertical, 6)
         .background(
