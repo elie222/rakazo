@@ -130,6 +130,15 @@ describePostgres("pausing a routine whose runs keep failing (PostgreSQL)", () =>
     expect(await read()).toMatchObject({ active: true });
   });
 
+  it("does not count a different failure toward the streak", async () => {
+    const { fail, record, read } = await fixture();
+    for (let index = 1; index < ROUTINE_FAILURE_PAUSE_AFTER; index += 1) {
+      await record("failed", "TypeError: Cannot read properties of undefined");
+    }
+    await fail();
+    expect(await read()).toMatchObject({ active: true });
+  });
+
   it("counts a fresh streak once the routine is turned back on", async () => {
     const { routine, fail, read, pauseMessages } = await fixture();
     for (let index = 0; index < ROUTINE_FAILURE_PAUSE_AFTER; index += 1) await fail();

@@ -162,9 +162,10 @@ export async function startTurnModel(
       { attemptId: attempt.id, workerId, fence },
       message,
     );
-    if (failed && accountFailure && run.trigger === "routine" && run.routineId) {
+    if (failed && run.trigger === "routine" && run.routineId) {
       const ref = { routineId: run.routineId, userId: run.userId };
-      await backOffRoutineAfterAccountError(deps, ref);
+      if (accountFailure) await backOffRoutineAfterAccountError(deps, ref);
+      // The model setup the user chose cannot start, which only they can change.
       await pauseRoutineAfterRepeatedFailures(deps, {
         ...ref,
         spaceId: run.spaceId,

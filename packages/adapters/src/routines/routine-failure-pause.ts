@@ -19,7 +19,7 @@ type RoutineFailurePauseDeps = {
   events: Pick<ThreadEvents, "notify" | "publishSpaceChange">;
 };
 
-/** The latest error when the owner's last runs of the active routine all failed, or null. */
+/** The latest error when the owner's last runs of the active routine all failed alike, or null. */
 async function failingStreak(
   client: Prisma.TransactionClient,
   run: RoutineRunRef,
@@ -42,17 +42,27 @@ async function failingStreak(
     select: { status: true, error: true },
   });
   const error = recent[0]?.error;
-  return error &&
-    recent.length === ROUTINE_FAILURE_PAUSE_AFTER &&
-    recent.every((row) => row.status === "failed" && row.error && !isServerRunError(row.error))
+  if (!error || isServerRunError(error) || recent.length < ROUTINE_FAILURE_PAUSE_AFTER) {
+    return null;
+  }
+  // A different failure, such as an internal error the call site never counts, breaks it.
+  const cause = failureCause(error);
+  return recent.every(
+    (row) => row.status === "failed" && row.error && failureCause(row.error) === cause,
+  )
     ? { name: routine.name, error }
     : null;
+}
+
+function failureCause(error: string): string {
+  const { kind, summary } = normalizeRunError(error);
+  return kind ?? summary;
 }
 
 /**
  * A run of the routine just failed for a reason the user has to fix. If the owner's last runs
  * all failed the same way, turn the routine off and say why in its chat. Cancelled runs are
- * skipped, and a success or a failure of the deployment itself breaks the streak.
+ * skipped, and a success or any other failure breaks the streak.
  */
 export async function pauseRoutineAfterRepeatedFailures(
   deps: RoutineFailurePauseDeps,
