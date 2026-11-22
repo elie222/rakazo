@@ -6,11 +6,14 @@ import type {
   ComputerAction,
   ComputerActionRequest,
   ComputerInput,
+  ComputerObservation,
   ComputerRef,
+  ControlLeaseRef,
   PageBrowserCommand,
   PageBrowserResult,
   ScreenRequest,
   ScreenSession,
+  SnapshotRef,
   TerminalRequest,
 } from "@rakazo/adapter-kit";
 import type { DesktopEnvironment } from "@rakazo/core/node/desktop-runtime";
@@ -113,6 +116,7 @@ export class LinuxDesktop {
     if (startsScreen && result.code === SCREEN_NOT_READY_EXIT) {
       // Only the first line: the rest is the browser's or display's own log.
       getLogger().warn("computer.screen_not_ready", {
+        "sandbox.id": computer.id,
         provider: computer.kind,
         reason: result.stderr?.trim().split("\n")[0]?.slice(0, 200),
       });
@@ -349,6 +353,65 @@ export class LinuxDesktop {
   }
 }
 
+/** A snapshot names the screen frame it captured. */
+export function observationSnapshot(observation: ComputerObservation): SnapshotRef {
+  return { id: observation.frameId, createdAt: observation.capturedAt };
+}
+
+/**
+ * A sandbox whose screens are a {@link LinuxDesktop}: its screen methods hand straight to it,
+ * and a provider overrides only the ones it adjusts.
+ */
+export abstract class LinuxDesktopSandbox {
+  protected abstract readonly desktops: LinuxDesktop;
+
+  async connectScreen(
+    computer: ComputerRef,
+    request: ScreenRequest,
+    context: AdapterContext,
+  ): Promise<ScreenSession> {
+    return this.desktops.connectScreen(computer, request, context);
+  }
+
+  async connectTerminal(computer: ComputerRef, request: TerminalRequest, context: AdapterContext) {
+    return this.desktops.connectTerminal(computer, request, context);
+  }
+
+  async setScreenControl(
+    computer: ComputerRef,
+    interactive: boolean,
+    context: AdapterContext,
+    controlToken?: string,
+  ): Promise<void> {
+    return this.desktops.setScreenControl(computer, interactive, context, controlToken);
+  }
+
+  async sendInput(
+    computer: ComputerRef,
+    input: ComputerInput,
+    _lease: ControlLeaseRef,
+    context: AdapterContext,
+  ): Promise<void> {
+    return this.desktops.sendInput(computer, input, context);
+  }
+
+  async observe(computer: ComputerRef, context: AdapterContext): Promise<ComputerObservation> {
+    return this.desktops.observe(computer, context);
+  }
+
+  async act(computer: ComputerRef, request: ComputerActionRequest, context: AdapterContext) {
+    return this.desktops.act(computer, request, context);
+  }
+
+  async releaseScreen(computer: ComputerRef, context: AdapterContext): Promise<void> {
+    return this.desktops.releaseScreen(computer, context);
+  }
+
+  async snapshot(computer: ComputerRef, context: AdapterContext): Promise<SnapshotRef> {
+    return observationSnapshot(await this.observe(computer, context));
+  }
+}
+
 function browserActionCommand(
   action: ComputerAction,
   layout: Parameters<typeof extraDisplayActionCommand>[0],
@@ -545,6 +608,9 @@ export const PREPARE_LINUX_DESKTOP = [
   `    $root env DEBIAN_FRONTEND=noninteractive ${APT} install -y -qq --fix-broken --no-remove`,
   `    $root env DEBIAN_FRONTEND=noninteractive ${APT} install -y -qq --reinstall --no-remove $missing`,
   "  fi",
+  // An install APT reports as done can still leave a tool out; the screen would then fail later.
+  ...FIND_MISSING_DESKTOP_TOOLS.map((line) => `  ${line}`),
+  '  if [ -n "$missing" ]; then echo "desktop tools still missing after install:$missing" >&2; exit 1; fi',
   "fi",
   // Bots read pages visually; without a color emoji font every emoji is an empty box. The
   // desktop works without it, so an image whose package manager is broken still runs.

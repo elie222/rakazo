@@ -1,8 +1,7 @@
-import { ResponseTooLargeError, sliceWellFormed } from "@rakazo/core";
+import { ResponseTooLargeError, readResponseWithin, sliceWellFormed } from "@rakazo/core";
 import { bestEffort } from "@rakazo/logging";
 import type { LocalServiceConnection } from "../../../network/local-service-endpoint.js";
 import { fetchLocalService, parseServiceBaseUrl } from "../../../network/local-service-endpoint.js";
-import { readBodyCapped } from "../../../web/web-ssrf.js";
 
 const SUPERMEMORY_TIMEOUT_MS = 15_000;
 export const SUPERMEMORY_CLOUD_BASE_URL = "https://api.supermemory.ai";
@@ -151,20 +150,11 @@ export async function searchSupermemory(
 }
 
 async function readSupermemoryJson(response: Response, signal?: AbortSignal): Promise<unknown> {
-  const declared = Number(response.headers.get("content-length") ?? 0);
-  if (Number.isFinite(declared) && declared > MAX_SUPERMEMORY_RESPONSE_BYTES) {
-    await bestEffort("cancel unread response body", response.body?.cancel());
-    throw new ResponseTooLargeError("Supermemory response is too large.");
-  }
-  let bytes: Uint8Array;
-  try {
-    bytes = await readBodyCapped(response, MAX_SUPERMEMORY_RESPONSE_BYTES, signal);
-  } catch (error) {
-    if (error instanceof ResponseTooLargeError) {
-      throw new ResponseTooLargeError("Supermemory response is too large.", { cause: error });
-    }
-    throw error;
-  }
+  const bytes = await readResponseWithin(response, {
+    maxBytes: MAX_SUPERMEMORY_RESPONSE_BYTES,
+    tooLargeMessage: "Supermemory response is too large.",
+    signal,
+  });
   return JSON.parse(new TextDecoder().decode(bytes));
 }
 

@@ -33,6 +33,7 @@ import {
   userMentionTargets,
 } from "../../lib/messages/message-mentions";
 import {
+  askOptions,
   hasMessageSenderContent,
   messagePresentationSegments,
   splitMessageBlocks,
@@ -525,7 +526,7 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
               ) : null}
               {question && (answered || canAnswer) ? (
                 <AskActions
-                  actions={askBlock.actions}
+                  actions={askOptions(askBlock)}
                   approval={false}
                   disabled={answered}
                   selectedAnswer={answered ? askBlock.answer : undefined}

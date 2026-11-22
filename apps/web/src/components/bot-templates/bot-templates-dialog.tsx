@@ -3,6 +3,7 @@ import { ChatMarkdown } from "@rakazo/chat-ui/web";
 import type { Bot, BotTemplateListing, ConnectionCatalogItem } from "@rakazo/contracts";
 import { isBotTemplateChanged } from "@rakazo/contracts";
 import { botTemplateApps, formatCron } from "@rakazo/core";
+import { cronLabels } from "@rakazo/i18n/cron";
 import {
   Button,
   Dialog,
@@ -32,7 +33,6 @@ import {
 import { useId, useState } from "react";
 import { useSave, useSpaceQueries } from "../../lib/query/query";
 import { errorDetails } from "../../lib/query/user-error";
-import { cronLabels } from "../../lib/routines/cron";
 import { ErrorNotice } from "../ErrorNotice";
 import { PluginLogo, ROW_HOVER } from "../integrations/plugin-marketplace";
 import { useBotTemplateCopy } from "./bot-template-copy";

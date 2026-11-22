@@ -1,5 +1,6 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { Bot, Group } from "@rakazo/contracts";
+import { formatBillingDate } from "@rakazo/i18n/billing";
 import {
   Button,
   InputGroup,
@@ -14,7 +15,6 @@ import { useEffect, useMemo, useRef } from "react";
 import { PasskeyOffer } from "../../../components/account/PasskeyOffer";
 import { useBilling } from "../../../components/billing/SubscriptionGate";
 import { emptyActivityFilters } from "../../../lib/activity-list-filters";
-import { formatBillingDate } from "../../../lib/billing/billing";
 import type { BotsSidebarDensity } from "../../../lib/preferences/bots-sidebar-density-pref";
 import { ActivityList } from "../../space/ActivityList";
 import { SpaceSearchResults } from "../../space/SpaceSearch";

@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 
+import { i18n } from "@lingui/core";
 import { flush } from "@rakazo/core/test-async";
 import type { ComponentProps, ReactNode } from "react";
 import { act } from "react";
@@ -66,6 +67,8 @@ vi.mock("@rakazo/ui-web", () => {
 
 import { LOG_OUT_FAILED_KEY, syncLogOutFailure } from "../../lib/auth/sign-out";
 import { CreditChoice } from "./ModelCredits";
+
+i18n.activate("en");
 
 afterEach(() => {
   vi.unstubAllGlobals();

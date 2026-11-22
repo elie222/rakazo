@@ -168,6 +168,7 @@ export function registerSetupIpc({
       // Only open the exact origin selected and authenticated by the managed stack.
       let openSetup = setup;
       if (setup.mode === "new") {
+        await settleLocalStack();
         const managedUrl = managedLocalOpenUrl(setup.serverUrl, desktop.localStack.webUrl());
         if (managedUrl === null || !(await desktop.localStack.matchesDesiredStack())) {
           return {

@@ -1,5 +1,6 @@
 import { EmailEmulator } from "@rakazo/adapters";
-import { describe, expect, it, vi } from "vitest";
+import { writeEmailCopyDir } from "@rakazo/auth/test-email-copy";
+import { beforeAll, describe, expect, it, vi } from "vitest";
 import { marketingEmailRoutes, sendWelcomeEmail, unsubscribeUrl } from "./marketing-email.js";
 
 const secret = "test-auth-secret-at-least-32-characters";
@@ -46,6 +47,10 @@ describe("marketing email unsubscribe", () => {
 });
 
 describe("sendWelcomeEmail", () => {
+  beforeAll(() => {
+    vi.stubEnv("EMAIL_COPY_DIR", writeEmailCopyDir({ welcome: true }));
+  });
+
   function deps(claimed: boolean) {
     const email = new EmailEmulator();
     const createMany = vi.fn(async () => ({ count: claimed ? 1 : 0 }));
@@ -68,7 +73,7 @@ describe("sendWelcomeEmail", () => {
     const url = unsubscribeUrl(origin, secret, "user-1");
     expect(email.sent[0]).toMatchObject({
       to: "new@example.test",
-      subject: "Welcome to Rakazo",
+      subject: "Test subject",
       headers: {
         "List-Unsubscribe": `<${url}>`,
         "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
