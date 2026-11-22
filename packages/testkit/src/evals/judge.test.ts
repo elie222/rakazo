@@ -1,6 +1,6 @@
 import type { AgentRunRequest, AgentRuntime, AgentRuntimeEvent } from "@rakazo/adapter-kit";
 import { describe, expect, it, vi } from "vitest";
-import { createEvalJudge } from "./judge.js";
+import { createEvalJudge, judgeSettings } from "./judge.js";
 import { SpendBudget } from "./measurement.js";
 
 function fixture(events: AgentRuntimeEvent[]) {
@@ -96,5 +96,30 @@ describe("semantic judge boundary", () => {
     expect(budget.usedUsd).toBeCloseTo(0.4);
     expect(budget.reservedUsd).toBe(0);
     expect(() => budget.reserve(40_000, 40_000, undefined, judgePrices)).toThrow("spend cap");
+  });
+});
+
+describe("judgeSettings", () => {
+  it("records a short endpoint hash, not the URL, and treats equivalent URLs alike", () => {
+    const model = { provider: "fake", id: "judge", baseUrl: "https://judge.example.test/v1/" };
+    const settings = judgeSettings({ ...model, maxTokens: 2048 });
+    expect(settings).toEqual({
+      endpoint: expect.stringMatching(/^[0-9a-f]{12}$/),
+      maxOutputTokens: 2048,
+      reasoning: null,
+      thinkingLevel: null,
+    });
+    expect(JSON.stringify(settings)).not.toContain("example");
+    expect(judgeSettings({ ...model, baseUrl: " HTTPS://Judge.example.test/v1" }).endpoint).toBe(
+      settings.endpoint,
+    );
+    expect(judgeSettings({ ...model, baseUrl: "https://other.example.test/v1" }).endpoint).not.toBe(
+      settings.endpoint,
+    );
+    expect(judgeSettings({ ...model, region: "eu" }).endpoint).not.toBe(settings.endpoint);
+    expect(judgeSettings({ ...model, zeroDataRetention: true }).endpoint).not.toBe(
+      settings.endpoint,
+    );
+    expect(judgeSettings({ provider: "fake", id: "judge" }).endpoint).toBeNull();
   });
 });

@@ -59,7 +59,7 @@ it.each([
   expect(new Uint8Array(await file.arrayBuffer())).toEqual(audio);
 });
 
-it("returns billable character evidence and the provider request id", async () => {
+it("returns the provider request id", async () => {
   const fetchMock = vi
     .fn()
     .mockResolvedValue(
@@ -71,11 +71,6 @@ it("returns billable character evidence and the provider request id", async () =
     context,
   );
   expect(clip.providerRequestId).toBe("fake-speech-request");
-  expect(clip.usage).toEqual({
-    model: "tts-1",
-    unit: "characters",
-    units: 2,
-  });
   expect(JSON.parse(fetchMock.mock.calls[0]![1].body).model).toBe("tts-1");
 });
 

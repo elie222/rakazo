@@ -2,6 +2,7 @@ import { useLingui } from "@lingui/react/macro";
 import { ChatMarkdown } from "@rakazo/chat-ui/native";
 import type { ComputerReleaseReason, MessageBlock } from "@rakazo/contracts";
 import {
+  plainTextFromMarkdown,
   TAKEOVER_COMPUTER_DONE_STATE,
   TAKEOVER_COMPUTER_PENDING_STATE,
   TAKEOVER_COMPUTER_SKIPPED_STATE,
@@ -113,7 +114,7 @@ export function ComputerCard({
       </Text>
       {open ? null : (
         <Text numberOfLines={1} style={[styles.summary, { color: tokens.mutedForeground }]}>
-          {label} · {block.text}
+          {label} · {plainTextFromMarkdown(block.text)}
         </Text>
       )}
     </View>

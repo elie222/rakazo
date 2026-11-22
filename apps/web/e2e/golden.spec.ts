@@ -265,6 +265,9 @@ test("takeover, routine, plugins, and export are reachable", async ({ page }, te
   await feed.getByRole("textbox", { name: "Integration domain" }).fill("github.com");
   await feed.getByRole("button", { name: "Search", exact: true }).click();
   await expect(feed.getByText("GitHub", { exact: true })).toBeVisible();
+  // The failure and empty-answer live regions stay mounted, and stay silent while results show.
+  await expect(feed.getByRole("alert")).toBeEmpty();
+  await expect(feed.getByRole("status")).toBeEmpty();
   await captureScreenshot(page, testInfo, "11c-catalog-feed");
 
   await feed.getByRole("button", { name: "MCP Add", exact: true }).click();

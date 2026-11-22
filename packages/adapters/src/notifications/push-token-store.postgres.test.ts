@@ -248,7 +248,17 @@ suite("database push registrations", () => {
     await runAsSystem("expire the desktop's session", () =>
       a.prisma.session.update({ where: { id: session("a") }, data: { expiresAt: new Date(0) } }),
     );
-    expect(await worker.desktopTargets(user("a"), "space-1")).toEqual([]);
+    try {
+      expect(await worker.desktopTargets(user("a"), "space-1")).toEqual([]);
+    } finally {
+      // The sessions are shared by the whole file: later tests sign in with this one.
+      await runAsSystem("restore the desktop's session", () =>
+        a.prisma.session.update({
+          where: { id: session("a") },
+          data: { expiresAt: new Date(Date.now() + 3600_000) },
+        }),
+      );
+    }
   });
 
   it("removes a handed-over or unregistered device from the table the previous release sends from", async () => {

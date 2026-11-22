@@ -6,11 +6,12 @@ import { mountLocalComputerHost, validLocalSettingsToken } from "./local-setting
 const token = "ab".repeat(32);
 function fixture(sandboxProvider = "docker") {
   const upsert = vi.fn(async () => ({}));
+  const updateMany = vi.fn(async () => ({ count: 0 }));
   const app = new Hono();
   mountLocalComputerHost(app, {
     token,
     sandboxProvider,
-    prisma: { deploymentSettings: { upsert } } as never,
+    prisma: { deploymentSettings: { upsert, updateMany } } as never,
   });
   const request = (body = "{}", supplied: string | null = token) =>
     app.request(LOCAL_COMPUTER_HOST_PATH, {
@@ -21,7 +22,7 @@ function fixture(sandboxProvider = "docker") {
       },
       body,
     });
-  return { app, request, upsert };
+  return { app, request, upsert, updateMany };
 }
 
 describe("native computer host capability", () => {
@@ -57,7 +58,7 @@ describe("native computer host capability", () => {
     }
     expect(f.upsert).not.toHaveBeenCalled();
   });
-  it("saves only a bounded host choice on the app-managed Docker instance", async () => {
+  it("saves only a bounded host choice on an app-managed local instance", async () => {
     const f = fixture();
     expect((await f.request('{"computerHost":"this-mac"}')).status).toBe(200);
     expect(f.upsert).toHaveBeenCalledWith({
@@ -69,6 +70,17 @@ describe("native computer host capability", () => {
       expect((await f.request(body)).status).toBe(400);
     expect((await f.request("x".repeat(1025))).status).toBe(413);
     expect((await fixture("e2b").request('{"computerHost":"this-mac"}')).status).toBe(403);
+    expect((await fixture("local-vm").request('{"computerHost":"this-mac"}')).status).toBe(200);
     expect(f.upsert).toHaveBeenCalledTimes(1);
+  });
+  it("clears a saved host choice only under a provider that cannot offer it", async () => {
+    const unsupported = fixture("e2b");
+    await vi.waitFor(() =>
+      expect(unsupported.updateMany).toHaveBeenCalledWith({
+        where: { computerHost: "this-mac" },
+        data: { computerHost: null },
+      }),
+    );
+    expect(fixture("docker").updateMany).not.toHaveBeenCalled();
   });
 });

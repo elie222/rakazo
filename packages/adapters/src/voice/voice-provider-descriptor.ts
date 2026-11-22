@@ -32,10 +32,7 @@ export interface VoiceProviderDefinition {
   synthesisModel?: string;
   /** A fixed recognition model when the deployment supports one model. */
   transcriptionModel?: string;
-  /** A unit this model reliably reports and this deployment policy can price. */
-  deploymentUsageUnit?(
-    operation: "synthesize" | "transcribe",
-    model: string,
-  ): VoiceUsage["unit"] | undefined;
+  /** The unit this transcription model reliably reports and a deployment policy can price. */
+  transcriptionUsageUnit?(model: string): VoiceUsage["unit"] | undefined;
   create(options: VoiceProviderOptions): VoiceProvider;
 }
