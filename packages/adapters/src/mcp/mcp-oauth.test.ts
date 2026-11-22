@@ -1078,6 +1078,43 @@ describe("MCP OAuth", () => {
     expect((await shared.stored()).oauth?.tokens).toBeUndefined();
   });
 
+  it("stores no grant when another process completes a sign-in for a server switched to stdio since", async () => {
+    const shared = sharedCredentials(null);
+    const broker = new McpOAuthBroker(shared.prisma as never, shared.secrets as never, {
+      fetch: issuingAuthServer().fetch,
+      resolveHostname: TEST_NETWORK.resolveHostname,
+    });
+    const session = await shared.beginSession({
+      oauth: {
+        codeVerifier: "verifier",
+        redirectUri: "http://127.0.0.1:5173/mcp/oauth/callback",
+        clientInformation: { client_id: "dynamic-1" },
+        discoveryState: {
+          authorizationServerUrl: "https://auth.example.test",
+          authorizationServerMetadata: {
+            issuer: "https://auth.example.test",
+            authorization_endpoint: "https://auth.example.test/authorize",
+            token_endpoint: "https://auth.example.test/token",
+            response_types_supported: ["code"],
+          },
+        },
+      },
+    });
+    // The settings API switches the server to stdio while the sign-in is in flight.
+    shared.server.endpoint = null;
+
+    await expect(
+      broker.complete({
+        sessionId: session.id,
+        code: "authorization-code",
+        state: session.id,
+        spaceId: shared.context.spaceId,
+        userId: shared.context.userId,
+      }),
+    ).rejects.toThrow();
+    expect((await shared.stored()).oauth?.tokens).toBeUndefined();
+  });
+
   it("rejects completing a sign-in that outlives its disconnect", async () => {
     const discoveryState = {
       authorizationServerUrl: "https://auth.example.test",

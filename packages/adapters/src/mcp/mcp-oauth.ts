@@ -1483,6 +1483,18 @@ export class McpOAuthBroker {
         material: await this.read(session.oauthCiphertext, session.id),
         ...(server.secretId ? { secretId: server.secretId } : {}),
       };
+      // A stdio sign-in began at its authorization server; one that began anywhere else began
+      // at a remote URL the server has since left for stdio.
+      const issuer =
+        loaded.material.oauthClient?.authorization_server ??
+        loaded.material.oauth?.discoveryState?.authorizationServerUrl;
+      const startedAtIssuer = Boolean(
+        issuer &&
+          URL.canParse(issuer) &&
+          URL.canParse(session.endpoint) &&
+          new URL(issuer).href === new URL(session.endpoint).href,
+      );
+      if (!server.endpoint && !startedAtIssuer) throw new McpOAuthRefusedError(SESSION_INVALID);
       pending = {
         serverId: server.id,
         spaceId: input.spaceId,
