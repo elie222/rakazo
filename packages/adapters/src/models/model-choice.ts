@@ -1,5 +1,5 @@
 import type { Actor } from "@rakazo/contracts";
-import { canonicalPiProviderId } from "@rakazo/contracts";
+import { canonicalPiProviderId, OPENAI_COMPATIBLE_PROVIDER_ID } from "@rakazo/contracts";
 import { connectedModelChoices as pickerModelChoices } from "@rakazo/core";
 import { listAvailablePiCatalog } from "../runtime/pi/models/pi-catalog-availability.js";
 import type { PiCatalogEntry } from "../runtime/pi/models/pi-models.js";
@@ -49,7 +49,9 @@ export async function connectedModelChoices(
       .filter((entry) => !entry.placeholder)
       .map(choiceKey),
   );
-  const own = pickerModelChoices(credentials, listPiCatalog())
+  // Only a custom server serves ids of its own; other connections run what the catalog lists.
+  const servers = credentials.filter((c) => c.provider === OPENAI_COMPATIBLE_PROVIDER_ID);
+  const own = pickerModelChoices(servers, listPiCatalog())
     .filter((choice) => !bundled.has(`${choice.provider}/${choice.modelId}`))
     .map((choice) => ({
       provider: choice.provider,

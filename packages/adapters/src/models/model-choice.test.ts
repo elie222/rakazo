@@ -254,6 +254,12 @@ describe("custom server models", () => {
     expect(await connectedModelChoices(unreadable, scope)).toEqual([]);
   });
 
+  it("adds no saved free-form id from a connection that is not a custom server", async () => {
+    const deps = customServer(async () => "fake-api-key", "anthropic");
+    const choices = await connectedModelChoices(deps, scope);
+    expect(choices.map((choice) => choice.id)).not.toContain("local-llama");
+  });
+
   it("leaves out a connection that must be signed in again, though settings still show it", async () => {
     const deps = customServer(
       async () => serializeModelSecret({ kind: "oauth", reconnectRequired: true }),

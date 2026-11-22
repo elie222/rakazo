@@ -87,12 +87,14 @@ export async function listModelCredentials(
       const unreadable = runnable ? null : dto();
       const ciphertext = ciphertextById.get(row.secretId);
       if (!ciphertext) return unreadable;
+      let plaintext: string;
       try {
-        return dto(await deps.secretStore.load(ciphertext, row.secretId));
+        plaintext = await deps.secretStore.load(ciphertext, row.secretId);
       } catch (error) {
         if (error instanceof SecretStoreUnavailableError) throw error;
         return unreadable;
       }
+      return dto(plaintext);
     }),
   );
   // A connection waiting to be signed in again cannot run anything until it is.
