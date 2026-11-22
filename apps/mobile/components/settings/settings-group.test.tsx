@@ -98,6 +98,7 @@ vi.mock("react-native", () => {
   }
 
   return {
+    I18nManager: { isRTL: false },
     Platform: { OS: "ios" },
     Pressable: MockPressable,
     Switch: MockSwitch,

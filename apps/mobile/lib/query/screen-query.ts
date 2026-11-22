@@ -11,7 +11,12 @@ import { queryClient } from "./query";
  * draft a new read would replace passes `onForeground: false` and reads again on focus only.
  */
 export function useScreenQuery<T>(
-  read: { queryKey: DataTag<QueryKey, T, Error>; queryFn: QueryFunction<T>; gcTime?: number },
+  read: {
+    queryKey: DataTag<QueryKey, T, Error>;
+    queryFn: QueryFunction<T>;
+    gcTime?: number;
+    meta?: Record<string, unknown>;
+  },
   { enabled = true, onForeground = true } = {},
 ) {
   const query = useQuery({ ...read, enabled }, queryClient);

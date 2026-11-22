@@ -15,13 +15,13 @@ import {
   currentReadySessionGeneration,
   currentSessionGeneration,
   loadSessionToken,
-  loadVerifiedIntegrationsScope,
+  loadVerifiedScope,
   snapshotSessionToken,
   subscribeSessionGeneration,
 } from "../../api/session";
 import { errorText } from "../../api/user-error";
+import { verifiedScope } from "../../api/verified-scope";
 import { artifactCacheSession } from "../../artifacts/artifact-cache-session";
-import { integrationsCacheScope } from "../../integrations/integrations-cache";
 import { askToAddModel } from "../../models/model-settings";
 import { foregroundCalendarDeviceKey } from "../../personal-calendar/device-calendar-key";
 import { hasSavedUnsentSends, outboxDisk } from "./outbox-disk";
@@ -47,11 +47,11 @@ async function loadUnsentSends(): Promise<void> {
   const apiBase = currentApiBase();
   const spaceId = selectedSpaceId();
   if (!scope() || activeScope?.spaceId !== spaceId) {
-    const saved = await loadVerifiedIntegrationsScope();
+    const saved = await loadVerifiedScope();
     const verified =
       saved?.apiBase === apiBase && (spaceId || saved.selectionId === null)
         ? saved
-        : await integrationsCacheScope();
+        : await verifiedScope();
     const cacheSession = await artifactCacheSession(await loadSessionToken());
     if (
       generation !== currentSessionGeneration() ||

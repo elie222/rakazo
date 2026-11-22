@@ -267,6 +267,8 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["models/rename"],
       ["models/saveModelSettings"],
       ["models/disconnect"],
+      ["models/deployment/get"],
+      ["models/deployment/update", { provider: null }],
       ["spaces/list"],
       ["meetingCalendar/status", { botId: "missing-bot" }],
       ["meetingCalendar/upcoming", { botId: "missing-bot" }],
@@ -2540,6 +2542,12 @@ describeWithDatabase("API authorization and resource isolation", () => {
       await expectForbidden(app, cookie, "updater/apply", {});
       await expectForbidden(app, cookie, "integrationSetup/save", {
         provider: "composio",
+        apiKey: "fake-key",
+      });
+      await expectForbidden(app, cookie, "models/deployment/get", {});
+      await expectForbidden(app, cookie, "models/deployment/update", {
+        provider: "openrouter",
+        modelId: "anthropic/claude-haiku-5.5",
         apiKey: "fake-key",
       });
     }

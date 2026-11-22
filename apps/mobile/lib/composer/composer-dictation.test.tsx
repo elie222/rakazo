@@ -56,7 +56,7 @@ vi.mock("../api/api", () => ({
 }));
 vi.mock("../api/session", () => ({ currentSessionGeneration: () => 1 }));
 vi.mock("../voice/voice", () => ({ ensureVoiceConsent: vi.fn(async () => undefined) }));
-vi.mock("../calls/call-session", () => ({
+vi.mock("../voice/voice-clip", () => ({
   recordClip: voice.recordClip,
   transcribeClip: voice.transcribeClip,
 }));

@@ -479,7 +479,7 @@ function fixture({
     botSection: { findMany: vi.fn(async () => []) },
     vaultCredential: { findMany: vi.fn(async () => []) },
     agentSkill: { findMany: vi.fn(async () => []) },
-    scratchpadItem: { findMany: vi.fn(async () => []) },
+    scratchpadItem: { findMany: vi.fn(async () => []), count: vi.fn(async () => 0) },
     spaceSettingOverride: {
       findUnique: vi.fn(
         async (query: { where: { spaceId_userId_setting: { setting: string } } }) =>
