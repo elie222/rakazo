@@ -1,4 +1,5 @@
 import { useId } from "react";
+import { graphemes } from "./graphemes.js";
 import { objectItems } from "./items.js";
 import { useWords } from "./labels.js";
 
@@ -21,18 +22,15 @@ const MIN_WIDTH = 88;
 const MAX_WIDTH = 208;
 const NODE_GAP = 24;
 const LOOP_ROOM = 36;
+// Edge labels are 12px with a 5px outline, so half the outline shows past each end.
+const EDGE_LABEL_CHAR = 6.7;
+const EDGE_LABEL_OUTLINE = 2.5;
 /** Node accents for `series` 0 to 4, in chart colour order. */
 const SERIES_COLORS = ["--rk-c1", "--rk-c2", "--rk-c3", "--rk-c4", "--rk-c5"];
 
 // Estimate full-width glyphs as two Latin characters, consistently for wrapping and sizing.
 const wideGlyph =
   /[\u1100-\u115f\u2329\u232a\u2e80-\ua4cf\uac00-\ud7a3\uf900-\ufaff\ufe10-\ufe19\ufe30-\ufe6f\uff01-\uff60\uffe0-\uffe6\u{20000}-\u{3fffd}]/u;
-const graphemes =
-  typeof Intl.Segmenter === "function"
-    ? new Intl.Segmenter(undefined, { granularity: "grapheme" })
-    : undefined;
-const segments = (text: string) =>
-  graphemes ? [...graphemes.segment(text)].map(({ segment }) => segment) : [...text];
 const characterWidth = (character: string) => {
   if (/\p{Emoji_Presentation}|\uFE0F|\u20E3/u.test(character)) return 2;
   return [...character].reduce(
@@ -42,7 +40,7 @@ const characterWidth = (character: string) => {
   );
 };
 const textWidth = (text: string) =>
-  segments(text).reduce((width, segment) => width + characterWidth(segment), 0);
+  graphemes(text).reduce((width, segment) => width + characterWidth(segment), 0);
 
 /** Greedy word wrap; a word longer than a line is split rather than clipped. */
 export function wrapText(text: string, perLine: number): string[] {
@@ -51,7 +49,7 @@ export function wrapText(text: string, perLine: number): string[] {
   for (const word of text.normalize("NFC").split(/\s+/).filter(Boolean)) {
     let remainder = "";
     let width = 0;
-    for (const character of segments(word)) {
+    for (const character of graphemes(word)) {
       const nextWidth = characterWidth(character);
       if (remainder && width + nextWidth > perLine) {
         if (line) lines.push(line);
@@ -245,6 +243,42 @@ export function Diagram({
   );
   if (!layout.nodes.length) return null;
   const pad = 2;
+  const drawn = layout.edges.map(({ edge, from, to, backward }) => {
+    let points: [Point, Point, Point, Point];
+    if (!backward && horizontal) {
+      const a: Point = [from.x + from.width, from.y + from.height / 2];
+      const d: Point = [to.x, to.y + to.height / 2];
+      const bend = (d[0] - a[0]) / 2;
+      points = [a, [a[0] + bend, a[1]], [d[0] - bend, d[1]], d];
+    } else if (!backward) {
+      const a: Point = [from.x + from.width / 2, from.y + from.height];
+      const d: Point = [to.x + to.width / 2, to.y];
+      const bend = (d[1] - a[1]) / 2;
+      points = [a, [a[0], a[1] + bend], [d[0], d[1] - bend], d];
+    } else if (horizontal) {
+      // Edges that loop back run under the nodes they join.
+      const a: Point = [from.x + from.width / 2, from.y + from.height];
+      const d: Point = [to.x + to.width / 2, to.y + to.height];
+      const low = Math.max(a[1], d[1]) + LOOP_ROOM - 6;
+      points = [a, [a[0], low], [d[0], low], d];
+    } else {
+      const a: Point = [from.x + from.width, from.y + from.height / 2];
+      const d: Point = [to.x + to.width, to.y + to.height / 2];
+      const right = Math.max(a[0], d[0]) + LOOP_ROOM - 6;
+      points = [a, [right, a[1]], [right, d[1]], d];
+    }
+    return { edge, points, label: mid(...points) };
+  });
+  // A long edge label can reach past the nodes, so the view widens to keep it on screen.
+  let minX = -pad;
+  let maxX = layout.width + pad;
+  for (const { edge, label } of drawn) {
+    if (!edge.label) continue;
+    const half = (textWidth(edge.label) * EDGE_LABEL_CHAR) / 2 + EDGE_LABEL_OUTLINE;
+    minX = Math.min(minX, Math.floor(label[0] - half));
+    maxX = Math.max(maxX, Math.ceil(label[0] + half));
+  }
+  const width = maxX - minX;
   const name = (id: string) => layout.nodes.find((node) => node.id === id)?.label ?? id;
   const description = [
     layout.nodes.map((node) => node.label).join(", "),
@@ -260,11 +294,11 @@ export function Diagram({
     <div className="rk-diagram">
       <svg
         role="img"
-        viewBox={`${-pad} ${-pad} ${layout.width + pad * 2} ${layout.height + pad * 2}`}
+        viewBox={`${minX} ${-pad} ${width} ${layout.height + pad * 2}`}
         // Below 85% its text gets too small to read, so a narrow column scrolls it instead.
         style={{
-          maxWidth: layout.width + pad * 2,
-          minWidth: Math.round((layout.width + pad * 2) * 0.85),
+          maxWidth: width,
+          minWidth: Math.round(width * 0.85),
         }}
       >
         <title>{description}</title>
@@ -281,32 +315,8 @@ export function Diagram({
             <path className="rk-diagram-arrow" d="M1 1L9 5L1 9" />
           </marker>
         </defs>
-        {layout.edges.map(({ edge, from, to, backward }, index) => {
-          let points: [Point, Point, Point, Point];
-          if (!backward && horizontal) {
-            const a: Point = [from.x + from.width, from.y + from.height / 2];
-            const d: Point = [to.x, to.y + to.height / 2];
-            const bend = (d[0] - a[0]) / 2;
-            points = [a, [a[0] + bend, a[1]], [d[0] - bend, d[1]], d];
-          } else if (!backward) {
-            const a: Point = [from.x + from.width / 2, from.y + from.height];
-            const d: Point = [to.x + to.width / 2, to.y];
-            const bend = (d[1] - a[1]) / 2;
-            points = [a, [a[0], a[1] + bend], [d[0], d[1] - bend], d];
-          } else if (horizontal) {
-            // Edges that loop back run under the nodes they join.
-            const a: Point = [from.x + from.width / 2, from.y + from.height];
-            const d: Point = [to.x + to.width / 2, to.y + to.height];
-            const low = Math.max(a[1], d[1]) + LOOP_ROOM - 6;
-            points = [a, [a[0], low], [d[0], low], d];
-          } else {
-            const a: Point = [from.x + from.width, from.y + from.height / 2];
-            const d: Point = [to.x + to.width, to.y + to.height / 2];
-            const right = Math.max(a[0], d[0]) + LOOP_ROOM - 6;
-            points = [a, [right, a[1]], [right, d[1]], d];
-          }
+        {drawn.map(({ edge, points, label }, index) => {
           const [a, b, c, d] = points;
-          const label = mid(a, b, c, d);
           return (
             <g key={index}>
               <path

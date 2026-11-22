@@ -18,8 +18,14 @@ const speakerMock = vi.hoisted(() => ({
 }));
 const speak = speakerMock.speak;
 
-vi.mock("../../../lib/calls/tts", () => ({ speaker: speakerMock }));
-vi.mock("@rakazo/ui-web", () => ({ toast: { error: vi.fn() } }));
+const NOT_READY = "Add a voice provider key and pick a voice in Voice settings.";
+vi.mock("../../../lib/calls/tts", () => ({
+  speaker: speakerMock,
+  voiceNotReadyText: () => NOT_READY,
+}));
+const toastError = vi.hoisted(() => vi.fn());
+const toastDismiss = vi.hoisted(() => vi.fn());
+vi.mock("@rakazo/ui-web", () => ({ toast: { error: toastError, dismiss: toastDismiss } }));
 
 const speaking: Bot = { id: "bot-b", autoSpeak: true } as unknown as Bot;
 
@@ -35,16 +41,25 @@ let root: Root | null = null;
 let container: HTMLDivElement | null = null;
 let latest: ReturnType<typeof useReadAloud>;
 
-function renderRead(props: { snapshot: ThreadSnapshot; callBotId?: string }) {
+type ReadProps = { snapshot: ThreadSnapshot; callBotId?: string; openVoiceSettings?: () => void };
+
+function renderRead(props: ReadProps) {
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
   rerenderRead(props);
 }
 
-function rerenderRead({ snapshot, callBotId }: { snapshot: ThreadSnapshot; callBotId?: string }) {
+function rerenderRead({ snapshot, callBotId, openVoiceSettings = () => {} }: ReadProps) {
   act(() => {
-    root?.render(<ReadHarness active={speaking} snapshot={snapshot} callBotId={callBotId} />);
+    root?.render(
+      <ReadHarness
+        active={speaking}
+        snapshot={snapshot}
+        callBotId={callBotId}
+        openVoiceSettings={openVoiceSettings}
+      />,
+    );
   });
 }
 
@@ -52,12 +67,20 @@ function ReadHarness({
   active,
   snapshot,
   callBotId,
+  openVoiceSettings,
 }: {
   active: Bot;
   snapshot: ThreadSnapshot;
   callBotId?: string;
+  openVoiceSettings: () => void;
 }) {
-  latest = useReadAloud({ active, snapshot, callBotId, activeBotId: { current: active.id } });
+  latest = useReadAloud({
+    active,
+    snapshot,
+    callBotId,
+    activeBotId: { current: active.id },
+    openVoiceSettings,
+  });
   return null;
 }
 
@@ -102,4 +125,68 @@ it("reads a message on request when no call is active", () => {
   renderRead({ snapshot: snapshot([message("m1", "first reply")]) });
   act(() => latest.speakMessage(message("m2", "spoken words")));
   expect(speak).toHaveBeenCalledWith("spoken words", { botId: "bot-b", messageId: "m2" });
+});
+
+type ToastOptions = { id: string; action?: { label: string; onClick: () => void } };
+
+it("offers Voice settings from the toast when a manual read finds no voice connected", async () => {
+  speak.mockResolvedValueOnce(NOT_READY as never);
+  const openVoiceSettings = vi.fn();
+  renderRead({ snapshot: snapshot([message("m1", "first reply")]), openVoiceSettings });
+  act(() => latest.speakMessage(message("m2", "spoken words")));
+  await vi.waitFor(() => expect(toastError).toHaveBeenCalledTimes(1));
+  const [text, options] = toastError.mock.calls[0] as [string, ToastOptions];
+  expect(text).toBe(NOT_READY);
+  expect(options.action?.label).toBe("Open Voice settings");
+  options.action?.onClick();
+  expect(openVoiceSettings).toHaveBeenCalledTimes(1);
+});
+
+it("offers Voice settings when an automatic read finds no voice connected", async () => {
+  speak.mockResolvedValueOnce(NOT_READY as never);
+  const openVoiceSettings = vi.fn();
+  renderRead({ snapshot: snapshot([message("m1", "first reply")]), openVoiceSettings });
+  rerenderRead({
+    snapshot: snapshot([message("m1", "first reply"), message("m2", "second reply")]),
+    openVoiceSettings,
+  });
+  await vi.waitFor(() => expect(toastError).toHaveBeenCalledTimes(1));
+  const [, options] = toastError.mock.calls[0] as [string, ToastOptions];
+  options.action?.onClick();
+  expect(openVoiceSettings).toHaveBeenCalledTimes(1);
+});
+
+it("opens Voice settings through the latest callback when the toast is clicked after a rerender", async () => {
+  speak.mockResolvedValueOnce(NOT_READY as never);
+  const stale = vi.fn();
+  const latestCallback = vi.fn();
+  renderRead({ snapshot: snapshot([message("m1", "first reply")]), openVoiceSettings: stale });
+  act(() => latest.speakMessage(message("m2", "spoken words")));
+  await vi.waitFor(() => expect(toastError).toHaveBeenCalledTimes(1));
+  rerenderRead({
+    snapshot: snapshot([message("m1", "first reply")]),
+    openVoiceSettings: latestCallback,
+  });
+  const [, options] = toastError.mock.calls[0] as [string, ToastOptions];
+  options.action?.onClick();
+  expect(stale).not.toHaveBeenCalled();
+  expect(latestCallback).toHaveBeenCalledTimes(1);
+});
+
+it("keeps other read-aloud failures as a plain toast", async () => {
+  speak.mockResolvedValueOnce("Could not play that clip." as never);
+  renderRead({ snapshot: snapshot([message("m1", "first reply")]), openVoiceSettings: vi.fn() });
+  act(() => latest.speakMessage(message("m2", "spoken words")));
+  await vi.waitFor(() => expect(toastError).toHaveBeenCalledTimes(1));
+  const [text, options] = toastError.mock.calls[0] as [string, ToastOptions];
+  expect(text).toBe("Could not play that clip.");
+  // Set explicitly: the shared toast id keeps an earlier toast's action unless it is cleared.
+  expect(options).toHaveProperty("action", undefined);
+});
+
+it("dismisses its toast when the shell unmounts", () => {
+  renderRead({ snapshot: snapshot([message("m1", "first reply")]) });
+  act(() => root?.unmount());
+  root = null;
+  expect(toastDismiss).toHaveBeenCalledWith("read-aloud-error");
 });

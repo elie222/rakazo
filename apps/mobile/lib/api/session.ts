@@ -11,9 +11,10 @@ import { clearFailedSends } from "../thread/send/thread-feedback";
 import { clearNetworkCache } from "./network-cache";
 
 const SESSION_KEY = "rakazo.session_token";
-const INTEGRATIONS_SCOPE_KEY = "rakazo.integrations-scope";
+// Named for the screen that first kept it; renaming it would drop every saved identity.
+const VERIFIED_SCOPE_KEY = "rakazo.integrations-scope";
 
-export type VerifiedIntegrationsScope = {
+export type SavedVerifiedScope = {
   apiBase: string;
   userId: string;
   spaceId: string;
@@ -67,10 +68,10 @@ function invalidateSessionCaches(
   return enqueueScopeWrite(async () => {
     await clearingArtifacts;
     try {
-      await SecureStore.deleteItemAsync(INTEGRATIONS_SCOPE_KEY);
+      await SecureStore.deleteItemAsync(VERIFIED_SCOPE_KEY);
     } catch {
       try {
-        await SecureStore.setItemAsync(INTEGRATIONS_SCOPE_KEY, "");
+        await SecureStore.setItemAsync(VERIFIED_SCOPE_KEY, "");
       } catch {
         // A failed wipe remains invalid in memory; token matching gates future reads.
       }
@@ -78,12 +79,12 @@ function invalidateSessionCaches(
   });
 }
 
-export async function loadVerifiedIntegrationsScope(): Promise<VerifiedIntegrationsScope | null> {
+export async function loadVerifiedScope(): Promise<SavedVerifiedScope | null> {
   const generation = sessionGeneration;
   if (scopeInvalidated) return null;
   try {
     const token = await snapshotSessionToken();
-    const stored = await SecureStore.getItemAsync(INTEGRATIONS_SCOPE_KEY);
+    const stored = await SecureStore.getItemAsync(VERIFIED_SCOPE_KEY);
     if (
       !token.ok ||
       !token.value ||
@@ -115,9 +116,9 @@ export async function loadVerifiedIntegrationsScope(): Promise<VerifiedIntegrati
   }
 }
 
-export async function saveVerifiedIntegrationsScope(
+export async function saveVerifiedScope(
   generation: number,
-  scope: VerifiedIntegrationsScope,
+  scope: SavedVerifiedScope,
 ): Promise<void> {
   // The launch's first token read queues its recovery write, so it cannot run inside the queue.
   if (!(await snapshotSessionToken()).ok) return;
@@ -127,7 +128,7 @@ export async function saveVerifiedIntegrationsScope(
     if (!token.ok || !token.value || generation !== sessionGeneration) return;
     try {
       await SecureStore.setItemAsync(
-        INTEGRATIONS_SCOPE_KEY,
+        VERIFIED_SCOPE_KEY,
         JSON.stringify({ ...scope, token: token.value }),
       );
       if (generation === sessionGeneration) scopeInvalidated = false;

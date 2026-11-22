@@ -58,6 +58,41 @@ describe("normalizeOpenAiCompatibleBaseUrl", () => {
     );
   });
 
+  it.each(["chat/completions", "completions", "responses", "models", "embeddings"])(
+    "strips a pasted /%s endpoint, with or without a trailing slash or query",
+    (suffix) => {
+      for (const tail of ["", "/", "?api-version=1", "/?api-version=1"]) {
+        expect(
+          normalizeOpenAiCompatibleBaseUrl(`https://gateway.example.test/v1/${suffix}${tail}`),
+        ).toBe("https://gateway.example.test/v1");
+      }
+      expect(
+        normalizeOpenAiCompatibleBaseUrl(`https://gateway.example.test/openai/${suffix}`),
+      ).toBe("https://gateway.example.test/openai/v1");
+    },
+  );
+
+  it("strips only the endpoint at the end, then applies the usual /v1 rule", () => {
+    expect(normalizeOpenAiCompatibleBaseUrl("https://gateway.example.test/models")).toBe(
+      "https://gateway.example.test/v1",
+    );
+    expect(
+      normalizeOpenAiCompatibleBaseUrl("https://gateway.example.test/v1/Chat/Completions"),
+    ).toBe("https://gateway.example.test/v1");
+    expect(
+      normalizeOpenAiCompatibleBaseUrl("https://gateway.example.test/v1/models/some-model"),
+    ).toBe("https://gateway.example.test/v1/models/some-model");
+    expect(normalizeOpenAiCompatibleBaseUrl("https://gateway.example.test/v1/my-completions")).toBe(
+      "https://gateway.example.test/v1/my-completions",
+    );
+  });
+
+  it("matches a preset when its endpoint was pasted", () => {
+    expect(matchCompatibleEndpointPreset(presets, `${PRESET_BASE_URL}/chat/completions`)).toBe(
+      presets[0],
+    );
+  });
+
   it("rejects text that is not an HTTP(S) URL", () => {
     expect(() => normalizeOpenAiCompatibleBaseUrl("127.0.0.1:8000")).toThrow();
   });

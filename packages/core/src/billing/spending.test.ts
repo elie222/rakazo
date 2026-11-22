@@ -130,6 +130,15 @@ describe("formatMinorAmount", () => {
     expect(formatMinorAmount(2340, "usd")).toBe("$23.40");
     expect(formatMinorAmount(5000, "ils", "en-US")).toBe("₪50.00");
   });
+
+  it("drops the cents of a whole amount only when asked, as prices show", () => {
+    const whole = { wholeWithoutCents: true };
+    expect(formatMinorAmount(1200, "usd", "en-US", whole)).toBe("$12");
+    expect(formatMinorAmount(1250, "usd", "en-US", whole)).toBe("$12.50");
+    expect(formatMinorAmount(1234, "kwd", "en-US", whole)).toBe("KWD\u00a01.234");
+    expect(formatMinorAmount(1200, "eur", "de-DE", whole)).toBe("12\u00a0€");
+    expect(formatMinorAmount(1200, "usd", "en-US")).toBe("$12.00");
+  });
 });
 
 describe("parseLimitInput", () => {
@@ -137,6 +146,11 @@ describe("parseLimitInput", () => {
     ["200", 20_000],
     ["200.5", 20_050],
     ["12,50", 1_250],
+    [".99", 99],
+    [",50", 50],
+    [".5", 50],
+    [" ,5 ", 50],
+    [".01", 1],
     ["1,000", 100_000],
     ["1 000", 100_000],
     [" 75 ", 7_500],
@@ -145,12 +159,33 @@ describe("parseLimitInput", () => {
     expect(parseLimitInput(text)).toBe(amount);
   });
 
-  it.each(["", "0", "-5", "abc", "$20", "1e3", "1000001", "1,2,3", "1.2345"])(
-    "refuses %j",
-    (text) => {
-      expect(parseLimitInput(text)).toBeNull();
-    },
-  );
+  it.each([
+    "",
+    "0",
+    ".00",
+    ",0",
+    ".",
+    ",",
+    "-5",
+    "-.5",
+    "abc",
+    "$20",
+    "$.99",
+    "1e3",
+    "1000001",
+    "1,000,000.01",
+    "1,2,3",
+    "1.2345",
+    "..99",
+    ",.99",
+    ".999",
+    ",500",
+    ".99.",
+    ",50.",
+    ".1,234",
+  ])("refuses %j", (text) => {
+    expect(parseLimitInput(text)).toBeNull();
+  });
 });
 
 describe("formatted amount properties", () => {

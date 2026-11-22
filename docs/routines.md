@@ -15,8 +15,9 @@ The bot creates the routine and reports each run back in the same chat.
 
 ## Create or edit one yourself
 
-Open the bot's computer with **Agent computer** at the top of the chat. Below the screen is the
-bot's **Routines** list. Choose **Create Routine** (the **+**), or click a routine to edit it.
+On web or desktop, click the bot's name at the top of its chat to open the bot panel. In
+**Routines**, choose **New routine** if the list is empty, or **+** (labeled **Create routine**) if
+it already has routines. To edit a routine, select it from the list.
 
 1. **Name** the routine and write the **Instruction**: what it should do each time it runs.
 2. Under **When to run**, choose **Add trigger**.

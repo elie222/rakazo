@@ -78,9 +78,11 @@ EMAIL_EMULATOR=true
 
 `NODE_ENV=production` 时模拟器被强制禁用，且要求 API 绑定回环地址。在 `NODE_ENV=development` 中，禁用缓存后可从 `http://127.0.0.1:3100/api/dev/emails` 查看捕获邮件；API 只记录投递元数据，不记录重置令牌。测试、预发布和生产环境不会注册收件箱路由。
 
-设置 `WELCOME_EMAIL_ENABLED=true` 后，每个新账号首次登录会收到一封带退订链接的欢迎邮件。它需要上述任一提供商。
+Rakazo 还可以发送带退订链接的产品邮件：新账号首次登录后的欢迎邮件、开启计费推荐时的推荐邮件，以及配置计费后在套餐开始后发送的提醒。本仓库不包含这些邮件的文案，因此只有在你提供对应文案（并配置上述任一提供商）时，每封邮件才会发送。
 
-配置计费后，同一开关还会在套餐开始一天后，向仍未连接模型的组织拥有者发送一封提醒邮件。该提醒由 worker 排队并发送，因此 worker 必须使用与 API 相同的邮件设置（包括这个开关；Compose 文件已经这样做）；没有这些设置的 worker 会丢弃提醒。
+文案是一个文件夹，每封邮件一个 `<email>.json` 文件（`welcome`、`referral`、`model-connection`、`agent-import`），把每种应用语言映射到该邮件各个键的字符串。每个字符串必须恰好使用 `packages/auth/src/email-copy/email-keys.ts` 为该键列出的 `{placeholders}`。只有当文件的英文（`en`）为每个键都提供了有效字符串时，该邮件才会发送；其他语言缺失或无效的字符串会回退到该英文。启动时，API 和 worker 会记录每封被关闭的邮件及原因。
+
+应用从 `EMAIL_COPY_DIR`（镜像中为 `/app/email-copy`）读取该文件夹，因此请为 `api` 和 `worker` 服务挂载它，或把 `EMAIL_COPY_DIR` 指向它。`node packages/auth/scripts/check-email-copy.ts <dir>` 会检查一个文件夹。
 
 ## 密码策略
 

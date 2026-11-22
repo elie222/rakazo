@@ -125,6 +125,9 @@ function objectHome(root: string, revision: string | null = null) {
       stored.revision = to;
       return true;
     },
+    prune: async () => [],
+    versions: async () => undefined,
+    restore: async () => undefined,
     revisions: async () => new Map(),
     kinds: async () => new Map(),
   };

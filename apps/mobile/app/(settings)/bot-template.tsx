@@ -4,6 +4,7 @@ import { ChatMarkdown } from "@rakazo/chat-ui/native";
 import type { Bot, BotTemplateListing } from "@rakazo/contracts";
 import { isBotTemplateChanged } from "@rakazo/contracts";
 import { botTemplateApps, formatCron } from "@rakazo/core";
+import { cronLabels } from "@rakazo/i18n/cron";
 import { useQuery } from "@tanstack/react-query";
 import { useLocalSearchParams, useNavigation, useRouter } from "expo-router";
 import type { ReactNode } from "react";
@@ -26,7 +27,6 @@ import {
   useThemedStyles,
 } from "../../lib/native/native";
 import { queryClient, rpcQuery, useSave } from "../../lib/query/query";
-import { cronLabels } from "../../lib/routines/cron";
 import type { SearchInboxSession } from "../../lib/search/search-inbox";
 import { addToSearchInbox, searchInboxSession } from "../../lib/search/search-inbox";
 import { openFromSettingsSheet } from "../../lib/settings/settings-sheet";
@@ -51,7 +51,7 @@ export default function BotTemplateScreen() {
         <TemplateDetail template={template} onChanged={() => void templates.refetch()} />
       ) : templates.isPending ? (
         <ActivityIndicator color={tokens.mutedForeground} accessibilityLabel={t`Loading…`} />
-      ) : (
+      ) : templates.isError ? (
         <View style={styles.failure}>
           <Text style={styles.secondary}>
             {errorText(templates.error, t`Could not load templates`)}
@@ -63,6 +63,8 @@ export default function BotTemplateScreen() {
             prominence="secondary"
           />
         </View>
+      ) : (
+        <Text style={styles.secondary}>{t`This template is no longer available.`}</Text>
       )}
     </ScrollView>
   );

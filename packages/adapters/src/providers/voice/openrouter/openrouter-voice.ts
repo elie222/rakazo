@@ -30,6 +30,12 @@ const PROVIDER = "OpenRouter";
 const TTS_MODEL = "mistralai/voxtral-mini-tts-2603";
 const STT_MODEL = "openai/whisper-large-v3";
 const MAX_LISTED_MODELS = 500;
+/** Checked to report billed seconds; token-priced models such as gpt-4o-transcribe report tokens. */
+const SECONDS_BILLED_STT = new Set([
+  "x-ai/grok-stt-2.0",
+  "openai/whisper-large-v3",
+  "mistralai/voxtral-mini-transcribe",
+]);
 const FORMAT_REFUSAL = /\b(?:mp3|mpeg|pcm|format)\b/i;
 
 type SpeechModel = VoiceModelInfo & { voices: string[] };
@@ -190,6 +196,7 @@ export class OpenRouterVoiceProvider implements VoiceProvider {
 }
 
 export const openRouterVoice: VoiceProviderDefinition = {
+  transcriptionUsageUnit: (model) => (SECONDS_BILLED_STT.has(model) ? "seconds" : undefined),
   catalog: {
     name: "OpenRouter",
     description: "Speech and transcription from many providers, with one key.",
