@@ -258,6 +258,7 @@ function SpaceShell() {
     snapshot,
     callBotId: call?.botId,
     activeBotId,
+    openVoiceSettings: () => openSettings("voice"),
   });
   const read = useChatRead({ rpc, active, groupId, activeGroup, setBots, setGroups });
   // A chat that wakes while it is open is already seen: read it, which ends the snooze.
@@ -804,8 +805,8 @@ function SpaceShell() {
             scrollRef={thread.messageScroll}
             scrollRequest={scrollRequest}
             onScrollRequestHandled={clearScrollRequest}
-            followRequest={composer.sentCount}
             {...view.transcriptProps}
+            {...composer.transcriptProps}
             markedUnreadMessageId={read.markedUnreadMessageId}
             showToolActivity={showToolActivity}
             unreadAfterSeq={read.unreadAfterSeq}

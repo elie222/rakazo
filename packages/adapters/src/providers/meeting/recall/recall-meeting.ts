@@ -2,13 +2,19 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 import type { MeetingJoinRequest, MeetingObservation, MeetingProvider } from "@rakazo/adapter-kit";
 import { MeetingJoinRejected } from "@rakazo/adapter-kit";
 import type { MeetingTurn } from "@rakazo/contracts";
-import { cancelResponseBody, parseRetryAfter, readBoundedJsonResponse } from "@rakazo/core";
+import {
+  cancelResponseBody,
+  parseRetryAfter,
+  ResponseBodyTooLargeError,
+  readBoundedJsonResponse,
+} from "@rakazo/core";
 import { z } from "zod";
 
 const id = z.string().uuid();
 const date = z.iso.datetime({ offset: true }).transform((value) => new Date(value));
 const metadata = z.object({ meetingSessionId: z.string().max(128).optional() }).optional();
 const botRef = z.object({ id, metadata });
+const completedBotRefusal = z.object({ code: z.literal("cannot_command_completed_bot") });
 const recording = z.object({ id, status: z.object({ code: z.string() }).optional() });
 const artifact = z.object({
   id,
@@ -146,8 +152,9 @@ export class RecallMeetingProvider implements MeetingProvider {
 
   async leave(externalId: string, signal: AbortSignal) {
     const response = await this.call(`bot/${id.parse(externalId)}/leave_call/`, signal, "POST");
-    cancelResponseBody(response);
+    if (response.status !== 400) cancelResponseBody(response);
     if (response.ok) return undefined;
+    const completed = response.status === 400 && (await isCompletedBotRefusal(response, signal));
     if (response.status === 400 || response.status === 404) {
       const actual = await this.get(externalId, signal);
       if (!actual) return { externalId, occurredAt: new Date(), status: "ended" as const };
@@ -158,6 +165,9 @@ export class RecallMeetingProvider implements MeetingProvider {
       ) {
         return actual;
       }
+      // Recall can refuse commands as soon as the bot starts shutting down.
+      // Keep the observed status authoritative while shutdown is still in progress.
+      if (completed) return undefined;
     }
     throw new Error(`Meeting provider could not remove participant (HTTP ${response.status})`);
   }
@@ -334,6 +344,16 @@ export class RecallMeetingProvider implements MeetingProvider {
     );
     if (!parsed.success) throw new Error("Meeting provider returned an unexpected response");
     return parsed.data;
+  }
+}
+
+async function isCompletedBotRefusal(response: Response, signal: AbortSignal) {
+  try {
+    const body = await readBoundedJsonResponse<unknown>(response, 8 * 1024, signal);
+    return completedBotRefusal.safeParse(body).success;
+  } catch (error) {
+    if (error instanceof SyntaxError || error instanceof ResponseBodyTooLargeError) return false;
+    throw error;
   }
 }
 

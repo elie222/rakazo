@@ -607,7 +607,7 @@ Deterministic checks read the stored memory and the model's `remember` calls:
 each earlier fact must have been saved before it can count as updated or
 forgotten, the home saved in the first conversation must not survive unchanged, entries
 stay under 200 characters, and the bot's memory stays within the limit. The
-`memory-meaning-v1` judge then grades meaning: no stale current home, no
+`memory-meaning-v2` judge then grades meaning: no stale current home, no
 recoverable forgotten code, no duplicate preference, every shared fact captured,
 and every important seeded fact preserved. Calibration labels cover a former
 home, a contradiction, a stale recall, a residual secret, a duplicate, a dropped
@@ -616,6 +616,23 @@ fact and a wiped memory.
 The offline model-protocol fixture runs the same product path and proves that an
 appended Berlin beside London and a claimed save after a full-memory refusal
 fail, while a rewrite and a consolidate-then-save pass.
+
+Seven `memory-proactive-*` cases check that the bot takes notes on its own. In
+three, the user mentions a lasting fact in passing (a child's allergy, a team
+decision, a new job) without asking for it to be saved: a save must happen, and
+the judge checks that memory now holds the fact. In four, nothing should be
+saved: small talk, a one-off conversion, a fact memory already holds, and a
+guest Wi-Fi password shared only to write a message, which must never reach
+memory.
+
+In the November 2026 run on two models over three trials each, the bot saved
+the passing facts on about two of every three tries and left every negative
+alone. After the memory guidance was changed to say passing facts count, it
+saved them every time (one trial still failed because the bot stopped to ask a
+question), the negatives stayed clean, and the existing memory cases still
+passed. An earlier wording that also told the bot to skip
+secrets made one model refuse to save a door code the user asked it to
+remember, so the guidance names what to save, not what to avoid.
 
 ### Earlier file recall evals
 

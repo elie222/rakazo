@@ -602,11 +602,14 @@ export const PREPARE_LINUX_DESKTOP = [
   "  apt_update",
   // A restored disk can keep a package's record without its files, and a plain install of a
   // package APT thinks is present does nothing.
-  `  if ! $root env DEBIAN_FRONTEND=noninteractive ${APT} install -y -qq --reinstall --no-remove $missing; then`,
+  "  packages=$missing",
+  // The dependency owns the executable. Reinstalling websockify alone leaves it missing.
+  '  case "$missing " in *" websockify "*) packages="$packages python3-websockify" ;; esac',
+  `  if ! $root env DEBIAN_FRONTEND=noninteractive ${APT} install -y -qq --reinstall --no-remove $packages; then`,
   // Provider images can arrive with unrelated, unfinished package dependencies. Let APT
   // solve those without specifying the desktop packages, and never remove existing tools.
   `    $root env DEBIAN_FRONTEND=noninteractive ${APT} install -y -qq --fix-broken --no-remove`,
-  `    $root env DEBIAN_FRONTEND=noninteractive ${APT} install -y -qq --reinstall --no-remove $missing`,
+  `    $root env DEBIAN_FRONTEND=noninteractive ${APT} install -y -qq --reinstall --no-remove $packages`,
   "  fi",
   // An install APT reports as done can still leave a tool out; the screen would then fail later.
   ...FIND_MISSING_DESKTOP_TOOLS.map((line) => `  ${line}`),

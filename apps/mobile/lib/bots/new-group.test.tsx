@@ -337,6 +337,21 @@ it("adds and removes chips, hides picked and archived bots, and clears filters o
   await type("no match");
   expect(button("Researcher")).toBeUndefined();
 });
+it.each(["café", "  CAFE\u0301  "])(
+  "matches composed and decomposed accents (%j)",
+  async (query) => {
+    rpc.mockResolvedValue([
+      { id: "composed", name: "Café helper" },
+      { id: "decomposed", name: "Cafe\u0301 team" },
+      { id: "plain", name: "Cafe plain" },
+    ]);
+    await start();
+    await type(query);
+    expect(button("Café helper")).toBeDefined();
+    expect(button("Cafe\u0301 team")).toBeDefined();
+    expect(button("Cafe plain")).toBeUndefined();
+  },
+);
 it("backspace only removes the last chip when the query is empty", async () => {
   await start();
   await click("Researcher");

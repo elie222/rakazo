@@ -1,13 +1,22 @@
-import type { AdapterContext, ComputerRef, SandboxProvider } from "@rakazo/adapter-kit";
+import type {
+  AdapterContext,
+  AgentToolExecutionResult,
+  ComputerRef,
+  SandboxProvider,
+} from "@rakazo/adapter-kit";
 import { SandboxFileTooLargeError } from "@rakazo/adapter-kit";
 import { redactSecrets } from "@rakazo/core";
+import sharp from "sharp";
 import { describe, expect, it } from "vitest";
+import { TOOL_IMAGE_MAX_BYTES } from "../media/tool-result-image.js";
+import { IMAGE_MODEL_CANNOT_SEE } from "../media/tool-result-image.prompt.js";
 import { TOOL_RESULT_TEXT_LIMIT } from "../runtime/pi/pi-runtime-limits.js";
 import type { RunWorkspace } from "./workspace-file-tools.js";
 import { readFileFromTool } from "./workspace-file-tools.js";
 
-function fileWorkspace(content: string, runSecrets: string[] = []) {
-  const bytes = new TextEncoder().encode(content);
+function fileWorkspace(content: string | Uint8Array, runSecrets: string[] = []) {
+  const bytes = typeof content === "string" ? new TextEncoder().encode(content) : content;
+  const maxBytesSeen: Array<number | undefined> = [];
   const computer: ComputerRef = {
     id: "computer-1",
     botId: "bot-1",
@@ -15,7 +24,17 @@ function fileWorkspace(content: string, runSecrets: string[] = []) {
     providerRef: "test-sandbox",
   };
   const sandbox = {
-    readFile: async () => bytes,
+    readFile: async (
+      _computer: ComputerRef,
+      _path: string,
+      _context: unknown,
+      options?: { maxBytes?: number },
+    ) => {
+      maxBytesSeen.push(options?.maxBytes);
+      if (options?.maxBytes !== undefined && bytes.byteLength > options.maxBytes)
+        throw new SandboxFileTooLargeError(options.maxBytes);
+      return bytes;
+    },
   } as unknown as SandboxProvider;
   const workspace: RunWorkspace = {
     botId: "bot-1",
@@ -25,7 +44,7 @@ function fileWorkspace(content: string, runSecrets: string[] = []) {
     context: {} as AdapterContext,
     runSecrets,
   };
-  return { sandbox, workspace };
+  return { sandbox, workspace, maxBytesSeen };
 }
 
 type ReadFileResult = {
@@ -335,5 +354,112 @@ describe("readFileFromTool size limit", () => {
     await expect(readFileFromTool(sandbox, workspace, { path: "logs/huge.log" })).rejects.toBe(
       failure,
     );
+  });
+});
+
+describe("readFileFromTool images", () => {
+  // Noise keeps the PNG from compressing below the text read limit.
+  async function photo(width: number, height: number) {
+    const pixels = Buffer.alloc(width * height * 3);
+    let seed = 1;
+    for (let index = 0; index < pixels.length; index += 1) {
+      seed ^= seed << 13;
+      seed ^= seed >>> 17;
+      seed ^= seed << 5;
+      pixels[index] = seed & 0xff;
+    }
+    return sharp(pixels, { raw: { width, height, channels: 3 } })
+      .png()
+      .toBuffer();
+  }
+
+  it("hands an image larger than the text limit to a vision model", async () => {
+    const bytes = await photo(400, 300);
+    expect(bytes.byteLength).toBeGreaterThan(250_000);
+    const { sandbox, workspace, maxBytesSeen } = fileWorkspace(bytes);
+    const result = (await readFileFromTool(
+      sandbox,
+      workspace,
+      { path: "shots/page.png" },
+      undefined,
+      true,
+    )) as AgentToolExecutionResult;
+    expect(maxBytesSeen).toEqual([TOOL_IMAGE_MAX_BYTES]);
+    expect(result.kind).toBe("agent_tool_result");
+    expect(result.details).toEqual({
+      path: "shots/page.png",
+      mimeType: "image/png",
+      width: 400,
+      height: 300,
+    });
+    expect(result.content.map((part) => part.type)).toEqual(["text", "image"]);
+  });
+
+  it("reads an image larger than the text limit whatever its name", async () => {
+    const bytes = await photo(400, 300);
+    expect(bytes.byteLength).toBeGreaterThan(250_000);
+    const { sandbox, workspace } = fileWorkspace(bytes);
+    const result = (await readFileFromTool(
+      sandbox,
+      workspace,
+      { path: "download" },
+      undefined,
+      true,
+    )) as AgentToolExecutionResult;
+    expect(result.details).toMatchObject({ mimeType: "image/png", width: 400, height: 300 });
+  });
+
+  it("keeps the text limit for a large file that is not an image", async () => {
+    const { sandbox, workspace } = fileWorkspace("x".repeat(250_001));
+    expect(await readFileFromTool(sandbox, workspace, { path: "logs/big.log" })).toEqual({
+      error: "file is over 250 KB; read parts of logs/big.log with shell (grep, sed -n, tail)",
+      path: "logs/big.log",
+      size: 250_001,
+    });
+  });
+
+  it("recognizes an image by its bytes whatever its name", async () => {
+    const { sandbox, workspace } = fileWorkspace(
+      await sharp({ create: { width: 8, height: 8, channels: 3, background: "#fff" } })
+        .jpeg()
+        .toBuffer(),
+    );
+    const result = (await readFileFromTool(
+      sandbox,
+      workspace,
+      { path: "download.bin" },
+      undefined,
+      true,
+    )) as AgentToolExecutionResult;
+    expect(result.details).toMatchObject({ mimeType: "image/jpeg", width: 8, height: 8 });
+  });
+
+  it("tells a text-only model the file is an image", async () => {
+    const { sandbox, workspace } = fileWorkspace(await photo(10, 10));
+    await expect(readFileFromTool(sandbox, workspace, { path: "a.png" })).resolves.toEqual({
+      path: "a.png",
+      mimeType: "image/png",
+      error: IMAGE_MODEL_CANNOT_SEE,
+    });
+  });
+
+  it("refuses an image over the image limit", async () => {
+    const { sandbox, workspace } = fileWorkspace(new Uint8Array(TOOL_IMAGE_MAX_BYTES + 1));
+    await expect(
+      readFileFromTool(sandbox, workspace, { path: "huge.jpg" }, undefined, true),
+    ).resolves.toEqual({ error: "image is over 10 MB", path: "huge.jpg" });
+  });
+
+  it("still sends other binary files to open_path", async () => {
+    const { sandbox, workspace, maxBytesSeen } = fileWorkspace(new Uint8Array([0xff, 0xfe, 0x00]));
+    const result = (await readFileFromTool(
+      sandbox,
+      workspace,
+      { path: "data.bin" },
+      undefined,
+      true,
+    )) as ReadFileResult;
+    expect(maxBytesSeen).toEqual([TOOL_IMAGE_MAX_BYTES]);
+    expect(result.error).toContain("open_path");
   });
 });

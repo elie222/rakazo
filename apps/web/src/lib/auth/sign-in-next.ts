@@ -7,6 +7,9 @@ const PAGE_REVIEW_PATH = /^\/review(?:\/[A-Za-z0-9_-]{1,200})?\/?$/;
 // A Space invite link, or an organization invitation's Join page.
 const INVITE_PATH = /^\/(invite|join)\/[A-Za-z0-9_-]{1,200}$/;
 
+// A bot's chat, which a question sent to a chat app links to.
+const BOT_CHAT_PATH = /^\/app\/[A-Za-z0-9_-]{1,200}$/;
+
 /** The page sign-in or sign-up may return to; anything else is ignored, so `next` can't redirect off the app. */
 export function signInNext(next: string | null): string | null {
   if (!next) return null;
@@ -22,6 +25,7 @@ export function signInNext(next: string | null): string | null {
     next.startsWith(`${MCP_OAUTH_CALLBACK_PATH}?`) ||
     next.startsWith(`${SLACK_INSTALL_CALLBACK_PATH}?`) ||
     INVITE_PATH.test(next) ||
+    BOT_CHAT_PATH.test(next) ||
     PAGE_REVIEW_PATH.test(next)
   ) {
     return next;

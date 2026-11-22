@@ -172,7 +172,9 @@ export const integrationTools: ToolHandlers = {
   async web_fetch(ctx, call) {
     const { context } = ctx;
     const { args } = call;
-    return call.finish(await webFetchFromTool(ctx.providers.web, context, args));
+    return call.finish(
+      await webFetchFromTool(ctx.providers.web, context, args, ctx.computer.modelSeesImages),
+    );
   },
   async service_search(ctx, call) {
     const provider = ctx.providers.paidServices;

@@ -51,7 +51,7 @@ export default function BotTemplateScreen() {
         <TemplateDetail template={template} onChanged={() => void templates.refetch()} />
       ) : templates.isPending ? (
         <ActivityIndicator color={tokens.mutedForeground} accessibilityLabel={t`Loading…`} />
-      ) : (
+      ) : templates.isError ? (
         <View style={styles.failure}>
           <Text style={styles.secondary}>
             {errorText(templates.error, t`Could not load templates`)}
@@ -63,6 +63,8 @@ export default function BotTemplateScreen() {
             prominence="secondary"
           />
         </View>
+      ) : (
+        <Text style={styles.secondary}>{t`This template is no longer available.`}</Text>
       )}
     </ScrollView>
   );

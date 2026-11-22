@@ -837,6 +837,7 @@ export class PiAgentRuntime implements AgentRuntime {
         let currentMessageStreamed = "";
         let toolCalls = 0;
         let toolActivityShowing = false;
+        const runningToolSteps = new Map<string, string>();
         let silentToolContinuations = 0;
         // A reply cut off by a dropped connection continues in the same bubble: no turn break,
         // and a continuation that starts by repeating the end of the cut text loses that repeat.
@@ -878,6 +879,15 @@ export class PiAgentRuntime implements AgentRuntime {
               timestamp: Date.now(),
             });
           }
+          if (event.type === "tool_execution_end" && runningToolSteps.has(event.toolCallId)) {
+            const shown = [...runningToolSteps.keys()].at(-1) === event.toolCallId;
+            runningToolSteps.delete(event.toolCallId);
+            if (shown && toolActivityShowing) {
+              const next = [...runningToolSteps.values()].at(-1) ?? "";
+              toolActivityShowing = Boolean(next);
+              queue.push({ type: "progress", text: next, activity: true });
+            }
+          }
           if (event.type === "message_end") {
             stopThinking();
             // Before any copy is kept: the recording below, and the checkpoint and provider
@@ -892,16 +902,15 @@ export class PiAgentRuntime implements AgentRuntime {
             // "Operation aborted"; skip activity and counting for calls that will not execute.
             if (turnSignal?.aborted || host.toolCallBudget.exceeded) return;
             toolCalls += 1;
+            const step = describeToolActivity(event.toolName, event.args, (name) =>
+              toolsByAgentName.get(name),
+            );
+            runningToolSteps.delete(event.toolCallId);
+            runningToolSteps.set(event.toolCallId, step);
             // Live activity feedback: without this the thread shows a bare
             // "working…" for the whole tool call with nothing actionable.
             toolActivityShowing = true;
-            queue.push({
-              type: "progress",
-              text: describeToolActivity(event.toolName, event.args, (name) =>
-                toolsByAgentName.get(name),
-              ),
-              activity: true,
-            });
+            queue.push({ type: "progress", text: step, activity: true });
           }
           if (event.type === "message_start" && event.message.role === "assistant") {
             host.modelResponses = (host.modelResponses ?? 0) + 1;

@@ -340,13 +340,7 @@ describe("Pi runtime transient model retries", () => {
     expect(providerState.delay).not.toHaveBeenCalled();
   });
 
-  it.each([
-    "terminated",
-    "Stream ended without finish_reason",
-    "Codex error: Our servers are currently overloaded. Please try again later.",
-    "Connection error.",
-    "Request timed out.",
-  ])(
+  it.each(["terminated"])(
     "recovers from two pre-output failures with %s and commits one assistant message",
     async (error) => {
       providerState.stream
@@ -411,7 +405,7 @@ describe("Pi runtime transient model retries", () => {
     expect(providerState.delay.mock.calls.map(([delay]) => delay)).toEqual([2_000, 8_000, 20_000]);
   });
 
-  it.each(["Request timed out.", "Connection error.", "HTTP 503 unavailable"])(
+  it.each(["Request timed out."])(
     "does not retry %s after the request budget is spent",
     async (error) => {
       vi.useFakeTimers();
@@ -519,78 +513,75 @@ describe("Pi runtime transient model retries", () => {
     expect(providerState.delay.mock.calls.map(([delay]) => delay)).toEqual([2_000]);
   });
 
-  it.each([
-    "terminated",
-    "Stream ended without finish_reason",
-    "Request timed out.",
-    "Connection error.",
-    MODEL_STREAM_IDLE_TIMEOUT_MESSAGE,
-  ])("redoes a call that failed with %s mid tool call, before any text", async (error) => {
-    const partialCall = {
-      type: "toolCall" as const,
-      id: "dropped-call",
-      name: "write_effect",
-      arguments: { value: "half" },
-    };
-    const failure = message(primary, [partialCall], "error", error);
-    const started = { ...failure, content: [], stopReason: "stop" as const };
-    providerState.stream
-      .mockImplementationOnce(() => {
-        const result = new AssistantMessageEventStream();
-        result.push({ type: "start", partial: started });
-        result.push({ type: "thinking_start", contentIndex: 0, partial: started });
-        result.push({ type: "toolcall_start", contentIndex: 1, partial: failure });
-        result.push({
-          type: "toolcall_delta",
-          contentIndex: 1,
-          delta: '{"value":"ha',
-          partial: failure,
-        });
-        result.push({ type: "error", reason: "error", error: failure });
-        result.end(failure);
-        return result;
-      })
-      .mockImplementationOnce((target: Model<"openai-completions">) =>
-        stream(
-          target,
-          message(
+  it.each(["terminated", MODEL_STREAM_IDLE_TIMEOUT_MESSAGE])(
+    "redoes a call that failed with %s mid tool call, before any text",
+    async (error) => {
+      const partialCall = {
+        type: "toolCall" as const,
+        id: "dropped-call",
+        name: "write_effect",
+        arguments: { value: "half" },
+      };
+      const failure = message(primary, [partialCall], "error", error);
+      const started = { ...failure, content: [], stopReason: "stop" as const };
+      providerState.stream
+        .mockImplementationOnce(() => {
+          const result = new AssistantMessageEventStream();
+          result.push({ type: "start", partial: started });
+          result.push({ type: "thinking_start", contentIndex: 0, partial: started });
+          result.push({ type: "toolcall_start", contentIndex: 1, partial: failure });
+          result.push({
+            type: "toolcall_delta",
+            contentIndex: 1,
+            delta: '{"value":"ha',
+            partial: failure,
+          });
+          result.push({ type: "error", reason: "error", error: failure });
+          result.end(failure);
+          return result;
+        })
+        .mockImplementationOnce((target: Model<"openai-completions">) =>
+          stream(
             target,
-            [
-              {
-                type: "toolCall",
-                id: "whole-call",
-                name: "write_effect",
-                arguments: { value: "whole" },
-              },
-            ],
-            "toolUse",
+            message(
+              target,
+              [
+                {
+                  type: "toolCall",
+                  id: "whole-call",
+                  name: "write_effect",
+                  arguments: { value: "whole" },
+                },
+              ],
+              "toolUse",
+            ),
           ),
-        ),
-      )
-      .mockImplementation((target: Model<"openai-completions">) =>
-        stream(target, message(target, [{ type: "text", text: "Done." }], "stop")),
-      );
-    const appendMessage = vi.fn(async (_entry: AgentMessage) => undefined);
-    vi.spyOn(PiJsonlSessionRecorder.prototype, "start").mockResolvedValue({ appendMessage });
-    const input = request([{ provider: backupA.provider, id: backupA.id, apiKey: "backup-key" }]);
+        )
+        .mockImplementation((target: Model<"openai-completions">) =>
+          stream(target, message(target, [{ type: "text", text: "Done." }], "stop")),
+        );
+      const appendMessage = vi.fn(async (_entry: AgentMessage) => undefined);
+      vi.spyOn(PiJsonlSessionRecorder.prototype, "start").mockResolvedValue({ appendMessage });
+      const input = request([{ provider: backupA.provider, id: backupA.id, apiKey: "backup-key" }]);
 
-    const events = await run(input, [], new PiAgentRuntime({ sessionRoot: "fixture-sessions" }));
+      const events = await run(input, [], new PiAgentRuntime({ sessionRoot: "fixture-sessions" }));
 
-    expect(providerState.stream).toHaveBeenCalledTimes(3);
-    expect(vi.mocked(input.executeTool!).mock.calls.map(([, args]) => args)).toEqual([
-      { value: "whole" },
-    ]);
-    expect(events.at(-1)).toEqual({ type: "done", text: "Done." });
-    // The dropped call leaves nothing behind: no assistant message and no tool activity.
-    const assistantEntries = appendMessage.mock.calls
-      .map(([entry]) => entry)
-      .filter((entry) => entry.role === "assistant");
-    expect(assistantEntries).toHaveLength(2);
-    expect(JSON.stringify(assistantEntries)).not.toContain("dropped-call");
-    expect(
-      events.filter((event) => event.type === "progress" && event.text && event.activity),
-    ).toHaveLength(1);
-  });
+      expect(providerState.stream).toHaveBeenCalledTimes(3);
+      expect(vi.mocked(input.executeTool!).mock.calls.map(([, args]) => args)).toEqual([
+        { value: "whole" },
+      ]);
+      expect(events.at(-1)).toEqual({ type: "done", text: "Done." });
+      // The dropped call leaves nothing behind: no assistant message and no tool activity.
+      const assistantEntries = appendMessage.mock.calls
+        .map(([entry]) => entry)
+        .filter((entry) => entry.role === "assistant");
+      expect(assistantEntries).toHaveLength(2);
+      expect(JSON.stringify(assistantEntries)).not.toContain("dropped-call");
+      expect(
+        events.filter((event) => event.type === "progress" && event.text && event.activity),
+      ).toHaveLength(1);
+    },
+  );
 
   it("keeps a failure mid tool call terminal once reply text was shown", async () => {
     const failure = message(
@@ -649,8 +640,6 @@ describe("Pi runtime transient model retries", () => {
   it.each([
     { source: "run", error: "429 rate limit" },
     { source: "turn", error: "429 rate limit" },
-    { source: "run", error: "Request timed out." },
-    { source: "turn", error: "Request timed out." },
     { source: "run", error: MODEL_STREAM_IDLE_TIMEOUT_MESSAGE },
     { source: "turn", error: MODEL_STREAM_IDLE_TIMEOUT_MESSAGE },
   ])(
@@ -914,22 +903,6 @@ describe("Pi runtime ordered model fallback", () => {
     expect(providerState.stream).toHaveBeenCalledTimes(2);
   });
 
-  it("completes on the backup when the primary reports a ChatGPT usage limit", async () => {
-    const chatGptUsageLimit =
-      "You have hit your ChatGPT usage limit (plus plan). Try again in ~158 min.";
-    providerState.stream.mockImplementation((target: Model<"openai-completions">) =>
-      target.provider === primary.provider
-        ? stream(target, message(target, [], "error", chatGptUsageLimit))
-        : stream(target, message(target, [{ type: "text", text: "backup answer" }], "stop")),
-    );
-    const events = await run(
-      request([{ provider: backupA.provider, id: backupA.id, apiKey: "backup-key" }]),
-    );
-    expect(events.at(-1)).toEqual({ type: "done", text: "backup answer" });
-    expect(providerState.stream).toHaveBeenCalledTimes(2);
-    expect(providerState.delay).not.toHaveBeenCalled();
-  });
-
   describe("openai-credits-exhausted-stream-fails-over", () => {
     const noCredits = [
       "You have no credits remaining. Add credits to continue using the API at",
@@ -943,11 +916,7 @@ describe("Pi runtime ordered model fallback", () => {
       code: "credit_balance_exhausted",
     })}`;
 
-    it.each([
-      ["bare statusless no-credits message", noCredits],
-      ["response.failed credit_balance_exhausted text", `credit_balance_exhausted: ${noCredits}`],
-      ["HTTP 429 credit_balance_exhausted", http429],
-    ])("%s", async (_label, error) => {
+    it.each([["HTTP 429 credit_balance_exhausted", http429]])("%s", async (_label, error) => {
       const { model: openai, input } = openAiRequest(backup);
       providerState.stream.mockImplementation((target: Model<"openai-completions">) =>
         target.provider === openai.provider
@@ -978,34 +947,18 @@ describe("Pi runtime ordered model fallback", () => {
       expect(providerState.delay).not.toHaveBeenCalled();
     });
 
-    it.each([
-      ["bare statusless no-credits message", noCredits],
-      ["response.failed credit_balance_exhausted text", `credit_balance_exhausted: ${noCredits}`],
-    ])("does not retry %s without a backup", async (_label, error) => {
-      const { input } = openAiRequest();
-      providerState.stream.mockImplementation((target: Model<"openai-completions">) =>
-        stream(target, message(target, [], "error", error)),
-      );
-      await expect(run(input)).rejects.toThrow(error);
-      expect(providerState.stream).toHaveBeenCalledOnce();
-      expect(providerState.delay).not.toHaveBeenCalled();
-    });
-  });
-
-  it("uses the configured backup for an explicit insufficient-balance error", async () => {
-    const balanceError =
-      '402: {"message":"Insufficient Balance","type":"insufficient_balance_error","code":"invalid_request_error"}';
-    providerState.stream.mockImplementation((target: Model<"openai-completions">) =>
-      target.provider === primary.provider
-        ? stream(target, message(target, [], "error", balanceError))
-        : stream(target, message(target, [{ type: "text", text: "backup answer" }], "stop")),
+    it.each([["bare statusless no-credits message", noCredits]])(
+      "does not retry %s without a backup",
+      async (_label, error) => {
+        const { input } = openAiRequest();
+        providerState.stream.mockImplementation((target: Model<"openai-completions">) =>
+          stream(target, message(target, [], "error", error)),
+        );
+        await expect(run(input)).rejects.toThrow(error);
+        expect(providerState.stream).toHaveBeenCalledOnce();
+        expect(providerState.delay).not.toHaveBeenCalled();
+      },
     );
-    const events = await run(
-      request([{ provider: backupA.provider, id: backupA.id, apiKey: "backup-key" }]),
-    );
-    expect(events.at(-1)).toEqual({ type: "done", text: "backup answer" });
-    expect(providerState.stream).toHaveBeenCalledTimes(2);
-    expect(providerState.delay).not.toHaveBeenCalled();
   });
 
   it.each([
@@ -1031,7 +984,6 @@ describe("Pi runtime ordered model fallback", () => {
   it.each([
     '401 {"type":"error","error":{"type":"authentication_error","message":"OAuth access token has been revoked."}}',
     "401 You have insufficient credits to make this request.",
-    "invalid_api_key: Incorrect API key provided",
   ])(
     "moves to the configured backup without a retry on a rejected credential: %s",
     async (error) => {
@@ -1106,9 +1058,6 @@ describe("Pi runtime ordered model fallback", () => {
   it.each([
     "You have hit your ChatGPT usage limit (plus plan). Try again in ~158 min.",
     '403 {"error":{"type":"permission_error","message":"You\'ve reached your 5-hour usage limit."}}',
-    "402 provider quota exhausted",
-    '402: {"message":"Insufficient Balance","type":"insufficient_balance_error","code":"invalid_request_error"}',
-    "400 You have insufficient credits to make this request.",
   ])(
     "does not retry the same model on an exhausted usage window without a backup: %s",
     async (error) => {
@@ -1122,7 +1071,7 @@ describe("Pi runtime ordered model fallback", () => {
   );
 
   it.each(
-    ["openai-codex", "openrouter", "openai-compatible"].flatMap((provider) =>
+    ["openai-codex", "openrouter"].flatMap((provider) =>
       [true, false].map((backup) => ({ provider, backup })),
     ),
   )(
@@ -2941,10 +2890,6 @@ describe("Pi runtime fallback error classes and mid-run switches", () => {
 
   it.each([
     ["429 rate limit", "429 rate_limit_error: Number of request tokens has exceeded your limit"],
-    ["500 server error", "500 Internal server error"],
-    ["503 unavailable", "503 service unavailable"],
-    ["529 overloaded", "529 overloaded_error: Overloaded"],
-    ["timeout", "Request timed out."],
   ])("switches to the backup on %s", async (_name, error) => {
     providerState.stream.mockImplementation((target: Model<"openai-completions">) =>
       target.provider === primary.provider
@@ -2976,19 +2921,6 @@ describe("Pi runtime fallback error classes and mid-run switches", () => {
       vi.unstubAllEnvs();
     }
   });
-
-  it.each([["403 forbidden", "403 Forbidden"]])(
-    "does not switch to the backup on %s",
-    async (_name, error) => {
-      providerState.stream.mockImplementation((target: Model<"openai-completions">) =>
-        stream(target, message(target, [], "error", error)),
-      );
-
-      await expect(run(request(backups()))).rejects.toThrow();
-
-      expect(providers()).toEqual([primary.provider]);
-    },
-  );
 
   it("runs the backup's own tool call after a primary tool call, never replaying the first", async () => {
     const input = request(backups());

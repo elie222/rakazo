@@ -4,7 +4,6 @@ import {
   applyMcpSourcePreset,
   createPluginMarketplace,
   isTransientFetchError,
-  MCP_SOURCE_PRESETS,
   pluginPreviewDto,
   prepareApiInstall,
   prepareGraphqlInstall,
@@ -13,7 +12,13 @@ import {
 } from "@rakazo/adapters";
 import type { Actor } from "@rakazo/contracts";
 import { ConnectionSetupError } from "@rakazo/contracts";
-import { ClientError, comparePlugins, containsSecret, matchesPluginQuery } from "@rakazo/core";
+import {
+  ClientError,
+  comparePlugins,
+  containsSecret,
+  MCP_SOURCE_PRESETS,
+  matchesPluginQuery,
+} from "@rakazo/core";
 import type { Prisma } from "@rakazo/db";
 import { AVAILABILITY_SELECT, availableInSpace, itemSecretIn, spaceAvailability } from "@rakazo/db";
 import { requireAdmin } from "../auth/admins.js";
