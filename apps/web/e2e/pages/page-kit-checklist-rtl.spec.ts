@@ -1,34 +1,29 @@
 import { expect, test } from "@playwright/test";
-import { pageViewerCode } from "../../../../packages/page-kit/src/compile";
-import { buildPageRuntime } from "../../../../packages/page-kit/src/runtime-build";
-
-let runtime = "";
-test.beforeAll(async () => {
-  runtime = await buildPageRuntime();
-});
+import { PAGE_RUNTIME_PATH } from "@rakazo/core";
 
 for (const { lang, dir, text, note } of [
   { lang: "en", dir: "ltr", text: "Task A", note: "Updated this morning" },
   { lang: "he", dir: "rtl", text: "משימה א", note: "עודכן הבוקר" },
 ]) {
-  test(`checklist notes align with task text in ${dir}`, async ({ page }, testInfo) => {
+  test(`checklist notes align with task text in ${dir}`, async ({ page, request }, testInfo) => {
+    const runtime = await request.get(PAGE_RUNTIME_PATH);
+    await expect(runtime).toBeOK();
     await page.route("**/*", (route) => route.abort());
     const items = [
       { text, meta: note, done: true },
       { text: "Task B", done: false },
     ];
-    const source = `export default function Tasks() {
-      return <Page title="Checklist" lang="${lang}"><Checklist items={${JSON.stringify(items)}} /></Page>;
-    }`;
-    const boot = JSON.stringify({
-      code: pageViewerCode(source),
-      theme: "light",
-      errorTitle: "Error",
-      lang,
+    const code = `
+      exports.default = function Tasks() {
+        return React.createElement(Page, { title: "Checklist", lang: ${JSON.stringify(lang)} },
+          React.createElement(Checklist, { items: ${JSON.stringify(items)} }));
+      };
+    `;
+    await page.setContent('<!doctype html><html><body><div id="root"></div></body></html>');
+    await page.addScriptTag({ content: await runtime.text() });
+    await page.addScriptTag({
+      content: `window.RakazoPage.mount(${JSON.stringify({ code, theme: "light", errorTitle: "Error", lang })});`,
     });
-    await page.setContent(
-      `<!doctype html><html><body><div id="root"></div><script>${runtime.replaceAll("</script", "<\\/script")}</script><script>RakazoPage.mount(${boot.replaceAll("<", "\\u003c")});</script></body></html>`,
-    );
     await expect(page.locator("main")).toHaveAttribute("dir", dir);
     const checklist = page.locator(".rk-checklist");
     await expect(checklist.locator(".rk-check-text").first()).toHaveText(text);
