@@ -21,6 +21,7 @@ test("sidebar rail keeps chats interactive and remembers a dragged width", async
     notifyOnFinish: true,
     computerMode: "team",
   });
+  await rpc(page, "bots/update", { botId: bot.id, pinned: true });
   await rpc(page, "threads/markUnread", { botId: bot.id });
   await page.reload();
   const sidebar = page.getByTestId("bots-sidebar");
@@ -45,7 +46,15 @@ test("sidebar rail keeps chats interactive and remembers a dragged width", async
   await page.getByTestId("minimize-bots-sidebar").click();
   await expect(sidebar).toHaveCSS("width", "72px");
   await expect(row).toHaveAccessibleName("Research");
-  await expect(row).toHaveAccessibleDescription(/unread/);
+  await expect(row).toHaveAccessibleDescription(/Favorite.*unread/);
+  const favorite = row.locator('[data-slot="favorite-badge"]');
+  const unread = row.locator("[data-roster-unread-dot]");
+  await expect
+    .poll(async () => {
+      const [star, dot] = await Promise.all([favorite.boundingBox(), unread.boundingBox()]);
+      return star && dot ? star.x + star.width <= dot.x : false;
+    })
+    .toBe(true);
   await page.getByTestId("restore-bots-sidebar").click();
   await expect(sidebar.getByRole("textbox", { name: "Search", exact: true })).toHaveValue(
     "no roster matches",

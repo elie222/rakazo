@@ -24,7 +24,7 @@ import type { MobileBot, MobileBotSection } from "../../lib/api/mobile-types";
 import { errorText } from "../../lib/api/user-error";
 import { mobileTokens } from "../../lib/appearance/appearance";
 import type { InboxChatKind } from "../../lib/inbox/inbox-swipe";
-import { inboxRowAction, SNOOZE_LABELS } from "../../lib/inbox/inbox-swipe";
+import { inboxPinAction, SNOOZE_LABELS } from "../../lib/inbox/inbox-swipe";
 import { confirmDeleteSection } from "../../lib/inbox/sections/confirm-delete-section";
 import { announceToScreenReader } from "../../lib/native/announce";
 import { native, useThemedStyles } from "../../lib/native/native";
@@ -67,7 +67,7 @@ export function BotOrganizeModal({
   const Sheet = useNativeSheet();
   const styles = useThemedStyles(createBotOrganizeStyles);
   const { t, i18n } = useLingui();
-  const pinAction = inboxRowAction(bot.pinned ? "unpin" : "pin", kind);
+  const pinAction = inboxPinAction(kind, bot.pinned ? "unpin" : "pin");
   const currentSection = sections.find((section) => section.id === bot.sectionId) ?? null;
   const [mode, setMode] = useState<"idle" | "create" | "rename">("idle");
   const [name, setName] = useState("");
@@ -131,19 +131,7 @@ export function BotOrganizeModal({
         onPress={() => void save(() => onUpdate({ pinned: !bot.pinned }))}
         style={({ pressed }) => [styles.action, pressed && styles.pressed]}
       >
-        <NativeSymbol
-          ios={pinAction.systemImage}
-          android={
-            kind === "bot"
-              ? bot.pinned
-                ? "star"
-                : "star-outline"
-              : bot.pinned
-                ? "pin-outline"
-                : "pin"
-          }
-          size={18}
-        />
+        <NativeSymbol ios={pinAction.systemImage} android={pinAction.androidImage} size={18} />
         <Text style={styles.actionLabel}>{i18n._(pinAction.label)}</Text>
       </Pressable>
       {typeof bot.notifyOnFinish === "boolean" ? (

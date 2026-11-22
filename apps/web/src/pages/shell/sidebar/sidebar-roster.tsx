@@ -320,7 +320,7 @@ export function SidebarRoster({
                     <span
                       aria-hidden
                       data-slot="favorite-badge"
-                      className="pointer-events-none absolute end-0 top-0 grid size-3.5 place-items-center rounded-full bg-sidebar-foreground text-sidebar ring-1 ring-sidebar"
+                      className={`pointer-events-none absolute top-0 grid size-3.5 place-items-center rounded-full bg-sidebar-foreground text-sidebar ring-1 ring-sidebar ${mini ? "start-0" : "end-0"}`}
                     >
                       <Star className="size-2.5 fill-current" />
                     </span>
