@@ -114,14 +114,18 @@ export function Scatter({
     if (sxx > 0) {
       const slope = shown.reduce((sum, p) => sum + (p.x - mx) * (p.y - my), 0) / sxx;
       const at = (v: number) => my + slope * (v - mx);
-      const clip = (v: number) => (slope === 0 ? v : mx + (v - my) / slope);
-      let x1 = Math.min(...shown.map((p) => p.x));
-      let x2 = Math.max(...shown.map((p) => p.x));
-      if (at(x1) < ys.low) x1 = clip(ys.low);
-      if (at(x1) > ys.high) x1 = clip(ys.high);
-      if (at(x2) > ys.high) x2 = clip(ys.high);
-      if (at(x2) < ys.low) x2 = clip(ys.low);
-      fit = [px(x1), py(at(x1)), px(x2), py(at(x2))];
+      let x1 = Math.max(xs.low, Math.min(...shown.map((p) => p.x)));
+      let x2 = Math.min(xs.high, Math.max(...shown.map((p) => p.x)));
+      if (slope !== 0) {
+        const lowCrossing = mx + (ys.low - my) / slope;
+        const highCrossing = mx + (ys.high - my) / slope;
+        x1 = Math.max(x1, Math.min(lowCrossing, highCrossing));
+        x2 = Math.min(x2, Math.max(lowCrossing, highCrossing));
+      }
+      if (x1 < x2 && (slope !== 0 || (my >= ys.low && my <= ys.high))) {
+        const fitY = (v: number) => py(Math.max(ys.low, Math.min(ys.high, at(v))));
+        fit = [px(x1), fitY(x1), px(x2), fitY(x2)];
+      }
       const residuals = shown.map((p) => p.y - at(p.x));
       const spread = Math.sqrt(residuals.reduce((sum, r) => sum + r * r, 0) / n);
       residuals.forEach((r, index) => {
