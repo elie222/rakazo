@@ -56,9 +56,11 @@ model validation. Embedded URL credentials, blocked destinations and keyed publi
 rejected before speech is advertised. Private endpoints require `MCP_ALLOW_PRIVATE_ENDPOINT=true`
 at startup and dispatch. Fixed recognition models are validated by the provider descriptor.
 
-The adapter must declare usable metering for both configured models. Reported units must match
-pricing units; startup rejects mismatches. Models without reliable usage evidence, including
-compatible servers, require explicit `"allowUnmeteredUsage": true` in this JSON. Use that opt-in
+Speech priced per character is metered by the server, which counts the text it sends. The adapter
+must declare usable metering for the transcription model, and its unit must match the pricing
+unit; startup rejects mismatches. Other speech units and transcription models without reliable
+usage evidence, including compatible servers, require explicit `"allowUnmeteredUsage": true` in
+this JSON. Use that opt-in
 only with an operator process for importing cost evidence: every unmetered request retains its
 full reservation until reconciled and can exhaust the allowance after a few replies. Token-billed
 models also require that opt-in because this policy cannot price mixed token classes automatically.
@@ -67,33 +69,23 @@ Endpoint/private-network restrictions remain in force. Keep server keys
 out of account settings, client configuration, repository files and logs. Use a dedicated speech
 service key, separate from reasoning credentials. No provider purchase or key retrieval is automated.
 
-See the [adapter pricing and calibration notes](../packages/adapters/src/providers/voice/xai/HOSTED.md)
-for a concrete existing-provider configuration and official research sources.
-
 All operator-funded speech checks the member's recorded consent for the actual operation's
 recipient and current disclosure version in that Space before dispatch or allowance admission.
 Web, Electron and mobile ask through their voice disclosure. Automatic messaging voice-note
 transcription leaves the attachment without a transcript when that consent is absent.
 
-## Allowances and remaining policy
+## Allowance
 
-All paid plans are proposed for inclusion, but quotas, renewal rules and cancellation grace are
-undecided. No entitlement or free speech is inferred from the presence of a server key. Until
-those decisions are made, an operator explicitly grants an account allowance with the database
-owner connection. Missing, expired or exhausted grants do not advertise the included voice, preserving device speech and personal setup. Admission also checks the grant atomically before dispatch:
+Each organization may spend a fifth of its plan's monthly list price on included speech per
+billing period: the own-key tier's price, or the monthly credit amount on a credit plan. A trial
+gets the Standard tier's share; a cancelled trial and an organization without a live plan get none.
+Yearly plans renew monthly on the day their period began, as the computer allowance does. A
+deployment without model-credit billing does not limit speech.
 
-```sql
-INSERT INTO speech_allowances ("userId", "limitMicros", "expiresAt")
-VALUES ('fake-account-id', 1000000, '2099-01-01T00:00:00Z');
-```
-
-The example amount is a test grant. Operator automation must select eligible paid accounts from
-the authoritative subscription state and apply the approved quotas; this change deliberately adds
-no paid price, automatic renewal, or model-credit debit. To revoke, expire the grant. To extend,
-raise the cumulative limit and expiry. **Never reset usedMicros or delete/recreate an allowance**:
-it includes pending reservations, and later reconciliation must still adjust the same counter.
-New periods can add an approved amount to the cumulative limit. A period-specific quota system
-and automated billing lifecycle provisioning remain operator work once policy is agreed.
+Usage is every reservation and recorded cost from `speech_costs` for any of the organization's
+Spaces since the period began. Admission locks the organization, so concurrent requests on several
+API instances cannot overspend it. A spent allowance stops advertising included voice, which
+leaves device speech and personal setup in place.
 
 ## Cost evidence and recovery
 
@@ -116,16 +108,11 @@ refund these: the provider may have billed it. Recover from the provider's usage
 using the provider request ID when present, request time and local operation ID. The internal
 `confirmSpeechCost` helper requires `runAsSystem` and accepts the operation ID plus
 `{ costMicros, source, reference }`. Supply a non-secret, unique evidence reference and provenance;
-zero requires evidence of no charge. It adjusts the allowance and confirms the row atomically.
-Repeated identical confirmation is idempotent; a changed cost, source or reference is rejected. Tenant SQL cannot edit grants or delete cost evidence; scoped accounting operations use an explicit system context. Preserve
+zero requires evidence of no charge. The confirmed cost replaces the reservation in the allowance.
+Repeated identical confirmation is idempotent; a changed cost, source or reference is rejected. Tenant SQL cannot edit or delete cost evidence; scoped accounting operations use an explicit system context. Preserve
 source exports in the operator's private financial system. No invoice API/reconciliation worker
 is installed here: the operator must schedule or perform this evidence import. Alert on old
 pending/unresolved rows; they intentionally reduce available allowance until resolved.
-
-No production configuration, purchases, paid calibration, browser E2E, or deployment is part of
-this change. Offline API, adapter, call-session and PostgreSQL concurrency/recovery tests cover
-the implementation. Enable hosted traffic only after setting the policy, provisioning grants,
-checking the provider key and measuring the calibration cases below.
 
 A completed request whose settlement write fails still returns its audio or transcript. The error
 log identifies `speechCostId`, provider, operation and provider request ID (when available), so an

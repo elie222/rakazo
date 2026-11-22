@@ -6,11 +6,14 @@ import type {
   ComputerAction,
   ComputerActionRequest,
   ComputerInput,
+  ComputerObservation,
   ComputerRef,
+  ControlLeaseRef,
   PageBrowserCommand,
   PageBrowserResult,
   ScreenRequest,
   ScreenSession,
+  SnapshotRef,
   TerminalRequest,
 } from "@rakazo/adapter-kit";
 import type { DesktopEnvironment } from "@rakazo/core/node/desktop-runtime";
@@ -113,6 +116,7 @@ export class LinuxDesktop {
     if (startsScreen && result.code === SCREEN_NOT_READY_EXIT) {
       // Only the first line: the rest is the browser's or display's own log.
       getLogger().warn("computer.screen_not_ready", {
+        "sandbox.id": computer.id,
         provider: computer.kind,
         reason: result.stderr?.trim().split("\n")[0]?.slice(0, 200),
       });
@@ -349,6 +353,65 @@ export class LinuxDesktop {
   }
 }
 
+/** A snapshot names the screen frame it captured. */
+export function observationSnapshot(observation: ComputerObservation): SnapshotRef {
+  return { id: observation.frameId, createdAt: observation.capturedAt };
+}
+
+/**
+ * A sandbox whose screens are a {@link LinuxDesktop}: its screen methods hand straight to it,
+ * and a provider overrides only the ones it adjusts.
+ */
+export abstract class LinuxDesktopSandbox {
+  protected abstract readonly desktops: LinuxDesktop;
+
+  async connectScreen(
+    computer: ComputerRef,
+    request: ScreenRequest,
+    context: AdapterContext,
+  ): Promise<ScreenSession> {
+    return this.desktops.connectScreen(computer, request, context);
+  }
+
+  async connectTerminal(computer: ComputerRef, request: TerminalRequest, context: AdapterContext) {
+    return this.desktops.connectTerminal(computer, request, context);
+  }
+
+  async setScreenControl(
+    computer: ComputerRef,
+    interactive: boolean,
+    context: AdapterContext,
+    controlToken?: string,
+  ): Promise<void> {
+    return this.desktops.setScreenControl(computer, interactive, context, controlToken);
+  }
+
+  async sendInput(
+    computer: ComputerRef,
+    input: ComputerInput,
+    _lease: ControlLeaseRef,
+    context: AdapterContext,
+  ): Promise<void> {
+    return this.desktops.sendInput(computer, input, context);
+  }
+
+  async observe(computer: ComputerRef, context: AdapterContext): Promise<ComputerObservation> {
+    return this.desktops.observe(computer, context);
+  }
+
+  async act(computer: ComputerRef, request: ComputerActionRequest, context: AdapterContext) {
+    return this.desktops.act(computer, request, context);
+  }
+
+  async releaseScreen(computer: ComputerRef, context: AdapterContext): Promise<void> {
+    return this.desktops.releaseScreen(computer, context);
+  }
+
+  async snapshot(computer: ComputerRef, context: AdapterContext): Promise<SnapshotRef> {
+    return observationSnapshot(await this.observe(computer, context));
+  }
+}
+
 function browserActionCommand(
   action: ComputerAction,
   layout: Parameters<typeof extraDisplayActionCommand>[0],
@@ -526,7 +589,8 @@ export const PREPARE_LINUX_DESKTOP = [
   // retries while that lock is busy and fails at once for anything else.
   "apt_update() {",
   "  tries=0",
-  `  while ! err=$($root ${APT} update -qq 2>&1); do`,
+  // A signed repository can rename its label while a provider's base image still caches the old one.
+  `  while ! err=$($root ${APT} update -qq --allow-releaseinfo-change-label 2>&1); do`,
   '    case "$err" in',
   '      *"Could not get lock"*|*"Unable to lock"*) tries=$((tries + 1)); [ "$tries" -lt 12 ] || { echo "$err" >&2; return 1; }; sleep 5 ;;',
   '      *) echo "$err" >&2; return 1 ;;',
@@ -536,12 +600,20 @@ export const PREPARE_LINUX_DESKTOP = [
   'if [ -n "$missing" ]; then',
   // Separate commands: set -e ignores a failure on the left of &&.
   "  apt_update",
-  `  if ! $root env DEBIAN_FRONTEND=noninteractive ${APT} install -y -qq --no-remove $missing; then`,
+  // A restored disk can keep a package's record without its files, and a plain install of a
+  // package APT thinks is present does nothing.
+  "  packages=$missing",
+  // The dependency owns the executable. Reinstalling websockify alone leaves it missing.
+  '  case "$missing " in *" websockify "*) packages="$packages python3-websockify" ;; esac',
+  `  if ! $root env DEBIAN_FRONTEND=noninteractive ${APT} install -y -qq --reinstall --no-remove $packages; then`,
   // Provider images can arrive with unrelated, unfinished package dependencies. Let APT
   // solve those without specifying the desktop packages, and never remove existing tools.
   `    $root env DEBIAN_FRONTEND=noninteractive ${APT} install -y -qq --fix-broken --no-remove`,
-  `    $root env DEBIAN_FRONTEND=noninteractive ${APT} install -y -qq --no-remove $missing`,
+  `    $root env DEBIAN_FRONTEND=noninteractive ${APT} install -y -qq --reinstall --no-remove $packages`,
   "  fi",
+  // An install APT reports as done can still leave a tool out; the screen would then fail later.
+  ...FIND_MISSING_DESKTOP_TOOLS.map((line) => `  ${line}`),
+  '  if [ -n "$missing" ]; then echo "desktop tools still missing after install:$missing" >&2; exit 1; fi',
   "fi",
   // Bots read pages visually; without a color emoji font every emoji is an empty box. The
   // desktop works without it, so an image whose package manager is broken still runs.

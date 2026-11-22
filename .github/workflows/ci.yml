@@ -27,7 +27,6 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
-      server: ${{ steps.areas.outputs.server }}
       native: ${{ steps.areas.outputs.native }}
       compose: ${{ steps.areas.outputs.compose }}
       web: ${{ steps.areas.outputs.web }}
@@ -87,7 +86,7 @@ jobs:
       - run: pnpm --filter @rakazo/desktop build
         env:
           electron_config_cache: ${{ runner.temp }}/electron-cache
-      - run: pnpm exec vitest run packages/adapters/src/computers/host/host-computer.test.ts packages/adapters/src/storage/file-handle-path.test.ts packages/adapters/src/providers/computer/desktop/desktop-sandbox-command.test.ts packages/adapters/src/providers/computer/desktop/desktop-sandbox-paths.test.ts packages/adapters/src/providers/computer/desktop/desktop-workspace-cleanup.test.ts packages/adapters/src/computers/screens/computer-support.test.ts apps/desktop/src/main/this-computer/host-computer.test.ts
+      - run: pnpm exec vitest run packages/adapters/src/computers/host/host-computer.test.ts packages/adapters/src/storage/file-handle-path.test.ts packages/adapters/src/providers/computer/desktop/desktop-sandbox-command.test.ts packages/adapters/src/computers/screens/desktop-sandbox-paths.test.ts packages/adapters/src/providers/computer/desktop/desktop-workspace-cleanup.test.ts packages/adapters/src/computers/screens/computer-support.test.ts apps/desktop/src/main/this-computer/host-computer.test.ts
       - name: Screen control on a real Windows desktop
         if: runner.os == 'Windows'
         run: pnpm exec vitest run apps/desktop/src/main/this-computer/host-screen.windows.test.ts
@@ -199,6 +198,7 @@ jobs:
               packages/chat-ui \
               packages/contracts \
               packages/core \
+              packages/i18n \
               packages/logging \
               packages/ui-tokens
           )

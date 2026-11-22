@@ -2,6 +2,7 @@ import { pageKitPalette } from "@rakazo/ui-tokens";
 import type { CSSProperties, ReactNode } from "react";
 import { Children, useEffect, useId, useRef, useState } from "react";
 import { LinkButton, linkUrl, ReplyButton } from "./controls.js";
+import { graphemes } from "./graphemes.js";
 import { openViaHost } from "./inline.js";
 import type { Words } from "./labels.js";
 import { useWords } from "./labels.js";
@@ -36,23 +37,24 @@ export function aspectRatio(value: unknown): number | undefined {
 const px = (value: unknown) =>
   typeof value === "number" && value > 0 && Number.isFinite(value) ? value : undefined;
 
-/** A soft fill shows until the picture has drawn, then it fades in; it never waits forever. */
-function Picture({
-  src,
-  alt,
-  fit,
-  style,
-}: {
+type PictureProps = {
   src: string;
   alt: string;
   fit?: "contain" | "cover";
   style?: CSSProperties;
-}) {
+};
+
+/** A soft fill shows until the current picture has drawn, then it fades in. */
+function Picture(props: PictureProps) {
+  return <PictureSource key={props.src} {...props} />;
+}
+
+function PictureSource({ src, alt, fit, style }: PictureProps) {
   const [loaded, setLoaded] = useState(false);
   useEffect(() => {
     const timer = setTimeout(() => setLoaded(true), 8000);
     return () => clearTimeout(timer);
-  }, [src]);
+  }, []);
   return (
     <div className="rk-picture" data-loading={!loaded || undefined} style={style}>
       <img
@@ -529,13 +531,13 @@ function StoreLine({ item }: { item: ProductItem }) {
     .filter(Boolean)
     .join(", ")
     .replace(", Rated", ", rated");
-  const mark = text(item.storeMark) || store.slice(0, 1).toUpperCase();
+  const mark = text(item.storeMark) || (graphemes(store)[0] ?? "").toUpperCase();
   return (
     <div className="rk-store" role="img" aria-label={label}>
       {store ? (
         <>
           <span className="rk-store-mark" aria-hidden="true">
-            {mark.slice(0, 2)}
+            {graphemes(mark).slice(0, 2).join("")}
           </span>
           <span>{store}</span>
         </>

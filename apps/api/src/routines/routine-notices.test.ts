@@ -59,7 +59,11 @@ function client(saved: Record<string, unknown> = routine) {
           delete: vi.fn(async () => saved),
           count: vi.fn(async () => 0),
         },
-        run: { updateManyAndReturn: vi.fn(async () => []) },
+        spaceMember: {
+          findMany: vi.fn(async () => [
+            { userId: "user-1", member: { user: { name: "Riley", email: "riley@example.test" } } },
+          ]),
+        },
         userModelPreference: { findMany: vi.fn(async () => []) },
       },
       env: { sandboxProvider: "fake" },
@@ -88,8 +92,25 @@ describe("routine rows from the routines API", () => {
       botId: "bot-1",
       change: "created",
       name: "Morning joke",
+      routine: { webhookEnabled: false, active: expect.any(Boolean) },
     });
     expect(JSON.stringify(adapters.postRoutineNotice.mock.calls)).not.toContain("SECRET PROMPT");
+  });
+
+  it("passes the saved routine's state, which decides whether its row offers the key", async () => {
+    await client({ ...routine, webhookEnabled: true }).routines.update({
+      routineId: "routine-1",
+      name: "Deploy hook",
+    });
+    expect(lastNotice()).toMatchObject({
+      change: "updated",
+      routine: { webhookEnabled: true, active: true },
+    });
+    await client({ ...routine, webhookEnabled: true, active: false }).routines.update({
+      routineId: "routine-1",
+      name: "Deploy hook",
+    });
+    expect(lastNotice()).toMatchObject({ routine: { webhookEnabled: true, active: false } });
   });
 
   it("a routine saved in a group posts to that group's chat", async () => {

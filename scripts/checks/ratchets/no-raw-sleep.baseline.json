@@ -29,7 +29,6 @@
   "packages/adapters/src/runs/wakeups/wakeup.ts": 1,
   "packages/adapters/src/runtime/pi/models/pi-oauth.ts": 1,
   "packages/core/src/computers/screen-reconnect.ts": 1,
-  "packages/db/src/database/client.ts": 1,
   "packages/db/src/database/database-outage.ts": 1,
   "packages/db/src/database/deferred-migrations.ts": 1,
   "packages/logging/src/logger.ts": 1

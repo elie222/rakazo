@@ -263,7 +263,10 @@ export interface RunComputerContext {
   graphical: boolean;
   graphicalToolsAllowed: boolean;
   pageBrowserAllowed: boolean;
+  /** Screenshots reach some model: this run's, a computer model, or a checkpoint resolver. */
   acceptsImages: boolean;
+  /** This run's own model sees images, so read_file and web_fetch can hand it pictures. */
+  modelSeesImages: boolean;
   heldForTakeover: boolean;
 }
 

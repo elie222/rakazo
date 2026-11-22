@@ -26,6 +26,7 @@ import {
   runModelChoice,
   selectDefaultCredentialId,
   spaceCanRunCatalogModel,
+  subscriptionSignInChoice,
   validateBotModelChange,
   validateConnectedModelChoice,
   validateModelAuthAvailability,
@@ -245,6 +246,37 @@ describe("defaultCatalogModelId", () => {
     });
     expect(defaultCatalogModelId("openai-codex", oauth)).not.toBe("gpt-5.3-codex-spark");
     expect(defaultCatalogModelId("openai-codex", oauth)).toBeTruthy();
+  });
+});
+
+describe("subscriptionSignInChoice", () => {
+  it("runs the plan's stronger model when the key default was left in place", () => {
+    expect(subscriptionSignInChoice("anthropic", "claude-haiku-5-5", null)).toEqual({
+      modelId: "claude-opus-5-5",
+      thinkingLevel: "low",
+    });
+    expect(subscriptionSignInChoice("openai-codex", undefined, undefined)).toEqual({
+      modelId: "gpt-6.1-sol",
+      thinkingLevel: "low",
+    });
+  });
+
+  it("keeps a model or effort the person picked", () => {
+    expect(subscriptionSignInChoice("anthropic", "claude-sonnet-5", null)).toEqual({
+      modelId: "claude-sonnet-5",
+      thinkingLevel: null,
+    });
+    expect(subscriptionSignInChoice("openai-codex", "gpt-6.1-sol", "high")).toEqual({
+      modelId: "gpt-6.1-sol",
+      thinkingLevel: "high",
+    });
+  });
+
+  it("leaves providers without a subscription default alone", () => {
+    expect(subscriptionSignInChoice("github-copilot", "gpt-6-luna", null)).toEqual({
+      modelId: "gpt-6-luna",
+      thinkingLevel: null,
+    });
   });
 });
 
@@ -1554,7 +1586,10 @@ describe("live-only catalog validation", () => {
       spaceModelRoleChoice: { findMany: async () => [] },
       deploymentSettings: { findFirst: async () => null },
       userModelPreference: { findFirst: async () => null, findMany: async () => [] },
-      userModelCredential: { findMany: async () => [selected], findFirst: async () => selected },
+      userModelCredential: {
+        findMany: async () => [{ ...selected, userPreferences: [] }],
+        findFirst: async () => selected,
+      },
       secret: {
         findFirst: vi.fn(async () => ({ id: selected.secretId, ciphertext: "fake-ciphertext" })),
       },

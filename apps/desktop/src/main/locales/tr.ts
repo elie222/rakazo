@@ -17,6 +17,7 @@ export const TR_MESSAGES: Record<string, string> = {
   Redo: "Yinele",
   Cut: "Kes",
   Copy: "Kopyala",
+  "Copy Link Address": "Bağlantı Adresini Kopyala",
   Paste: "Yapıştır",
   "Paste and Match Style": "Yapıştır ve Stili Eşle",
   Delete: "Sil",

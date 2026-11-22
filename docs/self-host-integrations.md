@@ -145,10 +145,17 @@ space or owner mismatch that keeps the server's tools from that bot.
 
 ## Apps and connectors
 
-Plugins use [Composio](https://composio.dev) when `COMPOSIO_API_KEY` is set. Pipedream is an
-alternative managed connector provider: set `PIPEDREAM_CLIENT_ID`, `PIPEDREAM_CLIENT_SECRET`,
-`PIPEDREAM_PROJECT_ID` and `PIPEDREAM_ENVIRONMENT` (`development` or `production`). Set them on the
-API and worker.
+To offer a larger managed app catalog in Integrations, set a [Composio](https://composio.dev)
+Platform project key as `COMPOSIO_API_KEY` on the API and worker. Pipedream is another managed
+connector provider. Set `PIPEDREAM_CLIENT_ID`, `PIPEDREAM_CLIENT_SECRET`, `PIPEDREAM_PROJECT_ID`
+and `PIPEDREAM_ENVIRONMENT` (`development` or `production`) on both services. Recreate the
+services with the updated environment. People authorize their individual apps from Integrations.
+
+People can also bring a personal tool gateway as an MCP connection. The built-in **Executor**
+option uses browser sign-in and exposes the apps the person has configured in their Executor
+organization. [Composio Connect](https://docs.composio.dev/docs/composio-connect) offers a separate
+personal MCP connection at `https://connect.composio.dev/mcp`. It supports browser sign-in for
+compatible MCP clients and a consumer key for header-based clients.
 
 A call on a shared mailbox is refused when the Outlook sign-in does not request the matching
 `.Shared` permission, and a connection made through Composio's default Outlook setup has been seen
@@ -161,7 +168,8 @@ before the change must disconnect and reconnect Outlook.
 
 `INTEGRATIONS_CATALOG_URL` points API connector search at an
 [integrations.sh](https://integrations.sh/)-compatible catalog, such as a mirror you host. Give the
-base URL; Rakazo appends `api/search`.
+base URL. Rakazo appends `api/search`. With the setting unset, **Search public MCP directory** can still
+search the public directory on demand. Each service handles its own authorization.
 
 ## Messaging apps
 
@@ -178,7 +186,7 @@ Webhooks arrive at `/api/v1/messaging/webhook/<provider>`.
 | --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | iMessage and SMS (Sendblue) | `SENDBLUE_API_KEY_ID`, `SENDBLUE_API_SECRET`, `SENDBLUE_SIGNING_SECRET`, `SENDBLUE_PHONE_NUMBER`                                                                                                   |
 | WhatsApp Business Cloud     | `WHATSAPP_ACCESS_TOKEN`, `WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_APP_SECRET`, `WHATSAPP_VERIFY_TOKEN`; optional `WHATSAPP_API_URL`, `WHATSAPP_BOT_USERNAME`                                          |
-| Telegram                    | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_WEBHOOK_SECRET_TOKEN`                                                                                                                                              |
+| Telegram                    | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_WEBHOOK_SECRET_TOKEN`; `TELEGRAM_GROUPS=off` for direct chats only                                                                                                 |
 | iMessage (Photon)           | `PHOTON_PROJECT_ID`, `PHOTON_PROJECT_SECRET`; `PHOTON_WEBHOOK_SECRET` to receive by webhook instead of the stream; more projects as `PHOTON_PROJECT_ID_<NAME>` plus `PHOTON_PROJECT_SECRET_<NAME>` |
 | Feishu/Lark                 | `LARK_APP_ID`, `LARK_APP_SECRET`, `LARK_VERIFICATION_TOKEN`; `LARK_ENCRYPT_KEY` when event encryption is on; `LARK_DOMAIN` (`feishu`, the default, or `lark`)                                      |
 | Microsoft Teams             | `TEAMS_APP_ID`, `TEAMS_APP_PASSWORD`, `TEAMS_APP_TENANT_ID` (single-tenant, direct messages only)                                                                                                  |

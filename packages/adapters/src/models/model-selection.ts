@@ -58,6 +58,7 @@ import {
   modelProviderAllowed,
   modelProviderAllowlist,
 } from "./model-provider-allowlist.js";
+import { modelProviderDefinition } from "./model-provider-registry.js";
 import type { StoredModelSecret } from "./model-secret.js";
 import { parseModelSecret } from "./model-secret.js";
 import { connectionModelSettings } from "./model-settings.js";
@@ -156,6 +157,22 @@ export function defaultCatalogModelId(
     (item) => item.provider === canonicalPiProviderId(provider),
   );
   return usableModelId((entries.find((item) => item.recommended) ?? entries[0])?.id);
+}
+
+/**
+ * The model and effort a new subscription sign-in saves. Connect forms preselect the key
+ * default, so that untouched choice becomes the plan's default; another picked model stays.
+ */
+export function subscriptionSignInChoice(
+  provider: string,
+  modelId: string | undefined,
+  thinkingLevel: string | null | undefined,
+): { modelId: string | undefined; thinkingLevel: string | null | undefined } {
+  const definition = modelProviderDefinition(canonicalPiProviderId(provider));
+  const preset = definition?.subscriptionModel;
+  const untouched = !modelId || modelId === definition?.recommendedModel || modelId === preset?.id;
+  if (!preset || !untouched) return { modelId, thinkingLevel };
+  return { modelId: preset.id, thinkingLevel: thinkingLevel || preset.thinkingLevel };
 }
 
 /** A run pinned to a provider the user has no connection for. */

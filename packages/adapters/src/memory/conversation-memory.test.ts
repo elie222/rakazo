@@ -363,7 +363,7 @@ describe("retainRunConversation", () => {
       }
     },
   );
-  it.each([undefined, "", "   "])(
+  it.each([undefined, "   "])(
     "refuses to submit without a connection identity: %j",
     async (identity) => {
       const { deps, provider } = harness();

@@ -160,6 +160,38 @@ it("authorizes a card in a normal chat and marks its thread connected", async ()
   }
 });
 
+it.each([
+  ["Gmail", "G"],
+  ["🦞 OpenClaw", "🦞"],
+  ["𠮷野", "𠮷"],
+])("starts a logo-less %s card with a whole first character", async (name, initial) => {
+  const host = document.createElement("div");
+  const root = createRoot(host);
+  try {
+    await act(async () =>
+      root.render(
+        <AppConnectCard
+          botId="bot"
+          threadId="normal-chat"
+          block={{
+            kind: "app_connect",
+            connectorId: "fake",
+            provider: "custom",
+            name,
+            description: "",
+            logo: null,
+            status: "pending",
+          }}
+        />,
+      ),
+    );
+    expect(host.querySelector("span.grid")?.textContent).toBe(initial);
+  } finally {
+    await act(async () => root.unmount());
+    host.remove();
+  }
+});
+
 it("links OAuth failures in chat to the shared recovery guide without approving the server", async () => {
   calls.oauthBegin.mockRejectedValueOnce(
     Object.assign(new Error("Sign-in configuration mismatch"), {

@@ -39,7 +39,7 @@ test("saves a website login from a username and password card without echoing ei
   await expect(card).toBeVisible({ timeout: 15_000 });
   await expect(card.getByText("login.example.test", { exact: true })).toBeVisible();
   await captureScreenshot(page, testInfo, "login-card-ask");
-  await card.getByRole("button", { name: "Add", exact: true }).click();
+  await card.getByRole("button", { name: "Continue", exact: true }).click();
   // The card's fields open in the vault's own form.
   const form = page.getByTestId("vault-editor");
   const usernameField = form.getByLabel("Username", { exact: true });

@@ -699,3 +699,11 @@ describe("isStaticPng", () => {
     expect(isStaticPng(bytes.subarray(5, 5 + png.length))).toBe(true);
   });
 });
+
+describe("normalizeVoiceTranscript emoji limit", () => {
+  it("does not cut an emoji in half at the transcript limit", () => {
+    const text = normalizeVoiceTranscript(`${"a".repeat(3999)}😀 tail`);
+    expect(text).toBe("a".repeat(3999));
+    expect(() => encodeURIComponent(text)).not.toThrow();
+  });
+});

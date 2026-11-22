@@ -1,7 +1,14 @@
 import type { PrismaClient } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
 import type { ModelChoice } from "./model-choice.js";
-import { matchModelChoice, resolveModelChoice, words } from "./model-choice.js";
+import {
+  connectedModelChoices,
+  matchModelChoice,
+  resolveModelChoice,
+  words,
+} from "./model-choice.js";
+import { listModelCredentials } from "./model-credential-list.js";
+import { serializeModelSecret } from "./model-secret.js";
 
 const choice = (provider: string, providerName: string, id: string, label: string) => ({
   provider,
@@ -164,7 +171,7 @@ describe("resolveModelChoice", () => {
   it("says when no model anywhere matches", async () => {
     expect(await resolveModelChoice(connected([]), scope, { model: "zzz-unknown" })).toEqual({
       ok: false,
-      error: 'No model matches "zzz-unknown".',
+      error: 'No model matches "zzz-unknown". The user can connect a model provider in Settings.',
     });
   });
 
@@ -182,5 +189,107 @@ describe("resolveModelChoice", () => {
     });
     expect(nowhere).toMatchObject({ ok: false });
     if (!nowhere.ok) expect(nowhere.error.length).toBeLessThan(400);
+  });
+});
+
+/** A custom server connection the user named, serving two ids it lists itself. */
+function customServer(
+  load: () => Promise<string> = async () => secret,
+  provider = "openai-compatible",
+) {
+  const credential = {
+    id: "cred-custom",
+    provider,
+    label: "Home server",
+    secretId: "secret-custom",
+    createdAt: new Date(0),
+    updatedAt: new Date(0),
+    userPreferences: [
+      {
+        credentialId: "cred-custom",
+        modelId: "local-llama",
+        thinkingLevel: null,
+        updatedAt: new Date(0),
+      },
+    ],
+  };
+  const prisma = {
+    userModelCredential: { findMany: vi.fn(async () => [credential]) },
+    secret: { findMany: vi.fn(async () => [{ id: "secret-custom", ciphertext: "fake" }]) },
+  };
+  return {
+    prisma: prisma as unknown as PrismaClient,
+    secretStore: { load },
+  };
+}
+
+const secret = JSON.stringify({
+  kind: "openai_compatible",
+  baseUrl: "http://models.example.test/v1",
+  enabledModelIds: ["local-llama", "local-qwen"],
+});
+
+describe("custom server models", () => {
+  it("lists the ids a custom connection serves under its own name", async () => {
+    expect(await connectedModelChoices(customServer(), scope)).toEqual([
+      {
+        provider: "openai-compatible",
+        providerName: "Home server",
+        id: "local-llama",
+        label: "local-llama",
+      },
+      {
+        provider: "openai-compatible",
+        providerName: "Home server",
+        id: "local-qwen",
+        label: "local-qwen",
+      },
+    ]);
+  });
+
+  it("lists nothing from a connection whose secret cannot be read", async () => {
+    const unreadable = customServer(async () => {
+      throw new Error("bad ciphertext");
+    });
+    expect(await connectedModelChoices(unreadable, scope)).toEqual([]);
+  });
+
+  it("leaves out only a connection whose secret is damaged", async () => {
+    const damaged = customServer(async () => JSON.stringify({ kind: "openai_compatible" }));
+    expect(await listModelCredentials(damaged, scope, { runnable: true })).toEqual([]);
+  });
+
+  it("adds no saved free-form id from a connection that is not a custom server", async () => {
+    const deps = customServer(async () => "fake-api-key", "anthropic");
+    const choices = await connectedModelChoices(deps, scope);
+    expect(choices.map((choice) => choice.id)).not.toContain("local-llama");
+  });
+
+  it("leaves out a connection that must be signed in again, though settings still show it", async () => {
+    const deps = customServer(
+      async () => serializeModelSecret({ kind: "oauth", reconnectRequired: true }),
+      "anthropic",
+    );
+    expect(await listModelCredentials(deps, scope, { runnable: true })).toEqual([]);
+    expect(await listModelCredentials(deps, scope)).toMatchObject([{ reconnectRequired: true }]);
+  });
+
+  it("skips a provider the deployment does not allow without loading its secret", async () => {
+    vi.stubEnv("RAKAZO_MODEL_PROVIDER_ALLOWLIST", "anthropic");
+    const load = vi.fn(async () => secret);
+    try {
+      expect(await connectedModelChoices(customServer(load), scope)).toEqual([]);
+      expect(load).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it("resolves a custom model by its id alone, as a catalog model is", async () => {
+    expect(await resolveModelChoice(customServer(), scope, { model: "local-qwen" })).toEqual({
+      ok: true,
+      provider: "openai-compatible",
+      model: "local-qwen",
+    });
   });
 });
