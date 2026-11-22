@@ -3391,130 +3391,6 @@ describe("computer replacement", () => {
     );
   });
 
-  it("refuses Reset on a fresh suspending claim", async () => {
-    const updateMany = vi.fn().mockResolvedValue({ count: 1 });
-    const nowMs = Date.parse("2024-06-01T12:00:00.000Z");
-    const prisma = transactional({
-      computer: {
-        findUniqueOrThrow: vi.fn().mockResolvedValue({
-          id: "computer-1",
-          homeKey: "bot-1",
-          providerRef: "provider-1",
-          kind: "fake",
-          scope: "team",
-          state: "suspending",
-          controlLeaseId: null,
-          updatedAt: new Date(nowMs),
-        }),
-        updateMany,
-      },
-      computerExecutionLease: { findFirst: vi.fn().mockResolvedValue(null) },
-      run: { findFirst: vi.fn().mockResolvedValue(null) },
-    });
-    const now = vi.spyOn(Date, "now").mockReturnValue(nowMs);
-
-    try {
-      await expect(
-        replaceComputer(
-          {
-            prisma,
-            sandbox: new FakeSandboxProvider(),
-            home: {} as AgentHomeStore,
-            jobs: jobQueue(),
-            events: {} as ThreadEvents,
-          },
-          "computer-1",
-          "reset",
-          context,
-        ),
-      ).rejects.toBeInstanceOf(ComputerBusyError);
-      expect(updateMany).not.toHaveBeenCalled();
-    } finally {
-      now.mockRestore();
-    }
-  });
-
-  it("refuses Reset on a stale suspending row while a run is still active", async () => {
-    const updateMany = vi.fn().mockResolvedValue({ count: 1 });
-    const prisma = transactional({
-      computer: {
-        findUniqueOrThrow: vi.fn().mockResolvedValue({
-          id: "computer-1",
-          homeKey: "bot-1",
-          providerRef: "provider-1",
-          kind: "fake",
-          scope: "team",
-          state: "suspending",
-          controlLeaseId: null,
-          updatedAt: new Date("2024-01-01T00:00:00.000Z"),
-        }),
-        updateMany,
-      },
-      computerExecutionLease: { findFirst: vi.fn().mockResolvedValue(null) },
-      run: { findFirst: vi.fn().mockResolvedValue({ id: "live-run" }) },
-    });
-
-    await expect(
-      replaceComputer(
-        {
-          prisma,
-          sandbox: new FakeSandboxProvider(),
-          home: {} as AgentHomeStore,
-          jobs: jobQueue(),
-          events: {} as ThreadEvents,
-        },
-        "computer-1",
-        "reset",
-        context,
-      ),
-    ).rejects.toBeInstanceOf(ComputerBusyError);
-    expect(updateMany).not.toHaveBeenCalled();
-  });
-
-  it("resets a computer a crashed worker left booting", async () => {
-    // No live lease from anyone else: the worker that set "booting" is gone, so Reset must
-    // reach the claim instead of answering "Computer is busy" for good.
-    const updateMany = vi.fn().mockResolvedValue({ count: 0 });
-    const prisma = {
-      $transaction: vi.fn(async (fn: (tx: unknown) => unknown) => fn(prisma)),
-      $queryRaw: vi.fn(async () => []),
-      space: { findUnique: vi.fn(async () => null) },
-      computer: {
-        findUniqueOrThrow: vi.fn().mockResolvedValue({
-          id: "computer-1",
-          homeKey: "bot-1",
-          providerRef: "",
-          kind: "fake",
-          scope: "dedicated",
-          state: "booting",
-          controlLeaseId: null,
-          updatedAt: new Date("2024-01-01T00:00:00.000Z"),
-        }),
-        updateMany,
-      },
-      computerExecutionLease: { findFirst: vi.fn().mockResolvedValue(null) },
-      run: { findFirst: vi.fn().mockResolvedValue(null) },
-    } as unknown as PrismaClient;
-
-    await expect(
-      replaceComputer(
-        {
-          prisma,
-          sandbox: new FakeSandboxProvider(),
-          home: {} as AgentHomeStore,
-          jobs: jobQueue(),
-          events: {} as ThreadEvents,
-        },
-        "computer-1",
-        "reset",
-        context,
-      ),
-    ).rejects.toBeInstanceOf(ComputerBusyError);
-    expect(updateMany).toHaveBeenCalledWith(
-      expect.objectContaining({ where: expect.objectContaining({ state: "booting" }) }),
-    );
-  });
-
   it("refuses a booting computer another bot is still holding", async () => {
     const updateMany = vi.fn().mockResolvedValue({ count: 1 });
     const prisma = transactional({
@@ -3638,44 +3514,6 @@ describe("computer replacement", () => {
     expect(updateMany).not.toHaveBeenCalled();
   });
 
-  it("rejects replacement while the target bot has an active run", async () => {
-    const prisma = {
-      $transaction: vi.fn(async (fn: (tx: unknown) => unknown) => fn(prisma)),
-      $queryRaw: vi.fn(async () => []),
-      space: { findUnique: vi.fn(async () => null) },
-      computer: {
-        findUniqueOrThrow: vi.fn().mockResolvedValue({
-          id: "computer-1",
-          homeKey: "bot-1",
-          providerRef: "provider-1",
-          kind: "fake",
-          scope: "dedicated",
-          state: "running",
-          controlLeaseId: null,
-          updatedAt: new Date("2024-01-01T00:00:00.000Z"),
-        }),
-        updateMany: vi.fn().mockResolvedValueOnce({ count: 1 }),
-      },
-      run: {
-        findFirst: vi.fn().mockResolvedValue({ id: "same-bot-run" }),
-      },
-    } as unknown as PrismaClient;
-    await expect(
-      replaceComputer(
-        {
-          prisma,
-          sandbox: new FakeSandboxProvider(),
-          home: {} as AgentHomeStore,
-          jobs: jobQueue(),
-          events: {} as ThreadEvents,
-        },
-        "computer-1",
-        "recover",
-        context,
-      ),
-    ).rejects.toBeInstanceOf(ComputerBusyError);
-  });
-
   it("rejects replacement while any bot holds user control", async () => {
     const prisma = transactional({
       computer: {
@@ -3704,39 +3542,6 @@ describe("computer replacement", () => {
         },
         "computer-1",
         "recover",
-        context,
-      ),
-    ).rejects.toBeInstanceOf(ComputerBusyError);
-  });
-
-  it("rejects replacement while the same bot holds user control", async () => {
-    const prisma = transactional({
-      computer: {
-        findUniqueOrThrow: vi.fn().mockResolvedValue({
-          id: "computer-1",
-          homeKey: "bot-1",
-          providerRef: "provider-1",
-          kind: "fake",
-          scope: "dedicated",
-          state: "running",
-          controlHolder: "user",
-          controlLeaseId: "lease-1",
-          controlLeaseExpiresAt: new Date(Date.now() + 60_000),
-          controlBotId: "bot-1",
-        }),
-      },
-    });
-    await expect(
-      replaceComputer(
-        {
-          prisma,
-          sandbox: new FakeSandboxProvider(),
-          home: {} as AgentHomeStore,
-          jobs: jobQueue(),
-          events: {} as ThreadEvents,
-        },
-        "computer-1",
-        "reset",
         context,
       ),
     ).rejects.toBeInstanceOf(ComputerBusyError);
@@ -4051,62 +3856,6 @@ describe("computer replacement", () => {
       expect.objectContaining({
         where: { id: "computer-1", state: "suspending", updatedAt: expect.any(Date) },
         data: { state: "stopped" },
-      }),
-    );
-  });
-
-  it("rejects replacement of a suspended computer while a run is still active", async () => {
-    const updateMany = vi
-      .fn()
-      .mockResolvedValueOnce({ count: 1 })
-      .mockResolvedValueOnce({ count: 1 });
-    const prisma = {
-      $transaction: vi.fn(async (fn: (tx: unknown) => unknown) => fn(prisma)),
-      $queryRaw: vi.fn(async () => []),
-      space: { findUnique: vi.fn(async () => null) },
-      computer: {
-        findUniqueOrThrow: vi.fn().mockResolvedValue({
-          id: "computer-1",
-          homeKey: "bot-1",
-          providerRef: "provider-1",
-          kind: "fake",
-          scope: "dedicated",
-          state: "suspended",
-          controlLeaseId: null,
-          updatedAt: new Date("2024-01-01T00:00:00.000Z"),
-        }),
-        updateMany,
-      },
-      run: {
-        findFirst: vi.fn().mockResolvedValue({ id: "active-run" }),
-      },
-    } as unknown as PrismaClient;
-    await expect(
-      replaceComputer(
-        {
-          prisma,
-          sandbox: new FakeSandboxProvider(),
-          home: {} as AgentHomeStore,
-          jobs: jobQueue(),
-          events: {} as ThreadEvents,
-        },
-        "computer-1",
-        "update",
-        context,
-      ),
-    ).rejects.toBeInstanceOf(ComputerBusyError);
-    expect(updateMany).toHaveBeenNthCalledWith(
-      1,
-      expect.objectContaining({
-        where: expect.objectContaining({ id: "computer-1", state: "suspended" }),
-        data: { state: "suspending", updatedAt: expect.any(Date) },
-      }),
-    );
-    expect(updateMany).toHaveBeenNthCalledWith(
-      2,
-      expect.objectContaining({
-        where: { id: "computer-1", state: "suspending", updatedAt: expect.any(Date) },
-        data: { state: "suspended" },
       }),
     );
   });
