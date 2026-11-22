@@ -46,11 +46,16 @@ import {
   USER_COMPUTER_ACT_TOOL,
   USER_COMPUTER_OBSERVE_TOOL,
   USER_COMPUTER_SHELL_TOOL,
+  USER_COMPUTER_TOOLS,
   userComputerAct,
   userComputerList,
   userComputerObserve,
   userComputerShell,
 } from "./run-tools-user-computer.js";
+
+/** The owner's own computer: its shell, screen and computer list. */
+const ownComputerResult = (tool: string) =>
+  USER_COMPUTER_TOOLS.has(tool) || tool === "user_computer_list";
 
 const TOOL_HANDLERS = new Map<string, ToolHandler>([
   ...Object.entries(computerTools),
@@ -290,7 +295,9 @@ async function dispatchTool(
   if ("result" in gate) {
     const ownProfile = name === "update_bot" && !argumentGiven(args.bot_id);
     if (gate.replayed && toolResultTaintsRun(request.name) && !ownProfile) {
-      await markReadOutsideContent(ctx, gate.result);
+      await markReadOutsideContent(ctx, gate.result, {
+        ownComputer: ownComputerResult(request.name),
+      });
     }
     return refuse(gate.result, request.name);
   }
@@ -305,7 +312,8 @@ async function dispatchTool(
       // Editing its own profile returns only what this run wrote; a child's profile is another
       // bot's.
       const ownProfile = name === "update_bot" && !argumentGiven(args.bot_id);
-      if (toolResultTaintsRun(name) && !ownProfile) await markReadOutsideContent(ctx, result);
+      if (toolResultTaintsRun(name) && !ownProfile)
+        await markReadOutsideContent(ctx, result, { ownComputer: ownComputerResult(name) });
     }
   };
   if (!gate.call.applied) return runHandler();

@@ -57,8 +57,8 @@ export const READ_ONLY_AGENT_TOOLS = new Set([
 /**
  * All a routine with its owner's computer is offered: the owner's computer, the web and the owner's
  * own answers. Everything else could hand it text the owner did not approve (mail, files, memory,
- * history, tickets, skills, connectors, other bots) or reach stored state, and the owner's computer
- * does not ask again once approved or in Never ask, whatever the run read.
+ * history, tickets, skills, connectors, other bots) or reach stored state. Once the run reads the
+ * web, the owner's computer asks before every call (see userComputerGate).
  */
 const OWN_PROMPT_ONLY_TOOLS: ReadonlySet<string> = new Set([
   "user_computer_list",

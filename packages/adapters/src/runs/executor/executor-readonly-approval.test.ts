@@ -4382,6 +4382,10 @@ describe("user_computer_shell", () => {
           yield { platform: "darwin", home: "/Users/fake", shell: "/bin/zsh" } as T;
           return;
         }
+        if (request.method === "screenObserve") {
+          yield { app: "Finder", title: "Backups", tree: '- [0] AXWindow "Backups"' } as T;
+          return;
+        }
         yield { type: "stdout", data: "pi.local\n" } as T;
         yield { type: "exit", code: 0 } as T;
       },
@@ -4685,6 +4689,45 @@ describe("user_computer_shell", () => {
       f.setCalls([call("ls", "call-2")]);
       await f.run();
       expect(requests.map(({ request }) => request.method)).toContain("execute");
+    });
+
+    // Its own computer's output is not outside content for this rule, so it can take several steps.
+    it("takes several steps on the computer in Never ask without asking", async () => {
+      const { gateway, requests } = devices();
+      const f = fixture({ ...ownRoutine, userDevices: gateway, skipApprovals: true });
+      f.setCalls([
+        { name: "user_computer_list", args: {}, executionId: "call-1" },
+        call("ls", "call-2"),
+        { name: "user_computer_observe", args: { app: "Finder" }, executionId: "call-3" },
+        call("ls ~/Backups", "call-4"),
+      ]);
+      await f.run();
+      expect(f.pauseRunForInput).not.toHaveBeenCalled();
+      expect(
+        requests
+          .map(({ request }) => request.method)
+          .filter((method) => method === "execute" || method === "screenObserve"),
+      ).toEqual(["execute", "screenObserve", "execute"]);
+    });
+
+    it("asks before the next computer call once it fetches a page between steps", async () => {
+      const { gateway, requests } = devices();
+      const f = fixture({ ...ownRoutine, userDevices: gateway, skipApprovals: true });
+      f.setCalls([
+        call("ls", "call-1"),
+        { name: "user_computer_observe", args: { app: "Finder" }, executionId: "call-2" },
+        { name: "web_fetch", args: { url: "https://status.example.com/" }, executionId: "call-3" },
+        call("ls ~/Backups", "call-4"),
+      ]);
+      await f.run();
+      const ran = () =>
+        requests
+          .map(({ request }) => request.method)
+          .filter((method) => method === "execute" || method === "screenObserve");
+      expect(ran()).toEqual(["execute", "screenObserve"]);
+      expect(f.fetchedUrls).toEqual(["https://status.example.com/"]);
+      expect(isApprovalPausedResult(f.results[3])).toBe(true);
+      expect(f.pauseRunForInput).toHaveBeenCalledOnce();
     });
 
     it.each<
