@@ -6,7 +6,9 @@ import {
   COMPUTER_CONTROL_HEARTBEAT_MS,
   COMPUTER_HEARTBEAT_MS,
   isRetryableError,
+  newClientId,
 } from "@rakazo/core";
+import { bestEffort } from "@rakazo/logging/best-effort";
 import { Button, Spinner } from "@rakazo/ui-web";
 import type { RefObject } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -40,6 +42,7 @@ export function useComputerControls({
   refreshThread,
   refreshGroupThread,
   onUpgrade,
+  onSendError,
 }: {
   rpc: ReturnType<typeof createSpaceRpc>;
   state: ComputerState;
@@ -58,6 +61,7 @@ export function useComputerControls({
   ) => Promise<ThreadSnapshot>;
   refreshGroupThread: (groupId: string) => Promise<ThreadSnapshot>;
   onUpgrade: () => void;
+  onSendError: (message: string) => void;
 }) {
   const { t } = useLingui();
   const {
@@ -199,6 +203,36 @@ export function useComputerControls({
     commitComputer(status);
     cacheComputerFor(targetBotId, { computer: status });
     if (readScreen) await refreshComputerScreen(targetBotId);
+  }
+
+  const [cleaningUpDisk, setCleaningUpDisk] = useState(false);
+  function dismissDiskWarning(targetBotId: string) {
+    const current = computerRef.current;
+    if (current?.botId === targetBotId) commitComputer({ ...current, diskFullPercent: undefined });
+    const cached = computerCacheRef.current.get(targetBotId)?.computer;
+    if (cached)
+      cacheComputerFor(targetBotId, { computer: { ...cached, diskFullPercent: undefined } });
+    return bestEffort(
+      "dismiss computer disk warning",
+      rpc.computer.dismissDiskWarning({ botId: targetBotId }),
+    );
+  }
+  /** Asks the bot to free up its computer's disk, then lets the warning go. */
+  function cleanUpDisk(targetBotId: string) {
+    setCleaningUpDisk(true);
+    void rpc.threads
+      .send({
+        botId: targetBotId,
+        clientNonce: newClientId(),
+        text: t`Your computer's disk is nearly full. Free up space by removing build output and caches you no longer need.`,
+      })
+      .then(async () => {
+        // The refresh must read the dismissal, or it would paint the warning again.
+        await dismissDiskWarning(targetBotId);
+        void refreshThread(targetBotId);
+      })
+      .catch((error: unknown) => onSendError(errorText(error)))
+      .finally(() => setCleaningUpDisk(false));
   }
 
   useEffect(() => {
@@ -527,5 +561,8 @@ export function useComputerControls({
     hasControl,
     computerScreenError,
     computerBooting,
+    cleaningUpDisk,
+    cleanUpDisk,
+    dismissDiskWarning,
   };
 }

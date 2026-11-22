@@ -713,6 +713,7 @@ it.each([false, true])(
         refreshThread: sync.refreshThread,
         refreshGroupThread: vi.fn(),
         onUpgrade: vi.fn(),
+        onSendError: vi.fn(),
       });
       return null;
     }
