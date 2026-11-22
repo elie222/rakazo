@@ -77,6 +77,8 @@ function WebhookKey({
   const [error, setError] = useState<string | null>(null);
   // Bumped on hide, close and unmount, so a reveal still on its way never shows the key again.
   const attempt = useRef(0);
+  // The attempt a reveal is running for, so a second tap waits on it instead of starting another.
+  const revealing = useRef<number | null>(null);
   useTimeout(hide, secret ? REVEAL_MS : null, secret);
   useEffect(
     () => () => {
@@ -101,7 +103,9 @@ function WebhookKey({
     void reveal();
   }
   async function reveal() {
+    if (revealing.current === attempt.current) return;
     const current = ++attempt.current;
+    revealing.current = current;
     setError(null);
     try {
       // A reveal the person closed meanwhile asks for nothing: it ends before any prompt opens.
@@ -119,6 +123,8 @@ function WebhookKey({
           ? t`Only the bot's creator can see its webhook key.`
           : errorText(caught, t`Could not show the webhook key`),
       );
+    } finally {
+      if (revealing.current === current) revealing.current = null;
     }
   }
 

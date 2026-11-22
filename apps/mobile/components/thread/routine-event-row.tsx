@@ -1,6 +1,7 @@
 import { useLingui } from "@lingui/react/macro";
 import { botInboundPath, isIdentityConfirmationRequired } from "@rakazo/contracts";
 import { errorCode } from "@rakazo/core";
+import { bestEffort } from "@rakazo/logging/best-effort";
 import * as Clipboard from "expo-clipboard";
 import { Alert, Pressable, Text, View } from "react-native";
 import { currentApiBase } from "../../lib/api/api";
@@ -70,7 +71,8 @@ export function WebhookKeyButton({
       withIdentityConfirmation(() => send("bots/revealWebhookSecret", { botId })),
     onSaved: ({ secret }) => {
       const url = `${currentApiBase()}${botInboundPath(botId, "webhook")}`;
-      const copy = (text: string) => void Clipboard.setStringAsync(text).catch(() => undefined);
+      const copy = (text: string) =>
+        void bestEffort("copy webhook", Clipboard.setStringAsync(text));
       Alert.alert(title, `${url}\n\nAuthorization: Bearer ${secret}`, [
         { text: t`Copy URL`, onPress: () => copy(url) },
         { text: t`Copy key`, onPress: () => copy(secret) },

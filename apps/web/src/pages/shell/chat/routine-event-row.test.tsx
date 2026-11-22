@@ -136,3 +136,15 @@ it("never asks a closed row's reveal to confirm it's the person", async () => {
   expect(identity.confirm).not.toHaveBeenCalled();
   expect(container.querySelector('[role="alert"]')).toBeNull();
 });
+
+it("starts one reveal however many times the key is asked for while it runs", async () => {
+  const pending = deferred<{ secret: string }>();
+  reveal.mockReset().mockReturnValue(pending.promise);
+  renderWebhookRow();
+  await act(async () => button("Show webhook key")!.click());
+  await act(async () => button("Show key")!.click());
+  await act(async () => button("Show key")!.click());
+  expect(reveal).toHaveBeenCalledOnce();
+  await act(async () => pending.resolve({ secret: "key-123" }));
+  expect(container.textContent).toContain("Authorization: Bearer key-123");
+});
