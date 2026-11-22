@@ -682,6 +682,7 @@ export const Transcript = memo(function Transcript({
           const message = item.message;
           const peerReceipt = isPeerReceiptBlocks(message.blocks);
           const messageReactions = reactionView.reactions.get(message.id);
+          const streaming = message.id.startsWith("progress:");
           return (
             <Fragment key={message.id}>
               {separatorIds.has(message.id) ? (
@@ -704,7 +705,7 @@ export const Transcript = memo(function Transcript({
                 >
                   <div
                     data-testid={peerReceipt ? undefined : "message-bubble-frame"}
-                    data-streaming={message.id.startsWith("progress:") ? "" : undefined}
+                    data-streaming={streaming ? "" : undefined}
                     className={
                       peerReceipt
                         ? undefined
@@ -728,6 +729,7 @@ export const Transcript = memo(function Transcript({
                             } min-w-0 ${bubbleFrameWidth(message.role)}`
                     }
                   >
+                    {streaming ? <span aria-hidden="true" className="stream-sweep" /> : null}
                     <MessageView
                       artifactTarget={artifactTarget}
                       message={message}

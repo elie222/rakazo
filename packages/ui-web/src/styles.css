@@ -97,22 +97,29 @@
   animation: message-enter var(--motion-pop) var(--ease-out) both;
 }
 
-/* A live reply keeps every word on screen; a faint band sweeps over it as text arrives. */
+/* A live reply keeps every word on screen; a faint band sweeps over it as text arrives.
+   The band moves on its own layer, so a long reply never repaints the text. */
 @keyframes stream-sweep {
   from {
-    background-position: 160% 0;
+    transform: translateX(-160%);
   }
   to {
-    background-position: -60% 0;
+    transform: translateX(40%);
   }
 }
 
-[data-streaming]::after {
+.stream-sweep {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  border-radius: var(--radius);
+  pointer-events: none;
+}
+
+.stream-sweep::after {
   content: "";
   position: absolute;
   inset: 0;
-  border-radius: var(--radius);
-  pointer-events: none;
   background-image: linear-gradient(
     100deg,
     transparent 35%,
@@ -128,9 +135,8 @@
     animation: none;
   }
 
-  [data-streaming]::after {
-    animation: none;
-    opacity: 0;
+  .stream-sweep {
+    display: none;
   }
 }
 
