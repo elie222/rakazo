@@ -693,12 +693,16 @@ describe("prepareToolRequest: a saved login that asks first", () => {
 });
 
 describe("the user's computer after a routine or webhook joined the run", () => {
-  function userComputerCall(claimed: boolean) {
+  function userComputerCall(claimed: boolean, access?: { routines: boolean; ownBots: boolean }) {
     const findFirst = vi.fn(async (_query: { where: Record<string, unknown> }) =>
       claimed ? { id: "steering-1" } : null,
     );
     const ctx = {
-      deps: { prisma: { steeringMessage: { findFirst } }, userDevices: {} },
+      deps: {
+        prisma: { steeringMessage: { findFirst } },
+        userDevices: {},
+        userComputerAccess: access,
+      },
       run: { trigger: "user" },
       bot: {},
       runId: "run-1",
@@ -727,5 +731,22 @@ describe("the user's computer after a routine or webhook joined the run", () => 
   it("stays available in the owner's own run", async () => {
     const { ctx, request } = userComputerCall(false);
     await expect(prepareToolRequest(ctx as never, request)).resolves.toBeUndefined();
+  });
+
+  it("only refuses handed-in webhook text when routines are allowed", async () => {
+    const { ctx, request, findFirst } = userComputerCall(false, { routines: true, ownBots: false });
+    await expect(prepareToolRequest(ctx as never, request)).resolves.toBeUndefined();
+    expect(findFirst.mock.calls.at(-1)?.[0].where).toEqual({
+      runId: "run-1",
+      claimedAt: { not: null },
+      originTrigger: { in: ["webhook"] },
+    });
+  });
+
+  it("still refuses once webhook text was handed in, with every switch on", async () => {
+    const { ctx, request } = userComputerCall(true, { routines: true, ownBots: true });
+    await expect(prepareToolRequest(ctx as never, request)).resolves.toEqual({
+      error: "The user's computer is not available in this run.",
+    });
   });
 });

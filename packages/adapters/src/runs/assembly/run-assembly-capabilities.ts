@@ -68,7 +68,12 @@ import {
   unavailableBuiltinToolReasons,
 } from "../tools/run-tool-selection.js";
 import type { UserComputerState } from "../tools/run-tools-user-computer.js";
-import { USER_COMPUTER_SHELL_TOOL, userComputerOwner } from "../tools/run-tools-user-computer.js";
+import {
+  botChainFromOwner,
+  NO_USER_COMPUTER_ACCESS,
+  USER_COMPUTER_SHELL_TOOL,
+  userComputerOwner,
+} from "../tools/run-tools-user-computer.js";
 import {
   modelCreditBillingEnabled,
   resolvedModelRunFields,
@@ -570,12 +575,20 @@ export async function resolveRunCapabilities(
     run.trigger !== "bot_message" &&
     !conversationThread.groupId &&
     !nonOwnerChatRun;
+  const userComputerAccess = deps.userComputerAccess ?? NO_USER_COMPUTER_ACCESS;
+  const ownBotChain =
+    conversationRun.trigger === "bot_message" &&
+    userComputerAccess.ownBots &&
+    run.userId === bot.userId &&
+    (await botChainFromOwner(deps.prisma, conversationRun, userComputerAccess));
   const userComputerOwnerId = userComputerOwner({
     trigger: conversationRun.trigger,
     sourceRole: (origin?.sourceMessage ?? sourceMessage)?.role,
     messagingChannelRun: nonOwnerChatRun,
     runUserId: run.userId,
     botUserId: bot.userId,
+    access: userComputerAccess,
+    ownBotChain,
   });
   let userComputer: UserComputerState;
   let userComputerShell = false;

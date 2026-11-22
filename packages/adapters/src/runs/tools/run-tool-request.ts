@@ -72,7 +72,11 @@ import { refusal } from "../turn/tool-refusal.js";
 import { BUILTIN_AGENT_TOOL_NAMES, FLEET_WRITE_TOOL_NAMES_SET } from "./run-tool-selection.js";
 import { holdSharedPageSave } from "./run-tools-pages.js";
 import { scheduleCreateRefusal } from "./run-tools-tasks.js";
-import { USER_COMPUTER_TOOLS } from "./run-tools-user-computer.js";
+import {
+  NO_USER_COMPUTER_ACCESS,
+  USER_COMPUTER_TOOLS,
+  userComputerBlockingOrigins,
+} from "./run-tools-user-computer.js";
 
 /** A tool call resolved to the tool it runs and the exact request an approval covers. */
 export interface ToolRequest {
@@ -429,13 +433,16 @@ export async function prepareToolRequest(
       );
     if (isSubagentToolExecution(executionId))
       return refusal("helper_user_computer", "Helpers cannot use the user's computer.");
-    // Routines and webhooks reach no one's computer, including through a run they were handed to.
+    // Webhooks reach no one's computer, including through a run they were handed to. Routines
+    // don't either, unless the server lets the owner's routines reach it.
     if (
       await deps.prisma.steeringMessage.findFirst({
         where: {
           runId: ctx.runId,
           claimedAt: { not: null },
-          originTrigger: { in: ["routine", "webhook"] },
+          originTrigger: {
+            in: userComputerBlockingOrigins(deps.userComputerAccess ?? NO_USER_COMPUTER_ACCESS),
+          },
         },
         select: { id: true },
       })

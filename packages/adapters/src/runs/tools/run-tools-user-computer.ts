@@ -1,8 +1,10 @@
 import path from "node:path";
 import type { AgentToolExecutionResult, ProcessEvent } from "@rakazo/adapter-kit";
 import type { ApprovalMode } from "@rakazo/core";
-import { redactSecrets } from "@rakazo/core";
+import { botMessageMaxHops, redactSecrets } from "@rakazo/core";
 import { sandboxCommandTimeoutMs } from "@rakazo/core/node/sandbox-command";
+import type { PrismaClient } from "@rakazo/db";
+import { mayBeChannelMessage, readMessageBlocks } from "@rakazo/db";
 import { z } from "zod";
 import type { HostComputerEnvironment } from "../../computers/host/host-computer-protocol.js";
 import { nativeShellCommandArgv } from "../../computers/host/native-shell.js";
@@ -44,8 +46,19 @@ const USER_COMPUTER_UNAVAILABLE =
   'The user\'s computer is not connected. If the task needs it, ask them to open the Rakazo desktop app and turn on "Let bots use this computer" in its settings.';
 
 /**
+ * Which runs besides the owner's own chat may reach their paired computer: their routines, and
+ * chains of their own bots that started where the computer was reachable. Server switches
+ * USER_DEVICES_ALLOW_ROUTINES and USER_DEVICES_ALLOW_OWN_BOTS, both off by default.
+ */
+export type UserComputerAccess = { routines: boolean; ownBots: boolean };
+
+export const NO_USER_COMPUTER_ACCESS: UserComputerAccess = { routines: false, ownBots: false };
+
+/**
  * Whose own computer this run may reach: the person whose message started it, when they own the
- * bot. Routines, webhooks, channels, other bots and other people's messages reach no one's.
+ * bot. With the server's switches on, also their own bot's routine, and a message from another of
+ * their bots when `ownBotChain` says the chain behind it started with them (see botChainFromOwner).
+ * Webhooks, channels, helpers and other people's messages reach no one's.
  */
 export function userComputerOwner(input: {
   trigger: string;
@@ -53,10 +66,95 @@ export function userComputerOwner(input: {
   messagingChannelRun: boolean;
   runUserId: string;
   botUserId: string;
+  access: UserComputerAccess;
+  ownBotChain: boolean;
 }): string | undefined {
-  if (input.trigger !== "user" && input.trigger !== "follow_up") return undefined;
-  if (input.sourceRole !== "user" || input.messagingChannelRun) return undefined;
-  return input.runUserId === input.botUserId ? input.runUserId : undefined;
+  if (input.messagingChannelRun || input.runUserId !== input.botUserId) return undefined;
+  const reachable =
+    input.trigger === "user" || input.trigger === "follow_up"
+      ? input.sourceRole === "user"
+      : input.trigger === "routine"
+        ? input.access.routines
+        : input.trigger === "bot_message" && input.access.ownBots && input.ownBotChain;
+  return reachable ? input.runUserId : undefined;
+}
+
+/** Outside tasks whose text, once handed into a run, keeps it from the owner's computer. */
+export function userComputerBlockingOrigins(access: UserComputerAccess): string[] {
+  return access.routines ? ["webhook"] : ["routine", "webhook"];
+}
+
+/**
+ * Whether the bot message that started a run comes from a chain the owner started: each sender run
+ * is theirs, in this Space, on one of their bots, took in no blocked outside task, and the first
+ * one started where their computer is reachable (their own message, or a routine when allowed).
+ * A link that is missing, unreadable or past the hop limit refuses.
+ */
+export async function botChainFromOwner(
+  prisma: PrismaClient,
+  run: { userId: string; spaceId: string; sourceMessageId: string | null },
+  access: UserComputerAccess,
+  maxHops = botMessageMaxHops(),
+): Promise<boolean> {
+  let messageId = run.sourceMessageId;
+  for (let hop = 0; hop < maxHops && messageId; hop++) {
+    const inbound = await prisma.message.findUnique({
+      where: { id: messageId },
+      select: { id: true, blocks: true },
+    });
+    if (!inbound) return false;
+    const read = readMessageBlocks(inbound);
+    const received = read.blocks.find((block) => block.kind === "bot_message_received");
+    // Stored fields are not checked against today's schema, so check the one this reads.
+    const returnTo =
+      received?.kind === "bot_message_received" ? (received.returnToMessageId as unknown) : null;
+    if (!read.intact || typeof returnTo !== "string" || !returnTo) return false;
+    const outbound = await prisma.message.findUnique({
+      where: { id: returnTo },
+      select: { runId: true },
+    });
+    if (!outbound?.runId) return false;
+    const sender = await prisma.run.findUnique({
+      where: { id: outbound.runId },
+      select: {
+        id: true,
+        trigger: true,
+        userId: true,
+        spaceId: true,
+        sourceMessageId: true,
+        bot: { select: { userId: true } },
+      },
+    });
+    if (
+      !sender ||
+      sender.userId !== run.userId ||
+      sender.spaceId !== run.spaceId ||
+      sender.bot.userId !== run.userId
+    )
+      return false;
+    const steered = await prisma.steeringMessage.findFirst({
+      where: {
+        runId: sender.id,
+        claimedAt: { not: null },
+        originTrigger: { in: userComputerBlockingOrigins(access) },
+      },
+      select: { id: true },
+    });
+    if (steered) return false;
+    if (sender.trigger === "routine") return access.routines;
+    if (sender.trigger === "user" || sender.trigger === "follow_up") {
+      const source = sender.sourceMessageId
+        ? await prisma.message.findUnique({
+            where: { id: sender.sourceMessageId },
+            select: { id: true, role: true, blocks: true },
+          })
+        : null;
+      return source?.role === "user" && !mayBeChannelMessage(source);
+    }
+    if (sender.trigger !== "bot_message") return false;
+    messageId = sender.sourceMessageId;
+  }
+  return false;
 }
 
 /**
