@@ -14,6 +14,7 @@ type Fixture = {
   eventIds?: string[];
   oldestKeptAt?: Date;
   failChunk?: boolean;
+  nonceSeqs?: number[];
 };
 
 function database(fixture: Fixture = {}) {
@@ -27,7 +28,13 @@ function database(fixture: Fixture = {}) {
       findFirst: vi.fn(async () =>
         fixture.firstKeptSeq === undefined ? null : { seq: fixture.firstKeptSeq },
       ),
-      findMany: vi.fn(async () => pending.messageSeqs.map((seq) => ({ seq }))),
+      findMany: vi.fn(async () =>
+        pending.messageSeqs.map((seq) => ({
+          id: `m${seq}`,
+          seq,
+          clientNonce: fixture.nonceSeqs?.includes(seq) ? `nonce-${seq}` : null,
+        })),
+      ),
       deleteMany: vi.fn(async () => ({ count: pending.messageSeqs.length })),
       aggregate: vi.fn(async () => ({ _min: { createdAt: fixture.oldestKeptAt ?? null } })),
     },
@@ -44,6 +51,7 @@ function database(fixture: Fixture = {}) {
       }),
     },
     thread: { update: vi.fn(async () => ({})) },
+    prunedMessageNonce: { createMany: vi.fn(async () => ({ count: 0 })) },
   };
   tx.message.deleteMany.mockImplementation(async () => {
     const count = pending.messageSeqs.length;
@@ -101,6 +109,18 @@ describe("pruneChatHistory", () => {
       expect.objectContaining({ where: { threadId: "thread-1", createdAt: { lt: CUTOFF } } }),
     );
     expect(tx.event.deleteMany).toHaveBeenCalledWith({ where: { id: { in: ["e1", "e2"] } } });
+  });
+
+  it("keeps the nonces of deleted messages so a replayed delivery is still recognized", async () => {
+    const { prisma, tx } = database({ messageSeqs: [0, 1, 2], nonceSeqs: [0, 2] });
+    await pruneChatHistory(prisma, 30, NOW);
+    expect(tx.prunedMessageNonce.createMany).toHaveBeenCalledWith({
+      data: [
+        { threadId: "thread-1", clientNonce: "nonce-0", messageId: "m0", seq: 0 },
+        { threadId: "thread-1", clientNonce: "nonce-2", messageId: "m2", seq: 2 },
+      ],
+      skipDuplicates: true,
+    });
   });
 
   it("leaves a chat alone while a run or a helper's run is in progress", async () => {

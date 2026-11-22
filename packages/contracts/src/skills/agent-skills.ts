@@ -59,6 +59,40 @@ export const CreateAgentSkillInput = z
     }
   });
 
+const MAX_SKILL_FILE_PATH_LENGTH = 240;
+const MAX_SKILL_FILE_BYTES = 100_000;
+
+const AgentSkillFileInput = z.strictObject({
+  path: z
+    .string()
+    .min(1)
+    .max(MAX_SKILL_FILE_PATH_LENGTH, { abort: true })
+    .refine(
+      (path) =>
+        !/[\\:%?#\p{Cc}\p{Cs}]/u.test(path) &&
+        !Object.hasOwn(Object.prototype, path) &&
+        path.toLowerCase() !== "skill.md" &&
+        path
+          .split("/")
+          .every(
+            (segment) =>
+              segment !== "" && segment !== "." && segment !== ".." && segment === segment.trim(),
+          ),
+      "Use a relative file path within the skill.",
+    ),
+  content: z
+    .string()
+    .max(MAX_SKILL_FILE_BYTES, { abort: true })
+    .refine(
+      (content) => !/(?![\t\n\r])[\p{Cc}\p{Cs}]/u.test(content),
+      "Skill files must contain plain text.",
+    )
+    .refine(
+      (content) => new TextEncoder().encode(content).byteLength <= MAX_SKILL_FILE_BYTES,
+      `Skill files must be at most ${MAX_SKILL_FILE_BYTES} UTF-8 bytes each.`,
+    ),
+});
+
 export const UpdateAgentSkillInput = z
   .object({
     skillId: Id,
@@ -66,14 +100,23 @@ export const UpdateAgentSkillInput = z
     name: z.string().min(1).max(80).optional(),
     description: z.string().min(1).max(2000).optional(),
     body: z.string().max(100_000).optional(),
+    /** Add or replace one reference file. Keep document edits in a separate request. */
+    file: AgentSkillFileInput.optional(),
   })
   .superRefine((input, ctx) => {
-    if (
-      input.content === undefined &&
-      input.name === undefined &&
-      input.description === undefined &&
-      input.body === undefined
-    ) {
+    const editsDocument =
+      input.content !== undefined ||
+      input.name !== undefined ||
+      input.description !== undefined ||
+      input.body !== undefined;
+    if (input.file && editsDocument) {
+      ctx.addIssue({
+        code: "custom",
+        message: "Update the skill file separately from the skill document.",
+        path: ["file"],
+      });
+    }
+    if (!input.file && !editsDocument) {
       ctx.addIssue({
         code: "custom",
         message: "Provide at least one field to update",
@@ -81,3 +124,4 @@ export const UpdateAgentSkillInput = z
       });
     }
   });
+export type UpdateAgentSkillInput = z.infer<typeof UpdateAgentSkillInput>;

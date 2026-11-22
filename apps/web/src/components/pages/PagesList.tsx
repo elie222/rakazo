@@ -1,8 +1,9 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import { PageIcon } from "@rakazo/chat-ui/web";
-import type { PageSummary } from "@rakazo/contracts";
+import type { PageSummary, PageVisibility } from "@rakazo/contracts";
 import { PAGE_TITLE_MAX_LENGTH } from "@rakazo/contracts";
 import { uniquePages } from "@rakazo/core";
+import { pageSharingLabel } from "@rakazo/i18n/page-review";
 import {
   Button,
   DropdownMenu,
@@ -13,13 +14,26 @@ import {
   Spinner,
 } from "@rakazo/ui-web";
 import { useInfiniteQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { ChevronRight, Globe, MoreHorizontal, Search } from "lucide-react";
+import { ChevronRight, Globe, MoreHorizontal, Search, Users } from "lucide-react";
 import { useDeferredValue, useState } from "react";
 import { formatRelativeTime } from "../../lib/locale/relative-time";
 import { pageMutationOptions } from "../../lib/pages/page-actions";
 import { useOpenPage } from "../../lib/pages/pages";
 import { useSpaceQueries } from "../../lib/query/query";
 import { DeleteItemDialog } from "../../pages/shell/create-delete-dialogs";
+
+function PageAudience({ visibility }: { visibility: PageVisibility }) {
+  const label = pageSharingLabel(visibility);
+  if (!label) return null;
+  const Icon = visibility === "people" ? Users : Globe;
+  return (
+    <>
+      <Icon aria-hidden="true" className="size-3" strokeWidth={1.8} />
+      {label}
+      <span aria-hidden="true">·</span>
+    </>
+  );
+}
 
 /** Enough to fill the panel; Show more brings the next batch. */
 const PAGE_SIZE = 20;
@@ -181,13 +195,7 @@ function OwnerPages({
               {page.title}
             </span>
             <span className="flex items-center gap-1 text-label text-muted-foreground">
-              {page.visibility === "link" ? (
-                <>
-                  <Globe aria-hidden="true" className="size-3" strokeWidth={1.8} />
-                  <Trans>Shared</Trans>
-                  <span aria-hidden="true">·</span>
-                </>
-              ) : null}
+              <PageAudience visibility={page.visibility} />
               <span>{formatRelativeTime(page.updatedAt)}</span>
             </span>
           </span>

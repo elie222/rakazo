@@ -1,3 +1,4 @@
+import { isRecord } from "@rakazo/core";
 export interface NumericSummary {
   count: number;
   min: number;
@@ -192,10 +193,6 @@ function isFiniteNumber(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value);
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
 function invalidReport(source: string, detail: string) {
   return new Error(`Invalid performance report ${source}: ${detail}`);
 }
@@ -241,7 +238,7 @@ export function checkBudgets(
 
 export function renderBudgetTable(rows: BudgetRow[]) {
   const value = (number: number | undefined, unit: string) =>
-    number === undefined ? "missing" : `${roundMetric(number, 1)} ${unit}`;
+    number === undefined ? "missing" : `${roundMetric(number)} ${unit}`;
   return [
     "| Metric | Median | p95 | Budget | |",
     "| --- | ---: | ---: | ---: | --- |",

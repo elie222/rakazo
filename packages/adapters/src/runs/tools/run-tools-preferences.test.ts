@@ -1,4 +1,5 @@
 import { routineWakeupJob } from "@rakazo/adapter-kit";
+import { ChatPreferencesSchema } from "@rakazo/contracts";
 import { describe, expect, it, vi } from "vitest";
 import { selectBuiltinToolsForRun } from "./run-tool-selection.js";
 import { preferenceTools } from "./run-tools-preferences.js";
@@ -11,6 +12,7 @@ function fakeAccount(ownerStartedRun = true, tainted = false, nextApprovedTool?:
   type Id = keyof typeof users;
   const routines: Record<string, unknown>[] = [];
   const enqueue = vi.fn(async () => undefined);
+  const publishSpaceChange = vi.fn(async () => undefined);
   const matches = (row: Record<string, unknown>, where: Record<string, unknown>) =>
     Object.entries(where).every(([key, value]) =>
       value && typeof value === "object" && "in" in value
@@ -65,6 +67,7 @@ function fakeAccount(ownerStartedRun = true, tainted = false, nextApprovedTool?:
     deps: {
       prisma,
       jobs: { enqueue, cancel: async () => undefined },
+      events: { publishSpaceChange },
     },
     run: { userId: "starter" },
     source: { ownerStartedRun },
@@ -83,24 +86,51 @@ function fakeAccount(ownerStartedRun = true, tainted = false, nextApprovedTool?:
         finish: async (result: unknown) => result,
       } as never,
     );
-  return { users, routines, enqueue, userUpdate, call };
+  return { users, routines, enqueue, userUpdate, publishSpaceChange, call };
 }
 
 describe("update_preferences", () => {
   it("reads the current values when called with no fields", async () => {
     const { call } = fakeAccount();
-    await expect(call({})).resolves.toEqual({ timezone: "UTC", marketingEmails: true });
+    await expect(call({})).resolves.toEqual({
+      timezone: "UTC",
+      marketingEmails: true,
+      ...ChatPreferencesSchema.parse({}),
+    });
+  });
+
+  it("changes only the requested chat preferences and signals the signed-in user's apps", async () => {
+    const { call, users, publishSpaceChange } = fakeAccount();
+    await expect(call({ composerModelPicker: true, streamReplies: true })).resolves.toMatchObject({
+      composerModelPicker: true,
+      streamReplies: true,
+    });
+    await expect(call({ composerModelPicker: false })).resolves.toMatchObject({
+      composerModelPicker: false,
+      streamReplies: true,
+    });
+    await expect(call({})).resolves.toMatchObject({
+      composerModelPicker: false,
+      streamReplies: true,
+    });
+    expect(users.other).not.toHaveProperty("composerModelPicker");
+    expect(publishSpaceChange.mock.calls).toEqual([
+      ["preferences:starter", "preferences"],
+      ["preferences:starter", "preferences"],
+    ]);
   });
 
   it("patches only the starter's own timezone and marketing emails", async () => {
     const { users, call } = fakeAccount();
-    await expect(call({ timezone: "Europe/Berlin", marketingEmails: false })).resolves.toEqual({
+    await expect(
+      call({ timezone: "Europe/Berlin", marketingEmails: false }),
+    ).resolves.toMatchObject({
       timezone: "Europe/Berlin",
       marketingEmails: false,
     });
     expect(users.starter.marketingEmailOptOutAt).toBeInstanceOf(Date);
     expect(users.other).toEqual({ timezone: "UTC", marketingEmailOptOutAt: null });
-    await expect(call({ marketingEmails: true })).resolves.toEqual({
+    await expect(call({ marketingEmails: true })).resolves.toMatchObject({
       timezone: "Europe/Berlin",
       marketingEmails: true,
     });
@@ -108,14 +138,21 @@ describe("update_preferences", () => {
 
   it("saves the timezone and the email preference in one write", async () => {
     const { users, userUpdate, call } = fakeAccount();
-    await expect(call({ timezone: "Europe/Berlin", marketingEmails: false })).resolves.toEqual({
+    await expect(
+      call({ timezone: "Europe/Berlin", marketingEmails: false, composerModelPicker: true }),
+    ).resolves.toMatchObject({
       timezone: "Europe/Berlin",
       marketingEmails: false,
+      composerModelPicker: true,
     });
     expect(userUpdate).toHaveBeenCalledTimes(1);
     expect(userUpdate).toHaveBeenCalledWith({
       where: { id: "starter" },
-      data: { timezone: "Europe/Berlin", marketingEmailOptOutAt: expect.any(Date) },
+      data: {
+        timezone: "Europe/Berlin",
+        marketingEmailOptOutAt: expect.any(Date),
+        composerModelPicker: true,
+      },
     });
     expect(users.other).toEqual({ timezone: "UTC", marketingEmailOptOutAt: null });
   });
@@ -155,7 +192,7 @@ describe("update_preferences", () => {
         },
       );
 
-      await expect(call({ timezone: "Europe/London" })).resolves.toEqual({
+      await expect(call({ timezone: "Europe/London" })).resolves.toMatchObject({
         timezone: "Europe/London",
         marketingEmails: true,
       });
@@ -190,6 +227,7 @@ describe("update_preferences", () => {
     { password: "hunter2" },
     { deleteAccount: true },
     { autoReview: false },
+    { showToolActivity: false },
   ])("refuses fields that stay in the app's settings: %o", async (args) => {
     const { users, call } = fakeAccount();
     const result = await call({ ...args, timezone: "Asia/Tokyo" });
@@ -198,9 +236,13 @@ describe("update_preferences", () => {
   });
 
   it("refuses a run the user did not start", async () => {
-    const { users, call } = fakeAccount(false);
-    await expect(call({ timezone: "Asia/Tokyo" })).resolves.toHaveProperty("error");
+    const { users, call, publishSpaceChange } = fakeAccount(false);
+    await expect(
+      call({ timezone: "Asia/Tokyo", composerModelPicker: true }),
+    ).resolves.toHaveProperty("error");
     expect(users.starter.timezone).toBe("UTC");
+    expect(users.starter).not.toHaveProperty("composerModelPicker");
+    expect(publishSpaceChange).not.toHaveBeenCalled();
   });
 
   it("still writes once outside content entered the run; the approval mode decides", async () => {
