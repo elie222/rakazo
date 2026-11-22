@@ -120,8 +120,8 @@ export class EncryptedSecretStore extends SecretChanges implements SecretStore {
     // Ciphertexts written before v2 used a single SHA-256 key derivation and
     // no AAD. Keep them readable so an upgrade does not strand credentials;
     // every subsequent write uses the stronger versioned format above.
-    // A value too short for its fixed parts is malformed, not a cipher error to retry.
     const buf = Buffer.from(ciphertext, "base64");
+    // Too short for its fixed parts: malformed, not a cipher error to retry.
     if (buf.length < IV_BYTES + TAG_BYTES) {
       throw new Error("Encrypted secret is malformed");
     }

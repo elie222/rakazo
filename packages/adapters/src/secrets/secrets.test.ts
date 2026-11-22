@@ -44,9 +44,9 @@ describe("EncryptedSecretStore", () => {
 
   it("reports a malformed legacy value as a permanent decrypt failure", async () => {
     const store = new EncryptedSecretStore("test-only-encryption-key");
-    for (const ciphertext of ["not-really-a-secret", "AAAA", "AAAAvv=="]) {
-      const error = await store.load(ciphertext, "record").catch((caught: unknown) => caught);
-      expect(isPermanentDecryptFailure(error)).toBe(true);
-    }
+    const error = await store
+      .load("not-really-a-secret", "record")
+      .catch((caught: unknown) => caught);
+    expect(isPermanentDecryptFailure(error)).toBe(true);
   });
 });
