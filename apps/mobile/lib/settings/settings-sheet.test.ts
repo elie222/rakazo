@@ -16,6 +16,7 @@ import {
 } from "./settings-sheet";
 
 vi.mock("../composer/incoming-share", () => ({ receiveIncomingShare: vi.fn() }));
+vi.mock("../integrations/app-connect-return", () => ({ finishReturnedAppConnection: vi.fn() }));
 
 const mobileRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
 
