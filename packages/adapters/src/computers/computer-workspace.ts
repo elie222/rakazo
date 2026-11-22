@@ -68,21 +68,22 @@ export class PortableFileBatcher<T> {
   }
 }
 
-/** `items` in the non-empty transfer batches {@link PortableFileBatcher} groups them into. */
-export function batchesOf<T>(
+/**
+ * `items` in the non-empty transfer batches {@link PortableFileBatcher} groups them into, each
+ * made only when the caller asks for it.
+ */
+export function* batchesOf<T>(
   items: Iterable<T>,
   maxFiles: number,
   size: (item: T) => number,
-): T[][] {
-  const batches: T[][] = [];
+): Generator<T[]> {
   const batcher = new PortableFileBatcher<T>(maxFiles, size);
   for (const item of items) {
     const full = batcher.add(item);
-    if (full?.length) batches.push(full);
+    if (full?.length) yield full;
   }
   const last = batcher.take();
-  if (last.length) batches.push(last);
-  return batches;
+  if (last.length) yield last;
 }
 
 /**
