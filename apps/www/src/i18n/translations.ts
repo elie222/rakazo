@@ -1,3 +1,4 @@
+import { marketing } from "../marketing-site";
 import type { Locale } from "./locales";
 import { DEFAULT_LOCALE, isLocale, LOCALES } from "./locales";
 
@@ -7,6 +8,7 @@ import { DEFAULT_LOCALE, isLocale, LOCALES } from "./locales";
  */
 export const TRANSLATED_PAGES: Readonly<Record<string, readonly Locale[]>> = {
   "/": LOCALES.filter((locale) => locale !== DEFAULT_LOCALE),
+  ...marketing.translatedPages,
 };
 
 export type PageVersion = { locale: Locale; path: string };
@@ -38,4 +40,19 @@ export function pageVersions(pathname: string): PageVersion[] {
     locale,
     path: localizedPath(english, locale),
   }));
+}
+
+/**
+ * Where a site link should go for a reader of `locale`: the translation of `href` when one exists,
+ * otherwise `href` unchanged. Keeps any `#hash` or `?query`.
+ */
+export function localizedHref(href: string, locale: Locale): string {
+  if (locale === DEFAULT_LOCALE || !href.startsWith("/") || href.startsWith("//")) return href;
+  const match = /^([^?#]*)(.*)$/.exec(href);
+  const path = match?.[1] ?? href;
+  const rest = match?.[2] ?? "";
+  const english = englishPath(path);
+  return TRANSLATED_PAGES[english]?.includes(locale)
+    ? `${localizedPath(english, locale)}${rest}`
+    : href;
 }
