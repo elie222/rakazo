@@ -393,18 +393,30 @@ private struct WatchBubble: View {
 enum WatchMarkdown {
   static func render(_ text: String) -> AttributedString {
     var result = AttributedString()
-    var inCode = false
+    var fence: String?
     var first = true
     for raw in text.split(separator: "\n", omittingEmptySubsequences: false) {
       var line = String(raw)
       let trimmed = line.trimmingCharacters(in: .whitespaces)
-      if trimmed.hasPrefix("```") || trimmed.hasPrefix("~~~") {
-        inCode.toggle()
+      if let open = fence, trimmed.hasPrefix(open) {
+        fence = nil
         continue
+      }
+      if fence == nil, let open = ["```", "~~~"].first(where: trimmed.hasPrefix) {
+        fence = open
+        continue
+      }
+      // Table rows read as cells side by side; their divider lines add nothing.
+      if fence == nil, trimmed.hasPrefix("|") {
+        if trimmed.allSatisfy({ "|-: ".contains($0) }) { continue }
+        line = trimmed.trimmingCharacters(in: CharacterSet(charactersIn: "| "))
+          .components(separatedBy: "|")
+          .map { $0.trimmingCharacters(in: .whitespaces) }
+          .joined(separator: "  ")
       }
       if !first { result += AttributedString("\n") }
       first = false
-      if inCode {
+      if fence != nil {
         var code = AttributedString(line)
         code.font = Font.system(.footnote, design: .monospaced)
         result += code
@@ -413,6 +425,9 @@ enum WatchMarkdown {
       var heading = false
       if let marker = line.range(of: #"^#{1,6}\s+"#, options: .regularExpression) {
         line.removeSubrange(marker)
+        if let closing = line.range(of: #"\s+#+\s*$"#, options: .regularExpression) {
+          line.removeSubrange(closing)
+        }
         heading = true
       } else if let marker = line.range(of: #"^\s*[-*+]\s+"#, options: .regularExpression) {
         let indent = line[marker].prefix { $0 == " " }
