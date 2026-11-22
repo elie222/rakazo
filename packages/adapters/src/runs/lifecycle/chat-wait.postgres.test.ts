@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { BackgroundJob } from "@rakazo/adapter-kit";
+import { CONNECTED_RUN_NONCE_PREFIX } from "@rakazo/core";
 import type { Prisma, PrismaClient } from "@rakazo/db";
 import {
   asSystem,
@@ -67,6 +68,7 @@ describePostgres("queued turns share a chat one at a time (PostgreSQL)", () => {
     startedAt?: Date;
     createdAt?: Date;
     routineId?: string;
+    clientNonce?: string;
   }) {
     const userId = data.userId ?? identity.userId;
     const task = await system.task.create({
@@ -84,6 +86,7 @@ describePostgres("queued turns share a chat one at a time (PostgreSQL)", () => {
         startedAt: data.startedAt,
         createdAt: data.createdAt,
         routineId: data.routineId,
+        clientNonce: data.clientNonce,
         leaseOwner: data.status === "running" ? "worker" : null,
         leaseFence: data.status === "running" ? 1 : 0,
       },
@@ -167,7 +170,7 @@ describePostgres("queued turns share a chat one at a time (PostgreSQL)", () => {
     }
   });
 
-  // "user" here is a turn with no message of its own, such as carrying on after a connect.
+  // "user" here is carrying on after a connect, which its nonce marks.
   it.each(["routine", "bot_message", "user"])(
     "waits for the chat's working run, then starts a %s run when that run lets go",
     async (trigger) => {
@@ -176,7 +179,13 @@ describePostgres("queued turns share a chat one at a time (PostgreSQL)", () => {
         status: "running",
         startedAt: new Date(),
       });
-      const waiting = await createRun({ trigger, status: "queued" });
+      const waiting = await createRun({
+        trigger,
+        status: "queued",
+        ...(trigger === "user"
+          ? { clientNonce: `${CONNECTED_RUN_NONCE_PREFIX}${randomUUID()}` }
+          : {}),
+      });
 
       expect(await claimRun(deps, waiting, "worker-2")).toBeUndefined();
       await holdRunForChat(deps, waiting);
@@ -225,16 +234,26 @@ describePostgres("queued turns share a chat one at a time (PostgreSQL)", () => {
     expect(await claimRun(deps, third!, "worker-2")).toBeUndefined();
   });
 
-  it("holds a turn with no message of its own, like carrying on after a connect, until the chat is free", async () => {
+  it("holds carrying on after a connect until the chat is free, and no other user turn", async () => {
     const working = await createRun({
       trigger: "user",
       status: "running",
       startedAt: new Date(),
     });
-    const carryOn = await createRun({ trigger: "user", status: "queued" });
+    const carryOn = await createRun({
+      trigger: "user",
+      status: "queued",
+      clientNonce: `${CONNECTED_RUN_NONCE_PREFIX}${randomUUID()}`,
+    });
+    // Any other queued user turn is claimed as before, busy chat or not.
+    const other = await createRun({ trigger: "user", status: "queued" });
 
     expect(await claimRun(deps, carryOn, "worker-2")).toBeUndefined();
-    await system.run.update({ where: { id: working.id }, data: { status: "completed" } });
+    expect(await claimRun(deps, other, "worker-3")).toBeDefined();
+    await system.run.updateMany({
+      where: { id: { in: [working.id, other.id] } },
+      data: { status: "completed" },
+    });
     expect(await claimRun(deps, carryOn, "worker-2")).toBeDefined();
   });
 

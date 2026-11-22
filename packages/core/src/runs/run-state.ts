@@ -19,6 +19,9 @@ export const ACTIVE_RUN_STATUSES = [
 export const QUEUE_HOLDING_RUN_STATUSES = ACTIVE_RUN_STATUSES.filter(
   (status) => status !== "waiting_input",
 );
+/** Starts the client nonce of a turn the bot takes after the user connects something from its
+ * card. Such a turn has no message of its own and waits for a busy chat. */
+export const CONNECTED_RUN_NONCE_PREFIX = "connected:";
 const TERMINAL: RunStatus[] = ["completed", "failed", "cancelled"];
 /**
  * These turns carry their own prompt and must not take a user message as steering.

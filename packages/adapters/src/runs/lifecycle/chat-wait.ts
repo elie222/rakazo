@@ -1,4 +1,4 @@
-import { QUEUE_HOLDING_RUN_STATUSES } from "@rakazo/core";
+import { CONNECTED_RUN_NONCE_PREFIX, QUEUE_HOLDING_RUN_STATUSES } from "@rakazo/core";
 import type { Prisma } from "@rakazo/db";
 import { HOLDS_CHAT, handQueuedRunToWorkingRun } from "@rakazo/db";
 import { bestEffort, getLogger } from "@rakazo/logging";
@@ -12,12 +12,12 @@ export const CHAT_WAIT_MS = 5 * 60_000;
 
 const CHAT_WAITING_TRIGGERS: readonly string[] = ["routine", "bot_message"];
 
-/** A turn the bot takes with no message of its own, such as carrying on once the user connects
- * an app from its card, waits for a busy chat as well, so it reads what that run did. */
-function waitsForChat(run: { trigger: string; sourceMessageId: string | null }): boolean {
+/** Carrying on after the user connects something from its card waits for a busy chat as well,
+ * so it reads what that run did. */
+function waitsForChat(run: { trigger: string; clientNonce: string | null }): boolean {
   return (
     CHAT_WAITING_TRIGGERS.includes(run.trigger) ||
-    (run.trigger === "user" && run.sourceMessageId === null)
+    (run.trigger === "user" && Boolean(run.clientNonce?.startsWith(CONNECTED_RUN_NONCE_PREFIX)))
   );
 }
 
@@ -27,7 +27,7 @@ interface ChatWaitingRun {
   threadId: string;
   taskId: string;
   trigger: string;
-  sourceMessageId: string | null;
+  clientNonce: string | null;
   status: string;
   startedAt: Date | null;
   wakeAt: Date | null;
@@ -44,10 +44,7 @@ interface ChatWaitingRun {
  * in the chat.
  */
 export function claimWaitsForChat(
-  run: Pick<
-    ChatWaitingRun,
-    "id" | "botId" | "trigger" | "sourceMessageId" | "startedAt" | "createdAt"
-  >,
+  run: Pick<ChatWaitingRun, "id" | "botId" | "trigger" | "clientNonce" | "startedAt" | "createdAt">,
   now: Date,
 ): Prisma.RunWhereInput {
   if (!waitsForChat(run) || run.startedAt) return {};
@@ -154,7 +151,7 @@ export async function startRunsWaitingOnChat(
         {
           OR: [
             { trigger: { in: [...CHAT_WAITING_TRIGGERS] } },
-            { trigger: "user", sourceMessageId: null },
+            { trigger: "user", clientNonce: { startsWith: CONNECTED_RUN_NONCE_PREFIX } },
           ],
         },
         { OR: [{ routineId: null }, { routine: { is: { inChat: true } } }] },
