@@ -240,7 +240,12 @@ export async function saveWorkspaceFile(
   const { deps, run } = ctx;
   if (!deps.artifacts) throw new Error("artifact storage unavailable");
   return attachWorkspaceFileToThread(
-    { prisma: deps.prisma, artifacts: deps.artifacts, maxUploadSizeBytes: deps.maxUploadSizeBytes },
+    {
+      prisma: deps.prisma,
+      artifacts: deps.artifacts,
+      maxUploadSizeBytes: deps.maxUploadSizeBytes,
+      events: deps.events,
+    },
     {
       spaceId: run.spaceId,
       userId: run.userId,
