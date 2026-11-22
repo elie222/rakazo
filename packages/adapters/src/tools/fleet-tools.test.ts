@@ -1327,24 +1327,21 @@ describe("updateChildBot", () => {
 
   function childMute(profileWrite: () => Promise<unknown>) {
     const { prisma } = fakeFleet({ bots });
+    // The bot notifies everyone who never chose, the asker included.
+    const findUnique = vi.fn(async () => ({
+      id: "thread-bot-child",
+      bot: { notifyOnFinish: true },
+      reads: [],
+    }));
     const tx = {
       $queryRaw: vi.fn(async () => [{ nextMessageSeq: 3 }]),
       threadRead: { upsert: vi.fn(async () => ({})) },
       bot: { update: vi.fn(profileWrite) },
-      thread: { update: vi.fn(async () => ({ nextEventSeq: 2 })) },
+      thread: { findUnique, update: vi.fn(async () => ({ nextEventSeq: 2 })) },
       event: { create: vi.fn(async () => ({ id: "event-1", seq: 1, createdAt: new Date() })) },
     };
     prisma.$transaction.mockImplementation(async (write) => write(tx));
-    // The bot notifies everyone who never chose, the asker included.
-    Object.assign(prisma, {
-      thread: {
-        findUnique: vi.fn(async () => ({
-          id: "thread-bot-child",
-          bot: { notifyOnFinish: true },
-          reads: [],
-        })),
-      },
-    });
+    Object.assign(prisma, { thread: { findUnique } });
     return { prisma, tx };
   }
 

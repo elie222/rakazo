@@ -252,11 +252,17 @@ async function upsertOwnState(
   prisma: PrismaClient,
   reader: Reader,
   state: { muted?: boolean; hidden?: boolean },
+  /** Read under this person's lock on the chat, so an overlapping choice can't go stale. */
+  unchanged?: (tx: Prisma.TransactionClient) => Promise<boolean>,
 ) {
   await withTransactionRetry(() =>
     prisma.$transaction(async (tx) => {
       const thread = await lockThread(tx, reader);
       if (!thread) return;
+      // One choice at a time per person and chat: their row may not exist yet to lock.
+      await tx.$queryRaw`
+        SELECT pg_advisory_xact_lock(hashtextextended(${`thread-read:${reader.threadId}:${reader.userId}`}, 0))::text AS "lock"`;
+      if (unchanged && (await unchanged(tx))) return;
       await tx.threadRead.upsert({
         where: { threadId_userId: { threadId: reader.threadId, userId: reader.userId } },
         // Someone with no read state had read it all.
@@ -333,18 +339,20 @@ export async function setBotNotifyFor(
   input: { botId: string; spaceId: string; userId: string },
   notify: boolean,
 ) {
-  const thread = await prisma.thread.findUnique({
-    where: { botId: input.botId },
-    select: {
-      id: true,
-      bot: { select: { notifyOnFinish: true } },
-      reads: { where: { userId: input.userId }, select: { muted: true } },
-    },
-  });
-  if (!thread || mutedFor(thread, thread.bot) === !notify) return;
-  await setThreadMuteFor(
+  const select = {
+    id: true,
+    bot: { select: { notifyOnFinish: true } },
+    reads: { where: { userId: input.userId }, select: { muted: true } },
+  } as const;
+  const thread = await prisma.thread.findUnique({ where: { botId: input.botId }, select });
+  if (!thread) return;
+  await upsertOwnState(
     prisma,
     { threadId: thread.id, spaceId: input.spaceId, userId: input.userId },
-    !notify,
+    { muted: !notify },
+    async (tx) => {
+      const current = await tx.thread.findUnique({ where: { id: thread.id }, select });
+      return !current || mutedFor(current, current.bot) === !notify;
+    },
   );
 }
