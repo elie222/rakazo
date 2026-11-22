@@ -410,8 +410,13 @@ describe("botChainFromOwner", () => {
     routine: { watch: unknown } | null;
     task: { prompt: string };
   };
-  const ownBots = { routines: false, ownBots: true, messaging: false };
-  const all = { routines: true, ownBots: true, messaging: true };
+  const ownBots = {
+    routines: false,
+    ownBots: true,
+    messaging: false,
+    verifiedChatApps: ["chat-a"],
+  };
+  const all = { routines: true, ownBots: true, messaging: true, verifiedChatApps: ["chat-a"] };
 
   function chain() {
     const messages = new Map<string, Message>();
@@ -665,6 +670,9 @@ describe("botChainFromOwner", () => {
     c.fromSender({ trigger: "messaging", sourceMessageId: "src-1" });
     await expect(c.check({ ...ownBots, messaging: true })).resolves.toBe(true);
     await expect(c.check(ownBots)).resolves.toBe(false);
+    await expect(c.check({ ...ownBots, messaging: true, verifiedChatApps: [] })).resolves.toBe(
+      false,
+    );
   });
 
   it("refuses a chain that started in a chat-app group or someone else's chat", async () => {
@@ -716,6 +724,7 @@ describe("ownerDirectMessage", () => {
     input:
       | typeof run
       | { userId: string; botId: string; threadId: string; sourceMessageId: null } = run,
+    verifiedChatApps: readonly string[] | null = ["chat-a"],
   ) =>
     ownerDirectMessage(
       {
@@ -729,10 +738,21 @@ describe("ownerDirectMessage", () => {
         },
       } as never,
       input,
+      {
+        ...NO_USER_COMPUTER_ACCESS,
+        messaging: true,
+        verifiedChatApps: verifiedChatApps ?? undefined,
+      },
     );
 
   it("is true for the owner's own message from their linked chat", async () => {
     await expect(check(linkedSource())).resolves.toBe(true);
+  });
+
+  it("refuses a chat app whose platform does not vouch for who sent each message", async () => {
+    await expect(check(linkedSource(), undefined, run, [])).resolves.toBe(false);
+    await expect(check(linkedSource(), undefined, run, null)).resolves.toBe(false);
+    await expect(check(linkedSource(), undefined, run, ["chat-b"])).resolves.toBe(false);
   });
 
   it("refuses a group chat message", async () => {

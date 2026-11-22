@@ -575,7 +575,10 @@ export async function resolveRunCapabilities(
     run.trigger !== "bot_message" &&
     !conversationThread.groupId &&
     !nonOwnerChatRun;
-  const userComputerAccess = deps.userComputerAccess ?? NO_USER_COMPUTER_ACCESS;
+  const userComputerAccess = {
+    ...(deps.userComputerAccess ?? NO_USER_COMPUTER_ACCESS),
+    verifiedChatApps: deps.messaging?.verifiedChatApps?.() ?? [],
+  };
   const userComputerOwnerId = userComputerOwner({
     trigger: conversationRun.trigger,
     sourceRole: (origin?.sourceMessage ?? sourceMessage)?.role,

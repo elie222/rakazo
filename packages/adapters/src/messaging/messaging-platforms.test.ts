@@ -394,27 +394,44 @@ describe("messagingPlatformsFromEnv", () => {
     }
   });
 
-  it("declares group support, the receipt and file support for each platform", () => {
+  it("declares group support, the receipt, file support and sender checks for each platform", () => {
     const platforms = messagingPlatformsFromEnv(fullEnv);
     const capabilities = Object.fromEntries(
       platforms.map((platform) => [platform.provider, platform.capabilities]),
     );
     expect(capabilities.sendblue).toEqual({ direct: true, groups: true, receipt: "typing" });
-    expect(capabilities.slack).toEqual({ direct: true, groups: true, receipt: "reaction" });
+    expect(capabilities.slack).toEqual({
+      direct: true,
+      groups: true,
+      receipt: "reaction",
+      verifiedSender: true,
+    });
     expect(capabilities.whatsapp).toEqual({
       direct: true,
       groups: false,
       receipt: null,
       files: true,
+      verifiedSender: true,
     });
     expect(capabilities.telegram).toEqual({
       direct: true,
       groups: true,
       receipt: null,
       files: true,
+      verifiedSender: true,
     });
-    expect(capabilities.lark).toEqual({ direct: true, groups: false, receipt: null });
-    expect(capabilities.photon).toEqual({ direct: true, groups: false, receipt: "typing" });
+    expect(capabilities.lark).toEqual({
+      direct: true,
+      groups: false,
+      receipt: null,
+      verifiedSender: true,
+    });
+    expect(capabilities.photon).toEqual({
+      direct: true,
+      groups: false,
+      receipt: "typing",
+      verifiedSender: true,
+    });
   });
 });
 

@@ -21,7 +21,7 @@ export const teamsMessaging = defineMessagingPlatform({
     };
     return {
       provider: "teams",
-      capabilities: { direct: true, groups: false, receipt: "typing" },
+      capabilities: { direct: true, groups: false, receipt: "typing", verifiedSender: true },
       adapter: lazyChatAdapter("teams", async () => {
         const { createTeamsAdapter } = await import("@chat-adapter/teams");
         const adapter = createTeamsAdapter(config);

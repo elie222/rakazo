@@ -53,7 +53,13 @@ const USER_COMPUTER_UNAVAILABLE =
  * chat app they linked. Server switches USER_DEVICES_ALLOW_ROUTINES, USER_DEVICES_ALLOW_OWN_BOTS
  * and USER_DEVICES_ALLOW_MESSAGING, all off by default.
  */
-export type UserComputerAccess = { routines: boolean; ownBots: boolean; messaging: boolean };
+export type UserComputerAccess = {
+  routines: boolean;
+  ownBots: boolean;
+  messaging: boolean;
+  /** Chat apps whose platform vouches for each sender; only their linked messages count. */
+  verifiedChatApps?: readonly string[];
+};
 
 export const NO_USER_COMPUTER_ACCESS: UserComputerAccess = {
   routines: false,
@@ -63,10 +69,10 @@ export const NO_USER_COMPUTER_ACCESS: UserComputerAccess = {
 
 /**
  * Whose own computer this run may reach: the person whose message started it, when they own the
- * bot. With the server's switches on, also their own bot's scheduled routine, their own message from
- * a chat app they linked (`ownerMessage`, see ownerDirectMessage), and a message from another of
- * their bots when `ownBotChain` says the chain behind it started with them (see botChainFromOwner),
- * none in a group chat. A routine that watches something hands the run text
+ * bot. With the server's switches on, also their own bot's scheduled routine, their own message
+ * from a chat app they linked (`ownerMessage`, see ownerDirectMessage), and a message from another
+ * of their bots when `ownBotChain` says the chain behind it started with them (see
+ * botChainFromOwner), none in a group chat. A routine that watches something hands the run text
  * someone else may have written, so it reaches no one's; nor do webhooks, channels, helpers and
  * other people's messages.
  */
@@ -131,6 +137,7 @@ export async function routineRunWatches(prisma: PrismaClient, runId: string): Pr
 export async function ownerDirectMessage(
   prisma: PrismaClient,
   run: { userId: string; botId: string; threadId: string; sourceMessageId: string | null },
+  access: UserComputerAccess,
 ): Promise<boolean> {
   if (!run.sourceMessageId) return false;
   const [source, link] = await Promise.all([
@@ -155,6 +162,7 @@ export async function ownerDirectMessage(
     source &&
       link &&
       link.userId === run.userId &&
+      access.verifiedChatApps?.includes(link.provider) &&
       source.threadId === run.threadId &&
       source.role === "user" &&
       source.authorUserId === run.userId &&
@@ -195,7 +203,7 @@ export async function userComputerTrust(
       run.trigger === "messaging" &&
       access.messaging &&
       ownsBot &&
-      (await ownerDirectMessage(prisma, run)),
+      (await ownerDirectMessage(prisma, run, access)),
   };
 }
 
@@ -208,8 +216,9 @@ export function userComputerBlockingOrigins(access: UserComputerAccess): string[
  * Whether the bot message that started a run comes from a chain the owner started: each sender run
  * is theirs, in this Space, on one of their bots, outside a group chat, took in no blocked outside
  * task, and the first one started where their computer is reachable (their own message, or a
- * scheduled routine or their own linked chat-app message when allowed). The caller checks that the receiving run is the owner's own.
- * A link that is missing, unreadable or past the hop limit refuses.
+ * scheduled routine or their own linked chat-app message when allowed). The caller checks that the
+ * receiving run is the owner's own. A link that is missing, unreadable or past the hop limit
+ * refuses.
  */
 export async function botChainFromOwner(
   prisma: PrismaClient,
@@ -270,7 +279,7 @@ export async function botChainFromOwner(
     if (steered) return false;
     if (sender.trigger === "routine") return access.routines && scheduledRoutine(sender);
     if (sender.trigger === "messaging")
-      return access.messaging && (await ownerDirectMessage(prisma, sender));
+      return access.messaging && (await ownerDirectMessage(prisma, sender, access));
     if (sender.trigger === "user" || sender.trigger === "follow_up") {
       const source = sender.sourceMessageId
         ? await prisma.message.findUnique({

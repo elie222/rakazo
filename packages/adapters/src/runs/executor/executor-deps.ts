@@ -75,6 +75,8 @@ export interface ExecutorDeps {
     hasIdentity(botId: string): Promise<boolean>;
     /** Names of the chat apps people can connect on this deployment. */
     chatApps?(): string[];
+    /** Chat apps whose platform vouches for who sent each message. */
+    verifiedChatApps?(): string[];
   };
   /** Sends what runs say to the chat apps their turns came from; absent without one. */
   messagingDelivery?: MessagingDelivery;

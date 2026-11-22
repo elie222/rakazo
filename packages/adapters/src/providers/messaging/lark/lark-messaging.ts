@@ -37,7 +37,7 @@ export const larkMessaging = defineMessagingPlatform({
     });
     return {
       provider: "lark",
-      capabilities: { direct: true, groups: false, receipt: null },
+      capabilities: { direct: true, groups: false, receipt: null, verifiedSender: true },
       adapter,
       postOnce: (threadId, message, idempotencyKey) =>
         adapter.postMessage(threadId, message, idempotencyKey),
