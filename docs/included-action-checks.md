@@ -64,63 +64,6 @@ still wins. A matching backup does not change the primary checker’s funding so
    Included expenses are excluded from customer usage totals and never reserve or settle
    purchased model credits.
 
-## Trialling another decision model
-
-To compare another decision model with the included reviewer on real reviews before switching,
-name it on the API and worker processes:
-
-```dotenv
-RAKAZO_AUTO_REVIEW_SHADOW_MODEL=microsoft/microsoft-decision-1.1
-# Optional share of reviews to trial, 0 to 1 (default 1); any other value runs no trial.
-RAKAZO_AUTO_REVIEW_SHADOW_SAMPLE_RATE=1
-```
-
-It runs only beside the included reviewer, only for another model of the same host that the same
-deployment key reaches, and its request is sent under the same data retention rule as the
-included reviewer's. It starts with the real review, has its own timeout, stops with the
-run, and never delays or changes the decision. Each trial records an `approval.shadow_reviewed`
-audit event naming the reviewed effect, both verdicts, their pass probabilities and latencies; its
-cost is operator usage whose `operationId` starts with `shadow:`. Unset, nothing runs.
-
-This read-only query compares the two, and for actions a person was asked about, what they
-answered. A review retried after a cancelled run counts once, at its latest trial:
-
-```sql
-WITH s AS (
-  SELECT DISTINCT ON (COALESCE(metadata->>'effectId', id)) *
-  FROM audit_events
-  WHERE action = 'approval.shadow_reviewed' AND "createdAt" > now() - interval '7 days'
-  ORDER BY COALESCE(metadata->>'effectId', id), "createdAt" DESC
-),
-d AS (
-  SELECT DISTINCT ON (metadata->>'effectId') metadata->>'effectId' AS effect_id, metadata
-  FROM audit_events
-  -- A day wider than the trials: a person can answer before the trial model does.
-  WHERE action = 'approval.decided' AND "createdAt" > now() - interval '8 days'
-  ORDER BY metadata->>'effectId', "createdAt" DESC
-)
-SELECT
-  s.metadata->>'decision' AS decision,
-  s.metadata->>'shadowDecision' AS shadow_decision,
-  CASE
-    WHEN e.status = 'denied' AND e.result IS NOT NULL THEN 'expired'
-    WHEN d.metadata IS NOT NULL THEN d.metadata->>'decision'
-    WHEN e."reviewDecision" IN ('ask', 'error') THEN 'unanswered'
-  END AS owner_answer,
-  count(*) AS reviews,
-  round(avg((s.metadata->>'latencyMs')::numeric)) AS latency_ms,
-  round(avg((s.metadata->>'shadowLatencyMs')::numeric)) AS shadow_latency_ms
-FROM s
-LEFT JOIN external_effects e ON e.id = s.metadata->>'effectId'
-LEFT JOIN d ON d.effect_id = s.metadata->>'effectId'
-GROUP BY 1, 2, 3
-ORDER BY 1, 2, 3;
-```
-
-A `pass` from the trial model where the person answered `deny` is the wrong pass to watch for. The
-included reviewer's own verdict is `decision`; when it failed and a backup decided, the action's
-final verdict is `external_effects."reviewDecision"`.
-
 ## Economics and qualification
 
 The catalog snapshot checked on 2026-11-17 prices text input at $0.042 per million tokens and

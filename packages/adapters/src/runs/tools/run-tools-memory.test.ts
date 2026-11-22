@@ -89,3 +89,52 @@ describe("saving shared memory over a newer revision", () => {
     await expect(save(failure)).rejects.toBe(failure);
   });
 });
+
+describe("deleting a shared memory document", () => {
+  const del = (path: string, documents: Array<{ id: string; path: string }>, removed = true) => {
+    const memory = {
+      read: vi.fn(async () => ({ documents })),
+      remove: vi.fn(async () => ({ removed })),
+    };
+    const ctx = { context: { spaceId: "space-1" }, deps: { memory } };
+    const result = memoryTools.delete_shared_memory!(
+      ctx as never,
+      { args: { path }, finish: (value: unknown) => value } as never,
+    );
+    return { memory, result };
+  };
+
+  it("removes exactly the document it read", async () => {
+    const { memory, result } = del(" team.md ", [{ id: "doc-1", path: "team.md" }]);
+    await expect(result).resolves.toEqual({ ok: true, path: "team.md" });
+    expect(memory.read).toHaveBeenCalledWith(
+      { scope: "user", path: "team.md" },
+      { spaceId: "space-1" },
+    );
+    expect(memory.remove).toHaveBeenCalledWith(
+      { id: "doc-1", scope: "user", path: "team.md" },
+      { spaceId: "space-1" },
+    );
+  });
+
+  it("keeps the index document, which is edited instead", async () => {
+    const { memory, result } = del("MEMORY.md", [{ id: "doc-1", path: "MEMORY.md" }]);
+    await expect(result).resolves.toEqual({
+      error: "MEMORY.md cannot be deleted; edit its content instead.",
+    });
+    expect(memory.remove).not.toHaveBeenCalled();
+  });
+
+  it("says when no document has that name", async () => {
+    const { memory, result } = del("gone.md", []);
+    await expect(result).resolves.toEqual({ error: "No shared memory document named gone.md." });
+    expect(memory.remove).not.toHaveBeenCalled();
+  });
+
+  it("says when the document was deleted before it was removed", async () => {
+    const { result } = del("team.md", [{ id: "doc-1", path: "team.md" }], false);
+    await expect(result).resolves.toEqual({
+      error: "team.md was already deleted.",
+    });
+  });
+});

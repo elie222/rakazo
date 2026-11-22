@@ -11,10 +11,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const optionName = (entry: Element) =>
   entry.textContent?.replace(/(Connect|Default|Included)$/, "");
 const api = vi.hoisted(() => ({ role: vi.fn(), forRole: vi.fn(), setRole: vi.fn() }));
-vi.mock("../../lib/models/localized-provider-hint", () => ({
-  providerDisplayName: (provider: string, name: string, auth?: string) =>
-    provider === "anthropic" && auth === "oauth" ? "Claude subscription" : name,
-}));
 vi.mock("../../lib/query/space-rpc", () => {
   const client = { models: api };
   return { useSpaceRpc: () => client };
@@ -588,4 +584,24 @@ it("saves credit and personal routes to the same model without mixing their iden
   );
   expect(saved.primary).toEqual(pin(chat));
   expect(saved.primary?.creditOfferingId).toBeUndefined();
+});
+
+it("names a managed OAuth-only role by its catalog name without a credential", async () => {
+  api.forRole.mockResolvedValue([
+    {
+      provider: "example",
+      providerName: "Example",
+      subscriptionName: "Example subscription",
+      auth: "oauth",
+      managed: true,
+      id: "model",
+      label: "Model",
+      billing: "",
+    },
+  ]);
+  saved = { primary: { provider: "example", modelId: "model" }, backups: [] };
+  await render({ credentials: [], providerLabel: () => "Example subscription" });
+  expect(rows()).toEqual(["ModelExample"]);
+  await click(trigger("Change Model"));
+  expect(document.body.textContent).not.toContain("Example subscription");
 });

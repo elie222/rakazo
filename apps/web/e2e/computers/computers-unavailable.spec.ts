@@ -1,5 +1,6 @@
 import type { Route } from "@playwright/test";
 import { expect, test } from "@playwright/test";
+import { deferred } from "@rakazo/core/test-async";
 import { captureScreenshot, completeOnboarding, openBotPanel, signup } from "../helpers/helpers";
 
 async function patchJson(route: Route, patch: (body: { json?: Record<string, unknown> }) => void) {
@@ -25,8 +26,11 @@ test("unavailable computers say so plainly and link setup help", async ({ page }
   await completeOnboarding(page);
   let sandboxProvider = "none";
   let meFails = false;
-  await page.route("**/rpc/me", (route) => {
+  let holdMe = false;
+  const finishRetry = deferred();
+  await page.route("**/rpc/me", async (route) => {
     if (meFails) return route.fulfill({ status: 500, json: {} });
+    if (holdMe) await finishRetry.promise;
     return patchJson(route, (body) => {
       if (!body.json) return;
       body.json.sandboxProvider = sandboxProvider;
@@ -103,7 +107,19 @@ test("unavailable computers say so plainly and link setup help", async ({ page }
   meFails = false;
 
   sandboxProvider = "docker";
-  await settingsHint.getByRole("button", { name: "Check again" }).click();
+  holdMe = true;
+  try {
+    await settingsHint.getByRole("button", { name: "Check again" }).press("Enter");
+    const checking = settingsHint.getByRole("button", { name: "Checking…" });
+    await expect(checking).toBeVisible();
+    await expect(checking).toBeDisabled();
+    await expect(checking).toBeFocused();
+    await expect(settingsHint.getByRole("link", { name: "Setup help" })).toBeVisible();
+    await captureScreenshot(page, testInfo, "computers-unavailable-retrying-after-failure");
+  } finally {
+    holdMe = false;
+    finishRetry.resolve();
+  }
   const recovered = settingsHint.getByText(
     "Computers are available. Reload or open a bot to continue.",
   );

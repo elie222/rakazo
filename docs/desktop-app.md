@@ -37,7 +37,7 @@ files.
   let them work directly on yours. **Computer Access…** in the app menu changes this later, and
   **Revoke Local Computer Access** turns it off.
 - With any HTTPS server, or a loopback server, turn on **Let bots use this computer**
-  in **Settings → General** under **Computers**. Your computer then shows as **Connected** or
+  in **Settings → Computers** under **Your devices**. Your computer then shows as **Connected** or
   **Offline** there. Access belongs to the account that turned it on and ends when that account
   signs out, resets its password or signs out everywhere. Signing back in to the same account
   restores it without asking again.
@@ -69,7 +69,9 @@ you are.
 - Cmd+N: create a bot, group or space.
 - Cmd+Shift+N (desktop app): start a group chat.
 - Cmd+K: open the command menu to jump to a bot, page or setting, or run an action.
-- Cmd+Shift+M: connect apps.
+- Cmd+Shift+A (desktop app): connect apps.
+- Cmd+Shift+M: choose the chat's model, when the model shows beside Send.
+- Cmd+Shift+E: switch to the model's next thinking level.
 - Cmd+Shift+, : open the chat's details.
 - Cmd+I: jump to the message box.
 - Cmd+D in an empty message box: dictate. Press it again to send.

@@ -1,3 +1,4 @@
+import { isRecord } from "@rakazo/core";
 /**
  * OpenAI chat-completions `tools[].function.parameters` must be a JSON Schema
  * object. Hosted proxies (OpenRouter) are lenient; local OpenAI-compatible
@@ -23,10 +24,6 @@ export function openAiToolParametersNeedNormalization(parameters: unknown): bool
 }
 
 const ROOT_UNION_KEYS = ["oneOf", "anyOf", "allOf"] as const;
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value != null && typeof value === "object" && !Array.isArray(value);
-}
 
 function rootUnionKey(schema: Record<string, unknown>) {
   return ROOT_UNION_KEYS.find((key) => Array.isArray(schema[key]));
