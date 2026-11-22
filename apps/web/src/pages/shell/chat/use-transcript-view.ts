@@ -92,13 +92,21 @@ export function useTranscriptView({
     activeSnapshot,
     transcript,
     artifactTarget,
-    answerableAskIds,
-    dismissableAskIds,
-    transcriptRunning: workingRuns.length > 0,
     composerRunning: currentRuns.some((run) => isActive(run.status)),
-    workingBots,
-    workingRoutine: workingRoutineName(workingRuns),
     resolveBot,
     resolveMemberName,
+    /** What the transcript draws from the open chat's snapshot. */
+    transcriptProps: {
+      transcript,
+      artifactTarget,
+      olderCursor: activeSnapshot?.olderCursor ?? null,
+      answerableAskIds,
+      dismissableAskIds,
+      running: workingRuns.length > 0,
+      workingBots,
+      workingRoutine: workingRoutineName(workingRuns),
+      memberName: resolveMemberName,
+      peerBot: resolveBot,
+    },
   };
 }

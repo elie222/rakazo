@@ -545,6 +545,33 @@ export function useComputerControls({
     !computerPreviewScreen &&
     !computerScreenError &&
     showComputerRecoveryHint;
+  /** The screen as both the bot panel and the full-screen computer show it. */
+  const screenProps = {
+    computer,
+    booting,
+    embeddedScreenUrl,
+    screenFrameKey: state.screenFrameKey,
+    heldScreen: state.heldScreen,
+    screenFrameRef: state.setScreenFrame,
+    computerScreenError,
+    computerBooting,
+  };
+  /** The bot panel's computer for `bot`, apart from settings and recovery, which the shell owns. */
+  function panelProps(bot: Bot) {
+    return {
+      ...screenProps,
+      bot,
+      computerOpen,
+      embeddedScreenUrl: panel === "settings" ? embeddedScreenUrl : null,
+      showingRecoveryHint,
+      showComputerRecoveryHint,
+      onRecoveryDismissed: releaseComputerRecovery,
+      onOpen: () => void openComputer(),
+      cleaningUpDisk,
+      onCleanUpDisk: () => cleanUpDisk(bot.id),
+      onDismissDiskWarning: () => void dismissDiskWarning(bot.id),
+    };
+  }
 
   return {
     computerBot,
@@ -561,8 +588,7 @@ export function useComputerControls({
     hasControl,
     computerScreenError,
     computerBooting,
-    cleaningUpDisk,
-    cleanUpDisk,
-    dismissDiskWarning,
+    screenProps,
+    panelProps,
   };
 }
