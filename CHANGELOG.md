@@ -19,13 +19,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Every embedded computer screen runs in a sandboxed frame. `/internal/health` returns deployment details only inside the deployment's network.
 - Deleting a Space always disconnects its meeting bots and calendars and removes stored secrets. Handled webhook, Git and email deliveries cannot be replayed after chat history retention deletes their messages.
 - `SIGNUPS_ENABLED=FALSE` now closes signups, and unreadable values for security settings stop startup instead of falling back to a looser default.
-- Purchase approval matches clicks correctly in a zoomed browser, and a page that cannot be read skips the action instead of asking to approve a payment.
+- Purchase approval matches clicks correctly in a zoomed browser, recognizes login, cancel and card fields in more languages, and skips the action on a page that cannot be read instead of asking to approve a payment.
 - Fixed smaller issues in image handling from tool servers, credit restoration after disputes, push delivery during upgrades, the meeting allowance, Git webhook signatures, plugin review emails and a regular-expression dependency.
 
 ### Added
 
 - Share a Page privately with specific accounts. Reviewers can comment by section and ask the bot for a revision the owner can preview and publish ([Pages](docs/pages.md)).
-- Bots can do more of what their owner can from chat: manage routines and watch intervals, edit or delete skills and shared memory documents, remove remote MCP servers, and change their own and managed bots' settings. Changes to other bots follow the owner's approval mode.
+- Bots can do more of what their owner can from chat: manage routines and watch intervals, edit or delete skills and shared memory documents, attach reference files to existing skills, remove remote MCP servers, and change their own and managed bots' settings. Changes to other bots follow the owner's approval mode.
 - Bots can list upcoming events and add events to a chosen calendar. In a private mobile chat, a bot can use the phone's calendar, and on iOS create and complete reminders.
 - Meeting bots can join Microsoft Teams meetings from a pasted link or a connected Google Calendar ([meetings](docs/meetings.md)).
 - **Settings → Computers** sets the size of each cloud computer and lists paired computers. Restore earlier versions of a computer's saved files from the bot's settings. With several paired computers, bots stay on the first one and switch only while it is offline.
