@@ -171,7 +171,8 @@ jobs:
         if: steps.current.outputs.current == 'true' && env.SCREENSHOT_AGENT == 'codex'
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
-          ref: ${{ inputs.head_sha }}
+          # The pull request ref also holds commits from forks.
+          ref: refs/pull/${{ inputs.pull_request }}/head
           path: pr-checkout
           persist-credentials: false
       - name: Prepare an isolated browser
@@ -224,6 +225,8 @@ jobs:
       # closed to other users, and its shell commands run in Codex's read-only, offline sandbox.
       - name: Prepare isolated Codex user
         if: steps.current.outputs.current == 'true' && env.SCREENSHOT_AGENT == 'codex'
+        env:
+          HEAD_SHA: ${{ inputs.head_sha }}
         run: |
           set -euo pipefail
           npm install --global @openai/codex@0.164.0
@@ -231,6 +234,7 @@ jobs:
           sudo useradd --create-home --shell /usr/sbin/nologin codex-screenshots
           sudo install -d -o codex-screenshots -g codex-screenshots -m 700 \
             /home/codex-screenshots/.codex /srv/pr-screenshot-agent
+          [[ $(git -C pr-checkout rev-parse HEAD) == "$HEAD_SHA" ]] || { echo "::error::The pull request moved past the captured commit"; exit 1; }
           rm -rf pr-checkout/.git
           sudo cp -R pr-checkout /srv/pr-checkout
           sudo install -m 644 "$RUNNER_TEMP/prompt/full.diff" /srv/pr-checkout.diff
@@ -277,8 +281,12 @@ jobs:
           gh secret set CODEX_SUBSCRIPTION_AUTH --repo "$GITHUB_REPOSITORY" < "$auth"
           echo "ready=true" >> "$GITHUB_OUTPUT"
           python3 .github/scripts/codex-credential-proxy.py refresh "$auth"
-          # Save a rotated login before anything can interrupt the run.
-          gh secret set CODEX_SUBSCRIPTION_AUTH --repo "$GITHUB_REPOSITORY" < "$auth"
+          # Save a rotated login before anything can interrupt the run; the old one no longer works.
+          for attempt in 1 2 3 4 5; do
+            gh secret set CODEX_SUBSCRIPTION_AUTH --repo "$GITHUB_REPOSITORY" < "$auth" && break
+            (( attempt < 5 )) || { echo "::error::Could not save the refreshed subscription login"; exit 1; }
+            sleep $(( attempt * 10 ))
+          done
           # A clean environment: the proxy serves the agent's requests, so it keeps no step secrets.
           nohup env -i PATH="$PATH" python3 .github/scripts/codex-credential-proxy.py serve "$auth" 18899 \
             > "$RUNNER_TEMP/screenshot-codex/proxy.log" 2>&1 &
