@@ -231,6 +231,34 @@ it("keeps refresh available on a still-empty board and offers retry after a fail
   expect(rpc).toHaveBeenCalledTimes(4);
 });
 
+it("starts a new retry instead of joining a pending foreground refetch after an empty read fails", async () => {
+  const backgroundRead = deferred<{ tickets: Ticket[] }>();
+  rpc
+    .mockResolvedValueOnce({ tickets: [] })
+    .mockRejectedValueOnce(new Error("Offline"))
+    .mockReturnValueOnce(backgroundRead.promise)
+    .mockResolvedValueOnce({ tickets: [ticket] });
+  await render();
+  await vi.waitFor(() => expect(button("Refresh")).toBeDefined());
+  await act(async () => button("Refresh")?.click());
+  await vi.waitFor(() => expect(button("Retry")).toBeDefined());
+
+  state.foreground = false;
+  await render();
+  state.foreground = true;
+  await render();
+  await vi.waitFor(() => expect(rpc).toHaveBeenCalledTimes(3));
+  expect(button("Retry")).toBeDefined();
+
+  await act(async () => button("Retry")?.click());
+  await vi.waitFor(() => expect(rpc).toHaveBeenCalledTimes(4));
+  await vi.waitFor(() => expect(host.textContent).toContain("Example ticket"));
+
+  await act(async () => backgroundRead.resolve({ tickets: [] }));
+  await act(flush);
+  expect(host.textContent).toContain("Example ticket");
+});
+
 it("keeps existing tickets available when a refresh fails", async () => {
   rpc.mockResolvedValueOnce({ tickets: [ticket] }).mockRejectedValueOnce(new Error("Offline"));
   await render();

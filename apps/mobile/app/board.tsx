@@ -41,11 +41,10 @@ export default function BoardScreen() {
 
   if (!tickets || tickets.length === 0) {
     const loading = !tickets && (list.isFetching || !list.error);
-    const reload = () => list.refetch({ cancelRefetch: false });
     async function refreshEmpty() {
       setRefreshingEmpty(true);
       try {
-        await reload();
+        await list.refetch({ cancelRefetch: false });
       } finally {
         setRefreshingEmpty(false);
       }
@@ -55,7 +54,7 @@ export default function BoardScreen() {
         {loading ? (
           <ActivityIndicator color={native.secondaryLabel} />
         ) : error ? (
-          <LoadFailure message={error} onRetry={() => void reload()} />
+          <LoadFailure message={error} onRetry={() => void list.refetch()} />
         ) : (
           <View style={styles.empty}>
             <Text style={styles.message}>{t`No tickets yet.`}</Text>
