@@ -148,8 +148,8 @@ function HostComputerDialog({
           <DialogDescription className="space-y-2 leading-relaxed">
             <span className="block">
               <Trans>
-                A sandbox limits access to your computer for added security. Using {hostLabel}
-                lets bots work with your local files and tools.
+                A sandbox limits access to your computer for added security. Using {hostLabel} lets
+                bots work with your local files and tools.
               </Trans>
             </span>
             <span className="block text-label text-muted-foreground/80">
