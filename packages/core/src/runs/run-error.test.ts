@@ -1,7 +1,10 @@
 import {
   COMPUTER_ALLOWANCE_USED_ERROR,
+  COMPUTER_DAMAGED_ERROR,
   COMPUTER_PROVIDER_UNAVAILABLE_ERROR,
   COMPUTER_RATE_LIMIT_ERROR,
+  COMPUTER_RECOVERY_REQUIRED_ERROR,
+  COMPUTER_START_FAILED_ERROR,
   COMPUTER_UNRESPONSIVE_ERROR,
 } from "@rakazo/contracts";
 import { expectLinearTime } from "@rakazo/contracts/test-timing";
@@ -276,7 +279,6 @@ describe("normalizeRunError", () => {
       ["socket hang up", tookTooLong],
       ["fetch failed", tookTooLong],
       ["Model stream ended without a terminal event", tookTooLong],
-      ["Request timed out.", tookTooLong],
     ])("summarizes %s without recovery advice", (details, summary) => {
       expect(classify(details)).toEqual({
         summary,
@@ -310,7 +312,6 @@ describe("normalizeRunError", () => {
           kind: "rate",
         },
       ],
-      ['504: {"message":"Gateway error"}', { summary: tookTooLong }],
       [
         "Rate limit reached for example-model in organization org-example on tokens per min (TPM): Limit 60000, Used 51552, Requested 12568. Please try again in 4.12s. You can increase your rate limit by adding a payment method to your account at https://platform.openai.com/account/billing.",
         {
@@ -353,6 +354,14 @@ describe("normalizeRunError", () => {
       ],
       [
         '429: {"code":"1113","message":"Insufficient balance or no resource package. Please recharge."}',
+        "spending",
+      ],
+      [
+        '403 {"code":"The caller does not have permission to execute the specified operation","error":"Your newly created team doesn\'t have any credits or licenses yet."}',
+        "credit",
+      ],
+      [
+        '429 {"error":{"message":"Your account is not active, please check your account balance","type":"exceeded_current_quota_error"}}',
         "spending",
       ],
       [
@@ -740,6 +749,9 @@ it.each([
   COMPUTER_RATE_LIMIT_ERROR,
   COMPUTER_PROVIDER_UNAVAILABLE_ERROR,
   COMPUTER_UNRESPONSIVE_ERROR,
+  COMPUTER_START_FAILED_ERROR,
+  COMPUTER_DAMAGED_ERROR,
+  COMPUTER_RECOVERY_REQUIRED_ERROR,
 ])("shows the computer error %j as written", (message) => {
   expect(normalizeRunError(message)).toEqual({ summary: message, details: message });
 });

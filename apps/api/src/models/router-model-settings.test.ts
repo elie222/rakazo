@@ -20,6 +20,8 @@ describe("model setup gate", () => {
     deploymentModelHostCredentials?: boolean;
     deploymentModelCredentialCipher?: string;
     savedDeploymentModel?: boolean;
+    /** A default an admin saved with its key; "credits" saves it where credits ignore it. */
+    adminDeploymentModel?: boolean | "credits";
     funding?: Pick<BillingStatus, "creditPurchasesEnabled" | "funding" | "balanceUsd">;
   }) {
     const prisma = {
@@ -40,15 +42,20 @@ describe("model setup gate", () => {
       },
       userModelPreference: { findFirst: vi.fn().mockResolvedValue(null) },
       deploymentSettings: {
-        findUnique: vi
-          .fn()
-          .mockResolvedValue(
-            options.deploymentModelCredentialCipher
+        findUnique: vi.fn().mockResolvedValue(
+          options.adminDeploymentModel
+            ? {
+                deploymentModelProvider: "anthropic",
+                deploymentModelId: "claude-sonnet-5",
+                deploymentModelCredentialCipher: "sealed-admin-key",
+                modelCreditsEnabled: options.adminDeploymentModel === "credits",
+              }
+            : options.deploymentModelCredentialCipher
               ? { deploymentModelCredentialCipher: options.deploymentModelCredentialCipher }
               : options.savedDeploymentModel
                 ? { defaultModelProvider: "openrouter", defaultModelId: "saved-model" }
                 : null,
-          ),
+        ),
       },
     } as unknown as PrismaClient;
     const deps = {
@@ -90,7 +97,7 @@ describe("model setup gate", () => {
     return response;
   }
 
-  it.each([undefined, 1, 8, 100])(
+  it.each([undefined, 8])(
     "advertises the effective attachment count (%s)",
     async (maxAttachmentsPerMessage) => {
       const { actor, handler } = modelGateDeps({
@@ -215,6 +222,39 @@ describe("model setup gate", () => {
     });
     await expect(withKey.json()).resolves.toEqual({
       json: expect.objectContaining({ hostCredentialProvider: null, hostCredentialSource: null }),
+    });
+  });
+
+  it("runs members without a model on the one an admin set, without an environment model", async () => {
+    const { actor, handler } = modelGateDeps({ agentRuntime: "pi", adminDeploymentModel: true });
+
+    const me = await call(handler, actor, "me", null);
+    await expect(me.json()).resolves.toEqual({
+      json: expect.objectContaining({
+        needsModel: false,
+        defaultProvider: "anthropic",
+        defaultModel: "claude-sonnet-5",
+      }),
+    });
+    const role = await call(handler, actor, "models/role", { role: "main", scope: "account" });
+    await expect(role.json()).resolves.toMatchObject({
+      json: { deploymentPrimary: { provider: "anthropic", modelId: "claude-sonnet-5" } },
+    });
+  });
+
+  it("names host credentials while an admin's ignored model leaves the environment's running", async () => {
+    const { actor, handler } = modelGateDeps({
+      agentRuntime: "pi",
+      deploymentModelConfigured: true,
+      deploymentModelHostCredentials: true,
+      adminDeploymentModel: "credits",
+    });
+    const me = await call(handler, actor, "me", null);
+    await expect(me.json()).resolves.toEqual({
+      json: expect.objectContaining({
+        defaultProvider: "openrouter",
+        hostCredentialProvider: "openrouter",
+      }),
     });
   });
 

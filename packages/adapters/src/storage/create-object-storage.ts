@@ -3,6 +3,7 @@ import {
   AzureBlobObjectStorage,
   azureBlobConfigFromEnv,
 } from "../providers/object-storage/azure-blob/azure-blob-object-storage.js";
+import { refuseEntraAuthUnderOtherProtocol } from "../providers/object-storage/azure-blob/azure-entra-credential.js";
 import {
   objectStorageConfigFromEnv,
   S3ObjectStorage,
@@ -22,6 +23,9 @@ export function createObjectStorage(
     return config && new AzureBlobObjectStorage(config);
   }
   if (protocol !== "s3") throw new Error('OBJECT_STORAGE_PROTOCOL must be "s3" or "azure-blob"');
+  // An Entra kind under the S3 protocol would be silently ignored while the S3 client signs its
+  // requests with whatever the settings hold; the Azure module owns what that means.
+  refuseEntraAuthUnderOtherProtocol(env);
   const config = objectStorageConfigFromEnv(env);
   return config && new S3ObjectStorage(config);
 }

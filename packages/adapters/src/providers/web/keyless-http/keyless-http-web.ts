@@ -8,6 +8,7 @@ import type {
   WebSearchRequest,
 } from "@rakazo/adapter-kit";
 import { JSDOM } from "jsdom";
+import { isToolImage } from "../../../media/tool-result-image.js";
 import {
   clampMaxChars,
   clampMaxResults,
@@ -15,7 +16,7 @@ import {
   pageWindow,
 } from "../../../web/web-limits.js";
 import type { ResolveHostname } from "../../../web/web-ssrf.js";
-import { fetchSafeWebText } from "../../../web/web-ssrf.js";
+import { decodeWebText, fetchSafeWebBytes, fetchSafeWebText } from "../../../web/web-ssrf.js";
 
 export {
   clampMaxChars,
@@ -108,7 +109,7 @@ export class KeylessHttpWebProvider implements WebProvider {
   async fetch(request: WebFetchRequest, context: AdapterContext): Promise<WebFetchResult> {
     const maxChars = clampMaxChars(request.maxChars);
     const offset = clampOffset(request.offset);
-    const { url, body, contentType } = await fetchSafeWebText(request.url, {
+    const response = await fetchSafeWebBytes(request.url, {
       fetch: this.fetchImpl,
       resolveHostname: this.resolveHostname,
       timeoutMs: this.fetchTimeoutMs,
@@ -116,8 +117,15 @@ export class KeylessHttpWebProvider implements WebProvider {
       userAgent: this.userAgent,
       signal: request.signal ?? context.signal,
     });
-    if (!body.trim()) throw new Error(`Failed to fetch content from ${url}`);
+    const { url, contentType } = response;
+    // The bytes decide, not the label: servers often send pictures as octet-stream.
+    if (isToolImage(response.body))
+      return { url, title: "", text: "", truncated: false, image: response.body };
     const mediaType = contentType?.split(";", 1)[0]?.trim().toLowerCase();
+    if (mediaType?.startsWith("image/") && mediaType !== "image/svg+xml")
+      throw new Error(`${url} is an image in a format that cannot be read (${mediaType}).`);
+    const body = decodeWebText(response.body, contentType);
+    if (!body.trim()) throw new Error(`Failed to fetch content from ${url}`);
     const extracted =
       mediaType === "text/plain" ||
       mediaType === "text/markdown" ||

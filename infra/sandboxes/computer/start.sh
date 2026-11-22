@@ -54,11 +54,12 @@ if [[ "$ready" -ne 1 ]]; then
   exit 1
 fi
 
-if command -v dbus-launch >/dev/null 2>&1; then
-  eval "$(dbus-launch --sh-syntax)"
-  # rakazo-browser is launched later without this session's environment; the
-  # file-chooser portals only work if the browser finds the same bus.
-  printf 'export DBUS_SESSION_BUS_ADDRESS=%s\n' "$DBUS_SESSION_BUS_ADDRESS" \
+rm -f /tmp/rakazo/session-bus /tmp/rakazo/dbus-session
+# The image sets this; keep a default for runtimes that drop image ENV.
+export DBUS_SESSION_BUS_ADDRESS="${DBUS_SESSION_BUS_ADDRESS:-unix:path=/tmp/rakazo/session-bus}"
+if dbus-daemon --session --fork --address="$DBUS_SESSION_BUS_ADDRESS"; then
+  # Keep the address file for browser launchers with a minimal environment.
+  printf 'export DBUS_SESSION_BUS_ADDRESS=%q\n' "$DBUS_SESSION_BUS_ADDRESS" \
     > /tmp/rakazo/dbus-session
 fi
 
@@ -101,7 +102,7 @@ if ! xdg-settings set default-web-browser rakazo-browser.desktop >/dev/null 2>&1
   exit 1
 fi
 
-x11vnc -display :1 -forever -shared -viewonly -nopw -listen 127.0.0.1 -rfbport 5900 -xkb -ncache 0 >/tmp/rakazo/x11vnc.log 2>&1 &
+x11vnc -display :1 -forever -shared -viewonly -repeat -nopw -listen 127.0.0.1 -rfbport 5900 -xkb -ncache 0 >/tmp/rakazo/x11vnc.log 2>&1 &
 
 NOVNC_ROOT=/usr/share/novnc
 if [[ ! -d "$NOVNC_ROOT" ]]; then

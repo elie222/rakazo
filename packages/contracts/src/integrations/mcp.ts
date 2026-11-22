@@ -179,6 +179,8 @@ export const McpSourcePresetSchema = z.object({
   /** The server signs the person in itself (OAuth), so no token is asked for. Otherwise
    * the preset connects with a bearer token. */
   signIn: z.boolean().optional(),
+  featured: z.boolean().optional(),
+  credentialHelpUrl: z.url({ protocol: /^https$/ }).optional(),
 });
 export type McpSourcePreset = z.infer<typeof McpSourcePresetSchema>;
 
@@ -196,10 +198,12 @@ const McpServerBaseInput = z.object({
 const McpOAuthClientFields = {
   clientId: z.string().trim().min(1).max(512),
   clientSecret: z.string().min(1).max(4096).optional(),
-  /** Space-separated scopes to request. Empty: the server's advertised scopes. */
+  /** Space-separated scopes to request. Empty: the server's advertised scopes. Left out of an
+   * update resending the stored client ID: its stored scope, which clients never read back. */
   scope: z.string().trim().max(2000).optional(),
   /** Extra authorization request parameters in query-string form, e.g. Google's
-   * `access_type=offline&prompt=consent` for a refresh token. */
+   * `access_type=offline&prompt=consent` for a refresh token. Kept like `scope` when left out of
+   * an update resending the stored client ID. */
   authorizationParams: z
     .string()
     .trim()

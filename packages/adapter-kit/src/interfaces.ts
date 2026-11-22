@@ -1,4 +1,5 @@
 import type { ComputerSize } from "@rakazo/contracts";
+import type { ConnectedCalendarProvider } from "./personal-calendar.js";
 import type {
   AdapterContext,
   AdapterDescriptor,
@@ -16,6 +17,7 @@ import type {
   BillingCheckoutRequest,
   BillingCreditCheckoutRequest,
   BillingCreditPurchase,
+  BillingInvoiceRefund,
   BillingPlanPayment,
   BillingPrice,
   BillingSubscriptionSnapshot,
@@ -322,6 +324,7 @@ export interface ConnectionAuthProvider {
 export interface ManagedConnectorProvider
   extends ConnectorProvider,
     Omit<ConnectionAuthProvider, "describe"> {
+  calendarProvider?: ConnectedCalendarProvider;
   catalog(context: AdapterContext, query?: string): Promise<ConnectorCatalogItem[]>;
   /** The actions one app offers, to show people what connecting it gives bots. */
   listAppTools?(context: AdapterContext, externalId: string): Promise<ConnectorTool[]>;
@@ -450,6 +453,34 @@ export interface JobPublisher {
   cancelIn(tx: JobTransaction, key: string): Promise<void>;
   cancel(key: string): Promise<void>;
   close(): Promise<void>;
+}
+
+/** A named queue's jobs ahead of one, as `JobQueueOrder.pendingUntil` reads them. */
+export interface QueuedAhead {
+  /** When the last of them is due; null when there are none. */
+  until: Date | null;
+  /** Whether the job keyed `exceptKey` is recorded at all; false without a key. */
+  own: boolean;
+}
+
+/**
+ * Order between the jobs of a named queue beyond running them one at a time, for work that must
+ * not overtake jobs already queued. A job whose payload has `follower: true` is due late only so
+ * it runs after the jobs ahead of it in its queue.
+ */
+export interface JobQueueOrder {
+  /**
+   * When the last unfinished job of a named queue is due; null when the queue has none. With
+   * `exceptKey`, only the jobs queued ahead of that job count, all of them while it is not queued,
+   * and the answer also says whether it is.
+   */
+  pendingUntil(queueName: string, exceptKey?: string): Promise<QueuedAhead>;
+  /**
+   * In the caller's transaction, makes the followers at the head of a named queue due now, a
+   * millisecond apart in their order, up to the first job that is not one or is running. The job
+   * keyed `exceptKey`, the one settling, is left out.
+   */
+  releaseFollowersIn(tx: JobTransaction, queueName: string, exceptKey?: string): Promise<void>;
 }
 
 export interface JobWorkerHost {
@@ -594,6 +625,12 @@ export interface BillingProvider {
    * Credits never count.
    */
   listPlanPayments?(customerId: string, since: Date): Promise<BillingPlanPayment[]>;
+  /** Inspects or fully refunds the card payment for a customer-owned invoice. */
+  refundInvoice?(
+    customerId: string,
+    invoiceNumber: string,
+    confirm: boolean,
+  ): Promise<BillingInvoiceRefund | null>;
   setMonthlyCredits?(customerId: string, amountCents: number): Promise<void>;
   /** Flat monthly own-key plan: access without credits. */
   createByokCheckout?(input: BillingByokCheckoutRequest): Promise<{ id: string; url: string }>;
@@ -775,7 +812,8 @@ export interface BrowserProvider {
   ): Promise<BrowserActResult>;
   /**
    * Whether these clicks, or a click or key on the screen, would complete a purchase, without acting.
-   * A browser that cannot tell, such as an older computer image, answers none.
+   * A browser that cannot tell, such as an older computer image, answers none. A check that started
+   * and could not read the page throws, and the press is refused.
    */
   purchaseCheck?(
     computer: ComputerRef,

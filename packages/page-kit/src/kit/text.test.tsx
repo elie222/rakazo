@@ -25,6 +25,7 @@ import {
   ProsCons,
   Quote,
   Sum,
+  slugify,
   TableOfContents,
 } from "./text.js";
 import { computeDAGLayout, useSource, useTheme } from "./theme.js";
@@ -232,6 +233,30 @@ describe("structure", () => {
   });
 });
 
+describe("slugify", () => {
+  it.each([
+    ["ダッシュボード", "ダッシュボード"],
+    ["नमस्ते", "नमस्ते"],
+    ["สวัสดี", "สวัสดี"],
+    ["ガ", "ガ"],
+    ["Café", "cafe"],
+    ["Hello 世界", "hello-世界"],
+  ])("keeps the anchor for %s readable", (heading, slug) => {
+    expect(slugify(heading)).toBe(slug);
+  });
+
+  it("keeps a composed kana distinct from its base character", () => {
+    expect(slugify("ガ")).not.toBe(slugify("カ"));
+  });
+
+  it("caps a long astral heading by code point, leaving it well formed", () => {
+    const slug = slugify("𠀀".repeat(70));
+    // encodeURIComponent throws on a lone surrogate, so this checks well-formedness.
+    expect(() => encodeURIComponent(slug)).not.toThrow();
+    expect(Array.from(slug)).toHaveLength(64);
+  });
+});
+
 describe("TableOfContents", () => {
   const items = Array.from({ length: 16 }, (_, index) => ({
     label: `Part ${index + 1}`,
@@ -262,7 +287,9 @@ describe("TableOfContents", () => {
     const host = mount(<TableOfContents items={items.slice(0, 5)} title="Contents" />);
     expect(host.querySelector("nav")!.getAttribute("aria-label")).toBe("Contents");
     expect(host.querySelector('a[aria-current="location"]')!.textContent).toBe("Part 1");
-    expect(host.querySelector<HTMLAnchorElement>('a[href="#p5"]')!.style.paddingLeft).toBe("22px");
+    expect(host.querySelector<HTMLAnchorElement>('a[href="#p5"]')!.style.paddingInlineStart).toBe(
+      "22px",
+    );
     act(() => host.querySelector<HTMLAnchorElement>('a[href="#p2"]')!.click());
     expect(target.scrollIntoView).toHaveBeenCalledOnce();
     target.remove();

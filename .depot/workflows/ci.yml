@@ -19,4 +19,6 @@ jobs:
     name: Tests
     uses: ./.depot/workflows/test-suites.yml
     with:
-      runner: depot-ubuntu-latest
+      # Eight CPUs for every job in the file. The unit shards finish about four times faster than on
+      # two, which offsets the four-times rate.
+      runner: depot-ubuntu-24.04-8

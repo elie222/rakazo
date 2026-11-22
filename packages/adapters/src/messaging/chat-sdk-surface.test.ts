@@ -2,6 +2,7 @@ import { createHmac } from "node:crypto";
 import { createSlackAdapter } from "@chat-adapter/slack";
 import { createMockAdapter, createTestMessage } from "@chat-adapter/tests";
 import type { AdapterContext, MessagingInboundEvent } from "@rakazo/adapter-kit";
+import { MAX_RETRY_AFTER_MS } from "@rakazo/core";
 import type { Adapter, ChatInstance } from "chat";
 import { describe, expect, it, vi } from "vitest";
 import { enrichSlackTeamRoom } from "../providers/messaging/slack/slack-messaging.js";
@@ -46,7 +47,7 @@ function createPlatform(
           isMe?: boolean;
           isMention?: boolean;
           rawType?: string;
-          files?: Array<{ name: string; url: string; authenticated?: boolean }>;
+          files?: Array<{ name: string; url: string; authenticated?: boolean; unsized?: boolean }>;
         };
         // Fire-and-forget: matches Chat SDK adapters that return 200 before
         // processMessage settles, relying on waitUntil for background work.
@@ -71,7 +72,7 @@ function createPlatform(
               name: file.name,
               url: file.url,
               mimeType: "image/png",
-              size: 3,
+              ...(file.unsized ? {} : { size: 3 }),
               ...(file.authenticated ? { fetchData: async () => Buffer.from([1, 2, 3]) } : {}),
             })),
             isMention: payload.isMention,
@@ -249,6 +250,71 @@ describe("ChatSdkMessagingSurface inbound", () => {
       { name: "screen.png", mimeType: "image/png", size: 3, fetch: expect.any(Function) },
     ]);
     await expect(event.attachments?.[0]?.fetch()).resolves.toEqual(new Uint8Array([1, 2, 3]));
+  });
+
+  it("asks the platform the size of a file it left unreported before handing it over", async () => {
+    const attachmentSize = vi.fn(async () => 2048);
+    const { surface, events } = createSurface({ attachmentSize });
+    await surface.handleWebhook(
+      "mock",
+      webhookRequest({
+        threadId: "mock:Duser:1",
+        id: "m-1",
+        text: "",
+        files: [
+          {
+            name: "clip.mov",
+            url: "https://files.example.test/a",
+            authenticated: true,
+            unsized: true,
+          },
+          { name: "known.png", url: "https://files.example.test/b", authenticated: true },
+          { name: "public.png", url: "https://cdn.example.test/c.png", unsized: true },
+        ],
+      }),
+    );
+
+    const event = events[0];
+    if (event?.type !== "message") throw new Error("expected a message");
+    expect(event.attachments?.map(({ name, size }) => ({ name, size }))).toEqual([
+      { name: "clip.mov", size: 2048 },
+      { name: "known.png", size: 3 },
+    ]);
+    // Only the downloadable file without a size is looked up.
+    expect(attachmentSize).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ name: "clip.mov" }),
+      expect.any(AbortSignal),
+    );
+  });
+
+  it("hands a file over with its size unknown when the platform cannot tell it", async () => {
+    const attachmentSize = vi.fn(async () => {
+      throw new Error("lookup failed");
+    });
+    const { surface, events } = createSurface({ attachmentSize });
+    const response = await surface.handleWebhook(
+      "mock",
+      webhookRequest({
+        threadId: "mock:Duser:1",
+        id: "m-1",
+        text: "",
+        files: [
+          {
+            name: "clip.mov",
+            url: "https://files.example.test/a",
+            authenticated: true,
+            unsized: true,
+          },
+        ],
+      }),
+    );
+
+    expect(response?.status).toBe(200);
+    const event = events[0];
+    if (event?.type !== "message") throw new Error("expected a message");
+    expect(event.attachments).toEqual([
+      { name: "clip.mov", mimeType: "image/png", fetch: expect.any(Function) },
+    ]);
   });
 
   it("hydrates incomplete Slack app-mention file stubs from the exact history message", async () => {
@@ -684,7 +750,7 @@ describe("ChatSdkMessagingSurface outbound", () => {
     });
   });
 
-  it.each(["whatsapp", "lark"])("posts %s replies as Markdown", async (provider) => {
+  it.each(["whatsapp", "lark", "slack"])("posts %s replies as Markdown", async (provider) => {
     const { surface, adapter } = createSurface({ provider });
     const body = "**bold** and [link](https://example.test)";
     const threadId = `${provider}:C1:9`;
@@ -705,14 +771,57 @@ describe("ChatSdkMessagingSurface outbound", () => {
     });
   });
 
-  it.each(["slack", "sendblue"])("keeps %s replies as strings", async (provider) => {
-    const { surface, adapter } = createSurface({ provider });
+  it("keeps sendblue replies as strings", async () => {
+    const { surface, adapter } = createSurface({ provider: "sendblue" });
     const body = "**bold** and [link](https://example.test)";
-    const threadId = `${provider}:C1:9`;
 
-    await surface.sendToThread({ threadId, body }, context);
+    await surface.sendToThread({ threadId: "sendblue:C1:9", body }, context);
 
-    expect(adapter.postMessage).toHaveBeenCalledExactlyOnceWith(threadId, body);
+    expect(adapter.postMessage).toHaveBeenCalledExactlyOnceWith("sendblue:C1:9", body);
+  });
+
+  /** A real Slack adapter whose HTTP transport records each chat.postMessage body. */
+  function slackSurface() {
+    const posts: Record<string, string>[] = [];
+    const adapter = createSlackAdapter({
+      botToken: "xoxb-fake",
+      botUserId: "UBOT",
+      signingSecret: "test-slack-signing-secret",
+      webClientOptions: {
+        adapter: async (config) => {
+          posts.push(
+            Object.fromEntries(new URLSearchParams(String(config.data))) as Record<string, string>,
+          );
+          return {
+            data: { ok: true, ts: `1700000000.00000${posts.length}`, channel: "C1" },
+            status: 200,
+            statusText: "OK",
+            headers: {},
+            config,
+            request: { path: "/api/chat.postMessage" },
+          };
+        },
+      },
+    });
+    const surface = new ChatSdkMessagingSurface([
+      {
+        provider: "slack",
+        capabilities: { direct: true, groups: true, receipt: "reaction" },
+        adapter,
+      },
+    ]);
+    return { surface, posts };
+  }
+
+  it("sends a Slack reply as Markdown for Slack to render, not as literal text", async () => {
+    const { surface, posts } = slackSurface();
+    const body = "**Done**: see [docs](https://x.y/z)\n# Head";
+
+    await surface.sendToThread({ threadId: "slack:C1:9", body }, context);
+
+    expect(posts).toHaveLength(1);
+    expect(posts[0]).toMatchObject({ markdown_text: body });
+    expect(posts[0]).not.toHaveProperty("text");
   });
 
   it("posts a Telegram image attachment as a photo", async () => {
@@ -790,6 +899,36 @@ describe("ChatSdkMessagingSurface outbound", () => {
       30_000,
     ],
     ["a permanent failure", new Error("channel_not_found"), true, null],
+    [
+      "a fractional retry-after",
+      Object.assign(new Error("slow down"), { retryAfter: 1.5 }),
+      false,
+      1_500,
+    ],
+    [
+      "an unbounded retry-after",
+      Object.assign(new Error("slow down"), { retryAfter: Infinity }),
+      false,
+      null,
+    ],
+    [
+      "a NaN retry-after",
+      Object.assign(new Error("slow down"), { retryAfter: Number.NaN }),
+      false,
+      null,
+    ],
+    [
+      "a negative retry-after",
+      Object.assign(new Error("slow down"), { retryAfter: -5 }),
+      false,
+      null,
+    ],
+    [
+      "a huge retry-after",
+      Object.assign(new Error("slow down"), { retryAfter: 1e12 }),
+      false,
+      MAX_RETRY_AFTER_MS,
+    ],
   ] as const)("classifies %s for the outbox", async (_label, error, permanent, retryAfterMs) => {
     const { surface } = createSurface(
       { isPermanentSendError: (candidate) => candidate === error && permanent },

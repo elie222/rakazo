@@ -434,7 +434,7 @@ async function noteUnverifiedOwnerMail(
     });
     return event.seq;
   });
-  if (seq !== undefined) await deps.events.notify(bot.threadId, seq).catch(() => undefined);
+  if (seq !== undefined) await deps.events.notify(bot.threadId, seq);
 }
 
 export const UNVERIFIED_OWNER_MAIL_NOTE =

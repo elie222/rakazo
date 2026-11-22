@@ -2,10 +2,12 @@ import { randomUUID } from "node:crypto";
 import type * as AzureSdk from "@azure/storage-blob";
 import type { ObjectStorage } from "@rakazo/adapter-kit";
 import {
-  objectStorageConnectionFromEnv,
+  objectStorageTargetFromEnv,
   PART_BYTES,
   parts,
 } from "../../../storage/object-storage-common.js";
+import type { EntraAuthConfig } from "./azure-entra-credential.js";
+import { entraAuthFromEnv, entraCredential } from "./azure-entra-credential.js";
 
 /** Bounds each request attempt, from sending it to receiving its response headers. */
 const TRY_TIMEOUT_MS = 120_000;
@@ -18,25 +20,62 @@ export interface AzureBlobObjectStorageConfig {
   container: string;
   /** Storage account name. */
   account: string;
-  accountKey: string;
+  /** Storage account key, for the default account-key authentication. */
+  accountKey?: string;
+  /**
+   * Entra ID authentication instead of the account key: a service principal with a client
+   * secret, a certificate or a federated token, or the platform's managed identity. Exactly one
+   * of `accountKey` and `entra` is set.
+   */
+  entra?: EntraAuthConfig;
   /** Account URL; empty uses `https://<account>.blob.core.windows.net`. */
   endpoint?: string;
   /** Prepended to every key, so one container can hold several deployments. */
   prefix: string;
 }
 
-/** Reads the shared `OBJECT_STORAGE_*` settings: the bucket is the container, the access key id is the account name and the secret is its key. */
+/**
+ * Reads the shared `OBJECT_STORAGE_*` settings: the bucket is the container and the access key id
+ * is the account name under every authentication. `OBJECT_STORAGE_SECRET_ACCESS_KEY` is the
+ * account key by default and the client secret with `OBJECT_STORAGE_AUTH=client-secret`.
+ */
 export function azureBlobConfigFromEnv(
   env: NodeJS.ProcessEnv = process.env,
 ): AzureBlobObjectStorageConfig | undefined {
-  const connection = objectStorageConnectionFromEnv(env);
-  if (!connection) return undefined;
+  const target = objectStorageTargetFromEnv(env);
+  if (!target) return undefined;
+  const account = env.OBJECT_STORAGE_ACCESS_KEY_ID?.trim();
+  const accountKey = env.OBJECT_STORAGE_SECRET_ACCESS_KEY?.trim();
+  const entra = entraAuthFromEnv(env);
+  if (entra) {
+    if (!account)
+      throw new Error(
+        "OBJECT_STORAGE_ACCESS_KEY_ID (the storage account name) is required with OBJECT_STORAGE_BUCKET",
+      );
+    // The SDK never sends Entra tokens over plain http, so say so here, at startup, rather
+    // than letting every first upload fail; the account key keeps working on an emulator URL.
+    if (target.endpoint && !target.endpoint.startsWith("https://"))
+      throw new Error(
+        "OBJECT_STORAGE_AUTH needs an https OBJECT_STORAGE_ENDPOINT: Entra tokens travel over TLS only",
+      );
+    return {
+      container: target.bucket,
+      account,
+      entra,
+      endpoint: target.endpoint,
+      prefix: target.prefix,
+    };
+  }
+  if (!account || !accountKey)
+    throw new Error(
+      "OBJECT_STORAGE_ACCESS_KEY_ID and OBJECT_STORAGE_SECRET_ACCESS_KEY are required with OBJECT_STORAGE_BUCKET",
+    );
   return {
-    container: connection.bucket,
-    account: connection.accessKeyId,
-    accountKey: connection.secretAccessKey,
-    endpoint: connection.endpoint,
-    prefix: connection.prefix,
+    container: target.bucket,
+    account,
+    accountKey,
+    endpoint: target.endpoint,
+    prefix: target.prefix,
   };
 }
 
@@ -46,20 +85,35 @@ export class AzureBlobObjectStorage implements ObjectStorage {
   constructor(
     private readonly config: AzureBlobObjectStorageConfig,
     private readonly idleBodyMs = IDLE_BODY_TIMEOUT_MS,
-  ) {}
+  ) {
+    if (!this.config.accountKey && !this.config.entra)
+      throw new Error("Azure Blob storage needs an account key or an Entra authentication kind");
+  }
 
   /** The SDK loads on first use, so deployments without object storage never load it. */
   private connect() {
-    this.container ??= import("@azure/storage-blob").then((sdk) => {
-      const { account, accountKey, endpoint, container } = this.config;
-      const service = new sdk.BlobServiceClient(
-        endpoint ?? `https://${account}.blob.core.windows.net`,
-        new sdk.StorageSharedKeyCredential(account, accountKey),
-        { retryOptions: { tryTimeoutInMs: TRY_TIMEOUT_MS } },
-      );
-      return { sdk, client: service.getContainerClient(container) };
+    this.container ??= this.open().catch((error) => {
+      // A failed open is not cached: the next operation retries, so one bad moment (or one
+      // fixed setting) does not brick every later use of this storage.
+      this.container = undefined;
+      throw error;
     });
     return this.container;
+  }
+
+  private async open() {
+    const sdk = await import("@azure/storage-blob");
+    const { account, accountKey, entra, endpoint, container } = this.config;
+    const url = endpoint ?? `https://${account}.blob.core.windows.net`;
+    const options = { retryOptions: { tryTimeoutInMs: TRY_TIMEOUT_MS } };
+    const service = entra
+      ? new sdk.BlobServiceClient(url, await entraCredential(entra), options)
+      : new sdk.BlobServiceClient(
+          url,
+          new sdk.StorageSharedKeyCredential(account, accountKey!),
+          options,
+        );
+    return { sdk, client: service.getContainerClient(container) };
   }
 
   private key(key: string) {

@@ -10,6 +10,7 @@ import {
   liveCatalogEntry,
   ProviderCatalogCache,
   providerLiveCatalogsForSpace,
+  savedCatalogSelections,
 } from "./pi-live-catalog.js";
 import { isChatModelId } from "./pi-live-model.js";
 import { listPiCatalog } from "./pi-models.js";
@@ -38,14 +39,61 @@ afterEach(() => {
 });
 
 describe("live catalog merge and execution", () => {
+  it("keeps saved models when another connection disappears during the catalog read", async () => {
+    const prisma = {
+      userModelCredential: {
+        findMany: vi.fn().mockResolvedValue([
+          { provider: "openai", userPreferences: [] },
+          {
+            provider: "openai",
+            userPreferences: [{ modelId: "gpt-saved" }, { modelId: null }],
+          },
+        ]),
+      },
+      userModelPreference: {
+        findMany: vi.fn().mockResolvedValue([{ modelId: "gpt-detached", credential: undefined }]),
+      },
+      bot: { findMany: vi.fn().mockResolvedValue([]) },
+      routine: { findMany: vi.fn().mockResolvedValue([]) },
+      userModelRoleChoice: { findMany: vi.fn().mockResolvedValue([]) },
+      spaceModelRoleChoice: { findMany: vi.fn().mockResolvedValue([]) },
+      deploymentSettings: { findFirst: vi.fn().mockResolvedValue(null) },
+    };
+
+    await expect(
+      savedCatalogSelections(
+        prisma as unknown as Parameters<typeof savedCatalogSelections>[0],
+        "user-test",
+      ),
+    ).resolves.toEqual(new Set(["openai:gpt-saved"]));
+    expect(prisma.userModelCredential.findMany).toHaveBeenCalledWith({
+      where: { userId: "user-test" },
+      select: { provider: true, userPreferences: { select: { modelId: true } } },
+    });
+  });
+
   it("recomputes recommendations for live IDs instead of inheriting a sibling's flag", () => {
-    expect(liveCatalogEntry("openai-codex", "gpt-6-luna")?.recommended).toBe(true);
+    expect(liveCatalogEntry("openai-codex", "gpt-6.1-sol")?.recommended).toBe(true);
     expect(liveCatalogEntry("openai-codex", "gpt-future-chat")?.recommended).toBe(false);
   });
 
   it("defaults probing on and honors the deployment off switch", () => {
     expect(liveModelCatalogEnabled({})).toBe(true);
     expect(liveModelCatalogEnabled({ RAKAZO_LIVE_MODEL_CATALOG: " off " })).toBe(false);
+  });
+
+  it.each(["off", "OFF", "false", "False", "0", "no", "NO"])("reads %s as off", (value) => {
+    expect(liveModelCatalogEnabled({ RAKAZO_LIVE_MODEL_CATALOG: value })).toBe(false);
+  });
+
+  it.each(["on", "ON", "true", "1", "yes", "Yes", "", "  "])("reads %j as on", (value) => {
+    expect(liveModelCatalogEnabled({ RAKAZO_LIVE_MODEL_CATALOG: value })).toBe(true);
+  });
+
+  it.each(["disabled", "of", "2", "nope"])("refuses %s, naming the variable", (value) => {
+    expect(() => liveModelCatalogEnabled({ RAKAZO_LIVE_MODEL_CATALOG: value })).toThrow(
+      /RAKAZO_LIVE_MODEL_CATALOG/,
+    );
   });
   it("skips credential reads and both provider transports when probing is off", async () => {
     vi.stubEnv("RAKAZO_LIVE_MODEL_CATALOG", "off");

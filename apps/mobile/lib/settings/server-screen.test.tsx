@@ -22,6 +22,7 @@ const api = vi.hoisted(() => ({
   reset: vi.fn(),
   save: vi.fn(),
 }));
+const announce = vi.hoisted(() => vi.fn());
 const saved = vi.hoisted(() => ({
   list: [] as Array<{ apiBase: string; headers: Record<string, string> }>,
   remove: vi.fn(),
@@ -46,10 +47,12 @@ vi.mock("react-native", () => {
     StyleSheet: { create: <T,>(styles: T) => styles },
     Text: View,
     TextInput: ({
+      editable,
       onChangeText,
       placeholder,
       value,
     }: {
+      editable?: boolean;
       onChangeText?: (value: string) => void;
       placeholder?: string;
       value?: string;
@@ -57,6 +60,7 @@ vi.mock("react-native", () => {
       <input
         onChange={(event) => onChangeText?.(event.target.value)}
         placeholder={placeholder}
+        readOnly={editable === false}
         value={value}
       />
     ),
@@ -130,6 +134,7 @@ vi.mock("../api/endpoint", async () => {
     usesCustomApiBase: () => server.custom,
   };
 });
+vi.mock("../native/announce", () => ({ announceToScreenReader: announce }));
 vi.mock("../native/native", () => ({
   useMobileTokens: () => ({}),
   useResolvedAppearance: () => "light",
@@ -174,14 +179,16 @@ async function renderServer(draft?: string) {
   document.body.append(container);
   root = createRoot(container);
   await act(async () => root?.render(<Server />));
-  if (draft) {
-    const input = container.querySelector("input")!;
-    await act(async () => {
-      const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
-      setter.call(input, draft);
-      input.dispatchEvent(new Event("input", { bubbles: true }));
-    });
-  }
+  if (draft) await editAddress(draft);
+}
+
+async function editAddress(value: string) {
+  const input = container!.querySelector("input")!;
+  await act(async () => {
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
+    setter.call(input, value);
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
 }
 
 async function pressSave() {
@@ -199,6 +206,28 @@ async function pressButton(label: string) {
 function alertButtons(index = 0) {
   return vi.mocked(Alert.alert).mock.calls[index]![2]!;
 }
+
+it("keeps the address read-only during a pending probe and accepts edits after it fails", async () => {
+  const checked = deferred<{ ok: false; error: string }>();
+  api.probe.mockReturnValueOnce(checked.promise);
+  await renderServer("https://two.example.test");
+  const address = container!.querySelector("input")!;
+
+  expect(address.readOnly).toBe(false);
+  await pressSave();
+  expect(address.readOnly).toBe(true);
+  expect(address.value).toBe("https://two.example.test");
+
+  await act(async () => checked.resolve({ ok: false, error: "Could not reach this server" }));
+  expect(api.save).not.toHaveBeenCalled();
+  expect(container?.textContent).toContain("Could not reach this server");
+  expect(address.readOnly).toBe(false);
+
+  await editAddress("https://three.example.test");
+  expect(address.value).toBe("https://three.example.test");
+  await pressSave();
+  expect(api.probe.mock.lastCall?.[0]).toBe("https://three.example.test");
+});
 
 it("asks before switching servers deletes unsent messages", async () => {
   vi.mocked(hasUnsentSends).mockReturnValue(true);
@@ -272,9 +301,12 @@ it("holds the save lock while the unsent-message confirmation is open", async ()
     await pressSave();
     await pressSave();
     expect(Alert.alert).toHaveBeenCalledOnce();
+    const address = container!.querySelector("input")!;
+    expect(address.readOnly).toBe(true);
 
     await act(async () => alertButtons()[0]!.onPress?.());
     expect(api.save).not.toHaveBeenCalled();
+    expect(address.readOnly).toBe(false);
     // Cancelling released the lock, so a later save asks again.
     await pressSave();
     expect(Alert.alert).toHaveBeenCalledTimes(2);
@@ -406,4 +438,56 @@ it("tells an http server from an https one on the same host", async () => {
   const labels = Array.from(container!.querySelectorAll("button")).map((node) => node.textContent);
   expect(labels).toContain("http://10.0.0.8");
   expect(labels).toContain("10.0.0.8");
+});
+
+it("announces a failed check once, with the words the screen shows", async () => {
+  api.probe.mockResolvedValueOnce({ ok: false, error: "No server" });
+  await renderServer("https://two.example.test");
+  await pressSave();
+  expect(container?.textContent).toContain("No server");
+  expect(announce).toHaveBeenCalledExactlyOnceWith("No server");
+});
+
+it("announces a failed save", async () => {
+  api.save.mockResolvedValueOnce({ ok: false, error: "Could not save the server" });
+  await renderServer();
+  await pressSave();
+  expect(container?.textContent).toContain("Could not save the server");
+  expect(announce).toHaveBeenCalledExactlyOnceWith("Could not save the server");
+});
+
+it("announces a failed return to the default server", async () => {
+  server.custom = true;
+  api.reset.mockResolvedValueOnce({ ok: false, error: "Could not restore the default" });
+  await renderServer();
+  await pressButton("Use default server");
+  expect(container?.textContent).toContain("Could not restore the default");
+  expect(announce).toHaveBeenCalledExactlyOnceWith("Could not restore the default");
+});
+
+it("announces a failed removal of a recent server", async () => {
+  saved.list = [{ apiBase: "https://two.example.test", headers: {} }];
+  saved.remove.mockResolvedValueOnce(false);
+  await renderServer();
+  await pressButton("Remove two.example.test");
+  expect(container?.textContent).toContain("Could not remove the server");
+  expect(announce).toHaveBeenCalledExactlyOnceWith("Could not remove the server");
+});
+
+it("announces a repeated failure again", async () => {
+  api.probe
+    .mockResolvedValueOnce({ ok: false, error: "No server" })
+    .mockResolvedValueOnce({ ok: false, error: "No server" });
+  await renderServer("https://two.example.test");
+  await pressSave();
+  await pressSave();
+  expect(announce).toHaveBeenCalledTimes(2);
+  expect(announce).toHaveBeenNthCalledWith(2, "No server");
+});
+
+it("announces nothing when the switch succeeds", async () => {
+  await renderServer("https://two.example.test");
+  await pressSave();
+  expect(api.save).toHaveBeenCalled();
+  expect(announce).not.toHaveBeenCalled();
 });
