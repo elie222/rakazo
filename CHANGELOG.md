@@ -15,7 +15,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Bot run prompts are encrypted at rest with the Space's keys, like chat messages. Memory text is escaped before it reaches the prompt, so a saved memory cannot read as instructions ([content encryption](docs/content-encryption.md)).
 - Names and labels lose invisible text-direction characters, so a chat member cannot disguise their name as someone else's.
 - Voice no longer uses a model connection set to zero data retention, and switching a call to **This device** voice keeps later replies off the hosted voice provider.
-- Desktop's local computer bridge listens only on this machine, its protection guard refuses `killall5`, and switching servers removes the cookie that lets its window create local accounts.
+- When desktop runs its local server without Docker, its computer bridge listens only on this machine. Its protection guard refuses `killall5`, and switching servers removes the cookie that lets its window create local accounts.
 - Every embedded computer screen runs in a sandboxed frame. `/internal/health` returns deployment details only inside the deployment's network.
 - Deleting a Space always disconnects its meeting bots and calendars and removes stored secrets. Handled webhook, Git and email deliveries cannot be replayed after chat history retention deletes their messages.
 - `SIGNUPS_ENABLED=FALSE` now closes signups, and unreadable values for security settings stop startup instead of falling back to a looser default.
@@ -71,7 +71,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Self-host upgrade notes
 
-- After deploying and once the previous release has stopped, run `content-encryption migrate` to encrypt existing run prompts. Run `content-encryption decrypt` before rolling back ([content encryption](docs/content-encryption.md)).
+- After deploying and once the previous release has stopped, run `content-encryption migrate` to encrypt existing run prompts. Before rolling back, set `CONTENT_ENCRYPTION=off` on the API and workers, then run `content-encryption decrypt` ([content encryption](docs/content-encryption.md)).
 - Welcome, referral, model connection reminder and agent import emails are sent only when `EMAIL_COPY_DIR` holds their copy. `WELCOME_EMAIL_ENABLED` is removed.
 - These settings now stop startup when their value cannot be read: `SIGNUPS_ENABLED`, `TELEGRAM_GROUPS`, `LARK_DOMAIN`, `RAKAZO_AUTO_REVIEW_MIN_CONFIDENCE` (0 to 1), `AUDIT_EVENT_RETENTION_DAYS`, `USER_DEVICES_ENABLED`, `RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC`, `RAKAZO_LIVE_MODEL_CATALOG` and `MAX_TOOL_CALLS_PER_TURN`. `RAKAZO_LOCAL_MODELS_URL` refuses embedded credentials; use `RAKAZO_LOCAL_MODELS_API_KEY`.
 - `SANDBOX_TEAM_SCREEN_LIMIT` and `SANDBOX_MAX_COMPUTERS_PER_SPACE` now reach the supervisor on Compose installs. On the native desktop stack, ` #` in `.env` starts a comment; quote values that contain it.
