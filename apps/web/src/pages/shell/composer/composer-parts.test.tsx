@@ -42,16 +42,10 @@ it("adds the visible subtitle to the names of options that share a name", async 
       ),
     );
 
-    const labels = [...host.querySelectorAll('[role="option"]')].map(
-      (option) =>
-        option.getAttribute("aria-label") ??
-        option
-          .getAttribute("aria-labelledby")
-          ?.split(" ")
-          .map((id) => document.getElementById(id)?.textContent)
-          .join(" "),
+    const labels = [...host.querySelectorAll('[role="option"]')].map((option) =>
+      option.getAttribute("aria-label"),
     );
-    expect(labels).toEqual(["@Design Bot", "@Design Group", "@Notes", "@Planner", "@Writer"]);
+    expect(labels).toEqual(["@Design, Bot", "@Design, Group", "@Notes", "@Planner", "@Writer"]);
   } finally {
     await act(async () => root.unmount());
     host.remove();

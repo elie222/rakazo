@@ -91,9 +91,8 @@ export function MentionPicker({
             type="button"
             role="option"
             aria-selected={highlighted}
-            aria-label={labelWithSubtitle ? undefined : t`@${mention.name}`}
-            aria-labelledby={
-              labelWithSubtitle ? `${optionId}-name ${optionId}-subtitle` : undefined
+            aria-label={
+              labelWithSubtitle ? t`@${mention.name}, ${mention.subtitle}` : t`@${mention.name}`
             }
             onMouseDown={(event) => event.preventDefault()}
             onClick={() => onPick(mention)}
@@ -105,15 +104,11 @@ export function MentionPicker({
           >
             <MentionOptionIcon mention={mention} />
             <span className="min-w-0">
-              <span id={`${optionId}-name`} dir="auto" className="block text-body text-foreground">
+              <span dir="auto" className="block text-body text-foreground">
                 @{mention.name}
               </span>
               {mention.subtitle ? (
-                <span
-                  id={`${optionId}-subtitle`}
-                  dir="auto"
-                  className="block truncate text-body-sm text-muted-foreground"
-                >
+                <span dir="auto" className="block truncate text-body-sm text-muted-foreground">
                   {mention.subtitle}
                 </span>
               ) : null}
