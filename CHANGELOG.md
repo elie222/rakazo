@@ -25,7 +25,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Added
 
 - Share a Page privately with specific accounts. Reviewers can comment by section and ask the bot for a revision the owner can preview and publish ([Pages](docs/pages.md)).
-- Bots can do more of what their owner can from chat: manage routines and watch intervals, edit or delete skills and shared memory documents, attach reference files to existing skills, remove remote MCP servers, and change their own and managed bots' settings. Changes to other bots follow the owner's approval mode.
+- Bots can do more of what their owner can from chat: manage routines and watch intervals, edit or delete skills and shared memory documents, remove remote MCP servers, and change their own and managed bots' settings. Changes to other bots follow the owner's approval mode.
 - Bots can list upcoming events and add events to a chosen calendar. In a private mobile chat, a bot can use the phone's calendar, and on iOS create and complete reminders.
 - Meeting bots can join Microsoft Teams meetings from a pasted link or a connected Google Calendar ([meetings](docs/meetings.md)).
 - **Settings → Computers** sets the size of each cloud computer and lists paired computers. Restore earlier versions of a computer's saved files from the bot's settings. With several paired computers, bots stay on the first one and switch only while it is offline.
