@@ -99,6 +99,30 @@ describe("postRoutineNotice", () => {
     expect(blocksToAgentHistoryText(message.blocks)).toBe("");
   });
 
+  it("flags a live webhook routine so its row can show the key, never the key itself", async () => {
+    const changes = ["created", "updated", "enabled", "disabled", "deleted"] as const;
+    for (const change of changes) {
+      await postRoutineNotice(deps().deps, {
+        spaceId: "s",
+        threadId: "t",
+        botId: "b",
+        change,
+        name: "Deploy hook",
+        webhook: true,
+      });
+    }
+    const blocks = db.createThreadMessageInTransaction.mock.calls.map(
+      ([, message]) => message.blocks[0],
+    );
+    expect(blocks.map((block) => block.webhook)).toEqual([true, true, true, undefined, undefined]);
+    for (const block of blocks) {
+      expect(
+        Object.keys(block).every((key) => ["kind", "change", "name", "webhook"].includes(key)),
+      ).toBe(true);
+    }
+    expect(blocksToAgentHistoryText(blocks)).toBe("");
+  });
+
   it("falls back to the bot's own chat, and writes nothing when there is none", async () => {
     await postRoutineNotice(deps().deps, {
       spaceId: "s",

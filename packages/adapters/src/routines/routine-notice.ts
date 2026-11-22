@@ -17,6 +17,8 @@ export type RoutineNoticeInput = {
   botId: string;
   change: RoutineEventChange;
   name: string;
+  /** Whether a webhook starts the saved routine. */
+  webhook?: boolean;
 };
 
 /** What an edit means for the chat: an on/off flip reads as enabled or disabled. */
@@ -70,8 +72,11 @@ async function botThreadId(prisma: PrismaClient, botId: string): Promise<string 
 
 /**
  * The small row a routine change leaves in its chat: a system message with one `routine_event`
- * block holding the routine's name and what happened, never the prompt or schedule. A system
- * message is not unread, and the block has no text, so the model never sees it. Never throws: the change is already saved, so a failure is only logged.
+ * block holding the routine's name and what happened, never the prompt or schedule. A live
+ * routine a webhook starts is flagged, so its creator can read the key back from the row; the
+ * key itself never enters the message. A system message is not unread, and the block has no
+ * text, so the model never sees it. Never throws: the change is already saved, so a failure is
+ * only logged.
  */
 export async function postRoutineNotice(
   deps: RoutineNoticeDeps,
@@ -84,7 +89,15 @@ async function writeRoutineNotice(deps: RoutineNoticeDeps, input: RoutineNoticeI
   const threadId = input.threadId ?? (await botThreadId(deps.prisma, input.botId));
   if (!threadId) return;
   const name = input.name.slice(0, 200);
-  const blocks = [{ kind: "routine_event" as const, change: input.change, name }];
+  const showsWebhook = input.webhook && input.change !== "deleted" && input.change !== "disabled";
+  const blocks = [
+    {
+      kind: "routine_event" as const,
+      change: input.change,
+      name,
+      ...(showsWebhook ? { webhook: true as const } : {}),
+    },
+  ];
   const seq = await deps.prisma.$transaction(async (tx) => {
     const message = await createThreadMessageInTransaction(tx, {
       threadId,

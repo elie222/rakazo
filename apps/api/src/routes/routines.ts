@@ -102,6 +102,7 @@ export function routinesRoutes(ctx: RouterContext) {
           botId: bot.id,
           change: "created",
           name: row.name,
+          webhook: row.webhookEnabled,
         });
         return await routineView(deps.prisma, context.actor, row);
       }),
@@ -342,6 +343,7 @@ export function routinesRoutes(ctx: RouterContext) {
             botId: bot.id,
             change: routineEditChange(existing, row),
             name: row.name,
+            webhook: row.webhookEnabled,
           });
         }
         return await routineView(deps.prisma, context.actor, row);
