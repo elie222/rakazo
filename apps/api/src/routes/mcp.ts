@@ -475,13 +475,15 @@ export function mcpRoutes(ctx: RouterContext) {
             // Under allBots the assignments stay as they were, so choosing agents again restores them.
             if (!input.allBots) {
               const botIds = [...new Set(input.botIds)];
+              // Any bot in the Space can use the member's own servers, as assignments.replace allows.
               const bots = await tx.bot.findMany({
-                where: { ...owner, id: { in: botIds } },
+                where: { spaceId: owner.spaceId, id: { in: botIds } },
                 select: { id: true },
               });
               if (bots.length !== botIds.length) throw new IsolationError();
+              // Archived bots are not offered to choose from, so their assignments stay for a restore.
               const previous = await tx.botMcpServer.findMany({
-                where: { ...owner, serverId: server.id },
+                where: { ...owner, serverId: server.id, bot: { archivedAt: null } },
                 select: { botId: true },
               });
               const removed = previous
@@ -507,8 +509,9 @@ export function mcpRoutes(ctx: RouterContext) {
                 )
               ).flat();
             }
+            // As assignments.all reads them: an archived bot's row stays but is not listed.
             const assignments = await tx.botMcpServer.findMany({
-              where: { ...owner, serverId: server.id },
+              where: { ...owner, serverId: server.id, bot: { archivedAt: null } },
               orderBy: { createdAt: "asc" },
             });
             return { server, assignments, seqs };
