@@ -1,3 +1,4 @@
+import { isRecord } from "@rakazo/core";
 export interface NumericSummary {
   count: number;
   min: number;
@@ -191,10 +192,6 @@ function isNumericSummary(value: unknown): value is NumericSummary {
 
 function isFiniteNumber(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value);
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function invalidReport(source: string, detail: string) {

@@ -1,4 +1,4 @@
-import { bestEffort } from "@rakazo/logging";
+import { bestEffort } from "@rakazo/logging/best-effort";
 import * as SecureStore from "expo-secure-store";
 import { rpc } from "../api/api";
 

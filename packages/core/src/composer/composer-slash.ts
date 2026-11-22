@@ -1,3 +1,5 @@
+import { graphemeSegments } from "unicode-segmenter/grapheme";
+
 import type { ComposerMentionBinding } from "./composer-mention-bindings.js";
 import { updateComposerMentionBindings } from "./composer-mention-bindings.js";
 import type { ComposerMentionQuery, ComposerMentionRange } from "./composer-mentions.js";
@@ -18,13 +20,20 @@ export function serializeComposerPrompt(draft: string, skill: { name: string } |
 }
 
 export function truncateSlashDescription(value: string, max = 72): string {
+  if (max < 1) return "";
   const text = value.replace(/\s+/g, " ").trim();
   const codePoints = Array.from(text);
   if (codePoints.length <= max) return text;
-  return `${codePoints
-    .slice(0, max - 1)
-    .join("")
-    .trimEnd()}…`;
+
+  // Reserve a code point for the ellipsis, then find a whole-grapheme boundary.
+  const budget = codePoints.slice(0, max - 1).join("").length;
+  let end = 0;
+  for (const { index, segment } of graphemeSegments(text)) {
+    const next = index + segment.length;
+    if (next > budget) break;
+    if (!segment.endsWith(" ")) end = next;
+  }
+  return `${text.slice(0, end)}…`;
 }
 
 /**

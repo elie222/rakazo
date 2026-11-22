@@ -204,6 +204,7 @@ test("activity filters keep retry when a refresh fails", async ({ page }, testIn
   await signup(page, `activity-retry-${stamp}@rakazo.test`, "password12", "Activity");
   await completeOnboarding(page);
   const now = new Date();
+  const previousYearDate = new Date(now.getFullYear() - 1, 5, 15, 12);
 
   type Phase = "ok" | "empty" | "fail" | "hang";
   let phase: Phase = "ok";
@@ -233,6 +234,7 @@ test("activity filters keep retry when a refresh fails", async ({ page }, testIn
     trigger: "bot_message",
     agentMessage: { fromBotName: "Scout", kind: "update", text: "filter me" },
     promptSnippet: "Update from Scout: filter me",
+    updatedAt: previousYearDate.toISOString(),
   };
 
   await page.route("**/rpc/runs/list", async (route) => {
@@ -271,6 +273,12 @@ test("activity filters keep retry when a refresh fails", async ({ page }, testIn
   await expect(activityRow(page, "Chief")).toContainText("filter me");
   await expect(activityRow(page, "Chief").getByText("just now", { exact: true })).toBeVisible();
   await expect(activityRow(page, "Helper")).toContainText("Update from Scout: filter me");
+  const historyLabel = previousYearDate.toLocaleDateString("en", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+  await expect(activityRow(page, "Helper").getByText(historyLabel, { exact: true })).toBeVisible();
   await captureActivitySidebar(page, testInfo, "61a-activity-first-minute");
   await aside.getByTestId("sidebar-search-trigger").click();
   const activitySearch = aside.getByRole("textbox", { name: "Search runs", exact: true });
