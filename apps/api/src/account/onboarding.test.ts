@@ -12,6 +12,8 @@ vi.mock("@rakazo/db", async (original) => ({
   }),
   appendEventInTransaction: vi.fn(async () => ({ seq: 1 })),
 }));
+const queueConnectedRun = vi.hoisted(() => vi.fn(async () => "carry-on"));
+vi.mock("../integrations/connected-run.js", () => ({ queueConnectedRun }));
 // These transactions lock the thread row, which snapshot reads hold for up to 15s.
 const budget = { timeout: 20_000 };
 function fixture(catalog: unknown[]) {
@@ -29,6 +31,7 @@ function fixture(catalog: unknown[]) {
       $transaction: vi.fn(async (fn: (tx: unknown) => unknown) => fn(tx)),
     },
     events: { notify: vi.fn() },
+    jobs: { enqueue: vi.fn() },
     connectors: {
       defaultConnectorId: "first-connector",
       managedProviders: () => [{ catalog: async () => catalog }],
@@ -273,5 +276,57 @@ it("updates the authorized card's own message even outside the bounded scan", as
   expect(tx.message.update).toHaveBeenCalledWith({
     where: { id: "middle" },
     data: { blocks: [{ ...card, status: "connected" }] },
+  });
+});
+
+describe("after a card connects its app", () => {
+  const card = {
+    kind: "app_connect",
+    connectorId: "pipedream",
+    provider: "slack",
+    name: "Slack",
+    status: "pending",
+  };
+  function connected(message: { runId: string | null; botId?: string }) {
+    queueConnectedRun.mockClear();
+    const setup = fixture([
+      { connectorId: "pipedream", slug: "slack", name: "Slack", connected: true },
+    ]);
+    setup.tx.message.findMany = vi.fn(async () => [
+      { id: "card", blocks: [card], botId: "bot", ...message },
+    ]) as never;
+    return setup;
+  }
+
+  it("lets the bot that asked for it carry on", async () => {
+    const { deps, actor, tx } = connected({ runId: "asked" });
+    await markAppConnected(deps, actor, "bot", "slack", "pipedream", "thread", "card");
+    expect(queueConnectedRun).toHaveBeenCalledWith(tx, actor, {
+      botId: "bot",
+      threadId: "thread",
+      prompt: expect.stringContaining('"Slack"'),
+    });
+    expect(deps.jobs.enqueue).toHaveBeenCalledWith(
+      expect.objectContaining({ payload: { runId: "carry-on" } }),
+    );
+  });
+
+  it("starts no turn for onboarding's own cards", async () => {
+    const { deps, actor } = connected({ runId: null });
+    await markAppConnected(deps, actor, "bot", "slack", "pipedream", "thread", "card");
+    expect(queueConnectedRun).not.toHaveBeenCalled();
+    expect(deps.jobs.enqueue).not.toHaveBeenCalled();
+  });
+
+  it("starts no turn for another bot than the one whose card it is", async () => {
+    const { deps, actor } = connected({ runId: "asked", botId: "peer" });
+    await markAppConnected(deps, actor, "bot", "slack", "pipedream", "thread", "card");
+    expect(queueConnectedRun).not.toHaveBeenCalled();
+  });
+
+  it("starts no turn when connected from somewhere other than the bot's card", async () => {
+    const { deps, actor } = connected({ runId: "asked" });
+    await markAppConnected(deps, actor, "bot", "slack", "pipedream", "thread");
+    expect(queueConnectedRun).not.toHaveBeenCalled();
   });
 });

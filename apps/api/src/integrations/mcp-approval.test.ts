@@ -389,10 +389,9 @@ describe("queueMcpConnectedRun", () => {
     });
   });
 
-  it("does not queue while the bot is still busy in that chat", async () => {
+  it("queues behind a busy chat instead of dropping the turn", async () => {
     const tx = connectedFixture({ busy: true });
-    await expect(queueMcpConnectedRun(tx, actor, input)).resolves.toBeNull();
-    expect(tx.run.create).not.toHaveBeenCalled();
+    await expect(queueMcpConnectedRun(tx, actor, input)).resolves.toBe("run");
   });
 
   it("does not restart an archived bot", async () => {

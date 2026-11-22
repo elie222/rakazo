@@ -405,6 +405,7 @@ export async function claimRun(
     spaceId: string;
     botId: string;
     trigger: string;
+    sourceMessageId: string | null;
     status: string;
     checkpoint: string | null;
     leaseFence: number;

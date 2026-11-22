@@ -38,3 +38,7 @@ export const HANG_UP_PROMPT =
 export function mcpConnectedPrompt(name: string): string {
   return `The user just connected the MCP server ${JSON.stringify(name)} from its approval card, so its tools are available now. Carry on with what they asked for. If nothing is left to do, confirm in one short sentence.`;
 }
+
+export function appConnectedPrompt(name: string): string {
+  return `The user just connected ${JSON.stringify(name)} from its card, so its tools are available now. Carry on with what they asked for. If nothing is left to do, confirm in one short sentence.`;
+}

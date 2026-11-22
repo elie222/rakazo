@@ -1,17 +1,16 @@
 import type { Actor, MessageBlock } from "@rakazo/contracts";
-import { QUEUE_HOLDING_RUN_STATUSES } from "@rakazo/core";
 import type { Prisma, PrismaClient, ThreadEvents } from "@rakazo/db";
 import {
   appendEventInTransaction,
   availableInSpace,
   changeMessageBlocks,
-  HOLDS_CHAT,
   IsolationError,
   storedMessageBlocks,
   withTransactionRetry,
 } from "@rakazo/db";
 import { requireBotThread } from "../bots/bot-thread.js";
 import { mcpConnectedPrompt } from "../bots/hidden-turns.prompt.js";
+import { queueConnectedRun } from "./connected-run.js";
 
 export type McpApprovalDeps = {
   prisma: PrismaClient;
@@ -277,68 +276,16 @@ export async function dismissMcpServerApprovals(
   return seqs;
 }
 
-/** Approving a card in a chat is the user's turn: queue a hidden-prompt run (like
-    a call's hang-up) so the bot carries on with the server's tools instead of
-    waiting for another message. Skipped while the bot is busy in that chat, no
-    longer in it, or archived along with the chat. Returns the run to enqueue. */
+/** Queues the run that carries on once a chat's MCP approval card connects its server. */
 export async function queueMcpConnectedRun(
   tx: Prisma.TransactionClient,
   actor: Actor,
   input: { botId: string; serverId: string; threadId: string },
 ): Promise<string | null> {
-  const thread = await tx.thread.findFirst({
-    where: {
-      id: input.threadId,
-      spaceId: actor.spaceId,
-      OR: [
-        { botId: input.botId },
-        { group: { archivedAt: null, members: { some: { botId: input.botId } } } },
-      ],
-    },
-    select: { id: true },
+  const server = await tx.mcpServer.findFirst({
+    where: { id: input.serverId, ...availableInSpace(actor) },
+    select: { name: true },
   });
-  if (!thread) return null;
-  const [bot, busy, server] = await Promise.all([
-    tx.bot.findFirst({
-      where: { id: input.botId, spaceId: actor.spaceId, archivedAt: null },
-      select: { id: true },
-    }),
-    tx.run.findFirst({
-      where: {
-        threadId: thread.id,
-        botId: input.botId,
-        status: { in: [...QUEUE_HOLDING_RUN_STATUSES] },
-        ...HOLDS_CHAT,
-      },
-      select: { id: true },
-    }),
-    tx.mcpServer.findFirst({
-      where: { id: input.serverId, ...availableInSpace(actor) },
-      select: { name: true },
-    }),
-  ]);
-  if (!bot || busy || !server) return null;
-  const task = await tx.task.create({
-    data: {
-      spaceId: actor.spaceId,
-      botId: input.botId,
-      threadId: thread.id,
-      userId: actor.userId,
-      prompt: mcpConnectedPrompt(server.name),
-      status: "queued",
-    },
-  });
-  const run = await tx.run.create({
-    data: {
-      spaceId: actor.spaceId,
-      botId: input.botId,
-      threadId: thread.id,
-      taskId: task.id,
-      userId: actor.userId,
-      status: "queued",
-      trigger: "user",
-    },
-    select: { id: true },
-  });
-  return run.id;
+  if (!server) return null;
+  return queueConnectedRun(tx, actor, { ...input, prompt: mcpConnectedPrompt(server.name) });
 }

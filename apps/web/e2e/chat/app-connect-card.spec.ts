@@ -32,6 +32,10 @@ test("a bot connects an app inline in a normal chat", async ({ page }, testInfo)
   }
   await card.getByRole("button", { name: "Connect", exact: true }).click();
   await expect(card.getByText("Connected", { exact: true })).toBeVisible();
+  // The bot carries on by itself; the scripted model echoes the turn it was given.
+  await expect(
+    page.getByTestId("message-bot-bubble").getByText(/i handled: The user just connected "Gmail"/),
+  ).toBeVisible({ timeout: 30_000 });
   await page.reload();
   await expect(card.getByText("Connected", { exact: true })).toBeVisible();
   for (const theme of ["light", "dark"]) {

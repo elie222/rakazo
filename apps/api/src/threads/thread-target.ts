@@ -338,6 +338,17 @@ function groupSendTargets(
   return { botIds: resolveGroupTargetBotIds(targeting), namesNobody: !named };
 }
 
+/** A chat's active runs in the order a message picks the one to steer: any run already claimed
+ * before a queued one, so a queued turn (such as carrying on after a connect) never holds the
+ * message back from the run the person is talking to; otherwise oldest first. */
+const RUN_ORDER: Prisma.RunOrderByWithRelationInput[] = [{ createdAt: "asc" }, { id: "asc" }];
+function claimedFirst<T extends { status: string }>(runs: T[]): T[] {
+  return [
+    ...runs.filter((run) => run.status !== "queued"),
+    ...runs.filter((run) => run.status === "queued"),
+  ];
+}
+
 export function latestWaitingRun<T extends { id: string; status: string; updatedAt: Date }>(
   runs: T[],
 ) {
@@ -654,25 +665,28 @@ export async function sendThreadMessage(
         // Match message counter locking before inspecting runs, without changing counters on rejection.
         await tx.$queryRaw`SELECT id FROM threads WHERE id = ${target.threadId} FOR UPDATE`;
         routineRuns = (await startRoutines?.(tx)) ?? [];
-        const activeRuns = await tx.run.findMany({
-          where: {
-            threadId: target.threadId,
-            botId: target.botId,
-            status: { in: [...ACTIVE_RUN_STATUSES] },
-          },
-          select: {
-            id: true,
-            taskId: true,
-            status: true,
-            trigger: true,
-            userId: true,
-            modelProvider: true,
-            modelId: true,
-            modelPinned: true,
-            thinkingLevel: true,
-            routine: { select: { inChat: true } },
-          },
-        });
+        const activeRuns = claimedFirst(
+          await tx.run.findMany({
+            where: {
+              threadId: target.threadId,
+              botId: target.botId,
+              status: { in: [...ACTIVE_RUN_STATUSES] },
+            },
+            orderBy: RUN_ORDER,
+            select: {
+              id: true,
+              taskId: true,
+              status: true,
+              trigger: true,
+              userId: true,
+              modelProvider: true,
+              modelId: true,
+              modelPinned: true,
+              thinkingLevel: true,
+              routine: { select: { inChat: true } },
+            },
+          }),
+        );
         if (input.imageHandling === "confirm") {
           await assertImageRecipients(tx, actor, target, input.text, attachmentBlocks, {
             botId: target.botId,
@@ -880,27 +894,30 @@ export async function sendThreadMessage(
       // Group ownership is locked first, then the thread, as in the normal write path.
       await tx.$queryRaw`SELECT id FROM threads WHERE id = ${target.threadId} FOR UPDATE`;
       routineRuns = (await startRoutines?.(tx)) ?? [];
-      let activeRuns = await tx.run.findMany({
-        where: {
-          threadId: target.threadId,
-          botId: { in: targetBotIds },
-          status: { in: [...ACTIVE_RUN_STATUSES] },
-        },
-        select: {
-          id: true,
-          taskId: true,
-          botId: true,
-          status: true,
-          trigger: true,
-          userId: true,
-          modelProvider: true,
-          modelId: true,
-          modelPinned: true,
-          routine: { select: { inChat: true } },
-          thinkingLevel: true,
-          updatedAt: true,
-        },
-      });
+      let activeRuns = claimedFirst(
+        await tx.run.findMany({
+          where: {
+            threadId: target.threadId,
+            botId: { in: targetBotIds },
+            status: { in: [...ACTIVE_RUN_STATUSES] },
+          },
+          orderBy: RUN_ORDER,
+          select: {
+            id: true,
+            taskId: true,
+            botId: true,
+            status: true,
+            trigger: true,
+            userId: true,
+            modelProvider: true,
+            modelId: true,
+            modelPinned: true,
+            routine: { select: { inChat: true } },
+            thinkingLevel: true,
+            updatedAt: true,
+          },
+        }),
+      );
       // A plain message while members wait on the user answers the latest question only.
       const asking = namesNobody ? latestWaitingRun(activeRuns) : undefined;
       if (asking) {

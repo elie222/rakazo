@@ -1,4 +1,6 @@
+import type { JobPublisher } from "@rakazo/adapter-kit";
 import type { ConnectorRegistry } from "@rakazo/adapters";
+import { wakeRun } from "@rakazo/adapters";
 import type { Actor, ConnectionCatalogItem, MessageBlock } from "@rakazo/contracts";
 import { appConnectCard, connectedAppBlock, matchAppCatalog } from "@rakazo/core";
 import type { Prisma, PrismaClient, ThreadEvents } from "@rakazo/db";
@@ -11,6 +13,8 @@ import {
   THREAD_LOCK_TRANSACTION_OPTIONS,
 } from "@rakazo/db";
 import { requireBotThread } from "../bots/bot-thread.js";
+import { appConnectedPrompt } from "../bots/hidden-turns.prompt.js";
+import { queueConnectedRun } from "../integrations/connected-run.js";
 import { resolveThreadTarget } from "../threads/thread-target.js";
 
 /**
@@ -23,6 +27,7 @@ type OnboardingDeps = {
   prisma: PrismaClient;
   events: ThreadEvents;
   connectors: ConnectorRegistry;
+  jobs: Pick<JobPublisher, "enqueue">;
 };
 
 type FocusOption = {
@@ -344,12 +349,12 @@ export async function markAppConnected(
   );
   if (!entry?.connected) return;
   const target = { spaceId: actor.spaceId, botId: bot.id, threadId: thread.id };
-  const updates = await deps.prisma.$transaction(async (tx) => {
+  const { events, runId } = await deps.prisma.$transaction(async (tx) => {
     // Two authorizations may finish together on an onboarding message with multiple cards.
     await tx.$executeRaw`SELECT id FROM threads WHERE id = ${thread.id} FOR UPDATE`;
     // Onboarding cards sit at the start of the chat and inline cards near the end;
     // bound both reads so a long chat is never scanned in full.
-    const select = { id: true, blocks: true } as const;
+    const select = { id: true, blocks: true, runId: true, botId: true } as const;
     const first = await tx.message.findMany({
       where: { threadId: thread.id },
       select,
@@ -367,11 +372,15 @@ export async function markAppConnected(
       : [];
     const messages = [...new Map([...first, ...latest, ...own].map((m) => [m.id, m])).values()];
     const events = [];
+    // The card connected from, when a run posted it, is the bot waiting on this connection;
+    // onboarding's own cards and other copies of the card are not.
+    let botWaiting = false;
     for (const message of messages) {
       const next = changeMessageBlocks(message, (block) =>
         connectedAppBlock(block, connectorId, entry.slug, deps.connectors.defaultConnectorId),
       );
       if (!next) continue;
+      if (message.id === messageId && message.runId && message.botId === bot.id) botWaiting = true;
       await tx.message.update({ where: { id: message.id }, data: { blocks: next.stored } });
       events.push(
         await appendEventInTransaction(tx, {
@@ -381,9 +390,17 @@ export async function markAppConnected(
         }),
       );
     }
-    return events;
+    const runId = botWaiting
+      ? await queueConnectedRun(tx, actor, {
+          botId: bot.id,
+          threadId: thread.id,
+          prompt: appConnectedPrompt(entry.name),
+        })
+      : null;
+    return { events, runId };
   }, THREAD_LOCK_TRANSACTION_OPTIONS);
-  for (const event of updates) await deps.events.notify(thread.id, event.seq);
+  for (const event of events) await deps.events.notify(thread.id, event.seq);
+  if (runId) await wakeRun(deps.jobs, runId);
 }
 
 function capitalize(value: string): string {

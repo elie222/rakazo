@@ -131,6 +131,46 @@ describe.skipIf(!enabled)("typed replies to waiting cards (PostgreSQL)", () => {
     },
   );
 
+  it.each(["bot", "group"] as const)(
+    "steers a %s chat message into the working run, not a queued carry-on",
+    async (kind) => {
+      const target = kind === "bot" ? privateTarget() : groupTarget;
+      const run = async (status: "queued" | "running") => {
+        const task = await system.task.create({
+          data: {
+            spaceId: actor.spaceId,
+            userId: actor.userId,
+            botId,
+            threadId: target.threadId,
+            prompt: "work",
+            status,
+          },
+        });
+        return system.run.create({
+          data: {
+            spaceId: actor.spaceId,
+            userId: actor.userId,
+            botId,
+            threadId: target.threadId,
+            taskId: task.id,
+            trigger: "user",
+            status,
+            // Claimed but not yet stamped with a start time, as the worker leaves it briefly.
+            ...(status === "running" ? { leaseOwner: "worker", leaseFence: 1 } : {}),
+          },
+        });
+      };
+      // The carry-on was queued first, so an unordered read would likely return it first.
+      await run("queued");
+      const working = await run("running");
+
+      await send(target, "One more thing");
+
+      const steering = await system.steeringMessage.findMany({ where: { botId } });
+      expect(steering.map((row) => row.runId)).toEqual([working.id]);
+    },
+  );
+
   it("serializes simultaneous text sends into one run and steering", async () => {
     const [first, second] = await Promise.all([
       send(privateTarget(), "First simultaneous message", "parallel-send-first"),

@@ -12,12 +12,22 @@ export const CHAT_WAIT_MS = 5 * 60_000;
 
 const CHAT_WAITING_TRIGGERS: readonly string[] = ["routine", "bot_message"];
 
+/** A turn the bot takes with no message of its own, such as carrying on once the user connects
+ * an app from its card, waits for a busy chat as well, so it reads what that run did. */
+function waitsForChat(run: { trigger: string; sourceMessageId: string | null }): boolean {
+  return (
+    CHAT_WAITING_TRIGGERS.includes(run.trigger) ||
+    (run.trigger === "user" && run.sourceMessageId === null)
+  );
+}
+
 interface ChatWaitingRun {
   id: string;
   botId: string;
   threadId: string;
   taskId: string;
   trigger: string;
+  sourceMessageId: string | null;
   status: string;
   startedAt: Date | null;
   wakeAt: Date | null;
@@ -34,10 +44,13 @@ interface ChatWaitingRun {
  * in the chat.
  */
 export function claimWaitsForChat(
-  run: Pick<ChatWaitingRun, "id" | "botId" | "trigger" | "startedAt" | "createdAt">,
+  run: Pick<
+    ChatWaitingRun,
+    "id" | "botId" | "trigger" | "sourceMessageId" | "startedAt" | "createdAt"
+  >,
   now: Date,
 ): Prisma.RunWhereInput {
-  if (!CHAT_WAITING_TRIGGERS.includes(run.trigger) || run.startedAt) return {};
+  if (!waitsForChat(run) || run.startedAt) return {};
   const chatFree: Prisma.RunWhereInput = { thread: { runs: { none: busyRunWhere(run, now) } } };
   if (run.trigger !== "routine") return chatFree;
   return { OR: [{ routine: { is: { inChat: false } } }, chatFree] };
@@ -73,8 +86,7 @@ function busyRunWhere(
  * own, because its reply goes back to that bot.
  */
 export async function holdRunForChat(deps: ExecutorDeps, run: ChatWaitingRun): Promise<void> {
-  if (!CHAT_WAITING_TRIGGERS.includes(run.trigger) || run.status !== "queued" || run.startedAt)
-    return;
+  if (!waitsForChat(run) || run.status !== "queued" || run.startedAt) return;
   // Read again: the claim saw the routine as it is now, which an edit may have changed since the
   // run was loaded.
   const current = await deps.prisma.run.findUnique({
@@ -138,10 +150,17 @@ export async function startRunsWaitingOnChat(
       id: { not: run.id },
       threadId: run.threadId,
       botId: run.botId,
-      trigger: { in: [...CHAT_WAITING_TRIGGERS] },
+      AND: [
+        {
+          OR: [
+            { trigger: { in: [...CHAT_WAITING_TRIGGERS] } },
+            { trigger: "user", sourceMessageId: null },
+          ],
+        },
+        { OR: [{ routineId: null }, { routine: { is: { inChat: true } } }] },
+      ],
       status: "queued",
       startedAt: null,
-      OR: [{ routineId: null }, { routine: { is: { inChat: true } } }],
       // A retry, or a run backing off after a failed attempt, keeps its own delay.
       retryOfRunId: null,
       attempts: { none: {} },
