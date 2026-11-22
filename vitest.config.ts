@@ -18,33 +18,14 @@ const include = [
   "apps/worker/src/**/*.test.ts",
 ];
 
+// Package scripts run from their own folder, so paths resolve from the repo root, not the cwd.
+const root = path.dirname(fileURLToPath(import.meta.url));
 // The slowest files start processes (shell scripts, CLIs, servers). CI runs them in their own job
-// beside the unit shards, so they never set a shard's finish time. List a new one here when it
-// takes more than a few seconds.
-const processes = [
-  ".agents/skills/pr-watch/pr-digest.test.ts",
-  "infra/sandboxes/supervisor/src/computer-spec.test.ts",
-  "infra/sandboxes/supervisor/src/egress-probe.test.ts",
-  "infra/sandboxes/supervisor/src/focus-or-launch.test.ts",
-  "infra/sandboxes/supervisor/src/index.test.ts",
-  "infra/sandboxes/supervisor/src/page-browser-helper.test.ts",
-  "packages/adapters/src/computers/computer-idle.test.ts",
-  "packages/adapters/src/mcp/mcp-package-installer.test.ts",
-  "packages/adapters/src/providers/computer/createos/createos-sandbox.test.ts",
-  "packages/adapters/src/providers/computer/local-vm/apple-container-sandbox.test.ts",
-  "packages/adapters/src/storage/workspace-save-policy.test.ts",
-  "packages/core/src/node/desktop-runtime.test.ts",
-  "packages/logging/src/redaction.test.ts",
-  "packages/testkit/src/evals/cli.test.ts",
-  "packages/testkit/src/evals/compare.test.ts",
-  "packages/testkit/src/evals/suites/approval.test.ts",
-  "packages/testkit/src/infra/backup-scripts.test.ts",
-  "packages/testkit/src/infra/compose-installer-smoke.test.ts",
-  "packages/testkit/src/infra/deploy-script.test.ts",
-  "packages/testkit/src/infra/package-test-scripts.test.ts",
-  "packages/testkit/src/performance/performance-stack.test.ts",
-  "packages/testkit/src/screenshots/playwright-artifact-publication.test.ts",
-];
+// beside the unit shards, so they never set a shard's finish time. List a new one in
+// vitest.processes.json when it takes more than a few seconds.
+const processes: string[] = JSON.parse(
+  readFileSync(path.join(root, "vitest.processes.json"), "utf8"),
+);
 
 // Files that mock modules, assign globals, or change the environment by hand keep a fresh module
 // graph; the rest share one per worker, which skips re-importing the same modules for every file.
@@ -55,8 +36,6 @@ const processes = [
 // Database runs give every file its own database, so they never share.
 const mutatesSharedState =
   /vi\.(mock|doMock|resetModules)\(|globalThis\.\w+ *=[^=]|(globalThis|global|window)\[[^\]]+\] *=[^=]|process\.env(\.\w+|\[[^\]]+\]) *=[^=]|delete process\.env|defineProperty\((globalThis|global|window|document|navigator|process)|process\.chdir|@vitest-environment|vitest-isolate/;
-// Package scripts run from their own folder, so paths resolve from the repo root, not the cwd.
-const root = path.dirname(fileURLToPath(import.meta.url));
 const isolated = include
   .flatMap((pattern) => globSync(pattern, { cwd: root }))
   .filter((file) => !processes.includes(file))
