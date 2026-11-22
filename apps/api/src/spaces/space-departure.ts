@@ -35,13 +35,7 @@ export async function afterSpaceDeparture(
       "stop meetings after Space departure",
       deps.meetings.stopForDepartedMember({ spaceId: actor.spaceId, userId: departedUserId }),
     );
-  await Promise.all(
-    departure.events.map(({ threadId, seq }) =>
-      deps.events.notify(threadId, seq).catch((error) => {
-        getLogger().error("space departure realtime notification", error);
-      }),
-    ),
-  );
+  await Promise.all(departure.events.map(({ threadId, seq }) => deps.events.notify(threadId, seq)));
   // Their routines pass to the owner, paused.
   await deps.events.publishSpaceChange?.(actor.spaceId, "routines");
   await stopCancelledGroupRuns(deps, actor, departure).catch((error) => {

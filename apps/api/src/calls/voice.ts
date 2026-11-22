@@ -15,6 +15,7 @@ import {
   openAiCompatibleVoiceServer,
   resolveVoiceKey,
   serializeOpenAiCompatibleVoiceSecret,
+  VoiceProviderUnavailableError,
   voiceCatalogEntry,
 } from "@rakazo/adapters";
 import type { Actor, SettingsScope, VoiceCredential, VoiceStatus } from "@rakazo/contracts";
@@ -32,6 +33,7 @@ import {
   lockSpaceSettings,
   newestVoiceCredentialOrder,
   Prisma,
+  remainingSpeechAllowance,
   runAsSystemInTransaction,
   runAsTenant,
   saveVoicePreference,
@@ -40,6 +42,7 @@ import {
   withTransactionRetry,
 } from "@rakazo/db";
 import { bestEffort, getLogger } from "@rakazo/logging";
+import { markExpectedFailure } from "@rakazo/logging/hono";
 import type { Context, Hono } from "hono";
 import { readBoundedBody } from "../http/http-body.js";
 import type { DeploymentVoice } from "../voice/deployment-config.js";
@@ -254,7 +257,7 @@ export function speechModelValue(speechModel: string): string | null {
   return trimmed;
 }
 
-/** A configured service is available only after the operator grants an unexpired allowance. */
+/** A configured service is available while the organization's plan has speech allowance left. */
 export async function includedVoice(
   deps: VoiceDeps,
   actor: Pick<Actor, "userId" | "spaceId">,
@@ -264,16 +267,14 @@ export async function includedVoice(
   if (!deployment) return undefined;
   const target = await voicePreferenceTarget(deps.prisma, actor, scope);
   if (target.scope !== "account") return undefined;
-  const allowance = await deps.prisma.speechAllowance.findFirst({
-    where: { userId: actor.userId, expiresAt: { gt: new Date() } },
-  });
-  const remaining = allowance ? allowance.limitMicros - allowance.usedMicros : 0n;
+  const remaining = await remainingSpeechAllowance(deps.prisma, actor.spaceId);
+  const affords = (micros: number) => remaining === null || remaining >= BigInt(micros);
   return {
     deployment,
-    synthesize: remaining >= BigInt(deployment.pricing.synthesize.maxRequestMicros),
+    synthesize: affords(deployment.pricing.synthesize.maxRequestMicros),
     transcribe:
       Boolean(catalogEntry(deployment.provider)?.transcribe) &&
-      remaining >= BigInt(deployment.pricing.transcribe.maxRequestMicros),
+      affords(deployment.pricing.transcribe.maxRequestMicros),
   };
 }
 
@@ -313,6 +314,15 @@ export async function withVoiceConnection<T>(
   try {
     return await run();
   } catch (error) {
+    const outage = voiceOutage(error);
+    if (outage) {
+      getLogger().warn("voice provider unavailable", {
+        provider,
+        reason: outage.cause instanceof Error ? outage.cause.name : "server error",
+      });
+      markExpectedFailure();
+      throw outage;
+    }
     if (!linked) throw error;
     const name = voiceCatalogEntry(provider)?.name ?? provider;
     if (error instanceof VoiceAccountError) {
@@ -333,6 +343,14 @@ export async function withVoiceConnection<T>(
       `Couldn't use the ${name} connection from Models. Try again.`,
     );
   }
+}
+
+/** A provider outage or a request it left unanswered past its deadline, as one error to wait out. */
+function voiceOutage(error: unknown): VoiceProviderUnavailableError | undefined {
+  if (error instanceof VoiceProviderUnavailableError) return error;
+  if (error instanceof Error && error.name === "TimeoutError")
+    return new VoiceProviderUnavailableError(undefined, { cause: error });
+  return undefined;
 }
 
 /** The connection and the bearer its provider takes, read from a model connection if linked. */

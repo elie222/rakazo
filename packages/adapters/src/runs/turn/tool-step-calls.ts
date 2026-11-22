@@ -189,6 +189,19 @@ export function historyReplaysOutsideContent(history: AgentRunRequest["history"]
   );
 }
 
+/** The kept results replayed history hands the model, oldest first. */
+export function historyToolResults(history: AgentRunRequest["history"]): unknown[] {
+  return history.flatMap((entry) =>
+    (entry.segments ?? []).flatMap((segment) =>
+      "steps" in segment
+        ? segment.steps.flatMap((step) =>
+            (step.calls ?? []).flatMap((call) => (call.result === undefined ? [] : [call.result])),
+          )
+        : [],
+    ),
+  );
+}
+
 /** The image a call returned (a screenshot), when it is one this product stores. */
 function screenshotOf(completion: AgentToolCompletion) {
   if (completion.paused || completion.error !== undefined || SECRET_TOOL.test(completion.name))

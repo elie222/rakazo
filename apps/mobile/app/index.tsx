@@ -2,6 +2,7 @@ import { t } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
 import type { SpaceBot, SpaceGroup } from "@rakazo/contracts";
 import { accountDisplay, chatSnoozed } from "@rakazo/core";
+import { bestEffort } from "@rakazo/logging/best-effort";
 import type { Href } from "expo-router";
 import {
   Redirect,
@@ -33,6 +34,7 @@ import { InboxFooter } from "../components/inbox/inbox-footer";
 import { InboxHeader } from "../components/inbox/inbox-header";
 import {
   InboxListFooter,
+  InboxNewBot,
   SWIPE_ROWS,
   useInboxRenderItem,
 } from "../components/inbox/inbox-render-item";
@@ -58,6 +60,7 @@ import { signOut } from "../lib/auth/api-auth";
 import { explicitSignInRoute } from "../lib/auth/auth-routing";
 import { offerPasskeyOnce } from "../lib/auth/passkey";
 import { hasSignedInBefore, rememberSignedIn } from "../lib/auth/returning-user";
+import { offerSelfHostedSupportOnce } from "../lib/billing/self-hosted-support";
 import { AvatarViewportScope, createAvatarViewport } from "../lib/bots/avatar-life";
 import { mobileLogoAvatarActivity } from "../lib/bots/logo-avatar-activity";
 import { useUiLocale } from "../lib/i18n/i18n";
@@ -100,6 +103,7 @@ import { native, useThemedStyles } from "../lib/native/native";
 import { iosAtLeast } from "../lib/native/native-controls";
 import { forgetAppBadge, syncInboxAppBadge, unreadChatCount } from "../lib/notifications/app-badge";
 import { registerPushToken } from "../lib/notifications/push";
+import { askForReviewIfDue } from "../lib/platform/store-review";
 import { loadActivityMode, saveActivityMode } from "../lib/preferences/activity-mode";
 import { usePublishSearchInbox } from "../lib/search/use-publish-search-inbox";
 import {
@@ -190,6 +194,7 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
     badgeLoad,
     inboxRequestId,
     inboxLoaded,
+    creatingFirstBot,
     loadBots,
     refreshBots,
   } = useInbox(spaceActionRef);
@@ -219,7 +224,15 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
     useCallback(() => {
       if (!userId) return;
       let active = true;
-      void offerPasskeyOnce(userId, () => active);
+      // One prompt per visit: the passkey offer, then the support offer, then the store rating.
+      void bestEffort(
+        "inbox prompts",
+        (async () => {
+          if (await offerPasskeyOnce(userId, () => active)) return;
+          if (await offerSelfHostedSupportOnce(() => active)) return;
+          await askForReviewIfDue(() => active);
+        })(),
+      );
       return () => {
         active = false;
       };
@@ -824,12 +837,16 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
         onRetry={() => void refreshBots()}
         onSignIn={() => void signInAgain()}
       />
-    ) : activityView ? undefined : (
-      <Text style={styles.empty}>{me && !onShareSelect ? t`Tap + to create a bot` : null}</Text>
+    ) : activityView || !me || onShareSelect || creatingFirstBot ? undefined : (
+      <InboxNewBot onPress={() => newBot()} />
     );
   const listFooter = activityView ? undefined : (
     <InboxListFooter
-      createHint={!onShareSelect && !showLoadFailure && inboxNeedsCreateHint(listData)}
+      onNewBot={
+        !onShareSelect && !showLoadFailure && !creatingFirstBot && inboxNeedsCreateHint(listData)
+          ? () => newBot()
+          : undefined
+      }
       archivedCount={onShareSelect ? 0 : archivedCount}
     />
   );

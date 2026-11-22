@@ -6,6 +6,7 @@ import {
   isAutoReviewCheckerConfigured,
   loadUserIncomingCalls,
   meetingCalendarScope,
+  nativeCalendarScope,
   PushSessionEndedError,
   settleCallRequest,
   validateCreditOfferingChoice,
@@ -41,6 +42,7 @@ import {
   lockSpaceSettings,
   newestVoiceCredentialOrder,
   Prisma,
+  pageChangesScope,
   removeApprovalRule,
   runAsSystem,
   runAsTenant,
@@ -129,6 +131,16 @@ export function accountRoutes(ctx: RouterContext) {
     },
     health: os.health.handler(async () => ({ ok: true as const, version: "0.1.0" })),
     me: authed.me.handler(async ({ context }): Promise<Me> => meDto(deps, context.actor)),
+    cloudComputers: {
+      list: authed.cloudComputers.list.handler(
+        async ({ context }) => (await deps.billing?.cloudComputers(context.actor)) ?? null,
+      ),
+      setSize: authed.cloudComputers.setSize.handler(async ({ context, input }) => {
+        const billing = requireBilling(deps);
+        await billing.setComputerSize(context.actor, input.computerId, input.size);
+        return { ok: true as const };
+      }),
+    },
     billing: {
       selectFunding: authed.billing.selectFunding.handler(async ({ context, input }) => {
         const billing = requireBilling(deps);
@@ -411,16 +423,32 @@ export function accountRoutes(ctx: RouterContext) {
         };
         const spaceChanges = async function* (
           signal: AbortSignal,
-          calendar = false,
+          special?: "meetingCalendar" | "nativeCalendar" | "pages",
         ): AsyncGenerator<{ spaceChange: SpaceChangeKind }> {
-          if (!followSpaceChanges || (calendar && !deps.meetingCalendar)) return;
-          const scope = calendar ? meetingCalendarScope(spaceId, userId) : spaceId;
+          if (!followSpaceChanges) return;
+          let scope = spaceId;
+          if (special === "meetingCalendar") {
+            if (!deps.meetingCalendar) return;
+            scope = meetingCalendarScope(spaceId, userId);
+          } else if (special === "nativeCalendar") {
+            if (!context.nativeSessionId) return;
+            scope = nativeCalendarScope({ spaceId, userId, sessionId: context.nativeSessionId });
+          } else if (special === "pages") {
+            scope = pageChangesScope(userId);
+          }
           // The app re-reads what these cover only on signals, so a failure ends the stream and
           // the app reconnects and re-reads. Alerts keep flowing for a while first, so a lasting
           // failure costs one reconnect every half minute rather than a tight loop.
           try {
             for await (const spaceChange of followSpaceChanges(scope, signal)) {
-              if ((spaceChange === "meetingCalendar") === calendar) yield { spaceChange };
+              if (
+                special
+                  ? spaceChange === special
+                  : spaceChange !== "meetingCalendar" &&
+                    spaceChange !== "nativeCalendar" &&
+                    spaceChange !== "pages"
+              )
+                yield { spaceChange };
             }
           } catch (error) {
             await abortableDelay(SIGNAL_FAILURE_HOLD_MS, signal);
@@ -444,7 +472,9 @@ export function accountRoutes(ctx: RouterContext) {
             followChatAlerts(userId, spaceId, signal),
             rosterChanges(signal),
             spaceChanges(signal),
-            spaceChanges(signal, true),
+            spaceChanges(signal, "meetingCalendar"),
+            spaceChanges(signal, "nativeCalendar"),
+            spaceChanges(signal, "pages"),
             organizationChanges(signal),
           ),
         );

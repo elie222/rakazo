@@ -67,7 +67,8 @@ function OptionSelect<T extends string>({
       >
         <SelectValue />
       </SelectTrigger>
-      <SelectContent>
+      {/* As wide as its longest option, never narrower than the button. */}
+      <SelectContent className="w-max max-w-(--available-width) min-w-(--anchor-width)">
         <SelectGroup>
           {options.map((option) => (
             <SelectItem key={option.value} value={option.value} disabled={option.disabled}>

@@ -26,7 +26,7 @@ and remote providers. This stack credential does not replace a remote provider's
 ## Settings configuration
 
 Set `COMPUTER_SETTINGS_ENABLED=true` on the API to turn this on. Admins can then choose
-**Settings → Computer → New computers run on** and save a supported provider's fields.
+**Settings → Computers → New computers run on** and save a supported provider's fields.
 The API supplies the provider's field descriptors and validates values server-side. Credentials are encrypted in the secret store and
 never returned; a blank secret field keeps its saved value for the same provider and destination.
 Changing a URL requires credentials again. **Default** uses `SANDBOX_PROVIDER`.
@@ -411,7 +411,7 @@ bot's uid 1000 cannot change it.
 ## `wuying`
 
 Bot computers run on one existing Wuying (无影) cloud computer. An admin can also set this up in
-**Settings → Computer** instead of these variables; see [Wuying cloud computers](./wuying-computers.md)
+**Settings → Computers** instead of these variables; see [Wuying cloud computers](./wuying-computers.md)
 for the full setup. Each computer's home is a folder
 under the desktop user's profile (`%USERPROFILE%\rakazo\<home>`), and the desktop's own disk
 keeps it between stops, so nothing is copied in or out. Commands run in PowerShell; files,

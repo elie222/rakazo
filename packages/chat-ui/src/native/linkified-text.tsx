@@ -1,10 +1,11 @@
+import { linkLabel } from "@rakazo/contracts";
 import type { ColorTokens } from "@rakazo/ui-tokens";
 import { typeScale } from "@rakazo/ui-tokens";
 import type { ReactNode } from "react";
 import { Fragment, memo } from "react";
 import type { TextStyle } from "react-native";
 import { Text, View } from "react-native";
-import { linkFaviconOrigin, linkLabel, plainTextLinkParts } from "../markdown";
+import { linkFaviconOrigin, plainTextLinkParts } from "../markdown";
 import { MarkdownPageChip } from "./chips";
 import { contraryDirection } from "./direction";
 import { ISOLATE, LinkFavicon, POP_ISOLATE, useNativeLinkConfirm, WORD_JOINER } from "./links";
