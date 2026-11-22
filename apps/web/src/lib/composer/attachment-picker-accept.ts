@@ -7,7 +7,15 @@ import { ATTACHMENT_ALLOWED_MIME_TYPES } from "@rakazo/contracts";
  */
 export function attachmentPickerAccept(userAgent: string): string {
   if (/\bAndroid\b/i.test(userAgent)) return "*/*";
-  return [...ATTACHMENT_ALLOWED_MIME_TYPES, ".zip", ".rar", ".7z", ".csv", ".xls", ".xlsx"].join(
-    ",",
-  );
+  return [
+    ...ATTACHMENT_ALLOWED_MIME_TYPES,
+    ".zip",
+    ".rar",
+    ".7z",
+    ".csv",
+    ".xls",
+    ".xlsx",
+    ".docx",
+    ".pptx",
+  ].join(",");
 }
