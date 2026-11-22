@@ -577,6 +577,10 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
           url: env.sandboxOptions.hostComputerUrl,
           token: env.sandboxOptions.hostComputerToken,
         }),
+      userComputerAccess: {
+        routines: env.userDevicesAllowRoutines,
+        ownBots: env.userDevicesAllowOwnBots,
+      },
       paymentWallet,
       web,
       stoppingSignal: shutdown.signal,
