@@ -53,7 +53,7 @@ export async function postRoutineMessage(
         return event.seq;
       }),
     );
-    if (seq !== undefined) await deps.events.notify(input.threadId, seq).catch(() => undefined);
+    if (seq !== undefined) await deps.events.notify(input.threadId, seq);
   } catch (error) {
     // Already in the chat from an earlier attempt.
     if (input.clientNonce && isUniqueViolation(error)) return;

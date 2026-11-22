@@ -1635,7 +1635,7 @@ async function announceInvite(
         },
       ],
     });
-    await deps.events.notify(thread.id, note.seq).catch(() => undefined);
+    await deps.events.notify(thread.id, note.seq);
   }
 }
 

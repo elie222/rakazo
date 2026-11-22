@@ -1,8 +1,5 @@
 import path from "node:path";
-import {
-  normalizeWorkspacePath,
-  WorkspacePathError,
-} from "../../../computers/screens/computer-support.js";
+import { normalizeWorkspacePath, WorkspacePathError } from "./computer-support.js";
 
 type PathOperations = Pick<typeof path, "isAbsolute" | "relative" | "resolve" | "sep">;
 

@@ -102,5 +102,5 @@ async function writeRoutineNotice(deps: RoutineNoticeDeps, input: RoutineNoticeI
     });
     return event.seq;
   }, THREAD_LOCK_TRANSACTION_OPTIONS);
-  await bestEffort("routine notice notify", deps.events.notify(threadId, seq));
+  await deps.events.notify(threadId, seq);
 }
