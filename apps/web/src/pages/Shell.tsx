@@ -12,7 +12,6 @@ import {
   answerableAskMessageIds,
   channelMessageSender,
   chatListed,
-  chatSnoozed,
   chatUserBubbleColors,
   chatWoke,
   dismissableAskMessageIds,
@@ -113,11 +112,11 @@ import {
 import { ShellSidePanel } from "./shell/side-panel";
 import { ArchivedChats } from "./shell/sidebar/archived-chats";
 import { focusSidebarSearch, ShellSidebar } from "./shell/sidebar/shell-sidebar";
-import { HiddenChats, SnoozedChats, shelvedChats } from "./shell/sidebar/shelved-chats";
+import { ChatShelves } from "./shell/sidebar/shelved-chats";
 import { BotsSidebarLayout } from "./shell/sidebar/sidebar-layout";
 import { SidebarRoster } from "./shell/sidebar/sidebar-roster";
 import { countUnreadChats, sidebarGroupsForSpaces } from "./shell/sidebar/space-sidebar";
-import { useChatHide, useChatMute, useChatSnooze } from "./shell/sidebar/use-chat-snooze";
+import { useChatChoices } from "./shell/sidebar/use-chat-snooze";
 import { useMobileSidebar } from "./shell/sidebar/use-mobile-sidebar";
 import { useSidebarExpansion } from "./shell/sidebar/use-sidebar-expansion";
 import { useSidebarSearch } from "./shell/sidebar/use-sidebar-search";
@@ -199,17 +198,14 @@ function SpaceShell() {
     ...groups,
     ...spaces.flatMap((space) => [...space.bots, ...space.groups]),
   ]);
-  const chatChoiceDeps = {
+  const { snooze, mute, hide } = useChatChoices({
     rpc,
     openSpaceId: bootstrapMe?.spaceId,
     setBots,
     setGroups,
     setSpaces,
     refreshBots,
-  };
-  const snooze = useChatSnooze(chatChoiceDeps);
-  const mute = useChatMute(chatChoiceDeps);
-  const hide = useChatHide(chatChoiceDeps);
+  });
   const { collapsedSidebarSections, toggleSidebarSection } = useSidebarExpansion(userId);
   // Read while rendering, so returning to chats does not animate the sidebar shut.
   const [botsSidebarCollapsed, setBotsSidebarCollapsed] = useState(() =>
@@ -304,8 +300,7 @@ function SpaceShell() {
     inGroup || routeChat?.groupId
       ? undefined
       : (bots.find((b) => b.id === (botId ?? routeChat?.botId)) ??
-        // With no chat named, open one that's in the list, not a snoozed one while any other is,
-        // and never a hidden one.
+        // With no chat named, open a listed one, else a snoozed one, never a hidden one.
         bots.find((b) => chatListed(b, snoozeNow)) ??
         bots.find((b) => !b.hidden));
   const selectBot = useCallback(
@@ -729,8 +724,7 @@ function SpaceShell() {
       spaces.some((space) => space.hasContent) ||
       // Someone who has chatted before, in a new organization: nothing is on its way to them.
       !firstBotDue);
-  // An open chat is ready once it loads. With none open because every bot is hidden, or there
-  // is none, the shell is ready as is.
+  // With no chat open because every bot is hidden, or there is none, the shell is ready as is.
   const shellReady =
     initialBotsLoaded &&
     (inGroup
@@ -1116,19 +1110,11 @@ function SpaceShell() {
         }
         archived={
           <>
-            <SnoozedChats
-              snoozed={shelvedChats(
-                sidebarSpaces,
-                (chat) => !chat.hidden && chatSnoozed(chat, snoozeNow),
-              )}
+            <ChatShelves
+              spaces={sidebarSpaces}
               showSpaceSearch={search.showSpaceSearch}
               now={snoozeNow}
               snooze={snooze}
-              openSpaceChat={openSpaceChat}
-            />
-            <HiddenChats
-              hidden={shelvedChats(sidebarSpaces, (chat) => Boolean(chat.hidden))}
-              showSpaceSearch={search.showSpaceSearch}
               hide={hide}
               openSpaceChat={openSpaceChat}
             />

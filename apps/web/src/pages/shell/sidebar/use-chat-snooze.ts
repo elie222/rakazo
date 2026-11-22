@@ -95,3 +95,8 @@ export function useChatMute(deps: ChatChoiceDeps): ToggleChat {
 export function useChatHide(deps: ChatChoiceDeps): ToggleChat {
   return useChatChoice(deps, "hidden", sendHide, false);
 }
+
+/** The viewer's own snooze, mute and hide for any chat in a listed space. */
+export function useChatChoices(deps: ChatChoiceDeps) {
+  return { snooze: useChatSnooze(deps), mute: useChatMute(deps), hide: useChatHide(deps) };
+}

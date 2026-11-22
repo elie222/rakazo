@@ -1,6 +1,6 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { Space } from "@rakazo/contracts";
-import { snoozeWakeDay } from "@rakazo/core";
+import { chatSnoozed, snoozeWakeDay } from "@rakazo/core";
 import { BotAvatar, Button, GroupAvatar } from "@rakazo/ui-web";
 import type { ReactNode } from "react";
 import { SidebarShelf } from "./sidebar-shelf";
@@ -10,9 +10,11 @@ export type ShelvedChat =
   | { kind: "bot"; chat: Space["bots"][number] }
   | { kind: "group"; chat: Space["groups"][number] };
 
+type ShelfSpaces = readonly Pick<Space, "bots" | "groups">[];
+
 /** The bots, then the groups, across every space that `keep` puts on a shelf. */
-export function shelvedChats(
-  spaces: readonly Pick<Space, "bots" | "groups">[],
+function shelvedChats(
+  spaces: ShelfSpaces,
   keep: (chat: ShelvedChat["chat"]) => boolean,
 ): ShelvedChat[] {
   return spaces.flatMap((space) => [
@@ -101,14 +103,14 @@ function ChatShelf({
   );
 }
 
-/** Snoozed chats with their wake times. */
-export function SnoozedChats({
-  snoozed,
+/** Snoozed chats with their wake times; a hidden one waits under Hidden instead. */
+function SnoozedChats({
+  spaces,
   now,
   snooze,
   ...shelf
 }: {
-  snoozed: ShelvedChat[];
+  spaces: ShelfSpaces;
   showSpaceSearch: boolean;
   now: number;
   snooze: SnoozeChat;
@@ -119,7 +121,7 @@ export function SnoozedChats({
     <ChatShelf
       {...shelf}
       title={<Trans>Snoozed</Trans>}
-      chats={snoozed}
+      chats={shelvedChats(spaces, (chat) => !chat.hidden && chatSnoozed(chat, now))}
       detail={(chat) => {
         const wake = new Date(chat.snoozedUntil ?? "");
         const day = snoozeWakeDay(wake, new Date(now));
@@ -133,12 +135,12 @@ export function SnoozedChats({
 }
 
 /** Chats hidden from the list; they keep working, and come back by themselves when they need the viewer. */
-export function HiddenChats({
-  hidden,
+function HiddenChats({
+  spaces,
   hide,
   ...shelf
 }: {
-  hidden: ShelvedChat[];
+  spaces: ShelfSpaces;
   showSpaceSearch: boolean;
   hide: ToggleChat;
   openSpaceChat: (spaceId: string, path: string) => void;
@@ -148,10 +150,28 @@ export function HiddenChats({
     <ChatShelf
       {...shelf}
       title={<Trans>Hidden</Trans>}
-      chats={hidden}
+      chats={shelvedChats(spaces, (chat) => Boolean(chat.hidden))}
       action={<Trans>Unhide</Trans>}
       actionLabel={(chat) => t`Unhide ${chat.name}`}
       onAction={({ kind, chat }) => hide({ kind, ...chat }, false)}
     />
+  );
+}
+
+/** The Snoozed and Hidden shelves under the chat list. */
+export function ChatShelves({
+  hide,
+  ...shelf
+}: Parameters<typeof SnoozedChats>[0] & { hide: ToggleChat }) {
+  return (
+    <>
+      <SnoozedChats {...shelf} />
+      <HiddenChats
+        spaces={shelf.spaces}
+        showSpaceSearch={shelf.showSpaceSearch}
+        hide={hide}
+        openSpaceChat={shelf.openSpaceChat}
+      />
+    </>
   );
 }
