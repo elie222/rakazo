@@ -3516,6 +3516,7 @@ describe("MCP OAuth", () => {
             client_secret: "default-secret",
             scope: "mail.read mail.send",
             authorization_params: "access_type=offline",
+            servers: ["https://mcp.example.test"],
           },
         }),
       );
@@ -3576,7 +3577,13 @@ describe("MCP OAuth", () => {
       it("still asks for a client when the default belongs to another authorization server", async () => {
         nonRegisteringAuthServer(() => undefined);
         const other = parseMcpOAuthDefaultClients(
-          JSON.stringify({ "https://other.example": { client_id: "other", client_secret: "s" } }),
+          JSON.stringify({
+            "https://other.example": {
+              client_id: "other",
+              client_secret: "s",
+              servers: ["https://mcp.example.test"],
+            },
+          }),
         );
         const { broker } = brokerWithMaterial({}, {}, other);
 
@@ -3591,11 +3598,33 @@ describe("MCP OAuth", () => {
       it("does not match an issuer that only shares a prefix with the default's", async () => {
         nonRegisteringAuthServer(() => undefined);
         const prefix = parseMcpOAuthDefaultClients(
-          JSON.stringify({ "https://auth.example.test/tenant": { client_id: "tenant" } }),
+          JSON.stringify({
+            "https://auth.example.test/tenant": {
+              client_id: "tenant",
+              servers: ["https://mcp.example.test"],
+            },
+          }),
         );
         const { broker } = brokerWithMaterial({}, {}, prefix);
 
         await expect(begin(broker)).rejects.toBeInstanceOf(McpOAuthClientRequiredError);
+      });
+
+      it("does not give the default to an MCP server the operator did not list", async () => {
+        nonRegisteringAuthServer(() => undefined);
+        const listed = parseMcpOAuthDefaultClients(
+          JSON.stringify({
+            "https://auth.example.test": {
+              client_id: "default-client",
+              client_secret: "default-secret",
+              servers: ["https://trusted.example.test"],
+            },
+          }),
+        );
+        const { broker, secrets } = brokerWithMaterial({}, {}, listed);
+
+        await expect(begin(broker)).rejects.toBeInstanceOf(McpOAuthClientRequiredError);
+        expect(written(secrets)).not.toContain("default-secret");
       });
 
       it("prefers the client the user entered", async () => {
@@ -3722,12 +3751,29 @@ describe("MCP OAuth", () => {
         expect(stored).not.toContain("default-secret");
       });
 
+      it("does not refresh an unlisted MCP server's grant with the default", async () => {
+        const server = rotatingAuthServer();
+        const { clientInformation: _registered, ...oauth } = expiringMaterial(EXPIRED()).oauth;
+        const shared = sharedCredentials({ oauth }, "https://unlisted.example.test/mcp");
+
+        const { provider } = await shared.startProcess(server.fetch, false, defaults);
+        await provider.tokens();
+
+        expect(server.requests).toHaveLength(0);
+      });
+
       it("cannot refresh once the default no longer matches the grant's authorization server", async () => {
         const server = rotatingAuthServer();
         const { clientInformation: _registered, ...oauth } = expiringMaterial(EXPIRED()).oauth;
         const shared = sharedCredentials({ oauth });
         const other = parseMcpOAuthDefaultClients(
-          JSON.stringify({ "https://other.example": { client_id: "other", client_secret: "s" } }),
+          JSON.stringify({
+            "https://other.example": {
+              client_id: "other",
+              client_secret: "s",
+              servers: ["https://mcp.example.test"],
+            },
+          }),
         );
         const { provider } = await shared.startProcess(server.fetch, false, other);
 

@@ -41,7 +41,7 @@ import { attemptSecretCleanup, cleanUpUnsavedSecret } from "../secrets/secret-cl
 import { persistPreparedSecret } from "../secrets/secret-persistence.js";
 import { holdSecretNotifications } from "../secrets/secret-store-factory.js";
 import type { McpOAuthDefaultClient, McpOAuthDefaultClients } from "./mcp-oauth-default-clients.js";
-import { defaultClientFor, defaultClientSecrets } from "./mcp-oauth-default-clients.js";
+import { defaultClientSecrets, deploymentClient } from "./mcp-oauth-default-clients.js";
 import { MCP_DYNAMIC_REGISTRATION_UNSUPPORTED, needsMcpOAuthClient } from "./mcp-server-health.js";
 import {
   MAX_AUTHORIZATION_URL_LENGTH,
@@ -398,30 +398,18 @@ function boundClient(
   return information;
 }
 
-/**
- * The operator's default client for the authorization server this grant belongs to. It applies
- * only when the user entered no client and the server registered none, and it is read from
- * the deployment's settings each time, never from the stored material.
- */
-function deploymentClient(
-  material: OAuthMaterial,
-  defaults: McpOAuthDefaultClients | undefined,
-): McpOAuthDefaultClient | undefined {
-  if (material.oauthClient || material.oauth?.clientInformation) return undefined;
-  return defaultClientFor(defaults, material.oauth?.discoveryState?.authorizationServerUrl);
-}
-
 /** The client a request to the authorization server is made as. */
 function resolveClientInformation(
   material: OAuthMaterial,
   defaults: McpOAuthDefaultClients | undefined,
+  mcpEndpoint: string | null | undefined,
 ): OAuthClientInformationMixed | undefined {
   if (material.oauthClient)
     return boundClient(
       material.oauthClient,
       material.oauth?.discoveryState?.authorizationServerUrl,
     );
-  const fallback = deploymentClient(material, defaults);
+  const fallback = deploymentClient(material, defaults, mcpEndpoint);
   if (!fallback) return material.oauth?.clientInformation;
   return {
     client_id: fallback.client_id,
@@ -525,6 +513,8 @@ type ProviderOptions = {
   allowPrivateEndpoint?: boolean;
   /** Clients the operator registered for every user; never stored with a user's credential. */
   defaultClients?: McpOAuthDefaultClients;
+  /** The MCP server's endpoint, which decides whether a default client may be used. */
+  mcpEndpoint?: string | null;
 };
 
 /** Refresh before expiry to cover clock skew and request time. */
@@ -704,7 +694,7 @@ export class StoredMcpOAuthProvider implements OAuthClientProvider {
   }
 
   private deploymentClient(): McpOAuthDefaultClient | undefined {
-    return deploymentClient(this.material, this.options.defaultClients);
+    return deploymentClient(this.material, this.options.defaultClients, this.options.mcpEndpoint);
   }
 
   /** Whether the client in use is the operator's default, registered with the web redirect. */
@@ -717,7 +707,12 @@ export class StoredMcpOAuthProvider implements OAuthClientProvider {
   }
   clientInformation(): OAuthClientInformationMixed | undefined {
     const client = this.material.oauthClient;
-    if (!client) return resolveClientInformation(this.material, this.options.defaultClients);
+    if (!client)
+      return resolveClientInformation(
+        this.material,
+        this.options.defaultClients,
+        this.options.mcpEndpoint,
+      );
     // The SDK saves discovery before asking for the client, so this is the server
     // about to receive it. The first one is kept and written with the next persist.
     const server = this.material.oauth?.discoveryState?.authorizationServerUrl;
@@ -1224,9 +1219,10 @@ async function requestRefresh(
   fetchFn: typeof fetch,
   allowPrivateEndpoint: boolean,
   defaultClients: McpOAuthDefaultClients,
+  mcpEndpoint: string | null,
 ): Promise<OAuthTokens> {
   const discovery = material.oauth?.discoveryState;
-  const clientInformation = resolveClientInformation(material, defaultClients);
+  const clientInformation = resolveClientInformation(material, defaultClients, mcpEndpoint);
   if (!discovery?.authorizationServerUrl || !clientInformation)
     throw new Error("MCP OAuth state cannot refresh");
   return refreshAuthorization(discovery.authorizationServerUrl, {
@@ -1748,6 +1744,7 @@ export class McpOAuthBroker {
           : {}),
         allowPrivateEndpoint: this.allowPrivateEndpoint,
         defaultClients: this.defaultClients,
+        mcpEndpoint: endpoint,
         ...options,
       },
     );
@@ -1805,6 +1802,7 @@ export class McpOAuthBroker {
                     network.fetch,
                     this.allowPrivateEndpoint,
                     this.defaultClients,
+                    endpoint,
                   ),
                 };
                 grant.obtainedAt = Date.now();

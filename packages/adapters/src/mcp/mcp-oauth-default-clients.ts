@@ -13,6 +13,17 @@ function issuerHref(key: string): string | undefined {
   }
 }
 
+function httpsOrigin(value: string): string | undefined {
+  try {
+    const url = new URL(value);
+    const plain = !url.username && !url.password && !url.search && !url.hash;
+    const exact = plain && url.pathname === "/" && !url.hostname.includes("*");
+    return url.protocol === "https:" && exact ? url.origin : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 const DefaultClient = z.strictObject({
   client_id: z.string().trim().min(1),
   client_secret: z.string().min(1).optional(),
@@ -29,6 +40,8 @@ const DefaultClient = z.strictObject({
       }
     }, "must not set the OAuth flow's own parameters")
     .optional(),
+  /** HTTPS origins of the MCP servers allowed to use this client. */
+  servers: z.array(z.string()).min(1),
 });
 
 /** A client the operator registered with an authorization server for every user of the deployment. */
@@ -66,21 +79,53 @@ export function parseMcpOAuthDefaultClients(raw: string | undefined): McpOAuthDe
         .join("; ");
       throw new Error(`${ENV_NAME} entry ${JSON.stringify(href)}: ${problem}`);
     }
+    const origins = client.data.servers.map(httpsOrigin);
+    // The offending value is left out: it may carry credentials.
+    if (origins.some((origin) => !origin))
+      throw new Error(
+        `${ENV_NAME} entry ${JSON.stringify(href)}: servers must be https origins without credentials, path, query or fragment`,
+      );
     if (Object.hasOwn(clients, href))
       throw new Error(`${ENV_NAME} lists ${JSON.stringify(href)} more than once`);
-    clients[href] = client.data;
+    clients[href] = { ...client.data, servers: [...new Set(origins as string[])] };
   }
   return clients;
 }
 
-/** The default for exactly this authorization server, so its secret goes nowhere else. */
+/** The default for exactly this authorization server and a listed MCP server, so its secret goes nowhere else. */
 export function defaultClientFor(
   clients: McpOAuthDefaultClients | undefined,
   authorizationServerUrl: string | undefined,
+  mcpEndpoint: string | null | undefined,
 ): McpOAuthDefaultClient | undefined {
-  if (!clients || !authorizationServerUrl) return undefined;
+  if (!clients || !authorizationServerUrl || !mcpEndpoint) return undefined;
   const href = new URL(authorizationServerUrl).href;
-  return Object.hasOwn(clients, href) ? clients[href] : undefined;
+  const client = Object.hasOwn(clients, href) ? clients[href] : undefined;
+  return client?.servers.includes(new URL(mcpEndpoint).origin) ? client : undefined;
+}
+
+/**
+ * The default that applies to a grant: only when the user entered no client and the server
+ * registered none, and only for a listed MCP server. A stdio server has no endpoint, so it
+ * never gets one.
+ */
+export function deploymentClient(
+  material: {
+    oauthClient?: unknown;
+    oauth?: {
+      clientInformation?: unknown;
+      discoveryState?: { authorizationServerUrl?: string };
+    };
+  },
+  defaults: McpOAuthDefaultClients | undefined,
+  mcpEndpoint: string | null | undefined,
+): McpOAuthDefaultClient | undefined {
+  if (material.oauthClient || material.oauth?.clientInformation) return undefined;
+  return defaultClientFor(
+    defaults,
+    material.oauth?.discoveryState?.authorizationServerUrl,
+    mcpEndpoint,
+  );
 }
 
 /** Every configured secret, for redaction wherever one could surface. */

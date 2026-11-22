@@ -79,8 +79,15 @@ describe("runRuntimeEnvFromProcess", () => {
     const env = (MCP_OAUTH_DEFAULT_CLIENTS?: string) =>
       runRuntimeEnvFromProcess({ NODE_ENV: "test", MCP_OAUTH_DEFAULT_CLIENTS });
     expect(
-      env('{"https://issuer.example":{"client_id":"fake-client"}}').mcpOAuthDefaultClients,
-    ).toEqual({ "https://issuer.example/": { client_id: "fake-client" } });
+      env(
+        '{"https://issuer.example":{"client_id":"fake-client","servers":["https://mcp.example.test"]}}',
+      ).mcpOAuthDefaultClients,
+    ).toEqual({
+      "https://issuer.example/": {
+        client_id: "fake-client",
+        servers: ["https://mcp.example.test"],
+      },
+    });
     expect(() => env("{oops")).toThrow("MCP_OAUTH_DEFAULT_CLIENTS");
   });
 
