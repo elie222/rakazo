@@ -9,6 +9,7 @@ import {
   retryDelayMs,
   speechFromBlocks,
 } from "@rakazo/core";
+import { bestEffort } from "@rakazo/logging/best-effort";
 import type { ApiRequestContext } from "../api/api";
 import { captureApiRequestContext, rpc } from "../api/api";
 import { subscribeThread } from "../api/api-live";
@@ -114,9 +115,9 @@ export function productionDeps({
     audio: setCallAudio,
     cue: playCallCue,
     waitSound: (action) => {
-      if (action === "start") void startWaitSound().catch(() => undefined);
+      if (action === "start") void bestEffort("start call wait sound", startWaitSound());
       else if (action === "stop") stopWaitSound();
-      else if (action === "preload") void preloadWaitSound().catch(() => undefined);
+      else if (action === "preload") void bestEffort("preload call wait sound", preloadWaitSound());
       else releaseWaitSound();
     },
     watch: (botId, onReply, onEnded, onThread) =>
@@ -174,7 +175,7 @@ function watchReplies(
 ): () => void {
   const { onReply: onNewReply, onEnded, onThread, onFeedLost } = feed;
   const controller = new AbortController();
-  void (async () => {
+  const follow = async () => {
     let snapshot: MobileSnapshot | null = null;
     let lastSeen: string | null = null;
     let cursor = 0;
@@ -250,7 +251,8 @@ function watchReplies(
       if (controller.signal.aborted) return;
       await abortableDelay(retryDelayMs(failure, retry), controller.signal);
     }
-  })().catch(() => undefined);
+  };
+  void bestEffort("follow the call's live reply feed", follow());
   return () => controller.abort();
 }
 
