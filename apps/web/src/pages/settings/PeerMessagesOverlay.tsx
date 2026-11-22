@@ -24,7 +24,7 @@ import { PageBlockCard } from "../../components/pages/PageBlockCard";
 import { WindowChrome } from "../../components/WindowChrome";
 import { TRANSCRIPT_CONTENT_PADDING } from "../../lib/chat/transcript-layout";
 import { transcriptIsNearEnd } from "../../lib/chat/transcript-scroll";
-import { desktopBridge } from "../../lib/platform/desktop";
+import { desktopBridge, windowChromeKind } from "../../lib/platform/desktop";
 import { useSpaceQueries } from "../../lib/query/query";
 import { rpc } from "../../lib/query/rpc";
 import { ArtifactImage, ChartBlockView } from "../shell/chat/message-cards";
@@ -107,7 +107,7 @@ export function PeerMessagesOverlay({
       >
         {/* macOS keeps its native window controls on the physical left. */}
         <div
-          dir={desktop?.platform === "darwin" ? "ltr" : undefined}
+          dir={windowChromeKind(desktop) === "darwin" ? "ltr" : undefined}
           className={`app-drag grid items-center gap-4 border-b border-sidebar-border px-[18px] py-3.5 ${
             desktop
               ? "grid-cols-[72px_minmax(0,1fr)_72px]"
