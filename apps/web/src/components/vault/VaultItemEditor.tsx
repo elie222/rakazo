@@ -33,7 +33,7 @@ import {
 import type { ComponentProps, ReactNode } from "react";
 import { useId, useRef, useState } from "react";
 import type { AgentAccess } from "../integrations/agent-access";
-import { SettingsPageHeader } from "../SettingsPageHeader";
+import { SettingsPageHeader } from "../settings/SettingsPageHeader";
 import type { VaultAuth } from "./kinds";
 import { LoginFieldsInput } from "./LoginFieldsInput";
 import { VaultItemAccess } from "./VaultItemAccess";
@@ -313,6 +313,10 @@ function EditorForm({
   });
   const { keyUnreadable, sites: otherSites } = loginSave;
   const limit = VAULT_ALSO_ON_LIMIT;
+  // Each input points at its message, so a screen reader says why Save is off.
+  const keyErrorId = id("otp-error");
+  const sitesErrorId = id("also-on-error");
+  const sitesInvalid = !Array.isArray(otherSites);
 
   const ready =
     kind === "login"
@@ -511,24 +515,30 @@ function EditorForm({
                 ? text("otp", t`Authenticator key`, otp, setOtp, {
                     type: "password",
                     autoComplete: "new-password",
+                    "aria-invalid": keyUnreadable ? true : undefined,
+                    "aria-describedby": keyUnreadable ? keyErrorId : undefined,
                   })
                 : null}
               {keyUnreadable ? (
-                <p className="-mt-2 text-label text-destructive">
+                <p id={keyErrorId} className="-mt-2 text-label text-destructive">
                   <Trans>This authenticator key can't be read.</Trans>
                 </p>
               ) : null}
               {alsoOnShown
                 ? text("also-on", t`Also on`, alsoOn, setAlsoOn, {
                     placeholder: "https://login.example.com",
+                    "aria-invalid": sitesInvalid ? true : undefined,
+                    "aria-describedby": sitesInvalid ? sitesErrorId : undefined,
                   })
                 : null}
               {otherSites === "invalid" ? (
-                <p className="-mt-2 text-label text-destructive">
+                <p id={sitesErrorId} className="-mt-2 text-label text-destructive">
                   <Trans>Enter each site as an HTTPS address a login can be saved for.</Trans>
                 </p>
               ) : otherSites === "too_many" ? (
-                <p className="-mt-2 text-label text-destructive">{t`Up to ${limit} sites.`}</p>
+                <p id={sitesErrorId} className="-mt-2 text-label text-destructive">
+                  {t`Up to ${limit} sites.`}
+                </p>
               ) : null}
               {otpShown && alsoOnShown ? null : (
                 <div className="flex gap-4">
@@ -567,7 +577,7 @@ function EditorForm({
               <Input
                 id={id("number")}
                 inputMode="numeric"
-                autoComplete="off"
+                autoComplete="cc-number"
                 spellCheck={false}
                 disabled={busy}
                 value={groupedCardNumber(cardDigits)}
@@ -594,21 +604,21 @@ function EditorForm({
                 const digits = digitsOf(next, 6);
                 setExpiry(digits.length > 2 ? `${digits.slice(0, 2)}/${digits.slice(2)}` : digits);
               },
-              { inputMode: "numeric", placeholder: "MM/YY" },
+              { inputMode: "numeric", placeholder: "MM/YY", autoComplete: "cc-exp" },
             )}
             <FormField id={id("cvc")} label={t`Security code`}>
               <Input
                 id={id("cvc")}
                 type="password"
                 inputMode="numeric"
-                autoComplete="new-password"
+                autoComplete="cc-csc"
                 disabled={busy}
                 value={cvc}
                 onChange={(event) => setCvc(digitsOf(event.target.value, 4))}
               />
             </FormField>
           </div>
-          {text("card-name", t`Name on card`, cardName, setCardName)}
+          {text("card-name", t`Name on card`, cardName, setCardName, { autoComplete: "cc-name" })}
           {contacts?.length ? (
             <FormField id={id("billing")} label={t`Billing address`}>
               <OptionSelect

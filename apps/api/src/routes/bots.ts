@@ -1,14 +1,11 @@
-import { randomBytes } from "node:crypto";
 import { ORPCError } from "@orpc/server";
 import {
   archiveBot,
-  checkpointAndStopComputer,
+  carriedBotModelPin,
   defaultVaultItemTitle,
-  endTeachingWithLease,
   forgetBotSecret,
   forgetPageShareSecrets,
   groupsRemovedByDeletingBot,
-  hasActiveComputerControl,
   importedLoginValue,
   isSecretAlreadySaved,
   LoginAlreadySavedError,
@@ -22,7 +19,8 @@ import {
   SpaceVaultNotInUseError,
   stopCancelledGroupRuns,
   storeBotSecret,
-  toComputerRef,
+  storeBotWebhookKey,
+  switchBotComputer,
   VaultFullError,
   VaultItemRefusedError,
   VaultRetryError,
@@ -47,16 +45,14 @@ import {
   vaultImportLogin,
   vaultImportOrigin,
 } from "@rakazo/contracts";
-import { ACTIVE_RUN_STATUSES, ClientError, computerUsingRuns, displayName } from "@rakazo/core";
+import { ClientError, displayName } from "@rakazo/core";
 import type { Prisma } from "@rakazo/db";
 import {
   botChatMutedFor,
   botProfileLabelsChanged,
   commitBotUpdate,
-  expireComputerExecutionLeases,
   IsolationError,
   isRecordNotFound,
-  recordComputerRunEnd,
   recordSecurityEvent,
   restoreBotUnderComputerQuota,
   setBotNotifyFor,
@@ -64,20 +60,29 @@ import {
   THREAD_LOCK_TRANSACTION_OPTIONS,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
-import type { AgentImportServices } from "../agent-import.js";
-import { agentImportSetupState, createImportedBot, previewAgentImport } from "../agent-import.js";
-import { deleteAgentSecret, listAgentSecrets, putAgentSecret } from "../agent-secrets.js";
-import { botEmailAddress, botEmailAddresses, claimBotEmailAddress } from "../bot-email-address.js";
-import { loadBotForRemoval } from "../bot-removal.js";
-import { changedBotSettings } from "../bot-setting-analytics.js";
-import { createBotFromTemplate, listBotTemplates } from "../bot-templates.js";
-import { botUpdateData } from "../bot-update-data.js";
-import { botIntroPrompt } from "../hidden-turns.prompt.js";
-import { requireIdentityConfirmation } from "../identity-confirmation.js";
-import { managedAppCatalog } from "../onboarding.js";
+import { managedAppCatalog } from "../account/onboarding.js";
+import { requireIdentityConfirmation } from "../auth/identity-confirmation.js";
+import type { AgentImportServices } from "../bots/agent-import.js";
+import {
+  agentImportSetupState,
+  createImportedBot,
+  previewAgentImport,
+} from "../bots/agent-import.js";
+import { deleteAgentSecret, listAgentSecrets, putAgentSecret } from "../bots/agent-secrets.js";
+import { loadBotForRemoval } from "../bots/bot-removal.js";
+import { createBotFromTemplate, listBotTemplates } from "../bots/bot-templates.js";
+import { botUpdateData } from "../bots/bot-update-data.js";
+import { botIntroPrompt } from "../bots/hidden-turns.prompt.js";
+import {
+  botEmailAddress,
+  botEmailAddresses,
+  claimBotEmailAddress,
+} from "../email/bot-email-address.js";
 import type { RouterDeps } from "../router.js";
-import { purgeClearedThreadMemory } from "../thread-memory.js";
-import { loadMessagePage } from "../thread-message-pages.js";
+import { resumeRoutinesAfterRestore } from "../routines/routine-resume.js";
+import { changedBotSettings } from "../telemetry/bot-setting-analytics.js";
+import { purgeClearedThreadMemory } from "../threads/thread-memory.js";
+import { loadMessagePage } from "../threads/thread-message-pages.js";
 import type { RouterContext } from "./context.js";
 import { computerContext, modelSetup, THREAD_MESSAGE_PAGE_SIZE } from "./shared.js";
 
@@ -339,7 +344,7 @@ export function botsRoutes(ctx: RouterContext) {
       get: authed.bots.get.handler(async ({ context, input }) => {
         const found = (await repos.listBots(context.actor)).find((bot) => bot.id === input.botId);
         if (!found) throw new IsolationError();
-        return found;
+        return { ...found, meetingsEnabled: await deps.meetings?.visible(context.actor, found.id) };
       }),
       create: authed.bots.create.handler(async ({ context, input }) => {
         // Older apps always send Original, which would pin every new bot to it.
@@ -386,9 +391,7 @@ export function botsRoutes(ctx: RouterContext) {
           avatarSet: resolveBotAvatarSet(source.avatarSet),
           avatarSetPinned: source.avatarSetPinned,
           computerMode: source.computer?.scope === "dedicated" ? "dedicated" : "team",
-          modelProvider: source.modelProvider,
-          modelId: source.modelId,
-          thinkingLevel: source.thinkingLevel,
+          ...carriedBotModelPin(source),
           disabledBuiltinTools: source.disabledBuiltinTools,
           replyMode: source.replyMode,
         });
@@ -525,78 +528,18 @@ export function botsRoutes(ctx: RouterContext) {
         return (await repos.listBots(context.actor)).find((bot) => bot.id === input.botId)!;
       }),
       setComputer: authed.bots.setComputer.handler(async ({ context, input }) => {
-        const bot = await repos.getBot(context.actor, input.botId);
-        if (!bot.computer) throw new IsolationError();
-        const currentMode = bot.computer.scope === "dedicated" ? "dedicated" : "team";
-        if (currentMode === input.mode) {
-          return repos.setBotComputer(context.actor, bot.id, input.mode);
-        }
-        const claimed = await deps.prisma.$transaction(async (tx) => {
-          await tx.$queryRaw`SELECT id FROM computers WHERE id = ${bot.computerId} FOR UPDATE`;
-          return tx.bot.updateMany({
-            where: { id: bot.id, computerSwitching: false, computer: { maintenanceId: null } },
-            data: { computerSwitching: true },
-          });
-        });
-        if (claimed.count !== 1) throw new ORPCError("CONFLICT");
-        try {
-          const active = await deps.prisma.run.findFirst({
-            where: {
-              botId: bot.id,
-              status: { in: [...ACTIVE_RUN_STATUSES] },
-              ...computerUsingRuns(),
-            },
-            select: { id: true },
-          });
-          if (active) {
-            throw new ORPCError("BAD_REQUEST", { message: "Stop the bot first" });
-          }
-          if (bot.computer.controlBotId === bot.id && hasActiveComputerControl(bot.computer)) {
-            throw new ORPCError("BAD_REQUEST", { message: "Release the computer first" });
-          }
-          if (bot.computer.scope === "dedicated" && bot.computer.providerRef) {
-            const ctx = computerContext(context.actor, bot.id, "computer.switch");
-            const ref = toComputerRef(bot.computer);
-            if (bot.computer.state === "running") {
-              await checkpointAndStopComputer(deps, bot.computer, ref, ctx);
-            }
-            await expireComputerExecutionLeases(deps.prisma, {
-              computerId: bot.computer.id,
-              botId: bot.id,
-            });
-            await deps.prisma.computer.update({
-              where: { id: bot.computer.id },
-              data: {
-                state: "stopped",
-                controlHolder: "none",
-                controlLeaseId: null,
-                controlUserId: null,
-                controlLeaseExpiresAt: null,
-                controlBotId: null,
-                executionRunId: null,
-                executionBotId: null,
-                executionLeaseExpiresAt: null,
-              },
-            });
-            await recordComputerRunEnd(deps.prisma, bot.computer, "stopped");
-            await endTeachingWithLease(deps, context.actor.spaceId, bot.computer.controlLeaseId);
-          }
-          const updated = await repos.setBotComputer(context.actor, bot.id, input.mode);
+        const { bot, switched } = await switchBotComputer(
+          { ...deps, repos },
+          context.actor,
+          input.botId,
+          input.mode,
+        );
+        if (switched)
           deps.analytics?.capture(context.actor.userId, {
             name: "bot_setting_changed",
             setting: "computer",
           });
-          return updated;
-        } catch (error) {
-          // Removing the bot mid-switch also deletes its dedicated computer.
-          if (isRecordNotFound(error)) throw new ClientError("NOT_FOUND", "Not Found");
-          throw error;
-        } finally {
-          await deps.prisma.bot.updateMany({
-            where: { id: bot.id },
-            data: { computerSwitching: false },
-          });
-        }
+        return bot;
       }),
       archive: authed.bots.archive.handler(async ({ context, input }) => {
         const bot = await repos.getBot(context.actor, input.botId, { includeArchived: true });
@@ -617,7 +560,11 @@ export function botsRoutes(ctx: RouterContext) {
       }),
       restore: authed.bots.restore.handler(async ({ context, input }) => {
         const bot = await repos.getBot(context.actor, input.botId, { includeArchived: true });
-        if (!bot.archivedAt) return { ok: true as const };
+        if (!bot.archivedAt) {
+          // Finishes a restore that brought the bot back but stopped before its routines.
+          await resumeRoutinesAfterRestore(deps, context.actor.userId, [bot.id]);
+          return { ok: true as const };
+        }
         if (bot.computer) {
           // The limit is the computer's owner's: a shared Team Computer is the space owner's.
           await restoreBotUnderComputerQuota(deps.prisma, {
@@ -628,6 +575,7 @@ export function botsRoutes(ctx: RouterContext) {
         } else {
           await deps.prisma.bot.update({ where: { id: bot.id }, data: { archivedAt: null } });
         }
+        await resumeRoutinesAfterRestore(deps, context.actor.userId, [bot.id]);
         return { ok: true as const };
       }),
       remove: authed.bots.remove.handler(async ({ context, input }) => {
@@ -658,40 +606,19 @@ export function botsRoutes(ctx: RouterContext) {
         const bot = await repos.getBot(context.actor, input.botId);
         // Webhook runs act as the bot's creator, so only the creator can issue its secret.
         if (bot.userId !== context.actor.userId) throw new ORPCError("FORBIDDEN");
-        const plaintext = randomBytes(32).toString("base64url");
-        const stored = await deps.secrets.put(plaintext, {
-          operationId: "bots.rotateWebhookSecret",
-          traceId: "bots.rotateWebhookSecret",
-          spaceId: context.actor.spaceId,
-          userId: context.actor.userId,
-          signal: context.signal ?? new AbortController().signal,
-        });
-        await deps.prisma.$transaction(async (tx) => {
-          const previousSecretId = bot.webhookSecretId;
-          await tx.secret.create({
-            data: {
-              id: stored.id,
-              userId: context.actor.userId,
-              spaceId: context.actor.spaceId,
-              kind: "webhook",
-              ciphertext: stored.ciphertext,
-            },
-          });
-          await tx.bot.update({
-            where: { id: bot.id },
-            data: { webhookSecretId: stored.id },
-          });
-          if (previousSecretId) {
-            await tx.secret.deleteMany({
-              where: {
-                id: previousSecretId,
-                spaceId: context.actor.spaceId,
-                userId: context.actor.userId,
-                kind: "webhook",
-              },
-            });
-          }
-        });
+        const plaintext = await storeBotWebhookKey(
+          { prisma: deps.prisma, secretStore: deps.secrets },
+          bot,
+          {
+            operationId: "bots.rotateWebhookSecret",
+            traceId: "bots.rotateWebhookSecret",
+            spaceId: context.actor.spaceId,
+            userId: context.actor.userId,
+            signal: context.signal ?? new AbortController().signal,
+          },
+          { replace: true },
+        );
+        if (!plaintext) throw new ClientError("NOT_FOUND", "Not Found");
         return {
           secret: plaintext,
           path: `/api/v1/bots/${bot.id}/webhook`,
@@ -785,6 +712,16 @@ export function botsRoutes(ctx: RouterContext) {
       }),
       restore: authed.groups.restore.handler(async ({ context, input }) => {
         await groupRepos.restoreGroup(context.actor, input.groupId);
+        // Its archived bots came back with it, and so do the routines archiving them turned off.
+        const members = await deps.prisma.chatGroupMember.findMany({
+          where: { groupId: input.groupId, group: { spaceId: context.actor.spaceId } },
+          select: { botId: true },
+        });
+        await resumeRoutinesAfterRestore(
+          deps,
+          context.actor.userId,
+          members.map((member) => member.botId),
+        );
         return { ok: true as const };
       }),
       remove: authed.groups.remove.handler(async ({ context, input }) => {

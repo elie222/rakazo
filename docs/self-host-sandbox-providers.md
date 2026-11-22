@@ -26,7 +26,7 @@ and remote providers. This stack credential does not replace a remote provider's
 ## Settings configuration
 
 Set `COMPUTER_SETTINGS_ENABLED=true` on the API to turn this on. Admins can then choose
-**Settings → Computer → New computers run on** and save a supported provider's fields.
+**Settings → Computers → New computers run on** and save a supported provider's fields.
 The API supplies the provider's field descriptors and validates values server-side. Credentials are encrypted in the secret store and
 never returned; a blank secret field keeps its saved value for the same provider and destination.
 Changing a URL requires credentials again. **Default** uses `SANDBOX_PROVIDER`.
@@ -411,7 +411,7 @@ bot's uid 1000 cannot change it.
 ## `wuying`
 
 Bot computers run on one existing Wuying (无影) cloud computer. An admin can also set this up in
-**Settings → Computer** instead of these variables; see [Wuying cloud computers](./wuying-computers.md)
+**Settings → Computers** instead of these variables; see [Wuying cloud computers](./wuying-computers.md)
 for the full setup. Each computer's home is a folder
 under the desktop user's profile (`%USERPROFILE%\rakazo\<home>`), and the desktop's own disk
 keeps it between stops, so nothing is copied in or out. Commands run in PowerShell; files,
@@ -549,7 +549,7 @@ rechecks each selected PID's marker descriptors before signaling it.
 E2B computers start from the `rakazo-computer` template: E2B's stock desktop at
 2 vCPU and 4 GB instead of its 8 vCPU and 8 GB. Build it once in the E2B team that
 owns `E2B_API_KEY`, and again whenever its definition in
-`packages/adapters/src/e2b-template.ts` changes:
+`packages/adapters/src/providers/computer/e2b/e2b-template.ts` changes:
 
 ```bash
 E2B_API_KEY=<deployment key> pnpm sandbox:e2b-template
@@ -595,7 +595,7 @@ or network error does not authorize replacing an existing computer.
 ### Boat computer snapshot
 
 Boat computers start from a named snapshot, `rakazo-computer-<hash>`, that already has the
-desktop tools installed. The hash follows the setup in `packages/adapters/src/boat-sandbox.ts`,
+desktop tools installed. The hash follows the setup in `packages/adapters/src/providers/computer/boat/boat-sandbox.ts`,
 so changing it produces a new name and existing computers keep the one they started from.
 
 No setup is needed: when the snapshot for the current setup is missing, the API or worker

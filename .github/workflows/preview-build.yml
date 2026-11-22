@@ -1,7 +1,7 @@
 name: preview-build
 
 # Builds a pull request's preview image, including from forks. This half runs the pull request's
-# code, so it gets a read-only token and no secrets; preview-deploy.yml picks up the image.
+# code with a read-only token and no secrets. preview-deploy.yml picks up the image.
 # See infra/preview/README.md.
 on:
   pull_request:
@@ -19,6 +19,13 @@ on:
       - "package.json"
       - "pnpm-lock.yaml"
       - "pnpm-workspace.yaml"
+      # Nothing a preview runs or shows.
+      - "!**/*.test.*"
+      - "!**/*.spec.*"
+      - "!apps/web/e2e/**"
+      - "!packages/testkit/**"
+      - "!scripts/checks/**"
+      - "!scripts/release/**"
 
 permissions:
   contents: read
@@ -49,5 +56,5 @@ jobs:
         with:
           name: preview-image
           path: ${{ runner.temp }}/preview-image.tar.zst
-          retention-days: 1
+          retention-days: 3
           compression-level: 0

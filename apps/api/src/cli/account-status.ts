@@ -1,13 +1,18 @@
 // `docker compose exec api node dist/cli/account-status.js deactivate|reactivate <email>`:
 // turns an account off or back on, as the identity provider would over SCIM.
 import {
+  configuredMeetingProviders,
   contentKeyProviderFromEnv,
+  GraphileJobPublisher,
+  MeetingCalendarService,
+  meetingCalendarScope,
   PostgresRealtimeFanout,
   PrismaPushTokenStore,
   UserDevices,
   unwrapEnvFromKeyManager,
   userDeviceForwardSecret,
 } from "@rakazo/adapters";
+import { resolveMeetingSigningKey } from "@rakazo/core/node/secrets-guard";
 import {
   createDb,
   createThreadEvents,
@@ -16,7 +21,7 @@ import {
   runAsSystem,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
-import { setAccountActive } from "../account-status.js";
+import { setAccountActive } from "../account/account-status.js";
 import { loadEnv } from "../env.js";
 
 const [action, address] = process.argv.slice(2);
@@ -35,6 +40,7 @@ const realtime = new PostgresRealtimeFanout({
   connectionString: env.realtimeDatabaseUrl,
   publisher: pool,
 });
+const jobs = new GraphileJobPublisher(pool, prisma);
 try {
   const email = address.trim().toLowerCase();
   // As the directory looks accounts up: the exact address, else the only one differing by case.
@@ -54,6 +60,24 @@ try {
   } else {
     const active = action === "reactivate";
     const events = createThreadEvents(prisma, realtime);
+    const provider = active ? undefined : (await configuredMeetingProviders()).calendar;
+    const meetingCalendar =
+      provider &&
+      new MeetingCalendarService({
+        prisma,
+        jobs,
+        provider,
+        webOrigin: env.webOrigin,
+        oauthStateKey: resolveMeetingSigningKey(),
+        enabled: () => false,
+        buildJoin: (input) => input,
+        publish: async ({ spaceId, userId }) => {
+          await events.publishSpaceChange?.(
+            meetingCalendarScope(spaceId, userId),
+            "meetingCalendar",
+          );
+        },
+      });
     const outcome = await setAccountActive(
       {
         prisma,
@@ -66,6 +90,7 @@ try {
           }),
         },
         events,
+        meetingCalendar,
         // Without the API's computers and jobs: open chats hear of it now, and screens and
         // waiting follow-ups are picked up by lease expiry and the job reconciler.
         afterDeparture: async (_actor, departure) => {
@@ -89,6 +114,7 @@ try {
     }
   }
 } finally {
+  await jobs.close();
   await realtime.close();
   await prisma.$disconnect();
   await pool.end();

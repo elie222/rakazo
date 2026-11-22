@@ -25,7 +25,7 @@ Windows and Linux).
 
 > [!NOTE]
 > A local server keeps running after you quit the app, so routines still run. Choose
-> **Stop Local Stack** in the app menu to shut it down.
+> **Quit and Stop Bots** in the app menu to shut it down.
 
 ## Let bots use this computer
 
@@ -37,7 +37,7 @@ files.
   let them work directly on yours. **Computer Access…** in the app menu changes this later, and
   **Revoke Local Computer Access** turns it off.
 - With any HTTPS server, or a loopback server, turn on **Let bots use this computer**
-  in **Settings → General** under **Computers**. Your computer then shows as **Connected** or
+  in **Settings → Computers** under **Your devices**. Your computer then shows as **Connected** or
   **Offline** there. Access belongs to the account that turned it on and ends when that account
   signs out, resets its password or signs out everywhere. Signing back in to the same account
   restores it without asking again.
@@ -69,7 +69,9 @@ you are.
 - Cmd+N: create a bot, group or space.
 - Cmd+Shift+N (desktop app): start a group chat.
 - Cmd+K: open the command menu to jump to a bot, page or setting, or run an action.
-- Cmd+Shift+M: connect apps.
+- Cmd+Shift+A (desktop app): connect apps.
+- Cmd+Shift+M: choose the chat's model, when the model shows beside Send.
+- Cmd+Shift+E: switch to the model's next thinking level.
 - Cmd+Shift+, : open the chat's details.
 - Cmd+I: jump to the message box.
 - Cmd+D in an empty message box: dictate. Press it again to send.
@@ -77,7 +79,8 @@ you are.
 - Ctrl+Tab / Ctrl+Shift+Tab (desktop app): switch to the next or previous bot.
 - Cmd/Ctrl+Shift+Down / Cmd/Ctrl+Shift+Up (browser): switch to the next or previous bot.
 - Cmd+[ / Cmd+] (Alt+Left / Alt+Right on Windows and Linux, desktop app): go back or forward.
-- Cmd+F (desktop app): search.
+- Cmd+F (desktop app): find text in the open chat.
+- Cmd+Shift+F (desktop app): search for bots in the sidebar.
 - Cmd+B: show or hide the sidebar.
 - Cmd+, (desktop app): open Settings.
 - Esc in the message box: stop the bot's reply.

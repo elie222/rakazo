@@ -12,6 +12,13 @@ on:
   push:
     tags: ["v*"]
   workflow_call:
+    secrets:
+      LEGACY_GHCR_TOKEN:
+        description: Writes the personal account's packages that installs made before the move pull.
+        required: false
+      MARKETING_REPO_TOKEN:
+        description: Reads the private marketing repository's hosted email copy for the app image.
+        required: false
   # Only what the image definitions consume directly. A source change that breaks the app's build
   # fails ci.yml's production builds first, and main still builds every image before it deploys.
   pull_request:
@@ -161,6 +168,13 @@ jobs:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           persist-credentials: false
+      - name: Fetch the hosted email copy
+        if: matrix.name == 'app'
+        env:
+          MARKETING_REPO_TOKEN: ${{ secrets.MARKETING_REPO_TOKEN }}
+          # Forks publish their own images with the default copy.
+          REQUIRE_EMAIL_COPY: ${{ !github.event.repository.fork }}
+        run: bash infra/compose/fetch-email-copy.sh
       - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
       - name: Log in to GHCR
         uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
@@ -250,6 +264,13 @@ jobs:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           persist-credentials: false
+      - name: Fetch the hosted email copy
+        if: matrix.name == 'app'
+        env:
+          MARKETING_REPO_TOKEN: ${{ secrets.MARKETING_REPO_TOKEN }}
+          # Forks publish their own images with the default copy.
+          REQUIRE_EMAIL_COPY: ${{ !github.event.repository.fork }}
+        run: bash infra/compose/fetch-email-copy.sh
       - uses: depot/setup-action@91bc8495a33ebfc504ffc89e5674379ccf23c29c # v1.7.2
       - name: Log in to GHCR
         uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
@@ -312,6 +333,10 @@ jobs:
         with:
           image: ghcr.io/${{ github.repository }}/${{ matrix.name }}
           digests-directory: /tmp/digests
+          # Installs made before the repository moved still pull the personal account's packages.
+          # Only main and release tags publish there, so only they receive the token.
+          mirror-image: ${{ github.repository == 'rakazobot/rakazo' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')) && format('ghcr.io/elie222/rakazo/{0}', matrix.name) || '' }}
+          mirror-token: ${{ github.repository == 'rakazobot/rakazo' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')) && secrets.LEGACY_GHCR_TOKEN || '' }}
 
   publish:
     name: Publish ${{ matrix.name }} image
@@ -355,3 +380,7 @@ jobs:
         with:
           image: ghcr.io/${{ github.repository }}/${{ matrix.name }}
           digests-directory: /tmp/digests
+          # Installs made before the repository moved still pull the personal account's packages.
+          # Only main and release tags publish there, so only they receive the token.
+          mirror-image: ${{ github.repository == 'rakazobot/rakazo' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')) && format('ghcr.io/elie222/rakazo/{0}', matrix.name) || '' }}
+          mirror-token: ${{ github.repository == 'rakazobot/rakazo' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')) && secrets.LEGACY_GHCR_TOKEN || '' }}

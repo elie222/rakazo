@@ -1,10 +1,10 @@
 import { ph } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
 import { ActivityIndicator, Pressable, Text, View } from "react-native";
-import { mobileTokens } from "../../lib/appearance";
-import type { ActivityMarkBot } from "../activity-mark";
-import { ActivityMark } from "../activity-mark";
-import { ScrollToBottomButton } from "../scroll-to-bottom-button";
+import { mobileTokens } from "../../lib/appearance/appearance";
+import type { ActivityMarkBot } from "../bots/activity-mark";
+import { ActivityMark } from "../bots/activity-mark";
+import { ScrollToBottomButton } from "./scroll-to-bottom-button";
 
 /** The bots still working on a reply, under the newest message. */
 export function ThreadWorkingFooter({
@@ -38,6 +38,7 @@ export function LoadEarlierButton({ loading, onPress }: { loading: boolean; onPr
   const { t } = useLingui();
   return (
     <Pressable
+      accessibilityRole="button"
       disabled={loading}
       onPress={onPress}
       style={{

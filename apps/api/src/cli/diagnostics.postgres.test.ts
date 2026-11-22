@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { promisify } from "node:util";
 import { asSystem, bootstrapUserSpace, createDb } from "@rakazo/db";
 import { expect, it } from "vitest";
-import { opaque } from "../diagnostics.js";
+import { opaque } from "../telemetry/diagnostics.js";
 
 const run = promisify(execFile);
 const testDatabase = process.env.VERIFY_DATABASE === "1" ? process.env.DATABASE_URL : undefined;

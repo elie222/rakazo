@@ -5,7 +5,7 @@ import { act } from "react";
 import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { FoundModelPicker } from "../../components/FoundModelPicker";
+import { FoundModelPicker } from "../../components/models/FoundModelPicker";
 import { ProvidersSection } from "./providers-section";
 import { RoleModelPicker } from "./role-model-picker";
 
@@ -155,4 +155,143 @@ it("keeps a short role list usable from the keyboard without search", async () =
     command.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })),
   );
   expect(onConnect).toHaveBeenCalledWith(providers[0]);
+});
+
+// Enough rows for the search box to show.
+const currentModels = [
+  "Newest",
+  "Older",
+  ...Array.from({ length: 10 }, (_, i) => `Other ${i}`),
+].map((label) => ({
+  id: label.toLowerCase().replace(" ", "-"),
+  label,
+  provider: "fixture",
+  providerName: "Fixture",
+  billing: "",
+}));
+async function renderCurrent(onPick: () => void) {
+  await act(async () =>
+    root.render(
+      <RoleModelPicker
+        trigger={<button type="button">Choose</button>}
+        label="Choose"
+        options={currentModels}
+        providers={[]}
+        current={{ provider: "fixture", modelId: "older" }}
+        onPick={onPick}
+        onConnect={() => {}}
+      />,
+    ),
+  );
+  await click("Choose");
+}
+const rowState = () =>
+  [...document.querySelectorAll("[cmdk-item]")].flatMap((row) =>
+    row.getAttribute("data-checked") === "true" || row.getAttribute("aria-selected") === "true"
+      ? [[row.textContent, row.getAttribute("data-checked"), row.getAttribute("aria-selected")]]
+      : [],
+  );
+
+it("checks the model in use and starts on it, so Enter keeps it without saving", async () => {
+  const onPick = vi.fn();
+  await renderCurrent(onPick);
+  expect(rowState()).toEqual([["Older", "true", "true"]]);
+  await act(async () =>
+    document
+      .querySelector<HTMLElement>("[cmdk-root]")!
+      .dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })),
+  );
+  expect(onPick).not.toHaveBeenCalled();
+});
+
+it("moves the active row to the first match when searching", async () => {
+  const onPick = vi.fn();
+  await renderCurrent(onPick);
+  await type("newest");
+  expect(rowState()).toEqual([["Newest", "false", "true"]]);
+  await act(async () =>
+    document
+      .querySelector<HTMLElement>("[cmdk-root]")!
+      .dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })),
+  );
+  expect(onPick).toHaveBeenCalledWith(expect.objectContaining({ id: "newest" }));
+});
+
+it("returns the active row to the model in use when the search is cleared", async () => {
+  const onPick = vi.fn();
+  await renderCurrent(onPick);
+  await type("newest");
+  await type("");
+  expect(rowState()).toEqual([["Older", "true", "true"]]);
+  await act(async () =>
+    document
+      .querySelector<HTMLElement>("[cmdk-root]")!
+      .dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })),
+  );
+  expect(onPick).not.toHaveBeenCalled();
+});
+
+it("does not mark or pick a connection of your own when the included model is in use", async () => {
+  const onPick = vi.fn();
+  await act(async () =>
+    root.render(
+      <RoleModelPicker
+        trigger={<button type="button">Choose</button>}
+        label="Choose"
+        options={[
+          {
+            id: "included",
+            label: "Own",
+            provider: "fixture",
+            providerName: "Fixture",
+            billing: "",
+            credentialId: "cred-1",
+          },
+          ...currentModels.slice(0, 1),
+        ]}
+        providers={[]}
+        defaultOption={{ label: "Included" }}
+        current={{ provider: "fixture", modelId: "included" }}
+        onPick={onPick}
+        onConnect={() => {}}
+      />,
+    ),
+  );
+  await click("Choose");
+  expect(document.querySelector('[data-checked="true"]')).toBeNull();
+  expect(rowState().some(([text]) => text === "Own")).toBe(false);
+  await act(async () =>
+    document
+      .querySelector<HTMLElement>("[cmdk-root]")!
+      .dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })),
+  );
+  expect(onPick).toHaveBeenCalledWith(null);
+});
+
+it("checks a model saved under a provider's older id", async () => {
+  const onPick = vi.fn();
+  await act(async () =>
+    root.render(
+      <RoleModelPicker
+        trigger={<button type="button">Choose</button>}
+        label="Choose"
+        options={[
+          { id: "first", label: "First", provider: "azure", providerName: "Azure", billing: "" },
+          { id: "saved", label: "Saved", provider: "azure", providerName: "Azure", billing: "" },
+        ]}
+        providers={[]}
+        current={{ provider: "azure-openai-responses", modelId: "saved" }}
+        onPick={onPick}
+        onConnect={() => {}}
+      />,
+    ),
+  );
+  await click("Choose");
+  expect(rowState()).toEqual([["Saved", "true", "true"]]);
+  await act(async () =>
+    document
+      .querySelector<HTMLElement>("[cmdk-root]")!
+      .dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })),
+  );
+  expect(onPick).not.toHaveBeenCalled();
 });

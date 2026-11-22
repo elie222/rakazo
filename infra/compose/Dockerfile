@@ -54,6 +54,9 @@ RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store pnpm install --frozen-lo
 # Normalize modes: a restrictive host umask (e.g. 077 on hardened hosts) would otherwise
 # leave the copied tree unreadable to USER node at runtime.
 COPY --chmod=755 . .
+# Published images carry the hosted email copy (infra/compose/fetch-email-copy.sh); a copy that
+# would fall back anywhere fails the build here rather than at send time.
+RUN [ ! -d email-copy ] || node packages/auth/scripts/check-email-copy.ts email-copy
 RUN pnpm --filter @rakazo/db generate
 RUN pnpm --filter @rakazo/api --filter @rakazo/worker build
 RUN RAKAZO_ALLOW_DEV_SECRETS=1 pnpm --filter @rakazo/web build
@@ -64,8 +67,9 @@ RUN find . -name node_modules -type d -prune -exec rm -rf {} + \
 FROM node:24.22.3-bookworm-slim@sha256:dc26ae92c9fb15cf6b1d63e20f0944b2efe0f115b20e00be48fb23fceb061c54
 COPY infra/sandboxes/computer/apt-security.sh /tmp/apt-security.sh
 RUN /tmp/apt-security.sh
-# Prisma's migration engine detects and links against OpenSSL.
-RUN apt-get update && apt-get upgrade -y --no-install-recommends && apt-get install -y --no-install-recommends openssl \
+# Prisma's migration engine detects and links against OpenSSL. A stdio MCP server that runs on
+# another machine is launched over ssh, which the slim base image does not ship.
+RUN apt-get update && apt-get upgrade -y --no-install-recommends && apt-get install -y --no-install-recommends openssl openssh-client \
   && rm -rf /var/lib/apt/lists/*
 # Managed stdio package installs need npm; the Node image bundles an older copy.
 RUN npm install --global --ignore-scripts npm@11.21.2 && npm cache clean --force
@@ -81,9 +85,10 @@ RUN install -d -m 750 -o node -g node /data /app/apps/web/node_modules/.vite-tem
 RUN /tmp/apt-security.sh --check && rm -f /tmp/apt-security.sh
 ARG GIT_SHA
 ENV NODE_ENV=production
+ENV EMAIL_COPY_DIR=/app/email-copy
 ENV GIT_SHA=$GIT_SHA
 EXPOSE 3100 5173 7091
-# The signal on which a replaced API lets its chat turns end before it exits (apps/api/src/drain.ts).
+# The signal on which a replaced API lets its chat turns end before it exits (apps/api/src/http/drain.ts).
 # deploy-main.sh sends it only to an API whose image names one.
 LABEL org.rakazo.run-drain-signal=SIGUSR2
 USER node

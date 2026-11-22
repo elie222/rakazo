@@ -132,6 +132,21 @@ not an online rolling migration. Stop the old API and worker, apply the migratio
 versions together. Its lock waits are bounded so contention fails the migration instead of leaving
 application traffic queued indefinitely.
 
+## Integrations connected before 30 October 2026
+
+Integrations connected through Pipedream before 30 October 2026 saved only the app's name, not
+which account was signed in. Releases since then use a connection only when it names its account,
+so these apps give bots no tools; the first time a bot tries one, it asks the user to reconnect.
+To find them ahead of time, run:
+
+```sql
+SELECT "id", "spaceId", "provider" FROM "connections"
+WHERE "connectorId" = 'pipedream' AND "status" = 'connected' AND "providerRef" = "provider";
+```
+
+Reconnect each listed app from its Space's Integrations page. Nothing is backfilled automatically,
+because a Space can have more than one account for the same app.
+
 ## Published images and tags
 
 `.github/workflows/publish-server-image.yml` publishes to `ghcr.io/<owner>/<repo>/…`, derived from
@@ -234,6 +249,148 @@ migrations — that ordering belongs to the API's dependency on the `migrate` se
 
 Only `https://` and `ssh://` git remotes are accepted. Merges are fast-forward only. A dirty or
 untracked source tree fails closed before anything runs (the application Dockerfile uses `COPY . .`).
+
+## Scheduled stable updates
+
+Both production Compose and the no-checkout `docker-compose.images.yml` offer the opt-in
+`updater` profile. Starting this profile alone does **not** enable scheduling. It grants
+root-equivalent Docker access, so leave it disabled unless you want update tooling.
+
+For a published-image installation on Linux, add these settings to the host's `.env`:
+
+```dotenv
+COMPOSE_PROFILES=updater
+RAKAZO_DEPLOY_DIR=/srv/rakazo
+RAKAZO_AUTO_UPDATE_INTERVAL_HOURS=6
+```
+
+Use the actual absolute deployment directory for `RAKAZO_DEPLOY_DIR`; Docker Desktop paths need
+the mapping described below. The installer generates `RAKAZO_UPDATER_TOKEN` for new installs.
+For an older installation, append a dedicated token without printing it:
+
+```bash
+printf '\nRAKAZO_UPDATER_TOKEN=%s\n' "$(openssl rand -hex 32)" >> .env
+```
+
+Keep an existing token. If your stack uses an overlay, set `RAKAZO_COMPOSE_FILE` to the same
+ordered file list you use manually, for example
+`docker-compose.images.yml:docker-compose.override.yml`. The images stack pulls the computer
+image and recreates its one-shot pull stub along with the supervisor by default; existing bot
+computers keep running. Then start the updater from the deployment directory:
+
+```bash
+docker compose --env-file .env -f docker-compose.images.yml up -d updater
+docker compose --env-file .env -f docker-compose.images.yml logs --tail 50 updater
+```
+
+For a source checkout, use the production Compose file, not the development
+`docker-compose.yml` stack. Migrate to published stable application images with the manual
+update flow above before enabling scheduling. The running image must match the cached
+source-commit image; source-built or overridden images with different bytes require manual
+migration. The updater never assigns those bytes to a shared published release tag.
+
+Then start the updater using `-f infra/compose/docker-compose.prod.yml --profile updater`, building
+or explicitly pulling its image as described above. Do not enable scheduled updates on a server
+already managed by CI deployments.
+
+The first check runs six hours after startup, then six hours after each check completes. Valid
+intervals are 1–168 whole hours; `0` disables scheduling. Checks use the official repository's
+newest stable `vX.Y.Z` tag only, resolve it to a full source-commit image tag, and use the existing
+apply/health-check/recovery path. Prereleases and main builds are never scheduled. Scheduling is
+disabled for custom image repositories, with a startup warning and an `autoUpdateDisabledReason`
+in `/state`; manual controls remain available for deployments already using those repositories.
+Changing the computer repository is an operator-managed migration: recreate the supervisor with
+the new repository and verify its matching images before using updater controls. The updater
+refuses a mismatch between its configured repository and the running supervisor.
+When already current, nothing is recreated.
+The first check can reconcile `latest` selections to full release-commit tags even when their
+image bytes match. This pins the supervisor's future computers to that release; subsequent
+checks do not recreate services while those selections remain current.
+Each check revalidates the deployment's image repositories. A running update keeps that
+validated repository selection for its pulls, recreation, recovery and cleanup.
+Scheduled updates follow stable source commits, not registry digest changes. Rebuilding or
+republishing an image for the same source commit does not trigger a deployment; publish a new
+stable release from a new commit to roll out those image changes automatically.
+A failed check logs its recovery status, recovery advice and failed-step diagnostics, then checks
+again after the configured interval; there is no tight retry loop.
+The updater waits for an in-flight scheduled update during graceful shutdown.
+
+For the published-image stack, application and computer images are pinned to the same release's
+full `sha-<commit>` tag. The updater pulls both before recreating services, so a release whose
+computer image has not finished publishing leaves the running services alone. New bot computers
+use that pinned image rather than a moving `computer:latest` cache. Existing bot computers keep
+running. The current and previous computer pins are recorded alongside the application pins and
+restored together by rollback, without contacting the registry.
+The computer stub uses `pull_policy: missing`, so ordinary pulls and installer reruns reuse
+locally cached rollback images. After successful updates, cleanup removes obsolete application
+and computer release images and computer cache tags, retaining current/previous images, cache
+or operator tags, images used by containers, and images selected by running supervisors.
+Automatic image cleanup is skipped when another project's or unlabelled stack containers are present.
+Managed bot computers do not disable cleanup; Docker retains every image used by a running or stopped container.
+Shared hosts require operator-managed image retention because other stacks' rollback pins
+cannot be inferred from running images.
+
+Before changing pins, the updater verifies the running application against the local source-commit
+image, pulling that baseline from the registry when it is not cached.
+If the app runtimes and managed computer references already match the release, stale Compose
+pins are aligned without a deployment. Scheduled image recovery is attempted only from a distinct,
+uniform previous release. A failed repair of the current release or a mixed runtime requires
+manual intervention; retrying the failed target is not described as restoring a previous release. Database migrations are never
+reversed by image recovery.
+
+To pause scheduling, set `RAKAZO_AUTO_UPDATE_INTERVAL_HOURS=0` in `.env`, then run the same
+`up -d updater` command. Set it back to `6` and recreate the updater to resume. Pause before a
+manual rollback, or the next scheduled check will apply the newer release again. `/state` reports
+`autoUpdateIntervalHours` alongside the last update result; the existing `/apply` and `/rollback`
+endpoints also work when scheduling is disabled.
+
+The images stack publishes no updater port and does not route its control API through the
+application API. Run these commands from the deployment directory to call it **inside** the
+updater container. They read the token from the container environment without printing it or
+putting it in command-line arguments:
+
+```bash
+# Inspect the schedule and last update result.
+docker compose --env-file .env -f docker-compose.images.yml exec -T updater node -e '
+fetch("http://127.0.0.1:7092/state", {
+  headers: {authorization: "Bearer " + process.env.RAKAZO_UPDATER_TOKEN}
+}).then(async response => {
+  console.log(await response.text());
+  if (!response.ok) process.exitCode = 1;
+}).catch(error => { console.error(error.message); process.exitCode = 1; });'
+
+# After pausing scheduling as described above, restore the previous cached application image.
+docker compose --env-file .env -f docker-compose.images.yml exec -T updater node -e '
+fetch("http://127.0.0.1:7092/rollback", {
+  method: "POST",
+  headers: {authorization: "Bearer " + process.env.RAKAZO_UPDATER_TOKEN}
+}).then(async response => {
+  const result = await response.json();
+  console.log(JSON.stringify(result, null, 2));
+  if (!response.ok || result.ok === false) process.exitCode = 1;
+}).catch(error => { console.error(error.message); process.exitCode = 1; });'
+```
+
+For a manual stable update using the second command, change the path to `/apply` and add
+`"content-type": "application/json"` to its headers and
+`body: JSON.stringify({repoUrl: "https://github.com/elie222/rakazo", branch: "main"})` to its
+fetch options. The official repository still selects stable releases; `main` here does not select
+a main-build image. Keep the updater profile running with an interval of `0` to use only these
+manual controls. Operator-initiated `/apply` does not use the scheduler's stable-source gate,
+so review release notes and database compatibility before manually moving an edge or unknown
+build to stable. Review the result's recovery advice if an update or rollback fails; neither
+operation reverses database migrations.
+
+Application updates do not replace the updater itself, Compose files, Postgres major versions or
+existing bot computer containers. Review release notes for changes requiring manual setup and
+keep database backups: application-image recovery never reverses database migrations.
+Scheduling verifies the source commit of every running application service in the update plan
+against the official stable release tags before pulling or recreating anything. A current API
+alone is insufficient: outdated or missing peer services are reconciled, preserving the previous
+release pin when the selected release has not changed. An `edge`, prerelease or unknown build cannot be
+unattendedly replaced by an older stable release, even if `.env` was edited to say `latest`.
+Existing edge installations must review release notes and migrate to a compatible stable release
+manually before scheduling can proceed. Cloud CI deployment triggers remain unchanged.
 
 ## The deploy directory must be one path
 

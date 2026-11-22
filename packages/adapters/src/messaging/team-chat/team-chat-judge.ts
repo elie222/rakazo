@@ -1,0 +1,392 @@
+import { randomUUID } from "node:crypto";
+import type { AgentRunModel, AgentRuntime, SecretStore } from "@rakazo/adapter-kit";
+import { redactSecrets } from "@rakazo/core";
+import type { PrismaClient } from "@rakazo/db";
+import { findModelCredential, recordUsage } from "@rakazo/db";
+import { getLogger } from "@rakazo/logging";
+import {
+  approvedModelCreditOffering,
+  modelCreditOfferings,
+} from "../../model-credits/offerings.js";
+import { approvedModelCreditMaterial } from "../../model-credits/routing.js";
+import { hostedModelCreditObserver } from "../../models/credits/model-credit-observer.js";
+import {
+  persistRefreshedModelCredential,
+  refreshStoredModelCredential,
+  resolveStoredModelAuth,
+  retireToReconnectMarker,
+} from "../../models/model-credential-refresh.js";
+import { outermostJsonObject } from "../../models/model-json.js";
+import {
+  modelProviderAllowed,
+  modelProviderAllowlist,
+} from "../../models/model-provider-allowlist.js";
+import { deploymentModelRole, resolveMemberMainModel } from "../../models/model-roles.js";
+import { modelBilling, secretValuesToRedact } from "../../models/model-secret.js";
+import {
+  hasHostedModelCredits,
+  validateCreditOfferingChoice,
+} from "../../models/model-selection.js";
+import { connectionModelSettings } from "../../models/model-settings.js";
+import {
+  cleanLine,
+  renderTeamChatEngagementPrompt,
+  teamChatEngagementInstructions,
+  truncate,
+} from "./team-chat-judge.prompt.js";
+
+const MAX_REASON_CHARS = 240;
+const DEFAULT_TIMEOUT_MS = 20_000;
+
+export interface TeamChatEngagementMessage {
+  eventId: string;
+  senderId: string;
+  senderName: string;
+  content: string;
+}
+
+export interface TeamChatEngagementInput {
+  bot: {
+    id: string;
+    spaceId: string;
+    userId: string;
+    name: string;
+    modelProvider: string | null;
+    modelId: string | null;
+  };
+  channelId: string;
+  channelName?: string;
+  rules: string;
+  messages: TeamChatEngagementMessage[];
+}
+
+export interface TeamChatEngagementDecision {
+  act: boolean;
+  reason?: string;
+  askedByEventId?: string;
+}
+
+export interface TeamChatEngagementJudge {
+  decide(input: TeamChatEngagementInput): Promise<TeamChatEngagementDecision>;
+}
+
+export function parseTeamChatEngagementDecision(
+  raw: string | undefined,
+): TeamChatEngagementDecision {
+  if (!raw) return { act: false };
+  const object = outermostJsonObject(raw);
+  if (!object) return { act: false };
+  try {
+    const parsed = JSON.parse(object) as {
+      act?: unknown;
+      reason?: unknown;
+      asked_by?: unknown;
+    };
+    if (parsed.act !== true) return { act: false };
+    const reason =
+      typeof parsed.reason === "string" ? truncate(parsed.reason, MAX_REASON_CHARS) : "";
+    const askedByEventId =
+      typeof parsed.asked_by === "string" ? cleanLine(parsed.asked_by).replace(/^\[|\]$/g, "") : "";
+    return {
+      act: true,
+      ...(reason ? { reason } : {}),
+      ...(askedByEventId ? { askedByEventId } : {}),
+    };
+  } catch {
+    return { act: false };
+  }
+}
+
+interface ModelTeamChatEngagementJudgeDeps {
+  prisma: PrismaClient;
+  runtime: AgentRuntime;
+  secrets: SecretStore;
+  deploymentProvider: string;
+  deploymentModel: string;
+  deploymentModelKey?: string;
+  providerOverride?: string;
+  modelOverride?: string;
+  /** The instance flag (`MCP_ALLOW_PRIVATE_ENDPOINT`). */
+  allowPrivateEndpoint?: boolean;
+  timeoutMs?: number;
+}
+
+export class ModelTeamChatEngagementJudge implements TeamChatEngagementJudge {
+  constructor(private readonly deps: ModelTeamChatEngagementJudgeDeps) {}
+
+  async decide(input: TeamChatEngagementInput): Promise<TeamChatEngagementDecision> {
+    let secretsToRedact: string[] = [];
+    try {
+      const resolved = await this.resolveModel(input.bot);
+      if (!resolved) return { act: false };
+      secretsToRedact = secretValuesToRedact({
+        kind: "openai_compatible",
+        baseUrl: resolved.model.baseUrl ?? "",
+        apiKey: resolved.model.apiKey,
+        headers: resolved.model.headers,
+      });
+      // Standing rules can be time-based ("only during work hours"): judge them in the owner's zone.
+      let ownerTimeZone: string | null | undefined;
+      try {
+        ownerTimeZone = (
+          await this.deps.prisma.user.findUnique({
+            where: { id: input.bot.userId },
+            select: { timezone: true },
+          })
+        )?.timezone;
+      } catch {
+        // Timezone is optional context; a lookup failure must not prevent judging.
+      }
+      const prompt = renderTeamChatEngagementPrompt({
+        botName: input.bot.name,
+        channelId: input.channelId,
+        channelName: input.channelName,
+        rules: input.rules,
+        messages: input.messages,
+      });
+      const judgeId = `team-chat-judge:${randomUUID()}`;
+      let text = "";
+      for await (const event of this.deps.runtime.run(
+        {
+          botId: input.bot.id,
+          threadId: judgeId,
+          runId: judgeId,
+          usageOperationKind: "setup",
+          onUsage: async (event) => {
+            await recordUsage(this.deps.prisma, event, {
+              spaceId: input.bot.spaceId,
+              botId: input.bot.id,
+              userId: input.bot.userId,
+              operationId: judgeId,
+              operationKind: "setup",
+            });
+          },
+          prompt,
+          instructions: teamChatEngagementInstructions(ownerTimeZone),
+          history: [],
+          tools: [],
+          model: resolved.model,
+        },
+        {
+          operationId: judgeId,
+          traceId: judgeId,
+          spaceId: input.bot.spaceId,
+          userId: input.bot.userId,
+          botId: input.bot.id,
+          signal: AbortSignal.timeout(this.deps.timeoutMs ?? DEFAULT_TIMEOUT_MS),
+        },
+      )) {
+        if (event.type === "done" && event.text) text = event.text;
+        if (event.type === "usage" && !event.accounted) {
+          await recordUsage(this.deps.prisma, event, {
+            spaceId: input.bot.spaceId,
+            botId: input.bot.id,
+            userId: input.bot.userId,
+            operationId: judgeId,
+            operationKind: "setup",
+          });
+        }
+      }
+      return parseTeamChatEngagementDecision(text);
+    } catch (error) {
+      getLogger().error(
+        "team chat engagement judge failed",
+        redactSecrets(safeError(error), secretsToRedact),
+      );
+      return { act: false };
+    }
+  }
+
+  private async resolveModel(bot: TeamChatEngagementInput["bot"]): Promise<{
+    model: AgentRunModel;
+  } | null> {
+    const settings = await this.deps.prisma.deploymentSettings.findUnique({
+      where: { id: "default" },
+    });
+    const scope = { userId: bot.userId, spaceId: bot.spaceId };
+    const member = await resolveMemberMainModel(
+      { prisma: this.deps.prisma, secretStore: this.deps.secrets },
+      scope,
+    );
+    const requestedProvider = this.deps.providerOverride ?? bot.modelProvider;
+    const requestedModel = this.deps.modelOverride ?? bot.modelId;
+    const allowlist = modelProviderAllowlist();
+    const refused = (provider: string | null | undefined) =>
+      provider != null && !modelProviderAllowed(allowlist, provider);
+    // A member's own key for a refused provider is never read, even for the operator's judge.
+    const overrideCredential =
+      requestedProvider && !refused(requestedProvider)
+        ? await findModelCredential(this.deps.prisma, scope, requestedProvider)
+        : null;
+    const explicitJudgeOverride = Boolean(this.deps.providerOverride && this.deps.modelOverride);
+    const useOverride = Boolean(
+      requestedProvider &&
+        requestedModel &&
+        (explicitJudgeOverride ||
+          overrideCredential ||
+          (settings?.modelCreditsEnabled &&
+            modelCreditOfferings() &&
+            approvedModelCreditOffering(requestedProvider, requestedModel))),
+    );
+    // The member's main model runs on its connection, or on funded deployment credits.
+    const main =
+      member &&
+      (member.creditOfferingId ||
+        member.credentialId ||
+        member.credential ||
+        (settings?.modelCreditsEnabled &&
+          (!modelCreditOfferings() ||
+            approvedModelCreditOffering(member.provider, member.modelId)) &&
+          (await hasHostedModelCredits(this.deps.prisma, scope, member.provider))))
+        ? member
+        : null;
+    const fallback = deploymentModelRole("main", {
+      settings,
+      deployment: { provider: this.deps.deploymentProvider, model: this.deps.deploymentModel },
+    }).primary;
+    // The operator's own judge setting is deployment configuration, not a user choice, so
+    // the allowlist never refuses it. Any other pin the list refuses is skipped rather than
+    // failing the decision, so a member with an allowed main model still gets one.
+    const pinned = useOverride && (explicitJudgeOverride || !refused(requestedProvider));
+    const mainModel = main && !refused(main.provider) ? main : null;
+    const credential = pinned ? overrideCredential : (mainModel?.credential ?? null);
+    const provider = pinned ? requestedProvider : (mainModel ?? fallback)?.provider;
+    const modelId = pinned ? requestedModel : (mainModel ?? fallback)?.modelId;
+    if (!provider || !modelId) return null;
+
+    const hosted =
+      settings?.modelCreditsEnabled &&
+      (await hasHostedModelCredits(this.deps.prisma, scope, provider));
+    if (!pinned && mainModel?.credentialId && !credential) return null;
+    const offeringId = !pinned ? mainModel?.creditOfferingId : undefined;
+    if (
+      offeringId &&
+      (!settings?.modelCreditsEnabled ||
+        !(await validateCreditOfferingChoice(
+          this.deps.prisma,
+          this.deps.secrets,
+          scope,
+          provider,
+          modelId,
+          offeringId,
+        )))
+    )
+      return null;
+    if (!credential || hosted) {
+      if (modelCreditOfferings() && !settings?.modelCreditsEnabled) return null;
+      const material = await approvedModelCreditMaterial(
+        this.deps.prisma,
+        this.deps.secrets,
+        provider,
+        modelId,
+      );
+      const apiKey =
+        material?.apiKey ??
+        (provider === this.deps.deploymentProvider ? this.deps.deploymentModelKey : undefined);
+      const callObserver = settings?.modelCreditsEnabled
+        ? await hostedModelCreditObserver(this.deps.prisma, scope)
+        : undefined;
+      return {
+        model: {
+          provider,
+          id: modelId,
+          ...material,
+          ...(apiKey ? { apiKey } : {}),
+          callObserver,
+          billing: modelBilling({ credits: Boolean(callObserver || material) }),
+        },
+      };
+    }
+
+    const secret = await this.deps.prisma.secret.findFirst({
+      where: { id: credential.secretId, userId: bot.userId, spaceId: null },
+    });
+    if (!secret) return null;
+    const plaintext = await this.deps.secrets.load(secret.ciphertext, secret.id);
+    const retire = retireToReconnectMarker(
+      this.deps.prisma,
+      this.deps.secrets,
+      { userId: bot.userId, spaceId: bot.spaceId },
+      credential,
+    );
+    const auth = await resolveStoredModelAuth(
+      this.deps.prisma,
+      this.deps.secrets,
+      scope,
+      credential,
+      plaintext,
+      provider,
+    );
+    const parsed = auth.secret;
+    const modelSettings = connectionModelSettings(parsed, provider, modelId, credential);
+    const billing = modelBilling({ secret: parsed });
+    const limit = {
+      ...(modelSettings.maxTokens !== undefined ? { maxTokens: modelSettings.maxTokens } : {}),
+      ...(modelSettings.contextWindow !== undefined
+        ? { contextWindow: modelSettings.contextWindow }
+        : {}),
+      ...(modelSettings.reasoning !== undefined ? { reasoning: modelSettings.reasoning } : {}),
+    };
+    const context = parsed.kind === "oauth" ? {} : { cacheCapabilities: parsed.cacheCapabilities };
+    if (parsed.kind === "oauth") {
+      return {
+        model: {
+          provider,
+          id: modelId,
+          billing,
+          ...limit,
+          oauth: {
+            credential: { ...parsed.credential },
+            persist: persistRefreshedModelCredential(
+              this.deps.prisma,
+              this.deps.secrets,
+              scope,
+              secret.id,
+            ),
+            refresh: refreshStoredModelCredential(
+              this.deps.prisma,
+              this.deps.secrets,
+              scope,
+              credential,
+              provider,
+            ),
+            retire,
+          },
+        },
+      };
+    }
+    if (parsed.kind === "openai_compatible") {
+      return {
+        model: {
+          provider,
+          id: modelId,
+          billing,
+          apiKey: parsed.apiKey,
+          baseUrl: parsed.baseUrl,
+          headers: parsed.headers,
+          allowPrivateEndpoint: this.deps.allowPrivateEndpoint === true,
+
+          ...limit,
+          ...context,
+        },
+      };
+    }
+    return {
+      model: {
+        provider,
+        id: modelId,
+        billing,
+        apiKey: auth.apiKey,
+        projectId: parsed.projectId,
+        region: parsed.region,
+        zeroDataRetention: parsed.zeroDataRetention,
+        ...limit,
+        ...context,
+      },
+    };
+  }
+}
+
+function safeError(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}

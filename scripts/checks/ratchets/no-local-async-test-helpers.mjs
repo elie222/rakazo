@@ -7,13 +7,18 @@ export const include = [
 ];
 
 // Browser specs run outside vitest and have their own waits (no-wait-for-timeout).
-export const exclude = ["**/e2e/**", "packages/core/src/async.test-support.ts"];
+export const exclude = ["**/e2e/**", "packages/core/src/primitives/async.test-support.ts"];
 
 // A type argument, with `=>` and up to three levels of nesting: `<Array<{ done: () => void }>>`.
 const TYPE = "(?:<(?:=>|[^<>]|<(?:=>|[^<>]|<(?:=>|[^<>])*>)*>)*>)?";
 const PARAMS = String.raw`\(?\s*([\w$]+)\s*(?:,\s*([\w$]+)\s*)?\)?\s*=>\s*`;
-// The executor does nothing but hand its resolvers to variables declared outside it.
-const CAPTURE = String.raw`[\w$.]+\s*=\s*(?:\1|\2)`;
+// A call with up to two levels of nested parentheses: `resolve(answer(value))`.
+const CALL_ARGS = String.raw`\((?:[^()\n]|\((?:[^()\n]|\([^()\n]*\))*\))*\)`;
+// A resolver itself, or a closure that only calls it: `() => reject(new Error("gone"))`.
+const RESOLVER = String.raw`(?:\1|\2|\(\s*[\w$]*\s*\)\s*=>\s*(?:\1|\2)${CALL_ARGS})`;
+// The executor does nothing but hand its resolvers to variables declared outside it. An event
+// handler such as `socket.onclose = resolve` waits on a real event, so it is left alone.
+const CAPTURE = String.raw`(?![\w$.]*\.on[a-z]\w*\s*=)[\w$.]+\s*=\s*${RESOLVER}`;
 const DEFERRED = String.raw`(?:\{\s*${CAPTURE}\s*;?\s*(?:${CAPTURE}\s*;?\s*)?\}|\(?\s*${CAPTURE}\s*\)?)`;
 // The executor does nothing but resolve from a timer that is already due.
 const FLUSH = String.raw`\{?\s*setTimeout\(\s*(?:\1|\(\)\s*=>\s*\1\(\))\s*(?:,\s*0\s*)?\)\s*;?\s*\}?`;
