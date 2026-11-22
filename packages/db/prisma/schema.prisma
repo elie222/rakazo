@@ -26,6 +26,8 @@ model User {
   nativeCalendarRequests NativeCalendarRequest[]
   aiDataConsents AiDataConsent[]
   pages          Page[]
+  pageGrants PageGrant[]
+  pageComments PageComment[]
   id                          String                       @id
   name                        String
   email                       String
@@ -826,6 +828,9 @@ model DeploymentSettings {
   ownerUserId                     String?
   defaultModelProvider            String?
   defaultModelId                  String?
+  /// The admin-managed model and its deployment-owned key.
+  deploymentModelProvider         String?
+  deploymentModelId               String?
   deploymentModelCredentialCipher String?
   computerHost                    String?
   /// Provider id for new computers chosen in Settings; null keeps SANDBOX_PROVIDER.
@@ -2118,6 +2123,8 @@ model Page {
   /// Set when the page's content or title changes; pinning or sharing it is not an update.
   updatedAt      DateTime      @default(now())
   versions       PageVersion[]
+  grants         PageGrant[]
+  comments       PageComment[]
 
   @@index([spaceId, userId, updatedAt])
   @@index([botId])
@@ -2138,6 +2145,62 @@ model PageVersion {
 
   @@unique([pageId, version])
   @@map("page_versions")
+}
+
+model PageGrant {
+  id             String @id @default(cuid())
+  pageId         String
+  page           Page   @relation(fields: [pageId], references: [id], onDelete: Cascade)
+  recipientEmail String
+  userId         String?
+  user           User?  @relation(fields: [userId], references: [id], onDelete: SetNull)
+  /// Retains the binding when the account is deleted. It takes a fresh grant to share the address again.
+  bound          Boolean @default(false)
+  firstVersion   Int
+
+  @@unique([pageId, recipientEmail])
+  @@index([userId, pageId])
+  @@map("page_grants")
+}
+
+model PageComment {
+  id         String @id @default(cuid())
+  pageId     String
+  page       Page   @relation(fields: [pageId], references: [id], onDelete: Cascade)
+  authorId   String?
+  author     User?  @relation(fields: [authorId], references: [id], onDelete: SetNull)
+  version    Int
+  section    String
+  sectionOccurrence Int?
+  body       String
+  createdAt  DateTime @default(now())
+  resolvedAt DateTime?
+  requests   PageRevisionRequest[]
+
+  @@index([pageId, createdAt, id])
+  @@map("page_comments")
+}
+
+model PageRevisionRequest {
+  id          String @id @default(cuid())
+  commentId   String
+  /// A reviewer can explicitly retry a terminal request once. Replays reuse the same retry.
+  retryOf     String? @unique
+  comment     PageComment @relation(fields: [commentId], references: [id], onDelete: Cascade)
+  requesterId String
+  /// The requester's Space whose AI-sharing permission covers this request.
+  consentSpaceId String?
+  /// The exact grant at submission. A later grant does not reinstate work from this one.
+  grantId     String?
+  status      String @default("pending")
+  createdAt   DateTime @default(now())
+  draftSource String?
+  draftCode   String?
+  resultVersion Int?
+
+  @@index([grantId])
+  @@index([commentId, createdAt])
+  @@map("page_revision_requests")
 }
 
 model UsageRecord {
@@ -2173,6 +2236,8 @@ model UsageRecord {
   callId             String?  @unique
   operationId        String?
   operationKind      String   @default("answer")
+  /// Who paid: subscription, api_key, custom_endpoint, credits or deployment; null before it was recorded.
+  billing            String?
   /// Durable attribution, deliberately without lifecycle foreign keys.
   parentRunId        String?
   agentId            String?
@@ -2965,20 +3030,13 @@ model CapabilityInstallSpace {
   @@map("capability_install_spaces")
 }
 
-/// Operator grants; never purchased model credits. Counter includes uncertain reservations.
-model SpeechAllowance {
-  userId String @id
-  limitMicros BigInt
-  usedMicros BigInt @default(0)
-  expiresAt DateTime
-  @@map("speech_allowances")
-}
-
 /// Financial evidence survives chat deletion; contains no audio, transcripts or credentials.
 model SpeechCost {
   id String @id
   userId String
   spaceId String
+  /// The organization the Space belonged to when charged, so usage outlives the Space.
+  organizationId String?
   callId String?
   provider String
   operation String
@@ -3002,6 +3060,7 @@ model SpeechCost {
   updatedAt DateTime @default(now())
   @@index([userId, createdAt], map: "speech_costs_account")
   @@index([spaceId, createdAt], map: "speech_costs_space")
+  @@index([organizationId, createdAt], map: "speech_costs_organization")
   @@index([state, createdAt], map: "speech_costs_reconcile")
   @@map("speech_costs")
 }

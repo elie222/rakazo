@@ -255,7 +255,7 @@ it("says the last loaded messages stay on screen when a refresh fails", () => {
   const node = mount(
     createElement(ThreadFetchErrorNotice, { error: "Network request failed", showingSaved: true }),
   );
-  expect(node.textContent).toBe("Couldn't refresh — showing the last loaded messages.");
+  expect(node.textContent).toBe("Couldn't refresh. Showing the last loaded messages.");
   expect(
     mount(createElement(ThreadFetchErrorNotice, { error: null, showingSaved: true })).textContent,
   ).toBe("");

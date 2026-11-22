@@ -21,7 +21,7 @@ export function droppedTableHtmlText(html: string): string | null {
   return null;
 }
 
-function decodeHtmlEntities(value: string): string {
+export function decodeHtmlEntities(value: string): string {
   const named: Record<string, string> = {
     amp: "&",
     apos: "'",

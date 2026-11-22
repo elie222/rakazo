@@ -210,9 +210,7 @@ export async function finishThreadStop(
 ) {
   if (eventSeq !== null) {
     // The events are durable; subscribers refetch from their persisted cursor.
-    await deps.events.notify(target.threadId, eventSeq).catch((error) => {
-      getLogger().error("thread stop realtime notification", error);
-    });
+    await deps.events.notify(target.threadId, eventSeq);
   }
   if (runIds.length > 0) await deps.events.publishSpaceChange?.(actor.spaceId, "runs");
   // Settle each stopped helper's card now rather than at the next reconciliation.
