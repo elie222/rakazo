@@ -135,7 +135,7 @@ suite("hosted speech dispatch (PostgreSQL, offline adapter)", () => {
       ]);
     },
   );
-  it("uses the default without member keys, admits before dispatch, and retains unknown costs", async () => {
+  it("uses the default without member keys, settles counted speech, and retains unknown costs", async () => {
     const system = asSystem(db.prisma);
     await plannedSpace(actor.spaceId);
     await runAsTenant(actor, async () => {
@@ -160,17 +160,20 @@ suite("hosted speech dispatch (PostgreSQL, offline adapter)", () => {
         "Add a voice provider key",
       );
     });
-    const costs = await system.speechCost.findMany({ where: { userId: actor.userId } });
-    expect(costs).toHaveLength(2);
-    expect(costs.map((row) => row.operation).sort()).toEqual(["synthesize", "transcribe"]);
-    for (const row of costs)
-      expect(row).toMatchObject({
-        userId: actor.userId,
-        spaceId: actor.spaceId,
-        callId: "fake-call",
-        state: "unresolved",
-        accountedMicros: 1_500_000n,
-      });
+    const costs = await system.speechCost.findMany({
+      where: { userId: actor.userId },
+      orderBy: { operation: "asc" },
+    });
+    const owner = { userId: actor.userId, spaceId: actor.spaceId, callId: "fake-call" };
+    expect(costs).toMatchObject([
+      {
+        ...owner,
+        operation: "synthesize",
+        state: "estimated",
+        accountedMicros: BigInt("Synthetic sample".length),
+      },
+      { ...owner, operation: "transcribe", state: "unresolved", accountedMicros: 1_500_000n },
+    ]);
     expect(await system.modelCreditEntry.count()).toBe(0);
   });
 });

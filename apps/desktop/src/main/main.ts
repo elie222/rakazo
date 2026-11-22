@@ -647,11 +647,6 @@ app.whenReady().then(async () => {
         return { png: fitted.toPNG(), ...fitted.getSize() };
       },
     });
-  try {
-    desktop.hostComputer = await prepareHostComputer(userDataDir, hostScreen);
-  } catch {
-    /* Local access fails closed; Docker remains available. */
-  }
   desktop.userDevices = createUserDeviceAccess({
     userDataDir,
     cipher: deviceTokenCipher(),
@@ -737,57 +732,59 @@ app.whenReady().then(async () => {
     run: runDocker,
     sleep: defaultSleep,
   };
-  const nativeStack = async (bundle: ServerBundle) => {
-    const moving = moveAccepted(await stackFacts());
-    return new NativeStackController({
+  const stackDeps = {
+    stackDir: userStackDir,
+    resourceDir,
+    localWebUrl,
+    imageTag,
+    run: runDocker,
+    exists: existsSync,
+    probe,
+    randomHex,
+    onState,
+  };
+  const nativeStack = (bundle: ServerBundle, moving: boolean) =>
+    new NativeStackController({
+      ...stackDeps,
       hostComputer: desktop.hostComputer?.connection,
-      stackDir: userStackDir,
-      resourceDir,
-      localWebUrl,
-      imageTag,
       serverBundle: bundle,
       nodeBinary: process.execPath,
       env: process.env,
       uid: process.getuid?.() ?? 0,
-      run: runDocker,
       fetch: (url, init) => net.fetch(url, { ...init, bypassCustomProtocolHandlers: true }),
-      exists: existsSync,
-      probe,
-      randomHex,
-      onState,
       importFromDocker: moving ? (target) => moveDockerStack(moveDeps, target) : undefined,
     });
+  const dockerStack = () =>
+    new LocalStackController({
+      ...stackDeps,
+      hostComputer: desktop.hostComputer?.connection,
+      platform: process.platform,
+      env: process.env,
+      launchDockerApp: (binary) => launchDockerApp(process.platform, binary),
+      // A confirmed reuse changes no phase; the menu must hear about it separately.
+      onReuseConfirmed: () => stopStackMenu.reuseConfirmed(),
+    });
+  const useStack = async (selected: StackChoice) => {
+    const bundle = selected === "native" ? serverBundle : null;
+    const moving = bundle !== null && moveAccepted(await stackFacts());
+    // The stack can still run with local computer access disabled.
+    desktop.hostComputer = await bestEffort(
+      "start the desktop computer bridge",
+      prepareHostComputer(userDataDir, bundle === null ? "docker" : "native", hostScreen),
+    );
+    desktop.localStack = bundle === null ? dockerStack() : nativeStack(bundle, moving);
   };
-  desktop.localStack =
-    choice === "native" && serverBundle !== null
-      ? await nativeStack(serverBundle)
-      : new LocalStackController({
-          hostComputer: desktop.hostComputer?.connection,
-          platform: process.platform,
-          env: process.env,
-          exists: existsSync,
-          run: runDocker,
-          launchDockerApp: (binary) => launchDockerApp(process.platform, binary),
-          stackDir: userStackDir,
-          resourceDir,
-          localWebUrl,
-          imageTag,
-          probe,
-          randomHex,
-          onState,
-          // A confirmed reuse changes no phase; the menu must hear about it separately.
-          onReuseConfirmed: () => stopStackMenu.reuseConfirmed(),
-        });
+  // Setup can read the Docker controller's idle state while the move choice is pending.
+  // Opening or starting the local stack waits for that choice before preparing the bridge.
+  if (choice === "ask") desktop.localStack = dockerStack();
+  else await useStack(choice);
   const settleLocalStack = settleStackWhenNeeded(
     choice,
     async () => {
       const settled = await decideStack();
       return settled === "ask" ? offerDockerMove(userStackDir) : settled;
     },
-    async (settled) => {
-      if (settled === "native" && serverBundle !== null)
-        desktop.localStack = await nativeStack(serverBundle);
-    },
+    useStack,
   );
   if (desktop.currentSetup?.mode === "new") await settleLocalStack();
   const target = resolveStartupTarget({

@@ -392,9 +392,7 @@ async function expireOne(
     ),
   );
   if (!expired) return;
-  await deps.events?.notify(run.threadId, expired.seq).catch((error) => {
-    getLogger().error("stuck work realtime notification", error);
-  });
+  await deps.events?.notify(run.threadId, expired.seq);
   await deps.events?.publishSpaceChange?.(run.spaceId, "runs");
   if (expired.continuationRunId) await wakeRun(deps.jobs, expired.continuationRunId);
   await bestEffort("stuck work unhide", owner.reveal());

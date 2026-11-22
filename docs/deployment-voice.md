@@ -56,9 +56,11 @@ model validation. Embedded URL credentials, blocked destinations and keyed publi
 rejected before speech is advertised. Private endpoints require `MCP_ALLOW_PRIVATE_ENDPOINT=true`
 at startup and dispatch. Fixed recognition models are validated by the provider descriptor.
 
-The adapter must declare usable metering for both configured models. Reported units must match
-pricing units; startup rejects mismatches. Models without reliable usage evidence, including
-compatible servers, require explicit `"allowUnmeteredUsage": true` in this JSON. Use that opt-in
+Speech priced per character is metered by the server, which counts the text it sends. The adapter
+must declare usable metering for the transcription model, and its unit must match the pricing
+unit; startup rejects mismatches. Other speech units and transcription models without reliable
+usage evidence, including compatible servers, require explicit `"allowUnmeteredUsage": true` in
+this JSON. Use that opt-in
 only with an operator process for importing cost evidence: every unmetered request retains its
 full reservation until reconciled and can exhaust the allowance after a few replies. Token-billed
 models also require that opt-in because this policy cannot price mixed token classes automatically.

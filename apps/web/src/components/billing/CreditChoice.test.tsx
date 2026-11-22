@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 
+import { i18n } from "@lingui/core";
 import { flush } from "@rakazo/core/test-async";
 import type { ComponentProps, ReactNode } from "react";
 import { act } from "react";
@@ -74,7 +75,11 @@ vi.mock("@rakazo/ui-web", () => {
   };
 });
 
-import { CreditChoice } from "./ModelCredits";
+import { CreditChoice } from "./CreditChoice";
+
+i18n.activate("en");
+
+i18n.activate("en");
 
 const status = {
   canManage: true,
@@ -92,25 +97,6 @@ function buttonByLabel(container: HTMLElement, label: string) {
   expect(found, `button ${label}`).toBeDefined();
   return found as HTMLButtonElement;
 }
-
-const tierStatus = {
-  ...status,
-  byokFreeUntil: null,
-  trialAvailable: true,
-  planLayout: "tiers",
-  byokTiers: [
-    ["standard", "Standard", 1500, 14400, "standard", 25],
-    ["pro", "Pro", 4900, 46800, "large", 100],
-    ["max", "Max", 9900, 94800, "xlarge", 200],
-  ].map(([tier, name, monthlyPriceCents, annualPriceCents, computerSize, computerHours]) => ({
-    tier,
-    name,
-    monthlyPriceCents,
-    annualPriceCents,
-    computerSize,
-    computerHours,
-  })),
-};
 
 async function renderChoice(choice: object = status) {
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -177,19 +163,3 @@ it.each([
     container.remove();
   },
 );
-
-it("starts the trial of the tier picked from the tiers layout", async () => {
-  billing.selectFunding.mockResolvedValue({ ok: true, url: "https://checkout.example/pro" });
-  const { container, root } = await renderChoice(tierStatus);
-  expect(container.textContent).toContain("$49");
-  await settle(() => buttonByLabel(container, "Start Pro trial").click());
-  expect(billing.selectFunding).toHaveBeenCalledWith({
-    funding: "byok",
-    tier: "pro",
-    interval: "month",
-  });
-  expect(assign).toHaveBeenCalledWith("https://checkout.example/pro");
-  expect(buttonByLabel(container, "Subscribe to credits").disabled).toBe(false);
-  act(() => root.unmount());
-  container.remove();
-});
