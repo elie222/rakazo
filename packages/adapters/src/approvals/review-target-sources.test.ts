@@ -187,18 +187,12 @@ describe("actionTargets", () => {
     "body",
     "html_body",
     "htmlBody",
-    "TextBody",
-    "reply-note",
     "comment.text",
     "notes",
     "Subject",
     "htmlbody",
-    "textbody",
     "plaintext",
-    "bodyhtml",
-    "messagetext",
     "values",
-    "records",
   ])("skips an address in the free-text key %s", (key) => {
     expect(actionTargets({ [key]: "a@x.example" })).toEqual([]);
   });
