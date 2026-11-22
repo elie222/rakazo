@@ -36,7 +36,7 @@ describe("routineSaveRequest", () => {
     });
     // Turning it on approves the prompt shown, so it goes with it.
     expect(routineSaveRequest({ ...draft, useComputer: true }, own, "bot-1", "UTC")).toEqual({
-      update: { routineId: own.id, useComputer: true, prompt: own.prompt.trim() },
+      update: { routineId: own.id, useComputer: true, prompt: own.prompt },
     });
     expect(
       routineSaveRequest(
@@ -69,6 +69,17 @@ describe("routineSaveRequest", () => {
       useComputer: true,
     });
     expect("create" in copy && copy.create).not.toHaveProperty("useComputer");
+  });
+
+  it("approves again the prompt shown when a save edits it while Use my computer is on", () => {
+    const own = { ...routine, useComputer: true };
+    const draft = draftFromRoutine(own);
+    expect(routineSaveRequest({ ...draft, prompt: " Twice " }, own, "bot-1", "UTC")).toEqual({
+      update: { routineId: own.id, prompt: "Twice", useComputer: true },
+    });
+    expect(routineSaveRequest({ ...draft, active: !own.active }, own, "bot-1", "UTC")).toEqual({
+      update: { routineId: own.id, active: !own.active },
+    });
   });
 
   it("creates a paused copy that keeps the triggers it can't show, but not the model", () => {

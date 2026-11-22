@@ -9,6 +9,7 @@ BEGIN
   IF NEW."computerPromptHash" IS NOT NULL
      AND NEW."computerPromptHash" IS NOT DISTINCT FROM OLD."computerPromptHash"
      AND (NEW.prompt IS DISTINCT FROM OLD.prompt
+       OR NEW.name IS DISTINCT FROM OLD.name
        OR NEW."userId" IS DISTINCT FROM OLD."userId"
        OR NEW."botId" IS DISTINCT FROM OLD."botId"
        OR NEW."inChat"

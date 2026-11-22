@@ -1,6 +1,11 @@
 import type { Routine, RpcInput } from "@rakazo/contracts";
 import type { RoutineDraft } from "@rakazo/core";
-import { cronFromPreset, draftFromRoutine, isOneShotRoutineCrons } from "@rakazo/core";
+import {
+  cronFromPreset,
+  draftFromRoutine,
+  isOneShotRoutineCrons,
+  routineComputerUpdate,
+} from "@rakazo/core";
 import type { RoutineWebTrigger } from "./routine";
 import { routineTriggerNames } from "./routine";
 
@@ -42,9 +47,11 @@ function routineChanges(draft: MobileRoutineDraft, routine: Routine) {
   const crons = draft.schedules.map(cronFromPreset);
   // A schedule merely opened is not a change, even when the editor would spell it differently.
   const savedCrons = draftFromRoutine(routine).schedules.map(cronFromPreset);
+  const name = draft.name !== routine.name ? draft.name.trim() : undefined;
+  const prompt = draft.prompt !== routine.prompt ? draft.prompt.trim() : undefined;
   return {
-    ...(draft.name !== routine.name ? { name: draft.name.trim() } : {}),
-    ...(draft.prompt !== routine.prompt ? { prompt: draft.prompt.trim() } : {}),
+    ...(name !== undefined ? { name } : {}),
+    ...(prompt !== undefined ? { prompt } : {}),
     ...(!routineScheduleLocked(routine) && !sameCrons(crons, savedCrons) ? { crons } : {}),
     ...(draft.emailSenders !== routine.emailSenders ? { emailSenders: draft.emailSenders } : {}),
     ...(draft.active !== routine.active ? { active: draft.active } : {}),
@@ -52,17 +59,12 @@ function routineChanges(draft: MobileRoutineDraft, routine: Routine) {
     ...(draft.githubEnabled === false && routine.githubEnabled ? { githubEnabled: false } : {}),
     ...(draft.messageProvider === null && routine.messageProvider ? { messageProvider: null } : {}),
     ...(draft.watch === null && routine.watch ? { watch: null } : {}),
-    ...(routine.useComputer !== undefined &&
-    draft.useComputer !== undefined &&
-    // The server refuses it for a routine that email starts.
-    !(draft.useComputer && draft.emailSenders) &&
-    draft.useComputer !== routine.useComputer
-      ? // Turning it on approves the prompt shown here, so it always goes with it.
-        {
-          useComputer: draft.useComputer,
-          ...(draft.useComputer ? { prompt: draft.prompt.trim() } : {}),
-        }
-      : {}),
+    ...routineComputerUpdate(routine, {
+      useComputer: draft.useComputer,
+      name: name ?? routine.name,
+      prompt: prompt ?? routine.prompt,
+      eventTriggered: Boolean(draft.emailSenders),
+    }),
   };
 }
 

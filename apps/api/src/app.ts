@@ -661,7 +661,9 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     });
 
   const router = createRouter({
-    userDevices: botUserDevices,
+    // Only computers people paired: nothing clears a routine's "Use my computer" when this
+    // server's own screen is turned off and on again.
+    userDevices: userDevicesOverride ?? userDevices,
     pageRevisions,
     meetings,
     meetingCalendar,

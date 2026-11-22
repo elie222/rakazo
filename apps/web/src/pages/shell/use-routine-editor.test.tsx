@@ -122,7 +122,7 @@ it("sends on/off only when the save changes it", async () => {
 });
 
 it("sends Use my computer only when the owner flips it", async () => {
-  const own = { ...routine, useComputer: false };
+  const own = { ...routine, prompt: "Check the backups", useComputer: false };
   update.mockResolvedValue(own);
   act(() => editor.editRoutine(own));
   act(() => editor.editorProps!.onChange({ ...editor.editorProps!.draft, name: "Renamed" }));
@@ -136,6 +136,24 @@ it("sends Use my computer only when the owner flips it", async () => {
     await editor.editorProps!.onSave();
   });
   expect(update.mock.calls[1]![0]).toMatchObject({ useComputer: true });
+});
+
+it("approves again the prompt shown when a save edits it while Use my computer is on", async () => {
+  const own = { ...routine, prompt: "Check the backups", useComputer: true };
+  update.mockResolvedValue(own);
+  act(() => editor.editRoutine(own));
+  act(() => editor.editorProps!.onChange({ ...editor.editorProps!.draft, active: !own.active }));
+  await act(async () => {
+    await editor.editorProps!.onSave();
+  });
+  expect(update.mock.calls[0]![0]).not.toHaveProperty("useComputer");
+
+  act(() => editor.editRoutine(own));
+  act(() => editor.editorProps!.onChange({ ...editor.editorProps!.draft, prompt: "Twice" }));
+  await act(async () => {
+    await editor.editorProps!.onSave();
+  });
+  expect(update.mock.calls[1]![0]).toMatchObject({ useComputer: true, prompt: "Twice" });
 });
 
 it("never sends Use my computer for a routine that doesn't offer it", async () => {

@@ -78,8 +78,8 @@ function harness({
   });
   const prisma = {
     $transaction: vi.fn(async (fn: (tx: unknown) => unknown) => fn(prisma)),
-    $executeRaw: vi.fn(async () => {
-      steps.push("lock");
+    $executeRaw: vi.fn(async (sql: TemplateStringsArray) => {
+      steps.push(sql.join("").includes("computerPromptHash") ? "clear" : "lock");
       return 1;
     }),
     spaceMember: {
@@ -153,7 +153,7 @@ describe("Use my computer", () => {
       prompt: "Check the backups",
       useComputer: true,
     });
-    expect(h.steps.slice(0, 4)).toEqual(["paired?", "lock", "paired?", "write"]);
+    expect(h.steps.slice(0, 5)).toEqual(["paired?", "lock", "paired?", "clear", "write"]);
     // The owner unpairs their computer after the first check but before the write.
     h.pairedSince.mockResolvedValueOnce(new Date(0)).mockResolvedValueOnce(null);
     h.saved.length = 0;
@@ -181,6 +181,23 @@ describe("Use my computer", () => {
     });
     expect(h.saved.at(-1)).toMatchObject({
       prompt: "Check the backups",
+      computerPromptHash: h.fingerprint("Check the backups"),
+    });
+  });
+
+  it("keeps it on when the owner renames the routine and approves it again", async () => {
+    const h = harness({ computerPromptHash: "approved" });
+    await h.client.routines.update({
+      routineId: "routine-1",
+      name: "Nightly",
+      prompt: "Check the backups",
+      useComputer: true,
+    });
+    // The same fingerprint is written again, which the routines table's trigger would read as a
+    // rename made without approval, so the update starts from none.
+    expect(h.steps.slice(0, 5)).toEqual(["paired?", "lock", "paired?", "clear", "write"]);
+    expect(h.saved.at(-1)).toMatchObject({
+      name: "Nightly",
       computerPromptHash: h.fingerprint("Check the backups"),
     });
   });

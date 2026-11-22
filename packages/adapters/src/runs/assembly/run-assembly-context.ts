@@ -304,8 +304,11 @@ export async function buildTurnPrompt(
   const { callEndRun, disabledBuiltinTools, ownerStartedRun, voiceCall } = parts.capabilities;
   const { approvedEffects, tools } = parts.tools;
   const { ctx } = parts;
-  const pluginLine = connectedPluginsInstruction(connectedPlugins);
-  // A routine with its owner's computer runs the exact text they approved, skills already expanded.
+  // A routine with its owner's computer runs the exact text they approved, skills already expanded,
+  // and reads no app or skill names, which others can change after the owner approved it.
+  const pluginLine = ownerComputerRoutine
+    ? undefined
+    : connectedPluginsInstruction(connectedPlugins);
   const runSavedSkills = nonOwnerChatRun || ownerComputerRoutine ? [] : savedSkills;
   const runAgentSkills = ownerComputerRoutine
     ? []
@@ -382,7 +385,11 @@ export async function buildTurnPrompt(
         select: { name: true, timezone: true },
       }),
     );
-    routineNote = routineRunInstruction(routine?.name, parts.records.historyReach === "recent");
+    // The name is not part of what the owner approved, and any of their runs can rename it.
+    routineNote = routineRunInstruction(
+      ownerComputerRoutine ? undefined : routine?.name,
+      parts.records.historyReach === "recent",
+    );
     if (routine && lateSince)
       lateRoutineNote = lateRoutineRunInstruction(lateSince, executionStartedAt, routine.timezone);
   }

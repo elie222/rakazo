@@ -90,7 +90,7 @@ export interface RouterDeps {
   userCloudAgents?: UserCloudAgents;
   /** The deployment's wallet provider; absent hides purchases. */
   paymentWallet?: PaymentWalletProvider | null;
-  /** The computers bots may reach; absent when none can be paired. */
+  /** The computers people paired, never this server's own screen; absent when none can be. */
   userDevices?: Pick<UserDeviceGateway, "pairedSince">;
   prisma: PrismaClient;
   events: ThreadEvents;

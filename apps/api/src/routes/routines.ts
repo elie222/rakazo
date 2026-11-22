@@ -389,6 +389,9 @@ export function routinesRoutes(ctx: RouterContext) {
                 if (!(await deps.userDevices?.pairedSince(existing.userId))) {
                   throw new ClientError("BAD_REQUEST", "This routine can't use your computer.");
                 }
+                // The table's trigger clears an approval left unchanged by a rename; this
+                // update approves the routine afresh, so it starts from none.
+                await tx.$executeRaw`UPDATE "routines" SET "computerPromptHash" = NULL WHERE "id" = ${existing.id}`;
                 return writeRoutine(tx);
               })
             : writeRoutine(deps.prisma);
