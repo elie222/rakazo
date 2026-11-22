@@ -68,7 +68,7 @@ it("previews every drag position, commits an expanded width, and remembers it th
   expect(current.resizing).toBe(false);
   expect(readBotsSidebarWidth("user")).toBe(400);
   await key("Home");
-  expect(current.width).toBe(72);
+  expect(current.width).toBe(92);
   await key("Enter");
   expect(current.width).toBe(400);
 });
@@ -76,11 +76,11 @@ it("previews every drag position, commits an expanded width, and remembers it th
 it("snaps a narrow drag to mini and expands a mini drag to the expanded minimum", async () => {
   await pointer("pointerdown", 316);
   await pointer("pointermove", 130);
-  expect(current.width).toBe(72);
+  expect(current.width).toBe(92);
   expect(host.querySelector("hr")?.getAttribute("data-collapsed")).toBe("true");
   await pointer("pointerup", 130);
-  expect(current.width).toBe(72);
-  await pointer("pointerdown", 72);
+  expect(current.width).toBe(92);
+  await pointer("pointerdown", 92);
   await pointer("pointermove", 180);
   await pointer("pointerup", 180);
   expect(current.width).toBe(240);
@@ -109,7 +109,7 @@ it("resizes pointer and keyboard gestures in the visual direction for RTL", asyn
   await key("ArrowLeft");
   expect(current.width).toBe(240);
   await key("ArrowRight");
-  expect(current.width).toBe(72);
+  expect(current.width).toBe(92);
 });
 
 it("limits the sidebar on viewport resize without discarding the preferred width", async () => {
@@ -154,13 +154,13 @@ it.each(["ltr", "rtl"])("snaps layout and width together while held (%s)", async
   const physicalX = (x: number) => (dir === "rtl" ? 1200 - x : x);
   await key("Home");
   commitCollapsed.mockClear();
-  await pointer("pointerdown", physicalX(72));
+  await pointer("pointerdown", physicalX(92));
   for (const [x, expectedWidth, expectedMini] of [
-    [120, 72, true],
+    [120, 92, true],
     [180, 240, false],
     [165, 240, false],
-    [140, 72, true],
-    [165, 72, true],
+    [140, 92, true],
+    [165, 92, true],
     [260, 260, false],
   ] as const) {
     await pointer("pointermove", physicalX(x));
@@ -177,18 +177,18 @@ it.each(["ltr", "rtl"])("snaps layout and width together while held (%s)", async
 it("restores the starting mode and width when a snap is cancelled or capture is lost", async () => {
   await pointer("pointerdown", 316);
   await pointer("pointermove", 120);
-  expect(current.width).toBe(72);
+  expect(current.width).toBe(92);
   await pointer("pointercancel", 120);
   expect(current.width).toBe(316);
   expect(host.querySelector("hr")?.getAttribute("data-collapsed")).toBe("false");
   expect(commitCollapsed).not.toHaveBeenCalled();
   await key("Home");
   commitCollapsed.mockClear();
-  await pointer("pointerdown", 72);
+  await pointer("pointerdown", 92);
   await pointer("pointermove", 300);
   expect(current.width).toBe(300);
   await pointer("lostpointercapture", 300);
-  expect(current.width).toBe(72);
+  expect(current.width).toBe(92);
   expect(host.querySelector("hr")?.getAttribute("data-collapsed")).toBe("true");
   expect(commitCollapsed).not.toHaveBeenCalled();
   expect(readBotsSidebarWidth("user")).toBe(316);

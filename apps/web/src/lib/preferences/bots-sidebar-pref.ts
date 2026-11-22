@@ -20,7 +20,7 @@ export function writeBotsSidebarCollapsed(
   if (storageKey) writeStoredString(storageKey, collapsed ? "1" : null);
 }
 
-export const BOTS_SIDEBAR_MINI_WIDTH = 72;
+export const BOTS_SIDEBAR_MINI_WIDTH = 92;
 export const BOTS_SIDEBAR_DEFAULT_WIDTH = 316;
 export const BOTS_SIDEBAR_MIN_WIDTH = 240;
 export const BOTS_SIDEBAR_MAX_WIDTH = 480;
