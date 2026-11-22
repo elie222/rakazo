@@ -19,7 +19,7 @@ import { bestEffort, getLogger } from "@rakazo/logging";
 import { installPageBrowserCommand, privatePageInput } from "../../browser/page-browser-install.js";
 import { shouldSkipPortableWorkspaceFile } from "../../storage/workspace-save-policy.js";
 import { sandboxIdleMs } from "../computer-idle.js";
-import { PortableFileBatcher } from "../computer-workspace.js";
+import { writePortableFilesInBatches } from "../computer-workspace.js";
 import {
   normalizeWorkspacePath,
   shellQuote,
@@ -626,17 +626,9 @@ export class RemoteDesktopSandboxProvider extends LinuxDesktopSandbox implements
     context: AdapterContext,
   ): Promise<void> {
     await this.desktops.stopBrowsers(computer, context);
-    const batcher = new PortableFileBatcher<PortableFile>(32, (file) => file.content.byteLength);
-    const flush = async (batch: PortableFile[]) => {
-      if (!batch.length) return;
-      await this.use(computer, (desktop) => writeRemoteFiles(desktop, batch, context));
-    };
-    for await (const file of files) {
-      if (shouldSkipPortableWorkspaceFile(file.path)) continue;
-      const full = batcher.add(file);
-      if (full) await flush(full);
-    }
-    await flush(batcher.take());
+    await writePortableFilesInBatches(files, 32, (batch) =>
+      this.use(computer, (desktop) => writeRemoteFiles(desktop, batch, context)),
+    );
     // Imported browser profiles remain dormant until their owning bot needs a desktop.
   }
 

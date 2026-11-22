@@ -52,7 +52,7 @@ import {
   BaseSnapshotCache,
   computerSnapshotName,
 } from "../../../computers/computer-base-snapshot.js";
-import { PortableFileBatcher } from "../../../computers/computer-workspace.js";
+import { writePortableFilesInBatches } from "../../../computers/computer-workspace.js";
 import {
   deleteUnreferencedMachine,
   recordUnreferencedMachine,
@@ -695,18 +695,12 @@ export class BoatSandboxProvider extends LinuxDesktopSandbox implements SandboxP
     );
     if (writable.timedOut)
       throw new Error("could not prepare Boat workspace for restore (timed out)");
-    const batcher = new PortableFileBatcher<PortableFile>(8, (file) => file.content.byteLength);
-    const flush = async (batch: PortableFile[]) => {
-      if (!batch.length) return;
-      await this.writeFiles(sandbox, batch, context);
-    };
-    for await (const file of files) {
-      if (shouldSkipPortableWorkspaceFile(file.path)) continue;
-      if (context.signal.aborted) throw context.signal.reason ?? new Error("import aborted");
-      const full = batcher.add(file);
-      if (full) await flush(full);
-    }
-    await flush(batcher.take());
+    await writePortableFilesInBatches(
+      files,
+      8,
+      (batch) => this.writeFiles(sandbox, batch, context),
+      context.signal,
+    );
     // Browser profiles are imported without opening a shared browser.
   }
 

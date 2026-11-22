@@ -26,7 +26,6 @@ import {
 } from "@rakazo/core/node/desktop-runtime";
 import { boundedSandboxCommandTimeoutMs } from "@rakazo/core/node/sandbox-command";
 import { computerIdleSleepEnabled, sandboxIdleMs } from "../../../computers/computer-idle.js";
-import { PORTABLE_TRANSFER_BATCH_BYTES } from "../../../computers/computer-workspace.js";
 import {
   deleteUnreferencedMachine,
   recordUnreferencedMachine,
@@ -720,12 +719,9 @@ print(json.dumps(out))
     files: AsyncIterable<PortableFile>,
     context: AdapterContext,
   ): Promise<void> {
-    let batchBytes = 0;
     for await (const file of files) {
       if (shouldSkipPortableWorkspaceFile(file.path)) continue;
-      if (batchBytes > PORTABLE_TRANSFER_BATCH_BYTES) batchBytes = 0;
       await this.putFile(computer, file, context);
-      batchBytes += file.content.byteLength;
     }
   }
 

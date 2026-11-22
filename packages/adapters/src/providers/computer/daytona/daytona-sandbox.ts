@@ -23,7 +23,7 @@ import {
   installPageBrowserCommand,
   privatePageInput,
 } from "../../../browser/page-browser-install.js";
-import { PortableFileBatcher } from "../../../computers/computer-workspace.js";
+import { writePortableFilesInBatches } from "../../../computers/computer-workspace.js";
 import {
   deleteUnreferencedMachine,
   recordUnreferencedMachine,
@@ -50,7 +50,6 @@ import {
   onBotScreen,
   PREPARE_LINUX_DESKTOP,
 } from "../../../computers/screens/linux-desktop.js";
-import { shouldSkipPortableWorkspaceFile } from "../../../storage/workspace-save-policy.js";
 import { withAbort } from "../../../web/web-ssrf.js";
 import { daytonaRateLimitError } from "./daytona-rate-limit.js";
 import { isDaytonaExecutable, walkDaytonaWorkspace } from "./daytona-workspace.js";
@@ -424,18 +423,12 @@ export class DaytonaSandboxProvider extends LinuxDesktopSandbox implements Sandb
   ): Promise<void> {
     const sandbox = await this.box(computer);
     await this.desktops.stopBrowsers(computer, context);
-    const batcher = new PortableFileBatcher<PortableFile>(8, (file) => file.content.byteLength);
-    const flush = async (batch: PortableFile[]) => {
-      if (!batch.length) return;
-      await this.writeFiles(sandbox, batch);
-    };
-    for await (const file of files) {
-      if (shouldSkipPortableWorkspaceFile(file.path)) continue;
-      if (context.signal.aborted) throw context.signal.reason ?? new Error("import aborted");
-      const full = batcher.add(file);
-      if (full) await flush(full);
-    }
-    await flush(batcher.take());
+    await writePortableFilesInBatches(
+      files,
+      8,
+      (batch) => this.writeFiles(sandbox, batch),
+      context.signal,
+    );
     // Browser profiles are imported without opening a shared browser.
   }
 

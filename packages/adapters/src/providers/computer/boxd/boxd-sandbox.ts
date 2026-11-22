@@ -27,7 +27,7 @@ import {
   BaseSnapshotCache,
   computerSnapshotName,
 } from "../../../computers/computer-base-snapshot.js";
-import { PortableFileBatcher } from "../../../computers/computer-workspace.js";
+import { batchesOf, writePortableFilesInBatches } from "../../../computers/computer-workspace.js";
 import {
   deleteUnreferencedMachine,
   recordUnreferencedMachine,
@@ -432,16 +432,11 @@ export class BoxdSandboxProvider extends LinuxDesktopSandbox implements SandboxP
     if (files.some((file) => file.size > MAX_FILE_BYTES) || (limits && bytes > limits.maxBytes)) {
       throw new WorkspaceTooLargeError("bytes");
     }
-    const batcher = new PortableFileBatcher<(typeof files)[number]>(4, (file) => file.size);
-    const flush = async (batch: typeof files) => {
+    for (const batch of batchesOf(files, 4, (file) => file.size)) {
       context.signal.throwIfAborted();
-      return Promise.all(batch.map((file) => this.readWorkspaceFile(id, file)));
-    };
-    for (const file of files) {
-      const full = batcher.add(file);
-      if (full) for (const read of await flush(full)) if (read) yield read;
+      const reads = await Promise.all(batch.map((file) => this.readWorkspaceFile(id, file)));
+      for (const read of reads) if (read) yield read;
     }
-    for (const read of await flush(batcher.take())) if (read) yield read;
   }
 
   async importWorkspace(
@@ -451,17 +446,14 @@ export class BoxdSandboxProvider extends LinuxDesktopSandbox implements SandboxP
   ) {
     const id = this.id(computer);
     await this.desktops.stopBrowsers(computer, context);
-    const batcher = new PortableFileBatcher<PortableFile>(4, (file) => file.content.byteLength);
-    const flush = async (batch: PortableFile[]) => {
-      context.signal.throwIfAborted();
-      await Promise.all(batch.map((file) => this.write(id, file)));
-    };
-    for await (const file of files) {
-      if (shouldSkipPortableWorkspaceFile(file.path)) continue;
-      const full = batcher.add(file);
-      if (full) await flush(full);
-    }
-    await flush(batcher.take());
+    await writePortableFilesInBatches(
+      files,
+      4,
+      async (batch) => {
+        await Promise.all(batch.map((file) => this.write(id, file)));
+      },
+      context.signal,
+    );
   }
 
   /** Suspends the machine with its memory and disk; the next command wakes it in milliseconds. */
