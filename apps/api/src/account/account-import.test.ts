@@ -1,4 +1,4 @@
-import { mkdtemp, readdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { link, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Actor } from "@rakazo/contracts";
@@ -45,21 +45,6 @@ const deps = {
   dataDir: "/nonexistent",
   maxArtifactBytes: 1024,
 } as unknown as AccountImportDeps;
-
-/** Planting the link needs symlink privilege, which stock Windows denies (EPERM); probe once and skip there. */
-const canPlantSymlinks = await (async () => {
-  const dir = await mkdtemp(join(tmpdir(), "rakazo-symlink-probe-"));
-  try {
-    const target = join(dir, "target");
-    await writeFile(target, "");
-    await symlink(target, join(dir, "link"));
-    return true;
-  } catch {
-    return false;
-  } finally {
-    await rm(dir, { recursive: true, force: true });
-  }
-})();
 
 const importBytes = (bytes: Uint8Array) => importAccount(deps, actor, chunked(bytes));
 
@@ -360,30 +345,27 @@ describe("account import archive", () => {
     }
   });
 
-  it.skipIf(!canPlantSymlinks)(
-    "never writes an entry through a file planted at the spill path",
-    async () => {
-      const dir = await spoolDir();
-      try {
-        const victim = join(dir, "victim");
-        await writeFile(victim, "keep");
-        const bytes = buildArchive([["manifest.json", "{}"]]);
-        async function* planting(): AsyncIterable<Uint8Array> {
-          yield bytes.subarray(0, 4);
-          // The spool exists now: plant a link where its spill will be opened.
-          const spool = (await readdir(dir)).find((name) => name.startsWith(SPOOL_PREFIX));
-          await symlink(victim, join(dir, `${spool}.entry`));
-          yield bytes.subarray(4);
-        }
-        await expect(
-          readArchive(planting(), limits, new RecordingSink(), { spoolDir: dir }),
-        ).rejects.toThrow("EEXIST");
-        expect(await readFile(victim, "utf8")).toBe("keep");
-      } finally {
-        await rm(dir, { recursive: true, force: true });
+  it("never writes an entry through a file planted at the spill path", async () => {
+    const dir = await spoolDir();
+    try {
+      const victim = join(dir, "victim");
+      await writeFile(victim, "keep");
+      const bytes = buildArchive([["manifest.json", "{}"]]);
+      async function* planting(): AsyncIterable<Uint8Array> {
+        yield bytes.subarray(0, 4);
+        // The spool exists now: plant a link where its spill will be opened.
+        const spool = (await readdir(dir)).find((name) => name.startsWith(SPOOL_PREFIX));
+        await link(victim, join(dir, `${spool}.entry`));
+        yield bytes.subarray(4);
       }
-    },
-  );
+      await expect(
+        readArchive(planting(), limits, new RecordingSink(), { spoolDir: dir }),
+      ).rejects.toThrow("EEXIST");
+      expect(await readFile(victim, "utf8")).toBe("keep");
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
 
   it("removes the spool when the upload aborts mid-stream", async () => {
     async function* aborting(): AsyncIterable<Uint8Array> {
