@@ -57,7 +57,10 @@ export function messagingRoutes(ctx: RouterContext) {
         return {
           enabled: deps.messaging?.enabled ?? false,
           providers: deps.messaging?.providers ?? [],
-          addresses: deps.messaging?.addresses ?? {},
+          addresses:
+            (await deps.messaging?.resolveAddresses?.(context.signal)) ??
+            deps.messaging?.addresses ??
+            {},
           openSignup: deps.messaging?.openSignup ?? false,
           identities: await Promise.all(
             identities.map((identity) => messagingIdentityDto(deps.prisma, identity)),
@@ -93,11 +96,15 @@ export function messagingRoutes(ctx: RouterContext) {
               message: "That bot is already linked to a chat app; unlink it first.",
             });
           }
-          const issued = await issueMessagingLinkCode(deps.prisma, {
-            userId: context.actor.userId,
-            spaceId: bot.spaceId,
-            botId: bot.id,
-          });
+          const issued = await issueMessagingLinkCode(
+            deps.prisma,
+            {
+              userId: context.actor.userId,
+              spaceId: bot.spaceId,
+              botId: bot.id,
+            },
+            { signal: context.signal },
+          );
           const shared = await spaceIsShared(deps.prisma, bot.spaceId);
           return {
             code: formatMessagingLinkCode(issued.code),
@@ -434,10 +441,12 @@ async function messagingConnectionDto(
   },
 ) {
   const incoming = myBotIds.has(connection.targetBotId);
+  const botId = incoming ? connection.targetBotId : connection.requesterBotId;
   // The target's identity stays opaque until they approve (mirrors connect_agent).
   if (!incoming && connection.status !== "approved") {
     return {
       id: connection.id,
+      botId,
       peerBotName: "agent",
       peerOwnerLabel: "owner",
       status: connection.status as "pending" | "approved" | "declined" | "revoked",
@@ -462,6 +471,7 @@ async function messagingConnectionDto(
     : null;
   return {
     id: connection.id,
+    botId,
     peerBotName: peerBot?.name ?? "",
     peerOwnerLabel: displayName(peerOwner?.name, "").split(/\s+/)[0] ?? "",
     status: connection.status as "pending" | "approved" | "declined" | "revoked",

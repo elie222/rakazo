@@ -1,18 +1,18 @@
 import { useLingui } from "@lingui/react/macro";
 import { Stack, useNavigation, useRouter } from "expo-router";
 import { useState } from "react";
-import { Alert, ScrollView, Text, TextInput } from "react-native";
-import { NativeActionButton } from "../components/native-action-button";
-import { cancelHeaderOptions } from "../components/sheet-header";
-import { selectSpace } from "../lib/api-server";
-import { hapticSuccess } from "../lib/haptics";
-import { native, useMobileTokens } from "../lib/native";
-import { refreshOrganizations } from "../lib/organizations";
-import { useSave } from "../lib/query";
-import { isSearchInboxSession, searchInboxSession } from "../lib/search-inbox";
-import { ACCOUNT_SETTINGS } from "../lib/settings-target";
-import { useSideInsets } from "../lib/side-insets";
-import { errorText } from "../lib/user-error";
+import { AccessibilityInfo, Alert, ScrollView, Text, TextInput } from "react-native";
+import { NativeActionButton } from "../components/native/native-action-button";
+import { cancelHeaderOptions } from "../components/native/sheet-header";
+import { selectSpace } from "../lib/api/api-server";
+import { errorText } from "../lib/api/user-error";
+import { useSideInsets } from "../lib/layout/side-insets";
+import { hapticSuccess } from "../lib/native/haptics";
+import { native, useMobileTokens } from "../lib/native/native";
+import { useSave } from "../lib/query/query";
+import { ACCOUNT_SETTINGS } from "../lib/query/settings-target";
+import { isSearchInboxSession, searchInboxSession } from "../lib/search/search-inbox";
+import { refreshOrganizations } from "../lib/spaces/organizations";
 
 export default function NewSpace() {
   const sideInsets = useSideInsets();
@@ -21,6 +21,7 @@ export default function NewSpace() {
   const router = useRouter();
   const navigation = useNavigation();
   const [name, setName] = useState("");
+  const creationError = (failure: Error) => errorText(failure, t`Could not create space`);
   const creation = useSave({
     // A new Space belongs to the account, so opening it does not end the save that made it.
     target: ACCOUNT_SETTINGS,
@@ -34,10 +35,12 @@ export default function NewSpace() {
       router.dismissAll();
       router.replace("/");
     },
+    // VoiceOver and TalkBack keep focus on the button, so the failure is spoken here as well.
+    onFailed: (failure) => AccessibilityInfo.announceForAccessibility(creationError(failure)),
     closesScreen: true,
   });
   const pending = creation.pending;
-  const error = creation.error ? errorText(creation.error, t`Could not create space`) : null;
+  const error = creation.error ? creationError(creation.error) : null;
 
   function create() {
     const trimmed = name.trim();
@@ -55,6 +58,7 @@ export default function NewSpace() {
       >
         <Text style={{ color: tokens.mutedForeground, fontSize: 14 }}>{t`Name`}</Text>
         <TextInput
+          accessibilityLabel={t`Name`}
           autoFocus
           value={name}
           maxLength={60}
@@ -72,7 +76,11 @@ export default function NewSpace() {
             fontSize: 16,
           }}
         />
-        {error ? <Text style={{ color: tokens.destructive, marginTop: 14 }}>{error}</Text> : null}
+        {error ? (
+          <Text accessibilityRole="alert" style={{ color: tokens.destructive, marginTop: 14 }}>
+            {error}
+          </Text>
+        ) : null}
         <NativeActionButton
           disabled={!name.trim() || pending}
           label={pending ? t`Creating…` : t`Create space`}

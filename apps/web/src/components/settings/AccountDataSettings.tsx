@@ -1,0 +1,147 @@
+import { Trans, useLingui } from "@lingui/react/macro";
+import { isIdentityConfirmationRequired } from "@rakazo/contracts";
+import { Button, Spinner } from "@rakazo/ui-web";
+import { useRef, useState } from "react";
+import { reportClientError } from "../../lib/platform/monitoring";
+import { useSave } from "../../lib/query/query";
+import { recheckSessionOnUnauthorized } from "../../lib/query/rpc";
+import { errorText } from "../../lib/query/user-error";
+import { useIdentityConfirmation } from "../account/ConfirmIdentityDialog";
+import { SuccessPop } from "../ai/primitives";
+import { SettingsRow } from "./SettingsRows";
+
+export function AccountDataSettings({
+  onImported,
+  onImportAgent,
+}: {
+  onImported?: () => Promise<void>;
+  onImportAgent?: () => void;
+}) {
+  const { t } = useLingui();
+  const { withIdentityConfirmation, identityDialog } = useIdentityConfirmation();
+  const fileInput = useRef<HTMLInputElement>(null);
+  const [imported, setImported] = useState(false);
+  const transfer = useSave({
+    save: async (action: "export" | File, rpc) => {
+      if (action === "export") {
+        const { token } = await withIdentityConfirmation(() => rpc.export.accountToken());
+        // A download link, not a fetch, so the browser or Electron saves the stream natively.
+        const link = document.createElement("a");
+        link.href = `/api/account/export?token=${encodeURIComponent(token)}`;
+        link.download = "";
+        link.click();
+        return false;
+      }
+      let response: Response;
+      try {
+        response = await fetch("/api/account/import", {
+          method: "POST",
+          headers: { "content-type": "application/zip" },
+          credentials: "include",
+          body: action,
+        });
+      } catch {
+        throw new Error(t`Could not reach the server`);
+      }
+      recheckSessionOnUnauthorized(response.status);
+      if (!response.ok) {
+        const body = (await response.json().catch(() => null)) as {
+          error?: unknown;
+        } | null;
+        throw new Error(typeof body?.error === "string" ? body.error : t`Could not continue`);
+      }
+      // The import worked; a failed refresh only delays the new Spaces, so report it, don't fail.
+      await onImported?.().catch((error: unknown) =>
+        reportClientError(error, "account.import.refresh"),
+      );
+      return true;
+    },
+    onSaved: setImported,
+  });
+  const pending = transfer.pending ? (transfer.input === "export" ? "export" : "import") : null;
+  const error =
+    !transfer.error || isIdentityConfirmationRequired(transfer.error)
+      ? null
+      : transfer.input === "export"
+        ? errorText(transfer.error, t`Could not continue`)
+        : transfer.error.message;
+
+  function start(action: "export" | File) {
+    if (pending) return;
+    setImported(false);
+    transfer.run(action);
+  }
+
+  return (
+    <>
+      <SettingsRow
+        label={<Trans>Your data</Trans>}
+        control={
+          <>
+            {imported ? <SuccessPop label={t`Done`} /> : null}
+            <Button
+              variant="secondary"
+              size="sm"
+              aria-label={t`Export data`}
+              data-testid="account-export"
+              disabled={pending !== null}
+              aria-busy={pending === "export"}
+              onClick={() => start("export")}
+            >
+              {pending === "export" ? <Spinner aria-hidden /> : null}
+              <Trans>Export</Trans>
+            </Button>
+            <Button
+              variant="secondary"
+              size="sm"
+              aria-label={t`Import data`}
+              data-testid="account-import"
+              disabled={pending !== null}
+              aria-busy={pending === "import"}
+              onClick={() => fileInput.current?.click()}
+            >
+              {pending === "import" ? <Spinner aria-hidden /> : null}
+              <Trans>Import</Trans>
+            </Button>
+            <input
+              ref={fileInput}
+              type="file"
+              accept=".zip,application/zip"
+              hidden
+              data-testid="account-import-file"
+              onChange={(event) => {
+                const file = event.target.files?.[0];
+                event.target.value = "";
+                if (file) start(file);
+              }}
+            />
+          </>
+        }
+      >
+        {error ? (
+          <p role="alert" className="mt-2 text-body-sm text-destructive">
+            {error}
+          </p>
+        ) : null}
+      </SettingsRow>
+      {onImportAgent ? (
+        <SettingsRow
+          label={<Trans>Agent from another app</Trans>}
+          control={
+            <Button
+              variant="secondary"
+              size="sm"
+              aria-label={t`Import an agent`}
+              data-testid="agent-import-open"
+              disabled={pending !== null}
+              onClick={onImportAgent}
+            >
+              <Trans>Import</Trans>
+            </Button>
+          }
+        />
+      ) : null}
+      {identityDialog}
+    </>
+  );
+}

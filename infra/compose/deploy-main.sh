@@ -95,7 +95,7 @@ use_revision_image() {
       echo "Using the published image ${published}."
       return 0
     fi
-    echo "::warning::Could not pull ${published}; building ${revision} on this host instead." >&2
+    echo "::warning::Could not pull ${published}; building ${revision} on this host instead, with the default email copy." >&2
   fi
   compose "${limit}" build --build-arg "GIT_SHA=${revision}"
 }
@@ -218,12 +218,14 @@ replace_worker() {
     finish_draining worker
     live=""
   fi
+  # No bare return: inside the rollback, which runs from the ERR trap, bash before 5.3 returns the
+  # status of the command that failed the deploy, and errexit then ends the rollback here.
   if [[ -z "${live}" ]]; then
     compose "${UP_TIMEOUT}" up -d --no-deps --wait worker
-    return
+  else
+    start_beside worker "${live}" "${WORKER_REPLICAS}"
+    drain_containers "${live}" SIGTERM
   fi
-  start_beside worker "${live}" "${WORKER_REPLICAS}"
-  drain_containers "${live}" SIGTERM
 }
 
 # Replaces the API, web and worker without a gap: new containers start beside the running

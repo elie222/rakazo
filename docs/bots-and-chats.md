@@ -54,7 +54,8 @@ can answer later.
 
 ## Bot settings
 
-Click the bot's name at the top of the chat to open its settings.
+On web and desktop, click the bot's name at the top of the chat to open its settings. On mobile,
+tap the bot's name to open its profile, then tap **Edit** to open **Chat settings**.
 
 - **Name** and avatar: pick a shape and color, or upload an image.
 - **Notifications**: **When it finishes or needs input**.
@@ -66,7 +67,7 @@ Under **Advanced**:
 - **Model** and **Thinking**: override the [model](./models.md) for this bot.
 - **Computer**: **Team** or **Private**. See [The bot's computer](./computer.md).
 - **Voice**: **Read replies aloud** and the bot's voice.
-- **Permissions**: **Allow cross-space bot communication** and
+- **Permissions**: **Allow cross-space bot communication** (for bots linked to chat apps only) and
   [**Manage other bots**](./fleet-management.md).
 - **Instructions**: the bot's standing instructions. You can also ask the bot in chat to change
   them, or its name, model, thinking, voice and read-aloud; instruction and setting changes

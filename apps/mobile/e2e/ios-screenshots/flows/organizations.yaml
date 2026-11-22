@@ -81,3 +81,18 @@ name: Organizations
 - waitForAnimationToEnd:
     timeout: 3000
 - takeScreenshot: 08-organization-menu
+- openLink: "rakazo:///account"
+- extendedWaitUntil:
+    visible: "Organization.*"
+    timeout: 15000
+- tapOn: "Organization.*"
+- extendedWaitUntil:
+    visible: "Members.*"
+    timeout: 15000
+- tapOn: "Members.*"
+- extendedWaitUntil:
+    visible: "Invite"
+    timeout: 15000
+- waitForAnimationToEnd:
+    timeout: 3000
+- takeScreenshot: 09-organization-members

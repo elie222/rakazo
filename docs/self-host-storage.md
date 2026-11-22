@@ -6,8 +6,26 @@ may be.
 ## Data directory
 
 `DATA_DIR` (`/data` in the Compose files, `./data` in a source checkout) holds uploaded and
-generated files, bot homes and caches. The API and worker must share it and it must persist. Bot
-homes and new artifacts can live in [object storage](#bot-homes-in-object-storage) instead.
+generated files, bot homes and caches. By default the API and worker must share it and it must
+persist. Bot homes and new artifacts can live in [object storage](#bot-homes-in-object-storage)
+instead.
+
+**With object storage from the first start**, nothing under `DATA_DIR` needs to be shared or to
+survive a restart, so each API and worker replica can use its own scratch directory (a Pod's
+`emptyDir`, for example), except for Docker computers, described below the table:
+
+| Path                                           | What it holds with object storage                                                                                                           |
+| ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| `homes/`, `home-revisions/`, `home-downloads/` | A cache of bot homes, downloaded again when missing or older than the bucket.                                                               |
+| `staging/`                                     | Scratch for saves, removed at startup. It needs free space for the largest home you want saved.                                             |
+| `mcp-packages/`                                | Packages each process installs on first use; set `MCP_PACKAGES_DIR` to put them elsewhere.                                                  |
+| `artifacts/`, `push-tokens/`                   | Nothing new. Only an install that started without object storage has files here; see [shared storage migration](#shared-storage-migration). |
+| `pi-sessions/`                                 | Only with `PI_SESSION_RECORDING=true`. Each process keeps its own files, so leave it off or share the directory.                            |
+
+Docker computers mount their cached home straight from the Docker host's `DATA_DIR/homes`, so the
+API and worker that start them need that directory on the same host. Remote computer providers,
+including Kubernetes with `OBJECT_STORAGE_BUCKET` set, copy the workspace through the server and
+need no shared directory.
 
 ## Content encryption
 
@@ -140,14 +158,21 @@ is stopped. Remote computers save straight from their files to the bucket; the w
 their copies after an hour unread. Homes never saved to the bucket keep their only copy.
 
 **Saving large homes.** A save streams files through `DATA_DIR/staging` on the data volume,
-so memory use does not grow with file or home size. A computer with more than 5 GiB or a
-million files, or more than the volume has free, is not saved and keeps running unsaved. A system
-note in each bot’s thread asks you to remove large or unneeded files. The worker also logs
-`computer.sleep_deferred` with reason `too_large` or `too_many_files`. Saves leave out rebuildable
-caches, dependencies (`node_modules` and `.venv`), build output (`.next` and `.turbo`), logs and
-core dump files. These files stay on the running computer but are absent on a fresh restore.
+so memory use does not grow with file or home size. A computer with more than 5 GiB (the
+default; see below) or a million files, or more than the volume has free, is not saved and keeps
+running unsaved. A system note in each bot’s thread asks you to remove large or unneeded files.
+The worker also logs `computer.sleep_deferred` with reason `too_large` or `too_many_files`. Saves
+leave out rebuildable caches, dependencies (`node_modules` and `.venv`), build output (`.next`
+and `.turbo`), logs and core dump files. These files stay on the running computer but are absent
+on a fresh restore.
 Docker, Kubernetes and Railway put tool caches under `/tmp/rakazo-cache`, outside the saved home.
 Staging left by a killed process is removed at startup and by the worker within minutes.
+
+`WORKSPACE_SAVE_MAX_GB` sets the size limit in GiB. It defaults to `5` and accepts a positive
+number up to `100`, such as `20` or `0.5`; `0`, negative, non-numeric and larger values stop the
+API and worker at start. 100 GiB is the most a saved home can be restored from. The file limit
+stays one million. Set it in `.env` for both the API and the worker, then restart them. The
+volume's free space still applies, so keep the data volume larger than the limit.
 
 ### Moving existing homes
 
@@ -227,6 +252,9 @@ in MiB (1 MiB = 1,048,576 bytes). It defaults to `10` and must be a positive int
 Set it in `.env` and restart the API, worker, and Docker supervisor (when used). Web, desktop, and mobile use the
 limit advertised by the server. If a reverse proxy limits request bodies, allow
 room for base64 encoding (about 4/3 of the file size) and the JSON envelope.
+
+Files sent in direct messages from chat apps download in the background, up to
+`MAX_UPLOAD_SIZE_MB`, with retries. The sender is told when a file can't be received.
 
 `MAX_ATTACHMENTS_PER_MESSAGE` sets the chat attachment count per message. It defaults
 to `4` and accepts integers from `1` to `100`. Set it in `.env` and restart the API.

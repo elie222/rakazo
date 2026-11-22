@@ -9,16 +9,16 @@ import { BrowserRouter, useLocation } from "react-router-dom";
 import { App } from "./App";
 import { DesktopUpdatesProvider } from "./components/DesktopUpdates";
 import { I18nBootstrap } from "./components/I18nBootstrap";
-import { applyUiDirection } from "./lib/apply-ui-direction";
-import { clientUpdates } from "./lib/client-update";
-import { webLogoAvatarActivity } from "./lib/logo-avatar-activity";
-import { reportCaughtReactError } from "./lib/monitoring";
-import { markAfterPaint, markOnce } from "./lib/performance";
-import { installPreloadRecovery } from "./lib/preload-recovery";
-import { queryClient } from "./lib/query";
-import { captureReferral } from "./lib/referral";
-import { applyUiAppearance, watchSystemAppearance } from "./lib/ui-appearance";
-import { resolveUiLocale } from "./lib/ui-locale";
+import { captureReferral } from "./lib/billing/referral";
+import { webLogoAvatarActivity } from "./lib/bots/logo-avatar-activity";
+import { applyUiDirection } from "./lib/locale/apply-ui-direction";
+import { resolveUiLocale } from "./lib/locale/ui-locale";
+import { clientUpdates } from "./lib/platform/client-update";
+import { reportCaughtReactError } from "./lib/platform/monitoring";
+import { markAfterPaint, markOnce } from "./lib/platform/performance";
+import { installPreloadRecovery } from "./lib/platform/preload-recovery";
+import { applyUiAppearance, watchSystemAppearance } from "./lib/preferences/ui-appearance";
+import { queryClient } from "./lib/query/query";
 import { registerServiceWorker } from "./pwa/register";
 import { lockStandaloneZoom } from "./pwa/standalone";
 import "./styles.css";
@@ -80,7 +80,8 @@ createRoot(document.getElementById("root")!, { onCaughtError: reportCaughtReactE
         <ClientUpdateOnNavigate />
         <QueryClientProvider client={queryClient}>
           <DesktopUpdatesProvider>
-            <TooltipProvider>
+            {/* Wait for a pause, so passing over icons does not flash their labels. */}
+            <TooltipProvider delay={500}>
               <BotAvatarActivityProvider source={webLogoAvatarActivity}>
                 <App />
               </BotAvatarActivityProvider>

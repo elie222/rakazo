@@ -1,12 +1,12 @@
 import { i18n } from "@lingui/core";
 import { I18nProvider } from "@lingui/react";
 import { useLingui } from "@lingui/react/macro";
-import { InputRevealLabelsProvider } from "@rakazo/ui-web";
+import { InputRevealLabelsProvider, KitLabelsProvider } from "@rakazo/ui-web";
 import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
-import { bootstrapI18n, getActiveUiLocale } from "../lib/i18n";
-import { resolveUiLocale } from "../lib/ui-locale";
-import { MarkdownChrome } from "./markdown-copy";
+import { bootstrapI18n, getActiveUiLocale } from "../lib/locale/i18n";
+import { resolveUiLocale } from "../lib/locale/ui-locale";
+import { MarkdownChrome } from "./messages/markdown-copy";
 
 export function I18nBootstrap({ children }: { children: ReactNode }) {
   const [ready, setReady] = useState(() => i18n.locale === getActiveUiLocale());
@@ -44,8 +44,10 @@ export function I18nBootstrap({ children }: { children: ReactNode }) {
 function KitLabels({ children }: { children: ReactNode }) {
   const { t } = useLingui();
   return (
-    <InputRevealLabelsProvider show={t`Show password`} hide={t`Hide password`}>
-      {children}
-    </InputRevealLabelsProvider>
+    <KitLabelsProvider close={t`Close`} loading={t`Loading`}>
+      <InputRevealLabelsProvider show={t`Show password`} hide={t`Hide password`}>
+        {children}
+      </InputRevealLabelsProvider>
+    </KitLabelsProvider>
   );
 }

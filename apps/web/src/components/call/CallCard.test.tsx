@@ -3,8 +3,8 @@ import type { ReactNode } from "react";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import type { CallState } from "../../lib/call-session";
-import { endCall } from "../../lib/call-session";
+import type { CallState } from "../../lib/calls/call-session";
+import { endCall } from "../../lib/calls/call-session";
 import { CallCard } from "./CallCard";
 
 vi.mock("@lingui/react/macro", () => ({
@@ -22,7 +22,7 @@ vi.mock("@rakazo/ui-web", () => ({
 }));
 vi.mock("react-router-dom", () => ({ useNavigate: () => vi.fn(), useParams: () => ({}) }));
 let session: CallState | null = null;
-vi.mock("../../lib/call-session", () => ({
+vi.mock("../../lib/calls/call-session", () => ({
   endCall: vi.fn(),
   setCallMinimized: vi.fn(),
   toggleMute: vi.fn(),
@@ -109,4 +109,51 @@ it("leaves focus in the app beside the desktop card", async () => {
   expect(container.querySelector('[data-testid="call-view"]')).not.toBeNull();
   expect(document.activeElement).toBe(composer);
   expect(composer.closest('[aria-hidden="true"]')).toBeNull();
+});
+
+it("keeps the running clock readable without including ticks in the live status", async () => {
+  viewport(1024);
+  vi.setSystemTime(31_000);
+  render({ phase: "thinking", connectedAt: 0 });
+  const live = container.querySelector('[aria-live="polite"]');
+  const clock = [...container.querySelectorAll("span")].find(
+    (span) => span.childElementCount === 0 && span.textContent === "00:31",
+  );
+  expect(clock).toBeDefined();
+  expect(clock?.closest('[aria-live], [aria-hidden="true"]')).toBeNull();
+  expect(live?.textContent).toBe("Thinking");
+
+  await act(() => vi.advanceTimersByTimeAsync(1_000));
+  expect(clock?.textContent).toBe("00:32");
+  expect(live?.textContent).toBe("Thinking");
+
+  render({ phase: "speaking", connectedAt: 0 });
+  expect(container.querySelector('[aria-live="polite"]')).toBe(live);
+  expect(live?.textContent).toBe("Speaking");
+});
+
+it("announces Calling without showing a clock before connection", () => {
+  viewport(1024);
+  render({ phase: "ringing", connectedAt: null });
+  expect(container.querySelector('[aria-live="polite"]')?.textContent).toBe("Calling…");
+  expect(container.textContent).not.toMatch(/\d{2}:\d{2}/);
+});
+
+it("consumes call Escape before underlying document handlers", async () => {
+  viewport(375);
+  render({});
+  await flushFocus();
+  const underlyingClose = vi.fn();
+  const onKey = (event: KeyboardEvent) => {
+    if (event.key === "Escape" && !event.defaultPrevented) underlyingClose();
+  };
+  document.addEventListener("keydown", onKey);
+  act(() => {
+    document.activeElement?.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }),
+    );
+  });
+  document.removeEventListener("keydown", onKey);
+  expect(endCall).toHaveBeenCalledOnce();
+  expect(underlyingClose).not.toHaveBeenCalled();
 });

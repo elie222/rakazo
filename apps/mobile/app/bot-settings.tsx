@@ -23,46 +23,49 @@ import type { Voice } from "expo-speech";
 import { useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import type { ScrollViewInstance } from "react-native";
 import { Alert, Modal, Pressable, ScrollView, Share, StyleSheet, Text, View } from "react-native";
-import { BotAvatar } from "../components/bot-avatar";
-import { BotContextCards } from "../components/bot-context-cards";
-import { BotLookPicker } from "../components/bot-look-picker";
-import { useComputerMaintenanceRows } from "../components/computer-maintenance-actions";
-import { glassHeaderOptions } from "../components/glass-title";
-import { GrowingTextInput } from "../components/growing-text-input";
-import type { MenuPickerChoice } from "../components/menu-picker";
-import { MenuPicker, MenuPickerMenu } from "../components/menu-picker";
-import { NativeActionButton } from "../components/native-action-button";
-import { NativeSymbol } from "../components/native-symbol";
-import { ProfileEditDialog } from "../components/profile-edit-dialog";
-import { Chevron } from "../components/row-accessories";
+import { BotAvatar } from "../components/bots/bot-avatar";
+import { BotContextCards } from "../components/bots/bot-context-cards";
+import { BotLookPicker } from "../components/bots/bot-look-picker";
+import { ProfileEditDialog } from "../components/bots/profile-edit-dialog";
+import { useComputerHomeVersionRows } from "../components/computers/computer-home-versions";
+import { useComputerMaintenanceRows } from "../components/computers/computer-maintenance-actions";
+import { glassHeaderOptions } from "../components/native/glass-title";
+import { NativeActionButton } from "../components/native/native-action-button";
+import { NativeSymbol } from "../components/native/native-symbol";
 import {
   SettingsGroup,
   SettingsLabel,
   SettingsRow,
   SettingsSwitch,
-} from "../components/settings-group";
-import { currentApiBase, rpc, selectedSpaceId } from "../lib/api";
-import { deviceVoices, setVoiceForBot, voiceForBot, voiceLabel } from "../lib/bot-voices";
-import { CallKeyboardContext } from "../lib/call-keyboard-context";
-import { chatModelPickerChoices } from "../lib/chat-model";
-import { COMPUTER_LIFECYCLE_TIMEOUT_MS } from "../lib/computer";
-import { notifyConversationCleared } from "../lib/conversation-cleared";
-import { loadDeviceVoiceEnabled } from "../lib/device-voice";
-import { afterChatNotifyChange } from "../lib/live-notifications";
-import type { MobileMe, MobileModel, MobileModelCredential } from "../lib/mobile-types";
-import { native, useMobileTokens } from "../lib/native";
-import { createQueuedSave } from "../lib/queued-save";
-import { loadSessionToken } from "../lib/session";
-import { useSideInsets } from "../lib/side-insets";
-import { thinkingLevelLabel } from "../lib/thinking-level";
-import { errorText } from "../lib/user-error";
-import { stopVoicePlayback } from "../lib/voice";
+} from "../components/settings/settings-group";
+import { GrowingTextInput } from "../components/ui/growing-text-input";
+import type { MenuPickerChoice } from "../components/ui/menu-picker";
+import { MenuPicker, MenuPickerMenu } from "../components/ui/menu-picker";
+import { Chevron } from "../components/ui/row-accessories";
+import { currentApiBase, rpc, selectedSpaceId } from "../lib/api/api";
+import type { MobileMe, MobileModel, MobileModelCredential } from "../lib/api/mobile-types";
+import { loadSessionToken } from "../lib/api/session";
+import { errorText } from "../lib/api/user-error";
+import { CallKeyboardContext } from "../lib/calls/call-keyboard-context";
+import { COMPUTER_LIFECYCLE_TIMEOUT_MS } from "../lib/computers/computer";
+import { dateLocaleForUi, useUiLocale } from "../lib/i18n/i18n";
+import { useSideInsets } from "../lib/layout/side-insets";
+import { chatModelPickerChoices } from "../lib/models/chat-model";
+import { thinkingLevelLabel } from "../lib/models/thinking-level";
+import { native, useMobileTokens } from "../lib/native/native";
+import { afterChatNotifyChange } from "../lib/notifications/live-notifications";
+import { createQueuedSave } from "../lib/query/queued-save";
+import { notifyConversationCleared } from "../lib/thread/conversation-cleared";
+import { deviceVoices, setVoiceForBot, voiceForBot, voiceLabel } from "../lib/voice/bot-voices";
+import { loadDeviceVoiceEnabled } from "../lib/voice/device-voice";
+import { stopVoicePlayback } from "../lib/voice/voice";
 
 export default function BotSettingsScreen() {
   const rootAvoidsKeyboard = useContext(CallKeyboardContext);
   const sideInsets = useSideInsets();
   const tokens = useMobileTokens();
   const { t } = useLingui();
+  const uiLocale = useUiLocale();
   const router = useRouter();
   const {
     botId,
@@ -104,6 +107,7 @@ export default function BotSettingsScreen() {
   const [modelMetaError, setModelMetaError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const computerMaintenanceRows = useComputerMaintenanceRows(botId);
+  const computerHomeVersionRows = useComputerHomeVersionRows(botId);
   const [deviceVoiceEnabled, setDeviceVoiceEnabled] = useState(false);
   const [voices, setVoices] = useState<Voice[]>([]);
   const [voiceId, setVoiceId] = useState<string | undefined>();
@@ -653,6 +657,7 @@ export default function BotSettingsScreen() {
                 onChange={(value) => setComputerMode(value ? "dedicated" : "team")}
               />
               {computerMaintenanceRows}
+              {computerHomeVersionRows}
             </SettingsGroup>
             {changed?.readAloud || deviceVoiceEnabled ? (
               <SettingsGroup label={t`Voice`}>
@@ -722,7 +727,7 @@ export default function BotSettingsScreen() {
                       value=""
                       choices={bot.instructionHistory.map((version) => ({
                         key: version.id,
-                        label: `${new Date(version.createdAt).toLocaleString()} (${version.reason})`,
+                        label: `${new Date(version.createdAt).toLocaleString(dateLocaleForUi(uiLocale))} (${version.reason})`,
                       }))}
                       onChange={(versionId) => {
                         if (pendingRef.current || instructions !== bot.instructions) return;

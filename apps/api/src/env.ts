@@ -1,21 +1,24 @@
 import { readFileSync } from "node:fs";
+import type { WorkspaceExportLimits } from "@rakazo/adapter-kit";
 import type {
   ApnsVoipConfig,
-  PhotonProjectCredentials,
+  MessagingEnvironmentValues,
   SandboxProviderOptions,
-  TelegramBotCredentials,
 } from "@rakazo/adapters";
 import {
   apnsVoipConfig,
+  autoReviewMinConfidence,
   deploymentLabsFromEnv,
+  liveModelCatalogEnabled,
   mcpStdioOptionsFromEnv,
-  photonProjectsFromEnv,
+  messagingEnvFromProcess,
+  openAiCompatAllowPublicHosts,
   resolveCloudAgentProvider,
   resolveDeploymentModel,
   resolveSandboxProvider,
   sandboxProviderOptionsFromEnv,
   secretStoreOptionsFromEnv,
-  telegramBotsFromEnv,
+  workspaceSaveLimits,
 } from "@rakazo/adapters";
 import type { OidcConfig, SocialAuthConfig } from "@rakazo/auth";
 import { socialAuthFromFields } from "@rakazo/auth";
@@ -24,22 +27,33 @@ import { isPrivateNetworkHost, parseMinimumClientBuilds, parseNavLinks } from "@
 import { parseCrispWebsiteId } from "@rakazo/contracts/content-security-policy";
 import {
   attachmentCountFromEnv,
+  parseEnvFlag,
   phoneCallSettings,
+  SIGNUPS_ENABLED_VALUES,
+  uploadSizeFromEnv,
+} from "@rakazo/core";
+import {
+  MAX_SANDBOX_COMMAND_TIMEOUT_MS,
+  sandboxCommandTimeoutExceedsMax,
+} from "@rakazo/core/node/sandbox-command";
+import {
   resolveAuthSecret,
   resolveContentEncryption,
   resolveEncryptionKey,
   resolveScreenProxySecret,
   resolveSupervisorToken,
-  uploadSizeFromEnv,
-} from "@rakazo/core";
+} from "@rakazo/core/node/secrets-guard";
 import { getLogger, monitoringPseudonymSecret } from "@rakazo/logging";
+import type { DeploymentVoice } from "./voice/deployment-config.js";
+import { deploymentVoiceFromEnv } from "./voice/deployment-config.js";
 
 export { resolveCloudAgentProvider, resolveSandboxProvider } from "@rakazo/adapters";
 
 /** Where a local development stack serves the web client. */
 const DEFAULT_WEB_ORIGIN = "http://127.0.0.1:5173";
 
-export interface AppEnv {
+export interface AppEnv extends MessagingEnvironmentValues {
+  deploymentVoice?: DeploymentVoice;
   passwordAuth?: boolean;
   /** Opt-in Have I Been Pwned check for new passwords. Default off: it calls an outside service. */
   breachedPasswordCheck?: boolean;
@@ -89,6 +103,8 @@ export interface AppEnv {
   phoneCallRingSeconds: number;
   phoneCallCooldownMinutes: number;
   maxUploadSizeBytes: number;
+  /** What one computer save may copy; the worker reads the same setting. */
+  workspaceSaveLimits: WorkspaceExportLimits;
   maxAttachmentsPerMessage: number;
   /** Bot replies longer than this are read aloud as a summary; unset reads every reply in full. */
   voiceSummaryMinChars: number | undefined;
@@ -117,10 +133,6 @@ export interface AppEnv {
   pipedreamClientSecret: string | undefined;
   pipedreamProjectId: string | undefined;
   pipedreamEnvironment: "development" | "production";
-  sendblueApiKeyId: string | undefined;
-  sendblueApiSecret: string | undefined;
-  sendblueSigningSecret: string | undefined;
-  sendbluePhoneNumber: string | undefined;
   expoAccessToken: string | undefined;
   apnsVoip?: ApnsVoipConfig;
   smtpUrl: string | undefined;
@@ -144,29 +156,6 @@ export interface AppEnv {
   experiments: string | undefined;
   slackClientId?: string;
   slackClientSecret?: string;
-  slackBotToken: string | undefined;
-  slackSigningSecret: string | undefined;
-  teamsAppId?: string;
-  teamsAppPassword?: string;
-  teamsAppTenantId?: string;
-  whatsappAccessToken: string | undefined;
-  whatsappPhoneNumberId: string | undefined;
-  whatsappAppSecret: string | undefined;
-  whatsappVerifyToken: string | undefined;
-  telegramBotToken: string | undefined;
-  telegramWebhookSecret: string | undefined;
-  /** Extra named Telegram bots (TELEGRAM_BOT_TOKEN_<NAME>), e.g. one per space. */
-  telegramBots?: TelegramBotCredentials[];
-  larkAppId: string | undefined;
-  larkAppSecret: string | undefined;
-  larkVerificationToken: string | undefined;
-  larkEncryptKey: string | undefined;
-  larkDomain: string | undefined;
-  photonProjectId: string | undefined;
-  photonProjectSecret: string | undefined;
-  photonWebhookSecret: string | undefined;
-  /** Extra named Photon projects (PHOTON_PROJECT_ID_<NAME>), each with its own number. */
-  photonProjects?: PhotonProjectCredentials[];
   /** Unknown chat senders auto-provision their own accounts when true. */
   messagingOpenSignup: boolean;
   /** Bot that owns team/external chat rooms on the messaging surface. */
@@ -192,6 +181,8 @@ export interface AppEnv {
     | undefined;
   /** Crisp chat on the paywall, for the hosted service; self-hosted installs leave it unset. */
   crispWebsiteId?: string | null;
+  /** DEMO_ACCOUNT_EMAIL and DEMO_ACCOUNT_PASSWORD, published to sign-in; only for throwaway demo servers. */
+  demoAccount?: { email: string; password: string } | null;
 }
 
 /** Overrides win key by key inside `sandboxOptions`, so a partial one keeps the rest of the environment's. */
@@ -205,6 +196,11 @@ export function withEnvOverrides(env: AppEnv, overrides: Partial<AppEnv>): AppEn
 
 export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
   secretStoreOptionsFromEnv(source);
+  if (sandboxCommandTimeoutExceedsMax(source)) {
+    getLogger().warn("SANDBOX_COMMAND_TIMEOUT_MS is above the maximum; using the maximum", {
+      maximumMs: MAX_SANDBOX_COMMAND_TIMEOUT_MS,
+    });
+  }
   const issuer = optional(source.OIDC_ISSUER);
   const clientId = optional(source.OIDC_CLIENT_ID);
   const clientSecret = optional(source.OIDC_CLIENT_SECRET);
@@ -232,6 +228,16 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
     if (value && !["true", "false"].includes(value))
       throw new Error(`${key} must be true or false`);
   }
+  // A typo that read as "open" would expose registration, so refuse anything unrecognized.
+  // Empty means unset, as before.
+  const signupsEnabled = source.SIGNUPS_ENABLED?.trim().toLowerCase();
+  if (signupsEnabled && !(SIGNUPS_ENABLED_VALUES as readonly string[]).includes(signupsEnabled))
+    throw new Error("SIGNUPS_ENABLED must be true or false");
+  // Same for the model endpoint switch: read at request time, so refuse a bad value at boot.
+  openAiCompatAllowPublicHosts(source);
+  // Fail at boot rather than on the first review, which would quietly ask every time.
+  autoReviewMinConfidence(source);
+  liveModelCatalogEnabled(source);
   const passwordAuth = source.AUTH_PASSWORD_ENABLED !== "false";
   if (!passwordAuth && !issuer)
     throw new Error("AUTH_PASSWORD_ENABLED=false requires OIDC configuration");
@@ -282,6 +288,7 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
     passkeyAppleAppIds: list(source.PASSKEY_APPLE_APP_IDS),
     passkeyAndroidCertFingerprints: androidCertFingerprints(source.PASSKEY_ANDROID_CERT_SHA256),
     privacyPolicyUrl: optional(source.PRIVACY_POLICY_URL),
+    ...messagingEnvFromProcess(source),
     apiUrl: source.API_URL ?? "http://127.0.0.1:3100",
     apiHost: source.API_HOST ?? "127.0.0.1",
     trustedProxies: (source.TRUSTED_PROXIES ?? "")
@@ -296,13 +303,18 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
     dataDir: source.DATA_DIR ?? "./data",
     piSessionRecording: source.PI_SESSION_RECORDING === "true",
     deploymentLabs: deploymentLabsFromEnv(source),
-    userDevicesEnabled: source.USER_DEVICES_ENABLED !== "false",
+    userDevicesEnabled: parseEnvFlag("USER_DEVICES_ENABLED", source.USER_DEVICES_ENABLED, true),
     computerSettingsEnabled: source.COMPUTER_SETTINGS_ENABLED === "true",
     navLinks: parseNavLinks(source.RAKAZO_NAV_LINKS),
     adminEmails: list(source.RAKAZO_ADMIN_EMAILS).map((email) => email.toLowerCase()),
     ...phoneCallSettings(source),
     maxUploadSizeBytes: uploadSizeFromEnv(source),
+    workspaceSaveLimits: workspaceSaveLimits(source),
     maxAttachmentsPerMessage: attachmentCountFromEnv(source),
+    deploymentVoice: deploymentVoiceFromEnv(
+      source.DEPLOYMENT_VOICE,
+      source.MCP_ALLOW_PRIVATE_ENDPOINT === "true",
+    ),
     voiceSummaryMinChars: voiceSummaryMinCharsFromEnv(source.VOICE_SUMMARY_MIN_CHARS),
     sandboxSupervisorUrl: source.SANDBOX_SUPERVISOR_URL ?? "http://127.0.0.1:7091",
     sandboxSupervisorToken:
@@ -331,10 +343,6 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
     pipedreamProjectId: optional(source.PIPEDREAM_PROJECT_ID),
     pipedreamEnvironment:
       source.PIPEDREAM_ENVIRONMENT === "production" ? "production" : "development",
-    sendblueApiKeyId: optional(source.SENDBLUE_API_KEY_ID),
-    sendblueApiSecret: optional(source.SENDBLUE_API_SECRET),
-    sendblueSigningSecret: optional(source.SENDBLUE_SIGNING_SECRET),
-    sendbluePhoneNumber: optional(source.SENDBLUE_PHONE_NUMBER),
     expoAccessToken: optional(source.EXPO_ACCESS_TOKEN),
     apnsVoip: apnsVoipConfig(source),
     smtpUrl: optional(source.SMTP_URL),
@@ -354,27 +362,6 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
     billingEmulator: source.BILLING_EMULATOR === "true" && source.NODE_ENV !== "production",
     slackClientId: optional(source.SLACK_CLIENT_ID),
     slackClientSecret: optional(source.SLACK_CLIENT_SECRET),
-    slackBotToken: optional(source.SLACK_BOT_TOKEN),
-    slackSigningSecret: optional(source.SLACK_SIGNING_SECRET),
-    teamsAppId: optional(source.TEAMS_APP_ID),
-    teamsAppPassword: optional(source.TEAMS_APP_PASSWORD),
-    teamsAppTenantId: optional(source.TEAMS_APP_TENANT_ID),
-    whatsappAccessToken: optional(source.WHATSAPP_ACCESS_TOKEN),
-    whatsappPhoneNumberId: optional(source.WHATSAPP_PHONE_NUMBER_ID),
-    whatsappAppSecret: optional(source.WHATSAPP_APP_SECRET),
-    whatsappVerifyToken: optional(source.WHATSAPP_VERIFY_TOKEN),
-    telegramBotToken: optional(source.TELEGRAM_BOT_TOKEN),
-    telegramWebhookSecret: optional(source.TELEGRAM_WEBHOOK_SECRET_TOKEN),
-    telegramBots: telegramBotsFromEnv(source),
-    larkAppId: optional(source.LARK_APP_ID),
-    larkAppSecret: optional(source.LARK_APP_SECRET),
-    larkVerificationToken: optional(source.LARK_VERIFICATION_TOKEN),
-    larkEncryptKey: optional(source.LARK_ENCRYPT_KEY),
-    larkDomain: optional(source.LARK_DOMAIN),
-    photonProjectId: optional(source.PHOTON_PROJECT_ID),
-    photonProjectSecret: optional(source.PHOTON_PROJECT_SECRET),
-    photonWebhookSecret: optional(source.PHOTON_WEBHOOK_SECRET),
-    photonProjects: photonProjectsFromEnv(source),
     messagingOpenSignup: source.MESSAGING_OPEN_SIGNUP === "true",
     teamChatBotId: optional(source.TEAM_CHAT_BOT_ID) ?? optional(source.SLACK_RAKAZO_BOT_ID),
     teamChatJudgeProvider: optional(source.TEAM_CHAT_JUDGE_PROVIDER),
@@ -394,6 +381,7 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
     minimumClientBuilds: parseMinimumClientBuilds(source.RAKAZO_MIN_CLIENT_BUILD),
     browserMonitoring: browserMonitoringFromEnv(source),
     crispWebsiteId: parseCrispWebsiteId(source.CRISP_WEBSITE_ID),
+    demoAccount: demoAccountFromEnv(source),
   };
 }
 
@@ -509,4 +497,10 @@ function androidCertFingerprints(value: string | undefined): string[] {
     }
     return hex.toUpperCase().match(/../g)!.join(":");
   });
+}
+
+function demoAccountFromEnv(source: NodeJS.ProcessEnv) {
+  const email = optional(source.DEMO_ACCOUNT_EMAIL);
+  const password = source.DEMO_ACCOUNT_PASSWORD;
+  return email && password ? { email, password } : null;
 }
