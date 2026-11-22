@@ -18,6 +18,7 @@ import {
   AVATAR_POKE_SECONDS,
   AVATAR_POKES,
   AVATAR_SETTLE_MS,
+  AVATAR_SHARED_WINDOW_SECONDS,
   AVATAR_STILL_MAX_SIZE,
   AVATAR_TYPING_DOTS,
   avatarClipPool,
@@ -29,6 +30,7 @@ import {
   avatarRestingBlink,
   avatarSchedule,
   avatarSchedulePose,
+  avatarSharedSchedule,
   avatarThinkingDot,
   avatarWorkingDot,
 } from "./avatar-life.js";
@@ -483,5 +485,43 @@ describe("authored motion", () => {
     expect(Math.min(...frames("bounce").map((frame) => frame.translateY))).toBeLessThan(-0.12);
     expect(Math.max(...frames("nod").map((frame) => frame.eyeY))).toBeGreaterThan(12);
     expect(frames("nod").every((frame) => frame.rotate === 0)).toBe(true);
+  });
+});
+
+describe("avatarSharedSchedule", () => {
+  const pool = AVATAR_CLIP_POOLS.working;
+  const window = AVATAR_SHARED_WINDOW_SECONDS;
+  const start = 1_800_000_000;
+
+  it("gives every copy the same timeline, whenever in the stretch it asks", () => {
+    const early = avatarSharedSchedule(pool, "bot-a", start + 1);
+    const late = avatarSharedSchedule(pool, "bot-a", start + window - 1);
+    for (const seconds of [start + 5, start + 20.25, start + window + 12]) {
+      expect(avatarSchedulePose(late, seconds)).toEqual(avatarSchedulePose(early, seconds));
+    }
+  });
+
+  it("carries on unchanged when the next stretch is planned", () => {
+    const index = Math.floor(start / window);
+    const before = avatarSharedSchedule(pool, "bot-a", index * window + window - 0.5);
+    const after = avatarSharedSchedule(pool, "bot-a", (index + 1) * window + 0.5);
+    for (const offset of [0, 0.3, 7, 30]) {
+      const seconds = (index + 1) * window + offset;
+      expect(avatarSchedulePose(after, seconds)).toEqual(avatarSchedulePose(before, seconds));
+    }
+  });
+
+  it("covers the stretch it is asked about and the next", () => {
+    const index = Math.floor(start / window);
+    const segments = avatarSharedSchedule(pool, "bot-a", start);
+    const last = segments.at(-1)!;
+    expect(segments[0]!.start).toBe(index * window);
+    expect(last.start + last.duration).toBeGreaterThanOrEqual((index + 2) * window);
+  });
+
+  it("moves different bots differently", () => {
+    const a = avatarSharedSchedule(pool, "bot-a", start);
+    const b = avatarSharedSchedule(pool, "bot-b", start);
+    expect(a.map((segment) => segment.clip)).not.toEqual(b.map((segment) => segment.clip));
   });
 });

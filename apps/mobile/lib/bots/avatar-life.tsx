@@ -9,11 +9,11 @@ import type {
 import {
   AVATAR_POKE_SECONDS,
   AVATAR_POKES,
-  AVATAR_REST_POSE,
   AVATAR_SETTLE_MS,
+  AVATAR_SHARED_WINDOW_SECONDS,
   avatarClipPool,
-  avatarSchedule,
-  avatarSchedulePose,
+  avatarSharedSchedule,
+  avatarSharedTimeMs,
 } from "@rakazo/core";
 import type { ReactNode } from "react";
 import {
@@ -123,27 +123,29 @@ const LIFE_RUN_SECONDS = 24 * 60 * 60;
 export const AWAKE_MS = 600;
 /** The spring that turns the face into the typing dots and back: quick, barely overshooting. */
 export const MORPH_SPRING = { duration: 520, dampingRatio: 0.8 } as const;
-/** The timeline is rebuilt this long before it runs out. */
-const SCHEDULE_MARGIN_S = 5;
 
-/**
- * The clip clock as the JS thread knows it: where it started and when (ms), or where it
- * stopped. The JS thread's read of a running animation can lag behind its frames.
- */
-type ClockMirror = { base: number; since: number | null };
-function clockNow({ base, since }: ClockMirror): number {
-  return since === null ? base : base + (performance.now() - since) / 1000;
+/** The shared avatar clock in seconds, which the UI thread's clock follows. */
+function sharedSeconds(): number {
+  return avatarSharedTimeMs() / 1000;
+}
+
+function untilNextStretchMs(): number {
+  const window = AVATAR_SHARED_WINDOW_SECONDS * 1000;
+  return window - (avatarSharedTimeMs() % window) + 1;
 }
 
 /**
  * Everything a moving avatar needs on the UI thread: a seconds clock, its 0–1 wake-up,
- * the clip timeline for its state, the typing-dots morph and the current tap poke.
+ * the clip timeline for its state, the typing-dots morph and the current tap poke. The
+ * clock and timeline come from the shared avatar clock and the bot, so every copy of one
+ * bot's avatar plays the same clip at the same moment.
  */
 export function useLife(
   state: AvatarLifeState,
   clock: AvatarClock,
   size: number,
   mode: AvatarMotionMode,
+  identity: string,
 ) {
   const seconds = useSharedValue(0);
   const awake = useSharedValue(0);
@@ -154,7 +156,6 @@ export function useLife(
   const schedule = useSharedValue<AvatarSegment[]>([]);
   const poke = useSharedValue<AvatarPoke | null>(null);
   const pokeProgress = useSharedValue(1);
-  const mirror = useRef<ClockMirror>({ base: 0, since: null });
   const moving = clock !== "still";
   const pool = avatarClipPool(state, size, mode);
   useEffect(() => {
@@ -168,9 +169,7 @@ export function useLife(
   }, [dots, morph]);
   useEffect(() => {
     if (!moving) return;
-    // The JS thread sets where the clock starts, so it can tell the time without reading it.
-    const start = clockNow(mirror.current);
-    mirror.current = { base: start, since: performance.now() };
+    const start = sharedSeconds();
     seconds.value = start;
     seconds.value = withTiming(start + LIFE_RUN_SECONDS, {
       duration: LIFE_RUN_SECONDS * 1000,
@@ -178,27 +177,16 @@ export function useLife(
       // The clock only ever drives blinks under Reduce Motion; it must keep ticking.
       reduceMotion: ReduceMotion.Never,
     });
-    return () => {
-      cancelAnimation(seconds);
-      mirror.current = { base: clockNow(mirror.current), since: null };
-    };
+    return () => cancelAnimation(seconds);
   }, [moving, seconds]);
+  // Counts the stretches this avatar has planned, so the next one is planned as it begins.
+  const [stretch, setStretch] = useState(0);
   useEffect(() => {
     if (!moving) return;
-    let timer: ReturnType<typeof setTimeout>;
-    const plan = () => {
-      // Pick up from wherever the head is now, as the next clip's bridge.
-      const now = clockNow(mirror.current);
-      const pose = schedule.value.length ? avatarSchedulePose(schedule.value, now) : undefined;
-      const next = avatarSchedule(pool, now, pose ?? AVATAR_REST_POSE, Math.random);
-      schedule.value = next;
-      const last = next[next.length - 1];
-      const remaining = last ? last.start + last.duration - now : 0;
-      timer = setTimeout(plan, Math.max(remaining - SCHEDULE_MARGIN_S, 1) * 1000);
-    };
-    plan();
-    return () => clearTimeout(timer);
-  }, [moving, pool, schedule]);
+    // The timeline covers this stretch and the next.
+    schedule.value = avatarSharedSchedule(pool, identity, sharedSeconds());
+  }, [moving, pool, identity, schedule, stretch]);
+  useTimeout(() => setStretch((count) => count + 1), moving ? untilNextStretchMs() : null, stretch);
   return { seconds, awake, morph, schedule, poke, pokeProgress };
 }
 

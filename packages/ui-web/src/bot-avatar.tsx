@@ -4,6 +4,7 @@ import type { AvatarEyes, LogoAvatarActivity } from "@rakazo/core";
 import {
   avatarEyeRects,
   avatarIdentitySeed,
+  avatarSharedTimeMs,
   botEyeTone,
   DEFAULT_BOT_AVATAR_COLOR,
   isRunWorking,
@@ -19,8 +20,9 @@ import {
   shippedBotAvatarShapePath,
 } from "@rakazo/core";
 import type { ComponentProps, CSSProperties } from "react";
-import { memo, useEffect, useMemo, useSyncExternalStore } from "react";
+import { memo, useLayoutEffect, useMemo, useSyncExternalStore } from "react";
 import { useBotAvatarActivity } from "./bot-avatar-activity.js";
+import { syncAvatarAnimations } from "./hooks/sync-avatar-animations.js";
 import { useAvatarMotionVisibility } from "./hooks/use-avatar-motion-visibility.js";
 import { cn } from "./lib/utils.js";
 import { LogoAvatar } from "./logo-avatar.js";
@@ -248,12 +250,20 @@ function MascotAvatar({
     () => false,
   );
   const { ref, visible } = useAvatarMotionVisibility(!reducedMotion);
-  useEffect(() => {
+  const morphMs = 4800 + (seed % 24) * 100;
+  useLayoutEffect(() => {
+    const svg = ref.current;
+    if (!svg) return;
+    // Every copy of a bot's avatar moves together, however long each has been on screen.
+    syncAvatarAnimations(svg);
     // jsdom has no SMIL clock, so these are optional.
-    if (visible) ref.current?.unpauseAnimations?.();
-    else ref.current?.pauseAnimations?.();
-  }, [ref, visible]);
-  const duration = `${4.8 + (seed % 24) / 10}s`;
+    if (!visible) {
+      svg.pauseAnimations?.();
+      return;
+    }
+    svg.unpauseAnimations?.();
+    svg.setCurrentTime?.((avatarSharedTimeMs() % morphMs) / 1000);
+  }, [ref, visible, isWorking, reducedMotion, morphMs]);
   const eyeOrigin = `${(eyes.leftCx + eyes.rightCx) / 2}px ${eyes.cy}px`;
   const unit = viewBoxWidth(viewBox) / viewBoxWidth(ORGANIC_AVATAR_VIEWBOX);
 
@@ -293,12 +303,12 @@ function MascotAvatar({
             } as CSSProperties
           }
         >
-          {/* Only a working body morphs. A late <animate> joins the svg clock mid-loop. */}
+          {/* Only a working body morphs, on the svg clock the effect above sets. */}
           {morph && !reducedMotion && mode === "working" && isWorking ? (
             <animate
               attributeName="d"
               values={`${body};${morph};${body}`}
-              dur={duration}
+              dur={`${morphMs}ms`}
               repeatCount="indefinite"
             />
           ) : null}

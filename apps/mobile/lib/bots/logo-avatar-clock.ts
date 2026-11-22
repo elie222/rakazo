@@ -1,5 +1,5 @@
-import { LOGO_AVATAR_LOOP_MS } from "@rakazo/core";
-import { useEffect, useRef } from "react";
+import { avatarSharedTimeMs, LOGO_AVATAR_LOOP_MS } from "@rakazo/core";
+import { useEffect } from "react";
 import {
   cancelAnimation,
   Easing,
@@ -9,14 +9,16 @@ import {
   withTiming,
 } from "react-native-reanimated";
 
-/** Native UI-thread clock. Activity/rerender changes do not restart its elapsed phase. */
+/**
+ * Native UI-thread clock read from the shared avatar clock, so every copy of a bot's
+ * avatar, here or on the web, is at the same point in its loop. Each track completes
+ * whole cycles in the loop, so restarting it at the same remainder never jumps.
+ */
 export function useLogoAvatarClock(running: boolean) {
   const milliseconds = useSharedValue(0);
-  const mirror = useRef({ elapsed: 0, since: null as number | null });
   useEffect(() => {
     if (!running) return;
-    const base = mirror.current.elapsed;
-    mirror.current = { elapsed: base, since: performance.now() };
+    const base = avatarSharedTimeMs() % LOGO_AVATAR_LOOP_MS;
     milliseconds.value = base;
     milliseconds.value = withRepeat(
       withTiming(base + LOGO_AVATAR_LOOP_MS, {
@@ -29,16 +31,7 @@ export function useLogoAvatarClock(running: boolean) {
       undefined,
       ReduceMotion.Never,
     );
-    return () => {
-      const started = mirror.current;
-      mirror.current = {
-        elapsed:
-          started.elapsed + Math.max(0, performance.now() - (started.since ?? performance.now())),
-        since: null,
-      };
-      cancelAnimation(milliseconds);
-      milliseconds.value = mirror.current.elapsed;
-    };
+    return () => cancelAnimation(milliseconds);
   }, [running, milliseconds]);
   return milliseconds;
 }

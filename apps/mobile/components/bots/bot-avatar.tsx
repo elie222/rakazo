@@ -290,7 +290,7 @@ function LegacyBotAvatar({
     settling,
     reducedMotion,
   });
-  const life = useLife(state, clock, size, motion);
+  const life = useLife(state, clock, size, motion, identity || color);
   const poke = usePoke(life, pokeable && clock === "running");
   const bodyStyle = useBodyStyle(life, size);
   const picture =

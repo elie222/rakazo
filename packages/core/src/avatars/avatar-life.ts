@@ -9,6 +9,7 @@ import {
   avatarEase,
   avatarTrackValue,
 } from "./avatar-clips.js";
+import { shippedHash, shippedRandom } from "./bot-avatar-colors.js";
 
 /**
  * Life for bot avatars, played flat on our shapes. A resting avatar is a still picture;
@@ -155,6 +156,69 @@ export function avatarSchedule(
       pose = avatarClipPose(clipData, clipData.duration);
       last = clip;
     }
+  }
+  return segments;
+}
+
+/**
+ * The clock every avatar's motion reads, in milliseconds. It is the wall clock, so every
+ * copy of a bot's avatar, on any screen or platform, is at the same point in its motion.
+ */
+export function avatarSharedTimeMs(): number {
+  return Date.now();
+}
+
+/** How long each stretch of a shared timeline runs, in seconds. */
+export const AVATAR_SHARED_WINDOW_SECONDS = 60;
+
+/**
+ * A bot's timeline for the stretch that holds `seconds` (shared clock) and the one after.
+ * Each stretch is drawn from the bot and the stretch's number alone, so every copy of the
+ * avatar plays the same clips wherever it started. A stretch opens by easing from where the
+ * one before left off back to rest, so its clips never depend on that pose.
+ */
+export function avatarSharedSchedule(
+  pool: readonly AvatarClipName[],
+  identity: string,
+  seconds: number,
+): AvatarSegment[] {
+  const index = Math.floor(seconds / AVATAR_SHARED_WINDOW_SECONDS);
+  const previous = sharedWindow(pool, identity, index - 1, AVATAR_REST_POSE);
+  const current = sharedWindow(pool, identity, index, poseAtWindow(previous, index));
+  const next = sharedWindow(pool, identity, index + 1, poseAtWindow(current, index + 1));
+  return [...current, ...next];
+}
+
+function poseAtWindow(segments: readonly AvatarSegment[], index: number): AvatarPose {
+  return avatarSchedulePose(segments, index * AVATAR_SHARED_WINDOW_SECONDS);
+}
+
+function sharedWindow(
+  pool: readonly AvatarClipName[],
+  identity: string,
+  index: number,
+  from: AvatarPose,
+): AvatarSegment[] {
+  const start = index * AVATAR_SHARED_WINDOW_SECONDS;
+  const end = start + AVATAR_SHARED_WINDOW_SECONDS;
+  const random = shippedRandom(shippedHash(`avatar-life/v1/${identity}/${pool.join()}/${index}`));
+  const segments: AvatarSegment[] = [
+    {
+      start,
+      duration: AVATAR_BRIDGE.seconds,
+      from: unwrap(from, AVATAR_REST_POSE),
+      to: AVATAR_REST_POSE,
+    },
+  ];
+  let time = start + AVATAR_BRIDGE.seconds;
+  let pose = AVATAR_REST_POSE;
+  while (time < end) {
+    const more = avatarSchedule(pool, time, pose, random).filter((segment) => segment.start < end);
+    const last = more.at(-1);
+    if (!last) break;
+    segments.push(...more);
+    time = last.start + last.duration;
+    pose = avatarSchedulePose(more, time);
   }
   return segments;
 }
