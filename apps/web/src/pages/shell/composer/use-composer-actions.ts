@@ -690,8 +690,12 @@ export function useComposerActions({
     clearReply,
     sending,
     pendingSends,
-    pendingTranscript,
     sentCount,
+    /** Laid over the transcript's own props: scroll on send, and the sends not stored yet. */
+    transcriptProps: {
+      followRequest: sentCount,
+      ...(pendingTranscript ? { transcript: pendingTranscript } : {}),
+    },
     sendMessage,
     stopRun,
     answerMessage,

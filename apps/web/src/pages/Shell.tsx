@@ -805,9 +805,8 @@ function SpaceShell() {
             scrollRef={thread.messageScroll}
             scrollRequest={scrollRequest}
             onScrollRequestHandled={clearScrollRequest}
-            followRequest={composer.sentCount}
             {...view.transcriptProps}
-            transcript={composer.pendingTranscript ?? transcript}
+            {...composer.transcriptProps}
             markedUnreadMessageId={read.markedUnreadMessageId}
             showToolActivity={showToolActivity}
             unreadAfterSeq={read.unreadAfterSeq}
