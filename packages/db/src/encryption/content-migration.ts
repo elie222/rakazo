@@ -379,7 +379,11 @@ export interface ContentEncryptionStatus {
 export async function contentEncryptionStatus(
   prisma: PrismaClient,
 ): Promise<{ tables: ContentEncryptionStatus[]; masterKeys: Record<string, number> }> {
-  const tables = await prisma.$queryRaw<Array<{ table: string; rows: bigint; plaintext: bigint }>>`
+  // Counting every row of a large table outlasts the app role's statement timeout.
+  const tables = await prisma.$transaction(
+    async (tx) => {
+      await tx.$executeRaw`SET LOCAL statement_timeout = 0`;
+      return tx.$queryRaw<Array<{ table: string; rows: bigint; plaintext: bigint }>>`
     SELECT 'messages' AS table, count(*) AS rows, count(*) FILTER (WHERE "searchTokens" IS NULL
       OR (cardinality("searchTokens") = 0 AND blocks <> '[]'::jsonb)) AS plaintext FROM messages
     UNION ALL
@@ -412,6 +416,9 @@ export async function contentEncryptionStatus(
       count(*) FILTER (WHERE NOT jsonb_exists(operation, '$sealed') OR NOT jsonb_exists(result, '$sealed'))
       FROM native_calendar_requests
   `;
+    },
+    { timeout: 60 * 60_000 },
+  );
   const keys = await prisma.spaceKey.groupBy({ by: ["masterKeyId"], _count: { _all: true } });
   return {
     tables: tables.map((row) => ({

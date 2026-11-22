@@ -312,6 +312,8 @@ export interface SandboxKindCapabilities {
   maxFileBytes?: number;
   /** The provider confirms machine size for size-based allowance accounting. */
   sizedUsage?: boolean;
+  /** On the desktop app's own server, the person may give bots the host machine instead. */
+  offersHostComputer?: boolean;
 }
 
 export interface SandboxCapabilities {

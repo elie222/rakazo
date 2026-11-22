@@ -113,6 +113,7 @@ export class LinuxDesktop {
     if (startsScreen && result.code === SCREEN_NOT_READY_EXIT) {
       // Only the first line: the rest is the browser's or display's own log.
       getLogger().warn("computer.screen_not_ready", {
+        "sandbox.id": computer.id,
         provider: computer.kind,
         reason: result.stderr?.trim().split("\n")[0]?.slice(0, 200),
       });
@@ -526,7 +527,8 @@ export const PREPARE_LINUX_DESKTOP = [
   // retries while that lock is busy and fails at once for anything else.
   "apt_update() {",
   "  tries=0",
-  `  while ! err=$($root ${APT} update -qq 2>&1); do`,
+  // A signed repository can rename its label while a provider's base image still caches the old one.
+  `  while ! err=$($root ${APT} update -qq --allow-releaseinfo-change-label 2>&1); do`,
   '    case "$err" in',
   '      *"Could not get lock"*|*"Unable to lock"*) tries=$((tries + 1)); [ "$tries" -lt 12 ] || { echo "$err" >&2; return 1; }; sleep 5 ;;',
   '      *) echo "$err" >&2; return 1 ;;',
@@ -536,12 +538,17 @@ export const PREPARE_LINUX_DESKTOP = [
   'if [ -n "$missing" ]; then',
   // Separate commands: set -e ignores a failure on the left of &&.
   "  apt_update",
-  `  if ! $root env DEBIAN_FRONTEND=noninteractive ${APT} install -y -qq --no-remove $missing; then`,
+  // A restored disk can keep a package's record without its files, and a plain install of a
+  // package APT thinks is present does nothing.
+  `  if ! $root env DEBIAN_FRONTEND=noninteractive ${APT} install -y -qq --reinstall --no-remove $missing; then`,
   // Provider images can arrive with unrelated, unfinished package dependencies. Let APT
   // solve those without specifying the desktop packages, and never remove existing tools.
   `    $root env DEBIAN_FRONTEND=noninteractive ${APT} install -y -qq --fix-broken --no-remove`,
-  `    $root env DEBIAN_FRONTEND=noninteractive ${APT} install -y -qq --no-remove $missing`,
+  `    $root env DEBIAN_FRONTEND=noninteractive ${APT} install -y -qq --reinstall --no-remove $missing`,
   "  fi",
+  // An install APT reports as done can still leave a tool out; the screen would then fail later.
+  ...FIND_MISSING_DESKTOP_TOOLS.map((line) => `  ${line}`),
+  '  if [ -n "$missing" ]; then echo "desktop tools still missing after install:$missing" >&2; exit 1; fi',
   "fi",
   // Bots read pages visually; without a color emoji font every emoji is an empty box. The
   // desktop works without it, so an image whose package manager is broken still runs.
