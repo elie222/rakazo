@@ -160,10 +160,11 @@ describe("truncateSlashDescription", () => {
     expect(truncateSlashDescription("a", 1)).toBe("a");
   });
 
-  it("keeps the normalized description for the menu to ellipsize without Intl.Segmenter", () => {
+  it("keeps the code point limit and whole graphemes without Intl.Segmenter", () => {
     vi.stubGlobal("Intl", Object.create(Intl, { Segmenter: { value: undefined } }));
     try {
-      expect(truncateSlashDescription("  每週\n進度👍🏽報告  ", 5)).toBe("每週 進度👍🏽報告");
+      expect(truncateSlashDescription("每週進度👍🏽報告", 6)).toBe("每週進度…");
+      expect(truncateSlashDescription("每週進度👍🏽報告", 7)).toBe("每週進度👍🏽…");
     } finally {
       vi.unstubAllGlobals();
     }
