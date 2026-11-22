@@ -2,8 +2,14 @@ import type { McpTransport, MessageBlock } from "@rakazo/contracts";
 import { McpRemoteEndpointSchema, McpTransportSchema } from "@rakazo/contracts";
 import { deriveMcpSlug } from "@rakazo/core";
 import type { McpServer } from "@rakazo/db";
-import { isUniqueViolation } from "@rakazo/db";
+import {
+  availableInSpace,
+  isUniqueViolation,
+  storedMessageBlocks,
+  THREAD_LOCK_TRANSACTION_OPTIONS,
+} from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
+import type { MarketplaceConnector } from "../integrations/marketplace-connectors.js";
 import { toStringRecord } from "../memory/memory-provider-factory.js";
 import { persistMessageInTransaction, runLeaseFor } from "../runs/assembly/run-messages.js";
 import type { ExecutorDeps } from "../runs/executor/executor-deps.js";
@@ -12,6 +18,8 @@ import { assertNoMcpEndpointCredential, assertSafeRemoteUrl } from "./remote-mcp
 export { deriveMcpSlug } from "@rakazo/core";
 
 const MAX_HEADERS = 32;
+/** Only recent cards count as already shown; an old one far up the chat should not block a new one. */
+const RECENT_MESSAGES = 50;
 
 export type ParsedMcpServerArgs = {
   slug: string;
@@ -127,7 +135,7 @@ export function needsOAuthProbe(parsed: {
 /** add_mcp_server: registers the server and, when asked, posts its approval card. */
 export async function addMcpServerFromTool(
   deps: ExecutorDeps,
-  run: { id: string; spaceId: string; userId: string; threadId: string; botId: string },
+  run: ToolRun,
   botId: string,
   args: Record<string, unknown>,
   executionId: string,
@@ -145,6 +153,156 @@ export async function addMcpServerFromTool(
         "Invalid MCP server details. Required: name, transport (streamable_http|sse), and an endpoint URL.",
     };
   }
+  return registerMcpServer(deps, run, botId, parsed, executionId);
+}
+
+type ToolRun = { id: string; spaceId: string; userId: string; threadId: string; botId: string };
+
+/** connect_app's fallback: offers a marketplace plugin's connector on the same approval card
+ * add_mcp_server posts, reusing the server when the user already has it. */
+export async function addMarketplaceConnector(
+  deps: ExecutorDeps,
+  run: ToolRun,
+  botId: string,
+  connector: MarketplaceConnector,
+  executionId: string,
+) {
+  const listing = { description: connector.description, logo: connector.logo };
+  // One card per call, even when a replay of it finds the server the first attempt saved.
+  const nonce = `connect-app:${executionId}`;
+  const matches = await deps.prisma.mcpServer.findMany({
+    where: { endpoint: connector.server.endpoint, ...availableInSpace(run) },
+    select: {
+      id: true,
+      name: true,
+      enabled: true,
+      allBots: true,
+      headers: true,
+      assignments: { where: { botId }, select: { id: true } },
+    },
+    orderBy: { enabled: "desc" },
+  });
+  if (matches.some((match) => match.enabled && (match.allBots || match.assignments.length > 0)))
+    return {
+      status: "connected",
+      message: "This app is already connected and its tools are available.",
+    };
+  const existing = matches[0];
+  if (!existing)
+    return registerMcpServer(
+      deps,
+      run,
+      botId,
+      {
+        slug: deriveMcpSlug(connector.name),
+        name: connector.name,
+        description: connector.description.slice(0, 2000),
+        transport: connector.server.transport,
+        endpoint: connector.server.endpoint,
+        headers: {},
+        assignToSelf: true,
+      },
+      executionId,
+      listing,
+      nonce,
+    );
+  if (!existing.enabled)
+    return {
+      error: `${existing.name} is turned off. Ask the user to turn it on in Settings.`,
+    };
+  // A server given credentials in its headers is approved as it is. Otherwise Authorize asks the
+  // server, which signs in when it needs to and goes straight on when not; a stored secret is no
+  // sign of a login, since starting one saves the client registration there.
+  const signsIn = !hasKeys(existing.headers);
+  const committed = await deps.prisma.$transaction(async (tx) => {
+    await tx.$executeRaw`SELECT id FROM threads WHERE id = ${run.threadId} FOR UPDATE`;
+    const shown = await tx.message.findFirst({
+      where: { threadId: run.threadId, clientNonce: nonce },
+      select: { id: true },
+    });
+    if (shown) return null;
+    // Asking again while a card for this server still waits points at that card instead.
+    const recent = await tx.message.findMany({
+      where: { threadId: run.threadId },
+      select: { id: true, blocks: true },
+      orderBy: { createdAt: "desc" },
+      take: RECENT_MESSAGES,
+    });
+    if (
+      recent.some((message) =>
+        storedMessageBlocks(message).some(
+          (block) =>
+            block.kind === "mcp_approval" &&
+            block.serverId === existing.id &&
+            block.status === "pending",
+        ),
+      )
+    )
+      return null;
+    return persistMessageInTransaction(
+      tx,
+      run,
+      "bot",
+      [approvalCard(existing, connector.server.transport, signsIn, listing)],
+      undefined,
+      nonce,
+      false,
+      runLeaseFor(deps, run.id),
+    );
+  }, THREAD_LOCK_TRANSACTION_OPTIONS);
+  if (committed) await notifyApproval(deps, run, committed.eventSeq, committed.firstResponseRunId);
+  return { ok: true, server_id: existing.id, next_step: cardNextStep(signsIn) };
+}
+
+function hasKeys(value: unknown): boolean {
+  return Boolean(value && typeof value === "object" && Object.keys(value).length > 0);
+}
+
+function approvalCard(
+  server: { id: string; name: string },
+  transport: McpTransport,
+  needsOAuth: boolean,
+  listing?: { description: string; logo: string | null },
+  endpoint: string | null = null,
+): MessageBlock {
+  return {
+    kind: "mcp_approval",
+    name: server.name,
+    serverId: server.id,
+    transport,
+    // A listing says what the server is; the address is only shown for one the bot was given.
+    endpoint: listing ? null : endpoint,
+    needsOAuth,
+    status: "pending",
+    ...listing,
+  };
+}
+
+async function notifyApproval(
+  deps: ExecutorDeps,
+  run: ToolRun,
+  eventSeq: number | undefined,
+  firstResponseRunId: string | undefined,
+) {
+  if (eventSeq === undefined) return;
+  await deps.events.notify(run.threadId, eventSeq, firstResponseRunId).catch((error) => {
+    getLogger().error("MCP approval realtime notification", error);
+  });
+}
+
+function cardNextStep(oauthLikely: boolean) {
+  return `An approval card is in the chat. End your turn with one short sentence asking the user to ${oauthLikely ? "authorize" : "approve"} it there; the card already shows the server's details. You will be told when they connect it.`;
+}
+
+async function registerMcpServer(
+  deps: ExecutorDeps,
+  run: ToolRun,
+  botId: string,
+  parsed: ParsedMcpServerArgs,
+  executionId: string,
+  listing?: { description: string; logo: string | null },
+  clientNonce?: string,
+) {
   try {
     await assertSafeRemoteUrl(parsed.endpoint, deps.secretHttp?.resolveHostname, {
       allowPrivateEndpoint: deps.mcpAllowPrivateEndpoint === true,
@@ -204,16 +362,8 @@ export async function addMcpServerFromTool(
         },
       });
       if (!parsed.assignToSelf) return { server };
-      const blocks: MessageBlock[] = [
-        {
-          kind: "mcp_approval",
-          name: server.name,
-          serverId: server.id,
-          transport: parsed.transport,
-          endpoint: parsed.endpoint,
-          needsOAuth: oauthLikely,
-          status: "pending",
-        },
+      const blocks = [
+        approvalCard(server, parsed.transport, oauthLikely, listing, parsed.endpoint),
       ];
       const committed = await persistMessageInTransaction(
         tx,
@@ -221,7 +371,7 @@ export async function addMcpServerFromTool(
         "bot",
         blocks,
         undefined,
-        undefined,
+        clientNonce,
         false,
         runLeaseFor(deps, run.id),
       );
@@ -242,18 +392,12 @@ export async function addMcpServerFromTool(
     }
     throw error;
   }
-  if (approvalEventSeq !== undefined) {
-    await deps.events
-      .notify(run.threadId, approvalEventSeq, approvalResponseRunId)
-      .catch((error) => {
-        getLogger().error("MCP approval realtime notification", error);
-      });
-  }
+  await notifyApproval(deps, run, approvalEventSeq, approvalResponseRunId);
   return {
     ok: true,
     server_id: serverRow.id,
     next_step: parsed.assignToSelf
-      ? `An approval card is in the chat. End your turn with one short sentence asking the user to ${oauthLikely ? "authorize" : "approve"} it there; the card already shows the server's details. You will be told when they connect it.`
+      ? cardNextStep(oauthLikely)
       : "The server was registered without assigning it to this bot.",
   };
 }

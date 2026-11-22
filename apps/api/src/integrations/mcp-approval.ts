@@ -64,7 +64,12 @@ async function threadsForDecision(
     where: {
       id: input.threadId,
       spaceId: actor.spaceId,
-      OR: [{ botId: input.botId }, { group: { members: { some: { botId: input.botId } } } }],
+      OR: [
+        { botId: input.botId },
+        { group: { members: { some: { botId: input.botId } } } },
+        // A topic, which opens only in the bot's own chat.
+        { parentMessage: { is: { thread: { botId: input.botId } } } },
+      ],
     },
     select: { id: true, botId: true },
   });

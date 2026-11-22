@@ -9,7 +9,13 @@ import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { McpApprovalCard } from "./McpApprovalCard";
 
-const { rpc, alert } = vi.hoisted(() => ({ rpc: vi.fn(), alert: vi.fn() }));
+const { rpc, alert, signIn } = vi.hoisted(() => ({
+  rpc: vi.fn(),
+  alert: vi.fn(),
+  signIn: vi.fn(),
+}));
+vi.mock("../../lib/integrations/mcp-oauth", () => ({ signInToMcpServer: signIn }));
+vi.mock("../integrations/connector-icon", () => ({ ConnectorIcon: () => null }));
 vi.mock("../../lib/api/api", () => ({
   rpc,
   currentApiBase: () => "http://api.test",
@@ -70,8 +76,39 @@ afterEach(async () => {
 });
 const button = (label: string) =>
   [...container.querySelectorAll("button")].find((item) => item.textContent === label);
-const render = () =>
-  act(async () => root.render(<McpApprovalCard botId="bot-1" threadId="thread-1" block={block} />));
+const render = (card = block) =>
+  act(async () => root.render(<McpApprovalCard botId="bot-1" threadId="thread-1" block={card} />));
+const listed = {
+  ...block,
+  name: "Planning Notes",
+  needsOAuth: true,
+  endpoint: null,
+  description: "Plan work and write notes",
+  logo: null,
+} as ComponentProps<typeof McpApprovalCard>["block"];
+
+it("signs in to a listed server in the app, then gives it to the bot", async () => {
+  signIn.mockResolvedValue("connected");
+  await render(listed);
+  expect(container.textContent).toContain("Plan work and write notes");
+  await act(async () => button("Authorize")!.click());
+  expect(signIn).toHaveBeenCalledWith(expect.any(Function), "server-1");
+  expect(rpc).toHaveBeenCalledWith(
+    "mcp/assignments/approve",
+    { botId: "bot-1", serverId: "server-1", threadId: "thread-1" },
+    expect.anything(),
+  );
+  await act(async () => answer.resolve({}));
+  expect(container.textContent).toContain("Connected.");
+});
+
+it("offers the sign-in again when it was closed", async () => {
+  signIn.mockResolvedValue("cancelled");
+  await render(listed);
+  await act(async () => button("Authorize")!.click());
+  expect(rpc).not.toHaveBeenCalled();
+  expect(button("Authorize")!.disabled).toBe(false);
+});
 
 it("approves once on a double tap, holds both buttons, then shows it connected", async () => {
   await render();

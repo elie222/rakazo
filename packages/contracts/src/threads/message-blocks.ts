@@ -313,6 +313,9 @@ export const MessageBlock = z.discriminatedUnion("kind", [
     endpoint: z.string().nullable(),
     needsOAuth: z.boolean(),
     status: z.enum(["pending", "connected", "dismissed"]).default("pending"),
+    /** Set when the server came from a marketplace listing, which says what it is. */
+    description: z.string().optional(),
+    logo: z.string().nullable().optional(),
   }),
   z.object({
     kind: z.literal("import_setup"),

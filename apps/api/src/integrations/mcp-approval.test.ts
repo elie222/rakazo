@@ -102,7 +102,11 @@ describe("resolveMcpApprovalCards", () => {
       where: {
         id: "group-thread",
         spaceId: "space",
-        OR: [{ botId: "bot" }, { group: { members: { some: { botId: "bot" } } } }],
+        OR: [
+          { botId: "bot" },
+          { group: { members: { some: { botId: "bot" } } } },
+          { parentMessage: { is: { thread: { botId: "bot" } } } },
+        ],
       },
       select: { id: true, botId: true },
     });

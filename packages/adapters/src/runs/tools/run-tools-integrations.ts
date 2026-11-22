@@ -9,7 +9,7 @@ import {
   sanitizeConnectorError,
 } from "../../integrations/connector-safety.js";
 import { mcpAppViewArguments, mcpAppViewResult } from "../../mcp/mcp-app.js";
-import { addMcpServerFromTool } from "../../mcp/mcp-server-tool.js";
+import { addMarketplaceConnector, addMcpServerFromTool } from "../../mcp/mcp-server-tool.js";
 import { serviceCallFromTool, serviceSearchFromTool } from "../../payments/paid-service-tools.js";
 import { collectLogIds } from "../../providers/integration/composio/composio-connector.js";
 import { storeMcpAppHtml } from "../../storage/thread-artifacts.js";
@@ -198,19 +198,29 @@ export const integrationTools: ToolHandlers = {
     return call.finish(await addMcpServerFromTool(deps, run, bot.id, args, executionId));
   },
   async connect_app(ctx, call) {
-    const { deps, run, runId, context } = ctx;
+    const { deps, run, runId, context, bot } = ctx;
     const { args, executionId, applied } = call;
     await flushProgress(ctx);
     await showNarrationStatus(ctx, await publishMidTurnNarration(ctx, true));
-    return call.finish(
-      await connectApp(
-        deps,
-        deps.connectors?.managedProviders?.() ?? [],
-        context,
-        run,
-        args.app,
-        applied?.effect.id ?? runScopedToolExecutionId(runId, executionId),
-      ),
+    const effectId = applied?.effect.id ?? runScopedToolExecutionId(runId, executionId);
+    const result = await connectApp(
+      deps,
+      deps.connectors?.managedProviders?.() ?? [],
+      context,
+      run,
+      args.app,
+      effectId,
     );
+    if (!("error" in result) || !deps.marketplaceConnectors || typeof args.app !== "string")
+      return call.finish(result);
+    // No app catalog has it; a marketplace plugin may bring it as a connector instead.
+    const connector = await deps.marketplaceConnectors
+      .find(args.app.trim(), context.signal)
+      .catch((error: unknown) => {
+        getLogger().warn("connect_app marketplace lookup failed", { error });
+        return null;
+      });
+    if (!connector) return call.finish(result);
+    return call.finish(await addMarketplaceConnector(deps, run, bot.id, connector, effectId));
   },
 };

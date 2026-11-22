@@ -138,6 +138,16 @@ function OnboardingFocusOptionLabel({
   }
 }
 
+function AppLogo({ name, logo }: { name: string; logo: string | null }) {
+  return logo ? (
+    <img src={logo} alt="" className="h-10 w-10 rounded-md bg-favicon-plate object-contain p-1" />
+  ) : (
+    <span className="grid h-10 w-10 place-items-center rounded-md bg-muted text-body-lg text-foreground">
+      {name.slice(0, 1).toUpperCase()}
+    </span>
+  );
+}
+
 export function AppConnectCard({
   botId,
   threadId,
@@ -224,17 +234,7 @@ export function AppConnectCard({
       className="w-full max-w-[440px] px-4 py-3.5"
     >
       <div className="flex items-center gap-3.5">
-        {block.logo ? (
-          <img
-            src={block.logo}
-            alt=""
-            className="h-10 w-10 rounded-md bg-favicon-plate object-contain p-1"
-          />
-        ) : (
-          <span className="grid h-10 w-10 place-items-center rounded-md bg-muted text-body-lg text-foreground">
-            {block.name.slice(0, 1).toUpperCase()}
-          </span>
-        )}
+        <AppLogo name={block.name} logo={block.logo} />
         <span className="min-w-0 flex-1">
           <span className="block text-body-lg font-medium text-foreground">{block.name}</span>
           <span className="block truncate text-body-sm text-muted-foreground">
@@ -416,24 +416,42 @@ export function McpApprovalCard({
   }
 
   const summary = endpoint ?? `stdio (${transport})`;
+  // A marketplace listing says what the server is, so the card leads with that instead.
+  const listed = block.description !== undefined;
   return (
     <BuiCard data-testid="mcp-approval-card" className="w-full min-w-0 max-w-xl p-4">
-      <div className="flex items-center gap-2">
-        <span className="grid h-7 w-7 place-items-center rounded-lg bg-muted text-label text-foreground">
-          M
-        </span>
-        <span className="text-body-lg font-medium text-foreground">
-          <Trans>Connect MCP server “{name}”</Trans>
-        </span>
-      </div>
-      <p className="mt-1.5 truncate text-label text-muted-foreground">{summary}</p>
+      {listed ? (
+        <div className="flex items-center gap-3.5">
+          <AppLogo name={name} logo={block.logo ?? null} />
+          <span className="min-w-0 flex-1">
+            <span className="block text-body-lg font-medium text-foreground">{name}</span>
+            <span className="block truncate text-body-sm text-muted-foreground">
+              {block.description}
+            </span>
+          </span>
+        </div>
+      ) : (
+        <>
+          <div className="flex items-center gap-2">
+            <span className="grid h-7 w-7 place-items-center rounded-lg bg-muted text-label text-foreground">
+              M
+            </span>
+            <span className="text-body-lg font-medium text-foreground">
+              <Trans>Connect MCP server “{name}”</Trans>
+            </span>
+          </div>
+          <p className="mt-1.5 truncate text-label text-muted-foreground">{summary}</p>
+        </>
+      )}
       {state === "pending" || state === "connecting" ? (
         <>
-          <p className="mt-2 text-body-sm leading-[1.5] text-foreground/75">
-            {needsOAuth
-              ? t`Authorize this server so agents can use its tools. A popup opens.`
-              : t`Approve this server to let your agent use its tools.`}
-          </p>
+          {listed ? null : (
+            <p className="mt-2 text-body-sm leading-[1.5] text-foreground/75">
+              {needsOAuth
+                ? t`Authorize this server so agents can use its tools. A popup opens.`
+                : t`Approve this server to let your agent use its tools.`}
+            </p>
+          )}
           {error ? (
             <div className="mt-2">
               <ErrorNotice error={error} />

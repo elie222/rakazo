@@ -174,7 +174,7 @@ function displayName(name: string): string {
     .join(" ");
 }
 
-const publicRead: PluginTextReader = async (url, maxBytes, signal) =>
+export const publicRead: PluginTextReader = async (url, maxBytes, signal) =>
   (await fetchSafeWebText(url, { maxBytes, signal })).body;
 
 /** Cache is per API router instance; failures are never cached. Concurrent

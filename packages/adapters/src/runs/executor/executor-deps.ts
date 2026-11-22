@@ -25,6 +25,7 @@ import type {
   UserCloudAgents,
 } from "../../cloud-agents/cloud-agent-factory.js";
 import type { UserDeviceGateway } from "../../computers/host/user-device-protocol.js";
+import type { MarketplaceConnectors } from "../../integrations/marketplace-connectors.js";
 import type { RemoteTransportDependencies } from "../../mcp/remote-mcp.js";
 import type { MemoryProviderResolver } from "../../memory/memory-provider-factory.js";
 import type { MessagingDelivery } from "../../messaging/messaging-delivery.js";
@@ -89,6 +90,8 @@ export interface ExecutorDeps {
   secretHttp?: RemoteTransportDependencies;
   /** Allow RFC1918 / Docker-network MCP URLs when the operator enabled the escape. */
   mcpAllowPrivateEndpoint?: boolean;
+  /** Listed plugins' connectors, which connect_app offers when no app catalog has the app. */
+  marketplaceConnectors?: MarketplaceConnectors;
   /** Remote cloud coding agents. Null/omit means tools stay uninjected. */
   cloudAgent?: CloudAgentConnection | null;
   /** Environments users connected themselves; a run uses its user's before the deployment's. */

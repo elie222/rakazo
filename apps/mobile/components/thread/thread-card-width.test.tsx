@@ -136,6 +136,7 @@ vi.mock("../native/native-action-button", () => ({
 // Cards this file doesn't exercise; each has its own tests.
 vi.mock("./ask-block", () => ({ AskBlock: () => null }));
 vi.mock("../cards/AppConnectCard", () => ({ AppConnectCard: () => null }));
+vi.mock("../integrations/connector-icon", () => ({ ConnectorIcon: () => null }));
 vi.mock("../media/audio-attachment", () => ({ AudioAttachment: () => null }));
 vi.mock("../cards/ChoiceCard", () => ({ ChoiceCard: () => null }));
 vi.mock("../cards/ImportSetupCard", () => ({ ImportSetupCard: () => null }));

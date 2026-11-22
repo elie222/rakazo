@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { ExecutorDeps } from "../runs/executor/executor-deps.js";
 import {
+  addMarketplaceConnector,
   addMcpServerFromTool,
   buildMcpCredentialBlob,
   deriveMcpSlug,
@@ -113,6 +114,171 @@ describe("addMcpServerFromTool", () => {
       "exec-1",
     );
     expect(result).toEqual({ error: "Put token in a header instead of the server URL" });
+  });
+});
+
+const persisted = vi.hoisted(() =>
+  vi.fn(async () => ({ eventSeq: 7, firstResponseRunId: undefined })),
+);
+vi.mock("../runs/assembly/run-messages.js", () => ({
+  persistMessageInTransaction: persisted,
+  runLeaseFor: () => undefined,
+}));
+
+describe("addMarketplaceConnector", () => {
+  const run = { id: "run", spaceId: "space", userId: "user", threadId: "thread", botId: "bot" };
+  const connector = {
+    name: "Planning Notes",
+    description: "Plan work and write notes",
+    logo: null,
+    server: {
+      name: "notes",
+      transport: "streamable_http" as const,
+      endpoint: "https://tools.example.test/mcp",
+      headers: {},
+    },
+  };
+  const tx = {
+    $executeRaw: vi.fn(),
+    message: {
+      findFirst: vi.fn(async (): Promise<{ id: string } | null> => null),
+      findMany: vi.fn(async (): Promise<Array<{ id: string; blocks: unknown[] }>> => []),
+    },
+  };
+  function deps(assigned: boolean, server: { enabled?: boolean; allBots?: boolean } = {}) {
+    const prisma = {
+      mcpServer: {
+        findMany: vi.fn(async () => [
+          {
+            id: "srv",
+            name: "Planning Notes",
+            enabled: true,
+            allBots: false,
+            headers: {},
+            assignments: [],
+            ...server,
+          },
+          ...(assigned
+            ? [
+                {
+                  id: "other",
+                  name: "Planning Notes",
+                  enabled: true,
+                  allBots: false,
+                  assignments: [{ id: "a" }],
+                },
+              ]
+            : []),
+        ]),
+      },
+      $transaction: vi.fn(async (fn: (client: unknown) => unknown) => fn(tx)),
+    };
+    return { prisma, events: { notify: vi.fn(async () => {}) } } as unknown as ExecutorDeps;
+  }
+
+  it("counts a server every bot gets as connected", async () => {
+    await expect(
+      addMarketplaceConnector(deps(false, { allBots: true }), run, "bot", connector, "e"),
+    ).resolves.toEqual(expect.objectContaining({ status: "connected" }));
+  });
+
+  it("asks for a turned-off server to be turned on instead of offering it", async () => {
+    persisted.mockClear();
+    await expect(
+      addMarketplaceConnector(deps(false, { enabled: false }), run, "bot", connector, "e"),
+    ).resolves.toEqual({ error: expect.stringContaining("turned off") });
+    expect(persisted).not.toHaveBeenCalled();
+  });
+
+  it("approves a server the user gave header credentials as it is", async () => {
+    persisted.mockClear();
+    await addMarketplaceConnector(
+      deps(false, { headers: { Authorization: true } } as never),
+      run,
+      "bot",
+      connector,
+      "e",
+    );
+    expect(persisted).toHaveBeenCalledWith(
+      tx,
+      run,
+      "bot",
+      [expect.objectContaining({ needsOAuth: false })],
+      undefined,
+      "connect-app:e",
+      false,
+      undefined,
+    );
+  });
+
+  it("points at a card for the server that still waits instead of posting another", async () => {
+    persisted.mockClear();
+    tx.message.findMany.mockResolvedValueOnce([
+      {
+        id: "earlier",
+        blocks: [
+          {
+            kind: "mcp_approval",
+            name: "Planning Notes",
+            serverId: "srv",
+            transport: "streamable_http",
+            endpoint: null,
+            needsOAuth: true,
+            status: "pending",
+          },
+        ],
+      },
+    ]);
+    const result = await addMarketplaceConnector(deps(false), run, "bot", connector, "again");
+    expect(result).toMatchObject({ ok: true, server_id: "srv" });
+    expect(persisted).not.toHaveBeenCalled();
+  });
+
+  it("posts no second card when a replay of the call finds the first", async () => {
+    persisted.mockClear();
+    tx.message.findFirst.mockResolvedValueOnce({ id: "shown" });
+    await addMarketplaceConnector(deps(false), run, "bot", connector, "e");
+    expect(tx.message.findFirst).toHaveBeenLastCalledWith({
+      where: { threadId: "thread", clientNonce: "connect-app:e" },
+      select: { id: true },
+    });
+    expect(persisted).not.toHaveBeenCalled();
+  });
+
+  it("says the app is connected when any matching server already serves the bot", async () => {
+    persisted.mockClear();
+    await expect(addMarketplaceConnector(deps(true), run, "bot", connector, "e")).resolves.toEqual(
+      expect.objectContaining({ status: "connected" }),
+    );
+    expect(persisted).not.toHaveBeenCalled();
+  });
+
+  it("offers the user's existing server on a card that shows the listing", async () => {
+    persisted.mockClear();
+    const result = await addMarketplaceConnector(deps(false), run, "bot", connector, "e");
+    expect(result).toMatchObject({ ok: true, server_id: "srv" });
+    expect(persisted).toHaveBeenCalledWith(
+      tx,
+      run,
+      "bot",
+      [
+        {
+          kind: "mcp_approval",
+          name: "Planning Notes",
+          serverId: "srv",
+          transport: "streamable_http",
+          endpoint: null,
+          needsOAuth: true,
+          status: "pending",
+          description: "Plan work and write notes",
+          logo: null,
+        },
+      ],
+      undefined,
+      "connect-app:e",
+      false,
+      undefined,
+    );
   });
 });
 

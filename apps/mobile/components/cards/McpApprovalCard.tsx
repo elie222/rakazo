@@ -6,9 +6,11 @@ import { useEffect, useState } from "react";
 import type { ViewProps } from "react-native";
 import { Alert, StyleSheet, Text, View } from "react-native";
 import { errorText } from "../../lib/api/user-error";
+import { signInToMcpServer } from "../../lib/integrations/mcp-oauth";
 import { native, useMobileTokens } from "../../lib/native/native";
 import { useSave } from "../../lib/query/query";
 import { useThreadReadOnly } from "../../lib/thread/thread-read-only";
+import { ConnectorIcon } from "../integrations/connector-icon";
 import { NativeActionButton } from "../native/native-action-button";
 
 const styles = StyleSheet.create({
@@ -47,15 +49,22 @@ export function McpApprovalCard({
   const tokens = useMobileTokens();
   const [localStatus, setLocalStatus] = useState<"pending" | "connected" | "dismissed">("pending");
   const answer = useSave({
-    save: async (action: "approve" | "dismiss", send) => {
+    save: async (action: "authorize" | "approve" | "dismiss", send) => {
       const input = { botId, serverId: block.serverId, threadId };
-      if (action === "approve") await send("mcp/assignments/approve", input);
-      else await send("mcp/assignments/dismiss", input);
+      if (action === "dismiss") {
+        await send("mcp/assignments/dismiss", input);
+        return "dismissed" as const;
+      }
+      // A closed sign-in leaves the card as it was, so it can be tried again.
+      if (action === "authorize" && (await signInToMcpServer(send, block.serverId)) === "cancelled")
+        return "pending" as const;
+      await send("mcp/assignments/approve", input);
+      return "connected" as const;
     },
-    onSaved: (_, action) => setLocalStatus(action === "approve" ? "connected" : "dismissed"),
+    onSaved: (saved) => setLocalStatus(saved),
     onFailed: (reason, action) =>
       Alert.alert(
-        action === "approve" ? t`Could not approve this server` : t`Could not complete action`,
+        action === "dismiss" ? t`Could not complete action` : t`Could not approve this server`,
         errorText(reason, t`Please try again.`),
       ),
   });
@@ -68,7 +77,10 @@ export function McpApprovalCard({
   const status = block.status && block.status !== "pending" ? block.status : localStatus;
   const summary = block.endpoint ?? `stdio (${block.transport})`;
 
-  function submit(action: "approve" | "dismiss") {
+  // A marketplace listing says what the server is, so the card leads with that instead.
+  const listed = block.description !== undefined;
+
+  function submit(action: "authorize" | "approve" | "dismiss") {
     if (!readOnly && status === "pending") answer.run(action);
   }
 
@@ -78,19 +90,26 @@ export function McpApprovalCard({
       style={[styles.card, { backgroundColor: native.fill }]}
     >
       <View style={styles.header}>
-        <View style={[styles.badge, { backgroundColor: native.fillPressed }]}>
-          <Text style={[styles.badgeText, { color: tokens.foreground }]}>M</Text>
-        </View>
+        {listed ? (
+          <ConnectorIcon name={block.name} logo={block.logo ?? null} size={40} />
+        ) : (
+          <View style={[styles.badge, { backgroundColor: native.fillPressed }]}>
+            <Text style={[styles.badgeText, { color: tokens.foreground }]}>M</Text>
+          </View>
+        )}
         <View style={styles.headline}>
           <Text
             accessibilityActions={accessibilityActions}
             onAccessibilityAction={onAccessibilityAction}
             style={[styles.title, { color: tokens.foreground }]}
           >
-            {t`Connect MCP server ${ph({ name: block.name })}`}
+            {listed ? block.name : t`Connect MCP server ${ph({ name: block.name })}`}
           </Text>
-          <Text style={[styles.summary, { color: tokens.mutedForeground }]} numberOfLines={2}>
-            {summary}
+          <Text
+            style={[styles.summary, { color: tokens.mutedForeground }]}
+            numberOfLines={listed ? 1 : 2}
+          >
+            {listed ? block.description : summary}
           </Text>
         </View>
       </View>
@@ -107,20 +126,20 @@ export function McpApprovalCard({
         </Text>
       ) : !readOnly ? (
         <>
-          <Text style={[styles.description, { color: tokens.foreground }]}>
-            {block.needsOAuth
-              ? t`Finish MCP authorization in the web app.`
-              : t`Approve this server to let your agent use its tools.`}
-          </Text>
+          {listed ? null : (
+            <Text style={[styles.description, { color: tokens.foreground }]}>
+              {block.needsOAuth
+                ? t`Authorize this server so agents can use its tools.`
+                : t`Approve this server to let your agent use its tools.`}
+            </Text>
+          )}
           <View style={styles.actions}>
-            {!block.needsOAuth ? (
-              <NativeActionButton
-                label={t`Approve`}
-                fill={false}
-                disabled={answer.pending}
-                onPress={() => submit("approve")}
-              />
-            ) : null}
+            <NativeActionButton
+              label={block.needsOAuth ? t`Authorize` : t`Approve`}
+              fill={false}
+              disabled={answer.pending}
+              onPress={() => submit(block.needsOAuth ? "authorize" : "approve")}
+            />
             <NativeActionButton
               label={t`Not now`}
               prominence="secondary"

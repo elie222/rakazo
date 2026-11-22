@@ -361,7 +361,7 @@ export const computerTools: ConnectorTool[] = [
   {
     name: "connect_app",
     description:
-      "Show an inline card to connect an app in this chat when you need an unconnected app or the user asks to connect one. Then wait for the user instead of directing them elsewhere.",
+      "Show an inline card to connect an app or service in this chat when needed or asked, before asking for a server URL. Then wait for the user instead of directing them elsewhere.",
     inputSchema: {
       type: "object",
       properties: { app: { type: "string", minLength: 1, maxLength: 100 } },
