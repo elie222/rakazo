@@ -455,51 +455,55 @@ describe.each(["routine", "reaction", "bot_message", "messaging"])(
         [{ kind: "text", text: "Checked: all clear." }],
       );
     });
-
-    it.each([
-      { narration: ["I will check that.", "NO_RESPONSE"], doneText: "" },
-      { narration: ["NO_RESPONSE", "The draft is posted."], doneText: "" },
-      { narration: ["I will check that. NO_RESPONSE"], doneText: "" },
-      { narration: ["NO_RESPONSENO_RESPONSE"], doneText: "" },
-      { narration: ["The draft is posted."], doneText: "NO_RESPONSE" },
-    ])("respects explicit silence in any turn: %j", async ({ narration, doneText }) => {
-      vi.mocked(returnBotMessageOutcome).mockClear();
-      const { finalizeRun } = await runTurn("", true, narration, [], "fyi", {
-        trigger,
-        doneText,
-        splitText: true,
-      });
-      expect(finalizeRun.mock.calls[0]![0].blocks.filter((block) => block.kind === "text")).toEqual(
-        [],
-      );
-      expect(returnBotMessageOutcome).not.toHaveBeenCalled();
-    });
-
-    it("respects an explicit silent final", async () => {
-      const { finalizeRun } = await runTurn("NO_RESPONSE", true, undefined, [], "fyi", { trigger });
-      expect(finalizeRun.mock.calls[0]![0].blocks.filter((block) => block.kind === "text")).toEqual(
-        [],
-      );
-    });
-
-    it("does not confuse an identifier with the silence token across chunks", async () => {
-      const { finalizeRun } = await runTurn(
-        "",
-        true,
-        "NO_RESPONSE_POLICY is configured.",
-        [],
-        "fyi",
-        {
-          trigger,
-          splitText: true,
-        },
-      );
-      expect(finalizeRun.mock.calls[0]![0].blocks.filter((block) => block.kind === "text")).toEqual(
-        [{ kind: "text", text: "NO_RESPONSE_POLICY is configured." }],
-      );
-    });
   },
 );
+
+describe("held-back narration silence", () => {
+  const trigger = "bot_message";
+
+  it.each([
+    { narration: ["I will check that.", "NO_RESPONSE"], doneText: "" },
+    { narration: ["NO_RESPONSE", "The draft is posted."], doneText: "" },
+    { narration: ["I will check that. NO_RESPONSE"], doneText: "" },
+    { narration: ["NO_RESPONSENO_RESPONSE"], doneText: "" },
+    { narration: ["The draft is posted."], doneText: "NO_RESPONSE" },
+  ])("respects explicit silence in any turn: %j", async ({ narration, doneText }) => {
+    vi.mocked(returnBotMessageOutcome).mockClear();
+    const { finalizeRun } = await runTurn("", true, narration, [], "fyi", {
+      trigger,
+      doneText,
+      splitText: true,
+    });
+    expect(finalizeRun.mock.calls[0]![0].blocks.filter((block) => block.kind === "text")).toEqual(
+      [],
+    );
+    expect(returnBotMessageOutcome).not.toHaveBeenCalled();
+  });
+
+  it("respects an explicit silent final", async () => {
+    const { finalizeRun } = await runTurn("NO_RESPONSE", true, undefined, [], "fyi", { trigger });
+    expect(finalizeRun.mock.calls[0]![0].blocks.filter((block) => block.kind === "text")).toEqual(
+      [],
+    );
+  });
+
+  it("does not confuse an identifier with the silence token across chunks", async () => {
+    const { finalizeRun } = await runTurn(
+      "",
+      true,
+      "NO_RESPONSE_POLICY is configured.",
+      [],
+      "fyi",
+      {
+        trigger,
+        splitText: true,
+      },
+    );
+    expect(finalizeRun.mock.calls[0]![0].blocks.filter((block) => block.kind === "text")).toEqual([
+      { kind: "text", text: "NO_RESPONSE_POLICY is configured." },
+    ]);
+  });
+});
 
 it("redacts restored narration", async () => {
   const { finalizeRun } = await runTurn(
