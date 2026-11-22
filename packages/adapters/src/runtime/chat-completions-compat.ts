@@ -1,4 +1,5 @@
 import type { Api, Model, SimpleStreamOptions } from "@earendil-works/pi-ai";
+import { isRecord } from "@rakazo/core";
 
 /**
  * OpenAI-compatible servers render `messages` through the model's chat template and
@@ -221,8 +222,4 @@ function sanitizeSchemaMap(map: Record<string, unknown>): Record<string, unknown
     next[name] = sanitized;
   }
   return changed ? next : map;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value != null && typeof value === "object" && !Array.isArray(value);
 }

@@ -4,6 +4,7 @@ import importlib.util
 import json
 import os
 from pathlib import Path
+import shutil
 import socket
 import subprocess
 import sys
@@ -935,6 +936,41 @@ class DesktopPurchaseTest(unittest.TestCase):
         # Outside the browser window: nothing on the page is pressed.
         found, _ = self.purchases({"pagePoint": {"x": -5, "y": 6, "inside": False}})
         self.assertIsNone(found.desktop({"points": [{"x": 1, "y": 2}]}))
+
+    @unittest.skipUnless(shutil.which("node"), "requires Node to run the browser helper's JavaScript")
+    def test_zoomed_desktop_point_maps_to_the_intended_page_control(self):
+        script = r"""
+            const assert = require("node:assert/strict");
+            const { readFileSync } = require("node:fs");
+            const { runInNewContext } = require("node:vm");
+            const window = {
+                devicePixelRatio: 2 / 3, innerWidth: 1920, innerHeight: 1069,
+                outerWidth: 1280, outerHeight: 800, screenX: 0, screenY: 0,
+                screen: { width: 1280, height: 800 },
+                visualViewport: { scale: 1, offsetLeft: 0, offsetTop: 0 },
+            };
+            let focused = true;
+            runInNewContext(readFileSync(0, "utf8"), { window, document: { hasFocus: () => focused } });
+            const { pagePoint } = window.__rakazoPurchase;
+            const placed = pagePoint(800, 487, [1280, 800]);
+            assert.ok(placed?.inside, "67% browser zoom must preserve the click location");
+            assert.equal(placed.x, 1200);
+            assert.equal(placed.y, 600);
+            assert.equal(pagePoint(800, 487, [2560, 1600]), null, "unverified display scale");
+            focused = false;
+            assert.equal(pagePoint(800, 487, [1280, 800]), null, "unfocused browser");
+        """
+        result = subprocess.run(["node", "-e", script], input=helper.PURCHASE_HELPERS,
+                                capture_output=True, text=True, timeout=5)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_desktop_click_places_zoomed_points_using_the_physical_display(self):
+        found, asked = self.purchases({"pagePoint": {"x": 1200, "y": 600, "inside": True},
+                                     "purchaseAt(1200, 600": {"purchase": PAY, "frames": False}})
+        with patch.object(helper.subprocess, "check_output", return_value=b"1280 800\n") as geometry:
+            self.assertEqual(found.desktop({"points": [{"x": 800, "y": 487}]}), PAY)
+        geometry.assert_called_once()
+        self.assertIn(("page", "pagePoint(800, 487, [1280, 800])"), asked)
 
     def test_a_key_or_a_click_that_cannot_be_placed_asks_when_the_page_shows_a_payment(self):
         shows = {**PAY, "reason": "payment_page"}
