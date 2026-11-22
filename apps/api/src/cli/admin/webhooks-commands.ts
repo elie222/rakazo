@@ -52,10 +52,12 @@ export async function webhooksCheck(
   fetcher: typeof fetch = fetch,
 ): Promise<AdminResult> {
   const origin = provider.publicOrigin;
-  const status = await provider.status(signal).catch((error: unknown) => ({
-    published: false as const,
-    reason: error instanceof Error ? error.message : String(error),
-  }));
+  const status = await provider
+    .status(deadlineSignal(PROBE_TIMEOUT_MS, signal))
+    .catch((error: unknown) => ({
+      published: false as const,
+      reason: error instanceof Error ? error.message : String(error),
+    }));
   const probe = async (url: string, method: string) => {
     try {
       const response = await fetcher(url, {

@@ -1,4 +1,4 @@
-import { botInboundUrl as inboundUrl } from "@rakazo/contracts";
+import { botInboundUrl } from "@rakazo/contracts";
 import { createContext, useContext } from "react";
 
 const InboundOriginContext = createContext<string | undefined>(undefined);
@@ -10,13 +10,13 @@ export const InboundOriginProvider = InboundOriginContext.Provider;
  * The full address a sender posts to: the deployment's published inbound origin when it has one,
  * else the server this app talks to.
  */
-export function botInboundUrl(
+export function appBotInboundUrl(
   origin: string | undefined,
   botId: string,
   kind: "webhook" | "github",
 ): string {
   const base = origin ?? (typeof window === "undefined" ? "" : window.location.origin);
-  return inboundUrl(base, botId, kind);
+  return botInboundUrl(base, botId, kind);
 }
 
 /** The published inbound origin set by the nearest `InboundOriginProvider`. */

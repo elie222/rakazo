@@ -1,5 +1,6 @@
 import type { Server } from "node:http";
 import { createIngressProvider, ingressPort, unwrapEnvFromKeyManager } from "@rakazo/adapters";
+import { deadlineSignal } from "@rakazo/core";
 import { loadRootEnv } from "@rakazo/core/node/load-root-env";
 import { stopOnShutdownSignals } from "@rakazo/core/node/shutdown-signals";
 
@@ -43,10 +44,7 @@ try {
     );
     drainIngress = trackConnections(ingressServer as Server);
     const upstream = process.env.INGRESS_UPSTREAM_URL?.trim() || `http://127.0.0.1:${port}`;
-    void bestEffort(
-      "publish inbound routes",
-      ingress.publish(upstream, AbortSignal.timeout(30_000)),
-    );
+    void bestEffort("publish inbound routes", ingress.publish(upstream, deadlineSignal(30_000)));
   }
 
   let stopped: Promise<void> | undefined;
