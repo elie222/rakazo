@@ -24,6 +24,7 @@ const mocks = vi.hoisted(() => ({
   avatarSet: undefined as "organic" | "rakazo" | undefined,
   focus: undefined as string | undefined,
   os: "ios",
+  rtl: false,
   work: [] as unknown[],
   history: [] as unknown[],
   share: vi.fn(),
@@ -163,6 +164,11 @@ vi.mock("react-native", () => {
   return {
     Alert: { alert: mocks.alert, prompt: mocks.prompt },
     Share: { share: mocks.share },
+    I18nManager: {
+      get isRTL() {
+        return mocks.rtl;
+      },
+    },
     Platform: {
       get OS() {
         return mocks.os;
@@ -359,6 +365,7 @@ describe("bot settings device voice menu", () => {
     mocks.instructions = "";
     mocks.description = "";
     mocks.os = "ios";
+    mocks.rtl = false;
     mocks.work = [];
     mocks.history = [];
     mocks.docs = [];
@@ -428,14 +435,21 @@ describe("bot settings device voice menu", () => {
     });
   });
 
-  it.each(["ios", "android"])(
-    "uses muted section disclosure and nonrepeating labels on %s",
-    async (os) => {
+  it.each([
+    { os: "ios", rtl: false, icon: "chevron.right", expandedIcon: "chevron.down" },
+    { os: "android", rtl: false, icon: "chevron-forward", expandedIcon: "chevron-down" },
+    { os: "android", rtl: true, icon: "chevron-back", expandedIcon: "chevron-down" },
+  ])(
+    "uses muted section disclosure and nonrepeating labels on $os (RTL: $rtl)",
+    async ({ os, rtl, icon, expandedIcon }) => {
       mocks.os = os;
+      mocks.rtl = rtl;
       await act(async () => root.render(<BotSettingsScreen />));
       const trigger = container.querySelector<HTMLButtonElement>('[aria-label="Advanced"]')!;
+      const chevron = () => trigger.querySelector(`[data-${os}]`)?.getAttribute(`data-${os}`);
       expect(trigger.getAttribute("role")).toBe("button");
       expect(trigger.getAttribute("aria-expanded")).toBe("false");
+      expect(chevron()).toBe(icon);
       expect(JSON.parse(trigger.dataset.style!)).toMatchObject({ minHeight: 44 });
       expect(JSON.parse(trigger.dataset.style!)).not.toHaveProperty("backgroundColor");
       expect(JSON.parse(trigger.querySelector("span")!.dataset.style!)).toMatchObject({
@@ -454,6 +468,7 @@ describe("bot settings device voice menu", () => {
       ).not.toBeNull();
       await expand();
       expect(trigger.getAttribute("aria-expanded")).toBe("true");
+      expect(chevron()).toBe(expandedIcon);
       const model = container.querySelector('[data-menu="Model"]')!;
       expect([...model.querySelectorAll("span")].some((node) => node.textContent === "Model")).toBe(
         false,
@@ -461,6 +476,7 @@ describe("bot settings device voice menu", () => {
       expect(model.querySelector('[aria-label="Model"]')).not.toBeNull();
       await expand();
       expect(trigger.getAttribute("aria-expanded")).toBe("false");
+      expect(chevron()).toBe(icon);
     },
   );
 
