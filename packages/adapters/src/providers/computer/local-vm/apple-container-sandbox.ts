@@ -3,16 +3,20 @@ import { randomUUID } from "node:crypto";
 import type { Readable } from "node:stream";
 import { setTimeout as sleep } from "node:timers/promises";
 import type { AdapterContext, ComputerRef } from "@rakazo/adapter-kit";
+import { SandboxUnavailableError } from "@rakazo/adapter-kit";
 import { COMPUTER_CACHE_ENV } from "@rakazo/core/node/desktop-runtime";
 import { getLogger } from "@rakazo/logging";
-import type { RawExecEvent } from "../../../exec-computer.js";
-import { RawExecChannel, COMPUTER_IMAGE_WORKSPACE as WORKSPACE } from "../../../exec-computer.js";
+import type { RawExecEvent } from "../../../computers/sandbox/exec-computer.js";
+import {
+  RawExecChannel,
+  COMPUTER_IMAGE_WORKSPACE as WORKSPACE,
+} from "../../../computers/sandbox/exec-computer.js";
 import {
   DESKTOP_PORT_START,
   ImageComputerSandbox,
   READY_PORT,
-} from "../../../image-computer-sandbox.js";
-import { sandboxNotFoundError } from "../../../sandbox-errors.js";
+} from "../../../computers/sandbox/image-computer-sandbox.js";
+import { sandboxNotFoundError } from "../../../computers/sandbox/sandbox-errors.js";
 
 const DEFAULT_COMPUTER_IMAGE = "ghcr.io/elie222/rakazo/computer:edge";
 const DEFAULT_CPUS = "2";
@@ -262,9 +266,11 @@ export class AppleContainerSandboxProvider extends ImageComputerSandbox {
     while (true) {
       if (await this.screenGatewayUp(computer, context)) return;
       if (Date.now() >= deadline) {
-        throw new Error(
-          `VM computer ${name} did not become ready within ${this.readyTimeoutMs} ms`,
-        );
+        throw new SandboxUnavailableError({
+          cause: new Error(
+            `VM computer ${name} did not become ready within ${this.readyTimeoutMs} ms`,
+          ),
+        });
       }
       await sleep(500, undefined, { signal: context.signal });
     }

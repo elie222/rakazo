@@ -1,16 +1,16 @@
 import { InstaboxError } from "@insforge/instabox-sdk";
 import type { PageBrowserCommand } from "@rakazo/adapter-kit";
 import { describe, expect, it, vi } from "vitest";
-import { ComputerBrowserProvider } from "../../../computer-browser.js";
-import { installPageBrowserCommand } from "../../../page-browser-install.js";
-import type { RemoteDesktopSdk } from "../../../remote-desktop-sandbox.js";
-import { RemoteDesktopSandboxProvider } from "../../../remote-desktop-sandbox.js";
-import { isSandboxGoneError } from "../../../sandbox-errors.js";
+import { installPageBrowserCommand } from "../../../browser/page-browser-install.js";
+import type { RemoteDesktopSdk } from "../../../computers/sandbox/remote-desktop-sandbox.js";
+import { RemoteDesktopSandboxProvider } from "../../../computers/sandbox/remote-desktop-sandbox.js";
+import { isSandboxGoneError } from "../../../computers/sandbox/sandbox-errors.js";
 import {
   assertSandboxWorkspaceContract,
   MachineRecords,
   settleMachineCleanup,
-} from "../../../sandbox-test-support.js";
+} from "../../../computers/sandbox/sandbox-test-support.js";
+import { ComputerBrowserProvider } from "../../../computers/screens/computer-browser.js";
 import { INSTABOX_COMPUTER_TEMPLATE } from "./instabox-sandbox.js";
 import { emulatedInstabox, InstaboxEmulator } from "./instabox-sandbox.test-support.js";
 
@@ -244,6 +244,8 @@ describe("instabox computer sizes", () => {
     const provider = emulatedInstabox(emulator).provider();
     const large = await provider.provision({ ...request, size: "large" }, ctx);
     const standard = await provider.provision({ ...request, size: "standard" }, ctx);
+    expect(large.size).toBe("large");
+    expect(standard.size).toBe("standard");
     expect(sizeOf(emulator, large.id)).toEqual({ vcpus: 8, memMiB: 16384 });
     expect(sizeOf(emulator, standard.id)).toEqual({ vcpus: 4, memMiB: 8192 });
     expect(emulator.requests.filter((name) => name.startsWith("create "))).toEqual([
@@ -270,7 +272,7 @@ describe("instabox computer sizes", () => {
       { ...request, providerRef: computer.id, providerKind: "instabox", size: "large" },
       ctx,
     );
-    expect(resumed).toMatchObject({ id: computer.id, fresh: false });
+    expect(resumed).toMatchObject({ id: computer.id, fresh: false, size: "large" });
     expect(sizeOf(emulator, computer.id)).toEqual({ vcpus: 8, memMiB: 16384 });
     expect(emulator.computers.get(computer.id)!.state).toBe("running");
   });
@@ -295,7 +297,10 @@ describe("instabox computer sizes", () => {
     });
     expect(sizeOf(emulator, computer.id)).toEqual({ vcpus: 4, memMiB: 8192 });
     // The lifecycle then starts it at the size it has.
-    await expect(provider.provision(reconnect, ctx)).resolves.toMatchObject({ fresh: false });
+    await expect(provider.provision(reconnect, ctx)).resolves.toMatchObject({
+      fresh: false,
+      size: "standard",
+    });
   });
 
   it("surfaces a resize failure that is not about the size instead of falling back", async () => {

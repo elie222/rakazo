@@ -9,8 +9,8 @@ import type {
 import { ATTACHMENT_MAX_BYTES, ATTACHMENT_MAX_COUNT } from "@rakazo/contracts";
 import { Message } from "chat";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { ChatSdkMessagingSurface } from "../../../chat-sdk-surface.js";
-import { messagingPlatformsFromEnv } from "../../../messaging-platforms.js";
+import { ChatSdkMessagingSurface } from "../../../messaging/chat-sdk-surface.js";
+import { messagingPlatformsFromEnv } from "../../../messaging/messaging-platforms.js";
 import { LazyLarkAdapter } from "./lazy-adapter.js";
 import { Domain, decodeThreadId, encodeThreadId } from "./thread-id.js";
 
@@ -894,6 +894,50 @@ describe("Lark messaging conformance", () => {
       expect.objectContaining({ url: "https://open.larksuite.com/open-apis/im/v1/chats" }),
     );
     expect(adapter.isDM(encodeThreadId({ chatId: "oc-test" }))).toBe(true);
+  });
+});
+
+describe("Lark domain setting", () => {
+  function openDmUrl(larkDomain: string | undefined) {
+    const [platform] = messagingPlatformsFromEnv(
+      {
+        larkAppId: "cli-test",
+        larkAppSecret: "test-app-secret",
+        larkVerificationToken: token,
+        ...(larkDomain === undefined ? {} : { larkDomain }),
+      },
+      { larkTransport: httpInstance },
+    );
+    request.mockClear();
+    return platform!.adapter.openDM!("ou-test").then(() => request.mock.calls[0]?.[0]?.url);
+  }
+
+  it("uses Feishu when unset, blank, or feishu", async () => {
+    for (const larkDomain of [undefined, "", "  ", "feishu", "FEISHU"]) {
+      expect(await openDmUrl(larkDomain)).toBe("https://open.feishu.cn/open-apis/im/v1/chats");
+    }
+  });
+
+  it("uses Lark for lark, ignoring case and surrounding spaces", async () => {
+    for (const larkDomain of ["lark", " Lark "]) {
+      expect(await openDmUrl(larkDomain)).toBe("https://open.larksuite.com/open-apis/im/v1/chats");
+    }
+  });
+
+  it("refuses a LARK_DOMAIN it cannot read, instead of silently using Feishu", () => {
+    for (const larkDomain of ["larksuite", "https://open.larksuite.com", "lark-suite"]) {
+      expect(() =>
+        messagingPlatformsFromEnv(
+          {
+            larkAppId: "cli-test",
+            larkAppSecret: "test-app-secret",
+            larkVerificationToken: token,
+            larkDomain,
+          },
+          { larkTransport: httpInstance },
+        ),
+      ).toThrow("LARK_DOMAIN must be feishu or lark");
+    }
   });
 });
 

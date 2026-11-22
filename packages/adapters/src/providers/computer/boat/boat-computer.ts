@@ -1,4 +1,18 @@
-import type { ComputerProviderDefinition } from "../../../computer-provider-descriptor.js";
+import type { SandboxTypeEnum } from "@boatdev/sdk";
+import type { ComputerSize } from "@rakazo/contracts";
+import type { ComputerProviderDefinition } from "../../../computers/computer-provider-descriptor.js";
+
+export const BOAT_MACHINE_TYPES: Record<ComputerSize, SandboxTypeEnum> = {
+  standard: "default",
+  large: "large",
+  xlarge: "xlarge",
+};
+
+export function boatComputerSize(
+  type: SandboxTypeEnum | null | undefined,
+): ComputerSize | undefined {
+  return type === "default" ? "standard" : type === "large" || type === "xlarge" ? type : undefined;
+}
 
 export const boatComputer: ComputerProviderDefinition = {
   capabilities: {
@@ -10,6 +24,8 @@ export const boatComputer: ComputerProviderDefinition = {
     serverHomeMount: "never",
     serverOwnsStoredTeamHome: true,
     storedHomeIsBackup: false,
+    readStoppedFiles: true,
+    sizedUsage: true,
   },
   env: {
     boatApiKey: { name: "BOAT_API_KEY", required: true },

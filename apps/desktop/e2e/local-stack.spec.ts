@@ -8,7 +8,7 @@ import path from "node:path";
 import type { ElectronApplication } from "@playwright/test";
 import { _electron as electron, expect, test } from "@playwright/test";
 import type { RakazoDesktop } from "@rakazo/contracts";
-import { prepareHostComputer } from "../src/main/host-computer.js";
+import { prepareHostComputer } from "../src/main/this-computer/host-computer.js";
 import { shownWindow } from "./shown-window.js";
 
 const APP_MARKER = "Local Rakazo stack ready";
@@ -403,7 +403,7 @@ test("a saved local stack that is down is started again without asking", async (
 test("a saved local stack is reused only after its private identity matches", async () => {
   const stackDir = path.join(userData, "stack");
   await mkdir(stackDir, { recursive: true });
-  const host = await prepareHostComputer(userData);
+  const host = await prepareHostComputer(userData, "docker");
   await writeFile(
     path.join(stackDir, ".desktop-host-config"),
     createHash("sha256").update(JSON.stringify(host.connection)).digest("hex"),

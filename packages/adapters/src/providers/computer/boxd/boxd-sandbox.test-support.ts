@@ -11,7 +11,10 @@ import type {
 import { ConflictError, FilesystemError, NotFoundError } from "@boxd-sh/sdk";
 import { deferred } from "@rakazo/core/test-async";
 import { parse } from "shell-quote";
-import { desktopCommandResponder, simpleCommand } from "../../../linux-desktop.test-support.js";
+import {
+  desktopCommandResponder,
+  simpleCommand,
+} from "../../../computers/screens/linux-desktop.test-support.js";
 import type { BoxdSandboxClient } from "./boxd-sandbox.js";
 import { BOXD_COMPUTER_SNAPSHOT, BoxdSandboxProvider } from "./boxd-sandbox.js";
 
@@ -24,6 +27,10 @@ interface FakeMachine {
   params: MachineCreateParams;
   files: Map<string, { content: Uint8Array; mode: number }>;
   proxies: Map<string, number>;
+}
+
+interface Hung {
+  hung: { stdout: string; stderr: string };
 }
 
 interface CommandResult {
@@ -201,8 +208,12 @@ export class FakeBoxd {
     }
     machine.status = "running";
     const result = this.shell(machine, command);
-    if (result === "forever") {
+    if (result === "forever" || "hung" in result) {
       this.running.add(key);
+      if (result !== "forever") {
+        output.stdout.push(Buffer.from(result.hung.stdout));
+        output.stderr.push(Buffer.from(result.hung.stderr));
+      }
     } else {
       if (result.stdout) output.stdout.push(Buffer.from(result.stdout));
       if (result.stderr) output.stderr.push(Buffer.from(result.stderr));
@@ -234,7 +245,7 @@ export class FakeBoxd {
     } as unknown as ExecStream;
   }
 
-  private shell(machine: FakeMachine, wrapped: string): CommandResult | "forever" {
+  private shell(machine: FakeMachine, wrapped: string): CommandResult | "forever" | Hung {
     // Desktop, setup, and listing scripts arrive as `bash -c <script>`.
     const tokens = parse(wrapped);
     const command =
@@ -266,6 +277,8 @@ export class FakeBoxd {
     const parsed = parse(argvText);
     const argv = parsed.filter((token): token is string => typeof token === "string");
     if (argv[0] === "sleep") return "forever";
+    // Never exits, but has already written `argv[1]` to stdout and `argv[2]` to stderr.
+    if (argv[0] === "hang") return { hung: { stdout: argv[1] ?? "", stderr: argv[2] ?? "" } };
     if (argv[0] === "fail") return { exitCode: Number(argv[1] ?? 1), stderr: `${argv[2] ?? ""}\n` };
     // Scripts with shell operators are setup the fake has no state for.
     if (argv.length !== parsed.length) return {};

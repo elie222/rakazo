@@ -1,5 +1,5 @@
 import { DEFAULT_COMPUTER_SCREEN } from "@rakazo/core";
-import type { ComputerProviderDefinition } from "../../../computer-provider-descriptor.js";
+import type { ComputerProviderDefinition } from "../../../computers/computer-provider-descriptor.js";
 
 export const instaboxComputer: ComputerProviderDefinition = {
   capabilities: {
@@ -11,6 +11,7 @@ export const instaboxComputer: ComputerProviderDefinition = {
     serverHomeMount: "never",
     serverOwnsStoredTeamHome: true,
     storedHomeIsBackup: false,
+    sizedUsage: true,
   },
   env: { instaboxApiKey: { name: "INSTABOX_API_KEY", required: true } },
   settings: {

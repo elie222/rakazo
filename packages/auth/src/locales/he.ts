@@ -23,26 +23,8 @@ export const HE_MESSAGES: Record<string, string> = {
   "Your Rakazo confirmation code": "קוד האישור שלך ל-Rakazo",
   "Enter this code in Rakazo to confirm it's you:":
     "יש להזין את הקוד הזה ב-Rakazo כדי לאשר שזה באמת את/ה:",
-  "Welcome to Rakazo": "ברוכים הבאים ל-Rakazo",
-  "Welcome to Rakazo. The people who get the most out of it do three things:":
-    "ברוכים הבאים ל-Rakazo. מי שמפיקים ממנו הכי הרבה עושים שלושה דברים:",
-  "Get the apps": "להוריד את האפליקציות",
-  "Rakazo runs on {platforms}, so your bots can reach you wherever you are.":
-    "Rakazo זמין ל-{platforms}, כדי שהבוטים שלך יוכלו להשיג אותך בכל מקום.",
-  "Join the community": "להצטרף לקהילה",
-  "See what others are building, get help fast, and tell us what to build next on {discord}.":
-    "לראות מה אחרים בונים, לקבל עזרה מהר ולספר לנו ב-{discord} מה לבנות בהמשך.",
-  "Star us on GitHub": "לתת לנו כוכב ב-GitHub",
-  "Rakazo is open source. {star} helps more people find it.":
-    "Rakazo הוא קוד פתוח. {star} עוזר ליותר אנשים למצוא אותו.",
-  "A star on GitHub": "כוכב ב-GitHub",
-  "Questions? Just reply. I read every one.": "שאלות? פשוט להשיב לאימייל. אני קורא כל תשובה.",
   Unsubscribe: "ביטול המינוי",
-  "Invite a friend": "הזמנת חבר",
-  "Invite a friend to Rakazo: they get {weeks} weeks free, and you earn a free month when they start a qualifying subscription with a new card.":
-    "אפשר להזמין חבר ל-Rakazo: הוא מקבל {weeks} שבועות בחינם, ואתם מקבלים חודש חינם כשהוא מתחיל מינוי מתאים עם כרטיס חדש.",
   "Open Rakazo": "פתיחת Rakazo",
-  "and choose Invite friends for your link.": "ובחירה ב״הזמנת חברים״ כדי לקבל את הקישור שלך.",
   "We received your Rakazo plugin": "קיבלנו את הפלאגין שלך ל-Rakazo",
   "Thanks for submitting a plugin to the Rakazo marketplace.": "תודה ששלחת פלאגין לחנות של Rakazo.",
   "We review every submission and will email you when it's done.":

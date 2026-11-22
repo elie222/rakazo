@@ -87,7 +87,7 @@
     "id": "bots",
     "title": "Bots",
     "flow": "flows/bots.yaml",
-    "screens": ["bot-profile", "routines", "bot-model", "peer-chat", "routine"]
+    "screens": ["bot-profile", "routines", "bot-model", "chat-model", "peer-chat", "routine"]
   },
   {
     "id": "files",
@@ -117,6 +117,7 @@
       "approval-rule-add",
       "vault",
       "archived-bots",
+      "spaces",
       "space",
       "space-members"
     ]
@@ -149,7 +150,7 @@
     "id": "pages",
     "title": "Pages",
     "flow": "flows/pages.yaml",
-    "screens": ["page", "page-share", "pages"]
+    "screens": ["page", "page-share", "page-review", "pages", "shared-pages"]
   },
   {
     "id": "organizations",

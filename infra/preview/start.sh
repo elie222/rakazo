@@ -109,7 +109,7 @@ trap 'exit 130' INT
 # Answer at once while the database and API start, so the first visit after a wake sees a page.
 gosu node node -e '
   require("node:http").createServer((_, res) => {
-    res.writeHead(503, { "content-type": "text/html", "retry-after": "3" });
+    res.writeHead(503, { "content-type": "text/html; charset=utf-8", "retry-after": "3" });
     res.end("<meta http-equiv=refresh content=3><title>Starting</title><p>Starting…</p>");
   }).listen(Number(process.argv[1]), "0.0.0.0");
 ' "$PORT" &

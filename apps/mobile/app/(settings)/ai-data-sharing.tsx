@@ -5,25 +5,26 @@ import { AI_PRIVACY_URL } from "@rakazo/contracts";
 import { writeSaved } from "@rakazo/core/query";
 import { useIsFocused } from "expo-router";
 import { useEffect } from "react";
-import { ActivityIndicator, Alert, Linking, ScrollView, StyleSheet } from "react-native";
+import { ActivityIndicator, Alert, ScrollView, StyleSheet } from "react-native";
 import {
   SettingsFooter,
   SettingsGroup,
   SettingsRow,
   SettingsSwitch,
   useStackedSettings,
-} from "../../components/settings-group";
-import { aiDataDisclosure, promptAiConsent } from "../../lib/ai-consent";
+} from "../../components/settings/settings-group";
+import { errorText } from "../../lib/api/user-error";
+import { useSideInsets } from "../../lib/layout/side-insets";
+import { native, useThemedStyles } from "../../lib/native/native";
+import { openExternalUrl } from "../../lib/platform/open-url";
+import { queryClient, rpcQuery, useSave } from "../../lib/query/query";
+import { useScreenQuery } from "../../lib/query/screen-query";
+import { aiDataDisclosure, promptAiConsent } from "../../lib/settings/ai-consent";
 import {
   aiDataSharingPlaceholder,
   aiPrivacyLinks,
   groupAiRecipients,
-} from "../../lib/ai-data-sharing";
-import { native, useThemedStyles } from "../../lib/native";
-import { queryClient, rpcQuery, useSave } from "../../lib/query";
-import { useScreenQuery } from "../../lib/screen-query";
-import { useSideInsets } from "../../lib/side-insets";
-import { errorText } from "../../lib/user-error";
+} from "../../lib/settings/ai-data-sharing";
 
 export default function AiDataSharing() {
   const sideInsets = useSideInsets();
@@ -53,7 +54,7 @@ export default function AiDataSharing() {
           ? await send("aiConsent/revoke", { key: null })
           : !ask.allowed
             ? await send("aiConsent/revoke", { key: ask.recipient.key })
-            : (await promptAiConsent(ask.recipient, status.privacyUrl))
+            : (await promptAiConsent(ask.recipient))
               ? await send("aiConsent/allow", {
                   scope: status.scope,
                   version: status.version,
@@ -118,14 +119,14 @@ export default function AiDataSharing() {
                 title={name}
                 accessibilityRole="link"
                 chevron="right"
-                onPress={() => void Linking.openURL(url)}
+                onPress={() => void openExternalUrl(url)}
               />
             ))}
             <SettingsRow
               title={t`Rakazo`}
               accessibilityRole="link"
               chevron="right"
-              onPress={() => void Linking.openURL(status.privacyUrl ?? AI_PRIVACY_URL)}
+              onPress={() => void openExternalUrl(status.privacyUrl ?? AI_PRIVACY_URL)}
             />
           </SettingsGroup>
           <SettingsGroup>

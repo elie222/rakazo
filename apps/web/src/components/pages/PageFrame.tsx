@@ -1,10 +1,11 @@
 import { useExternalLinkOpener } from "@rakazo/chat-ui/web";
-import { pageCopyRequest, pageCopyResult, pageLinkRequest } from "@rakazo/core";
+import type { PageSectionAnchor } from "@rakazo/contracts";
+import { pageCopyRequest, pageCopyResult, pageLinkRequest, pageReviewSections } from "@rakazo/core";
 import type { CSSProperties } from "react";
 import { useCallback, useRef, useState } from "react";
 import { writeClipboard } from "../../lib/copy-text";
-import { pageFrameHeight } from "../../lib/page-cards";
-import { SandboxedHtmlViewer } from "../SandboxedHtmlViewer";
+import { pageFrameHeight } from "../../lib/pages/page-cards";
+import { SandboxedHtmlViewer } from "../messages/SandboxedHtmlViewer";
 
 /**
  * A page document in the sandboxed viewer. Only an `interactive` frame acts for its page (copy,
@@ -20,6 +21,7 @@ export function PageFrame({
   interactive = false,
   onHeight,
   onReply,
+  onSections,
 }: {
   document: string;
   title: string;
@@ -27,6 +29,7 @@ export function PageFrame({
   onHeight?: (height: number) => void;
   /** Where a page's reply button puts its text; without it the page offers no replies. */
   onReply?: (text: unknown) => void;
+  onSections?: (sections: PageSectionAnchor[]) => void;
 }) {
   const { open, dialog } = useExternalLinkOpener();
   const box = useRef<HTMLDivElement>(null);
@@ -52,6 +55,8 @@ export function PageFrame({
         onHeight?.(height);
         return;
       }
+      const sections = onSections && pageReviewSections(data);
+      if (sections) onSections(sections);
       const { gesture } = message;
       if (!interactive || !focused || typeof gesture !== "string") return;
       if (gesture === usedGesture.current) return;
@@ -64,7 +69,7 @@ export function PageFrame({
       else if (url) open(url);
       else if (reply) reply(message.text);
     },
-    [interactive, onHeight, onReply, open],
+    [interactive, onHeight, onReply, onSections, open],
   );
   return (
     <>

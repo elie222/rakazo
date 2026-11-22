@@ -38,7 +38,8 @@ while IFS= read -r file; do
     # vitest.config.ts loads these into every package's tests, which the package graph misses.
     packages/testkit/src/pin-test-env.ts | packages/testkit/src/lingui-core-macro.ts | \
       packages/testkit/src/lingui-react-macro.ts | \
-      packages/chat-ui/src/native-test-stubs.tsx) all_packages=true ;;
+      packages/chat-ui/src/native-test-stubs.tsx | \
+      packages/chat-ui/src/enriched-markdown-test-stub.tsx) all_packages=true ;;
     apps/www/* | docs/*) unit_site=true ;;
     apps/*/* | packages/*/* | infra/sandboxes/supervisor/* | infra/updater/*) unit_packages=true ;;
     .agents/skills/pr-watch/* | .agents/skills/translate/*) all_packages=true ;;
@@ -51,7 +52,7 @@ while IFS= read -r file; do
     *) all_packages=true ;;
   esac
   case "$file" in
-    .github/workflows/ci.yml | .github/workflows/playwright.yml | .depot/workflows/* | .github/actions/setup-workspace/* | .github/actions/start-postgres/* | .github/scripts/changed-areas.sh | .github/scripts/restore-postgres-image.sh | pnpm-lock.yaml | package.json)
+    .github/workflows/ci.yml | .github/workflows/test-suites.yml | .github/workflows/playwright.yml | .depot/workflows/* | .github/actions/setup-workspace/* | .github/actions/start-postgres/* | .github/scripts/changed-areas.sh | .github/scripts/restore-postgres-image.sh | pnpm-lock.yaml | package.json)
       native=true
       compose=true
       www=true
@@ -61,9 +62,9 @@ while IFS= read -r file; do
       packages/adapter-kit/* | packages/core/src/node/* | \
       packages/adapters/src/*computer* | packages/adapters/src/*desktop* | \
       packages/adapters/src/*sandbox* | packages/adapters/src/*host-* | \
-      packages/adapters/src/home* | packages/adapters/src/native-shell* | \
-      packages/adapters/src/page-browser* | packages/adapters/src/file-handle-path* | \
-      packages/adapters/src/workspace-save-*)
+      packages/adapters/src/storage/home* | packages/adapters/src/computers/host/native-shell* | \
+      packages/adapters/src/browser/page-browser* | packages/adapters/src/storage/file-handle-path* | \
+      packages/adapters/src/storage/workspace-save-*)
       native=true
       ;;
     infra/compose/*) compose=true ;;
@@ -85,7 +86,7 @@ while IFS= read -r file; do
     scripts/checks/bundle-size*) web=true; continue ;;
     scripts/checks/*) continue ;;
     # Other workflows build or run nothing the product suites test; their own tests run above.
-    .github/workflows/ci.yml | .github/workflows/playwright.yml) ;;
+    .github/workflows/ci.yml | .github/workflows/test-suites.yml | .github/workflows/playwright.yml) ;;
     .github/workflows/*) continue ;;
     apps/www/* | docs/*) continue ;;
     apps/web/* | apps/desktop/* | packages/ui-web/* | packages/chat-ui/*)

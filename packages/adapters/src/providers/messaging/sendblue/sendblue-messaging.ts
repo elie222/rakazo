@@ -1,12 +1,12 @@
 import type { MessagingOutboundStatus } from "@rakazo/adapter-kit";
 import type { SendblueAdapterConfig, SendblueThreadId } from "chat-adapter-sendblue";
-import { lazyChatAdapter } from "../../../lazy-chat-adapter.js";
+import { lazyChatAdapter } from "../../../messaging/lazy-chat-adapter.js";
 import {
   asRecord,
   defineMessagingPlatform,
   MESSAGING_SEND_TIMEOUT_MS,
   stringField,
-} from "../../../messaging-platform-descriptor.js";
+} from "../../../messaging/messaging-platform-descriptor.js";
 
 export const sendblueMessaging = defineMessagingPlatform({
   env: {
@@ -24,8 +24,11 @@ export const sendblueMessaging = defineMessagingPlatform({
       webhookSecret: env.sendblueSigningSecret,
       allowedServices: ["iMessage", "SMS", "RCS"],
       // Delivery-status callbacks need a public HTTPS origin; local setups skip them.
-      ...(options.apiUrl?.startsWith("https://")
-        ? { statusCallbackUrl: new URL("/api/v1/messaging/webhook/sendblue", options.apiUrl).href }
+      ...(options.inboundOrigin?.startsWith("https://")
+        ? {
+            statusCallbackUrl: new URL("/api/v1/messaging/webhook/sendblue", options.inboundOrigin)
+              .href,
+          }
         : {}),
     };
     // chat@4.39 derives thread.isDM solely from the optional Adapter.isDM

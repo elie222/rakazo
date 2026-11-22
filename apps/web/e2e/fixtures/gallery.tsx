@@ -7,10 +7,10 @@ import { Button } from "@rakazo/ui-web";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { bootstrapI18n, i18n } from "../../src/lib/i18n";
-import { queryClient } from "../../src/lib/query";
-import type { ResolvedAppearance } from "../../src/lib/ui-appearance";
-import { applyResolvedAppearance } from "../../src/lib/ui-appearance";
+import { bootstrapI18n, i18n } from "../../src/lib/locale/i18n";
+import type { ResolvedAppearance } from "../../src/lib/preferences/ui-appearance";
+import { applyResolvedAppearance } from "../../src/lib/preferences/ui-appearance";
+import { queryClient } from "../../src/lib/query/query";
 import "../../src/styles.css";
 import { BOT, FixtureTranscript } from "./thread-fixture";
 
@@ -19,6 +19,20 @@ import { BOT, FixtureTranscript } from "./thread-fixture";
 
 const SCOUT = { botId: "bot-2", name: "Scout", color: botColor("green") };
 const LEDGER = { botId: "bot-3", name: "Ledger", color: botColor("red") };
+const INSTRUCTIONS_BEFORE = [
+  "Reply in English.",
+  "Sign off as the team, never by name.",
+  "Draft replies; ask before sending.",
+  "Flag invoices over 500.",
+  "Summarize long threads in bullets.",
+  "Skip newsletters.",
+  "Archive receipts after filing them.",
+  "Never share calendar details.",
+].join("\n");
+const INSTRUCTIONS_AFTER = INSTRUCTIONS_BEFORE.replace(
+  "Summarize long threads in bullets.",
+  "Keep summaries to one paragraph.",
+);
 
 function botColor(id: string) {
   return BOT_COLOR_LIST.find((color) => color.id === id)!.hex;
@@ -190,6 +204,74 @@ const approvals: Scenario = {
   id: "approvals",
   label: "Approvals",
   messages: [
+    bot(
+      [
+        {
+          kind: "ask",
+          text: "Gmail",
+          approvalEffectId: "draft-effect",
+          status: "pending",
+          actions: [
+            { id: "allow", label: "Send" },
+            { id: "deny", label: "Discard" },
+          ],
+          outgoingDraft: {
+            source: "Gmail",
+            keys: { to: "recipient_email", subject: "subject", body: "body" },
+            values: {
+              kind: "email",
+              to: "sam@example.test",
+              subject: "Friday handoff",
+              body: "Hi Sam,\n\nThe report is ready for review. Could you take a look before Friday?\n\nThanks!",
+            },
+          },
+        },
+      ],
+      { runId: "draft-run" },
+    ),
+    // A tool's server asking mid-call; its text is the server's, so markdown stays literal.
+    bot([
+      {
+        kind: "tool_question",
+        question: {
+          source: "Tool gateway",
+          message: "Run **send_email** to sam@example.test?",
+          fields: [
+            { name: "approve", label: "Approve this call", required: true, type: "boolean" },
+            {
+              name: "reason",
+              label: "Reason",
+              description: "Shown in the audit log",
+              required: false,
+              type: "text",
+              maxLength: 200,
+            },
+            {
+              name: "scope",
+              label: "Scope",
+              required: true,
+              type: "choice",
+              options: [
+                { value: "once", label: "This call" },
+                { value: "session", label: "This session" },
+              ],
+            },
+          ],
+        },
+        status: "pending",
+        expiresAt: "2026-10-26T09:10:00.000Z",
+        publicKey: "gallery-key",
+      },
+    ]),
+    bot([
+      {
+        kind: "tool_question",
+        question: { source: "Tool gateway", message: "Delete the draft?", fields: [] },
+        status: "declined",
+        expiresAt: "2026-10-26T09:10:00.000Z",
+        publicKey: "gallery-key",
+      },
+    ]),
     bot([
       {
         kind: "ask",
@@ -262,14 +344,11 @@ const approvals: Scenario = {
         status: "pending",
         instructionUpdate: {
           botId: BOT.botId,
-          before: "Reply in English.",
-          after: "Reply in English. Keep summaries to one paragraph.",
+          before: INSTRUCTIONS_BEFORE,
+          after: INSTRUCTIONS_AFTER,
           reason: "You asked for shorter summaries.",
         },
-        detail: instructionUpdateDiff(
-          "Reply in English.",
-          "Reply in English. Keep summaries to one paragraph.",
-        ),
+        detail: instructionUpdateDiff(INSTRUCTIONS_BEFORE, INSTRUCTIONS_AFTER),
         detailFormat: "code",
         actions: [
           { id: "allow", label: "Apply" },
@@ -505,6 +584,26 @@ const team: Scenario = {
   ],
 };
 
+const routine = (
+  change: "created" | "updated" | "enabled" | "disabled" | "deleted",
+  name: string,
+) => message("system", [{ kind: "routine_event", change, name }]);
+const routines: Scenario = {
+  id: "routines",
+  label: "Routine changes",
+  messages: [
+    user("Remind me to stretch every morning."),
+    routine("created", "Morning stretch"),
+    say("Done. I'll remind you at 8:00 every day."),
+    routine("updated", "Morning stretch"),
+    routine("updated", "Morning stretch"),
+    routine("disabled", "Morning stretch"),
+    routine("enabled", "Morning stretch"),
+    say("Back on."),
+    routine("deleted", "Morning stretch"),
+  ],
+};
+
 const rich: Scenario = {
   id: "rich",
   label: "Rich content",
@@ -679,6 +778,7 @@ const SCENARIOS: Scenario[] = [
   secrets,
   working,
   team,
+  routines,
   rich,
   calls,
 ];

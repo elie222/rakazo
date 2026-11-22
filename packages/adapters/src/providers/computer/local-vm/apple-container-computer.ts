@@ -1,5 +1,5 @@
 import { DEFAULT_COMPUTER_SCREEN } from "@rakazo/core";
-import type { ComputerProviderDefinition } from "../../../computer-provider-descriptor.js";
+import type { ComputerProviderDefinition } from "../../../computers/computer-provider-descriptor.js";
 
 export const appleContainerComputer: ComputerProviderDefinition = {
   capabilities: {
@@ -11,6 +11,7 @@ export const appleContainerComputer: ComputerProviderDefinition = {
     serverHomeMount: "never",
     serverOwnsStoredTeamHome: true,
     storedHomeIsBackup: false,
+    offersHostComputer: true,
   },
   env: {
     localVmCli: { name: "LOCAL_VM_CLI" },

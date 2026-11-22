@@ -3,9 +3,9 @@ import { Stack, useNavigation } from "expo-router";
 import { HeaderBackButton } from "expo-router/react-navigation";
 import { useEffect } from "react";
 import { Platform } from "react-native";
-import { floatingHeaderOptions, glassHeaderOptions } from "../../components/glass-title";
-import { native, useMobileTokens } from "../../lib/native";
-import { registerSettingsSheet, settingsSheetCloser } from "../../lib/settings-sheet";
+import { floatingHeaderOptions, glassHeaderOptions } from "../../components/native/glass-title";
+import { native, useMobileTokens } from "../../lib/native/native";
+import { registerSettingsSheet, settingsSheetCloser } from "../../lib/settings/settings-sheet";
 
 /** Settings pages share one stack, which the root layout presents as a sheet on iOS. */
 export default function SettingsLayout() {
@@ -127,6 +127,13 @@ export default function SettingsLayout() {
           ...glassHeaderOptions((route.params as { name?: string } | undefined)?.name ?? t`Space`),
           contentStyle: { backgroundColor: native.groupedPage },
         })}
+      />
+      <Stack.Screen
+        name="spaces"
+        options={{
+          ...glassHeaderOptions(t`Spaces`),
+          contentStyle: { backgroundColor: native.groupedPage },
+        }}
       />
       <Stack.Screen
         name="organization"

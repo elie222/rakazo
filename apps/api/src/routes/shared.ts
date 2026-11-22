@@ -1,11 +1,14 @@
 import { ORPCError } from "@orpc/server";
+import type { SavedDeploymentModel } from "@rakazo/adapters";
 import {
+  adminDeploymentModel,
   deploymentModelRole,
   findConnectedModelCredential,
   hasHostedModelCredits,
   hostCredentialSource,
   mcpStdioAvailable,
   resolveMemberMainModel,
+  sandboxKindCapabilities,
   selectConfiguredModel,
 } from "@rakazo/adapters";
 import type { Actor, Me } from "@rakazo/contracts";
@@ -18,8 +21,8 @@ import {
   resolveBotAvatarSet,
   resolveLabs,
 } from "@rakazo/contracts";
-import { isAdmin } from "../admins.js";
-import { effectiveSandboxProvider } from "../computer-provider-config.js";
+import { isAdmin } from "../auth/admins.js";
+import { effectiveSandboxProvider } from "../computers/computer-provider-config.js";
 import type { RouterDeps } from "../router.js";
 
 export { createAdapterContext as computerContext } from "@rakazo/adapter-kit";
@@ -31,7 +34,7 @@ function hostCredentials(active: boolean, provider: string) {
 }
 
 export async function meDto(deps: RouterDeps, actor: Actor): Promise<Me> {
-  const [user, setup, admin] = await Promise.all([
+  const [user, setup, admin, meetingsEnabled] = await Promise.all([
     deps.prisma.user.findUniqueOrThrow({
       where: { id: actor.userId },
       select: {
@@ -46,6 +49,7 @@ export async function meDto(deps: RouterDeps, actor: Actor): Promise<Me> {
     }),
     modelSetup(deps, actor),
     isAdmin(deps, actor.userId),
+    deps.meetings?.visible(actor),
   ]);
   // Where the deployment runs computers once an admin's choice in Settings applies.
   const sandboxProvider = effectiveSandboxProvider(setup.settings, deps.env.sandboxProvider);
@@ -55,6 +59,8 @@ export async function meDto(deps: RouterDeps, actor: Actor): Promise<Me> {
     labs,
     labsAvailable: LAB_FEATURES.filter((feature) => !deploymentLabs.includes(feature)),
     ticketBoardEnabled: labs.includes("board"),
+    meetingsEnabled,
+    inboundOrigin: deps.env.publishedInboundOrigin,
     phoneCallsEnabled: deps.env.phoneCallsEnabled === true,
     navLinks: deps.env.navLinks ?? [],
     maxUploadSizeBytes: attachmentMaxBytes(deps.env),
@@ -71,13 +77,15 @@ export async function meDto(deps: RouterDeps, actor: Actor): Promise<Me> {
     // Set only while the active default is the deployment's own, running on host credentials.
     ...hostCredentials(
       !setup.main &&
+        !adminDeploymentModel(setup.settings) &&
         !setup.settings?.defaultModelProvider &&
         Boolean(deps.env.deploymentModelHostCredentials),
       deps.env.defaultProvider,
     ),
     computerHost: computerHostFor(setup.settings?.computerHost, sandboxProvider),
     canChooseHostComputer:
-      Boolean(deps.env.desktopHostChoiceEnabled) && sandboxProvider === "docker",
+      Boolean(deps.env.desktopHostChoiceEnabled) &&
+      sandboxKindCapabilities(sandboxProvider).offersHostComputer === true,
     // The deployment's provider: an account's own choice covers only its Team Computers.
     sandboxProvider,
     computerSettingsEnabled: Boolean(deps.env.computerSettingsEnabled),
@@ -105,9 +113,25 @@ function computerHostFor(
   sandboxProvider: string,
 ): "docker" | "this-mac" | null {
   if (sandboxProvider === "desktop") return "this-mac";
-  if (sandboxProvider !== "docker") return null;
+  if (!sandboxKindCapabilities(sandboxProvider).offersHostComputer) return null;
   if (stored === "this-mac" || stored === "docker") return stored;
   return null;
+}
+
+/** Whether this member can use the deployment's model under the current funding mode. */
+export async function deploymentModelAccess(
+  deps: RouterDeps,
+  actor: Actor,
+  settings: SavedDeploymentModel | null,
+) {
+  const funding = deps.billing ? await deps.billing.status(actor) : null;
+  const creditsAvailable = modelCreditsUsd(funding) !== null;
+  return {
+    creditsAvailable,
+    hasDeployment:
+      (Boolean(deps.env.deploymentModelConfigured) || Boolean(adminDeploymentModel(settings))) &&
+      (!funding?.creditPurchasesEnabled || creditsAvailable),
+  };
 }
 
 /** The main model chat runs: the member's while it can run, else the deployment's. */
@@ -123,11 +147,7 @@ export async function modelSetup(deps: RouterDeps, actor: Actor) {
         (await hasHostedModelCredits(deps.prisma, actor, member.provider))))
       ? member
       : null;
-  const funding = deps.billing ? await deps.billing.status(actor) : null;
-  const creditsAvailable = modelCreditsUsd(funding) !== null;
-  const hasDeployment =
-    Boolean(deps.env.deploymentModelConfigured) &&
-    (!funding?.creditPurchasesEnabled || creditsAvailable);
+  const deploymentAccess = await deploymentModelAccess(deps, actor, settings);
   return {
     main,
     model:
@@ -137,10 +157,8 @@ export async function modelSetup(deps: RouterDeps, actor: Actor) {
         deployment: { provider: deps.env.defaultProvider, model: deps.env.defaultModel },
       }).primary,
     settings,
-    funding,
-    creditsAvailable,
-    hasDeployment,
-    needsModel: deps.env.agentRuntime !== "scripted" && !main && !hasDeployment,
+    ...deploymentAccess,
+    needsModel: deps.env.agentRuntime !== "scripted" && !main && !deploymentAccess.hasDeployment,
   };
 }
 

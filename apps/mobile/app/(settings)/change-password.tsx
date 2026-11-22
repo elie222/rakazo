@@ -11,14 +11,15 @@ import {
   TextInput,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { NativeActionButton } from "../../components/native-action-button";
-import { changePassword } from "../../lib/api-auth";
-import { mobileTokens } from "../../lib/appearance";
-import { CallKeyboardContext } from "../../lib/call-keyboard-context";
-import { endCallBeforeSessionEnd } from "../../lib/call-session";
-import { native, useThemedStyles } from "../../lib/native";
-import { useSideInsets } from "../../lib/side-insets";
-import { errorText } from "../../lib/user-error";
+import { NativeActionButton } from "../../components/native/native-action-button";
+import { errorText } from "../../lib/api/user-error";
+import { mobileTokens } from "../../lib/appearance/appearance";
+import { changePassword } from "../../lib/auth/api-auth";
+import { CallKeyboardContext } from "../../lib/calls/call-keyboard-context";
+import { endCallBeforeSessionEnd } from "../../lib/calls/call-session";
+import { useSideInsets } from "../../lib/layout/side-insets";
+import { announceToScreenReader } from "../../lib/native/announce";
+import { native, useThemedStyles } from "../../lib/native/native";
 
 export default function ChangePassword() {
   const call = useContext(CallKeyboardContext);
@@ -49,7 +50,9 @@ export default function ChangePassword() {
   async function save() {
     if (!ready || submitting.current) return;
     if (newPassword !== confirmation) {
-      setError(t`Passwords do not match`);
+      const message = t`Passwords do not match`;
+      setError(message);
+      announceToScreenReader(message);
       return;
     }
     submitting.current = true;
@@ -65,7 +68,10 @@ export default function ChangePassword() {
       setConfirmation("");
       close();
     } catch (cause) {
-      setError(errorText(cause, t`Could not change password`));
+      if (!mounted.current) return;
+      const message = errorText(cause, t`Could not change password`);
+      setError(message);
+      announceToScreenReader(message);
     } finally {
       submitting.current = false;
       setPending(false);

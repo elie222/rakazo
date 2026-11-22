@@ -3,12 +3,12 @@ import type { AdapterContext, ComputerRef, ProcessEvent } from "@rakazo/adapter-
 import { SandboxRateLimitError, WorkspaceTooLargeError } from "@rakazo/adapter-kit";
 import { screenDisplayArgv, shellQuote } from "@rakazo/core/node/desktop-runtime";
 import { describe, expect, it, onTestFinished, vi } from "vitest";
-import { isSandboxGoneError } from "../../../sandbox-errors.js";
+import { isSandboxGoneError } from "../../../computers/sandbox/sandbox-errors.js";
 import {
   assertSandboxWorkspaceContract,
   MachineRecords,
   settleMachineCleanup,
-} from "../../../sandbox-test-support.js";
+} from "../../../computers/sandbox/sandbox-test-support.js";
 import type { BoxdSandboxClient } from "./boxd-sandbox.js";
 import { BOXD_COMPUTER_SNAPSHOT, BoxdSandboxProvider } from "./boxd-sandbox.js";
 import { BOXD_WORKSPACE, FakeBoxd, fakeBoxdProvider } from "./boxd-sandbox.test-support.js";
@@ -148,6 +148,20 @@ describe("boxd computers", () => {
     expect(await sent({ argv, env: { DISPLAY: ":0" } }, { ...ctx, botId: "beto" })).not.toContain(
       "desktop-assignments",
     );
+  });
+
+  it("keeps the output a command wrote before it timed out", async () => {
+    const boxd = new FakeBoxd();
+    const provider = fakeBoxdProvider(boxd);
+    const computer = await provider.provision({ botId: "bot", homePath: "/unused" }, ctx);
+    expect(
+      await events(provider, computer, { argv: ["hang", "step 1\n", "warning\n"], timeoutMs: 50 }),
+    ).toEqual([
+      { type: "stdout", data: "step 1\n" },
+      { type: "stderr", data: "warning\n" },
+      { type: "stderr", data: "command timed out after 50 ms\n" },
+      { type: "exit", code: 124 },
+    ]);
   });
 
   it("reports exit codes and stderr, and stops commands that time out or are aborted", async () => {

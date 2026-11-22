@@ -31,22 +31,25 @@ import type {
 } from "@rakazo/adapter-kit";
 import { SandboxFileTooLargeError } from "@rakazo/adapter-kit";
 import { boundedSandboxCommandTimeoutMs } from "@rakazo/core/node/sandbox-command";
+import { hostCommandEnvironment } from "../../../computers/sandbox/sandbox-command-environment.js";
+import { abortedCommandEvents } from "../../../computers/sandbox/sandbox-command-events.js";
 import {
   applyPlaceholderAction,
   boundedComputerActions,
   normalizeWorkspacePath,
   placeholderObservation,
   WorkspacePathError,
-} from "../../../computer-support.js";
-import { hostCommandEnvironment } from "../../../sandbox-command-environment.js";
-import { abortedCommandEvents } from "../../../sandbox-command-events.js";
+} from "../../../computers/screens/computer-support.js";
+import {
+  isAllowedDesktopPath,
+  normalizeDesktopWorkspacePath,
+} from "../../../computers/screens/desktop-sandbox-paths.js";
 import {
   isTaggedCacheDirectory,
   shouldSkipPortableWorkspaceFile,
-} from "../../../workspace-save-policy.js";
+} from "../../../storage/workspace-save-policy.js";
 import type { NativeProcessTree } from "./desktop-process-tree.js";
 import { spawnOwnedCommand } from "./desktop-process-tree.js";
-import { isAllowedDesktopPath, normalizeDesktopWorkspacePath } from "./desktop-sandbox-paths.js";
 import type { Win32FileHandle } from "./desktop-sandbox-win32-path.js";
 import {
   createExclusiveChildViaDirectoryFdWin32,

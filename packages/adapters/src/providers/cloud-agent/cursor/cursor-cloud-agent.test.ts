@@ -1,7 +1,7 @@
 import type { AdapterContext } from "@rakazo/adapter-kit";
 import { CloudAgentRequestRejected, CloudAgentRetryLater } from "@rakazo/adapter-kit";
 import { describe, expect, it } from "vitest";
-import { CursorCloudAgentEmulator } from "../../../cloud-agent-emulator.js";
+import { CursorCloudAgentEmulator } from "../../../cloud-agents/cloud-agent-emulator.js";
 import { CursorCloudAgentProvider } from "./cursor-cloud-agent.js";
 
 const context: AdapterContext = {

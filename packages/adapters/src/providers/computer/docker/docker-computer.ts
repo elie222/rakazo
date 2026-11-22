@@ -1,6 +1,6 @@
 import { DEFAULT_COMPUTER_SCREEN } from "@rakazo/core";
-import type { ComputerProviderDefinition } from "../../../computer-provider-descriptor.js";
-import { optional } from "../../../computer-provider-descriptor.js";
+import type { ComputerProviderDefinition } from "../../../computers/computer-provider-descriptor.js";
+import { optional } from "../../../computers/computer-provider-descriptor.js";
 
 export const dockerComputer: ComputerProviderDefinition = {
   capabilities: {
@@ -12,6 +12,7 @@ export const dockerComputer: ComputerProviderDefinition = {
     serverHomeMount: "always",
     serverOwnsStoredTeamHome: false,
     storedHomeIsBackup: true,
+    offersHostComputer: true,
   },
   // Production without a supervisor token cannot run Docker computers; boot as none instead of exiting.
   unavailable: (source) =>

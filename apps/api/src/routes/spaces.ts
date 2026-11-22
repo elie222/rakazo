@@ -27,14 +27,15 @@ import {
   setSpaceSettingOverride,
   spaceSettingOverrides,
 } from "@rakazo/db";
-import { otherSpaceOfBot, otherSpaceOfGroup } from "../bot-space.js";
-import { invitationRecipientKey, sendInvitationEmail } from "../invitation-email.js";
+import { hasChatHistory } from "../account/first-bot.js";
+import { otherSpaceOfBot, otherSpaceOfGroup } from "../bots/bot-space.js";
+import { invitationRecipientKey, sendInvitationEmail } from "../email/invitation-email.js";
 import type { RouterDeps } from "../router.js";
-import { listRoutinesDto } from "../routines.js";
-import { deleteSpaceWithContent } from "../space-deletion.js";
-import { afterSpaceDeparture } from "../space-departure.js";
-import { threadSnapshot } from "../thread-snapshot.js";
-import { resolveThreadTarget } from "../thread-target.js";
+import { listRoutinesDto } from "../routines/routines.js";
+import { deleteSpaceWithContent } from "../spaces/space-deletion.js";
+import { afterSpaceDeparture } from "../spaces/space-departure.js";
+import { threadSnapshot } from "../threads/thread-snapshot.js";
+import { resolveThreadTarget } from "../threads/thread-target.js";
 import type { RouterContext } from "./context.js";
 import { meDto } from "./shared.js";
 
@@ -188,6 +189,7 @@ export function spacesRoutes(ctx: RouterContext) {
               deps,
               { spaceId: input.spaceId, userId: context.actor.userId },
               departure,
+              input.userId,
             );
             return { ok: true as const };
           }),
@@ -330,6 +332,7 @@ export function spacesRoutes(ctx: RouterContext) {
         thread,
         routines,
         spaces: navigation.spaces,
+        firstBotDue: navigation.firstBotDue,
         ...(botSpaceId ? { botSpaceId } : {}),
         ...(groupSpaceId ? { groupSpaceId } : {}),
       };
@@ -388,6 +391,7 @@ async function memberSpaceNavigation(
     externalConversations,
     contentBots,
     contentGroups,
+    deletedBots,
     guestSpaces,
   ] = await Promise.all([
     repos.listBots(actor),
@@ -409,6 +413,11 @@ async function memberSpaceNavigation(
       select: { spaceId: true },
       distinct: ["spaceId"],
     }),
+    // A Space whose bots were all deleted was used, so it is not sent back to onboarding.
+    deps.prisma.botDeletion.groupBy({
+      by: ["spaceId"],
+      where: { spaceId: { in: spaceIds } },
+    }),
     // Spaces someone from outside their organization belongs to, marked so nobody shares
     // there unaware.
     deps.prisma.spaceMember.findMany({
@@ -422,6 +431,7 @@ async function memberSpaceNavigation(
   const spacesWithContent = new Set([
     ...contentBots.map((row) => row.spaceId),
     ...contentGroups.map((row) => row.spaceId),
+    ...deletedBots.map((row) => row.spaceId),
   ]);
   const currentMembership = memberships.find((membership) => membership.spaceId === actor.spaceId);
   if (!currentMembership) throw new IsolationError();
@@ -433,7 +443,11 @@ async function memberSpaceNavigation(
   const sectionsFor = (spaceId: string) => sectionsBySpace.get(spaceId) ?? [];
   const staleClaimBefore = new Date(Date.now() - SPACE_DELETION_CLAIM_TIMEOUT_MS);
 
+  // Only an account with nothing in sight is worth the wider look at its own Spaces.
+  const firstBotDue = spacesWithContent.size === 0 && !(await hasChatHistory(deps.prisma, actor));
+
   return {
+    firstBotDue,
     current: {
       id: actor.spaceId,
       name: currentMembership.space.name,

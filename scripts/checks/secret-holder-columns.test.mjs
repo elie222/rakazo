@@ -3,7 +3,10 @@ import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
 const SCHEMA = new URL("../../packages/db/prisma/schema.prisma", import.meta.url);
-const LISTS = new URL("../../packages/adapters/src/secret-holder-columns.json", import.meta.url);
+const LISTS = new URL(
+  "../../packages/adapters/src/secrets/secret-holder-columns.json",
+  import.meta.url,
+);
 
 /** `table.column` for each scalar field whose name contains "cipher", by its database names. */
 function cipherColumns(schema) {
@@ -39,7 +42,7 @@ test("every cipher column is either checked by the secret backup or never remote
   assert.deepEqual(
     columns,
     listed,
-    "A column holding a sealed value must be listed in packages/adapters/src/secret-holder-columns.json: " +
+    "A column holding a sealed value must be listed in packages/adapters/src/secrets/secret-holder-columns.json: " +
       'under "checked" if it can hold a remote store entry (secret cleanup looks it up before ' +
       'deleting one), or under "neverRemote" if it never does.',
   );

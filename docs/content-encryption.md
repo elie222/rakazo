@@ -10,6 +10,8 @@ directory, so a copied database dump, backup or disk does not reveal it.
 | Chat messages                                                                                                                                                                                                                | `messages.blocks`                                                             |
 | Thread events (they repeat message content)                                                                                                                                                                                  | `events.payload`                                                              |
 | Compacted history summaries                                                                                                                                                                                                  | `threads.historyCompactionSummary`                                            |
+| The text that starts each run, answers to a bot's questions included                                                                                                                                                         | `tasks.prompt`                                                                |
+| Text of a direct message whose files are still downloading, in its backup job                                                                                                                                                | `graphile_worker.jobs` (`payload.text`)                                       |
 | Memory documents and their revisions                                                                                                                                                                                         | `memory_documents.content`, `memory_revisions.content`                        |
 | Uploaded and generated files                                                                                                                                                                                                 | `DATA_DIR/artifacts/<space>/<file>`                                           |
 | Bot computer homes kept in [object storage](./self-host-storage.md#bot-homes-in-object-storage) (always, whatever `CONTENT_ENCRYPTION` says)                                                                                 | `homes/<id>/<revision>` in the bucket                                         |
@@ -90,24 +92,32 @@ read-only and runs across spaces.
 Postgres full-text search cannot read ciphertext. Messages carry a
 `searchTokens` integer array with a GIN index: keyed HMACs (per space) of each
 normalized word in the conversational text, plus word prefixes of 2 to 10
-characters from every string in the message. Agent history search matches
-whole words, as before. Space search matches word prefixes, then decrypts the
-candidates and applies its usual filter. Rows not yet migrated keep matching
-through the old full-text and substring predicates.
+characters from every string in the message. Chat writes also index adjacent
+letters or digits when at least one of the two characters is Han. Space search
+looks for these pairs as well as word prefixes, then decrypts candidates and
+checks the literal query. For example, `今晚部署API服务` can be found with `部署`,
+`部署API` or `署A`. Existing encrypted messages retain their original prefix
+coverage. Agent history search uses whole words, and email keeps its prefix
+index. Plaintext rows use the existing full-text and substring predicates.
 
 Tradeoffs:
 
 - Someone with the database but not the keys can see which encrypted messages
-  in the same space share a word or prefix, and how often tokens repeat. They
-  cannot recover the words without the space key.
-- Space search no longer finds text in the middle of a word ("elican" no longer
-  matches "pelican") once a row is encrypted. Queries of single characters scan
-  the 200 most recent messages instead of the index.
+  in the same space share a word, prefix or Han pair, and how often tokens repeat.
+  The tokens do not reveal text directly, but frequency analysis can guess
+  common ones, especially Han pairs, which come from a small, well-known set.
+- Encrypted words without Han characters still use prefix matching. Queries
+  with no indexable terms scan the 200 most recent messages.
+- Chat writes add at most 512 distinct pair tokens per message. A query whose
+  pairs first occur after that limit can reach the row through its original
+  prefix, but may otherwise miss it.
 - Tokens are 32-bit, so unrelated words occasionally collide; those candidates
   are discarded after decryption.
-- Space search checks at most 500 index candidates per query, newest first, so
-  a phrase whose words are common may need a more specific query to reach
-  older messages. Agent history search pages through cursors instead.
+- For direct and group messages, space search takes up to 500 prefix candidates
+  and, for queries with Han pairs, up to 500 pair candidates. It combines the
+  selected IDs and checks them newest first. Common pairs can fill their
+  candidate set before older messages. Agent history search uses its own
+  cursor-based pagination.
 
 ## Threat model
 
@@ -237,7 +247,7 @@ process has just added.
 
 Rotation is not finished when `rotate --reencrypt` exits. Each API and worker
 process keeps the key versions it has read in memory for up to ten minutes
-(the default `ttlMs` of `ContentKeyRing` in `packages/db/src/content-keys.ts`).
+(the default `ttlMs` of `ContentKeyRing` in `packages/db/src/encryption/content-keys.ts`).
 For that long after a rotation, it may still seal new content and new vault
 saves with the previous version. Those stay under that version until the next
 `reencrypt`. An interrupted run also leaves items under the previous version.
@@ -331,6 +341,6 @@ without a key manager stops startup with the variable's name.
 
 Other key managers implement the `KeyProvider` interface in
 `@rakazo/adapter-kit` (`activeKeyId`, `wrap`, `unwrap`), pass the shared suite in
-`packages/adapters/src/key-provider-conformance.test.ts`, and are selected in
+`packages/adapters/src/secrets/key-provider-conformance.test.ts`, and are selected in
 `keyManagerFromEnv`. A provider only wraps 32-byte data keys: one per space
 key and one per wrapped setting, never per stored message or file.

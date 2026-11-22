@@ -10,20 +10,20 @@ import {
 } from "@rakazo/core";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useRef, useState } from "react";
-import { BackHandler, ScrollView, Text, TextInput, View } from "react-native";
-import { BotAvatar } from "../components/bot-avatar";
-import { BotLookPicker } from "../components/bot-look-picker";
-import { NativeActionButton } from "../components/native-action-button";
-import { cancelHeaderOptions } from "../components/sheet-header";
-import { selectedSpaceId } from "../lib/api";
-import type { InboxBotOutcome } from "../lib/create-inbox-bot";
-import { askForModelBeforeFirstBot, createInboxBot } from "../lib/create-inbox-bot";
-import { openChatFromInbox } from "../lib/inbox-changes";
-import { native, useMobileTokens } from "../lib/native";
-import { accountRpcQuery, useSave } from "../lib/query";
-import { useScreenQuery } from "../lib/screen-query";
-import { useSideInsets } from "../lib/side-insets";
-import { errorText } from "../lib/user-error";
+import { AccessibilityInfo, BackHandler, ScrollView, Text, TextInput, View } from "react-native";
+import { BotAvatar } from "../components/bots/bot-avatar";
+import { BotLookPicker } from "../components/bots/bot-look-picker";
+import { NativeActionButton } from "../components/native/native-action-button";
+import { cancelHeaderOptions } from "../components/native/sheet-header";
+import { selectedSpaceId } from "../lib/api/api";
+import { errorText } from "../lib/api/user-error";
+import type { InboxBotOutcome } from "../lib/inbox/create-inbox-bot";
+import { askForModelBeforeFirstBot, createInboxBot } from "../lib/inbox/create-inbox-bot";
+import { openChatFromInbox } from "../lib/inbox/inbox-changes";
+import { useSideInsets } from "../lib/layout/side-insets";
+import { native, useMobileTokens } from "../lib/native/native";
+import { accountRpcQuery, useSave } from "../lib/query/query";
+import { useScreenQuery } from "../lib/query/screen-query";
 
 type NewBotInput = Parameters<typeof createInboxBot>[0]["input"];
 
@@ -87,7 +87,13 @@ export default function NewBot() {
     closesScreen: true,
   });
   const pending = creation.pending;
-  const error = creation.error ? errorText(creation.error, t`Could not create bot`) : null;
+  const failure = creation.error;
+  const error = failure ? errorText(failure, t`Could not create bot`) : null;
+
+  // Create keeps focus after a failure, so speak it. A retry that fails again is a new Error.
+  useEffect(() => {
+    if (error) AccessibilityInfo.announceForAccessibility(error);
+  }, [failure, error]);
 
   // The logo has no studio shapes; drop one picked while the Original set was shown.
   useEffect(() => {
@@ -180,7 +186,11 @@ export default function NewBot() {
             }}
           />
         </View>
-        {error ? <Text style={{ color: tokens.destructive, marginTop: 16 }}>{error}</Text> : null}
+        {error ? (
+          <Text accessibilityRole="alert" style={{ color: tokens.destructive, marginTop: 16 }}>
+            {error}
+          </Text>
+        ) : null}
         <NativeActionButton
           fill
           label={pending ? t`Creating…` : t`Create`}

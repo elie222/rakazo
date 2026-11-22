@@ -8,6 +8,7 @@ import type {
   SemanticMemoryResult,
   SemanticMemorySaveRequest,
 } from "@rakazo/adapter-kit";
+import { byteLength } from "@rakazo/core";
 import {
   assertLocalServiceBaseUrlSync,
   LocalServiceHost,
@@ -15,9 +16,8 @@ import {
   localServiceTrustSettings,
   parseServiceBaseUrl,
   pinLocalServiceHost,
-} from "../../../local-service-endpoint.js";
-import type { ResolveHostname } from "../../../network-address.js";
-import { truncateUtf8 } from "../../../utf8.js";
+} from "../../../network/local-service-endpoint.js";
+import type { ResolveHostname } from "../../../network/network-address.js";
 import type { HonchoConnectionConfig, HonchoReasoningLevel } from "./honcho-client.js";
 import {
   createHonchoConclusions,
@@ -382,8 +382,14 @@ export class HonchoMemoryProvider implements SemanticMemoryProvider {
       // Compaction summaries stay in Rakazo; Honcho holds durable facts only.
       return { ok: true, value: undefined };
     }
-    const content = truncateUtf8(request.content.trim(), MAX_HONCHO_CONCLUSION_BYTES);
+    const content = request.content.trim();
     if (!content) return { ok: false, error: "Honcho save skipped: memory content is empty." };
+    if (byteLength(content) > MAX_HONCHO_CONCLUSION_BYTES) {
+      return {
+        ok: false,
+        error: `Honcho save skipped: memory content is longer than ${MAX_HONCHO_CONCLUSION_BYTES} bytes. Save a shorter fact.`,
+      };
+    }
     const connection = await this.connectionForRequest();
     if (!connection.ok) return connection;
     const workspaceId = honchoWorkspaceId(this.settings, context.spaceId);

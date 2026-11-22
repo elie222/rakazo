@@ -1,4 +1,4 @@
-import { useEffect, useEffectEvent } from "react";
+import { useEffect, useLayoutEffect, useRef } from "react";
 
 type EventMap<T> = T extends Window
   ? WindowEventMap
@@ -23,13 +23,17 @@ export function useEventListener<T extends EventTarget, K extends keyof EventMap
   // A null target stops listening; there is no signal to pass.
   options?: boolean | Omit<AddEventListenerOptions, "signal">,
 ): void {
-  const listener = useEffectEvent((event: Event) => handler(event as EventMap<T>[K]));
+  // Native targets can dispatch synchronously while React is rendering.
+  const committedHandler = useRef(handler);
+  useLayoutEffect(() => {
+    committedHandler.current = handler;
+  }, [handler]);
   const capture = typeof options === "boolean" ? options : options?.capture;
   const passive = typeof options === "boolean" ? undefined : options?.passive;
   const once = typeof options === "boolean" ? undefined : options?.once;
   useEffect(() => {
     if (!target) return;
-    const onEvent = (event: Event) => listener(event);
+    const onEvent = (event: Event) => committedHandler.current(event as EventMap<T>[K]);
     target.addEventListener(type, onEvent, { capture, passive, once });
     return () => target.removeEventListener(type, onEvent, capture);
   }, [target, type, capture, passive, once]);

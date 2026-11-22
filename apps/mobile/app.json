@@ -4,7 +4,7 @@
     "slug": "rakazo",
     "owner": "inbox-zero",
     "scheme": "rakazo",
-    "version": "1.0.15",
+    "version": "1.0.18",
     "orientation": "default",
     "userInterfaceStyle": "automatic",
     "icon": "./assets/icon.png",
@@ -37,6 +37,13 @@
         }
       ],
       "expo-localization",
+      [
+        "expo-calendar",
+        {
+          "calendarPermission": "Allow Rakazo to read and add events in calendars you choose for your bots.",
+          "remindersPermission": "Allow Rakazo to create and complete reminders in lists you choose for your bots."
+        }
+      ],
       "@react-native-vector-icons/ionicons",
       "@react-native-vector-icons/material-design-icons",
       [
@@ -94,11 +101,13 @@
       "./plugins/with-android-no-gwp-asan",
       "./plugins/with-agent-notifications",
       "./plugins/with-app-intents",
+      "./plugins/with-apple-watch",
       "expo-apple-authentication"
     ],
     "locales": {
       "es": "./locales/es.json",
-      "pl": "./locales/pl.json"
+      "pl": "./locales/pl.json",
+      "th": "./locales/th.json"
     },
     "ios": {
       "bundleIdentifier": "com.rakazo.app",
@@ -146,6 +155,10 @@
           "experimental": {
             "ios": {
               "appExtensions": [
+                {
+                  "targetName": "RakazoWatch",
+                  "bundleIdentifier": "com.rakazo.app.watchkitapp"
+                },
                 {
                   "targetName": "RakazoWidgets",
                   "bundleIdentifier": "com.rakazo.app.widgets"

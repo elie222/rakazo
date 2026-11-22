@@ -4,7 +4,7 @@ import type { Deferred } from "@rakazo/core/test-async";
 import { deferred } from "@rakazo/core/test-async";
 import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { ResolveHostname } from "../../../network-address.js";
+import type { ResolveHostname } from "../../../network/network-address.js";
 import { MemoryProviderPrivateEndpointRequiredError } from "../serenity/serenity-memory-provider.js";
 import { HINDSIGHT_CLOUD_BASE_URL } from "./hindsight-client.js";
 import {
@@ -265,6 +265,30 @@ describe("Hindsight saves", () => {
       async: false,
       operation_id: expect.stringMatching(/^[0-9a-f-]{36}$/),
     });
+  });
+
+  it("saves a fact at the byte limit unchanged", async () => {
+    const fake = hindsightFake();
+    const content = "a".repeat(32_768);
+    await expect(
+      provider(fake.fetch).save({ ...save, content, scope: "isolated" }, context),
+    ).resolves.toEqual({ ok: true, value: undefined });
+    const [write] = writes(fake.requests);
+    expect((write!.body as { items: [{ content: string }] }).items[0].content).toBe(content);
+  });
+
+  it("refuses a fact over the byte limit instead of cutting it short", async () => {
+    const fake = hindsightFake();
+    // CJK characters are three bytes each, so this is under the limit in characters only.
+    const content = "记".repeat(32_768);
+    await expect(
+      provider(fake.fetch).save({ ...save, content, scope: "isolated" }, context),
+    ).resolves.toEqual({
+      ok: false,
+      error:
+        "Hindsight save skipped: memory content is longer than 32768 bytes. Save a shorter fact.",
+    });
+    expect(fake.requests).toHaveLength(0);
   });
 
   it("reuses the operation id when the same operation saves the same fact again", async () => {

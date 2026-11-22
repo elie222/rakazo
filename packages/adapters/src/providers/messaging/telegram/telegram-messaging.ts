@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { TelegramAdapter, TelegramFormatConverter } from "@chat-adapter/telegram";
+import { deadlineSignal, withAbort } from "@rakazo/core";
 import { getLogger } from "@rakazo/logging";
 import type { AdapterPostableMessage, CardElement, Root } from "chat";
 import {
@@ -10,13 +11,13 @@ import {
   toPlainText,
   walkAst,
 } from "chat";
-import type { MessagingPlatform } from "../../../chat-sdk-surface.js";
-import type { MessagingMountContext } from "../../../messaging-platform-descriptor.js";
+import type { MessagingPlatform } from "../../../messaging/chat-sdk-surface.js";
+import type { MessagingMountContext } from "../../../messaging/messaging-platform-descriptor.js";
 import {
   asRecord,
   defineMessagingPlatform,
   stringField,
-} from "../../../messaging-platform-descriptor.js";
+} from "../../../messaging/messaging-platform-descriptor.js";
 
 /**
  * Both the token and the secret are required: without the secret token the adapter accepts
@@ -26,11 +27,16 @@ export const telegramMessaging = defineMessagingPlatform({
   env: {
     telegramBotToken: { name: "TELEGRAM_BOT_TOKEN", required: true },
     telegramWebhookSecret: { name: "TELEGRAM_WEBHOOK_SECRET_TOKEN", required: true },
+    /** "off" ignores group and supergroup chats on every Telegram bot, leaving direct chats only. */
+    telegramGroups: { name: "TELEGRAM_GROUPS" },
     /** Extra named Telegram bots (TELEGRAM_BOT_TOKEN_<NAME>), e.g. one per space. */
     telegramBots: { read: telegramBotsFromEnv },
   },
   mount(env, options) {
-    return telegramPlatform("telegram", env.telegramBotToken, env.telegramWebhookSecret, options);
+    return telegramPlatform("telegram", env.telegramBotToken, env.telegramWebhookSecret, {
+      ...options,
+      groups: telegramGroupsEnabled(env.telegramGroups),
+    });
   },
   // Same rules as the default bot; each named bot has its own token and so
   // its own getUpdates slot. The surface maps their native "telegram:" thread
@@ -46,10 +52,12 @@ export const telegramMessaging = defineMessagingPlatform({
         continue;
       }
       tokens.add(bot.botToken.trim());
-      platforms.push({
-        ...telegramPlatform(provider, bot.botToken, bot.webhookSecret, options),
-        adapterName: "telegram",
+      const platform = telegramPlatform(provider, bot.botToken, bot.webhookSecret, {
+        ...options,
+        groups: telegramGroupsEnabled(env.telegramGroups),
       });
+      platform.adapterName = "telegram";
+      platforms.push(platform);
     }
     return platforms;
   },
@@ -82,17 +90,29 @@ export function telegramBotsFromEnv(
     const botToken = value?.trim();
     const webhookSecret = env[`TELEGRAM_WEBHOOK_SECRET_TOKEN_${suffix}`]?.trim();
     if (!botToken || !webhookSecret) continue;
-    bots.push({ name: suffix.toLowerCase(), botToken, webhookSecret });
+    bots.push({
+      name: suffix.toLowerCase(),
+      botToken,
+      webhookSecret,
+    });
   }
   bots.sort((a, b) => a.name.localeCompare(b.name));
   return bots;
+}
+
+/** Unset or blank keeps group chats on. Any other value must be one of these, or startup fails. */
+function telegramGroupsEnabled(setting: string | undefined): boolean {
+  const value = setting?.trim().toLowerCase();
+  if (!value || value === "on" || value === "true" || value === "1") return true;
+  if (value === "off" || value === "false" || value === "0") return false;
+  throw new Error("TELEGRAM_GROUPS must be on or off");
 }
 
 function telegramPlatform(
   provider: string,
   botToken: string,
   secretToken: string,
-  options: MessagingMountContext,
+  options: MessagingMountContext & { groups: boolean },
 ): MessagingPlatform {
   const adapter = new TelegramAdapterWithLinkAddresses({
     botToken,
@@ -104,11 +124,26 @@ function telegramPlatform(
   });
   return {
     provider,
-    capabilities: { direct: true, groups: true, receipt: null, files: true },
+    get address() {
+      return adapter.verifiedLinkAddress;
+    },
+    resolveAddress: (signal) => adapter.resolveLinkAddress(signal),
+    capabilities: { direct: true, groups: options.groups, receipt: null, files: true },
     ...withTelegramRedelivery(adapter),
     ...telegramGroupHooks(adapter),
     isPermanentSendError: isTelegramBlocked,
   };
+}
+
+/** Public destination only; credentials must never become a displayed address. */
+function telegramLinkAddress(username: string | undefined): string | undefined {
+  if (!username?.trim()) return undefined;
+  const name = username.trim().replace(/^@/, "");
+  if (!/^[a-zA-Z][a-zA-Z0-9_]{4,31}$/.test(name)) {
+    getLogger().warn("ignoring invalid Telegram bot username");
+    return undefined;
+  }
+  return `@${name}`;
 }
 
 /**
@@ -154,8 +189,60 @@ export function telegramFallbackText(
   return plainText.trim() ? plainText : markdown;
 }
 
-/** The adapter builds its plain-text fallback itself; this is its one seam for that text. */
+/** Authenticated linking identity and plain-text rendering absent from the SDK surface. */
 class TelegramAdapterWithLinkAddresses extends TelegramAdapter {
+  verifiedLinkAddress: string | undefined;
+  private addressLookup: Promise<string | undefined> | undefined;
+  private nextAddressLookupAt = 0;
+  private identityLookupVersion = 0;
+
+  async resolveLinkAddress(signal?: AbortSignal): Promise<string | undefined> {
+    signal?.throwIfAborted();
+    if (Date.now() < this.nextAddressLookupAt) return this.verifiedLinkAddress;
+    this.addressLookup ??= this.telegramFetch("getMe", undefined, {
+      signal: deadlineSignal(10_000),
+    })
+      .then(
+        () => this.verifiedLinkAddress,
+        () => {
+          // Provider failures can include credential-bearing request URLs.
+          throw new Error("Messaging link address unavailable");
+        },
+      )
+      .finally(() => {
+        this.addressLookup = undefined;
+      });
+    return signal ? withAbort(this.addressLookup, signal) : this.addressLookup;
+  }
+
+  protected override async telegramFetch<TResult>(
+    method: string,
+    payload?: Record<string, unknown> | FormData,
+    request?: { signal?: AbortSignal },
+  ): Promise<TResult> {
+    if (method !== "getMe") return super.telegramFetch<TResult>(method, payload, request);
+    const version = ++this.identityLookupVersion;
+    try {
+      const result = await super.telegramFetch<TResult>(method, payload, request);
+      if (version !== this.identityLookupVersion) return result;
+      const identity = asRecord(result);
+      this.verifiedLinkAddress = telegramLinkAddress(
+        identity ? stringField(identity, "username") : undefined,
+      );
+      // Reuse authenticated identity briefly; failures never retain a destination.
+      this.nextAddressLookupAt = Date.now() + (this.verifiedLinkAddress ? 300_000 : 30_000);
+      // The SDK may read a legacy username override from the environment.
+      if (this.verifiedLinkAddress) this._userName = this.verifiedLinkAddress.slice(1);
+      return result;
+    } catch (error) {
+      if (version === this.identityLookupVersion) {
+        this.verifiedLinkAddress = undefined;
+        this.nextAddressLookupAt = Date.now() + 30_000;
+      }
+      throw error;
+    }
+  }
+
   protected override renderPlainTextMessage(
     message: AdapterPostableMessage,
     card: CardElement | null,

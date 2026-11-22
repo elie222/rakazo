@@ -1,5 +1,5 @@
 import { parse } from "shell-quote";
-import { simpleCommand } from "../../../linux-desktop.test-support.js";
+import { simpleCommand } from "../../../computers/screens/linux-desktop.test-support.js";
 import { CreateOSSandboxProvider } from "./createos-sandbox.js";
 
 function reply(status: number, body: unknown) {

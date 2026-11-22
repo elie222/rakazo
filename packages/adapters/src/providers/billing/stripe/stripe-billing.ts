@@ -27,6 +27,7 @@ import {
 } from "@rakazo/contracts";
 import { readBoundedJsonResponse } from "@rakazo/core";
 import { z } from "zod";
+import { stripeInvoiceRefund } from "./stripe-invoice-refund.js";
 
 export const STRIPE_API_VERSION = "2026-09-30.endive";
 const WEBHOOK_TOLERANCE_SECONDS = 300;
@@ -55,6 +56,7 @@ const priceSchema = z.object({
 });
 const idSchema = z.object({ id: z.string().min(1) });
 const urlSchema = z.object({ url: z.string().min(1) });
+const checkoutSessionSchema = z.object({ id: z.string().min(1), url: z.string().min(1) });
 const subscriptionSchema = z.object({
   id: z.string(),
   status: z.string(),
@@ -73,6 +75,16 @@ const subscriptionSchema = z.object({
     .union([
       z.string(),
       z.object({ card: z.object({ fingerprint: z.string().nullish() }).nullish() }),
+    ])
+    .nullish(),
+  latest_invoice: z
+    .union([
+      z.string(),
+      z.object({
+        status: z.string().nullish(),
+        total: z.number().nullish(),
+        status_transitions: z.object({ paid_at: z.number().nullish() }).nullish(),
+      }),
     ])
     .nullish(),
   items: z.object({
@@ -162,6 +174,15 @@ export class StripeBillingProvider implements BillingProvider {
     };
   }
 
+  refundInvoice(customerId: string, invoiceNumber: string, confirm: boolean) {
+    return stripeInvoiceRefund(
+      { request: this.request.bind(this), listPages: this.listPages.bind(this) },
+      customerId,
+      invoiceNumber,
+      confirm,
+    );
+  }
+
   async createCustomer(input: { email: string; organizationId: string }) {
     const customer = idSchema.parse(
       await this.request("POST", "/v1/customers", {
@@ -195,8 +216,7 @@ export class StripeBillingProvider implements BillingProvider {
       success_url: input.successUrl,
       cancel_url: input.cancelUrl,
     });
-    const session = urlSchema.parse(await this.request("POST", "/v1/checkout/sessions", body));
-    return { url: session.url };
+    return checkoutSessionSchema.parse(await this.request("POST", "/v1/checkout/sessions", body));
   }
 
   async createCreditCheckout(input: BillingCreditCheckoutRequest) {
@@ -213,7 +233,7 @@ export class StripeBillingProvider implements BillingProvider {
         throw new BillingCheckoutCompletedError();
     }
     const metadata = { rakazo_credit_cents: String(input.amountCents) };
-    const session = urlSchema.parse(
+    const session = checkoutSessionSchema.parse(
       await this.request("POST", "/v1/checkout/sessions", {
         customer: input.customerId,
         mode: input.monthly ? "subscription" : "payment",
@@ -248,7 +268,7 @@ export class StripeBillingProvider implements BillingProvider {
         cancel_url: input.cancelUrl,
       }),
     );
-    return { url: session.url };
+    return { id: session.id, url: session.url };
   }
 
   async setMonthlyCredits(customerId: string, amountCents: number) {
@@ -292,7 +312,7 @@ export class StripeBillingProvider implements BillingProvider {
       throw new BillingCheckoutCompletedError();
     const metadata = { [BYOK_PLAN_METADATA]: "byok" };
     const interval = input.interval ?? "month";
-    const session = urlSchema.parse(
+    const session = checkoutSessionSchema.parse(
       await this.request("POST", "/v1/checkout/sessions", {
         customer: input.customerId,
         mode: "subscription",
@@ -319,7 +339,7 @@ export class StripeBillingProvider implements BillingProvider {
         cancel_url: input.cancelUrl,
       }),
     );
-    return { url: session.url };
+    return { id: session.id, url: session.url };
   }
 
   async changeByokPlan(
@@ -834,17 +854,18 @@ export class StripeBillingProvider implements BillingProvider {
       if (fresh.length === 0) return;
       for (const session of fresh) {
         seen.add(session.id);
-        try {
-          await this.request(
-            "POST",
-            `/v1/checkout/sessions/${encodeURIComponent(session.id)}/expire`,
-          );
-        } catch (error) {
-          // No longer open: it expired on its own or was just paid, which the caller rechecks.
-          if (!(error instanceof StripeRequestError && error.type === "invalid_request_error"))
-            throw error;
-        }
+        await this.expireCheckout(session.id);
       }
+    }
+  }
+
+  async expireCheckout(id: string): Promise<void> {
+    try {
+      await this.request("POST", `/v1/checkout/sessions/${encodeURIComponent(id)}/expire`);
+    } catch (error) {
+      // No longer open: it expired on its own or was just paid, which the caller rechecks.
+      if (!(error instanceof StripeRequestError && error.type === "invalid_request_error"))
+        throw error;
     }
   }
 
@@ -875,7 +896,7 @@ export class StripeBillingProvider implements BillingProvider {
         status: "all",
         limit: 100,
         starting_after: startingAfter,
-        expand: ["data.default_payment_method"],
+        expand: ["data.default_payment_method", "data.latest_invoice"],
       });
       const page = subscriptionListSchema.parse(
         await this.request("GET", `/v1/subscriptions?${query}`),
@@ -993,12 +1014,14 @@ function pickStripeSubscription(subscriptions: StripeSubscription[]) {
 }
 
 function grantsAccess(status: BillingSubscriptionStatus) {
-  return status === "trialing" || status === "active" || status === "past_due";
+  return status === "trialing" || status === "active";
 }
 
 /** Grants access now or resumes once paid, so another checkout would bill twice. */
 export function holdsBillingSubscription(status: BillingSubscriptionStatus) {
-  return grantsAccess(status) || status === "unpaid" || status === "paused";
+  return (
+    grantsAccess(status) || status === "past_due" || status === "unpaid" || status === "paused"
+  );
 }
 
 function toSnapshot(
@@ -1011,6 +1034,12 @@ function toSnapshot(
   const fingerprint = typeof method === "object" ? method?.card?.fingerprint : undefined;
   const reason = cancellationReason(subscription.cancellation_details?.feedback);
   const comment = subscription.cancellation_details?.comment?.trim();
+  const invoice = subscription.latest_invoice;
+  const paidAt =
+    // By its total, so an invoice settled from the customer's balance counts and a free one does not.
+    typeof invoice === "object" && invoice?.status === "paid" && (invoice.total ?? 0) > 0
+      ? fromSeconds(invoice.status_transitions?.paid_at)
+      : null;
   return {
     creditAmountCents: creditAmount(subscription.metadata?.rakazo_credit_cents),
     subscriptionId: subscription.id,
@@ -1025,6 +1054,7 @@ function toSnapshot(
     currentPeriodEndsAt: fromSeconds(item.current_period_end ?? subscription.current_period_end),
     cancelAtPeriodEnd: Boolean(subscription.cancel_at_period_end) || subscription.cancel_at != null,
     endedAt: fromSeconds(subscription.ended_at),
+    ...(paidAt ? { paidAt } : {}),
     ...(isByokPlan(subscription)
       ? {
           byokPlan: true,

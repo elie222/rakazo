@@ -11,20 +11,25 @@ import { useHeaderHeight } from "expo-router/react-navigation";
 import { useContext, useEffect, useMemo, useState } from "react";
 import { BackHandler, Platform, ScrollView, Text, TextInput, View } from "react-native";
 import { KeyboardAvoidingView } from "react-native-keyboard-controller";
-import { BotChipPicker } from "../components/bot-chip-picker";
-import { GlassIconButton } from "../components/glass-icon-button";
-import { GroupAvatar } from "../components/group-avatar";
-import { NativeActionButton } from "../components/native-action-button";
-import { SheetCloseButton } from "../components/sheet-close-button";
-import { CallKeyboardContext } from "../lib/call-keyboard-context";
-import { hapticSuccess } from "../lib/haptics";
-import type { MobileBot } from "../lib/mobile-types";
-import { native, useMobileTokens } from "../lib/native";
-import { iosAtLeast } from "../lib/native-controls";
-import { formRead, queryClient, rpcQuery, useSave } from "../lib/query";
-import { addToSearchInbox, isSearchInboxSession, searchInboxSession } from "../lib/search-inbox";
-import { useSideInsets } from "../lib/side-insets";
-import { errorText } from "../lib/user-error";
+import { GroupAvatar } from "../components/bots/group-avatar";
+import { BotChipPicker } from "../components/composer/bot-chip-picker";
+import { GlassIconButton } from "../components/native/glass-icon-button";
+import { NativeActionButton } from "../components/native/native-action-button";
+import { SheetCloseButton } from "../components/native/sheet-close-button";
+import type { MobileBot } from "../lib/api/mobile-types";
+import { errorText } from "../lib/api/user-error";
+import { CallKeyboardContext } from "../lib/calls/call-keyboard-context";
+import { useSideInsets } from "../lib/layout/side-insets";
+import { announceToScreenReader } from "../lib/native/announce";
+import { hapticSuccess } from "../lib/native/haptics";
+import { native, useMobileTokens } from "../lib/native/native";
+import { iosAtLeast } from "../lib/native/native-controls";
+import { formRead, queryClient, rpcQuery, useSave } from "../lib/query/query";
+import {
+  addToSearchInbox,
+  isSearchInboxSession,
+  searchInboxSession,
+} from "../lib/search/search-inbox";
 
 export default function NewGroup() {
   const call = useContext(CallKeyboardContext);
@@ -47,6 +52,7 @@ export default function NewGroup() {
   const [selected, setSelected] = useState<string[]>([]);
   const valid = selected.length >= GROUP_MEMBER_MIN && selected.length <= GROUP_MEMBER_MAX;
   const picked = selected.flatMap((id) => bots.find((bot) => bot.id === id) ?? []);
+  const creationError = (failure: Error) => errorText(failure, t`Could not create group`);
   const creation = useSave({
     save: async (
       ask: { name: string; botIds: string[]; askedIn: ReturnType<typeof searchInboxSession> },
@@ -61,10 +67,12 @@ export default function NewGroup() {
         params: { groupId: group.id, name: group.name },
       });
     },
+    // Create keeps focus after a failure, so VoiceOver and TalkBack are told as well as shown.
+    onFailed: (failure) => announceToScreenReader(creationError(failure)),
     closesScreen: true,
   });
   const pending = creation.pending;
-  const error = creation.error ? errorText(creation.error, t`Could not create group`) : null;
+  const error = creation.error ? creationError(creation.error) : null;
   const goBack = () => {
     if (!pending) setStep("bots");
   };
@@ -214,7 +222,12 @@ export default function NewGroup() {
                 style={{ marginTop: 24, borderRadius: 28 }}
               />
               {error ? (
-                <Text style={{ color: tokens.destructive, marginTop: 12 }}>{error}</Text>
+                <Text
+                  accessibilityRole="alert"
+                  style={{ color: tokens.destructive, marginTop: 12 }}
+                >
+                  {error}
+                </Text>
               ) : null}
             </View>
           )}
