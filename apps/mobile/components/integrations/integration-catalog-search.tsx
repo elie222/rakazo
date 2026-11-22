@@ -1,8 +1,7 @@
 import { ph } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
-import { CATALOG_SEARCH_QUERY_MAX_LENGTH } from "@rakazo/contracts";
 import type { CatalogMcpServer, SignInMcpServer } from "@rakazo/core";
-import { catalogMcpServers } from "@rakazo/core";
+import { catalogMcpServers, publicMcpCatalogQuery } from "@rakazo/core";
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import { Text, View } from "react-native";
@@ -38,13 +37,13 @@ export function IntegrationCatalogSearch({
 }) {
   const { t } = useLingui();
   const styles = useThemedStyles(createIntegrationsStyles);
-  const trimmed = query.trim();
-  const eligible = trimmed.length >= 2 && trimmed.length <= CATALOG_SEARCH_QUERY_MAX_LENGTH;
   const [asked, setAsked] = useState<string | null>(null);
-  const searching = eligible && asked === trimmed;
+  const lookup = publicMcpCatalogQuery(query, asked);
+  const trimmed = lookup.input.query;
+  const searching = lookup.requested;
   const search = useQuery(
     {
-      ...rpcQuery("capabilities/catalogSearch", { query: trimmed, usePublicCatalog: true }),
+      ...rpcQuery("capabilities/catalogSearch", lookup.input),
       enabled: searching,
       staleTime: Number.POSITIVE_INFINITY,
     },
@@ -78,21 +77,17 @@ export function IntegrationCatalogSearch({
   }, [searching, search.error, t]);
   if (!trimmed || hidden) return null;
   const servers =
-    searching && search.data
-      ? catalogMcpServers(search.data.results).filter(
-          ({ name }) => !excludedNames.includes(name.toLowerCase()),
-        )
-      : [];
+    searching && search.data ? catalogMcpServers(search.data.results, { excludedNames }) : [];
   const failure = connect.error ?? (searching ? search.error : null);
   return (
     <View testID="integration-catalog-search" style={styles.catalogStack}>
       {noLocalMatch && !servers.length && (!searching || search.isSuccess) ? (
         <Text style={styles.secondary}>{t`No apps match your search.`}</Text>
       ) : null}
-      {eligible && (!searching || !search.data) ? (
+      {lookup.eligible && (!searching || !search.data) ? (
         <NativeActionButton
           fill={false}
-          label={t`Search more apps`}
+          label={t`Search public MCP directory`}
           busy={searching && search.isFetching}
           onPress={() => (searching ? void search.refetch() : setAsked(trimmed))}
           prominence="secondary"

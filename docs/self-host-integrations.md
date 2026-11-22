@@ -168,7 +168,7 @@ before the change must disconnect and reconnect Outlook.
 
 `INTEGRATIONS_CATALOG_URL` points API connector search at an
 [integrations.sh](https://integrations.sh/)-compatible catalog, such as a mirror you host. Give the
-base URL. Rakazo appends `api/search`. With the setting unset, **Search MCP servers** can still
+base URL. Rakazo appends `api/search`. With the setting unset, **Search public MCP directory** can still
 search the public directory on demand. Each service handles its own authorization.
 
 ## Messaging apps

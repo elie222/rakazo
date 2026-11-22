@@ -183,7 +183,7 @@ async function type(input: HTMLInputElement, value: string) {
 
 function publicCatalogRow() {
   return Array.from(host.querySelectorAll("button")).find((button) =>
-    button.textContent?.startsWith("Search MCP servers for"),
+    button.textContent?.startsWith("Search public MCP directory for"),
   );
 }
 
@@ -212,7 +212,7 @@ it("shows public catalog results inline and sends nothing there until asked", as
 
   await type(searchBox(), " canva ");
   expect(host.textContent).toContain("No matches in your current catalogs.");
-  expect(publicCatalogRow()?.textContent).toBe("Search MCP servers for “canva”");
+  expect(publicCatalogRow()?.textContent).toBe("Search public MCP directory for “canva”");
   expect(publicSearches()).toHaveLength(0);
 
   await act(async () => publicCatalogRow()?.click());

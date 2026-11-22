@@ -1578,7 +1578,7 @@ it("looks a search up in the public catalog only when asked, and signs in from t
   expect(container.textContent).toContain("No apps match your search.");
   expect(state.rpc).not.toHaveBeenCalledWith("capabilities/catalogSearch", expect.anything());
 
-  await press("Search more apps");
+  await press("Search public MCP directory");
   expect(state.rpc).toHaveBeenCalledWith(
     "capabilities/catalogSearch",
     { query: "tracker", usePublicCatalog: true },
@@ -1614,7 +1614,7 @@ it("offers Connect on a catalog server whose sign-in failed", async () => {
   await act(async () => catalog.resolve([]));
   await settle();
   await searchFor("tracker");
-  await press("Search more apps");
+  await press("Search public MCP directory");
   await press("Connect");
 
   expect(container.querySelector('[data-testid="registered-mcp-server"]')?.textContent).toBe(
@@ -1635,7 +1635,7 @@ it("shows a catalog server added while another category was open", async () => {
   await act(async () => catalog.resolve([]));
   await settle();
   await searchFor("tracker");
-  await press("Search more apps");
+  await press("Search public MCP directory");
   await press("Connect");
   await press("Security & Ops");
   await act(async () => browser.resolve({ type: "cancel" }));
@@ -1658,7 +1658,7 @@ it("opens the credential form for a catalog server that needs a token", async ()
   await act(async () => catalog.resolve([]));
   await settle();
   await searchFor("tracker");
-  await press("Search more apps");
+  await press("Search public MCP directory");
 
   await press("Connect");
   expect(container.querySelector('input[placeholder="Bearer token"]')).not.toBeNull();
@@ -1681,7 +1681,7 @@ it("does not say nothing matched when the screen lists a match but the catalog f
   await act(async () => catalog.resolve([item]));
   await settle();
   await searchFor("example");
-  await press("Search more apps");
+  await press("Search public MCP directory");
 
   expect(container.textContent).toContain("Example app");
   expect(container.textContent).not.toContain("No apps match your search.");

@@ -118,12 +118,12 @@ afterEach(() => {
 it("reads out a failed catalog search once, and each new failure of it", async () => {
   state.rpc.mockImplementation(() => Promise.reject(new Error("Search is unavailable right now.")));
   await act(async () => root.render(view()));
-  await press("Search more apps");
+  await press("Search public MCP directory");
 
   expect(container.textContent).toContain("Search is unavailable right now.");
   expect(state.announce).toHaveBeenCalledExactlyOnceWith("Search is unavailable right now.");
 
-  await press("Search more apps");
+  await press("Search public MCP directory");
   expect(state.announce).toHaveBeenCalledTimes(2);
   expect(state.announce).toHaveBeenLastCalledWith("Search is unavailable right now.");
 });
@@ -135,7 +135,7 @@ it("reads out a failed Connect once, in the text the screen shows", async () => 
       : Promise.reject(new Error("Tracker needs you to sign in again.")),
   );
   await act(async () => root.render(view()));
-  await press("Search more apps");
+  await press("Search public MCP directory");
   await press("Connect");
 
   expect(container.textContent).toContain("Tracker needs you to sign in again.");
@@ -149,7 +149,7 @@ it("reads out a Connect that fails after the component is hidden behind another 
     proc === "capabilities/catalogSearch" ? Promise.resolve(catalogResult) : connect.promise,
   );
   await act(async () => root.render(view()));
-  await press("Search more apps");
+  await press("Search public MCP directory");
   await press("Connect");
   await act(async () => root.render(view({ hidden: true })));
   await act(async () => connect.reject(new Error("Tracker needs you to sign in again.")));
@@ -162,7 +162,7 @@ it("reads out a catalog search that fails after the component is hidden", async 
   const search = deferred<never>();
   state.rpc.mockImplementation(() => search.promise);
   await act(async () => root.render(view()));
-  await press("Search more apps");
+  await press("Search public MCP directory");
   await act(async () => root.render(view({ hidden: true })));
   await act(async () => search.reject(new Error("Search is unavailable right now.")));
   await act(flush);
@@ -180,7 +180,7 @@ it("does not read out a Connect that succeeds", async () => {
         }),
   );
   await act(async () => root.render(view()));
-  await press("Search more apps");
+  await press("Search public MCP directory");
   await press("Connect");
 
   expect(onChanged).toHaveBeenCalledWith("tracker-server");

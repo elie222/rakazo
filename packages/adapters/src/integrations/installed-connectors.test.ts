@@ -1,6 +1,7 @@
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { validateToolArguments } from "@earendil-works/pi-ai/utils/validation";
+import { MCP_SOURCE_PRESETS } from "@rakazo/core";
 import { approvalEffectKey } from "@rakazo/core/node/approval-effect-key";
 import { describe, expect, it, vi } from "vitest";
 import {
@@ -15,7 +16,6 @@ import {
   applyMcpSourcePreset,
   InstalledConnectorProvider,
   importOpenApiDocument,
-  MCP_SOURCE_PRESETS,
   prepareApiInstall,
   verifyMcpInstall,
 } from "./installed-connectors.js";

@@ -4,7 +4,7 @@ import type {
   McpSourcePreset,
   PluginMarketplaceEntry,
 } from "@rakazo/contracts";
-import { CATALOG_SEARCH_QUERY_MAX_LENGTH, SUBMIT_PLUGIN_URL } from "@rakazo/contracts";
+import { SUBMIT_PLUGIN_URL } from "@rakazo/contracts";
 import type { CatalogMcpServer } from "@rakazo/core";
 import {
   addedMcpEndpoints,
@@ -15,6 +15,7 @@ import {
   isRecommendedPlugin,
   managedAppFor,
   OTHER_PLUGINS,
+  publicMcpCatalogQuery,
 } from "@rakazo/core";
 import { Button, SectionHeading, Spinner } from "@rakazo/ui-web";
 import { useQuery } from "@tanstack/react-query";
@@ -74,16 +75,14 @@ export function PluginBrowse({
     searching,
     pluginMatches,
   } = browse;
-  const term = query.trim();
+  const search = publicMcpCatalogQuery(query, publicTerm);
+  const term = search.input.query;
   const directReady = !state.loading && !state.mcpQuery.isPending;
-  const browsePublic =
-    directReady && !category && term.length >= 2 && term.length <= CATALOG_SEARCH_QUERY_MAX_LENGTH;
-  const searchingPublic = browsePublic && publicTerm === term;
+  const browsePublic = directReady && !category && search.eligible;
+  const searchingPublic = browsePublic && search.requested;
   const queries = useSpaceQueries();
   const publicCatalog = useQuery({
-    ...queries.capabilities.catalogSearch.queryOptions({
-      input: { query: term, usePublicCatalog: true },
-    }),
+    ...queries.capabilities.catalogSearch.queryOptions({ input: search.input }),
     enabled: searchingPublic,
     staleTime: 60_000,
     retry: false,
@@ -95,12 +94,11 @@ export function PluginBrowse({
       : featuredMcpPresets(sourcePresets, term).filter(
           ({ name }) => !managedNames.has(name.toLowerCase()),
         );
-  const listedNames = new Set([...managedNames, ...presets.map(({ name }) => name.toLowerCase())]);
   const remoteMatches =
     searchingPublic && publicCatalog.data
-      ? catalogMcpServers(publicCatalog.data.results).filter(
-          ({ name }) => !listedNames.has(name.toLowerCase()),
-        )
+      ? catalogMcpServers(publicCatalog.data.results, {
+          excludedNames: [...managedNames, ...presets.map(({ name }) => name)],
+        })
       : [];
   const addedEndpoints = addedMcpEndpoints(state.sources, state.mcpServers);
   const waitingForPublic = searchingPublic && publicCatalog.isFetching;
@@ -405,7 +403,7 @@ export function PluginBrowse({
               {waitingForPublic ? (
                 <Trans>Searching…</Trans>
               ) : (
-                <Trans>Search MCP servers for “{term}”</Trans>
+                <Trans>Search public MCP directory for “{term}”</Trans>
               )}
             </Button>
           ) : null}

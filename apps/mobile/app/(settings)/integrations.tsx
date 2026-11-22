@@ -656,9 +656,7 @@ export default function Integrations() {
                     query={query}
                     hidden={Boolean(category)}
                     noLocalMatch={noMatch && directPresets.length === 0}
-                    excludedNames={[...catalog, ...directPresets].map(({ name }) =>
-                      name.toLowerCase(),
-                    )}
+                    excludedNames={[...catalog, ...directPresets].map(({ name }) => name)}
                     addedEndpoints={addedEndpoints}
                     onOpenMcp={startCatalogMcp}
                     onChanged={(serverId) => {
