@@ -57,6 +57,8 @@ export type UsageBreakdownInput = z.infer<typeof UsageBreakdownInputSchema>;
 export const UsageBreakdownModelSchema = UsageTotalsSchema.required().extend({
   provider: z.string(),
   model: z.string(),
+  /** Input read from the provider's cache, which `inputTokens` leaves out; null when any call lacks the figure. */
+  cachedTokens: z.number().nullable(),
 });
 export type UsageBreakdownModel = z.infer<typeof UsageBreakdownModelSchema>;
 
@@ -86,7 +88,11 @@ export const UsageBreakdownSchema = z.object({
   bots: z.array(UsageBreakdownBotSchema),
   /** Every model used in the range, for the model selector. */
   modelOptions: z.array(z.object({ provider: z.string(), model: z.string() })),
-  totals: UsageTotalsSchema.required().extend({ runs: z.number() }),
+  totals: UsageTotalsSchema.required().extend({
+    runs: z.number(),
+    /** The token total adds up only the calls that reported a count; some did not. */
+    tokensPartial: z.boolean().optional(),
+  }),
   models: z.array(UsageBreakdownModelSchema),
   /** One point per day, or per month for an all-time history longer than two months. */
   overTimeUnit: z.enum(["day", "month"]),

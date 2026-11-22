@@ -16,8 +16,8 @@ import {
 } from "@rakazo/adapter-kit";
 import type { MessageBlock } from "@rakazo/contracts";
 import {
+  BOT_MESSAGE_MAX_HOPS,
   botMessageHopExhausted,
-  botMessageMaxHops,
   chatAppAskText,
   chatAppTakeoverText,
   nextBotMessageHop,
@@ -1199,7 +1199,7 @@ export class MessagingDelivery {
             if (error instanceof CrossSpaceCommunicationBlockedError) return null;
             throw error;
           });
-        if (event) await events.notify(peerThread.id, event.seq).catch(() => undefined);
+        if (event) await events.notify(peerThread.id, event.seq);
       }
     }
   }
@@ -1325,8 +1325,7 @@ export class MessagingDelivery {
     const { prisma } = this.deps;
     let current: string | null = sourceMessageId;
     const visited = new Set<string>();
-    const maxHops = botMessageMaxHops();
-    for (let depth = 0; current && depth <= maxHops; depth += 1) {
+    for (let depth = 0; current && depth <= BOT_MESSAGE_MAX_HOPS; depth += 1) {
       const source = await prisma.message.findUnique({
         where: { id: current },
         select: { replyTo: { select: { runId: true } } },

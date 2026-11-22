@@ -907,7 +907,7 @@ async function postComputerNote(
         });
         return event.seq;
       }, THREAD_LOCK_TRANSACTION_OPTIONS);
-      if (seq !== undefined) await deps.events.notify(threadId, seq).catch(() => undefined);
+      if (seq !== undefined) await deps.events.notify(threadId, seq);
     } catch (cause) {
       // A competing worker already wrote the same nonce. Other failures are retried next tick.
       if (!isUniqueViolation(cause)) {

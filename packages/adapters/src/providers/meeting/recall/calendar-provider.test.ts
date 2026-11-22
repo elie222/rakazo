@@ -113,3 +113,15 @@ describe("calendar provider over its offline HTTP protocol", () => {
     ).toBeNull();
   });
 });
+
+describe("Recall calendar title emoji limit", () => {
+  it("does not cut an emoji in half in an event title", async () => {
+    const emulator = new RecallCalendarEmulator(now);
+    const calendarId = await connect(emulator, "calendar-one");
+    const [event] = await eventsFor(emulator, calendarId);
+    emulator.revision(event!.id, { raw: { summary: `${"a".repeat(299)}😀 tail` } });
+    expect(await emulator.provider.getEvent(event!.id, signal)).toMatchObject({
+      title: "a".repeat(299),
+    });
+  });
+});

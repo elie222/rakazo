@@ -23,6 +23,7 @@ import {
   backOffRoutineAfterAccountError,
   modelAccountRefusal,
 } from "../../routines/routine-backoff.js";
+import { pauseRoutineAfterRepeatedFailures } from "../../routines/routine-failure-pause.js";
 import { isStrategicInitiativeRun } from "../../routines/strategic-initiative.js";
 import { rejectedRequestsOf } from "../../runtime/provider-request-shape.js";
 import { returnHelperOutcome } from "../../tasks/background-helpers.js";
@@ -235,6 +236,25 @@ export async function failRun(
     );
   }
   const retrying = !failed.continuationRunId && (await scheduleRoutineRetry(deps, run, error));
+  // The user's own model connection failing, or a spent allowance, is theirs to fix; a retry
+  // still due gets its chance first.
+  if (
+    run.trigger === "routine" &&
+    run.routineId &&
+    !retrying &&
+    ((model.ownCredential &&
+      (error instanceof TransientModelError ||
+        error instanceof ModelAccountError ||
+        error instanceof ModelOutputError)) ||
+      error instanceof SandboxAllowanceUsedError)
+  ) {
+    await pauseRoutineAfterRepeatedFailures(deps, {
+      routineId: run.routineId,
+      userId: run.userId,
+      spaceId: run.spaceId,
+      botId: bot.id,
+    });
+  }
   // Nobody asked for a check-in, so its failure is not news to the user.
   if (
     runSendsFinishNotification(run.trigger) &&
