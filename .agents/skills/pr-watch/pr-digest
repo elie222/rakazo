@@ -92,7 +92,7 @@ get() {
         return 0
         ;;
       304)
-        if [ -s "$file" ]; then tail -n +2 "$file"; return 0; fi
+        if [ -s "$file" ]; then touch "$file"; tail -n +2 "$file"; return 0; fi
         ;;
       403|429)
         wait=$(rate_limit_wait "$headers") || return 1
@@ -504,6 +504,9 @@ main() {
 
   command -v gh >/dev/null || die "gh not found"
   command -v jq >/dev/null || die "jq not found"
+  # Check-run and status URLs name a head SHA, so their cached answers go stale
+  # with each push; drop any not used for a day.
+  [ -d "$CACHE_DIR" ] && find "$CACHE_DIR" -type f -mtime +0 -delete 2>/dev/null
 
   local repo viewer
   repo=$(gh repo view --json nameWithOwner --jq .nameWithOwner 2>/dev/null) || die "not a GitHub repo"
