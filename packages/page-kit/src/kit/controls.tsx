@@ -271,7 +271,7 @@ export function Select({
 }) {
   const id = useId();
   const items = optionsOf(options);
-  const current = value === undefined || value === null ? null : String(value);
+  const current = value === undefined || value === null ? undefined : String(value);
   const chosen = items.some((item) => item.value === current);
   // An empty string can be a real choice, so the placeholder needs its own value.
   const placeholderValue = `${id}placeholder`;
