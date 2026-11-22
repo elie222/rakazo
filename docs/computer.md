@@ -8,7 +8,8 @@ that needs more than a chat.
 On web and desktop, select the bot's name at the top of its chat and find **Computer** in the bot
 panel. The preview shows the running screen beside the chat. Choose **Open** on the preview for a
 full-window view, or **Wake** if the computer is asleep. The computer also starts when the bot needs
-it and goes to sleep when idle.
+it and goes to sleep when idle. In the full-window view, choose **Save screenshot** to download a
+picture of what the screen shows right now, such as a code or an error you want to keep.
 
 On mobile, tap the bot's name at the top of its chat to open its profile, then tap **Computer**.
 
@@ -56,8 +57,8 @@ when the computer is in an error state.
 ## Use your own computer
 
 In the [desktop app](./desktop-app.md), bots can also run commands and use apps on the computer the
-app is installed on. Turn on **Let bots use this computer** in **Settings → General** under
-**Computers**. This works with Rakazo Cloud, an HTTPS server you connect to, and a
+app is installed on. Turn on **Let bots use this computer** in **Settings → Computers** under
+**Your devices**. This works with Rakazo Cloud, an HTTPS server you connect to, and a
 loopback server.
 Using apps on screen works on Mac and Windows; on a Mac, allow Rakazo under **Accessibility** and
 **Screen Recording** in System Settings.

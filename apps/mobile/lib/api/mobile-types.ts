@@ -60,6 +60,7 @@ export type MobileMe = Pick<
   | "labs"
   | "labsAvailable"
   | "botAvatarSet"
+  | "chatPreferences"
   | "liveStatusLines"
 >;
 export type MobileModel = ModelCatalogEntry;

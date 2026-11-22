@@ -111,7 +111,7 @@ export async function holdRunForChat(deps: ExecutorDeps, run: ChatWaitingRun): P
         "run.id": run.id,
         "run.working_id": handed.workingRunId,
       });
-      await bestEffort("notify routine handover", deps.events.notify(handed.threadId, handed.seq));
+      await deps.events.notify(handed.threadId, handed.seq);
       if (deps.events.publishSpaceChange)
         await bestEffort(
           "publish routine handover",

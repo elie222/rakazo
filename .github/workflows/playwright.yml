@@ -238,9 +238,8 @@ jobs:
           (needs.heavy.result == 'success' || (inputs.e2e == 'false' && needs.heavy.result == 'skipped')) &&
           (needs.www-screenshots.result == 'success' || (inputs.www == 'false' && needs.www-screenshots.result == 'skipped'))
         }}
-    concurrency:
-      group: ${{ inputs.publish_report && 'playwright-publication' || format('playwright-{0}', github.run_id) }}
-      cancel-in-progress: false
+    outputs:
+      history_entry: ${{ steps.publish.outputs.history_entry }}
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
       # Only the report publisher needs the workspace; merging the shard reports needs Playwright alone.
@@ -353,6 +352,7 @@ jobs:
           retention-days: 7
           if-no-files-found: warn
       - name: Publish Playwright visual report
+        id: publish
         if: ${{ !cancelled() && inputs.publish_report }}
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.S3_ACCESS_KEY_ID }}
@@ -370,6 +370,7 @@ jobs:
           PLAYWRIGHT_SHA: ${{ github.sha }}
           PLAYWRIGHT_EVENT: ${{ github.event_name }}
           PLAYWRIGHT_BRANCH: ${{ github.ref_name }}
+          PLAYWRIGHT_UPDATE_HISTORY: "false"
         run: bash scripts/publish-playwright-report.sh
       - name: Fail when a shard, heavy spec, or homepage capture failed
         if: env.SUITES_PASSED != 'true'
@@ -382,3 +383,13 @@ jobs:
           echo "Heavy page-browser/pages finished with: $HEAVY_RESULT" >&2
           echo "Marketing homepage screenshots finished with: $WWW_RESULT" >&2
           exit 1
+
+  history:
+    needs: playwright
+    if: ${{ !cancelled() && inputs.publish_report && needs.playwright.outputs.history_entry != '' }}
+    uses: ./.github/workflows/publish-playwright-history.yml
+    with:
+      entry: ${{ needs.playwright.outputs.history_entry }}
+    secrets:
+      S3_ACCESS_KEY_ID: ${{ secrets.S3_ACCESS_KEY_ID }}
+      S3_SECRET_ACCESS_KEY: ${{ secrets.S3_SECRET_ACCESS_KEY }}

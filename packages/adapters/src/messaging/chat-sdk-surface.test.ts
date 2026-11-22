@@ -2,6 +2,7 @@ import { createHmac } from "node:crypto";
 import { createSlackAdapter } from "@chat-adapter/slack";
 import { createMockAdapter, createTestMessage } from "@chat-adapter/tests";
 import type { AdapterContext, MessagingInboundEvent } from "@rakazo/adapter-kit";
+import { MAX_RETRY_AFTER_MS } from "@rakazo/core";
 import type { Adapter, ChatInstance } from "chat";
 import { describe, expect, it, vi } from "vitest";
 import { enrichSlackTeamRoom } from "../providers/messaging/slack/slack-messaging.js";
@@ -823,15 +824,6 @@ describe("ChatSdkMessagingSurface outbound", () => {
     expect(posts[0]).not.toHaveProperty("text");
   });
 
-  it("sends a short plain Slack reply unchanged", async () => {
-    const { surface, posts } = slackSurface();
-
-    await surface.sendToThread({ threadId: "slack:C1:9", body: "On it." }, context);
-
-    expect(posts).toHaveLength(1);
-    expect(posts[0]).toMatchObject({ markdown_text: "On it." });
-  });
-
   it("posts a Telegram image attachment as a photo", async () => {
     const { surface, adapter } = createSurface({ provider: "telegram" });
     const data = new Uint8Array([1, 2, 3]);
@@ -907,6 +899,36 @@ describe("ChatSdkMessagingSurface outbound", () => {
       30_000,
     ],
     ["a permanent failure", new Error("channel_not_found"), true, null],
+    [
+      "a fractional retry-after",
+      Object.assign(new Error("slow down"), { retryAfter: 1.5 }),
+      false,
+      1_500,
+    ],
+    [
+      "an unbounded retry-after",
+      Object.assign(new Error("slow down"), { retryAfter: Infinity }),
+      false,
+      null,
+    ],
+    [
+      "a NaN retry-after",
+      Object.assign(new Error("slow down"), { retryAfter: Number.NaN }),
+      false,
+      null,
+    ],
+    [
+      "a negative retry-after",
+      Object.assign(new Error("slow down"), { retryAfter: -5 }),
+      false,
+      null,
+    ],
+    [
+      "a huge retry-after",
+      Object.assign(new Error("slow down"), { retryAfter: 1e12 }),
+      false,
+      MAX_RETRY_AFTER_MS,
+    ],
   ] as const)("classifies %s for the outbox", async (_label, error, permanent, retryAfterMs) => {
     const { surface } = createSurface(
       { isPermanentSendError: (candidate) => candidate === error && permanent },

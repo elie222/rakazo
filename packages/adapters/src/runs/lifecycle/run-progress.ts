@@ -135,7 +135,7 @@ export function canPostLongTaskHeadsUp(ctx: RunContext) {
   );
 }
 
-export function progressSinceBudgetStart(reply: ReplyState) {
+function progressSinceBudgetStart(reply: ReplyState) {
   return reply.midTurnProgressCount - reply.progressBudgetStart;
 }
 
@@ -163,6 +163,8 @@ export async function publishInterimMessage(ctx: RunContext, text: string, markU
   );
   reply.midTurnUserTexts.push(text);
   reply.publishedMidTurnUserMessage = true;
+  // Text held back earlier is older than what the person now has, so it is no reply.
+  reply.lastDiscardedMidTurnNarration = "";
   if (run.trigger === "messaging" && !ctx.source.channelId) {
     // Sent from here while the turn carries on; its rows' backup jobs cover a failed send.
     const delivery = deps.messagingDelivery;

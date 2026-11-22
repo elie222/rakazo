@@ -1,6 +1,7 @@
 import { useLingui } from "@lingui/react/macro";
 import type { Bot, Group, ThreadSnapshot } from "@rakazo/contracts";
 import { MEETING_CALENDAR_RETURN_PARAM } from "@rakazo/contracts";
+import { activeThreadRuns, isRunWorking } from "@rakazo/core";
 import { BotAvatar, Button, GroupAvatar } from "@rakazo/ui-web";
 import { Gift, Menu, Phone, Video } from "lucide-react";
 import { lazy, Suspense, useEffect, useState } from "react";
@@ -24,7 +25,8 @@ export function ChatHeader({
   voiceReady,
   inCall,
   panelOpen,
-  working,
+  // The chat's own runs, as the transcript counts them.
+  working = activeThreadRuns(activeSnapshot ?? null).some((run) => isRunWorking(run.status)),
   onOpenNavigation,
   onTogglePanel,
   onCall,
@@ -40,7 +42,7 @@ export function ChatHeader({
   inCall: boolean;
   panelOpen: boolean;
   /** A bot is working on this chat right now: a green dot sits on the avatar. */
-  working: boolean;
+  working?: boolean;
   onOpenNavigation: () => void;
   onTogglePanel: () => void;
   onCall: (bot: Bot) => void;
@@ -50,12 +52,16 @@ export function ChatHeader({
   const [inviteOpen, setInviteOpen] = useState(false);
   const macChrome = windowChromeKind(desktopBridge()) === "darwin";
   return (
-    <div className="pointer-events-none absolute inset-x-0 top-0 z-10 grid grid-cols-[1fr_minmax(0,auto)_1fr] items-center gap-2 px-3 py-3 md:px-[22px] [&_button]:pointer-events-auto">
+    <div
+      data-testid="chat-header"
+      className="pointer-events-none absolute inset-x-0 top-0 z-10 grid grid-cols-[1fr_minmax(0,auto)_1fr] items-center gap-2 px-3 py-3 md:px-[22px] [&_button]:pointer-events-auto"
+    >
       <div className="flex items-center">
         {macChrome ? <WindowChrome className="md:hidden" /> : null}
         <Button
           variant="floating"
           size="icon-lg"
+          data-navigation-trigger=""
           aria-label={t`Open navigation`}
           onClick={onOpenNavigation}
           className="app-no-drag md:hidden"

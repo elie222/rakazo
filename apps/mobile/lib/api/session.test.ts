@@ -12,14 +12,14 @@ import {
   clearSessionToken,
   currentSessionGeneration,
   loadSessionToken,
-  loadVerifiedIntegrationsScope,
+  loadVerifiedScope,
   registerSessionDiskCache,
   replaceSessionTokenIfCurrent,
   restoreSessionToken,
   rotateSessionTokenIfCurrent,
   saveRotatedSessionToken,
   saveSessionToken,
-  saveVerifiedIntegrationsScope,
+  saveVerifiedScope,
   snapshotSessionToken,
   subscribeSessionGeneration,
   tokenFromAuthResponse,
@@ -361,9 +361,9 @@ describe("password change token rotation", () => {
     };
 
     const next = await restart();
-    await next.saveVerifiedIntegrationsScope(0, scope);
+    await next.saveVerifiedScope(0, scope);
     expect(disk.get("rakazo.session_token")).toBe("fake-new");
-    await expect(next.loadVerifiedIntegrationsScope()).resolves.toEqual(scope);
+    await expect(next.loadVerifiedScope()).resolves.toEqual(scope);
   });
 
   it("does not adopt a rotation recorded for a different saved token", async () => {
@@ -465,23 +465,23 @@ describe("verified integration session scope", () => {
     await saveSessionToken("fake-session-a");
   });
   it("loads the scope only for the exact stored session", async () => {
-    await saveVerifiedIntegrationsScope(currentSessionGeneration(), scope);
-    expect(await loadVerifiedIntegrationsScope()).toEqual(scope);
+    await saveVerifiedScope(currentSessionGeneration(), scope);
+    expect(await loadVerifiedScope()).toEqual(scope);
     disk.set("rakazo.session_token", "fake-session-b");
-    expect(await loadVerifiedIntegrationsScope()).toBeNull();
+    expect(await loadVerifiedScope()).toBeNull();
   });
   it.each(["sign-out", "replacement", "restore"])("invalidates the scope on %s", async (change) => {
-    await saveVerifiedIntegrationsScope(currentSessionGeneration(), scope);
+    await saveVerifiedScope(currentSessionGeneration(), scope);
     if (change === "sign-out") await clearSessionToken();
     if (change === "replacement") await saveSessionToken("fake-session-a");
     if (change === "restore") await restoreSessionToken("fake-session-a");
-    expect(await loadVerifiedIntegrationsScope()).toBeNull();
+    expect(await loadVerifiedScope()).toBeNull();
     expect(disk.has("rakazo.integrations-scope")).toBe(false);
   });
   it("rejects a late verification after session replacement", async () => {
     const generation = currentSessionGeneration();
     await saveSessionToken("fake-session-b");
-    await saveVerifiedIntegrationsScope(generation, scope);
+    await saveVerifiedScope(generation, scope);
     expect(disk.has("rakazo.integrations-scope")).toBe(false);
   });
   it("serializes an in-flight scope write before sign-out deletes it", async () => {
@@ -490,18 +490,18 @@ describe("verified integration session scope", () => {
       if (key === "rakazo.integrations-scope") await pending.promise;
       disk.set(key, value);
     });
-    const saving = saveVerifiedIntegrationsScope(currentSessionGeneration(), scope);
+    const saving = saveVerifiedScope(currentSessionGeneration(), scope);
     await Promise.resolve();
     await Promise.resolve();
     const clearing = clearSessionToken();
     pending.resolve();
     await Promise.all([saving, clearing]);
     expect(disk.has("rakazo.integrations-scope")).toBe(false);
-    expect(await loadVerifiedIntegrationsScope()).toBeNull();
+    expect(await loadVerifiedScope()).toBeNull();
   });
   it("treats malformed stored scopes as misses", async () => {
-    await saveVerifiedIntegrationsScope(currentSessionGeneration(), scope);
+    await saveVerifiedScope(currentSessionGeneration(), scope);
     disk.set("rakazo.integrations-scope", "{");
-    expect(await loadVerifiedIntegrationsScope()).toBeNull();
+    expect(await loadVerifiedScope()).toBeNull();
   });
 });

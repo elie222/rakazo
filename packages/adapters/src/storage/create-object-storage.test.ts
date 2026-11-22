@@ -32,4 +32,33 @@ describe("createObjectStorage", () => {
       /OBJECT_STORAGE_PROTOCOL/,
     );
   });
+
+  it("refuses an Entra kind under the S3 protocol", () => {
+    // Without this guard the S3 client would sign its requests with the Entra secret, or fail
+    // on an unrelated missing-field message, when all that is wrong is the protocol line.
+    expect(() =>
+      createObjectStorage({
+        ...base,
+        OBJECT_STORAGE_AUTH: "managed-identity",
+      }),
+    ).toThrow(/OBJECT_STORAGE_AUTH applies only with OBJECT_STORAGE_PROTOCOL=azure-blob/);
+    expect(() =>
+      createObjectStorage({
+        ...base,
+        OBJECT_STORAGE_AUTH: "CLIENT-SECRET",
+      }),
+    ).toThrow(/OBJECT_STORAGE_AUTH applies only with OBJECT_STORAGE_PROTOCOL=azure-blob/);
+    expect(createObjectStorage({ ...base, OBJECT_STORAGE_AUTH: "account-key" })).toBeInstanceOf(
+      S3ObjectStorage,
+    );
+  });
+
+  it("ignores the auth kind when storage is off", () => {
+    expect(
+      createObjectStorage({
+        OBJECT_STORAGE_PROTOCOL: "s3",
+        OBJECT_STORAGE_AUTH: "managed-identity",
+      }),
+    ).toBeUndefined();
+  });
 });

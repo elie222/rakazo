@@ -2,9 +2,10 @@ import type { MessageAuthor, MessageBlock, ReplyPreview } from "@rakazo/contract
 import { MessageAuthorSchema, ReplyPreviewSchema } from "@rakazo/contracts";
 import { isQuestionAskBlock } from "../asks/ask-kind.js";
 import { displayName } from "../bots/display-name.js";
+import type { ThreadItem, VoiceChatMessage } from "../calls/voice-chat-groups.js";
 import { plainTextFromMarkdown } from "./markdown-plain.js";
 import { messageReaction } from "./message-reactions.js";
-import { isDeliveryMessage } from "./message-visibility.js";
+import { isDeliveryMessage, isPeerReceiptBlocks } from "./message-visibility.js";
 
 /** Bound the source considered when deriving a reply excerpt. */
 export const MAX_QUOTABLE_SOURCE_LENGTH = 100_000;
@@ -59,6 +60,44 @@ export function otherAuthor(
   meId: string | undefined,
 ): MessageAuthor | undefined {
   return author && meId && author.id !== meId ? author : undefined;
+}
+
+type SenderMessage = VoiceChatMessage & { author?: MessageAuthor; botId?: string };
+
+/** Later messages in a visible sender group do not need another sender header. */
+export function continuedSenderMessageIds(
+  items: readonly ThreadItem<SenderMessage>[],
+  separatorIds: ReadonlySet<string>,
+  unreadDividerId: string | null,
+  canShowSender?: (message: SenderMessage) => boolean,
+): Set<string> {
+  const continued = new Set<string>();
+  let previousRole: string | undefined;
+  let previousSender: string | undefined;
+  for (const item of items) {
+    if (
+      item.kind === "voiceChat" ||
+      isPeerReceiptBlocks(item.message.blocks) ||
+      canShowSender?.(item.message) === false
+    ) {
+      previousSender = undefined;
+      continue;
+    }
+    const { id, role, botId, author } = item.message;
+    const sender = role === "bot" ? botId : role === "user" ? author?.id : undefined;
+    if (
+      sender &&
+      sender === previousSender &&
+      role === previousRole &&
+      !separatorIds.has(id) &&
+      id !== unreadDividerId
+    ) {
+      continued.add(id);
+    }
+    previousRole = role;
+    previousSender = sender;
+  }
+  return continued;
 }
 
 /**

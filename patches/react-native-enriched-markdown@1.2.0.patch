@@ -1,0 +1,137 @@
+diff --git a/android/src/main/java/com/swmansion/enriched/markdown/segments/CodeBlockContainerView.kt b/android/src/main/java/com/swmansion/enriched/markdown/segments/CodeBlockContainerView.kt
+--- a/android/src/main/java/com/swmansion/enriched/markdown/segments/CodeBlockContainerView.kt
++++ b/android/src/main/java/com/swmansion/enriched/markdown/segments/CodeBlockContainerView.kt
+@@ -21,7 +21,6 @@
+ import android.view.MotionEvent
+ import android.view.View
+ import android.widget.FrameLayout
+-import android.widget.HorizontalScrollView
+ import android.widget.ImageView
+ import androidx.appcompat.widget.AppCompatImageButton
+ import androidx.appcompat.widget.AppCompatTextView
+@@ -137,7 +136,7 @@
+     }
+ 
+   private val scrollView =
+-    HorizontalScrollView(context).apply {
++    MarkdownHorizontalScrollView(context).apply {
+       isHorizontalScrollBarEnabled = true
+       overScrollMode = View.OVER_SCROLL_NEVER
+       if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+diff --git a/android/src/main/java/com/swmansion/enriched/markdown/segments/MarkdownHorizontalScrollView.kt b/android/src/main/java/com/swmansion/enriched/markdown/segments/MarkdownHorizontalScrollView.kt
+new file mode 100644
+--- /dev/null
++++ b/android/src/main/java/com/swmansion/enriched/markdown/segments/MarkdownHorizontalScrollView.kt
+@@ -0,0 +1,78 @@
++package com.swmansion.enriched.markdown.segments
++
++import android.content.Context
++import android.view.MotionEvent
++import android.view.View
++import android.view.ViewConfiguration
++import android.widget.HorizontalScrollView
++import kotlin.math.abs
++import kotlin.math.max
++
++/** Give a wide block the first chance to classify a drag inside a vertical scroller. */
++internal class MarkdownHorizontalScrollView(context: Context) : HorizontalScrollView(context) {
++  private enum class Drag { Pending, Horizontal, Vertical }
++
++  private val touchSlop = ViewConfiguration.get(context).scaledTouchSlop
++  private var drag = Drag.Vertical
++  private var downX = 0f
++  private var downY = 0f
++
++  init {
++    // Keep the viewport origin at the physical left, independently of cell text direction.
++    layoutDirection = View.LAYOUT_DIRECTION_LTR
++  }
++
++  override fun dispatchTouchEvent(event: MotionEvent): Boolean {
++    when (event.actionMasked) {
++      MotionEvent.ACTION_DOWN -> {
++        downX = event.x
++        downY = event.y
++        val scrollable = canScrollHorizontally(-1) || canScrollHorizontally(1)
++        drag = if (scrollable) Drag.Pending else Drag.Vertical
++        // A vertical parent sees MOVE before its child. Waiting until MOVE to ask
++        // would let the parent intercept diagonals before we could classify them.
++        if (scrollable) parent?.requestDisallowInterceptTouchEvent(true)
++      }
++      MotionEvent.ACTION_POINTER_DOWN -> {
++        // Multi-touch before the drag is classified: leave the gesture to the chat.
++        if (drag == Drag.Pending) {
++          drag = Drag.Vertical
++          parent?.requestDisallowInterceptTouchEvent(false)
++        }
++      }
++      MotionEvent.ACTION_MOVE -> {
++        if (drag == Drag.Pending) {
++          val dx = abs(event.x - downX)
++          val dy = abs(event.y - downY)
++          if (max(dx, dy) > touchSlop) {
++            // A finger moving left scrolls the content right.
++            val canFollow = canScrollHorizontally(if (event.x < downX) 1 else -1)
++            drag = if (dx >= dy && canFollow) Drag.Horizontal else Drag.Vertical
++            if (drag == Drag.Vertical) parent?.requestDisallowInterceptTouchEvent(false)
++          }
++        }
++      }
++    }
++
++    val handled = super.dispatchTouchEvent(event)
++    if (event.actionMasked == MotionEvent.ACTION_UP || event.actionMasked == MotionEvent.ACTION_CANCEL) {
++      if (drag != Drag.Vertical) parent?.requestDisallowInterceptTouchEvent(false)
++      drag = Drag.Vertical
++    }
++    return handled
++  }
++
++  override fun onInterceptTouchEvent(event: MotionEvent): Boolean =
++    if (event.actionMasked == MotionEvent.ACTION_MOVE && drag != Drag.Horizontal) {
++      false
++    } else {
++      super.onInterceptTouchEvent(event)
++    }
++
++  override fun onTouchEvent(event: MotionEvent): Boolean =
++    if (event.actionMasked == MotionEvent.ACTION_MOVE && drag != Drag.Horizontal) {
++      true
++    } else {
++      super.onTouchEvent(event)
++    }
++}
+diff --git a/android/src/main/java/com/swmansion/enriched/markdown/segments/TableContainerView.kt b/android/src/main/java/com/swmansion/enriched/markdown/segments/TableContainerView.kt
+--- a/android/src/main/java/com/swmansion/enriched/markdown/segments/TableContainerView.kt
++++ b/android/src/main/java/com/swmansion/enriched/markdown/segments/TableContainerView.kt
+@@ -19,7 +19,6 @@
+ import android.view.MotionEvent
+ import android.view.View
+ import android.widget.FrameLayout
+-import android.widget.HorizontalScrollView
+ import androidx.core.view.ViewCompat
+ import com.swmansion.enriched.markdown.accessibility.AccessibilityLabels
+ import com.swmansion.enriched.markdown.parser.MarkdownASTNode
+@@ -70,7 +69,7 @@
+   var dynamicProps: DynamicBlockProps = DynamicBlockProps()
+ 
+   private val scrollView =
+-    HorizontalScrollView(context).apply {
++    MarkdownHorizontalScrollView(context).apply {
+       isHorizontalScrollBarEnabled = true
+       overScrollMode = View.OVER_SCROLL_NEVER
+       importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+@@ -383,13 +382,6 @@
+       } else {
+         0f
+       }
+-
+-    if (isRtl) {
+-      val effectiveWidth = if (tableOverflows) contentWidth.toFloat() else viewWidth.toFloat()
+-      if (totalTableWidth > effectiveWidth) {
+-        scrollView.scrollTo((totalTableWidth - effectiveWidth).toInt(), 0)
+-      }
+-    }
+   }
+ 
+   private fun showContextMenu(anchor: View): Boolean {

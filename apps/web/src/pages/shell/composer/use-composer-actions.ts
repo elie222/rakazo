@@ -653,9 +653,8 @@ export function useComposerActions({
     clearReply,
     sending,
     sentCount,
-    sentTexts,
-    unsentCount,
-    unsentTexts,
+    /** What the transcript follows this tab's sends by: to scroll to them and animate them in. */
+    sendEntrance: { followRequest: sentCount, sentTexts, unsentRequests: unsentCount, unsentTexts },
     sendMessage,
     stopRun,
     answerMessage,

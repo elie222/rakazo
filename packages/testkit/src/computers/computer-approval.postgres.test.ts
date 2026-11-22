@@ -3,7 +3,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { ComposioConnector, FakeComposioClient, FakeSandboxProvider } from "@rakazo/adapters";
-import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { discardBotIntroRun } from "../discard-bot-intro.js";
 import { sessionCookieHeader } from "../index.js";
 import type { ModelEmulatorStep } from "../model-emulator.js";
@@ -15,12 +15,11 @@ const databaseAvailable = process.env.VERIFY_DATABASE === "1" && Boolean(process
 const fixtureOrigin = "http://127.0.0.1:5173";
 
 describe.skipIf(!databaseAvailable)("offline Pi computer approval", () => {
-  beforeAll(() => {
+  beforeEach(() => {
     // Use the existing compatible-endpoint capability declaration so the real
     // executor exposes computer tools without mocking its model vision gate.
     vi.stubEnv("RAKAZO_OPENAI_COMPATIBLE_VISION_MODELS", "offline-fixture");
   });
-  afterAll(() => vi.unstubAllEnvs());
 
   it.each(["allow", "deny"] as const)(
     "%s enforces the persisted computer action before any sandbox effect",

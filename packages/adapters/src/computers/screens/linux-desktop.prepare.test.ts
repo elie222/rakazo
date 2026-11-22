@@ -1,11 +1,46 @@
 import { execFileSync, spawnSync } from "node:child_process";
-import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { BROWSER_POLICY, PREPARE_LINUX_DESKTOP } from "./linux-desktop.js";
 
-function prepareDesktop({ repairExitCode = 0, installExitCode = 0, broken = true } = {}) {
+const DESKTOP_TOOLS = [
+  "python3",
+  "flock",
+  "Xvfb",
+  "xdpyinfo",
+  "x11vnc",
+  "fluxbox",
+  "xdotool",
+  "wmctrl",
+  "scrot",
+  "xterm",
+  "websockify",
+];
+
+/** Points the script's absolute noVNC paths into `dir`, so the host's own install never counts. */
+function withNoVncIn(script: string, dir: string) {
+  return script
+    .replaceAll("/usr/share/novnc", path.join(dir, "novnc"))
+    .replaceAll("/opt/noVNC", path.join(dir, "opt-novnc"));
+}
+
+function prepareDesktop({
+  repairExitCode = 0,
+  installExitCode = 0,
+  broken = true,
+  installsTools = true,
+  onlyWebsockifyMissing = false,
+} = {}) {
   const bin = mkdtempSync(path.join(tmpdir(), "rakazo-prepare-"));
   try {
     const calls = path.join(bin, "calls");
@@ -20,7 +55,8 @@ function prepareDesktop({ repairExitCode = 0, installExitCode = 0, broken = true
       "apt-get": `#!/bin/sh
 echo "$*" >> ${JSON.stringify(calls)}
 case " $* " in
-  *" update "*) exit 0 ;;
+  *" update "*" --allow-releaseinfo-change-label "*) exit 0 ;;
+  *" update "*|*" --allow-releaseinfo-change-label "*) exit 100 ;;
 esac
 case " $* " in *" --no-remove "*) ;; *) exit 99 ;; esac
 case " $* " in
@@ -35,8 +71,28 @@ if [ ! -e ${JSON.stringify(repaired)} ]; then
 fi
 [ ${installExitCode} -eq 0 ] || exit ${installExitCode}
 : > ${JSON.stringify(installed)}
+${
+  installsTools
+    ? `
+install_tool() {
+  printf '#!/bin/sh\\n' > ${JSON.stringify(bin)}/"$1"
+  /bin/chmod 755 ${JSON.stringify(bin)}/"$1"
+}
+for tool in ${DESKTOP_TOOLS.filter((tool) => tool !== "websockify").join(" ")}; do install_tool "$tool"; done
+case " $* " in *" python3-websockify "*) install_tool websockify ;; esac
+/bin/mkdir -p ${JSON.stringify(path.join(bin, "novnc"))}
+`
+    : ""
+}
 `,
     };
+    if (onlyWebsockifyMissing) {
+      mkdirSync(path.join(bin, "novnc"));
+      for (const tool of DESKTOP_TOOLS) {
+        if (tool === "websockify") continue;
+        writeFileSync(path.join(bin, tool), "#!/bin/sh\n", { mode: 0o755 });
+      }
+    }
     for (const [name, script] of Object.entries(fakes)) {
       writeFileSync(path.join(bin, name), script);
       chmodSync(path.join(bin, name), 0o755);
@@ -46,9 +102,12 @@ fi
     // assertions describe the script, not the host.
     const fontPath = path.join(bin, "NotoColorEmoji.ttf");
     writeFileSync(fontPath, "");
-    const prepare = PREPARE_LINUX_DESKTOP.replaceAll(
-      "/usr/share/fonts/truetype/noto/NotoColorEmoji.ttf",
-      fontPath,
+    const prepare = withNoVncIn(
+      PREPARE_LINUX_DESKTOP.replaceAll(
+        "/usr/share/fonts/truetype/noto/NotoColorEmoji.ttf",
+        fontPath,
+      ),
+      bin,
     );
     const result = spawnSync("/bin/sh", ["-c", prepare], {
       env: { PATH: bin },
@@ -75,6 +134,18 @@ describe("provider desktop preparation", () => {
     expect(result.calls[3]).toContain("xvfb");
   });
 
+  it("reinstalls missing tools, since a restored disk can list a package whose files are gone", () => {
+    const result = prepareDesktop({ broken: false });
+    expect(result.calls[1]).toMatch(/ install .*--reinstall --no-remove .*websockify/);
+  });
+
+  it("reinstalls the package that owns the websockify executable", () => {
+    const result = prepareDesktop({ broken: false, onlyWebsockifyMissing: true });
+    expect(result.status, result.stderr).toBe(0);
+    expect(result.calls).toHaveLength(2);
+    expect(result.calls[1]).toMatch(/--reinstall --no-remove websockify python3-websockify$/);
+  });
+
   it("waits for another preparation of the same computer before checking its tools", () => {
     const lock = PREPARE_LINUX_DESKTOP.indexOf("flock 9");
     expect(lock).toBeGreaterThan(-1);
@@ -93,6 +164,12 @@ describe("provider desktop preparation", () => {
     expect(result.status).toBe(100);
     expect(result.installed).toBe(false);
     expect(result.calls).toHaveLength(4);
+  });
+
+  it("fails, naming the tools, when an install it reported as done left them out", () => {
+    const result = prepareDesktop({ broken: false, installsTools: false });
+    expect(result.status).toBe(1);
+    expect(result.stderr).toMatch(/desktop tools still missing after install:.*websockify/);
   });
 
   it("does not repair dependencies when the first install succeeds", () => {
@@ -134,29 +211,19 @@ describe("provider desktop preparation", () => {
         // A broken package manager: installs fail, as on images with unmet dependencies.
         "apt-get": `#!/bin/sh\necho "$*" >> ${JSON.stringify(calls)}\ncase "$*" in *fonts-noto-color-emoji*) exit 100;; esac\n`,
       };
-      for (const tool of [
-        "python3",
-        "flock",
-        "Xvfb",
-        "xdpyinfo",
-        "x11vnc",
-        "fluxbox",
-        "xdotool",
-        "wmctrl",
-        "scrot",
-        "xterm",
-        "websockify",
-      ]) {
-        fakes[tool] = "#!/bin/sh\n";
-      }
+      for (const tool of DESKTOP_TOOLS) fakes[tool] = "#!/bin/sh\n";
       for (const [name, script] of Object.entries(fakes)) {
         writeFileSync(path.join(bin, name), script);
         chmodSync(path.join(bin, name), 0o755);
       }
+      mkdirSync(path.join(bin, "novnc"));
       // The host may have the font installed; point the check at a file that never exists.
-      const prepare = PREPARE_LINUX_DESKTOP.replaceAll(
-        "/usr/share/fonts/truetype/noto/NotoColorEmoji.ttf",
-        path.join(bin, "NotoColorEmoji.ttf"),
+      const prepare = withNoVncIn(
+        PREPARE_LINUX_DESKTOP.replaceAll(
+          "/usr/share/fonts/truetype/noto/NotoColorEmoji.ttf",
+          path.join(bin, "NotoColorEmoji.ttf"),
+        ),
+        bin,
       );
       const result = spawnSync("/bin/sh", ["-c", prepare], {
         env: { PATH: bin },
@@ -190,7 +257,7 @@ describe("provider desktop preparation", () => {
       });
       expect(result.status).not.toBe(0);
       expect(readFileSync(calls, "utf8").trim().split("\n")).toEqual(
-        Array.from({ length: 12 }, () => "update -qq"),
+        Array.from({ length: 12 }, () => "update -qq --allow-releaseinfo-change-label"),
       );
       expect(result.stderr).toContain("Could not get lock");
     } finally {
@@ -218,7 +285,9 @@ describe("provider desktop preparation", () => {
         encoding: "utf8",
       });
       expect(result.status).not.toBe(0);
-      expect(readFileSync(calls, "utf8").trim()).toBe("update -qq");
+      expect(readFileSync(calls, "utf8").trim()).toBe(
+        "update -qq --allow-releaseinfo-change-label",
+      );
     } finally {
       rmSync(bin, { recursive: true, force: true });
     }

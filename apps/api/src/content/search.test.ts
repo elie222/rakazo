@@ -1,7 +1,6 @@
 import type { Actor } from "@rakazo/contracts";
 import { GROUP_MEMBER_MIN } from "@rakazo/contracts";
-import type { PrismaClient } from "@rakazo/db";
-import { Prisma } from "@rakazo/db";
+import type { Prisma, PrismaClient } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
 import { querySpaceSearch } from "./search.js";
 
@@ -174,8 +173,7 @@ it("resolves active group eligibility once for names, artifacts, and messages", 
     where: { spaceId: actor.spaceId, groupId: { in: ["group-test"] } },
     take: 25,
   });
-  const [strings, ...values] = prisma.$queryRaw.mock.calls[2]!;
-  const groupMessageQuery = Prisma.sql(strings, ...values);
+  const groupMessageQuery = prisma.$queryRaw.mock.calls[2]?.[0];
   expect(groupMessageQuery.text).toContain("AND g.id IN ($2)");
   expect(groupMessageQuery.values[1]).toBe("group-test");
 });
@@ -287,14 +285,12 @@ describe("cancelled search", () => {
 it("finds text stored beside entries that are not blocks, in a bot chat and in a group", async () => {
   const { prisma } = fixture(0);
   const blocks = [{ text: "no kind" }, { kind: "text", text: "the quarterly report" }, null];
-  // The message scans are tagged templates: their first argument is the SQL's literal parts.
-  prisma.$queryRaw.mockImplementation(async (sql: readonly string[] | object) => {
-    const text = Array.isArray(sql) ? sql.join("") : "";
-    if (text.includes('b.id AS "botId"'))
+  prisma.$queryRaw.mockImplementation(async (sql: Prisma.Sql) => {
+    if (sql.text.includes('b.id AS "botId"'))
       return [
         { id: "message-1", threadId: "thread-1", seq: 3, blocks, botId: "bot-1", botName: "Bot" },
       ];
-    if (text.includes('g.id AS "groupId"'))
+    if (sql.text.includes('g.id AS "groupId"'))
       return [
         { id: "message-2", threadId: "thread-2", seq: 4, blocks, groupId: "g-1", groupName: "G" },
       ];

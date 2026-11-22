@@ -1,5 +1,6 @@
 import { ph, t } from "@lingui/core/macro";
 import type { AiDataUse, AiRecipient } from "@rakazo/contracts";
+import { pageRevisionDataDisclosure } from "@rakazo/i18n/page-review";
 import { Alert } from "react-native";
 
 /** What a provider receives for one use of AI data, in full, for the settings screen. */
@@ -27,6 +28,15 @@ function consentSummary(use: AiDataUse): string {
 }
 
 export function promptAiConsent(recipient: AiRecipient): Promise<boolean> {
+  return promptDataSharing(recipient.name, consentSummary(recipient.use));
+}
+
+export function promptPageRevisionConsent(recipient: AiRecipient): Promise<boolean> {
+  const withdrawal = t`To turn this off, use Withdraw all permissions in Account → AI data sharing.`;
+  return promptDataSharing(recipient.name, `${pageRevisionDataDisclosure()}\n\n${withdrawal}`);
+}
+
+function promptDataSharing(name: string, disclosure: string): Promise<boolean> {
   return new Promise((resolve) => {
     let settled = false;
     const finish = (allowed: boolean) => {
@@ -35,8 +45,8 @@ export function promptAiConsent(recipient: AiRecipient): Promise<boolean> {
       resolve(allowed);
     };
     Alert.alert(
-      t`Send data to ${ph({ name: recipient.name })}?`,
-      consentSummary(recipient.use),
+      t`Send data to ${ph({ name })}?`,
+      disclosure,
       [
         { text: t`Not now`, style: "cancel", onPress: () => finish(false) },
         { text: t`Allow`, onPress: () => finish(true) },
