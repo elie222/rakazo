@@ -6,15 +6,15 @@ import {
   normalizeRunError,
   routineHistoryPage,
   routineRunAt,
-  routineRunLateness,
 } from "@rakazo/core";
+import { routineRunLateLabel, runStatusLabel } from "@rakazo/i18n/activity";
 import { translateRunError } from "@rakazo/i18n/run-error";
 import { Button, SectionHeading, Spinner } from "@rakazo/ui-web";
 import { useInfiniteQuery } from "@tanstack/react-query";
 import { ChevronRight } from "lucide-react";
 import { Link } from "react-router-dom";
 import { useSpaceQueries } from "../../lib/query/query";
-import { statusLabel, statusTone } from "../space/ActivityList";
+import { statusTone } from "../space/ActivityList";
 
 export function RoutineRunHistory({ routineId }: { routineId: string }) {
   const { t } = useLingui();
@@ -72,15 +72,7 @@ function RunRow({ run }: { run: RoutineRun }) {
   const { i18n, t } = useLingui();
   const locale = i18n.locale || "en";
   const at = routineRunAt(run);
-  const late = routineRunLateness(run);
-  const count = late?.count;
-  const lateLabel = !late
-    ? null
-    : late.unit === "minutes"
-      ? t`Started ${count}m late`
-      : late.unit === "hours"
-        ? t`Started ${count}h late`
-        : t`Started ${count}d late`;
+  const lateLabel = routineRunLateLabel(run);
   const chatTo = run.messageId
     ? run.groupId
       ? `/app/g/${encodeURIComponent(run.groupId)}?m=${encodeURIComponent(run.messageId)}`
@@ -93,7 +85,7 @@ function RunRow({ run }: { run: RoutineRun }) {
       </time>
       {lateLabel ? <span>{lateLabel}</span> : null}
       {run.status !== "completed" ? (
-        <span className={`ml-auto ${statusTone(run.status)}`}>{statusLabel(run.status)}</span>
+        <span className={`ml-auto ${statusTone(run.status)}`}>{runStatusLabel(run.status)}</span>
       ) : chatTo ? null : (
         <span className="ml-auto">{t`No reply`}</span>
       )}

@@ -1,7 +1,7 @@
 import { CONNECTOR_AUTH_UNAVAILABLE, MCP_OAUTH_CLIENT_REQUIRED } from "@rakazo/contracts";
 import { MODEL_IMAGE_INPUT_ERROR } from "@rakazo/core";
 import { describe, expect, it } from "vitest";
-import { authErrorText, errorText } from "./user-error";
+import { authErrorText, errorText } from "./user-error.js";
 
 describe("authErrorText", () => {
   it("maps PASSWORD_AUTH_DISABLED before the server message", () => {
