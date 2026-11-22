@@ -74,7 +74,7 @@ export function quoteShortcutLabel(host: ShortcutHost) {
   return chordLabel(host, quoteShortcutKeys(host));
 }
 
-function isComposingKey(event: KeyboardEvent) {
+export function isComposingKey(event: KeyboardEvent) {
   // The legacy IME key code also covers composition-boundary keydowns.
   return event.isComposing || event.keyCode === 229;
 }
@@ -141,6 +141,19 @@ export function shellShortcut(event: KeyboardEvent, host: ShortcutHost): ShellSh
     return { type: event.key === "ArrowLeft" ? "back" : "forward" };
   }
   return null;
+}
+
+/**
+ * What Find does about the side panel. A panel that floats over the chat would hide the bar, so a
+ * details panel closes first; a panel holding a form keeps its unsaved input and Find waits.
+ */
+export function findPanelAction(
+  overlaysChat: boolean,
+  panelOpen: boolean,
+  chatPanelOpen: boolean,
+): "open" | "close-panel" | "refuse" {
+  if (!overlaysChat || !panelOpen) return "open";
+  return chatPanelOpen ? "close-panel" : "refuse";
 }
 
 /** A printable key pressed outside any text field, which belongs in the composer. */

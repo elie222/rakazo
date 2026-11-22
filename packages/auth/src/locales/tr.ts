@@ -23,28 +23,8 @@ export const TR_MESSAGES: Record<string, string> = {
   "Your Rakazo confirmation code": "Rakazo onay kodunuz",
   "Enter this code in Rakazo to confirm it's you:":
     "Siz olduğunuzu onaylamak için bu kodu Rakazo’ya girin:",
-  "Welcome to Rakazo": "Rakazo’ya hoş geldiniz",
-  "Welcome to Rakazo. The people who get the most out of it do three things:":
-    "Rakazo'ya hoş geldiniz. Rakazo'dan en çok verimi alanlar üç şey yapıyor:",
-  "Get the apps": "Uygulamaları indirin",
-  "Rakazo runs on {platforms}, so your bots can reach you wherever you are.":
-    "Rakazo {platforms} üzerinde çalışır; böylece botlarınız size her yerde ulaşabilir.",
-  "Join the community": "Topluluğa katılın",
-  "See what others are building, get help fast, and tell us what to build next on {discord}.":
-    "Başkalarının neler yaptığını görün, hızlıca yardım alın ve sırada ne yapmamız gerektiğini {discord} üzerinden bize söyleyin.",
-  "Star us on GitHub": "GitHub'da bize yıldız verin",
-  "Rakazo is open source. {star} helps more people find it.":
-    "Rakazo açık kaynaklıdır. {star} daha fazla kişinin onu bulmasına yardımcı olur.",
-  "A star on GitHub": "GitHub'da bir yıldız",
-  "Questions? Just reply. I read every one.":
-    "Sorunuz mu var? Yanıtlamanız yeterli. Her birini okuyorum.",
   Unsubscribe: "Abonelikten çık",
-  "Invite a friend": "Bir arkadaşını davet et",
-  "Invite a friend to Rakazo: they get {weeks} weeks free, and you earn a free month when they start a qualifying subscription with a new card.":
-    "Bir arkadaşını Rakazo'ya davet et: {weeks} hafta ücretsiz kullanır, yeni bir kartla uygun bir aboneliğe başladığında da sen bir ay ücretsiz kazanırsın.",
   "Open Rakazo": "Rakazo’yu açın",
-  "and choose Invite friends for your link.":
-    "ve bağlantınızı almak için Arkadaşlarını davet et’i seçin.",
   "We received your Rakazo plugin": "Rakazo eklentinizi aldık",
   "Thanks for submitting a plugin to the Rakazo marketplace.":
     "Rakazo pazaryerine eklenti gönderdiğiniz için teşekkürler.",
@@ -87,16 +67,4 @@ export const TR_MESSAGES: Record<string, string> = {
     "{inviter} sizi Rakazo'da {space} alanına katılmaya davet etti.",
   "Join {space}": "{space} alanına katıl",
   "This invitation expires in 7 days.": "Bu davetin süresi 7 gün içinde dolar.",
-  "Connect a model to start using Rakazo": "Rakazo’yu kullanmaya başlamak için bir model bağlayın",
-  "Your Rakazo plan has started, but your bots can't reply until a model is connected.":
-    "Rakazo planınız başladı, ancak bir model bağlanana kadar botlarınız yanıt veremez.",
-  "Sign in with your {subscriptions} subscription, or paste an API key.":
-    "{subscriptions} aboneliğinizle oturum açın veya bir API anahtarı yapıştırın.",
-  "Connect a model": "Model bağla",
-  "Bring your old assistant to Rakazo": "Eski asistanınızı Rakazo'ya taşıyın",
-  "Already set up an assistant in {assistants}? Rakazo can bring over its instructions, memory, skills and routines as a new bot, so you don't start again.":
-    "{assistants} üzerinde zaten bir asistan kurdunuz mu? Rakazo onun talimatlarını, belleğini, becerilerini ve rutinlerini yeni bir bot olarak getirebilir; böylece baştan başlamazsınız.",
-  "It works for any other assistant too: send it one prompt and paste its reply.":
-    "Başka herhangi bir asistanla da çalışır: ona tek bir istem gönderin ve yanıtını yapıştırın.",
-  "Import an agent": "Ajan içe aktar",
 };

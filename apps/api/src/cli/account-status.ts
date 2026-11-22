@@ -20,7 +20,6 @@ import {
   installSecurityEventStore,
   runAsSystem,
 } from "@rakazo/db";
-import { getLogger } from "@rakazo/logging";
 import { setAccountActive } from "../account/account-status.js";
 import { loadEnv } from "../env.js";
 
@@ -94,10 +93,7 @@ try {
         // Without the API's computers and jobs: open chats hear of it now, and screens and
         // waiting follow-ups are picked up by lease expiry and the job reconciler.
         afterDeparture: async (_actor, departure) => {
-          for (const { threadId, seq } of departure.events)
-            await events.notify(threadId, seq).catch((error) => {
-              getLogger().error("space departure realtime notification", error);
-            });
+          for (const { threadId, seq } of departure.events) await events.notify(threadId, seq);
         },
       },
       user.id,

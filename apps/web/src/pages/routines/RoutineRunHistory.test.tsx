@@ -23,9 +23,6 @@ vi.mock("@rakazo/core", async (original) => ({
   ...(await original<typeof import("@rakazo/core")>()),
   runThreadSubscription: vi.fn(async () => {}),
 }));
-vi.mock("@lingui/core/macro", () => ({
-  t: (parts: TemplateStringsArray) => parts.join(""),
-}));
 vi.mock("@lingui/react/macro", () => ({
   useLingui: () => ({
     i18n: { locale: "en" },

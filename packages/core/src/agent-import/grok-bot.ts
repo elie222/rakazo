@@ -11,6 +11,7 @@ import {
 } from "@rakazo/contracts";
 import JSON5 from "json5";
 import { messagingProviderNamed } from "../messaging/messaging-providers.js";
+import { isRecord } from "../primitives/records.js";
 import { nextCronDateAcrossStrict } from "../routines/schedule.js";
 import { buildSkillMd, parseSkillMd } from "../skills/agent-skill.js";
 import { looksLikeCredential } from "./credentials.js";
@@ -112,8 +113,6 @@ export type GrokBot = {
 
 type Json = Record<string, unknown>;
 
-const isObject = (value: unknown): value is Json =>
-  typeof value === "object" && value !== null && !Array.isArray(value);
 const text = (value: unknown): string =>
   typeof value === "string"
     ? value.trim()
@@ -124,7 +123,7 @@ const first = (...values: unknown[]) => values.map(text).find(Boolean) ?? "";
 const list = (value: unknown): unknown[] => (Array.isArray(value) ? value : []);
 const strings = (value: unknown) =>
   list(value)
-    .map((item) => (isObject(item) ? first(item.text, item.content, item.name) : text(item)))
+    .map((item) => (isRecord(item) ? first(item.text, item.content, item.name) : text(item)))
     .filter(Boolean);
 
 /** Control and line-separator characters become spaces; whitespace collapses. */
@@ -227,11 +226,11 @@ function bracedObjects(source: string): { found: string[]; cutOff: boolean } {
 }
 
 const isExportDocument = (value: unknown): value is Json =>
-  isObject(value) &&
+  isRecord(value) &&
   (value.format === undefined || value.format === GROK_BOT_EXPORT_FORMAT) &&
   Array.isArray(value.bots);
 const looksLikeBot = (value: unknown): value is Json =>
-  isObject(value) && Boolean(text(value.name)) && BOT_FIELDS.some((key) => key in value);
+  isRecord(value) && Boolean(text(value.name)) && BOT_FIELDS.some((key) => key in value);
 
 /**
  * Inside a reply only export-shaped objects count, so an example routine list is not a Bot.
@@ -266,7 +265,7 @@ function documentsIn(source: string): Json[] {
 }
 
 function readApp(app: unknown): GrokBotApp[] {
-  const record = isObject(app) ? app : {};
+  const record = isRecord(app) ? app : {};
   const name =
     typeof app === "string" ? app.trim() : first(record.name, record.label, record.id, record.slug);
   if (!name) return [];
@@ -275,7 +274,7 @@ function readApp(app: unknown): GrokBotApp[] {
       name: oneLine(name),
       mcpUrl: first(record.mcp_url, record.mcpUrl),
       transport: first(record.transport, record.type).toLowerCase(),
-      headerNames: isObject(record.headers) ? Object.keys(record.headers) : [],
+      headerNames: isRecord(record.headers) ? Object.keys(record.headers) : [],
     },
   ];
 }
@@ -296,7 +295,7 @@ function readBot(bot: Json): GrokBot {
       if (typeof skill === "string") {
         return skill.trim() ? [{ name: oneLine(skill), description: "", instructions: "" }] : [];
       }
-      if (!isObject(skill)) return [];
+      if (!isRecord(skill)) return [];
       return [
         {
           name: oneLine(first(skill.name, skill.title)),
@@ -309,7 +308,7 @@ function readBot(bot: Json): GrokBot {
       ];
     }),
     routines: list(bot.routines).flatMap((routine): GrokBotRoutine[] =>
-      isObject(routine)
+      isRecord(routine)
         ? [
             {
               name: oneLine(first(routine.name, routine.title)),
@@ -428,7 +427,7 @@ function botsIn(documents: readonly Json[]): GrokBot[] {
     throw new GrokBotExportError("newer_version");
   }
   const raw = documents.flatMap((document) =>
-    Array.isArray(document.bots) ? document.bots.filter(isObject) : [document],
+    Array.isArray(document.bots) ? document.bots.filter(isRecord) : [document],
   );
   if (
     raw.length > 100 ||

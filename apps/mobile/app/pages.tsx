@@ -3,6 +3,7 @@ import { useLingui } from "@lingui/react/macro";
 import { PageIcon } from "@rakazo/chat-ui/native";
 import type { PageSummary } from "@rakazo/contracts";
 import { PAGE_TITLE_MAX_LENGTH } from "@rakazo/contracts";
+import { pageSharingLabel } from "@rakazo/i18n/page-review";
 import * as Clipboard from "expo-clipboard";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useState } from "react";
@@ -74,8 +75,9 @@ export default function PagesScreen() {
     else if (action === "copy") {
       void getLatestPage(page.id, { refresh: true, link: true })
         .then(async (detail) => {
-          // Turned off elsewhere since the list was read: the list catches up instead.
-          if (detail.shareUrl) await Clipboard.setStringAsync(detail.shareUrl);
+          // The menu was opened for a public link, so another sharing mode refreshes the list.
+          if (detail.visibility === "link" && detail.shareUrl)
+            await Clipboard.setStringAsync(detail.shareUrl);
           else refresh();
         })
         .catch(() => setProblem(t`Could not copy the link.`));
@@ -100,34 +102,38 @@ export default function PagesScreen() {
       );
     }
   };
-  const row = (page: PageSummary) => (
-    <LongPressMenu
-      key={page.id}
-      colorScheme={colorScheme}
-      title={page.title}
-      actions={[
-        { id: "open", title: t`Open` },
-        { id: "rename", title: t`Rename` },
-        { id: "share", title: t`Share` },
-        ...(page.visibility === "link" ? [{ id: "copy", title: t`Copy link` }] : []),
-        { id: "pin", title: page.pinned ? t`Unpin` : t`Pin` },
-        { id: "delete", title: t`Delete`, attributes: { destructive: true } },
-      ]}
-      onPressAction={(event) => act(page, event.nativeEvent.event)}
-    >
-      {(onLongPress) => (
-        <SettingsRow
-          accessibilityRole="button"
-          chevron="right"
-          title={page.title}
-          detail={`${page.visibility === "link" ? `${t`Shared`} · ` : ""}${formatActivityRelativeTime(page.updatedAt)}`}
-          leading={<PageIcon colors={tokens} width={26} />}
-          onPress={() => open(page)}
-          onLongPress={onLongPress}
-        />
-      )}
-    </LongPressMenu>
-  );
+  const row = (page: PageSummary) => {
+    const sharing = pageSharingLabel(page.visibility);
+    const updated = formatActivityRelativeTime(page.updatedAt);
+    return (
+      <LongPressMenu
+        key={page.id}
+        colorScheme={colorScheme}
+        title={page.title}
+        actions={[
+          { id: "open", title: t`Open` },
+          { id: "rename", title: t`Rename` },
+          { id: "share", title: t`Share` },
+          ...(page.visibility === "link" ? [{ id: "copy", title: t`Copy link` }] : []),
+          { id: "pin", title: page.pinned ? t`Unpin` : t`Pin` },
+          { id: "delete", title: t`Delete`, attributes: { destructive: true } },
+        ]}
+        onPressAction={(event) => act(page, event.nativeEvent.event)}
+      >
+        {(onLongPress) => (
+          <SettingsRow
+            accessibilityRole="button"
+            chevron="right"
+            title={page.title}
+            detail={sharing ? `${sharing} · ${updated}` : updated}
+            leading={<PageIcon colors={tokens} width={26} />}
+            onPress={() => open(page)}
+            onLongPress={onLongPress}
+          />
+        )}
+      </LongPressMenu>
+    );
+  };
   const pinned = listed.items.filter((page) => page.pinned);
   const rest = listed.items.filter((page) => !page.pinned);
   return (

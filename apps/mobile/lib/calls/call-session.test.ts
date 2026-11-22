@@ -34,15 +34,15 @@ import {
   stop as stopDictation,
 } from "../voice/dictation";
 import { ensureVoiceConsent, setDictationAudio, speakText } from "../voice/voice";
-import type { CallClip, CallDeps, CallEnded, DictationHandlers } from "./call-session";
+import type { VoiceClip } from "../voice/voice-clip";
+import { ExpectedTurnFailure, recordClip } from "../voice/voice-clip";
+import type { CallDeps, CallEnded, DictationHandlers } from "./call-session";
 import {
   ECHO_GUARD_MS,
-  ExpectedTurnFailure,
   endCall,
   endCallBeforeSessionEnd,
   getSnapshot,
   hangUp,
-  recordClip,
   SIGN_OUT_HANG_UP_MS,
   setCallProviderTranscribe,
   startCall,
@@ -158,7 +158,7 @@ function idleThread(botId: string): MobileSnapshot {
 }
 
 function fakes(opts: { onDevice?: boolean; loadThread?: boolean } = {}) {
-  const recordings: Array<Deferred<CallClip | null>> = [];
+  const recordings: Array<Deferred<VoiceClip | null>> = [];
   const signals: AbortSignal[] = [];
   const speeches: Array<Deferred<void>> = [];
   const send = vi.fn(
@@ -207,7 +207,7 @@ function fakes(opts: { onDevice?: boolean; loadThread?: boolean } = {}) {
     stopSpeaking,
     record: (signal) => {
       signals.push(signal);
-      const next = deferred<CallClip | null>();
+      const next = deferred<VoiceClip | null>();
       recordings.push(next);
       return next.promise;
     },
@@ -2795,7 +2795,7 @@ describe("mobile call recording without metering", () => {
 
   it("ends the clip before the cap and sends nothing for silence", async () => {
     const fake = fakes();
-    const transcribe = vi.fn(async (clip: CallClip) => clip.base64);
+    const transcribe = vi.fn(async (clip: VoiceClip) => clip.base64);
     const { record: _record, ...deps } = fake.deps;
     startCall({ botId: "bot-1", botName: "Ada" }, { ...deps, transcribe });
     await vi.advanceTimersByTimeAsync(0);

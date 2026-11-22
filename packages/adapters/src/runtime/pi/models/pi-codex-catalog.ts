@@ -2,6 +2,7 @@ import type { OAuthCredential } from "@earendil-works/pi-ai";
 import type { SecretStore } from "@rakazo/adapter-kit";
 import type { ThinkingLevel } from "@rakazo/contracts";
 import { ThinkingLevelSchema } from "@rakazo/contracts";
+import { readResponseWithin } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import type { StoredModelSecret } from "../../../models/model-secret.js";
 import { parseModelSecret } from "../../../models/model-secret.js";
@@ -123,29 +124,12 @@ export async function fetchCodexCatalog(
 }
 
 async function readBoundedText(response: Response): Promise<string | undefined> {
-  const declared = Number(response.headers.get("content-length") ?? 0);
-  if (declared > CODEX_CATALOG_MAX_BYTES) {
-    await response.body?.cancel().catch(() => undefined);
-    return undefined;
-  }
-  if (!response.body) return undefined;
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  let bytes = 0;
-  let text = "";
   try {
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      bytes += value.byteLength;
-      if (bytes > CODEX_CATALOG_MAX_BYTES) {
-        await reader.cancel().catch(() => undefined);
-        return undefined;
-      }
-      text += decoder.decode(value, { stream: true });
-    }
-    text += decoder.decode();
-    return text;
+    const bytes = await readResponseWithin(response, {
+      maxBytes: CODEX_CATALOG_MAX_BYTES,
+      tooLargeMessage: "Codex catalog response is too large",
+    });
+    return new TextDecoder().decode(bytes);
   } catch {
     return undefined;
   }
