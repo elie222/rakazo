@@ -39,6 +39,7 @@ function prepareDesktop({
   installExitCode = 0,
   broken = true,
   installsTools = true,
+  onlyWebsockifyMissing = false,
 } = {}) {
   const bin = mkdtempSync(path.join(tmpdir(), "rakazo-prepare-"));
   try {
@@ -70,9 +71,28 @@ if [ ! -e ${JSON.stringify(repaired)} ]; then
 fi
 [ ${installExitCode} -eq 0 ] || exit ${installExitCode}
 : > ${JSON.stringify(installed)}
-${installsTools ? `for tool in ${DESKTOP_TOOLS.join(" ")}; do printf '#!/bin/sh\\n' > ${JSON.stringify(bin)}/$tool; /bin/chmod 755 ${JSON.stringify(bin)}/$tool; done; /bin/mkdir ${JSON.stringify(path.join(bin, "novnc"))}` : ""}
+${
+  installsTools
+    ? `
+install_tool() {
+  printf '#!/bin/sh\\n' > ${JSON.stringify(bin)}/"$1"
+  /bin/chmod 755 ${JSON.stringify(bin)}/"$1"
+}
+for tool in ${DESKTOP_TOOLS.filter((tool) => tool !== "websockify").join(" ")}; do install_tool "$tool"; done
+case " $* " in *" python3-websockify "*) install_tool websockify ;; esac
+/bin/mkdir -p ${JSON.stringify(path.join(bin, "novnc"))}
+`
+    : ""
+}
 `,
     };
+    if (onlyWebsockifyMissing) {
+      mkdirSync(path.join(bin, "novnc"));
+      for (const tool of DESKTOP_TOOLS) {
+        if (tool === "websockify") continue;
+        writeFileSync(path.join(bin, tool), "#!/bin/sh\n", { mode: 0o755 });
+      }
+    }
     for (const [name, script] of Object.entries(fakes)) {
       writeFileSync(path.join(bin, name), script);
       chmodSync(path.join(bin, name), 0o755);
@@ -117,6 +137,13 @@ describe("provider desktop preparation", () => {
   it("reinstalls missing tools, since a restored disk can list a package whose files are gone", () => {
     const result = prepareDesktop({ broken: false });
     expect(result.calls[1]).toMatch(/ install .*--reinstall --no-remove .*websockify/);
+  });
+
+  it("reinstalls the package that owns the websockify executable", () => {
+    const result = prepareDesktop({ broken: false, onlyWebsockifyMissing: true });
+    expect(result.status, result.stderr).toBe(0);
+    expect(result.calls).toHaveLength(2);
+    expect(result.calls[1]).toMatch(/--reinstall --no-remove websockify python3-websockify$/);
   });
 
   it("waits for another preparation of the same computer before checking its tools", () => {
