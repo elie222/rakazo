@@ -2741,6 +2741,13 @@ describe("answerRunInput approvals", () => {
       "secret_request",
       false,
     ],
+    [
+      "COMPOSIO_MULTI_EXECUTE_TOOL",
+      { tools: [{ tool_slug: "GMAIL_SEND_EMAIL", arguments: {} }] },
+      "tool",
+      "GMAIL_SEND_EMAIL",
+      false,
+    ],
   ])(
     "approves %s and upserts always-allow without overwriting the task prompt",
     async (kind, request, matchKind, matchValue, spaceOverridesConfirmations) => {
@@ -2780,7 +2787,7 @@ describe("answerRunInput approvals", () => {
             status: "intended",
             kind,
             request,
-            batchActions: null,
+            batchActions: kind === "COMPOSIO_MULTI_EXECUTE_TOOL" ? ["GMAIL_SEND_EMAIL"] : null,
           }),
           update: vi.fn().mockResolvedValue({ id: "effect-1" }),
         },
