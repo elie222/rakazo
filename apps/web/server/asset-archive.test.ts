@@ -111,8 +111,11 @@ describe("asset archive", () => {
   it("refuses a build id that is not a plain timestamp", () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "asset-archive-"));
     roots.push(root);
-    fs.mkdirSync(path.join(root, "archive"));
-    expect(deploy(root, "../escape", { "a.js": "a" }, NOW)).toBeNull();
-    expect(fs.readdirSync(path.join(root, "archive"))).toEqual([]);
+    const archiveDir = path.join(root, "archive");
+    fs.mkdirSync(archiveDir);
+    expect(
+      archiveAssets({ assetsDir: root, archiveDir, buildId: "../escape", now: NOW }),
+    ).toBeNull();
+    expect(fs.readdirSync(archiveDir)).toEqual([]);
   });
 });
