@@ -3,6 +3,7 @@ import { useLingui } from "@lingui/react/macro";
 import { ChatMarkdown } from "@rakazo/chat-ui/native";
 import type { ArtifactWithContent } from "@rakazo/contracts";
 import { artifactPreviewKind } from "@rakazo/contracts";
+import { errorCode, errorStatus } from "@rakazo/core";
 import { bestEffort } from "@rakazo/logging/best-effort";
 import type { File } from "expo-file-system";
 import { useFocusEffect, useIsFocused, useLocalSearchParams, useRouter } from "expo-router";
@@ -85,6 +86,11 @@ async function prepareContent(
   return { artifact, file, preview: await computePreview(artifact.mimeType, file) };
 }
 
+function artifactUnavailable(error: unknown): boolean {
+  const status = errorStatus(error);
+  return status === 401 || status === 403 || errorCode(error) === "NOT_FOUND";
+}
+
 export default function ArtifactDetailScreen() {
   const { artifactId, exact, gallery } = useLocalSearchParams<{
     artifactId: string;
@@ -130,18 +136,19 @@ function ArtifactDetail({
   const versionsQuery = useScreenQuery({
     ...versionsRead,
     gcTime: 0,
-    queryFn: async (request) => {
-      const versions = await bestEffort(
-        "Read artifact versions",
-        Promise.resolve(versionsRead.queryFn(request)),
-      );
-      return versions ?? [];
+    queryFn: (request) => {
+      const result = Promise.resolve(versionsRead.queryFn(request));
+      void bestEffort("Read artifact versions", result);
+      return result;
     },
   });
+  const historyUnavailable = artifactUnavailable(versionsQuery.error);
   const versions = versionsQuery.data;
-  const attachedVersionId =
-    exact && versions?.some((version) => version.id === artifactId) ? artifactId : undefined;
-  const selectedVersionId = pickedVersionId ?? attachedVersionId ?? versions?.[0]?.id ?? activeId;
+  const requestedVersionId = pickedVersionId ?? (exact ? artifactId : undefined);
+  const selectedVersionId =
+    versions?.find((version) => version.id === requestedVersionId)?.id ??
+    versions?.[0]?.id ??
+    activeId;
   const contentRead = artifactContentRead(selectedVersionId);
   const cacheScope = contentRead.queryKey.slice(0, 3).map(String);
   const contentQuery = useScreenQuery(
@@ -154,19 +161,12 @@ function ArtifactDetail({
       },
       gcTime: 0,
     },
-    { enabled: !versionsQuery.isPending },
+    { enabled: !versionsQuery.isPending && !historyUnavailable, onFocus: false },
   );
-  const content = contentQuery.isError ? undefined : contentQuery.data;
-  useSpaceChanges(
-    "artifacts",
-    async () => {
-      const result = await versionsQuery.refetch({ cancelRefetch: false });
-      if (content && !result.data?.some((version) => version.id === selectedVersionId)) {
-        await contentQuery.refetch({ cancelRefetch: false });
-      }
-    },
-    focused,
-  );
+  const loadError = historyUnavailable ? versionsQuery.error : contentQuery.error;
+  const unavailable = artifactUnavailable(loadError);
+  const content = unavailable ? undefined : contentQuery.data;
+  useSpaceChanges("artifacts", () => versionsQuery.refetch({ cancelRefetch: false }), focused);
 
   const familyScope = JSON.stringify(versionsRead.queryKey);
   const versionScope = JSON.stringify(contentRead.queryKey);
@@ -180,11 +180,12 @@ function ArtifactDetail({
   );
   useFocusEffect(
     useCallback(() => {
+      if (unavailable) return;
       versionContext.current = {};
       return () => {
         versionContext.current = null;
       };
-    }, [activeId, versionScope]),
+    }, [activeId, unavailable, versionScope]),
   );
 
   const remove = useSave<{ id: string; isCurrent: () => boolean }>({
@@ -339,9 +340,9 @@ function ArtifactDetail({
     />
   ) : (
     <View style={styles.centered}>
-      {contentQuery.isError ? (
+      {loadError ? (
         <Text style={styles.errorText}>
-          {errorText(contentQuery.error, t`Could not load this artifact.`)}
+          {errorText(loadError, t`Could not load this artifact.`)}
         </Text>
       ) : (
         <ActivityIndicator color={native.secondaryLabel} />

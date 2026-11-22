@@ -16,6 +16,7 @@ const state = vi.hoisted(() => ({
   focused: true,
   gallery: undefined as string | undefined,
   changeActive: undefined as ((id: string) => void) | undefined,
+  refresh: undefined as (() => Promise<unknown>) | undefined,
   actions: [] as { text: string; onPress: () => void }[],
   setOptions: vi.fn(),
   back: vi.fn(),
@@ -23,6 +24,7 @@ const state = vi.hoisted(() => ({
   remove: vi.fn(),
   download: vi.fn(),
   getArtifact: vi.fn(),
+  listVersions: vi.fn(),
   mimeType: "text/plain",
   fileUri: "file:///test",
   fileExists: true,
@@ -45,7 +47,11 @@ vi.mock("expo-router", () => ({
     useEffect(() => (state.focused ? effect() : undefined), [effect, state.focused]);
   },
 }));
-vi.mock("../api/roster-signals", () => ({ useSpaceChanges: vi.fn() }));
+vi.mock("../api/roster-signals", () => ({
+  useSpaceChanges: (_kind: string, refresh: () => Promise<unknown>) => {
+    state.refresh = refresh;
+  },
+}));
 vi.mock("../api/api", () => ({
   currentApiBase: () => "https://fixture.example",
   selectedSpaceId: () => "test-space",
@@ -55,7 +61,7 @@ vi.mock("../api/api", () => ({
     headers: { "x-rakazo-space-id": "test-space" },
   }),
   rpc: (proc: string, input: { familyId?: string; artifactId?: string }) => {
-    if (proc === "artifacts/listVersions") return Promise.resolve([{ id: input.familyId }]);
+    if (proc === "artifacts/listVersions") return state.listVersions(input.familyId);
     if (proc === "artifacts/remove") return state.remove(input.artifactId);
     if (proc === "artifacts/getById") return state.getArtifact(input.artifactId);
     throw new Error(`Unexpected RPC: ${proc}`);
@@ -142,6 +148,7 @@ beforeEach(() => {
   state.focused = true;
   state.gallery = undefined;
   state.changeActive = undefined;
+  state.refresh = undefined;
   state.actions = [];
   state.options = {};
   state.setOptions.mockImplementation((options: typeof state.options) => {
@@ -152,6 +159,7 @@ beforeEach(() => {
   state.remove.mockReset();
   state.download.mockReset();
   state.getArtifact.mockReset();
+  state.listVersions.mockReset().mockImplementation(async (id: string) => [{ id }]);
   state.getArtifact.mockImplementation(async (id: string) => ({
     id,
     name: id,
@@ -227,13 +235,6 @@ it.each(["blur", "target", "unmount", "refocus"])("does not navigate after %s", 
     await render();
     if (change === "refocus") {
       state.focused = true;
-      state.gallery = undefined;
-      state.changeActive = undefined;
-      state.actions = [];
-      state.options = {};
-      state.setOptions.mockImplementation((options: typeof state.options) => {
-        state.options = options;
-      });
       await render();
     }
   }
@@ -326,4 +327,46 @@ it("does not load the artifact the route left", async () => {
     slow.resolve({ id: "a", name: "a", mimeType: state.mimeType, contentBase64: "" }),
   );
   expect(state.options.title).toBe("b");
+});
+
+it("keeps the preview after a failed focus refresh without re-downloading it", async () => {
+  await render();
+  state.focused = false;
+  await render(false);
+  const offline = deferred<never>();
+  state.listVersions.mockReturnValueOnce(offline.promise);
+  state.focused = true;
+  await render(false);
+  await vi.waitFor(() => expect(state.listVersions).toHaveBeenCalledTimes(2));
+  await act(async () => {
+    offline.reject(new Error("Offline"));
+    await flush();
+  });
+  expect(state.options.title).toBe("a");
+  expect(await openActions()).toHaveLength(2);
+  expect(state.getArtifact).toHaveBeenCalledOnce();
+});
+
+it("hides a removed artifact and disables actions from a previously opened menu", async () => {
+  state.mimeType = "image/png";
+  await render();
+  const actions = await openActions();
+  state.listVersions.mockRejectedValueOnce(
+    Object.assign(new Error("Artifact not found"), {
+      status: 404,
+      code: "NOT_FOUND",
+    }),
+  );
+  await act(async () => {
+    await state.refresh?.();
+    await flush();
+  });
+  await vi.waitFor(async () => {
+    await act(async () => flush());
+    expect(container.textContent).toContain("Artifact not found");
+    expect(state.options.headerRight).toBeUndefined();
+  });
+  await act(async () => actions.find((action) => action.text === "Download")!.onPress());
+  expect(state.getArtifact).toHaveBeenCalledOnce();
+  expect(state.download).not.toHaveBeenCalled();
 });
