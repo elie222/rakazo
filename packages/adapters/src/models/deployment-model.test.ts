@@ -1,4 +1,3 @@
-// vitest-isolate: the model catalog reads RAKAZO_LOCAL_MODELS once per process.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { listPiCatalog } from "../runtime/pi/models/pi-models.js";
 import {
