@@ -32,6 +32,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - The ticket Board has drag-and-drop status, a table view, and, with the Board lab on, a rail to switch between **Chats** and **Board** ([Board](docs/board.md)).
 - Organizations have an **Activity log** with export. Owners and admins see every event, other members their own.
 - Model setup follows the same steps on every platform, and keys without credits are refused when connecting. New choices include GPT-6.2 Sol and Astra for ChatGPT account connections, OpenRouter for voice, Mnemoverse for memory, Microsoft Decision 1.1 for Auto Review, and Concentrate AI as a hosted preset. Connections that support it have a **Zero data retention** switch.
+- Admins can set the shared model and key for everyone in **Settings → Models → Default for everyone** on web and desktop.
 - Billing offers an **Ultra** plan for customers who bring their own model, and paid plans get an included speech allowance when hosted speech is configured. Mobile users on a self-hosted server can choose an optional **Support Rakazo** subscription.
 - Thai is available as a UI language. Encrypted chat search finds Chinese and Japanese terms in the middle of a sentence.
 - Cmd+Shift+M opens the composer's model list and Cmd+Shift+E cycles thinking levels. Desktop's Connect apps moves to Cmd+Shift+A, and right-click offers **Copy Link Address**.
@@ -67,6 +68,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Desktop fixes Find, window sizing, the update check, offline update servers, full disks on Spanish-language Macs, and copying Space invite links. Computer Access on a Mac without Docker offers **Use this Mac**.
 - Mobile fixes crashes from the chat header invite button and some catalog icons on Android, keyboard and landscape layout, dark mode tables, double-tap Delete account, and shared photos without a file type.
 - Right-to-left layouts, charts and tables on Pages, login field labels in more languages, link detection near CJK punctuation, and skill imports with duplicate names or extra whitespace now behave correctly.
+- Tapping a mobile notification opens its chat with the chat list underneath, so Back returns to the list. Mobile Meetings, Pages and artifacts recover from a failed load, and restoring archived chats shows distinct errors.
 - `install-images.sh` deletes replaced images on Docker's containerd image store, and `content-encryption status` finishes on large tables.
 
 ### Self-host upgrade notes
