@@ -1,11 +1,13 @@
 import { i18n } from "@lingui/core";
 import type { BillingStatus } from "@rakazo/contracts";
 import { beforeAll, expect, it } from "vitest";
+import { messages as french } from "../locales/fr/messages.po";
 import {
   billingDateLabel,
   formatBillingAmount,
   formatBillingDate,
   formatBillingPrice,
+  formatMonthlyPrice,
 } from "./billing.js";
 
 beforeAll(() => {
@@ -40,13 +42,13 @@ it("labels the next billing date", () => {
   expect(billingDateLabel({ ...status, state: "paused" }, "en")).toBeNull();
 });
 
-it("finds the existing translations in the shared catalog", async () => {
-  const { messages } = await import("../locales/fr/messages.po");
-  i18n.load("fr", messages);
+it("finds the existing translations in the shared catalog", () => {
+  i18n.load("fr", french);
   i18n.activate("fr");
   try {
     const price = { amount: 1200, currency: "usd", interval: "month", intervalCount: 1 } as const;
     expect(formatBillingPrice(price, "fr")).toMatch(/ \/ mois$/);
+    expect(formatMonthlyPrice(1200, "fr")).toMatch(/ \/ mois$/);
     const status = {
       state: "active",
       trialEndsAt: null,

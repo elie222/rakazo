@@ -14,7 +14,7 @@ import {
 } from "@rakazo/contracts";
 import { ownKeySubscriptionCents, subscribedTier, tierPriceCents } from "@rakazo/core";
 import { writeSaved } from "@rakazo/core/query";
-import { formatBillingAmount, formatBillingDate, formatBillingPrice } from "@rakazo/i18n/billing";
+import { formatBillingAmount, formatBillingDate, formatMonthlyPrice } from "@rakazo/i18n/billing";
 import { computerUsageDetails, tierComputerDescription } from "@rakazo/i18n/computer-usage";
 import { useIsFocused, useRouter } from "expo-router";
 import { useEffect, useRef, useState } from "react";
@@ -91,11 +91,7 @@ export default function BillingScreen() {
   const usageDetails =
     status.canManage && showComputerUsage ? computerUsageDetails(computerUsage, locale) : null;
   const usd = (cents: number) => formatBillingAmount(cents, "usd", locale);
-  const monthly = (cents: number) =>
-    formatBillingPrice(
-      { amount: cents, currency: "usd", interval: "month", intervalCount: 1 },
-      locale,
-    );
+  const monthly = (cents: number) => formatMonthlyPrice(cents, locale);
   const formatDate = (iso: string) => formatBillingDate(iso, locale);
 
   const plan = currentPlan(status);

@@ -20,6 +20,7 @@ import {
   formatBillingAmount,
   formatBillingDate,
   formatBillingPrice,
+  formatMonthlyPrice,
 } from "@rakazo/i18n/billing";
 import { tierComputerDescription, tierComputerSummary } from "@rakazo/i18n/computer-usage";
 import {
@@ -64,13 +65,6 @@ import { ComputerUsage } from "./ComputerUsage";
 
 type CreditAmount = (typeof MODEL_CREDIT_AMOUNTS)[number];
 type TierOffer = NonNullable<BillingStatus["byokTiers"]>[number];
-
-function formatMonthlyUsd(cents: number, locale: string): string {
-  return formatBillingPrice(
-    { amount: cents, currency: "usd", interval: "month", intervalCount: 1 },
-    locale,
-  );
-}
 
 /** Monthly or yearly own-key plan, with what the yearly plan saves. */
 function ByokIntervalToggle({
@@ -199,7 +193,7 @@ export function CreditAmountSelect({
   const items = creditAmountChoices(value).map((amount) => ({
     value: amount,
     label: monthly
-      ? formatMonthlyUsd(amount, i18n.locale)
+      ? formatMonthlyPrice(amount, i18n.locale)
       : formatBillingAmount(amount, "usd", i18n.locale),
   }));
   return (
@@ -517,7 +511,7 @@ export function CreditChoice({
               ) : (
                 <p className="flex h-12 items-center text-display font-medium tracking-tight">
                   {status.byokPriceCents ? (
-                    formatMonthlyUsd(status.byokPriceCents, i18n.locale)
+                    formatMonthlyPrice(status.byokPriceCents, i18n.locale)
                   ) : (
                     <Trans>Free</Trans>
                   )}
