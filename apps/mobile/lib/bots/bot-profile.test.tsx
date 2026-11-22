@@ -1625,7 +1625,7 @@ describe("artifacts opened for one bot", () => {
     expect(container.textContent).not.toContain("Could not load artifacts.");
   });
 
-  it("keeps displayed files when a background refresh fails", async () => {
+  it.each(["focus", "live"])("keeps displayed files when a %s refresh fails", async (source) => {
     const file = {
       id: "file-a",
       name: "report.md",
@@ -1642,7 +1642,11 @@ describe("artifacts opened for one bot", () => {
     listSpaceArtifacts.mockResolvedValueOnce({ items: [file], nextCursor: null });
     listSpaceArtifacts.mockRejectedValueOnce(new Error("Could not load artifacts."));
     await render(createElement(ArtifactsScreen));
-    await act(async () => button("Refresh files").click());
+    const effects = source === "focus" ? focus : (spaceChangeListeners.get("artifacts") ?? []);
+    await act(async () => {
+      await Promise.all([...effects].map((effect) => effect()));
+    });
+    expect(listSpaceArtifacts).toHaveBeenCalledTimes(2);
     expect(container.textContent).toContain("report.md");
     expect(container.textContent).not.toContain("Could not load artifacts.");
     expect(container.querySelector("progress")).toBeNull();

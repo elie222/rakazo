@@ -86,7 +86,10 @@ export default function ArtifactsScreen() {
     next?.botId === activeBotId && next.madeByBots === madeByBots ? next.cursor : null;
   const [loadingMore, setLoadingMore] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
-  const [loadError, setLoadError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<{
+    message: string;
+    fromPullToRefresh: boolean;
+  } | null>(null);
   const [query, setQuery] = useState("");
   const [searchPageFailed, setSearchPageFailed] = useState(false);
   const loadingMoreRef = useRef(false);
@@ -124,7 +127,11 @@ export default function ArtifactsScreen() {
   );
 
   const load = useCallback(
-    async (botId: string | null, madeByBots: boolean, mode: "replace" | "refresh" | "live") => {
+    async (
+      botId: string | null,
+      madeByBots: boolean,
+      mode: "replace" | "refresh" | "live" | "pull-to-refresh",
+    ) => {
       const pageCount = mode === "live" ? loadedPagesRef.current : 1;
       const generation = ++generationRef.current;
       loadingPageRef.current = true;
@@ -133,8 +140,8 @@ export default function ArtifactsScreen() {
       setLoadingMore(false);
       autoFetchedCursorRef.current = null;
       setSearchPageFailed(false);
-      setLoadError(null);
       if (mode === "replace") {
+        setLoadError(null);
         loadedPagesRef.current = 1;
         setItems(null);
         setNext(null);
@@ -157,9 +164,18 @@ export default function ArtifactsScreen() {
         loadedPagesRef.current = loaded;
         setItems(nextItems);
         setNext(page.nextCursor ? { cursor: page.nextCursor, botId, madeByBots } : null);
+        setLoadError(null);
       } catch (error) {
         if (generation !== generationRef.current) return;
-        setLoadError(errorText(error, t`Could not load artifacts.`));
+        const message = errorText(error, t`Could not load artifacts.`);
+        const fromPullToRefresh = mode === "pull-to-refresh";
+        // A failed background read is silent with cached files and must not erase a visible
+        // pull-to-refresh error before the list has actually been updated.
+        setLoadError((current) =>
+          !fromPullToRefresh && current?.fromPullToRefresh
+            ? current
+            : { message, fromPullToRefresh },
+        );
       } finally {
         if (generation === generationRef.current) {
           loadingPageRef.current = false;
@@ -215,7 +231,7 @@ export default function ArtifactsScreen() {
   async function refresh() {
     setRefreshing(true);
     try {
-      await load(activeBotId, madeByBots, "refresh");
+      await load(activeBotId, madeByBots, "pull-to-refresh");
     } finally {
       setRefreshing(false);
     }
@@ -350,9 +366,9 @@ export default function ArtifactsScreen() {
                 />
               ))}
             </ScrollView>
-            {items !== null && loadError ? (
+            {items !== null && loadError?.fromPullToRefresh ? (
               <Text accessibilityRole="alert" style={[styles.empty, styles.refreshError]}>
-                {loadError}
+                {loadError.message}
               </Text>
             ) : null}
           </View>
@@ -376,7 +392,7 @@ export default function ArtifactsScreen() {
           items === null ? (
             <View style={styles.centered}>
               {loadError ? (
-                <Text style={styles.empty}>{loadError}</Text>
+                <Text style={styles.empty}>{loadError.message}</Text>
               ) : (
                 <ActivityIndicator color={native.secondaryLabel} />
               )}

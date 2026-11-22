@@ -7,7 +7,10 @@ import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import ArtifactsScreen from "../../app/artifacts";
 
-const { listSpaceArtifacts } = vi.hoisted(() => ({ listSpaceArtifacts: vi.fn() }));
+const { listSpaceArtifacts, useSpaceChanges } = vi.hoisted(() => ({
+  listSpaceArtifacts: vi.fn(),
+  useSpaceChanges: vi.fn<(kind: string, onChange: () => Promise<void>, enabled: boolean) => void>(),
+}));
 
 vi.mock("react-native", () => {
   const Container = ({ children }: { children?: ReactNode }) => <div>{children}</div>;
@@ -71,8 +74,8 @@ vi.mock("../../components/native/native-segmented-control", () => ({
   NativeSegmentedControl: () => null,
 }));
 vi.mock("../../components/native/native-symbol", () => ({ NativeSymbol: () => null }));
-vi.mock("../api/api", () => ({ rpc: vi.fn() }));
-vi.mock("../api/roster-signals", () => ({ useSpaceChanges: vi.fn() }));
+vi.mock("../api/api", () => ({ rpc: async () => [] }));
+vi.mock("../api/roster-signals", () => ({ useSpaceChanges }));
 vi.mock("../api/user-error", () => ({ errorText: (error: Error) => error.message }));
 vi.mock("../appearance/appearance", () => ({ mobileTokens: () => ({}) }));
 vi.mock("./artifacts", () => ({
@@ -84,6 +87,8 @@ vi.mock("../inbox/activity", () => ({ formatActivityRelativeTime: () => "just no
 vi.mock("../layout/content-bottom-inset", () => ({ useContentBottomInset: () => 0 }));
 vi.mock("../layout/side-insets", () => ({ useSideInsets: () => ({}) }));
 vi.mock("../native/native", () => ({ native: {}, useThemedStyles: () => ({}) }));
+vi.mock("../query/query", () => ({ rpcQuery: vi.fn() }));
+vi.mock("../query/screen-query", () => ({ useScreenQuery: () => ({ data: [] }) }));
 
 let root: Root;
 let container: HTMLDivElement;
@@ -91,6 +96,7 @@ let container: HTMLDivElement;
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   listSpaceArtifacts.mockReset();
+  useSpaceChanges.mockClear();
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
@@ -113,6 +119,7 @@ it("shows one refresh error with the existing rows and clears it after retry", a
   listSpaceArtifacts
     .mockResolvedValueOnce(page("Cached document"))
     .mockRejectedValueOnce(new Error("Could not load artifacts."))
+    .mockRejectedValueOnce(new Error("Background request failed."))
     .mockResolvedValueOnce(page("Updated document"));
   await act(async () => root.render(<ArtifactsScreen />));
   expect(container.textContent).toContain("Cached document");
@@ -124,11 +131,17 @@ it("shows one refresh error with the existing rows and clears it after retry", a
   expect(container.querySelectorAll('[role="alert"]')).toHaveLength(1);
   expect(container.querySelector('[role="alert"]')?.textContent).toBe("Could not load artifacts.");
 
+  const [, onSpaceChange] = useSpaceChanges.mock.lastCall!;
+  await act(async () => onSpaceChange());
+  expect(container.textContent).toContain("Cached document");
+  expect(container.querySelectorAll('[role="alert"]')).toHaveLength(1);
+  expect(container.querySelector('[role="alert"]')?.textContent).toBe("Could not load artifacts.");
+
   await refresh();
   expect(container.textContent).not.toContain("Cached document");
   expect(container.textContent).toContain("Updated document");
   expect(container.querySelectorAll('[role="alert"]')).toHaveLength(0);
-  expect(listSpaceArtifacts).toHaveBeenCalledTimes(3);
+  expect(listSpaceArtifacts).toHaveBeenCalledTimes(4);
 });
 
 it("still shows a first-load error once in the existing empty state", async () => {
