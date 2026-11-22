@@ -966,6 +966,9 @@ export function mountVoiceHttpRoutes(
           signal: c.req.raw.signal,
         }),
       );
+      // A silent or unusable clip reaches the client as no words, with no error to report.
+      if (!result.text.trim())
+        getLogger().info("voice transcript empty", { bytes: audio.byteLength });
       return c.json({ text: result.text });
     } catch (error) {
       return voiceHttpError(c, error);
