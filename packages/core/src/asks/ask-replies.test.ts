@@ -1,4 +1,5 @@
 import type { MessageBlock } from "@rakazo/contracts";
+import { AGENT_IMPORT_ASK_ACTION_ID } from "@rakazo/contracts";
 import { describe, expect, it } from "vitest";
 import { separateAskAnswers } from "./ask-replies.js";
 
@@ -64,6 +65,25 @@ describe("separateAskAnswers", () => {
     expect(
       separateAskAnswers([question(), { id: "later", role: "bot", blocks: [] }, reply()]).size,
     ).toBe(1);
+  });
+
+  it("suppresses legacy cards whose stored answer is agent-import when the linked reply holds the label", () => {
+    const actions = [
+      { id: "choice-1", label: "Start fresh" },
+      { id: AGENT_IMPORT_ASK_ACTION_ID, label: "Move from another assistant" },
+    ];
+    expect(
+      separateAskAnswers([
+        question({ actions, answer: AGENT_IMPORT_ASK_ACTION_ID }),
+        reply("Move from another assistant"),
+      ]).size,
+    ).toBe(1);
+    expect(
+      separateAskAnswers([
+        question({ actions, answer: AGENT_IMPORT_ASK_ACTION_ID }),
+        reply("Something unrelated"),
+      ]).size,
+    ).toBe(0);
   });
 });
 

@@ -1,4 +1,5 @@
 import type { MessageBlock } from "@rakazo/contracts";
+import { AGENT_IMPORT_ASK_ACTION_ID } from "@rakazo/contracts";
 import { isQuestionAskBlock } from "./ask-kind.js";
 
 export { isQuestionAskBlock } from "./ask-kind.js";
@@ -35,7 +36,17 @@ export function separateAskAnswers(
         .flatMap((part) => (part.kind === "text" ? [part.text] : []))
         .join("\n")
         .trim();
-      if (text && block.answer.trim() === text) {
+      // Cards answered before AGENT_IMPORT_ASK_ACTION_ID was excluded stored the action id while the linked reply holds the label.
+      const legacyImportAnswer =
+        block.answer.trim() === AGENT_IMPORT_ASK_ACTION_ID &&
+        Boolean(
+          block.actions?.some(
+            (action) =>
+              action.id === AGENT_IMPORT_ASK_ACTION_ID &&
+              action.label.trim().toLowerCase() === text.toLowerCase(),
+          ),
+        );
+      if (text && (block.answer.trim() === text || legacyImportAnswer)) {
         const repeated = answers.get(message.id) ?? new Set<MessageBlock>();
         repeated.add(block);
         answers.set(message.id, repeated);
