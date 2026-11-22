@@ -37,7 +37,8 @@ vi.mock("../api/session", () => ({
   currentSessionGeneration: () => state.generation,
   loadVerifiedScope: state.loadVerified,
 }));
-vi.mock("../api/verified-scope", () => ({
+vi.mock("../api/verified-scope", async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
   verifiedScope: async () => {
     if (!state.verified) throw new Error("offline");
     return { ...state.verified, sessionGeneration: state.generation };
@@ -329,4 +330,19 @@ it("writes an answer only when it changed, without rescanning the folder", async
   expect(state.writes).toBe(writes);
   await answerAndSave({ ...catalogRead(), staleTime: 0 }, [{ ...app, name: "Changed app" }]);
   expect(state.lists).toBe(lists);
+});
+
+it("does not count files the OS removed when making room", async () => {
+  const save = (query: string) =>
+    answerAndSave(rpcQuery("marketplace/catalog", { query }), {
+      entries: [],
+      unavailableRegistries: ["x".repeat(SAVED_READ_MAX_BYTES * 0.9)],
+      skippedEntries: 0,
+    });
+  for (const query of ["q0", "q1", "q2", "q3", "q4"]) await save(query);
+  // The OS clears the newest two; the folder index still lists them.
+  for (const path of [...state.files.keys()])
+    if (path.includes("q3") || path.includes("q4")) state.files.delete(path);
+  await save("q5");
+  expect([...state.files.keys()].some((path) => path.includes("q0"))).toBe(true);
 });

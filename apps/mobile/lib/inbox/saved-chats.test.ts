@@ -34,7 +34,8 @@ vi.mock("../api/api", () => ({
   currentApiBase: () => "https://api.example.test",
   selectedSpaceId: () => state.selection,
 }));
-vi.mock("../api/verified-scope", () => ({
+vi.mock("../api/verified-scope", async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
   isVerifiedScopeCurrent: () => state.current,
   verifiedScope: async () => {
     throw new Error("offline");

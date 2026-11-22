@@ -195,11 +195,6 @@ export default function Integrations() {
   const mcpError =
     mcpFailure ??
     (serversQuery.error ? errorText(serversQuery.error, t`Could not load MCP servers`) : null);
-  // A failed sign-in shows until the servers are read again.
-  const serverReads = queryClient.getQueryState(serversRead.queryKey)?.dataUpdateCount;
-  useEffect(() => {
-    if (serverReads) resetMcpFailure();
-  }, [serverReads, resetMcpFailure]);
 
   function retry() {
     resetFailures();

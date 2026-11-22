@@ -63,6 +63,17 @@ export async function verifiedScope(): Promise<VerifiedScope> {
   return scope;
 }
 
+/**
+ * The Space a selection names, or, with none selected, the one the verified identity says the
+ * server chose when it saw no selection either. Null when that is unknown.
+ */
+export function verifiedSpaceId(
+  selectionId: string | null,
+  verified: { spaceId: string; selectionId: string | null } | null,
+): string | null {
+  return selectionId ?? (verified?.selectionId === null ? verified.spaceId : null);
+}
+
 export function isVerifiedScopeCurrent(scope: VerifiedScope): boolean {
   return (
     scope.apiBase === currentApiBase() &&

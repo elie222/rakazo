@@ -14,6 +14,7 @@ import { queryClient, rpcQuery } from "../query/query";
 
 const state = vi.hoisted(() => ({
   rpc: vi.fn(),
+  lastBot: vi.fn(),
   marketplace: vi.fn(),
   push: vi.fn(),
   space: "space-a",
@@ -51,7 +52,7 @@ vi.mock("expo-web-browser", () => ({ openAuthSessionAsync: state.authSession }))
 vi.mock("../../components/integrations/plugin-icon", () => ({
   PluginIcon: ({ name }: { name: string }) => <span>{name[0]}</span>,
 }));
-vi.mock("../inbox/last-bot", () => ({ loadLastBotId: async () => "" }));
+vi.mock("../inbox/last-bot", () => ({ loadLastBotId: () => state.lastBot() }));
 vi.mock("../appearance/appearance", () => ({
   mobileTokens: () => ({ destructive: "red", success: "green", warning: "orange" }),
 }));
@@ -234,6 +235,7 @@ beforeEach(() => {
   i18n.activate("en");
   state.space = "space-a";
   state.focused = true;
+  state.lastBot.mockReset().mockResolvedValue("");
   state.authSession.mockReset().mockResolvedValue({ type: "cancel" });
   queryClient.clear();
   state.headerMenu = false;
@@ -1283,7 +1285,7 @@ it("adds a source once when tapped again while a sign-in is still starting", asy
   expect(state.rpc.mock.calls.filter(([proc]) => proc === "capabilities/install")).toHaveLength(1);
 });
 
-it("clears a failed MCP sign-in once the servers load again", async () => {
+it("keeps a failed MCP sign-in through a refresh until Retry", async () => {
   const fallback = state.rpc.getMockImplementation();
   state.rpc.mockImplementation((proc: string, args: unknown) => {
     if (proc === "mcp/servers/list") return Promise.resolve([expiredServer]);
@@ -1301,7 +1303,58 @@ it("clears a failed MCP sign-in once the servers load again", async () => {
   await press("Verify and add");
   expect(container.querySelector('input[placeholder="https://example.com/mcp"]')).toBeNull();
   expect(container.textContent).toContain("Expired server");
+  // The servers were read again, as on a return from the browser; the failure still explains itself.
+  expect(container.textContent).toContain("Could not start MCP OAuth");
+  await press("Retry");
   expect(container.textContent).not.toContain("Could not start MCP OAuth");
+});
+
+it("starts the next app at once when a waiting connection is replaced, without reading the lists", async () => {
+  const other = { ...item, slug: "other", name: "Other app", connected: false };
+  cached([{ ...item, connected: false }, other], []);
+  await render();
+  state.rpc.mockImplementation((proc: string) => {
+    if (proc === "connections/begin")
+      return Promise.resolve({ connectionId: account.id, authorizationUrl: null });
+    if (proc === "connections/complete") return Promise.resolve({ ...account, status: "pending" });
+    return new Promise(() => undefined);
+  });
+  const adds = () =>
+    [...container.querySelectorAll("button")].filter((b) => b.textContent === "Add");
+  await act(async () => adds()[0]?.click());
+  const catalogReads = () =>
+    state.rpc.mock.calls.filter(([proc]) => proc === "connections/catalog").length;
+  const before = catalogReads();
+  await act(async () => adds()[0]?.click());
+  await settle();
+  // The lists never answer here, so the second app could only start without waiting on them.
+  expect(state.rpc.mock.calls.filter(([proc]) => proc === "connections/begin")).toHaveLength(2);
+  expect(catalogReads()).toBe(before);
+  expect(container.textContent).not.toContain("Could not connect");
+});
+
+it("does not tell onboarding about an app once another Space is selected", async () => {
+  cached([{ ...item, connected: false }], []);
+  await render();
+  state.rpc.mockImplementation((proc: string) => {
+    if (proc === "connections/begin")
+      return Promise.resolve({ connectionId: account.id, authorizationUrl: null });
+    if (proc === "connections/complete") return Promise.resolve(account);
+    return Promise.resolve([]);
+  });
+  const lastBotRead = deferred<string>();
+  state.lastBot.mockReturnValue(lastBotRead.promise);
+  await act(async () => button("Add")?.click());
+  await settle();
+  state.space = "space-b";
+  lastBotRead.resolve("bot-a");
+  await settle();
+  expect(state.rpc).not.toHaveBeenCalledWith(
+    "onboarding/appConnected",
+    expect.anything(),
+    expect.anything(),
+  );
+  expect(state.rpc).not.toHaveBeenCalledWith("onboarding/appConnected", expect.anything());
 });
 
 it("clears a failed add when another type is picked from the header menu", async () => {

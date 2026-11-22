@@ -67,13 +67,32 @@ export function cacheFolder(name: string) {
         others.splice(others.indexOf(oldest), 1);
         remove(oldest.file);
       };
+      // Only when a limit is reached: files the OS removed meanwhile no longer count.
+      let pruned = false;
+      const prune = () => {
+        if (pruned) return;
+        pruned = true;
+        for (const entry of [...others]) {
+          if (entry.file.exists) continue;
+          others.splice(others.indexOf(entry), 1);
+          index?.delete(entry.file.uri);
+        }
+      };
       for (const count of counts) {
         if (!count.matches(file.name)) continue;
-        while (others.filter((entry) => count.matches(entry.file.name)).length >= count.max)
+        while (others.filter((entry) => count.matches(entry.file.name)).length >= count.max) {
+          if (!pruned) {
+            prune();
+            continue;
+          }
           evictOldest(count.matches);
+        }
       }
       const total = () => others.reduce((sum, entry) => sum + entry.size, bytes);
-      while (total() > totalBytes) evictOldest(evictable);
+      while (total() > totalBytes) {
+        if (!pruned) prune();
+        else evictOldest(evictable);
+      }
       file.create({ overwrite: true });
       file.writeSync(text);
       lastOrder = Math.max(lastOrder + 1, Date.now());

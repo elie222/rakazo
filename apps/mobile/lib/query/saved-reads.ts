@@ -9,7 +9,7 @@ import { z } from "zod";
 import { currentApiBase } from "../api/api";
 import type { SavedVerifiedScope } from "../api/session";
 import { currentSessionGeneration, loadVerifiedScope } from "../api/session";
-import { verifiedScope } from "../api/verified-scope";
+import { verifiedScope, verifiedSpaceId } from "../api/verified-scope";
 import { cacheFolder } from "../platform/cache-folder";
 
 /** Where an rpc read was sent, carried in its query's meta. */
@@ -99,10 +99,7 @@ function savedFile(meta: RpcReadMeta, user: Pick<SavedVerifiedScope, "userId">, 
 
 /** The Space a read went to, resolved through a verified identity; undefined when it cannot be. */
 function resolvedSpace(meta: RpcReadMeta, user: SavedVerifiedScope): string | null | undefined {
-  if (!meta.space) return undefined;
-  if (meta.space.id) return meta.space.id;
-  // No Space selected: the verified identity names the one the server chose, when it saw the same.
-  return user.selectionId === null ? user.spaceId : null;
+  return meta.space ? verifiedSpaceId(meta.space.id, user) : undefined;
 }
 
 async function verifiedUser(meta: RpcReadMeta, ask: boolean): Promise<SavedVerifiedScope | null> {

@@ -15,6 +15,9 @@ import { queryClient, useSave } from "../../lib/query/query";
 
 type Read<T> = { queryKey: DataTag<QueryKey, T, Error> };
 
+/** A connection stopped before it finished; nothing to report and nothing to read again. */
+class ConnectStopped extends Error {}
+
 /**
  * The Integrations screen's account and server actions. Each one belongs to the Space it was
  * tapped in, marks itself pending, and reports its own failure; a success reads `stale` again.
@@ -84,8 +87,9 @@ export function useConnectionActions({
   }
 
   async function notifyAppConnected(item: ConnectionCatalogItem) {
+    const isCurrent = captureScope();
     const botId = lastBotId || (await loadLastBotId());
-    if (!botId) return;
+    if (!botId || !isCurrent()) return;
     if (botId !== lastBotId) setLastBotId(botId);
     void bestEffort(
       "tell onboarding an app was connected",
@@ -117,11 +121,13 @@ export function useConnectionActions({
           signal: controller.signal,
           isCurrent: captureScope(),
         });
+        // Stopped (left, another app tapped, another Space): a failure that shows nothing and
+        // reads nothing again, so a queued app starts at once.
+        if (result.status === "aborted") throw new ConnectStopped();
         if (result.status === "connected" && result.row) await updateAccount(result.row);
         return result.status;
       } catch (reason) {
-        // Leaving the screen or starting another app stops this one without a failure to show.
-        if (controller.signal.aborted) return "aborted" as const;
+        if (controller.signal.aborted) throw new ConnectStopped();
         throw reason;
       } finally {
         if (connectionAttempt.current === controller) connectionAttempt.current = null;
@@ -198,40 +204,52 @@ export function useConnectionActions({
             : null;
 
   /** The last account action's failure, worded for what was tried. */
-  const failure = connect.error
-    ? errorText(connect.error, t`Could not connect`)
-    : rename.error
-      ? errorText(rename.error, t`Could not rename connection`)
-      : (revoke.error ?? uninstall.error)
-        ? errorText(revoke.error ?? uninstall.error, t`Could not revoke connection`)
-        : null;
+  const failure =
+    connect.error && !(connect.error instanceof ConnectStopped)
+      ? errorText(connect.error, t`Could not connect`)
+      : rename.error
+        ? errorText(rename.error, t`Could not rename connection`)
+        : (revoke.error ?? uninstall.error)
+          ? errorText(revoke.error ?? uninstall.error, t`Could not revoke connection`)
+          : null;
+
+  /** Forgets the account failures shown: one slot, as a retry, an opened app or a new action does. */
+  function resetFailures() {
+    connect.reset();
+    revoke.reset();
+    rename.reset();
+    uninstall.reset();
+  }
 
   return {
     connect(item: ConnectionCatalogItem) {
-      if (!connect.pending) return connect.run(item);
+      if (!connect.pending) {
+        resetFailures();
+        return connect.run(item);
+      }
       if (connect.input && catalogItemKey(connect.input) === catalogItemKey(item)) return;
       nextConnect.current = { item, isCurrent: captureScope() };
       connectionAttempt.current?.abort();
     },
-    revokeAccount: (row: Connection) => revoke.run(row),
+    revokeAccount(row: Connection) {
+      resetFailures();
+      revoke.run(row);
+    },
     renameAccount(row: Connection) {
       const displayName = (labelDrafts[row.id] ?? row.displayName).trim();
       if (!displayName || displayName === row.displayName) return;
+      resetFailures();
       rename.run({ row, displayName });
     },
     uninstall(item: ConnectionCatalogItem) {
       if (catalogItemAccounts(connections, item).length === 0) return closeDetail();
+      resetFailures();
       uninstall.run(item);
     },
+    /** A new attempt, or Retry, is what clears a failed sign-in. */
     authorizeMcp: (serverId: string) => authorize.run(serverId),
     stopConnecting,
-    /** Forgets the account failures shown, as a retry or a newly opened app does. */
-    resetFailures() {
-      connect.reset();
-      revoke.reset();
-      rename.reset();
-      uninstall.reset();
-    },
+    resetFailures,
     pending: pending ?? null,
     failure,
     mcpFailure: authorize.error ? errorText(authorize.error, t`Could not start MCP OAuth`) : null,

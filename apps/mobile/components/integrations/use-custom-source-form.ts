@@ -48,6 +48,7 @@ export function useCustomSourceForm({
           : { type: sourceAuth === "bearer" ? "bearer" : "none" };
       if (sourceAuth === "oauth") {
         const created = await send("mcp/servers/create", customMcpServerInput(displayName, url));
+        closeAfterAdding();
         return created.id;
       }
       await send("capabilities/install", {
@@ -63,13 +64,11 @@ export function useCustomSourceForm({
               ? { auth }
               : { preset: "custom", auth },
       });
+      closeAfterAdding();
       return null;
     },
     stale,
     onSaved: (serverId) => {
-      setCredential("");
-      setSourceKind(null);
-      setAdding(null);
       if (!serverId) return;
       setOauthServerId(serverId);
       authorizeMcp(serverId);
@@ -87,6 +86,12 @@ export function useCustomSourceForm({
   function clearSourceError() {
     add.reset();
     remove.reset();
+  }
+  /** Closes the form as soon as the source is added, while the lists read again behind it. */
+  function closeAfterAdding() {
+    setCredential("");
+    setSourceKind(null);
+    setAdding(null);
   }
 
   const addOptions: AddCustomOption[] = [
@@ -137,7 +142,10 @@ export function useCustomSourceForm({
     addOptions,
     adding,
     startAdding,
-    removeSource: (source: CapabilityInstall) => remove.run(source),
+    removeSource(source: CapabilityInstall) {
+      clearSourceError();
+      remove.run(source);
+    },
     /** What a pending add or remove is working on: "source", or the source being removed. */
     pending: add.pending ? "source" : remove.pending ? (remove.input?.id ?? null) : null,
     /** The open form's fields and handlers, as AddCustomForm takes them. */
@@ -158,7 +166,9 @@ export function useCustomSourceForm({
       credential,
       setCredential,
       onAdd: () => {
-        if (sourceKind) add.run(sourceKind);
+        if (!sourceKind) return;
+        clearSourceError();
+        add.run(sourceKind);
       },
       onClose: closeAdding,
     },

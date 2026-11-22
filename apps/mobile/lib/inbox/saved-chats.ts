@@ -18,7 +18,7 @@ import {
   saveVerifiedScope,
 } from "../api/session";
 import type { VerifiedScope } from "../api/verified-scope";
-import { isVerifiedScopeCurrent, verifiedScope } from "../api/verified-scope";
+import { isVerifiedScopeCurrent, verifiedScope, verifiedSpaceId } from "../api/verified-scope";
 import { artifactCacheSession } from "../artifacts/artifact-cache-session";
 import { cacheFolder } from "../platform/cache-folder";
 import { onConversationCleared } from "../thread/conversation-cleared";
@@ -198,7 +198,7 @@ export async function savedChatsScope(): Promise<SavedChatsScope | null> {
   const apiBase = currentApiBase();
   const selectionId = selectedSpaceId();
   const verified = await loadVerifiedScope();
-  const spaceId = selectionId ?? (verified?.selectionId === null ? verified.spaceId : null);
+  const spaceId = verifiedSpaceId(selectionId, verified);
   if (!verified || verified.apiBase !== apiBase || !spaceId) return null;
   const scope = await withSessionNamespace({
     apiBase,
