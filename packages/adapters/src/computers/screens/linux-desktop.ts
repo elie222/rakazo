@@ -537,11 +537,13 @@ export const PREPARE_LINUX_DESKTOP = [
   'if [ -n "$missing" ]; then',
   // Separate commands: set -e ignores a failure on the left of &&.
   "  apt_update",
-  `  if ! $root env DEBIAN_FRONTEND=noninteractive ${APT} install -y -qq --no-remove $missing; then`,
+  // A restored disk can keep a package's record without its files, and a plain install of a
+  // package APT thinks is present does nothing.
+  `  if ! $root env DEBIAN_FRONTEND=noninteractive ${APT} install -y -qq --reinstall --no-remove $missing; then`,
   // Provider images can arrive with unrelated, unfinished package dependencies. Let APT
   // solve those without specifying the desktop packages, and never remove existing tools.
   `    $root env DEBIAN_FRONTEND=noninteractive ${APT} install -y -qq --fix-broken --no-remove`,
-  `    $root env DEBIAN_FRONTEND=noninteractive ${APT} install -y -qq --no-remove $missing`,
+  `    $root env DEBIAN_FRONTEND=noninteractive ${APT} install -y -qq --reinstall --no-remove $missing`,
   "  fi",
   "fi",
   // Bots read pages visually; without a color emoji font every emoji is an empty box. The
