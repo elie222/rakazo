@@ -89,8 +89,8 @@ export default function Integrations() {
   const connectionsRead = {
     ...listRead,
     queryFn: async (context: Parameters<typeof listRead.queryFn>[0]) => {
-      // The catalog call reconciles connection rows, so list them after it settles.
-      await Promise.allSettled([queryClient.fetchQuery({ ...catalogRead, staleTime: 0 })]);
+      // The catalog call reconciles connection rows, so they are listed after it answers.
+      await queryClient.fetchQuery({ ...catalogRead, staleTime: 0 });
       return listRead.queryFn(context);
     },
   };

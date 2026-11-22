@@ -437,18 +437,81 @@ it("keeps a rename when a refresh sent before it answers", async () => {
   cached([item], [account]);
   await render();
   await act(async () => button("Added")?.click());
+  const renamed = { ...account, displayName: "Renamed" };
+  const lists = () => state.rpc.mock.calls.filter(([proc]) => proc === "connections/list").length;
+  const before = lists();
   state.rpc.mockImplementation((proc: string) =>
-    proc === "connections/rename"
-      ? Promise.resolve({ ...account, displayName: "Renamed" })
-      : Promise.resolve([]),
+    Promise.resolve(
+      proc === "connections/rename"
+        ? renamed
+        : proc === "connections/catalog"
+          ? [item]
+          : proc === "connections/list"
+            ? [renamed]
+            : [],
+    ),
   );
   await typeLabel("Renamed");
   await settle();
-  expect(listed()).toEqual([{ ...account, displayName: "Renamed" }]);
+  expect(listed()).toEqual([renamed]);
+  // The rename reads the accounts again, as revoking does.
+  expect(lists()).toBeGreaterThan(before);
   await act(async () => catalog.resolve([item]));
   await settle();
   expect(container.querySelector("input")?.value).toBe("Renamed");
-  expect(listed()).toEqual([{ ...account, displayName: "Renamed" }]);
+  expect(listed()).toEqual([renamed]);
+});
+
+it("stops a connection waiting on the browser, and any app tapped after it, on leaving", async () => {
+  const other = { ...item, slug: "other", name: "Other app", connected: false };
+  cached([{ ...item, connected: false }, other], []);
+  await render();
+  state.rpc.mockImplementation((proc: string) => {
+    if (proc === "connections/begin")
+      return Promise.resolve({ connectionId: account.id, authorizationUrl: null });
+    if (proc === "connections/complete") return Promise.resolve({ ...account, status: "pending" });
+    return Promise.resolve([]);
+  });
+  const begins = () => state.rpc.mock.calls.filter(([proc]) => proc === "connections/begin");
+  const adds = () =>
+    [...container.querySelectorAll("button")].filter((b) => b.textContent === "Add");
+  await act(async () => adds()[0]?.click());
+  expect(container.textContent).toContain("Working…");
+  await act(async () => {
+    adds()[0]?.click();
+    state.focused = false;
+    root.render(<Integrations />);
+  });
+  await settle();
+  expect(begins()).toHaveLength(1);
+  state.focused = true;
+  await render();
+  expect(container.textContent).not.toContain("Working…");
+  expect(begins()).toHaveLength(1);
+});
+
+it("stops polling a connection once another Space is selected", async () => {
+  cached([{ ...item, connected: false }], []);
+  await render();
+  const complete = deferred<unknown>();
+  state.rpc.mockImplementation((proc: string) => {
+    if (proc === "connections/begin")
+      return Promise.resolve({ connectionId: account.id, authorizationUrl: null });
+    if (proc === "connections/complete") return complete.promise;
+    if (proc === "connections/catalog") return Promise.resolve([{ ...item, connected: false }]);
+    return Promise.resolve([]);
+  });
+  await act(async () => button("Add")?.click());
+  await settle();
+  expect(container.textContent).toContain("Working…");
+  state.space = "space-b";
+  await render();
+  await act(async () => complete.resolve({ ...account, status: "pending" }));
+  await settle();
+  state.space = "space-a";
+  await render();
+  expect(container.textContent).not.toContain("Working…");
+  expect(state.rpc.mock.calls.filter(([proc]) => proc === "connections/complete")).toHaveLength(1);
 });
 
 it.each(["Remove", "Uninstall"])(

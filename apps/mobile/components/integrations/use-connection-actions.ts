@@ -6,7 +6,8 @@ import type { DataTag, QueryKey } from "@tanstack/react-query";
 import type { Dispatch, SetStateAction } from "react";
 import { useCallback, useRef } from "react";
 import { Alert, Linking } from "react-native";
-import { rpc } from "../../lib/api/api";
+import { rpc, selectedSpaceId } from "../../lib/api/api";
+import { currentSessionGeneration } from "../../lib/api/session";
 import { errorText } from "../../lib/api/user-error";
 import { loadLastBotId } from "../../lib/inbox/last-bot";
 import { signInToMcpServer } from "../../lib/integrations/mcp-oauth";
@@ -41,23 +42,25 @@ export function useConnectionActions({
 }) {
   const { t } = useLingui();
   const connectionAttempt = useRef<AbortController | null>(null);
-  // Another app tapped while a connection is still waiting on the browser starts once it stops.
-  const nextConnect = useRef<ConnectionCatalogItem | null>(null);
+  // Another app tapped while a connection is still waiting on the browser starts once that one
+  // stops, if the screen still shows the Space and session it was tapped in.
+  const nextConnect = useRef<{ item: ConnectionCatalogItem; isCurrent: () => boolean } | null>(
+    null,
+  );
 
   /** Shows a changed account at once; a refresh sent before the change would answer without it. */
   async function updateAccount(row: Connection) {
-    const rows = queryClient.getQueryData(connectionsRead.queryKey) ?? [];
-    const items = queryClient.getQueryData(catalogRead.queryKey);
     await Promise.all([
       queryClient.cancelQueries({ queryKey: connectionsRead.queryKey }),
       queryClient.cancelQueries({ queryKey: catalogRead.queryKey }),
     ]);
-    const next = [...rows.filter((entry) => entry.id !== row.id), row];
-    queryClient.setQueryData(connectionsRead.queryKey, next);
-    if (!items) return;
-    queryClient.setQueryData(
-      catalogRead.queryKey,
-      items.map((item) =>
+    // Built on what is cached now, so another action that finished meanwhile is kept.
+    const next = queryClient.setQueryData(connectionsRead.queryKey, (rows = []) => [
+      ...rows.filter((entry) => entry.id !== row.id),
+      row,
+    ]) ?? [row];
+    queryClient.setQueryData(catalogRead.queryKey, (items) =>
+      items?.map((item) =>
         item.connectorId === row.connectorId && item.slug === row.provider
           ? {
               ...item,
@@ -71,6 +74,13 @@ export function useConnectionActions({
           : item,
       ),
     );
+  }
+
+  /** Whether the screen still shows the Space and session of this moment. */
+  function captureScope() {
+    const spaceId = selectedSpaceId();
+    const generation = currentSessionGeneration();
+    return () => selectedSpaceId() === spaceId && currentSessionGeneration() === generation;
   }
 
   async function notifyAppConnected(item: ConnectionCatalogItem) {
@@ -90,11 +100,13 @@ export function useConnectionActions({
   function startNextConnect() {
     const next = nextConnect.current;
     nextConnect.current = null;
-    if (next) connect.run(next);
+    if (next?.isCurrent()) connect.run(next.item);
   }
 
   const connect = useSave({
     save: async (item: ConnectionCatalogItem, send) => {
+      // One attempt at a time: one started in another Space stops the earlier one.
+      connectionAttempt.current?.abort();
       const controller = new AbortController();
       connectionAttempt.current = controller;
       try {
@@ -103,6 +115,7 @@ export function useConnectionActions({
           complete: (input) => send("connections/complete", input),
           openUrl: (url) => Linking.openURL(url),
           signal: controller.signal,
+          isCurrent: captureScope(),
         });
         if (result.status === "connected" && result.row) await updateAccount(result.row);
         return result.status;
@@ -141,6 +154,7 @@ export function useConnectionActions({
       await updateAccount(updated);
       return updated;
     },
+    stale,
     onSaved: (updated) =>
       setLabelDrafts((current) => ({ ...current, [updated.id]: updated.displayName })),
   });
@@ -166,7 +180,10 @@ export function useConnectionActions({
   });
 
   /** Stops a connection still waiting on the browser, as when the screen loses focus. */
-  const stopConnecting = useCallback(() => connectionAttempt.current?.abort(), []);
+  const stopConnecting = useCallback(() => {
+    nextConnect.current = null;
+    connectionAttempt.current?.abort();
+  }, []);
 
   const pending = connect.pending
     ? connect.input && catalogItemKey(connect.input)
@@ -193,7 +210,7 @@ export function useConnectionActions({
     connect(item: ConnectionCatalogItem) {
       if (!connect.pending) return connect.run(item);
       if (connect.input && catalogItemKey(connect.input) === catalogItemKey(item)) return;
-      nextConnect.current = item;
+      nextConnect.current = { item, isCurrent: captureScope() };
       connectionAttempt.current?.abort();
     },
     revokeAccount: (row: Connection) => revoke.run(row),
