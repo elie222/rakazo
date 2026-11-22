@@ -26,6 +26,7 @@ import type {
 } from "../../computers/screens/host-screen.js";
 import { HOST_SCREEN_MAX_ACTIONS, hostScreenAction } from "../../computers/screens/host-screen.js";
 import type { RunContext } from "../assembly/run-context.js";
+import { isRunTainted } from "../assembly/run-context.js";
 import type { ToolCall } from "./run-tool-gate.js";
 
 export {
@@ -69,7 +70,8 @@ export function userComputerOwner(input: {
  * choose "Allow in this space"; Never ask runs it, since pairing was consent, and a block refuses it. These tools run
  * only in the user's own runs (see userComputerOwner), so any effect of them past "intended" in
  * this space traces back to that approval. Removing every paired computer ends it, so pairing again
- * asks again. Screen control is approved per app.
+ * asks again. Screen control is approved per app. A routine runs unattended, so once it has read
+ * outside content, such as a fetched page, every call asks again whatever the mode or earlier approvals.
  */
 export async function userComputerGate(
   ctx: RunContext,
@@ -79,6 +81,7 @@ export async function userComputerGate(
   mode: ApprovalMode,
 ): Promise<"deny" | "allow" | "ask"> {
   if (blocked) return "deny";
+  if (ctx.run.trigger === "routine" && (await isRunTainted(ctx))) return "ask";
   // Pairing the desktop was the owner's consent; Never ask does not ask again.
   if (mode === "never") return "allow";
   const { deps, run } = ctx;

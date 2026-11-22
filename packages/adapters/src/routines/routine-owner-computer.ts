@@ -39,16 +39,61 @@ export function botEventRoutines(botIds: string[]) {
   };
 }
 
+/** Why a routine can't use its owner's computer. */
+export type OwnerComputerRefusal =
+  | "in_chat"
+  | "watch"
+  | "other_owner"
+  | "group"
+  | "event_routines"
+  | "text_changed";
+
+/**
+ * The one rule for "Use my computer", checked when it is turned on, when the editor shows it and
+ * when a run starts: the routine and its bot belong to whoever would get the computer, it runs in
+ * no chat and watches nothing, its chat is no group, its bot has no routine that outside events
+ * start, and the text matches what the owner approved. Null when it may.
+ */
+export function ownerComputerRefusal(routine: {
+  /** Whose computer it would use: the run's, the viewer's or the editor's user. */
+  ownerId: string;
+  userId: string;
+  botUserId: string;
+  inChat: boolean;
+  watch: unknown;
+  groupThread: boolean;
+  botEventRoutines: boolean;
+  /** The approved fingerprint; undefined while it is being approved. */
+  approved?: string | null;
+  /** The fingerprint of the text a run gets; null when it names a skill. */
+  current: string | null;
+}): OwnerComputerRefusal | null {
+  if (routine.inChat) return "in_chat";
+  if (routine.watch !== null) return "watch";
+  if (routine.userId !== routine.ownerId || routine.botUserId !== routine.ownerId)
+    return "other_owner";
+  if (routine.groupThread) return "group";
+  if (routine.botEventRoutines) return "event_routines";
+  if (routine.current === null) return "text_changed";
+  if (routine.approved !== undefined && routine.approved !== routine.current) return "text_changed";
+  return null;
+}
+
 /**
  * Whether a routine run may use its owner's own computer: the owner turned it on for this routine
- * in the app, the routine, its bot and the run are all theirs, and the run carries exactly the text
- * they approved. Webhook, email, git and chat-app runs are not routine runs, and while the bot has
- * any, none of its routines qualify. A watch's change note or any edit changes the text. Such a run
- * reads only its own prompt.
+ * in the app and the run is this routine's, by its owner, in its bot (see ownerComputerRefusal).
+ * Webhook, email, git and chat-app runs are not routine runs. Such a run reads only its own prompt.
  */
 export async function routineRunUsesOwnerComputer(
   prisma: PrismaClient,
-  run: { trigger: string; routineId: string | null; userId: string; botId: string; taskId: string },
+  run: {
+    trigger: string;
+    routineId: string | null;
+    userId: string;
+    botId: string;
+    taskId: string;
+    threadId: string;
+  },
 ): Promise<boolean> {
   if (run.trigger !== "routine" || !run.routineId) return false;
   const routine = await prisma.routine.findUnique({
@@ -63,23 +108,25 @@ export async function routineRunUsesOwnerComputer(
     },
   });
   if (!routine?.computerPromptHash) return false;
-  const [task, eventRoutines] = await Promise.all([
+  const [task, eventRoutines, thread] = await Promise.all([
     prisma.task.findUnique({ where: { id: run.taskId }, select: { prompt: true } }),
     prisma.routine.count({ where: botEventRoutines([run.botId]) }),
+    prisma.thread.findUnique({ where: { id: run.threadId }, select: { groupId: true } }),
   ]);
-  const refused = routine.inChat
-    ? "in_chat"
-    : routine.watch !== null
-      ? "watch"
-      : routine.botId !== run.botId
-        ? "other_bot"
-        : routine.userId !== run.userId || routine.bot.userId !== run.userId
-          ? "other_owner"
-          : eventRoutines > 0
-            ? "event_routines"
-            : task === null || promptFingerprint(task.prompt) !== routine.computerPromptHash
-              ? "text_changed"
-              : null;
+  const refused =
+    routine.botId !== run.botId
+      ? "other_bot"
+      : ownerComputerRefusal({
+          ownerId: run.userId,
+          userId: routine.userId,
+          botUserId: routine.bot.userId,
+          inChat: routine.inChat,
+          watch: routine.watch,
+          groupThread: !thread || thread.groupId !== null,
+          botEventRoutines: eventRoutines > 0,
+          approved: routine.computerPromptHash,
+          current: task ? promptFingerprint(task.prompt) : null,
+        });
   if (refused) {
     // The switch is on but this run won't get the computer, so say why.
     getLogger().info("routine.owner_computer_refused", {

@@ -4,6 +4,7 @@ import {
   botEventRoutines,
   firstWatchCheck,
   listAgentSkillRecords,
+  ownerComputerRefusal,
   parseRoutineWatch,
   postRoutineNotice,
   RoutineWatchError,
@@ -61,9 +62,8 @@ export function routinesRoutes(ctx: RouterContext) {
 
   /**
    * "Use my computer" on: the fingerprint of the prompt the owner's editor showed, which this same
-   * update stores. Only the owner of the routine and its bot, with a computer paired, may turn it
-   * on, and never for a routine that runs in its chat, watches or names a skill, or on a bot that
-   * outside events start, whose runs read or leave more than its own prompt.
+   * update stores, while they have a computer paired and the routine may use it (see
+   * ownerComputerRefusal).
    */
   async function approveComputerPrompt(routine: {
     id: string;
@@ -71,35 +71,50 @@ export function routinesRoutes(ctx: RouterContext) {
     userId: string;
     botId: string;
     botUserId: string;
+    threadId: string | null;
     prompt: string | undefined;
     inChat: boolean;
     watch: RoutineWatch | null;
     eventTriggered: boolean;
   }): Promise<string> {
-    if (
-      routine.prompt === undefined ||
-      routine.botUserId !== routine.userId ||
-      routine.inChat ||
-      routine.watch ||
-      !(await deps.userDevices?.pairedSince(routine.userId))
-    ) {
+    const { prompt } = routine;
+    if (prompt === undefined || !(await deps.userDevices?.pairedSince(routine.userId))) {
       throw new ClientError("BAD_REQUEST", "This routine can't use your computer.");
     }
-    const otherEventRoutines = await deps.prisma.routine.count({
-      where: { ...botEventRoutines([routine.botId]), id: { not: routine.id } },
+    const [otherEventRoutines, thread, skills] = await Promise.all([
+      deps.prisma.routine.count({
+        where: { ...botEventRoutines([routine.botId]), id: { not: routine.id } },
+      }),
+      routine.threadId
+        ? deps.prisma.thread.findUnique({
+            where: { id: routine.threadId },
+            select: { groupId: true },
+          })
+        : null,
+      listAgentSkillRecords(deps.prisma, routine),
+    ]);
+    const fingerprint = routineComputerFingerprint(prompt, skills);
+    const refused = ownerComputerRefusal({
+      ownerId: routine.userId,
+      userId: routine.userId,
+      botUserId: routine.botUserId,
+      inChat: routine.inChat,
+      watch: routine.watch,
+      groupThread: Boolean(thread?.groupId),
+      botEventRoutines: routine.eventTriggered || otherEventRoutines > 0,
+      current: fingerprint,
     });
-    if (routine.eventTriggered || otherEventRoutines > 0) {
+    if (refused === "event_routines") {
       throw new ClientError(
         "BAD_REQUEST",
         "A bot with webhook, email, git or chat app triggers can't use your computer.",
       );
     }
-    const fingerprint = routineComputerFingerprint(
-      routine.prompt,
-      await listAgentSkillRecords(deps.prisma, routine),
-    );
-    if (!fingerprint) {
+    if (refused === "text_changed") {
       throw new ClientError("BAD_REQUEST", "A routine that uses a skill can't use your computer.");
+    }
+    if (refused || !fingerprint) {
+      throw new ClientError("BAD_REQUEST", "This routine can't use your computer.");
     }
     return fingerprint;
   }

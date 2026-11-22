@@ -1,9 +1,11 @@
 import { ORPCError } from "@orpc/server";
 import { routineWakeupJob } from "@rakazo/adapter-kit";
+import type { OwnerComputerRefusal } from "@rakazo/adapters";
 import {
   botEventRoutines,
   firstWatchCheck,
   listAgentSkillRecords,
+  ownerComputerRefusal,
   parseRoutineWatch,
   parseRoutineWatchState,
   routineComputerFingerprint,
@@ -141,15 +143,22 @@ export function mapRoutine(row: {
 
 type RoutineRow = Parameters<typeof mapRoutine>[0] & {
   userId: string;
+  threadId: string | null;
   computerPromptHash: string | null;
 };
 
 type RoutineViewDeps = Pick<RouterDeps, "prisma" | "userDevices">;
 
+/** Refusals the owner can't undo in the routine's editor, so the switch is left out. */
+const SWITCH_HIDDEN: ReadonlySet<OwnerComputerRefusal> = new Set([
+  "other_owner",
+  "group",
+  "event_routines",
+]);
+
 /**
- * "Use my computer" for each routine the viewer may switch it on for: their own, on their own bot,
- * while they have a computer paired and no routine of the bot is started by outside events. It
- * shows on only while a run would still get the computer.
+ * "Use my computer" for each routine the viewer may switch it on for, while they have a computer
+ * paired (see ownerComputerRefusal). It shows on only while a run would still get the computer.
  */
 async function computerSwitches(
   deps: RoutineViewDeps,
@@ -159,30 +168,40 @@ async function computerSwitches(
   const own = rows.filter((row) => row.userId === actor.userId);
   if (own.length === 0 || !deps.userDevices) return new Map();
   const botIds = [...new Set(own.map((row) => row.botId))];
-  const [bots, eventRoutines, pairedSince] = await Promise.all([
-    deps.prisma.bot.findMany({
-      where: { id: { in: botIds }, userId: actor.userId },
+  const threadIds = [...new Set(own.flatMap((row) => (row.threadId ? [row.threadId] : [])))];
+  const [bots, eventRoutines, groupThreads, pairedSince] = await Promise.all([
+    deps.prisma.bot.findMany({ where: { id: { in: botIds } }, select: { id: true, userId: true } }),
+    deps.prisma.routine.findMany({ where: botEventRoutines(botIds), select: { botId: true } }),
+    deps.prisma.thread.findMany({
+      where: { id: { in: threadIds }, groupId: { not: null } },
       select: { id: true },
     }),
-    deps.prisma.routine.findMany({ where: botEventRoutines(botIds), select: { botId: true } }),
     deps.userDevices.pairedSince(actor.userId),
   ]);
   if (!pairedSince) return new Map();
+  const botOwners = new Map(bots.map((bot) => [bot.id, bot.userId]));
   const eventBots = new Set(eventRoutines.map((routine) => routine.botId));
-  const ownBots = new Set(bots.map((bot) => bot.id).filter((id) => !eventBots.has(id)));
-  const offered = own.filter((row) => ownBots.has(row.botId));
-  const skills = offered.some((row) => row.computerPromptHash)
+  const groups = new Set(groupThreads.map((thread) => thread.id));
+  const skills = own.some((row) => row.computerPromptHash)
     ? await listAgentSkillRecords(deps.prisma, actor)
     : [];
-  return new Map(
-    offered.map((row) => [
-      row.id,
-      Boolean(row.computerPromptHash) &&
-        !row.inChat &&
-        row.watch === null &&
-        row.computerPromptHash === routineComputerFingerprint(row.prompt, skills),
-    ]),
-  );
+  const switches = new Map<string, boolean>();
+  for (const row of own) {
+    const refused = ownerComputerRefusal({
+      ownerId: actor.userId,
+      userId: row.userId,
+      botUserId: botOwners.get(row.botId) ?? "",
+      inChat: row.inChat,
+      watch: row.watch,
+      groupThread: row.threadId !== null && groups.has(row.threadId),
+      botEventRoutines: eventBots.has(row.botId),
+      approved: row.computerPromptHash,
+      current: routineComputerFingerprint(row.prompt, skills),
+    });
+    if (refused && SWITCH_HIDDEN.has(refused)) continue;
+    switches.set(row.id, Boolean(row.computerPromptHash) && refused === null);
+  }
+  return switches;
 }
 
 /**

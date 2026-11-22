@@ -430,6 +430,7 @@ function fixture({
     },
     thread: {
       findUniqueOrThrow: vi.fn(async () => ({ id: run.threadId, groupId: null })),
+      findUnique: vi.fn(async () => ({ id: run.threadId, groupId: null })),
       update: vi.fn(async () => ({ nextMessageSeq: 2, nextEventSeq: 2 })),
     },
     message: {
@@ -4653,6 +4654,37 @@ describe("user_computer_shell", () => {
       expect(on).toMatchObject({ saw: false });
       expect(on.tools).toContain("user_computer_shell");
       expect((await sawSkill({ routineRow: { computerPromptHash: null } })).saw).toBe(true);
+    });
+
+    it("asks again in Never ask once it has read a fetched page, then runs the approved call", async () => {
+      const { gateway, requests } = devices();
+      const f = fixture({
+        ...ownRoutine,
+        prompt: "Check the backups listed at https://status.example.com/",
+        routineRow: {
+          computerPromptHash: routineComputerFingerprint(
+            "Check the backups listed at https://status.example.com/",
+            [],
+          ),
+        },
+        userDevices: gateway,
+        skipApprovals: true,
+      });
+      f.setCalls([
+        { name: "web_fetch", args: { url: "https://status.example.com/" }, executionId: "call-1" },
+        call("ls", "call-2"),
+      ]);
+      await f.run();
+      expect(f.fetchedUrls).toEqual(["https://status.example.com/"]);
+      expect(isApprovalPausedResult(f.results[1])).toBe(true);
+      expect(f.pauseRunForInput).toHaveBeenCalledOnce();
+      expect(requests).toEqual([]);
+
+      const shell = f.effects.find((effect) => effect.kind === "user_computer_shell")!;
+      shell.status = "approved";
+      f.setCalls([call("ls", "call-2")]);
+      await f.run();
+      expect(requests.map(({ request }) => request.method)).toContain("execute");
     });
 
     it("refuses once outside content reached the run, as in chat", async () => {

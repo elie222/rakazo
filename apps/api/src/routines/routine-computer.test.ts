@@ -17,6 +17,8 @@ function harness({
   webhookEnabled = false,
   /** Other routines on the bot that outside events start. */
   eventRoutines = 0,
+  /** The routine was made in a group chat, where it runs. */
+  group = false,
 } = {}) {
   const skills = [
     {
@@ -32,7 +34,7 @@ function harness({
     botId: "bot-1",
     spaceId: "space-1",
     userId: routineOwner,
-    threadId: null,
+    threadId: group ? "thread-group" : null,
     name: "Backups",
     prompt,
     crons: ["0 9 * * *"],
@@ -77,8 +79,12 @@ function harness({
         },
         bot: {
           findFirst: vi.fn(async () => bot),
-          findMany: vi.fn(async ({ where }: { where: { userId: string } }) =>
-            where.userId === bot.userId ? [{ id: bot.id }] : [],
+          findMany: vi.fn(async () => [{ id: bot.id, userId: bot.userId }]),
+        },
+        thread: {
+          findUnique: vi.fn(async () => ({ groupId: group ? "group-1" : null })),
+          findMany: vi.fn(async ({ where }: { where: { id: { in: string[] } } }) =>
+            group && where.id.in.includes("thread-group") ? [{ id: "thread-group" }] : [],
           ),
         },
         routine: {
@@ -191,6 +197,8 @@ describe("Use my computer", () => {
     ["a prompt that names a skill", {}, "BAD_REQUEST", true, "@backups every night"],
     ["a routine with its own webhook", { webhookEnabled: true }, "BAD_REQUEST", false],
     ["a bot whose other routine has an event trigger", { eventRoutines: 1 }, "BAD_REQUEST", false],
+    // Its runs would read the group's name and other members' bot descriptions.
+    ["a routine in a group chat", { group: true }, "BAD_REQUEST", false],
   ])("is refused for %s", async (_label, options, code, shownOff, prompt = "Check the backups") => {
     const h = harness({ ...options, prompt });
     await expect(

@@ -33,6 +33,7 @@ describe("routineRunUsesOwnerComputer", () => {
     userId: "user-1",
     botId: "bot-1",
     taskId: "task-1",
+    threadId: "thread-1",
   };
   const routine = {
     userId: "user-1",
@@ -46,6 +47,11 @@ describe("routineRunUsesOwnerComputer", () => {
     ({
       routine: { findUnique: async () => row, count: async () => eventRoutines },
       task: { findUnique: async () => ({ prompt: taskPrompt }) },
+      thread: {
+        findUnique: async ({ where }: { where: { id: string } }) => ({
+          groupId: where.id === "group-thread" ? "group-1" : null,
+        }),
+      },
     }) as unknown as PrismaClient;
 
   it("holds for the owner's own run of the exact text they approved", async () => {
@@ -86,6 +92,8 @@ describe("routineRunUsesOwnerComputer", () => {
     ["another member owns the bot", { ...routine, bot: { userId: "user-2" } }, {}],
     ["it is another bot's routine", { ...routine, botId: "bot-2" }, {}],
     ["another member started the run", routine, { userId: "user-2" }],
+    // The group's name and other members' bots would reach the run.
+    ["it runs in a group chat", routine, { threadId: "group-thread" }],
     ["an event started it", routine, { trigger: "webhook" }],
     ["it is a check-in", routine, { routineId: null }],
   ])("refuses when %s", async (_label, row, change, taskPrompt) => {
