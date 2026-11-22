@@ -339,7 +339,7 @@ describe("mobile computer keyboard", () => {
       [96, 96],
       [90, 95],
       [99, 99],
-    ]) {
+    ] as const) {
       input.setSelectionRange(start, end);
       inputListeners.get("document:selectionchange")?.({});
       expect([input.selectionStart, input.selectionEnd]).toEqual([99, 99]);
