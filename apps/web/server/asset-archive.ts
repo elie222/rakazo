@@ -90,8 +90,7 @@ export function archiveAssets(options: {
   now: number;
 }): string | null {
   const { assetsDir, archiveDir, buildId, now } = options;
-  // The build id names a file under the archive; the shared contract's shape is the
-  // guard, so a stray build-id file cannot write or prune outside it.
+  // The id names a file under the archive, so a malformed one must not reach a path.
   if (!isBuildId(buildId) || !fs.existsSync(archiveDir)) return null;
   const archivedAssets = path.join(archiveDir, "assets");
   const buildsDir = path.join(archiveDir, "builds");
