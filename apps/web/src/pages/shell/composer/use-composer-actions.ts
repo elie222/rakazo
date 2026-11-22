@@ -409,6 +409,8 @@ export function useComposerActions({
           clientNonce,
           text: trimmed,
           afterSeq: newestMessageSeq(activeSnapshot?.messages ?? []),
+          replyToMessageId: replyToMessageId ?? replyAtSend?.id,
+          replyQuote: replyToMessageId ? undefined : (replyQuoteAtSend ?? undefined),
         };
         setPendingSends((current) => [
           ...current.filter((pending) => pending.clientNonce !== clientNonce),

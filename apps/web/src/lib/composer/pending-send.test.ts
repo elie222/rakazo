@@ -41,6 +41,14 @@ describe("withPendingSends", () => {
     expect(last.blocks).toEqual([{ kind: "text", text: "new words" }]);
   });
 
+  it("shows the reply a send carries", () => {
+    const reply = { ...pending, replyToMessageId: "m1", replyQuote: "hi" };
+    expect(withPendingSends(messages, [reply], "bot1", "t1", "me")[2]).toMatchObject({
+      replyToMessageId: "m1",
+      replyQuote: "hi",
+    });
+  });
+
   it("keeps a confirmed send until its stored message arrives", () => {
     const confirmed = { ...pending, acceptedSeq: 3 };
     expect(withPendingSends(messages, [confirmed], "bot1", "t1", "me")).toHaveLength(3);

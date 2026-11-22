@@ -10,6 +10,8 @@ export type PendingSend = {
   afterSeq: number;
   /** The message seq the server returned; the stored message carries it. */
   acceptedSeq?: number;
+  replyToMessageId?: string;
+  replyQuote?: string;
 };
 
 const PENDING_ID_PREFIX = "pending:";
@@ -98,6 +100,8 @@ export function withPendingSends(
       seq: ++seq,
       role: "user" as const,
       blocks: [{ kind: "text" as const, text: send.text }],
+      ...(send.replyToMessageId ? { replyToMessageId: send.replyToMessageId } : {}),
+      ...(send.replyQuote ? { replyQuote: send.replyQuote } : {}),
       createdAt,
     })),
   ];
