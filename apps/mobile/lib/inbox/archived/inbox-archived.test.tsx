@@ -235,13 +235,22 @@ describe("archived chats row", () => {
   );
 
   it("sits at the very end of the inbox list and opens the existing Archived screen", () => {
-    act(() => root.render(<InboxListFooter createHint archivedCount={3} />));
+    const onNewBot = vi.fn();
+    act(() => root.render(<InboxListFooter onNewBot={onNewBot} archivedCount={3} />));
     expect(Array.from(container.children, (child) => child.textContent)).toEqual([
-      "Tap + to create a bot",
+      "New bot",
       "Archived3",
     ]);
-    act(() => container.querySelector("button")!.click());
+    const [newBot, archived] = Array.from(container.querySelectorAll("button"));
+    act(() => newBot!.click());
+    expect(onNewBot).toHaveBeenCalledOnce();
+    act(() => archived!.click());
     expect(mocks.router.push).toHaveBeenCalledWith("/archived-bots");
+  });
+
+  it("offers no New bot once a Space has a chat", () => {
+    act(() => root.render(<InboxListFooter archivedCount={0} />));
+    expect(container.textContent).not.toContain("New bot");
   });
 });
 

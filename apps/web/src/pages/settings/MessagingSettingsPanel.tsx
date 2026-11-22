@@ -1,6 +1,7 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import { useTimeout } from "@rakazo/chat-ui/hooks";
 import type {
+  MessagingAgentConnection,
   MessagingChannelMembership,
   MessagingInstallationsStatus,
   MessagingStatus,
@@ -10,6 +11,7 @@ import {
   createMessagingLinkGuard,
   isRetryableError,
   messagingChatApps,
+  messagingRequests,
 } from "@rakazo/core";
 import { fetchFresh, writeSaved } from "@rakazo/core/query";
 import {
@@ -27,9 +29,9 @@ import {
   SectionHeading,
 } from "@rakazo/ui-web";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { CheckIcon, ChevronDownIcon, EllipsisIcon, PlusIcon } from "lucide-react";
+import { CheckIcon, EllipsisIcon, PlusIcon } from "lucide-react";
 import type { ReactNode } from "react";
-import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
+import { useEffect, useId, useMemo, useState, useSyncExternalStore } from "react";
 
 import { SettingsGroup, SettingsRow } from "../../components/settings/SettingsRows";
 import { providerLabel } from "../../lib/integrations/messaging";
@@ -50,8 +52,78 @@ function Row({ children, actions }: { children: ReactNode; actions: ReactNode })
   );
 }
 
+/** A request is a sentence: it wraps instead of losing its end, and describes its buttons. */
+function RequestRow({
+  children,
+  onRespond,
+}: {
+  children: ReactNode;
+  onRespond: (accept: boolean) => void;
+}) {
+  const id = useId();
+  return (
+    <li className="flex items-center justify-between gap-3 text-body text-foreground/75">
+      <span id={id} className="min-w-0 break-words">
+        {children}
+      </span>
+      <span className="flex shrink-0 gap-2">
+        <Button size="sm" aria-describedby={id} onClick={() => onRespond(true)}>
+          <Trans>Allow</Trans>
+        </Button>
+        <Button
+          size="sm"
+          variant="secondary"
+          aria-describedby={id}
+          onClick={() => onRespond(false)}
+        >
+          <Trans>Decline</Trans>
+        </Button>
+      </span>
+    </li>
+  );
+}
+
 function Meta({ children }: { children: ReactNode }) {
   return <span className="ml-2 text-label text-muted-foreground/70">{children}</span>;
+}
+
+function InviteText({ channel, agent }: { channel: MessagingChannelMembership; agent: string }) {
+  const group = channel.name ?? "";
+  const app = providerLabel(channel.provider);
+  return (
+    <>
+      {group ? (
+        <Trans>
+          {agent} was invited to {group}
+        </Trans>
+      ) : (
+        <Trans>{agent} was invited to a group</Trans>
+      )}
+      <Meta>
+        <Trans>{app} group</Trans>
+      </Meta>
+    </>
+  );
+}
+
+function ConnectionRequestText({
+  connection,
+  agent,
+}: {
+  connection: MessagingAgentConnection;
+  agent: string | undefined;
+}) {
+  const owner = connection.peerOwnerLabel;
+  const peer = connection.peerBotName;
+  return agent ? (
+    <Trans>
+      {owner}'s {peer} wants to connect to {agent}
+    </Trans>
+  ) : (
+    <Trans>
+      {owner}'s {peer} wants to connect to your bot
+    </Trans>
+  );
 }
 
 function AppLabel({ provider, detail }: { provider: string; detail?: string }) {
@@ -193,8 +265,8 @@ export function MessagingSettingsPanel() {
     [linkGuard],
   );
   const botName = (botId: string) => bots.find((bot) => bot.id === botId)?.name;
-  // Only meaningful once a second chat app is linked: the same group can then
-  // hold two of the caller's memberships, one per agent.
+  // A joined group names its agent only once a second chat app is linked: the
+  // same group can then hold two of the caller's memberships, one per agent.
   const agentByIdentity = new Map(status?.identities.map((i) => [i.id, i.botName]) ?? []);
   function channelMeta(channel: MessagingChannelMembership): string {
     return [
@@ -227,16 +299,13 @@ export function MessagingSettingsPanel() {
   const memberLink =
     Boolean(installationStatus.personalLinkAvailable) &&
     Boolean(status?.providers.includes("slack"));
-  const invitedChannels = channels.filter((channel) => channel.status === "invited");
-  const incomingConnections = connections.filter(
-    (connection) => connection.status === "pending" && connection.incoming,
-  );
+  const { invites, connectionRequests } = messagingRequests({ status, channels, connections });
   const joinedChannels = channels.filter((channel) => channel.status === "approved");
   const otherConnections = connections.filter(
     (connection) =>
       connection.status === "approved" || (connection.status === "pending" && !connection.incoming),
   );
-  const hasRequests = invitedChannels.length > 0 || incomingConnections.length > 0;
+  const hasRequests = invites.length > 0 || connectionRequests.length > 0;
   const hasConversations =
     joinedChannels.length > 0 || otherConnections.length > 0 || externalConversations.length > 0;
   const hasChatApps = showSlack || linkProviders.length > 0 || otherIdentities.length > 0;
@@ -307,7 +376,6 @@ export function MessagingSettingsPanel() {
           render={<Button size="sm" variant="outline" aria-label={ariaLabel} />}
         >
           {label}
-          <ChevronDownIcon data-icon="inline-end" />
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-auto min-w-44">
           <DropdownMenuGroup>
@@ -435,17 +503,6 @@ export function MessagingSettingsPanel() {
     </SettingsRow>
   );
 
-  const respondButtons = (respond: (accept: boolean) => Promise<unknown>) => (
-    <>
-      <Button size="sm" onClick={() => void act(() => respond(true))}>
-        <Trans>Approve</Trans>
-      </Button>
-      <Button size="sm" variant="secondary" onClick={() => void act(() => respond(false))}>
-        <Trans>Decline</Trans>
-      </Button>
-    </>
-  );
-
   return (
     <div data-testid="messaging-settings" className="space-y-8">
       {shownError ? <p className="text-body-sm text-destructive">{shownError}</p> : null}
@@ -456,28 +513,29 @@ export function MessagingSettingsPanel() {
             <Trans>Requests</Trans>
           </SectionHeading>
           <ul className="mt-3 space-y-3">
-            {invitedChannels.map((channel) => (
-              <Row
+            {invites.map(({ channel, agent }) => (
+              <RequestRow
                 key={channel.id}
-                actions={respondButtons((accept) =>
-                  rpc.messaging.channels.respond({ membershipId: channel.id, accept }),
-                )}
+                onRespond={(accept) =>
+                  void act(() =>
+                    rpc.messaging.channels.respond({ membershipId: channel.id, accept }),
+                  )
+                }
               >
-                {channel.name ?? t`Group`}
-                <Meta>{channelMeta(channel)}</Meta>
-              </Row>
+                <InviteText channel={channel} agent={agent ?? t`Your bot`} />
+              </RequestRow>
             ))}
-            {incomingConnections.map((connection) => (
-              <Row
+            {connectionRequests.map(({ connection, agent }) => (
+              <RequestRow
                 key={connection.id}
-                actions={respondButtons((accept) =>
-                  rpc.messaging.connections.respond({ connectionId: connection.id, accept }),
-                )}
+                onRespond={(accept) =>
+                  void act(() =>
+                    rpc.messaging.connections.respond({ connectionId: connection.id, accept }),
+                  )
+                }
               >
-                {connection.peerOwnerLabel}
-                {"'s "}
-                {connection.peerBotName}
-              </Row>
+                <ConnectionRequestText connection={connection} agent={agent} />
+              </RequestRow>
             ))}
           </ul>
         </section>

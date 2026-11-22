@@ -13,7 +13,10 @@ export function fetchAuthCapabilities(): Promise<AuthCapabilities> {
   // Auth can briefly remount during session refresh; the gate uses the same deployment lookup.
   capabilitiesRequest ??= loadAuthCapabilities().then(
     (capabilities) => {
-      if (capabilities.sso && capabilities.sso.availability !== "available") {
+      if (
+        capabilities.registrationOpen !== undefined ||
+        (capabilities.sso && capabilities.sso.availability !== "available")
+      ) {
         capabilitiesRequest = undefined;
       }
       return capabilities;

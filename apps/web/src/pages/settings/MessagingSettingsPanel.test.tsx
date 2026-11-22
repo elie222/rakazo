@@ -71,6 +71,7 @@ vi.mock("@rakazo/ui-web", () => {
     DropdownMenuSeparator: () => <hr />,
     DropdownMenuSub: Pass,
     DropdownMenuSubContent: Pass,
+    SectionHeading: Pass,
     DropdownMenuTrigger: ({
       children,
       disabled,
@@ -142,6 +143,8 @@ afterEach(() => {
   messaging.status.mockReset();
   messaging.channels.list.mockReset();
   messaging.channels.list.mockResolvedValue([]);
+  messaging.connections.list.mockReset();
+  messaging.connections.list.mockResolvedValue([]);
 });
 
 /** The settings row for `app`, or the one also naming `detail`. */
@@ -690,4 +693,51 @@ it("links a free bot when another is already linked elsewhere", async () => {
   await renderOverlay();
   await act(async () => rowButton("WhatsApp", "Team").click());
   expect(messaging.link.start).toHaveBeenCalledWith({ botId: "bot-2" });
+});
+
+it("says what each request asks and answers it by its own id", async () => {
+  messaging.status.mockResolvedValue(statusWith([identity]));
+  messaging.channels.list.mockResolvedValue([
+    {
+      id: "cm-1",
+      channelId: "ch-1",
+      identityId: "mi-1",
+      provider: "telegram",
+      name: "Family",
+      status: "invited",
+      memberCount: 3,
+    },
+  ] as never);
+  messaging.connections.list.mockResolvedValue([
+    {
+      id: "ac-1",
+      botId: "bot-1",
+      peerBotName: "Assistant",
+      peerOwnerLabel: "Dana",
+      status: "pending",
+      incoming: true,
+    },
+  ] as never);
+  await renderOverlay();
+
+  const request = (text: string) => {
+    const row = [...container.querySelectorAll("li")].find((item) =>
+      item.textContent?.startsWith(text),
+    );
+    if (!row) throw new Error(`no request ${text}`);
+    return row;
+  };
+  const invite = request("Chief was invited to Family");
+  expect(invite.textContent).toContain("Telegram group");
+  const connection = request("Dana's Assistant wants to connect to Chief");
+
+  await act(async () => [...invite.querySelectorAll("button")][0]?.click());
+  expect(messaging.channels.respond).toHaveBeenCalledWith({ membershipId: "cm-1", accept: true });
+  const [allow, decline] = [...connection.querySelectorAll("button")];
+  expect([allow?.textContent, decline?.textContent]).toEqual(["Allow", "Decline"]);
+  await act(async () => decline?.click());
+  expect(messaging.connections.respond).toHaveBeenCalledWith({
+    connectionId: "ac-1",
+    accept: false,
+  });
 });
