@@ -1,6 +1,7 @@
 import { useLingui } from "@lingui/react/macro";
 import type { Connection, ConnectionCatalogItem } from "@rakazo/contracts";
 import { catalogItemAccounts, catalogItemKey, connectCatalogItem } from "@rakazo/core";
+import { bestEffort } from "@rakazo/logging/best-effort";
 import type { Dispatch, RefObject, SetStateAction } from "react";
 import { Alert, Linking } from "react-native";
 import { rpc } from "../../lib/api/api";
@@ -51,11 +52,14 @@ export function useConnectionActions({
     const botId = lastBotId || (await loadLastBotId());
     if (!botId || !isCurrent()) return;
     if (botId !== lastBotId) setLastBotId(botId);
-    void rpc("onboarding/appConnected", {
-      botId,
-      provider: item.slug,
-      connectorId: item.connectorId,
-    }).catch(() => undefined);
+    void bestEffort(
+      "tell onboarding an app was connected",
+      rpc("onboarding/appConnected", {
+        botId,
+        provider: item.slug,
+        connectorId: item.connectorId,
+      }),
+    );
   }
 
   async function connect(item: ConnectionCatalogItem) {
@@ -161,7 +165,7 @@ export function useConnectionActions({
       if (isCurrent()) closeDetail();
     } catch (reason) {
       if (!isCurrent()) return;
-      await refresh().catch(() => undefined);
+      await bestEffort("refresh integrations after a failed uninstall", refresh());
       if (isCurrent()) setCatalogError(errorText(reason, t`Could not revoke connection`));
     } finally {
       if (isCurrent()) setPending(null);
