@@ -8,6 +8,7 @@ import type {
 } from "@rakazo/contracts";
 import { parseLabs } from "@rakazo/contracts";
 import type { connectedAppMarks } from "@rakazo/core";
+import { localTimezone, quietHoursSave } from "@rakazo/core";
 import { writeSaved } from "@rakazo/core/query";
 import type { RefObject } from "react";
 import { lazyOverlay } from "../../components/ErrorBoundary";
@@ -208,6 +209,19 @@ export function SettingsOverlays({
           onTimezoneChange={async (timezone, client) => {
             const nextMe = await client.preferences.update({ timezone });
             setBootstrapMe((prev) => (prev ? { ...prev, timezone: nextMe.timezone } : nextMe));
+          }}
+          quietHours={bootstrapMe?.quietHours}
+          onQuietHoursChange={async (quietHours, client) => {
+            // Settings shows this device's timezone while none is saved, so the save keeps it.
+            const save = quietHoursSave(quietHours, bootstrapMe?.timezone, localTimezone());
+            if (!save) throw new Error("No timezone to read quiet hours in");
+            const nextMe = await client.preferences.update(save);
+            // A server without quiet hours leaves them out, which hides the switch again.
+            setBootstrapMe((prev) =>
+              prev
+                ? { ...prev, quietHours: nextMe.quietHours, timezone: nextMe.timezone ?? null }
+                : nextMe,
+            );
           }}
           botAvatarSet={bootstrapMe?.botAvatarSet}
           onBotAvatarSetChange={async (botAvatarSet) => {

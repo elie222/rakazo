@@ -55,6 +55,9 @@ They are unavailable with the App Store build connected to a self-hosted server;
 On Android, **Notifications** in Settings also lets you choose which kinds you get, including a live
 working status while a bot runs.
 
+**Quiet hours** in Settings hold news back every night, or whenever you pick. See
+[Quiet hours](./account.md#quiet-hours).
+
 ## Shortcuts and Siri
 
 On iPhone, Rakazo adds actions to Shortcuts, Siri and the Action button:

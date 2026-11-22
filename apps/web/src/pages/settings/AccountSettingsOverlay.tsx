@@ -1,12 +1,14 @@
 import { Trans, useLingui } from "@lingui/react/macro";
-import type { AccountSecurity, BotAvatarSet, SignInProvider } from "@rakazo/contracts";
+import type { AccountSecurity, BotAvatarSet, QuietHours, SignInProvider } from "@rakazo/contracts";
 import {
   APP_LOCALE_LABELS,
   accountDisplay,
+  DEFAULT_QUIET_HOURS,
   displayName,
   localTimezone,
   MAX_PASSWORD_LENGTH,
   MIN_PASSWORD_LENGTH,
+  quietHourChoices,
   sameTimeZone,
 } from "@rakazo/core";
 import {
@@ -61,6 +63,9 @@ export type SettingsGeneralProps = {
   /** The user's saved IANA timezone, or null before one is set. */
   timezone?: string | null;
   onTimezoneChange?: (timezone: string, client: RpcClient) => Promise<void>;
+  /** Daily quiet hours, null when off; absent from servers that predate them. */
+  quietHours?: QuietHours | null;
+  onQuietHoursChange?: (quietHours: QuietHours | null, client: RpcClient) => Promise<void>;
   /** The icon set new and unpinned bots wear; absent from servers that predate it. */
   botAvatarSet?: BotAvatarSet;
   onBotAvatarSetChange?: (set: BotAvatarSet) => Promise<void>;
@@ -74,6 +79,8 @@ export function GeneralSettingsPanels({
   onNameSaved,
   timezone = null,
   onTimezoneChange,
+  quietHours,
+  onQuietHoursChange,
   botAvatarSet,
   onBotAvatarSetChange,
   onAccountImported,
@@ -178,6 +185,18 @@ export function GeneralSettingsPanels({
     stale: [queries.usage.breakdown.key()],
   });
   const timezonePending = timezoneSave.pending;
+  const quietHoursId = useId();
+  const quietHoursSaving = useSave({
+    save: (next: QuietHours | null, client) =>
+      onQuietHoursChange?.(next, client) ?? Promise.resolve(),
+    // A save that also keeps this device's timezone moves the usage days, as a timezone save does.
+    stale: [queries.usage.breakdown.key()],
+  });
+  // The choice being saved shows until the server answers.
+  const shownQuietHours = quietHoursSaving.pending ? quietHoursSaving.input : quietHours;
+  // A quiet hours save can also keep this device's timezone, so it and a timezone save wait for
+  // each other rather than racing.
+  const zoneSaving = timezonePending || quietHoursSaving.pending;
   const selectedTimezone = timezone ?? deviceTimezone;
 
   function chooseLocale(next: UiLocale) {
@@ -190,8 +209,13 @@ export function GeneralSettingsPanels({
     });
   }
 
+  function chooseQuietHours(next: QuietHours | null) {
+    if (!onQuietHoursChange || zoneSaving) return;
+    quietHoursSaving.run(next);
+  }
+
   function chooseTimezone(next: string) {
-    if (!onTimezoneChange || timezonePending || next === timezone) return;
+    if (!onTimezoneChange || zoneSaving || next === timezone) return;
     timezoneSave.run(next);
   }
 
@@ -387,7 +411,7 @@ export function GeneralSettingsPanels({
                   aria-labelledby={timezoneId}
                   data-testid="timezone-select"
                   value={selectedTimezone}
-                  disabled={timezonePending}
+                  disabled={zoneSaving}
                   options={timezoneOptions(selectedTimezone).map((zone) => ({
                     value: zone,
                     label: zone.replaceAll("_", " "),
@@ -403,7 +427,7 @@ export function GeneralSettingsPanels({
                     variant="outline"
                     size="sm"
                     className="h-auto max-w-full py-1.5 text-left whitespace-normal"
-                    disabled={timezonePending}
+                    disabled={zoneSaving}
                     data-testid="timezone-use-device"
                     onClick={() => chooseTimezone(deviceTimezone)}
                   >
@@ -420,6 +444,58 @@ export function GeneralSettingsPanels({
               ) : null}
             </SettingsRow>
           </div>
+        ) : null}
+        {onQuietHoursChange && shownQuietHours !== undefined ? (
+          <SettingsRow
+            label={
+              <Label htmlFor={quietHoursId} className="text-body font-normal text-foreground">
+                <Trans>Quiet hours</Trans>
+              </Label>
+            }
+            control={
+              <Switch
+                id={quietHoursId}
+                data-testid="quiet-hours-toggle"
+                checked={shownQuietHours !== null}
+                disabled={zoneSaving}
+                onCheckedChange={(on) => chooseQuietHours(on ? DEFAULT_QUIET_HOURS : null)}
+              />
+            }
+          >
+            {shownQuietHours ? (
+              <div className="mt-2 space-y-1 text-right" data-testid="quiet-hours-range">
+                <div className="flex items-center justify-end gap-2">
+                  <QuietHourSelect
+                    label={t`Quiet hours start`}
+                    value={shownQuietHours.start}
+                    other={shownQuietHours.end}
+                    locale={locale}
+                    disabled={zoneSaving}
+                    onChange={(start) => chooseQuietHours({ ...shownQuietHours, start })}
+                  />
+                  <span aria-hidden="true" className="text-muted-foreground">
+                    –
+                  </span>
+                  <QuietHourSelect
+                    label={t`Quiet hours end`}
+                    value={shownQuietHours.end}
+                    other={shownQuietHours.start}
+                    locale={locale}
+                    disabled={zoneSaving}
+                    onChange={(end) => chooseQuietHours({ ...shownQuietHours, end })}
+                  />
+                </div>
+                <p className="text-body-sm text-muted-foreground">
+                  <Trans>Only what needs you comes through.</Trans>
+                </p>
+              </div>
+            ) : null}
+            {quietHoursSaving.error ? (
+              <p role="alert" className="mt-2 text-right text-body-sm text-destructive">
+                {t`Couldn't update quiet hours`}
+              </p>
+            ) : null}
+          </SettingsRow>
         ) : null}
       </SettingsGroup>
 
@@ -740,6 +816,37 @@ function SettingsPasswordInput({
         onChange={(event) => onChange(event.target.value)}
       />
     </Field>
+  );
+}
+
+/** One end of the quiet hours, on the hour; the other end's hour isn't offered. */
+function QuietHourSelect({
+  label,
+  value,
+  other,
+  locale,
+  disabled,
+  onChange,
+}: {
+  label: string;
+  value: number;
+  other: number;
+  locale: string;
+  disabled: boolean;
+  onChange: (hour: number) => void;
+}) {
+  return (
+    <OptionSelect
+      aria-label={label}
+      value={String(value)}
+      disabled={disabled}
+      options={quietHourChoices(other, locale).map(({ hour, label: clock }) => ({
+        value: String(hour),
+        label: clock,
+      }))}
+      onValueChange={(hour) => onChange(Number(hour))}
+      className="w-28"
+    />
   );
 }
 

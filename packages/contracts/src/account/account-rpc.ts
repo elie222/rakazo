@@ -10,7 +10,12 @@ import { AiConsentQuerySchema, AiConsentStatusSchema } from "./ai-consent.js";
 import { AnalyticsModelSignInStepInput, AnalyticsScreenInput } from "./analytics.js";
 import { AuditEventListInputSchema, AuditEventPageSchema } from "./audit-events.js";
 import { AppBootstrapSchema, MeSchema, SignupSurveySchema } from "./me.js";
-import { AppLocaleSchema, AvatarStyleSchema, TimeZoneSchema } from "./preferences.js";
+import {
+  AppLocaleSchema,
+  AvatarStyleSchema,
+  QuietHoursSchema,
+  TimeZoneSchema,
+} from "./preferences.js";
 import { SecurityEventListInputSchema, SecurityEventSchema } from "./security-events.js";
 
 export const accountRpc = {
@@ -50,6 +55,8 @@ export const accountRpc = {
             timezone: TimeZoneSchema.nullable().optional(),
             /** The language the app runs in, so emails can be written in it. */
             locale: AppLocaleSchema.optional(),
+            /** Null turns quiet hours off. */
+            quietHours: QuietHoursSchema.nullable().optional(),
             /** Replaces the account's Labs list. */
             labs: z.array(LabFeatureSchema).optional(),
           })
@@ -59,6 +66,7 @@ export const accountRpc = {
               input.botAvatarSet !== undefined ||
               input.timezone !== undefined ||
               input.locale !== undefined ||
+              input.quietHours !== undefined ||
               input.labs !== undefined,
             { message: "Nothing to update" },
           ),

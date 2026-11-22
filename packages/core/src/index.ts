@@ -4,6 +4,7 @@ export * from "./account/organizations.js";
 export * from "./account/passkey-offer.js";
 export * from "./account/password-policy.js";
 export * from "./account/product-analytics.js";
+export * from "./account/quiet-hours.js";
 export * from "./account/signup-attribution.js";
 export * from "./account/signup-policy.js";
 export * from "./account/space-availability.js";

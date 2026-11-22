@@ -8,7 +8,7 @@ import { RoutineSchema } from "../routines/routine.js";
 import { GroupSchema } from "../spaces/groups.js";
 import { SpaceSchema } from "../spaces/space.js";
 import { ThreadSnapshotSchema } from "../threads/thread.js";
-import { AvatarStyleSchema } from "./preferences.js";
+import { AvatarStyleSchema, QuietHoursSchema } from "./preferences.js";
 
 export const MeSchema = z.object({
   meetingsEnabled: z.boolean().optional(),
@@ -53,6 +53,8 @@ export const MeSchema = z.object({
    * Absent from servers that predate it.
    */
   timezone: z.string().nullable().optional(),
+  /** Daily quiet hours, or null when off. Absent from servers that predate them. */
+  quietHours: QuietHoursSchema.nullable().optional(),
   /**
    * The app language last reported for the user, or null until an app reports it.
    * Absent from servers that predate it.

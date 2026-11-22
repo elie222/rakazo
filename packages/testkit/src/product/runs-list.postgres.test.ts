@@ -79,6 +79,67 @@ describeRunsList("runs.list activity tracker", () => {
     expect(recent.runs.some((run) => run.botName === "Beta")).toBe(false);
   });
 
+  it("holds news in quiet hours, but still lets the person's own failure through", async () => {
+    const cookie = await signup(app, `runs-quiet-${stamp}@rakazo.test`, "Quiet User");
+    const done = await rpc<{ id: string }>(app, cookie, "bots/create", {
+      name: "Done",
+      title: "Done",
+      description: "",
+      instructions: "",
+      notifyOnFinish: true,
+    });
+    const broken = await rpc<{ id: string }>(app, cookie, "bots/create", {
+      name: "Broken",
+      title: "Broken",
+      description: "",
+      instructions: "",
+      notifyOnFinish: true,
+    });
+    await seedRun(prisma, done.id, "completed", "done run");
+    await seedRun(prisma, broken.id, "failed", "broken run");
+    const notified = async () =>
+      Object.fromEntries(
+        (
+          await rpc<{ runs: RunActivityRow[] }>(app, cookie, "runs/list", { filter: "recent" })
+        ).runs.map((run) => [run.botName, run.notificationsEnabled]),
+      );
+    expect(await notified()).toEqual({ Done: true, Broken: true });
+
+    // From the hour before now until two hours later, in UTC, so the test can't cross the end.
+    const hour = new Date().getUTCHours();
+    const quietHours = { start: (hour + 23) % 24, end: (hour + 2) % 24 };
+    // Without a timezone the hours would be read in UTC, so they need one saved or sent along.
+    expect((await raw(app, cookie, "preferences/update", { quietHours })).status).toBe(400);
+    const me = await rpc<{ quietHours: unknown }>(app, cookie, "preferences/update", {
+      timezone: "UTC",
+      quietHours,
+    });
+    expect(me.quietHours).toEqual(quietHours);
+    // Nor can the timezone be cleared while they are on.
+    expect((await raw(app, cookie, "preferences/update", { timezone: null })).status).toBe(400);
+    expect(await notified()).toEqual({ Done: false, Broken: true });
+
+    await rpc(app, cookie, "preferences/update", { quietHours: null });
+    expect(await notified()).toEqual({ Done: true, Broken: true });
+    expect(
+      (await raw(app, cookie, "preferences/update", { quietHours: { start: 8, end: 8 } })).status,
+    ).toBe(400);
+    // The database holds both ends or neither, whatever writes it.
+    const user = await prisma.user.findFirstOrThrow({
+      where: { email: `runs-quiet-${stamp}@rakazo.test` },
+    });
+    await expect(
+      prisma.user.update({ where: { id: user.id }, data: { quietHoursStart: 3 } }),
+    ).rejects.toThrow();
+    // Nor hours without a timezone, however two saves interleave.
+    await expect(
+      prisma.user.update({
+        where: { id: user.id },
+        data: { quietHoursStart: 22, quietHoursEnd: 7, timezone: null },
+      }),
+    ).rejects.toThrow();
+  });
+
   it("never returns runs from another workspace", async () => {
     const ownerCookie = await signup(app, `runs-owner-${stamp}@rakazo.test`, "Owner");
     const ownerBot = await rpc<{ id: string }>(app, ownerCookie, "bots/create", {

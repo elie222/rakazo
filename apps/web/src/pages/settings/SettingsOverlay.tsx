@@ -1,6 +1,6 @@
 import { useLingui } from "@lingui/react/macro";
 import { useTimeout } from "@rakazo/chat-ui/hooks";
-import type { BotAvatarSet, LabFeature, SpaceMemoryConfig } from "@rakazo/contracts";
+import type { BotAvatarSet, LabFeature, QuietHours, SpaceMemoryConfig } from "@rakazo/contracts";
 import {
   Button,
   Dialog,
@@ -69,6 +69,8 @@ export function SettingsOverlay({
   onNameSaved,
   timezone,
   onTimezoneChange,
+  quietHours,
+  onQuietHoursChange,
   botAvatarSet,
   onBotAvatarSetChange,
   onAccountImported,
@@ -103,6 +105,9 @@ export function SettingsOverlay({
   onNameSaved?: () => Promise<void>;
   timezone: string | null;
   onTimezoneChange: (timezone: string, client: RpcClient) => Promise<void>;
+  /** Absent from servers that predate quiet hours, which then offer none. */
+  quietHours?: QuietHours | null;
+  onQuietHoursChange?: (quietHours: QuietHours | null, client: RpcClient) => Promise<void>;
   botAvatarSet?: BotAvatarSet;
   onBotAvatarSetChange?: (set: BotAvatarSet) => Promise<void>;
   onAccountImported?: () => Promise<void>;
@@ -419,6 +424,8 @@ export function SettingsOverlay({
                         onNameSaved={onNameSaved}
                         timezone={timezone}
                         onTimezoneChange={onTimezoneChange}
+                        quietHours={quietHours}
+                        onQuietHoursChange={onQuietHoursChange}
                         botAvatarSet={botAvatarSet}
                         onBotAvatarSetChange={onBotAvatarSetChange}
                         onAccountImported={onAccountImported}
