@@ -217,7 +217,7 @@ export function AppConnectCard({
           />
         ) : (
           <span className="grid h-10 w-10 place-items-center rounded-md bg-muted text-body-lg text-foreground">
-            {block.name.slice(0, 1).toUpperCase()}
+            {Array.from(block.name)[0]?.toUpperCase()}
           </span>
         )}
         <span className="min-w-0 flex-1">
