@@ -51,7 +51,6 @@ export function BillingSettingsPanel({ client }: { client: RpcClient }) {
             queryKey: queries.billing.computerUsage.queryKey(),
           });
         }}
-        client={client}
       />
     );
 
