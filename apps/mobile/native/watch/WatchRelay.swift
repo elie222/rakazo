@@ -1,5 +1,6 @@
 import Foundation
 import OSLog
+import Security
 import UIKit
 import WatchConnectivity
 
@@ -23,6 +24,17 @@ final class WatchRelay: NSObject, WCSessionDelegate {
     guard WCSession.isSupported() else { return }
     WCSession.default.delegate = self
     WCSession.default.activate()
+    keepSessionReadableWhileLocked()
+    // Leaving the foreground comes before the lock, so items the app created meanwhile
+    // (a new Space choice, server headers) are covered too.
+    for name in [
+      UIApplication.protectedDataDidBecomeAvailableNotification,
+      UIApplication.willResignActiveNotification,
+    ] {
+      _ = NotificationCenter.default.addObserver(forName: name, object: nil, queue: nil) {
+        [weak self] _ in DispatchQueue.main.async { self?.keepSessionReadableWhileLocked() }
+      }
+    }
     // The relay lives for the process. Enqueue session changes in order without making
     // the React Native thread wait on the main queue.
     _ = NotificationCenter.default.addObserver(
@@ -36,6 +48,7 @@ final class WatchRelay: NSObject, WCSessionDelegate {
   }
 
   private func chatChanged(_ change: Change, selectedSpace: String?) {
+    keepSessionReadableWhileLocked()
     switch change {
     case .sessionUnavailable:
       sessionReady = false
@@ -53,6 +66,25 @@ final class WatchRelay: NSObject, WCSessionDelegate {
       break
     }
     publishRevision()
+  }
+
+  /// The watch asks while the iPhone sleeps, so the session items expo-secure-store saved as
+  /// readable only while unlocked become readable after the first unlock. A new sign-in saves
+  /// fresh items, so this runs again on every session change.
+  private func keepSessionReadableWhileLocked() {
+    let keys = ["rakazo.session_token", "rakazo.api_base", "rakazo.space_id", "rakazo.server_headers"]
+    for key in keys {
+      for service in ["app:no-auth", "app"] {
+        let query: [String: Any] = [
+          kSecClass as String: kSecClassGenericPassword,
+          kSecAttrService as String: service,
+          kSecAttrAccount as String: Data(key.utf8),
+        ]
+        SecItemUpdate(
+          query as CFDictionary,
+          [kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlock] as CFDictionary)
+      }
+    }
   }
 
   private func clearScope() {
@@ -118,9 +150,14 @@ final class WatchRelay: NSObject, WCSessionDelegate {
   }
 
   private func currentSession() throws -> RakazoSession {
-    guard UIApplication.shared.isProtectedDataAvailable else { throw WatchFailure.unlockPhone }
     guard sessionReady else { throw WatchFailure.signIn }
-    let session = try RakazoSession.load()
+    let session: RakazoSession
+    do {
+      session = try RakazoSession.load()
+    } catch MessageBotError.signedOut where !UIApplication.shared.isProtectedDataAvailable {
+      // Before the first unlock after a restart, the Keychain stays closed.
+      throw WatchFailure.unlockPhone
+    }
     guard let selectedSpace else { return session }
     // The app announces its selection before the Keychain write completes.
     return RakazoSession(
