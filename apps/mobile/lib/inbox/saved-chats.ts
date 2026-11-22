@@ -14,18 +14,15 @@ import type {
 import {
   currentSessionGeneration,
   loadSessionToken,
-  loadVerifiedIntegrationsScope,
-  saveVerifiedIntegrationsScope,
+  loadVerifiedScope,
+  saveVerifiedScope,
 } from "../api/session";
+import type { VerifiedScope } from "../api/verified-scope";
+import { isVerifiedScopeCurrent, verifiedScope } from "../api/verified-scope";
 import { artifactCacheSession } from "../artifacts/artifact-cache-session";
-import type { IntegrationsCacheScope } from "../integrations/integrations-cache";
-import {
-  integrationsCacheScope,
-  isIntegrationsScopeCurrent,
-} from "../integrations/integrations-cache";
 import { onConversationCleared } from "../thread/conversation-cleared";
 
-export type SavedChatsScope = IntegrationsCacheScope & { namespace: string };
+export type SavedChatsScope = VerifiedScope & { namespace: string };
 
 export type SavedInbox = {
   bots: MobileBot[];
@@ -80,7 +77,7 @@ function isRows(value: unknown): value is Array<{ id: string }> {
 }
 
 export function readSavedInbox(scope: SavedChatsScope): SavedInbox | null {
-  if (!isIntegrationsScopeCurrent(scope)) return null;
+  if (!isVerifiedScopeCurrent(scope)) return null;
   try {
     const data = readJson(spaceFile(scope, "inbox"), scopeKey(scope, "inbox"));
     const inbox = data?.inbox as SavedInbox | undefined;
@@ -179,7 +176,7 @@ export function writeSavedInbox(
       })),
       me: { userId: me.userId, spaceId: me.spaceId, name: me.name },
     };
-    if (!isIntegrationsScopeCurrent(scope) || me.userId !== scope.userId) return;
+    if (!isVerifiedScopeCurrent(scope) || me.userId !== scope.userId) return;
     writeSavedFile(scope, "inbox", { key: scopeKey(scope, "inbox"), inbox });
   } catch {}
 }
@@ -190,7 +187,7 @@ const knownScopes = new Map<string, SavedChatsScope>();
 /** The saved-chat scope of the selected Space, when one was read in this session already. */
 export function currentSavedChatsScope(): SavedChatsScope | null {
   const scope = knownScopes.get(selectedSpaceId() ?? "");
-  return scope && isIntegrationsScopeCurrent(scope) ? scope : null;
+  return scope && isVerifiedScopeCurrent(scope) ? scope : null;
 }
 
 export async function savedChatsScope(): Promise<SavedChatsScope | null> {
@@ -198,7 +195,7 @@ export async function savedChatsScope(): Promise<SavedChatsScope | null> {
   const generation = currentSessionGeneration();
   const apiBase = currentApiBase();
   const selectionId = selectedSpaceId();
-  const verified = await loadVerifiedIntegrationsScope();
+  const verified = await loadVerifiedScope();
   const spaceId = selectionId ?? (verified?.selectionId === null ? verified.spaceId : null);
   if (!verified || verified.apiBase !== apiBase || !spaceId) return null;
   const scope = await withSessionNamespace({
@@ -212,12 +209,10 @@ export async function savedChatsScope(): Promise<SavedChatsScope | null> {
   return scope;
 }
 
-async function withSessionNamespace(
-  scope: IntegrationsCacheScope,
-): Promise<SavedChatsScope | null> {
+async function withSessionNamespace(scope: VerifiedScope): Promise<SavedChatsScope | null> {
   try {
     const namespace = await artifactCacheSession(await loadSessionToken());
-    return isIntegrationsScopeCurrent(scope) ? { ...scope, namespace } : null;
+    return isVerifiedScopeCurrent(scope) ? { ...scope, namespace } : null;
   } catch {
     return null;
   }
@@ -226,7 +221,7 @@ async function withSessionNamespace(
 export async function liveSavedChatsScope(): Promise<SavedChatsScope | null> {
   const saved = await savedChatsScope();
   if (saved) return saved;
-  const verified = await integrationsCacheScope().catch(() => null);
+  const verified = await verifiedScope().catch(() => null);
   return verified ? withSessionNamespace(verified) : null;
 }
 
@@ -236,13 +231,13 @@ export async function loadSavedInbox(): Promise<SavedInbox | null> {
 }
 
 export function saveInbox(
-  verifiedLoad: IntegrationsCacheScope,
+  verifiedLoad: VerifiedScope,
   navigation: MobileSpaceNavigation,
   me: MobileMe,
 ): void {
-  if (!isIntegrationsScopeCurrent(verifiedLoad) || verifiedLoad.userId !== me.userId) return;
+  if (!isVerifiedScopeCurrent(verifiedLoad) || verifiedLoad.userId !== me.userId) return;
   const { sessionGeneration, ...verified } = verifiedLoad;
-  void saveVerifiedIntegrationsScope(sessionGeneration, verified);
+  void saveVerifiedScope(sessionGeneration, verified);
   void withSessionNamespace(verifiedLoad).then((scope) => {
     if (scope) writeSavedInbox(scope, navigation, me);
   });
@@ -269,7 +264,7 @@ export function savedThreadSnapshot(snapshot: MobileSnapshot): MobileSnapshot {
 }
 
 export function readSavedThread(scope: SavedChatsScope, target: string): MobileSnapshot | null {
-  if (!isIntegrationsScopeCurrent(scope)) return null;
+  if (!isVerifiedScopeCurrent(scope)) return null;
   try {
     const data = readJson(spaceFile(scope, target), scopeKey(scope, target));
     const snapshot = data?.snapshot as MobileSnapshot | undefined;
@@ -298,7 +293,7 @@ function writeSavedFile(
   target: string,
   data: Record<string, unknown>,
 ): void {
-  if (!isIntegrationsScopeCurrent(scope)) return;
+  if (!isVerifiedScopeCurrent(scope)) return;
   const text = JSON.stringify(data);
   const bytes = new TextEncoder().encode(text).length;
   if (bytes > SAVED_CHAT_MAX_BYTES) return;
@@ -339,7 +334,7 @@ export function writeSavedThread(
   target: string,
   snapshot: MobileSnapshot,
 ): void {
-  if (!isIntegrationsScopeCurrent(scope) || savedChatTarget(snapshot) !== target) return;
+  if (!isVerifiedScopeCurrent(scope) || savedChatTarget(snapshot) !== target) return;
   try {
     writeSavedFile(scope, target, {
       key: scopeKey(scope, target),

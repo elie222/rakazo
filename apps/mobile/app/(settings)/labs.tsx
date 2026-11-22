@@ -11,7 +11,7 @@ import {
 import { errorText } from "../../lib/api/user-error";
 import { useSideInsets } from "../../lib/layout/side-insets";
 import { useThemedStyles } from "../../lib/native/native";
-import { accountRpcQuery, queryClient, useSave } from "../../lib/query/query";
+import { accountRpcQuery, persisted, queryClient, useSave } from "../../lib/query/query";
 import { useScreenQuery } from "../../lib/query/screen-query";
 import { ACCOUNT_SETTINGS } from "../../lib/query/settings-target";
 import { createSettingsPageStyles } from "../../lib/settings/settings-page-styles";
@@ -24,7 +24,7 @@ export default function Labs() {
   const copy: Record<LabFeature, { title: string; detail: string }> = {
     board: { title: t`Board`, detail: t`A kanban board of tickets your bots can work on` },
   };
-  const meRead = accountRpcQuery("me");
+  const meRead = persisted(accountRpcQuery("me"));
   const me = useScreenQuery(meRead).data;
   const change = useSave({
     target: ACCOUNT_SETTINGS,

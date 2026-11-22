@@ -1,0 +1,72 @@
+import { t } from "@lingui/core/macro";
+import type { Me } from "@rakazo/contracts";
+import { currentApiBase, rpc, selectedSpaceId } from "./api";
+import { currentSessionGeneration, saveVerifiedScope } from "./session";
+
+/**
+ * Who the server says is signed in, and which Space a selection resolves to, for this session.
+ * Disk copies (saved chats, saved reads) are filed under it, never under the session generation,
+ * which starts again at every launch.
+ */
+export type VerifiedScope = {
+  apiBase: string;
+  userId: string;
+  spaceId: string;
+  sessionGeneration: number;
+  selectionId: string | null;
+};
+
+// Reuse verified identity within this session, never across sign-out or server changes.
+let identity:
+  | {
+      apiBase: string;
+      generation: number;
+      selectionId: string | null;
+      user: Promise<Pick<Me, "userId" | "spaceId">>;
+    }
+  | undefined;
+
+/** Asks the server who is signed in, once per session and selected Space. */
+export async function verifiedScope(): Promise<VerifiedScope> {
+  const apiBase = currentApiBase();
+  const generation = currentSessionGeneration();
+  const spaceId = selectedSpaceId();
+  if (
+    !identity ||
+    identity.apiBase !== apiBase ||
+    identity.generation !== generation ||
+    identity.selectionId !== spaceId
+  ) {
+    const user = rpc("me");
+    const entry = { apiBase, generation, selectionId: spaceId, user };
+    identity = entry;
+    void user.catch(() => {
+      if (identity === entry) identity = undefined;
+    });
+  }
+  const me = await identity.user;
+  if (
+    apiBase !== currentApiBase() ||
+    generation !== currentSessionGeneration() ||
+    spaceId !== selectedSpaceId()
+  )
+    throw new Error(t`Something went wrong. Try again.`);
+  if (!me.userId || !(spaceId || me.spaceId)) throw new Error(t`Something went wrong. Try again.`);
+  const scope = {
+    apiBase,
+    userId: me.userId,
+    spaceId: spaceId || me.spaceId,
+    sessionGeneration: generation,
+    selectionId: spaceId,
+  };
+  void saveVerifiedScope(generation, scope);
+  return scope;
+}
+
+export function isVerifiedScopeCurrent(scope: VerifiedScope): boolean {
+  return (
+    scope.apiBase === currentApiBase() &&
+    scope.sessionGeneration === currentSessionGeneration() &&
+    scope.selectionId === selectedSpaceId()
+  );
+}

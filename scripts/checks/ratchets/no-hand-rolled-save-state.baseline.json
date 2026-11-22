@@ -1,7 +1,6 @@
 {
   "apps/mobile/app/(settings)/archived-bots.tsx": 1,
   "apps/mobile/app/(settings)/change-password.tsx": 1,
-  "apps/mobile/app/(settings)/integrations.tsx": 1,
   "apps/mobile/app/(settings)/model-connection.tsx": 1,
   "apps/mobile/app/(settings)/profile.tsx": 1,
   "apps/mobile/app/(settings)/vault.tsx": 1,
