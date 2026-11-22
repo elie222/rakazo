@@ -36,7 +36,20 @@ test("computer maintenance shows durable background progress and failure recover
     await page.getByRole("button", { name: button }).click();
     await expect(dialog).toBeVisible();
   };
+  let recoveryRefused = true;
   await page.route("**/rpc/computer/recover", (route) => {
+    if (recoveryRefused)
+      return route.fulfill({
+        status: 409,
+        json: {
+          json: {
+            defined: false,
+            code: "CONFLICT",
+            status: 409,
+            message: "The computer is still shutting down. Try again after it stops.",
+          },
+        },
+      });
     updates = [{ ...updating, id: "recovery-example", action: "recover", stage: "preparing" }];
     return route.fulfill({ json: { json: updates[0] } });
   });
@@ -65,6 +78,12 @@ test("computer maintenance shows durable background progress and failure recover
   await expect(dialog.getByRole("button", { name: "Recover computer", exact: true })).toBeVisible();
   await expect(dialog.getByRole("heading")).toHaveText("Update failed");
   await captureScreenshot(page, testInfo, "computer-update-failed");
+  await dialog.getByRole("button", { name: "Recover computer" }).click();
+  await expect(dialog.getByRole("alert")).toHaveText(
+    "The computer is still shutting down. Try again after it stops.",
+  );
+  await captureScreenshot(page, testInfo, "computer-recovery-refused");
+  recoveryRefused = false;
   await dialog.getByRole("button", { name: "Recover computer" }).click();
   await expect(dialog.getByRole("heading")).toHaveText("Recovering Team Computer");
   await captureScreenshot(page, testInfo, "computer-recovery-progress");

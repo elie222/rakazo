@@ -16,7 +16,7 @@ import type {
   MessagingSurface,
 } from "@rakazo/adapter-kit";
 import { trimEndChars } from "@rakazo/contracts";
-import { deadlineSignal, withAbort } from "@rakazo/core";
+import { deadlineSignal, MAX_RETRY_AFTER_MS, withAbort } from "@rakazo/core";
 import { bestEffort, getLogger } from "@rakazo/logging";
 import type { Adapter, Attachment, Message, PostableMarkdown, Root, Thread } from "chat";
 import { Chat, isLinkNode, paragraph, parseMarkdown, root, text, toPlainText, walkAst } from "chat";
@@ -311,14 +311,16 @@ export class ChatSdkMessagingSurface implements MessagingSurface {
     context.signal.throwIfAborted();
     // Telegram converts Markdown and retries parse errors as plain text;
     // WhatsApp renders it as its own formatting and Lark posts it as an md
-    // block; Photon's iMessage adapter renders it as native styled text. Keep
-    // the other adapters' plain payloads (Slack markdown_text has a lower
-    // limit, Sendblue's iMessage has no markup).
+    // block; Slack posts it as markdown_text (parts stay under its 12,000
+    // limit, see splitOutboundBody); Photon's iMessage adapter renders it as
+    // native styled text. Sendblue's iMessage has no markup, so it keeps a
+    // plain payload.
     const telegram = mounted.adapterName === "telegram";
     const markdown =
       telegram ||
       mounted.adapterName === "whatsapp" ||
       mounted.adapterName === "lark" ||
+      mounted.adapterName === "slack" ||
       mounted.adapterName === "imessage";
     const { attachment } = request;
     if (telegram && attachment && attachment.data.byteLength > TELEGRAM_UPLOAD_MAX_BYTES) {
@@ -818,10 +820,15 @@ export class MessagingSendError extends Error {
 }
 
 function sendError(platform: MessagingPlatform, error: unknown): MessagingSendError {
-  // Chat SDK AdapterRateLimitError and Slack's rate-limited error both carry seconds.
+  // Chat SDK AdapterRateLimitError and Slack's rate-limited error both carry seconds. A value
+  // that is not a finite positive number is ignored (the normal retry delay applies), and a
+  // large one is capped like any other Retry-After, so the backup job is never scheduled years out.
   const seconds = (error as { retryAfter?: unknown } | null)?.retryAfter;
   return new MessagingSendError(error, {
     permanent: platform.isPermanentSendError?.(error) ?? false,
-    retryAfterMs: typeof seconds === "number" && seconds > 0 ? seconds * 1000 : null,
+    retryAfterMs:
+      typeof seconds === "number" && Number.isFinite(seconds) && seconds > 0
+        ? Math.min(seconds * 1000, MAX_RETRY_AFTER_MS)
+        : null,
   });
 }

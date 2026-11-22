@@ -1,6 +1,10 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { ConnectionCatalogItem, PluginMarketplaceEntry } from "@rakazo/contracts";
-import { CATALOG_SEARCH_QUERY_MAX_LENGTH, SUBMIT_PLUGIN_URL } from "@rakazo/contracts";
+import {
+  CATALOG_SEARCH_QUERY_MAX_LENGTH,
+  CATALOG_SEARCH_QUERY_MIN_LENGTH,
+  SUBMIT_PLUGIN_URL,
+} from "@rakazo/contracts";
 import {
   CONNECTION_CATALOG_PAGE_SIZE,
   catalogItemKey,
@@ -129,7 +133,7 @@ export function PluginBrowse({
     if (category || searching)
       return pluginMatches.length || brandMatches.length ? (
         <section data-testid="plugin-results" className="mt-2">
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
             {brandMatches.map(({ item }) => catalogTile(item, item.name, item.logo))}
             {pluginMatches.slice(0, pluginCount).map(renderPluginRow)}
           </div>
@@ -170,7 +174,7 @@ export function PluginBrowse({
             <SectionHeading as="h2" className="mb-2 px-2.5">
               <Trans>Recommended</Trans>
             </SectionHeading>
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
               {recommended.map(({ entry, item }) =>
                 item ? catalogTile(item, item.name, item.logo) : renderPluginRow(entry),
               )}
@@ -187,7 +191,7 @@ export function PluginBrowse({
                 </Button>
               ) : null}
             </div>
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
               {entries.slice(0, SECTION_SIZE).map(renderPluginRow)}
             </div>
           </section>
@@ -229,7 +233,7 @@ export function PluginBrowse({
               </p>
             )
           ) : (
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
               {featuredTiles.map((tile) => {
                 const item = tile.item;
                 const key = item ? catalogItemKey(item) : tile.id;
@@ -273,7 +277,7 @@ export function PluginBrowse({
       !showFeatured &&
       !pluginMatches.length &&
       !brandMatches.length ? (
-        <p className="text-muted-foreground/80">
+        <p className="text-muted-foreground/80" role="status">
           <Trans>No apps match your search.</Trans>
         </p>
       ) : null}
@@ -286,7 +290,7 @@ export function PluginBrowse({
             </SectionHeading>
           ) : null}
           {visible.length > 0 && !category ? (
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
               {rendered.map((item) =>
                 catalogTile(item, item.name, item.logo, {
                   // Avoid duplicate connection-tile-* ids while featured is also shown.
@@ -311,7 +315,7 @@ export function PluginBrowse({
       ) : (
         <>
           {strongMatches.length > 0 && !category ? (
-            <div className="mb-2 grid grid-cols-2 gap-2">
+            <div className="mb-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
               {strongMatches.map((item) =>
                 catalogTile(item, item.name, item.logo, { tileTestId: true }),
               )}
@@ -319,7 +323,7 @@ export function PluginBrowse({
           ) : null}
           {renderPluginSections()}
           {rendered.length > 0 && !category ? (
-            <div className="mt-2 grid grid-cols-2 gap-2">
+            <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
               {rendered.map((item) =>
                 catalogTile(item, item.name, item.logo, { tileTestId: true }),
               )}
@@ -337,7 +341,7 @@ export function PluginBrowse({
               </Button>
             </div>
           ) : null}
-          {query.trim().length >= 2 &&
+          {query.trim().length >= CATALOG_SEARCH_QUERY_MIN_LENGTH &&
           query.trim().length <= CATALOG_SEARCH_QUERY_MAX_LENGTH &&
           !category
             ? renderPublicCatalogRow(query.trim())

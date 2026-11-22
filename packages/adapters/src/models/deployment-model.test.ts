@@ -1,5 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { resolveDeploymentModel } from "./deployment-model.js";
+import { listPiCatalog } from "../runtime/pi/models/pi-models.js";
+import {
+  adminDeploymentModel,
+  deploymentModelProviders,
+  matchingAdminDeploymentModel,
+  resolveDeploymentModel,
+} from "./deployment-model.js";
 
 // Host credentials come from the process, so blank the ones a developer machine or CI
 // host may carry; each case states its own.
@@ -162,5 +168,58 @@ describe("resolveDeploymentModel", () => {
         ...overrides,
       }),
     ).toMatchObject({ key: undefined, configured: false, hostCredentials: false });
+  });
+});
+
+describe("an admin's default for everyone", () => {
+  const saved = {
+    deploymentModelProvider: "anthropic",
+    deploymentModelId: "claude-sonnet-5",
+    deploymentModelCredentialCipher: "sealed-admin-key",
+    modelCreditsEnabled: false,
+  };
+  beforeEach(() => vi.stubEnv("RAKAZO_LOCAL_MODELS", "example-local-model"));
+  afterEach(() => vi.unstubAllEnvs());
+
+  it("applies only with its key, without credits and while the allowlist offers it", () => {
+    expect(adminDeploymentModel(saved)).toEqual({
+      provider: "anthropic",
+      modelId: "claude-sonnet-5",
+      cipher: "sealed-admin-key",
+    });
+    // A default saved without a key is the environment's own.
+    expect(adminDeploymentModel({ ...saved, deploymentModelCredentialCipher: null })).toBeNull();
+    expect(adminDeploymentModel({ ...saved, modelCreditsEnabled: true })).toBeNull();
+    expect(
+      adminDeploymentModel(saved, {
+        MODEL_CREDIT_OFFERINGS: JSON.stringify({ defaultOfferingId: null, offerings: [] }),
+      }),
+    ).toBeNull();
+    vi.stubEnv("RAKAZO_MODEL_PROVIDER_ALLOWLIST", "openrouter");
+    expect(adminDeploymentModel(saved)).toBeNull();
+  });
+
+  it("matches only the provider and model the admin selected", () => {
+    expect(matchingAdminDeploymentModel(saved, "anthropic", "claude-sonnet-5")).toMatchObject({
+      cipher: "sealed-admin-key",
+    });
+    expect(matchingAdminDeploymentModel(saved, "openrouter", "claude-sonnet-5")).toBeNull();
+    expect(matchingAdminDeploymentModel(saved, "anthropic", "claude-opus-5")).toBeNull();
+  });
+
+  it("offers only providers that connect with a key alone", () => {
+    expect(listPiCatalog()).toContainEqual(
+      expect.objectContaining({ provider: "local", id: "example-local-model" }),
+    );
+    const providers = deploymentModelProviders();
+    const ids = providers.map((provider) => provider.id);
+    expect(ids).toContain("anthropic");
+    expect(ids).not.toContain("local");
+    expect(ids).not.toContain("openai-compatible");
+    expect(ids).not.toContain("openai-codex");
+    expect(ids).not.toContain("google-vertex");
+    expect(providers.find((provider) => provider.id === "anthropic")?.models).toContainEqual(
+      expect.objectContaining({ id: "claude-sonnet-5" }),
+    );
   });
 });

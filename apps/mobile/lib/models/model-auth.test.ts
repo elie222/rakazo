@@ -8,7 +8,11 @@ it("sends the sign-in ID and cancellation signal on the client that began it", a
   const signal = new AbortController().signal;
   const call = vi.fn().mockResolvedValue({ status: "ready" });
 
-  await waitForModelOAuth("login-id", signal, call as unknown as typeof rpc);
+  await waitForModelOAuth(
+    { loginId: "login-id", expiresInSeconds: 900 },
+    signal,
+    call as unknown as typeof rpc,
+  );
 
   expect(call).toHaveBeenCalledExactlyOnceWith(
     "models/completeOAuth",

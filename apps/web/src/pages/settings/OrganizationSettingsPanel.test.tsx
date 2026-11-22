@@ -388,7 +388,10 @@ describe("organization members", () => {
       organizationId: "org-work",
       email: "cy@example.test",
     });
-    expect(copy).toHaveBeenCalledWith("https://app.example.test/join/invitation-1");
+    expect(copy).toHaveBeenCalledWith(
+      "https://app.example.test/join/invitation-1",
+      expect.any(Function),
+    );
     expect(toast).toHaveBeenCalledWith("Invite link copied");
 
     organizations.members.setRole.mockResolvedValue({ ok: true });
