@@ -410,7 +410,7 @@ function RailItem({
     variant: "ghost",
     size: "icon",
     className: cn(
-      "app-no-drag group/rail-item min-w-0 shrink-0 select-none justify-start overflow-hidden rounded-full px-0 text-start",
+      "app-no-drag group/rail-item relative min-w-0 shrink-0 select-none justify-start overflow-hidden rounded-full px-0 text-start",
       expanded
         ? "w-full gap-2"
         : "hover:w-max hover:bg-primary hover:pe-2.5 hover:text-primary-foreground hover:shadow-md focus-visible:w-max focus-visible:bg-primary focus-visible:pe-2.5 focus-visible:text-primary-foreground focus-visible:shadow-md",
@@ -424,7 +424,7 @@ function RailItem({
       {expanded ? (
         <span className="min-w-0 truncate text-body">{label}</span>
       ) : (
-        <span className="absolute start-[34px] top-1/2 -translate-y-1/2 whitespace-nowrap text-label opacity-0 transition-opacity duration-(--motion-micro) ease-(--ease-standard) group-hover/rail-item:static group-hover/rail-item:translate-y-0 group-hover/rail-item:opacity-100 group-focus-visible/rail-item:static group-focus-visible/rail-item:translate-y-0 group-focus-visible/rail-item:opacity-100 motion-reduce:transition-none">
+        <span className="pointer-events-none absolute start-[34px] top-1/2 -translate-y-1/2 whitespace-nowrap text-label opacity-0 transition-opacity duration-(--motion-micro) ease-(--ease-standard) group-hover/rail-item:static group-hover/rail-item:translate-y-0 group-hover/rail-item:opacity-100 group-focus-visible/rail-item:static group-focus-visible/rail-item:translate-y-0 group-focus-visible/rail-item:opacity-100 motion-reduce:transition-none">
           {label}
         </span>
       )}
