@@ -679,8 +679,7 @@ function SpaceShell() {
             rosterDropAction={rosterDrop.rosterDropAction}
             applyRosterDrop={rosterDrop.applyRosterDrop}
             openSpaceChat={openSpaceChat}
-            spaceMenuAnchor={dialogs.spaceMenuAnchor}
-            setSpaceMenu={dialogs.setSpaceMenu}
+            openSpaceSettings={openSpaceSettings}
             setRenameSectionTarget={dialogs.setRenameSectionTarget}
             setDeleteSectionTarget={dialogs.setDeleteSectionTarget}
             toggleSidebarSection={toggleSidebarSection}
@@ -889,7 +888,6 @@ function SpaceShell() {
         <ShellDialogs
           dialogs={dialogs}
           rpc={rpc}
-          spaces={spaces}
           bots={bots}
           activeId={active?.id}
           activeGroupId={activeGroup?.id}
@@ -897,8 +895,6 @@ function SpaceShell() {
           navigate={navigate}
           setPanel={setPanel}
           refreshBots={refreshBots}
-          removeSpace={removeSpace}
-          openSpaceSettings={openSpaceSettings}
           closeMobileSidebar={() => setMobileSidebarOpen(false)}
           createBot={createBot}
           botAvatarSet={bootstrapMe?.botAvatarSet ?? DEFAULT_NEW_BOT_AVATAR_SET}

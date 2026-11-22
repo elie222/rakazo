@@ -59,10 +59,16 @@ test("a new space starts empty, is renamed in its settings, and is deleted with 
     .filter({ hasText: "Typo space" });
   await expect(occupied.getByRole("button", { name: /^Scout/ })).toBeVisible();
 
-  // The space menu's Settings opens the Space section, where it is renamed in place.
-  await sidebar.getByRole("button", { name: "Actions for Typo space" }).click();
-  await expect(page.getByRole("menuitem", { name: "Rename space" })).toHaveCount(0);
-  await page.getByRole("menuitem", { name: "Settings" }).click();
+  const gear = sidebar.getByRole("button", { name: "Settings for Typo space" });
+  await page.mouse.move(1, 1);
+  await expect(gear).toHaveCSS("opacity", "0");
+  await occupied.getByRole("button", { name: /Collapse Typo space/ }).hover();
+  await expect(gear).toHaveCSS("opacity", "1");
+  await captureScreenshot(page, testInfo, "sidebar-space-settings-gear");
+
+  // The gear opens the named Space's settings directly, including from the keyboard.
+  await page.mouse.move(1, 1);
+  await gear.press("Enter");
   const settings = page.getByTestId("user-settings");
   await expect(settings).toHaveAttribute("data-settings-section", "space");
   const spaceName = settings.getByTestId("space-settings").getByLabel("Name");
@@ -147,8 +153,8 @@ test("deleting the last bot in a space stays in the app after first use", {
     page.locator("main").getByRole("button", { name: "New bot", exact: true }),
   ).toBeVisible();
 
-  await sidebar.getByRole("button", { name: "Actions for Side" }).click();
-  await page.getByRole("menuitem", { name: "Delete space" }).click();
+  await sidebar.getByRole("button", { name: "Settings for Side" }).press("Enter");
+  await page.getByTestId("space-settings").getByRole("button", { name: "Delete space" }).click();
   await page
     .getByRole("alertdialog", { name: "Delete Side?" })
     .getByRole("button", { name: "Delete", exact: true })
