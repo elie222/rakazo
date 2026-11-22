@@ -9,12 +9,13 @@
 #   pr-digest --reply ID BODY reply to a review comment thread
 #
 # Exit: 0 green · 10 check failures · 11 open comments · 12 still pending
-#       20 local/remote out of sync · 1 error
+#       20 local/remote out of sync · 1 error. --watch exits 0 on any verdict.
 set -uo pipefail
 
 POLL=${PR_DIGEST_POLL:-30}
 BODY_CHARS=${PR_DIGEST_BODY_CHARS:-600}
 SEEN_DIR=${PR_DIGEST_SEEN_DIR:-$HOME/.cache/pr-digest}
+CACHE_DIR=$SEEN_DIR/http
 # How many empty polls to allow before accepting that a PR has no check runs.
 EMPTY_POLLS=${PR_DIGEST_EMPTY_POLLS:-3}
 SHOW_ALL=0
@@ -47,9 +48,81 @@ api() {
   printf '%s' "$out"
 }
 
+# The value of one response header, from the header block `get` captured.
+header() { awk -F': ' -v k="$1" 'tolower($1) == k { print $2; exit }' <<<"$2"; }
+
+# Seconds to wait out a rate limit, or a failure when the refusal is not one.
+rate_limit_wait() {
+  local after remaining reset now
+  after=$(header retry-after "$1")
+  remaining=$(header x-ratelimit-remaining "$1")
+  reset=$(header x-ratelimit-reset "$1")
+  if [[ $after =~ ^[0-9]+$ ]]; then
+    echo $((after + 1))
+  elif [ "$remaining" = 0 ] && [[ $reset =~ ^[0-9]+$ ]]; then
+    now=$(date +%s)
+    echo $((reset > now ? reset - now + 1 : 1))
+  else
+    return 1
+  fi
+}
+
+# GET one URL, sending the ETag of the last answer. An unchanged resource
+# answers 304 from the cache, which GitHub does not count against the hourly
+# rate limit, so a watch costs almost nothing between changes and many agents
+# can watch PRs at once on one account. Out of quota, wait for the reset rather
+# than failing the watch. The cache is shared, so writes replace it atomically.
+get() {
+  local url=$1 file etag resp status headers wait tmp tries=0
+  file="$CACHE_DIR/${url//[^A-Za-z0-9._-]/_}"
+  mkdir -p "$CACHE_DIR"
+  while [ "$tries" -lt 5 ]; do
+    tries=$((tries + 1))
+    etag=""
+    [ -s "$file" ] && etag=$(head -n 1 "$file")
+    resp=$(gh api -i ${etag:+-H "If-None-Match: $etag"} "$url" 2>/dev/null)
+    status=$(head -n 1 <<<"$resp" | awk '{ print $2 }')
+    headers=$(awk 'NR > 1 && /^\r?$/ { exit } NR > 1' <<<"$resp" | tr -d '\r')
+    case $status in
+      200)
+        tmp=$(mktemp "$file.XXXXXX") || return 1
+        { header etag "$headers"; awk 'body { print; next } /^\r?$/ { body = 1 }' <<<"$resp"; } >"$tmp"
+        mv "$tmp" "$file"
+        tail -n +2 "$file"
+        return 0
+        ;;
+      304)
+        if [ -s "$file" ]; then tail -n +2 "$file"; return 0; fi
+        ;;
+      403|429)
+        wait=$(rate_limit_wait "$headers") || return 1
+        echo "pr-digest: GitHub rate limit, waiting ${wait}s" >&2
+        sleep "$wait"
+        ;;
+      *) return 1 ;;
+    esac
+  done
+  return 1
+}
+
+# Every page of a list endpoint as one JSON array; $2 picks the list out of an
+# endpoint that wraps it in an object.
+get_list() {
+  local url=$1 path=${2:-.} sep='?' page=1 body pages="" n
+  [[ $url == *\?* ]] && sep='&'
+  while :; do
+    body=$(get "$url${sep}per_page=100&page=$page") || return 1
+    pages+=$body$'\n'
+    n=$(jq "($path // []) | length" <<<"$body") || return 1
+    [ "$n" -lt 100 ] && break
+    page=$((page + 1))
+  done
+  jq -cs "map($path // []) | add // []" <<<"$pages"
+}
+
 check_runs() {
-  api --paginate "repos/$1/commits/$2/check-runs?per_page=100" \
-    --jq '.check_runs[] | {name, status, conclusion, html_url}' | jq -s .
+  get_list "repos/$1/commits/$2/check-runs" .check_runs |
+    jq '[.[] | {name, status, conclusion, html_url}]'
 }
 
 # A workflow queued behind a runner backlog has no jobs yet, so it shows up
@@ -57,10 +130,10 @@ check_runs() {
 # count; a manual dispatch on the same commit is not part of the PR's checks.
 # A newer run of the same workflow replaces an older one.
 workflow_runs() {
-  api --paginate "repos/$1/actions/runs?head_sha=$2&per_page=100" \
-    --jq '.workflow_runs[] | select(.event | test("^(pull_request|pull_request_target|push)$"))
-      | {id, workflow_id, event, name, status, conclusion, html_url}' |
-    jq -s 'group_by([.workflow_id, .event]) | map(max_by(.id))'
+  get_list "repos/$1/actions/runs?head_sha=$2" .workflow_runs |
+    jq '[.[] | select(.event | test("^(pull_request|pull_request_target|push)$"))
+      | {id, workflow_id, event, name, status, conclusion, html_url}]
+      | group_by([.workflow_id, .event]) | map(max_by(.id))'
 }
 
 # Workflow runs that ended unsuccessfully without a failed job of their own,
@@ -73,16 +146,11 @@ failed_workflows() {
              | length == 0)]' <<<"$2"
 }
 
-# Fork PRs always carry Vercel's "Authorization required to deploy." failure,
-# which AGENTS.md says to ignore; counting it would wake every watch at once.
-# On a same-repo PR the same status is a real deploy problem, so it still counts.
-FORK=false
+# Vercel only deploys the marketing site, and fork PRs always fail it with
+# "Authorization required to deploy.", so it never gates a PR here.
 commit_statuses() {
-  api --paginate "repos/$1/commits/$2/status?per_page=100" \
-    --jq '.statuses[] | {context, state, description}' |
-    jq -s --argjson fork "$FORK" '[.[]
-      | select($fork and .context == "Vercel" and .description == "Authorization required to deploy." | not)
-      | {context, state}]'
+  get_list "repos/$1/commits/$2/status" .statuses |
+    jq '[.[] | select(.context | startswith("Vercel") | not) | {context, state}]'
 }
 
 logs() {
@@ -144,7 +212,7 @@ findings() {
   local noise_def='
     def noise:
       .user.type == "Bot" and (
-        (.user.login == "vercel[bot]" and (.body | startswith("[vc]: ")))
+        .user.login == "vercel[bot]"
         or (.user.login == "coderabbitai[bot]" and (.body |
           sub("^<!-- coderabbit-ai-generated:v1 -->\\s*"; "")
           | startswith("<!-- This is an auto-generated comment: summarize by coderabbit.ai -->")
@@ -156,7 +224,7 @@ findings() {
             or startswith("<h3>Qodo is busy working</h3>") or startswith("<!-- qodo:")
             or test("^\\[Code review\\]\\([^)]*\\) by qodo was updated up to the latest commit ")))
         or (.user.login == "github-actions[bot]" and (.body |
-          startswith("<!-- rakazo-playwright-screenshots -->\n### Playwright screenshots")
+          startswith("<!-- rakazo-playwright-screenshots -->")
             or startswith("<!-- rakazo-preview -->")
             or . == "/agentic_review"))
       );'
@@ -197,7 +265,7 @@ findings() {
   # Inline review threads. One stays open until *you* have replied to it; a bot
   # follow-up confirming your fix must not mark it handled.
   local inline open
-  inline=$(api --paginate "repos/$repo/pulls/$pr/comments?per_page=100" | jq -s 'add // []') \
+  inline=$(get_list "repos/$repo/pulls/$pr/comments") \
     || die "could not read review comments"
   open=$(jq --arg me "$viewer" --argjson n "$BODY_CHARS" "
     $clean_def
@@ -218,7 +286,7 @@ findings() {
   # yours is not enough, and a bot confirming a fix must not close it. Compare
   # against updated_at so an edit after your reply reopens the finding.
   local convo noise_n convo_open
-  convo=$(api --paginate "repos/$repo/issues/$pr/comments?per_page=100" | jq -s 'add // []') \
+  convo=$(get_list "repos/$repo/issues/$pr/comments") \
     || die "could not read conversation comments"
   noise_n=$(jq "
     $noise_def
@@ -271,7 +339,7 @@ findings() {
   # A human can request changes in a review summary with no line comment and no
   # conversation comment attached, so that surface has to be read too.
   local reviews review_open
-  reviews=$(api --paginate "repos/$repo/pulls/$pr/reviews?per_page=100" | jq -s 'add // []') \
+  reviews=$(get_list "repos/$repo/pulls/$pr/reviews") \
     || die "could not read reviews"
   review_open=$(jq --arg me "$viewer" --argjson n "$BODY_CHARS" "
     $clean_def
@@ -294,7 +362,7 @@ digest() {
 
   local meta head state mergeable branch
   meta=$(gh pr view "$pr" --repo "$repo" \
-    --json headRefOid,state,mergeable,headRefName,reviewDecision) || die "no PR $pr"
+    --json headRefOid,state,mergeable,headRefName,reviewDecision 2>/dev/null) || die "no PR $pr"
   head=$(jq -r .headRefOid <<<"$meta")
   state=$(jq -r .state <<<"$meta")
   mergeable=$(jq -r .mergeable <<<"$meta")
@@ -398,7 +466,7 @@ digest() {
   # everything above may already be stale. A failed re-read is an error, not
   # an out-of-sync signal — callers must not push to "reconcile" a blind miss.
   local head_now
-  head_now=$(gh pr view "$pr" --repo "$repo" --json headRefOid --jq .headRefOid) \
+  head_now=$(gh pr view "$pr" --repo "$repo" --json headRefOid --jq .headRefOid 2>/dev/null) \
     || die "could not re-read PR $pr head"
   if [ "$head_now" != "$head" ]; then
     echo "VERDICT out-of-sync (head moved during this observation)"
@@ -447,16 +515,13 @@ main() {
     || die "could not resolve authenticated user"
   case $viewer in ''|null|\{*) die "could not resolve authenticated user" ;; esac
   [ -n "$pr" ] || pr=$(gh pr view --json number --jq .number 2>/dev/null) || die "no PR for this branch"
-  FORK=$(gh pr view "$pr" --repo "$repo" --json isCrossRepository --jq .isCrossRepository) \
-    || die "could not read PR $pr"
-  [ "$FORK" = true ] || FORK=false
 
   if [ "$watch" -eq 1 ]; then
-    local head runs statuses workflows empty=0 baseline="" first=1 seen
+    local pull head runs statuses workflows empty=0 baseline="" first=1 seen
     seen=$(seen_path "$repo" "$pr")
     while :; do
-      head=$(gh pr view "$pr" --repo "$repo" --json headRefOid --jq .headRefOid) \
-        || die "could not read PR head"
+      pull=$(get "repos/$repo/pulls/$pr") || die "could not read PR $pr"
+      head=$(jq -r .head.sha <<<"$pull")
       runs=$(check_runs "$repo" "$head") || die "could not read check runs"
       statuses=$(commit_statuses "$repo" "$head") || die "could not read commit statuses"
       workflows=$(workflow_runs "$repo" "$head") || die "could not read workflow runs"
@@ -486,6 +551,11 @@ main() {
       fi
       sleep "$POLL"
     done
+    # The verdict line carries the result. A watch that ends on anything but an
+    # error exits 0, so a background runner does not report it as failed.
+    digest "$pr" "$repo" "$viewer"
+    [ $? -eq 1 ] && exit 1
+    exit 0
   fi
 
   digest "$pr" "$repo" "$viewer"
