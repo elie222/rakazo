@@ -79,10 +79,10 @@ const IMPORT_ACTION = { id: AGENT_IMPORT_ASK_ACTION_ID, label: "Move from anothe
 /** The first question the bot a new account starts with asks, as it introduces itself. */
 async function isFirstBotOpening({ deps, run, bot }: RunContext): Promise<boolean> {
   if (run.trigger !== "created" || bot.spawnKey !== FIRST_BOT_SPAWN_KEY) return false;
+  // A new bot's chat holds only its introduction so far, so the whole thread is a short read.
   const messages = await deps.prisma.message.findMany({
     where: { threadId: run.threadId },
     select: { id: true, role: true, blocks: true },
-    take: 50,
   });
   return !messages.some(
     (message) =>
