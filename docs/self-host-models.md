@@ -159,8 +159,10 @@ What it needs:
   OS user. The official Docker images and the desktop app's local stack do not include Claude
   Code, and adding it to them is not supported.
 - Claude Code 2.1.280 or newer on that user's `PATH`, signed in once in a terminal as that user
-  with `claude auth login`. This route uses no Claude sign-in inside Rakazo and no Claude token,
-  so `claude setup-token` is not needed.
+  with `claude auth login`. On a server without a browser, the CLI can use the token
+  `claude setup-token` creates instead: set it as `CLAUDE_CODE_OAUTH_TOKEN` together with
+  `RAKAZO_CLAUDE_CODE_SETUP_TOKEN=1` in the API's and worker's environment. Either way there is
+  no Claude sign-in inside Rakazo.
 - One account on the server. A Claude sign-in belongs to one person, so Rakazo refuses Claude Code
   runs while the server has more than one account (people who only message bots from chat apps do
   not count) or bills for model usage.
@@ -179,8 +181,9 @@ Anthropic's terms; see [Legal and compliance](https://code.claude.com/docs/en/le
 
 The CLI runs in an empty private temporary directory with an allowlisted environment. API keys and
 other server secrets, including `ANTHROPIC_API_KEY`, are never passed to it, so it always uses its
-own sign-in. Only the deployment model runs on Claude Code; it is not offered as a connection in
-**Settings → Models**.
+own sign-in. `RAKAZO_CLAUDE_CODE_SETUP_TOKEN=1` adds only `CLAUDE_CODE_OAUTH_TOKEN`, which the CLI
+reads and Rakazo does not. Only the deployment model runs on Claude Code; it is not offered as a
+connection in **Settings → Models**.
 
 ## Ollama Cloud
 
