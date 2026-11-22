@@ -2,7 +2,11 @@
 
 import { i18n } from "@lingui/core";
 import type { LoginFieldInput } from "@rakazo/contracts";
-import { BLOCKED_ITEM_ANSWER, UNCHOSEN_ITEM_ANSWER } from "@rakazo/contracts";
+import {
+  AGENT_IMPORT_ASK_ACTION_ID,
+  BLOCKED_ITEM_ANSWER,
+  UNCHOSEN_ITEM_ANSWER,
+} from "@rakazo/contracts";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { act } from "react";
@@ -397,6 +401,46 @@ it("keeps an accepted question choice answered until the block updates", async (
   await render({ ...block, status: "answered", answer: "london" });
   expect(button("BLondon")!.getAttribute("aria-pressed")).toBe("true");
   expect(button("AParis")!.getAttribute("aria-pressed")).toBe("false");
+});
+
+it("opens the agent import from a first bot's opening question instead of answering", async () => {
+  const block: AskBlock = {
+    kind: "ask",
+    text: "Which city?",
+    status: "pending",
+    actions: [
+      { id: "paris", label: "Paris" },
+      { id: AGENT_IMPORT_ASK_ACTION_ID, label: "Move from another assistant" },
+    ],
+  };
+  const onAnswer = vi.fn(async () => undefined);
+  const onOpenAgentImport = vi.fn();
+  const renderCard = (shown: AskBlock, opener?: () => void) =>
+    act(async () =>
+      root.render(
+        <AskCard
+          block={shown}
+          canAnswer
+          canDismiss
+          onAnswer={onAnswer}
+          onDismiss={async () => undefined}
+          onOpenAgentImport={opener}
+        />,
+      ),
+    );
+
+  await renderCard(block, onOpenAgentImport);
+  await act(async () => button("BMove from another assistant")!.click());
+  expect(onOpenAgentImport).toHaveBeenCalledOnce();
+  expect(onAnswer).not.toHaveBeenCalled();
+  expect(container.querySelector("[aria-pressed]")).toBeNull();
+
+  await renderCard({ ...block, status: "answered", answer: "paris" }, onOpenAgentImport);
+  expect(button("BMove from another assistant")).toBeUndefined();
+
+  await renderCard(block);
+  expect(button("BMove from another assistant")).toBeUndefined();
+  expect(button("AParis")).toBeDefined();
 });
 
 it("announces an answered question's state and marks only the chosen option", async () => {

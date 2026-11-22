@@ -1,5 +1,6 @@
 import type { AgentRunRequest, AgentRuntimeEvent, BackgroundJob } from "@rakazo/adapter-kit";
 import type { MessageBlock } from "@rakazo/contracts";
+import { AGENT_IMPORT_ASK_ACTION_ID } from "@rakazo/contracts";
 import { deferred } from "@rakazo/core/test-async";
 import type { AppendEventInput, Prisma } from "@rakazo/db";
 import {
@@ -63,6 +64,8 @@ async function runTurn(
   intent: "fyi" | "request" | "question" = "fyi",
   options: {
     trigger?: string;
+    /** The run's owner made another bot before this one. */
+    earlierBot?: boolean;
     doneText?: string;
     splitText?: boolean;
     priorProgressText?: string;
@@ -195,6 +198,7 @@ async function runTurn(
         replyMode: options.replyMode ?? "chat",
         computer: { id: "computer-1", scope: "dedicated" },
       })),
+      findFirst: vi.fn(async () => (options.earlierBot ? { id: "bot-0" } : null)),
       findMany: vi.fn(async () => []),
     },
     attempt: {
@@ -1287,6 +1291,43 @@ describe("text written before a question", () => {
         ],
       }),
     );
+  });
+
+  describe("a first bot's opening question", () => {
+    const opening = { kind: "ask", text: "Which order?" } as const;
+    const offered = async (options: Parameters<typeof runTurn>[5]) => {
+      const { pauseRunForInput } = await runTurn("", false, "", [], "fyi", {
+        trigger: "created",
+        ...options,
+        runtimeEvents: [
+          { type: "tool", name: "ask_user", args: {}, executionId: "ask-1" },
+          { type: "ask", text: "Which order?", actions: [{ id: "choice-1", label: "Art first" }] },
+        ],
+      });
+      const blocks = (pauseRunForInput.mock.calls[0] as unknown as [{ blocks: MessageBlock[] }])[0]
+        .blocks;
+      const ask = blocks.find((block) => block.kind === "ask");
+      expect(ask).toMatchObject(opening);
+      return ask?.kind === "ask" ? ask.actions?.map((action) => action.id) : undefined;
+    };
+
+    it("also offers the agent import", async () => {
+      expect(await offered({})).toEqual(["choice-1", AGENT_IMPORT_ASK_ACTION_ID]);
+    });
+
+    it("is not offered once the person has another bot", async () => {
+      expect(await offered({ earlierBot: true })).toEqual(["choice-1"]);
+    });
+
+    it("is not offered after the person has written", async () => {
+      expect(await offered({ history: [{ id: "m1", seq: 1, role: "user", text: "Hi" }] })).toEqual([
+        "choice-1",
+      ]);
+    });
+
+    it("is not offered outside a new bot's introduction", async () => {
+      expect(await offered({ trigger: "user" })).toEqual(["choice-1"]);
+    });
   });
 
   it("posts the text on runs that may finish silently", async () => {
