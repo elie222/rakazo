@@ -1,4 +1,5 @@
 import { timingSafeEqual } from "node:crypto";
+import { sandboxKindCapabilities } from "@rakazo/adapters";
 import { LOCAL_COMPUTER_HOST_PATH, LOCAL_SETTINGS_TOKEN_HEADER } from "@rakazo/contracts";
 import { LOCAL_SIGNUP_COOKIE, localSignupKey } from "@rakazo/core/node/local-signup";
 import type { PrismaClient } from "@rakazo/db";
@@ -45,7 +46,8 @@ export function mountLocalComputerHost(
     if (!validLocalSettingsToken(deps.token, c.req.header(LOCAL_SETTINGS_TOKEN_HEADER))) {
       return c.json({ error: "Local settings are unavailable" }, 401);
     }
-    if (deps.sandboxProvider !== "docker") return c.json({ error: "Unavailable" }, 403);
+    if (!sandboxKindCapabilities(deps.sandboxProvider).offersHostComputer)
+      return c.json({ error: "Unavailable" }, 403);
     const body = await readBoundedBody(c.req.raw, 1024);
     if (body === null) return c.json({ error: "Request too large" }, 413);
     let computerHost: unknown;

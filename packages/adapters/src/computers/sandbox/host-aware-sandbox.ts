@@ -33,9 +33,11 @@ import {
 } from "./configured-sandbox.js";
 import type { SandboxProviderOptions } from "./sandbox-factory.js";
 import { createSandboxProvider } from "./sandbox-factory.js";
+import { sandboxKindCapabilities } from "./sandbox-kind-capabilities.js";
 
 export function sandboxKindForBot(envKind: string, computerHost: string | null | undefined) {
-  if (envKind === "docker" && computerHost === "this-mac") return "desktop";
+  if (sandboxKindCapabilities(envKind).offersHostComputer && computerHost === "this-mac")
+    return "desktop";
   return envKind;
 }
 
@@ -128,7 +130,7 @@ async function createBaseRunSandbox(
         }
       : opts.onUnsafeStop,
   });
-  if (kind !== "docker" || !opts.prisma) return primary;
+  if (!sandboxKindCapabilities(kind).offersHostComputer || !opts.prisma) return primary;
   return new HostAwareSandbox(
     primary,
     new HostComputerSandbox(opts.hostComputerUrl ?? "", opts.hostComputerToken ?? ""),

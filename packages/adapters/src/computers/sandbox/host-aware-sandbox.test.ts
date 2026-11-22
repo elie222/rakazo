@@ -224,9 +224,10 @@ describe("host-aware sandbox", () => {
     }
   });
 
-  it("only switches docker deployments onto this Mac", () => {
+  it("only switches deployments that offer the host computer onto this Mac", () => {
     expect(sandboxKindForBot("docker", "this-mac")).toBe("desktop");
     expect(sandboxKindForBot("docker", "docker")).toBe("docker");
+    expect(sandboxKindForBot("local-vm", "this-mac")).toBe("desktop");
     expect(sandboxKindForBot("e2b", "this-mac")).toBe("e2b");
     expect(sandboxKindForBot("fake", "this-mac")).toBe("fake");
   });
