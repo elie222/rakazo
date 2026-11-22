@@ -179,25 +179,86 @@ for relative in ("Default/Preferences", "Local State"):
         json.dump(data, handle)
 `;
 
-/** True when this profile's browser is running. Renderers carry --type= and do not count. */
-const CHROME_PROFILE_RUNNING_SCRIPT = `
-import os, sys
-profile = sys.argv[1]
-flag = "--user-data-dir=" + profile
-for pid in os.listdir("/proc"):
-    if not pid.isdigit():
-        continue
+/**
+ * Python helpers the profile scripts start with. `profile_pids` yields this profile's browser
+ * processes as (pid, args, cmdline without the profile flag); renderers carry --type= and do not
+ * count. `debug_port` reads one's --remote-debugging-port, and `owns_port` is whether that process
+ * holds the port's listening socket.
+ */
+const CHROME_PROFILE_PRELUDE = `
+import os
+
+def profile_pids(profile, root="/proc"):
+    flag = "--user-data-dir=" + profile
     try:
-        raw = open("/proc/" + pid + "/cmdline", "rb").read()
+        names = os.listdir(root)
     except OSError:
-        continue
-    text = raw.replace(b"\\0", b"\\n").decode("utf-8", "replace")
-    args = [line for line in text.split("\\n") if line]
-    joined = " " + text.replace("\\n", " ") + " "
-    if flag not in args and (" " + flag + " ") not in joined:
-        continue
-    if "--type=" in text.replace(flag, ""):
-        continue
+        return
+    for pid in names:
+        if not pid.isdigit():
+            continue
+        try:
+            raw = open(root + "/" + pid + "/cmdline", "rb").read()
+        except OSError:
+            continue
+        text = raw.replace(b"\\0", b"\\n").decode("utf-8", "replace")
+        args = [line for line in text.split("\\n") if line]
+        joined = " " + text.replace("\\n", " ") + " "
+        if flag not in args and (" " + flag + " ") not in joined:
+            continue
+        stripped = text.replace(flag, "")
+        if "--type=" in stripped:
+            continue
+        yield pid, args, stripped
+
+def debug_port(args, stripped):
+    for arg in args:
+        if arg.startswith("--remote-debugging-port=") and arg.split("=", 1)[1].isdigit():
+            return int(arg.split("=", 1)[1])
+    marker = "--remote-debugging-port="
+    start = stripped.rfind(marker)
+    if start < 0:
+        return None
+    digits = []
+    index = start + len(marker)
+    while index < len(stripped) and stripped[index].isdigit():
+        digits.append(stripped[index])
+        index += 1
+    return int("".join(digits)) if digits else None
+
+def owns_port(pid, port, root="/proc"):
+    hexport = format(port, "X")
+    inodes = set()
+    for net in (root + "/net/tcp", root + "/net/tcp6"):
+        try:
+            handle = open(net, encoding="utf-8")
+        except OSError:
+            continue
+        with handle:
+            next(handle, None)
+            for line in handle:
+                fields = line.split()
+                if len(fields) < 10 or fields[1].rsplit(":", 1)[-1].upper() != hexport:
+                    continue
+                inodes.add(fields[9])
+    try:
+        fds = os.listdir(root + "/" + pid + "/fd")
+    except OSError:
+        return False
+    for name in fds:
+        try:
+            link = os.readlink(root + "/" + pid + "/fd/" + name)
+        except OSError:
+            continue
+        if link.startswith("socket:[") and link[8:-1] in inodes:
+            return True
+    return False
+`;
+
+/** True when this profile's browser is running. */
+const CHROME_PROFILE_RUNNING_SCRIPT = `${CHROME_PROFILE_PRELUDE}
+import sys
+for _ in profile_pids(sys.argv[1]):
     raise SystemExit(0)
 raise SystemExit(1)
 `;
@@ -229,98 +290,24 @@ raise SystemExit(1)
  * Exit 0 when this profile's browser process owns its debugger socket.
  * argv: profile [port] [proc_root]. An empty port accepts the port on the command line.
  */
-export const CHROME_OWNS_DEBUG_PORT_SCRIPT = `
-import os, sys
+export const CHROME_OWNS_DEBUG_PORT_SCRIPT = `${CHROME_PROFILE_PRELUDE}
+import sys
 profile = sys.argv[1]
 expect = sys.argv[2] if len(sys.argv) > 2 and sys.argv[2] != "" else None
 root = sys.argv[3] if len(sys.argv) > 3 and sys.argv[3] != "" else "/proc"
-flag = "--user-data-dir=" + profile
-try:
-    names = os.listdir(root)
-except OSError:
-    raise SystemExit(1)
-for pid in names:
-    if not pid.isdigit():
-        continue
-    try:
-        raw = open(root + "/" + pid + "/cmdline", "rb").read()
-    except OSError:
-        continue
-    text = raw.replace(b"\\0", b"\\n").decode("utf-8", "replace")
-    args = [line for line in text.split("\\n") if line]
-    joined = " " + text.replace("\\n", " ") + " "
-    if flag not in args and (" " + flag + " ") not in joined:
-        continue
-    stripped = text.replace(flag, "")
-    if "--type=" in stripped:
-        continue
-    found = None
-    for arg in args:
-        if arg.startswith("--remote-debugging-port=") and arg.split("=", 1)[1].isdigit():
-            found = int(arg.split("=", 1)[1])
-            break
-    if found is None:
-        marker = "--remote-debugging-port="
-        start = stripped.rfind(marker)
-        if start >= 0:
-            digits = []
-            index = start + len(marker)
-            while index < len(stripped) and stripped[index].isdigit():
-                digits.append(stripped[index])
-                index += 1
-            if digits:
-                found = int("".join(digits))
+for pid, args, stripped in profile_pids(profile, root):
+    found = debug_port(args, stripped)
     if found is None or (expect is not None and str(found) != expect):
         continue
-    hexport = format(found, "X")
-    inodes = set()
-    for net in (root + "/net/tcp", root + "/net/tcp6"):
-        try:
-            handle = open(net, encoding="utf-8")
-        except OSError:
-            continue
-        with handle:
-            next(handle, None)
-            for line in handle:
-                fields = line.split()
-                if len(fields) < 10 or fields[1].rsplit(":", 1)[-1].upper() != hexport:
-                    continue
-                inodes.add(fields[9])
-    try:
-        fds = os.listdir(root + "/" + pid + "/fd")
-    except OSError:
-        continue
-    for name in fds:
-        try:
-            link = os.readlink(root + "/" + pid + "/fd/" + name)
-        except OSError:
-            continue
-        if link.startswith("socket:[") and link[8:-1] in inodes:
-            raise SystemExit(0)
+    if owns_port(pid, found, root):
+        raise SystemExit(0)
 raise SystemExit(1)
 `;
 
 /** Stop this profile's browser so a failed debugger bind cannot keep the profile. */
-const CHROME_STOP_PROFILE_SCRIPT = `
-import os, signal, sys, time
-profile = sys.argv[1]
-flag = "--user-data-dir=" + profile
-pids = []
-for pid in os.listdir("/proc"):
-    if not pid.isdigit():
-        continue
-    try:
-        raw = open("/proc/" + pid + "/cmdline", "rb").read()
-    except OSError:
-        continue
-    text = raw.replace(b"\\0", b"\\n").decode("utf-8", "replace")
-    args = [line for line in text.split("\\n") if line]
-    joined = " " + text.replace("\\n", " ") + " "
-    if flag not in args and (" " + flag + " ") not in joined:
-        continue
-    if "--type=" in text.replace(flag, ""):
-        continue
-    pids.append(int(pid))
+const CHROME_STOP_PROFILE_SCRIPT = `${CHROME_PROFILE_PRELUDE}
+import signal, sys, time
+pids = [int(pid) for pid, _, _ in profile_pids(sys.argv[1])]
 for pid in pids:
     try:
         os.kill(pid, signal.SIGTERM)
@@ -1297,78 +1284,17 @@ print(json.dumps(out))
     profile: string,
     context: AdapterContext,
   ): Promise<boolean> {
-    const script = `
-import os, sys, urllib.parse, urllib.request
+    const script = `${CHROME_PROFILE_PRELUDE}
+import sys, urllib.parse, urllib.request
 uri, profile = sys.argv[1], sys.argv[2]
-flag = "--user-data-dir=" + profile
 port = None
 owner = None
-for pid in os.listdir("/proc"):
-    if not pid.isdigit():
-        continue
-    try:
-        raw = open("/proc/" + pid + "/cmdline", "rb").read()
-    except OSError:
-        continue
-    text = raw.replace(b"\\0", b"\\n").decode("utf-8", "replace")
-    args = [line for line in text.split("\\n") if line]
-    joined = " " + text.replace("\\n", " ") + " "
-    if flag not in args and (" " + flag + " ") not in joined:
-        continue
-    stripped = text.replace(flag, "")
-    if "--type=" in stripped:
-        continue
-    found = None
-    for arg in args:
-        if arg.startswith("--remote-debugging-port=") and arg.split("=", 1)[1].isdigit():
-            found = int(arg.split("=", 1)[1])
-            break
-    if found is None:
-        marker = "--remote-debugging-port="
-        start = stripped.rfind(marker)
-        if start >= 0:
-            digits = []
-            index = start + len(marker)
-            while index < len(stripped) and stripped[index].isdigit():
-                digits.append(stripped[index])
-                index += 1
-            if digits:
-                found = int("".join(digits))
-    if found is None:
-        continue
-    port = found
-    owner = pid
-    break
-if port is None or owner is None:
-    raise SystemExit(1)
-hexport = format(port, "X")
-inodes = set()
-for net in ("/proc/net/tcp", "/proc/net/tcp6"):
-    try:
-        handle = open(net, encoding="utf-8")
-    except OSError:
-        continue
-    with handle:
-        next(handle, None)
-        for line in handle:
-            fields = line.split()
-            if len(fields) < 10 or fields[1].rsplit(":", 1)[-1].upper() != hexport:
-                continue
-            inodes.add(fields[9])
-owned = False
-try:
-    names = os.listdir("/proc/" + owner + "/fd")
-except OSError:
-    raise SystemExit(1)
-for name in names:
-    try:
-        link = os.readlink("/proc/" + owner + "/fd/" + name)
-    except OSError:
-        continue
-    if link.startswith("socket:[") and link[8:-1] in inodes:
-        owned = True
+for pid, args, stripped in profile_pids(profile):
+    port = debug_port(args, stripped)
+    if port is not None:
+        owner = pid
         break
-if not owned:
+if owner is None or not owns_port(owner, port):
     raise SystemExit(1)
 target = "http://127.0.0.1:" + str(port) + "/json/new?" + urllib.parse.quote(uri, safe="")
 for method in ("PUT", "GET"):
