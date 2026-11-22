@@ -986,7 +986,7 @@ describe("production backup deployment and archive behavior", () => {
     const f = fixture();
     write(
       path.join(f.checkout, ".env"),
-      "OVERLAY=ops/b.yml\nRAKAZO_COMPOSE_FILE=a.yml:${OVERLAY}\n",
+      `OVERLAY=ops/b.yml\nRAKAZO_COMPOSE_FILE=a.yml:\${OVERLAY}\n`,
     );
     write(path.join(f.checkout, "docker-compose.images.yml"), "services: {}\n");
     const result = f.run("infra/compose/backup-prod.sh", [], { RAKAZO_DEPLOY_DIR: f.checkout });

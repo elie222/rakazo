@@ -36,6 +36,12 @@ describe("askActionLabel", () => {
     },
   );
 
+  it("labels the allow that applies the change itself as Apply now", () => {
+    expect(askActionLabel({ id: "allow", label: "Apply now" }, { approval: true })).toBe(
+      "Apply now",
+    );
+  });
+
   it.each(["allow", "always", "deny", "custom"])(
     "preserves the server label for non-approval action %s",
     (id) => {

@@ -35,7 +35,23 @@ The Compose files also pass the standard provider key variables the agent runtim
 (`OPENAI_API_KEY`, `GEMINI_API_KEY`, `MISTRAL_API_KEY`, `GROQ_API_KEY`, `XAI_API_KEY` and others) to
 the API and worker, for models that have no stored credential.
 
-`RAKAZO_LIVE_MODEL_CATALOG=off` disables provider and Codex live catalog probing; the default is on.
+### Default for everyone
+
+Admins (`RAKAZO_ADMIN_EMAILS`) can set the deployment model in **Settings → Models → Default for
+everyone** instead: choose a provider that connects with an API key, paste the key and pick the
+model. It replaces `PI_DEFAULT_PROVIDER` and `PI_DEFAULT_MODEL` for everyone without a model of
+their own, from their next run and without a restart; **Default** goes back to the environment's.
+The key is stored encrypted, is never shown again, and is redacted from run output like the
+environment's. Each change is recorded in the security audit log.
+
+`RAKAZO_MODEL_PROVIDER_ALLOWLIST` applies to it like any connection an account makes: a provider
+the list leaves out is not offered, and a saved one stops serving and the environment's model
+applies again. Deployments with model credits always run on the operator's own connection, so the
+block is not offered there and a saved choice is ignored. Calls the operator pays for, such as the
+deployment's approval checker, keep using the environment's keys. Messaging apps with open signup
+are turned on at startup only when the environment configures a model.
+
+`RAKAZO_LIVE_MODEL_CATALOG=off` (or `false`, `0`, `no`) disables provider and Codex live catalog probing; the default is on, and an unrecognized value stops the API at startup.
 
 ## Approvals
 

@@ -457,7 +457,7 @@ async function cancelRunOfFormerMember(
     return { seq: event.seq, continuationId };
   });
   if (!cancelled) return true;
-  await deps.events.notify(run.threadId, cancelled.seq).catch(() => undefined);
+  await deps.events.notify(run.threadId, cancelled.seq);
   if (cancelled.continuationId) await wakeRun(deps.jobs, cancelled.continuationId);
   return true;
 }

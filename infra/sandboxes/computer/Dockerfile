@@ -234,6 +234,9 @@ EXPOSE 7070 6080 6081 6082 6083 6084 6085 6086 6087 6088 6089 6090 6091 6092 609
 ENV LD_PRELOAD=/usr/local/lib/libnss_wrapper.so \
     NSS_WRAPPER_PASSWD=/tmp/rakazo-nss/passwd \
     NSS_WRAPPER_GROUP=/tmp/rakazo-nss/group
+# All execs share the boot session bus. An absent socket gives a connection
+# error without triggering D-Bus autolaunch.
+ENV DBUS_SESSION_BUS_ADDRESS=unix:path=/tmp/rakazo/session-bus
 USER 1000:1000
 # Start Bash without the wrapper; user-env enables it once both files exist.
 CMD ["/usr/bin/env", "-u", "LD_PRELOAD", "/usr/local/bin/rakazo-computer"]
