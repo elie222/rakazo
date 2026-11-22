@@ -27,6 +27,7 @@ import {
   spokenMemory,
   withBotSpeech,
 } from "@rakazo/core";
+import { toast } from "@rakazo/ui-web";
 import { getGlobalBroadcastChannel } from "better-auth/client";
 import { useSyncExternalStore } from "react";
 import {
@@ -39,6 +40,7 @@ import { recheckSessionOnUnauthorized, rpc } from "../query/rpc.js";
 import { errorText } from "../query/user-error";
 import { pickUp } from "./call-pickup.js";
 import { dictation, usesServerDictation } from "./dictation.js";
+import { openRealtimeCall, SIGNED_IN_USER_KEY, selectedRealtimeModel } from "./realtime-call.js";
 import { speaker } from "./tts.js";
 
 /** `ringing` until the call picks up; the rest describe the conversation. */
@@ -73,8 +75,10 @@ export const SIGN_OUT_HANG_UP_MS = 3_000;
  * The last signed-in user a tab confirmed. Signing in elsewhere sends no Better Auth message,
  * so other tabs learn of a new account from this key's storage event.
  */
-export const SIGNED_IN_USER_KEY = "rakazo.signedInUser";
+export { SIGNED_IN_USER_KEY };
+
 let state: CallState | null = null;
+let realtimeCall: ReturnType<typeof openRealtimeCall> | undefined;
 /** The signed-in user this page belongs to; undefined until the session first resolves. */
 let identity: string | null | undefined;
 /** Other tabs' sign-outs and account changes are watched once a user is signed in. */
@@ -165,6 +169,7 @@ export function startCall(call: {
   botColor?: string;
   botAvatarSet?: BotAvatarSet;
   transcribe?: boolean;
+  classic?: boolean;
   /** The bot called and the user picked up: no ringing, and the bot speaks first. */
   answered?: { callId: string; opening: string };
 }): void {
@@ -197,6 +202,41 @@ export function startCall(call: {
     heard: "",
     exchanges: [],
   };
+  const realtimeModel = !call.answered && !call.classic && selectedRealtimeModel(identity);
+  if (realtimeModel && typeof RTCPeerConnection !== "undefined") {
+    const currentId = callId;
+    let connected = false;
+    realtimeCall = openRealtimeCall({
+      callId: currentId,
+      botId: call.botId,
+      model: realtimeModel,
+      onReady() {
+        if (callId !== currentId || !state) return;
+        connected = true;
+        set({ connectedAt: Date.now(), phase: "listening" });
+      },
+      onPhase(phase) {
+        if (callId === currentId && state) set({ phase });
+      },
+      onTranscript(exchange) {
+        if (callId === currentId && state) {
+          set({ exchanges: [...state.exchanges, exchange] });
+        }
+      },
+      onFailure() {
+        if (callId !== currentId || !state) return;
+        if (connected) {
+          toast.error(t`The realtime call was disconnected.`);
+          endCall();
+        } else {
+          toast.error(t`Realtime could not connect. Starting a standard call.`);
+          startCall({ ...call, classic: true });
+        }
+      },
+    });
+    emit();
+    return;
+  }
   unsubSpeech = speaker.subscribe((speech) => {
     if (!state || state.phase === "ringing") return;
     if (openingPending && speech.status === "idle") openingPending = false;
@@ -277,7 +317,11 @@ export function endCall(): void {
     const epoch = sessionEpoch;
     const durationSeconds =
       connectedAt === null ? undefined : Math.max(0, Math.round((Date.now() - connectedAt) / 1000));
+    const stopRealtime = realtimeCall?.stop();
+    realtimeCall = undefined;
     const closeServerCall = async () => {
+      if (stopRealtime)
+        await stopRealtime.catch((error) => reportClientError(error, "rpc.transport"));
       if (epoch !== sessionEpoch) return;
       await rpc.threads.endCall({
         botId,
@@ -294,6 +338,8 @@ export function endCall(): void {
 
 /** Stops the call on this device only. */
 function dropCall(): void {
+  void realtimeCall?.stop().catch((error) => reportClientError(error, "rpc.transport"));
+  realtimeCall = undefined;
   pickup?.abort();
   pickup = null;
   openingPending = false;
@@ -424,6 +470,10 @@ export function toggleMute(): void {
   if (!state) return;
   const muted = !state.muted;
   set({ muted });
+  if (realtimeCall) {
+    realtimeCall.mute(muted);
+    return;
+  }
   if (muted) {
     dictation.stop("cancel");
     micOpen = false;

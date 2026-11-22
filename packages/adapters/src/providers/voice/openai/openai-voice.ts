@@ -22,6 +22,8 @@ import {
 } from "../../../voice/voice-http.js";
 import type { VoiceProviderDefinition } from "../../../voice/voice-provider-descriptor.js";
 
+import { openaiRealtimeVoice } from "./openai-realtime.js";
+
 const API = "https://api.openai.com/v1";
 const TTS_MODEL = "gpt-4o-mini-tts";
 const STT_MODEL = "gpt-4o-mini-transcribe";
@@ -156,6 +158,7 @@ export class OpenAIVoiceProvider implements VoiceProvider {
 }
 
 export const openaiVoice: VoiceProviderDefinition = {
+  realtime: openaiRealtimeVoice,
   transcriptionUsageUnit: (model) => (model === "whisper-1" ? "seconds" : undefined),
   catalog: {
     name: "OpenAI",

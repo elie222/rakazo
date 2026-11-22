@@ -49,6 +49,13 @@ when there's something to send. During a call you can
 **Mute**, open the **Transcript**, minimize the call and keep using the app, or **Hang up**. The
 transcript stays in the chat afterwards.
 
+With a personal OpenAI voice connection, **Settings → Voice → Realtime call model** lets you
+choose a model for calls you start from web or desktop. This choice is saved on your device.
+Realtime calls send audio and recent chat context to the voice provider. Tasks that need the
+bot's memory, skills, or tools run through its normal chat and keep its approval settings.
+If the connection is unavailable, you can continue with a standard call. Realtime usage is
+billed on the OpenAI account whose voice connection you chose.
+
 Bots can call you too: ask "call me at 5 to go over the day", or a bot may call when you've missed
 the same reminder several times. You'll see that the bot is calling you; answer or **Decline**. A
 missed call shows **Call back** in the chat.

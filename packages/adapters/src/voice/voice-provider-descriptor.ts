@@ -1,6 +1,8 @@
 import type { VoiceProvider, VoiceUsage } from "@rakazo/adapter-kit";
 import type { VoiceCatalogEntry } from "@rakazo/contracts";
 
+import type { RealtimeVoiceProvider } from "./realtime-voice.js";
+
 export interface VoiceProviderOptions {
   /** The caller's decision that this connection may reach a private address. */
   allowPrivateEndpoint?: boolean;
@@ -34,5 +36,6 @@ export interface VoiceProviderDefinition {
   transcriptionModel?: string;
   /** The unit this transcription model reliably reports and a deployment policy can price. */
   transcriptionUsageUnit?(model: string): VoiceUsage["unit"] | undefined;
+  realtime?: RealtimeVoiceProvider;
   create(options: VoiceProviderOptions): VoiceProvider;
 }
