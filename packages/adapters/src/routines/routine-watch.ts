@@ -25,14 +25,7 @@ import {
   watchToolRefusal,
 } from "@rakazo/core";
 import type { ComputerMode, PrismaClient, ThreadEvents } from "@rakazo/db";
-import {
-  appendEventInTransaction,
-  createThreadMessageInTransaction,
-  isUniqueViolation,
-  listApprovalRules,
-  parseComputerMode,
-  withTransactionRetry,
-} from "@rakazo/db";
+import { listApprovalRules, parseComputerMode } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { scheduleComputerSleep } from "../computers/computer-idle.js";
 import { ComputerBusyError, provisionComputer } from "../computers/computer-lifecycle.js";
@@ -53,6 +46,7 @@ import {
 import { recordVaultItemUse } from "../secrets/vault/vault-activity.js";
 import type { SafeWebFetchOptions } from "../web/web-ssrf.js";
 import { fetchSafeHttpRequest } from "../web/web-ssrf.js";
+import { postRoutineMessage } from "./routine-message.js";
 import { ROUTINE_WATCH_NOTE_START, routineWatchNote } from "./routine-watch.prompt.js";
 import { resolveWatchArgs } from "./routine-watch-args.js";
 
@@ -995,62 +989,6 @@ export async function tickRoutineWatch(
   }
   await deps.jobs.enqueue(routineWakeupJob(routine.id, nextRunAt));
   return { run: false };
-}
-
-/** A line in the routine's thread without a model run. */
-export async function postRoutineMessage(
-  deps: Pick<RoutineWatchDeps, "prisma" | "events">,
-  input: {
-    spaceId: string;
-    threadId: string;
-    botId: string;
-    role: "bot" | "system";
-    text: string;
-    /** Makes the line idempotent: a second post with it adds nothing to the thread. */
-    clientNonce?: string;
-    /** Marks the chat unread, which a status line otherwise does not. */
-    markUnread?: boolean;
-    /**
-     * For a caller that retries: a line that can't be written throws instead of being skipped.
-     * One an earlier attempt wrote under the same clientNonce counts as written.
-     */
-    required?: boolean;
-  },
-): Promise<void> {
-  const blocks =
-    input.role === "bot"
-      ? [{ kind: "text" as const, text: input.text }]
-      : [{ kind: "meta" as const, text: input.text }];
-  try {
-    // A write that conflicts with another in the chat tries again, as a sent message does.
-    const seq = await withTransactionRetry(() =>
-      deps.prisma.$transaction(async (tx) => {
-        const message = await createThreadMessageInTransaction(tx, {
-          threadId: input.threadId,
-          botId: input.botId,
-          role: input.role,
-          blocks,
-          clientNonce: input.clientNonce,
-          ...(input.markUnread === undefined ? {} : { markUnread: input.markUnread }),
-        });
-        const event = await appendEventInTransaction(tx, {
-          spaceId: input.spaceId,
-          threadId: input.threadId,
-          botId: input.botId,
-          type: "thread.message.created",
-          payload: { messageId: message.id, role: input.role, blocks },
-        });
-        return event.seq;
-      }),
-    );
-    if (seq !== undefined) await deps.events.notify(input.threadId, seq).catch(() => undefined);
-  } catch (error) {
-    // Already in the chat from an earlier attempt.
-    if (input.clientNonce && isUniqueViolation(error)) return;
-    if (input.required) throw error;
-    // Best effort: the routine's state is already saved.
-    getLogger().error("routine status line", error);
-  }
 }
 
 export function assertWatchToolReadOnly(tool: string, readOnly: boolean | undefined): void {

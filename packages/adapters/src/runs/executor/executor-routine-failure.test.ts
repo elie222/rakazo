@@ -11,8 +11,7 @@ import { countUnreadInboxChats } from "@rakazo/db";
 import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type * as ComputerLifecycleModule from "../../computers/computer-lifecycle.js";
-import type * as RoutineWatchModule from "../../routines/routine-watch.js";
-import { postRoutineMessage } from "../../routines/routine-watch.js";
+import { postRoutineMessage } from "../../routines/routine-message.js";
 import { createRunExecutor } from "./executor.js";
 
 vi.mock("../../computers/computer-lifecycle.js", async (importOriginal) => ({
@@ -23,8 +22,7 @@ vi.mock("../../computers/computer-lifecycle.js", async (importOriginal) => ({
   provisionComputer: async () => ({ id: "computer-1", kind: "desktop" }),
 }));
 
-vi.mock("../../routines/routine-watch.js", async (importOriginal) => ({
-  ...(await importOriginal<typeof RoutineWatchModule>()),
+vi.mock("../../routines/routine-message.js", () => ({
   postRoutineMessage: vi.fn(async () => undefined),
 }));
 

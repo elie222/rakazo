@@ -1244,6 +1244,10 @@ describe("updateScheduleFromTool", () => {
     await expect(
       update({ userId: "user-2", schedule: { cron: "0 9 * * 1" } }),
     ).resolves.toHaveProperty("error");
+    // Silent decides whether its runs post in the owner's chat, so it is the owner's too.
+    await expect(update({ userId: "user-2", silent: true })).resolves.toMatchObject({
+      error: expect.stringContaining("Only the person who owns this routine"),
+    });
     expect(updateMany).not.toHaveBeenCalled();
   });
 
@@ -1431,7 +1435,11 @@ describe("updateScheduleFromTool", () => {
 
   it("turns a routine silent without touching its timing", async () => {
     const { updateMany, enqueue, cancel, update } = setup();
-    await expect(update({ silent: true })).resolves.toMatchObject({ ok: true, silent: true });
+    await expect(update({ silent: true })).resolves.toMatchObject({
+      ok: true,
+      silent: true,
+      changes: { silent: { after: true } },
+    });
     expect(updateMany).toHaveBeenCalledWith(expect.objectContaining({ data: { silent: true } }));
     expect(enqueue).not.toHaveBeenCalled();
     expect(cancel).not.toHaveBeenCalled();

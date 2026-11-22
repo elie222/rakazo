@@ -141,4 +141,9 @@ describe("routineEdited", () => {
     expect(routineEdited(at("2030-01-01T10:00:00Z"), at("2030-01-01T10:00:00Z"))).toBe(false);
     expect(routineEdited(at("2030-01-01T10:00:00Z"), at("2030-01-02T10:00:00Z"))).toBe(true);
   });
+
+  it("counts turning Silent on or off as an edit", () => {
+    expect(routineEdited({ silent: false }, { silent: true })).toBe(true);
+    expect(routineEdited({ silent: true }, { silent: true })).toBe(false);
+  });
 });

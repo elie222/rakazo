@@ -30,11 +30,11 @@ import { bestEffort, getLogger } from "@rakazo/logging";
 import { routineRunModelPin } from "../../models/model-selection.js";
 import { protectedComputerLifecycleRefusal } from "../../providers/computer/desktop/desktop-command-guard.js";
 import { findPendingRoutineTick, routineTimerNonce } from "../../routines/routine-coalescing.js";
+import { postRoutineMessage } from "../../routines/routine-message.js";
 import { routineGroupThreadId } from "../../routines/routine-thread.js";
 import {
   nextRoutineWatchAt,
   parseRoutineWatch,
-  postRoutineMessage,
   tickRoutineWatch,
 } from "../../routines/routine-watch.js";
 import { listAgentSkillRecords } from "../../tools/skill-tools.js";

@@ -37,6 +37,7 @@ const EDITABLE_FIELDS = [
   "active",
   "notify",
   "inChat",
+  "silent",
   "webhookEnabled",
   "githubEnabled",
   "messageProvider",

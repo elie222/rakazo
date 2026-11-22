@@ -1065,6 +1065,7 @@ export async function updateScheduleFromTool(
     (input.name !== undefined ||
       input.prompt !== undefined ||
       input.inChat !== undefined ||
+      input.silent !== undefined ||
       input.timezone !== undefined ||
       input.on !== undefined ||
       input.everyMinutes !== undefined ||
@@ -1253,6 +1254,7 @@ export async function updateScheduleFromTool(
     ...(name === undefined ? {} : { name }),
     ...(prompt === undefined ? {} : { prompt }),
     ...(inChat === undefined ? {} : { inChat }),
+    ...(input.silent === undefined ? {} : { silent: input.silent }),
     ...(timingChanged ? { crons, timezone, active, nextRunAt } : {}),
     ...(watchChanged ? { watch } : {}),
     ...(eventsChanged ? events : {}),
@@ -1286,6 +1288,7 @@ export async function updateScheduleFromTool(
         name: existing.name,
         prompt: existing.prompt,
         inChat: existing.inChat,
+        silent: existing.silent,
         active: existing.active,
         ...describeRoutineTiming(existing),
         everyMinutes: existingWatch?.everyMinutes,
@@ -1295,6 +1298,7 @@ export async function updateScheduleFromTool(
         name: name ?? existing.name,
         prompt: prompt ?? existing.prompt,
         inChat: inChat ?? existing.inChat,
+        silent: input.silent ?? existing.silent,
         active,
         ...timing,
         everyMinutes: watch?.everyMinutes,
@@ -1308,6 +1312,7 @@ type RoutineView = {
   name: string;
   prompt: string;
   inChat: boolean;
+  silent: boolean;
   active: boolean;
   timezone: string;
   schedule?: string;
@@ -1323,6 +1328,7 @@ function routineChanges(before: RoutineView, after: RoutineView) {
     "name",
     "prompt",
     "inChat",
+    "silent",
     "active",
     "timezone",
     "schedule",

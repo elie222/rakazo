@@ -13,8 +13,8 @@ import {
   sendUserMessage,
 } from "@rakazo/db";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { postRoutineMessage } from "../../routines/routine-message.js";
 import { routineGroupThreadId } from "../../routines/routine-thread.js";
-import { postRoutineMessage } from "../../routines/routine-watch.js";
 import { createRunExecutor } from "../executor/executor.js";
 import { createJobReconciler } from "../wakeups/job-reconciler.js";
 import { deleteSpentOneShotRoutine } from "./run-routines.js";
