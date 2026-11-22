@@ -44,7 +44,11 @@ export function openAiCompatibleProbeSuccessMessage(modelCount: number): string 
     : "Server found. Enter a model name.";
 }
 
-/** The canonical endpoint the server stores: trailing slashes dropped, `/v1` added only when no
+/** The request path people paste from provider docs instead of the base URL. */
+const PASTED_ENDPOINT_SUFFIX = /\/(?:chat\/completions|completions|responses|models|embeddings)$/i;
+
+/** The canonical endpoint the server stores: trailing slashes dropped, a pasted request path
+ * (`/chat/completions`, `/models`, ...) removed, `/v1` added only when no
  * path segment is already a version (`v1`, `v4`, `v1beta`, ...), so gateways that route models by
  * path (`/v1/some-model`) keep their URL verbatim. */
 export function normalizeOpenAiCompatibleBaseUrl(raw: string): string {
@@ -61,7 +65,7 @@ export function normalizeOpenAiCompatibleBaseUrl(raw: string): string {
   if (url.username || url.password) {
     throw new ConnectionSetupError("Base URL must not contain credentials");
   }
-  let path = url.pathname.replace(/\/+$/, "") || "";
+  let path = url.pathname.replace(/\/+$/, "").replace(PASTED_ENDPOINT_SUFFIX, "");
   const VERSION_SEGMENT = /^v\d+[a-z]*$/;
   if (!path.split("/").some((segment) => VERSION_SEGMENT.test(segment))) {
     path = path ? `${path}/v1` : "/v1";

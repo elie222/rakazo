@@ -9,14 +9,14 @@ import type {
 const state = vi.hoisted(() => ({
   asset: {
     uri: "file:///fake/photo.jpg",
-    fileName: "photo.jpg",
+    fileName: "photo.jpg" as string | null,
     mimeType: "image/jpeg",
     width: 4000 as number | undefined,
     height: 3000 as number | undefined,
   },
   assets: [] as Array<{
     uri: string;
-    fileName: string;
+    fileName: string | null;
     mimeType: string;
     width: number | undefined;
     height: number | undefined;
@@ -79,7 +79,7 @@ let readDroppedFiles: typeof ReadDroppedFiles;
 function asset(overrides: Partial<typeof state.asset> = {}) {
   state.asset = {
     uri: "file:///fake/photo.jpg",
-    fileName: "photo.jpg",
+    fileName: "photo.jpg" as string | null,
     mimeType: "image/jpeg",
     width: 4000,
     height: 3000,
@@ -122,6 +122,33 @@ beforeEach(async () => {
 afterEach(() => vi.restoreAllMocks());
 
 describe("image attachment preparation", () => {
+  it("names a library image with no filename using its reported MIME type", async () => {
+    asset({ fileName: null, mimeType: "image/png", width: 100, height: 100 });
+    const { attachments } = await pickFromLibrary();
+    expect(attachments[0]).toMatchObject({
+      name: expect.stringMatching(/^photo-.*\.png$/),
+      mimeType: "image/png",
+    });
+  });
+
+  it("names a camera image with no filename using its reported MIME type", async () => {
+    asset({ fileName: null, mimeType: "image/png", width: 100, height: 100 });
+    const { attachments } = await takePhoto();
+    expect(attachments[0]).toMatchObject({
+      name: expect.stringMatching(/^photo-.*\.png$/),
+      mimeType: "image/png",
+    });
+  });
+
+  it("keeps the JPEG fallback when the picker cannot supply a useful MIME type", async () => {
+    asset({ fileName: null, mimeType: "application/octet-stream", width: 100, height: 100 });
+    const { attachments } = await pickFromLibrary();
+    expect(attachments[0]).toMatchObject({
+      name: expect.stringMatching(/^photo-.*\.jpg$/),
+      mimeType: "image/jpeg",
+    });
+  });
+
   it("keeps the original when the native module is absent", async () => {
     state.optionalNativeModule.mockReturnValue(null);
 

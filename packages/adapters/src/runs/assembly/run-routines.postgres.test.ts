@@ -13,6 +13,7 @@ import {
   sendUserMessage,
 } from "@rakazo/db";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { routineGroupThreadId } from "../../routines/routine-thread.js";
 import { createRunExecutor } from "../executor/executor.js";
 import { createJobReconciler } from "../wakeups/job-reconciler.js";
 import { deleteSpentOneShotRoutine } from "./run-routines.js";
@@ -44,6 +45,37 @@ describePostgres("routine tick prompt and model consistency (PostgreSQL)", () =>
       await db.prisma.$disconnect();
       await db.pool.end();
     }
+  });
+
+  it("picks a group thread only while the group is live and the bot is in it", async () => {
+    const { userId, spaceId, botId } = identity;
+    const other = await system.bot.create({
+      data: { spaceId, userId, name: "Other", color: "#000000" },
+    });
+    const group = await system.chatGroup.create({
+      data: {
+        spaceId,
+        userId,
+        name: "Team",
+        members: { create: [{ botId }, { botId: other.id }] },
+      },
+    });
+    const thread = await system.thread.create({ data: { spaceId, userId, groupId: group.id } });
+    const routine = { spaceId, threadId: thread.id };
+    await expect(routineGroupThreadId(system, routine, botId)).resolves.toBe(thread.id);
+    await expect(
+      routineGroupThreadId(system, { spaceId, threadId: identity.threadId }, botId),
+    ).resolves.toBe(identity.threadId);
+    await expect(
+      routineGroupThreadId(system, { spaceId, threadId: null }, botId),
+    ).resolves.toBeNull();
+    await system.chatGroupMember.deleteMany({ where: { groupId: group.id, botId } });
+    await expect(routineGroupThreadId(system, routine, botId)).resolves.toBeNull();
+    await system.chatGroupMember.create({ data: { groupId: group.id, botId } });
+    await system.chatGroup.update({ where: { id: group.id }, data: { archivedAt: new Date() } });
+    await expect(routineGroupThreadId(system, routine, botId)).resolves.toBeNull();
+    await system.chatGroup.delete({ where: { id: group.id } });
+    await system.bot.delete({ where: { id: other.id } });
   });
 
   it("runs the prompt that was saved with the model it claims", async () => {

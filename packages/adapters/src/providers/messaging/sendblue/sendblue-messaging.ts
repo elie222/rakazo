@@ -24,8 +24,11 @@ export const sendblueMessaging = defineMessagingPlatform({
       webhookSecret: env.sendblueSigningSecret,
       allowedServices: ["iMessage", "SMS", "RCS"],
       // Delivery-status callbacks need a public HTTPS origin; local setups skip them.
-      ...(options.apiUrl?.startsWith("https://")
-        ? { statusCallbackUrl: new URL("/api/v1/messaging/webhook/sendblue", options.apiUrl).href }
+      ...(options.inboundOrigin?.startsWith("https://")
+        ? {
+            statusCallbackUrl: new URL("/api/v1/messaging/webhook/sendblue", options.inboundOrigin)
+              .href,
+          }
         : {}),
     };
     // chat@4.39 derives thread.isDM solely from the optional Adapter.isDM

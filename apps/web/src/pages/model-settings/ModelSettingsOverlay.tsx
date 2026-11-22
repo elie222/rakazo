@@ -1,7 +1,7 @@
 import { Trans, useLingui } from "@lingui/react/macro";
-import type { SettingsScope } from "@rakazo/contracts";
+import type { ModelSignInCancelReason, SettingsScope } from "@rakazo/contracts";
 import {
-  connectionDisplayName,
+  modelConnectionNames,
   modelRoleChoiceKey,
   OPENAI_COMPATIBLE_PROVIDER_ID,
   savedCompatibleEndpointMatches,
@@ -13,6 +13,7 @@ import {
   isFirstModelConnection,
   popularModelProvidersFirst,
 } from "@rakazo/core";
+import { localizeModelEntry } from "@rakazo/i18n/model-provider";
 import {
   Button,
   Dialog,
@@ -32,7 +33,8 @@ import { SettingsPageHeader } from "../../components/settings/SettingsPageHeader
 import type { ModelCredential } from "../../lib/models/model-auth";
 import { useSpaceQueries } from "../../lib/query/query";
 import { CompatibleModelFields } from "./compatible-model-fields";
-import { CompatibleKeyControls, ConnectionControls } from "./connection-controls";
+import { CompatibleKeyInput, ConnectionControls } from "./connection-controls";
+import { DeploymentModelSettings } from "./deployment-model-settings";
 import type { ModelRoleConnectIntent } from "./ModelRoleSettings";
 import { ModelRoleSettings, useModelRole } from "./ModelRoleSettings";
 import { ModelSettingsPanel } from "./model-settings-panel";
@@ -133,11 +135,10 @@ export function ModelSettingsOverlay({
   );
   const connectionName = (entry: ModelCredential) => {
     const group = groups.find((item) => item.id === entry.provider);
-    return connectionDisplayName(
+    return modelConnectionNames(
+      localizeModelEntry(group?.entries[0] ?? { provider: entry.provider }),
       entry,
-      group?.name ?? entry.provider,
-      group?.entries[0]?.providerName ? [group.entries[0].providerName] : [],
-    );
+    ).connectionName;
   };
   const providerLabel = (id: string) =>
     credentialByProvider.get(id)?.endpointName ??
@@ -189,8 +190,8 @@ export function ModelSettingsOverlay({
     setConnectionAt(at);
   }
 
-  function closeConnection() {
-    cancelOAuthAttempt();
+  function closeConnection(reason: ModelSignInCancelReason = "left") {
+    cancelOAuthAttempt(reason);
     intentRef.current = null;
     setConnectionAt(null);
   }
@@ -198,13 +199,13 @@ export function ModelSettingsOverlay({
   function openProvider(credentialId: string) {
     const target = credentials.find((entry) => entry.id === credentialId);
     if (!target) return;
-    closeConnection();
+    closeConnection("replaced");
     model.chooseProvider(target.provider, undefined, target.id);
     setPage({ kind: "provider", credentialId });
   }
 
   function openModel(credentialId: string, modelId: string, back: SettingsPage | null) {
-    closeConnection();
+    closeConnection("replaced");
     setPage({ kind: "model", credentialId, modelId, back });
   }
 
@@ -234,8 +235,17 @@ export function ModelSettingsOverlay({
   const connection = selected ? (
     isOpenAiCompatible ? (
       <>
-        <CompatibleModelFields {...model} />
-        <CompatibleKeyControls {...model} />
+        <CompatibleModelFields {...model} keyField={<CompatibleKeyInput {...model} />} />
+        <Button
+          type="button"
+          variant="secondary"
+          className="mt-3"
+          size="sm"
+          disabled={busy || !model.openAiCompatibleReady}
+          onClick={() => void connectKey()}
+        >
+          {pending === "connect" ? <Trans>Saving…</Trans> : <Trans>Save</Trans>}
+        </Button>
       </>
     ) : credential ? (
       <>
@@ -319,7 +329,7 @@ export function ModelSettingsOverlay({
           {connected ? selectedConnectionName : <Trans>Connect {selectedProviderName}</Trans>}
         </span>
       ),
-      onClose: closeConnection,
+      onClose: () => closeConnection(),
       children: (
         <>
           {connectionPanel}
@@ -444,6 +454,7 @@ export function ModelSettingsOverlay({
               panel={connectionAt === "providers:add" ? panelFor(true) : null}
             />
           )}
+          {scope === "account" && me.isAdmin ? <DeploymentModelSettings /> : null}
         </>
       ) : loading ? (
         <div className="grid place-items-center py-10">

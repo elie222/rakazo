@@ -179,7 +179,7 @@ pnpm dev
 ```
 
 `pnpm dev` 会使用 `DATABASE_URL` 指向且可连接的 Postgres；否则会通过 Docker 启动本地
-`rakazo-dev-postgres` 容器，所有检出目录共用该容器。启动服务前会应用数据库迁移并生成 Prisma 客户端。
+`rakazo-dev-postgres` 容器，所有检出目录共用该容器。没有 Docker 时，会改用本机安装的 Postgres（位于 `PATH` 或来自 Homebrew）运行一个本地 Postgres 集群，同样由所有检出目录共用。启动服务前会应用数据库迁移并生成 Prisma 客户端。
 如果当前分支新增了 `main` 尚未包含的迁移，会在同一服务器上使用独立数据库，条件允许时从共享数据库复制，
 避免未合入的数据库结构变更影响共享数据库。默认端口被占用时（例如另一个 Git worktree 正在运行），
 会选择下一个空闲端口组并打印访问地址。也可以设置 `WEB_PORT` 和 `API_PORT` 自行指定端口。
