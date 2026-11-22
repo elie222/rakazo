@@ -12,7 +12,10 @@ const options = { cwd: ".", env: {}, timeoutMs: 10_000 };
 
 it("does not spawn Docker when the command is already aborted", async () => {
   vi.mocked(spawn).mockReturnValueOnce(new EventEmitter() as ReturnType<typeof spawn>);
-  const result = await runDocker("fake-docker", ["info"], { ...options, signal: AbortSignal.abort() });
+  const result = await runDocker("fake-docker", ["info"], {
+    ...options,
+    signal: AbortSignal.abort(),
+  });
   expect(result).toEqual({ code: 130, stdout: "", stderr: "" });
   expect(spawn).not.toHaveBeenCalled();
 });
