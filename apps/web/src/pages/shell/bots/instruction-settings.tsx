@@ -74,7 +74,11 @@ export function InstructionSettings({ bot }: { bot: Bot }) {
             >
               <History className="size-4 text-muted-foreground" />
             </PopoverTrigger>
-            <PopoverContent align="end" className="max-h-96 overflow-y-auto">
+            <PopoverContent
+              align="end"
+              className="max-h-96 overflow-y-auto"
+              aria-label={t`Instruction history`}
+            >
               {current.instructionHistory.map((version) => (
                 <div key={version.id} className="mt-2 text-body">
                   <Disclosure

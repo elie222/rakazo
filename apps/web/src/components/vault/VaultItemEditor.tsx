@@ -36,6 +36,7 @@ import type { AgentAccess } from "../integrations/agent-access";
 import { SettingsPageHeader } from "../settings/SettingsPageHeader";
 import type { VaultAuth } from "./kinds";
 import { LoginFieldsInput } from "./LoginFieldsInput";
+import { passwordManagerIgnore } from "./password-manager-ignore";
 import { VaultItemAccess } from "./VaultItemAccess";
 
 /** What the editor hands back: a destination and the value to save, in the shape vault.put takes. */
@@ -313,6 +314,10 @@ function EditorForm({
   });
   const { keyUnreadable, sites: otherSites } = loginSave;
   const limit = VAULT_ALSO_ON_LIMIT;
+  // Each input points at its message, so a screen reader says why Save is off.
+  const keyErrorId = id("otp-error");
+  const sitesErrorId = id("also-on-error");
+  const sitesInvalid = !Array.isArray(otherSites);
 
   const ready =
     kind === "login"
@@ -467,6 +472,7 @@ function EditorForm({
         data-testid="vault-editor-value"
         type="password"
         autoComplete="new-password"
+        {...passwordManagerIgnore}
         spellCheck={false}
         disabled={busy}
         placeholder={placeholder}
@@ -511,24 +517,31 @@ function EditorForm({
                 ? text("otp", t`Authenticator key`, otp, setOtp, {
                     type: "password",
                     autoComplete: "new-password",
+                    ...passwordManagerIgnore,
+                    "aria-invalid": keyUnreadable ? true : undefined,
+                    "aria-describedby": keyUnreadable ? keyErrorId : undefined,
                   })
                 : null}
               {keyUnreadable ? (
-                <p className="-mt-2 text-label text-destructive">
+                <p id={keyErrorId} className="-mt-2 text-label text-destructive">
                   <Trans>This authenticator key can't be read.</Trans>
                 </p>
               ) : null}
               {alsoOnShown
                 ? text("also-on", t`Also on`, alsoOn, setAlsoOn, {
                     placeholder: "https://login.example.com",
+                    "aria-invalid": sitesInvalid ? true : undefined,
+                    "aria-describedby": sitesInvalid ? sitesErrorId : undefined,
                   })
                 : null}
               {otherSites === "invalid" ? (
-                <p className="-mt-2 text-label text-destructive">
+                <p id={sitesErrorId} className="-mt-2 text-label text-destructive">
                   <Trans>Enter each site as an HTTPS address a login can be saved for.</Trans>
                 </p>
               ) : otherSites === "too_many" ? (
-                <p className="-mt-2 text-label text-destructive">{t`Up to ${limit} sites.`}</p>
+                <p id={sitesErrorId} className="-mt-2 text-label text-destructive">
+                  {t`Up to ${limit} sites.`}
+                </p>
               ) : null}
               {otpShown && alsoOnShown ? null : (
                 <div className="flex gap-4">
@@ -753,7 +766,7 @@ function EditorForm({
         <span className="flex-1" />
         {onDismiss ? (
           <Button type="button" variant="ghost" disabled={busy} onClick={() => void dismiss()}>
-            <Trans>Dismiss</Trans>
+            <Trans>Dismiss request</Trans>
           </Button>
         ) : null}
         <Button type="submit" data-testid="vault-editor-save" disabled={!ready || busy}>

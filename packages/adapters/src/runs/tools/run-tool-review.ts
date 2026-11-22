@@ -12,10 +12,11 @@ import type { AutoReviewChecker } from "../../approvals/auto-review.js";
 import { ownComputerReviewArgs, redactToolArgsForReview } from "../../approvals/auto-review.js";
 import type { AutoReviewCandidate } from "../../approvals/auto-review-backups.js";
 import { reviewWithBackups } from "../../approvals/auto-review-backups.js";
+import { changedTextReviewArgs } from "../../approvals/changed-text-review-args.js";
 import type { RunContext, RunTrust } from "../assembly/run-context.js";
 import type { ExecutorDeps } from "../executor/executor-deps.js";
 import { autoReviewCheckerProvider, includedAutoReviewChecker } from "../turn/run-auto-review.js";
-import { reviewOwnerContext } from "./run-review-context.js";
+import { currentRoutinePrompt, reviewOwnerContext } from "./run-review-context.js";
 import { auditToolCall } from "./run-tool-audit.js";
 import type { AppliedEffect } from "./run-tool-gate.js";
 
@@ -83,15 +84,21 @@ export async function reviewToolCall(
         Boolean(
           lastingWriteKind({ toolName: name, args, savedContextWrite: review.savedContextWrite }),
         ));
-    const reviewArgs = newSiteUrl
+    const redacted = redactToolArgsForReview(args, ctx.secrets);
+    // Targets come from the whole call: an edit's changes list addresses it removes or keeps too.
+    const targetArgs = newSiteUrl
       ? { url: redactSecrets(newSiteUrl, ctx.secrets) }
       : review.ownComputerAction
         ? ownComputerReviewArgs(
             name,
-            redactToolArgsForReview(args, ctx.secrets),
+            redacted,
             review.pageUrl && redactSecrets(review.pageUrl, ctx.secrets),
           )
-        : redactToolArgsForReview(args, ctx.secrets);
+        : redacted;
+    const reviewArgs =
+      targetArgs === redacted
+        ? changedTextReviewArgs(name, redacted, await currentRoutinePrompt(ctx, name, args))
+        : targetArgs;
     const reviewRequest: AutoReviewRequest = {
       toolName: name,
       connectorKind,
@@ -105,7 +112,7 @@ export async function reviewToolCall(
       ...(newSiteUrl ? { newSite: true } : {}),
       ...(review.savedContextWrite ? { savedContextWrite: true } : {}),
       ...(review.ownComputerAction ? { ownComputerAction: true } : {}),
-      ...(await reviewOwnerContext(ctx, reviewArgs, !newSiteUrl && !review.savedContextWrite)),
+      ...(await reviewOwnerContext(ctx, targetArgs, !newSiteUrl && !review.savedContextWrite)),
     };
     // The usage names the reviewed action, so a run's reviews are counted and priced one by one.
     const operationId = applied
@@ -130,7 +137,6 @@ export async function reviewToolCall(
           botId: bot.id,
           threadId: thread.id,
           operationId,
-          effectId: applied?.effect.id,
         },
         {
           injectedReview,

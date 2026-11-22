@@ -332,13 +332,27 @@ describe("controls", () => {
     expect(host.textContent).not.toContain("Choose a region");
   });
 
-  it("reports typed text and makes number inputs numeric, with a number pad on phones", () => {
+  it("offers the decimal pad only when a number can't go negative", () => {
+    const view = render(<Input value={1} type="number" min={0} />);
+    expect(q<HTMLInputElement>("input")!.inputMode).toBe("decimal");
+    expect(q<HTMLInputElement>("input")!.min).toBe("0");
+    view.rerender(<Input value={1} type="number" min={-5} />);
+    expect(q<HTMLInputElement>("input")!.inputMode).toBe("");
+    view.rerender(<Input value={1} type="number" />);
+    expect(q<HTMLInputElement>("input")!.inputMode).toBe("");
+    // Pages are written as plain JavaScript, so a min given as text still counts.
+    view.rerender(<Input value={1} type="number" min={"0" as unknown as number} />);
+    expect(q<HTMLInputElement>("input")!.inputMode).toBe("decimal");
+    view.rerender(<Input value="a" type="text" min={0} />);
+    expect(q<HTMLInputElement>("input")!.inputMode).toBe("");
+  });
+
+  it("reports typed text and makes number inputs numeric", () => {
     const onChange = vi.fn();
     render(<Input label="Seats" value={12} type="number" onChange={onChange} />);
     const input = q<HTMLInputElement>("input")!;
     expect(input.value).toBe("12");
     expect(input.type).toBe("number");
-    expect(input.inputMode).toBe("decimal");
     act(() => {
       const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
       setter.call(input, "13");
@@ -385,6 +399,43 @@ describe("controls", () => {
     const buttons = host.querySelectorAll("button");
     expect(buttons).toHaveLength(200);
     expect(q('[aria-pressed="true"]')!.textContent).toBe("o240");
+  });
+
+  it("presses the segment for a numeric value and still reports the choice as a string", () => {
+    const onChange = vi.fn();
+    render(<Segmented options={[1, 2, 3]} value={2} onChange={onChange} />);
+    expect(q('[aria-pressed="true"]')!.textContent).toBe("2");
+    expect(host.querySelectorAll('[aria-pressed="false"]')).toHaveLength(2);
+    click(host.querySelectorAll("button")[2]!);
+    expect(onChange).toHaveBeenCalledWith("3");
+  });
+
+  it("presses the object option whose numeric value is chosen", () => {
+    render(
+      <Segmented
+        options={[
+          { value: 7, label: "Week" },
+          { value: 30, label: "Month" },
+        ]}
+        value={30}
+      />,
+    );
+    expect(q('[aria-pressed="true"]')!.textContent).toBe("Month");
+  });
+
+  it("keeps a numeric chosen segment when there are too many to list", () => {
+    const many = Array.from({ length: 250 }, (_, index) => index);
+    render(<Segmented value={240} options={many} />);
+    expect(host.querySelectorAll("button")).toHaveLength(200);
+    expect(q('[aria-pressed="true"]')!.textContent).toBe("240");
+  });
+
+  it("keeps string values pressed and reports the clicked value as a string", () => {
+    const onChange = vi.fn();
+    render(<Segmented options={["a", "b"]} value="a" onChange={onChange} />);
+    expect(q('[aria-pressed="true"]')!.textContent).toBe("a");
+    click(host.querySelectorAll("button")[1]!);
+    expect(onChange).toHaveBeenCalledWith("b");
   });
 
   it("shows a section's content again once the value that broke it is replaced", () => {

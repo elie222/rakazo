@@ -3,9 +3,18 @@ import { useTimeout } from "@rakazo/chat-ui/hooks";
 import { botColors, typeScale } from "@rakazo/ui-tokens";
 import type { NativeStackNavigationProp } from "expo-router";
 import { useFocusEffect, useNavigation, useRouter } from "expo-router";
-import { useCallback, useContext, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import {
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import type { TextInputInstance } from "react-native";
 import {
+  AccessibilityInfo,
   Alert,
   FlatList,
   Platform,
@@ -65,6 +74,20 @@ export default function SearchSheet() {
   const spaces = useSyncExternalStore(subscribeSearchInbox, getSearchInbox);
   const { hits, loading, error, retry } = useSearch(query);
   const rows = useMemo(() => searchSheetRows(spaces, query, hits), [spaces, query, hits, locale]);
+  // The search field keeps focus, so tell screen readers once when a typed query finishes with no
+  // rows. Keyed to the loading edge: `loading` only falls after a response, so a query typed before
+  // its debounce ends (or cleared mid-search) is never announced.
+  const searching = useRef(false);
+  useEffect(() => {
+    if (loading) {
+      searching.current = true;
+    } else if (searching.current) {
+      searching.current = false;
+      if (query.trim() && !error && rows.length === 0) {
+        AccessibilityInfo.announceForAccessibility(t`No results`);
+      }
+    }
+  }, [loading]);
 
   const cancelOpen = useCallback(() => {
     attempt.current += 1;

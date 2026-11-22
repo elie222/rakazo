@@ -403,7 +403,7 @@ test("a saved local stack that is down is started again without asking", async (
 test("a saved local stack is reused only after its private identity matches", async () => {
   const stackDir = path.join(userData, "stack");
   await mkdir(stackDir, { recursive: true });
-  const host = await prepareHostComputer(userData);
+  const host = await prepareHostComputer(userData, "docker");
   await writeFile(
     path.join(stackDir, ".desktop-host-config"),
     createHash("sha256").update(JSON.stringify(host.connection)).digest("hex"),

@@ -11,6 +11,7 @@ export const appleContainerComputer: ComputerProviderDefinition = {
     serverHomeMount: "never",
     serverOwnsStoredTeamHome: true,
     storedHomeIsBackup: false,
+    offersHostComputer: true,
   },
   env: {
     localVmCli: { name: "LOCAL_VM_CLI" },

@@ -2,6 +2,7 @@ import { createHmac } from "node:crypto";
 import { createSlackAdapter } from "@chat-adapter/slack";
 import { createMockAdapter, createTestMessage } from "@chat-adapter/tests";
 import type { AdapterContext, MessagingInboundEvent } from "@rakazo/adapter-kit";
+import { MAX_RETRY_AFTER_MS } from "@rakazo/core";
 import type { Adapter, ChatInstance } from "chat";
 import { describe, expect, it, vi } from "vitest";
 import { enrichSlackTeamRoom } from "../providers/messaging/slack/slack-messaging.js";
@@ -907,6 +908,36 @@ describe("ChatSdkMessagingSurface outbound", () => {
       30_000,
     ],
     ["a permanent failure", new Error("channel_not_found"), true, null],
+    [
+      "a fractional retry-after",
+      Object.assign(new Error("slow down"), { retryAfter: 1.5 }),
+      false,
+      1_500,
+    ],
+    [
+      "an unbounded retry-after",
+      Object.assign(new Error("slow down"), { retryAfter: Infinity }),
+      false,
+      null,
+    ],
+    [
+      "a NaN retry-after",
+      Object.assign(new Error("slow down"), { retryAfter: Number.NaN }),
+      false,
+      null,
+    ],
+    [
+      "a negative retry-after",
+      Object.assign(new Error("slow down"), { retryAfter: -5 }),
+      false,
+      null,
+    ],
+    [
+      "a huge retry-after",
+      Object.assign(new Error("slow down"), { retryAfter: 1e12 }),
+      false,
+      MAX_RETRY_AFTER_MS,
+    ],
   ] as const)("classifies %s for the outbox", async (_label, error, permanent, retryAfterMs) => {
     const { surface } = createSurface(
       { isPermanentSendError: (candidate) => candidate === error && permanent },

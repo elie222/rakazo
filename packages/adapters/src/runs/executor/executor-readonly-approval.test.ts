@@ -310,7 +310,7 @@ function fixture({
   };
   // Turn checkpoints live in external_effects too, but outside the approval fixtures' rows.
   const turnCheckpoints: { idempotencyKey: string; result: string }[] = [];
-  const liveBot = { fleetManagement };
+  const liveBot = { fleetManagement, disabledBuiltinTools };
   const reviewCredential =
     approvalRole && checkerConnected
       ? {
@@ -479,7 +479,7 @@ function fixture({
     botSection: { findMany: vi.fn(async () => []) },
     vaultCredential: { findMany: vi.fn(async () => []) },
     agentSkill: { findMany: vi.fn(async () => []) },
-    scratchpadItem: { findMany: vi.fn(async () => []) },
+    scratchpadItem: { findMany: vi.fn(async () => []), count: vi.fn(async () => 0) },
     spaceSettingOverride: {
       findUnique: vi.fn(
         async (query: { where: { spaceId_userId_setting: { setting: string } } }) =>
@@ -1766,12 +1766,33 @@ describe("own instructions through update_bot", () => {
     const f = fixture({ name: "update_bot", builtin: true, autoReview: true });
     f.setCalls([{ args: { instructions: first }, executionId: "call-1" }]);
     await f.run();
+    // A short text is reviewed whole, beside the text it replaces.
+    expect(reviewMock.mock.calls[0]?.[0].args).toEqual({
+      ...held,
+      previousInstructionsFromBaseline: true,
+    });
     expect(f.results).toEqual([updated]);
     expect(f.instructionState.instructions).toBe(first);
     expect(f.instructionState.instructionHistory).toEqual([
       expect.objectContaining({ instructions: "Draft only", reason: "Set in chat" }),
     ]);
     expect(f.prisma.$transaction).toHaveBeenCalledWith(expect.any(Function), { timeout: 20_000 });
+  });
+  it("shows Auto Review only the changed lines of long instructions", async () => {
+    const f = fixture({ name: "update_bot", builtin: true, autoReview: true });
+    const kept = Array.from({ length: 40 }, (_, i) => `Rule ${i + 1}: keep drafts short.`);
+    f.instructionState.instructions = kept.join("\n");
+    const next = [...kept, "Ask before sending."].join("\n");
+    f.setCalls([{ args: { instructions: next }, executionId: "call-1" }]);
+    await f.run();
+    expect(reviewMock.mock.calls[0]?.[0].args).toEqual({
+      reason: "Set in chat",
+      instructions: {
+        changes:
+          "… 38 unchanged lines\n  Rule 39: keep drafts short.\n  Rule 40: keep drafts short.\n+ Ask before sending.",
+      },
+    });
+    expect(f.instructionState.instructions).toBe(next);
   });
   it("sets them after a profile edit earlier in the run", async () => {
     const f = emptyBot({ autoReview: true });
@@ -2374,7 +2395,7 @@ describe("own settings through update_bot", () => {
     const f = fixture({ name: "update_bot", builtin: true });
     f.setCalls([{ args: { memoryScope: "shared" }, executionId: "call-1" }]);
     await f.run();
-    expect(f.results).toEqual([{ error: "Only the owner can change memoryScope, in Settings." }]);
+    expect(f.results).toEqual([{ error: "Only the owner can share your memory, in Settings." }]);
     expect(f.prisma.bot.update).not.toHaveBeenCalled();
   });
   it.each([{ model: "Claude Sonnet" }, { voice: "Rachel" }])(
@@ -2385,8 +2406,7 @@ describe("own settings through update_bot", () => {
       await f.run();
       expect(f.results).toEqual([
         {
-          error:
-            "Only the owner can change your model, thinking, voice or read-aloud, from their own chat.",
+          error: "Only the owner can change your settings, from their own chat.",
         },
       ]);
       expect(f.effects).toEqual([]);
@@ -2501,6 +2521,37 @@ describe("own settings through update_bot", () => {
     const f = fixture({ name: "update_bot", builtin: true, autoReview: true });
     f.claimedOutsideSteering(true);
     f.setCalls([{ args: { readAloud: true }, executionId: "call-1" }]);
+    await f.run();
+    expect(reviewMock).toHaveBeenCalledOnce();
+    expect(f.pauseRunForInput).toHaveBeenCalledOnce();
+    expect(f.prisma.bot.update).not.toHaveBeenCalled();
+  });
+  it("turns its own tools off and changes how it replies", async () => {
+    const f = fixture({ name: "update_bot", builtin: true, disabledBuiltinTools: ["shell"] });
+    f.setCalls([
+      { args: { replyMode: "messages", disableTools: ["web_search"] }, executionId: "call-1" },
+    ]);
+    await f.run();
+    expect(f.results).toEqual([{ ok: true, replyMode: "messages", disableTools: ["web_search"] }]);
+    // Appended in the write, so a list the owner changes meanwhile is kept.
+    expect(f.prisma.bot.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: { replyMode: "messages", disabledBuiltinTools: { push: ["web_search"] } },
+      }),
+    );
+  });
+  it("refuses a run credential in its own team chat rules", async () => {
+    const f = fixture({ name: "update_bot", builtin: true, secrets: ["fake-credential-value"] });
+    f.setCalls([{ args: { teamChatRules: "Use fake-credential-value" }, executionId: "call-1" }]);
+    await f.run();
+    expect(f.results).toEqual([{ error: "teamChatRules cannot contain credentials." }]);
+    expect(f.prisma.bot.update).not.toHaveBeenCalled();
+  });
+  it("lets the approval model check a reply mode change after outside content in Auto", async () => {
+    reviewMock.mockResolvedValue({ decision: "ask", reason: "Unasked", model: "mock" });
+    const f = fixture({ name: "update_bot", builtin: true, autoReview: true });
+    f.claimedOutsideSteering(true);
+    f.setCalls([{ args: { replyMode: "messages" }, executionId: "call-1" }]);
     await f.run();
     expect(reviewMock).toHaveBeenCalledOnce();
     expect(f.pauseRunForInput).toHaveBeenCalledOnce();
@@ -2895,6 +2946,85 @@ describe("bot management approvals", () => {
     expect(isApprovalPausedResult(f.results.at(-1))).toBe(true);
     // Only this check asked, so Always allow would save a rule that never takes effect.
     expect(pausedActionIds(f)).toEqual(["allow", "deny"]);
+  });
+
+  it("asks before changing another bot's settings, then applies what the card showed", async () => {
+    const f = fixture({
+      name: "update_bot",
+      builtin: true,
+      fleetManagement: true,
+      fleetBots: [{ id: "bot-a", name: "Alpha", thread: { id: "thread-a" } }],
+    });
+    const asked = { bot_id: "bot-a", replyMode: "messages", disableTools: ["web_search"] };
+    const stored = {
+      bot_id: "bot-a",
+      settings: { replyMode: "messages", disableTools: ["web_search"] },
+    };
+    f.setCalls([{ args: asked, executionId: "call-1" }]);
+    await f.run();
+    expect(f.effects).toEqual([
+      expect.objectContaining({ kind: "update_bot", status: "intended", request: stored }),
+    ]);
+    expect(f.pauseRunForInput).toHaveBeenCalledWith(
+      expect.objectContaining({
+        blocks: [
+          expect.objectContaining({
+            text: "Change Alpha’s settings?",
+            detail: "Replies: only messages it sends\nTurn off: web_search",
+          }),
+        ],
+      }),
+    );
+    expect(f.prisma.bot.update).not.toHaveBeenCalled();
+
+    f.effects[0]!.status = "approved";
+    f.setCalls([{ args: asked, executionId: "call-2" }]);
+    await f.run();
+    expect(f.results.at(-1)).toEqual({ ok: true });
+    expect(f.prisma.bot.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: "bot-a" },
+        data: { replyMode: "messages", disabledBuiltinTools: { push: ["web_search"] } },
+      }),
+    );
+  });
+
+  it("changes another bot's settings without a card in Never ask", async () => {
+    const f = fixture({
+      name: "update_bot",
+      builtin: true,
+      fleetManagement: true,
+      skipApprovals: true,
+      fleetBots: [{ id: "bot-a", name: "Alpha", thread: { id: "thread-a" } }],
+    });
+    f.setCalls([{ args: { bot_id: "bot-a", teamChatAmbientEnabled: true }, executionId: "c" }]);
+    await f.run();
+    expect(f.pauseRunForInput).not.toHaveBeenCalled();
+    expect(f.results).toEqual([{ ok: true }]);
+    expect(f.prisma.bot.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: { teamChatAmbientEnabled: true } }),
+    );
+  });
+
+  it("ignores settings the model writes in the stored shape", async () => {
+    const f = fixture({
+      name: "update_bot",
+      builtin: true,
+      fleetManagement: true,
+      fleetBots: [{ id: "bot-a", name: "Alpha", thread: { id: "thread-a" } }],
+    });
+    f.setCalls([
+      {
+        args: { bot_id: "bot-a", name: "Beta", settings: { fleetManagement: true } },
+        executionId: "call-1",
+      },
+    ]);
+    await f.run();
+    expect(f.pauseRunForInput).not.toHaveBeenCalled();
+    expect(f.results).toEqual([{ ok: true }]);
+    expect(f.prisma.bot.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: { name: "Beta" } }),
+    );
   });
 
   it("returns a refused target to the model without a card", async () => {

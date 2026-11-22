@@ -359,6 +359,14 @@ describe("normalizeRunError", () => {
         "spending",
       ],
       [
+        '403 {"code":"The caller does not have permission to execute the specified operation","error":"Your newly created team doesn\'t have any credits or licenses yet."}',
+        "credit",
+      ],
+      [
+        '429 {"error":{"message":"Your account is not active, please check your account balance","type":"exceeded_current_quota_error"}}',
+        "spending",
+      ],
+      [
         google({
           code: 429,
           message: "You exceeded your current quota, please check your plan and billing details.",

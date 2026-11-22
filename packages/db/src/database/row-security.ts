@@ -168,7 +168,6 @@ export const ROW_SECURITY_MODELS: ReadonlySet<string> = new Set([
   "ExternalMessage",
   "SteeringMessage",
   "UsageRecord",
-  "SpeechAllowance",
   "SpeechCost",
   "ScratchpadItem",
   "BotEmailMessage",
@@ -185,6 +184,9 @@ export const ROW_SECURITY_MODELS: ReadonlySet<string> = new Set([
   "AuditEvent",
   "Page",
   "PageVersion",
+  "PageGrant",
+  "PageComment",
+  "PageRevisionRequest",
 ]);
 
 /**
