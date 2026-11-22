@@ -344,7 +344,7 @@ function toolUsageLine(parts: {
       ? "Use connect_app when an app needs connecting or the user asks to connect one, then wait for them."
       : undefined,
     builtinOffered(disabled, "remember")
-      ? "Use remember for durable facts, including ones the user mentions in passing without asking you to save them, such as a preference, decision or fact about them or their work."
+      ? "Use remember for durable facts, even ones the user mentions in passing without asking."
       : undefined,
     scratchpadClause(disabled),
     parts.followUpsOffered ? FOLLOW_UP_INSTRUCTION : undefined,

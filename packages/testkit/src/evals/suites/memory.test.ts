@@ -138,6 +138,9 @@ describe("memory outcome grading", () => {
     expect(
       failed("proactive-secret", evidence("", [remember(1, "Guest Wi-Fi: Sunflower-4471")])),
     ).toEqual(["secret-not-saved"]);
+    expect(
+      failed("proactive-secret", evidence("Guest Wi-Fi: sunflower-four-four-seven-one")),
+    ).toEqual(["secret-not-saved"]);
     expect(failed("proactive-secret", evidence("", [remember(1, "Has a guest Wi-Fi.")]))).toEqual(
       [],
     );
