@@ -71,7 +71,7 @@ export function WebhookKeyButton({
 }) {
   const { t } = useLingui();
   const { withIdentityConfirmation, identityDialog } = useIdentityConfirmation();
-  // A key that arrives after the person left this chat is never shown over another one.
+  // A key or failure that arrives after the person left this chat is never shown over another one.
   const focused = useRef(false);
   focused.current = useIsFocused();
   const reveal = useSave({
@@ -90,7 +90,7 @@ export function WebhookKeyButton({
     },
     onFailed: (error) => {
       // Dismissing the confirmation prompt is the person's choice, not a failure.
-      if (isIdentityConfirmationRequired(error)) return;
+      if (!focused.current || isIdentityConfirmationRequired(error)) return;
       Alert.alert(
         errorCode(error) === "FORBIDDEN"
           ? t`Only the bot's creator can see its webhook key.`
