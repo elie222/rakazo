@@ -244,7 +244,7 @@ msgstr "{channel} {id}, {date}"
 
 #: apps/web/src/pages/shell/sidebar/sidebar-roster.tsx
 msgid "{chatCount, plural, one {# chat} other {# chats}}"
-msgstr ""
+msgstr "{chatCount, plural, other {#件のチャット}}"
 
 #: apps/web/src/components/vault/VaultItemEditor.tsx
 msgid "{commandVariable} is reserved and cannot be used as a command variable. Choose another name."
@@ -2468,7 +2468,7 @@ msgstr "{name}からのチャット"
 
 #: apps/web/src/pages/shell/sidebar/archived-chats.tsx
 msgid "Chat restored, but the list could not refresh."
-msgstr ""
+msgstr "チャットを復元しましたが、一覧を更新できませんでした。"
 
 #: apps/mobile/app/_layout.tsx
 #: apps/mobile/app/bot-settings.tsx
@@ -3339,7 +3339,7 @@ msgstr "招待リンクをコピー"
 
 #: apps/mobile/components/thread/routine-event-row.tsx
 msgid "Copy key"
-msgstr ""
+msgstr "キーをコピー"
 
 #: apps/mobile/app/page-share.tsx
 #: apps/mobile/app/pages.tsx
@@ -3364,7 +3364,7 @@ msgstr "行をコピー"
 
 #: apps/mobile/components/thread/routine-event-row.tsx
 msgid "Copy URL"
-msgstr ""
+msgstr "URLをコピー"
 
 #: apps/web/src/pages/settings/UsageSettingsPanel.tsx
 msgid "Cost"
@@ -3855,7 +3855,7 @@ msgstr "画像を読み込めませんでした"
 
 #: apps/web/src/components/integrations/skills-dialog.tsx
 msgid "Could not load installed skill packs."
-msgstr ""
+msgstr "インストール済みのスキルパックを読み込めませんでした。"
 
 #: apps/mobile/app/(settings)/integrations.tsx
 #: apps/web/src/pages/plugins/PluginsOverlay.tsx
@@ -4191,7 +4191,7 @@ msgstr "ボットを復元できませんでした"
 
 #: apps/web/src/pages/shell/sidebar/archived-chats.tsx
 msgid "Could not restore chat. Try again."
-msgstr ""
+msgstr "チャットを復元できませんでした。もう一度お試しください。"
 
 #: apps/mobile/components/computers/computer-home-versions.tsx
 #: apps/web/src/components/computers/ComputerHomeVersions.tsx
@@ -6204,7 +6204,7 @@ msgstr "文字起こしを非表示: {title}、{duration}"
 
 #: apps/web/src/pages/shell/chat/routine-event-row.tsx
 msgid "Hide webhook key"
-msgstr ""
+msgstr "Webhookキーを非表示"
 
 #: apps/web/src/components/models/ProviderSettingsForm.tsx
 #: apps/web/src/pages/space/ticket-priority.ts
@@ -7564,7 +7564,7 @@ msgstr "ボットに名前を付ける"
 #: apps/mobile/app/(settings)/voice.tsx
 #: apps/web/src/pages/settings/VoiceSettingsOverlay.tsx
 msgid "Names and terms (optional)"
-msgstr ""
+msgstr "名前と用語（任意）"
 
 #: apps/web/src/lib/chat/roster-status.ts
 msgid "Needs an answer"
@@ -9881,7 +9881,7 @@ msgstr "メインモデルと同じ"
 #: apps/mobile/app/(settings)/space.tsx
 #: apps/web/src/pages/settings/SpaceSettingOverrides.tsx
 msgid "Same as your account"
-msgstr ""
+msgstr "アカウントと同じ"
 
 #: apps/web/src/pages/shell/host-computer-prompt.tsx
 msgid "Sandbox"
@@ -10345,13 +10345,13 @@ msgstr "設定"
 #. placeholder {0}: group.spaceName
 #: apps/web/src/pages/shell/sidebar/sidebar-roster.tsx
 msgid "Settings for {0}"
-msgstr ""
+msgstr "{0}の設定"
 
 #: apps/mobile/app/(settings)/space.tsx
 #: apps/mobile/app/(settings)/spaces.tsx
 #: apps/web/src/pages/settings/SpaceSettingOverrides.tsx
 msgid "Settings for this Space"
-msgstr ""
+msgstr "このスペースの設定"
 
 #: apps/mobile/components/cards/change-undo.tsx
 #: apps/web/src/components/messages/AskCard.tsx
@@ -10537,7 +10537,7 @@ msgstr "文字起こしを表示: {title}、{duration}"
 #: apps/mobile/components/thread/routine-event-row.tsx
 #: apps/web/src/pages/shell/chat/routine-event-row.tsx
 msgid "Show webhook key"
-msgstr ""
+msgstr "Webhookキーを表示"
 
 #: apps/web/src/pages/settings/AccountSettingsOverlay.tsx
 msgid "Sidebar density"
@@ -10874,7 +10874,7 @@ msgstr "スペース"
 #: apps/mobile/app/(settings)/spaces.tsx
 #: apps/web/src/pages/settings/settings-nav.ts
 msgid "Spaces keep work apart. Bots, chats, memory and computers never cross between them."
-msgstr ""
+msgstr "スペースは作業を分けて保ちます。ボット、チャット、メモリ、コンピューターがスペース間で共有されることはありません。"
 
 #: apps/mobile/app/(settings)/organization-members.tsx
 #: apps/web/src/components/spaces/OrganizationMembersSettings.tsx
@@ -11966,7 +11966,7 @@ msgstr "文字起こしサーバーURL"
 #: apps/mobile/app/(settings)/voice.tsx
 #: apps/web/src/pages/settings/VoiceSettingsOverlay.tsx
 msgid "Transcription vocabulary"
-msgstr ""
+msgstr "文字起こしの語彙"
 
 #: apps/mobile/app/(settings)/team-conversation.tsx
 #: apps/web/src/pages/settings/ExternalConversationSettings.tsx
@@ -12339,11 +12339,11 @@ msgstr "見つかったモデルを使用"
 
 #: apps/web/src/pages/settings/SpaceSettingOverrides.tsx
 msgid "Use account settings"
-msgstr ""
+msgstr "アカウント設定を使用"
 
 #: apps/web/src/pages/settings/SpaceSettingOverrides.tsx
 msgid "Use account settings for {label}"
-msgstr ""
+msgstr "{label}にアカウント設定を使用"
 
 #: packages/i18n/src/user-error.ts
 msgid "Use an account with the same email address"

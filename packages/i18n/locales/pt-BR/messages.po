@@ -244,7 +244,7 @@ msgstr "{channel} {id}, {date}"
 
 #: apps/web/src/pages/shell/sidebar/sidebar-roster.tsx
 msgid "{chatCount, plural, one {# chat} other {# chats}}"
-msgstr ""
+msgstr "{chatCount, plural, one {# conversa} other {# conversas}}"
 
 #: apps/web/src/components/vault/VaultItemEditor.tsx
 msgid "{commandVariable} is reserved and cannot be used as a command variable. Choose another name."
@@ -2468,7 +2468,7 @@ msgstr "Conversar pelo {name}"
 
 #: apps/web/src/pages/shell/sidebar/archived-chats.tsx
 msgid "Chat restored, but the list could not refresh."
-msgstr ""
+msgstr "Conversa restaurada, mas não foi possível atualizar a lista."
 
 #: apps/mobile/app/_layout.tsx
 #: apps/mobile/app/bot-settings.tsx
@@ -3339,7 +3339,7 @@ msgstr "Copiar link de convite"
 
 #: apps/mobile/components/thread/routine-event-row.tsx
 msgid "Copy key"
-msgstr ""
+msgstr "Copiar chave"
 
 #: apps/mobile/app/page-share.tsx
 #: apps/mobile/app/pages.tsx
@@ -3364,7 +3364,7 @@ msgstr "Copiar linhas"
 
 #: apps/mobile/components/thread/routine-event-row.tsx
 msgid "Copy URL"
-msgstr ""
+msgstr "Copiar URL"
 
 #: apps/web/src/pages/settings/UsageSettingsPanel.tsx
 msgid "Cost"
@@ -3855,7 +3855,7 @@ msgstr "Não foi possível carregar a imagem"
 
 #: apps/web/src/components/integrations/skills-dialog.tsx
 msgid "Could not load installed skill packs."
-msgstr ""
+msgstr "Não foi possível carregar os pacotes de habilidades instalados."
 
 #: apps/mobile/app/(settings)/integrations.tsx
 #: apps/web/src/pages/plugins/PluginsOverlay.tsx
@@ -4191,7 +4191,7 @@ msgstr "Não foi possível restaurar o bot"
 
 #: apps/web/src/pages/shell/sidebar/archived-chats.tsx
 msgid "Could not restore chat. Try again."
-msgstr ""
+msgstr "Não foi possível restaurar a conversa. Tente novamente."
 
 #: apps/mobile/components/computers/computer-home-versions.tsx
 #: apps/web/src/components/computers/ComputerHomeVersions.tsx
@@ -6204,7 +6204,7 @@ msgstr "Ocultar transcrição: {title}, {duration}"
 
 #: apps/web/src/pages/shell/chat/routine-event-row.tsx
 msgid "Hide webhook key"
-msgstr ""
+msgstr "Ocultar chave de webhook"
 
 #: apps/web/src/components/models/ProviderSettingsForm.tsx
 #: apps/web/src/pages/space/ticket-priority.ts
@@ -7564,7 +7564,7 @@ msgstr "Dê um nome ao seu bot"
 #: apps/mobile/app/(settings)/voice.tsx
 #: apps/web/src/pages/settings/VoiceSettingsOverlay.tsx
 msgid "Names and terms (optional)"
-msgstr ""
+msgstr "Nomes e termos (opcional)"
 
 #: apps/web/src/lib/chat/roster-status.ts
 msgid "Needs an answer"
@@ -9881,7 +9881,7 @@ msgstr "Igual ao modelo principal"
 #: apps/mobile/app/(settings)/space.tsx
 #: apps/web/src/pages/settings/SpaceSettingOverrides.tsx
 msgid "Same as your account"
-msgstr ""
+msgstr "Igual à sua conta"
 
 #: apps/web/src/pages/shell/host-computer-prompt.tsx
 msgid "Sandbox"
@@ -10345,13 +10345,13 @@ msgstr "Configurações"
 #. placeholder {0}: group.spaceName
 #: apps/web/src/pages/shell/sidebar/sidebar-roster.tsx
 msgid "Settings for {0}"
-msgstr ""
+msgstr "Configurações de {0}"
 
 #: apps/mobile/app/(settings)/space.tsx
 #: apps/mobile/app/(settings)/spaces.tsx
 #: apps/web/src/pages/settings/SpaceSettingOverrides.tsx
 msgid "Settings for this Space"
-msgstr ""
+msgstr "Configurações deste Espaço"
 
 #: apps/mobile/components/cards/change-undo.tsx
 #: apps/web/src/components/messages/AskCard.tsx
@@ -10537,7 +10537,7 @@ msgstr "Mostrar transcrição: {title}, {duration}"
 #: apps/mobile/components/thread/routine-event-row.tsx
 #: apps/web/src/pages/shell/chat/routine-event-row.tsx
 msgid "Show webhook key"
-msgstr ""
+msgstr "Mostrar chave de webhook"
 
 #: apps/web/src/pages/settings/AccountSettingsOverlay.tsx
 msgid "Sidebar density"
@@ -10874,7 +10874,7 @@ msgstr "Espaços"
 #: apps/mobile/app/(settings)/spaces.tsx
 #: apps/web/src/pages/settings/settings-nav.ts
 msgid "Spaces keep work apart. Bots, chats, memory and computers never cross between them."
-msgstr ""
+msgstr "Os Espaços mantêm o trabalho separado. Bots, conversas, memória e computadores nunca passam de um para outro."
 
 #: apps/mobile/app/(settings)/organization-members.tsx
 #: apps/web/src/components/spaces/OrganizationMembersSettings.tsx
@@ -11966,7 +11966,7 @@ msgstr "URL do servidor de transcrição"
 #: apps/mobile/app/(settings)/voice.tsx
 #: apps/web/src/pages/settings/VoiceSettingsOverlay.tsx
 msgid "Transcription vocabulary"
-msgstr ""
+msgstr "Vocabulário de transcrição"
 
 #: apps/mobile/app/(settings)/team-conversation.tsx
 #: apps/web/src/pages/settings/ExternalConversationSettings.tsx
@@ -12339,11 +12339,11 @@ msgstr "Usar um modelo encontrado"
 
 #: apps/web/src/pages/settings/SpaceSettingOverrides.tsx
 msgid "Use account settings"
-msgstr ""
+msgstr "Usar configurações da conta"
 
 #: apps/web/src/pages/settings/SpaceSettingOverrides.tsx
 msgid "Use account settings for {label}"
-msgstr ""
+msgstr "Usar configurações da conta para {label}"
 
 #: packages/i18n/src/user-error.ts
 msgid "Use an account with the same email address"

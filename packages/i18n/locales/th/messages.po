@@ -238,7 +238,7 @@ msgstr "{channel} {id}, {date}"
 
 #: apps/web/src/pages/shell/sidebar/sidebar-roster.tsx
 msgid "{chatCount, plural, one {# chat} other {# chats}}"
-msgstr ""
+msgstr "{chatCount, plural, other {# แชท}}"
 
 #: apps/web/src/components/vault/VaultItemEditor.tsx
 msgid "{commandVariable} is reserved and cannot be used as a command variable. Choose another name."
@@ -2462,7 +2462,7 @@ msgstr "แชทจาก {name}"
 
 #: apps/web/src/pages/shell/sidebar/archived-chats.tsx
 msgid "Chat restored, but the list could not refresh."
-msgstr ""
+msgstr "กู้คืนแชทแล้ว แต่รีเฟรชรายการไม่สำเร็จ"
 
 #: apps/mobile/app/_layout.tsx
 #: apps/mobile/app/bot-settings.tsx
@@ -3333,7 +3333,7 @@ msgstr "คัดลอกลิงก์เชิญ"
 
 #: apps/mobile/components/thread/routine-event-row.tsx
 msgid "Copy key"
-msgstr ""
+msgstr "คัดลอกคีย์"
 
 #: apps/mobile/app/page-share.tsx
 #: apps/mobile/app/pages.tsx
@@ -3358,7 +3358,7 @@ msgstr "คัดลอกแถว"
 
 #: apps/mobile/components/thread/routine-event-row.tsx
 msgid "Copy URL"
-msgstr ""
+msgstr "คัดลอก URL"
 
 #: apps/web/src/pages/settings/UsageSettingsPanel.tsx
 msgid "Cost"
@@ -3849,7 +3849,7 @@ msgstr "โหลดรูปภาพไม่สำเร็จ"
 
 #: apps/web/src/components/integrations/skills-dialog.tsx
 msgid "Could not load installed skill packs."
-msgstr ""
+msgstr "โหลดแพ็กสกิลที่ติดตั้งไว้ไม่สำเร็จ"
 
 #: apps/mobile/app/(settings)/integrations.tsx
 #: apps/web/src/pages/plugins/PluginsOverlay.tsx
@@ -4185,7 +4185,7 @@ msgstr "กู้คืนบอทไม่สำเร็จ"
 
 #: apps/web/src/pages/shell/sidebar/archived-chats.tsx
 msgid "Could not restore chat. Try again."
-msgstr ""
+msgstr "กู้คืนแชทไม่สำเร็จ ลองอีกครั้ง"
 
 #: apps/mobile/components/computers/computer-home-versions.tsx
 #: apps/web/src/components/computers/ComputerHomeVersions.tsx
@@ -6198,7 +6198,7 @@ msgstr "ซ่อนการถอดเสียง: {title}, {duration}"
 
 #: apps/web/src/pages/shell/chat/routine-event-row.tsx
 msgid "Hide webhook key"
-msgstr ""
+msgstr "ซ่อน webhook key"
 
 #: apps/web/src/components/models/ProviderSettingsForm.tsx
 #: apps/web/src/pages/space/ticket-priority.ts
@@ -7558,7 +7558,7 @@ msgstr "ตั้งชื่อบอท"
 #: apps/mobile/app/(settings)/voice.tsx
 #: apps/web/src/pages/settings/VoiceSettingsOverlay.tsx
 msgid "Names and terms (optional)"
-msgstr ""
+msgstr "ชื่อและคำศัพท์ (ไม่บังคับ)"
 
 #: apps/web/src/lib/chat/roster-status.ts
 msgid "Needs an answer"
@@ -9875,7 +9875,7 @@ msgstr "เหมือนกับโมเดลหลัก"
 #: apps/mobile/app/(settings)/space.tsx
 #: apps/web/src/pages/settings/SpaceSettingOverrides.tsx
 msgid "Same as your account"
-msgstr ""
+msgstr "เหมือนกับบัญชีของคุณ"
 
 #: apps/web/src/pages/shell/host-computer-prompt.tsx
 msgid "Sandbox"
@@ -10339,13 +10339,13 @@ msgstr "การตั้งค่า"
 #. placeholder {0}: group.spaceName
 #: apps/web/src/pages/shell/sidebar/sidebar-roster.tsx
 msgid "Settings for {0}"
-msgstr ""
+msgstr "การตั้งค่าสำหรับ {0}"
 
 #: apps/mobile/app/(settings)/space.tsx
 #: apps/mobile/app/(settings)/spaces.tsx
 #: apps/web/src/pages/settings/SpaceSettingOverrides.tsx
 msgid "Settings for this Space"
-msgstr ""
+msgstr "การตั้งค่าสำหรับสเปซนี้"
 
 #: apps/mobile/components/cards/change-undo.tsx
 #: apps/web/src/components/messages/AskCard.tsx
@@ -10531,7 +10531,7 @@ msgstr "แสดงข้อความถอดเสียง: {title}, {dur
 #: apps/mobile/components/thread/routine-event-row.tsx
 #: apps/web/src/pages/shell/chat/routine-event-row.tsx
 msgid "Show webhook key"
-msgstr ""
+msgstr "แสดง webhook key"
 
 #: apps/web/src/pages/settings/AccountSettingsOverlay.tsx
 msgid "Sidebar density"
@@ -10868,7 +10868,7 @@ msgstr "สเปซ"
 #: apps/mobile/app/(settings)/spaces.tsx
 #: apps/web/src/pages/settings/settings-nav.ts
 msgid "Spaces keep work apart. Bots, chats, memory and computers never cross between them."
-msgstr ""
+msgstr "สเปซแยกงานออกจากกัน บอท แชท ความจำ และคอมพิวเตอร์จะไม่ข้ามไปมาระหว่างสเปซ"
 
 #: apps/mobile/app/(settings)/organization-members.tsx
 #: apps/web/src/components/spaces/OrganizationMembersSettings.tsx
@@ -11960,7 +11960,7 @@ msgstr "URL ของเซิร์ฟเวอร์ถอดเสียง"
 #: apps/mobile/app/(settings)/voice.tsx
 #: apps/web/src/pages/settings/VoiceSettingsOverlay.tsx
 msgid "Transcription vocabulary"
-msgstr ""
+msgstr "คำศัพท์สำหรับการถอดเสียง"
 
 #: apps/mobile/app/(settings)/team-conversation.tsx
 #: apps/web/src/pages/settings/ExternalConversationSettings.tsx
@@ -12333,11 +12333,11 @@ msgstr "ใช้โมเดลที่พบ"
 
 #: apps/web/src/pages/settings/SpaceSettingOverrides.tsx
 msgid "Use account settings"
-msgstr ""
+msgstr "ใช้การตั้งค่าบัญชี"
 
 #: apps/web/src/pages/settings/SpaceSettingOverrides.tsx
 msgid "Use account settings for {label}"
-msgstr ""
+msgstr "ใช้การตั้งค่าบัญชีสำหรับ {label}"
 
 #: packages/i18n/src/user-error.ts
 msgid "Use an account with the same email address"

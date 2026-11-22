@@ -244,7 +244,7 @@ msgstr "{channel} {id}, {date}"
 
 #: apps/web/src/pages/shell/sidebar/sidebar-roster.tsx
 msgid "{chatCount, plural, one {# chat} other {# chats}}"
-msgstr ""
+msgstr "{chatCount, plural, one {צ׳אט אחד} two {# צ׳אטים} other {# צ׳אטים}}"
 
 #: apps/web/src/components/vault/VaultItemEditor.tsx
 msgid "{commandVariable} is reserved and cannot be used as a command variable. Choose another name."
@@ -2468,7 +2468,7 @@ msgstr "צ׳אט מ-{name}"
 
 #: apps/web/src/pages/shell/sidebar/archived-chats.tsx
 msgid "Chat restored, but the list could not refresh."
-msgstr ""
+msgstr "הצ׳אט שוחזר, אבל לא ניתן היה לרענן את הרשימה."
 
 #: apps/mobile/app/_layout.tsx
 #: apps/mobile/app/bot-settings.tsx
@@ -3339,7 +3339,7 @@ msgstr "העתקת קישור ההזמנה"
 
 #: apps/mobile/components/thread/routine-event-row.tsx
 msgid "Copy key"
-msgstr ""
+msgstr "העתקת המפתח"
 
 #: apps/mobile/app/page-share.tsx
 #: apps/mobile/app/pages.tsx
@@ -3364,7 +3364,7 @@ msgstr "העתקת שורות"
 
 #: apps/mobile/components/thread/routine-event-row.tsx
 msgid "Copy URL"
-msgstr ""
+msgstr "העתקת ה-URL"
 
 #: apps/web/src/pages/settings/UsageSettingsPanel.tsx
 msgid "Cost"
@@ -3855,7 +3855,7 @@ msgstr "לא ניתן לטעון את התמונה"
 
 #: apps/web/src/components/integrations/skills-dialog.tsx
 msgid "Could not load installed skill packs."
-msgstr ""
+msgstr "לא ניתן היה לטעון את חבילות המיומנויות המותקנות."
 
 #: apps/mobile/app/(settings)/integrations.tsx
 #: apps/web/src/pages/plugins/PluginsOverlay.tsx
@@ -4191,7 +4191,7 @@ msgstr "לא ניתן לשחזר את הבוט"
 
 #: apps/web/src/pages/shell/sidebar/archived-chats.tsx
 msgid "Could not restore chat. Try again."
-msgstr ""
+msgstr "לא ניתן היה לשחזר את הצ׳אט. כדאי לנסות שוב."
 
 #: apps/mobile/components/computers/computer-home-versions.tsx
 #: apps/web/src/components/computers/ComputerHomeVersions.tsx
@@ -6204,7 +6204,7 @@ msgstr "הסתרת התמליל: {title}, {duration}"
 
 #: apps/web/src/pages/shell/chat/routine-event-row.tsx
 msgid "Hide webhook key"
-msgstr ""
+msgstr "הסתרת מפתח ה-webhook"
 
 #: apps/web/src/components/models/ProviderSettingsForm.tsx
 #: apps/web/src/pages/space/ticket-priority.ts
@@ -7564,7 +7564,7 @@ msgstr "שם לבוט"
 #: apps/mobile/app/(settings)/voice.tsx
 #: apps/web/src/pages/settings/VoiceSettingsOverlay.tsx
 msgid "Names and terms (optional)"
-msgstr ""
+msgstr "שמות ומונחים (אופציונלי)"
 
 #: apps/web/src/lib/chat/roster-status.ts
 msgid "Needs an answer"
@@ -9881,7 +9881,7 @@ msgstr "כמו המודל הראשי"
 #: apps/mobile/app/(settings)/space.tsx
 #: apps/web/src/pages/settings/SpaceSettingOverrides.tsx
 msgid "Same as your account"
-msgstr ""
+msgstr "כמו בחשבון שלך"
 
 #: apps/web/src/pages/shell/host-computer-prompt.tsx
 msgid "Sandbox"
@@ -10345,13 +10345,13 @@ msgstr "הגדרות"
 #. placeholder {0}: group.spaceName
 #: apps/web/src/pages/shell/sidebar/sidebar-roster.tsx
 msgid "Settings for {0}"
-msgstr ""
+msgstr "הגדרות עבור {0}"
 
 #: apps/mobile/app/(settings)/space.tsx
 #: apps/mobile/app/(settings)/spaces.tsx
 #: apps/web/src/pages/settings/SpaceSettingOverrides.tsx
 msgid "Settings for this Space"
-msgstr ""
+msgstr "הגדרות למרחב הזה"
 
 #: apps/mobile/components/cards/change-undo.tsx
 #: apps/web/src/components/messages/AskCard.tsx
@@ -10537,7 +10537,7 @@ msgstr "הצגת התמליל: {title}, {duration}"
 #: apps/mobile/components/thread/routine-event-row.tsx
 #: apps/web/src/pages/shell/chat/routine-event-row.tsx
 msgid "Show webhook key"
-msgstr ""
+msgstr "הצגת מפתח ה-webhook"
 
 #: apps/web/src/pages/settings/AccountSettingsOverlay.tsx
 msgid "Sidebar density"
@@ -10874,7 +10874,7 @@ msgstr "מרחבים"
 #: apps/mobile/app/(settings)/spaces.tsx
 #: apps/web/src/pages/settings/settings-nav.ts
 msgid "Spaces keep work apart. Bots, chats, memory and computers never cross between them."
-msgstr ""
+msgstr "מרחבים מפרידים בין עבודות. בוטים, צ׳אטים, זיכרון ומחשבים אף פעם לא עוברים ביניהם."
 
 #: apps/mobile/app/(settings)/organization-members.tsx
 #: apps/web/src/components/spaces/OrganizationMembersSettings.tsx
@@ -11966,7 +11966,7 @@ msgstr "כתובת שרת התמלול"
 #: apps/mobile/app/(settings)/voice.tsx
 #: apps/web/src/pages/settings/VoiceSettingsOverlay.tsx
 msgid "Transcription vocabulary"
-msgstr ""
+msgstr "אוצר מילים לתמלול"
 
 #: apps/mobile/app/(settings)/team-conversation.tsx
 #: apps/web/src/pages/settings/ExternalConversationSettings.tsx
@@ -12339,11 +12339,11 @@ msgstr "שימוש במודל שנמצא"
 
 #: apps/web/src/pages/settings/SpaceSettingOverrides.tsx
 msgid "Use account settings"
-msgstr ""
+msgstr "שימוש בהגדרות החשבון"
 
 #: apps/web/src/pages/settings/SpaceSettingOverrides.tsx
 msgid "Use account settings for {label}"
-msgstr ""
+msgstr "שימוש בהגדרות החשבון עבור {label}"
 
 #: packages/i18n/src/user-error.ts
 msgid "Use an account with the same email address"
