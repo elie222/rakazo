@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { TAKEOVER_COMPUTER_DONE_STATE } from "@rakazo/core";
 import { deferred } from "@rakazo/core/test-async";
 import { notifyManager } from "@tanstack/react-query";
 import type { ReactNode } from "react";
@@ -126,4 +127,24 @@ it("says why an answer failed and offers it again", async () => {
   await vi.waitFor(() => expect(mocks.alert).toHaveBeenCalledTimes(1));
   expect(mocks.alert.mock.calls[0]?.[0]).toBe("Could not continue");
   expect(button("I’m done")?.dataset.busy).toBe("false");
+});
+
+it("folds a settled request to its plain text, not the markdown source", async () => {
+  await act(async () =>
+    root.render(
+      <ComputerCard
+        block={{
+          ...block,
+          state: TAKEOVER_COMPUTER_DONE_STATE,
+          text: "Please **sign in** to [Example](https://example.com)",
+        }}
+        botId="bot-1"
+        runId="run-1"
+        onOpen={() => undefined}
+      />,
+    ),
+  );
+  expect(container.textContent).toContain("Done · Please sign in to Example");
+  expect(container.textContent).not.toContain("**");
+  expect(container.textContent).not.toContain("https://example.com");
 });

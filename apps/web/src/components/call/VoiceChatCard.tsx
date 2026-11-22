@@ -1,4 +1,5 @@
 import { useLingui } from "@lingui/react/macro";
+import { useTimeout } from "@rakazo/chat-ui/hooks";
 import type { VoiceChatGroup } from "@rakazo/core";
 import {
   callRequestBlock,
@@ -8,7 +9,7 @@ import {
 } from "@rakazo/core";
 import { Button, buttonVariants, Collapsible, CollapsibleContent, cn } from "@rakazo/ui-web";
 import { ChevronDown, Phone, PhoneIncoming, PhoneMissed } from "lucide-react";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { BuiCard } from "../ai/primitives";
 
 export function VoiceChatCard({
@@ -31,7 +32,16 @@ export function VoiceChatCard({
   const request = callRequestBlock(group.messages[0]?.blocks);
   const seconds = voiceChatDuration(group);
   const duration = `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
-  const ringing = request?.status === "ringing" && Date.parse(request.expiresAt) > Date.now();
+  // Re-render at the ring's end so the card turns missed without waiting for the server.
+  const [now, setNow] = useState(() => Date.now());
+  const ringEnd = request?.status === "ringing" ? request.expiresAt : undefined;
+  const untilRingEnd = useMemo(
+    () => (ringEnd ? Math.max(0, Date.parse(ringEnd) - Date.now()) : null),
+    [ringEnd],
+  );
+  useTimeout(() => setNow(Date.now()), untilRingEnd, ringEnd);
+  const ringing =
+    request?.status === "ringing" && Date.parse(request.expiresAt) > Math.max(now, Date.now());
   // A call that rang out reads as missed even before the server's ring-out lands.
   const missed =
     request?.status === "declined" ||

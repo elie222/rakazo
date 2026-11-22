@@ -107,15 +107,19 @@ export async function fetchSafeWebText(
   options: SafeWebFetchOptions = {},
 ): Promise<SafeWebResponse<string>> {
   const response = await fetchSafeWebBytes(url, options);
+  return { ...response, body: decodeWebText(response.body, response.contentType) };
+}
+
+/** Decode a body with the charset its content type names, or UTF-8. */
+export function decodeWebText(body: Uint8Array, contentType: string | null): string {
   let decoder = new TextDecoder();
   try {
-    const charset =
-      response.contentType && new MIMEType(response.contentType).params.get("charset");
+    const charset = contentType && new MIMEType(contentType).params.get("charset");
     if (charset) decoder = new TextDecoder(charset);
   } catch {
     // Preserve UTF-8 decoding for malformed media types or unsupported charset labels.
   }
-  return { ...response, body: decoder.decode(response.body) };
+  return decoder.decode(body);
 }
 
 export async function fetchSafeWebBytes(

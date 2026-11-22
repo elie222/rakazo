@@ -1,14 +1,12 @@
 #!/usr/bin/env bash
 # Prints which CI areas a pull request's merge commit can affect, as GitHub step outputs.
 # web: anything beyond the mobile app, the marketing site, docs/ and agent notes. e2e: web, minus the
-# worker, which the E2E server never loads (it imports the server adapters in-process). server (the
-# Postgres journeys): web, minus the browser and desktop clients and their UI packages, which no
-# journey loads. www: the marketing site, the docs/ it publishes, the workspace packages it imports
+# worker, which the E2E server never loads (it imports the server adapters in-process). www: the marketing site, the docs/ it publishes, the workspace packages it imports
 # (WWW_PACKAGES, kept equal to its dependencies by changed-areas.test.py), root config and CI.
 # native: the desktop app, the computer, screen and sandbox adapters its native tests load, and
 # core's desktop runtime. compose: the Compose files the Postgres upgrade drill copies. CI itself,
 # the root manifest and the lockfile count for every area. Any other file, shared packages included, counts
-# for web, e2e and server. all_packages: a change outside the workspace packages (root config, CI,
+# for web and e2e. all_packages: a change outside the workspace packages (root config, CI,
 # scripts, infra, a package manifest) that typecheck and unit tests cannot trace through the package
 # graph, so they run for every package; docs, agent notes and root markdown do not count. Every
 # Dockerfile counts too: the host safeguard tests read all of them, so none may skip the gate.
@@ -24,7 +22,6 @@ WWW_PACKAGES="contracts core ui-tokens ui-web"
 files="$(git diff --no-renames --name-only HEAD^1 HEAD)"
 web=false
 e2e=false
-server=false
 www=false
 native=false
 compose=false
@@ -94,14 +91,13 @@ while IFS= read -r file; do
       e2e=true
       continue
       ;;
-    apps/worker/*) web=true; server=true; continue ;;
-    packages/adapters/*) web=true; e2e=true; server=true; continue ;;
+    apps/worker/*) web=true; continue ;;
+    packages/adapters/*) web=true; e2e=true; continue ;;
     */*) ;;
     *.md) continue ;;
   esac
   web=true
   e2e=true
-  server=true
 done <<<"$files"
 if [[ "$all_packages" == true || "$unit_packages" == true ]]; then
   unit_shards="[1,2,3,4]"
@@ -112,7 +108,6 @@ else
 fi
 echo "web=$web"
 echo "e2e=$e2e"
-echo "server=$server"
 echo "www=$www"
 echo "native=$native"
 echo "compose=$compose"

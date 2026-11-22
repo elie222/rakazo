@@ -7,14 +7,13 @@ import { describe, expect, it } from "vitest";
 
 const script = fileURLToPath(new URL("./pr-digest", import.meta.url));
 const mockGh = String.raw`#!/usr/bin/env node
-const { readFileSync, appendFileSync } = require("node:fs");
+const { readFileSync, appendFileSync, existsSync } = require("node:fs");
 const args = process.argv.slice(2);
 const fixture = JSON.parse(readFileSync(process.env.FIXTURE, "utf8"));
 const print = (value) => console.log(typeof value === "string" ? value : JSON.stringify(value));
 if (args[0] === "repo" && args[1] === "view") print("example/project");
 else if (args[0] === "pr" && args[1] === "view") {
-  if (args.includes("isCrossRepository")) print(fixture.fork ?? false);
-  else if (args.includes("--jq")) print("abc");
+  if (args.includes("--jq")) print("abc");
   else print({ headRefOid: "abc", state: "OPEN", mergeable: "MERGEABLE", headRefName: "topic", reviewDecision: "" });
 } else if (args[0] === "api") {
   const endpoint = args.find((arg) => arg === "graphql" || arg.startsWith("repos/"));
@@ -23,14 +22,6 @@ else if (args[0] === "pr" && args[1] === "view") {
     appendFileSync(process.env.CALLS, "POST\n");
     process.exit(1);
   } else if (endpoint.includes("/pulls/comments/")) print("1");
-  else if (endpoint.includes("/check-runs?")) {
-    // A sequence plays one entry per poll, then repeats its last entry.
-    const polls = fixture.checks ?? [fixture.check ?? { name: "tests", status: "completed", conclusion: "success", html_url: "" }];
-    appendFileSync(process.env.POLLS, "x");
-    const count = readFileSync(process.env.POLLS, "utf8").length;
-    const poll = polls[Math.min(count, polls.length) - 1];
-    for (const run of Array.isArray(poll) ? poll : [poll]) print(run);
-  }
   else if (endpoint.includes("/actions/jobs/")) {
     const result = require("node:child_process").spawnSync("jq", ["-r", args[args.indexOf("--jq") + 1]], {
       input: JSON.stringify({ steps: fixture.steps?.[endpoint.split("/").pop()] ?? [] }), encoding: "utf8"
@@ -38,27 +29,41 @@ else if (args[0] === "pr" && args[1] === "view") {
     process.stdout.write(result.stdout);
     process.stderr.write(result.stderr);
     process.exit(result.status);
+  } else {
+    // Sequences play one entry per poll (counted on the check-runs fetch), then repeat their last entry.
+    const at = (polls) => polls[Math.min(readFileSync(process.env.POLLS, "utf8").length, polls.length) - 1];
+    let body;
+    if (endpoint.includes("/check-runs?")) {
+      appendFileSync(process.env.POLLS, "x");
+      const poll = at(fixture.checks ?? [fixture.check ?? { name: "tests", status: "completed", conclusion: "success", html_url: "" }]);
+      body = { check_runs: Array.isArray(poll) ? poll : [poll] };
+    } else if (endpoint.includes("/status?")) body = { statuses: at(fixture.statuses ?? [[]]) };
+    else if (endpoint.includes("/actions/runs?"))
+      body = { workflow_runs: at(fixture.workflows ?? [[]]).map((run) => ({ event: "pull_request", ...run })) };
+    else if (endpoint.includes("/issues/")) body = fixture.conversation ?? [];
+    else if (endpoint.includes("/reviews?")) body = fixture.reviews ?? [];
+    else if (endpoint.includes("/comments?")) body = fixture.inline ?? [];
+    else if (/\/pulls\/\d+$/.test(endpoint)) body = { head: { sha: "abc" }, base: { ref: "main" } };
+    else if (endpoint.endsWith("/branches/main"))
+      body = fixture.required ? { protection: { required_status_checks: { contexts: fixture.required } } } : {};
+    else process.exit(2);
+    // Answer the way gh api -i does, honouring If-None-Match like GitHub.
+    const limited = Number(fixture.rateLimited ?? 0);
+    if (limited > (existsSync(process.env.LIMITED) ? readFileSync(process.env.LIMITED, "utf8").length : 0)) {
+      appendFileSync(process.env.LIMITED, "x");
+      print("HTTP/2.0 403 Forbidden\nX-Ratelimit-Remaining: 0\nX-Ratelimit-Reset: " + Math.floor(Date.now() / 1000) + "\n\n{}");
+      process.exit(1);
+    }
+    const json = JSON.stringify(body);
+    const etag = 'W/"' + require("node:crypto").createHash("sha1").update(json).digest("hex") + '"';
+    const sent = args[args.indexOf("-H") + 1];
+    if (args.includes("-H") && sent === "If-None-Match: " + etag) {
+      appendFileSync(process.env.CALLS, "304\n");
+      print("HTTP/2.0 304 Not Modified\n");
+      process.exit(1);
+    }
+    print("HTTP/2.0 200 OK\n" + (fixture.noEtag ? "" : "Etag: " + etag + "\n") + "\n" + json);
   }
-  else if (endpoint.includes("/status?")) {
-    const polls = fixture.statuses ?? [[]];
-    const count = readFileSync(process.env.POLLS, "utf8").length;
-    for (const status of polls[Math.min(count, polls.length) - 1]) print(status);
-  }
-  else if (endpoint.includes("/actions/runs?")) {
-    const polls = fixture.workflows ?? [[]];
-    const count = readFileSync(process.env.POLLS, "utf8").length;
-    const jq = args[args.indexOf("--jq") + 1];
-    const runs = polls[Math.min(count, polls.length) - 1].map((run) => ({ event: "pull_request", ...run }));
-    const input = JSON.stringify({ workflow_runs: runs });
-    const result = require("node:child_process").spawnSync("jq", ["-c", jq], { input, encoding: "utf8" });
-    process.stdout.write(result.stdout);
-    process.stderr.write(result.stderr);
-    process.exit(result.status);
-  }
-  else if (endpoint.includes("/issues/")) print(fixture.conversation ?? []);
-  else if (endpoint.includes("/reviews?")) print(fixture.reviews ?? []);
-  else if (endpoint.includes("/comments?")) print(fixture.inline ?? []);
-  else process.exit(2);
 } else process.exit(2);
 `;
 
@@ -88,7 +93,9 @@ function runDigest(
     checks?: object[];
     statuses?: object[][];
     workflows?: object[][];
-    fork?: boolean;
+    rateLimited?: number;
+    noEtag?: boolean;
+    required?: string[];
     steps?: Record<string, object[]>;
   },
   ...args: string[]
@@ -106,6 +113,7 @@ function runDigest(
         FIXTURE: join(root, "fixture"),
         CALLS: callsPath,
         POLLS: join(root, "polls"),
+        LIMITED: join(root, "limited"),
         PR_DIGEST_POLL: "1",
         PR_DIGEST_SEEN_DIR: join(root, "seen"),
       },
@@ -200,6 +208,18 @@ describe("pr-digest", () => {
       conversation: [
         comment({ id: 41, user: "vercel[bot]", kind: "Bot", body: "[vc]: generated deployment" }),
         comment({
+          id: 52,
+          user: "vercel[bot]",
+          kind: "Bot",
+          body: "@someone is attempting to deploy",
+        }),
+        comment({
+          id: 53,
+          user: "github-actions[bot]",
+          kind: "Bot",
+          body: "<!-- rakazo-playwright-screenshots -->\n<!-- screenshot-commit:abc -->\n### Playwright screenshots\n",
+        }),
+        comment({
           id: 42,
           user: "github-actions[bot]",
           kind: "Bot",
@@ -257,7 +277,7 @@ describe("pr-digest", () => {
       ],
     });
     expect(result.status).toBe(0);
-    expect(result.stdout).toContain("(11 noise)");
+    expect(result.stdout).toContain("(13 noise)");
   });
 
   describe("Qodo review comment", () => {
@@ -378,7 +398,7 @@ describe("pr-digest", () => {
         "--watch",
         "1",
       );
-      expect(result.status).toBe(11);
+      expect(result.stdout).toContain("VERDICT open-comments");
       expect(result.stdout).toContain("Retry can loop");
     });
   });
@@ -518,12 +538,14 @@ describe("pr-digest", () => {
 
     it("wakes for an unseen finding while checks are still running", () => {
       const result = runDigest({ check: running, conversation: [comment()] }, "--watch", "1");
-      expect(result.status).toBe(11);
+      expect(result.status).toBe(0);
+      expect(result.stdout).toContain("VERDICT open-comments");
       expect(result.stdout).toContain("Please fix this");
     });
     it("wakes when a check fails while others are still running", () => {
       const result = runDigest({ checks: [running, [failed, running]] }, "--watch", "1");
-      expect(result.status).toBe(10);
+      expect(result.status).toBe(0);
+      expect(result.stdout).toContain("VERDICT failures");
     });
 
     it("wakes when a commit status fails while checks are still running", () => {
@@ -532,7 +554,8 @@ describe("pr-digest", () => {
         "--watch",
         "1",
       );
-      expect(result.status).toBe(10);
+      expect(result.status).toBe(0);
+      expect(result.stdout).toContain("VERDICT failures");
     });
 
     const deployAuth = {
@@ -541,24 +564,74 @@ describe("pr-digest", () => {
       description: "Authorization required to deploy.",
     };
 
-    it("ignores the deploy authorization failure fork PRs always get", () => {
+    it("never waits on or wakes for the marketing site's deploy status", () => {
       const passed = { ...running, status: "completed", conclusion: "success" };
       const result = runDigest(
-        { checks: [running, running, passed], statuses: [[], [deployAuth]], fork: true },
+        { checks: [running, running, passed], statuses: [[], [deployAuth]] },
         "--watch",
         "1",
       );
-      expect(result.status).toBe(0);
+      expect(result.stdout).toContain("VERDICT green");
       expect(result.stdout).not.toContain("STATUS Vercel");
     });
 
-    it("still wakes for that failure on a same-repo PR", () => {
+    it("re-reads unchanged data from its cache without spending rate limit", () => {
+      const passed = { ...running, status: "completed", conclusion: "success" };
+      const result = runDigest({ checks: [running, running, passed] }, "--watch", "1");
+      expect(result.stdout).toContain("VERDICT green");
+      // Conversation, review and status reads stay the same across polls.
+      expect(result.calls.split("304").length - 1).toBeGreaterThan(5);
+    });
+
+    it("waits only for the checks the base branch requires", () => {
+      const passed = { ...running, name: "tests", status: "completed", conclusion: "success" };
       const result = runDigest(
-        { check: running, statuses: [[], [deployAuth]], fork: false },
+        { required: ["tests"], checks: [[passed, { ...running, name: "image" }]] },
         "--watch",
         "1",
       );
-      expect(result.status).toBe(10);
+      expect(result.stdout).toContain("VERDICT green");
+    });
+
+    it("waits for checks the base does not require when asked to", () => {
+      const passed = { ...running, name: "tests", status: "completed", conclusion: "success" };
+      const result = runDigest(
+        { required: ["tests"], checks: [[passed, { ...running, name: "image" }]] },
+        "--all-checks",
+        "1",
+      );
+      expect(result.stdout).toContain("VERDICT pending (1)");
+    });
+
+    it("still waits for a missing required check when waiting for every check", () => {
+      const result = runDigest(
+        {
+          required: ["tests", "e2e"],
+          check: { ...running, name: "tests", status: "completed", conclusion: "success" },
+        },
+        "--all-checks",
+        "1",
+      );
+      expect(result.stdout).toContain("VERDICT pending (1)");
+    });
+
+    it("waits for a required check that has not appeared yet", () => {
+      const result = runDigest({
+        required: ["tests", "e2e"],
+        check: { ...running, name: "tests", status: "completed", conclusion: "success" },
+      });
+      expect(result.stdout).toContain("VERDICT pending (1)");
+    });
+
+    it("reads a response that carries no ETag", () => {
+      const result = runDigest({ noEtag: true, conversation: [comment()] }, "--watch", "1");
+      expect(result.stdout).toContain("Please fix this");
+    });
+
+    it("waits out a rate limit instead of failing", () => {
+      const result = runDigest({ rateLimited: 2 }, "--watch", "1");
+      expect(result.stdout).toContain("VERDICT green");
+      expect(result.stderr).toContain("rate limit, waiting");
     });
 
     it("keeps waiting on a workflow queued before it has any jobs", () => {
@@ -599,7 +672,8 @@ describe("pr-digest", () => {
         "--watch",
         "1",
       );
-      expect(result.status).toBe(10);
+      expect(result.status).toBe(0);
+      expect(result.stdout).toContain("VERDICT failures");
       expect(Date.now() - started).toBeGreaterThanOrEqual(2_000);
     });
   });

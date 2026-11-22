@@ -6,6 +6,7 @@ import type { RakazoDesktop } from "../../lib/platform/desktop";
 import type { ShellShortcut, ShortcutHost } from "./shell-shortcuts";
 import {
   cycleBotId,
+  findPanelAction,
   quoteShortcutLabel,
   shellShortcut,
   startsTyping,
@@ -98,7 +99,7 @@ describe("shellShortcut", () => {
     expect(shellShortcut(keyEvent({ key: "b", metaKey: true }), windowsApp)).toBeNull();
   });
 
-  it("focuses the composer, connects apps and toggles chat details with the primary key", () => {
+  it("focuses the composer, switches model and thinking, and toggles chat details with the primary key", () => {
     for (const [host, primary] of [
       [macBrowser, "metaKey"],
       [windowsApp, "ctrlKey"],
@@ -107,7 +108,10 @@ describe("shellShortcut", () => {
         type: "focus-composer",
       });
       expect(shellShortcut(keyEvent({ key: "M", [primary]: true, shiftKey: true }), host)).toEqual({
-        type: "integrations",
+        type: "model-picker",
+      });
+      expect(shellShortcut(keyEvent({ key: "E", [primary]: true, shiftKey: true }), host)).toEqual({
+        type: "thinking-level",
       });
       expect(
         shellShortcut(keyEvent({ key: "<", code: "Comma", [primary]: true, shiftKey: true }), host),
@@ -116,6 +120,22 @@ describe("shellShortcut", () => {
     expect(shellShortcut(keyEvent({ key: "i", ctrlKey: true }), macApp)).toBeNull();
     expect(shellShortcut(keyEvent({ key: "i", metaKey: true, shiftKey: true }), macApp)).toBeNull();
     expect(shellShortcut(keyEvent({ key: ",", code: "Comma", metaKey: true }), macApp)).toBeNull();
+    expect(shellShortcut(keyEvent({ key: "m", metaKey: true }), macApp)).toBeNull();
+  });
+
+  it("connects apps with Cmd/Ctrl+Shift+A only in the desktop app, since Chrome keeps it for tab search", () => {
+    expect(shellShortcut(keyEvent({ key: "A", metaKey: true, shiftKey: true }), macApp)).toEqual({
+      type: "integrations",
+    });
+    expect(
+      shellShortcut(keyEvent({ key: "A", ctrlKey: true, shiftKey: true }), windowsApp),
+    ).toEqual({ type: "integrations" });
+    expect(
+      shellShortcut(keyEvent({ key: "A", metaKey: true, shiftKey: true }), macBrowser),
+    ).toBeNull();
+    expect(
+      shellShortcut(keyEvent({ key: "A", ctrlKey: true, shiftKey: true }), windowsBrowser),
+    ).toBeNull();
   });
 
   it("lists the shortcuts with Cmd/Ctrl+/ on any layout", () => {
@@ -394,5 +414,24 @@ describe("useShellShortcuts", () => {
     expect(run.mock.calls).toEqual([[{ type: "search" }]]);
     await unmount();
     expect(stop).toHaveBeenCalled();
+  });
+});
+
+describe("findPanelAction", () => {
+  it("closes a details panel that floats over the chat", () => {
+    expect(findPanelAction(true, true, true)).toBe("close-panel");
+  });
+
+  it("keeps a panel that sits beside the chat", () => {
+    expect(findPanelAction(false, true, true)).toBe("open");
+    expect(findPanelAction(false, true, false)).toBe("open");
+  });
+
+  it("waits while a covering panel holds a form", () => {
+    expect(findPanelAction(true, true, false)).toBe("refuse");
+  });
+
+  it("opens when no panel is open", () => {
+    expect(findPanelAction(true, false, false)).toBe("open");
   });
 });

@@ -1,8 +1,8 @@
 import type { JobPublisher } from "@rakazo/adapter-kit";
 import { routineWakeupJob } from "@rakazo/adapter-kit";
+import { firstWatchCheck } from "@rakazo/adapters";
 import { isOneShotRoutineCrons, nextCronDateAcross } from "@rakazo/core";
 import type { PrismaClient, ThreadEvents } from "@rakazo/db";
-import { firstWatchCheck } from "./routines.js";
 
 interface ResumeDeps {
   prisma: PrismaClient;

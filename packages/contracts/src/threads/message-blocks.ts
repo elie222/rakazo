@@ -52,6 +52,12 @@ const ChartBlock = z
 export const RoutineEventChange = z.enum(["created", "updated", "enabled", "disabled", "deleted"]);
 export type RoutineEventChange = z.infer<typeof RoutineEventChange>;
 
+/**
+ * An option added to a new user's first bot's opening question: clients open the agent import
+ * instead of answering with it, and hide it where there is no importer.
+ */
+export const AGENT_IMPORT_ASK_ACTION_ID = "agent-import";
+
 export const SecretAskPurpose = z.enum(["otp", "password", "api_key"]);
 export type SecretAskPurpose = z.infer<typeof SecretAskPurpose>;
 
@@ -209,6 +215,8 @@ export const MessageBlock = z.discriminatedUnion("kind", [
     kind: z.literal("routine_event"),
     change: RoutineEventChange,
     name: z.string().max(200),
+    /** A webhook starts the routine: the creator's client can show its URL and the bot's key. */
+    webhook: z.literal(true).optional(),
   }),
   /**
    * Marks a user message as what woke the bot (a webhook, an email, a chat message). Its text

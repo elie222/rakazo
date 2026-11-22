@@ -7,9 +7,8 @@ import type {
   ConnectorTool,
   SecretStore,
 } from "@rakazo/adapter-kit";
-import type { McpSourcePreset } from "@rakazo/contracts";
 import { ConnectionSetupError } from "@rakazo/contracts";
-import { cancelResponseBody } from "@rakazo/core";
+import { cancelResponseBody, MCP_SOURCE_PRESETS } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import { availableInSpace, itemSecretIn } from "@rakazo/db";
 import { parse as parseYaml } from "yaml";
@@ -75,12 +74,6 @@ const McpAuthSchema = z
   })
   .default({ type: "none" });
 
-/** MCP services offered as one-step sources. A preset with a URL always connects there. */
-export const MCP_SOURCE_PRESETS: McpSourcePreset[] = [
-  // A self-hosted Executor serves the same endpoint at its own origin, so the URL stays editable.
-  { id: "executor", name: "Executor", defaultUrl: "https://mcp.executor.sh/mcp", signIn: true },
-];
-
 /** Applies a preset named in an MCP install: its fixed URL and bearer auth, so clients send
  * only the id. A sign-in preset is saved as an MCP server instead; older clients that still
  * send its id with a token install it here. Stored configs keep only fixed-URL preset ids; the rest store as custom. */
@@ -119,6 +112,12 @@ const ApiOperationSchema = z.object({
   formObjectQueryParameters: z.array(z.string().min(1).max(120)).optional(),
   commaSeparatedQueryParameters: z.array(z.string().min(1).max(120)).optional(),
   headerParameters: z.array(ModelHeaderName).default([]),
+  /** The JSON media type the request body is sent as, when the API does not take `application/json`. */
+  bodyMediaType: z
+    .string()
+    .regex(/^application\/[\w.+-]+$/)
+    .max(120)
+    .optional(),
 });
 
 const ApiConfigSchema = z.object({
@@ -502,6 +501,7 @@ export async function prepareApiInstall(input: {
       async () =>
         importOpenApiDocument(
           await loadOpenApiDocument(documentUrl, documentHeaders, input.signal, remote),
+          new URL(documentUrl.pathname, documentUrl.origin).href,
         ),
       input,
     );
@@ -605,15 +605,34 @@ function isCircular(root: unknown): boolean {
 const OPENAPI_SERVER_VARIABLE = /\{([^{}]+)\}/g;
 const MAX_OPENAPI_BASE_URL_LENGTH = 2_048;
 
-export function importOpenApiDocument(document: Record<string, unknown>): {
+const ABSOLUTE_URL = /^[a-z][a-z\d+.-]*:/i;
+const JSON_MEDIA_TYPE = /^application\/(?:[\w.+-]*\+)?json\b/i;
+
+/** The request body's media type: plain `application/json` first, then any JSON-like type. */
+function jsonMediaType(content: Record<string, unknown> | undefined): string | undefined {
+  if (!content) return undefined;
+  if (content["application/json"] !== undefined) return "application/json";
+  return Object.keys(content).find((type) => JSON_MEDIA_TYPE.test(type));
+}
+
+/**
+ * `documentUrl` is where the document was fetched from: a relative server URL, or the default
+ * `/` when `servers` is absent, resolves against it, as the OpenAPI specification says.
+ */
+export function importOpenApiDocument(
+  document: Record<string, unknown>,
+  documentUrl?: string,
+): {
   baseUrl: string;
   operations: ApiOperation[];
 } {
   const server = asRecord(Array.isArray(document.servers) ? document.servers[0] : undefined);
-  if (typeof server?.url !== "string" || !server.url) {
+  const hasServerUrl = typeof server?.url === "string" && server.url !== "";
+  if (!hasServerUrl && Array.isArray(document.servers) && document.servers.length > 0) {
     throw new ConnectionSetupError("OpenAPI document must define servers[0].url");
   }
-  const variables = asRecord(server.variables);
+  const serverUrl = hasServerUrl ? (server!.url as string) : "/";
+  const variables = asRecord(server?.variables);
   const serverDefault = (name: string) => {
     const variable = asRecord(variables?.[name]);
     if (typeof variable?.default !== "string") {
@@ -623,8 +642,8 @@ export function importOpenApiDocument(document: Record<string, unknown>): {
   };
   // Repeating a long default can expand a small document into a huge URL,
   // so measure the result before building it.
-  let length = server.url.length;
-  for (const [placeholder, name] of server.url.matchAll(OPENAPI_SERVER_VARIABLE)) {
+  let length = serverUrl.length;
+  for (const [placeholder, name] of serverUrl.matchAll(OPENAPI_SERVER_VARIABLE)) {
     length += serverDefault(name!).length - placeholder.length;
   }
   if (length > MAX_OPENAPI_BASE_URL_LENGTH) {
@@ -632,9 +651,26 @@ export function importOpenApiDocument(document: Record<string, unknown>): {
       `OpenAPI server URL exceeds ${MAX_OPENAPI_BASE_URL_LENGTH} characters`,
     );
   }
-  const baseUrl = server.url.replace(OPENAPI_SERVER_VARIABLE, (_placeholder, name: string) =>
+  let baseUrl = serverUrl.replace(OPENAPI_SERVER_VARIABLE, (_placeholder, name: string) =>
     serverDefault(name),
   );
+  if (!ABSOLUTE_URL.test(baseUrl)) {
+    if (!documentUrl) {
+      throw new ConnectionSetupError(
+        "OpenAPI document needs a full server URL (servers[0].url) when it is not loaded from a URL",
+      );
+    }
+    try {
+      baseUrl = new URL(baseUrl, documentUrl).href;
+    } catch {
+      throw new ConnectionSetupError("OpenAPI server URL is invalid");
+    }
+    if (baseUrl.length > MAX_OPENAPI_BASE_URL_LENGTH) {
+      throw new ConnectionSetupError(
+        `OpenAPI server URL exceeds ${MAX_OPENAPI_BASE_URL_LENGTH} characters`,
+      );
+    }
+  }
   assertNoSensitiveQuery(baseUrl);
   const paths = document.paths;
   if (!paths || typeof paths !== "object" || Array.isArray(paths)) {
@@ -662,6 +698,8 @@ export function importOpenApiDocument(document: Record<string, unknown>): {
         (pathValue as Record<string, unknown>).parameters,
         operation.parameters,
       )) {
+        // A cookie is not something the model supplies, and the API never sends one here.
+        if (parameter.in === "cookie") continue;
         const schema = asRecord(inlineOpenApiSchema(refs, parameter.schema, "string")) ?? {
           type: "string",
         };
@@ -692,11 +730,13 @@ export function importOpenApiDocument(document: Record<string, unknown>): {
           }
           headerParameters.push(parameter.name);
         }
-        if (parameter.required === true) required.push(parameter.name);
+        if (parameter.required === true || parameter.in === "path") required.push(parameter.name);
       }
       const requestBody = asRecord(dereferenceOpenApi(document, operation.requestBody));
       const content = asRecord(requestBody?.content);
-      const jsonBody = asRecord(content?.["application/json"]);
+      const mediaType = jsonMediaType(content);
+      const jsonBody = asRecord(mediaType === undefined ? undefined : content?.[mediaType]);
+      const bodyMediaType = mediaType?.split(";")[0]?.trim().toLowerCase();
       const bodySchema = asRecord(inlineOpenApiSchema(refs, jsonBody?.schema, "object"));
       if (bodySchema) {
         properties.body = bodySchema;
@@ -723,6 +763,7 @@ export function importOpenApiDocument(document: Record<string, unknown>): {
         ...(formObjectQueryParameters.length > 0 ? { formObjectQueryParameters } : {}),
         ...(commaSeparatedQueryParameters.length > 0 ? { commaSeparatedQueryParameters } : {}),
         headerParameters,
+        ...(bodyMediaType && bodyMediaType !== "application/json" ? { bodyMediaType } : {}),
       });
       if (operations.length >= 100) break;
     }
@@ -1040,6 +1081,10 @@ async function executeApiOperation(
   const path = operation.path.replace(/\{([^}]+)\}/g, (_match, name: string) => {
     const value = args[name];
     if (value == null) throw new Error(`Missing path parameter ${name}`);
+    // `.` and `..` survive encoding, then the URL collapses them into a different path.
+    if (String(value) === "." || String(value) === "..") {
+      throw new Error(`Invalid path parameter ${name}`);
+    }
     consumed.add(name);
     return encodeURIComponent(String(value));
   });
@@ -1093,7 +1138,7 @@ async function executeApiOperation(
         : (args.body ??
           Object.fromEntries(Object.entries(args).filter(([key]) => !consumed.has(key))));
     body = JSON.stringify(payload);
-    headers["content-type"] = "application/json";
+    headers["content-type"] = operation.bodyMediaType ?? "application/json";
   }
   applyCredential(url, headers, config.auth, credential);
   const safeFetch = createSafeRemoteFetch(remote.fetch, remote.resolveHostname, remote);

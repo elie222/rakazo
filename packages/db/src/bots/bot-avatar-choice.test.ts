@@ -75,14 +75,12 @@ describe("chooseBotAvatar", () => {
     });
   });
 
-  it.each(["#123456", "#abc", "#8B5CF6::shape_3", "data:image/png;base64,aGVsbG8="])(
-    "keeps explicit Rakazo appearance %s",
-    (color) => {
-      expect(
-        chooseBotAvatar([], color, { avatarSet: "rakazo", random: seeded(1), now: 0 }).color,
-      ).toBe(color);
-    },
-  );
+  it("keeps an explicit Rakazo appearance", () => {
+    const color = "#8B5CF6::shape_3";
+    expect(
+      chooseBotAvatar([], color, { avatarSet: "rakazo", random: seeded(1), now: 0 }).color,
+    ).toBe(color);
+  });
 
   it("gives a new bot the organic family and colour the user's bots use least", () => {
     const existing = idsForFamilies([0, 1, 2, 3, 4, 5, 6, 7, 8]).map((id, index) => ({

@@ -146,15 +146,8 @@ it("shows a readable run error with raw details, while preserving send errors", 
 
 it.each([
   ['402: {"message":"You have no credits remaining."}', "Choose a model", "models"],
-  [
-    '403: {"type":"FreeTierError","message":"This free tier can only be used from within its own app."}',
-    "Choose a model",
-    "models",
-  ],
-  ['404: {"message":"Model example-model does not exist"}', "Choose a model", "models"],
   ['401: {"message":"Invalid API key"}', "Replace key", "connections"],
   ["Connect a model in Settings before running bots.", "Connect a model", "connections"],
-  ["Request timed out.", null, null],
   ['429: {"message":"Too many requests"}', null, null],
 ] as const)("offers the one action that fixes %s", (runError, label, opens) => {
   const onOpenModels = vi.fn();

@@ -1,16 +1,20 @@
 import { t } from "@lingui/core/macro";
 import type { RpcInput, RpcOutput, RpcPath } from "@rakazo/contracts";
-import type { DataTag, QueryFunction, QueryKey } from "@tanstack/react-query";
+import { refreshQueriesAfterSignal } from "@rakazo/core";
+import type { DataTag, QueryFilters, QueryFunction, QueryKey } from "@tanstack/react-query";
 import { QueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ApiRequestContext, RpcArgs } from "../api/api";
 import { captureApiRequestContext, currentApiBase, rpc, selectedSpaceId } from "../api/api";
 import { currentSessionGeneration } from "../api/session";
+import type { RpcReadMeta } from "./saved-reads";
 import type { SettingsTarget } from "./settings-target";
 
 /**
  * Screens paint what they last saw and refresh it in the background, so reopening a settings
- * screen does not wait on the network again. Kept in memory only; saved chats own the disk.
+ * screen does not wait on the network again. The reads `saved-reads.ts` lists also keep their
+ * last answer on disk, so a cold launch paints it too; the rest stay in memory. A form's read
+ * (`formRead`) carries no read meta, so it is never seeded from disk.
  */
 export const queryClient = new QueryClient({
   defaultOptions: {
@@ -49,35 +53,53 @@ function requestScope(context: ApiRequestContext, account: boolean): string {
 function scopedRpcQuery<P extends RpcPath>(
   scopeKey: () => string[],
   proc: P,
-  input?: RpcInput<P>,
+  input: RpcInput<P> | undefined,
+  space: RpcReadMeta["space"],
   spaceId?: string,
+  timeoutMs?: number,
 ) {
   type T = RpcOutput<P>;
   const scope = scopeKey();
   const queryKey = [...scope, proc, input ?? {}] as unknown as DataTag<QueryKey, T, Error>;
+  const read: RpcReadMeta = {
+    proc,
+    input,
+    apiBase: currentApiBase(),
+    sessionGeneration: currentSessionGeneration(),
+    space,
+  };
   const queryFn: QueryFunction<T> = async ({ signal }) => {
     if (scopeKey().join("\n") !== scope.join("\n"))
       throw new Error(t`Something went wrong. Try again.`);
     const requestContext = await captureApiRequestContext(spaceId);
-    const answer = await rpc(proc, ...([input, { signal, requestContext }] as RpcArgs<P>));
+    const answer = await rpc(
+      proc,
+      ...([input, { signal, requestContext, timeoutMs }] as RpcArgs<P>),
+    );
     if (scopeKey().join("\n") !== scope.join("\n"))
       throw new Error(t`Something went wrong. Try again.`);
     return answer;
   };
-  return { queryKey, queryFn };
+  return { queryKey, queryFn, meta: { rpc: read } };
 }
 
 /**
  * One rpc read in the current scope (server, session, space). Its answer is only cached under
  * the scope it was sent in. A `spaceId` sends it to that Space instead of the selected one.
  */
-export function rpcQuery<P extends RpcPath>(proc: P, input?: RpcInput<P>, spaceId?: string) {
-  return scopedRpcQuery(() => spaceScope(spaceId), proc, input, spaceId);
+export function rpcQuery<P extends RpcPath>(
+  proc: P,
+  input?: RpcInput<P>,
+  spaceId?: string,
+  options?: { timeoutMs?: number },
+) {
+  const space = { id: spaceId ?? selectedSpaceId() ?? null };
+  return scopedRpcQuery(() => spaceScope(spaceId), proc, input, space, spaceId, options?.timeoutMs);
 }
 
 /** One rpc read of the signed-in user's own data, the same in every space: cached once per session. */
 export function accountRpcQuery<P extends RpcPath>(proc: P, input?: RpcInput<P>) {
-  return scopedRpcQuery(sessionScope, proc, input);
+  return scopedRpcQuery(sessionScope, proc, input, null);
 }
 
 /**
@@ -127,13 +149,28 @@ export function formRead<T>(read: {
   };
 }
 
-/** One rpc write of a save. It is refused once the save's server, session or Space is no longer current. */
-export type SaveSend = <P extends RpcPath>(proc: P, input: RpcInput<P>) => Promise<RpcOutput<P>>;
+/**
+ * One rpc write of a save. It is refused once the save's server, session or Space is no longer
+ * current. A write the server takes long over, such as starting a computer, names its own timeout.
+ */
+export type SaveSend = <P extends RpcPath>(
+  proc: P,
+  input: RpcInput<P>,
+  options?: { timeoutMs?: number },
+) => Promise<RpcOutput<P>>;
 
 /** Writes with this request context, or with the current one when there is none. */
 export function sendWith(requestContext: ApiRequestContext | undefined): SaveSend {
-  return (proc, body) =>
-    rpc(proc, ...([body, requestContext && { requestContext }] as RpcArgs<typeof proc>));
+  return (proc, body, options) =>
+    rpc(
+      proc,
+      ...([
+        body,
+        options || requestContext
+          ? { ...options, ...(requestContext && { requestContext }) }
+          : undefined,
+      ] as RpcArgs<typeof proc>),
+    );
 }
 
 /**
@@ -209,14 +246,14 @@ export function useSave<Input = void, Saved = unknown>(options: {
         (requestContext) => ({ requestContext }),
         (failure: Error) => ({ failure }),
       );
-      const send: SaveSend = async (proc, body) => {
+      const send: SaveSend = async (proc, body, sendOptions) => {
         const pin = await pinned;
         if ("failure" in pin) throw pin.failure;
         const { requestContext } = pin;
         const sent = requestScope(requestContext, account);
         if (sent !== scope || sent !== scopeKey())
           throw new Error(t`Something went wrong. Try again.`);
-        return sendWith(requestContext)(proc, body);
+        return sendWith(requestContext)(proc, body, sendOptions);
       };
       void (async () => {
         const saved = await save(input, send);
@@ -259,7 +296,8 @@ export function resetRpcQueries(proc: RpcPath): Promise<void> {
  * the answer they have until the new one arrives.
  */
 export function refreshRpcQueries(proc: RpcPath): Promise<void> {
-  return queryClient.invalidateQueries({ predicate: (query) => query.queryKey.includes(proc) });
+  const filters: QueryFilters = { predicate: (query) => query.queryKey.includes(proc) };
+  return refreshQueriesAfterSignal(queryClient, filters);
 }
 
 /** Forgets the reads sent to these Spaces, as when leaving their organization. */

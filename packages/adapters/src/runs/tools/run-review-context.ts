@@ -2,6 +2,7 @@ import { redactSecrets } from "@rakazo/core";
 import { bestEffort } from "@rakazo/logging";
 import { reviewOwnerMessages } from "../../approvals/review-owner-messages.js";
 import { outsideOnlyTargets, taskPromptIsOutside } from "../../approvals/review-target-sources.js";
+import { findRoutinesTarget } from "../../routines/routine-target.js";
 import type { RunContext } from "../assembly/run-context.js";
 
 /**
@@ -35,4 +36,40 @@ export async function reviewOwnerContext(
     ...(ownerMessages.length ? { ownerMessages } : {}),
     ...(targets.length ? { outsideOnlyTargets: targets } : {}),
   };
+}
+
+/**
+ * The stored prompt a routine edit replaces, redacted like the call, so the review can show only
+ * the change. Found as the update finds it (this bot's or a managed bot's routine, this thread's in
+ * a group); a failed lookup leaves the review of the whole new prompt.
+ */
+export async function currentRoutinePrompt(
+  ctx: RunContext,
+  toolName: string,
+  args: Record<string, unknown>,
+): Promise<string | undefined> {
+  if (toolName !== "schedule_update" || typeof args.prompt !== "string") return undefined;
+  const routineId = typeof args.routineId === "string" ? args.routineId.trim() : "";
+  if (!routineId) return undefined;
+  const routine = await bestEffort(
+    "auto_review.routine_prompt",
+    findRoutinesTarget(
+      { prisma: ctx.deps.prisma, fleetRun: ctx.fleetRun, botId: ctx.bot.id, thread: ctx.thread },
+      toolName,
+      args,
+    ).then((target) =>
+      "error" in target
+        ? null
+        : ctx.deps.prisma.routine.findFirst({
+            where: {
+              id: routineId,
+              spaceId: ctx.run.spaceId,
+              botId: target.botId,
+              ...(target.groupThreadId ? { threadId: target.groupThreadId } : {}),
+            },
+            select: { prompt: true },
+          }),
+    ),
+  );
+  return routine ? redactSecrets(routine.prompt, ctx.secrets) : undefined;
 }

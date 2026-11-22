@@ -1,10 +1,9 @@
 #!/bin/sh
-# Clones the private marketing pages into src/marketing when GITHUB_MARKETING_TOKEN is set (Vercel
-# builds). Without it the site builds the home page and docs alone, which production must never do.
+# Clones the marketing pages from MARKETING_REPO into src/marketing when GITHUB_MARKETING_TOKEN is
+# set. Without it the site builds the home page and docs alone, which production must never do.
 set -eu
 
 MARKETING_DIR="src/marketing"
-REPO="github.com/rakazobot/marketing.git"
 
 if [ -z "${GITHUB_MARKETING_TOKEN:-}" ]; then
   if [ "${VERCEL_ENV:-}" = "production" ]; then
@@ -14,6 +13,8 @@ if [ -z "${GITHUB_MARKETING_TOKEN:-}" ]; then
   echo "No GITHUB_MARKETING_TOKEN: building without marketing pages."
   exit 0
 fi
+: "${MARKETING_REPO:?Set MARKETING_REPO (owner/name) alongside GITHUB_MARKETING_TOKEN.}"
+REPO="github.com/${MARKETING_REPO}.git"
 
 if [ -d "$MARKETING_DIR" ]; then
   echo "$MARKETING_DIR already exists."

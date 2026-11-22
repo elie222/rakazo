@@ -1,6 +1,11 @@
 import type { ConnectorTool, ToolBatch } from "@rakazo/adapter-kit";
 import type { AskReceipt, MessageBlock } from "@rakazo/contracts";
-import { BOT_INSTRUCTIONS_MAX_LENGTH, draftBatchEntry, OutgoingDraft } from "@rakazo/contracts";
+import {
+  BOT_INSTRUCTIONS_MAX_LENGTH,
+  draftBatchEntry,
+  OutgoingDraft,
+  TEAM_CHAT_RULES_MAX_LENGTH,
+} from "@rakazo/contracts";
 import {
   batchActions,
   CARD_TITLE_ESCAPED_CHARACTERS,
@@ -35,12 +40,14 @@ export type FleetCardSummary = {
 
 /**
  * The child instruction card shows the whole new text, so its detail holds the longest
- * instructions plus the two length lines above them.
+ * instructions plus the two length lines above them. A child settings card holds the longest
+ * team chat rules beside its other lines.
  */
 export function approvalDetailLength(toolName: string): number {
-  return toolName === "set_child_instructions"
-    ? BOT_INSTRUCTIONS_MAX_LENGTH + MAX_APPROVAL_SUMMARY_LENGTH
-    : MAX_APPROVAL_DETAIL_LENGTH;
+  if (toolName === "set_child_instructions")
+    return BOT_INSTRUCTIONS_MAX_LENGTH + MAX_APPROVAL_SUMMARY_LENGTH;
+  if (toolName === "update_bot") return TEAM_CHAT_RULES_MAX_LENGTH + MAX_APPROVAL_DETAIL_LENGTH;
+  return MAX_APPROVAL_DETAIL_LENGTH;
 }
 
 function redactReceipt(receipt: AskReceipt, secrets: string[]): AskReceipt {
@@ -110,7 +117,12 @@ export function buildApprovalAskBlock(
       actions:
         onceOnly || options.summary.onceOnly
           ? [
-              { id: "allow", label: "Allow once" },
+              // Approving a child bot's instruction replacement applies it at once, so the
+              // button names the action instead of a generic allow.
+              {
+                id: "allow",
+                label: toolName === "set_child_instructions" ? "Apply now" : "Allow once",
+              },
               { id: "deny", label: "Deny" },
             ]
           : [

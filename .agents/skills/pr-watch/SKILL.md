@@ -71,6 +71,17 @@ PRD="$(git rev-parse --show-toplevel)/.agents/skills/pr-watch/pr-digest"
    there is something to act on: a review finding you have not seen, a check
    that newly failed, or every check run, commit status and workflow run on the
    exact head SHA terminal. Then it prints the digest. You are re-invoked when it exits.
+   When the base branch names required checks, only those hold it back; optional
+   ones (Web E2E, image validation, code scanning) never make you wait, though a
+   failure in one is still reported and a failure your change caused is yours to fix.
+   Web E2E is optional on purpose: most changes cannot break it. Add
+   `--all-checks` to wait for it too only when the change could plausibly break a
+   browser flow, such as a web UI change, a change to the E2E specs or fixtures,
+   or a change to the auth or chat paths every flow goes through.
+   It exits 0 on every verdict, so a finished watch is never a failure: read its
+   `VERDICT` line. Polling is cheap: unchanged reads are conditional requests that
+   GitHub does not count against the rate limit, and if the limit runs out the
+   watch waits for the reset by itself. Do not diagnose or work around either.
    Review bots usually answer long before the slowest check, so expect to
    handle comments while CI is still running.
 
@@ -124,7 +135,13 @@ and a wrong fix is worse than a declined comment.
 - Valid → fix, validate, then reply with what changed.
 - Wrong → reply with the evidence that refutes it: the line of code, the
   upstream source, the behaviour on the base branch.
-- A product decision → stop and ask the user.
+- A product decision → stop and ask the user. An implementation call is not one:
+  a small dependency from an established maintainer, dropping a risky option, or
+  moving scope to a follow-up is yours to decide; say what you chose in the report.
+
+Do not add a "just in case" guard for a finding you have shown to be wrong;
+reply instead (AGENTS.md). Every push reruns CI, so handle every finding on the
+current head first and push the real fixes together.
 
 Mark a comment handled only after the change, the validation, and the reply have
 all succeeded.
@@ -198,7 +215,8 @@ gh api graphql -f query='mutation($id:ID!){
 Finish only when one observation of a single SHA proves all of:
 
 1. `VERDICT green` — local, upstream, and PR head agree; no failing check or
-   status, and no workflow run still queued or running.
+   status, and every required check finished (every check, when the base names
+   none).
 2. Every review bot has produced a signal on that SHA. If none has ever
    appeared, require two consecutive observations separated by a full wait
    before concluding none is configured.
@@ -213,7 +231,10 @@ checkpoints as `<source>\t<Markdown image>`; filter by the spec or checkpoint
 name you wrote, pick the frame, and edit the description
 (`gh api -X PATCH repos/{owner}/{repo}/pulls/<n> -F body=@<file>`). If the
 Playwright workflow did not run for that SHA, there is no gallery; say so in
-the description instead of waiting for one.
+the description instead of waiting for one. The gallery never holds up a merge:
+if its "publish Playwright report" run failed or was cancelled, rerun it once
+(`gh run rerun <run-id>`), do not hold a merge for it, and add the screenshot to
+the description when it lands.
 
 Screens you captured yourself (a native simulator, emulator, or a local browser)
 that show the change go in the description too. Leave out any that show private
@@ -252,4 +273,6 @@ the change does at length.
 ```
 
 Exit codes: `0` green · `10` failures · `11` open comments · `12` pending ·
-`20` out of sync · `1` error. Needs `gh`, `jq`, and `perl`.
+`20` out of sync · `1` error. `--watch` exits `0` on any verdict and `1` on an
+error. Vercel's status is ignored: it only deploys the marketing site. Needs
+`gh`, `jq`, and `perl`.
