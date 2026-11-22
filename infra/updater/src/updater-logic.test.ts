@@ -230,6 +230,22 @@ describe("readEnvAssignment", () => {
   it("does not match a key that merely shares a prefix", () => {
     expect(readEnvAssignment("RAKAZO_IMAGE_TAG_PREVIOUS=v1", "RAKAZO_IMAGE_TAG")).toBeNull();
   });
+
+  it.each([
+    ["export A=v1.2.3", "v1.2.3"],
+    ["export\tA=v1.2.3", "v1.2.3"],
+    ['export A="v1.2.3" # pinned', "v1.2.3"],
+    ["export   A = v1.2.3", "v1.2.3"],
+  ])("reads an export-prefixed assignment: %j", (contents, expected) => {
+    expect(readEnvAssignment(contents, "A")).toBe(expected);
+  });
+
+  it.each(["exported=no", "OTHER_RAKAZO_IMAGE_TAG=x", "# export RAKAZO_IMAGE_TAG=x"])(
+    "does not match %j for the key RAKAZO_IMAGE_TAG",
+    (line) => {
+      expect(readEnvAssignment(line, "RAKAZO_IMAGE_TAG")).toBeNull();
+    },
+  );
 });
 
 describe("missingSecretAssignments", () => {
@@ -270,6 +286,11 @@ describe("readTagState", () => {
   it("reads the pinned tag and the rollback tag", () => {
     const contents = "RAKAZO_IMAGE_TAG=v1.1.0\nRAKAZO_IMAGE_TAG_PREVIOUS=v1.0.0\n";
     expect(readTagState(contents)).toEqual({ currentTag: "v1.1.0", previousTag: "v1.0.0" });
+  });
+
+  it("reads export-prefixed tags, as Compose does", () => {
+    const contents = "export RAKAZO_IMAGE_TAG=v1.2.3\nexport RAKAZO_IMAGE_TAG_PREVIOUS=v1.2.2\n";
+    expect(readTagState(contents)).toEqual({ currentTag: "v1.2.3", previousTag: "v1.2.2" });
   });
 
   it.each(["", '"', "'"])("reads tags with inline comments and %j quoting", (quote) => {

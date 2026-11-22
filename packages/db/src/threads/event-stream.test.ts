@@ -1,6 +1,32 @@
 import type { RealtimeFanout } from "@rakazo/adapter-kit";
 import { describe, expect, it, vi } from "vitest";
-import { notifyRealtime, observeThreadChanges } from "./event-stream.js";
+import type { PrismaClient } from "../database/client.js";
+import { notifyCommittedEvent, notifyRealtime, observeThreadChanges } from "./event-stream.js";
+
+describe("notifyCommittedEvent", () => {
+  it("resolves when the publish and the timing read both fail", async () => {
+    const realtime = {
+      publish: vi.fn().mockRejectedValue(new Error("fanout down")),
+    } as unknown as RealtimeFanout;
+    const prisma = {
+      run: { findUnique: vi.fn().mockRejectedValue(new Error("database down")) },
+    } as unknown as PrismaClient;
+    await expect(
+      notifyCommittedEvent(prisma, realtime, "thread-1", 3, "run-1"),
+    ).resolves.toBeUndefined();
+    expect(realtime.publish).toHaveBeenCalledWith("thread:thread-1", JSON.stringify({ cursor: 3 }));
+  });
+
+  it("resolves when the publish throws before returning a promise", async () => {
+    const realtime = {
+      publish: vi.fn(() => {
+        throw new Error("fanout closed");
+      }),
+    } as unknown as RealtimeFanout;
+    const prisma = {} as PrismaClient;
+    await expect(notifyCommittedEvent(prisma, realtime, "thread-1", 4)).resolves.toBeUndefined();
+  });
+});
 
 describe("observeThreadChanges", () => {
   it("reports each published thread change after it reaches the fanout", async () => {

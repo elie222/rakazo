@@ -1,0 +1,63 @@
+import { ph, t } from "@lingui/core/macro";
+import type { RoutineRun, RunActivityRow } from "@rakazo/contracts";
+import { formatShortHistoryDate, routineRunLateness } from "@rakazo/core";
+
+/** "5m ago" for the last week, then a short date in `locale`. */
+export function formatRelativeTime(iso: string, locale: string, now = new Date()): string {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "";
+  const seconds = Math.floor((now.getTime() - date.getTime()) / 1000);
+  if (seconds < 60) return t`just now`;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return t`${ph({ count: minutes })}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return t`${ph({ count: hours })}h ago`;
+  const days = Math.floor(hours / 24);
+  if (days < 7) return t`${ph({ count: days })}d ago`;
+  return formatShortHistoryDate(date, now, locale);
+}
+
+/** "Started 2h late" for a scheduled run that started well after its time; else undefined. */
+export function routineRunLateLabel(run: RoutineRun): string | undefined {
+  const late = routineRunLateness(run);
+  if (!late) return undefined;
+  if (late.unit === "minutes") return t`Started ${ph({ count: late.count })}m late`;
+  if (late.unit === "hours") return t`Started ${ph({ count: late.count })}h late`;
+  return t`Started ${ph({ count: late.count })}d late`;
+}
+
+export function runStatusLabel(status: RunActivityRow["status"]): string {
+  switch (status) {
+    case "queued":
+      return t`Queued`;
+    case "leased":
+      return t`Starting`;
+    case "running":
+      return t`Running`;
+    case "waiting_input":
+      return t`Needs input`;
+    case "waiting_takeover":
+      return t`Needs takeover`;
+    case "completed":
+      return t`Done`;
+    case "failed":
+      return t`Failed`;
+    case "cancelled":
+      return t`Cancelled`;
+    default:
+      return status;
+  }
+}
+
+/** What a run is about: its prompt, or who sent the agent message that started it. */
+export function activityPreview(run: RunActivityRow): string {
+  if (run.trigger !== "bot_message") return run.promptSnippet;
+  if (!run.agentMessage) return run.promptSnippet;
+  if (run.agentMessage.kind === "unknown") return t`Message from another agent`;
+  const name = run.agentMessage.fromBotName.trim() || t`Another agent`;
+  const text = run.agentMessage.text;
+  if (run.agentMessage.kind === "update") {
+    return text ? t`Update from ${name}: ${text}` : t`Update from ${name}`;
+  }
+  return text ? t`${name} asked: ${text}` : t`${name} asked`;
+}

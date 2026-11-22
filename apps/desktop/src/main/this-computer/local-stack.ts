@@ -146,10 +146,12 @@ export function parseStackEnv(env: string): Map<string, string> {
   const values = new Map<string, string>();
   // Consume quoted values across lines so their contents cannot become assignments.
   const assignments = env.matchAll(
-    /^[\t ]*(?:export[\t ]+)?([^\s=#]+)[\t ]*=[\t ]*(?:"((?:\\[\s\S]|[^"\\])*)"(?=[\t ]*(?:#.*)?\r?$)|'((?:\\[\s\S]|[^'\\])*)'(?=[\t ]*(?:#.*)?\r?$)|([^\r\n]*))/gm,
+    /^[\t ]*(?:export[\t ]+)?([^\s=#]+)[\t ]*=([\t ]*)(?:"((?:\\[\s\S]|[^"\\])*)"(?=[\t ]*(?:#.*)?\r?$)|'((?:\\[\s\S]|[^'\\])*)'(?=[\t ]*(?:#.*)?\r?$)|([^\r\n]*))/gm,
   );
-  for (const match of assignments) {
-    values.set(match[1]!, match[2] ?? match[3] ?? match[4]!.trim());
+  for (const [, name, gap = "", double, single, bare = ""] of assignments) {
+    // An unquoted ` #…` is a comment, but a `#` with no whitespace before it is part of the value.
+    const value = double ?? single ?? (gap + bare).replace(/\s+#.*$/, "").trim();
+    values.set(name!, value);
   }
   return values;
 }
