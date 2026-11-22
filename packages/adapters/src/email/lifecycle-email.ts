@@ -100,6 +100,8 @@ async function recipient(prisma: PrismaClient, target: Target) {
  * so a person's mails form one sequence in the order they come due.
  */
 export function createLifecycleEmailSender(deps: {
+  /** The kinds whose copy the deployment supplies; a job for another kind is dropped. */
+  kinds: readonly LifecycleEmailKind[];
   prisma: PrismaClient;
   email: TransactionalEmailProvider;
   jobs: Pick<JobPublisher, "enqueue">;
@@ -108,6 +110,7 @@ export function createLifecycleEmailSender(deps: {
   const { prisma } = deps;
   return async (job) => {
     const { kind, userId } = job;
+    if (!deps.kinds.includes(kind)) return;
     const user = await recipient(prisma, job);
     if (!user || !(await STILL_WANTED[kind](prisma, job))) return;
     const claim = await claimProductEmail(prisma, { userId, kind }, LIFECYCLE_EMAIL_GAP_MS);

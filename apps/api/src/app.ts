@@ -98,12 +98,14 @@ import {
   CLIENT_IP_HEADER,
   createAuth,
   createDirectory,
+  emailCopyAvailable,
   isBlockedAuthPath,
   publicSignInProviders,
 } from "@rakazo/auth";
 import type { Actor, AuthCapabilities, ModelCredential } from "@rakazo/contracts";
 import {
   isLocalhostOrLoopbackIp,
+  LIFECYCLE_EMAIL_KINDS,
   PLUGIN_SUBMISSIONS_PATH,
   SERVER_BUILD_HEADER,
 } from "@rakazo/contracts";
@@ -200,6 +202,7 @@ import {
   handleRpcError,
   requestHitDatabaseOutage,
 } from "./rpc-errors.js";
+import type { SpaceDeletionDeps } from "./spaces/space-deletion.js";
 import { afterSpaceDeparture } from "./spaces/space-departure.js";
 import { cspReportRoutes } from "./telemetry/csp-report.js";
 import { createExperiments } from "./telemetry/experiments.js";
@@ -454,10 +457,12 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     throw new Error("EMAIL_EMULATOR requires API_HOST to be a loopback host");
   }
   const email: TransactionalEmailProvider | undefined = configuredEmail ?? localEmailEmulator;
-  // Our own product mail, behind the same switch as the welcome email. The worker sends it, and
+  // Lifecycle mail goes out only where the deployment supplies its copy. The worker sends it, and
   // the local emulator lives in this process, so the emulator counts only in single-process mode.
-  const lifecycleEmailsEnabled =
-    env.welcomeEmailEnabled && Boolean(configuredEmail ?? (inMemoryJobs ? email : undefined));
+  const lifecycleEmailKinds =
+    (configuredEmail ?? (inMemoryJobs ? email : undefined))
+      ? LIFECYCLE_EMAIL_KINDS.filter((kind) => emailCopyAvailable(kind))
+      : [];
   const botEmail: TransactionalEmailProvider | undefined =
     configuredBotEmailProvider({
       smtpUrl: env.botEmailSmtpUrl,
@@ -491,15 +496,17 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
         analytics,
         experiments: createExperiments(env.experiments),
         partnerProgram,
-        scheduleLifecycleEmail: lifecycleEmailsEnabled
-          ? lifecycleEmailScheduler({
-              prisma,
-              jobs,
-              webOrigin: env.webOrigin,
-              origin: env.authUrl,
-              secret: env.authSecret,
-            })
-          : undefined,
+        scheduleLifecycleEmail:
+          lifecycleEmailKinds.length > 0
+            ? lifecycleEmailScheduler({
+                kinds: lifecycleEmailKinds,
+                prisma,
+                jobs,
+                webOrigin: env.webOrigin,
+                origin: env.authUrl,
+                secret: env.authSecret,
+              })
+            : undefined,
       })
     : undefined;
   const modelCreditsEnabled = billing?.modelCreditsEnabled ?? false;
@@ -541,6 +548,46 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     });
   const activityPush = await createApnsActivityProvider(env.apnsVoip);
   if (activityPush) workActivities = new WorkActivities(prisma, env.encryptionKey, activityPush);
+  const { meeting: meetingProvider, calendar: calendarProvider } =
+    await configuredMeetingProviders();
+  const meetingMediaConfig = meetingProvider && configuredMeetingMedia();
+  const meetings = new MeetingService({
+    prisma,
+    jobs,
+    events,
+    provider: meetingProvider,
+    spaceIds: meetingProvider && configuredMeetingSpaces(meetingProvider),
+    buildJoin: meetingMediaConfig?.buildJoin,
+  });
+  const meetingCalendar =
+    calendarProvider &&
+    new MeetingCalendarService({
+      prisma,
+      jobs,
+      provider: calendarProvider,
+      webOrigin: env.webOrigin,
+      oauthStateKey: resolveMeetingSigningKey(),
+      enabled: (spaceId) => meetings.enabled(spaceId),
+      buildJoin: meetingMediaConfig?.buildJoin ?? ((input) => input),
+      publish: async ({ spaceId, userId }) => {
+        await events.publishSpaceChange?.(meetingCalendarScope(spaceId, userId), "meetingCalendar");
+      },
+    });
+  // Every Space deletion, from account deletion, the organization sweep or an import rollback,
+  // tears down the same bots, computers, meetings and secrets.
+  const spaceDeletionDeps: SpaceDeletionDeps = {
+    prisma,
+    sandbox,
+    home,
+    jobs,
+    memoryProviders,
+    artifacts,
+    dataDir: env.dataDir,
+    messagingInstallations,
+    secrets,
+    meetings,
+    meetingCalendar,
+  };
   const userDeviceSecret = userDeviceForwardSecret(env.encryptionKey);
   const userDeviceHub = env.userDevicesEnabled
     ? new UserDeviceHub({ prisma, address: userDeviceInternalAddress(env.apiHost, env.port) })
@@ -584,7 +631,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     logger: authLibraryLogger("auth.request.failed"),
     onEmailError,
     afterSignIn:
-      email && env.welcomeEmailEnabled
+      email && emailCopyAvailable("welcome")
         ? (userId, headers) =>
             sendWelcomeEmail(
               {
@@ -602,24 +649,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     androidAppCertFingerprints: env.passkeyAndroidCertFingerprints,
     beforeDeleteUser: async (userId) => {
       // Calendar cleanup and billing run under the Space claims, before content teardown.
-      await deleteAccountContent(
-        {
-          prisma,
-          sandbox,
-          home,
-          jobs,
-          memoryProviders,
-          artifacts,
-          dataDir: env.dataDir,
-          messagingInstallations,
-          secrets,
-          events,
-          billing,
-          meetings,
-          meetingCalendar,
-        },
-        userId,
-      );
+      await deleteAccountContent({ ...spaceDeletionDeps, events, billing }, userId);
       await removePiUserSessions(env.dataDir, userId);
       await pushTokens
         .remove(userId)
@@ -689,31 +719,6 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
   const codexCatalog = new CodexCatalogCache();
   // One instance: chat runs submit videos and, in single-process mode, background polls finish them.
   const mediaGeneration = createMediaGenerationProvider();
-  const { meeting: meetingProvider, calendar: calendarProvider } =
-    await configuredMeetingProviders();
-  const meetingMediaConfig = meetingProvider && configuredMeetingMedia();
-  const meetings = new MeetingService({
-    prisma,
-    jobs,
-    events,
-    provider: meetingProvider,
-    spaceIds: meetingProvider && configuredMeetingSpaces(meetingProvider),
-    buildJoin: meetingMediaConfig?.buildJoin,
-  });
-  const meetingCalendar =
-    calendarProvider &&
-    new MeetingCalendarService({
-      prisma,
-      jobs,
-      provider: calendarProvider,
-      webOrigin: env.webOrigin,
-      oauthStateKey: resolveMeetingSigningKey(),
-      enabled: (spaceId) => meetings.enabled(spaceId),
-      buildJoin: meetingMediaConfig?.buildJoin ?? ((input) => input),
-      publish: async ({ spaceId, userId }) => {
-        await events.publishSpaceChange?.(meetingCalendarScope(spaceId, userId), "meetingCalendar");
-      },
-    });
   const { runtime, executor, jobHandlers, messagingDelivery, teamChat, pageRevisions } =
     createRunRuntime(runtimeEnv, connectors, {
       billingEnabled: modelCreditsEnabled,
@@ -740,8 +745,14 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
       email: botEmail,
       // Single-process mode answers the job here; otherwise the worker does.
       lifecycleEmail:
-        email && lifecycleEmailsEnabled
-          ? createLifecycleEmailSender({ prisma, email, jobs, analytics })
+        email && lifecycleEmailKinds.length > 0
+          ? createLifecycleEmailSender({
+              kinds: lifecycleEmailKinds,
+              prisma,
+              email,
+              jobs,
+              analytics,
+            })
           : undefined,
       messaging,
       isMessagingInstallationActive: messagingInstallations
@@ -787,7 +798,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     : undefined;
   reconciler?.start();
   const stopReferralEmails =
-    email && env.welcomeEmailEnabled && billing?.referralsEnabled
+    email && billing?.referralsEnabled && emailCopyAvailable("referral")
       ? startHourlySweep(
           sendReferralEmails({
             prisma,
@@ -816,18 +827,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
       : undefined;
 
   const stopOrganizationDeletions = startHourlySweep(
-    finishStalledOrganizationDeletions({
-      prisma,
-      sandbox,
-      home,
-      jobs,
-      memoryProviders,
-      artifacts,
-      dataDir: env.dataDir,
-      messagingInstallations,
-      secrets,
-      billing,
-    }),
+    finishStalledOrganizationDeletions({ ...spaceDeletionDeps, billing }),
     (error) => getLogger().error("stalled organization deletion failed", error),
   );
 
@@ -1227,17 +1227,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
   });
   mountAccountImportRoute(
     app,
-    {
-      prisma,
-      sandbox,
-      home,
-      jobs,
-      memoryProviders,
-      artifacts,
-      dataDir: env.dataDir,
-      messagingInstallations,
-      maxArtifactBytes: env.maxUploadSizeBytes,
-    },
+    { ...spaceDeletionDeps, maxArtifactBytes: env.maxUploadSizeBytes },
     sessionActor,
   );
   if (meetingProvider) mountMeetingWebhook(app, meetings);
