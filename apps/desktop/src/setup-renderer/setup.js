@@ -145,19 +145,17 @@
     return Object.values(stack.layerBytes ?? {}).reduce((total, bytes) => total + bytes, 0);
   }
 
-  const wholeSize = new Intl.NumberFormat(lang, { useGrouping: false, maximumFractionDigits: 0 });
-  const fractionalSize = new Intl.NumberFormat(lang, {
-    useGrouping: false,
+  const wholeSize = new Intl.NumberFormat(lang, { maximumFractionDigits: 0 });
+  const gigabytes = new Intl.NumberFormat(lang, {
     minimumFractionDigits: 1,
     maximumFractionDigits: 1,
   });
 
   function formatBytes(bytes) {
-    // Round as before, then localize only the displayed number.
-    if (bytes >= 1e9) return `${fractionalSize.format(Number((bytes / 1e9).toFixed(1)))} GB`;
-    if (bytes >= 1e6) return `${wholeSize.format(Math.round(bytes / 1e6))} MB`;
-    if (bytes >= 1e3) return `${wholeSize.format(Math.round(bytes / 1e3))} kB`;
-    return `${wholeSize.format(Math.round(bytes))} B`;
+    if (bytes >= 1e9) return `${gigabytes.format(bytes / 1e9)} GB`;
+    if (bytes >= 1e6) return `${wholeSize.format(bytes / 1e6)} MB`;
+    if (bytes >= 1e3) return `${wholeSize.format(bytes / 1e3)} kB`;
+    return `${wholeSize.format(bytes)} B`;
   }
 
   function progressFor(stack) {

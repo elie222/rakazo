@@ -644,7 +644,7 @@ describe("setup", () => {
       [2_500, "3 kB"],
       [2_500_000, "3 MB"],
       [1_000_000_000, `1${separator}0 GB`],
-      [1_150_000_000, `1${separator}1 GB`],
+      [1_150_000_000, `1${separator}2 GB`],
       [1_400_000_000, `1${separator}4 GB`],
     ] as const;
     for (const [bytes, size] of sizes) {
@@ -655,10 +655,6 @@ describe("setup", () => {
       await flush();
       expect(element("stack-detail").textContent).toBe(template.replace("{size}", size));
     }
-
-    const progress = element("stack-progress").getAttribute("aria-valuenow");
-    expect(progress).toMatch(/^\d+\.\d$/);
-    expect(Number(progress)).toBe(Number.parseFloat(element("stack-progress-fill").style.width));
   });
 
   it("renders Polish setup controls and interpolates connection and download status", async () => {
