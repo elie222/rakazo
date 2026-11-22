@@ -19,5 +19,6 @@ jobs:
     name: Tests
     uses: ./.depot/workflows/test-suites.yml
     with:
-      # Eight CPUs: the unit test and typecheck jobs spread across every core.
+      # Eight CPUs for every job in the file. The unit shards finish about four times faster than on
+      # two, which offsets the four-times rate; the other jobs take seconds either way.
       runner: depot-ubuntu-24.04-8
