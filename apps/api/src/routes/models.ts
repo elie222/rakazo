@@ -38,6 +38,7 @@ import {
   comparePreferenceOrder,
   defaultModelCredentialCandidates,
   deleteUnreferencedCredentialSecret,
+  deploymentModelChangesScope,
   findModelCredential,
   getModelRole,
   modelCredentialProviderFilter,
@@ -54,6 +55,10 @@ import { getLogger } from "@rakazo/logging";
 import { markExpectedFailure } from "@rakazo/logging/hono";
 import { assertCompatibleDefaultChange } from "../bots/model-pins.js";
 import { mayUsePrivateEndpoint } from "../integrations/mcp-servers.js";
+import {
+  getDeploymentModelSettings,
+  updateDeploymentModelSettings,
+} from "../models/deployment-model-settings.js";
 import {
   recordSignInStep,
   signInDurationMs,
@@ -752,6 +757,21 @@ export function modelsRoutes(ctx: RouterContext) {
         );
         return { ok: true as const };
       }),
+      deployment: {
+        get: authed.models.deployment.get.handler(({ context }) =>
+          getDeploymentModelSettings(deps, context.actor),
+        ),
+        update: authed.models.deployment.update.handler(async ({ context, input }) => {
+          const saved = await updateDeploymentModelSettings(
+            deps,
+            context.actor,
+            input,
+            context.signal,
+          );
+          void deps.events?.publishSpaceChange?.(deploymentModelChangesScope, "deploymentModel");
+          return saved;
+        }),
+      },
     },
   };
 }

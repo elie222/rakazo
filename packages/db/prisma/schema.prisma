@@ -828,6 +828,9 @@ model DeploymentSettings {
   ownerUserId                     String?
   defaultModelProvider            String?
   defaultModelId                  String?
+  /// The admin-managed model and its deployment-owned key.
+  deploymentModelProvider         String?
+  deploymentModelId               String?
   deploymentModelCredentialCipher String?
   computerHost                    String?
   /// Provider id for new computers chosen in Settings; null keeps SANDBOX_PROVIDER.

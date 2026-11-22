@@ -95,6 +95,7 @@ const payloadSchemas = {
       "secret_tables",
       "messaging_installation",
       "deployment_computer_provider",
+      "deployment_model",
       "purchase_request",
       "purchase_card",
       "purchase_token",

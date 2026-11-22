@@ -71,15 +71,18 @@ export function TeachCaptureOverlay({
       });
     }
 
-    function buttonFor(event: PointerEvent): "left" | "right" {
-      return event.button === 2 ? "right" : "left";
-    }
+    // The computer has only left and right buttons, and one mouse: only the pointer that pressed
+    // a supported button may move or release it. Middle and side buttons are not captured.
+    let pressed: { id: number; button: "left" | "right" } | null = null;
 
     function onPointerDown(event: PointerEvent) {
       event.preventDefault();
+      const button = event.button === 0 ? "left" : event.button === 2 ? "right" : null;
+      if (!button || pressed) return;
+      pressed = { id: event.pointerId, button };
       target.setPointerCapture(event.pointerId);
       const { x, y } = pointerAt(event);
-      enqueueInput(() => sendPointer("down", x, y, buttonFor(event)));
+      enqueueInput(() => sendPointer("down", x, y, button));
     }
 
     // Each input is one request, one recording write and one sandbox action, so a raw pointer
@@ -104,18 +107,29 @@ export function TeachCaptureOverlay({
     }
 
     function onPointerMove(event: PointerEvent) {
-      if (!event.buttons) return;
+      if (pressed?.id !== event.pointerId) return;
       event.preventDefault();
+      // Releasing the pressed button while another stays held fires pointermove, not pointerup.
+      if (!(event.buttons & (pressed.button === "left" ? 1 : 2))) {
+        release(event);
+        return;
+      }
       const { x, y } = pointerAt(event);
-      pendingMove = { x, y, button: event.buttons === 2 ? "right" : "left" };
+      pendingMove = { x, y, button: pressed.button };
       pumpMove();
     }
 
     function onPointerUp(event: PointerEvent) {
       event.preventDefault();
+      if (pressed?.id === event.pointerId) release(event);
+    }
+
+    function release(event: PointerEvent) {
+      if (!pressed) return;
+      const { button } = pressed;
+      pressed = null;
       if (target.hasPointerCapture(event.pointerId)) target.releasePointerCapture(event.pointerId);
       const { x, y } = pointerAt(event);
-      const button = buttonFor(event);
       const dragged = pendingMove !== null;
       pendingMove = null;
       // The final position has to reach the sandbox before the release; dropped intermediate
