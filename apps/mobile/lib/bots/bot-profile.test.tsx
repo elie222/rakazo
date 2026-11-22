@@ -1669,6 +1669,34 @@ describe("artifacts opened for one bot", () => {
     expect(container.textContent).not.toContain("Could not load artifacts.");
   });
 
+  it("shows a pull failure when a live read supersedes the pull and also fails", async () => {
+    const file = {
+      id: "file-a",
+      name: "report.md",
+      botId: "bot-fixture",
+      groupId: null,
+      runId: null,
+      description: null,
+      mimeType: "text/markdown",
+      size: 6,
+      version: 1,
+      versionCount: 1,
+      createdAt: "2026-11-01T00:00:00.000Z",
+    };
+    const pull = deferred<never>();
+    listSpaceArtifacts.mockResolvedValueOnce({ items: [file], nextCursor: null });
+    listSpaceArtifacts.mockReturnValueOnce(pull.promise);
+    listSpaceArtifacts.mockRejectedValueOnce(new Error("Could not load artifacts."));
+    await render(createElement(ArtifactsScreen));
+    act(() => button("Refresh files").click());
+    await act(async () => {
+      for (const listener of spaceChangeListeners.get("artifacts") ?? []) await listener();
+    });
+    await act(async () => pull.reject(new Error("Pull failed.")));
+    expect(container.textContent).toContain("report.md");
+    expect(container.textContent).toContain("Could not load artifacts.");
+  });
+
   it("loads only the profile bot's artifacts initially", async () => {
     await render(createElement(ArtifactsScreen));
     expect(listSpaceArtifacts).toHaveBeenCalledTimes(1);

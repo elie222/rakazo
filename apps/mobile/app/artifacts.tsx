@@ -92,6 +92,7 @@ export default function ArtifactsScreen() {
   const [query, setQuery] = useState("");
   const [searchPageFailed, setSearchPageFailed] = useState(false);
   const loadingMoreRef = useRef(false);
+  const pullingRef = useRef(false);
   const loadedPagesRef = useRef(1);
   const generationRef = useRef(0);
   const loadingPageRef = useRef(false);
@@ -118,11 +119,9 @@ export default function ArtifactsScreen() {
   }, [navigation, t]);
 
   const load = useCallback(
-    async (
-      botId: string | null,
-      madeByBots: boolean,
-      mode: "replace" | "pull" | "refresh" | "live",
-    ) => {
+    async (botId: string | null, madeByBots: boolean, mode: "replace" | "refresh" | "live") => {
+      // A read that starts during a pull-to-refresh supersedes it, so it reports its failure.
+      const forPull = pullingRef.current;
       const pageCount = mode === "live" ? loadedPagesRef.current : 1;
       const generation = ++generationRef.current;
       loadingPageRef.current = true;
@@ -161,7 +160,7 @@ export default function ArtifactsScreen() {
         if (generation !== generationRef.current) return;
         const message = errorText(error, t`Could not load artifacts.`);
         setLoadError(message);
-        if (mode === "pull") setRefreshError(message);
+        if (forPull) setRefreshError(message);
       } finally {
         if (generation === generationRef.current) {
           loadingPageRef.current = false;
@@ -216,9 +215,11 @@ export default function ArtifactsScreen() {
 
   async function refresh() {
     setRefreshing(true);
+    pullingRef.current = true;
     try {
-      await load(activeBotId, madeByBots, "pull");
+      await load(activeBotId, madeByBots, "refresh");
     } finally {
+      pullingRef.current = false;
       setRefreshing(false);
     }
   }
