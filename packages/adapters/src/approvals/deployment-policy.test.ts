@@ -83,6 +83,17 @@ describe("deploymentPolicyRefusal", () => {
     expect(await deploymentPolicyRefusal(policy, call, 1)).toBe(DEPLOYMENT_POLICY_FAILED);
   });
 
+  it("refuses the call when the policy answers late after blocking the process", async () => {
+    const policy: DeploymentPolicy = {
+      toolCall: () => {
+        const until = performance.now() + 20;
+        while (performance.now() < until);
+        return undefined;
+      },
+    };
+    expect(await deploymentPolicyRefusal(policy, call, 5)).toBe(DEPLOYMENT_POLICY_FAILED);
+  });
+
   it("refuses the call when the policy answers with something that is not a refusal", async () => {
     const policy = { toolCall: () => ({ allow: true }) } as unknown as DeploymentPolicy;
     expect(await deploymentPolicyRefusal(policy, call)).toBe(DEPLOYMENT_POLICY_FAILED);

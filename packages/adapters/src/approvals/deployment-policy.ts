@@ -50,10 +50,15 @@ export async function deploymentPolicyRefusal(
   try {
     // The policy gets its own copy, so it cannot change the arguments the call runs with.
     const asked = { ...call, actions: [...call.actions], args: structuredClone(call.args) };
+    const started = performance.now();
     const decision: unknown = await withAbort(
       Promise.resolve().then(() => policy.toolCall?.(asked)),
       deadlineSignal(timeoutMs),
     );
+    // A policy that blocks the process holds the deadline back too, so a late answer is checked
+    // against the clock.
+    if (performance.now() - started > timeoutMs)
+      throw new DOMException("The policy took too long.", "TimeoutError");
     if (decision === undefined || decision === null) return undefined;
     const refuse = (decision as { refuse?: unknown }).refuse;
     if (typeof refuse !== "string") throw new TypeError("not a refusal");
