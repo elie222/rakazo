@@ -9,8 +9,22 @@ const isLowSurrogate = (code) => code >= 0xdc00 && code <= 0xdfff;
  * changed text never starts with half of a surrogate pair.
  */
 export function mobileInputChanges(oldValue, newValue, selectionStart = newValue.length) {
-  const newLength = Math.max(selectionStart ?? newValue.length, newValue.length);
-  const limit = Math.min(oldValue.length, newLength);
+  // Space-bar caret gestures can leave unchanged text after the edit. It is local context,
+  // not text to delete and retype on the remote computer.
+  let suffix = 0;
+  const caret = selectionStart ?? newValue.length;
+  while (
+    newValue.length - suffix > caret &&
+    suffix < oldValue.length &&
+    oldValue.charCodeAt(oldValue.length - suffix - 1) ===
+      newValue.charCodeAt(newValue.length - suffix - 1)
+  ) {
+    suffix += 1;
+  }
+  if (suffix > 0 && isLowSurrogate(newValue.charCodeAt(newValue.length - suffix))) suffix -= 1;
+  const newLength = newValue.length - suffix;
+  const oldLength = oldValue.length - suffix;
+  const limit = Math.min(oldLength, newLength);
   let prefix = 0;
   while (prefix < limit && oldValue.charCodeAt(prefix) === newValue.charCodeAt(prefix)) {
     prefix += 1;
@@ -25,7 +39,7 @@ export function mobileInputChanges(oldValue, newValue, selectionStart = newValue
   }
 
   return {
-    backspaces: Array.from(oldValue.slice(prefix)).length,
+    backspaces: Array.from(oldValue.slice(prefix, oldLength)).length,
     text: newValue.slice(prefix, newLength),
   };
 }
@@ -457,6 +471,8 @@ export function attachMobileKeyboard(
   if (!button || !input || !Keyboard || !documentTarget || rfb.viewOnly) return () => {};
 
   let lastValue = "";
+  // What the remote computer has been sent; lastValue can differ while an IME composes at a moved caret.
+  let sentValue = "";
   let closeOnButtonClick = false;
   let controlLatched = false;
   let keyboardTouchAt = 0;
@@ -476,6 +492,7 @@ export function attachMobileKeyboard(
   const resetInput = () => {
     input.value = "_".repeat(DEFAULT_INPUT_LENGTH - 1);
     lastValue = input.value;
+    sentValue = lastValue;
   };
   const setOpen = (open) => {
     const label = open ? "Hide keyboard" : "Show keyboard";
@@ -575,6 +592,25 @@ export function attachMobileKeyboard(
     if (!key) return;
     sendTap(key[0], key[1], command.control === true);
   };
+  let composing = false;
+  const restoreCaret = () => {
+    if (composing || documentTarget.activeElement !== input) return;
+    const length = input.value.length;
+    if (input.selectionStart !== length || input.selectionEnd !== length) {
+      input.setSelectionRange?.(length, length);
+    }
+  };
+  const onCompositionStart = () => {
+    composing = true;
+  };
+  const onCompositionEnd = () => {
+    composing = false;
+    // A final input still on its way normalizes the field itself.
+    if (input.value !== lastValue) return;
+    if (input.value !== sentValue) input.value = sentValue;
+    lastValue = sentValue;
+    restoreCaret();
+  };
   const show = () => {
     try {
       input.focus({ preventScroll: true });
@@ -611,7 +647,7 @@ export function attachMobileKeyboard(
   };
   const onInput = (event) => {
     if (!lastValue) resetInput();
-    const newValue = event.target.value;
+    let newValue = event.target.value;
     const changes = mobileInputChanges(lastValue, newValue, event.target.selectionStart);
     if (
       typeof pasteText === "function" &&
@@ -625,6 +661,15 @@ export function attachMobileKeyboard(
     repeatBackspace(changes.backspaces);
     insertText(changes.text, false);
 
+    const sent = Array.from(sentValue);
+    sentValue = sent.slice(0, sent.length - changes.backspaces).join("") + changes.text;
+    if (!composing && !event.isComposing) {
+      // Keep the local history in the same order as the remote keys, even if input beat
+      // selectionchange to a caret moved by the phone keyboard.
+      newValue = sentValue;
+      if (input.value !== newValue) input.value = newValue;
+      restoreCaret();
+    }
     if (newValue.length > 2 * DEFAULT_INPUT_LENGTH) {
       resetInput();
     } else if (newValue.length < 1) {
@@ -691,6 +736,9 @@ export function attachMobileKeyboard(
   button.addEventListener("touchend", onKeyboardTouchEnd, { passive: false });
   button.addEventListener("click", onKeyboardClick);
   input.addEventListener("input", onInput);
+  documentTarget.addEventListener("selectionchange", restoreCaret);
+  input.addEventListener("compositionstart", onCompositionStart);
+  input.addEventListener("compositionend", onCompositionEnd);
   input.addEventListener("focus", onFocus);
   input.addEventListener("blur", onBlur);
   if (keyBar) {
@@ -713,6 +761,9 @@ export function attachMobileKeyboard(
     button.removeEventListener("touchend", onKeyboardTouchEnd);
     button.removeEventListener("click", onKeyboardClick);
     input.removeEventListener("input", onInput);
+    documentTarget.removeEventListener("selectionchange", restoreCaret);
+    input.removeEventListener("compositionstart", onCompositionStart);
+    input.removeEventListener("compositionend", onCompositionEnd);
     input.removeEventListener("focus", onFocus);
     input.removeEventListener("blur", onBlur);
     if (keyBar) {
