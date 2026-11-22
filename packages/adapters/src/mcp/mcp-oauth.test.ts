@@ -3625,6 +3625,25 @@ describe("MCP OAuth", () => {
         ).toBe(true);
       });
 
+      it("reports no covering default once discovery found a different authorization server", async () => {
+        const { broker } = brokerWithMaterial(
+          {
+            oauth: {
+              discoveryState: { authorizationServerUrl: "https://elsewhere.example.test" },
+            },
+          },
+          {},
+          defaults,
+        );
+
+        const summary = await broker.summaryFor(
+          { id: "server-1", endpoint: "https://mcp.example.test/mcp", secretId: "secret-1" },
+          { spaceId: "workspace-1", userId: "user-1" },
+        );
+
+        expect(summary.defaultClient).toBe(false);
+      });
+
       it("does not give the default to an MCP server the operator did not list", async () => {
         nonRegisteringAuthServer(() => undefined);
         const listed = parseMcpOAuthDefaultClients(

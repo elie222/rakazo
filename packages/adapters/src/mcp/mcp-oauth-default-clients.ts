@@ -128,12 +128,24 @@ export function deploymentClient(
   );
 }
 
-/** Whether any default lists this MCP server, whichever authorization server it turns out to use. */
-export function defaultClientCovers(
+/**
+ * Whether a default can supply the client for this server: its issuer too once discovery has
+ * found it, and until then any default that lists the server's origin.
+ */
+export function defaultClientApplies(
   clients: McpOAuthDefaultClients,
+  material: Parameters<typeof deploymentClient>[0],
   mcpEndpoint: string | null | undefined,
 ): boolean {
   if (!mcpEndpoint) return false;
+  if (material.oauth?.discoveryState?.authorizationServerUrl)
+    return (
+      defaultClientFor(
+        clients,
+        material.oauth.discoveryState.authorizationServerUrl,
+        mcpEndpoint,
+      ) !== undefined
+    );
   const origin = new URL(mcpEndpoint).origin;
   return Object.values(clients).some((client) => client.servers.includes(origin));
 }

@@ -42,7 +42,7 @@ import { persistPreparedSecret } from "../secrets/secret-persistence.js";
 import { holdSecretNotifications } from "../secrets/secret-store-factory.js";
 import type { McpOAuthDefaultClient, McpOAuthDefaultClients } from "./mcp-oauth-default-clients.js";
 import {
-  defaultClientCovers,
+  defaultClientApplies,
   defaultClientSecrets,
   deploymentClient,
 } from "./mcp-oauth-default-clients.js";
@@ -1295,13 +1295,17 @@ function hasCredential(material: OAuthMaterial): boolean {
   );
 }
 
-function summarize(material: OAuthMaterial, defaultClient: boolean): McpOAuthSummary {
+function summarize(
+  material: OAuthMaterial,
+  defaults: McpOAuthDefaultClients,
+  endpoint: string | null,
+): McpOAuthSummary {
   const status = material.oauth?.tokens ? "connected" : material.oauth ? "reconnect" : "none";
   return {
     status,
     clientId: material.oauthClient?.client_id ?? null,
     credential: hasCredential(material),
-    defaultClient,
+    defaultClient: defaultClientApplies(defaults, material, endpoint),
   };
 }
 
@@ -1330,7 +1334,7 @@ export class McpOAuthBroker {
 
   async summaryFor(server: ServerRef, context: ActorRef): Promise<McpOAuthSummary> {
     const { material } = await this.loadMaterial(server, context);
-    return summarize(material, defaultClientCovers(this.defaultClients, server.endpoint));
+    return summarize(material, this.defaultClients, server.endpoint);
   }
 
   async summaryForCiphertext(
@@ -1340,7 +1344,8 @@ export class McpOAuthBroker {
   ): Promise<McpOAuthSummary> {
     return summarize(
       ciphertext && recordId ? await this.read(ciphertext, recordId) : {},
-      defaultClientCovers(this.defaultClients, endpoint),
+      this.defaultClients,
+      endpoint,
     );
   }
 
