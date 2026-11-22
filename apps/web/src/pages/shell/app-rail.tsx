@@ -140,7 +140,7 @@ export function AppRailLayout({ boardEnabled }: { boardEnabled: boolean }) {
             onToggle={toggle}
             setRailFooterNode={setRailFooterNode}
           />
-          <div className="h-full min-h-0 min-w-0 flex-1">
+          <div className="h-full min-h-0 min-w-0 flex-1 md:border-s md:border-sidebar-border">
             {/* A page still loading leaves the rail on screen instead of blanking the window. */}
             <Suspense fallback={<RouteLoading />}>
               <Outlet />
@@ -186,7 +186,7 @@ function PrimaryRail({
       data-testid="app-rail"
       aria-label={t`Sections`}
       data-expanded={expanded}
-      className="app-drag relative z-20 hidden w-(--app-rail-width) shrink-0 flex-col border-e border-sidebar-border bg-sidebar transition-[width] duration-(--motion-pop) ease-(--ease-out) motion-reduce:transition-none md:flex"
+      className="app-drag relative z-20 hidden w-(--app-rail-width) shrink-0 flex-col bg-sidebar transition-[width] duration-(--motion-pop) ease-(--ease-out) motion-reduce:transition-none md:flex"
     >
       {desktopBridge() ? <WindowChrome className="mt-3 self-start" /> : null}
       <div
@@ -208,7 +208,7 @@ function PrimaryRail({
             onClick={onToggle}
             className="app-no-drag group/rail-toggle relative grid size-8 shrink-0 place-items-center rounded-full text-muted-foreground outline-none transition-colors hover:bg-sidebar-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50"
           >
-            <RailBrandMark className="size-6 transition-[opacity,scale] duration-(--motion-floating) ease-(--ease-out) group-hover/rail-toggle:scale-75 group-hover/rail-toggle:opacity-0 group-focus-visible/rail-toggle:scale-75 group-focus-visible/rail-toggle:opacity-0 motion-reduce:transition-none" />
+            <RailBrandMark className="transition-[opacity,scale] duration-(--motion-floating) ease-(--ease-out) group-hover/rail-toggle:scale-75 group-hover/rail-toggle:opacity-0 group-focus-visible/rail-toggle:scale-75 group-focus-visible/rail-toggle:opacity-0 motion-reduce:transition-none" />
             <PanelLeftOpen
               className="absolute size-5 scale-75 opacity-0 transition-[opacity,scale] duration-(--motion-floating) ease-(--ease-out) group-hover/rail-toggle:scale-100 group-hover/rail-toggle:opacity-100 group-focus-visible/rail-toggle:scale-100 group-focus-visible/rail-toggle:opacity-100 motion-reduce:transition-none"
               strokeWidth={1.75}
@@ -339,7 +339,7 @@ function RailFooter({
 function RailBrand() {
   return (
     <span className="flex h-8 min-w-0 flex-1 items-center gap-2" aria-hidden="true">
-      <RailBrandMark className="size-6" />
+      <RailBrandMark />
       <span className="min-w-0 flex-1 truncate text-center text-body font-medium">Rakazo</span>
     </span>
   );
@@ -349,7 +349,7 @@ function RailBrandMark({ className }: { className?: string }) {
   return (
     <span
       className={cn(
-        "flex shrink-0 items-center justify-center gap-1 rounded-full bg-card",
+        "flex size-8 shrink-0 items-center justify-center gap-1 rounded-full bg-card",
         className,
       )}
     >
@@ -413,7 +413,7 @@ function RailItem({
     variant: "ghost",
     size: "icon",
     className: cn(
-      "app-no-drag group/rail-item relative min-w-0 shrink-0 select-none justify-start overflow-hidden rounded-full px-0 text-start",
+      "app-no-drag group/rail-item relative min-w-0 shrink-0 select-none justify-start overflow-hidden rounded-full border-0 px-0 text-start",
       expanded
         ? "w-full gap-2"
         : "hover:w-max hover:bg-primary hover:pe-2.5 hover:text-primary-foreground hover:shadow-md focus-visible:w-max focus-visible:bg-primary focus-visible:pe-2.5 focus-visible:text-primary-foreground focus-visible:shadow-md",
