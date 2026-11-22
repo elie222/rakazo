@@ -25,7 +25,7 @@ export function createObjectStorage(
   if (protocol !== "s3") throw new Error('OBJECT_STORAGE_PROTOCOL must be "s3" or "azure-blob"');
   // An Entra kind under the S3 protocol would be silently ignored while the S3 client signs its
   // requests with whatever the settings hold; the Azure module owns what that means.
-  refuseEntraAuthUnderOtherProtocol(env, protocol);
+  refuseEntraAuthUnderOtherProtocol(env);
   const config = objectStorageConfigFromEnv(env);
   return config && new S3ObjectStorage(config);
 }

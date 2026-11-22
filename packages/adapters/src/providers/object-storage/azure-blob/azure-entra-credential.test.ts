@@ -136,7 +136,7 @@ describe("entraAuthFromEnv", () => {
               OBJECT_STORAGE_CERTIFICATE: path,
             }),
           name,
-        ).toThrow(/PEM bundle|password-protected|not usable|do not pair/);
+        ).toThrow(/PEM bundle|not usable|do not pair/);
       }
     } finally {
       rmSync(directory, { recursive: true, force: true });

@@ -1,3 +1,4 @@
+import type { KeyObject } from "node:crypto";
 import { createPrivateKey, createPublicKey, X509Certificate } from "node:crypto";
 import { readFileSync } from "node:fs";
 
@@ -35,8 +36,7 @@ const KINDS =
  * what an Entra kind is, so the shared factory forwards here. Storage turned off (no bucket)
  * ignores every setting, as before.
  */
-export function refuseEntraAuthUnderOtherProtocol(env: NodeJS.ProcessEnv, protocol: string): void {
-  if (protocol === "azure-blob") return;
+export function refuseEntraAuthUnderOtherProtocol(env: NodeJS.ProcessEnv): void {
   const auth = env.OBJECT_STORAGE_AUTH?.trim().toLowerCase() || "account-key";
   if (auth !== "account-key" && env.OBJECT_STORAGE_BUCKET?.trim())
     throw new Error("OBJECT_STORAGE_AUTH needs OBJECT_STORAGE_PROTOCOL=azure-blob");
@@ -51,15 +51,9 @@ function certificateBundle(value: string): string {
   let certificate: string;
   try {
     // A PEM bundle inline, or a path to one. Env files, docker -e and systemd EnvironmentFile
-    // carry multi-line values on one line with escaped newlines, so decode those; Windows
-    // edits leave CRLF endings, which node's parsers and the SDK also accept. Normalizing both
-    // lets the line-anchored checks see real lines.
+    // carry multi-line values on one line with escaped newlines, so decode those.
     const raw = value.includes("-----BEGIN") ? value : readFileSync(value, "utf8");
-    certificate = raw
-      .replace(/\\r\\n/g, "\n")
-      .replace(/\\n/g, "\n")
-      .replace(/\r\n/g, "\n")
-      .trim();
+    certificate = raw.replace(/\\r\\n|\\n/g, "\n").trim();
   } catch {
     // A value without a PEM header lands here read as a path, and the filesystem error's
     // message would repeat the whole value — private key included — into startup logs, so the
@@ -69,34 +63,21 @@ function certificateBundle(value: string): string {
       "OBJECT_STORAGE_CERTIFICATE is neither a readable PEM file nor an inline PEM bundle; decode base64 bundles before setting them",
     );
   }
-  const begins = certificate.match(/^-----BEGIN [^-]+-----$/gm) ?? [];
-  const ends = certificate.match(/^-----END [^-]+-----$/gm) ?? [];
-  if (
-    begins.length !== ends.length ||
-    begins.length < 2 ||
-    !certificate.includes("-----BEGIN CERTIFICATE-----") ||
-    !/-----BEGIN [A-Z ]*PRIVATE KEY-----/.test(certificate)
-  )
+  if (!certificate.includes("-----BEGIN CERTIFICATE-----") || !/PRIVATE KEY-----/.test(certificate))
     throw new Error(
       "OBJECT_STORAGE_CERTIFICATE must hold a PEM bundle with a certificate and its private key",
     );
-  if (certificate.includes("-----BEGIN ENCRYPTED PRIVATE KEY-----"))
-    throw new Error(
-      "OBJECT_STORAGE_CERTIFICATE holds a password-protected key; export it without a passphrase",
-    );
+  // Prove both blocks parse and pair, so garbage inside valid-looking headers, a
+  // password-protected key and a key from another certificate (a rotation mix-up) fail here.
+  let pair: [X509Certificate, KeyObject];
   try {
-    // Prove both blocks parse and pair, so garbage inside valid-looking headers and a key from
-    // another certificate (a rotation mix-up) also fail here.
-    const parsed = new X509Certificate(certificate);
-    const key = createPrivateKey(certificate);
-    const fromCertificate = parsed.publicKey.export({ type: "spki", format: "der" });
-    const fromKey = createPublicKey(key).export({ type: "spki", format: "der" });
-    if (!fromCertificate.equals(fromKey))
-      throw new Error("OBJECT_STORAGE_CERTIFICATE's certificate and private key do not pair");
+    pair = [new X509Certificate(certificate), createPublicKey(createPrivateKey(certificate))];
   } catch (error) {
-    if (error instanceof Error && error.message.includes("do not pair")) throw error;
     throw new Error(`OBJECT_STORAGE_CERTIFICATE is not usable: ${(error as Error).message}`);
   }
+  const spki = (key: KeyObject) => key.export({ type: "spki", format: "der" });
+  if (!spki(pair[0].publicKey).equals(spki(pair[1])))
+    throw new Error("OBJECT_STORAGE_CERTIFICATE's certificate and private key do not pair");
   return certificate;
 }
 
