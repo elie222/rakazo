@@ -1257,6 +1257,12 @@ describe("withToolStepOutcomes", () => {
 });
 
 describe("heldActivityLine", () => {
+  it("clears a finished step's line where bots do not narrate live", () => {
+    const first = heldActivityLine(undefined, "Running: ls", ["run-1"], { hold: false });
+    expect(first.line).toBe("Running: ls");
+    expect(heldActivityLine(first, undefined, ["run-1"], { hold: false }).line).toBeUndefined();
+  });
+
   it("keeps the last status between steps and drops it when the work stops", () => {
     const first = heldActivityLine(undefined, "Checking availability", ["run-1"]);
     expect(first.line).toBe("Checking availability");

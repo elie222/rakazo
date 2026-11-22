@@ -413,19 +413,22 @@ export function messageBlocksText(blocks: readonly MessageBlock[]): string {
 export type HeldActivityLine = { line?: string; workers: string };
 
 /**
- * The working line a chat shows: the newest live status, or the last one while the same work
- * is between steps. `workers` names what is working (run or bot ids); when it changes, as when
- * one bot finishes while another keeps going, the old line goes.
+ * The working line a chat shows: the newest live status, or, where bots narrate live (`hold`),
+ * the last one while the same work is between steps. Without live narration a cleared line
+ * stays cleared, as a finished tool's technical text means nothing once it ends. `workers`
+ * names what is working (run or bot ids); when it changes, as when one bot finishes while
+ * another keeps going, the old line goes.
  */
 export function heldActivityLine(
   previous: HeldActivityLine | undefined,
   live: string | undefined,
   workers: readonly string[],
+  { hold = true }: { hold?: boolean } = {},
 ): HeldActivityLine {
   // The same run can be listed twice (as the chat's run and among its active ones).
   const key = [...new Set(workers)].sort().join(",");
   if (!key) return { workers: "" };
-  const kept = previous?.workers === key ? previous.line : undefined;
+  const kept = hold && previous?.workers === key ? previous.line : undefined;
   return { line: live ?? kept, workers: key };
 }
 

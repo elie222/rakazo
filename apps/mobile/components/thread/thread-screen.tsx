@@ -303,7 +303,8 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
   const hasLiveProgress = visibleMessages.some(
     (message) => message.id.startsWith("progress:") && liveMessageComposing(message.blocks),
   );
-  // The bot's last status stays up between steps, until the next one or the end of its run.
+  // Where bots narrate live, the last status stays up between steps, until the next one or the
+  // end of its run.
   // It belongs to the runs that were working: another chat's or a finished peer's never shows.
   const lastActivityLine = useRef<HeldActivityLine | undefined>(undefined);
   lastActivityLine.current = heldActivityLine(
@@ -312,6 +313,8 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
     [...(snap?.activeRuns ?? []), ...(snap?.run ? [snap.run] : [])]
       .filter((run) => isRunWorking(run.status))
       .map((run) => run.id),
+    // Without live narration a finished tool's line is cleared, not kept.
+    { hold: uploadConfig?.liveStatusLines === true },
   );
   const activityLine = lastActivityLine.current.line;
   const workingRoutine = workingRoutineName(snap?.activeRuns ?? (snap?.run ? [snap.run] : []));

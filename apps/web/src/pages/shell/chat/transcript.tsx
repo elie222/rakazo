@@ -105,6 +105,7 @@ export const Transcript = memo(function Transcript({
   dismissableAskIds,
   running,
   workingRunIds,
+  holdsActivityLine = false,
   workingBots,
   workingRoutine,
   userBubble,
@@ -159,6 +160,8 @@ export const Transcript = memo(function Transcript({
   running: boolean;
   /** The runs at work in this chat; the held status belongs to them. */
   workingRunIds?: readonly string[];
+  /** Bots narrate live, so the last status stays up between steps. */
+  holdsActivityLine?: boolean;
   workingBots: GroupAvatarMember[];
   workingRoutine?: string;
   /** Your bubbles take the bot's color in its own chat. */
@@ -318,12 +321,14 @@ export const Transcript = memo(function Transcript({
   );
   const separatorIds = timeSeparatorIds(shownMessages);
   const unreadDividerId = unreadDividerMessageId(shownMessages, unreadAfterSeq, olderCursor, meId);
-  // The bot's last status stays up between steps, until the next one or the end of the run.
+  // Where bots narrate live, the last status stays up between steps, until the next one or the
+  // end of the run.
   const lastActivityLine = useRef<HeldActivityLine | undefined>(undefined);
   lastActivityLine.current = heldActivityLine(
     lastActivityLine.current,
     liveActivityLine(messages),
     running ? (workingRunIds ?? workingBots.map((bot, index) => bot.botId ?? `bot-${index}`)) : [],
+    { hold: holdsActivityLine },
   );
 
   // Remounted per chat, so each opened chat paints its latest rows before the full history.
