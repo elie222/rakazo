@@ -1,7 +1,7 @@
 import { ph } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
 import type { SpaceBot, SpaceGroup } from "@rakazo/contracts";
-import { chatSnoozed, chatWoke, isRunWorking } from "@rakazo/core";
+import { chatMuted, chatSnoozed, chatWoke, isRunWorking } from "@rakazo/core";
 import { botColors } from "@rakazo/ui-tokens";
 import type { ReactElement, ReactNode } from "react";
 import { createContext, memo, useContext, useEffect, useState, useSyncExternalStore } from "react";
@@ -341,20 +341,6 @@ function chatTime(
   if (chat.snoozedUntil && chatSnoozed(chat, now)) return formatSnoozeWake(chat.snoozedUntil);
   if (chatWoke(chat, now)) return woke;
   return chat.updatedAt ? formatThreadTime(chat.updatedAt, new Date(day)) : "";
-}
-
-/**
- * Whether the viewer muted the chat, as the server says. A server from before chat mutes sends a
- * bot's own notification setting instead, which is that viewer's mute there, and cannot mute a
- * group: unknown.
- */
-export function chatMuted(
-  chat: MobileBot | MobileGroup | SpaceBot | SpaceGroup,
-): boolean | undefined {
-  if (typeof chat.muted === "boolean") return chat.muted;
-  return "notifyOnFinish" in chat && typeof chat.notifyOnFinish === "boolean"
-    ? !chat.notifyOnFinish
-    : undefined;
 }
 
 /** A group's avatar, with the bell while the viewer has it muted. */

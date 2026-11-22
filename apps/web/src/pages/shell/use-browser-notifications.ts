@@ -1,11 +1,10 @@
 import type { Bot, ChatAlert, Group, ProductEvent } from "@rakazo/contracts";
-import { chatSnoozed } from "@rakazo/core";
+import { chatMuted, chatSnoozed } from "@rakazo/core";
 import type { RefObject } from "react";
 import { useCallback, useEffect, useRef } from "react";
 import { computerUpdates } from "../../lib/computers/computer-updates";
 import {
   browserNotificationTag,
-  chatMuted,
   deliverBrowserNotification as deliverNativeBrowserNotification,
   shouldNotifyBrowser,
 } from "../../lib/platform/browser-notifications";

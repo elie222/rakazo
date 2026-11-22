@@ -25,6 +25,19 @@ export function chatListed(chat: SnoozableChat & { hidden?: boolean }, now: numb
   return chat.hidden !== true && !chatSnoozed(chat, now);
 }
 
+/**
+ * Whether the viewer muted the chat, as the server says. A server from before chat mutes sends a
+ * bot's own notification setting instead, which is that viewer's mute there, and cannot mute a
+ * group: unknown.
+ */
+export function chatMuted(chat: {
+  muted?: boolean | null;
+  notifyOnFinish?: boolean;
+}): boolean | undefined {
+  if (typeof chat.muted === "boolean") return chat.muted;
+  return typeof chat.notifyOnFinish === "boolean" ? !chat.notifyOnFinish : undefined;
+}
+
 /** Back in the list after its snooze ended, until the viewer opens it. */
 export function chatWoke(chat: SnoozableChat, now: number): boolean {
   const wake = wakeTime(chat);

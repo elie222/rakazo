@@ -1,7 +1,7 @@
 import { t } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
 import type { SpaceBot, SpaceGroup } from "@rakazo/contracts";
-import { accountDisplay, chatListed, chatSnoozed } from "@rakazo/core";
+import { accountDisplay, chatListed, chatMuted, chatSnoozed } from "@rakazo/core";
 import { bestEffort } from "@rakazo/logging/best-effort";
 import type { Href } from "expo-router";
 import {
@@ -38,7 +38,7 @@ import {
   SWIPE_ROWS,
   useInboxRenderItem,
 } from "../components/inbox/inbox-render-item";
-import { CompactRowsContext, chatMuted, SelectedChatContext } from "../components/inbox/inbox-rows";
+import { CompactRowsContext, SelectedChatContext } from "../components/inbox/inbox-rows";
 import { createInboxStyles } from "../components/inbox/inbox-styles";
 import { NativeInboxList } from "../components/inbox/native-inbox-list";
 import { OrganizationTitleMenu } from "../components/inbox/organization-menu";

@@ -20,6 +20,7 @@ import type { ComposerMention } from "@rakazo/core";
 import {
   applyThreadSendReceipt,
   attachmentsForThread,
+  chatMuted,
   inferAttachmentMimeType,
   isImageInputConfirmation,
   newClientId,
@@ -37,10 +38,7 @@ import {
 } from "../../../lib/composer/pending-attachments";
 import { canPrepareImage, prepareImage } from "../../../lib/composer/prepare-image";
 import type { PageSession } from "../../../lib/pages/pages";
-import {
-  chatMuted,
-  requestBrowserNotificationPermission,
-} from "../../../lib/platform/browser-notifications";
+import { requestBrowserNotificationPermission } from "../../../lib/platform/browser-notifications";
 import type { createSpaceRpc } from "../../../lib/query/rpc";
 import { clearActiveThreadRuns, threadRunError } from "../../../lib/query/thread-events";
 import { errorText } from "../../../lib/query/user-error";

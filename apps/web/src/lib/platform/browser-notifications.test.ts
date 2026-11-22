@@ -1,4 +1,3 @@
-import type { Bot, Group } from "@rakazo/contracts";
 import { TAKEOVER_COMPUTER_PENDING_STATE } from "@rakazo/core";
 import type { Deferred } from "@rakazo/core/test-async";
 import { deferred } from "@rakazo/core/test-async";
@@ -10,7 +9,6 @@ import type {
 } from "./browser-notifications.js";
 import {
   browserNotificationMessage,
-  chatMuted,
   deliverBrowserNotification,
   requestBrowserNotificationPermission,
   shouldNotifyBrowser,
@@ -252,15 +250,4 @@ describe("browser notifications", () => {
 
 it("uses a readable fallback for opaque notification names", () => {
   expect(browserNotificationMessage(event(), "__TestTok1__").title).toBe("Bot");
-});
-
-describe("chatMuted", () => {
-  it("reads a member's own mute, else a bot's own switch from a server without one", () => {
-    const bot = (fields: Partial<Bot>) => ({ id: "bot", notifyOnFinish: true, ...fields }) as Bot;
-    expect(chatMuted(bot({ muted: true }))).toBe(true);
-    expect(chatMuted(bot({ muted: false, notifyOnFinish: false }))).toBe(false);
-    expect(chatMuted(bot({ notifyOnFinish: false }))).toBe(true);
-    expect(chatMuted(bot({}))).toBe(false);
-    expect(chatMuted({ id: "group" } as Group)).toBe(false);
-  });
 });

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { deferred, flush } from "../primitives/async.test-support.js";
 import {
   chatListed,
+  chatMuted,
   chatSnoozed,
   chatWoke,
   createChatChoiceQueue,
@@ -168,5 +169,16 @@ describe("chat choice queue", () => {
     queue("bot:a", null, tomorrow, change);
     await new Promise((resolve) => setTimeout(resolve, 20));
     expect(requests).toHaveLength(1);
+  });
+});
+
+describe("chatMuted", () => {
+  it("reads a member's own mute, else a bot's own switch from a server without one", () => {
+    expect(chatMuted({ muted: true, notifyOnFinish: true })).toBe(true);
+    expect(chatMuted({ muted: false, notifyOnFinish: false })).toBe(false);
+    expect(chatMuted({ notifyOnFinish: false })).toBe(true);
+    expect(chatMuted({ muted: null, notifyOnFinish: true })).toBe(false);
+    // Such a server cannot mute a group.
+    expect(chatMuted({})).toBeUndefined();
   });
 });
