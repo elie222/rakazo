@@ -168,7 +168,7 @@ export function GeneralSettingsPanels({
   const queryUserId = useQueryUserId();
   const queryClient = useQueryClient();
   const meRead = queries.me.queryOptions();
-  const { data: me } = useQuery({
+  const { data: me, isLoading: loadingAccount } = useQuery({
     ...meRead,
     enabled: Boolean(queryUserId),
     refetchOnWindowFocus: "always",
@@ -184,7 +184,7 @@ export function GeneralSettingsPanels({
     },
     stale: [meRead.queryKey],
   });
-  const chatSaveDisabled = chatSave.pending || (Boolean(queryUserId) && !me);
+  const chatSaveDisabled = chatSave.pending || loadingAccount;
 
   function changeChatPreference(key: keyof ChatPreferences, value: boolean) {
     if (me?.chatPreferences) chatSave.run({ [key]: value });

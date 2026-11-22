@@ -75,8 +75,8 @@ export default function General() {
   const stacked = useStackedSettings();
   // Read on every visit, so a failed read retries when the page is shown again.
   const meRead = accountRpcQuery("me");
-  const me = useScreenQuery(meRead).data;
-  useLiveStream(useIsFocused() && Boolean(me));
+  const { data: me, isLoading: loadingAccount } = useScreenQuery(meRead);
+  useLiveStream(useIsFocused());
   const botStyle = useSave({
     target: ACCOUNT_SETTINGS,
     save: async (botAvatarSet: NonNullable<MobileMe["botAvatarSet"]>, send) => {
@@ -98,6 +98,7 @@ export default function General() {
     onFailed: () => Alert.alert(t`Could not save`),
   });
   const appearance = getCachedAppearancePreference();
+  const chatSaveDisabled = loadingAccount || chatSave.pending;
   const deviceStreamReplies = useSyncExternalStore(
     subscribeResponseStreaming,
     getCachedResponseStreamingEnabled,
@@ -328,7 +329,7 @@ export default function General() {
           <SettingsSwitch
             label={t`Stream replies`}
             value={me?.chatPreferences?.streamReplies ?? deviceStreamReplies}
-            disabled={!me || chatSave.pending}
+            disabled={chatSaveDisabled}
             onChange={(checked) => {
               if (me?.chatPreferences) chatSave.run({ streamReplies: checked });
               else void setResponseStreamingPreference(checked ? "on" : "off");
@@ -337,7 +338,7 @@ export default function General() {
           <SettingsSwitch
             label={t`Model picker in chat`}
             value={me?.chatPreferences?.composerModelPicker ?? deviceModelPicker}
-            disabled={!me || chatSave.pending}
+            disabled={chatSaveDisabled}
             onChange={(checked) => {
               if (me?.chatPreferences) chatSave.run({ composerModelPicker: checked });
               else void setComposerModelPicker(checked);
