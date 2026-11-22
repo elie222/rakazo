@@ -21,6 +21,7 @@ dbTests("operator admin bot webhook-key command", { timeout: 120_000 }, () => {
   afterAll(async () => {
     const system = asSystem(db.prisma);
     await system.securityEvent.deleteMany({ where: { userId } });
+    await system.organization.deleteMany({ where: { members: { some: { userId } } } });
     await system.user.deleteMany({ where: { id: userId } });
     await db.prisma.$disconnect();
     await db.pool.end();
@@ -84,6 +85,13 @@ dbTests("operator admin bot webhook-key command", { timeout: 120_000 }, () => {
         { procedure: "admin.bot.webhookKey", kind: "webhook", botId: bot.id, by: "operator" },
         { procedure: "admin.bot.webhookKey", kind: "webhook", botId: bot.id, by: "operator" },
       ]);
+      const audit = await system.auditEvent.findMany({
+        where: { spaceId, action: "credential.changed" },
+      });
+      expect(audit).toHaveLength(2);
+      for (const row of audit) {
+        expect(row).toMatchObject({ actorType: "system", actorId: null, actorLabel: "operator" });
+      }
     } finally {
       await secrets.close();
     }

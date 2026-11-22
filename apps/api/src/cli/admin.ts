@@ -5,7 +5,12 @@ import {
   unwrapEnvFromKeyManager,
   withSecretPersistence,
 } from "@rakazo/adapters";
-import { createDb, installSecurityEventStore, runAsSystem } from "@rakazo/db";
+import {
+  createDb,
+  installAuditEventStore,
+  installSecurityEventStore,
+  runAsSystem,
+} from "@rakazo/db";
 import { loadEnv } from "../env.js";
 import { AdminCommandError } from "./admin/admin-command.js";
 import { ADMIN_USAGE, formatAdminResult, parseAdminArgs } from "./admin/commands.js";
@@ -23,6 +28,7 @@ const secrets = createSecretStore(env.encryptionKey);
 await secrets.start();
 const prisma = withSecretPersistence(db.prisma, secrets);
 installSecurityEventStore(prisma);
+installAuditEventStore(prisma);
 try {
   const result = await runAsSystem("run an operator admin command", () =>
     invocation.run({ prisma, secrets, apiUrl: env.apiUrl, signal: new AbortController().signal }),
