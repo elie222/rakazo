@@ -227,6 +227,7 @@ describe("update_preferences", () => {
     { password: "hunter2" },
     { deleteAccount: true },
     { autoReview: false },
+    { showToolActivity: false },
   ])("refuses fields that stay in the app's settings: %o", async (args) => {
     const { users, call } = fakeAccount();
     const result = await call({ ...args, timezone: "Asia/Tokyo" });

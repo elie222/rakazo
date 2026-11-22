@@ -506,10 +506,6 @@ export const fleetTools: ConnectorTool[] = [
           type: "boolean",
           description: "Show replies as they are written.",
         },
-        showToolActivity: {
-          type: "boolean",
-          description: "Show tool activity in web and desktop.",
-        },
       },
       additionalProperties: false,
     },

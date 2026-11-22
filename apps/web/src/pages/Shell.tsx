@@ -16,6 +16,7 @@ import { PageLoading } from "../components/PageLoading";
 import { PageViewHost } from "../components/pages/PageViewHost";
 import { authClient } from "../lib/auth/auth";
 import { peekBootstrapSeed } from "../lib/bootstrap";
+import { toolActivityPreference } from "../lib/chat/tool-activity-preference";
 import { composerEnterToSendPreference } from "../lib/composer/composer-enter-to-send-pref";
 import { PagesProvider, usePagesForChat } from "../lib/pages/pages";
 import { desktopBridge } from "../lib/platform/desktop";
@@ -169,6 +170,7 @@ function SpaceShell() {
   });
   const chatPreferences = useChatPreferences(me?.chatPreferences);
   const enterToSend = composerEnterToSendPreference.use();
+  const showToolActivity = toolActivityPreference.use();
   const thread = useThreadState(chatPreferences.streamReplies);
   const { snapshot } = thread;
   const botsSidebarDensity = botsSidebarDensityPreference.use();
@@ -807,7 +809,7 @@ function SpaceShell() {
             followRequest={composer.sentCount}
             {...view.transcriptProps}
             markedUnreadMessageId={read.markedUnreadMessageId}
-            showToolActivity={chatPreferences.showToolActivity}
+            showToolActivity={showToolActivity}
             unreadAfterSeq={read.unreadAfterSeq}
             loadingOlder={loadingOlder}
             userBubble={userBubble}

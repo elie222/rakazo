@@ -4,14 +4,12 @@ import * as z from "zod";
 export const ChatPreferencesSchema = z.object({
   composerModelPicker: z.boolean().nullable().default(null),
   streamReplies: z.boolean().nullable().default(null),
-  showToolActivity: z.boolean().nullable().default(null),
 });
 export type ChatPreferences = z.infer<typeof ChatPreferencesSchema>;
 
 export const ChatPreferencesPatchSchema = z.strictObject({
   composerModelPicker: z.boolean().optional(),
   streamReplies: z.boolean().optional(),
-  showToolActivity: z.boolean().optional(),
 });
 export type ChatPreferencesPatch = z.infer<typeof ChatPreferencesPatchSchema>;
 

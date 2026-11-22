@@ -43,6 +43,7 @@ import { TrustedLinkSitesSettings } from "../../components/settings/TrustedLinkS
 import { authClient } from "../../lib/auth/auth";
 import { fetchAuthCapabilities } from "../../lib/auth/auth-capabilities";
 import { usePasskeysSupported } from "../../lib/auth/passkeys";
+import { toolActivityPreference } from "../../lib/chat/tool-activity-preference";
 import { composerEnterToSendPreference } from "../../lib/composer/composer-enter-to-send-pref";
 import { getActiveUiLocale, setUiLocale } from "../../lib/locale/i18n";
 import { keepTimezone } from "../../lib/locale/kept-timezone";
@@ -134,6 +135,7 @@ export function GeneralSettingsPanels({
   const botStyleLabelId = useId();
   const [botStyleError, setBotStyleError] = useState<string | null>(null);
   const streamRepliesId = useId();
+  const showToolActivity = toolActivityPreference.use();
   const showToolActivityId = useId();
   const enterToSend = composerEnterToSendPreference.use();
   const enterToSendId = useId();
@@ -508,9 +510,8 @@ export function GeneralSettingsPanels({
             <Switch
               id={showToolActivityId}
               data-testid="tool-activity-toggle"
-              checked={chat.showToolActivity}
-              disabled={chatSaveDisabled}
-              onCheckedChange={(checked) => changeChatPreference("showToolActivity", checked)}
+              checked={showToolActivity}
+              onCheckedChange={(checked) => toolActivityPreference.set(checked)}
             />
           }
         />

@@ -167,6 +167,7 @@ export const TOOL_CHOICE_DEFINITIONS: ToolChoiceCase[] = [
     prompt: "Turn on inline model switching in my chat box.",
     expect: {
       calls: [{ tool: "update_preferences", args: { composerModelPicker: true } }],
+      callsMustNot: [{ tool: "update_bot", args: { model: "*" } }],
       user: { composerModelPicker: true },
     },
   },
