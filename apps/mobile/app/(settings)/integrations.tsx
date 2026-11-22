@@ -5,7 +5,6 @@ import type {
   Connection,
   ConnectionCatalogItem,
   McpServer,
-  McpServerConnection,
   McpSourcePreset,
   PluginMarketplaceEntry,
 } from "@rakazo/contracts";
@@ -75,6 +74,7 @@ import {
   writeIntegrationsCache,
 } from "../../lib/integrations/integrations-cache";
 import { signInToMcpServer } from "../../lib/integrations/mcp-oauth";
+import { mcpConnectionLabel } from "../../lib/integrations/mcp-server-edit";
 import type { PluginParams } from "../../lib/integrations/plugin-marketplace";
 import {
   browsablePlugins,
@@ -507,23 +507,6 @@ export default function Integrations() {
       : { source: install.source, installedSource: install.source, name: install.name };
   }
 
-  function serverStatus(state: McpServerConnection): string {
-    switch (state) {
-      case "disabled":
-        return t`Disabled`;
-      case "needs_client":
-        return t`Needs an OAuth client ID`;
-      case "needs_sign_in":
-        return t`Needs sign-in`;
-      case "not_working":
-        return t`Not working`;
-      case "connected":
-        return t`Connected`;
-      case "not_connected":
-        return t`Not connected`;
-    }
-  }
-
   function renderInstalledPlugin(install: CapabilityInstall, summary: string, signIn: boolean) {
     const params = installedParams(install);
     return (
@@ -578,23 +561,30 @@ export default function Integrations() {
             ? { ios: "exclamationmark.circle", android: "alert-circle-outline" as const }
             : null;
     return (
+      // Connect sits beside the row's button, not inside it, so VoiceOver reaches both.
       <View key={server.id} testID="registered-mcp-server" style={styles.row}>
-        <ConnectorIcon name={server.name} size={LOGO_SIZE} />
-        <Text numberOfLines={1} style={[styles.title, styles.grow]}>
-          {server.name}
-        </Text>
-        <View style={styles.connectionStatus}>
-          {symbol ? (
-            <View
-              accessible={false}
-              accessibilityElementsHidden
-              importantForAccessibility="no-hide-descendants"
-            >
-              <NativeSymbol {...symbol} size={14} color={color} />
-            </View>
-          ) : null}
-          <Text style={[styles.secondary, { color }]}>{serverStatus(state)}</Text>
-        </View>
+        <Pressable
+          accessibilityRole="button"
+          onPress={() => router.push({ pathname: "/mcp-server", params: { id: server.id } })}
+          style={({ pressed }) => [styles.rowLink, pressed && styles.dimmed]}
+        >
+          <ConnectorIcon name={server.name} size={LOGO_SIZE} />
+          <Text numberOfLines={1} style={[styles.title, styles.grow]}>
+            {server.name}
+          </Text>
+          <View style={styles.connectionStatus}>
+            {symbol ? (
+              <View
+                accessible={false}
+                accessibilityElementsHidden
+                importantForAccessibility="no-hide-descendants"
+              >
+                <NativeSymbol {...symbol} size={14} color={color} />
+              </View>
+            ) : null}
+            <Text style={[styles.secondary, { color }]}>{mcpConnectionLabel(state)}</Text>
+          </View>
+        </Pressable>
         {server.enabled &&
         state !== "connected" &&
         state !== "needs_client" &&

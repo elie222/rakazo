@@ -19,6 +19,7 @@ import { createThreadMessage } from "@rakazo/db";
 import { disposableDatabaseEnv } from "../cli/postgres.js";
 import { runProcess } from "../cli/process.js";
 import { sessionCookieHeader } from "../index.js";
+import { ensureMcpServer } from "./mcp-server-fixture.js";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../..");
 const REPORT_DIR = path.join(ROOT, "test-report", "mobile-screenshots");
@@ -506,6 +507,11 @@ async function seedFixture(app: App, prisma: PrismaClient) {
     runId: peerRun.id,
     markUnread: false,
     blocks: [{ kind: "text", text: "Update from Writer: The fixture launch note is drafted." }],
+  });
+  await ensureMcpServer(prisma, {
+    spaceId: botThread.spaceId,
+    userId: botThread.userId,
+    botIds: [researcher.id, writer.id],
   });
 
   return {

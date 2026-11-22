@@ -91,6 +91,19 @@ name: Settings
 - waitForAnimationToEnd:
     timeout: 3000
 - takeScreenshot: 08-integrations-advanced
+- tapOn: "Cancel"
+- extendedWaitUntil:
+    visible:
+      id: "registered-mcp-server"
+    timeout: 15000
+- tapOn:
+    id: "registered-mcp-server"
+- extendedWaitUntil:
+    visible: "Test connection"
+    timeout: 15000
+- waitForAnimationToEnd:
+    timeout: 3000
+- takeScreenshot: 08-mcp-server
 - openLink: "rakazo:///voice"
 - extendedWaitUntil:
     visible: ".*This device.*"
