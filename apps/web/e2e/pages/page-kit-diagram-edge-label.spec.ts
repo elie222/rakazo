@@ -100,6 +100,35 @@ test("vertical Page diagram edge labels stay inside the scrollable SVG", async (
   await expect(changing).toHaveAttribute("viewBox", "-2 -2 92 138");
 });
 
+test("a one-pixel viewport change cannot start a diagram label measurement loop", async ({
+  page,
+  request,
+}) => {
+  await mountPage(
+    page,
+    request,
+    `
+      const getBBox = SVGGraphicsElement.prototype.getBBox;
+      SVGGraphicsElement.prototype.getBBox = function () {
+        const box = getBBox.call(this);
+        if (!this.classList.contains("rk-diagram-edge-label")) return box;
+        // Cross a rounding boundary when the viewport shifts, as SVG text metrics can.
+        const x = this.ownerSVGElement.viewBox.baseVal.x === -95 ? -91.49 : -91.51;
+        return new DOMRect(x, box.y, 170, box.height);
+      };
+      exports.default = function Fixture() {
+        return React.createElement(Diagram, {
+          nodes: [{ id: "draft", label: "Draft" }, { id: "publish", label: "Publish" }],
+          edges: [{ from: "draft", to: "publish", label: ${JSON.stringify(longLabel)} }],
+        });
+      };
+    `,
+  );
+  const svg = page.getByRole("img", { name: /After reviewer approves the first draft/ });
+  await expect(svg).toBeVisible();
+  await expectOutlineInside(svg);
+});
+
 test("revealing a mounted Page diagram remeasures its edge labels", async ({
   page,
   request,

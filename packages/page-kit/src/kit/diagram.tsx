@@ -1,4 +1,4 @@
-import { useCallback, useId, useLayoutEffect, useRef, useState } from "react";
+import { useId, useLayoutEffect, useRef, useState } from "react";
 import { objectItems } from "./items.js";
 import { useWords } from "./labels.js";
 
@@ -234,8 +234,6 @@ export function Diagram({
   edges?: DiagramEdge[];
   direction?: "horizontal" | "vertical";
 }) {
-  const arrow = `rk-arrow-${useId().replace(/[^a-zA-Z0-9]/g, "")}`;
-  const words = useWords();
   const horizontal = direction === "horizontal";
   const links = objectItems(edges);
   const layout = layoutDiagram(
@@ -244,40 +242,58 @@ export function Diagram({
     horizontal,
     links.some((edge) => edge.label),
   );
+  if (!layout.nodes.length) return null;
+
+  // Rebuild on graph renders, but keep the SVG's measured padding local to the view.
+  return <DiagramSvg layout={layout} horizontal={horizontal} />;
+}
+
+function DiagramSvg({
+  layout,
+  horizontal,
+}: {
+  layout: ReturnType<typeof layoutDiagram>;
+  horizontal: boolean;
+}) {
+  const arrow = `rk-arrow-${useId().replace(/[^a-zA-Z0-9]/g, "")}`;
+  const words = useWords();
   const svgRef = useRef<SVGSVGElement>(null);
   const [labelOverflow, setLabelOverflow] = useState({ left: 0, right: 0 });
   const measureLabels = !horizontal && layout.edges.some(({ edge }) => edge.label);
-  const layoutWidth = layout.width;
 
-  const measure = useCallback(() => {
-    const svg = svgRef.current;
-    if (!measureLabels || !svg?.getClientRects().length) return;
-    let left = -VIEWBOX_PAD;
-    let right = layoutWidth + VIEWBOX_PAD;
-    // The SVG box excludes the 5px paint stroke. Round out to keep that outline visible too.
-    for (const label of svg.querySelectorAll<SVGTextElement>(".rk-diagram-edge-label")) {
-      const box = label.getBBox?.();
-      if (!box?.width) continue;
-      left = Math.min(left, Math.floor(box.x - 2.5));
-      right = Math.max(right, Math.ceil(box.x + box.width + 2.5));
-    }
-    const extraLeft = -VIEWBOX_PAD - left;
-    const extraRight = right - layoutWidth - VIEWBOX_PAD;
-    setLabelOverflow((current) =>
-      current.left === extraLeft && current.right === extraRight
-        ? current
-        : { left: extraLeft, right: extraRight },
-    );
-  }, [layoutWidth, measureLabels]);
-
-  // Page code can change graph contents without replacing the input arrays.
-  useLayoutEffect(() => measure());
   useLayoutEffect(() => {
     const svg = svgRef.current;
     if (!measureLabels || !svg) return;
-    // The scroll container gains a layout box when an ancestor is shown without a React render.
+    const isVisible = () => svg.getClientRects().length > 0;
+    const measure = () => {
+      if (!isVisible()) return;
+      let left = -VIEWBOX_PAD;
+      let right = layout.width + VIEWBOX_PAD;
+      // The SVG box excludes the 5px paint stroke. Round out to keep that outline visible too.
+      for (const label of svg.querySelectorAll<SVGTextElement>(".rk-diagram-edge-label")) {
+        const box = label.getBBox?.();
+        if (!box?.width) continue;
+        left = Math.min(left, Math.floor(box.x - 2.5));
+        right = Math.max(right, Math.ceil(box.x + box.width + 2.5));
+      }
+      const extraLeft = -VIEWBOX_PAD - left;
+      const extraRight = right - layout.width - VIEWBOX_PAD;
+      setLabelOverflow((current) =>
+        current.left === extraLeft && current.right === extraRight
+          ? current
+          : { left: extraLeft, right: extraRight },
+      );
+    };
+    measure();
+    let wasVisible = isVisible();
+    const onResize = () => {
+      const visible = isVisible();
+      // Only a reveal needs a new measurement. Padding changes must not trigger more measurements.
+      if (visible && !wasVisible) measure();
+      wasVisible = visible;
+    };
     const observer =
-      typeof ResizeObserver === "undefined" ? undefined : new ResizeObserver(measure);
+      typeof ResizeObserver === "undefined" ? undefined : new ResizeObserver(onResize);
     if (svg.parentElement) observer?.observe(svg.parentElement);
     const fonts = svg.ownerDocument.fonts;
     fonts?.addEventListener("loadingdone", measure);
@@ -285,11 +301,10 @@ export function Diagram({
       observer?.disconnect();
       fonts?.removeEventListener("loadingdone", measure);
     };
-  }, [measure, measureLabels]);
+  }, [layout, measureLabels]);
 
-  if (!layout.nodes.length) return null;
   const overflow = measureLabels ? labelOverflow : { left: 0, right: 0 };
-  const width = layoutWidth + VIEWBOX_PAD * 2 + overflow.left + overflow.right;
+  const width = layout.width + VIEWBOX_PAD * 2 + overflow.left + overflow.right;
   const name = (id: string) => layout.nodes.find((node) => node.id === id)?.label ?? id;
   const description = [
     layout.nodes.map((node) => node.label).join(", "),
