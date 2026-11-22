@@ -50,7 +50,11 @@ export function ModelSettingsPanel({
         ),
       );
     },
-    stale: [queries.models.credentials.key(), queries.models.list.key()],
+    stale: [
+      queries.models.credentials.key(),
+      queries.models.list.key(),
+      queries.models.suggested.key(),
+    ],
     onSaved: () => {
       setEdited(null);
       setNotice(t`Saved.`);

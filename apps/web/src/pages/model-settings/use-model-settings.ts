@@ -371,6 +371,8 @@ export function useModelSettings(onClose: () => void, scope: SettingsScope) {
     const stillSelected = () => form === formRevisionRef.current;
     try {
       const saved = await rpc.models.connect({ ...input, surface: analyticsSurface() });
+      // Connections change which models are runnable for suggestions.
+      await queryClient.invalidateQueries({ queryKey: queries.models.suggested.key() });
       if (!stillSelected()) {
         await refresh({ keepForm: true });
         return;
@@ -403,6 +405,8 @@ export function useModelSettings(onClose: () => void, scope: SettingsScope) {
     setPending("disconnect");
     try {
       await rpc.models.disconnect({ provider: selected.provider, credentialId: credential.id });
+      // Connections change which models are runnable for suggestions.
+      await queryClient.invalidateQueries({ queryKey: queries.models.suggested.key() });
       setCredentialId(null);
       setApiKey("");
       setThinkingLevel(null);

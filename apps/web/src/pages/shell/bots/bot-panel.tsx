@@ -208,6 +208,11 @@ export function BotSettings({
   const voices = useQuery({ ...queries.voice.voices.queryOptions({ input: {} }), ...refresh }).data;
   const credentialsQuery = useQuery({ ...queries.models.credentials.queryOptions(), ...refresh });
   const catalogQuery = useQuery({ ...queries.models.list.queryOptions(), ...refresh });
+  // Refreshed by spaceChanged("runs") when runs finish; connect/disconnect also invalidate it.
+  const suggestionsQuery = useQuery({
+    ...queries.models.suggested.queryOptions(),
+    ...refresh,
+  });
   const meQuery = useQuery({ ...queries.me.queryOptions(), ...refresh });
   const credentials = credentialsQuery.data ?? NO_CREDENTIALS;
   const catalog = catalogQuery.data ?? NO_CATALOG;
@@ -674,6 +679,7 @@ export function BotSettings({
                 ids={ids}
                 containerRef={modelRef}
                 choices={modelChoices}
+                suggestions={suggestionsQuery.data?.suggestions}
                 value={selectedModelKey}
                 onModelChange={(key) => {
                   setModelKey(key);

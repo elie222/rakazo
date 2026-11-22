@@ -19,6 +19,11 @@ vi.mock("../../../lib/query/rpc", () => {
     models: {
       credentials: vi.fn(async () => []),
       list: vi.fn(async () => []),
+      suggested: vi.fn(async () => ({
+        checkedAt: "2026-01-01T00:00:00.000Z",
+        windowDays: 14,
+        suggestions: [],
+      })),
     },
     me: vi.fn(async () => ({})),
     // This server receives no email, so the panel offers no address.

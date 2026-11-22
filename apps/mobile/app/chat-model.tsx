@@ -4,26 +4,38 @@ import type { ThinkingLevel } from "@rakazo/contracts";
 import { botModelPick, botModelState, modelOptionKey } from "@rakazo/core";
 import { localizeModelEntry } from "@rakazo/i18n/model-provider";
 import { thinkingLevelLabel } from "@rakazo/i18n/thinking-level";
-import { useLocalSearchParams, useRouter } from "expo-router";
+import { useIsFocused, useLocalSearchParams, useRouter } from "expo-router";
 import { Alert, View } from "react-native";
 import { ModelPickerList } from "../components/models/model-picker-list";
 import { SettingsGroup, SettingsRow } from "../components/settings/settings-group";
 import { MenuPicker } from "../components/ui/menu-picker";
+import { useSpaceChanges } from "../lib/api/roster-signals";
 import { errorText } from "../lib/api/user-error";
 import { chatModelPickerChoices } from "../lib/models/chat-model";
-import { rpcQuery, useSave } from "../lib/query/query";
+import { queryClient, rpcQuery, useSave } from "../lib/query/query";
 import { useScreenQuery } from "../lib/query/screen-query";
 
 /** A chat's model and thinking, opened from the composer; each change saves at once. */
 export default function ChatModelScreen() {
   const { t } = useLingui();
   const router = useRouter();
+  const focused = useIsFocused();
   const { botId } = useLocalSearchParams<{ botId: string }>();
   const botRead = rpcQuery("bots/get", { botId });
   const bot = useScreenQuery(botRead);
   const me = useScreenQuery(rpcQuery("me"));
   const catalog = useScreenQuery(rpcQuery("models/list"));
   const credentials = useScreenQuery(rpcQuery("models/credentials"));
+  const suggestions = useScreenQuery(rpcQuery("models/suggested"));
+  // Finished runs change which models rank as suggested.
+  useSpaceChanges(
+    "runs",
+    () =>
+      queryClient.invalidateQueries({
+        queryKey: rpcQuery("models/suggested").queryKey,
+      }),
+    focused,
+  );
   const save = useSave({
     // A model pick also resets thinking; a thinking pick sends only the level.
     save: (patch: { modelKey?: string; thinkingLevel: ThinkingLevel | null }, send) =>
@@ -69,6 +81,7 @@ export default function ChatModelScreen() {
       choices={choices}
       selectedKey={state?.selectedModelKey ?? ""}
       error={failure && !choices ? errorText(failure, t`Could not load model settings`) : null}
+      suggestions={suggestions.data?.suggestions}
       onSelect={(choice) => {
         if (!state || choice.key === state.selectedModelKey) return;
         // A new model starts on its own default thinking, as it does from the bot's settings.

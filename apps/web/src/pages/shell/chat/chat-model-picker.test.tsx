@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 
+import type { ModelSuggestion } from "@rakazo/contracts";
 import type { ChatModelChoice } from "@rakazo/core";
 import type { PopoverContent } from "@rakazo/ui-web/components/ui/popover";
 import type { ComponentProps, ReactNode } from "react";
@@ -22,10 +23,55 @@ vi.mock("@rakazo/ui-web/components/ui/popover", async (importOriginal) => {
   };
 });
 
-vi.mock("@lingui/react/macro", () => {
-  const t = (parts: TemplateStringsArray, ...values: unknown[]) =>
-    parts.reduce((text, part, index) => `${text}${index > 0 ? values[index - 1] : ""}${part}`, "");
-  return { useLingui: () => ({ t }), Trans: ({ children }: { children: ReactNode }) => children };
+const { linguiExports, linguiT } = vi.hoisted(() => {
+  // Macro transform turns t`Hello ${name}` into _t({ message: "Hello {0}", values: { 0: name } })
+  // (via useLingui's `_`) or leaves a template tag; accept both shapes.
+  const linguiT = (
+    parts:
+      | TemplateStringsArray
+      | string
+      | { message?: string; id?: string; values?: Record<string, unknown> },
+    ...values: unknown[]
+  ) => {
+    if (typeof parts === "string") {
+      return values.length
+        ? parts.replace(/\{(\d+)\}/g, (_, i) => String(values[Number(i)] ?? ""))
+        : parts;
+    }
+    if (parts && typeof parts === "object" && !Array.isArray(parts) && "message" in parts) {
+      const message = parts.message ?? parts.id ?? "";
+      const vars = parts.values ?? {};
+      return message.replace(/\{(\w+)\}/g, (_, key) => String(vars[key] ?? ""));
+    }
+    return (parts as TemplateStringsArray).reduce(
+      (text, part, index) => `${text}${index > 0 ? values[index - 1] : ""}${part}`,
+      "",
+    );
+  };
+  const Trans = ({
+    children,
+    message,
+    id,
+  }: {
+    children?: ReactNode;
+    message?: string;
+    id?: string;
+  }) => children ?? message ?? id ?? null;
+  return {
+    linguiT,
+    linguiExports: {
+      t: linguiT,
+      useLingui: () => ({ t: linguiT, _: linguiT, i18n: { _: linguiT } }),
+      Trans,
+    },
+  };
+});
+vi.mock("@lingui/react/macro", () => linguiExports);
+vi.mock("@lingui/react", () => linguiExports);
+vi.mock("@lingui/core/macro", () => ({ t: linguiT }));
+vi.mock("@lingui/core", async (importOriginal) => {
+  const actual = await importOriginal<Record<string, unknown>>();
+  return { ...actual, t: linguiT };
 });
 
 function choices(count: number): ChatModelChoice[] {
@@ -70,9 +116,17 @@ describe("ChatModelPicker", () => {
     vi.unstubAllGlobals();
   });
 
-  const render = (list: ChatModelChoice[], value: string) =>
+  const render = (list: ChatModelChoice[], value: string, suggested?: ModelSuggestion[]) =>
     act(() =>
-      root.render(<ChatModelPicker id="model" choices={list} value={value} onChange={onChange} />),
+      root.render(
+        <ChatModelPicker
+          id="model"
+          choices={list}
+          suggestions={suggested}
+          value={value}
+          onChange={onChange}
+        />,
+      ),
     );
   const options = () => [...document.querySelectorAll('[role="option"]')];
   const search = (text: string) =>
@@ -193,6 +247,44 @@ describe("ChatModelPicker", () => {
     expect(options()).toHaveLength(0);
     expect(document.querySelector("[cmdk-group-heading]")).toBeNull();
     expect(document.body.textContent).toContain("No matching models");
+  });
+
+  it("shows suggested models first without duplicating them below", () => {
+    const suggested: ModelSuggestion[] = [
+      {
+        provider: "openrouter",
+        modelId: "vendor/model-7",
+        label: "Model 7",
+        reason: "recent",
+        recentRuns: 12,
+        successRatePct: 100,
+        lastUsedAt: new Date().toISOString(),
+      },
+      {
+        provider: "openrouter",
+        modelId: "vendor/model-2",
+        label: "Model 2",
+        reason: "recent",
+        recentRuns: 3,
+        successRatePct: 100,
+        lastUsedAt: new Date().toISOString(),
+      },
+    ];
+    render(choices(11), "openrouter::vendor/model-2", suggested);
+    act(() => container.querySelector<HTMLButtonElement>("button#model")!.click());
+
+    // Every choice is still listed once: the shortcut row replaces the copies.
+    expect(options()).toHaveLength(12);
+    const headings = [...document.querySelectorAll("[cmdk-group-heading]")].map(
+      (node) => node.textContent,
+    );
+    expect(headings[0]).toBe("Suggested");
+    expect(options()[0]?.getAttribute("aria-label")).toBe("Model 7 (OpenRouter)");
+    expect(options()[1]?.getAttribute("aria-label")).toBe("Model 2 (OpenRouter)");
+
+    // A search still finds every model, suggestions included.
+    search("MODEL 7");
+    expect(options().map((option) => option.textContent)).toEqual(["Model 7"]);
   });
 
   it("lets the popup flip vertically without switching axes", () => {

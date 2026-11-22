@@ -29,6 +29,11 @@ vi.mock("../../../lib/query/rpc", () => {
     models: {
       credentials: vi.fn().mockResolvedValue([]),
       list: vi.fn().mockResolvedValue([]),
+      suggested: vi.fn().mockResolvedValue({
+        checkedAt: "2026-01-01T00:00:00.000Z",
+        windowDays: 14,
+        suggestions: [],
+      }),
     },
     me: vi.fn().mockResolvedValue(null),
   };

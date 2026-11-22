@@ -109,6 +109,8 @@ vi.mock("../messages/message-action-sheet", () => ({ presentMessageActionSheet: 
 vi.mock("../notifications/live-notifications", () => ({
   afterChatNotifyChange: vi.fn(async () => undefined),
 }));
+// The real hook opens the app's live stream, which loads native Expo code in tests.
+vi.mock("../api/roster-signals", () => ({ useSpaceChanges: vi.fn() }));
 
 vi.mock("../api/session", () => ({
   loadSessionToken: async () => "token",

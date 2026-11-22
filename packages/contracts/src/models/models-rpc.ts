@@ -13,6 +13,7 @@ import {
   ModelCredentialSchema,
   ModelOAuthBeginSchema,
   ModelSettingsSaveSchema,
+  ModelSuggestionsSchema,
   modelChoiceListSchema,
   OPENAI_COMPATIBLE_PROVIDER_ID,
 } from "./model-connections.js";
@@ -56,6 +57,7 @@ export const modelsRpc = {
       )
       .output(ModelRoleViewSchema),
     list: oc.output(z.array(ModelCatalogEntrySchema)),
+    suggested: oc.output(ModelSuggestionsSchema),
     credentials: oc.output(z.array(ModelCredentialSchema)),
     backups: oc.output(z.array(ModelRoleChoiceSchema)),
     setBackups: oc

@@ -1,5 +1,5 @@
 import { Trans, useLingui } from "@lingui/react/macro";
-import type { ComputerMode, ThinkingLevel } from "@rakazo/contracts";
+import type { ComputerMode, ModelSuggestion, ThinkingLevel } from "@rakazo/contracts";
 import {
   BOT_COMPUTER_MODES,
   BOT_DESCRIPTION_MAX_LENGTH,
@@ -98,6 +98,7 @@ export function ModelRow({
   ids,
   containerRef,
   choices,
+  suggestions,
   value,
   onModelChange,
   thinkingOptions,
@@ -108,6 +109,7 @@ export function ModelRow({
   ids: string;
   containerRef: RefObject<HTMLDivElement | null>;
   choices: readonly ChatModelChoice[];
+  suggestions?: readonly ModelSuggestion[];
   value: string;
   onModelChange: (key: string) => void;
   thinkingOptions: ThinkingLevel[];
@@ -122,6 +124,7 @@ export function ModelRow({
         <ChatModelPicker
           id={`${ids}-model`}
           choices={choices}
+          suggestions={suggestions}
           value={value}
           onChange={onModelChange}
         />

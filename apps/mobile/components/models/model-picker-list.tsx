@@ -1,8 +1,14 @@
 import { useLingui } from "@lingui/react/macro";
 import { useListSearch, useTimeout } from "@rakazo/chat-ui/hooks";
 import { withConnectionName } from "@rakazo/contracts";
+import type { ModelSuggestion } from "@rakazo/contracts";
 import type { ChatModelChoice } from "@rakazo/core";
-import { groupModelChoices, modelChoiceSearchText, modelMark } from "@rakazo/core";
+import {
+  groupModelChoices,
+  modelChoiceSearchText,
+  modelMark,
+  modelOptionKey,
+} from "@rakazo/core";
 import { useNavigation } from "expo-router";
 import type { ReactElement } from "react";
 import {
@@ -44,6 +50,7 @@ export function ModelPickerList({
   providerLabel,
   emptyMessage,
   connectChoices,
+  suggestions,
   header,
 }: {
   choices: readonly ChatModelChoice[] | null;
@@ -51,6 +58,8 @@ export function ModelPickerList({
   header?: ReactElement;
   /** Providers that need a connection first, listed after the models. */
   connectChoices?: readonly ChatModelChoice[];
+  /** Models the Space can run now, ranked for the Suggested shortcut section. */
+  suggestions?: readonly ModelSuggestion[];
   selectedKey: string;
   onSelect: (choice: ChatModelChoice) => void;
   error?: string | null;
@@ -127,12 +136,33 @@ export function ModelPickerList({
     });
   }, [navigation, t, changeQuery, showSearch]);
 
+  const suggestedChoiceKeys = useMemo(
+    () =>
+      new Set((suggestions ?? []).map((entry) => modelOptionKey(entry.provider, entry.modelId))),
+    [suggestions],
+  );
+  const suggestedChoices = useMemo(() => {
+    if (!suggestions?.length || !choices) return [];
+    const byKey = new Map(choices.map((choice) => [choice.key, choice]));
+    const seen = new Set<string>();
+    const rows: ChatModelChoice[] = [];
+    for (const entry of suggestions) {
+      const choice = byKey.get(modelOptionKey(entry.provider, entry.modelId));
+      if (!choice || seen.has(choice.key)) continue;
+      seen.add(choice.key);
+      rows.push(choice);
+    }
+    return rows;
+  }, [choices, suggestions]);
   const sections = useMemo(() => {
     if (!choices) return [];
-    const models = groupModelChoices(
-      visible.flatMap((row) => (row.connect ? [] : [row.choice])),
-      "",
-    ).map((section) => ({
+    // Suggestions are a shortcut, not a duplicate section: while not searching,
+    // their rows leave the provider groups. A search still finds every copy.
+    const modelRows = visible.flatMap((row) => (row.connect ? [] : [row.choice]));
+    const rest = query
+      ? modelRows
+      : modelRows.filter((choice) => !suggestedChoiceKeys.has(choice.key));
+    const models = groupModelChoices(rest, "").map((section) => ({
       ...section,
       connect: false,
       heading:
@@ -142,14 +172,34 @@ export function ModelPickerList({
             ? section.heading.slice(0, -withConnectionName("", providerLabel).length)
             : section.heading,
     }));
+    const suggested =
+      !query && suggestedChoices.length > 0
+        ? [
+            {
+              key: "suggested",
+              heading: t`Suggested`,
+              connect: false,
+              data: suggestedChoices,
+            },
+          ]
+        : [];
     const connect = groupModelChoices(
       visible.flatMap((row) => (row.connect ? [row.choice] : [])),
       "",
     ).flatMap((section) => section.data);
+    const withSuggested = [...suggested, ...models];
     return connect.length
-      ? [...models, { key: "connect", heading: undefined, connect: true, data: connect }]
-      : models;
-  }, [choices, visible, providerLabel]);
+      ? [...withSuggested, { key: "connect", heading: undefined, connect: true, data: connect }]
+      : withSuggested;
+  }, [
+    choices,
+    visible,
+    providerLabel,
+    query,
+    suggestedChoiceKeys,
+    suggestedChoices,
+    t,
+  ]);
   const opensAtTop = Boolean(header);
   useLayoutEffect(() => {
     const state = initialScroll.current;
