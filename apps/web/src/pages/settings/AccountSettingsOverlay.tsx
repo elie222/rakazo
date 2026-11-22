@@ -52,7 +52,11 @@ import type { UiLocale } from "../../lib/locale/ui-locale";
 import { UI_LOCALES } from "../../lib/locale/ui-locale";
 import type { BotsSidebarDensity } from "../../lib/preferences/bots-sidebar-density-pref";
 import { botsSidebarDensityPreference } from "../../lib/preferences/bots-sidebar-density-pref";
-import { deviceChatPreferences, useChatPreferences } from "../../lib/preferences/chat-preferences";
+import {
+  chatPreferencesQuery,
+  deviceChatPreferences,
+  useChatPreferences,
+} from "../../lib/preferences/chat-preferences";
 import { remoteImagesPreference } from "../../lib/preferences/remote-images-preference";
 import type { AppearancePreference } from "../../lib/preferences/ui-appearance";
 import { getUiAppearancePreference, setUiAppearance } from "../../lib/preferences/ui-appearance";
@@ -169,12 +173,8 @@ export function GeneralSettingsPanels({
   const queries = useSpaceQueries();
   const queryUserId = useQueryUserId();
   const queryClient = useQueryClient();
-  const meRead = queries.me.queryOptions();
-  const { data: me, isLoading: loadingAccount } = useQuery({
-    ...meRead,
-    enabled: Boolean(queryUserId),
-    refetchOnWindowFocus: "always",
-  });
+  const meRead = chatPreferencesQuery(queries, queryUserId);
+  const { data: me, isLoading: loadingAccount } = useQuery(meRead);
   const chat = useChatPreferences(me?.chatPreferences);
   const chatSave = useSave({
     save: async (chatPreferences: ChatPreferencesPatch, client) => {

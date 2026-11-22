@@ -22,7 +22,7 @@ import { PagesProvider, usePagesForChat } from "../lib/pages/pages";
 import { desktopBridge } from "../lib/platform/desktop";
 import { usePreloadRecoveryState } from "../lib/platform/preload-recovery";
 import { botsSidebarDensityPreference } from "../lib/preferences/bots-sidebar-density-pref";
-import { useChatPreferences } from "../lib/preferences/chat-preferences";
+import { chatPreferencesQuery, useChatPreferences } from "../lib/preferences/chat-preferences";
 import {
   lastChatKey,
   lastChatOf,
@@ -163,10 +163,8 @@ function SpaceShell() {
   const { collapsedSidebarSections, toggleSidebarSection } = useSidebarExpansion(userId);
   const search = useSidebarSearch({ rpc, navigate });
   const { data: me } = useQuery({
-    ...queries.me.queryOptions(),
-    enabled: Boolean(userId),
+    ...chatPreferencesQuery(queries, userId),
     placeholderData: bootstrapMe && bootstrapMe.userId === userId ? bootstrapMe : undefined,
-    refetchOnWindowFocus: "always",
   });
   const chatPreferences = useChatPreferences(me?.chatPreferences);
   const enterToSend = composerEnterToSendPreference.use();
