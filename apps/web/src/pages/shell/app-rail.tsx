@@ -93,7 +93,7 @@ export function AppRailLayout({ boardEnabled }: { boardEnabled: boolean }) {
 
   // Like the reference, the rail starts as a 56px icon column and widens on request.
   const expanded = preference ?? false;
-  const railWidth = railVisible ? (expanded ? 220 : desktopBridge() ? 62 : 56) : 0;
+  const railWidth = railVisible ? (expanded ? 220 : desktopBridge() ? 72 : 56) : 0;
   function toggle() {
     const next = !expanded;
     setPreference(next);
@@ -187,7 +187,7 @@ function PrimaryRail({
       data-expanded={expanded}
       className="app-drag relative z-20 hidden w-(--app-rail-width) shrink-0 flex-col border-e border-sidebar-border bg-sidebar transition-[width] duration-(--motion-pop) ease-(--ease-out) motion-reduce:transition-none md:flex"
     >
-      {desktopBridge() ? <WindowChrome className="mx-3 mt-3 self-start" /> : null}
+      {desktopBridge() ? <WindowChrome className="mt-3 self-start" /> : null}
       <div
         className={cn(
           "flex h-11 shrink-0 items-start pt-3",
