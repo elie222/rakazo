@@ -1,5 +1,6 @@
 import { useLingui } from "@lingui/react/macro";
 import type { Ticket, TicketStatus } from "@rakazo/contracts";
+import { useState } from "react";
 import { ActivityIndicator, Alert, StyleSheet, Text, View } from "react-native";
 import { NativeActionButton } from "../components/native/native-action-button";
 import { LoadFailure } from "../components/ui/load-failure";
@@ -16,6 +17,7 @@ export default function BoardScreen() {
   const { t } = useLingui();
   const styles = useThemedStyles(createStyles);
   const sideInsets = useSideInsets();
+  const [refreshingEmpty, setRefreshingEmpty] = useState(false);
   const listRead = rpcQuery("tickets/list", {});
   const list = useScreenQuery(listRead);
   const move = useSave({
@@ -38,23 +40,32 @@ export default function BoardScreen() {
   const error = list.error ? errorText(list.error, t`Try again.`) : "";
 
   if (!tickets || tickets.length === 0) {
-    const loading = list.isFetching || (!tickets && !list.error);
-    const reload = () => void list.refetch();
+    const loading = !tickets && (list.isFetching || !list.error);
+    const reload = () => list.refetch({ cancelRefetch: false });
+    async function refreshEmpty() {
+      setRefreshingEmpty(true);
+      try {
+        await reload();
+      } finally {
+        setRefreshingEmpty(false);
+      }
+    }
     return (
       <View style={[styles.centered, sideInsets]}>
         {loading ? (
           <ActivityIndicator color={native.secondaryLabel} />
         ) : error ? (
-          <LoadFailure message={error} onRetry={reload} />
+          <LoadFailure message={error} onRetry={() => void reload()} />
         ) : (
           <View style={styles.empty}>
             <Text style={styles.message}>{t`No tickets yet.`}</Text>
             <NativeActionButton
               label={t`Refresh`}
+              busy={refreshingEmpty}
               fill={false}
               prominence="secondary"
               style={styles.refresh}
-              onPress={reload}
+              onPress={() => void refreshEmpty()}
             />
           </View>
         )}

@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import type { Ticket } from "@rakazo/contracts";
-import { deferred } from "@rakazo/core/test-async";
+import { deferred, flush } from "@rakazo/core/test-async";
 import type { EffectCallback, ReactNode } from "react";
 import { act, createElement, useEffect } from "react";
 import type { Root } from "react-dom/client";
@@ -10,9 +10,10 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import BoardScreen from "../../app/board";
 import { queryClient } from "../query/query";
 
-const { rpc } = vi.hoisted(() => ({ rpc: vi.fn() }));
+const state = vi.hoisted(() => ({ rpc: vi.fn(), foreground: true }));
+const { rpc } = state;
 vi.mock("../api/api", () => ({
-  rpc,
+  rpc: state.rpc,
   currentApiBase: () => "http://api.test",
   selectedSpaceId: () => "space-1",
   captureApiRequestContext: async (spaceId: string | null = "space-1") => ({
@@ -22,7 +23,7 @@ vi.mock("../api/api", () => ({
   }),
 }));
 vi.mock("../api/session", () => ({ currentSessionGeneration: () => 1 }));
-vi.mock("../platform/app-foreground", () => ({ useAppForeground: () => true }));
+vi.mock("../platform/app-foreground", () => ({ useAppForeground: () => state.foreground }));
 vi.mock("expo-router", () => ({
   useFocusEffect: (effect: EffectCallback) => useEffect(effect, [effect]),
 }));
@@ -40,8 +41,20 @@ vi.mock("../native/native", () => ({
 vi.mock("../appearance/appearance", () => ({ mobileTokens: () => ({}) }));
 vi.mock("../layout/side-insets", () => ({ useSideInsets: () => ({}) }));
 vi.mock("../../components/native/native-action-button", () => ({
-  NativeActionButton: ({ label, onPress }: { label: string; onPress: () => void }) =>
-    createElement("button", { type: "button", onClick: onPress }, label),
+  NativeActionButton: ({
+    label,
+    onPress,
+    busy,
+  }: {
+    label: string;
+    onPress: () => void;
+    busy?: boolean;
+  }) =>
+    createElement(
+      "button",
+      { type: "button", "aria-label": label, onClick: onPress, disabled: busy },
+      busy ? createElement("span", { role: "progressbar" }) : label,
+    ),
 }));
 vi.mock("./board-list", () => ({
   BoardList: ({
@@ -88,6 +101,8 @@ let host: HTMLDivElement;
 let root: Root;
 
 beforeEach(() => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  state.foreground = true;
   rpc.mockReset();
   host = document.createElement("div");
   document.body.append(host);
@@ -97,9 +112,12 @@ afterEach(async () => {
   await act(async () => root.unmount());
   host.remove();
   queryClient.clear();
+  vi.unstubAllGlobals();
 });
 const button = (label: string) =>
-  [...host.querySelectorAll("button")].find((element) => element.textContent === label);
+  [...host.querySelectorAll("button")].find(
+    (element) => (element.getAttribute("aria-label") ?? element.textContent) === label,
+  );
 const render = () => act(async () => root.render(createElement(BoardScreen)));
 
 it("retries a failed first load without leaving the screen", async () => {
@@ -146,13 +164,42 @@ it("refreshes an empty board to show the first ticket without leaving", async ()
 
   await act(async () => button("Refresh")?.click());
   await vi.waitFor(() => expect(host.querySelector('[role="progressbar"]')).not.toBeNull());
-  expect(button("Refresh")).toBeUndefined();
+  expect(host.textContent).toContain("No tickets yet.");
+  expect(button("Refresh")?.disabled).toBe(true);
+  await act(async () => button("Refresh")?.click());
   expect(rpc).toHaveBeenCalledTimes(2);
   expect(rpc.mock.lastCall?.slice(0, 2)).toEqual(["tickets/list", {}]);
 
   await act(async () => refresh.resolve({ tickets: [ticket] }));
   await vi.waitFor(() => expect(host.textContent).toContain("Example ticket"));
   expect(host.textContent).not.toContain("No tickets yet.");
+});
+
+it("keeps the cached empty board visible during a foreground refetch", async () => {
+  const refresh = deferred<{ tickets: Ticket[] }>();
+  rpc.mockResolvedValueOnce({ tickets: [] }).mockReturnValueOnce(refresh.promise);
+  await render();
+  await vi.waitFor(() => expect(button("Refresh")).toBeDefined());
+  const refreshButton = button("Refresh");
+
+  state.foreground = false;
+  await render();
+  state.foreground = true;
+  await render();
+  await vi.waitFor(() => expect(rpc).toHaveBeenCalledTimes(2));
+  await act(flush);
+
+  expect(host.textContent).toContain("No tickets yet.");
+  expect(button("Refresh")).toBe(refreshButton);
+  expect(refreshButton?.disabled).toBe(false);
+  expect(host.querySelector('[role="progressbar"]')).toBeNull();
+
+  await act(async () => refreshButton?.click());
+  expect(refreshButton?.disabled).toBe(true);
+  expect(rpc).toHaveBeenCalledTimes(2);
+
+  await act(async () => refresh.resolve({ tickets: [ticket] }));
+  await vi.waitFor(() => expect(host.textContent).toContain("Example ticket"));
 });
 
 it("keeps refresh available on a still-empty board and offers retry after a failed refresh", async () => {
@@ -166,9 +213,9 @@ it("keeps refresh available on a still-empty board and offers retry after a fail
   await vi.waitFor(() => expect(button("Refresh")).toBeDefined());
 
   await act(async () => button("Refresh")?.click());
-  await vi.waitFor(() => expect(button("Refresh")).toBeUndefined());
+  expect(button("Refresh")?.disabled).toBe(true);
   await act(async () => refresh.resolve({ tickets: [] }));
-  await vi.waitFor(() => expect(button("Refresh")).toBeDefined());
+  await vi.waitFor(() => expect(button("Refresh")?.disabled).toBe(false));
   expect(host.textContent).toContain("No tickets yet.");
   expect(button("Retry")).toBeUndefined();
 
