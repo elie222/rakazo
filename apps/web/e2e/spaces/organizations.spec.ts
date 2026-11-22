@@ -242,9 +242,10 @@ test("create, switch, rename and delete an organization", async ({ page }, testI
   );
 });
 
-test("an organization owner opens the activity log from the organization menu", async ({
-  page,
-}, testInfo) => {
+const auditTest = test.extend({ locale: "de-DE", timezoneId: "America/New_York" });
+
+auditTest("owner activity log uses the UI language", async ({ page }, testInfo) => {
+  await page.addInitScript(() => localStorage.setItem("rakazo.uiLocale", "en"));
   await signup(page, `audit-log-${Date.now()}@rakazo.test`, "password12", "Audit Owner");
   await completeOnboarding(page);
   await rpc(page, "spaces/create", { name: "Audited space" });
@@ -261,9 +262,24 @@ test("an organization owner opens the activity log from the organization menu", 
   const log = settings.getByTestId("audit-log");
   await expect(log.getByRole("heading", { name: "Activity log" })).toBeVisible();
   await expect(log.getByRole("button", { name: "Export" })).toBeEnabled();
-  await expect(log.getByRole("listitem").filter({ hasText: "space.created" })).toContainText(
-    "Audited space",
-  );
+  const creation = log.getByRole("listitem").filter({ hasText: "space.created" });
+  await expect(creation).toContainText("Audited space");
+  await expect(page.locator("html")).toHaveAttribute("lang", "en");
+  const time = creation.locator("time");
+  await expect(time).toHaveAttribute("datetime", /^\d{4}-\d{2}-\d{2}T/);
+  const formats = await time.evaluate((element) => {
+    const iso = element.getAttribute("datetime");
+    if (!iso) throw new Error("Missing audit timestamp");
+    const date = new Date(iso);
+    return {
+      app: date.toLocaleString("en"),
+      browser: date.toLocaleString(),
+      utc: date.toLocaleString("en", { timeZone: "UTC" }),
+    };
+  });
+  expect(formats.app).not.toBe(formats.browser);
+  expect(formats.app).not.toBe(formats.utc);
+  await expect(time).toHaveText(formats.app);
   await captureScreenshot(page, testInfo, "audit-log");
 
   await log.getByRole("button", { name: "Back" }).click();

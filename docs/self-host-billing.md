@@ -10,12 +10,12 @@ monthly model credits in USD: $10, $20, $50, $100, $200, or $500. One-time top-u
 amounts. Monthly credits expire at the end of their service period; one-time top-ups do not expire.
 The hosted computer is included in both paths, and monthly credits include the own-key plan.
 
-`BYOK_TIERS` in `@rakazo/contracts` sets the own-key plan's tiers: Standard, Pro and Max, each with
+`BYOK_TIERS` in `@rakazo/contracts` sets the own-key plan's tiers: Standard, Pro, Max and Ultra, each with
 a monthly and yearly price, a monthly computer allowance and a maximum computer size. New organizations
 start on Standard; existing subscribers keep the price they signed up at. A `null` Standard monthly
 price makes the plan free, hides the other tiers, and ends paid own-key subscriptions at their
-period end; a `null` yearly price offers that tier monthly only, and a `null` monthly price on Pro
-or Max hides it. Billing reads a plan's tier from its price's lookup key, which Rakazo creates as
+period end; a `null` yearly price offers that tier monthly only, and a `null` monthly price on another
+tier hides it. Billing reads a plan's tier from its price's lookup key, which Rakazo creates as
 `rakazo_byok_<tier>_<monthly|yearly>_<cents>` (Standard's keys name no tier), so keep those keys
 on any price you create by hand. Computers default to Standard and apply the organization's
 selection on the next start. Before selling a tier, make sure the sandbox account can run its
@@ -91,6 +91,19 @@ lock, with no added database round trips or history scans. Only capped calls loc
 row and sum their indexed journal. Automatic assignment and timed caps are not enabled.
 Deploy the API and worker changes before relying on enforcement; the previous release ignores
 the new nullable setting while a rolling deployment finishes.
+
+## Extra computer allowance
+
+An operator can give an organization extra computer allowance, in US dollars, for its current
+period only. It adds to whatever its plan includes, is recorded in the billing journal, and does
+not carry into the next period. From the API container, run:
+
+```sh
+node dist/cli/computer-allowance.js grant <organization-id> 10
+node dist/cli/computer-allowance.js status <organization-id>
+```
+
+Both print the period's allowance, the extra granted, and when it resets. Billing shows the hours left.
 
 ## Accounting
 

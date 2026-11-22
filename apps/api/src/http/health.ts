@@ -1,4 +1,5 @@
 import { isPrivateNetworkAddress } from "@rakazo/contracts/network-host";
+import type { PrismaClient } from "@rakazo/db";
 import { logSinkHealth } from "@rakazo/logging";
 import { Hono } from "hono";
 import { socketPeer } from "./socket-peer.js";
@@ -66,4 +67,13 @@ async function withinDeadline(check: Promise<boolean>) {
   } finally {
     clearTimeout(timer);
   }
+}
+
+/** The statement timeout ends a stuck probe on the server too, freeing its connection. */
+export function databaseProbe(prisma: PrismaClient) {
+  return () =>
+    prisma.$transaction([
+      prisma.$executeRaw`SET LOCAL statement_timeout = 1500`,
+      prisma.$queryRaw`SELECT 1`,
+    ]);
 }

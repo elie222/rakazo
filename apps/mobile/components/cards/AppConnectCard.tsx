@@ -1,7 +1,7 @@
 import { ph } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
 import type { MessageBlock } from "@rakazo/contracts";
-import { appConnectedInput, waitForSignIn } from "@rakazo/core";
+import { appConnectedInput, appConnectLabel, waitForSignIn } from "@rakazo/core";
 import { fontWeight, typeScale } from "@rakazo/ui-tokens";
 import { useEffect, useRef, useState } from "react";
 import type { ViewProps } from "react-native";
@@ -55,7 +55,7 @@ export function AppConnectCard({
         {
           connectorId: block.connectorId,
           provider: block.provider,
-          displayName: block.name,
+          displayName: appConnectLabel(block),
         },
         { signal: controller.signal },
       );

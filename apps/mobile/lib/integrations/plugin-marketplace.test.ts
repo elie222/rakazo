@@ -1,12 +1,9 @@
 import type { CapabilityInstall, PluginMarketplaceEntry } from "@rakazo/contracts";
 import { expect, it } from "vitest";
 import {
-  browsablePlugins,
-  filterPlugins,
   gitImportParams,
   hasPluginConnector,
   managedPluginParams,
-  pluginCategories,
   pluginSkillCount,
   skillPacks,
   sourceHref,
@@ -28,23 +25,6 @@ const entry = (overrides: Partial<PluginMarketplaceEntry>): PluginMarketplaceEnt
   hasConnector: true,
   skillCount: 0,
   ...overrides,
-});
-
-it("filters by category and matches word prefixes, including the category label", () => {
-  const plugins = [
-    entry({ id: "a", displayName: "Calcom", keywords: ["scheduling"], category: "productivity" }),
-    entry({ id: "b", displayName: "Sentry", description: "Error monitoring", category: "ops" }),
-  ];
-  const label = (name: string) => (name === "ops" ? "Security & Ops" : name);
-  expect(filterPlugins(plugins, "cal sched", null, label).map((row) => row.id)).toEqual(["a"]);
-  expect(filterPlugins(plugins, "", "productivity", label).map((row) => row.id)).toEqual(["a"]);
-  expect(filterPlugins(plugins, "secu", null, label).map((row) => row.id)).toEqual(["b"]);
-  expect(filterPlugins(plugins, "error", "productivity", label)).toEqual([]);
-});
-
-it("lists only present categories in product order", () => {
-  const plugins = [entry({ category: "ops" }), entry({ category: "productivity" })];
-  expect(pluginCategories(plugins)).toEqual(["productivity", "ops"]);
 });
 
 it("links a pinned subfolder to its tree and names a pasted URL after its last segment", () => {
@@ -72,13 +52,10 @@ const app = {
   noAuth: false,
 };
 
-it("lends a managed app its brand's skills and keeps skill packs out of Integrations", () => {
+it("lists skill packs for Skills and opens a brand's plugin as its managed app", () => {
   const vercel = entry({ id: "vercel", name: "vercel", displayName: "Vercel", skillCount: 3 });
   const sentry = entry({ id: "sentry", displayName: "Sentry" });
   const pack = entry({ id: "pack", displayName: "Teaching", hasConnector: false, skillCount: 2 });
-  const { plugins, pluginForApp } = browsablePlugins([vercel, sentry, pack], [app]);
-  expect(plugins.map((row) => row.id)).toEqual(["sentry"]);
-  expect([...pluginForApp.values()].map((row) => row.id)).toEqual(["vercel"]);
   expect(skillPacks([vercel, sentry, pack], "teach").map((row) => row.id)).toEqual(["pack"]);
   expect(managedPluginParams(vercel, app)).toMatchObject({
     name: "Vercel",

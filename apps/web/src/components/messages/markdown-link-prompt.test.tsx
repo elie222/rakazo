@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 
 import { ChatMarkdown } from "@rakazo/chat-ui/web";
+import { flush } from "@rakazo/core/test-async";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { act } from "react";
@@ -87,7 +88,7 @@ it("trusts a site from the prompt, then opens its links directly", async () => {
   };
   document.addEventListener("click", record);
   // Query updates reach components on a timer; let the saved site land.
-  await act(() => new Promise((resolve) => setTimeout(resolve, 20)));
+  await act(flush);
   await act(async () => view.links()[1]?.click());
   expect(prevented).toBe(false);
   expect(document.querySelector("[role='alertdialog']")).toBeNull();

@@ -76,6 +76,11 @@ export function routineSaveRequest(
   routine: Routine | null,
   botId: string,
   timezone: string,
+  /**
+   * For a new routine started as a copy: the triggers and settings it keeps from it. Not its model,
+   * which this editor can't change and the copier may not have connected.
+   */
+  copyOf: Routine | null = null,
 ): RoutineSaveRequest {
   const name = draft.name.trim();
   const prompt = draft.prompt.trim();
@@ -83,9 +88,10 @@ export function routineSaveRequest(
   if (!prompt) return { error: "prompt" };
   const crons = draft.schedules.map(cronFromPreset);
   // Triggers this editor doesn't show still count; the email one counts as the draft has it.
-  const otherTriggers = routine
-    ? routineTriggerNames({ ...routineWithDraftTriggers(routine, draft), emailSenders: null })
-        .length > 0
+  const source = routine ?? copyOf;
+  const kept = source ? routineWithDraftTriggers(source, draft) : null;
+  const otherTriggers = kept
+    ? routineTriggerNames({ ...kept, emailSenders: null }).length > 0
     : false;
   if (!crons.length && !draft.emailSenders && !otherTriggers) return { error: "trigger" };
   if (!routine) {
@@ -97,8 +103,17 @@ export function routineSaveRequest(
         crons,
         timezone,
         active: draft.active,
-        notify: true,
+        notify: kept?.notify ?? true,
         ...(draft.emailSenders ? { emailSenders: draft.emailSenders } : {}),
+        ...(kept
+          ? {
+              webhookEnabled: kept.webhookEnabled,
+              githubEnabled: kept.githubEnabled,
+              messageProvider: kept.messageProvider,
+              watch: kept.watch,
+              inChat: kept.inChat,
+            }
+          : {}),
       },
     };
   }
