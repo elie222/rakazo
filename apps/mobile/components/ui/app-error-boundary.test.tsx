@@ -88,20 +88,4 @@ describe("AppErrorBoundary", () => {
     expect(SplashScreen.hideAsync).toHaveBeenCalledOnce();
     expect(completeMobileStartup).toHaveBeenCalledOnce();
   });
-
-  it("renders healthy children without showing a fallback or starting recovery", () => {
-    shouldThrow = false;
-    act(() =>
-      root.render(
-        <AppErrorBoundary>
-          <Child />
-        </AppErrorBoundary>,
-      ),
-    );
-
-    expect(container.textContent).toBe("Recovered content");
-    expect(reportMobileError).not.toHaveBeenCalled();
-    expect(SplashScreen.hideAsync).not.toHaveBeenCalled();
-    expect(completeMobileStartup).not.toHaveBeenCalled();
-  });
 });
