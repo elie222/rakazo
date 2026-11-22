@@ -9,7 +9,7 @@ const rename = vi.hoisted(() => vi.fn());
 const pageItems = vi.hoisted(() => ({
   current: [] as { id: string; title: string; updatedAt: string }[],
 }));
-const pageRead = vi.hoisted(() => ({ isError: false, refetch: vi.fn() }));
+const pageRead = vi.hoisted(() => ({ isError: false, isPending: false, refetch: vi.fn() }));
 const page = (index: number) => ({
   id: `page-${index}`,
   title: `Plan ${index}`,
@@ -30,8 +30,12 @@ vi.mock("@tanstack/react-query", () => ({
   useQueryClient: () => ({}),
   useMutation: () => ({ mutate: rename, reset: vi.fn() }),
   useInfiniteQuery: () => ({
-    data: pageRead.isError ? undefined : { pages: [{ items: pageItems.current }] },
+    data:
+      pageRead.isError || pageRead.isPending
+        ? undefined
+        : { pages: [{ items: pageItems.current }] },
     isError: pageRead.isError,
+    isPending: pageRead.isPending,
     refetch: pageRead.refetch,
   }),
 }));
@@ -48,6 +52,7 @@ vi.mock("@rakazo/ui-web", async (importActual) => ({
 }));
 beforeEach(() => {
   pageRead.isError = false;
+  pageRead.isPending = false;
   pageItems.current = [{ id: "page-1", title: "Plan", updatedAt: new Date().toISOString() }];
 });
 afterEach(() => {
@@ -134,10 +139,15 @@ it("keeps the search field editable after a failed search and distinguishes no m
     });
     expect(pageRead.refetch).toHaveBeenCalledOnce();
 
-    await type("new search");
-    expect(input()!.value).toBe("new search");
-    pageItems.current = [];
+    // A new term after the failure has no earlier results to show while it loads.
     pageRead.isError = false;
+    pageRead.isPending = true;
+    await type("new search");
+    expect(input()).toBe(field);
+    expect(input()!.value).toBe("new search");
+    expect(host.textContent).not.toContain("No pages match");
+    pageItems.current = [];
+    pageRead.isPending = false;
     await show();
     expect(host.textContent).toContain("No pages match");
     expect(host.querySelector('[role="alert"]')).toBeNull();

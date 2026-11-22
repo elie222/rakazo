@@ -100,7 +100,8 @@ function OwnerPages({
   const [renaming, setRenaming] = useState<{ id: string; draft: string } | null>(null);
   if (preview && !pages.isError && !pages.data?.pages.some((read) => read.items.length > 0))
     return null;
-  if (pages.isPending) {
+  // A search with nothing to show yet waits under its field, so the field stays editable.
+  if (pages.isPending && !query) {
     return (
       <div className="grid place-items-center py-6 text-muted-foreground">
         <Spinner />
@@ -314,7 +315,11 @@ function OwnerPages({
         </label>
       ) : null}
       {actionError}
-      {!pages.isError && items.length === 0 ? (
+      {pages.isPending ? (
+        <div className="grid place-items-center py-6 text-muted-foreground">
+          <Spinner />
+        </div>
+      ) : !pages.isError && items.length === 0 ? (
         <p className="px-2 py-1 text-body-sm text-muted-foreground">
           <Trans>No pages match “{query}”.</Trans>
         </p>
