@@ -243,9 +243,4 @@ describe("entraCredential", () => {
       await entraCredential({ kind: "managed-identity", clientId: "user-assigned" }),
     ).toBeInstanceOf(IdentitySdk.ManagedIdentityCredential);
   });
-
-  it("passes an injected credential through untouched", async () => {
-    const credential = { getToken: async () => ({ token: "t", expiresOnTimestamp: 0 }) };
-    expect(await entraCredential({ kind: "token", credential })).toBe(credential);
-  });
 });

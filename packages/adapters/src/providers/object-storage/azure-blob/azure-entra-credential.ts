@@ -12,9 +12,7 @@ export type EntraAuthConfig =
   | { kind: "client-secret"; tenant: string; clientId: string; clientSecret: string }
   | { kind: "client-certificate"; tenant: string; clientId: string; certificate: string }
   | { kind: "federated-identity"; tenant: string; clientId: string; tokenFile: string }
-  | { kind: "managed-identity"; clientId?: string }
-  /** An existing token credential, for callers and tests that hold one already. Not from env. */
-  | { kind: "token"; credential: EntraTokenCredential };
+  | { kind: "managed-identity"; clientId?: string };
 
 /**
  * The shape of the SDK's token credentials, mirroring the storage SDK's accepted credential so
@@ -162,7 +160,6 @@ export function entraAuthFromEnv(env: NodeJS.ProcessEnv): EntraAuthConfig | unde
  * deployments without object storage never load it.
  */
 export async function entraCredential(config: EntraAuthConfig): Promise<EntraTokenCredential> {
-  if (config.kind === "token") return config.credential;
   const identity = await import("@azure/identity");
   switch (config.kind) {
     case "client-secret":
