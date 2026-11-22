@@ -8,6 +8,7 @@ import { native, useMobileTokens } from "../../lib/native/native";
 import { BotAvatar } from "../bots/bot-avatar";
 import { NativeSymbol } from "../native/native-symbol";
 
+// Lowercasing can create new composable sequences, so normalize again afterward.
 function searchKey(value: string): string {
   return value.normalize("NFC").toLowerCase().normalize("NFC");
 }

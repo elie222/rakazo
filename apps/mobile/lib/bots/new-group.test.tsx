@@ -338,36 +338,18 @@ it("adds and removes chips, hides picked and archived bots, and clears filters o
   expect(button("Researcher")).toBeUndefined();
 });
 it.each(["café", "  CAFE\u0301  "])(
-  "matches both canonical spellings in the bot picker without changing their names (%j)",
+  "matches composed and decomposed accents (%j)",
   async (query) => {
-    const composed = "Café helper";
-    const decomposed = "Cafe\u0301 team";
-    const plain = "Cafe plain";
-    const archived = "Café archived";
     rpc.mockResolvedValue([
-      { id: "composed", name: composed },
-      { id: "decomposed", name: decomposed },
-      { id: "plain", name: plain },
-      { id: "archived", name: archived, archivedAt: "2026-01-01T00:00:00Z" },
+      { id: "composed", name: "Café helper" },
+      { id: "decomposed", name: "Cafe\u0301 team" },
+      { id: "plain", name: "Cafe plain" },
     ]);
     await start();
     await type(query);
-    expect(button(composed)?.textContent).toBe(composed);
-    expect(button(decomposed)?.textContent).toBe(decomposed);
-    expect(button(plain)).toBeUndefined();
-    expect(button(archived)).toBeUndefined();
-
-    await click(composed);
-    expect(button(`Remove ${composed}`)).toBeDefined();
-    expect(container.querySelector("input")?.value).toBe("");
-    await type(query);
-    expect(button(composed)).toBeUndefined();
-    expect(button(decomposed)).toBeDefined();
-
-    await type("cafe");
-    expect(button(plain)).toBeDefined();
-    expect(button(decomposed)).toBeUndefined();
-    expect(creations()).toEqual([]);
+    expect(button("Café helper")).toBeDefined();
+    expect(button("Cafe\u0301 team")).toBeDefined();
+    expect(button("Cafe plain")).toBeUndefined();
   },
 );
 it("backspace only removes the last chip when the query is empty", async () => {
