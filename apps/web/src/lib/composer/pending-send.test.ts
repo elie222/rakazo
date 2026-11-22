@@ -111,6 +111,8 @@ describe("withoutDeliveredSends", () => {
     const waiting = [accepted, { ...accepted, clientNonce: "n2", acceptedSeq: undefined }];
     expect(withoutDeliveredSends(waiting, [stored(2, "hello")], "bot1")).toBe(waiting);
     expect(withoutDeliveredSends(waiting, [stored(3, "new words")], "bot1")).toEqual([waiting[1]]);
+    // Newer messages mean the stored one is in older history the chat has not loaded.
+    expect(withoutDeliveredSends(waiting, [stored(9, "later")], "bot1")).toEqual([waiting[1]]);
     // Another chat's seq numbers say nothing about this send.
     expect(withoutDeliveredSends(waiting, [stored(3, "new words")], "bot2")).toBe(waiting);
   });
@@ -124,5 +126,7 @@ describe("newestMessageSeq", () => {
       seq: undefined,
     } as unknown as ThreadMessage;
     expect(newestMessageSeq([stored(4, "hi"), live])).toBe(4);
+    const streaming = { ...stored(40, "working"), id: "progress:run-2" };
+    expect(newestMessageSeq([stored(4, "hi"), streaming])).toBe(4);
   });
 });

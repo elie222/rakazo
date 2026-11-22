@@ -27,13 +27,17 @@ function messageText(message: ThreadMessage) {
     .trim();
 }
 
-/**
- * The newest message seq in a chat, the baseline a pending send compares against. Rows built
- * from live events can lack a seq, so only real numbers count.
- */
+/** Rows built from live events carry an event seq, or none, rather than a message seq. */
+const LIVE_ROW_PREFIXES = ["progress:", "subagent:", PENDING_ID_PREFIX];
+
+/** The newest stored message seq in a chat, the baseline a pending send compares against. */
 export function newestMessageSeq(messages: readonly ThreadMessage[]) {
   return messages.reduce(
-    (max, message) => (Number.isFinite(message.seq) ? Math.max(max, message.seq) : max),
+    (max, message) =>
+      Number.isFinite(message.seq) &&
+      !LIVE_ROW_PREFIXES.some((prefix) => message.id.startsWith(prefix))
+        ? Math.max(max, message.seq)
+        : max,
     0,
   );
 }
@@ -107,17 +111,19 @@ export function withPendingSends(
   ];
 }
 
-/** Pending sends with those whose stored message the chat now shows removed. */
+/**
+ * Pending sends without those the chat has caught up with: once it holds a message at or past a
+ * send's stored seq, the stored message is in it or in older history it has not loaded.
+ */
 export function withoutDeliveredSends(
   pending: PendingSend[],
   messages: readonly ThreadMessage[],
   threadKey: string | undefined,
 ) {
+  const newest = newestMessageSeq(messages);
   const next = pending.filter(
     (send) =>
-      send.threadKey !== threadKey ||
-      send.acceptedSeq === undefined ||
-      !messages.some((message) => message.seq === send.acceptedSeq),
+      send.threadKey !== threadKey || send.acceptedSeq === undefined || newest < send.acceptedSeq,
   );
   return next.length === pending.length ? pending : next;
 }
