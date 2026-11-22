@@ -12,6 +12,19 @@ describe("botEyeTone", () => {
   });
 });
 
+function oklchHueDegrees(hex: string): number {
+  const [r, g, b] = [1, 3, 5].map((index) => {
+    const channel = Number.parseInt(hex.slice(index, index + 2), 16) / 255;
+    return channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4;
+  }) as [number, number, number];
+  const l = Math.cbrt(0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b);
+  const m = Math.cbrt(0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b);
+  const s = Math.cbrt(0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b);
+  const a = 1.9779984951 * l - 2.428592205 * m + 0.4505937099 * s;
+  const bb = 0.0259040371 * l + 0.7827717662 * m - 0.808675766 * s;
+  return (Math.atan2(bb, a) * 180) / Math.PI;
+}
+
 describe("chatUserBubbleColors", () => {
   it("wears the bot's color under readable text", () => {
     const red = chatUserBubbleColors("#EF4444::shape_2", "bot-1");
@@ -49,9 +62,19 @@ describe("chatUserBubbleColors", () => {
   it("deepens bright colors without turning them muddy", () => {
     const orange = chatUserBubbleColors("#FF781C", "bot-1")!;
     // Darkening in RGB pulled orange toward brown; OKLCH keeps it orange.
-    expect(orange.background).toBe("#CD4A00");
+    expect(orange.background).toBe("#C35500");
     expect(contrastRatio(orange.background, orange.foreground)).toBeGreaterThanOrEqual(4.5);
   });
+
+  it.each(["#FFFF00", "#00FFFF", "#00FF00", "#FFE066"])(
+    "keeps the hue of bright custom %s when deepening it",
+    (color) => {
+      const bubble = chatUserBubbleColors(color, "bot-1")!;
+      const drift = Math.abs(oklchHueDegrees(bubble.background) - oklchHueDegrees(color));
+      expect(Math.min(drift, 360 - drift)).toBeLessThan(1);
+      expect(contrastRatio(bubble.background, bubble.foreground)).toBeGreaterThanOrEqual(4.5);
+    },
+  );
 
   it("deepens custom violet for readable white text", () => {
     const bubble = chatUserBubbleColors("#C9A8FF", "bot-1")!;
