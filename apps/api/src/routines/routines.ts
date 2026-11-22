@@ -1,10 +1,17 @@
 import { ORPCError } from "@orpc/server";
 import { routineWakeupJob } from "@rakazo/adapter-kit";
-import { parseRoutineWatch, parseRoutineWatchState, routineRunModelPin } from "@rakazo/adapters";
+import {
+  firstWatchCheck,
+  parseRoutineWatch,
+  parseRoutineWatchState,
+  routineGroupThreadId,
+  routineRunModelPin,
+} from "@rakazo/adapters";
 import type { Actor, CreateRoutineInput, Routine } from "@rakazo/contracts";
 import { canonicalPiProviderId, RoutineEmailSendersSchema } from "@rakazo/contracts";
 import {
   ClientError,
+  displayName,
   hasMixedOneShotSchedule,
   isOneShotRoutineCrons,
   nextCronDateAcrossStrict,
@@ -77,11 +84,6 @@ export function nextRoutineDate(crons: string[], timezone: string): Date {
   return next;
 }
 
-/** A new or re-armed watch takes its first reading a moment from now. */
-export function firstWatchCheck(): Date {
-  return new Date(Date.now() + 2_000);
-}
-
 export function mapRoutine(row: {
   id: string;
   botId: string;
@@ -134,12 +136,62 @@ export function mapRoutine(row: {
   };
 }
 
-/** Any member may change a routine; editing it hands it to them (see routines.update). */
+type RoutineRow = Parameters<typeof mapRoutine>[0] & { userId: string };
+
+/**
+ * The routines as a member of the Space sees them, each with whose accounts it runs with: the
+ * owner's display name and whether that is the viewer, never their id or email.
+ */
+export async function routineViews(
+  prisma: PrismaClient,
+  actor: Actor,
+  rows: RoutineRow[],
+): Promise<Routine[]> {
+  if (rows.length === 0) return [];
+  const owners = await prisma.spaceMember.findMany({
+    where: { spaceId: actor.spaceId, userId: { in: [...new Set(rows.map((row) => row.userId))] } },
+    select: {
+      userId: true,
+      member: { select: { user: { select: { name: true, email: true } } } },
+    },
+  });
+  // A name that holds its account's email address would show that address to the whole Space.
+  const names = new Map(
+    owners.map(({ userId, member: { user } }) => [
+      userId,
+      user.name.toLowerCase().includes(user.email.toLowerCase()) ? "" : user.name,
+    ]),
+  );
+  return rows.map((row) => {
+    const name = names.get(row.userId);
+    return {
+      ...mapRoutine(row),
+      editable: row.userId === actor.userId,
+      runsAs:
+        name === undefined
+          ? null
+          : { name: displayName(name, "Member"), isViewer: row.userId === actor.userId },
+    };
+  });
+}
+
+/** One routine as `routineViews` shows it, for the one a member just created or changed. */
+export async function routineView(
+  prisma: PrismaClient,
+  actor: Actor,
+  row: RoutineRow,
+): Promise<Routine> {
+  const [view] = await routineViews(prisma, actor, [row]);
+  if (!view) throw new IsolationError();
+  return view;
+}
+
+/** Only a routine's owner changes it; other members may turn it on or off (see routines.update). */
 export async function listRoutinesDto(deps: RouterDeps, actor: Actor, botId: string) {
   const rows = await deps.prisma.routine.findMany({
     where: { botId, spaceId: actor.spaceId },
   });
-  return rows.map(mapRoutine);
+  return routineViews(deps.prisma, actor, rows);
 }
 
 export function createRoutineAnnouncer(deps: RouterDeps) {
@@ -181,11 +233,52 @@ export async function routineTestTarget(
 }
 
 /**
+ * Run now: the same chat a scheduled tick would use, so a routine made in a group chat runs there.
+ * Spaces share their groups, so a member who may run the routine may see its group.
+ */
+export async function routineRunNowTarget(
+  prisma: PrismaClient,
+  repos: RouterContext["repos"],
+  actor: Actor,
+  routineId: string,
+) {
+  const target = await routineTestTarget(prisma, repos, actor, routineId);
+  const groupThreadId = await routineGroupThreadId(prisma, target.routine, target.botId);
+  return groupThreadId ? { ...target, threadId: groupThreadId } : target;
+}
+
+/**
  * The run key of a test run. The caller's id keeps another member from ever taking it, and the
  * previous release wrote `routine-test:<client nonce>` as given, so it can never write this prefix.
  */
 export function routineTestRunNonce(actor: Actor, clientNonce: string): string {
   return `routine-run:${actor.userId}:${clientNonce}`;
+}
+
+/** A test run and the group chat it went to, null when it ran in the bot's own chat. */
+const testRunSelect = { id: true, thread: { select: { groupId: true } } } as const;
+
+/**
+ * The run a nonce already created. The database keeps a nonce unique across the Space, so the
+ * lookup is never narrowed to a thread: a retry must find the original run even after its group
+ * was archived and the target moved to the bot's chat.
+ */
+export async function findRoutineTestRun(
+  db: Pick<PrismaClient, "run">,
+  actor: Actor,
+  routineId: string,
+  nonce: string | undefined,
+) {
+  if (!nonce) return null;
+  return db.run.findFirst({
+    where: {
+      spaceId: actor.spaceId,
+      userId: actor.userId,
+      routineId,
+      clientNonce: nonce,
+    },
+    select: testRunSelect,
+  });
 }
 
 /** Task + run commit together; a run already saved under the nonce fails the insert. */
@@ -225,6 +318,6 @@ export async function createRoutineTestRun(
       ...routineRunModelPin(currentModel),
       clientNonce: nonce,
     },
-    select: { id: true, status: true },
+    select: { ...testRunSelect, status: true },
   });
 }

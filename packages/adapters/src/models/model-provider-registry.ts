@@ -1,5 +1,5 @@
 import type { ModelUsageLookup } from "@rakazo/adapter-kit";
-import type { ModelOAuthSignInMode, ModelRoutingField } from "@rakazo/contracts";
+import type { ModelCatalogEntry, ModelOAuthSignInMode, ModelRoutingField } from "@rakazo/contracts";
 import { bestEffort } from "@rakazo/logging";
 import {
   CLAUDE_CODE_CREDENTIAL_SOURCE,
@@ -12,8 +12,12 @@ import { OpenRouterUsageLookup } from "./endpoints/openrouter-usage.js";
  * without an entry is used exactly as the registry describes it.
  */
 export interface ModelProviderDefinition {
+  preserveModelOrder?: true;
   /** Kept where the registry renamed a provider, so existing names stay. */
   displayName?: string;
+  /** What a signed-in connection is called, by the plan people pay for. */
+  subscriptionName?: string;
+  subscriptionNameId?: string;
   /** The model a new connection preselects; only an exact catalog id. */
   recommendedModel?: string;
   /** Bundled or live-listed ids the provider refuses agent runs for every new account. */
@@ -24,6 +28,8 @@ export interface ModelProviderDefinition {
     headers(apiKey: string): Record<string, string>;
     rejected(response: Response): Promise<boolean>;
   };
+  /** A connection needs host configuration beyond an API key. */
+  requiresHostConfiguration?: true;
   /** A deployment-wide key operators set in the environment, and the model it runs. */
   deployment?: { keyEnv: string; defaultModel: string };
   /** Optional authenticated recovery of a dispatched request. */
@@ -35,7 +41,14 @@ export interface ModelProviderDefinition {
     resolvedAtRequest?: boolean;
   };
   /** Subscription sign-in Rakazo offers. */
-  signIn?: { mode: ModelOAuthSignInMode; loginLabel: string; hint: string; billing: string };
+  signIn?: {
+    mode: ModelOAuthSignInMode;
+    loginLabel: string;
+    hint: string;
+    billing: string;
+    /** A setting the account must turn on first, or the provider refuses the sign-in. */
+    setup?: ModelCatalogEntry["signInSetup"];
+  };
   /** Ids each connection supplies to route its requests. */
   routingFields?: ModelRoutingField[];
   /** A connection can ask that requests only reach endpoints that keep no prompts or replies. */
@@ -46,9 +59,18 @@ const bearer = (apiKey: string) => ({ Authorization: `Bearer ${apiKey}` });
 const unauthorized = async (response: Response) =>
   response.status === 401 || response.status === 403;
 
+const subscriptionNames = {
+  codex: /*i18n*/ { id: "XrwIDk", message: "ChatGPT subscription" },
+  anthropic: /*i18n*/ { id: "oCbawp", message: "Claude subscription" },
+};
+
 export const modelProviders = {
+  local: { requiresHostConfiguration: true },
+  "openai-compatible": { preserveModelOrder: true },
   "openai-codex": {
     displayName: "OpenAI Codex",
+    subscriptionName: subscriptionNames.codex.message,
+    subscriptionNameId: subscriptionNames.codex.id,
     recommendedModel: "gpt-6-luna",
     signIn: {
       mode: "device-code",
@@ -56,6 +78,11 @@ export const modelProviders = {
       hint: "ChatGPT Plus/Pro",
       billing:
         "Sign in with ChatGPT Plus or Pro. Uses your OpenAI subscription. Rakazo does not pay.",
+      setup: {
+        label: "Turn on device code sign-in in ChatGPT security settings",
+        url: "https://chatgpt.com/#settings/Security",
+        note: "Workspace accounts need an admin to turn this on.",
+      },
     },
   },
   openai: { recommendedModel: "gpt-6-luna" },
@@ -72,6 +99,8 @@ export const modelProviders = {
   },
   anthropic: {
     recommendedModel: "claude-haiku-5-5",
+    subscriptionName: subscriptionNames.anthropic.message,
+    subscriptionNameId: subscriptionNames.anthropic.id,
     deployment: { keyEnv: "ANTHROPIC_API_KEY", defaultModel: "claude-sonnet-5" },
     signIn: {
       mode: "auth-url",

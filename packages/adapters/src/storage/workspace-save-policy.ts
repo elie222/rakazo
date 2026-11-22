@@ -87,7 +87,7 @@ const alternatives = (names: readonly string[]) =>
 const exclusions = [
   {
     pattern:
-      "(.*/)?(\\.cache|\\.npm|\\.pnpm-store|node_modules|\\.venv|__pycache__|\\.next|\\.turbo|\\.yarn/cache)",
+      "(.*/)?(\\.cache|\\.npm|\\.pnpm-store|\\.local/share/pnpm/store|node_modules|\\.venv|__pycache__|\\.next|\\.turbo|\\.yarn/cache)",
     kind: "directory",
   },
   { pattern: "(.*/)?([^/]*\\.log|core|core\\.[0-9]+)", kind: "file" },

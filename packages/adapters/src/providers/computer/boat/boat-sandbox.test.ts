@@ -136,11 +136,133 @@ describe("stopped workspace files", () => {
         savedAt: new Date(),
       }),
     ).resolves.toBeUndefined();
+    expect(download).not.toHaveBeenCalled();
     await api.stop({ sandboxId: computer.id, stopRequest: { force: true } });
+    // The file is requested while the stop is checked, but an unverified snapshot never returns it.
     await expect(
       provider.readStoppedFile(computer, "notes.txt", context, { maxBytes: 100 }),
     ).resolves.toBeUndefined();
-    expect(download).not.toHaveBeenCalled();
+  });
+
+  it("checks the stop while the file downloads, and returns the file only once it passes", async () => {
+    const stopCheck = deferred<Awaited<ReturnType<FakeBoatApi["getStop"]>>>();
+    const checkStop = FakeBoatApi.prototype.getStop;
+    const getStop = vi.spyOn(FakeBoatApi.prototype, "getStop");
+    const download = vi.spyOn(FakeBoatApi.prototype, "getSnapshotFileRaw");
+    const { computer, provider } = await boat();
+    const bytes = new TextEncoder().encode("last saved content");
+    await provider.writeFile(computer, { path: "notes.txt", content: bytes }, context);
+    await provider.stop(computer, context);
+    getStop.mockClear();
+    getStop.mockImplementationOnce(async function (this: FakeBoatApi, request) {
+      const operation = await checkStop.call(this, request);
+      await stopCheck.promise;
+      return operation;
+    });
+
+    const read = provider.readStoppedFile(computer, "notes.txt", context, { maxBytes: 100 });
+    await vi.waitUntil(() => download.mock.calls.length > 0);
+    expect(getStop).toHaveBeenCalledOnce();
+    stopCheck.resolve(undefined as never);
+    expect(await read).toEqual(bytes);
+  });
+
+  it("logs each read with how long every step took", async () => {
+    const sink = createTestSink();
+    installLogger(createLogger({ service: "test", sinks: [sink] }));
+    const { computer, provider } = await boat();
+    const bytes = new TextEncoder().encode("last saved content");
+    await provider.writeFile(computer, { path: "notes.txt", content: bytes }, context);
+    await provider.stop(computer, context);
+
+    await provider.readStoppedFile(computer, "notes.txt", context, { maxBytes: 100 });
+    await provider.readStoppedFile(computer, "missing.txt", context, { maxBytes: 100 });
+
+    const reads = sink.events.filter((event) => event.message === "computer.stopped_file_read");
+    expect(reads).toEqual([
+      expect.objectContaining({
+        level: "info",
+        provider: "boat",
+        outcome: "read",
+        bytes: bytes.byteLength,
+        stepMs: expect.objectContaining({ get: 0, latest: 0, stop: 0, file: 0, read: 0 }),
+      }),
+      expect.objectContaining({
+        outcome: "fallback",
+        reason: "snapshot_request_refused",
+        status: 404,
+      }),
+    ]);
+    expect(reads[0]).toHaveProperty("totalMs");
+    expect(sink.events.filter((event) => event.level === "warn")).toEqual([]);
+  });
+
+  it("falls back without waiting for a file request that never answers", async () => {
+    const download = vi.spyOn(FakeBoatApi.prototype, "getSnapshotFileRaw");
+    const { api, computer, provider } = await boat();
+    await provider.stop(computer, context);
+    vi.setSystemTime(Date.now() + 1);
+    await api.stop({ sandboxId: computer.id, stopRequest: { force: true } });
+    download.mockImplementationOnce(() => new Promise(() => {}));
+
+    await expect(
+      provider.readStoppedFile(computer, "notes.txt", context, { maxBytes: 100 }),
+    ).resolves.toBeUndefined();
+    expect(download).toHaveBeenCalledOnce();
+  });
+
+  it("does not call a caller's cancellation a deadline", async () => {
+    const cancelled = new AbortController();
+    const sink = createTestSink();
+    installLogger(createLogger({ service: "test", sinks: [sink] }));
+    const getStop = vi.spyOn(FakeBoatApi.prototype, "getStop");
+    const { computer, provider } = await boat();
+    await provider.stop(computer, context);
+    getStop.mockImplementationOnce(async () => {
+      cancelled.abort(new Error("cancelled"));
+      throw cancelled.signal.reason;
+    });
+
+    await expect(
+      provider.readStoppedFile(
+        computer,
+        "notes.txt",
+        { ...context, signal: cancelled.signal },
+        { maxBytes: 100 },
+      ),
+    ).rejects.toThrow("cancelled");
+    const read = sink.events.find((event) => event.message === "computer.stopped_file_read");
+    expect(read).toMatchObject({ outcome: "aborted" });
+  });
+
+  it("names the step that was still running when the deadline passed", async () => {
+    const deadline = new AbortController();
+    vi.spyOn(AbortSignal, "timeout").mockReturnValue(deadline.signal);
+    const download = vi.spyOn(FakeBoatApi.prototype, "getSnapshotFileRaw");
+    const getStop = vi.spyOn(FakeBoatApi.prototype, "getStop");
+    const sink = createTestSink();
+    installLogger(createLogger({ service: "test", sinks: [sink] }));
+    const { computer, provider } = await boat();
+    await provider.writeFile(computer, { path: "notes.txt", content: Uint8Array.of(1) }, context);
+    await provider.stop(computer, context);
+    getStop.mockImplementationOnce(async () => {
+      await vi.waitUntil(() => download.mock.results.length > 0);
+      await download.mock.results[0]?.value;
+      deadline.abort(new DOMException("timed out", "TimeoutError"));
+      throw deadline.signal.reason;
+    });
+
+    await expect(
+      provider.readStoppedFile(computer, "notes.txt", context, { maxBytes: 100 }),
+    ).resolves.toBeUndefined();
+    expect(sink.events).toContainEqual(
+      expect.objectContaining({
+        message: "computer.stopped_file_read",
+        outcome: "fallback",
+        reason: "deadline",
+        unfinishedSteps: ["stop"],
+      }),
+    );
   });
 });
 
@@ -604,6 +726,55 @@ describe("BoatSandboxProvider", () => {
     await expect(run()).rejects.toThrow("invalid environment variable name");
     expect(writeFile).not.toHaveBeenCalled();
     expect(command).not.toHaveBeenCalled();
+  });
+
+  it("keeps the output a command wrote before it timed out", async () => {
+    const command = FakeBoatApi.prototype.command;
+    vi.spyOn(FakeBoatApi.prototype, "command").mockImplementation(async function (
+      this: FakeBoatApi,
+      request,
+    ) {
+      const text = request.commandRequest.command;
+      if (text.startsWith("test -f") && text.includes("completed-124")) {
+        return {
+          ok: true,
+          type: "command.finished",
+          success: false,
+          exitCode: 1,
+          stdout: "",
+          stderr: "",
+          timedOut: false,
+        };
+      }
+      return text.includes("still-working")
+        ? {
+            ok: true,
+            type: "command.finished",
+            success: false,
+            exitCode: 124,
+            stdout: "step 1\n",
+            stderr: "warning\n",
+            timedOut: false,
+          }
+        : command.call(this, request);
+    });
+    const { provider, computer } = await boat();
+
+    const events = [];
+    for await (const event of provider.execute(
+      computer,
+      { argv: ["still-working"], timeoutMs: 1_000 },
+      context,
+    )) {
+      events.push(event);
+    }
+
+    expect(events).toEqual([
+      { type: "stdout", data: "step 1\n" },
+      { type: "stderr", data: "warning\n" },
+      { type: "stderr", data: "command timed out after 1000 ms\n" },
+      { type: "exit", code: 124 },
+    ]);
   });
 
   it("reports a timed out command that has no env file", async () => {

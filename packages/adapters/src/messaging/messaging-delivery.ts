@@ -1199,7 +1199,7 @@ export class MessagingDelivery {
             if (error instanceof CrossSpaceCommunicationBlockedError) return null;
             throw error;
           });
-        if (event) await events.notify(peerThread.id, event.seq).catch(() => undefined);
+        if (event) await events.notify(peerThread.id, event.seq);
       }
     }
   }

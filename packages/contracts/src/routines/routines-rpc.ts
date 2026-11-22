@@ -38,8 +38,8 @@ export const routinesRpc = {
         z
           .object({
             routineId: Id,
-            name: z.string().optional(),
-            prompt: z.string().optional(),
+            name: z.string().min(1).optional(),
+            prompt: z.string().min(1).optional(),
             crons: z.array(z.string().min(1)).optional(),
             timezone: TimeZoneSchema.optional(),
             active: z.boolean().optional(),
@@ -92,6 +92,7 @@ export const routinesRpc = {
           clientNonce: z.string().min(1).max(200).optional(),
         }),
       )
-      .output(z.object({ runId: Id })),
+      // groupId is the group chat the run went to, null when it ran in the bot's own chat.
+      .output(z.object({ runId: Id, groupId: Id.nullable() })),
   },
 };
