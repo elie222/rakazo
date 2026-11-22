@@ -87,12 +87,9 @@ export function sidebarGroupsForSpaces<TBot extends SidebarChat, TGroup extends 
         ? { ...group, title: null }
         : group,
     );
-    const firstHeader = showSpaceNames
-      ? 0
-      : Math.max(
-          0,
-          headed.findIndex((group) => group.key !== "pinned"),
-        );
+    // A Space whose chats are all pinned keeps its name above the tiles.
+    const listIndex = headed.findIndex((group) => group.key !== "pinned");
+    const firstHeader = showSpaceNames || listIndex < 0 ? 0 : listIndex;
     const sections = headed.map((group, index) => ({
       ...group,
       tiles: group.key === "pinned",
@@ -101,7 +98,7 @@ export function sidebarGroupsForSpaces<TBot extends SidebarChat, TGroup extends 
       // The first header needs a title so it can host the Space settings button.
       title: showSpaceNames
         ? space.name
-        : index === firstHeader && !group.title && group.key !== "pinned"
+        : index === firstHeader && !group.title
           ? space.name
           : group.title,
       subtitle: showSpaceNames && group.title ? group.title : undefined,

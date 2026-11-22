@@ -268,7 +268,7 @@ export function SidebarRoster({
                   (rosterHasUndismissedRunError(item.chat.runErrorId, dismissedRunErrorIds) ||
                     (active?.id === item.chat.id && Boolean(displayedRunError)));
                 const compactStatusLabel =
-                  (compact || mini) && item.kind === "bot"
+                  (compact || mini || tiles) && item.kind === "bot"
                     ? rowError
                       ? t`Error`
                       : compactRosterStatusLabel(item.chat.status)
@@ -320,7 +320,7 @@ export function SidebarRoster({
                     draggable={item.kind === "bot"}
                     data-roster-bot-id={item.kind === "bot" ? item.chat.id : undefined}
                     data-roster-unread={item.chat.unread ? "true" : undefined}
-                    data-roster-error={rowError && (compact || mini) ? "true" : undefined}
+                    data-roster-error={rowError && (compact || mini || tiles) ? "true" : undefined}
                     aria-current={selected ? "page" : undefined}
                     aria-label={mini ? item.chat.name : undefined}
                     aria-describedby={
@@ -444,7 +444,12 @@ export function SidebarRoster({
                       >
                         {item.chat.name}
                       </span>
-                    ) : !mini ? (
+                    ) : null}
+                    {tiles && item.woke ? (
+                      <span data-roster-woke className="text-label font-medium text-foreground/75">
+                        <Trans>Woke</Trans>
+                      </span>
+                    ) : !tiles && !mini ? (
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center justify-between gap-1.5">
                           <div className="flex min-w-0 items-center gap-1.5 overflow-hidden">

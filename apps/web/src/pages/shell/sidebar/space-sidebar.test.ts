@@ -116,6 +116,21 @@ describe("sidebarGroupsForSpaces", () => {
     ]);
   });
 
+  it("keeps the Space name above the tiles when every chat is pinned", () => {
+    const input = {
+      ...space("space-1", "Personal", { bots: [{ ...chat("pin", "Pinned bot"), pinned: true }] }),
+      hasGuests: true,
+    };
+    expect(sidebarGroupsForSpaces([input], "")).toEqual([
+      expect.objectContaining({
+        title: "Personal",
+        tiles: true,
+        hasGuests: true,
+        canOpenSpaceSettings: true,
+      }),
+    ]);
+  });
+
   it("names the only space on the header that holds its settings", () => {
     const [group] = sidebarGroupsForSpaces([space("space-1", "Personal", { canRename: true })], "");
 
