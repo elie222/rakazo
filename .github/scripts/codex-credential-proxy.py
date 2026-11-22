@@ -16,6 +16,7 @@ import socketserver
 import ssl
 import sys
 import time
+import urllib.parse
 import urllib.request
 
 UPSTREAM = "chatgpt.com"
@@ -55,16 +56,18 @@ def refresh(path: str):
         return
     request = urllib.request.Request(
         REFRESH_URL,
-        data=json.dumps({
+        data=urllib.parse.urlencode({
             "client_id": CLIENT_ID,
             "grant_type": "refresh_token",
             "refresh_token": tokens["refresh_token"],
             "scope": "openid profile email",
         }).encode(),
-        headers={"Content-Type": "application/json"},
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
     )
     with urllib.request.urlopen(request, timeout=30) as response:
         fresh = json.load(response)
+    if not isinstance(fresh, dict) or not isinstance(fresh.get("access_token"), str) or not fresh["access_token"]:
+        raise SystemExit("The login refresh returned no access token; the stored login is unchanged.")
     for name in ("access_token", "id_token", "refresh_token"):
         if fresh.get(name):
             tokens[name] = fresh[name]

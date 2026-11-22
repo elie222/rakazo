@@ -8,6 +8,7 @@ import threading
 import time
 import unittest
 import urllib.error
+import urllib.parse
 import urllib.request
 from unittest import mock
 
@@ -44,11 +45,23 @@ class RefreshTest(unittest.TestCase):
             with mock.patch.object(proxy.urllib.request, "urlopen", return_value=response) as urlopen, \
                     mock.patch("builtins.print"):
                 proxy.refresh(path)
-            sent = json.loads(urlopen.call_args.args[0].data)
-            self.assertEqual(sent["refresh_token"], "old")
+            sent = urllib.parse.parse_qs(urlopen.call_args.args[0].data.decode())
+            self.assertEqual(sent["refresh_token"], ["old"])
             tokens = json.loads(pathlib.Path(path).read_text())["tokens"]
             self.assertEqual(tokens["refresh_token"], "new-refresh")
             self.assertEqual(tokens["account_id"], "acct")
+
+
+    def test_keeps_the_login_when_the_reply_has_no_access_token(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = self.write(directory, jwt(time.time() + 60))
+            before = pathlib.Path(path).read_text()
+            response = mock.MagicMock()
+            response.__enter__.return_value = io.BytesIO(b"{}")
+            with mock.patch.object(proxy.urllib.request, "urlopen", return_value=response), \
+                    self.assertRaises(SystemExit):
+                proxy.refresh(path)
+            self.assertEqual(pathlib.Path(path).read_text(), before)
 
 
 class ServeTest(unittest.TestCase):

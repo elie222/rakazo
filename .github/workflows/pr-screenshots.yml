@@ -115,10 +115,11 @@ jobs:
             ${{ runner.temp }}/pr-screenshots/full.diff
           retention-days: 1
 
-  # Shows the change on the pull request without its author taking screenshots. The agent only
-  # gets browser tools: no files, shell or web access, so the pull request and the preview it
-  # browses, which anyone may write, cannot reach the login in its environment. The browser runs
-  # as a separate user that cannot read the runner's files or processes either.
+  # Shows the change on the pull request without its author taking screenshots. The pull request
+  # and the preview, which anyone may write, never reach a credential: the Codex agent reads the
+  # checkout through an offline, read-only shell while a proxy holds its login (see below), and the
+  # opt-in Claude agent gets browser tools only. The browser runs as a separate user that cannot
+  # read the runner's files or processes either.
   screenshots:
     name: Screenshot the change
     needs: screenshot-context
@@ -278,7 +279,8 @@ jobs:
           python3 .github/scripts/codex-credential-proxy.py refresh "$auth"
           # Save a rotated login before anything can interrupt the run.
           gh secret set CODEX_SUBSCRIPTION_AUTH --repo "$GITHUB_REPOSITORY" < "$auth"
-          nohup python3 .github/scripts/codex-credential-proxy.py serve "$auth" 18899 \
+          # A clean environment: the proxy serves the agent's requests, so it keeps no step secrets.
+          nohup env -i PATH="$PATH" python3 .github/scripts/codex-credential-proxy.py serve "$auth" 18899 \
             > "$RUNNER_TEMP/screenshot-codex/proxy.log" 2>&1 &
           for _ in $(seq 50); do
             curl -s -o /dev/null http://127.0.0.1:18899/ && exit 0
