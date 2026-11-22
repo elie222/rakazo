@@ -108,8 +108,12 @@ export const fileTools: ToolHandlers = {
     const { deps } = ctx;
     const { args } = call;
     const workspace = runWorkspace(ctx, call);
-    return readFileFromTool(deps.sandbox, workspace, args, (path, maxBytes) =>
-      readStoppedRunFile(ctx, path, maxBytes),
+    return readFileFromTool(
+      deps.sandbox,
+      workspace,
+      args,
+      (path, maxBytes) => readStoppedRunFile(ctx, path, maxBytes),
+      ctx.computer.modelSeesImages,
     );
   },
   async write_file(ctx, call) {

@@ -100,6 +100,7 @@ export async function createRunContext(
     earlierFiles,
     getRunComputer,
     graphical,
+    modelSeesImages,
     runComputer,
     storedComputer,
     workspaceCheckpoint,
@@ -228,6 +229,7 @@ export async function createRunContext(
       graphicalToolsAllowed,
       pageBrowserAllowed,
       acceptsImages,
+      modelSeesImages,
       heldForTakeover,
     },
     tools: {
