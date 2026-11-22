@@ -56,6 +56,20 @@ describe("mobile voice call entry", () => {
     expect(fakes.dictationAvailable).not.toHaveBeenCalled();
   });
 
+  it("uses on-device composer dictation after selecting a provider that transcribes", async () => {
+    const fakes = deps({
+      deviceVoice: false,
+      dictation: true,
+      status: { ready: true, transcribe: true },
+    });
+
+    await expect(resolveVoiceCallPlan(fakes, "dictation")).resolves.toEqual({
+      kind: "device",
+      transcribe: false,
+    });
+    expect(fakes.loadVoiceStatus).not.toHaveBeenCalled();
+  });
+
   it("keeps provider setup when only on-device dictation is available", async () => {
     const fakes = deps({
       deviceVoice: false,
