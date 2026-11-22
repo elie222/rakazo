@@ -88,6 +88,20 @@ function GalleryThumb({
   );
 }
 
+// Keyed by image, so switching never shows the previous picture under the new name.
+function LightboxPicture({ image }: { image: GalleryImage }) {
+  const src = useArtifactImage(image.target, image.artifactId);
+  return src ? (
+    <img
+      src={src}
+      alt={image.name}
+      className="max-h-full max-w-[calc(100%-6rem)] cursor-zoom-out rounded-xl object-contain"
+    />
+  ) : (
+    <div className="size-40 rounded-xl bg-muted" />
+  );
+}
+
 /**
  * The picture at full size over the page, with the chat's other pictures beside it: arrows and
  * the carousel move through them, and the arrow keys, Escape or a click dismiss the lightbox.
@@ -106,7 +120,6 @@ export function ImageLightbox({
   const { t } = useLingui();
   const index = images.findIndex((image) => galleryImageKey(image) === selectedKey);
   const current = images[index];
-  const src = useArtifactImage(current?.target, current?.artifactId ?? "", Boolean(current));
   const close = useRef<HTMLButtonElement>(null);
   const single = images.length < 2;
   const step = (delta: number) => {
@@ -141,15 +154,7 @@ export function ImageLightbox({
       >
         <DialogTitle className="sr-only">{current.name}</DialogTitle>
         <div className="relative flex min-h-0 flex-1 items-center justify-center">
-          {src ? (
-            <img
-              src={src}
-              alt={current.name}
-              className="max-h-full max-w-[calc(100%-6rem)] cursor-zoom-out rounded-xl object-contain"
-            />
-          ) : (
-            <div className="size-40 rounded-xl bg-muted" />
-          )}
+          <LightboxPicture key={selectedKey} image={current} />
           <DialogClose
             ref={close}
             render={
