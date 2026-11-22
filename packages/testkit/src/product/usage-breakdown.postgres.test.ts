@@ -309,6 +309,7 @@ describeBreakdown("usage.breakdown", () => {
   it.each([
     ["Pacific/Kiritimati", 14],
     ["Asia/Calcutta", 5.5],
+    ["Asia/Rangoon", 6.5],
     ["Asia/Saigon", 7],
     ["America/Indianapolis", -5],
   ])("cuts today and day buckets at midnight in %s", async (timezone, hours) => {
