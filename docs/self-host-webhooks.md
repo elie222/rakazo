@@ -77,7 +77,19 @@ INGRESS_PROVIDER=manual
 INGRESS_PUBLIC_URL=https://hooks.example.com
 ```
 
-Use a hostname of its own for the public address, not the app's.
+A router port forward needs the inbound port on the host. Publish only that port, for example in
+`docker-compose.override.yml`:
+
+```yaml
+services:
+  api:
+    ports:
+      - "3101:3101"
+```
+
+Forward the router to that port alone, never to `3100` or the web port, which serve the whole
+app. Use a hostname of its own for the public address, not the app's. `admin.js webhooks
+unpublish` cannot stop a tunnel Rakazo does not run: stop the tunnel or forward itself.
 
 ## Check it
 

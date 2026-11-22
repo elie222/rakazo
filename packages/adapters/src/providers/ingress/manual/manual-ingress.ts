@@ -10,7 +10,9 @@ export class ManualIngressProvider implements IngressProvider {
 
   async publish(): Promise<void> {}
 
-  async unpublish(): Promise<void> {}
+  async unpublish(): Promise<void> {
+    throw new Error("Rakazo does not run this tunnel: stop it or its port forward yourself");
+  }
 
   async status(): Promise<IngressStatus> {
     return { published: true };

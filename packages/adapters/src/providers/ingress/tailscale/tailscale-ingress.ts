@@ -1,4 +1,4 @@
-import { mkdir, rename, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { request } from "node:http";
 import { dirname } from "node:path";
 import type { IngressProvider, IngressStatus } from "@rakazo/adapter-kit";
@@ -81,7 +81,17 @@ export class TailscaleIngressProvider implements IngressProvider {
     if (Self.CapMap && !("funnel" in Self.CapMap)) {
       return { published: false, reason: "The tailnet policy does not allow Funnel on this node" };
     }
+    if (!(await this.serving())) {
+      return { published: false, reason: "The serve config forwards nothing" };
+    }
     return { published: true };
+  }
+
+  private async serving(): Promise<boolean> {
+    const config: unknown = JSON.parse(await readFile(this.options.serveConfigPath, "utf8"));
+    return Boolean(
+      config && typeof config === "object" && "AllowFunnel" in config && config.AllowFunnel,
+    );
   }
 
   private async writeServeConfig(config: object) {

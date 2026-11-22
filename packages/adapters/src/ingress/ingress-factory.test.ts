@@ -69,6 +69,16 @@ describe("createIngressProvider", () => {
     expect(JSON.parse(await readFile(path, "utf8"))).toEqual({});
   });
 
+  it("refuses to unpublish a tunnel it does not run", async () => {
+    const provider = createIngressProvider({
+      INGRESS_PROVIDER: "manual",
+      INGRESS_PUBLIC_URL: "https://hooks.example.test",
+    });
+    await expect(provider?.unpublish(new AbortController().signal)).rejects.toThrow(
+      "does not run this tunnel",
+    );
+  });
+
   it("reads the listener port", () => {
     expect(ingressPort({})).toBe(3101);
     expect(ingressPort({ INGRESS_PORT: "4000" })).toBe(4000);
