@@ -1,6 +1,6 @@
+import { marketing } from "../marketing-site";
 import type { Locale } from "./locales";
 import { DEFAULT_LOCALE, isLocale, LOCALES } from "./locales";
-import { marketing } from "../marketing-site";
 
 /**
  * Pages that exist in more languages than English, keyed by their English path, with the
