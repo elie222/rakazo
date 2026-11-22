@@ -12,8 +12,8 @@ import { useScreenQuery } from "../../lib/query/screen-query";
 import { openFromSettingsSheet } from "../../lib/settings/settings-sheet";
 
 /**
- * One Space shows its members, and its own settings only when some were customized while there
- * were others; several each open their own settings.
+ * One Space shows its members under its name, and its own settings only when some were customized
+ * while there were others; several each open their own settings.
  */
 export default function SpacesSettings() {
   const { t } = useLingui();
@@ -44,6 +44,7 @@ export default function SpacesSettings() {
           )
         ) : (
           <SettingsGroup
+            label={only?.name}
             footer={t`Spaces keep work apart. Bots, chats, memory and computers never cross between them.`}
           >
             {only ? (
