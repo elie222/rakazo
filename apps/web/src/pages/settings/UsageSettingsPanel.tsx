@@ -175,7 +175,10 @@ export function UsageSettingsPanel({ panelRef }: { panelRef?: RefObject<HTMLDivE
       <dl className="grid grid-cols-3 gap-3">
         {[
           { label: t`Runs`, value: number(totals?.runs) },
-          { label: t`Tokens`, value: number(totals?.totalTokens) },
+          {
+            label: t`Tokens`,
+            value: `${number(totals?.totalTokens)}${totals?.tokensPartial ? "+" : ""}`,
+          },
           { label: t`Cost`, value: cost(totals?.costUsd) },
         ].map((stat) => (
           <div key={stat.label} className="rounded-xl border border-border px-4 py-3">
@@ -254,6 +257,9 @@ export function UsageSettingsPanel({ panelRef }: { panelRef?: RefObject<HTMLDivE
                   <Trans>Input</Trans>
                 </TableHead>
                 <TableHead className="text-right text-muted-foreground">
+                  <Trans>Cached</Trans>
+                </TableHead>
+                <TableHead className="text-right text-muted-foreground">
                   <Trans>Output</Trans>
                 </TableHead>
                 <TableHead className="text-right text-muted-foreground">
@@ -280,6 +286,9 @@ export function UsageSettingsPanel({ panelRef }: { panelRef?: RefObject<HTMLDivE
                     </TableCell>
                     <TableCell className="text-right tabular-nums">
                       {number(row.inputTokens)}
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {number(row.cachedTokens)}
                     </TableCell>
                     <TableCell className="text-right tabular-nums">
                       {number(row.outputTokens)}

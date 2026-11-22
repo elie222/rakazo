@@ -39,6 +39,8 @@ import type {
 } from "@rakazo/contracts";
 import {
   BotSecretAuth,
+  botInboundPath,
+  botInboundUrl,
   noneSkipped,
   resolveBotAvatarSet,
   VaultPolicy,
@@ -622,7 +624,7 @@ export function botsRoutes(ctx: RouterContext) {
         if (!plaintext) throw new ClientError("NOT_FOUND", "Not Found");
         return {
           secret: plaintext,
-          path: `/api/v1/bots/${bot.id}/webhook`,
+          path: botInboundPath(bot.id, "webhook"),
           webhookConfigured: true as const,
         };
       }),
@@ -659,7 +661,8 @@ export function botsRoutes(ctx: RouterContext) {
           spaceId: context.actor.spaceId,
           metadata: { procedure: "bots.revealWebhookSecret", kind: "webhook", botId: bot.id },
         });
-        return { secret };
+        const origin = deps.env.publishedInboundOrigin;
+        return origin ? { secret, url: botInboundUrl(origin, bot.id, "webhook") } : { secret };
       }),
     },
     groups: {

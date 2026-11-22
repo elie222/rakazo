@@ -1,5 +1,6 @@
 import { useLingui } from "@lingui/react/macro";
 import { isEmptyBotMemory } from "@rakazo/contracts";
+import { shownOpenWork } from "@rakazo/core";
 import { writeSaved } from "@rakazo/core/query";
 import { useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useMemo, useState } from "react";
@@ -30,6 +31,8 @@ export function BotContextCards({ botId, section }: { botId: string; section: "w
     onForeground: false,
   });
   const work = (section === "work" && workQuery.data) || [];
+  // Parked work waits behind Show more, so what is still open leads the list.
+  const shownWork = shownOpenWork(work, allWork);
   const docs = useMemo(
     () =>
       (section === "memory" ? (docsQuery.data ?? []) : []).filter((doc) => !isEmptyBotMemory(doc)),
@@ -37,12 +40,22 @@ export function BotContextCards({ botId, section }: { botId: string; section: "w
   );
   const change = useSave({
     save: async (
-      action: { kind: "create"; title: string } | { kind: "complete"; itemId: string },
+      action:
+        | { kind: "create"; title: string }
+        | { kind: "complete"; itemId: string }
+        | { kind: "reopen"; itemId: string },
       send,
     ) => {
       if (action.kind === "create") {
         const item = await send("scratchpad/create", { botId, title: action.title });
         await writeSaved(queryClient, workRead.queryKey, (items) => [item, ...(items ?? [])]);
+      } else if (action.kind === "reopen") {
+        const item = await send("scratchpad/update", { itemId: action.itemId, status: "open" });
+        // Just updated, so it leads the list, as the server orders it.
+        await writeSaved(queryClient, workRead.queryKey, (items) => [
+          item,
+          ...(items ?? []).filter((entry) => entry.id !== item.id),
+        ]);
       } else {
         await send("scratchpad/update", { itemId: action.itemId, status: "done" });
         await writeSaved(queryClient, workRead.queryKey, (items) =>
@@ -95,7 +108,7 @@ export function BotContextCards({ botId, section }: { botId: string; section: "w
             </Pressable>
           </View>
           <View style={card}>
-            {(allWork ? work : work.slice(0, 5)).map((item) => (
+            {shownWork.map((item) => (
               <View
                 key={item.id}
                 style={{ minHeight: 44, flexDirection: "row", gap: 12, alignItems: "center" }}
@@ -122,16 +135,39 @@ export function BotContextCards({ botId, section }: { botId: string; section: "w
                   />
                 </Pressable>
                 <View style={{ flex: 1 }}>
-                  <Text style={{ color: tokens.foreground, fontSize: 14 }}>{item.title}</Text>
+                  <Text
+                    style={{
+                      color: item.status === "parked" ? tokens.mutedForeground : tokens.foreground,
+                      fontSize: 14,
+                    }}
+                  >
+                    {item.title}
+                  </Text>
                   {item.notes ? (
                     <Text style={{ color: tokens.mutedForeground, fontSize: 12, marginTop: 4 }}>
                       {item.notes}
                     </Text>
                   ) : null}
                 </View>
+                {item.status === "parked" ? (
+                  <Pressable
+                    accessibilityLabel={`${t`Reopen`} ${item.title}`}
+                    accessibilityRole="button"
+                    hitSlop={11}
+                    disabled={busy}
+                    onPress={() => change.run({ kind: "reopen", itemId: item.id })}
+                  >
+                    <NativeSymbol
+                      ios="arrow.uturn.backward"
+                      android="arrow-undo-outline"
+                      size={18}
+                      color={tokens.mutedForeground}
+                    />
+                  </Pressable>
+                ) : null}
               </View>
             ))}
-            {!allWork && work.length > 5 ? (
+            {work.length > shownWork.length ? (
               <Pressable
                 accessibilityRole="button"
                 onPress={() => setAllWork(true)}

@@ -10,6 +10,7 @@ import { parseModelOptionKey } from "../../lib/models/model-catalog";
 import type { createSpaceRpc } from "../../lib/query/rpc";
 import { sharedInflight } from "../../lib/query/shared-inflight";
 import { errorCode, errorText } from "../../lib/query/user-error";
+import { appBotInboundUrl } from "../../lib/routines/inbound-url";
 import type { RoutineDraftState } from "../../lib/routines/routine-draft";
 import {
   draftStateFromRoutine,
@@ -25,6 +26,7 @@ export function useRoutineEditor({
   active,
   activeBotId,
   timezone,
+  inboundOrigin,
   setBots,
   refreshThread,
   openGroup,
@@ -35,6 +37,8 @@ export function useRoutineEditor({
   active: Bot | undefined;
   activeBotId: RefObject<string | undefined>;
   timezone: string | null | undefined;
+  /** The deployment's published inbound origin; unset means the app's own. */
+  inboundOrigin?: string;
   messageProviders: string[];
   setBots: Dispatch<SetStateAction<Bot[]>>;
   refreshThread: (botId: string) => Promise<ThreadSnapshot>;
@@ -151,17 +155,11 @@ export function useRoutineEditor({
         editing: editingRoutine,
         timezone: editingRoutine?.timezone ?? timezone ?? localTimezone(),
         webhook: {
-          path:
-            typeof window !== "undefined"
-              ? `${window.location.origin}/api/v1/bots/${active.id}/webhook`
-              : `/api/v1/bots/${active.id}/webhook`,
+          path: appBotInboundUrl(inboundOrigin, active.id, "webhook"),
           secret: routineWebhookSecret,
           configured: active.webhookConfigured || Boolean(routineWebhookSecret),
         },
-        githubPath:
-          typeof window !== "undefined"
-            ? `${window.location.origin}/api/v1/bots/${active.id}/github`
-            : `/api/v1/bots/${active.id}/github`,
+        githubPath: appBotInboundUrl(inboundOrigin, active.id, "github"),
         messageProviders,
         saving: savingRoutine,
         running: runningRoutine,

@@ -1348,7 +1348,7 @@ function pinnedRoutineRunPrisma(modelId: string, trigger = "routine") {
     secret: { findMany: vi.fn(async () => []) },
     vaultCredential: { findMany: vi.fn(async () => []) },
     agentSkill: { findMany: vi.fn(async () => []) },
-    scratchpadItem: { findMany: vi.fn(async () => []) },
+    scratchpadItem: { findMany: vi.fn(async () => []), count: vi.fn(async () => 0) },
     $queryRaw: vi.fn(async () => []),
     space: { findUnique: vi.fn(async () => null) },
   };
@@ -3429,7 +3429,7 @@ description: Prepare standup notes
         taughtSkill: { findMany: vi.fn(async () => []) },
         vaultCredential: { findMany: vi.fn(async () => []) },
         agentSkill: { findMany: vi.fn(async () => []) },
-        scratchpadItem: { findMany: vi.fn(async () => []) },
+        scratchpadItem: { findMany: vi.fn(async () => []), count: vi.fn(async () => 0) },
       } as unknown as PrismaClient;
       if (stored) withSpaceMain(prisma, "openrouter", "openai/gpt-6-luna");
       const executor = createRunExecutor({
@@ -3547,7 +3547,7 @@ description: Prepare standup notes
       secret: { findMany: vi.fn(async () => []) },
       vaultCredential: { findMany: vi.fn(async () => []) },
       agentSkill: { findMany: vi.fn(async () => []) },
-      scratchpadItem: { findMany: vi.fn(async () => []) },
+      scratchpadItem: { findMany: vi.fn(async () => []), count: vi.fn(async () => 0) },
     } as unknown as PrismaClient;
     withSpaceMain(prisma, "openrouter", "deepseek/deepseek-v4-flash-0731");
     const executor = createRunExecutor({
@@ -3687,7 +3687,7 @@ description: Prepare standup notes
       secret: { findMany: vi.fn(async () => []) },
       vaultCredential: { findMany: vi.fn(async () => []) },
       agentSkill: { findMany: vi.fn(async () => []) },
-      scratchpadItem: { findMany: vi.fn(async () => []) },
+      scratchpadItem: { findMany: vi.fn(async () => []), count: vi.fn(async () => 0) },
     } as unknown as PrismaClient;
     withSpaceMain(prisma, "openrouter", "deepseek/deepseek-v4-flash-0731");
     const executor = createRunExecutor({

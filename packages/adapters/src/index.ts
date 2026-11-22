@@ -77,6 +77,7 @@ export * from "./email/email-emulator.js";
 export * from "./email/email-provider.js";
 export * from "./email/inbound-email.js";
 export * from "./email/lifecycle-email.js";
+export * from "./ingress/ingress-factory.js";
 export * from "./integrations/connection-cleanup.js";
 export * from "./integrations/connector-catalog.js";
 export * from "./integrations/connector-registry.js";
@@ -294,6 +295,7 @@ export {
   vaultItemsUnderOlderKeys,
 } from "./secrets/vault/vault-values.js";
 export * from "./secrets/wrapped-env.js";
+export * from "./server/server-foundation.js";
 export * from "./storage/artifact-store-factory.js";
 export * from "./storage/artifacts.js";
 export * from "./storage/home.js";

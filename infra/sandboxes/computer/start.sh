@@ -54,11 +54,12 @@ if [[ "$ready" -ne 1 ]]; then
   exit 1
 fi
 
-if command -v dbus-launch >/dev/null 2>&1; then
-  eval "$(dbus-launch --sh-syntax)"
-  # rakazo-browser is launched later without this session's environment; the
-  # file-chooser portals only work if the browser finds the same bus.
-  printf 'export DBUS_SESSION_BUS_ADDRESS=%s\n' "$DBUS_SESSION_BUS_ADDRESS" \
+rm -f /tmp/rakazo/session-bus /tmp/rakazo/dbus-session
+# The image sets this; keep a default for runtimes that drop image ENV.
+export DBUS_SESSION_BUS_ADDRESS="${DBUS_SESSION_BUS_ADDRESS:-unix:path=/tmp/rakazo/session-bus}"
+if dbus-daemon --session --fork --address="$DBUS_SESSION_BUS_ADDRESS"; then
+  # Keep the address file for browser launchers with a minimal environment.
+  printf 'export DBUS_SESSION_BUS_ADDRESS=%q\n' "$DBUS_SESSION_BUS_ADDRESS" \
     > /tmp/rakazo/dbus-session
 fi
 

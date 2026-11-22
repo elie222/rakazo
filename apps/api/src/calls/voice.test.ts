@@ -735,18 +735,20 @@ describe("voiceCredentialPlaintext", () => {
     expect(voiceCredentialPlaintext({ provider: "macos", plaintext: "sk-test-key" })).toBe("macos");
   });
 
-  it("stores a self-hosted server's address and models without a key", () => {
+  it("stores a self-hosted server's address, models, and vocabulary without a key", () => {
     const plaintext = voiceCredentialPlaintext({
       provider: "openai-compatible",
       allowPrivateEndpoint: true,
       plaintext: "",
       baseUrl: "http://100.64.0.10:8810",
       ttsModel: "kokoro",
+      transcriptionVocabulary: "Acme, Xyla",
     });
     expect(JSON.parse(plaintext)).toEqual({
       kind: "openai_compatible",
       baseUrl: "http://100.64.0.10:8810/v1",
       ttsModel: "kokoro",
+      transcriptionVocabulary: "Acme, Xyla",
       sttModel: adapters.DEFAULT_COMPATIBLE_STT_MODEL,
     });
   });

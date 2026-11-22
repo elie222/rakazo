@@ -45,7 +45,6 @@ export function ModelStep({ model, fieldId }: { model: OnboardingModel; fieldId:
     needsProject,
     needsRouting,
     notice,
-    oauth,
     provider,
     providerItems,
     providerOptions,
@@ -222,15 +221,13 @@ export function ModelStep({ model, fieldId }: { model: OnboardingModel; fieldId:
         </p>
       ) : null}
       {error ? <p className="mt-3 text-body text-destructive">{error}</p> : null}
-      {oauth ? null : (
-        <Button
-          className="mt-6"
-          disabled={!credits && !canSaveModel}
-          onClick={() => void (credits ? fundWithCredits() : saveModel())}
-        >
-          <Trans>Continue</Trans>
-        </Button>
-      )}
+      <Button
+        className="mt-6"
+        disabled={!credits && !canSaveModel}
+        onClick={() => void (credits ? fundWithCredits() : saveModel())}
+      >
+        <Trans>Continue</Trans>
+      </Button>
     </div>
   );
 }
