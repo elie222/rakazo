@@ -1,8 +1,8 @@
 import { useLingui } from "@lingui/react/macro";
+import { useListSearch } from "@rakazo/chat-ui/hooks";
 import type { ConnectionModel } from "@rakazo/core";
 import { useEffect } from "react";
 import { AccessibilityInfo } from "react-native";
-import { useListSearch } from "../../lib/search/use-list-search";
 import { SettingsGroup, SettingsRow } from "../settings/settings-group";
 import { ListSearchInput } from "../ui/list-search-input";
 

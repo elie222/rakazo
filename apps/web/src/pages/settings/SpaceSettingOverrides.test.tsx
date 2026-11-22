@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 
+import { flush } from "@rakazo/core/test-async";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ComponentProps, ReactNode } from "react";
 import { act } from "react";
@@ -165,7 +166,7 @@ it("follows the account until a setting is customized, then edits the Space's ow
   expect(button("Customize Voice")?.textContent).toBe("Customize");
   expect(button("Customize Approvals")).not.toBeNull();
   expect(button("Customize Vault")).not.toBeNull();
-  expect(container.textContent?.match(/Your defaults/g)).toHaveLength(4);
+  expect(container.textContent?.match(/Same as your account/g)).toHaveLength(4);
   expect(panels).toEqual([]);
   // The calls go to the space these settings are bound to, not the selected one.
   expect(rpcForSpace).toHaveBeenCalledWith("space-a");
@@ -176,10 +177,10 @@ it("follows the account until a setting is customized, then edits the Space's ow
     expect(container.querySelector('[data-testid="voice-panel"]')).not.toBeNull(),
   );
   expect(new Set(panels)).toEqual(new Set(["voice:space"]));
-  expect(button("Use defaults for Voice")?.textContent).toBe("Use defaults");
-  expect(container.textContent?.match(/Your defaults/g)).toHaveLength(3);
+  expect(button("Use account settings for Voice")?.textContent).toBe("Use account settings");
+  expect(container.textContent?.match(/Same as your account/g)).toHaveLength(3);
 
-  await click("Use defaults for Voice");
+  await click("Use account settings for Voice");
   expect(spaceSettings.setOverride).toHaveBeenLastCalledWith({ setting: "voice", enabled: false });
   await vi.waitFor(() => expect(container.querySelector('[data-testid="voice-panel"]')).toBeNull());
   expect(button("Customize Voice")).not.toBeNull();
@@ -196,6 +197,20 @@ it("opens the panels a Space already customizes", async () => {
   expect(new Set(panels)).toEqual(new Set(["models:space", "confirmations:space"]));
 });
 
+it("shows a lone Space's overrides only once one is customized", async () => {
+  spaceSettings.overrides.mockResolvedValue([]);
+  await render(<SpaceSettingOverrides hideUntilCustomized onClose={() => undefined} />);
+  await vi.waitFor(() => expect(spaceSettings.overrides).toHaveBeenCalled());
+  await act(flush);
+  expect(container.querySelector('[data-testid="space-setting-overrides"]')).toBeNull();
+
+  spaceSettings.overrides.mockResolvedValue(["voice"]);
+  await act(async () => root.unmount());
+  root = createRoot(container);
+  await render(<SpaceSettingOverrides hideUntilCustomized onClose={() => undefined} />);
+  await vi.waitFor(() => expect(button("Use account settings for Voice")).not.toBeNull());
+});
+
 it("asks before going back to the defaults deletes the Space's own vault", async () => {
   spaceSettings.overrides.mockResolvedValue(["credentials"]);
   spaceSettings.setOverride.mockResolvedValue([]);
@@ -208,11 +223,11 @@ it("asks before going back to the defaults deletes the Space's own vault", async
 
   // A credential still saving would land in the vault being deleted, so the reset waits for it.
   await click("Start saving");
-  expect(button("Use defaults for Vault")?.disabled).toBe(true);
+  expect(button("Use account settings for Vault")?.disabled).toBe(true);
   await click("Finish saving");
-  expect(button("Use defaults for Vault")?.disabled).toBe(false);
+  expect(button("Use account settings for Vault")?.disabled).toBe(false);
 
-  await click("Use defaults for Vault");
+  await click("Use account settings for Vault");
   expect(spaceSettings.setOverride).not.toHaveBeenCalled();
   expect(dialog()?.textContent).toContain("Delete this Space's credentials?");
   const cancel = [...(dialog()?.querySelectorAll("button") ?? [])].find(
@@ -222,7 +237,7 @@ it("asks before going back to the defaults deletes the Space's own vault", async
   expect(dialog()).toBeNull();
   expect(spaceSettings.setOverride).not.toHaveBeenCalled();
 
-  await click("Use defaults for Vault");
+  await click("Use account settings for Vault");
   const confirm = [...(dialog()?.querySelectorAll("button") ?? [])].find(
     (item) => item.textContent === "Delete",
   );

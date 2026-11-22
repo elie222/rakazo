@@ -160,6 +160,18 @@ export const TOOL_CHOICE_DEFINITIONS: ToolChoiceCase[] = [
   },
   // Account settings.
   {
+    id: "user-inline-model-switching",
+    area: "user-settings",
+    kind: "guard",
+    purpose: "Enable the composer picker while leaving the bot's model alone.",
+    prompt: "Turn on inline model switching in my chat box.",
+    expect: {
+      calls: [{ tool: "update_preferences", args: { composerModelPicker: true } }],
+      callsMustNot: [{ tool: "update_bot", args: { model: "*" } }],
+      user: { composerModelPicker: true },
+    },
+  },
+  {
     id: "user-timezone",
     area: "user-settings",
     kind: "guard",

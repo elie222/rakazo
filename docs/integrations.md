@@ -22,6 +22,18 @@ disconnect only that account, or **Uninstall** to remove the whole app.
 > configured an app catalog. See [Self-hosting](./self-host.md). Custom sources, below, work on any
 > server.
 
+## Use your phone's calendar and reminders
+
+In the mobile app, open a private text chat with a bot and ask what's on your phone's calendar or
+ask to add an event. Keep that chat open and the app in the foreground while the bot works.
+Calendar events work on iOS and Android. On iOS, you can also ask the bot to read, add, or complete
+reminders. You don't need to connect a calendar account in **Integrations** to use your phone's
+calendar.
+
+If your phone asks for Calendar or Reminders access, allow it only if you want to use the feature.
+Review any approval request in chat, and check the calendar or reminder list shown on your phone
+before confirming the request there.
+
 ## Add your own tools
 
 The **+** in **Integrations** adds tools that aren't in the catalog:

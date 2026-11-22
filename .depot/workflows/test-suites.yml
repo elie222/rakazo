@@ -145,7 +145,7 @@ jobs:
         run: python3 infra/preview/start.test.py
       - name: Codex subscription auth safety tests
         if: steps.areas.outputs.all_packages != 'false'
-        run: python3 .github/scripts/codex-subscription-auth.test.py
+        run: python3 .github/scripts/codex-subscription-auth.test.py && python3 .github/scripts/codex-credential-proxy.test.py
       - name: Dependency update patch safety tests
         if: steps.areas.outputs.all_packages != 'false'
         run: python3 .github/scripts/dependency-update-patch.test.py

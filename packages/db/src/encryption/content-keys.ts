@@ -160,7 +160,9 @@ export type SpaceSource =
   | "memory_documents"
   | "memory_revisions"
   | "bot_email_messages"
-  | "meeting_sessions";
+  | "meeting_sessions"
+  | "native_calendar_requests"
+  | "tasks";
 
 export interface SpaceKeyStore {
   forSpace(spaceId: string): Promise<SpaceKeyRecord[]>;
@@ -191,6 +193,8 @@ export const ROW_OWNER: Record<SpaceSource, string> = {
   memory_revisions: "documentId",
   bot_email_messages: "botId",
   meeting_sessions: "userId",
+  native_calendar_requests: "userId",
+  tasks: "threadId",
 };
 
 export interface Queryable {
@@ -212,8 +216,10 @@ const ROW_CONTEXT: Record<SpaceSource, string> = {
   memory_documents: `SELECT "spaceId", "userId" AS owner FROM memory_documents WHERE id = $1`,
   messages: `SELECT t."spaceId", m."threadId" AS owner FROM messages m JOIN threads t ON t.id = m."threadId" WHERE m.id = $1`,
   memory_revisions: `SELECT d."spaceId", r."documentId" AS owner FROM memory_revisions r JOIN memory_documents d ON d.id = r."documentId" WHERE r.id = $1`,
+  native_calendar_requests: `SELECT "spaceId", "userId" AS owner FROM native_calendar_requests WHERE id = $1`,
   meeting_sessions: `SELECT "spaceId", "userId" AS owner FROM meeting_sessions WHERE id = $1`,
   bot_email_messages: `SELECT "spaceId", "botId" AS owner FROM bot_email_messages WHERE id = $1`,
+  tasks: `SELECT "spaceId", "threadId" AS owner FROM tasks WHERE id = $1`,
 };
 
 /**

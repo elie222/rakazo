@@ -469,6 +469,45 @@ describe("updater orchestration", () => {
     expect((await first).status).toBe(200);
   });
 
+  it.each([
+    ["decoys listed first", ["feature/main", "old-main", "main"]],
+    ["decoys listed last", ["main", "feature/main", "old-main"]],
+  ])("plans a fork build from exactly refs/heads/main with %s", async (_label, names) => {
+    const fixture = await deployment();
+    await mkdir(path.join(fixture.deployDir, ".git"));
+    const decoyCommit = "9".repeat(40);
+    const lines = names.map(
+      (name) => `${name === "main" ? targetCommit : decoyCommit}\trefs/heads/${name}`,
+    );
+    const calls: string[][] = [];
+    const run: UpdaterCommandRunner = async (_command, args) => {
+      calls.push(args);
+      if (args.includes("ls-remote")) return ok(`${lines.join("\n")}\n`);
+      return ok();
+    };
+    const subject = createUpdaterApp(fixture.config, { run });
+    const response = await request(subject, "/plan", {
+      repoUrl: "https://github.com/example/fork",
+      branch: "main",
+    });
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({ targetCommit });
+    expect(calls.find((args) => args.includes("ls-remote"))?.at(-1)).toBe("refs/heads/main");
+  });
+
+  it("refuses a fork branch that only decoy refs match", async () => {
+    const fixture = await deployment();
+    await mkdir(path.join(fixture.deployDir, ".git"));
+    const run: UpdaterCommandRunner = async (_command, args) =>
+      args.includes("ls-remote") ? ok(`${"9".repeat(40)}\trefs/heads/feature/main\n`) : ok();
+    const subject = createUpdaterApp(fixture.config, { run });
+    const response = await request(subject, "/plan", {
+      repoUrl: "https://github.com/example/fork",
+      branch: "main",
+    });
+    expect(response.status).toBe(400);
+  });
+
   it("restores the previous remote when a fork update fails after repointing it", async () => {
     const fixture = await deployment();
     await mkdir(path.join(fixture.deployDir, ".git"));
