@@ -10,7 +10,13 @@ import {
   truncatePlainText,
 } from "@rakazo/core";
 import type { PrismaClient, ThreadEvents } from "@rakazo/db";
-import { countUnreadInboxChats, membersSnoozing } from "@rakazo/db";
+import {
+  chatHoldsFor,
+  chatMutedByDefault,
+  countUnreadInboxChats,
+  ownerHearsChat,
+  unhideChatFor,
+} from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { notificationIdentity } from "../../notifications/notification-identity.js";
 import { messageBlocksText } from "../assembly/run-replies.prompt.js";
@@ -19,23 +25,18 @@ import type { ExecutorDeps } from "../executor/executor-deps.js";
 const COMPLETION_NOTIFICATION_MAX_CHARS = 180;
 const NOTIFY_RECIPIENTS_AT_ONCE = 5;
 
-export async function runNotificationsEnabled(
-  prisma: PrismaClient,
-  run: { spaceId: string; userId: string; botId: string; threadId: string },
-): Promise<boolean> {
-  return (await runNotice(prisma, run)).enabled;
-}
-
 async function runNotice(
   prisma: PrismaClient,
   run: { spaceId: string; userId: string; botId: string; threadId: string },
   routineId?: string | null,
 ): Promise<{
-  enabled: boolean;
+  /** A routine's own notify setting, which decides on its failures. */
+  routineNotify: boolean | null;
+  /** Muted for whoever never muted or unmuted the chat: a bot's chat with its own switch off. */
+  mutedByDefault: boolean;
   groupId: string | null;
   bot?: { id: string; name: string; color: string; avatarSet: string };
-}> {
-  // A routine carries its own notify setting, which decides on its failures.
+} | null> {
   const routine = routineId
     ? await prisma.routine.findUnique({ where: { id: routineId }, select: { notify: true } })
     : null;
@@ -51,11 +52,50 @@ async function runNotice(
       thread: { select: { groupId: true } },
     },
   });
-  if (!source) return { enabled: false, groupId: null };
+  if (!source) return null;
   return {
-    enabled: routine ? routine.notify : Boolean(source.thread.groupId || source.bot.notifyOnFinish),
+    routineNotify: routine?.notify ?? null,
+    mutedByDefault: chatMutedByDefault(source.thread.groupId ? null : source.bot),
     groupId: source.thread.groupId,
     bot: source.bot,
+  };
+}
+
+/**
+ * A run's question, takeover or failure needs the person whose run it is: a chat they hid comes
+ * back to their list for it, and they hear of it even in a chat they muted, snoozed or hid, since
+ * only they can answer. Until they mute or unmute the chat themselves, a bot whose own
+ * notification switch is off stays as silent as it always was, questions included; its chat
+ * still comes back.
+ */
+async function ownerHearsRun(
+  deps: Pick<ExecutorDeps, "prisma" | "events">,
+  run: { threadId: string; userId: string },
+  mutedByDefault: boolean,
+): Promise<boolean> {
+  const owner = await readOwnerHold(deps, run, mutedByDefault);
+  await owner.reveal();
+  return owner.hears;
+}
+
+/**
+ * Whether the run's owner hears its chat, read now. `reveal` brings the chat back if it is
+ * hidden, so a caller can read before a change it can't undo and reveal after it, and tells the
+ * owner's open apps to read their list again.
+ */
+export async function readOwnerHold(
+  deps: { prisma: PrismaClient; events?: Pick<ThreadEvents, "publishRosterChange"> },
+  run: { threadId: string; userId: string },
+  mutedByDefault: boolean,
+) {
+  const hold = (await chatHoldsFor(deps.prisma, run.threadId, [run.userId])).get(run.userId);
+  return {
+    hears: ownerHearsChat(hold?.muted, mutedByDefault),
+    reveal: async () => {
+      if (!hold?.hidden) return;
+      await unhideChatFor(deps.prisma, run.threadId, run.userId);
+      await deps.events?.publishRosterChange?.({ userIds: [run.userId] });
+    },
   };
 }
 
@@ -73,8 +113,9 @@ export async function notifyRun(
   message: NotificationMessage,
   options: { retryOnFailure?: boolean } = {},
 ) {
+  const canAlert = Boolean(deps.notifications || deps.events.publishChatAlert);
   if (
-    (!deps.notifications && !deps.events.publishChatAlert) ||
+    (!canAlert && message.kind === "completion") ||
     (isBackgroundRunTrigger(run.trigger) && message.kind !== "help" && message.kind !== "takeover")
   )
     return;
@@ -88,21 +129,33 @@ export async function notifyRun(
     message = { ...message, threadId: card.threadId };
   }
   const routineId = message.kind === "failure" ? run.routineId : null;
-  const notice = await runNotice(deps.prisma, run, routineId).catch((error) => {
-    if (options.retryOnFailure) throw error;
-    getLogger().error("notification preference lookup", error);
-    return null;
-  });
-  if (!notice?.enabled) return;
+  const lookup =
+    <T>(label: string, fallback: T) =>
+    (error: unknown) => {
+      if (options.retryOnFailure) throw error;
+      getLogger().error(label, error);
+      return fallback;
+    };
+  const notice = await runNotice(deps.prisma, run, routineId).catch(
+    lookup("notification preference lookup", null),
+  );
+  if (!notice || notice.routineNotify === false) return;
+  // Checked even without a way to alert anyone, so a hidden chat still comes back when it needs them.
+  if (
+    message.kind !== "completion" &&
+    !(await ownerHearsRun(deps, run, notice.routineNotify === null && notice.mutedByDefault).catch(
+      lookup("run owner notification lookup", true),
+    ))
+  )
+    return;
+  if (!canAlert) return;
   // A reply is news to everyone in the Space. Only the person whose run it is can answer its
   // questions, take its screen, or fix what made it fail, and a reply to another bot is theirs.
   const recipients =
     message.kind === "completion" && run.trigger !== "bot_message"
-      ? await spaceMemberIds(deps.prisma, run.spaceId).catch((error) => {
-          if (options.retryOnFailure) throw error;
-          getLogger().error("notification recipients", error);
-          return [run.userId];
-        })
+      ? await spaceMemberIds(deps.prisma, run.spaceId).catch(
+          lookup("notification recipients", [run.userId]),
+        )
       : [run.userId];
   await deliverChatNotice(deps, {
     spaceId: run.spaceId,
@@ -110,13 +163,14 @@ export async function notifyRun(
     message,
     groupId: notice.groupId,
     bot: notice.bot,
+    mutedByDefault: notice.mutedByDefault,
     retryOnFailure: options.retryOnFailure,
   });
 }
 
 /**
  * Another member's message in a chat: everyone else in the Space hears about it, as they would a
- * reply. Nothing goes to the person who wrote it, or anywhere when the chat is muted.
+ * reply. Nothing goes to the person who wrote it, or to anyone who muted the chat.
  */
 export async function notifyMemberMessage(
   deps: Pick<ExecutorDeps, "prisma" | "events" | "notifications">,
@@ -150,7 +204,7 @@ export async function notifyMemberMessage(
     deps.prisma.user.findUnique({ where: { id: input.authorUserId }, select: { name: true } }),
   ]);
   const botId = thread?.bot?.id ?? thread?.group?.members[0]?.botId;
-  if (!thread || !botId || (!thread.groupId && !thread.bot?.notifyOnFinish)) return;
+  if (!thread || !botId) return;
   const chatName = thread.group?.name ?? thread.bot?.name ?? "";
   const authorName = displayName(author?.name ?? "", "Someone");
   await deliverChatNotice(deps, {
@@ -166,6 +220,7 @@ export async function notifyMemberMessage(
     },
     groupId: thread.groupId,
     bot: thread.groupId ? undefined : (thread.bot ?? undefined),
+    mutedByDefault: chatMutedByDefault(thread.groupId ? null : thread.bot),
   });
 }
 
@@ -187,22 +242,30 @@ async function deliverChatNotice(
     message: NotificationMessage;
     groupId: string | null;
     bot?: { id: string; name: string; color: string; avatarSet: string };
+    /** Muted for whoever never muted or unmuted the chat. */
+    mutedByDefault: boolean;
     retryOnFailure?: boolean;
   },
 ) {
   const { spaceId, message, groupId, bot } = input;
-  // News in a chat waits for whoever snoozed it. Questions, takeovers and failures still reach
-  // the person whose run it is: the chat is hidden, so this is how they would hear of it.
-  const snoozing =
+  // News in a chat waits for whoever snoozed, hid or muted it. Questions, takeovers and failures
+  // only go to the person whose run it is, who `ownerHearsRun` already let through.
+  const holds =
     message.kind === "completion"
-      ? await membersSnoozing(deps.prisma, message.threadId, input.recipients).catch((error) => {
-          // A retried delivery waits for the answer; otherwise everyone hears, rather than no one.
+      ? await chatHoldsFor(deps.prisma, message.threadId, input.recipients).catch((error) => {
+          // A retried delivery waits for the answer.
           if (input.retryOnFailure) throw error;
-          getLogger().error("snoozed chat lookup", error);
-          return new Set<string>();
+          getLogger().error("chat hold lookup", error);
+          return undefined;
         })
-      : new Set<string>();
-  const recipients = input.recipients.filter((userId) => !snoozing.has(userId));
+      : null;
+  // News whose holds could not be read reaches no one, so a failed read never overrides a mute.
+  if (holds === undefined) return;
+  const recipients = input.recipients.filter((userId) => {
+    if (!holds) return true;
+    const hold = holds.get(userId);
+    return !(hold?.snoozed || hold?.hidden || (hold?.muted ?? input.mutedByDefault));
+  });
   for (const userId of recipients) {
     publishChatAlert(deps.events, { spaceId, userId }, message, groupId);
   }
@@ -309,6 +372,19 @@ export function completionMarksUnread(
   if (trigger === "bot_message") return userFacingPeerReply;
   if (isBackgroundRunTrigger(trigger)) return false;
   return (trigger !== "routine" && trigger !== "reaction") || Boolean(text);
+}
+
+/**
+ * How a run's final message is marked, however the run finished: unread for the people in the
+ * chat, or written for another bot whose request it answers, which alerts nobody.
+ */
+export function completionMarks(
+  trigger: string,
+  text: string,
+  userFacingPeerReply = false,
+): { markUnread: boolean; forBot: boolean } {
+  const markUnread = completionMarksUnread(trigger, text, userFacingPeerReply);
+  return { markUnread, forBot: trigger === "bot_message" && !markUnread };
 }
 
 export function subagentMarksUnread(

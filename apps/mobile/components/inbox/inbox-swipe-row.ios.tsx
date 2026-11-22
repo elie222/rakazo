@@ -23,6 +23,7 @@ import {
   shapes,
   tint,
 } from "@expo/ui/swift-ui/modifiers";
+import { ph } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
 import { SNOOZE_PRESETS, snoozePresetTime } from "@rakazo/core";
 import type { ReactElement } from "react";
@@ -50,7 +51,8 @@ export function InboxSwipeRow({
   rowKey,
   unread,
   pinned,
-  notifyOnFinish,
+  muted,
+  hidden,
   sectionId,
   sections,
   preview,
@@ -102,11 +104,11 @@ export function InboxSwipeRow({
         <ContextMenu.Items>
           {button(actions.leading)}
           {button(pinned ? "unpin" : "pin")}
-          {notifyOnFinish === undefined ? null : (
+          {muted === undefined ? null : (
             <Button
-              label={notifyOnFinish ? t`Silence notifications` : t`Resume notifications`}
-              systemImage={notifyOnFinish ? "bell.slash" : "bell"}
-              onPress={() => onOrganize({ notifyOnFinish: !notifyOnFinish })}
+              label={muted ? t`Unmute` : t`Mute`}
+              systemImage={muted ? "bell" : "bell.slash"}
+              onPress={() => onOrganize({ muted: !muted })}
             />
           )}
           {!onSnooze ? null : snoozed ? (
@@ -121,6 +123,17 @@ export function InboxSwipeRow({
                 />
               ))}
             </Menu>
+          )}
+          {hidden === undefined ? null : (
+            <Button
+              label={
+                hidden
+                  ? t`Show ${ph({ label: preview.title })}`
+                  : t`Hide ${ph({ label: preview.title })}`
+              }
+              systemImage="eye.slash.circle"
+              onPress={() => onOrganize({ hidden: !hidden })}
+            />
           )}
           <Menu label={t`Move to`} systemImage="folder">
             {sections.map((section) => (

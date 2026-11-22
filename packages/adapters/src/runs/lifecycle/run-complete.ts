@@ -45,7 +45,7 @@ import {
 import { saveLatestStepScreenshot } from "../turn/tool-step-calls.js";
 import { enqueueSteeringContinuation, renewRunLease } from "./run-lifecycle.js";
 import {
-  completionMarksUnread,
+  completionMarks,
   completionNotificationBody,
   completionNotificationPreview,
   notifyRun,
@@ -133,9 +133,14 @@ export async function completeRun(ctx: RunContext) {
     run.trigger === "bot_message"
       ? botMessageOutcomeFromMidTurn(text, reply.midTurnUserTexts)
       : null;
+  const { markUnread, forBot } = completionMarks(
+    run.trigger,
+    text,
+    ctx.source.peerMessage?.repliesToRequest === true,
+  );
   const marksUnread =
     (!ctx.allowSilentEmptyRun || blocks.length > 0 || reply.publishedMidTurnUserMessage) &&
-    completionMarksUnread(run.trigger, text, ctx.source.peerMessage?.repliesToRequest === true);
+    markUnread;
   await ctx.settleRunningHelpers();
   const answeredMessageIds = await conversationRetentionMessages(ctx);
   const completed = await deps.events.finalizeRun({
@@ -150,6 +155,8 @@ export async function completeRun(ctx: RunContext) {
     outcome: "completed",
     blocks,
     markUnread: !groupSilentEnd && marksUnread,
+    // An answer to another bot's request goes back to that bot; the person hears its reply.
+    forBot,
   });
   if (!completed) return;
   ctx.stopHeartbeatAfterCompletion();

@@ -2,7 +2,7 @@ import type { VoiceInfo } from "@rakazo/contracts";
 import { ComputerModeSchema } from "@rakazo/contracts";
 import { ClientError, redactSecrets } from "@rakazo/core";
 import type { ThreadEvents } from "@rakazo/db";
-import { commitBotUpdate, createRepos } from "@rakazo/db";
+import { commitBotUpdate, createRepos, setBotNotifyFor } from "@rakazo/db";
 import type { FleetCardSummary } from "../approvals/approval-ask.js";
 import { approvalDetailLength, MAX_APPROVAL_SUMMARY_LENGTH } from "../approvals/approval-ask.js";
 import type { BotComputerSwitchDeps } from "../computers/bot-computer-switch.js";
@@ -276,8 +276,11 @@ export async function updateChildBot(
       throw error;
     }
   }
-  const data = { ...patch, ...botSettingsData(settings) };
-  if (Object.keys(data).length)
+  const { notifyOnFinish, ...profilePatch } = patch;
+  const data = { ...profilePatch, ...botSettingsData(settings) };
+  // A mute alone is the asker's own: the shared bot, its updatedAt and everyone's clients stay as
+  // they are.
+  if (Object.values(data).some((value) => value !== undefined))
     await commitBotUpdate({
       prisma: deps.prisma,
       notify: (threadId, seq) => deps.events.notify(threadId, seq),
@@ -287,5 +290,14 @@ export async function updateChildBot(
       emitBotUpdated: true,
       data,
     });
+  // After the profile, which is what can refuse: a refused update leaves notifications alone.
+  // They are each member's own, so this mutes or unmutes for whoever asked.
+  if (notifyOnFinish !== undefined) {
+    await setBotNotifyFor(
+      deps.prisma,
+      { botId: child.id, spaceId: run.spaceId, userId: run.userId },
+      notifyOnFinish,
+    );
+  }
   return { ok: true };
 }

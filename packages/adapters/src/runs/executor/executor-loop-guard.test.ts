@@ -64,7 +64,12 @@ type Answer = { text?: string; calls?: Array<{ name: string; args: object }> };
  */
 async function runLoop(
   answer: (request: number) => Answer,
-  { listing = (_call: number) => [REPORT], learning = false, finalized = true } = {},
+  {
+    listing = (_call: number) => [REPORT],
+    learning = false,
+    finalized = true,
+    trigger = "user",
+  } = {},
 ) {
   vi.stubEnv("RAKAZO_LOCAL_MODELS", "example-model");
   vi.stubEnv("RAKAZO_LOCAL_VISION_MODELS", "example-model");
@@ -119,7 +124,7 @@ async function runLoop(
     spaceId: "space-1",
     userId: "user-1",
     status: "queued" as string,
-    trigger: "user",
+    trigger,
     sourceMessageId: "message-1",
     routineId: null,
     retryOfRunId: null,
@@ -465,6 +470,17 @@ describe("over-limit computer_act batches through the run loop", () => {
 describe("repeated identical tool calls through the run loop", () => {
   it("ends the run at the sixth call that fails the same way", async () => {
     expectStoppedAt(6, await runLoop(() => ({ calls: [LISTING] }), { listing: unreadable }));
+  }, 30_000);
+
+  it("marks a stopped errand for another bot as written for that bot, not news", async () => {
+    const stopped = await runLoop(() => ({ calls: [LISTING] }), {
+      listing: unreadable,
+      trigger: "bot_message",
+    });
+    expectStoppedAt(6, stopped);
+    expect(stopped.finalizeRun).toHaveBeenCalledWith(
+      expect.objectContaining({ markUnread: false, forBot: true }),
+    );
   }, 30_000);
 
   it("lets the bot wait on an unchanged answer until it changes", async () => {

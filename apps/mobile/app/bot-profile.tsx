@@ -49,7 +49,7 @@ function BotProfileScreen() {
   const name = displayName(bot?.name ?? nameParam, t`Bot`);
   const { routines } = useBotRoutines(botId);
   const actions = useBotProfileActions(botId, name);
-  // The chat list's Silence notifications saves the same setting.
+  // The chat list's Mute saves the same setting.
   const notify = useNotifyOnFinish(botId, bot?.notifyOnFinish ?? true, (error) =>
     Alert.alert(t`Could not update notifications`, errorText(error, t`Try again.`)),
   );

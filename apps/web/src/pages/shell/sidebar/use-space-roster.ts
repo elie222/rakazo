@@ -469,8 +469,14 @@ export function useSpaceBootstrap({
           redirectKeepingOverlay(firstThreadRoute(bootstrap.bots, groupList));
           return;
         }
-        const selectedBotId = bootstrap.thread?.botId ?? bootstrap.bots[0]?.id;
-        if (selectedBotId) redirectKeepingOverlay(`/app/${selectedBotId}`);
+        // The chat the bootstrap loaded opens unless it is hidden; otherwise the first one listed,
+        // and none when every chat is hidden, so a chatless route then stays where it is.
+        const loaded = bootstrap.bots.find((bot) => bot.id === bootstrap.thread?.botId);
+        const target =
+          loaded && !loaded.hidden
+            ? `/app/${loaded.id}`
+            : firstThreadRoute(bootstrap.bots, groupList);
+        if (target !== "/app" || route.botId) redirectKeepingOverlay(target);
       })
       .catch(() => {
         if (cancelled) return;

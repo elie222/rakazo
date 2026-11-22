@@ -1,5 +1,5 @@
 import type { Bot, Group } from "@rakazo/contracts";
-import { chatSnoozed, chatUserBubbleColors } from "@rakazo/core";
+import { chatListed, chatUserBubbleColors } from "@rakazo/core";
 import { useMemo, useRef } from "react";
 import type { ChatTarget } from "../../lib/query/query";
 
@@ -27,9 +27,9 @@ export function useActiveChat({
     inGroup || routeChat?.groupId
       ? undefined
       : (bots.find((b) => b.id === (botId ?? routeChat?.botId)) ??
-        // With no chat named, open one that's in the list, not a snoozed one.
-        bots.find((b) => !chatSnoozed(b, now)) ??
-        bots[0]);
+        // With no chat named, open a listed one, else a snoozed one, never a hidden one.
+        bots.find((b) => chatListed(b, now)) ??
+        bots.find((b) => !b.hidden));
   const userBubble = useMemo(
     () => (active ? chatUserBubbleColors(active.color, active.id) : undefined),
     [active?.color, active?.id],

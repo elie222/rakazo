@@ -4,6 +4,8 @@ import type { PrismaClient } from "@rakazo/db";
 import {
   markThreadReadFor,
   markThreadUnreadFromFor,
+  setThreadHiddenFor,
+  setThreadMuteFor,
   setThreadSnoozeFor,
   setThreadUnreadFor,
 } from "@rakazo/db";
@@ -66,4 +68,24 @@ export async function setThreadSnooze(
     throw new ORPCError("BAD_REQUEST", { message: "Pick a time within the next year" });
   }
   await setThreadSnoozeFor(prisma, readerOf(actor, target), wake);
+}
+
+/** Mutes or unmutes the chat for the actor alone. */
+export async function setThreadMute(
+  prisma: PrismaClient,
+  actor: Actor,
+  target: ThreadTarget,
+  muted: boolean,
+) {
+  await setThreadMuteFor(prisma, readerOf(actor, target), muted);
+}
+
+/** Hides the chat from the actor's list, or brings it back. */
+export async function setThreadHidden(
+  prisma: PrismaClient,
+  actor: Actor,
+  target: ThreadTarget,
+  hidden: boolean,
+) {
+  await setThreadHiddenFor(prisma, readerOf(actor, target), hidden);
 }

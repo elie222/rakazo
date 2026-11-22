@@ -1,7 +1,7 @@
 import { t } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
 import type { SpaceBot, SpaceGroup } from "@rakazo/contracts";
-import { accountDisplay, chatSnoozed } from "@rakazo/core";
+import { accountDisplay, chatListed, chatMuted, chatSnoozed } from "@rakazo/core";
 import { bestEffort } from "@rakazo/logging/best-effort";
 import type { Href } from "expo-router";
 import {
@@ -393,18 +393,18 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
     const otherSpaces = shownSpaces.filter((space) => space.id !== me?.spaceId);
     const pinned: PinnedChat[] = [
       ...[...visible, ...otherSpaces.flatMap((space) => space.bots)]
-        .filter((bot) => bot.pinned && !chatSnoozed(bot, snoozeNow))
+        .filter((bot) => bot.pinned && chatListed(bot, snoozeNow))
         .map((bot) => ({ kind: "bot" as const, bot })),
       ...[...visibleGroups, ...otherSpaces.flatMap((space) => space.groups)]
-        .filter((group) => group.pinned && !chatSnoozed(group, snoozeNow))
+        .filter((group) => group.pinned && chatListed(group, snoozeNow))
         .map((group) => ({ kind: "group" as const, group })),
     ];
-    // A snoozed pin waits under Snoozed rather than in the tiles.
+    // A snoozed or hidden pin waits under Snoozed or Hidden rather than in the tiles.
     const sidebarSpaces = inboxSpaces.map((space) => ({
       ...space,
-      bots: space.bots.filter((bot) => SWIPE_ROWS || !bot.pinned || chatSnoozed(bot, snoozeNow)),
+      bots: space.bots.filter((bot) => SWIPE_ROWS || !bot.pinned || !chatListed(bot, snoozeNow)),
       groups: space.groups.filter(
-        (group) => SWIPE_ROWS || !group.pinned || chatSnoozed(group, snoozeNow),
+        (group) => SWIPE_ROWS || !group.pinned || !chatListed(group, snoozeNow),
       ),
     }));
     const items: InboxItem[] = spaceInboxItems(sidebarSpaces, collapsed, me?.spaceId, snoozeNow);
@@ -424,12 +424,12 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
   useEffect(() => {
     if (inboxLoaded.current && !onShareSelect) void preloadChats(inboxChats(listData));
   }, [listData, onShareSelect]);
-  // Snoozed chats stay off the icon until they wake.
+  // Snoozed and hidden chats stay off the icon until they wake or come back; muted ones count.
   const badgeCount = me
     ? unreadChatCount(
         inboxSpaces.map((space) => ({
-          bots: space.bots.filter((bot) => !chatSnoozed(bot, snoozeNow)),
-          groups: space.groups.filter((group) => !chatSnoozed(group, snoozeNow)),
+          bots: space.bots.filter((bot) => chatListed(bot, snoozeNow)),
+          groups: space.groups.filter((group) => chatListed(group, snoozeNow)),
         })),
       )
     : null;
@@ -945,7 +945,7 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
       ) : null}
       {organizeChat && organizeTarget ? (
         <BotOrganizeModal
-          bot={organizeChat}
+          bot={{ ...organizeChat, muted: chatMuted(organizeChat) }}
           sections={organizeSpace?.botSections ?? organizeTarget.sections}
           onClose={() => {
             organizeRequestId.current += 1;

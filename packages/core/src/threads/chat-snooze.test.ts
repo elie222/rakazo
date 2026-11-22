@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { flush } from "../primitives/async.test-support.js";
+import { deferred, flush } from "../primitives/async.test-support.js";
 import {
+  chatListed,
+  chatMuted,
   chatSnoozed,
   chatWoke,
-  createSnoozeQueue,
+  createChatChoiceQueue,
   nextChatWake,
   snoozePresetTime,
   snoozeWakeDay,
@@ -21,6 +23,13 @@ describe("chat snooze", () => {
     expect(chatWoke({ snoozedUntil: earlier }, now)).toBe(true);
     expect(chatSnoozed({ snoozedUntil: null }, now)).toBe(false);
     expect(chatWoke({ snoozedUntil: "not a date" }, now)).toBe(false);
+  });
+
+  it("lists a chat that is neither snoozed nor hidden", () => {
+    expect(chatListed({ snoozedUntil: earlier }, now)).toBe(true);
+    expect(chatListed({ snoozedUntil: later }, now)).toBe(false);
+    expect(chatListed({ hidden: true }, now)).toBe(false);
+    expect(chatListed({ hidden: false, snoozedUntil: null }, now)).toBe(true);
   });
 
   it("finds the next wake among future snoozes", () => {
@@ -64,13 +73,13 @@ describe("chat snooze", () => {
   });
 });
 
-describe("snooze queue", () => {
+describe("chat choice queue", () => {
   const tomorrow = "2026-11-08T09:00:00.000Z";
   function setup() {
     const requests: Array<{ resolve: () => void; reject: (error: Error) => void }> = [];
     const shown: Array<string | null> = [];
     const settled: Array<boolean> = [];
-    const queue = createSnoozeQueue();
+    const queue = createChatChoiceQueue<string | null>();
     const change = {
       send: () =>
         new Promise<void>((resolve, reject) => {
@@ -139,11 +148,37 @@ describe("snooze queue", () => {
     expect(settled).toEqual([false]);
   });
 
+  it("rolls a failed mute back to the saved one", async () => {
+    const queue = createChatChoiceQueue<boolean>();
+    const shown: boolean[] = [];
+    const save = deferred();
+    queue("group:a", true, false, {
+      send: () => save.promise,
+      apply: (muted) => shown.push(muted),
+      settled: () => undefined,
+    });
+    await flush();
+    save.reject(new Error("offline"));
+    await flush();
+    expect(shown).toEqual([true, false]);
+  });
+
   it("never starts a save before the one ahead of it finishes", async () => {
     const { requests, queue, change } = setup();
     queue("bot:a", tomorrow, null, change);
     queue("bot:a", null, tomorrow, change);
     await new Promise((resolve) => setTimeout(resolve, 20));
     expect(requests).toHaveLength(1);
+  });
+});
+
+describe("chatMuted", () => {
+  it("reads a member's own mute, else a bot's own switch from a server without one", () => {
+    expect(chatMuted({ muted: true, notifyOnFinish: true })).toBe(true);
+    expect(chatMuted({ muted: false, notifyOnFinish: false })).toBe(false);
+    expect(chatMuted({ notifyOnFinish: false })).toBe(true);
+    expect(chatMuted({ muted: null, notifyOnFinish: true })).toBe(false);
+    // Such a server cannot mute a group.
+    expect(chatMuted({})).toBeUndefined();
   });
 });

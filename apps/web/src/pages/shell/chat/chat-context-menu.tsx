@@ -6,7 +6,7 @@ import { Suspense, useCallback, useEffect, useState } from "react";
 import { lazyOverlay } from "../../../components/ErrorBoundary";
 import type { createSpaceRpc } from "../../../lib/query/rpc";
 import type { ShellDialogsState } from "../shell-dialogs";
-import type { SnoozeChat } from "../sidebar/use-chat-snooze";
+import type { SnoozeChat, ToggleChat } from "../sidebar/use-chat-snooze";
 import type { useChatRead } from "./use-chat-read";
 
 const BotContextMenu = lazyOverlay(() =>
@@ -15,9 +15,10 @@ const BotContextMenu = lazyOverlay(() =>
 
 type ChatRead = ReturnType<typeof useChatRead>;
 
-export type ChatMenuTarget = { kind: "bot" | "group"; id: string };
+/** The chat whose menu is open; `anchor` is its row's "⋯" button when opened from there. */
+export type ChatMenuTarget = { kind: "bot" | "group"; id: string; anchor?: HTMLElement | null };
 
-/** Which chat's right-click menu is open, shared by the roster and search results. */
+/** Which chat's menu is open, shared by the roster and search results. */
 export type ChatMenuState = {
   menu: ChatMenuTarget | null;
   setMenu: Dispatch<SetStateAction<ChatMenuTarget | null>>;
@@ -33,7 +34,7 @@ export function useChatMenu({
   ...menuProps
 }: { bots: Bot[]; groups: Group[] } & Omit<
   ComponentProps<typeof ChatContextMenu>,
-  "bot" | "group" | "onClose"
+  "bot" | "group" | "anchor" | "onClose"
 >): ChatMenuState {
   const [menu, setMenu] = useState<ChatMenuTarget | null>(null);
   const close = useCallback(() => setMenu(null), []);
@@ -44,7 +45,13 @@ export function useChatMenu({
     setMenu,
     content:
       bot || group ? (
-        <ChatContextMenu {...menuProps} bot={bot} group={group} onClose={close} />
+        <ChatContextMenu
+          {...menuProps}
+          bot={bot}
+          group={group}
+          anchor={menu?.anchor}
+          onClose={close}
+        />
       ) : null,
     // Search can list a chat the roster doesn't hold; it has no menu to show.
     has: (target) =>
@@ -93,17 +100,23 @@ export function ChatMenu({
   );
 }
 
-/** The right-click menu for a bot or group in the roster or search results. */
+/**
+ * The menu for a bot or group in the roster or search results, from a right-click or the row's
+ * "⋯" button.
+ */
 export function ChatContextMenu({
   rpc,
   bot,
   group,
+  anchor,
   sections,
   spaceId,
   onClose,
   refreshBots,
   read,
   snooze,
+  mute,
+  hide,
   dialogs,
   openChatSettings,
   navigate,
@@ -111,12 +124,16 @@ export function ChatContextMenu({
   rpc: ReturnType<typeof createSpaceRpc>;
   bot: Bot | undefined;
   group: Group | undefined;
+  /** The "⋯" button it opened from, if not the pointer. */
+  anchor?: HTMLElement | null;
   sections: BotSection[];
   spaceId: string | undefined;
   onClose: () => void;
   refreshBots: (includeArchived?: boolean) => Promise<void>;
   read: Pick<ChatRead, "markBotRead" | "markBotUnread" | "toggleGroupUnread">;
   snooze: SnoozeChat;
+  mute: ToggleChat;
+  hide: ToggleChat;
   dialogs: ShellDialogsState;
   openChatSettings: (kind: "bot" | "group", id: string) => void;
   navigate: (path: string) => void;
@@ -129,6 +146,7 @@ export function ChatContextMenu({
   return (
     <BotContextMenu
       bot={chat}
+      anchor={anchor}
       onClose={onClose}
       sections={sections}
       onTogglePinned={() => {
@@ -155,6 +173,14 @@ export function ChatContextMenu({
       onSnooze={(until) => {
         onClose();
         snooze({ kind: target.kind, ...chat }, until);
+      }}
+      onToggleMuted={() => {
+        onClose();
+        mute({ kind: target.kind, ...chat }, !chat.muted);
+      }}
+      onToggleHidden={() => {
+        onClose();
+        hide({ kind: target.kind, ...chat }, !chat.hidden);
       }}
       onMoveToSection={(sectionId) => {
         onClose();

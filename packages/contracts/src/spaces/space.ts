@@ -23,6 +23,8 @@ export const SpaceBotSchema = BotSchema.pick({
   sectionId: true,
   unread: true,
   snoozedUntil: true,
+  muted: true,
+  hidden: true,
   parentBotId: true,
   preview: true,
   status: true,
@@ -42,6 +44,8 @@ export const SpaceGroupSchema = GroupSchema.pick({
   preview: true,
   unread: true,
   snoozedUntil: true,
+  muted: true,
+  hidden: true,
   updatedAt: true,
 });
 export type SpaceGroup = z.infer<typeof SpaceGroupSchema>;

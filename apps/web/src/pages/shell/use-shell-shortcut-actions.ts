@@ -1,5 +1,5 @@
 import type { Bot, BotSection, Group } from "@rakazo/contracts";
-import { chatSnoozed, groupBotsForSidebar } from "@rakazo/core";
+import { chatListed, groupBotsForSidebar } from "@rakazo/core";
 import { bestEffort } from "@rakazo/logging/best-effort";
 import type { Dispatch, SetStateAction } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -76,7 +76,7 @@ export function useShellShortcutActions({
   const cycleBots = useMemo(
     () =>
       groupBotsForSidebar(
-        bots.filter((bot) => !chatSnoozed(bot, snoozeNow)),
+        bots.filter((bot) => chatListed(bot, snoozeNow)),
         botSections,
       ).flatMap((group) => group.bots),
     [bots, botSections, snoozeNow],

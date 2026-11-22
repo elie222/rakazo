@@ -276,6 +276,15 @@ export function BotSettings({
     if (voiceId === saved[4]) setVoiceId(next[4]);
     setSavedAdvanced(JSON.stringify(next));
   }, [bot]);
+  // The chat menu mutes and unmutes too, without touching the bot or its updatedAt, so the switch
+  // follows the member's mute whenever it changes, unless they are changing it here.
+  const memberNotify = bot.muted === undefined ? (bot.notifyOnFinish ?? true) : !bot.muted;
+  useEffect(() => {
+    const accepted = acceptedAutomatic.current.notifyOnFinish;
+    if (memberNotify === accepted) return;
+    setNotifyOnFinish((shown) => (shown === accepted ? memberNotify : shown));
+    acceptedAutomatic.current = { ...acceptedAutomatic.current, notifyOnFinish: memberNotify };
+  }, [memberNotify]);
 
   const {
     selectedModel,
@@ -345,7 +354,10 @@ export function BotSettings({
         nextAvatarSet !== acceptedAutomatic.current.avatarSet
           ? { avatarSet: nextAvatarSet }
           : {}),
-        notifyOnFinish: nextNotify,
+        // The member's own mute, which the chat menu also sets: only a change here is sent.
+        ...(nextNotify !== acceptedAutomatic.current.notifyOnFinish
+          ? { notifyOnFinish: nextNotify }
+          : {}),
         computerMode,
         autoSpeak,
         voiceId: voiceId || null,

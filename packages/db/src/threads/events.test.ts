@@ -232,7 +232,17 @@ describe("finalizeRun", () => {
       outcome: "failed",
       error: "terminated",
       partialReply,
+      forBot: true,
     });
+    // Written for another bot, the kept text alerts nobody; the failure event still does.
+    expect(
+      (tx.event.create.mock.calls[0]?.[0].data as { payload?: unknown } | undefined)?.payload,
+    ).toMatchObject({ forBot: true });
+    // Nor is it unread for anyone, as the finished reply wouldn't be.
+    const sql = (tx.$executeRaw.mock.calls as unknown as [readonly string[]][]).map(([parts]) =>
+      parts.join(""),
+    );
+    expect(sql.some((text) => text.includes("INSERT INTO thread_reads"))).toBe(false);
 
     expect(tx.message.create).toHaveBeenCalledExactlyOnceWith({
       data: expect.objectContaining({

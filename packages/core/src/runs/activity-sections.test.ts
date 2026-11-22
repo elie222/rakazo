@@ -115,3 +115,16 @@ it("leaves a snoozed chat out until it wakes, even one waiting on the user", () 
   const woken = activitySections({ ...input, now: Date.parse(wake) + 1 });
   expect(woken.attention.map((item) => item.botId)).toEqual(["asleep", "awake"]);
 });
+
+it("leaves a hidden chat out, as the chat list does", () => {
+  const sections = activitySections({
+    active: [run("away", "running")],
+    recent: [],
+    bots: [{ id: "away", unread: true, hidden: true }],
+    groups: [{ id: "crew", unread: true, hidden: true }],
+    now: Date.parse(now),
+  });
+  expect(sections.working).toEqual([]);
+  expect(sections.unreadBots).toEqual([]);
+  expect(sections.unreadGroups).toEqual([]);
+});

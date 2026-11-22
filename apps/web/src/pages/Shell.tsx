@@ -61,10 +61,10 @@ import { isApplePlatform } from "./shell/shell-shortcuts";
 import { ShellSidePanel } from "./shell/side-panel";
 import { ArchivedChats } from "./shell/sidebar/archived-chats";
 import { ShellSidebar } from "./shell/sidebar/shell-sidebar";
+import { ChatShelves } from "./shell/sidebar/shelved-chats";
 import { BotsSidebarLayout } from "./shell/sidebar/sidebar-layout";
 import { SidebarRoster } from "./shell/sidebar/sidebar-roster";
-import { SnoozedChats } from "./shell/sidebar/snoozed-chats";
-import { useChatSnooze } from "./shell/sidebar/use-chat-snooze";
+import { useChatChoices } from "./shell/sidebar/use-chat-snooze";
 import { useMobileSidebar } from "./shell/sidebar/use-mobile-sidebar";
 import { useSidebarExpansion } from "./shell/sidebar/use-sidebar-expansion";
 import { useSidebarSearch } from "./shell/sidebar/use-sidebar-search";
@@ -150,7 +150,7 @@ function SpaceShell() {
     ...groups,
     ...spaces.flatMap((space) => [...space.bots, ...space.groups]),
   ]);
-  const snooze = useChatSnooze({
+  const { snooze, mute, hide } = useChatChoices({
     rpc,
     openSpaceId: bootstrapMe?.spaceId,
     setBots,
@@ -428,11 +428,14 @@ function SpaceShell() {
       spaces.some((space) => space.hasContent) ||
       // Someone who has chatted before, in a new organization: nothing is on its way to them.
       !firstBotDue);
+  // With no chat open because every bot is hidden, or there is none, the shell is ready as is.
   const shellReady =
     initialBotsLoaded &&
     (inGroup
       ? Boolean(activeGroup && activeSnapshot)
-      : bots.length === 0 || Boolean(active && activeSnapshot));
+      : active
+        ? Boolean(activeSnapshot)
+        : bots.every((bot) => bot.hidden));
 
   useShellReadyMarks({
     botsLoaded: initialBotsLoaded,
@@ -485,6 +488,7 @@ function SpaceShell() {
     activeBotId,
     activeGroupId,
     botsRef,
+    groupsRef,
     bootstrapMe,
     activeSnapshot,
     navigate,
@@ -614,6 +618,8 @@ function SpaceShell() {
     refreshBots,
     read,
     snooze,
+    mute,
+    hide,
     dialogs,
     openChatSettings,
     navigate,
@@ -699,11 +705,12 @@ function SpaceShell() {
         }
         archived={
           <>
-            <SnoozedChats
-              snoozed={sidebar.snoozed}
+            <ChatShelves
+              spaces={sidebar.sidebarSpaces}
               showSpaceSearch={search.showSpaceSearch}
               now={snoozeNow}
               snooze={snooze}
+              hide={hide}
               openSpaceChat={openSpaceChat}
             />
             <ArchivedChats

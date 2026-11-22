@@ -2,6 +2,7 @@ import { useLingui } from "@lingui/react/macro";
 import type {
   Bot,
   ComputerStatus,
+  Group,
   LoginFieldInput,
   Me,
   MessageReaction,
@@ -20,6 +21,7 @@ import type { ComposerMention } from "@rakazo/core";
 import {
   applyThreadSendReceipt,
   attachmentsForThread,
+  chatMuted,
   inferAttachmentMimeType,
   isImageInputConfirmation,
   newClientId,
@@ -59,6 +61,7 @@ export function useComposerActions({
   activeBotId,
   activeGroupId,
   botsRef,
+  groupsRef,
   bootstrapMe,
   activeSnapshot,
   navigate,
@@ -81,6 +84,7 @@ export function useComposerActions({
   activeBotId: RefObject<string | undefined>;
   activeGroupId: RefObject<string | undefined>;
   botsRef: RefObject<Bot[]>;
+  groupsRef: RefObject<Group[]>;
   bootstrapMe: Me | null | undefined;
   activeSnapshot: ThreadSnapshot | null;
   navigate: ReturnType<typeof useShellNavigation>["navigate"];
@@ -366,9 +370,13 @@ export function useComposerActions({
       );
       const groupTarget = plan.rerouteGroupId ?? initialGroupTarget;
       const botTarget = reroutedToGroup ? undefined : initialBotTarget;
+      // A muted or hidden chat shows no browser notifications, so it never asks for them.
+      const target = groupTarget
+        ? groupsRef.current.find((group) => group.id === groupTarget)
+        : botsRef.current.find((bot) => bot.id === botTarget);
       if (
         plan.shouldSend &&
-        (groupTarget || botsRef.current.find((bot) => bot.id === botTarget)?.notifyOnFinish)
+        (target ? !chatMuted(target) && !target.hidden : Boolean(groupTarget))
       ) {
         const permissionRequest = requestBrowserNotificationPermission();
         if (permissionRequest) void permissionRequest.then(flushPendingBrowserNotifications);

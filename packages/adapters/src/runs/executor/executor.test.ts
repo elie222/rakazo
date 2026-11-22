@@ -45,7 +45,6 @@ import {
 } from "../assembly/run-instructions.prompt.js";
 import { REACTION_SILENT_REPLY_GUIDANCE } from "../assembly/run-replies.prompt.js";
 import { createRunWorkspaceCheckpoint } from "../lifecycle/run-lifecycle.js";
-import { runNotificationsEnabled } from "../lifecycle/run-notifications.js";
 import {
   followUpsOffered,
   offeredFleetTools,
@@ -1437,50 +1436,6 @@ describe("parseUpdateBotPatch", () => {
     expect(parseUpdateBotPatch({ color: "#8B5CF6" })).toEqual({ patch: {} });
     expect(parseUpdateBotPatch({ artifact_id: "art-1" })).toEqual({ patch: {} });
     expect(parseUpdateBotPatch({ use_attached_image: true })).toEqual({ patch: {} });
-  });
-});
-
-describe("run notification preference", () => {
-  it("silences direct messages but leaves group notifications enabled", async () => {
-    let source: { bot: { notifyOnFinish: boolean }; thread: { groupId: string | null } } | null = {
-      bot: { notifyOnFinish: false },
-      thread: { groupId: null },
-    };
-    const findFirst = vi.fn(async () => source);
-    const prisma = { run: { findFirst } } as unknown as PrismaClient;
-
-    await expect(
-      runNotificationsEnabled(prisma, {
-        botId: "bot-1",
-        threadId: "thread-1",
-        spaceId: "workspace-1",
-        userId: "user-1",
-      }),
-    ).resolves.toBe(false);
-    expect(findFirst).toHaveBeenCalledWith({
-      where: {
-        botId: "bot-1",
-        threadId: "thread-1",
-        spaceId: "workspace-1",
-        userId: "user-1",
-      },
-      select: {
-        bot: {
-          select: { id: true, name: true, color: true, avatarSet: true, notifyOnFinish: true },
-        },
-        thread: { select: { groupId: true } },
-      },
-    });
-
-    source = { bot: { notifyOnFinish: false }, thread: { groupId: "group-1" } };
-    await expect(
-      runNotificationsEnabled(prisma, {
-        botId: "bot-1",
-        threadId: "thread-1",
-        spaceId: "workspace-1",
-        userId: "user-1",
-      }),
-    ).resolves.toBe(true);
   });
 });
 

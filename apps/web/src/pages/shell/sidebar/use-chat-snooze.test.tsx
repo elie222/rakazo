@@ -1,11 +1,12 @@
 // @vitest-environment jsdom
 import type { Bot, Group, Space } from "@rakazo/contracts";
+import { deferred } from "@rakazo/core/test-async";
 import { act, createElement, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { expect, it, vi } from "vitest";
 import type { createSpaceRpc } from "../../../lib/query/rpc";
-import type { SnoozeChat } from "./use-chat-snooze";
-import { useChatSnooze } from "./use-chat-snooze";
+import type { SnoozeChat, ToggleChat } from "./use-chat-snooze";
+import { useChatHide, useChatMute, useChatSnooze } from "./use-chat-snooze";
 
 const toast = vi.hoisted(() => ({ error: vi.fn() }));
 vi.mock("@lingui/react/macro", () => ({
@@ -56,5 +57,38 @@ it("puts a chat back to what the server saved when a snooze and its quick undo b
   expect(state!.bots[0]!.snoozedUntil).toBeNull();
   expect(toast.error).toHaveBeenCalledTimes(1);
   expect(refreshBots).toHaveBeenCalledTimes(1);
+  await act(async () => root.unmount());
+});
+
+it("mutes a group and hides a bot at once, and puts a failed hide back", async () => {
+  const mute = vi.fn(async () => ({ ok: true }));
+  const hidden = deferred();
+  const hide = vi.fn(() => hidden.promise);
+  const rpc = { threads: { mute, hide } } as unknown as ReturnType<typeof createSpaceRpc>;
+  const refreshBots = vi.fn(async () => undefined);
+  let state: { bots: Bot[]; groups: Group[]; mute: ToggleChat; hide: ToggleChat } | undefined;
+  function Harness() {
+    const [bots, setBots] = useState([{ id: "bot", spaceId: "space", hidden: false } as Bot]);
+    const [groups, setGroups] = useState([{ id: "crew", spaceId: "space", muted: false } as Group]);
+    const [, setSpaces] = useState<Space[]>([]);
+    const deps = { rpc, openSpaceId: "space", setBots, setGroups, setSpaces, refreshBots };
+    state = { bots, groups, mute: useChatMute(deps), hide: useChatHide(deps) };
+    return null;
+  }
+  const root = createRoot(document.createElement("div"));
+  await act(async () => root.render(createElement(Harness)));
+
+  await act(async () => state!.mute({ kind: "group", id: "crew", spaceId: "space" }, true));
+  expect(mute).toHaveBeenCalledWith({ groupId: "crew", muted: true });
+  expect(state!.groups[0]!.muted).toBe(true);
+
+  await act(async () =>
+    state!.hide({ kind: "bot", id: "bot", spaceId: "space", hidden: false }, true),
+  );
+  expect(hide).toHaveBeenCalledWith({ botId: "bot", hidden: true });
+  expect(state!.bots[0]!.hidden).toBe(true);
+  await act(async () => hidden.reject(new Error("offline")));
+  expect(state!.bots[0]!.hidden).toBe(false);
+  expect(toast.error).toHaveBeenCalled();
   await act(async () => root.unmount());
 });

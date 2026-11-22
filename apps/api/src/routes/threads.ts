@@ -55,6 +55,8 @@ import { reactToThreadMessage } from "../threads/thread-reactions.js";
 import {
   markThreadRead,
   markThreadUnreadFrom,
+  setThreadHidden,
+  setThreadMute,
   setThreadSnooze,
   setThreadUnreadState,
 } from "../threads/thread-read-state.js";
@@ -700,6 +702,16 @@ export function threadsRoutes(ctx: RouterContext) {
       snooze: authed.threads.snooze.handler(async ({ context, input }) => {
         const target = await resolveThreadTarget(deps.prisma, context.actor, input);
         await setThreadSnooze(deps.prisma, context.actor, target, input.until);
+        return { ok: true as const };
+      }),
+      mute: authed.threads.mute.handler(async ({ context, input }) => {
+        const target = await resolveThreadTarget(deps.prisma, context.actor, input);
+        await setThreadMute(deps.prisma, context.actor, target, input.muted);
+        return { ok: true as const };
+      }),
+      hide: authed.threads.hide.handler(async ({ context, input }) => {
+        const target = await resolveThreadTarget(deps.prisma, context.actor, input);
+        await setThreadHidden(deps.prisma, context.actor, target, input.hidden);
         return { ok: true as const };
       }),
     },

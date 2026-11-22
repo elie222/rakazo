@@ -43,6 +43,7 @@ export const BotSchema = z.object({
   instructionHistory: z.array(InstructionVersionSchema).optional(),
   color: z.string(),
   avatarSet: BotAvatarSetSchema.optional(),
+  /** The viewer's own setting, the inverse of `muted`; installed apps still read it. */
   notifyOnFinish: z.boolean(),
   pinned: z.boolean(),
   sectionId: Id.nullable(),
@@ -50,6 +51,13 @@ export const BotSchema = z.object({
   unread: z.boolean(),
   /** Hidden from the viewer's chat list until then; past, the chat has just woken. */
   snoozedUntil: z.string().nullable().optional(),
+  /**
+   * The viewer muted it: no pushes or alerts, except their own run's questions, takeovers and
+   * failures.
+   */
+  muted: z.boolean().optional(),
+  /** The viewer hid it from their chat list; it keeps working. */
+  hidden: z.boolean().optional(),
   parentBotId: Id.nullable(),
   memoryScope: MemoryScopeSchema.nullable(),
   threadId: Id,
@@ -133,6 +141,7 @@ export const CreateBotInput = z.object({
   name: z.string().trim().min(1).max(BOT_NAME_MAX_LENGTH),
   description: z.string().max(BOT_DESCRIPTION_MAX_LENGTH).default(""),
   instructions: z.string().max(BOT_INSTRUCTIONS_MAX_LENGTH).default(""),
+  /** Whether the space's members hear from the bot until each mutes or unmutes it. */
   notifyOnFinish: z.boolean().default(true),
   dailyCheckIns: z.boolean().optional(),
   fleetManagement: z.boolean().optional(),
@@ -157,6 +166,10 @@ export const UpdateBotInput = z
     expectedInstructions: z.string().max(BOT_INSTRUCTIONS_MAX_LENGTH).optional(),
     /** Ignored; installed mobile apps may still send it. */
     selfUpdateInstructions: z.boolean().optional(),
+    /**
+     * Unmutes (true) or mutes (false) the bot's chat for the caller, like `threads.mute`. A value
+     * that matches the caller's current setting records nothing.
+     */
     notifyOnFinish: z.boolean().optional(),
     color: BotAvatarValueSchema.optional(),
     avatarSet: BotAvatarSetSchema.optional(),

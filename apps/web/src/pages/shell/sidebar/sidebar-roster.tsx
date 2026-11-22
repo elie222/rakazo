@@ -18,6 +18,7 @@ import {
   TooltipTrigger,
 } from "@rakazo/ui-web";
 import {
+  BellOff,
   ChevronDown,
   CircleAlert,
   Globe,
@@ -316,6 +317,11 @@ export function SidebarRoster({
                 const rowSameList =
                   Boolean(draggedBotId) && groupBotIds.includes(draggedBotId ?? "");
                 const rowDropKey = `row:${item.kind}:${item.chat.id}`;
+                const menuOpen =
+                  chatMenu.menu?.kind === item.kind && chatMenu.menu.id === item.chat.id;
+                // Only the open space's chats have a menu; the mini rail has no room for "⋯".
+                const hasMenu = item.chat.spaceId === bootstrapMe?.spaceId;
+                const actionsButton = hasMenu && !mini;
                 const groupMembers =
                   item.kind === "group" && item.chat.id === activeSnapshot?.groupId
                     ? (activeSnapshot.members ?? item.chat.members)
@@ -454,7 +460,15 @@ export function SidebarRoster({
                       avatar
                     )}
                     {!mini ? (
-                      <div className="min-w-0 flex-1">
+                      <div
+                        className={`min-w-0 flex-1 ${
+                          actionsButton
+                            ? menuOpen
+                              ? "pe-7"
+                              : "group-focus-within/row:pe-7 group-hover/row:pe-7"
+                            : ""
+                        }`}
+                      >
                         <div className="flex items-center justify-between gap-1.5">
                           <div className="flex min-w-0 items-center gap-1.5 overflow-hidden">
                             <span
@@ -473,6 +487,15 @@ export function SidebarRoster({
                             ) : null}
                           </div>
                           <div className="flex shrink-0 items-center gap-1.5">
+                            {item.chat.muted ? (
+                              <BellOff
+                                size={12}
+                                role="img"
+                                aria-label={t`Muted`}
+                                data-roster-muted
+                                className="shrink-0 text-faint-foreground"
+                              />
+                            ) : null}
                             {item.woke ? (
                               <span
                                 data-roster-woke
@@ -550,7 +573,7 @@ export function SidebarRoster({
                     <ChatMenu
                       target={{ kind: item.kind, id: item.chat.id }}
                       state={chatMenu}
-                      disabled={item.chat.spaceId !== bootstrapMe?.spaceId}
+                      disabled={!hasMenu}
                     >
                       {mini ? (
                         <Tooltip>
@@ -602,6 +625,32 @@ export function SidebarRoster({
                         chatTrigger
                       )}
                     </ChatMenu>
+                    {actionsButton ? (
+                      // The same menu without a right-click, so it can be found and reached by
+                      // keyboard. It shows on hover or focus, or while its menu is open; until
+                      // then a tap on that end of the row still opens the chat.
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        data-roster-actions
+                        aria-label={t`Actions for ${item.chat.name}`}
+                        aria-haspopup="menu"
+                        aria-expanded={menuOpen}
+                        className={`absolute end-1.5 top-1/2 -translate-y-1/2 text-muted-foreground ${
+                          menuOpen
+                            ? "opacity-100"
+                            : "pointer-events-none opacity-0 focus-visible:opacity-100 group-focus-within/row:pointer-events-auto group-focus-within/row:opacity-100 group-hover/row:pointer-events-auto group-hover/row:opacity-100"
+                        }`}
+                        onClick={(event) => {
+                          const anchor = event.currentTarget;
+                          chatMenu.setMenu(
+                            menuOpen ? null : { kind: item.kind, id: item.chat.id, anchor },
+                          );
+                        }}
+                      >
+                        <MoreHorizontal size={16} aria-hidden="true" />
+                      </Button>
+                    ) : null}
                   </div>
                 );
               })}

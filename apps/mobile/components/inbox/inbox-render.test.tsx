@@ -7,7 +7,7 @@ import { act, cloneElement, useEffect, useMemo, useState } from "react";
 import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import type { MobileBot } from "../../lib/api/mobile-types";
+import type { MobileBot, MobileGroup } from "../../lib/api/mobile-types";
 import { askForModelBeforeFirstBot, createInboxBot } from "../../lib/inbox/create-inbox-bot";
 import { formatThreadTime } from "../../lib/inbox/inbox";
 import { onInboxChanged } from "../../lib/inbox/inbox-changes";
@@ -37,6 +37,7 @@ const ui = vi.hoisted(() => ({
   rowMenus: [] as NativeRowMenu[],
   a11yActions: new Map<string, (event: { nativeEvent: { actionName: string } }) => void>(),
   swipeRows: [] as string[],
+  swipeMuted: [] as Array<boolean | undefined>,
   avatars: [] as string[],
   chevronStarts: [] as number[],
   chevronTargets: [] as number[],
@@ -225,6 +226,7 @@ vi.mock("../bots/bot-avatar", () => ({
     ui.avatars.push(identity);
     return <b data-identity={identity} data-muted={String(Boolean(muted))} data-motion={motion} />;
   },
+  MutedBadge: () => <s data-muted-badge />,
 }));
 vi.mock("../bots/group-avatar", () => ({ GroupAvatar: () => null }));
 // Rows in the current space carry the iOS swipe host and its long-press menu.
@@ -232,13 +234,16 @@ vi.mock("./inbox-swipe-row", () => ({
   InboxSwipeRow: ({
     rowKey,
     sections,
+    muted,
     children,
   }: {
     rowKey: string;
     sections: { id: string }[];
+    muted?: boolean;
     children: ReactElement;
   }) => {
     ui.swipeRows.push([rowKey, ...sections.map((section) => section.id)].join(" "));
+    ui.swipeMuted.push(muted);
     return children;
   },
 }));
@@ -307,6 +312,7 @@ beforeEach(() => {
     menus: [],
     rowMenus: [],
     swipeRows: [],
+    swipeMuted: [],
     avatars: [],
     chevronStarts: [],
     chevronTargets: [],
@@ -530,6 +536,55 @@ it("ties the pinned tiles' avatars to the pinned row, so they freeze when it scr
   expect(container.querySelector('[data-row="pinned"] b[data-identity="bot-p"]')).not.toBeNull();
 });
 
+it("marks a muted pinned group as a muted pinned bot is marked", () => {
+  const bot = { id: "bot-p", name: "Scout", preview: "", pinned: true, notifyOnFinish: false };
+  const group = {
+    id: "group-p",
+    name: "Crew",
+    preview: "",
+    pinned: true,
+    muted: true,
+    members: [],
+  };
+  render(
+    <List
+      items={[
+        {
+          type: "pinned",
+          chats: [
+            { kind: "bot", bot: bot as MobileBot },
+            { kind: "group", group: group as unknown as MobileGroup },
+          ],
+        },
+      ]}
+    />,
+  );
+  expect(rowLabels()).toEqual(["Scout, notifications silenced", "Crew, notifications silenced"]);
+  expect(container.querySelector('b[data-identity="bot-p"]')?.getAttribute("data-muted")).toBe(
+    "true",
+  );
+  expect(container.querySelectorAll("[data-muted-badge]")).toHaveLength(1);
+});
+
+it("takes a pinned bot's mute from the server's muted over its notification setting", () => {
+  const bot = (id: string, muted: boolean) =>
+    ({ id, name: id, preview: "", pinned: true, notifyOnFinish: muted, muted }) as MobileBot;
+  render(
+    <List
+      items={[
+        {
+          type: "pinned",
+          chats: [
+            { kind: "bot", bot: bot("quiet", true) },
+            { kind: "bot", bot: bot("loud", false) },
+          ],
+        },
+      ]}
+    />,
+  );
+  expect(rowLabels()).toEqual(["quiet, notifications silenced", "loud"]);
+});
+
 it("collapses a section from its heading and keeps the choice for the account", async () => {
   ui.loadCollapsedSections.mockReset().mockResolvedValue(null);
   ui.saveCollapsedSections.mockReset();
@@ -665,6 +720,26 @@ it("waits for a saved or live inbox before publishing a remounted session's sear
   // A loaded inbox may legitimately become empty; only the initial placeholder is skipped.
   render(<PublishRoster key="session-2" me={me} inboxSpaces={[]} />);
   expect(publish).toHaveBeenLastCalledWith([]);
+});
+
+it("offers Mute for a bot on a server that sends only its notification setting", () => {
+  const items = [
+    {
+      type: "bot",
+      bot: { id: "quiet", spaceId: "space-a", name: "Quiet", preview: "", notifyOnFinish: false },
+    },
+    {
+      type: "bot",
+      bot: { id: "loud", spaceId: "space-a", name: "Loud", preview: "", notifyOnFinish: true },
+    },
+    // Such a server cannot mute a group, so its menu offers no Mute.
+    {
+      type: "group",
+      group: { id: "crew", spaceId: "space-a", name: "Crew", preview: "", members: [] },
+    },
+  ] as unknown as InboxItem[];
+  render(<List items={items} spaceId="space-a" />);
+  expect(ui.swipeMuted).toEqual([true, false, undefined]);
 });
 
 it("opens bots in each space in share mode without swipe actions or long-press menus", () => {

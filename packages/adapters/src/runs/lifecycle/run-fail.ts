@@ -40,7 +40,7 @@ import {
   enqueueSteeringContinuation,
   requeueInterruptedRun,
 } from "./run-lifecycle.js";
-import { notifyRun, runSendsFinishNotification } from "./run-notifications.js";
+import { completionMarks, notifyRun, runSendsFinishNotification } from "./run-notifications.js";
 import { recordExplicitNoResponse } from "./run-progress.js";
 import { extractNarrationText } from "./user-progress.js";
 
@@ -152,6 +152,13 @@ export async function failRun(
     partialText && !containsSecret(partialText, ctx.secrets)
       ? [{ kind: "text" as const, text: partialText }]
       : [];
+  // Text written for another bot alerts nobody, as its finished reply wouldn't; a peer's result
+  // passed on to the person is theirs.
+  const { forBot } = completionMarks(
+    run.trigger,
+    partialText,
+    ctx.source.peerMessage?.repliesToRequest === true,
+  );
   await ctx.settleRunningHelpers();
   const failed = await deps.events.finalizeRun({
     spaceId: run.spaceId,
@@ -165,6 +172,7 @@ export async function failRun(
     outcome: "failed",
     error: message,
     ...(partialReply.length > 0 ? { partialReply } : {}),
+    ...(forBot ? { forBot: true } : {}),
   });
   if (!failed) return;
   if (

@@ -1,6 +1,13 @@
 // @vitest-environment jsdom
 
-import type { Bot, ComputerStatus, Me, ThreadMessage, ThreadSnapshot } from "@rakazo/contracts";
+import type {
+  Bot,
+  ComputerStatus,
+  Group,
+  Me,
+  ThreadMessage,
+  ThreadSnapshot,
+} from "@rakazo/contracts";
 import { THREAD_MESSAGE_TEXT_MAX_LENGTH } from "@rakazo/contracts";
 import { flush as flushTimer } from "@rakazo/core/test-async";
 import { act } from "react";
@@ -10,6 +17,8 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { composerHoldsUnsavedWork } from "../../../lib/composer/composer-draft";
 import type { PageSession } from "../../../lib/pages/pages";
 import { createPageSession } from "../../../lib/pages/pages";
+import type * as BrowserNotifications from "../../../lib/platform/browser-notifications";
+import { requestBrowserNotificationPermission } from "../../../lib/platform/browser-notifications";
 import type { createSpaceRpc } from "../../../lib/query/rpc";
 import { useComposerActions } from "./use-composer-actions";
 
@@ -20,6 +29,10 @@ vi.mock("@lingui/react/macro", () => {
     parts.reduce((text, part, index) => `${text}${index > 0 ? values[index - 1] : ""}${part}`, "");
   return { useLingui: () => ({ t, i18n: { locale: "en" } }) };
 });
+vi.mock("../../../lib/platform/browser-notifications", async (importOriginal) => ({
+  ...(await importOriginal<typeof BrowserNotifications>()),
+  requestBrowserNotificationPermission: vi.fn(() => undefined),
+}));
 vi.mock("../../../lib/composer/prepare-image", () => ({
   canPrepareImage: () => false,
   prepareImage: async (file: File) => file,
@@ -46,6 +59,7 @@ let activeSnapshot: ThreadSnapshot | null;
 const activeBotId = ref<string | undefined>(undefined);
 const activeGroupId = ref<string | undefined>(undefined);
 const botsRef = ref<Bot[]>([]);
+const groupsRef = ref<Group[]>([]);
 const terminalRunReceipts = ref(new Set<string>());
 const computerRef = ref<ComputerStatus | null>(null);
 const refreshBots = async () => undefined;
@@ -70,6 +84,7 @@ function Harness({ extras }: { extras?: Record<string, unknown> }) {
     activeBotId,
     activeGroupId,
     botsRef,
+    groupsRef,
     bootstrapMe: me,
     activeSnapshot,
     navigate: navigate as never,
@@ -108,6 +123,8 @@ beforeEach(() => {
   activeBotId.current = activeChat;
   activeGroupId.current = undefined;
   botsRef.current = [];
+  groupsRef.current = [];
+  vi.mocked(requestBrowserNotificationPermission).mockClear();
   terminalRunReceipts.current = new Set();
   computerRef.current = null;
   pageSession = createPageSession();
@@ -361,6 +378,19 @@ it("opens a mentioned group without running anything", async () => {
   expect(navigate).toHaveBeenCalledWith("/app/g/group-2");
   expect(rpc.threads.sendWithRoutines).not.toHaveBeenCalled();
   expect(rpc.threads.send).not.toHaveBeenCalled();
+});
+
+it("asks for browser notifications only for a group that shows them", async () => {
+  activeBotId.current = undefined;
+  activeGroupId.current = "group-1";
+  rpc.threads.send.mockResolvedValue({ runId: "run-1", taskId: "task-1", seq: 1 });
+  groupsRef.current = [{ id: "group-1", muted: true, hidden: false } as Group];
+  await send("hello", []);
+  expect(requestBrowserNotificationPermission).not.toHaveBeenCalled();
+
+  groupsRef.current = [{ id: "group-1", muted: false, hidden: false } as Group];
+  await send("hello again", []);
+  expect(requestBrowserNotificationPermission).toHaveBeenCalledTimes(1);
 });
 
 it("asks the chat to follow on submit, before the send lands", async () => {

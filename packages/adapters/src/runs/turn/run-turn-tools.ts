@@ -11,6 +11,7 @@ import {
   enqueueConversationRetention,
 } from "../lifecycle/run-complete.js";
 import { enqueueSteeringContinuation, renewRunLease } from "../lifecycle/run-lifecycle.js";
+import { completionMarks } from "../lifecycle/run-notifications.js";
 import {
   flushPendingTools,
   flushProgress,
@@ -202,6 +203,8 @@ async function stopStuckToolLoop(ctx: RunContext, toolName: string, refusal?: To
     leaseFence: fence,
     outcome: "completed",
     blocks: isBackgroundRunTrigger(run.trigger) ? [] : [{ kind: "text", text: stuckText }],
+    // Marked as a finished reply would be, so a stopped errand for another bot alerts nobody.
+    ...completionMarks(run.trigger, stuckText, ctx.source.peerMessage?.repliesToRequest === true),
   });
   if (!stopped) return;
   await enqueueConversationRetention(ctx, answeredMessageIds);

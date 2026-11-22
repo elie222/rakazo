@@ -1,18 +1,16 @@
 import { useLingui } from "@lingui/react/macro";
 import type { Bot, BotSection, Group, Me, Space } from "@rakazo/contracts";
-import { chatSnoozed } from "@rakazo/core";
 import { useMemo, useState } from "react";
 import { useDesktopBadge } from "../../../lib/platform/use-desktop-badge";
 import {
   readBotsSidebarCollapsed,
   writeBotsSidebarCollapsed,
 } from "../../../lib/preferences/bots-sidebar-pref";
-import type { SnoozedChat } from "./snoozed-chats";
 import { countUnreadChats, sidebarGroupsForSpaces } from "./space-sidebar";
 
 /**
  * What the sidebar shows: whether it is collapsed, every space's chats grouped for the roster, the
- * snoozed ones, and the unread count on the Dock badge.
+ * spaces the Snoozed and Hidden shelves read, and the unread count on the Dock badge.
  */
 export function useSidebarView({
   userId,
@@ -88,14 +86,6 @@ export function useSidebarView({
     [sidebarSpaces, now],
   );
   useDesktopBadge(userId ? unreadChatCount : 0);
-  const snoozed: SnoozedChat[] = sidebarSpaces.flatMap((space) => [
-    ...space.bots
-      .filter((chat) => chatSnoozed(chat, now))
-      .map((chat) => ({ kind: "bot" as const, chat })),
-    ...space.groups
-      .filter((chat) => chatSnoozed(chat, now))
-      .map((chat) => ({ kind: "group" as const, chat })),
-  ]);
 
-  return { collapsed, setCollapsed, setCollapsedPref, mini, sidebarGroups, snoozed };
+  return { collapsed, setCollapsed, setCollapsedPref, mini, sidebarSpaces, sidebarGroups };
 }

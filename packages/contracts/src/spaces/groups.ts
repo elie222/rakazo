@@ -36,6 +36,13 @@ export const GroupSchema = z.object({
   unread: z.boolean(),
   /** Hidden from the viewer's chat list until then; past, the chat has just woken. */
   snoozedUntil: z.string().nullable().optional(),
+  /**
+   * The viewer muted it: no pushes or alerts, except their own run's questions, takeovers and
+   * failures.
+   */
+  muted: z.boolean().optional(),
+  /** The viewer hid it from their chat list; it keeps working. */
+  hidden: z.boolean().optional(),
   updatedAt: z.string(),
   createdAt: z.string(),
 });

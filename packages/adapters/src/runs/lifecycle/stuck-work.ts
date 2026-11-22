@@ -14,16 +14,17 @@ import {
 import type { Prisma, PrismaClient, ThreadEvents } from "@rakazo/db";
 import {
   appendEventInTransaction,
+  chatMutedByDefault,
   expireStuckRun,
   runHoldsOwnSecrets,
   THREAD_LOCK_TRANSACTION_OPTIONS,
   withTransactionRetry,
 } from "@rakazo/db";
-import { getLogger } from "@rakazo/logging";
+import { bestEffort, getLogger } from "@rakazo/logging";
 import { ExpoPushProvider } from "../../notifications/expo-push.js";
 import { notificationIdentity } from "../../notifications/notification-identity.js";
 import { wakeRun } from "../wakeups/wake-run.js";
-import { publishChatAlert } from "./run-notifications.js";
+import { publishChatAlert, readOwnerHold } from "./run-notifications.js";
 
 type StuckCursor = { at: Date; id: string };
 
@@ -160,8 +161,12 @@ function readyStuckRun(
   };
 }
 
-function noticesEnabled(run: StuckCandidate<ExpirableWaitStatus>): boolean {
-  return Boolean(run.thread.groupId || run.bot.notifyOnFinish);
+/** Reminders are for the person whose run it is, as its questions are. */
+function readStuckOwner(
+  deps: { prisma: PrismaClient; events?: ThreadEvents },
+  run: StuckCandidate<ExpirableWaitStatus>,
+) {
+  return readOwnerHold(deps, run, chatMutedByDefault(run.thread.groupId ? null : run.bot));
 }
 
 type StuckNoticePayload = {
@@ -213,9 +218,13 @@ async function remindStuckRun(
   },
   run: StuckCandidate,
 ) {
-  // A skipped push (notices off, no provider, or no push token yet) stays unmarked
-  // so a later sweep can still remind during this same wait.
-  if (!deps.notifications || !noticesEnabled(run)) return;
+  // A skipped push (notices off, no provider, or no push token yet) stays unmarked so a later
+  // sweep can still remind during this same wait. The question itself already brought a hidden
+  // chat back, so only the reminder that is sent does it again: a sweep that sends nothing
+  // leaves a chat the person hid again as they left it.
+  if (!deps.notifications) return;
+  const owner = await readStuckOwner(deps, run);
+  if (!owner.hears) return;
   if (!(await pushCanDeliver(deps.notifications, run.userId))) return;
   const claimId = await withTransactionRetry(() =>
     deps.prisma.$transaction(
@@ -224,6 +233,8 @@ async function remindStuckRun(
     ),
   );
   if (!claimId) return;
+  // A chat that can't be brought back still gets its reminder, which opens it.
+  await bestEffort("stuck work unhide", owner.reveal());
   const reminder = stuckWorkReminder(run.status, run.bot.name);
   const message = {
     kind: reminder.kind,
@@ -364,6 +375,9 @@ async function expireOne(
   },
   run: StuckCandidate<ExpirableWaitStatus>,
 ) {
+  // Read before the run expires: a failed lookup then leaves the run for the next sweep, which
+  // retries the notice with it.
+  const owner = await readStuckOwner(deps, run);
   const expired = await withTransactionRetry(() =>
     deps.prisma.$transaction(
       (tx) =>
@@ -381,7 +395,8 @@ async function expireOne(
   await deps.events?.notify(run.threadId, expired.seq);
   await deps.events?.publishSpaceChange?.(run.spaceId, "runs");
   if (expired.continuationRunId) await wakeRun(deps.jobs, expired.continuationRunId);
-  if (!noticesEnabled(run)) return;
+  await bestEffort("stuck work unhide", owner.reveal());
+  if (!owner.hears) return;
   const stopped = stuckWorkStoppedNotification(run.status, run.bot.name);
   const message = {
     kind: stopped.kind,
