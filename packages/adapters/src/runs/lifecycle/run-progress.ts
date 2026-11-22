@@ -34,10 +34,12 @@ import { PAGE_BROWSER_TOOL_NAMES } from "../tools/run-tool-selection.js";
 import {
   clampUserProgressMessage,
   extractNarrationText,
+  isOpeningProgressClientNonce,
   isUserProgressClientNonce,
   midTurnProgressBudgetAllows,
   narrationStatusLine,
   openingAcknowledgementEnabled,
+  openingProgressClientNonce,
   USER_PROGRESS_MESSAGE_MAX_LENGTH,
   userProgressClientNonce,
 } from "./user-progress.js";
@@ -96,6 +98,8 @@ export async function createReplyState(
     reply.midTurnUserTexts.push(text);
     reply.publishedMidTurnUserMessage = true;
     reply.midTurnProgressCount += 1;
+    // An earlier attempt's opening still leaves room for the browser heads-up.
+    if (isOpeningProgressClientNonce(message.clientNonce)) reply.openingPosted = true;
   }
   return reply;
 }
@@ -142,17 +146,25 @@ function progressSinceBudgetStart(reply: ReplyState) {
 }
 
 /** The next interim message's nonce; it uses up the allowance for answering the person. */
-function nextProgressNonce(ctx: RunContext) {
+function nextProgressNonce(ctx: RunContext, { opening = false } = {}) {
   const { reply } = ctx.state;
   reply.steeringReplyPending = false;
-  return userProgressClientNonce(ctx.run.id, reply.midTurnProgressCount++);
+  const index = reply.midTurnProgressCount++;
+  return opening
+    ? openingProgressClientNonce(ctx.run.id)
+    : userProgressClientNonce(ctx.run.id, index);
 }
 
 /**
  * Posts an interim message. A chat app gets a run's messages when the run ends, so a 1:1 run it
  * started sends this one on at once. A group run posts once, when it ends.
  */
-export async function publishInterimMessage(ctx: RunContext, text: string, markUnread?: boolean) {
+export async function publishInterimMessage(
+  ctx: RunContext,
+  text: string,
+  markUnread?: boolean,
+  { opening = false }: { opening?: boolean } = {},
+) {
   const { deps, run } = ctx;
   const { reply } = ctx.state;
   await publishMessage(
@@ -161,8 +173,9 @@ export async function publishInterimMessage(ctx: RunContext, text: string, markU
     "bot",
     [{ kind: "text", text }],
     markUnread,
-    nextProgressNonce(ctx),
+    nextProgressNonce(ctx, { opening }),
   );
+  if (opening) reply.openingPosted = true;
   reply.midTurnUserTexts.push(text);
   reply.publishedMidTurnUserMessage = true;
   // Text held back earlier is older than what the person now has, so it is no reply.
@@ -346,10 +359,10 @@ export async function publishMidTurnNarration(ctx: RunContext, beforeConnectCard
       isOpeningAcknowledgement(ctx, openingText, text) ||
       (beforeConnectCard && narrationBecomesMessages(ctx)))
   ) {
-    if (isOpeningAcknowledgement(ctx, openingText, text)) reply.openingPosted = true;
+    const opening = isOpeningAcknowledgement(ctx, openingText, text);
     reply.workingNotes.length = 0;
     reply.narrationStatusShowing = false;
-    await publishInterimMessage(ctx, text);
+    await publishInterimMessage(ctx, text, undefined, { opening });
     return undefined;
   }
   reply.discardedMidTurnNarration = true;

@@ -1,5 +1,6 @@
 import type { MessageBlock } from "@rakazo/contracts";
 import { isToolActivityBlock } from "@rakazo/core";
+import type { Run } from "@rakazo/db";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { builtinAgentTools } from "../../tools/builtin.tool-definition.js";
 import {
@@ -7,12 +8,15 @@ import {
   midTaskMessageFromPrompt,
   midTaskMessagePrompt,
 } from "../assembly/run-replies.prompt.js";
+import type { ExecutorDeps } from "../executor/executor-deps.js";
+import { createReplyState } from "./run-progress.js";
 import {
   assistantTurnSeparator,
   botMessageOutcomeFromMidTurn,
   clampUserProgressMessage,
   extractNarrationText,
   finalBlocksAfterMidTurnProgress,
+  isOpeningProgressClientNonce,
   isProgressMessageTruncated,
   isUserProgressClientNonce,
   MID_TURN_PROGRESS_MAX_PER_RUN,
@@ -21,6 +25,7 @@ import {
   midTurnProgressBudgetAllows,
   NARRATION_STATUS_MAX_LENGTH,
   narrationStatusLine,
+  openingProgressClientNonce,
   USER_PROGRESS_MESSAGE_MAX_LENGTH,
   userProgressClientNonce,
 } from "./user-progress.js";
@@ -185,6 +190,33 @@ describe("userProgressClientNonce", () => {
     expect(userProgressClientNonce("run-1", 0)).not.toBe(nonce);
     expect(isUserProgressClientNonce(null)).toBe(false);
     expect(isUserProgressClientNonce("other")).toBe(false);
+  });
+
+  it("marks the opening bubble, so a resumed attempt can tell it apart", () => {
+    const opening = openingProgressClientNonce("run-1");
+    expect(isUserProgressClientNonce(opening)).toBe(true);
+    expect(isOpeningProgressClientNonce(opening)).toBe(true);
+    expect(isOpeningProgressClientNonce(userProgressClientNonce("run-1", 0))).toBe(false);
+  });
+});
+
+describe("a resumed reply", () => {
+  it("still has room for the browser heads-up after an earlier attempt's opening", async () => {
+    const message = (clientNonce: string) => ({
+      id: clientNonce,
+      clientNonce,
+      blocks: [{ kind: "text", text: "On it." }],
+    });
+    const resumed = (clientNonce: string) =>
+      createReplyState(
+        {
+          prisma: { message: { findMany: async () => [message(clientNonce)] } },
+        } as unknown as ExecutorDeps,
+        { id: "run-1", startedAt: new Date() } as unknown as Run,
+        [],
+      );
+    expect((await resumed(openingProgressClientNonce("run-1"))).openingPosted).toBe(true);
+    expect((await resumed(userProgressClientNonce("run-1", 0))).openingPosted).toBe(false);
   });
 });
 
