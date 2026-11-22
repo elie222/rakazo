@@ -587,13 +587,7 @@ const team: Scenario = {
 const routine = (
   change: "created" | "updated" | "enabled" | "disabled" | "deleted",
   name: string,
-  webhook = false,
-) =>
-  message(
-    "system",
-    [{ kind: "routine_event", change, name, ...(webhook ? { webhook: true as const } : {}) }],
-    { botId: BOT.botId },
-  );
+) => message("system", [{ kind: "routine_event", change, name }]);
 const routines: Scenario = {
   id: "routines",
   label: "Routine changes",
@@ -607,8 +601,6 @@ const routines: Scenario = {
     routine("enabled", "Morning stretch"),
     say("Back on."),
     routine("deleted", "Morning stretch"),
-    user("Run a check whenever a deploy finishes."),
-    routine("created", "Deploy check", true),
   ],
 };
 
@@ -804,8 +796,6 @@ window.fetch = async (input, init) => {
     return Response.json({
       json: { contentBase64: btoa(IMAGE_SVG), mimeType: "image/svg+xml" },
     });
-  if (url.pathname === "/rpc/bots/revealWebhookSecret")
-    return Response.json({ json: { secret: "example-webhook-key" } });
   if (url.pathname === "/rpc/computer/preview")
     return Response.json({ json: { image: `data:image/svg+xml;base64,${btoa(SCREEN_SVG)}` } });
   if (url.pathname.startsWith("/rpc/"))

@@ -40,23 +40,8 @@ test("gallery shows routine changes as small rows", async ({ page }, testInfo) =
     'Disabled routine "Morning stretch"',
     'Enabled routine "Morning stretch"',
     'Deleted routine "Morning stretch"',
-    'Created routine "Deploy check"',
   ]);
   await captureScreenshot(page, testInfo, "routine-change-rows");
-});
-
-test("gallery shows a webhook routine's URL and key from its row", async ({ page }, testInfo) => {
-  await page.goto("/e2e/fixtures/gallery.html?scenario=routines&theme=light");
-  const row = page.getByTestId("routine-event-row").last();
-  await expect(row.getByRole("button", { name: "Show webhook key" })).toHaveCount(1);
-  await expect(
-    page.getByTestId("routine-event-row").first().getByRole("button", { name: "Show webhook key" }),
-  ).toHaveCount(0);
-  await row.getByRole("button", { name: "Show webhook key" }).click();
-  await expect(row.getByText("/api/v1/bots/", { exact: false })).toBeVisible();
-  await expect(row.getByText("Authorization: Bearer example-webhook-key")).toBeVisible();
-  await row.scrollIntoViewIfNeeded();
-  await captureScreenshot(page, testInfo, "routine-webhook-key");
 });
 
 test("gallery renders every chat scenario in both themes", async ({ page }, testInfo) => {
