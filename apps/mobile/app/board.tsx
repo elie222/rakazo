@@ -63,7 +63,6 @@ export default function BoardScreen() {
               busy={refreshingEmpty}
               fill={false}
               prominence="secondary"
-              style={styles.refresh}
               onPress={() => void refreshEmpty()}
             />
           </View>
@@ -96,6 +95,5 @@ function createStyles() {
     },
     empty: { alignItems: "center", gap: 8 },
     message: { color: native.secondaryLabel, fontSize: 17, textAlign: "center" },
-    refresh: { alignSelf: "center" },
   });
 }
