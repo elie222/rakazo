@@ -531,9 +531,10 @@ export function mcpRoutes(ctx: RouterContext) {
                 where: { ...owner, serverId: server.id, bot: { archivedAt: null } },
                 select: { botId: true },
               });
+              // A bot named in the choice is never removed, even one restored since the read above.
               const removed = previous
                 .map((row) => row.botId)
-                .filter((botId) => !botIds.includes(botId));
+                .filter((botId) => !requested.includes(botId));
               await tx.botMcpServer.deleteMany({
                 where: { ...owner, serverId: server.id, botId: { in: removed } },
               });
