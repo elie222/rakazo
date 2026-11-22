@@ -69,7 +69,6 @@ export function BoardPage() {
   const [streamError, setError] = useState("");
   const loadFailed = ticketsQuery.error ?? botsQuery.error;
   const error = streamError || (loadFailed ? errorText(loadFailed) : "");
-  const empty = ticketsQuery.isSuccess && tickets.length === 0;
 
   useEffect(() => {
     let currentController: AbortController | undefined;
@@ -194,7 +193,7 @@ export function BoardPage() {
             onMove={(id, status) => change.run({ id, status })}
           />
         )}
-        {!error && (ticketsQuery.isPending || empty) ? (
+        {!error && (ticketsQuery.isPending || (ticketsQuery.isSuccess && tickets.length === 0)) ? (
           <p className="pointer-events-none absolute inset-0 flex items-center justify-center text-body text-muted-foreground">
             {ticketsQuery.isPending ? <Spinner /> : <Trans>No tickets yet</Trans>}
           </p>
