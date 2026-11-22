@@ -561,6 +561,30 @@ describe("avatarSharedSchedule", () => {
     }
   });
 
+  it("never jumps where one stretch hands over to the next, even mid-clip", () => {
+    // Angles compare by the shortest way round: a whole turn ending on 360 is the same pose as 0.
+    const turn = (degrees: number) => Math.abs((((degrees % 360) + 540) % 360) - 180);
+    let largest = 0;
+    for (let index = 30_000_000; index < 30_000_200; index += 1) {
+      const boundary = index * window;
+      const segments = avatarSharedSchedule(pool, `bot-${index % 7}`, boundary - 1);
+      const before = avatarSchedulePose(segments, boundary - 0.001);
+      const after = avatarSchedulePose(segments, boundary + 0.001);
+      largest = Math.max(
+        largest,
+        turn(before.pitch - after.pitch),
+        turn(before.yaw - after.yaw),
+        turn(before.roll - after.roll),
+        Math.abs(before.x - after.x) * 100,
+        Math.abs(before.y - after.y) * 100,
+        Math.abs(before.zoom - after.zoom) * 100,
+        Math.abs(before.lid - after.lid) * 100,
+      );
+    }
+    // Two milliseconds of ordinary motion, nowhere near a snap.
+    expect(largest).toBeLessThan(2);
+  });
+
   it("moves different bots differently", () => {
     const a = avatarSharedSchedule(pool, "bot-a", start);
     const b = avatarSharedSchedule(pool, "bot-b", start);
