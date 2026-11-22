@@ -21,7 +21,7 @@ import {
   disabledBuiltinToolUnavailableReason,
   groupMessageBotUnavailableReason,
 } from "./run-tool-selection.prompt.js";
-import { USER_COMPUTER_SCREEN_TOOLS } from "./run-tools-user-computer.js";
+import { USER_COMPUTER_SCREEN_TOOLS, USER_COMPUTER_TOOLS } from "./run-tools-user-computer.js";
 
 export const READ_ONLY_AGENT_TOOLS = new Set([
   "computer_observe",
@@ -52,6 +52,20 @@ export const READ_ONLY_AGENT_TOOLS = new Set([
   "list_secrets",
   "cloud_agent_status",
   "purchase_status",
+]);
+
+/**
+ * All a routine with its owner's computer is offered: the owner's computer, the web and the owner's
+ * own answers. Everything else could hand it text the owner did not approve (mail, files, memory,
+ * history, tickets, skills, connectors, other bots) or reach stored state. Once the run reads the
+ * web, the owner's computer asks before every call (see userComputerGate).
+ */
+const OWN_PROMPT_ONLY_TOOLS: ReadonlySet<string> = new Set([
+  "user_computer_list",
+  ...USER_COMPUTER_TOOLS,
+  "web_search",
+  "web_fetch",
+  "ask_user",
 ]);
 
 /** The bot's own inbox, offered only in its owner's runs outside groups and channels. */
@@ -117,6 +131,8 @@ export function selectBuiltinToolsForRun(options: {
   ticketBoardEnabled?: boolean;
   phoneCallsEnabled?: boolean;
   historyRetrievalEnabled?: boolean;
+  /** A routine with its owner's computer: only OWN_PROMPT_ONLY_TOOLS. */
+  ownPromptOnly?: boolean;
   meetingTranscriptsAvailable?: boolean;
   graphicalToolsAllowed: boolean;
   /** Page browser tools need a graphical computer (Chrome), not model vision. */
@@ -226,6 +242,7 @@ export function selectBuiltinToolsForRun(options: {
         tool.name !== "call_user") &&
       (options.historyRetrievalEnabled ||
         !["search_history", "read_history"].includes(tool.name)) &&
+      (!options.ownPromptOnly || OWN_PROMPT_ONLY_TOOLS.has(tool.name)) &&
       (options.meetingTranscriptsAvailable || tool.name !== READ_MEETING_TRANSCRIPT) &&
       (!options.messagingChannelRun ||
         (!SCHEDULE_TOOL_NAMES.has(tool.name) &&

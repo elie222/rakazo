@@ -35,6 +35,7 @@ import {
   purchaseApprovalOf,
   purchaseCardSummary,
 } from "../../payments/purchase-gate.js";
+import { routineRunUsesOwnerComputer } from "../../routines/routine-owner-computer.js";
 import { reachesManagedRoutines } from "../../routines/routine-target.js";
 import { canonicalToolEvents } from "../../routines/routine-triggers.js";
 import { listVaultItems } from "../../secrets/bot-secrets.js";
@@ -429,6 +430,15 @@ export async function prepareToolRequest(
       );
     if (isSubagentToolExecution(executionId))
       return refusal("helper_user_computer", "Helpers cannot use the user's computer.");
+    // Turning the switch off or editing the routine mid-run ends its use of the computer.
+    if (
+      ctx.source.ownerComputerRoutine &&
+      !(await routineRunUsesOwnerComputer(deps.prisma, ctx.run))
+    )
+      return refusal(
+        "user_computer_unavailable",
+        "The user's computer is not available in this run.",
+      );
     // Routines and webhooks reach no one's computer, including through a run they were handed to.
     if (
       await deps.prisma.steeringMessage.findFirst({
