@@ -40,6 +40,7 @@ import type {
 import {
   BotSecretAuth,
   botInboundPath,
+  botInboundUrl,
   noneSkipped,
   resolveBotAvatarSet,
   VaultPolicy,
@@ -660,7 +661,8 @@ export function botsRoutes(ctx: RouterContext) {
           spaceId: context.actor.spaceId,
           metadata: { procedure: "bots.revealWebhookSecret", kind: "webhook", botId: bot.id },
         });
-        return { secret };
+        const origin = deps.env.publishedInboundOrigin;
+        return origin ? { secret, url: botInboundUrl(origin, bot.id, "webhook") } : { secret };
       }),
     },
     groups: {

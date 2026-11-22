@@ -26,6 +26,7 @@ export function useRoutineEditor({
   active,
   activeBotId,
   timezone,
+  inboundOrigin,
   setBots,
   refreshThread,
   openGroup,
@@ -36,6 +37,8 @@ export function useRoutineEditor({
   active: Bot | undefined;
   activeBotId: RefObject<string | undefined>;
   timezone: string | null | undefined;
+  /** The deployment's published inbound origin; unset means the app's own. */
+  inboundOrigin?: string;
   messageProviders: string[];
   setBots: Dispatch<SetStateAction<Bot[]>>;
   refreshThread: (botId: string) => Promise<ThreadSnapshot>;
@@ -152,11 +155,11 @@ export function useRoutineEditor({
         editing: editingRoutine,
         timezone: editingRoutine?.timezone ?? timezone ?? localTimezone(),
         webhook: {
-          path: botInboundUrl(active.id, "webhook"),
+          path: botInboundUrl(inboundOrigin, active.id, "webhook"),
           secret: routineWebhookSecret,
           configured: active.webhookConfigured || Boolean(routineWebhookSecret),
         },
-        githubPath: botInboundUrl(active.id, "github"),
+        githubPath: botInboundUrl(inboundOrigin, active.id, "github"),
         messageProviders,
         saving: savingRoutine,
         running: runningRoutine,

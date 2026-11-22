@@ -146,3 +146,8 @@ export type CreateRoutineInput = z.infer<typeof CreateRoutineInput>;
 export function botInboundPath(botId: string, kind: "webhook" | "github"): string {
   return `/api/v1/bots/${botId}/${kind}`;
 }
+
+/** The full address a sender posts to: `origin` is the published inbound origin, else the app's own. */
+export function botInboundUrl(origin: string, botId: string, kind: "webhook" | "github"): string {
+  return `${origin.replace(/\/+$/, "")}${botInboundPath(botId, kind)}`;
+}
