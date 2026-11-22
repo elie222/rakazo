@@ -576,6 +576,7 @@ export async function resolveRunCapabilities(
     messagingChannelRun: nonOwnerChatRun,
     runUserId: run.userId,
     botUserId: bot.userId,
+    ownerComputerRoutine: parts.records.ownerComputerRoutine,
   });
   let userComputer: UserComputerState;
   let userComputerShell = false;
@@ -669,6 +670,7 @@ export async function selectRunTools(
     conversationThread,
     ticketBoardEnabled,
     unknownChannelSourceId,
+    ownerComputerRoutine,
   } = parts.records;
   const { connectedPlugins, semanticMemory } = parts.connected;
   const { discovered, groupReplyOptional, history, semanticMemoryEnabled } = parts.turnContext;
@@ -729,7 +731,9 @@ export async function selectRunTools(
             select: { id: true },
           }),
         ),
-      historyRetrievalEnabled: contextStrategy !== "current" && !unknownChannelSourceId,
+      historyRetrievalEnabled:
+        contextStrategy !== "current" && !unknownChannelSourceId && !ownerComputerRoutine,
+      ownPromptOnly: ownerComputerRoutine,
       meetingTranscriptsAvailable: parts.meetingTranscriptsAvailable,
       graphicalToolsAllowed,
       pageBrowserAllowed,

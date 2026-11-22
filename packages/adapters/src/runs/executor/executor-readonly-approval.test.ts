@@ -20,6 +20,7 @@ import type * as ComputerLifecycleModule from "../../computers/computer-lifecycl
 import type { HostComputerRequest } from "../../computers/host/host-computer-protocol.js";
 import type { UserDeviceGateway } from "../../computers/host/user-device-protocol.js";
 import { FakeWebProvider } from "../../providers/web/fake/fake-web.js";
+import { routineComputerFingerprint } from "../../routines/routine-owner-computer.js";
 import { ROUTINE_WATCH_NOTE_START } from "../../routines/routine-watch.prompt.js";
 import { MAX_SHARED_MEMORY_CHARS } from "../../tools/builtin.tool-definition.js";
 import type * as FleetToolsModule from "../../tools/fleet-tools.js";
@@ -113,6 +114,8 @@ function fixture({
   connectedApps = [] as string[],
   userDevices,
   botUserId = "user-1",
+  routineId,
+  routineRow,
   batch,
   browser,
   spendingLimit = null,
@@ -130,6 +133,16 @@ function fixture({
   userDevices?: UserDeviceGateway;
   /** The bot's owner; runs are started by user-1. */
   botUserId?: string;
+  /** The routine a routine run belongs to; none is a check-in. */
+  routineId?: string;
+  /** The saved routine; by default user-1's, with "Use my computer" on for the run's prompt. */
+  routineRow?: Partial<{
+    userId: string;
+    botId: string;
+    inChat: boolean;
+    watch: unknown;
+    computerPromptHash: string | null;
+  }>;
   connectedApps?: string[];
   routines?: { name: string; prompt: string }[];
   /** Adds `demo_get_other`, a read on a separate installed resource with the same name prefix. */
@@ -212,6 +225,7 @@ function fixture({
     userId: "user-1",
     status: "queued",
     trigger,
+    routineId: routineId ?? null,
     sourceMessageId: sourceRole ? "source-1" : null,
     leaseFence: 0,
   };
@@ -334,11 +348,15 @@ function fixture({
     $transaction: vi.fn(async (fn: (tx: unknown) => unknown) => fn(prisma)),
     $executeRaw: vi.fn(async () => 0),
     $queryRaw: vi.fn(async () => []),
-    space: { findUnique: vi.fn(async () => null) },
+    space: {
+      findUnique: vi.fn(async () => null),
+      count: vi.fn(async () => 0),
+      deleteMany: vi.fn(async () => ({ count: 0 })),
+    },
     spaceMember: { findUnique: vi.fn(async () => ({ id: "member-1" })) },
     spendingLimit: spending.client.spendingLimit,
     payment: spending.client.payment,
-    user: { findUnique: vi.fn(async () => null) },
+    user: { findUnique: vi.fn(async () => null), count: vi.fn(async () => 0) },
     run: {
       findFirst: vi.fn(
         async (_query?: {
@@ -427,7 +445,10 @@ function fixture({
         ...data,
       })),
     },
-    task: { findUniqueOrThrow: vi.fn(async () => ({ id: run.taskId, prompt: taskPrompt })) },
+    task: {
+      findUniqueOrThrow: vi.fn(async () => ({ id: run.taskId, prompt: taskPrompt })),
+      findUnique: vi.fn(async () => ({ id: run.taskId, prompt: taskPrompt })),
+    },
     connection: {
       findMany: vi.fn(async () =>
         connectedApps.map((provider) => ({
@@ -463,7 +484,7 @@ function fixture({
       createMany: vi.fn(async () => ({ count: 1 })),
       updateMany: vi.fn(async () => ({ count: 1 })),
     },
-    modelCreditEntry: { findUnique: vi.fn(async () => null) },
+    modelCreditEntry: { findUnique: vi.fn(async () => null), count: vi.fn(async () => 0) },
     deploymentSettings: {
       findUnique: vi.fn(async () => ({
         defaultModelProvider: "openrouter",
@@ -490,7 +511,26 @@ function fixture({
     },
     actionApprovalRule: { findMany: vi.fn(async () => (confirmationsOverride ? rules : [])) },
     userActionApprovalRule: { findMany: vi.fn(async () => (confirmationsOverride ? [] : rules)) },
-    routine: { findMany: vi.fn(async () => routines) },
+    routine: {
+      findMany: vi.fn(async () => routines),
+      findUnique: vi.fn(async () =>
+        routineId
+          ? {
+              name: "Backups",
+              timezone: "UTC",
+              userId: "user-1",
+              botId: run.botId,
+              inChat: false,
+              watch: null,
+              computerPromptHash: routineComputerFingerprint(prompt, []),
+              bot: { userId: botUserId },
+              ...routineRow,
+            }
+          : null,
+      ),
+      count: vi.fn(async () => 0),
+      deleteMany: vi.fn(async () => ({ count: 0 })),
+    },
     actionAutoReviewPreference: {
       findUnique: vi.fn(async () =>
         confirmationsOverride && savedPreference ? { enabled: autoReview, skipApprovals } : null,
@@ -715,7 +755,7 @@ function fixture({
       const tx = {
         $executeRaw: vi.fn(async () => 0),
         $queryRaw: vi.fn(async () => []),
-        space: { findUnique: vi.fn(async () => null) },
+        space: { findUnique: vi.fn(async () => null), count: vi.fn(async () => 0) },
         thread: { update: vi.fn(async () => ({ nextMessageSeq: 2, nextEventSeq: 2 })) },
         message: {
           create: vi.fn(async () => inboundMessage),
@@ -4416,6 +4456,88 @@ describe("user_computer_shell", () => {
     expect(f.offeredTools()).not.toContain("user_computer_shell");
     expect(f.instructions()).not.toContain(line);
     expect(f.offeredTools()).not.toContain("user_computer_list");
+  });
+
+  describe("in a routine the owner let use it", () => {
+    const ownRoutine = {
+      name: "user_computer_shell",
+      builtin: true,
+      trigger: "routine",
+      routineId: "routine-1",
+      prompt: "Check the backups",
+    };
+    const approved = {
+      routineRow: { computerPromptHash: routineComputerFingerprint(ownRoutine.prompt, []) },
+    };
+
+    it("is offered, asks first as in chat, and reads nothing but its own prompt", async () => {
+      const { gateway, requests } = devices();
+      const f = fixture({ ...ownRoutine, userDevices: gateway });
+      f.setCalls([call("ls")]);
+      await f.run();
+      expect(f.offeredTools()).toContain("user_computer_shell");
+      for (const read of ["read_history", "search_history", "schedule_list", "skill_read"])
+        expect(f.offeredTools()).not.toContain(read);
+      expect(f.instructions()).toContain(line);
+      expect(isApprovalPausedResult(f.results[0])).toBe(true);
+      expect(f.pauseRunForInput).toHaveBeenCalledOnce();
+      expect(requests).toEqual([]);
+    });
+
+    it("tells the bot how to connect the owner's computer when it is offline", async () => {
+      const f = fixture({ ...ownRoutine, userDevices: devices(false, true).gateway });
+      await f.run();
+      expect(f.offeredTools()).not.toContain("user_computer_shell");
+      expect(f.instructions()).toContain(offlineLine);
+    });
+
+    it.each<[string, Parameters<typeof fixture>[0]]>([
+      ["the switch off", { routineRow: { computerPromptHash: null } }],
+      // A prompt or skill edit, by anyone or any tool, after the owner turned it on.
+      ["a prompt that changed since it was turned on", { prompt: "Wipe the backups", ...approved }],
+      [
+        "a watch's change",
+        { prompt: `Check the backups${ROUTINE_WATCH_NOTE_START}the inbox).`, ...approved },
+      ],
+      ["a routine that runs in its chat", { routineRow: { inChat: true } }],
+      ["a routine that watches", { routineRow: { watch: { kind: "files" } } }],
+      ["another member's bot", { botUserId: "user-2" }],
+      // Run now or an @mention by the owner on another member's routine runs as the owner.
+      ["another member's routine", { routineRow: { userId: "user-2" } }],
+      ["another bot's routine", { routineRow: { botId: "bot-2" } }],
+      ["a check-in", { routineId: undefined }],
+      ["an event run", { trigger: "webhook", sourceRole: "user" }],
+    ])("is not offered with %s", async (_label, options) => {
+      const f = fixture({ ...ownRoutine, userDevices: devices(false, true).gateway, ...options });
+      await f.run();
+      expect(f.offeredTools()).not.toContain("user_computer_shell");
+      expect(f.instructions()).not.toContain(offlineLine);
+    });
+
+    it("reads no chat history or earlier results, unlike with the switch off", async () => {
+      const historyLimits = async (options: Parameters<typeof fixture>[0]) => {
+        const f = fixture({ ...ownRoutine, ...options });
+        await f.run();
+        const calls = f.prisma.message.findMany.mock.calls as unknown as [{ take?: number }][];
+        return { tools: f.offeredTools(), limits: calls.map(([query]) => query?.take) };
+      };
+      const on = await historyLimits({ userDevices: devices().gateway });
+      expect(on.limits[0]).toBe(0);
+      const off = await historyLimits({ routineRow: { computerPromptHash: null } });
+      expect(off.limits[0]).toBeGreaterThan(0);
+      expect(off.tools).toContain("schedule_list");
+    });
+
+    it("refuses once outside content reached the run, as in chat", async () => {
+      const { gateway, requests } = devices();
+      const f = fixture({ ...ownRoutine, userDevices: gateway });
+      f.claimedOutsideSteering(true);
+      f.setCalls([call("ls")]);
+      await f.run();
+      expect(f.results).toEqual([{ error: "The user's computer is not available in this run." }]);
+      expect(f.pauseRunForInput).not.toHaveBeenCalled();
+      expect(requests).toEqual([]);
+    });
   });
 
   it("lists connected computers without a command approval", async () => {

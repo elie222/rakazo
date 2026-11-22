@@ -529,6 +529,15 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
   const codexCatalog = new CodexCatalogCache();
   // One instance: chat runs submit videos and, in single-process mode, background polls finish them.
   const mediaGeneration = createMediaGenerationProvider();
+  // The computers bots may reach: paired desktops, and this server's own screen when it has one.
+  const botUserDevices =
+    userDevicesOverride ??
+    withHostComputerScreen(userDevices, {
+      prisma,
+      sandboxKind: env.sandboxProvider,
+      url: env.sandboxOptions.hostComputerUrl,
+      token: env.sandboxOptions.hostComputerToken,
+    });
   const { runtime, executor, jobHandlers, messagingDelivery, teamChat, pageRevisions } =
     createRunRuntime(runtimeEnv, connectors, {
       billingEnabled: modelCreditsEnabled,
@@ -569,14 +578,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
         ? (id: string) => messagingInstallations.isActive(id)
         : undefined,
       cloudAgent,
-      userDevices:
-        userDevicesOverride ??
-        withHostComputerScreen(userDevices, {
-          prisma,
-          sandboxKind: env.sandboxProvider,
-          url: env.sandboxOptions.hostComputerUrl,
-          token: env.sandboxOptions.hostComputerToken,
-        }),
+      userDevices: botUserDevices,
       paymentWallet,
       web,
       stoppingSignal: shutdown.signal,
@@ -659,6 +661,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     });
 
   const router = createRouter({
+    userDevices: botUserDevices,
     pageRevisions,
     meetings,
     meetingCalendar,

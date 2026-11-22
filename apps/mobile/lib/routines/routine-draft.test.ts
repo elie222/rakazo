@@ -28,6 +28,31 @@ const routine: Routine = {
 };
 
 describe("routineSaveRequest", () => {
+  it("sends Use my computer only when the owner flips it, and never to a copy", () => {
+    const own = { ...routine, useComputer: false };
+    const draft = draftFromRoutine(own);
+    expect(routineSaveRequest({ ...draft, name: "Mail" }, own, "bot-1", "UTC")).toEqual({
+      update: { routineId: own.id, name: "Mail" },
+    });
+    expect(routineSaveRequest({ ...draft, useComputer: true }, own, "bot-1", "UTC")).toEqual({
+      update: { routineId: own.id, useComputer: true },
+    });
+    // A routine the server doesn't offer it for never sends it.
+    expect(
+      routineSaveRequest(
+        { ...draftFromRoutine(routine), useComputer: true },
+        routine,
+        "bot-1",
+        "UTC",
+      ),
+    ).toEqual({ unchanged: true });
+    const copy = routineSaveRequest({ ...draft, useComputer: true }, null, "bot-1", "UTC", {
+      ...own,
+      useComputer: true,
+    });
+    expect("create" in copy && copy.create).not.toHaveProperty("useComputer");
+  });
+
   it("creates a paused copy that keeps the triggers it can't show, but not the model", () => {
     const hooked = {
       ...routine,

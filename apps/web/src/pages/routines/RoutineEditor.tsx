@@ -204,7 +204,12 @@ export function RoutineEditor({
           <div className="flex items-center gap-2">
             <Trans>When to run</Trans>
             <span className="text-label text-muted-foreground/70">{timezone}</span>
-            <RoutineModelSettings draft={draft} onChange={onChange} fieldId={fieldId} />
+            <RoutineModelSettings
+              draft={draft}
+              onChange={onChange}
+              fieldId={fieldId}
+              computerOffered={editing?.useComputer !== undefined}
+            />
           </div>
 
           <div className="mt-2 space-y-2">

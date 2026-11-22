@@ -2,9 +2,11 @@ import { ORPCError } from "@orpc/server";
 import { routineJobKey, routineWakeupJob } from "@rakazo/adapter-kit";
 import {
   firstWatchCheck,
+  listAgentSkillRecords,
   parseRoutineWatch,
   postRoutineNotice,
   RoutineWatchError,
+  routineComputerFingerprint,
   routineEditChange,
   routineEdited,
   stableStringify,
@@ -55,6 +57,34 @@ async function assertRoutineWatch(
 
 export function routinesRoutes(ctx: RouterContext) {
   const { deps, repos, announceRoutine, codexCatalog, agentSkills, authed } = ctx;
+
+  /**
+   * "Use my computer" on: the fingerprint of the prompt as its runs will get it. Only the owner of
+   * the routine and its bot, with a computer paired, may turn it on, and never for a routine that
+   * runs in its chat or watches, whose runs read more than its own prompt.
+   */
+  async function approveComputerPrompt(routine: {
+    spaceId: string;
+    userId: string;
+    botUserId: string;
+    prompt: string;
+    inChat: boolean;
+    watch: RoutineWatch | null;
+  }): Promise<string> {
+    if (
+      routine.botUserId !== routine.userId ||
+      routine.inChat ||
+      routine.watch ||
+      !(await deps.userDevices?.pairedSince(routine.userId))
+    ) {
+      throw new ClientError("BAD_REQUEST", "This routine can't use your computer.");
+    }
+    return routineComputerFingerprint(
+      routine.prompt,
+      await listAgentSkillRecords(deps.prisma, routine),
+    );
+  }
+
   return {
     routines: {
       listForMentions: authed.routines.listForMentions.handler(async ({ context, input }) => {
@@ -71,7 +101,7 @@ export function routinesRoutes(ctx: RouterContext) {
         const rows = await deps.prisma.routine.findMany({
           where: { botId: { in: bots.map((bot) => bot.id) }, spaceId: actor.spaceId },
         });
-        const views = await routineViews(deps.prisma, actor, rows);
+        const views = await routineViews(deps, actor, rows);
         return bots.map((bot) => ({
           botId: bot.id,
           routines: views.filter((routine) => routine.botId === bot.id),
@@ -104,7 +134,7 @@ export function routinesRoutes(ctx: RouterContext) {
           name: row.name,
           routine: { webhookEnabled: row.webhookEnabled, active: row.active },
         });
-        return await routineView(deps.prisma, context.actor, row);
+        return await routineView(deps, context.actor, row);
       }),
       update: authed.routines.update.handler(async ({ context, input }) => {
         // Archived bots keep their routines paused, so resolve an active parent before any write.
@@ -246,6 +276,20 @@ export function routinesRoutes(ctx: RouterContext) {
               : isOneShotRoutineCrons(crons)
                 ? (armedOneShotAt ?? existing.nextRunAt)
                 : (recalculatedNextRunAt ?? existing.nextRunAt);
+        // What a watch read is not the owner's words, so it never runs as a turn in the chat.
+        const inChat = watch ? false : input.inChat;
+        const computerPromptHash =
+          input.useComputer === undefined
+            ? undefined
+            : input.useComputer
+              ? await approveComputerPrompt({
+                  ...existing,
+                  prompt: input.prompt ?? existing.prompt,
+                  inChat: inChat ?? existing.inChat,
+                  watch,
+                  botUserId: bot.userId,
+                })
+              : null;
         const writesSchedule = nextRunAt?.getTime() !== existing.nextRunAt?.getTime();
         // An explicit on/off must not undo an enable, a disable or a finished one-shot that landed
         // after the read; neither may a schedule change computed from the old on/off state.
@@ -281,8 +325,9 @@ export function routinesRoutes(ctx: RouterContext) {
               // An explicit on or off is the member's own choice, so a restore must not undo it.
               ...(input.active !== undefined ? { resumeOnRestore: false } : {}),
               notify: input.notify,
-              // What a watch read is not the owner's words, so it never runs as a turn in the chat.
-              inChat: watch ? false : input.inChat,
+              inChat,
+              // Changing the prompt without this clears it (see the routines table's trigger).
+              ...(computerPromptHash === undefined ? {} : { computerPromptHash }),
               webhookEnabled: input.webhookEnabled,
               githubEnabled: input.githubEnabled,
               messageProvider: input.messageProvider,
@@ -346,7 +391,7 @@ export function routinesRoutes(ctx: RouterContext) {
             routine: { webhookEnabled: row.webhookEnabled, active: row.active },
           });
         }
-        return await routineView(deps.prisma, context.actor, row);
+        return await routineView(deps, context.actor, row);
       }),
       remove: authed.routines.remove.handler(async ({ context, input }) => {
         // Any member can delete a routine, as they can turn it off.

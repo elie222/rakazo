@@ -278,8 +278,15 @@ export async function buildTurnPrompt(
   const { takeoverResume } = hold.takeover;
   const { checkpointModelResolver, savedComputerMode } = parts.saved;
   let { turnCheckpoint } = parts.saved;
-  const { agentSkills, nonOwnerChatRun, savedSkills, task, thread, conversationThread } =
-    parts.records;
+  const {
+    agentSkills,
+    nonOwnerChatRun,
+    ownerComputerRoutine,
+    savedSkills,
+    task,
+    thread,
+    conversationThread,
+  } = parts.records;
   const { connectedPlugins, context } = parts.connected;
   const { compactedHistory, people, speakers } = parts.thread;
   const {
@@ -296,8 +303,13 @@ export async function buildTurnPrompt(
   const { approvedEffects, tools } = parts.tools;
   const { ctx } = parts;
   const pluginLine = connectedPluginsInstruction(connectedPlugins);
-  const runSavedSkills = nonOwnerChatRun ? [] : savedSkills;
-  const runAgentSkills = nonOwnerChatRun ? builtinAgentSkillRecords() : agentSkills;
+  // A routine with its owner's computer runs the exact text they approved, skills already expanded.
+  const runSavedSkills = nonOwnerChatRun || ownerComputerRoutine ? [] : savedSkills;
+  const runAgentSkills = ownerComputerRoutine
+    ? []
+    : nonOwnerChatRun
+      ? builtinAgentSkillRecords()
+      : agentSkills;
   const taughtSkillIndex = runSavedSkills.slice(0, 20);
   const taughtSkillsLine = taughtSkillsInstruction(
     taughtSkillIndex.map((skill) => ({

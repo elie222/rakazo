@@ -594,6 +594,17 @@ function RoutineEditor({
           onRemove={() => update({ emailSenders: null })}
         />
       ) : null}
+      {/* Only the owner, with a computer paired, sees it; a watch's runs never get the computer. */}
+      {base?.useComputer !== undefined && !base.inChat && !kept?.watch ? (
+        <SettingsGroup>
+          <SettingsSwitch
+            key="computer"
+            label={t`Use my computer`}
+            value={draft.useComputer ?? base.useComputer}
+            onChange={(useComputer) => update({ useComputer })}
+          />
+        </SettingsGroup>
+      ) : null}
       {base ? (
         <SettingsGroup>
           <SettingsRow

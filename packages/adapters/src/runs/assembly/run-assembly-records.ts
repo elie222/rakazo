@@ -36,6 +36,7 @@ import {
   mergeConnectedPlugins,
   needsLivePluginSync,
 } from "../../providers/integration/composio/composio-connector.js";
+import { routineRunUsesOwnerComputer } from "../../routines/routine-owner-computer.js";
 import { LEGACY_HISTORY_WINDOW_SIZE } from "../../runtime/context/history-compaction.js";
 import { restoreComputerModels } from "../../runtime/pi/tools/pi-runtime-computer-mode.js";
 import {
@@ -177,7 +178,9 @@ export async function loadRunRecords(
   // so the run reads only the message that woke it and gets no history tools.
   const unknownChannelSourceId =
     messagingChannelRun && !channelId ? messagingSource?.id : undefined;
-  const historyReach = runHistoryReach(run);
+  // A routine the owner let use their computer reads only its own prompt.
+  const ownerComputerRoutine = await routineRunUsesOwnerComputer(deps.prisma, run);
+  const historyReach = ownerComputerRoutine ? "none" : runHistoryReach(run);
   const [
     { bot, ownerLabs },
     thread,
@@ -219,7 +222,11 @@ export async function loadRunRecords(
     loadRunHistoryMessages(
       deps.prisma,
       run,
-      historyReach === "recent" ? ROUTINE_RECENT_MESSAGES : LEGACY_HISTORY_WINDOW_SIZE,
+      ownerComputerRoutine
+        ? 0
+        : historyReach === "recent"
+          ? ROUTINE_RECENT_MESSAGES
+          : LEGACY_HISTORY_WINDOW_SIZE,
       run.trigger === BACKGROUND_HELPER_TRIGGER
         ? undefined
         : channelId
@@ -327,6 +334,7 @@ export async function loadRunRecords(
       : null;
   return {
     historyReach,
+    ownerComputerRoutine,
     origin,
     conversationRun,
     conversationThread,

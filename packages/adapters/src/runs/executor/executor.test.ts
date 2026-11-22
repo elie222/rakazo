@@ -1327,6 +1327,7 @@ function pinnedRoutineRunPrisma(modelId: string, trigger = "routine") {
     scratchpadItem: { findMany: vi.fn(async () => []), count: vi.fn(async () => 0) },
     $queryRaw: vi.fn(async () => []),
     space: { findUnique: vi.fn(async () => null) },
+    routine: { findUnique: vi.fn(async () => null) },
   };
 }
 
@@ -3459,6 +3460,7 @@ description: Prepare standup notes
       $transaction: vi.fn(async (fn: (tx: unknown) => unknown) => fn(prisma)),
       $queryRaw: vi.fn(async () => []),
       space: { findUnique: vi.fn(async () => null) },
+      routine: { findUnique: vi.fn(async () => null) },
       user: { findUnique: vi.fn(async () => null) },
       spaceMember: { findUnique: vi.fn(async () => ({ id: "member-1" })) },
       run: {

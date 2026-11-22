@@ -2,8 +2,10 @@ import { ORPCError } from "@orpc/server";
 import { routineWakeupJob } from "@rakazo/adapter-kit";
 import {
   firstWatchCheck,
+  listAgentSkillRecords,
   parseRoutineWatch,
   parseRoutineWatchState,
+  routineComputerFingerprint,
   routineGroupThreadId,
   routineRunModelPin,
 } from "@rakazo/adapters";
@@ -136,18 +138,60 @@ export function mapRoutine(row: {
   };
 }
 
-type RoutineRow = Parameters<typeof mapRoutine>[0] & { userId: string };
+type RoutineRow = Parameters<typeof mapRoutine>[0] & {
+  userId: string;
+  computerPromptHash: string | null;
+};
+
+type RoutineViewDeps = Pick<RouterDeps, "prisma" | "userDevices">;
+
+/**
+ * "Use my computer" for each routine the viewer may switch it on for: their own, on their own bot,
+ * while they have a computer paired. It shows on only while a run would still get the computer.
+ */
+async function computerSwitches(
+  deps: RoutineViewDeps,
+  actor: Actor,
+  rows: RoutineRow[],
+): Promise<Map<string, boolean>> {
+  const own = rows.filter((row) => row.userId === actor.userId);
+  if (own.length === 0 || !deps.userDevices) return new Map();
+  const [bots, pairedSince] = await Promise.all([
+    deps.prisma.bot.findMany({
+      where: { id: { in: [...new Set(own.map((row) => row.botId))] }, userId: actor.userId },
+      select: { id: true },
+    }),
+    deps.userDevices.pairedSince(actor.userId),
+  ]);
+  if (!pairedSince) return new Map();
+  const ownBots = new Set(bots.map((bot) => bot.id));
+  const offered = own.filter((row) => ownBots.has(row.botId));
+  const skills = offered.some((row) => row.computerPromptHash)
+    ? await listAgentSkillRecords(deps.prisma, actor)
+    : [];
+  return new Map(
+    offered.map((row) => [
+      row.id,
+      Boolean(row.computerPromptHash) &&
+        !row.inChat &&
+        row.watch === null &&
+        row.computerPromptHash === routineComputerFingerprint(row.prompt, skills),
+    ]),
+  );
+}
 
 /**
  * The routines as a member of the Space sees them, each with whose accounts it runs with: the
  * owner's display name and whether that is the viewer, never their id or email.
  */
 export async function routineViews(
-  prisma: PrismaClient,
+  deps: RoutineViewDeps,
   actor: Actor,
   rows: RoutineRow[],
 ): Promise<Routine[]> {
   if (rows.length === 0) return [];
+  const { prisma } = deps;
+  const computer = await computerSwitches(deps, actor, rows);
   const owners = await prisma.spaceMember.findMany({
     where: { spaceId: actor.spaceId, userId: { in: [...new Set(rows.map((row) => row.userId))] } },
     select: {
@@ -171,17 +215,18 @@ export async function routineViews(
         name === undefined
           ? null
           : { name: displayName(name, "Member"), isViewer: row.userId === actor.userId },
+      ...(computer.has(row.id) ? { useComputer: computer.get(row.id) } : {}),
     };
   });
 }
 
 /** One routine as `routineViews` shows it, for the one a member just created or changed. */
 export async function routineView(
-  prisma: PrismaClient,
+  deps: RoutineViewDeps,
   actor: Actor,
   row: RoutineRow,
 ): Promise<Routine> {
-  const [view] = await routineViews(prisma, actor, [row]);
+  const [view] = await routineViews(deps, actor, [row]);
   if (!view) throw new IsolationError();
   return view;
 }
@@ -191,7 +236,7 @@ export async function listRoutinesDto(deps: RouterDeps, actor: Actor, botId: str
   const rows = await deps.prisma.routine.findMany({
     where: { botId, spaceId: actor.spaceId },
   });
-  return routineViews(deps.prisma, actor, rows);
+  return routineViews(deps, actor, rows);
 }
 
 export function createRoutineAnnouncer(deps: RouterDeps) {

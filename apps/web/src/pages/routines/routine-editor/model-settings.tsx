@@ -21,10 +21,13 @@ export function RoutineModelSettings({
   draft,
   onChange,
   fieldId,
+  computerOffered = false,
 }: {
   draft: RoutineDraftState;
   onChange: (next: RoutineDraftState) => void;
   fieldId: string;
+  /** The viewer owns the routine and its bot and has a computer paired. */
+  computerOffered?: boolean;
 }) {
   const { t } = useLingui();
   const [credentials, setCredentials] = useState<ModelCredential[]>([]);
@@ -70,7 +73,7 @@ export function RoutineModelSettings({
         }
       >
         <SlidersHorizontal />
-        {draft.modelKey || (draft.inChat && !draft.watch) ? (
+        {draft.modelKey || (!draft.watch && (draft.inChat || draft.useComputer)) ? (
           <span
             aria-hidden
             className="absolute top-1 right-1 h-1.5 w-1.5 rounded-full bg-muted-foreground"
@@ -125,11 +128,28 @@ export function RoutineModelSettings({
             <Switch
               id={`${fieldId}-in-chat`}
               checked={draft.inChat}
-              onCheckedChange={(inChat) => onChange({ ...draft, inChat })}
+              // A run in the chat reads the whole conversation, so it never gets the computer.
+              onCheckedChange={(inChat) =>
+                onChange({ ...draft, inChat, useComputer: inChat ? false : draft.useComputer })
+              }
             />
             <Trans>Run in the chat</Trans>
           </label>
         )}
+
+        {computerOffered && !draft.watch && !draft.inChat ? (
+          <label
+            htmlFor={`${fieldId}-computer`}
+            className="mt-5 flex items-center gap-2.5 text-body text-muted-foreground"
+          >
+            <Switch
+              id={`${fieldId}-computer`}
+              checked={draft.useComputer}
+              onCheckedChange={(useComputer) => onChange({ ...draft, useComputer })}
+            />
+            <Trans>Use my computer</Trans>
+          </label>
+        ) : null}
       </PopoverContent>
     </Popover>
   );

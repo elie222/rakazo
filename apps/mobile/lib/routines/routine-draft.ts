@@ -8,7 +8,11 @@ import { routineTriggerNames } from "./routine";
  * The editor's draft. A web-only trigger is left out until the person removes it here, so a
  * draft only ever turns one off.
  */
-export type MobileRoutineDraft = RoutineDraft & Partial<Pick<Routine, RoutineWebTrigger>>;
+export type MobileRoutineDraft = RoutineDraft &
+  Partial<Pick<Routine, RoutineWebTrigger>> & {
+    /** Set once the owner flips "Use my computer"; see Routine.useComputer. */
+    useComputer?: boolean;
+  };
 
 /** The routine as this draft would leave it, for the triggers mobile can only remove. */
 export function routineWithDraftTriggers(routine: Routine, draft: MobileRoutineDraft): Routine {
@@ -48,6 +52,11 @@ function routineChanges(draft: MobileRoutineDraft, routine: Routine) {
     ...(draft.githubEnabled === false && routine.githubEnabled ? { githubEnabled: false } : {}),
     ...(draft.messageProvider === null && routine.messageProvider ? { messageProvider: null } : {}),
     ...(draft.watch === null && routine.watch ? { watch: null } : {}),
+    ...(routine.useComputer !== undefined &&
+    draft.useComputer !== undefined &&
+    draft.useComputer !== routine.useComputer
+      ? { useComputer: draft.useComputer }
+      : {}),
   };
 }
 

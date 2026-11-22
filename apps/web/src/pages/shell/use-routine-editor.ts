@@ -285,6 +285,10 @@ export function useRoutineEditor({
                 ...(routineDraft.inChat !== targetRoutine.inChat
                   ? { inChat: routineDraft.inChat }
                   : {}),
+                ...(targetRoutine.useComputer !== undefined &&
+                routineDraft.useComputer !== targetRoutine.useComputer
+                  ? { useComputer: routineDraft.useComputer }
+                  : {}),
                 ...(routineModel.modelProvider !== targetRoutine.modelProvider ||
                 routineModel.modelId !== targetRoutine.modelId ||
                 routineModel.thinkingLevel !== targetRoutine.thinkingLevel

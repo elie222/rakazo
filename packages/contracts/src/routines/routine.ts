@@ -86,6 +86,11 @@ export const RoutineSchema = z.object({
    * the viewer, never an id. Null when that member is no longer in the Space; absent on older servers.
    */
   runsAs: z.object({ name: z.string(), isViewer: z.boolean() }).nullable().optional(),
+  /**
+   * Whether its runs may use the viewer's own paired computer. Present only when the viewer owns
+   * the routine and its bot and has a computer paired, so only they see the switch.
+   */
+  useComputer: z.boolean().optional(),
 });
 export type Routine = z.infer<typeof RoutineSchema>;
 

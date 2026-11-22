@@ -54,6 +54,14 @@ export const READ_ONLY_AGENT_TOOLS = new Set([
   "purchase_status",
 ]);
 
+/** Reads of text earlier runs may have written, which a routine with its owner's computer skips. */
+const OWN_PROMPT_ONLY_HIDDEN_TOOLS = new Set([
+  "read_history",
+  "search_history",
+  "schedule_list",
+  "skill_read",
+]);
+
 /** The bot's own inbox, offered only in its owner's runs outside groups and channels. */
 const EMAIL_INBOX_TOOL_NAMES = new Set(["read_email", "delete_email"]);
 const PAID_SERVICE_TOOL_NAMES = new Set(["service_search", "service_call"]);
@@ -117,6 +125,8 @@ export function selectBuiltinToolsForRun(options: {
   ticketBoardEnabled?: boolean;
   phoneCallsEnabled?: boolean;
   historyRetrievalEnabled?: boolean;
+  /** A routine with its owner's computer reads nothing saved by other runs beyond its own prompt. */
+  ownPromptOnly?: boolean;
   meetingTranscriptsAvailable?: boolean;
   graphicalToolsAllowed: boolean;
   /** Page browser tools need a graphical computer (Chrome), not model vision. */
@@ -226,6 +236,7 @@ export function selectBuiltinToolsForRun(options: {
         tool.name !== "call_user") &&
       (options.historyRetrievalEnabled ||
         !["search_history", "read_history"].includes(tool.name)) &&
+      (!options.ownPromptOnly || !OWN_PROMPT_ONLY_HIDDEN_TOOLS.has(tool.name)) &&
       (options.meetingTranscriptsAvailable || tool.name !== READ_MEETING_TRANSCRIPT) &&
       (!options.messagingChannelRun ||
         (!SCHEDULE_TOOL_NAMES.has(tool.name) &&
