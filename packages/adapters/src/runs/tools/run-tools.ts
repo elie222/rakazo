@@ -12,14 +12,17 @@ import {
 } from "../../meetings/meeting-chat.tool-definition.js";
 import { IMAGE_RETURNING_COMPUTER_TOOLS } from "../../models/model-vision.js";
 import { MODEL_CANNOT_SEE_MESSAGE } from "../../models/model-vision.prompt.js";
+import { personalCalendarTools } from "../../personal-calendar/personal-calendar.tool-definition.js";
+import { calendarTool } from "../../personal-calendar/run-calendar-tool.js";
 import { strategicInitiativeToolAllowed } from "../../routines/strategic-initiative.js";
 import type { RunContext } from "../assembly/run-context.js";
 import { markReadOutsideContent } from "../assembly/run-context.js";
 import { noteComputerTaskStep } from "../lifecycle/run-progress.js";
 import { logToolRefusal } from "../turn/tool-completion-audit.js";
 import { refusal } from "../turn/tool-refusal.js";
+import { auditToolCall } from "./run-tool-audit.js";
 import type { ToolHandler } from "./run-tool-gate.js";
-import { auditToolCall, gateToolCall } from "./run-tool-gate.js";
+import { gateToolCall } from "./run-tool-gate.js";
 import { prepareToolRequest, resolveToolRequest } from "./run-tool-request.js";
 import {
   BUILTIN_AGENT_TOOL_NAMES,
@@ -81,6 +84,7 @@ const TOOL_HANDLERS = new Map<string, ToolHandler>([
   ...Object.entries(preferenceTools),
   ...Object.entries(feedbackTools),
   ...Object.entries(emailTools),
+  ...personalCalendarTools.map(({ name }) => [name, calendarTool] as const),
   ...[...PAGE_BROWSER_TOOL_NAMES].map((name) => [name, pageBrowserTool] as const),
 ]);
 

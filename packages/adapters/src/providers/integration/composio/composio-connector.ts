@@ -17,6 +17,7 @@ import { humanizeToolName } from "@rakazo/core";
 import { isVitestRuntime } from "@rakazo/core/node/test-runtime";
 import { getLogger } from "@rakazo/logging";
 import { collectPages, filterCatalog } from "../../../integrations/connector-catalog.js";
+import { connectedCalendarProvider } from "./calendar.js";
 import {
   COMPOSIO_MULTI_EXECUTE_TOOL,
   composioOutgoingDraft,
@@ -44,6 +45,7 @@ export type ComposioSession = Pick<
 /** The Composio SDK surface the connector uses; offline tests inject a stateful fake. */
 export type ComposioClient = {
   create(userId: string, config: ToolRouterCreateSessionConfig): Promise<ComposioSession>;
+  tools?: Pick<Composio["tools"], "proxyExecute">;
   sessions: { use(sessionId: string): Promise<ComposioSession> };
   connectedAccounts: Pick<Composio["connectedAccounts"], "list" | "waitForConnection" | "delete">;
   toolkits: {
@@ -467,6 +469,12 @@ export class ComposioConnector implements ComposioProvider {
     this.directoryCache =
       options.client || options.apiKey ? createToolkitDirectoryCache() : composioToolkitDirectory;
   }
+  readonly calendarProvider = connectedCalendarProvider(async (connection, accountId, context) => {
+    const active = await this.accountIds(context.userId, [connection.externalId], ["ACTIVE"], {
+      signal: context.signal,
+    });
+    return active.includes(accountId) ? (await this.sdk()).tools : undefined;
+  });
   private readonly catalogSessions = new Map<string, string>();
   private readonly executeSessions = new Map<string, { sessionId: string; key: string }>();
 

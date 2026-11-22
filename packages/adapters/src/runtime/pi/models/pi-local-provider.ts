@@ -1,6 +1,7 @@
 import type { Model, MutableModels, Provider, ProviderStreams } from "@earendil-works/pi-ai";
 import { createProvider } from "@earendil-works/pi-ai";
 import { openAICompletionsApi } from "@earendil-works/pi-ai/api/openai-completions.lazy";
+import { normalizeOpenAiCompatibleBaseUrl } from "@rakazo/contracts";
 import type { Dispatcher } from "undici";
 import { Agent, EnvHttpProxyAgent } from "undici";
 import { pacerTokensPerMinute } from "../../../models/endpoints/token-pacer.js";
@@ -49,7 +50,12 @@ export function localBaseUrl(): string {
   if (url.protocol !== "http:" && url.protocol !== "https:") {
     throw new Error("RAKAZO_LOCAL_MODELS_URL must be an absolute HTTP(S) URL");
   }
-  return value;
+  if (url.username || url.password) {
+    throw new Error(
+      "RAKAZO_LOCAL_MODELS_URL must not contain credentials; set RAKAZO_LOCAL_MODELS_API_KEY instead",
+    );
+  }
+  return normalizeOpenAiCompatibleBaseUrl(value);
 }
 
 /** Throws instead of `Number(x) || default`, which would swallow a typo or accept a negative window. */

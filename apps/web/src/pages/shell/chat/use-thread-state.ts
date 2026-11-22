@@ -49,6 +49,14 @@ export function useThreadState() {
     historyEpoch.current += 1;
   }
 
+  /** Empties the open chat after its history was cleared. */
+  function clearOpenThread() {
+    resetHistory();
+    updateSnapshot((current) =>
+      current ? { ...current, messages: [], olderCursor: null, run: null } : current,
+    );
+  }
+
   return {
     snapshot,
     snapshotRef,
@@ -68,6 +76,7 @@ export function useThreadState() {
     messageScroll,
     pinnedAroundRef,
     resetHistory,
+    clearOpenThread,
   };
 }
 
