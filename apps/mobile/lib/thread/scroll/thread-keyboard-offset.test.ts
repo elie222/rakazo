@@ -32,7 +32,7 @@ describe("threadKeyboardAvoidance", () => {
   });
 
   it.each([0, 32, 64, 88, 120])(
-    "lets Android track the actual screen position rather than caching a %s px header",
+    "offsets Android by its opaque %s px header, not a window position read once",
     (header) => {
       Platform.OS = "android";
       expect(
@@ -41,7 +41,7 @@ describe("threadKeyboardAvoidance", () => {
           floatingHeader: threadHeaderFloats(),
           nativeHeaderHeight: header,
         }),
-      ).toEqual({ automaticOffset: true, keyboardVerticalOffset: 0 });
+      ).toEqual({ automaticOffset: false, keyboardVerticalOffset: header });
     },
   );
 });
