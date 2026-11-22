@@ -102,7 +102,7 @@ export function routinesRoutes(ctx: RouterContext) {
           botId: bot.id,
           change: "created",
           name: row.name,
-          webhook: row.webhookEnabled && row.active && Boolean(bot.webhookSecretId),
+          routine: { webhookEnabled: row.webhookEnabled, active: row.active },
         });
         return await routineView(deps.prisma, context.actor, row);
       }),
@@ -343,7 +343,7 @@ export function routinesRoutes(ctx: RouterContext) {
             botId: bot.id,
             change: routineEditChange(existing, row),
             name: row.name,
-            webhook: row.webhookEnabled && row.active && Boolean(bot.webhookSecretId),
+            routine: { webhookEnabled: row.webhookEnabled, active: row.active },
           });
         }
         return await routineView(deps.prisma, context.actor, row);

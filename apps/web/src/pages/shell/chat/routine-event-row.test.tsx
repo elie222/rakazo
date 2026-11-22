@@ -15,14 +15,19 @@ vi.mock("@lingui/react/macro", () => ({
   }),
 }));
 
-const cancelIdentity = vi.hoisted(() => vi.fn());
-vi.mock("../../../components/account/ConfirmIdentityDialog", () => ({
-  useIdentityConfirmation: () => ({
-    withIdentityConfirmation: <T,>(action: () => Promise<T>) => action(),
-    cancel: cancelIdentity,
-    identityDialog: null,
-  }),
-}));
+const identity = vi.hoisted(() => ({ cancel: vi.fn(), confirm: vi.fn(async () => true) }));
+// The real retry rule from contracts, with the dialog replaced by `identity.confirm`.
+vi.mock("../../../components/account/ConfirmIdentityDialog", async () => {
+  const { runWithIdentityConfirmation } = await import("@rakazo/contracts");
+  return {
+    useIdentityConfirmation: () => ({
+      withIdentityConfirmation: <T,>(action: () => Promise<T>) =>
+        runWithIdentityConfirmation(action, identity.confirm),
+      cancel: identity.cancel,
+      identityDialog: null,
+    }),
+  };
+});
 
 let container: HTMLDivElement;
 let root: Root;
@@ -90,7 +95,7 @@ it("reads the key back for the bot and hides it again when closed", async () => 
   expect(container.textContent).toContain("/api/v1/bots/bot-1/webhook");
   expect(container.textContent).toContain("Authorization: Bearer key-123");
   await act(async () => button("Hide webhook key")!.click());
-  expect(cancelIdentity).toHaveBeenCalled();
+  expect(identity.cancel).toHaveBeenCalled();
   expect(container.textContent).not.toContain("key-123");
   expect(container.textContent).not.toContain("/api/v1/bots/bot-1/webhook");
 });
@@ -116,4 +121,18 @@ it("tells another member only the creator can see the key", async () => {
   renderWebhookRow();
   await act(async () => button("Show webhook key")!.click());
   expect(container.textContent).toContain("Only the bot's creator can see its webhook key.");
+});
+
+it("never asks a closed row's reveal to confirm it's the person", async () => {
+  const pending = deferred<{ secret: string }>();
+  reveal.mockReset().mockReturnValueOnce(pending.promise);
+  identity.confirm.mockClear();
+  renderWebhookRow();
+  await act(async () => button("Show webhook key")!.click());
+  await act(async () => button("Hide webhook key")!.click());
+  await act(async () =>
+    pending.reject(Object.assign(new Error("Confirm"), { code: "IDENTITY_CONFIRMATION_REQUIRED" })),
+  );
+  expect(identity.confirm).not.toHaveBeenCalled();
+  expect(container.querySelector('[role="alert"]')).toBeNull();
 });

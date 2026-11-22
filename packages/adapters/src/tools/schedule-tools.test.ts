@@ -1872,10 +1872,15 @@ describe("schedule tools with events", () => {
       return { id: "secret-1", ciphertext: "sealed" };
     });
     const notices: unknown[] = [];
+    const stored = { webhookSecretId: null as string | null };
     const tx = {
       $queryRaw: vi.fn(async () => [{ webhookSecretId: null }]),
       secret: { create: vi.fn(), deleteMany: vi.fn() },
-      bot: { update: vi.fn() },
+      bot: {
+        update: vi.fn(async (args: { data: { webhookSecretId: string } }) => {
+          stored.webhookSecretId = args.data.webhookSecretId;
+        }),
+      },
       thread: { update: vi.fn(async () => ({ nextMessageSeq: 2, spaceId: "ws-1" })) },
       message: {
         create: vi.fn(async (args: { data: { blocks: unknown } }) => {
@@ -1890,7 +1895,7 @@ describe("schedule tools with events", () => {
         routine: { create, findMany: noRoutines },
         bot: {
           findFirst: vi.fn(async () => ({ id: "bot-1", userId: options.botUserId ?? "user-1" })),
-          findUnique: vi.fn(async () => ({ webhookSecretId: null })),
+          findUnique: vi.fn(async () => ({ ...stored })),
         },
         messagingIdentity: {
           findUnique: vi.fn(async () => (options.provider ? { provider: options.provider } : null)),

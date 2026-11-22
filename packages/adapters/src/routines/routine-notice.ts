@@ -17,8 +17,8 @@ export type RoutineNoticeInput = {
   botId: string;
   change: RoutineEventChange;
   name: string;
-  /** Whether a webhook starts the saved routine now, with a key the bot already holds. */
-  webhook?: boolean;
+  /** The saved routine's state, which decides whether its row can show the bot's webhook key. */
+  routine?: { webhookEnabled: boolean; active: boolean };
 };
 
 /** What an edit means for the chat: an on/off flip reads as enabled or disabled. */
@@ -61,6 +61,17 @@ export function routineEdited(
   return EDITABLE_FIELDS.some((key) => comparable(before[key]) !== comparable(after[key]));
 }
 
+/** A live routine a webhook starts, on a bot that already holds a key to show. */
+async function offersWebhookKey(prisma: PrismaClient, input: RoutineNoticeInput) {
+  if (!input.routine?.webhookEnabled || !input.routine.active) return false;
+  if (input.change === "deleted" || input.change === "disabled") return false;
+  const bot = await prisma.bot.findUnique({
+    where: { id: input.botId },
+    select: { webhookSecretId: true },
+  });
+  return Boolean(bot?.webhookSecretId);
+}
+
 /** The bot's own chat, for a routine saved without one. */
 async function botThreadId(prisma: PrismaClient, botId: string): Promise<string | undefined> {
   const bot = await prisma.bot.findUnique({
@@ -89,7 +100,7 @@ async function writeRoutineNotice(deps: RoutineNoticeDeps, input: RoutineNoticeI
   const threadId = input.threadId ?? (await botThreadId(deps.prisma, input.botId));
   if (!threadId) return;
   const name = input.name.slice(0, 200);
-  const showsWebhook = input.webhook && input.change !== "deleted" && input.change !== "disabled";
+  const showsWebhook = await offersWebhookKey(deps.prisma, input);
   const blocks = [
     {
       kind: "routine_event" as const,

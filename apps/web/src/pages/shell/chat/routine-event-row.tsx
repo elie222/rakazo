@@ -104,8 +104,11 @@ function WebhookKey({
     const current = ++attempt.current;
     setError(null);
     try {
+      // A reveal the person closed meanwhile asks for nothing: it ends before any prompt opens.
       const revealed = await withIdentityConfirmation(() =>
-        rpc.bots.revealWebhookSecret({ botId }),
+        rpc.bots.revealWebhookSecret({ botId }).catch((error: unknown) => {
+          throw attempt.current === current ? error : new Error("closed");
+        }),
       );
       if (attempt.current === current) setSecret(revealed.secret);
     } catch (caught) {

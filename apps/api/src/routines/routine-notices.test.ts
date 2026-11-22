@@ -50,7 +50,6 @@ function client(saved: Record<string, unknown> = routine) {
             id: "bot-1",
             thread: { id: "bot-thread" },
             computer: null,
-            webhookSecretId: "secret-1",
           })),
         },
         routine: {
@@ -93,22 +92,25 @@ describe("routine rows from the routines API", () => {
       botId: "bot-1",
       change: "created",
       name: "Morning joke",
-      webhook: false,
+      routine: { webhookEnabled: false, active: expect.any(Boolean) },
     });
     expect(JSON.stringify(adapters.postRoutineNotice.mock.calls)).not.toContain("SECRET PROMPT");
   });
 
-  it("says whether a webhook starts the saved routine, so its row can offer the key", async () => {
+  it("passes the saved routine's state, which decides whether its row offers the key", async () => {
     await client({ ...routine, webhookEnabled: true }).routines.update({
       routineId: "routine-1",
       name: "Deploy hook",
     });
-    expect(lastNotice()).toMatchObject({ change: "updated", webhook: true });
+    expect(lastNotice()).toMatchObject({
+      change: "updated",
+      routine: { webhookEnabled: true, active: true },
+    });
     await client({ ...routine, webhookEnabled: true, active: false }).routines.update({
       routineId: "routine-1",
       name: "Deploy hook",
     });
-    expect(lastNotice()).toMatchObject({ change: "updated", webhook: false });
+    expect(lastNotice()).toMatchObject({ routine: { webhookEnabled: true, active: false } });
   });
 
   it("a routine saved in a group posts to that group's chat", async () => {
