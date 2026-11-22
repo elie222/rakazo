@@ -20,6 +20,7 @@ import type { ComposerMention } from "@rakazo/core";
 import {
   applyThreadSendReceipt,
   attachmentsForThread,
+  foldPeerReplies,
   inferAttachmentMimeType,
   isImageInputConfirmation,
   newClientId,
@@ -36,7 +37,11 @@ import {
   usePendingAttachmentPreviewCleanup,
 } from "../../../lib/composer/pending-attachments";
 import type { PendingSend } from "../../../lib/composer/pending-send";
-import { newestMessageSeq, withoutDeliveredSends } from "../../../lib/composer/pending-send";
+import {
+  newestMessageSeq,
+  withoutDeliveredSends,
+  withPendingSends,
+} from "../../../lib/composer/pending-send";
 import { canPrepareImage, prepareImage } from "../../../lib/composer/prepare-image";
 import type { PageSession } from "../../../lib/pages/pages";
 import { requestBrowserNotificationPermission } from "../../../lib/platform/browser-notifications";
@@ -111,6 +116,14 @@ export function useComposerActions({
     if (activeMessages)
       setPendingSends((current) => withoutDeliveredSends(current, activeMessages, activeThreadKey));
   }, [activeMessages, activeThreadKey, pendingSends]);
+  // The open chat's transcript with its unconfirmed text sends shown last, or null with none.
+  const meId = bootstrapMe?.userId;
+  const pendingTranscript = useMemo(() => {
+    if (!pendingSends.length || !activeSnapshot) return null;
+    const { messages, threadId } = activeSnapshot;
+    const shown = withPendingSends(messages, pendingSends, activeThreadKey, threadId, meId);
+    return shown === messages ? null : foldPeerReplies(shown, { includePeerReceipts: true });
+  }, [activeSnapshot, activeThreadKey, meId, pendingSends]);
   const [sentCount, setSentCount] = useState(0);
   useEffect(() => {
     setComposerUnsavedWork({ sending, attachments: pendingAttachments.length > 0 });
@@ -677,6 +690,7 @@ export function useComposerActions({
     clearReply,
     sending,
     pendingSends,
+    pendingTranscript,
     sentCount,
     sendMessage,
     stopRun,

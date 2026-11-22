@@ -46,7 +46,7 @@ import { useMessageJump } from "./shell/chat/use-message-jump";
 import { useReadAloud } from "./shell/chat/use-read-aloud";
 import { useThreadState } from "./shell/chat/use-thread-state";
 import { useThreadSync } from "./shell/chat/use-thread-sync";
-import { usePendingSendTranscript, useTranscriptView } from "./shell/chat/use-transcript-view";
+import { useTranscriptView } from "./shell/chat/use-transcript-view";
 import { ChatComposerArea } from "./shell/composer/chat-composer-area";
 import { useComposerActions } from "./shell/composer/use-composer-actions";
 import { useComposerMentions } from "./shell/composer/use-composer-mentions";
@@ -506,8 +506,6 @@ function SpaceShell() {
     flushPendingBrowserNotifications,
   });
   const { sending, sendError, stopRun } = composer;
-  const threadKey = inGroup ? groupId : active?.id;
-  const shownTranscript = usePendingSendTranscript(view, composer.pendingSends, threadKey, userId);
   const routineList = useRoutineList({
     rpc,
     queries,
@@ -808,7 +806,7 @@ function SpaceShell() {
             onScrollRequestHandled={clearScrollRequest}
             followRequest={composer.sentCount}
             {...view.transcriptProps}
-            transcript={shownTranscript}
+            transcript={composer.pendingTranscript ?? transcript}
             markedUnreadMessageId={read.markedUnreadMessageId}
             showToolActivity={showToolActivity}
             unreadAfterSeq={read.unreadAfterSeq}

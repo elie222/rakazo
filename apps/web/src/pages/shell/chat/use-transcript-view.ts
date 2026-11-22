@@ -10,8 +10,6 @@ import {
 } from "@rakazo/core";
 import type { GroupAvatarMember } from "@rakazo/ui-web";
 import { useCallback, useMemo } from "react";
-import type { PendingSend } from "../../../lib/composer/pending-send";
-import { withPendingSends } from "../../../lib/composer/pending-send";
 import type { ArtifactTarget } from "../../../lib/pages/artifact-open";
 import { FALLBACK_BOT_COLOR } from "./chat-shared";
 import { resolveTranscriptMemberName as groupTranscriptMemberName } from "./transcript-member-name";
@@ -111,29 +109,4 @@ export function useTranscriptView({
       peerBot: resolveBot,
     },
   };
-}
-
-/** The transcript with unconfirmed text sends shown last, each until its stored message arrives. */
-export function usePendingSendTranscript(
-  {
-    activeSnapshot,
-    transcript,
-  }: Pick<ReturnType<typeof useTranscriptView>, "activeSnapshot" | "transcript">,
-  pendingSends: readonly PendingSend[],
-  threadKey: string | undefined,
-  meId: string | undefined,
-) {
-  return useMemo(() => {
-    if (!pendingSends.length || !activeSnapshot) return transcript;
-    const messages = withPendingSends(
-      activeSnapshot.messages,
-      pendingSends,
-      threadKey,
-      activeSnapshot.threadId,
-      meId,
-    );
-    return messages === activeSnapshot.messages
-      ? transcript
-      : foldPeerReplies(messages, { includePeerReceipts: true });
-  }, [activeSnapshot, meId, pendingSends, threadKey, transcript]);
 }

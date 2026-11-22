@@ -575,6 +575,7 @@ it("clears a quoted reply re-picked as a fresh object after a thread refresh", a
 it("shows a text send at once and keeps it when the follow-up refresh fails", async () => {
   const reply = deferred<{ runId: string; taskId: string; seq: number }>();
   rpc.threads.send.mockReturnValue(reply.promise);
+  activeSnapshot = { threadId: "t-1", messages: [] } as unknown as ThreadSnapshot;
   refreshThread = () => Promise.reject(new Error("offline"));
   let sent!: Promise<boolean>;
   act(() => {
@@ -582,6 +583,9 @@ it("shows a text send at once and keeps it when the follow-up refresh fails", as
   });
   expect(latest.pendingSends).toEqual([
     { threadKey: "bot-1", clientNonce: "nonce-1", text: "hello there", afterSeq: 0 },
+  ]);
+  expect(latest.pendingTranscript?.messages.map((message) => message.id)).toEqual([
+    "pending:nonce-1",
   ]);
 
   reply.resolve({ runId: "run-1", taskId: "task-1", seq: 7 });
