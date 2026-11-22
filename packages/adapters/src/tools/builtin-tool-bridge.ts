@@ -1,6 +1,10 @@
 import type { ConnectorTool, ToolSearchHit, ToolSearchRequest } from "@rakazo/adapter-kit";
 import { FLEET_TOOL_NAMES } from "@rakazo/contracts";
 import { READ_MEETING_TRANSCRIPT } from "../meetings/meeting-chat.tool-definition.js";
+import {
+  normalizeOpenAiToolParameters,
+  openAiToolParametersNeedNormalization,
+} from "../models/endpoints/openai-tool-parameters.js";
 import { BUILTIN_AGENT_TOOL_NAMES } from "../runs/tools/run-tool-selection.js";
 import { bridgeToolDefinitions } from "./builtin.tool-definition.js";
 import type { CatalogEntry } from "./lazy-tool-catalog.js";
@@ -234,7 +238,7 @@ export async function findTools(
   return {
     hits,
     result: {
-      tools: hits.map(shownToolSearchHit),
+      tools: hits.map(shownFindTool),
       ...(unavailable ? { unavailable } : {}),
       ...(unknown.length ? { unknown } : {}),
       ...(hits.length || (unavailable && !unknown.length)
@@ -242,4 +246,14 @@ export async function findTools(
         : { hint: "Pass names from this tool's list or other words." }),
     },
   };
+}
+
+/**
+ * The schema find_tool shows. A root union is flattened here because this result never passes
+ * through the model request normalizer. The hit keeps the original schema for execution.
+ */
+function shownFindTool(hit: ToolSearchHit) {
+  const shown = shownToolSearchHit(hit);
+  if (!shown.inputSchema || !openAiToolParametersNeedNormalization(shown.inputSchema)) return shown;
+  return { ...shown, inputSchema: normalizeOpenAiToolParameters(shown.inputSchema) };
 }

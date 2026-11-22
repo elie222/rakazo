@@ -1,3 +1,5 @@
+import { validateToolArguments } from "@earendil-works/pi-ai/utils/validation";
+import { expectLinearTime } from "@rakazo/contracts/test-timing";
 import { describe, expect, it } from "vitest";
 import { parametersFor } from "../../runtime/pi/tools/pi-runtime-tool-parameters.js";
 import { builtinAgentTools } from "../../tools/builtin.tool-definition.js";
@@ -268,6 +270,317 @@ describe("normalizeOpenAiToolParameters", () => {
       properties: {},
     });
   });
+
+  it("flattens pure nested anyOf branches and deduplicates identical members", () => {
+    const blank = { anyOf: [{ type: "null" }, { type: "string", pattern: "^\\s*$" }] };
+    const normalized = normalizeOpenAiToolParameters({
+      oneOf: [
+        { properties: { on: { anyOf: [{ type: "boolean" }, ...blank.anyOf] } } },
+        { properties: { on: blank } },
+      ],
+    });
+    expect(normalized.properties).toEqual({
+      on: {
+        anyOf: [{ type: "boolean" }, { type: "null" }, { type: "string", pattern: "^\\s*$" }],
+      },
+    });
+  });
+
+  it("drops redundant primitive and pattern branches when an unconstrained branch exists", () => {
+    const normalized = normalizeOpenAiToolParameters({
+      oneOf: [
+        {
+          properties: {
+            cron: { type: "string", description: "5-field cron" },
+            unit: { type: "string", enum: ["minutes", "hours"] },
+          },
+        },
+        {
+          properties: {
+            cron: { anyOf: [{ type: "null" }, { type: "string", pattern: "^\\s*$" }] },
+            unit: { anyOf: [{ type: "null" }, { type: "string", pattern: "^\\s*$" }] },
+          },
+        },
+        {
+          properties: {
+            cron: { type: "string" },
+          },
+        },
+      ],
+    });
+    expect(normalized.properties).toEqual({
+      cron: { anyOf: [{ type: "string", description: "5-field cron" }, { type: "null" }] },
+      unit: {
+        anyOf: [
+          { type: "string", enum: ["minutes", "hours"] },
+          { type: "null" },
+          { type: "string", pattern: "^\\s*$" },
+        ],
+      },
+    });
+  });
+
+  it("preserves annotated nested anyOf objects and explicit empty anyOf arrays", () => {
+    const normalized = normalizeOpenAiToolParameters({
+      oneOf: [
+        { properties: { annotated: { anyOf: [{ type: "string" }], description: "keep me" } } },
+        { properties: { annotated: { type: "null" } } },
+        { properties: { empty: { anyOf: [] } } },
+        { properties: { empty: { type: "null" } } },
+      ],
+    });
+    expect(normalized.properties).toEqual({
+      annotated: {
+        anyOf: [{ anyOf: [{ type: "string" }], description: "keep me" }, { type: "null" }],
+      },
+      empty: { anyOf: [{ anyOf: [] }, { type: "null" }] },
+    });
+  });
+
+  it("preserves a singleton anyOf property shared identically across root and union branches", () => {
+    const singleton = { anyOf: [{ type: "string" }] };
+    const normalized = normalizeOpenAiToolParameters({
+      type: "object",
+      properties: { x: singleton },
+      oneOf: [
+        { properties: { x: singleton, a: { type: "string" } } },
+        { properties: { x: singleton, b: { type: "string" } } },
+      ],
+    });
+    expect(normalized.properties).toEqual({
+      x: { anyOf: [{ type: "string" }] },
+      a: { type: "string" },
+      b: { type: "string" },
+    });
+  });
+
+  it("preserves coercion order when promoting a described primitive over an earlier bare primitive", () => {
+    const inputSchema = {
+      oneOf: [
+        { properties: { timing: { type: "string" } } },
+        { properties: { timing: { type: "integer" } } },
+        { properties: { timing: { type: "string", description: "cron expression" } } },
+      ],
+    };
+    const normalized = normalizeOpenAiToolParameters(inputSchema);
+    expect(normalized.properties).toEqual({
+      timing: {
+        anyOf: [{ type: "string", description: "cron expression" }, { type: "integer" }],
+      },
+    });
+    const validated = validateToolArguments(
+      {
+        name: "test_tool",
+        description: "test",
+        parameters: parametersFor({
+          name: "test_tool",
+          description: "test",
+          inputSchema,
+        }),
+      },
+      { type: "toolCall", id: "1", name: "test_tool", arguments: { timing: 1.5 } },
+    );
+    expect(validated).toEqual({ timing: "1.5" });
+  });
+
+  it("preserves coercion order when a constrained branch precedes an intervening type", () => {
+    const flatInputSchema = {
+      oneOf: [
+        { properties: { timing: { type: "string", pattern: "^\\s*$" } } },
+        { properties: { timing: { type: "integer" } } },
+        { properties: { timing: { type: "string", description: "cron expression" } } },
+      ],
+    };
+    const flatNormalized = normalizeOpenAiToolParameters(flatInputSchema);
+    expect(flatNormalized.properties).toEqual({
+      timing: {
+        anyOf: [
+          { type: "string", pattern: "^\\s*$" },
+          { type: "integer" },
+          { type: "string", description: "cron expression" },
+        ],
+      },
+    });
+    expect(
+      validateToolArguments(
+        {
+          name: "flat_tool",
+          description: "test",
+          parameters: parametersFor({
+            name: "flat_tool",
+            description: "test",
+            inputSchema: flatInputSchema,
+          }),
+        },
+        { type: "toolCall", id: "1", name: "flat_tool", arguments: { timing: 1.5 } },
+      ),
+    ).toEqual({ timing: "1.5" });
+
+    const nestedInputSchema = {
+      oneOf: [
+        {
+          properties: {
+            timing: { anyOf: [{ type: "string", minLength: 5 }, { type: "integer" }] },
+          },
+        },
+        { properties: { timing: { type: "string", description: "any text" } } },
+      ],
+    };
+    const nestedNormalized = normalizeOpenAiToolParameters(nestedInputSchema);
+    expect(nestedNormalized.properties).toEqual({
+      timing: {
+        anyOf: [
+          { anyOf: [{ type: "string", minLength: 5 }, { type: "integer" }] },
+          { type: "string", description: "any text" },
+        ],
+      },
+    });
+    expect(
+      validateToolArguments(
+        {
+          name: "nested_tool",
+          description: "test",
+          parameters: parametersFor({
+            name: "nested_tool",
+            description: "test",
+            inputSchema: nestedInputSchema,
+          }),
+        },
+        { type: "toolCall", id: "1", name: "nested_tool", arguments: { timing: 1.5 } },
+      ),
+    ).toEqual({ timing: 1 });
+    expect(
+      validateToolArguments(
+        {
+          name: "nested_tool_direct",
+          description: "test",
+          parameters: nestedNormalized as never,
+        },
+        { type: "toolCall", id: "2", name: "nested_tool_direct", arguments: { timing: 1.5 } },
+      ),
+    ).toEqual({ timing: 1 });
+  });
+
+  it("preserves union grouping when later union branches span multiple earlier unions", () => {
+    const inputSchema = {
+      oneOf: [
+        { properties: { value: { anyOf: [{ type: "integer", minimum: 10 }, { type: "null" }] } } },
+        { properties: { value: { anyOf: [{ type: "number", maximum: 1 }, { type: "object" }] } } },
+        {
+          properties: {
+            value: {
+              anyOf: [
+                { type: "integer", minimum: 10 },
+                { type: "number", maximum: 1 },
+              ],
+            },
+          },
+        },
+      ],
+    };
+    const normalized = normalizeOpenAiToolParameters(inputSchema);
+    expect(
+      validateToolArguments(
+        {
+          name: "multi_union_tool",
+          description: "test",
+          parameters: parametersFor({
+            name: "multi_union_tool",
+            description: "test",
+            inputSchema,
+          }),
+        },
+        { type: "toolCall", id: "1", name: "multi_union_tool", arguments: { value: 1.5 } },
+      ),
+    ).toEqual({ value: 1 });
+    expect(
+      validateToolArguments(
+        {
+          name: "multi_union_tool_direct",
+          description: "test",
+          parameters: normalized as never,
+        },
+        { type: "toolCall", id: "2", name: "multi_union_tool_direct", arguments: { value: 1.5 } },
+      ),
+    ).toEqual({ value: 1 });
+  });
+
+  it("does not recursively flatten a nested constrained union into an outer unconstrained sibling", () => {
+    const inputSchema = {
+      oneOf: [
+        {
+          properties: {
+            value: {
+              anyOf: [
+                { anyOf: [{ type: "string", minLength: 5 }, { type: "integer" }] },
+                { type: "string" },
+              ],
+            },
+          },
+        },
+        { properties: { value: { type: "null" } } },
+      ],
+    };
+    const normalized = normalizeOpenAiToolParameters(inputSchema);
+    expect(
+      validateToolArguments(
+        {
+          name: "deep_union_tool",
+          description: "test",
+          parameters: parametersFor({
+            name: "deep_union_tool",
+            description: "test",
+            inputSchema,
+          }),
+        },
+        { type: "toolCall", id: "1", name: "deep_union_tool", arguments: { value: 1.5 } },
+      ),
+    ).toEqual({ value: 1 });
+    expect(
+      validateToolArguments(
+        {
+          name: "deep_union_tool_direct",
+          description: "test",
+          parameters: normalized as never,
+        },
+        { type: "toolCall", id: "2", name: "deep_union_tool_direct", arguments: { value: 1.5 } },
+      ),
+    ).toEqual({ value: 1 });
+  });
+
+  it("compacts large nested anyOf unions in linear time", () => {
+    const firstHalf = Array.from({ length: 3_000 }, (_, i) => ({
+      type: "string",
+      description: `choice ${i}`,
+    }));
+    const secondHalf = Array.from({ length: 3_000 }, (_, i) => ({
+      type: "string",
+      description: `choice ${i + 3_000}`,
+    }));
+    const nestedSchema = {
+      oneOf: [
+        { properties: { choice: { anyOf: firstHalf } } },
+        { properties: { choice: { anyOf: secondHalf } } },
+      ],
+    };
+    const wideOneOfSchema = {
+      oneOf: Array.from({ length: 10_000 }, (_, i) => ({
+        properties: { choice: { type: "string", const: `v${i}` } },
+      })),
+    };
+
+    expectLinearTime(() => {
+      const compactedNested = normalizeOpenAiToolParameters(nestedSchema) as {
+        properties: { choice: { anyOf: unknown[] } };
+      };
+      expect(compactedNested.properties.choice.anyOf).toHaveLength(6_000);
+
+      const compactedWide = normalizeOpenAiToolParameters(wideOneOfSchema) as {
+        properties: { choice: { anyOf: unknown[] } };
+      };
+      expect(compactedWide.properties.choice.anyOf).toHaveLength(10_000);
+    });
+  });
 });
 
 describe("openAiToolParametersNeedNormalization", () => {
@@ -485,6 +798,78 @@ describe("parametersFor OpenAI wire fidelity", () => {
       for (const key of ["oneOf", "anyOf", "allOf"]) {
         expect(wire, tool.name).not.toHaveProperty(key);
       }
+    }
+  });
+
+  it("avoids pure nested anyOf wrappers across merged root-union builtin properties", () => {
+    const isPureNestedAnyOf = (spec: unknown): boolean =>
+      spec != null &&
+      typeof spec === "object" &&
+      !Array.isArray(spec) &&
+      Array.isArray((spec as Record<string, unknown>).anyOf) &&
+      ((spec as Record<string, unknown>).anyOf as unknown[]).some(
+        (member) =>
+          member != null &&
+          typeof member === "object" &&
+          !Array.isArray(member) &&
+          Array.isArray((member as Record<string, unknown>).anyOf) &&
+          Object.keys(member as object).length === 1,
+      );
+
+    const mergedUnionFields = (schema: Record<string, unknown>): Set<string> => {
+      const specs = new Map<string, Set<string>>();
+      for (const key of ["oneOf", "anyOf"] as const) {
+        const variants = schema[key];
+        if (!Array.isArray(variants)) continue;
+        for (const variant of variants) {
+          if (variant == null || typeof variant !== "object" || Array.isArray(variant)) continue;
+          const props = (variant as Record<string, unknown>).properties;
+          if (props == null || typeof props !== "object" || Array.isArray(props)) continue;
+          for (const [field, spec] of Object.entries(props)) {
+            const seen = specs.get(field) ?? new Set<string>();
+            seen.add(JSON.stringify(spec) ?? "undefined");
+            specs.set(field, seen);
+          }
+        }
+      }
+      return new Set([...specs].filter(([, seen]) => seen.size > 1).map(([field]) => field));
+    };
+
+    const normalizedBuiltins = builtinAgentTools.filter((tool) =>
+      openAiToolParametersNeedNormalization(tool.inputSchema),
+    );
+    expect(normalizedBuiltins.length).toBeGreaterThan(0);
+
+    let checkedFields = 0;
+    for (const tool of normalizedBuiltins) {
+      const mergedFields = mergedUnionFields(tool.inputSchema);
+      if (mergedFields.size === 0) continue;
+      const wire = JSON.parse(JSON.stringify(parametersFor(tool))) as {
+        properties?: Record<string, unknown>;
+      };
+      for (const field of mergedFields) {
+        checkedFields += 1;
+        expect(isPureNestedAnyOf(wire.properties?.[field]), `${tool.name}.${field}`).toBe(false);
+      }
+    }
+    expect(checkedFields).toBeGreaterThan(0);
+
+    for (const name of ["schedule_create", "create_child_routine"]) {
+      const tool = builtinAgentTools.find((entry) => entry.name === name);
+      if (!tool) throw new Error(`missing ${name}`);
+      const wire = JSON.parse(JSON.stringify(parametersFor(tool))) as {
+        properties: Record<string, { anyOf?: Array<Record<string, unknown>> }>;
+      };
+      for (const field of ["cron", "runAt", "startAt"]) {
+        const members = wire.properties[field]?.anyOf ?? [];
+        expect(members, `${name}.${field}`).toHaveLength(2);
+        expect(members.map((member) => member.type).sort()).toEqual(["null", "string"]);
+      }
+      const unitMembers = wire.properties.unit?.anyOf ?? [];
+      expect(unitMembers.some((member) => member.type === "string" && !("enum" in member))).toBe(
+        true,
+      );
+      expect(unitMembers.some((member) => Array.isArray(member.enum))).toBe(true);
     }
   });
 });

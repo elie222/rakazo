@@ -384,7 +384,7 @@ export const fleetTools: ConnectorTool[] = [
   {
     name: "create_child_routine",
     description:
-      "Schedule a routine that wakes a bot in this space in its own thread. Identify it by bot_id or bot_name (exact). Repeats: cron or every/unit (min 1 minute), optionally until endAt. One-shot: runAt, delayMinutes, or delaySeconds. on: events, as in schedule_create.",
+      "Schedule a routine that wakes a bot in this space in its own thread. Identify it by bot_id or bot_name (exact). Choose one timing method: repeats (cron or every/unit, min 1 minute, optionally until endAt) or one-shot (runAt, delayMinutes, or delaySeconds). on: events, as in schedule_create, only with a repeat or by itself.",
     inputSchema: createChildRoutineInputSchema,
   },
   {

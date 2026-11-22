@@ -55,20 +55,31 @@ function flattenRootUnion(
   const requiredOf = (source: Record<string, unknown>) =>
     Array.isArray(source.required) ? source.required.map(String) : [];
   const mergeProperties = (sources: Record<string, unknown>[], combinator: "allOf" | "anyOf") => {
-    const specs = new Map<string, unknown[]>();
+    const specs = new Map<string, { items: unknown[]; keys: Set<string> }>();
     for (const source of sources) {
       if (!isRecord(source.properties)) continue;
       for (const [name, spec] of Object.entries(source.properties)) {
-        const seen = specs.get(name) ?? [];
-        if (!seen.some((other) => JSON.stringify(other) === JSON.stringify(spec))) seen.push(spec);
-        specs.set(name, seen);
+        let entry = specs.get(name);
+        if (!entry) {
+          entry = { items: [], keys: new Set() };
+          specs.set(name, entry);
+        }
+        const key = JSON.stringify(spec) ?? "undefined";
+        if (!entry.keys.has(key)) {
+          entry.keys.add(key);
+          entry.items.push(spec);
+        }
       }
     }
     return Object.fromEntries(
-      [...specs].map(([name, seen]) => [
-        name,
-        seen.length === 1 ? seen[0] : { [combinator]: seen },
-      ]),
+      [...specs].map(([name, { items }]) => {
+        if (items.length === 1) return [name, items[0]];
+        if (combinator === "anyOf") {
+          const compacted = compactAnyOf(items);
+          return [name, compacted.length === 1 ? compacted[0] : { anyOf: compacted }];
+        }
+        return [name, { [combinator]: items }];
+      }),
     );
   };
 
@@ -169,4 +180,294 @@ export function localSchemaReference(root: Record<string, unknown>, ref: string)
     value = (value as Record<string, unknown>)[key];
   }
   return value;
+}
+
+const PRIMITIVE_TYPES = new Set(["string", "number", "integer", "boolean", "null"]);
+const ALL_JSON_SCHEMA_TYPES = new Set([...PRIMITIVE_TYPES, "object", "array"]);
+const SCHEMA_ANNOTATION_KEYS = new Set(["description", "title"]);
+const COMPLEX_SCHEMA_KEYS = [
+  "anyOf",
+  "oneOf",
+  "allOf",
+  "$ref",
+  "const",
+  "enum",
+  "not",
+  "if",
+] as const;
+
+function isPureNonEmptyAnyOf(
+  spec: unknown,
+): spec is Record<string, unknown> & { anyOf: unknown[] } {
+  return (
+    isRecord(spec) &&
+    Array.isArray(spec.anyOf) &&
+    spec.anyOf.length > 0 &&
+    Object.keys(spec).length === 1
+  );
+}
+
+function isUnconstrainedPrimitive(
+  spec: unknown,
+): spec is Record<string, unknown> & { type: string } {
+  if (!isRecord(spec) || typeof spec.type !== "string" || !PRIMITIVE_TYPES.has(spec.type)) {
+    return false;
+  }
+  return Object.keys(spec).every((key) => key === "type" || SCHEMA_ANNOTATION_KEYS.has(key));
+}
+
+function isSimpleConstrainedPrimitive(
+  spec: unknown,
+): spec is Record<string, unknown> & { type: string } {
+  return (
+    isRecord(spec) &&
+    typeof spec.type === "string" &&
+    PRIMITIVE_TYPES.has(spec.type) &&
+    COMPLEX_SCHEMA_KEYS.every((key) => !(key in spec))
+  );
+}
+
+function isPatternOnlyString(spec: unknown): spec is Record<string, unknown> & { type: string } {
+  return (
+    isRecord(spec) &&
+    spec.type === "string" &&
+    typeof spec.pattern === "string" &&
+    Object.keys(spec).length === 2
+  );
+}
+
+function isSimpleStringSchema(spec: unknown): boolean {
+  if (
+    !isRecord(spec) ||
+    spec.type !== "string" ||
+    "anyOf" in spec ||
+    "oneOf" in spec ||
+    "allOf" in spec ||
+    "$ref" in spec
+  ) {
+    return false;
+  }
+  if ("const" in spec && typeof spec.const !== "string") return false;
+  if (
+    "enum" in spec &&
+    (!Array.isArray(spec.enum) || !spec.enum.every((value) => typeof value === "string"))
+  ) {
+    return false;
+  }
+  return true;
+}
+
+function typesOverlap(a: string, b: string): boolean {
+  return a === b || (a === "number" && b === "integer") || (a === "integer" && b === "number");
+}
+
+function schemaCanAcceptType(spec: unknown, targetType: string): boolean {
+  if (spec === false) return false;
+  if (!isRecord(spec) || typeof spec.$ref === "string") return true;
+  if (typeof spec.type === "string") {
+    return !ALL_JSON_SCHEMA_TYPES.has(spec.type) || typesOverlap(spec.type, targetType);
+  }
+  if (Array.isArray(spec.type)) {
+    return spec.type.some(
+      (type) =>
+        typeof type !== "string" ||
+        !ALL_JSON_SCHEMA_TYPES.has(type) ||
+        typesOverlap(type, targetType),
+    );
+  }
+  return true;
+}
+
+/**
+ * Flatten single-level pure `anyOf` branches when coercion-equivalent, deduplicate in linear time,
+ * and compact redundant primitive/pattern branches without shifting validator coercion precedence.
+ */
+function compactAnyOf(members: unknown[]): unknown[] {
+  type PreparedEntry =
+    | { isUnion: false; member: unknown }
+    | { isUnion: true; member: unknown; branches: unknown[]; branchKeys: string[] };
+
+  const prepared: PreparedEntry[] = members.map((member) => {
+    if (!isPureNonEmptyAnyOf(member)) return { isUnion: false, member };
+    const branches = member.anyOf;
+    const branchKeys = branches.map((branch) => JSON.stringify(branch) ?? "undefined");
+    return { isUnion: true, member, branches, branchKeys };
+  });
+
+  let largestUnionBranches: Set<string> | undefined;
+  const active: PreparedEntry[] = [];
+  for (const entry of prepared) {
+    if (entry.isUnion) {
+      if (largestUnionBranches && entry.branchKeys.every((key) => largestUnionBranches!.has(key))) {
+        continue;
+      }
+      if (!largestUnionBranches || entry.branchKeys.length > largestUnionBranches.size) {
+        largestUnionBranches = new Set(entry.branchKeys);
+      }
+    }
+    active.push(entry);
+  }
+  if (active.length === 1) return [active[0]!.member];
+
+  const acceptsPerEntry: Set<string>[] = active.map((entry) => {
+    const accepts = new Set<string>();
+    for (const type of PRIMITIVE_TYPES) {
+      const matches = entry.isUnion
+        ? entry.branches.some((branch) => schemaCanAcceptType(branch, type))
+        : schemaCanAcceptType(entry.member, type);
+      if (matches) accepts.add(type);
+    }
+    return accepts;
+  });
+  const totalAccepts = new Map<string, number>();
+  for (const accepts of acceptsPerEntry) {
+    for (const type of accepts) {
+      totalAccepts.set(type, (totalAccepts.get(type) ?? 0) + 1);
+    }
+  }
+
+  const flatItems: { spec: unknown; key?: string }[] = [];
+  const earlierUnconstrained = new Set<string>();
+  let precedingStringCount = 0;
+  let allPrecedingStringsSimple = true;
+  for (let i = 0; i < active.length; i += 1) {
+    const entry = active[i]!;
+    const selfAccepts = acceptsPerEntry[i]!;
+    if (!entry.isUnion) {
+      flatItems.push({ spec: entry.member });
+      if (isUnconstrainedPrimitive(entry.member)) {
+        earlierUnconstrained.add(entry.member.type);
+      }
+      if (selfAccepts.has("string")) {
+        allPrecedingStringsSimple &&= isSimpleStringSchema(entry.member);
+        precedingStringCount += 1;
+      }
+      continue;
+    }
+
+    const withinUnionUnconstrained = new Set<string>();
+    let canUnwrap = true;
+    for (let branchIndex = 0; branchIndex < entry.branches.length; branchIndex += 1) {
+      const branch = entry.branches[branchIndex];
+      if (isUnconstrainedPrimitive(branch)) {
+        withinUnionUnconstrained.add(branch.type);
+        continue;
+      }
+      if (!isSimpleConstrainedPrimitive(branch)) {
+        canUnwrap = false;
+        break;
+      }
+      const othersAccepting =
+        (totalAccepts.get(branch.type) ?? 0) - (selfAccepts.has(branch.type) ? 1 : 0);
+      const coveredEarlier =
+        earlierUnconstrained.has(branch.type) || withinUnionUnconstrained.has(branch.type);
+      const precededOnlyBySimpleStrings =
+        branch.type === "string" &&
+        othersAccepting === precedingStringCount &&
+        allPrecedingStringsSimple;
+      const trailingSimpleString =
+        branch.type === "string" &&
+        branchIndex === entry.branches.length - 1 &&
+        othersAccepting === 1 &&
+        i + 1 < active.length &&
+        acceptsPerEntry[i + 1]!.has("string") &&
+        isSimpleStringSchema(active[i + 1]!.member);
+      if (
+        !coveredEarlier &&
+        othersAccepting !== 0 &&
+        !precededOnlyBySimpleStrings &&
+        !trailingSimpleString
+      ) {
+        canUnwrap = false;
+        break;
+      }
+    }
+
+    if (!canUnwrap) {
+      flatItems.push({ spec: entry.member });
+      if (selfAccepts.has("string")) {
+        allPrecedingStringsSimple = false;
+        precedingStringCount += 1;
+      }
+      continue;
+    }
+
+    for (let branchIndex = 0; branchIndex < entry.branches.length; branchIndex += 1) {
+      const branch = entry.branches[branchIndex];
+      flatItems.push({ spec: branch, key: entry.branchKeys[branchIndex] });
+      if (isUnconstrainedPrimitive(branch)) {
+        earlierUnconstrained.add(branch.type);
+      }
+    }
+    if (selfAccepts.has("string")) {
+      allPrecedingStringsSimple &&= entry.branches.every(
+        (branch) => !schemaCanAcceptType(branch, "string") || isSimpleStringSchema(branch),
+      );
+      precedingStringCount += 1;
+    }
+  }
+
+  const seenKeys = new Set<string>();
+  const deduped: unknown[] = [];
+  for (const item of flatItems) {
+    const key = item.key ?? JSON.stringify(item.spec) ?? "undefined";
+    if (seenKeys.has(key)) continue;
+    seenKeys.add(key);
+    deduped.push(item.spec);
+  }
+
+  const promoted: unknown[] = [];
+  const firstUnconstrainedIndex = new Map<string, number>();
+  const firstIsBare = new Set<string>();
+  for (const member of deduped) {
+    if (!isUnconstrainedPrimitive(member)) {
+      promoted.push(member);
+      continue;
+    }
+    const type = member.type;
+    const bare = Object.keys(member).length === 1;
+    const firstIndex = firstUnconstrainedIndex.get(type);
+    if (firstIndex === undefined) {
+      firstUnconstrainedIndex.set(type, promoted.length);
+      if (bare) firstIsBare.add(type);
+      promoted.push(member);
+      continue;
+    }
+    if (bare) continue;
+    if (firstIsBare.has(type)) {
+      promoted[firstIndex] = member;
+      firstIsBare.delete(type);
+      continue;
+    }
+    promoted.push(member);
+  }
+
+  const seenUnconstrainedString = new Array<boolean>(promoted.length).fill(false);
+  let hasUnconstrainedStringBefore = false;
+  for (let i = 0; i < promoted.length; i += 1) {
+    seenUnconstrainedString[i] = hasUnconstrainedStringBefore;
+    const member = promoted[i];
+    if (isUnconstrainedPrimitive(member) && member.type === "string") {
+      hasUnconstrainedStringBefore = true;
+    }
+  }
+
+  const keep = new Array<boolean>(promoted.length).fill(true);
+  let stringDirectlyAhead = false;
+  for (let i = promoted.length - 1; i >= 0; i -= 1) {
+    const member = promoted[i];
+    if (isUnconstrainedPrimitive(member) && member.type === "string") {
+      stringDirectlyAhead = true;
+      continue;
+    }
+    if (isPatternOnlyString(member)) {
+      if (seenUnconstrainedString[i] || stringDirectlyAhead) {
+        keep[i] = false;
+      }
+      continue;
+    }
+    stringDirectlyAhead = false;
+  }
+
+  return promoted.filter((_, i) => keep[i]);
 }

@@ -1,10 +1,14 @@
+import type { Api, Context, Model } from "@earendil-works/pi-ai";
+import { builtinModels } from "@earendil-works/pi-ai/providers/all";
 import type { ConnectorTool } from "@rakazo/adapter-kit";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   BUILTIN_AGENT_TOOL_NAMES,
   selectBuiltinToolsForRun,
 } from "../runs/tools/run-tool-selection.js";
+import { parametersFor } from "../runtime/pi/tools/pi-runtime-tool-parameters.js";
 import { describeToolActivity } from "../runtime/pi/tools/pi-runtime-tools.js";
+import { observedPiStream } from "../runtime/pi/usage/pi-usage.js";
 import { FIND_TOOL, USE_TOOL } from "./builtin.tool-definition.js";
 import { CORE_BUILTIN_TOOL_NAMES, findTools, partitionTools } from "./builtin-tool-bridge.js";
 
@@ -25,12 +29,61 @@ const ownerChat = selectBuiltinToolsForRun({
   followUpFromUser: true,
 });
 
+const ownerChatWithBrowser = selectBuiltinToolsForRun({
+  graphicalToolsAllowed: true,
+  pageBrowserAllowed: true,
+  groupId: null,
+  trigger: "user",
+  semanticMemoryEnabled: false,
+  historyRetrievalEnabled: true,
+  messagingChannelRun: false,
+  fleetManagement: true,
+  followUpFromUser: true,
+});
+
 const definitionBytes = (tools: typeof ownerChat) =>
   Buffer.byteLength(
     JSON.stringify(
       tools.map(({ name, description, inputSchema }) => ({ name, description, inputSchema })),
     ),
   );
+
+async function chatCompletionsToolStats(tools: typeof ownerChat) {
+  const models = builtinModels();
+  const catalogModel = models.getModel("openrouter", "openai/gpt-oss-20b");
+  if (!catalogModel) throw new Error("fixture model is missing");
+  const model: Model<Api> = { ...catalogModel, reasoning: false };
+  const context: Context = {
+    systemPrompt: "Fixture instructions.",
+    messages: [{ role: "user", content: "Fixture request.", timestamp: 1 }],
+    tools: tools.map((tool) => ({
+      name: tool.name,
+      description: tool.description,
+      parameters: parametersFor(tool),
+    })),
+  };
+  let serializedTools: Array<{ type?: unknown }> | undefined;
+  const fetchMock = vi.fn(async (_input: unknown, init?: RequestInit) => {
+    serializedTools = (JSON.parse(String(init?.body)) as { tools?: Array<{ type?: unknown }> })
+      .tools;
+    return new Response(
+      'data: {"choices":[{"index":0,"delta":{"content":"Ready"},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n',
+      { headers: { "content-type": "text/event-stream" } },
+    );
+  });
+  const result = await observedPiStream(
+    models,
+    model,
+    context,
+    { apiKey: "fixture-key", maxRetries: 0, fetch: fetchMock },
+    () => undefined,
+  ).result();
+  expect(result.stopReason).toBe("stop");
+  expect(serializedTools).toHaveLength(tools.length);
+  expect(serializedTools?.[0]).toMatchObject({ type: "function" });
+  const wireBytes = Buffer.byteLength(JSON.stringify(serializedTools));
+  return { wireBytes, estimatedTokens: Math.ceil(wireBytes / 4) };
+}
 
 describe("built-in tool bridge", () => {
   it("lists a pinned tool set within a byte budget on an owner chat run", () => {
@@ -82,6 +135,28 @@ describe("built-in tool bridge", () => {
     );
   });
 
+  it("keeps serialized Chat Completions tool wire bytes and estimated tokens within budget", async () => {
+    const nonGraphical = await chatCompletionsToolStats(partitionTools(ownerChat).listed);
+    expect(
+      nonGraphical.wireBytes,
+      `ownerChat wire=${nonGraphical.wireBytes}B (~${nonGraphical.estimatedTokens} tok)`,
+    ).toBeLessThanOrEqual(28_249);
+    expect(
+      nonGraphical.estimatedTokens,
+      `ownerChat estTokens=${nonGraphical.estimatedTokens} (wire=${nonGraphical.wireBytes}B)`,
+    ).toBeLessThanOrEqual(7_063);
+
+    const withBrowser = await chatCompletionsToolStats(partitionTools(ownerChatWithBrowser).listed);
+    expect(
+      withBrowser.wireBytes,
+      `ownerChatWithBrowser wire=${withBrowser.wireBytes}B (~${withBrowser.estimatedTokens} tok)`,
+    ).toBeLessThanOrEqual(34_184);
+    expect(
+      withBrowser.estimatedTokens,
+      `ownerChatWithBrowser estTokens=${withBrowser.estimatedTokens} (wire=${withBrowser.wireBytes}B)`,
+    ).toBeLessThanOrEqual(8_546);
+  });
+
   it("names only real built-ins as core", () => {
     for (const name of CORE_BUILTIN_TOOL_NAMES) expect(BUILTIN_AGENT_TOOL_NAMES).toContain(name);
   });
@@ -120,6 +195,26 @@ describe("built-in tool bridge", () => {
       tools: [],
       hint: expect.any(String),
     });
+  });
+
+  it("normalizes deferred root-union schemas returned by find_tool", async () => {
+    const { deferred } = partitionTools(ownerChat);
+    const found = await find(deferred, { names: ["create_child_routine"] });
+    expect(found.tools).toHaveLength(1);
+    expect(found.tools[0]!.description).toContain("Choose one timing method");
+    expect(found.tools[0]!.description).toContain("only with a repeat or by itself");
+    const schema = found.tools[0]!.inputSchema as Record<string, unknown>;
+    expect(schema.type).toBe("object");
+    expect(schema.additionalProperties).toBe(false);
+    expect(schema.required).toEqual(["name", "prompt", "inChat"]);
+    expect(Object.keys((schema.properties as Record<string, unknown>) ?? {})).toEqual(
+      expect.arrayContaining(["bot_id", "bot_name", "name", "prompt", "cron", "delaySeconds"]),
+    );
+    for (const key of ["oneOf", "anyOf", "allOf"]) {
+      expect(schema).not.toHaveProperty(key);
+    }
+    const bytes = Buffer.byteLength(JSON.stringify(found));
+    expect(bytes, `create_child_routine find_tool result=${bytes}B`).toBeLessThanOrEqual(3_511);
   });
 
   it("never finds a tool the bot turned off", async () => {
