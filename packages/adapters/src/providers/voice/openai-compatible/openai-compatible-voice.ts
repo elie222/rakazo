@@ -15,7 +15,7 @@ import {
   DEFAULT_COMPATIBLE_TTS_MODEL,
   OPENAI_COMPATIBLE_PROVIDER_ID,
 } from "@rakazo/contracts";
-import { deadlineSignal } from "@rakazo/core";
+import { deadlineSignal, redactSecrets } from "@rakazo/core";
 import {
   assertAllowedOpenAiCompatibleUrl,
   assertHttpsForKeyedOpenAiCompatibleUrl,
@@ -247,11 +247,8 @@ function serverError(
   body: unknown,
   ...privateValues: (string | undefined)[]
 ): Error {
-  let redacted = voiceErrorDetail(body);
-  for (const value of privateValues) {
-    if (value) redacted = redacted.replaceAll(value, "[redacted]");
-  }
-  const short = redacted
+  const secrets = privateValues.filter((value): value is string => Boolean(value));
+  const short = redactSecrets(voiceErrorDetail(body), secrets)
     .replace(/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]+/gu, " ")
     .trim()
     .slice(0, MAX_SERVER_DETAIL_LENGTH);

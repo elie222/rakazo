@@ -11,6 +11,7 @@ import {
   DEFAULT_COMPATIBLE_TTS_MODEL,
   MAX_TRANSCRIPTION_VOCABULARY_LENGTH,
   OPENAI_COMPATIBLE_PROVIDER_ID,
+  savedVoiceTranscriptionVocabulary,
   voiceConnectionForm,
 } from "@rakazo/contracts";
 import { fetchFresh, writeSaved } from "@rakazo/core/query";
@@ -120,9 +121,7 @@ export default function VoiceSettings() {
   const [speechModel, setSpeechModel] = useState(cached?.credential?.speechModel ?? "");
   const [baseUrl, setBaseUrl] = useState(cached?.credential?.endpoint ?? "");
   const [ttsModel, setTtsModel] = useState(cached?.credential?.ttsModel ?? "");
-  const [transcriptionVocabulary, setTranscriptionVocabulary] = useState(
-    cached?.credential?.transcriptionVocabulary ?? "",
-  );
+  const [transcriptionVocabulary, setTranscriptionVocabulary] = useState<string>();
   const [sttModel, setSttModel] = useState(cached?.credential?.sttModel ?? "");
   const [sttBaseUrl, setSttBaseUrl] = useState(cached?.credential?.sttEndpoint ?? "");
   const [sttApiKey, setSttApiKey] = useState("");
@@ -206,10 +205,10 @@ export default function VoiceSettings() {
         ["baseUrl", setBaseUrl, cred?.endpoint],
         ["ttsModel", setTtsModel, cred?.ttsModel],
         ["sttModel", setSttModel, cred?.sttModel],
-        ["transcriptionVocabulary", setTranscriptionVocabulary, cred?.transcriptionVocabulary],
         ["sttBaseUrl", setSttBaseUrl, cred?.sttEndpoint],
       ];
       for (const [field, set, value] of fields) if (!edited.current.has(field)) set(value ?? "");
+      if (!edited.current.has("transcriptionVocabulary")) setTranscriptionVocabulary(undefined);
       if (cred) {
         const nextVoices = await fetchFresh(queryClient, voicesRead(target, selected), fresh);
         if (revision === loadRevision.current) setVoices(nextVoices);
@@ -483,6 +482,10 @@ export default function VoiceSettings() {
       // A key typed meanwhile stays pinned to the address it was typed for.
       if (connection.current.apiKey !== sent.apiKey) edited.current.add("baseUrl");
       if (connection.current.sttApiKey !== sent.sttApiKey) edited.current.add("sttBaseUrl");
+      if (connection.current.transcriptionVocabulary !== sent.transcriptionVocabulary) {
+        edited.current.add("baseUrl");
+        edited.current.add("sttBaseUrl");
+      }
       await load(selected.id, { keepForm: true }).catch((err: unknown) =>
         setError(errorText(err, t`Could not load voice settings`)),
       );
@@ -738,8 +741,15 @@ export default function VoiceSettings() {
                       maxLength={MAX_TRANSCRIPTION_VOCABULARY_LENGTH}
                       placeholder={t`Names and terms (optional)`}
                       placeholderTextColor={native.tertiaryLabel}
-                      value={transcriptionVocabulary}
-                      onChangeText={edit("transcriptionVocabulary", setTranscriptionVocabulary)}
+                      value={
+                        transcriptionVocabulary ??
+                        savedVoiceTranscriptionVocabulary(credential, baseUrl, sttBaseUrl)
+                      }
+                      onChangeText={edit("transcriptionVocabulary", (value) => {
+                        edited.current.add("baseUrl");
+                        edited.current.add("sttBaseUrl");
+                        setTranscriptionVocabulary(value);
+                      })}
                       style={styles.input}
                     />
                   </>

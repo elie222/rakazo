@@ -12,6 +12,7 @@ import {
   DEFAULT_COMPATIBLE_TTS_MODEL,
   MAX_TRANSCRIPTION_VOCABULARY_LENGTH,
   OPENAI_COMPATIBLE_PROVIDER_ID,
+  savedVoiceTranscriptionVocabulary,
   voiceConnectionForm,
 } from "@rakazo/contracts";
 import { fetchFresh } from "@rakazo/core/query";
@@ -109,9 +110,7 @@ export function VoiceSettingsOverlay({
   const [speechModel, setSpeechModel] = useState(cached?.credential?.speechModel ?? "");
   const [baseUrl, setBaseUrl] = useState(cached?.credential?.endpoint ?? "");
   const [ttsModel, setTtsModel] = useState(cached?.credential?.ttsModel ?? "");
-  const [transcriptionVocabulary, setTranscriptionVocabulary] = useState(
-    cached?.credential?.transcriptionVocabulary ?? "",
-  );
+  const [transcriptionVocabulary, setTranscriptionVocabulary] = useState<string>();
   const [sttModel, setSttModel] = useState(cached?.credential?.sttModel ?? "");
   const [sttBaseUrl, setSttBaseUrl] = useState(cached?.credential?.sttEndpoint ?? "");
   const [sttApiKey, setSttApiKey] = useState("");
@@ -179,8 +178,7 @@ export function VoiceSettingsOverlay({
     if (!keep("baseUrl")) setBaseUrl(cred?.endpoint ?? "");
     if (!keep("ttsModel")) setTtsModel(cred?.ttsModel ?? "");
     if (!keep("sttModel")) setSttModel(cred?.sttModel ?? "");
-    if (!keep("transcriptionVocabulary"))
-      setTranscriptionVocabulary(cred?.transcriptionVocabulary ?? "");
+    if (!keep("transcriptionVocabulary")) setTranscriptionVocabulary(undefined);
     if (!keep("sttBaseUrl")) setSttBaseUrl(cred?.sttEndpoint ?? "");
     if (!cred) return Promise.resolve();
     return queryClient
@@ -354,6 +352,10 @@ export function VoiceSettingsOverlay({
       // A key typed meanwhile stays pinned to the address it was typed for.
       if (connection.current.apiKey !== sent.apiKey) edited.current.add("baseUrl");
       if (connection.current.sttApiKey !== sent.sttApiKey) edited.current.add("sttBaseUrl");
+      if (connection.current.transcriptionVocabulary !== sent.transcriptionVocabulary) {
+        edited.current.add("baseUrl");
+        edited.current.add("sttBaseUrl");
+      }
       setNotice(t`Connected ${selected.name}.`);
       // The saved connection (the server may have picked another voice for a new address) shows
       // at once in untouched fields, so a failed read after it cannot leave stale values to send.
@@ -641,9 +643,14 @@ export function VoiceSettingsOverlay({
                         spellCheck={false}
                         maxLength={MAX_TRANSCRIPTION_VOCABULARY_LENGTH}
                         placeholder={t`Names and terms (optional)`}
-                        value={transcriptionVocabulary}
+                        value={
+                          transcriptionVocabulary ??
+                          savedVoiceTranscriptionVocabulary(credential, baseUrl, sttBaseUrl)
+                        }
                         onChange={(event) => {
                           edited.current.add("transcriptionVocabulary");
+                          edited.current.add("baseUrl");
+                          edited.current.add("sttBaseUrl");
                           setTranscriptionVocabulary(event.target.value);
                         }}
                       />

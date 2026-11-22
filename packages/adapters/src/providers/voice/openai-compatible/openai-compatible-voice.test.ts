@@ -788,15 +788,16 @@ describe("OpenAiCompatibleVoiceProvider", () => {
     expect((form.get("file") as File).name).toBe("speech.m4a");
   });
 
-  it("redacts vocabulary echoed in a transcription error", async () => {
+  it("redacts vocabulary and its embedded API key when echoed in a transcription error", async () => {
     const apiKey = serializeAsOwner({
       baseUrl: "http://192.168.1.20:8880",
-      transcriptionVocabulary: "Acme, Xyla",
+      apiKey: "example-key",
+      transcriptionVocabulary: "Acme, example-key, Xyla",
     });
     const fetchMock = vi
       .fn()
       .mockResolvedValue(
-        Response.json({ detail: 'Unsupported prompt "Acme, Xyla"' }, { status: 400 }),
+        Response.json({ detail: 'Unsupported prompt "Acme, example-key, Xyla"' }, { status: 400 }),
       );
     await expect(
       provider(fetchMock).transcribe(

@@ -321,6 +321,7 @@ it("connects a self-hosted speech server by URL without a key", async () => {
 
 it.each([
   { field: "Server URL", value: "http://100.64.0.11:8880/v1" },
+  { field: "Transcription server URL", value: "http://100.64.0.12:9000" },
   { field: "Speech model", value: "new-model" },
   { field: "Transcription model", value: "new-transcriber" },
   { field: "Transcription vocabulary", value: "Acme, Xyla" },
@@ -381,6 +382,9 @@ it.each([
         );
         input.dispatchEvent(new Event("input", { bubbles: true }));
       });
+      if (field === "Server URL" || field === "Transcription server URL") {
+        expect(labelledInput(container, "Transcription vocabulary").value).toBe("");
+      }
       await act(async () => {
         [...container.querySelectorAll("button")]
           .find((button) => button.textContent === "Reconnect")
