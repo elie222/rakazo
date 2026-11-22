@@ -947,7 +947,7 @@ export async function tickRoutineWatch(
         spaceId: routine.spaceId,
         ...target,
         role: "bot",
-        text: `I paused the **${routine.name}** routine because its change check failed: ${reason}\n\nTell me how to fix it, or turn the routine back on once it's sorted.`,
+        text: `I paused the **${routine.name}** routine because its change check failed: ${reason}\n\nReply here and I'll help fix it.`,
       });
     }
     return { run: false };

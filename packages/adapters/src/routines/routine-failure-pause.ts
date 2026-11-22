@@ -114,6 +114,6 @@ export async function pauseRoutineAfterRepeatedFailures(
     threadId,
     botId: run.botId,
     role: "bot",
-    text: `I paused the **${paused.name}** routine because its last ${ROUTINE_FAILURE_PAUSE_AFTER} runs failed: ${normalizeRunError(paused.error).summary}\n\nTell me how to fix it, or turn the routine back on once it's sorted.`,
+    text: `I paused the **${paused.name}** routine because its last ${ROUTINE_FAILURE_PAUSE_AFTER} runs failed: ${normalizeRunError(paused.error).summary}\n\nReply here and I'll help fix it.`,
   });
 }
