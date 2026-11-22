@@ -48,7 +48,7 @@ export function ChatColumn({
       <div
         ref={chatColumnRef}
         data-finding={findOpen || undefined}
-        className="relative flex min-h-0 flex-1 flex-col [--chat-top-clearance:5rem] md:[--chat-top-clearance:5.25rem]"
+        className="relative flex min-h-0 flex-1 flex-col"
       >
         {/* Only the pills take input; the gaps pass clicks and scrolling to the transcript. */}
         <div aria-hidden="true" className="app-drag absolute inset-x-0 top-0 z-10 h-3" />

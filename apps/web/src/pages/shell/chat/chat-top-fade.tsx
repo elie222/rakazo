@@ -2,8 +2,8 @@ import "./chat-top-fade.css";
 
 /**
  * Fades and blurs the transcript where it scrolls under the floating chat header.
- * Its height comes from the chat column's --chat-top-clearance, so it matches the
- * transcript's top padding and stays invisible while the chat is at the top.
+ * Its height comes from the shared --chat-top-clearance, so it matches the transcript's
+ * top padding and stays invisible while the chat is at the top.
  */
 export function ChatTopFade() {
   return (

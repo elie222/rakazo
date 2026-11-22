@@ -23,6 +23,19 @@
   }
 }
 
+/* The floating chat header draws over the transcript. The fade, the transcript's top
+   padding and its scroll padding all read this clearance; it is global so fixture
+   transcripts and any other surface that renders the transcript share the same spacing. */
+:root {
+  --chat-top-clearance: 5rem;
+}
+
+@media (min-width: 48rem) {
+  :root {
+    --chat-top-clearance: 5.25rem;
+  }
+}
+
 html,
 body,
 #root {
