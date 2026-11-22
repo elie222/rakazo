@@ -1,3 +1,4 @@
+import { t } from "@lingui/core/macro";
 import type { MessageBlock, RoutineHistory, RoutineRun, RoutineRunCursor } from "@rakazo/contracts";
 import { mergeRoutineRunPages, plainTextFromMarkdown, routineHistoryPage } from "@rakazo/core";
 import { useInfiniteQuery } from "@tanstack/react-query";
@@ -59,6 +60,15 @@ export function routineRunReplyText(blocks: readonly MessageBlock[] | undefined)
       if (block.kind === "page") return [block.title];
       if (block.kind === "file" || block.kind === "image" || block.kind === "chart")
         return [block.name];
+      // A bot it created goes by its name, as the chat shows it; one it removed says so.
+      if (block.kind === "child_bot")
+        return [
+          block.status === "archived"
+            ? `${block.name} ${t`archived`}`
+            : block.status === "deleted"
+              ? `${block.name} ${t`deleted`}`
+              : block.name,
+        ];
       return [];
     })
     .map((part) => part.trim())

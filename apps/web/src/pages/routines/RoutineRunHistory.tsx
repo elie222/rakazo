@@ -204,6 +204,16 @@ function RunReply({ blocks, target }: { blocks: readonly MessageBlock[]; target:
             mimeType={block.mimeType}
             size={block.size}
           />
+        ) : block.kind === "child_bot" ? (
+          // A bot it created or removed, named as the chat names it.
+          <p key={index}>
+            {block.name}{" "}
+            {block.status === "created" ? null : (
+              <span className="text-muted-foreground">
+                {block.status === "archived" ? <Trans>archived</Trans> : <Trans>deleted</Trans>}
+              </span>
+            )}
+          </p>
         ) : null,
       )}
     </div>

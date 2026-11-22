@@ -275,6 +275,7 @@ it("opens a silent run's steps and reply in place instead of linking to the chat
             status: "completed",
             result: "Three tickets are done.",
           },
+          { kind: "child_bot", botId: "bot-2", name: "Board keeper", status: "archived" },
           { kind: "text", text: "Archived **3** done tickets. See [Plan](page:page-1)." },
         ],
       },
@@ -296,6 +297,7 @@ it("opens a silent run's steps and reply in place instead of linking to the chat
     expect(reply?.textContent).toContain("board.csv");
     // A helper's result shows as the chat shows it, and a page link opens the page.
     expect(reply?.textContent).toContain("Researcher");
+    expect(reply?.textContent).toContain("Board keeper archived");
     expect(
       [...(reply?.querySelectorAll("button") ?? [])].some((node) => node.textContent === "Plan"),
     ).toBe(true);

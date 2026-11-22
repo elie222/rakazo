@@ -53,6 +53,15 @@ describe("a silent run's reply on mobile", () => {
     ).toBe("Researcher: Found 3 prices.\n\nDone.");
   });
 
+  it("names a bot it created, and says when it archived one", () => {
+    expect(
+      routineRunReplyText([
+        { kind: "child_bot", botId: "b1", name: "Scout", status: "created" },
+        { kind: "child_bot", botId: "b2", name: "Old scout", status: "archived" },
+      ] as never),
+    ).toBe("Scout\n\nOld scout archived");
+  });
+
   it("is empty for a run that kept no reply", () => {
     expect(routineRunReplyText(undefined)).toBe("");
     expect(routineRunReplyText([])).toBe("");
