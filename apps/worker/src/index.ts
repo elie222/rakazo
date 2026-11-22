@@ -9,6 +9,7 @@ loadRootEnv();
 await unwrapEnvFromKeyManager();
 
 import {
+  apnsDesktopConfig,
   apnsVoipConfig,
   CodexCatalogCache,
   closeServerFoundation,
@@ -186,6 +187,7 @@ async function main() {
     encryptionKey: env.encryptionKey,
     expoAccessToken: process.env.EXPO_ACCESS_TOKEN,
     apnsVoip: apnsVoipConfig(process.env),
+    apnsDesktop: apnsDesktopConfig(process.env),
   });
   foundation.useWorkActivities(workActivities);
   const email = configuredBotEmailProvider({

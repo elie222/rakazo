@@ -153,6 +153,8 @@ export interface RouterDeps {
     /** Labs features this deployment turns on for every account. */
     deploymentLabs?: LabFeature[];
     phoneCallsEnabled?: boolean;
+    /** Desktop apps can get notifications while closed. */
+    desktopPushEnabled?: boolean;
     phoneCallRingSeconds?: number;
     maxUploadSizeBytes?: number;
     maxAttachmentsPerMessage?: number;
@@ -217,6 +219,7 @@ export function routerEnv(env: AppEnv): RouterDeps["env"] {
     deploymentLabs: env.deploymentLabs,
     deploymentVoice: env.deploymentVoice,
     phoneCallsEnabled: env.phoneCallsEnabled,
+    desktopPushEnabled: Boolean(env.apnsDesktop),
     phoneCallRingSeconds: env.phoneCallRingSeconds,
     navLinks: env.navLinks,
     adminEmails: env.adminEmails,

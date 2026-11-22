@@ -37,6 +37,7 @@ import {
   isMessagingSurfaceEnabled,
   messagingPlatformsFromEnv,
 } from "../messaging/messaging-platforms.js";
+import { createApnsDesktopProvider } from "../notifications/apns-desktop-config.js";
 import { ExpoPushProvider } from "../notifications/expo-push.js";
 import { PrismaPushTokenStore } from "../notifications/push-token-store.js";
 import { WorkActivities } from "../runs/lifecycle/work-activity.js";
@@ -151,13 +152,17 @@ export async function startServerFoundation(input: {
   };
 }
 
-/** Phone push, VoIP calls and live status cards, built alike in the API and the worker. */
+/**
+ * Phone and desktop push, VoIP calls and live status cards, built alike in the API and the worker.
+ */
 export async function createPushDelivery(input: {
   prisma: PrismaClient;
   jobs: JobPublisher;
   encryptionKey: string;
   expoAccessToken: string | undefined;
   apnsVoip: ApnsVoipConfig | undefined;
+  /** Desktop alerts sign with the same team key, under the desktop app's topic. */
+  apnsDesktop?: ApnsVoipConfig;
   /** Test-only stand-in; no push provider is built beside it. */
   notifications?: NotificationProvider;
 }) {
@@ -170,6 +175,7 @@ export async function createPushDelivery(input: {
       jobs: input.jobs,
       accessToken: input.expoAccessToken,
       voip: await createApnsVoipProvider(apnsVoip),
+      desktop: await createApnsDesktopProvider(input.apnsDesktop),
     });
   const activityPush = await createApnsActivityProvider(apnsVoip);
   const workActivities = activityPush

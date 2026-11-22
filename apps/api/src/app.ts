@@ -425,6 +425,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     encryptionKey: env.encryptionKey,
     expoAccessToken: env.expoAccessToken,
     apnsVoip: env.apnsVoip,
+    apnsDesktop: env.apnsDesktop,
     notifications: notificationsOverride,
   });
   foundation.useWorkActivities(workActivities);

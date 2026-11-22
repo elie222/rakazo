@@ -13,6 +13,7 @@ import { bestEffort, getLogger } from "@rakazo/logging";
 import type { IncomingCallPush, VoipPushProvider } from "../calls/apns-voip.js";
 import { combineSignals } from "../integrations/connector-safety.js";
 import { credentialDigest } from "../secrets/credential-digest.js";
+import type { DesktopPushProvider } from "./apns-desktop.js";
 import type { PushRecord, PushTokenStore } from "./push-token-store.js";
 
 const EXPO_PUSH_URL = "https://exp.host/--/api/v2/push/send";
@@ -171,6 +172,8 @@ function expoPushReceipts(body: unknown): Record<string, ExpoPushTicket | undefi
 
 export type ExpoPushOptions = {
   voip?: VoipPushProvider;
+  /** Reaches desktop apps while they are closed. */
+  desktop?: DesktopPushProvider;
   sessionExpiresAt?: PushSessionExpiresAt;
   /** Schedules the receipt check; without it receipts are not read. */
   jobs?: JobPublisher;
@@ -181,6 +184,7 @@ export type ExpoPushOptions = {
 
 export class ExpoPushProvider implements NotificationProvider {
   private readonly voip?: VoipPushProvider;
+  private readonly desktop?: DesktopPushProvider;
   private readonly sessionExpiresAt?: PushSessionExpiresAt;
   private readonly jobs?: JobPublisher;
   private readonly accessToken?: string;
@@ -191,6 +195,7 @@ export class ExpoPushProvider implements NotificationProvider {
     options: ExpoPushOptions = {},
   ) {
     this.voip = options.voip;
+    this.desktop = options.desktop;
     this.sessionExpiresAt = options.sessionExpiresAt;
     this.jobs = options.jobs;
     this.accessToken = options.accessToken?.trim() || undefined;
@@ -206,8 +211,11 @@ export class ExpoPushProvider implements NotificationProvider {
     };
   }
 
-  async hasPushRecipient(userId: string): Promise<boolean> {
-    return (await this.deliverableTokens(userId)).length > 0;
+  /** With a Space, a desktop app already showing that Space's alerts does not count. */
+  async hasPushRecipient(userId: string, spaceId = ""): Promise<boolean> {
+    if ((await this.deliverableTokens(userId)).length > 0) return true;
+    if (!this.desktop) return false;
+    return (await this.tokens.hasDesktopTarget?.(userId, spaceId)) ?? false;
   }
 
   async send(message: NotificationMessage, context: AdapterContext): Promise<void> {
@@ -318,13 +326,15 @@ export class ExpoPushProvider implements NotificationProvider {
    * device took the push, so a retry never repeats it on a device that already has it.
    */
   async deliver(message: NotificationMessage, context: AdapterContext): Promise<ExpoPushDelivery> {
+    const desktop = await this.deliverDesktop(message, context);
     const registrations = await this.deliverableTokens(context.userId);
     const results = await Promise.allSettled(
       registrations.map((registration) => this.deliverTo(registration, message, context)),
     );
-    const delivered = results.some(
-      (result) => result.status === "fulfilled" && result.value === "delivered",
-    );
+    // A desktop app that took the alert counts like any phone that did.
+    const delivered =
+      desktop === "sent" ||
+      results.some((result) => result.status === "fulfilled" && result.value === "delivered");
     const thrown = delivered ? -1 : results.findIndex((result) => result.status === "rejected");
     // The caller reports the failure it is thrown; the rest are logged here, once each.
     for (const [index, result] of results.entries())
@@ -336,6 +346,8 @@ export class ExpoPushProvider implements NotificationProvider {
     if (delivered) return "delivered";
     const failed = results[thrown];
     if (failed?.status === "rejected") throw failed.reason;
+    // Thrown like an Expo failure, so callers that retry a notice retry this one too.
+    if (desktop === "failed") throw new Error("Desktop push failed.");
     return "undeliverable";
   }
 
@@ -402,6 +414,25 @@ export class ExpoPushProvider implements NotificationProvider {
     if (failure) throw new Error(failure);
     if (ticket?.id) await this.scheduleReceiptCheck(context.userId, token, ticket.id);
     return "delivered";
+  }
+
+  /** Pushes to the account's desktop apps, except those showing this Space's alerts already. */
+  private async deliverDesktop(
+    message: NotificationMessage,
+    context: AdapterContext,
+  ): Promise<"sent" | "failed" | "none"> {
+    const desktop = this.desktop;
+    if (!desktop) return "none";
+    const targets = (await this.tokens.desktopTargets?.(context.userId, context.spaceId)) ?? [];
+    const results = await Promise.all(
+      targets.map(async (target) => {
+        const result = await desktop.send(target.token, message, context.spaceId);
+        if (result === "invalid") await this.tokens.removeDesktop?.(context.userId, target.id);
+        return result;
+      }),
+    );
+    if (results.includes("sent")) return "sent";
+    return results.includes("failed") ? "failed" : "none";
   }
 
   /** Drops the token when the receipt says the device is no longer registered. */
@@ -543,7 +574,7 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-function capped(text: string, maxChars: number): string {
+export function capped(text: string, maxChars: number): string {
   const chars = Array.from(text);
   return chars.length <= maxChars ? text : `${chars.slice(0, maxChars - 1).join("")}…`;
 }

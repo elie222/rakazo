@@ -97,7 +97,9 @@ export class ApnsClient {
       topic: string;
       pushType: string;
       priority: 5 | 10;
-      expiration: number;
+      expiration?: number;
+      /** A newer push with the same id replaces the one still on screen. */
+      collapseId?: string;
       body: unknown;
     },
     failureEvent: string,
@@ -114,7 +116,10 @@ export class ApnsClient {
           "apns-topic": request.topic,
           "apns-push-type": request.pushType,
           "apns-priority": String(request.priority),
-          "apns-expiration": String(request.expiration),
+          ...(request.expiration === undefined
+            ? {}
+            : { "apns-expiration": String(request.expiration) }),
+          ...(request.collapseId === undefined ? {} : { "apns-collapse-id": request.collapseId }),
           "content-type": "application/json",
         },
         JSON.stringify(request.body),

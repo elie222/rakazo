@@ -56,6 +56,7 @@ import {
 import { destroySetupWindow, registerSetupIpc, showSetupWindow } from "./setup/setup-window.js";
 import { createBadgeHandler } from "./system/badge.js";
 import { createClipboardHandler } from "./system/clipboard.js";
+import { installDesktopPush } from "./system/desktop-push-install.js";
 import {
   configureDesktopMonitoring,
   desktopReportsErrors,
@@ -554,6 +555,8 @@ if (!hasSingleInstanceLock) {
     revealSecondInstanceWindow(win);
   });
 }
+const answerDesktopPush = installDesktopPush(permissionTarget);
+
 app.whenReady().then(async () => {
   if (!hasSingleInstanceLock) return;
   installSessionPermissions(session.defaultSession, permissionTarget);
@@ -876,6 +879,7 @@ app.whenReady().then(async () => {
     createClipboardHandler(permissionTarget, (text) => clipboard.writeText(text)),
   );
   handleIpc("desktop.passkeys.rpIds", () => passkeyRpIds);
+  answerDesktopPush();
   handleIpc("desktop.monitoring.enabled", () => reportsErrors);
   handleIpc("desktop.server.change", () => {
     showSetupWindow();

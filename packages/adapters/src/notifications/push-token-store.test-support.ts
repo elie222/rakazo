@@ -1,10 +1,47 @@
 import { credentialDigest } from "../secrets/credential-digest.js";
-import type { PushRecord, PushTokenStore } from "./push-token-store.js";
+import type { DesktopPushTarget, PushRecord, PushTokenStore } from "./push-token-store.js";
 
 type Row = PushRecord & { userId: string };
 
 export class MemoryPushTokenStore implements PushTokenStore {
   private rows: Row[] = [];
+  readonly desktop = new Map<
+    string,
+    { userId: string; token: string; sessionId: string; live?: { spaceId: string; until: Date } }
+  >();
+  async saveDesktop(userId: string, token: string, sessionId: string) {
+    this.desktop.set(credentialDigest(token), { userId, token, sessionId });
+    return true;
+  }
+  async desktopTargets(userId: string, spaceId: string): Promise<DesktopPushTarget[]> {
+    return [...this.desktop.entries()]
+      .filter(
+        ([, row]) =>
+          row.userId === userId &&
+          !(row.live?.spaceId === spaceId && row.live.until.getTime() > Date.now()),
+      )
+      .map(([id, row]) => ({ id, token: row.token }));
+  }
+  async hasDesktopTarget(userId: string, spaceId: string) {
+    return (await this.desktopTargets(userId, spaceId)).length > 0;
+  }
+  async removeDesktop(userId: string, id: string) {
+    if (this.desktop.get(id)?.userId === userId) this.desktop.delete(id);
+  }
+  async markDesktopLive(
+    userId: string,
+    sessionId: string,
+    live: { spaceId: string; until: Date } | null,
+    written?: Date,
+  ) {
+    for (const row of this.desktop.values())
+      if (
+        row.userId === userId &&
+        row.sessionId === sessionId &&
+        (!written || row.live?.until.getTime() === written.getTime())
+      )
+        row.live = live ?? undefined;
+  }
   async list(userId: string) {
     return this.rows
       .filter((row) => row.userId === userId)
