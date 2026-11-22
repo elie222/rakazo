@@ -798,6 +798,7 @@ function SpaceShell() {
     activeBotId,
     activeGroupId,
     botsRef,
+    groupsRef,
     bootstrapMe,
     activeSnapshot,
     navigate,
