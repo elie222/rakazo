@@ -4,6 +4,13 @@ import type { StatusLineWriter } from "./status-lines.js";
 
 /** How long showing one status may take before later ones go ahead without it. */
 const SHOW_TIMEOUT_MS = 5_000;
+/**
+ * How long the reply and the run's end wait for a status write already sent. Long enough for a
+ * slow database write to land; a write that never settles does not hold the run past it.
+ */
+const SETTLE_TIMEOUT_MS = 30_000;
+/** How many worded steps a run remembers. */
+const WORDED_STEPS_KEPT = 20;
 
 export type LiveStatusLines = {
   /**
@@ -23,7 +30,8 @@ export type LiveStatusLines = {
   restore(): void;
   /**
    * The turn ended: nothing more is shown and pending requests are cancelled. Settles once the
-   * status writes already under way have landed, so none lands after the run's end.
+   * status writes already under way have landed (or after a long limit), so none lands after
+   * the run's end.
    */
   close(): Promise<void>;
 };
@@ -70,13 +78,24 @@ export function startStatusLines(target: StatusLineTarget): LiveStatusLines {
   // the one before the newest keeps going: its status still says what the bot is doing, close
   // enough, rather than leaving the line as it was. Older ones are cancelled.
   const steps: AbortController[] = [];
+  // Each step's line as the status model worded it, for a step that shows again.
+  const worded = new Map<string, string>();
   const cancelSteps = (keep: number) => {
     while (steps.length > keep) steps.shift()?.abort();
   };
   // Status writes under way, which the run's own writes and its end wait for. A write cannot
   // be called back once sent, so whatever comes next goes after it.
   const writes = new Set<Promise<boolean>>();
-  const landed = () => Promise.allSettled([...writes]).then(() => undefined);
+  const landed = () =>
+    writes.size
+      ? bestEffort(
+          "finish status line writes",
+          withAbort(
+            Promise.allSettled([...writes]).then(() => undefined),
+            deadlineSignal(SETTLE_TIMEOUT_MS),
+          ),
+        ).then(() => undefined)
+      : Promise.resolve();
   // Each status waits for the one before it, so a slow write never lands after a newer one.
   let showing: Promise<unknown> = Promise.resolve();
   /**
@@ -148,16 +167,28 @@ export function startStatusLines(target: StatusLineTarget): LiveStatusLines {
       const mine = ++generation;
       // The opening says nothing has happened yet; once a step starts, it is out of date.
       opening.abort();
+      // A step shown again, as when a parallel call outlasts the newest one, keeps its wording
+      // instead of asking the status model twice.
+      const known = worded.get(text);
+      if (known) {
+        void show(known, mine);
+        return;
+      }
       const controller = new AbortController();
       steps.push(controller);
       cancelSteps(2);
       void bestEffort(
         "write step status",
         writer.then((writer) => writer?.step(target.request, text, scoped(controller))),
-      ).then((line) =>
-        // Without an answer, the step's own line shows, but only while it is the newest step.
-        line ? show(line, mine) : show(text, mine, { latestOnly: true }),
-      );
+      ).then((line) => {
+        if (!line) {
+          // Without an answer, the step's own line shows, but only while it is the newest step.
+          return show(text, mine, { latestOnly: true });
+        }
+        worded.set(text, line);
+        if (worded.size > WORDED_STEPS_KEPT) worded.delete(worded.keys().next().value!);
+        return show(line, mine);
+      });
     },
     supersede() {
       // Every streamed text delta supersedes; only the first after a status has work to do.

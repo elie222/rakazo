@@ -142,6 +142,24 @@ describe("startStatusLines", () => {
     live.close();
   });
 
+  it("keeps a step's wording when the step shows again, without asking twice", async () => {
+    const step = vi.fn(async (_request: string, line: string) =>
+      line === "Searching: prices" ? "Comparing prices" : "Reading the ledger",
+    );
+    const t = target({ opening: async () => undefined, step });
+    const live = startStatusLines(t.target);
+    live.step("Searching: prices");
+    await flush();
+    live.step("Reading ledger.json");
+    await flush();
+    // The ledger read ends first, and the search that is still running shows again.
+    live.step("Searching: prices");
+    await flush();
+    expect(step).toHaveBeenCalledTimes(2);
+    expect(t.shown).toEqual(["Comparing prices", "Reading the ledger", "Comparing prices"]);
+    live.close();
+  });
+
   it("ends only once a status already being written has landed", async () => {
     const landing = deferred();
     const t = target(
