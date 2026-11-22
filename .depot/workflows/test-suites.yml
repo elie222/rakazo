@@ -309,12 +309,12 @@ jobs:
           test "${{ needs.unit-tests-shard.result }}" = success &&
           test "${{ needs.unit-tests-processes.result }}" = success
 
-  # Checks its own changed areas instead of needing `changes`: a deploy needs this job, and on main
-  # it must reach its lock in push order so an older revision cannot replace a newer waiting one.
-  # Four runners finish the suites before the Web E2E shards, which set the pull request's finish
-  # time; more runners only add per-job setup and queue for the account's runner limit.
+  # Main only: pull requests skip these, and every push to main runs them before the deploy, which
+  # needs this job. It needs nothing itself, so on main it reaches its lock in push order and an
+  # older revision cannot replace a newer waiting one.
   test-integration-shard:
     name: Postgres journeys (${{ matrix.shard }}/4)
+    if: github.event_name != 'pull_request'
     runs-on: ${{ inputs.runner }}
     strategy:
       fail-fast: false
@@ -327,20 +327,12 @@ jobs:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           persist-credentials: false
-          fetch-depth: 2
-      - id: areas
-        if: github.event_name == 'pull_request'
-        run: bash .github/scripts/changed-areas.sh >> "$GITHUB_OUTPUT"
       - name: Start Postgres
-        if: steps.areas.outputs.server != 'false'
         uses: ./.github/actions/start-postgres
       - uses: ./.github/actions/setup-workspace
-        if: steps.areas.outputs.server != 'false'
       - name: Wait for Postgres
-        if: steps.areas.outputs.server != 'false'
         run: bash .github/actions/start-postgres/wait.sh
       - run: pnpm test:integration --shard=${{ matrix.shard }}/4
-        if: steps.areas.outputs.server != 'false'
 
   # The required check and the deploy gate, under one stable name.
   test-integration:
@@ -349,7 +341,9 @@ jobs:
     if: always()
     runs-on: ${{ inputs.runner }}
     steps:
-      - run: test "${{ needs.test-integration-shard.result }}" = success
+      - run: >-
+          test "${{ needs.test-integration-shard.result }}" = success ||
+          test "${{ github.event_name }}/${{ needs.test-integration-shard.result }}" = pull_request/skipped
 
   test-postgres-upgrade:
     name: Postgres upgrade
