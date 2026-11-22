@@ -253,7 +253,6 @@ export async function failRun(
       userId: run.userId,
       spaceId: run.spaceId,
       botId: bot.id,
-      threadId: thread.id,
     });
   }
   // Nobody asked for a check-in, so its failure is not news to the user.

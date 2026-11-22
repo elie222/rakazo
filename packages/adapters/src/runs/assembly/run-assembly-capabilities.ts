@@ -170,7 +170,6 @@ export async function startTurnModel(
         ...ref,
         spaceId: run.spaceId,
         botId: run.botId,
-        threadId: run.threadId,
       });
     }
   };

@@ -2,6 +2,7 @@ import { isServerRunError, normalizeRunError } from "@rakazo/core";
 import type { Prisma, PrismaClient, ThreadEvents } from "@rakazo/db";
 import { bestEffort } from "@rakazo/logging";
 import type { RoutineRunRef } from "./routine-backoff.js";
+import { routineGroupThreadId } from "./routine-thread.js";
 import { postRoutineWatchMessage } from "./routine-watch.js";
 
 /**
@@ -20,10 +21,21 @@ type RoutineFailurePauseDeps = {
 async function failingStreak(
   client: Prisma.TransactionClient,
   run: RoutineRunRef,
-): Promise<{ name: string; error: string } | null> {
+): Promise<{
+  name: string;
+  error: string;
+  routine: { threadId: string | null; spaceId: string };
+} | null> {
   const routine = await client.routine.findUnique({
     where: { id: run.routineId },
-    select: { active: true, userId: true, name: true, failurePausedAt: true },
+    select: {
+      active: true,
+      userId: true,
+      name: true,
+      failurePausedAt: true,
+      threadId: true,
+      spaceId: true,
+    },
   });
   if (!routine?.active || routine.userId !== run.userId) return null;
   const recent = await client.run.findMany({
@@ -47,7 +59,7 @@ async function failingStreak(
   return recent.every(
     (row) => row.status === "failed" && row.error && failureCause(row.error) === cause,
   )
-    ? { name: routine.name, error }
+    ? { name: routine.name, error, routine }
     : null;
 }
 
@@ -63,7 +75,7 @@ function failureCause(error: string): string {
  */
 export async function pauseRoutineAfterRepeatedFailures(
   deps: RoutineFailurePauseDeps,
-  run: RoutineRunRef & { spaceId: string; botId: string; threadId: string },
+  run: RoutineRunRef & { spaceId: string; botId: string },
   now = new Date(),
 ): Promise<void> {
   const latest = await bestEffort("routine failure streak", failingStreak(deps.prisma, run));
@@ -87,9 +99,19 @@ export async function pauseRoutineAfterRepeatedFailures(
     "routine failure pause change",
     deps.events.publishSpaceChange?.(run.spaceId, "routines"),
   );
+  // The chat its next run would use, as a scheduled tick picks it.
+  const threadId =
+    (await routineGroupThreadId(deps.prisma, paused.routine, run.botId)) ??
+    (
+      await deps.prisma.bot.findUnique({
+        where: { id: run.botId },
+        select: { thread: { select: { id: true } } },
+      })
+    )?.thread?.id;
+  if (!threadId) return;
   await postRoutineWatchMessage(deps, {
     spaceId: run.spaceId,
-    threadId: run.threadId,
+    threadId,
     botId: run.botId,
     role: "bot",
     text: `I paused the **${paused.name}** routine because its last ${ROUTINE_FAILURE_PAUSE_AFTER} runs failed: ${normalizeRunError(paused.error).summary}\n\nTell me how to fix it, or turn the routine back on once it's sorted.`,
