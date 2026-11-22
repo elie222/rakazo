@@ -39,3 +39,22 @@ it("labels the next billing date", () => {
   expect(billingDateLabel({ ...status, cancelAtPeriodEnd: true }, "en")).toBe(`Ends ${day}`);
   expect(billingDateLabel({ ...status, state: "paused" }, "en")).toBeNull();
 });
+
+it("finds the existing translations in the shared catalog", async () => {
+  const { messages } = await import("../locales/fr/messages.po");
+  i18n.load("fr", messages);
+  i18n.activate("fr");
+  try {
+    const price = { amount: 1200, currency: "usd", interval: "month", intervalCount: 1 } as const;
+    expect(formatBillingPrice(price, "fr")).toMatch(/ \/ mois$/);
+    const status = {
+      state: "active",
+      trialEndsAt: null,
+      currentPeriodEndsAt: "2026-12-02T12:00:00Z",
+      cancelAtPeriodEnd: false,
+    } as BillingStatus;
+    expect(billingDateLabel(status, "fr")).toMatch(/^Renouvellement le /);
+  } finally {
+    i18n.activate("en");
+  }
+});
