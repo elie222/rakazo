@@ -714,7 +714,7 @@ services:
   # its own that publishes only the API's inbound listener through Funnel. The app keeps its
   # private name; this node's name is public (docs/self-host-webhooks.md).
   tailscale-ingress:
-    image: ${TAILSCALE_IMAGE:-tailscale/tailscale:stable}
+    image: ${TAILSCALE_IMAGE:-tailscale/tailscale:v1.94.2@sha256:95e528798bebe75f39b10e74e7051cf51188ee615934f232ba7ad06a3390ffa1}
     profiles: [tailscale-ingress]
     restart: unless-stopped
     security_opt:

@@ -4,7 +4,7 @@ import { webhooksCheck } from "./webhooks-commands.js";
 
 const provider = (published: boolean): IngressProvider => ({
   publicOrigin: "https://hooks.example.test",
-  describe: () => ({ id: "manual", label: "Your own tunnel" }),
+  describe: () => ({ id: "manual", label: "Your own tunnel", canUnpublish: false }),
   publish: async () => {},
   unpublish: async () => {},
   status: async () => (published ? { published: true } : { published: false, reason: "down" }),

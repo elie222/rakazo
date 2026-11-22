@@ -5,7 +5,7 @@ export class ManualIngressProvider implements IngressProvider {
   constructor(readonly publicOrigin: string) {}
 
   describe() {
-    return { id: "manual", label: "Your own tunnel" };
+    return { id: "manual", label: "Your own tunnel", canUnpublish: false };
   }
 
   async publish(): Promise<void> {}

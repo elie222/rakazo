@@ -42,7 +42,7 @@ export class TailscaleIngressProvider implements IngressProvider {
   }
 
   describe() {
-    return { id: "tailscale", label: "Tailscale Funnel" };
+    return { id: "tailscale", label: "Tailscale Funnel", canUnpublish: true };
   }
 
   async publish(upstream: string): Promise<void> {

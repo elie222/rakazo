@@ -23,9 +23,12 @@ export const webhooksUnpublishCommand: AdminCommand = {
       ? null
       : async (context) => {
           const provider = ingress();
-          await provider.unpublish(context.signal).catch((error: unknown) => {
-            throw new AdminCommandError(error instanceof Error ? error.message : String(error));
-          });
+          if (!provider.describe().canUnpublish) {
+            throw new AdminCommandError(
+              "Rakazo does not run this tunnel: stop it or its port forward yourself",
+            );
+          }
+          await provider.unpublish(context.signal);
           return {
             text: `Unpublished ${provider.publicOrigin} until the API next starts. Unset INGRESS_PROVIDER to keep it off.`,
             json: { origin: provider.publicOrigin, published: false },

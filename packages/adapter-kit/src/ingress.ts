@@ -1,5 +1,10 @@
 /** What an ingress provider can say about itself without a call. */
-export type IngressDescriptor = { id: string; label: string };
+export type IngressDescriptor = {
+  id: string;
+  label: string;
+  /** False when the operator runs the tunnel, so only they can stop it. */
+  canUnpublish: boolean;
+};
 
 export type IngressStatus = { published: true } | { published: false; reason: string };
 
