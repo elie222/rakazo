@@ -1,5 +1,6 @@
 import type { SecretCleanup } from "@rakazo/adapters";
 import {
+  adminDeploymentModel,
   assertModelProviderAllowed,
   cleanUpUnsavedSecret,
   DEPLOYMENT_MODEL_RECORD,
@@ -46,10 +47,13 @@ function view(
 ): DeploymentModelSettings {
   // Only a default saved with its key is an admin's; one without belongs to the environment.
   const own = saved?.deploymentModelCredentialCipher ? saved : null;
+  // One that credits or the allowlist set aside shows as the environment's, which is what runs,
+  // while its key stays saved until an admin removes it.
+  const active = own && available(deps) ? adminDeploymentModel(own) : null;
   const allowlist = modelProviderAllowlist();
   return {
-    provider: own?.defaultModelProvider ?? null,
-    modelId: own?.defaultModelId ?? null,
+    provider: active ? own!.defaultModelProvider : null,
+    modelId: active ? own!.defaultModelId : null,
     keySaved: Boolean(own),
     providers: available(deps)
       ? deploymentModelProviders().filter((provider) =>

@@ -72,6 +72,8 @@ export function DeploymentModelSettings({ onSaved }: { onSaved?: () => void }) {
   };
   const provider = settings.providers.find((entry) => entry.id === draft.provider);
   const keySaved = settings.keySaved && draft.provider === settings.provider;
+  // A key whose model no longer runs shows as Default, and saving that removes the key.
+  const setAside = settings.keySaved && !settings.provider;
   return (
     <section className="mb-8" data-testid="deployment-model-settings">
       <SectionHeading className="mb-2.5">
@@ -153,7 +155,7 @@ export function DeploymentModelSettings({ onSaved }: { onSaved?: () => void }) {
           </p>
         ) : null}
         <div className="flex items-center gap-3">
-          <Button type="submit" size="sm" disabled={save.pending || !edited}>
+          <Button type="submit" size="sm" disabled={save.pending || (!edited && !setAside)}>
             <Trans>Save</Trans>
           </Button>
           {saved ? <SuccessPop label={t`Saved`} /> : null}

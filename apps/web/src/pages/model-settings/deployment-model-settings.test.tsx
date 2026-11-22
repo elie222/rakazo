@@ -134,11 +134,12 @@ it("shows nothing where the server offers no providers", async () => {
   expect(host.querySelector("form")).toBeNull();
 });
 
-it("keeps a saved key removable once nothing can be chosen", async () => {
-  deployment.get.mockResolvedValue({ ...saved, providers: [] });
+it("offers to remove a saved key whose model no longer runs", async () => {
+  deployment.get.mockResolvedValue({ ...saved, provider: null, modelId: null, providers: [] });
   deployment.update.mockResolvedValue({ ...saved, provider: null, keySaved: false, providers: [] });
   await render();
-  await choose("Provider", "Default");
+  expect(field("Provider")?.textContent).toContain("Default");
+  expect(host.querySelector<HTMLButtonElement>('button[type="submit"]')?.disabled).toBe(false);
   await act(async () => host.querySelector("form")?.requestSubmit());
   expect(deployment.update).toHaveBeenCalledWith({ provider: null });
 });

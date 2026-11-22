@@ -191,6 +191,27 @@ describe("the model an admin sets for everyone", () => {
     ).rejects.toThrow("This server's model is set by its operator");
   });
 
+  it("shows a saved model credits or the allowlist set aside as the environment's", async () => {
+    const row = {
+      defaultModelProvider: "anthropic",
+      defaultModelId: "claude-sonnet-5",
+      deploymentModelCredentialCipher: "sealed-earlier",
+    };
+    expect(await getDeploymentModelSettings(setup({ row }).deps, admin)).toMatchObject({
+      provider: "anthropic",
+      keySaved: true,
+    });
+    expect(
+      await getDeploymentModelSettings(setup({ row, credits: true }).deps, admin),
+    ).toMatchObject({ provider: null, modelId: null, keySaved: true });
+    vi.stubEnv("RAKAZO_MODEL_PROVIDER_ALLOWLIST", "openrouter");
+    expect(await getDeploymentModelSettings(setup({ row }).deps, admin)).toMatchObject({
+      provider: null,
+      modelId: null,
+      keySaved: true,
+    });
+  });
+
   it("goes back to the environment's model and removes the key", async () => {
     const { deps, secrets, row } = setup({
       row: {
