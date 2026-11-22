@@ -191,7 +191,7 @@ function PrimaryRail({
       {desktopBridge() ? <WindowChrome className="mt-3 self-start" /> : null}
       <div
         className={cn(
-          "flex h-11 shrink-0 items-start pt-3",
+          "flex h-11 shrink-0 items-center pt-3",
           expanded ? "justify-between gap-2 px-3" : "justify-center px-3",
         )}
       >
@@ -338,7 +338,7 @@ function RailFooter({
 
 function RailBrand() {
   return (
-    <span className="flex min-w-0 flex-1 items-center gap-2" aria-hidden="true">
+    <span className="flex h-8 min-w-0 flex-1 items-center gap-2" aria-hidden="true">
       <RailBrandMark className="size-6" />
       <span className="min-w-0 flex-1 truncate text-center text-body font-medium">Rakazo</span>
     </span>
