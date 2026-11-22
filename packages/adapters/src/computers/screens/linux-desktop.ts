@@ -113,6 +113,7 @@ export class LinuxDesktop {
     if (startsScreen && result.code === SCREEN_NOT_READY_EXIT) {
       // Only the first line: the rest is the browser's or display's own log.
       getLogger().warn("computer.screen_not_ready", {
+        "computer.id": computer.id,
         provider: computer.kind,
         reason: result.stderr?.trim().split("\n")[0]?.slice(0, 200),
       });
