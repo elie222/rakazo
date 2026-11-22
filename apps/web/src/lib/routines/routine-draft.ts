@@ -36,6 +36,13 @@ export type RoutineDraftState = RoutineDraft & {
   watch: RoutineWatchDraft | null;
 };
 
+/** Whether outside events start it (webhook, Git, chat app or email), so it can't use the computer. */
+export function routineDraftEventTriggered(draft: RoutineDraftState): boolean {
+  return Boolean(
+    draft.webhookEnabled || draft.githubEnabled || draft.messageProvider || draft.emailSenders,
+  );
+}
+
 /** The change trigger as the editor holds it: free text until saved. */
 export type RoutineWatchDraft = {
   kind: RoutineWatch["kind"];

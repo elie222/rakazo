@@ -4615,7 +4615,13 @@ describe("user_computer_shell", () => {
       ).toEqual([]);
       expect(on.sawPlanted).toBe(false);
       const off = await offered({ routineRow: { computerPromptHash: null } });
-      for (const tool of ["read_email", "demo_get_item", "read_file", "list_secrets"])
+      for (const tool of [
+        "read_email",
+        "demo_get_item",
+        "read_file",
+        "list_secrets",
+        "task_catalog",
+      ])
         expect(off.tools).toContain(tool);
       expect(off.sawPlanted).toBe(true);
     });

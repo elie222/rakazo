@@ -54,6 +54,8 @@ function routineChanges(draft: MobileRoutineDraft, routine: Routine) {
     ...(draft.watch === null && routine.watch ? { watch: null } : {}),
     ...(routine.useComputer !== undefined &&
     draft.useComputer !== undefined &&
+    // The server refuses it for a routine that email starts.
+    !(draft.useComputer && draft.emailSenders) &&
     draft.useComputer !== routine.useComputer
       ? // Turning it on approves the prompt shown here, so it always goes with it.
         {

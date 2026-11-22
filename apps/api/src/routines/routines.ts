@@ -148,7 +148,8 @@ type RoutineViewDeps = Pick<RouterDeps, "prisma" | "userDevices">;
 
 /**
  * "Use my computer" for each routine the viewer may switch it on for: their own, on their own bot,
- * while they have a computer paired. It shows on only while a run would still get the computer.
+ * while they have a computer paired and no routine of the bot is started by outside events. It
+ * shows on only while a run would still get the computer.
  */
 async function computerSwitches(
   deps: RoutineViewDeps,
@@ -157,34 +158,28 @@ async function computerSwitches(
 ): Promise<Map<string, boolean>> {
   const own = rows.filter((row) => row.userId === actor.userId);
   if (own.length === 0 || !deps.userDevices) return new Map();
-  const [bots, pairedSince] = await Promise.all([
+  const botIds = [...new Set(own.map((row) => row.botId))];
+  const [bots, eventRoutines, pairedSince] = await Promise.all([
     deps.prisma.bot.findMany({
-      where: { id: { in: [...new Set(own.map((row) => row.botId))] }, userId: actor.userId },
+      where: { id: { in: botIds }, userId: actor.userId },
       select: { id: true },
     }),
+    deps.prisma.routine.findMany({ where: botEventRoutines(botIds), select: { botId: true } }),
     deps.userDevices.pairedSince(actor.userId),
   ]);
   if (!pairedSince) return new Map();
-  const ownBots = new Set(bots.map((bot) => bot.id));
-  const offered = own.filter((row) => ownBots.has(row.botId));
-  const approved = offered.filter((row) => row.computerPromptHash);
-  const [skills, eventRoutines] = approved.length
-    ? await Promise.all([
-        listAgentSkillRecords(deps.prisma, actor),
-        deps.prisma.routine.findMany({
-          where: botEventRoutines([...new Set(approved.map((row) => row.botId))]),
-          select: { botId: true },
-        }),
-      ])
-    : [[], []];
   const eventBots = new Set(eventRoutines.map((routine) => routine.botId));
+  const ownBots = new Set(bots.map((bot) => bot.id).filter((id) => !eventBots.has(id)));
+  const offered = own.filter((row) => ownBots.has(row.botId));
+  const skills = offered.some((row) => row.computerPromptHash)
+    ? await listAgentSkillRecords(deps.prisma, actor)
+    : [];
   return new Map(
     offered.map((row) => [
       row.id,
       Boolean(row.computerPromptHash) &&
         !row.inChat &&
         row.watch === null &&
-        !eventBots.has(row.botId) &&
         row.computerPromptHash === routineComputerFingerprint(row.prompt, skills),
     ]),
   );

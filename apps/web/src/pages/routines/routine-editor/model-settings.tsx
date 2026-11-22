@@ -15,6 +15,7 @@ import { useEffect, useState } from "react";
 import { connectedModelOptions, parseModelOptionKey } from "../../../lib/models/model-catalog";
 import { rpc } from "../../../lib/query/rpc";
 import type { RoutineDraftState } from "../../../lib/routines/routine-draft";
+import { routineDraftEventTriggered } from "../../../lib/routines/routine-draft";
 
 /** The advanced popover that picks a model and thinking level for this routine. */
 export function RoutineModelSettings({
@@ -137,7 +138,7 @@ export function RoutineModelSettings({
           </label>
         )}
 
-        {computerOffered && !draft.watch && !draft.inChat ? (
+        {computerOffered && !draft.watch && !draft.inChat && !routineDraftEventTriggered(draft) ? (
           <label
             htmlFor={`${fieldId}-computer`}
             className="mt-5 flex items-center gap-2.5 text-body text-muted-foreground"

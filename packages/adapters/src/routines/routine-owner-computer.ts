@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import type { SkillRecord } from "@rakazo/core";
 import { expandSkillReferencesInPrompt } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
+import { getLogger } from "@rakazo/logging";
 
 function promptFingerprint(text: string): string {
   return createHash("sha256").update(text).digest("hex");
@@ -61,22 +62,31 @@ export async function routineRunUsesOwnerComputer(
       bot: { select: { userId: true } },
     },
   });
-  if (
-    !routine?.computerPromptHash ||
-    routine.inChat ||
-    routine.watch !== null ||
-    routine.botId !== run.botId ||
-    routine.userId !== run.userId ||
-    routine.bot.userId !== run.userId
-  )
-    return false;
+  if (!routine?.computerPromptHash) return false;
   const [task, eventRoutines] = await Promise.all([
     prisma.task.findUnique({ where: { id: run.taskId }, select: { prompt: true } }),
     prisma.routine.count({ where: botEventRoutines([run.botId]) }),
   ]);
-  return (
-    eventRoutines === 0 &&
-    task !== null &&
-    promptFingerprint(task.prompt) === routine.computerPromptHash
-  );
+  const refused = routine.inChat
+    ? "in_chat"
+    : routine.watch !== null
+      ? "watch"
+      : routine.botId !== run.botId
+        ? "other_bot"
+        : routine.userId !== run.userId || routine.bot.userId !== run.userId
+          ? "other_owner"
+          : eventRoutines > 0
+            ? "event_routines"
+            : task === null || promptFingerprint(task.prompt) !== routine.computerPromptHash
+              ? "text_changed"
+              : null;
+  if (refused) {
+    // The switch is on but this run won't get the computer, so say why.
+    getLogger().info("routine.owner_computer_refused", {
+      "routine.id": run.routineId,
+      "task.id": run.taskId,
+      reason: refused,
+    });
+  }
+  return refused === null;
 }

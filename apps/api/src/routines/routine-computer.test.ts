@@ -170,7 +170,7 @@ describe("Use my computer", () => {
     expect((await h.client.routines.list({ botId: "bot-1" }))[0]?.useComputer).toBe(false);
   });
 
-  it("shows off once the bot gets a routine that outside events start", async () => {
+  it("is no longer offered once the bot gets a routine that outside events start", async () => {
     const h = harness();
     await h.client.routines.update({
       routineId: "routine-1",
@@ -178,7 +178,7 @@ describe("Use my computer", () => {
       useComputer: true,
     });
     h.events.count = 1;
-    expect((await h.client.routines.list({ botId: "bot-1" }))[0]?.useComputer).toBe(false);
+    expect((await h.client.routines.list({ botId: "bot-1" }))[0]).not.toHaveProperty("useComputer");
   });
 
   it.each<[string, Parameters<typeof harness>[0], string, boolean, string?]>([
@@ -189,8 +189,8 @@ describe("Use my computer", () => {
     ["a routine that watches", { watch: { kind: "files", paths: ["~"] } }, "BAD_REQUEST", true],
     // Skill text is never shown in the editor, so the owner could not have read what runs.
     ["a prompt that names a skill", {}, "BAD_REQUEST", true, "@backups every night"],
-    ["a routine with its own webhook", { webhookEnabled: true }, "BAD_REQUEST", true],
-    ["a bot whose other routine has an event trigger", { eventRoutines: 1 }, "BAD_REQUEST", true],
+    ["a routine with its own webhook", { webhookEnabled: true }, "BAD_REQUEST", false],
+    ["a bot whose other routine has an event trigger", { eventRoutines: 1 }, "BAD_REQUEST", false],
   ])("is refused for %s", async (_label, options, code, shownOff, prompt = "Check the backups") => {
     const h = harness({ ...options, prompt });
     await expect(

@@ -1,7 +1,8 @@
 import type { SkillRecord } from "@rakazo/core";
 import { expandSkillReferencesInPrompt } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
-import { describe, expect, it } from "vitest";
+import * as Logging from "@rakazo/logging";
+import { describe, expect, it, vi } from "vitest";
 import {
   routineComputerFingerprint,
   routineRunUsesOwnerComputer,
@@ -61,8 +62,18 @@ describe("routineRunUsesOwnerComputer", () => {
     expect(await routineRunUsesOwnerComputer(prisma(approved, fired), run)).toBe(false);
   });
 
-  it("refuses while the bot has a routine that outside events start", async () => {
-    expect(await routineRunUsesOwnerComputer(prisma(routine, prompt, 1), run)).toBe(false);
+  it("refuses while the bot has a routine that outside events start, and logs why", async () => {
+    const info = vi.spyOn(Logging.getLogger(), "info");
+    try {
+      expect(await routineRunUsesOwnerComputer(prisma(routine, prompt, 1), run)).toBe(false);
+      expect(info).toHaveBeenCalledExactlyOnceWith("routine.owner_computer_refused", {
+        "routine.id": "routine-1",
+        "task.id": "task-1",
+        reason: "event_routines",
+      });
+    } finally {
+      info.mockRestore();
+    }
   });
 
   it.each<[string, object | null, Partial<typeof run>, string?]>([

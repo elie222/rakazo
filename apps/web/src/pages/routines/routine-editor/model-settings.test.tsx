@@ -93,6 +93,12 @@ it("offers Use my computer only where the server offers it, and not with a run i
   const inChat = await open({ ...draft, inChat: true }, vi.fn(), true);
   expect(computerSwitch()).toBeNull();
   await act(async () => inChat.root.unmount());
+  document.body.replaceChildren();
+
+  // The server refuses it once outside events start the routine.
+  const hooked = await open({ ...draft, webhookEnabled: true }, vi.fn(), true);
+  expect(computerSwitch()).toBeNull();
+  await act(async () => hooked.root.unmount());
 });
 
 it("turns Use my computer off when the routine starts running in the chat", async () => {

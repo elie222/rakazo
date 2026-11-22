@@ -55,6 +55,15 @@ describe("routineSaveRequest", () => {
         "UTC",
       ),
     ).toEqual({ unchanged: true });
+    // Nor with an email trigger, which the server refuses it for.
+    expect(
+      routineSaveRequest(
+        { ...draft, emailSenders: "owner", useComputer: true },
+        own,
+        "bot-1",
+        "UTC",
+      ),
+    ).toEqual({ update: { routineId: own.id, emailSenders: "owner" } });
     const copy = routineSaveRequest({ ...draft, useComputer: true }, null, "bot-1", "UTC", {
       ...own,
       useComputer: true,
