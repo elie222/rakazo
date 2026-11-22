@@ -147,6 +147,23 @@ Compose bot homes mount only their own subdirectory of the application volume us
 - [Billing](./self-host-billing.md): optional Stripe plans and model credits.
 - [Restricted networks](./self-host-restricted-network.md): mirrors when downloads are blocked.
 
+## Admin commands
+
+`admin.js` runs setup tasks from the API container. It needs shell access to the server and opens
+no port.
+
+```bash
+docker compose --env-file .env -f docker-compose.images.yml exec api \
+  node dist/cli/admin.js bot webhook-key <bot-id> [--rotate] [--json]
+```
+
+`bot webhook-key` gives a bot that has no webhook key a new one and prints its webhook URL
+(`API_URL` + `/api/v1/bots/<bot-id>/webhook`) and the key. When the bot already has one, it
+prints only the URL; `--rotate` replaces the key, and the old one stops working. `--json` prints
+one line, `{"botId","url","key","created"}`, for piping into another program so the key stays
+out of chat and logs. Each new key is recorded as a `credential.changed`
+[security event](./self-host-observability.md#security-events) with `by: operator`.
+
 ## Reporting a problem
 
 Attach a diagnostics report to a [self-host issue](https://github.com/elie222/rakazo/issues/new?template=self-host.yml):
