@@ -3,7 +3,7 @@ import type { SearchHit, SpaceBot, SpaceGroup } from "@rakazo/contracts";
 import { dedupeSearchHits, searchHitListKey } from "@rakazo/core";
 import { searchKindLabel } from "@rakazo/i18n/search";
 import type { MobileBot, MobileGroup } from "../api/mobile-types";
-import { filterBots as filterRosterChats } from "../inbox/inbox";
+import { filterBots } from "../inbox/inbox";
 import type { InboxSpace } from "../inbox/inbox-spaces";
 import { previewSnippet } from "../messages/preview";
 import { mobileSearchDestination } from "./search-destination";
@@ -32,7 +32,7 @@ export function searchSheetRows(
     .filter((bot) => !("archivedAt" in bot && bot.archivedAt));
   const groups = spaces.flatMap((space) => space.groups);
   const rows: SearchSheetRow[] = [
-    ...filterRosterChats(bots, query).map(
+    ...filterBots(bots, query).map(
       (bot): SearchSheetRow => ({
         key: `bot-${bot.id}`,
         title: bot.name,
@@ -44,7 +44,7 @@ export function searchSheetRows(
         destination: { pathname: "/thread", params: { botId: bot.id, name: bot.name } },
       }),
     ),
-    ...filterRosterChats(groups, query).map(
+    ...filterBots(groups, query).map(
       (group): SearchSheetRow => ({
         key: `group-${group.id}`,
         title: group.name,
