@@ -139,4 +139,15 @@ describe("mcpServerHealthDto", () => {
     expect(mcpServerHealthDto(row).code).toBe(MCP_OAUTH_CLIENT_REQUIRED);
     expect(mcpServerHealthDto({ ...row, healthMessage: "fetch failed" }).code).toBeNull();
   });
+
+  it("does not ask for a client when a default client covers the server", () => {
+    const row = {
+      healthStatus: "error",
+      healthMessage: MCP_DYNAMIC_REGISTRATION_UNSUPPORTED,
+      healthToolCount: null,
+      healthCheckedAt: null,
+    };
+    expect(mcpServerHealthDto(row, true).code).toBeNull();
+    expect(mcpServerHealthDto(row, false).code).toBe(MCP_OAUTH_CLIENT_REQUIRED);
+  });
 });

@@ -128,6 +128,16 @@ export function deploymentClient(
   );
 }
 
+/** Whether any default lists this MCP server, whichever authorization server it turns out to use. */
+export function defaultClientCovers(
+  clients: McpOAuthDefaultClients,
+  mcpEndpoint: string | null | undefined,
+): boolean {
+  if (!mcpEndpoint) return false;
+  const origin = new URL(mcpEndpoint).origin;
+  return Object.values(clients).some((client) => client.servers.includes(origin));
+}
+
 /** Every configured secret, for redaction wherever one could surface. */
 export function defaultClientSecrets(clients: McpOAuthDefaultClients): string[] {
   return Object.values(clients).flatMap((client) =>

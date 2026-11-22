@@ -174,6 +174,7 @@ export function mcpRoutes(ctx: RouterContext) {
                 await mcpOAuth.summaryForCiphertext(
                   row.secretId ? ciphertextById.get(row.secretId) : undefined,
                   row.secretId ?? undefined,
+                  row.endpoint,
                 ),
               ),
             ),

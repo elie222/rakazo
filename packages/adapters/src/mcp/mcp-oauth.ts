@@ -41,7 +41,11 @@ import { attemptSecretCleanup, cleanUpUnsavedSecret } from "../secrets/secret-cl
 import { persistPreparedSecret } from "../secrets/secret-persistence.js";
 import { holdSecretNotifications } from "../secrets/secret-store-factory.js";
 import type { McpOAuthDefaultClient, McpOAuthDefaultClients } from "./mcp-oauth-default-clients.js";
-import { defaultClientSecrets, deploymentClient } from "./mcp-oauth-default-clients.js";
+import {
+  defaultClientCovers,
+  defaultClientSecrets,
+  deploymentClient,
+} from "./mcp-oauth-default-clients.js";
 import { MCP_DYNAMIC_REGISTRATION_UNSUPPORTED, needsMcpOAuthClient } from "./mcp-server-health.js";
 import {
   MAX_AUTHORIZATION_URL_LENGTH,
@@ -1274,6 +1278,8 @@ export type McpOAuthSummary = {
   clientId: string | null;
   /** Whether the stored material holds a credential; a lone generation marker holds none. */
   credential: boolean;
+  /** An operator default client is configured for this server, so no client needs entering. */
+  defaultClient: boolean;
 };
 
 /** Whether the material holds anything beyond OAuth bookkeeping. */
@@ -1289,12 +1295,13 @@ function hasCredential(material: OAuthMaterial): boolean {
   );
 }
 
-function summarize(material: OAuthMaterial): McpOAuthSummary {
+function summarize(material: OAuthMaterial, defaultClient: boolean): McpOAuthSummary {
   const status = material.oauth?.tokens ? "connected" : material.oauth ? "reconnect" : "none";
   return {
     status,
     clientId: material.oauthClient?.client_id ?? null,
     credential: hasCredential(material),
+    defaultClient,
   };
 }
 
@@ -1323,14 +1330,18 @@ export class McpOAuthBroker {
 
   async summaryFor(server: ServerRef, context: ActorRef): Promise<McpOAuthSummary> {
     const { material } = await this.loadMaterial(server, context);
-    return summarize(material);
+    return summarize(material, defaultClientCovers(this.defaultClients, server.endpoint));
   }
 
   async summaryForCiphertext(
     ciphertext: string | undefined,
     recordId: string | undefined,
+    endpoint: string | null,
   ): Promise<McpOAuthSummary> {
-    return summarize(ciphertext && recordId ? await this.read(ciphertext, recordId) : {});
+    return summarize(
+      ciphertext && recordId ? await this.read(ciphertext, recordId) : {},
+      defaultClientCovers(this.defaultClients, endpoint),
+    );
   }
 
   async providerFor(

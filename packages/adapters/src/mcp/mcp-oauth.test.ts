@@ -3610,6 +3610,21 @@ describe("MCP OAuth", () => {
         await expect(begin(broker)).rejects.toBeInstanceOf(McpOAuthClientRequiredError);
       });
 
+      it("reports whether a default client covers a server's endpoint", async () => {
+        const { broker } = brokerWithMaterial({}, {}, defaults);
+        const summaryAt = (endpoint: string | null) =>
+          broker.summaryFor({ id: "server-1", endpoint, secretId: null }, context);
+        const context = { spaceId: "workspace-1", userId: "user-1" };
+
+        expect((await summaryAt("https://mcp.example.test/mcp")).defaultClient).toBe(true);
+        expect((await summaryAt("https://unlisted.example.test/mcp")).defaultClient).toBe(false);
+        expect((await summaryAt(null)).defaultClient).toBe(false);
+        expect(
+          (await broker.summaryForCiphertext(undefined, undefined, "https://mcp.example.test/mcp"))
+            .defaultClient,
+        ).toBe(true);
+      });
+
       it("does not give the default to an MCP server the operator did not list", async () => {
         nonRegisteringAuthServer(() => undefined);
         const listed = parseMcpOAuthDefaultClients(

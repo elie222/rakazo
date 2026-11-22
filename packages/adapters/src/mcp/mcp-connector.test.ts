@@ -24,9 +24,10 @@ import { CATALOG_EXECUTE, DIRECT_TOOL_LIMIT } from "../tools/lazy-tool-catalog.j
 import { MCP_CLOSE_TIMEOUT_MS } from "./mcp-close.js";
 import { allowlistDrift, DEFAULT_MCP_STDIO_IDLE_MS, McpConnector } from "./mcp-connector.js";
 import type { McpOAuthBroker, OAuthMaterial } from "./mcp-oauth.js";
-import { StoredMcpOAuthProvider } from "./mcp-oauth.js";
+import { McpOAuthBroker as RealMcpOAuthBroker, StoredMcpOAuthProvider } from "./mcp-oauth.js";
 import type * as reconnectCard from "./mcp-reconnect-card.js";
 import { reportExpiredMcpSignIn } from "./mcp-reconnect-card.js";
+import { needsMcpOAuthClient } from "./mcp-server-health.js";
 import { McpSession } from "./mcp-transport.js";
 import { MCP_TOOL_TIMEOUT_MS } from "./remote-mcp.js";
 
@@ -1238,6 +1239,57 @@ describe("MCP connector session cache", () => {
         );
       } finally {
         vi.restoreAllMocks();
+        await connector.close();
+      }
+    });
+
+    it("does not record a missing client for a server nobody has signed in to yet", async () => {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+          const url = logicalHref(input, init);
+          if (url === "https://mcp.example.test/mcp")
+            return new Response(null, {
+              status: 401,
+              headers: {
+                "WWW-Authenticate":
+                  'Bearer resource_metadata="https://mcp.example.test/.well-known/oauth-protected-resource/mcp"',
+              },
+            });
+          if (url.includes("oauth-protected-resource"))
+            return Response.json({
+              resource: "https://mcp.example.test/mcp",
+              authorization_servers: ["https://auth.example.test"],
+            });
+          return Response.json({
+            issuer: "https://auth.example.test",
+            authorization_endpoint: "https://auth.example.test/authorize",
+            token_endpoint: "https://auth.example.test/token",
+            response_types_supported: ["code"],
+            code_challenge_methods_supported: ["S256"],
+          });
+        }),
+      );
+      const writes = vi.fn().mockResolvedValue({ count: 1 });
+      const prisma = {
+        botMcpServer: { findMany: vi.fn(async () => []) },
+        mcpServer: { ...NO_SHARED_SERVERS, updateMany: writes },
+        secret: { findFirst: vi.fn(async () => null) },
+      };
+      const broker = new RealMcpOAuthBroker(prisma as never, {} as never, TEST_NETWORK);
+      const connector = new McpConnector(
+        prisma as never,
+        {} as never,
+        { network: TEST_NETWORK },
+        broker,
+      );
+      try {
+        const result = await connector.probe(SERVER as never, { spaceId: "w1", userId: "u1" });
+
+        // Only a sign-in attempt can find that the authorization server has no registration.
+        expect(result.status).toBe("error");
+        expect(needsMcpOAuthClient(new Error(result.message ?? ""))).toBe(false);
+      } finally {
         await connector.close();
       }
     });
