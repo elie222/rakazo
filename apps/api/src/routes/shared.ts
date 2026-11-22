@@ -2,6 +2,7 @@ import { ORPCError } from "@orpc/server";
 import type { SavedDeploymentModel } from "@rakazo/adapters";
 import {
   adminDeploymentModel,
+  appliedSavedDefault,
   deploymentModelRole,
   findConnectedModelCredential,
   hasHostedModelCredits,
@@ -75,7 +76,7 @@ export async function meDto(deps: RouterDeps, actor: Actor): Promise<Me> {
     // Set only while the active default is the deployment's own, running on host credentials.
     ...hostCredentials(
       !setup.main &&
-        !setup.settings?.defaultModelProvider &&
+        !appliedSavedDefault(setup.settings)?.defaultModelProvider &&
         Boolean(deps.env.deploymentModelHostCredentials),
       deps.env.defaultProvider,
     ),

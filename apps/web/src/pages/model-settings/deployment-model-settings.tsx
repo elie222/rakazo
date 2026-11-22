@@ -63,7 +63,8 @@ export function DeploymentModelSettings({ onSaved }: { onSaved?: () => void }) {
       </p>
     ) : null;
   }
-  if (settings.providers.length === 0) return null;
+  // A key saved before the block stopped applying stays removable.
+  if (settings.providers.length === 0 && !settings.keySaved) return null;
   const draft = edited ?? draftFrom(settings);
   const set = (patch: Partial<Draft>) => {
     setSaved(false);

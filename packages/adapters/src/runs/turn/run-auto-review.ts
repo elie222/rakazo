@@ -131,6 +131,7 @@ export async function autoReviewCheckerProvider(
           creditOfferingId: checker.creditOfferingId,
           requireStoredSecret: Boolean(checker.credentialId),
           operatorFunded,
+          operatorKey: deploymentChoice,
         },
       );
   const callObserver = operatorObserver ?? judgeKey?.callObserver;

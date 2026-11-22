@@ -20,8 +20,8 @@ describe("model setup gate", () => {
     deploymentModelHostCredentials?: boolean;
     deploymentModelCredentialCipher?: string;
     savedDeploymentModel?: boolean;
-    /** A default an admin saved with its key. */
-    adminDeploymentModel?: boolean;
+    /** A default an admin saved with its key; "credits" saves it where credits ignore it. */
+    adminDeploymentModel?: boolean | "credits";
     funding?: Pick<BillingStatus, "creditPurchasesEnabled" | "funding" | "balanceUsd">;
   }) {
     const prisma = {
@@ -48,7 +48,7 @@ describe("model setup gate", () => {
                 defaultModelProvider: "anthropic",
                 defaultModelId: "claude-sonnet-5",
                 deploymentModelCredentialCipher: "sealed-admin-key",
-                modelCreditsEnabled: false,
+                modelCreditsEnabled: options.adminDeploymentModel === "credits",
               }
             : options.deploymentModelCredentialCipher
               ? { deploymentModelCredentialCipher: options.deploymentModelCredentialCipher }
@@ -239,6 +239,22 @@ describe("model setup gate", () => {
     const role = await call(handler, actor, "models/role", { role: "main", scope: "account" });
     await expect(role.json()).resolves.toMatchObject({
       json: { deploymentPrimary: { provider: "anthropic", modelId: "claude-sonnet-5" } },
+    });
+  });
+
+  it("names host credentials while an admin's ignored model leaves the environment's running", async () => {
+    const { actor, handler } = modelGateDeps({
+      agentRuntime: "pi",
+      deploymentModelConfigured: true,
+      deploymentModelHostCredentials: true,
+      adminDeploymentModel: "credits",
+    });
+    const me = await call(handler, actor, "me", null);
+    await expect(me.json()).resolves.toEqual({
+      json: expect.objectContaining({
+        defaultProvider: "openrouter",
+        hostCredentialProvider: "openrouter",
+      }),
     });
   });
 

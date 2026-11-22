@@ -46,6 +46,31 @@ describe("the model an admin set for everyone", () => {
     expect(resolved.billing).toBe("deployment");
   });
 
+  it("serves only the model it was saved for", async () => {
+    const { deps, load } = setup(false);
+    await expect(
+      resolveModelKey(deps, scope.userId, scope.spaceId, null, "anthropic", "claude-opus-5"),
+    ).rejects.toThrow(MISSING_MODEL_RUN_ERROR);
+    expect(load).not.toHaveBeenCalled();
+  });
+
+  it("is never used for the operator's own checker", async () => {
+    const { deps, load } = setup(false);
+    await expect(
+      resolveModelKey(
+        deps,
+        scope.userId,
+        scope.spaceId,
+        null,
+        "anthropic",
+        "claude-sonnet-5",
+        undefined,
+        { operatorKey: true },
+      ),
+    ).rejects.toThrow(MISSING_MODEL_RUN_ERROR);
+    expect(load).not.toHaveBeenCalled();
+  });
+
   it("is never used for a call on model credits", async () => {
     const { deps, load } = setup(true);
     await expect(

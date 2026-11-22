@@ -134,6 +134,15 @@ it("shows nothing where the server offers no providers", async () => {
   expect(host.querySelector("form")).toBeNull();
 });
 
+it("keeps a saved key removable once nothing can be chosen", async () => {
+  deployment.get.mockResolvedValue({ ...saved, providers: [] });
+  deployment.update.mockResolvedValue({ ...saved, provider: null, keySaved: false, providers: [] });
+  await render();
+  await choose("Provider", "Default");
+  await act(async () => host.querySelector("form")?.requestSubmit());
+  expect(deployment.update).toHaveBeenCalledWith({ provider: null });
+});
+
 it("keeps the saved key when only the model changes", async () => {
   deployment.get.mockResolvedValue(saved);
   deployment.update.mockResolvedValue({ ...saved, modelId: "large-model" });

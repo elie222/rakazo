@@ -290,7 +290,8 @@ export class ModelTeamChatEngagementJudge implements TeamChatEngagementJudge {
             provider: this.deps.deploymentProvider,
             key: this.deps.deploymentModelKey,
             // An admin's key serves only the deployment's default, never a pin or credits.
-            operatorOnly: Boolean(settings?.modelCreditsEnabled || hosted || pinned || mainModel),
+            adminModelId:
+              settings?.modelCreditsEnabled || hosted || pinned || mainModel ? null : modelId,
           },
         ));
       const callObserver = settings?.modelCreditsEnabled

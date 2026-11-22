@@ -140,6 +140,24 @@ describe("the model an admin sets for everyone", () => {
     expect(secrets.put).not.toHaveBeenCalled();
   });
 
+  it("reports a cancelled save as cancelled, not as a rejected key", async () => {
+    const { deps, modelConnectionCheck } = setup();
+    const cancelled = new AbortController();
+    const reason = new Error("Request cancelled");
+    modelConnectionCheck.mockImplementationOnce(async () => {
+      cancelled.abort(reason);
+      throw reason;
+    });
+    await expect(
+      updateDeploymentModelSettings(
+        deps,
+        admin,
+        { ...choice, apiKey: "fake-admin-key" },
+        cancelled.signal,
+      ),
+    ).rejects.toBe(reason);
+  });
+
   it("refuses a model the provider does not list and a provider the allowlist leaves out", async () => {
     const { deps } = setup();
     await expect(

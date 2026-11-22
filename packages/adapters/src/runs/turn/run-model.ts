@@ -132,13 +132,13 @@ export async function fleetPrepareDeps(
  * The deployment key is a bearer credential for exactly one vendor, so it is handed out
  * only when the provider that won the resolution above is that vendor. A provider named
  * by a bot override gets no key rather than another vendor's. The key an admin saved serves
- * only the deployment's default, never a call the operator pays for or one on credits.
+ * only the default model it was saved for (`adminModelId`), never a call on credits.
  */
-async function deploymentKeyFor(deps: ExecutorDeps, provider: string, admin: boolean) {
+async function deploymentKeyFor(deps: ExecutorDeps, provider: string, adminModelId: string | null) {
   return deploymentModelKey(deps, provider, {
     provider: resolveDeploymentModel().provider,
     key: deps.deploymentModelKey,
-    operatorOnly: !admin || (await modelCreditBillingEnabled(deps)),
+    adminModelId: adminModelId && !(await modelCreditBillingEnabled(deps)) ? adminModelId : null,
   });
 }
 
@@ -264,7 +264,14 @@ async function resolveModelKeyMaterial(
   {
     requireStoredSecret = false,
     operatorFunded = false,
-  }: { requireStoredSecret?: boolean; creditOfferingId?: string; operatorFunded?: boolean } = {},
+    operatorKey = false,
+  }: {
+    requireStoredSecret?: boolean;
+    creditOfferingId?: string;
+    operatorFunded?: boolean;
+    /** The operator's own configuration, such as the approval checker, never an admin's key. */
+    operatorKey?: boolean;
+  } = {},
 ): Promise<{
   apiKey?: string;
   accountId?: string;
@@ -313,7 +320,7 @@ async function resolveModelKeyMaterial(
           throw new UnavailableModelForAuthError(UNKNOWN_PROVIDER_MODEL);
         }
         cloudflareProviderEnv({ provider });
-        return { apiKey: await deploymentKeyFor(deps, provider, false), redact: [] };
+        return { apiKey: await deploymentKeyFor(deps, provider, null), redact: [] };
       }
       const plaintext = await deps.secretStore.load(row.ciphertext, row.id);
       registerSecrets?.(secretValuesToRedact(parseModelSecret(plaintext)));
@@ -453,7 +460,10 @@ async function resolveModelKeyMaterial(
     return material!;
   }
   cloudflareProviderEnv({ provider });
-  return { apiKey: await deploymentKeyFor(deps, provider, !operatorFunded), redact: [] };
+  return {
+    apiKey: await deploymentKeyFor(deps, provider, operatorFunded || operatorKey ? null : modelId),
+    redact: [],
+  };
 }
 
 /** Translate resolved credentials and capabilities consistently for every run path. */

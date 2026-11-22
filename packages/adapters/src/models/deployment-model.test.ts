@@ -178,7 +178,11 @@ describe("an admin's default for everyone", () => {
     deploymentModelCredentialCipher: "sealed-admin-key",
     modelCreditsEnabled: false,
   };
-  const environment = { provider: "openrouter", key: "fake-operator-key" };
+  const environment = {
+    provider: "openrouter",
+    key: "fake-operator-key",
+    adminModelId: "claude-sonnet-5",
+  };
   function deps(row: typeof saved | null = saved) {
     const load = vi.fn(async (_ref: string, _context: unknown) =>
       JSON.stringify({ kind: "api_key", key: "fake-admin-key" }),
@@ -220,15 +224,19 @@ describe("an admin's default for everyone", () => {
       "fake-operator-key",
     );
     await expect(deploymentModelKey(withAdmin, "deepseek", environment)).resolves.toBeUndefined();
+    // Only the model it was saved for: another model of the provider is not the default.
+    await expect(
+      deploymentModelKey(withAdmin, "anthropic", { ...environment, adminModelId: "claude-opus-5" }),
+    ).resolves.toBeUndefined();
   });
 
   it("never hands out the admin's key to a call the operator pays for or one on credits", async () => {
     const { deps: operator, load } = deps();
     await expect(
-      deploymentModelKey(operator, "anthropic", { ...environment, operatorOnly: true }),
+      deploymentModelKey(operator, "anthropic", { ...environment, adminModelId: null }),
     ).resolves.toBeUndefined();
     await expect(
-      deploymentModelKey(operator, "openrouter", { ...environment, operatorOnly: true }),
+      deploymentModelKey(operator, "openrouter", { ...environment, adminModelId: null }),
     ).resolves.toBe("fake-operator-key");
     const { deps: credits } = deps({ ...saved, modelCreditsEnabled: true });
     await expect(deploymentModelKey(credits, "anthropic", environment)).resolves.toBeUndefined();

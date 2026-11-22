@@ -116,11 +116,14 @@ export async function deploymentModelKey(
   environment: {
     provider: string;
     key: string | undefined;
-    /** Credit-funded and operator-paid calls use the operator's own key, never an admin's. */
-    operatorOnly?: boolean;
+    /**
+     * The model the call runs, when it may be the default an admin saved. Credit-funded and
+     * operator-paid calls pass null: they use the operator's own key, never an admin's.
+     */
+    adminModelId: string | null;
   },
 ): Promise<string | undefined> {
-  const saved = environment.operatorOnly
+  const saved = !environment.adminModelId
     ? null
     : adminDeploymentModel(
         await deps.prisma.deploymentSettings.findUnique({
@@ -133,7 +136,11 @@ export async function deploymentModelKey(
           },
         }),
       );
-  if (saved && canonicalPiProviderId(saved.provider) === canonicalPiProviderId(provider)) {
+  if (
+    saved &&
+    canonicalPiProviderId(saved.provider) === canonicalPiProviderId(provider) &&
+    saved.modelId === environment.adminModelId
+  ) {
     const secret = parseModelSecret(
       await deps.secretStore.load(saved.cipher, DEPLOYMENT_MODEL_RECORD),
     );

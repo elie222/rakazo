@@ -48,7 +48,8 @@ environment's. Each change is recorded in the security audit log.
 the list leaves out is not offered, and a saved one stops serving and the environment's model
 applies again. Deployments with model credits always run on the operator's own connection, so the
 block is not offered there and a saved choice is ignored. Calls the operator pays for, such as the
-deployment's approval checker, keep using the environment's keys.
+deployment's approval checker, keep using the environment's keys. Messaging apps with open signup
+are turned on at startup only when the environment configures a model.
 
 `RAKAZO_LIVE_MODEL_CATALOG=off` (or `false`, `0`, `no`) disables provider and Codex live catalog probing; the default is on, and an unrecognized value stops the API at startup.
 

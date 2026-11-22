@@ -85,26 +85,32 @@ export async function updateDeploymentModelSettings(
 ): Promise<DeploymentModelSettings> {
   await requireAdmin(deps, actor.userId);
   if (input.provider === null) {
-    const dropped = await runAsSystem("an admin goes back to the environment's model", () =>
-      deps.prisma.$transaction(async (tx) => {
-        const current = await tx.deploymentSettings.findUnique({
-          where: { id: "default" },
-          select: SAVED,
-        });
-        // A default saved without a key is the environment's own and stays.
-        if (!current?.deploymentModelCredentialCipher) return undefined;
-        await tx.deploymentSettings.update({
-          where: { id: "default" },
-          data: {
-            defaultModelProvider: null,
-            defaultModelId: null,
-            deploymentModelCredentialCipher: null,
+    // Serializable like a save, so a save that lands meanwhile is never cleared unrecorded.
+    const dropped = await withTransactionRetry(() =>
+      runAsSystem("an admin goes back to the environment's model", () =>
+        deps.prisma.$transaction(
+          async (tx) => {
+            const current = await tx.deploymentSettings.findUnique({
+              where: { id: "default" },
+              select: SAVED,
+            });
+            // A default saved without a key is the environment's own and stays.
+            if (!current?.deploymentModelCredentialCipher) return undefined;
+            await tx.deploymentSettings.update({
+              where: { id: "default" },
+              data: {
+                defaultModelProvider: null,
+                defaultModelId: null,
+                deploymentModelCredentialCipher: null,
+              },
+            });
+            const cleanup = deploymentSecret(current.deploymentModelCredentialCipher);
+            await recordSecretCleanup(deps, tx, cleanup);
+            return cleanup;
           },
-        });
-        const cleanup = deploymentSecret(current.deploymentModelCredentialCipher);
-        await recordSecretCleanup(deps, tx, cleanup);
-        return cleanup;
-      }),
+          { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+        ),
+      ),
     );
     if (dropped) await finishSecretCleanup(deps, dropped);
     return view(deps, null);
@@ -205,6 +211,9 @@ async function verifyKey(
       { fetch: deps.modelConnectionFetch, signal },
     );
   } catch (error) {
+    // A cancelled save is not a rejected key.
+    if (signal?.aborted) throw error;
+    // The checks refuse a key with plain errors, as for a member's own connection.
     throw new ClientError(
       "BAD_REQUEST",
       modelConnectionErrorMessage(error, "Invalid model connection", { apiKey }),

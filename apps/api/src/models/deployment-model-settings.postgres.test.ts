@@ -27,7 +27,11 @@ it.skipIf(!databaseUrl)(
       env: { adminEmails: [email] },
     } as unknown as DeploymentModelSettingsDeps;
     const admin: Actor = { userId, spaceId: "unused-space", email, isDeploymentOwner: false };
-    const environment = { provider: "openrouter", key: "fake-operator-key" };
+    const environment = {
+      provider: "openrouter",
+      key: "fake-operator-key",
+      adminModelId: "claude-sonnet-5",
+    };
     const before = await system.deploymentSettings.findUnique({ where: { id: "default" } });
     try {
       await system.user.create({
