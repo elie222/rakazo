@@ -116,8 +116,11 @@ class FixtureRepository:
     def commit(self, message, files):
         for rel_path, content in files.items():
             target = self.path / rel_path
-            target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_text(content)
+            if content is None:
+                target.unlink()
+            else:
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_text(content)
         self.git("add", "-A")
         self.git("commit", "--quiet", "--allow-empty", "-m", message)
         return self.git("rev-parse", "HEAD")
@@ -407,20 +410,38 @@ class OtaBaseStepTests(OtaBaseTestCase):
 
     def test_classifies_translation_changes_from_the_mobile_bundle(self):
         catalog = "packages/i18n/locales/de/messages.po"
+        unused = "packages/i18n/locales/unused/messages.po"
+        renamed = "packages/i18n/locales/fr/messages.po"
+        importer = "apps/mobile/lib/i18n/i18n.ts"
         manifest = "packages/i18n/package.json"
         unrelated_catalog = "packages/ui-web/locales/de/messages.po"
-        eligible = "Mobile OTA eligible"
         translation = 'msgid "Save"\nmsgstr "Speichern"\n'
-        edited_translation = 'msgid "Save"\nmsgstr "Sichern"\n'
+        edited = 'msgid "Save"\nmsgstr "Sichern"\n'
+        imports = (
+            'import { messages as de } from "@rakazo/i18n/locales/de/messages.po";\n'
+            'import { messages as fr } from "@rakazo/i18n/locales/fr/messages.po";\n'
+            '/*\n'
+            'import { messages as unused } from "@rakazo/i18n/locales/unused/messages.po";\n'
+            '*/\n'
+        )
+        published = self.repo.commit(
+            "seed the installed translations",
+            {catalog: translation, unused: translation, importer: imports},
+        )
         for files, expected, summary_line in (
-            ({catalog: translation}, "publish=true", eligible),
-            ({"packages/i18n/src/meeting.ts": "export const meeting = 1;\n"}, "publish=true", eligible),
-            ({catalog: edited_translation, SWIFT_FILE: "import UIKit\n"}, "publish=false", SWIFT_FILE),
+            ({catalog: edited}, "publish=true", "Mobile OTA eligible"),
+            ({unused: edited}, "publish=false", unused),
+            ({catalog: edited, unused: edited}, "publish=false", unused),
+            ({catalog: None}, "publish=false", catalog),
+            ({catalog: None, renamed: translation}, "publish=false", catalog),
+            ({renamed: translation}, "publish=false", renamed),
+            ({catalog: edited, importer: imports + "\n"}, "publish=false", catalog),
+            ({catalog: edited, SWIFT_FILE: "import UIKit\n"}, "publish=false", SWIFT_FILE),
             ({manifest: "{}\n"}, "publish=false", manifest),
             ({unrelated_catalog: translation}, "publish=false", "No mobile OTA needed"),
         ):
             with self.subTest(files=sorted(files)):
-                published = self.repo.head
+                self.repo.git("reset", "--hard", published)
                 self.repo.head = self.repo.commit("change translations or adjacent files", files)
                 publish, summary = self.run_step(updates_response(update(published, RUNTIME)))
                 self.assertEqual(publish, expected)

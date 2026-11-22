@@ -193,21 +193,23 @@ jobs:
             git show "$1:pnpm-lock.yaml" | node .github/scripts/mobile-dependency-tree.mjs
           }
 
-          mapfile -t files < <(
-            git diff --name-only "$base" "$GITHUB_SHA" -- \
-              apps/mobile \
-              packages/chat-ui \
-              packages/contracts \
-              packages/core \
-              packages/i18n \
-              packages/logging \
-              packages/ui-tokens
-          )
+          # Keep moves as additions/deletions so either in-scope side can block an unsafe move.
+          # Store the completed diff so a Git error cannot send a partial list to the classifier.
+          changes="$(mktemp)"
+          trap 'rm -f -- "$changes"' EXIT
+          git diff --name-status -z --no-renames "$base" "$GITHUB_SHA" -- \
+            apps/mobile \
+            packages/chat-ui \
+            packages/contracts \
+            packages/core \
+            packages/i18n \
+            packages/logging \
+            packages/ui-tokens > "$changes"
           if [[ "$(mobile_dependencies "$base")" != "$(mobile_dependencies "$GITHUB_SHA")" ]]; then
-            files+=("pnpm-lock.yaml (mobile dependency tree)")
+            printf 'M\0pnpm-lock.yaml (mobile dependency tree)\0' >> "$changes"
           fi
 
-          printf '%s\n' "${files[@]}" | node scripts/release/mobile-ota.mjs "$base" "$GITHUB_STEP_SUMMARY" "$GITHUB_OUTPUT"
+          node scripts/release/mobile-ota.mjs "$base" "$GITHUB_STEP_SUMMARY" "$GITHUB_OUTPUT" < "$changes"
 
       - name: Require Expo automation token
         if: steps.ota.outputs.publish == 'true'
