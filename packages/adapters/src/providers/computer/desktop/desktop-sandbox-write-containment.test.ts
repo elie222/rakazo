@@ -14,6 +14,7 @@ import {
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { WorkspaceDirectoryError } from "../../../computers/screens/computer-support.js";
 
 const lstatRace = vi.hoisted(() => ({
   after: undefined as undefined | ((target: string) => Promise<void>),
@@ -90,6 +91,15 @@ it("lists remaining entries when a file disappears between realpath and stat", a
   const entries = await desktop.listFiles(computer, "", ctx);
   expect(entries.map((entry) => entry.path)).toContain("kept.txt");
   expect(entries.map((entry) => entry.path)).not.toContain("removed.txt");
+});
+
+it("does not misreport a workspace home replaced by a file as a bad directory path", async () => {
+  const { desktop, computer } = await fixture("file-home");
+  await rm(computer.providerRef, { recursive: true, force: true });
+  await writeFile(computer.providerRef, "not a directory");
+  const err = await desktop.listFiles(computer, "notes", ctx).catch((error: unknown) => error);
+  expect(err).not.toBeInstanceOf(WorkspaceDirectoryError);
+  expect(err).toMatchObject({ code: "ENOTDIR" });
 });
 
 describe("desktop sandbox write containment without O_NOFOLLOW", () => {

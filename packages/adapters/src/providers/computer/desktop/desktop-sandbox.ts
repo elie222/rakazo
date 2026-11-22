@@ -509,14 +509,27 @@ async function readWorkspaceDirectory(home: string, relative: string) {
     return await readdir(target);
   } catch (error) {
     if (
-      error instanceof WorkspacePathError ||
-      (error instanceof Error &&
-        "code" in error &&
-        "path" in error &&
-        error.path !== home &&
-        (error.code === "ENOENT" || error.code === "ENOTDIR"))
+      (error instanceof WorkspacePathError ||
+        (error instanceof Error &&
+          "code" in error &&
+          "path" in error &&
+          error.path !== home &&
+          (error.code === "ENOENT" || error.code === "ENOTDIR"))) &&
+      (await isExistingDirectory(home))
     ) {
       throw new WorkspaceDirectoryError();
+    }
+    throw error;
+  }
+}
+
+async function isExistingDirectory(target: string) {
+  try {
+    return (await stat(target)).isDirectory();
+  } catch (error) {
+    if (error && typeof error === "object" && "code" in error) {
+      const code = (error as { code?: unknown }).code;
+      if (code === "ENOENT" || code === "ENOTDIR" || code === "ELOOP") return false;
     }
     throw error;
   }
