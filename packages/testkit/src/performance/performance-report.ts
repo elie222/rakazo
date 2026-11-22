@@ -8,7 +8,6 @@ export interface NumericSummary {
 }
 
 export const PERFORMANCE_REPORT_SCHEMA_VERSION = 2 as const;
-const REPORT_METRIC_DIGITS = 2;
 
 export interface PerformanceReport {
   schemaVersion: typeof PERFORMANCE_REPORT_SCHEMA_VERSION;
@@ -83,10 +82,10 @@ export function roundedSummary(values: number[]): NumericSummary {
   const summary = summarize(values);
   return {
     count: summary.count,
-    min: roundMetric(summary.min, REPORT_METRIC_DIGITS),
-    median: roundMetric(summary.median, REPORT_METRIC_DIGITS),
-    p95: roundMetric(summary.p95, REPORT_METRIC_DIGITS),
-    max: roundMetric(summary.max, REPORT_METRIC_DIGITS),
+    min: roundMetric(summary.min),
+    median: roundMetric(summary.median),
+    p95: roundMetric(summary.p95),
+    max: roundMetric(summary.max),
   };
 }
 
@@ -95,7 +94,7 @@ export function percentageDelta(before: number, after: number) {
   return ((after - before) / before) * 100;
 }
 
-export function roundMetric(value: number, digits = REPORT_METRIC_DIGITS) {
+export function roundMetric(value: number, digits = 2) {
   return Number(value.toFixed(digits));
 }
 
@@ -239,7 +238,7 @@ export function checkBudgets(
 
 export function renderBudgetTable(rows: BudgetRow[]) {
   const value = (number: number | undefined, unit: string) =>
-    number === undefined ? "missing" : `${roundMetric(number, REPORT_METRIC_DIGITS)} ${unit}`;
+    number === undefined ? "missing" : `${roundMetric(number)} ${unit}`;
   return [
     "| Metric | Median | p95 | Budget | |",
     "| --- | ---: | ---: | ---: | --- |",
