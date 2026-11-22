@@ -451,9 +451,10 @@ export async function buildTurnPrompt(
       )
     : replayHistory;
   const runtimeHistory = [...historicalContext, ...historyWithImages];
-  const groupDirectory = conversationThread.groupId
-    ? undefined
-    : await loadBotGroupDirectory(deps.prisma, run);
+  const groupDirectory =
+    conversationThread.groupId || ownerComputerRoutine
+      ? undefined
+      : await loadBotGroupDirectory(deps.prisma, run);
   const botDirectory =
     [renderBotDirectory(parts.tools.teammates), groupDirectory].filter(Boolean).join("\n\n") ||
     undefined;

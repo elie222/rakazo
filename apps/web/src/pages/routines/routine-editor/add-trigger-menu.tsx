@@ -113,7 +113,8 @@ export function AddTriggerMenu({
 
         <DropdownMenuItem
           disabled={Boolean(draft.watch) || draft.schedules.length > 0}
-          onClick={() => onChange({ ...draft, watch: emptyWatchDraft() })}
+          // A watch's runs never get the owner's computer.
+          onClick={() => onChange({ ...draft, watch: emptyWatchDraft(), useComputer: false })}
         >
           <Eye />
           <Trans>When something changes</Trans>

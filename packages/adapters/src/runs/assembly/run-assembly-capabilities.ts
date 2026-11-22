@@ -690,20 +690,22 @@ export async function selectRunTools(
     userComputerShell,
     voiceCall,
   } = parts.capabilities;
-  // In a group the members are the room's; a bot elsewhere messages the Space's other bots.
-  const teammates = conversationThread.groupId
-    ? []
-    : await deps.prisma.bot.findMany({
-        where: {
-          spaceId: run.spaceId,
-          archivedAt: null,
-          id: { not: bot.id },
-          thread: { isNot: null },
-        },
-        select: { id: true, name: true, description: true },
-        orderBy: { createdAt: "asc" },
-        take: BOT_DIRECTORY_LIMIT,
-      });
+  // In a group the members are the room's; a bot elsewhere messages the Space's other bots. A
+  // routine with its owner's computer messages none, nor reads their names and descriptions.
+  const teammates =
+    conversationThread.groupId || ownerComputerRoutine
+      ? []
+      : await deps.prisma.bot.findMany({
+          where: {
+            spaceId: run.spaceId,
+            archivedAt: null,
+            id: { not: bot.id },
+            thread: { isNot: null },
+          },
+          select: { id: true, name: true, description: true },
+          orderBy: { createdAt: "asc" },
+          take: BOT_DIRECTORY_LIMIT,
+        });
   // Another group the bot belongs to, which post_to_group can post into.
   const otherGroups = await deps.prisma.chatGroup.findMany({
     where: {
@@ -731,8 +733,7 @@ export async function selectRunTools(
             select: { id: true },
           }),
         ),
-      historyRetrievalEnabled:
-        contextStrategy !== "current" && !unknownChannelSourceId && !ownerComputerRoutine,
+      historyRetrievalEnabled: contextStrategy !== "current" && !unknownChannelSourceId,
       ownPromptOnly: ownerComputerRoutine,
       meetingTranscriptsAvailable: parts.meetingTranscriptsAvailable,
       graphicalToolsAllowed,
@@ -770,6 +771,7 @@ export async function selectRunTools(
     // creator's, and a connected agent's messages run as them, so only their runs may
     // open, approve or use one.
     ...(run.userId === bot.userId &&
+    !ownerComputerRoutine &&
     offersAgentConnectionTools({
       hasMessagingIdentity,
       crossSpaceCommunication: bot.crossSpaceCommunication === true,
@@ -782,9 +784,11 @@ export async function selectRunTools(
     trigger: run.trigger,
     clientNonce: run.clientNonce,
   });
-  const exposedConnectorTools = discovered.filter(
-    (tool) => !builtinAgentTools.some((builtin) => builtin.name === tool.name),
-  );
+  // Connector and MCP results are other services' text, which a routine with its owner's computer
+  // never reads (see selectBuiltinToolsForRun's ownPromptOnly).
+  const exposedConnectorTools = ownerComputerRoutine
+    ? []
+    : discovered.filter((tool) => !builtinAgentTools.some((builtin) => builtin.name === tool.name));
   const strategicConnectorTools = filterStrategicInitiativeTools(exposedConnectorTools, {
     trigger: run.trigger,
     clientNonce: run.clientNonce,
