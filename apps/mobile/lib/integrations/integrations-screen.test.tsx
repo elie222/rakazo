@@ -710,39 +710,45 @@ it.each(["rename", "revoke", "uninstall", "connect"])(
 );
 
 it("shows registered MCP servers with connector initials and sentence case statuses", async () => {
+  const endpoint = "https://mcp.saved.example.test/mcp";
   const fallback = state.rpc.getMockImplementation();
-  state.rpc.mockImplementation((proc: string) =>
-    proc === "mcp/servers/list"
-      ? Promise.resolve([
-          {
-            id: "saved",
-            name: "Saved server",
-            enabled: true,
-            hasSecret: true,
-            health: { status: "ok" },
-          },
-          { id: "open", name: "Open server", enabled: true, hasSecret: false, health: {} },
-          {
-            id: "client",
-            name: "Client server",
-            enabled: true,
-            hasSecret: false,
-            oauthClientId: null,
-            // Signing in again can't help until a client ID is entered.
-            oauthStatus: "reconnect",
-            health: { status: "error", code: MCP_OAUTH_CLIENT_REQUIRED },
-          },
-          { id: "broken", name: "Broken server", enabled: true, health: { status: "error" } },
-          {
-            id: "expired",
-            name: "Expired server",
-            enabled: true,
-            oauthStatus: "reconnect",
-            health: { status: "ok" },
-          },
-        ])
-      : fallback?.(proc),
-  );
+  state.rpc.mockImplementation((proc: string) => {
+    if (proc === "capabilities/sourcePresets")
+      return Promise.resolve([
+        { id: "saved", name: "Saved server", url: endpoint, signIn: true, featured: true },
+      ]);
+    if (proc === "mcp/servers/list")
+      return Promise.resolve([
+        {
+          id: "saved",
+          name: "Saved server",
+          endpoint,
+          enabled: true,
+          hasSecret: true,
+          health: { status: "ok" },
+        },
+        { id: "open", name: "Open server", enabled: true, hasSecret: false, health: {} },
+        {
+          id: "client",
+          name: "Client server",
+          enabled: true,
+          hasSecret: false,
+          oauthClientId: null,
+          // Signing in again can't help until a client ID is entered.
+          oauthStatus: "reconnect",
+          health: { status: "error", code: MCP_OAUTH_CLIENT_REQUIRED },
+        },
+        { id: "broken", name: "Broken server", enabled: true, health: { status: "error" } },
+        {
+          id: "expired",
+          name: "Expired server",
+          enabled: true,
+          oauthStatus: "reconnect",
+          health: { status: "ok" },
+        },
+      ]);
+    return fallback?.(proc);
+  });
   await render();
   const rows = container.querySelectorAll('[data-testid="registered-mcp-server"]');
   expect([...rows].map((row) => row.textContent)).toEqual([
@@ -777,6 +783,7 @@ it("shows registered MCP servers with connector initials and sentence case statu
   });
   const matches = container.querySelectorAll('[data-testid="registered-mcp-server"]');
   expect([...matches].map((row) => row.textContent)).toEqual(["SSaved serverConnected"]);
+  expect(container.textContent?.match(/Saved server/g)).toHaveLength(1);
   expect(container.textContent).not.toContain("No apps match your search.");
 });
 

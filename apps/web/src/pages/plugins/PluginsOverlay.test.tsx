@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { i18n } from "@lingui/core";
+import { deferred, flush } from "@rakazo/core/test-async";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactElement, ReactNode } from "react";
 import { act, cloneElement } from "react";
@@ -225,6 +226,38 @@ it("shows public catalog results inline and sends nothing there until asked", as
   await act(async () => add?.click());
   expect(host.textContent).toContain("Verify and add");
   expect(host.textContent).not.toContain("Save and sign in");
+});
+
+it("shows progress while retrying a failed public directory search", async () => {
+  const retry = deferred<{ enabled: true; results: [] }>();
+  let searches = 0;
+  api.capabilities.catalogSearch.mockImplementation(async ({ usePublicCatalog }) => {
+    if (!usePublicCatalog) return { enabled: false, results: [] };
+    if (++searches === 1) throw new Error("Lookup failed");
+    return retry.promise;
+  });
+  await act(async () =>
+    root.render(
+      <QueryClientProvider client={client}>
+        <PluginsOverlay onClose={() => {}} />
+      </QueryClientProvider>,
+    ),
+  );
+  await vi.waitFor(() => expect(searchBox().disabled).toBe(false));
+  await type(searchBox(), "tracker");
+  await act(async () => publicCatalogRow()?.click());
+  await vi.waitFor(() => expect(host.textContent).toContain("Could not load MCP servers."));
+
+  await act(async () => publicCatalogRow()?.click());
+  await act(flush);
+  const searching = [...host.querySelectorAll("button")].find(
+    (button) => button.textContent === "Searching…",
+  );
+  expect(searching?.disabled).toBe(true);
+  expect(host.textContent).not.toContain("Could not load MCP servers.");
+
+  await act(async () => retry.resolve({ enabled: true, results: [] }));
+  await vi.waitFor(() => expect(host.textContent).toContain("No apps match your search."));
 });
 
 it("opens Manage for an already-added direct MCP source", async () => {

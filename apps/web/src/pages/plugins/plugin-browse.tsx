@@ -101,7 +101,7 @@ export function PluginBrowse({
         )
       : [];
   const addedEndpoints = addedMcpEndpoints(state.sources, state.mcpServers);
-  const waitingForPublic = searchingPublic && publicCatalog.isPending;
+  const waitingForPublic = searchingPublic && publicCatalog.isFetching;
 
   const installedPlugin = (installedSource: string) =>
     pluginInstalls.find((row) => row.source === installedSource);
@@ -307,7 +307,7 @@ export function PluginBrowse({
         </div>
       ) : null}
 
-      {searchingPublic && publicCatalog.isError ? (
+      {searchingPublic && publicCatalog.isError && !waitingForPublic ? (
         <p role="status" className="text-body text-muted-foreground">
           <Trans>Could not load MCP servers.</Trans>
         </p>

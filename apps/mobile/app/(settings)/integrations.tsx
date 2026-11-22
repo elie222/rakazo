@@ -416,7 +416,7 @@ export default function Integrations() {
         },
       ],
     } satisfies NativeStackNavigationOptions);
-  }, [navigation, presetsQuery.data, t]);
+  }, [navigation, presetsQuery.data, installsQuery.data, serversQuery.data, t]);
 
   return (
     <SafeAreaView edges={["bottom"]} style={styles.screen}>
