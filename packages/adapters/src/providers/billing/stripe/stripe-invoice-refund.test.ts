@@ -29,7 +29,11 @@ const charge = {
   payment_method_details: { type: "card" },
 };
 
-function fixture(options?: { payments?: (typeof payment)[]; charge?: Partial<typeof charge> }) {
+function fixture(options?: {
+  payments?: (typeof payment)[];
+  charge?: Partial<typeof charge>;
+  cacheFirstRefundError?: boolean;
+}) {
   const writes: Array<{ body: string; key: string | null }> = [];
   const refund = { id: "re_fixture", amount: 1000, status: "pending" };
   const latestCharge = { ...charge, ...options?.charge };
@@ -37,6 +41,7 @@ function fixture(options?: { payments?: (typeof payment)[]; charge?: Partial<typ
   const provider = new StripeBillingProvider({
     secretKey: "sk_test_fixture",
     webhookSecret: "whsec_fixture",
+    sleep: async () => {},
     fetch: async (input, init) => {
       const url = new URL(String(input));
       switch (url.pathname) {
@@ -56,6 +61,8 @@ function fixture(options?: { payments?: (typeof payment)[]; charge?: Partial<typ
             body: String(init?.body),
             key: new Headers(init?.headers).get("Idempotency-Key"),
           });
+          if (options?.cacheFirstRefundError && writes.at(-1)?.key === writes[0]?.key)
+            return Response.json({ error: { message: "Cached refund error" } }, { status: 500 });
           latestCharge.amount_refunded = refund.amount;
           return Response.json(refund);
         default:
@@ -80,12 +87,29 @@ describe("operator invoice refunds", () => {
     expect(refunded).toMatchObject({ state: "pending", refundId: "re_fixture" });
     await expect(provider.refundInvoice(customer, invoiceNumber, true)).resolves.toEqual(refunded);
     expect(writes).toHaveLength(1);
-    expect(writes[0]?.key).toBe("admin-invoice-refund:in_fixture:ch_fixture");
+    expect(writes[0]?.key).toEqual(expect.any(String));
     expect(Object.fromEntries(new URLSearchParams(writes[0]?.body))).toEqual({
       charge: "ch_fixture",
       amount: "1000",
       reason: "requested_by_customer",
     });
+  });
+
+  it("uses a fresh key on a new confirmation after a cached request error", async () => {
+    const { provider, writes } = fixture({ cacheFirstRefundError: true });
+    await expect(provider.refundInvoice(customer, invoiceNumber, true)).rejects.toThrow(
+      "Cached refund error",
+    );
+    await expect(provider.refundInvoice(customer, invoiceNumber, true)).resolves.toMatchObject({
+      state: "pending",
+    });
+    expect(writes.map(({ key }) => key)).toEqual([
+      writes[0]?.key,
+      writes[0]?.key,
+      writes[0]?.key,
+      expect.any(String),
+    ]);
+    expect(writes.at(-1)?.key).not.toBe(writes[0]?.key);
   });
 
   it("refuses mixed payments and disputed or mismatched charges before writing", async () => {

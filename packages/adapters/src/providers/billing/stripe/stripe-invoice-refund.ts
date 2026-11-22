@@ -33,12 +33,7 @@ const refundSchema = z.object({
 });
 
 type StripeInvoiceApi = {
-  request(
-    method: "GET" | "POST",
-    path: string,
-    params?: Record<string, unknown>,
-    idempotencyKey?: string,
-  ): Promise<unknown>;
+  request(method: "GET" | "POST", path: string, params?: Record<string, unknown>): Promise<unknown>;
   listPages<T>(path: string, schema: z.ZodType<T>): Promise<T[]>;
 };
 
@@ -112,13 +107,15 @@ export async function stripeInvoiceRefund(
     throw new ClientError("CONFLICT", "This charge has a previous refund. Review it in billing.");
   }
   if (!confirm) return { ...result, state: "refundable" };
+  // The transport reuses a key for retries within this request. A later confirmation checks
+  // refund state again and uses a fresh key, so it can recover from a cached provider error.
+  // Stripe caps refunds at the original charge, even if a previous response was lost.
   const refund = refundSchema.parse(
-    await api.request(
-      "POST",
-      "/v1/refunds",
-      { charge: charge.id, amount: charge.amount, reason: "requested_by_customer" },
-      `admin-invoice-refund:${invoice.id}:${charge.id}`,
-    ),
+    await api.request("POST", "/v1/refunds", {
+      charge: charge.id,
+      amount: charge.amount,
+      reason: "requested_by_customer",
+    }),
   );
   if (refund.amount !== charge.amount)
     throw new ClientError("CONFLICT", "The refund amount needs review in billing");
