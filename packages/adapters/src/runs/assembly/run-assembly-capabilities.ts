@@ -71,6 +71,7 @@ import type { UserComputerState } from "../tools/run-tools-user-computer.js";
 import {
   botChainFromOwner,
   NO_USER_COMPUTER_ACCESS,
+  routineRunWatches,
   USER_COMPUTER_SHELL_TOOL,
   userComputerOwner,
 } from "../tools/run-tools-user-computer.js";
@@ -581,6 +582,10 @@ export async function resolveRunCapabilities(
     userComputerAccess.ownBots &&
     run.userId === bot.userId &&
     (await botChainFromOwner(deps.prisma, conversationRun, userComputerAccess));
+  const routineWatches =
+    conversationRun.trigger === "routine" &&
+    userComputerAccess.routines &&
+    (await routineRunWatches(deps.prisma, conversationRun.id));
   const userComputerOwnerId = userComputerOwner({
     trigger: conversationRun.trigger,
     sourceRole: (origin?.sourceMessage ?? sourceMessage)?.role,
@@ -589,6 +594,8 @@ export async function resolveRunCapabilities(
     botUserId: bot.userId,
     access: userComputerAccess,
     ownBotChain,
+    groupThread: Boolean(conversationThread.groupId),
+    routineWatches,
   });
   let userComputer: UserComputerState;
   let userComputerShell = false;

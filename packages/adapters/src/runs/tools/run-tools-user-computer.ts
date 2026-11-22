@@ -56,9 +56,11 @@ export const NO_USER_COMPUTER_ACCESS: UserComputerAccess = { routines: false, ow
 
 /**
  * Whose own computer this run may reach: the person whose message started it, when they own the
- * bot. With the server's switches on, also their own bot's routine, and a message from another of
- * their bots when `ownBotChain` says the chain behind it started with them (see botChainFromOwner).
- * Webhooks, channels, helpers and other people's messages reach no one's.
+ * bot. With the server's switches on, also their own bot's scheduled routine, and a message from
+ * another of their bots when `ownBotChain` says the chain behind it started with them (see
+ * botChainFromOwner), neither in a group chat. A routine that watches something hands the run text
+ * someone else may have written, so it reaches no one's; nor do webhooks, channels, helpers and
+ * other people's messages.
  */
 export function userComputerOwner(input: {
   trigger: string;
@@ -68,15 +70,33 @@ export function userComputerOwner(input: {
   botUserId: string;
   access: UserComputerAccess;
   ownBotChain: boolean;
+  groupThread: boolean;
+  /** The run's routine watches something, or is gone. */
+  routineWatches: boolean;
 }): string | undefined {
   if (input.messagingChannelRun || input.runUserId !== input.botUserId) return undefined;
   const reachable =
     input.trigger === "user" || input.trigger === "follow_up"
       ? input.sourceRole === "user"
-      : input.trigger === "routine"
-        ? input.access.routines
-        : input.trigger === "bot_message" && input.access.ownBots && input.ownBotChain;
+      : !input.groupThread &&
+        (input.trigger === "routine"
+          ? input.access.routines && !input.routineWatches
+          : input.trigger === "bot_message" && input.access.ownBots && input.ownBotChain);
   return reachable ? input.runUserId : undefined;
+}
+
+/** Whether a routine run's routine still exists and watches nothing, so only its own prompt ran. */
+function scheduledRoutine(routine: { watch: unknown } | null): boolean {
+  return routine !== null && routine.watch === null;
+}
+
+/** Whether a routine run may carry text its routine watched for, or no longer has a routine. */
+export async function routineRunWatches(prisma: PrismaClient, runId: string): Promise<boolean> {
+  const run = await prisma.run.findUnique({
+    where: { id: runId },
+    select: { routine: { select: { watch: true } } },
+  });
+  return !scheduledRoutine(run?.routine ?? null);
 }
 
 /** Outside tasks whose text, once handed into a run, keeps it from the owner's computer. */
@@ -86,8 +106,9 @@ export function userComputerBlockingOrigins(access: UserComputerAccess): string[
 
 /**
  * Whether the bot message that started a run comes from a chain the owner started: each sender run
- * is theirs, in this Space, on one of their bots, took in no blocked outside task, and the first
- * one started where their computer is reachable (their own message, or a routine when allowed).
+ * is theirs, in this Space, on one of their bots, outside a group chat, took in no blocked outside
+ * task, and the first one started where their computer is reachable (their own message, or a
+ * scheduled routine when allowed). The caller checks that the receiving run is the owner's own.
  * A link that is missing, unreadable or past the hop limit refuses.
  */
 export async function botChainFromOwner(
@@ -123,13 +144,16 @@ export async function botChainFromOwner(
         spaceId: true,
         sourceMessageId: true,
         bot: { select: { userId: true } },
+        thread: { select: { groupId: true } },
+        routine: { select: { watch: true } },
       },
     });
     if (
       !sender ||
       sender.userId !== run.userId ||
       sender.spaceId !== run.spaceId ||
-      sender.bot.userId !== run.userId
+      sender.bot.userId !== run.userId ||
+      sender.thread.groupId
     )
       return false;
     const steered = await prisma.steeringMessage.findFirst({
@@ -141,7 +165,7 @@ export async function botChainFromOwner(
       select: { id: true },
     });
     if (steered) return false;
-    if (sender.trigger === "routine") return access.routines;
+    if (sender.trigger === "routine") return access.routines && scheduledRoutine(sender.routine);
     if (sender.trigger === "user" || sender.trigger === "follow_up") {
       const source = sender.sourceMessageId
         ? await prisma.message.findUnique({

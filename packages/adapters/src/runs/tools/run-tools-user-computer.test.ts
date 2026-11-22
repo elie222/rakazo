@@ -7,6 +7,7 @@ import type { ToolCall } from "./run-tool-gate.js";
 import {
   botChainFromOwner,
   NO_USER_COMPUTER_ACCESS,
+  routineRunWatches,
   userComputerAct,
   userComputerCwd,
   userComputerGate,
@@ -96,6 +97,8 @@ describe("userComputerOwner", () => {
     botUserId: "user-1",
     access: NO_USER_COMPUTER_ACCESS,
     ownBotChain: false,
+    groupThread: false,
+    routineWatches: false,
   };
   const all = { routines: true, ownBots: true };
 
@@ -148,8 +151,27 @@ describe("userComputerOwner", () => {
     { trigger: "bot_message", access: all, ownBotChain: true, runUserId: "user-2" },
     { trigger: "follow_up", sourceRole: "bot", access: all },
     { trigger: "helper", access: all },
+    { trigger: "routine", access: all, routineWatches: true },
+    { trigger: "routine", access: all, groupThread: true },
+    { trigger: "bot_message", access: all, ownBotChain: true, groupThread: true },
   ])("is still nobody with the switches on for %o", (change) => {
     expect(userComputerOwner({ ...own, ...change })).toBeUndefined();
+  });
+});
+
+describe("routineRunWatches", () => {
+  const prismaWith = (run: { routine: { watch: unknown } | null } | null) =>
+    ({ run: { findUnique: async () => run } }) as never;
+
+  it("is false only for a routine that still exists and watches nothing", async () => {
+    await expect(
+      routineRunWatches(prismaWith({ routine: { watch: null } }), "run-1"),
+    ).resolves.toBe(false);
+    await expect(
+      routineRunWatches(prismaWith({ routine: { watch: { kind: "url" } } }), "run-1"),
+    ).resolves.toBe(true);
+    await expect(routineRunWatches(prismaWith({ routine: null }), "run-1")).resolves.toBe(true);
+    await expect(routineRunWatches(prismaWith(null), "run-1")).resolves.toBe(true);
   });
 });
 
@@ -343,6 +365,8 @@ describe("botChainFromOwner", () => {
     spaceId: string;
     sourceMessageId: string | null;
     bot: { userId: string };
+    thread: { groupId: string | null };
+    routine: { watch: unknown } | null;
   };
   const ownBots = { routines: false, ownBots: true };
   const all = { routines: true, ownBots: true };
@@ -397,6 +421,8 @@ describe("botChainFromOwner", () => {
         userId: string;
         spaceId: string;
         botOwner: string;
+        groupId: string;
+        routine: { watch: unknown } | null;
       }>,
     ) =>
       runs.set(id, {
@@ -406,6 +432,13 @@ describe("botChainFromOwner", () => {
         userId: run.userId ?? "user-1",
         spaceId: run.spaceId ?? "space-1",
         bot: { userId: run.botOwner ?? "user-1" },
+        thread: { groupId: run.groupId ?? null },
+        routine:
+          run.routine !== undefined
+            ? run.routine
+            : run.trigger === "routine"
+              ? { watch: null }
+              : null,
       });
     /** The developer's message in-1 came from the orchestrator's run-1. */
     const fromSender = (run: Parameters<typeof senderRun>[1]) => {
@@ -455,6 +488,27 @@ describe("botChainFromOwner", () => {
     c.fromSender({ trigger: "routine", sourceMessageId: null });
     await expect(c.check(all)).resolves.toBe(true);
     await expect(c.check(ownBots)).resolves.toBe(false);
+  });
+
+  it("refuses a routine that watches something, or whose routine is gone", async () => {
+    const watching = chain();
+    watching.fromSender({
+      trigger: "routine",
+      sourceMessageId: null,
+      routine: { watch: { kind: "url" } },
+    });
+    await expect(watching.check(all)).resolves.toBe(false);
+
+    const gone = chain();
+    gone.fromSender({ trigger: "routine", sourceMessageId: null, routine: null });
+    await expect(gone.check(all)).resolves.toBe(false);
+  });
+
+  it("refuses a sender that ran in a group chat", async () => {
+    const c = chain();
+    c.fromSender({ trigger: "user", sourceMessageId: "owner-1", groupId: "group-1" });
+    c.ownerMessage("owner-1");
+    await expect(c.check(all)).resolves.toBe(false);
   });
 
   it.each(["webhook", "messaging", "helper", "spawn"])(
