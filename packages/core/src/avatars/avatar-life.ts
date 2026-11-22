@@ -170,6 +170,14 @@ export function avatarSharedTimeMs(): number {
   return Date.now();
 }
 
+/**
+ * How far one bot's motion is shifted on the shared clock, in milliseconds, so different
+ * bots whose loops share their timing do not move in unison.
+ */
+export function avatarPhaseMs(seed: number): number {
+  return seed % 10_000;
+}
+
 /** How long each stretch of a shared timeline runs, in seconds. */
 export const AVATAR_SHARED_WINDOW_SECONDS = 60;
 

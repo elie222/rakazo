@@ -44,3 +44,9 @@ it("leaves one-off fades alone", () => {
   expect(fade.startTime).toBeNull();
   expect(fade.currentTime).toBeNull();
 });
+
+it("shifts one bot's loops by its offset", () => {
+  const loop = fakeAnimation("paused", Number.POSITIVE_INFINITY);
+  syncAvatarAnimations(elementWith([loop]), 1_234);
+  expect(loop.currentTime).toBe(1_800_000_006_234);
+});

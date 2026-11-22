@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { avatarIdentitySeed, avatarPhaseMs } from "@rakazo/core";
 import { captureScreenshot } from "../helpers/helpers";
 
 test("photo working avatars show a visible ring while idle avatars stay plain", async ({
@@ -135,24 +136,30 @@ test("organic avatars hold still while idle and stop working motion while offscr
 
   // The working morph joins the shared avatar clock, so every copy of the bot morphs
   // together, and fades in.
-  const handoff = await avatar.evaluate(async (svg: SVGSVGElement) => {
-    const body = (mode: string) =>
-      svg.querySelector<SVGPathElement>(`.rakazo-mascot-avatar-body-${mode}`)!;
-    svg.parentElement!.querySelector("button")!.click();
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    // Whole milliseconds: the duration comes back as float seconds.
-    const duration = Math.round(
-      body("working").querySelector("animate")!.getSimpleDuration() * 1000,
-    );
-    return {
-      duration,
-      offset: (svg.getCurrentTime() * 1000 - Date.now()) % duration,
-      fading: body("working")
-        .getAnimations()
-        .some((track) => track instanceof CSSTransition && track.transitionProperty === "opacity"),
-    };
-  });
-  // How far the morph sits from the shared clock's point in its loop, either way round.
+  const handoff = await avatar.evaluate(
+    async (svg: SVGSVGElement, phase: number) => {
+      const body = (mode: string) =>
+        svg.querySelector<SVGPathElement>(`.rakazo-mascot-avatar-body-${mode}`)!;
+      svg.parentElement!.querySelector("button")!.click();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      // Whole milliseconds: the duration comes back as float seconds.
+      const duration = Math.round(
+        body("working").querySelector("animate")!.getSimpleDuration() * 1000,
+      );
+      return {
+        duration,
+        offset: (svg.getCurrentTime() * 1000 - Date.now() - phase) % duration,
+        fading: body("working")
+          .getAnimations()
+          .some(
+            (track) => track instanceof CSSTransition && track.transitionProperty === "opacity",
+          ),
+      };
+    },
+    avatarPhaseMs(avatarIdentitySeed("organic-fixture")),
+  );
+  // How far the morph sits from this bot's point in its loop on the shared clock, either
+  // way round.
   const drift = Math.abs(handoff.offset);
   expect(Math.min(drift, handoff.duration - drift)).toBeLessThan(100);
   expect(handoff.fading).toBe(true);

@@ -4,6 +4,7 @@ import type { AvatarEyes, LogoAvatarActivity } from "@rakazo/core";
 import {
   avatarEyeRects,
   avatarIdentitySeed,
+  avatarPhaseMs,
   avatarSharedTimeMs,
   botEyeTone,
   DEFAULT_BOT_AVATAR_COLOR,
@@ -251,19 +252,22 @@ function MascotAvatar({
   );
   const { ref, visible } = useAvatarMotionVisibility(!reducedMotion);
   const morphMs = 4800 + (seed % 24) * 100;
+  // The CSS loops take their timing from the shape family alone; this offset keeps two
+  // different bots of one family from moving in unison while copies of one bot still match.
+  const phaseMs = avatarPhaseMs(seed);
   useLayoutEffect(() => {
     const svg = ref.current;
     if (!svg) return;
     // Every copy of a bot's avatar moves together, however long each has been on screen.
-    syncAvatarAnimations(svg);
+    syncAvatarAnimations(svg, phaseMs);
     // jsdom has no SMIL clock, so these are optional.
     if (!visible) {
       svg.pauseAnimations?.();
       return;
     }
     svg.unpauseAnimations?.();
-    svg.setCurrentTime?.((avatarSharedTimeMs() % morphMs) / 1000);
-  }, [ref, visible, isWorking, reducedMotion, seed, morphMs]);
+    svg.setCurrentTime?.(((avatarSharedTimeMs() + phaseMs) % morphMs) / 1000);
+  }, [ref, visible, isWorking, reducedMotion, morphMs, phaseMs]);
   const eyeOrigin = `${(eyes.leftCx + eyes.rightCx) / 2}px ${eyes.cy}px`;
   const unit = viewBoxWidth(viewBox) / viewBoxWidth(ORGANIC_AVATAR_VIEWBOX);
 
