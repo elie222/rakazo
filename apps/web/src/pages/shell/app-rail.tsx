@@ -247,6 +247,7 @@ function PrimaryRail({
         <RailItem
           active={activityMode && onChatShell}
           expanded={expanded}
+          toggles
           icon={<Bell className="size-5" strokeWidth={1.75} aria-hidden="true" />}
           label={t`Activity`}
           onClick={() => {
@@ -391,6 +392,7 @@ function RailToggle({
 function RailItem({
   active,
   expanded,
+  toggles = false,
   icon,
   label,
   to,
@@ -399,6 +401,8 @@ function RailItem({
 }: {
   active: boolean;
   expanded: boolean;
+  /** Only a control that switches a mode reports a pressed state to assistive technology. */
+  toggles?: boolean;
   icon: ReactNode;
   label: string;
   to?: string;
@@ -443,7 +447,7 @@ function RailItem({
   ) : (
     <button
       type="button"
-      aria-pressed={active}
+      aria-pressed={toggles ? active : undefined}
       aria-label={label}
       data-testid={testId}
       className={className}
