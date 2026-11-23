@@ -7,6 +7,7 @@ import { act, Children, createElement, createRef, isValidElement, useMemo } from
 import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { setComposerEnterToSendPreference } from "../../lib/composer/composer-enter-to-send-preference";
 import { settleComposer } from "../../lib/thread/send/thread-feedback";
 import { useThreadMentionCatalog } from "../../lib/thread/thread-mention-catalog";
 import type { ThreadComposerHandle } from "./thread-composer";
@@ -194,6 +195,33 @@ vi.mock("react-native", () => {
     },
   };
 });
+vi.mock("expo", () => ({
+  requireOptionalNativeModule: () => ({}),
+  requireNativeView:
+    () =>
+    ({
+      children,
+      enabled,
+      onHardwareEnter,
+    }: {
+      children: ReactNode;
+      enabled: boolean;
+      onHardwareEnter: () => void;
+    }) =>
+      createElement(
+        "div",
+        null,
+        children,
+        createElement("button", {
+          type: "button",
+          "aria-label": "Hardware Enter",
+          disabled: !enabled,
+          onClick: onHardwareEnter,
+        }),
+      ),
+}));
+vi.mock("expo-secure-store", () => ({ getItemAsync: vi.fn(), setItemAsync: vi.fn() }));
+
 vi.mock("@expo/ui/community/menu", () => ({
   MenuView: ({ children }: { children?: ReactNode }) => children,
 }));
@@ -866,6 +894,74 @@ describe("thread composer isolation", () => {
     select(0);
     expect(field().value).toBe("@Helper ");
     expect(composer.current!.snapshot().mentions).toEqual([bot]);
+  });
+
+  it("sends a draft on hardware Enter", () => {
+    type("A message");
+
+    press("Hardware Enter");
+
+    expect(props.send).toHaveBeenCalledOnce();
+  });
+
+  it("honors the hardware Enter toggle", async () => {
+    await act(() => setComposerEnterToSendPreference(false));
+    try {
+      type("A message");
+
+      press("Hardware Enter");
+
+      expect(props.send).not.toHaveBeenCalled();
+    } finally {
+      await act(() => setComposerEnterToSendPreference(true));
+    }
+  });
+
+  it("inserts a newline on software Enter", () => {
+    type("First line");
+    act(() => input.key({ nativeEvent: { key: "Enter" } }));
+    type("First line\nSecond line");
+
+    expect(composer.current!.snapshot().promptText).toBe("First line\nSecond line");
+    expect(props.send).not.toHaveBeenCalled();
+  });
+
+  it("keeps hardware Enter from sending a second message during a send", () => {
+    render({ sending: true });
+    type("Another message");
+
+    press("Hardware Enter");
+
+    expect(props.send).not.toHaveBeenCalled();
+  });
+
+  it("leaves an unfinished mention in the draft on hardware Enter", () => {
+    type("Ask @He");
+
+    press("Hardware Enter");
+
+    expect(props.send).not.toHaveBeenCalled();
+  });
+
+  it("leaves hardware Enter blocked while dictation is transcribing", () => {
+    dictation.status = "transcribing";
+    render();
+    type("A message");
+
+    press("Hardware Enter");
+
+    expect(dictation.finish).not.toHaveBeenCalled();
+    expect(props.send).not.toHaveBeenCalled();
+  });
+
+  it("finishes dictation before sending on hardware Enter", () => {
+    dictation.status = "listening";
+    render();
+
+    press("Hardware Enter");
+
+    expect(dictation.finish).toHaveBeenCalledOnce();
+    expect(props.send).not.toHaveBeenCalled();
   });
 
   it("types 20 characters without rendering the parent and sends the latest ref snapshot", () => {

@@ -5,6 +5,25 @@ export type MentionPickerKeyAction =
   | { type: "send" }
   | { type: "none" };
 
+/** A printable key outside shortcuts and IME composition is evidence of keyboard typing. */
+export function isHardwareTypingKey(event: {
+  key: string;
+  shiftKey?: boolean;
+  ctrlKey?: boolean;
+  metaKey?: boolean;
+  altKey?: boolean;
+  isComposing?: boolean;
+}): boolean {
+  return (
+    !event.shiftKey &&
+    !event.ctrlKey &&
+    !event.metaKey &&
+    !event.altKey &&
+    !event.isComposing &&
+    /^[^\p{C}\p{Zl}\p{Zp}]$/u.test(event.key)
+  );
+}
+
 /** Wrap highlight within `[0, count)`. Returns `0` when the list is empty. */
 export function wrapMentionHighlightIndex(index: number, count: number): number {
   if (count <= 0) return 0;

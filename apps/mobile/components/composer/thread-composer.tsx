@@ -44,12 +44,14 @@ import {
 import { useComposerDictation } from "../../lib/composer/composer-dictation";
 import type { ComposerDraftScope } from "../../lib/composer/composer-draft";
 import { readComposerDraft, writeComposerDraft } from "../../lib/composer/composer-draft";
+import { useComposerHardwareEnterPreference } from "../../lib/composer/composer-enter-to-send-preference";
 import type { ComposerModel } from "../../lib/composer/composer-model";
 import { useMobileTokens, useResolvedAppearance } from "../../lib/native/native";
 import type { ComposerSnapshot } from "../../lib/thread/send/thread-feedback";
 import { BotAvatar } from "../bots/bot-avatar";
 import { GlassSurface } from "../native/glass-surface";
 import { NativeSymbol } from "../native/native-symbol";
+import { ComposerKeyboard } from "./composer-keyboard";
 import { ModelChip, TrailingControls } from "./composer-model-chip";
 import { DictationBar } from "./dictation-bar";
 
@@ -465,6 +467,14 @@ export function ThreadComposer({
     dictation.status === "transcribing" ||
     (!canSend && dictation.status === "idle");
 
+  const enterToSend = useComposerHardwareEnterPreference();
+  const hardwareEnterEnabled =
+    enterToSend &&
+    !sendBlocked &&
+    mentionOptions.length === 0 &&
+    slashSkillOptions.length === 0 &&
+    slashActionOptions.length === 0;
+
   const sendButton = (
     <Pressable
       accessibilityRole="button"
@@ -663,7 +673,11 @@ export function ThreadComposer({
           }}
           fallbackStyle={styles.composerFill}
         >
-          <View
+          <ComposerKeyboard
+            enabled={hardwareEnterEnabled}
+            onHardwareEnter={() => {
+              if (hardwareEnterEnabled) sendOrFinish();
+            }}
             style={{
               flex: stacked ? undefined : 1,
               // Room for the text comes first; the model chip shrinks instead.
@@ -864,7 +878,7 @@ export function ThreadComposer({
                 ))}
               </TextInput>
             </Pressable>
-          </View>
+          </ComposerKeyboard>
           {dictation.status !== "idle" ? (
             <DictationBar
               status={dictation.status}
