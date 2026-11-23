@@ -26,6 +26,12 @@ import { bestEffort, getLogger } from "@rakazo/logging";
 import { runLeaseFor } from "../runs/assembly/run-messages.js";
 import type { ExecutorDeps } from "../runs/executor/executor-deps.js";
 import { wakeRun } from "../runs/wakeups/wake-run.js";
+import {
+  deliverTicketBotMessageOutcome,
+  loadTicketForBotMessage,
+  recordTicketExchangeComment,
+  ticketRefForRun,
+} from "./bot-message-ticket.js";
 
 /**
  * The hop the current run sits at, read back from the message that woke this
@@ -96,7 +102,7 @@ export function unresolvedBotError(
 }
 
 export async function messageBot(
-  deps: Pick<ExecutorDeps, "prisma" | "events" | "jobs" | "runLease">,
+  deps: Pick<ExecutorDeps, "prisma" | "events" | "jobs" | "runLease" | "onTicketChange">,
   run: {
     id: string;
     spaceId: string;
@@ -104,6 +110,9 @@ export async function messageBot(
     botId: string;
     userId: string;
     sourceMessageId?: string | null;
+    /** Present for runs the executor starts; a `tickets` trigger marks ticket origin. */
+    trigger?: string;
+    taskId?: string;
   },
   sender: { id: string; name: string },
   input: {
@@ -173,7 +182,62 @@ export async function messageBot(
       note: `Already sent to ${target.name} in this turn; it was not sent again.`,
     }) as const;
 
-  const wakePrompt = buildBotMessageWakePrompt({ from: sender, text: message, intent });
+  // Ticket origin: a send from a ticket-triggered run, or one already working such an
+  // exchange (the inbound block carries the ref through the chain). Results and statuses
+  // then belong on the ticket, not in any owner's chat; requests, questions and FYIs are
+  // still delivered as ordinary bot messages, but stay marked with the ticket.
+  const ticketOrigin =
+    sourceContext?.ticketRef ??
+    (run.trigger === "tickets" ? await ticketRefForRun(deps.prisma, run) : undefined);
+  const files = input.files ?? [];
+  if (ticketOrigin && (intent === "result" || intent === "status")) {
+    const outcome = await deliverTicketBotMessageOutcome(deps, {
+      run,
+      sender,
+      addressTo: { id: target.id, name: target.name },
+      ticketRef: ticketOrigin,
+      text: message,
+      intent,
+      deliveryKey,
+      returnFrom,
+    });
+    if (!outcome.ok) return outcome;
+    if ("replayed" in outcome) {
+      return {
+        ok: true as const,
+        botId: target.id,
+        name: target.name,
+        delivered: message,
+        replayed: true as const,
+        note: `Already recorded on ticket ${ticketOrigin}; it was not recorded again.`,
+      };
+    }
+    return {
+      ok: true as const,
+      botId: target.id,
+      name: target.name,
+      delivered: message,
+      note: `Recorded as a comment on ticket ${ticketOrigin}. The ticket's assignee is woken to continue that work; nothing was sent to anyone's chat.${
+        files.length > 0
+          ? " Attached files are not posted to the ticket; share them there separately if needed."
+          : ""
+      }`,
+    };
+  }
+  const ticket =
+    ticketOrigin && (intent === "request" || intent === "question" || intent === "fyi")
+      ? await loadTicketForBotMessage(deps.prisma, {
+          spaceId: run.spaceId,
+          ticketRef: ticketOrigin,
+        })
+      : undefined;
+
+  const wakePrompt = buildBotMessageWakePrompt({
+    from: sender,
+    text: message,
+    intent,
+    ...(ticketOrigin ? { ticketRef: ticketOrigin } : {}),
+  });
   const outboundBlock: MessageBlock = {
     kind: "bot_message_sent",
     toBotId: target.id,
@@ -181,7 +245,6 @@ export async function messageBot(
     text: message,
     intent,
   };
-  const files = input.files ?? [];
 
   let committed:
     | {
@@ -268,6 +331,7 @@ export async function messageBot(
           hop,
           intent,
           returnToMessageId: outbound.id,
+          ...(ticketOrigin ? { ticketRef: ticketOrigin } : {}),
         };
         const inbound = await createThreadMessageInTransaction(tx, {
           threadId: targetThreadId,
@@ -280,6 +344,17 @@ export async function messageBot(
           clientNonce: deliveryKey,
           markUnread: options?.forceUnread === true,
         });
+        if (ticket) {
+          // The question the ticket's work asked, kept on the ticket itself: the reply is
+          // recorded there too (see deliverTicketBotMessageOutcome), so the workflow
+          // stays readable without any owner's chat.
+          await recordTicketExchangeComment(tx, {
+            spaceId: run.spaceId,
+            ticketId: ticket.ticketId,
+            botId: sender.id,
+            body: message,
+          });
+        }
         const task = await tx.task.create({
           data: {
             spaceId: run.spaceId,
@@ -353,7 +428,9 @@ export async function messageBot(
     botId: target.id,
     name: target.name,
     delivered: message,
-    note: `Sent to ${target.name}. Delivery is async; a reply wakes you later as a new message. Continue independent work; send another update later only if it adds something new.`,
+    note: ticketOrigin
+      ? `Sent to ${target.name}. Delivery is async; ${target.name}'s reply is recorded on ticket ${ticketOrigin} and that ticket's assignee is woken to continue the work. Continue independent work; send another update later only if it adds something new.`
+      : `Sent to ${target.name}. Delivery is async; a reply wakes you later as a new message. Continue independent work; send another update later only if it adds something new.`,
   };
 }
 
@@ -367,33 +444,60 @@ type DelegatedRun = {
 };
 
 /** The bot that handed this run its request or question, while it can still take a reply. */
-async function requesterBotId(
+async function requesterBot(
   prisma: PrismaClient,
   run: DelegatedRun,
-): Promise<string | undefined> {
-  const source = await loadBotMessageContext(prisma, run.sourceMessageId);
-  if (!source) return undefined;
-  const sourceIntent = source.intent ?? "request";
+  source?: Awaited<ReturnType<typeof loadBotMessageContext>>,
+): Promise<{ id: string; name: string } | undefined> {
+  const context = source ?? (await loadBotMessageContext(prisma, run.sourceMessageId));
+  if (!context) return undefined;
+  const sourceIntent = context.intent ?? "request";
   if (sourceIntent !== "request" && sourceIntent !== "question") return undefined;
   // messageBot reaches only active bots of this space, so an archived or deleted
   // requester can never take the reply.
   const requester = await prisma.bot.findFirst({
-    where: { id: source.fromBotId, spaceId: run.spaceId, archivedAt: null },
-    select: { id: true },
+    where: { id: context.fromBotId, spaceId: run.spaceId, archivedAt: null },
+    select: { id: true, name: true },
   });
-  return requester?.id;
+  return requester ?? undefined;
 }
 
 /** Return a delegated run's terminal outcome unless it already sent one explicitly. */
 export async function returnBotMessageOutcome(
-  deps: Pick<ExecutorDeps, "prisma" | "events" | "jobs">,
+  deps: Pick<ExecutorDeps, "prisma" | "events" | "jobs" | "runLease" | "onTicketChange">,
   run: DelegatedRun,
   sender: { id: string; name: string },
   text: string,
   intent: "result" | "status" = "result",
   options?: { forceUnread?: boolean },
 ) {
-  const requesterId = await requesterBotId(deps.prisma, run);
+  const source = await loadBotMessageContext(deps.prisma, run.sourceMessageId);
+  if (source?.ticketRef) {
+    // A ticket-originated clarification: the outcome belongs on that ticket's workflow,
+    // not in any owner's chat. The claim inside the delivery transaction makes the
+    // return exactly-once, replay-safe the same way the chat path's key is.
+    const requester = await requesterBot(deps.prisma, run, source);
+    const outcome = await deliverTicketBotMessageOutcome(deps, {
+      run,
+      sender,
+      ...(requester ? { addressTo: requester } : {}),
+      ticketRef: source.ticketRef,
+      text: clampBotMessage(text),
+      intent,
+      deliveryKey: `bot-message:auto-outcome:${run.id}`,
+      claimOutcome: true,
+      returnFrom: "ended",
+    });
+    if (outcome.ok || outcome.missingTicket) {
+      // A ticket that no longer exists makes the outcome moot, not retryable.
+      if (!outcome.ok)
+        getLogger().warn("bot message ticket outcome dropped", { error: outcome.error });
+      await markBotOutcomeReturned(deps.prisma, run.id);
+      return true;
+    }
+    return false;
+  }
+  const requesterId = (await requesterBot(deps.prisma, run, source))?.id;
   if (!requesterId) {
     await markBotOutcomeReturned(deps.prisma, run.id);
     // Handled: nothing to deliver. Return true so callers do not release a reservation.
@@ -439,7 +543,7 @@ export async function returnBotMessageOutcome(
  * hearing nothing until the user answers. `waitId` is the paused attempt: one notice per wait.
  */
 export async function reportBotMessageWait(
-  deps: Pick<ExecutorDeps, "prisma" | "events" | "jobs" | "runLease">,
+  deps: Pick<ExecutorDeps, "prisma" | "events" | "jobs" | "runLease" | "onTicketChange">,
   run: DelegatedRun & { trigger: string },
   sender: { id: string; name: string },
   ask: string,
@@ -457,13 +561,13 @@ export async function reportBotMessageWait(
 }
 
 async function sendWaitNotice(
-  deps: Pick<ExecutorDeps, "prisma" | "events" | "jobs" | "runLease">,
+  deps: Pick<ExecutorDeps, "prisma" | "events" | "jobs" | "runLease" | "onTicketChange">,
   run: DelegatedRun,
   sender: { id: string; name: string },
   ask: string,
   waitId: string,
 ) {
-  const requesterId = await requesterBotId(deps.prisma, run);
+  const requesterId = (await requesterBot(deps.prisma, run))?.id;
   if (!requesterId) return;
   const sent = await messageBot(
     deps,

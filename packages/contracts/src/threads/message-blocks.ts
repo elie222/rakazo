@@ -404,6 +404,12 @@ export const MessageBlock = z.discriminatedUnion("kind", [
     returnToMessageId: Id.optional(),
     /** Links in a bot-started chain; absent when a person started it. */
     hop: z.number().int().nonnegative().optional(),
+    /**
+     * Ticket this exchange originated from: set when a ticket-triggered run sent it (or a
+     * run already working such an exchange did). Replies then stay with that ticket's
+     * workflow instead of returning through the owner's chat.
+     */
+    ticketRef: z.string().optional(),
   }),
 ]);
 export type MessageBlock = z.infer<typeof MessageBlock>;

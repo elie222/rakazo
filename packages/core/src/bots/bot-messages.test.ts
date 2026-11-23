@@ -422,6 +422,43 @@ describe("inbound wake prompt", () => {
     const wake = buildBotMessageWakePrompt({ from: bots[0]!, text: "Deploy done.", intent: "fyi" });
     expect(wake).not.toContain(BOT_DELIBERATION_GUIDANCE);
   });
+
+  it("aims a ticket-originated request at the ticket, not a chat reply", () => {
+    const wake = buildBotMessageWakePrompt({
+      from: bots[0]!,
+      text: "What quota applies?",
+      intent: "request",
+      ticketRef: "OPS-7",
+    });
+    expect(wake).toContain("OPS-7");
+    expect(wake).toContain("recorded as a comment on ticket OPS-7");
+    // The chat-return phrasing must not leak into the ticket variant.
+    expect(wake).not.toContain("automatically returned to");
+    expect(wake).not.toContain("interim question, status");
+  });
+
+  it("never tells a ticket-originated result or status to relay to the user", () => {
+    for (const intent of ["result", "status"] as const) {
+      const wake = buildBotMessageWakePrompt({
+        from: bots[0]!,
+        text: "Quota is five.",
+        intent,
+        ticketRef: "OPS-7",
+      });
+      expect(wake).toContain("OPS-7");
+      expect(wake).not.toContain("Relay it to the user");
+      expect(wake).toContain("continue the ticket work");
+    }
+  });
+
+  it("keeps ordinary prompts free of ticket phrasing when no ticket origin is present", () => {
+    for (const intent of ["request", "question", "result", "status", "fyi"] as const) {
+      const wake = buildBotMessageWakePrompt({ from: bots[0]!, text: "Done.", intent });
+      expect(wake).not.toContain("ticket");
+    }
+    const relay = buildBotMessageWakePrompt({ from: bots[0]!, text: "Done.", intent: "result" });
+    expect(relay).toContain("Relay it to the user");
+  });
 });
 
 describe("group routing metadata", () => {

@@ -91,10 +91,10 @@ const CREATED_RUN_TOOL_NAMES = new Set(["ask_user", "update_bot"]);
 
 /**
  * User-facing and group messaging and media tools a background run is not offered (see
- * selectBuiltinToolsForRun). Same-space message_bot stays available so a ticket run can hold
- * the ordinary conversational exchanges its work needs (a capacity question, a scope
- * clarification) without leaking into the owner's chat; substantive cross-agent work still
- * routes through the ticket itself.
+ * selectBuiltinToolsForRun). Same-space message_bot stays available so a ticket run can ask
+ * another bot a one-off clarification (a capacity question, a scope check): the exchange is
+ * recorded on the originating ticket and the reply returns there as a comment that re-wakes
+ * the assignee, never as an owner-chat turn (see messaging/bot-message-ticket.ts).
  */
 const BACKGROUND_DROPPED_TOOL_NAMES: ReadonlySet<string> = new Set([
   "message_user",
