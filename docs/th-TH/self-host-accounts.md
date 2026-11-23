@@ -157,13 +157,13 @@ https://app.example.com/api/auth/callback/oidc
 
 `OIDC_AUTHORIZATION_PARAMS` เพิ่มพารามิเตอร์เริ่มต้นให้ทุก request ที่ส่งคนไปยัง provider เขียนเป็นคู่ `name=value` เชื่อมด้วย `&` ค่าถูก form-encode: เขียน `&`, `=` และ `+` เป็น `%26`, `%3D` และ `%2B` เพราะ `+` เปล่า ๆ จะถูกอ่านเป็นช่องว่าง ใช้สำหรับคำใบ้ที่ provider มีให้เพื่อข้ามหน้าเลือกบัญชีหรือองค์กร:
 
-| Provider           | การตั้งค่า                     | ผล                                                                                         |
-| ------------------ | ---------------------------- | ------------------------------------------------------------------------------------------ |
+| Provider           | การตั้งค่า                      | ผล                                                                                     |
+| ------------------ | ---------------------------- | -------------------------------------------------------------------------------------- |
 | Microsoft Entra ID | `domain_hint=example.com`    | ไปที่หน้าลงชื่อเข้าใช้ขององค์กรคุณโดยตรง รวมถึง identity provider แบบ federated ถ้าโดเมนของคุณใช้อยู่ |
-| Google Workspace   | `hd=example.com`             | แสดงเฉพาะบัญชีในโดเมนนั้น                                                                     |
-| Keycloak           | `kc_idp_hint=<alias>`        | ข้ามหน้าล็อกอินของ Keycloak ไปยัง identity provider ที่ลิงก์ไว้ด้วย alias นั้น                     |
-| Okta               | `idp=<identity provider id>` | ส่งคนไปยัง identity provider นั้น                                                              |
-| Any                | `prompt=select_account`      | ถามว่าจะใช้บัญชีใด แม้มีบัญชีที่ลงชื่อเข้าใช้อยู่เพียงบัญชีเดียว                                          |
+| Google Workspace   | `hd=example.com`             | แสดงเฉพาะบัญชีในโดเมนนั้น                                                                  |
+| Keycloak           | `kc_idp_hint=<alias>`        | ข้ามหน้าล็อกอินของ Keycloak ไปยัง identity provider ที่ลิงก์ไว้ด้วย alias นั้น                      |
+| Okta               | `idp=<identity provider id>` | ส่งคนไปยัง identity provider นั้น                                                          |
+| Any                | `prompt=select_account`      | ถามว่าจะใช้บัญชีใด แม้มีบัญชีที่ลงชื่อเข้าใช้อยู่เพียงบัญชีเดียว                                           |
 
 รวมหลายค่าได้ เช่น `domain_hint=example.com&prompt=select_account` แต่ละชื่อใช้ได้ครั้งเดียว provider เป็นผู้ตัดสินว่าจะทำตามคำใบ้หรือไม่ (เช่น tenant ของ Entra ตั้งให้ไม่สน `domain_hint` ได้) จึงควรลองลงชื่อเข้าใช้หนึ่งครั้งหลังตั้งค่า request ลงชื่อเข้าใช้ที่ส่งค่าของพารามิเตอร์เองจะแทนที่ค่าเริ่มต้นนี้ พารามิเตอร์มีผลกับการลงชื่อเข้าใช้บนเว็บ เดสก์ท็อป และมือถือ รวมถึงการลิงก์ เพราะ API เป็นผู้สร้าง request API จะไม่ยอมสตาร์ทถ้าระบุพารามิเตอร์ที่ขั้นตอนลงชื่อเข้าใช้ตั้งเอง (`client_id`, `redirect_uri`, `response_type`, `response_mode`, `scope`, `state`, `nonce`, `code_challenge`, `code_challenge_method`, `request` หรือ `request_uri`) การยืนยันตัวตนซ้ำที่ชัดเจนข้างบนยังส่ง `prompt=login` และ `max_age=0` ไม่ว่าตั้งอะไรไว้ที่นี่ คำใบ้เพียงทำให้หน้าจอของ provider สั้นลง ส่วนใครลงชื่อเข้าใช้ได้ยังตัดสินโดย provider และกฎการสมัครของ deployment นี้
 

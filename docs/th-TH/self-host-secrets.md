@@ -10,15 +10,15 @@ credential ที่จำเป็นและที่ไม่บังคั
 
 `bash install-images.sh` (เมื่อยังไม่มี `.env`) จะคัดลอก `.env.images.example` แล้วเติมคีย์ที่ว่างด้วย `openssl`:
 
-| Key                        | ค่าที่ตัวติดตั้งเติม       | หน้าที่                                                                   |
-| -------------------------- | ---------------------- | ------------------------------------------------------------------------ |
-| `POSTGRES_PASSWORD`        | `openssl rand -hex 16` | รหัสผ่านเจ้าของ Postgres ภายใน Compose (ใช้กับ migration)                    |
-| `POSTGRES_APP_PASSWORD`    | `openssl rand -hex 16` | รหัสผ่านของ login `rakazo_app` ของแอป ซึ่ง row-level security มีผลกับมัน     |
-| `BETTER_AUTH_SECRET`       | `openssl rand -hex 32` | ลงนาม auth/session                                                        |
-| `ENCRYPTION_KEY`           | `openssl rand -hex 32` | เข้ารหัส credential ที่เก็บไว้                                              |
-| `SCREEN_PROXY_SECRET`      | `openssl rand -hex 32` | ลงนาม capability ของหน้าจอ `/novnc/*` อายุสั้น                              |
-| `SANDBOX_SUPERVISOR_TOKEN` | `openssl rand -hex 32` | การยืนยันตัวตนระหว่าง API ↔ sandbox supervisor                              |
-| `RAKAZO_UPDATER_TOKEN`     | `openssl rand -hex 32` | credential เฉพาะของ updater ไม่ถูกใช้จนกว่าจะเปิด updater profile           |
+| Key                        | ค่าที่ตัวติดตั้งเติม           | หน้าที่                                                              |
+| -------------------------- | ---------------------- | ----------------------------------------------------------------- |
+| `POSTGRES_PASSWORD`        | `openssl rand -hex 16` | รหัสผ่านเจ้าของ Postgres ภายใน Compose (ใช้กับ migration)              |
+| `POSTGRES_APP_PASSWORD`    | `openssl rand -hex 16` | รหัสผ่านของ login `rakazo_app` ของแอป ซึ่ง row-level security มีผลกับมัน |
+| `BETTER_AUTH_SECRET`       | `openssl rand -hex 32` | ลงนาม auth/session                                                |
+| `ENCRYPTION_KEY`           | `openssl rand -hex 32` | เข้ารหัส credential ที่เก็บไว้                                          |
+| `SCREEN_PROXY_SECRET`      | `openssl rand -hex 32` | ลงนาม capability ของหน้าจอ `/novnc/*` อายุสั้น                        |
+| `SANDBOX_SUPERVISOR_TOKEN` | `openssl rand -hex 32` | การยืนยันตัวตนระหว่าง API ↔ sandbox supervisor                        |
+| `RAKAZO_UPDATER_TOKEN`     | `openssl rand -hex 32` | credential เฉพาะของ updater ไม่ถูกใช้จนกว่าจะเปิด updater profile      |
 
 การรันซ้ำจะ**เก็บ** `.env` เดิมไว้ (ไม่หมุน secret) จะเพิ่มเฉพาะ `POSTGRES_APP_PASSWORD` เมื่อ `.env` รุ่นเก่ายังไม่มี คีย์บังคับที่ว่างยังคงล้มเหลวแบบปิดไว้ก่อนตอน Compose validate (`${VAR:?Set … in .env}`)
 
@@ -55,16 +55,16 @@ volume `pgdata` ของ source checkout ที่มีอยู่จะค�
 
 จาก `.env.images.example` (ตัวติดตั้ง images) เว้นว่างได้ถ้าไม่ใช้:
 
-| Key(s)                                                         | ใช้เมื่อ                                                                                       |
-| -------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
-| `OPENROUTER_API_KEY`                                           | โมเดล OpenRouter สำหรับทั้ง deployment                                                        |
-| `TYPESAFE_API_KEY`                                             | ตัวตรวจ TypeSafe Jev Auto Review ที่ไม่บังคับ (`RAKAZO_AUTO_REVIEW_PROVIDER=jev`)                  |
-| `COMPOSIO_API_KEY`                                             | แคตตาล็อกที่ Composio จัดการ                                                                    |
-| `E2B_API_KEY` / `DAYTONA_API_KEY` / `BOAT_API_KEY`             | computer ระยะไกลเมื่อ `SANDBOX_PROVIDER` ไม่ใช่ `docker`                                         |
-| `EMAIL_PROVIDER` / `EMAIL_API_KEY` / `SMTP_URL` / `EMAIL_FROM` | อีเมลบัญชีผ่าน Resend API หรือ SMTP ที่ไม่บังคับ                                                  |
+| Key(s)                                                         | ใช้เมื่อ                                                                                                 |
+| -------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| `OPENROUTER_API_KEY`                                           | โมเดล OpenRouter สำหรับทั้ง deployment                                                                   |
+| `TYPESAFE_API_KEY`                                             | ตัวตรวจ TypeSafe Jev Auto Review ที่ไม่บังคับ (`RAKAZO_AUTO_REVIEW_PROVIDER=jev`)                           |
+| `COMPOSIO_API_KEY`                                             | แคตตาล็อกที่ Composio จัดการ                                                                              |
+| `E2B_API_KEY` / `DAYTONA_API_KEY` / `BOAT_API_KEY`             | computer ระยะไกลเมื่อ `SANDBOX_PROVIDER` ไม่ใช่ `docker`                                                  |
+| `EMAIL_PROVIDER` / `EMAIL_API_KEY` / `SMTP_URL` / `EMAIL_FROM` | อีเมลบัญชีผ่าน Resend API หรือ SMTP ที่ไม่บังคับ                                                                |
 | `BOT_EMAIL_SMTP_URL`                                           | การเชื่อมต่อ SMTP แบบ TLS แยกสำหรับการส่งเมลของ bot ดู [อีเมลของ bot](../self-host-inbound-email.md#sending) |
-| `EXPO_ACCESS_TOKEN`                                            | push บนมือถือเมื่อโปรเจกต์ Expo เปิด enhanced push security                                     |
-| token ของแอปแชท (Slack, Telegram, …)                            | เฉพาะเมื่อเปิดช่องทางเหล่านั้น                                                                   |
+| `EXPO_ACCESS_TOKEN`                                            | push บนมือถือเมื่อโปรเจกต์ Expo เปิด enhanced push security                                                 |
+| token ของแอปแชท (Slack, Telegram, …)                           | เฉพาะเมื่อเปิดช่องทางเหล่านั้น                                                                               |
 
 `APNS_VOIP_KEY_ID`, `APNS_VOIP_TEAM_ID` และ `APNS_VOIP_PRIVATE_KEY` ที่ไม่บังคับ จะเปิด [การเรียกเข้าแบบ VoIP บน iOS](../self-host-clients.md#mobile-incoming-calls) เก็บเนื้อหาไฟล์ `.p8` ไว้ใน secret manager
 

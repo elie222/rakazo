@@ -91,24 +91,24 @@ WHERE "connectorId" = 'pipedream' AND "status" = 'connected' AND "providerRef" =
 
 `.github/workflows/publish-server-image.yml` เผยแพร่ไปที่ `ghcr.io/<owner>/<repo>/…` ซึ่งได้มาจาก `${{ github.repository }}` ไม่ได้ hardcode CI ของ fork จึงเผยแพร่ลง namespace ของ fork เอง สำหรับ repository นี้คือ:
 
-| Image                             | เนื้อหา                                                          |
-| --------------------------------- | ---------------------------------------------------------------- |
+| Image                             | เนื้อหา                                                        |
+| --------------------------------- | ------------------------------------------------------------ |
 | `ghcr.io/elie222/rakazo/app`      | api, worker, web และ sandbox supervisor: image เดียว หลายคำสั่ง |
-| `ghcr.io/elie222/rakazo/computer` | Linux desktop ที่ใช้เป็น computer ของแต่ละ bot                  |
-| `ghcr.io/elie222/rakazo/updater`  | updater sidecar พร้อม Docker CLI                                 |
+| `ghcr.io/elie222/rakazo/computer` | Linux desktop ที่ใช้เป็น computer ของแต่ละ bot                    |
+| `ghcr.io/elie222/rakazo/updater`  | updater sidecar พร้อม Docker CLI                              |
 
 `infra/compose/docker-compose.images.yml` คือทางที่ไม่ต้องมี checkout สำหรับ tag ของ app และ computer เหล่านั้น พร้อม Postgres supervisor รันจาก image ของ app บนเครือข่ายภายในเท่านั้น (ไม่มี image supervisor ที่เผยแพร่แยก และไม่มี port บนเครื่อง) production Compose (`docker-compose.prod.yml`) ก็ pull tag ของ app เดียวกันได้เมื่อตั้ง `RAKAZO_IMAGE_TAG` เป็นค่าที่เผยแพร่แล้ว
 
 ถ้า deploy จาก fork ของคุณเอง ให้ตั้ง `RAKAZO_IMAGE` และ `RAKAZO_UPDATER_IMAGE` เป็น namespace ของคุณ เพราะ CI ของคุณเผยแพร่ลง namespace ของคนอื่นไม่ได้
 
-| Tag                   | เผยแพร่เมื่อ                                        | เลื่อนไหม                                       |
-| --------------------- | --------------------------------------------------- | ----------------------------------------------- |
-| `local`               | ไม่เผยแพร่ build ในเครื่องด้วย `up --build`         | build ใหม่ทับที่เดิม                             |
-| `local-<full-commit>` | ไม่เผยแพร่ build บนเซิร์ฟเวอร์จากการอัปเดต fork     | ไม่เลื่อน                                        |
-| `vX.Y.Z`, `vX.Y`      | release tag                                         | ตามธรรมเนียมไม่เลื่อน / เลื่อนเมื่อมี patch release |
-| `latest`              | เฉพาะ tag `vX.Y.Z` รุ่นเสถียร (ไม่รวม prerelease)  | เลื่อนไป release เสถียรล่าสุด                   |
-| `sha-<full-commit>`   | ทุก commit บน main, release tag และการรันด้วยมือ   | อ้างตาม source ใช้โดย updater sidecar           |
-| `edge`                | push ไป main                                        | เลื่อนไป build ล่าสุดของ main                   |
+| Tag                   | เผยแพร่เมื่อ                                     | เลื่อนไหม                                    |
+| --------------------- | --------------------------------------------- | ------------------------------------------ |
+| `local`               | ไม่เผยแพร่ build ในเครื่องด้วย `up --build`        | build ใหม่ทับที่เดิม                            |
+| `local-<full-commit>` | ไม่เผยแพร่ build บนเซิร์ฟเวอร์จากการอัปเดต fork     | ไม่เลื่อน                                     |
+| `vX.Y.Z`, `vX.Y`      | release tag                                   | ตามธรรมเนียมไม่เลื่อน / เลื่อนเมื่อมี patch release |
+| `latest`              | เฉพาะ tag `vX.Y.Z` รุ่นเสถียร (ไม่รวม prerelease) | เลื่อนไป release เสถียรล่าสุด                   |
+| `sha-<full-commit>`   | ทุก commit บน main, release tag และการรันด้วยมือ  | อ้างตาม source ใช้โดย updater sidecar        |
+| `edge`                | push ไป main                                  | เลื่อนไป build ล่าสุดของ main                  |
 
 การเผยแพร่ทุกครั้ง รวมถึง `edge` จากการ merge เข้า main เป็นแบบ multi-arch (`amd64` + `arm64`): แต่ละสถาปัตยกรรม build แบบ native บน Depot เมื่อตัวแปร repository `DEPOT_PROJECT_ID` ระบุ project ไว้ ไม่อย่างนั้นใช้ runner ของ GitHub แล้วประกอบ manifest หนึ่งชุดต่อ image build บน Depot เผยแพร่และ attest แต่ละ image ใน job เดียวกัน ส่วน build แบบ native บน GitHub รวม artifact ของแต่ละสถาปัตยกรรมใน job เผยแพร่แยก revision ของ main CI ตรวจสอบแยกกัน lock ของการเผยแพร่แยกตาม image และ build ของ main ที่ถูกแทนที่แล้วจะเก็บ commit tag ไว้โดยไม่เลื่อน `edge` คิวของ image และ release เก็บงานที่รออยู่ไว้ การรันเก่าที่ช้ากว่าจึงแทนที่การรันใหม่ไม่ได้ การ deploy production ยังทำทีละครั้ง และ deploy revision ที่ผ่านการตรวจตรงตัว ก่อน tag ใดจะชี้ไปที่ image ใหม่ของ app CI จะทำให้การเผยแพร่ล้มเหลวถ้า image มีไฟล์ `.env` โฟลเดอร์ `.git` หรือ private key (`infra/compose/check-image.sh`) จนกว่าจะเผยแพร่ `vX.Y.Z` รุ่นเสถียร GHCR อาจมีแค่ tag `edge` และ `sha-*` อย่าตรึง `latest` เว้นแต่ tag นั้นมีอยู่ใน registry
 

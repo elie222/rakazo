@@ -8,11 +8,11 @@
 
 ใครที่ยังไม่ได้เชื่อมโมเดลของตัวเองจะใช้โมเดลของ deployment `PI_DEFAULT_PROVIDER` เลือกผู้ให้บริการ และ `PI_DEFAULT_MODEL` เลือกโมเดล:
 
-| `PI_DEFAULT_PROVIDER`      | Key                  | โมเดลเริ่มต้น                |
-| -------------------------- | -------------------- | ---------------------------- |
+| `PI_DEFAULT_PROVIDER`  | Key                  | โมเดลเริ่มต้น                   |
+| ---------------------- | -------------------- | ---------------------------- |
 | `openrouter` (ค่าเริ่มต้น) | `OPENROUTER_API_KEY` | `anthropic/claude-haiku-5.5` |
-| `anthropic`                | `ANTHROPIC_API_KEY`  | `claude-sonnet-5`            |
-| `deepseek`                 | `DEEPSEEK_API_KEY`   | `deepseek-flash`             |
+| `anthropic`            | `ANTHROPIC_API_KEY`  | `claude-sonnet-5`            |
+| `deepseek`             | `DEEPSEEK_API_KEY`   | `deepseek-flash`             |
 
 เลือกโมเดลที่รองรับภาพ เพื่อให้เครื่องมือ computer ที่ใช้ภาพหน้าจอยังใช้ได้
 

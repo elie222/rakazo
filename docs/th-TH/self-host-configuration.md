@@ -78,13 +78,13 @@ RAKAZO_EXTRA_AUTH_ORIGINS=https://rakazo.your-tailnet.ts.net,http://192.168.1.20
 
 ## สวิตช์ฟีเจอร์
 
-| ตัวแปร                    | ค่าเริ่มต้น          | ผล                                                                                                                              |
-| ------------------------- | -------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
-| `TICKET_BOARD_ENABLED`    | `false`              | เปิด ticket board ให้ทุกบัญชี ถ้าไม่ตั้ง แต่ละคนเปิดเองใน **ตั้งค่า (Settings) → Labs** ตั้งบน API และ worker                   |
-| `USER_DEVICES_ENABLED`    | เปิด                 | `false` ห้ามแอป desktop ที่ sign-in อยู่ให้ bot รันคำสั่งบนเครื่องของผู้ใช้เอง ตั้งบน API และ worker                              |
-| `PI_SESSION_RECORDING`    | ปิด                  | `true` บันทึก agent session เป็น JSONL ใต้ `DATA_DIR/pi-sessions` ไฟล์ไม่ได้เข้ารหัส อย่าใช้บนการติดตั้งที่ใช้ร่วมกันหรือ multi-tenant |
-| `PRIVACY_POLICY_URL`      | นโยบายของ Rakazo     | นโยบายความเป็นส่วนตัวที่ลิงก์จากประกาศการแชร์ข้อมูลกับ AI ตั้งบน API                                                              |
-| `AUTH_RATE_LIMIT_ENABLED` | เปิดใน production    | จำกัดอัตราการ sign-in และ route ที่เกี่ยวกับ credential อื่น `true` เปิดให้การติดตั้งที่รันโดยไม่มี `NODE_ENV=production` ตั้งบน API |
+| ตัวแปร                     | ค่าเริ่มต้น          | ผล                                                                                                                 |
+| ------------------------- | ---------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `TICKET_BOARD_ENABLED`    | `false`          | เปิด ticket board ให้ทุกบัญชี ถ้าไม่ตั้ง แต่ละคนเปิดเองใน **ตั้งค่า (Settings) → Labs** ตั้งบน API และ worker                      |
+| `USER_DEVICES_ENABLED`    | เปิด              | `false` ห้ามแอป desktop ที่ sign-in อยู่ให้ bot รันคำสั่งบนเครื่องของผู้ใช้เอง ตั้งบน API และ worker                               |
+| `PI_SESSION_RECORDING`    | ปิด               | `true` บันทึก agent session เป็น JSONL ใต้ `DATA_DIR/pi-sessions` ไฟล์ไม่ได้เข้ารหัส อย่าใช้บนการติดตั้งที่ใช้ร่วมกันหรือ multi-tenant |
+| `PRIVACY_POLICY_URL`      | นโยบายของ Rakazo | นโยบายความเป็นส่วนตัวที่ลิงก์จากประกาศการแชร์ข้อมูลกับ AI ตั้งบน API                                                            |
+| `AUTH_RATE_LIMIT_ENABLED` | เปิดใน production | จำกัดอัตราการ sign-in และ route ที่เกี่ยวกับ credential อื่น `true` เปิดให้การติดตั้งที่รันโดยไม่มี `NODE_ENV=production` ตั้งบน API    |
 
 ## การเก็บประวัติแชท
 
