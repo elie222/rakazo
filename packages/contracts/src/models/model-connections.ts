@@ -403,6 +403,8 @@ export const CompatibleEndpointPresetSchema = z.object({
   baseUrl: z.string(),
   /** The model list can be loaded before the connection has a key. */
   publicModels: z.boolean().optional(),
+  /** The protocol a new connection to this service starts on. */
+  apiProtocol: ModelApiProtocolSchema.optional(),
 });
 export type CompatibleEndpointPreset = z.infer<typeof CompatibleEndpointPresetSchema>;
 
