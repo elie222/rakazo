@@ -15,6 +15,8 @@ export type SignInSiteOptions = {
   name: string;
   /** What the signed-in dashboard shows, so a reply can be checked against it. */
   dashboard: string;
+  /** The site signs in with this email and password instead of emailing a code. */
+  login?: { email: string; password: string };
 };
 
 export type SignInMail = { from: string; fromName: string; subject: string; text: string };
@@ -46,6 +48,7 @@ export class SignInSite implements BrowserProvider {
   private email = "";
   private code = "";
   private typed = "";
+  private password = "";
   private error = "";
 
   constructor(options: SignInSiteOptions) {
@@ -109,19 +112,35 @@ export class SignInSite implements BrowserProvider {
     if (!action.ref || !refs.includes(action.ref))
       return `No element ${action.ref ?? ""} on this page`;
     if (action.kind === "fill" || action.kind === "type") {
+      if (action.kind === "fill" && action.field === "password" && action.ref !== "e6")
+        return `Element ${action.ref} is not a password field`;
       if (action.ref === "e1") this.email = action.text.trim();
       else if (action.ref === "e3") this.typed = action.text.trim();
+      else if (action.ref === "e6") this.password = action.text;
       else return `Element ${action.ref} is not a text field`;
       return undefined;
     }
     if (action.kind !== "click") return `Unsupported action ${action.kind}`;
-    if (action.ref === "e2") return this.sendCode();
+    if (action.ref === "e2") return this.options.login ? this.checkPassword() : this.sendCode();
     if (action.ref === "e4") return this.verify();
     if (action.ref === "e5") {
       this.step = "email";
       this.error = "";
       return undefined;
     }
+    return undefined;
+  }
+
+  private checkPassword(): undefined {
+    const { login } = this.options;
+    this.state.emailsEntered.push(this.email);
+    if (
+      this.email.toLowerCase() === login?.email.toLowerCase() &&
+      this.password === login.password
+    ) {
+      this.state.signedIn = true;
+      this.error = "";
+    } else this.error = "Incorrect email or password.";
     return undefined;
   }
 
@@ -177,6 +196,16 @@ export class SignInSite implements BrowserProvider {
           { ref: "e3", role: "textbox", name: "Sign-in code", tag: "input", value: this.typed },
           { ref: "e4", role: "button", name: "Sign in", tag: "button" },
           { ref: "e5", role: "link", name: "Use a different email", tag: "a" },
+        ],
+      };
+    if (this.options.login)
+      return {
+        title: `Sign in | ${name}`,
+        text: [`Sign in to ${name}`, ...errors],
+        elements: [
+          { ref: "e1", role: "textbox", name: "Email", tag: "input", value: this.email },
+          { ref: "e6", role: "textbox", name: "Password", tag: "input" },
+          { ref: "e2", role: "button", name: "Sign in", tag: "button" },
         ],
       };
     return {

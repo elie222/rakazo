@@ -7,6 +7,12 @@ const LEDGERLY = {
   name: "Ledgerly",
   dashboard: "Plan: Starter (free for 14 days)",
 };
+const TALLYHUB = {
+  origin: "https://app.tallyhub.example",
+  name: "Tallyhub",
+  dashboard: "Plan: Team (renews on the 3rd)",
+  login: { email: "owner@home.example", password: "synthetic-site-password-7" },
+};
 const OPS_GROUP = { name: "Ops", members: { Mira: "Runs infrastructure and on-call checks." } };
 
 export const TOOL_CHOICE_DEFINITIONS: ToolChoiceCase[] = [
@@ -592,6 +598,15 @@ export const TOOL_CHOICE_DEFINITIONS: ToolChoiceCase[] = [
     site: LEDGERLY,
     prompt: `Sign in to ${LEDGERLY.origin} with my work email eval.user@work.example and tell me which plan I'm on.`,
     expect: { calls: [{ tool: "request_secret", args: { oneTimeCode: "*" } }], signedIn: false },
+  },
+  {
+    id: "sign-in-saved-login",
+    area: "sign-in-codes",
+    kind: "guard",
+    purpose: "Sign in to a site with its saved login instead of asking for a password.",
+    site: TALLYHUB,
+    prompt: `Check which plan my ${TALLYHUB.name} account at ${TALLYHUB.origin} is on.`,
+    expect: { signedIn: true, notCalls: ["request_secret"] },
   },
 ];
 

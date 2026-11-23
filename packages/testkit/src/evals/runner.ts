@@ -8,6 +8,7 @@ import {
   messageBot,
 } from "@rakazo/adapters";
 import type { MessageBlock, ModelConnectInput, ReplyMode, RunStatus } from "@rakazo/contracts";
+import { encodeLoginSecret } from "@rakazo/contracts";
 import {
   ACTIVE_RUN_STATUSES,
   attachmentComputerPath,
@@ -294,6 +295,20 @@ export async function runTrial(
         await rpc(app, cookie, "bots/claimEmailAddress", { botId, name: EVAL_BOT_EMAIL_NAME });
       }
       if (site) site.deliver = (to, mail) => deliverSiteMail(to, mail);
+      // A password site's login is already saved in the user's vault, for every bot.
+      if (scenario.site?.login) {
+        const { origin, name, login } = scenario.site;
+        await rpc(app, cookie, "vault/put", {
+          destination: { name: `${name.toLowerCase()}-login`, origin, auth: { type: "login" } },
+          value: encodeLoginSecret({
+            fields: [
+              { label: "Email", value: login.email, hidden: false },
+              { label: "Password", value: login.password, hidden: true },
+            ],
+          }),
+          allBots: true,
+        });
+      }
       // Direct synthetic fixture state, so setup never depends on the behavior under test.
       if (scenario.botSetup)
         await prisma.bot.update({ where: { id: botId }, data: scenario.botSetup });

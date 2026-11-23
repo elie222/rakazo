@@ -147,7 +147,10 @@ export type EvalCase = {
   routine?: { prompt: string; name?: string };
   teammates?: Array<{ name: string; description: string }>; // Other bots in the space; never run.
   wallet?: true; // The owner connected the offline wallet emulator, so purchase tools appear.
-  /** The only website the bot's page browser reaches; it emails a sign-in code to the address typed. */
+  /**
+   * The only website the bot's page browser reaches; it emails a sign-in code to the address typed,
+   * or, with login, signs in with that email and password, saved in the user's vault.
+   */
   site?: SignInSiteOptions;
   /** The bot has its own email address, `assistant@` the eval inbound domain, with an inbox. */
   botEmail?: true;

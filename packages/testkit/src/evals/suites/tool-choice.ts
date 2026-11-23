@@ -147,9 +147,17 @@ export const ToolChoiceCaseSchema = z
       .optional(),
     /** The owner connected a wallet (the offline emulator), so purchase tools are offered. */
     wallet: z.literal(true).optional(),
-    /** The only website the page browser reaches; it emails a sign-in code to the address typed. */
+    /**
+     * The only website the page browser reaches; it emails a sign-in code to the address typed,
+     * or, with login, signs in with that email and password, saved in the user's vault.
+     */
     site: z
-      .object({ origin: z.url(), name: z.string().min(1), dashboard: z.string().min(1) })
+      .object({
+        origin: z.url(),
+        name: z.string().min(1),
+        dashboard: z.string().min(1),
+        login: z.object({ email: z.string().min(1), password: z.string().min(1) }).optional(),
+      })
       .strict()
       .optional(),
     /** The bot has its own email address and inbox. */
