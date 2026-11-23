@@ -94,10 +94,26 @@ describe("operator billing writes", () => {
     expect(result.text).toContain("Add EXAMPLE-0001 --confirm");
   });
 
+  it("reports a refund already sent instead of planning another", async () => {
+    const sent = { ...preview, state: "succeeded", refundId: "re_fixture", refundedMinor: 968 };
+    mocks.refundInvoice.mockResolvedValueOnce(sent).mockResolvedValueOnce(sent);
+    const refund = billingRefundCommand.parse([email, "EXAMPLE-0001"], { confirm: true })!;
+    await expect(refund(context)).resolves.toMatchObject({ json: { refundedMinor: 968 } });
+    expect(mocks.refundInvoice).toHaveBeenLastCalledWith(
+      "cus_fixture",
+      "EXAMPLE-0001",
+      true,
+      undefined,
+    );
+  });
+
   it("refunds the whole charge with --full", async () => {
-    mocks.refundInvoice
-      .mockResolvedValueOnce(preview)
-      .mockResolvedValueOnce({ ...preview, state: "pending", refundId: "re_fixture" });
+    mocks.refundInvoice.mockResolvedValueOnce(preview).mockResolvedValueOnce({
+      ...preview,
+      state: "pending",
+      refundId: "re_fixture",
+      refundedMinor: 968,
+    });
     const refund = billingRefundCommand.parse([email, "EXAMPLE-0001"], {
       confirm: true,
       full: true,
@@ -124,9 +140,12 @@ describe("operator billing writes", () => {
   });
 
   it("records the provider's reported refund outcome separately from the request", async () => {
-    mocks.refundInvoice
-      .mockResolvedValueOnce(preview)
-      .mockResolvedValueOnce({ ...preview, state: "pending", refundId: "re_fixture" });
+    mocks.refundInvoice.mockResolvedValueOnce(preview).mockResolvedValueOnce({
+      ...preview,
+      state: "pending",
+      refundId: "re_fixture",
+      refundedMinor: 968,
+    });
     const refund = billingRefundCommand.parse([email, "EXAMPLE-0001"], { confirm: true })!;
     await expect(refund(context)).resolves.toMatchObject({ json: { state: "pending" } });
     expect(mocks.recordAuditEvent).toHaveBeenCalledWith(

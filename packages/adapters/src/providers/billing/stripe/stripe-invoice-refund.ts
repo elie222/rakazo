@@ -31,7 +31,10 @@ const refundSchema = z.object({
   id: z.string(),
   amount: z.number().int(),
   status: z.string().nullable(),
+  metadata: z.record(z.string(), z.string()).nullish(),
 });
+/** Marks the refunds this sends, so a repeat never mistakes someone else's refund for its own. */
+const REFUND_MARK = "rakazo_operator_refund";
 
 type StripeInvoiceApi = {
   request(method: "GET" | "POST", path: string, params?: Record<string, unknown>): Promise<unknown>;
@@ -121,8 +124,15 @@ export async function stripeInvoiceRefund(
       (refund) => refund.status === "pending" || refund.status === "succeeded",
     );
     const [existing] = live;
-    // One refund for the whole refunded amount is this command's own, maybe from a lost response.
-    if (existing && live.length === 1 && existing.amount === charge.amount_refunded)
+    // Only one marked refund covering everything refunded is this command's, maybe from a lost
+    // response; a repeat asking for a different amount must not pass as that one.
+    if (
+      existing &&
+      live.length === 1 &&
+      existing.metadata?.[REFUND_MARK] === "1" &&
+      existing.amount === charge.amount_refunded &&
+      (amountMinor === undefined || amountMinor === existing.amount)
+    )
       return { ...result, ...refundStatus(existing) };
     throw new ClientError("CONFLICT", "This charge has a previous refund. Review it in billing.");
   }
@@ -141,6 +151,7 @@ export async function stripeInvoiceRefund(
       charge: charge.id,
       amount,
       reason: "requested_by_customer",
+      metadata: { [REFUND_MARK]: "1" },
     }),
   );
   if (refund.amount !== amount)

@@ -144,17 +144,20 @@ async function refundBilling(
           )
         )
           throw new AdminCommandError("The billing account changed. Preview the refund again.");
-        // Read again under the lease, so credits used since the preview are kept too.
-        planned = await plan();
+        // Read again under the lease, so credits used since the preview are kept too. A refund
+        // the preview already found is reported as it is, never planned again.
+        planned = match.refund.state === "refundable" ? await plan() : null;
         await recordAuditEvent({
           action: "billing.invoice.refund_requested",
           actor: { type: "system", label: "operator" },
           organizationId,
           target: { type: "invoice", id: match.refund.invoiceId },
-          metadata: { refundMinor: planned.refundMinor, keptMinor: planned.keptMinor },
+          ...(planned
+            ? { metadata: { refundMinor: planned.refundMinor, keptMinor: planned.keptMinor } }
+            : {}),
         });
         attempted = true;
-        const result = await invoiceRefund(customerId, invoice, true, planned.refundMinor);
+        const result = await invoiceRefund(customerId, invoice, true, planned?.refundMinor);
         if (!result || result.state === "refundable")
           throw new AdminCommandError(
             "The refund could not be confirmed. Preview the refund again.",
@@ -167,7 +170,7 @@ async function refundBilling(
           metadata: {
             refundId: result.refundId,
             status: result.state,
-            amountMinor: result.refundedMinor ?? planned.refundMinor,
+            amountMinor: result.refundedMinor,
             currency: result.currency,
           },
         });
@@ -287,6 +290,7 @@ async function invoiceCredits(
     fromInvoiceMicros: purchase?.amountMicros ?? 0n,
     // Includes holds for calls still running.
     usedMicros: lot?.usedMicros ?? 0n,
+    expiredMicros: lot?.expiredMicros ?? 0n,
     balanceMicros: account.balanceMicros,
     byModel: spent
       .map(({ model, _sum }) => ({ model: model ?? "unknown", micros: -(_sum.amountMicros ?? 0n) }))
@@ -312,7 +316,18 @@ function refundPlan(credits: InvoiceCredits | null, paidMinor: number, full: boo
     throw new AdminCommandError(
       "This invoice's credits are all used, so nothing is left to refund. Add --full to refund the whole charge.",
     );
-  const balanceAfter = credits ? credits.balanceMicros - bought + (bought * kept) / paid : null;
+  // Sync shrinks the purchase to what the kept amount buys, cutting expired credits first; only
+  // the cut from credits still available comes off the balance.
+  const remaining = (bought * kept) / paid;
+  const available = (amount: bigint, expired: bigint) => {
+    const left = amount - used - expired;
+    return left > 0n ? left : 0n;
+  };
+  const expired = credits?.expiredMicros ?? 0n;
+  const expiredAfter = expired - (bought - remaining) > 0n ? expired - (bought - remaining) : 0n;
+  const balanceAfter = credits
+    ? credits.balanceMicros - available(bought, expired) + available(remaining, expiredAfter)
+    : null;
   return { refundMinor: Number(paid - kept), keptMinor: Number(kept), balanceAfter };
 }
 

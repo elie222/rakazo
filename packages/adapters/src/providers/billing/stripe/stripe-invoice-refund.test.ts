@@ -38,7 +38,12 @@ function fixture(options?: {
   cacheFirstRefundError?: boolean;
 }) {
   const writes: Array<{ body: string; key: string | null }> = [];
-  const refund = { id: "re_fixture", amount: 1000, status: "pending" };
+  const refund = {
+    id: "re_fixture",
+    amount: 1000,
+    status: "pending",
+    metadata: { rakazo_operator_refund: "1" },
+  };
   const latestCharge = { ...charge, ...options?.charge };
   const list = (data: unknown[]) => Response.json({ data, has_more: false });
   const provider = new StripeBillingProvider({
@@ -102,6 +107,7 @@ describe("operator invoice refunds", () => {
       charge: "ch_fixture",
       amount: "1000",
       reason: "requested_by_customer",
+      "metadata[rakazo_operator_refund]": "1",
     });
   });
 
@@ -145,6 +151,14 @@ describe("operator invoice refunds", () => {
     );
     expect(writes).toHaveLength(1);
     expect(new URLSearchParams(writes[0]?.body).get("amount")).toBe("600");
+  });
+
+  it("refuses to pass off another refund as the one asked for", async () => {
+    const { provider } = fixture();
+    await provider.refundInvoice(customer, invoiceNumber, true, 600);
+    await expect(provider.refundInvoice(customer, invoiceNumber, true, 700)).rejects.toMatchObject({
+      kind: "CONFLICT",
+    });
   });
 
   it("uses a fresh key on a new confirmation after a cached request error", async () => {
