@@ -1176,7 +1176,11 @@ export async function replaceComputer(
   context: AdapterContext,
   controlHolder: "bot" | "none" = "none",
   onProgress?: ComputerUpdateProgress,
-  options?: { handBackIdleTakeover?: boolean },
+  options?: {
+    handBackIdleTakeover?: boolean;
+    /** The requesting bot's own folder; the replacement lays out the same one. */
+    layout?: { workspacePath?: string | null };
+  },
 ): Promise<ComputerRef> {
   let existing = await deps.prisma.computer.findUniqueOrThrow({ where: { id: computerId } });
   if (existing.maintenanceId && existing.maintenanceId !== context.operationId)
@@ -1465,7 +1469,7 @@ export async function replaceComputer(
     if (stopped.count !== 1) throw new ComputerBusyError();
     await recordComputerRunEnd(deps.prisma, existing, "replaced");
     await endTeachingWithLease(deps, existing.spaceId, existing.controlLeaseId);
-    return provisionComputer(deps, computerId, context, controlHolder, onProgress);
+    return provisionComputer(deps, computerId, context, controlHolder, onProgress, options?.layout);
   } catch (error) {
     const failedState =
       previousState === "quarantined"

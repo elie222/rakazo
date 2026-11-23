@@ -52,9 +52,33 @@ const readSkill = (fileName) => {
   };
 };
 
-const timeZone =
-  process.env.AGENT_FACTORY_TZ?.trim() || Intl.DateTimeFormat().resolvedOptions().timeZone;
-const schedule = (role) => process.env[`SCHEDULE_${role.toUpperCase()}`]?.trim() || SCHEDULE[role];
+/** Throws on a time zone the import would refuse, so a bad env cannot ship a dead routine. */
+function validTimeZone(value) {
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: value });
+  } catch {
+    throw new Error(`AGENT_FACTORY_TZ is not a valid time zone: ${value}`);
+  }
+  return value;
+}
+
+const timeZone = validTimeZone(
+  process.env.AGENT_FACTORY_TZ?.trim() || Intl.DateTimeFormat().resolvedOptions().timeZone,
+);
+
+/** Throws on a cron the import would refuse, so a bad env cannot ship a dead routine. */
+function schedule(role) {
+  const value = process.env[`SCHEDULE_${role.toUpperCase()}`]?.trim() || SCHEDULE[role];
+  const fields = value.split(/\s+/);
+  const valid =
+    fields.length === 5 &&
+    fields.every((field) =>
+      field.split(",").every((part) => /^(?:\*|\d+(?:-\d+)?)(?:\/\d+)?$/.test(part)),
+    );
+  if (!valid)
+    throw new Error(`SCHEDULE_${role.toUpperCase()} must be a 5-field cron expression: ${value}`);
+  return value;
+}
 
 const bots = [
   {

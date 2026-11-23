@@ -76,10 +76,12 @@ export function ShellSidebarFooter({
         }}
         onIntegrations={() => {
           setMenuOpen(false);
+          closeMobileSidebar();
           openIntegrations();
         }}
         onSkills={() => {
           setMenuOpen(false);
+          closeMobileSidebar();
           openSkills();
         }}
         onBoard={
@@ -109,17 +111,20 @@ export function ShellSidebarFooter({
         }}
         onSettings={() => {
           setMenuOpen(false);
+          closeMobileSidebar();
           openSettings("general");
         }}
         usage={usage}
         onUsage={() => {
           setMenuOpen(false);
+          closeMobileSidebar();
           openSettings("usage");
         }}
         onInvite={
           referral
             ? () => {
                 setMenuOpen(false);
+                closeMobileSidebar();
                 setInviteOpen(true);
               }
             : undefined

@@ -554,7 +554,7 @@ export async function performComputerUpdate(deps: Deps, updateId: string) {
   try {
     const bot = await deps.prisma.bot.findFirst({
       where: { id: update.botId, computerId: update.computerId, archivedAt: null },
-      select: { userId: true },
+      select: { userId: true, workspacePath: true },
     });
     if (!bot) throw new Error("Computer update target is unavailable");
     await replaceComputer(
@@ -579,6 +579,7 @@ export async function performComputerUpdate(deps: Deps, updateId: string) {
         if (result.count !== 1) throw new Error("Computer update interrupted");
         await announce();
       },
+      { layout: { workspacePath: bot.workspacePath } },
     );
     await finishUpdate(deps.prisma, updateId, update.computerId, "completed");
   } catch (error) {
