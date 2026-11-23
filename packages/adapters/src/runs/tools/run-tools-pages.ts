@@ -91,9 +91,9 @@ function editsGiven(args: Record<string, unknown>): boolean {
 }
 
 function imagesGiven(args: Record<string, unknown>): boolean {
-  return (
-    typeof args.images === "object" && args.images !== null && Object.keys(args.images).length > 0
-  );
+  if (typeof args.images === "object" && args.images !== null)
+    return Object.keys(args.images).length > 0;
+  return argumentGiven(args.images);
 }
 
 /** The page a save would store: the given source, or the current source with the edits applied. */
