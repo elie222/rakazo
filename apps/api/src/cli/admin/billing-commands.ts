@@ -224,7 +224,7 @@ async function refundBilling(
           ...(planned.balanceAfter !== null
             ? [`The balance after the refund is ${usd(planned.balanceAfter)}.`]
             : []),
-          `Add ${invoice ? "" : `${reference} `}--confirm to refund it${planned.keptMinor ? ", or --full to refund the whole charge" : ""}.`,
+          `Add ${invoice ? "" : `${reference} `}${full ? "--full " : ""}--confirm to refund it${planned.keptMinor ? ", or --full to refund the whole charge" : ""}.`,
         ]
       : [
           `Refund of ${money(refund.refundedMinor ?? refund.amountMinor)} ${refund.state}.`,
