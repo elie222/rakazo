@@ -335,7 +335,6 @@ dbTests("own-key plan", () => {
       limitMicros: 40_000_000,
       usedMicros: 25_000_000,
       resetsAt: null,
-      since: new Date(),
       trial: false,
     });
     await expect(metered.changeTier(actor, "pro")).rejects.toMatchObject({ code: "CONFLICT" });
@@ -346,7 +345,6 @@ dbTests("own-key plan", () => {
       limitMicros: 40_000_000,
       usedMicros: 15_000_000,
       resetsAt: null,
-      since: new Date(),
       trial: false,
     });
     await metered.changeTier(actor, "pro");

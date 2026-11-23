@@ -2209,6 +2209,7 @@ describe("Team Computer wake", () => {
       computerAllowanceGrant: {
         aggregate: vi.fn().mockResolvedValue({ _sum: { amountCents: null } }),
       },
+      externalEffect: { findMany: vi.fn().mockResolvedValue([]) },
       includedUsageCharge: {
         aggregate: vi.fn().mockResolvedValue({ _sum: { amountMicros: null } }),
       },

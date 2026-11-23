@@ -11,6 +11,7 @@ import {
   MICROS_PER_DOLLAR,
   sandboxRunHours,
 } from "@rakazo/db";
+import { queuedMediaMicros } from "../../media/media-queued.js";
 import { sandboxKindCapabilities } from "./sandbox-kind-capabilities.js";
 
 type AllowanceDeps = { prisma: PrismaClient; sandbox: SandboxProvider };
@@ -34,8 +35,8 @@ export function sandboxDisplayedHourMicros(sandbox: SandboxProvider): number {
 }
 
 /**
- * This period's included usage and what computers and hosted media spent of it, in micro-dollars;
- * null when nothing is metered.
+ * This period's included usage and what computers and hosted media spent of it, in micro-dollars,
+ * counting videos still running at their submitted price; null when nothing is metered.
  */
 export async function includedUsage(
   deps: Pick<AllowanceDeps, "prisma"> & { sandbox?: SandboxProvider },
@@ -45,14 +46,14 @@ export async function includedUsage(
   limitMicros: number;
   usedMicros: number;
   resetsAt: Date | null;
-  since: Date;
   trial: boolean;
 } | null> {
   const plan = await includedUsagePlan(deps.prisma, organizationId, now);
   if (plan === null) return null;
-  const [runs, chargedMicros] = await Promise.all([
+  const [runs, chargedMicros, queuedMicros] = await Promise.all([
     sandboxRunHours(deps.prisma, organizationId, plan.since, now),
     includedUsageChargedMicros(deps.prisma, organizationId, plan.since),
+    queuedMediaMicros(deps.prisma, organizationId),
   ]);
   const { sandbox } = deps;
   const computerMicros = sandbox
@@ -60,9 +61,8 @@ export async function includedUsage(
     : 0;
   return {
     limitMicros: (plan.limitCents * MICROS_PER_DOLLAR) / 100,
-    usedMicros: Math.round(computerMicros) + chargedMicros,
+    usedMicros: Math.round(computerMicros) + chargedMicros + queuedMicros,
     resetsAt: plan.resetsAt,
-    since: plan.since,
     trial: plan.trial,
   };
 }

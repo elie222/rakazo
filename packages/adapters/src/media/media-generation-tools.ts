@@ -29,14 +29,19 @@ const savedCharge = z.object({
   charge: z.object({ organizationId: z.string(), micros: z.number().int().positive() }).optional(),
 });
 
+/** The price a generation saved when it was submitted; none where nothing is metered. */
+export function savedMediaCharge(effect: Pick<ExternalEffect, "id" | "request">) {
+  return readJsonColumn(
+    savedCharge,
+    effect.request,
+    { table: "external_effects", column: "request", id: effect.id },
+    "reject",
+  ).charge;
+}
+
 /** Charges a completed generation the price saved when it was submitted, once per reservation. */
 async function chargeCompleted(prisma: PrismaClient, reservation: ExternalEffect, video: boolean) {
-  const { charge } = readJsonColumn(
-    savedCharge,
-    reservation.request,
-    { table: "external_effects", column: "request", id: reservation.id },
-    "reject",
-  );
+  const charge = savedMediaCharge(reservation);
   if (!charge) return;
   await chargeIncludedUsage(prisma, {
     organizationId: charge.organizationId,

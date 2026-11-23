@@ -2084,6 +2084,7 @@ function idleHarness(
       findUnique: vi.fn(async () => ({ modelCredits: { mode: "byok" }, billing: null })),
     },
     computerAllowanceGrant: { aggregate: vi.fn(async () => ({ _sum: { amountCents: null } })) },
+    externalEffect: { findMany: vi.fn(async () => []) },
     includedUsageCharge: { aggregate: vi.fn(async () => ({ _sum: { amountMicros: null } })) },
     space: { findUnique: vi.fn(async () => ({ organizationId: "organization" })) },
     thread: { update: vi.fn().mockResolvedValue({ nextMessageSeq: 1, nextEventSeq: 1 }) },
