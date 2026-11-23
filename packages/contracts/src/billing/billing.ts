@@ -88,6 +88,11 @@ export const BYOK_TIERS: Record<ByokTier, ByokTierTerms> = {
   },
 };
 
+/** The part of a tier's included usage that is not set aside for media, in cents. */
+export function tierComputerCents(tier: ByokTier): number {
+  return BYOK_TIERS[tier].includedUsageCents - MEDIA_INCLUDED_USAGE_CENTS;
+}
+
 /** The tier's price for new subscriptions billed every `interval`; null when it is not offered. */
 export function byokTierPriceCents(tier: ByokTier, interval: ByokInterval): number | null {
   if (BYOK_TIERS.standard.monthlyPriceCents === null) return null;

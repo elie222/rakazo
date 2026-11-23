@@ -2,10 +2,9 @@ import type { Route } from "@playwright/test";
 import { expect, test } from "@playwright/test";
 import type { BillingStatus } from "@rakazo/contracts";
 import {
-  BYOK_TIERS,
-  MEDIA_INCLUDED_USAGE_CENTS,
   SANDBOX_SIZE_HOURLY_COST_MICROS,
   sandboxAllowanceHours,
+  tierComputerCents,
 } from "@rakazo/contracts";
 import {
   captureScreenshot,
@@ -545,7 +544,7 @@ test("move an own-key plan to a bigger tier", async ({ page }, testInfo) => {
       ...offer,
       computerSizeChoice: true,
       computerHours: sandboxAllowanceHours(
-        BYOK_TIERS[offer.tier].includedUsageCents - MEDIA_INCLUDED_USAGE_CENTS,
+        tierComputerCents(offer.tier),
         SANDBOX_SIZE_HOURLY_COST_MICROS.standard,
       ),
     })),

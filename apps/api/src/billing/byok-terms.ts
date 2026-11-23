@@ -4,8 +4,8 @@ import {
   BYOK_TIERS,
   ByokTierSchema,
   byokTierPriceCents,
-  MEDIA_INCLUDED_USAGE_CENTS,
   sandboxAllowanceHours,
+  tierComputerCents,
 } from "@rakazo/contracts";
 import type { BillingAccount } from "@rakazo/db";
 import { hasBillingAccess, needsBillingPortal } from "@rakazo/db";
@@ -72,10 +72,7 @@ export function byokTierOffers(sizeChoice: boolean, hourMicros?: number) {
         annualPriceCents: byokTierPriceCents(tier, "year"),
         computerSize: terms.computerSize,
         includedUsageCents: terms.includedUsageCents,
-        computerHours: sandboxAllowanceHours(
-          terms.includedUsageCents - MEDIA_INCLUDED_USAGE_CENTS,
-          hourMicros,
-        ),
+        computerHours: sandboxAllowanceHours(tierComputerCents(tier), hourMicros),
         ...(sizeChoice ? { computerSizeChoice: true as const } : {}),
       },
     ];

@@ -50,10 +50,11 @@ export async function includedUsage(
 } | null> {
   const plan = await includedUsagePlan(deps.prisma, organizationId, now);
   if (plan === null) return null;
-  const [runs, chargedMicros, queuedMicros] = await Promise.all([
+  // Queued videos first: one charged in between then counts twice for a moment, never not at all.
+  const queuedMicros = await queuedMediaMicros(deps.prisma, organizationId);
+  const [runs, chargedMicros] = await Promise.all([
     sandboxRunHours(deps.prisma, organizationId, plan.since, now),
     includedUsageChargedMicros(deps.prisma, organizationId, plan.since),
-    queuedMediaMicros(deps.prisma, organizationId),
   ]);
   const { sandbox } = deps;
   const computerMicros = sandbox
