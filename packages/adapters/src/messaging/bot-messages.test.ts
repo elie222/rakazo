@@ -1706,3 +1706,233 @@ describe("ticket-originated bot messages", () => {
     expect(harness.enqueue).not.toHaveBeenCalled();
   });
 });
+
+describe("ticket outcome classification", () => {
+  const board = { id: "board-1", ticketPrefix: "OPS" };
+  const ticket = { id: "ticket-7", assigneeBotId: "bot-sender" };
+  const helperRun = {
+    ...run,
+    id: "run-2",
+    threadId: "thread-target",
+    botId: "bot-target",
+    sourceMessageId: "message-source",
+  };
+  const analyst = { id: "bot-target", name: "Analyst" };
+  const sourceWith = (intent: string | undefined) => [
+    {
+      kind: "bot_message_received",
+      fromBotId: "bot-sender",
+      fromBotName: "Researcher",
+      text: "Heads up",
+      hop: 1,
+      ...(intent ? { intent } : {}),
+      ticketRef: "OPS-7",
+    },
+  ];
+
+  it.each(["fyi", "status", "result"])(
+    "routes no outcome for a %s source, so acknowledgements stay off the ticket",
+    async (intent) => {
+      const harness = deps({ hopBlocks: sourceWith(intent), board, ticket });
+      const returned = await returnBotMessageOutcome(harness.deps, helperRun, analyst, "Noted.");
+
+      // An FYI or update never solicited a reply: no ticket comment, no assignee
+      // wake, no chat send — exactly the pre-ticket-messaging semantics.
+      expect(returned).toBe(true);
+      expect(harness.tx.ticketComment.create).not.toHaveBeenCalled();
+      expect(harness.tx.run.create).not.toHaveBeenCalled();
+      expect(harness.tx.task.create).not.toHaveBeenCalled();
+      expect(harness.tx.message.create).not.toHaveBeenCalled();
+      expect(harness.enqueue).not.toHaveBeenCalled();
+      expect(harness.unreadMarks()).toHaveLength(0);
+      // The run still settles exactly-once.
+      expect(harness.deps.prisma.run.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ id: "run-2", botOutcomeReturnedAt: null }),
+          data: expect.objectContaining({ botOutcomeReturnedAt: expect.any(Date) }),
+        }),
+      );
+    },
+  );
+
+  it.each(["request", "question", undefined])(
+    "keeps delivering a %s outcome to the ticket",
+    async (intent) => {
+      const harness = deps({ hopBlocks: sourceWith(intent), board, ticket });
+      const returned = await returnBotMessageOutcome(harness.deps, helperRun, analyst, "Done.");
+
+      expect(returned).toBe(true);
+      expect(harness.tx.ticketComment.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ ticketId: "ticket-7", authorBotId: "bot-target" }),
+        }),
+      );
+      expect(harness.tx.run.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ trigger: "tickets", botId: "bot-sender" }),
+        }),
+      );
+    },
+  );
+
+  it("stays settled when a duplicate completion of a non-replyable source replays", async () => {
+    const harness = deps({ hopBlocks: sourceWith("fyi"), board, ticket });
+    const first = await returnBotMessageOutcome(harness.deps, helperRun, analyst, "Noted.");
+    const second = await returnBotMessageOutcome(harness.deps, helperRun, analyst, "Noted.");
+
+    expect(first).toBe(true);
+    expect(second).toBe(true);
+    expect(harness.tx.ticketComment.create).not.toHaveBeenCalled();
+    expect(harness.tx.run.create).not.toHaveBeenCalled();
+  });
+
+  it("keeps a forced failure return off the owner's unread chats for ticket collaboration", async () => {
+    // The requester is no longer the ticket's assignee (helper-to-helper), so the
+    // failure text still reaches it as a chat message — without the forced unread
+    // mark an ordinary failure return would leave on both owner-facing chats.
+    const harness = deps({
+      hopBlocks: sourceWith("request"),
+      board,
+      ticket: { id: "ticket-7", assigneeBotId: "bot-other" },
+      bots: [
+        { id: "bot-target", name: "Analyst", title: "", thread: { id: "thread-target" } },
+        { id: "bot-sender", name: "Researcher", title: "", thread: { id: "thread-sender" } },
+      ],
+    });
+    const returned = await returnBotMessageOutcome(
+      harness.deps,
+      helperRun,
+      analyst,
+      "Could not complete the delegated request.",
+      "status",
+      { forceUnread: true },
+    );
+
+    expect(returned).toBe(true);
+    expect(harness.unreadMarks()).toHaveLength(0);
+    expect(
+      harness.tx.message.create.mock.calls.some(([call]) => call.data.threadId === "thread-sender"),
+    ).toBe(true);
+    // The exchange is still recorded on the ticket.
+    expect(harness.tx.ticketComment.create).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("ticket hop lineage", () => {
+  const board = { id: "board-1", ticketPrefix: "OPS" };
+  const ticket = { id: "ticket-7", assigneeBotId: "bot-sender" };
+  const ticketRun = { ...run, trigger: "tickets" as const, taskId: "task-wake" };
+  const helperRun = {
+    ...run,
+    id: "run-2",
+    threadId: "thread-target",
+    botId: "bot-target",
+    sourceMessageId: "message-source",
+  };
+  const analyst = { id: "bot-target", name: "Analyst" };
+  const clarification = [
+    {
+      kind: "bot_message_received",
+      fromBotId: "bot-sender",
+      fromBotName: "Researcher",
+      text: "What quota applies?",
+      hop: 1,
+      intent: "request",
+      ticketRef: "OPS-7",
+    },
+  ];
+  const inboundToHelper = (harness: ReturnType<typeof deps>) =>
+    harness.tx.message.create.mock.calls
+      .map(([call]) => call.data)
+      .filter((data) => data.threadId === "thread-target")
+      .at(-1);
+
+  it("continues the hop across a ticket wake instead of restarting at one", async () => {
+    const harness = deps({
+      taskPrompt: "Work on ticket OPS-7. Read it with ticket_get.",
+      hopBlocks: clarification,
+      board,
+      ticket,
+    });
+    // Cycle 1: the assignee's ticket run (person-started, no ancestry) asks the helper.
+    const asked = await messageBot(harness.deps, ticketRun, sender, {
+      bot_id: "bot-target",
+      message: "What quota applies?",
+    });
+    expect(asked).toMatchObject({ ok: true });
+    expect(inboundToHelper(harness)?.blocks?.[0]).toMatchObject({ hop: 1, ticketRef: "OPS-7" });
+
+    // The helper's outcome lands on the ticket and wakes the assignee with lineage.
+    const returned = await returnBotMessageOutcome(
+      harness.deps,
+      helperRun,
+      analyst,
+      "Quota is five.",
+    );
+    expect(returned).toBe(true);
+    const wake = harness.tx.run.create.mock.calls.at(-1)?.[0]?.data;
+    expect(wake).toMatchObject({
+      trigger: "tickets",
+      botId: "bot-sender",
+      sourceMessageId: "message-source",
+    });
+
+    // Cycle 2: the woken assignee continues the same bounded chain, not a fresh one.
+    const askedAgain = await messageBot(
+      harness.deps,
+      { ...ticketRun, id: "run-wake", sourceMessageId: "message-source" },
+      sender,
+      { bot_id: "bot-target", message: "And the region?" },
+    );
+    expect(askedAgain).toMatchObject({ ok: true });
+    expect(inboundToHelper(harness)?.blocks?.[0]).toMatchObject({ hop: 2 });
+  });
+
+  it("refuses the next bot message once the cycle exhausts the hop limit", async () => {
+    const harness = deps({
+      taskPrompt: "Work on ticket OPS-7.",
+      hopBlocks: [{ ...clarification[0], hop: BOT_MESSAGE_MAX_HOPS }],
+      board,
+      ticket,
+    });
+    const refused = await messageBot(
+      harness.deps,
+      { ...ticketRun, sourceMessageId: "message-source" },
+      sender,
+      { bot_id: "bot-target", message: "One more thing" },
+    );
+
+    expect(refused).toMatchObject({ ok: false });
+    if (!refused.ok) {
+      expect(refused.error).toContain("limit reached");
+      expect(refused.error).toContain("ticket");
+    }
+    expect(harness.tx.message.create).not.toHaveBeenCalled();
+    expect(harness.tx.task.create).not.toHaveBeenCalled();
+    expect(harness.tx.run.create).not.toHaveBeenCalled();
+    expect(harness.enqueue).not.toHaveBeenCalled();
+  });
+
+  it("keeps the wake lineage when the delivery transaction retries", async () => {
+    const harness = deps({
+      hopBlocks: clarification,
+      board,
+      ticket,
+      transactionConflictOnce: true,
+    });
+    const returned = await returnBotMessageOutcome(
+      harness.deps,
+      helperRun,
+      analyst,
+      "Quota is five.",
+    );
+
+    expect(returned).toBe(true);
+    const wake = harness.tx.run.create.mock.calls.at(-1)?.[0]?.data;
+    expect(wake).toMatchObject({
+      trigger: "tickets",
+      sourceMessageId: "message-source",
+    });
+    expect(harness.tx.ticketComment.create).toHaveBeenCalledTimes(1);
+  });
+});

@@ -13,8 +13,8 @@ const change: TicketChange = {
 function setup(ownerLabs: string[], status = "todo") {
   const notify = vi.fn(async () => {});
   const enqueue = vi.fn(async () => {});
-  const createRun = vi.fn(async () => ({ id: "run-1" }));
-  const createTask = vi.fn(async () => ({ id: "task-1" }));
+  const createRun = vi.fn(async (_args: { data: Record<string, unknown> }) => ({ id: "run-1" }));
+  const createTask = vi.fn(async (_args: { data: Record<string, unknown> }) => ({ id: "task-1" }));
   const tx = {
     $queryRaw: vi.fn(async () => []),
     ticket: {
@@ -92,5 +92,12 @@ describe("ticket changes", () => {
     const s = setup(["board"]);
     await s.changes({ ...change, assigneeBotId: null });
     expect(s.transaction).not.toHaveBeenCalled();
+  });
+  it("wakes without bot-message lineage, so a human action starts a fresh chain", async () => {
+    const s = setup(["board"]);
+    await s.changes(change);
+    const data = s.createRun.mock.calls[0]?.[0].data;
+    expect(data).toMatchObject({ trigger: "tickets", status: "queued" });
+    expect(data).not.toHaveProperty("sourceMessageId");
   });
 });

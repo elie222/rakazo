@@ -40,7 +40,11 @@ import {
   enqueueSteeringContinuation,
   requeueInterruptedRun,
 } from "./run-lifecycle.js";
-import { notifyRun, runSendsFinishNotification } from "./run-notifications.js";
+import {
+  botMessageReportsToTicket,
+  notifyRun,
+  runSendsFinishNotification,
+} from "./run-notifications.js";
 import { recordExplicitNoResponse } from "./run-progress.js";
 import { extractNarrationText } from "./user-progress.js";
 
@@ -260,7 +264,10 @@ export async function failRun(
     runSendsFinishNotification(run.trigger) &&
     !isStrategicInitiativeRun(run) &&
     !failed.continuationRunId &&
-    !retrying
+    !retrying &&
+    // Ticket-originated collaboration reports its failure through the ticket outcome
+    // return above, not the owner's chat.
+    !botMessageReportsToTicket(run.trigger, ctx.source.peerMessage)
   ) {
     await notifyRun(deps, run, {
       kind: "failure",

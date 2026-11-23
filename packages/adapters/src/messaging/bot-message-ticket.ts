@@ -98,7 +98,15 @@ export async function recordTicketExchangeComment(
 export async function deliverTicketBotMessageOutcome(
   deps: BotMessageDeliveryDeps,
   input: {
-    run: { id: string; spaceId: string; threadId: string; botId: string; userId: string };
+    run: {
+      id: string;
+      spaceId: string;
+      threadId: string;
+      botId: string;
+      userId: string;
+      /** The message that woke the sending run; its hop lineage continues through the wake. */
+      sourceMessageId?: string | null;
+    };
     sender: { id: string; name: string };
     /** Who the exchange is with, for the sender-thread echo record. */
     addressTo?: { id: string; name: string };
@@ -170,6 +178,10 @@ export async function deliverTicketBotMessageOutcome(
         ticketId: input.ticket.ticketId,
         skipBotId: input.sender.id,
         deploymentLabs: deps.deploymentLabs,
+        // The continuation inherits the chain the answering bot sat in, so the next
+        // bot-to-bot message from the woken assignee continues the same bounded hop
+        // count instead of restarting it.
+        sourceMessageId: input.run.sourceMessageId ?? undefined,
       });
       // The ticket comment is the outcome's durable record and is unconditional: an
       // archived or missing requester must not drop it.

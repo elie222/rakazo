@@ -156,28 +156,6 @@ export async function messageBot(
       sourceContext.intent === "request" ||
       sourceContext.intent === "question") &&
     sourceContext?.fromBotId === target.id;
-  if (botMessageHopExhausted(hop) && !returnsToSender) {
-    return {
-      ok: false as const,
-      error:
-        "bot-to-bot message limit reached for this chain; report back to the user instead of messaging another bot",
-    };
-  }
-
-  const targetThreadId = target.thread.id;
-
-  // A tool call can be re-executed after a lease expiry, so a delivery has to be
-  // replayable: without this the recipient is messaged twice and woken twice.
-  const deliveryKey = input.deliveryKey ? `bot-message:${input.deliveryKey}` : undefined;
-  const replayed = () =>
-    ({
-      ok: true as const,
-      botId: target.id,
-      name: target.name,
-      delivered: message,
-      replayed: true as const,
-      note: `Already sent to ${target.name} in this turn; it was not sent again.`,
-    }) as const;
 
   // Ticket origin: a send from a ticket-triggered run, or one already working such an
   // exchange (the inbound block carries the ref through the chain). The ticket is part of
@@ -203,6 +181,30 @@ export async function messageBot(
       missingTicket: true as const,
     };
   }
+  if (botMessageHopExhausted(hop) && !returnsToSender) {
+    return {
+      ok: false as const,
+      error: ticketOrigin
+        ? "bot-to-bot message limit reached for this ticket's collaboration; record the outcome on the ticket instead of messaging another bot"
+        : "bot-to-bot message limit reached for this chain; report back to the user instead of messaging another bot",
+    };
+  }
+
+  const targetThreadId = target.thread.id;
+
+  // A tool call can be re-executed after a lease expiry, so a delivery has to be
+  // replayable: without this the recipient is messaged twice and woken twice.
+  const deliveryKey = input.deliveryKey ? `bot-message:${input.deliveryKey}` : undefined;
+  const replayed = () =>
+    ({
+      ok: true as const,
+      botId: target.id,
+      name: target.name,
+      delivered: message,
+      replayed: true as const,
+      note: `Already sent to ${target.name} in this turn; it was not sent again.`,
+    }) as const;
+
   // A reply serving the bot that handed this run its request or question.
   const repliesToItsRequester =
     sourceContext?.fromBotId === target.id &&
@@ -293,7 +295,7 @@ export async function messageBot(
         blocks: [outboundBlock],
         botId: run.botId,
         runId: run.id,
-        markUnread: options?.forceUnread === true,
+        markUnread: options?.forceUnread === true && !ticketOrigin,
         allowCancelledRun: returnFrom === "ended",
         lease: runLeaseFor(deps, run.id),
       });
@@ -316,7 +318,7 @@ export async function messageBot(
             ? sourceContext.returnToMessageId
             : undefined,
         clientNonce: deliveryKey,
-        markUnread: options?.forceUnread === true,
+        markUnread: options?.forceUnread === true && !ticketOrigin,
       });
       if (ticket) {
         // This side of a ticket-originated exchange, kept on the ticket itself: the
@@ -435,6 +437,13 @@ export async function returnBotMessageOutcome(
 ) {
   const source = await loadBotMessageContext(deps.prisma, run.sourceMessageId);
   const requester = await requesterBot(deps.prisma, run, source);
+  // Distinguish "nothing to answer" from "cannot answer". An fyi, result or status
+  // source never solicited a reply, so its completion text is not an outcome to route
+  // anywhere — posting it to the ticket would turn every acknowledgment into a new
+  // continuation. A request or question whose requester went away is different: that
+  // outcome still belongs on the ticket, where its assignee picks it up.
+  const sourceSolicitedReply =
+    source?.intent === undefined || source.intent === "request" || source.intent === "question";
   if (source?.ticketRef) {
     // A ticket-originated clarification: the outcome belongs on that ticket's workflow,
     // not in any owner's chat. The claim inside the delivery transaction makes the
@@ -451,7 +460,7 @@ export async function returnBotMessageOutcome(
       await markBotOutcomeReturned(deps.prisma, run.id);
       return true;
     }
-    if (!requester || ticket.assigneeBotId === requester.id) {
+    if (sourceSolicitedReply && (!requester || ticket.assigneeBotId === requester.id)) {
       // The asking bot still owns the ticket — or is archived and can no longer take a
       // reply: either way the outcome lands on the ticket as a comment that wakes its
       // current assignee. Only the sender-thread echo needs a requester to address.

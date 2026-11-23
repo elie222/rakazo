@@ -1,7 +1,7 @@
 import type { NotificationMessage } from "@rakazo/adapter-kit";
 import { describe, expect, it, vi } from "vitest";
 import type { ExecutorDeps } from "../executor/executor-deps.js";
-import { notifyMemberMessage, notifyRun } from "./run-notifications.js";
+import { botMessageReportsToTicket, notifyMemberMessage, notifyRun } from "./run-notifications.js";
 
 vi.mock("../../notifications/notification-identity.js", () => ({
   notificationIdentity: async () => undefined,
@@ -66,6 +66,22 @@ function deps({
   } as unknown as ExecutorDeps;
   return { value, publish, send };
 }
+
+describe("ticket-originated collaboration notifications", () => {
+  it("reports through the ticket instead of the owner's chat, repliesToRequest included", () => {
+    expect(botMessageReportsToTicket("bot_message", { ticketRef: "OPS-7" })).toBe(true);
+    expect(
+      botMessageReportsToTicket("bot_message", { ticketRef: "OPS-7", repliesToRequest: true }),
+    ).toBe(true);
+  });
+
+  it("keeps ordinary bot messages and other triggers owner-facing", () => {
+    expect(botMessageReportsToTicket("bot_message", undefined)).toBe(false);
+    expect(botMessageReportsToTicket("bot_message", { repliesToRequest: true })).toBe(false);
+    expect(botMessageReportsToTicket("user", { ticketRef: "OPS-7" })).toBe(false);
+    expect(botMessageReportsToTicket("tickets", { ticketRef: "OPS-7" })).toBe(false);
+  });
+});
 
 describe("notifyRun chat alerts", () => {
   it("publishes the alert for open apps alongside the push", async () => {

@@ -45,6 +45,7 @@ import {
 import { saveLatestStepScreenshot } from "../turn/tool-step-calls.js";
 import { enqueueSteeringContinuation, renewRunLease } from "./run-lifecycle.js";
 import {
+  botMessageReportsToTicket,
   completionMarksUnread,
   completionNotificationBody,
   completionNotificationPreview,
@@ -133,7 +134,11 @@ export async function completeRun(ctx: RunContext) {
     run.trigger === "bot_message"
       ? botMessageOutcomeFromMidTurn(text, reply.midTurnUserTexts)
       : null;
+  // Ticket-originated collaboration reports through the ticket: its completion is not
+  // owner-chat news either, so the chat stays read and no finish notification leaves.
+  const reportsToTicket = botMessageReportsToTicket(run.trigger, ctx.source.peerMessage);
   const marksUnread =
+    !reportsToTicket &&
     (!ctx.allowSilentEmptyRun || blocks.length > 0 || reply.publishedMidTurnUserMessage) &&
     completionMarksUnread(run.trigger, text, ctx.source.peerMessage?.repliesToRequest === true);
   await ctx.settleRunningHelpers();

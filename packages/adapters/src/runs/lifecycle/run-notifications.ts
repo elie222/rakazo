@@ -279,6 +279,21 @@ export function runSendsFinishNotification(trigger: string): boolean {
   );
 }
 
+/**
+ * A bot-message run whose source message carried a ticket ref is ticket-originated
+ * collaboration: its outcome returns through the ticket workflow (a ticket comment plus
+ * the assignee wake committed with it), so its completion and failure are not owner-chat
+ * news — no unread mark, no finish or failure notification, forced ones included. The
+ * ref is read off the persisted source message, never out of a prompt. Ordinary
+ * conversational bot-message runs keep their notification behavior.
+ */
+export function botMessageReportsToTicket(
+  trigger: string,
+  peer: { ticketRef?: string; repliesToRequest?: boolean } | undefined,
+): boolean {
+  return trigger === "bot_message" && peer?.ticketRef !== undefined;
+}
+
 /** User-facing text for completion notifications; empty when only tool/step activity remains. */
 export function completionNotificationBody(assembled: string, blocks: MessageBlock[]): string {
   if (assembled) return assembled;

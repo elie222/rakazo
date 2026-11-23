@@ -26,6 +26,15 @@ export async function createTicketAssigneeWakeRun(
     requireAssigneeBotId?: string;
     skipBotId?: string;
     deploymentLabs?: readonly LabFeature[];
+    /**
+     * The bot message this continuation answers, when the wake continues a bot-to-bot
+     * exchange. Carrying it preserves the chain's hop lineage: the woken assignee's
+     * next message_bot continues after the hop that woke the answering bot instead of
+     * restarting at 1, so automated comment → wake → message cycles stay inside the
+     * bot-message hop limit. Human-initiated wakes (assignment, ticket creation) pass
+     * nothing and legitimately start a fresh chain.
+     */
+    sourceMessageId?: string | null;
   },
 ): Promise<string | null> {
   await tx.$queryRaw`SELECT id FROM tickets WHERE id = ${input.ticketId} FOR UPDATE`;
@@ -67,6 +76,7 @@ export async function createTicketAssigneeWakeRun(
       taskId: task.id,
       trigger: "tickets",
       status: "queued",
+      ...(input.sourceMessageId ? { sourceMessageId: input.sourceMessageId } : {}),
     },
   });
   return run.id;
