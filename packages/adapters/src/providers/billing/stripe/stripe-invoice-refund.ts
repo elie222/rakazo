@@ -50,7 +50,10 @@ export async function stripeInvoiceRefund(
   );
   const matches = reference
     ? invoices.filter((invoice) => invoice.number === reference || invoice.id === reference)
-    : invoices.toSorted((a, b) => b.created - a.created).slice(0, 1);
+    : invoices
+        .filter((invoice) => invoice.amount_paid > 0)
+        .toSorted((a, b) => b.created - a.created)
+        .slice(0, 1);
   if (!matches.length) return null;
   const [invoice] = matches;
   if (matches.length !== 1 || !invoice || invoice.customer !== customerId)

@@ -104,14 +104,21 @@ describe("operator invoice refunds", () => {
     });
   });
 
-  it("finds an invoice by its id, or the newest paid one when none is named", async () => {
+  it("finds an invoice by its id, or the newest one that charged when none is named", async () => {
     const older = {
       ...invoice,
       id: "in_older",
       number: "EXAMPLE-0000",
       created: invoice.created - 1,
     };
-    const { provider } = fixture({ invoices: [older, invoice] });
+    const trial = {
+      ...invoice,
+      id: "in_trial",
+      number: "EXAMPLE-0002",
+      created: invoice.created + 1,
+      amount_paid: 0,
+    };
+    const { provider } = fixture({ invoices: [older, invoice, trial] });
     await expect(provider.refundInvoice(customer, invoice.id, false)).resolves.toMatchObject({
       invoiceNumber,
     });
