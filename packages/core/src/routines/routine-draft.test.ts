@@ -3,6 +3,7 @@ import {
   draftFromRoutine,
   formatRoutineEnd,
   routineComputerUpdate,
+  routineCopy,
   routineEndUpdate,
 } from "./routine-draft.js";
 
@@ -75,6 +76,14 @@ describe("routine end in an editor", () => {
     expect(routineEndUpdate(routine, "", true)).toEqual({ endsAt: null });
     expect(routineEndUpdate(routine, "2026-11-30", false)).toEqual({ endsAt: null });
     expect(routineEndUpdate({ ...routine, endsAt: null }, "", true)).toEqual({});
+  });
+
+  it("copies an end still ahead and drops one that has passed", () => {
+    const now = Date.parse("2026-11-29T00:00:00.000Z");
+    expect(routineCopy(routine, "Deals (copy)", now)?.endsAt).toBe(routine.endsAt);
+    expect(
+      routineCopy(routine, "Deals (copy)", Date.parse("2026-12-01T00:00:00.000Z")),
+    ).toMatchObject({ endsAt: null, active: false });
   });
 
   it("names the time only when the routine ends before its day is over", () => {

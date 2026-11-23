@@ -1856,6 +1856,27 @@ describe("changeUserTimezone", () => {
     });
   });
 
+  it("keeps a routine on its last run without a next run", async () => {
+    const { deps, rows } = account([
+      {
+        spaceId: base.spaceId,
+        botId: base.botId,
+        userId: base.userId,
+        name: "Deals",
+        crons: ["0 9 * * *"],
+        timezone: "Africa/Cairo",
+        active: true,
+        watch: null,
+        nextRunAt: null,
+        endsAt: new Date(Date.now() + 60 * 60_000),
+      },
+    ]);
+
+    await changeUserTimezone(deps, "user-1", "Europe/London");
+
+    expect(rows[0]).toMatchObject({ timezone: "Europe/London", nextRunAt: null });
+  });
+
   it("moves nothing when the account had no saved zone", async () => {
     const { deps, rows, user } = account([
       {

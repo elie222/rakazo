@@ -461,6 +461,7 @@ export async function changeUserTimezone(
           nextRunAt: true,
           active: true,
           watch: true,
+          endsAt: true,
         },
       });
       for (const routine of routines) movedSpaces.add(routine.spaceId);
@@ -522,11 +523,13 @@ function nextRunAtAfterTimezoneMove(
     nextRunAt: Date | null;
     active: boolean;
     watch: unknown;
+    endsAt: Date | null;
   },
   timezone: string,
 ): Date | null {
   if (
     !routine.active ||
+    routineEnded(routine) ||
     routine.watch != null ||
     isOneShotRoutineCrons(routine.crons) ||
     routine.crons.length === 0

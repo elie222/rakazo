@@ -24,10 +24,10 @@ import { routineRunModelPin } from "../../models/model-selection.js";
 import { protectedComputerLifecycleRefusal } from "../../providers/computer/desktop/desktop-command-guard.js";
 import { findPendingRoutineTick, routineTimerNonce } from "../../routines/routine-coalescing.js";
 import {
+  deleteEndedRoutine,
   deleteSpentRoutine,
   endRoutinePastItsEnd,
   runBeforeEnd,
-  stopFailedLastRun,
 } from "../../routines/routine-end.js";
 import { routineGroupThreadId } from "../../routines/routine-thread.js";
 import {
@@ -365,8 +365,8 @@ export async function notifyRoutineRetryAttemptsExhausted(deps: ExecutorDeps, ru
     select: { id: true },
   });
   if (supersedingRun) return;
-  await stopFailedLastRun(deps, failed);
   await notifyFailedRoutineRun(deps, failed, { retryOnFailure: true });
+  await deleteEndedRoutine(deps, failed);
 }
 
 export async function retryRoutineRun(deps: ExecutorDeps, runId: string) {
@@ -398,8 +398,8 @@ export async function retryRoutineRun(deps: ExecutorDeps, runId: string) {
   });
   if (laterRun) return;
   const notifyAbandonedRetry = async () => {
-    await stopFailedLastRun(deps, failed);
     await notifyFailedRoutineRun(deps, failed, { retryOnFailure: true });
+    await deleteEndedRoutine(deps, failed);
   };
   if (routine && routineNextRunIsNear(routine.nextRunAt, Date.now())) {
     await notifyAbandonedRetry();

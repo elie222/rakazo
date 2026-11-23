@@ -89,17 +89,23 @@ async function announceEnded(deps: SpentRoutineDeps, routine: EndedRoutine) {
 export async function deleteSpentRoutine(
   deps: SpentRoutineDeps,
   input: { spaceId: string; routineId: string; userId: string },
+  options: { oneShots: boolean } = { oneShots: true },
 ): Promise<boolean> {
-  return (await bestEffort("delete a spent routine", deleteIfSpent(deps, input))) ?? false;
+  return (
+    (await bestEffort("delete a spent routine", deleteIfSpent(deps, input, options.oneShots))) ??
+    false
+  );
 }
 
 async function deleteIfSpent(
   deps: SpentRoutineDeps,
   input: { spaceId: string; routineId: string; userId: string },
+  oneShots: boolean,
 ): Promise<boolean> {
   const routine = await deps.prisma.routine.findUnique({ where: { id: input.routineId } });
   if (!routine || routine.userId !== input.userId || routine.nextRunAt) return false;
   const oneShot =
+    oneShots &&
     !routine.active &&
     isOneShotRoutineCrons(routine.crons) &&
     routine.lastRunAt !== null &&
@@ -171,16 +177,14 @@ export async function endRoutinePastItsEnd(
   }
 }
 
-export async function stopFailedLastRun(
-  deps: { prisma: PrismaClient },
-  run: { routineId: string | null; userId: string },
+export async function deleteEndedRoutine(
+  deps: SpentRoutineDeps,
+  run: { spaceId: string; routineId: string | null; userId: string },
 ): Promise<void> {
-  const { routineId, userId } = run;
-  if (!routineId) return;
-  const stop = async () =>
-    deps.prisma.routine.updateMany({
-      where: { id: routineId, userId, active: true, nextRunAt: null, endsAt: { not: null } },
-      data: { active: false },
-    });
-  await bestEffort("stop a routine whose last run failed", stop());
+  if (!run.routineId) return;
+  await deleteSpentRoutine(
+    deps,
+    { spaceId: run.spaceId, routineId: run.routineId, userId: run.userId },
+    { oneShots: false },
+  );
 }

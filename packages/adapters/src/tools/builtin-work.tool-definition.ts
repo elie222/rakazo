@@ -116,6 +116,7 @@ const endAtSpec = { type: "string", description: endAtDescription };
 export function scheduleCreateBranch(
   active: readonly (keyof typeof scheduleTimingSpecs)[],
   extraProperties: Record<string, unknown> = {},
+  ends = true,
 ) {
   const activeNames = new Set<string>(active);
   const properties: Record<string, unknown> = { ...extraProperties, ...scheduleCreateProperties };
@@ -129,7 +130,8 @@ export function scheduleCreateBranch(
   const repeats = activeNames.has("cron") || activeNames.has("every");
   properties.on = repeats || activeNames.has("watch") ? optionalRoutineEvents : blankScheduleTiming;
   properties.startAt = repeats ? startAtSpec : blankScheduleTiming;
-  properties.endAt = repeats || activeNames.has("watch") ? endAtSpec : blankScheduleTiming;
+  properties.endAt =
+    ends && (repeats || activeNames.has("watch")) ? endAtSpec : blankScheduleTiming;
   return {
     type: "object",
     properties,

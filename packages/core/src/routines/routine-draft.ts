@@ -78,11 +78,12 @@ export function formatRoutineEnd(endsAt: string, timezone: string, locale: strin
  * The routine a copy starts from: paused, so it never runs alongside the original. Null for a
  * one-time routine, whose schedule is only set up from chat.
  */
-export function routineCopy<T extends Pick<Routine, "crons" | "name" | "active">>(
-  routine: T,
-  name: string,
-): T | null {
-  return isOneShotRoutineCrons(routine.crons) ? null : { ...routine, name, active: false };
+export function routineCopy<
+  T extends Pick<Routine, "crons" | "name" | "active"> & { endsAt?: string | null },
+>(routine: T, name: string, now = Date.now()): T | null {
+  if (isOneShotRoutineCrons(routine.crons)) return null;
+  const ended = routine.endsAt != null && Date.parse(routine.endsAt) <= now;
+  return { ...routine, name, active: false, ...(ended ? { endsAt: null } : {}) };
 }
 
 /**

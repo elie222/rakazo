@@ -138,7 +138,9 @@ async function failRun(scenario: Scenario) {
             scenario.nextRunAt === undefined
               ? new Date(NOW.getTime() + 24 * 60 * MINUTE)
               : scenario.nextRunAt,
-          ...(scenario.endsAt ? { endsAt: scenario.endsAt, active: true, watch: null } : {}),
+          ...(scenario.endsAt
+            ? { endsAt: scenario.endsAt, active: true, watch: null, userId: "user-1" }
+            : {}),
           ...(scenario.oneShot ? { userId: "user-1", active: false, lastRunAt: NOW } : {}),
         };
       }),
@@ -428,15 +430,20 @@ describe("a routine run's prompt", () => {
     );
   });
 
-  it("turns a routine off when its last run fails for good", async () => {
+  it("ends a routine whose last run fails for good, once none of its runs is under way", async () => {
+    const endsAt = new Date(NOW.getTime() + 60 * MINUTE);
     const { prisma } = await failRun({
       error: new Error("Invalid API key"),
       nextRunAt: null,
-      endsAt: new Date(NOW.getTime() + 60 * MINUTE),
+      endsAt,
     });
-    expect(prisma.routine.updateMany).toHaveBeenCalledWith({
-      where: expect.objectContaining({ active: true, nextRunAt: null, endsAt: { not: null } }),
-      data: { active: false },
+    expect(prisma.routine.deleteMany).toHaveBeenCalledWith({
+      where: expect.objectContaining({
+        active: true,
+        nextRunAt: null,
+        endsAt,
+        runs: { none: { status: { in: expect.any(Array) } } },
+      }),
     });
   });
 
