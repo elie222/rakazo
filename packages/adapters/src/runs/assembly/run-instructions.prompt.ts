@@ -139,7 +139,7 @@ export function persistentComputerInstruction(options: {
 export function desktopGuardShellInstruction(offeredToolNames: ReadonlySet<string>) {
   if (!offeredToolNames.has("shell")) return undefined;
   const write = offeredToolNames.has("write_file") ? "a script with write_file" : "a script file";
-  return `Shell commands must be literal: no \`$(...)\`, backticks, subshells, or loop or computed variables. For more, write ${write} and run it with \`python3\` or \`bash\`.`;
+  return `Shell commands must be literal: no \`$(...)\`, backticks, subshells, loops, or \`$\` variables, environment variables included. Otherwise write ${write} and run it with \`python3\` or \`bash\`.`;
 }
 
 export function dockerComputerToolInstruction(
