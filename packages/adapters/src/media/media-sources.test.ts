@@ -4,11 +4,24 @@ import { FakeMediaGenerationProvider } from "./media-generation-provider.js";
 import type { MediaSource, MediaSourceDeps } from "./media-sources.js";
 import { mediaProviderForSource, resolveRunMediaSources } from "./media-sources.js";
 
-function deps(connection: { id: string; provider: string } | null): MediaSourceDeps {
+type Connection = { id: string; provider: string };
+
+/** `connections` are newest first, as the lookup orders them. */
+function deps(connections: Connection | Connection[] | null): MediaSourceDeps {
+  const list = connections === null ? [] : [connections].flat();
   return {
     prisma: {
       userModelCredential: {
-        findFirst: vi.fn().mockResolvedValue(connection && { ...connection, secretId: "secret" }),
+        findFirst: vi.fn(
+          async ({ where }: { where: { id?: string; provider?: { in: string[] } } }) => {
+            const found = list.find(
+              (connection) =>
+                (!where.id || connection.id === where.id) &&
+                (!where.provider || where.provider.in.includes(connection.provider)),
+            );
+            return found ? { ...found, secretId: "secret" } : null;
+          },
+        ),
       },
       secret: { findFirst: vi.fn().mockResolvedValue({ id: "secret", ciphertext: "sealed" }) },
     } as unknown as MediaSourceDeps["prisma"],
@@ -35,6 +48,21 @@ describe("run media sources", () => {
       provider: "openai",
     });
     expect(await settle(sources.video)).toEqual({ record: { kind: "hosted" }, provider: "fake" });
+  });
+
+  it("uses an older connection for video when the newest one makes only images", async () => {
+    const sources = await resolveRunMediaSources(
+      deps([
+        { id: "newer", provider: "openai" },
+        { id: "older", provider: "openrouter" },
+      ]),
+      "owner",
+    );
+    expect(await settle(sources.image)).toMatchObject({ provider: "openai" });
+    expect(await settle(sources.video)).toEqual({
+      record: { kind: "connection", connectionId: "older" },
+      provider: "openrouter",
+    });
   });
 
   it("uses the deployment's provider when the owner has no connection that makes media", async () => {

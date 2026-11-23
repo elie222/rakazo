@@ -77,6 +77,8 @@ export async function requestImagesApiImage(
     apiKey: string;
     model: string;
     prompt: string;
+    /** Extra request fields the provider's own API takes, such as its routing preferences. */
+    extraBody?: Record<string, unknown>;
     fetch?: typeof fetch;
     resolveHostname?: ResolveHostname;
     /** What the response's usage says the image cost, in micro-dollars, if it says. */
@@ -96,7 +98,12 @@ export async function requestImagesApiImage(
         Authorization: `Bearer ${options.apiKey}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ model: options.model, prompt: parsed.data.prompt, n: 1 }),
+      body: JSON.stringify({
+        ...options.extraBody,
+        model: options.model,
+        prompt: parsed.data.prompt,
+        n: 1,
+      }),
       signal,
       redirect: "error",
     });

@@ -76,7 +76,8 @@ function connectionMedia(provider: string): ConnectionMedia | undefined {
   return modelProviderDefinition(provider)?.media;
 }
 
-const mediaProviderIds = () => Object.keys(modelProviders).filter((id) => connectionMedia(id));
+const mediaProviderIds = (kind: "images" | "video") =>
+  Object.keys(modelProviders).filter((id) => connectionMedia(id)?.[kind]);
 
 /** Builds the connection's media provider from its stored key; undefined once it is gone. */
 async function connectionProvider(
@@ -103,7 +104,9 @@ async function connectionProvider(
     getLogger().warn("media.connection_secret_unreadable", { "media.connection_id": connectionId });
     return undefined;
   }
-  return secret.kind === "api_key" ? media.create({ apiKey: secret.key }) : undefined;
+  return secret.kind === "api_key"
+    ? media.create({ apiKey: secret.key, zeroDataRetention: secret.zeroDataRetention })
+    : undefined;
 }
 
 /** The provider that made, or will keep checking, a job saved with this source. */
@@ -125,23 +128,31 @@ export async function resolveRunMediaSources(
   deps: MediaSourceDeps,
   userId: string,
 ): Promise<RunMediaSources> {
-  const connection = await deps.prisma.userModelCredential.findFirst({
-    where: { userId, provider: { in: mediaProviderIds() } },
-    orderBy: newestModelCredentialOrder,
-    select: { id: true, provider: true },
-  });
-  const media = connection && connectionMedia(connection.provider);
+  const newest = (kind: "images" | "video") =>
+    deps.prisma.userModelCredential.findFirst({
+      where: { userId, provider: { in: mediaProviderIds(kind) } },
+      orderBy: newestModelCredentialOrder,
+      select: { id: true },
+    });
+  const [imageConnection, videoConnection] = await Promise.all([newest("images"), newest("video")]);
   const hosted = deps.mediaGeneration;
-  let own: Promise<MediaGenerationProvider | undefined> | undefined;
-  const source = (kind: "images" | "video"): MediaSource | undefined => {
+  const built = new Map<string, Promise<MediaGenerationProvider | undefined>>();
+  const source = (
+    kind: "images" | "video",
+    connection: { id: string } | null,
+  ): MediaSource | undefined => {
     const fallback = hosted?.capabilities[kind] ? { record: HOSTED, provider: hosted } : undefined;
-    if (!connection || !media?.[kind]) return fallback && (() => Promise.resolve(fallback));
+    if (!connection) return fallback && (() => Promise.resolve(fallback));
     return async () => {
       // A failed key lookup is not kept, so a later call in the same turn tries it again.
-      own ??= connectionProvider(deps, userId, connection.id).catch((error: unknown) => {
-        own = undefined;
-        throw error;
-      });
+      let own = built.get(connection.id);
+      if (!own) {
+        own = connectionProvider(deps, userId, connection.id).catch((error: unknown) => {
+          built.delete(connection.id);
+          throw error;
+        });
+        built.set(connection.id, own);
+      }
       const provider = await own;
       // A connection removed or left unreadable since leaves the media to the deployment.
       return provider
@@ -149,5 +160,5 @@ export async function resolveRunMediaSources(
         : fallback;
     };
   };
-  return { image: source("images"), video: source("video") };
+  return { image: source("images", imageConnection), video: source("video", videoConnection) };
 }
