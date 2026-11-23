@@ -4,6 +4,7 @@ import { resolveActionApprovalDetail, siteAlwaysAllowed } from "@rakazo/core";
 import { normalizedHttpUrl, urlSite } from "@rakazo/core/egress";
 import type { Prisma } from "@rakazo/db";
 import { pageImagesNamedIn } from "@rakazo/db";
+import { MAX_FETCH_URL_LENGTH } from "../../approvals/approval-ask.js";
 import { resolveBotWorkspacePath } from "../../computers/screens/computer-support.js";
 import type { EncodedPageImage } from "../../pages/page-image.js";
 import {
@@ -90,6 +91,8 @@ async function pictureBytes(
     const url = normalizedHttpUrl(source);
     const site = url ? urlSite(url) : undefined;
     if (!url || !site) return "not a valid web address";
+    if (url.length > MAX_FETCH_URL_LENGTH)
+      return `the address must be at most ${MAX_FETCH_URL_LENGTH} characters`;
     if (!ctx.tools.offered.some((tool) => tool.name === "web_fetch"))
       return "this bot cannot fetch web addresses";
     if (!(await addressGiven(ctx, url, site)))
@@ -98,10 +101,11 @@ async function pictureBytes(
   }
   const artifact = await deps.prisma.artifact.findFirst({
     where: reachableFiles(ctx, [source]),
-    select: { storageKey: true },
+    select: { storageKey: true, size: true },
   });
   if (artifact) {
     if (!deps.artifacts) return "file storage is unavailable";
+    if (artifact.size > PAGE_IMAGE_SOURCE_MAX_BYTES) return "the picture is larger than 10 MB";
     return deps.artifacts
       .get(artifact.storageKey, context)
       .catch(() => "the file could not be read");
