@@ -388,6 +388,19 @@ export const TOOL_CHOICE_DEFINITIONS: ToolChoiceCase[] = [
     },
   },
   {
+    id: "group-notify-not-relay",
+    area: "group",
+    kind: "guard",
+    purpose: "Notify its group itself rather than relaying through a member.",
+    group: OPS_GROUP,
+    prompt: "Let the Ops group know last night's backup finished.",
+    expect: {
+      calls: [{ tool: "post_to_group", args: { message: "~backup" } }],
+      notCalls: ["handoff_to_bot", "message_bot"],
+      maxCalls: { post_to_group: 1 },
+    },
+  },
+  {
     id: "group-handoff-not-post",
     area: "group",
     kind: "guard",
