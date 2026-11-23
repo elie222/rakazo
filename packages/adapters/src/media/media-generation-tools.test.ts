@@ -97,6 +97,26 @@ describe("bot media tools", () => {
     );
     expect(publish).toHaveBeenCalledTimes(1);
   });
+  it("hands an own-key image's model and cost to be recorded, and none for a hosted one", async () => {
+    const { options, provider, attach } = setup();
+    vi.spyOn(provider, "generateImage").mockResolvedValue({
+      bytes: new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+      mimeType: "image/png",
+      cost: { usd: 0.04, source: "provider" },
+    });
+    await generateMediaFromTool({
+      ...options,
+      source: { kind: "connection", connectionId: "connection", model: "lab/draw" },
+    });
+    expect(attach.mock.calls[0]![2].spend).toEqual({
+      role: "image",
+      provider: "fake",
+      model: "lab/draw",
+      cost: { usd: 0.04, source: "provider" },
+    });
+    await generateMediaFromTool({ ...options, executionId: "hosted" });
+    expect(attach.mock.calls[1]![2].spend).toBeUndefined();
+  });
   it("names an attached image after the format the provider returned", async () => {
     const { options, provider, attach } = setup();
     vi.spyOn(provider, "generateImage").mockResolvedValue({

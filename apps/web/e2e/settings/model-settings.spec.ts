@@ -3,7 +3,7 @@ import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import type { Route } from "@playwright/test";
 import { expect, test } from "@playwright/test";
-import type { ModelRoleSettings } from "@rakazo/contracts";
+import type { MediaModelsView, ModelRoleSettings } from "@rakazo/contracts";
 import {
   captureScreenshot,
   chooseOption,
@@ -561,6 +561,71 @@ test("model funding connections", async ({ page }, testInfo) => {
     modelId: model.id,
     credentialId: "personal-example",
   });
+});
+
+test("image and video models are chosen from the connections that make them", async ({
+  page,
+}, testInfo) => {
+  const stamp = Date.now();
+  await signup(page, `media-models-${stamp}@rakazo.test`, "password12", "Media Models");
+  await completeOnboarding(page);
+  // A media-capable key connection, without a real key or the provider's live catalog.
+  await page.route("**/rpc/models/credentials", async (route) => {
+    const response = await route.fetch();
+    const body = (await response.json()) as { json: unknown[] };
+    await route.fulfill({
+      response,
+      json: {
+        json: [
+          ...body.json,
+          {
+            id: "media-key",
+            provider: "openrouter",
+            label: "Media",
+            hasKey: true,
+            isDefault: false,
+          },
+        ],
+      },
+    });
+  });
+  let view: MediaModelsView = {
+    image: {
+      options: [
+        { credentialId: "media-key", modelId: "example/draw", label: "Example: Draw" },
+        { credentialId: "media-key", modelId: "example/sketch", label: "Example: Sketch" },
+      ],
+      selected: { credentialId: "media-key", modelId: "example/draw" },
+    },
+    video: {
+      options: [{ credentialId: "media-key", modelId: "example/clip", label: "Example: Clip" }],
+      selected: { credentialId: "media-key", modelId: "example/clip" },
+    },
+  };
+  await page.route("**/rpc/models/media", (route) => route.fulfill({ json: { json: view } }));
+  await page.route("**/rpc/models/setMedia", async (route) => {
+    const { json } = route.request().postDataJSON() as {
+      json: { role: "image" | "video"; credentialId: string; modelId: string };
+    };
+    view = {
+      ...view,
+      [json.role]: {
+        ...view[json.role],
+        selected: { credentialId: json.credentialId, modelId: json.modelId },
+      },
+    };
+    await route.fulfill({ json: { json: view } });
+  });
+  await page.reload();
+  await openUserSettings(page, "models");
+  const image = page.getByRole("combobox", { name: "Image model" });
+  await expect(image).toHaveText("Example: Draw");
+  await expect(page.getByRole("combobox", { name: "Video model" })).toHaveText("Example: Clip");
+  await chooseOption(image, "Example: Sketch");
+  await expect(image).toHaveText("Example: Sketch");
+  expect(view.image.selected).toEqual({ credentialId: "media-key", modelId: "example/sketch" });
+  await page.getByTestId("model-role-video").scrollIntoViewIfNeeded();
+  await captureScreenshot(page, testInfo, "model-settings-media-models");
 });
 
 test("an approval default the deployment pays for reads as included", async ({

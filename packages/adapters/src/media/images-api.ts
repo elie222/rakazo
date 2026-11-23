@@ -44,8 +44,10 @@ export function mediaBaseUrl(raw: string): string {
   return url.href.replace(/\/$/, "");
 }
 
+export const isMediaModelId = (model: string) => MODEL_ID_PATTERN.test(model);
+
 export function checkMediaModelId(model: string) {
-  if (!MODEL_ID_PATTERN.test(model)) throw new Error("Invalid media model id");
+  if (!isMediaModelId(model)) throw new Error("Invalid media model id");
 }
 
 export function mediaHttpError(status: number): MediaGenerationError {
@@ -70,6 +72,8 @@ export async function requestImagesApiImage(
     prompt: string;
     fetch?: typeof fetch;
     resolveHostname?: ResolveHostname;
+    /** Reads what the image cost from the response body, when the server says. */
+    cost?: (body: unknown) => GeneratedMedia["cost"];
   },
   context: AdapterContext,
 ): Promise<GeneratedMedia> {
@@ -117,7 +121,8 @@ export async function requestImagesApiImage(
     throw new MediaGenerationError("provider_failure");
   const output = { bytes, mimeType } as GeneratedMedia;
   validateGeneratedMedia(output, "image");
-  return output;
+  const cost = options.cost?.(body);
+  return cost && Number.isFinite(cost.usd) && cost.usd >= 0 ? { ...output, cost } : output;
 }
 
 async function download(

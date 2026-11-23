@@ -173,6 +173,23 @@ export default function Account() {
         value={t`${ph({ amount: usd.format(creditsUsd) })} left`}
       />
     ) : null;
+  // Cents and below, so a few cheap images never round to nothing.
+  const spend = new Intl.NumberFormat(dateLocaleForUi(locale), {
+    style: "currency",
+    currency: "USD",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 4,
+  });
+  const mediaUsd = usage?.ownKeyMediaUsd ?? 0;
+  const mediaRow =
+    mediaUsd > 0 ? (
+      <SettingsRow
+        key="own-key-media"
+        accessible
+        title={t`Images and video`}
+        value={t`${ph({ amount: spend.format(mediaUsd) })} this month`}
+      />
+    ) : null;
   const period = { session: t`Session`, week: t`Weekly`, month: t`Monthly` };
   const planGroups = plans.map((plan) => (
     <SettingsGroup
@@ -272,6 +289,7 @@ export default function Account() {
             <SettingsGroup>
               {usageBlock}
               {creditsRow}
+              {mediaRow}
             </SettingsGroup>
             {planGroups}
             {usageModels}
@@ -290,6 +308,7 @@ export default function Account() {
           />
           {focus !== "usage" ? usageBlock : null}
           {focus !== "usage" ? creditsRow : null}
+          {focus !== "usage" ? mediaRow : null}
         </SettingsGroup>
         {focus !== "usage" ? planGroups : null}
 

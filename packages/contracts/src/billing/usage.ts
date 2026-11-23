@@ -36,6 +36,8 @@ const UsageTotalsSchema = z.object({
 });
 export const UsageSummarySchema = UsageTotalsSchema.extend({
   runs: z.number(),
+  /** What images and videos made on the member's own keys cost this calendar month; absent from older servers. */
+  ownKeyMediaUsd: z.number().optional(),
   models: z
     .array(UsageTotalsSchema.required().extend({ provider: z.string(), model: z.string() }))
     .optional(),

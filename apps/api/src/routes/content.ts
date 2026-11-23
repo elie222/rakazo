@@ -1,7 +1,7 @@
 import type { UsageOperationKind } from "@rakazo/adapter-kit";
 import { planLimitsReader, readMemberPlanLimits, resolveBotWorkspacePath } from "@rakazo/adapters";
 import type { ExportManifest } from "@rakazo/contracts";
-import { attachmentMaxBytes, resolveBotAvatarSet } from "@rakazo/contracts";
+import { attachmentMaxBytes, MediaModelRoleSchema, resolveBotAvatarSet } from "@rakazo/contracts";
 import {
   AttachmentValidationError,
   ClientError,
@@ -35,8 +35,35 @@ const usageTimezoneAliases = new Map([
   ["asia/saigon", "Asia/Ho_Chi_Minh"],
 ]);
 
+/** Images and videos made on a member's own key; model usage totals leave them out. */
+const MEDIA_OPERATION_KINDS = [...MediaModelRoleSchema.options];
+const modelUsage = Prisma.sql`AND u."operationKind" NOT IN (${Prisma.join(MEDIA_OPERATION_KINDS)})`;
+
 export function contentRoutes(ctx: RouterContext) {
   const { deps, repos, favicons, groupRepos, authed, refreshExpiredCredential } = ctx;
+  const usageTimezone = async (userId: string) => {
+    const member = await deps.prisma.user.findUnique({
+      where: { id: userId },
+      select: { timezone: true },
+    });
+    const saved = member?.timezone ?? "UTC";
+    return validTimezoneOrUtc(usageTimezoneAliases.get(saved.toLowerCase()) ?? saved);
+  };
+  const ownKeyMediaThisMonth = async (actor: { spaceId: string; userId: string }) => {
+    const timezone = await usageTimezone(actor.userId);
+    const month = wallClock(new Date(), timezone).slice(0, 7);
+    const total = await deps.prisma.usageRecord.aggregate({
+      where: {
+        spaceId: actor.spaceId,
+        userId: actor.userId,
+        operationKind: { in: MEDIA_OPERATION_KINDS },
+        billing: "api_key",
+        createdAt: { gte: zonedDateTime(`${month}-01`, timezone)! },
+      },
+      _sum: { costUsd: true },
+    });
+    return total._sum.costUsd ?? 0;
+  };
   return {
     artifacts: {
       list: authed.artifacts.list.handler(async ({ context, input }) => {
@@ -123,6 +150,7 @@ export function contentRoutes(ctx: RouterContext) {
             spaceId: context.actor.spaceId,
             userId: context.actor.userId,
             fundingSource: "customer",
+            operationKind: { notIn: MEDIA_OPERATION_KINDS },
           },
           orderBy: { createdAt: "desc" },
           take: 100,
@@ -166,6 +194,7 @@ export function contentRoutes(ctx: RouterContext) {
           spaceId: context.actor.spaceId,
           userId: context.actor.userId,
           fundingSource: "customer",
+          operationKind: { notIn: MEDIA_OPERATION_KINDS },
         };
         const sums = {
           inputTokens: true,
@@ -174,7 +203,7 @@ export function contentRoutes(ctx: RouterContext) {
           costUsd: true,
         } as const;
         const counts = { _all: true, ...sums } as const;
-        const [result, modelGroups, runGroups] = await Promise.all([
+        const [result, modelGroups, runGroups, ownKeyMediaUsd] = await Promise.all([
           deps.prisma.usageRecord.aggregate({ where, _sum: sums, _count: counts }),
           deps.prisma.usageRecord.groupBy({
             by: ["provider", "model"],
@@ -183,6 +212,7 @@ export function contentRoutes(ctx: RouterContext) {
             _count: counts,
           }),
           deps.prisma.usageRecord.groupBy({ by: ["runId", "parentRunId"], where }),
+          ownKeyMediaThisMonth(context.actor),
         ]);
         const runs = new Set(runGroups.map((row) => row.parentRunId ?? row.runId).filter(Boolean))
           .size;
@@ -204,6 +234,7 @@ export function contentRoutes(ctx: RouterContext) {
         return {
           ...completeSums(result),
           runs,
+          ownKeyMediaUsd,
           models: modelGroups
             .map((group) => ({
               provider: group.provider,
@@ -221,14 +252,7 @@ export function contentRoutes(ctx: RouterContext) {
           userId: context.actor.userId,
         } as const;
         const now = new Date();
-        const member = await deps.prisma.user.findUnique({
-          where: { id: context.actor.userId },
-          select: { timezone: true },
-        });
-        const savedTimezone = member?.timezone ?? "UTC";
-        const timezone = validTimezoneOrUtc(
-          usageTimezoneAliases.get(savedTimezone.toLowerCase()) ?? savedTimezone,
-        );
+        const timezone = await usageTimezone(context.actor.userId);
         const localDay = (at: Date) => wallClock(at, timezone).slice(0, 10);
         const days = input.range === "today" ? 1 : input.range === "7d" ? 7 : 30;
         const firstDate = new Date(`${localDay(now)}T00:00:00Z`);
@@ -307,7 +331,7 @@ export function contentRoutes(ctx: RouterContext) {
                 tx.$queryRaw<TotalsRow[]>(Prisma.sql`
             SELECT ${totalsSelect}
             FROM usage_records u
-            WHERE u."spaceId" = ${where.spaceId} AND u."userId" = ${where.userId} AND u."fundingSource" = 'customer'
+            WHERE u."spaceId" = ${where.spaceId} AND u."userId" = ${where.userId} AND u."fundingSource" = 'customer' ${modelUsage}
               ${rangeFilter} ${modelFilter} ${botFilter}
           `),
                 // Rows from before cache reads were measured hold a zero and no total, so a zero
@@ -317,7 +341,7 @@ export function contentRoutes(ctx: RouterContext) {
               SUM(u."cacheReadTokens")::double precision AS "cachedTokens",
               BOOL_AND(COALESCE(u."cacheReadTokens" > 0 OR (u."cacheReadTokens" = 0 AND u."totalTokens" IS NOT NULL), false)) AS "cachedComplete"
             FROM usage_records u
-            WHERE u."spaceId" = ${where.spaceId} AND u."userId" = ${where.userId} AND u."fundingSource" = 'customer'
+            WHERE u."spaceId" = ${where.spaceId} AND u."userId" = ${where.userId} AND u."fundingSource" = 'customer' ${modelUsage}
               ${rangeFilter} ${modelFilter} ${botFilter}
             GROUP BY u.provider, u.model
             ORDER BY COALESCE(SUM(u."totalTokens"), 0) DESC, COUNT(*) DESC
@@ -334,7 +358,7 @@ export function contentRoutes(ctx: RouterContext) {
               SUM(u."costUsd")::double precision AS "costUsd",
               BOOL_AND(u."costUsd" IS NOT NULL) AS "costComplete"
             FROM usage_records u
-            WHERE u."spaceId" = ${where.spaceId} AND u."userId" = ${where.userId} AND u."fundingSource" = 'customer'
+            WHERE u."spaceId" = ${where.spaceId} AND u."userId" = ${where.userId} AND u."fundingSource" = 'customer' ${modelUsage}
               ${rangeFilter} ${modelFilter} ${botFilter}
             GROUP BY bucket
             ORDER BY bucket ASC
@@ -348,7 +372,7 @@ export function contentRoutes(ctx: RouterContext) {
             FROM usage_records u
             LEFT JOIN bots b ON b.id = u."botId"
             LEFT JOIN bot_deletions bd ON bd.id = u."botId"
-            WHERE u."spaceId" = ${where.spaceId} AND u."userId" = ${where.userId} AND u."fundingSource" = 'customer'
+            WHERE u."spaceId" = ${where.spaceId} AND u."userId" = ${where.userId} AND u."fundingSource" = 'customer' ${modelUsage}
               AND u."botId" IS NOT NULL
               ${rangeFilter}
             GROUP BY u."botId", b.id, b.name, bd.name
@@ -357,7 +381,7 @@ export function contentRoutes(ctx: RouterContext) {
                 tx.$queryRaw<{ provider: string; model: string }[]>(Prisma.sql`
             SELECT u.provider, u.model
             FROM usage_records u
-            WHERE u."spaceId" = ${where.spaceId} AND u."userId" = ${where.userId} AND u."fundingSource" = 'customer'
+            WHERE u."spaceId" = ${where.spaceId} AND u."userId" = ${where.userId} AND u."fundingSource" = 'customer' ${modelUsage}
               ${rangeFilter}
             GROUP BY u.provider, u.model
             ORDER BY COALESCE(SUM(u."totalTokens"), 0) DESC, COUNT(*) DESC

@@ -47,7 +47,7 @@ export async function assembleRunTurn(services: RunExecutorServices, hold: RunHo
   const media = hold.deps.artifacts
     ? await resolveRunMediaSources(
         { ...hold.deps, mediaGeneration: services.mediaGeneration },
-        hold.run.userId,
+        hold.run,
       )
     : {};
   const tools = await selectRunTools(services, hold, {

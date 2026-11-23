@@ -183,6 +183,29 @@ describePostgres("background video delivery (PostgreSQL)", () => {
       );
       return result.jobId;
     };
+    /** A check made with the job's own source, as the turn that submitted it would. */
+    const check = (jobId: string, source: MediaSourceRecord) =>
+      runAsTenant(tenant, () =>
+        generateMediaFromTool({
+          name: "generate_video",
+          args: { jobId },
+          executionId: randomUUID(),
+          recoverOnly: true,
+          provider: media,
+          source,
+          prisma,
+          context: {
+            operationId: randomUUID(),
+            traceId: "test",
+            spaceId: user.id,
+            userId: user.id,
+            botId: user.bot.id,
+            signal: new AbortController().signal,
+          },
+          run,
+          ...mediaDelivery(process(), run, { providerId: media.id, operationId: "check" }),
+        }),
+      );
     const poll = (jobId: string) => runAsTenant(tenant, () => pollMediaVideo(process(), { jobId }));
     const reconcile = () => runAsSystem("reconcile", () => reconcileMediaVideos(process()));
     const job = (jobId: string) =>
@@ -219,6 +242,7 @@ describePostgres("background video delivery (PostgreSQL)", () => {
       limits,
       recovered,
       submit,
+      check,
       poll,
       reconcile,
       job,
@@ -263,6 +287,34 @@ describePostgres("background video delivery (PostgreSQL)", () => {
     h.enqueued.length = 0;
     await h.reconcile();
     expect(h.recovered()).not.toContain(jobId);
+  });
+
+  it("records what a video made on the owner's own key cost, with its model", async () => {
+    const h = await setup();
+    const source = { kind: "connection", connectionId: "connection", model: "lab/clip" } as const;
+    const jobId = await h.submit("completed", source);
+    h.media.remote = "completed";
+    const finish = h.media.pollVideo.bind(h.media);
+    vi.spyOn(h.media, "pollVideo").mockImplementation(async (id, context) => {
+      const job = await finish(id, context);
+      return job.status === "completed"
+        ? { ...job, output: { ...job.output, cost: { usd: 0.2, source: "provider" } } }
+        : job;
+    });
+    expect(await h.check(jobId, source)).toMatchObject({ status: "completed" });
+    expect(await h.check(jobId, source)).toMatchObject({ status: "completed" });
+    const rows = await asSystem(prisma).usageRecord.findMany({ where: { userId: h.user.id } });
+    expect(rows).toMatchObject([
+      {
+        operationKind: "video",
+        provider: h.media.id,
+        model: "lab/clip",
+        costUsd: 0.2,
+        costSource: "provider",
+        billing: "api_key",
+        runId: h.user.run.id,
+      },
+    ]);
   });
 
   it("reports a failed video to the bot instead of leaving the chat empty", async () => {

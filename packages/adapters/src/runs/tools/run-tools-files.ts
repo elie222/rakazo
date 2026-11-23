@@ -11,7 +11,7 @@ import { getLogger } from "@rakazo/logging";
 import { resolveBotWorkspacePath } from "../../computers/screens/computer-support.js";
 import { generateMediaFromTool, MEDIA_JOB_KIND } from "../../media/media-generation-tools.js";
 import type { MediaSource, ResolvedMediaSource } from "../../media/media-sources.js";
-import { mediaProviderForSource, readMediaJobSource } from "../../media/media-sources.js";
+import { mediaVideoProviderForSource, readMediaJobSource } from "../../media/media-sources.js";
 import { mediaDelivery, scheduleMediaPoll } from "../../media/media-video-poll.js";
 import {
   desktopGuardApplies,
@@ -73,7 +73,7 @@ async function savedJobSource(
   if (!record) return null;
   const deps = { ...ctx.deps, mediaGeneration: ctx.providers.mediaGeneration };
   return async () => {
-    const provider = await mediaProviderForSource(deps, ctx.run.userId, record);
+    const provider = await mediaVideoProviderForSource(deps, ctx.run.userId, record);
     return provider && { record, provider };
   };
 }

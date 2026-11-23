@@ -1,7 +1,7 @@
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import type { UsageBreakdown, UsageBreakdownInput } from "@rakazo/contracts";
+import type { UsageBreakdown, UsageBreakdownInput, UsageSummary } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { sessionCookieHeader } from "../index.js";
@@ -305,6 +305,48 @@ describeBreakdown("usage.breakdown", () => {
     expect(summary(elsewhere)).toEqual({ runs: 1, calls: 1, tokens: 1_000_000 });
     expect(names(elsewhere)).toEqual(["Elsewhere"]);
   }, 150000);
+
+  it("totals this month's own-key media apart from model usage", async () => {
+    vi.setSystemTime(new Date("2026-03-15T12:00:00.000Z"));
+    const cookie = await signup(app, `usage-media-${stamp}@rakazo.test`, "Media");
+    const bot = await rpc<{ id: string }>(app, cookie, "bots/create", {
+      name: "Painter",
+      title: "",
+      description: "",
+      instructions: "",
+      notifyOnFinish: false,
+    });
+    const thread = await prisma.thread.findFirstOrThrow({ where: { botId: bot.id } });
+    const media = (
+      operationKind: string,
+      costUsd: number,
+      createdAt: string,
+      billing = "api_key",
+    ) => ({
+      spaceId: thread.spaceId,
+      userId: thread.userId,
+      botId: bot.id,
+      provider: "p",
+      model: "lab/draw",
+      operationKind,
+      billing,
+      costUsd,
+      createdAt: new Date(createdAt),
+    });
+    await prisma.usageRecord.createMany({
+      data: [
+        media("image", 0.0412, "2026-03-02T00:00:00.000Z"),
+        media("video", 0.2, "2026-03-14T00:00:00.000Z"),
+        // Last month's, and a model call, count elsewhere.
+        media("video", 5, "2026-02-27T00:00:00.000Z"),
+        media("answer", 1, "2026-03-14T00:00:00.000Z"),
+      ],
+    });
+    const summary = await rpc<UsageSummary>(app, cookie, "usage/summary");
+    expect(summary.ownKeyMediaUsd).toBeCloseTo(0.2412, 10);
+    const usage = await rpc<UsageBreakdown>(app, cookie, "usage/breakdown", { range: "all" });
+    expect(usage.totals).toMatchObject({ modelCalls: 1, costUsd: 1 });
+  });
 
   it.each([
     ["Pacific/Kiritimati", 14],

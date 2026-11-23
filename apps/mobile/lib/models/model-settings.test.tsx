@@ -1,5 +1,10 @@
 // @vitest-environment jsdom
-import type { ModelCatalogEntry, ModelCredential, ModelRoleView } from "@rakazo/contracts";
+import type {
+  MediaModelsView,
+  ModelCatalogEntry,
+  ModelCredential,
+  ModelRoleView,
+} from "@rakazo/contracts";
 
 import { MAX_MODEL_CONTEXT_WINDOW, MAX_MODEL_MAX_TOKENS } from "@rakazo/contracts";
 import { deferred } from "@rakazo/core/test-async";
@@ -63,6 +68,10 @@ const { push, back, replace, params, rpcCalls, saved, pinnedTo, focus } = vi.hoi
     roleCatalog: [] as ModelCatalogEntry[],
     roleSettings: { primary: null, backups: [] } as ModelRoleView,
     extraCredentials: [] as ModelCredential[],
+    media: {
+      image: { options: [], selected: null },
+      video: { options: [], selected: null },
+    } as MediaModelsView,
     // A failed save either keeps the bot's own model or finds it already cleared elsewhere.
     failBotUpdates: {} as Record<string, "kept" | "changed elsewhere">,
     needsModel: false,
@@ -102,6 +111,19 @@ vi.mock("../api/api", () => ({
     if (procedure === "models/probeOpenAiCompatible")
       return { models: Array.from({ length: 11 }, (_, index) => `found-${index}`) };
     if (procedure === "models/role") return saved.roleSettings;
+    if (procedure === "models/media") return saved.media;
+    if (procedure === "models/setMedia") {
+      const { role, credentialId, modelId } = input as {
+        role: "image" | "video";
+        credentialId: string;
+        modelId: string;
+      };
+      saved.media = {
+        ...saved.media,
+        [role]: { ...saved.media[role], selected: { credentialId, modelId } },
+      };
+      return saved.media;
+    }
     if (procedure === "models/setRole") {
       const {
         role: _role,
@@ -354,6 +376,7 @@ beforeEach(async () => {
   saved.roleCatalog = [];
   saved.roleSettings = { primary: null, backups: [] };
   saved.extraCredentials = [];
+  saved.media = { image: { options: [], selected: null }, video: { options: [], selected: null } };
   delete params.spaceId;
   back.mockClear();
   container = document.createElement("div");
@@ -1016,6 +1039,36 @@ it("paints a revisit from cache without a spinner and refreshes behind it", asyn
     saved.held = null;
     saved.label = "Fixture";
   }
+});
+
+it("offers the image models the member's keys make and saves the one chosen", async () => {
+  const option = (modelId: string, label: string) => ({ credentialId: "key", modelId, label });
+  saved.media = {
+    image: {
+      options: [option("draw-2", "Draw 2"), option("draw-mini", "Draw Mini")],
+      selected: { credentialId: "key", modelId: "draw-2" },
+    },
+    video: { options: [], selected: null },
+  };
+  await remount(async () => {
+    await act(async () => root.render(createElement(Models)));
+  });
+  const menu = container.querySelector('[aria-label="Image model"]')!;
+  expect(menu.textContent).toContain("Draw 2");
+  expect(container.querySelector('[aria-label="Video model"]')).toBeNull();
+  const mini = [...menu.querySelectorAll("button")].find((b) => b.textContent === "Draw Mini")!;
+  await act(async () => mini.click());
+  expect(rpcCalls.find(([procedure]) => procedure === "models/setMedia")?.[1]).toEqual({
+    role: "image",
+    credentialId: "key",
+    modelId: "draw-mini",
+    scope: "account",
+  });
+  await vi.waitFor(() =>
+    expect(
+      container.querySelector('[aria-label="Image model"] [aria-pressed="true"]')?.textContent,
+    ).toBe("Draw Mini"),
+  );
 });
 
 it("offers a retry when the first load fails, then shows the model lists", async () => {

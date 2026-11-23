@@ -12,6 +12,7 @@ import { isUniqueViolation } from "@rakazo/db";
 import { z } from "zod";
 import { mediaPromptSchema, validateGeneratedMedia } from "./media-generation-provider.js";
 import type { MediaSourceRecord } from "./media-sources.js";
+import type { OwnKeyMediaSpend } from "./media-spend.js";
 
 export const MEDIA_JOB_KIND = "media_generation_job";
 const FILE_EXTENSIONS: Record<GeneratedMedia["mimeType"], string> = {
@@ -42,7 +43,7 @@ export async function generateMediaFromTool(options: {
   attach: (
     output: GeneratedMedia,
     name: string,
-    job: { id: string; result: { provider: string; jobId?: string } },
+    job: { id: string; result: { provider: string; jobId?: string }; spend?: OwnKeyMediaSpend },
   ) => Promise<{ artifactId: string; block: MessageBlock }>;
   publish: (block: MessageBlock, jobId: string, artifactId: string) => Promise<unknown>;
   /** Commits with a video's provider failure, so whatever follows it cannot be lost. */
@@ -236,7 +237,21 @@ export async function generateMediaFromTool(options: {
       attached = await options.attach(
         output.output,
         `generated-${reservation.id}.${FILE_EXTENSIONS[output.output.mimeType]}`,
-        { id: reservation.id, result: fetched },
+        {
+          id: reservation.id,
+          result: fetched,
+          // compat-shim(after v0.15.0): a job the previous release saved names no model to record.
+          ...(options.source.kind === "connection" && options.source.model
+            ? {
+                spend: {
+                  role: video ? "video" : "image",
+                  provider: provider.id,
+                  model: options.source.model,
+                  cost: output.output.cost,
+                },
+              }
+            : {}),
+        },
       );
     } catch (error) {
       // A finished video that could not be stored releases its claim, so a later check retries

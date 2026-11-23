@@ -310,8 +310,13 @@ test("account menu shows the usage hint and Usage shows allowances and credits o
   await page.route("**/rpc/billing/status", (route) =>
     route.fulfill({ json: { json: creditStatus } }),
   );
+  // Images and videos made on the member's own key, which Rakazo prices but does not charge.
+  await page.route("**/rpc/usage/summary", (route) =>
+    route.fulfill({ json: { json: { ...summary, ownKeyMediaUsd: 0.2412 } } }),
+  );
   await page.reload();
   await openUserSettings(page, "usage");
   await expect(page.getByTestId("credit-balance")).toContainText("$12.50 left");
+  await expect(page.getByTestId("own-key-media-spend")).toContainText("$0.2412 this month");
   await captureScreenshot(page, testInfo, "usage-limits-settings-credits");
 });

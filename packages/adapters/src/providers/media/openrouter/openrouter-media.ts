@@ -27,13 +27,20 @@ const API = "https://openrouter.ai/api/v1";
 const REQUEST_TIMEOUT_MS = 30_000;
 const DOWNLOAD_TIMEOUT_MS = 120_000;
 const MAX_JSON_BYTES = 100_000;
-const VIDEO_SECONDS = 4;
+export const VIDEO_SECONDS = 4;
 const JOB_ID_PATTERN = /^[\w-]{1,200}$/;
 const videoJob = z.object({
   id: z.string().regex(JOB_ID_PATTERN),
   status: z.enum(["pending", "in_progress", "completed", "failed", "cancelled", "expired"]),
   progress: z.number().min(0).max(100).optional(),
 });
+const reportedCost = z.object({ usage: z.object({ cost: z.number().nonnegative() }) });
+
+/** The USD cost a response reports in its usage, when it has one. */
+export function openRouterCost(body: unknown): GeneratedMedia["cost"] {
+  const parsed = reportedCost.safeParse(body);
+  return parsed.success ? { usd: parsed.data.usage.cost, source: "provider" } : undefined;
+}
 
 type PendingJob = Exclude<MediaVideoJob, { status: "completed" }>;
 
@@ -68,7 +75,13 @@ export class OpenRouterMediaGenerationProvider implements MediaGenerationProvide
     const model = this.options.imageModel;
     if (!model) return Promise.reject(new MediaGenerationError("unsupported"));
     return requestImagesApiImage(
-      { ...this.options, endpoint: `${this.baseUrl}/images`, model, ...input },
+      {
+        ...this.options,
+        endpoint: `${this.baseUrl}/images`,
+        model,
+        cost: openRouterCost,
+        ...input,
+      },
       context,
     );
   }
@@ -92,12 +105,14 @@ export class OpenRouterMediaGenerationProvider implements MediaGenerationProvide
   }
   async pollVideo(id: string, context: AdapterContext): Promise<MediaVideoJob> {
     if (!JOB_ID_PATTERN.test(id)) throw new MediaGenerationError("invalid_input");
-    const job = this.job(await this.request(`/videos/${id}`, context));
+    const body = await this.request(`/videos/${id}`, context);
+    const job = this.job(body);
     if (job.id !== id) throw new MediaGenerationError("provider_failure");
     if (job.status !== "completed") return job;
     const output = { bytes: await this.content(id, context), mimeType: "video/mp4" } as const;
     validateGeneratedMedia(output, "video");
-    return { id, status: "completed", output };
+    const cost = openRouterCost(body);
+    return { id, status: "completed", output: cost ? { ...output, cost } : output };
   }
   private job(body: unknown): PendingJob | { id: string; status: "completed" } {
     const parsed = videoJob.safeParse(body);

@@ -54,6 +54,26 @@ describe("images API media generation", () => {
       n: 1,
     });
   });
+  it("prices a listed model's image from the token usage the response reports", async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValueOnce(
+      json({
+        ...image(PNG),
+        usage: {
+          input_tokens: 50,
+          input_tokens_details: { text_tokens: 50, image_tokens: 0 },
+          output_tokens: 1000,
+        },
+      }),
+    );
+    const provider = new OpenAIMediaGenerationProvider({
+      apiKey: "fake-key",
+      imageModel: "gpt-image-2",
+      fetch,
+    });
+    const { cost } = await provider.generateImage({ prompt: "draw" }, context);
+    expect(cost?.source).toBe("price_list");
+    expect(cost?.usd).toBeCloseTo((50 * 5 + 1000 * 30) / 1_000_000, 10);
+  });
   it("defaults to the vendor endpoint", async () => {
     const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValueOnce(json(image(PNG)));
     await new OpenAIMediaGenerationProvider({

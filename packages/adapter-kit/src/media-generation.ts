@@ -4,6 +4,8 @@ export type MediaGenerationInput = { prompt: string };
 export type GeneratedMedia = {
   bytes: Uint8Array;
   mimeType: "image/png" | "image/jpeg" | "image/webp" | "video/mp4";
+  /** What it cost in USD: reported by the provider, or priced from the adapter's own list. */
+  cost?: { usd: number; source: "provider" | "price_list" };
 };
 export type MediaVideoJob =
   | { id: string; status: "queued" | "running"; progress?: number }

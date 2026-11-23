@@ -8,7 +8,9 @@ import { mediaVideoWakePrompt } from "../runs/wakeups/wakes.prompt.js";
 import { attachWorkspaceFileToThread } from "../storage/thread-artifacts.js";
 import { generateMediaFromTool, MEDIA_JOB_KIND } from "./media-generation-tools.js";
 import type { MediaSourceDeps } from "./media-sources.js";
-import { mediaProviderForSource, readMediaJobSource } from "./media-sources.js";
+import { mediaVideoProviderForSource, readMediaJobSource } from "./media-sources.js";
+import type { OwnKeyMediaSpend } from "./media-spend.js";
+import { recordOwnKeyMediaSpend } from "./media-spend.js";
 
 /** A short video takes minutes; one still unfinished after this is reported as failed. */
 export const MEDIA_POLL_DEADLINE_MS = 60 * 60_000;
@@ -71,7 +73,11 @@ export function mediaDelivery(
     attach: (
       output: { bytes: Uint8Array },
       fileName: string,
-      job: { id: string; result: { provider: string; jobId?: string } },
+      job: {
+        id: string;
+        result: { provider: string; jobId?: string };
+        spend?: OwnKeyMediaSpend;
+      },
     ) =>
       attachWorkspaceFileToThread(
         {
@@ -102,6 +108,7 @@ export function mediaDelivery(
               },
             });
             if (!checkpointed.count) throw new Error("Media attachment was already checkpointed");
+            if (job.spend) await recordOwnKeyMediaSpend(tx, run, job.id, job.spend);
           },
         },
       ),
@@ -203,7 +210,7 @@ export async function pollMediaVideo(deps: MediaVideoDeps, payload: { jobId: str
   if (!job) return;
   const { thread, ...run } = job.run;
   const source = readMediaJobSource(job);
-  const provider = source && (await mediaProviderForSource(deps, run.userId, source));
+  const provider = source && (await mediaVideoProviderForSource(deps, run.userId, source));
   // A hosted job waits for the deployment to offer video again; one whose connection is gone
   // or whose source is unreadable can never finish, so it is reported failed below.
   const lost = !provider?.capabilities.video;
