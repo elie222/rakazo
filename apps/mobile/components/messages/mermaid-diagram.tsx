@@ -92,6 +92,9 @@ export function MermaidDiagram({ source, palette, colorScheme, fallback }: Merma
           }}
           onError={fail}
           onHttpError={fail}
+          // Android cannot use a WebView again once its renderer has died, and expects the app
+          // to drop it; the code block takes its place.
+          onRenderProcessGone={fail}
           style={[styles.webview, { height: drawn ? diagram.height : 1 }]}
           javaScriptEnabled
           allowsLinkPreview={false}
