@@ -593,6 +593,43 @@ describe("call session", () => {
     }
   });
 
+  it.each(["running", "waiting_input"] as const)(
+    "routes speech to the %s primary run beside another approval",
+    async (status) => {
+      vi.stubGlobal("window", { addEventListener: vi.fn() });
+      try {
+        syncCallIdentity("me");
+        const approval = approvalMessage();
+        const primary = { ...runningRun!, id: "primary", userId: "me", status };
+        const question = { ...askMessage("choice", { text: "Which day?" }), runId: primary.id };
+        await answeredCall({ botId: "call-bot", botName: "Ada" });
+        getThread.mockResolvedValue({
+          ...snapshot(status === "running" ? [approval] : [approval, question], primary),
+          activeRuns: [primary, { ...waitingRun!, userId: "me" }],
+        });
+        await vi.mocked(runThreadSubscription).mock.calls.at(-1)![0].refresh();
+        expect(getSnapshot()?.approval?.messageId).toBe(approval.id);
+        await heard("on Friday");
+        if (status === "running") {
+          expect(followUp).toHaveBeenCalledWith(expect.objectContaining({ text: "on Friday" }));
+          expect(answer).not.toHaveBeenCalled();
+        } else {
+          expect(answer).toHaveBeenCalledOnce();
+          expect(answer).toHaveBeenCalledWith(
+            expect.objectContaining({
+              messageId: question.id,
+              runId: primary.id,
+              answer: "on Friday",
+            }),
+          );
+        }
+      } finally {
+        forgetSignedInUser();
+        vi.unstubAllGlobals();
+      }
+    },
+  );
+
   it("defers a pending approval through pickup and opening playback", async () => {
     vi.stubGlobal("window", { addEventListener: vi.fn() });
     try {

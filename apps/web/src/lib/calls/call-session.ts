@@ -739,16 +739,15 @@ async function handleTranscript(text: string) {
   const turnCallId = callId;
   const closing = isFarewell(text);
   // An approval is only answered on screen, next to its details; a spoken reply would be refused.
-  const onScreen = state.approval ?? (turn.kind === "approve_on_screen" ? turn : null);
-  if (onScreen) {
+  if (turn.kind === "approve_on_screen") {
     // The caption covers a card the call never read; once tapped, it must not pass for the reply.
-    spokenMessageIds.add(onScreen.messageId);
-    approvalRunId = onScreen.runId;
+    spokenMessageIds.add(turn.messageId);
+    approvalRunId = turn.runId;
     awaitingReply = true;
     if (closing) hangUpAfterReply = true;
     set({
       heard: "",
-      caption: acceptedApprovalIds.has(onScreen.messageId) ? "" : t`Approve or deny it on screen.`,
+      caption: acceptedApprovalIds.has(turn.messageId) ? "" : t`Approve or deny it on screen.`,
     });
     void listen();
     return;
