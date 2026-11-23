@@ -291,7 +291,11 @@ export async function generateMediaFromTool(options: {
                   role: video ? "video" : "image",
                   provider: provider.id,
                   model: options.source.model,
-                  costMicros: output.output.costMicros,
+                  // A response that says nothing of cost is counted at the model's saved price.
+                  costMicros:
+                    output.output.costMicros ??
+                    provider.prices[video ? "videoMicros" : "imageMicros"],
+                  estimated: output.output.costMicros === undefined,
                 },
               }
             : {}),

@@ -6,8 +6,9 @@ export interface OwnKeyMediaSpend {
   role: MediaModelRole;
   provider: string;
   model: string;
-  /** What the provider reported it cost, in micro-dollars, when it reports one. */
-  costMicros?: number;
+  /** What it cost in micro-dollars: from the response, or the model's saved price when `estimated`. */
+  costMicros: number;
+  estimated: boolean;
 }
 
 /**
@@ -30,7 +31,8 @@ export async function recordOwnKeyMediaSpend(
         parentRunId: run.id,
         provider: spend.provider,
         model: spend.model,
-        costUsd: spend.costMicros === undefined ? null : spend.costMicros / 1_000_000,
+        costUsd: spend.costMicros / 1_000_000,
+        costSource: spend.estimated ? "catalog-estimate" : "provider-reported",
         billing: "api_key",
         operationKind: spend.role,
         callId: `media:${jobId}`,

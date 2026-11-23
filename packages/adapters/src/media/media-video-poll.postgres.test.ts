@@ -310,6 +310,7 @@ describePostgres("background video delivery (PostgreSQL)", () => {
         provider: h.media.id,
         model: "lab/clip",
         costUsd: 0.2,
+        costSource: "provider-reported",
         billing: "api_key",
         runId: h.user.run.id,
       },

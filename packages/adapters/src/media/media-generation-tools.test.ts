@@ -159,9 +159,19 @@ describe("bot media tools", () => {
       provider: "fake",
       model: "lab/draw",
       costMicros: 40_000,
+      estimated: false,
     });
     await generateMediaFromTool({ ...options, executionId: "hosted" });
     expect(attach.mock.calls[1]![2].spend).toBeUndefined();
+  });
+  it("counts an own-key image whose response names no cost at the model's saved price", async () => {
+    const { options, provider, attach } = setup();
+    Object.assign(provider, { prices: { imageMicros: 52_000, videoMicros: 0 } });
+    await generateMediaFromTool({
+      ...options,
+      source: { kind: "connection", connectionId: "connection", model: "lab/draw" },
+    });
+    expect(attach.mock.calls[0]![2].spend).toMatchObject({ costMicros: 52_000, estimated: true });
   });
   it("names an attached image after the format the provider returned", async () => {
     const { options, provider, attach } = setup();
