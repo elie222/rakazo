@@ -207,7 +207,7 @@ export async function holdSharedPageSave(
       : []),
     ...changedLines(current, proposed.source),
     ...Object.entries(await pageImageSourceLabels(ctx, sources)).map(
-      ([name, source]) => `+ Image ${name}: ${source}`,
+      ([name, source]) => `+ Image ${name}: ${source.replace(/[\p{Cc}\u2028\u2029]+/gu, " ")}`,
     ),
   ];
   // Measured as the card shows it, redacted, so nothing an approval covers is cut off.

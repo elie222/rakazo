@@ -551,13 +551,13 @@ describe("saving a page's pictures", () => {
     });
     const ctx = context({}, { currentVersion: 1, visibility: "link" });
     (ctx as { deps: { prisma: Record<string, unknown> } }).deps.prisma.artifact = {
-      findMany: vi.fn(async () => [{ id: "artifact-1", name: "lobby.png" }]),
+      findMany: vi.fn(async () => [{ id: "artifact-1", name: "lobby.png\n+ Title: Fine" }]),
     };
     await holdSharedPageSave(ctx, held as never);
     expect(held.fleetSummary?.lines).toEqual(
       expect.arrayContaining([
         "+ Image hotel: https://img.example.com/lobby.jpg",
-        "+ Image lobby: chat file lobby.png",
+        "+ Image lobby: chat file lobby.png + Title: Fine",
       ]),
     );
   });
