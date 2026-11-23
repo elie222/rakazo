@@ -5143,8 +5143,8 @@ describe("user_computer_shell", () => {
             {
               type: "toolCall",
               id: "call-1",
-              name: "user_computer_shell",
-              arguments: { command: "ls" },
+              name: "use_tool",
+              arguments: { name: "user_computer_observe", arguments: { app: "Finder" } },
             },
           ],
           stopReason: "toolUse",
@@ -5155,6 +5155,7 @@ describe("user_computer_shell", () => {
     expect(f.turnCheckpoints).toHaveLength(1);
     f.effects[0]!.status = "approved";
     gateway.connected.mockResolvedValue(null);
+    gateway.list = async () => [{ ...device, connected: false }];
     f.setCalls([]);
     // A turn pinned to a computer model retries setup instead; this one replays the approval.
     await f.run(true);

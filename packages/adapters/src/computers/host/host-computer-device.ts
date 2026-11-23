@@ -23,8 +23,8 @@ export function withHostComputerScreen(
   const host = new HostComputerSandbox(url, token);
   // Kept from the last answer, so a missed one leaves it listed as offline rather than unpaired:
   // runs offer its tools by what is listed, and that must not change while access stays on.
-  // Tied to the settings change it was learned under, so turning access off and on forgets it.
-  let lastSeen: { platform: string; since: number } | undefined;
+  // Forgotten whenever access is found off, so a new access period lists it only once it answers.
+  let lastPlatform: string | undefined;
 
   // Approvals count from the latest settings change, so turning access off and on asks again.
   async function enabledSince() {
@@ -36,8 +36,10 @@ export function withHostComputerScreen(
   }
 
   async function hostDevice(): Promise<UserDevice | null> {
-    const since = await enabledSince();
-    if (!since) return null;
+    if (!(await enabledSince())) {
+      lastPlatform = undefined;
+      return null;
+    }
     try {
       let environment: HostComputerEnvironment | undefined;
       for await (const value of host.stream<HostComputerEnvironment>(
@@ -45,7 +47,7 @@ export function withHostComputerScreen(
         AbortSignal.timeout(5_000),
       ))
         environment = value;
-      if (environment) lastSeen = { platform: environment.platform, since: since.getTime() };
+      if (environment) lastPlatform = environment.platform;
       return environment
         ? {
             deviceId: HOST_COMPUTER_DEVICE_ID,
@@ -69,9 +71,7 @@ export function withHostComputerScreen(
     async list(userId) {
       const paired = (await devices?.list(userId)) ?? [];
       const local = await hostDevice();
-      const since = local ? undefined : (await enabledSince())?.getTime();
-      const platform =
-        local?.platform ?? (since && lastSeen?.since === since ? lastSeen.platform : undefined);
+      const platform = local?.platform ?? lastPlatform;
       return platform
         ? [
             ...paired,

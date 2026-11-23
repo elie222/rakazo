@@ -91,7 +91,6 @@ export function restoreTurnCheckpoint(
   };
 }
 
-/** Match results in transcript order: wire IDs may repeat in later responses. */
 /** The calls a saved turn runs when it resumes: the pending one, or every unresolved one in turn. */
 export function resumingTurnCheckpointCalls(checkpoint: TurnCheckpoint): ToolCall[] {
   const unresolved = unresolvedTurnCheckpointCalls(checkpoint.messages);
@@ -100,6 +99,7 @@ export function resumingTurnCheckpointCalls(checkpoint: TurnCheckpoint): ToolCal
     : unresolved.filter((call) => call.id === checkpoint.pendingToolCallId);
 }
 
+/** Match results in transcript order: wire IDs may repeat in later responses. */
 export function unresolvedTurnCheckpointCalls(messages: Message[]): ToolCall[] {
   const pending = new Map<string, ToolCall>();
   for (const message of messages) {

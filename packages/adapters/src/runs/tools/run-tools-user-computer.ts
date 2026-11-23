@@ -28,6 +28,7 @@ import type {
   HostScreenObservation,
 } from "../../computers/screens/host-screen.js";
 import { HOST_SCREEN_MAX_ACTIONS, hostScreenAction } from "../../computers/screens/host-screen.js";
+import { USE_TOOL } from "../../tools/builtin.tool-definition.js";
 import type { RunContext } from "../assembly/run-context.js";
 import { isRunTaintedBeyondOwnComputer } from "../assembly/run-context.js";
 import type { ToolCall } from "./run-tool-gate.js";
@@ -211,8 +212,8 @@ function requestedComputer(args: Record<string, unknown>): { computerId?: string
 }
 
 /**
- * A paused turn's calls whose computer is offline now, so restoring it waits as it would for a
- * tool not offered. A failed lookup is not offline: the call checks again and reports it.
+ * A paused turn's calls whose paired computer is offline now, so restoring it waits as it would
+ * for a tool not offered. An id that is not paired, or a failed lookup, is left to the call.
  */
 export async function offlineUserComputerCalls(
   devices: UserDeviceGateway,
@@ -220,15 +221,29 @@ export async function offlineUserComputerCalls(
   calls: readonly { id: string; name: string; arguments: Record<string, unknown> }[],
 ): Promise<Set<string>> {
   const offline = new Set<string>();
-  for (const call of calls) {
+  // Screen tools are deferred, so the model reaches them through use_tool.
+  const unwrapped = calls.map((call) =>
+    call.name === USE_TOOL &&
+    call.arguments.arguments &&
+    typeof call.arguments.arguments === "object"
+      ? {
+          id: call.id,
+          name: String(call.arguments.name),
+          arguments: call.arguments.arguments as Record<string, unknown>,
+        }
+      : call,
+  );
+  if (!unwrapped.some((call) => USER_COMPUTER_TOOLS.has(call.name))) return offline;
+  const computers = await bestEffort("list the paused call's computers", devices.list(owner));
+  if (!computers?.length) return offline;
+  for (const call of unwrapped) {
     if (!USER_COMPUTER_TOOLS.has(call.name)) continue;
     const target = requestedComputer(call.arguments);
     if (target.error) continue;
-    const device = await bestEffort(
-      "check the paused call's computer",
-      devices.connected(owner, target.computerId),
-    );
-    if (device === null) offline.add(call.id);
+    const reachable = target.computerId
+      ? computers.filter((computer) => computer.deviceId === target.computerId)
+      : computers;
+    if (reachable.length && !reachable.some((computer) => computer.connected)) offline.add(call.id);
   }
   return offline;
 }

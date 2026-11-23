@@ -79,7 +79,11 @@ import { reviewToolCall } from "./run-tool-review.js";
 import { BUILTIN_AGENT_TOOL_NAMES, READ_ONLY_AGENT_TOOLS } from "./run-tool-selection.js";
 import { callMediaTool } from "./run-tools-files.js";
 import { callPaidService } from "./run-tools-integrations.js";
-import { USER_COMPUTER_TOOLS, userComputerGate } from "./run-tools-user-computer.js";
+import {
+  USER_COMPUTER_TOOLS,
+  userComputerCallRefusal,
+  userComputerGate,
+} from "./run-tools-user-computer.js";
 
 export type AppliedEffect = Awaited<ReturnType<typeof recordEffect>>;
 
@@ -756,7 +760,12 @@ async function settleToolUncertainty(
 }
 
 /** Ask the owner through an approval card. Parallel calls share the first call's pause. */
-function requestApproval(ctx: RunContext, call: ToolCall, card: ApprovalCardOptions) {
+async function requestApproval(ctx: RunContext, call: ToolCall, card: ApprovalCardOptions) {
+  // Never ask about a call the user's computer cannot run; answering it now closes its effect.
+  if (USER_COMPUTER_TOOLS.has(call.name)) {
+    const mismatch = await userComputerCallRefusal(ctx, call.name, call.args);
+    if (mismatch) return call.finish({ error: mismatch });
+  }
   const { approval } = ctx.state;
   // Parallel calls can need approval at once. Only the first saves the turn and shows
   // its card; the others wait for that pause. Otherwise a later call's save could make
