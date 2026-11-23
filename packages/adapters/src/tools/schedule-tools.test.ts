@@ -1345,12 +1345,15 @@ describe("updateScheduleFromTool", () => {
       endAt: "Monday, 2026-11-30 23:59 (UTC+01:00)",
       changes: { endAt: { before: null, after: "Monday, 2026-11-30 23:59 (UTC+01:00)" } },
     });
-    expect(updateMany).toHaveBeenLastCalledWith(expect.objectContaining({ data: { endsAt } }));
+    expect(updateMany).toHaveBeenLastCalledWith({
+      where: expect.objectContaining({ nextRunAt: weekly.nextRunAt }),
+      data: expect.objectContaining({ endsAt }),
+    });
 
     const ending = setup({ ...weekly, endsAt });
     await expect(ending.update({ endAt: "none" })).resolves.toMatchObject({ ok: true });
     expect(ending.updateMany).toHaveBeenLastCalledWith(
-      expect.objectContaining({ data: { endsAt: null } }),
+      expect.objectContaining({ data: expect.objectContaining({ endsAt: null }) }),
     );
   });
 
@@ -1482,6 +1485,23 @@ describe("updateScheduleFromTool", () => {
       expect.objectContaining({ data: { name: "Last groceries" } }),
     );
     expect(enqueue).not.toHaveBeenCalled();
+  });
+
+  it("changes the timing of a routine on its last run without resuming it", async () => {
+    const { updateMany, update } = setup({
+      ...weekly,
+      nextRunAt: null,
+      endsAt: new Date("2026-10-20T05:00:00Z"),
+    });
+    await expect(update({ schedule: { cron: "0 9 * * 2" } })).resolves.toMatchObject({
+      ok: true,
+      nextRunAt: null,
+    });
+    expect(updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ crons: ["0 9 * * 2"], nextRunAt: null }),
+      }),
+    );
   });
 
   it("resumes a routine on its last run when its end moves later", async () => {

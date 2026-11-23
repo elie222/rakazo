@@ -1197,6 +1197,7 @@ export async function updateScheduleFromTool(
     if (!resolved.ok) return { error: resolved.error };
     crons = [resolved.cron];
     nextRunAt = carried ?? resolved.nextRunAt;
+    if (routineEnded(existing)) nextRunAt = runBeforeEnd(nextRunAt, endsAt);
   } else if (active && watchChanged) {
     nextRunAt = firstWatchCheck();
   } else if (
@@ -1243,7 +1244,7 @@ export async function updateScheduleFromTool(
     { endsAt, crons, watch: existing.watch, nextRunAt },
     {
       end: end.endsAt !== undefined && endChanged,
-      nextRun: nextRunAt?.getTime() !== existing.nextRunAt?.getTime(),
+      nextRun: endChanged || nextRunAt?.getTime() !== existing.nextRunAt?.getTime(),
     },
   );
   if (endError) return { error: `${endError} ${nowIn(timezone)}` };
@@ -1262,6 +1263,7 @@ export async function updateScheduleFromTool(
   const timingChanged =
     retime ||
     watchChanged ||
+    endChanged ||
     active !== existing.active ||
     nextRunAt?.getTime() !== existing.nextRunAt?.getTime();
 

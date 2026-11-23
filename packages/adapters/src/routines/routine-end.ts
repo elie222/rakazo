@@ -162,7 +162,7 @@ export async function endRoutinePastItsEnd(
   deps: SpentRoutineDeps,
   routine: EndedRoutine & { id: string; userId: string; endsAt: Date | null },
   scheduledAt: Date,
-): Promise<void> {
+): Promise<boolean> {
   const due = {
     id: routine.id,
     userId: routine.userId,
@@ -175,7 +175,7 @@ export async function endRoutinePastItsEnd(
   });
   if (deleted.count) {
     await announceEnded(deps, routine);
-    return;
+    return true;
   }
   const stopped = await deps.prisma.routine.updateMany({
     where: due,
@@ -187,6 +187,7 @@ export async function endRoutinePastItsEnd(
       deps.events.publishSpaceChange?.(routine.spaceId, "routines"),
     );
   }
+  return stopped.count > 0;
 }
 
 export async function deleteEndedRoutine(

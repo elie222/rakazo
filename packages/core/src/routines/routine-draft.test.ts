@@ -66,9 +66,15 @@ describe("routine end in an editor", () => {
     expect(draftFromRoutine(routine).endsOn).toBe("2026-11-30");
   });
 
-  it("keeps a time set on the same day and ends a new day at its last moment", () => {
+  it("keeps a time a bot set, on the same day or a new one", () => {
     expect(routineEndUpdate(routine, "2026-11-30", true)).toEqual({});
     expect(routineEndUpdate(routine, "2026-12-02", true)).toEqual({
+      endsAt: "2026-12-02T23:00:00.000Z",
+    });
+  });
+
+  it("ends a newly picked day at its last moment", () => {
+    expect(routineEndUpdate({ ...routine, endsAt: null }, "2026-12-02", true)).toEqual({
       endsAt: "2026-12-03T04:59:59.999Z",
     });
   });

@@ -1,5 +1,11 @@
 import type { Routine, RoutineEmailSenders } from "@rakazo/contracts";
-import { DAY_MS, isEndOfZonedDay, wallClock, zonedEndDateTime } from "../primitives/time.js";
+import {
+  DAY_MS,
+  isEndOfZonedDay,
+  wallClock,
+  zonedDateTime,
+  zonedEndDateTime,
+} from "../primitives/time.js";
 import type { CronPreset } from "./schedule.js";
 import { isOneShotRoutineCrons, nextCronDateAcross, presetFromCron } from "./schedule.js";
 
@@ -69,7 +75,12 @@ export function routineEndUpdate(
 ): { endsAt?: string | null } {
   const endsAt = routineDraftEndsAt(endsOn, repeats, routine.timezone);
   if (endsAt === null) return routine.endsAt ? { endsAt: null } : {};
-  return endsOn === endsOnDay(routine) ? {} : { endsAt };
+  if (endsOn === endsOnDay(routine)) return {};
+  const saved = routine.endsAt ? new Date(routine.endsAt) : null;
+  if (!saved || isEndOfZonedDay(saved, routine.timezone)) return { endsAt };
+  const time = wallClock(saved, routine.timezone).slice(11);
+  const moved = zonedDateTime(`${endsOn}T${time}`, routine.timezone);
+  return { endsAt: moved?.toISOString() ?? endsAt };
 }
 
 export function defaultRoutineEndDay(crons: string[], timezone: string, now = new Date()): string {

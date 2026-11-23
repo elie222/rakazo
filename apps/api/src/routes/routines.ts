@@ -334,7 +334,7 @@ export function routinesRoutes(ctx: RouterContext) {
           { endsAt, crons, watch, nextRunAt },
           {
             end: input.endsAt !== undefined && endChanged,
-            nextRun: nextRunAt?.getTime() !== existing.nextRunAt?.getTime(),
+            nextRun: endChanged || nextRunAt?.getTime() !== existing.nextRunAt?.getTime(),
           },
         );
         if (endError) throw new ClientError("BAD_REQUEST", endError);

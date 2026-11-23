@@ -970,12 +970,15 @@ export async function tickRoutineWatch(
     };
   }
   const { endsAt } = routine;
-  if (endsAt && !runBeforeEnd(nextRunAt, endsAt)) {
-    await endRoutinePastItsEnd(
+  if (
+    endsAt &&
+    !runBeforeEnd(nextRunAt, endsAt) &&
+    (await endRoutinePastItsEnd(
       deps,
       { ...routine, threadId: routine.threadId ?? null, endsAt },
       scheduledAt,
-    );
+    ))
+  ) {
     return { run: false };
   }
   const claimed = await deps.prisma.routine.updateMany({
