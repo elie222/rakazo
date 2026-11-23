@@ -386,7 +386,8 @@ function RoutineEditor({
     !locked &&
     routineCanEnd(draftCrons, Boolean(kept.watch), routineDraftEventTriggered(draft, source));
   const zone = draft.timezone ?? deviceTimeZone() ?? "UTC";
-  // A webhook needs the bot's key. It is made once, by the bot's creator, as on web.
+  // A webhook needs the bot's key. It is made once, by the bot's creator, as on web. Triggers
+  // are held until it settles, so a failure has nothing newer to undo.
   const webhookKey = useSave({
     save: async (_previous: Pick<MobileRoutineDraft, "webhookEnabled" | "useComputer">, send) => {
       const bot = await send("bots/get", { botId });
@@ -603,6 +604,7 @@ function RoutineEditor({
                   key={trigger.key}
                   label={trigger.label}
                   value=""
+                  disabled={trigger.key === "webhookEnabled" && webhookKey.pending}
                   choices={[
                     {
                       key: "remove",
@@ -642,6 +644,7 @@ function RoutineEditor({
                 key="add"
                 label={t`Add trigger`}
                 value=""
+                disabled={webhookKey.pending}
                 choices={addChoices}
                 onChange={addTrigger}
               >

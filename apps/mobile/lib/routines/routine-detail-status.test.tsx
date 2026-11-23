@@ -70,15 +70,17 @@ vi.mock("../../components/settings/settings-group", () => ({
 vi.mock("../../components/ui/menu-picker", () => ({
   MenuPickerMenu: ({
     choices,
+    disabled,
     onChange,
   }: {
     choices: Array<{ key: string; label: string }>;
+    disabled?: boolean;
     onChange: (key: string) => void;
   }) =>
     choices.map((choice) =>
       createElement(
         "button",
-        { key: choice.key, type: "button", onClick: () => onChange(choice.key) },
+        { key: choice.key, type: "button", disabled, onClick: () => onChange(choice.key) },
         choice.label,
       ),
     ),
@@ -256,6 +258,20 @@ it("takes the webhook back off when only the bot's creator can make its key", as
   await press("Webhook");
   expect(container.textContent).toContain("Only the bot's creator can set its webhook key.");
   expect(container.textContent).not.toContain("Remove Webhook");
+});
+
+it("holds the triggers until a new webhook's key request settles", async () => {
+  const key = deferred();
+  state.rpc.mockImplementation(async (proc: string) =>
+    proc === "bots/get" ? { webhookConfigured: false } : key.promise,
+  );
+  await press("Edit routine");
+  await press("Webhook");
+  expect(button("Remove Webhook")?.disabled).toBe(true);
+  expect(button("On a schedule")?.disabled).toBe(true);
+  await act(async () => key.resolve(undefined));
+  expect(button("Remove Webhook")?.disabled).toBe(false);
+  expect(button("On a schedule")?.disabled).toBe(false);
 });
 
 async function startDelete() {
