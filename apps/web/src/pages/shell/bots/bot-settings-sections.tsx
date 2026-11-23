@@ -22,6 +22,10 @@ import type { ChatModelChoice } from "@rakazo/core";
 import { thinkingLevelLabel } from "@rakazo/i18n/thinking-level";
 import {
   Button,
+  Field,
+  FieldDescription,
+  FieldError,
+  FieldLabel,
   Input,
   OptionSelect,
   SectionHeading,
@@ -100,13 +104,13 @@ export function SwitchRow({
   onChange: (checked: boolean) => void;
 }) {
   return (
-    <label
-      htmlFor={id}
-      className="flex min-h-12 cursor-pointer items-center justify-between gap-3 text-body text-foreground"
+    <Field
+      orientation="horizontal"
+      className="min-h-12 cursor-pointer gap-3 text-body text-foreground"
     >
-      {label}
+      <FieldLabel htmlFor={id}>{label}</FieldLabel>
       <Switch id={id} checked={checked} disabled={disabled} onCheckedChange={onChange} />
-    </label>
+    </Field>
   );
 }
 
@@ -149,11 +153,10 @@ export function ModelRow({
         />
       </div>
       {thinkingOptions.length ? (
-        <label
-          htmlFor={`${ids}-thinking`}
-          className="flex min-h-12 items-center justify-between gap-3 text-body text-foreground"
-        >
-          <Trans>Thinking</Trans>
+        <Field orientation="horizontal" className="min-h-12 gap-3 text-body text-foreground">
+          <FieldLabel htmlFor={`${ids}-thinking`}>
+            <Trans>Thinking</Trans>
+          </FieldLabel>
           <OptionSelect
             id={`${ids}-thinking`}
             className="w-fit max-w-2/3"
@@ -167,7 +170,7 @@ export function ModelRow({
               })),
             ]}
           />
-        </label>
+        </Field>
       ) : null}
     </>
   );
@@ -187,11 +190,10 @@ export function VoiceRow({
 }) {
   const { t } = useLingui();
   return (
-    <label
-      htmlFor={`${ids}-voice`}
-      className="flex min-h-12 items-center justify-between gap-3 text-body text-foreground"
-    >
-      <Trans>Voice</Trans>
+    <Field orientation="horizontal" className="min-h-12 gap-3 text-body text-foreground">
+      <FieldLabel htmlFor={`${ids}-voice`}>
+        <Trans>Voice</Trans>
+      </FieldLabel>
       <OptionSelect
         id={`${ids}-voice`}
         className="w-fit max-w-2/3"
@@ -202,7 +204,7 @@ export function VoiceRow({
           ...voices.map((voice) => ({ value: voice.id, label: voice.label })),
         ]}
       />
-    </label>
+    </Field>
   );
 }
 
@@ -340,10 +342,10 @@ export function WorkspacePathRow({
     if (normalized !== value) onCommit(normalized);
   }
   return (
-    <div className="flex flex-col gap-1.5 py-3">
-      <label htmlFor={id} className="text-body text-foreground">
+    <Field className="gap-1.5 py-3">
+      <FieldLabel htmlFor={id} className="text-body text-foreground">
         <Trans>Workspace folder</Trans>
-      </label>
+      </FieldLabel>
       <Input
         id={id}
         data-testid="bot-workspace-path"
@@ -365,11 +367,11 @@ export function WorkspacePathRow({
           }
         }}
       />
-      <p className="text-body-sm text-muted-foreground">
+      <FieldDescription>
         <Trans>The bot's commands and files start here. Leave empty for the default folder.</Trans>
-      </p>
-      {error ? <p className="text-body-sm text-destructive">{error}</p> : null}
-    </div>
+      </FieldDescription>
+      {error ? <FieldError>{error}</FieldError> : null}
+    </Field>
   );
 }
 
@@ -408,10 +410,10 @@ export function DeviceRow({
       label: boundName ? t`${boundName} (offline)` : t`Unavailable computer`,
     });
   return (
-    <div className="flex min-h-12 items-center justify-between gap-3 py-2 text-body">
-      <label htmlFor={id} className="text-foreground">
+    <Field orientation="horizontal" className="min-h-12 gap-3 py-2 text-body">
+      <FieldLabel htmlFor={id} className="text-foreground">
         <Trans>Your computer</Trans>
-      </label>
+      </FieldLabel>
       <OptionSelect
         id={id}
         data-testid="bot-host-device"
@@ -423,7 +425,7 @@ export function DeviceRow({
         }}
         options={options}
       />
-    </div>
+    </Field>
   );
 }
 
@@ -449,10 +451,10 @@ export function ApprovalModeRow({
   const { t } = useLingui();
   return (
     <div className="flex flex-col gap-1.5 py-3">
-      <div className="flex min-h-12 items-center justify-between gap-3 text-body">
-        <label htmlFor={id} className="text-foreground">
+      <Field orientation="horizontal" className="min-h-12 gap-3 text-body">
+        <FieldLabel htmlFor={id} className="text-foreground">
           <Trans>Approval mode</Trans>
-        </label>
+        </FieldLabel>
         <OptionSelect
           id={id}
           data-testid="bot-approval-mode"
@@ -468,11 +470,11 @@ export function ApprovalModeRow({
             { value: "never", label: t`Never ask` },
           ]}
         />
-      </div>
+      </Field>
       {value === "auto" && !autoAvailable ? (
-        <p className="text-body-sm text-muted-foreground">
+        <FieldDescription>
           <Trans>Auto needs an approval model; until one is set, this bot asks.</Trans>
-        </p>
+        </FieldDescription>
       ) : null}
     </div>
   );
@@ -522,11 +524,11 @@ export function ParallelWorkRow({
     if (next !== value) onCommit(next);
   }
   return (
-    <div className="flex flex-col gap-1.5 py-3">
-      <div className="flex min-h-12 items-center justify-between gap-3 text-body">
-        <label htmlFor={id} className="text-foreground">
+    <Field className="gap-1.5 py-3">
+      <Field orientation="horizontal" className="min-h-12 gap-3 text-body">
+        <FieldLabel htmlFor={id} className="text-foreground">
           <Trans>Tasks at once</Trans>
-        </label>
+        </FieldLabel>
         <Input
           id={id}
           data-testid="bot-parallel-work"
@@ -549,12 +551,12 @@ export function ParallelWorkRow({
             }
           }}
         />
-      </div>
-      <p className="text-body-sm text-muted-foreground">
+      </Field>
+      <FieldDescription>
         <Trans>Background tasks this bot can run at the same time. 3 by default.</Trans>
-      </p>
-      {error ? <p className="text-body-sm text-destructive">{error}</p> : null}
-    </div>
+      </FieldDescription>
+      {error ? <FieldError>{error}</FieldError> : null}
+    </Field>
   );
 }
 
@@ -626,11 +628,11 @@ export function ConversationCompactionRow({
           : t`Keeps the latest 50 messages and summarizes older ones.`;
 
   return (
-    <div className="flex flex-col gap-1.5 py-3">
-      <div className="flex min-h-12 items-center justify-between gap-3 text-body">
-        <label htmlFor={id} className="text-foreground">
+    <Field className="gap-1.5 py-3">
+      <Field orientation="horizontal" className="min-h-12 gap-3 text-body">
+        <FieldLabel htmlFor={id} className="text-foreground">
           <Trans>Compact conversation</Trans>
-        </label>
+        </FieldLabel>
         <OptionSelect
           id={id}
           data-testid="bot-conversation-compaction"
@@ -656,12 +658,15 @@ export function ConversationCompactionRow({
             { value: "custom", label: t`Custom amount` },
           ]}
         />
-      </div>
+      </Field>
       {mode === "custom" ? (
-        <div className="flex flex-wrap items-center justify-between gap-2 text-body-sm text-muted-foreground">
-          <label htmlFor={`${id}-tokens`}>
+        <Field
+          orientation="horizontal"
+          className="flex-wrap justify-between gap-2 text-body-sm text-muted-foreground"
+        >
+          <FieldLabel htmlFor={`${id}-tokens`}>
             <Trans>Tokens</Trans>
-          </label>
+          </FieldLabel>
           <div className="flex items-center gap-1.5">
             <Button
               type="button"
@@ -704,11 +709,11 @@ export function ConversationCompactionRow({
               }}
             />
           </div>
-        </div>
+        </Field>
       ) : null}
-      <p className="text-body-sm text-muted-foreground">{help}</p>
-      {error ? <p className="text-body-sm text-destructive">{error}</p> : null}
-    </div>
+      <FieldDescription>{help}</FieldDescription>
+      {error ? <FieldError>{error}</FieldError> : null}
+    </Field>
   );
 }
 
@@ -753,11 +758,11 @@ export function ToolCallLimitRow({
   }
 
   return (
-    <div className="flex flex-col gap-1.5 py-3">
-      <div className="flex min-h-12 items-center justify-between gap-3 text-body">
-        <label htmlFor={id} className="text-foreground">
+    <Field className="gap-1.5 py-3">
+      <Field orientation="horizontal" className="min-h-12 gap-3 text-body">
+        <FieldLabel htmlFor={id} className="text-foreground">
           <Trans>Tool calls per turn</Trans>
-        </label>
+        </FieldLabel>
         <Input
           id={id}
           data-testid="bot-tool-call-limit"
@@ -781,11 +786,11 @@ export function ToolCallLimitRow({
             }
           }}
         />
-      </div>
-      <p className="text-body-sm text-muted-foreground">
+      </Field>
+      <FieldDescription>
         <Trans>The agent stops after this many tool calls in one turn. Empty means no limit.</Trans>
-      </p>
-      {error ? <p className="text-body-sm text-destructive">{error}</p> : null}
-    </div>
+      </FieldDescription>
+      {error ? <FieldError>{error}</FieldError> : null}
+    </Field>
   );
 }

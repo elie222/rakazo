@@ -12,6 +12,14 @@ vi.mock("@lingui/react/macro", () => {
   return { useLingui: () => ({ t }), Trans: ({ children }: { children: ReactNode }) => children };
 });
 vi.mock("@rakazo/ui-web", () => ({
+  Field: ({ children, ...props }: ComponentProps<"div">) => <div {...props}>{children}</div>,
+  FieldLabel: ({ children, htmlFor, ...props }: ComponentProps<"label">) => (
+    <label htmlFor={htmlFor} {...props}>
+      {children}
+    </label>
+  ),
+  FieldDescription: ({ children, ...props }: ComponentProps<"p">) => <p {...props}>{children}</p>,
+  FieldError: ({ children, ...props }: ComponentProps<"div">) => <div {...props}>{children}</div>,
   Button: (props: ComponentProps<"button">) => <button type="button" {...props} />,
   Tabs: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   TabsList: ({ children }: { children: ReactNode }) => <div>{children}</div>,

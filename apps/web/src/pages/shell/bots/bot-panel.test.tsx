@@ -54,12 +54,25 @@ vi.mock("@lingui/react/macro", () => {
   return { useLingui: () => ({ t }), Trans: ({ children }: { children: ReactNode }) => children };
 });
 vi.mock("@rakazo/ui-web", async (importOriginal) => {
-  const { OptionSelect, Tabs, TabsContent, TabsList, TabsTrigger } =
-    await importOriginal<typeof UiWeb>();
+  const {
+    Field,
+    FieldDescription,
+    FieldError,
+    FieldLabel,
+    OptionSelect,
+    Tabs,
+    TabsContent,
+    TabsList,
+    TabsTrigger,
+  } = await importOriginal<typeof UiWeb>();
   const { createContext, useContext } = await import("react");
   const PopoverOpen = createContext<(open: boolean) => void>(() => undefined);
   const ToggleValue = createContext<(value: string) => void>(() => undefined);
   return {
+    Field,
+    FieldDescription,
+    FieldError,
+    FieldLabel,
     Tabs,
     TabsContent,
     TabsList,

@@ -185,7 +185,11 @@ describe("deleting a shared memory document", () => {
       read: vi.fn(async () => ({ documents })),
       remove: vi.fn(async () => ({ removed })),
     };
-    const ctx = { context: { spaceId: "space-1" }, deps: { memory } };
+    const ctx = {
+      context: { spaceId: "space-1" },
+      bot: { useSharedMemory: true },
+      deps: { memory },
+    };
     const result = memoryTools.delete_shared_memory!(
       ctx as never,
       { args: { path }, finish: (value: unknown) => value } as never,
@@ -204,6 +208,20 @@ describe("deleting a shared memory document", () => {
       { id: "doc-1", scope: "user", path: "team.md" },
       { spaceId: "space-1" },
     );
+  });
+
+  it("refuses to delete shared notes when the bot turned them off", async () => {
+    const memory = { read: vi.fn(), remove: vi.fn() };
+    const result = await memoryTools.delete_shared_memory!(
+      {
+        context: { spaceId: "space-1" },
+        bot: { useSharedMemory: false },
+        deps: { memory },
+      } as never,
+      { args: { path: "team.md" }, finish: (value: unknown) => value } as never,
+    );
+    expect(result).toEqual({ error: "Shared memory is turned off for this bot in its settings." });
+    expect(memory.read).not.toHaveBeenCalled();
   });
 
   it("keeps the index document, which is edited instead", async () => {

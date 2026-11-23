@@ -46,6 +46,10 @@ vi.mock("@lingui/react/macro", () => {
   return { useLingui: () => ({ t }), Trans: ({ children }: { children: ReactNode }) => children };
 });
 vi.mock("@rakazo/ui-web", async (importOriginal) => ({
+  Field: (await importOriginal<typeof UiWeb>()).Field,
+  FieldLabel: (await importOriginal<typeof UiWeb>()).FieldLabel,
+  FieldDescription: (await importOriginal<typeof UiWeb>()).FieldDescription,
+  FieldError: (await importOriginal<typeof UiWeb>()).FieldError,
   OptionSelect: (await importOriginal<typeof UiWeb>()).OptionSelect,
   Tabs: (await importOriginal<typeof UiWeb>()).Tabs,
   TabsList: (await importOriginal<typeof UiWeb>()).TabsList,
@@ -224,9 +228,9 @@ describe("BotSettings rarely changed settings", () => {
       fleetManagement: false,
     });
     const speechToggle = container.querySelector<HTMLButtonElement>('[id$="-auto-speak"]');
-    const speechRow = speechToggle?.closest("label");
-    expect(speechRow?.htmlFor).toBe(speechToggle?.id);
-    expect(speechRow?.textContent).toBe("Read replies aloud");
+    expect(container.querySelector(`label[for="${speechToggle?.id}"]`)?.textContent).toBe(
+      "Read replies aloud",
+    );
     expect(container.querySelector('label[for$="-daily-check-ins"]')?.textContent?.trim()).toBe(
       "Daily check-ins on unfinished work",
     );

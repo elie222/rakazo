@@ -178,6 +178,9 @@ export const memoryTools: ToolHandlers = {
   },
   async delete_shared_memory(ctx, call) {
     const { deps, context } = ctx;
+    if (ctx.bot.useSharedMemory === false) {
+      return call.finish({ error: "Shared memory is turned off for this bot in its settings." });
+    }
     const path = String(call.args.path ?? "").trim();
     if (!path) return call.finish({ error: "path is required" });
     if (!isDeletableMemoryDocument(path)) {
