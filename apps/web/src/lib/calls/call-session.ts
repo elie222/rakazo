@@ -37,7 +37,7 @@ import {
   webLogoAvatarActivity,
 } from "../bots/logo-avatar-activity.js";
 import { reportClientError } from "../platform/monitoring";
-import { recheckSessionOnUnauthorized, rpc } from "../query/rpc.js";
+import { recheckSessionOnUnauthorized, rpc, selectedSpaceId } from "../query/rpc.js";
 import { errorText } from "../query/user-error";
 import { pickUp } from "./call-pickup.js";
 import { dictation, usesServerDictation } from "./dictation.js";
@@ -103,6 +103,7 @@ let sessionEpoch = 0;
 let transcribe: boolean | undefined;
 let thread: ThreadSnapshot | null = null;
 let feed: {
+  spaceId: string | null;
   controller: AbortController;
   load: () => Promise<ThreadSnapshot | null>;
 } | null = null;
@@ -209,7 +210,10 @@ export function startCall(call: {
   };
   unsubSpeech = speaker.subscribe((speech) => {
     if (!state || state.phase === "ringing") return;
-    if (openingPending && speech.status === "idle") openingPending = false;
+    if (openingPending && speech.status === "idle") {
+      openingPending = false;
+      syncApproval();
+    }
     if (speech.status === "speaking") {
       bargedIn = false;
       set({ phase: "speaking", caption: speech.caption ?? "" });
@@ -255,6 +259,7 @@ export function startCall(call: {
     pickup = null;
     if (!opening) {
       set({ phase: "listening", connectedAt: Date.now() });
+      syncApproval();
       void listen();
       return;
     }
@@ -269,6 +274,7 @@ export function startCall(call: {
     void speaker.speak(opening, { botId: call.botId, callId }).catch(() => {
       if (callId !== ringingCallId) return;
       openingPending = false;
+      syncApproval();
       void listen();
     });
   });
@@ -457,6 +463,8 @@ export function setCallMinimized(minimized: boolean): void {
 
 /** Live feed for the bot on the call, independent of whichever thread is on screen. */
 function watchThread(botId: string) {
+  const spaceId = selectedSpaceId();
+  const context = { spaceId };
   const controller = new AbortController();
   const avatarSource = newLogoAvatarActivitySource();
   const feedCallId = callId;
@@ -470,7 +478,7 @@ function watchThread(botId: string) {
   const load = async () => {
     if (!isCurrent()) return null;
     const request = ++requestEpoch;
-    const next = await rpc.threads.get({ botId }, { signal: controller.signal });
+    const next = await rpc.threads.get({ botId }, { signal: controller.signal, context });
     if (!isCurrent()) return null;
     if (request < acceptedEpoch) return thread;
     if (thread?.threadId === next.threadId && thread.cursor > next.cursor) return thread;
@@ -489,7 +497,7 @@ function watchThread(botId: string) {
     throw error;
   };
   const loadOrEnd = () => load().catch(endOnUnauthorized);
-  feed = { controller, load: loadOrEnd };
+  feed = { controller, load: loadOrEnd, spaceId };
   async function* endOnUnauthorizedEvents(events: AsyncIterable<ProductEvent>) {
     try {
       yield* events;
@@ -501,13 +509,13 @@ function watchThread(botId: string) {
     signal: controller.signal,
     loadInitial: loadOrEnd,
     loadHead: () =>
-      rpc.threads.head({ botId }, { signal: controller.signal }).catch(endOnUnauthorized),
+      rpc.threads.head({ botId }, { signal: controller.signal, context }).catch(endOnUnauthorized),
     refresh: loadOrEnd,
     currentSnapshot: () => thread,
     subscribe: async (cursor, signal) =>
       endOnUnauthorizedEvents(
         await openLogoAvatarActivityFeed(avatarSource, thread, cursor, signal, () =>
-          rpc.threads.subscribe({ botId, cursor }, { signal }),
+          rpc.threads.subscribe({ botId, cursor }, { signal, context }),
         ).catch(endOnUnauthorized),
       ),
     beforeEvent: (event) => webLogoAvatarActivity.apply(avatarSource, event),
@@ -566,19 +574,24 @@ function commit(next: ThreadSnapshot | null) {
     else finishedRunIds.add(run.id);
   }
   thread = next;
-  const approval = pendingApproval(next);
+  reactToThread();
+  syncApproval();
+  return next;
+}
+
+function syncApproval() {
+  const approval =
+    thread && state?.connectedAt != null && !openingPending ? pendingApproval(thread) : null;
   if (
     state &&
     (state.approval?.block !== approval?.block || state.approval?.messageId !== approval?.messageId)
   )
     set({ approval });
-  reactToThread();
-  return next;
 }
 
 function pendingApproval(snapshot: ThreadSnapshot): CallState["approval"] {
   if (!identity) return null;
-  const followedRun = approvalRunId ?? awaitedRunId;
+  const followedRun = awaitingReply ? (approvalRunId ?? awaitedRunId) : null;
   const ids = answerableAskMessageIds(snapshot, identity);
   for (let i = snapshot.messages.length - 1; i >= 0; i--) {
     const message = snapshot.messages[i];
@@ -600,18 +613,21 @@ function pendingApproval(snapshot: ThreadSnapshot): CallState["approval"] {
 /** Only the on-screen card submits a decision. Follow the resumed run even if the mic is idle. */
 export async function answerCallApproval(messageId: string, answer: string): Promise<void> {
   const approval = state?.approval;
-  if (!state || !approval || approval.messageId !== messageId)
+  if (!feed || !state || !approval || approval.messageId !== messageId)
     throw new Error(t`Could not submit this answer`);
   const currentFeed = feed;
   approvalRunId = approval.runId;
   awaitingReply = true;
   spokenMessageIds.add(messageId);
-  const request = rpc.threads.answer({
-    botId: state.botId,
-    runId: approval.runId,
-    messageId,
-    answer,
-  });
+  const request = rpc.threads.answer(
+    {
+      botId: state.botId,
+      runId: approval.runId,
+      messageId,
+      answer,
+    },
+    { context: { spaceId: currentFeed.spaceId } },
+  );
   const release = callSends.track(callId, request);
   try {
     await request;
