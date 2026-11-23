@@ -25,7 +25,7 @@ function Dashboard() {
         <ReplyButton label="Ask about churn" reply="Why did churn change this week?" />
         <CopyButton label="Copy MRR" text="MRR $12,400" />
         <Toggle label={targets ? "Targets shown" : "Show targets"} value={targets} onChange={setTargets} />
-        <Metrics metrics={[{ value: "$12,400", label: "MRR" }, { value: "398", label: "New users" }, { value: "${churn}", label: "Churn", tone: "warning" }, { value: "4.8%", label: "Trial to paid" }]} />
+        <Metrics metrics={[{ value: "$12,400", label: "MRR", icon: "banknote" }, { value: "398", label: "New users", icon: "user-plus" }, { value: "${churn}", label: "Churn", tone: "warning", icon: "trending-down" }, { value: "4.8%", label: "Trial to paid", icon: "percent" }]} />
       </Section>
       <Grid columns={2}>
         <Section heading="Signups over time"><LineChart points={points} ceiling={86} floor={0} labels={["Signups"]} /></Section>

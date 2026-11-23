@@ -12,6 +12,7 @@ import {
   PAGE_KIT_MODULE,
   PAGE_MODULES,
 } from "./components.js";
+import { closeIconNames, isPageIcon } from "./icon-names.js";
 import { selfRenderingKitNames, selfRenderingMessage } from "./shadow.js";
 
 export { PAGE_KIT_GUIDE } from "./guide.js";
@@ -94,9 +95,14 @@ export function checkPageSource(source: string): PageSourceCheck {
   const tags = new Map<string, number>();
   let defaults = 0;
   const blocked = new Set<string>();
+  let tag = "";
   tokens.forEach((token, index) => {
     const text = source.slice(token.start, token.end);
     const line = lineOf(token.start);
+    if (token.type === TokenType.string && namesIcon(tokens, index, source, tag)) {
+      const name = text.slice(1, -1);
+      if (name && !isPageIcon(name)) warnings.push(`line ${line}: ${unknownIconMessage(name)}`);
+    }
     if (token.type === TokenType._import) {
       const problem = importProblem(tokens, index, source);
       if (problem) errors.push(`line ${line}: ${problem}`);
@@ -120,6 +126,7 @@ export function checkPageSource(source: string): PageSourceCheck {
       const nameToken =
         tokens[index + 1]?.type === TokenType.jsxName ? tokens[index + 1] : undefined;
       const name = nameToken ? source.slice(nameToken.start, nameToken.end) : "";
+      tag = name;
       // A lowercase first letter makes an element, and HTML reads its name in any case.
       const element = /^[a-z]/.test(name) ? name.toLowerCase() : "";
       if (BLOCKED_ELEMENTS.has(element) && !blocked.has(element)) {
@@ -276,6 +283,25 @@ function importProblem(tokens: Tokens, start: number, source: string): string | 
   return unknown.length
     ? `${unknown.join(", ")} ${unknown.length > 1 ? "are" : "is"} not in the kit. Use ${KIT_LIST}.`
     : undefined;
+}
+
+function namesIcon(tokens: Tokens, index: number, source: string, tag: string): boolean {
+  const before = tokens[index - 2];
+  if (!before) return false;
+  const key = source.slice(before.start, before.end);
+  if (tokens[index - 1]?.type === TokenType.eq && before.type === TokenType.jsxName) {
+    return key === "icon" || (key === "name" && tag === "Icon");
+  }
+  return (
+    tokens[index - 1]?.type === TokenType.colon &&
+    (before.type === TokenType.name || before.type === TokenType.string) &&
+    key.replace(/^["']|["']$/g, "") === "icon"
+  );
+}
+
+function unknownIconMessage(name: string): string {
+  const close = closeIconNames(name);
+  return `no kit icon is named "${name}", and an unknown icon draws nothing.${close.length ? ` Did you mean ${close.map((icon) => `"${icon}"`).join(", ")}?` : " Pick one from the icon list in the guide."}`;
 }
 
 function isJsxAttributeValue(tokens: Tokens, index: number): boolean {
