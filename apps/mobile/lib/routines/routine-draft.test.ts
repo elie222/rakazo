@@ -132,6 +132,13 @@ describe("routineSaveRequest", () => {
     expect(routineCopy({ ...routine, crons: ["@once"] }, "Once (copy)")).toBeNull();
   });
 
+  it("creates a copy in the zone of the routine it copies, not the device's", () => {
+    const copy = routineCopy({ ...routine, timezone: "America/New_York" }, "Inbox (copy)")!;
+    expect(
+      routineSaveRequest(draftFromRoutine(copy), null, "bot-1", "Australia/Sydney", copy),
+    ).toEqual({ create: expect.objectContaining({ timezone: "America/New_York" }) });
+  });
+
   it("creates a routine with the device zone and its schedules", () => {
     const draft = {
       ...emptyRoutineDraft(),

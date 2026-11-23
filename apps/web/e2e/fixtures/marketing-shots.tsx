@@ -171,6 +171,7 @@ function RoutineShot() {
     messageProvider: null,
     emailSenders: null,
     active: true,
+    timezone: null,
     endsOn: "",
     runAtLocal: "",
     modelKey: "",

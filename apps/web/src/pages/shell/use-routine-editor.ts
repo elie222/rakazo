@@ -162,7 +162,7 @@ export function useRoutineEditor({
         draft: routineDraft,
         onChange: setRoutineDraft,
         editing: editingRoutine,
-        timezone: editingRoutine?.timezone ?? timezone ?? localTimezone(),
+        timezone: routineDraft.timezone ?? timezone ?? localTimezone(),
         webhook: {
           path: appBotInboundUrl(inboundOrigin, active.id, "webhook"),
           secret: routineWebhookSecret,
@@ -313,7 +313,7 @@ export function useRoutineEditor({
                 ...routineEndUpdate(targetRoutine, routineDraft.endsOn, repeats),
               });
             } else {
-              const createTimezone = timezone ?? localTimezone();
+              const createTimezone = routineDraft.timezone ?? timezone ?? localTimezone();
               saved = await rpc.routines.create({
                 botId: targetBotId,
                 name: routineDraft.name || t`Routine`,

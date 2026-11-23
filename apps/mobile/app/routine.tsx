@@ -382,7 +382,7 @@ function RoutineEditor({
 
   async function save() {
     if (busy.current) return;
-    const timezone = base?.timezone ?? deviceTimeZone() ?? "UTC";
+    const timezone = deviceTimeZone() ?? "UTC";
     const request = routineSaveRequest(draft, base, botId, timezone, template);
     if ("error" in request) {
       setSaveError(
@@ -576,7 +576,7 @@ function RoutineEditor({
           {repeats ? (
             <RoutineEndDate
               endsOn={draft.endsOn}
-              today={wallClock(new Date(), base?.timezone ?? deviceTimeZone() ?? "UTC").slice(
+              today={wallClock(new Date(), draft.timezone ?? deviceTimeZone() ?? "UTC").slice(
                 0,
                 10,
               )}

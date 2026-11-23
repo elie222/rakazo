@@ -11,11 +11,21 @@ export type RoutineDraft = {
   /** Whose mail starts the routine; null without an email trigger. */
   emailSenders: RoutineEmailSenders | null;
   active: boolean;
+  /** The zone its schedules run in, kept by a copy; null for a new routine, which takes its creator's. */
+  timezone: string | null;
   endsOn: string;
 };
 
 export function emptyRoutineDraft(): RoutineDraft {
-  return { name: "", prompt: "", schedules: [], emailSenders: null, active: true, endsOn: "" };
+  return {
+    name: "",
+    prompt: "",
+    schedules: [],
+    emailSenders: null,
+    active: true,
+    timezone: null,
+    endsOn: "",
+  };
 }
 
 function endsOnDay(routine: Pick<Routine, "endsAt" | "timezone">): string {
@@ -34,6 +44,7 @@ export function draftFromRoutine(
     schedules: routine.crons.map(presetFromCron),
     emailSenders: routine.emailSenders,
     active: routine.active,
+    timezone: routine.timezone,
     endsOn: endsOnDay(routine),
   };
 }
