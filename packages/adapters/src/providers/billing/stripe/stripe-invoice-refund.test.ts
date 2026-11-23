@@ -9,6 +9,7 @@ const invoice = {
   customer,
   currency: "usd",
   amount_paid: 1000,
+  created: 1_800_000_000,
 };
 const payment = {
   id: "inpay_fixture",
@@ -30,6 +31,7 @@ const charge = {
 };
 
 function fixture(options?: {
+  invoices?: (typeof invoice)[];
   payments?: (typeof payment)[];
   charge?: Partial<typeof charge>;
   cacheFirstRefundError?: boolean;
@@ -48,7 +50,7 @@ function fixture(options?: {
         case "/v1/invoices":
           expect(url.searchParams.get("customer")).toBe(customer);
           expect(url.searchParams.get("status")).toBe("paid");
-          return list([invoice]);
+          return list(options?.invoices ?? [invoice]);
         case "/v1/invoice_payments":
           expect(url.searchParams.get("invoice")).toBe(invoice.id);
           return list(options?.payments ?? [payment]);
@@ -78,6 +80,8 @@ describe("operator invoice refunds", () => {
     const { provider, writes } = fixture();
     await expect(provider.refundInvoice(customer, invoiceNumber, false)).resolves.toEqual({
       invoiceId: invoice.id,
+      invoiceNumber,
+      createdAt: new Date(invoice.created * 1000).toISOString(),
       amountMinor: invoice.amount_paid,
       currency: invoice.currency,
       state: "refundable",
@@ -92,6 +96,22 @@ describe("operator invoice refunds", () => {
       charge: "ch_fixture",
       amount: "1000",
       reason: "requested_by_customer",
+    });
+  });
+
+  it("finds an invoice by its id, or the newest paid one when none is named", async () => {
+    const older = {
+      ...invoice,
+      id: "in_older",
+      number: "EXAMPLE-0000",
+      created: invoice.created - 1,
+    };
+    const { provider } = fixture({ invoices: [older, invoice] });
+    await expect(provider.refundInvoice(customer, invoice.id, false)).resolves.toMatchObject({
+      invoiceNumber,
+    });
+    await expect(provider.refundInvoice(customer, undefined, false)).resolves.toMatchObject({
+      invoiceId: invoice.id,
     });
   });
 

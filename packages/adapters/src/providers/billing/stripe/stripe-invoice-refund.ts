@@ -8,6 +8,7 @@ const invoiceSchema = z.object({
   customer: z.string(),
   currency: z.string(),
   amount_paid: z.number().int().nonnegative(),
+  created: z.number().int(),
 });
 const paymentSchema = z.object({
   invoice: z.string(),
@@ -40,14 +41,16 @@ type StripeInvoiceApi = {
 export async function stripeInvoiceRefund(
   api: StripeInvoiceApi,
   customerId: string,
-  invoiceNumber: string,
+  reference: string | undefined,
   confirm: boolean,
 ): Promise<BillingInvoiceRefund | null> {
   const invoices = await api.listPages(
     `/v1/invoices?customer=${encodeURIComponent(customerId)}&status=paid`,
     invoiceSchema,
   );
-  const matches = invoices.filter((invoice) => invoice.number === invoiceNumber);
+  const matches = reference
+    ? invoices.filter((invoice) => invoice.number === reference || invoice.id === reference)
+    : invoices.toSorted((a, b) => b.created - a.created).slice(0, 1);
   if (!matches.length) return null;
   const [invoice] = matches;
   if (matches.length !== 1 || !invoice || invoice.customer !== customerId)
@@ -90,6 +93,8 @@ export async function stripeInvoiceRefund(
 
   const result = {
     invoiceId: invoice.id,
+    invoiceNumber: invoice.number,
+    createdAt: new Date(invoice.created * 1000).toISOString(),
     amountMinor: invoice.amount_paid,
     currency: invoice.currency,
   };

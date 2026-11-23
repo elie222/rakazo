@@ -18,6 +18,12 @@ describe("parseAdminArgs", () => {
     expect(parseAdminArgs([...args, "--confirm", "--json"])).toMatchObject({ json: true });
   });
 
+  it("previews a refund without naming the invoice", () => {
+    expect(parseAdminArgs(["billing", "refund", "person@example.test"])).toMatchObject({
+      json: false,
+    });
+  });
+
   it.each([
     [[]],
     [["bot"]],

@@ -25,12 +25,15 @@ export const billingCancelCommand: AdminCommand = {
 
 export const billingRefundCommand: AdminCommand = {
   path: ["billing", "refund"],
-  usage: "<email> <invoice-number> [--confirm]",
+  usage: "<email> [<invoice-number-or-id>] [--confirm]",
   flags: ["confirm"],
   parse: ([address, invoice, ...extra], flags) => {
     const email = adminEmail(address);
-    if (!email || !invoice || !BILLING_REFERENCE.test(invoice) || extra.length) return null;
-    return (context) => refundBilling(context, email, invoice, flags.confirm === true);
+    const confirm = flags.confirm === true;
+    if (!email || extra.length || (invoice && !BILLING_REFERENCE.test(invoice))) return null;
+    // Refunding money names the invoice the preview showed, never whichever is newest by then.
+    if (confirm && !invoice) return null;
+    return (context) => refundBilling(context, email, invoice, confirm);
   },
 };
 
@@ -98,7 +101,7 @@ async function cancelBilling(
 async function refundBilling(
   context: AdminContext,
   email: string,
-  invoiceNumber: string,
+  invoice: string | undefined,
   confirm: boolean,
 ) {
   const { provider, accounts, userId } = await billingAccounts(context, email);
@@ -107,12 +110,20 @@ async function refundBilling(
     throw new AdminCommandError("The billing provider does not support invoice refunds");
   const matches = [];
   for (const account of accounts) {
-    const refund = await invoiceRefund(account.customerId, invoiceNumber, false);
+    const refund = await invoiceRefund(account.customerId, invoice, false);
     if (refund) matches.push({ account, refund });
   }
   const [match] = matches;
+  if (!invoice && matches.length > 1)
+    throw new AdminCommandError(
+      `Choose an invoice: ${matches.map(({ refund }) => refund.invoiceNumber ?? refund.invoiceId).join(", ")}`,
+    );
   if (matches.length !== 1 || !match)
-    throw new AdminCommandError("No single paid invoice matches that number for this account");
+    throw new AdminCommandError(
+      invoice
+        ? "No single paid invoice matches that number or id for this account"
+        : "This account has no paid invoices",
+    );
 
   const { customerId, organizationId } = match.account;
   let { refund } = match;
@@ -134,7 +145,7 @@ async function refundBilling(
           target: { type: "invoice", id: match.refund.invoiceId },
         });
         attempted = true;
-        const result = await invoiceRefund(customerId, invoiceNumber, true);
+        const result = await invoiceRefund(customerId, invoice, true);
         if (!result || result.state === "refundable")
           throw new AdminCommandError(
             "The refund could not be confirmed. Preview the refund again.",
@@ -176,10 +187,77 @@ async function refundBilling(
     refund.currency === "usd"
       ? `$${(refund.amountMinor / 100).toFixed(2)} USD`
       : `${refund.amountMinor} minor units of ${refund.currency.toUpperCase()}`;
+  const credits = await invoiceCredits(context, organizationId, refund);
+  const renews =
+    match.account.status === "active" || match.account.status === "trialing"
+      ? !match.account.cancelAtPeriodEnd
+      : false;
+  const reference = refund.invoiceNumber ?? refund.invoiceId;
   return {
-    text: `Invoice ${invoiceNumber} for organization ${organizationId}, ${amount}. ${status}`,
-    json: { organizationId, invoiceNumber, ...refund },
+    text: [
+      `Invoice ${reference} (${refund.invoiceId}) for organization ${organizationId}, ${amount}, paid ${refund.createdAt.slice(0, 10)}.`,
+      ...(credits ? creditLines(credits, refund.state === "refundable") : []),
+      refund.state === "refundable" && !invoice
+        ? `Add ${reference} --confirm to refund the full charge.`
+        : status,
+      ...(renews ? ["The subscription still renews. Stop it with billing cancel."] : []),
+    ].join("\n"),
+    json: { organizationId, ...refund, credits, subscriptionRenews: renews },
   };
+}
+
+/** Model credits the invoice bought, what the organization spent since, and its balance. */
+async function invoiceCredits(
+  { prisma }: AdminContext,
+  organizationId: string,
+  refund: { invoiceId: string; createdAt: string },
+) {
+  const [account, purchase, spent] = await Promise.all([
+    prisma.modelCreditAccount.findUnique({ where: { organizationId } }),
+    prisma.modelCreditEntry.findUnique({ where: { source: `purchase:${refund.invoiceId}` } }),
+    prisma.modelCreditEntry.groupBy({
+      by: ["model"],
+      where: {
+        organizationId,
+        callId: { not: null },
+        pending: false,
+        createdAt: { gte: new Date(refund.createdAt) },
+      },
+      _sum: { amountMicros: true },
+    }),
+  ]);
+  if (!account || purchase?.organizationId !== organizationId) return null;
+  const byModel = spent
+    .map(({ model, _sum }) => ({
+      model: model ?? "unknown",
+      usd: Number(-(_sum.amountMicros ?? 0n)) / 1e6,
+    }))
+    .filter(({ usd }) => usd > 0)
+    .toSorted((a, b) => b.usd - a.usd);
+  const usd = (micros: bigint) => Number(micros) / 1e6;
+  return {
+    bought: usd(purchase.amountMicros),
+    spentSincePaid: usd(-spent.reduce((total, { _sum }) => total + (_sum.amountMicros ?? 0n), 0n)),
+    byModel,
+    balance: usd(account.balanceMicros),
+    balanceAfterRefund: usd(account.balanceMicros - purchase.amountMicros),
+  };
+}
+
+function creditLines(
+  credits: NonNullable<Awaited<ReturnType<typeof invoiceCredits>>>,
+  preview: boolean,
+) {
+  const usd = (value: number) => `${value < 0 ? "-" : ""}$${Math.abs(value).toFixed(2)}`;
+  return [
+    `Credits: ${usd(credits.bought)} from this invoice, ${usd(credits.spentSincePaid)} spent since it was paid, balance ${usd(credits.balance)}.`,
+    ...credits.byModel.map(({ model, usd: spent }) => `  ${model} ${usd(spent)}`),
+    ...(preview && credits.bought > 0
+      ? [
+          `The refund takes back this invoice's credits, leaving a balance of ${usd(credits.balanceAfterRefund)}.`,
+        ]
+      : []),
+  ];
 }
 
 async function withAdminBilling<T>(

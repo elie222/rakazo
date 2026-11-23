@@ -1850,6 +1850,10 @@ export interface BillingPlanPayment {
 
 export interface BillingInvoiceRefund {
   invoiceId: string;
+  /** The number on the customer's receipt; null when the provider gave the invoice none. */
+  invoiceNumber: string | null;
+  /** When the invoice was created, as an ISO timestamp. */
+  createdAt: string;
   amountMinor: number;
   currency: string;
   state: "refundable" | "pending" | "succeeded";
