@@ -199,13 +199,16 @@ export async function searchSupermemoryContainers(
   const byMemory = new Map<string, SupermemoryResult>();
   for (const result of successful.flatMap((response) => response.results)) {
     const existing = byMemory.get(result.memory);
-    // A copy with an id wins, so the fact keeps a citation the bot can forget by.
-    const better =
-      !existing ||
-      (Boolean(result.id) === Boolean(existing.id)
-        ? result.similarity > existing.similarity
-        : Boolean(result.id));
-    if (better) byMemory.set(result.memory, result);
+    if (!existing) {
+      byMemory.set(result.memory, result);
+      continue;
+    }
+    // Rank by the best copy, but keep a copy with an id so the fact can still be forgotten.
+    const cited = existing.id || !result.id ? existing : result;
+    byMemory.set(result.memory, {
+      ...cited,
+      similarity: Math.max(existing.similarity, result.similarity),
+    });
   }
   return {
     ok: true,

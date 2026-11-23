@@ -262,6 +262,25 @@ describe("searchSupermemoryContainers", () => {
     });
     vi.unstubAllGlobals();
   });
+
+  it("keeps a fact's best score while citing the copy that has an id", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValueOnce(Response.json({ results: [{ memory: "tea", similarity: 0.9 }] }))
+        .mockResolvedValueOnce(
+          Response.json({ results: [{ id: "mem_b", memory: "tea", similarity: 0.4 }] }),
+        ),
+    );
+
+    await expect(
+      searchSupermemoryContainers("query", ["rakazo:workspace:ws-1", "rakazo:bot-1"], config),
+    ).resolves.toEqual({
+      ok: true,
+      results: [{ id: "mem_b", memory: "tea", similarity: 0.9, containerTag: "rakazo:bot-1" }],
+    });
+  });
 });
 
 describe("saveSupermemoryMemory", () => {
