@@ -1,7 +1,7 @@
 import { MenuView } from "@expo/ui/community/menu";
 import { useLingui } from "@lingui/react/macro";
 import type { NativeStackNavigationOptions } from "expo-router";
-import { useRouter } from "expo-router";
+import { useNavigation, useRouter } from "expo-router";
 import { Alert, View } from "react-native";
 import { errorText } from "../../lib/api/user-error";
 import {
@@ -31,6 +31,7 @@ export type BotProfileAction = {
 export function useBotProfileActions(botId: string, name: string): BotProfileAction[] {
   const { t } = useLingui();
   const router = useRouter();
+  const navigation = useNavigation();
   const leaveDeletedChat = useLeaveDeletedChat();
   const beginDelete = useConfirmationGuard();
   function leave() {
@@ -43,11 +44,16 @@ export function useBotProfileActions(botId: string, name: string): BotProfileAct
     onSaved: (copy, { askedIn }) => {
       notifyInboxChanged();
       addToSearchInbox({ kind: "bot", bot: copy }, askedIn);
+      // Opened Edit meanwhile: leave that screen as it is.
+      if (!navigation.isFocused()) return;
       router.dismissAll();
       const href = { pathname: "/thread" as const, params: { botId: copy.id, name: copy.name } };
       if (!openChatFromInbox(href)) router.push(href);
     },
-    onFailed: (error) => Alert.alert(t`Could not duplicate bot`, errorText(error, t`Try again.`)),
+    onFailed: (error) => {
+      if (navigation.isFocused())
+        Alert.alert(t`Could not duplicate bot`, errorText(error, t`Try again.`));
+    },
     closesScreen: true,
   });
   return [

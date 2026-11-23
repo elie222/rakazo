@@ -27,6 +27,7 @@ const mocks = vi.hoisted(() => ({
   addToSearchInbox: vi.fn(),
   loadArchived: vi.fn(),
   getCurrentRoute: vi.fn(),
+  isFocused: vi.fn(),
   router: {
     push: vi.fn(),
     replace: vi.fn(),
@@ -89,7 +90,7 @@ vi.mock("expo-router", () => ({
   useFocusEffect: (effect: () => (() => void) | undefined) => useEffect(effect, [effect]),
   useRouter: () => mocks.router,
   useNavigationContainerRef: () => ({ getCurrentRoute: mocks.getCurrentRoute }),
-  useNavigation: () => ({ setOptions: vi.fn() }),
+  useNavigation: () => ({ setOptions: vi.fn(), isFocused: mocks.isFocused }),
   useRoute: () => ({ key: "thread-1" }),
   useLocalSearchParams: () => ({ groupId: "group-b" }),
   Stack: { Screen: () => null },
@@ -159,6 +160,7 @@ beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   mocks.getCurrentRoute.mockReturnValue({ name: "bot-profile", params: { botId: "bot-b" } });
   mocks.rpc.mockReset();
+  mocks.isFocused.mockReset().mockReturnValue(true);
   mocks.alert.mockReset();
   mocks.removeFromSearchInbox.mockReset();
   mocks.addToSearchInbox.mockReset();
@@ -397,6 +399,18 @@ describe("bot profile menu actions", () => {
       pathname: "/thread",
       params: { botId: "bot-c", name: "Bot (copy)" },
     });
+  });
+
+  it("keeps the screen opened over the profile when the copy lands", async () => {
+    const action = renderActions();
+    const copy = { id: "bot-c", name: "Bot (copy)" };
+    mocks.rpc.mockResolvedValueOnce(copy);
+    act(() => action("Duplicate").onPress());
+    mocks.isFocused.mockReturnValue(false);
+    await flush();
+    expect(mocks.addToSearchInbox).toHaveBeenCalledOnce();
+    expect(mocks.router.dismissAll).not.toHaveBeenCalled();
+    expect(mocks.router.push).not.toHaveBeenCalled();
   });
 
   it("says when a bot could not be duplicated and stays on the profile", async () => {
