@@ -665,6 +665,7 @@ function peerReply(
     intent?: string;
     status?: string;
     replies?: Reply[];
+    ticketRef?: string;
   },
 ) {
   world.messages.push({
@@ -699,6 +700,7 @@ function peerReply(
         text: "Three flights found.",
         intent: input.intent ?? "result",
         hop: 1,
+        ...(input.ticketRef ? { ticketRef: input.ticketRef } : {}),
       },
     ],
     replies: input.replies ?? [text("m-1", "Hello from your bot")],
@@ -1211,6 +1213,51 @@ describe("deliverRun to a 1:1 chat", () => {
     });
     await asking.delivery.deliverRun("run-1");
     expect(bodies(asking)).toEqual([expect.stringContaining("Share your calendar?")]);
+  });
+
+  it.each<[string, string | undefined, string[]]>([
+    ["keeps a ticket-tagged helper reply out of", "ticket-7", []],
+    ["sends an ordinary helper reply into", undefined, ["Hello from your bot"]],
+  ])("%s the owner's chat", async (_label, ticketRef, expected) => {
+    const t = setup();
+    peerReply(t.world, { requested: true, ticketRef });
+    await t.delivery.deliverRun("run-1");
+    // A replay of the same delivery must not surface anything either.
+    await t.delivery.deliverRun("run-1");
+
+    expect(bodies(t)).toEqual(expected);
+    expect(t.world.outbound.map((row) => row.idempotencyKey)).toEqual(
+      expected.length ? ["msg:m-1"] : [],
+    );
+  });
+
+  it("keeps a ticket-tagged helper run's failure out of the owner's chat", async () => {
+    const t = setup();
+    peerReply(t.world, { requested: false, status: "failed", ticketRef: "ticket-7" });
+    await t.delivery.deliverRun("run-1");
+
+    expect(t.world.outbound).toEqual([]);
+    expect(t.sendToThread).not.toHaveBeenCalled();
+  });
+
+  it("still sends a ticket-tagged run's pending question to the owner's chat", async () => {
+    const t = setup();
+    peerReply(t.world, {
+      requested: false,
+      status: "waiting_input",
+      ticketRef: "ticket-7",
+      replies: [
+        text("m-1", "Working the ticket."),
+        {
+          id: "ask-1",
+          blocks: [{ kind: "ask", text: "Approve the refund?", status: "pending", actions: [] }],
+        },
+      ],
+    });
+    await t.delivery.deliverRun("run-1");
+
+    expect(bodies(t)).toEqual([expect.stringContaining("Approve the refund?")]);
+    expect(t.world.outbound.map((row) => row.idempotencyKey)).toEqual(["msg:ask-1"]);
   });
 
   it.each(["messaging", "bot_message"])(
@@ -2018,7 +2065,7 @@ describe("delegated team-chat replies", () => {
    */
   function delegationChain(
     world: World,
-    input: { status?: string; replies?: Reply[]; threadId?: string } = {},
+    input: { status?: string; replies?: Reply[]; threadId?: string; ticketRef?: string } = {},
   ) {
     addRun(world, {
       id: "run-a",
@@ -2069,6 +2116,7 @@ describe("delegated team-chat replies", () => {
           text: "Three flights found.",
           intent: "result",
           hop: 1,
+          ...(input.ticketRef ? { ticketRef: input.ticketRef } : {}),
         },
       ],
       replies: input.replies ?? [text("c-msg", "Helper found three flights.")],
@@ -2097,6 +2145,16 @@ describe("delegated team-chat replies", () => {
       expect.objectContaining({ kind: "team", sourceMessageId: "c-msg" }),
     );
     expect(t.sendToThread).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps a ticket-tagged delegated reply out of the owner's chat and the team thread", async () => {
+    const t = setup();
+    delegationChain(t.world, { ticketRef: "ticket-7" });
+    await t.delivery.deliverRun("run-c");
+    await t.delivery.deliverRun("run-c");
+
+    expect(t.world.outbound).toEqual([]);
+    expect(t.sendToThread).not.toHaveBeenCalled();
   });
 
   it("answers in the thread the chain started in after many bot-to-bot hops", async () => {

@@ -45,6 +45,7 @@ import {
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { z } from "zod";
+import { botMessageReportsToTicket } from "../runs/lifecycle/run-notifications.js";
 import { loadRunOrigin } from "../runs/lifecycle/run-origin.js";
 import { isUserProgressClientNonce } from "../runs/lifecycle/user-progress.js";
 import { wakeRun } from "../runs/wakeups/wake-run.js";
@@ -404,14 +405,17 @@ export class MessagingDelivery {
         // have read its owner's memory and stays in the app.
         // The chat app has no quiet message, so it gets what the app marks unread: a failure or
         // an answer to this bot's own request. Other bot-to-bot talk sends only a question the
-        // run waits on the owner for.
+        // run waits on the owner for. Ticket-originated collaboration is none of that either:
+        // its outcome returns through the ticket workflow, so the owner's chat app, like the
+        // in-app marks and notifications, hears only a question the run still waits on.
+        const context = await loadBotMessageContext(this.deps.prisma, run.sourceMessageId);
+        const reportsToTicket = botMessageReportsToTicket(run.trigger, context);
         const news =
-          run.status === "failed" ||
-          (await loadBotMessageContext(this.deps.prisma, run.sourceMessageId))?.repliesToRequest ===
-            true;
+          !reportsToTicket && (run.status === "failed" || context?.repliesToRequest === true);
         const direct = await this.recordDirectRun(run, false, !news);
         if (direct) lanes.push(direct);
         if (
+          !reportsToTicket &&
           (run.status === "completed" || run.status === "failed") &&
           run.thread.externalConversation?.botId === run.botId
         ) {
