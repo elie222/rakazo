@@ -341,7 +341,11 @@ export async function archiveBot(
       where: { botId: bot.id },
       data: { active: false, nextRunAt: null },
     });
-    await expireComputerExecutionLeases(tx, { botId: bot.id });
+    // The asking run keeps its computer lease until it ends, so its heartbeat does not abort it.
+    await expireComputerExecutionLeases(tx, {
+      botId: bot.id,
+      ...(options?.keepRunId ? { runId: { not: options.keepRunId } } : {}),
+    });
     // Archiving ends a person's control of the bot's screen, and the recording made under it.
     const held = await tx.computer.findMany({
       where: { controlBotId: bot.id, controlLeaseId: { not: null } },

@@ -485,8 +485,11 @@ export async function prepareToolRequest(
     // The run-start snapshot is not enough: the owner can turn the switch off mid-run.
     const live = await deps.prisma.bot.findUnique({
       where: { id: bot.id },
-      select: { fleetManagement: true },
+      select: { fleetManagement: true, archivedAt: true },
     });
+    // A bot that archived itself only finishes its reply; a retried archive_bot still reconciles.
+    if (live?.archivedAt && name !== "archive_bot")
+      return refusal("bot_archived", "You are archived, so bot management tools are off.");
     if (!live?.fleetManagement)
       return refusal(
         "tool_disabled",

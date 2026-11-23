@@ -2680,6 +2680,15 @@ describe("bot management tool gating", () => {
     expect(f.effects).toEqual([]);
   });
 
+  it("refuses bot management once the bot has archived itself", async () => {
+    const f = fixture({ name: "create_group", builtin: true, fleetManagement: true });
+    Object.assign(f.liveBot, { archivedAt: new Date("2026-11-23T12:00:00.000Z") });
+    f.setCalls([{ args: { name: "Crew", bot_ids: ["a", "b"] }, executionId: "call-1" }]);
+    await f.run();
+    expect(f.results).toEqual([{ error: "You are archived, so bot management tools are off." }]);
+    expect(f.effects).toEqual([]);
+  });
+
   it.each(["routine", "messaging"])("offers list_fleet on the owner's %s runs", async (trigger) => {
     const f = fixture({ name: "list_fleet", builtin: true, fleetManagement: true, trigger });
     await f.run();

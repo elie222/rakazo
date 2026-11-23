@@ -289,6 +289,7 @@ describe("spawned bot archival", () => {
   it("archives its own bot through the same lifecycle while the asking run finishes", async () => {
     const botUpdate = vi.fn().mockResolvedValue({});
     const routineUpdate = vi.fn().mockResolvedValue({ count: 1 });
+    const expireLeases = vi.fn().mockResolvedValue({ count: 1 });
     const findRuns = vi
       .fn()
       .mockResolvedValue([
@@ -325,7 +326,7 @@ describe("spawned bot archival", () => {
           message: { findMany: vi.fn().mockResolvedValue([]) },
           secret: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
           routine: { updateMany: routineUpdate },
-          computerExecutionLease: { updateMany: vi.fn().mockResolvedValue({ count: 0 }) },
+          computerExecutionLease: { updateMany: expireLeases },
           computer: {
             updateMany: vi.fn().mockResolvedValue({ count: 0 }),
             findMany: vi.fn().mockResolvedValue([]),
@@ -367,6 +368,10 @@ describe("spawned bot archival", () => {
     expect(routineUpdate).toHaveBeenCalledWith({
       where: { botId: "self-1" },
       data: { active: false, nextRunAt: null },
+    });
+    expect(expireLeases).toHaveBeenCalledWith({
+      where: { botId: "self-1", runId: { not: "own-run" } },
+      data: { expiresAt: new Date(0) },
     });
     expect(botUpdate).toHaveBeenCalledWith({
       where: { id: "self-1" },
