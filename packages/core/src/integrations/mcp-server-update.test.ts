@@ -2,8 +2,8 @@ import { describe, expect, it } from "vitest";
 import { mcpHeaderEditValid, mcpOAuthClientInput, mcpServerHeaders } from "./mcp-server-update.js";
 
 const stored = ["X-Api-Key", "X-Team"];
-const headers = (name: string, value: string, endpointChanged = false) =>
-  mcpServerHeaders({ storedKeys: stored, name, value, endpointChanged });
+const headers = (name: string, value: string) =>
+  mcpServerHeaders({ storedKeys: stored, name, value });
 
 describe("mcpServerHeaders", () => {
   it("sends stored headers blank to keep them", () => {
@@ -24,14 +24,9 @@ describe("mcpServerHeaders", () => {
   });
 
   it("puts a value typed without a name in Authorization", () => {
-    expect(
-      mcpServerHeaders({ storedKeys: [], name: "", value: "abc", endpointChanged: false }),
-    ).toEqual({ Authorization: "abc" });
-  });
-
-  it("drops stored values when the URL changes", () => {
-    expect(headers("X-Api-Key", "", true)).toEqual({});
-    expect(headers("X-Api-Key", "new", true)).toEqual({ "X-Api-Key": "new" });
+    expect(mcpServerHeaders({ storedKeys: [], name: "", value: "abc" })).toEqual({
+      Authorization: "abc",
+    });
   });
 });
 

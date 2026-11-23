@@ -403,15 +403,6 @@ it("marks Advanced only when the server uses one of its settings", async () => {
   expect(container.textContent).not.toContain("In use");
 });
 
-it("drops stored header values when the URL changes", async () => {
-  await render();
-  await type("Server URL", "https://other.example.test/mcp");
-  expect(await save()).toBe(true);
-  expect(updates()).toEqual([
-    expect.objectContaining({ endpoint: "https://other.example.test/mcp", headers: {} }),
-  ]);
-});
-
 it("does not show the stored OAuth client ID", async () => {
   server = { ...remote, oauthClientId: "stored-client" };
   await render();

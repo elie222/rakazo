@@ -47,7 +47,7 @@ export function remoteMcpServerChanged(server: McpServer, edit: RemoteMcpServerE
   return (
     edit.name.trim() !== server.name ||
     edit.endpoint.trim() !== server.endpoint ||
-    Boolean(edit.token) ||
+    Boolean(edit.token.trim()) ||
     edit.transport !== server.transport ||
     Boolean(edit.headerValue.trim()) ||
     (stored !== undefined && mcpEditedHeaderName(edit.headerName, edit.headerValue) !== stored) ||
@@ -62,7 +62,6 @@ export function remoteMcpServerUpdate(
   edit: RemoteMcpServerEdit,
 ): McpServerConfigInput | null {
   if (server.transport === "stdio") return null;
-  const endpoint = edit.endpoint.trim();
   return {
     slug: server.slug,
     name: edit.name.trim(),
@@ -70,15 +69,14 @@ export function remoteMcpServerUpdate(
     enabled: server.enabled,
     verbatimResults: edit.verbatimResults,
     transport: edit.transport,
-    endpoint,
+    endpoint: edit.endpoint.trim(),
     headers: mcpServerHeaders({
       storedKeys: server.headerKeys,
       name: edit.headerName,
       value: edit.headerValue,
-      endpointChanged: endpoint !== server.endpoint,
     }),
     // A blank token keeps the stored one.
-    secret: edit.token || undefined,
+    secret: edit.token.trim() || undefined,
     oauthClient: mcpOAuthClientInput({
       clientId: edit.oauthClientId,
       clientSecret: edit.oauthClientSecret,

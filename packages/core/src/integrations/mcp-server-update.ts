@@ -16,24 +16,22 @@ export function mcpEditedHeaderName(name: string, value: string): string {
 }
 
 /**
- * The headers a remote server saves. A stored header is sent blank, which keeps its value,
- * unless the URL changed: stored values never follow a server to a new URL, so they are
- * dropped there. A typed value is saved under the edited name and replaces the edited stored
- * header, and clearing the name removes it. A rename without a value keeps the stored header,
+ * The headers a remote server saves. A stored header is sent blank, which keeps its value
+ * (the API drops it instead when the URL moves). A typed value is saved under the edited name
+ * and replaces the edited stored header, and clearing the name removes it. A rename without a value keeps the stored header,
  * since its value cannot be moved.
  */
 export function mcpServerHeaders(input: {
   storedKeys: readonly string[];
   name: string;
   value: string;
-  endpointChanged: boolean;
 }): Record<string, string> {
   const name = mcpEditedHeaderName(input.name, input.value);
   const value = input.value.trim();
   const edited = input.storedKeys[0];
-  const headers: Record<string, string> = input.endpointChanged
-    ? {}
-    : Object.fromEntries(input.storedKeys.map((key) => [key, ""]));
+  const headers: Record<string, string> = Object.fromEntries(
+    input.storedKeys.map((key) => [key, ""]),
+  );
   if (edited && name !== edited && (value || !name)) delete headers[edited];
   if (name && value) headers[name] = value;
   return headers;

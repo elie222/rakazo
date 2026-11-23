@@ -136,12 +136,10 @@ export function duplicateEnvNames(envRows: EnvRow[]): Set<string> {
 /** The server config a draft saves, with the header and OAuth client rules mobile shares. */
 export function mcpServerConfig(draft: McpServerDraft, editing: McpServer | null) {
   const slug = deriveMcpSlug(draft.name);
-  const endpoint = draft.endpoint.trim();
   const headers = mcpServerHeaders({
     storedKeys: editing?.headerKeys ?? [],
     name: draft.headerName,
     value: draft.headerValue,
-    endpointChanged: editing !== null && endpoint !== editing.endpoint,
   });
   const oauthBase = mcpOAuthClientInput({
     clientId: draft.oauthClientId,
@@ -178,7 +176,7 @@ export function mcpServerConfig(draft: McpServerDraft, editing: McpServer | null
         slug,
         name: draft.name.trim(),
         transport: draft.transport,
-        endpoint,
+        endpoint: draft.endpoint.trim(),
         headers,
         secret: draft.secret || undefined,
         oauthClient: oauthBase,
