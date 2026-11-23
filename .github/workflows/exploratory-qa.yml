@@ -1,0 +1,156 @@
+name: exploratory QA
+
+# Once a week, a model explores a few product features (sections of PRODUCT.md) in a headless
+# browser against a preview stack with fake seed data, and files one issue per new bug it finds.
+# It spends real model money, so it is off until the maintainer turns it on. See
+# docs/agent-verification.md#weekly-exploratory-qa.
+#
+# To turn it on, in the repository's Actions settings:
+#   - secrets MODEL_BASE_URL (a chat-completions compatible endpoint, ending before
+#     /chat/completions) and MODEL_API_KEY;
+#   - variables EXPLORATORY_AGENT_MODEL (the model id), EXPLORATORY_AGENT_INPUT_USD_PER_MTOK and
+#     EXPLORATORY_AGENT_OUTPUT_USD_PER_MTOK (its prices per million tokens, which the budget is
+#     counted in), optionally EXPLORATORY_AGENT_BUDGET_USD (default 5, at most 25);
+#   - then the variable EXPLORATORY_AGENT_ENABLED=true. With it unset no job runs.
+# Each run is capped at 6 features, 30 minutes per feature and the budget, and files at most 10
+# issues, labeled exploratory-qa.
+on:
+  schedule:
+    - cron: "17 5 * * 1"
+  workflow_dispatch:
+    inputs:
+      budget_usd:
+        description: Most this run may spend on the model, in US dollars (at most 25)
+        required: false
+        default: ""
+      workers:
+        description: Features to explore at once (at most 6)
+        required: false
+        default: "3"
+      minutes:
+        description: Minutes per feature (at most 30)
+        required: false
+        default: "15"
+      features:
+        description: PRODUCT.md section names separated by semicolons; empty picks this week's rotation
+        required: false
+        default: ""
+
+permissions: {}
+
+concurrency:
+  group: exploratory-qa
+  cancel-in-progress: false
+
+jobs:
+  explore:
+    name: Explore features
+    if: vars.EXPLORATORY_AGENT_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    # Step timeouts add up to 105 minutes, leaving room for checkout and runner overhead.
+    timeout-minutes: 120
+    permissions:
+      contents: read
+      issues: read
+    outputs:
+      artifact_url: ${{ steps.upload.outputs.artifact-url }}
+      findings: ${{ steps.uploaded.outputs.findings }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-workspace
+        timeout-minutes: 10
+        with:
+          playwright: "true"
+      - name: Install Chromium
+        timeout-minutes: 5
+        run: pnpm --filter @rakazo/web exec playwright install chromium
+      # The same image a pull request preview runs: Postgres, the app and emulated services,
+      # with the public demo account and fake data only.
+      - name: Build the preview stack
+        timeout-minutes: 40
+        run: |
+          docker build -f infra/compose/Dockerfile --build-arg GIT_SHA="$GITHUB_SHA" -t rakazo-server:preview .
+          docker build --build-arg SERVER_IMAGE=rakazo-server:preview -t rakazo-preview infra/preview
+      - name: Start the preview stack
+        timeout-minutes: 5
+        run: |
+          docker run -d --name preview -p 127.0.0.1:8080:8080 \
+            -e PREVIEW_HOST=localhost:8080 -e PREVIEW_SCHEME=http rakazo-preview
+          until [[ $(curl -s -o /dev/null -w '%{http_code}' http://localhost:8080/) == 200 ]]; do
+            docker inspect -f '{{.State.Running}}' preview | grep -qx true || { docker logs preview; exit 1; }
+            sleep 3
+          done
+      - name: List known bugs
+        timeout-minutes: 2
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node scripts/exploratory-qa/file-issues.mjs --list "$RUNNER_TEMP/known.json"
+      - name: Explore
+        timeout-minutes: 35
+        env:
+          STACK_URL: http://localhost:8080
+          MODEL_BASE_URL: ${{ secrets.MODEL_BASE_URL }}
+          MODEL_API_KEY: ${{ secrets.MODEL_API_KEY }}
+          MODEL: ${{ vars.EXPLORATORY_AGENT_MODEL }}
+          MODEL_INPUT_USD_PER_MTOK: ${{ vars.EXPLORATORY_AGENT_INPUT_USD_PER_MTOK }}
+          MODEL_OUTPUT_USD_PER_MTOK: ${{ vars.EXPLORATORY_AGENT_OUTPUT_USD_PER_MTOK }}
+          QA_BUDGET_USD: ${{ inputs.budget_usd || vars.EXPLORATORY_AGENT_BUDGET_USD || '5' }}
+          QA_WORKERS: ${{ inputs.workers || '3' }}
+          QA_MINUTES: ${{ inputs.minutes || '15' }}
+          QA_FEATURES: ${{ inputs.features }}
+          QA_KNOWN_ISSUES: ${{ runner.temp }}/known.json
+          QA_OUT_DIR: exploratory-qa-out
+        run: |
+          status=0
+          node scripts/exploratory-qa/explore.mjs || status=$?
+          # The summary explains a failed run too, so it is written before failing the step.
+          if [[ -f "$QA_OUT_DIR/summary.md" ]]; then cat "$QA_OUT_DIR/summary.md" >> "$GITHUB_STEP_SUMMARY"; fi
+          exit "$status"
+      - name: Upload findings and screenshots
+        id: upload
+        if: ${{ always() && hashFiles('exploratory-qa-out/findings.json') != '' }}
+        timeout-minutes: 5
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: exploratory-qa-${{ github.run_id }}
+          path: exploratory-qa-out
+          retention-days: 90
+      # Set only once the findings are uploaded, so they are filed even when an earlier step failed.
+      - name: Mark findings uploaded
+        id: uploaded
+        if: ${{ always() && steps.upload.outcome == 'success' }}
+        run: echo "findings=true" >> "$GITHUB_OUTPUT"
+      - name: Stop the preview stack
+        if: always()
+        timeout-minutes: 3
+        run: docker rm -f preview || true
+
+  # Separate from the explorer so the job holding the model key never gets a token that can write.
+  file-issues:
+    name: File new bugs
+    needs: explore
+    if: ${{ always() && needs.explore.outputs.findings == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 24
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: exploratory-qa-${{ github.run_id }}
+          path: ${{ runner.temp }}/exploratory-qa
+      - name: File issues
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          ARTIFACT_URL: ${{ needs.explore.outputs.artifact_url }}
+        run: node scripts/exploratory-qa/file-issues.mjs --file "$RUNNER_TEMP/exploratory-qa/findings.json"

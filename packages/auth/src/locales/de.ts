@@ -23,28 +23,8 @@ export const DE_MESSAGES: Record<string, string> = {
   "Your Rakazo confirmation code": "Dein Bestätigungscode für Rakazo",
   "Enter this code in Rakazo to confirm it's you:":
     "Gib diesen Code in Rakazo ein, um zu bestätigen, dass du es bist:",
-  "Welcome to Rakazo": "Willkommen bei Rakazo",
-  "Thanks for signing up for Rakazo.": "Danke, dass du dich bei Rakazo registriert hast.",
-  "Rakazo also has apps for": "Rakazo gibt es auch als App für",
-  "Questions or ideas?": "Fragen oder Ideen?",
-  "Join us on Discord": "Komm zu uns auf Discord",
-  "Rakazo is open source. If you like it,": "Rakazo ist Open Source. Wenn es dir gefällt,",
-  "a star on GitHub": "hilft ein Stern auf GitHub",
-  "helps others find it.": "anderen, es zu finden.",
-  "Want to run it on your own servers?": "Möchtest du es auf deinen eigenen Servern betreiben?",
-  "Self-host Rakazo": "Rakazo selbst hosten",
-  "Have any questions? Reply to this email.": "Hast du Fragen? Antworte einfach auf diese E-Mail.",
   Unsubscribe: "Abmelden",
-  "Invite a friend": "Lade einen Freund ein",
-  "Invite a friend to Rakazo: they get {weeks} weeks free, and you earn a free month when they start a qualifying subscription with a new card.":
-    "Lade einen Freund zu Rakazo ein: Er bekommt {weeks} Wochen gratis, und du erhältst einen Gratismonat, wenn er ein qualifizierendes Abo mit einer neuen Karte abschließt.",
   "Open Rakazo": "Öffne Rakazo",
-  "and choose Invite friends for your link.":
-    "und wähle „Freunde einladen“, um deinen Link zu erhalten.",
-  "Have any questions? Just reply to this email.":
-    "Hast du Fragen? Antworte einfach auf diese E-Mail.",
-  "If you're enjoying Rakazo,": "Wenn dir Rakazo gefällt,",
-  "give us a star on GitHub": "gib uns einen Stern auf GitHub",
   "We received your Rakazo plugin": "Wir haben dein Rakazo-Plugin erhalten",
   "Thanks for submitting a plugin to the Rakazo marketplace.":
     "Danke, dass du ein Plugin für den Rakazo-Marktplatz eingereicht hast.",
@@ -75,4 +55,17 @@ export const DE_MESSAGES: Record<string, string> = {
     "Deine gespeicherten Computerdateien werden am {date} gelöscht, wenn du dein Abo nicht erneuerst.",
   "Your saved computer files will be deleted on {date} unless you choose a plan.":
     "Deine gespeicherten Computerdateien werden am {date} gelöscht, wenn du keinen Tarif wählst.",
+  "{inviter} invited you to {organization} on Rakazo":
+    "{inviter} hat dich zu {organization} auf Rakazo eingeladen",
+  "{inviter} invited you to join {organization} on Rakazo.":
+    "{inviter} hat dich eingeladen, {organization} auf Rakazo beizutreten.",
+  "Join {organization}": "{organization} beitreten",
+  "This invitation expires in 7 days. Sign in with this email address to accept it.":
+    "Diese Einladung läuft in 7 Tagen ab. Melde dich mit dieser E-Mail-Adresse an, um sie anzunehmen.",
+  "{inviter} invited you to {space} on Rakazo":
+    "{inviter} hat dich zu {space} auf Rakazo eingeladen",
+  "{inviter} invited you to join {space} on Rakazo.":
+    "{inviter} hat dich eingeladen, {space} auf Rakazo beizutreten.",
+  "Join {space}": "{space} beitreten",
+  "This invitation expires in 7 days.": "Diese Einladung läuft in 7 Tagen ab.",
 };

@@ -4,7 +4,6 @@ import {
   CreateGroupInput,
   CreateRoutineInput,
   canReactToThreadMessage,
-  connectionCacheCapabilities,
   McpServerConfigInput,
   MessageBlock,
   MODEL_ROUTING_ID_MESSAGE,
@@ -51,52 +50,6 @@ describe("contracts", () => {
         enabledModelIds: Array.from({ length: 501 }, (_, i) => `model-${i}`),
       }).success,
     ).toBe(false);
-  });
-
-  it("accepts per-model cache capabilities for the selected model and every enabled one", () => {
-    const capabilities = { scope: "connection" as const, readCostPerMillion: 0.1 };
-    const input = {
-      provider: "openai-compatible",
-      baseUrl: "http://localhost:8000/v1",
-      modelId: "selected-model",
-      enabledModelIds: Array.from({ length: 500 }, (_, i) => `model-${i}`),
-    };
-    const byModel = (count: number) =>
-      Object.fromEntries(
-        Array.from({ length: count }, (_, i) => [
-          i === 0 ? "selected-model" : `model-${i}`,
-          capabilities,
-        ]),
-      );
-    expect(
-      ModelConnectInputSchema.safeParse({ ...input, cacheCapabilitiesByModel: byModel(501) })
-        .success,
-    ).toBe(true);
-    expect(
-      ModelConnectInputSchema.safeParse({ ...input, cacheCapabilitiesByModel: byModel(502) })
-        .success,
-    ).toBe(false);
-  });
-
-  it("picks the cache capabilities of the model a connection input runs", () => {
-    const own = { scope: "connection" as const, readCostPerMillion: 0.1 };
-    const wide = { scope: "account" as const, readCostPerMillion: 0.9 };
-    const input = {
-      provider: "openai-compatible",
-      cacheCapabilities: wide,
-      cacheCapabilitiesByModel: { "model-a": own, "model-b": null },
-    };
-    expect(connectionCacheCapabilities(input, "model-a")).toEqual(own);
-    expect(connectionCacheCapabilities(input, "model-b")).toEqual(wide);
-    expect(connectionCacheCapabilities(input, "model-c")).toEqual(wide);
-    expect(
-      connectionCacheCapabilities({ ...input, cacheCapabilities: undefined }, "model-c"),
-    ).toBeUndefined();
-    expect(
-      connectionCacheCapabilities({ ...input, cacheCapabilities: null }, "model-b"),
-    ).toBeUndefined();
-    expect(connectionCacheCapabilities(input, undefined)).toEqual(wide);
-    expect(connectionCacheCapabilities(input, "constructor")).toEqual(wide);
   });
 
   it("round-trips every wire protocol a compatible connection may select", () => {
@@ -225,11 +178,13 @@ describe("contracts", () => {
     expect(modelRoutingForm(undefined, {})).toEqual({
       needsRouting: false,
       needsGateway: false,
+      needsProject: false,
       routingReady: true,
     });
     expect(modelRoutingForm(["accountId", "gatewayId"], { accountId: "acct" })).toEqual({
       needsRouting: true,
       needsGateway: true,
+      needsProject: false,
       routingReady: false,
     });
     expect(modelRoutingReady(["accountId"], { accountId: " acct " })).toBe(true);
@@ -249,6 +204,27 @@ describe("contracts", () => {
       ModelConnectInputSchema.safeParse({ provider: "anthropic", apiKey: "short" }).success,
     ).toBe(false);
   });
+
+  it.each(["accountId", "gatewayId", "projectId", "region"])(
+    "accepts a routing-only %s update only for a targeted connection",
+    (field) => {
+      const input = { provider: "example-provider", [field]: "example-route" };
+      expect(
+        ModelConnectInputSchema.safeParse({ ...input, credentialId: "credential-fixture" }).success,
+      ).toBe(true);
+      expect(ModelConnectInputSchema.safeParse(input).success).toBe(false);
+      expect(ModelConnectInputSchema.safeParse({ ...input, credentialId: null }).success).toBe(
+        false,
+      );
+      expect(
+        ModelConnectInputSchema.safeParse({
+          ...input,
+          credentialId: "credential-fixture",
+          [field]: "../invalid",
+        }).success,
+      ).toBe(false);
+    },
+  );
 
   it("accepts optional persisted duration only on valid steps blocks", () => {
     expect(
@@ -300,6 +276,10 @@ describe("contracts", () => {
     const parsed = CreateBotInput.parse({ name: "Chief" });
     expect(parsed.notifyOnFinish).toBe(true);
     expect(parsed.avatarFamily).toBeUndefined();
+    expect(parsed.computerMode).toBeUndefined();
+    expect(CreateBotInput.parse({ name: "Chief", computerMode: "dedicated" }).computerMode).toBe(
+      "dedicated",
+    );
   });
 
   it("accepts an organic avatar family from 0 to 9 when creating a bot", () => {
@@ -493,21 +473,6 @@ describe("contracts", () => {
       }).success,
     ).toBe(true);
     expect(RunSchema.safeParse({ ...run, trigger: "webhook" }).success).toBe(true);
-  });
-
-  it("caps remote MCP headers", () => {
-    const headers = Object.fromEntries(
-      Array.from({ length: 33 }, (_, index) => [`X-Test-${index}`, "value"]),
-    );
-    expect(
-      McpServerConfigInput.safeParse({
-        slug: "demo",
-        name: "Demo",
-        transport: "streamable_http",
-        endpoint: "https://mcp.example.test",
-        headers,
-      }).success,
-    ).toBe(false);
   });
 
   it("allows localhost HTTP MCP endpoints and other HTTP(S) URLs without credentials", () => {

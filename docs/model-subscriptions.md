@@ -15,13 +15,17 @@ See the [official OpenAI authentication documentation](https://learn.chatgpt.com
 
 ## Claude
 
-**Use an Anthropic API key for Rakazo's bot models.** Claude Pro and Max subscriptions do not
-include API credit. Although Rakazo currently exposes a Claude sign-in option, Anthropic's
-published rules prohibit third-party apps from offering Claude account login or routing their own
-requests through consumer subscription credentials. We do not recommend that path.
+**Yes, through Claude sign-in.** Open **Settings → Models**, find **Anthropic**, and choose
+**Sign in with Claude**. You need a Claude Pro or Max plan. Usage counts against your plan's
+limits.
 
-Using your subscription in the unmodified Claude Code app is a separate case. It does not authorize
-Rakazo's model connection. See Anthropic's [authentication and credential rules](https://code.claude.com/docs/en/legal-and-compliance#authentication-and-credential-use).
+Connecting an **Anthropic API key** instead uses separate API billing, not your subscription allowance.
+
+Your use remains subject to Anthropic's terms, including its
+[authentication and credential rules](https://code.claude.com/docs/en/legal-and-compliance#authentication-and-credential-use).
+
+If you self-host from a source checkout for yourself, you can also run models through the official
+[Claude Code CLI](./self-host-models.md#claude-code-cli), signed in on the host with your own account.
 
 ## OpenCode
 

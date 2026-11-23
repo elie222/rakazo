@@ -20,6 +20,11 @@ export function secretAnswerErrorText(error: unknown, fallback: string): string 
         id: "This bot can't use this item. Change it in the Vault, or dismiss the request.",
         message: "This bot can't use this item. Change it in the Vault, or dismiss the request.",
       });
+    case "full":
+      return i18n._({
+        id: "Your Vault is full. Remove items you no longer need, then try again.",
+        message: "Your Vault is full. Remove items you no longer need, then try again.",
+      });
     default:
       return fallback;
   }
@@ -34,6 +39,14 @@ export function vaultPolicyLabels(): Record<VaultPolicy, string> {
     ask: i18n._({ id: "Ask first", message: "Ask first" }),
     off: i18n._({ id: "Block", message: "Block" }),
   };
+}
+
+export function vaultOwnSpaceNote(): string {
+  return i18n._({
+    id: "This Space keeps its own vault. Its bots save and use items there, not here: open the Space's settings, then Vault.",
+    message:
+      "This Space keeps its own vault. Its bots save and use items there, not here: open the Space's settings, then Vault.",
+  });
 }
 
 /**

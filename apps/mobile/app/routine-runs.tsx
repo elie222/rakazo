@@ -1,8 +1,8 @@
 import { useLocalSearchParams } from "expo-router";
 import { ScrollView } from "react-native";
-import { RoutineRunHistory } from "../components/routine-run-history";
-import { native } from "../lib/native";
-import { useSideInsets } from "../lib/side-insets";
+import { RoutineRunHistory } from "../components/routines/routine-run-history";
+import { useSideInsets } from "../lib/layout/side-insets";
+import { native } from "../lib/native/native";
 
 /** A routine's past runs, opened from its detail. */
 export default function RoutineRuns() {

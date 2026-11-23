@@ -1,0 +1,105 @@
+import type { AgentMessage } from "@earendil-works/pi-agent-core";
+import type { Message, ToolCall } from "@earendil-works/pi-ai";
+import type { AgentRunModel } from "@rakazo/adapter-kit";
+import { TRANSCRIPT_RESULT_OMITTED } from "../../meetings/meeting-chat.prompt.js";
+import { READ_MEETING_TRANSCRIPT } from "../../meetings/meeting-chat.tool-definition.js";
+import { withoutThinkingFrom } from "../../runtime/thinking-signatures.js";
+
+export interface ComputerModeSelection {
+  provider: string;
+  id: string;
+  connectionId?: string;
+  auth: "oauth" | "api-key";
+  thinkingLevel?: AgentRunModel["thinkingLevel"];
+}
+
+export interface ComputerModeCheckpoint {
+  version: 1;
+  mode: "main" | "computer";
+  main: ComputerModeSelection;
+  computer: ComputerModeSelection;
+}
+
+/** Internal, versioned transcript; never a client event payload. */
+export interface TurnCheckpoint {
+  version: 1;
+  /** Credential-free role state; absent on legacy checkpoints. */
+  computerMode?: ComputerModeCheckpoint;
+  provider: string;
+  model: string;
+  systemPrompt: string;
+  pendingToolCallId: string;
+  messages: Message[];
+  historyMessageIds?: string[];
+  /** The instructions the saved system prompt was built from; own writes resume guarding on it. */
+  ownInstructionsBaseline?: string;
+  /** Executor-assigned occurrences include canonical arguments and the paused call. */
+  effectOccurrences?: Array<{ executionId: string; fingerprint: string; occurrence: number }>;
+  /** Tool calls the turn made before it was saved; the resumed turn counts on from here. */
+  toolCallCount?: number;
+  /** The reply so far, saved only when the turn was handed back between steps. */
+  reply?: unknown;
+  /** Only explicit sequential checkpoints guarantee an unstarted tail. */
+  executionMode?: "parallel" | "sequential";
+}
+
+export function serializeTurnCheckpoint(checkpoint: TurnCheckpoint): string {
+  return JSON.stringify({
+    ...checkpoint,
+    messages: checkpoint.messages.map(withoutSavedMeetingResult),
+  });
+}
+
+/** Keep the wire result paired with its call while leaving the transcript in its authorized store. */
+export function withoutSavedMeetingResult<T extends AgentMessage>(message: T): T {
+  if (message.role !== "toolResult" || message.toolName !== READ_MEETING_TRANSCRIPT) return message;
+  return {
+    ...message,
+    content: [{ type: "text", text: TRANSCRIPT_RESULT_OMITTED }],
+    details: undefined,
+  };
+}
+
+export function restoreTurnCheckpoint(
+  blob: string,
+  model: Pick<AgentRunModel, "provider" | "id">,
+): TurnCheckpoint {
+  const checkpoint = JSON.parse(blob) as TurnCheckpoint;
+  if (
+    checkpoint.version !== 1 ||
+    typeof checkpoint.systemPrompt !== "string" ||
+    typeof checkpoint.provider !== "string" ||
+    typeof checkpoint.model !== "string" ||
+    typeof checkpoint.pendingToolCallId !== "string" ||
+    !Array.isArray(checkpoint.messages)
+  ) {
+    throw new Error("Unsupported turn checkpoint");
+  }
+  const messages = checkpoint.messages.map(withoutSavedMeetingResult);
+  while (messages.at(-1)?.role === "assistant") {
+    const tail = messages.at(-1)!;
+    if (tail.role !== "assistant" || (tail.stopReason !== "aborted" && tail.stopReason !== "error"))
+      break;
+    messages.pop();
+  }
+  return {
+    ...checkpoint,
+    messages:
+      checkpoint.provider === model.provider && checkpoint.model === model.id
+        ? messages
+        : withoutThinkingFrom(messages, 0),
+  };
+}
+
+/** Match results in transcript order: wire IDs may repeat in later responses. */
+export function unresolvedTurnCheckpointCalls(messages: Message[]): ToolCall[] {
+  const pending = new Map<string, ToolCall>();
+  for (const message of messages) {
+    if (message.role === "assistant") {
+      for (const call of message.content) if (call.type === "toolCall") pending.set(call.id, call);
+    } else if (message.role === "toolResult") {
+      pending.delete(message.toolCallId);
+    }
+  }
+  return [...pending.values()];
+}

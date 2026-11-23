@@ -1,3 +1,4 @@
+import { boundLogEvent } from "./bounded-event.js";
 import { guardedFlush, guardedWrite, reportSinkError } from "./sink-guard.js";
 import type { LogEvent, LogSink } from "./types.js";
 
@@ -32,7 +33,7 @@ export async function createAxiomSink(options: AxiomSinkOptions): Promise<LogSin
   return {
     write(event: LogEvent) {
       guardedWrite(() => {
-        client.ingest(dataset, [event]);
+        client.ingest(dataset, [boundLogEvent(event)]);
       });
     },
     flush() {

@@ -6,7 +6,7 @@ import { vaultPolicyLabels } from "@rakazo/i18n/vault";
 import { ToggleGroup, ToggleGroupItem } from "@rakazo/ui-web";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
-import { useSpaceQueries } from "../../lib/query";
+import { useSpaceQueries } from "../../lib/query/query";
 import type { AgentAccess } from "../integrations/agent-access";
 import { AgentAccessControl } from "../integrations/agent-access";
 

@@ -1,28 +1,43 @@
 import { useLingui } from "@lingui/react/macro";
+import type { ChatPreferencesPatch } from "@rakazo/contracts";
 import { APP_LOCALE_LABELS } from "@rakazo/core";
 import * as Notifications from "expo-notifications";
-import { useFocusEffect, useRouter } from "expo-router";
+import { useFocusEffect, useIsFocused, useRouter } from "expo-router";
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { Alert, AppState, Platform, ScrollView, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { NativeSegmentedControl } from "../../components/native-segmented-control";
+import { NativeSegmentedControl } from "../../components/native/native-segmented-control";
 import {
   SettingsGroup,
   SettingsLabel,
   SettingsRow,
   SettingsSwitch,
   useStackedSettings,
-} from "../../components/settings-group";
-import { currentApiBase, rpc, selectedSpaceId } from "../../lib/api";
-import { getCachedAppearancePreference, setAppearancePreference } from "../../lib/appearance";
+} from "../../components/settings/settings-group";
+import { currentApiBase, selectedSpaceId } from "../../lib/api/api";
+import type { MobileMe } from "../../lib/api/mobile-types";
+import { useLiveStream } from "../../lib/api/roster-signals";
+import { loadSessionToken } from "../../lib/api/session";
+import { errorText } from "../../lib/api/user-error";
+import {
+  getCachedAppearancePreference,
+  setAppearancePreference,
+} from "../../lib/appearance/appearance";
+import {
+  getCachedComposerModelPicker,
+  setComposerModelPicker,
+  subscribeComposerModelPicker,
+} from "../../lib/composer/composer-model-picker-preference";
+import { useUiLocale } from "../../lib/i18n/i18n";
+import { useSideInsets } from "../../lib/layout/side-insets";
 import {
   getHapticsEnabled,
   loadHapticsPreference,
   setHapticsEnabled,
   subscribeHaptics,
-} from "../../lib/haptics";
-import { useUiLocale } from "../../lib/i18n";
-import type { LiveNotificationSettings } from "../../lib/live-notifications";
+} from "../../lib/native/haptics";
+import { useThemedStyles } from "../../lib/native/native";
+import type { LiveNotificationSettings } from "../../lib/notifications/live-notifications";
 import {
   canPostPromotedNotifications,
   DEFAULT_LIVE_NOTIFICATION_SETTINGS,
@@ -31,25 +46,23 @@ import {
   openLiveNotificationSettings,
   openPromotedNotificationSettings,
   setLiveNotificationSettings,
-} from "../../lib/live-notifications";
-import type { MobileMe } from "../../lib/mobile-types";
-import { useThemedStyles } from "../../lib/native";
-import { registerPushToken } from "../../lib/push";
-import { createQueuedSave } from "../../lib/queued-save";
+} from "../../lib/notifications/live-notifications";
+import { registerPushToken } from "../../lib/notifications/push";
 import {
   getCachedRemoteImagesEnabled,
   setRemoteImagesPreference,
   subscribeRemoteImages,
-} from "../../lib/remote-images-preference";
+} from "../../lib/preferences/remote-images-preference";
 import {
   getCachedResponseStreamingEnabled,
   setResponseStreamingPreference,
   subscribeResponseStreaming,
-} from "../../lib/response-streaming";
-import { loadSessionToken } from "../../lib/session";
-import { createSettingsPageStyles } from "../../lib/settings-page-styles";
-import { useSideInsets } from "../../lib/side-insets";
-import { errorText } from "../../lib/user-error";
+} from "../../lib/preferences/response-streaming";
+import { accountRpcQuery, queryClient, useSave } from "../../lib/query/query";
+import { createQueuedSave } from "../../lib/query/queued-save";
+import { useScreenQuery } from "../../lib/query/screen-query";
+import { ACCOUNT_SETTINGS } from "../../lib/query/settings-target";
+import { createSettingsPageStyles } from "../../lib/settings/settings-page-styles";
 
 let hapticsSaveVersion = 0;
 
@@ -60,10 +73,33 @@ export default function General() {
   const router = useRouter();
   const styles = useThemedStyles(createSettingsPageStyles);
   const stacked = useStackedSettings();
-  const [me, setMe] = useState<MobileMe | null>(null);
-  const botStyleRequest = useRef(0);
+  // Read on every visit, so a failed read retries when the page is shown again.
+  const meRead = accountRpcQuery("me");
+  const { data: me, isLoading: loadingAccount } = useScreenQuery(meRead);
+  useLiveStream(useIsFocused());
+  const botStyle = useSave({
+    target: ACCOUNT_SETTINGS,
+    save: async (botAvatarSet: NonNullable<MobileMe["botAvatarSet"]>, send) => {
+      // The answer is the account as saved, so the picker keeps it if the read after it fails.
+      queryClient.setQueryData(meRead.queryKey, await send("preferences/update", { botAvatarSet }));
+    },
+    stale: [meRead.queryKey],
+    onFailed: () => Alert.alert(t`Couldn't update bot style`),
+  });
+  const chatSave = useSave({
+    target: ACCOUNT_SETTINGS,
+    save: async (chatPreferences: ChatPreferencesPatch, send) => {
+      queryClient.setQueryData(
+        meRead.queryKey,
+        await send("preferences/update", { chatPreferences }),
+      );
+    },
+    stale: [meRead.queryKey],
+    onFailed: () => Alert.alert(t`Could not save`),
+  });
   const appearance = getCachedAppearancePreference();
-  const streamReplies = useSyncExternalStore(
+  const chatSaveDisabled = loadingAccount || chatSave.pending;
+  const deviceStreamReplies = useSyncExternalStore(
     subscribeResponseStreaming,
     getCachedResponseStreamingEnabled,
     () => false,
@@ -71,6 +107,11 @@ export default function General() {
   const loadRemoteImages = useSyncExternalStore(
     subscribeRemoteImages,
     getCachedRemoteImagesEnabled,
+    () => false,
+  );
+  const deviceModelPicker = useSyncExternalStore(
+    subscribeComposerModelPicker,
+    getCachedComposerModelPicker,
     () => false,
   );
   const hapticsEnabled = useSyncExternalStore(
@@ -104,21 +145,6 @@ export default function General() {
       ]);
     });
   }
-
-  // Read on every visit, so a failed read retries when the page is shown again.
-  useFocusEffect(
-    useCallback(() => {
-      let active = true;
-      void rpc("me")
-        .then((next) => {
-          if (active) setMe(next);
-        })
-        .catch(() => undefined);
-      return () => {
-        active = false;
-      };
-    }, []),
-  );
 
   useEffect(() => {
     if (Platform.OS === "android") {
@@ -188,22 +214,7 @@ export default function General() {
   }
 
   function updateBotStyle(botAvatarSet: MobileMe["botAvatarSet"] | "") {
-    if (!me || !botAvatarSet) return;
-    const previous = me.botAvatarSet;
-    // Only the latest tap's reply may land, so a slower earlier save can't undo it.
-    const request = ++botStyleRequest.current;
-    setMe((current) => (current ? { ...current, botAvatarSet } : current));
-    rpc("preferences/update", { botAvatarSet })
-      .then((next) => {
-        // Take only the style, so an older snapshot can't undo another edit.
-        if (request !== botStyleRequest.current) return;
-        setMe((current) => (current ? { ...current, botAvatarSet: next.botAvatarSet } : next));
-      })
-      .catch(() => {
-        if (request !== botStyleRequest.current) return;
-        setMe((current) => (current ? { ...current, botAvatarSet: previous } : current));
-        Alert.alert(t`Couldn't update bot style`);
-      });
+    if (me && botAvatarSet) botStyle.run(botAvatarSet);
   }
 
   return (
@@ -232,12 +243,13 @@ export default function General() {
             <SettingsLabel>{t`Bot style`}</SettingsLabel>
             <NativeSegmentedControl
               accessibilityLabel={t`Bot style`}
+              disabled={botStyle.pending}
               onChange={updateBotStyle}
               options={[
                 { value: "organic", label: t`Original` },
                 { value: "rakazo", label: t`Rakazo` },
               ]}
-              value={me.botAvatarSet ?? ""}
+              value={(botStyle.pending ? botStyle.input : me.botAvatarSet) ?? ""}
             />
           </View>
         ) : null}
@@ -316,8 +328,21 @@ export default function General() {
         <SettingsGroup>
           <SettingsSwitch
             label={t`Stream replies`}
-            value={streamReplies}
-            onChange={(checked) => void setResponseStreamingPreference(checked ? "on" : "off")}
+            value={me?.chatPreferences?.streamReplies ?? deviceStreamReplies}
+            disabled={chatSaveDisabled}
+            onChange={(checked) => {
+              if (me?.chatPreferences) chatSave.run({ streamReplies: checked });
+              else void setResponseStreamingPreference(checked ? "on" : "off");
+            }}
+          />
+          <SettingsSwitch
+            label={t`Model picker in chat`}
+            value={me?.chatPreferences?.composerModelPicker ?? deviceModelPicker}
+            disabled={chatSaveDisabled}
+            onChange={(checked) => {
+              if (me?.chatPreferences) chatSave.run({ composerModelPicker: checked });
+              else void setComposerModelPicker(checked);
+            }}
           />
           <SettingsSwitch
             label={t`Load web images automatically`}

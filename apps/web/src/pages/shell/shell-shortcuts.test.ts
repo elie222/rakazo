@@ -2,9 +2,16 @@
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { RakazoDesktop } from "../../lib/desktop";
+import type { RakazoDesktop } from "../../lib/platform/desktop";
 import type { ShellShortcut, ShortcutHost } from "./shell-shortcuts";
-import { cycleBotId, shellShortcut, startsTyping, useShellShortcuts } from "./shell-shortcuts";
+import {
+  cycleBotId,
+  findPanelAction,
+  quoteShortcutLabel,
+  shellShortcut,
+  startsTyping,
+  useShellShortcuts,
+} from "./shell-shortcuts";
 
 function keyEvent(
   partial: Partial<Omit<KeyboardEvent, "target">> &
@@ -29,6 +36,41 @@ const windowsBrowser: ShortcutHost = { desktop: false, apple: false };
 const textarea = document.createElement("textarea");
 
 describe("shellShortcut", () => {
+  it("quotes with the plain chord in the desktop app and Shift on the web", () => {
+    for (const host of [macApp, windowsApp]) {
+      const chord = { key: "L", metaKey: host.apple, ctrlKey: !host.apple };
+      expect(shellShortcut(keyEvent(chord), host)).toEqual({ type: "quote-selection" });
+      expect(shellShortcut(keyEvent({ ...chord, shiftKey: true }), host)).toBeNull();
+    }
+    for (const host of [macBrowser, windowsBrowser]) {
+      const chord = { key: "L", metaKey: host.apple, ctrlKey: !host.apple, shiftKey: true };
+      expect(shellShortcut(keyEvent(chord), host)).toEqual({ type: "quote-selection" });
+      // The browser keeps the plain chord for its address bar.
+      expect(shellShortcut(keyEvent({ ...chord, shiftKey: false }), host)).toBeNull();
+    }
+    for (const host of [macApp, windowsApp, macBrowser, windowsBrowser]) {
+      const chord = { key: "L", metaKey: host.apple, ctrlKey: !host.apple, shiftKey: true };
+      for (const extra of [
+        { altKey: true },
+        { repeat: true },
+        { isComposing: true },
+        { keyCode: 229 },
+        { metaKey: true, ctrlKey: true },
+      ]) {
+        expect(shellShortcut(keyEvent({ ...chord, ...extra }), host)).toBeNull();
+      }
+      expect(
+        shellShortcut(keyEvent({ key: "l", metaKey: !host.apple, ctrlKey: host.apple }), host),
+      ).toBeNull();
+    }
+  });
+
+  it("writes the pill hint for each host", () => {
+    expect(quoteShortcutLabel(macApp)).toBe("⌘L");
+    expect(quoteShortcutLabel(windowsApp)).toBe("Ctrl+L");
+    expect(quoteShortcutLabel(macBrowser)).toBe("⌘⇧L");
+    expect(quoteShortcutLabel(windowsBrowser)).toBe("Ctrl+Shift+L");
+  });
   it("opens the command menu and the create menu with Cmd or Ctrl everywhere", () => {
     for (const host of [macApp, windowsApp, macBrowser, windowsBrowser]) {
       expect(shellShortcut(keyEvent({ key: "k", metaKey: true }), host)).toEqual({
@@ -57,7 +99,7 @@ describe("shellShortcut", () => {
     expect(shellShortcut(keyEvent({ key: "b", metaKey: true }), windowsApp)).toBeNull();
   });
 
-  it("focuses the composer, connects apps and toggles chat details with the primary key", () => {
+  it("focuses the composer, switches model and thinking, and toggles chat details with the primary key", () => {
     for (const [host, primary] of [
       [macBrowser, "metaKey"],
       [windowsApp, "ctrlKey"],
@@ -66,7 +108,10 @@ describe("shellShortcut", () => {
         type: "focus-composer",
       });
       expect(shellShortcut(keyEvent({ key: "M", [primary]: true, shiftKey: true }), host)).toEqual({
-        type: "integrations",
+        type: "model-picker",
+      });
+      expect(shellShortcut(keyEvent({ key: "E", [primary]: true, shiftKey: true }), host)).toEqual({
+        type: "thinking-level",
       });
       expect(
         shellShortcut(keyEvent({ key: "<", code: "Comma", [primary]: true, shiftKey: true }), host),
@@ -75,6 +120,22 @@ describe("shellShortcut", () => {
     expect(shellShortcut(keyEvent({ key: "i", ctrlKey: true }), macApp)).toBeNull();
     expect(shellShortcut(keyEvent({ key: "i", metaKey: true, shiftKey: true }), macApp)).toBeNull();
     expect(shellShortcut(keyEvent({ key: ",", code: "Comma", metaKey: true }), macApp)).toBeNull();
+    expect(shellShortcut(keyEvent({ key: "m", metaKey: true }), macApp)).toBeNull();
+  });
+
+  it("connects apps with Cmd/Ctrl+Shift+A only in the desktop app, since Chrome keeps it for tab search", () => {
+    expect(shellShortcut(keyEvent({ key: "A", metaKey: true, shiftKey: true }), macApp)).toEqual({
+      type: "integrations",
+    });
+    expect(
+      shellShortcut(keyEvent({ key: "A", ctrlKey: true, shiftKey: true }), windowsApp),
+    ).toEqual({ type: "integrations" });
+    expect(
+      shellShortcut(keyEvent({ key: "A", metaKey: true, shiftKey: true }), macBrowser),
+    ).toBeNull();
+    expect(
+      shellShortcut(keyEvent({ key: "A", ctrlKey: true, shiftKey: true }), windowsBrowser),
+    ).toBeNull();
   });
 
   it("lists the shortcuts with Cmd/Ctrl+/ on any layout", () => {
@@ -228,6 +289,29 @@ describe("cycleBotId", () => {
 });
 
 describe("useShellShortcuts", () => {
+  it("leaves the address-bar chord alone and consumes the web chord only when a quote applied", async () => {
+    vi.spyOn(navigator, "platform", "get").mockReturnValue("Linux");
+    const run = vi.fn(() => false);
+    const unmount = await mount(run);
+    const press = (shiftKey: boolean) => {
+      const event = new KeyboardEvent("keydown", {
+        key: shiftKey ? "L" : "l",
+        ctrlKey: true,
+        shiftKey,
+        cancelable: true,
+      });
+      window.dispatchEvent(event);
+      return event;
+    };
+    expect(press(false).defaultPrevented).toBe(false);
+    expect(run).not.toHaveBeenCalled();
+    expect(press(true).defaultPrevented).toBe(false);
+    run.mockReturnValue(true);
+    expect(press(true).defaultPrevented).toBe(true);
+    expect(run).toHaveBeenLastCalledWith({ type: "quote-selection" });
+    await unmount();
+    vi.restoreAllMocks();
+  });
   afterEach(() => {
     vi.unstubAllGlobals();
     delete window.rakazoDesktop;
@@ -260,6 +344,45 @@ describe("useShellShortcuts", () => {
     await unmountIgnored();
   });
 
+  it.each(["isComposing", "keyCode"] as const)(
+    "leaves %s composition keydowns to the input method",
+    async (marker) => {
+      const platform = vi.spyOn(navigator, "platform", "get").mockReturnValue("Win32");
+      const run = vi.fn(() => true);
+      const onTyping = vi.fn();
+      const unmount = await mount(run, onTyping);
+      const press = (key: string, composing: boolean, ctrlKey = false) => {
+        const event = new KeyboardEvent("keydown", {
+          key,
+          ctrlKey,
+          isComposing: composing && marker === "isComposing",
+          cancelable: true,
+        });
+        if (composing && marker === "keyCode") {
+          Object.defineProperty(event, "keyCode", { value: 229 });
+        }
+        window.dispatchEvent(event);
+        return event.defaultPrevented;
+      };
+      try {
+        expect(press("b", true, true)).toBe(false);
+        expect(press("k", true, true)).toBe(false);
+        expect(press("h", true)).toBe(false);
+        expect(run).not.toHaveBeenCalled();
+        expect(onTyping).not.toHaveBeenCalled();
+
+        expect(press("b", false, true)).toBe(true);
+        expect(press("k", false, true)).toBe(true);
+        expect(press("h", false)).toBe(false);
+        expect(run.mock.calls).toEqual([[{ type: "toggle-sidebar" }], [{ type: "command-menu" }]]);
+        expect(onTyping).toHaveBeenCalledOnce();
+      } finally {
+        await unmount();
+        platform.mockRestore();
+      }
+    },
+  );
+
   it("hands printable keys to onTyping without stopping them", async () => {
     const run = vi.fn(() => true);
     const onTyping = vi.fn();
@@ -291,5 +414,24 @@ describe("useShellShortcuts", () => {
     expect(run.mock.calls).toEqual([[{ type: "search" }]]);
     await unmount();
     expect(stop).toHaveBeenCalled();
+  });
+});
+
+describe("findPanelAction", () => {
+  it("closes a details panel that floats over the chat", () => {
+    expect(findPanelAction(true, true, true)).toBe("close-panel");
+  });
+
+  it("keeps a panel that sits beside the chat", () => {
+    expect(findPanelAction(false, true, true)).toBe("open");
+    expect(findPanelAction(false, true, false)).toBe("open");
+  });
+
+  it("waits while a covering panel holds a form", () => {
+    expect(findPanelAction(true, true, false)).toBe("refuse");
+  });
+
+  it("opens when no panel is open", () => {
+    expect(findPanelAction(true, false, false)).toBe("open");
   });
 });

@@ -8,10 +8,20 @@
       "types": "./src/index.ts",
       "development": "./src/index.ts",
       "default": "./src/index.ts"
+    },
+    "./email-copy": {
+      "types": "./src/email-copy/deployment-copy.ts",
+      "development": "./src/email-copy/deployment-copy.ts",
+      "default": "./src/email-copy/deployment-copy.ts"
+    },
+    "./test-email-copy": {
+      "types": "./src/email-copy/email-copy.test-support.ts",
+      "development": "./src/email-copy/email-copy.test-support.ts",
+      "default": "./src/email-copy/email-copy.test-support.ts"
     }
   },
   "scripts": {
-    "check": "tsc --noEmit -p tsconfig.json",
+    "check": "tsrs --noEmit -p tsconfig.json",
     "test": "vitest run --root ../.. packages/auth/src"
   },
   "dependencies": {
@@ -22,6 +32,7 @@
     "@rakazo/contracts": "workspace:*",
     "@rakazo/core": "workspace:*",
     "@rakazo/db": "workspace:*",
+    "@rakazo/logging": "workspace:*",
     "@rakazo/ui-tokens": "workspace:*",
     "better-auth": "1.7.18",
     "react": "19.3.1",

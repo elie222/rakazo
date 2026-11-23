@@ -1,30 +1,31 @@
 import { useLingui } from "@lingui/react/macro";
-import type { VoiceCatalogEntry, VoiceCredential, VoiceInfo, VoiceStatus } from "@rakazo/contracts";
+import type {
+  VoiceCatalogEntry,
+  VoiceCredential,
+  VoiceInfo,
+  VoiceModelInfo,
+  VoiceStatus,
+} from "@rakazo/contracts";
 import {
   DEFAULT_COMPATIBLE_STT_MODEL,
   DEFAULT_COMPATIBLE_TTS_MODEL,
+  MAX_TRANSCRIPTION_VOCABULARY_LENGTH,
   OPENAI_COMPATIBLE_PROVIDER_ID,
+  savedVoiceTranscriptionVocabulary,
   voiceConnectionForm,
 } from "@rakazo/contracts";
 import { fetchFresh, writeSaved } from "@rakazo/core/query";
 import { isCancelledError } from "@tanstack/react-query";
 import { useFocusEffect, useLocalSearchParams } from "expo-router";
-import { useCallback, useMemo, useRef, useState } from "react";
-import {
-  ActivityIndicator,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from "react-native";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ActivityIndicator, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { LoadFailure } from "../../components/load-failure";
-import { NativeActionButton } from "../../components/native-action-button";
-import { NativeSwitch } from "../../components/native-switch";
-import { Checkmark } from "../../components/row-accessories";
-import { mobileTokens } from "../../lib/appearance";
+import { NativeActionButton } from "../../components/native/native-action-button";
+import { NativeSwitch } from "../../components/native/native-switch";
+import { LoadFailure } from "../../components/ui/load-failure";
+import { MenuPicker } from "../../components/ui/menu-picker";
+import { errorText } from "../../lib/api/user-error";
+import { mobileTokens } from "../../lib/appearance/appearance";
 import {
   loadCallGreetingEnabled,
   loadCallSoundsEnabled,
@@ -33,17 +34,26 @@ import {
   saveCallGreetingEnabled,
   saveCallSoundsEnabled,
   saveWaitSoundEnabled,
-} from "../../lib/call-sounds";
-import { loadDeviceVoiceEnabled, saveDeviceVoiceEnabled } from "../../lib/device-voice";
-import { native, useThemedStyles } from "../../lib/native";
-import { queryClient, rpcQuery } from "../../lib/query";
-import type { SettingsTarget } from "../../lib/settings-target";
-import { settingsRpc, settingsTarget } from "../../lib/settings-target";
-import { useSideInsets } from "../../lib/side-insets";
-import { errorText } from "../../lib/user-error";
-import { speakText } from "../../lib/voice";
+} from "../../lib/calls/call-sounds";
+import { useSideInsets } from "../../lib/layout/side-insets";
+import { native, useThemedStyles } from "../../lib/native/native";
+import { queryClient, rpcQuery } from "../../lib/query/query";
+import type { SettingsTarget } from "../../lib/query/settings-target";
+import { settingsRpc, settingsTarget } from "../../lib/query/settings-target";
+import { loadDeviceVoiceEnabled, saveDeviceVoiceEnabled } from "../../lib/voice/device-voice";
+import { speakText } from "../../lib/voice/voice";
 
-type VoiceField = "voiceId" | "speechModel" | "baseUrl" | "ttsModel" | "sttModel";
+const DEVICE_CHOICE = "device";
+
+const CONNECTION_FIELDS = [
+  "speechModel",
+  "baseUrl",
+  "ttsModel",
+  "sttModel",
+  "sttBaseUrl",
+  "transcriptionVocabulary",
+] as const;
+type VoiceField = "voiceId" | (typeof CONNECTION_FIELDS)[number];
 
 /** A Space's override is read from that Space even when another one is selected. */
 const targetSpace = (target: SettingsTarget) =>
@@ -59,6 +69,8 @@ const voiceReads = (target: SettingsTarget) => {
 };
 const voicesRead = (target: SettingsTarget, provider: string) =>
   rpcQuery("voice/voices", { provider, scope: target.scope }, targetSpace(target));
+const modelsRead = (target: SettingsTarget, provider: string) =>
+  rpcQuery("voice/models", { provider, scope: target.scope }, targetSpace(target));
 
 function pickProvider(catalog: VoiceCatalogEntry[], status: VoiceStatus, preferred?: string) {
   return (
@@ -99,13 +111,41 @@ export default function VoiceSettings() {
   const [credentials, setCredentials] = useState<VoiceCredential[]>(cached?.credentials ?? []);
   const [status, setStatus] = useState<VoiceStatus | null>(cached?.status ?? null);
   const [voices, setVoices] = useState<VoiceInfo[]>(cached?.voices ?? []);
+  const [modelList, setModelList] = useState<{ provider: string; models: VoiceModelInfo[] }>({
+    provider: "",
+    models: [],
+  });
   const [provider, setProvider] = useState(cached?.provider ?? "");
   const [apiKey, setApiKey] = useState("");
   const [voiceId, setVoiceId] = useState(cached?.credential?.voiceId ?? "");
   const [speechModel, setSpeechModel] = useState(cached?.credential?.speechModel ?? "");
   const [baseUrl, setBaseUrl] = useState(cached?.credential?.endpoint ?? "");
   const [ttsModel, setTtsModel] = useState(cached?.credential?.ttsModel ?? "");
+  const [transcriptionVocabulary, setTranscriptionVocabulary] = useState<string>();
   const [sttModel, setSttModel] = useState(cached?.credential?.sttModel ?? "");
+  const [sttBaseUrl, setSttBaseUrl] = useState(cached?.credential?.sttEndpoint ?? "");
+  const [sttApiKey, setSttApiKey] = useState("");
+  // The connection fields as last rendered, read when a connect finishes.
+  const connection = useRef({
+    speechModel,
+    baseUrl,
+    ttsModel,
+    sttModel,
+    transcriptionVocabulary,
+    sttBaseUrl,
+    apiKey,
+    sttApiKey,
+  });
+  connection.current = {
+    speechModel,
+    baseUrl,
+    ttsModel,
+    sttModel,
+    transcriptionVocabulary,
+    sttBaseUrl,
+    apiKey,
+    sttApiKey,
+  };
   // Fields typed into since the last load; an opening refresh keeps them only while their
   // provider stays selected.
   const edited = useRef(new Set<VoiceField>());
@@ -135,18 +175,19 @@ export default function VoiceSettings() {
 
   /**
    * Opening keeps fields typed into meanwhile and may share a read already in flight; after a
-   * change, every field takes the server's value from a read sent afterwards.
+   * change, fields take the server's value from a read sent afterwards, except those `keepForm`
+   * keeps because they were typed into meanwhile.
    */
   const load = useCallback(
-    async (nextProvider?: string, opening = false) => {
+    async (nextProvider?: string, { keepForm = false, reuse = false } = {}) => {
       const revision = ++loadRevision.current;
-      if (!opening) edited.current.clear();
+      if (!keepForm) edited.current.clear();
       const reads = voiceReads(target);
-      const reuse = { reuse: opening };
+      const fresh = { reuse };
       const [nextCatalog, nextCredentials, nextStatus] = await Promise.all([
-        fetchFresh(queryClient, reads.catalog, reuse),
-        fetchFresh(queryClient, reads.credentials, reuse),
-        fetchFresh(queryClient, reads.status, reuse),
+        fetchFresh(queryClient, reads.catalog, fresh),
+        fetchFresh(queryClient, reads.credentials, fresh),
+        fetchFresh(queryClient, reads.status, fresh),
       ]);
       if (revision !== loadRevision.current) return;
       setLoadError(null);
@@ -164,10 +205,12 @@ export default function VoiceSettings() {
         ["baseUrl", setBaseUrl, cred?.endpoint],
         ["ttsModel", setTtsModel, cred?.ttsModel],
         ["sttModel", setSttModel, cred?.sttModel],
+        ["sttBaseUrl", setSttBaseUrl, cred?.sttEndpoint],
       ];
       for (const [field, set, value] of fields) if (!edited.current.has(field)) set(value ?? "");
+      if (!edited.current.has("transcriptionVocabulary")) setTranscriptionVocabulary(undefined);
       if (cred) {
-        const nextVoices = await fetchFresh(queryClient, voicesRead(target, selected), reuse);
+        const nextVoices = await fetchFresh(queryClient, voicesRead(target, selected), fresh);
         if (revision === loadRevision.current) setVoices(nextVoices);
       } else {
         setVoices([]);
@@ -183,7 +226,7 @@ export default function VoiceSettings() {
   };
 
   const open = useCallback(() => {
-    void load(undefined, true)
+    void load(undefined, { keepForm: true, reuse: true })
       .catch((err: unknown) => {
         // A newer read replaced this one and reports for both.
         if (!isCancelledError(err)) setLoadError(errorText(err, t`Could not load voice settings`));
@@ -327,6 +370,7 @@ export default function VoiceSettings() {
         }
       }
       setApiKey("");
+      setSttApiKey("");
       setVoiceId(cred?.voiceId ?? "");
       setSpeechModel(cred?.speechModel ?? "");
       setVoices([]);
@@ -349,6 +393,22 @@ export default function VoiceSettings() {
     credentials.some((entry) => entry.provider === OPENAI_COMPATIBLE_PROVIDER_ID);
 
   const selfHosted = selected?.id === OPENAI_COMPATIBLE_PROVIDER_ID;
+  const listsSpeechModels = Boolean(selected?.speechModels && credential);
+  const speechModelChoices = modelList.provider === provider ? modelList.models : [];
+  useEffect(() => {
+    if (!listsSpeechModels || !provider) return;
+    let current = true;
+    fetchFresh(queryClient, modelsRead(target, provider), { reuse: true }).then(
+      (models) => {
+        if (current) setModelList({ provider, models });
+      },
+      // Without the list the field stays a text box.
+      () => undefined,
+    );
+    return () => {
+      current = false;
+    };
+  }, [listsSpeechModels, provider, target]);
   const keyless = Boolean(selected?.keyless);
   const { keyOptional, linked, canConnect } = voiceConnectionForm({
     entry: selected,
@@ -359,14 +419,18 @@ export default function VoiceSettings() {
 
   async function connect() {
     if (!selected || !canConnect) return;
+    // What this connect carries; anything typed after this point was not saved.
+    const sentApiKey = apiKey;
+    const sentSttApiKey = sttApiKey;
+    const sent = connection.current;
     setPending("connect");
     setError(null);
     if (status) setLoadError(null);
     try {
-      await rpc("voice/connect", {
+      const connected = await rpc("voice/connect", {
         provider: selected.id,
         scope,
-        apiKey: apiKey.trim(),
+        apiKey: sentApiKey.trim(),
         // The server drops this voice when the address or speech model really changed.
         voiceId: voiceId || undefined,
         ...(selected.speechModel ? { speechModel: speechModel.trim() } : {}),
@@ -375,11 +439,56 @@ export default function VoiceSettings() {
               baseUrl: baseUrl.trim(),
               ttsModel: ttsModel.trim() || undefined,
               sttModel: sttModel.trim() || undefined,
+              ...(selected.transcriptionVocabulary && edited.current.has("transcriptionVocabulary")
+                ? { transcriptionVocabulary }
+                : {}),
+              sttBaseUrl: sttBaseUrl.trim(),
+              sttApiKey: sentSttApiKey.trim(),
             }
           : {}),
       });
-      setApiKey("");
-      await load(selected.id);
+      // The mutation has succeeded even if the following read cannot reach the server.
+      loadRevision.current++;
+      const merge = (current: VoiceCredential[] = []) =>
+        current.some((entry) => entry.provider === connected.provider)
+          ? current.map((entry) => (entry.provider === connected.provider ? connected : entry))
+          : [...current, connected];
+      const savedStatus: VoiceStatus = {
+        configured: true,
+        ready: Boolean(connected.voiceId),
+        transcribe: Boolean(selected.transcribe),
+        provider: connected.provider,
+        voiceId: connected.voiceId ?? "",
+      };
+      setStatus(savedStatus);
+      // A replacement server or model can have a different set of voices.
+      setVoices([]);
+      setCredentials(merge);
+      setVoiceId(connected.voiceId ?? "");
+      edited.current.delete("voiceId");
+      await Promise.all([
+        writeSaved(queryClient, voiceReads(target).credentials.queryKey, merge),
+        writeSaved(queryClient, voiceReads(target).status.queryKey, () => savedStatus),
+        writeSaved(queryClient, voicesRead(target, connected.provider).queryKey, () => []),
+      ]);
+      // A key typed while the connect ran was not saved; keep it for the next try.
+      setApiKey((current) => (current === sentApiKey ? "" : current));
+      setSttApiKey((current) => (current === sentSttApiKey ? "" : current));
+      // The connect saved the values it carried, which the server may have normalized or
+      // filled in; fields typed meanwhile keep theirs.
+      for (const field of CONNECTION_FIELDS) {
+        if (connection.current[field] === sent[field]) edited.current.delete(field);
+      }
+      // A key typed meanwhile stays pinned to the address it was typed for.
+      if (connection.current.apiKey !== sent.apiKey) edited.current.add("baseUrl");
+      if (connection.current.sttApiKey !== sent.sttApiKey) edited.current.add("sttBaseUrl");
+      if (connection.current.transcriptionVocabulary !== sent.transcriptionVocabulary) {
+        edited.current.add("baseUrl");
+        edited.current.add("sttBaseUrl");
+      }
+      await load(selected.id, { keepForm: true }).catch((err: unknown) =>
+        setError(errorText(err, t`Could not load voice settings`)),
+      );
     } catch (err) {
       setError(errorText(err, t`Could not connect`));
     } finally {
@@ -400,6 +509,7 @@ export default function VoiceSettings() {
         return;
       }
       setApiKey("");
+      setSttApiKey("");
       const drop = (current: VoiceCredential[] = []) =>
         current.filter((entry) => entry.provider !== providerId);
       loadRevision.current += 1;
@@ -417,9 +527,9 @@ export default function VoiceSettings() {
     }
   }
 
-  async function saveSpeechModel() {
+  async function saveSpeechModel(value = speechModel) {
     if (!credential || !selected?.speechModel || pending !== null) return;
-    const next = speechModel.trim();
+    const next = value.trim();
     if (next === (credential.speechModel ?? "")) return;
     if (speechModelSave.current === next) return;
     speechModelSave.current = next;
@@ -438,9 +548,13 @@ export default function VoiceSettings() {
       loadRevision.current++;
       edited.current.delete("speechModel");
       setSpeechModel(saved.speechModel ?? "");
+      // The server moved the voice to one the new model has.
+      if (!edited.current.has("voiceId")) setVoiceId(saved.voiceId ?? "");
       setCredentials(merge);
       await writeSaved(queryClient, voiceReads(target).credentials.queryKey, merge);
-      void load(selected.id, true).catch(() => undefined);
+      void load(selected.id, { keepForm: true, reuse: !selected.speechModels }).catch(
+        () => undefined,
+      );
     } catch (err) {
       setError(errorText(err, t`Could not save that speech model`));
     } finally {
@@ -450,12 +564,33 @@ export default function VoiceSettings() {
   }
 
   async function chooseVoice(nextVoiceId: string) {
+    if (pending !== null) return;
     loadRevision.current++;
     setVoiceId(nextVoiceId);
     setPending("voice");
+    setError(null);
+    if (status) setLoadError(null);
     try {
-      await rpc("voice/setVoice", { voiceId: nextVoiceId, provider: selected?.id, scope });
-      await load(selected?.id);
+      const saved = await rpc("voice/setVoice", {
+        voiceId: nextVoiceId,
+        provider: selected?.id,
+        scope,
+      });
+      setStatus(saved);
+      edited.current.delete("voiceId");
+      // A cached revisit initializes the picker from credentials, not status.
+      const merge = (current: VoiceCredential[] = []) =>
+        current.map((entry) =>
+          entry.provider === saved.provider ? { ...entry, voiceId: saved.voiceId } : entry,
+        );
+      setCredentials(merge);
+      await Promise.all([
+        writeSaved(queryClient, voiceReads(target).status.queryKey, () => saved),
+        writeSaved(queryClient, voiceReads(target).credentials.queryKey, merge),
+      ]);
+      await load(selected?.id, { keepForm: true }).catch((err: unknown) =>
+        setError(errorText(err, t`Could not load voice settings`)),
+      );
     } catch (err) {
       setError(errorText(err, t`Could not save that voice`));
     } finally {
@@ -481,6 +616,10 @@ export default function VoiceSettings() {
     }
   }
 
+  const providerChoices = [
+    ...(deviceSettings ? [{ key: DEVICE_CHOICE, label: t`This device` }] : []),
+    ...catalog.map((entry) => ({ key: entry.id, label: entry.name })),
+  ];
   const failure = error ?? loadError;
   const shownError = error ?? (status ? loadError : null);
 
@@ -504,51 +643,18 @@ export default function VoiceSettings() {
         ) : shownError ? (
           <Text style={styles.error}>{shownError}</Text>
         ) : null}
-        {deviceSettings ? (
+        {providerChoices.length ? (
           <View style={styles.group}>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityState={{ selected: deviceVoice }}
+            <MenuPicker
+              label={t`Provider`}
               disabled={pending !== null || !deviceVoiceReady}
-              onPress={() => void toggleDeviceVoice()}
-              style={({ pressed }) => [
-                styles.groupRow,
-                (pending !== null || !deviceVoiceReady) && styles.disabled,
-                pressed && styles.pressed,
-              ]}
-            >
-              <View style={styles.rowCopy}>
-                <Text style={styles.cardTitle}>{t`This device`}</Text>
-              </View>
-              {deviceVoice ? <Checkmark /> : null}
-            </Pressable>
-          </View>
-        ) : null}
-        {catalog.length ? (
-          <View style={styles.group}>
-            {catalog.map((entry, index) => {
-              const chosen = deviceVoiceReady && !deviceVoice && provider === entry.id;
-              return (
-                <Pressable
-                  key={entry.id}
-                  accessibilityRole="button"
-                  accessibilityState={{ selected: chosen }}
-                  disabled={pending !== null || !deviceVoiceReady}
-                  onPress={() => void chooseProvider(entry.id)}
-                  style={({ pressed }) => [
-                    styles.groupRow,
-                    index > 0 && styles.groupDivider,
-                    (pending !== null || !deviceVoiceReady) && styles.disabled,
-                    pressed && styles.pressed,
-                  ]}
-                >
-                  <View style={styles.rowCopy}>
-                    <Text style={styles.cardTitle}>{entry.name}</Text>
-                  </View>
-                  {chosen ? <Checkmark /> : null}
-                </Pressable>
-              );
-            })}
+              choices={providerChoices}
+              value={deviceVoice ? DEVICE_CHOICE : provider}
+              onChange={(key) => {
+                if (key === (deviceVoice ? DEVICE_CHOICE : provider)) return;
+                void (key === DEVICE_CHOICE ? toggleDeviceVoice() : chooseProvider(key));
+              }}
+            />
           </View>
         ) : null}
         {/* Connections belong to the account, so a space never removes them. */}
@@ -586,7 +692,8 @@ export default function VoiceSettings() {
                 autoCorrect={false}
                 importantForAutofill="no"
                 value={apiKey}
-                onChangeText={setApiKey}
+                // The key belongs to this address, so a refresh must not swap it.
+                onChangeText={edit("baseUrl", setApiKey)}
                 placeholder={
                   selfHosted || keyOptional
                     ? t`Optional`
@@ -624,6 +731,61 @@ export default function VoiceSettings() {
                   placeholderTextColor={native.tertiaryLabel}
                   style={styles.input}
                 />
+                {selected.transcriptionVocabulary ? (
+                  <>
+                    <Text style={styles.fieldLabel}>{t`Transcription vocabulary`}</Text>
+                    <TextInput
+                      accessibilityLabel={t`Transcription vocabulary`}
+                      autoCapitalize="none"
+                      autoCorrect={false}
+                      maxLength={MAX_TRANSCRIPTION_VOCABULARY_LENGTH}
+                      placeholder={t`Names and terms (optional)`}
+                      placeholderTextColor={native.tertiaryLabel}
+                      value={
+                        transcriptionVocabulary ??
+                        savedVoiceTranscriptionVocabulary(credential, baseUrl, sttBaseUrl)
+                      }
+                      onChangeText={edit("transcriptionVocabulary", (value) => {
+                        edited.current.add("baseUrl");
+                        edited.current.add("sttBaseUrl");
+                        setTranscriptionVocabulary(value);
+                      })}
+                      style={styles.input}
+                    />
+                  </>
+                ) : null}
+                <Text style={styles.fieldLabel}>{t`Transcription server URL`}</Text>
+                <TextInput
+                  accessibilityLabel={t`Transcription server URL`}
+                  autoCapitalize="none"
+                  autoComplete="off"
+                  autoCorrect={false}
+                  inputMode="url"
+                  keyboardType="url"
+                  value={sttBaseUrl}
+                  onChangeText={edit("sttBaseUrl", setSttBaseUrl)}
+                  placeholder={baseUrl.trim() || "http://192.168.1.10:8880/v1"}
+                  placeholderTextColor={native.tertiaryLabel}
+                  style={styles.input}
+                  textContentType="URL"
+                />
+                {sttBaseUrl.trim() ? (
+                  <TextInput
+                    accessibilityLabel={t`Transcription API key`}
+                    autoCapitalize="none"
+                    autoComplete="off"
+                    autoCorrect={false}
+                    importantForAutofill="no"
+                    value={sttApiKey}
+                    // The key belongs to this address, so a refresh must not swap it.
+                    onChangeText={edit("sttBaseUrl", setSttApiKey)}
+                    placeholder={t`Optional`}
+                    placeholderTextColor={native.tertiaryLabel}
+                    secureTextEntry
+                    style={styles.input}
+                    textContentType="none"
+                  />
+                ) : null}
               </>
             ) : null}
             {(keyless && credential) || linked ? null : (
@@ -646,42 +808,78 @@ export default function VoiceSettings() {
             {credential && selected.speechModel ? (
               <>
                 <Text style={styles.fieldLabel}>{t`Speech model`}</Text>
+                {listsSpeechModels && speechModelChoices.length ? (
+                  <View style={styles.group}>
+                    <MenuPicker
+                      label={t`Speech model`}
+                      disabled={pending !== null}
+                      choices={[
+                        { key: "", label: t`Default` },
+                        ...(speechModel &&
+                        !speechModelChoices.some((model) => model.id === speechModel)
+                          ? [{ key: speechModel, label: speechModel }]
+                          : []),
+                        ...speechModelChoices.map((model) => ({
+                          key: model.id,
+                          label: model.label,
+                        })),
+                      ]}
+                      value={speechModel}
+                      onChange={(key) => {
+                        edit("speechModel", setSpeechModel)(key);
+                        void saveSpeechModel(key);
+                      }}
+                    />
+                  </View>
+                ) : (
+                  <TextInput
+                    accessibilityLabel={t`Speech model`}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    editable={pending === null}
+                    value={speechModel}
+                    onChangeText={edit("speechModel", setSpeechModel)}
+                    onBlur={() => void saveSpeechModel()}
+                    onSubmitEditing={() => void saveSpeechModel()}
+                    placeholder={t`Optional`}
+                    placeholderTextColor={native.tertiaryLabel}
+                    style={styles.input}
+                  />
+                )}
+              </>
+            ) : null}
+            {voices.length ? (
+              <View style={styles.group}>
+                <MenuPicker
+                  label={t`Voice`}
+                  disabled={pending !== null}
+                  choices={voices.map((voice) => ({ key: voice.id, label: voice.label }))}
+                  value={voiceId}
+                  onChange={(key) => void chooseVoice(key)}
+                />
+              </View>
+            ) : credential && selected.freeformVoice ? (
+              <>
+                <Text style={styles.fieldLabel}>{t`Voice`}</Text>
                 <TextInput
-                  accessibilityLabel={t`Speech model`}
+                  accessibilityLabel={t`Voice`}
                   autoCapitalize="none"
                   autoCorrect={false}
                   editable={pending === null}
-                  value={speechModel}
-                  onChangeText={edit("speechModel", setSpeechModel)}
-                  onBlur={() => void saveSpeechModel()}
-                  onSubmitEditing={() => void saveSpeechModel()}
-                  placeholder={t`Optional`}
+                  value={voiceId}
+                  onChangeText={edit("voiceId", setVoiceId)}
+                  onBlur={() => {
+                    const next = voiceId.trim();
+                    if (next && next !== credential.voiceId) void chooseVoice(next);
+                    else if (!next) {
+                      edited.current.delete("voiceId");
+                      setVoiceId(credential.voiceId);
+                    }
+                  }}
                   placeholderTextColor={native.tertiaryLabel}
                   style={styles.input}
                 />
               </>
-            ) : null}
-            {voices.length ? (
-              <View style={[styles.group, styles.voices]}>
-                {voices.map((voice, index) => (
-                  <Pressable
-                    key={voice.id}
-                    accessibilityRole="button"
-                    accessibilityState={{ selected: voiceId === voice.id }}
-                    disabled={pending !== null}
-                    onPress={() => void chooseVoice(voice.id)}
-                    style={({ pressed }) => [
-                      styles.groupRow,
-                      index > 0 && styles.groupDivider,
-                      pending !== null && styles.disabled,
-                      pressed && styles.pressed,
-                    ]}
-                  >
-                    <Text style={styles.voiceLabel}>{voice.label}</Text>
-                    {voiceId === voice.id ? <Checkmark /> : null}
-                  </Pressable>
-                ))}
-              </View>
             ) : null}
           </>
         ) : null}
@@ -766,7 +964,5 @@ function createVoiceStyles() {
     },
     disabled: { opacity: 0.4 },
     pressed: { opacity: 0.7 },
-    voices: { marginTop: 12 },
-    voiceLabel: { flex: 1, color: native.label, fontSize: 16 },
   });
 }

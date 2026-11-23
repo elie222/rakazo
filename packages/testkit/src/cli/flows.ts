@@ -7,7 +7,7 @@ import path from "node:path";
 import { parseArgs } from "node:util";
 import { serve } from "@hono/node-server";
 import { loadRootEnv } from "@rakazo/core/node/load-root-env";
-import { computerTestSandbox } from "../computer-test-config.js";
+import { computerTestSandbox } from "../computers/computer-test-config.js";
 import { FLOWS } from "../flows/index.js";
 import { validateFlowLimits } from "../flows/limits.js";
 import type { FlowResult } from "../flows/runner.js";
@@ -144,11 +144,6 @@ async function main() {
       dataDir,
       sandboxProvider: sandbox.provider,
       agentRuntime: "pi",
-      e2bApiKey: process.env.E2B_API_KEY,
-      novitaApiKey: process.env.NOVITA_API_KEY,
-      sandboxTemplate: process.env.SANDBOX_TEMPLATE,
-      boatApiKey: process.env.BOAT_API_KEY,
-      boatApiUrl: process.env.BOAT_API_URL,
       wakeupDriver: "memory",
     });
     stop = handles.stop;

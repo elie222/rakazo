@@ -8,7 +8,7 @@ import path from "node:path";
 import type { ElectronApplication } from "@playwright/test";
 import { _electron as electron, expect, test } from "@playwright/test";
 import type { RakazoDesktop } from "@rakazo/contracts";
-import { prepareHostComputer } from "../src/host-computer.js";
+import { prepareHostComputer } from "../src/main/this-computer/host-computer.js";
 import { shownWindow } from "./shown-window.js";
 
 const APP_MARKER = "Local Rakazo stack ready";
@@ -32,6 +32,7 @@ let server: Server;
 let serverUrl: string;
 let userData: string;
 let app: ElectronApplication | undefined;
+let stackProbes = 0;
 
 // The fake docker is a POSIX shell script; Windows desktop e2e does not run in CI.
 test.skip(process.platform === "win32", "fake docker needs a POSIX shell");
@@ -39,6 +40,7 @@ test.skip(process.platform === "win32", "fake docker needs a POSIX shell");
 test.beforeAll(async () => {
   server = createServer(async (request, response) => {
     if (request.url === STACK_PROBE_PATH && request.method === "GET") {
+      stackProbes += 1;
       const expected = await readFile(path.join(userData, "stack", ".desktop-stack-token"), "utf8")
         .then((value) => value.trim())
         .catch(() => null);
@@ -77,12 +79,16 @@ test.beforeEach(async () => {
   userData = await realpath(await mkdtemp(path.join(tmpdir(), "rakazo-desktop-stack-")));
   // Setup otherwise follows the machine's language; these specs read its English text.
   await writeFile(path.join(userData, "ui-locale.txt"), "en\n");
+  stackProbes = 0;
 });
 
 test.afterEach(async () => {
-  await app?.close();
-  app = undefined;
-  await rm(userData, { recursive: true, force: true });
+  try {
+    await app?.close();
+  } finally {
+    app = undefined;
+    await rm(userData, { recursive: true, force: true });
+  }
 });
 
 function fakeDockerLog() {
@@ -244,7 +250,6 @@ test("without Docker the app offers the download and continues once Docker is in
   );
   // Installing Docker is a step, not a failure.
   await expect(setup.locator("#stack-phase")).not.toHaveAttribute("data-tone");
-  await expect(setup.locator("#stack-waiting")).toHaveText(`Waiting for ${docker}…`);
   const download = setup.getByRole("button", {
     name: process.platform === "linux" ? "Install Docker" : "Download Docker Desktop",
   });
@@ -323,7 +328,6 @@ test("a stopped Docker daemon is reported and setup keeps asking Docker on its o
       ? "Docker is installed but not running. Start the Docker service to continue."
       : "Docker is installed but not running. Open it to continue.",
   );
-  await expect(setup.locator("#stack-waiting")).toBeVisible();
   // Setup looks again on its own, so there is no button to press.
   await expect(setup.locator("#continue")).toBeHidden();
   await setup.screenshot({
@@ -348,7 +352,6 @@ test("a failed Compose check shows diagnostics instead of installation help", as
   await expect(setup.locator("#stack-output")).toContainText("Access is denied.");
   await expect(setup.locator("#stack-output")).toContainText("exited with code 7");
   await expect(setup.getByRole("button", { name: "Retry" })).toBeEnabled();
-  await expect(setup.locator("#stack-waiting")).toBeHidden();
   await setup.screenshot({
     path: path.join(import.meta.dirname, "screenshots", "11-setup-compose-check-failed.png"),
   });
@@ -365,7 +368,6 @@ test("unpublished images show the docker output and a Retry button", async () =>
   );
   await expect(setup.locator("#stack-output")).toContainText("manifest unknown");
   await expect(setup.getByRole("button", { name: "Retry" })).toBeEnabled();
-  await expect(setup.locator("#stack-waiting")).toBeHidden();
   expect((await readLog()).some((line) => line.endsWith(" up -d --wait --wait-timeout 300"))).toBe(
     false,
   );
@@ -401,7 +403,7 @@ test("a saved local stack that is down is started again without asking", async (
 test("a saved local stack is reused only after its private identity matches", async () => {
   const stackDir = path.join(userData, "stack");
   await mkdir(stackDir, { recursive: true });
-  const host = await prepareHostComputer(userData);
+  const host = await prepareHostComputer(userData, "docker");
   await writeFile(
     path.join(stackDir, ".desktop-host-config"),
     createHash("sha256").update(JSON.stringify(host.connection)).digest("hex"),
@@ -422,6 +424,34 @@ test("a saved local stack is reused only after its private identity matches", as
   await expect(appWindow.getByText(APP_MARKER)).toBeVisible();
   expect(await readLog()).toEqual([]);
 });
+
+for (const hasStackFiles of [false, true]) {
+  test(`a saved external server does not discover local services (${hasStackFiles ? "retained" : "absent"} stack files)`, async () => {
+    if (hasStackFiles) {
+      const stackDir = path.join(userData, "stack");
+      await mkdir(stackDir, { recursive: true });
+      await writeFile(path.join(stackDir, ".desktop-stack-token"), `${"ab".repeat(32)}\n`, {
+        encoding: "utf8",
+        mode: 0o600,
+      });
+    }
+    await writeFile(
+      path.join(userData, "setup.json"),
+      `${JSON.stringify({ mode: "existing", serverUrl }, null, 2)}\n`,
+      { encoding: "utf8", mode: 0o600 },
+    );
+    app = await launch("ok");
+    const appWindow = await app.firstWindow();
+    await expect(appWindow.getByText(APP_MARKER)).toBeVisible();
+    expect(stackProbes).toBe(0);
+    expect(await readLog()).toEqual([]);
+    expect(
+      await app.evaluate(
+        ({ Menu }) => Menu.getApplicationMenu()?.getMenuItemById("quit-and-stop-bots")?.visible,
+      ),
+    ).toBe(false);
+  });
+}
 
 test("a saved local target is the exact origin authenticated before reuse", async () => {
   const uncheckedServer = createServer((request, response) => {

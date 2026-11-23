@@ -4,8 +4,8 @@ import type { GroupAvatarMember } from "@rakazo/ui-web";
 import { DEFAULT_BOT_AVATAR_COLOR } from "@rakazo/ui-web";
 import type { ReactNode } from "react";
 import { useMemo, useRef } from "react";
-import { rpc } from "../../src/lib/rpc";
-import { Transcript } from "../../src/pages/shell/transcript";
+import { rpc } from "../../src/lib/query/rpc";
+import { Transcript } from "../../src/pages/shell/chat/transcript";
 
 export const BOT = { botId: "bot-1", name: "Chief", color: DEFAULT_BOT_AVATAR_COLOR };
 const NO_IDS = new Set<string>();

@@ -7,6 +7,10 @@ const workflowsDir = path.resolve(import.meta.dirname, "../../../.github/workflo
 const workflowText = readFileSync(path.join(workflowsDir, "publish-server-image.yml"), "utf8");
 const publisherDir = path.resolve(workflowsDir, "../actions/publish-image");
 const publisherText = readFileSync(path.join(publisherDir, "action.yml"), "utf8");
+const scannerText = readFileSync(
+  path.resolve(workflowsDir, "../actions/setup-trivy/action.yml"),
+  "utf8",
+);
 interface WorkflowStep {
   id?: string;
   if?: string;
@@ -39,6 +43,9 @@ const workflow = parse(workflowText) as {
 };
 const ci = parse(readFileSync(path.join(workflowsDir, "ci.yml"), "utf8")) as {
   concurrency: { group: string; "cancel-in-progress": string };
+  jobs: Record<string, WorkflowJob>;
+};
+const suites = parse(readFileSync(path.join(workflowsDir, "test-suites.yml"), "utf8")) as {
   jobs: Record<string, WorkflowJob>;
 };
 const publisher = parse(publisherText) as { runs: { steps: WorkflowStep[] } };
@@ -134,11 +141,9 @@ describe("server image publish workflow", () => {
     const publish = ci.jobs["publish-server-image"];
     expect(publish?.uses).toBe("./.github/workflows/publish-server-image.yml");
     expect(publish?.if).toBe("github.event_name == 'push' && github.ref == 'refs/heads/main'");
-    expect(ci.jobs["deploy-production"]?.needs).toEqual([
-      "checks",
-      "test-integration",
-      "publish-server-image",
-    ]);
+    expect(ci.jobs["deploy-production"]?.needs).toEqual(["tests", "publish-server-image"]);
+    expect(ci.jobs["publish-mobile-update"]?.needs).toBe("tests");
+    expect(ci.jobs.tests?.uses).toBe("./.github/workflows/test-suites.yml");
   });
 
   it("lets main revisions validate independently and retains pending release work", () => {
@@ -161,11 +166,12 @@ describe("server image publish workflow", () => {
 
   it("lets only the newest waiting main revision replace a queued one, never a running one", () => {
     const locks = [
-      "static-checks",
-      "unit-tests-shard",
-      "test-integration-shard",
-      "publish-server-image",
-    ].map((name) => ci.jobs[name]?.concurrency);
+      suites.jobs["static-checks"],
+      suites.jobs["unit-tests-shard"],
+      suites.jobs["unit-tests-processes"],
+      suites.jobs["test-integration-shard"],
+      ci.jobs["publish-server-image"],
+    ].map((job) => job?.concurrency);
     expect(new Set(locks.map((lock) => lock?.group)).size).toBe(locks.length);
     for (const lock of locks) {
       expect(lock?.group).toMatch(/main/);
@@ -174,17 +180,20 @@ describe("server image publish workflow", () => {
     }
     // Release prerequisites start with their run, so they reach these locks in push order and an
     // older revision cannot replace a newer one that is already waiting.
+    for (const name of ["tests", "publish-server-image"]) {
+      expect(ci.jobs[name]?.needs, name).toBeUndefined();
+    }
     for (const name of [
       "static-checks",
       "unit-tests-shard",
+      "unit-tests-processes",
       "test-integration-shard",
-      "publish-server-image",
     ]) {
-      expect(ci.jobs[name]?.needs, name).toBeUndefined();
+      expect(suites.jobs[name]?.needs, name).toBeUndefined();
     }
   });
 
-  it("keeps pull requests read-only and every action pinned to a commit", () => {
+  it("keeps pull requests read-only and external actions pinned to a commit", () => {
     const validate = workflow.jobs.validate;
     expect(validate.if).toBe("github.event_name == 'pull_request'");
     expect(validate.permissions).toEqual({ contents: "read" });
@@ -195,9 +204,10 @@ describe("server image publish workflow", () => {
     const cacheScope = "scope=pr-${{ github.event.pull_request.number }}-${{ matrix.name }}";
     expect(build?.with?.["cache-from"]).toContain(cacheScope);
     expect(build?.with?.["cache-to"]).toContain(cacheScope);
-    for (const text of [workflowText, publisherText]) {
+    for (const text of [workflowText, publisherText, scannerText]) {
       for (const match of text.matchAll(/uses:\s+([^\s#]+)/g)) {
-        if (match[1] === publicationAction) continue;
+        if (match[1] === publicationAction || match[1] === "./.github/actions/setup-trivy")
+          continue;
         expect(match[1], match[1]).toMatch(/@[0-9a-f]{40}$/);
       }
     }

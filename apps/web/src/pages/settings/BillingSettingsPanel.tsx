@@ -1,0 +1,98 @@
+import { Plural, Trans, useLingui } from "@lingui/react/macro";
+import { billingDateLabel, formatBillingPrice } from "@rakazo/i18n/billing";
+import { Button, SectionHeading, Skeleton } from "@rakazo/ui-web";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { ModelCreditsSettings } from "../../components/billing/ModelCredits";
+import { useSave, useSpaceQueries } from "../../lib/query/query";
+import type { RpcClient } from "../../lib/query/rpc";
+
+/** `client` is the window's space: another tab can select another organization at any time. */
+export function BillingSettingsPanel({ client }: { client: RpcClient }) {
+  const { t, i18n } = useLingui();
+  const locale = i18n.locale || "en";
+  const queryClient = useQueryClient();
+  const queries = useSpaceQueries();
+  const statusRead = useQuery({
+    ...queries.billing.status.queryOptions(),
+    queryFn: () => client.billing.status(),
+  });
+  const status = statusRead.data;
+  const error = statusRead.isError && !status;
+  // Desktop opens the URL in the system browser and this page stays, so the button comes back.
+  const portal = useSave({
+    save: (_, rpc) => rpc.billing.portal(),
+    onSaved: ({ url }) => window.location.assign(url),
+  });
+
+  const stateLabel = status
+    ? status.state === "trialing"
+      ? t`Trial`
+      : status.state === "active"
+        ? t`Active`
+        : status.state === "past_due"
+          ? t`Past due`
+          : status.state === "canceled"
+            ? t`Canceled`
+            : t`Inactive`
+    : null;
+
+  const dateLabel = status ? billingDateLabel(status, locale) : null;
+
+  const price = status?.price ? formatBillingPrice(status.price, locale) : null;
+  const seats = status?.seats ?? 0;
+
+  if (status?.funding !== undefined)
+    return (
+      <ModelCreditsSettings
+        status={status}
+        refresh={async () => {
+          await statusRead.refetch({ throwOnError: true });
+          await queryClient.invalidateQueries({
+            queryKey: queries.billing.computerUsage.queryKey(),
+          });
+        }}
+      />
+    );
+
+  return (
+    <div data-testid="billing-settings" className="rounded-xl border border-border px-4 py-4">
+      <div className="flex items-start justify-between gap-4">
+        <div className="min-w-0">
+          {status ? (
+            <SectionHeading variant="heading">{stateLabel}</SectionHeading>
+          ) : error ? null : (
+            <Skeleton className="h-5 w-24" />
+          )}
+          {price ? (
+            <p className="mt-3 flex flex-wrap gap-x-2 text-body text-foreground/75">
+              <span>{price}</span>
+              {seats > 1 ? (
+                <span className="text-muted-foreground">
+                  <Plural value={seats} one="# seat" other="# seats" />
+                </span>
+              ) : null}
+            </p>
+          ) : null}
+          {dateLabel ? (
+            <p className="mt-2 text-body-sm text-muted-foreground/80">{dateLabel}</p>
+          ) : null}
+        </div>
+        {status?.canManage && status.hasCustomer ? (
+          <Button
+            variant="secondary"
+            size="sm"
+            disabled={portal.pending}
+            onClick={() => portal.run()}
+          >
+            <Trans>Manage</Trans>
+          </Button>
+        ) : null}
+      </div>
+      {portal.error || error ? (
+        <p role="alert" className="mt-3 text-body text-destructive">
+          {portal.error ? t`Could not open billing` : t`Could not load billing`}
+        </p>
+      ) : null}
+    </div>
+  );
+}

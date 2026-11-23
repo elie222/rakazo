@@ -1,6 +1,6 @@
 import { pageKitPalette } from "@rakazo/ui-tokens";
 import type { ReactNode } from "react";
-import { useEffect, useId, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { openViaHost } from "./inline.js";
 import { useWords } from "./labels.js";
 
@@ -143,22 +143,42 @@ export function CopyButton({
   variant?: "quiet" | "primary";
 }) {
   const words = useWords();
-  const [state, setState] = useState<"idle" | "copied" | "blocked">("idle");
+  const name = text(label);
+  const content = text(value) || name;
+  const request = useRef(0);
+  const [feedback, setFeedback] = useState<{
+    content: string;
+    name: string;
+    state: "copied" | "blocked";
+  } | null>(null);
+  const state = feedback?.content === content && feedback.name === name ? feedback.state : "idle";
+  useEffect(() => {
+    setFeedback(null);
+    return () => {
+      request.current += 1;
+    };
+  }, [content, name]);
   useEffect(() => {
     if (state !== "copied") return;
-    const timer = setTimeout(() => setState("idle"), 1600);
+    const timer = setTimeout(() => setFeedback(null), 1600);
     return () => clearTimeout(timer);
   }, [state]);
-  const name = text(label);
   if (!name) return null;
-  const content = text(value) || name;
   return (
     <>
       <button
         type="button"
         className="rk-button"
         data-variant={variant === "primary" ? "primary" : undefined}
-        onClick={() => void copyText(content).then((ok) => setState(ok ? "copied" : "blocked"))}
+        onClick={() => {
+          const id = ++request.current;
+          setFeedback(null);
+          void copyText(content).then((ok) => {
+            if (request.current === id) {
+              setFeedback({ content, name, state: ok ? "copied" : "blocked" });
+            }
+          });
+        }}
       >
         {state === "copied" ? text(copiedLabel) || words.t("copied") : name}
       </button>
@@ -251,8 +271,10 @@ export function Select({
 }) {
   const id = useId();
   const items = optionsOf(options);
-  const current = value === undefined || value === null ? "" : String(value);
+  const current = value === undefined || value === null ? undefined : String(value);
   const chosen = items.some((item) => item.value === current);
+  // An empty string can be a real choice, so the placeholder needs its own value.
+  const placeholderValue = `${id}placeholder`;
   return (
     <div className="rk-field" data-inline="true">
       {label ? (
@@ -263,14 +285,14 @@ export function Select({
       <span className="rk-select">
         <select
           id={id}
-          value={chosen ? current : ""}
+          value={chosen ? current : placeholderValue}
           disabled={disabled === true}
           data-empty={!chosen || undefined}
           aria-label={label ? undefined : placeholder}
           onChange={(event) => onChange?.(event.target.value)}
         >
           {!chosen ? (
-            <option value="" disabled>
+            <option value={placeholderValue} disabled>
               {placeholder ?? ""}
             </option>
           ) : null}
@@ -294,12 +316,14 @@ export function Input({
   onChange,
   placeholder,
   type = "text",
+  min,
 }: {
   label?: string;
   value?: string | number;
   onChange?: (value: string) => void;
   placeholder?: string;
   type?: "text" | "number" | "search";
+  min?: number;
 }) {
   const id = useId();
   return (
@@ -313,7 +337,11 @@ export function Input({
         id={id}
         className="rk-input"
         type={type}
-        inputMode={type === "number" ? "decimal" : undefined}
+        min={type === "number" ? min : undefined}
+        // The phone decimal pad has no minus key, so only a field that can't go negative gets it.
+        inputMode={
+          type === "number" && min !== undefined && Number(min) >= 0 ? "decimal" : undefined
+        }
         value={value === undefined || value === null ? "" : String(value)}
         placeholder={placeholder}
         aria-label={label ? undefined : placeholder}

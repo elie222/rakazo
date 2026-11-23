@@ -9,8 +9,8 @@ import UIKit
 final class WorkActivities {
   static let shared = WorkActivities()
 
-  /// Receives the card's push token, again whenever iOS changes it.
-  var onToken: ((_ token: String) -> Void)?
+  /// Receives the card's push token, again whenever iOS changes it, with the request it starts.
+  var onToken: ((_ token: String, _ request: Int) -> Void)?
   /// Receives the phone's token for starting a card by push, again whenever iOS changes it.
   var onStartToken: ((_ token: String) -> Void)?
 
@@ -19,6 +19,9 @@ final class WorkActivities {
   /// Cards being ended: a send meanwhile starts a new one instead of reusing them.
   private var ending = Set<String>()
   private var observing = false
+  /// The latest request asking the server whether it follows the card, from the app or from here.
+  /// Only its answer may end the card: an older one can land after a newer one restarted the work.
+  private var request = 0
 
   func start(_ row: WorkActivityAttributes.ContentState.Row) {
     guard ActivityAuthorizationInfo().areActivitiesEnabled else { return }
@@ -78,7 +81,10 @@ final class WorkActivities {
     guard let current = Activity<WorkActivityAttributes>.activities.first(where: {
       $0.activityState == .active && !ending.contains($0.id)
     }) else { return false }
-    if let token = current.pushToken { onToken?(hex(token)) }
+    if let token = current.pushToken, let onToken {
+      request += 1
+      onToken(hex(token), request)
+    }
     // A card from an earlier launch may still change its token.
     watch(current)
     return true
@@ -103,14 +109,21 @@ final class WorkActivities {
   /// A card the server starts wakes the app in the background, where its JavaScript may not run
   /// in time, so the token goes to the server from here with the saved session.
   private func deliver(_ token: String) {
+    request += 1
+    let request = self.request
     if UIApplication.shared.applicationState == .active, let onToken {
-      onToken(token)
+      onToken(token, request)
       return
     }
     IncomingCalls.shared.send("notifications/followWorkActivity", ["token": token]) { [weak self] output in
       // Nothing would update it: no bot is at work or this server cannot reach the phone.
-      if output?["following"] as? Bool == false { self?.end() }
+      if output?["following"] as? Bool == false { self?.endUnfollowed(request) }
     }
+  }
+
+  /// Ends the card for the server's answer to a request, unless a newer request was made since.
+  func endUnfollowed(_ answered: Int) {
+    if answered == request { end() }
   }
 
   /// Ends the card straight away, such as when the server cannot update it.

@@ -3,19 +3,20 @@ import { useLingui } from "@lingui/react/macro";
 import { PageIcon } from "@rakazo/chat-ui/native";
 import type { PageSummary } from "@rakazo/contracts";
 import { PAGE_TITLE_MAX_LENGTH } from "@rakazo/contracts";
+import { pageSharingLabel } from "@rakazo/i18n/page-review";
 import * as Clipboard from "expo-clipboard";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useState } from "react";
 import { ActivityIndicator, Alert, ScrollView, StyleSheet, Text, View } from "react-native";
-import { LongPressMenu } from "../components/long-press-menu";
-import { PageLoadFailure } from "../components/pages/page-load-failure";
-import { useTextEditDialog } from "../components/profile-edit-dialog";
-import { SettingsGroup, SettingsRow } from "../components/settings-group";
-import { formatActivityRelativeTime } from "../lib/activity";
-import { rpc } from "../lib/api";
-import { useMobileTokens, useResolvedAppearance } from "../lib/native";
-import { getLatestPage, removePage, renamePage } from "../lib/pages";
-import { usePagedPages } from "../lib/use-paged-pages";
+import { useTextEditDialog } from "../components/bots/profile-edit-dialog";
+import { SettingsGroup, SettingsRow } from "../components/settings/settings-group";
+import { LongPressMenu } from "../components/ui/long-press-menu";
+import { rpc } from "../lib/api/api";
+import { formatActivityRelativeTime } from "../lib/inbox/activity";
+import { useMobileTokens, useResolvedAppearance } from "../lib/native/native";
+import { PageLoadFailure } from "../lib/pages/page-load-failure";
+import { getLatestPage, removePage, renamePage } from "../lib/pages/pages";
+import { usePagedPages } from "../lib/pages/use-paged-pages";
 
 /** The bot's pages, pinned first and then most recently updated. */
 export default function PagesScreen() {
@@ -74,8 +75,9 @@ export default function PagesScreen() {
     else if (action === "copy") {
       void getLatestPage(page.id, { refresh: true, link: true })
         .then(async (detail) => {
-          // Turned off elsewhere since the list was read: the list catches up instead.
-          if (detail.shareUrl) await Clipboard.setStringAsync(detail.shareUrl);
+          // The menu was opened for a public link, so another sharing mode refreshes the list.
+          if (detail.visibility === "link" && detail.shareUrl)
+            await Clipboard.setStringAsync(detail.shareUrl);
           else refresh();
         })
         .catch(() => setProblem(t`Could not copy the link.`));
@@ -100,41 +102,46 @@ export default function PagesScreen() {
       );
     }
   };
-  const row = (page: PageSummary) => (
-    <LongPressMenu
-      key={page.id}
-      colorScheme={colorScheme}
-      title={page.title}
-      actions={[
-        { id: "open", title: t`Open` },
-        { id: "rename", title: t`Rename` },
-        { id: "share", title: t`Share` },
-        ...(page.visibility === "link" ? [{ id: "copy", title: t`Copy link` }] : []),
-        { id: "pin", title: page.pinned ? t`Unpin` : t`Pin` },
-        { id: "delete", title: t`Delete`, attributes: { destructive: true } },
-      ]}
-      onPressAction={(event) => act(page, event.nativeEvent.event)}
-    >
-      {(onLongPress) => (
-        <SettingsRow
-          accessibilityRole="button"
-          chevron="right"
-          title={page.title}
-          detail={`${page.visibility === "link" ? `${t`Shared`} · ` : ""}${formatActivityRelativeTime(page.updatedAt)}`}
-          leading={<PageIcon colors={tokens} width={26} />}
-          onPress={() => open(page)}
-          onLongPress={onLongPress}
-        />
-      )}
-    </LongPressMenu>
-  );
+  const row = (page: PageSummary) => {
+    const sharing = pageSharingLabel(page.visibility);
+    const updated = formatActivityRelativeTime(page.updatedAt);
+    return (
+      <LongPressMenu
+        key={page.id}
+        colorScheme={colorScheme}
+        title={page.title}
+        actions={[
+          { id: "open", title: t`Open` },
+          { id: "rename", title: t`Rename` },
+          { id: "share", title: t`Share` },
+          ...(page.visibility === "link" ? [{ id: "copy", title: t`Copy link` }] : []),
+          { id: "pin", title: page.pinned ? t`Unpin` : t`Pin` },
+          { id: "delete", title: t`Delete`, attributes: { destructive: true } },
+        ]}
+        onPressAction={(event) => act(page, event.nativeEvent.event)}
+      >
+        {(onLongPress) => (
+          <SettingsRow
+            accessibilityRole="button"
+            chevron="right"
+            title={page.title}
+            detail={sharing ? `${sharing} · ${updated}` : updated}
+            leading={<PageIcon colors={tokens} width={26} />}
+            onPress={() => open(page)}
+            onLongPress={onLongPress}
+          />
+        )}
+      </LongPressMenu>
+    );
+  };
   const pinned = listed.items.filter((page) => page.pinned);
   const rest = listed.items.filter((page) => !page.pinned);
+  const displayedProblem = problem ?? (listed.paginationFailed ? t`Could not load pages.` : null);
   return (
     <ScrollView contentInsetAdjustmentBehavior="automatic">
-      {problem ? (
+      {displayedProblem ? (
         <Text accessibilityRole="alert" style={[styles.problem, { color: tokens.destructive }]}>
-          {problem}
+          {displayedProblem}
         </Text>
       ) : null}
       {pinned.length ? <SettingsGroup label={t`Pinned`}>{pinned.map(row)}</SettingsGroup> : null}
@@ -146,7 +153,7 @@ export default function PagesScreen() {
             key="more"
             accessibilityRole="button"
             title={t`Show more`}
-            onPress={() => void showMore().catch(() => setProblem(t`Could not load pages.`))}
+            onPress={() => void showMore()}
           />
         </SettingsGroup>
       ) : null}

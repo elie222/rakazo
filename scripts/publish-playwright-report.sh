@@ -18,6 +18,14 @@ set -euo pipefail
 report_dir="${PLAYWRIGHT_REPORT_DIR:-playwright-report}"
 test_results_dir="${PLAYWRIGHT_TEST_RESULTS_DIR:-apps/web/test-results}"
 publish_report="${PLAYWRIGHT_PUBLISH_REPORT:-true}"
+# false leaves the shared history and dashboard to a separately serialized step,
+# which reads this run's entry from the history_entry output.
+update_history="${PLAYWRIGHT_UPDATE_HISTORY:-true}"
+
+if [[ "$update_history" != "true" && "$update_history" != "false" ]]; then
+  echo "PLAYWRIGHT_UPDATE_HISTORY must be true or false." >&2
+  exit 1
+fi
 
 if [[ "$publish_report" != "true" && "$publish_report" != "false" ]]; then
   echo "PLAYWRIGHT_PUBLISH_REPORT must be true or false." >&2
@@ -46,7 +54,7 @@ esac
 
 dashboard_dir="$GITHUB_WORKSPACE/.tmp/playwright-dashboard"
 history_path="$dashboard_dir/history.json"
-dashboard_path="$dashboard_dir/index.html"
+history_entry_path="$dashboard_dir/history-entry.json"
 gallery_dir="$dashboard_dir/screenshots"
 history_error_path="$dashboard_dir/history-download-error.log"
 baseline_manifest_path="$dashboard_dir/main-baseline-manifest.json"
@@ -86,6 +94,10 @@ if aws s3 cp \
   echo "Downloaded existing Playwright history."
 elif grep -Eq "404|NoSuchKey|Not Found" "$history_error_path"; then
   echo "No existing Playwright history found; creating it."
+elif [[ "$PLAYWRIGHT_EVENT" == "pull_request" ]]; then
+  # Pull request runs never write the main baseline, so history is only their comparison fallback.
+  echo "::warning::Could not read Playwright history; publishing this run without its baseline fallback."
+  cat "$history_error_path"
 else
   cat "$history_error_path"
   exit 1
@@ -174,9 +186,9 @@ PLAYWRIGHT_SCREENSHOTS_URL="$screenshots_url" \
 PLAYWRIGHT_DASHBOARD_URL="$public_base_url/index.html" \
 PLAYWRIGHT_PR_URL="$pull_request_url" \
   pnpm exec tsx \
-    packages/testkit/src/cli/generate-playwright-report-dashboard.ts \
+    packages/testkit/src/screenshots/generate-playwright-report-dashboard.ts \
     "$history_path" \
-    "$dashboard_path" \
+    "$history_entry_path" \
     "$test_results_dir" \
     "$gallery_dir" \
     "$baseline_manifest_path"
@@ -219,42 +231,28 @@ if [[ -z "${PLAYWRIGHT_PR_NUMBER:-}" && "$PLAYWRIGHT_EVENT" != "pull_request" &&
     echo "Skipping stable baseline update because a newer successful main run is already published."
   fi
 fi
-aws s3 cp \
-  "$history_path" \
-  "$bucket_uri/history.json" \
-  --endpoint-url "$S3_ENDPOINT" \
-  --content-type "application/json" \
-  --cache-control "no-store"
-aws s3 cp \
-  "$dashboard_path" \
-  "$bucket_uri/index.html" \
-  --endpoint-url "$S3_ENDPOINT" \
-  --content-type "text/html" \
-  --cache-control "no-store"
+# The run's own files are published, so the history may list it even if the PR alias fails.
+if [[ -n "${GITHUB_OUTPUT:-}" ]]; then
+  printf 'history_entry=%s\n' "$(jq -c . "$history_entry_path")" >> "$GITHUB_OUTPUT"
+fi
 
 stable_screenshots_url=""
-latest_pr_run="false"
 if [[ -n "${PLAYWRIGHT_PR_NUMBER:-}" ]]; then
+  # The caller passes a PR number only while that PR's head is this run's commit.
   stable_screenshots_url="$public_base_url/prs/$PLAYWRIGHT_PR_NUMBER/index.html"
-  latest_pr_run_key="$(jq -r --argjson number "$PLAYWRIGHT_PR_NUMBER" '
-    [.[] | select(.pullRequestNumber == $number)][0] |
-    if . then .id + "-" + (.attempt | tostring) else empty end
-  ' "$history_path")"
-  if [[ "$latest_pr_run_key" == "$run_key" ]]; then
-    aws s3 cp \
-      "$gallery_dir/index.html" \
-      "$bucket_uri/prs/$PLAYWRIGHT_PR_NUMBER/index.html" \
-      --endpoint-url "$S3_ENDPOINT" \
-      --content-type "text/html" \
-      --cache-control "no-store"
-    latest_pr_run="true"
-  else
-    echo "Skipping stable PR gallery update because a newer run is already published."
-  fi
+  aws s3 cp \
+    "$gallery_dir/index.html" \
+    "$bucket_uri/prs/$PLAYWRIGHT_PR_NUMBER/index.html" \
+    --endpoint-url "$S3_ENDPOINT" \
+    --content-type "text/html" \
+    --cache-control "no-store"
+fi
+
+if [[ "$update_history" == "true" ]]; then
+  bash scripts/publish-playwright-history.sh "$history_entry_path"
 fi
 
 if [[ -n "${GITHUB_OUTPUT:-}" ]]; then
-  printf 'latest_pr_run=%s\n' "$latest_pr_run" >> "$GITHUB_OUTPUT"
   printf 'stable_screenshots_url=%s\n' "$stable_screenshots_url" >> "$GITHUB_OUTPUT"
 fi
 

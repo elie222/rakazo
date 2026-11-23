@@ -9,20 +9,18 @@ import {
   localeHomePath,
   type Locale,
 } from "../i18n/locales";
-import { HUB_CARDS } from "../alternatives";
-import { ENTERPRISE_PATH } from "../enterprise";
-import { INTEGRATION_PLATFORMS_PATH } from "../integration-platforms/shared";
-import { SANDBOXES_PATH } from "../sandboxes";
-import { VOICE_PROVIDERS_PATH } from "../voice-providers/shared";
 import { getHomeCopy } from "../i18n/home";
+import { localizedHref, pageVersions } from "../i18n/translations";
 import type { HomeCopy } from "../i18n/home";
 import {
+  AFFILIATE_PROGRAM_URL,
   CHANGELOG_URL,
   GITHUB_URL,
   INBOX_ZERO_URL,
   PLUGIN_SUBMIT_PATH,
   SELF_HOST_GUIDE_PATH,
 } from "../site";
+import { marketing } from "../marketing-site";
 import Logo from "./Logo.astro";
 
 type Props = {
@@ -48,6 +46,12 @@ const {
 } = Astro.props;
 
 const currentPath = Astro.url.pathname.replace(/\/+$/, "") || "/";
+const versions = pageVersions(Astro.url.pathname);
+
+/** The current page in `locale` when it is translated, otherwise that locale's home page. */
+function languageHref(locale: Locale): string {
+  return versions.find((version) => version.locale === locale)?.path ?? localeHomePath(locale);
+}
 
 function isCurrentPage(href: string): boolean {
   return (href.replace(/\/+$/, "") || "/") === currentPath;
@@ -60,11 +64,12 @@ const columns: Array<{ heading: string; links: FooterLink[] }> = [
     heading: linkLabels.product,
     links: [
       { href: "/download/", label: linkLabels.download },
-      { href: SELF_HOST_GUIDE_PATH, label: linkLabels.docs },
-      { href: ENTERPRISE_PATH, label: linkLabels.enterprise },
-      { href: SANDBOXES_PATH, label: linkLabels.sandboxes },
-      { href: INTEGRATION_PLATFORMS_PATH, label: linkLabels.integrationPlatforms },
-      { href: VOICE_PROVIDERS_PATH, label: linkLabels.voiceProviders },
+      { href: "/docs/", label: linkLabels.docs },
+      { href: SELF_HOST_GUIDE_PATH, label: localeCopy.selfHost.heading },
+      { href: "/enterprise/", label: linkLabels.enterprise },
+      { href: "/sandboxes/", label: linkLabels.sandboxes },
+      { href: "/integration-platforms/", label: linkLabels.integrationPlatforms },
+      { href: "/voice-providers/", label: linkLabels.voiceProviders },
       { href: PLUGIN_SUBMIT_PATH, label: linkLabels.submitPlugin },
       { href: CHANGELOG_URL, label: linkLabels.changelog, external: true },
       { href: GITHUB_URL, label: "GitHub", external: true },
@@ -73,7 +78,7 @@ const columns: Array<{ heading: string; links: FooterLink[] }> = [
   {
     heading: linkLabels.alternatives,
     links: [
-      ...HUB_CARDS.map((card) => ({ href: card.href, label: card.name })),
+      ...marketing.footerAlternatives.map((card) => ({ href: card.href, label: card.name })),
       { href: "/alternatives/", label: linkLabels.all },
     ],
   },
@@ -83,6 +88,7 @@ const columns: Array<{ heading: string; links: FooterLink[] }> = [
       { href: "/blog/", label: linkLabels.blog },
       { href: "/about/", label: linkLabels.about },
       { href: "/brand/", label: linkLabels.brand },
+      { href: AFFILIATE_PROGRAM_URL, label: linkLabels.affiliates, external: true },
       { href: "/support/", label: linkLabels.support },
       { href: "/privacy/", label: linkLabels.privacy },
       { href: "/terms/", label: linkLabels.terms },
@@ -106,7 +112,7 @@ const columns: Array<{ heading: string; links: FooterLink[] }> = [
             LOCALES.map((locale) => (
               <li>
                 <a
-                  href={localeHomePath(locale)}
+                  href={languageHref(locale)}
                   hreflang={LOCALE_HREFLANG[locale]}
                   lang={LOCALE_HTML_LANG[locale]}
                   aria-current={locale === currentLocale ? "true" : undefined}
@@ -133,8 +139,12 @@ const columns: Array<{ heading: string; links: FooterLink[] }> = [
             {column.links.map((link) => (
               <li>
                 <a
-                  href={link.href}
-                  aria-current={!link.external && isCurrentPage(link.href) ? "page" : undefined}
+                  href={link.external ? link.href : localizedHref(link.href, currentLocale)}
+                  aria-current={
+                    !link.external && isCurrentPage(localizedHref(link.href, currentLocale))
+                      ? "page"
+                      : undefined
+                  }
                   {...(link.external ? { target: "_blank", rel: "noopener" } : {})}
                 >
                   {link.label}

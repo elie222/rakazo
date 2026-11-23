@@ -50,12 +50,12 @@ createRoot(document.getElementById("root")!).render(
     <div className="avatar-example">
       <BotAvatar
         color="#8B5CF6::shape_2"
-        identity="idle-shape"
+        identity="working-shape"
         size={120}
-        status="idle"
-        className="avatar-shape-idle"
+        status="running"
+        className="avatar-shape-working"
       />
-      <span>Idle shape</span>
+      <span>Working shape</span>
     </div>
     <OrganicExample />
   </>,

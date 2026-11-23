@@ -7,8 +7,10 @@ import { IntegrationSetup } from "./IntegrationSetup";
 
 const api = vi.hoisted(() => ({ capabilities: { catalogSearch: vi.fn() } }));
 
-vi.mock("../../lib/rpc", () => ({ rpc: api }));
-vi.mock("../../lib/mcp-connect", () => ({ connectMcpOauth: vi.fn() }));
+vi.mock("../../lib/query/rpc", () => ({ rpc: api }));
+const connectMcpEndpoint = vi.hoisted(() => vi.fn());
+
+vi.mock("../../lib/integrations/mcp-connect", () => ({ connectMcpEndpoint }));
 vi.mock("@lingui/react/macro", () => ({
   Trans: ({ children }: { children: ReactNode }) => children,
   useLingui: () => ({
@@ -23,6 +25,7 @@ let root: ReturnType<typeof createRoot>;
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   api.capabilities.catalogSearch.mockReset().mockResolvedValue({ enabled: true, results: [] });
+  connectMcpEndpoint.mockReset();
   host = document.createElement("div");
   root = createRoot(host);
 });
@@ -45,17 +48,92 @@ it("does not search on open without a query", async () => {
   expect(api.capabilities.catalogSearch).not.toHaveBeenCalled();
 });
 
-it("searches the public catalog once for a query it opens with", async () => {
+async function searchCatalog(query: string) {
+  const input = host.querySelector("input")!;
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set?.call(input, query);
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
   await act(async () =>
-    root.render(
-      <StrictMode>
-        <IntegrationSetup initialQuery="canva" />
-      </StrictMode>,
-    ),
+    host
+      .querySelector("form")
+      ?.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })),
   );
+}
+
+async function connectTracker() {
+  api.capabilities.catalogSearch.mockResolvedValue({
+    enabled: true,
+    results: [
+      {
+        domain: "tracker.example",
+        name: "Tracker",
+        description: "",
+        pageUrl: null,
+        surfaces: [
+          {
+            slug: "tracker-mcp",
+            kind: "mcp",
+            source: "https://mcp.tracker.example/mcp",
+            auth: { type: "oauth", headerName: null, note: null },
+          },
+        ],
+      },
+    ],
+  });
+  await act(async () => root.render(<IntegrationSetup botId="bot-1" />));
+  await searchCatalog("tracker");
+  await vi.waitFor(() => expect(host.textContent).toContain("Tracker"));
+  const connect = [...host.querySelectorAll("button")].find(
+    (button) => button.textContent === "Connect" && !button.closest("details"),
+  );
+  await act(async () => connect?.click());
+}
+
+it("signs in to a catalog server for the bot", async () => {
+  connectMcpEndpoint.mockResolvedValue("connected");
+  await connectTracker();
+  expect(connectMcpEndpoint).toHaveBeenCalledWith({
+    name: "Tracker",
+    endpoint: "https://mcp.tracker.example/mcp",
+    botId: "bot-1",
+  });
+  expect(host.textContent).toContain("Connected");
+});
+
+it("connects a catalog server that needs no sign-in", async () => {
+  connectMcpEndpoint.mockResolvedValue("authorization_not_requested");
+  await connectTracker();
+  expect(host.textContent).toContain("Connected");
+});
+
+it("leaves a catalog server unconnected when sign-in is cancelled", async () => {
+  connectMcpEndpoint.mockResolvedValue("cancelled");
+  await connectTracker();
+  expect(host.textContent).not.toContain("Connected");
+});
+
+it("does not offer a catalog server that needs a key", async () => {
+  api.capabilities.catalogSearch.mockResolvedValue({
+    enabled: true,
+    results: [
+      {
+        domain: "keyed.example",
+        name: "Keyed",
+        description: "",
+        pageUrl: null,
+        surfaces: [
+          {
+            slug: "keyed-mcp",
+            kind: "mcp",
+            source: "https://mcp.keyed.example/mcp",
+            auth: { type: "bearer", headerName: null, note: null },
+          },
+        ],
+      },
+    ],
+  });
+  await act(async () => root.render(<IntegrationSetup />));
+  await searchCatalog("keyed");
   await vi.waitFor(() => expect(host.textContent).toContain("No remote MCP servers found"));
-  expect(host.querySelector("input")?.value).toBe("canva");
-  expect(api.capabilities.catalogSearch.mock.calls).toEqual([
-    [{ query: "canva", usePublicCatalog: true }],
-  ]);
 });

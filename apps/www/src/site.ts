@@ -20,7 +20,10 @@ export const SETUP_PROMPT_URL = "https://github.com/elie222/rakazo/blob/main/SET
 export const SELF_HOST_GUIDE_PATH = "/self-hosted-ai-agent/";
 export const PLUGIN_SUBMIT_PATH = "/plugins/submit/";
 export const OPENCLAW_ALTERNATIVE_PATH = "/openclaw-alternative/";
+export const AFFILIATE_PROGRAM_URL = "https://partners.dub.co/inboxzero/rakazo";
 export const CHANGELOG_URL = "https://github.com/elie222/rakazo/releases";
 export const LATEST_RELEASE_URL = `${CHANGELOG_URL}/latest`;
 export const INBOX_ZERO_URL =
   "https://www.getinboxzero.com/?utm_source=rakazo&utm_medium=website&utm_campaign=footer";
+export const X_URL = "https://x.com/rakazobot";
+export const DISCORD_URL = "https://discord.gg/RWwKa2Sn7h";

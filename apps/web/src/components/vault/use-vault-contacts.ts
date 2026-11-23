@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { useSpaceQueries } from "../../lib/query";
+import { useSpaceQueries } from "../../lib/query/query";
 import type { BillingContact } from "./VaultItemEditor";
 
 /** The saved contacts of the vault this Space uses, which a card can bill to. */

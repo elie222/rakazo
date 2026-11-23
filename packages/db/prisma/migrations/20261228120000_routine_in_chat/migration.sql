@@ -1,0 +1,1 @@
+ALTER TABLE "routines" ADD COLUMN "inChat" BOOLEAN NOT NULL DEFAULT false;

@@ -105,6 +105,20 @@ describe("media", () => {
     act(() => root.unmount());
   });
 
+  it("restores the placeholder when replacing an already drawn picture", () => {
+    const root = createRoot(host.appendChild(document.createElement("div")));
+    const loading = () => q(".rk-picture")!.hasAttribute("data-loading");
+    act(() => root.render(<Image src={PNG} alt="Harbour" />));
+    act(() => q("img")!.dispatchEvent(new Event("load")));
+    act(() => root.render(<Image src={PNG} alt="Updated" />));
+    expect(loading()).toBe(false);
+    act(() => root.render(<Image src="data:image/png;base64,QQ==" alt="Updated" />));
+    expect(loading()).toBe(true);
+    act(() => q("img")!.dispatchEvent(new Event("load")));
+    expect(loading()).toBe(false);
+    act(() => root.unmount());
+  });
+
   it("enlarges a picture on click and closes it with Escape, returning focus", () => {
     render(<Image src={PNG} alt="Harbour" />);
     const opener = q<HTMLButtonElement>('button[aria-label="Enlarge Harbour"]')!;
@@ -249,6 +263,22 @@ describe("cards and people", () => {
     expect(q("a")!.getAttribute("aria-label")).toBe("View Linen shirt");
   });
 
+  it.each([
+    { store: "Shop", storeMark: undefined, mark: "S" },
+    { store: "🍎 Shop", storeMark: undefined, mark: "🍎" },
+    { store: "𝒜pple Shop", storeMark: undefined, mark: "𝒜" },
+    { store: "Shop", storeMark: "A🍎", mark: "A🍎" },
+    { store: "🇨🇦 Shop", storeMark: undefined, mark: "🇨🇦" },
+    { store: "👩‍💻 Dev", storeMark: undefined, mark: "👩‍💻" },
+    { store: "Shop", storeMark: "🇨🇦🇺🇸🇲🇽", mark: "🇨🇦🇺🇸" },
+  ])("draws a whole store mark, never half a character: $store -> $mark", (row) => {
+    render(<ProductCard {...item} store={row.store} storeMark={row.storeMark} />);
+    const mark = q(".rk-store-mark")!.textContent!;
+    expect(mark).toBe(row.mark);
+    // encodeURIComponent throws on a lone surrogate, so this proves the mark is well formed.
+    expect(() => encodeURIComponent(mark)).not.toThrow();
+  });
+
   it("makes a compact card one link and drops products and tiles with nothing to show", () => {
     render(
       <>
@@ -389,6 +419,38 @@ describe("calendar", () => {
     ]);
     expect(host.textContent).not.toContain("Lost");
     render(<MonthView month="soon" />);
+  });
+
+  it("sizes a week from visible events only, including the first and last day", () => {
+    render(
+      <WeekView
+        week="2026-11-09"
+        events={[
+          { date: "2026-11-08", start: 0, end: 1, title: "Previous week" },
+          { date: " 2026-11-09 ", start: 9, end: 10, title: "First day" },
+          { date: "2026-11-15", start: 10, end: 11, title: "Last day" },
+          { date: "2026-11-16", start: 22, end: 23, title: "Next week" },
+        ]}
+      />,
+    );
+    expect((host.querySelector(".rk-cal-body") as HTMLElement).style.height).toBe("88px");
+    expect(host.textContent).toContain("First day");
+    expect(host.textContent).toContain("Last day");
+    expect(host.textContent).not.toContain("Previous week");
+    expect(host.textContent).not.toContain("Next week");
+  });
+
+  it("uses the empty-week range when every event is outside the displayed days", () => {
+    render(
+      <WeekView
+        week="2026-12-28"
+        events={[
+          { date: "2026-12-27", start: 0, end: 1, title: "Before" },
+          { date: "2027-01-04", start: 22, end: 23, title: "After" },
+        ]}
+      />,
+    );
+    expect((host.querySelector(".rk-cal-body") as HTMLElement).style.height).toBe("440px");
   });
 
   it("places week events by hour and draws the now line only on today", () => {

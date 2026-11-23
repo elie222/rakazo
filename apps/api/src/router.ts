@@ -1,3 +1,4 @@
+import { createHmac } from "node:crypto";
 import type {
   AgentHomeStore,
   ArtifactStore,
@@ -13,12 +14,14 @@ import type {
 import type {
   CloudAgentConnection,
   CodexLiveCatalog,
-  ComposioProvider,
   ConnectorRegistry,
+  createPageRevisions,
   FaviconResolver,
   IntegrationProviderSettings,
   McpConnector,
   McpOAuthBroker,
+  MeetingCalendarService,
+  MeetingService,
   MemoryProviderResolver,
   MessagingDelivery,
   MessagingInstallations,
@@ -31,13 +34,19 @@ import type {
   RemoteConnectorDependencies,
   TicketChangeNotifier,
   UserCloudAgents,
+  UserDeviceGateway,
   verifyModelServesAgents,
   WorkActivities,
 } from "@rakazo/adapters";
 import type { Auth } from "@rakazo/auth";
-import type { ModelCredential, NavLink } from "@rakazo/contracts";
+import type { LabFeature, ModelCredential, NavLink } from "@rakazo/contracts";
 import type { BoardEvents, PrismaClient, ThreadEvents } from "@rakazo/db";
-import type { BillingService } from "./billing.js";
+import type { BillingService } from "./billing/billing.js";
+import type { VoiceDeps } from "./calls/voice.js";
+import type { AppEnv } from "./env.js";
+import { meetingCalendarRoutes } from "./meetings/calendar/calendar-routes.js";
+import type { createMeetingAnswers } from "./meetings/meeting-answers.js";
+import { meetingRoutes } from "./meetings/meeting-routes.js";
 import { accountRoutes } from "./routes/account.js";
 import { availabilityRoutes } from "./routes/availability.js";
 import { boardsRoutes } from "./routes/boards.js";
@@ -60,14 +69,17 @@ import { routinesRoutes } from "./routes/routines.js";
 import { spacesRoutes } from "./routes/spaces.js";
 import { spendingLimitRoutes } from "./routes/spending-limit.js";
 import { threadsRoutes } from "./routes/threads.js";
-import type { VoiceDeps } from "./voice.js";
 
-export { nextConnectionLabel } from "./model-credentials.js";
-export { botIntroPrompt, enqueueBotIntroRun } from "./routes/bots.js";
+export { botIntroPrompt } from "./bots/hidden-turns.prompt.js";
+export { nextConnectionLabel } from "./models/model-credentials.js";
+export { enqueueBotIntroRun } from "./routes/bots.js";
 export { HEARTBEAT_MS, SESSION_RECHECK_MS } from "./routes/shared.js";
 export { callMarkerClientNonce } from "./routes/threads.js";
 
 export interface RouterDeps {
+  meetings?: MeetingService;
+  meetingCalendar?: MeetingCalendarService;
+  meetingAnswers?: ReturnType<typeof createMeetingAnswers>;
   pushTokens: PushTokenStore;
   /** Absent when the deployment cannot update a phone's live status card. */
   workActivities?: Pick<WorkActivities, "register" | "registerStarts">;
@@ -78,12 +90,15 @@ export interface RouterDeps {
   userCloudAgents?: UserCloudAgents;
   /** The deployment's wallet provider; absent hides purchases. */
   paymentWallet?: PaymentWalletProvider | null;
+  /** The computers people paired, never this server's own screen; absent when none can be. */
+  userDevices?: Pick<UserDeviceGateway, "pairedSince">;
   prisma: PrismaClient;
   events: ThreadEvents;
   boardEvents: BoardEvents;
   ticketChanges: TicketChangeNotifier;
   auth: Auth;
   jobs: JobPublisher;
+  pageRevisions?: Pick<ReturnType<typeof createPageRevisions>, "start" | "recipient">;
   sandbox: SandboxProvider;
   memory: MemoryStore;
   memoryProviders: MemoryProviderResolver;
@@ -108,7 +123,6 @@ export interface RouterDeps {
     provider: string,
   ) => void;
   integrationSettings?: IntegrationProviderSettings;
-  composio?: ComposioProvider;
   mcpOAuth?: McpOAuthBroker;
   /** Probes MCP server health; without it servers are never probed from here. */
   mcp?: Pick<McpConnector, "probe">;
@@ -125,6 +139,7 @@ export interface RouterDeps {
     enabled: boolean;
     providers: string[];
     addresses: Record<string, string>;
+    resolveAddresses?: (signal?: AbortSignal) => Promise<Record<string, string>>;
     openSignup: boolean;
   };
   /** Present only when the deployment bills; self-hosted installs leave it unset. */
@@ -133,11 +148,15 @@ export interface RouterDeps {
   onEmailError?: (error: unknown) => void;
   speechSummary?: VoiceDeps["speechSummary"];
   env: {
+    deploymentVoice?: NonNullable<VoiceDeps["env"]>["deploymentVoice"];
     /** Domain of bots' email addresses; unset when this server receives no email. */
     inboundEmailDomain?: string;
-    ticketBoardEnabled?: boolean;
+    /** The public origin webhooks reach, when an ingress provider publishes one. */
+    publishedInboundOrigin?: string;
     navLinks?: NavLink[];
     adminEmails?: string[];
+    /** Labs features this deployment turns on for every account. */
+    deploymentLabs?: LabFeature[];
     phoneCallsEnabled?: boolean;
     phoneCallRingSeconds?: number;
     maxUploadSizeBytes?: number;
@@ -152,6 +171,8 @@ export interface RouterDeps {
     webOrigin: string;
     privacyPolicyUrl?: string;
     screenProxySecret: string;
+    /** Keys the hash that names an invited address in the security log, so it can't be guessed. */
+    invitationRecipientKey: string;
     sandboxProvider: string;
     gitSha?: string;
     integrationsCatalogUrl?: string;
@@ -169,6 +190,8 @@ export function createRouter(deps: RouterDeps) {
 
   return os.router({
     ...accountRoutes(ctx),
+    ...meetingRoutes(ctx),
+    ...meetingCalendarRoutes(ctx),
     ...spacesRoutes(ctx),
     ...organizationsRoutes(ctx),
     ...modelsRoutes(ctx),
@@ -190,4 +213,41 @@ export function createRouter(deps: RouterDeps) {
     ...paymentWalletRoutes(ctx),
     ...spendingLimitRoutes(ctx),
   });
+}
+
+/** What the procedures read from the deployment's settings. */
+export function routerEnv(env: AppEnv): RouterDeps["env"] {
+  return {
+    inboundEmailDomain: env.inboundEmail?.domain,
+    publishedInboundOrigin: env.publishedInboundOrigin,
+    deploymentLabs: env.deploymentLabs,
+    deploymentVoice: env.deploymentVoice,
+    phoneCallsEnabled: env.phoneCallsEnabled,
+    phoneCallRingSeconds: env.phoneCallRingSeconds,
+    navLinks: env.navLinks,
+    adminEmails: env.adminEmails,
+    maxUploadSizeBytes: env.maxUploadSizeBytes,
+    maxAttachmentsPerMessage: env.maxAttachmentsPerMessage,
+    agentRuntime: env.agentRuntime,
+    defaultProvider: env.defaultProvider,
+    defaultModel: env.defaultModel,
+    teamChatJudgeProvider: env.teamChatJudgeProvider,
+    teamChatJudgeModel: env.teamChatJudgeModel,
+    deploymentModelConfigured: env.deploymentModelConfigured,
+    deploymentModelHostCredentials: env.deploymentModelHostCredentials,
+    webOrigin: env.webOrigin,
+    privacyPolicyUrl: env.privacyPolicyUrl,
+    screenProxySecret: env.screenProxySecret,
+    invitationRecipientKey: createHmac("sha256", env.authSecret)
+      .update("organization-invitation-recipient")
+      .digest("hex"),
+    sandboxProvider: env.sandboxProvider,
+    gitSha: env.gitSha,
+    integrationsCatalogUrl: env.integrationsCatalogUrl,
+    mcpAllowPrivateEndpoint: env.mcpAllowPrivateEndpoint,
+    desktopHostChoiceEnabled: Boolean(env.desktopStackToken),
+    computerSettingsEnabled: env.computerSettingsEnabled,
+    mcpStdioEnabled: env.mcpStdioEnabled,
+    mcpStdioAllowedCommands: env.mcpStdioAllowedCommands,
+  };
 }

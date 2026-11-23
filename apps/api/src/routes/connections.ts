@@ -1,24 +1,28 @@
 import type { ConnectorCatalogItem } from "@rakazo/adapter-kit";
 import { planLiveConnectionSync } from "@rakazo/adapters";
 import type { Actor } from "@rakazo/contracts";
-import type { Prisma, PrismaClient } from "@rakazo/db";
+import { availableChatApps, isAvailableChatApp } from "@rakazo/core";
+import type { Prisma } from "@rakazo/db";
 import { IsolationError, recordSecurityEvent } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
+import { connectionCreatedEvent } from "../auth/security-audit.js";
 import {
   beginConnection,
   completeConnection,
   connectionContext,
   revokeConnection,
-} from "../connection-flows.js";
-import { connectionCreatedEvent } from "../security-audit.js";
+} from "../integrations/connection-flows.js";
+import { recordToolConnected } from "../integrations/tool-connect-analytics.js";
+import type { RouterDeps } from "../router.js";
 import type { RouterContext } from "./context.js";
 
 async function reconcileConnections(
-  prisma: PrismaClient,
+  { prisma, analytics }: Pick<RouterDeps, "prisma" | "analytics">,
   owner: Pick<Actor, "spaceId" | "userId">,
   connectorId: string,
   connectedProviders: string[],
   reconnectRefs: string[],
+  listConnectedRefs: () => Promise<string[] | undefined>,
 ): Promise<void> {
   const connectedProviderKeys = new Set(
     connectedProviders.map((provider) => provider.trim().toLowerCase()),
@@ -31,13 +35,32 @@ async function reconcileConnections(
         connectorId,
         status: { in: ["pending", "connected"] },
       },
-      select: { id: true, provider: true, displayName: true, status: true },
-      orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+      select: {
+        id: true,
+        provider: true,
+        displayName: true,
+        status: true,
+        updatedAt: true,
+        createdAt: true,
+        providerRef: true,
+      },
+      // Breaks a tie between attempts begun at the same moment in favour of the later row.
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
     })
   ).filter((row: { provider: string }) =>
     connectedProviderKeys.has(row.provider.trim().toLowerCase()),
   );
-  const sync = planLiveConnectionSync(rows, connectedProviders);
+  // Asked only when a sign-in is waiting to be matched to the account it created. When the
+  // listing fails, the rows wait for the next pass instead of this one guessing.
+  let sync: ReturnType<typeof planLiveConnectionSync> = { connectIds: [], revokeIds: [] };
+  try {
+    const liveRefs = rows.some((row) => row.status === "pending")
+      ? await listConnectedRefs()
+      : undefined;
+    sync = planLiveConnectionSync(rows, connectedProviders, Date.now(), liveRefs);
+  } catch (error) {
+    getLogger().warn(`${connectorId} signed-in accounts could not be listed`, { error });
+  }
   // One update per row so the credential event goes only to rows this call actually connected.
   const connectedIds: string[] = [];
   const updates = [
@@ -86,6 +109,8 @@ async function reconcileConnections(
     });
   for (const id of connectedIds) {
     await recordSecurityEvent(connectionCreatedEvent("connections.catalog", id, owner));
+    const row = rows.find((candidate) => candidate.id === id);
+    if (row) recordToolConnected(analytics, owner.userId, row);
   }
 }
 
@@ -116,11 +141,12 @@ export function connectionsRoutes(ctx: RouterContext) {
               const nowConnected = items.filter((item) => item.connected).map((item) => item.slug);
               if (nowConnected.length > 0 || reconnectRefs.length > 0) {
                 await reconcileConnections(
-                  deps.prisma,
+                  deps,
                   context.actor,
                   provider.describe().id,
                   nowConnected,
                   reconnectRefs,
+                  async () => provider.listConnectedRefs?.(adapterContext),
                 ).catch((error) => {
                   getLogger().error(
                     `${provider.describe().id} connection reconciliation failed`,
@@ -134,7 +160,12 @@ export function connectionsRoutes(ctx: RouterContext) {
             }
           }),
         );
-        return catalogs.flat();
+        const chatApps = deps.messaging?.enabled
+          ? availableChatApps(deps.messaging.providers, Boolean(deps.messagingInstallations))
+          : [];
+        return catalogs
+          .flat()
+          .map((item) => (isAvailableChatApp(item, chatApps) ? { ...item, chatApp: true } : item));
       }),
       list: authed.connections.list.handler(async ({ context }) => {
         const rows = await deps.prisma.connection.findMany({
@@ -196,7 +227,7 @@ export function connectionsRoutes(ctx: RouterContext) {
         });
         if (!row) return [];
         try {
-          const tools = await connector.discoverTools({
+          const adapterContext = {
             ...connectionContext(context.actor, "connections.tools", context.signal),
             connectedConnections: [
               {
@@ -208,16 +239,23 @@ export function connectionsRoutes(ctx: RouterContext) {
               },
             ],
             connectedProviders: [input.provider],
-          });
+          };
+          const tools = connector.listAppTools
+            ? await connector.listAppTools(adapterContext, input.provider)
+            : await connector.discoverTools(adapterContext);
           return tools.map((tool) => ({
             name: tool.name,
             description: tool.description,
           }));
         } catch (error) {
-          getLogger().error("connections.tools failed", error, {
-            connectorId: input.connectorId,
-            provider: input.provider,
-          });
+          const fields = { connectorId: input.connectorId, provider: input.provider };
+          // The client went away before the list came back.
+          if (context.signal?.aborted)
+            getLogger().warn("connections.tools cancelled", {
+              ...fields,
+              error: error instanceof Error ? error.message : String(error),
+            });
+          else getLogger().error("connections.tools failed", error, fields);
           return [];
         }
       }),

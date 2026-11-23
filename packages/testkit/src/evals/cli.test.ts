@@ -29,10 +29,10 @@ it("lists eval cases without importing a generated database client or runtime ad
     { encoding: "utf8", timeout: 20_000 },
   );
   expect(output).toContain("workspace-memory-isolation:");
-  expect(output.trim().split("\n")).toHaveLength(16);
+  expect(output.trim().split("\n")).toHaveLength(19);
 });
 
-it("records explicit not-run reasons without live execution", async () => {
+it("plans one trial per case and strategy by default and records why it did not run", async () => {
   const dir = mkdtempSync(path.join(tmpdir(), "eval-offline-"));
   const output = path.join(dir, "report.json");
   try {
@@ -51,8 +51,6 @@ it("records explicit not-run reasons without live execution", async () => {
           "history",
           "--case",
           "history-100-exact",
-          "--trials",
-          "1",
           "--output",
           output,
         ],
@@ -63,13 +61,39 @@ it("records explicit not-run reasons without live execution", async () => {
     expect(report.trials[0].status).toBe("not-run");
     expect(report.trials[0].reason).toContain("--live");
     expect(report.trials[0].costUsd).toBeNull();
+    expect(report.controls.trials).toBe(1);
     expect(report.trials).toHaveLength(2);
     expect(report.summary.map((row: { strategy: string }) => row.strategy)).toEqual([
       "current",
       "retrieval",
     ]);
     expect(report.spendCapUsd).toBe(5);
-    expect(report.caseFixtureVersions).toEqual({ "history-100-exact": "history-v1-seed-73" });
+    expect(report.caseFixtureVersions).toEqual({ "history-100-exact": "history-v2-seed-73" });
+    expect(report.limitations.join(" ")).toContain("graded by a calibrated LLM judge");
+
+    expect(() =>
+      execFileSync(
+        process.execPath,
+        [
+          "--import",
+          "tsx",
+          path.resolve(import.meta.dirname, "../cli/evals.ts"),
+          "--suite",
+          "bot-files",
+          "--case",
+          "send-folder-on-shared-computer",
+          "--trials",
+          "2",
+          "--output",
+          output,
+        ],
+        { encoding: "utf8", stdio: "pipe", timeout: 20000 },
+      ),
+    ).toThrow();
+    const unjudged = JSON.parse(readFileSync(output, "utf8"));
+    expect(unjudged.trials).toHaveLength(2);
+    expect(unjudged.limitations.join(" ")).toContain("no LLM judge");
+    expect(unjudged.limitations.join(" ")).not.toContain("calibrated");
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

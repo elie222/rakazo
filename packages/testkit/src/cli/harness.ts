@@ -6,11 +6,14 @@ import type { createApp } from "@rakazo/api/app";
 import { loadRootEnv } from "@rakazo/core/node/load-root-env";
 import type { runAsSystem as RunAsSystem } from "@rakazo/db";
 import { createModelConnectionFixtureFetch } from "../model-connection-fixture.js";
+import { pinLocalSecretStore } from "../pin-secret-store.js";
 import { PluginMarketplaceFixture } from "../plugin-marketplace-fixture.js";
 import { startPostgres } from "./postgres.js";
 import { runProcess } from "./process.js";
 
 loadRootEnv();
+
+if (!process.env.VERIFY_PROVIDERS) pinLocalSecretStore();
 
 const integration = process.argv.includes("--integration");
 const e2e = process.argv.includes("--e2e");
@@ -73,7 +76,8 @@ async function main() {
     runtimeUrl.password = "rakazo-test-runtime";
     const databaseUrl = runtimeUrl.toString();
     const apiPort = Number(process.env.API_PORT ?? 3110);
-    const webPort = Number(process.env.WEB_PORT ?? 5180);
+    // Integration starts no web server; its tests send the default web origin.
+    const webPort = Number(process.env.WEB_PORT ?? (integration ? 5173 : 5180));
     const webOrigin = `http://127.0.0.1:${webPort}`;
 
     process.env.DATABASE_URL = databaseUrl;
@@ -85,7 +89,6 @@ async function main() {
     process.env.AGENT_RUNTIME = agentRuntime;
     process.env.RAKAZO_LIVE_MODEL_CATALOG = "off";
     if (!integration) {
-      process.env.TICKET_BOARD_ENABLED = "true";
       process.env.PHONE_CALLS_ENABLED = "true";
       process.env.INBOUND_EMAIL_DOMAIN = "bots.rakazo.test";
       process.env.INBOUND_EMAIL_SECRET = "test-inbound-email-secret-test-32chars";
@@ -130,14 +133,14 @@ async function main() {
       // the other suites need the database too but carry no suffix.
       const suites = [
         ...globSync("{apps,packages}/*/src/**/*.postgres.test.ts").sort(),
-        "packages/testkit/src/journeys.test.ts",
-        "packages/testkit/src/authorization.test.ts",
-        "packages/testkit/src/attachments.test.ts",
-        "packages/testkit/src/voice.test.ts",
-        "packages/testkit/src/search.test.ts",
-        "packages/testkit/src/executor-lifecycle.test.ts",
-        "packages/testkit/src/connections.test.ts",
-        "packages/testkit/src/bot-secrets.test.ts",
+        "packages/testkit/src/product/journeys.test.ts",
+        "packages/testkit/src/product/authorization.test.ts",
+        "packages/testkit/src/product/attachments.test.ts",
+        "packages/testkit/src/product/voice.test.ts",
+        "packages/testkit/src/product/search.test.ts",
+        "packages/testkit/src/product/executor-lifecycle.test.ts",
+        "packages/testkit/src/product/connections.test.ts",
+        "packages/testkit/src/product/bot-secrets.test.ts",
       ];
       // --spec=<part of a path> runs only the matching suites.
       const selected = e2eSpec ? suites.filter((suite) => suite.includes(e2eSpec)) : suites;

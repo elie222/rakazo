@@ -1,10 +1,10 @@
 # The bot browser: chromium by default, or BROWSER=chrome (Google Chrome, amd64
 # only) or BROWSER=brave (installed below).
 ARG BROWSER=chromium
-FROM debian:bookworm-slim@sha256:3783cc01769c7b2b1b83a5c5ad96c815348e28ed7da68e2e3687004faa906251 AS capture-builder
+FROM debian:bookworm-slim@sha256:734a72b3d6142a71993b4bc580ca01d8ca687f77a2c422d96a961d3376b179bc AS capture-builder
 COPY apt-security.sh /tmp/apt-security.sh
 RUN /tmp/apt-security.sh && rm -f /tmp/apt-security.sh
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN apt-get update && apt-get upgrade -y --no-install-recommends && apt-get install -y --no-install-recommends \
     build-essential \
     libx11-dev \
     libxdamage-dev \
@@ -22,7 +22,7 @@ RUN cc -O3 -fPIC -shared -Wall -Wextra -Werror -o librakazo-xcapture.so xcapture
 # Only that key goes into the keyring apt trusts for the Google Chrome
 # repository. Other builds never contact Google; the empty file they get is
 # removed below.
-FROM debian:bookworm-slim@sha256:3783cc01769c7b2b1b83a5c5ad96c815348e28ed7da68e2e3687004faa906251 AS chrome-keyring
+FROM debian:bookworm-slim@sha256:734a72b3d6142a71993b4bc580ca01d8ca687f77a2c422d96a961d3376b179bc AS chrome-keyring
 ARG BROWSER
 COPY apt-security.sh /tmp/apt-security.sh
 RUN set -eux; \
@@ -34,7 +34,7 @@ RUN set -eux; \
     exit 1; \
   fi; \
   /tmp/apt-security.sh; \
-  apt-get update; \
+  apt-get update && apt-get upgrade -y --no-install-recommends; \
   apt-get install -y --no-install-recommends ca-certificates curl gnupg; \
   export GNUPGHOME="$(mktemp -d)"; \
   curl -fsSL https://dl.google.com/linux/linux_signing_key.pub -o /tmp/google.pub; \
@@ -42,7 +42,7 @@ RUN set -eux; \
   gpg --batch --export "$fingerprint" > /google-chrome.gpg; \
   gpg --batch --show-keys --with-colons /google-chrome.gpg | grep -qx "fpr:::::::::$fingerprint:"
 
-FROM debian:bookworm-slim@sha256:3783cc01769c7b2b1b83a5c5ad96c815348e28ed7da68e2e3687004faa906251
+FROM debian:bookworm-slim@sha256:734a72b3d6142a71993b4bc580ca01d8ca687f77a2c422d96a961d3376b179bc
 COPY apt-security.sh /tmp/apt-security.sh
 RUN /tmp/apt-security.sh
 # Dev tools let bots clone repos and fetch artifacts; containers run uid 1000
@@ -50,7 +50,7 @@ RUN /tmp/apt-security.sh
 # Compilers stay in the builder stage; heavier toolchains are a separate call.
 # Debian names fd-find's binary fdfind, so the image links it as fd.
 ARG BROWSER
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN apt-get update && apt-get upgrade -y --no-install-recommends && apt-get install -y --no-install-recommends \
     xvfb \
     x11vnc \
     fluxbox \
@@ -110,19 +110,27 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
   && chmod +x /usr/bin/fbsetbg \
   && ln -sfn /bin/true /usr/bin/xmessage
 # Google Chrome or Brave replaces Chromium only when built with BROWSER=chrome
-# or BROWSER=brave. The default build installs Chromium above, so this step does
-# nothing for it. repo_add_once=false keeps Chrome's package from adding a
-# second repository entry without the pinned key.
+# or BROWSER=brave. For the default Chromium build, remove Debian's conflicting
+# or duplicate /etc/chromium.d defaults (--enable-gpu-rasterization, --disable-pings,
+# duplicate --no-default-browser-check / --disable-dev-shm-usage, and empty
+# --load-extension=) while keeping --enable-remote-extensions so /usr/bin/chromium
+# does not inject --disable-background-networking and --disable-extensions-except=.
+# repo_add_once=false keeps Chrome's package from adding a second repository entry
+# without the pinned key.
 COPY --from=chrome-keyring /google-chrome.gpg /usr/share/keyrings/google-chrome.gpg
 RUN set -eux; \
     [ "$BROWSER" = chrome ] || rm /usr/share/keyrings/google-chrome.gpg; \
     case "$BROWSER" in \
-      chromium) ;; \
+      chromium) \
+        rm -f /etc/chromium.d/default-flags /etc/chromium.d/dev-shm; \
+        printf '%s\n' \
+          'export CHROMIUM_FLAGS="$CHROMIUM_FLAGS --enable-remote-extensions"' \
+          > /etc/chromium.d/extensions ;; \
       chrome) \
         echo "deb [signed-by=/usr/share/keyrings/google-chrome.gpg arch=amd64] https://dl.google.com/linux/chrome/deb/ stable main" \
           > /etc/apt/sources.list.d/google-chrome.list; \
         echo 'repo_add_once="false"' > /etc/default/google-chrome; \
-        apt-get update; \
+        apt-get update && apt-get upgrade -y --no-install-recommends; \
         apt-get install -y --no-install-recommends google-chrome-stable; \
         rm -rf /var/lib/apt/lists/*; \
         google-chrome-stable --version ;; \
@@ -131,7 +139,7 @@ RUN set -eux; \
         curl -fsSLo "$keyring" https://brave-browser-apt-release.s3.brave.com/brave-browser-archive-keyring.gpg; \
         echo "deb [signed-by=$keyring arch=$(dpkg --print-architecture)] https://brave-browser-apt-release.s3.brave.com/ stable main" \
           > /etc/apt/sources.list.d/brave-browser-release.list; \
-        apt-get update; \
+        apt-get update && apt-get upgrade -y --no-install-recommends; \
         apt-get install -y --no-install-recommends brave-browser; \
         rm -rf /var/lib/apt/lists/*; \
         mkdir -p /etc/brave/policies/managed; \
@@ -162,11 +170,11 @@ RUN set -eux; \
   uv --version; \
   uvx --version
 # Bookworm has no gh package; pin the upstream binary and verify sha256, same as uv.
-ARG GH_VERSION=2.100.0
+ARG GH_VERSION=2.104.0
 RUN set -eux; \
   case "$TARGETARCH" in \
-    amd64) gh_arch=amd64; gh_sha256=e4d4bb4498e8d007abe545b6568926793ace1b6447da598294a610018cb164be ;; \
-    arm64) gh_arch=arm64; gh_sha256=ea4e7a581a32ccad6cc7923cb1576ac5859ba4b9a16ab22eb8f8a96e78e2e961 ;; \
+    amd64) gh_arch=amd64; gh_sha256=98cb101ad87dbbd3f6b2f2bfcbd43197ccd07643140121d8a9cfaa91eadbc24e ;; \
+    arm64) gh_arch=arm64; gh_sha256=cb34cefc6f4e77b90731374a2b737516bb8f3033c6ca46aa949e5344f68069e3 ;; \
     *) echo "unsupported TARGETARCH: $TARGETARCH" >&2; exit 1 ;; \
   esac; \
   archive="$(mktemp)"; \
@@ -204,6 +212,9 @@ COPY --chmod=755 rakazo-focus-or-launch /usr/local/bin/rakazo-focus-or-launch
 COPY --chmod=755 rakazo-page-browser /usr/local/bin/rakazo-page-browser
 COPY --chmod=644 page_secrets.py /usr/local/lib/rakazo/page_secrets.py
 COPY --chmod=644 rakazo-browser.desktop /usr/share/applications/rakazo-browser.desktop
+# Every type start.sh would register for rakazo-browser, so a boot whose home does not
+# override them skips the slow xdg-mime and xdg-settings calls.
+COPY --chmod=644 mimeapps.list /etc/xdg/mimeapps.list
 # Rakazo keeps credentials itself; the browser's save prompts would cover pages.
 # Pop-ups open: one a page opens after making a report would be blocked unseen.
 COPY --chmod=644 browser-policy.json /etc/chromium/policies/managed/rakazo-browser.json
@@ -223,7 +234,7 @@ RUN ldconfig \
   && sed -i 's/\r$//' /usr/local/bin/rakazo-computer /usr/local/lib/rakazo-user-env.sh /usr/local/bin/rakazo-computer-control /usr/local/bin/rakazo-browser /usr/local/bin/rakazo-focus-or-launch /usr/local/bin/rakazo-page-browser \
     /usr/local/lib/rakazo/page_secrets.py \
     /etc/rakazo/fluxbox/init /etc/rakazo/fluxbox/apps /etc/rakazo/fluxbox/menu \
-    /etc/profile.d/rakazo-local-bin.sh
+    /etc/profile.d/rakazo-local-bin.sh /etc/xdg/mimeapps.list
 # Agent-authored scripts often use the unversioned name. Keep it on the installed Python 3.
 RUN ln -s /usr/bin/python3 /usr/local/bin/python \
   && python -c 'import sys; assert sys.version_info.major == 3'
@@ -234,6 +245,9 @@ EXPOSE 7070 6080 6081 6082 6083 6084 6085 6086 6087 6088 6089 6090 6091 6092 609
 ENV LD_PRELOAD=/usr/local/lib/libnss_wrapper.so \
     NSS_WRAPPER_PASSWD=/tmp/rakazo-nss/passwd \
     NSS_WRAPPER_GROUP=/tmp/rakazo-nss/group
+# All execs share the boot session bus. An absent socket gives a connection
+# error without triggering D-Bus autolaunch.
+ENV DBUS_SESSION_BUS_ADDRESS=unix:path=/tmp/rakazo/session-bus
 USER 1000:1000
 # Start Bash without the wrapper; user-env enables it once both files exist.
 CMD ["/usr/bin/env", "-u", "LD_PRELOAD", "/usr/local/bin/rakazo-computer"]

@@ -36,10 +36,7 @@ describePostgres("the operator's account status command (PostgreSQL)", { timeout
     const user = await system.user.create({
       data: { id: randomUUID(), name: "Erin", email, emailVerified: true },
     });
-    const { spaceId } = await bootstrapUserSpace(system, user, {
-      signupsEnabled: "true",
-      signupAllowlist: "",
-    });
+    const { spaceId } = await bootstrapUserSpace(system, user);
     const bot = await createRepos(system).createBot(
       { userId: user.id, spaceId, email, isDeploymentOwner: false },
       { name: "Helper", description: "", instructions: "", notifyOnFinish: false },

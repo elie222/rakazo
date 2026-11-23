@@ -4,12 +4,14 @@
   "license": "Apache-2.0",
   "type": "module",
   "exports": {
+    "./hooks": "./src/hooks.ts",
     "./mermaid": "./src/mermaid.ts",
+    "./model-discovery": "./src/use-compatible-model-discovery.ts",
     "./native": "./src/markdown.native.tsx",
     "./web": "./src/markdown.web.tsx"
   },
   "scripts": {
-    "check": "tsc --noEmit -p tsconfig.json",
+    "check": "tsrs --noEmit -p tsconfig.json",
     "test": "vitest run --root ../.. packages/chat-ui/src"
   },
   "dependencies": {
@@ -29,7 +31,8 @@
     "react": "19.3.1",
     "react-dom": "19.3.1",
     "react-native": ">=0.79",
-    "@ronradtke/react-native-markdown-display": "9.0.3"
+    "@ronradtke/react-native-markdown-display": "9.0.3",
+    "react-native-enriched-markdown": "1.2.0"
   },
   "peerDependenciesMeta": {
     "react-dom": {
@@ -39,6 +42,9 @@
       "optional": true
     },
     "@ronradtke/react-native-markdown-display": {
+      "optional": true
+    },
+    "react-native-enriched-markdown": {
       "optional": true
     }
   },
@@ -50,6 +56,7 @@
     "react-native": "0.88.1",
     "typescript": "7.0.2",
     "vitest": "5.1.0",
-    "@ronradtke/react-native-markdown-display": "9.0.3"
+    "@ronradtke/react-native-markdown-display": "9.0.3",
+    "react-native-enriched-markdown": "1.2.0"
   }
 }

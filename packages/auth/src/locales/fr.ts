@@ -23,28 +23,8 @@ export const FR_MESSAGES: Record<string, string> = {
   "Your Rakazo confirmation code": "Votre code de confirmation Rakazo",
   "Enter this code in Rakazo to confirm it's you:":
     "Saisissez ce code dans Rakazo pour confirmer que c’est bien vous :",
-  "Welcome to Rakazo": "Bienvenue dans Rakazo",
-  "Thanks for signing up for Rakazo.": "Merci de vous être inscrit à Rakazo.",
-  "Rakazo also has apps for": "Rakazo existe aussi en app pour",
-  "Questions or ideas?": "Des questions ou des idées ?",
-  "Join us on Discord": "Rejoignez-nous sur Discord",
-  "Rakazo is open source. If you like it,": "Rakazo est open source. S’il vous plaît,",
-  "a star on GitHub": "une étoile sur GitHub",
-  "helps others find it.": "aide d’autres personnes à le découvrir.",
-  "Want to run it on your own servers?": "Vous voulez l’héberger sur vos propres serveurs ?",
-  "Self-host Rakazo": "Héberger Rakazo soi-même",
-  "Have any questions? Reply to this email.": "Des questions ? Répondez à cet e-mail.",
   Unsubscribe: "Se désabonner",
-  "Invite a friend": "Invitez un ami",
-  "Invite a friend to Rakazo: they get {weeks} weeks free, and you earn a free month when they start a qualifying subscription with a new card.":
-    "Invitez un ami sur Rakazo : il profite de {weeks} semaines gratuites, et vous gagnez un mois offert quand il démarre un abonnement éligible avec une nouvelle carte.",
   "Open Rakazo": "Ouvrez Rakazo",
-  "and choose Invite friends for your link.":
-    "et choisissez Inviter des amis pour obtenir votre lien.",
-  "Have any questions? Just reply to this email.":
-    "Des questions ? Répondez simplement à cet e-mail.",
-  "If you're enjoying Rakazo,": "Si Rakazo vous plaît,",
-  "give us a star on GitHub": "donnez-nous une étoile sur GitHub",
   "We received your Rakazo plugin": "Nous avons reçu votre plugin Rakazo",
   "Thanks for submitting a plugin to the Rakazo marketplace.":
     "Merci d’avoir proposé un plugin sur la marketplace Rakazo.",
@@ -75,4 +55,17 @@ export const FR_MESSAGES: Record<string, string> = {
     "Les fichiers enregistrés de votre ordinateur seront supprimés le {date}, sauf si vous vous réabonnez.",
   "Your saved computer files will be deleted on {date} unless you choose a plan.":
     "Les fichiers enregistrés de votre ordinateur seront supprimés le {date}, sauf si vous choisissez une offre.",
+  "{inviter} invited you to {organization} on Rakazo":
+    "{inviter} vous a invité à rejoindre {organization} sur Rakazo",
+  "{inviter} invited you to join {organization} on Rakazo.":
+    "{inviter} vous a invité à rejoindre {organization} sur Rakazo.",
+  "Join {organization}": "Rejoindre {organization}",
+  "This invitation expires in 7 days. Sign in with this email address to accept it.":
+    "Cette invitation expire dans 7 jours. Connectez-vous avec cette adresse e-mail pour l’accepter.",
+  "{inviter} invited you to {space} on Rakazo":
+    "{inviter} vous a invité à rejoindre {space} sur Rakazo",
+  "{inviter} invited you to join {space} on Rakazo.":
+    "{inviter} vous a invité à rejoindre {space} sur Rakazo.",
+  "Join {space}": "Rejoindre {space}",
+  "This invitation expires in 7 days.": "Cette invitation expire dans 7 jours.",
 };

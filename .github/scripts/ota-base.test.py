@@ -13,6 +13,7 @@ WORKFLOW = REPO / ".github" / "workflows" / "ci.yml"
 OTA_BASE = pathlib.Path(__file__).with_name("ota-base.sh").resolve()
 OTA_CLASSIFY = pathlib.Path(__file__).with_name("ota-classify.sh").resolve()
 DEPENDENCY_TREE = pathlib.Path(__file__).with_name("mobile-dependency-tree.mjs").resolve()
+MOBILE_OTA = REPO / "scripts" / "release" / "mobile-ota.mjs"
 
 OLD_RUNTIME = "1.0.11"
 RUNTIME = "1.0.12"
@@ -132,6 +133,9 @@ class OtaBaseTestCase(unittest.TestCase):
             # A checkout whose step classifies inline carries no classifier script.
             if script.exists():
                 shutil.copy(script, scripts / script.name)
+        release = directory / "scripts" / "release"
+        release.mkdir(parents=True)
+        shutil.copy(MOBILE_OTA, release / MOBILE_OTA.name)
         self.repo = FixtureRepository(directory, **kwargs)
         self.scripts = scripts
         return directory
@@ -297,6 +301,10 @@ class OtaBaseStepTests(OtaBaseTestCase):
         response_file.write_text(response)
         (stub / "curl").write_text(
             "#!/usr/bin/env bash\n"
+            'while (( $# )); do\n'
+            '  if [[ "$1" == "--data" ]]; then printf \'%s\' "$2" > "${OTA_CURL_REQUEST_FILE:?}"; break; fi\n'
+            '  shift\n'
+            'done\n'
             '[[ -n "${OTA_CURL_FAIL:-}" ]] && exit 1\n'
             'cat "${OTA_CURL_RESPONSE_FILE:?}"\n'
         )
@@ -305,6 +313,7 @@ class OtaBaseStepTests(OtaBaseTestCase):
             os.environ,
             PATH=f"{stub}:{os.environ['PATH']}",
             OTA_CURL_RESPONSE_FILE=str(response_file),
+            OTA_CURL_REQUEST_FILE=str(stub / "request"),
             EXPO_TOKEN="test-token",
             GITHUB_SHA=self.repo.head,
             GITHUB_STEP_SUMMARY=str(stub / "summary"),
@@ -321,6 +330,9 @@ class OtaBaseStepTests(OtaBaseTestCase):
             stderr=subprocess.DEVNULL,
         )
         publish = (stub / "output").read_text().strip()
+        request = json.loads((stub / "request").read_text())
+        self.assertEqual(request["variables"]["runtime"], RUNTIME)
+        self.assertIn("filter: { runtimeVersions: [$runtime] }", request["query"])
         self.assertIn(publish, ("publish=true", "publish=false"))
         return publish, (stub / "summary").read_text()
 
@@ -382,9 +394,12 @@ class OtaBaseStepTests(OtaBaseTestCase):
             # Token edits regenerate the stylesheet alongside the source.
             ({tokens: "a = 2;\n", "packages/ui-tokens/src/tokens.css": ":root {}\n"}, "publish=true", eligible),
             ({"packages/logging/src/monitoring.ts": "export const m = 1;\n"}, "publish=true", eligible),
+            ({"packages/i18n/locales/de/messages.po": 'msgid "Save"\n'}, "publish=true", eligible),
+            ({"packages/i18n/src/cron.ts": "export const c = 1;\n"}, "publish=true", eligible),
+            ({"packages/i18n/package.json": "{}\n"}, "publish=false", "packages/i18n/package.json"),
             ({icon: "{}\n"}, "publish=false", icon),
             ({tokens: "export const a = 3;\n", SWIFT_FILE: "import UIKit\n"}, "publish=false", SWIFT_FILE),
-            ({"packages/db/src/client.ts": "export const db = 1;\n"}, "publish=false", "No mobile OTA needed"),
+            ({"packages/db/src/database/client.ts": "export const db = 1;\n"}, "publish=false", "No mobile OTA needed"),
         ):
             with self.subTest(files=sorted(files)):
                 published = self.repo.head

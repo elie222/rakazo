@@ -386,6 +386,40 @@ EVAL_HELPERS = r"""
       && !el.disabled && !el.readOnly && el.getAttribute("aria-hidden") !== "true" && visible(el)
       && (el.getAttribute("autocomplete") || "").toLowerCase().split(/\s+/).includes(token));
   }
+  // The option a visible saved field picks, matched as browser_act fill matches one. Only options that
+  // can be chosen are matched or listed, so a refusal never repeats the saved value.
+  function chooseOption(select, value) {
+    const label = (option) => (option.label || option.text).replace(/\s+/g, " ").trim();
+    const norm = (text) => text.replace(/\s+/g, " ").trim().toLowerCase();
+    const options = [...select.options].filter((option) => !option.disabled
+      && !(option.parentElement instanceof HTMLOptGroupElement && option.parentElement.disabled));
+    const match = options.find((option) => option.value === value)
+      ?? options.find((option) => label(option) === value)
+      ?? options.find((option) => norm(label(option)) === norm(value) || norm(option.value) === norm(value));
+    if (!match) {
+      // Long labels keep their start and end, and the list stops at about 2 KB.
+      const shown = [];
+      let size = 0;
+      for (const option of options) {
+        const text = label(option);
+        const part = JSON.stringify(text.length > 80 ? `${text.slice(0, 50)}…${text.slice(-29)}` : text);
+        if (size + part.length > 2000) {
+          shown.push(`and ${options.length - shown.length} more`);
+          break;
+        }
+        shown.push(part);
+        size += part.length + 2;
+      }
+      throw refused(`This dropdown has no option for this saved field. Its options: ${shown.join(", ") || "none"}.`);
+    }
+    for (const option of select.options) option.selected = false;
+    match.selected = true;
+    // Snapshots never show which option was chosen, whatever the page later does with the dropdown.
+    select.setAttribute(FILLED, "");
+    select.dispatchEvent(new Event("input", { bubbles: true }));
+    select.dispatchEvent(new Event("change", { bubbles: true }));
+    return true;
+  }
   // The element keys go to in this document, through open shadow trees.
   function focused() {
     let el = document.activeElement;
@@ -423,9 +457,9 @@ EVAL_HELPERS = r"""
       const el = focused();
       if (!el) throw refused("The field did not keep focus, so nothing was typed. Take a fresh snapshot and fill again.");
       if (el.readOnly || el.disabled) throw refused("Element is read-only");
-      // A password goes only into a password field, which never displays it. A username is an input;
-      // textareas, search boxes, and editable page content stay out. A card goes only into a plain
-      // input: text, tel, or password (CVC boxes are often masked).
+      // A password goes only into a password field, which never displays it. A username is an input or
+      // a dropdown's option; textareas, search boxes, and editable page content stay out. A card goes
+      // only into a plain input: text, tel, or password (CVC boxes are often masked).
       const input = el instanceof HTMLInputElement ? el : null;
       if (card && !(input && ["text", "tel", "password"].includes(input.type))) {
         throw refused("A card can only be typed into a card field.");
@@ -434,9 +468,10 @@ EVAL_HELPERS = r"""
       if (password && !(input && input.type === "password")) {
         throw refused("A saved password can only be typed into a password field.");
       }
+      if (field === "username" && el instanceof HTMLSelectElement) return chooseOption(el, String(value));
       if (!card && !password && !(input && ["text", "email", "tel"].includes(input.type))) {
         throw refused(code ? "A code can only be typed into a text, email, or telephone field."
-          : "A saved username can only be typed into a text, email, or telephone field.");
+          : "A saved username can only be typed into a text, email, or telephone field, or chosen in a dropdown.");
       }
       if (code && !looksLikeCodeBox(input)) {
         throw refused("This field doesn't look like a code box; ask the user to take over.");
@@ -465,6 +500,20 @@ EVAL_HELPERS = r"""
         setTimeout(() => { if (cardMasked.has(input)) maskCodeSlots(input, value); }, 50);
       }
       return true;
+    },
+    // The options saved logins chose in this document's dropdowns, open shadow trees included.
+    filledChoices() {
+      const found = [];
+      const visit = (root) => {
+        for (const select of root.querySelectorAll(`select[${FILLED}]`)) {
+          for (const option of select.selectedOptions) {
+            found.push(option.value, (option.label || option.text).replace(/\s+/g, " ").trim());
+          }
+        }
+        for (const el of root.querySelectorAll("*")) if (el.shadowRoot) visit(el.shadowRoot);
+      };
+      visit(document);
+      return found;
     },
     payTokenAccount() {
       const blocks = [...document.querySelectorAll(".AiAgentPaymentSteering")]
@@ -637,10 +686,10 @@ def pay_token_frames(client: CdpClient, frames: list[tuple[str, str, int]]) -> l
             if origin == PAY_TOKEN_FRAME_ORIGIN]
 
 
-def focused_frame(client: CdpClient, session_id: str) -> tuple[str, str, int]:
-    """The frame whose document holds focus, followed through the frame elements that hold it:
-    (session, frame, world). Frames in another process are found through their own sessions."""
-    children: dict[str, list[tuple[str, str]]] = {}
+def all_frames(client: CdpClient, session_id: str, complete: bool = False) -> list[tuple[str, str, str | None]]:
+    """The tab's frames, up to MAX_FRAME_SESSIONS processes: (session, frame, parent frame). Frames in
+    another process are found through their own sessions. With complete, raises unless every frame is in."""
+    frames: list[tuple[str, str, str | None]] = []
     sessions, seen = [session_id], set()
     while sessions and len(seen) < MAX_FRAME_SESSIONS:
         session = sessions.pop(0)
@@ -651,15 +700,30 @@ def focused_frame(client: CdpClient, session_id: str) -> tuple[str, str, int]:
             if session != session_id:
                 client.call("Page.enable", session_id=session)
             sessions += auto_attach(client, session)
+            if complete and len(client.frame_sessions(session)) > MAX_FRAME_SESSIONS:
+                raise RuntimeError("too many frames")
             stack = [client.call("Page.getFrameTree", session_id=session)["frameTree"]]
         except Exception:  # noqa: BLE001
+            if complete:
+                raise
             continue
         while stack:
             node = stack.pop()
             frame = node["frame"]
-            if frame.get("parentId"):
-                children.setdefault(frame["parentId"], []).append((session, frame["id"]))
+            frames.append((session, frame["id"], frame.get("parentId")))
             stack += node.get("childFrames") or []
+    if complete and set(sessions) - seen:
+        raise RuntimeError("too many frames")
+    return frames
+
+
+def focused_frame(client: CdpClient, session_id: str) -> tuple[str, str, int]:
+    """The frame whose document holds focus, followed through the frame elements that hold it:
+    (session, frame, world)."""
+    children: dict[str, list[tuple[str, str]]] = {}
+    for session, frame_id, parent in all_frames(client, session_id):
+        if parent:
+            children.setdefault(parent, []).append((session, frame_id))
     at = (session_id, main_frame(client, session_id)["id"], client.context_id)
     for _ in range(MAX_FRAME_DEPTH):
         session, frame_id, world = at
@@ -894,6 +958,22 @@ def frame_hints(client: CdpClient, session_id: str) -> tuple[bool, str | None]:
     accounts = [found for found in frame_eval(client, pay_token_frames(client, frames),
                                               "window.__rakazoPageBrowser.payTokenAccount()") if found]
     return card, accounts[0] if len(accounts) == 1 else None
+
+
+def filled_choices(port: int, target_id: str) -> set[str]:
+    """The values and labels of the options saved logins chose in dropdowns, in every frame of the
+    tab: a snapshot never marks them as chosen. Raises when a frame cannot be read."""
+    client = connect(port)
+    try:
+        session_id = attach(client, target_id)
+        found: set[str] = set()
+        for session, frame_id, _ in all_frames(client, session_id, complete=True):
+            world = world_in(client, session, frame_id)
+            found.update(str(text) for text in eval_json(client, session, "window.__rakazoPageBrowser.filledChoices()",
+                                                         context_id=world) or [] if text)
+        return found
+    finally:
+        client.close()
 
 
 def payment_frame_hints(port: int, target_id: str) -> tuple[bool, str | None]:

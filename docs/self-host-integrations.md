@@ -35,6 +35,9 @@ be loopback or resolve to private addresses (a Compose service name, an RFC1918 
 address, or a `.internal` name such as Railway's private network); Rakazo pins the resolved
 address for every request. Space members use the saved connection without seeing its key.
 
+A self-hosted Supermemory server must be v0.0.9 or later; run `supermemory-server upgrade` on
+older servers.
+
 For [Honcho](https://github.com/plastic-labs/honcho), enable `AUTH_USE_AUTH` on the Honcho
 server and use an admin JWT from its `scripts/generate_jwt.py --admin` as the key, so each Space
 gets its own workspace. A workspace-scoped JWT works when you enter that workspace. Honcho needs
@@ -68,6 +71,12 @@ client's allowed redirect URIs. The client is stored encrypted with the server's
 credentials and survives **Disconnect**; switching to a different client drops the current grant.
 On first use the client is bound to the authorization server the MCP server pointed to, and Rakazo
 refuses to send it anywhere else afterwards. Replacing the client clears the binding.
+
+Other providers register clients themselves but only for redirect addresses they know, plus the
+loopback addresses desktop apps use, and refuse `<your web origin>/mcp/oauth/callback` with
+`invalid_redirect_uri`. Connect those from the desktop app: it signs in on a loopback address
+instead and reads the result from its own sign-in window. A browser and the mobile app cannot,
+and show the provider's refusal.
 
 Stdio MCP servers can use OAuth too. They do not authorize themselves (the MCP spec has them
 read credentials from the environment), so Rakazo runs the flow for them. They are off unless
@@ -106,8 +115,10 @@ variables. Any other `npx` form (local paths, git and tarball URLs, unknown `npx
 refused. `npx` is the only supported package launcher: other package managers and runners
 (`npm`, `pnpm`, `yarn`, `bun`, `bunx`, `deno`, `uv`, `uvx`, `pipx` and the like) are refused
 even when allowlisted. To run a server from another ecosystem, install it on the host and
-allowlist its binary. An allowlisted interpreter or shell (`node`, `python`, `sh`) runs any
-code passed in its arguments, so allowlist it only where that is acceptable. Each server runs as one process per user in each of the API and worker,
+allowlist its binary. To run a server that lives on another machine, allowlist `ssh`, which the
+app image includes, and launch the server through it. An allowlisted interpreter or shell
+(`node`, `python`, `sh`) runs any code passed in its arguments, and `ssh` runs local commands
+through options such as `ProxyCommand`, so allowlist these only where that is acceptable. Each server runs as one process per user in each of the API and worker,
 shared by that user's bots, and stops after `MCP_STDIO_IDLE_MS` (default 900000, 15 minutes)
 without use. When a server fails to start, the reason (including the end of its stderr, with
 credentials redacted) appears on the server in **Settings**, and its bots are told it is
@@ -134,18 +145,39 @@ space or owner mismatch that keeps the server's tools from that bot.
 
 ## Apps and connectors
 
-Plugins use [Composio](https://composio.dev) when `COMPOSIO_API_KEY` is set. Pipedream is an
-alternative managed connector provider: set `PIPEDREAM_CLIENT_ID`, `PIPEDREAM_CLIENT_SECRET`,
-`PIPEDREAM_PROJECT_ID` and `PIPEDREAM_ENVIRONMENT` (`development` or `production`). Set them on the
-API and worker.
+To offer a larger managed app catalog in Integrations, set a [Composio](https://composio.dev)
+Platform project key as `COMPOSIO_API_KEY` on the API and worker. Pipedream is another managed
+connector provider. Set `PIPEDREAM_CLIENT_ID`, `PIPEDREAM_CLIENT_SECRET`, `PIPEDREAM_PROJECT_ID`
+and `PIPEDREAM_ENVIRONMENT` (`development` or `production`) on both services. Recreate the
+services with the updated environment. People authorize their individual apps from Integrations.
+
+People can also bring a personal tool gateway as an MCP connection. The built-in **Executor**
+option uses browser sign-in and exposes the apps the person has configured in their Executor
+organization. [Composio Connect](https://docs.composio.dev/docs/composio-connect) offers a separate
+personal MCP connection at `https://connect.composio.dev/mcp`. It supports browser sign-in for
+compatible MCP clients and a consumer key for header-based clients.
+
+A call on a shared mailbox is refused when the Outlook sign-in does not request the matching
+`.Shared` permission, and a connection made through Composio's default Outlook setup has been seen
+to lack it. To let a bot read or send from one, create an Outlook auth config in the Composio
+dashboard that lists the defaults plus the `.Shared` variants you need (`Mail.Read.Shared`,
+`Mail.ReadWrite.Shared`, `Mail.Send.Shared`), and make it the config new Outlook connections use. The
+person's account also needs Full Access to the mailbox in Exchange, and a tenant admin may need to
+consent to the `.Shared` permissions. A new config affects new connections only, so people connected
+before the change must disconnect and reconnect Outlook.
 
 `INTEGRATIONS_CATALOG_URL` points API connector search at an
 [integrations.sh](https://integrations.sh/)-compatible catalog, such as a mirror you host. Give the
-base URL; Rakazo appends `api/search`.
+base URL. Rakazo appends `api/search`. With the setting unset, **Search public MCP directory** can still
+search the public directory on demand. Each service handles its own authorization.
 
 ## Messaging apps
 
-Optional messaging platforms (iMessage through Sendblue or Photon, Slack, WhatsApp, Telegram, Feishu/Lark) mount when their env credentials are set — see `.env.example`. The Lark adapter and official SDK load only when configured. Point a Feishu/Lark bot event subscription at `/api/v1/messaging/webhook/lark` (webhook/HTTP inbound only; do not enable long connection). Personal group linking works on iMessage and Telegram (see the Telegram privacy note below); WhatsApp and Feishu/Lark are direct-only, and Slack channels use workspace installations below. Telegram can run several bots side by side (`TELEGRAM_BOT_TOKEN_<NAME>` plus `TELEGRAM_WEBHOOK_SECRET_TOKEN_<NAME>`), for example one per space, so the same person can chat with a different Rakazo bot through each. Photon works the same way: each extra project (`PHOTON_PROJECT_ID_<NAME>` plus `PHOTON_PROJECT_SECRET_<NAME>`, and `PHOTON_WEBHOOK_SECRET_<NAME>` for webhooks) gives the person a different number, mounted as provider `photon-<name>`. Photon receives iMessage over an outbound stream from the API, so it works on a server with no public URL; on Photon's shared lines the person texts first, and group chats are not available.
+Messaging adapters are optional. Configure credentials for the platforms you need; users link
+their own bots from **Settings → Messaging**. See [Chat apps](./messaging-apps.md) for the supported
+direct-message and group flows. Teams, WhatsApp, Feishu/Lark, and Photon are direct-message only.
+Slack channels use workspace installations; Telegram and iMessage through Sendblue use personal
+group linking.
 
 Each platform turns on when its full set of credentials is present on the API and worker.
 Webhooks arrive at `/api/v1/messaging/webhook/<provider>`.
@@ -153,22 +185,55 @@ Webhooks arrive at `/api/v1/messaging/webhook/<provider>`.
 | Platform                    | Settings                                                                                                                                                                                           |
 | --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | iMessage and SMS (Sendblue) | `SENDBLUE_API_KEY_ID`, `SENDBLUE_API_SECRET`, `SENDBLUE_SIGNING_SECRET`, `SENDBLUE_PHONE_NUMBER`                                                                                                   |
-| WhatsApp Business Cloud     | `WHATSAPP_ACCESS_TOKEN`, `WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_APP_SECRET`, `WHATSAPP_VERIFY_TOKEN`                                                                                                |
-| Telegram                    | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_WEBHOOK_SECRET_TOKEN`                                                                                                                                              |
+| WhatsApp Business Cloud     | `WHATSAPP_ACCESS_TOKEN`, `WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_APP_SECRET`, `WHATSAPP_VERIFY_TOKEN`; optional `WHATSAPP_API_URL`, `WHATSAPP_BOT_USERNAME`                                          |
+| Telegram                    | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_WEBHOOK_SECRET_TOKEN`; `TELEGRAM_GROUPS=off` for direct chats only                                                                                                 |
 | iMessage (Photon)           | `PHOTON_PROJECT_ID`, `PHOTON_PROJECT_SECRET`; `PHOTON_WEBHOOK_SECRET` to receive by webhook instead of the stream; more projects as `PHOTON_PROJECT_ID_<NAME>` plus `PHOTON_PROJECT_SECRET_<NAME>` |
 | Feishu/Lark                 | `LARK_APP_ID`, `LARK_APP_SECRET`, `LARK_VERIFICATION_TOKEN`; `LARK_ENCRYPT_KEY` when event encryption is on; `LARK_DOMAIN` (`feishu`, the default, or `lark`)                                      |
 | Microsoft Teams             | `TEAMS_APP_ID`, `TEAMS_APP_PASSWORD`, `TEAMS_APP_TENANT_ID` (single-tenant, direct messages only)                                                                                                  |
 | Slack                       | See below                                                                                                                                                                                          |
 
-Telegram is webhook-only: Telegram sends the secret in `X-Telegram-Bot-Api-Secret-Token`, and the
-worker never long-polls. An extra bot named `<NAME>` (letters and digits) uses the provider
+### WhatsApp Business Cloud
+
+Use an operator-owned business number and the direct adapter. See the
+[WhatsApp launch runbook](./hosted-whatsapp-launch.md) for registration, token permissions,
+webhook setup, current regional AI restrictions and service-window limits. Credentials alone do
+not establish eligibility. Proactive template reminders are not implemented.
+
+### Telegram
+
+Telegram sends its webhook secret in `X-Telegram-Bot-Api-Secret-Token`. The receiving API
+uses automatic transport selection and can poll when no webhook is registered; workers never
+poll. Register the hosted webhook before starting multiple API instances. Linking destinations
+come from the authenticated bot identity, never a configured username.
+See the [hosted Telegram runbook](./hosted-telegram.md) for operator registration and acceptance.
+An extra bot named `<NAME>` (letters and digits) uses the provider
 `telegram-<name>` and the webhook `/api/v1/messaging/webhook/telegram-<name>`; see
 [settings with names you choose](./self-host-configuration.md#settings-with-names-you-choose).
 Telegram groups use personal group linking, like iMessage: each linked member approves their own
 bot, and the per-room listening settings belong to Slack team conversations only. In BotFather
 run `/setprivacy` on the bot and choose **Disable** (or make it a group admin), or the bot only
-receives group messages that mention it. Broadcast channel posts never start runs. For Lark,
-create a custom app with the Bot capability and subscribe it to `im.message.receive_v1`.
+receives group messages that mention it. Broadcast channel posts never start runs. Multiple bots
+can run side by side, allowing one person to link a different Rakazo bot through each.
+
+### iMessage through Photon
+
+This connection uses the Stable Spectrum API, not Photon 2.0 Beta credentials. See the
+[hosted iMessage/SMS runbook](./hosted-imessage-sms.md) for adapter limits and operator checks.
+
+Photon receives messages over an outbound stream from the API, so it works without a public URL.
+To use webhooks instead, set `PHOTON_WEBHOOK_SECRET`. Each additional project uses
+`PHOTON_PROJECT_ID_<NAME>` and `PHOTON_PROJECT_SECRET_<NAME>` (plus
+`PHOTON_WEBHOOK_SECRET_<NAME>` for webhooks), and appears as `photon-<name>`. On shared lines,
+the person must text first. Group chats are not supported.
+
+### Feishu/Lark
+
+Create a custom app with the Bot capability and subscribe to `im.message.receive_v1`. Point the
+event subscription at `/api/v1/messaging/webhook/lark`. Use webhook/HTTP delivery, not long
+connection. Set `LARK_DOMAIN=lark` for Lark or leave the default `feishu` for Feishu. Set
+`LARK_ENCRYPT_KEY` when event encryption is enabled. The adapter and SDK load only when configured.
+
+### Linking and signup
 
 People link a chat app to their account from **Messaging** settings. `MESSAGING_OPEN_SIGNUP=true`
 instead gives unknown senders their own chat-only accounts, whose runs use the deployment model.
@@ -178,16 +243,43 @@ model for that decision, set both `TEAM_CHAT_JUDGE_PROVIDER` and `TEAM_CHAT_JUDG
 
 ### Microsoft Teams
 
-Register a single-tenant Azure bot with the Teams channel enabled. Set `TEAMS_APP_ID`,
-`TEAMS_APP_PASSWORD` (the client secret value), and `TEAMS_APP_TENANT_ID` on the server.
-Set its messaging endpoint to `https://your-domain.example/api/v1/messaging/webhook/teams`.
-Install the Teams app with the bot's `personal` scope in your tenant; your administrator may
-need to allow custom apps. Microsoft JWT verification remains enabled.
+This guide covers installation in the Microsoft tenant that owns the bot registration.
+Cross-company distribution has not been verified for this configuration.
 
-Choose `teams` under **Settings → Messaging**, then send the link code to the bot in a direct
-message. Replies and later messages use the linked conversation, including after a server
-restart. Starting a new DM by user address, Teams channels, and group chats are not supported.
-No Microsoft Graph history permissions are needed for this direct-message flow.
+1. Register an app in Microsoft Entra ID and create a client secret. Create an Azure Bot using
+   that app's **Single Tenant** identity, then enable its Microsoft Teams channel.
+2. Set `TEAMS_APP_ID`, `TEAMS_APP_PASSWORD` (the client secret **value**), and `TEAMS_APP_TENANT_ID`
+   on the API and worker. The tenant ID is the tenant that owns the bot registration.
+3. Set the bot's messaging endpoint to
+   `https://your-domain.example/api/v1/messaging/webhook/teams`. It must be publicly reachable over
+   HTTPS. Microsoft JWT verification remains enabled.
+4. In Developer Portal for Teams, create a Teams app with the existing bot's app ID and the
+   `personal` scope. Include the app's icons, website, privacy policy, and terms, then validate
+   and download the app package.
+5. Have a Microsoft 365 administrator upload the package to the organization's Teams app catalog
+   and allow the app for its intended users. Install that catalog app in Teams and open its
+   personal chat.
+6. In Rakazo, pick a bot under **Settings → Messaging**, choose `teams`, and send the code in a
+   direct message to the Teams app within 10 minutes.
+
+One server registration serves individually linked users; it does not bind the deployment to one
+Rakazo account, space, or bot. Replies use each user's linked conversation, including after a
+server restart. Teams channels, group chats, and starting a new DM by user address are not
+supported. No Microsoft Graph history permissions are needed.
+
+For **Permissions needed** during installation, check the app's availability for the affected
+user in Teams admin center. For a Developer Portal preview or personal package upload, also check
+**Teams apps → Setup policies → Upload custom apps** in the policy actually assigned to that user.
+A separate test-user policy can enable previews without changing the organization-wide default.
+Changes can take a few hours. Install the organization catalog version when the administrator has
+already published it there; a Developer Portal preview is a separate upload path.
+
+See Microsoft's [custom app installation guide](https://learn.microsoft.com/en-us/microsoftteams/platform/concepts/deploy-and-publish/apps-upload)
+and [app setup policies](https://learn.microsoft.com/en-us/microsoftteams/teams-app-setup-policies).
+Before considering setup complete, link a user in the registration's tenant and verify a
+message/reply roundtrip. Repeat with a second user linked to a different Rakazo bot to check
+individual routing. A validated package or successful installation alone does not verify message
+delivery.
 
 ### Slack
 

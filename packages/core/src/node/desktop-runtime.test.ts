@@ -234,6 +234,20 @@ describe("shared Linux desktop lifecycle", () => {
     expect(ensureScreenCommand(0, "bot", "view")).not.toMatch(/-wait 5|-defer 5/);
   });
 
+  it("leaves key autorepeat to the process a person types into", () => {
+    const view = ensureScreenCommand(0, "bot", "view");
+    expect(view).toMatch(/nohup x11vnc [^\n]* -viewonly -repeat /);
+    expect(interactiveScreenCommand(true, "control")).not.toMatch(/x11vnc [^\n]* -repeat /);
+    // A viewer started before -repeat is replaced rather than reused.
+    const reuse = view.match(/! pgrep -f '([^']+)'"\$\{desktop_view_token\}"'([^']+)'/);
+    expect(reuse).not.toBeNull();
+    const pattern = new RegExp(`${reuse![1]}view${reuse![2]}`);
+    const viewer = (flags: string) =>
+      `/usr/bin/x11vnc -display :1 -forever -shared ${flags} -nopw -rfbport 0 -unixsock /tmp/rakazo/sockets/view-1-view -xkb -ncache 0`;
+    expect(viewer("-viewonly -repeat")).toMatch(pattern);
+    expect(viewer("-viewonly")).not.toMatch(pattern);
+  });
+
   it.each([undefined, "127.0.0.1", "localhost", "192.0.2.10", "0.0.0.0"])(
     "binds and identifies the configured gateway (%s)",
     (bindHost) => {
@@ -468,12 +482,85 @@ describe("shared Linux desktop lifecycle", () => {
     );
     const lines = command.split("\n");
     const unsetAt = lines.findIndex((line) => line.includes("unset LD_PRELOAD"));
-    const execAt = lines.findIndex((line) => line.startsWith("exec "));
+    const wrapperExecAt = lines.findIndex((line) => line.includes("rakazo-browser) exec "));
+    const directExecAt = lines.findIndex((line) => line.includes("*) exec "));
     expect(unsetAt).toBeGreaterThan(-1);
-    expect(execAt).toBeGreaterThan(unsetAt);
-    // A relaunch keeps the bot's tabs and session cookies, matching rakazo-browser.
-    expect(lines[execAt]).toContain("--restore-last-session");
+    expect(wrapperExecAt).toBeGreaterThan(unsetAt);
+    expect(directExecAt).toBeGreaterThan(unsetAt);
+    // rakazo-browser owns its flag set; browser-launch only hands it the profile and user args.
+    expect(lines[wrapperExecAt]).toContain("--user-data-dir=");
+    expect(lines[wrapperExecAt]).not.toContain("--test-type");
+    expect(lines[wrapperExecAt]).not.toContain("--remote-debugging-port=");
+    // Direct browser fallback keeps the bot's tabs and session cookies, matching rakazo-browser.
+    expect(lines[directExecAt]).toContain("--restore-last-session");
   });
+
+  it.skipIf(process.platform !== "linux")(
+    "hands rakazo-browser only the profile and extra args, keeping direct flags for raw browsers",
+    () => {
+      const root = mkdtempSync(path.join(tmpdir(), "desktop-browser-launcher-"));
+      roots.push(root);
+      const runtime = path.join(root, "runtime");
+      const wrapperBin = path.join(root, "wrapper-bin");
+      const rawBin = path.join(root, "raw-bin");
+      const wrapperArgs = path.join(root, "wrapper-args");
+      const rawArgs = path.join(root, "raw-args");
+      mkdirSync(runtime, { recursive: true });
+      mkdirSync(wrapperBin, { recursive: true });
+      mkdirSync(rawBin, { recursive: true });
+      const writeRecorder = (target: string, outFile: string) => {
+        writeFileSync(
+          target,
+          `#!/bin/sh\nprintf 'DISPLAY=%s\\n' "$DISPLAY" > ${shellQuote(outFile)}\nprintf '%s\\n' "$@" >> ${shellQuote(outFile)}\n`,
+          { mode: 0o755 },
+        );
+      };
+      writeRecorder(path.join(wrapperBin, "rakazo-browser"), wrapperArgs);
+      writeRecorder(path.join(rawBin, "google-chrome"), rawArgs);
+
+      const script = ensureScreenCommand(0, "bot", "token", env)
+        .replaceAll("/tmp/rakazo", runtime)
+        .replaceAll("/usr/share/novnc", root);
+      const launcherWritten = script.indexOf("\nchmod 700 ");
+      expect(launcherWritten).toBeGreaterThan(-1);
+      const writeLauncher = `command() { :; }\n${script.slice(0, script.indexOf("\n", launcherWritten + 1))}\n`;
+      const setup = spawnSync("bash", ["-eu", "-c", writeLauncher], {
+        encoding: "utf8",
+        timeout: 5_000,
+      });
+      expect(setup.status, setup.stderr).toBe(0);
+
+      const launcher = path.join(runtime, `browser-launch-${env.displayStart}`);
+      const profile = browserProfilePathForScreen("bot", env);
+      const { debugPort } = screenPorts(0, env);
+
+      const viaWrapper = spawnSync(launcher, ["https://example.test"], {
+        encoding: "utf8",
+        timeout: 5_000,
+        env: { PATH: `${wrapperBin}${path.delimiter}${process.env.PATH ?? ""}` },
+      });
+      expect(viaWrapper.status, viaWrapper.stderr).toBe(0);
+      expect(readFileSync(wrapperArgs, "utf8").trim().split("\n")).toEqual([
+        `DISPLAY=:${env.displayStart}`,
+        `--user-data-dir=${profile}`,
+        "https://example.test",
+      ]);
+
+      const viaRaw = spawnSync(launcher, ["https://example.test"], {
+        encoding: "utf8",
+        timeout: 5_000,
+        env: { PATH: `${rawBin}${path.delimiter}/usr/bin:/bin` },
+      });
+      expect(viaRaw.status, viaRaw.stderr).toBe(0);
+      const rawLines = readFileSync(rawArgs, "utf8").trim().split("\n");
+      expect(rawLines[0]).toBe(`DISPLAY=:${env.displayStart}`);
+      expect(rawLines).toContain("--test-type");
+      expect(rawLines).toContain("--restore-last-session");
+      expect(rawLines).toContain(`--remote-debugging-port=${debugPort}`);
+      expect(rawLines).toContain(`--user-data-dir=${profile}`);
+      expect(rawLines.at(-1)).toBe("https://example.test");
+    },
+  );
 
   it.skipIf(process.platform !== "linux").each([
     ["readable", false],
@@ -539,7 +626,7 @@ describe("shared Linux desktop lifecycle", () => {
     },
   );
 
-  it("starts a screen's window manager with a wallpaper setter that cannot open an error dialog", () => {
+  it("starts a screen's window manager so it keeps its settings and cannot open a wallpaper error dialog", () => {
     const root = mkdtempSync(path.join(tmpdir(), "desktop-wallpaper-test-"));
     roots.push(root);
     const bin = path.join(root, "bin");
@@ -550,17 +637,23 @@ describe("shared Linux desktop lifecycle", () => {
     stub("Xvfb", "exit 0");
     stub("websockify", "exit 0");
     stub("xsetroot", `echo "xsetroot $*" >>"${log}"`);
-    // A stock image's style asks for its wallpaper like this.
+    // fluxbox replaces its -rc file with the system default when $HOME/.fluxbox is missing, and
+    // a stock image's style asks for its wallpaper like this.
     stub(
       "fluxbox",
-      `echo "fbsetbg=$(command -v fbsetbg)" >>"${log}"\nfbsetbg -z -f /usr/share/images/fluxbox/debian-squared.jpg`,
+      [
+        `test -d "$HOME/.fluxbox" && echo "home settings folder" >>"${log}"`,
+        `echo "fbsetbg=$(command -v fbsetbg)" >>"${log}"`,
+        "fbsetbg -z -f /usr/share/images/fluxbox/debian-squared.jpg",
+      ].join("\n"),
     );
     const script = ensureScreenCommand(0, "bot", "token", env)
       .replaceAll("/etc/rakazo/", path.join(root, "image/"))
       .replaceAll("/tmp/fluxbox-home-", path.join(root, "flux-"))
       .replaceAll("/tmp/.X", path.join(root, ".X"))
       .replaceAll("/tmp/rakazo", root)
-      .replaceAll("/usr/share/novnc", root);
+      .replaceAll("/usr/share/novnc", root)
+      .replaceAll(env.homeDir, path.join(root, "home"));
     const result = spawnSync(
       "bash",
       [
@@ -580,9 +673,78 @@ describe("shared Linux desktop lifecycle", () => {
     );
     expect(result.status, result.stderr).toBe(0);
     expect(readFileSync(log, "utf8")).toBe(
-      `fbsetbg=${path.join(root, "flux-20/bin/fbsetbg")}\nxsetroot -solid #111113\n`,
+      `home settings folder\nfbsetbg=${path.join(root, "flux-20/bin/fbsetbg")}\nxsetroot -solid #111113\n`,
     );
   });
+
+  it.skipIf(process.platform !== "linux")(
+    "restarts a screen's browser that stops answering, but not again within ten minutes",
+    () => {
+      const root = mkdtempSync(path.join(tmpdir(), "desktop-hung-browser-"));
+      roots.push(root);
+      const bin = path.join(root, "bin");
+      mkdirSync(bin);
+      const fake = path.join(root, "fake-browser.py");
+      writeFileSync(
+        fake,
+        [
+          "import socket, sys",
+          'port = int(next(a for a in sys.argv if a.startswith("--remote-debugging-port=")).split("=")[1])',
+          "server = socket.socket()",
+          "server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)",
+          'server.bind(("127.0.0.1", port))',
+          "server.listen(64)",
+          "while True:",
+          "    client, _ = server.accept()",
+          "    client.recv(4096)",
+          '    client.sendall(b"HTTP/1.1 200 OK\\r\\nContent-Length: 2\\r\\n\\r\\n{}")',
+          "    client.close()",
+        ].join("\n"),
+      );
+      writeFileSync(path.join(bin, "websockify"), "#!/bin/sh\n", { mode: 0o755 });
+      writeFileSync(
+        path.join(bin, "rakazo-browser"),
+        `#!/bin/sh\nexec python3 ${fake} "$@" --remote-debugging-port=${screenPorts(0, env).debugPort}\n`,
+        { mode: 0o755 },
+      );
+      const script = ensureScreenCommand(0, "bot", "token", env)
+        .replaceAll("/tmp/rakazo", root)
+        .replaceAll("/usr/share/novnc", root)
+        .replaceAll(env.homeDir, path.join(root, "home"));
+      // Stop once the browser is ready; the viewer after it is covered elsewhere.
+      const browserReady = script.slice(0, script.indexOf(`\nmkdir -p ${root}/desktop-targets `));
+      const ensure = () =>
+        spawnSync("bash", ["-c", `xdpyinfo() { return 0; }\n${browserReady}`], {
+          encoding: "utf8",
+          timeout: 60_000,
+          env: { ...process.env, PATH: `${bin}:${process.env.PATH}` },
+        });
+      const browserPid = () => {
+        const file = readdirSync(root).find(
+          (name) => name.startsWith("browser-pid-") && !name.endsWith("-restarted"),
+        );
+        if (!file) throw new Error("no browser was started");
+        return Number(readFileSync(path.join(root, file), "utf8"));
+      };
+      try {
+        const started = ensure();
+        expect(started.status, started.stderr).toBe(0);
+        // A stopped process keeps its port open and never answers, as a hung browser does.
+        process.kill(browserPid(), "SIGSTOP");
+        const restarted = ensure();
+        expect(restarted.status, restarted.stderr).toBe(0);
+        expect(restarted.stdout).toContain("RAKAZO_BROWSER_RESTARTED=unresponsive");
+
+        process.kill(browserPid(), "SIGSTOP");
+        const again = ensure();
+        expect(again.status).toBe(77);
+        expect(again.stdout).not.toContain("RAKAZO_BROWSER_RESTARTED");
+        expect(again.stderr).toContain("computer browser CDP not ready");
+      } finally {
+        spawnSync("pkill", ["-KILL", "-f", fake]);
+      }
+    },
+  );
 
   it.skipIf(process.platform !== "linux").each([false, true])(
     "repairs an empty control route or fails if publication fails (failPublish=%s)",
@@ -983,11 +1145,14 @@ describe("shared Linux desktop lifecycle", () => {
         preservePrimaryDisplay: true,
       };
       const { debugPort } = screenPorts(0, screenEnv);
+      writeFileSync(path.join(bin, "websockify"), "#!/bin/sh\n", { mode: 0o755 });
       writeFileSync(
         path.join(bin, "rakazo-browser"),
         [
           "#!/usr/bin/env python3",
           "import os, socket, sys, time",
+          "if not any(arg.startswith('--remote-debugging-port=') for arg in sys.argv[1:]):",
+          `    os.execv(sys.executable, [sys.executable, __file__, "--remote-debugging-port=${debugPort}", *sys.argv[1:]])`,
           `open(${JSON.stringify(launches)}, "a").write("launch\\n")`,
           "server = socket.socket()",
           "server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)",
@@ -1242,6 +1407,14 @@ describe("shared Linux desktop lifecycle", () => {
       [
         "#!/usr/bin/env python3",
         "import os, socket, sys, time",
+        "port = None",
+        "for arg in sys.argv[1:]:",
+        "    if arg.startswith('--remote-debugging-port='):",
+        "        port = int(arg.split('=', 1)[1])",
+        "if port is None:",
+        "    display = os.environ.get('DISPLAY', ':1').lstrip(':').split('.', 1)[0]",
+        "    port = 9221 + int(display)",
+        "    os.execv(sys.executable, [sys.executable, __file__, f'--remote-debugging-port={port}', *sys.argv[1:]])",
         "log = os.environ.get('BROWSER_LOG')",
         "if log:",
         "    handle = open(log, 'a')",
@@ -1251,12 +1424,6 @@ describe("shared Linux desktop lifecycle", () => {
         "pid_log = os.environ.get('PID_LOG')",
         "if pid_log:",
         "    open(pid_log, 'a').write(str(os.getpid()) + '\\n')",
-        "port = None",
-        "for arg in sys.argv[1:]:",
-        "    if arg.startswith('--remote-debugging-port='):",
-        "        port = int(arg.split('=', 1)[1])",
-        "if port is None:",
-        "    raise SystemExit('missing debugging port')",
         "server = socket.socket()",
         "server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)",
         "server.bind(('127.0.0.1', port))",
@@ -1268,8 +1435,14 @@ describe("shared Linux desktop lifecycle", () => {
         "        request = connection.recv(1024)",
         "    except socket.timeout:",
         "        request = b''",
-        "    connection.close()",
+        // The screen check asks for the version; Browser.close asks for it and then connects.
         "    if b'GET /json/version' in request:",
+        '        body = b\'{"webSocketDebuggerUrl": "ws://127.0.0.1:%d/devtools/browser/fake"}\' % port',
+        "        connection.sendall(b'HTTP/1.1 200 OK\\r\\nContent-Length: %d\\r\\n\\r\\n' % len(body) + body)",
+        "        connection.close()",
+        "        continue",
+        "    connection.close()",
+        "    if b'GET /devtools/' in request:",
         "        break",
         "",
       ].join("\n"),
@@ -1383,11 +1556,22 @@ describe("shared Linux desktop lifecycle", () => {
       if (!Number.isSafeInteger(parsed) || parsed <= 1) return false;
       try {
         process.kill(parsed, 0);
-        return true;
       } catch {
         return false;
       }
+      // A killed orphan stays a zombie until whichever process adopted it reaps it. Without a
+      // readable /proc entry the signal check stands, so a hidden procfs cannot fake an exit;
+      // one that just exited reads as alive here and the next poll sees it gone.
+      let stat: string;
+      try {
+        stat = readFileSync(`/proc/${parsed}/stat`, "utf8");
+      } catch {
+        return true;
+      }
+      return !/^[ZX]/.test(stat.slice(stat.lastIndexOf(")") + 2));
     };
+    // Signals land asynchronously, so a stop that just sent one cannot promise the exit yet.
+    const exited = (pid: string) => expect.poll(() => alive(pid), { timeout: 5_000 }).toBe(false);
     const launch = (display: number, inherited: string | undefined, log: string) => {
       const env: NodeJS.ProcessEnv = {
         PATH: `${recordBin}${path.delimiter}${process.env.PATH ?? ""}`,
@@ -1433,6 +1617,7 @@ describe("shared Linux desktop lifecycle", () => {
       relocate,
       busAddress,
       alive,
+      exited,
       launch,
       extraDisplay,
       bootDisplay,
@@ -1455,6 +1640,7 @@ describe("shared Linux desktop lifecycle", () => {
         relocate,
         busAddress,
         alive,
+        exited,
         launch,
         extraDisplay,
         bootDisplay,
@@ -1538,9 +1724,9 @@ describe("shared Linux desktop lifecycle", () => {
         expect(readFileSync(path.join(runtime, "dbus-session"), "utf8")).toBe(
           "export DBUS_SESSION_BUS_ADDRESS=unix:path=/boot-bus\n",
         );
-        expect(alive(recordedPid(dbusPid))).toBe(false);
-        expect(alive(recordedPid(portalPid))).toBe(false);
-        expect(alive(recordedPid(gtkPid))).toBe(false);
+        await exited(recordedPid(dbusPid));
+        await exited(recordedPid(portalPid));
+        await exited(recordedPid(gtkPid));
         const bootHash = createHash("sha256").update("boot").digest("hex").slice(0, 32);
         const bootPid = readFileSync(path.join(runtime, `browser-pid-${bootHash}`), "utf8");
         expect(alive(bootPid)).toBe(true);
@@ -1564,9 +1750,9 @@ describe("shared Linux desktop lifecycle", () => {
         expect(readFileSync(path.join(runtime, "dbus-session"), "utf8")).toBe(
           "export DBUS_SESSION_BUS_ADDRESS=unix:path=/boot-bus\n",
         );
-        expect(alive(recordedPid(restartedPortal))).toBe(false);
-        expect(alive(recordedPid(restartedGtk))).toBe(false);
-        expect(alive(recordedPid(restartedBus))).toBe(false);
+        await exited(recordedPid(restartedPortal));
+        await exited(recordedPid(restartedGtk));
+        await exited(recordedPid(restartedBus));
       } finally {
         cleanup();
       }
@@ -1629,6 +1815,7 @@ describe("shared Linux desktop lifecycle", () => {
         run,
         relocate,
         alive,
+        exited,
         extraDisplay,
         dbusLog,
         portalLog,
@@ -1638,12 +1825,6 @@ describe("shared Linux desktop lifecycle", () => {
       const dbusPid = path.join(runtime, `dbus-pid-${extraDisplay}`);
       const portalPid = path.join(runtime, `portal-pid-${extraDisplay}`);
       const gtkPid = path.join(runtime, `portal-gtk-pid-${extraDisplay}`);
-      const waitDead = async (pid: string) => {
-        for (let i = 0; i < 50 && alive(pid); i += 1) {
-          await new Promise((resolve) => setTimeout(resolve, 20));
-        }
-        expect(alive(pid)).toBe(false);
-      };
       try {
         const first = run(command, true);
         expect(first.status, first.stderr).toBe(0);
@@ -1651,7 +1832,7 @@ describe("shared Linux desktop lifecycle", () => {
         const portal = readFileSync(portalPid, "utf8");
         const dbus = readFileSync(dbusPid, "utf8");
         process.kill(Number(recordedPid(gtk)), "SIGKILL");
-        await waitDead(recordedPid(gtk));
+        await exited(recordedPid(gtk));
         const second = run(command, true);
         expect(second.status, second.stderr).toBe(0);
         expect(readFileSync(dbusLog, "utf8")).toBe("launch\n");
@@ -1737,18 +1918,12 @@ describe("shared Linux desktop lifecycle", () => {
   it.skipIf(process.platform !== "linux")(
     "restarts a dead screen bus without killing an unrelated pid",
     async () => {
-      const { runtime, screenEnv, run, relocate, alive, extraDisplay, dbusLog, cleanup } =
+      const { runtime, screenEnv, run, relocate, alive, exited, extraDisplay, dbusLog, cleanup } =
         await portalScreenFixture();
       const command = relocate(ensureScreenCommand(1, "extra", "viewtok", screenEnv));
       const dbusPid = path.join(runtime, `dbus-pid-${extraDisplay}`);
       const portalPid = path.join(runtime, `portal-pid-${extraDisplay}`);
       const gtkPid = path.join(runtime, `portal-gtk-pid-${extraDisplay}`);
-      const waitDead = async (pid: string) => {
-        for (let i = 0; i < 50 && alive(pid); i += 1) {
-          await new Promise((resolve) => setTimeout(resolve, 20));
-        }
-        expect(alive(pid)).toBe(false);
-      };
       try {
         const first = run(command, true);
         expect(first.status, first.stderr).toBe(0);
@@ -1756,7 +1931,7 @@ describe("shared Linux desktop lifecycle", () => {
         const portal = readFileSync(portalPid, "utf8");
         const gtk = readFileSync(gtkPid, "utf8");
         process.kill(Number(recordedPid(dbus)), "SIGKILL");
-        await waitDead(recordedPid(dbus));
+        await exited(recordedPid(dbus));
         const unrelated = String(process.pid);
         writeFileSync(dbusPid, unrelated);
         writeFileSync(portalPid, unrelated);
@@ -1764,7 +1939,7 @@ describe("shared Linux desktop lifecycle", () => {
         expect(second.status, second.stderr).toBe(0);
         expect(alive(unrelated)).toBe(true);
         expect(alive(recordedPid(portal))).toBe(true);
-        expect(alive(recordedPid(gtk))).toBe(false);
+        await exited(recordedPid(gtk));
         expect(readFileSync(dbusLog, "utf8")).toBe("launch\nlaunch\n");
         const restartedBus = readFileSync(dbusPid, "utf8");
         const restartedPortal = readFileSync(portalPid, "utf8");
@@ -1882,12 +2057,6 @@ describe("shared Linux desktop lifecycle", () => {
         writeFileSync(file, original.replace(/^\d+/, outside));
         return outside;
       };
-      const waitDead = async (alive: (pid: string) => boolean, pid: string) => {
-        for (let i = 0; i < 50 && alive(pid); i += 1) {
-          await new Promise((resolve) => setTimeout(resolve, 20));
-        }
-        expect(alive(pid)).toBe(false);
-      };
       const replaceBinary = (file: string, source: string) => {
         unlinkSync(file);
         copyFileSync(source, file);
@@ -1907,7 +2076,7 @@ describe("shared Linux desktop lifecycle", () => {
         const killRecorded = async (file: string) => {
           const pid = recordedPid(readFileSync(file, "utf8"));
           process.kill(Number(pid), "SIGKILL");
-          await waitDead(recycled.alive, pid);
+          await recycled.exited(pid);
         };
         const retarget = async () => {
           const started = recycled.run(command, true);
@@ -2009,7 +2178,7 @@ describe("shared Linux desktop lifecycle", () => {
           false,
         );
         expect(stopped.status, stopped.stderr).toBe(0);
-        expect(replaced.alive(gtkPid)).toBe(false);
+        await replaced.exited(gtkPid);
         expect(existsSync(gtkFile)).toBe(false);
 
         writeFileSync(replaced.dbusLog, "");
@@ -2032,7 +2201,7 @@ describe("shared Linux desktop lifecycle", () => {
           false,
         );
         expect(stoppedBus.status, stoppedBus.stderr).toBe(0);
-        expect(replaced.alive(dbusPid)).toBe(false);
+        await replaced.exited(dbusPid);
         expect(existsSync(dbusFile)).toBe(false);
       } finally {
         replaced.cleanup();

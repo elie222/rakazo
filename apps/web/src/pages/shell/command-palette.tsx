@@ -17,7 +17,9 @@ import {
 import { Check } from "lucide-react";
 import type { ComponentType } from "react";
 import { useEffect, useMemo, useState } from "react";
-import { formatRelativeTime } from "../../lib/relative-time";
+import { formatRelativeTime } from "../../lib/locale/relative-time";
+import { desktopBridge } from "../../lib/platform/desktop";
+import { useEventListener } from "../../lib/use-event-listener";
 import { isApplePlatform } from "./shell-shortcuts";
 
 /** Pages listed before anything is typed. */
@@ -62,6 +64,7 @@ export function CommandPalette({
 }) {
   const [search, setSearch] = useState("");
   useEffect(() => onSearchChange?.(search), [search, onSearchChange]);
+  const desktop = Boolean(desktopBridge());
   const [modKey, setModKey] = useState("⌘");
 
   useEffect(() => {
@@ -124,22 +127,17 @@ export function CommandPalette({
         ))}
       </CommandGroup>
     ) : null;
-  useEffect(() => {
-    if (!open) return;
-    function onKey(event: KeyboardEvent) {
-      if (!(event.metaKey || event.ctrlKey) || event.altKey || event.shiftKey || event.repeat) {
-        return;
-      }
-      if (!/^[1-9]$/.test(event.key)) return;
-      const bot = filteredBots[Number(event.key) - 1];
-      if (!bot) return;
-      event.preventDefault();
-      onSelectBot(bot.id);
-      onOpenChange(false);
+  useEventListener(open ? window : null, "keydown", (event) => {
+    if (!(event.metaKey || event.ctrlKey) || event.altKey || event.shiftKey || event.repeat) {
+      return;
     }
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [filteredBots, onOpenChange, onSelectBot, open]);
+    if (!desktop || !/^[1-9]$/.test(event.key)) return;
+    const bot = filteredBots[Number(event.key) - 1];
+    if (!bot) return;
+    event.preventDefault();
+    onSelectBot(bot.id);
+    onOpenChange(false);
+  });
 
   return (
     <CommandDialog
@@ -158,6 +156,7 @@ export function CommandPalette({
           value={search}
           onValueChange={setSearch}
           placeholder={t`Search`}
+          aria-label={t`Search`}
           data-testid="command-palette-search"
         />
         <CommandList className="max-h-80" data-testid="command-palette-list">
@@ -168,7 +167,8 @@ export function CommandPalette({
           <CommandGroup>
             {filteredBots.map((bot, index) => {
               const subtitle = botSubtitle(bot);
-              const shortcut = index < 9 ? `${modKey}${index + 1}` : null;
+              // Browsers keep Cmd/Ctrl+1–9 for switching tabs, so only the desktop app answers them.
+              const shortcut = desktop && index < 9 ? `${modKey}${index + 1}` : null;
               return (
                 <CommandItem
                   key={bot.id}

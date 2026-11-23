@@ -26,19 +26,22 @@ instead of a password. Some actions, such as exporting data, ask you to confirm 
 
 ## Credentials
 
-**Settings → Vault** lists the API keys and website logins your bots can use. Values are never shown.
+**Settings → Vault** lists the API keys and website logins your bots can use. Protected values
+show only after you confirm it's you.
 You can add one, replace its value, or remove it. See [Reusable credentials](./bot-secrets.md).
 
 ## Organizations
 
-Keep work and personal use apart, each with its own bots and billing. Choose
-**Create organization** in **Settings → Organization**. Once you have two, switch between them from
-the account menu. Rename or delete an organization in the same place; deleting one cancels its
-plan and removes its bots and data.
+Keep work and personal use apart, each with its own bots and billing. The account menu names the
+organization you're in; open it to switch to another or choose **New organization** (on mobile, the
+**Organization** row under **Account**). Rename or delete the current one in
+**Settings → Organization**; deleting one cancels its plan and removes its bots and data.
 
 ## Usage
 
-**Settings → Usage** shows runs, tokens and model cost, by model.
+On web and desktop, **Settings → Usage** shows runs, tokens and cost by model. On mobile,
+**Settings** shows a **Usage** summary. For a breakdown by model, type `/` at the start of a draft
+in a bot chat and choose **Settings: Usage**.
 
 ## Your data
 
@@ -63,6 +66,12 @@ plan:
 Both plans come in monthly or yearly, and include monthly hours on your bots' computers.
 **Settings → Billing** shows your plan, when it renews and the computer hours left. Choose
 **Manage** to change it. See [pricing](https://rakazo.com/pricing) for current plans.
+
+Cloud computers start at Standard size. On plans that offer larger sizes, the account owner can
+choose a size for each computer in **Settings → Computers → Cloud computers**. The change applies
+only to that computer the next time it starts. Large uses twice the allowance per hour, and
+Extra large uses four times as much. Where computer sizes are available, **Billing** shows the
+hours left and usage by computer in Standard hours.
 
 **Invite friends** in the account menu gives you a link. You get a free month for each friend who
 starts a trial.

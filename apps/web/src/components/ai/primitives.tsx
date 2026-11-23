@@ -1,5 +1,6 @@
+import { useNow } from "@rakazo/chat-ui/hooks";
 import { cn } from "@rakazo/ui-web";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import "./beautiful-ui.css";
 
 /* Beautiful UI primitives — hand-ported from beautifului.dev
@@ -11,7 +12,7 @@ import "./beautiful-ui.css";
 /** A light sweep travelling across a text label. */
 export function Shimmer({ children }: { children: React.ReactNode }) {
   return (
-    <span className="animate-[bui-shimmer-text_1.4s_linear_infinite] bg-linear-to-r from-muted-foreground from-35% via-foreground via-50% to-muted-foreground to-65% bg-size-[200%_100%] bg-clip-text text-transparent">
+    <span className="bg-linear-to-r from-muted-foreground from-35% via-foreground via-50% to-muted-foreground to-65% bg-size-[200%_100%] bg-clip-text text-transparent motion-safe:animate-[bui-shimmer-text_1.4s_linear_infinite] motion-reduce:bg-none motion-reduce:text-muted-foreground">
       {children}
     </span>
   );
@@ -35,11 +36,7 @@ export function formatElapsed(startedAtMs: number, nowMs: number): string {
 
 function useElapsed(startedAtMs?: number): string {
   const [mountedAt] = useState(() => Date.now());
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    const timer = setInterval(() => setNow(Date.now()), 100);
-    return () => clearInterval(timer);
-  }, []);
+  const now = useNow(100);
   return formatElapsed(startedAtMs ?? mountedAt, now);
 }
 
@@ -52,8 +49,8 @@ function DefaultLoadingState({ label, startedAt }: { label: string; startedAt?: 
         {CHEVRON_DELAYS.map((delay, i) => (
           <span
             key={i}
-            className="h-[4px] w-[4px] rounded-[1px] bg-foreground opacity-15"
-            style={{ animation: `bui-pixel-on 650ms ease-in-out ${delay}ms infinite` }}
+            className="h-[4px] w-[4px] rounded-[1px] bg-foreground opacity-15 motion-safe:animate-[bui-pixel-on_650ms_ease-in-out_infinite]"
+            style={{ animationDelay: `${delay}ms` }}
           />
         ))}
       </span>
@@ -93,11 +90,8 @@ export function LoadingState({
 /** Pop-in green check with a fading-up label — the approval-card success beat. */
 export function SuccessPop({ label }: { label: string }) {
   return (
-    <span className="flex items-center gap-2">
-      <span
-        className="flex h-6 w-6 items-center justify-center rounded-full bg-success text-background"
-        style={{ animation: "bui-pop-in 300ms cubic-bezier(0.23,1,0.32,1) both" }}
-      >
+    <span role="status" className="flex items-center gap-2">
+      <span className="flex h-6 w-6 items-center justify-center rounded-full bg-success text-background motion-safe:animate-[bui-pop-in_300ms_cubic-bezier(0.23,1,0.32,1)_both]">
         <svg
           width="12"
           height="12"
@@ -112,10 +106,7 @@ export function SuccessPop({ label }: { label: string }) {
           <path d="M20 6L9 17l-5-5" />
         </svg>
       </span>
-      <span
-        className="text-body-sm font-medium text-foreground"
-        style={{ animation: "bui-fade-up 350ms cubic-bezier(0.23,1,0.32,1) 100ms both" }}
-      >
+      <span className="text-body-sm font-medium text-foreground motion-safe:animate-[bui-fade-up_350ms_cubic-bezier(0.23,1,0.32,1)_100ms_both]">
         {label}
       </span>
     </span>

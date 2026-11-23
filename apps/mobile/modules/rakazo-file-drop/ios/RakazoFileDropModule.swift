@@ -19,7 +19,7 @@ public class RakazoFileDropModule: Module {
 
   private static let root = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
     .appendingPathComponent("dropped", isDirectory: true)
-  // Matches the composer's testID, so other text fields keep their normal paste.
+  // The composer's testID (kept-in-step check), so other text fields keep their normal paste.
   private static let composerID = "chat-composer"
   // Room for a photo that is over the attachment limit until the chat resizes it.
   private static let resizeHeadroom = 4

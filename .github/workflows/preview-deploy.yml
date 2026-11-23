@@ -20,6 +20,10 @@ jobs:
     if: github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    # Keep the count, eviction, and machine creation ordered across PRs.
+    concurrency:
+      group: fly-preview-deploy
+      queue: max
     permissions:
       actions: read
       contents: read
@@ -76,6 +80,7 @@ jobs:
           HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
           IMAGE: rakazo-preview:pr
           FLY_ORG: ${{ vars.FLY_PREVIEW_ORG }}
+          MACHINE_HIGH_WATER: ${{ vars.FLY_PREVIEW_MACHINE_HIGH_WATER || '90' }}
           REGION: ${{ vars.FLY_PREVIEW_REGION || 'iad' }}
           APP_PREFIX: ${{ vars.FLY_PREVIEW_APP_PREFIX }}
         run: |
@@ -98,4 +103,9 @@ jobs:
     with:
       head_sha: ${{ github.event.workflow_run.head_sha }}
       pull_request: ${{ matrix.pr }}
-    secrets: inherit
+    secrets:
+      CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+      CODEX_SUBSCRIPTION_AUTH: ${{ secrets.CODEX_SUBSCRIPTION_AUTH }}
+      GH_DEPENDENCY_UPDATES_PAT: ${{ secrets.GH_DEPENDENCY_UPDATES_PAT }}
+      S3_ACCESS_KEY_ID: ${{ secrets.S3_ACCESS_KEY_ID }}
+      S3_SECRET_ACCESS_KEY: ${{ secrets.S3_SECRET_ACCESS_KEY }}

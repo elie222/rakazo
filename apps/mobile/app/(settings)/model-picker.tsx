@@ -1,25 +1,28 @@
 import { useLingui } from "@lingui/react/macro";
-import { useLocalSearchParams, useNavigation, useRouter } from "expo-router";
-import { useLayoutEffect, useState } from "react";
-import { ModelPickerList } from "../../components/model-picker-list";
-import { modelPickerRequest, selectPickerModel } from "../../lib/model-picker-selection";
+import { useLocalSearchParams, useRouter } from "expo-router";
+import { useState } from "react";
+import { ModelPickerList } from "../../components/models/model-picker-list";
+import { SettingsFooter } from "../../components/settings/settings-group";
+import { modelPickerRequest, selectPickerModel } from "../../lib/models/model-picker-selection";
+import { useScreenHeader } from "../../lib/navigation/screen-header";
 
 export default function SettingsModelPickerScreen() {
   const { requestId = "" } = useLocalSearchParams<{ requestId?: string }>();
   const router = useRouter();
-  const navigation = useNavigation();
   const { t } = useLingui();
   const [request] = useState(() => modelPickerRequest(requestId));
-  const title = request?.title ?? t`Model`;
-  useLayoutEffect(() => {
-    navigation.setOptions({ title });
-  }, [navigation, title]);
+  useScreenHeader({ title: request?.title ?? t`Model` });
   return (
     <ModelPickerList
       choices={request?.choices ?? []}
       connectChoices={request?.connectChoices}
       selectedKey={request?.selectedKey ?? ""}
       providerLabel={request?.providerLabel}
+      header={
+        request?.connectionNotice ? (
+          <SettingsFooter>{request.connectionNotice}</SettingsFooter>
+        ) : undefined
+      }
       emptyMessage={request?.emptyMessage}
       error={request ? null : t`Could not load model settings`}
       onSelect={(choice) => {

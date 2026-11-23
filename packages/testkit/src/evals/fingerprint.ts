@@ -1,4 +1,7 @@
+import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
+import path from "node:path";
 import type { ModelConnectInput } from "@rakazo/contracts";
 import type { EvalCase } from "./cases.js";
 
@@ -106,7 +109,11 @@ export function caseFingerprint(input: {
         model: modelSettings(input.connection),
         caseVersion: input.caseVersion,
         // Functions drop out; the steps, files and scripts a case feeds the bot later stay.
-        caseData: JSON.parse(JSON.stringify(input.scenario)),
+        caseData: JSON.parse(JSON.stringify({ ...input.scenario, fixtureData: undefined })),
+        // Hashed as written: a date the case plants in its content is part of the case.
+        ...(input.scenario.fixtureData === undefined
+          ? {}
+          : { fixtureData: sha256(JSON.stringify(input.scenario.fixtureData)) }),
         strategy: input.strategy,
         replyMode: input.replyMode,
         maxToolCalls: input.maxToolCalls,
@@ -162,6 +169,24 @@ export function firstRequestFetch(
   };
 }
 
+/**
+ * Adds fields to the JSON body of every request for the eval model, such as a gateway's upstream
+ * routing. It wraps the fingerprinting fetch, so the added fields are part of the fingerprint.
+ */
+export function requestBodyFetch(
+  upstream: typeof fetch,
+  modelId: string,
+  extra: Record<string, unknown>,
+): typeof fetch {
+  return (input, init) => {
+    if (typeof init?.body !== "string" || !isFor(input, init.body, modelId))
+      return upstream(input, init);
+    const body: unknown = JSON.parse(init.body);
+    if (!body || typeof body !== "object" || Array.isArray(body)) return upstream(input, init);
+    return upstream(input, { ...init, body: JSON.stringify({ ...body, ...extra }) });
+  };
+}
+
 /** Most protocols name the model in the body; some put it in the path. */
 function isFor(input: Parameters<typeof fetch>[0], body: string, modelId: string) {
   const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
@@ -170,5 +195,42 @@ function isFor(input: Parameters<typeof fetch>[0], body: string, modelId: string
     return (JSON.parse(body) as { model?: unknown }).model === modelId;
   } catch {
     return false;
+  }
+}
+
+export function workingDiffHash(): string | null {
+  try {
+    const root = execFileSync("git", ["rev-parse", "--show-toplevel"], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    }).trim();
+    const options = {
+      cwd: root,
+      stdio: ["ignore", "pipe", "ignore"] as ["ignore", "pipe", "ignore"],
+      maxBuffer: 64 * 1024 * 1024,
+    };
+    const hash = createHash("sha256").update(execFileSync("git", ["diff", "HEAD"], options));
+    const added = execFileSync("git", ["ls-files", "--others", "--exclude-standard", "-z"], {
+      ...options,
+      encoding: "utf8",
+    })
+      .split("\0")
+      .filter((p) => /\.(?:ts|tsx|json)$/.test(p) && /^(?:packages|apps)\//.test(p))
+      .sort();
+    for (const file of added) hash.update(file).update(readFileSync(path.join(root, file)));
+    return hash.digest("hex");
+  } catch {
+    return null;
+  }
+}
+
+export function codeRevision(): string | null {
+  try {
+    return execFileSync("git", ["rev-parse", "HEAD"], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    }).trim();
+  } catch {
+    return null;
   }
 }

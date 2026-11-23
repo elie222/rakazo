@@ -3,8 +3,9 @@ import { ChatMarkdown } from "@rakazo/chat-ui/native";
 import type { PeerConversation } from "@rakazo/core";
 import { displayName, loadPeerHistory, newestPageCards, peerConversations } from "@rakazo/core";
 import { typeScale } from "@rakazo/ui-tokens";
+import type { DataTag, QueryKey } from "@tanstack/react-query";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useRef } from "react";
 import type { ScrollViewInstance } from "react-native";
 import {
   ActivityIndicator,
@@ -15,19 +16,20 @@ import {
   Text,
   View,
 } from "react-native";
-import { glassHeaderOptions } from "../components/glass-title";
-import { InlineImageAttachment } from "../components/inline-image-attachment";
-import { NativeActionButton } from "../components/native-action-button";
-import { NewestPageCards, PageCard } from "../components/pages/page-card";
-import { SheetCloseButton } from "../components/sheet-close-button";
-import { rpc } from "../lib/api";
-import { mobileTokens } from "../lib/appearance";
-import { openMobileArtifact } from "../lib/artifact-open";
-import { isInlineImageBlock } from "../lib/inline-image";
-import { native, useResolvedAppearance, useThemedStyles } from "../lib/native";
-import { useChatOnScreen } from "../lib/page-card-detail";
-import { useSideInsets } from "../lib/side-insets";
-import { errorText } from "../lib/user-error";
+import { InlineImageAttachment } from "../components/media/inline-image-attachment";
+import { glassHeaderOptions } from "../components/native/glass-title";
+import { NativeActionButton } from "../components/native/native-action-button";
+import { SheetCloseButton } from "../components/native/sheet-close-button";
+import { errorText } from "../lib/api/user-error";
+import { mobileTokens } from "../lib/appearance/appearance";
+import { openMobileArtifact } from "../lib/artifacts/artifact-open";
+import { useSideInsets } from "../lib/layout/side-insets";
+import { isInlineImageBlock } from "../lib/messages/inline-image";
+import { native, useResolvedAppearance, useThemedStyles } from "../lib/native/native";
+import { NewestPageCards, PageCard } from "../lib/pages/page-card";
+import { useChatOnScreen } from "../lib/pages/page-card-detail";
+import { queryClient, rpcQuery } from "../lib/query/query";
+import { useScreenQuery } from "../lib/query/screen-query";
 
 /** View-only bot-to-bot exchange, opened from a Messaged / Message from chip in a bot's chat. */
 export default function PeerChat() {
@@ -49,37 +51,51 @@ export default function PeerChat() {
   const botId = params.botId ?? "";
   const peerBotId = params.peerBotId ?? "";
   const botName = displayName(params.botName, t`Bot`);
-  const [state, setState] = useState<
-    { kind: "loading" } | { kind: "failed" } | { kind: "ready"; chat: PeerConversation | null }
-  >({ kind: "loading" });
-  const [attempt, setAttempt] = useState(0);
-  const retry = useCallback(() => setAttempt((value) => value + 1), []);
+  const pageRead = (before?: number) =>
+    rpcQuery("threads/messages", { botId, before, includePeerRuns: true });
+  const historyRead = {
+    queryKey: [...pageRead().queryKey, "peer", peerBotId] as unknown as DataTag<
+      QueryKey,
+      PeerConversation | null,
+      Error
+    >,
+    queryFn: async ({ signal }: { signal: AbortSignal }) => {
+      const messages = await loadPeerHistory({
+        signal,
+        // Each page is its own request, cancelled with the page: a retry never joins one given up.
+        loadPage: async (before, pageSignal) => {
+          const page = pageRead(before);
+          return await page.queryFn({
+            client: queryClient,
+            queryKey: page.queryKey,
+            signal: pageSignal,
+            meta: undefined,
+          });
+        },
+      });
+      const sources = messages.map((message) => ({
+        ...message,
+        createdAt: message.createdAt ?? "",
+      }));
+      return peerConversations(sources).find((entry) => entry.peerBotId === peerBotId) ?? null;
+    },
+    gcTime: 0,
+  };
+  const history = useScreenQuery(historyRead, { enabled: Boolean(botId && peerBotId) });
+  const { refetch } = history;
+  const retry = () => void refetch();
+  const state:
+    | { kind: "loading" }
+    | { kind: "failed" }
+    | { kind: "ready"; chat: PeerConversation | null } =
+    // A failed re-read keeps the chat already on screen.
+    history.data !== undefined
+      ? { kind: "ready", chat: history.data }
+      : history.isError && !history.isFetching
+        ? { kind: "failed" }
+        : { kind: "loading" };
   const scrollRef = useRef<ScrollViewInstance>(null);
   const userScrolled = useRef(false);
-
-  useEffect(() => {
-    if (!botId || !peerBotId) return;
-    const abort = new AbortController();
-    setState({ kind: "loading" });
-    void loadPeerHistory({
-      signal: abort.signal,
-      loadPage: (before, signal) =>
-        rpc("threads/messages", { botId, before, includePeerRuns: true }, { signal }),
-    })
-      .then((messages) => {
-        if (abort.signal.aborted) return;
-        const sources = messages.map((message) => ({
-          ...message,
-          createdAt: message.createdAt ?? "",
-        }));
-        const chat = peerConversations(sources).find((entry) => entry.peerBotId === peerBotId);
-        setState({ kind: "ready", chat: chat ?? null });
-      })
-      .catch(() => {
-        if (!abort.signal.aborted) setState({ kind: "failed" });
-      });
-    return () => abort.abort();
-  }, [botId, peerBotId, attempt]);
 
   const chat = state.kind === "ready" ? state.chat : null;
   const newestPages = newestPageCards(

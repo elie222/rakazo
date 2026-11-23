@@ -53,4 +53,5 @@ docker compose --env-file .env -f infra/compose/docker-compose.prod.yml \
 
 ต้องมี `RAKAZO_UPDATER_TOKEN` แยกจาก secret อื่น อย่างน้อย 32 ตัวอักษร เรียก `/apply` `/rollback` ผ่านเครือข่าย `control` เท่านั้น
 
-แท็ก image: `edge`, `vX.Y.Z`, `sha-<commit>` — อย่าอาศัย `latest` จนกว่า registry จะมีจริง
+การติดตั้งใหม่ใช้แท็ก `latest` ซึ่งติดตามเฉพาะรุ่นเสถียร ต้องมีรุ่นเสถียรที่เผยแพร่แล้ว และตัวติดตั้งจะไม่ย้อนกลับไปใช้บิลด์จาก main
+หากต้องการตรึงเวอร์ชัน ให้ใช้ `vX.Y.Z` หรือ `sha-<commit>` ของรุ่นเสถียร ตัวติดตั้งจะเก็บแท็กเดิมใน `.env` ที่มีอยู่

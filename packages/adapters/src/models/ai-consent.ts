@@ -1,0 +1,63 @@
+import { createHash } from "node:crypto";
+import type { AiDataUse, AiRecipient } from "@rakazo/contracts";
+import { localBaseUrl } from "../runtime/pi/models/pi-local-provider.js";
+import { listPiCatalog } from "../runtime/pi/models/pi-models.js";
+import { voiceCatalogEntry } from "../voice/voice-factory.js";
+
+const PRIVACY_URLS: Record<string, string> = {
+  cursor: "https://cursor.com/privacy",
+  openrouter: "https://openrouter.ai/privacy",
+  openai: "https://openai.com/policies/privacy-policy/",
+  "openai-codex": "https://openai.com/policies/privacy-policy/",
+  anthropic: "https://www.anthropic.com/legal/privacy",
+  google: "https://policies.google.com/privacy",
+  "vercel-ai-gateway": "https://vercel.com/legal/privacy-policy",
+  elevenlabs: "https://elevenlabs.io/privacy-policy",
+  cartesia: "https://cartesia.ai/legal/privacy",
+  "fish-audio": "https://fish.audio/privacy/",
+  xai: "https://x.ai/legal/privacy-policy",
+  supermemory: "https://supermemory.ai/privacy",
+  honcho: "https://app.honcho.dev/privacy",
+  hindsight: "https://vectorize.io/privacy",
+  mnemoverse: "https://mnemoverse.com/docs/legal/privacy-policy",
+};
+
+/** Never expose endpoint paths, query parameters, user info, or credentials in a disclosure. */
+export function aiRecipient(input: {
+  provider: string;
+  use: AiDataUse;
+  baseUrl?: string;
+}): Omit<AiRecipient, "allowed"> | null {
+  if (input.provider === "scripted") return null;
+  const endpoint = input.baseUrl ?? (input.provider === "local" ? localBaseUrl() : undefined);
+  const origin = endpoint ? new URL(endpoint).origin : undefined;
+  const name = recipientName(input.provider, input.use);
+  // One approval per service: switching models never asks again, while a different custom
+  // endpoint is a different recipient. Private URL components stay out of the disclosure.
+  const key = createHash("sha256")
+    .update(JSON.stringify([input.use, input.provider, endpoint ?? ""]))
+    .digest("hex");
+  return {
+    key,
+    name: origin ? `${name} (${origin})` : name,
+    use: input.use,
+    detail: ["openrouter", "vercel-ai-gateway"].includes(input.provider)
+      ? "Forwards to model providers"
+      : "",
+    privacyUrl: PRIVACY_URLS[input.provider],
+  };
+}
+
+function recipientName(provider: string, use: AiDataUse) {
+  if (use === "voice") return voiceCatalogEntry(provider)?.name ?? provider;
+  if (use === "memory") {
+    if (provider === "supermemory") return "Supermemory";
+    if (provider === "honcho") return "Honcho";
+    if (provider === "hindsight") return "Hindsight";
+    if (provider === "mnemoverse") return "Mnemoverse";
+    return provider;
+  }
+  if (provider === "cursor") return "Cursor";
+  if (provider === "t3code") return "T3 Code";
+  return listPiCatalog().find((entry) => entry.provider === provider)?.providerName ?? provider;
+}

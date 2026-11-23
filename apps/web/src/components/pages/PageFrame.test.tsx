@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 
+import { flush } from "@rakazo/core/test-async";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vitest";
@@ -29,7 +30,7 @@ it("copies what its own page asks from the app's frame and answers whether it wo
   const send = (data: unknown, source: Window | null = frame.contentWindow) =>
     act(async () => {
       window.dispatchEvent(new MessageEvent("message", { data, source }));
-      await new Promise((resolve) => setTimeout(resolve, 0));
+      await flush();
     });
 
   await send({ type: "rakazo-page:copy", id: "a", text: "Copy yes", gesture: "k:1" });
@@ -71,7 +72,7 @@ it("copies by selection where the page has no Clipboard API, as on plain http", 
         source: frame.contentWindow,
       }),
     );
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await flush();
   });
   expect(copied).toEqual(["MRR $12,400"]);
   // The hidden field is gone once copied.
@@ -107,7 +108,7 @@ it("acts for a page only in an interactive frame, right after the person used th
     act(async () => {
       const source = container.querySelector("iframe")!.contentWindow;
       window.dispatchEvent(new MessageEvent("message", { data, source }));
-      await new Promise((resolve) => setTimeout(resolve, 0));
+      await flush();
     });
   let gestures = 0;
   const actions = (vouched: boolean) =>

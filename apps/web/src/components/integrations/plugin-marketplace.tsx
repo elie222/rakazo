@@ -8,16 +8,17 @@ import type {
   PluginPreview,
 } from "@rakazo/contracts";
 import { mcpServerConnection, mcpServerNeedsSignIn, PluginPreviewSchema } from "@rakazo/contracts";
-import { installedPluginParts } from "@rakazo/core";
+import { installedPluginParts, pluginSite } from "@rakazo/core";
 import { Button, Spinner } from "@rakazo/ui-web";
 import { ArrowUpRight, Check, ChevronLeft, FileText, Plug } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { connectMcpOauth } from "../../lib/mcp-connect";
-import { rpc } from "../../lib/rpc";
-import type { ErrorDetails } from "../../lib/user-error";
-import { errorDetails } from "../../lib/user-error";
+import { connectMcpOauth } from "../../lib/integrations/mcp-connect";
+import { rpc } from "../../lib/query/rpc";
+import type { ErrorDetails } from "../../lib/query/user-error";
+import { errorDetails } from "../../lib/query/user-error";
 import { ErrorNotice } from "../ErrorNotice";
 import { AvailabilityControl, reachesOtherSpaces, useOwnSpaces } from "./space-availability";
+import { useCatalogIconVisibility } from "./use-catalog-icon-visibility";
 
 export type PluginSelection = {
   source: string;
@@ -39,49 +40,41 @@ export function pluginSelection(entry: PluginMarketplaceEntry): PluginSelection 
   };
 }
 
-/** GitHub homepages would give every plugin the same mark, so they never stand in for a site. */
-function pluginSite(entry: Pick<PluginMarketplaceEntry, "homepage" | "domains">): string | null {
-  const domain = entry.domains[0]?.replace(/^https?:\/\//, "");
-  if (domain) return `https://${domain}`;
-  try {
-    return entry.homepage && !new URL(entry.homepage).hostname.endsWith("github.com")
-      ? entry.homepage
-      : null;
-  } catch {
-    return null;
-  }
-}
-
 export function PluginLogo({
   name,
   logo,
   site,
   large = false,
+  defer = false,
 }: {
   name: string;
   logo?: string | null;
   site?: string | null;
   large?: boolean;
+  defer?: boolean;
 }) {
+  const { ready, placeholderRef } = useCatalogIconVisibility(defer && Boolean(logo || site));
   const [logoFailed, setLogoFailed] = useState(false);
   const useLogo = Boolean(logo) && !logoFailed;
-  const favicon = useLinkFavicon(useLogo ? "" : (site ?? ""));
-  const src = useLogo ? logo : favicon.icon;
+  const favicon = useLinkFavicon(ready && !useLogo ? (site ?? "") : "");
+  const src = ready ? (useLogo ? logo : favicon.icon) : null;
   const box = large ? "h-14 w-14 rounded-2xl text-heading2" : "h-10 w-10 rounded-xl text-body";
   return src ? (
     <img
       src={src}
       alt=""
-      loading="lazy"
+      loading={defer ? "eager" : "lazy"}
       decoding="async"
       onError={() => (useLogo ? setLogoFailed(true) : favicon.unusable())}
       className={`${box} shrink-0 border border-border/60 bg-favicon-plate object-contain p-1.5`}
     />
   ) : (
     <div
+      ref={placeholderRef}
+      aria-hidden="true"
       className={`${box} grid shrink-0 place-items-center border border-border/60 bg-favicon-plate font-semibold text-foreground`}
     >
-      {name[0]?.toUpperCase()}
+      {Array.from(name)[0]?.toUpperCase()}
     </div>
   );
 }
@@ -111,10 +104,11 @@ export function PluginRow({
   installed: boolean;
   onOpen: () => void;
 }) {
+  const { t } = useLingui();
   return (
     <div data-testid="plugin-row" className={`${ROW_SHELL} ${ROW_HOVER}`}>
       <button type="button" onClick={onOpen} className={ROW_BUTTON}>
-        <PluginLogo name={name} logo={logo} site={site} />
+        <PluginLogo name={name} logo={logo} site={site} defer />
         <span className="min-w-0 flex-1">
           <span className="block truncate text-body-lg font-medium text-foreground">{name}</span>
           {description ? (
@@ -122,7 +116,13 @@ export function PluginRow({
           ) : null}
         </span>
       </button>
-      <Button type="button" variant="secondary" size="sm" onClick={onOpen}>
+      <Button
+        type="button"
+        variant="secondary"
+        size="sm"
+        aria-label={installed ? t`Added: ${name}` : t`Add ${name}`}
+        onClick={onOpen}
+      >
         {installed ? <Trans>Added</Trans> : <Trans>Add</Trans>}
       </Button>
     </div>

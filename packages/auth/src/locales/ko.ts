@@ -23,27 +23,8 @@ export const KO_MESSAGES: Record<string, string> = {
   "Your Rakazo confirmation code": "Rakazo 확인 코드",
   "Enter this code in Rakazo to confirm it's you:":
     "본인임을 확인하려면 Rakazo에서 이 코드를 입력하세요:",
-  "Welcome to Rakazo": "Rakazo에 오신 것을 환영합니다",
-  "Thanks for signing up for Rakazo.": "Rakazo에 가입해 주셔서 감사합니다.",
-  "Rakazo also has apps for": "Rakazo는 다음 플랫폼용 앱도 제공합니다:",
-  "Questions or ideas?": "질문이나 아이디어가 있으신가요?",
-  "Join us on Discord": "Discord에 참여하세요",
-  "Rakazo is open source. If you like it,": "Rakazo는 오픈 소스입니다. 마음에 드신다면",
-  "a star on GitHub": "GitHub 스타",
-  "helps others find it.": "하나가 다른 사람들이 Rakazo를 찾는 데 도움이 됩니다.",
-  "Want to run it on your own servers?": "직접 서버에서 운영하고 싶으신가요?",
-  "Self-host Rakazo": "Rakazo 셀프 호스팅",
-  "Have any questions? Reply to this email.": "궁금한 점이 있으신가요? 이 이메일에 답장하세요.",
   Unsubscribe: "수신 거부",
-  "Invite a friend": "친구 초대",
-  "Invite a friend to Rakazo: they get {weeks} weeks free, and you earn a free month when they start a qualifying subscription with a new card.":
-    "친구를 Rakazo에 초대하세요. 친구는 {weeks}주 동안 무료로 사용하고, 친구가 새 카드로 대상 구독을 시작하면 나는 한 달 무료를 받아요.",
   "Open Rakazo": "Rakazo를 열고",
-  "and choose Invite friends for your link.": "친구 초대를 선택해 링크를 받으세요.",
-  "Have any questions? Just reply to this email.":
-    "궁금한 점이 있으신가요? 이 이메일에 답장만 하시면 됩니다.",
-  "If you're enjoying Rakazo,": "Rakazo가 마음에 드신다면",
-  "give us a star on GitHub": "GitHub에서 스타를 눌러 주세요",
   "We received your Rakazo plugin": "Rakazo 플러그인을 받았습니다",
   "Thanks for submitting a plugin to the Rakazo marketplace.":
     "Rakazo 마켓플레이스에 플러그인을 제출해 주셔서 감사합니다.",
@@ -72,4 +53,16 @@ export const KO_MESSAGES: Record<string, string> = {
     "다시 구독하지 않으면 저장된 컴퓨터 파일이 {date}에 삭제됩니다.",
   "Your saved computer files will be deleted on {date} unless you choose a plan.":
     "플랜을 선택하지 않으면 저장된 컴퓨터 파일이 {date}에 삭제됩니다.",
+  "{inviter} invited you to {organization} on Rakazo":
+    "{inviter}님이 Rakazo의 {organization}에 초대했습니다",
+  "{inviter} invited you to join {organization} on Rakazo.":
+    "{inviter}님이 Rakazo의 {organization}에 참여하도록 초대했습니다.",
+  "Join {organization}": "{organization} 참여하기",
+  "This invitation expires in 7 days. Sign in with this email address to accept it.":
+    "이 초대는 7일 후에 만료됩니다. 수락하려면 이 이메일 주소로 로그인하세요.",
+  "{inviter} invited you to {space} on Rakazo": "{inviter}님이 Rakazo의 {space}에 초대했습니다",
+  "{inviter} invited you to join {space} on Rakazo.":
+    "{inviter}님이 Rakazo의 {space}에 참여하도록 초대했습니다.",
+  "Join {space}": "{space} 참여하기",
+  "This invitation expires in 7 days.": "이 초대는 7일 후에 만료됩니다.",
 };

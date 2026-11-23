@@ -23,27 +23,8 @@ export const ES_MESSAGES: Record<string, string> = {
   "Your Rakazo confirmation code": "Tu código de confirmación de Rakazo",
   "Enter this code in Rakazo to confirm it's you:":
     "Introduce este código en Rakazo para confirmar que eres tú:",
-  "Welcome to Rakazo": "Te damos la bienvenida a Rakazo",
-  "Thanks for signing up for Rakazo.": "Gracias por registrarte en Rakazo.",
-  "Rakazo also has apps for": "Rakazo también tiene apps para",
-  "Questions or ideas?": "¿Tienes preguntas o ideas?",
-  "Join us on Discord": "Únete a nosotros en Discord",
-  "Rakazo is open source. If you like it,": "Rakazo es de código abierto. Si te gusta,",
-  "a star on GitHub": "una estrella en GitHub",
-  "helps others find it.": "ayuda a que otros lo encuentren.",
-  "Want to run it on your own servers?": "¿Quieres usarlo en tus propios servidores?",
-  "Self-host Rakazo": "Aloja Rakazo por tu cuenta",
-  "Have any questions? Reply to this email.": "¿Tienes alguna pregunta? Responde a este correo.",
   Unsubscribe: "Cancelar suscripción",
-  "Invite a friend": "Invita a un amigo",
-  "Invite a friend to Rakazo: they get {weeks} weeks free, and you earn a free month when they start a qualifying subscription with a new card.":
-    "Invita a un amigo a Rakazo: recibe {weeks} semanas gratis y tú ganas un mes gratis cuando empiece una suscripción válida con una tarjeta nueva.",
   "Open Rakazo": "Abre Rakazo",
-  "and choose Invite friends for your link.": "y elige Invitar amigos para obtener tu enlace.",
-  "Have any questions? Just reply to this email.":
-    "¿Tienes alguna pregunta? Responde a este correo.",
-  "If you're enjoying Rakazo,": "Si te está gustando Rakazo,",
-  "give us a star on GitHub": "danos una estrella en GitHub",
   "We received your Rakazo plugin": "Recibimos tu plugin de Rakazo",
   "Confirm your Rakazo page claim": "Confirma tu solicitud de página en Rakazo",
   "Confirm claim": "Confirmar solicitud",
@@ -74,4 +55,16 @@ export const ES_MESSAGES: Record<string, string> = {
     "Los archivos guardados de tu ordenador se eliminarán el {date} a menos que vuelvas a suscribirte.",
   "Your saved computer files will be deleted on {date} unless you choose a plan.":
     "Los archivos guardados de tu ordenador se eliminarán el {date} a menos que elijas un plan.",
+  "{inviter} invited you to {organization} on Rakazo":
+    "{inviter} te invitó a {organization} en Rakazo",
+  "{inviter} invited you to join {organization} on Rakazo.":
+    "{inviter} te invitó a unirte a {organization} en Rakazo.",
+  "Join {organization}": "Unirte a {organization}",
+  "This invitation expires in 7 days. Sign in with this email address to accept it.":
+    "Esta invitación caduca en 7 días. Inicia sesión con esta dirección de correo para aceptarla.",
+  "{inviter} invited you to {space} on Rakazo": "{inviter} te invitó a {space} en Rakazo",
+  "{inviter} invited you to join {space} on Rakazo.":
+    "{inviter} te invitó a unirte a {space} en Rakazo.",
+  "Join {space}": "Unirte a {space}",
+  "This invitation expires in 7 days.": "Esta invitación caduca en 7 días.",
 };

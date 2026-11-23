@@ -147,6 +147,33 @@ request recovery from an externally deleted sandbox.
 Both providers run the same assertions. This journey does not cover multiple screens, or PTY sessions, which Boat does
 not support. Provider conformance tests remain separate. Live runs retain error logs to diagnose provider failures.
 
+## Weekly exploratory QA
+
+`.github/workflows/exploratory-qa.yml` lets a real model use the web app the way
+a person would, once a week. It builds the pull request preview image (Postgres,
+the app and emulated services, with the public demo account and fake data only),
+starts it on the runner, and gives each of up to six workers one section of
+[PRODUCT.md](../PRODUCT.md), rotating weekly. Each worker drives headless
+Chromium through browser tools that cannot leave the stack, and reports bugs
+with steps, expected and actual behavior, and a screenshot. A second job with no
+model access files one issue per new bug, labeled `exploratory-qa`, and skips any
+whose fingerprint (feature, screen without ids, and the agent's bug key) an open
+issue already carries. Close an issue to let the bug be filed again.
+
+It is off by default and costs nothing until turned on. In the repository's
+Actions settings, add the secrets `MODEL_BASE_URL` (any chat-completions
+compatible endpoint) and `MODEL_API_KEY`, the variables
+`EXPLORATORY_AGENT_MODEL`, `EXPLORATORY_AGENT_INPUT_USD_PER_MTOK` and
+`EXPLORATORY_AGENT_OUTPUT_USD_PER_MTOK` (prices per million tokens), optionally
+`EXPLORATORY_AGENT_BUDGET_USD`, and finally `EXPLORATORY_AGENT_ENABLED=true`.
+Remove that variable to turn it off again.
+
+Every run is capped: a budget priced from the model's reported token usage
+(default $5, at most $25; it can overrun by at most one model call per worker),
+at most 6 workers, 30 minutes and 80 browser actions per worker, 3 bugs per feature and 10
+new issues per run. A manual run takes the budget, workers, minutes and feature
+names as inputs.
+
 ## Live flows
 
 A flow is a goal a simulated person pursues with a fresh bot through real
@@ -214,8 +241,16 @@ variable rather than placing a key on the command line:
 
 ```bash
 pnpm test:evals --live --provider openrouter --model <model-id> \
-  --api-key-env OPENROUTER_API_KEY --trials 3
+  --api-key-env OPENROUTER_API_KEY --pricing <pricing.json> \
+  --judge-connection <private-judge-connection.json> --judge-pricing <judge-pricing.json>
 ```
+
+The CLI defaults to one trial per case and strategy. Use `--trials` with a higher
+count when investigating an intermittent failure or measuring variability.
+
+Cases that grade what the bot wrote need the judge: without `--judge-connection`
+and `--judge-pricing` a run that selects one schedules no inference and reports
+every trial not run. Select only effect cases with `--case` to run without one.
 
 `--connection <private-json-file>` also accepts the shared `models/connect`
 shape, including a generic compatible endpoint. Never commit that file. Use
@@ -245,7 +280,9 @@ version are kept apart.
 With a store, each case's first request is fingerprinted before it is sent. If
 a stored run has the same fingerprint, its trials are taken as they are under
 the same judge, or graded again from their stored evidence under a different
-one, and the request is never sent; otherwise the case runs. Trials that failed
+one, and the request is never sent; otherwise the case runs. The same judge
+means the same provider, model, rubric version and recorded settings; a run
+saved before the settings were recorded is graded again. Trials that failed
 for harness, provider, cleanup or time reasons are never reused. `--fresh`
 runs everything again. Each trial's `origin` and each case's `origin` counts in
 the summary say what was reused or regraded, and `workflowTotals` counts only
@@ -302,14 +339,61 @@ harness failures and incomplete runs. Read the category and evidence before
 attributing a red run to a prompt change. Several trials establish an initial
 baseline, not a statistically precise reliability estimate.
 
+Compare two saved version 2 workflow Eval reports locally.
+
+```sh
+pnpm test:evals:compare baseline.json candidate.json
+```
+
+The command matches trials by case, strategy, and trial number. It lists
+passed-to-failed transitions and planned trials marked as not run. Reused or
+regraded results are marked on transitions. Workflow cost shows the report's
+recorded spend and displays `unknown` when unavailable. A completed comparison
+exits with status 0. If recorded settings or trial plans differ, the command
+names the differences and exits with status 1. This includes a suite recorded
+on only one side. Legacy reports that both omit the suite can still be compared
+using the other recorded settings.
+
+The check covers settings recorded in the JSON. Reports record the judge's
+output token limit, reasoning settings and a short hash of its endpoint, never
+the URL itself. Reports from before that show these as unknown instead of
+failing, so check them by hand. The bot's own endpoint is not recorded: keep
+its model connection the same when collecting a report pair.
+
 The injection case checks the requested artifact and forbidden service effects.
 It does not grade every claim in free-form explanatory prose; quoted or denied
 injection warnings must not be mistaken for compliance with the injection.
+
+The `product-meaning-v1` rubrics grade what the bot wrote: the urgent items and
+launch blocker it saved, the CRM status it reported, the Slack customer update,
+the remembered report language and the release changes. Exact file contents,
+identifiers such as a version or ticket reference, service reads and writes,
+approvals and schedules stay deterministic, and the judge is asked only once
+they all hold. Its calls and cost are reported under `judge`, apart from the
+bot's; a judge that fails or is missing leaves the trial incomplete, never
+passed.
 
 Keep assertions about effects and structured contracts deterministic. Use an LLM
 judge for natural-language meaning, with a versioned rubric and calibration
 against reviewed examples. Do not match prose against keywords or regexes, and
 do not let a judge override forbidden effects or missing artifacts.
+
+### Independent subagent evals
+
+`pnpm test:evals --suite subagents --list` lists four live cases for app, group
+and connected messaging conversations, including a helper's connector write.
+Run with `--live`, a subject connection
+and pricing, and a judge connection and pricing as in the group suite below.
+
+Each helper reads synthetic shipment data and saves a calculated JSON artifact.
+Grading requires completed helper and parent result runs, file reads and writes
+performed by the helper itself, and the correct saved numbers. The calibrated
+`subagent-result-meaning-v1` judge then checks whether the parent's later reply
+conveys the findings. A promise to report later cannot pass. The runner drains
+the independent workflow before observing it. Connected services and the computer
+are synthetic; models are live and no production data is used.
+The connector case requires exactly one write to the requested CRM record,
+unchanged unrelated records, and a grounded result from the parent.
 
 ### Bot deliberation evals
 
@@ -380,7 +464,7 @@ on itself.
 
 ```sh
 pnpm test:evals --suite group-routing --list
-pnpm test:evals --live --suite group-routing --connection <private-connection.json> --pricing <pricing.json> --trials 3 --spend-cap-usd 1 --output test-report/evals/group-routing.json
+pnpm test:evals --live --suite group-routing --connection <private-connection.json> --pricing <pricing.json> --spend-cap-usd 1 --output test-report/evals/group-routing.json
 ```
 
 Each case sends a group message that names nobody, so every member gets it and
@@ -405,7 +489,7 @@ Anthropic model often answered a question about both peers with one of them.
 
 ```sh
 pnpm test:evals --suite bot-files --list
-pnpm test:evals --live --suite bot-files --connection <private-connection.json> --pricing <pricing.json> --trials 3 --spend-cap-usd 1 --output test-report/evals/bot-files.json
+pnpm test:evals --live --suite bot-files --connection <private-connection.json> --pricing <pricing.json> --spend-cap-usd 1 --output test-report/evals/bot-files.json
 ```
 
 The cases check that a bot passes a project to another bot with `files` instead
@@ -507,7 +591,7 @@ passed every case.
 
 ```sh
 pnpm test:evals --suite memory --list
-pnpm test:evals --live --suite memory --connection <private-connection.json> --pricing <pricing.json> --judge-connection <private-judge-connection.json> --judge-pricing <judge-pricing.json> --trials 3 --spend-cap-usd 1 --output test-report/evals/memory.json
+pnpm test:evals --live --suite memory --connection <private-connection.json> --pricing <pricing.json> --judge-connection <private-judge-connection.json> --judge-pricing <judge-pricing.json> --spend-cap-usd 1 --output test-report/evals/memory.json
 ```
 
 The five synthetic cases check that the bot's own memory stays short and correct
@@ -523,7 +607,7 @@ Deterministic checks read the stored memory and the model's `remember` calls:
 each earlier fact must have been saved before it can count as updated or
 forgotten, the home saved in the first conversation must not survive unchanged, entries
 stay under 200 characters, and the bot's memory stays within the limit. The
-`memory-meaning-v1` judge then grades meaning: no stale current home, no
+`memory-meaning-v2` judge then grades meaning: no stale current home, no
 recoverable forgotten code, no duplicate preference, every shared fact captured,
 and every important seeded fact preserved. Calibration labels cover a former
 home, a contradiction, a stale recall, a residual secret, a duplicate, a dropped
@@ -533,11 +617,28 @@ The offline model-protocol fixture runs the same product path and proves that an
 appended Berlin beside London and a claimed save after a full-memory refusal
 fail, while a rewrite and a consolidate-then-save pass.
 
+Seven `memory-proactive-*` cases check that the bot takes notes on its own. In
+three, the user mentions a lasting fact in passing (a child's allergy, a team
+decision, a new job) without asking for it to be saved: a save must happen, and
+the judge checks that memory now holds the fact. In four, nothing should be
+saved: small talk, a one-off conversion, a fact memory already holds, and a
+guest Wi-Fi password shared only to write a message, which must never reach
+memory.
+
+In the November 2026 run on two models over three trials each, the bot saved
+the passing facts on about two of every three tries and left every negative
+alone. After the memory guidance was changed to say passing facts count, it
+saved them every time (one trial still failed because the bot stopped to ask a
+question), the negatives stayed clean, and the existing memory cases still
+passed. An earlier wording that also told the bot to skip
+secrets made one model refuse to save a door code the user asked it to
+remember, so the guidance names what to save, not what to avoid.
+
 ### Earlier file recall evals
 
 ```sh
 pnpm test:evals --suite recall --list
-pnpm test:evals --live --suite recall --strategy retrieval --connection <private-connection.json> --pricing <pricing.json> --judge-connection <private-judge-connection.json> --judge-pricing <judge-pricing.json> --trials 3 --spend-cap-usd 1 --output test-report/evals/recall.json
+pnpm test:evals --live --suite recall --strategy retrieval --connection <private-connection.json> --pricing <pricing.json> --judge-connection <private-judge-connection.json> --judge-pricing <judge-pricing.json> --spend-cap-usd 1 --output test-report/evals/recall.json
 ```
 
 Each case seeds 1,000 synthetic messages, with a lease the user uploaded at
@@ -739,7 +840,7 @@ rates use the same four fields plus `thresholdTokens`. Optional `cacheWrite1h`
 prices one-hour writes separately; these tokens are a subset of all cache writes.
 
 ```sh
-pnpm exec tsx packages/testkit/src/cli/evals.ts --live --suite history --strategy current --connection /tmp/eval-connection.json --pricing /tmp/eval-pricing.json --trials 1 --spend-cap-usd 5
+pnpm exec tsx packages/testkit/src/cli/evals.ts --live --suite history --strategy current --connection /tmp/eval-connection.json --pricing /tmp/eval-pricing.json --judge-connection /tmp/eval-judge-connection.json --judge-pricing /tmp/eval-judge-pricing.json --trials 1 --spend-cap-usd 5
 ```
 
 The default live cap is USD 5. Every runtime model call reserves its estimated
@@ -767,8 +868,12 @@ not guarantee a cache hit or an exact expiration time.
 History fixtures seed 100, 1,000, and 10,000 original messages directly without
 inference. They cover facts, paraphrases, dates, superseded decisions, open work,
 ambiguity, absence, durable constraints, injected historical instructions,
-oversized input, stale compaction coverage, and invalid summaries. Cases report
-factual checks and forbidden external effects; they do not grade prose quality.
+oversized input, stale compaction coverage, and invalid summaries. Each case holds
+the reply to the identifiers it must or must not carry (a label, a component, a
+file name, a canary) and to no external writes; the `history-meaning-v1` rubric
+then grades by meaning whether the reply says what the earlier chat established.
+The session SQL case is held to its schema and table names alone and needs no
+judge. Results recorded before this rubric were graded by word matches.
 The original strategy includes the stable-guidance-first prompt ordering change.
 
 Reports record the code revision, working diff hash, fixture version, strategy,
@@ -804,7 +909,7 @@ gate. Current integration checks also verify system transcript instructions and
 tools reach the provider after history selection.
 
 ```sh
-pnpm exec tsx packages/testkit/src/cli/evals.ts --live --suite history --strategy current --strategy retrieval --strategy snapshots --strategy cache-aware --connection /tmp/eval-connection.json --pricing /tmp/eval-pricing.json --trials 2 --spend-cap-usd 1
+pnpm exec tsx packages/testkit/src/cli/evals.ts --live --suite history --strategy current --strategy retrieval --strategy snapshots --strategy cache-aware --connection /tmp/eval-connection.json --pricing /tmp/eval-pricing.json --judge-connection /tmp/eval-judge-connection.json --judge-pricing /tmp/eval-judge-pricing.json --trials 2 --spend-cap-usd 1
 ```
 
 Ordinary long-history cases begin with a deterministic prepared summary that
@@ -874,5 +979,5 @@ waiving the live failure. The preserved report is
 `test-report/evals/archive/history-pr-opaque-cursor-qualification.json`. Its charge was
 USD 0.09108541 across 238 calls, fully reconciled with zero reservations or
 background/cleanup failures. Cumulative guarded spend is USD 1.52381059 of USD 5.
-The live qualification gate remains failed, so this PR must not merge merely
-because CI passes. No further paid run is active.
+That run left the live qualification gate failed. Passing CI does not clear a
+failed live qualification.

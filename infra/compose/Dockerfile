@@ -1,4 +1,4 @@
-FROM node:24.22.2-bookworm@sha256:8fa96264f302f58bbb13aa7339c541547b56975766ce956c875da149452a3e40 AS manifests
+FROM node:24.22.3-bookworm@sha256:9d266751ca3d7fdbe651c878ffd5ad0a42fed49a18c283509267c97f025b7496 AS manifests
 # pnpm lives in the image so containers start without downloading it.
 ENV COREPACK_HOME=/usr/local/share/corepack
 RUN corepack enable
@@ -61,12 +61,15 @@ RUN RAKAZO_ALLOW_DEV_SECRETS=1 pnpm --filter @rakazo/web build
 RUN find . -name node_modules -type d -prune -exec rm -rf {} + \
   && rm -rf apps/desktop apps/mobile apps/www docs examples
 
-FROM node:24.22.2-bookworm-slim@sha256:01d566e8d94d8c619591d78652babfccd3c6992a3dffa9ed5ab39e11cf6c70e9
+FROM node:24.22.3-bookworm-slim@sha256:dc26ae92c9fb15cf6b1d63e20f0944b2efe0f115b20e00be48fb23fceb061c54
 COPY infra/sandboxes/computer/apt-security.sh /tmp/apt-security.sh
 RUN /tmp/apt-security.sh
-# Prisma's migration engine detects and links against OpenSSL.
-RUN apt-get update && apt-get install -y --no-install-recommends openssl \
+# Prisma's migration engine detects and links against OpenSSL. A stdio MCP server that runs on
+# another machine is launched over ssh, which the slim base image does not ship.
+RUN apt-get update && apt-get upgrade -y --no-install-recommends && apt-get install -y --no-install-recommends openssl openssh-client \
   && rm -rf /var/lib/apt/lists/*
+# Managed stdio package installs need npm; the Node image bundles an older copy.
+RUN npm install --global --ignore-scripts npm@11.21.2 && npm cache clean --force
 ENV COREPACK_HOME=/usr/local/share/corepack
 COPY --from=manifests /usr/local/share/corepack /usr/local/share/corepack
 RUN corepack enable
@@ -74,12 +77,16 @@ WORKDIR /app
 # --link keeps each layer independent of the ones below, so an unchanged one is reused as is.
 COPY --link --from=deps /app /app
 COPY --link --from=build /app /app
-RUN install -d -m 750 -o node -g node /data /app/apps/web/node_modules/.vite-temp /app/apps/web/asset-archive
+RUN install -d -m 750 -o node -g node /data /app/apps/web/node_modules/.vite-temp /app/apps/web/asset-archive /run/ingress
 # Last root step, so a cached earlier layer cannot be the filesystem that ships.
 RUN /tmp/apt-security.sh --check && rm -f /tmp/apt-security.sh
 ARG GIT_SHA
 ENV NODE_ENV=production
+ENV EMAIL_COPY_DIR=/app/email-copy
 ENV GIT_SHA=$GIT_SHA
 EXPOSE 3100 5173 7091
+# The signal on which a replaced API lets its chat turns end before it exits (apps/api/src/http/drain.ts).
+# deploy-main.sh sends it only to an API whose image names one.
+LABEL org.rakazo.run-drain-signal=SIGUSR2
 USER node
 CMD ["pnpm", "--filter", "@rakazo/api", "start"]

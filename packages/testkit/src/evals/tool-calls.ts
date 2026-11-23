@@ -8,6 +8,7 @@ import { FIND_TOOL, findTools, partitionTools } from "@rakazo/adapters";
  */
 export type ObservedToolCall = {
   runId: string;
+  executionId?: string;
   name: string;
   args: Record<string, unknown>;
   viaUseTool?: boolean;
@@ -46,6 +47,7 @@ export function observeToolCalls(
             for (const tool of findTools(deferred, event.args).tools) loaded.add(tool.name);
           calls.push({
             runId: request.runId,
+            executionId: event.executionId,
             name: event.name,
             args: structuredClone(event.args),
             ...(event.viaUseTool ? { viaUseTool: true, loaded: loaded.has(event.name) } : {}),

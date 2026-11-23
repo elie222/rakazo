@@ -28,11 +28,30 @@ Google Vertex works the same way with `PI_DEFAULT_PROVIDER=google-vertex`, using
 application default credentials (`GOOGLE_APPLICATION_CREDENTIALS`, `GOOGLE_CLOUD_PROJECT`,
 `GOOGLE_CLOUD_LOCATION`). Runs on host credentials are billed to that cloud account.
 
+On a server only you use, the deployment model can also run through the
+[Claude Code CLI](#claude-code-cli) signed in on the host.
+
 The Compose files also pass the standard provider key variables the agent runtime reads itself
 (`OPENAI_API_KEY`, `GEMINI_API_KEY`, `MISTRAL_API_KEY`, `GROQ_API_KEY`, `XAI_API_KEY` and others) to
 the API and worker, for models that have no stored credential.
 
-`RAKAZO_LIVE_MODEL_CATALOG=off` disables provider and Codex live catalog probing; the default is on.
+### Default for everyone
+
+Admins (`RAKAZO_ADMIN_EMAILS`) can set the deployment model in **Settings → Models → Default for
+everyone** instead: choose a provider that connects with an API key, paste the key and pick the
+model. It replaces `PI_DEFAULT_PROVIDER` and `PI_DEFAULT_MODEL` for everyone without a model of
+their own, from their next run and without a restart; **Default** goes back to the environment's.
+The key is stored encrypted, is never shown again, and is redacted from run output like the
+environment's. Each change is recorded in the security audit log.
+
+`RAKAZO_MODEL_PROVIDER_ALLOWLIST` applies to it like any connection an account makes: a provider
+the list leaves out is not offered, and a saved one stops serving and the environment's model
+applies again. Deployments with model credits always run on the operator's own connection, so the
+block is not offered there and a saved choice is ignored. Calls the operator pays for, such as the
+deployment's approval checker, keep using the environment's keys. Messaging apps with open signup
+are turned on at startup only when the environment configures a model.
+
+`RAKAZO_LIVE_MODEL_CATALOG=off` (or `false`, `0`, `no`) disables provider and Codex live catalog probing; the default is on, and an unrecognized value stops the API at startup.
 
 ## Approvals
 
@@ -57,8 +76,8 @@ TypeSafe direct remains available through `RAKAZO_AUTO_REVIEW_PROVIDER=jev` and
 `TYPESAFE_API_KEY`. Core runs without either hosted service.
 
 With TypeSafe, `RAKAZO_AUTO_REVIEW_MODEL` defaults to `jev-latest`, and
-`RAKAZO_AUTO_REVIEW_MIN_CONFIDENCE` (0 to 1, default `0.5`) is the confidence below which Auto asks
-the person instead. `RAKAZO_AUTO_REVIEW_TIMEOUT_MS` (200 to 30000, default `10000`) bounds each
+`RAKAZO_AUTO_REVIEW_MIN_CONFIDENCE` (0 to 1) is the confidence below which Auto asks the person
+instead. Unset, each decision model uses its own calibrated floor (`0.5` for Jev). `RAKAZO_AUTO_REVIEW_TIMEOUT_MS` (200 to 30000, default `10000`) bounds each
 check.
 
 ## Local models
@@ -125,13 +144,50 @@ way by default.
 Only configure an endpoint you control: prompts, attachments, and tool results sent to that model
 leave Rakazo through this URL. Leave `RAKAZO_LOCAL_MODELS` blank to disable the provider.
 
+## Claude Code CLI
+
+With a Claude subscription, a server that only you use can run its deployment model through the
+official Claude Code CLI, signed in with your own account. For each model turn Rakazo starts the
+`claude` command installed on the server and reads its reply. Rakazo never reads, stores, forwards
+or refreshes your Claude sign-in, and every request to Anthropic is the CLI's own. Rakazo keeps the
+conversation, tools, memory and approvals: the CLI only answers as the model, with its own tools,
+settings, project files and saved sessions turned off.
+
+What it needs:
+
+- The API and worker running from a source checkout on the same machine as the CLI, as the same
+  OS user. The official Docker images and the desktop app's local stack do not include Claude
+  Code, and adding it to them is not supported.
+- Claude Code 2.1.280 or newer on that user's `PATH`, signed in once in a terminal as that user
+  with `claude auth login`. On a server without a browser, the CLI can use the token
+  `claude setup-token` creates instead: set it as `CLAUDE_CODE_OAUTH_TOKEN` together with
+  `RAKAZO_CLAUDE_CODE_SETUP_TOKEN=1` in the API's and worker's environment. Either way there is
+  no Claude sign-in inside Rakazo.
+- One account on the server. A Claude sign-in belongs to one person, so Rakazo refuses Claude Code
+  runs while the server has more than one account (people who only message bots from chat apps do
+  not count) or bills for model usage.
+
+```env
+PI_DEFAULT_PROVIDER=claude-code
+PI_DEFAULT_CREDENTIALS=host
+PI_DEFAULT_MODEL=claude-sonnet-5
+```
+
+Use a full model id the CLI accepts with `claude --model`, so Rakazo knows the model's context
+and output limits. Usage counts against your own Claude plan and its limits, which assume
+ordinary individual use; Rakazo shows no cost for these runs, and once the plan's limit is reached
+runs fail with a rate-limit error until it resets. Your use of Claude Code is covered by
+Anthropic's terms; see [Legal and compliance](https://code.claude.com/docs/en/legal-and-compliance).
+
+The CLI runs in an empty private temporary directory with an allowlisted environment. API keys and
+other server secrets, including `ANTHROPIC_API_KEY`, are never passed to it, so it always uses its
+own sign-in. `RAKAZO_CLAUDE_CODE_SETUP_TOKEN=1` adds only `CLAUDE_CODE_OAUTH_TOKEN`, which the CLI
+reads and Rakazo does not. Only the deployment model runs on Claude Code; it is not offered as a
+connection in **Settings → Models**.
+
 ## Ollama Cloud
 
-In **Settings → Models**, choose **Ollama Cloud**, paste an API key from ollama.com, then **Find models**. This uses an OpenAI-compatible connection with no environment configuration, and stays available when `RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC=0`.
-
-## DeepInfra
-
-In **Settings → Models**, choose **DeepInfra**, paste an API key from deepinfra.com, then **Find models**. The list shows DeepInfra's chat models only, and each model's image input, thinking, context window and prompt cache pricing are prefilled from DeepInfra's own model metadata. **Supports thinking** starts on only for models that accept `reasoning_effort`; models that always think, with no effort control, start with it off. Like Ollama Cloud, this needs no environment configuration and stays available when `RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC=0`. DeepInfra's model list answers without a key, so Rakazo checks the key against DeepInfra's account endpoint before listing or saving.
+In **Settings → Models**, choose **Ollama Cloud**, paste an API key from ollama.com, then choose a model from the list that loads. This uses an OpenAI-compatible connection with no environment configuration, and stays available when `RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC=0`. `RAKAZO_MODEL_PROVIDER_ALLOWLIST` without `ollama-cloud` removes the preset, and with `RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC=0` its host exemption too; see [Limiting model providers](#limiting-model-providers).
 
 ## OpenAI-compatible connections
 
@@ -143,17 +199,19 @@ are shown afterwards.
 Public hosts and ordinary hostnames need HTTPS when they receive an API key or custom headers,
 and must resolve only to public addresses. Set `RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC=0` on the API
 and worker to block them.
-Literal private IP, loopback, and `host.docker.internal` targets do not, but they are refused
-unless `MCP_ALLOW_PRIVATE_ENDPOINT=true` is set on the API and worker, which allows them for every
-user. This is checked on save, on model discovery, and on every run.
+Literal private IP, loopback, mDNS `.local` names, and `host.docker.internal` targets do not,
+but they are refused unless `MCP_ALLOW_PRIVATE_ENDPOINT=true` is set on the API and worker, which
+allows them for every user. This is checked on save, on model discovery, and on every run.
 With the Docker images install and the desktop app, a `localhost` or `127.0.0.1` connection
 reaches the computer running Docker (through `host.docker.internal`). On Linux, the model server
 must listen on an address the Docker bridge can reach, not only `127.0.0.1`.
 For a self-hosted endpoint whose hostname resolves to private IPs, set
 `RAKAZO_OPENAI_COMPAT_PRIVATE_HOSTS=models.example.test,other.example.test` in the deployment
 environment for both API and worker, then recreate those containers. Entries are exact hostnames
-(case-insensitive, optional trailing dot), not URLs, suffixes, or wildcards. These hosts ignore
-`RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC`; every DNS answer must be private, and metadata and
+(case-insensitive, optional trailing dot), not URLs, suffixes, or wildcards. mDNS `.local` names
+name a LAN host by convention, so they need no entry. mDNS resolves where the API and worker run:
+it works on native installs and mDNS-aware hosts, but usually not on container bridge DNS. These
+hosts ignore `RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC`; every DNS answer must be private, and metadata and
 link-local destinations remain blocked. This applies to discovery and model requests.
 HTTPS still validates the hostname's certificate. Like private IP endpoints, trusted hostnames
 also permit HTTP with API keys; use HTTPS unless the network is trusted. Only allow hosts you
@@ -163,6 +221,22 @@ accepts images, enable **Supports images** under **Advanced** when connecting so
 screenshot computer tools stay available. Existing connections default to disabled. For centrally
 managed endpoints, the deployment-wide fallback remains
 `RAKAZO_OPENAI_COMPATIBLE_VISION_MODELS=gpt4o-vision,llava`.
+
+## Limiting model providers
+
+Set `RAKAZO_MODEL_PROVIDER_ALLOWLIST=provider1,provider2` in the deployment environment for both
+API and worker, then recreate those containers, to limit which model providers users can connect.
+Entries are the model registry's provider ids (for example `openrouter`, `anthropic`, and
+`openai-compatible` for OpenAI-compatible endpoints). The list applies to the model catalog: a
+provider not on it is not offered, a key for it is refused on save and on import, a bot cannot be
+switched to it, and its runs fail with a clear error. An unset or empty list means every provider,
+exactly the behavior without it.
+
+Hosted OpenAI-compatible presets include Ollama Cloud (`ollama-cloud`), Concentrate AI
+(`concentrate`) and DeepInfra (`deepinfra`). Choose one in **Settings → Models**, enter its API key, and select
+a model. Rakazo loads the list automatically. Their HTTPS hosts remain available with `RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC=0`.
+If you set a provider allowlist, include `openai-compatible` and the ids of the presets you
+want to keep. Leaving out a preset id hides it and removes its host exemption.
 
 ## Thinking
 
@@ -191,16 +265,6 @@ Connections with unknown retention or `retentionMode: "none"` retain the default
 retrieval policy. An explicit executor context strategy still takes precedence.
 Callers without usable history-retrieval tools keep fitting original history
 under the model's context budget instead of replacing it with snapshots.
-
-An OpenAI-compatible connection can enable several models whose cache support and
-prices differ, so it also accepts `cacheCapabilitiesByModel`, keyed by model id. The
-model that runs uses its own entry. A value saves that model's entry, `null` clears it
-(a model the server lists with no prompt cache), and models not mentioned keep theirs.
-`cacheCapabilities` stays as the fallback for a model without an entry, which suits a
-connection set up by hand or saved before per-model entries; sending
-`cacheCapabilitiesByModel` without it replaces the saved connection-wide value, and
-`cacheCapabilities: null` clears it. Settings → Models sends per-model entries for
-every enabled model that DeepInfra's listing described.
 
 Cache warmth is advisory. Changing instructions or tools, context pressure,
 worker eviction, or a process restart can require fresh prompt processing.
@@ -245,14 +309,37 @@ MEDIA_GENERATION_IMAGE_MODEL=fal-ai/flux/schnell
 MEDIA_GENERATION_VIDEO_MODEL=fal-ai/wan/v2.2-a14b/text-to-video
 ```
 
-`MEDIA_GENERATION_PROVIDER` accepts `disabled` (the default), `fal`, or `fake`
-(for offline testing only). The base URL is optional and defaults to the URL above.
-Only set the image/video model fields for capabilities you want enabled. Compatible
-servers can use the same connection fields; models must support the corresponding
-fal queue API and Flux/Wan input and output shapes. Credentials stay on the server. Set these in
+For images only, `openai` uses the Images API (`POST /images/generations`) instead:
+
+```dotenv
+MEDIA_GENERATION_PROVIDER=openai
+MEDIA_GENERATION_BASE_URL=https://api.openai.com/v1
+MEDIA_GENERATION_API_KEY=replace-with-media-api-key
+MEDIA_GENERATION_IMAGE_MODEL=gpt-image-1
+```
+
+`openrouter` makes images through OpenRouter's Images API (`POST /images`) and four-second
+videos through its video jobs API (`POST /videos`); set either model or both:
+
+```dotenv
+MEDIA_GENERATION_PROVIDER=openrouter
+MEDIA_GENERATION_BASE_URL=https://openrouter.ai/api/v1
+MEDIA_GENERATION_API_KEY=replace-with-media-api-key
+MEDIA_GENERATION_IMAGE_MODEL=openai/gpt-image-1-mini
+MEDIA_GENERATION_VIDEO_MODEL=google/veo-3.1-fast
+```
+
+The video model must accept a four-second duration.
+
+`MEDIA_GENERATION_PROVIDER` accepts `disabled` (the default), `fal`, `openai`, `openrouter`, or `fake`
+(for offline testing only). The base URL is optional and defaults to the provider's URL above.
+Only set the image/video model fields for capabilities you want enabled; `openai` takes an
+image model only. Compatible servers can use the same connection fields; models must support
+the corresponding fal queue API and Flux/Wan input and output shapes, or the Images API with
+base64 image data (`b64_json`) in the response. Credentials stay on the server. Set these in
 your deployment secret configuration; never commit actual credentials.
 
-Bots use `generate_image` to attach one PNG or `generate_video` to submit a
+Bots use `generate_image` to attach one image (PNG, JPEG or WebP) or `generate_video` to submit a
 four-second MP4. The video tool returns a job ID and queued/running status. The
 worker keeps checking the job in the background, including after a restart, and
 posts the finished video to the chat that asked for it, once; the bot then gets a

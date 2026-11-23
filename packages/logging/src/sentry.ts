@@ -44,11 +44,7 @@ export function sentryConfigFromEnv(source: NodeJS.ProcessEnv = process.env): {
 export function isValidDsn(dsn: string): boolean {
   try {
     const url = new URL(dsn);
-    return (
-      (url.protocol === "https:" || url.protocol === "http:") &&
-      Boolean(url.username) &&
-      /\/[\w-]+$/.test(url.pathname)
-    );
+    return url.protocol === "https:" && Boolean(url.username) && /\/[\w-]+$/.test(url.pathname);
   } catch {
     return false;
   }

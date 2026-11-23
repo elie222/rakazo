@@ -1,12 +1,13 @@
 // @vitest-environment jsdom
 
+import { flush } from "@rakazo/core/test-async";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, expect, it, vi } from "vitest";
-import { createPageSession, PagesProvider } from "../../lib/pages";
+import { createPageSession, PagesProvider } from "../../lib/pages/pages";
 import { PageNotice } from "./PageNotice";
 import { PageViewHost } from "./PageViewHost";
 
@@ -14,10 +15,14 @@ vi.mock("@lingui/react/macro", () => ({
   useLingui: () => ({ i18n: { locale: "en" }, t: String.raw }),
   Trans: ({ children }: { children: ReactNode }) => children,
 }));
-vi.mock("../../lib/query", () => ({
+vi.mock("../../lib/query/query", () => ({
+  useSave: () => ({ pending: false, error: null }),
   useSpaceQueries: () => ({
+    pageReviews: { grants: { key: () => ["grants"] } },
     pages: {
+      list: { key: () => ["pages"] },
       get: {
+        queryKey: () => ["page"],
         // Like the server: the link only when asked for.
         queryOptions: ({ input }: { input: { pageId: string; link?: true } }) => ({
           queryKey: ["page", input],
@@ -33,9 +38,6 @@ vi.mock("../../lib/query", () => ({
       },
     },
   }),
-}));
-vi.mock("../../lib/page-actions", () => ({
-  pageMutationOptions: () => ({ rename: {}, setVisibility: {} }),
 }));
 vi.mock("./PageView", () => ({
   PageView: ({ composer, share }: { composer: ReactNode; share: ReactNode }) => (
@@ -73,7 +75,7 @@ it("docks the chat's composer over a tablet's page sheet, so its reply goes to t
       </QueryClientProvider>,
     ),
   );
-  await act(async () => await new Promise((resolve) => setTimeout(resolve, 0)));
+  await act(flush);
   expect(session.dock.get().node).not.toBeNull();
   const card = {
     id: "m1",
@@ -108,7 +110,7 @@ it("shows the link when Share opens on a page that is already shared", async () 
       </QueryClientProvider>,
     ),
   );
-  await act(async () => await new Promise((resolve) => setTimeout(resolve, 0)));
+  await act(flush);
   const share = document.querySelector('[data-testid="page-share"]');
   expect(share?.textContent).toContain("Open link");
   expect(share?.querySelector("a")?.getAttribute("href")).toBe("https://rakazo.example/p/1");

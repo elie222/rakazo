@@ -1,17 +1,17 @@
 ---
 import "../styles/global.css";
 import { getMarkdownAlternate } from "../agent-content";
+import type { ArticleMeta } from "../structured-data";
 import {
   DEFAULT_LOCALE,
-  LOCALES,
   LOCALE_HREFLANG,
   LOCALE_HTML_LANG,
   LOCALE_OG,
   isLocale,
   RTL_LOCALES,
-  localeHomePath,
   type Locale,
 } from "../i18n/locales";
+import { pageVersions } from "../i18n/translations";
 import { SITE_NAME, SITE_URL } from "../site";
 
 type Props = {
@@ -20,12 +20,10 @@ type Props = {
   structuredData?: object;
   locale?: Locale;
   skipLabel?: string;
-  homeAlternates?: boolean;
-  localeAlternates?: boolean;
   ogImageAlt?: string;
   /** Path or absolute URL. Defaults to the shared homepage image. */
   ogImage?: string;
-  ogType?: string;
+  article?: ArticleMeta;
   /** False on the not-found page: noindex, and no canonical URL. */
   index?: boolean;
   /** For prerendered pages the edge middleware does not know about. */
@@ -37,11 +35,9 @@ const {
   description,
   structuredData,
   skipLabel = "Skip to content",
-  homeAlternates = false,
-  localeAlternates = true,
   ogImageAlt = "Rakazo. AI teammates you actually own. Your keys, your model, your machine.",
   ogImage = "/og-image.png",
-  ogType = "website",
+  article,
   index = true,
 } = Astro.props;
 
@@ -59,9 +55,11 @@ const markdownAlternate =
   Astro.props.markdownAlternate ?? getMarkdownAlternate(Astro.url.pathname);
 const htmlLang = LOCALE_HTML_LANG[locale];
 const ogLocale = LOCALE_OG[locale];
-const homeUrls = Object.fromEntries(
-  LOCALES.map((l) => [l, new URL(localeHomePath(l), SITE_URL).toString()]),
-) as Record<Locale, string>;
+const versions = pageVersions(Astro.url.pathname).map((version) => ({
+  ...version,
+  url: new URL(version.path, SITE_URL).toString(),
+}));
+const englishVersion = versions.find((version) => version.locale === DEFAULT_LOCALE);
 ---
 
 <!doctype html>
@@ -75,14 +73,24 @@ const homeUrls = Object.fromEntries(
     <meta property="og:title" content={title} />
     <meta property="og:description" content={description} />
     {canonical && <meta property="og:url" content={canonical} />}
-    <meta property="og:type" content={ogType} />
+    <meta property="og:type" content={article ? "article" : "website"} />
     <meta property="og:site_name" content={SITE_NAME} />
     <meta property="og:locale" content={ogLocale} />
     {
-      localeAlternates &&
-        LOCALES.filter((l) => l !== locale).map((l) => (
-          <meta property="og:locale:alternate" content={LOCALE_OG[l]} />
+      versions
+        .filter((version) => version.locale !== locale)
+        .map((version) => (
+          <meta property="og:locale:alternate" content={LOCALE_OG[version.locale]} />
         ))
+    }
+    {
+      article && (
+        <>
+          <meta property="article:published_time" content={article.published.toISOString()} />
+          <meta property="article:modified_time" content={article.modified.toISOString()} />
+          <meta property="article:author" content={article.authorUrl} />
+        </>
+      )
     }
     <meta property="og:image" content={socialImage} />
     <meta property="og:image:width" content="1200" />
@@ -95,16 +103,10 @@ const homeUrls = Object.fromEntries(
     <meta name="twitter:image" content={socialImage} />
     <meta name="twitter:image:alt" content={ogImageAlt} />
     {canonical && <link rel="canonical" href={canonical} />}
-    {
-      homeAlternates && (
-        <>
-          {LOCALES.map((l) => (
-            <link rel="alternate" hreflang={LOCALE_HREFLANG[l]} href={homeUrls[l]} />
-          ))}
-          <link rel="alternate" hreflang="x-default" href={homeUrls.en} />
-        </>
-      )
-    }
+    {versions.map((version) => (
+      <link rel="alternate" hreflang={LOCALE_HREFLANG[version.locale]} href={version.url} />
+    ))}
+    {englishVersion && <link rel="alternate" hreflang="x-default" href={englishVersion.url} />}
     {markdownAlternate && (
       <link rel="alternate" type="text/markdown" href={markdownAlternate} />
     )}

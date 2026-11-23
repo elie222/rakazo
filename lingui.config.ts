@@ -21,6 +21,7 @@ export default defineConfig({
     "nl",
     "ja",
     "pl",
+    "th",
   ],
   catalogs: [
     {
@@ -28,11 +29,12 @@ export default defineConfig({
       include: [
         "<rootDir>/apps/web/src",
         "<rootDir>/packages/i18n/src",
+        "<rootDir>/packages/adapters/src/models/model-provider-registry.ts",
         "<rootDir>/apps/mobile/app",
         "<rootDir>/apps/mobile/components",
         "<rootDir>/apps/mobile/lib",
       ],
-      exclude: ["**/locales/**", "**/*.test.*", "**/node_modules/**"],
+      exclude: ["<rootDir>/**/locales/**", "<rootDir>/**/*.test.*", "<rootDir>/**/node_modules/**"],
     },
   ],
   compileNamespace: "es",

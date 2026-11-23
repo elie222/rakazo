@@ -1,12 +1,12 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { SettingsScope } from "@rakazo/contracts";
+import { siteHost } from "@rakazo/core";
 import { Button } from "@rakazo/ui-web";
 import { useQuery } from "@tanstack/react-query";
 import { ChevronRight } from "lucide-react";
-import { useSpaceQueries } from "../../lib/query";
-import { formatRelativeTime } from "../../lib/relative-time";
-import { siteHost } from "./kinds";
-import { VaultPageHeader } from "./VaultPageHeader";
+import { formatRelativeTime } from "../../lib/locale/relative-time";
+import { useSpaceQueries } from "../../lib/query/query";
+import { SettingsPageHeader } from "../settings/SettingsPageHeader";
 
 function useVaultItemUses(scope: SettingsScope, name: string) {
   const queries = useSpaceQueries();
@@ -74,7 +74,7 @@ export function VaultItemUses({
   const uses = useVaultItemUses(scope, name);
   return (
     <div data-testid="vault-item-uses" className="flex flex-col gap-4">
-      <VaultPageHeader title={title} subtitle={t`Activity`} onBack={onBack} />
+      <SettingsPageHeader title={title} subtitle={t`Activity`} onBack={onBack} />
       {uses.isError ? (
         <ActivityError retry={() => void uses.refetch()} />
       ) : (

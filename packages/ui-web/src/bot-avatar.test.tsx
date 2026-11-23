@@ -1,4 +1,4 @@
-import { ACTIVE_RUN_STATUSES } from "@rakazo/core";
+import { WAITING_ON_USER_RUN_STATUSES, WORKING_RUN_STATUSES } from "@rakazo/core";
 import { renderToString } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import {
@@ -12,31 +12,33 @@ import {
 } from "./bot-avatar.js";
 
 describe("BotAvatar", () => {
-  it("renders distinct ring gradient IDs for concurrent working avatars", () => {
+  it("moves a working studio shape like an organic body, without a ring", () => {
     const html = renderToString(
-      <div>
-        <BotAvatar color="#8B5CF6::shape_0" status="running" />
-        <BotAvatar color="#10B981::shape_1" status="running" />
-      </div>,
+      <BotAvatar color="#8B5CF6::shape_0" identity="maya" status="running" />,
     );
+    expect(html).toContain("rakazo-shape-avatar");
+    expect(html).toContain('data-working="true"');
+    expect(html).toContain("rakazo-mascot-avatar-body-working");
+    expect(html).not.toContain("rakazo-bot-avatar-ring");
+    expect(html).not.toContain("<animate");
+  });
 
-    const gradMatches = [...html.matchAll(/id="([^"]+)"/g)].map((m) => m[1]);
-    expect(gradMatches).toHaveLength(2);
-    expect(new Set(gradMatches).size).toBe(2);
-    for (const id of gradMatches) {
-      expect(id).toBeTruthy();
-      expect(html).toContain(`url(#${id})`);
-    }
+  it("scales a shape's motion and glow to match an organic body on screen", () => {
+    const unit = (html: string) => html.match(/--rakazo-mascot-unit:([\d.]+)px/)?.[1];
+    const shape = renderToString(<BotAvatar color="#8B5CF6::shape_0" status="running" />);
+    const organic = renderToString(<BotAvatar color="#8B5CF6" status="running" />);
+    expect(Number(unit(shape))).toBeCloseTo(259 / 120);
+    expect(unit(organic)).toBe("1");
   });
 
   // Button sizes any SVG without a size class, which beats width/height attributes but not inline styles.
   it("sizes the shape with an inline style so icon sizing in a button cannot shrink it", () => {
     const html = renderToString(<BotAvatar color="#8B5CF6::shape_0" size={26} />);
-    const shape = html.match(/<svg[^>]*transition-transform[^>]*>/)?.[0];
+    const shape = html.match(/<svg[^>]*rakazo-shape-avatar[^>]*>/)?.[0];
     expect(shape).toMatch(/style="[^"]*width:26px;height:26px/);
   });
 
-  it.each([...ACTIVE_RUN_STATUSES])("marks active run status %s as working", (status) => {
+  it.each([...WORKING_RUN_STATUSES])("marks run status %s as working", (status) => {
     const html = renderToString(<BotAvatar color="#3B82F6" status={status} />);
     expect(html).toContain("<svg");
     expect(html).toContain('data-working="true"');
@@ -83,7 +85,7 @@ describe("BotAvatar", () => {
     );
     expect(html).toContain("<img");
     expect(html).not.toContain("<path");
-    expect(html).not.toContain("bot-character-eyes");
+    expect(html).not.toContain("rakazo-mascot-avatar");
   });
 
   it("keeps a working photo ring outside the clipped image and uses the status token", () => {
@@ -98,6 +100,16 @@ describe("BotAvatar", () => {
     expect(html.indexOf("rakazo-bot-avatar-picture")).toBeLessThan(
       html.indexOf("rakazo-bot-avatar-ring"),
     );
+  });
+
+  it("keeps the ring off while a bot waits on the user", () => {
+    for (const status of WAITING_ON_USER_RUN_STATUSES) {
+      const html = renderToString(
+        <BotAvatar color="data:image/png;base64,abc" identity="maya" size={32} status={status} />,
+      );
+      expect(html).toContain('data-working="false"');
+      expect(html).not.toContain("rakazo-bot-avatar-ring");
+    }
   });
 
   it("keeps idle photo avatars ring-free", () => {
@@ -118,14 +130,6 @@ describe("BotAvatar", () => {
     );
     expect(html).not.toContain("<img");
     expect(html).not.toContain("evil.example");
-  });
-
-  it("honors reduced-motion for the working mascot pulse class", () => {
-    const html = renderToString(
-      <BotAvatar color="#8B5CF6::shape_0" identity="maya" size={32} status="running" />,
-    );
-    expect(html).toContain("animate-pulse");
-    expect(html).toContain("motion-reduce:animate-none");
   });
 
   it("restores a plain color that renders the organic body instead of a pinned shape", () => {
@@ -149,8 +153,8 @@ describe("BotAvatar", () => {
       <BotAvatar color={`${DEFAULT_BOT_AVATAR_COLOR}::shape_4`} identity="maya" />,
     );
     expect(restored).toContain("rakazo-organic-avatar");
-    expect(restored).not.toContain("bot-character-eyes");
-    expect(shaped).toContain("bot-character-eyes");
+    expect(restored).not.toContain("rakazo-shape-avatar");
+    expect(shaped).toContain("rakazo-shape-avatar");
     expect(shaped).not.toContain("rakazo-organic-avatar");
   });
 
@@ -175,7 +179,7 @@ describe("BotAvatar", () => {
     const morphing = (status: string) =>
       [
         ...renderToString(<BotAvatar color="#8B5CF6" status={status} />).matchAll(
-          /rakazo-organic-avatar-body-(idle|working)"[^>]*>(<animate)?/g,
+          /rakazo-mascot-avatar-body-(idle|working)"[^>]*>(<animate)?/g,
         ),
       ]
         .filter((match) => match[2])
@@ -200,7 +204,7 @@ describe("BotAvatar", () => {
     const html = renderToString(
       <BotAvatar color={`${DEFAULT_BOT_AVATAR_COLOR}::shape_3`} identity="maya" />,
     );
-    expect(html).toContain("bot-character-eyes");
+    expect(html).toContain("rakazo-shape-avatar");
     expect(html).not.toContain("rakazo-organic-avatar");
   });
 

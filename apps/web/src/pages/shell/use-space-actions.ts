@@ -1,8 +1,8 @@
 import type { RefObject } from "react";
-import type { createSpaceRpc } from "../../lib/rpc";
-import { selectedSpaceId, selectSpace } from "../../lib/rpc";
-import { commitSpaceRename } from "./space-sidebar";
-import type { useSpaceRoster } from "./use-space-roster";
+import type { createSpaceRpc, RpcClient } from "../../lib/query/rpc";
+import { selectedSpaceId, selectSpace } from "../../lib/query/rpc";
+import { commitSpaceRename } from "./sidebar/space-sidebar";
+import type { useSpaceRoster } from "./sidebar/use-space-roster";
 
 type Roster = ReturnType<typeof useSpaceRoster>;
 
@@ -22,10 +22,10 @@ export function useSpaceActions({
   bootstrapMe: Roster["bootstrapMe"];
   closePanel: () => void;
 }) {
-  async function renameSpace(spaceId: string, name: string) {
+  async function renameSpace(spaceId: string, name: string, client: RpcClient) {
     await commitSpaceRename({
       rename: async () => {
-        await rpc.spaces.rename({ spaceId, name });
+        await client.spaces.rename({ spaceId, name });
       },
       apply: () => {
         setSpaces((current) =>

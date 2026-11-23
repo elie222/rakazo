@@ -33,7 +33,7 @@ function Disclosure({
         {summary}
         <ChevronDown
           aria-hidden="true"
-          className="size-4 shrink-0 text-muted-foreground transition-transform group-data-panel-open/disclosure:rotate-180 motion-reduce:transition-none"
+          className="size-4 shrink-0 text-muted-foreground transition-transform group-data-open/disclosure:rotate-180 motion-reduce:transition-none"
         />
       </CollapsibleTrigger>
       <CollapsibleContent hiddenUntilFound className={contentClassName}>

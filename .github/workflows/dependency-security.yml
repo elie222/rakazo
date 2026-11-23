@@ -1,0 +1,114 @@
+name: Dependency security
+
+on:
+  # The audit reads only the lockfile and its config, so a pull request that leaves them alone
+  # cannot change the result; main and the nightly run catch newly published advisories.
+  pull_request:
+    paths:
+      - ".github/workflows/dependency-security.yml"
+      - "scripts/checks/dependency-audit.mjs"
+      - "pnpm-lock.yaml"
+      # Its auditConfig lists the advisories the audit ignores.
+      - "pnpm-workspace.yaml"
+      # Its packageManager field picks the pnpm that runs the audit.
+      - "package.json"
+  push:
+    branches: [main]
+  schedule:
+    - cron: "19 5 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dependency-security-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 24
+      # pnpm reads its own multi-document lockfile. No dependency installation or lifecycle
+      # scripts are needed. Include build/release dependencies as well as production ones.
+      - name: Audit workspace dependencies
+        run: |
+          pnpm audit --audit-level high --json > dependency-audit.json
+          node scripts/checks/dependency-audit.mjs dependency-audit.json
+      - name: Retain complete audit
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: dependency-audit
+          path: dependency-audit.json
+          if-no-files-found: error
+
+  image-tags:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      tags: ${{ steps.tags.outputs.tags }}
+    steps:
+      - name: Select main and latest published version release
+        id: tags
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tags=$(gh api --paginate --slurp "repos/$GITHUB_REPOSITORY/releases?per_page=100" |
+            jq -c '[.[][] | select(.draft == false and (.tag_name | test("^v[0-9]+[.][0-9]+[.][0-9]+(-[0-9A-Za-z.-]+)?$")))]
+              | max_by(.published_at)
+              | ["edge", .tag_name] | map(select(. != null)) | unique')
+          echo "tags=$tags" >> "$GITHUB_OUTPUT"
+
+  published-images:
+    needs: image-tags
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: read
+    strategy:
+      fail-fast: false
+      matrix:
+        image: [app, computer, updater]
+        arch: [amd64, arm64]
+        tag: ${{ fromJSON(needs.image-tags.outputs.tags) }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - uses: ./.github/actions/setup-trivy
+      - name: Scan published image
+        env:
+          IMAGE_REF: ghcr.io/${{ github.repository }}/${{ matrix.image }}:${{ matrix.tag }}
+          IMAGE_PLATFORM: linux/${{ matrix.arch }}
+        run: |
+          trivy image --image-src remote --platform "$IMAGE_PLATFORM" --scanners vuln --format json --output image-vulnerabilities.json "$IMAGE_REF"
+          trivy version --format json > scanner-version.json
+          trivy convert --format cyclonedx --output image-sbom.json image-vulnerabilities.json
+      - name: Retain image security reports
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: published-image-security-${{ matrix.image }}-${{ matrix.arch }}-${{ matrix.tag }}
+          path: |
+            image-vulnerabilities.json
+            scanner-version.json
+            image-sbom.json
+          if-no-files-found: warn

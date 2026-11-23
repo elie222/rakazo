@@ -32,7 +32,7 @@ Write translations as JSON objects `{ "<key>": "<translation>" }`, about 120 per
 
 - `node .agents/skills/translate/catalog-gaps.ts check` exits 0.
 - `pnpm exec lingui compile --strict` passes.
-- `pnpm exec vitest run apps/web/src/lib/i18n apps/web/src/lib/agent-import-locales apps/web/src/lib/bot-templates-locales apps/mobile/lib/i18n` passes.
+- `pnpm exec vitest run apps/web/src/lib/locale/i18n apps/web/src/lib/locale/agent-import-locales apps/web/src/lib/locale/bot-templates-locales apps/mobile/lib/i18n` passes.
 - Only translations changed: `git diff -U0 -- packages/i18n/locales | grep -E '^[-+][^-+]' | grep -vE '^[-+]msgstr '` prints nothing.
 
 ## 4. Ship

@@ -8,6 +8,7 @@ import {
   AGENT_IMPORT_MAX_FILE_LENGTH,
   AGENT_IMPORT_MAX_FILES,
   AGENT_IMPORT_MAX_TOTAL_LENGTH,
+  GROK_BOT_EXPORT_PATH,
 } from "@rakazo/contracts";
 import { AgentImportArchiveError } from "./archive.js";
 import {
@@ -17,6 +18,8 @@ import {
 } from "./config.js";
 import { looksLikeCredential } from "./credentials.js";
 import { isAgentDocument, parseAgentDocument } from "./document.js";
+import type { GrokBot, RoutineTriggersAvailable } from "./grok-bot.js";
+import { parseGrokBot, readGrokBotExportJson } from "./grok-bot.js";
 import {
   BUNDLED_MANIFEST,
   bundledSkillNames,
@@ -31,8 +34,8 @@ import {
   OPENCLAW_RUNTIME_FILES,
   parseOpenClaw,
 } from "./openclaw.js";
-import type { AgentImportParse, SkillFiles } from "./shared.js";
-import { freeName, isPrivatePath, isSkillPath, renameSkillMd } from "./shared.js";
+import type { AgentImportParse, SkillFiles } from "./types.js";
+import { freeName, isPrivatePath, isSkillPath, renameSkillMd } from "./types.js";
 
 export {
   AGENT_IMPORT_ARCHIVE_LIMITS,
@@ -42,6 +45,8 @@ export {
   openAgentImportArchive,
   safeArchivePath,
 } from "./archive.js";
+export type { AgentImportAssistant } from "./assistants.js";
+export { AGENT_IMPORT_ASSISTANTS } from "./assistants.js";
 export {
   AGENT_IMPORT_PROVIDER_KEYS,
   hasAgentImportSecrets,
@@ -55,9 +60,26 @@ export {
 } from "./config.js";
 export { looksLikeCredential } from "./credentials.js";
 export { AGENT_IMPORT_PROMPT } from "./document.js";
+export type {
+  GrokBot,
+  GrokBotExportErrorCode,
+  GrokRoutineTrigger,
+  RoutineTriggersAvailable,
+} from "./grok-bot.js";
+export {
+  GROK_BOT_EXPORT_PROMPT,
+  GROK_BOT_REPLY_MAX_LENGTH,
+  GrokBotExportError,
+  grokBotExportJson,
+  grokRoutineTrigger,
+  grokSkillNames,
+  NO_OPTIONAL_ROUTINE_TRIGGERS,
+  parseGrokBotExport,
+  readGrokBotExportJson,
+} from "./grok-bot.js";
 export { bundledSkillNames } from "./hermes.js";
-export type { AgentImportReader, SkillFiles } from "./shared.js";
-export { renameSkillMd } from "./shared.js";
+export type { AgentImportReader, SkillFiles } from "./types.js";
+export { agentImportLeftoverMessages, renameSkillMd } from "./types.js";
 
 export const AGENT_IMPORT_NOT_FOUND = "No OpenClaw, Hermes or agent document found.";
 
@@ -193,7 +215,7 @@ export function readAgentImportFolder(
   files: AgentImportFile[],
   options: { includeSecrets: boolean },
 ): {
-  source: Exclude<AgentImportSource, "document" | "template">;
+  source: Exclude<AgentImportSource, "document" | "template" | "grok_bot">;
   root: string;
   files: Map<string, string>;
 } | null {
@@ -281,13 +303,35 @@ export function agentImportUpload(
 
 /**
  * Imported text is data: nothing here follows it. Settings (model, MCP servers, scheduled
- * jobs, API keys) are added by the server.
+ * jobs, API keys) are added by the server, which also says which routine triggers it receives.
  */
 export function parseAgentImport(
   files: AgentImportFile[],
   skillFiles: SkillFiles = {},
+  routineTriggers?: RoutineTriggersAvailable,
 ): AgentImportPlan | { error: string } {
   const only = files.length === 1 ? files[0] : undefined;
+  if (only?.path === GROK_BOT_EXPORT_PATH) {
+    let bots: GrokBot[];
+    try {
+      bots = readGrokBotExportJson(only.content);
+    } catch {
+      return { error: AGENT_IMPORT_NOT_FOUND };
+    }
+    // The client sends only the Bot the user picked.
+    const [bot] = bots;
+    if (!bot || bots.length !== 1) return { error: AGENT_IMPORT_NOT_FOUND };
+    const parsed = parseGrokBot(bot, routineTriggers);
+    if (
+      !parsed.instructions.length &&
+      !parsed.memory.length &&
+      !parsed.skills.length &&
+      !bot.routines.length &&
+      !bot.apps.length
+    )
+      return { error: AGENT_IMPORT_NOT_FOUND };
+    return plan("grok_bot", parsed);
+  }
   // A known agent file (SOUL.md, MEMORY.md, memories/…) is read as one even when its text
   // has the document's headings; only another file or the pasted reply is a document.
   if (only && !isKnownAgentFile(only.path) && isAgentDocument(only.content)) {
@@ -331,6 +375,7 @@ function plan(source: AgentImportSource, parsed: AgentImportParse): AgentImportP
       mcpServers: [],
       routines: [],
       apiKeys: [],
+      leftovers: (parsed.leftovers ?? []).map(flag),
     },
     { spaceMemoryPaths: [], skillNames: [] },
   );
@@ -339,7 +384,7 @@ function plan(source: AgentImportSource, parsed: AgentImportParse): AgentImportP
 function detectSource(
   paths: Set<string>,
   root: string,
-): Exclude<AgentImportSource, "document" | "template"> | null {
+): Exclude<AgentImportSource, "document" | "template" | "grok_bot"> | null {
   const has = (path: string) => paths.has(path);
   if (
     root === ".hermes" ||
@@ -383,10 +428,16 @@ export function combineImportedInstructions(
 }
 
 function withoutFileTitle(file: string, content: string): string {
-  const text = content.replace(/\r\n?/g, "\n").trim();
+  const normalized = content.replace(/\r\n?/g, "\n");
+  let start = 0;
+  let end = normalized.length;
+  while (start < end && normalized[start] === "\n") start += 1;
+  while (end > start && normalized[end - 1] === "\n") end -= 1;
+  const text = normalized.slice(start, end).trimEnd();
+  if (!text.trim()) return "";
   const name = file.split("/").at(-1) ?? file;
   const first = text.split("\n", 1)[0] ?? "";
-  if (/^#\s/.test(first) && first.replace(/^#\s+/, "").startsWith(name)) {
+  if (name.endsWith(".md") && /^#\s/.test(first) && first.replace(/^#\s+/, "").startsWith(name)) {
     return text.slice(first.length).trim();
   }
   return text;

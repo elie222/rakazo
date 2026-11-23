@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   browserProfilePathForScreen,
   prepareBrowserProfileCommand,
-  stopScreensCommand,
+  stopBrowserCommand,
 } from "./supervisor-logic.js";
 
 const fixtures: string[] = [];
@@ -57,14 +57,7 @@ describe("durable independent browser profiles", () => {
       expect(existsSync(path.join(profile(bot), "login"))).toBe(false);
       writeFileSync(path.join(profile(bot), "login"), `${bot}-session`);
     }
-    expect(
-      run(
-        stopScreensCommand([
-          { screenId: "writer", index: 0 },
-          { screenId: "reader", index: 1 },
-        ]),
-      ).status,
-    ).toBe(0);
+    for (const bot of ["writer", "reader"]) expect(run(stopBrowserCommand(bot)).status).toBe(0);
     for (const bot of ["writer", "reader"]) {
       expect(run(prepareBrowserProfileCommand(bot)).status).toBe(0);
       expect(readFileSync(path.join(profile(bot), "login"), "utf8")).toBe(`${bot}-session`);

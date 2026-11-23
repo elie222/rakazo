@@ -1,5 +1,6 @@
 import { ORPCError } from "@orpc/server";
-import { displayName } from "@rakazo/core";
+import { MessagingInstallRefusedError } from "@rakazo/adapter-kit";
+import { ClientError, displayName } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import {
   crossSpaceCommunicationAllowed,
@@ -33,8 +34,10 @@ export function messagingRoutes(ctx: RouterContext) {
           if (!deps.messagingInstallations) throw new ORPCError("BAD_REQUEST");
           try {
             await deps.messagingInstallations.complete(context.actor, input.state, input.code);
-          } catch {
-            throw new ORPCError("BAD_REQUEST");
+          } catch (error) {
+            if (error instanceof MessagingInstallRefusedError)
+              throw new ClientError("BAD_REQUEST", "Bad Request");
+            throw error;
           }
           return { ok: true as const };
         }),
@@ -54,7 +57,10 @@ export function messagingRoutes(ctx: RouterContext) {
         return {
           enabled: deps.messaging?.enabled ?? false,
           providers: deps.messaging?.providers ?? [],
-          addresses: deps.messaging?.addresses ?? {},
+          addresses:
+            (await deps.messaging?.resolveAddresses?.(context.signal)) ??
+            deps.messaging?.addresses ??
+            {},
           openSignup: deps.messaging?.openSignup ?? false,
           identities: await Promise.all(
             identities.map((identity) => messagingIdentityDto(deps.prisma, identity)),
@@ -90,11 +96,15 @@ export function messagingRoutes(ctx: RouterContext) {
               message: "That bot is already linked to a chat app; unlink it first.",
             });
           }
-          const issued = await issueMessagingLinkCode(deps.prisma, {
-            userId: context.actor.userId,
-            spaceId: bot.spaceId,
-            botId: bot.id,
-          });
+          const issued = await issueMessagingLinkCode(
+            deps.prisma,
+            {
+              userId: context.actor.userId,
+              spaceId: bot.spaceId,
+              botId: bot.id,
+            },
+            { signal: context.signal },
+          );
           const shared = await spaceIsShared(deps.prisma, bot.spaceId);
           return {
             code: formatMessagingLinkCode(issued.code),
@@ -141,9 +151,7 @@ export function messagingRoutes(ctx: RouterContext) {
           } catch (error) {
             // botId is unique: the target bot is already linked elsewhere.
             if (isUniqueViolation(error)) {
-              throw new ORPCError("BAD_REQUEST", {
-                message: "That bot is already linked to a chat app.",
-              });
+              throw new ClientError("BAD_REQUEST", "That bot is already linked to a chat app.");
             }
             throw error;
           }
@@ -433,10 +441,12 @@ async function messagingConnectionDto(
   },
 ) {
   const incoming = myBotIds.has(connection.targetBotId);
+  const botId = incoming ? connection.targetBotId : connection.requesterBotId;
   // The target's identity stays opaque until they approve (mirrors connect_agent).
   if (!incoming && connection.status !== "approved") {
     return {
       id: connection.id,
+      botId,
       peerBotName: "agent",
       peerOwnerLabel: "owner",
       status: connection.status as "pending" | "approved" | "declined" | "revoked",
@@ -461,6 +471,7 @@ async function messagingConnectionDto(
     : null;
   return {
     id: connection.id,
+    botId,
     peerBotName: peerBot?.name ?? "",
     peerOwnerLabel: displayName(peerOwner?.name, "").split(/\s+/)[0] ?? "",
     status: connection.status as "pending" | "approved" | "declined" | "revoked",

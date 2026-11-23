@@ -248,8 +248,8 @@ public class RakazoNotificationsModule: Module {
     Events("onIncomingCallChanged", "onWorkActivityToken", "onWorkActivityStartToken")
     OnCreate {
       if #available(iOS 18.0, *) {
-        WorkActivities.shared.onToken = { [weak self] token in
-          self?.sendEvent("onWorkActivityToken", ["token": token])
+        WorkActivities.shared.onToken = { [weak self] token, request in
+          self?.sendEvent("onWorkActivityToken", ["token": token, "request": request])
         }
         WorkActivities.shared.onStartToken = { [weak self] token in
           self?.sendEvent("onWorkActivityStartToken", ["token": token])
@@ -265,6 +265,11 @@ public class RakazoNotificationsModule: Module {
     OnStopObserving {
       if let observer = self.observer { NotificationCenter.default.removeObserver(observer) }
       self.observer = nil
+    }
+    Function("invalidateWatchChat") { (kind: String, spaceId: String?) in
+      NotificationCenter.default.post(
+        name: Notification.Name("RakazoWatchChatChanged"), object: kind,
+        userInfo: spaceId.map { ["spaceId": $0] })
     }
     AsyncFunction("configureIncomingSession") { (base: String, headers: [String: String]) in IncomingCalls.shared.configure(base, headers: headers) }.runOnQueue(.main)
     AsyncFunction("incomingState") { () -> [String: Any] in IncomingCalls.shared.state() }.runOnQueue(.main)
@@ -292,6 +297,9 @@ public class RakazoNotificationsModule: Module {
     }.runOnQueue(.main)
     AsyncFunction("endWorkActivity") {
       if #available(iOS 18.0, *) { WorkActivities.shared.end() }
+    }.runOnQueue(.main)
+    AsyncFunction("endUnfollowedWorkActivity") { (request: Int) in
+      if #available(iOS 18.0, *) { WorkActivities.shared.endUnfollowed(request) }
     }.runOnQueue(.main)
   }
 }

@@ -1,0 +1,5 @@
+{
+  "packages/adapters/src/providers/billing/stripe/stripe-billing.ts": 1,
+  "packages/adapters/src/providers/cloud-agent/cursor/cursor-cloud-agent.ts": 1,
+  "packages/adapters/src/providers/memory/serenity/serenity-client.ts": 1
+}

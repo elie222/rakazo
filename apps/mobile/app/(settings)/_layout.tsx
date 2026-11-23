@@ -3,9 +3,9 @@ import { Stack, useNavigation } from "expo-router";
 import { HeaderBackButton } from "expo-router/react-navigation";
 import { useEffect } from "react";
 import { Platform } from "react-native";
-import { floatingHeaderOptions, glassHeaderOptions } from "../../components/glass-title";
-import { native, useMobileTokens } from "../../lib/native";
-import { registerSettingsSheet, settingsSheetCloser } from "../../lib/settings-sheet";
+import { floatingHeaderOptions, glassHeaderOptions } from "../../components/native/glass-title";
+import { native, useMobileTokens } from "../../lib/native/native";
+import { registerSettingsSheet, settingsSheetCloser } from "../../lib/settings/settings-sheet";
 
 /** Settings pages share one stack, which the root layout presents as a sheet on iOS. */
 export default function SettingsLayout() {
@@ -86,7 +86,15 @@ export default function SettingsLayout() {
       <Stack.Screen name="language" options={glassHeaderOptions(t`Language`)} />
       <Stack.Screen name="model-picker" options={glassHeaderOptions(t`Model`)} />
       <Stack.Screen name="model-connection" options={glassHeaderOptions(t`Model`)} />
+      <Stack.Screen name="model-settings" options={glassHeaderOptions(t`Model`)} />
       <Stack.Screen name="billing" options={glassHeaderOptions(t`Billing`)} />
+      <Stack.Screen
+        name="computers"
+        options={{
+          ...glassHeaderOptions(t`Computers`),
+          contentStyle: { backgroundColor: native.groupedPage },
+        }}
+      />
       <Stack.Screen name="models" options={glassHeaderOptions(t`Models`)} />
       <Stack.Screen name="voice" options={glassHeaderOptions(t`Voice`)} />
       <Stack.Screen name="wallet" options={glassHeaderOptions(t`Wallet`)} />
@@ -121,13 +129,34 @@ export default function SettingsLayout() {
         })}
       />
       <Stack.Screen
+        name="spaces"
+        options={{
+          ...glassHeaderOptions(t`Spaces`),
+          contentStyle: { backgroundColor: native.groupedPage },
+        }}
+      />
+      <Stack.Screen
         name="organization"
         options={{
           ...glassHeaderOptions(t`Organization`),
           contentStyle: { backgroundColor: native.groupedPage },
         }}
       />
+      <Stack.Screen
+        name="organization-members"
+        options={{
+          ...glassHeaderOptions(t`Members`),
+          contentStyle: { backgroundColor: native.groupedPage },
+        }}
+      />
       <Stack.Screen name="messaging" options={glassHeaderOptions(t`Messaging`)} />
+      <Stack.Screen
+        name="labs"
+        options={{
+          ...glassHeaderOptions(t`Labs`),
+          contentStyle: { backgroundColor: native.groupedPage },
+        }}
+      />
       <Stack.Screen name="team-conversation" />
       <Stack.Screen name="integrations" options={glassHeaderOptions(t`Integrations`)} />
       <Stack.Screen name="skills" options={glassHeaderOptions(t`Skills`)} />

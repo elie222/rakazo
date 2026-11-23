@@ -44,7 +44,7 @@ it.skipIf(!testDatabase)(
       const owner = await prisma.user.findUniqueOrThrow({ where: { email: env.OWNER_EMAIL } });
       expect(
         await prisma.deploymentSettings.findUnique({ where: { id: "default" } }),
-      ).toMatchObject({ ownerUserId: null, signupsEnabled: false });
+      ).toMatchObject({ ownerUserId: null });
       expect(await prisma.session.count()).toBe(0);
       expect(owner.emailVerified).toBe(true);
       const memberships = await prisma.spaceMember.count({ where: { userId: owner.id } });
@@ -57,7 +57,7 @@ it.skipIf(!testDatabase)(
       await boot(env.OWNER_PASSWORD);
       expect(
         await prisma.deploymentSettings.findUnique({ where: { id: "default" } }),
-      ).toMatchObject({ ownerUserId: null, signupsEnabled: false });
+      ).toMatchObject({ ownerUserId: null });
       expect(await prisma.spaceMember.count({ where: { userId: owner.id } })).toBe(memberships);
       await boot("a-different-password-on-restart");
       expect(await prisma.user.count()).toBe(1);

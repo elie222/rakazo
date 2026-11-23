@@ -1,0 +1,67 @@
+# See ../../self-host-kubernetes.md before applying.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: rakazo-bootstrap
+  labels:
+    rakazo.example/phase: bootstrap
+  namespace: rakazo
+spec:
+  backoffLimit: 1
+  template:
+    metadata:
+      labels:
+        app: rakazo-bootstrap
+    spec:
+      restartPolicy: Never
+      automountServiceAccountToken: false
+      containers:
+        - name: bootstrap
+          image: ghcr.io/elie222/rakazo/app@sha256:cec37eeb8230131ebf3e8aaf752e09439558d05e3581c6990734e8b4b515adeb
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            seccompProfile:
+              type: RuntimeDefault
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+              ephemeral-storage: 128Mi
+            limits:
+              cpu: "2"
+              memory: 2Gi
+              ephemeral-storage: 2Gi
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: rakazo-secrets
+                  key: DATABASE_URL
+            - name: ENCRYPTION_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: rakazo-secrets
+                  key: ENCRYPTION_KEY
+            - name: BETTER_AUTH_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: rakazo-secrets
+                  key: BETTER_AUTH_SECRET
+            - name: OWNER_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: rakazo-secrets
+                  key: OWNER_PASSWORD
+          envFrom:
+            - configMapRef:
+                name: rakazo-config
+          command:
+            - node
+            - dist/cli/bootstrap-owner.js
+          workingDir: /app/apps/api
