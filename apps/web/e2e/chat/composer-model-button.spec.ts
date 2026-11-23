@@ -75,9 +75,10 @@ for (const lang of ["en", "he"] as const) {
         const text = page.getByTestId("composer-bar").locator("textarea");
         for (const [draft, value] of Object.entries(drafts)) {
           await text.fill(value);
-          // Let the one-line/two-line switch settle.
-          await page.waitForTimeout(150);
-          await expectApart(page, `${lang} ${viewport.name} ${model} ${draft}`);
+          // The box picks one line or two after it measures the draft, so check the settled layout.
+          await expect(async () =>
+            expectApart(page, `${lang} ${viewport.name} ${model} ${draft}`),
+          ).toPass({ timeout: 5_000 });
           if (model === "long" && draft === "short")
             await captureScreenshot(
               page,
