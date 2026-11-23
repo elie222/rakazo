@@ -177,16 +177,22 @@ export async function resolveRunMediaSources(
   deps: MediaSourceDeps,
   scope: { userId: string; spaceId: string },
 ): Promise<RunMediaSources> {
-  const [connections, image, video] = await Promise.all([
-    mediaConnections(deps.prisma, scope.userId),
-    appliedModelRole(deps.prisma, scope, "image"),
-    appliedModelRole(deps.prisma, scope, "video"),
-  ]);
+  const connections = await mediaConnections(deps.prisma, scope.userId);
+  // A choice can only name a connection, so without one there is nothing to read.
+  const [image, video] = connections.length
+    ? await Promise.all([
+        appliedModelRole(deps.prisma, scope, "image"),
+        appliedModelRole(deps.prisma, scope, "video"),
+      ])
+    : [null, null];
   const hosted = deps.mediaGeneration;
-  const source = (role: MediaModelRole, chosen: ModelRoleSettings): MediaSource | undefined => {
+  const source = (
+    role: MediaModelRole,
+    chosen: ModelRoleSettings | null,
+  ): MediaSource | undefined => {
     const kind = ROLE_KIND[role];
     const fallback = hosted?.capabilities[kind] ? { record: HOSTED, provider: hosted } : undefined;
-    const choice = mediaChoice(role, connections, chosen.primary);
+    const choice = mediaChoice(role, connections, chosen?.primary ?? null);
     if (!choice) return fallback && (() => Promise.resolve(fallback));
     const { connection, model } = choice;
     let own: Promise<MediaGenerationProvider | undefined> | undefined;
