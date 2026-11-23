@@ -478,7 +478,7 @@ export function userTurnInstructions(parts: {
     offeredBuiltinClause(
       parts.disabledBuiltinTools,
       "archive_bot",
-      "archive_bot safely archives another bot in this space. Use it when the user asks to remove that bot or when it is finished and unused. The user can restore it or permanently delete it later. confirm_name must exactly match its name.",
+      "archive_bot safely archives a bot in this space, yourself included. Use it when the user asks to remove a bot, or when another bot is finished and unused. The user can restore it or permanently delete it later. confirm_name must exactly match its name.",
     ),
     fleetClause(
       parts.offeredFleetTools,
