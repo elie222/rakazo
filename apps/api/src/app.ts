@@ -114,7 +114,7 @@ import { scimDirectory } from "./auth/directory-route.js";
 import { requestSessions } from "./auth/request-session.js";
 import { createAuthResponseAudit } from "./auth/security-audit.js";
 import { accountLifecycleHooks } from "./auth/session-hooks.js";
-import { isTrustedOrigin, MOBILE_AUTH_ORIGINS } from "./auth/trusted-origins.js";
+import { isTrustedOrigin, mobileAuthOrigins } from "./auth/trusted-origins.js";
 import { mountUserDeviceRoutes } from "./auth/user-devices.js";
 import { createBillingService } from "./billing/billing.js";
 import { mountBillingRoutes } from "./billing/billing-webhook.js";
@@ -497,7 +497,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
               headers,
             )
         : undefined,
-    extraOrigins: [...MOBILE_AUTH_ORIGINS, ...env.extraAuthOrigins],
+    extraOrigins: [...mobileAuthOrigins(env.nodeEnv), ...env.extraAuthOrigins],
     androidAppCertFingerprints: env.passkeyAndroidCertFingerprints,
     ...accountLifecycleHooks({
       spaceDeletion: spaceDeletionDeps,

@@ -1,6 +1,6 @@
 import { createAuth } from "@rakazo/auth";
 import { describe, expect, it } from "vitest";
-import { isTrustedOrigin, MOBILE_AUTH_ORIGINS, trustedRequestOrigins } from "./trusted-origins.js";
+import { isTrustedOrigin, mobileAuthOrigins, trustedRequestOrigins } from "./trusted-origins.js";
 
 // Better Auth skips its origin middleware under NODE_ENV=test, so check the
 // matcher that production uses for callback URLs and request origins.
@@ -11,7 +11,7 @@ async function trusted(url: string) {
     webOrigin: "https://app.example.test",
     signupsEnabled: undefined,
     signupAllowlist: undefined,
-    extraOrigins: MOBILE_AUTH_ORIGINS,
+    extraOrigins: mobileAuthOrigins(undefined),
   });
   return (await auth.$context).isTrustedOrigin(url);
 }
@@ -59,13 +59,27 @@ describe("CORS origins", () => {
       expect(isTrustedOrigin(origin, env), origin).toBe(false);
     }
   });
+
+  it("drops the mobile dev servers in production", () => {
+    const production = {
+      webOrigin: "https://app.example.test",
+      apiUrl: "https://api.example.test",
+      authUrl: "https://app.example.test",
+      nodeEnv: "production",
+    };
+    expect(isTrustedOrigin("http://localhost:8081", production)).toBe(false);
+    expect(isTrustedOrigin("http://127.0.0.1:19006", production)).toBe(false);
+    expect(isTrustedOrigin("rakazo://sign-in", production)).toBe(true);
+  });
 });
 
 describe("request origin list", () => {
   // The CORS list before the API and Better Auth shared one builder.
   function previousRequestOrigins(env: { webOrigin: string; apiUrl: string; authUrl: string }) {
     return new Set(
-      [env.webOrigin, env.apiUrl, env.authUrl, ...MOBILE_AUTH_ORIGINS].flatMap(previousVariants),
+      [env.webOrigin, env.apiUrl, env.authUrl, ...mobileAuthOrigins(undefined)].flatMap(
+        previousVariants,
+      ),
     );
   }
 
