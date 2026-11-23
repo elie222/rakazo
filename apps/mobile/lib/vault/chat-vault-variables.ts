@@ -5,7 +5,13 @@ import { useQuery } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
 import { useCallback, useMemo, useState, useSyncExternalStore } from "react";
 import { Alert } from "react-native";
-import { selectedSpaceId, subscribeSpaceSelection } from "../api/api";
+import {
+  currentApiBase,
+  selectedSpaceId,
+  subscribeApiBase,
+  subscribeSpaceSelection,
+} from "../api/api";
+import { currentSessionGeneration, subscribeSessionGeneration } from "../api/session";
 import { queryClient, rpcQuery } from "../query/query";
 
 /** Where the Vault screen opens an item: the account's Vault, or the Space's own. */
@@ -19,6 +25,9 @@ export function useChatVaultVariables(): VaultVariables {
   const { t } = useLingui();
   const router = useRouter();
   const spaceId = useSyncExternalStore(subscribeSpaceSelection, selectedSpaceId);
+  // A name checked before a sign-in or a server switch is checked again after it.
+  const server = useSyncExternalStore(subscribeApiBase, currentApiBase);
+  const session = useSyncExternalStore(subscribeSessionGeneration, currentSessionGeneration);
   const [wanted, setWanted] = useState(false);
   const overrides = useQuery(
     { ...rpcQuery("spaceSettings/overrides"), enabled: wanted && spaceId !== null },
@@ -56,7 +65,7 @@ export function useChatVaultVariables(): VaultVariables {
   }, [refetchAccount, refetchSpace, spaceVault]);
   const { want, names, find } = useVaultVariableReads({
     reads,
-    readsOf: spaceId ?? "",
+    readsOf: `${server}\n${session}\n${spaceId ?? ""}`,
     setWanted,
     readAgain,
   });
