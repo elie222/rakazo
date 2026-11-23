@@ -531,6 +531,16 @@ describe("routines.update", () => {
     expect(enqueue).not.toHaveBeenCalled();
   });
 
+  it("saves an end and refuses one that leaves the routine no run", async () => {
+    const { call, update } = fixture(false, false, recurring);
+    const endsAt = "2031-01-01T00:00:00.000Z";
+    expect((await call({ endsAt, runAt: undefined })).status).toBe(200);
+    expect(update.mock.calls[0]![0].data).toMatchObject({ endsAt: new Date(endsAt) });
+    const refused = await call({ endsAt: "2026-01-01T00:00:00.000Z", runAt: undefined });
+    expect(refused.status).toBe(400);
+    expect(update).toHaveBeenCalledTimes(1);
+  });
+
   it("keeps a schedule that a concurrent enable armed while renaming", async () => {
     const armedAt = new Date("2026-09-02T09:00:00.000Z");
     const { call, update, enqueue, cancel } = fixture(false, false, {

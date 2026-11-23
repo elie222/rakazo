@@ -1,8 +1,17 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { Routine } from "@rakazo/contracts";
 import { ROUTINE_NAME_MAX_LENGTH } from "@rakazo/contracts";
-import { cronFromPreset, isOneShotRoutineCrons } from "@rakazo/core";
-import { Button, Input, Switch, Textarea } from "@rakazo/ui-web";
+import { cronFromPreset, isOneShotRoutineCrons, routineRepeats } from "@rakazo/core";
+import {
+  Button,
+  Input,
+  InputGroup,
+  InputGroupAddon,
+  InputGroupButton,
+  InputGroupInput,
+  Switch,
+  Textarea,
+} from "@rakazo/ui-web";
 import { useQuery } from "@tanstack/react-query";
 import { ChevronLeft, X } from "lucide-react";
 import { useId, useState } from "react";
@@ -109,8 +118,9 @@ export function RoutineEditor({
   const canTest = Boolean(editing) && !saving && !running;
   // Only the owner changes another member's routine; anyone may still turn it on or off.
   const readOnly = editing?.editable === false;
-  const needsOneShotArm =
-    editing != null && routineNeedsOneShotArm(editing, draft.schedules.map(cronFromPreset));
+  const draftCrons = draft.schedules.map(cronFromPreset);
+  const needsOneShotArm = editing != null && routineNeedsOneShotArm(editing, draftCrons);
+  const repeats = routineRepeats(draftCrons, draft.watch !== null);
 
   return (
     <div>
@@ -284,6 +294,34 @@ export function RoutineEditor({
                 onChange={(emailSenders) => onChange({ ...draft, emailSenders })}
                 onRemove={() => onChange({ ...draft, emailSenders: null })}
               />
+            ) : null}
+
+            {repeats ? (
+              <div className="text-body text-muted-foreground">
+                <label htmlFor={`${fieldId}-ends`}>
+                  <Trans>Ends</Trans>
+                </label>
+                <InputGroup className="mt-2">
+                  <InputGroupInput
+                    id={`${fieldId}-ends`}
+                    type="date"
+                    value={draft.endsOn}
+                    min={new Date().toLocaleDateString("en-CA")}
+                    onChange={(e) => onChange({ ...draft, endsOn: e.target.value })}
+                  />
+                  {draft.endsOn && !readOnly ? (
+                    <InputGroupAddon align="inline-end">
+                      <InputGroupButton
+                        size="icon-sm"
+                        aria-label={t`Remove end date`}
+                        onClick={() => onChange({ ...draft, endsOn: "" })}
+                      >
+                        <X />
+                      </InputGroupButton>
+                    </InputGroupAddon>
+                  ) : null}
+                </InputGroup>
+              </div>
             ) : null}
 
             {needsOneShotArm ? (

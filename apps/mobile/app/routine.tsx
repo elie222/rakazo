@@ -3,11 +3,14 @@ import { useLingui } from "@lingui/react/macro";
 import type { Routine } from "@rakazo/contracts";
 import { ROUTINE_NAME_MAX_LENGTH } from "@rakazo/contracts";
 import {
+  cronFromPreset,
   defaultCronPreset,
   draftFromRoutine,
   emptyRoutineDraft,
+  formatRoutineEnd,
   isOneShotRoutineCrons,
   routineCopy,
+  routineRepeats,
 } from "@rakazo/core";
 import { Stack, useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
@@ -16,6 +19,7 @@ import { useBotEmail } from "../components/bots/bot-email";
 import { GlassIconButton } from "../components/native/glass-icon-button";
 import { NativeActionButton } from "../components/native/native-action-button";
 import { RoutineEmailTrigger } from "../components/routines/routine-email-trigger";
+import { RoutineEndDate } from "../components/routines/routine-end-date";
 import { RoutineScheduleEditor } from "../components/routines/routine-schedule-editor";
 import {
   SettingsGroup,
@@ -262,6 +266,13 @@ function RoutineView({
           <SettingsRow key={trigger} title={trigger} />
         ))}
         {nextRun ? <SettingsRow key="next" title={t`Next run`} value={nextRun} /> : null}
+        {routine.endsAt ? (
+          <SettingsRow
+            key="ends"
+            title={t`Ends`}
+            value={formatRoutineEnd(routine.endsAt, routine.timezone, dateLocaleForUi(locale))}
+          />
+        ) : null}
       </SettingsGroup>
       <SettingsGroup>
         <SettingsRow
@@ -350,6 +361,8 @@ function RoutineEditor({
   const source = base ?? template;
   const kept = source ? routineWithDraftTriggers(source, draft) : null;
   const webTriggers = kept ? routineWebTriggers(kept) : [];
+  const repeats =
+    !locked && routineRepeats(draft.schedules.map(cronFromPreset), Boolean(kept?.watch));
 
   // On Android, back leaves the form for the routine instead of leaving the routine.
   useEffect(() => {
@@ -558,6 +571,9 @@ function RoutineEditor({
                 </MenuPickerMenu>
               ))}
             </SettingsGroup>
+          ) : null}
+          {repeats ? (
+            <RoutineEndDate endsOn={draft.endsOn} onChange={(endsOn) => update({ endsOn })} />
           ) : null}
           {locked ? null : (
             <SettingsGroup>

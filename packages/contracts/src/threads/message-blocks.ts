@@ -49,7 +49,14 @@ const ChartBlock = z
   });
 
 /** What a routine row in the chat says happened. */
-export const RoutineEventChange = z.enum(["created", "updated", "enabled", "disabled", "deleted"]);
+export const RoutineEventChange = z.enum([
+  "created",
+  "updated",
+  "enabled",
+  "disabled",
+  "deleted",
+  "ended",
+]);
 export type RoutineEventChange = z.infer<typeof RoutineEventChange>;
 
 /**

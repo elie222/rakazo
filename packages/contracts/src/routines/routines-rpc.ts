@@ -69,6 +69,7 @@ export const routinesRpc = {
             runAt: IsoDate.optional(),
             /** Null removes the change trigger. */
             watch: RoutineWatchSchema.nullable().optional(),
+            endsAt: IsoDate.nullable().optional(),
           })
           .superRefine((value, ctx) => {
             if (

@@ -5,6 +5,9 @@ import {
   draftFromRoutine,
   isOneShotRoutineCrons,
   routineComputerUpdate,
+  routineDraftEndsAt,
+  routineEndUpdate,
+  routineRepeats,
 } from "@rakazo/core";
 import type { RoutineWebTrigger } from "./routine";
 import { routineTriggerNames } from "./routine";
@@ -59,6 +62,14 @@ function routineChanges(draft: MobileRoutineDraft, routine: Routine) {
     ...(draft.githubEnabled === false && routine.githubEnabled ? { githubEnabled: false } : {}),
     ...(draft.messageProvider === null && routine.messageProvider ? { messageProvider: null } : {}),
     ...(draft.watch === null && routine.watch ? { watch: null } : {}),
+    ...routineEndUpdate(
+      routine,
+      draft.endsOn,
+      routineRepeats(
+        routineScheduleLocked(routine) ? routine.crons : crons,
+        draft.watch !== null && routine.watch !== null,
+      ),
+    ),
     ...routineComputerUpdate(routine, {
       useComputer: draft.useComputer,
       name: name ?? routine.name,
@@ -112,6 +123,11 @@ export function routineSaveRequest(
     : false;
   if (!crons.length && !draft.emailSenders && !otherTriggers) return { error: "trigger" };
   if (!routine) {
+    const endsAt = routineDraftEndsAt(
+      draft.endsOn,
+      routineRepeats(crons, Boolean(kept?.watch)),
+      timezone,
+    );
     return {
       create: {
         botId,
@@ -120,6 +136,7 @@ export function routineSaveRequest(
         crons,
         timezone,
         active: draft.active,
+        ...(endsAt ? { endsAt } : {}),
         notify: kept?.notify ?? true,
         ...(draft.emailSenders ? { emailSenders: draft.emailSenders } : {}),
         ...(kept

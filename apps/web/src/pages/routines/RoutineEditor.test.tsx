@@ -210,3 +210,16 @@ it("keeps a run time edited while saving a one-time routine as unsaved", async (
   await act(async () => button("Close").click());
   expect(onClose).not.toHaveBeenCalled();
 });
+
+it("offers an end date only on a repeating routine and removes it with its button", async () => {
+  await render({ ...routine, endsAt: "2031-11-30T23:59:59.999Z" } as Routine);
+  const input = host.querySelector("input[type=date]") as HTMLInputElement;
+  expect(input.value).toBe("2031-11-30");
+  await act(async () => button("Remove end date").click());
+  expect(latestDraft.endsOn).toBe("");
+
+  await act(async () => root.unmount());
+  root = createRoot(host, new QueryClient({ defaultOptions: { queries: { retry: false } } }));
+  await render({ ...routine, crons: [ONCE_ROUTINE_CRON] } as Routine);
+  expect(host.querySelector("input[type=date]")).toBeNull();
+});

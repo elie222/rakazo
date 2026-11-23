@@ -12,6 +12,7 @@ import {
   routineComputerFingerprint,
   routineEditChange,
   routineEdited,
+  routineEndError,
   stableStringify,
   validateRoutineWatch,
   wakeRun,
@@ -157,9 +158,10 @@ export function routinesRoutes(ctx: RouterContext) {
           await assertEmailTrigger(deps.prisma, deps.env.inboundEmailDomain, bot.id);
         }
         await assertRoutineModel(deps, context.actor, input, codexCatalog);
-        const row = await deps.prisma.routine.create({
-          data: routineRowData(context.actor, input, routineNextRunAt(input)),
-        });
+        const data = routineRowData(context.actor, input, routineNextRunAt(input));
+        const endError = routineEndError({ ...data, watch: input.watch });
+        if (endError) throw new ClientError("BAD_REQUEST", endError);
+        const row = await deps.prisma.routine.create({ data });
         await announceRoutine(context.actor, bot, row);
         await postRoutineNotice(deps, {
           spaceId: context.actor.spaceId,
@@ -311,6 +313,17 @@ export function routinesRoutes(ctx: RouterContext) {
               : isOneShotRoutineCrons(crons)
                 ? (armedOneShotAt ?? existing.nextRunAt)
                 : (recalculatedNextRunAt ?? existing.nextRunAt);
+        const endsAt =
+          input.endsAt === undefined
+            ? existing.endsAt
+            : input.endsAt === null
+              ? null
+              : new Date(input.endsAt);
+        const endChanged = endsAt?.getTime() !== existing.endsAt?.getTime();
+        if (endChanged || nextRunAt?.getTime() !== existing.nextRunAt?.getTime()) {
+          const endError = routineEndError({ endsAt, crons, watch, nextRunAt });
+          if (endError) throw new ClientError("BAD_REQUEST", endError);
+        }
         // What a watch read is not the owner's words, so it never runs as a turn in the chat.
         const inChat = watch ? false : input.inChat;
         const computerPromptHash =
@@ -378,6 +391,7 @@ export function routinesRoutes(ctx: RouterContext) {
                 : { watch: (input.watch as Prisma.InputJsonValue | null) ?? Prisma.DbNull }),
               ...(watchChanged ? { watchState: Prisma.DbNull } : {}),
               ...(writesSchedule ? { nextRunAt } : {}),
+              ...(endChanged ? { endsAt } : {}),
             },
           });
         const write =

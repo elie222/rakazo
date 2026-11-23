@@ -597,6 +597,52 @@ describe("schedule tool persistence", () => {
     );
   });
 
+  it("saves a repeat's end as the end of that day and refuses one with no run before it", async () => {
+    vi.useFakeTimers({ now: new Date("2026-11-23T12:00:00Z") });
+    const create = vi.fn(async (args: { data: Record<string, unknown> }) => ({
+      id: "routine-1",
+      ...args.data,
+    }));
+    const deps = {
+      prisma: { routine: { create, findMany: noRoutines } },
+      events: { append: vi.fn(async () => undefined) },
+      jobs: { enqueue: vi.fn(async () => undefined) },
+    } as unknown as Parameters<typeof createScheduleFromTool>[0];
+    const daily = (endAt: string, schedule: Record<string, unknown> = { cron: "0 9 * * *" }) =>
+      createScheduleFromTool(deps, {
+        spaceId: "ws-1",
+        botId: "bot-1",
+        userId: "user-1",
+        threadId: "thread-1",
+        name: "Black Friday deals",
+        prompt: "Check the deals",
+        timezone: "America/New_York",
+        schedule,
+        endAt,
+      });
+
+    try {
+      await expect(daily("2026-11-30")).resolves.toMatchObject({
+        ok: true,
+        endAt: "Monday, 2026-11-30 23:59 (UTC-05:00)",
+      });
+      await expect(daily("2026-11-23T08:00")).resolves.toEqual({
+        error: expect.stringContaining("The end date is before the next run."),
+      });
+      await expect(daily("2026-11-30", { delayMinutes: 10 })).resolves.toEqual({
+        error: expect.stringContaining("A one-time routine ends once it runs."),
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+    expect(create).toHaveBeenCalledOnce();
+    expect(create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ endsAt: new Date("2026-12-01T04:59:59.999Z") }),
+      }),
+    );
+  });
+
   it("createScheduleFromTool creates the routine for the target bot and thread", async () => {
     const append = vi.fn(async () => undefined);
     const enqueue = vi.fn(async () => undefined);
@@ -1285,6 +1331,36 @@ describe("updateScheduleFromTool", () => {
     };
     expect(result.ok).toBe(true);
     expect(result.changes).toEqual({});
+  });
+
+  it("sets an end and removes it with none", async () => {
+    const { updateMany, update } = setup();
+    const endsAt = new Date("2026-11-30T22:59:59.999Z");
+    await expect(update({ endAt: "2026-11-30" })).resolves.toMatchObject({
+      ok: true,
+      endAt: "Monday, 2026-11-30 23:59 (UTC+01:00)",
+      changes: { endAt: { before: null, after: "Monday, 2026-11-30 23:59 (UTC+01:00)" } },
+    });
+    expect(updateMany).toHaveBeenLastCalledWith(expect.objectContaining({ data: { endsAt } }));
+
+    const ending = setup({ ...weekly, endsAt });
+    await expect(ending.update({ endAt: "none" })).resolves.toMatchObject({ ok: true });
+    expect(ending.updateMany).toHaveBeenLastCalledWith(
+      expect.objectContaining({ data: { endsAt: null } }),
+    );
+  });
+
+  it("refuses an end before the next run, or a retime past the end", async () => {
+    const { updateMany, update } = setup();
+    await expect(update({ endAt: "2026-10-25" })).resolves.toEqual({
+      error: expect.stringContaining("The end date is before the next run."),
+    });
+    const ending = setup({ ...weekly, endsAt: new Date("2026-10-25T00:00:00Z") });
+    await expect(ending.update({ schedule: { cron: "0 9 * * 1" } })).resolves.toEqual({
+      error: expect.stringContaining("The end date is before the next run."),
+    });
+    expect(updateMany).not.toHaveBeenCalled();
+    expect(ending.updateMany).not.toHaveBeenCalled();
   });
 
   it("moves the first run of the current repeat with startAt alone", async () => {

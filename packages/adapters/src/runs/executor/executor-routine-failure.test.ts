@@ -53,6 +53,7 @@ interface Scenario {
   noRoutine?: boolean;
   setupFailsOnce?: boolean;
   oneShot?: boolean;
+  endsAt?: Date;
 }
 
 async function failRun(scenario: Scenario) {
@@ -137,6 +138,8 @@ async function failRun(scenario: Scenario) {
             scenario.nextRunAt === undefined
               ? new Date(NOW.getTime() + 24 * 60 * MINUTE)
               : scenario.nextRunAt,
+          ...(scenario.endsAt ? { endsAt: scenario.endsAt, active: false } : {}),
+          ...(scenario.oneShot ? { userId: "user-1", active: false, lastRunAt: NOW } : {}),
         };
       }),
       count: vi.fn(async () => 0),
@@ -410,6 +413,17 @@ describe("a routine run's prompt", () => {
     });
     expect(prompt(runtimeRun)).toMatch(
       /^This is one scheduled run of your routine: do the work now, and do not schedule it again\.\n\nSweep the inbox/,
+    );
+  });
+
+  it("tells the bot when no run of the routine is left before its end", async () => {
+    const { runtimeRun } = await failRun({
+      error: new Error("Invalid API key"),
+      nextRunAt: null,
+      endsAt: new Date(NOW.getTime() + 60 * MINUTE),
+    });
+    expect(prompt(runtimeRun)).toContain(
+      "It is the last run: the routine reaches its end date and is deleted after it",
     );
   });
 

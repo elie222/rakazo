@@ -24,10 +24,29 @@ const routine: Routine = {
   watchState: null,
   lastRunAt: null,
   nextRunAt: null,
+  endsAt: null,
   createdAt: "2026-11-01T00:00:00.000Z",
 };
 
 describe("routineSaveRequest", () => {
+  it("sends an end only when its day changes, and on a new routine as that day ends", () => {
+    const ending = { ...routine, endsAt: "2031-11-30T17:00:00.000Z" };
+    const draft = draftFromRoutine(ending);
+    expect(routineSaveRequest({ ...draft, name: "Mail" }, ending, "bot-1", "UTC")).toEqual({
+      update: { routineId: ending.id, name: "Mail" },
+    });
+    expect(routineSaveRequest({ ...draft, endsOn: "" }, ending, "bot-1", "UTC")).toEqual({
+      update: { routineId: ending.id, endsAt: null },
+    });
+    const created = routineSaveRequest(
+      { ...draftFromRoutine(routine), endsOn: "2031-12-24" },
+      null,
+      "bot-1",
+      "Europe/Berlin",
+    );
+    expect("create" in created && created.create.endsAt).toBe("2031-12-24T22:59:59.999Z");
+  });
+
   it("sends Use my computer only when the owner flips it, and never to a copy", () => {
     const own = { ...routine, useComputer: false };
     const draft = draftFromRoutine(own);

@@ -242,6 +242,7 @@ export const taskTools: ToolHandlers = {
         schedule: compactScheduleInput(scheduleTimingArgs(args)),
         everyMinutes: isScheduleValueProvided(args.everyMinutes) ? args.everyMinutes : undefined,
         on: isScheduleValueProvided(args.on) ? args.on : undefined,
+        endAt: isScheduleValueProvided(args.endAt) ? String(args.endAt) : undefined,
       }),
     );
   },

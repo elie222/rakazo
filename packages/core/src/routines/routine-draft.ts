@@ -1,4 +1,5 @@
 import type { Routine, RoutineEmailSenders } from "@rakazo/contracts";
+import { isEndOfZonedDay, wallClock, zonedEndDateTime } from "../primitives/time.js";
 import type { CronPreset } from "./schedule.js";
 import { isOneShotRoutineCrons, presetFromCron } from "./schedule.js";
 
@@ -10,14 +11,22 @@ export type RoutineDraft = {
   /** Whose mail starts the routine; null without an email trigger. */
   emailSenders: RoutineEmailSenders | null;
   active: boolean;
+  endsOn: string;
 };
 
 export function emptyRoutineDraft(): RoutineDraft {
-  return { name: "", prompt: "", schedules: [], emailSenders: null, active: true };
+  return { name: "", prompt: "", schedules: [], emailSenders: null, active: true, endsOn: "" };
+}
+
+function endsOnDay(routine: Pick<Routine, "endsAt" | "timezone">): string {
+  return routine.endsAt ? wallClock(new Date(routine.endsAt), routine.timezone).slice(0, 10) : "";
 }
 
 export function draftFromRoutine(
-  routine: Pick<Routine, "name" | "prompt" | "crons" | "emailSenders" | "active">,
+  routine: Pick<
+    Routine,
+    "name" | "prompt" | "crons" | "emailSenders" | "active" | "endsAt" | "timezone"
+  >,
 ): RoutineDraft {
   return {
     name: routine.name,
@@ -25,7 +34,44 @@ export function draftFromRoutine(
     schedules: routine.crons.map(presetFromCron),
     emailSenders: routine.emailSenders,
     active: routine.active,
+    endsOn: endsOnDay(routine),
   };
+}
+
+export function routineRepeats(crons: string[], watching: boolean): boolean {
+  return watching || (crons.length > 0 && !isOneShotRoutineCrons(crons));
+}
+
+export function routineDraftEndsAt(
+  endsOn: string,
+  repeats: boolean,
+  timezone: string,
+): string | null {
+  if (!repeats || !endsOn) return null;
+  return zonedEndDateTime(endsOn, timezone)?.toISOString() ?? null;
+}
+
+export function routineEndUpdate(
+  routine: Pick<Routine, "endsAt" | "timezone">,
+  endsOn: string,
+  repeats: boolean,
+): { endsAt?: string | null } {
+  const endsAt = routineDraftEndsAt(endsOn, repeats, routine.timezone);
+  if (endsAt === null) return routine.endsAt ? { endsAt: null } : {};
+  return endsOn === endsOnDay(routine) ? {} : { endsAt };
+}
+
+export function formatRoutineEnd(endsAt: string, timezone: string, locale: string): string {
+  const end = new Date(endsAt);
+  const now = new Date();
+  const sameYear = wallClock(end, timezone).slice(0, 4) === wallClock(now, timezone).slice(0, 4);
+  return end.toLocaleString(locale, {
+    timeZone: timezone,
+    month: "short",
+    day: "numeric",
+    ...(sameYear ? {} : { year: "numeric" }),
+    ...(isEndOfZonedDay(end, timezone) ? {} : { hour: "numeric", minute: "2-digit" }),
+  });
 }
 
 /**
