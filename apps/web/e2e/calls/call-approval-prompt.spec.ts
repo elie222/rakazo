@@ -17,9 +17,10 @@ test("a call answers each turn and sends the caller to the screen for an approva
   await expect(call.getByText("Listening", { exact: true })).toBeVisible();
 
   await say(page, "show a fetch approval card");
-  await expect(call.getByText("Allow Web fetch example.test?", { exact: true })).toBeVisible({
-    timeout: 60_000,
-  });
+  await expect(call.getByTestId("ask-detail")).toContainText(
+    "https://docs.example.test/page?q=fixture",
+    { timeout: 60_000 },
+  );
   await finishClip(page);
   await expect(call.getByRole("button", { name: "Allow once", exact: true })).toBeVisible();
   const deny = call.getByRole("button", { name: "Deny", exact: true });
