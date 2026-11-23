@@ -64,6 +64,10 @@ vi.mock("./tts.js", () => ({
 }));
 
 vi.mock("../query/rpc.js", () => ({
+  createSpaceRpc: (id: string) => {
+    if (id !== "space-1") throw Error("Unexpected call space");
+    return rpc;
+  },
   selectedSpaceId: vi.fn(() => "space-1"),
   recheckSessionOnUnauthorized: vi.fn(),
   rpc: {
@@ -609,7 +613,12 @@ describe("call session", () => {
         });
         await vi.mocked(runThreadSubscription).mock.calls.at(-1)![0].refresh();
         expect(getSnapshot()?.approval?.messageId).toBe(approval.id);
+        vi.mocked(selectedSpaceId).mockReturnValue("another-tab-space");
+        const pending = deferred<never>();
+        (status === "running" ? followUp : answer).mockReturnValueOnce(pending.promise);
         await heard("on Friday");
+        expect(getSnapshot()?.approval).toBeNull();
+        await expect(answerCallApproval(approval.id, "allow")).rejects.toThrow();
         if (status === "running") {
           expect(followUp).toHaveBeenCalledWith(expect.objectContaining({ text: "on Friday" }));
           expect(answer).not.toHaveBeenCalled();
@@ -623,7 +632,11 @@ describe("call session", () => {
             }),
           );
         }
+        pending.reject(new Error("offline"));
+        await flushMicrotasks();
+        expect(getSnapshot()?.approval?.messageId).toBe(approval.id);
       } finally {
+        vi.mocked(selectedSpaceId).mockReturnValue("space-1");
         forgetSignedInUser();
         vi.unstubAllGlobals();
       }
@@ -676,16 +689,22 @@ describe("call session", () => {
         getThread.mockResolvedValue(
           snapshot([turn, answered(approval), botMessage("done", "Ready to continue.")]),
         );
+        const pending = deferred<never>();
+        answer.mockReturnValueOnce(pending.promise);
+        const first = answerCallApproval(approval.id, decision);
+        await expect(
+          answerCallApproval(approval.id, decision === "allow" ? "deny" : "allow"),
+        ).rejects.toThrow();
+        expect(answer).toHaveBeenCalledTimes(1);
+        pending.reject(new Error("offline"));
+        await expect(first).rejects.toThrow("offline");
         await answerCallApproval(approval.id, decision);
-        expect(answer).toHaveBeenCalledWith(
-          {
-            botId: "call-bot",
-            runId: "run-1",
-            messageId: approval.id,
-            answer: decision,
-          },
-          { context: { spaceId: "space-1" } },
-        );
+        expect(answer).toHaveBeenCalledWith({
+          botId: "call-bot",
+          runId: "run-1",
+          messageId: approval.id,
+          answer: decision,
+        });
         expect(getSnapshot()?.approval).toBeNull();
         expect(speak).toHaveBeenLastCalledWith(
           "Ready to continue.",

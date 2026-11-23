@@ -54,6 +54,7 @@ vi.mock("../calls/tts.js", () => ({
   },
 }));
 vi.mock("../query/rpc", () => ({
+  createSpaceRpc: () => ({ threads: { endCall: mocks.endCall, send: mocks.send } }),
   clearSpaceSelection: vi.fn(),
   recheckSessionOnUnauthorized: vi.fn(),
   rpc: {
