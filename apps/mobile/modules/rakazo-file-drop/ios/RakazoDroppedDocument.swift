@@ -22,15 +22,20 @@ enum RakazoDroppedDocument {
     let expectedType = documentType(provider)
     let name = provider.suggestedName
     let result = FileCopy()
+    let itemDirectory = directory
+      .appendingPathComponent(UUID().uuidString, isDirectory: true)
     let done = DispatchSemaphore(value: 0)
     let complete: @Sendable (URL?) -> Void = { source in
       defer { done.signal() }
       guard let source else { return }
       // The provider's temporary URL expires when its completion handler returns.
-      result.store {
-        initialSweep.wait()
-        return copyFile(source, into: directory, name: name, type: expectedType, maxBytes: maxBytes,
-          resizeHeadroom: resizeHeadroom)
+      initialSweep.wait()
+      let payload = copyFile(
+        source, into: itemDirectory, name: name, type: expectedType, maxBytes: maxBytes,
+        resizeHeadroom: resizeHeadroom
+      )
+      if !result.store(payload) || payload?["uri"] == nil {
+        try? FileManager.default.removeItem(at: itemDirectory)
       }
     }
     let progress: Progress
@@ -58,9 +63,11 @@ enum RakazoDroppedDocument {
     private var payload: [String: Any]?
     private var expired = false
 
-    func store(_ copy: () -> [String: Any]?) {
+    func store(_ value: [String: Any]?) -> Bool {
       lock.withLock {
-        if !expired { payload = copy() }
+        guard !expired else { return false }
+        payload = value
+        return true
       }
     }
 

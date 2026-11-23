@@ -8,9 +8,11 @@ import { useHardwareEscape, useHardwareShortcuts } from "./hardware-shortcuts";
 const native = vi.hoisted(() => ({
   dispatch: undefined as ((event: { key: string; presented: boolean }) => void) | undefined,
   navigate: vi.fn(),
+  setThreadEscapeEnabled: vi.fn(),
 }));
 vi.mock("expo-modules-core", () => ({
   requireOptionalNativeModule: () => ({
+    setThreadEscapeEnabled: native.setThreadEscapeEnabled,
     addListener: (_: string, listener: typeof native.dispatch) => {
       native.dispatch = listener;
       return {
@@ -21,10 +23,13 @@ vi.mock("expo-modules-core", () => ({
     },
   }),
 }));
-vi.mock("expo-router", async () => ({
-  useFocusEffect: (await import("react")).useEffect,
-  useRouter: () => ({ navigate: native.navigate }),
-}));
+vi.mock("expo-router", async () => {
+  const { useEffect } = await import("react");
+  return {
+    useFocusEffect: (effect: Parameters<typeof useEffect>[0]) => useEffect(effect, [effect]),
+    useRouter: () => ({ navigate: native.navigate }),
+  };
+});
 vi.mock("../api/session", () => ({ loadSessionToken: async () => "test-session" }));
 
 let root: ReturnType<typeof createRoot>;
@@ -32,6 +37,7 @@ beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   root = createRoot(document.createElement("div"));
   native.navigate.mockClear();
+  native.setThreadEscapeEnabled.mockClear();
 });
 afterEach(async () => {
   await act(() => root.unmount());
@@ -61,6 +67,17 @@ it("stops a thread on Escape when the navigator is not presenting a sheet", asyn
 
   act(() => native.dispatch?.({ key: "Escape", presented: false }));
 
+  expect(stop).toHaveBeenCalledOnce();
+});
+
+it("keeps thread Escape registered while applying the latest stop action", async () => {
+  const stop = vi.fn();
+  await act(async () => root.render(<Shortcuts stop={() => {}} />));
+  await act(async () => root.render(<Shortcuts stop={stop} />));
+
+  act(() => native.dispatch?.({ key: "Escape", presented: false }));
+
+  expect(native.setThreadEscapeEnabled).toHaveBeenCalledExactlyOnceWith(true);
   expect(stop).toHaveBeenCalledOnce();
 });
 

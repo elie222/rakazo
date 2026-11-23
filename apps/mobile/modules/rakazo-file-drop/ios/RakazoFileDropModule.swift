@@ -94,9 +94,9 @@ public class RakazoFileDropModule: Module {
   }
 
   private func attachDocuments(_ providers: [NSItemProvider], limits: Limits) {
-    sendAttachments(providers, limits: limits) { provider, directory in
+    sendAttachments(providers, limits: limits) { provider, _ in
       RakazoDroppedDocument.startCopy(
-        provider, into: directory, maxBytes: limits.maxBytes, resizeHeadroom: Self.resizeHeadroom,
+        provider, into: Self.root, maxBytes: limits.maxBytes, resizeHeadroom: Self.resizeHeadroom,
         after: self.initialSweep)
     }
   }

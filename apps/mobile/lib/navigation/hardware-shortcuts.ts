@@ -1,7 +1,7 @@
 import { resolveChatNavigationShortcut } from "@rakazo/core";
 import { requireOptionalNativeModule } from "expo-modules-core";
 import { useFocusEffect, useRouter } from "expo-router";
-import { useCallback, useEffect, useEffectEvent, useState } from "react";
+import { useCallback, useEffect, useEffectEvent, useLayoutEffect, useRef, useState } from "react";
 
 import { loadSessionToken } from "../api/session";
 
@@ -22,19 +22,25 @@ const escapeActions: Record<EscapeAction, Set<() => void>> = {
 };
 
 export function useHardwareEscape(kind: EscapeAction, action: (() => void) | null) {
+  const latest = useRef(action);
+  useLayoutEffect(() => {
+    latest.current = action;
+  }, [action]);
+  const enabled = action !== null;
   useFocusEffect(
     useCallback(() => {
-      if (!action) return;
+      if (!enabled) return;
+      const run = () => latest.current?.();
       const handlers = escapeActions[kind];
-      handlers.add(action);
+      handlers.add(run);
       if (kind === "thread") hardwareShortcutModule()?.setThreadEscapeEnabled?.(true);
       return () => {
-        handlers.delete(action);
+        handlers.delete(run);
         if (kind === "thread" && !handlers.size) {
           hardwareShortcutModule()?.setThreadEscapeEnabled?.(false);
         }
       };
-    }, [action, kind]),
+    }, [enabled, kind]),
   );
 }
 

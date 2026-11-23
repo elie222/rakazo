@@ -3,6 +3,7 @@ import {
   parseComposerEnterToSend,
   serializeComposerEnterToSend,
 } from "@rakazo/core";
+import { bestEffort } from "@rakazo/logging/best-effort";
 import * as SecureStore from "expo-secure-store";
 import { useSyncExternalStore } from "react";
 
@@ -30,12 +31,11 @@ export function useComposerHardwareEnterPreference(): boolean {
 }
 
 export async function loadComposerEnterToSendPreference(): Promise<void> {
-  try {
-    const raw = await SecureStore.getItemAsync(COMPOSER_ENTER_TO_SEND_STORAGE_KEY);
-    if (preference === null) update(parseComposerEnterToSend(raw));
-  } catch {
-    // Unreadable storage keeps the hardware keyboard default.
-  }
+  const raw = await bestEffort(
+    "read composer Enter preference",
+    SecureStore.getItemAsync(COMPOSER_ENTER_TO_SEND_STORAGE_KEY),
+  );
+  if (preference === null && raw !== undefined) update(parseComposerEnterToSend(raw));
 }
 
 let writes = Promise.resolve();
@@ -43,14 +43,13 @@ let writes = Promise.resolve();
 export async function setComposerEnterToSendPreference(enabled: boolean): Promise<void> {
   update(enabled);
   writes = writes.then(async () => {
-    try {
-      await SecureStore.setItemAsync(
+    await bestEffort(
+      "save composer Enter preference",
+      SecureStore.setItemAsync(
         COMPOSER_ENTER_TO_SEND_STORAGE_KEY,
         serializeComposerEnterToSend(enabled),
-      );
-    } catch {
-      // Keep the choice for the current session if storage is unavailable.
-    }
+      ),
+    );
   });
   await writes;
 }
