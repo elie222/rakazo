@@ -3,7 +3,7 @@ import type { BrowserWindow } from "electron";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { desktop } from "../desktop-state.js";
 import type { IpcCaller } from "../ipc/ipc.js";
-import { registerSetupIpc, showSetupWindow } from "./setup-window.js";
+import { isSetupSaveInProgress, registerSetupIpc, showSetupWindow } from "./setup-window.js";
 
 type Listener = (event: IpcCaller, ...args: unknown[]) => unknown;
 const mocks = vi.hoisted(() => ({ invoke: new Map<string, Listener>() }));
@@ -136,22 +136,30 @@ describe("showSetupWindow", () => {
   });
 
   it("notifies onAppReady after saving a server and closing setup", async () => {
-    const destroy = vi.fn();
+    const destroy = vi.fn(() => {
+      desktop.setupWindow = null;
+    });
     (page as unknown as { destroy: ReturnType<typeof vi.fn> }).destroy = destroy;
+    desktop.mainWindow = {
+      ...fakeWindow(),
+      webContents: { once: vi.fn(), removeListener: vi.fn(), isCrashed: () => false },
+    } as unknown as BrowserWindow;
+    desktop.currentTargetUrl = SERVER;
     const save = mocks.invoke.get("desktop.setup.save")?.(page.event, {
       mode: "existing",
       serverUrl: SERVER,
       headers: {},
     });
+    expect(isSetupSaveInProgress()).toBe(true);
     opening.resolve(true);
     await expect(save).resolves.toEqual({ ok: true });
+    expect(isSetupSaveInProgress()).toBe(false);
     expect(destroy).toHaveBeenCalledOnce();
     expect(onAppReady).toHaveBeenCalledOnce();
   });
 
-  it("does not fire onAppReady early when setup closes during an in-progress save rollback", async () => {
+  it("defers onAppReady while setup save is in progress and fires it if setup closed before a failed save", async () => {
     let closedHandler: (() => void) | undefined;
-    let crashed = false;
     const main = {
       isDestroyed: () => false,
       hide: vi.fn(),
@@ -160,14 +168,13 @@ describe("showSetupWindow", () => {
       webContents: {
         once: vi.fn(),
         removeListener: vi.fn(),
-        isCrashed: () => crashed,
+        isCrashed: () => false,
       },
     };
     desktop.mainWindow = main as unknown as BrowserWindow;
     desktop.currentTargetUrl = "https://previous.example";
     desktop.setupWindow = null;
 
-    // Create a real setup window via showSetupWindow so its closed listener is wired.
     const createdSetup = {
       ...fakeWindow(),
       once: vi.fn((event: string, listener: () => void) => {
@@ -198,16 +205,83 @@ describe("showSetupWindow", () => {
       serverUrl: SERVER,
       headers: {},
     });
+    expect(isSetupSaveInProgress()).toBe(true);
     // Closing setup while save is still running must not fire onAppReady against the old server.
     closedHandler?.();
     expect(onAppReady).not.toHaveBeenCalled();
 
-    // Re-attach setupWindow and simulate renderer crashing when destroySetupWindow runs so save rolls back.
-    desktop.setupWindow = createdSetup as unknown as BrowserWindow;
-    createdSetup.destroy.mockImplementationOnce(() => {
-      desktop.setupWindow = null;
-      closedHandler?.();
-      crashed = true;
+    // Save fails and leaves the restored main window visible with setup closed: now onAppReady runs.
+    opening.resolve(false);
+    await expect(save).resolves.toMatchObject({ ok: false });
+    expect(isSetupSaveInProgress()).toBe(false);
+    expect(onAppReady).toHaveBeenCalledOnce();
+  });
+
+  it("does not fire onAppReady when a post-destroy renderer crash rolls back to setup", async () => {
+    let closedHandler: (() => void) | undefined;
+    let crashed = false;
+    const main = {
+      isDestroyed: () => false,
+      hide: vi.fn(),
+      show: vi.fn(),
+      focus: vi.fn(),
+      webContents: {
+        once: vi.fn(),
+        removeListener: vi.fn(),
+        isCrashed: () => crashed,
+      },
+    };
+    desktop.mainWindow = main as unknown as BrowserWindow;
+    desktop.currentTargetUrl = "https://previous.example";
+    desktop.setupWindow = null;
+
+    const createdSetup = {
+      ...fakeWindow(),
+      once: vi.fn((event: string, listener: () => void) => {
+        if (event === "closed") closedHandler = listener;
+      }),
+      destroy: vi.fn(() => {
+        desktop.setupWindow = null;
+        closedHandler?.();
+        crashed = true;
+      }),
+      loadFile: vi.fn(() => Promise.resolve()),
+      webContents: {
+        mainFrame: {},
+        setWindowOpenHandler: vi.fn(),
+      },
+    };
+    const { BrowserWindow: MockBrowserWindow } = await import("electron");
+    vi.mocked(MockBrowserWindow).mockImplementationOnce(function mockWindow() {
+      return createdSetup as unknown as BrowserWindow;
+    });
+    registerSetupIpc({
+      userDataDir: "unused",
+      appOpener: { busy: () => false, open: () => opening.promise },
+      probeServer: async () => ({ ok: true }),
+      configureHeaderSession: vi.fn(),
+      syncHostComputerAccess: vi.fn(),
+      commitPendingAppSwitch: vi.fn(),
+      abandonPendingAppSwitch: vi.fn(),
+      recoverFromCrashedSave: async () => {
+        desktop.setupWindow = createdSetup as unknown as BrowserWindow;
+        return "Renderer stopped.";
+      },
+      stopStackLeftBehind: vi.fn(),
+      settleLocalStack,
+      onAppReady,
+    } as unknown as Parameters<typeof registerSetupIpc>[0]);
+
+    showSetupWindow();
+    const setupEvent = {
+      sender: createdSetup.webContents,
+      senderFrame: createdSetup.webContents.mainFrame,
+    } as unknown as IpcCaller;
+
+    const save = mocks.invoke.get("desktop.setup.save")?.(setupEvent, {
+      mode: "existing",
+      serverUrl: SERVER,
+      headers: {},
     });
     opening.resolve(true);
     await expect(save).resolves.toMatchObject({ ok: false });

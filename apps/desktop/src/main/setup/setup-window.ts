@@ -15,6 +15,11 @@ import { writeSetup } from "./setup-store.js";
 
 let setupSaveInProgress = false;
 let onAppReadyCallback: (() => void) | undefined;
+
+export function isSetupSaveInProgress(): boolean {
+  return setupSaveInProgress;
+}
+
 function createSetupWindow() {
   const icon = developmentIcon();
   const win = new BrowserWindow({
@@ -230,7 +235,6 @@ export function registerSetupIpc({
         }
         // Only now is the switch final; a crash rollback above may restore the local server.
         stopStackLeftBehind(previousSetup?.mode);
-        onAppReady?.();
         return { ok: true };
       } catch {
         const outcome = abandonPendingAppSwitch(previousSetup, previousUrl);
@@ -246,6 +250,14 @@ export function registerSetupIpc({
       }
     } finally {
       setupSaveInProgress = false;
+      if (
+        (desktop.setupWindow === null || desktop.setupWindow.isDestroyed()) &&
+        desktop.mainWindow !== null &&
+        !desktop.mainWindow.isDestroyed() &&
+        desktop.currentTargetUrl !== null
+      ) {
+        onAppReadyCallback?.();
+      }
     }
   });
 

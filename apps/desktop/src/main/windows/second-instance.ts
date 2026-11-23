@@ -1,5 +1,6 @@
 import type { App, BrowserWindow } from "electron";
 import { desktop } from "../desktop-state.js";
+import { isSetupSaveInProgress } from "../setup/setup-window.js";
 import type { ParsedDeepLink } from "./deep-link.js";
 import {
   DEEP_LINK_SCHEME,
@@ -125,12 +126,13 @@ export function registerDeepLinkHandlers(
     reopenTarget: (url: string) => void;
   },
 ) {
+  const isBusy = () => options.isOpening() || isSetupSaveInProgress();
   const controller = createDeepLinkController({
     initialArgv: options.initialArgv,
     setupWindow: () => desktop.setupWindow,
     mainWindow: () => desktop.mainWindow,
     currentTargetUrl: () => desktop.currentTargetUrl,
-    isOpening: options.isOpening,
+    isOpening: isBusy,
     onRevealMainWindow: () => clearTimeout(desktop.warmWindowTimer),
     reopenIfClosed: () => {
       if (
@@ -138,7 +140,7 @@ export function registerDeepLinkHandlers(
         (desktop.setupWindow !== null && !desktop.setupWindow.isDestroyed()) ||
         (desktop.mainWindow !== null && !desktop.mainWindow.isDestroyed()) ||
         desktop.currentTargetUrl === null ||
-        options.isOpening()
+        isBusy()
       ) {
         return;
       }
