@@ -921,7 +921,8 @@ export class BoatSandboxProvider extends LinuxDesktopSandbox implements SandboxP
         attempts: Number.POSITIVE_INFINITY,
         delayMs: BOAT_RESTORE_RETRY_MS,
         signal,
-        retryable: (error) => boatRetryableRefusal(error) && Date.now() < deadline,
+        retryable: (error) =>
+          !notRunning(error) && boatRetryableRefusal(error) && Date.now() < deadline,
       });
     try {
       return await send();
