@@ -69,7 +69,8 @@ export async function loadRunHistoryMessages(
   /**
    * A routine run acts with its owner's accounts and nobody is there to vouch for anyone else's
    * words, so it reads only what its owner wrote and this bot replied in turns they started, plus
-   * the latest replies of the routine's earlier runs, however far back they are.
+   * the latest replies of the routine's earlier runs. Both reads start after the thread's
+   * compaction cursor.
    */
   routine?: { routineId: string; earlierResults: number },
 ) {
@@ -77,7 +78,9 @@ export async function loadRunHistoryMessages(
     ? (
         await prisma.$queryRaw<Array<{ id: string }>>`
           SELECT m.id FROM messages m
-          WHERE m."threadId" = ${run.threadId} AND ${routineReadableSql(run.userId, run.botId)}
+          JOIN threads t ON t.id = m."threadId"
+          WHERE (t."historyCompactedUpToSeq" IS NULL OR m.seq > t."historyCompactedUpToSeq")
+            AND m."threadId" = ${run.threadId} AND ${routineReadableSql(run.userId, run.botId)}
           ORDER BY m.seq DESC
           LIMIT ${limit}`
       ).map(({ id }) => id)
@@ -116,9 +119,12 @@ export async function loadRunHistoryMessages(
   const messages = [...recent, ...earlier.filter((message) => !recentIds.has(message.id))]
     .sort((left, right) => right.seq - left.seq)
     // What a message replied to may be anyone's, so a routine reads no reply targets.
-    .map((message) =>
-      routine ? { ...message, replyToMessageId: null, replyQuote: null, replyTo: null } : message,
-    );
+    .map((message) => ({
+      ...message,
+      ...(routine ? { replyToMessageId: null, replyQuote: null, replyTo: null } : {}),
+      // A result already in the recent window uses that window's replay budget.
+      earlierRoutineResult: !recentIds.has(message.id),
+    }));
   return withOwnToolHistory(prisma, run, messages);
 }
 
@@ -133,9 +139,11 @@ async function earlierRoutineResults(
 ) {
   const latest = await prisma.$queryRaw<Array<{ id: string }>>`
     SELECT last_reply.id FROM runs r
+    JOIN threads t ON t.id = r."threadId"
     CROSS JOIN LATERAL (
       SELECT m.id FROM messages m
       WHERE m."runId" = r.id AND m."threadId" = ${run.threadId} AND m.role = 'bot'
+        AND (t."historyCompactedUpToSeq" IS NULL OR m.seq > t."historyCompactedUpToSeq")
       ORDER BY m.seq DESC
       LIMIT 1
     ) last_reply

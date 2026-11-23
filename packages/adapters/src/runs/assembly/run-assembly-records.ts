@@ -132,6 +132,8 @@ export type SavedTurn = Awaited<ReturnType<typeof loadSavedTurn>>;
 export const ROUTINE_RECENT_MESSAGES = 10;
 /** Replies of the routine's own earlier runs it also reads, so it can tell what is new. */
 export const ROUTINE_EARLIER_RESULTS = 2;
+export const ROUTINE_REPLAY_MESSAGE_MAX_CHARS = 2_000;
+export const ROUTINE_RECENT_HISTORY_MAX_CHARS = 16_000;
 
 /**
  * How much of the chat a run reads. A routine that runs in its chat reads all of it; one that runs
