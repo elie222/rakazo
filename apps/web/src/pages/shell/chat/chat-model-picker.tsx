@@ -90,20 +90,27 @@ export function ChatModelPicker({
     onOpenChange?.(next);
   }
   const sidePanel = compact && open ? aside?.(() => openChange(false)) : null;
+  const compactName = detail ? t`Model: ${model}, ${detail}` : t`Model: ${model}`;
+  // The button shrinks with the message box down to 44px and cuts the name off, so the full name
+  // shows on hover: in the shortcut tooltip when there is one, otherwise as the button's title.
+  // On touch screens an invisible strip above and below makes the 32px button a 44px target.
   const compactTrigger = (
     <PopoverTrigger
       id={id}
       disabled={disabled}
-      aria-label={detail ? t`Model: ${model}, ${detail}` : t`Model: ${model}`}
+      aria-label={compactName}
       aria-describedby={textOnly ? imagesHintId : undefined}
       aria-keyshortcuts={keyShortcuts}
-      className="flex h-8 min-w-0 max-w-64 items-center gap-1.5 rounded-full px-2.5 text-body-sm text-muted-foreground outline-none transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-40"
+      title={hint ? undefined : compactName}
+      className="relative flex h-8 min-w-11 max-w-64 items-center rounded-full px-2.5 text-body-sm text-muted-foreground outline-none transition-colors pointer-coarse:after:absolute pointer-coarse:after:inset-x-0 pointer-coarse:after:-inset-y-1.5 hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-40"
     >
-      <ModelMarkIcon mark={mark} className="size-3.5 shrink-0 text-foreground" />
-      <span className="min-w-0 truncate text-foreground">{model}</span>
-      {detail ? <span className="shrink-0">{detail}</span> : null}
-      {textOnly ? <TextOnlyMark /> : null}
-      <ChevronDownIcon className="size-3.5 shrink-0" aria-hidden="true" />
+      <span className="flex min-w-0 items-center gap-1.5 overflow-hidden">
+        <ModelMarkIcon mark={mark} className="size-3.5 shrink-0 text-foreground" />
+        <span className="min-w-0 truncate text-foreground">{model}</span>
+        {detail ? <span className="shrink-0">{detail}</span> : null}
+        {textOnly ? <TextOnlyMark /> : null}
+        <ChevronDownIcon className="size-3.5 shrink-0" aria-hidden="true" />
+      </span>
     </PopoverTrigger>
   );
 
@@ -115,7 +122,12 @@ export function ChatModelPicker({
           // The tooltip stays mounted so the button keeps its focus, and hides while the list is open.
           <Tooltip>
             <TooltipTrigger render={compactTrigger} />
-            {open ? null : <TooltipContent>{hint}</TooltipContent>}
+            {open ? null : (
+              <TooltipContent>
+                <span className="min-w-0 break-words">{model}</span>
+                {hint}
+              </TooltipContent>
+            )}
           </Tooltip>
         ) : (
           compactTrigger

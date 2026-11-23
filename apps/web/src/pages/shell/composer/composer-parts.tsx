@@ -243,7 +243,8 @@ export function ComposerActions({
   return (
     <div
       ref={actionsRef}
-      className={`col-start-3 flex shrink-0 items-center gap-2 justify-self-end ${
+      // Held to its column, so the model button cuts its name off instead of growing over the text.
+      className={`col-start-3 flex min-w-0 max-w-full shrink-0 items-center gap-2 justify-self-end ${
         expanded ? "row-start-2" : ""
       }`}
     >
