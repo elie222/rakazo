@@ -1,4 +1,5 @@
 import type { PageVisibility } from "@rakazo/contracts";
+import sharp from "sharp";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { RunContext } from "../assembly/run-context.js";
 
@@ -363,7 +364,6 @@ describe("saving a page's pictures", () => {
     `const App = () => (\n  <Page title="Trip">\n${names.map((name) => `    <Image src="image:${name}" alt="${name}" />\n`).join("")}  </Page>\n);\nexport default App;\n`;
 
   async function png() {
-    const { default: sharp } = await import("sharp");
     return new Uint8Array(
       await sharp({ create: { width: 8, height: 8, channels: 3, background: "#123456" } })
         .png()
@@ -467,6 +467,24 @@ describe("saving a page's pictures", () => {
     expect(result.warnings).toEqual([
       "image:beach is not one of this page's images, so it is left out.",
     ]);
+  });
+
+  it("refuses a save over a stored picture map it cannot read, rather than dropping it", async () => {
+    const tx = { page: { updateMany: vi.fn() }, pageVersion: { create: vi.fn() } };
+    const ctx = context(tx, { currentVersion: 1 });
+    (
+      ctx as { deps: { prisma: { page: { findFirst: () => Promise<unknown> } } } }
+    ).deps.prisma.page.findFirst = async () => ({
+      id: "page-1",
+      title: "Trip",
+      visibility: "private",
+      currentVersion: 1,
+      versions: [{ id: "v1", source: pictured("hotel"), images: ["not", "a", "map"] }],
+    });
+    await expect(
+      pageTools.save_page!(ctx, call({ pageId: "page-1", source: pictured("hotel") })),
+    ).rejects.toThrow(/does not match its schema/);
+    expect(tx.pageVersion.create).not.toHaveBeenCalled();
   });
 
   it("lists each picture a shared page would gain on its approval card", async () => {

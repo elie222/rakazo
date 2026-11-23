@@ -3,10 +3,10 @@ import type { PageImageSource, SharedPage } from "@rakazo/contracts";
 import { pageShareTokenFromSlug, SHARED_PAGE_PATH_PREFIX } from "@rakazo/contracts";
 import { Button, buttonVariants, Spinner } from "@rakazo/ui-web";
 import { useQuery } from "@tanstack/react-query";
-import { useEffect, useMemo } from "react";
+import { useEffect } from "react";
 import { useParams } from "react-router-dom";
 import { PublicPageShell } from "../components/pages/PublicPageShell";
-import { usePageDocument } from "../lib/pages/pages";
+import { usePageContent, usePageDocument } from "../lib/pages/pages";
 
 async function readSharedPage(token: string): Promise<SharedPage | null> {
   const response = await fetch(`${SHARED_PAGE_PATH_PREFIX}${token}`, {
@@ -50,20 +50,8 @@ function SharedPageBody() {
     enabled: token !== null,
     retry: false,
   });
-  const page = shared.data;
-  const content = useMemo(
-    () =>
-      page && token
-        ? {
-            code: page.code,
-            images: page.images,
-            readImage: (imageId: string) => ({
-              queryKey: ["shared-page", token, "image", imageId],
-              queryFn: () => readSharedPageImage(token, imageId),
-            }),
-          }
-        : undefined,
-    [page, token],
+  const content = usePageContent(shared.data, ["shared-page", token, "image"], (imageId) =>
+    readSharedPageImage(token!, imageId),
   );
   const viewer = usePageDocument(content);
   const title = shared.data?.title;

@@ -262,7 +262,7 @@ async function savePage(ctx: RunContext, call: ToolCall) {
   if (pageId && !page) return { error: "No page with that pageId belongs to this bot or chat." };
   const currentVersion = page?.versions[0];
   const current = currentVersion?.source ?? "";
-  const previousImages = currentVersion ? pageVersionImages(currentVersion) : {};
+  const previousImages = currentVersion ? pageVersionImages(currentVersion, "reject") : {};
 
   if (page && !hasSource && !hasEdits && !title && !hasImages) {
     // The stored source may hold outside text an earlier run put in the page, so reading it

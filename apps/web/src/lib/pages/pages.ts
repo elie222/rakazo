@@ -13,6 +13,7 @@ import {
   useCallback,
   useContext,
   useMemo,
+  useRef,
   useState,
   useSyncExternalStore,
 } from "react";
@@ -70,25 +71,37 @@ export type PageContent = {
   readImage: (imageId: string) => { queryKey: QueryKey; queryFn: () => Promise<PageImageSource> };
 };
 
+export function usePageContent(
+  page: { code: string; images: PageImages } | null | undefined,
+  scope: QueryKey,
+  read: (imageId: string) => Promise<PageImageSource>,
+): PageContent | undefined {
+  const key = JSON.stringify(scope);
+  const latest = useRef(read);
+  latest.current = read;
+  return useMemo(
+    () =>
+      page
+        ? {
+            code: page.code,
+            images: page.images,
+            readImage: (imageId: string) => ({
+              queryKey: [...(JSON.parse(key) as unknown[]), imageId],
+              queryFn: () => latest.current(imageId),
+            }),
+          }
+        : undefined,
+    [page, key],
+  );
+}
+
 export function useReviewedPageContent(
   pageId: string | null,
   page: { code: string; images: PageImages; version: number } | undefined,
 ): PageContent | undefined {
   const queries = useSpaceQueries();
-  return useMemo(
-    () =>
-      page && pageId
-        ? {
-            code: page.code,
-            images: page.images,
-            readImage: (imageId: string) => ({
-              queryKey: [...queries.pageReviews.image.key(), imageId],
-              queryFn: () =>
-                queries.pageReviews.image.call({ pageId, version: page.version, imageId }),
-            }),
-          }
-        : undefined,
-    [pageId, page, queries],
+  return usePageContent(pageId ? page : undefined, queries.pageReviews.image.key(), (imageId) =>
+    queries.pageReviews.image.call({ pageId: pageId!, version: page!.version, imageId }),
   );
 }
 

@@ -7,12 +7,15 @@ const StoredPageImages = PageImagesSchema.nullish().transform((images) => images
 
 type StoredVersion = { id: string; images: Prisma.JsonValue | null };
 
-export function pageVersionImages(version: StoredVersion): PageImages {
+export function pageVersionImages(
+  version: StoredVersion,
+  onMismatch: "reject" | { fallback: PageImages } = { fallback: {} },
+): PageImages {
   return readJsonColumn(
     StoredPageImages,
     version.images,
     { table: "page_versions", column: "images", id: version.id },
-    { fallback: {} },
+    onMismatch,
   );
 }
 
@@ -21,12 +24,7 @@ export async function readPageVersionImage(
   version: StoredVersion & { pageId: string },
   imageId: string,
 ): Promise<PageImageSource | null> {
-  const images = readJsonColumn(
-    StoredPageImages,
-    version.images,
-    { table: "page_versions", column: "images", id: version.id },
-    "reject",
-  );
+  const images = pageVersionImages(version, "reject");
   if (!Object.values(images).includes(imageId)) return null;
   const image = await db.pageImage.findFirst({
     where: { id: imageId, pageId: version.pageId },

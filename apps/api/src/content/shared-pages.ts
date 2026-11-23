@@ -6,7 +6,7 @@ import { readSharedPage, readSharedPageImage } from "./pages.js";
 
 const MINUTE_MS = 60_000;
 const READS_PER_IP_PER_MINUTE = 120;
-const IMAGE_READS_PER_IP_PER_MINUTE = 1200;
+const IMAGE_READS_PER_IP_PER_MINUTE = 480;
 
 const HEADERS = {
   "cache-control": "no-store",

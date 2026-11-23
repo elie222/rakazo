@@ -86,7 +86,7 @@ async function pictureBytes(
       { maxBytes: PAGE_IMAGE_SOURCE_MAX_BYTES },
     );
   } catch {
-    return "no chat file with that artifactId and no readable file at that path";
+    return "could not read a chat file with that artifactId or a computer file at that path";
   }
 }
 
@@ -95,13 +95,11 @@ export async function preparePageImages(
   call: ToolCall,
   sources: PageImageSources,
 ): Promise<{ images: Record<string, EncodedPageImage> } | { problems: string[] }> {
-  const entries = await Promise.all(
-    Object.entries(sources).map(async ([name, source]) => {
-      const bytes = await pictureBytes(ctx, call, source);
-      const image = typeof bytes === "string" ? bytes : await encodePageImage(bytes);
-      return [name, image] as const;
-    }),
-  );
+  const entries: (readonly [string, EncodedPageImage | string])[] = [];
+  for (const [name, source] of Object.entries(sources)) {
+    const bytes = await pictureBytes(ctx, call, source);
+    entries.push([name, typeof bytes === "string" ? bytes : await encodePageImage(bytes)]);
+  }
   const problems = entries.flatMap(([name, image]) =>
     typeof image === "string" ? [`Image ${name}: ${image}.`] : [],
   );

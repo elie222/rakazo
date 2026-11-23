@@ -179,7 +179,10 @@ async function requireReadyDraft(
     },
     select: { id: true, images: true },
   });
-  const images = pageImagesNamedIn(base ? pageVersionImages(base) : {}, request.draftSource);
+  const images = pageImagesNamedIn(
+    base ? pageVersionImages(base, "reject") : {},
+    request.draftSource,
+  );
   return { code: request.draftCode, source: request.draftSource, images };
 }
 
