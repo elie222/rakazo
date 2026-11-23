@@ -127,6 +127,7 @@ describe.skipIf(!enabled)("keys pasted into a chat message (PostgreSQL)", () => 
     await send(`Use ${key}`);
 
     const variable = /Use \[saved as \$(PASTED_KEY_[0-9A-F]{6})\]/.exec(await stored())?.[1];
+    expect(variable).toBeDefined();
     const copy = await system.vaultCredential.findFirstOrThrow({
       where: { userId: actor.userId, name: variable?.toLowerCase().replaceAll("_", "-") },
     });
