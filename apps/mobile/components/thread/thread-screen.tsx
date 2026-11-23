@@ -20,7 +20,7 @@ import { useFocusEffect, useIsFocused, useLocalSearchParams, useRouter } from "e
 import { useHeaderHeight } from "expo-router/react-navigation";
 import { useCallback, useContext, useMemo, useRef, useState } from "react";
 import { I18nManager, Platform, View } from "react-native";
-import { KeyboardAvoidingView } from "react-native-keyboard-controller";
+import { KeyboardAvoidingView, useKeyboardState } from "react-native-keyboard-controller";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useLiveStream } from "../../lib/api/roster-signals";
 import { mobileTokens } from "../../lib/appearance/appearance";
@@ -48,7 +48,10 @@ import {
   threadHeaderFloats,
 } from "../../lib/thread/scroll/thread-edges";
 import { useThreadKeyboard } from "../../lib/thread/scroll/thread-keyboard";
-import { threadKeyboardAvoidance } from "../../lib/thread/scroll/thread-keyboard-offset";
+import {
+  keyboardListInset,
+  threadKeyboardAvoidance,
+} from "../../lib/thread/scroll/thread-keyboard-offset";
 import { useThreadListScroll } from "../../lib/thread/scroll/thread-list-scroll";
 import {
   isOwnThreadMessage,
@@ -117,6 +120,11 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
   const { inboxShown, contentWidth: windowWidth } = useSplitView();
   const nativeHeaderHeight = useHeaderHeight();
   const headerHeight = threadHeaderFloats() ? nativeHeaderHeight : 0;
+  const keyboardAvoidance = threadKeyboardAvoidance({
+    os: Platform.OS,
+    floatingHeader: threadHeaderFloats(),
+    nativeHeaderHeight,
+  });
   const headerClearance = threadHeaderClearance(headerHeight);
   const insets = useSafeAreaInsets();
   // An unfolded or tablet window keeps messages and the composer in a centred reading column.
@@ -156,8 +164,19 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
   // The composer floats over the list, which scrolls underneath; this keeps the newest message
   // clear of it. A read-only chat has no composer.
   const [dockHeight, setDockHeight] = useState(0);
+  // The room the dock is laid out in. Capping the lifted dock to it keeps expanded controls above
+  // the keyboard without letting them rise under the native header.
+  const [threadBodyHeight, setThreadBodyHeight] = useState(0);
   const keyboard = useThreadKeyboard();
-  const bottomInset = Math.max(dockHeight, readOnly ? contentBottomInset : 0);
+  // Only the height is needed, so the screen does not rebuild for the rest of the keyboard state.
+  const keyboardHeight = useKeyboardState((state) => state.height);
+  // Android's dock lifts itself, so the list takes the keyboard's height as its own room.
+  const keyboardInset = keyboardListInset({
+    os: Platform.OS,
+    rootOwnsKeyboard: rootAvoidsKeyboard,
+    keyboardHeight: keyboard.avoiding ? keyboardHeight : 0,
+  });
+  const bottomInset = Math.max(dockHeight, readOnly ? contentBottomInset : 0) + keyboardInset;
   const activeBotId = useRef(botId);
   activeBotId.current = botId;
   const activeGroupId = useRef(groupId);
@@ -593,22 +612,22 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
   return (
     <View style={{ flex: 1 }}>
       <KeyboardAvoidingView
-        enabled={!rootAvoidsKeyboard && keyboard.avoiding}
+        enabled={!rootAvoidsKeyboard && keyboard.avoiding && keyboardAvoidance.enabled}
         // Padding always settles to zero. "height" stays shrunk when the keyboard hides without
         // move frames, such as when a pushed screen closes with its own keyboard up.
         behavior="padding"
-        {...threadKeyboardAvoidance({
-          os: Platform.OS,
-          floatingHeader: threadHeaderFloats(),
-          nativeHeaderHeight,
-        })}
+        automaticOffset={keyboardAvoidance.automaticOffset}
+        keyboardVerticalOffset={keyboardAvoidance.keyboardVerticalOffset}
         style={{
           flex: 1,
           backgroundColor: tokens.background,
         }}
       >
         {/* The keyboard's padding shrinks this, so the floating composer rides above it. */}
-        <View style={{ flex: 1 }}>
+        <View
+          style={{ flex: 1 }}
+          onLayout={(event) => setThreadBodyHeight(event.nativeEvent.layout.height)}
+        >
           <NewestPageCards.Provider value={newestPages}>
             <ThreadMessageList
               scroll={scroll}
@@ -640,6 +659,8 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
           <ThreadComposerDock
             hidden={readOnly}
             keyboardProgress={keyboard.progress}
+            keyboardHeight={keyboard.height}
+            availableHeight={threadBodyHeight}
             columnPadding={columnPadding}
             notice={<ThreadFetchErrorNotice error={error} showingSaved={showingSaved} />}
             onHeight={setDockHeight}

@@ -13,10 +13,14 @@ const mocks = vi.hoisted(() => ({
   events: new Map<string, () => void>(),
   input: { value: null as object | null },
   reaction: null as null | (() => void),
+  visible: false,
+  stateHeight: 0,
 }));
 
 vi.mock("react-native-keyboard-controller", () => ({
-  KeyboardController: { isVisible: () => false },
+  KeyboardController: { isVisible: () => mocks.visible },
+  useKeyboardState: <T,>(selector: (state: { height: number }) => T): T =>
+    selector({ height: mocks.stateHeight }),
   KeyboardEvents: {
     addListener: (name: string, callback: () => void) => {
       mocks.events.set(name, callback);
@@ -65,6 +69,8 @@ function keyboardEnd(progress: number) {
 beforeEach(() => {
   vi.useFakeTimers();
   mocks.input.value = null;
+  mocks.visible = false;
+  mocks.stateHeight = 0;
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   root = createRoot(document.createElement("div"));
   act(() => root.render(createElement(Probe)));
@@ -111,6 +117,29 @@ describe("useThreadKeyboard", () => {
     act(() => vi.advanceTimersByTime(KEYBOARD_SETTLE_MS));
     expect(keyboard.progress.value).toBe(1);
     expect(keyboard.avoiding).toBe(true);
+  });
+
+  it("reports the keyboard's height and clears it when the keyboard is taken down", () => {
+    focus(true);
+    keyboardEnd(1);
+    expect(keyboard.height.value).toBe(300);
+
+    focus(false);
+    act(() => vi.advanceTimersByTime(KEYBOARD_SETTLE_MS));
+    expect(keyboard.height.value).toBe(0);
+  });
+
+  it("lifts for a keyboard that is already up when the thread mounts", () => {
+    // A thread can replace another chat while the keyboard stays up, so no transition frame
+    // arrives to report the height.
+    mocks.visible = true;
+    mocks.stateHeight = 280;
+    act(() => root.unmount());
+    root = createRoot(document.createElement("div"));
+    act(() => root.render(createElement(Probe)));
+    act(() => mocks.reaction?.());
+
+    expect(keyboard.height.value).toBe(280);
   });
 
   it("avoids the keyboard again when it next shows", () => {
