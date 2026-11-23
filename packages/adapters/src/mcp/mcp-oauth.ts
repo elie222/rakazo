@@ -40,7 +40,12 @@ import type { SecretCleanup, SecretCleanupDeps } from "../secrets/secret-cleanup
 import { attemptSecretCleanup, cleanUpUnsavedSecret } from "../secrets/secret-cleanup.js";
 import { persistPreparedSecret } from "../secrets/secret-persistence.js";
 import { holdSecretNotifications } from "../secrets/secret-store-factory.js";
-import { MCP_DYNAMIC_REGISTRATION_UNSUPPORTED, needsMcpOAuthClient } from "./mcp-server-health.js";
+import type { FailedOAuthRequest } from "./mcp-server-health.js";
+import {
+  MCP_DYNAMIC_REGISTRATION_UNSUPPORTED,
+  needsMcpOAuthClient,
+  refusedRegistration,
+} from "./mcp-server-health.js";
 import {
   MAX_AUTHORIZATION_URL_LENGTH,
   secureFetch,
@@ -1107,20 +1112,6 @@ function withoutRequestCredentials(material: OAuthMaterial): OAuthMaterial {
 }
 
 type OAuthRejection = { status: number; code: string; description: string };
-
-type FailedOAuthRequest = { href: string; method: string; status: number };
-
-/** Whether the authorization server turned away our client registration as not allowed
- * (401 or 403 at its registration endpoint): it accepts only clients registered with it
- * out of band, so the user must enter one. */
-function refusedRegistration(
-  failed: FailedOAuthRequest | undefined,
-  discovery: OAuthDiscoveryState | undefined,
-): boolean {
-  if (failed?.method !== "POST" || (failed.status !== 401 && failed.status !== 403)) return false;
-  const endpoint = discovery?.authorizationServerMetadata?.registration_endpoint;
-  return endpoint !== undefined && new URL(endpoint).href === failed.href;
-}
 
 const OAUTH_ERROR_BODY_MAX_CHARS = 8_000;
 // A JavaScript character is at most 3 UTF-8 bytes, so a longer body cannot pass the character cap.
