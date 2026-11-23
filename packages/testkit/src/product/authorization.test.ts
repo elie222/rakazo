@@ -348,6 +348,7 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["bots/restoreInstructions"],
       ["bots/setComputer"],
       ["bots/rotateWebhookSecret"],
+      ["bots/ensureWebhookSecret", { botId: "missing-bot" }],
       ["bots/revealWebhookSecret", { botId: "missing-bot" }],
       ["bots/emailAddress", { botId: "missing-bot" }],
       ["bots/emailAddresses"],

@@ -624,6 +624,40 @@ export function botsRoutes(ctx: RouterContext) {
           webhookConfigured: true as const,
         };
       }),
+      ensureWebhookSecret: authed.bots.ensureWebhookSecret.handler(async ({ context, input }) => {
+        const bot = await repos.getBot(context.actor, input.botId);
+        if (bot.userId !== context.actor.userId) {
+          throw new ClientError("FORBIDDEN", "Only the bot's creator can set its webhook key.");
+        }
+        // Without `replace`, a key the bot already has is kept, and of two calls at once only one
+        // saves its key, so a device that asks again never revokes one in use.
+        const created = await storeBotWebhookKey(
+          { prisma: deps.prisma, secretStore: deps.secrets },
+          bot,
+          {
+            operationId: "bots.ensureWebhookSecret",
+            traceId: "bots.ensureWebhookSecret",
+            spaceId: context.actor.spaceId,
+            userId: context.actor.userId,
+            signal: context.signal ?? new AbortController().signal,
+          },
+          { replace: false },
+        );
+        // Audited here rather than in the table, so a call that keeps the key records nothing.
+        if (created) {
+          await recordSecurityEvent({
+            type: "credential.created",
+            userId: context.actor.userId,
+            spaceId: context.actor.spaceId,
+            metadata: { procedure: "bots.ensureWebhookSecret", kind: "webhook", botId: bot.id },
+          });
+        }
+        return {
+          ...(created ? { secret: created } : {}),
+          path: botInboundPath(bot.id, "webhook"),
+          webhookConfigured: true as const,
+        };
+      }),
       revealWebhookSecret: authed.bots.revealWebhookSecret.handler(async ({ context, input }) => {
         const bot = await repos.getBot(context.actor, input.botId);
         // Only the creator can issue the secret, so only the creator can read it back. Checked

@@ -47,7 +47,10 @@ vi.mock("../layout/side-insets", () => ({ useSideInsets: () => ({}) }));
 vi.mock("../api/user-error", () => ({ errorText: (_: unknown, fallback: string) => fallback }));
 vi.mock("./routine", () => ({
   deviceTimeZone: () => "UTC",
-  routineTriggerRows: () => ["Every day at 9:00 AM"],
+  routineTriggerRows: (routine: { webhookEnabled?: boolean }) => [
+    "Every day at 9:00 AM",
+    ...(routine.webhookEnabled ? ["Webhook"] : []),
+  ],
   routineWebTriggers: (routine: { webhookEnabled?: boolean }) =>
     routine.webhookEnabled ? [{ key: "webhookEnabled", label: "Webhook" }] : [],
 }));
@@ -61,18 +64,27 @@ vi.mock("../../components/settings/settings-group", () => ({
     value,
     onPress,
     accessibilityState,
+    trailing,
   }: {
     title: string;
     value?: string;
     onPress?: () => void;
     accessibilityState?: { disabled?: boolean };
-  }) =>
+    trailing?: ReactNode;
+  }) => [
     createElement(
       "button",
-      { type: "button", onClick: onPress, "aria-disabled": accessibilityState?.disabled },
+      {
+        key: "row",
+        type: "button",
+        onClick: onPress,
+        "aria-disabled": accessibilityState?.disabled,
+      },
       title,
       value,
     ),
+    trailing,
+  ],
   SettingsSwitch: () => null,
 }));
 vi.mock("../../components/ui/menu-picker", () => ({
@@ -97,7 +109,9 @@ vi.mock("../../components/ui/menu-picker", () => ({
     ),
   ],
 }));
-vi.mock("../../components/thread/routine-event-row", () => ({ WebhookKeyButton: () => null }));
+vi.mock("../../components/thread/routine-event-row", () => ({
+  WebhookKeyButton: () => createElement("span", null, "Show webhook key"),
+}));
 vi.mock("../../components/ui/growing-text-input", () => ({ GrowingTextInput: () => null }));
 vi.mock("../../components/routines/routine-end-date", () => ({ RoutineEndDate: () => null }));
 vi.mock("../../components/routines/routine-email-trigger", () => ({
@@ -233,13 +247,12 @@ function button(label: string) {
 
 it("adds a webhook, makes the bot's key first, then saves the trigger", async () => {
   const key = deferred<{ secret: string }>();
-  state.rpc.mockImplementation(async (proc: string) =>
-    proc === "bots/get" ? { webhookConfigured: false } : key.promise,
-  );
+  state.rpc.mockReturnValue(key.promise);
   await press("Edit routine");
   await press("Webhook");
+  expect(state.rpc).toHaveBeenCalledTimes(1);
   expect(state.rpc).toHaveBeenCalledWith(
-    "bots/rotateWebhookSecret",
+    "bots/ensureWebhookSecret",
     { botId: "bot-1" },
     expect.anything(),
   );
@@ -253,30 +266,33 @@ it("adds a webhook, makes the bot's key first, then saves the trigger", async ()
   });
 });
 
-it("never replaces a key the bot already has", async () => {
-  state.rpc.mockResolvedValue({ webhookConfigured: true });
-  await press("Edit routine");
-  await press("Webhook");
-  expect(state.rpc).toHaveBeenCalledTimes(1);
-  expect(state.rpc).toHaveBeenCalledWith("bots/get", { botId: "bot-1" }, expect.anything());
-});
-
 it("takes the webhook back off when only the bot's creator can make its key", async () => {
-  state.rpc.mockImplementation(async (proc: string) => {
-    if (proc === "bots/get") return { webhookConfigured: false };
-    throw Object.assign(new Error("Forbidden"), { code: "FORBIDDEN" });
-  });
+  state.rpc.mockRejectedValue(Object.assign(new Error("Forbidden"), { code: "FORBIDDEN" }));
   await press("Edit routine");
   await press("Webhook");
   expect(container.textContent).toContain("Only the bot's creator can set its webhook key.");
   expect(container.textContent).not.toContain("Remove Webhook");
 });
 
+it("asks for a newer server when the server cannot make webhook keys", async () => {
+  state.rpc.mockRejectedValue(Object.assign(new Error(""), { status: 404, code: undefined }));
+  await press("Edit routine");
+  await press("Webhook");
+  expect(container.textContent).toContain("Update your server to add webhooks from this app.");
+  expect(container.textContent).not.toContain("Remove Webhook");
+});
+
+it("offers the webhook key on another member's routine, for the bot's creator", async () => {
+  state.useBotRoutines.mockReturnValue({
+    routines: [{ ...routine, webhookEnabled: true, editable: false }],
+  });
+  await act(async () => root.render(createElement(RoutineDetail)));
+  expect(container.textContent).toContain("Show webhook key");
+});
+
 it("holds the triggers until a new webhook's key request settles", async () => {
   const key = deferred();
-  state.rpc.mockImplementation(async (proc: string) =>
-    proc === "bots/get" ? { webhookConfigured: false } : key.promise,
-  );
+  state.rpc.mockReturnValue(key.promise);
   await press("Edit routine");
   await press("Webhook");
   expect(button("Remove Webhook")?.disabled).toBe(true);

@@ -275,7 +275,8 @@ function RoutineView({
             key={trigger}
             title={trigger}
             trailing={
-              editable && trigger === webhookLabel ? (
+              // The key is the bot creator's, whoever owns the routine, as in the chat row.
+              trigger === webhookLabel ? (
                 <WebhookKeyButton
                   botId={botId}
                   title={routine.name}
@@ -386,20 +387,23 @@ function RoutineEditor({
     !locked &&
     routineCanEnd(draftCrons, Boolean(kept.watch), routineDraftEventTriggered(draft, source));
   const zone = draft.timezone ?? deviceTimeZone() ?? "UTC";
-  // A webhook needs the bot's key. It is made once, by the bot's creator, as on web. Triggers
-  // are held until it settles, so a failure has nothing newer to undo.
+  // A webhook needs the bot's key. The server makes it once, for the bot's creator, and keeps a
+  // key the bot already has. Triggers are held until it settles, so a failure has nothing newer
+  // to undo.
   const webhookKey = useSave({
-    save: async (_previous: Pick<MobileRoutineDraft, "webhookEnabled" | "useComputer">, send) => {
-      const bot = await send("bots/get", { botId });
-      if (!bot.webhookConfigured) await send("bots/rotateWebhookSecret", { botId });
-    },
+    save: (_previous: Pick<MobileRoutineDraft, "webhookEnabled" | "useComputer">, send) =>
+      send("bots/ensureWebhookSecret", { botId }),
     stale: [rpcQuery("bots/get", { botId }).queryKey],
     onFailed: (cause, previous) => {
       update(previous);
+      const code = errorCode(cause);
       setSaveError(
-        errorCode(cause) === "FORBIDDEN"
+        code === "FORBIDDEN"
           ? t`Only the bot's creator can set its webhook key.`
-          : errorText(cause, t`Could not create the webhook key`),
+          : // A server older than this app has no such call: a 404 without an oRPC code.
+            code === undefined && (cause as { status?: unknown }).status === 404
+            ? t`Update your server to add webhooks from this app.`
+            : errorText(cause, t`Could not create the webhook key`),
       );
     },
   });

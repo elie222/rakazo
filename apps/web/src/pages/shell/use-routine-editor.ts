@@ -86,7 +86,7 @@ export function useRoutineEditor({
   const [runningRoutine, setRunningRoutine] = useState(false);
   const [routineError, setRoutineError] = useState<string | null>(null);
   const routineSavePending = useRef(false);
-  const webhookSecretProvisionRef = useRef(new Map<string, Promise<string>>());
+  const webhookSecretProvisionRef = useRef(new Map<string, Promise<void>>());
   // Bumped when a bot's key rotates or the person hides it, so a reveal that started before
   // never shows a revoked key or brings back one they hid.
   const webhookKeyGenerations = useRef(new Map<string, number>());
@@ -94,13 +94,15 @@ export function useRoutineEditor({
     webhookKeyGenerations.current.set(botId, (webhookKeyGenerations.current.get(botId) ?? 0) + 1);
   const ensureWebhookSecret = (botId: string) =>
     sharedInflight(webhookSecretProvisionRef.current, botId, async () => {
-      const result = await rpc.bots.rotateWebhookSecret({ botId });
-      bumpWebhookKeyGeneration(botId);
-      showWebhookSecret(botId, result.secret);
+      // The server keeps a key the bot already has, so only a new one comes back to show.
+      const { secret } = await rpc.bots.ensureWebhookSecret({ botId });
+      if (secret) {
+        bumpWebhookKeyGeneration(botId);
+        showWebhookSecret(botId, secret);
+      }
       setBots((current) =>
         current.map((bot) => (bot.id === botId ? { ...bot, webhookConfigured: true } : bot)),
       );
-      return result.secret;
     });
   // A key on screen, new or read back, hides again after a while, as the Vault's values do.
   // Each bot's key keeps its own hide time, on a clock a system time change cannot move, and one

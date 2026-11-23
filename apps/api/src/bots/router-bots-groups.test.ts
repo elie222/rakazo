@@ -875,6 +875,9 @@ describe("shared space bot permissions", () => {
     await expect(client.bots.rotateWebhookSecret({ botId: "bot-1" })).rejects.toMatchObject({
       code: "FORBIDDEN",
     });
+    await expect(client.bots.ensureWebhookSecret({ botId: "bot-1" })).rejects.toMatchObject({
+      code: "FORBIDDEN",
+    });
     expect(secrets.put).not.toHaveBeenCalled();
   });
 });

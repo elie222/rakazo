@@ -44,7 +44,7 @@ let editor: ReturnType<typeof useRoutineEditor>;
 let finishUpdate: Deferred<Routine>;
 const update = vi.fn();
 const create = vi.fn();
-const rotateWebhookSecret = vi.fn();
+const ensureWebhookSecret = vi.fn();
 const testRun = vi.fn();
 const openGroup = vi.fn();
 const refreshThread = vi.fn(async () => ({}) as never);
@@ -55,7 +55,7 @@ function Harness() {
   editor = useRoutineEditor({
     rpc: {
       routines: { update, create, testRun },
-      bots: { rotateWebhookSecret },
+      bots: { ensureWebhookSecret },
     } as unknown as ReturnType<typeof createSpaceRpc>,
     active: activeBot,
     activeBotId,
@@ -184,10 +184,10 @@ it("never sends Use my computer for a routine that doesn't offer it", async () =
 });
 
 it("shows a revealed webhook secret only for the bot it belongs to", async () => {
-  let finishRotate!: Deferred<{ secret: string }>;
-  rotateWebhookSecret.mockImplementation(() => {
-    finishRotate = deferred();
-    return finishRotate.promise;
+  let finishEnsure!: Deferred<{ secret: string }>;
+  ensureWebhookSecret.mockImplementation(() => {
+    finishEnsure = deferred();
+    return finishEnsure.promise;
   });
   let ensuring!: Promise<void>;
   act(() => {
@@ -197,7 +197,7 @@ it("shows a revealed webhook secret only for the bot it belongs to", async () =>
   activeBot = { id: "bot-2", webhookConfigured: false } as Bot;
   act(() => root.render(<Harness />));
   await act(async () => {
-    finishRotate.resolve({ secret: "secret-1" });
+    finishEnsure.resolve({ secret: "secret-1" });
     await ensuring;
   });
   expect(editor.editorProps!.webhook.secret).toBeNull();
@@ -208,9 +208,9 @@ it("shows a revealed webhook secret only for the bot it belongs to", async () =>
   expect(editor.editorProps!.webhook.secret).toBe("secret-1");
 });
 
-it("keeps each bot's revealed secret when rotations overlap", async () => {
+it("keeps each bot's revealed secret when key requests overlap", async () => {
   const finishers: ((result: { secret: string }) => void)[] = [];
-  rotateWebhookSecret.mockImplementation(() => new Promise((resolve) => finishers.push(resolve)));
+  ensureWebhookSecret.mockImplementation(() => new Promise((resolve) => finishers.push(resolve)));
   let first!: Promise<void>;
   act(() => {
     first = editor.editorProps!.onEnsureWebhook() as Promise<void>;
@@ -233,8 +233,17 @@ it("keeps each bot's revealed secret when rotations overlap", async () => {
   expect(editor.editorProps!.webhook.secret).toBe("secret-1");
 });
 
+it("shows no key when the bot already had one", async () => {
+  ensureWebhookSecret.mockResolvedValue({ path: "/hooks/bot-1", webhookConfigured: true });
+  await act(async () => {
+    await editor.editorProps!.onEnsureWebhook();
+  });
+  expect(editor.editorProps!.webhook.secret).toBeNull();
+  expect(editor.editorProps!.error).toBeNull();
+});
+
 it("shows why a key cannot be set instead of leaving the rejection unhandled", async () => {
-  rotateWebhookSecret.mockRejectedValue(
+  ensureWebhookSecret.mockRejectedValue(
     Object.assign(new Error("Forbidden"), { code: "FORBIDDEN", status: 403 }),
   );
   await act(async () => {
@@ -245,7 +254,7 @@ it("shows why a key cannot be set instead of leaving the rejection unhandled", a
 
 it("drops a key failure that arrives after switching to another bot", async () => {
   let fail!: Deferred<{ secret: string }>;
-  rotateWebhookSecret.mockImplementation(() => {
+  ensureWebhookSecret.mockImplementation(() => {
     fail = deferred();
     return fail.promise;
   });
