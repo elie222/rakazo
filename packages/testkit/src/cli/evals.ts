@@ -459,6 +459,10 @@ async function main() {
       "A valid model connection is required: --connection with models/connect JSON, or --provider --model --api-key-env (and --base-url for compatible servers). All trials remain not-run.",
     );
   const subjectOnPlan = subject.onPlan;
+  if (subjectOnPlan && (subject.connection.contextWindow || subject.connection.maxTokens))
+    return notRun(
+      "A model on your own plan runs with its own context and output limits; drop them. All trials remain not-run.",
+    );
   // Usage on the person's own plan has no per-token price: its cost stays unknown, never $0.
   let pricing: EvalPricing | undefined;
   try {
@@ -492,7 +496,18 @@ async function main() {
   const judgePricingFile = values["judge-pricing"];
   if (judged.size && !values["cache-probe"] && !suiteJudge)
     return notRun("This suite has no judge rubric; no inference was scheduled");
-  if (judged.size && !values["cache-probe"] && !judgeConnectionFile) {
+  const judgeFileOnPlan = () => {
+    try {
+      return Boolean(readModel(readConnection(judgeConnectionFile!))?.onPlan);
+    } catch {
+      return false;
+    }
+  };
+  if (
+    judged.size &&
+    !values["cache-probe"] &&
+    (!judgeConnectionFile || (!judgePricingFile && !judgeFileOnPlan()))
+  ) {
     const reason =
       "Not run: graded by meaning, which needs --judge-connection and --judge-pricing; unqualified, not a pass";
     if (judged.size === selected.length) return notRun(reason);
