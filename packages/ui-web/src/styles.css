@@ -154,6 +154,8 @@
 }
 
 .rakazo-bot-avatar {
+  --rakazo-avatar-shadow: 0 2px 5px rgb(0 0 0 / 0.5);
+  --rakazo-avatar-working-drop-shadow: 0 0 4px var(--status-working);
   transition: box-shadow 180ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 
@@ -174,11 +176,11 @@
 }
 
 .rakazo-bot-avatar-picture {
-  box-shadow: 0 2px 5px rgb(0 0 0 / 0.5);
+  box-shadow: var(--rakazo-avatar-shadow);
 }
 
 .rakazo-bot-avatar-ring-working {
-  filter: drop-shadow(0 0 4px var(--status-working));
+  filter: drop-shadow(var(--rakazo-avatar-working-drop-shadow));
 }
 
 .rakazo-bot-avatar[data-working="true"] .rakazo-bot-avatar-picture {
@@ -186,6 +188,31 @@
   box-shadow:
     0 0 0 2px var(--status-working),
     0 0 10px color-mix(in srgb, var(--status-working) 60%, transparent);
+}
+
+/*
+ * A cutout drops the round frame and casts shadow and working glow from the picture outline.
+ * These rules sit outside any layer, so they beat the frame's Tailwind classes.
+ */
+.rakazo-bot-avatar[data-cutout="true"] .rakazo-bot-avatar-picture {
+  overflow: visible;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+/* Outranks the working frame glow above. */
+.rakazo-bot-avatar[data-cutout="true"][data-working="true"] .rakazo-bot-avatar-picture {
+  box-shadow: none;
+}
+
+.rakazo-bot-avatar[data-cutout="true"] img {
+  filter: drop-shadow(var(--rakazo-avatar-shadow));
+}
+
+.rakazo-bot-avatar[data-cutout="true"][data-working="true"] img {
+  filter: drop-shadow(var(--rakazo-avatar-working-drop-shadow));
 }
 
 .rakazo-mascot-avatar-body {

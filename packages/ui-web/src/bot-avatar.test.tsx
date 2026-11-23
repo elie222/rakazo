@@ -121,6 +121,11 @@ describe("BotAvatar", () => {
     expect(html).not.toContain("rakazo-bot-avatar-ring");
   });
 
+  it("keeps a photo in its round frame until it is known to be a cutout", () => {
+    const html = renderToString(<BotAvatar color="data:image/png;base64,abc" identity="maya" />);
+    expect(html).toContain('data-cutout="false"');
+  });
+
   it("does not treat arbitrary http(s) color values as remote images", () => {
     const parsed = parseBotAvatar("https://evil.example/track.png");
     expect(parsed.isImage).toBe(false);

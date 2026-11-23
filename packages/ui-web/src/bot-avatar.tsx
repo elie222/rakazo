@@ -22,6 +22,7 @@ import type { ComponentProps, CSSProperties } from "react";
 import { memo, useEffect, useMemo, useSyncExternalStore } from "react";
 import { useBotAvatarActivity } from "./bot-avatar-activity.js";
 import { useAvatarMotionVisibility } from "./hooks/use-avatar-motion-visibility.js";
+import { useImageCutout } from "./hooks/use-image-cutout.js";
 import { cn } from "./lib/utils.js";
 import { LogoAvatar } from "./logo-avatar.js";
 import "./styles.css";
@@ -105,13 +106,17 @@ export const BotAvatar = memo(function BotAvatar({
     [effectiveId, parsed.color],
   );
 
+  const cutout = useImageCutout(parsed.imageUrl);
+
   if (parsed.isImage && parsed.imageUrl) {
     return (
       <div
         className={cn("rakazo-bot-avatar relative shrink-0 select-none", className)}
         data-working={isWorking}
+        data-cutout={cutout}
         style={{ width: size, height: size }}
       >
+        {/* styles.css removes this round frame when data-cutout is true. */}
         <div className="rakazo-bot-avatar-picture relative flex h-full w-full items-center justify-center overflow-hidden rounded-full border border-border bg-secondary">
           <img src={parsed.imageUrl} alt="" className="h-full w-full object-cover" />
         </div>
