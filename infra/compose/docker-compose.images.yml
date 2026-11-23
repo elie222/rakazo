@@ -310,6 +310,7 @@ x-app-environment: &app-environment # Runtime
   MCP_MAX_PAGES:
   MCP_PACKAGES_DIR:
   MCP_ALLOW_PRIVATE_ENDPOINT:
+  MCP_OAUTH_DEFAULT_CLIENTS:
   # Messaging (outbound delivery runs in the worker)
   MESSAGING_OPEN_SIGNUP:
   SENDBLUE_API_KEY_ID:

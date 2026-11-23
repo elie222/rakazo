@@ -91,6 +91,7 @@ export * from "./locks/advisory-lock.js";
 export * from "./mcp/mcp-connector.js";
 export * from "./mcp/mcp-emulator.js";
 export * from "./mcp/mcp-oauth.js";
+export * from "./mcp/mcp-oauth-default-clients.js";
 export * from "./mcp/mcp-server-health.js";
 export * from "./mcp/mcp-server-removal.js";
 export * from "./mcp/mcp-server-tool.js";

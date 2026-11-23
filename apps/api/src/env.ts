@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import type { WorkspaceExportLimits } from "@rakazo/adapter-kit";
 import type {
   ApnsVoipConfig,
+  McpOAuthDefaultClients,
   MessagingEnvironmentValues,
   SandboxProviderOptions,
 } from "@rakazo/adapters";
@@ -15,6 +16,7 @@ import {
   mcpStdioOptionsFromEnv,
   messagingEnvFromProcess,
   openAiCompatAllowPublicHosts,
+  parseMcpOAuthDefaultClients,
   resolveCloudAgentProvider,
   resolveDeploymentModel,
   resolveSandboxProvider,
@@ -172,6 +174,8 @@ export interface AppEnv extends MessagingEnvironmentValues {
   mcpStdio: ReturnType<typeof mcpStdioOptionsFromEnv>;
   /** Deployment-owner escape for remote MCP on RFC1918 / Docker-network hosts. */
   mcpAllowPrivateEndpoint: boolean;
+  /** Clients registered for every user, keyed by authorization server (MCP_OAUTH_DEFAULT_CLIENTS). */
+  mcpOAuthDefaultClients: McpOAuthDefaultClients;
   port: number;
   gitSha: string | undefined;
   /** Oldest client build per kind the API still serves (RAKAZO_MIN_CLIENT_BUILD). */
@@ -377,6 +381,7 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
       .filter(Boolean),
     mcpStdio: mcpStdioOptionsFromEnv(source),
     mcpAllowPrivateEndpoint: source.MCP_ALLOW_PRIVATE_ENDPOINT === "true",
+    mcpOAuthDefaultClients: parseMcpOAuthDefaultClients(source.MCP_OAUTH_DEFAULT_CLIENTS),
     port: Number(source.API_PORT ?? 3100),
     gitSha: optional(source.GIT_SHA) ?? optional(source.RAKAZO_GIT_SHA),
     minimumClientBuilds: parseMinimumClientBuilds(source.RAKAZO_MIN_CLIENT_BUILD),

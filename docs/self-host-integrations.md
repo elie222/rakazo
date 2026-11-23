@@ -72,6 +72,25 @@ credentials and survives **Disconnect**; switching to a different client drops t
 On first use the client is bound to the authorization server the MCP server pointed to, and Rakazo
 refuses to send it anywhere else afterwards. Replacing the client clears the binding.
 
+To avoid entering the same client for every user, set `MCP_OAUTH_DEFAULT_CLIENTS` on the API and
+worker. It is a JSON object keyed by the authorization server's HTTPS issuer URL:
+
+```bash
+MCP_OAUTH_DEFAULT_CLIENTS='{"https://issuer.example.com":{"client_id":"your-client-id","client_secret":"your-client-secret","servers":["https://mcp.example.com"],"scope":"read write","authorization_params":"access_type=offline"}}'
+```
+
+`client_id` and `servers` are required. `servers` lists the HTTPS origins of the MCP servers that
+may use the client, such as `https://mcp.example.com`, with no path and no wildcards. Anyone can
+add an MCP server, so without this list a server that points at the same authorization server
+could sign in with the operator's client. A remote MCP server whose origin is listed and whose
+authorization server matches the key exactly then signs in with that client, with no client
+entered on the server. A client entered on the server wins, and so does a client the
+authorization server already registered. Register `<your web origin>/mcp/oauth/callback` as a
+redirect URI on the client. Everyone on the deployment can sign in through it, so create it with
+only the access you accept for all of them. The secret stays in the environment and is never
+stored with a user's credentials, so rotating it there applies to everyone. A malformed value
+stops the API and worker from starting. Stdio servers still need their own client.
+
 Other providers register clients themselves but only for redirect addresses they know, plus the
 loopback addresses desktop apps use, and refuse `<your web origin>/mcp/oauth/callback` with
 `invalid_redirect_uri`. Connect those from the desktop app: it signs in on a loopback address

@@ -51,7 +51,12 @@ export function mcpServerDto(
     createdAt: Date;
     updatedAt: Date;
   },
-  oauth: McpOAuthSummary = { status: "none", clientId: null, credential: true },
+  oauth: McpOAuthSummary = {
+    status: "none",
+    clientId: null,
+    credential: true,
+    defaultClient: false,
+  },
 ): McpServer {
   const keysOf = (value: unknown) =>
     value && typeof value === "object" && !Array.isArray(value) ? Object.keys(value) : [];
@@ -78,7 +83,7 @@ export function mcpServerDto(
     enabled: row.enabled,
     verbatimResults: row.verbatimResults ?? false,
     revision: row.revision,
-    health: mcpServerHealthDto(row),
+    health: mcpServerHealthDto(row, oauth.defaultClient),
     availability: spaceAvailability({ ...row, allSpaces: row.allSpaces ?? false }),
     allBots: row.allBots ?? false,
     createdAt: row.createdAt.toISOString(),

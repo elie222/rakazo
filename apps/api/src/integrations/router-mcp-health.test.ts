@@ -1,6 +1,10 @@
 import { createRouterClient } from "@orpc/server";
 import type { McpOAuthSummary } from "@rakazo/adapters";
-import { McpOAuthClientRequiredError, McpOAuthRefusedError } from "@rakazo/adapters";
+import {
+  MCP_DYNAMIC_REGISTRATION_UNSUPPORTED,
+  McpOAuthClientRequiredError,
+  McpOAuthRefusedError,
+} from "@rakazo/adapters";
 import type { Actor } from "@rakazo/contracts";
 import { MCP_OAUTH_CLIENT_REQUIRED } from "@rakazo/contracts";
 import { flush } from "@rakazo/core/test-async";
@@ -249,6 +253,28 @@ describe("MCP server health", () => {
     });
   });
 
+  it("drops a recorded client-required code once a default client covers the server", async () => {
+    const row = baseRow({
+      transport: "streamable_http",
+      endpoint: "https://mcp.example.test/mcp",
+      healthStatus: "error",
+      healthMessage: MCP_DYNAMIC_REGISTRATION_UNSUPPORTED,
+    });
+    const listed = async (defaultClient: boolean) => {
+      const h = harness({
+        row,
+        oauth: { status: "none", clientId: null, credential: false, defaultClient },
+      });
+      (h.deps.prisma.mcpServer as unknown as { findMany: unknown }).findMany = vi.fn(async () => [
+        h.row(),
+      ]);
+      return (await h.client.mcp.servers.list())[0]?.health;
+    };
+
+    expect((await listed(false))?.code).toBe(MCP_OAUTH_CLIENT_REQUIRED);
+    expect(await listed(true)).toMatchObject({ status: "unknown", message: null, code: null });
+  });
+
   describe("test", () => {
     it("probes the server and returns the recorded health", async () => {
       const { client, probe } = harness();
@@ -291,7 +317,12 @@ describe("MCP server health", () => {
 
     it("says why it did not probe when the server still needs its OAuth account", async () => {
       const { client, probe } = harness({
-        oauth: { status: "none", clientId: "client-1.apps.example.test", credential: true },
+        oauth: {
+          status: "none",
+          clientId: "client-1.apps.example.test",
+          credential: true,
+          defaultClient: false,
+        },
       });
 
       const tested = await client.mcp.servers.test({ id: "server-1" });
@@ -311,7 +342,12 @@ describe("MCP server health", () => {
       async (material, shouldProbe) => {
         const h = harness({
           row: baseRow({ secretId: "secret-1" }),
-          oauth: { status: "none", clientId: "fake-client", credential: true },
+          oauth: {
+            status: "none",
+            clientId: "fake-client",
+            credential: true,
+            defaultClient: false,
+          },
         });
         vi.mocked(h.deps.prisma.secret.findFirst).mockResolvedValue({
           id: "secret-1",
@@ -380,7 +416,12 @@ describe("MCP server health", () => {
     it("does not probe a server whose OAuth account is not connected", async () => {
       const { client, probe, row } = harness({
         row: null,
-        oauth: { status: "none", clientId: "client-1.apps.example.test", credential: true },
+        oauth: {
+          status: "none",
+          clientId: "client-1.apps.example.test",
+          credential: true,
+          defaultClient: false,
+        },
       });
 
       const created = await client.mcp.servers.create(stdioInput);
@@ -661,41 +702,44 @@ describe("MCP server health", () => {
       expect(h.probe).toHaveBeenCalledTimes(1);
     });
 
-    it("drops a check from before sign-in as soon as its OAuth session completes", async () => {
-      const h = harness({
-        row: baseRow({
-          transport: "streamable_http",
-          endpoint: "https://mcp.example.test/mcp",
-          command: null,
-          args: [],
-          healthStatus: "error",
-          healthMessage: "HTTP 401",
-        }),
-        probe: () => new Promise(() => undefined),
-      });
-      Object.assign(h.deps, {
-        mcpOAuth: {
-          ...(h.deps.mcpOAuth as object),
-          complete: vi.fn(async () => ({ serverId: "server-1", revision: 1 })),
-        },
-      });
-      // A separate session lookup failing must not skip the reset: the completed sign-in names
-      // its server.
-      (h.deps.prisma as unknown as { mcpOAuthSession: unknown }).mcpOAuthSession = {
-        findFirst: vi.fn(async () => {
-          throw new Error("pool timeout");
-        }),
-      };
+    it.each(["HTTP 401", MCP_DYNAMIC_REGISTRATION_UNSUPPORTED])(
+      "drops a check from before sign-in (%s) as soon as its OAuth session completes",
+      async (message) => {
+        const h = harness({
+          row: baseRow({
+            transport: "streamable_http",
+            endpoint: "https://mcp.example.test/mcp",
+            command: null,
+            args: [],
+            healthStatus: "error",
+            healthMessage: message,
+          }),
+          probe: () => new Promise(() => undefined),
+        });
+        Object.assign(h.deps, {
+          mcpOAuth: {
+            ...(h.deps.mcpOAuth as object),
+            complete: vi.fn(async () => ({ serverId: "server-1", revision: 1 })),
+          },
+        });
+        // A separate session lookup failing must not skip the reset: the completed sign-in names
+        // its server.
+        (h.deps.prisma as unknown as { mcpOAuthSession: unknown }).mcpOAuthSession = {
+          findFirst: vi.fn(async () => {
+            throw new Error("pool timeout");
+          }),
+        };
 
-      await h
-        .clientFor()
-        .mcp.oauth.complete({ sessionId: "session-1", code: "code", state: "session-1" });
+        await h
+          .clientFor()
+          .mcp.oauth.complete({ sessionId: "session-1", code: "code", state: "session-1" });
 
-      // The new check is still running, so the list must not keep showing the old failure.
-      expect(h.row()).toMatchObject({ healthStatus: "unknown", healthMessage: null });
-      await flush();
-      expect(h.probe).toHaveBeenCalledTimes(1);
-    });
+        // The new check is still running, so the list must not keep showing the old failure.
+        expect(h.row()).toMatchObject({ healthStatus: "unknown", healthMessage: null });
+        await flush();
+        expect(h.probe).toHaveBeenCalledTimes(1);
+      },
+    );
 
     it("keeps an edit's failed check that lands while its OAuth session completes", async () => {
       const h = harness({ row: baseRow({ revision: 1 }) });
@@ -746,7 +790,7 @@ describe("MCP server health", () => {
           ...(h.deps.mcpOAuth as object),
           summaryFor: vi.fn(async () => {
             editLandsDuring(h);
-            return { status: "none", clientId: null, credential: true };
+            return { status: "none", clientId: null, credential: true, defaultClient: false };
           }),
         },
       });
@@ -772,7 +816,12 @@ describe("MCP server health", () => {
           ...(h.deps.mcpOAuth as object),
           summaryFor: vi.fn(async () => {
             editLandsDuring(h);
-            return { status: "none", clientId: "client-1", credential: false };
+            return {
+              status: "none",
+              clientId: "client-1",
+              credential: false,
+              defaultClient: false,
+            };
           }),
         },
       });
@@ -791,7 +840,7 @@ describe("MCP server health", () => {
           complete: vi.fn(async () => ({ serverId: "server-1", revision: 1 })),
           summaryFor: vi.fn(async () => {
             editLandsDuring(h);
-            return { status: "connected", clientId: null, credential: true };
+            return { status: "connected", clientId: null, credential: true, defaultClient: false };
           }),
         },
       });

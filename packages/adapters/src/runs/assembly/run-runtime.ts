@@ -37,6 +37,8 @@ import { InstalledConnectorProvider } from "../../integrations/installed-connect
 import { IntegrationProviderSettings } from "../../integrations/integration-provider-settings.js";
 import { McpConnector, mcpStdioOptionsFromEnv } from "../../mcp/mcp-connector.js";
 import { McpOAuthBroker } from "../../mcp/mcp-oauth.js";
+import type { McpOAuthDefaultClients } from "../../mcp/mcp-oauth-default-clients.js";
+import { parseMcpOAuthDefaultClients } from "../../mcp/mcp-oauth-default-clients.js";
 import { reconcileMediaVideos } from "../../media/media-video-poll.js";
 import { createMessagingContextLoader } from "../../messaging/messaging-context.js";
 import { MessagingDelivery } from "../../messaging/messaging-delivery.js";
@@ -96,6 +98,8 @@ export interface RunRuntimeEnv extends PipedreamEnvironmentValues {
   mcpStdioAllowedCommands: string[];
   mcpStdio: ReturnType<typeof mcpStdioOptionsFromEnv>;
   mcpAllowPrivateEndpoint: boolean;
+  /** Clients registered for every user, keyed by authorization server (MCP_OAUTH_DEFAULT_CLIENTS). */
+  mcpOAuthDefaultClients: McpOAuthDefaultClients;
   deploymentLabs: LabFeature[];
   phoneCallsEnabled: boolean;
   phoneCallRingSeconds: number;
@@ -131,6 +135,7 @@ export function runRuntimeEnvFromProcess(source: NodeJS.ProcessEnv): RunRuntimeE
       .filter(Boolean),
     mcpStdio: mcpStdioOptionsFromEnv(source),
     mcpAllowPrivateEndpoint: source.MCP_ALLOW_PRIVATE_ENDPOINT === "true",
+    mcpOAuthDefaultClients: parseMcpOAuthDefaultClients(source.MCP_OAUTH_DEFAULT_CLIENTS),
     pipedreamClientId: source.PIPEDREAM_CLIENT_ID,
     pipedreamClientSecret: source.PIPEDREAM_CLIENT_SECRET,
     pipedreamProjectId: source.PIPEDREAM_PROJECT_ID,
@@ -172,6 +177,7 @@ export function createConnectorRuntime(
     network,
     env.mcpAllowPrivateEndpoint,
     deps.jobs,
+    env.mcpOAuthDefaultClients,
   );
   const mcp = new McpConnector(
     prisma,
