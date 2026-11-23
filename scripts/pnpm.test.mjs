@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { once } from "node:events";
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { test } from "node:test";
@@ -94,6 +94,32 @@ test("Windows pnpm script entry preserves arguments and process behavior", {
     });
     assert.deepEqual(JSON.parse(launched), expected);
     assert.equal(existsSync(marker), false);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("Windows standalone pnpm executable runs directly with its arguments", {
+  skip: process.platform !== "win32",
+}, () => {
+  const dir = mkdtempSync(path.join(os.tmpdir(), "pnpm exe "));
+  try {
+    // Any executable named pnpm.exe stands in for the standalone binary.
+    const entry = path.join(dir, "pnpm.exe");
+    copyFileSync(process.execPath, entry);
+    const args = [
+      "-e",
+      "process.stdout.write(JSON.stringify(process.argv.slice(1)))",
+      "space value",
+      "%literal%",
+    ];
+    const output = runPnpm(args, {
+      cwd: dir,
+      env: { ...process.env, PATH: dir, Path: dir, npm_execpath: entry },
+      encoding: "utf8",
+      stdio: "pipe",
+    });
+    assert.deepEqual(JSON.parse(output), ["space value", "%literal%"]);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
