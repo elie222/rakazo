@@ -19,7 +19,11 @@ import {
   normalizeWorkspacePath,
   resolveBotWorkspacePath,
 } from "../../computers/screens/computer-support.js";
-import { messageBot, unresolvedBotError } from "../../messaging/bot-messages.js";
+import {
+  messageBot,
+  ticketOutcomeRoute,
+  unresolvedBotError,
+} from "../../messaging/bot-messages.js";
 import { startBackgroundHelper } from "../../tasks/background-helpers.js";
 import type { RunContext } from "../assembly/run-context.js";
 import {
@@ -48,11 +52,16 @@ type SentFiles = { files: AttachmentBlock[]; sharedPaths: string[]; recipientId?
  * Files a bot passes by path to another bot. A recipient on the same computer reads them
  * where they are. One elsewhere, or one that cannot be told apart, gets saved copies, filed
  * under the chat that shows them: its own, or the group's for a handoff.
+ *
+ * `ticketOutcome` names the ticket a result or status from this run reports on and its
+ * current assignee: such a send to the assignee is recorded on the ticket as a comment,
+ * which cannot carry attachments, so its copied files are refused before any is read.
  */
 async function prepareSentFiles(
   ctx: RunContext,
   call: ToolCall,
   recipient: { botId?: string; name?: string; groupId?: string },
+  ticketOutcome?: { ticketRef: string; assigneeBotId: string | null },
 ): Promise<{ error: string } | SentFiles> {
   const paths = filePaths(call);
   if ("error" in paths) return paths;
@@ -74,6 +83,15 @@ async function prepareSentFiles(
     target.computerId === bot.computerId
   )
     return withRecipient(await sharedFiles(ctx, call, paths), target.id);
+  if (ticketOutcome?.assigneeBotId === target.id) {
+    return {
+      error:
+        `files cannot be attached to a result recorded on ticket ${ticketOutcome.ticketRef}: ` +
+        `its comment carries text only, and ${target.name} is the ticket's assignee. ` +
+        `Send the files to ${target.name} separately (for example message_bot with intent "fyi" ` +
+        "and the same files), then report the result without files.",
+    };
+  }
   const owner = recipient.groupId
     ? { botId: bot.id, groupId: recipient.groupId }
     : { botId: target.id };
@@ -328,10 +346,26 @@ export const messagingTools: ToolHandlers = {
     const { args, effectKey } = call;
     const invalid = messageError(ctx, args.message);
     if (invalid) return call.finish({ error: invalid });
-    const stored = await prepareSentFiles(ctx, call, {
-      botId: args.bot_id ? String(args.bot_id) : undefined,
-      name: args.confirm_name ? String(args.confirm_name) : undefined,
-    });
+    const intent = args.intent as "request" | "result" | "question" | "status" | "fyi" | undefined;
+    // A result or status the ticket's current assignee will read is recorded on the
+    // ticket as a comment, which cannot carry attachments: refuse such a send's
+    // copied files before they exist. messageBot re-checks the route at commit and
+    // never takes it — or re-routes onto it — while files are attached.
+    const ticketOutcome =
+      Array.isArray(args.files) &&
+      args.files.length > 0 &&
+      (intent === "result" || intent === "status")
+        ? await ticketOutcomeRoute(deps.prisma, run)
+        : undefined;
+    const stored = await prepareSentFiles(
+      ctx,
+      call,
+      {
+        botId: args.bot_id ? String(args.bot_id) : undefined,
+        name: args.confirm_name ? String(args.confirm_name) : undefined,
+      },
+      ticketOutcome,
+    );
     if ("error" in stored) return call.finish({ error: stored.error });
     const delivered = deliveredMessage(ctx, args.message, stored.sharedPaths);
     if ("error" in delivered) return call.finish({ error: delivered.error });
@@ -347,7 +381,7 @@ export const messagingTools: ToolHandlers = {
             ? String(args.confirm_name)
             : undefined,
         message: delivered.message,
-        intent: args.intent as "request" | "result" | "question" | "status" | "fyi" | undefined,
+        intent,
         deliveryKey: effectKey,
         files: stored.files,
       },

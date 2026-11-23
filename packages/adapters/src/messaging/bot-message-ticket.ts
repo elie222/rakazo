@@ -66,6 +66,24 @@ export async function loadTicketForBotMessage(
   return { boardId: board.id, ticketId: ticket.id, assigneeBotId: ticket.assigneeBotId };
 }
 
+/**
+ * The ticket's assignee as of this transaction, read under the ticket row's lock —
+ * the same lock `createTicketAssigneeWakeRun` takes — so a concurrent reassignment
+ * serializes with the delivery: the assignee a route chose from is either still
+ * true at commit, or the caller sees the new value here and re-routes.
+ */
+export async function ticketAssigneeUnderLock(
+  tx: Prisma.TransactionClient,
+  input: { spaceId: string; ticketId: string },
+): Promise<string | null | undefined> {
+  await tx.$queryRaw`SELECT id FROM tickets WHERE id = ${input.ticketId} FOR UPDATE`;
+  const ticket = await tx.ticket.findFirst({
+    where: { id: input.ticketId, spaceId: input.spaceId },
+    select: { assigneeBotId: true },
+  });
+  return ticket?.assigneeBotId;
+}
+
 /** Record one side of a ticket-originated exchange on the ticket itself, like commentTicket. */
 export async function recordTicketExchangeComment(
   tx: Prisma.TransactionClient,
@@ -125,12 +143,19 @@ export async function deliverTicketBotMessageOutcome(
      * after the run sent its result explicitly.
      */
     outcome?: { claim: boolean; suppressWhenClaimed?: boolean };
+    /**
+     * When set, the delivery refuses to commit unless the ticket's locked assignee is
+     * still this bot: a reassignment after the caller's routing read returns
+     * `reassigned` with nothing committed, so the caller re-routes the reply instead
+     * of settling its outcome on a route the requester no longer reads.
+     */
+    requireAssigneeBotId?: string;
     returnFrom?: "ended" | "waiting";
   },
 ): Promise<
   | { ok: true; ticketRef: string; senderEventSeq?: number; woken?: boolean }
   | { ok: true; replayed: true }
-  | { ok: false; error: string }
+  | { ok: false; error: string; reassigned?: true }
 > {
   const addressTo = input.addressTo;
   const outboundBlock: MessageBlock | undefined = addressTo
@@ -160,6 +185,19 @@ export async function deliverTicketBotMessageOutcome(
         : undefined,
     },
     async (tx) => {
+      if (input.requireAssigneeBotId !== undefined) {
+        const assignee = await ticketAssigneeUnderLock(tx, {
+          spaceId: input.run.spaceId,
+          ticketId: input.ticket.ticketId,
+        });
+        if (assignee !== input.requireAssigneeBotId) {
+          return {
+            ok: false as const,
+            error: "the ticket was reassigned while sending",
+            reassigned: true as const,
+          };
+        }
+      }
       if (input.outcome?.suppressWhenClaimed || input.outcome?.claim) {
         const claimed = await tx.run.updateMany({
           where: { id: input.run.id, botOutcomeReturnedAt: null },

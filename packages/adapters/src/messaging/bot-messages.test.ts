@@ -43,6 +43,13 @@ function deps(
      * routing read but before the delivery transaction's locked read.
      */
     wakeTicket?: unknown;
+    /**
+     * A reassignment that commits after the send's routing read but before the
+     * delivery transaction's locked read: from that locked read on, every later
+     * reader — routing or in-transaction — sees the new assignee, like a row that
+     * really changed in between. Unlike `wakeTicket`, the change persists.
+     */
+    reassignedDuringDelivery?: string | null;
     /** Labs stored on the assignee owner's user row; the board gate reads them. */
     ownerLabs?: string[];
     /** Deployment-wide lab flags, as the executor's runtime env supplies them. */
@@ -60,6 +67,8 @@ function deps(
         ? (options.alreadyDelivered ?? null)
         : { blocks: options.hopBlocks ?? [] },
     );
+  /** The assignee every reader sees; a simulated mid-delivery reassignment moves it. */
+  let liveAssignee: string | null = options.ticket ? options.ticket.assigneeBotId : null;
   const tx = {
     $queryRaw: vi.fn().mockResolvedValue([{ id: "thread" }]),
     $executeRaw: vi.fn().mockResolvedValue(0),
@@ -96,11 +105,13 @@ function deps(
     ticketComment: { create: vi.fn().mockResolvedValue({ id: "comment-1" }) },
     ticket: {
       findFirst: vi.fn().mockImplementation(async () => {
+        if (options.reassignedDuringDelivery !== undefined)
+          liveAssignee = options.reassignedDuringDelivery;
         if (options.wakeTicket !== undefined) return options.wakeTicket;
         return options.ticket
           ? {
               id: options.ticket.id,
-              assigneeBotId: options.ticket.assigneeBotId,
+              assigneeBotId: liveAssignee,
               status: "doing",
               number: 7,
               board: { ticketPrefix: "OPS" },
@@ -143,7 +154,11 @@ function deps(
       findUnique: vi.fn().mockResolvedValue(options.board === undefined ? null : options.board),
     },
     ticket: {
-      findFirst: vi.fn().mockResolvedValue(options.ticket === undefined ? null : options.ticket),
+      findFirst: vi
+        .fn()
+        .mockImplementation(async () =>
+          options.ticket ? { id: options.ticket.id, assigneeBotId: liveAssignee } : null,
+        ),
     },
     $transaction: vi.fn(async (fn: (client: unknown) => unknown) => {
       transactionAttempts += 1;
@@ -830,6 +845,15 @@ describe("hardening", () => {
     (
       harness.deps.prisma.ticket as unknown as { findFirst: ReturnType<typeof vi.fn> }
     ).findFirst.mockImplementation(async () => ({ id: "ticket-7", assigneeBotId: assignee }));
+    // The locked in-transaction read sees the same row the routing read does:
+    // once a reassignment commits, both return the new assignee.
+    harness.tx.ticket.findFirst.mockImplementation(async () => ({
+      id: "ticket-7",
+      assigneeBotId: assignee,
+      status: "doing",
+      number: 7,
+      board: { ticketPrefix: "OPS" },
+    }));
     harness.tx.message.findUnique.mockImplementation(
       async (args: {
         where?: { threadId_clientNonce?: { threadId: string; clientNonce: string } };
@@ -1599,9 +1623,166 @@ describe("ticket-originated bot messages", () => {
     );
   });
 
-  it("wakes the assignee the delivery transaction sees, not the pre-send snapshot", async () => {
+  /**
+   * Makes the delivery-key probe see the messages earlier attempts committed, so a
+   * repeat of the same send replays instead of delivering again (the fake's rows).
+   */
+  function probeSeesCommittedStamps(harness: ReturnType<typeof deps>, blocks: unknown[]) {
+    harness.tx.message.findUnique.mockImplementation(
+      async (args: {
+        where?: { threadId_clientNonce?: { threadId: string; clientNonce: string } };
+      }) => {
+        const probe = args?.where?.threadId_clientNonce;
+        if (probe) {
+          const committed = harness.tx.message.create.mock.calls
+            .map(([created]) => created.data as { threadId: string; clientNonce?: string })
+            .find(
+              (data) => data.threadId === probe.threadId && data.clientNonce === probe.clientNonce,
+            );
+          return committed ? { id: "message-delivered" } : null;
+        }
+        return { blocks };
+      },
+    );
+  }
+
+  it("re-routes a reassigned-away result to the requester it still addresses", async () => {
     // The ticket is reassigned between the send's routing read and the locked read
-    // inside the delivery transaction: the wake must follow the new owner.
+    // inside the delivery transaction. The addressed requester is still active, so it
+    // must receive its answer as a ticket-tagged reply — not lose it to a comment and
+    // a successor wake it never reads. The complete contract: the requester's chat run,
+    // the exchange recorded on the ticket, and no ticket continuation for the successor.
+    const harness = deps({
+      hopBlocks: clarification,
+      board,
+      ticket,
+      bots: [
+        { id: "bot-target", name: "Analyst", title: "", thread: { id: "thread-target" } },
+        { id: "bot-sender", name: "Researcher", title: "", thread: { id: "thread-sender" } },
+      ],
+      reassignedDuringDelivery: "bot-successor",
+    });
+    probeSeesCommittedStamps(harness, clarification);
+    const senderRun = {
+      ...run,
+      id: "run-2",
+      threadId: "thread-target",
+      botId: "bot-target",
+      sourceMessageId: "message-source",
+    };
+    const send = () =>
+      messageBot(
+        harness.deps,
+        senderRun,
+        { id: "bot-target", name: "Analyst" },
+        {
+          bot_id: "bot-sender",
+          message: "Quota is five.",
+          intent: "result",
+          deliveryKey: "effect-1",
+        },
+      );
+    const sent = await send();
+
+    expect(sent).toMatchObject({
+      ok: true,
+      botId: "bot-sender",
+      note: expect.stringContaining("recorded on ticket OPS-7"),
+    });
+    // The addressed requester received the answer: a ticket-tagged bot reply in its chat.
+    const inbound = harness.tx.message.create.mock.calls
+      .map(([call]) => call.data)
+      .find((data) => data.threadId === "thread-sender");
+    expect(inbound?.blocks?.[0]).toMatchObject({
+      kind: "bot_message_received",
+      fromBotId: "bot-target",
+      ticketRef: "OPS-7",
+    });
+    expect(harness.tx.task.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ botId: "bot-sender" }) }),
+    );
+    expect(harness.tx.run.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ trigger: "bot_message", botId: "bot-sender" }),
+      }),
+    );
+    // The exchange is still recorded on the ticket...
+    expect(harness.tx.ticketComment.create).toHaveBeenCalledTimes(1);
+    // ...but no ticket continuation woke the successor for a reply its requester got.
+    expect(harness.tx.run.create.mock.calls.some(([call]) => call.data.trigger === "tickets")).toBe(
+      false,
+    );
+    // A replay of the same send adds nothing through either route.
+    const again = await send();
+    expect(again).toMatchObject({ ok: true, replayed: true });
+    expect(harness.tx.ticketComment.create).toHaveBeenCalledTimes(1);
+    expect(harness.tx.run.create).toHaveBeenCalledTimes(1);
+  });
+
+  it("re-routes a result onto the ticket when its recipient becomes the assignee", async () => {
+    // The mirror race: the routing read sees another bot's ticket, so the send starts
+    // on the chat path; a reassignment to the addressed bot commits before the
+    // delivery transaction. The reply must land as the ticket comment with its
+    // continuation, not start a chat run the assignee does not need.
+    const harness = deps({
+      hopBlocks: clarification,
+      board,
+      ticket: { id: "ticket-7", assigneeBotId: "bot-other" },
+      bots: [
+        { id: "bot-target", name: "Analyst", title: "", thread: { id: "thread-target" } },
+        { id: "bot-sender", name: "Researcher", title: "", thread: { id: "thread-sender" } },
+      ],
+      reassignedDuringDelivery: "bot-sender",
+    });
+    probeSeesCommittedStamps(harness, clarification);
+    const senderRun = {
+      ...run,
+      id: "run-2",
+      threadId: "thread-target",
+      botId: "bot-target",
+      sourceMessageId: "message-source",
+    };
+    const send = () =>
+      messageBot(
+        harness.deps,
+        senderRun,
+        { id: "bot-target", name: "Analyst" },
+        {
+          bot_id: "bot-sender",
+          message: "Quota is five.",
+          intent: "result",
+          deliveryKey: "effect-1",
+        },
+      );
+    const sent = await send();
+
+    expect(sent).toMatchObject({
+      ok: true,
+      botId: "bot-sender",
+      note: expect.stringContaining("Recorded as a comment on ticket OPS-7"),
+    });
+    expect(harness.tx.ticketComment.create).toHaveBeenCalledTimes(1);
+    // The continuation is the assignee's ticket wake, and no chat run started.
+    expect(harness.tx.run.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ trigger: "tickets", botId: "bot-sender" }),
+      }),
+    );
+    expect(
+      harness.tx.run.create.mock.calls.some(([call]) => call.data.trigger === "bot_message"),
+    ).toBe(false);
+    expect(
+      harness.tx.message.create.mock.calls.some(([call]) => call.data.threadId === "thread-sender"),
+    ).toBe(false);
+    const again = await send();
+    expect(again).toMatchObject({ ok: true, replayed: true });
+    expect(harness.tx.ticketComment.create).toHaveBeenCalledTimes(1);
+    expect(harness.tx.run.create).toHaveBeenCalledTimes(1);
+  });
+
+  it("refuses the send when the assignment keeps changing under it, committing nothing", async () => {
+    // The routing read and the locked read never agree, so no route can settle.
+    // The model is told to send again and nothing has been committed meanwhile.
     const harness = deps({
       hopBlocks: clarification,
       board,
@@ -1636,15 +1817,70 @@ describe("ticket-originated bot messages", () => {
       },
     );
 
-    expect(sent).toMatchObject({ ok: true });
+    expect(sent).toMatchObject({ ok: false });
+    expect(harness.tx.ticketComment.create).not.toHaveBeenCalled();
+    expect(harness.tx.message.create).not.toHaveBeenCalled();
+    expect(harness.tx.task.create).not.toHaveBeenCalled();
+    expect(harness.tx.run.create).not.toHaveBeenCalled();
+    expect(harness.enqueue).not.toHaveBeenCalled();
+  });
+
+  it("keeps a prepared attachment send on the route that can deliver the files", async () => {
+    // Copies are already saved when the ticket is reassigned to the recipient
+    // mid-send: re-routing to the text-only ticket path would strand them, so the
+    // delivery stays on the chat path, which carries the attachment blocks.
+    const files = [
+      {
+        kind: "file" as const,
+        artifactId: "artifact-zip",
+        name: "result.zip",
+        mimeType: "application/zip",
+        size: 19_000,
+      },
+    ];
+    const harness = deps({
+      hopBlocks: clarification,
+      board,
+      ticket: { id: "ticket-7", assigneeBotId: "bot-other" },
+      bots: [
+        { id: "bot-target", name: "Analyst", title: "", thread: { id: "thread-target" } },
+        { id: "bot-sender", name: "Researcher", title: "", thread: { id: "thread-sender" } },
+      ],
+      reassignedDuringDelivery: "bot-sender",
+    });
+    const sent = await messageBot(
+      harness.deps,
+      {
+        ...run,
+        id: "run-2",
+        threadId: "thread-target",
+        botId: "bot-target",
+        sourceMessageId: "message-source",
+      },
+      { id: "bot-target", name: "Analyst" },
+      {
+        bot_id: "bot-sender",
+        message: "The archive is attached.",
+        intent: "result",
+        deliveryKey: "effect-1",
+        files,
+      },
+    );
+
+    expect(sent).toMatchObject({ ok: true, botId: "bot-sender" });
+    const inbound = harness.tx.message.create.mock.calls
+      .map(([call]) => call.data)
+      .find((data) => data.threadId === "thread-sender");
+    expect(inbound?.blocks).toEqual([
+      expect.objectContaining({ kind: "bot_message_received" }),
+      ...files,
+    ]);
+    expect(harness.tx.ticketComment.create).toHaveBeenCalledTimes(1);
     expect(harness.tx.run.create).toHaveBeenCalledWith(
       expect.objectContaining({
-        data: expect.objectContaining({ trigger: "tickets", botId: "bot-successor" }),
+        data: expect.objectContaining({ trigger: "bot_message", botId: "bot-sender" }),
       }),
     );
-    expect(
-      harness.tx.run.create.mock.calls.some(([call]) => call.data.botId === "bot-sender"),
-    ).toBe(false);
   });
 
   it("keeps the wake recoverable when the nudge or the notifier fails", async () => {

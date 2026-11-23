@@ -11,7 +11,16 @@ import type { ExecutorDeps } from "../runs/executor/executor-deps.js";
 export type BotMessageReplay = { replayed: true };
 
 /** A delivery the transaction refused; the caller reports the error verbatim. */
-export type BotMessageRejection = { ok: false; error: string };
+export type BotMessageRejection = {
+  ok: false;
+  error: string;
+  /**
+   * The route this delivery selected no longer matches the ticket's locked
+   * assignment: nothing was committed, and the caller re-routes from a fresh
+   * read instead of reporting the error to the model.
+   */
+  reassigned?: true;
+};
 
 /**
  * The transaction every bot-message delivery commits through, so the chat path

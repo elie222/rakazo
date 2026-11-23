@@ -29,6 +29,7 @@ import {
   deliverTicketBotMessageOutcome,
   loadTicketForBotMessage,
   recordTicketExchangeComment,
+  ticketAssigneeUnderLock,
   ticketRefForRun,
 } from "./bot-message-ticket.js";
 
@@ -99,6 +100,44 @@ export async function loadBotMessageContext(
 
 /** Bots named in a resolution error; a large Space must not turn one tool result into a wall. */
 const REACHABLE_BOTS_MAX = 12;
+
+/**
+ * Attempts to land an ownership-sensitive send on a route the ticket's assignment
+ * still supports. Each invalidated attempt commits nothing, so one re-route per
+ * changing assignment is enough in practice; past this the model is told to send
+ * again rather than looping over a ticket that keeps changing hands.
+ */
+const ROUTE_ATTEMPTS = 3;
+
+/** A delivery whose selected route the ticket's locked assignment no longer supports. */
+class RouteReassigned extends Error {
+  constructor(ticketRef: string) {
+    super(`ticket ${ticketRef} kept being reassigned while sending; try again`);
+  }
+}
+
+/**
+ * The ticket a result or status from this run reports on, and its current assignee —
+ * the route decision `messageBot` makes, factored out so the `message_bot` tool can
+ * refuse an attachment such a send cannot deliver before saving copies for it.
+ * `messageBot` re-reads the route per attempt and validates it at commit.
+ */
+export async function ticketOutcomeRoute(
+  prisma: PrismaClient,
+  run: { spaceId: string; taskId?: string; trigger?: string; sourceMessageId?: string | null },
+): Promise<{ ticketRef: string; assigneeBotId: string | null } | undefined> {
+  const sourceContext = await loadBotMessageContext(prisma, run.sourceMessageId);
+  const ticketOrigin =
+    sourceContext?.ticketRef ??
+    (run.trigger === "tickets" ? await ticketRefForRun(prisma, run) : undefined);
+  if (!ticketOrigin) return undefined;
+  const ticket = await loadTicketForBotMessage(prisma, {
+    spaceId: run.spaceId,
+    ticketRef: ticketOrigin,
+  });
+  if (!ticket) return undefined;
+  return { ticketRef: ticketOrigin, assigneeBotId: ticket.assigneeBotId };
+}
 
 /**
  * What a failed lookup could have used instead. The candidates are already loaded for the
@@ -236,53 +275,6 @@ export async function messageBot(
     (sourceContext.intent === undefined ||
       sourceContext.intent === "request" ||
       sourceContext.intent === "question");
-  if (
-    ticketOrigin &&
-    ticket &&
-    (intent === "result" || intent === "status") &&
-    ticket.assigneeBotId === target.id
-  ) {
-    const outcome = await deliverTicketBotMessageOutcome(deps, {
-      run,
-      sender,
-      addressTo: { id: target.id, name: target.name },
-      ticketRef: ticketOrigin,
-      ticket,
-      text: message,
-      intent,
-      deliveryKey,
-      // An explicit terminal result settles the run's outcome here, so the automatic
-      // return after completion replays instead of double-commenting; interim statuses
-      // and results to anyone else stay eligible for the automatic return.
-      ...(intent === "result" && repliesToItsRequester ? { outcome: { claim: true } } : {}),
-      returnFrom,
-    });
-    if (!outcome.ok) return outcome;
-    if ("replayed" in outcome) {
-      return {
-        ok: true as const,
-        botId: target.id,
-        name: target.name,
-        delivered: message,
-        replayed: true as const,
-        note: `Already recorded on ticket ${ticketOrigin}; it was not recorded again.`,
-      };
-    }
-    return {
-      ok: true as const,
-      botId: target.id,
-      name: target.name,
-      delivered: message,
-      // Claim the wake only when a continuation run was actually committed (the
-      // assignee may be missing, archived, or ineligible for the board).
-      note: `Recorded as a comment on ticket ${ticketOrigin}.${
-        outcome.woken
-          ? " The ticket's assignee is woken to continue that work; nothing was sent to anyone's chat."
-          : ""
-      }${files.length > 0 ? " Attached files are not posted to the ticket; share them there separately if needed." : ""}`,
-    };
-  }
-
   const wakePrompt = buildBotMessageWakePrompt({
     from: sender,
     text: message,
@@ -297,148 +289,249 @@ export async function messageBot(
     intent,
   };
 
-  const committed = await commitBotMessageDelivery<{
-    ok: true;
-    runId: string;
-    targetEventSeq: number;
-    senderEventSeq: number;
-  }>(
-    deps,
-    {
-      run,
-      returnFrom,
-      lockThreadIds: [targetThreadId],
-      nonce: deliveryKey ? { threadId: targetThreadId, clientNonce: deliveryKey } : undefined,
-      target: { id: target.id, name: target.name },
-    },
-    async (tx) => {
-      // Echo into the sender's chat in the same transaction so a failed notify
-      // cannot leave one side delivered and the other blank. The echo also
-      // carries the delivery key, making the sender's thread a stamp domain
-      // both routes share (see the probe in commitBotMessageDelivery).
-      const outbound = await createThreadMessageInTransaction(tx, {
-        threadId: run.threadId,
-        role: "bot",
-        blocks: [outboundBlock],
-        botId: run.botId,
-        runId: run.id,
-        ...(deliveryKey ? { clientNonce: deliveryKey } : {}),
-        markUnread: options?.forceUnread === true && !ticketOrigin,
-        allowCancelledRun: returnFrom === "ended",
-        lease: runLeaseFor(deps, run.id),
-      });
-      const inboundBlock: MessageBlock = {
-        kind: "bot_message_received",
-        fromBotId: sender.id,
-        fromBotName: sender.name,
-        text: message,
-        hop,
-        intent,
-        returnToMessageId: outbound.id,
-        ...(ticketOrigin ? { ticketRef: ticketOrigin } : {}),
-      };
-      const inbound = await createThreadMessageInTransaction(tx, {
-        threadId: targetThreadId,
-        role: "user",
-        blocks: [inboundBlock, ...files],
-        replyToMessageId:
-          sourceContext?.fromBotId === target.id && intent !== "fyi"
-            ? sourceContext.returnToMessageId
-            : undefined,
-        clientNonce: deliveryKey,
-        markUnread: options?.forceUnread === true && !ticketOrigin,
-      });
-      if (ticket) {
-        // This side of a ticket-originated exchange, kept on the ticket itself: the
-        // reply is recorded there too (see deliverTicketBotMessageOutcome), so the
-        // workflow stays readable without any owner's chat.
-        await recordTicketExchangeComment(tx, {
-          spaceId: run.spaceId,
-          ticketId: ticket.ticketId,
-          botId: sender.id,
-          body: message,
-        });
+  // A result or status the ticket's current assignee will read is ownership-sensitive:
+  // the route is chosen from an assignee read that can go stale before the delivery
+  // transaction commits. Each attempt re-validates the assignment under the ticket
+  // row's lock inside the transaction — rejecting with `reassigned` and committing
+  // nothing when it changed — so the send re-routes from a fresh read and the
+  // addressed requester gets its reply on the route its role supports; once the
+  // attempts run out the model is told to send again over a ticket that keeps
+  // changing hands. A send carrying attachment blocks never takes the ticket-only
+  // route (a comment cannot carry them) and is never re-routed onto it, so prepared
+  // files always travel the chat path that delivers them.
+  const sent = await retry(
+    async () => {
+      const attemptTicket = ticketOrigin
+        ? await loadTicketForBotMessage(deps.prisma, {
+            spaceId: run.spaceId,
+            ticketRef: ticketOrigin,
+          })
+        : undefined;
+      if (ticketOrigin && !attemptTicket) {
+        return {
+          ok: false as const,
+          error: `ticket ${ticketOrigin} is no longer available`,
+          missingTicket: true as const,
+        };
       }
-      const task = await tx.task.create({
-        data: {
-          spaceId: run.spaceId,
+      if (
+        ticketOrigin &&
+        attemptTicket &&
+        files.length === 0 &&
+        (intent === "result" || intent === "status") &&
+        attemptTicket.assigneeBotId === target.id
+      ) {
+        const outcome = await deliverTicketBotMessageOutcome(deps, {
+          run,
+          sender,
+          addressTo: { id: target.id, name: target.name },
+          ticketRef: ticketOrigin,
+          ticket: attemptTicket,
+          text: message,
+          intent,
+          deliveryKey,
+          // An explicit terminal result settles the run's outcome here, so the automatic
+          // return after completion replays instead of double-commenting; interim statuses
+          // and results to anyone else stay eligible for the automatic return.
+          ...(intent === "result" && repliesToItsRequester ? { outcome: { claim: true } } : {}),
+          returnFrom,
+          requireAssigneeBotId: target.id,
+        });
+        if (!outcome.ok) {
+          if (!outcome.reassigned) return outcome;
+          throw new RouteReassigned(ticketOrigin);
+        }
+        if ("replayed" in outcome) {
+          return {
+            ok: true as const,
+            botId: target.id,
+            name: target.name,
+            delivered: message,
+            replayed: true as const,
+            note: `Already recorded on ticket ${ticketOrigin}; it was not recorded again.`,
+          };
+        }
+        return {
+          ok: true as const,
           botId: target.id,
-          threadId: targetThreadId,
-          userId: run.userId,
-          prompt: wakePrompt,
-          status: "queued",
+          name: target.name,
+          delivered: message,
+          // Claim the wake only when a continuation run was actually committed (the
+          // assignee may be missing, archived, or ineligible for the board).
+          note: `Recorded as a comment on ticket ${ticketOrigin}.${
+            outcome.woken
+              ? " The ticket's assignee is woken to continue that work; nothing was sent to anyone's chat."
+              : ""
+          }`,
+        };
+      }
+
+      const committed = await commitBotMessageDelivery<{
+        ok: true;
+        runId: string;
+        targetEventSeq: number;
+        senderEventSeq: number;
+      }>(
+        deps,
+        {
+          run,
+          returnFrom,
+          lockThreadIds: [targetThreadId],
+          nonce: deliveryKey ? { threadId: targetThreadId, clientNonce: deliveryKey } : undefined,
+          target: { id: target.id, name: target.name },
         },
-      });
-      const nextRun = await tx.run.create({
-        data: {
-          spaceId: run.spaceId,
-          botId: target.id,
-          threadId: targetThreadId,
-          taskId: task.id,
-          userId: run.userId,
-          status: "queued",
-          trigger: "bot_message",
-          sourceMessageId: inbound.id,
+        async (tx) => {
+          if (
+            ticketOrigin &&
+            attemptTicket &&
+            files.length === 0 &&
+            (intent === "result" || intent === "status")
+          ) {
+            const assignee = await ticketAssigneeUnderLock(tx, {
+              spaceId: run.spaceId,
+              ticketId: attemptTicket.ticketId,
+            });
+            if (assignee === target.id) throw new RouteReassigned(ticketOrigin);
+          }
+          // Echo into the sender's chat in the same transaction so a failed notify
+          // cannot leave one side delivered and the other blank. The echo also
+          // carries the delivery key, making the sender's thread a stamp domain
+          // both routes share (see the probe in commitBotMessageDelivery).
+          const outbound = await createThreadMessageInTransaction(tx, {
+            threadId: run.threadId,
+            role: "bot",
+            blocks: [outboundBlock],
+            botId: run.botId,
+            runId: run.id,
+            ...(deliveryKey ? { clientNonce: deliveryKey } : {}),
+            markUnread: options?.forceUnread === true && !ticketOrigin,
+            allowCancelledRun: returnFrom === "ended",
+            lease: runLeaseFor(deps, run.id),
+          });
+          const inboundBlock: MessageBlock = {
+            kind: "bot_message_received",
+            fromBotId: sender.id,
+            fromBotName: sender.name,
+            text: message,
+            hop,
+            intent,
+            returnToMessageId: outbound.id,
+            ...(ticketOrigin ? { ticketRef: ticketOrigin } : {}),
+          };
+          const inbound = await createThreadMessageInTransaction(tx, {
+            threadId: targetThreadId,
+            role: "user",
+            blocks: [inboundBlock, ...files],
+            replyToMessageId:
+              sourceContext?.fromBotId === target.id && intent !== "fyi"
+                ? sourceContext.returnToMessageId
+                : undefined,
+            clientNonce: deliveryKey,
+            markUnread: options?.forceUnread === true && !ticketOrigin,
+          });
+          if (attemptTicket) {
+            // This side of a ticket-originated exchange, kept on the ticket itself: the
+            // reply is recorded there too (see deliverTicketBotMessageOutcome), so the
+            // workflow stays readable without any owner's chat.
+            await recordTicketExchangeComment(tx, {
+              spaceId: run.spaceId,
+              ticketId: attemptTicket.ticketId,
+              botId: sender.id,
+              body: message,
+            });
+          }
+          const task = await tx.task.create({
+            data: {
+              spaceId: run.spaceId,
+              botId: target.id,
+              threadId: targetThreadId,
+              userId: run.userId,
+              prompt: wakePrompt,
+              status: "queued",
+            },
+          });
+          const nextRun = await tx.run.create({
+            data: {
+              spaceId: run.spaceId,
+              botId: target.id,
+              threadId: targetThreadId,
+              taskId: task.id,
+              userId: run.userId,
+              status: "queued",
+              trigger: "bot_message",
+              sourceMessageId: inbound.id,
+            },
+            select: { id: true },
+          });
+          await tx.message.update({ where: { id: inbound.id }, data: { runId: nextRun.id } });
+          const inboundEvent = await appendEventInTransaction(tx, {
+            spaceId: run.spaceId,
+            threadId: targetThreadId,
+            botId: target.id,
+            type: "thread.message.created",
+            runId: nextRun.id,
+            payload: { messageId: inbound.id, role: "user", blocks: [inboundBlock, ...files] },
+          });
+          const outboundEvent = await appendEventInTransaction(tx, {
+            spaceId: run.spaceId,
+            threadId: run.threadId,
+            botId: run.botId,
+            type: "thread.message.created",
+            runId: run.id,
+            allowCancelledRun: returnFrom === "ended",
+            lease: runLeaseFor(deps, run.id),
+            payload: { messageId: outbound.id, role: "bot", blocks: [outboundBlock] },
+          });
+          return {
+            ok: true as const,
+            runId: nextRun.id,
+            targetEventSeq: inboundEvent.seq,
+            senderEventSeq: outboundEvent.seq,
+          };
         },
-        select: { id: true },
-      });
-      await tx.message.update({ where: { id: inbound.id }, data: { runId: nextRun.id } });
-      const inboundEvent = await appendEventInTransaction(tx, {
-        spaceId: run.spaceId,
-        threadId: targetThreadId,
-        botId: target.id,
-        type: "thread.message.created",
-        runId: nextRun.id,
-        payload: { messageId: inbound.id, role: "user", blocks: [inboundBlock, ...files] },
-      });
-      const outboundEvent = await appendEventInTransaction(tx, {
-        spaceId: run.spaceId,
-        threadId: run.threadId,
-        botId: run.botId,
-        type: "thread.message.created",
-        runId: run.id,
-        allowCancelledRun: returnFrom === "ended",
-        lease: runLeaseFor(deps, run.id),
-        payload: { messageId: outbound.id, role: "bot", blocks: [outboundBlock] },
-      });
+      );
+      if ("replayed" in committed) return replayed();
+      if (!committed.ok) return committed;
+
+      await deps.events.notify(targetThreadId, committed.targetEventSeq);
+      await deps.events.notify(run.threadId, committed.senderEventSeq);
+      await wakeRun(deps.jobs, committed.runId);
+      if (attemptTicket) {
+        // Board refresh only: the comment above is the durable record and the
+        // recipient's wake was committed with it, so a lost nudge loses nothing —
+        // the same best-effort shape the ticket outcome path uses.
+        await bestEffort(
+          "bot message ticket board refresh",
+          deps.onTicketChange?.({
+            spaceId: run.spaceId,
+            boardId: attemptTicket.boardId,
+            ticketId: attemptTicket.ticketId,
+            assigneeBotId: null,
+            wakeAssignee: false,
+          }),
+        );
+      }
       return {
         ok: true as const,
-        runId: nextRun.id,
-        targetEventSeq: inboundEvent.seq,
-        senderEventSeq: outboundEvent.seq,
+        botId: target.id,
+        name: target.name,
+        delivered: message,
+        note: ticketOrigin
+          ? `Sent to ${target.name}. Delivery is async; a reply wakes you later as a new message. The exchange is recorded on ticket ${ticketOrigin}. Continue independent work; send another update later only if it adds something new.`
+          : `Sent to ${target.name}. Delivery is async; a reply wakes you later as a new message. Continue independent work; send another update later only if it adds something new.`,
       };
     },
+    {
+      attempts: ROUTE_ATTEMPTS,
+      delayMs: 0,
+      retryable: (error) => error instanceof RouteReassigned,
+    },
+  ).catch((error) =>
+    error instanceof RouteReassigned
+      ? { ok: false as const, error: error.message }
+      : Promise.reject(error),
   );
-  if ("replayed" in committed) return replayed();
-  if (!committed.ok) return committed;
-
-  await deps.events.notify(targetThreadId, committed.targetEventSeq);
-  await deps.events.notify(run.threadId, committed.senderEventSeq);
-  await wakeRun(deps.jobs, committed.runId);
-  if (ticket) {
-    // Board refresh only: the comment above is the durable record and the
-    // recipient's wake was committed with it, so a lost nudge loses nothing —
-    // the same best-effort shape the ticket outcome path uses.
-    await bestEffort(
-      "bot message ticket board refresh",
-      deps.onTicketChange?.({
-        spaceId: run.spaceId,
-        boardId: ticket.boardId,
-        ticketId: ticket.ticketId,
-        assigneeBotId: null,
-        wakeAssignee: false,
-      }),
-    );
-  }
-  return {
-    ok: true as const,
-    botId: target.id,
-    name: target.name,
-    delivered: message,
-    note: ticketOrigin
-      ? `Sent to ${target.name}. Delivery is async; a reply wakes you later as a new message. The exchange is recorded on ticket ${ticketOrigin}. Continue independent work; send another update later only if it adds something new.`
-      : `Sent to ${target.name}. Delivery is async; a reply wakes you later as a new message. Continue independent work; send another update later only if it adds something new.`,
-  };
+  return sent;
 }
 
 type DelegatedRun = {
@@ -539,10 +632,14 @@ export async function returnBotMessageOutcome(
       // The asking bot still owns the ticket — or is archived and can no longer take a
       // reply: either way the outcome lands on the ticket as a comment that wakes its
       // current assignee. Only the sender-thread echo needs a requester to address.
+      // While it owns the ticket, the delivery holds it to that read: a reassignment
+      // that commits underneath returns `reassigned` with nothing written, and the
+      // still-active requester takes its answer as an ordinary ticket-tagged reply
+      // below instead of losing it to the flip.
       const outcome = await deliverTicketBotMessageOutcome(deps, {
         run,
         sender,
-        ...(requester ? { addressTo: requester } : {}),
+        ...(requester ? { addressTo: requester, requireAssigneeBotId: requester.id } : {}),
         ticketRef: source.ticketRef,
         ticket,
         text: clampBotMessage(text),
@@ -555,7 +652,7 @@ export async function returnBotMessageOutcome(
         await markBotOutcomeReturned(deps.prisma, run.id);
         return true;
       }
-      return false;
+      if (!outcome.reassigned) return false;
     }
     // The asking bot no longer owns the ticket (a helper-to-helper chain, or the ticket
     // was reassigned): the answer goes to it below as an ordinary bot message, which
