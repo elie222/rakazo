@@ -23,7 +23,7 @@ vi.mock("./run-tools-files.js", () => ({
   saveWorkspaceFile: mocks.saveWorkspaceFile,
 }));
 
-const { messagingTools } = await import("./run-tools-messaging.js");
+import { messagingTools } from "./run-tools-messaging.js";
 
 /** The fake-prisma delivery stack the real messageBot routing runs against. */
 function ticketDeps(options: {

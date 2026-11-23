@@ -127,7 +127,7 @@ export function buildBotMessageWakePrompt(args: {
   const label = safeName.replaceAll('"', "");
   const intent = args.intent ?? "request";
   const ticket = args.ticketRef ? escapeDirectoryField(args.ticketRef) : undefined;
-  const ticketOrigin = ticket ? ` the ticket ${ticket} workflow, not a chat turn` : "";
+  const ticketOrigin = ticket ? `the ticket ${ticket} workflow, not a chat turn` : "";
   const action =
     intent === "result" || intent === "status"
       ? ticket
