@@ -23,28 +23,8 @@ export const RU_MESSAGES: Record<string, string> = {
   "Your Rakazo confirmation code": "Ваш код подтверждения Rakazo",
   "Enter this code in Rakazo to confirm it's you:":
     "Введите этот код в Rakazo, чтобы подтвердить, что это вы:",
-  "Welcome to Rakazo": "Добро пожаловать в Rakazo",
-  "Welcome to Rakazo. The people who get the most out of it do three things:":
-    "Добро пожаловать в Rakazo. Те, кто получает от него больше всего, делают три вещи:",
-  "Get the apps": "Установите приложения",
-  "Rakazo runs on {platforms}, so your bots can reach you wherever you are.":
-    "Rakazo работает на {platforms}, поэтому ваши боты могут связаться с вами где угодно.",
-  "Join the community": "Присоединяйтесь к сообществу",
-  "See what others are building, get help fast, and tell us what to build next on {discord}.":
-    "Смотрите, что создают другие, быстро получайте помощь и подскажите нам в {discord}, что сделать дальше.",
-  "Star us on GitHub": "Поставьте нам звезду на GitHub",
-  "Rakazo is open source. {star} helps more people find it.":
-    "Rakazo — проект с открытым исходным кодом. {star} помогает другим его найти.",
-  "A star on GitHub": "Звезда на GitHub",
-  "Questions? Just reply. I read every one.":
-    "Есть вопросы? Просто ответьте. Я читаю каждое письмо.",
   Unsubscribe: "Отписаться",
-  "Invite a friend": "Пригласите друга",
-  "Invite a friend to Rakazo: they get {weeks} weeks free, and you earn a free month when they start a qualifying subscription with a new card.":
-    "Пригласите друга в Rakazo: он получит {weeks} недели бесплатно, а вы — бесплатный месяц, когда он оформит подходящую подписку с новой картой.",
   "Open Rakazo": "Откройте Rakazo",
-  "and choose Invite friends for your link.":
-    "и выберите «Пригласить друзей», чтобы получить ссылку.",
   "We received your Rakazo plugin": "Мы получили ваш плагин для Rakazo",
   "Thanks for submitting a plugin to the Rakazo marketplace.":
     "Спасибо, что отправили плагин в маркетплейс Rakazo.",
@@ -73,4 +53,16 @@ export const RU_MESSAGES: Record<string, string> = {
     "Сохранённые файлы вашего компьютера будут удалены {date}, если вы не продлите подписку.",
   "Your saved computer files will be deleted on {date} unless you choose a plan.":
     "Сохранённые файлы вашего компьютера будут удалены {date}, если вы не выберете тариф.",
+  "{inviter} invited you to {organization} on Rakazo":
+    "{inviter} приглашает вас в {organization} в Rakazo",
+  "{inviter} invited you to join {organization} on Rakazo.":
+    "{inviter} приглашает вас присоединиться к {organization} в Rakazo.",
+  "Join {organization}": "Присоединиться к {organization}",
+  "This invitation expires in 7 days. Sign in with this email address to accept it.":
+    "Приглашение действует 7 дней. Чтобы принять его, войдите с этим адресом электронной почты.",
+  "{inviter} invited you to {space} on Rakazo": "{inviter} приглашает вас в {space} в Rakazo",
+  "{inviter} invited you to join {space} on Rakazo.":
+    "{inviter} приглашает вас присоединиться к {space} в Rakazo.",
+  "Join {space}": "Присоединиться к {space}",
+  "This invitation expires in 7 days.": "Приглашение действует 7 дней.",
 };

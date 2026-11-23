@@ -81,13 +81,13 @@
     "id": "models",
     "title": "Models",
     "flow": "flows/models.yaml",
-    "screens": ["models", "model-picker", "model-settings", "model-connection"]
+    "screens": ["models", "model-picker", "model-connection"]
   },
   {
     "id": "bots",
     "title": "Bots",
     "flow": "flows/bots.yaml",
-    "screens": ["bot-profile", "routines", "bot-model", "peer-chat", "routine"]
+    "screens": ["bot-profile", "routines", "bot-model", "chat-model", "peer-chat", "routine"]
   },
   {
     "id": "files",
@@ -117,6 +117,7 @@
       "approval-rule-add",
       "vault",
       "archived-bots",
+      "spaces",
       "space",
       "space-members"
     ]
@@ -149,12 +150,19 @@
     "id": "pages",
     "title": "Pages",
     "flow": "flows/pages.yaml",
-    "screens": ["page", "page-share", "pages"]
+    "screens": ["page", "page-share", "page-review", "pages", "shared-pages"]
   },
   {
     "id": "organizations",
     "title": "Organizations",
     "flow": "flows/organizations.yaml",
-    "screens": ["account", "new-organization", "paywall", "index", "organization"]
+    "screens": [
+      "account",
+      "new-organization",
+      "paywall",
+      "index",
+      "organization",
+      "organization-members"
+    ]
   }
 ]

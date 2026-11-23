@@ -29,12 +29,12 @@ vi.mock("./lib/bootstrap", () => ({
   getLabs: () => (capability.enabled ? ["board"] : []),
   subscribeLabs: () => () => {},
 }));
-vi.mock("./lib/auth", () => ({
+vi.mock("./lib/auth/auth", () => ({
   authClient: {
     useSession: () => ({ ...(capability.session ?? signedIn), refetch: vi.fn() }),
   },
 }));
-vi.mock("./pages/Auth", async () => {
+vi.mock("./pages/auth/Auth", async () => {
   const { useEffect } = await import("react");
   return {
     AuthPage: ({ mode }: { mode: string }) => {
@@ -45,13 +45,13 @@ vi.mock("./pages/Auth", async () => {
     },
   };
 });
-vi.mock("./lib/call-session", () => ({ syncCallIdentity: capability.syncCallIdentity }));
-vi.mock("./lib/remote-images-preference", () => ({
+vi.mock("./lib/calls/call-session", () => ({ syncCallIdentity: capability.syncCallIdentity }));
+vi.mock("./lib/preferences/remote-images-preference", () => ({
   remoteImagesPreference: { use: () => false },
 }));
-vi.mock("./lib/performance", () => ({ markOnce: () => {}, markAfterPaint: () => {} }));
-vi.mock("./lib/rpc", () => ({ rpc: { analytics: { screen: capability.screen } } }));
-vi.mock("./components/SubscriptionGate", () => ({
+vi.mock("./lib/platform/performance", () => ({ markOnce: () => {}, markAfterPaint: () => {} }));
+vi.mock("./lib/query/rpc", () => ({ rpc: { analytics: { screen: capability.screen } } }));
+vi.mock("./components/billing/SubscriptionGate", () => ({
   SubscriptionGate: ({ children }: { children: ReactNode }) => children,
 }));
 vi.mock("./pages/Shell", () => ({ ShellPage: () => <div>Shell</div> }));
@@ -59,15 +59,17 @@ vi.mock("./components/call/CallLayout", async () => {
   const { Outlet } = await import("react-router-dom");
   return { CallLayout: () => <Outlet /> };
 });
-vi.mock("./components/markdown-link-prompt", () => ({
+vi.mock("./components/messages/markdown-link-prompt", () => ({
   MarkdownLinkPrompt: ({ children }: { children: ReactNode }) => children,
 }));
-vi.mock("./pages/Board", () => {
+vi.mock("./pages/space/Board", () => {
   capability.boardLoaded();
   return { BoardPage: () => <div>Board page</div> };
 });
-vi.mock("./pages/IntegrationSetup", () => ({ IntegrationSetupPage: () => null }));
-vi.mock("./pages/McpOAuthCallback", () => ({ McpOAuthCallbackPage: () => null }));
+vi.mock("./pages/integrations/IntegrationSetup", () => ({ IntegrationSetupPage: () => null }));
+vi.mock("./pages/integrations/McpOAuthCallback", () => ({
+  McpOAuthCallbackPage: () => <div>MCP callback</div>,
+}));
 
 import { App } from "./App";
 
@@ -127,6 +129,30 @@ it("loads the board chunk only after bootstrap enables the route", async () => {
     expect(capability.boardLoaded).toHaveBeenCalledOnce();
     expect(container.textContent).toBe("Board page");
   } finally {
+    await act(async () => root.unmount());
+    vi.unstubAllGlobals();
+  }
+});
+
+it.each([
+  ["hands a mobile sign-in back to the app", "mobile-session-1", "MCP callback"],
+  ["sends a signed-out browser sign-in to sign in first", "session-1", "Auth in"],
+])("on the MCP OAuth callback, %s", async (_name, state, text) => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const container = document.createElement("div");
+  const root = createRoot(container);
+  capability.session = { isPending: false, data: null, error: null };
+  try {
+    await act(async () =>
+      root.render(
+        <MemoryRouter initialEntries={[`/mcp/oauth/callback?code=code-1&state=${state}`]}>
+          <App />
+        </MemoryRouter>,
+      ),
+    );
+    await vi.waitFor(() => expect(container.textContent).toBe(text));
+  } finally {
+    capability.session = null;
     await act(async () => root.unmount());
     vi.unstubAllGlobals();
   }

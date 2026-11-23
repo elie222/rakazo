@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { deferred } from "@rakazo/core/test-async";
 import { act } from "react";
 import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
@@ -52,14 +53,9 @@ it.each(examples)("%s offers manual copying when copying fails", async (label, m
 });
 
 it("Copy rows offers the text from the click when the table changes before the failure", async () => {
-  let fail: () => void = () => undefined;
+  const copy = deferred();
   Object.defineProperty(navigator, "clipboard", {
-    value: {
-      writeText: () =>
-        new Promise<void>((_, reject) => {
-          fail = () => reject();
-        }),
-    },
+    value: { writeText: () => copy.promise },
     configurable: true,
   });
   document.execCommand = vi.fn(() => false);
@@ -71,20 +67,15 @@ it("Copy rows offers the text from the click when the table changes before the f
   await act(async () =>
     root.render(<ChatMarkdown>{"| Item |\n| --- |\n| avocado |"}</ChatMarkdown>),
   );
-  await act(async () => fail());
+  await act(async () => copy.reject(new Error("denied")));
   const field = document.querySelector<HTMLTextAreaElement>('[role="dialog"] textarea');
   expect(field?.value).toBe("Item\napple");
 });
 
 it("Copy rows starts no feedback timers when the copy settles after the table is gone", async () => {
-  let succeed: () => void = () => undefined;
+  const copied = deferred();
   Object.defineProperty(navigator, "clipboard", {
-    value: {
-      writeText: () =>
-        new Promise<void>((resolve) => {
-          succeed = resolve;
-        }),
-    },
+    value: { writeText: () => copied.promise },
     configurable: true,
   });
   await act(async () => root.render(<ChatMarkdown>{"| Item |\n| --- |\n| apple |"}</ChatMarkdown>));
@@ -96,7 +87,7 @@ it("Copy rows starts no feedback timers when the copy settles after the table is
   root = createRoot(container);
   const setTimeout = vi.spyOn(window, "setTimeout");
 
-  await act(async () => succeed());
+  await act(async () => copied.resolve());
 
   expect(setTimeout).not.toHaveBeenCalled();
   setTimeout.mockRestore();

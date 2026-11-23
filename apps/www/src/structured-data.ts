@@ -1,8 +1,13 @@
-import type { FaqItem } from "./alternatives";
-import { BLOG_AUTHOR_PERSON } from "./blog/format";
-import { pageDate } from "./page-dates";
 import { PRICE_OFFERS } from "./pricing";
 import { DISCORD_URL, GITHUB_URL, SITE_NAME, SITE_URL, X_URL } from "./site";
+
+export type FaqItem = {
+  question: string;
+  answer: string;
+};
+
+/** What a post's head says about it: og:type article, its dates and its author's profile URL. */
+export type ArticleMeta = { published: Date; modified: Date; authorUrl: string };
 
 const LEGAL_NAME = "Inbox Zero Inc.";
 
@@ -97,63 +102,6 @@ export function articleStructuredData(input: ArticleInput, ...nodes: readonly ob
     breadcrumbNode(input.pageUrl, input.crumbs),
     ...nodes,
   ]);
-}
-
-export type PageArticleInput = {
-  /** The page's path, such as `/sandboxes/e2b/`. */
-  path: string;
-  headline: string;
-  description: string;
-  /** The last breadcrumb's name, when shorter than the headline. */
-  crumb?: string;
-  parents?: readonly Crumb[];
-  image?: string;
-  faq?: readonly FaqItem[];
-};
-
-/** A site page as an Article, dated from `page-dates`, with its FAQ and any other nodes. */
-export function pageArticleStructuredData(input: PageArticleInput, ...nodes: readonly object[]) {
-  const pageUrl = new URL(input.path, SITE_URL).toString();
-  const date = pageDate(input.path);
-  return articleStructuredData(
-    {
-      pageUrl,
-      headline: input.headline,
-      description: input.description,
-      crumbs: [...(input.parents ?? []), { name: input.crumb ?? input.headline, path: input.path }],
-      modified: date,
-      image: input.image,
-    },
-    ...nodes,
-    ...(input.faq && input.faq.length > 0 ? [faqPageNode(input.faq, pageUrl)] : []),
-  );
-}
-
-export function blogPostStructuredData(input: {
-  pageUrl: string;
-  title: string;
-  description: string;
-  published: string;
-  updated: string;
-  image: string;
-  /** Left out while the category page stays out of the index. */
-  category?: Crumb;
-}) {
-  return articleStructuredData({
-    type: "BlogPosting",
-    pageUrl: input.pageUrl,
-    headline: input.title,
-    description: input.description,
-    published: input.published,
-    modified: input.updated,
-    image: input.image,
-    author: BLOG_AUTHOR_PERSON,
-    crumbs: [
-      { name: "Blog", path: "/blog/" },
-      ...(input.category ? [input.category] : []),
-      { name: input.title, path: input.pageUrl },
-    ],
-  });
 }
 
 function usd(cents: number): string {

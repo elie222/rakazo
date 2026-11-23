@@ -1,11 +1,11 @@
 import { useLingui } from "@lingui/react/macro";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useMemo } from "react";
-import { ModelPickerList } from "../components/model-picker-list";
-import { chatModelPickerChoices } from "../lib/chat-model";
-import { rpcQuery } from "../lib/query";
-import { useScreenQuery } from "../lib/screen-query";
-import { errorText } from "../lib/user-error";
+import { ModelPickerList } from "../components/models/model-picker-list";
+import { errorText } from "../lib/api/user-error";
+import { chatModelPickerChoices } from "../lib/models/chat-model";
+import { rpcQuery } from "../lib/query/query";
+import { useScreenQuery } from "../lib/query/screen-query";
 
 export default function BotModelScreen() {
   const { t } = useLingui();

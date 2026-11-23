@@ -13,10 +13,18 @@ import {
 import { regradeTrial } from "./grading.js";
 import { HISTORY_JUDGE_VERSION } from "./history-fixtures.js";
 import type { EvalJudge } from "./judge.js";
-import { emptyTrial, redact, summarize, validateControls } from "./report.js";
+import {
+  emptyTrial,
+  holdBackJudged,
+  redact,
+  stopRemaining,
+  summarize,
+  validateControls,
+} from "./report.js";
 import type { EvalApp } from "./runner.js";
 import { runTrial } from "./runner.js";
-import { EvalServices } from "./services.js";
+import { EvalServices, evalWeb } from "./services.js";
+import { TOOL_CHOICE_CASES } from "./suites/tool-choice-cases.js";
 
 const context: AdapterContext = {
   operationId: "synthetic",
@@ -69,6 +77,21 @@ const graded = (scenario: EvalCase, e: Evidence, judge?: EvalJudge) =>
 const judgeDown: EvalJudge = async () => {
   throw new Error("judge down");
 };
+
+describe("eval web", () => {
+  it("serves this checkout's docs at the docs URLs the Rakazo skill links", async () => {
+    const web = evalWeb();
+    const page = await web.fetch(
+      { url: "https://rakazo.com/docs/account.md" },
+      {} as AdapterContext,
+    );
+    expect(page.text).toContain("Settings → Billing");
+    const home = await web.fetch({ url: "https://rakazo.com/docs.md" }, {} as AdapterContext);
+    expect(home.text).not.toBe(web.fetchResult.text);
+    const other = await web.fetch({ url: "https://example.test/x" }, {} as AdapterContext);
+    expect(other.text).toBe(web.fetchResult.text);
+  });
+});
 
 describe("stateful eval services", () => {
   it("rejects unknown records without advancing state", async () => {
@@ -200,9 +223,9 @@ describe("independent outcome graders", () => {
     e.files["results/language.txt"] = "French";
     expect(passes("updated-preference", e)).toBe(false);
   });
-  it("has 16 distinct cases, each rejects empty evidence and a completion claim", () => {
-    expect(EVAL_CASES).toHaveLength(16);
-    expect(new Set(EVAL_CASES.map((c) => c.id)).size).toBe(16);
+  it("has 19 distinct cases, each rejects empty evidence and a completion claim", () => {
+    expect(EVAL_CASES).toHaveLength(19);
+    expect(new Set(EVAL_CASES.map((c) => c.id)).size).toBe(19);
     for (const scenario of EVAL_CASES) {
       expect(
         passes(scenario.id, { ...evidence(), text: "Done! I completed everything." }),
@@ -279,7 +302,7 @@ describe("independent outcome graders", () => {
     e.records[1]!.status = "active";
     expect(passes("crm-update", e)).toBe(false);
   });
-  it("requires grounded cross-system evidence and the ticket reference in the Slack reply", () => {
+  it("requires grounded cross-system evidence and leaves the reply's meaning to the judge", () => {
     const e = evidence();
     e.calls.push(
       {
@@ -314,11 +337,10 @@ describe("independent outcome graders", () => {
       ],
     };
     expect(passes("slack-customer-update", e)).toBe(true);
-    e.messaging.outbound[0]!.body =
-      "Casey Morgan owns the renewal, now in Negotiation. An urgent ticket covers the SSO incident.";
-    expect(passes("slack-customer-update", e)).toBe(false);
-    e.messaging.outbound[0]!.body =
-      "Casey Morgan owns the renewal, now in Negotiation. Urgent ticket ZD-1842 covers the SSO incident; engineering is testing a configuration fix.";
+    expect(EVAL_CASES.find((c) => c.id === "slack-customer-update")!.judge!(e).evidence).toEqual({
+      reply:
+        "Casey Morgan owns the renewal, now in Negotiation. Urgent ticket ZD-1842 covers the SSO incident; engineering is testing a configuration fix.",
+    });
     e.calls[1]!.args.accountId = "sf-fairhaven-logistics";
     expect(passes("slack-customer-update", e)).toBe(false);
   });
@@ -375,6 +397,12 @@ describe("independent outcome graders", () => {
 });
 
 /** What each judged case needs before its judge is asked, built from a reviewed example. */
+/** A chat the bot answered turn by turn, with nothing else to show. */
+const conversation = (e: Evidence, reviewed: Record<string, unknown>) => {
+  const turns = (reviewed.conversation ?? []) as Array<{ reply: string }>;
+  e.replies = turns.map((turn) => turn.reply);
+  e.text = e.replies.at(-1) ?? "";
+};
 const PRODUCT_EVIDENCE: Record<string, (e: Evidence, reviewed: Record<string, string>) => void> = {
   "inbox-triage": (e, { file }) => {
     e.calls.push({ tool: "GMAIL_LIST_MESSAGES", args: {}, outcome: "read" });
@@ -435,6 +463,16 @@ const PRODUCT_EVIDENCE: Record<string, (e: Evidence, reviewed: Record<string, st
     });
     e.files["results/watched-release.txt"] = file!;
   },
+  "rakazo-development-bot": conversation,
+  "describe-image-url": (e, { reply }) => {
+    e.toolCalls.push({
+      step: 1,
+      name: "web_fetch",
+      args: { url: "https://example.test/shapes.png" },
+    });
+    e.text = reply!;
+  },
+  "what-is-rakazo": conversation,
 };
 /** Every reviewed example that is a product case's own judge input, with the evidence behind it. */
 const PRODUCT_REVIEWED = PRODUCT_JUDGE_CALIBRATION.flatMap((anchor) =>
@@ -497,6 +535,29 @@ describe("product meaning graded by the judge", () => {
 });
 
 describe("eval run controls and reporting", () => {
+  it("without a judge, holds back only judged cases as unqualified and leaves the rest to run", () => {
+    const judgedIds = new Set(TOOL_CHOICE_CASES.filter((c) => c.judge).map((c) => c.id));
+    expect(judgedIds.size).toBeGreaterThan(0);
+    const trials = TOOL_CHOICE_CASES.map((c) => emptyTrial(c.id, 1));
+    const heldBack = holdBackJudged(trials, judgedIds, "needs a judge");
+    expect(heldBack).toEqual(judgedIds);
+    for (const trial of trials) {
+      expect(trial.status).toBe("not-run");
+      expect(trial.reason === "needs a judge").toBe(judgedIds.has(trial.caseId));
+    }
+    expect(heldBack.size).toBeLessThan(trials.length);
+    expect(summarize(trials).every((row) => row.passed === 0)).toBe(true);
+  });
+
+  it("keeps the missing-judge reason on held-back trials when a graceful stop marks the rest", () => {
+    const trials = [emptyTrial("judged", 1), emptyTrial("plain", 1), emptyTrial("plain", 2)];
+    const heldBack = holdBackJudged(trials, new Set(["judged"]), "needs a judge");
+    stopRemaining(trials, heldBack);
+    expect(trials[0]!.reason).toBe("needs a judge");
+    expect(trials[1]!.reason).toMatch(/graceful stop/);
+    expect(trials[2]!.reason).toBe(trials[1]!.reason);
+  });
+
   it("keeps not-run trials separate from failures and first attempt from later success", () => {
     const a = { ...emptyTrial("one", 1), status: "failed" as const, latencyMs: 100 };
     const b = { ...emptyTrial("one", 2), status: "passed" as const, latencyMs: 300 };

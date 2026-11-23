@@ -17,7 +17,7 @@ import {
   serializeSpaceMemoryConfig,
   updateMemoryProviderConfig,
   updateMemoryProviderDefaultScope,
-} from "../memory-provider-config.js";
+} from "../integrations/memory-provider-config.js";
 import type { RouterContext } from "./context.js";
 
 export function memoryRoutes(ctx: RouterContext) {

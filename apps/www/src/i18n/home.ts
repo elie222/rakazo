@@ -3,7 +3,14 @@ import { SITE_DESCRIPTION } from "../site";
 import { CLAUDE_CHATGPT_SUBSCRIPTION_FAQ } from "../subscription-faq";
 import type { Locale } from "./locales";
 
-export const HOME_MODEL_PROVIDERS = ["Claude", "ChatGPT", "OpenRouter", "Grok", "Ollama", "LM Studio"];
+export const HOME_MODEL_PROVIDERS = [
+  "Claude",
+  "ChatGPT",
+  "OpenRouter",
+  "Grok",
+  "Ollama",
+  "LM Studio",
+];
 
 export const HOME_CHANNELS = [
   { id: "slack", name: "Slack", selfHosted: false, docsAnchor: "slack" },
@@ -15,7 +22,6 @@ export const HOME_CHANNELS = [
 
 export const HOME_FEATURE_KINDS = ["apps", "teach", "memory", "triggers", "team", "call"] as const;
 export type HomeFeatureKind = (typeof HOME_FEATURE_KINDS)[number];
-
 
 export type HomeCopy = {
   title: string;
@@ -982,7 +988,10 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       },
       features: [
         { title: "Twój model", body: "Wybierz inny model dla każdego bota." },
-        { title: "Praca według harmonogramu", body: "Działa także wtedy, gdy Twój komputer jest wyłączony." },
+        {
+          title: "Praca według harmonogramu",
+          body: "Działa także wtedy, gdy Twój komputer jest wyłączony.",
+        },
         { title: "Ty ustalasz granice", body: "Zdecyduj, które działania wymagają Twojej zgody." },
       ],
     },
@@ -1009,12 +1018,30 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
     features: {
       heading: "Rozmowa i działanie",
       items: {
-        call: { title: "Dzwoni do Ciebie", body: "Gdy potrzebuje Twojej decyzji, bot dzwoni przez aplikację. Możecie omówić sprawę." },
-        apps: { title: "Pracuje w Twoich aplikacjach", body: "Połącz Gmail, GitHub, Notion i dowolny serwer MCP." },
-        memory: { title: "Pamięta", body: "Boty zapamiętują to, czego się uczą, i dzielą się wiedzą z zespołem." },
-        triggers: { title: "Sam zaczyna pracę", body: "Uruchamia go harmonogram, webhook, zdarzenie na GitHubie lub obserwowana zmiana." },
-        team: { title: "Przekazuje zadania", body: "Boty zlecają sobie pracę i współpracują w grupach." },
-        teach: { title: "Uczy się, obserwując", body: "Pokaż raz zadanie na komputerze bota. Zapisze kroki jako umiejętność." },
+        call: {
+          title: "Połączenia i spotkania",
+          body: "Bot dzwoni do Ciebie w aplikacji i dołącza do Zoom lub Google Meet, by sporządzić transkrypcję.",
+        },
+        apps: {
+          title: "Pracuje w Twoich aplikacjach",
+          body: "Połącz Gmail, GitHub, Notion i dowolny serwer MCP.",
+        },
+        memory: {
+          title: "Pamięta",
+          body: "Boty zapamiętują to, czego się uczą, i dzielą się wiedzą z zespołem.",
+        },
+        triggers: {
+          title: "Sam zaczyna pracę",
+          body: "Uruchamia go harmonogram, webhook, zdarzenie na GitHubie lub obserwowana zmiana.",
+        },
+        team: {
+          title: "Przekazuje zadania",
+          body: "Boty zlecają sobie pracę i współpracują w grupach.",
+        },
+        teach: {
+          title: "Uczy się, obserwując",
+          body: "Pokaż raz zadanie na komputerze bota. Zapisze kroki jako umiejętność.",
+        },
       },
       mock: {
         calling: "Dzwonienie…",
@@ -1037,7 +1064,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
         {
           question: "Czy mogę używać subskrypcji Claude Pro/Max lub ChatGPT Plus/Pro?",
           answer:
-            "Tak. Zaloguj się przez ChatGPT z odpowiednim planem. Aby używać Claude Pro lub Max, hostuj Rakazo samodzielnie z kodu źródłowego tylko dla siebie i uruchamiaj je przez oficjalne Claude Code CLI zalogowane na Twoje konto. Możesz też połączyć klucz API. Szczegóły opisano na stronie Model subscriptions w dokumentacji.",
+            "Tak. W ustawieniach modeli Rakazo zaloguj się planem Claude Pro lub Max albo odpowiednim planem ChatGPT. Możesz też połączyć klucz API. Szczegóły opisano na stronie Model subscriptions w dokumentacji.",
         },
         {
           question: "Czy mogę uruchomić model lokalnie?",
@@ -1100,8 +1127,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
   en: {
     title: "Rakazo | Open source Grok Bot alternative",
     description: SITE_DESCRIPTION,
-    ogImageAlt:
-      "Rakazo. AI teammates you actually own. Your keys, your model, your machine.",
+    ogImageAlt: "Rakazo. AI teammates you actually own. Your keys, your model, your machine.",
     availableLanguage: "English",
     skipToContent: "Skip to content",
     nav: {
@@ -1138,7 +1164,12 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       heading: "Self-hosted",
       copy: "Your machine, your models, your control.",
       worksWith: "Works with",
-      mock: { weekdays: "Weekdays at 9:00", approval: "Approval required", approve: "Approve", deny: "Deny" },
+      mock: {
+        weekdays: "Weekdays at 9:00",
+        approval: "Approval required",
+        approve: "Approve",
+        deny: "Deny",
+      },
       features: [
         { title: "Your model", body: "Choose a different model for each bot." },
         { title: "Work on a schedule", body: "Keeps working while your computer is off." },
@@ -1160,17 +1191,38 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
     channels: {
       heading: "Message them anywhere",
       copy: "Mention a bot in Slack or text it from your phone.",
-      mock: { ask: "who needs a follow-up today?", reply: "Three leads went quiet this week. Drafts are in the thread." },
+      mock: {
+        ask: "who needs a follow-up today?",
+        reply: "Three leads went quiet this week. Drafts are in the thread.",
+      },
     },
     features: {
       heading: "More than chat",
       items: {
-        call: { title: "It calls you", body: "When something needs you, your bot calls you in the app. Talk it through." },
-        apps: { title: "Works in your apps", body: "Connect Gmail, GitHub, Notion, and any MCP server." },
-        memory: { title: "Remembers", body: "Bots keep what they learn and share it with the team." },
-        triggers: { title: "Wakes up on its own", body: "On a schedule, a webhook, a GitHub event, or a change it watches." },
-        team: { title: "Hands off work", body: "Bots delegate to each other and work together in groups." },
-        teach: { title: "Learns by watching", body: "Show a task once on its computer. It saves the steps as a skill." },
+        call: {
+          title: "Calls and meetings",
+          body: "Your bot can call you in the app and join Zoom or Google Meet for a transcript.",
+        },
+        apps: {
+          title: "Works in your apps",
+          body: "Connect Gmail, GitHub, Notion, and any MCP server.",
+        },
+        memory: {
+          title: "Remembers",
+          body: "Bots keep what they learn and share it with the team.",
+        },
+        triggers: {
+          title: "Wakes up on its own",
+          body: "On a schedule, a webhook, a GitHub event, or a change it watches.",
+        },
+        team: {
+          title: "Hands off work",
+          body: "Bots delegate to each other and work together in groups.",
+        },
+        teach: {
+          title: "Learns by watching",
+          body: "Show a task once on its computer. It saves the steps as a skill.",
+        },
       },
       mock: {
         calling: "Calling…",
@@ -1291,11 +1343,22 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       heading: "Self-hosted",
       copy: "Deine Maschine, deine Modelle, deine Kontrolle.",
       worksWith: "Funktioniert mit",
-      mock: { weekdays: "Mo–Fr um 9:00", approval: "Freigabe erforderlich", approve: "Genehmigen", deny: "Ablehnen" },
+      mock: {
+        weekdays: "Mo–Fr um 9:00",
+        approval: "Freigabe erforderlich",
+        approve: "Genehmigen",
+        deny: "Ablehnen",
+      },
       features: [
         { title: "Dein Modell", body: "Wähle für jeden Bot ein anderes Modell." },
-        { title: "Arbeitet nach Zeitplan", body: "Arbeitet weiter, auch wenn dein Computer aus ist." },
-        { title: "Du setzt die Grenzen", body: "Bestimme, welche Aktionen deine Freigabe brauchen." },
+        {
+          title: "Arbeitet nach Zeitplan",
+          body: "Arbeitet weiter, auch wenn dein Computer aus ist.",
+        },
+        {
+          title: "Du setzt die Grenzen",
+          body: "Bestimme, welche Aktionen deine Freigabe brauchen.",
+        },
       ],
     },
     platforms: {
@@ -1313,17 +1376,38 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
     channels: {
       heading: "Schreib ihnen überall",
       copy: "Erwähne einen Bot in Slack oder schreib ihm vom Handy.",
-      mock: { ask: "wer braucht heute ein Follow-up?", reply: "Drei Leads sind diese Woche still geworden. Die Entwürfe sind im Thread." },
+      mock: {
+        ask: "wer braucht heute ein Follow-up?",
+        reply: "Drei Leads sind diese Woche still geworden. Die Entwürfe sind im Thread.",
+      },
     },
     features: {
       heading: "Mehr als Chat",
       items: {
-        call: { title: "Er ruft dich an", body: "Wenn etwas dich braucht, ruft dein Bot dich in der App an. Sprecht es durch." },
-        apps: { title: "Arbeitet in deinen Apps", body: "Verbinde Gmail, GitHub, Notion und jeden MCP-Server." },
-        memory: { title: "Merkt sich Dinge", body: "Bots behalten, was sie lernen, und teilen es mit dem Team." },
-        triggers: { title: "Wird von selbst aktiv", body: "Nach Zeitplan, per Webhook, bei GitHub-Events oder wenn sich etwas ändert." },
-        team: { title: "Gibt Arbeit ab", body: "Bots delegieren untereinander und arbeiten in Gruppen zusammen." },
-        teach: { title: "Lernt durch Zuschauen", body: "Zeig eine Aufgabe einmal auf seinem Computer. Er speichert die Schritte als Skill." },
+        call: {
+          title: "Anrufe und Meetings",
+          body: "Dein Bot ruft dich in der App an und erstellt Transkripte für Zoom- oder Google-Meet-Termine.",
+        },
+        apps: {
+          title: "Arbeitet in deinen Apps",
+          body: "Verbinde Gmail, GitHub, Notion und jeden MCP-Server.",
+        },
+        memory: {
+          title: "Merkt sich Dinge",
+          body: "Bots behalten, was sie lernen, und teilen es mit dem Team.",
+        },
+        triggers: {
+          title: "Wird von selbst aktiv",
+          body: "Nach Zeitplan, per Webhook, bei GitHub-Events oder wenn sich etwas ändert.",
+        },
+        team: {
+          title: "Gibt Arbeit ab",
+          body: "Bots delegieren untereinander und arbeiten in Gruppen zusammen.",
+        },
+        teach: {
+          title: "Lernt durch Zuschauen",
+          body: "Zeig eine Aufgabe einmal auf seinem Computer. Er speichert die Schritte als Skill.",
+        },
       },
       mock: {
         calling: "Ruft an…",
@@ -1346,7 +1430,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
         {
           question: "Kann ich mein Claude Pro/Max- oder ChatGPT Plus/Pro-Abo nutzen?",
           answer:
-            "Ja. Melde dich mit einem passenden Plan über ChatGPT an. Für Claude Pro oder Max hostest du Rakazo aus dem Quellcode nur für dich selbst und betreibst es über die offizielle Claude Code CLI, angemeldet mit deinem Konto. Du kannst auch einen API-Schlüssel verbinden. Details findest du unter Model subscriptions in der Dokumentation.",
+            "Ja. Melde dich in den Modelleinstellungen von Rakazo mit deinem Claude Pro- oder Max-Plan oder einem passenden ChatGPT-Plan an. Du kannst auch einen API-Schlüssel verbinden. Details findest du unter Model subscriptions in der Dokumentation.",
         },
         {
           question: "Kann ich ein lokales Modell nutzen?",
@@ -1469,17 +1553,32 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
     channels: {
       heading: "어디서든 메시지하세요",
       copy: "Slack에서 봇을 멘션하거나 휴대폰으로 문자를 보내세요.",
-      mock: { ask: "오늘 팔로업할 사람이 누구야?", reply: "이번 주에 연락이 끊긴 리드가 세 명 있어요. 초안은 스레드에 있어요." },
+      mock: {
+        ask: "오늘 팔로업할 사람이 누구야?",
+        reply: "이번 주에 연락이 끊긴 리드가 세 명 있어요. 초안은 스레드에 있어요.",
+      },
     },
     features: {
       heading: "채팅 그 이상",
       items: {
-        call: { title: "먼저 전화해요", body: "당신이 필요할 때 봇이 앱에서 전화를 걸어요. 말로 해결하세요." },
-        apps: { title: "쓰던 앱에서 일해요", body: "Gmail, GitHub, Notion, 그리고 모든 MCP 서버를 연결하세요." },
+        call: {
+          title: "통화와 회의",
+          body: "봇이 앱에서 전화하거나 Zoom 또는 Google Meet에 참여해 회의록을 작성해요.",
+        },
+        apps: {
+          title: "쓰던 앱에서 일해요",
+          body: "Gmail, GitHub, Notion, 그리고 모든 MCP 서버를 연결하세요.",
+        },
         memory: { title: "기억해요", body: "봇은 배운 것을 기억하고 팀과 공유해요." },
-        triggers: { title: "스스로 깨어나요", body: "일정, 웹훅, GitHub 이벤트, 또는 지켜보던 변화에 맞춰 움직여요." },
+        triggers: {
+          title: "스스로 깨어나요",
+          body: "일정, 웹훅, GitHub 이벤트, 또는 지켜보던 변화에 맞춰 움직여요.",
+        },
         team: { title: "일을 넘겨요", body: "봇끼리 일을 맡기고 그룹으로 함께 일해요." },
-        teach: { title: "보고 배워요", body: "봇의 컴퓨터에서 한 번 보여 주세요. 그 과정을 스킬로 저장해요." },
+        teach: {
+          title: "보고 배워요",
+          body: "봇의 컴퓨터에서 한 번 보여 주세요. 그 과정을 스킬로 저장해요.",
+        },
       },
       mock: {
         calling: "전화 거는 중…",
@@ -1502,7 +1601,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
         {
           question: "Claude Pro/Max 또는 ChatGPT Plus/Pro 구독을 쓸 수 있나요?",
           answer:
-            "네. 해당 요금제로 ChatGPT에 로그인하세요. Claude Pro나 Max를 쓰려면 소스 코드에서 Rakazo를 본인 전용으로 직접 호스팅하고, 본인 계정으로 로그인한 공식 Claude Code CLI를 통해 실행하세요. API 키를 연결해도 됩니다. 자세한 내용은 문서의 Model subscriptions를 확인하세요.",
+            "네. Rakazo의 모델 설정에서 Claude Pro 또는 Max 요금제나 해당 ChatGPT 요금제로 로그인하세요. API 키를 연결해도 됩니다. 자세한 내용은 문서의 Model subscriptions를 확인하세요.",
         },
         {
           question: "로컬 모델을 쓸 수 있나요?",
@@ -1630,8 +1729,14 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
     features: {
       heading: "不止聊天",
       items: {
-        call: { title: "它会给你打电话", body: "需要你的时候，机器人会在应用里给你打电话。当面说清楚。" },
-        apps: { title: "在你的应用里工作", body: "连接 Gmail、GitHub、Notion 以及任何 MCP 服务器。" },
+        call: {
+          title: "通话和会议",
+          body: "机器人可以在应用里给你打电话，也能加入 Zoom 或 Google Meet 并生成文字记录。",
+        },
+        apps: {
+          title: "在你的应用里工作",
+          body: "连接 Gmail、GitHub、Notion 以及任何 MCP 服务器。",
+        },
         memory: { title: "记得住", body: "机器人会记住学到的东西，并与团队共享。" },
         triggers: { title: "自己醒来", body: "按计划、Webhook、GitHub 事件，或它关注的变化触发。" },
         team: { title: "把工作交出去", body: "机器人之间互相委派，也能在群组里协作。" },
@@ -1658,7 +1763,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
         {
           question: "可以用我的 Claude Pro/Max 或 ChatGPT Plus/Pro 订阅吗？",
           answer:
-            "可以。使用符合条件的套餐登录 ChatGPT。若要使用 Claude Pro 或 Max，请从源码自行托管仅供你本人使用的 Rakazo，并通过用你的账号登录的官方 Claude Code CLI 运行。你也可以连接 API 密钥。详情见文档中的 Model subscriptions。",
+            "可以。在 Rakazo 的模型设置中，用你的 Claude Pro 或 Max 套餐，或符合条件的 ChatGPT 套餐登录。你也可以连接 API 密钥。详情见文档中的 Model subscriptions。",
         },
         {
           question: "可以用本地模型吗？",
@@ -1763,7 +1868,10 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       mock: { weekdays: "平日 9:00", approval: "承認が必要", approve: "承認", deny: "拒否" },
       features: [
         { title: "好きなモデルで", body: "ボットごとに別のモデルを選べます。" },
-        { title: "スケジュールどおりに実行", body: "コンピューターの電源が切れていても動き続けます。" },
+        {
+          title: "スケジュールどおりに実行",
+          body: "コンピューターの電源が切れていても動き続けます。",
+        },
         { title: "制限はあなたが決める", body: "どの操作に承認が必要かを決められます。" },
       ],
     },
@@ -1782,17 +1890,32 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
     channels: {
       heading: "どこからでもメッセージ",
       copy: "Slack でボットをメンション。スマホからテキストも送れます。",
-      mock: { ask: "今日フォローすべき相手は？", reply: "今週返信が止まったリードが3件あります。下書きはスレッドにあります。" },
+      mock: {
+        ask: "今日フォローすべき相手は？",
+        reply: "今週返信が止まったリードが3件あります。下書きはスレッドにあります。",
+      },
     },
     features: {
       heading: "チャットだけじゃない",
       items: {
-        call: { title: "ボットから電話", body: "あなたが必要なとき、ボットがアプリで電話をかけてきます。話して片付けましょう。" },
-        apps: { title: "いつものアプリで", body: "Gmail、GitHub、Notion、あらゆる MCP サーバーとつなげます。" },
+        call: {
+          title: "通話と会議",
+          body: "ボットはアプリから電話をかけ、Zoom や Google Meet に参加して文字起こしもできます。",
+        },
+        apps: {
+          title: "いつものアプリで",
+          body: "Gmail、GitHub、Notion、あらゆる MCP サーバーとつなげます。",
+        },
         memory: { title: "覚えている", body: "ボットは学んだことを覚え、チームと共有します。" },
-        triggers: { title: "自分で動き出す", body: "スケジュール、Webhook、GitHub のイベント、見張っている変化をきっかけに動きます。" },
+        triggers: {
+          title: "自分で動き出す",
+          body: "スケジュール、Webhook、GitHub のイベント、見張っている変化をきっかけに動きます。",
+        },
         team: { title: "仕事を任せ合う", body: "ボット同士で仕事を任せ、グループで協力します。" },
-        teach: { title: "見て覚える", body: "ボットのコンピューターで一度やって見せれば、手順をスキルとして保存します。" },
+        teach: {
+          title: "見て覚える",
+          body: "ボットのコンピューターで一度やって見せれば、手順をスキルとして保存します。",
+        },
       },
       mock: {
         calling: "発信中…",
@@ -1815,7 +1938,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
         {
           question: "Claude Pro/Max や ChatGPT Plus/Pro のサブスクリプションを使えますか？",
           answer:
-            "はい。対象プランで ChatGPT にサインインしてください。Claude Pro または Max を使う場合は、Rakazo をソースコードから自分専用にセルフホストし、自分のアカウントでサインインした公式の Claude Code CLI 経由で動かします。API キーを接続することもできます。詳しくはドキュメントの Model subscriptions をご覧ください。",
+            "はい。Rakazo のモデル設定で、Claude Pro または Max のプラン、あるいは対象の ChatGPT プランでサインインしてください。API キーを接続することもできます。詳しくはドキュメントの Model subscriptions をご覧ください。",
         },
         {
           question: "ローカルモデルを使えますか？",
@@ -1875,7 +1998,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       },
     },
   },
-  "es": {
+  es: {
     title: "Rakazo | Alternativa de código abierto a Grok Bot",
     description:
       "Rakazo es una alternativa de código abierto a Grok Bot para compañeros de IA persistentes que hacen trabajo real. Tus claves, tu modelo, tu máquina.",
@@ -1917,7 +2040,12 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       heading: "Autoalojado",
       copy: "Tu máquina, tus modelos, tu control.",
       worksWith: "Funciona con",
-      mock: { weekdays: "Días laborables a las 9:00", approval: "Requiere aprobación", approve: "Aprobar", deny: "Denegar" },
+      mock: {
+        weekdays: "Días laborables a las 9:00",
+        approval: "Requiere aprobación",
+        approve: "Aprobar",
+        deny: "Denegar",
+      },
       features: [
         { title: "Tu modelo", body: "Elige un modelo distinto para cada bot." },
         { title: "Trabaja según un horario", body: "Sigue trabajando con tu computadora apagada." },
@@ -1939,17 +2067,38 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
     channels: {
       heading: "Escríbeles desde cualquier lugar",
       copy: "Menciona a un bot en Slack o escríbele desde tu teléfono.",
-      mock: { ask: "¿quién necesita un seguimiento hoy?", reply: "Tres leads dejaron de responder esta semana. Los borradores están en el hilo." },
+      mock: {
+        ask: "¿quién necesita un seguimiento hoy?",
+        reply: "Tres leads dejaron de responder esta semana. Los borradores están en el hilo.",
+      },
     },
     features: {
       heading: "Más que un chat",
       items: {
-        call: { title: "Te llama", body: "Cuando algo te necesita, tu bot te llama en la app. Háblalo con él." },
-        apps: { title: "Trabaja en tus apps", body: "Conecta Gmail, GitHub, Notion y cualquier servidor MCP." },
-        memory: { title: "Recuerda", body: "Los bots guardan lo que aprenden y lo comparten con el equipo." },
-        triggers: { title: "Se activa solo", body: "Según un horario, un webhook, un evento de GitHub o un cambio que vigila." },
-        team: { title: "Reparte el trabajo", body: "Los bots se delegan tareas entre sí y trabajan juntos en grupos." },
-        teach: { title: "Aprende observando", body: "Muéstrale una tarea una vez en su computadora. Guarda los pasos como una habilidad." },
+        call: {
+          title: "Llamadas y reuniones",
+          body: "Tu bot puede llamarte en la app y unirse a Zoom o Google Meet para transcribir la reunión.",
+        },
+        apps: {
+          title: "Trabaja en tus apps",
+          body: "Conecta Gmail, GitHub, Notion y cualquier servidor MCP.",
+        },
+        memory: {
+          title: "Recuerda",
+          body: "Los bots guardan lo que aprenden y lo comparten con el equipo.",
+        },
+        triggers: {
+          title: "Se activa solo",
+          body: "Según un horario, un webhook, un evento de GitHub o un cambio que vigila.",
+        },
+        team: {
+          title: "Reparte el trabajo",
+          body: "Los bots se delegan tareas entre sí y trabajan juntos en grupos.",
+        },
+        teach: {
+          title: "Aprende observando",
+          body: "Muéstrale una tarea una vez en su computadora. Guarda los pasos como una habilidad.",
+        },
       },
       mock: {
         calling: "Llamando…",
@@ -1972,7 +2121,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
         {
           question: "¿Puedo usar mi suscripción a Claude Pro/Max o ChatGPT Plus/Pro?",
           answer:
-            "Sí. Inicia sesión con ChatGPT con un plan compatible. Para usar Claude Pro o Max, aloja Rakazo desde el código fuente solo para ti y ejecútalo con la CLI oficial de Claude Code, con tu propia cuenta. También puedes conectar una clave de API. Consulta Model subscriptions en la documentación para más detalles.",
+            "Sí. En la configuración de modelos de Rakazo, inicia sesión con tu plan Claude Pro o Max, o con un plan compatible de ChatGPT. También puedes conectar una clave de API. Consulta Model subscriptions en la documentación para más detalles.",
         },
         {
           question: "¿Puedo usar un modelo local?",
@@ -2032,7 +2181,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       },
     },
   },
-  "fr": {
+  fr: {
     title: "Rakazo | Alternative open source à Grok Bot",
     description:
       "Rakazo est une alternative open source à Grok Bot pour des coéquipiers IA persistants qui font un vrai travail. Vos clés, votre modèle, votre machine.",
@@ -2074,11 +2223,22 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       heading: "Auto-hébergé",
       copy: "Votre machine, vos modèles, votre contrôle.",
       worksWith: "Fonctionne avec",
-      mock: { weekdays: "Jours ouvrés à 9:00", approval: "Approbation requise", approve: "Approuver", deny: "Refuser" },
+      mock: {
+        weekdays: "Jours ouvrés à 9:00",
+        approval: "Approbation requise",
+        approve: "Approuver",
+        deny: "Refuser",
+      },
       features: [
         { title: "Votre modèle", body: "Choisissez un modèle différent pour chaque bot." },
-        { title: "Travaille selon un planning", body: "Continue de travailler, même ordinateur éteint." },
-        { title: "Vous fixez les limites", body: "Décidez quelles actions nécessitent votre approbation." },
+        {
+          title: "Travaille selon un planning",
+          body: "Continue de travailler, même ordinateur éteint.",
+        },
+        {
+          title: "Vous fixez les limites",
+          body: "Décidez quelles actions nécessitent votre approbation.",
+        },
       ],
     },
     platforms: {
@@ -2096,17 +2256,38 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
     channels: {
       heading: "Écrivez-leur partout",
       copy: "Mentionnez un bot dans Slack ou envoyez-lui un SMS depuis votre téléphone.",
-      mock: { ask: "qui a besoin d’une relance aujourd’hui ?", reply: "Trois prospects ne répondent plus cette semaine. Les brouillons sont dans le fil." },
+      mock: {
+        ask: "qui a besoin d’une relance aujourd’hui ?",
+        reply: "Trois prospects ne répondent plus cette semaine. Les brouillons sont dans le fil.",
+      },
     },
     features: {
       heading: "Plus qu’un chat",
       items: {
-        call: { title: "Il vous appelle", body: "Quand quelque chose a besoin de vous, votre bot vous appelle dans l’app. Parlez-en ensemble." },
-        apps: { title: "Travaille dans vos apps", body: "Connectez Gmail, GitHub, Notion et n’importe quel serveur MCP." },
-        memory: { title: "Se souvient", body: "Les bots retiennent ce qu’ils apprennent et le partagent avec l’équipe." },
-        triggers: { title: "Se lance tout seul", body: "Selon un planning, un webhook, un événement GitHub ou un changement qu’il surveille." },
-        team: { title: "Passe le relais", body: "Les bots se délèguent des tâches et travaillent ensemble en groupes." },
-        teach: { title: "Apprend en observant", body: "Montrez-lui une tâche une fois sur son ordinateur. Il enregistre les étapes comme compétence." },
+        call: {
+          title: "Appels et réunions",
+          body: "Votre bot peut vous appeler dans l’app et rejoindre Zoom ou Google Meet pour transcrire la réunion.",
+        },
+        apps: {
+          title: "Travaille dans vos apps",
+          body: "Connectez Gmail, GitHub, Notion et n’importe quel serveur MCP.",
+        },
+        memory: {
+          title: "Se souvient",
+          body: "Les bots retiennent ce qu’ils apprennent et le partagent avec l’équipe.",
+        },
+        triggers: {
+          title: "Se lance tout seul",
+          body: "Selon un planning, un webhook, un événement GitHub ou un changement qu’il surveille.",
+        },
+        team: {
+          title: "Passe le relais",
+          body: "Les bots se délèguent des tâches et travaillent ensemble en groupes.",
+        },
+        teach: {
+          title: "Apprend en observant",
+          body: "Montrez-lui une tâche une fois sur son ordinateur. Il enregistre les étapes comme compétence.",
+        },
       },
       mock: {
         calling: "Appel en cours…",
@@ -2129,7 +2310,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
         {
           question: "Puis-je utiliser mon abonnement Claude Pro/Max ou ChatGPT Plus/Pro ?",
           answer:
-            "Oui. Connectez-vous avec ChatGPT si votre offre est éligible. Pour Claude Pro ou Max, auto-hébergez Rakazo à partir du code source pour vous seul et faites-le tourner via la CLI officielle Claude Code, connectée à votre compte. Vous pouvez aussi connecter une clé API. Voir Model subscriptions dans la documentation pour les détails.",
+            "Oui. Dans les réglages des modèles de Rakazo, connectez-vous avec votre offre Claude Pro ou Max, ou avec une offre ChatGPT éligible. Vous pouvez aussi connecter une clé API. Consultez Model subscriptions dans la documentation pour en savoir plus.",
         },
         {
           question: "Puis-je utiliser un modèle local ?",
@@ -2231,10 +2412,18 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       heading: "Auto-hospedado",
       copy: "Sua máquina, seus modelos, seu controle.",
       worksWith: "Funciona com",
-      mock: { weekdays: "Dias úteis às 9:00", approval: "Aprovação necessária", approve: "Aprovar", deny: "Negar" },
+      mock: {
+        weekdays: "Dias úteis às 9:00",
+        approval: "Aprovação necessária",
+        approve: "Aprovar",
+        deny: "Negar",
+      },
       features: [
         { title: "Seu modelo", body: "Escolha um modelo diferente para cada bot." },
-        { title: "Trabalha com agendamento", body: "Continua trabalhando com seu computador desligado." },
+        {
+          title: "Trabalha com agendamento",
+          body: "Continua trabalhando com seu computador desligado.",
+        },
         { title: "Você define os limites", body: "Decida quais ações precisam da sua aprovação." },
       ],
     },
@@ -2253,17 +2442,38 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
     channels: {
       heading: "Fale com eles em qualquer lugar",
       copy: "Mencione um bot no Slack ou mande uma mensagem pelo celular.",
-      mock: { ask: "quem precisa de um follow-up hoje?", reply: "Três leads sumiram esta semana. Os rascunhos estão na conversa." },
+      mock: {
+        ask: "quem precisa de um follow-up hoje?",
+        reply: "Três leads sumiram esta semana. Os rascunhos estão na conversa.",
+      },
     },
     features: {
       heading: "Mais que um chat",
       items: {
-        call: { title: "Ele liga para você", body: "Quando algo precisa de você, seu bot liga para você no app. Converse com ele." },
-        apps: { title: "Funciona nos seus apps", body: "Conecte Gmail, GitHub, Notion e qualquer servidor MCP." },
-        memory: { title: "Lembra", body: "Os bots guardam o que aprendem e compartilham com a equipe." },
-        triggers: { title: "Entra em ação sozinho", body: "Por agendamento, webhook, evento do GitHub ou uma mudança que ele monitora." },
-        team: { title: "Divide o trabalho", body: "Os bots delegam tarefas entre si e trabalham juntos em grupos." },
-        teach: { title: "Aprende observando", body: "Mostre uma tarefa uma vez no computador dele. Ele salva os passos como uma habilidade." },
+        call: {
+          title: "Chamadas e reuniões",
+          body: "Seu bot pode ligar pelo app e entrar no Zoom ou no Google Meet para transcrever a reunião.",
+        },
+        apps: {
+          title: "Funciona nos seus apps",
+          body: "Conecte Gmail, GitHub, Notion e qualquer servidor MCP.",
+        },
+        memory: {
+          title: "Lembra",
+          body: "Os bots guardam o que aprendem e compartilham com a equipe.",
+        },
+        triggers: {
+          title: "Entra em ação sozinho",
+          body: "Por agendamento, webhook, evento do GitHub ou uma mudança que ele monitora.",
+        },
+        team: {
+          title: "Divide o trabalho",
+          body: "Os bots delegam tarefas entre si e trabalham juntos em grupos.",
+        },
+        teach: {
+          title: "Aprende observando",
+          body: "Mostre uma tarefa uma vez no computador dele. Ele salva os passos como uma habilidade.",
+        },
       },
       mock: {
         calling: "Ligando…",
@@ -2286,7 +2496,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
         {
           question: "Posso usar minha assinatura do Claude Pro/Max ou ChatGPT Plus/Pro?",
           answer:
-            "Sim. Entre com o ChatGPT em um plano elegível. Para usar Claude Pro ou Max, hospede o Rakazo a partir do código-fonte só para você e execute-o pela CLI oficial do Claude Code, conectada à sua conta. Você também pode conectar uma chave de API. Veja Model subscriptions na documentação para mais detalhes.",
+            "Sim. Nas configurações de modelos do Rakazo, entre com seu plano Claude Pro ou Max ou com um plano elegível do ChatGPT. Você também pode conectar uma chave de API. Veja Model subscriptions na documentação para mais detalhes.",
         },
         {
           question: "Posso usar um modelo local?",
@@ -2346,7 +2556,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       },
     },
   },
-  "nl": {
+  nl: {
     title: "Rakazo | Open source alternatief voor Grok Bot",
     description:
       "Rakazo is een open source alternatief voor Grok Bot voor blijvende AI-teamgenoten die echt werk doen. Jouw keys, jouw model, jouw machine.",
@@ -2388,11 +2598,19 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       heading: "Zelf gehost",
       copy: "Jouw machine, jouw modellen, jouw controle.",
       worksWith: "Werkt met",
-      mock: { weekdays: "Werkdagen om 9:00", approval: "Goedkeuring vereist", approve: "Goedkeuren", deny: "Weigeren" },
+      mock: {
+        weekdays: "Werkdagen om 9:00",
+        approval: "Goedkeuring vereist",
+        approve: "Goedkeuren",
+        deny: "Weigeren",
+      },
       features: [
         { title: "Jouw model", body: "Kies voor elke bot een ander model." },
         { title: "Werkt volgens schema", body: "Blijft werken, ook als je computer uit staat." },
-        { title: "Jij bepaalt de grenzen", body: "Bepaal welke acties jouw goedkeuring nodig hebben." },
+        {
+          title: "Jij bepaalt de grenzen",
+          body: "Bepaal welke acties jouw goedkeuring nodig hebben.",
+        },
       ],
     },
     platforms: {
@@ -2410,17 +2628,35 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
     channels: {
       heading: "Stuur ze overal een bericht",
       copy: "Noem een bot in Slack of stuur hem een bericht vanaf je telefoon.",
-      mock: { ask: "wie heeft vandaag een follow-up nodig?", reply: "Drie leads zijn deze week stil geworden. De concepten staan in de thread." },
+      mock: {
+        ask: "wie heeft vandaag een follow-up nodig?",
+        reply: "Drie leads zijn deze week stil geworden. De concepten staan in de thread.",
+      },
     },
     features: {
       heading: "Meer dan chat",
       items: {
-        call: { title: "Hij belt je", body: "Als iets jou nodig heeft, belt je bot je in de app. Bespreek het samen." },
-        apps: { title: "Werkt in je apps", body: "Koppel Gmail, GitHub, Notion en elke MCP-server." },
+        call: {
+          title: "Gesprekken en vergaderingen",
+          body: "Je bot kan je in de app bellen en deelnemen aan Zoom of Google Meet voor een transcript.",
+        },
+        apps: {
+          title: "Werkt in je apps",
+          body: "Koppel Gmail, GitHub, Notion en elke MCP-server.",
+        },
         memory: { title: "Onthoudt", body: "Bots bewaren wat ze leren en delen het met het team." },
-        triggers: { title: "Komt zelf in actie", body: "Volgens schema, via een webhook, bij een GitHub-event of bij een wijziging die hij in de gaten houdt." },
-        team: { title: "Draagt werk over", body: "Bots delegeren aan elkaar en werken samen in groepen." },
-        teach: { title: "Leert door te kijken", body: "Doe een taak één keer voor op zijn computer. Hij slaat de stappen op als skill." },
+        triggers: {
+          title: "Komt zelf in actie",
+          body: "Volgens schema, via een webhook, bij een GitHub-event of bij een wijziging die hij in de gaten houdt.",
+        },
+        team: {
+          title: "Draagt werk over",
+          body: "Bots delegeren aan elkaar en werken samen in groepen.",
+        },
+        teach: {
+          title: "Leert door te kijken",
+          body: "Doe een taak één keer voor op zijn computer. Hij slaat de stappen op als skill.",
+        },
       },
       mock: {
         calling: "Belt…",
@@ -2443,7 +2679,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
         {
           question: "Kan ik mijn Claude Pro/Max- of ChatGPT Plus/Pro-abonnement gebruiken?",
           answer:
-            "Ja. Log in met ChatGPT met een geschikt abonnement. Voor Claude Pro of Max host je Rakazo vanuit de broncode alleen voor jezelf en draai je het via de officiële Claude Code CLI, ingelogd met je eigen account. Je kunt ook een API-sleutel koppelen. Zie Model subscriptions in de documentatie voor details.",
+            "Ja. Log in via de modelinstellingen van Rakazo met je Claude Pro- of Max-abonnement, of met een geschikt ChatGPT-abonnement. Je kunt ook een API-sleutel koppelen. Zie Model subscriptions in de documentatie voor details.",
         },
         {
           question: "Kan ik een lokaal model draaien?",
@@ -2503,7 +2739,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       },
     },
   },
-  "ru": {
+  ru: {
     title: "Rakazo | Альтернатива Grok Bot с открытым исходным кодом",
     description:
       "Rakazo — альтернатива Grok Bot с открытым исходным кодом: постоянные ИИ-коллеги, которые выполняют реальную работу. Ваши ключи, ваша модель, ваш компьютер.",
@@ -2545,7 +2781,12 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       heading: "На своём сервере",
       copy: "Ваш компьютер, ваши модели, ваш контроль.",
       worksWith: "Работает с",
-      mock: { weekdays: "По будням в 9:00", approval: "Требуется одобрение", approve: "Утвердить", deny: "Запретить" },
+      mock: {
+        weekdays: "По будням в 9:00",
+        approval: "Требуется одобрение",
+        approve: "Утвердить",
+        deny: "Запретить",
+      },
       features: [
         { title: "Ваша модель", body: "Выберите свою модель для каждого бота." },
         { title: "Работа по расписанию", body: "Работает, даже когда компьютер выключен." },
@@ -2567,17 +2808,38 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
     channels: {
       heading: "Пишите им где угодно",
       copy: "Упомяните бота в Slack или напишите ему с телефона.",
-      mock: { ask: "кому сегодня нужно напомнить о себе?", reply: "Три лида замолчали на этой неделе. Черновики в треде." },
+      mock: {
+        ask: "кому сегодня нужно напомнить о себе?",
+        reply: "Три лида замолчали на этой неделе. Черновики в треде.",
+      },
     },
     features: {
       heading: "Больше, чем чат",
       items: {
-        call: { title: "Он вам звонит", body: "Когда нужно ваше участие, бот звонит вам в приложении. Обсудите всё голосом." },
-        apps: { title: "Работает в ваших приложениях", body: "Подключите Gmail, GitHub, Notion и любой MCP-сервер." },
-        memory: { title: "Помнит", body: "Боты сохраняют то, что узнали, и делятся этим с командой." },
-        triggers: { title: "Запускается сам", body: "По расписанию, по вебхуку, по событию GitHub или при изменении, за которым он следит." },
-        team: { title: "Передаёт работу", body: "Боты поручают задачи друг другу и работают вместе в группах." },
-        teach: { title: "Учится, наблюдая", body: "Покажите задачу один раз на его компьютере. Он сохранит шаги как навык." },
+        call: {
+          title: "Звонки и встречи",
+          body: "Бот может позвонить вам в приложении и расшифровать встречу в Zoom или Google Meet.",
+        },
+        apps: {
+          title: "Работает в ваших приложениях",
+          body: "Подключите Gmail, GitHub, Notion и любой MCP-сервер.",
+        },
+        memory: {
+          title: "Помнит",
+          body: "Боты сохраняют то, что узнали, и делятся этим с командой.",
+        },
+        triggers: {
+          title: "Запускается сам",
+          body: "По расписанию, по вебхуку, по событию GitHub или при изменении, за которым он следит.",
+        },
+        team: {
+          title: "Передаёт работу",
+          body: "Боты поручают задачи друг другу и работают вместе в группах.",
+        },
+        teach: {
+          title: "Учится, наблюдая",
+          body: "Покажите задачу один раз на его компьютере. Он сохранит шаги как навык.",
+        },
       },
       mock: {
         calling: "Вызов…",
@@ -2600,7 +2862,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
         {
           question: "Можно ли использовать подписку Claude Pro/Max или ChatGPT Plus/Pro?",
           answer:
-            "Да. Войдите через ChatGPT с подходящим тарифом. Чтобы использовать Claude Pro или Max, разверните Rakazo из исходного кода только для себя и запускайте его через официальный Claude Code CLI, вошедший в ваш аккаунт. Можно также подключить API-ключ. Подробности — на странице Model subscriptions в документации.",
+            "Да. В настройках моделей Rakazo войдите с тарифом Claude Pro или Max либо с подходящим тарифом ChatGPT. Можно также подключить API-ключ. Подробности см. на странице Model subscriptions в документации.",
         },
         {
           question: "Можно ли запустить локальную модель?",
@@ -2660,7 +2922,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       },
     },
   },
-  "tr": {
+  tr: {
     title: "Rakazo | Açık kaynaklı Grok Bot alternatifi",
     description:
       "Rakazo, gerçek işler yapan kalıcı yapay zekâ ekip arkadaşları için açık kaynaklı bir Grok Bot alternatifidir. Sizin anahtarlarınız, sizin modeliniz, sizin makineniz.",
@@ -2702,11 +2964,19 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       heading: "Kendi sunucunuzda",
       copy: "Sizin makineniz, sizin modelleriniz, sizin kontrolünüz.",
       worksWith: "Şunlarla çalışır",
-      mock: { weekdays: "Hafta içi 9:00'da", approval: "Onay gerekli", approve: "Onayla", deny: "Reddet" },
+      mock: {
+        weekdays: "Hafta içi 9:00'da",
+        approval: "Onay gerekli",
+        approve: "Onayla",
+        deny: "Reddet",
+      },
       features: [
         { title: "Sizin modeliniz", body: "Her bot için farklı bir model seçin." },
         { title: "Zamanlanmış çalışma", body: "Bilgisayarınız kapalıyken bile çalışır." },
-        { title: "Sınırları siz belirlersiniz", body: "Hangi işlemlerin onayınızı gerektirdiğine karar verin." },
+        {
+          title: "Sınırları siz belirlersiniz",
+          body: "Hangi işlemlerin onayınızı gerektirdiğine karar verin.",
+        },
       ],
     },
     platforms: {
@@ -2724,17 +2994,35 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
     channels: {
       heading: "Onlara her yerden yazın",
       copy: "Slack'te bir botu etiketleyin veya telefonunuzdan mesaj atın.",
-      mock: { ask: "bugün kimin takibe ihtiyacı var?", reply: "Bu hafta üç potansiyel müşteriden ses çıkmadı. Taslaklar başlıkta." },
+      mock: {
+        ask: "bugün kimin takibe ihtiyacı var?",
+        reply: "Bu hafta üç potansiyel müşteriden ses çıkmadı. Taslaklar başlıkta.",
+      },
     },
     features: {
       heading: "Sohbetten fazlası",
       items: {
-        call: { title: "Sizi arar", body: "Size ihtiyaç duyulduğunda botunuz sizi uygulamada arar. Konuşarak halledin." },
-        apps: { title: "Uygulamalarınızda çalışır", body: "Gmail, GitHub, Notion ve herhangi bir MCP sunucusunu bağlayın." },
+        call: {
+          title: "Aramalar ve toplantılar",
+          body: "Botunuz sizi uygulamada arayabilir ve Zoom veya Google Meet toplantılarını yazıya dökebilir.",
+        },
+        apps: {
+          title: "Uygulamalarınızda çalışır",
+          body: "Gmail, GitHub, Notion ve herhangi bir MCP sunucusunu bağlayın.",
+        },
         memory: { title: "Hatırlar", body: "Botlar öğrendiklerini saklar ve ekiple paylaşır." },
-        triggers: { title: "Kendiliğinden devreye girer", body: "Bir zamanlamayla, bir webhook ile, bir GitHub olayıyla veya izlediği bir değişiklikle." },
-        team: { title: "İşi devreder", body: "Botlar birbirine görev verir ve gruplar halinde birlikte çalışır." },
-        teach: { title: "İzleyerek öğrenir", body: "Bir görevi kendi bilgisayarında bir kez gösterin. Adımları beceri olarak kaydeder." },
+        triggers: {
+          title: "Kendiliğinden devreye girer",
+          body: "Bir zamanlamayla, bir webhook ile, bir GitHub olayıyla veya izlediği bir değişiklikle.",
+        },
+        team: {
+          title: "İşi devreder",
+          body: "Botlar birbirine görev verir ve gruplar halinde birlikte çalışır.",
+        },
+        teach: {
+          title: "İzleyerek öğrenir",
+          body: "Bir görevi kendi bilgisayarında bir kez gösterin. Adımları beceri olarak kaydeder.",
+        },
       },
       mock: {
         calling: "Aranıyor…",
@@ -2757,7 +3045,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
         {
           question: "Claude Pro/Max veya ChatGPT Plus/Pro aboneliğimi kullanabilir miyim?",
           answer:
-            "Evet. Uygun bir planla ChatGPT ile giriş yapın. Claude Pro veya Max kullanmak için Rakazo'yu kaynak koddan yalnızca kendiniz için barındırın ve kendi hesabınızla giriş yapılmış resmi Claude Code CLI üzerinden çalıştırın. Bir API anahtarı da bağlayabilirsiniz. Ayrıntılar için belgelerdeki Model subscriptions sayfasına bakın.",
+            "Evet. Rakazo'nun model ayarlarında Claude Pro veya Max planınızla ya da uygun bir ChatGPT planıyla giriş yapın. Bir API anahtarı da bağlayabilirsiniz. Ayrıntılar için belgelerdeki Model subscriptions sayfasına bakın.",
         },
         {
           question: "Yerel bir model çalıştırabilir miyim?",
@@ -2817,12 +3105,11 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       },
     },
   },
-  "he": {
+  he: {
     title: "Rakazo | חלופת קוד פתוח ל-Grok Bot",
     description:
       "Rakazo היא חלופת קוד פתוח ל-Grok Bot לעמיתי AI קבועים שעושים עבודה אמיתית. המפתחות שלך, המודל שלך, המכונה שלך.",
-    ogImageAlt:
-      "Rakazo. עמיתי AI ששייכים לך באמת. המפתחות שלך, המודל שלך, המכונה שלך.",
+    ogImageAlt: "Rakazo. עמיתי AI ששייכים לך באמת. המפתחות שלך, המודל שלך, המכונה שלך.",
     availableLanguage: "Hebrew",
     skipToContent: "דילוג לתוכן",
     nav: {
@@ -2859,7 +3146,12 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       heading: "באירוח עצמי",
       copy: "המכונה שלך, המודלים שלך, השליטה שלך.",
       worksWith: "עובד עם",
-      mock: { weekdays: "שני עד שישי ב-9:00", approval: "נדרש אישור", approve: "אישור", deny: "דחייה" },
+      mock: {
+        weekdays: "שני עד שישי ב-9:00",
+        approval: "נדרש אישור",
+        approve: "אישור",
+        deny: "דחייה",
+      },
       features: [
         { title: "המודל שלך", body: "אפשר לבחור מודל אחר לכל בוט." },
         { title: "עבודה לפי לוח זמנים", body: "ממשיך לעבוד גם כשהמחשב שלך כבוי." },
@@ -2886,12 +3178,27 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
     features: {
       heading: "יותר מצ'אט",
       items: {
-        call: { title: "הוא מתקשר אליך", body: "כשמשהו צריך אותך, הבוט מתקשר אליך באפליקציה. מדברים על זה." },
-        apps: { title: "עובד באפליקציות שלך", body: "אפשר לחבר את Gmail, GitHub, Notion וכל שרת MCP." },
+        call: {
+          title: "שיחות ופגישות",
+          body: "הבוט יכול להתקשר אליך באפליקציה ולהצטרף לפגישות ב-Zoom או ב-Google Meet כדי לתמלל אותן.",
+        },
+        apps: {
+          title: "עובד באפליקציות שלך",
+          body: "אפשר לחבר את Gmail, GitHub, Notion וכל שרת MCP.",
+        },
         memory: { title: "זוכר", body: "הבוטים שומרים את מה שהם לומדים ומשתפים את זה עם הצוות." },
-        triggers: { title: "מתעורר מעצמו", body: "לפי לוח זמנים, דרך Webhook, באירוע GitHub או כשמשהו שהוא עוקב אחריו משתנה." },
-        team: { title: "מעביר עבודה הלאה", body: "הבוטים מאצילים משימות זה לזה ועובדים יחד בקבוצות." },
-        teach: { title: "לומד מצפייה", body: "מראים לו משימה פעם אחת במחשב שלו. הוא שומר את השלבים כמיומנות." },
+        triggers: {
+          title: "מתעורר מעצמו",
+          body: "לפי לוח זמנים, דרך Webhook, באירוע GitHub או כשמשהו שהוא עוקב אחריו משתנה.",
+        },
+        team: {
+          title: "מעביר עבודה הלאה",
+          body: "הבוטים מאצילים משימות זה לזה ועובדים יחד בקבוצות.",
+        },
+        teach: {
+          title: "לומד מצפייה",
+          body: "מראים לו משימה פעם אחת במחשב שלו. הוא שומר את השלבים כמיומנות.",
+        },
       },
       mock: {
         calling: "מתקשר…",
@@ -2914,7 +3221,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
         {
           question: "אפשר להשתמש במנוי Claude Pro/Max או ChatGPT Plus/Pro שלי?",
           answer:
-            "כן. התחברו עם ChatGPT בתוכנית מתאימה. כדי להשתמש ב-Claude Pro או Max, ארחו את Rakazo מקוד המקור לשימושכם בלבד והריצו אותו דרך ה-CLI הרשמי של Claude Code, מחובר לחשבון שלכם. אפשר גם לחבר מפתח API. פרטים נוספים בעמוד Model subscriptions בתיעוד.",
+            "כן. בהגדרות המודלים של Rakazo, התחברו עם תוכנית Claude Pro או Max, או עם תוכנית ChatGPT מתאימה. אפשר גם לחבר מפתח API. לפרטים, ראו את Model subscriptions בתיעוד.",
         },
         {
           question: "אפשר להריץ מודל מקומי?",
@@ -2974,12 +3281,11 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       },
     },
   },
-  "hi": {
+  hi: {
     title: "Rakazo | Grok Bot का ओपन सोर्स विकल्प",
     description:
       "Rakazo, Grok Bot का ओपन सोर्स विकल्प है, ऐसे स्थायी AI साथियों के लिए जो असली काम करते हैं। आपकी कुंजियाँ, आपका मॉडल, आपकी मशीन।",
-    ogImageAlt:
-      "Rakazo. ऐसे AI साथी जो सच में आपके अपने हैं। आपकी कुंजियाँ, आपका मॉडल, आपकी मशीन।",
+    ogImageAlt: "Rakazo. ऐसे AI साथी जो सच में आपके अपने हैं। आपकी कुंजियाँ, आपका मॉडल, आपकी मशीन।",
     availableLanguage: "Hindi",
     skipToContent: "सामग्री पर जाएं",
     nav: {
@@ -3016,7 +3322,12 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       heading: "सेल्फ़-होस्टेड",
       copy: "आपकी मशीन, आपके मॉडल, आपका नियंत्रण।",
       worksWith: "इनके साथ काम करता है",
-      mock: { weekdays: "कार्यदिवस, 9:00 बजे", approval: "अनुमोदन ज़रूरी", approve: "अनुमोदित करें", deny: "अस्वीकार करें" },
+      mock: {
+        weekdays: "कार्यदिवस, 9:00 बजे",
+        approval: "अनुमोदन ज़रूरी",
+        approve: "अनुमोदित करें",
+        deny: "अस्वीकार करें",
+      },
       features: [
         { title: "आपका मॉडल", body: "हर बॉट के लिए अलग मॉडल चुनें।" },
         { title: "शेड्यूल पर काम", body: "आपका कंप्यूटर बंद होने पर भी काम चलता रहता है।" },
@@ -3038,17 +3349,38 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
     channels: {
       heading: "कहीं से भी मैसेज करें",
       copy: "Slack में किसी बॉट को मेंशन करें या अपने फ़ोन से उसे मैसेज भेजें।",
-      mock: { ask: "आज किसे फ़ॉलो-अप चाहिए?", reply: "इस हफ़्ते तीन लीड्स ने जवाब देना बंद कर दिया। ड्राफ़्ट थ्रेड में हैं।" },
+      mock: {
+        ask: "आज किसे फ़ॉलो-अप चाहिए?",
+        reply: "इस हफ़्ते तीन लीड्स ने जवाब देना बंद कर दिया। ड्राफ़्ट थ्रेड में हैं।",
+      },
     },
     features: {
       heading: "चैट से कहीं ज़्यादा",
       items: {
-        call: { title: "यह आपको कॉल करता है", body: "जब किसी काम में आपकी ज़रूरत हो, आपका बॉट ऐप में आपको कॉल करता है। बात करके सुलझाएं।" },
-        apps: { title: "आपके ऐप्स में काम करता है", body: "Gmail, GitHub, Notion और किसी भी MCP सर्वर से कनेक्ट करें।" },
-        memory: { title: "याद रखता है", body: "बॉट्स जो सीखते हैं उसे याद रखते हैं और टीम के साथ शेयर करते हैं।" },
-        triggers: { title: "अपने आप जाग जाता है", body: "शेड्यूल पर, Webhook से, GitHub इवेंट पर, या जिस चीज़ पर वह नज़र रखता है उसमें बदलाव होने पर।" },
-        team: { title: "काम आगे सौंपता है", body: "बॉट्स एक-दूसरे को काम सौंपते हैं और समूहों में साथ काम करते हैं।" },
-        teach: { title: "देखकर सीखता है", body: "उसके कंप्यूटर पर एक बार काम करके दिखाएं। वह उन स्टेप्स को स्किल के रूप में सहेज लेता है।" },
+        call: {
+          title: "कॉल और मीटिंग",
+          body: "आपका बॉट ऐप में आपको कॉल कर सकता है और Zoom या Google Meet की मीटिंग का लिखित रिकॉर्ड बना सकता है।",
+        },
+        apps: {
+          title: "आपके ऐप्स में काम करता है",
+          body: "Gmail, GitHub, Notion और किसी भी MCP सर्वर से कनेक्ट करें।",
+        },
+        memory: {
+          title: "याद रखता है",
+          body: "बॉट्स जो सीखते हैं उसे याद रखते हैं और टीम के साथ शेयर करते हैं।",
+        },
+        triggers: {
+          title: "अपने आप जाग जाता है",
+          body: "शेड्यूल पर, Webhook से, GitHub इवेंट पर, या जिस चीज़ पर वह नज़र रखता है उसमें बदलाव होने पर।",
+        },
+        team: {
+          title: "काम आगे सौंपता है",
+          body: "बॉट्स एक-दूसरे को काम सौंपते हैं और समूहों में साथ काम करते हैं।",
+        },
+        teach: {
+          title: "देखकर सीखता है",
+          body: "उसके कंप्यूटर पर एक बार काम करके दिखाएं। वह उन स्टेप्स को स्किल के रूप में सहेज लेता है।",
+        },
       },
       mock: {
         calling: "कॉल हो रही है…",
@@ -3071,7 +3403,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
         {
           question: "क्या मेरा Claude Pro/Max या ChatGPT Plus/Pro सब्सक्रिप्शन इस्तेमाल हो सकता है?",
           answer:
-            "हाँ। योग्य प्लान के साथ ChatGPT से साइन इन करें। Claude Pro या Max इस्तेमाल करने के लिए Rakazo को सोर्स कोड से सिर्फ़ अपने लिए खुद होस्ट करें और अपने खाते से साइन इन किए गए आधिकारिक Claude Code CLI के ज़रिए चलाएँ। आप API कुंजी भी जोड़ सकते हैं। विवरण के लिए डॉक्स में Model subscriptions देखें।",
+            "हाँ। Rakazo की मॉडल सेटिंग्स में अपने Claude Pro या Max प्लान, या किसी योग्य ChatGPT प्लान से साइन इन करें। आप API कुंजी भी जोड़ सकते हैं। विवरण के लिए डॉक्स में Model subscriptions देखें।",
         },
         {
           question: "क्या लोकल मॉडल चलाया जा सकता है?",
@@ -3199,8 +3531,14 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
     features: {
       heading: "不只是聊天",
       items: {
-        call: { title: "它會打電話給你", body: "需要你的時候，機器人會在 App 裡打電話給你。直接講清楚。" },
-        apps: { title: "在你的 App 裡工作", body: "連接 Gmail、GitHub、Notion 和任何 MCP 伺服器。" },
+        call: {
+          title: "通話和會議",
+          body: "機器人可以在 App 裡打電話給你，也能加入 Zoom 或 Google Meet 並產生逐字稿。",
+        },
+        apps: {
+          title: "在你的 App 裡工作",
+          body: "連接 Gmail、GitHub、Notion 和任何 MCP 伺服器。",
+        },
         memory: { title: "記得住", body: "機器人會記住學到的東西，並與團隊分享。" },
         triggers: { title: "自動啟動", body: "依排程、Webhook、GitHub 事件，或它關注的變化觸發。" },
         team: { title: "分派工作", body: "機器人彼此委派工作，也能在群組中協作。" },
@@ -3227,7 +3565,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
         {
           question: "可以用我的 Claude Pro/Max 或 ChatGPT Plus/Pro 訂閱嗎？",
           answer:
-            "可以。使用符合資格的方案登入 ChatGPT。若要使用 Claude Pro 或 Max，請從原始碼自行託管僅供你本人使用的 Rakazo，並透過以你的帳號登入的官方 Claude Code CLI 執行。你也可以連接 API 金鑰。詳情請見文件中的 Model subscriptions。",
+            "可以。在 Rakazo 的模型設定中，以你的 Claude Pro 或 Max 方案，或符合資格的 ChatGPT 方案登入。你也可以連接 API 金鑰。詳情請見文件中的 Model subscriptions。",
         },
         {
           question: "可以執行本機模型嗎？",

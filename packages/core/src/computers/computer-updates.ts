@@ -1,0 +1,181 @@
+import type { ComputerUpdate } from "@rakazo/contracts";
+import { COMPUTER_UPDATE_STAGES } from "@rakazo/contracts";
+import { isRetryableError, retryDelayMs } from "../primitives/retry-policy.js";
+
+/** Failed reads retry on this backoff (or the server's Retry-After); nothing else re-reads on a timer. */
+const RETRY_MS = 5_000;
+
+/**
+ * Shared list and local presentation state; the server owns operation lifetime. The list is read
+ * when watching starts and whenever the app's live stream signals a change. The stream signals once
+ * on every (re)connect, so a change missed while it was down is caught then.
+ */
+export function createComputerUpdates(client: {
+  list: () => Promise<ComputerUpdate[]>;
+  start: (botId: string, action: "update" | "recover") => Promise<ComputerUpdate>;
+  dismiss: (id: string) => Promise<unknown>;
+  /** The list belongs to the selected Space, so switching starts over. */
+  onSpaceChange?: (listener: () => void) => () => void;
+}) {
+  let state: { updates: ComputerUpdate[]; openId: string | null } = { updates: [], openId: null };
+  const listeners = new Set<() => void>();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  // Bumped by every watch and unwatch, so a late response from another watch is dropped.
+  let generation = 0;
+  let watching = false;
+  // The server refused a read (signed out, or this build): nothing is asked again until rewatched.
+  let refused = false;
+  // After a failed read, signals wait for its scheduled retry, which honors Retry-After.
+  let backoffUntil = 0;
+  let revision = 0;
+  let fetching = false;
+  let again = false;
+  const emit = () => {
+    for (const listener of listeners) listener();
+  };
+  const retry = (failure: unknown) => {
+    clearTimeout(timer);
+    const delay = retryDelayMs(failure, RETRY_MS);
+    backoffUntil = Date.now() + delay;
+    timer = setTimeout(() => {
+      // The timer is the retry the backoff waited for, even if it fires a little early.
+      backoffUntil = 0;
+      void refresh();
+    }, delay);
+  };
+  const read = async () => {
+    const epoch = generation;
+    const stamp = revision;
+    clearTimeout(timer);
+    try {
+      const updates = await client.list();
+      if (epoch !== generation) return;
+      // A start or dismiss landed while this was in flight; its result is newer than this read.
+      if (stamp !== revision) {
+        again = true;
+        return;
+      }
+      backoffUntil = 0;
+      if (JSON.stringify(state.updates) !== JSON.stringify(updates)) {
+        state = {
+          updates,
+          openId: updates.some((item) => item.id === state.openId) ? state.openId : null,
+        };
+        emit();
+      }
+    } catch (error) {
+      if (epoch !== generation) return;
+      // Keep the last known operation through transient failures; a 401 or other refusal stops
+      // reading until the next watch, since asking again cannot change the answer.
+      if (!isRetryableError(error)) {
+        refused = true;
+        clearTimeout(timer);
+        return;
+      }
+      retry(error);
+    }
+  };
+  /** One read at a time; signals that arrive meanwhile become one more read. */
+  const mayRead = () => watching && !refused && Date.now() >= backoffUntil;
+  const refresh = async () => {
+    if (!mayRead()) return;
+    if (fetching) {
+      again = true;
+      return;
+    }
+    fetching = true;
+    try {
+      do {
+        again = false;
+        await read();
+      } while (again && mayRead());
+    } finally {
+      fetching = false;
+    }
+  };
+  const begin = () => {
+    generation++;
+    watching = true;
+    refused = false;
+    backoffUntil = 0;
+    void refresh();
+    return () => {
+      generation++;
+      watching = false;
+      clearTimeout(timer);
+      state = { updates: [], openId: null };
+    };
+  };
+  return {
+    getSnapshot: () => state,
+    subscribe(listener: () => void) {
+      listeners.add(listener);
+      return () => {
+        listeners.delete(listener);
+      };
+    },
+    watch() {
+      let stop = begin();
+      // Another Space has its own list, and nothing from the old one may land.
+      const unfollowSpace = client.onSpaceChange?.(() => {
+        stop();
+        emit();
+        stop = begin();
+      });
+      return () => {
+        unfollowSpace?.();
+        stop();
+      };
+    },
+    /** Call when the app's live stream opens and on each change it signals. */
+    signalled() {
+      void refresh();
+    },
+    open(id: string | null) {
+      state = { ...state, openId: id };
+      emit();
+    },
+    /** `begin` sends the start through the caller's own client instead of this store's. */
+    async start(
+      botId: string,
+      action: "update" | "recover" = "update",
+      begin: (
+        botId: string,
+        action: "update" | "recover",
+      ) => Promise<ComputerUpdate> = client.start,
+    ) {
+      const epoch = generation;
+      const update = await begin(botId, action);
+      if (epoch !== generation) return;
+      revision++;
+      state = {
+        updates: [update, ...state.updates.filter((item) => item.id !== update.id)],
+        openId: update.id,
+      };
+      emit();
+    },
+    async dismiss(id: string) {
+      const epoch = generation;
+      await client.dismiss(id);
+      if (epoch !== generation) return;
+      revision++;
+      state = {
+        updates: state.updates.filter((item) => item.id !== id),
+        openId: state.openId === id ? null : state.openId,
+      };
+      emit();
+    },
+  };
+}
+
+export function computerUpdateStages(
+  action: ComputerUpdate["action"],
+): readonly ComputerUpdate["stage"][] {
+  return action === "recover"
+    ? COMPUTER_UPDATE_STAGES.filter((stage) => stage !== "saving")
+    : COMPUTER_UPDATE_STAGES;
+}
+
+export function computerUpdateNeedsAttention(update: ComputerUpdate): boolean {
+  return update.status === "failed" || update.status === "interrupted";
+}

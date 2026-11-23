@@ -79,8 +79,8 @@ async function main() {
           "run",
           "--root",
           root,
-          "packages/testkit/src/computer-replay.docker.test.ts",
-          "packages/testkit/src/computer-user.docker.test.ts",
+          "packages/testkit/src/computers/computer-replay.docker.test.ts",
+          "packages/testkit/src/computers/computer-user.docker.test.ts",
         ],
         {
           env,

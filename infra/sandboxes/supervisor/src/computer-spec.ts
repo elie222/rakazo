@@ -43,6 +43,7 @@ export const COMPUTER_IMAGE_CONTEXT_FILES = [
   "page_secrets.py",
   "install-agent-browser.sh",
   "rakazo-browser.desktop",
+  "mimeapps.list",
   "browser-policy.json",
   "embed.html",
   "clipboard-bridge.js",
@@ -248,6 +249,54 @@ export function computerDnsMatches(current: string[] | null | undefined, desired
   const have = current ?? [];
   const want = desired ?? [];
   return have.length === want.length && have.every((server, index) => server === want[index]);
+}
+
+/** The computer environment variable rakazo-browser reads for --proxy-pac-url. */
+export const BROWSER_PROXY_PAC_ENV = "RAKAZO_BROWSER_PROXY_PAC_URL";
+// Chromium takes the PAC script as one argument; a data: URL holds the whole script.
+const MAX_BROWSER_PROXY_PAC_URL_LENGTH = 64 * 1024;
+const BROWSER_PROXY_PAC_PROTOCOLS: Record<string, true> = {
+  "http:": true,
+  "https:": true,
+  "data:": true,
+};
+
+/**
+ * Proxy auto-config (PAC) script for the bot browser, from SANDBOX_COMPUTER_BROWSER_PROXY_PAC_URL:
+ * an absolute http://, https:// or data: URL. The script decides per request which sites go
+ * through a proxy and which connect directly. Unset leaves the browser's connections as they are.
+ */
+export function resolveComputerBrowserProxyPacUrl(
+  value = process.env.SANDBOX_COMPUTER_BROWSER_PROXY_PAC_URL,
+): string | undefined {
+  const raw = (value ?? "").trim();
+  if (!raw) return undefined;
+  const fail = (reason: string) =>
+    new Error(`Unsupported SANDBOX_COMPUTER_BROWSER_PROXY_PAC_URL: ${reason}`);
+  if (raw.length > MAX_BROWSER_PROXY_PAC_URL_LENGTH) throw fail("longer than 64 KiB");
+  // The browser launcher passes it as a single flag, so it cannot hold spaces.
+  if (/\s/.test(raw) || [...raw].some((char) => char <= " " || char === "\u007f"))
+    throw fail("contains whitespace or control characters (base64-encode a data: URL)");
+  let protocol: string;
+  try {
+    protocol = new URL(raw).protocol;
+  } catch {
+    throw fail("expected an absolute http://, https:// or data: URL");
+  }
+  if (!BROWSER_PROXY_PAC_PROTOCOLS[protocol])
+    throw fail(`expected an http://, https:// or data: URL, received ${protocol}`);
+  return raw;
+}
+
+/** Whether a computer's environment carries the configured PAC URL (none configured: none set). */
+export function computerBrowserProxyPacMatches(
+  env: string[] | null | undefined,
+  desired?: string,
+): boolean {
+  const prefix = `${BROWSER_PROXY_PAC_ENV}=`;
+  const have = (env ?? []).filter((entry) => entry.startsWith(prefix));
+  if (desired === undefined) return have.length === 0;
+  return have.length === 1 && have[0] === `${prefix}${desired}`;
 }
 
 /**
@@ -617,6 +666,8 @@ export interface ComputerCreateInput {
   mounts?: ComputerMount[];
   /** Docker's GPU device count, where -1 means all (see resolveComputerComputeGpus). */
   computeGpus?: number;
+  /** PAC URL for the bot browser (see resolveComputerBrowserProxyPacUrl). */
+  browserProxyPacUrl?: string;
   locale?: ComputerLocale;
 }
 
@@ -650,6 +701,7 @@ export function containerCreateOptions(input: ComputerCreateInput) {
       "PIP_USER=1",
       ...(input.controlToken ? [`RAKAZO_COMPUTER_CONTROL_TOKEN=${input.controlToken}`] : []),
       ...computerLocaleEnv(input.locale),
+      ...(input.browserProxyPacUrl ? [`${BROWSER_PROXY_PAC_ENV}=${input.browserProxyPacUrl}`] : []),
     ],
     Labels: {
       "rakazo.managed": "true",
@@ -870,5 +922,15 @@ function mapKey(key: string) {
   if (lower === "alt") return "alt";
   if (lower === "shift") return "shift";
   if (lower === "meta" || lower === "cmd" || lower === "super") return "super";
+  if (lower === "pagedown" || lower === "page_down" || lower === "pgdn") return "Page_Down";
+  if (lower === "pageup" || lower === "page_up" || lower === "pgup") return "Page_Up";
+  if (lower === "arrowup" || lower === "up") return "Up";
+  if (lower === "arrowdown" || lower === "down") return "Down";
+  if (lower === "arrowleft" || lower === "left") return "Left";
+  if (lower === "arrowright" || lower === "right") return "Right";
+  if (lower === "delete" || lower === "del") return "Delete";
+  if (lower === "home") return "Home";
+  if (lower === "end") return "End";
+  if (lower === "insert" || lower === "ins") return "Insert";
   return key;
 }

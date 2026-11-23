@@ -27,10 +27,10 @@ const timer = window.setTimeout(close, 100);
   "apps/web/src/pages/leak.tsx": `useEffect(() => {\n  window.addEventListener("resize", sync);\n}, []);\n`,
   "apps/mobile/lib/use-foreground.ts": `${effects}const sub = AppState.addEventListener("change", onChange);\nsignal.addEventListener("abort", stop);\n`,
   "apps/mobile/lib/use-pulse.ts": `${effects}globalThis.setTimeout(pulse, 10);\n`,
-  "apps/mobile/lib/api.ts": "const timer = setTimeout(() => controller.abort(), 5000);\n",
-  "apps/web/src/lib/call-session.ts":
+  "apps/mobile/lib/api/api.ts": "const timer = setTimeout(() => controller.abort(), 5000);\n",
+  "apps/web/src/lib/calls/call-session.ts":
     'import { useSyncExternalStore } from "react";\nhangUp = setTimeout(endCall, 1000);\n',
-  "apps/web/src/preview-middleware.ts": "socket.setTimeout(1000, done);\n",
+  "apps/web/server/preview-middleware.ts": "socket.setTimeout(1000, done);\n",
   "apps/web/src/pages/converted.tsx":
     'useTimeout(close, 100);\nuseEventListener(window, "resize", sync);\n',
   "apps/web/src/lib/use-event-listener.ts": `${effects}target.removeEventListener(type, onEvent);\n`,
@@ -59,10 +59,10 @@ test("counts raw timers and added listeners, including one never removed", () =>
 
 test("leaves helpers without effects, method calls, converted code, the hooks and tests alone", () => {
   for (const file of [
-    "apps/mobile/lib/api.ts",
+    "apps/mobile/lib/api/api.ts",
     "apps/mobile/lib/use-foreground.ts",
-    "apps/web/src/lib/call-session.ts",
-    "apps/web/src/preview-middleware.ts",
+    "apps/web/src/lib/calls/call-session.ts",
+    "apps/web/server/preview-middleware.ts",
     "apps/web/src/pages/converted.tsx",
     "apps/web/src/lib/use-event-listener.ts",
     "apps/web/src/pages/panel.test.tsx",

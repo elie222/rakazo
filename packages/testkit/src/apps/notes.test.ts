@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { studioFacts, studioNotes } from "./fixtures/studio.js";
+import { studioFacts, studioNotes } from "../evals/fixtures/studio.js";
 import { NotesEmulator, noteId } from "./notes.js";
 
 const now = new Date("2026-11-06T16:30:00Z");

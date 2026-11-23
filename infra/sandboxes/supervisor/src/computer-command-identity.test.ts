@@ -1,5 +1,6 @@
 import { Duplex, Readable, Writable } from "node:stream";
-import { resolveSupervisorToken } from "@rakazo/core";
+import { resolveSupervisorToken } from "@rakazo/core/node/secrets-guard";
+import { deferred } from "@rakazo/core/test-async";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { computerCommandEnv } from "./supervisor-logic.js";
 
@@ -74,21 +75,21 @@ describe("computer command identity", () => {
       env: { EXTRA: "1" },
     });
     await response.text();
-    expect(execs().at(-1)?.Env).toEqual([...computerCommandEnv({ display: ":1" }), "EXTRA=1"]);
+    expect(execs().at(-1)?.Env).toEqual([
+      ...computerCommandEnv({ display: ":1", debugPort: 9222 }),
+      "EXTRA=1",
+    ]);
     expectContainerUser();
   });
 
   it("keeps a silent command's response alive until it exits", async () => {
     vi.useFakeTimers();
     try {
-      let finish = (_code: number) => {};
-      const exited = new Promise<number>((resolve) => {
-        finish = resolve;
-      });
+      const exited = deferred<number>();
       mock.exec.mockImplementation(async () => ({
         start: async () => {
           const output = new Readable({ read() {} });
-          void exited.then(() => output.push(null));
+          void exited.promise.then(() => output.push(null));
           return Duplex.from({
             readable: output,
             writable: new Writable({
@@ -98,14 +99,14 @@ describe("computer command identity", () => {
             }),
           });
         },
-        inspect: async () => ({ ExitCode: await exited }),
+        inspect: async () => ({ ExitCode: await exited.promise }),
       }));
       const response = await post("/computers/computer-exec/exec", { argv: ["sleep", "600"] });
       const reader = response.body?.getReader();
       const decoder = new TextDecoder();
       await vi.advanceTimersByTimeAsync(15_000);
       expect(decoder.decode((await reader?.read())?.value)).toBe("\n");
-      finish(0);
+      exited.resolve(0);
       let rest = "";
       for (;;) {
         const chunk = await reader?.read();
@@ -157,8 +158,76 @@ describe("computer command identity", () => {
     const terminal = execs().find((options) =>
       options.Cmd.join(" ").includes("terminal-fixture-token"),
     );
-    expect(terminal?.Env).toEqual(computerCommandEnv({ display: ":1" }));
+    expect(terminal?.Env).toEqual(computerCommandEnv({ display: ":1", debugPort: 9222 }));
+    expect(terminal?.Env?.[terminal.Env.indexOf("DISPLAY=:1") + 1]).toBe("RAKAZO_CDP_PORT=9222");
     expectContainerUser();
+  });
+
+  it("computer-exec-screen-cdp-port", async () => {
+    const opened = mock.exec.getMockImplementation();
+    mock.exec.mockImplementation(async (options: ExecOptions) => {
+      if (!options.Cmd.includes("/usr/local/bin/rakazo-page-browser")) return opened?.(options);
+      return {
+        start: async () =>
+          Duplex.from({
+            readable: Readable.from([
+              Buffer.from(
+                JSON.stringify({
+                  ok: true,
+                  url: "https://example.test",
+                  title: "Fixture",
+                  tree: "",
+                  elements: [],
+                }),
+              ),
+            ]),
+            writable: new Writable({
+              write(_chunk, _encoding, callback) {
+                callback();
+              },
+            }),
+          }),
+        inspect: async () => ({ ExitCode: 0 }),
+      };
+    });
+    const computer = "computer-cdp";
+    // One Team Computer. The container owner stays on x-rakazo-bot-id; each bot is a screen.
+    const headers = (screenId: string) => ({
+      authorization: `Bearer ${resolveSupervisorToken(process.env)}`,
+      "content-type": "application/json",
+      "x-rakazo-bot-id": "bot",
+      "x-rakazo-space-id": "space",
+      "x-rakazo-screen-id": screenId,
+      "x-rakazo-screen-lease-id": `${screenId}:1`,
+    });
+    const open = (screenId: string) =>
+      supervisorApp.request(`/computers/${computer}/browser`, {
+        method: "POST",
+        headers: headers(screenId),
+        body: JSON.stringify({ command: "snapshot" }),
+      });
+    expect(await (await open("bot-a")).json()).toMatchObject({ ok: true });
+    expect(await (await open("bot-b")).json()).toMatchObject({ ok: true });
+    const shell = async (screenId: string) => {
+      const response = await supervisorApp.request(`/computers/${computer}/exec`, {
+        method: "POST",
+        headers: headers(screenId),
+        body: JSON.stringify({ argv: ["print-cdp", screenId] }),
+      });
+      expect(response.status).toBe(200);
+      await response.text();
+      return execs()
+        .filter((options) => options.Cmd.includes("print-cdp") && options.Cmd.includes(screenId))
+        .at(-1)?.Env;
+    };
+    const workspace = [
+      "HOME=/home/rakazo",
+      "PATH=/home/rakazo/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+      "NPM_CONFIG_PREFIX=/home/rakazo/.local",
+      "PIP_USER=1",
+    ];
+    expect(await shell("bot-b")).toEqual(["DISPLAY=:2", "RAKAZO_CDP_PORT=9223", ...workspace]);
+    expect(await shell("bot-a")).toEqual(["DISPLAY=:1", "RAKAZO_CDP_PORT=9222", ...workspace]);
   });
 
   it("writes uploaded files as the container's user", async () => {

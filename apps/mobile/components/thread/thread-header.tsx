@@ -2,20 +2,20 @@ import { useLingui } from "@lingui/react/macro";
 import { useNavigation, useRoute, useRouter } from "expo-router";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Alert } from "react-native";
-import { mobileTokens } from "../../lib/appearance";
-import { notifyArchivedChatsChanged } from "../../lib/archived-chats";
-import { restoreArchivedBot } from "../../lib/bot-lifecycle";
-import { chatTitleRoute } from "../../lib/chat-settings-route";
-import { onConversationCleared } from "../../lib/conversation-cleared";
-import type { MobileBot } from "../../lib/mobile-types";
-import { useResolvedAppearance } from "../../lib/native";
-import { useReferral } from "../../lib/referral";
-import { threadEdgeOptions } from "../../lib/thread-edges";
-import { errorText } from "../../lib/user-error";
-import type { ChatTitle } from "../chat-header-title";
-import { publishChatTitle } from "../chat-header-title";
-import { trailingHeaderOptions } from "../sheet-header";
-import { openInvite, threadHeaderRight } from "../thread-header-right";
+import type { MobileBot } from "../../lib/api/mobile-types";
+import { errorText } from "../../lib/api/user-error";
+import { mobileTokens } from "../../lib/appearance/appearance";
+import { useReferral } from "../../lib/billing/referral";
+import { restoreArchivedBot } from "../../lib/bots/bot-lifecycle";
+import { notifyArchivedChatsChanged } from "../../lib/inbox/archived/archived-chats";
+import { useResolvedAppearance } from "../../lib/native/native";
+import { chatTitleRoute } from "../../lib/navigation/chat-settings-route";
+import { onConversationCleared } from "../../lib/thread/conversation-cleared";
+import { threadEdgeOptions } from "../../lib/thread/scroll/thread-edges";
+import { trailingHeaderOptions } from "../native/sheet-header";
+import type { ChatTitle } from "./header/chat-header-title";
+import { publishChatTitle } from "./header/chat-header-title";
+import { openInvite, threadHeaderRight } from "./header/thread-header-right";
 
 /**
  * The chat's navigation header: its title (which opens the bot's profile), the invite gift (or
@@ -106,7 +106,7 @@ export function useThreadHeader({
         color: tokens.foreground,
         onGroupSettings: () =>
           router.push({ pathname: "/group-settings", params: { groupId: groupId ?? "" } }),
-        onInvite: canInvite && botId ? openInvite : undefined,
+        onInvite: canInvite && botId ? () => openInvite(router) : undefined,
       }),
       ...(readOnly
         ? trailingHeaderOptions(t`Restore`, () => void restoreConversation(), restoring)

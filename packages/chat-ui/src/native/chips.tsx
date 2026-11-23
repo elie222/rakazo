@@ -13,19 +13,6 @@ export const InlineChipsContext = createContext<
   Pick<ChatMarkdownProps, "renderMention" | "onOpenPage"> & { palette: ColorTokens }
 >({ palette: darkTokens });
 
-export function MarkdownMention({
-  id,
-  name,
-  children,
-}: {
-  id: string;
-  name: string;
-  children: ReactNode;
-}) {
-  const { renderMention } = useContext(InlineChipsContext);
-  return renderMention?.(id, name) ?? <Text>{children}</Text>;
-}
-
 /** `PAGE_ICON` drawn from views so it can sit inline in text; the flap is a border triangle. */
 export function PageIcon({
   colors,

@@ -76,7 +76,8 @@ async function main() {
     runtimeUrl.password = "rakazo-test-runtime";
     const databaseUrl = runtimeUrl.toString();
     const apiPort = Number(process.env.API_PORT ?? 3110);
-    const webPort = Number(process.env.WEB_PORT ?? 5180);
+    // Integration starts no web server; its tests send the default web origin.
+    const webPort = Number(process.env.WEB_PORT ?? (integration ? 5173 : 5180));
     const webOrigin = `http://127.0.0.1:${webPort}`;
 
     process.env.DATABASE_URL = databaseUrl;
@@ -132,14 +133,14 @@ async function main() {
       // the other suites need the database too but carry no suffix.
       const suites = [
         ...globSync("{apps,packages}/*/src/**/*.postgres.test.ts").sort(),
-        "packages/testkit/src/journeys.test.ts",
-        "packages/testkit/src/authorization.test.ts",
-        "packages/testkit/src/attachments.test.ts",
-        "packages/testkit/src/voice.test.ts",
-        "packages/testkit/src/search.test.ts",
-        "packages/testkit/src/executor-lifecycle.test.ts",
-        "packages/testkit/src/connections.test.ts",
-        "packages/testkit/src/bot-secrets.test.ts",
+        "packages/testkit/src/product/journeys.test.ts",
+        "packages/testkit/src/product/authorization.test.ts",
+        "packages/testkit/src/product/attachments.test.ts",
+        "packages/testkit/src/product/voice.test.ts",
+        "packages/testkit/src/product/search.test.ts",
+        "packages/testkit/src/product/executor-lifecycle.test.ts",
+        "packages/testkit/src/product/connections.test.ts",
+        "packages/testkit/src/product/bot-secrets.test.ts",
       ];
       // --spec=<part of a path> runs only the matching suites.
       const selected = e2eSpec ? suites.filter((suite) => suite.includes(e2eSpec)) : suites;

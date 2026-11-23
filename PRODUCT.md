@@ -16,6 +16,7 @@ Keep implementation gaps explicit when adding a capability, and keep technical p
 
 One bot has one continuous visible thread because continuity is part of its identity, while internal runs and attempts remain implementation detail.
 A pending question or approval card never blocks a chat: the user can always keep chatting and new work still runs, and the card stays answerable until someone replies.
+A bot's model and thinking level belong to the bot and change in its settings. A Chat setting, off by default and kept per device, also shows them in the message box of a one-to-one chat, where a pick saves to the bot the same way. It is opt-in because most people rarely change models and the message box stays minimal, and group chats leave it out because each bot in a group can use a different model.
 
 ## Activity
 
@@ -41,6 +42,13 @@ For example, a bot comparing three options can delegate their research, answer a
 
 Subagents inherit the originating conversation's context, tool permissions and privacy boundaries in app, group and connected messaging chats.
 Approvals and results return to that conversation; delegation never grants access to private context that the parent could not use there.
+
+## Routines
+
+A routine runs either in its chat, as a turn with the whole conversation that waits for work already under way there, or alongside it, as its own run that starts on time even while the bot is busy and posts its result in the chat.
+The bot chooses when it creates the routine: alongside for reports, digests, reminders and alerts whose prompt can say everything they need; in the chat for follow-ups that continue work the conversation is doing, such as updating a draft or fixing a deploy started there.
+A routine running alongside reads the chat's latest messages and its own earlier results, so it can say what changed instead of repeating itself, and searches the rest of the chat when it needs more.
+A routine in the chat that is still waiting after five minutes is handed to the running turn, so a run that goes on for hours does not hold it back; one that watches for changes always runs alongside, because what it read is not the user's words.
 
 ## Computers
 
@@ -92,9 +100,11 @@ Access checks and action approvals enforce these boundaries. Labeling text as de
 
 ## Approvals
 
-Approvals have three modes: Never ask runs every action without waiting, Auto lets an approval model pass actions that fit what the owner asked for and asks only when one is off-task or irreversible without being asked for, and Ask asks before any action that changes something; reading asks only when the request itself could carry private data somewhere new.
-Every mode is shaped by two lists of exact tools or sites, Allow and Block, which grow from approval cards and settings rather than from guessed categories, and a blocked action is refused without a card in every mode.
-Actions that outside text could steer, such as writes in webhook-started runs, another owner's bot connecting, or instruction changes after untrusted content entered a run, still ask in Auto and Ask. Never ask runs them, except that it refuses another owner's bot connecting when outside text could have asked for it.
+The approval mode is the one thing that decides whether a bot asks before acting. Ask asks you before anything that changes something, costs money or sends something out, and before reading a site you didn't name. Auto hands those to an approval model, which passes what fits your request and asks you about the rest. Never ask runs everything without waiting.
+Your own runs are the same wherever they start: a message in the app or from a linked chat app, and a routine you set up. Text the bot read from a page, an email or another bot never refuses a call or adds a question; it only tells the approval model that outside words are in play, which it never treats as your request.
+A few limits hold in every mode, because asking would not help: Block rules and your spending limit, limits that stop bots looping, anything that acts for another person (accepting another owner's bot connection, another chat's routines), and runs someone or something else started (another person, a webhook, another bot), which cannot use your private chats, account settings or bot management.
+A run nobody is watching (a routine, webhook, ticket or another bot) still posts its approval card and notifies you; if nobody answers within 30 minutes the card expires and the action is not done.
+Every mode is shaped by two lists of exact tools or sites, Allow and Block, which grow from approval cards and settings rather than from guessed categories.
 The deployment picks the default approval mode, so a self-hosted server works without any model and a hosted one can default to Auto.
 
 ## Deployment administration and host access

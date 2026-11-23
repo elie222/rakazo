@@ -1,8 +1,8 @@
 import { reportUiLocale } from "@rakazo/core";
 import { useEffect, useRef } from "react";
-import { i18n } from "../../lib/i18n";
-import type { createSpaceRpc } from "../../lib/rpc";
-import { normalizeUiLocale } from "../../lib/ui-locale";
+import { i18n } from "../../lib/locale/i18n";
+import { normalizeUiLocale } from "../../lib/locale/ui-locale";
+import type { createSpaceRpc } from "../../lib/query/rpc";
 
 /**
  * Keeps the account's saved app language current, so emails are written in it. `saved` is

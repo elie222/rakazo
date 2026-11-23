@@ -23,26 +23,8 @@ export const NL_MESSAGES: Record<string, string> = {
   "Your Rakazo confirmation code": "Je bevestigingscode voor Rakazo",
   "Enter this code in Rakazo to confirm it's you:":
     "Voer deze code in Rakazo in om te bevestigen dat jij het bent:",
-  "Welcome to Rakazo": "Welkom bij Rakazo",
-  "Welcome to Rakazo. The people who get the most out of it do three things:":
-    "Welkom bij Rakazo. Wie er het meest uit haalt, doet drie dingen:",
-  "Get the apps": "Download de apps",
-  "Rakazo runs on {platforms}, so your bots can reach you wherever you are.":
-    "Rakazo werkt op {platforms}, zodat je bots je overal kunnen bereiken.",
-  "Join the community": "Word lid van de community",
-  "See what others are building, get help fast, and tell us what to build next on {discord}.":
-    "Zie wat anderen bouwen, krijg snel hulp en vertel ons op {discord} wat we hierna moeten bouwen.",
-  "Star us on GitHub": "Geef ons een ster op GitHub",
-  "Rakazo is open source. {star} helps more people find it.":
-    "Rakazo is open source. {star} helpt meer mensen het te vinden.",
-  "A star on GitHub": "Een ster op GitHub",
-  "Questions? Just reply. I read every one.": "Vragen? Antwoord gewoon. Ik lees elk bericht.",
   Unsubscribe: "Afmelden",
-  "Invite a friend": "Nodig een vriend uit",
-  "Invite a friend to Rakazo: they get {weeks} weeks free, and you earn a free month when they start a qualifying subscription with a new card.":
-    "Nodig een vriend uit voor Rakazo: die krijgt {weeks} weken gratis, en jij verdient een gratis maand zodra die met een nieuwe kaart een geldig abonnement start.",
   "Open Rakazo": "Open Rakazo",
-  "and choose Invite friends for your link.": "en kies Vrienden uitnodigen voor je link.",
   "We received your Rakazo plugin": "We hebben je Rakazo-plug-in ontvangen",
   "Thanks for submitting a plugin to the Rakazo marketplace.":
     "Bedankt voor het insturen van een plug-in voor de Rakazo-marketplace.",
@@ -72,4 +54,17 @@ export const NL_MESSAGES: Record<string, string> = {
     "Je opgeslagen computerbestanden worden op {date} verwijderd, tenzij je opnieuw een abonnement neemt.",
   "Your saved computer files will be deleted on {date} unless you choose a plan.":
     "Je opgeslagen computerbestanden worden op {date} verwijderd, tenzij je een abonnement kiest.",
+  "{inviter} invited you to {organization} on Rakazo":
+    "{inviter} heeft je uitgenodigd voor {organization} op Rakazo",
+  "{inviter} invited you to join {organization} on Rakazo.":
+    "{inviter} heeft je uitgenodigd om lid te worden van {organization} op Rakazo.",
+  "Join {organization}": "Word lid van {organization}",
+  "This invitation expires in 7 days. Sign in with this email address to accept it.":
+    "Deze uitnodiging verloopt over 7 dagen. Log in met dit e-mailadres om haar te accepteren.",
+  "{inviter} invited you to {space} on Rakazo":
+    "{inviter} heeft je uitgenodigd voor {space} op Rakazo",
+  "{inviter} invited you to join {space} on Rakazo.":
+    "{inviter} heeft je uitgenodigd om lid te worden van {space} op Rakazo.",
+  "Join {space}": "Word lid van {space}",
+  "This invitation expires in 7 days.": "Deze uitnodiging verloopt over 7 dagen.",
 };

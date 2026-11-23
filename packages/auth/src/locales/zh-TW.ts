@@ -21,26 +21,8 @@ export const ZH_TW_MESSAGES: Record<string, string> = {
     "此驗證碼將在十分鐘後失效。如果你沒有要求刪除，請忽略這封郵件。",
   "Your Rakazo confirmation code": "你的 Rakazo 確認碼",
   "Enter this code in Rakazo to confirm it's you:": "在 Rakazo 中輸入此驗證碼以確認是你本人：",
-  "Welcome to Rakazo": "歡迎使用 Rakazo",
-  "Welcome to Rakazo. The people who get the most out of it do three things:":
-    "歡迎使用 Rakazo。用得最好的人都會做三件事：",
-  "Get the apps": "下載應用程式",
-  "Rakazo runs on {platforms}, so your bots can reach you wherever you are.":
-    "Rakazo 支援 {platforms}，讓你的機器人隨時隨地都能聯絡到你。",
-  "Join the community": "加入社群",
-  "See what others are building, get help fast, and tell us what to build next on {discord}.":
-    "在 {discord} 上看看別人在打造什麼、快速獲得協助，並告訴我們接下來該做什麼。",
-  "Star us on GitHub": "在 GitHub 上給我們星星",
-  "Rakazo is open source. {star} helps more people find it.":
-    "Rakazo 是開源的。{star}能幫助更多人發現它。",
-  "A star on GitHub": "在 GitHub 上給星星",
-  "Questions? Just reply. I read every one.": "有問題嗎？直接回覆即可。每封我都會看。",
   Unsubscribe: "取消訂閱",
-  "Invite a friend": "邀請朋友",
-  "Invite a friend to Rakazo: they get {weeks} weeks free, and you earn a free month when they start a qualifying subscription with a new card.":
-    "邀請朋友加入 Rakazo：對方可免費使用 {weeks} 週；當對方用新卡開始符合條件的訂閱時，你將獲得一個月免費。",
   "Open Rakazo": "開啟 Rakazo",
-  "and choose Invite friends for your link.": "並選擇「邀請朋友」取得你的連結。",
   "We received your Rakazo plugin": "我們已收到你的 Rakazo 外掛",
   "Thanks for submitting a plugin to the Rakazo marketplace.": "感謝你向 Rakazo 外掛市集提交外掛。",
   "We review every submission and will email you when it's done.":
@@ -65,4 +47,15 @@ export const ZH_TW_MESSAGES: Record<string, string> = {
     "除非你重新訂閱，否則你儲存的電腦檔案將於 {date} 被刪除。",
   "Your saved computer files will be deleted on {date} unless you choose a plan.":
     "除非你選擇一個方案，否則你儲存的電腦檔案將於 {date} 被刪除。",
+  "{inviter} invited you to {organization} on Rakazo":
+    "{inviter} 邀請你加入 Rakazo 上的 {organization}",
+  "{inviter} invited you to join {organization} on Rakazo.":
+    "{inviter} 邀請你加入 Rakazo 上的 {organization}。",
+  "Join {organization}": "加入 {organization}",
+  "This invitation expires in 7 days. Sign in with this email address to accept it.":
+    "此邀請將在 7 天後過期。請使用此電子郵件地址登入以接受邀請。",
+  "{inviter} invited you to {space} on Rakazo": "{inviter} 邀請你加入 Rakazo 上的 {space}",
+  "{inviter} invited you to join {space} on Rakazo.": "{inviter} 邀請你加入 Rakazo 上的 {space}。",
+  "Join {space}": "加入 {space}",
+  "This invitation expires in 7 days.": "此邀請將在 7 天後過期。",
 };

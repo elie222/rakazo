@@ -1,0 +1,166 @@
+import type { SearchHit } from "@rakazo/contracts";
+import { textBoundary, truncatePlainText } from "../messages/markdown-plain.js";
+
+// A bare link never contains CJK or typographic punctuation, or the quotes and guillemets that wrap
+// one. Ideographs, kana and hangul stay in the link: Wikipedia paths use them. A right single quote
+// stays too, since it is an apostrophe in paths such as O’Connor; linkUrl drops it when it closes a
+// left single quote before the link.
+const URL_PATTERN =
+  /https?:\/\/[^\s<>"'`\]、。〈-】（）！，：；？‘“”«»][^\s<>"'`、。〈-】（）！，：；？‘“”«»]*/gi;
+
+const URL_START = /https?:\/\/[^\s<>"'`\]、。〈-】（）！，：；？‘“”«»]/gi;
+
+const TRAILING_LINK_PUNCTUATION = /[.,;:!?]+$/;
+
+function linkEnd(text: string, start: number, limit: number): number {
+  let parentheses = 0;
+  let brackets = 0;
+  for (let i = start; i < limit; i++) {
+    if (text[i] === "(") parentheses += 1;
+    else if (text[i] === ")" && --parentheses < 0) return i;
+    else if (text[i] === "[") brackets += 1;
+    else if (text[i] === "]" && --brackets < 0) return i;
+  }
+  return limit;
+}
+
+function linkUrl(text: string, start: number, end: number): string | null {
+  let url = text.slice(start, end).replace(TRAILING_LINK_PUNCTUATION, "");
+  if (text[start - 1] === "‘" && url.endsWith("’")) url = url.slice(0, -1);
+  const beforeOpener = text[start - 3];
+  const hasBoldWrapper =
+    url.endsWith("**") &&
+    text.startsWith("**", start - 2) &&
+    beforeOpener !== "*" &&
+    beforeOpener !== "\\" &&
+    url.at(-3) !== "\\" &&
+    !(beforeOpener === "`" && text[end] === "`");
+  if (!hasBoldWrapper) return url;
+
+  const unwrapped = url.slice(0, -2);
+  return /^https?:\/\/$/i.test(unwrapped) ? null : unwrapped;
+}
+
+function findLinks(text: string): string[] {
+  const links: string[] = [];
+  for (const match of text.matchAll(URL_PATTERN)) {
+    const limit = match.index + match[0].length;
+    let start = match.index;
+    while (start < limit) {
+      const end = linkEnd(text, start, limit);
+      const url = linkUrl(text, start, end);
+      if (url !== null) links.push(url);
+      URL_START.lastIndex = end;
+      start = URL_START.exec(text)?.index ?? limit;
+    }
+  }
+  return links;
+}
+
+export function extractLinksFromText(text: string): string[] {
+  return [...new Set(findLinks(text))];
+}
+
+export function matchesSearchQuery(
+  query: string,
+  ...fields: Array<string | undefined | null>
+): boolean {
+  const q = query.trim().toLowerCase();
+  if (!q) return false;
+  return fields.some((field) => field?.toLowerCase().includes(q));
+}
+
+/**
+ * Escape the characters a SQL `LIKE` pattern treats as wildcards, so a search
+ * matches the text the user typed. `matchesSearchQuery` compares literally:
+ * without this a `%` or `_` would widen the match, and a `\` would swallow the
+ * character after it.
+ */
+export function escapeSearchWildcards(value: string): string {
+  return value.replace(/[\\%_]/g, (character) => `\\${character}`);
+}
+
+/** Escape string content as rendered in JSONB text, then escape SQL LIKE wildcards. */
+export function escapeJsonSearchWildcards(value: string): string {
+  return escapeSearchWildcards(JSON.stringify(value).slice(1, -1));
+}
+
+/**
+ * A snippet that would open mid-word ("…nd code") opens at the next word instead, when one starts
+ * soon enough to keep the context before the match.
+ */
+function wordStart(text: string, start: number, match: number): number {
+  if (start === 0 || /\s/.test(text[start - 1] ?? "") || /\s/.test(text[start] ?? "")) return start;
+  const space = text.slice(start, Math.min(start + 15, match)).search(/\s/);
+  return space < 0 ? start : start + space + 1;
+}
+
+/** Map an index in `lower` (the lowercase form of `text`) back to its original UTF-16 offset. */
+export function originalLowercaseOffset(text: string, lower: string, index: number): number {
+  if (index < 0 || lower.length === text.length) return index;
+  // Lowercasing can expand a character (İ → i + combining dot).
+  let lowerOffset = 0;
+  let originalOffset = 0;
+  for (const character of text) {
+    const lowerLength = character.toLowerCase().length;
+    if (lowerOffset + lowerLength > index) break;
+    lowerOffset += lowerLength;
+    originalOffset += character.length;
+  }
+  return originalOffset;
+}
+
+/** 按 UTF-16 长度生成搜索摘要，保持原有匹配逻辑并避免在边界切断代理对。 */
+export function snippetAroundMatch(text: string, query: string, maxLen = 120): string {
+  const q = query.trim().toLowerCase();
+  if (!q) return truncatePlainText(text, maxLen);
+  const lower = text.toLowerCase();
+  const originalIndex = originalLowercaseOffset(text, lower, lower.indexOf(q));
+  if (originalIndex < 0) return truncatePlainText(text, maxLen);
+  const start = wordStart(text, textBoundary(text, Math.max(0, originalIndex - 40)), originalIndex);
+  const end = textBoundary(text, Math.min(text.length, start + maxLen));
+  const prefix = start > 0 ? "…" : "";
+  const suffix = end < text.length ? "…" : "";
+  return `${prefix}${text.slice(start, end)}${suffix}`;
+}
+
+export type SearchThreadTarget =
+  | { botId: string; groupId?: undefined }
+  | { groupId: string; botId?: undefined };
+
+export function searchHitThreadTarget(hit: {
+  botId?: string;
+  groupId?: string;
+}): SearchThreadTarget {
+  if (Boolean(hit.botId) === Boolean(hit.groupId)) {
+    throw new Error("Search hit must target exactly one of a bot or group");
+  }
+  return hit.groupId ? { groupId: hit.groupId } : { botId: hit.botId! };
+}
+
+/**
+ * One row per hit, unique per kind and every id. File hits carry the message they were sent in,
+ * so files sent together share a message id; links in one message differ only by URL.
+ */
+export function searchHitListKey(hit: SearchHit): string {
+  return [
+    hit.kind,
+    hit.groupId ?? hit.botId ?? "",
+    hit.messageId ?? "",
+    hit.artifactId ?? "",
+    hit.routineId ?? "",
+    hit.url ?? "",
+  ].join("\u0000");
+}
+
+export function dedupeSearchHits(hits: readonly SearchHit[]): SearchHit[] {
+  const seen = new Set<string>();
+  const unique: SearchHit[] = [];
+  for (const hit of hits) {
+    const key = searchHitListKey(hit);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    unique.push(hit);
+  }
+  return unique;
+}

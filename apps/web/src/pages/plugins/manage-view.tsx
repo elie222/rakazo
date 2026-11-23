@@ -3,6 +3,7 @@ import type { CapabilityInstall, ConnectionCatalogItem, McpServer } from "@rakaz
 import { mcpServerNeedsSignIn } from "@rakazo/contracts";
 import { catalogItemKey } from "@rakazo/core";
 import { Button } from "@rakazo/ui-web";
+import { useId } from "react";
 import type { PluginSelection } from "../../components/integrations/plugin-marketplace";
 import {
   PluginLogo,
@@ -121,52 +122,77 @@ export function ManageView({
             </div>
             <div data-testid="tool-sources" className="contents">
               {sources.map((source) => (
-                <div
+                <ToolSourceRow
                   key={source.id}
-                  data-testid="tool-source"
-                  className="flex min-w-0 items-center gap-3 rounded-xl px-2.5 py-2"
-                >
-                  <ConnectorIcon name={source.name} />
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate text-body-lg font-medium">{source.name}</span>
-                    <span className="block truncate text-body-sm text-muted-foreground">
-                      {source.kind === "api"
-                        ? "OpenAPI"
-                        : source.kind === "graphql"
-                          ? "GraphQL"
-                          : "MCP"}{" "}
-                      {source.source}
-                    </span>
-                    <span className="mt-1 block">
-                      <AvailabilityControl
-                        kind="install"
-                        id={source.id}
-                        availability={source.availability}
-                        onChanged={refresh}
-                      />
-                    </span>
-                  </span>
-                  <Button
-                    type="button"
-                    variant={confirmingSource === source.id ? "destructive" : "secondary"}
-                    size="sm"
-                    disabled={pending === source.id}
-                    onClick={() => onRemoveSource(source)}
-                  >
-                    {pending === source.id ? (
-                      <Trans>Removing…</Trans>
-                    ) : confirmingSource === source.id ? (
-                      <Trans>Remove from every space?</Trans>
-                    ) : (
-                      <Trans>Remove</Trans>
-                    )}
-                  </Button>
-                </div>
+                  source={source}
+                  confirming={confirmingSource === source.id}
+                  removing={pending === source.id}
+                  onRemove={onRemoveSource}
+                  refresh={refresh}
+                />
               ))}
             </div>
           </div>
         </section>
       ) : null}
+    </div>
+  );
+}
+
+function ToolSourceRow({
+  source,
+  confirming,
+  removing,
+  onRemove,
+  refresh,
+}: {
+  source: CapabilityInstall;
+  confirming: boolean;
+  removing: boolean;
+  onRemove: (install: CapabilityInstall) => void;
+  refresh: PluginConnections["refresh"];
+}) {
+  // Ties the Remove button to its source name, so identical buttons tell apart for screen readers.
+  const nameId = useId();
+  return (
+    <div
+      data-testid="tool-source"
+      className="flex min-w-0 items-center gap-3 rounded-xl px-2.5 py-2"
+    >
+      <ConnectorIcon name={source.name} />
+      <span className="min-w-0 flex-1">
+        <span id={nameId} className="block truncate text-body-lg font-medium">
+          {source.name}
+        </span>
+        <span className="block truncate text-body-sm text-muted-foreground">
+          {source.kind === "api" ? "OpenAPI" : source.kind === "graphql" ? "GraphQL" : "MCP"}{" "}
+          {source.source}
+        </span>
+        <span className="mt-1 block">
+          <AvailabilityControl
+            kind="install"
+            id={source.id}
+            availability={source.availability}
+            onChanged={refresh}
+          />
+        </span>
+      </span>
+      <Button
+        type="button"
+        variant={confirming ? "destructive" : "secondary"}
+        size="sm"
+        aria-describedby={nameId}
+        disabled={removing}
+        onClick={() => onRemove(source)}
+      >
+        {removing ? (
+          <Trans>Removing…</Trans>
+        ) : confirming ? (
+          <Trans>Remove from every space?</Trans>
+        ) : (
+          <Trans>Remove</Trans>
+        )}
+      </Button>
     </div>
   );
 }

@@ -6,8 +6,8 @@ import type { ReactNode } from "react";
 import { act, Suspense } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { isLeavingSession, startCall } from "../../lib/call-session";
-import { rpc } from "../../lib/rpc";
+import { isLeavingSession, startCall } from "../../lib/calls/call-session";
+import { rpc } from "../../lib/query/rpc";
 import { IncomingCall } from "./IncomingCall";
 
 vi.mock("@lingui/react/macro", () => ({
@@ -23,13 +23,13 @@ vi.mock("@rakazo/ui-web", () => ({
     <button {...props}>{children}</button>
   ),
 }));
-vi.mock("../../lib/call-session", () => ({
+vi.mock("../../lib/calls/call-session", () => ({
   isLeavingSession: vi.fn(() => false),
   prepareCallAudio: vi.fn(),
   startCall: vi.fn(),
   useCallSession: () => null,
 }));
-vi.mock("../../lib/rpc", () => ({
+vi.mock("../../lib/query/rpc", () => ({
   rpc: {
     threads: { answerCall: vi.fn(), endCall: vi.fn() },
     notifications: { declineIncomingCall: vi.fn() },

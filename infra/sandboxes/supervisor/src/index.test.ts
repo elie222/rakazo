@@ -4,7 +4,8 @@ import http from "node:http";
 import net from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { resolveSupervisorToken } from "@rakazo/core";
+import { resolveSupervisorToken } from "@rakazo/core/node/secrets-guard";
+import { deferred } from "@rakazo/core/test-async";
 import type Docker from "dockerode";
 import { describe, expect, it, vi } from "vitest";
 import { resolveDockerSocketPath } from "./context.js";
@@ -317,8 +318,15 @@ describe("sandbox supervisor input containment", () => {
     expect(normalizeWorkspaceRelative("/notes\\result.txt")).toBe("notes/result.txt");
     expect(normalizeWorkspaceRelative("//notes///result.txt")).toBe("notes/result.txt");
     expect(() => normalizeWorkspaceRelative("../outside")).toThrow(/escapes/);
-    expect(() => normalizeWorkspaceRelative("notes/./result.txt")).toThrow(/escapes/);
     expect(() => normalizeWorkspaceRelative("notes/../outside")).toThrow(/escapes/);
+    expect(() => normalizeWorkspaceRelative("a/../../x")).toThrow(/escapes/);
+  });
+
+  it("drops current-directory segments the way the adapter does", () => {
+    expect(normalizeWorkspaceRelative("./report.html")).toBe("report.html");
+    expect(normalizeWorkspaceRelative("a/./b")).toBe("a/b");
+    expect(normalizeWorkspaceRelative(".")).toBe("");
+    expect(normalizeWorkspaceRelative("./")).toBe("");
   });
 
   it("requires both bot and workspace identities to match", () => {
@@ -737,13 +745,10 @@ describe("sandbox supervisor input containment", () => {
   it("serializes screen lifecycle operations by container", async () => {
     const locks = new Map<string, Promise<void>>();
     const events: string[] = [];
-    let releaseFirst!: () => void;
-    const firstBlocked = new Promise<void>((resolve) => {
-      releaseFirst = resolve;
-    });
+    const firstBlocked = deferred();
     const first = withKeyedLock(locks, "container-1", async () => {
       events.push("ensure:start");
-      await firstBlocked;
+      await firstBlocked.promise;
       events.push("ensure:end");
     });
     const release = withKeyedLock(locks, "container-1", async () => {
@@ -752,7 +757,7 @@ describe("sandbox supervisor input containment", () => {
 
     await new Promise<void>((resolve) => setImmediate(resolve));
     expect(events).toEqual(["ensure:start"]);
-    releaseFirst();
+    firstBlocked.resolve();
     await Promise.all([first, release]);
     expect(events).toEqual(["ensure:start", "ensure:end", "release"]);
     expect(locks.size).toBe(0);
@@ -1270,8 +1275,9 @@ describe("docker exec stream demux", () => {
 
 describe("computer command identity", () => {
   it("gives commands the workspace user's home, PATH and package prefixes on the screen's display", () => {
-    expect(computerCommandEnv({ display: ":2" })).toEqual([
+    expect(computerCommandEnv({ display: ":2", debugPort: 9223 })).toEqual([
       "DISPLAY=:2",
+      "RAKAZO_CDP_PORT=9223",
       "HOME=/home/rakazo",
       "PATH=/home/rakazo/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
       "NPM_CONFIG_PREFIX=/home/rakazo/.local",

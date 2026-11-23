@@ -4,27 +4,32 @@ import { ChatMarkdown } from "@rakazo/chat-ui/native";
 import type { Bot, BotTemplateListing } from "@rakazo/contracts";
 import { isBotTemplateChanged } from "@rakazo/contracts";
 import { botTemplateApps, formatCron } from "@rakazo/core";
+import { cronLabels } from "@rakazo/i18n/cron";
 import { useQuery } from "@tanstack/react-query";
 import { useLocalSearchParams, useNavigation, useRouter } from "expo-router";
 import type { ReactNode } from "react";
 import { useState } from "react";
 import { ActivityIndicator, Alert, ScrollView, StyleSheet, Text, View } from "react-native";
-import { BotTemplateIcon } from "../../components/bot-template-icon";
-import { ConnectorIcon } from "../../components/connector-icon";
-import { NativeActionButton } from "../../components/native-action-button";
-import { NativeSymbol } from "../../components/native-symbol";
-import { SettingsGroup, SettingsRow } from "../../components/settings-group";
-import { SkillSymbol } from "../../components/skill-symbol";
-import { botTemplateCopy } from "../../lib/bot-template-copy";
-import { cronLabels } from "../../lib/cron";
-import { useUiLocale } from "../../lib/i18n";
-import { native, useMobileTokens, useResolvedAppearance, useThemedStyles } from "../../lib/native";
-import { queryClient, rpcQuery, useSave } from "../../lib/query";
-import type { SearchInboxSession } from "../../lib/search-inbox";
-import { addToSearchInbox, searchInboxSession } from "../../lib/search-inbox";
-import { openFromSettingsSheet } from "../../lib/settings-sheet";
-import { useSideInsets } from "../../lib/side-insets";
-import { errorText } from "../../lib/user-error";
+import { BotTemplateIcon } from "../../components/bots/bot-template-icon";
+import { ConnectorIcon } from "../../components/integrations/connector-icon";
+import { SkillSymbol } from "../../components/integrations/skill-symbol";
+import { NativeActionButton } from "../../components/native/native-action-button";
+import { NativeSymbol } from "../../components/native/native-symbol";
+import { SettingsGroup, SettingsRow } from "../../components/settings/settings-group";
+import { errorText } from "../../lib/api/user-error";
+import { botTemplateCopy } from "../../lib/bots/bot-template-copy";
+import { useUiLocale } from "../../lib/i18n/i18n";
+import { useSideInsets } from "../../lib/layout/side-insets";
+import {
+  native,
+  useMobileTokens,
+  useResolvedAppearance,
+  useThemedStyles,
+} from "../../lib/native/native";
+import { queryClient, rpcQuery, useSave } from "../../lib/query/query";
+import type { SearchInboxSession } from "../../lib/search/search-inbox";
+import { addToSearchInbox, searchInboxSession } from "../../lib/search/search-inbox";
+import { openFromSettingsSheet } from "../../lib/settings/settings-sheet";
 
 /** One template: what it sends, what it adds, and the apps it works with. */
 export default function BotTemplateScreen() {
@@ -46,7 +51,7 @@ export default function BotTemplateScreen() {
         <TemplateDetail template={template} onChanged={() => void templates.refetch()} />
       ) : templates.isPending ? (
         <ActivityIndicator color={tokens.mutedForeground} accessibilityLabel={t`Loading…`} />
-      ) : (
+      ) : templates.isError ? (
         <View style={styles.failure}>
           <Text style={styles.secondary}>
             {errorText(templates.error, t`Could not load templates`)}
@@ -58,6 +63,8 @@ export default function BotTemplateScreen() {
             prominence="secondary"
           />
         </View>
+      ) : (
+        <Text style={styles.secondary}>{t`This template is no longer available.`}</Text>
       )}
     </ScrollView>
   );

@@ -3,7 +3,7 @@ import { Button, SectionHeading } from "@rakazo/ui-web";
 import { useQuery } from "@tanstack/react-query";
 import { Check, Copy, Mail } from "lucide-react";
 import { useCopyText } from "../../lib/copy-text";
-import { useSpaceQueries } from "../../lib/query";
+import { useSpaceQueries } from "../../lib/query/query";
 
 /** The addresses the bots use to sign up and receive mail, beside the logins they use. */
 export function BotEmailAddresses() {

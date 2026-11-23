@@ -5,7 +5,7 @@ tools the bot called during the run.
 
 ## Behavior
 
-- Off by default, so chats stay clean. **Settings → General → Advanced → Show tool activity** turns it on. Nothing stored counts as off; only a saved "on" shows the cards.
+- Off by default, so chats stay clean. **Settings → General → Chat → Show tool activity** turns it on. Nothing stored counts as off; only a saved "on" shows the cards.
 - The choice is stored in the browser's local storage (`rakazo.showToolActivity`), so it
   applies to that browser or desktop install only. It is not saved to the account and does
   not sync between devices.
@@ -32,11 +32,11 @@ API responses are the same with it on or off.
 
 ## Tests
 
-- Unit tests: `apps/web/src/components/ToolActivityDisclosure.test.tsx`,
-  `apps/web/src/lib/tool-activity-preference.test.ts`,
-  `apps/web/src/lib/tool-activity-view.test.ts`, and
-  `apps/web/src/pages/AccountSettingsOverlay.test.tsx`.
-- UI E2E with fake data and screenshots: `apps/web/e2e/tool-activity.spec.ts` covers the
-  `apps/web/e2e/fixtures/tool-activity.html` fixture and one scripted-runtime chat turn in
-  the real app. `apps/web/e2e/tool-activity-disclosure.spec.ts` checks the setting-off view
-  on desktop and mobile widths.
+- Unit tests: `apps/web/src/components/messages/ToolActivityDisclosure.test.tsx`,
+  `apps/web/src/lib/chat/tool-activity-preference.test.ts`,
+  `apps/web/src/lib/chat/tool-activity-view.test.ts`, and
+  `apps/web/src/pages/settings/AccountSettingsOverlay.test.tsx`.
+- UI E2E with fake data and screenshots:
+  [tool-activity.spec.ts](../apps/web/e2e/chat/tool-activity.spec.ts) checks live and finished
+  runs with tool activity enabled at desktop and mobile widths. A separate desktop-width test
+  checks that tool activity is hidden by default and appears after turning the setting on.

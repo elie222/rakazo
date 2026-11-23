@@ -13,16 +13,18 @@ rg --files packages apps | rg '\.(prompt|tool-definition)\.ts$'
 
 The main entry points are:
 
-- `packages/adapters/src/run-instructions.prompt.ts`: main turn instructions and
+- `packages/adapters/src/runs/assembly/run-instructions.prompt.ts`: main turn instructions and
   capability-dependent guidance.
-- `packages/adapters/src/builtin.tool-definition.ts`: built-in tool descriptions
-  and input schemas.
-- `packages/adapters/src/run-replies.prompt.ts` and `continuation.prompt.ts`:
+- `packages/adapters/src/tools/builtin.tool-definition.ts`: the built-in tool list, in
+  order, assembled from `builtin-*.tool-definition.ts` files that hold each area's
+  descriptions and input schemas.
+- `packages/adapters/src/runs/assembly/run-replies.prompt.ts` and `continuation.prompt.ts` in the same folder:
   reply, silence and continuation guidance.
-- `packages/adapters/src/auto-review.prompt.ts` and `team-chat-judge.prompt.ts`:
+- `packages/adapters/src/approvals/auto-review.prompt.ts` and
+  `packages/adapters/src/messaging/team-chat/team-chat-judge.prompt.ts`:
   approval and engagement judges.
-- `packages/adapters/src/history-compaction.prompt.ts` and
-  `apps/api/src/speech-summary.prompt.ts`: conversation and spoken summaries.
+- `packages/adapters/src/runtime/context/history-compaction.prompt.ts` and
+  `apps/api/src/calls/speech-summary.prompt.ts`: conversation and spoken summaries.
 - The remaining prompt files cover shared messaging, helper tasks, memory,
   attachments, time, workspaces and task catalogs.
 

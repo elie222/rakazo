@@ -1,3 +1,4 @@
+import { LifecycleEmailKind } from "@rakazo/contracts";
 import { z } from "zod";
 import type {
   BackgroundJob,
@@ -9,7 +10,14 @@ import type {
   UnreferencedMachine,
 } from "./types.js";
 
+/**
+ * Files one direct message's backup settle lists by name, those past the attachment cap
+ * included, so its message and the sender's notice account for each; more are left out.
+ */
+export const MESSAGING_INBOUND_SETTLE_MAX_ATTACHMENTS = 20;
+
 const payloadSchemas = {
+  "page.revise": z.object({ requestId: z.string().min(1) }),
   "run.continue": z.object({ runId: z.string().min(1) }),
   "routine.wakeup": z.object({
     routineId: z.string().min(1),
@@ -23,6 +31,8 @@ const payloadSchemas = {
     leaseId: z.string().min(1),
   }),
   "skill.teaching-expire": z.object({ skillId: z.string().min(1) }),
+  "run.forget-secrets": z.object({ runId: z.string().min(1) }),
+  "approval.expire": z.object({ runId: z.string().min(1), effectId: z.string().min(1) }),
   "call.expire": z.object({ threadId: z.string().min(1), callId: z.string().min(1) }),
   // The member whose turn asked for it, who pays; older jobs name only the thread.
   "history.compact": z.object({
@@ -57,6 +67,25 @@ const payloadSchemas = {
       .optional(),
   }),
   "messaging.send": z.object({ outboundId: z.string().min(1) }),
+  "messaging.inbound_settle": z.object({
+    provider: z.string().min(1),
+    handle: z.string().min(1),
+    identityId: z.string().min(1),
+    spaceId: z.string().min(1),
+    botId: z.string().min(1),
+    receivedAt: z.number().int().nonnegative(),
+    text: z.string(),
+    attachments: z
+      .array(
+        z.object({
+          name: z.string(),
+          mimeType: z.string(),
+          size: z.number().int().nonnegative().optional(),
+        }),
+      )
+      .max(MESSAGING_INBOUND_SETTLE_MAX_ATTACHMENTS),
+    follower: z.boolean().optional(),
+  }),
   "messaging.reply": z.object({ runId: z.string().min(1) }),
   "messaging.deliver": z.object({ runId: z.string().min(1).optional() }),
   "messaging.progress": z.object({ runId: z.string().min(1) }),
@@ -66,10 +95,12 @@ const payloadSchemas = {
       "secret_tables",
       "messaging_installation",
       "deployment_computer_provider",
+      "deployment_model",
       "purchase_request",
       "purchase_card",
       "purchase_token",
       "payment_wallet",
+      "store_write",
     ]),
     recordId: z.string().min(1),
     ref: z.string().min(1),
@@ -93,12 +124,43 @@ const payloadSchemas = {
   "team_chat.engage": z.object({ externalMessageId: z.string().min(1) }),
   "team_chat.ambient": z.object({ conversationId: z.string().min(1) }),
   "cloud_agent.poll": z.object({ agentId: z.string().min(1) }),
+  "meeting.calendar-sync": z.object({ connectionId: z.string().min(1) }),
+  "meeting.work": z.object({
+    sessionId: z.string().min(1),
+    action: z.enum([
+      "join",
+      "leave",
+      "expire",
+      "reconcile",
+      "transcript",
+      "transcript-check",
+      "cleanup",
+    ]),
+    detached: z
+      .object({
+        provider: z.string().min(1),
+        externalId: z.string().min(1).optional(),
+        recordingId: z.string().min(1).optional(),
+      })
+      .optional(),
+  }),
   "purchase.poll": z.object({ purchaseId: z.string().min(1) }),
   "media.poll": z.object({ jobId: z.string().min(1) }),
   "push.receipt": z.object({
     userId: z.string().min(1),
     ticketId: z.string().min(1),
     tokenDigest: z.string().min(1),
+  }),
+  "email.lifecycle": z.object({
+    kind: LifecycleEmailKind,
+    organizationId: z.string().min(1),
+    userId: z.string().min(1),
+    message: z.object({
+      subject: z.string().min(1),
+      text: z.string().min(1),
+      html: z.string().optional(),
+      headers: z.record(z.string(), z.string()).optional(),
+    }),
   }),
 } satisfies { [Name in BackgroundJobName]: z.ZodType<BackgroundJobPayloads[Name]> };
 
@@ -218,6 +280,30 @@ export function skillTeachingExpireJob(skillId: string, availableAt: Date): Back
   };
 }
 
+/** Keyed to the run, so each new pause moves the one pending cleanup. */
+export function runForgetSecretsJob(runId: string, availableAt: Date): BackgroundJob {
+  return {
+    name: "run.forget-secrets",
+    payload: { runId },
+    availableAt,
+    replaceKey: `run.forget-secrets:${runId}`,
+  };
+}
+
+/** Ends an unattended run's approval card that is still unanswered at `availableAt`. */
+export function approvalExpireJob(
+  runId: string,
+  effectId: string,
+  availableAt: Date,
+): BackgroundJob {
+  return {
+    name: "approval.expire",
+    payload: { runId, effectId },
+    availableAt,
+    replaceKey: `approval.expire:${effectId}`,
+  };
+}
+
 export function callExpireJob(threadId: string, callId: string, availableAt: Date): BackgroundJob {
   return {
     name: "call.expire",
@@ -257,6 +343,39 @@ export function messagingSendJob(outboundId: string, availableAt: Date): Backgro
     availableAt,
     replaceKey: messagingSendJobKey(outboundId),
     maxAttempts: MESSAGING_SEND_MAX_ATTEMPTS,
+  };
+}
+
+export function messagingInboundSettleJobKey(provider: string, handle: string): string {
+  return `messaging.inbound_settle:${JSON.stringify([provider, handle])}`;
+}
+
+/**
+ * Tries of one direct message's backup settle. Its work is a few keyed writes, so a handful rides
+ * out a brief outage, and a job that cannot settle is given up within minutes, not days.
+ */
+export const MESSAGING_INBOUND_SETTLE_MAX_ATTEMPTS = 5;
+
+/** The queue one sender's direct-message settles share, so their jobs run one at a time. */
+export function messagingInboundSettleQueue(identityId: string): string {
+  return `messaging.inbound:${identityId}`;
+}
+
+/**
+ * Backup for settling one direct message whose files download after its webhook was answered.
+ * One sender's jobs share a queue, so after a restart they still settle in the order they came.
+ */
+export function messagingInboundSettleJob(
+  payload: BackgroundJobPayloads["messaging.inbound_settle"],
+  availableAt: Date,
+): BackgroundJob {
+  return {
+    name: "messaging.inbound_settle",
+    payload,
+    availableAt,
+    replaceKey: messagingInboundSettleJobKey(payload.provider, payload.handle),
+    queueName: messagingInboundSettleQueue(payload.identityId),
+    maxAttempts: MESSAGING_INBOUND_SETTLE_MAX_ATTEMPTS,
   };
 }
 
@@ -437,5 +556,27 @@ export function mediaPollJob(jobId: string, availableAt?: Date): BackgroundJob {
     payload: { jobId },
     replaceKey: `media.poll:${jobId}`,
     ...(availableAt ? { availableAt } : {}),
+  };
+}
+
+/** A few tries ride out a database or queue blip; a send that was claimed is never repeated. */
+const LIFECYCLE_EMAIL_MAX_ATTEMPTS = 5;
+
+/**
+ * One lifecycle mail for one owner of one organization, due at `availableAt`. Keyed by kind,
+ * person and organization, so scheduling it again moves the one job, and a person's mails share
+ * a queue, so two that are due together run one after the other.
+ */
+export function lifecycleEmailJob(
+  payload: BackgroundJobPayloads["email.lifecycle"],
+  availableAt: Date,
+): BackgroundJob {
+  return {
+    name: "email.lifecycle",
+    payload,
+    availableAt,
+    replaceKey: `email.lifecycle:${payload.kind}:${payload.userId}:${payload.organizationId}`,
+    queueName: `email.lifecycle:${payload.userId}`,
+    maxAttempts: LIFECYCLE_EMAIL_MAX_ATTEMPTS,
   };
 }

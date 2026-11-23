@@ -244,12 +244,12 @@ demonstrates a missing capability; do not replace the runtime speculatively.
 
 Relevant implementation locations:
 
-- `packages/adapters/src/executor.ts`
-- `packages/adapters/src/history-compaction.ts`
-- `packages/adapters/src/pi-runtime.ts`
+- `packages/adapters/src/runs/executor/executor.ts`
+- `packages/adapters/src/runtime/context/history-compaction.ts`
+- `packages/adapters/src/runtime/pi/pi-runtime.ts`
 - `packages/adapter-kit/src/types.ts`
-- `packages/db/src/messages.ts` and `packages/db/prisma/schema.prisma`
-- `apps/api/src/search.ts`
+- `packages/db/src/threads/messages.ts` and `packages/db/prisma/schema.prisma`
+- `apps/api/src/content/search.ts`
 - `packages/testkit/src/evals/` and `packages/testkit/src/cli/evals.ts`
 - `docs/agent-verification.md`
 
@@ -582,7 +582,7 @@ whole checklist is complete. The implementation goal resumed after this handoff.
 - The runtime invokes the shared context policy inside the guarded provider call,
   before spend reservation, for both main agents and subagents. Screenshot pruning
   still runs first. Generic configured cache retention is forwarded to Pi.
-- `packages/testkit/src/pi-offline.test.ts` verifies actual outgoing HTTP requests
+- `packages/testkit/src/runtime/pi-offline.test.ts` verifies actual outgoing HTTP requests
   for retrieval, snapshots, and cache-aware strategies, oversized tool-result
   shortening, intact tool pairs, delegated tool loops, and rejection of oversized
   required input before provider invocation or spend reservation. All 11 tests passed.

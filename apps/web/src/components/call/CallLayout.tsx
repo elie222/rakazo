@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { Outlet, useNavigate } from "react-router-dom";
-import { useSpaceQueries } from "../../lib/query";
+import { useSpaceQueries } from "../../lib/query/query";
 import { CallCard, CallReturnBar } from "./CallCard";
 import { IncomingCall } from "./IncomingCall";
 import { useIncomingCalls } from "./use-incoming-calls";

@@ -1,4 +1,5 @@
 import { Trans, useLingui } from "@lingui/react/macro";
+import { useTimeout } from "@rakazo/chat-ui/hooks";
 import type { BotSecretMetadata, SettingsScope, VaultRevealed } from "@rakazo/contracts";
 import {
   BotSecretName,
@@ -8,15 +9,16 @@ import {
   otherSitesText,
   vaultKind,
 } from "@rakazo/contracts";
+import { siteHost } from "@rakazo/core";
 import { vaultBotsLine } from "@rakazo/i18n/vault";
 import { Button } from "@rakazo/ui-web";
 import { Check, Copy, Eye, EyeOff } from "lucide-react";
 import type { ReactNode } from "react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { useCopyText } from "../../lib/copy-text";
-import { SettingsPageHeader } from "../SettingsPageHeader";
+import { SettingsPageHeader } from "../settings/SettingsPageHeader";
 import type { VaultAuth } from "./kinds";
-import { siteHost, useVaultKindLabels, VaultTile } from "./kinds";
+import { useVaultKindLabels, VaultTile } from "./kinds";
 import { useVaultBots } from "./VaultItemAccess";
 import { VaultItemActivity, VaultItemUses } from "./VaultItemActivity";
 
@@ -25,7 +27,7 @@ export const REVEAL_MS = 30_000;
 
 const MASK = "••••••••";
 
-function CopyButton({ text }: { text: string }) {
+function CopyButton({ text, describedBy }: { text: string; describedBy: string }) {
   const { t } = useLingui();
   const [copied, copy] = useCopyText();
   return (
@@ -34,6 +36,7 @@ function CopyButton({ text }: { text: string }) {
       variant="ghost"
       size="icon-xs"
       aria-label={copied ? t`Copied` : t`Copy`}
+      aria-describedby={describedBy}
       className="shrink-0 text-muted-foreground"
       onClick={() => copy(text)}
     >
@@ -56,15 +59,18 @@ function DetailRow({
   action?: ReactNode;
   testId?: string;
 }) {
+  const labelId = useId();
   return (
     <div
       data-testid={testId}
       className="flex min-h-11 items-center gap-3 border-t border-border py-2 first:border-t-0"
     >
-      <span className="w-28 shrink-0 text-body-sm text-muted-foreground">{label}</span>
+      <span id={labelId} className="w-28 shrink-0 text-body-sm text-muted-foreground">
+        {label}
+      </span>
       <span className="min-w-0 flex-1 whitespace-pre-line break-words text-body">{children}</span>
       {action}
-      {copy ? <CopyButton text={copy} /> : null}
+      {copy ? <CopyButton text={copy} describedBy={labelId} /> : null}
     </div>
   );
 }
@@ -119,20 +125,18 @@ export function VaultItemDetail({
   const [revealing, setRevealing] = useState(false);
   const [confirmingRemove, setConfirmingRemove] = useState(false);
   const [usesOpen, setUsesOpen] = useState(false);
-  const hideTimer = useRef<number | undefined>(undefined);
   const attempt = useRef(0);
+  useTimeout(hide, revealed ? REVEAL_MS : null, revealed);
 
   useEffect(
     () => () => {
       attempt.current += 1;
-      window.clearTimeout(hideTimer.current);
     },
     [],
   );
 
   function hide() {
     attempt.current += 1;
-    window.clearTimeout(hideTimer.current);
     setRevealed(null);
     setRevealing(false);
   }
@@ -143,11 +147,8 @@ export function VaultItemDetail({
     try {
       const shown = await onReveal();
       if (current !== attempt.current) return null;
-      if (shown) {
-        setRevealed(shown);
-        window.clearTimeout(hideTimer.current);
-        hideTimer.current = window.setTimeout(hide, REVEAL_MS);
-      }
+      // A copy, so revealing again restarts the hide timer.
+      if (shown) setRevealed({ ...shown });
       return shown;
     } finally {
       if (current === attempt.current) setRevealing(false);

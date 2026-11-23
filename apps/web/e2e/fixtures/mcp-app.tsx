@@ -3,10 +3,10 @@ import type { ThreadMessage } from "@rakazo/contracts";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { composerDraftKey, subscribeComposerOffer } from "../../src/lib/composer-draft";
-import { bootstrapI18n, i18n } from "../../src/lib/i18n";
-import { queryClient } from "../../src/lib/query";
-import { applyResolvedAppearance } from "../../src/lib/ui-appearance";
+import { composerDraftKey, subscribeComposerOffer } from "../../src/lib/composer/composer-draft";
+import { bootstrapI18n, i18n } from "../../src/lib/locale/i18n";
+import { applyResolvedAppearance } from "../../src/lib/preferences/ui-appearance";
+import { queryClient } from "../../src/lib/query/query";
 import "../../src/styles.css";
 import { BOT, FixtureTranscript } from "./thread-fixture";
 

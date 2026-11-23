@@ -36,25 +36,38 @@ x-app-environment: &app-environment # Runtime
   OBJECT_STORAGE_SECRET_ACCESS_KEY:
   OBJECT_STORAGE_PREFIX:
   OBJECT_STORAGE_PATH_STYLE:
+  OBJECT_STORAGE_AUTH:
+  OBJECT_STORAGE_TENANT:
+  OBJECT_STORAGE_CLIENT_ID:
+  OBJECT_STORAGE_CERTIFICATE:
+  OBJECT_STORAGE_FEDERATED_TOKEN_FILE:
   WAKEUP_DRIVER: graphile
   AGENT_RUNTIME: pi
   API_URL:
   MAX_UPLOAD_SIZE_MB:
   MAX_ATTACHMENTS_PER_MESSAGE:
+  WORKSPACE_SAVE_MAX_GB:
   RAKAZO_UPDATE_RESTART_SUPERVISOR:
   TICKET_BOARD_ENABLED:
   USER_DEVICES_ENABLED:
-  BOT_MESSAGE_MAX_HOPS:
   RAKAZO_MESSAGE_USER_MAX_CHARS:
   TEACH_RECORDING_TTL_MS:
   STUCK_WORK_NOTIFY_AFTER_MS:
   STUCK_WORK_EXPIRE_AFTER_MS:
+  UNATTENDED_APPROVAL_EXPIRE_AFTER_MS:
   PHONE_CALLS_ENABLED:
   PHONE_CALL_RING_SECONDS:
   PHONE_CALL_COOLDOWN_MINUTES:
   # The worker names each bot's address to it and sends its email; the API receives the mail.
   INBOUND_EMAIL_DOMAIN:
   BOT_EMAIL_SMTP_URL:
+  # Account mail: the API sends sign-in and account messages, the worker the ones queued for later.
+  EMAIL_PROVIDER:
+  EMAIL_API_KEY:
+  SMTP_URL:
+  EMAIL_FROM:
+  EMAIL_REPLY_TO:
+  EMAIL_COPY_DIR: ${EMAIL_COPY_DIR:-/app/email-copy}
   RAKAZO_SECRETS_ALLOW_PRIVATE_HTTP:
   EXPO_ACCESS_TOKEN:
   APNS_VOIP_KEY_ID:
@@ -73,8 +86,10 @@ x-app-environment: &app-environment # Runtime
   INFISICAL_FOLDER: ${INFISICAL_FOLDER:-}
   # Logs, errors, traces and analytics
   LOG_LEVEL:
+  GRAPHILE_LOGGER_DEBUG:
   SECURITY_EVENT_RETENTION_DAYS:
   AUDIT_EVENT_RETENTION_DAYS:
+  CHAT_HISTORY_RETENTION_DAYS:
   AUDIT_LOG_WEBHOOK_URL:
   AUDIT_LOG_WEBHOOK_AUTHORIZATION:
   LOG_FORMAT:
@@ -108,6 +123,7 @@ x-app-environment: &app-environment # Runtime
   MODEL_STREAM_MAX_RETRIES:
   MODEL_STREAM_TIMEOUT_MS:
   MODEL_CONNECT_TIMEOUT_MS:
+  MODEL_CREDIT_OFFERINGS:
   MODEL_STREAM_IDLE_TIMEOUT_MS:
   RAKAZO_LOCAL_MODELS:
   RAKAZO_LOCAL_MODELS_URL:
@@ -122,6 +138,7 @@ x-app-environment: &app-environment # Runtime
   RAKAZO_OPENAI_COMPATIBLE_VISION_MODELS:
   RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC:
   RAKAZO_OPENAI_COMPAT_PRIVATE_HOSTS:
+  RAKAZO_MODEL_PROVIDER_ALLOWLIST:
   RAKAZO_AUTO_REVIEW_PROVIDER:
   RAKAZO_AUTO_REVIEW_MODEL:
   RAKAZO_AUTO_REVIEW_MIN_CONFIDENCE:
@@ -134,6 +151,27 @@ x-app-environment: &app-environment # Runtime
   MEDIA_GENERATION_API_KEY:
   MEDIA_GENERATION_IMAGE_MODEL:
   MEDIA_GENERATION_VIDEO_MODEL:
+  # Optional: publish only webhooks and other inbound deliveries at a public address, so the app
+  # can stay private. Off unless INGRESS_PROVIDER is set (docs/self-host-webhooks.md).
+  INGRESS_PROVIDER:
+  INGRESS_PUBLIC_URL:
+  INGRESS_PORT:
+  TAILSCALE_INGRESS_HOSTNAME:
+  TAILSCALE_INGRESS_TAILNET:
+  TAILSCALE_INGRESS_SERVE_CONFIG:
+  TAILSCALE_INGRESS_SOCKET:
+  MEETING_PROVIDER:
+  MEETING_API_KEY:
+  MEETING_REGION:
+  MEETING_SPACE_IDS:
+  MEETING_WEBHOOK_SECRET:
+  MEETING_WEBHOOK_SIGNATURE:
+  MEETING_SIGNING_KEY:
+  MEETING_PUBLIC_ORIGIN:
+  MEETING_LIVE_VOICE:
+  MEETING_CALENDAR_CLIENT_ID:
+  MEETING_CALENDAR_CLIENT_SECRET:
+  MEETING_CALENDAR_WEBHOOK_SECRET:
   PAID_SERVICES_PROVIDER:
   PAID_SERVICES_API_KEY:
   PAID_SERVICES_BASE_URL:
@@ -169,6 +207,10 @@ x-app-environment: &app-environment # Runtime
   OPENCODE_API_KEY:
   QWEN_TOKEN_PLAN_API_KEY:
   QWEN_TOKEN_PLAN_CN_API_KEY:
+  QWEN_TOKEN_PLAN_INDIVIDUAL_API_KEY:
+  QWEN_TOKEN_PLAN_INDIVIDUAL_CN_API_KEY:
+  QWEN_TOKEN_PLAN_TEAM_API_KEY:
+  QWEN_TOKEN_PLAN_TEAM_CN_API_KEY:
   RADIUS_API_KEY:
   TOGETHER_API_KEY:
   XAI_API_KEY:
@@ -286,8 +328,11 @@ x-app-environment: &app-environment # Runtime
   WHATSAPP_PHONE_NUMBER_ID:
   WHATSAPP_APP_SECRET:
   WHATSAPP_VERIFY_TOKEN:
+  WHATSAPP_API_URL:
+  WHATSAPP_BOT_USERNAME:
   TELEGRAM_BOT_TOKEN:
   TELEGRAM_WEBHOOK_SECRET_TOKEN:
+  TELEGRAM_GROUPS:
   LARK_APP_ID:
   LARK_APP_SECRET:
   LARK_VERIFICATION_TOKEN:
@@ -303,6 +348,8 @@ x-app-environment: &app-environment # Runtime
   http_proxy: ${http_proxy:-${HTTP_PROXY:-}}
   https_proxy: ${https_proxy:-${HTTPS_PROXY:-}}
   no_proxy: ${no_proxy:-${NO_PROXY:-}}
+  # Hosts the proxy must be asked for by name instead of the checked address.
+  RAKAZO_PROXY_CONNECT_BY_HOSTNAME_HOSTS:
 
 services:
   postgres:
@@ -480,6 +527,8 @@ services:
     environment:
       <<: *app-environment
       # Sign-in, sessions, billing and inbound webhooks: API only.
+      # Where the ingress forwards to: the inbound listener, never the app port.
+      INGRESS_UPSTREAM_URL: http://api:${INGRESS_PORT:-3101}
       API_HOST: "0.0.0.0"
       API_PORT:
       BETTER_AUTH_SECRET:
@@ -517,13 +566,7 @@ services:
       SENTRY_BROWSER_DSN: ${SENTRY_BROWSER_DSN:-}
       PRIVACY_POLICY_URL:
       INBOUND_EMAIL_SECRET:
-      WELCOME_EMAIL_ENABLED:
       EXPERIMENTS:
-      EMAIL_PROVIDER:
-      EMAIL_API_KEY:
-      SMTP_URL:
-      EMAIL_FROM:
-      EMAIL_REPLY_TO:
       STRIPE_SECRET_KEY:
       STRIPE_WEBHOOK_SECRET:
       STRIPE_PRICE_ID:
@@ -536,11 +579,13 @@ services:
       RAKAZO_MIN_CLIENT_BUILD:
       RAKAZO_NAV_LINKS:
       RAKAZO_ADMIN_EMAILS:
+      DEPLOYMENT_VOICE:
       VOICE_SUMMARY_MIN_CHARS:
     expose:
       - "3100"
     volumes:
       - appdata:/data
+      - ingress:/run/ingress
     networks:
       - app
       - data
@@ -577,7 +622,7 @@ services:
     # takes most of the worker's CPU.
     command: ["node", "--enable-source-maps", "--max-semi-space-size=64", "dist/index.js"]
     # A stop lets the running jobs finish rather than killing them mid-way, which would leave each
-    # locked for hours. Above JOB_DRAIN_TIMEOUT_MS in packages/adapters/src/wakeup.ts.
+    # locked for hours. Above JOB_DRAIN_TIMEOUT_MS in packages/adapters/src/runs/wakeups/wakeup.ts.
     stop_grace_period: 50m
     healthcheck:
       test: ["CMD", "node", "dist/health-check.js"]
@@ -599,6 +644,7 @@ services:
       replicas: ${RAKAZO_WORKER_REPLICAS:-1}
     environment:
       <<: *app-environment
+      WEB_ORIGIN:
       GRAPHILE_WORKER_CONCURRENCY:
       # A stopping worker ends the turns it is running before it hands them back, which fits
       # inside stop_grace_period. The deploy starts its replacement first, so nothing waits.
@@ -669,6 +715,32 @@ services:
       start_period: 2m
       start_interval: 1s
 
+  # Opt-in (COMPOSE_PROFILES=tailscale-ingress with INGRESS_PROVIDER=tailscale): a tailnet node of
+  # its own that publishes only the API's inbound listener through Funnel. The app keeps its
+  # private name; this node's name is public (docs/self-host-webhooks.md).
+  tailscale-ingress:
+    image: ${TAILSCALE_IMAGE:-tailscale/tailscale:v1.94.2@sha256:95e528798bebe75f39b10e74e7051cf51188ee615934f232ba7ad06a3390ffa1}
+    profiles: [tailscale-ingress]
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      TS_AUTHKEY: ${TAILSCALE_INGRESS_AUTH_KEY:-}
+      TS_HOSTNAME: ${TAILSCALE_INGRESS_HOSTNAME:-}
+      TS_STATE_DIR: /var/lib/tailscale
+      TS_USERSPACE: "true"
+      # Shared with the API, which writes the serve config and reads the node's status here.
+      TS_SOCKET: /var/run/tailscale/tailscaled.sock
+      TS_SERVE_CONFIG: /var/run/tailscale/serve.json
+    volumes:
+      - tailscale-ingress-state:/var/lib/tailscale
+      - ingress:/var/run/tailscale
+    networks:
+      - app
+    depends_on:
+      api:
+        condition: service_healthy
+
   # The updater holds the Docker socket, which is root-equivalent on the host, so it is opt-in and
   # deliberately the narrowest service here: no `ports` (nothing on the host), only the dedicated
   # `control` network shared with the API, and no `env_file` — secrets stay in the bind-mounted
@@ -686,6 +758,8 @@ services:
       args:
         GIT_SHA: ${GIT_SHA:-}
     restart: unless-stopped
+    # Allow a 10-minute pull, 90-minute recreate and 90-minute recovery, plus checks.
+    stop_grace_period: 4h
     init: true
     logging: *logging
     user: root
@@ -698,9 +772,11 @@ services:
       # Keep interpolation optional so deployments that do not enable this profile need no token.
       # resolveUpdaterConfig still refuses to start the sidecar without a dedicated secure value.
       RAKAZO_UPDATER_TOKEN: ${RAKAZO_UPDATER_TOKEN:-}
+      RAKAZO_AUTO_UPDATE_INTERVAL_HOURS: ${RAKAZO_AUTO_UPDATE_INTERVAL_HOURS:-0}
       RAKAZO_UPDATER_HOST: "0.0.0.0"
       RAKAZO_UPDATER_PORT: "7092"
       RAKAZO_IMAGE: ${RAKAZO_IMAGE:-ghcr.io/elie222/rakazo/app}
+      RAKAZO_COMPUTER_IMAGE: ${RAKAZO_COMPUTER_IMAGE:-ghcr.io/elie222/rakazo/computer}
       # `-p` is available to Compose interpolation but is not injected into containers unless it is
       # declared here. The sidecar must target the project the operator actually started.
       COMPOSE_PROJECT_NAME: ${COMPOSE_PROJECT_NAME:-rakazo-prod}
@@ -772,6 +848,8 @@ services:
         condition: service_started
 
 volumes:
+  ingress:
+  tailscale-ingress-state:
   postgres:
   pgdata:
   appdata:

@@ -11,14 +11,15 @@ name: Organizations
     element: "Organization.*"
     direction: DOWN
     timeout: 15000
+# The row opens a menu: the organizations, a new one, and the active one's settings.
 - tapOn: "Organization.*"
 - extendedWaitUntil:
-    visible: "Create organization"
+    visible: "New organization"
     timeout: 15000
 - waitForAnimationToEnd:
     timeout: 3000
 - takeScreenshot: 01-account-organization
-- tapOn: "Create organization"
+- tapOn: "New organization"
 - extendedWaitUntil:
     visible: "Name"
     timeout: 15000
@@ -56,6 +57,10 @@ name: Organizations
     timeout: 15000
 - tapOn: "Organization.*"
 - extendedWaitUntil:
+    visible: "Organization settings"
+    timeout: 15000
+- tapOn: "Organization settings"
+- extendedWaitUntil:
     visible: ".*Delete organization.*"
     timeout: 15000
 - waitForAnimationToEnd:
@@ -76,3 +81,18 @@ name: Organizations
 - waitForAnimationToEnd:
     timeout: 3000
 - takeScreenshot: 08-organization-menu
+- openLink: "rakazo:///account"
+- extendedWaitUntil:
+    visible: "Organization.*"
+    timeout: 15000
+- tapOn: "Organization.*"
+- extendedWaitUntil:
+    visible: "Members.*"
+    timeout: 15000
+- tapOn: "Members.*"
+- extendedWaitUntil:
+    visible: "Invite"
+    timeout: 15000
+- waitForAnimationToEnd:
+    timeout: 3000
+- takeScreenshot: 09-organization-members

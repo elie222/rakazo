@@ -57,7 +57,7 @@ describe("logo-derived avatar prototype", () => {
 
   it("leaves a manually selected shape intact", () => {
     const html = renderToString(<BotAvatar color="#8B5CF6::shape_3" avatarSet="rakazo" />);
-    expect(html).toContain("bot-character-eyes");
+    expect(html).toContain("rakazo-shape-avatar");
     expect(html).not.toContain("bot-avatar-body.png");
   });
 

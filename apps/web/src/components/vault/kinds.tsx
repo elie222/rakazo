@@ -36,10 +36,6 @@ export function useVaultKindLabels() {
   return { one, many };
 }
 
-export function siteHost(origin: string): string {
-  return URL.canParse(origin) ? new URL(origin).host.replace(/^www\./, "") : origin;
-}
-
 /** The first letter or digit, so an IPv6 site shows "1", not "[". */
 function initial(text: string): string | undefined {
   return Array.from(text)

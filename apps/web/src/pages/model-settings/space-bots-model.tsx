@@ -1,10 +1,12 @@
+import { plural } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
 import type { Bot } from "@rakazo/contracts";
 import { botsWithOwnModel } from "@rakazo/core";
 import { Button, Popover, PopoverContent, PopoverTrigger, toast } from "@rakazo/ui-web";
 import { Bot as BotIcon } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useSpaceRpc } from "../../lib/space-rpc";
+import { useSave } from "../../lib/query/query";
+import { useSpaceRpc } from "../../lib/query/space-rpc";
 
 /**
  * Bots that ignore the main model. They stay out of sight behind a small icon by the
@@ -16,7 +18,6 @@ export function SpaceBotsModelButton({ mainModelKey }: { mainModelKey: string })
   const { t } = useLingui();
   const [bots, setBots] = useState<Bot[] | null>(null);
   const [open, setOpen] = useState(false);
-  const [pending, setPending] = useState(false);
   const shownKey = useRef<string | null>(null);
   const latest = useRef(0);
   const known = useRef<Bot[]>([]);
@@ -38,21 +39,20 @@ export function SpaceBotsModelButton({ mainModelKey }: { mainModelKey: string })
 
   const pinned = bots ? botsWithOwnModel(bots) : [];
 
-  const switchAll = useCallback(
-    async (targets: Bot[]) => {
-      setPending(true);
-      // Each bot saves on its own; any that fail are named and stay listed to retry.
-      const results = await Promise.allSettled(
+  const switchAll = useSave({
+    // Each bot saves on its own; any that fail are named and stay listed to retry.
+    save: (targets: Bot[], client) =>
+      Promise.allSettled(
         targets.map((bot) =>
-          rpc.bots.update({
+          client.bots.update({
             botId: bot.id,
             modelProvider: null,
             modelId: null,
             thinkingLevel: null,
           }),
         ),
-      );
-      setPending(false);
+      ),
+    onSaved: async (results, targets) => {
       setOpen(false);
       const failed = targets.filter((_, index) => results[index]?.status === "rejected");
       // Switched bots drop off at once, even if the refresh below fails.
@@ -67,8 +67,10 @@ export function SpaceBotsModelButton({ mainModelKey }: { mainModelKey: string })
       }
       await load();
     },
-    [load, rpc, t],
-  );
+  });
+  // The notice outlives the render that raised it, so its action reaches the latest hook.
+  const switchLatest = useRef(switchAll.run);
+  switchLatest.current = switchAll.run;
 
   useEffect(() => {
     // The first load is what was already there; later ones follow a main model change.
@@ -78,15 +80,16 @@ export function SpaceBotsModelButton({ mainModelKey }: { mainModelKey: string })
       const stay = next ? botsWithOwnModel(next) : [];
       if (!changed || !stay.length) return;
       const names = stay.map((bot) => bot.name).join(", ");
+      const count = stay.length;
       toast(
-        stay.length === 1 ? t`${names} keeps its own model` : t`${names} keep their own model`,
+        t`${plural(count, { one: `${names} keeps its own model`, other: `${names} keep their own model` })}`,
         {
           id: "space-bots-model",
-          action: { label: t`Use main model`, onClick: () => void switchAll(stay) },
+          action: { label: t`Use main model`, onClick: () => switchLatest.current(stay) },
         },
       );
     });
-  }, [load, mainModelKey, switchAll, t]);
+  }, [load, mainModelKey, t]);
 
   // The notice acts on this Space's bots, so it goes when this view does.
   useEffect(() => () => void toast.dismiss("space-bots-model"), []);
@@ -114,10 +117,10 @@ export function SpaceBotsModelButton({ mainModelKey }: { mainModelKey: string })
         <Button
           variant="outline"
           size="sm"
-          disabled={pending}
-          onClick={() => void switchAll(pinned)}
+          disabled={switchAll.pending}
+          onClick={() => switchAll.run(pinned)}
         >
-          {pending ? t`Switching…` : t`Use main model`}
+          {switchAll.pending ? t`Switching…` : t`Use main model`}
         </Button>
       </PopoverContent>
     </Popover>

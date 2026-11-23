@@ -13,6 +13,7 @@ const api = vi.hoisted(() => ({
   connect: vi.fn(),
   skills: vi.fn(),
   skill: vi.fn(),
+  favicon: vi.fn(),
 }));
 // One space, so no "Available in" choice appears.
 vi.mock("./space-availability", () => ({
@@ -22,16 +23,19 @@ vi.mock("./space-availability", () => ({
   useOwnSpaces: () => [],
 }));
 
-vi.mock("../../lib/rpc", () => ({
+vi.mock("../../lib/query/rpc", () => ({
   rpc: {
     capabilities: { pluginPreview: api.preview, install: api.install, pluginParts: api.parts },
     mcp: { assignments: { approve: api.approve } },
     agentSkills: { list: api.skills, get: api.skill },
   },
 }));
-vi.mock("../../lib/mcp-connect", () => ({ connectMcpOauth: api.connect }));
+vi.mock("../../lib/integrations/mcp-connect", () => ({ connectMcpOauth: api.connect }));
 vi.mock("@rakazo/chat-ui/web", () => ({
-  useLinkFavicon: () => ({ icon: null, unusable: () => undefined }),
+  useLinkFavicon: (site: string) => {
+    api.favicon(site);
+    return { icon: null, unusable: () => undefined };
+  },
 }));
 vi.mock("@lingui/react/macro", () => ({
   useLingui: () => ({
@@ -59,10 +63,10 @@ vi.mock("@rakazo/ui-web", () => {
 });
 
 import { ConnectorDetail } from "../../pages/plugins/connector-detail";
-import { ConnectorIcon } from "../../pages/plugins/parts";
+import type { TileContext } from "../../pages/plugins/parts";
+import { CatalogTile, ConnectorIcon } from "../../pages/plugins/parts";
 import type { PluginConnections } from "../../pages/plugins/use-plugin-connections";
-
-import { PluginDetail, PluginLogo } from "./plugin-marketplace";
+import { PluginDetail, PluginLogo, PluginRow } from "./plugin-marketplace";
 
 const source = "https://github.com/example/notes";
 const preview = {
@@ -416,5 +420,124 @@ describe("integration fallback icons", () => {
     expect(
       [...container.querySelectorAll("img")].map((image) => image.getAttribute("src")),
     ).toEqual([logo, logo, logo]);
+  });
+
+  it("waits for catalog icons to enter view before requesting artwork or a favicon", async () => {
+    let onIntersection!: IntersectionObserverCallback;
+    const disconnect = vi.fn();
+    vi.stubGlobal(
+      "IntersectionObserver",
+      class {
+        observe = vi.fn();
+        unobserve = vi.fn();
+        disconnect = disconnect;
+
+        constructor(callback: IntersectionObserverCallback) {
+          onIntersection = callback;
+        }
+      },
+    );
+    const connectorLogo = "https://example.test/connector.png";
+    const pluginLogo = "https://example.test/plugin.png";
+    const site = "https://plugin.example.test";
+    try {
+      await act(async () =>
+        root.render(
+          <>
+            <ConnectorIcon name="Connector" logo={connectorLogo} />
+            <PluginRow
+              name="Plugin"
+              logo={pluginLogo}
+              description=""
+              installed={false}
+              onOpen={vi.fn()}
+            />
+            <PluginRow
+              name="Fallback"
+              site={site}
+              description=""
+              installed={false}
+              onOpen={vi.fn()}
+            />
+          </>,
+        ),
+      );
+      const [connector, plugin, fallback] = [...container.querySelectorAll(".place-items-center")];
+      if (!connector || !plugin || !fallback) throw new Error("Missing catalog icon placeholders");
+      expect(container.querySelectorAll("img")).toHaveLength(0);
+      expect(api.favicon).not.toHaveBeenCalledWith(site);
+      const intersect = async (target: Element, isIntersecting: boolean) =>
+        act(async () =>
+          onIntersection(
+            [{ target, isIntersecting } as IntersectionObserverEntry],
+            {} as IntersectionObserver,
+          ),
+        );
+      await intersect(connector, true);
+      await intersect(plugin, false);
+      expect([...container.querySelectorAll("img")].map((image) => image.src)).toEqual([
+        connectorLogo,
+      ]);
+      await intersect(plugin, true);
+      expect([...container.querySelectorAll("img")].map((image) => image.src)).toEqual([
+        connectorLogo,
+        pluginLogo,
+      ]);
+      expect(api.favicon).not.toHaveBeenCalledWith(site);
+      await intersect(fallback, true);
+      expect(api.favicon).toHaveBeenCalledWith(site);
+      expect(disconnect).toHaveBeenCalledOnce();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("names each Added button after its standalone plugin without changing the visible text", async () => {
+    await act(async () =>
+      root.render(
+        <>
+          <PluginRow name="Notes Board" description="" installed onOpen={vi.fn()} />
+          <PluginRow name="Checklist Pack" description="" installed onOpen={vi.fn()} />
+          <PluginRow name="Task Cards" description="" installed={false} onOpen={vi.fn()} />
+        </>,
+      ),
+    );
+    const actions = [
+      ...container.querySelectorAll('[data-testid="plugin-row"] > button:last-child'),
+    ];
+    expect(actions.map((node) => node.getAttribute("aria-label"))).toEqual([
+      "Added: Notes Board",
+      "Added: Checklist Pack",
+      "Add Task Cards",
+    ]);
+    expect(actions.map((node) => node.textContent)).toEqual(["Added", "Added", "Add"]);
+  });
+
+  it("names each Add button after its app and hides the decorative initial", async () => {
+    const item = { connectorId: "gm", slug: "gmail", name: "Gmail" } as never;
+    const context = {
+      connections: { itemConnected: () => false, pending: null, connect: vi.fn() },
+      pluginForApp: new Map(),
+      onOpenApp: vi.fn(),
+      onOpenDetail: vi.fn(),
+    } as unknown as TileContext;
+    await act(async () =>
+      root.render(
+        <>
+          <PluginRow name="Slack" description="" installed={false} onOpen={() => undefined} />
+          <CatalogTile item={item} label="Gmail" context={context} />
+        </>,
+      ),
+    );
+    const buttons = [...container.querySelectorAll("button")];
+    expect(buttons.map((node) => node.getAttribute("aria-label"))).toEqual([
+      null,
+      "Add Slack",
+      "Add Gmail",
+    ]);
+    expect(buttons.slice(1).map((node) => node.textContent)).toEqual(["Add", "Add"]);
+    const initials = [...container.querySelectorAll(".place-items-center")];
+    expect(initials).toHaveLength(2);
+    for (const initial of initials) expect(initial.getAttribute("aria-hidden")).toBe("true");
   });
 });

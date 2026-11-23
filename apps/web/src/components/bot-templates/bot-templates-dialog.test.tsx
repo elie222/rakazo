@@ -15,7 +15,7 @@ const bots = vi.hoisted(() => ({
   get: vi.fn(),
   list: vi.fn(),
 }));
-vi.mock("../../lib/rpc", () => {
+vi.mock("../../lib/query/rpc", () => {
   const rpc = { bots, connections: { catalog: vi.fn(async () => []) } };
   return { rpc, rpcForSpace: () => rpc, createSpaceRpc: () => rpc, selectedSpaceId: () => null };
 });
@@ -50,7 +50,7 @@ vi.mock("@rakazo/ui-web", () => {
 });
 vi.mock("../integrations/plugin-marketplace", () => ({ PluginLogo: () => null, ROW_HOVER: "" }));
 
-import { useSpaceQueries } from "../../lib/query";
+import { useSpaceQueries } from "../../lib/query/query";
 import { BotTemplatesDialog } from "./bot-templates-dialog";
 
 const template: BotTemplateListing = {

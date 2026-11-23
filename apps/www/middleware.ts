@@ -2,9 +2,6 @@ import { next, rewrite } from "@vercel/functions";
 import {
   AGENT_DISCOVERY_LINKS,
   getMarkdownAlternate,
-  getMarkdownDocument,
-  getStaticMarkdownPath,
-  markdownResponse,
   negotiateRepresentation,
 } from "./src/agent-content.js";
 
@@ -38,23 +35,19 @@ export default function middleware(request: Request): Response {
 
   if (request.method !== "GET" && request.method !== "HEAD") return next();
 
-  if (negotiateRepresentation(request.headers.get("accept")) === "markdown") {
-    const markdown = getMarkdownDocument(url.pathname);
-    if (markdown) return markdownResponse(markdown, request.method);
-    const staticMarkdown = getStaticMarkdownPath(url.pathname);
-    if (staticMarkdown) {
-      return rewrite(new URL(staticMarkdown, url), {
-        headers: {
-          "Content-Language": "en",
-          "Content-Type": "text/markdown; charset=utf-8",
-          Link: AGENT_DISCOVERY_LINKS,
-          Vary: VARY_HEADER,
-        },
-      });
-    }
-  }
-
   const markdownAlternate = getMarkdownAlternate(url.pathname);
+  if (markdownAlternate && negotiateRepresentation(request.headers.get("accept")) === "markdown") {
+    const destination = new URL(url);
+    destination.pathname = markdownAlternate;
+    return rewrite(destination, {
+      headers: {
+        "Content-Language": "en",
+        "Content-Type": "text/markdown; charset=utf-8",
+        Link: AGENT_DISCOVERY_LINKS,
+        Vary: VARY_HEADER,
+      },
+    });
+  }
   return next({
     headers: {
       Link: [

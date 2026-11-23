@@ -22,3 +22,43 @@ jobs:
     secrets:
       S3_ACCESS_KEY_ID: ${{ secrets.S3_ACCESS_KEY_ID }}
       S3_SECRET_ACCESS_KEY: ${{ secrets.S3_SECRET_ACCESS_KEY }}
+
+  # User-felt web numbers (startup, opening and switching chats, typing, resize, idle) held to
+  # fixed lines on one runner type. Results land in the job summary; a number past its line fails
+  # the job.
+  web-performance:
+    name: Web performance scorecard
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - name: Start Postgres
+        uses: ./.github/actions/start-postgres
+      - uses: ./.github/actions/setup-workspace
+        with:
+          playwright: "true"
+      - run: pnpm db:generate
+      - name: Install Chromium
+        timeout-minutes: 5
+        run: pnpm --filter @rakazo/web exec playwright install chromium
+      - name: Wait for Postgres
+        run: bash .github/actions/start-postgres/wait.sh
+      - name: Measure
+        env:
+          REPORT: ${{ runner.temp }}/web-performance.json
+        run: pnpm perf:web-chat --label=nightly --sizes=100 --samples=7 --warmups=2 --database-url "$CI_POSTGRES_URL" --out "$REPORT"
+      - name: Check budgets
+        env:
+          REPORT: ${{ runner.temp }}/web-performance.json
+          RAKAZO_ENV_FILE: none
+        run: |
+          set -o pipefail
+          pnpm --silent perf:web-chat check "$REPORT" | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: Upload report
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: web-performance
+          path: ${{ runner.temp }}/web-performance.json
+          if-no-files-found: ignore
+          retention-days: 30

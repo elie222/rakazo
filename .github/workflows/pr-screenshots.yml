@@ -11,6 +11,19 @@ on:
       pull_request:
         required: true
         type: number
+    # Named, so a caller hands over these five rather than every repository secret: this job
+    # reads a pull request's text and browses its preview, so the set it could reach stays small.
+    secrets:
+      CLAUDE_CODE_OAUTH_TOKEN:
+        required: false
+      CODEX_SUBSCRIPTION_AUTH:
+        required: false
+      GH_DEPENDENCY_UPDATES_PAT:
+        required: false
+      S3_ACCESS_KEY_ID:
+        required: false
+      S3_SECRET_ACCESS_KEY:
+        required: false
 
 permissions: {}
 
@@ -34,7 +47,6 @@ jobs:
       SCREENSHOT_AGENT: ${{ vars.PR_SCREENSHOT_AGENT || 'codex' }}
     outputs:
       pr: ${{ steps.pr.outputs.pr }}
-      prompt: ${{ steps.pr.outputs.prompt }}
       preview_url: ${{ steps.pr.outputs.preview_url }}
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
@@ -85,26 +97,35 @@ jobs:
               '{title, head_sha: .head.sha, body: (.body // ""), changed_files: ($files | split("\n") | map(select(. != ""))), preview_url: $url, existing_e2e_screenshots: $evidence}' \
               > "$dir/pr.json"
           gh pr diff "$pr" --repo "$GITHUB_REPOSITORY" > "$dir/full.diff" 2>/dev/null || echo "(diff unavailable)" > "$dir/full.diff"
-          delimiter="PROMPT_$(openssl rand -hex 16)"
+          # Not a job output: GitHub drops an output that contains anything matching a secret.
+          python3 .github/scripts/pr-screenshots.py prompt .github/prompts/pr-screenshots.md \
+            "$dir/pr.json" "$dir/full.diff" > "$dir/prompt.txt"
           {
-            echo "prompt<<$delimiter"
-            python3 .github/scripts/pr-screenshots.py prompt .github/prompts/pr-screenshots.md \
-              "$dir/pr.json" "$dir/full.diff"
-            echo "$delimiter"
             echo "pr=$pr"
             echo "preview_url=$preview_url"
+            echo "prompt_file=$dir/prompt.txt"
           } >> "$GITHUB_OUTPUT"
+      - name: Hand over the prompt
+        if: steps.pr.outputs.pr != ''
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: pr-screenshot-prompt-${{ github.run_id }}-${{ github.run_attempt }}-${{ inputs.pull_request }}
+          path: |
+            ${{ steps.pr.outputs.prompt_file }}
+            ${{ runner.temp }}/pr-screenshots/full.diff
+          retention-days: 1
 
-  # Shows the change on the pull request without its author taking screenshots. The agent only
-  # gets browser tools: no files, shell or web access, so the pull request and the preview it
-  # browses, which anyone may write, cannot reach the login in its environment. The browser runs
-  # as a separate user that cannot read the runner's files or processes either.
+  # Shows the change on the pull request without its author taking screenshots. The pull request
+  # and the preview, which anyone may write, never reach a credential: the Codex agent reads the
+  # checkout through an offline, read-only shell while a proxy holds its login (see below), and the
+  # opt-in Claude agent gets browser tools only. The browser runs as a separate user that cannot
+  # read the runner's files or processes either.
   screenshots:
     name: Screenshot the change
     needs: screenshot-context
     if: needs.screenshot-context.outputs.pr != ''
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 40
     # Only Codex uses the shared login; other agents get a run-specific group.
     concurrency:
       group: ${{ (vars.PR_SCREENSHOT_AGENT || 'codex') == 'codex' && 'codex-subscription' || format('screenshot-agent-{0}-{1}-{2}', github.run_id, github.run_attempt, inputs.pull_request) }}
@@ -122,6 +143,20 @@ jobs:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: pr-screenshot-prompt-${{ github.run_id }}-${{ github.run_attempt }}-${{ inputs.pull_request }}
+          path: ${{ runner.temp }}/prompt
+      - name: Read the prompt
+        id: prompt
+        run: |
+          delimiter="PROMPT_$(openssl rand -hex 16)"
+          {
+            echo "text<<$delimiter"
+            cat "$RUNNER_TEMP/prompt/prompt.txt"
+            echo
+            echo "$delimiter"
+          } >> "$GITHUB_OUTPUT"
       - name: Recheck the queued commit
         id: current
         env:
@@ -132,6 +167,16 @@ jobs:
           if [[ $(gh api "repos/$GITHUB_REPOSITORY/pulls/$PR" --jq '"\(.state) \(.head.sha)"') == "open $HEAD_SHA" ]]; then
             echo "current=true" >> "$GITHUB_OUTPUT"
           fi
+      - name: Check out the pull request for the agent
+        if: steps.current.outputs.current == 'true' && env.SCREENSHOT_AGENT == 'codex'
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          # The pull request ref also holds commits from forks. The agent only reads these files: nothing
+          # here installs or runs them, and the copy it reads has no Git metadata or credentials.
+          ref: refs/pull/${{ inputs.pull_request }}/head
+          path: pr-checkout
+          persist-credentials: false
+          allow-unsafe-pr-checkout: true
       - name: Prepare an isolated browser
         id: browser
         if: steps.current.outputs.current == 'true'
@@ -169,16 +214,22 @@ jobs:
           github_token: ${{ github.token }}
           # Fork authors lack write access; the agent has only browser tools and a read-only token.
           allowed_non_write_users: "*"
-          prompt: ${{ needs.screenshot-context.outputs.prompt }}
+          prompt: ${{ steps.prompt.outputs.text }}
           claude_args: >-
             --model ${{ vars.PR_SCREENSHOT_MODEL || 'claude-sonnet-5-5' }}
-            --max-turns 60
+            --max-turns 90
             --mcp-config ${{ runner.temp }}/pr-screenshots-mcp.json
             --allowedTools ${{ steps.browser.outputs.tools }}
             --disallowedTools Read,Grep,Glob,Bash,Edit,Write,MultiEdit,NotebookEdit,WebFetch,WebSearch,Task,mcp__playwright__browser_evaluate,mcp__playwright__browser_run_code_unsafe,mcp__playwright__browser_file_upload,mcp__playwright__browser_drop,mcp__playwright__browser_network_request,mcp__playwright__browser_network_requests
             --json-schema '${{ steps.browser.outputs.schema }}'
+      # The agent gets a shell, so it runs as its own user that can read the pull request and
+      # nothing of the runner's: the login stays with the credential proxy, the runner's home is
+      # closed to other users, and its shell commands run in Codex's read-only, offline sandbox.
       - name: Prepare isolated Codex user
+        id: codex-user
         if: steps.current.outputs.current == 'true' && env.SCREENSHOT_AGENT == 'codex'
+        env:
+          HEAD_SHA: ${{ inputs.head_sha }}
         run: |
           set -euo pipefail
           npm install --global @openai/codex@0.164.0
@@ -186,6 +237,16 @@ jobs:
           sudo useradd --create-home --shell /usr/sbin/nologin codex-screenshots
           sudo install -d -o codex-screenshots -g codex-screenshots -m 700 \
             /home/codex-screenshots/.codex /srv/pr-screenshot-agent
+          if [[ $(git -C pr-checkout rev-parse HEAD) != "$HEAD_SHA" ]]; then
+            echo "This commit is no longer current; skipping."
+            exit 0
+          fi
+          rm -rf pr-checkout/.git
+          sudo cp -R pr-checkout /srv/pr-checkout
+          sudo install -m 644 "$RUNNER_TEMP/prompt/full.diff" /srv/pr-checkout.diff
+          sudo chown -R root:root /srv/pr-checkout
+          sudo chmod -R a+rX,go-w /srv/pr-checkout
+          chmod 700 "$HOME"
           # Root-owned, fixed command: no arguments or environment from the agent.
           {
             echo '#!/bin/sh'
@@ -200,29 +261,55 @@ jobs:
           sudo visudo -cf /etc/sudoers.d/codex-screenshots
           jq '.mcpServers.playwright = {command: "sudo", args: ["-n", "/opt/pr-screenshots-browser"]}' \
             "$RUNNER_TEMP/pr-screenshots-mcp.json" > "$RUNNER_TEMP/codex-mcp.json"
-          sudo python3 .github/scripts/pr-screenshot-codex.py "$RUNNER_TEMP/codex-mcp.json" /home/codex-screenshots/.codex
+          sudo python3 .github/scripts/pr-screenshot-codex.py "$RUNNER_TEMP/codex-mcp.json" /home/codex-screenshots/.codex 18899
           sudo chown -R codex-screenshots:codex-screenshots /home/codex-screenshots/.codex
           sudo chmod 600 /home/codex-screenshots/.codex/config.toml /home/codex-screenshots/.codex/schema.json
+          echo "ready=true" >> "$GITHUB_OUTPUT"
       - name: Restore subscription login
         id: auth
-        if: steps.current.outputs.current == 'true' && env.SCREENSHOT_AGENT == 'codex'
+        if: steps.codex-user.outputs.ready == 'true'
         env:
           CODEX_SUBSCRIPTION_AUTH: ${{ secrets.CODEX_SUBSCRIPTION_AUTH }}
           GH_TOKEN: ${{ secrets.GH_DEPENDENCY_UPDATES_PAT }}
         run: |
           set -euo pipefail
+          # The token shares its hourly API limit with other automation. A refresh rotates the login,
+          # so skip the capture unless there is room left to save the rotated one.
+          remaining="$(gh api rate_limit --jq .resources.core.remaining)"
+          if (( remaining < 100 )); then
+            reset="$(gh api rate_limit --jq '.resources.core.reset | todate')"
+            echo "::warning::Skipped the screenshot agent: the token that saves the subscription login has $remaining GitHub API calls left until $reset. The stored login is unchanged."
+            exit 0
+          fi
           install -d -m 700 "$RUNNER_TEMP/screenshot-codex"
           printf '%s' "$CODEX_SUBSCRIPTION_AUTH" | python3 .github/scripts/codex-subscription-auth.py "$RUNNER_TEMP/screenshot-codex/auth.json"
-          # Verify write-back before Codex can rotate the refresh token.
-          gh secret set CODEX_SUBSCRIPTION_AUTH --repo "$GITHUB_REPOSITORY" < "$RUNNER_TEMP/screenshot-codex/auth.json"
-          sudo install -o codex-screenshots -g codex-screenshots -m 600 \
-            "$RUNNER_TEMP/screenshot-codex/auth.json" /home/codex-screenshots/.codex/auth.json
+          auth="$RUNNER_TEMP/screenshot-codex/auth.json"
+          # Verify write-back before the proxy can rotate the refresh token.
+          gh secret set CODEX_SUBSCRIPTION_AUTH --repo "$GITHUB_REPOSITORY" < "$auth"
+          echo "ready=true" >> "$GITHUB_OUTPUT"
+          python3 .github/scripts/codex-credential-proxy.py refresh "$auth"
+          # Save a rotated login before anything can interrupt the run; the old one no longer works.
+          for attempt in 1 2 3 4 5; do
+            gh secret set CODEX_SUBSCRIPTION_AUTH --repo "$GITHUB_REPOSITORY" < "$auth" && break
+            (( attempt < 5 )) || { echo "::error::Could not save the refreshed subscription login"; exit 1; }
+            sleep $(( attempt * 10 ))
+          done
+          # A clean environment: the proxy serves the agent's requests, so it keeps no step secrets.
+          nohup env -i PATH="$PATH" python3 .github/scripts/codex-credential-proxy.py serve "$auth" 18899 \
+            > "$RUNNER_TEMP/screenshot-codex/proxy.log" 2>&1 &
+          for _ in $(seq 50); do
+            curl -s -o /dev/null http://127.0.0.1:18899/ && exit 0
+            sleep 0.2
+          done
+          echo "::error::The credential proxy did not start"
+          tail -n 20 "$RUNNER_TEMP/screenshot-codex/proxy.log"
+          exit 1
       - name: Run Codex screenshot agent
         id: codex
-        if: steps.auth.outcome == 'success'
+        if: steps.auth.outputs.ready == 'true'
         env:
           CODEX_HOME: /home/codex-screenshots/.codex
-          PROMPT: ${{ needs.screenshot-context.outputs.prompt }}
+          PROMPT: ${{ steps.prompt.outputs.text }}
           MODEL: ${{ vars.PR_SCREENSHOT_MODEL }}
         run: |
           set -euo pipefail
@@ -230,9 +317,9 @@ jobs:
           codex=$(command -v codex)
           args=()
           [[ -z $MODEL ]] || args+=(--model "$MODEL")
-          # No checkout instructions or inherited credentials; browser tools only.
+          # No inherited environment or credentials: the proxy adds the login to model requests.
           status=0
-          printf '%s' "$PROMPT" | timeout --kill-after=30s 20m sudo -n -H -u codex-screenshots env -i \
+          { printf '%s\n\n' "$PROMPT"; cat .github/prompts/pr-screenshots-shell.md; } | timeout --kill-after=30s 30m sudo -n -H -u codex-screenshots env -i \
             PATH="$PATH" HOME=/home/codex-screenshots CODEX_HOME="$CODEX_HOME" \
             "$codex" exec --ephemeral --skip-git-repo-check \
             -C /srv/pr-screenshot-agent "${args[@]}" \
@@ -247,25 +334,24 @@ jobs:
             grep -E '^(ERROR|Error|error)[: ]|^[0-9-]+T[0-9:.]+Z +ERROR |^Not inside a trusted directory' "$log" \
               | grep -viE '[A-Za-z0-9+_=-]{24,}|token|bearer|secret|authoriz|cookie|password|eyJ' \
               | tail -n 20 | cut -c1-300 || true
+            grep -E 'Error|Exception' "$RUNNER_TEMP/screenshot-codex/proxy.log" \
+              | grep -viE '[A-Za-z0-9+_=-]{24,}|token|bearer|secret|authoriz|cookie|password|eyJ' \
+              | tail -n 5 | sed 's/^/proxy: /' | cut -c1-300 || true
             echo "::$resume::"
             exit "$status"
           fi
+          # Tool names and outcomes only, so an incomplete run says which step failed without echoing
+          # page text or the commands the agent ran.
+          grep -E '^mcp: [a-z_./]+( started| \(failed\)| \(completed\))?$|^ (succeeded|exited -?[0-9]+|failed) in [0-9.]+m?s:?$' "$log" \
+            | sed -E 's/^ (.*) in .*/shell: \1/' | tail -n 60 || true
           result=$(sudo -n -u codex-screenshots head -c 65537 /srv/pr-screenshot-agent/result.json | jq -c .)
           echo "result=$result" >> "$GITHUB_OUTPUT"
-      - name: Persist refreshed subscription login
-        if: always() && steps.auth.outcome == 'success'
-        env:
-          GH_TOKEN: ${{ secrets.GH_DEPENDENCY_UPDATES_PAT }}
-        run: |
-          set -euo pipefail
-          timeout 10s sudo -n -u codex-screenshots head -c 65537 /home/codex-screenshots/.codex/auth.json \
-            | python3 .github/scripts/codex-subscription-auth.py "$RUNNER_TEMP/screenshot-auth.json"
-          gh secret set CODEX_SUBSCRIPTION_AUTH --repo "$GITHUB_REPOSITORY" < "$RUNNER_TEMP/screenshot-auth.json"
       - name: Remove subscription login and logs
         if: always() && env.SCREENSHOT_AGENT == 'codex'
         run: |
-          sudo rm -rf /home/codex-screenshots/.codex /srv/pr-screenshot-agent
-          rm -rf "$RUNNER_TEMP/screenshot-codex" "$RUNNER_TEMP/screenshot-auth.json" "$RUNNER_TEMP/codex-mcp.json"
+          pkill -f codex-credential-proxy.py || true
+          sudo rm -rf /home/codex-screenshots/.codex /srv/pr-screenshot-agent /srv/pr-checkout /srv/pr-checkout.diff
+          rm -rf "$RUNNER_TEMP/screenshot-codex" "$RUNNER_TEMP/codex-mcp.json"
       - name: Collect screenshots
         if: steps.claude.outputs.structured_output != '' || steps.codex.outputs.result != ''
         run: |

@@ -37,12 +37,13 @@ tags:
 - scrollUntilVisible:
     element: "Organization"
     direction: DOWN
+# The row opens a menu: the organizations, a new one, and the active one's settings.
 - tapOn: "Organization"
 - extendedWaitUntil:
-    visible: "Create organization"
+    visible: "New organization"
     timeout: 10000
 - takeScreenshot: "40-account-organization"
-- tapOn: "Create organization"
+- tapOn: "New organization"
 - extendedWaitUntil:
     visible: "Name"
     timeout: 10000
@@ -101,6 +102,10 @@ tags:
     visible: "Work"
     timeout: 10000
 - tapOn: "Organization"
+- extendedWaitUntil:
+    visible: "Organization settings"
+    timeout: 10000
+- tapOn: "Organization settings"
 - extendedWaitUntil:
     visible: "Delete organization"
     timeout: 10000

@@ -56,3 +56,48 @@ Runtime CPU and launch measurements are informational until enough samples exist
 Bundle sizes are deterministic enough for automated regression checks. Keep hardware, platform, and
 build mode fixed. A comparison that intentionally changes Electron or renderer mode measures the
 combined migration result; it cannot attribute the change to either layer in isolation.
+
+## Web performance scorecard
+
+`pnpm perf:web-chat` measures the production web build against a seeded chat in headless Chromium,
+offline like the desktop benchmark. Besides scrolling and streaming, it times what people feel:
+first paint and a usable chat on a cold open, opening another chat, switching back to a loaded
+one, opening a chat in another Space, main-thread work per keystroke and per resize step, idle
+main-thread CPU, and JS heap. Each run starts with unrecorded warmups.
+
+```sh
+pnpm perf:web-chat --label=local --sizes=100 --samples=5
+pnpm perf:web-chat check .context/performance/web-chat-local.json
+```
+
+`check` compares the medians for the largest thread size against fixed budgets and exits non-zero
+when any metric is over. Opening an uncached chat or a chat in another Space has a 200 ms budget.
+Switching back to a cached chat has a 100 ms budget. Typing and resizing each have a one-frame
+(16 ms) budget for main-thread work. The nightly verification workflow runs both commands on a
+GitHub-hosted Ubuntu runner, writes the table to the job summary, and keeps the JSON report as an
+artifact. Desktop and mobile are not on the scorecard yet.
+
+## Mobile
+
+`pnpm perf:mobile-stack` starts a disposable Postgres and the offline local API, then seeds a paid
+account past onboarding with 100-message chats in two Spaces. It prints the URL the app should use
+and the sign-in email and password, and runs until Ctrl-C.
+
+```sh
+pnpm perf:mobile-stack
+pnpm perf:mobile-stack --delay=1000
+```
+
+`--delay=<ms>` puts a small proxy in front of the API that holds every request for that long before
+forwarding it, to see how the app behaves on a slow connection; responses, including the live
+notification stream, pass through unchanged. `--port=<n>` moves the API (default 3120; the proxy
+uses the next port).
+
+Build a Release simulator app pointed at the printed URL, then sign in with **Password**:
+
+```sh
+EXPO_PUBLIC_API_URL=<printed URL> pnpm --filter @rakazo/mobile exec expo run:ios --configuration Release
+```
+
+Simulators run on a remote Mac. The API listens on loopback only, so run the stack on that Mac, or
+forward the printed port there (`ssh -R <port>:127.0.0.1:<port> <mac>`).

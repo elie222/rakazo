@@ -1,6 +1,6 @@
 import { Trans } from "@lingui/react/macro";
 import { Link } from "react-router-dom";
-import { WindowChrome } from "./WindowChrome";
+import { WindowChrome } from "../components/WindowChrome";
 
 export function NotFoundPage() {
   return (

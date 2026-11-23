@@ -4,13 +4,18 @@ import { writeSaved } from "@rakazo/core/query";
 import { useFocusEffect } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
 import { Alert, Linking, ScrollView, StyleSheet } from "react-native";
-import { LoadFailure } from "../../components/load-failure";
-import { SettingsGroup, SettingsRow, useStackedSettings } from "../../components/settings-group";
-import { accountRpcQuery, formRead, queryClient, useSave } from "../../lib/query";
-import { useScreenQuery } from "../../lib/screen-query";
-import { ACCOUNT_SETTINGS } from "../../lib/settings-target";
-import { useSideInsets } from "../../lib/side-insets";
-import { errorText } from "../../lib/user-error";
+import {
+  SettingsGroup,
+  SettingsRow,
+  useStackedSettings,
+} from "../../components/settings/settings-group";
+import { LoadFailure } from "../../components/ui/load-failure";
+import { errorText } from "../../lib/api/user-error";
+import { useSideInsets } from "../../lib/layout/side-insets";
+import { openExternalUrl } from "../../lib/platform/open-url";
+import { accountRpcQuery, formRead, queryClient, useSave } from "../../lib/query/query";
+import { useScreenQuery } from "../../lib/query/screen-query";
+import { ACCOUNT_SETTINGS } from "../../lib/query/settings-target";
 
 /** How often an open sign-in asks whether the provider finished it. */
 export const WALLET_POLL_MS = 3_000;
@@ -96,7 +101,7 @@ export default function WalletSettings() {
               <SettingsRow
                 accessibilityRole="button"
                 disabled={pending}
-                onPress={() => void Linking.openURL(status.verificationUrl)}
+                onPress={() => void openExternalUrl(status.verificationUrl)}
                 title={t`Open`}
               />
               <SettingsRow

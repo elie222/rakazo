@@ -1,23 +1,46 @@
 const DEFAULT_INPUT_LENGTH = 100;
 
-/** Return the remote key changes represented by a mobile input event. */
-export function mobileInputChanges(oldValue, newValue, selectionStart = newValue.length) {
-  const newLength = Math.max(selectionStart ?? newValue.length, newValue.length);
-  const oldLength = oldValue.length;
-  let inputCount = newLength - oldLength;
-  let backspaces = inputCount < 0 ? -inputCount : 0;
+const isHighSurrogate = (code) => code >= 0xd800 && code <= 0xdbff;
+const isLowSurrogate = (code) => code >= 0xdc00 && code <= 0xdfff;
 
-  for (let index = 0; index < Math.min(oldLength, newLength); index += 1) {
-    if (newValue.charAt(index) !== oldValue.charAt(index)) {
-      inputCount = newLength - index;
-      backspaces = oldLength - index;
-      break;
-    }
+/**
+ * Return the remote key changes represented by a mobile input event. The remote receives one key
+ * per code point, so Backspaces are counted in code points (one emoji is one Backspace) and the
+ * changed text never starts with half of a surrogate pair.
+ */
+export function mobileInputChanges(oldValue, newValue, selectionStart = newValue.length) {
+  // Space-bar caret gestures can leave unchanged text after the edit. It is local context,
+  // not text to delete and retype on the remote computer.
+  let suffix = 0;
+  const caret = selectionStart ?? newValue.length;
+  while (
+    newValue.length - suffix > caret &&
+    suffix < oldValue.length &&
+    oldValue.charCodeAt(oldValue.length - suffix - 1) ===
+      newValue.charCodeAt(newValue.length - suffix - 1)
+  ) {
+    suffix += 1;
+  }
+  if (suffix > 0 && isLowSurrogate(newValue.charCodeAt(newValue.length - suffix))) suffix -= 1;
+  const newLength = newValue.length - suffix;
+  const oldLength = oldValue.length - suffix;
+  const limit = Math.min(oldLength, newLength);
+  let prefix = 0;
+  while (prefix < limit && oldValue.charCodeAt(prefix) === newValue.charCodeAt(prefix)) {
+    prefix += 1;
+  }
+  // A change that starts between the halves of a pair keeps the whole pair in the change.
+  if (
+    prefix > 0 &&
+    isHighSurrogate(oldValue.charCodeAt(prefix - 1)) &&
+    (isLowSurrogate(oldValue.charCodeAt(prefix)) || isLowSurrogate(newValue.charCodeAt(prefix)))
+  ) {
+    prefix -= 1;
   }
 
   return {
-    backspaces,
-    text: newValue.slice(newLength - inputCount, newLength),
+    backspaces: Array.from(oldValue.slice(prefix, oldLength)).length,
+    text: newValue.slice(prefix, newLength),
   };
 }
 
@@ -348,8 +371,10 @@ export function attachMobileTrackpad(
   };
   const onTouchEnd = (event) => finishTouch(event, true);
   const onTouchCancel = (event) => finishTouch(event, false);
+  // A real mouse moving means the person has one, so hand them direct control. Browsers also
+  // send still moves of their own (Chromium does after a page lays out), which mean nothing.
   const onMouseMove = (event) => {
-    if (event.isTrusted && enabled) setEnabled(false);
+    if (event.isTrusted && enabled && (event.movementX || event.movementY)) setEnabled(false);
   };
   const onResize = () => {
     const x =
@@ -415,6 +440,9 @@ const MOBILE_KEYS = {
   ArrowDown: [0xff54, "ArrowDown"],
 };
 
+// Shift, Control, Alt, Meta, Super and Hyper: a latched Ctrl waits for the next other key.
+const isModifierKeysym = (keysym) => keysym >= 0xffe1 && keysym <= 0xffee;
+
 function keyNameFromEvent(event) {
   const target = event?.target?.closest?.("[data-key]") || event?.target;
   const name = target?.getAttribute?.("data-key");
@@ -443,6 +471,8 @@ export function attachMobileKeyboard(
   if (!button || !input || !Keyboard || !documentTarget || rfb.viewOnly) return () => {};
 
   let lastValue = "";
+  // What the remote computer has been sent; lastValue can differ while an IME composes at a moved caret.
+  let sentValue = "";
   let closeOnButtonClick = false;
   let controlLatched = false;
   let keyboardTouchAt = 0;
@@ -462,6 +492,7 @@ export function attachMobileKeyboard(
   const resetInput = () => {
     input.value = "_".repeat(DEFAULT_INPUT_LENGTH - 1);
     lastValue = input.value;
+    sentValue = lastValue;
   };
   const setOpen = (open) => {
     const label = open ? "Hide keyboard" : "Show keyboard";
@@ -505,6 +536,30 @@ export function attachMobileKeyboard(
     if (control) rfb.sendKey(CONTROL_KEYSYM, CONTROL_CODE, false);
     if (latched) setControlLatched(false);
   };
+  // Keys that noVNC turns into keysyms on keydown. A latched Ctrl is held from the press until the
+  // key is released, as on a physical keyboard, so noVNC's keyup releases both.
+  const heldControlKeys = new Set();
+  // A keyup that never arrives must not leave Ctrl pressed on the remote past the keyboard.
+  const releaseHeldControl = () => {
+    if (heldControlKeys.size === 0) return;
+    heldControlKeys.clear();
+    rfb.sendKey(CONTROL_KEYSYM, CONTROL_CODE, false);
+  };
+  const sendKeyEvent = (keysym, code, down) => {
+    if (!down) {
+      rfb.sendKey(keysym, code, false);
+      if (heldControlKeys.delete(keysym) && heldControlKeys.size === 0) {
+        rfb.sendKey(CONTROL_KEYSYM, CONTROL_CODE, false);
+      }
+      return;
+    }
+    if (controlLatched && !isModifierKeysym(keysym)) {
+      setControlLatched(false);
+      if (heldControlKeys.size === 0) rfb.sendKey(CONTROL_KEYSYM, CONTROL_CODE, true);
+      heldControlKeys.add(keysym);
+    }
+    rfb.sendKey(keysym, code, true);
+  };
   const insertText = (text, explicitControl) => {
     if (typeof text !== "string" || !text) return;
     for (const character of text) {
@@ -520,7 +575,7 @@ export function attachMobileKeyboard(
     const times = Number(count);
     if (!Number.isInteger(times) || times < 1) return;
     const capped = Math.min(times, 500);
-    for (let index = 0; index < capped; index += 1) rfb.sendKey(backspaceKeysym, "Backspace");
+    for (let index = 0; index < capped; index += 1) sendTap(backspaceKeysym, "Backspace");
   };
   const run = (command) => {
     if (!command || typeof command !== "object") return;
@@ -536,6 +591,25 @@ export function attachMobileKeyboard(
     const key = namedKey(command.name);
     if (!key) return;
     sendTap(key[0], key[1], command.control === true);
+  };
+  let composing = false;
+  const restoreCaret = () => {
+    if (composing || documentTarget.activeElement !== input) return;
+    const length = input.value.length;
+    if (input.selectionStart !== length || input.selectionEnd !== length) {
+      input.setSelectionRange?.(length, length);
+    }
+  };
+  const onCompositionStart = () => {
+    composing = true;
+  };
+  const onCompositionEnd = () => {
+    composing = false;
+    // A final input still on its way normalizes the field itself.
+    if (input.value !== lastValue) return;
+    if (input.value !== sentValue) input.value = sentValue;
+    lastValue = sentValue;
+    restoreCaret();
   };
   const show = () => {
     try {
@@ -567,10 +641,13 @@ export function attachMobileKeyboard(
     toggleKeyboard();
   };
   const onFocus = () => setOpen(true);
-  const onBlur = () => setOpen(false);
+  const onBlur = () => {
+    releaseHeldControl();
+    setOpen(false);
+  };
   const onInput = (event) => {
     if (!lastValue) resetInput();
-    const newValue = event.target.value;
+    let newValue = event.target.value;
     const changes = mobileInputChanges(lastValue, newValue, event.target.selectionStart);
     if (
       typeof pasteText === "function" &&
@@ -584,6 +661,15 @@ export function attachMobileKeyboard(
     repeatBackspace(changes.backspaces);
     insertText(changes.text, false);
 
+    const sent = Array.from(sentValue);
+    sentValue = sent.slice(0, sent.length - changes.backspaces).join("") + changes.text;
+    if (!composing && !event.isComposing) {
+      // Keep the local history in the same order as the remote keys, even if input beat
+      // selectionchange to a caret moved by the phone keyboard.
+      newValue = sentValue;
+      if (input.value !== newValue) input.value = newValue;
+      restoreCaret();
+    }
     if (newValue.length > 2 * DEFAULT_INPUT_LENGTH) {
       resetInput();
     } else if (newValue.length < 1) {
@@ -637,7 +723,7 @@ export function attachMobileKeyboard(
 
   resetInput();
   const keyboard = new Keyboard(input);
-  keyboard.onkeyevent = (keysym, code, down) => rfb.sendKey(keysym, code, down);
+  keyboard.onkeyevent = sendKeyEvent;
   keyboard.grab();
   if (pageChrome) {
     button.hidden = false;
@@ -650,6 +736,9 @@ export function attachMobileKeyboard(
   button.addEventListener("touchend", onKeyboardTouchEnd, { passive: false });
   button.addEventListener("click", onKeyboardClick);
   input.addEventListener("input", onInput);
+  documentTarget.addEventListener("selectionchange", restoreCaret);
+  input.addEventListener("compositionstart", onCompositionStart);
+  input.addEventListener("compositionend", onCompositionEnd);
   input.addEventListener("focus", onFocus);
   input.addEventListener("blur", onBlur);
   if (keyBar) {
@@ -666,11 +755,15 @@ export function attachMobileKeyboard(
   }
 
   return () => {
+    releaseHeldControl();
     keyboard.ungrab?.();
     for (const type of keepOpenEvents) button.removeEventListener(type, onButtonPressStart);
     button.removeEventListener("touchend", onKeyboardTouchEnd);
     button.removeEventListener("click", onKeyboardClick);
     input.removeEventListener("input", onInput);
+    documentTarget.removeEventListener("selectionchange", restoreCaret);
+    input.removeEventListener("compositionstart", onCompositionStart);
+    input.removeEventListener("compositionend", onCompositionEnd);
     input.removeEventListener("focus", onFocus);
     input.removeEventListener("blur", onBlur);
     if (keyBar) {

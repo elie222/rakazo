@@ -2,23 +2,23 @@ import { useLingui } from "@lingui/react/macro";
 import { useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useRef, useState } from "react";
 import { ActivityIndicator, Alert, ScrollView, Text, View } from "react-native";
-import { ArchivedBotList } from "../../components/archived-bot-list";
-import { NativeActionButton } from "../../components/native-action-button";
-import { captureApiRequestContext, rpc } from "../../lib/api";
-import { selectSpace } from "../../lib/api-server";
+import { ArchivedBotList } from "../../components/inbox/archived-bot-list";
+import { NativeActionButton } from "../../components/native/native-action-button";
+import { captureApiRequestContext, rpc } from "../../lib/api/api";
+import { selectSpace } from "../../lib/api/api-server";
+import type { MobileBot, MobileGroup } from "../../lib/api/mobile-types";
+import { errorText } from "../../lib/api/user-error";
+import { confirmDeleteBot } from "../../lib/bots/bot-lifecycle";
 import {
   loadAllArchivedChats as loadArchivedChats,
   notifyArchivedChatsChanged,
-} from "../../lib/archived-chats";
-import { confirmDeleteBot } from "../../lib/bot-lifecycle";
-import { useFloatingHeaderInset } from "../../lib/floating-header";
-import type { MobileBot, MobileGroup } from "../../lib/mobile-types";
-import { useMobileTokens } from "../../lib/native";
-import { addToSearchInbox, searchInboxSession } from "../../lib/search-inbox";
-import { openFromSettingsSheet } from "../../lib/settings-sheet";
-import { useSideInsets } from "../../lib/side-insets";
-import { useConfirmationGuard } from "../../lib/use-confirmation-guard";
-import { errorText } from "../../lib/user-error";
+} from "../../lib/inbox/archived/archived-chats";
+import { useFloatingHeaderInset } from "../../lib/layout/floating-header";
+import { useSideInsets } from "../../lib/layout/side-insets";
+import { useMobileTokens } from "../../lib/native/native";
+import { useConfirmationGuard } from "../../lib/native/use-confirmation-guard";
+import { addToSearchInbox, searchInboxSession } from "../../lib/search/search-inbox";
+import { openFromSettingsSheet } from "../../lib/settings/settings-sheet";
 
 export default function ArchivedBots() {
   const sideInsets = useSideInsets();

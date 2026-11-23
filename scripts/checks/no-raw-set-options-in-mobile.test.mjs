@@ -19,12 +19,12 @@ const effect = `useLayoutEffect(() => {
 const sources = {
   "apps/mobile/app/(settings)/note.tsx": effect,
   "apps/mobile/components/thread/header.tsx": `${effect}navigation.setOptions(\n  options,\n);\n`,
-  "apps/mobile/lib/use-home-header.ts":
+  "apps/mobile/lib/inbox/use-inbox-header.ts":
     "const { setOptions } = navigation;\nsetOptions({ title });\n",
   "apps/mobile/app/optional.tsx":
     "navigation?.setOptions?.(options);\nnavigation.setOptions (options);\n",
   "apps/mobile/app/converted.tsx": "useScreenHeader({ title });\nresetOptions();\n",
-  "apps/mobile/lib/screen-header.tsx": "navigation.setOptions(options);\n",
+  "apps/mobile/lib/navigation/screen-header.tsx": "navigation.setOptions(options);\n",
   "apps/mobile/lib/note-screen.test.tsx":
     "const navigation = { setOptions: () => state.setOptions() };\n",
   "apps/web/src/routes/note.tsx": effect,
@@ -42,7 +42,7 @@ test("counts every setOptions call in the mobile app's screens, components and h
       "apps/mobile/app/(settings)/note.tsx": [2],
       "apps/mobile/app/optional.tsx": [1, 2],
       "apps/mobile/components/thread/header.tsx": [2, 4],
-      "apps/mobile/lib/use-home-header.ts": [2],
+      "apps/mobile/lib/inbox/use-inbox-header.ts": [2],
     },
   );
 });
@@ -50,7 +50,7 @@ test("counts every setOptions call in the mobile app's screens, components and h
 test("leaves the hook's own module, tests, converted screens and other apps alone", () => {
   for (const file of [
     "apps/mobile/app/converted.tsx",
-    "apps/mobile/lib/screen-header.tsx",
+    "apps/mobile/lib/navigation/screen-header.tsx",
     "apps/mobile/lib/note-screen.test.tsx",
     "apps/web/src/routes/note.tsx",
   ]) {
@@ -61,11 +61,11 @@ test("leaves the hook's own module, tests, converted screens and other apps alon
 test("a new call fails with a message that names the hook, and a frozen one passes", () => {
   const frozen = {
     "apps/mobile/components/thread/header.tsx": 2,
-    "apps/mobile/lib/use-home-header.ts": 1,
+    "apps/mobile/lib/inbox/use-inbox-header.ts": 1,
   };
   const failure = report(rule, violations(frozen, found));
   assert.match(failure, /useScreenHeader\(\{ title, action \}\)/);
-  assert.match(failure, /apps\/mobile\/lib\/screen-header\.tsx/);
+  assert.match(failure, /apps\/mobile\/lib\/navigation\/screen-header\.tsx/);
   assert.match(
     failure,
     /apps\/mobile\/app\/\(settings\)\/note\.tsx:2 {2}navigation\.setOptions\(\{ title \}\);/,

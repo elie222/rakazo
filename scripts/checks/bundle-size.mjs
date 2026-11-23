@@ -57,7 +57,7 @@ function measure(root, bundle) {
     return { files, bytes: files.reduce((sum, file) => sum + file.bytes, 0) };
   } catch (error) {
     if (error.code !== "ENOENT") throw error;
-    return { missing: path.relative(root, error.path) };
+    return { missing: path.relative(root, error.path).split(path.sep).join("/") };
   }
 }
 

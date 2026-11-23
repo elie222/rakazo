@@ -153,7 +153,7 @@ cp .env.example .env
 ```
 
 将 `POSTGRES_PASSWORD` 和 `POSTGRES_APP_PASSWORD` 分别设置为由 `openssl rand -hex 16` 生成的两个值，再把它们填入 `DATABASE_MIGRATION_URL` 和 `DATABASE_URL`。
-应用以自己的 `rakazo_app` 登录身份连接数据库，并受行级安全策略约束；迁移则以所有者身份运行（参见 [数据库角色](docs/self-host-configuration.md#database-roles)）。
+应用以自己的 `rakazo_app` 登录身份连接数据库，并受行级安全策略约束；迁移则以所有者身份运行（参见 [数据库角色](docs/zh-CN/self-host-configuration.md#数据库角色)）。
 为 `BETTER_AUTH_SECRET`、`ENCRYPTION_KEY` 和 `SCREEN_PROXY_SECRET` 分别设置独立的长随机值。
 Docker 沙箱还需要专用的 `SANDBOX_SUPERVISOR_TOKEN`。
 你也可以设置 `OPENROUTER_API_KEY`，或在首次设置时连接支持的模型提供商。
@@ -179,7 +179,7 @@ pnpm dev
 ```
 
 `pnpm dev` 会使用 `DATABASE_URL` 指向且可连接的 Postgres；否则会通过 Docker 启动本地
-`rakazo-dev-postgres` 容器，所有检出目录共用该容器。启动服务前会应用数据库迁移并生成 Prisma 客户端。
+`rakazo-dev-postgres` 容器，所有检出目录共用该容器。没有 Docker 时，会改用本机安装的 Postgres（位于 `PATH` 或来自 Homebrew）运行一个本地 Postgres 集群，同样由所有检出目录共用。启动服务前会应用数据库迁移并生成 Prisma 客户端。
 如果当前分支新增了 `main` 尚未包含的迁移，会在同一服务器上使用独立数据库，条件允许时从共享数据库复制，
 避免未合入的数据库结构变更影响共享数据库。默认端口被占用时（例如另一个 Git worktree 正在运行），
 会选择下一个空闲端口组并打印访问地址。也可以设置 `WEB_PORT` 和 `API_PORT` 自行指定端口。
@@ -210,7 +210,8 @@ docker compose --env-file .env \
 
 打开终端打印的地址（默认是 [http://127.0.0.1:5173](http://127.0.0.1:5173)），创建账号、连接模型，并创建第一个机器人。
 
-部署、提供商选择、备份与升级说明见[自托管指南](./docs/zh-CN/self-host.md)。
+部署、提供商选择、备份与升级说明见[自托管指南](./docs/zh-CN/self-host.md)、[生产部署](./docs/self-host-production.md)、
+[备份与恢复](./docs/zh-CN/self-host-backups.md)和[升级](./docs/zh-CN/self-host-upgrading.md)。
 
 使用 CreateOS 时，设置 `SANDBOX_PROVIDER=createos` 和 `CREATEOS_SANDBOX_API_KEY`。
 可选配置 `CREATEOS_SANDBOX_BASE_URL`、`CREATEOS_SANDBOX_SHAPE` 和 `CREATEOS_SANDBOX_ROOTFS`
@@ -255,7 +256,7 @@ pnpm --filter @rakazo/desktop dev
 公共服务器必须使用 HTTPS；只有回环地址和局域网私有地址允许 HTTP，不包括链路本地地址。
 应用会在保存地址前检查 Rakazo 的健康检查端点，之后启动时直接连接该实例。
 退出应用后，Docker 服务栈仍会继续运行；不使用 Docker 的服务器则随应用停止。
-可通过应用菜单中的 **Stop Local Stack**（停止本地服务栈）停止受管服务栈，而无需退出应用。
+应用菜单中的 **Quit and Stop Bots**（退出并停止 Bot）会停止受管服务栈并退出应用；切换到其他服务器时也会停止该服务栈。
 
 在 Linux 上，桌面应用以 AppImage 形式发布，需要 FUSE 2（`libfuse.so.2`）。只包含 FUSE 3 的发行版（例如 Fedora Silverblue 或 Ubuntu 24.04）会报错
 `dlopen(): error loading libfuse.so.2`。请安装 FUSE 2 库（Fedora 上为 `fuse-libs`，Ubuntu 24.04 上为 `libfuse2t64`，较早的 Ubuntu 和 Debian 上为 `libfuse2`），或者不借助 FUSE 运行 AppImage：
@@ -278,14 +279,12 @@ Docker 兼容 CLI，请在启动应用前把 `RAKAZO_DOCKER_BINARY` 设为该 CL
 ## 界面语言
 
 网页版及 Electron 内嵌界面可在 **Settings → Language**（设置 → 语言）中选择英语、德语、韩语、土耳其语、
-印地语、巴西葡萄牙语、简体中文、繁体中文、西班牙语、俄语、法语、希伯来语、荷兰语、日语和波兰语。
-Expo 应用包含英语、简体中文、繁体中文、俄语、德语、荷兰语、日语、西班牙语和波兰语翻译，**Account → Language**（账户 → 语言）列出这九种语言。
-在用户保存选择之前，移动端的初始语言由设备语言或 `EXPO_PUBLIC_DEFAULT_UI_LOCALE` 决定。
+印地语、巴西葡萄牙语、简体中文、繁体中文、西班牙语、俄语、法语、希伯来语、荷兰语、日语、波兰语和泰语。
+Expo 应用提供与网页版相同的 16 种语言，在 **Account → Language**（账户 → 语言）中选择。
+在用户保存选择之前，设备语言或 `EXPO_PUBLIC_DEFAULT_UI_LOCALE` 仍决定初始语言目录。
 
-Electron 原生设置窗口和菜单也支持上述网页版语言，并跟随应用中保存的选择；首次启动使用系统语言。
-
-官网首页（`apps/www`）可通过页脚切换全部 15 种语言，简体中文路径为 `/zh/`，繁体中文为 `/zh-tw/`。
-其他官网页面主要仍为英文。
+Electron 原生设置与菜单也支持网页版语言集，跟随已保存的应用选择；首次启动使用系统语言。
+营销首页（`apps/www`）通过页脚链接提供 15 种语言，含 `/zh/` 与 `/zh-tw/`；其他营销页主要仍为英文。
 
 ## 开发
 
@@ -310,33 +309,43 @@ pnpm test:e2e
 
 ## 文档
 
+中文指南：[自托管](./docs/zh-CN/self-host.md)、[模型](./docs/zh-CN/self-host-models.md)、
+[备份](./docs/zh-CN/self-host-backups.md)、[升级](./docs/zh-CN/self-host-upgrading.md)、
+[受限网络](./docs/zh-CN/self-host-restricted-network.md)、[登录门与屏幕](./docs/zh-CN/self-host-login-gate.md)。
+
 - [自托管](./docs/zh-CN/self-host.md)
-- [模型接入、审批与语音](./docs/zh-CN/self-host-models.md)
+- [自托管配置](./docs/zh-CN/self-host-configuration.md)
+- [密钥管理](./docs/zh-CN/self-host-secrets.md)
+- [登录与账号](./docs/zh-CN/self-host-accounts.md)
+- [模型](./docs/zh-CN/self-host-models.md)
+- [工具与集成](./docs/zh-CN/self-host-integrations.md)
+- [计算机提供商](./docs/self-host-sandbox-providers.md)
+- [Docker 计算机](./docs/self-host-docker-computers.md)
+- [Kubernetes / k3s 安装](./docs/self-host-kubernetes.md)（[한국어](./docs/ko-KR/self-host-kubernetes.md)）
+- [存储与加密](./docs/self-host-storage.md)
+- [生产部署](./docs/self-host-production.md)
 - [备份与恢复](./docs/zh-CN/self-host-backups.md)
 - [升级](./docs/zh-CN/self-host-upgrading.md)
-- [受限网络与镜像下载](./docs/zh-CN/self-host-restricted-network.md)
+- [日志与监控](./docs/self-host-observability.md)
+- [审计日志](./docs/self-host-audit-log.md)
+- [应用与客户端](./docs/self-host-clients.md)
+- [计费](./docs/self-host-billing.md)
+- [计算机运行时与隔离](./docs/computer-runtime.md)
+- [桌面端发布](./docs/desktop-release.md)
+- [移动端发布](./docs/mobile-release.md)
+- [性能测试](./docs/performance.md)
+- [管理机器人的机器人](./docs/fleet-management.md)
 - [无影云电脑](./docs/wuying-computers.zh-CN.md)
-- [部署配置](./docs/self-host-configuration.md)、[密钥管理](./docs/self-host-secrets.md)、[账号与登录](./docs/self-host-accounts.md)（英文）
-- [工具集成](./docs/self-host-integrations.md)、[计算机提供商](./docs/self-host-sandbox-providers.md)、[Docker 计算机](./docs/self-host-docker-computers.md)（英文）
-- [存储与加密](./docs/self-host-storage.md)、[生产部署](./docs/self-host-production.md)、[日志与监控](./docs/self-host-observability.md)、[审计日志](./docs/self-host-audit-log.md)（英文）
-- [客户端](./docs/self-host-clients.md)、[计费](./docs/self-host-billing.md)、[计算机运行时与隔离](./docs/computer-runtime.md)（英文）
-- [桌面端发布](./docs/desktop-release.md)、[移动端发布](./docs/mobile-release.md)、[性能测试](./docs/performance.md)、[管理机器人的机器人](./docs/fleet-management.md)（英文）
 
-## 与其他产品的比较
-
-Rakazo 启动后，你可以像使用 Grok Bot 一样，通过聊天设置和管理机器人。
-Muse、Dots、Instinct 和 Claude Duet 是托管式助手；OpenClaw 和 Hermes Agent 则同样是可以自行运行的开源智能体。
-后两者的文档介绍了安装器、配置文件和网关。Hermes Desktop 无需命令行即可开始第一次聊天；消息网关则是独立进程。
+## 与其他产品对比
 
 - [Grok Bot](https://rakazo.com/grok-bot-alternative/)
 - [Muse](https://rakazo.com/muse-alternative/)
 - [Dots](https://rakazo.com/dots-alternative/)
-- [Instinct](https://rakazo.com/instinct-alternative/)，可通过短信或电话交流的个人助手
+- [Instinct](https://rakazo.com/instinct-alternative/)
 - [OpenClaw](https://rakazo.com/openclaw-alternative/)
-- [Hermes Agent](https://rakazo.com/hermes-alternative/)，Nous Research 的开源智能体
-- [Claude Duet](https://rakazo.com/claude-duet-alternative/)，Anthropic 的主动式个人智能体
-- [全部对比](https://rakazo.com/alternatives/)
-- [自托管指南](https://rakazo.com/self-hosted-ai-agent/)
+- [Hermes Agent](https://rakazo.com/hermes-alternative/)
+- [全部比较](https://rakazo.com/alternatives/)
 
 ## 致谢
 

@@ -68,6 +68,8 @@ ACTION_WAIT_SECONDS = 2.0
 QUIET_SECONDS = 0.15
 # How often a wait reads the page again.
 POLL_SECONDS = 0.05
+# The most the purchase check waits for a page that scrolls smoothly to bring a control into view.
+SCROLL_SETTLE_SECONDS = 1.5
 # A search box or autocomplete sends its request a moment after typing stops (a debounce), so an act
 # that ends by typing starts its quiet wait this long after the last key.
 TYPING_PAUSE_SECONDS = 0.35
@@ -463,12 +465,23 @@ PAGE_LOAD = r"""({ href: location.href, ready: document.readyState, began: perfo
     .map((entry) => [entry.name, performance.timeOrigin + entry.responseEnd]) })"""
 
 # The page's address, title and text, the values a snapshot must not show (password fields, fields
-# holding a saved login or card, and fields drawn as dots), and the merchant account a pay token checkout names in the page itself.
+# holding a saved login or card, and fields drawn as dots), the options saved logins chose in its
+# dropdowns, and the merchant account a pay token checkout names in the page itself.
 PAGE_STATE = r"""(() => {
   const masked = [...document.querySelectorAll("input, textarea")]
     .filter((el) => el.value && (el.type === "password" || el.hasAttribute("data-rakazo-filled")
       || getComputedStyle(el).webkitTextSecurity !== "none"))
     .map((el) => el.value);
+  const choices = [];
+  const visit = (root) => {
+    for (const select of root.querySelectorAll("select[data-rakazo-filled]")) {
+      for (const option of select.selectedOptions) {
+        choices.push(option.value, (option.label || option.text).replace(/\s+/g, " ").trim());
+      }
+    }
+    for (const el of root.querySelectorAll("*")) if (el.shadowRoot) visit(el.shadowRoot);
+  };
+  visit(document);
   const blocks = [...document.querySelectorAll(".AiAgentPaymentSteering")]
     .filter((block) => block.querySelector('input[name="link_pay_token"]'));
   const holder = blocks.length !== 1 ? null : blocks[0].matches("[data-stripe-merchant-account]") ? blocks[0]
@@ -480,6 +493,7 @@ PAGE_STATE = r"""(() => {
     ready: document.readyState,
     text: (document.body?.innerText || "").slice(0, 200000),
     masked,
+    choices,
     payToken: /^acct_[A-Za-z0-9]{1,64}$/.test(account) ? account : null,
     frames: [...document.querySelectorAll("iframe")].slice(0, 50).map((frame) => frame.src),
   };
@@ -578,18 +592,34 @@ def cut_option(text: str) -> str:
     return f"{text[:50]}…{text[-(MAX_OPTION_TEXT - 51):]}" if len(text) > MAX_OPTION_TEXT else text
 
 
-def options_of(node: Node) -> tuple[list[dict[str, Any]], int]:
-    """A dropdown's options as the page shows them: the first MAX_OPTIONS and the chosen one."""
+def chosen_option(node: Node) -> Node | None:
+    return next((option for option in native_options(node) if "selected" in option.attrs.split(", ")), None)
+
+
+def hides_choice(node: Node, choices: set[str] | None) -> bool:
+    """Whether a dropdown holds an option a saved login chose, which the bot never sees. With choices
+    unknown, no dropdown shows its choice."""
+    chosen = chosen_option(node)
+    if chosen is None:
+        return False
+    shown = {" ".join(text.split()) for text in (node.value, chosen.name) if text}
+    return choices is None or bool(shown & choices)
+
+
+def options_of(node: Node, hide_choice: bool = False) -> tuple[list[dict[str, Any]], int]:
+    """A dropdown's options as the page shows them: the first MAX_OPTIONS and the chosen one, unless
+    a saved login chose it."""
     every = native_options(node)
     shown = every[:MAX_OPTIONS]
-    chosen = next((option for option in every if "selected" in option.attrs.split(", ")), None)
-    if chosen is not None and chosen not in shown:
+    chosen = chosen_option(node)
+    if chosen is not None and chosen not in shown and not hide_choice:
         shown.append(chosen)
     options = []
     for option in shown:
         label = cut_option(" ".join(option.name.split()))
         attrs = option.attrs.split(", ")
-        options.append({"label": label, "value": label, **({"selected": True} if "selected" in attrs else {}),
+        selected = "selected" in attrs and not hide_choice
+        options.append({"label": label, "value": label, **({"selected": True} if selected else {}),
                         **({"disabled": True} if "disabled" in attrs else {})})
     return options, len(every)
 
@@ -826,6 +856,15 @@ class PageBrowser:
         sites = {id(node): frame_site(urljoin(str(state.get("url") or ""), str((found or {}).get("value") or "")))
                  for node, found in zip(frames, sources)}
         masked = {str(value) for value in state.get("masked") or [] if value}
+        choices = {" ".join(str(text).split()) for text in state.get("choices") or [] if text}
+        # A frame's documents are out of the page's reach, so its dropdowns are read through page_secrets,
+        # only when one shows a choice. Unread, none of them shows it.
+        frame_choices: set[str] | None = set()
+        if any(chosen_option(node) and node.frame for node in walk(roots)):
+            try:
+                frame_choices = {" ".join(text.split()) for text in page_secrets.filled_choices(self.port, self.target)}
+            except Exception:  # noqa: BLE001
+                frame_choices = None
         # Found in the page, not in agent-browser's tree: a session that attached after a frame loaded never sees inside it.
         payment = any(payment_frame_origin(frame_site(src)) for src in state.get("frames") or [])
         try:
@@ -859,7 +898,8 @@ class PageBrowser:
                     render(node.children, depth, inside)
                     continue
                 value = node.value
-                if value is not None and (value in masked or set(value) <= {"•"}):
+                hide_choice = hides_choice(node, frame_choices if node.frame else choices)
+                if value is not None and (hide_choice or value in masked or set(value) <= {"•"}):
                     value = None
                 entry: dict[str, Any] = {"ref": ref, "role": node.role, "name": node.name[:200]}
                 checked = re.search(r"\bchecked=(true|false)\b", node.attrs)
@@ -875,7 +915,7 @@ class PageBrowser:
                     line += f" {sites[id(node)]}"
                 if value is not None and value != "":
                     line += ": " + value[:100]
-                options, total = options_of(node)
+                options, total = options_of(node, hide_choice)
                 if options:
                     entry["options"] = options
                     if total > len(options):
@@ -975,7 +1015,7 @@ class PageBrowser:
 
     def click_purchase(self, ref: str, node: Node) -> tuple[str, dict[str, Any] | None]:
         """The top page's host, the site the user sees, and what a click on ref would buy, or None.
-        A page that cannot be read asks."""
+        A page that cannot be read answers the unreadable purchase, which refuses the press."""
         try:
             purchases = self.purchases()
             site = purchases.site()
@@ -992,7 +1032,9 @@ class PageBrowser:
             try:
                 if scrolled:
                     self.ab.batch([["scrollintoview", f"@{ref}"]])
-                (box,) = self.ab.batch([["get", "box", f"@{ref}"]])
+                    box = self.scrolled_box(ref)
+                else:
+                    (box,) = self.ab.batch([["get", "box", f"@{ref}"]])
             except Exception:  # noqa: BLE001
                 box = None
             try:
@@ -1000,6 +1042,19 @@ class PageBrowser:
             except Offscreen:
                 continue
         return site, None
+
+    def scrolled_box(self, ref: str) -> Any:
+        """ref's box once scrolling to it stops. A page that scrolls smoothly is still moving when
+        scrollintoview returns, and a box read then can be out of view."""
+        deadline = time.monotonic() + SCROLL_SETTLE_SECONDS
+        (box,) = self.ab.batch([["get", "box", f"@{ref}"]])
+        while time.monotonic() < deadline:
+            time.sleep(POLL_SECONDS)
+            previous = box
+            (box,) = self.ab.batch([["get", "box", f"@{ref}"]])
+            if box == previous:
+                break
+        return box
 
     def purchase_check(self, args: dict[str, Any]) -> dict[str, Any]:
         """Which of these clicks would complete a purchase, or whether a click or key on the screen would.
@@ -1026,6 +1081,10 @@ class PageBrowser:
                 break
         if args.get("desktop") is True and not steps:
             first = self.purchases().desktop(args)
+        if first and first.get("reason") == UNREADABLE_PURCHASE["reason"]:
+            dialog = self.open_dialog()
+            if dialog:
+                return dialog
         purchase = {"steps": steps, "label": first.get("label", ""), "amount": first.get("amount", ""),
                     "amountFrom": first.get("amountFrom", "page"), "reason": first.get("reason"),
                     **({"total": first["total"]} if first and first.get("total") else {}),
@@ -1115,6 +1174,20 @@ class PageBrowser:
         except Exception:  # noqa: BLE001
             return None
         return status if status.get("hasDialog") else None
+
+    def open_dialog(self) -> dict[str, Any] | None:
+        """After a purchase check could not read the page: the check's answer when that is because a
+        JavaScript dialog is open on it, naming the dialog's type. The page then takes no input, so a press
+        can only reach the dialog; whether answering it could buy something (a confirm can submit an order)
+        is the caller's to decide. Asked only once the check has failed, so a slow agent-browser never holds
+        up a check that works; one that cannot answer leaves the check failed."""
+        try:
+            self.ab.use_tab(self.target)
+        except Exception:  # noqa: BLE001
+            return None
+        dialog = self.dialog()
+        kind = str((dialog or {}).get("type") or "")
+        return {"ok": True, "url": "", "title": "", "site": "", "purchase": None, "dialog": kind} if kind else None
 
     def dialog_result(self, dialog: dict[str, Any], progress: dict[str, Any], remaining: bool = False) -> dict[str, Any]:
         """An alert only informs and OK is its one answer, so it is closed and its message reported.
@@ -1842,28 +1915,38 @@ PURCHASE_HELPERS = r"""
   const SURROUNDINGS = "header, nav, footer, aside, [role=banner], [role=navigation], [role=contentinfo], [role=complementary]";
   const NOTICE = /cookie|consent|gdpr|onetrust/i;
   const CARD_TOKENS = ["cc-number", "cc-csc", "cc-exp", "cc-exp-month", "cc-exp-year"];
-  // What only a payment card's field is called. "Card number" alone is not: membership, frequent-flyer and ID
-  // cards have numbers too, and a payment card's form also asks for its security code.
-  const CARD_NAMING = /(?<![a-z])(?:cvv2?|cvc2?|cvn2?|csc)(?![a-z])|card[\s_-]*(?:security|verification)|(?:credit|debit)[\s_-]*card|(?:^|[^\d•*x])(?:\d|•|\*|x){4}[\s-]+(?:\d|•|\*|x){4}[\s-]+(?:\d|•|\*|x){4}|כרטיס[\s_-]*אשראי/i;
-  // A gift card, voucher or coupon number is not the card that pays.
-  const NOT_A_CARD = /gift|voucher|coupon|promo|loyalty|rewards?\b|שובר|קופון|מתנה|הטבה/i;
-  const CARD_NUMBER = /card[\s_-]*(?:number|no\b|num\b)|cardnumber|cc[\s_-]*(?:num|number)|ccnum|מספר[\s_-]*כרטיס/i;
-  const CARD_COMPANION = /(?<![a-z])(?:cvv2?|cvc2?|cvn2?|csc)(?![a-z])|security[\s_-]*code|(?<![a-z])mm\s*\/\s*yy(?!yy)|קוד[\s_-]*(?:אבטחה|ביטחון)/i;
+  const cardTypes = [
+    /(?:credit|debit)[\s_-]*card|כרטיס[\s_-]*אשראי/i,
+    /信用卡|银行卡|銀行卡|借记卡|借記卡|クレジットカード|デビットカード|신용카드/,
+    /tarjeta[\s_-]*de[\s_-]*(?:crédito|credito|débito|debito)|carte[\s_-]*(?:bancaire|de[\s_-]*cr[eé]dit)|kreditkarte|debitkarte|bankkarte/i,
+  ];
+  const MASKED_CARD_NUMBER = /(?:^|[^\d•*x])(?:\d|•|\*|x){4}[\s-]+(?:\d|•|\*|x){4}[\s-]+(?:\d|•|\*|x){4}/i;
+  const CARD_VERIFICATION = /card[\s_-]*(?:security|verification)/i;
+  const CARD_CODE = /(?<![a-z])(?:cvv2?|cvc2?|cvn2?)(?![a-z])/i;
+  const CSC_CODE = /(?:(?<!\p{L})|(?<=安全[码碼]|セキュリティコード|カード|卡|카드))csc(?:(?!\p{L})|(?=[码碼]|コード|번호|番号))/iu;
+  const hasCardCode = (name) => CARD_CODE.test(name) || CSC_CODE.test(name);
+  const NON_PAYMENT_CARD = /gift|voucher|coupon|promo|loyalty|rewards?[\s_-]*(?:card|number|no\b|id|program|points?)|שובר|קופון|מתנה|הטבה|礼品|禮品|礼券|禮券|优惠券|優惠券|代金券|ギフト|クーポン|기프트|쿠폰|regalo|cup[oó]n|cadeau|bon[\s_-]*d['’]?achat|geschenk|gutschein|会员卡|會員卡|积分卡|積分卡|会員カード|メンバーズカード|회원카드|멤버십|tarjeta[\s_-]*de[\s_-]*socio|carte[\s_-]*de[\s_-]*(?:membre|fid[ée]lit[ée])|mitgliedskarte|kundenkarte/i;
+  const CARD_NUMBER = /card[\s_-]*(?:number|no\b|num\b)|cc[\s_-]*(?:num|number)|מספר[\s_-]*כרטיס|卡号|卡號|カード番号|카드[\s_-]*번호|n[uú]mero[\s_-]*de[\s_-]*tarjeta|num[eé]ro[\s_-]*de[\s_-]*carte|kartennummer/i;
+  const CARD_COMPANION = /security[\s_-]*code|(?<![a-z])mm\s*\/\s*yy(?!yy)|קוד[\s_-]*(?:אבטחה|ביטחון)|安全[码碼]|セキュリティコード|보안[\s_-]*코드|c[oó]digo[\s_-]*de[\s_-]*seguridad|cryptogramme|sicherheitscode|pr[üu]fziffer/i;
   const namingOf = (el) => [el.name, el.id, el.placeholder, el.getAttribute("aria-label"),
-    ...Array.from(el.labels || [], (label) => label.textContent)].join(" ");
+    ...Array.from(el.labels || [], (label) => label.textContent)].join(" ").normalize("NFKC");
   function cardLike(el) {
     if (!(el instanceof HTMLInputElement) || !["text", "tel", "number", "password"].includes(el.type) || !visible(el)) return false;
     const tokens = (el.getAttribute("autocomplete") || "").toLowerCase().split(/\s+/);
     if (CARD_TOKENS.some((token) => tokens.includes(token))) return true;
     const naming = namingOf(el);
-    if (NOT_A_CARD.test(naming)) return false;
-    if (CARD_NAMING.test(naming)) return true;
+    if (cardTypes.some((pattern) => pattern.test(naming))) return true;
+    if (NON_PAYMENT_CARD.test(naming)) return false;
+    if (hasCardCode(naming) || CARD_VERIFICATION.test(naming) || MASKED_CARD_NUMBER.test(naming)) return true;
     // A card number counts beside a security code or a month/year expiry, which an ID or membership card
     // form does not ask for.
     if (!CARD_NUMBER.test(naming)) return false;
     const around = el.form ? [...el.form.elements] : [...el.getRootNode().querySelectorAll("input")];
-    return around.some((other) => other !== el && other instanceof HTMLInputElement && visible(other)
-      && CARD_COMPANION.test(namingOf(other)));
+    return around.some((other) => {
+      if (other === el || !(other instanceof HTMLInputElement) || !visible(other)) return false;
+      const name = namingOf(other);
+      return hasCardCode(name) || CARD_COMPANION.test(name);
+    });
   }
   // Inputs of the page and of its open shadow trees, where some checkouts draw their card fields.
   function deepInputs(root = document, found = []) {
@@ -1936,6 +2019,19 @@ PURCHASE_HELPERS = r"""
     || (el && PAY_WORD.test(phrase(word)) && inPaymentForm(el)));
   // Controls on a payment page that never pay.
   const NOT_PAYING = /^(?:back|go back|previous|cancel|edit|change|remove|delete|clear|apply|redeem|coupon|promo|discount|gift card|show|hide|help|close|dismiss|terms|privacy|learn more|view|select (?:a )?seat|choose (?:a )?seat|sign in|log in|login|sign up|register|forgot|add (?:a )?(?:promo|coupon|code|gift|note)|add to (?:cart|basket|bag))\b|^(?:חזרה|ביטול|עריכה|שינוי|הסרה|קופון|סגירה|סגור|עזרה|תנאי|פרטיות|התחבר|כניסה|החל|הוסף לסל|הוספה לסל)(?:\s|$)/;
+  const localizedNonPaymentLabels = [
+    /^(?:返回|返回上一步|返回购物车|返回購物車|返回首页|返回首頁|上一步|取消|关闭|關閉|登录|登錄|登入|立即登录|立即登錄|去登录|去登錄|注册|註冊|立即注册|立即註冊|忘记密码|忘記密碼|加入购物车|加入購物車|添加到购物车|添加到購物車)$/,
+    /^(?:戻る|前へ|キャンセル|閉じる|ログイン|新規登録|会員登録|パスワードを忘れた方|カートに追加|カートに入れる)$/,
+    /^(?:(?:뒤로|이전|취소|닫기|로그인|회원가입|비밀번호 찾기)(?:하기)?|장바구니(?:에)? 담기)$/,
+    /^(?:volver|atrás|cancelar|cerrar|iniciar sesión|acceder|registrarse|regístrate|olvidé mi contraseña|añadir al carrito|agregar al carrito)$/,
+    /^(?:retour|retourner|précédent|annuler|fermer|connexion|se connecter|s'inscrire|créer un compte|mot de passe oublié|ajouter au panier)$/,
+    /^(?:zurück|abbrechen|schließen|anmelden|einloggen|registrieren|passwort vergessen|in den warenkorb)$/,
+  ];
+  function notPaying(words) {
+    const names = words.map(phrase);
+    return names.some((name) => NOT_PAYING.test(name))
+      || (names.length > 0 && names.every((name) => localizedNonPaymentLabels.some((pattern) => pattern.test(name))));
+  }
   // A number may group its thousands with spaces, as in "1 234,56 €". Separators before its first digit
   // are kept, so ".99 USD" is not read as 99 dollars.
   const NUMBER = "[.,]*\\d(?:[\\d.,]|[ \\u00a0\\u202f](?=\\d{3}))*";
@@ -2095,7 +2191,7 @@ PURCHASE_HELPERS = r"""
     else if ((el instanceof HTMLButtonElement || el instanceof HTMLInputElement || el instanceof HTMLAnchorElement
         || el.getAttribute("role") === "button" || pressable(el)) && isFinalStep(words, el)) reason = "final_step";
     else if (!selectsMethod(el) && (frame || pageCards().length) && pressable(el) && !inSurroundings(el)
-        && !words.some((word) => NOT_PAYING.test(phrase(word)))) reason = "payment_page";
+        && !notPaying(words)) reason = "payment_page";
     return reason ? shownPurchase(reason, words[0] || "", words) : null;
   }
   // The control a click at this spot of the page presses, unless it lands on a field, label or nothing.
@@ -2119,15 +2215,27 @@ PURCHASE_HELPERS = r"""
   // panel or docked tools: anything else moves the page, so a spot cannot be placed.
   const TOOLBAR_HEIGHT = 87;
   window.__rakazoPurchase = {
-    // Where a point of the screen (x, y) is in this page, or null when that cannot be told (a zoomed page,
-    // a scaled screen, a window with more than the toolbar).
-    pagePoint(x, y) {
-      if (window.devicePixelRatio !== 1 || !Number.isFinite(x) || !Number.isFinite(y)) return null;
-      if (window.outerWidth !== window.innerWidth
-          || Math.abs(window.outerHeight - window.innerHeight - TOOLBAR_HEIGHT) > 2) return null;
-      const side = (window.outerWidth - window.innerWidth) / 2;
-      const at = [x - (window.screenX + side), y - (window.screenY + window.outerHeight - window.innerHeight - side)];
-      return { x: at[0], y: at[1], inside: at[0] >= 0 && at[1] >= 0 && at[0] < window.innerWidth && at[1] < window.innerHeight };
+    // Where a physical screen point lands in the page's CSS pixels.
+    pagePoint(x, y, display) {
+      const ratio = window.devicePixelRatio;
+      if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(ratio) || ratio <= 0) return null;
+      if (ratio !== 1) {
+        const viewport = window.visualViewport;
+        // The native display confirms unscaled browser chrome. Require a focused, maximized browser
+        // with ordinary page zoom, no pinch offset, and the same toolbar geometry as an unzoomed one.
+        if (!document.hasFocus()
+            || display?.[0] !== window.screen.width || display?.[1] !== window.screen.height
+            || window.outerWidth !== window.screen.width || window.outerHeight !== window.screen.height
+            || window.screenX !== 0 || window.screenY !== 0
+            || viewport?.scale !== 1 || viewport.offsetLeft !== 0 || viewport.offsetTop !== 0) return null;
+      }
+      const width = Math.round(window.innerWidth * ratio);
+      const height = Math.round(window.innerHeight * ratio);
+      const toolbar = window.outerHeight - height;
+      if (window.outerWidth !== width || Math.abs(toolbar - TOOLBAR_HEIGHT) > 2) return null;
+      const left = (x - window.screenX) / ratio;
+      const top = (y - window.screenY - toolbar) / ratio;
+      return { x: left, y: top, inside: left >= 0 && top >= 0 && left < window.innerWidth && top < window.innerHeight };
     },
     // What a click at a spot of this page (in viewport coordinates) would press: the purchase it completes, or
     // `inFrame` when the spot is inside a frame, whose own page must be asked.
@@ -2171,7 +2279,7 @@ PURCHASE_HELPERS = r"""
 
 # Zero-width, bidirectional and tag characters, which the card does not show.
 INVISIBLE = re.compile("[\U000E0000-\U000E007F​-‏⁠-⁤‪-‮⁦-⁩﻿]")
-# What the card shows when not even the page's own signals can be read: the check asks rather than allows.
+# The answer when not even the page's own signals can be read: the press is refused rather than allowed.
 UNREADABLE_PURCHASE = {"reason": "unreadable", "label": "", "amount": "", "amountFrom": "page"}
 DESKTOP_DEADLINE_SECONDS = 8.0
 # Chromium's answer for a world whose document the tab has just replaced, and how long the check waits
@@ -2399,9 +2507,20 @@ class Purchases:
         points = [(p["x"], p["y"]) for p in (args.get("points") or [])[:24]
                   if isinstance(p, dict) and all(isinstance(p.get(k), (int, float)) for k in ("x", "y"))]
         unknown = enter or not points or args.get("unplaced") is True
+        display = None
+        if points:
+            try:
+                width, height = map(int, subprocess.check_output(
+                    ["/usr/bin/xdotool", "getdisplaygeometry"], stderr=subprocess.DEVNULL, timeout=0.35
+                ).split())
+                if width > 0 and height > 0:
+                    display = [width, height]
+            except (OSError, ValueError, subprocess.SubprocessError):
+                pass
         try:
             for x, y in points:
-                placed = self.ask(self.session, None, f"pagePoint({json.dumps(x)}, {json.dumps(y)})")
+                placed = self.ask(self.session, None,
+                                  f"pagePoint({json.dumps(x)}, {json.dumps(y)}, {json.dumps(display)})")
                 if not isinstance(placed, dict):
                     unknown = True
                 elif placed.get("inside"):
@@ -2619,7 +2738,11 @@ def run(argv: list[str]) -> int:
             # The new tab is already on the site: navigating it again would go unseen by the request log
             # it has only just started.
             opened = True
-        browser.use_tab(target)
+        # A check of screen presses only reads the tab over CDP: a slow agent-browser must not fail it, since
+        # a failed check asks. Only a click's ref needs agent-browser's session on the tab.
+        refs = args.get("actions") if isinstance(args.get("actions"), list) else []
+        if command != "purchase_check" or any(isinstance(step, dict) and step.get("kind") == "click" for step in refs):
+            browser.use_tab(target)
         page = PageBrowser(port, target, browser)
         if downloads:
             session = client.call("Target.attachToTarget", {"targetId": target, "flatten": True})["sessionId"]
@@ -2683,7 +2806,14 @@ def run(argv: list[str]) -> int:
                 saved = downloads.finish()
             except Exception:
                 saved = [{"error": DOWNLOAD_FAILED}]
-        dialog = page.dialog() if page else None
+        # A purchase check presses nothing, an alert's OK included. A failed one fails, unless a dialog open
+        # on the page is why it could not read it: then it names the dialog's type for the caller to judge.
+        if page and command == "purchase_check":
+            dialog = page.open_dialog()
+            if dialog:
+                print(json.dumps(dialog))
+                return 0
+        dialog = page.dialog() if page and command != "purchase_check" else None
         failure = page.dialog_result(dialog, {}) if page and dialog else {
             "ok": False, "error": str(exc), "fallback": "computer_act", "uncertain": command == "act" and connected}
         print(json.dumps({**failure, **({"downloads": saved} if saved else {})}))

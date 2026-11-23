@@ -1,26 +1,30 @@
 import { ph } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
-import { canDeleteOrganization } from "@rakazo/core";
-import { useLocalSearchParams, useRouter } from "expo-router";
+import { canDeleteOrganization, canManageOrganizationMembers } from "@rakazo/core";
+import { useIsFocused, useLocalSearchParams, useRouter } from "expo-router";
 import { useState } from "react";
 import { ActivityIndicator, ScrollView, StyleSheet, Text } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { LoadFailure } from "../../components/load-failure";
-import { SettingsGroup, SettingsInputRow, SettingsRow } from "../../components/settings-group";
-import { mobileTokens } from "../../lib/appearance";
-import { native, useThemedStyles } from "../../lib/native";
-import type { Organization } from "../../lib/organizations";
+import {
+  SettingsGroup,
+  SettingsInputRow,
+  SettingsRow,
+} from "../../components/settings/settings-group";
+import { LoadFailure } from "../../components/ui/load-failure";
+import { useLiveStream } from "../../lib/api/roster-signals";
+import { errorText } from "../../lib/api/user-error";
+import { mobileTokens } from "../../lib/appearance/appearance";
+import { useSideInsets } from "../../lib/layout/side-insets";
+import { native, useThemedStyles } from "../../lib/native/native";
+import { useSave } from "../../lib/query/query";
+import { ACCOUNT_SETTINGS } from "../../lib/query/settings-target";
+import type { Organization } from "../../lib/spaces/organizations";
 import {
   activeOrganization,
   leaveDeletedOrganization,
   refreshOrganizations,
   useOrganizations,
-} from "../../lib/organizations";
-import { useSave } from "../../lib/query";
-import { openFromSettingsSheet } from "../../lib/settings-sheet";
-import { ACCOUNT_SETTINGS } from "../../lib/settings-target";
-import { useSideInsets } from "../../lib/side-insets";
-import { errorText } from "../../lib/user-error";
+} from "../../lib/spaces/organizations";
 
 export default function OrganizationSettings() {
   const { t } = useLingui();
@@ -28,6 +32,8 @@ export default function OrganizationSettings() {
   const sideInsets = useSideInsets();
   const styles = useThemedStyles(createStyles);
   const query = useOrganizations();
+  // Someone else's change to the members reaches this screen as a signal on the live stream.
+  useLiveStream(useIsFocused());
   const organization = activeOrganization(query.data);
   const [draft, setDraft] = useState<string | null>(null);
   // The plan choice links here with the deletion confirmation already open.
@@ -114,11 +120,22 @@ export default function OrganizationSettings() {
         </SettingsGroup>
         <SettingsGroup>
           <SettingsRow
-            key="create"
+            key="members"
             accessibilityRole="button"
-            disabled={pending}
-            title={t`Create organization`}
-            onPress={() => openFromSettingsSheet(router, "/new-organization")}
+            title={t`Members`}
+            // Alone in it, its owner is offered to invite someone instead of a count of one.
+            value={
+              current.memberCount === 1 && canManageOrganizationMembers(current)
+                ? t`Invite people`
+                : String(current.memberCount)
+            }
+            chevron="right"
+            onPress={() =>
+              router.push({
+                pathname: "/organization-members",
+                params: { organizationId: current.id },
+              })
+            }
           />
         </SettingsGroup>
         {canDelete ? (

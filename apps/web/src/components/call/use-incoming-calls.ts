@@ -1,7 +1,7 @@
 import type { IncomingBotCall } from "@rakazo/contracts";
 import { useEffect, useState } from "react";
-import { followStream } from "../../lib/follow-stream";
-import { rpc } from "../../lib/rpc";
+import { followStream } from "../../lib/query/follow-stream";
+import { rpc } from "../../lib/query/rpc";
 
 const NO_CALLS: IncomingBotCall[] = [];
 

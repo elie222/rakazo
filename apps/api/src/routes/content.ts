@@ -10,6 +10,7 @@ import {
   zonedDateTime,
 } from "@rakazo/core";
 import { IsolationError, LISTED_ARTIFACT, Prisma, parseComputerMode } from "@rakazo/db";
+import { requireIdentityConfirmation } from "../auth/identity-confirmation.js";
 import {
   createOwnedArtifact,
   deleteArtifactFamily,
@@ -18,14 +19,21 @@ import {
   getSpaceArtifactById,
   listArtifactVersions,
   listSpaceArtifacts,
-} from "../artifacts.js";
-import { requireIdentityConfirmation } from "../identity-confirmation.js";
-import { listSpaceRuns } from "../runs.js";
-import { querySpaceSearch } from "../search.js";
-import { loadAllMessages } from "../thread-message-pages.js";
+} from "../content/artifacts.js";
+import { querySpaceSearch } from "../content/search.js";
+import { listSpaceRuns } from "../threads/runs.js";
+import { loadAllMessages } from "../threads/thread-message-pages.js";
 import type { RouterContext } from "./context.js";
 
 const EXPORT_MESSAGE_PAGE_SIZE = 500;
+
+// ICU accepts these legacy names even when PostgreSQL ships only their IANA targets.
+const usageTimezoneAliases = new Map([
+  ["america/indianapolis", "America/Indiana/Indianapolis"],
+  ["asia/calcutta", "Asia/Kolkata"],
+  ["asia/rangoon", "Asia/Yangon"],
+  ["asia/saigon", "Asia/Ho_Chi_Minh"],
+]);
 
 export function contentRoutes(ctx: RouterContext) {
   const { deps, repos, favicons, groupRepos, authed, refreshExpiredCredential } = ctx;
@@ -111,7 +119,11 @@ export function contentRoutes(ctx: RouterContext) {
     usage: {
       list: authed.usage.list.handler(async ({ context }) => {
         const rows = await deps.prisma.usageRecord.findMany({
-          where: { spaceId: context.actor.spaceId, userId: context.actor.userId },
+          where: {
+            spaceId: context.actor.spaceId,
+            userId: context.actor.userId,
+            fundingSource: "customer",
+          },
           orderBy: { createdAt: "desc" },
           take: 100,
         });
@@ -150,7 +162,11 @@ export function contentRoutes(ctx: RouterContext) {
         ),
       ),
       summary: authed.usage.summary.handler(async ({ context }) => {
-        const where = { spaceId: context.actor.spaceId, userId: context.actor.userId };
+        const where = {
+          spaceId: context.actor.spaceId,
+          userId: context.actor.userId,
+          fundingSource: "customer",
+        };
         const sums = {
           inputTokens: true,
           outputTokens: true,
@@ -209,7 +225,10 @@ export function contentRoutes(ctx: RouterContext) {
           where: { id: context.actor.userId },
           select: { timezone: true },
         });
-        const timezone = validTimezoneOrUtc(member?.timezone ?? "UTC");
+        const savedTimezone = member?.timezone ?? "UTC";
+        const timezone = validTimezoneOrUtc(
+          usageTimezoneAliases.get(savedTimezone.toLowerCase()) ?? savedTimezone,
+        );
         const localDay = (at: Date) => wallClock(at, timezone).slice(0, 10);
         const days = input.range === "today" ? 1 : input.range === "7d" ? 7 : 30;
         const firstDate = new Date(`${localDay(now)}T00:00:00Z`);
@@ -244,7 +263,12 @@ export function contentRoutes(ctx: RouterContext) {
           costUsd: number | null;
           costComplete: boolean;
         };
-        type ModelRow = TotalsRow & { provider: string; model: string };
+        type ModelRow = TotalsRow & {
+          provider: string;
+          model: string;
+          cachedTokens: number | bigint | null;
+          cachedComplete: boolean;
+        };
         type TimeRow = Omit<TotalsRow, "runs"> & { bucket: string };
         type BotRow = TotalsRow & { botId: string; name: string | null; deleted: boolean };
 
@@ -283,13 +307,17 @@ export function contentRoutes(ctx: RouterContext) {
                 tx.$queryRaw<TotalsRow[]>(Prisma.sql`
             SELECT ${totalsSelect}
             FROM usage_records u
-            WHERE u."spaceId" = ${where.spaceId} AND u."userId" = ${where.userId}
+            WHERE u."spaceId" = ${where.spaceId} AND u."userId" = ${where.userId} AND u."fundingSource" = 'customer'
               ${rangeFilter} ${modelFilter} ${botFilter}
           `),
+                // Rows from before cache reads were measured hold a zero and no total, so a zero
+                // counts as measured only where the row's total is; any other count was measured.
                 tx.$queryRaw<ModelRow[]>(Prisma.sql`
-            SELECT u.provider, u.model, ${totalsSelect}
+            SELECT u.provider, u.model, ${totalsSelect},
+              SUM(u."cacheReadTokens")::double precision AS "cachedTokens",
+              BOOL_AND(COALESCE(u."cacheReadTokens" > 0 OR (u."cacheReadTokens" = 0 AND u."totalTokens" IS NOT NULL), false)) AS "cachedComplete"
             FROM usage_records u
-            WHERE u."spaceId" = ${where.spaceId} AND u."userId" = ${where.userId}
+            WHERE u."spaceId" = ${where.spaceId} AND u."userId" = ${where.userId} AND u."fundingSource" = 'customer'
               ${rangeFilter} ${modelFilter} ${botFilter}
             GROUP BY u.provider, u.model
             ORDER BY COALESCE(SUM(u."totalTokens"), 0) DESC, COUNT(*) DESC
@@ -306,7 +334,7 @@ export function contentRoutes(ctx: RouterContext) {
               SUM(u."costUsd")::double precision AS "costUsd",
               BOOL_AND(u."costUsd" IS NOT NULL) AS "costComplete"
             FROM usage_records u
-            WHERE u."spaceId" = ${where.spaceId} AND u."userId" = ${where.userId}
+            WHERE u."spaceId" = ${where.spaceId} AND u."userId" = ${where.userId} AND u."fundingSource" = 'customer'
               ${rangeFilter} ${modelFilter} ${botFilter}
             GROUP BY bucket
             ORDER BY bucket ASC
@@ -320,7 +348,7 @@ export function contentRoutes(ctx: RouterContext) {
             FROM usage_records u
             LEFT JOIN bots b ON b.id = u."botId"
             LEFT JOIN bot_deletions bd ON bd.id = u."botId"
-            WHERE u."spaceId" = ${where.spaceId} AND u."userId" = ${where.userId}
+            WHERE u."spaceId" = ${where.spaceId} AND u."userId" = ${where.userId} AND u."fundingSource" = 'customer'
               AND u."botId" IS NOT NULL
               ${rangeFilter}
             GROUP BY u."botId", b.id, b.name, bd.name
@@ -329,7 +357,7 @@ export function contentRoutes(ctx: RouterContext) {
                 tx.$queryRaw<{ provider: string; model: string }[]>(Prisma.sql`
             SELECT u.provider, u.model
             FROM usage_records u
-            WHERE u."spaceId" = ${where.spaceId} AND u."userId" = ${where.userId}
+            WHERE u."spaceId" = ${where.spaceId} AND u."userId" = ${where.userId} AND u."fundingSource" = 'customer'
               ${rangeFilter}
             GROUP BY u.provider, u.model
             ORDER BY COALESCE(SUM(u."totalTokens"), 0) DESC, COUNT(*) DESC
@@ -363,13 +391,18 @@ export function contentRoutes(ctx: RouterContext) {
               costUsd: 0,
             };
           }
-          return totalsOf({
-            ...rawTotals,
-            inputComplete: Boolean(rawTotals.inputComplete),
-            outputComplete: Boolean(rawTotals.outputComplete),
-            totalComplete: Boolean(rawTotals.totalComplete),
-            costComplete: Boolean(rawTotals.costComplete),
-          });
+          // A few calls without a count (an interrupted one) must not blank the whole total.
+          const tokensPartial = !rawTotals.totalComplete && rawTotals.totalTokens !== null;
+          return {
+            ...totalsOf({
+              ...rawTotals,
+              inputComplete: Boolean(rawTotals.inputComplete),
+              outputComplete: Boolean(rawTotals.outputComplete),
+              totalComplete: Boolean(rawTotals.totalComplete) || tokensPartial,
+              costComplete: Boolean(rawTotals.costComplete),
+            }),
+            tokensPartial,
+          };
         })();
 
         const nextDay = (day: string) =>
@@ -444,6 +477,7 @@ export function contentRoutes(ctx: RouterContext) {
               model: row.model,
               modelCalls: t.modelCalls,
               inputTokens: t.inputTokens,
+              cachedTokens: toNullableInt(row.cachedTokens, Boolean(row.cachedComplete)),
               outputTokens: t.outputTokens,
               totalTokens: t.totalTokens,
               costUsd: t.costUsd,
@@ -530,7 +564,7 @@ export function contentRoutes(ctx: RouterContext) {
     },
     runs: {
       list: authed.runs.list.handler(async ({ context, input }) => ({
-        runs: await listSpaceRuns(deps.prisma, context.actor, input.filter),
+        runs: await listSpaceRuns(deps.prisma, context.actor, input.filter, input.status),
       })),
     },
   };

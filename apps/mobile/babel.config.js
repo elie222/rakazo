@@ -1,5 +1,5 @@
 // SDK 58's Hermes rejects async arrows whose rest parameter is a destructuring pattern
-// (`async (...[a, b]) => {}`), which `@orpc/client` and lib/api.ts ship, and babel-preset-expo
+// (`async (...[a, b]) => {}`), which `@orpc/client` and lib/api/api.ts ship, and babel-preset-expo
 // 58.0.18 stopped rewriting them, so only bytecode (release) builds fail.
 // Remove this plugin once https://github.com/expo/expo/issues/52983 is fixed.
 //

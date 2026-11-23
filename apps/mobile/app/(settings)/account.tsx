@@ -9,29 +9,39 @@ import type { ComponentProps } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { AppMark } from "../../components/app-mark";
-import { ApprovalModeRow, ApprovalRulesRow } from "../../components/approval-settings-rows";
-import { NativeActionButton } from "../../components/native-action-button";
-import { NativeSymbol } from "../../components/native-symbol";
-import { SettingsGroup, SettingsRow, useStackedSettings } from "../../components/settings-group";
-import { SpendingLimitRow, useSpendingStatus } from "../../components/spending-limit-row";
-import { rpc, selectedSpaceId } from "../../lib/api";
-import { signOut } from "../../lib/api-auth";
-import { formatUpdateLabel, getAppVersionInfo } from "../../lib/app-version";
-import { useApprovalSettings } from "../../lib/approval-settings";
-import { replaceWithSignIn } from "../../lib/auth-routing";
-import { endCallBeforeSessionEnd } from "../../lib/call-session";
-import { dateLocaleForUi, useUiLocale } from "../../lib/i18n";
-import type { MobileMe } from "../../lib/mobile-types";
-import { native, useMobileTokens, useThemedStyles } from "../../lib/native";
-import { activeOrganization, useOrganizations } from "../../lib/organizations";
-import { createSettingsPageStyles } from "../../lib/settings-page-styles";
-import { isSettingsLink, openFromSettingsSheet } from "../../lib/settings-sheet";
-import { ACCOUNT_SETTINGS } from "../../lib/settings-target";
-import { useSideInsets } from "../../lib/side-insets";
-import { openStoreListing, useStoreUpdateAvailable } from "../../lib/store-update";
-import { confirmUnsentSendLoss } from "../../lib/unsent-send-warning";
-import { errorText } from "../../lib/user-error";
+import { OrganizationRowMenu } from "../../components/inbox/organization-menu";
+import { NativeActionButton } from "../../components/native/native-action-button";
+import { NativeSymbol } from "../../components/native/native-symbol";
+import {
+  ApprovalModeRow,
+  ApprovalRulesRow,
+} from "../../components/settings/approval-settings-rows";
+import {
+  SettingsGroup,
+  SettingsRow,
+  useStackedSettings,
+} from "../../components/settings/settings-group";
+import { SpendingLimitRow, useSpendingStatus } from "../../components/settings/spending-limit-row";
+import { AppMark } from "../../components/ui/app-mark";
+import { rpc } from "../../lib/api/api";
+import type { MobileMe } from "../../lib/api/mobile-types";
+import { errorText } from "../../lib/api/user-error";
+import { signOut } from "../../lib/auth/api-auth";
+import { replaceWithSignIn } from "../../lib/auth/auth-routing";
+import { selfHosted, showSelfHostedSupport } from "../../lib/billing/self-hosted-support";
+import { endCallBeforeSessionEnd } from "../../lib/calls/call-session";
+import { dateLocaleForUi, useUiLocale } from "../../lib/i18n/i18n";
+import { useSideInsets } from "../../lib/layout/side-insets";
+import { native, useMobileTokens, useThemedStyles } from "../../lib/native/native";
+import { formatUpdateLabel, getAppVersionInfo } from "../../lib/platform/app-version";
+import { openWriteReview, writeReviewUrl } from "../../lib/platform/store-review";
+import { openStoreListing, useStoreUpdateAvailable } from "../../lib/platform/store-update";
+import { ACCOUNT_SETTINGS } from "../../lib/query/settings-target";
+import { useApprovalSettings } from "../../lib/settings/approval-settings";
+import { createSettingsPageStyles } from "../../lib/settings/settings-page-styles";
+import { isSettingsLink, openFromSettingsSheet } from "../../lib/settings/settings-sheet";
+import { activeOrganization, useOrganizations } from "../../lib/spaces/organizations";
+import { confirmUnsentSendLoss } from "../../lib/thread/send/unsent-send-warning";
 
 type Icon = Pick<ComponentProps<typeof NativeSymbol>, "ios" | "android">;
 type SettingsLink = { title: string; href: Href; icon: Icon };
@@ -76,7 +86,7 @@ export default function Account() {
       chevron="right"
       disabled={signingOut}
       leading={icon(glyph)}
-      // Artifacts, Board and Members live on the root stack, so they close the sheet first.
+      // Artifacts and Board live on the root stack, so they close the sheet first.
       onPress={() =>
         typeof href === "string" && isSettingsLink(href)
           ? router.push(href)
@@ -234,6 +244,11 @@ export default function Account() {
       href: "/artifacts",
       icon: { ios: "folder", android: "folder-outline" },
     },
+    {
+      title: t`Pages shared with you`,
+      href: "/shared-pages",
+      icon: { ios: "doc.on.doc", android: "documents-outline" },
+    },
     ...(hasLab(me?.labs, "board")
       ? [
           {
@@ -367,27 +382,29 @@ export default function Account() {
 
         <SettingsGroup>
           {organizations ? (
-            <SettingsRow
+            <OrganizationRowMenu
               key="organization"
-              accessibilityRole="button"
-              chevron="right"
-              leading={icon({ ios: "building.2", android: "business-outline" })}
-              onPress={() => router.push("/organization")}
-              title={t`Organization`}
-              value={activeOrganization(organizations)?.name}
-            />
+              list={organizations}
+              onCreate={() => openFromSettingsSheet(router, "/new-organization")}
+              onSettings={() => router.push("/organization")}
+            >
+              <SettingsRow
+                accessible
+                accessibilityRole="button"
+                accessibilityLabel={t`Organization`}
+                accessibilityValue={{ text: activeOrganization(organizations)?.name }}
+                chevron="down"
+                leading={icon({ ios: "building.2", android: "business-outline" })}
+                title={t`Organization`}
+                value={activeOrganization(organizations)?.name}
+              />
+            </OrganizationRowMenu>
           ) : null}
-          {me
-            ? settingsLink({
-                title: t`Members`,
-                // The space header holds Members too, but a single space has no header.
-                href: {
-                  pathname: "/space-members",
-                  params: { spaceId: selectedSpaceId() ?? me.spaceId },
-                },
-                icon: { ios: "person.2", android: "people-outline" },
-              })
-            : null}
+          {settingsLink({
+            title: t`Spaces`,
+            href: "/spaces",
+            icon: { ios: "square.stack", android: "layers-outline" },
+          })}
           {me?.billingEnabled
             ? settingsLink({
                 title: t`Billing`,
@@ -396,6 +413,27 @@ export default function Account() {
               })
             : null}
         </SettingsGroup>
+
+        {writeReviewUrl() || selfHosted() ? (
+          <SettingsGroup>
+            {selfHosted() ? (
+              <SettingsRow
+                accessibilityRole="button"
+                leading={icon({ ios: "heart", android: "heart-outline" })}
+                title={t`Support Rakazo`}
+                onPress={showSelfHostedSupport}
+              />
+            ) : null}
+            {writeReviewUrl() ? (
+              <SettingsRow
+                accessibilityRole="button"
+                leading={icon({ ios: "star", android: "star-outline" })}
+                title={t`Rate Rakazo`}
+                onPress={openWriteReview}
+              />
+            ) : null}
+          </SettingsGroup>
+        ) : null}
 
         <View style={styles.section}>
           <NativeActionButton

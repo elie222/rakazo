@@ -10,7 +10,7 @@ import {
 } from "@rakazo/ui-web";
 import type { ComponentType, ReactNode } from "react";
 import { Component } from "react";
-import { lazyComponent } from "../lib/preload-recovery";
+import { lazyComponent } from "../lib/platform/preload-recovery";
 
 type ErrorBoundaryProps = {
   children: ReactNode;

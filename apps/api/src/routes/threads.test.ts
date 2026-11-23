@@ -1,13 +1,13 @@
 import { ORPCError } from "@orpc/server";
 import type { Actor } from "@rakazo/contracts";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { answerComputerRequest } from "../computer-control.js";
+import { answerComputerRequest } from "../computers/computer-control.js";
 import type { RouterDeps } from "../router.js";
-import { purgeClearedThreadMemory } from "../thread-memory.js";
-import type { ThreadTarget } from "../thread-target.js";
+import { purgeClearedThreadMemory } from "../threads/thread-memory.js";
+import type { ThreadTarget } from "../threads/thread-target.js";
 import { takeoverReleaser } from "./threads.js";
 
-vi.mock("../computer-control.js", () => ({
+vi.mock("../computers/computer-control.js", () => ({
   answerComputerRequest: vi.fn().mockResolvedValue(null),
 }));
 

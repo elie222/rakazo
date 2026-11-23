@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { parseArgs } from "node:util";
 import { loadRootEnv } from "@rakazo/core/node/load-root-env";
-import { computerTestSandbox } from "../computer-test-config.js";
+import { computerTestSandbox } from "../computers/computer-test-config.js";
 import { disposableDatabaseEnv, startPostgres } from "./postgres.js";
 import { runProcess } from "./process.js";
 
@@ -51,7 +51,7 @@ async function main() {
     });
     await runProcess(
       "pnpm",
-      ["exec", "vitest", "run", "packages/testkit/src/computer-use.e2e.test.ts"],
+      ["exec", "vitest", "run", "packages/testkit/src/computers/computer-use.e2e.test.ts"],
       env,
     );
   } finally {

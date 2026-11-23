@@ -28,6 +28,8 @@ Linux 默认不提供相同的 `host.docker.internal` 行为。
 自定义主机名解析到私有 IP 时，还需在 API 和 worker 的部署环境中设置
 `RAKAZO_OPENAI_COMPAT_PRIVATE_HOSTS=models.example.test,other.example.test`，然后重建这些容器。
 条目必须是精确主机名（大小写不敏感，可带末尾点），不能使用 URL、后缀或通配符。
+以 `.local` 结尾的 mDNS 局域网主机名无需加入此列表。
+mDNS 解析发生在 API 和 worker 所在环境：原生安装和启用 mDNS 的主机可用，容器桥接 DNS 通常无法解析。
 这些主机忽略 `RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC`；DNS 的每个答案都必须是私有地址，
 元数据和链路本地目标仍会被阻止。此设置适用于模型发现和实际请求。
 HTTPS 仍会校验证书；和私有 IP 端点一样，受信任主机名也允许携带 API 密钥时使用 HTTP，

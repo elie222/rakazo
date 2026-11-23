@@ -10,24 +10,26 @@ import { otaEligibility, otaSummary } from "./mobile-ota.mjs";
 const script = fileURLToPath(new URL("./mobile-ota.mjs", import.meta.url));
 const BASE = "0123456789abcdef0123456789abcdef01234567";
 
-test("bundled JavaScript, TypeScript and shared CSS ship over the air", () => {
+test("bundled JavaScript, TypeScript, shared CSS and translation catalogs ship over the air", () => {
   const files = [
     "apps/mobile/app/(tabs)/index.tsx",
     "apps/mobile/components/deep/nested/Card.tsx",
-    "apps/mobile/lib/query.ts",
+    "apps/mobile/lib/query/query.ts",
     "apps/mobile/index.ts",
     "packages/chat-ui/src/theme.css",
     "packages/ui-tokens/src/tokens.ts",
-    "packages/contracts/src/rpc.ts",
+    "packages/contracts/src/rpc/app-contract.ts",
     "packages/core/src/time.ts",
     "packages/logging/src/index.ts",
+    "packages/i18n/src/cron.ts",
+    "packages/i18n/locales/zh-TW/messages.po",
   ];
   assert.deepEqual(otaEligibility(files), { publish: true, blocked: [] });
 });
 
 test("files that never ship are ignored", () => {
   const files = [
-    "apps/mobile/lib/query.test.ts",
+    "apps/mobile/lib/query/query.test.ts",
     "apps/mobile/components/Card.test.tsx",
     "packages/core/src/time.test.js",
     "packages/contracts/src/env.d.ts",
@@ -51,9 +53,10 @@ test("anything else that changed blocks the update", () => {
     "packages/core/src/data.json",
     "packages/core/package.json",
     "packages/logging/src/style.css",
+    "packages/i18n/package.json",
     "pnpm-lock.yaml (mobile dependency tree)",
   ];
-  assert.deepEqual(otaEligibility(["apps/mobile/lib/query.ts", ...blocked]), {
+  assert.deepEqual(otaEligibility(["apps/mobile/lib/query/query.ts", ...blocked]), {
     publish: false,
     blocked,
   });
@@ -79,7 +82,7 @@ test("the summary explains the decision against the base commit", () => {
   );
   assert.equal(
     otaSummary(BASE, { publish: true, blocked: [] }),
-    "### Mobile OTA eligible\n\nSince `012345678`, only JavaScript, TypeScript, or bundled CSS used by the mobile client changed.\n",
+    "### Mobile OTA eligible\n\nSince `012345678`, only JavaScript, TypeScript, bundled CSS, or translation catalogs used by the mobile client changed.\n",
   );
   assert.equal(
     otaSummary(BASE, { publish: false, blocked: [] }),
@@ -94,7 +97,9 @@ test("the command line writes the step summary and the publish output", (t) => {
   const output = path.join(dir, "output");
   writeFileSync(summary, "earlier\n");
   writeFileSync(output, "");
-  execFileSync("node", [script, BASE, summary, output], { input: "apps/mobile/lib/query.ts\n" });
+  execFileSync("node", [script, BASE, summary, output], {
+    input: "apps/mobile/lib/query/query.ts\n",
+  });
   assert.equal(readFileSync(output, "utf8"), "publish=true\n");
   assert.match(readFileSync(summary, "utf8"), /^earlier\n### Mobile OTA eligible\n/);
 });

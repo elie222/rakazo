@@ -9,7 +9,7 @@ export const exclude = [
   "**/*.{test,spec}.*",
   "**/*{.,-}test-support.*",
   "**/testing/**",
-  "packages/core/src/{async,retry,retry-policy}.ts",
+  "packages/core/src/primitives/{async,retry,retry-policy}.ts",
 ];
 
 const ANY_MENTION = /retry-?after/i;

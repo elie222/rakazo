@@ -9,7 +9,7 @@ import { act } from "react";
 import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { RpcClient } from "../../lib/rpc";
+import type { RpcClient } from "../../lib/query/rpc";
 import { useBrowserNotifications } from "./use-browser-notifications";
 
 type Frame = { type: "alert" | "roster" | "heartbeat"; alert?: ChatAlert };

@@ -17,6 +17,7 @@ kill_timeout = 30
 [[mounts]]
   source = "preview_data"
   destination = "/data"
+  initial_size = "1gb"
 
 [[vm]]
   size = "shared-cpu-2x"

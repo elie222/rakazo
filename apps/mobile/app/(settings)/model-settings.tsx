@@ -5,7 +5,7 @@ import { MAX_MODEL_CONTEXT_WINDOW, MAX_MODEL_MAX_TOKENS } from "@rakazo/contract
 import type { ModelSettingsFields } from "@rakazo/core";
 import {
   catalogEntryFor,
-  connectionModels,
+  connectionServesModel,
   credentialModelSettings,
   modelCapabilitiesConfigurable,
   modelHasOwnSettings,
@@ -25,18 +25,18 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { LimitField } from "../../components/model-connection-fields";
-import { createModelsStyles } from "../../components/model-connection-styles";
-import { NativeActionButton } from "../../components/native-action-button";
-import { NativeSwitch } from "../../components/native-switch";
-import type { MobileModel, MobileModelCredential } from "../../lib/mobile-types";
-import { native, useThemedStyles } from "../../lib/native";
-import { formRead, queryClient, targetRpcQuery, useSave } from "../../lib/query";
-import { useScreenHeader } from "../../lib/screen-header";
-import { useScreenQuery } from "../../lib/screen-query";
-import type { SettingsTarget } from "../../lib/settings-target";
-import { settingsTarget } from "../../lib/settings-target";
-import { errorText } from "../../lib/user-error";
+import { LimitField } from "../../components/models/model-connection-fields";
+import { createModelsStyles } from "../../components/models/model-connection-styles";
+import { NativeActionButton } from "../../components/native/native-action-button";
+import { NativeSwitch } from "../../components/native/native-switch";
+import type { MobileModel, MobileModelCredential } from "../../lib/api/mobile-types";
+import { errorText } from "../../lib/api/user-error";
+import { native, useThemedStyles } from "../../lib/native/native";
+import { useScreenHeader } from "../../lib/navigation/screen-header";
+import { formRead, queryClient, targetRpcQuery, useSave } from "../../lib/query/query";
+import { useScreenQuery } from "../../lib/query/screen-query";
+import type { SettingsTarget } from "../../lib/query/settings-target";
+import { settingsTarget } from "../../lib/query/settings-target";
 
 type ModelRoute = { credentialId: string; modelId: string; spaceId?: string };
 
@@ -58,7 +58,7 @@ function modelRead(
     ]);
     const credential = credentials.find((item) => item.id === credentialId);
     if (!credential) throw new Error(notFound);
-    if (!connectionModels(credential, catalog).some((entry) => entry.id === modelId)) return null;
+    if (!connectionServesModel(credential, catalog, modelId)) return null;
     return { credential, entry: catalogEntryFor(catalog, credential.provider, modelId) };
   };
   return {

@@ -1,5 +1,7 @@
+import { plural } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
 import type { CapabilityInstall } from "@rakazo/contracts";
+import { pluginSite } from "@rakazo/core";
 import { useQuery } from "@tanstack/react-query";
 import { useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useState } from "react";
@@ -13,23 +15,22 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { BotTemplateIcon } from "../../components/bot-template-icon";
-import { NativeActionButton } from "../../components/native-action-button";
-import { PluginIcon } from "../../components/plugin-icon";
-import { Chevron } from "../../components/row-accessories";
-import { SkillSymbol } from "../../components/skill-symbol";
-import { native, useThemedStyles } from "../../lib/native";
-import type { PluginParams } from "../../lib/plugin-marketplace";
+import { BotTemplateIcon } from "../../components/bots/bot-template-icon";
+import { PluginIcon } from "../../components/integrations/plugin-icon";
+import { SkillSymbol } from "../../components/integrations/skill-symbol";
+import { NativeActionButton } from "../../components/native/native-action-button";
+import { Chevron } from "../../components/ui/row-accessories";
+import type { PluginParams } from "../../lib/integrations/plugin-marketplace";
 import {
   gitImportParams,
   pluginParams,
-  pluginSite,
   pluginSkillCount,
   skillPacks,
-} from "../../lib/plugin-marketplace";
-import { queryClient, rpcQuery } from "../../lib/query";
-import { useScreenHeader } from "../../lib/screen-header";
-import { useSideInsets } from "../../lib/side-insets";
+} from "../../lib/integrations/plugin-marketplace";
+import { useSideInsets } from "../../lib/layout/side-insets";
+import { native, useThemedStyles } from "../../lib/native/native";
+import { useScreenHeader } from "../../lib/navigation/screen-header";
+import { queryClient, rpcQuery } from "../../lib/query/query";
 
 const LOGO_SIZE = 32;
 
@@ -196,7 +197,7 @@ export default function SkillsScreen() {
                       {params.name}
                     </Text>
                     <Text numberOfLines={1} style={styles.secondary}>
-                      {count === 1 ? t`1 skill` : t`${count} skills`}
+                      {t`${plural(count, { one: "# skill", other: "# skills" })}`}
                     </Text>
                   </View>
                   <Chevron />

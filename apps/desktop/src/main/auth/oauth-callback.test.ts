@@ -1,0 +1,157 @@
+import { describe, expect, it } from "vitest";
+import {
+  mcpLoopbackRefusalFrom,
+  mcpOAuthCallbackFrom,
+  oauthCallbackFrom,
+} from "./oauth-callback.js";
+
+describe("loopback OAuth callbacks", () => {
+  it("reads the code and state Anthropic redirects with", () => {
+    expect(
+      oauthCallbackFrom("http://localhost:53692/callback?code=ac_123&state=verifier_456"),
+    ).toEqual({ code: "ac_123", state: "verifier_456" });
+  });
+
+  it("accepts the loopback addresses a provider may redirect to", () => {
+    expect(oauthCallbackFrom("http://127.0.0.1:53692/callback?code=ac_123")).toEqual({
+      code: "ac_123",
+    });
+    expect(oauthCallbackFrom("http://[::1]:53692/callback?code=ac_123")).toEqual({
+      code: "ac_123",
+    });
+  });
+
+  it("omits state when the provider redirects without one", () => {
+    expect(oauthCallbackFrom("http://localhost:53692/callback?code=ac_123")).toEqual({
+      code: "ac_123",
+    });
+  });
+
+  it("ignores the authorize page and other steps of the flow", () => {
+    expect(oauthCallbackFrom("https://claude.ai/oauth/authorize?code=true")).toBeUndefined();
+    expect(oauthCallbackFrom("http://localhost:53692/callback")).toBeUndefined();
+    expect(oauthCallbackFrom("http://localhost:5173/")).toBeUndefined();
+  });
+
+  it("does not treat a remote host as a loopback callback", () => {
+    expect(oauthCallbackFrom("https://example.com/callback?code=ac_123")).toBeUndefined();
+    expect(oauthCallbackFrom("https://localhost.example.com/callback?code=ac_123")).toBeUndefined();
+  });
+
+  it("ignores non-http schemes and unparseable targets", () => {
+    expect(oauthCallbackFrom("file:///callback?code=ac_123")).toBeUndefined();
+    expect(oauthCallbackFrom("rakazo://localhost/callback?code=ac_123")).toBeUndefined();
+    expect(oauthCallbackFrom("not a url")).toBeUndefined();
+  });
+
+  it("ignores whitespace-only codes", () => {
+    expect(oauthCallbackFrom("http://localhost:53692/callback?code=%20%20")).toBeUndefined();
+  });
+
+  it("does not capture the app renderer origin used by MCP and other in-app callbacks", () => {
+    expect(
+      oauthCallbackFrom("http://127.0.0.1:5173/mcp/oauth/callback?code=mcp_123&state=s", {
+        excludeOrigins: ["http://127.0.0.1:5173"],
+      }),
+    ).toBeUndefined();
+    expect(
+      oauthCallbackFrom("http://localhost:53692/callback?code=ac_123", {
+        excludeOrigins: ["http://127.0.0.1:5173"],
+      }),
+    ).toEqual({ code: "ac_123" });
+  });
+});
+
+it("lets SSO reach its API callback instead of capturing a separate loopback origin", () => {
+  const url = "http://127.0.0.1:3100/api/auth/callback/oidc?code=sso-code&state=sso-state";
+  expect(
+    oauthCallbackFrom(url, {
+      frameName: "rakazo-sso-oauth",
+      excludeOrigins: ["http://127.0.0.1:5173"],
+    }),
+  ).toBeUndefined();
+  expect(
+    oauthCallbackFrom("http://localhost:53692/callback?code=model-code", {
+      frameName: "rakazo-model-oauth",
+    }),
+  ).toEqual({ code: "model-code" });
+});
+
+describe("MCP sign-in callbacks", () => {
+  const appOrigin = "https://rakazo.example.com";
+
+  it("reads the code from the app's own callback route", () => {
+    expect(
+      mcpOAuthCallbackFrom(
+        `${appOrigin}/mcp/oauth/callback?code=mcp_123&state=session-456`,
+        appOrigin,
+      ),
+    ).toEqual({ code: "mcp_123", state: "session-456" });
+  });
+
+  it("ignores another origin, another route and the authorize step", () => {
+    expect(
+      mcpOAuthCallbackFrom(
+        "https://elsewhere.example.com/mcp/oauth/callback?code=mcp_123&state=s",
+        appOrigin,
+      ),
+    ).toBeUndefined();
+    expect(
+      mcpOAuthCallbackFrom(`${appOrigin}/app?code=mcp_123&state=s`, appOrigin),
+    ).toBeUndefined();
+    expect(mcpOAuthCallbackFrom(`${appOrigin}/mcp/oauth/callback`, appOrigin)).toBeUndefined();
+    expect(mcpOAuthCallbackFrom("not a url", appOrigin)).toBeUndefined();
+  });
+
+  it("needs exactly one code and one state", () => {
+    expect(
+      mcpOAuthCallbackFrom(`${appOrigin}/mcp/oauth/callback?code=a&code=b&state=s`, appOrigin),
+    ).toBeUndefined();
+    expect(
+      mcpOAuthCallbackFrom(`${appOrigin}/mcp/oauth/callback?code=a&state=s&state=t`, appOrigin),
+    ).toBeUndefined();
+    expect(
+      mcpOAuthCallbackFrom(`${appOrigin}/mcp/oauth/callback?code=a&state=%20`, appOrigin),
+    ).toBeUndefined();
+  });
+
+  it("reports a refusal for its attempt instead of leaving its window open", () => {
+    expect(
+      mcpOAuthCallbackFrom(
+        `${appOrigin}/mcp/oauth/callback?error=access_denied&state=s`,
+        appOrigin,
+      ),
+    ).toEqual({ code: null, state: "s" });
+    expect(
+      mcpOAuthCallbackFrom(`${appOrigin}/mcp/oauth/callback?error=access_denied`, appOrigin),
+    ).toBeUndefined();
+    expect(
+      mcpOAuthCallbackFrom(`${appOrigin}/mcp/oauth/callback?code=c&error=&state=s`, appOrigin),
+    ).toEqual({ code: "c", state: "s" });
+  });
+});
+
+describe("an MCP sign-in refused on a loopback redirect", () => {
+  it("reports the refusal for its attempt", () => {
+    expect(
+      mcpLoopbackRefusalFrom("http://127.0.0.1:53682/callback?error=access_denied&state=s"),
+    ).toEqual({ code: null, state: "s" });
+    expect(
+      mcpLoopbackRefusalFrom("http://localhost:1/callback?error=server_error&state=s"),
+    ).toEqual({ code: null, state: "s" });
+  });
+
+  it("leaves a code, another host, and an attempt it cannot name to the other readers", () => {
+    for (const url of [
+      "http://127.0.0.1:53682/callback?code=c&state=s",
+      "http://127.0.0.1:53682/callback?code=c&error=access_denied&state=s",
+      "http://127.0.0.1:53682/callback?error=access_denied",
+      "http://127.0.0.1:53682/callback?error=access_denied&state=s&state=t",
+      "http://127.0.0.1:53682/callback?error=&state=s",
+      "https://127.0.0.1:53682/callback?error=access_denied&state=s",
+      "https://provider.example.com/callback?error=access_denied&state=s",
+      "not a url",
+    ])
+      expect(mcpLoopbackRefusalFrom(url)).toBeUndefined();
+  });
+});

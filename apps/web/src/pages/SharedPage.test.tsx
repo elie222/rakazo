@@ -12,7 +12,7 @@ import { SharedPagePage } from "./SharedPage";
 vi.mock("@lingui/react/macro", () => ({
   Trans: ({ children }: { children: ReactNode }) => children,
 }));
-vi.mock("../lib/pages", () => ({
+vi.mock("../lib/pages/pages", () => ({
   usePageDocument: () => ({ document: null, failed: false, retry: () => undefined }),
 }));
 vi.mock("../components/pages/PublicPageShell", () => ({

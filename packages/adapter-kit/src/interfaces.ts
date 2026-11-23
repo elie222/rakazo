@@ -1,4 +1,5 @@
 import type { ComputerSize } from "@rakazo/contracts";
+import type { ConnectedCalendarProvider } from "./personal-calendar.js";
 import type {
   AdapterContext,
   AdapterDescriptor,
@@ -16,6 +17,7 @@ import type {
   BillingCheckoutRequest,
   BillingCreditCheckoutRequest,
   BillingCreditPurchase,
+  BillingInvoiceRefund,
   BillingPlanPayment,
   BillingPrice,
   BillingSubscriptionSnapshot,
@@ -89,8 +91,10 @@ import type {
   UnreferencedMachine,
   VoiceCapabilities,
   VoiceInfo,
+  VoiceModelInfo,
   VoiceSynthesizeRequest,
   VoiceTranscribeRequest,
+  VoiceUsage,
   VoiceVerifyResult,
   WebFetchCapabilities,
   WebFetchRequest,
@@ -234,6 +238,15 @@ export interface SandboxProvider {
     context: AdapterContext,
     options?: { maxBytes?: number },
   ): Promise<Uint8Array>;
+  /** Reads a file from the disk a stopped computer would resume from, without starting it.
+   * Returns undefined if the provider cannot verify or serve the file from that disk.
+   */
+  readStoppedFile?(
+    computer: ComputerRef,
+    path: string,
+    context: AdapterContext,
+    options: { maxBytes: number; savedAt?: Date },
+  ): Promise<Uint8Array | undefined>;
   writeFile(computer: ComputerRef, file: PortableFile, context: AdapterContext): Promise<void>;
   /** Large files may come as streams. A provider that lists first refuses `limits` up front. */
   exportWorkspace(
@@ -311,12 +324,18 @@ export interface ConnectionAuthProvider {
 export interface ManagedConnectorProvider
   extends ConnectorProvider,
     Omit<ConnectionAuthProvider, "describe"> {
+  calendarProvider?: ConnectedCalendarProvider;
   catalog(context: AdapterContext, query?: string): Promise<ConnectorCatalogItem[]>;
   /** The actions one app offers, to show people what connecting it gives bots. */
   listAppTools?(context: AdapterContext, externalId: string): Promise<ConnectorTool[]>;
   listConnectedExternalIds(context: AdapterContext): Promise<string[]>;
   /** Whether a connected app needs reconnecting because its saved connection gives this run no tools. */
   needsReconnect?(context: AdapterContext, externalId: string): Promise<boolean>;
+  /**
+   * Connection refs the provider reports as signed in, which tell a finished sign-in from an
+   * abandoned one. Undefined when the provider cannot say.
+   */
+  listConnectedRefs?(context: AdapterContext): Promise<string[] | undefined>;
   /** Connection refs the provider reports as dead until the user reconnects them. */
   listReconnectRefs?(context: AdapterContext): Promise<string[]>;
   connectionReady(context: AdapterContext, externalId: string): Promise<boolean>;
@@ -428,10 +447,40 @@ export interface JobPublisher {
   enqueue(job: BackgroundJob): Promise<void>;
   /** Adds the job, or replaces the one with its key, as part of the caller's transaction. */
   enqueueIn(tx: JobTransaction, job: BackgroundJob): Promise<void>;
+  /** `enqueueIn` for many jobs in one statement; a key given twice keeps its last job. */
+  enqueueManyIn(tx: JobTransaction, jobs: readonly BackgroundJob[]): Promise<void>;
   /** Removes the keyed job as part of the caller's transaction. */
   cancelIn(tx: JobTransaction, key: string): Promise<void>;
   cancel(key: string): Promise<void>;
   close(): Promise<void>;
+}
+
+/** A named queue's jobs ahead of one, as `JobQueueOrder.pendingUntil` reads them. */
+export interface QueuedAhead {
+  /** When the last of them is due; null when there are none. */
+  until: Date | null;
+  /** Whether the job keyed `exceptKey` is recorded at all; false without a key. */
+  own: boolean;
+}
+
+/**
+ * Order between the jobs of a named queue beyond running them one at a time, for work that must
+ * not overtake jobs already queued. A job whose payload has `follower: true` is due late only so
+ * it runs after the jobs ahead of it in its queue.
+ */
+export interface JobQueueOrder {
+  /**
+   * When the last unfinished job of a named queue is due; null when the queue has none. With
+   * `exceptKey`, only the jobs queued ahead of that job count, all of them while it is not queued,
+   * and the answer also says whether it is.
+   */
+  pendingUntil(queueName: string, exceptKey?: string): Promise<QueuedAhead>;
+  /**
+   * In the caller's transaction, makes the followers at the head of a named queue due now, a
+   * millisecond apart in their order, up to the first job that is not one or is running. The job
+   * keyed `exceptKey`, the one settling, is left out.
+   */
+  releaseFollowersIn(tx: JobTransaction, queueName: string, exceptKey?: string): Promise<void>;
 }
 
 export interface JobWorkerHost {
@@ -441,6 +490,8 @@ export interface JobWorkerHost {
 
 export interface AgentHomeStore {
   describe(): AdapterDescriptor<{ revisions: boolean }>;
+  /** The most one computer save copies; unset means the default of 5 GiB and a million files. */
+  readonly saveLimits?: WorkspaceExportLimits;
   checkout(botId: string, dest: string, context: AdapterContext): Promise<string>;
   commit(botId: string, src: string, context: AdapterContext): Promise<string>;
   restore(botId: string, revision: string, dest: string, context: AdapterContext): Promise<void>;
@@ -567,16 +618,25 @@ export interface TransactionalEmailProvider {
  */
 export interface BillingProvider {
   /** Optional prepaid model usage capabilities; product code owns the balance ledger. */
-  createCreditCheckout?(input: BillingCreditCheckoutRequest): Promise<{ url: string }>;
+  createCreditCheckout?(input: BillingCreditCheckoutRequest): Promise<{ id: string; url: string }>;
   listCreditPurchases?(customerId: string): Promise<BillingCreditPurchase[]>;
   /**
    * Paid own-key plan invoices created since `since`, the payments a referring partner earns on.
    * Credits never count.
    */
   listPlanPayments?(customerId: string, since: Date): Promise<BillingPlanPayment[]>;
+  /**
+   * Inspects or fully refunds the card payment for a customer-owned paid invoice, named by its
+   * number or id; without one, the newest paid invoice.
+   */
+  refundInvoice?(
+    customerId: string,
+    invoice: string | undefined,
+    confirm: boolean,
+  ): Promise<BillingInvoiceRefund | null>;
   setMonthlyCredits?(customerId: string, amountCents: number): Promise<void>;
   /** Flat monthly own-key plan: access without credits. */
-  createByokCheckout?(input: BillingByokCheckoutRequest): Promise<{ url: string }>;
+  createByokCheckout?(input: BillingByokCheckoutRequest): Promise<{ id: string; url: string }>;
   /** Ends the customer's running trial now and bills the first period; a no-op without one. */
   endTrial?(customerId: string): Promise<void>;
   /**
@@ -601,9 +661,11 @@ export interface BillingProvider {
   describe(): AdapterDescriptor<{ trials: boolean; portal: boolean; modelCredits?: boolean }>;
   getPrice(): Promise<BillingPrice>;
   createCustomer(input: { email: string; organizationId: string }): Promise<{ customerId: string }>;
-  createCheckout(input: BillingCheckoutRequest): Promise<{ url: string }>;
+  createCheckout(input: BillingCheckoutRequest): Promise<{ id: string; url: string }>;
   /** Expires every open checkout session of the customer; resolves once none can be paid. */
   expireOpenCheckouts(customerId: string): Promise<void>;
+  /** Expires checkout session `id` so it cannot be paid; a no-op once it is no longer open. */
+  expireCheckout(id: string): Promise<void>;
   createPortal(input: { customerId: string; returnUrl: string }): Promise<{ url: string }>;
   /** Current subscription for the customer, preferring one that grants access. */
   getCustomerSubscription(customerId: string): Promise<BillingSubscriptionSnapshot | null>;
@@ -630,14 +692,22 @@ export interface ExecutionRunner {
 export interface VoiceProvider {
   describe(): AdapterDescriptor<VoiceCapabilities>;
   verify(apiKey: string, context: AdapterContext): Promise<VoiceVerifyResult>;
-  /** `options.language` narrows the listing for providers that advertise `languages`. */
+  /**
+   * `options.language` narrows the listing for providers that advertise `languages`;
+   * `options.model` selects the speech model for providers whose voices belong to one.
+   */
   listVoices(
     apiKey: string,
     context: AdapterContext,
-    options?: { language?: string },
+    options?: { language?: string; model?: string },
   ): Promise<VoiceInfo[]>;
+  /** The speech models the account can pick from, for providers that list them. */
+  listModels?(apiKey: string, context: AdapterContext): Promise<VoiceModelInfo[]>;
   synthesize(request: VoiceSynthesizeRequest, context: AdapterContext): Promise<SpeechClip>;
-  transcribe?(request: VoiceTranscribeRequest, context: AdapterContext): Promise<{ text: string }>;
+  transcribe?(
+    request: VoiceTranscribeRequest,
+    context: AdapterContext,
+  ): Promise<{ text: string; usage?: VoiceUsage; providerRequestId?: string }>;
 }
 
 /**
@@ -651,6 +721,8 @@ export interface MessagingSurface {
   describe(): AdapterDescriptor<{ providers: string[] }>;
   /** Enabled platforms and what each supports. */
   platforms(): MessagingPlatformDescriptor[];
+  /** Resolve public linking destinations on demand, including recovery after a startup outage. */
+  resolveAddresses?(signal?: AbortSignal): Promise<Record<string, string>>;
   /**
    * Verify and process one platform webhook request. Parsed events reach the
    * sink registered via onInbound before the returned response resolves.
@@ -743,7 +815,8 @@ export interface BrowserProvider {
   ): Promise<BrowserActResult>;
   /**
    * Whether these clicks, or a click or key on the screen, would complete a purchase, without acting.
-   * A browser that cannot tell, such as an older computer image, answers none.
+   * A browser that cannot tell, such as an older computer image, answers none. A check that started
+   * and could not read the page throws, and the press is refused.
    */
   purchaseCheck?(
     computer: ComputerRef,

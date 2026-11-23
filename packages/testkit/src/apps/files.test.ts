@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
+import { studioFacts, studioFiles } from "../evals/fixtures/studio.js";
 import { fileId } from "./files.js";
-import { studioFacts, studioFiles } from "./fixtures/studio.js";
 
 const now = new Date("2026-11-06T16:30:00Z");
 /** The fields these tests read from a successful call. */

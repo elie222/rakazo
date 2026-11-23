@@ -5,24 +5,30 @@ import { Stack, useRouter } from "expo-router";
 import { useContext, useEffect, useRef, useState } from "react";
 import { KeyboardAvoidingView, Platform, ScrollView, Text, TextInput } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { HeaderRowsEditor } from "../components/header-rows-editor";
-import { NativeActionButton } from "../components/native-action-button";
-import { cancelHeaderOptions, trailingHeaderOptions } from "../components/sheet-header";
-import { currentApiBase } from "../lib/api";
-import { resetApiBase, saveApiBase } from "../lib/api-server";
-import { CallKeyboardContext } from "../lib/call-keyboard-context";
+import { HeaderRowsEditor } from "../components/integrations/header-rows-editor";
+import { NativeActionButton } from "../components/native/native-action-button";
+import { cancelHeaderOptions, trailingHeaderOptions } from "../components/native/sheet-header";
+import { SettingsGroup, SettingsRow } from "../components/settings/settings-group";
+import { LongPressMenu } from "../components/ui/long-press-menu";
+import { currentApiBase } from "../lib/api/api";
+import { resetApiBase, saveApiBase } from "../lib/api/api-server";
 import {
   apiBaseWarning,
   defaultApiBase,
+  displaySavedServer,
   normalizeApiBase,
   probeApiBase,
   usesCustomApiBase,
-} from "../lib/endpoint";
-import { useMobileTokens } from "../lib/native";
-import { serverHeaders } from "../lib/server-headers";
-import { useSideInsets } from "../lib/side-insets";
-import { confirmUnsentSendLoss } from "../lib/unsent-send-warning";
-import { errorText } from "../lib/user-error";
+} from "../lib/api/endpoint";
+import type { SavedServer } from "../lib/api/saved-servers";
+import { removeSavedServer, savedServers } from "../lib/api/saved-servers";
+import { serverHeaders } from "../lib/api/server-headers";
+import { errorText } from "../lib/api/user-error";
+import { CallKeyboardContext } from "../lib/calls/call-keyboard-context";
+import { useSideInsets } from "../lib/layout/side-insets";
+import { announceToScreenReader } from "../lib/native/announce";
+import { useMobileTokens, useResolvedAppearance } from "../lib/native/native";
+import { confirmUnsentSendLoss } from "../lib/thread/send/unsent-send-warning";
 
 export default function ServerScreen() {
   const call = useContext(CallKeyboardContext);
@@ -37,8 +43,11 @@ export default function ServerScreen() {
   );
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+  const [saved, setSaved] = useState(savedServers);
+  const colorScheme = useResolvedAppearance();
   const active = useRef(true);
   const saving = useRef(false);
+  const removing = useRef(new Set<string>());
 
   useEffect(() => {
     return () => {
@@ -53,11 +62,19 @@ export default function ServerScreen() {
     else router.replace("/sign-in");
   }
 
+  // Save keeps focus while the check runs, so each failure is spoken as well as shown.
+  function fail(message: string) {
+    setError(message);
+    announceToScreenReader(message);
+  }
+
   const parsedDraft = normalizeApiBase(draft);
   const warning = parsedDraft.ok ? apiBaseWarning(parsedDraft.url) : null;
 
-  async function save() {
-    if (saving.current) return;
+  // A saved server brings the headers it was set up with; typing an address uses the rows.
+  async function save(target?: SavedServer) {
+    // A switch to a server whose removal is still running would list it again once it lands.
+    if (saving.current || (target && removing.current.has(target.apiBase))) return;
     // Held across the confirmation, so a second submit cannot start a parallel switch.
     saving.current = true;
     try {
@@ -65,15 +82,15 @@ export default function ServerScreen() {
       setError(null);
       let headers: Record<string, string>;
       try {
-        headers = serverHeadersFromRows(headerRows);
+        headers = target ? target.headers : serverHeadersFromRows(headerRows);
       } catch (headerError) {
-        setError(errorText(headerError));
+        fail(errorText(headerError));
         return;
       }
-      const probed = await probeApiBase(draft, fetch, headers);
+      const probed = await probeApiBase(target ? target.apiBase : draft, fetch, headers);
       if (!active.current) return;
       if (!probed.ok) {
-        setError(probed.error);
+        fail(probed.error);
         return;
       }
       // Asked once the switch can happen. Only a different server clears the device; the same
@@ -82,13 +99,32 @@ export default function ServerScreen() {
       if (!active.current) return;
       const saved = await saveApiBase(probed.url, headers);
       if (!saved.ok) {
-        setError(saved.error);
+        fail(saved.error);
         return;
       }
       close();
     } finally {
       saving.current = false;
       setPending(false);
+    }
+  }
+
+  async function forget(apiBase: string) {
+    // A switch in progress records its server when it lands, which would bring this one back.
+    if (saving.current) return;
+    if (removing.current.has(apiBase)) return;
+    removing.current.add(apiBase);
+    try {
+      if (!(await removeSavedServer(apiBase))) {
+        if (active.current) fail(t`Could not remove the server`);
+        return;
+      }
+      if (active.current) {
+        setError(null);
+        setSaved(savedServers());
+      }
+    } finally {
+      removing.current.delete(apiBase);
     }
   }
 
@@ -103,7 +139,7 @@ export default function ServerScreen() {
       const saved = await resetApiBase();
       if (!active.current) return;
       if (!saved.ok) {
-        setError(saved.error);
+        fail(saved.error);
         return;
       }
       close();
@@ -139,6 +175,7 @@ export default function ServerScreen() {
             autoCapitalize="none"
             autoComplete="off"
             autoCorrect={false}
+            editable={!pending}
             keyboardType="url"
             onChangeText={(value) => {
               setDraft(value);
@@ -171,7 +208,35 @@ export default function ServerScreen() {
             }}
             disabled={pending}
           />
-          {error ? <Text style={{ color: tokens.destructive, marginTop: 12 }}>{error}</Text> : null}
+          {error ? (
+            <Text accessibilityRole="alert" style={{ color: tokens.destructive, marginTop: 12 }}>
+              {error}
+            </Text>
+          ) : null}
+          <SettingsGroup label={t`Recent servers`}>
+            {saved
+              .filter((entry) => entry.apiBase !== current)
+              .map((entry) => (
+                <LongPressMenu
+                  key={entry.apiBase}
+                  colorScheme={colorScheme}
+                  title={displaySavedServer(entry.apiBase)}
+                  actions={[{ id: "remove", title: t`Remove`, attributes: { destructive: true } }]}
+                  onPressAction={() => void forget(entry.apiBase)}
+                >
+                  {(onLongPress) => (
+                    <SettingsRow
+                      accessibilityRole="button"
+                      title={displaySavedServer(entry.apiBase)}
+                      disabled={pending}
+                      dimmed={pending}
+                      onPress={() => void save(entry)}
+                      onLongPress={onLongPress}
+                    />
+                  )}
+                </LongPressMenu>
+              ))}
+          </SettingsGroup>
           {usesCustomApiBase(current) || draft.trim() !== current ? (
             <NativeActionButton
               disabled={pending}

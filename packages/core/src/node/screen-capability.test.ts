@@ -63,6 +63,26 @@ describe("sealed screen capabilities", () => {
     expect(issue("first")).toBe(issue("first"));
     expect(issue("second")).not.toBe(issue("first"));
   });
+  it("keeps issued remote links compatible with existing viewers", () => {
+    const issued = new URL(
+      issueScreenCapability(
+        "https://screen.example/vnc.html",
+        "fake-secret",
+        "https://app.example",
+        scope,
+        100,
+        { cookie: "fixture" },
+      ),
+    );
+    // Produced by the original screen capability codec for these fixture inputs.
+    const priorPath =
+      "/novnc/session/view/3600000.ddPyhv6h6qc50CILkZ3_KkdkMwJWZWREt7EJdMcmPECYz-iZXNhUxVR3ZgZDXNI4HmFm2rde1cPZdGsEe3eOwnyWyZYDo6X8W1l9gK3ShaSz8BOTfGJDirz0aroH80rhA4aWeL62sluQCWIqUUElKRGmbwEu-obsvgiUPZAl2s7kKtBLwQm6iPOCTQ4oOzPhpmV5tQQz45hbyfDSi6XCDNgcaV3Z4tygfobTPJgcgj1uRZ8_hNokFoy0ciqa3NdxCIKSDFRV-YIakck0UpG1iD64DQ/vnc.html";
+    expect(issued.pathname).toBe(priorPath);
+    expect(openScreenCapability(priorPath, "fake-secret", 101)?.target.headers).toEqual({
+      cookie: "fixture",
+    });
+  });
+
   it.each<Record<string, string>>([
     { cookie: "fake\r\nInjected: value" },
     { host: "other.example" },

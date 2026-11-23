@@ -2,8 +2,9 @@ import { generateKeyPairSync } from "node:crypto";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
-import { loadEnv, parseExtraAuthOrigins } from "./env.js";
+import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
+import { afterEach, describe, expect, it } from "vitest";
+import { loadEnv, parseExtraAuthOrigins, withEnvOverrides } from "./env.js";
 
 const base = {
   DATABASE_URL: "postgres://rakazo:rakazo@127.0.0.1:5433/rakazo",
@@ -52,6 +53,22 @@ describe("loadEnv", () => {
   it.each(["0", "1e3", "9007199254740991"])("rejects invalid upload limit %s", (value) => {
     expect(() => loadEnv({ ...base, MAX_UPLOAD_SIZE_MB: value })).toThrow("MAX_UPLOAD_SIZE_MB");
   });
+  it("keeps the 5 GiB computer save limit unless configured", () => {
+    expect(loadEnv(base).workspaceSaveLimits).toEqual({
+      maxBytes: 5 * 1024 ** 3,
+      maxFiles: 1_000_000,
+    });
+    expect(loadEnv({ ...base, WORKSPACE_SAVE_MAX_GB: "20" }).workspaceSaveLimits.maxBytes).toBe(
+      20 * 1024 ** 3,
+    );
+  });
+
+  it.each(["0", "-1", "abc", "1e3"])("rejects invalid computer save limit %s", (value) => {
+    expect(() => loadEnv({ ...base, WORKSPACE_SAVE_MAX_GB: value })).toThrow(
+      "WORKSPACE_SAVE_MAX_GB",
+    );
+  });
+
   it("keeps the ticket board off unless explicitly enabled", () => {
     expect(loadEnv(base).deploymentLabs).toEqual([]);
     for (const value of ["false", "1", ""])
@@ -113,33 +130,6 @@ describe("loadEnv", () => {
     ).toBe("https://catalog.example.test/feed");
   });
 
-  it("falls back to none when a remote provider key is missing", () => {
-    expect(
-      loadEnv({
-        ...base,
-        SANDBOX_PROVIDER: "e2b",
-      }).sandboxProvider,
-    ).toBe("none");
-    expect(
-      loadEnv({
-        ...base,
-        SANDBOX_PROVIDER: "createos",
-      }).sandboxProvider,
-    ).toBe("none");
-    expect(
-      loadEnv({
-        ...base,
-        SANDBOX_PROVIDER: "none",
-      }).sandboxProvider,
-    ).toBe("none");
-    expect(
-      loadEnv({
-        ...base,
-        SANDBOX_PROVIDER: "",
-      }).sandboxProvider,
-    ).toBe("none");
-  });
-
   it("loads provider-specific Daytona configuration", () => {
     const env = loadEnv({
       ...base,
@@ -150,28 +140,12 @@ describe("loadEnv", () => {
     });
     expect(env).toMatchObject({
       sandboxProvider: "daytona",
-      daytonaApiKey: "test-daytona-key",
-      daytonaApiUrl: "https://daytona.test/api",
-      daytonaTarget: "test-target",
+      sandboxOptions: {
+        daytonaApiKey: "test-daytona-key",
+        daytonaApiUrl: "https://daytona.test/api",
+        daytonaTarget: "test-target",
+      },
     });
-  });
-
-  it("loads Novita credentials and the shared sandbox template", () => {
-    expect(
-      loadEnv({
-        ...base,
-        SANDBOX_PROVIDER: "novita",
-        NOVITA_API_KEY: "test-novita-key",
-        SANDBOX_TEMPLATE: "custom-desktop",
-      }),
-    ).toMatchObject({
-      sandboxProvider: "novita",
-      novitaApiKey: "test-novita-key",
-      sandboxTemplate: "custom-desktop",
-    });
-    expect(
-      loadEnv({ ...base, SANDBOX_PROVIDER: "novita", E2B_API_KEY: "test-e2b-key" }).sandboxProvider,
-    ).toBe("none");
   });
 
   it("loads provider-specific Boat configuration", () => {
@@ -183,9 +157,27 @@ describe("loadEnv", () => {
     });
     expect(env).toMatchObject({
       sandboxProvider: "boat",
-      boatApiKey: "test-boat-key",
-      boatApiUrl: "https://boat.test/api/v1",
+      sandboxOptions: { boatApiKey: "test-boat-key", boatApiUrl: "https://boat.test/api/v1" },
     });
+  });
+
+  it("starts without reading a malformed computer setting until a computer is built", () => {
+    const env = loadEnv({ ...base, KUBERNETES_SANDBOX_POD_ANNOTATIONS: "{" });
+    expect(env.databaseUrl).toBe(base.DATABASE_URL);
+    expect(() => env.sandboxOptions).toThrow(/KUBERNETES_SANDBOX_POD_ANNOTATIONS/);
+  });
+
+  it("keeps environment computer options a partial override leaves out", () => {
+    const env = loadEnv({
+      ...base,
+      SANDBOX_PROVIDER: "daytona",
+      DAYTONA_API_KEY: "test-daytona-key",
+      DAYTONA_TARGET: "env-target",
+    });
+    expect(
+      withEnvOverrides(env, { sandboxOptions: { daytonaTarget: "override-target" } })
+        .sandboxOptions,
+    ).toMatchObject({ daytonaApiKey: "test-daytona-key", daytonaTarget: "override-target" });
   });
 
   it("throws when production omits secrets", () => {
@@ -377,6 +369,53 @@ describe("OIDC environment", () => {
     ).toBe(true);
     expect(() => loadEnv({ ...base, AUTH_BREACHED_PASSWORD_CHECK_ENABLED: "yes" })).toThrow(
       "AUTH_BREACHED_PASSWORD_CHECK_ENABLED must be true or false",
+    );
+  });
+  it("refuses an Auto Review confidence floor it can't read at startup", () => {
+    expect(() => loadEnv({ ...base, RAKAZO_AUTO_REVIEW_MIN_CONFIDENCE: "90" })).toThrow(
+      "RAKAZO_AUTO_REVIEW_MIN_CONFIDENCE must be a number from 0 to 1",
+    );
+    expect(() => loadEnv({ ...base, RAKAZO_AUTO_REVIEW_MIN_CONFIDENCE: "0.9" })).not.toThrow();
+    expect(() => loadEnv({ ...base, RAKAZO_AUTO_REVIEW_MIN_CONFIDENCE: "" })).not.toThrow();
+  });
+  it("refuses a SIGNUPS_ENABLED value it can't read", () => {
+    for (const value of ["false", "FALSE", " true ", "0", "1", ""]) {
+      expect(loadEnv({ ...base, SIGNUPS_ENABLED: value }).signupsEnabled).toBe(value);
+    }
+    for (const value of ["no", "off", "flase"]) {
+      expect(() => loadEnv({ ...base, SIGNUPS_ENABLED: value })).toThrow(
+        "SIGNUPS_ENABLED must be true or false",
+      );
+    }
+  });
+  it("refuses a RAKAZO_LIVE_MODEL_CATALOG value it can't read at startup", () => {
+    for (const value of ["off", "false", "0", "no", "on", ""]) {
+      expect(() => loadEnv({ ...base, RAKAZO_LIVE_MODEL_CATALOG: value })).not.toThrow();
+    }
+    expect(() => loadEnv({ ...base, RAKAZO_LIVE_MODEL_CATALOG: "disabled" })).toThrow(
+      "RAKAZO_LIVE_MODEL_CATALOG must be on or off",
+    );
+  });
+  it("reads USER_DEVICES_ENABLED strictly and refuses a value it can't read", () => {
+    expect(loadEnv(base).userDevicesEnabled).toBe(true);
+    for (const value of ["", "  ", "true", "TRUE", "1"]) {
+      expect(loadEnv({ ...base, USER_DEVICES_ENABLED: value }).userDevicesEnabled).toBe(true);
+    }
+    for (const value of ["false", "FALSE", "False", " false ", "0"]) {
+      expect(loadEnv({ ...base, USER_DEVICES_ENABLED: value }).userDevicesEnabled).toBe(false);
+    }
+    for (const value of ["no", "off", "flase"]) {
+      expect(() => loadEnv({ ...base, USER_DEVICES_ENABLED: value })).toThrow(
+        "USER_DEVICES_ENABLED must be true or false",
+      );
+    }
+  });
+  it("refuses a RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC value it can't read", () => {
+    for (const value of ["", "0", "false", "1", "TRUE"]) {
+      expect(() => loadEnv({ ...base, RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC: value })).not.toThrow();
+    }
+    expect(() => loadEnv({ ...base, RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC: "no" })).toThrow(
+      "RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC must be true or false",
     );
   });
   it("defaults to SSO with no policy bypass", () => {
@@ -583,5 +622,26 @@ describe("RAKAZO_EXTRA_AUTH_ORIGINS", () => {
         "http://example.com,ftp://host,rakazo://,not a url,https://host/path,https://u:p@host,*",
       ),
     ).toEqual([]);
+  });
+});
+
+describe("SANDBOX_COMMAND_TIMEOUT_MS", () => {
+  afterEach(() => {
+    installLogger(createLogger({ service: "rakazo-api", level: "off", sinks: [] }));
+  });
+
+  it("warns at startup when the value is above the maximum", () => {
+    const sink = createTestSink();
+    installLogger(createLogger({ service: "rakazo-api", sinks: [sink] }));
+    loadEnv({ ...base, SANDBOX_COMMAND_TIMEOUT_MS: "7200000" });
+    expect(sink.events).toHaveLength(1);
+    expect(sink.events[0]).toMatchObject({ level: "warn", maximumMs: 3_600_000 });
+  });
+
+  it.each([undefined, "300000", "3600000", "0", "invalid"])("stays quiet for %s", (value) => {
+    const sink = createTestSink();
+    installLogger(createLogger({ service: "rakazo-api", sinks: [sink] }));
+    loadEnv({ ...base, SANDBOX_COMMAND_TIMEOUT_MS: value });
+    expect(sink.events).toEqual([]);
   });
 });

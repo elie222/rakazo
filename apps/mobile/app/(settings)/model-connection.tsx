@@ -1,14 +1,16 @@
 import { ph } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
+import { useListSearch } from "@rakazo/chat-ui/hooks";
+import { useCompatibleModelDiscovery } from "@rakazo/chat-ui/model-discovery";
 import type { ModelApiProtocol, ModelHeaderRow, ThinkingLevel } from "@rakazo/contracts";
 import {
   compatibleEndpointPresets,
-  connectionDisplayName,
   matchCompatibleEndpointPreset,
-  modelHeadersInput,
+  modelConnectionNames,
   modelRoutingDirty,
   modelRoutingForm,
   OPENAI_COMPATIBLE_PROVIDER_ID,
+  providerDisplayName,
   savedCompatibleEndpointMatches,
 } from "@rakazo/contracts";
 import {
@@ -17,14 +19,15 @@ import {
   connectionFormFields,
   connectionFormModelId,
   connectionModels,
-  createModelProbe,
-  initialModelProbeState,
+  dataRetentionDirty,
   modelConnectionFormSecrets,
   modelConnectRequest,
+  sameCompatibleModelEndpoint,
   sanitizeModelConnectionError,
   savedCompatibleModelIds,
 } from "@rakazo/core";
-import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
+import { localizeModelEntry } from "@rakazo/i18n/model-provider";
+import { useFocusEffect, useIsFocused, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AccessibilityInfo,
@@ -32,35 +35,41 @@ import {
   Alert,
   Keyboard,
   Linking,
-  Pressable,
   ScrollView,
   Text,
   TextInput,
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { CompatibleEndpointForm } from "../../components/compatible-endpoint-form";
-import { ConnectionModelList } from "../../components/connection-model-list";
-import { DisclosureRow } from "../../components/model-connection-fields";
-import { createModelsStyles } from "../../components/model-connection-styles";
-import { NativeActionButton } from "../../components/native-action-button";
-import type { MobileMe, MobileModel, MobileModelCredential } from "../../lib/mobile-types";
+import { CompatibleEndpointForm } from "../../components/models/compatible-endpoint-form";
+import { ConnectionModelList } from "../../components/models/connection-model-list";
+import { DisclosureRow } from "../../components/models/model-connection-fields";
+import { createModelsStyles } from "../../components/models/model-connection-styles";
+import { NativeActionButton } from "../../components/native/native-action-button";
+import { NativeSymbol } from "../../components/native/native-symbol";
+import {
+  SettingsGroup,
+  SettingsRow,
+  SettingsSwitch,
+} from "../../components/settings/settings-group";
+import { MenuPicker } from "../../components/ui/menu-picker";
+import type { MobileMe, MobileModel, MobileModelCredential } from "../../lib/api/mobile-types";
+import { errorText } from "../../lib/api/user-error";
+import { useSubscriptionSignIn } from "../../lib/auth/use-subscription-sign-in";
 import {
   MODEL_CONNECT_TIMEOUT_MS,
   modelConnectionRequest,
-} from "../../lib/model-connection-request";
-import { native, useThemedStyles } from "../../lib/native";
-import { useScreenHeader } from "../../lib/screen-header";
-import { ACCOUNT_SETTINGS, settingsRpc } from "../../lib/settings-target";
-import { useListSearch } from "../../lib/use-list-search";
-import { useSubscriptionSignIn } from "../../lib/use-subscription-sign-in";
-import { errorText } from "../../lib/user-error";
+} from "../../lib/models/model-connection-request";
+import { analyticsClient } from "../../lib/native/analytics-surface";
+import { native, useThemedStyles } from "../../lib/native/native";
+import { useScreenHeader } from "../../lib/navigation/screen-header";
+import { ACCOUNT_SETTINGS, settingsRpc } from "../../lib/query/settings-target";
 
 type ModelSelection = {
   modelId?: string;
 };
 
-type FeedbackAnchor = "probe" | "model" | "connection";
+type FeedbackAnchor = "model" | "connection";
 
 /** Connects or manages one provider for the model list that opened it. */
 export default function ModelConnection() {
@@ -90,20 +99,47 @@ export default function ModelConnection() {
   const [gatewayId, setGatewayId] = useState("");
   const [projectId, setProjectId] = useState("");
   const [region, setRegion] = useState("global");
+  const [zeroDataRetention, setZeroDataRetention] = useState(false);
   const [baseUrl, setBaseUrl] = useState("");
   const [apiProtocol, setApiProtocol] = useState<ModelApiProtocol>("chat-completions");
   const [headerRows, setHeaderRows] = useState<ModelHeaderRow[] | null>(null);
   const [thinkingLevel, setThinkingLevel] = useState<ThinkingLevel | null>(null);
-  const [showEndpointHelp, setShowEndpointHelp] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [showModelPicker, setShowModelPicker] = useState(false);
   const [showApiKey, setShowApiKey] = useState(false);
-  const [{ models: probeModels, probing }, setProbe] = useState(initialModelProbeState);
-  const [modelProbe] = useState(() => createModelProbe(setProbe));
-  const resetOpenAiCompatibleProbe = modelProbe.reset;
   const [loading, setLoading] = useState(true);
   const [pending, setPending] = useState<"connect" | "disconnect" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [savedNotice, setSavedNotice] = useState<string | null>(null);
+
+  const credential = credentials.find((entry) => entry.id === credentialId);
+  const focused = useIsFocused();
+  const isOpenAiCompatible = provider === OPENAI_COMPATIBLE_PROVIDER_ID;
+  const endpointPresets = isOpenAiCompatible ? compatibleEndpointPresets(catalog) : [];
+  const endpointPreset = matchCompatibleEndpointPreset(
+    endpointPresets,
+    request?.baseUrl ?? credential?.baseUrl,
+  );
+  const matchedEndpoint = matchCompatibleEndpointPreset(endpointPresets, baseUrl);
+  const compatibleKeyRequired = Boolean(matchedEndpoint);
+  const {
+    discoverModels,
+    modelProbe,
+    probeError,
+    probeModels,
+    probing,
+    resetOpenAiCompatibleProbe,
+  } = useCompatibleModelDiscovery(
+    focused && isOpenAiCompatible
+      ? { baseUrl, apiKey, apiProtocol, headerRows, preset: matchedEndpoint, credential }
+      : null,
+    {
+      request: (input) =>
+        rpc("models/probeOpenAiCompatible", input, { timeoutMs: MODEL_CONNECT_TIMEOUT_MS }),
+      onModels: (models) => setModelId((current) => current.trim() || models[0] || ""),
+      errorMessage: (err) => connectionErrorText(err, t`Could not reach this model server`),
+    },
+  );
 
   const meRef = useRef<MobileMe | null>(null);
   meRef.current = me;
@@ -116,7 +152,7 @@ export default function ModelConnection() {
     const nextError = next.error ?? null;
     setFeedbackAnchor(anchor);
     setError(nextError);
-    setSavedNotice(next.notice === t`Saved.` ? next.notice : null);
+    setSavedNotice(next.notice ?? null);
     const message = nextError ?? next.notice ?? null;
     // VoiceOver keeps focus on the tapped button, so speak the result from here.
     if (message) AccessibilityInfo.announceForAccessibility(message);
@@ -172,9 +208,10 @@ export default function ModelConnection() {
       setGatewayId(fields.gatewayId);
       setProjectId(fields.projectId ?? "");
       setRegion(fields.region ?? "global");
+      setZeroDataRetention(fields.zeroDataRetention ?? false);
       return nextMe;
     },
-    [request, rpc, t],
+    [request, resetOpenAiCompatibleProbe, rpc, t],
   );
 
   function adoptSavedCredential(saved: MobileModelCredential) {
@@ -184,16 +221,15 @@ export default function ModelConnection() {
 
   const modelsForProvider = catalog.filter((entry) => entry.provider === provider);
   const selected = modelsForProvider.find((entry) => entry.id === modelId) ?? modelsForProvider[0];
-  const credential = credentials.find((entry) => entry.id === credentialId);
+  const signInSetup = selected?.signInSetup;
   const {
     oauth,
     pasteCode,
     setPasteCode,
     oauthPending,
-    codeCopied,
-    copyOAuthCode,
     cancelOAuth,
-    cancelSignIn,
+    leaveSignIn,
+    openSignInPage,
     startSubscriptionSignIn,
     submitOAuthCode,
   } = useSubscriptionSignIn({
@@ -212,10 +248,19 @@ export default function ModelConnection() {
     clearFeedback,
   });
 
+  async function openSignInSetup(url: string) {
+    clearFeedback();
+    try {
+      await Linking.openURL(url);
+    } catch {
+      publishFeedback("connection", { error: t`Could not open security settings. Try again.` });
+    }
+  }
+
   const cancelInFlightWork = useCallback(() => {
     modelProbe.invalidate();
-    cancelSignIn();
-  }, [cancelSignIn, modelProbe]);
+    leaveSignIn();
+  }, [leaveSignIn, modelProbe]);
 
   useEffect(
     () => () => {
@@ -248,16 +293,11 @@ export default function ModelConnection() {
     }, [cancelInFlightWork, load]),
   );
 
-  const providerName = selected?.providerName ?? selected?.provider ?? "";
-  const endpointPreset =
-    provider === OPENAI_COMPATIBLE_PROVIDER_ID
-      ? matchCompatibleEndpointPreset(compatibleEndpointPresets(catalog), baseUrl)
-      : undefined;
+  const selectedEntry = localizeModelEntry(selected ?? { provider, providerName: "" });
   const selectedProviderLabel = credential
-    ? connectionDisplayName(credential, providerName)
-    : (endpointPreset?.name ?? providerName);
+    ? modelConnectionNames(selectedEntry, credential).connectionName
+    : (endpointPreset?.name ?? providerDisplayName(selectedEntry));
   useScreenHeader({ title: selectedProviderLabel || undefined });
-  const isOpenAiCompatible = provider === OPENAI_COMPATIBLE_PROVIDER_ID;
   const { needsRouting, needsGateway, needsProject, routingReady } = modelRoutingForm(
     selected?.routingFields,
     {
@@ -287,13 +327,19 @@ export default function ModelConnection() {
     modelId,
     headerRows,
     credential,
-    keyRequired: Boolean(endpointPreset),
+    keyRequired: compatibleKeyRequired,
   });
-  const gatewayDirty = modelRoutingDirty({ accountId, gatewayId, projectId, region }, credential);
-  const gatewayOnlySave = needsRouting && Boolean(credential) && !apiKey.trim();
+  const retentionDirty =
+    selected !== undefined && dataRetentionDirty(selected, zeroDataRetention, credential);
+  const gatewayDirty =
+    modelRoutingDirty({ accountId, gatewayId, projectId, region }, credential) || retentionDirty;
+  const gatewayOnlySave = (needsRouting || retentionDirty) && Boolean(credential) && !apiKey.trim();
 
   function updateBaseUrl(nextBaseUrl: string) {
     setBaseUrl(nextBaseUrl);
+    if (sameCompatibleModelEndpoint(baseUrl, nextBaseUrl)) return;
+    // A typed key belongs to the endpoint it was entered for.
+    if (baseUrl.trim()) setApiKey("");
     setHeaderRows(null);
     // A new endpoint starts with no model or ticks; the saved endpoint gets its saved ones back.
     setEnabledModelIds(savedCompatibleModelIds(credential, nextBaseUrl));
@@ -314,7 +360,9 @@ export default function ModelConnection() {
 
   function updateApiKey(nextApiKey: string) {
     setApiKey(nextApiKey);
-    resetOpenAiCompatibleProbe();
+    if (!matchedEndpoint?.publicModels && nextApiKey.trim() !== apiKey.trim()) {
+      resetOpenAiCompatibleProbe();
+    }
     clearFeedback();
   }
 
@@ -323,42 +371,6 @@ export default function ModelConnection() {
       errorText(err, fallback),
       modelConnectionFormSecrets({ apiKey, headerRows }),
     );
-  }
-
-  async function probeServerModels() {
-    if (!baseUrl.trim()) return;
-    Keyboard.dismiss();
-    clearFeedback();
-    await modelProbe.probe({
-      baseUrl,
-      apiKey,
-      request: (input) =>
-        rpc(
-          "models/probeOpenAiCompatible",
-          {
-            ...input,
-            apiProtocol,
-            headers: modelHeadersInput(headerRows),
-            credentialId: credential?.id,
-          },
-          { timeoutMs: MODEL_CONNECT_TIMEOUT_MS },
-        ),
-      onSuccess: (models) => {
-        setModelId(modelId.trim() || models[0] || "");
-        publishFeedback("probe", {
-          notice:
-            models.length === 0
-              ? t`Server found. Enter a model name.`
-              : models.length === 1
-                ? t`Found ${ph({ count: 1 })} model.`
-                : t`Found ${ph({ count: models.length })} models.`,
-        });
-      },
-      onError: (err) =>
-        publishFeedback("probe", {
-          error: connectionErrorText(err, t`Could not reach this model server`),
-        }),
-    });
   }
 
   async function disconnectCredential() {
@@ -396,6 +408,7 @@ export default function ModelConnection() {
         gatewayId,
         projectId,
         region,
+        zeroDataRetention,
       },
       selected,
       credential,
@@ -408,9 +421,11 @@ export default function ModelConnection() {
     const { savingWithoutKey, activeModelId } = connect;
     setPending("connect");
     try {
-      const saved = await rpc("models/connect", connect.input, {
-        timeoutMs: MODEL_CONNECT_TIMEOUT_MS,
-      });
+      const saved = await rpc(
+        "models/connect",
+        { ...connect.input, ...analyticsClient() },
+        { timeoutMs: MODEL_CONNECT_TIMEOUT_MS },
+      );
       adoptSavedCredential(saved);
       credentialIdRef.current = saved.id;
       setCredentialId(saved.id);
@@ -478,19 +493,65 @@ export default function ModelConnection() {
     clearFeedback();
   }
 
+  const serverCredentialsNote = (
+    <Text style={styles.secondary}>
+      {t`Uses this server's own ${ph({ source: me?.hostCredentialSource ?? "" })} credentials to access ${ph({ provider: selected?.providerName ?? provider })}.`}
+    </Text>
+  );
+
+  const compatKeySection =
+    isOpenAiCompatible && acceptsKey ? (
+      <View style={styles.keySection}>
+        {compatibleKeyRequired ? (
+          <Text style={styles.sectionTitle}>{t`API key`}</Text>
+        ) : (
+          <DisclosureRow
+            label={t`API key`}
+            expanded={showApiKey}
+            onPress={() => setShowApiKey((visible) => !visible)}
+          />
+        )}
+        {showApiKey || compatibleKeyRequired ? (
+          <TextInput
+            accessibilityLabel={t`API key`}
+            autoCapitalize="none"
+            autoCorrect={false}
+            autoComplete="off"
+            editable={!busy}
+            importantForAutofill="no"
+            onChangeText={updateApiKey}
+            placeholder={
+              credential?.hasKey
+                ? t`Paste a replacement key`
+                : compatibleKeyRequired
+                  ? undefined
+                  : t`Optional`
+            }
+            placeholderTextColor={native.tertiaryLabel}
+            secureTextEntry
+            style={styles.keyInput}
+            textContentType="none"
+            value={apiKey}
+          />
+        ) : null}
+      </View>
+    ) : null;
+
   const compatConfig = isOpenAiCompatible ? (
     <CompatibleEndpointForm
       busy={busy}
       probing={probing}
       baseUrl={baseUrl}
       onChangeBaseUrl={updateBaseUrl}
-      onFindModels={() => void probeServerModels()}
       hasPreset={Boolean(endpointPreset)}
-      showEndpointHelp={showEndpointHelp}
-      onToggleEndpointHelp={() => setShowEndpointHelp((visible) => !visible)}
       apiProtocol={apiProtocol}
       onChangeProtocol={updateApiProtocol}
-      probeFeedback={feedbackAnchor === "probe" ? feedback : null}
+      probeError={probeError}
+      onRetryProbe={discoverModels}
+      keyField={compatKeySection}
+      showModelPicker={showModelPicker}
+      onToggleModelPicker={() => setShowModelPicker((visible) => !visible)}
+      showConnectionOptions={!endpointPreset || Boolean(credential)}
       search={search}
       compatibleRows={compatibleRows}
       modelId={modelId}
@@ -508,82 +569,49 @@ export default function ModelConnection() {
     />
   ) : null;
 
-  const serverCredentialsNote = (
-    <Text style={styles.secondary}>
-      {t`Uses this server's own ${ph({ source: me?.hostCredentialSource ?? "" })} credentials to access ${ph({ provider: selected?.providerName ?? provider })}.`}
-    </Text>
-  );
-
-  const compatKeySection =
-    isOpenAiCompatible && acceptsKey ? (
-      <View style={styles.keySection}>
-        {endpointPreset ? (
-          <Text style={styles.sectionTitle}>{t`API key`}</Text>
-        ) : (
-          <DisclosureRow
-            label={t`API key`}
-            expanded={showApiKey}
-            onPress={() => setShowApiKey((visible) => !visible)}
-          />
-        )}
-        {showApiKey || endpointPreset ? (
-          <TextInput
-            accessibilityLabel={t`API key`}
-            autoCapitalize="none"
-            autoCorrect={false}
-            autoComplete="off"
-            editable={!busy}
-            importantForAutofill="no"
-            onChangeText={updateApiKey}
-            placeholder={
-              credential?.hasKey
-                ? t`Paste a replacement key`
-                : endpointPreset
-                  ? undefined
-                  : t`Optional`
-            }
-            placeholderTextColor={native.tertiaryLabel}
-            secureTextEntry
-            style={styles.keyInput}
-            textContentType="none"
-            value={apiKey}
-          />
-        ) : null}
-
-        <NativeActionButton
-          disabled={
-            busy || (isOpenAiCompatible ? !openAiCompatibleReady : apiKey.trim().length < 8)
-          }
-          label={
-            pending === "connect"
-              ? t`Saving…`
-              : isOpenAiCompatible
-                ? t`Save`
-                : credential
-                  ? t`Replace API key`
-                  : t`Connect API key`
-          }
-          onPress={() => void connectKey()}
-          style={{ marginTop: 12 }}
-        />
-      </View>
-    ) : null;
-
+  const signInHost = oauth?.mode === "auth-url" ? new URL(oauth.verificationUri).hostname : "";
+  const deviceCodeInstructions = t`In your browser, sign in and paste this code when asked. Then return to Rakazo.`;
   const catalogConnectionControls =
     !isOpenAiCompatible && selected ? (
       <>
+        {subscriptionSignIn &&
+        signInSetup &&
+        (oauth || credential?.authKind !== "oauth" || credential.reconnectRequired) ? (
+          <SettingsGroup>
+            <SettingsRow
+              accessibilityRole="link"
+              title={`1. ${signInSetup.label}`}
+              detail={signInSetup.note}
+              trailing={
+                <NativeSymbol
+                  ios="arrow.up.right"
+                  android="open-outline"
+                  size={16}
+                  color={native.secondaryLabel}
+                />
+              }
+              onPress={() => void openSignInSetup(signInSetup.url)}
+            />
+          </SettingsGroup>
+        ) : null}
         {subscriptionSignIn ? (
           oauth ? (
             <View style={styles.oauthCard}>
               {oauth.mode === "auth-url" ? (
                 <>
-                  <Text style={styles.secondary}>{t`Finish signing in in your browser:`}</Text>
-                  <Pressable onPress={() => void Linking.openURL(oauth.verificationUri)}>
-                    <Text style={styles.link}>{oauth.verificationUri}</Text>
-                  </Pressable>
-                  <Text style={styles.secondary}>{t`Then paste the code here.`}</Text>
+                  <Text style={styles.secondary}>
+                    {t`Sign in at ${ph({ host: signInHost })}, then paste the code it shows you here.`}
+                  </Text>
+                  <NativeActionButton
+                    fill
+                    label={t`Open ${ph({ host: signInHost })}`}
+                    onPress={() => void openSignInPage(oauth)}
+                    style={{ marginTop: 12 }}
+                  />
                   <TextInput
-                    accessibilityLabel={t`Authorization code`}
+                    accessibilityLabel={t`Code from ${ph({ host: signInHost })}`}
+                    placeholder={t`Paste code`}
+                    placeholderTextColor={native.tertiaryLabel}
                     value={pasteCode}
                     onChangeText={setPasteCode}
                     autoCapitalize="none"
@@ -598,55 +626,53 @@ export default function ModelConnection() {
                     prominence="secondary"
                     style={{ marginTop: 12 }}
                   />
-                  <Text style={styles.secondary}>
-                    {t`Waiting for sign-in — the link expires in about ${ph({ minutes: Math.ceil(oauth.expiresInSeconds / 60) })} minutes.`}
-                  </Text>
                 </>
               ) : (
                 <>
                   <Text style={styles.secondary}>
-                    {t`A sign-in page opened — enter this code there:`}
+                    {signInSetup ? `2. ${deviceCodeInstructions}` : deviceCodeInstructions}
                   </Text>
-                  <Pressable onPress={() => void Linking.openURL(oauth.verificationUri)}>
-                    <Text style={styles.link}>{oauth.verificationUri}</Text>
-                  </Pressable>
                   <Text style={styles.code}>{oauth.userCode}</Text>
                   <NativeActionButton
                     fill
-                    label={codeCopied ? t`Copied` : t`Copy`}
-                    onPress={() => copyOAuthCode(oauth.userCode)}
-                    prominence="secondary"
+                    label={t`Copy code and open`}
+                    onPress={() => void openSignInPage(oauth)}
                     style={{ marginTop: 12 }}
                   />
                   <Text style={styles.secondary}>
-                    {t`Waiting for sign-in — the code expires in about ${ph({ minutes: Math.ceil(oauth.expiresInSeconds / 60) })} minutes.`}
+                    {t`Waiting for you to sign in. The code expires in about ${ph({ minutes: Math.ceil(oauth.expiresInSeconds / 60) })} minutes.`}
                   </Text>
                 </>
               )}
               <NativeActionButton
                 fill
-                label={t`Cancel`}
-                onPress={() => cancelOAuth()}
+                label={oauth.mode === "device-code" ? t`Get a new code` : t`Start over`}
+                onPress={() => {
+                  cancelOAuth("replaced");
+                  void startSubscriptionSignIn();
+                }}
                 prominence="secondary"
                 style={{ marginTop: 12 }}
               />
             </View>
-          ) : (
+          ) : credential?.authKind !== "oauth" || credential.reconnectRequired ? (
             <NativeActionButton
               disabled={busy}
               fill
               label={
                 oauthPending
                   ? t`Starting…`
-                  : credential
+                  : credential?.authKind === "oauth"
                     ? t`Sign in again`
-                    : (selected.oauthLabel ?? t`Sign in`)
+                    : signInSetup
+                      ? t`2. Get a sign-in code`
+                      : (selected.oauthLabel ?? t`Sign in`)
               }
               onPress={() => void startSubscriptionSignIn()}
-              prominence="secondary"
+              prominence={signInSetup ? "primary" : "secondary"}
               style={{ marginTop: 12 }}
             />
-          )
+          ) : null
         ) : null}
         {acceptsKey || needsRouting ? (
           <View style={styles.keySection}>
@@ -712,6 +738,32 @@ export default function ModelConnection() {
                 />
               </>
             ) : null}
+            {!credential && acceptsKey && modelsForProvider.length ? (
+              <MenuPicker
+                label={t`Model`}
+                choices={modelsForProvider.map((entry) => ({ key: entry.id, label: entry.label }))}
+                value={modelId}
+                onChange={(id) => {
+                  setModelId(id);
+                  setThinkingLevel(null);
+                }}
+                disabled={busy}
+                plain
+              />
+            ) : null}
+            {selected.dataRetentionControl ? (
+              <SettingsGroup>
+                <SettingsSwitch
+                  label={t`Zero data retention`}
+                  value={zeroDataRetention}
+                  disabled={busy}
+                  onChange={(value) => {
+                    setZeroDataRetention(value);
+                    clearFeedback();
+                  }}
+                />
+              </SettingsGroup>
+            ) : null}
 
             <NativeActionButton
               disabled={
@@ -742,11 +794,8 @@ export default function ModelConnection() {
       </>
     ) : null;
 
-  const connectedStatusRow = credential ? (
+  const disconnectButton = credential ? (
     <View style={styles.statusRow}>
-      <View style={styles.providerCopy}>
-        <Text style={styles.secondary}>{t`Connected`}</Text>
-      </View>
       <NativeActionButton
         disabled={busy}
         fill={false}
@@ -806,18 +855,23 @@ export default function ModelConnection() {
           isOpenAiCompatible ? (
             <>
               {compatConfig}
-              {compatKeySection}
-              {feedbackAnchor === "probe" ? null : feedback}
-              {connectedStatusRow}
+              <NativeActionButton
+                disabled={busy || !openAiCompatibleReady}
+                label={pending === "connect" ? t`Saving…` : t`Save`}
+                onPress={() => void connectKey()}
+                style={{ marginTop: 12 }}
+              />
+              {feedback}
               {modelList}
+              {disconnectButton}
             </>
           ) : credential ? (
             <>
               {provider === me?.hostCredentialProvider ? serverCredentialsNote : null}
-              {connectedStatusRow}
               {catalogConnectionControls}
               {feedbackAnchor === "connection" ? feedback : null}
               {modelList}
+              {disconnectButton}
             </>
           ) : provider === me?.hostCredentialProvider ? (
             <>

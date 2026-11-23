@@ -4,8 +4,8 @@
   "apps/mobile/app/(settings)/vault.tsx": 1,
   "apps/mobile/app/artifact.tsx": 1,
   "apps/mobile/app/artifacts.tsx": 1,
-  "apps/mobile/components/model-picker-list.tsx": 1,
-  "apps/mobile/components/pick-chat-pane.tsx": 1,
+  "apps/mobile/components/inbox/pick-chat-pane.tsx": 1,
+  "apps/mobile/components/models/model-picker-list.tsx": 1,
   "apps/mobile/components/thread/thread-header.tsx": 1,
-  "apps/mobile/lib/use-home-header.ts": 1
+  "apps/mobile/lib/inbox/use-inbox-header.ts": 1
 }

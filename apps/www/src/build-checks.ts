@@ -1,5 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import type { AstroIntegration } from "astro";
+import { getMarkdownAlternate } from "./agent-content";
 import { DEFAULT_LOCALE, isLocale } from "./i18n/locales";
 import { localizedPath, TRANSLATED_PAGES } from "./i18n/translations";
 import { SITE_URL } from "./site";
@@ -16,6 +17,15 @@ function missingOgImages(pathnames: string[], dir: URL): string[] {
     const url = new URL(image, SITE_URL);
     if (url.origin !== new URL(SITE_URL).origin) return [];
     return existsSync(new URL(`.${url.pathname}`, dir)) ? [] : [`/${pathname} → ${url.pathname}`];
+  });
+}
+
+/** Built pages whose Markdown twin, which the middleware serves to agents, was not built. */
+function missingMarkdownTwins(pathnames: string[], dir: URL): string[] {
+  return pathnames.flatMap((pathname) => {
+    if (!existsSync(new URL(`./${pathname}index.html`, dir))) return [];
+    const twin = getMarkdownAlternate(`/${pathname}`);
+    return twin && !existsSync(new URL(`.${twin}`, dir)) ? [`/${pathname} → ${twin}`] : [];
   });
 }
 
@@ -41,7 +51,7 @@ function translationMismatches(pathnames: string[]): string[] {
   ];
 }
 
-/** Fails the build on a missing Open Graph image or a translation the registry does not match. */
+/** Fails the build on a missing Open Graph image or Markdown twin, or a translation the registry does not match. */
 export function buildChecks(): AstroIntegration {
   return {
     name: "build-checks",
@@ -50,7 +60,11 @@ export function buildChecks(): AstroIntegration {
         const pathnames = pages.map((page) => page.pathname);
         const problems = [
           ...missingOgImages(pathnames, dir).map(
-            (page) => `Missing Open Graph image for ${page}. Render it with scripts/render-og.mjs.`,
+            (page) =>
+              `Missing Open Graph image for ${page}. Render it with scripts/render-og.mjs in the marketing repository.`,
+          ),
+          ...missingMarkdownTwins(pathnames, dir).map(
+            (page) => `Missing Markdown twin for ${page}. Add a .md endpoint beside the page.`,
           ),
           ...translationMismatches(pathnames),
         ];
