@@ -1,5 +1,4 @@
-import { PostgresRealtimeFanout } from "@rakazo/adapters";
-import { publishOrganizationChange, recordAuditEvent } from "@rakazo/db";
+import { hasBillingAccess, isOwnerRole } from "@rakazo/db";
 import { applyAccessGrants, createAccessGrant } from "../../auth/access-grants.js";
 import { adminEmail, findAdminAccount } from "./account-target.js";
 import type { AdminCommand, AdminContext } from "./admin-command.js";
@@ -16,38 +15,35 @@ export const accessGrantCommand: AdminCommand = {
   },
 };
 
-async function grantAccess(context: AdminContext, email: string, freeMonths: number) {
-  const { prisma } = context;
+async function grantAccess({ prisma }: AdminContext, email: string, freeMonths: number) {
   const user = await findAdminAccount(prisma, email);
   const grant = await createAccessGrant(prisma, null, { email: user.email, freeMonths });
-  await recordAuditEvent({
-    action: "access_grant.created",
-    actor: { type: "system", label: "operator" },
-    target: { type: "access_grant", id: grant.id },
-    metadata: { freeMonths },
-  });
-  const owned = await prisma.member.findMany({
+  const memberships = await prisma.member.findMany({
     where: { userId: user.id, role: { contains: "owner" } },
-    select: { organizationId: true },
-    take: 2,
+    select: { organizationId: true, role: true },
   });
+  const owned = memberships.filter((member) => isOwnerRole(member.role));
   const organizationId = owned.length === 1 ? owned[0]?.organizationId : undefined;
-  if (organizationId) {
+  if (organizationId)
     await applyAccessGrants(prisma, { userId: user.id, email: user.email, organizationId });
-    await signalOrganization(context, organizationId);
-  }
-  const [applied, credits] = await Promise.all([
+  const [applied, organization] = await Promise.all([
     prisma.accessGrant.findUniqueOrThrow({ where: { id: grant.id }, select: { appliedAt: true } }),
     organizationId
-      ? prisma.modelCreditAccount.findUnique({
-          where: { organizationId },
-          select: { mode: true, byokFreeUntil: true },
+      ? prisma.organization.findUnique({
+          where: { id: organizationId },
+          select: {
+            modelCredits: { select: { mode: true, byokFreeUntil: true } },
+            billing: { select: { status: true } },
+          },
         })
       : null,
   ]);
-  const freeUntil = applied.appliedAt ? (credits?.byokFreeUntil ?? null) : null;
+  const freeUntil = applied.appliedAt ? (organization?.modelCredits?.byokFreeUntil ?? null) : null;
+  const counting =
+    organization?.modelCredits?.mode === "byok" &&
+    !hasBillingAccess(organization.billing?.status ?? null);
   const text = freeUntil
-    ? `Own-key plan free until ${freeUntil.toISOString()}.${credits?.mode === "byok" ? "" : " It counts only while the organization uses its own key."}`
+    ? `Own-key plan free until ${freeUntil.toISOString()}.${counting ? "" : " It counts only while the organization uses its own key without a subscription."}`
     : "Grant saved. It applies the next time the account's owner opens billing.";
   return {
     text,
@@ -55,18 +51,7 @@ async function grantAccess(context: AdminContext, email: string, freeMonths: num
       grantId: grant.id,
       organizationId: applied.appliedAt ? organizationId : null,
       freeUntil: freeUntil?.toISOString() ?? null,
+      counting: Boolean(freeUntil) && counting,
     },
   };
-}
-
-async function signalOrganization({ prisma, pool, env }: AdminContext, organizationId: string) {
-  const realtime = new PostgresRealtimeFanout({
-    connectionString: env.realtimeDatabaseUrl,
-    publisher: pool,
-  });
-  try {
-    await publishOrganizationChange(prisma, realtime, organizationId);
-  } finally {
-    await realtime.close();
-  }
 }

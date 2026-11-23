@@ -23,11 +23,7 @@ dbTests("operator access grant", () => {
         update: { mode: "byok" },
       });
 
-      const context = {
-        prisma,
-        pool: db.pool,
-        env: { realtimeDatabaseUrl: databaseUrl },
-      } as unknown as AdminContext;
+      const context = { prisma } as unknown as AdminContext;
       const result = await runAsSystem("test an operator access grant", () =>
         parseAdminArgs(["access", "grant", email.toUpperCase(), "3"])!.run(context),
       );
@@ -41,6 +37,7 @@ dbTests("operator access grant", () => {
       expect(result.json).toMatchObject({
         organizationId,
         freeUntil: byokFreeUntil!.toISOString(),
+        counting: true,
       });
     } finally {
       await prisma.accessGrant.deleteMany({ where: { email } });
