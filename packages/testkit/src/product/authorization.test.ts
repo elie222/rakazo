@@ -567,6 +567,8 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["voice/models", { provider: "openrouter" }],
       ["voice/prepare", { text: "Nope" }],
       ["voice/setSpeechModel"],
+      ["voice/realtime/get"],
+      ["voice/realtime/set", {}],
       ["analytics/screen"],
       ["analytics/modelSignInStep"],
       ["aiConsent/status"],
