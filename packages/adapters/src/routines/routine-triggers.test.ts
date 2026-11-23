@@ -168,10 +168,16 @@ describe("storeBotWebhookKey", () => {
     return { prisma, tx, put };
   }
 
+  const store = (put: ReturnType<typeof keyPrisma>["put"]) => ({
+    put,
+    delete: vi.fn(async () => undefined),
+    isRemote: () => false,
+  });
+
   it("keeps a key the bot already has unless asked to replace it", async () => {
     const { prisma, put } = keyPrisma("secret-old");
     expect(
-      await storeBotWebhookKey({ prisma, secretStore: { put } }, target, context, {
+      await storeBotWebhookKey({ prisma, secretStore: store(put) }, target, context, {
         replace: false,
       }),
     ).toBeNull();
@@ -181,7 +187,7 @@ describe("storeBotWebhookKey", () => {
   it("saves a new key, and saves none when another landed first", async () => {
     const fresh = keyPrisma(null);
     const key = await storeBotWebhookKey(
-      { prisma: fresh.prisma, secretStore: { put: fresh.put } },
+      { prisma: fresh.prisma, secretStore: store(fresh.put) },
       target,
       context,
       { replace: false },
@@ -204,7 +210,7 @@ describe("storeBotWebhookKey", () => {
     const raced = keyPrisma(null, "secret-other");
     expect(
       await storeBotWebhookKey(
-        { prisma: raced.prisma, secretStore: { put: raced.put } },
+        { prisma: raced.prisma, secretStore: store(raced.put) },
         target,
         context,
         { replace: false },
@@ -215,7 +221,9 @@ describe("storeBotWebhookKey", () => {
 
   it("rotates and deletes the previous key when replacing", async () => {
     const { prisma, tx, put } = keyPrisma("secret-old");
-    await storeBotWebhookKey({ prisma, secretStore: { put } }, target, context, { replace: true });
+    await storeBotWebhookKey({ prisma, secretStore: store(put) }, target, context, {
+      replace: true,
+    });
     expect(tx.secret.deleteMany).toHaveBeenCalledWith({
       where: { id: "secret-old", spaceId: "space-1", userId: "owner-1", kind: "webhook" },
     });

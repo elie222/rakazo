@@ -45,7 +45,6 @@ import { deviceTimeZone, routineTriggerRows, routineWebTriggers } from "../lib/r
 import type { MobileRoutineDraft } from "../lib/routines/routine-draft";
 import {
   draftWebTriggers,
-  outsideEventTriggers,
   routineDraftChanged,
   routineDraftEventTriggered,
   routineSaveRequest,
@@ -687,8 +686,7 @@ function RoutineEditor({
       {base?.useComputer !== undefined &&
       !base.inChat &&
       !kept.watch &&
-      !draft.emailSenders &&
-      !outsideEventTriggers(kept) ? (
+      !routineDraftEventTriggered(draft, source) ? (
         <SettingsGroup>
           <SettingsSwitch
             key="computer"

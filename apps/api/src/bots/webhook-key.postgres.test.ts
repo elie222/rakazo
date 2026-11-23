@@ -19,13 +19,19 @@ describe.skipIf(!enabled)("making a bot's webhook key (PostgreSQL)", () => {
   // Every call reaches the transaction before any saves, as two devices asking at once would.
   let callers = 0;
   const bothStoring = deferred();
+  const deleted: string[] = [];
   const secrets = {
     put: async () => {
       if (++callers === 2) bothStoring.resolve();
       await bothStoring.promise;
-      return { id: randomUUID(), ciphertext: "sealed", ref: "sealed" };
+      const ref = `sealed-${randomUUID()}`;
+      return { id: randomUUID(), ciphertext: ref, ref };
     },
     load: async () => "unused",
+    delete: async (ref: string) => {
+      deleted.push(ref);
+    },
+    isRemote: () => false,
   };
   const client = () =>
     createRouterClient(createRouter({ prisma, env: {}, secrets } as unknown as RouterDeps), {
@@ -65,6 +71,9 @@ describe.skipIf(!enabled)("making a bot's webhook key (PostgreSQL)", () => {
     expect((await system.bot.findUniqueOrThrow({ where: { id: bot.id } })).webhookSecretId).toBe(
       key!.id,
     );
+    // The losing request's sealed key is not left behind in the store.
+    expect(deleted).toHaveLength(1);
+    expect(deleted).not.toContain(key!.ciphertext);
 
     const again = await client().bots.ensureWebhookSecret({ botId: bot.id });
     expect(again.secret).toBeUndefined();

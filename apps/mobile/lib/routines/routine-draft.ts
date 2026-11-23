@@ -8,6 +8,7 @@ import {
   routineComputerUpdate,
   routineDraftEndsAt,
   routineEndUpdate,
+  routineEventTriggered,
 } from "@rakazo/core";
 import type { RoutineWebTrigger } from "./routine";
 import { routineWebTriggers } from "./routine";
@@ -51,19 +52,15 @@ export function draftWebTriggers(
   return routineWithDraftTriggers(source ?? NO_WEB_TRIGGERS, draft);
 }
 
+/** Whether something outside starts the routine the draft would save. */
 export function routineDraftEventTriggered(
   draft: MobileRoutineDraft,
   source: Routine | null,
 ): boolean {
-  const kept = draftWebTriggers(source, draft);
-  return Boolean(
-    draft.emailSenders || kept.webhookEnabled || kept.githubEnabled || kept.messageProvider,
-  );
-}
-
-/** Whether a trigger other than email starts it from outside, which keeps the owner's computer off. */
-export function outsideEventTriggers(triggers: Pick<Routine, RoutineWebTrigger>): boolean {
-  return Boolean(triggers.webhookEnabled || triggers.githubEnabled || triggers.messageProvider);
+  return routineEventTriggered({
+    ...draftWebTriggers(source, draft),
+    emailSenders: draft.emailSenders,
+  });
 }
 
 /** A one-shot is set up from chat with its run time; its schedule can't change here. */
@@ -110,9 +107,7 @@ function routineChanges(draft: MobileRoutineDraft, routine: Routine) {
       useComputer: draft.useComputer,
       name: name ?? routine.name,
       prompt: prompt ?? routine.prompt,
-      eventTriggered:
-        Boolean(draft.emailSenders) ||
-        outsideEventTriggers(routineWithDraftTriggers(routine, draft)),
+      eventTriggered: routineDraftEventTriggered(draft, routine),
     }),
   };
 }

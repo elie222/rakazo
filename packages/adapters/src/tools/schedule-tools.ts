@@ -317,7 +317,7 @@ export interface ScheduleToolDeps {
   /** Where this server receives mail, if it does; an email trigger needs it. */
   inboundEmailDomain?: string;
   /** Holds the bot's webhook key, made when a routine first needs one. */
-  secretStore?: Pick<SecretStore, "put">;
+  secretStore?: Pick<SecretStore, "put" | "delete" | "isRemote">;
 }
 
 const ONE_SHOT_FIELDS = ["runAt", "delayMinutes", "delaySeconds"] as const;

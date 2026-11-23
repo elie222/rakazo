@@ -123,6 +123,20 @@ export function routineCopy<
   return { ...routine, name, active: false, ...(ended ? { endsAt: null } : {}) };
 }
 
+/** Whether outside events start it (webhook, Git, chat app or email), so it can't use the computer. */
+export function routineEventTriggered(
+  triggers: Partial<
+    Pick<Routine, "webhookEnabled" | "githubEnabled" | "messageProvider" | "emailSenders">
+  >,
+): boolean {
+  return Boolean(
+    triggers.webhookEnabled ||
+      triggers.githubEnabled ||
+      triggers.messageProvider ||
+      triggers.emailSenders,
+  );
+}
+
 /**
  * The "Use my computer" part of an editor's update, given the name and prompt it will send. Turning
  * it on approves the prompt shown, and so does saving an edited prompt or name while it shows on,
