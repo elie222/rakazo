@@ -1,13 +1,20 @@
 import type { AdapterContext, ComputerRef, PageBrowserCommand } from "@rakazo/adapter-kit";
 import { getLogger } from "@rakazo/logging";
-import { COMPUTER_SCREEN_UNAVAILABLE } from "./computer-screens.js";
+import {
+  COMPUTER_SCREEN_UNAVAILABLE,
+  PAGE_BROWSER_INTERRUPTED,
+  PAGE_BROWSER_TIMED_OUT,
+} from "./computer-screens.js";
 
 type Failed = { error?: unknown; dialog?: unknown; fallback?: unknown; uncertain?: unknown };
 
-/** Prefixes of failures the desktop, supervisor and page browser write themselves, never the page. */
+/**
+ * Prefixes of failures the desktop, supervisor and page browser write themselves, never the page.
+ * The supervisor and page browser run in the computer, so theirs are copies of their text.
+ */
 const KNOWN_FAILURES: [prefix: string, kind: string][] = [
-  ["Page browser timed out", "timeout"],
-  ["Page browser unavailable or interrupted", "interrupted"],
+  [PAGE_BROWSER_TIMED_OUT, "timeout"],
+  [PAGE_BROWSER_INTERRUPTED, "interrupted"],
   [COMPUTER_SCREEN_UNAVAILABLE, "screen_busy"],
   ["This Team Computer cannot allocate another screen", "screen_busy"],
   // The page browser closes an alert itself, so its result names no open dialog.

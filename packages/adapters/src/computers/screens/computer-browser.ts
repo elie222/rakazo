@@ -20,6 +20,7 @@ import { SandboxRequestRejectedError } from "@rakazo/adapter-kit";
 import { getLogger } from "@rakazo/logging";
 import type { FakeBrowserProviderOptions } from "../../browser/fake-browser.js";
 import { FakeBrowserProvider } from "../../browser/fake-browser.js";
+import { PAGE_BROWSER_TIMED_OUT } from "./computer-screens.js";
 import { logPageBrowserFailure } from "./page-browser-failure.js";
 
 const DETACHED_MESSAGE = "Page browser is not attached to this computer's Chrome.";
@@ -258,7 +259,7 @@ export class ComputerBrowserProvider implements BrowserProvider {
     };
     let live = await this.runLive(computer, probe, context);
     // A busy page often answers the next probe; the probe presses nothing, so one retry is safe.
-    if (live?.ok !== true && live?.error?.startsWith("Page browser timed out;"))
+    if (live?.ok !== true && live?.error?.startsWith(`${PAGE_BROWSER_TIMED_OUT};`))
       live = await this.runLive(computer, probe, context);
     if (live?.ok !== true) {
       // The check started and failed (timed out, killed, a page it could not read).
