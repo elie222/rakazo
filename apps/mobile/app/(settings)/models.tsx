@@ -9,6 +9,7 @@ import {
 import { isFirstModelConnection, popularModelProvidersFirst } from "@rakazo/core";
 import { fetchFresh } from "@rakazo/core/query";
 import { localizeModelEntry } from "@rakazo/i18n/model-provider";
+import { bestEffort } from "@rakazo/logging/best-effort";
 import { isCancelledError, useQuery } from "@tanstack/react-query";
 import type { Href } from "expo-router";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
@@ -106,9 +107,12 @@ export default function Models() {
             () => undefined,
           ),
           // Without it only the image and video model rows are missing.
-          fetchFresh(queryClient, rpcQuery("models/media", { scope: target.scope }, spaceId), {
-            reuse,
-          }).catch(() => undefined),
+          bestEffort(
+            "read the image and video models",
+            fetchFresh(queryClient, rpcQuery("models/media", { scope: target.scope }, spaceId), {
+              reuse,
+            }),
+          ),
         ]);
         setLoadError(null);
       } catch (err) {
