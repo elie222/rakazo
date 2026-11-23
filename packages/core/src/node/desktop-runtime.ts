@@ -916,7 +916,7 @@ function renderEnsureScreenCommand(
     "  sleep 0.25",
     "done",
     "if ! browser_running || ! browser_answers; then",
-    `  echo "computer browser not answering on ${layout.debugPort} (running=$(browser_running && echo yes || echo no))" >&2`,
+    `  echo "computer browser CDP not ready on ${layout.debugPort} (running=$(browser_running && echo yes || echo no))" >&2`,
     `  tail -c 4000 ${log}-browser.log >&2 || true`,
     `  exit ${SCREEN_NOT_READY_EXIT}`,
     "fi",
