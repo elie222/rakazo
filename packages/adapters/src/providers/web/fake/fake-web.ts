@@ -19,6 +19,8 @@ export class FakeWebProvider implements WebProvider {
   };
   /** Text served for these exact URLs instead of `fetchResult`. */
   pages: Record<string, string> = {};
+  /** Picture bytes served for these exact URLs. */
+  images: Record<string, Uint8Array> = {};
   lastSearch?: WebSearchRequest;
   lastFetch?: WebFetchRequest;
   searchError?: Error;
@@ -49,6 +51,8 @@ export class FakeWebProvider implements WebProvider {
   async fetch(request: WebFetchRequest, _context: AdapterContext): Promise<WebFetchResult> {
     this.lastFetch = request;
     if (this.fetchError) throw this.fetchError;
+    const image = this.images[request.url];
+    if (image) return { url: request.url, title: "", text: "", truncated: false, image };
     const page = this.pages[request.url];
     const result = page === undefined ? this.fetchResult : { ...this.fetchResult, text: page };
     const offset = clampOffset(request.offset);

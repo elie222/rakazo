@@ -328,10 +328,11 @@ export async function savedCatalogSelections(
   prisma: PrismaClient,
   userId: string,
 ): Promise<Set<string>> {
-  const [preferences, bots, routines, accountRoles, spaceRoles, settings] = await Promise.all([
-    prisma.userModelPreference.findMany({
+  const [credentials, bots, routines, accountRoles, spaceRoles, settings] = await Promise.all([
+    // A concurrent disconnect can remove preferences while Prisma loads the relation.
+    prisma.userModelCredential.findMany({
       where: { userId },
-      select: { modelId: true, credential: { select: { provider: true } } },
+      select: { provider: true, userPreferences: { select: { modelId: true } } },
     }),
     prisma.bot.findMany({ where: { userId }, select: { modelProvider: true, modelId: true } }),
     prisma.routine.findMany({ where: { userId }, select: { modelProvider: true, modelId: true } }),
@@ -349,7 +350,11 @@ export async function savedCatalogSelections(
     }),
   ]);
   return new Set([
-    ...preferences.map((p) => `${canonicalPiProviderId(p.credential.provider)}:${p.modelId}`),
+    ...credentials.flatMap(({ provider, userPreferences }) =>
+      userPreferences.flatMap(({ modelId }) =>
+        modelId ? [`${canonicalPiProviderId(provider)}:${modelId}`] : [],
+      ),
+    ),
     ...bots.map(
       (p) => `${p.modelProvider ? canonicalPiProviderId(p.modelProvider) : ""}:${p.modelId}`,
     ),

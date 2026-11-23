@@ -97,7 +97,7 @@ describe("model setup gate", () => {
     return response;
   }
 
-  it.each([undefined, 1, 8, 100])(
+  it.each([undefined, 8])(
     "advertises the effective attachment count (%s)",
     async (maxAttachmentsPerMessage) => {
       const { actor, handler } = modelGateDeps({

@@ -8,7 +8,7 @@ import { MentionPicker } from "./composer-parts";
 
 vi.mock("@lingui/react/macro", () => ({ useLingui: () => ({ t: String.raw }) }));
 
-it("announces target kinds only when a bot shares a name with a routine or connector", async () => {
+it("announces missing kinds for same-name cross-kind options without losing their subtitles", async () => {
   const options = buildComposerMentionOptions({
     query: "",
     bots: [
@@ -20,6 +20,7 @@ it("announces target kinds only when a bot shares a name with a routine or conne
     groups: [{ id: "group-team", name: "Team" }],
     routines: [
       { id: "routine-notes", name: "Weekly Notes", crons: ["0 9 * * 1"], botId: "bot-notes" },
+      { id: "routine-sync", name: "Sync", crons: [], botId: "bot-notes" },
     ],
     connectors: mentionConnectorsFrom(
       [],
@@ -28,6 +29,13 @@ it("announces target kinds only when a bot shares a name with a routine or conne
           connectorId: "connector-workspace",
           slug: "workspace",
           name: "Workspace",
+          connected: false,
+          noAuth: false,
+        },
+        {
+          connectorId: "connector-sync",
+          slug: "sync",
+          name: "Sync",
           connected: false,
           noAuth: false,
         },
@@ -62,16 +70,18 @@ it("announces target kinds only when a bot shares a name with a routine or conne
   try {
     const rows = await render(options, 5);
     expect(rows.map((option) => option.getAttribute("aria-label"))).toEqual([
-      "@Weekly Notes Bot",
-      "@Workspace Bot",
-      "@Writer",
-      "@Writer",
+      "@Weekly Notes, Bot",
+      "@Workspace, Bot",
+      "@Writer, Bot",
+      "@Writer, Bot",
       "@Team",
-      "@Weekly Notes Routine",
-      "@Workspace Connector",
+      "@Weekly Notes, Routine, Every Monday at 9:00 AM",
+      "@Sync, Routine",
+      "@Workspace, Connector, Needs auth",
+      "@Sync, Connector, Needs auth",
     ]);
     expect(rows[5]?.textContent).toContain("Every Monday at 9:00 AM");
-    expect(rows[6]?.textContent).toContain("Needs auth");
+    expect(rows[7]?.textContent).toContain("Needs auth");
     expect(rows[5]?.id).toBe("test-mentions-option-5");
     expect(rows[5]?.getAttribute("aria-selected")).toBe("true");
 
@@ -84,7 +94,8 @@ it("announces target kinds only when a bot shares a name with a routine or conne
       0,
     );
     expect(filteredRows[0]?.getAttribute("aria-label")).toBe("@Weekly Notes");
-    expect(filteredRows[1]?.getAttribute("aria-label")).toBe("@Workspace Bot");
+    expect(filteredRows[1]?.getAttribute("aria-label")).toBe("@Workspace, Bot");
+    expect(filteredRows.at(-1)?.getAttribute("aria-label")).toBe("@Sync");
   } finally {
     await act(async () => root.unmount());
     host.remove();

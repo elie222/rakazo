@@ -1,5 +1,6 @@
 import { VoiceAccountError } from "@rakazo/adapter-kit";
 import * as adapters from "@rakazo/adapters";
+import { VoiceProviderRefusedError } from "@rakazo/adapters";
 import type { Actor } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
 import * as db from "@rakazo/db";
@@ -347,6 +348,9 @@ describe("isVoiceProviderFailure", () => {
   it("treats provider refusals and timeouts as expected but keeps bugs reported", () => {
     expect(isVoiceProviderFailure(new Error("Fish Audio could not speak that (500)."))).toBe(true);
     expect(isVoiceProviderFailure(new DOMException("timed out", "TimeoutError"))).toBe(true);
+    expect(isVoiceProviderFailure(new VoiceProviderRefusedError("speaking failed", 400))).toBe(
+      true,
+    );
     expect(isVoiceProviderFailure(new TypeError("Cannot read properties of undefined"))).toBe(
       false,
     );

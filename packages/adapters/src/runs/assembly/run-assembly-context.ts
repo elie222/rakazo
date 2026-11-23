@@ -100,6 +100,7 @@ export async function createRunContext(
     earlierFiles,
     getRunComputer,
     graphical,
+    modelSeesImages,
     runComputer,
     storedComputer,
     workspaceCheckpoint,
@@ -154,6 +155,7 @@ export async function createRunContext(
     overLimitActionCalls: 0,
     toolResults: new Map(),
     tainted: initiallyTainted,
+    taintedBeyondOwnComputer: initiallyTainted,
     outsideText: initialOutsideText,
     // A resumed turn replaces this with the baseline its saved prompt was built from.
     ownInstructionsBaseline: bot.instructions ?? "",
@@ -211,6 +213,7 @@ export async function createRunContext(
       callClientNonce: callClientNonceForRun,
       peerMessage,
       userComputerOwner: userComputerOwnerId,
+      ownerComputerRoutine: parts.records.ownerComputerRoutine,
     },
     computer: {
       stored: storedComputer,
@@ -228,6 +231,7 @@ export async function createRunContext(
       graphicalToolsAllowed,
       pageBrowserAllowed,
       acceptsImages,
+      modelSeesImages,
       heldForTakeover,
     },
     tools: {
@@ -276,8 +280,15 @@ export async function buildTurnPrompt(
   const { takeoverResume } = hold.takeover;
   const { checkpointModelResolver, savedComputerMode } = parts.saved;
   let { turnCheckpoint } = parts.saved;
-  const { agentSkills, nonOwnerChatRun, savedSkills, task, thread, conversationThread } =
-    parts.records;
+  const {
+    agentSkills,
+    nonOwnerChatRun,
+    ownerComputerRoutine,
+    savedSkills,
+    task,
+    thread,
+    conversationThread,
+  } = parts.records;
   const { connectedPlugins, context } = parts.connected;
   const { compactedHistory, people, speakers } = parts.thread;
   const {
@@ -293,9 +304,17 @@ export async function buildTurnPrompt(
   const { callEndRun, disabledBuiltinTools, ownerStartedRun, voiceCall } = parts.capabilities;
   const { approvedEffects, tools } = parts.tools;
   const { ctx } = parts;
-  const pluginLine = connectedPluginsInstruction(connectedPlugins);
-  const runSavedSkills = nonOwnerChatRun ? [] : savedSkills;
-  const runAgentSkills = nonOwnerChatRun ? builtinAgentSkillRecords() : agentSkills;
+  // A routine with its owner's computer runs the exact text they approved, skills already expanded,
+  // and reads no app or skill names, which others can change after the owner approved it.
+  const pluginLine = ownerComputerRoutine
+    ? undefined
+    : connectedPluginsInstruction(connectedPlugins);
+  const runSavedSkills = nonOwnerChatRun || ownerComputerRoutine ? [] : savedSkills;
+  const runAgentSkills = ownerComputerRoutine
+    ? []
+    : nonOwnerChatRun
+      ? builtinAgentSkillRecords()
+      : agentSkills;
   const taughtSkillIndex = runSavedSkills.slice(0, 20);
   const taughtSkillsLine = taughtSkillsInstruction(
     taughtSkillIndex.map((skill) => ({
@@ -366,13 +385,19 @@ export async function buildTurnPrompt(
         select: { name: true, timezone: true },
       }),
     );
-    routineNote = routineRunInstruction(routine?.name, parts.records.historyReach === "recent");
+    // The name is not part of what the owner approved, and any of their runs can rename it.
+    routineNote = routineRunInstruction(
+      ownerComputerRoutine ? undefined : routine?.name,
+      parts.records.historyReach === "recent",
+    );
     if (routine && lateSince)
       lateRoutineNote = lateRoutineRunInstruction(lateSince, executionStartedAt, routine.timezone);
   }
-  const sharedSpaceNote = people
-    ? await loadSharedSpaceNote(deps.prisma, run.spaceId, run.userId)
-    : undefined;
+  // Other members' account names are text the owner of a routine with their computer never approved.
+  const sharedSpaceNote =
+    people && !ownerComputerRoutine
+      ? await loadSharedSpaceNote(deps.prisma, run.spaceId, run.userId)
+      : undefined;
   const prompt = [
     replyContext,
     parts.meetingContext,
@@ -437,9 +462,10 @@ export async function buildTurnPrompt(
       )
     : replayHistory;
   const runtimeHistory = [...historicalContext, ...historyWithImages];
-  const groupDirectory = conversationThread.groupId
-    ? undefined
-    : await loadBotGroupDirectory(deps.prisma, run);
+  const groupDirectory =
+    conversationThread.groupId || ownerComputerRoutine
+      ? undefined
+      : await loadBotGroupDirectory(deps.prisma, run);
   const botDirectory =
     [renderBotDirectory(parts.tools.teammates), groupDirectory].filter(Boolean).join("\n\n") ||
     undefined;

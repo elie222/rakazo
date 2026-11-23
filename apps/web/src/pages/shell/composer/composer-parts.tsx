@@ -68,11 +68,15 @@ export function MentionPicker({
   onHighlight: (mention: ComposerMention) => void;
 }) {
   const { t } = useLingui();
-  const mentionedBotNames = new Set<string>();
-  const routineOrConnectorNames = new Set<string>();
+  // Options sharing a name (a bot and a group, say) are told apart by their visible subtitle.
+  const nameCounts = new Map<string, number>();
+  const firstKindByName = new Map<string, ComposerMention["kind"]>();
+  const mixedKindNames = new Set<string>();
   for (const { name, kind } of options) {
-    if (kind === "bot") mentionedBotNames.add(name);
-    if (kind === "routine" || kind === "connector") routineOrConnectorNames.add(name);
+    nameCounts.set(name, (nameCounts.get(name) ?? 0) + 1);
+    const firstKind = firstKindByName.get(name);
+    if (firstKind === undefined) firstKindByName.set(name, kind);
+    else if (firstKind !== kind) mixedKindNames.add(name);
   }
   return (
     <div
@@ -85,12 +89,23 @@ export function MentionPicker({
       {options.map((mention, index) => {
         const optionId = `${listboxId}-option-${index}`;
         const highlighted = index === activeIndex;
-        const { name, kind } = mention;
-        let kindLabel: string | undefined;
-        if (mentionedBotNames.has(name) && routineOrConnectorNames.has(name)) {
-          if (kind === "bot") kindLabel = t`Bot`;
-          if (kind === "routine") kindLabel = t`Routine`;
-          if (kind === "connector") kindLabel = t`Connector`;
+        const labelWithSubtitle =
+          Boolean(mention.subtitle) && (nameCounts.get(mention.name) ?? 0) > 1;
+        // Bot and group subtitles already name their type; routine and connector subtitles do not.
+        const typeLabel = mixedKindNames.has(mention.name)
+          ? mention.kind === "routine"
+            ? t`Routine`
+            : mention.kind === "connector"
+              ? t`Connector`
+              : undefined
+          : undefined;
+        let optionLabel = t`@${mention.name}`;
+        if (typeLabel) {
+          optionLabel = mention.subtitle
+            ? t`@${mention.name}, ${typeLabel}, ${mention.subtitle}`
+            : t`@${mention.name}, ${typeLabel}`;
+        } else if (labelWithSubtitle) {
+          optionLabel = t`@${mention.name}, ${mention.subtitle}`;
         }
         return (
           <button
@@ -99,7 +114,7 @@ export function MentionPicker({
             type="button"
             role="option"
             aria-selected={highlighted}
-            aria-label={kindLabel ? t`@${name} ${kindLabel}` : t`@${name}`}
+            aria-label={optionLabel}
             onMouseDown={(event) => event.preventDefault()}
             onClick={() => onPick(mention)}
             // Opening the list under a stationary pointer must not steal the keyboard highlight.

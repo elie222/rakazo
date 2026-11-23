@@ -38,6 +38,13 @@
       ],
       "expo-localization",
       [
+        "expo-media-library",
+        {
+          "savePhotosPermission": "Rakazo saves photos and videos you download from Artifacts to your photo library.",
+          "granularPermissions": []
+        }
+      ],
+      [
         "expo-calendar",
         {
           "calendarPermission": "Allow Rakazo to read and add events in calendars you choose for your bots.",
@@ -133,6 +140,7 @@
       }
     },
     "android": {
+      "blockedPermissions": ["android.permission.READ_MEDIA_VISUAL_USER_SELECTED"],
       "package": "com.rakazo.app",
       "versionCode": 10,
       "softwareKeyboardLayoutMode": "resize",

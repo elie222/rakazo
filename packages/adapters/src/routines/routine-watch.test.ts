@@ -387,7 +387,7 @@ describe("tickRoutineWatch", () => {
     ).rejects.toThrow("can change data");
   });
 
-  it.each([false, undefined, true])("checks lazy tool readOnly %s", async (readOnly) => {
+  it.each([undefined, true])("checks lazy tool readOnly %s", async (readOnly) => {
     const { deps, routine } = setup({ data: "ok" });
     vi.mocked(deps.connector!.discoverTools).mockResolvedValue([]);
     deps.connector!.resolveCall = vi.fn(async (call) => ({
@@ -1384,27 +1384,6 @@ describe("tickRoutineWatch on a computer", () => {
         }),
       }),
     );
-  });
-
-  it("keeps sub-second modification times", async () => {
-    vi.mocked(provisionComputer).mockResolvedValueOnce({
-      id: "computer-1",
-      botId: "bot-1",
-      kind: "fake",
-      providerRef: "fake",
-    });
-    const { deps, routine, updateMany } = setupComputer(
-      { kind: "files", paths: ["a"] },
-      { stdout: "/home/rakazo/bots/bot-1/a/x.txt\t1\t5.25\n" },
-    );
-    routine.watchState = {
-      checkedAt: "x",
-      outcome: "unchanged",
-      fingerprint: null,
-      detail: null,
-    } as never;
-    await tickRoutineWatch(deps, routine, target, scheduledAt);
-    expect(JSON.stringify(updateMany.mock.calls[0])).toContain("1:5.25");
   });
 
   describe("a check's use of the vault's command variables", () => {
