@@ -11,6 +11,7 @@ import {
   CLAUDE_CODE_PROVIDER_ID,
 } from "../providers/cli-model/claude-code/provider-id.js";
 import { OpenAIMediaGenerationProvider } from "../providers/media/openai/openai-media.js";
+import { OpenRouterMediaGenerationProvider } from "../providers/media/openrouter/openrouter-media.js";
 import { OpenRouterUsageLookup } from "./endpoints/openrouter-usage.js";
 
 /**
@@ -105,7 +106,7 @@ export const modelProviders = {
     media: {
       images: true,
       create: ({ apiKey }) =>
-        new OpenAIMediaGenerationProvider({ apiKey, imageModel: "gpt-image-1" }),
+        new OpenAIMediaGenerationProvider({ apiKey, imageModel: "gpt-image-2" }),
     },
   },
   openrouter: {
@@ -118,6 +119,16 @@ export const modelProviders = {
     },
     deployment: { keyEnv: "OPENROUTER_API_KEY", defaultModel: "anthropic/claude-haiku-5.5" },
     dataRetentionControl: true,
+    media: {
+      images: true,
+      video: true,
+      create: ({ apiKey }) =>
+        new OpenRouterMediaGenerationProvider({
+          apiKey,
+          imageModel: "openai/gpt-image-2",
+          videoModel: "google/veo-3.1-lite",
+        }),
+    },
   },
   anthropic: {
     recommendedModel: "claude-haiku-5-5",
