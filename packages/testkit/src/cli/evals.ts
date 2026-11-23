@@ -6,9 +6,11 @@ import { parseArgs } from "node:util";
 import type { AgentContextStrategy, AgentRunRequest } from "@rakazo/adapter-kit";
 import { ModelConnectInputSchema, ReplyModeSchema } from "@rakazo/contracts";
 import { loadRootEnv } from "@rakazo/core/node/load-root-env";
+import { z } from "zod";
 import type { EvalCase } from "../evals/cases.js";
 import {
   EVAL_CASES,
+  EVAL_INBOUND_EMAIL,
   HISTORY_EVAL_CASES,
   HISTORY_JUDGE_CALIBRATION,
   PRODUCT_JUDGE_CALIBRATION,
@@ -20,6 +22,7 @@ import {
   caseKey,
   codeRevision,
   firstRequestFetch,
+  requestBodyFetch,
   runFingerprint,
   workingDiffHash,
 } from "../evals/fingerprint.js";
@@ -128,6 +131,8 @@ async function main() {
       model: { type: "string" },
       "api-key-env": { type: "string" },
       "base-url": { type: "string" },
+      /** JSON object merged into every eval model request body, such as a gateway's routing. */
+      "request-body": { type: "string" },
       "context-window": { type: "string" },
       "max-output-tokens": { type: "string" },
       trials: { type: "string", default: "1" },
@@ -448,6 +453,9 @@ async function main() {
   budget = new SpendBudget(report.spendCapUsd, pricing);
   const liveBudget = budget;
   const connection = parsedConnection.data;
+  const requestBody = values["request-body"]
+    ? z.record(z.string(), z.unknown()).parse(JSON.parse(values["request-body"]))
+    : undefined;
   report.model = connection.modelId!;
   report.provider = connection.provider;
   Object.assign(report, { cacheCapabilities: connection.cacheCapabilities ?? null });
@@ -749,7 +757,7 @@ async function main() {
         known && known.kind !== "run" && known.trials.some((t) => t.trial === planned.trial)
           ? { plan: known }
           : {};
-      const modelFetch = firstRequestFetch(
+      const fingerprintedFetch = firstRequestFetch(
         observeWire
           ? diagnosticWireFetch(dispatcherFetch, connection.modelId!, wireDiagnostics)
           : dispatcherFetch,
@@ -787,6 +795,9 @@ async function main() {
         },
         scenario,
       );
+      const modelFetch = requestBody
+        ? requestBodyFetch(fingerprintedFetch, connection.modelId!, requestBody)
+        : fingerprintedFetch;
       if (!stored.plan) {
         const ran = {
           ...(await runTrial(scenario, planned.trial, {
@@ -795,7 +806,7 @@ async function main() {
             connection,
             pricing,
             judge,
-            createApp: async (composio, messaging, witnesses) => {
+            createApp: async (composio, messaging, witnesses, site) => {
               const sandbox = new EvalSandboxProvider(scenario.computer);
               let acceptingCalls = true;
               const cacheDecisions: CacheDecisionMeasurement[] = [];
@@ -863,6 +874,8 @@ async function main() {
                 composio,
                 messaging,
                 web: composio.web,
+                ...(site ? { browser: site } : {}),
+                ...(scenario.botEmail ? { inboundEmail: EVAL_INBOUND_EMAIL } : {}),
                 ...(wakesRoutines(scenario) ? witnesses : {}),
                 messagingOpenSignup: false,
                 defaultProvider: connection.provider,
