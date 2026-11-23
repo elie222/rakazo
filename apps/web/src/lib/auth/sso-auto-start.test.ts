@@ -1,12 +1,23 @@
 // @vitest-environment jsdom
-import { afterEach, expect, it } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
 import { holdSsoAutoStart, releaseSsoAutoStart, ssoAutoStartAllowed } from "./sso-auto-start";
 
-afterEach(() => localStorage.clear());
+afterEach(() => {
+  vi.useRealTimers();
+  localStorage.clear();
+});
 
-it("allows an automatic start again once a session releases the hold", () => {
+it("is released by a session created after the hold", () => {
+  vi.useFakeTimers({ now: new Date("2026-11-24T10:00:00Z") });
   expect(holdSsoAutoStart()).toBe(true);
   expect(ssoAutoStartAllowed()).toBe(false);
-  releaseSsoAutoStart();
+  releaseSsoAutoStart(new Date("2026-11-24T10:00:30Z"));
   expect(ssoAutoStartAllowed()).toBe(true);
+});
+
+it("stays held for a tab still on the session being signed out", () => {
+  vi.useFakeTimers({ now: new Date("2026-11-24T10:00:00Z") });
+  holdSsoAutoStart();
+  releaseSsoAutoStart(new Date("2026-11-24T08:00:00Z"));
+  expect(ssoAutoStartAllowed()).toBe(false);
 });

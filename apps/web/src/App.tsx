@@ -135,6 +135,7 @@ function SessionApp() {
   const { pathname, search } = useLocation();
   const screen = analyticsScreen(pathname);
   const analyticsUserId = session.data?.user.id;
+  const sessionCreatedAt = session.data?.session?.createdAt;
   const lastScreen = useRef<string | undefined>(undefined);
   useEffect(() => {
     // A pending session is not a sign-out; startup already tagged the signed-in user.
@@ -162,9 +163,9 @@ function SessionApp() {
     syncLogOutFailure(gate === "authenticated");
     if (gate === "authenticated") {
       rememberSignedIn();
-      releaseSsoAutoStart();
+      if (sessionCreatedAt) releaseSsoAutoStart(new Date(sessionCreatedAt));
     }
-  }, [gate, analyticsUserId]);
+  }, [gate, analyticsUserId, sessionCreatedAt]);
   useEffect(() => {
     if (gate === "authenticated" || gate === "anonymous") setQueryUser(analyticsUserId ?? null);
   }, [gate, analyticsUserId]);
