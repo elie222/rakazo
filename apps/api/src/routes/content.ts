@@ -41,14 +41,6 @@ const isMedia = Prisma.sql`u."operationKind" IN (${Prisma.join(MEDIA_OPERATION_K
 
 export function contentRoutes(ctx: RouterContext) {
   const { deps, repos, favicons, groupRepos, authed, refreshExpiredCredential } = ctx;
-  const usageTimezone = async (userId: string) => {
-    const member = await deps.prisma.user.findUnique({
-      where: { id: userId },
-      select: { timezone: true },
-    });
-    const saved = member?.timezone ?? "UTC";
-    return validTimezoneOrUtc(usageTimezoneAliases.get(saved.toLowerCase()) ?? saved);
-  };
   return {
     artifacts: {
       list: authed.artifacts.list.handler(async ({ context, input }) => {
@@ -250,7 +242,14 @@ export function contentRoutes(ctx: RouterContext) {
           userId: context.actor.userId,
         } as const;
         const now = new Date();
-        const timezone = await usageTimezone(context.actor.userId);
+        const member = await deps.prisma.user.findUnique({
+          where: { id: context.actor.userId },
+          select: { timezone: true },
+        });
+        const savedTimezone = member?.timezone ?? "UTC";
+        const timezone = validTimezoneOrUtc(
+          usageTimezoneAliases.get(savedTimezone.toLowerCase()) ?? savedTimezone,
+        );
         const localDay = (at: Date) => wallClock(at, timezone).slice(0, 10);
         const days = input.range === "today" ? 1 : input.range === "7d" ? 7 : 30;
         const firstDate = new Date(`${localDay(now)}T00:00:00Z`);

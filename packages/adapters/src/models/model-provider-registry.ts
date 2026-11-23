@@ -86,7 +86,7 @@ const unauthorized = async (response: Response) =>
   response.status === 401 || response.status === 403;
 
 const openAIImages: MediaModelList = {
-  defaultModel: { id: "gpt-image-2", label: "GPT Image 2" },
+  defaultModel: OPENAI_IMAGE_MODELS[0]!,
   models: async () => OPENAI_IMAGE_MODELS.map(({ id, label }) => ({ id, label })),
 };
 const openRouterImages: MediaModelList = {
