@@ -16,7 +16,7 @@ import {
   VIDEO_JOB_UNAVAILABLE,
 } from "../../media/media-generation-tools.js";
 import type { MediaSource, ResolvedMediaSource } from "../../media/media-sources.js";
-import { mediaProviderForSource, readMediaJobSource } from "../../media/media-sources.js";
+import { mediaVideoProviderForSource, readMediaJobSource } from "../../media/media-sources.js";
 import { hostedMediaPrice } from "../../media/media-usage.js";
 import { mediaDelivery, scheduleMediaPoll } from "../../media/media-video-poll.js";
 import {
@@ -92,7 +92,7 @@ async function savedJobSource(
   if (!record) return null;
   const deps = { ...ctx.deps, mediaGeneration: ctx.providers.mediaGeneration };
   return async () => {
-    const provider = await mediaProviderForSource(deps, run.userId, record);
+    const provider = await mediaVideoProviderForSource(deps, run.userId, record);
     return provider && { record, provider };
   };
 }

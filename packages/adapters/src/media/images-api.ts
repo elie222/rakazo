@@ -53,8 +53,10 @@ export function mediaBaseUrl(raw: string): string {
   return url.href.replace(/\/$/, "");
 }
 
+export const isMediaModelId = (model: string) => MODEL_ID_PATTERN.test(model);
+
 export function checkMediaModelId(model: string) {
-  if (!MODEL_ID_PATTERN.test(model)) throw new Error("Invalid media model id");
+  if (!isMediaModelId(model)) throw new Error("Invalid media model id");
 }
 
 export function mediaHttpError(status: number): MediaGenerationError {

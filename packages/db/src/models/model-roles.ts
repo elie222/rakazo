@@ -1,4 +1,5 @@
 import type {
+  MediaModelRole,
   ModelRole,
   ModelRoleChoice,
   ModelRoleSettings,
@@ -16,6 +17,8 @@ import { withTransactionRetry } from "../database/transaction-retry.js";
 import { lockSpaceSettings, settingsTarget } from "../spaces/space-settings.js";
 
 type Scope = { userId: string; spaceId: string };
+/** A model role, or a media one, which keeps only a primary. */
+type StoredRole = ModelRole | MediaModelRole;
 /** Which copy of a member's model roles a call acts on: the account's or the Space's override. */
 export type ModelRoleTarget = Scope & { scope: SettingsScope };
 type RoleClient = Pick<PrismaClient, "spaceModelRoleChoice" | "userModelRoleChoice">;
@@ -92,7 +95,7 @@ export async function modelRoleTarget(
 export async function appliedModelRole(
   prisma: RoleClient & Pick<PrismaClient, "spaceSettingOverride">,
   scope: Scope,
-  role: ModelRole,
+  role: StoredRole,
   requested?: SettingsScope,
 ): Promise<ModelRoleSettings> {
   return getModelRole(prisma, await modelRoleTarget(prisma, scope, requested), role);
@@ -102,7 +105,7 @@ export async function appliedModelRole(
 export async function getModelRole(
   prisma: RoleClient,
   target: ModelRoleTarget,
-  role: ModelRole,
+  role: StoredRole,
 ): Promise<ModelRoleSettings> {
   const { table, owner } = roleRows(prisma, target);
   const rows = await table.findMany({
@@ -138,7 +141,7 @@ export async function listModelRoleChoices(
 export async function updateModelRole(
   prisma: PrismaClient,
   target: Scope & { scope?: SettingsScope },
-  role: ModelRole,
+  role: StoredRole,
   patch: Partial<ModelRoleSettings>,
 ): Promise<ModelRoleSettings> {
   return withTransactionRetry(() =>
@@ -172,7 +175,7 @@ export async function updateModelRole(
 export async function writeModelRole(
   tx: RoleClient,
   target: ModelRoleTarget,
-  role: ModelRole,
+  role: StoredRole,
   patch: Partial<ModelRoleSettings>,
 ): Promise<ModelRoleSettings> {
   const { table, owner } = roleRows(tx, target);

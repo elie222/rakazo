@@ -28,7 +28,7 @@ const API = "https://openrouter.ai/api/v1";
 const REQUEST_TIMEOUT_MS = 30_000;
 const DOWNLOAD_TIMEOUT_MS = 120_000;
 const MAX_JSON_BYTES = 100_000;
-const VIDEO_SECONDS = 4;
+export const VIDEO_SECONDS = 4;
 /**
  * Per model, the most one image (auto size and quality) or one four-second video with its default
  * audio costs, from OpenRouter's published prices, in micro-dollars. Each response reports what

@@ -54,7 +54,7 @@ export async function assembleRunTurn(services: RunExecutorServices, hold: RunHo
             services.mediaGeneration,
           ),
         },
-        hold.run.userId,
+        hold.run,
       )
     : {};
   const tools = await selectRunTools(services, hold, {

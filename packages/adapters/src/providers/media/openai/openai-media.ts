@@ -28,6 +28,13 @@ const MODELS = new Map<string, { imageMicros: number; textToken?: number; output
   ["dall-e-2", { imageMicros: 20_000 }],
 ]);
 
+/** The image models a key's picker offers, newest first. */
+export const OPENAI_IMAGE_MODELS = [
+  { id: "gpt-image-2", label: "GPT Image 2" },
+  { id: "gpt-image-1", label: "GPT Image 1" },
+  { id: "gpt-image-1-mini", label: "GPT Image 1 Mini" },
+] as const;
+
 /**
  * The Images API (`POST /images/generations`). Servers that speak the same API work through the
  * base URL. It has no video.

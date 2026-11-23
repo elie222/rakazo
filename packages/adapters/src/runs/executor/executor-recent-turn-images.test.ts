@@ -256,7 +256,7 @@ async function runWithModel(
       ),
     },
     secret: { findMany: vi.fn(async () => []), findFirst: vi.fn(async () => null) },
-    userModelCredential: { findFirst: vi.fn(async () => null) },
+    userModelCredential: { findFirst: vi.fn(async () => null), findMany: vi.fn(async () => []) },
     userModelRoleChoice: {
       findMany: vi.fn(async ({ where }: { where: { role: string } }) => {
         if (where.role !== "main") return [];

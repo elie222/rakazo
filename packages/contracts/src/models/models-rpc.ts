@@ -9,6 +9,11 @@ import { Id, ThinkingLevelSchema } from "../ids.js";
 import { SettingsScopeSchema, settingsScopeInput } from "../settings-scope.js";
 import { DeploymentModelSettingsSchema, DeploymentModelUpdateSchema } from "./deployment-model.js";
 import {
+  MediaModelChoiceSchema,
+  MediaModelRoleSchema,
+  MediaModelsViewSchema,
+} from "./media-models.js";
+import {
   ModelApiProtocolSchema,
   ModelCatalogEntrySchema,
   ModelConnectInputSchema,
@@ -59,6 +64,18 @@ export const modelsRpc = {
         }),
       )
       .output(ModelRoleViewSchema),
+    media: oc
+      .input(z.object({ expectedUserId: Id.optional(), scope: SettingsScopeSchema.optional() }))
+      .output(MediaModelsViewSchema),
+    setMedia: oc
+      .input(
+        MediaModelChoiceSchema.extend({
+          role: MediaModelRoleSchema,
+          expectedUserId: Id.optional(),
+          scope: SettingsScopeSchema.optional(),
+        }),
+      )
+      .output(MediaModelsViewSchema),
     list: oc.output(z.array(ModelCatalogEntrySchema)),
     credentials: oc.output(z.array(ModelCredentialSchema)),
     backups: oc.output(z.array(ModelRoleChoiceSchema)),

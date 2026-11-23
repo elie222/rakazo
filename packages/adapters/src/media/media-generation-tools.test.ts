@@ -143,6 +143,36 @@ describe("bot media tools", () => {
     expect(externalEffect.create).not.toHaveBeenCalled();
     expect(generate).not.toHaveBeenCalled();
   });
+  it("hands an own-key image's model and cost to be recorded, and none for a hosted one", async () => {
+    const { options, provider, attach } = setup();
+    vi.spyOn(provider, "generateImage").mockResolvedValue({
+      bytes: new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+      mimeType: "image/png",
+      costMicros: 40_000,
+    });
+    await generateMediaFromTool({
+      ...options,
+      source: { kind: "connection", connectionId: "connection", model: "lab/draw" },
+    });
+    expect(attach.mock.calls[0]![2].spend).toEqual({
+      role: "image",
+      provider: "fake",
+      model: "lab/draw",
+      costMicros: 40_000,
+      estimated: false,
+    });
+    await generateMediaFromTool({ ...options, executionId: "hosted" });
+    expect(attach.mock.calls[1]![2].spend).toBeUndefined();
+  });
+  it("counts an own-key image whose response names no cost at the model's saved price", async () => {
+    const { options, provider, attach } = setup();
+    Object.assign(provider, { prices: { imageMicros: 52_000, videoMicros: 0 } });
+    await generateMediaFromTool({
+      ...options,
+      source: { kind: "connection", connectionId: "connection", model: "lab/draw" },
+    });
+    expect(attach.mock.calls[0]![2].spend).toMatchObject({ costMicros: 52_000, estimated: true });
+  });
   it("names an attached image after the format the provider returned", async () => {
     const { options, provider, attach } = setup();
     vi.spyOn(provider, "generateImage").mockResolvedValue({

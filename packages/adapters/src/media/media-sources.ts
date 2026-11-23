@@ -1,6 +1,8 @@
 import type { MediaGenerationProvider, SecretStore } from "@rakazo/adapter-kit";
+import type { MediaModelRole, ModelRoleSettings } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
 import {
+  appliedModelRole,
   JsonColumnMismatchError,
   newestModelCredentialOrder,
   readJsonColumn,
@@ -15,13 +17,19 @@ import {
 import type { ModelProviderDefinition } from "../models/model-provider-registry.js";
 import { modelProviderDefinition, modelProviders } from "../models/model-provider-registry.js";
 import { parseModelSecret } from "../models/model-secret.js";
+import type { MediaKind } from "./media-models.js";
 
 /**
  * What made a generation, saved on its job: the run owner's own model connection, which costs
  * them nothing on Rakazo's side, or the deployment's hosted provider, which metering charges.
  */
 export const mediaSourceSchema = z.discriminatedUnion("kind", [
-  z.object({ kind: z.literal("connection"), connectionId: z.string().min(1) }),
+  z.object({
+    kind: z.literal("connection"),
+    connectionId: z.string().min(1),
+    // compat-shim(after v0.15.0): jobs the previous release saves name no model; it made the default.
+    model: z.string().min(1).optional(),
+  }),
   z.object({ kind: z.literal("hosted") }),
 ]);
 export type MediaSourceRecord = z.infer<typeof mediaSourceSchema>;
@@ -63,7 +71,14 @@ export interface RunMediaSources {
 }
 
 export interface MediaSourceDeps {
-  prisma: Pick<PrismaClient, "userModelCredential" | "secret">;
+  prisma: Pick<
+    PrismaClient,
+    | "userModelCredential"
+    | "secret"
+    | "spaceSettingOverride"
+    | "userModelRoleChoice"
+    | "spaceModelRoleChoice"
+  >;
   secretStore: Pick<SecretStore, "load">;
   /** The deployment-wide provider, used when the owner has no connection that makes the media. */
   mediaGeneration?: MediaGenerationProvider;
@@ -71,19 +86,55 @@ export interface MediaSourceDeps {
 
 type ConnectionMedia = NonNullable<ModelProviderDefinition["media"]>;
 
-function connectionMedia(provider: string): ConnectionMedia | undefined {
+export function connectionMedia(provider: string): ConnectionMedia | undefined {
   if (!modelProviderAllowed(modelProviderAllowlist(), provider)) return undefined;
   return modelProviderDefinition(provider)?.media;
 }
 
-const mediaProviderIds = (kind: "images" | "video") =>
-  Object.keys(modelProviders).filter((id) => connectionMedia(id)?.[kind]);
+export const ROLE_KIND = { image: "images", video: "video" } as const satisfies Record<
+  MediaModelRole,
+  MediaKind
+>;
+
+/** The owner's connections whose provider makes some media, newest first. */
+export async function mediaConnections(
+  prisma: Pick<PrismaClient, "userModelCredential">,
+  userId: string,
+) {
+  const connections = await prisma.userModelCredential.findMany({
+    where: { userId, provider: { in: Object.keys(modelProviders).filter(connectionMedia) } },
+    orderBy: newestModelCredentialOrder,
+    select: { id: true, provider: true, label: true },
+  });
+  return connections.flatMap((connection) => {
+    const media = connectionMedia(connection.provider);
+    return media ? [{ ...connection, media }] : [];
+  });
+}
+export type MediaConnection = Awaited<ReturnType<typeof mediaConnections>>[number];
+
+/**
+ * The connection and model a kind of media runs on: the member's choice while its connection
+ * remains and makes that media, otherwise the newest connection that does, with its default.
+ */
+export function mediaChoice(
+  role: MediaModelRole,
+  connections: MediaConnection[],
+  chosen: { credentialId?: string; modelId: string } | null,
+): { connection: MediaConnection; model: string } | undefined {
+  const kind = ROLE_KIND[role];
+  const pinned = connections.find((item) => item.id === chosen?.credentialId);
+  if (chosen && pinned?.media[kind]) return { connection: pinned, model: chosen.modelId };
+  const newest = connections.find((item) => item.media[kind]);
+  return newest && { connection: newest, model: newest.media[kind]!.defaultModel.id };
+}
 
 /** Builds the connection's media provider from its stored key; undefined once it is gone. */
 async function connectionProvider(
   deps: MediaSourceDeps,
   userId: string,
   connectionId: string,
+  models: { imageModel?: string; videoModel?: string },
 ): Promise<MediaGenerationProvider | undefined> {
   const connection = await deps.prisma.userModelCredential.findFirst({
     where: { id: connectionId, userId },
@@ -105,60 +156,65 @@ async function connectionProvider(
     return undefined;
   }
   return secret.kind === "api_key"
-    ? media.create({ apiKey: secret.key, zeroDataRetention: secret.zeroDataRetention })
+    ? media.create({ apiKey: secret.key, zeroDataRetention: secret.zeroDataRetention, ...models })
     : undefined;
 }
 
-/** The provider that made, or will keep checking, a job saved with this source. */
-export function mediaProviderForSource(
+/** The provider that made, or will keep checking, a video job saved with this source. */
+export function mediaVideoProviderForSource(
   deps: MediaSourceDeps,
   userId: string,
   source: MediaSourceRecord,
 ): Promise<MediaGenerationProvider | undefined> {
   return source.kind === "hosted"
     ? Promise.resolve(deps.mediaGeneration)
-    : connectionProvider(deps, userId, source.connectionId);
+    : connectionProvider(deps, userId, source.connectionId, { videoModel: source.model });
 }
 
 /**
- * Where a run's images and videos come from: the owner's newest connection whose provider
- * declares that media, otherwise the deployment's provider.
+ * Where a run's images and videos come from: the model the owner chose for each, else the
+ * newest connection that makes it, else the deployment's provider.
  */
 export async function resolveRunMediaSources(
   deps: MediaSourceDeps,
-  userId: string,
+  scope: { userId: string; spaceId: string },
 ): Promise<RunMediaSources> {
-  const newest = (kind: "images" | "video") =>
-    deps.prisma.userModelCredential.findFirst({
-      where: { userId, provider: { in: mediaProviderIds(kind) } },
-      orderBy: newestModelCredentialOrder,
-      select: { id: true },
-    });
-  const [imageConnection, videoConnection] = await Promise.all([newest("images"), newest("video")]);
+  const connections = await mediaConnections(deps.prisma, scope.userId);
+  // A choice can only name a connection, so without one there is nothing to read.
+  const [image, video] = connections.length
+    ? await Promise.all([
+        appliedModelRole(deps.prisma, scope, "image"),
+        appliedModelRole(deps.prisma, scope, "video"),
+      ])
+    : [null, null];
   const hosted = deps.mediaGeneration;
-  const built = new Map<string, Promise<MediaGenerationProvider | undefined>>();
   const source = (
-    kind: "images" | "video",
-    connection: { id: string } | null,
+    role: MediaModelRole,
+    chosen: ModelRoleSettings | null,
   ): MediaSource | undefined => {
+    const kind = ROLE_KIND[role];
     const fallback = hosted?.capabilities[kind] ? { record: HOSTED, provider: hosted } : undefined;
-    if (!connection) return fallback && (() => Promise.resolve(fallback));
+    const choice = mediaChoice(role, connections, chosen?.primary ?? null);
+    if (!choice) return fallback && (() => Promise.resolve(fallback));
+    const { connection, model } = choice;
+    let own: Promise<MediaGenerationProvider | undefined> | undefined;
     return async () => {
       // A failed key lookup is not kept, so a later call in the same turn tries it again.
-      let own = built.get(connection.id);
-      if (!own) {
-        own = connectionProvider(deps, userId, connection.id).catch((error: unknown) => {
-          built.delete(connection.id);
-          throw error;
-        });
-        built.set(connection.id, own);
-      }
+      own ??= connectionProvider(
+        deps,
+        scope.userId,
+        connection.id,
+        role === "image" ? { imageModel: model } : { videoModel: model },
+      ).catch((error: unknown) => {
+        own = undefined;
+        throw error;
+      });
       const provider = await own;
       // A connection removed or left unreadable since leaves the media to the deployment.
       return provider
-        ? { record: { kind: "connection", connectionId: connection.id }, provider }
+        ? { record: { kind: "connection", connectionId: connection.id, model }, provider }
         : fallback;
     };
   };
-  return { image: source("images", imageConnection), video: source("video", videoConnection) };
+  return { image: source("image", image), video: source("video", video) };
 }

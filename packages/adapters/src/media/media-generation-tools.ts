@@ -12,6 +12,7 @@ import { isUniqueViolation, readJsonColumn } from "@rakazo/db";
 import { z } from "zod";
 import { mediaPromptSchema, validateGeneratedMedia } from "./media-generation-provider.js";
 import type { MediaSourceRecord } from "./media-sources.js";
+import type { OwnKeyMediaSpend } from "./media-spend.js";
 import type { MediaCharge } from "./media-usage.js";
 
 export const MEDIA_JOB_KIND = "media_generation_job";
@@ -62,7 +63,12 @@ export async function generateMediaFromTool(options: {
   attach: (
     output: GeneratedMedia,
     name: string,
-    job: { id: string; result: { provider: string; jobId?: string }; charge?: StoredMediaCharge },
+    job: {
+      id: string;
+      result: { provider: string; jobId?: string };
+      charge?: StoredMediaCharge;
+      spend?: OwnKeyMediaSpend;
+    },
   ) => Promise<{ artifactId: string; block: MessageBlock }>;
   publish: (block: MessageBlock, jobId: string, artifactId: string) => Promise<unknown>;
   /** Commits with a video's provider failure, so whatever follows it cannot be lost. */
@@ -275,6 +281,21 @@ export async function generateMediaFromTool(options: {
                   organizationId: charge.organizationId,
                   kind: video ? "video" : "image",
                   amountMicros: output.output.costMicros ?? charge.micros,
+                },
+              }
+            : {}),
+          // compat-shim(after v0.15.0): a job the previous release saved names no model to record.
+          ...(options.source.kind === "connection" && options.source.model
+            ? {
+                spend: {
+                  role: video ? "video" : "image",
+                  provider: provider.id,
+                  model: options.source.model,
+                  // A response that says nothing of cost is counted at the model's saved price.
+                  costMicros:
+                    output.output.costMicros ??
+                    provider.prices[video ? "videoMicros" : "imageMicros"],
+                  estimated: output.output.costMicros === undefined,
                 },
               }
             : {}),

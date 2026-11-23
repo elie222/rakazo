@@ -98,6 +98,7 @@ export * from "./mcp/mcp-transport.js";
 export * from "./mcp/remote-mcp.js";
 export * from "./media/media-generation-factory.js";
 export * from "./media/media-generation-provider.js";
+export * from "./media/media-model-choices.js";
 export * from "./media/media-usage.js";
 export * from "./media/media-video-poll.js";
 export * from "./meetings/calendar/calendar-notifications.js";
