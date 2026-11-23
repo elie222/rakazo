@@ -16,16 +16,13 @@ import type { PrismaClient } from "@rakazo/db";
 import {
   appendEventInTransaction,
   createThreadMessageInTransaction,
-  isUniqueViolation,
-  spaceTakesWork,
   storedMessageBlocks,
-  THREAD_LOCK_TRANSACTION_OPTIONS,
-  withTransactionRetry,
 } from "@rakazo/db";
 import { bestEffort, getLogger } from "@rakazo/logging";
 import { runLeaseFor } from "../runs/assembly/run-messages.js";
-import type { ExecutorDeps } from "../runs/executor/executor-deps.js";
 import { wakeRun } from "../runs/wakeups/wake-run.js";
+import { commitBotMessageDelivery } from "./bot-message-commit.js";
+import type { BotMessageDeliveryDeps } from "./bot-message-ticket.js";
 import {
   deliverTicketBotMessageOutcome,
   loadTicketForBotMessage,
@@ -102,7 +99,7 @@ export function unresolvedBotError(
 }
 
 export async function messageBot(
-  deps: Pick<ExecutorDeps, "prisma" | "events" | "jobs" | "runLease" | "onTicketChange">,
+  deps: BotMessageDeliveryDeps,
   run: {
     id: string;
     spaceId: string;
@@ -183,22 +180,54 @@ export async function messageBot(
     }) as const;
 
   // Ticket origin: a send from a ticket-triggered run, or one already working such an
-  // exchange (the inbound block carries the ref through the chain). Results and statuses
-  // then belong on the ticket, not in any owner's chat; requests, questions and FYIs are
-  // still delivered as ordinary bot messages, but stay marked with the ticket.
+  // exchange (the inbound block carries the ref through the chain). The ticket is part of
+  // every such delivery: a result or status for the ticket's current assignee belongs on
+  // the ticket itself, while requests, questions and FYIs — and results for any other
+  // bot, such as the helper that asked — are delivered as ordinary bot messages that stay
+  // marked with the ticket. A tag whose ticket no longer resolves is an error, not a
+  // silent drop: the recipient must not start work whose answer can never land anywhere.
   const ticketOrigin =
     sourceContext?.ticketRef ??
     (run.trigger === "tickets" ? await ticketRefForRun(deps.prisma, run) : undefined);
   const files = input.files ?? [];
-  if (ticketOrigin && (intent === "result" || intent === "status")) {
+  const ticket = ticketOrigin
+    ? await loadTicketForBotMessage(deps.prisma, {
+        spaceId: run.spaceId,
+        ticketRef: ticketOrigin,
+      })
+    : undefined;
+  if (ticketOrigin && !ticket) {
+    return {
+      ok: false as const,
+      error: `ticket ${ticketOrigin} is no longer available`,
+      missingTicket: true as const,
+    };
+  }
+  // A reply serving the bot that handed this run its request or question.
+  const repliesToItsRequester =
+    sourceContext?.fromBotId === target.id &&
+    (sourceContext.intent === undefined ||
+      sourceContext.intent === "request" ||
+      sourceContext.intent === "question");
+  if (
+    ticketOrigin &&
+    ticket &&
+    (intent === "result" || intent === "status") &&
+    ticket.assigneeBotId === target.id
+  ) {
     const outcome = await deliverTicketBotMessageOutcome(deps, {
       run,
       sender,
       addressTo: { id: target.id, name: target.name },
       ticketRef: ticketOrigin,
+      ticket,
       text: message,
       intent,
       deliveryKey,
+      // An explicit terminal result settles the run's outcome here, so the automatic
+      // return after completion replays instead of double-commenting; interim statuses
+      // and results to anyone else stay eligible for the automatic return.
+      ...(intent === "result" && repliesToItsRequester ? { outcome: { claim: true } } : {}),
       returnFrom,
     });
     if (!outcome.ok) return outcome;
@@ -217,20 +246,15 @@ export async function messageBot(
       botId: target.id,
       name: target.name,
       delivered: message,
-      note: `Recorded as a comment on ticket ${ticketOrigin}. The ticket's assignee is woken to continue that work; nothing was sent to anyone's chat.${
-        files.length > 0
-          ? " Attached files are not posted to the ticket; share them there separately if needed."
+      // Claim the wake only when a continuation run was actually committed (the
+      // assignee may be missing, archived, or ineligible for the board).
+      note: `Recorded as a comment on ticket ${ticketOrigin}.${
+        outcome.woken
+          ? " The ticket's assignee is woken to continue that work; nothing was sent to anyone's chat."
           : ""
-      }`,
+      }${files.length > 0 ? " Attached files are not posted to the ticket; share them there separately if needed." : ""}`,
     };
   }
-  const ticket =
-    ticketOrigin && (intent === "request" || intent === "question" || intent === "fyi")
-      ? await loadTicketForBotMessage(deps.prisma, {
-          spaceId: run.spaceId,
-          ticketRef: ticketOrigin,
-        })
-      : undefined;
 
   const wakePrompt = buildBotMessageWakePrompt({
     from: sender,
@@ -246,177 +270,115 @@ export async function messageBot(
     intent,
   };
 
-  let committed:
-    | {
-        ok: true;
-        runId: string;
-        targetEventSeq: number;
-        senderEventSeq: number;
-      }
-    | {
-        ok: false;
-        error: string;
-      }
-    | {
-        ok: true;
-        replayed: true;
+  const committed = await commitBotMessageDelivery<{
+    ok: true;
+    runId: string;
+    targetEventSeq: number;
+    senderEventSeq: number;
+  }>(
+    deps,
+    {
+      run,
+      returnFrom,
+      lockThreadIds: [targetThreadId],
+      nonce: deliveryKey ? { threadId: targetThreadId, clientNonce: deliveryKey } : undefined,
+      target: { id: target.id, name: target.name },
+    },
+    async (tx) => {
+      // Echo into the sender's chat in the same transaction so a failed notify
+      // cannot leave one side delivered and the other blank.
+      const outbound = await createThreadMessageInTransaction(tx, {
+        threadId: run.threadId,
+        role: "bot",
+        blocks: [outboundBlock],
+        botId: run.botId,
+        runId: run.id,
+        markUnread: options?.forceUnread === true,
+        allowCancelledRun: returnFrom === "ended",
+        lease: runLeaseFor(deps, run.id),
+      });
+      const inboundBlock: MessageBlock = {
+        kind: "bot_message_received",
+        fromBotId: sender.id,
+        fromBotName: sender.name,
+        text: message,
+        hop,
+        intent,
+        returnToMessageId: outbound.id,
+        ...(ticketOrigin ? { ticketRef: ticketOrigin } : {}),
       };
-  try {
-    committed = await withTransactionRetry(() =>
-      deps.prisma.$transaction(async (tx) => {
-        if (!(await spaceTakesWork(tx, run.spaceId)))
-          return { ok: false as const, error: "this Space is being deleted" };
-        for (const threadId of [run.threadId, targetThreadId].sort()) {
-          await tx.$queryRaw`SELECT id FROM threads WHERE id = ${threadId} FOR UPDATE`;
-        }
-        // Claim the delivery key inside the transaction so a concurrent retry
-        // either sees the winner or loses on the unique (threadId, clientNonce).
-        if (deliveryKey) {
-          const already = await tx.message.findUnique({
-            where: { threadId_clientNonce: { threadId: targetThreadId, clientNonce: deliveryKey } },
-            select: { id: true },
-          });
-          if (already) return { ok: true as const, replayed: true as const };
-        }
-
-        const senderStillRunning = await tx.run.findFirst({
-          where: {
-            id: run.id,
-            spaceId: run.spaceId,
-            threadId: run.threadId,
-            botId: run.botId,
-            userId: run.userId,
-            status:
-              returnFrom === "ended"
-                ? { in: ["completed", "failed", "cancelled"] }
-                : returnFrom === "waiting"
-                  ? "waiting_input"
-                  : "running",
-          },
-          select: { id: true },
-        });
-        if (!senderStillRunning)
-          return { ok: false as const, error: "source run is no longer active" };
-
-        // Re-read the target inside the transaction: it can be archived between
-        // resolving it above and committing here.
-        const stillAddressable = await tx.bot.findFirst({
-          where: {
-            id: target.id,
-            spaceId: run.spaceId,
-            archivedAt: null,
-          },
-          select: { id: true },
-        });
-        if (!stillAddressable)
-          return { ok: false as const, error: `${target.name} is no longer available` };
-
-        // Echo into the sender's chat in the same transaction so a failed notify
-        // cannot leave one side delivered and the other blank.
-        const outbound = await createThreadMessageInTransaction(tx, {
-          threadId: run.threadId,
-          role: "bot",
-          blocks: [outboundBlock],
-          botId: run.botId,
-          runId: run.id,
-          markUnread: options?.forceUnread === true,
-          allowCancelledRun: returnFrom === "ended",
-          lease: runLeaseFor(deps, run.id),
-        });
-        const inboundBlock: MessageBlock = {
-          kind: "bot_message_received",
-          fromBotId: sender.id,
-          fromBotName: sender.name,
-          text: message,
-          hop,
-          intent,
-          returnToMessageId: outbound.id,
-          ...(ticketOrigin ? { ticketRef: ticketOrigin } : {}),
-        };
-        const inbound = await createThreadMessageInTransaction(tx, {
-          threadId: targetThreadId,
-          role: "user",
-          blocks: [inboundBlock, ...files],
-          replyToMessageId:
-            sourceContext?.fromBotId === target.id && intent !== "fyi"
-              ? sourceContext.returnToMessageId
-              : undefined,
-          clientNonce: deliveryKey,
-          markUnread: options?.forceUnread === true,
-        });
-        if (ticket) {
-          // The question the ticket's work asked, kept on the ticket itself: the reply is
-          // recorded there too (see deliverTicketBotMessageOutcome), so the workflow
-          // stays readable without any owner's chat.
-          await recordTicketExchangeComment(tx, {
-            spaceId: run.spaceId,
-            ticketId: ticket.ticketId,
-            botId: sender.id,
-            body: message,
-          });
-        }
-        const task = await tx.task.create({
-          data: {
-            spaceId: run.spaceId,
-            botId: target.id,
-            threadId: targetThreadId,
-            userId: run.userId,
-            prompt: wakePrompt,
-            status: "queued",
-          },
-        });
-        const nextRun = await tx.run.create({
-          data: {
-            spaceId: run.spaceId,
-            botId: target.id,
-            threadId: targetThreadId,
-            taskId: task.id,
-            userId: run.userId,
-            status: "queued",
-            trigger: "bot_message",
-            sourceMessageId: inbound.id,
-          },
-          select: { id: true },
-        });
-        await tx.message.update({ where: { id: inbound.id }, data: { runId: nextRun.id } });
-        const inboundEvent = await appendEventInTransaction(tx, {
+      const inbound = await createThreadMessageInTransaction(tx, {
+        threadId: targetThreadId,
+        role: "user",
+        blocks: [inboundBlock, ...files],
+        replyToMessageId:
+          sourceContext?.fromBotId === target.id && intent !== "fyi"
+            ? sourceContext.returnToMessageId
+            : undefined,
+        clientNonce: deliveryKey,
+        markUnread: options?.forceUnread === true,
+      });
+      if (ticket) {
+        // This side of a ticket-originated exchange, kept on the ticket itself: the
+        // reply is recorded there too (see deliverTicketBotMessageOutcome), so the
+        // workflow stays readable without any owner's chat.
+        await recordTicketExchangeComment(tx, {
           spaceId: run.spaceId,
-          threadId: targetThreadId,
+          ticketId: ticket.ticketId,
+          botId: sender.id,
+          body: message,
+        });
+      }
+      const task = await tx.task.create({
+        data: {
+          spaceId: run.spaceId,
           botId: target.id,
-          type: "thread.message.created",
-          runId: nextRun.id,
-          payload: { messageId: inbound.id, role: "user", blocks: [inboundBlock, ...files] },
-        });
-        const outboundEvent = await appendEventInTransaction(tx, {
+          threadId: targetThreadId,
+          userId: run.userId,
+          prompt: wakePrompt,
+          status: "queued",
+        },
+      });
+      const nextRun = await tx.run.create({
+        data: {
           spaceId: run.spaceId,
-          threadId: run.threadId,
-          botId: run.botId,
-          type: "thread.message.created",
-          runId: run.id,
-          allowCancelledRun: returnFrom === "ended",
-          lease: runLeaseFor(deps, run.id),
-          payload: { messageId: outbound.id, role: "bot", blocks: [outboundBlock] },
-        });
-        return {
-          ok: true as const,
-          runId: nextRun.id,
-          targetEventSeq: inboundEvent.seq,
-          senderEventSeq: outboundEvent.seq,
-        };
-      }, THREAD_LOCK_TRANSACTION_OPTIONS),
-    );
-  } catch (error) {
-    // Two concurrent retries can both miss the in-transaction lookup; the
-    // loser hits the unique key. Treat that as a successful replay.
-    if (deliveryKey && isUniqueViolation(error)) {
-      const winner = await deps.prisma.message.findUnique({
-        where: { threadId_clientNonce: { threadId: targetThreadId, clientNonce: deliveryKey } },
+          botId: target.id,
+          threadId: targetThreadId,
+          taskId: task.id,
+          userId: run.userId,
+          status: "queued",
+          trigger: "bot_message",
+          sourceMessageId: inbound.id,
+        },
         select: { id: true },
       });
-      if (winner) return replayed();
-    }
-    throw error;
-  }
+      await tx.message.update({ where: { id: inbound.id }, data: { runId: nextRun.id } });
+      const inboundEvent = await appendEventInTransaction(tx, {
+        spaceId: run.spaceId,
+        threadId: targetThreadId,
+        botId: target.id,
+        type: "thread.message.created",
+        runId: nextRun.id,
+        payload: { messageId: inbound.id, role: "user", blocks: [inboundBlock, ...files] },
+      });
+      const outboundEvent = await appendEventInTransaction(tx, {
+        spaceId: run.spaceId,
+        threadId: run.threadId,
+        botId: run.botId,
+        type: "thread.message.created",
+        runId: run.id,
+        allowCancelledRun: returnFrom === "ended",
+        lease: runLeaseFor(deps, run.id),
+        payload: { messageId: outbound.id, role: "bot", blocks: [outboundBlock] },
+      });
+      return {
+        ok: true as const,
+        runId: nextRun.id,
+        targetEventSeq: inboundEvent.seq,
+        senderEventSeq: outboundEvent.seq,
+      };
+    },
+  );
   if ("replayed" in committed) return replayed();
   if (!committed.ok) return committed;
 
@@ -429,7 +391,7 @@ export async function messageBot(
     name: target.name,
     delivered: message,
     note: ticketOrigin
-      ? `Sent to ${target.name}. Delivery is async; ${target.name}'s reply is recorded on ticket ${ticketOrigin} and that ticket's assignee is woken to continue the work. Continue independent work; send another update later only if it adds something new.`
+      ? `Sent to ${target.name}. Delivery is async; a reply wakes you later as a new message. The exchange is recorded on ticket ${ticketOrigin}. Continue independent work; send another update later only if it adds something new.`
       : `Sent to ${target.name}. Delivery is async; a reply wakes you later as a new message. Continue independent work; send another update later only if it adds something new.`,
   };
 }
@@ -464,7 +426,7 @@ async function requesterBot(
 
 /** Return a delegated run's terminal outcome unless it already sent one explicitly. */
 export async function returnBotMessageOutcome(
-  deps: Pick<ExecutorDeps, "prisma" | "events" | "jobs" | "runLease" | "onTicketChange">,
+  deps: BotMessageDeliveryDeps,
   run: DelegatedRun,
   sender: { id: string; name: string },
   text: string,
@@ -472,32 +434,51 @@ export async function returnBotMessageOutcome(
   options?: { forceUnread?: boolean },
 ) {
   const source = await loadBotMessageContext(deps.prisma, run.sourceMessageId);
+  const requester = await requesterBot(deps.prisma, run, source);
   if (source?.ticketRef) {
     // A ticket-originated clarification: the outcome belongs on that ticket's workflow,
     // not in any owner's chat. The claim inside the delivery transaction makes the
     // return exactly-once, replay-safe the same way the chat path's key is.
-    const requester = await requesterBot(deps.prisma, run, source);
-    const outcome = await deliverTicketBotMessageOutcome(deps, {
-      run,
-      sender,
-      ...(requester ? { addressTo: requester } : {}),
+    const ticket = await loadTicketForBotMessage(deps.prisma, {
+      spaceId: run.spaceId,
       ticketRef: source.ticketRef,
-      text: clampBotMessage(text),
-      intent,
-      deliveryKey: `bot-message:auto-outcome:${run.id}`,
-      claimOutcome: true,
-      returnFrom: "ended",
     });
-    if (outcome.ok || outcome.missingTicket) {
+    if (!ticket) {
       // A ticket that no longer exists makes the outcome moot, not retryable.
-      if (!outcome.ok)
-        getLogger().warn("bot message ticket outcome dropped", { error: outcome.error });
+      getLogger().warn("bot message ticket outcome dropped", {
+        error: `ticket ${source.ticketRef} is no longer available`,
+      });
       await markBotOutcomeReturned(deps.prisma, run.id);
       return true;
     }
-    return false;
+    if (!requester || ticket.assigneeBotId === requester.id) {
+      // The asking bot still owns the ticket — or is archived and can no longer take a
+      // reply: either way the outcome lands on the ticket as a comment that wakes its
+      // current assignee. Only the sender-thread echo needs a requester to address.
+      const outcome = await deliverTicketBotMessageOutcome(deps, {
+        run,
+        sender,
+        ...(requester ? { addressTo: requester } : {}),
+        ticketRef: source.ticketRef,
+        ticket,
+        text: clampBotMessage(text),
+        intent,
+        deliveryKey: `bot-message:auto-outcome:${run.id}`,
+        outcome: { claim: true, suppressWhenClaimed: true },
+        returnFrom: "ended",
+      });
+      if (outcome.ok) {
+        await markBotOutcomeReturned(deps.prisma, run.id);
+        return true;
+      }
+      return false;
+    }
+    // The asking bot no longer owns the ticket (a helper-to-helper chain, or the ticket
+    // was reassigned): the answer goes to it below as an ordinary bot message, which
+    // still records the exchange on the ticket and never routes an obsolete assignee's
+    // continuation through the wake.
   }
-  const requesterId = (await requesterBot(deps.prisma, run, source))?.id;
+  const requesterId = requester?.id;
   if (!requesterId) {
     await markBotOutcomeReturned(deps.prisma, run.id);
     // Handled: nothing to deliver. Return true so callers do not release a reservation.
@@ -543,7 +524,7 @@ export async function returnBotMessageOutcome(
  * hearing nothing until the user answers. `waitId` is the paused attempt: one notice per wait.
  */
 export async function reportBotMessageWait(
-  deps: Pick<ExecutorDeps, "prisma" | "events" | "jobs" | "runLease" | "onTicketChange">,
+  deps: BotMessageDeliveryDeps,
   run: DelegatedRun & { trigger: string },
   sender: { id: string; name: string },
   ask: string,
@@ -561,7 +542,7 @@ export async function reportBotMessageWait(
 }
 
 async function sendWaitNotice(
-  deps: Pick<ExecutorDeps, "prisma" | "events" | "jobs" | "runLease" | "onTicketChange">,
+  deps: BotMessageDeliveryDeps,
   run: DelegatedRun,
   sender: { id: string; name: string },
   ask: string,

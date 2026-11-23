@@ -6,52 +6,85 @@ import {
   resolveLabs,
   TicketStatusSchema,
 } from "@rakazo/contracts";
-import type { PrismaClient } from "@rakazo/db";
+import type { Prisma, PrismaClient } from "@rakazo/db";
 import { wakeRun } from "../runs/wakeups/wake-run.js";
 import { ticketWakePrompt } from "../runs/wakeups/wakes.prompt.js";
+
+/**
+ * Create the assignee's wake run inside the caller's transaction. The ticket row is
+ * locked first, so the bot this wakes owns the ticket as of this commit: a concurrent
+ * reassignment cannot quietly redirect or drop the wake, and a delivery that commits a
+ * ticket comment commits its continuation in the same transaction. `requireAssigneeBotId`
+ * keeps the notifier's contract (wake only the bot the change named, while it still owns
+ * the ticket); `skipBotId` spares a sender from being woken for its own message.
+ */
+export async function createTicketAssigneeWakeRun(
+  tx: Prisma.TransactionClient,
+  input: {
+    spaceId: string;
+    ticketId: string;
+    requireAssigneeBotId?: string;
+    skipBotId?: string;
+    deploymentLabs?: readonly LabFeature[];
+  },
+): Promise<string | null> {
+  await tx.$queryRaw`SELECT id FROM tickets WHERE id = ${input.ticketId} FOR UPDATE`;
+  const ticket = await tx.ticket.findFirst({
+    where: { id: input.ticketId, spaceId: input.spaceId },
+    include: { board: { select: { ticketPrefix: true } } },
+  });
+  if (!ticket) return null;
+  const assigneeBotId = ticket.assigneeBotId;
+  if (!assigneeBotId) return null;
+  if (input.requireAssigneeBotId !== undefined && assigneeBotId !== input.requireAssigneeBotId)
+    return null;
+  if (assigneeBotId === input.skipBotId) return null;
+  const status = TicketStatusSchema.safeParse(ticket.status);
+  if (!status.success || isTicketCompletedStatus(status.data)) return null;
+  const bot = await tx.bot.findFirst({
+    where: { id: assigneeBotId, spaceId: input.spaceId, archivedAt: null },
+    select: { id: true, userId: true, thread: { select: { id: true } } },
+  });
+  if (!bot?.thread) return null;
+  const owner = await tx.user.findUnique({ where: { id: bot.userId }, select: { labs: true } });
+  if (!hasLab(resolveLabs(owner?.labs, input.deploymentLabs), "board")) return null;
+  const task = await tx.task.create({
+    data: {
+      spaceId: input.spaceId,
+      botId: bot.id,
+      threadId: bot.thread.id,
+      userId: bot.userId,
+      prompt: ticketWakePrompt(`${ticket.board.ticketPrefix}-${ticket.number}`),
+      status: "queued",
+    },
+  });
+  const run = await tx.run.create({
+    data: {
+      spaceId: input.spaceId,
+      botId: bot.id,
+      threadId: bot.thread.id,
+      userId: bot.userId,
+      taskId: task.id,
+      trigger: "tickets",
+      status: "queued",
+    },
+  });
+  return run.id;
+}
 
 /** Assignment wakes only its current owner, without posting a chat message. */
 export async function wakeTicketAssignee(
   deps: { prisma: PrismaClient; jobs: JobPublisher; deploymentLabs?: readonly LabFeature[] },
   input: { spaceId: string; ticketId: string; botId: string },
 ): Promise<void> {
-  const run = await deps.prisma.$transaction(async (tx) => {
-    const ticket = await tx.ticket.findFirst({
-      where: { id: input.ticketId, spaceId: input.spaceId, assigneeBotId: input.botId },
-      include: { board: { select: { ticketPrefix: true } } },
-    });
-    if (!ticket) return null;
-    const status = TicketStatusSchema.safeParse(ticket.status);
-    if (!status.success || isTicketCompletedStatus(status.data)) return null;
-    const bot = await tx.bot.findFirst({
-      where: { id: input.botId, spaceId: input.spaceId, archivedAt: null },
-      select: { id: true, userId: true, thread: { select: { id: true } } },
-    });
-    if (!bot?.thread) return null;
-    const owner = await tx.user.findUnique({ where: { id: bot.userId }, select: { labs: true } });
-    if (!hasLab(resolveLabs(owner?.labs, deps.deploymentLabs), "board")) return null;
-    const task = await tx.task.create({
-      data: {
-        spaceId: input.spaceId,
-        botId: bot.id,
-        threadId: bot.thread.id,
-        userId: bot.userId,
-        prompt: ticketWakePrompt(`${ticket.board.ticketPrefix}-${ticket.number}`),
-        status: "queued",
-      },
-    });
-    return tx.run.create({
-      data: {
-        spaceId: input.spaceId,
-        botId: bot.id,
-        threadId: bot.thread.id,
-        userId: bot.userId,
-        taskId: task.id,
-        trigger: "tickets",
-        status: "queued",
-      },
-    });
-  });
-  if (!run) return;
-  await wakeRun(deps.jobs, run.id);
+  const runId = await deps.prisma.$transaction((tx) =>
+    createTicketAssigneeWakeRun(tx, {
+      spaceId: input.spaceId,
+      ticketId: input.ticketId,
+      requireAssigneeBotId: input.botId,
+      deploymentLabs: deps.deploymentLabs,
+    }),
+  );
+  if (!runId) return;
+  await wakeRun(deps.jobs, runId);
 }

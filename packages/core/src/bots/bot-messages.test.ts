@@ -447,8 +447,32 @@ describe("inbound wake prompt", () => {
       });
       expect(wake).toContain("OPS-7");
       expect(wake).not.toContain("Relay it to the user");
-      expect(wake).toContain("continue the ticket work");
+      expect(wake).toContain("already recorded on that ticket");
+      expect(wake).toContain("do not relay it to the user in chat");
     }
+  });
+
+  it("keeps a ticket-originated question off the user's chat", () => {
+    const wake = buildBotMessageWakePrompt({
+      from: bots[0]!,
+      text: "Which environment?",
+      intent: "question",
+      ticketRef: "OPS-7",
+    });
+    expect(wake).toContain("ticket OPS-7");
+    expect(wake).not.toContain("keep the user informed");
+    expect(wake).toContain("instead of the user's chat");
+  });
+
+  it("keeps a ticket-originated FYI off the user's chat", () => {
+    const wake = buildBotMessageWakePrompt({
+      from: bots[0]!,
+      text: "Heads up.",
+      intent: "fyi",
+      ticketRef: "OPS-7",
+    });
+    expect(wake).toContain("note it on the ticket");
+    expect(wake).not.toContain("changes the user's outcome");
   });
 
   it("keeps ordinary prompts free of ticket phrasing when no ticket origin is present", () => {

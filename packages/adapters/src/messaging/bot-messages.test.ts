@@ -37,6 +37,16 @@ function deps(
     taskPrompt?: string;
     board?: { id: string; ticketPrefix: string } | null;
     ticket?: { id: string; assigneeBotId: string | null } | null;
+    /**
+     * The ticket row the in-transaction assignee wake sees; defaults to `ticket` enriched.
+     * A different assignee here simulates a reassignment committed after the send's
+     * routing read but before the delivery transaction's locked read.
+     */
+    wakeTicket?: unknown;
+    /** Labs stored on the assignee owner's user row; the board gate reads them. */
+    ownerLabs?: string[];
+    /** Deployment-wide lab flags, as the executor's runtime env supplies them. */
+    deploymentLabs?: string[];
     /** The auto-outcome claim finds the run already returned. */
     outcomeAlreadyClaimed?: boolean;
   } = {},
@@ -67,8 +77,14 @@ function deps(
       updateMany: vi.fn().mockResolvedValue({ count: options.outcomeAlreadyClaimed ? 0 : 1 }),
     },
     bot: {
-      findFirst: vi.fn().mockResolvedValue(options.targetArchived ? null : { id: "bot-target" }),
+      findFirst: vi.fn().mockImplementation(async (args: { where?: { id?: string } }) => {
+        if (options.targetArchived && args?.where?.id === "bot-target") return null;
+        return args?.where?.id
+          ? { id: args.where.id, userId: "user-1", thread: { id: "thread-sender" } }
+          : { id: "bot-target" };
+      }),
     },
+    user: { findUnique: vi.fn().mockResolvedValue({ labs: options.ownerLabs ?? ["board"] }) },
     task: { create: vi.fn().mockResolvedValue({ id: "task-1" }) },
     message: {
       findUnique: messageFindUnique,
@@ -78,7 +94,21 @@ function deps(
     event: { create: vi.fn().mockResolvedValue({ seq: 7 }) },
     thread: { update: vi.fn().mockResolvedValue({}) },
     ticketComment: { create: vi.fn().mockResolvedValue({ id: "comment-1" }) },
-    ticket: { update: vi.fn().mockResolvedValue({}) },
+    ticket: {
+      findFirst: vi.fn().mockImplementation(async () => {
+        if (options.wakeTicket !== undefined) return options.wakeTicket;
+        return options.ticket
+          ? {
+              id: options.ticket.id,
+              assigneeBotId: options.ticket.assigneeBotId,
+              status: "doing",
+              number: 7,
+              board: { ticketPrefix: "OPS" },
+            }
+          : null;
+      }),
+      update: vi.fn().mockResolvedValue({}),
+    },
   };
   /** Each time a chat was marked unread for its Space's members. */
   const unreadMarks = () =>
@@ -88,11 +118,12 @@ function deps(
   let transactionAttempts = 0;
   const prisma = {
     bot: {
-      findFirst: vi
-        .fn()
-        .mockResolvedValue(
-          options.requesterArchived ? null : { id: "bot-target", name: "Analyst" },
-        ),
+      findFirst: vi.fn().mockImplementation(async (args: { where?: { id?: string } }) => {
+        if (options.requesterArchived) return null;
+        // The ticket chains ask their requester (the sender bot) for a reply back.
+        if (args?.where?.id === "bot-sender") return { id: "bot-sender", name: "Researcher" };
+        return { id: "bot-target", name: "Analyst" };
+      }),
       findMany: vi
         .fn()
         .mockResolvedValue(
@@ -127,9 +158,15 @@ function deps(
   } as unknown as PrismaClient;
   const onTicketChange = vi.fn().mockResolvedValue(undefined);
   return {
-    deps: { prisma, events: { notify }, jobs: { enqueue }, onTicketChange } as unknown as Pick<
+    deps: {
+      prisma,
+      events: { notify },
+      jobs: { enqueue },
+      onTicketChange,
+      ...(options.deploymentLabs ? { deploymentLabs: options.deploymentLabs } : {}),
+    } as unknown as Pick<
       ExecutorDeps,
-      "prisma" | "events" | "jobs" | "runLease" | "onTicketChange"
+      "prisma" | "events" | "jobs" | "runLease" | "onTicketChange" | "deploymentLabs"
     >,
     tx,
     unreadMarks,
@@ -1154,15 +1191,23 @@ describe("ticket-originated bot messages", () => {
       }),
     );
     expect(harness.onTicketChange).toHaveBeenCalledWith(
-      expect.objectContaining({ ticketId: "ticket-7", wakeAssignee: true }),
+      expect.objectContaining({ ticketId: "ticket-7", wakeAssignee: false }),
     );
-    // Nothing reaches the requester's chat: no inbound message, no wake run, no unread mark.
+    // Nothing reaches the requester's chat: no inbound message, no bot_message run, no
+    // unread mark. The assignee's continuation is the ticket-triggered wake run the
+    // delivery commits, nudged through the same durable run-row path as any other run.
     const senderThreadCreates = harness.tx.message.create.mock.calls
       .map(([call]) => call.data)
       .filter((data) => data.threadId === "thread-sender");
     expect(senderThreadCreates).toHaveLength(0);
-    expect(harness.tx.run.create).not.toHaveBeenCalled();
-    expect(harness.enqueue).not.toHaveBeenCalled();
+    expect(harness.tx.run.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ trigger: "tickets", botId: "bot-sender" }),
+      }),
+    );
+    const createdRuns = harness.tx.run.create.mock.calls.map(([call]) => call.data);
+    expect(createdRuns).toHaveLength(1);
+    expect(harness.enqueue).toHaveBeenCalledTimes(1);
     expect(harness.unreadMarks()).toHaveLength(0);
   });
 
@@ -1223,9 +1268,33 @@ describe("ticket-originated bot messages", () => {
     expect(sent).toMatchObject({ ok: true });
     if (sent.ok) expect(sent.note).toContain("ticket OPS-7");
     expect(harness.tx.ticketComment.create).toHaveBeenCalledTimes(1);
-    // No chat delivery for the requester: no inbound and no wake run.
-    expect(harness.tx.run.create).not.toHaveBeenCalled();
-    expect(harness.enqueue).not.toHaveBeenCalled();
+    // No chat delivery for the requester: the only run created is the assignee's
+    // ticket-triggered wake, committed with the comment.
+    expect(harness.tx.run.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ trigger: "tickets", botId: "bot-sender" }),
+      }),
+    );
+    expect(harness.tx.run.create.mock.calls.map(([call]) => call.data)).toHaveLength(1);
+    // The explicit terminal result settles the outcome in the same transaction, so the
+    // automatic return after completion cannot double-comment (it replays on the claim).
+    expect(harness.tx.run.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ id: "run-2", botOutcomeReturnedAt: null }),
+        data: expect.objectContaining({ botOutcomeReturnedAt: expect.any(Date) }),
+      }),
+    );
+
+    // Run completion returns the outcome: the claim makes it a replay, not a second comment.
+    vi.mocked(harness.tx.run.updateMany).mockResolvedValue({ count: 0 });
+    const returned = await returnBotMessageOutcome(
+      harness.deps,
+      { ...replyRun },
+      { id: "bot-target", name: "Analyst" },
+      "Quota is five.",
+    );
+    expect(returned).toBe(true);
+    expect(harness.tx.ticketComment.create).toHaveBeenCalledTimes(1);
 
     // The nonce probe now finds the echo the first delivery committed.
     vi.mocked(harness.tx.message.findUnique).mockImplementation(
@@ -1301,5 +1370,339 @@ describe("ticket-originated bot messages", () => {
         where: expect.objectContaining({ id: "run-2", botOutcomeReturnedAt: null }),
       }),
     );
+  });
+
+  it("answers a helper's question in its chat, not only on the ticket", async () => {
+    // The assignee (sender) replies to a question another bot asked it mid-ticket.
+    const harness = deps({
+      taskPrompt: "Work on ticket OPS-7. Read it with ticket_get.",
+      board,
+      ticket,
+      hopBlocks: [
+        {
+          kind: "bot_message_received",
+          fromBotId: "bot-target",
+          fromBotName: "Analyst",
+          text: "Which environment should I target?",
+          hop: 1,
+          intent: "question",
+          ticketRef: "OPS-7",
+        },
+      ],
+    });
+    const sent = await messageBot(harness.deps, ticketRun, sender, {
+      bot_id: "bot-target",
+      message: "Use staging; production is frozen.",
+      intent: "result",
+    });
+
+    expect(sent).toMatchObject({ ok: true, botId: "bot-target" });
+    // The asking bot actually receives the answer: an inbound in its chat and a wake run.
+    const inbound = harness.tx.message.create.mock.calls
+      .map(([call]) => call.data)
+      .find((data) => data.threadId === "thread-target");
+    expect(inbound?.blocks?.[0]).toMatchObject({
+      kind: "bot_message_received",
+      ticketRef: "OPS-7",
+    });
+    expect(harness.tx.run.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ trigger: "bot_message", botId: "bot-target" }),
+      }),
+    );
+    expect(harness.enqueue).toHaveBeenCalledOnce();
+    // The exchange is still recorded on the ticket, but the sender is the assignee, so
+    // no ticket wake is created for it.
+    expect(harness.tx.ticketComment.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ body: "Use staging; production is frozen." }),
+      }),
+    );
+    expect(harness.tx.run.create.mock.calls.some(([call]) => call.data.trigger === "tickets")).toBe(
+      false,
+    );
+  });
+
+  it("returns a helper-to-helper answer to the helper that asked", async () => {
+    // The asking bot no longer owns the ticket: the answer goes to it as an ordinary
+    // bot message, recorded on the ticket, instead of vanishing into a ticket comment.
+    const harness = deps({
+      hopBlocks: [
+        {
+          kind: "bot_message_received",
+          fromBotId: "bot-target",
+          fromBotName: "Analyst",
+          text: "Which quota applies?",
+          hop: 2,
+          intent: "question",
+          ticketRef: "OPS-7",
+        },
+      ],
+      board,
+      ticket,
+    });
+    const returned = await returnBotMessageOutcome(
+      harness.deps,
+      {
+        ...run,
+        id: "run-3",
+        threadId: "thread-helper2",
+        botId: "bot-helper2",
+        sourceMessageId: "message-source",
+      },
+      { id: "bot-helper2", name: "Surveyor" },
+      "Quota is five.",
+    );
+
+    expect(returned).toBe(true);
+    const inbound = harness.tx.message.create.mock.calls
+      .map(([call]) => call.data)
+      .find((data) => data.threadId === "thread-target");
+    expect(inbound?.blocks?.[0]).toMatchObject({
+      kind: "bot_message_received",
+      ticketRef: "OPS-7",
+    });
+    expect(harness.tx.ticketComment.create).toHaveBeenCalledTimes(1);
+    expect(harness.enqueue).toHaveBeenCalledOnce();
+    expect(harness.deps.prisma.run.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ id: "run-3", botOutcomeReturnedAt: null }),
+      }),
+    );
+  });
+
+  it("wakes the assignee the delivery transaction sees, not the pre-send snapshot", async () => {
+    // The ticket is reassigned between the send's routing read and the locked read
+    // inside the delivery transaction: the wake must follow the new owner.
+    const harness = deps({
+      hopBlocks: clarification,
+      board,
+      ticket,
+      bots: [
+        { id: "bot-target", name: "Analyst", title: "", thread: { id: "thread-target" } },
+        { id: "bot-sender", name: "Researcher", title: "", thread: { id: "thread-sender" } },
+      ],
+      wakeTicket: {
+        id: "ticket-7",
+        assigneeBotId: "bot-successor",
+        status: "doing",
+        number: 7,
+        board: { ticketPrefix: "OPS" },
+      },
+    });
+    const sent = await messageBot(
+      harness.deps,
+      {
+        ...run,
+        id: "run-2",
+        threadId: "thread-target",
+        botId: "bot-target",
+        sourceMessageId: "message-source",
+      },
+      { id: "bot-target", name: "Analyst" },
+      {
+        bot_id: "bot-sender",
+        message: "Quota is five.",
+        intent: "result",
+        deliveryKey: "effect-1",
+      },
+    );
+
+    expect(sent).toMatchObject({ ok: true });
+    expect(harness.tx.run.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ trigger: "tickets", botId: "bot-successor" }),
+      }),
+    );
+    expect(
+      harness.tx.run.create.mock.calls.some(([call]) => call.data.botId === "bot-sender"),
+    ).toBe(false);
+  });
+
+  it("keeps the wake recoverable when the nudge or the notifier fails", async () => {
+    const harness = deps({ hopBlocks: clarification, board, ticket });
+    harness.enqueue.mockRejectedValueOnce(new Error("queue down"));
+    harness.onTicketChange.mockRejectedValueOnce(new Error("notifier down"));
+    const returned = await returnBotMessageOutcome(
+      harness.deps,
+      {
+        ...run,
+        id: "run-2",
+        threadId: "thread-target",
+        botId: "bot-target",
+        sourceMessageId: "message-source",
+      },
+      { id: "bot-target", name: "Analyst" },
+      "Quota is five.",
+    );
+
+    // The delivery succeeds and the wake run row is committed with the comment: a lost
+    // nudge is recovered by the run-row path, and the board refresh is ignorable.
+    expect(returned).toBe(true);
+    expect(harness.tx.ticketComment.create).toHaveBeenCalledTimes(1);
+    expect(harness.tx.run.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ trigger: "tickets", botId: "bot-sender" }),
+      }),
+    );
+  });
+
+  it("refuses to launch work for a ticket that no longer exists", async () => {
+    const harness = deps({
+      taskPrompt: "Work on ticket OPS-7. Read it with ticket_get.",
+      board,
+      ticket: null,
+    });
+    for (const input of [
+      { message: "What quota applies?" },
+      { message: "Quota is five.", intent: "result" as const },
+    ]) {
+      const sent = await messageBot(harness.deps, ticketRun, sender, {
+        bot_id: "bot-target",
+        ...input,
+      });
+      expect(sent).toMatchObject({ ok: false, missingTicket: true });
+      if (sent.ok) continue;
+      expect(sent.error).toContain("no longer available");
+    }
+    expect(harness.tx.message.create).not.toHaveBeenCalled();
+    expect(harness.tx.task.create).not.toHaveBeenCalled();
+    expect(harness.tx.run.create).not.toHaveBeenCalled();
+    expect(harness.tx.ticketComment.create).not.toHaveBeenCalled();
+    expect(harness.enqueue).not.toHaveBeenCalled();
+  });
+
+  it("keeps the outcome on the ticket when the requester is archived", async () => {
+    const harness = deps({
+      requesterArchived: true,
+      hopBlocks: clarification,
+      board,
+      ticket,
+    });
+    const returned = await returnBotMessageOutcome(
+      harness.deps,
+      {
+        ...run,
+        id: "run-2",
+        threadId: "thread-target",
+        botId: "bot-target",
+        sourceMessageId: "message-source",
+      },
+      { id: "bot-target", name: "Analyst" },
+      "Quota is five.",
+    );
+
+    // No requester to address does not drop the outcome: the comment lands, the
+    // assignee wakes, and only the sender-thread echo is skipped.
+    expect(returned).toBe(true);
+    expect(harness.tx.ticketComment.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          ticketId: "ticket-7",
+          authorBotId: "bot-target",
+          body: "Quota is five.",
+        }),
+      }),
+    );
+    expect(harness.tx.run.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ trigger: "tickets", botId: "bot-sender" }),
+      }),
+    );
+    expect(harness.tx.message.create).not.toHaveBeenCalled();
+    expect(harness.enqueue).toHaveBeenCalledOnce();
+    expect(harness.deps.prisma.run.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ id: "run-2", botOutcomeReturnedAt: null }),
+      }),
+    );
+  });
+
+  it("wakes an assignee whose board access comes from the deployment labs", async () => {
+    // A deployment that enables boards globally: the owner has no personal lab entry,
+    // so the wake must consult the deployment flags the executor supplies.
+    const harness = deps({
+      hopBlocks: clarification,
+      board,
+      ticket,
+      ownerLabs: [],
+      deploymentLabs: ["board"],
+      bots: [
+        { id: "bot-target", name: "Analyst", title: "", thread: { id: "thread-target" } },
+        { id: "bot-sender", name: "Researcher", title: "", thread: { id: "thread-sender" } },
+      ],
+    });
+    const sent = await messageBot(
+      harness.deps,
+      {
+        ...run,
+        id: "run-2",
+        threadId: "thread-target",
+        botId: "bot-target",
+        sourceMessageId: "message-source",
+      },
+      { id: "bot-target", name: "Analyst" },
+      {
+        bot_id: "bot-sender",
+        message: "Quota is five.",
+        intent: "result",
+        deliveryKey: "effect-1",
+      },
+    );
+
+    expect(sent).toMatchObject({ ok: true });
+    if (sent.ok) expect(sent.note).toContain("assignee is woken");
+    expect(harness.tx.run.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ trigger: "tickets", botId: "bot-sender" }),
+      }),
+    );
+  });
+
+  it("does not claim a wake when no continuation run was committed", async () => {
+    // The ticket completed while the answer was in flight: the comment still lands,
+    // but the tool result must not report a wake that never happened.
+    const harness = deps({
+      hopBlocks: clarification,
+      board,
+      ticket,
+      wakeTicket: {
+        id: "ticket-7",
+        assigneeBotId: "bot-sender",
+        status: "done",
+        number: 7,
+        board: { ticketPrefix: "OPS" },
+      },
+      bots: [
+        { id: "bot-target", name: "Analyst", title: "", thread: { id: "thread-target" } },
+        { id: "bot-sender", name: "Researcher", title: "", thread: { id: "thread-sender" } },
+      ],
+    });
+    const sent = await messageBot(
+      harness.deps,
+      {
+        ...run,
+        id: "run-2",
+        threadId: "thread-target",
+        botId: "bot-target",
+        sourceMessageId: "message-source",
+      },
+      { id: "bot-target", name: "Analyst" },
+      {
+        bot_id: "bot-sender",
+        message: "Quota is five.",
+        intent: "result",
+        deliveryKey: "effect-1",
+      },
+    );
+
+    expect(sent).toMatchObject({ ok: true });
+    if (sent.ok) {
+      expect(sent.note).toContain("Recorded as a comment on ticket OPS-7");
+      expect(sent.note).not.toContain("assignee is woken");
+    }
+    expect(harness.tx.ticketComment.create).toHaveBeenCalledTimes(1);
+    expect(harness.tx.run.create).not.toHaveBeenCalled();
+    expect(harness.enqueue).not.toHaveBeenCalled();
   });
 });

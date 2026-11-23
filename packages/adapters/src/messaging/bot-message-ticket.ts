@@ -2,18 +2,20 @@ import type { MessageBlock } from "@rakazo/contracts";
 import { parseTicketRef } from "@rakazo/contracts";
 import { clampBotMessage } from "@rakazo/core";
 import type { Prisma, PrismaClient } from "@rakazo/db";
-import {
-  appendEventInTransaction,
-  createThreadMessageInTransaction,
-  isUniqueViolation,
-  spaceTakesWork,
-  THREAD_LOCK_TRANSACTION_OPTIONS,
-  withTransactionRetry,
-} from "@rakazo/db";
-import { getLogger } from "@rakazo/logging";
+import { appendEventInTransaction, createThreadMessageInTransaction } from "@rakazo/db";
+import { bestEffort } from "@rakazo/logging";
 import { runLeaseFor } from "../runs/assembly/run-messages.js";
 import type { ExecutorDeps } from "../runs/executor/executor-deps.js";
+import { wakeRun } from "../runs/wakeups/wake-run.js";
 import { extractTicketRefs } from "../tasks/ticket-context.js";
+import { createTicketAssigneeWakeRun } from "../tasks/ticket-wake.js";
+import { commitBotMessageDelivery } from "./bot-message-commit.js";
+
+/** The delivery dependencies shared by the chat and ticket paths. */
+export type BotMessageDeliveryDeps = Pick<
+  ExecutorDeps,
+  "prisma" | "events" | "jobs" | "runLease" | "onTicketChange" | "deploymentLabs"
+>;
 
 /**
  * Ticket association for bot-to-bot exchanges that originate in ticket work. A ticket run
@@ -78,46 +80,49 @@ export async function recordTicketExchangeComment(
 
 /**
  * Deliver a ticket-originated result or status to its ticket instead of the requester's
- * chat: a comment on the ticket authored by the replying bot, plus a wake for the current
- * assignee so the ticket's work continues with the answer. Nothing is written to or read
- * from the requester's chat, and no chat run is started for it.
+ * chat: a comment on the ticket authored by the replying bot, plus a queued wake run for
+ * the ticket's assignee so the ticket's work continues with the answer. Nothing is written
+ * to or read from the requester's chat, and no chat run is started for it.
  *
- * Idempotency mirrors messageBot's: the sender-thread echo carries the delivery key as its
- * nonce, so a replay of the same tool call or outcome is detected (or loses on the unique
- * constraint), and the auto outcome additionally claims `botOutcomeReturnedAt` inside the
- * same transaction that posts the comment.
+ * The comment, the outcome claim and the assignee wake run commit in one transaction, so
+ * a committed answer always carries its continuation with it: the wake's run row is the
+ * durable record (a lost nudge is recovered like any other run), and the ticket row lock
+ * inside makes the woken bot the assignee as of this commit, never a stale snapshot. A
+ * missing `addressTo` (an archived requester) skips only the sender-thread echo — the
+ * comment and the wake still land.
+ *
+ * Idempotency mirrors messageBot's: the sender-thread echo carries the delivery key as
+ * its nonce, so a replay of the same tool call or outcome is detected (or loses on the
+ * unique constraint), and a claimed terminal outcome replays rather than double-commenting.
  */
 export async function deliverTicketBotMessageOutcome(
-  deps: Pick<ExecutorDeps, "prisma" | "events" | "jobs" | "runLease" | "onTicketChange">,
+  deps: BotMessageDeliveryDeps,
   input: {
     run: { id: string; spaceId: string; threadId: string; botId: string; userId: string };
     sender: { id: string; name: string };
     /** Who the exchange is with, for the sender-thread echo record. */
     addressTo?: { id: string; name: string };
     ticketRef: string;
+    /** The board and ticket the caller resolved with loadTicketForBotMessage. */
+    ticket: { boardId: string; ticketId: string };
     text: string;
     intent: "result" | "status";
+    /** Final nonce of the sender-thread echo; a probe hit means a prior attempt committed. */
     deliveryKey?: string;
-    /** The run's automatic final outcome: claim botOutcomeReturnedAt with the comment. */
-    claimOutcome?: boolean;
+    /**
+     * How this delivery settles the run's terminal-outcome flag. `claim` marks it returned
+     * in the same transaction as the comment; `suppressWhenClaimed` treats an already
+     * claimed outcome as a replay, which keeps the automatic return from double-commenting
+     * after the run sent its result explicitly.
+     */
+    outcome?: { claim: boolean; suppressWhenClaimed?: boolean };
     returnFrom?: "ended" | "waiting";
   },
 ): Promise<
-  | { ok: true; ticketRef: string; senderEventSeq?: number }
+  | { ok: true; ticketRef: string; senderEventSeq?: number; woken?: boolean }
   | { ok: true; replayed: true }
-  | { ok: false; error: string; missingTicket?: true }
+  | { ok: false; error: string }
 > {
-  const ticket = await loadTicketForBotMessage(deps.prisma, {
-    spaceId: input.run.spaceId,
-    ticketRef: input.ticketRef,
-  });
-  if (!ticket)
-    return {
-      ok: false as const,
-      error: `ticket ${input.ticketRef} is no longer available`,
-      missingTicket: true as const,
-    };
-
   const addressTo = input.addressTo;
   const outboundBlock: MessageBlock | undefined = addressTo
     ? {
@@ -129,56 +134,53 @@ export async function deliverTicketBotMessageOutcome(
       }
     : undefined;
   const returnFrom = input.returnFrom;
-  const replayed = () => ({ ok: true as const, replayed: true as const });
 
-  let committed:
-    | { ok: true; senderEventSeq?: number }
-    | { ok: false; error: string }
-    | { ok: true; replayed: true };
-  try {
-    committed = await withTransactionRetry(() =>
-      deps.prisma.$transaction(async (tx) => {
-        if (!(await spaceTakesWork(tx, input.run.spaceId)))
-          return { ok: false as const, error: "this Space is being deleted" };
-        await tx.$queryRaw`SELECT id FROM threads WHERE id = ${input.run.threadId} FOR UPDATE`;
-        if (input.deliveryKey) {
-          const already = await tx.message.findUnique({
-            where: {
-              threadId_clientNonce: {
-                threadId: input.run.threadId,
-                clientNonce: input.deliveryKey,
-              },
-            },
-            select: { id: true },
-          });
-          if (already) return { ok: true as const, replayed: true as const };
-        }
-        const senderStillRunning = await tx.run.findFirst({
-          where: {
-            id: input.run.id,
-            spaceId: input.run.spaceId,
-            threadId: input.run.threadId,
-            botId: input.run.botId,
-            userId: input.run.userId,
-            status:
-              returnFrom === "ended"
-                ? { in: ["completed", "failed", "cancelled"] }
-                : returnFrom === "waiting"
-                  ? "waiting_input"
-                  : "running",
-          },
-          select: { id: true },
+  const committed = await commitBotMessageDelivery<{
+    ok: true;
+    senderEventSeq?: number;
+    wakeRunId?: string;
+    woken: boolean;
+  }>(
+    deps,
+    {
+      run: input.run,
+      returnFrom,
+      lockThreadIds: [],
+      nonce: input.deliveryKey
+        ? { threadId: input.run.threadId, clientNonce: input.deliveryKey }
+        : undefined,
+    },
+    async (tx) => {
+      if (input.outcome?.suppressWhenClaimed || input.outcome?.claim) {
+        const claimed = await tx.run.updateMany({
+          where: { id: input.run.id, botOutcomeReturnedAt: null },
+          data: { botOutcomeReturnedAt: new Date() },
         });
-        if (!senderStillRunning)
-          return { ok: false as const, error: "source run is no longer active" };
-        if (input.claimOutcome) {
-          const claimed = await tx.run.updateMany({
-            where: { id: input.run.id, botOutcomeReturnedAt: null },
-            data: { botOutcomeReturnedAt: new Date() },
-          });
-          if (claimed.count === 0) return { ok: true as const, replayed: true as const };
-        }
-        if (!outboundBlock) return { ok: true as const, senderEventSeq: undefined };
+        // An explicit result claims silently; the automatic return treats an existing
+        // claim as proof its outcome was already delivered.
+        if (claimed.count === 0 && input.outcome?.suppressWhenClaimed)
+          return { replayed: true as const };
+      }
+      // The continuation belongs to whoever owns the ticket at this commit; the sender
+      // does not need waking for its own message. This runs first so the ticket row is
+      // locked (and the wake run's thread referenced) before any comment write takes
+      // locks on it, keeping this transaction's lock order sender-thread → ticket row.
+      const wakeRunId = await createTicketAssigneeWakeRun(tx, {
+        spaceId: input.run.spaceId,
+        ticketId: input.ticket.ticketId,
+        skipBotId: input.sender.id,
+        deploymentLabs: deps.deploymentLabs,
+      });
+      // The ticket comment is the outcome's durable record and is unconditional: an
+      // archived or missing requester must not drop it.
+      await recordTicketExchangeComment(tx, {
+        spaceId: input.run.spaceId,
+        ticketId: input.ticket.ticketId,
+        botId: input.sender.id,
+        body: input.text,
+      });
+      let senderEventSeq: number | undefined;
+      if (outboundBlock) {
         const outbound = await createThreadMessageInTransaction(tx, {
           threadId: input.run.threadId,
           role: "bot",
@@ -190,12 +192,6 @@ export async function deliverTicketBotMessageOutcome(
           allowCancelledRun: returnFrom === "ended",
           lease: runLeaseFor(deps, input.run.id),
         });
-        await recordTicketExchangeComment(tx, {
-          spaceId: input.run.spaceId,
-          ticketId: ticket.ticketId,
-          botId: input.sender.id,
-          body: input.text,
-        });
         const outboundEvent = await appendEventInTransaction(tx, {
           spaceId: input.run.spaceId,
           threadId: input.run.threadId,
@@ -206,40 +202,41 @@ export async function deliverTicketBotMessageOutcome(
           lease: runLeaseFor(deps, input.run.id),
           payload: { messageId: outbound.id, role: "bot", blocks: [outboundBlock] },
         });
-        return { ok: true as const, senderEventSeq: outboundEvent.seq };
-      }, THREAD_LOCK_TRANSACTION_OPTIONS),
-    );
-  } catch (error) {
-    if (input.deliveryKey && isUniqueViolation(error)) {
-      const winner = await deps.prisma.message.findUnique({
-        where: {
-          threadId_clientNonce: { threadId: input.run.threadId, clientNonce: input.deliveryKey },
-        },
-        select: { id: true },
-      });
-      if (winner) return replayed();
-    }
-    throw error;
-  }
-  if ("replayed" in committed) return replayed();
+        senderEventSeq = outboundEvent.seq;
+      }
+      return {
+        ok: true as const,
+        senderEventSeq,
+        woken: Boolean(wakeRunId),
+        ...(wakeRunId ? { wakeRunId } : {}),
+      };
+    },
+  );
+  if ("replayed" in committed) return { ok: true as const, replayed: true };
   if (!committed.ok) return committed;
 
   if (committed.senderEventSeq !== undefined) {
     await deps.events.notify(input.run.threadId, committed.senderEventSeq);
   }
-  await deps
-    .onTicketChange?.({
+  // Never rejects: the committed run row above is the durable record, and a lost nudge
+  // is recovered like any other queued run's.
+  if (committed.wakeRunId) await wakeRun(deps.jobs, committed.wakeRunId);
+  // Board refresh only: the assignee wake itself was committed with the comment above,
+  // so this failing cannot lose the continuation.
+  await bestEffort(
+    "bot message ticket board refresh",
+    deps.onTicketChange?.({
       spaceId: input.run.spaceId,
-      boardId: ticket.boardId,
-      ticketId: ticket.ticketId,
-      assigneeBotId: ticket.assigneeBotId,
-      // The answer only moves the work forward for whoever now owns the ticket.
-      wakeAssignee: Boolean(ticket.assigneeBotId) && ticket.assigneeBotId !== input.sender.id,
-    })
-    .catch((error) => getLogger().error("bot message ticket delivery wake failed", error));
+      boardId: input.ticket.boardId,
+      ticketId: input.ticket.ticketId,
+      assigneeBotId: null,
+      wakeAssignee: false,
+    }),
+  );
   return {
     ok: true as const,
     ticketRef: input.ticketRef,
     senderEventSeq: committed.senderEventSeq,
+    woken: committed.woken,
   };
 }

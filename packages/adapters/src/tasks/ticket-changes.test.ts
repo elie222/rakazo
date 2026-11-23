@@ -16,9 +16,11 @@ function setup(ownerLabs: string[], status = "todo") {
   const createRun = vi.fn(async () => ({ id: "run-1" }));
   const createTask = vi.fn(async () => ({ id: "task-1" }));
   const tx = {
+    $queryRaw: vi.fn(async () => []),
     ticket: {
       findFirst: vi.fn(async () => ({
         id: "ticket-1",
+        assigneeBotId: "bot-1",
         status,
         number: 1,
         board: { ticketPrefix: "RAK" },
