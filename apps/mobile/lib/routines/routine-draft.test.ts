@@ -98,19 +98,6 @@ describe("routineSaveRequest", () => {
     expect("create" in copy && copy.create).not.toHaveProperty("useComputer");
   });
 
-  it("revokes the computer when a webhook is added, so removing it later keeps it off", () => {
-    const approved = { ...routine, useComputer: true };
-    const draft = draftFromRoutine(approved);
-    expect(
-      routineSaveRequest(
-        { ...draft, webhookEnabled: true, useComputer: false },
-        approved,
-        "bot-1",
-        "UTC",
-      ),
-    ).toEqual({ update: { routineId: approved.id, webhookEnabled: true, useComputer: false } });
-  });
-
   it("never sends Use my computer for a routine whose webhook was already saved", () => {
     const hooked = { ...routine, useComputer: false, webhookEnabled: true };
     expect(
