@@ -6,6 +6,7 @@ import {
   readJsonColumn,
   reportJsonColumnOnce,
 } from "@rakazo/db";
+import { getLogger } from "@rakazo/logging";
 import { z } from "zod";
 import {
   modelProviderAllowed,
@@ -99,6 +100,7 @@ async function connectionProvider(
     secret = parseModelSecret(plaintext);
   } catch {
     // A secret that decrypts but does not parse is as unusable as a removed connection.
+    getLogger().warn("media.connection_secret_unreadable", { "media.connection_id": connectionId });
     return undefined;
   }
   return secret.kind === "api_key" ? media.create({ apiKey: secret.key }) : undefined;
@@ -135,7 +137,11 @@ export async function resolveRunMediaSources(
     const fallback = hosted?.capabilities[kind] ? { record: HOSTED, provider: hosted } : undefined;
     if (!connection || !media?.[kind]) return fallback && (() => Promise.resolve(fallback));
     return async () => {
-      own ??= connectionProvider(deps, userId, connection.id);
+      // A failed key lookup is not kept, so a later call in the same turn tries it again.
+      own ??= connectionProvider(deps, userId, connection.id).catch((error: unknown) => {
+        own = undefined;
+        throw error;
+      });
       const provider = await own;
       // A connection removed or left unreadable since leaves the media to the deployment.
       return provider
