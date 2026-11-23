@@ -135,6 +135,7 @@ it("reviews an outgoing draft and sends the edited values from the call", async 
     approval: {
       runId: "run",
       messageId: "draft",
+      effectId: "draft-effect",
       block: {
         kind: "ask",
         text: "Review draft",
@@ -167,7 +168,7 @@ it("reviews an outgoing draft and sends the edited values from the call", async 
     [...draft.querySelectorAll("button")].find((button) => button.textContent === "Send")!.click(),
   );
   expect(answerCallApproval).toHaveBeenCalledWith(
-    "draft",
+    "draft-effect",
     JSON.stringify({ outgoingDraft: { ...values, body: "Tomorrow at four" } }),
   );
 });

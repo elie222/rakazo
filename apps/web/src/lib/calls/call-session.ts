@@ -60,6 +60,7 @@ export interface CallState {
   transcriptOpen: boolean;
   approval: {
     messageId: string;
+    effectId: string;
     runId: string;
     block: Extract<ThreadMessage["blocks"][number], { kind: "ask" }>;
   } | null;
@@ -133,6 +134,7 @@ let approvalRunId: string | null = null;
 /** A successful tap is authoritative even while the thread feed still shows the old card. */
 const acceptedApprovalIds = new Set<string>();
 let awaitedRunId: string | null = null;
+let followedMessageId: string | null = null;
 const finishedRunIds = new Set<string>();
 /** Counting down an interim phrase heard over the reply, before it counts as cutting in. */
 const interim = createInterimBargeIn(() => {
@@ -331,6 +333,7 @@ function dropCall(): void {
   awaitedRunId = null;
   finishedRunIds.clear();
   unsubSpeech?.();
+  followedMessageId = null;
   unsubDictation?.();
   unsubSpeech = null;
   unsubDictation = null;
@@ -575,6 +578,10 @@ function commit(next: ThreadSnapshot | null) {
     else finishedRunIds.add(run.id);
   }
   thread = next;
+  if (awaitingReply && followedMessageId) {
+    const turn = next.messages.find((message) => message.id === followedMessageId);
+    if (turn?.runId) awaitedRunId = turn.runId;
+  }
   reactToThread();
   syncApproval();
   return next;
@@ -597,33 +604,39 @@ function pendingApproval(snapshot: ThreadSnapshot): CallState["approval"] {
   const ids = answerableAskMessageIds(snapshot, identity);
   for (let i = snapshot.messages.length - 1; i >= 0; i--) {
     const message = snapshot.messages[i];
-    if (
-      !message?.runId ||
-      (followedRun && message.runId !== followedRun) ||
-      !ids.has(message.id) ||
-      acceptedApprovalIds.has(message.id)
-    )
+    if (!message?.runId || (followedRun && message.runId !== followedRun) || !ids.has(message.id))
       continue;
-    const block = message.blocks.find(
-      (part) => part.kind === "ask" && part.status !== "answered" && isApprovalAskBlock(part),
-    );
-    if (block?.kind === "ask") return { messageId: message.id, runId: message.runId, block };
+    const block = message.blocks.find((part) => part.kind === "ask" && part.status !== "answered");
+    if (
+      block?.kind === "ask" &&
+      block.approvalEffectId &&
+      isApprovalAskBlock(block) &&
+      !acceptedApprovalIds.has(block.approvalEffectId)
+    )
+      return {
+        messageId: message.id,
+        effectId: block.approvalEffectId,
+        runId: message.runId,
+        block,
+      };
   }
   return null;
 }
 
 /** Only the on-screen card submits a decision. Follow the resumed run even if the mic is idle. */
-export async function answerCallApproval(messageId: string, answer: string): Promise<void> {
+export async function answerCallApproval(effectId: string, answer: string): Promise<void> {
   const approval = state?.approval;
   if (
     !feed ||
     !state ||
     !approval ||
-    approval.messageId !== messageId ||
-    feed.pendingAnswers.has(messageId)
+    approval.effectId !== effectId ||
+    feed.pendingAnswers.has(approval.messageId)
   )
     throw new Error(t`Could not submit this answer`);
   const currentFeed = feed;
+  const { messageId } = approval;
+  followedMessageId = null;
   currentFeed.pendingAnswers.add(messageId);
   approvalRunId = approval.runId;
   awaitingReply = true;
@@ -633,6 +646,7 @@ export async function answerCallApproval(messageId: string, answer: string): Pro
       botId: state.botId,
       runId: approval.runId,
       messageId,
+      approvalEffectId: effectId,
       answer,
     });
     const release = callSends.track(callId, request);
@@ -645,8 +659,8 @@ export async function answerCallApproval(messageId: string, answer: string): Pro
     currentFeed.pendingAnswers.delete(messageId);
   }
   if (feed !== currentFeed) return;
-  acceptedApprovalIds.add(messageId);
-  if (state?.approval?.messageId === messageId) set({ approval: null, caption: "" });
+  acceptedApprovalIds.add(effectId);
+  if (state?.approval?.effectId === effectId) set({ approval: null, caption: "" });
   await bestEffort("refresh call after approval", currentFeed?.load());
 }
 
@@ -748,6 +762,7 @@ async function handleTranscript(text: string) {
   const callFeed = feed;
   const turnCallId = callId;
   const closing = isFarewell(text);
+  followedMessageId = null;
   // An approval is only answered on screen, next to its details; a spoken reply would be refused.
   if (turn.kind === "approve_on_screen") {
     // The caption covers a card the call never read; once tapped, it must not pass for the reply.
@@ -758,18 +773,13 @@ async function handleTranscript(text: string) {
     if (closing) hangUpAfterReply = true;
     set({
       heard: "",
-      caption: acceptedApprovalIds.has(turn.messageId) ? "" : t`Approve or deny it on screen.`,
+      caption: acceptedApprovalIds.has(turn.effectId) ? "" : t`Approve or deny it on screen.`,
     });
     void listen();
     return;
   }
   approvalRunId = null;
-  awaitedRunId =
-    turn.kind === "answer"
-      ? turn.runId
-      : turn.kind === "follow_up"
-        ? (thread?.run?.id ?? null)
-        : null;
+  awaitedRunId = turn.kind === "answer" ? turn.runId : null;
   awaitingReply = true;
   syncApproval();
   set({ heard: text, phase: "thinking", exchanges: [...exchanges, { role: "user", text }] });
@@ -799,6 +809,14 @@ async function handleTranscript(text: string) {
     const receipt = await sendRequest;
     if (!state || state.botId !== botId || callId !== turnCallId) return;
     if ("runId" in receipt) awaitedRunId = receipt.runId;
+    if (
+      turn.kind === "follow_up" &&
+      "messageId" in receipt &&
+      typeof receipt.messageId === "string"
+    ) {
+      followedMessageId = receipt.messageId;
+      if (thread) commit(thread);
+    }
     syncApproval();
   } catch (error) {
     if (!state || state.botId !== botId || callId !== turnCallId) return;
@@ -854,7 +872,9 @@ function reactToThread() {
   const messages = thread?.messages ?? [];
   // Only what the bot wrote after the caller's latest turn answers it. A run that stopped on a
   // card keeps its live progress message after the card; that is not a reply.
-  const turnIndex = messages.findLastIndex((message) => message.role === "user");
+  const turnIndex = followedMessageId
+    ? messages.findIndex((message) => message.id === followedMessageId)
+    : messages.findLastIndex((message) => message.role === "user");
   const replyRunId = approvalRunId ?? awaitedRunId;
   speakAsWritten(replyRunId, messages);
   const lastBot = messages

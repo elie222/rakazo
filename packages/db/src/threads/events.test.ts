@@ -3089,7 +3089,7 @@ describe("answerRunInput approvals", () => {
         }),
       },
       run: {
-        findFirst: vi.fn().mockResolvedValue({ botId: "bot-1" }),
+        findFirst: vi.fn().mockResolvedValue({ botId: "bot-1", userId: "user-1" }),
         updateMany: vi.fn(),
       },
       externalEffect: { findFirst: vi.fn().mockResolvedValue(null) },
@@ -3108,6 +3108,24 @@ describe("answerRunInput approvals", () => {
         answer: "allow",
       }),
     ).resolves.toBe(false);
+    expect(tx.externalEffect.findFirst).toHaveBeenCalledOnce();
+    for (const stale of [
+      { approvalEffectId: "previous-effect" },
+      { clientNonce: "call:example:spoken" },
+    ]) {
+      await expect(
+        answerRunInput(prisma, {
+          spaceId: "workspace-1",
+          threadId: "thread-1",
+          runId: "run-1",
+          messageId: "message-1",
+          answeredByUserId: "user-1",
+          answer: "allow",
+          ...stale,
+        }),
+      ).resolves.toBe(false);
+    }
+    expect(tx.externalEffect.findFirst).toHaveBeenCalledOnce();
     expect(tx.run.updateMany).not.toHaveBeenCalled();
   });
 
@@ -5119,6 +5137,7 @@ describe("claimSteering", () => {
   it("claims pending messages for the fenced run in message order", async () => {
     const tx = {
       $queryRaw: vi.fn(),
+      message: { update: vi.fn() },
       run: {
         findFirst: vi.fn().mockResolvedValue({ id: "run-1", spaceId: "space-1", userId: "user-1" }),
         findUnique: vi.fn().mockResolvedValue({ status: "running", startedAt: null }),
@@ -5136,6 +5155,9 @@ describe("claimSteering", () => {
             userId: "user-1",
             originTrigger: null,
             message: {
+              id: "message-1",
+              clientNonce: "call:example:spoken",
+              runId: null,
               seq: 5,
               blocks: [
                 { kind: "text", text: "First" },
@@ -5210,6 +5232,21 @@ describe("claimSteering", () => {
     expect(tx.steeringMessage.updateMany).toHaveBeenCalledWith({
       where: { id: { in: ["steer-1", "steer-2"] }, claimedAt: null },
       data: { runId: "run-1", claimedAt: expect.any(Date) },
+    });
+    expect(tx.message.update).toHaveBeenCalledExactlyOnceWith({
+      where: { id: "message-1" },
+      data: { runId: "run-1" },
+    });
+    expect(tx.event.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        type: "thread.message.updated",
+        runId: "run-1",
+        payload: expect.objectContaining({
+          messageId: "message-1",
+          callId: "example",
+          role: "user",
+        }),
+      }),
     });
   });
 

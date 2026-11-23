@@ -171,19 +171,19 @@ export function CallCard({ onSettings }: { onSettings: () => void }) {
           <div>
             {approval.block.outgoingDraft ? (
               <OutgoingDraftCard
-                key={approval.messageId}
+                key={approval.effectId}
                 block={approval.block}
                 canAnswer
-                onAnswer={(value) => answerCallApproval(approval.messageId, value)}
+                onAnswer={(value) => answerCallApproval(approval.effectId, value)}
               />
             ) : (
               <AskCard
-                key={approval.messageId}
+                key={approval.effectId}
                 block={approval.block}
                 canAnswer
                 canDismiss={false}
                 onDismiss={async () => {}}
-                onAnswer={(value) => answerCallApproval(approval.messageId, value)}
+                onAnswer={(value) => answerCallApproval(approval.effectId, value)}
               />
             )}
           </div>

@@ -105,7 +105,7 @@ export const threadsRpc = {
           clientNonce: z.string().min(1).max(200).optional(),
         }),
       )
-      .output(z.object({ ok: z.literal(true) })),
+      .output(z.object({ ok: z.literal(true), messageId: Id.optional() })),
     /** The client hung up: close the call card and let the bot finish what was asked on it. */
     endCall: oc
       // ":" separates the call id from the nonce suffix, so it can never appear inside one.
@@ -159,6 +159,8 @@ export const threadsRpc = {
             runId: Id,
             messageId: Id,
             answer: z.string(),
+            /** Reject a stale tap if the message is now asking about another effect. */
+            approvalEffectId: Id.optional(),
             /** Carries the call id for an answer spoken during a call. */
             clientNonce: z.string().min(1).max(200).optional(),
             /** A login card's answer, one per requested field; `answer` is then empty. */

@@ -417,7 +417,7 @@ export function threadsRoutes(ctx: RouterContext) {
           if (sent.taskId && sent.runId) {
             await wakeRun(deps.jobs, sent.runId);
           }
-          return { ok: true as const };
+          return { ok: true as const, messageId: sent.messageId };
         }
         const committed = await deps.prisma.$transaction(async (tx) => {
           if (input.clientNonce) {
@@ -656,6 +656,7 @@ export function threadsRoutes(ctx: RouterContext) {
             messageId: input.messageId,
             answeredByUserId: context.actor.userId,
             answer: input.answer,
+            approvalEffectId: input.approvalEffectId,
             clientNonce: input.clientNonce,
             fields: input.fields,
             username: input.username,

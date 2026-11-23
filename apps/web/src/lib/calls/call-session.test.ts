@@ -103,7 +103,7 @@ describe("call session", () => {
     isSpeaking.mockReturnValue(false);
     listen.mockResolvedValue(undefined);
     answer.mockResolvedValue({ ok: true } as never);
-    followUp.mockResolvedValue({ runId: "run-1", taskId: "task-1" } as never);
+    followUp.mockResolvedValue({ ok: true, messageId: "turn-1" });
     getThread.mockResolvedValue(snapshot([]) as never);
     send.mockResolvedValue({ runId: "run-1", taskId: "task-1" } as never);
     endCallRpc.mockResolvedValue({ ok: true } as never);
@@ -265,8 +265,21 @@ describe("call session", () => {
 
       recovered.send({
         ...userMessageEvent("call-1"),
-        id: "event-16",
+        id: "claimed",
         seq: 16,
+        runId: "run-1",
+        type: "thread.message.updated",
+        payload: {
+          messageId: "turn-1",
+          role: "user",
+          blocks: [{ kind: "text", text: "continue the current task" }],
+        },
+      });
+      await vi.advanceTimersByTimeAsync(0);
+      recovered.send({
+        ...userMessageEvent("call-1"),
+        id: "event-16",
+        seq: 17,
         runId: "run-1",
         payload: {
           messageId: "current-reply",
@@ -278,7 +291,7 @@ describe("call session", () => {
       recovered.send({
         ...userMessageEvent("call-1"),
         id: "event-17",
-        seq: 17,
+        seq: 18,
         type: "run.completed",
         runId: "run-1",
         payload: {},
@@ -586,7 +599,7 @@ describe("call session", () => {
       expect(getSnapshot()?.approval?.messageId).toBe(approval.id);
       expect(dictation.stop).toHaveBeenCalledWith("cancel");
       getThread.mockRejectedValueOnce(new Error("refresh offline"));
-      await answerCallApproval(approval.id, "deny");
+      await answerCallApproval("effect-1", "deny");
       expect(getSnapshot()?.approval).toBeNull();
       await feed.refresh();
       expect(getSnapshot()?.approval).toBeNull();
@@ -618,7 +631,7 @@ describe("call session", () => {
         (status === "running" ? followUp : answer).mockReturnValueOnce(pending.promise);
         await heard("on Friday");
         expect(getSnapshot()?.approval).toBeNull();
-        await expect(answerCallApproval(approval.id, "allow")).rejects.toThrow();
+        await expect(answerCallApproval("effect-1", "allow")).rejects.toThrow();
         if (status === "running") {
           expect(followUp).toHaveBeenCalledWith(expect.objectContaining({ text: "on Friday" }));
           expect(answer).not.toHaveBeenCalled();
@@ -642,6 +655,64 @@ describe("call session", () => {
       }
     },
   );
+
+  it("waits for the claimed follow-up instead of reading the formerly busy run", async () => {
+    await answeredCall({ botId: "call-bot", botName: "Ada" });
+    const feed = vi.mocked(runThreadSubscription).mock.calls.at(-1)![0];
+    getThread.mockResolvedValue(snapshot([], runningRun));
+    await feed.refresh();
+    const turn = { ...callerMessage("continue"), runId: undefined };
+    const wrong = botMessage("other", "Original job finished.");
+    getThread.mockResolvedValue(snapshot([turn, wrong]));
+    await heard("continue");
+    await flushMicrotasks();
+    expect(speak).not.toHaveBeenCalled();
+    const right = { ...botMessage("continued", "Here is Friday's update."), runId: "continuation" };
+    getThread.mockResolvedValue(snapshot([{ ...turn, runId: right.runId }, wrong, right]));
+    await feed.refresh();
+    expect(speak).toHaveBeenCalledExactlyOnceWith(
+      "Here is Friday's update.",
+      expect.objectContaining({ messageId: right.id }),
+    );
+  });
+
+  it("offers only the first pending ask, and guards each approval within the message separately", async () => {
+    vi.stubGlobal("window", { addEventListener: vi.fn() });
+    try {
+      syncCallIdentity("me");
+      await answeredCall({ botId: "call-bot", botName: "Ada" });
+      const feed = vi.mocked(runThreadSubscription).mock.calls.at(-1)![0];
+      const message = approvalMessage();
+      const first = message.blocks[0]!;
+      if (first.kind !== "ask") throw Error("expected an approval");
+      const second = { ...first, approvalEffectId: "effect-2" };
+      const show = (blocks: ThreadMessage["blocks"]) =>
+        getThread.mockResolvedValue(
+          snapshot([{ ...message, blocks }], { ...waitingRun!, userId: "me" }),
+        );
+      show([{ kind: "ask", status: "pending", text: "Which date?" }, first, second]);
+      await feed.refresh();
+      expect(getSnapshot()?.approval).toBeNull();
+      show([first, second]);
+      await feed.refresh();
+      expect(getSnapshot()?.approval?.effectId).toBe("effect-1");
+      show([{ ...first, status: "answered" }, second]);
+      await answerCallApproval("effect-1", "allow");
+      expect(getSnapshot()?.approval?.effectId).toBe("effect-2");
+      await expect(answerCallApproval("effect-1", "allow")).rejects.toThrow();
+      await answerCallApproval("effect-2", "deny");
+      expect(answer).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          messageId: message.id,
+          approvalEffectId: "effect-2",
+          answer: "deny",
+        }),
+      );
+    } finally {
+      forgetSignedInUser();
+      vi.unstubAllGlobals();
+    }
+  });
 
   it("defers a pending approval through pickup and opening playback", async () => {
     vi.stubGlobal("window", { addEventListener: vi.fn() });
@@ -691,18 +762,19 @@ describe("call session", () => {
         );
         const pending = deferred<never>();
         answer.mockReturnValueOnce(pending.promise);
-        const first = answerCallApproval(approval.id, decision);
+        const first = answerCallApproval("effect-1", decision);
         await expect(
-          answerCallApproval(approval.id, decision === "allow" ? "deny" : "allow"),
+          answerCallApproval("effect-1", decision === "allow" ? "deny" : "allow"),
         ).rejects.toThrow();
         expect(answer).toHaveBeenCalledTimes(1);
         pending.reject(new Error("offline"));
         await expect(first).rejects.toThrow("offline");
-        await answerCallApproval(approval.id, decision);
+        await answerCallApproval("effect-1", decision);
         expect(answer).toHaveBeenCalledWith({
           botId: "call-bot",
           runId: "run-1",
           messageId: approval.id,
+          approvalEffectId: "effect-1",
           answer: decision,
         });
         expect(getSnapshot()?.approval).toBeNull();
@@ -712,7 +784,14 @@ describe("call session", () => {
         );
         await finishSpeaking();
         expect(getSnapshot()?.phase).toBe("listening");
-        const later = { ...approval, id: "later", runId: "new-run" };
+        const later = {
+          ...approval,
+          id: "later",
+          runId: "new-run",
+          blocks: approval.blocks.map((b) =>
+            b.kind === "ask" ? { ...b, approvalEffectId: "another-effect" } : b,
+          ),
+        };
         getThread.mockResolvedValue(
           snapshot([turn, answered(approval), later], {
             ...waitingRun!,
@@ -1793,6 +1872,7 @@ describe("call session", () => {
 
       getThread.mockResolvedValue(
         snapshot([
+          callerMessage("wait, what about the deploy"),
           botMessage(
             "message-1",
             "Booked for Friday. The hotel is close. About the deploy, it shipped.",

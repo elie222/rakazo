@@ -3,6 +3,7 @@ import {
   BACKGROUND_HELPER_TRIGGER,
   BACKGROUND_RUN_TRIGGERS,
   blocksToAgentHistoryText,
+  callIdFromClientNonce,
   HELPER_RESULT_TRIGGER,
   isConversationalRun,
   messagingChannelId,
@@ -146,10 +147,31 @@ async function claimSteeringOnce(
               : {}),
         },
       },
-      include: { message: { select: { id: true, blocks: true, seq: true } } },
+      include: {
+        message: { select: { id: true, blocks: true, seq: true, clientNonce: true, runId: true } },
+      },
       orderBy: [{ message: { seq: "asc" } }, { id: "asc" }],
     });
     if (steering.length === 0) return [];
+    for (const { message } of steering) {
+      const callId = callIdFromClientNonce(message.clientNonce);
+      if (!callId || message.runId === input.runId) continue;
+      await tx.message.update({ where: { id: message.id }, data: { runId: input.runId } });
+      await appendEventInTransaction(tx, {
+        threadId: input.threadId,
+        spaceId: run.spaceId,
+        botId: input.botId,
+        runId: input.runId,
+        type: "thread.message.updated",
+        payload: {
+          messageId: message.id,
+          seq: message.seq,
+          role: "user",
+          blocks: storedMessageBlocks(message),
+          callId,
+        },
+      });
+    }
     await tx.steeringMessage.updateMany({
       where: { id: { in: steering.map((item) => item.id) }, claimedAt: null },
       data: { runId: input.runId, claimedAt: new Date() },
