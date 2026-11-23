@@ -10,7 +10,10 @@ const mocks = vi.hoisted(() => ({
   recordAuditEvent: vi.fn(),
 }));
 vi.mock("./billing-provider.js", () => ({
-  adminBillingProvider: () => ({ refundInvoice: mocks.refundInvoice }),
+  adminBillingProvider: () => ({
+    refundInvoice: mocks.refundInvoice,
+    getCustomerSubscription: async () => ({ status: "active", cancelAtPeriodEnd: false }),
+  }),
 }));
 vi.mock("../../billing/billing.js", () => ({
   createBillingService: () => ({
@@ -24,9 +27,7 @@ vi.mock("../../billing/checkout-lease.js", () => ({
 }));
 vi.mock("@rakazo/db", async (importOriginal) => ({
   ...(await importOriginal<object>()),
-  ownedBillingAccounts: async () => [
-    { organizationId: "org_fixture", customerId: "cus_fixture", status: "active" },
-  ],
+  ownedBillingAccounts: async () => [{ organizationId: "org_fixture", customerId: "cus_fixture" }],
   recordAuditEvent: mocks.recordAuditEvent,
 }));
 
@@ -45,7 +46,11 @@ const context = {
     user: { findMany: async () => [{ id: "user_fixture", email }] },
     modelCreditAccount: { findUnique: async () => ({ balanceMicros: 9_680_000n }) },
     modelCreditEntry: {
-      findUnique: async () => ({ organizationId: "org_fixture", amountMicros: 10_000_000n }),
+      findUnique: async () => ({
+        organizationId: "org_fixture",
+        amountMicros: 10_000_000n,
+        createdAt: new Date("2030-01-01T00:00:05Z"),
+      }),
       groupBy: async () => [{ model: "example/model", _sum: { amountMicros: -320_000n } }],
     },
   },

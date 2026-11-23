@@ -187,15 +187,15 @@ async function refundBilling(
     refund.currency === "usd"
       ? `$${(refund.amountMinor / 100).toFixed(2)} USD`
       : `${refund.amountMinor} minor units of ${refund.currency.toUpperCase()}`;
-  const credits = await invoiceCredits(context, organizationId, refund);
-  const renews =
-    match.account.status === "active" || match.account.status === "trialing"
-      ? !match.account.cancelAtPeriodEnd
-      : false;
+  const [credits, plan] = await Promise.all([
+    invoiceCredits(context, organizationId, refund),
+    provider.getCustomerSubscription(customerId),
+  ]);
+  const renews = !!plan && plan.status !== "canceled" && !plan.cancelAtPeriodEnd;
   const reference = refund.invoiceNumber ?? refund.invoiceId;
   return {
     text: [
-      `Invoice ${reference} (${refund.invoiceId}) for organization ${organizationId}, ${amount}, paid ${refund.createdAt.slice(0, 10)}.`,
+      `Invoice ${reference} (${refund.invoiceId}) for organization ${organizationId}, ${amount}, dated ${refund.createdAt.slice(0, 10)}.`,
       ...(credits ? creditLines(credits, refund.state === "refundable") : []),
       refund.state === "refundable" && !invoice
         ? `Add ${reference} --confirm to refund the full charge.`
@@ -212,21 +212,25 @@ async function invoiceCredits(
   organizationId: string,
   refund: { invoiceId: string; createdAt: string },
 ) {
-  const [account, purchase, spent] = await Promise.all([
+  const [account, entry] = await Promise.all([
     prisma.modelCreditAccount.findUnique({ where: { organizationId } }),
     prisma.modelCreditEntry.findUnique({ where: { source: `purchase:${refund.invoiceId}` } }),
-    prisma.modelCreditEntry.groupBy({
-      by: ["model"],
-      where: {
-        organizationId,
-        callId: { not: null },
-        pending: false,
-        createdAt: { gte: new Date(refund.createdAt) },
-      },
-      _sum: { amountMicros: true },
-    }),
   ]);
-  if (!account || purchase?.organizationId !== organizationId) return null;
+  if (!account) return null;
+  // An invoice that bought no credits, such as an own-key plan, still shows the balance.
+  const purchase = entry?.organizationId === organizationId ? entry : null;
+  // The purchase is recorded once the payment settles, which can be well after the invoice date.
+  const spent = await prisma.modelCreditEntry.groupBy({
+    by: ["model"],
+    where: {
+      organizationId,
+      callId: { not: null },
+      pending: false,
+      createdAt: { gte: purchase?.createdAt ?? new Date(refund.createdAt) },
+    },
+    _sum: { amountMicros: true },
+  });
+  const bought = purchase?.amountMicros ?? 0n;
   const byModel = spent
     .map(({ model, _sum }) => ({
       model: model ?? "unknown",
@@ -236,11 +240,11 @@ async function invoiceCredits(
     .toSorted((a, b) => b.usd - a.usd);
   const usd = (micros: bigint) => Number(micros) / 1e6;
   return {
-    bought: usd(purchase.amountMicros),
+    bought: usd(bought),
     spentSincePaid: usd(-spent.reduce((total, { _sum }) => total + (_sum.amountMicros ?? 0n), 0n)),
     byModel,
     balance: usd(account.balanceMicros),
-    balanceAfterRefund: usd(account.balanceMicros - purchase.amountMicros),
+    balanceAfterRefund: usd(account.balanceMicros - bought),
   };
 }
 
