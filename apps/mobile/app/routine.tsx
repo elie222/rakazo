@@ -8,6 +8,7 @@ import {
   defaultRoutineEndDay,
   draftFromRoutine,
   emptyRoutineDraft,
+  errorCode,
   formatRoutineEnd,
   isOneShotRoutineCrons,
   routineCanEnd,
@@ -30,6 +31,7 @@ import {
   SettingsRow,
   SettingsSwitch,
 } from "../components/settings/settings-group";
+import { WebhookKeyButton } from "../components/thread/routine-event-row";
 import { GrowingTextInput } from "../components/ui/growing-text-input";
 import { MenuPickerMenu } from "../components/ui/menu-picker";
 import { errorText } from "../lib/api/user-error";
@@ -38,15 +40,15 @@ import { dateLocaleForUi, useUiLocale } from "../lib/i18n/i18n";
 import { useSideInsets } from "../lib/layout/side-insets";
 import { native, useMobileTokens } from "../lib/native/native";
 import { iosAtLeast } from "../lib/native/native-controls";
-import { useSave } from "../lib/query/query";
+import { rpcQuery, useSave } from "../lib/query/query";
 import { deviceTimeZone, routineTriggerRows, routineWebTriggers } from "../lib/routines/routine";
 import type { MobileRoutineDraft } from "../lib/routines/routine-draft";
 import {
+  draftWebTriggers,
   routineDraftChanged,
   routineDraftEventTriggered,
   routineSaveRequest,
   routineScheduleLocked,
-  routineWithDraftTriggers,
 } from "../lib/routines/routine-draft";
 import {
   removeBotRoutine,
@@ -181,6 +183,9 @@ function RoutineView({
     onFailed: (cause) => Alert.alert(t`Could not run routine`, errorText(cause, t`Try again.`)),
   });
   const triggers = routineTriggerRows(routine, deviceTimeZone());
+  const webhookLabel = routineWebTriggers(routine).find(
+    (trigger) => trigger.key === "webhookEnabled",
+  )?.label;
   const nextRun =
     !routine.active || !routine.nextRunAt
       ? null
@@ -266,7 +271,19 @@ function RoutineView({
       </View>
       <SettingsGroup label={t`When to run`}>
         {triggers.map((trigger) => (
-          <SettingsRow key={trigger} title={trigger} />
+          <SettingsRow
+            key={trigger}
+            title={trigger}
+            trailing={
+              editable && trigger === webhookLabel ? (
+                <WebhookKeyButton
+                  botId={botId}
+                  title={routine.name}
+                  color={tokens.mutedForeground}
+                />
+              ) : undefined
+            }
+          />
         ))}
         {nextRun ? <SettingsRow key="next" title={t`Next run`} value={nextRun} /> : null}
         {routine.endsAt ? (
@@ -362,13 +379,29 @@ function RoutineEditor({
   const locked = routineScheduleLocked(base);
   // Triggers set up on web stay listed here so the person sees them and can remove them.
   const source = base ?? template;
-  const kept = source ? routineWithDraftTriggers(source, draft) : null;
-  const webTriggers = kept ? routineWebTriggers(kept) : [];
+  const kept = draftWebTriggers(source, draft);
+  const webTriggers = routineWebTriggers(kept);
   const draftCrons = draft.schedules.map(cronFromPreset);
   const repeats =
     !locked &&
-    routineCanEnd(draftCrons, Boolean(kept?.watch), routineDraftEventTriggered(draft, source));
+    routineCanEnd(draftCrons, Boolean(kept.watch), routineDraftEventTriggered(draft, source));
   const zone = draft.timezone ?? deviceTimeZone() ?? "UTC";
+  // A webhook needs the bot's key. It is made once, by the bot's creator, as on web.
+  const webhookKey = useSave({
+    save: async (_previous: boolean | undefined, send) => {
+      const bot = await send("bots/get", { botId });
+      if (!bot.webhookConfigured) await send("bots/rotateWebhookSecret", { botId });
+    },
+    stale: [rpcQuery("bots/get", { botId }).queryKey],
+    onFailed: (cause, previous) => {
+      update({ webhookEnabled: previous });
+      setSaveError(
+        errorCode(cause) === "FORBIDDEN"
+          ? t`Only the bot's creator can set its webhook key.`
+          : errorText(cause, t`Could not create the webhook key`),
+      );
+    },
+  });
 
   // On Android, back leaves the form for the routine instead of leaving the routine.
   useEffect(() => {
@@ -446,7 +479,24 @@ function RoutineEditor({
   // A newly added email trigger needs the bot's address first; the server refuses it without one.
   const awaitingAddress =
     Boolean(draft.emailSenders) && !base?.emailSenders && !email.address?.address;
-  const canSave = dirty && !saving && !awaitingAddress;
+  const canSave = dirty && !saving && !awaitingAddress && !webhookKey.pending;
+  const addChoices = [
+    // A change trigger checks on its own interval, so it never shares a schedule.
+    ...(kept.watch ? [] : [{ key: "schedule", label: t`On a schedule` }]),
+    ...(email.address && !draft.emailSenders
+      ? [{ key: "email", label: t({ message: "Email", context: "routine trigger" }) }]
+      : []),
+    ...(kept.webhookEnabled ? [] : [{ key: "webhook", label: t`Webhook` }]),
+  ];
+  function addTrigger(key: string) {
+    if (key === "schedule") update({ schedules: [...draft.schedules, defaultCronPreset()] });
+    // A bot that outside events start never gets the owner's computer.
+    if (key === "email") update({ emailSenders: "owner", useComputer: undefined });
+    if (key === "webhook") {
+      webhookKey.run(draft.webhookEnabled);
+      update({ webhookEnabled: true, useComputer: undefined });
+    }
+  }
   return (
     <>
       <Stack.Screen
@@ -586,28 +636,23 @@ function RoutineEditor({
               onChange={(endsOn) => update({ endsOn })}
             />
           ) : null}
-          {locked ? null : (
+          {locked || !addChoices.length ? null : (
             <SettingsGroup>
-              {/* A change trigger checks on its own interval, so it never shares a schedule. */}
-              {kept?.watch ? null : (
+              <MenuPickerMenu
+                key="add"
+                label={t`Add trigger`}
+                value=""
+                choices={addChoices}
+                onChange={addTrigger}
+              >
                 <SettingsRow
-                  key="add"
-                  accessibilityRole="button"
+                  title={t`Add trigger`}
                   tinted
-                  title={t`Add schedule`}
-                  onPress={() => update({ schedules: [...draft.schedules, defaultCronPreset()] })}
-                />
-              )}
-              {email.address && !draft.emailSenders ? (
-                <SettingsRow
-                  key="email"
+                  accessible
                   accessibilityRole="button"
-                  tinted
-                  title={t`Add email trigger`}
-                  // An email trigger's bot never gets the owner's computer.
-                  onPress={() => update({ emailSenders: "owner", useComputer: undefined })}
+                  accessibilityLabel={t`Add trigger`}
                 />
-              ) : null}
+              </MenuPickerMenu>
             </SettingsGroup>
           )}
         </View>
@@ -623,7 +668,11 @@ function RoutineEditor({
         />
       ) : null}
       {/* Only the owner, with a computer paired, sees it; a watch's runs never get the computer. */}
-      {base?.useComputer !== undefined && !base.inChat && !kept?.watch && !draft.emailSenders ? (
+      {base?.useComputer !== undefined &&
+      !base.inChat &&
+      !kept.watch &&
+      !draft.emailSenders &&
+      !draft.webhookEnabled ? (
         <SettingsGroup>
           <SettingsSwitch
             key="computer"

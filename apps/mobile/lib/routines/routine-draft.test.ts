@@ -167,6 +167,28 @@ describe("routineSaveRequest", () => {
     });
   });
 
+  it("creates a routine whose only trigger is a webhook added here", () => {
+    const draft = {
+      ...emptyRoutineDraft(),
+      name: "Deploys",
+      prompt: "Check.",
+      webhookEnabled: true,
+    };
+    expect(routineDraftChanged({ ...emptyRoutineDraft(), webhookEnabled: true }, null)).toBe(true);
+    expect(routineSaveRequest(draft, null, "bot-1", "UTC")).toEqual({
+      create: {
+        botId: "bot-1",
+        name: "Deploys",
+        prompt: "Check.",
+        crons: [],
+        timezone: "UTC",
+        active: true,
+        notify: true,
+        webhookEnabled: true,
+      },
+    });
+  });
+
   it("asks for a name, an instruction and a trigger before saving", () => {
     const named = { ...emptyRoutineDraft(), name: "Inbox" };
     expect(routineSaveRequest(emptyRoutineDraft(), null, "bot-1", "UTC")).toEqual({
