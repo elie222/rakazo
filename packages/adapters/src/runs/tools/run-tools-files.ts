@@ -111,7 +111,11 @@ export async function callMediaTool(ctx: RunContext, call: ToolCall, recoverOnly
     !deps.artifacts
   )
     return { error: MEDIA_UNAVAILABLE };
-  const saved = await savedJobSource(ctx, args.jobId);
+  // Only a well-formed video check reads its saved job; anything else gets the tool's own refusal.
+  const saved =
+    name === "generate_video" && args.prompt === undefined
+      ? await savedJobSource(ctx, args.jobId)
+      : undefined;
   if (saved === null) return { error: VIDEO_JOB_UNAVAILABLE };
   if (saved && "settled" in saved) return saved.settled;
   let source: ResolvedMediaSource | undefined;
