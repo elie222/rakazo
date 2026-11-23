@@ -35,7 +35,11 @@ export async function readPageVersionImage(
 
 const IMAGE_REFERENCE = /image:([A-Za-z0-9][A-Za-z0-9_.-]{0,63})/g;
 
+export function pageImageNames(source: string): Set<string> {
+  return new Set([...source.matchAll(IMAGE_REFERENCE)].map((match) => match[1]!));
+}
+
 export function pageImagesNamedIn(images: PageImages, source: string): PageImages {
-  const named = new Set([...source.matchAll(IMAGE_REFERENCE)].map((match) => match[1]));
+  const named = pageImageNames(source);
   return Object.fromEntries(Object.entries(images).filter(([name]) => named.has(name)));
 }

@@ -6,7 +6,13 @@ import {
   PageTitleSchema,
 } from "@rakazo/contracts";
 import { CARD_TITLE_ESCAPED_CHARACTERS, containsSecret, redactSecrets } from "@rakazo/core";
-import { isUniqueViolation, pageVersionImages, signalPage, signalPageUsers } from "@rakazo/db";
+import {
+  isUniqueViolation,
+  pageImageNames,
+  pageVersionImages,
+  signalPage,
+  signalPageUsers,
+} from "@rakazo/db";
 import { bestEffort } from "@rakazo/logging";
 import { checkPageSource, PAGE_KIT_GUIDE } from "@rakazo/page-kit/validate";
 import { MAX_APPROVAL_DETAIL_LENGTH } from "../../approvals/approval-ask.js";
@@ -428,10 +434,11 @@ async function savePage(ctx: RunContext, call: ToolCall) {
 }
 
 function missingImages(source: string, kept: string[]): string[] {
-  const named = source.match(/image:[A-Za-z0-9][A-Za-z0-9_.-]{0,63}/g) ?? [];
-  return [...new Set(named)]
-    .filter((reference) => !kept.includes(reference.slice(PAGE_IMAGE_PREFIX.length)))
-    .map((reference) => `${reference} is not one of this page's images, so it is left out.`);
+  return [...pageImageNames(source)]
+    .filter((name) => !kept.includes(name))
+    .map(
+      (name) => `${PAGE_IMAGE_PREFIX}${name} is not one of this page's images, so it is left out.`,
+    );
 }
 
 class PageChangedError extends Error {}
