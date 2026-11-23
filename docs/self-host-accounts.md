@@ -167,6 +167,7 @@ OIDC_SCOPES=openid email profile
 AUTH_PASSWORD_ENABLED=true
 OIDC_ALLOW_SIGNUP_BYPASS=false
 OIDC_EMAIL_VERIFIED_CLAIM=
+OIDC_AUTHORIZATION_PARAMS=
 ```
 
 The issuer must be HTTPS and exactly match the discovery document's issuer. Rakazo loads
@@ -236,6 +237,29 @@ start while discovery is temporarily unavailable: the provider remains registere
 returns a temporary error, and background retries recover without restarting. Discovery is lazy
 on first use, refreshed in the background, and failures back off up to one minute. Availability
 reflects discovery, not a guarantee that the provider's token endpoint is currently reachable.
+
+### Sign-in hints
+
+`OIDC_AUTHORIZATION_PARAMS` adds fixed parameters to every request that sends someone to the
+provider, written as `name=value` pairs joined with `&` (URL-encode a value that contains `&`
+or `=`). Use it for the hints a provider offers to skip its account or organization picker:
+
+| Provider | Setting | Effect |
+| --- | --- | --- |
+| Microsoft Entra ID | `domain_hint=example.com` | Goes straight to your organization's sign-in, including a federated identity provider if your domain uses one. |
+| Google Workspace | `hd=example.com` | Offers only accounts in that domain. |
+| Keycloak | `kc_idp_hint=<alias>` | Skips the Keycloak login page for the linked identity provider with that alias. |
+| Okta | `idp=<identity provider id>` | Sends people to that identity provider. |
+| Any | `prompt=select_account` | Asks which account to use, even when only one is signed in. |
+
+Several can be combined, for example `domain_hint=example.com&prompt=select_account`. The
+parameters apply to web, desktop and mobile sign-in and to linking, because the API builds the
+request. The API refuses to start if they name a parameter the sign-in flow sets itself
+(`client_id`, `redirect_uri`, `response_type`, `response_mode`, `scope`, `state`, `nonce`,
+`code_challenge`, `code_challenge_method`, `request` or `request_uri`). The explicit
+reauthentication above still sends `prompt=login` and `max_age=0`, whatever is set here. Hints only
+shorten the provider's screens: who may sign in is still decided by the provider and this
+deployment's signup rules.
 
 Account deletion keeps the existing password confirmation for password users. Users without a
 password may delete after explicit organization SSO reauthentication within five minutes; **Sign in again** starts a fresh

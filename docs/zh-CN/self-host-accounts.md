@@ -107,6 +107,7 @@ OIDC_SCOPES=openid email profile
 AUTH_PASSWORD_ENABLED=true
 OIDC_ALLOW_SIGNUP_BYPASS=false
 OIDC_EMAIL_VERIFIED_CLAIM=
+OIDC_AUTHORIZATION_PARAMS=
 ```
 
 Issuer 必须是 HTTPS，并与发现文档中的 issuer 完全一致。Rakazo 加载 `<issuer>/.well-known/openid-configuration`，用发现 JWKS 校验 ID token 的 issuer、audience 和 nonce，并使用带 PKCE 的授权码流程。额外 scope 可以用空格或逗号分隔；`openid email profile` 总是会请求。`OIDC_NAME` 是按钮标签，默认为 “SSO”。密钥只在 API 上保留；Compose 会清除 worker 的 OIDC 凭据。能力端点只暴露标签、发现可用性和已启用的登录方式。
@@ -128,6 +129,20 @@ SSO 注册会先遵守关闭注册和部署允许名单，再创建账号。允�
 设置 `AUTH_PASSWORD_ENABLED=false` 可进入 SSO-only 模式。服务端禁用密码登录、注册、密码重置和密码修改端点，登录表单也会隐藏。未完整配置 OIDC 凭据时，API 在该模式下会拒绝启动。发现服务暂时不可用时仍可启动：提供商保持注册，登录返回临时错误，后台重试会自动恢复，无需重启。发现服务在首次使用时懒加载，并在后台刷新；失败最多退避一分钟。可用性反映发现服务状态，不保证提供商 token 端点当前可达。
 
 删除账号时，密码用户仍需密码确认。没有密码的用户可以在五分钟内完成显式组织 SSO 重新认证后删除；**Sign in again** 会发起一个绑定到已登录账号的新提供商往返。选择其他身份无法确认删除，也不能在该流程中创建另一个账号。过期或借用的会话不能授权删除。配置事务邮件后，**Send deletion code** 会向账号邮箱发送一次性验证码，10 分钟有效。在账号设置中输入即可确认删除。邮箱验证码请求有限流；无效、过期或错误账号的验证码都会失败。删除不需要创建密码。
+
+### 登录提示
+
+`OIDC_AUTHORIZATION_PARAMS` 会给每次跳转到提供商的请求加上固定参数，格式为用 `&` 连接的 `name=value`（值里含有 `&` 或 `=` 时需 URL 编码）。可用于提供商自带的提示，跳过账号或组织选择：
+
+| 提供商 | 设置 | 效果 |
+| --- | --- | --- |
+| Microsoft Entra ID | `domain_hint=example.com` | 直接进入你组织的登录页，域名使用联合身份提供商时也直接跳转过去。 |
+| Google Workspace | `hd=example.com` | 只提供该域名下的账号。 |
+| Keycloak | `kc_idp_hint=<alias>` | 跳过 Keycloak 登录页，直接使用该别名对应的身份提供商。 |
+| Okta | `idp=<identity provider id>` | 直接跳转到该身份提供商。 |
+| 任意 | `prompt=select_account` | 即使只登录了一个账号，也询问使用哪个账号。 |
+
+可以组合使用，例如 `domain_hint=example.com&prompt=select_account`。请求由 API 生成，所以这些参数对网页、桌面和移动端登录以及绑定都生效。如果其中包含登录流程自己设置的参数（`client_id`、`redirect_uri`、`response_type`、`response_mode`、`scope`、`state`、`nonce`、`code_challenge`、`code_challenge_method`、`request` 或 `request_uri`），API 会拒绝启动。上文的显式重新认证仍会发送 `prompt=login` 和 `max_age=0`，不受这里的设置影响。提示只会缩短提供商的页面，谁能登录仍由提供商和本部署的注册规则决定。
 
 ## Google 和 Apple 登录
 

@@ -17,6 +17,34 @@ export interface OidcConfig {
   allowSignupBypass: boolean;
   /** Read instead of `email_verified` when the ID token omits it, for IdPs that name it differently. */
   emailVerifiedClaim?: string;
+  /** Fixed parameters added to every authorization request, such as a domain hint. */
+  authorizationParams?: Record<string, string>;
+}
+
+/** Parameters the sign-in flow sets itself; a fixed value would break or weaken it. */
+const PROTOCOL_AUTHORIZATION_PARAMS = new Set([
+  "client_id",
+  "code_challenge",
+  "code_challenge_method",
+  "nonce",
+  "redirect_uri",
+  "request",
+  "request_uri",
+  "response_mode",
+  "response_type",
+  "scope",
+  "state",
+]);
+
+/** Reads `name=value&name=value`, refusing names the sign-in flow owns. */
+export function oidcAuthorizationParams(value: string | undefined): Record<string, string> {
+  const params: Record<string, string> = {};
+  for (const [name, param] of new URLSearchParams(value?.trim() ?? "")) {
+    if (!name || PROTOCOL_AUTHORIZATION_PARAMS.has(name.toLowerCase()))
+      throw new Error(`OIDC_AUTHORIZATION_PARAMS cannot set ${name || "an unnamed parameter"}`);
+    params[name] = param;
+  }
+  return params;
 }
 
 /** Whether the ID token proved the profile email: boolean `true` or the string "true", any case. */
@@ -39,6 +67,7 @@ export function oidcDiscovery(config: OidcConfig) {
         clientId: config.clientId,
         clientSecret: config.clientSecret,
         scopes: [...new Set(["openid", "email", "profile", ...config.scopes])],
+        authorizationUrlParams: config.authorizationParams,
         pkce: true,
         accountSubject: ({ profile }) => {
           if (typeof profile.sub !== "string" || !profile.sub.trim()) return "";
