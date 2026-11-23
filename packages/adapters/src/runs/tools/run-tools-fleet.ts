@@ -46,6 +46,7 @@ import { publishMessage } from "../assembly/run-messages.js";
 import { mayOpenModelStream } from "../lifecycle/run-lifecycle.js";
 import { fleetPrepareDeps } from "../turn/run-model.js";
 import type { ToolCall, ToolHandlers } from "./run-tool-gate.js";
+import { SELF_ARCHIVED_NOTE } from "./run-tools-fleet.prompt.js";
 
 async function archiveBot(ctx: RunContext, call: ToolCall) {
   const { deps, run, bot, thread, context } = ctx;
@@ -54,6 +55,7 @@ async function archiveBot(ctx: RunContext, call: ToolCall) {
     deps,
     {
       spawnedByBotId: bot.id,
+      runId: run.id,
       userId: run.userId,
       spaceId: run.spaceId,
       confirmName: String(args.confirm_name ?? args.confirmName ?? ""),
@@ -62,7 +64,10 @@ async function archiveBot(ctx: RunContext, call: ToolCall) {
     context,
   );
   if ("error" in archived) return call.finish(archived);
-  if (!(await call.persistEffectResult(archived))) return uncertainEffectResult(name);
+  const self = archived.botId === bot.id;
+  if (self) ctx.state.selfArchived = true;
+  const result = self ? { ...archived, note: SELF_ARCHIVED_NOTE } : archived;
+  if (!(await call.persistEffectResult(result))) return uncertainEffectResult(name);
   try {
     await publishMessage(deps, run, "bot", [
       {
@@ -83,7 +88,7 @@ async function archiveBot(ctx: RunContext, call: ToolCall) {
   } catch (error) {
     getLogger().error("archived bot notification", error);
   }
-  return archived;
+  return result;
 }
 
 /** Writes this bot's instructions quietly; earlier versions stay restorable in its settings. */

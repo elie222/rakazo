@@ -341,6 +341,8 @@ const EXTENSION_MIME_TYPES: Record<string, AttachmentMimeType> = {
   ".csv": "text/csv",
   ".xls": "application/vnd.ms-excel",
   ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
   ".html": "text/html",
   ".htm": "text/html",
   ".json": "application/json",
@@ -369,6 +371,8 @@ const MIME_TYPE_EXTENSIONS: Record<AttachmentMimeType, string> = {
   "text/csv": ".csv",
   "application/vnd.ms-excel": ".xls",
   "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": ".xlsx",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document": ".docx",
+  "application/vnd.openxmlformats-officedocument.presentationml.presentation": ".pptx",
   "text/html": ".html",
   "application/json": ".json",
   "application/zip": ".zip",
@@ -426,6 +430,26 @@ export function inferAttachmentMimeType(
 
 export function attachmentExtensionForMimeType(mimeType: string): string {
   return isAllowedAttachmentMimeType(mimeType) ? MIME_TYPE_EXTENSIONS[mimeType] : "";
+}
+
+const OFFICE_MIME_TYPES: ReadonlySet<string> = new Set([
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+]);
+
+/**
+ * The name an Office file is stored and downloaded under ends in its type's own extension, so a file accepted as a
+ * Word document cannot be saved as "Invoice.docm" (a macro-enabled name) and opened by Office as one. Other types keep
+ * the name they were given.
+ */
+export function attachmentStoredName(name: string, mimeType: string): string {
+  if (!OFFICE_MIME_TYPES.has(mimeType)) return name;
+  const extension = attachmentExtensionForMimeType(mimeType);
+  if (name.toLowerCase().endsWith(extension)) return name;
+  const dot = name.lastIndexOf(".");
+  const stem = dot > 0 ? name.slice(0, dot) : name;
+  return `${stem}${extension}`;
 }
 
 /** Where a run copies an attached file in the bot's workspace; history tools report the same path. */

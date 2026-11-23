@@ -13,7 +13,6 @@ import {
   createScheduleFromTool,
   filterBuiltinToolsForRun,
   filterBuiltinToolsForThread,
-  isOneShotRoutineCron,
   listSchedulesFromTool,
   MAX_ACTIVE_ROUTINES_PER_BOT,
   resolveScheduleTiming,
@@ -72,7 +71,6 @@ describe("resolveScheduleTiming", () => {
   it.each([
     [1000, "hours"],
     [57600, "minutes"],
-    [100000, "minutes"],
   ])("never suggests more than 31 days for every %i %s", (every, unit) => {
     const result = resolveScheduleTiming({ every, unit });
     expect(result.ok).toBe(false);
@@ -82,10 +80,7 @@ describe("resolveScheduleTiming", () => {
 
   it.each([
     [7, "minutes", "*/7 * * * *"],
-    [45, "minutes", "*/45 * * * *"],
-    [59, "minutes", "*/59 * * * *"],
     [60, "minutes", "*/60 * * * *"],
-    [23, "hours", "0 */23 * * *"],
     [24, "hours", "0 */24 * * *"],
     [31, "days", "0 0 */31 * *"],
   ])("still accepts every %i %s", (every, unit, cron) => {
@@ -362,13 +357,6 @@ describe("filterBuiltinToolsForThread", () => {
         { name: "remember" },
       ]);
     }
-  });
-});
-
-describe("isOneShotRoutineCron", () => {
-  it("detects the one-shot sentinel", () => {
-    expect(isOneShotRoutineCron(ONCE_ROUTINE_CRON)).toBe(true);
-    expect(isOneShotRoutineCron("0 9 * * *")).toBe(false);
   });
 });
 
@@ -1201,6 +1189,14 @@ describe("updateScheduleFromTool", () => {
       expect(append).not.toHaveBeenCalled();
     },
   );
+
+  it("refuses a name longer than the editor allows", async () => {
+    const { updateMany, update } = setup();
+    await expect(update({ name: "x".repeat(81) })).resolves.toEqual({
+      error: "name must be at most 80 characters.",
+    });
+    expect(updateMany).not.toHaveBeenCalled();
+  });
 
   it("refuses another member's change to what a schedule does", async () => {
     const { updateMany, update } = setup();

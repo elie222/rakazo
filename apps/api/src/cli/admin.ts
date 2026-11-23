@@ -41,6 +41,7 @@ try {
       env,
       pool: db.pool,
       apiUrl: env.apiUrl,
+      inboundOrigin: env.publishedInboundOrigin,
       signal: new AbortController().signal,
     }),
   );

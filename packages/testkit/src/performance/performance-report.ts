@@ -238,7 +238,7 @@ export function checkBudgets(
 
 export function renderBudgetTable(rows: BudgetRow[]) {
   const value = (number: number | undefined, unit: string) =>
-    number === undefined ? "missing" : `${roundMetric(number, 1)} ${unit}`;
+    number === undefined ? "missing" : `${roundMetric(number)} ${unit}`;
   return [
     "| Metric | Median | p95 | Budget | |",
     "| --- | ---: | ---: | ---: | --- |",

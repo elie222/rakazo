@@ -1,6 +1,6 @@
 import type { PrismaClient } from "@rakazo/db";
 import { asSystem, createDb, runAsSystem, runAsTenant } from "@rakazo/db";
-import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { changeUserTimezone, createScheduleFromTool } from "./schedule-tools.js";
 
 // Needs DATABASE_URL as the runtime login and DATABASE_MIGRATION_URL as the owner,
@@ -42,8 +42,10 @@ describePostgres("moving routines with the account timezone (PostgreSQL)", () =>
 
   beforeAll(async () => {
     await runAsSystem("test fixture", seed);
-    // Occurrences are built against this moment, whatever day the suite runs on. Only
-    // Date is faked: the I/O and barrier waits below stay on real timers.
+  });
+  // Occurrences are built against this moment, whatever day the suite runs on. Only
+  // Date is faked: the I/O and barrier waits below stay on real timers.
+  beforeEach(() => {
     vi.useFakeTimers({ now: new Date("2026-11-05T12:00:00.000Z"), toFake: ["Date"] });
   });
 

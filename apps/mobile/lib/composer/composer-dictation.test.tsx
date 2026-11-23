@@ -1,7 +1,6 @@
 // @vitest-environment jsdom
 
 import { deferred } from "@rakazo/core/test-async";
-import { AudioModule } from "expo-audio";
 import { act, useState } from "react";
 import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
@@ -14,6 +13,7 @@ const app = vi.hoisted(() => ({
 }));
 
 const voice = vi.hoisted(() => ({
+  microphonePermission: vi.fn(async () => ({ granted: true })),
   recordClip: vi.fn(),
   transcribeClip: vi.fn(),
 }));
@@ -40,12 +40,6 @@ vi.mock("react-native", () => ({
   },
 }));
 
-vi.mock("expo-audio", () => ({
-  AudioModule: {
-    requestRecordingPermissionsAsync: vi.fn(async () => ({ granted: true })),
-  },
-}));
-
 vi.mock("../api/api", () => ({
   captureApiRequestContext: vi.fn(async () => ({
     apiBase: "https://api.test",
@@ -57,6 +51,7 @@ vi.mock("../api/api", () => ({
 vi.mock("../api/session", () => ({ currentSessionGeneration: () => 1 }));
 vi.mock("../voice/voice", () => ({ ensureVoiceConsent: vi.fn(async () => undefined) }));
 vi.mock("../voice/voice-clip", () => ({
+  microphonePermission: voice.microphonePermission,
   recordClip: voice.recordClip,
   transcribeClip: voice.transcribeClip,
 }));
@@ -240,7 +235,7 @@ it.each(["blur", "unmount"])(
       consent.resolve();
       await consent.promise;
     });
-    expect(AudioModule.requestRecordingPermissionsAsync).not.toHaveBeenCalled();
+    expect(voice.microphonePermission).not.toHaveBeenCalled();
     expect(voice.recordClip).not.toHaveBeenCalled();
   },
 );

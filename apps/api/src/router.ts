@@ -34,6 +34,7 @@ import type {
   RemoteConnectorDependencies,
   TicketChangeNotifier,
   UserCloudAgents,
+  UserDeviceGateway,
   verifyModelServesAgents,
   WorkActivities,
 } from "@rakazo/adapters";
@@ -89,6 +90,8 @@ export interface RouterDeps {
   userCloudAgents?: UserCloudAgents;
   /** The deployment's wallet provider; absent hides purchases. */
   paymentWallet?: PaymentWalletProvider | null;
+  /** The computers people paired, never this server's own screen; absent when none can be. */
+  userDevices?: Pick<UserDeviceGateway, "pairedSince">;
   prisma: PrismaClient;
   events: ThreadEvents;
   boardEvents: BoardEvents;
@@ -148,6 +151,8 @@ export interface RouterDeps {
     deploymentVoice?: NonNullable<VoiceDeps["env"]>["deploymentVoice"];
     /** Domain of bots' email addresses; unset when this server receives no email. */
     inboundEmailDomain?: string;
+    /** The public origin webhooks reach, when an ingress provider publishes one. */
+    publishedInboundOrigin?: string;
     navLinks?: NavLink[];
     adminEmails?: string[];
     /** Labs features this deployment turns on for every account. */
@@ -214,6 +219,7 @@ export function createRouter(deps: RouterDeps) {
 export function routerEnv(env: AppEnv): RouterDeps["env"] {
   return {
     inboundEmailDomain: env.inboundEmail?.domain,
+    publishedInboundOrigin: env.publishedInboundOrigin,
     deploymentLabs: env.deploymentLabs,
     deploymentVoice: env.deploymentVoice,
     phoneCallsEnabled: env.phoneCallsEnabled,

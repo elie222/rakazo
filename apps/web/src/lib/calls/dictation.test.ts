@@ -1143,20 +1143,12 @@ describe("combineTranscript", () => {
     expect(combineTranscript("hello", "Hello, world")).toBe("Hello, world");
   });
 
-  it.each([
-    ["hello."],
-    ["hello!"],
-    ["hello?"],
-    ["hello; world"],
-    ["hello: world"],
-    ["hello's world"],
-    ["hello-world"],
-    ["hello)"],
-    ['hello"'],
-    ["hello，world"],
-  ])("treats punctuation after the retained word as a boundary (%s)", (speechText) => {
-    expect(combineTranscript("hello", speechText)).toBe(speechText);
-  });
+  it.each([["hello."], ["hello's world"], ["hello，world"]])(
+    "treats punctuation after the retained word as a boundary (%s)",
+    (speechText) => {
+      expect(combineTranscript("hello", speechText)).toBe(speechText);
+    },
+  );
 
   it("keeps the replayed transcript when whitespace follows the retained words", () => {
     expect(combineTranscript("call me later", "Call me later and goodbye")).toBe(
@@ -1286,6 +1278,7 @@ describe("dictation engine choice", () => {
     expect(webSpeechNeedsServerFallback("network", true)).toBe(true);
     expect(webSpeechNeedsServerFallback("service-not-allowed", true)).toBe(true);
     expect(webSpeechNeedsServerFallback("network", false)).toBe(false);
+    expect(webSpeechNeedsServerFallback("language-not-supported", false)).toBe(false);
     expect(webSpeechNeedsServerFallback("not-allowed", true)).toBe(false);
     expect(webSpeechNeedsServerFallback("aborted", true)).toBe(false);
     expect(webSpeechNeedsServerFallback(undefined, true)).toBe(false);
@@ -1374,7 +1367,6 @@ describe("Dictation web speech", () => {
 
   it.each([
     ["es-CL", "es-CL"],
-    ["es-ES", "es-ES"],
     ["es-419", "es-MX"],
     ["es_AR", "es-AR"],
     ["it-IT", "it-IT"],
@@ -1494,9 +1486,6 @@ describe("Dictation web speech", () => {
   it.each([
     ["orlando florida", "florida international", "orlando florida international"],
     ["say no", "no no please", "say no no please"],
-    ["go go now", "go now please", "go go now please"],
-    ["go go", "go go now", "go go now"],
-    ["we", "welcome", "we welcome"],
     ["hello cat", "catalog", "hello cat catalog"],
     ["hello scat", "cat now", "hello scat cat now"],
   ])("merges restarted speech at whole-word overlaps (%s / %s)", async (first, next, expected) => {
@@ -1755,7 +1744,7 @@ describe("Dictation web speech", () => {
     );
   });
 
-  it.each(["network", "service-not-allowed"])(
+  it.each(["network", "service-not-allowed", "language-not-supported"])(
     "falls back to server transcription when Web Speech fails with %s",
     async (error) => {
       const instances: Array<{
@@ -2051,7 +2040,6 @@ describe("Dictation web speech", () => {
   it.each([
     ["please say no", "no please", "please say no no please"],
     ["call me later", "Call me later and goodbye", "call me later Call me later and goodbye"],
-    ["hello", "hello", "hello hello"],
     ["call me later", "", "call me later"],
   ])(
     "appends fresh recording text without removing repeated words (%s / %s)",

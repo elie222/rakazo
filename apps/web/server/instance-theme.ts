@@ -1,4 +1,4 @@
-import { readFileSync, realpathSync } from "node:fs";
+import { readFileSync, realpathSync, statSync } from "node:fs";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import path from "node:path";
 import type { ResolvedAppearance, WebColorTokens } from "@rakazo/ui-tokens";
@@ -170,15 +170,25 @@ export function instanceThemeIndexMiddleware(outDir: string) {
   };
 }
 
-function loadTheme(file: string): InstanceTheme {
-  return parseInstanceTheme(readFileSync(file, "utf8"), path.dirname(path.resolve(file)));
-}
-
 /**
- * Serves `RAKAZO_THEME`'s stylesheet and font files. The file is re-read per request so a
- * self-hoster sees edits on reload; a bad file is logged and serves nothing.
+ * Serves `RAKAZO_THEME`'s stylesheet and font files. The file is re-read when it changes, so a
+ * self-hoster sees edits on reload; an unchanged file is parsed once, and a bad file is logged
+ * and serves nothing.
  */
 export function instanceThemeMiddleware(themeFile: string, warn: (reason: string) => void) {
+  let parsed: { stamp: string; theme: InstanceTheme } | undefined;
+  const loadTheme = (): InstanceTheme => {
+    // ctime changes on every write or replace and, unlike mtime, cannot be set back by a copy.
+    const stat = statSync(themeFile);
+    const stamp = `${stat.size}:${stat.ctimeMs}`;
+    if (parsed?.stamp === stamp) return parsed.theme;
+    const theme = parseInstanceTheme(
+      readFileSync(themeFile, "utf8"),
+      path.dirname(path.resolve(themeFile)),
+    );
+    parsed = { stamp, theme };
+    return theme;
+  };
   return (req: IncomingMessage, res: ServerResponse, next: () => void) => {
     const pathname = req.url?.split("?", 1)[0] ?? "";
     if (pathname === INSTANCE_THEME_PATH) {
@@ -186,7 +196,7 @@ export function instanceThemeMiddleware(themeFile: string, warn: (reason: string
       res.setHeader("cache-control", "no-cache");
       let css = "";
       try {
-        css = renderInstanceThemeCss(loadTheme(themeFile));
+        css = renderInstanceThemeCss(loadTheme());
       } catch (error) {
         warn(error instanceof Error ? error.message : String(error));
       }
@@ -197,7 +207,7 @@ export function instanceThemeMiddleware(themeFile: string, warn: (reason: string
     // Only indexes into the theme's own list are served, never a path from the URL.
     const index = Number.parseInt(pathname.slice(FONT_PATH.length), 10);
     try {
-      const font = loadTheme(themeFile).fonts.files[index];
+      const font = loadTheme().fonts.files[index];
       if (!font) return next();
       // A symlink in the theme folder must not reach outside it either.
       const themeDir = realpathSync(path.dirname(path.resolve(themeFile)));

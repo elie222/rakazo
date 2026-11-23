@@ -22,12 +22,15 @@ import { modelSetup } from "../routes/shared.js";
 type ConnectMethod = Exclude<AnalyticsModelConnectMethod, "compatible">;
 
 type ModelConnectOutcome =
-  | { name: "model_connect_started" }
+  | { name: "model_connect_started"; appVersion?: string }
   | { name: "model_connected"; flow?: AnalyticsModelSignInFlow; durationMs?: number }
   | { name: "model_connect_failed"; error: unknown };
 
 /** Where a try began and which of the person's tries it is. */
 type ModelConnectTry = { surface?: AnalyticsSurface; attempt?: number };
+
+/** The app a try began in, as its client reports it. */
+export type ModelConnectClient = { surface?: AnalyticsSurface; appVersion?: string };
 
 type ModelConnectRecorder = (provider: string | undefined, outcome: ModelConnectOutcome) => void;
 
@@ -76,7 +79,7 @@ export async function startModelConnect(
   actor: Actor,
   method: ConnectMethod,
   provider: string | undefined,
-  surface: AnalyticsSurface | undefined,
+  { surface, appVersion }: ModelConnectClient,
 ): Promise<{ record: ModelConnectRecorder; measure?: PiOAuthMeasure }> {
   const analytics = deps.analytics;
   if (!analytics || !(await needsFirstModel(deps, actor))) return { record: () => {} };
@@ -94,7 +97,7 @@ export async function startModelConnect(
   const attempt = counted.modelConnectStarts;
   const tried = { ...(surface ? { surface } : {}), attempt };
   const record = recorder(analytics, actor.userId, method, tried);
-  record(provider, { name: "model_connect_started" });
+  record(provider, { name: "model_connect_started", ...(appVersion ? { appVersion } : {}) });
   return { record, measure: tried };
 }
 

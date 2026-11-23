@@ -28,7 +28,8 @@ import {
 } from "../auth/api-auth";
 import { replaceWithSignIn } from "../auth/auth-routing";
 import { endCallBeforeSessionEnd } from "../calls/call-session";
-import { queryClient } from "../query/query";
+import { setResponseStreamingPreference } from "../preferences/response-streaming";
+import { accountRpcQuery, queryClient } from "../query/query";
 import { registerSettingsSheet } from "../settings/settings-sheet";
 import type * as ThreadFeedback from "../thread/send/thread-feedback";
 import { hasUnsentSends } from "../thread/send/thread-feedback";
@@ -147,6 +148,7 @@ vi.mock("expo-router", () => {
   const router = { push: account.push, back: () => undefined };
   return {
     useFocusEffect: (effect: () => undefined | (() => void)) => useEffect(effect, [effect]),
+    useIsFocused: () => true,
     useLocalSearchParams: () => ({}),
     useRouter: () => router,
   };
@@ -155,6 +157,7 @@ vi.mock("react-native-safe-area-context", () => ({
   SafeAreaView: element("div"),
   useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }),
 }));
+vi.mock("../api/roster-signals", () => ({ useLiveStream: vi.fn() }));
 vi.mock("../../components/ui/app-mark", () => ({ AppMark: () => null }));
 vi.mock("../../components/native/native-symbol", () => ({ NativeSymbol: () => null }));
 vi.mock("../../components/native/native-action-button", () => ({
@@ -458,6 +461,37 @@ it("keeps bot style visible when the account has no saved style", async () => {
   expect(container.textContent).not.toContain("Avatars");
   expect(container.textContent).not.toContain("Robot");
   expect(container.textContent).not.toContain("Organic");
+});
+
+it("reads and saves the account's model picker preference", async () => {
+  account.me = { ...account.me, chatPreferences: { composerModelPicker: true } };
+  const { screen } = await renderAccount(General);
+  const toggle = screen.querySelector<HTMLButtonElement>('[aria-label="Model picker in chat"]')!;
+  expect(toggle.getAttribute("aria-checked")).toBe("true");
+
+  vi.mocked(rpc).mockImplementationOnce(async () => {
+    account.me = { ...account.me, chatPreferences: { composerModelPicker: false } };
+    return account.me as never;
+  });
+  await act(async () => toggle.click());
+  expect(rpc).toHaveBeenCalledWith(
+    "preferences/update",
+    { chatPreferences: { composerModelPicker: false } },
+    expect.anything(),
+  );
+  await act(flush);
+  expect(toggle.getAttribute("aria-checked")).toBe("false");
+});
+
+it("uses the device preference when the account read fails", async () => {
+  vi.mocked(rpc).mockRejectedValueOnce(new Error("offline"));
+  const { screen } = await renderAccount(General);
+  expect(queryClient.getQueryState(accountRpcQuery("me").queryKey)?.status).toBe("error");
+  const toggle = screen.querySelector<HTMLButtonElement>('[aria-label="Stream replies"]')!;
+  expect(toggle.disabled).toBe(false);
+  await act(async () => toggle.click());
+  expect(setResponseStreamingPreference).toHaveBeenCalledWith("off");
+  expect(rpc).not.toHaveBeenCalledWith("preferences/update", expect.anything(), expect.anything());
 });
 
 /** Answers one preference save when the test says so; the account read sees it only then. */
@@ -869,7 +903,7 @@ it.each([false, true])(
         "Voice",
         "Messaging",
         "Labs",
-        "Members",
+        "Spaces",
       ];
       expect(titles).toEqual(["tester@example.test", "Usage", ...links]);
       const artifacts = view.button("Artifacts")!;
@@ -893,6 +927,7 @@ it.each([false, true])(
         ["Computers", "/computers"],
         ["Memory", "/memory"],
         ["Messaging", "/messaging"],
+        ["Spaces", "/spaces"],
       ]) {
         events.length = 0;
         await view.press(title!);

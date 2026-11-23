@@ -11,7 +11,7 @@ import {
   messagingDmSurfaceNote,
   nonOwnerChatPrivacyBlock,
 } from "@rakazo/core";
-import { availableInSpace, parseComputerMode } from "@rakazo/db";
+import { availableInSpace, mayBeChannelMessage, parseComputerMode } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { createApprovedEffectReplayQueue } from "../../approvals/approval-effect.js";
 import { appendOutsideText, taskPromptIsOutside } from "../../approvals/review-target-sources.js";
@@ -67,6 +67,7 @@ import {
   selectBuiltinToolsForRun,
   unavailableBuiltinToolReasons,
 } from "../tools/run-tool-selection.js";
+import { historyMyChatsAllowed } from "../tools/run-tools-memory.js";
 import type { UserComputerState } from "../tools/run-tools-user-computer.js";
 import { USER_COMPUTER_SHELL_TOOL, userComputerOwner } from "../tools/run-tools-user-computer.js";
 import {
@@ -576,6 +577,7 @@ export async function resolveRunCapabilities(
     messagingChannelRun: nonOwnerChatRun,
     runUserId: run.userId,
     botUserId: bot.userId,
+    ownerComputerRoutine: parts.records.ownerComputerRoutine,
   });
   let userComputer: UserComputerState;
   let userComputerShell = false;
@@ -663,12 +665,15 @@ export async function selectRunTools(
   const { checkpointLoadError, turnCheckpoint } = parts.saved;
   const {
     bot,
+    channelId,
+    conversationRun,
     nonOwnerChatRun,
     sourceBlocks,
     task,
     conversationThread,
     ticketBoardEnabled,
     unknownChannelSourceId,
+    ownerComputerRoutine,
   } = parts.records;
   const { connectedPlugins, semanticMemory } = parts.connected;
   const { discovered, groupReplyOptional, history, semanticMemoryEnabled } = parts.turnContext;
@@ -688,20 +693,32 @@ export async function selectRunTools(
     userComputerShell,
     voiceCall,
   } = parts.capabilities;
-  // In a group the members are the room's; a bot elsewhere messages the Space's other bots.
-  const teammates = conversationThread.groupId
-    ? []
-    : await deps.prisma.bot.findMany({
-        where: {
-          spaceId: run.spaceId,
-          archivedAt: null,
-          id: { not: bot.id },
-          thread: { isNot: null },
-        },
-        select: { id: true, name: true, description: true },
-        orderBy: { createdAt: "asc" },
-        take: BOT_DIRECTORY_LIMIT,
-      });
+  const myChatsAllowed = historyMyChatsAllowed(
+    conversationRun,
+    parts.records.origin?.sourceMessage ?? sourceMessage,
+    nonOwnerChatRun ||
+      Boolean(
+        channelId ||
+          conversationThread.externalConversationId ||
+          (sourceMessage && mayBeChannelMessage(sourceMessage)),
+      ),
+  );
+  // In a group the members are the room's; a bot elsewhere messages the Space's other bots. A
+  // routine with its owner's computer messages none, nor reads their names and descriptions.
+  const teammates =
+    conversationThread.groupId || ownerComputerRoutine
+      ? []
+      : await deps.prisma.bot.findMany({
+          where: {
+            spaceId: run.spaceId,
+            archivedAt: null,
+            id: { not: bot.id },
+            thread: { isNot: null },
+          },
+          select: { id: true, name: true, description: true },
+          orderBy: { createdAt: "asc" },
+          take: BOT_DIRECTORY_LIMIT,
+        });
   // Another group the bot belongs to, which post_to_group can post into.
   const otherGroups = await deps.prisma.chatGroup.findMany({
     where: {
@@ -730,6 +747,8 @@ export async function selectRunTools(
           }),
         ),
       historyRetrievalEnabled: contextStrategy !== "current" && !unknownChannelSourceId,
+      historyMyChats: myChatsAllowed,
+      ownPromptOnly: ownerComputerRoutine,
       meetingTranscriptsAvailable: parts.meetingTranscriptsAvailable,
       graphicalToolsAllowed,
       pageBrowserAllowed,
@@ -766,6 +785,7 @@ export async function selectRunTools(
     // creator's, and a connected agent's messages run as them, so only their runs may
     // open, approve or use one.
     ...(run.userId === bot.userId &&
+    !ownerComputerRoutine &&
     offersAgentConnectionTools({
       hasMessagingIdentity,
       crossSpaceCommunication: bot.crossSpaceCommunication === true,
@@ -778,9 +798,11 @@ export async function selectRunTools(
     trigger: run.trigger,
     clientNonce: run.clientNonce,
   });
-  const exposedConnectorTools = discovered.filter(
-    (tool) => !builtinAgentTools.some((builtin) => builtin.name === tool.name),
-  );
+  // Connector and MCP results are other services' text, which a routine with its owner's computer
+  // never reads (see selectBuiltinToolsForRun's ownPromptOnly).
+  const exposedConnectorTools = ownerComputerRoutine
+    ? []
+    : discovered.filter((tool) => !builtinAgentTools.some((builtin) => builtin.name === tool.name));
   const strategicConnectorTools = filterStrategicInitiativeTools(exposedConnectorTools, {
     trigger: run.trigger,
     clientNonce: run.clientNonce,
@@ -839,6 +861,7 @@ export async function selectRunTools(
   const approvedEffectReplays = createApprovedEffectReplayQueue(approvedEffects);
   return {
     teammates,
+    myChatsAllowed,
     strategicBuiltins,
     connectorTools,
     trustLoaders,

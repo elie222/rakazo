@@ -10,7 +10,7 @@ import { useIdentityConfirmation } from "../../../components/account/ConfirmIden
 import { REVEAL_MS } from "../../../components/vault/VaultItemDetail";
 import type { createSpaceRpc } from "../../../lib/query/rpc";
 import { errorCode, errorText } from "../../../lib/query/user-error";
-import { botInboundUrl } from "../../../lib/routines/inbound-url";
+import { appBotInboundUrl, useInboundOrigin } from "../../../lib/routines/inbound-url";
 import { InboundKeyRows } from "../../routines/routine-editor/trigger-cards";
 
 type RoutineEventBlock = Extract<MessageBlock, { kind: "routine_event" }>;
@@ -71,6 +71,7 @@ function WebhookKey({
   children: ReactNode;
 }) {
   const { t } = useLingui();
+  const inboundOrigin = useInboundOrigin();
   const { withIdentityConfirmation, cancel, identityDialog } = useIdentityConfirmation();
   const [open, setOpen] = useState(false);
   const [secret, setSecret] = useState<string | null>(null);
@@ -147,7 +148,7 @@ function WebhookKey({
         <div className="w-full max-w-md">
           <InboundKeyRows
             kind="webhook"
-            path={botInboundUrl(botId, "webhook")}
+            path={appBotInboundUrl(inboundOrigin, botId, "webhook")}
             secret={secret}
             onReveal={() => void reveal()}
             onHide={hide}

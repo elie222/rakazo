@@ -115,7 +115,11 @@ beforeEach(() => {
   client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
 });
 
-async function renderBoard(stream?: AsyncIterable<{ ticketId?: string }>, refusal?: unknown) {
+async function renderBoard(
+  stream?: AsyncIterable<{ ticketId?: string }>,
+  refusal?: unknown,
+  entry = "/app/board",
+) {
   api.boards.subscribe.mockReset();
   api.boards.subscribe.mockResolvedValue(
     stream ?? {
@@ -129,7 +133,7 @@ async function renderBoard(stream?: AsyncIterable<{ ticketId?: string }>, refusa
   await act(async () =>
     root.render(
       <QueryClientProvider client={client}>
-        <MemoryRouter initialEntries={["/app/board"]}>
+        <MemoryRouter initialEntries={[entry]}>
           <BoardPage />
         </MemoryRouter>
       </QueryClientProvider>,
@@ -145,6 +149,46 @@ async function renderBoard(stream?: AsyncIterable<{ ticketId?: string }>, refusa
     },
   };
 }
+
+it.each(["/app/board", "/app/board?view=table"])(
+  "shows loading until the first ticket list confirms %s is empty",
+  async (entry) => {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    api.bots.list.mockResolvedValue([bot("bot-1", "Helper")]);
+    const firstList = deferred<{ tickets: ReturnType<typeof ticket>[] }>();
+    api.tickets.list.mockReset().mockReturnValue(firstList.promise);
+    const page = await renderBoard(undefined, undefined, entry);
+    try {
+      expect(page.container.textContent).not.toContain("No tickets yet");
+      expect(page.container.querySelector('[role="status"][aria-label="Loading"]')).not.toBeNull();
+
+      await act(async () => firstList.resolve({ tickets: [] }));
+      await settle();
+      expect(page.container.querySelector('[data-slot="spinner"]')).toBeNull();
+      expect(page.container.textContent).toContain("No tickets yet");
+    } finally {
+      await page.cleanup();
+      vi.unstubAllGlobals();
+    }
+  },
+);
+
+it("does not show loading or an empty board after the first ticket list fails", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  api.bots.list.mockResolvedValue([bot("bot-1", "Helper")]);
+  api.tickets.list.mockReset().mockRejectedValue(new Error("Tickets unavailable"));
+  const page = await renderBoard();
+  try {
+    expect(page.container.querySelector('[role="alert"]')?.textContent).toContain(
+      "Tickets unavailable",
+    );
+    expect(page.container.querySelector('[data-slot="spinner"]')).toBeNull();
+    expect(page.container.textContent).not.toContain("No tickets yet");
+  } finally {
+    await page.cleanup();
+    vi.unstubAllGlobals();
+  }
+});
 
 it("renders status columns and opens a ticket with comments", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
@@ -486,6 +530,8 @@ it("reopens with cached tickets and refreshes them in the background", async () 
   try {
     // Painted from the cache while the refresh is still out.
     expect(page.container.textContent).toContain("Cached");
+    expect(page.container.querySelector('[data-slot="spinner"]')).toBeNull();
+    expect(page.container.textContent).not.toContain("No tickets yet");
     await act(async () => finish?.resolve({ tickets: [ticket("Fresh", "ticket-1")] }));
     await act(async () => {
       await vi.waitFor(() => expect(page.container.textContent).toContain("Fresh"));
