@@ -37,6 +37,10 @@ organization you're in; open it to switch to another or choose **New organizatio
 **Organization** row under **Account**). Rename or delete the current one in
 **Settings → Organization**; deleting one cancels its plan and removes its bots and data.
 
+To bring your team in, open **Members** there, enter an email and choose **Invite**. Each person
+gets a private space of their own; [share a space](./spaces.md#share-a-space) to work together.
+The owner and admins invite people, change roles and remove members.
+
 ## Usage
 
 On web and desktop, **Settings → Usage** shows runs, tokens and cost by model. On mobile,
