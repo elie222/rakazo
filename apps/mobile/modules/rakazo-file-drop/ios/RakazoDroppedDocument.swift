@@ -89,7 +89,7 @@ enum RakazoDroppedDocument {
     guard let values = try? source.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey, .contentTypeKey]),
       values.isRegularFile == true, let size = values.fileSize
     else { return nil }
-    let type = values.contentType.flatMap { supported($0) ? $0 : nil } ?? expectedType
+    let type = values.contentType ?? expectedType
     var name = suggestedName ?? source.lastPathComponent
     let sourceExtension = source.pathExtension
     if URL(fileURLWithPath: name).pathExtension.isEmpty,
@@ -98,8 +98,7 @@ enum RakazoDroppedDocument {
       name += "." + suffix
     }
     var payload: [String: Any] = ["name": name, "mimeType": type?.preferredMIMEType ?? "", "size": size]
-    guard let type else { return payload }
-    let image = type.conforms(to: .image)
+    let image = type?.conforms(to: .image) == true
     let limit = maxBytes * (image ? resizeHeadroom : 1)
     guard size <= limit else { return payload }
     let destination = directory.appendingPathComponent(UUID().uuidString)
