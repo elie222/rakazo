@@ -10,6 +10,7 @@ import { redactConnectorPayload } from "../../integrations/connector-safety.js";
 import { editMemory } from "../../memory/memory-tools.js";
 import { MAX_RECALLED_MEMORIES } from "../../runtime/context/history-compaction.prompt.js";
 import { sharedMemorySaveError } from "../../tools/builtin.tool-definition.js";
+import { RememberInputSchema } from "../../tools/builtin-conversation.tool-definition.js";
 import type { RunContext } from "../assembly/run-context.js";
 import { markReadOutsideContent } from "../assembly/run-context.js";
 import { argsError } from "../turn/tool-args.js";
@@ -102,6 +103,8 @@ export const memoryTools: ToolHandlers = {
   async remember(ctx, call) {
     const { deps, runId, bot, thread, context } = ctx;
     const { args } = call;
+    const parsed = RememberInputSchema.safeParse(args);
+    if (!parsed.success) return call.finish({ error: argsError(parsed.error) });
     // A save may edit any document the bot already has, such as an imported one. A path it
     // does not have means the index: a save never creates a document, so models cannot
     // invent file names to get past the size cap.
@@ -114,11 +117,7 @@ export const memoryTools: ToolHandlers = {
         snapshot = await read(MEMORY_INDEX_PATH);
       const existing = snapshot.documents[0];
       const path = existing?.path ?? MEMORY_INDEX_PATH;
-      const edit = editMemory(
-        existing?.content ?? "",
-        String(args.content ?? ""),
-        String(args.old_text ?? ""),
-      );
+      const edit = editMemory(existing?.content ?? "", parsed.data.operations);
       if ("error" in edit) return call.finish(edit);
       const { content } = edit;
       if (content === (existing?.content ?? "")) return call.finish({ ok: true });

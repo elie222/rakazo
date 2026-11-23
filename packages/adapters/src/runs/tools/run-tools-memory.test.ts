@@ -161,7 +161,12 @@ describe("remembering in another private memory document", () => {
 
   it("edits one entry and leaves the rest of the document", async () => {
     const { memory, result } = remember(
-      { path: "USER.md", old_text: "Lives in Paris", content: "- Lives in Berlin" },
+      {
+        path: "USER.md",
+        operations: [
+          { action: "replace", old_text: "Lives in Paris", content: "- Lives in Berlin" },
+        ],
+      },
       [{ path: "USER.md", content: "# User\n- Lives in Paris\n- Likes tea\n", revision: 3 }],
     );
     await expect(result).resolves.toEqual({ ok: true });
