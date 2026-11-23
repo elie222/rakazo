@@ -4,7 +4,6 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { parseArgs } from "node:util";
 import type { AgentContextStrategy, AgentRunRequest } from "@rakazo/adapter-kit";
-import type { ModelConnectInput } from "@rakazo/contracts";
 import { ModelConnectInputSchema, ReplyModeSchema } from "@rakazo/contracts";
 import { loadRootEnv } from "@rakazo/core/node/load-root-env";
 import { z } from "zod";
@@ -442,13 +441,13 @@ async function main() {
    * fixture of the one person running it and the app never bills, so the sign-in serves only them.
    */
   const readModel = (raw: unknown) => {
-    const named = z
-      .object({ provider: z.string(), modelId: z.string().trim().min(1) })
-      .safeParse(raw);
+    // The connection's own fields, without the key it does not need.
+    const named = z.object(ModelConnectInputSchema.shape).safeParse(raw);
     const onPlan =
       named.success &&
+      named.data.modelId?.trim() &&
       personalCliRuntime(named.data.provider, named.data.modelId, async () => undefined);
-    if (onPlan) return { connection: named.data as ModelConnectInput, onPlan };
+    if (onPlan) return { connection: named.data, onPlan };
     const parsed = ModelConnectInputSchema.safeParse(raw);
     return parsed.success && parsed.data.modelId?.trim()
       ? { connection: parsed.data, onPlan: undefined }
