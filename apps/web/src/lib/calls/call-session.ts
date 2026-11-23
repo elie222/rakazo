@@ -47,6 +47,7 @@ import { speaker } from "./tts.js";
 type CallPhase = "ringing" | "listening" | "thinking" | "speaking";
 
 export interface CallState {
+  spaceId: string | null;
   botId: string;
   botName: string;
   botColor: string;
@@ -197,6 +198,7 @@ export function startCall(call: {
   awaitedRunId = null;
   finishedRunIds.clear();
   state = {
+    spaceId: selectedSpaceId(),
     botId: call.botId,
     botName: call.botName,
     botColor: call.botColor ?? "",
@@ -251,7 +253,7 @@ export function startCall(call: {
       set({ caption: heard.error });
     }
   });
-  watchThread(call.botId);
+  watchThread(call.botId, state.spaceId);
   emit();
   const ringing = new AbortController();
   pickup = ringing;
@@ -467,8 +469,8 @@ export function setCallMinimized(minimized: boolean): void {
 }
 
 /** Live feed for the bot on the call, independent of whichever thread is on screen. */
-function watchThread(botId: string) {
-  const client = createSpaceRpc(selectedSpaceId());
+function watchThread(botId: string, spaceId: string | null) {
+  const client = createSpaceRpc(spaceId);
   const controller = new AbortController();
   const avatarSource = newLogoAvatarActivitySource();
   const feedCallId = callId;
@@ -607,27 +609,24 @@ function pendingApproval(snapshot: ThreadSnapshot): CallState["approval"] {
     if (!message?.runId || (followedRun && message.runId !== followedRun) || !ids.has(message.id))
       continue;
     const block = message.blocks.find((part) => part.kind === "ask" && part.status !== "answered");
-    if (
-      block?.kind === "ask" &&
-      block.approvalEffectId &&
-      isApprovalAskBlock(block) &&
-      !acceptedApprovalIds.has(block.approvalEffectId)
-    )
-      return {
-        messageId: message.id,
-        effectId: block.approvalEffectId,
-        runId: message.runId,
-        block,
-      };
+    if (block?.kind !== "ask" || !isApprovalAskBlock(block)) continue;
+    const effectId = block.approvalEffectId;
+    if (effectId && !acceptedApprovalIds.has(effectId))
+      return { messageId: message.id, effectId, runId: message.runId, block };
   }
   return null;
 }
 
 /** Only the on-screen card submits a decision. Follow the resumed run even if the mic is idle. */
-export async function answerCallApproval(effectId: string, answer: string): Promise<void> {
+export async function answerCallApproval(
+  effectId: string,
+  answer: string,
+  client = feed?.client,
+): Promise<void> {
   const approval = state?.approval;
   if (
     !feed ||
+    !client ||
     !state ||
     !approval ||
     approval.effectId !== effectId ||
@@ -642,26 +641,21 @@ export async function answerCallApproval(effectId: string, answer: string): Prom
   awaitingReply = true;
   spokenMessageIds.add(messageId);
   try {
-    const request = currentFeed.client.threads.answer({
+    const request = client.threads.answer({
       botId: state.botId,
       runId: approval.runId,
       messageId,
       approvalEffectId: effectId,
       answer,
     });
-    const release = callSends.track(callId, request);
-    try {
-      await request;
-    } finally {
-      release();
-    }
+    await request.finally(callSends.track(callId, request));
+    if (feed !== currentFeed) return;
+    acceptedApprovalIds.add(effectId);
+    if (state?.approval?.effectId === effectId) set({ approval: null, caption: "" });
   } finally {
+    if (feed === currentFeed) await bestEffort("refresh call after approval", currentFeed.load());
     currentFeed.pendingAnswers.delete(messageId);
   }
-  if (feed !== currentFeed) return;
-  acceptedApprovalIds.add(effectId);
-  if (state?.approval?.effectId === effectId) set({ approval: null, caption: "" });
-  await bestEffort("refresh call after approval", currentFeed?.load());
 }
 
 /** The tail of playback reaches the microphone after the audio element ends. */
@@ -773,7 +767,10 @@ async function handleTranscript(text: string) {
     if (closing) hangUpAfterReply = true;
     set({
       heard: "",
-      caption: acceptedApprovalIds.has(turn.effectId) ? "" : t`Approve or deny it on screen.`,
+      caption:
+        state.approval?.effectId === turn.effectId || acceptedApprovalIds.has(turn.effectId)
+          ? ""
+          : t`Approve or deny it on screen.`,
     });
     void listen();
     return;

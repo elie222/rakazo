@@ -12,6 +12,7 @@ import {
   toggleTranscript,
   useCallSession,
 } from "../../lib/calls/call-session";
+import { SpaceRpcProvider, useSpaceRpc } from "../../lib/query/space-rpc";
 import { useEventListener } from "../../lib/use-event-listener";
 import { AskCard } from "../messages/AskCard";
 import { OutgoingDraftCard } from "../messages/OutgoingDraftCard";
@@ -20,6 +21,26 @@ import { CallWindow } from "./CallWindow";
 const BARS = [9, 15, 21, 15, 9];
 const TRANSCRIPT_LINES = 4;
 const EDITABLE = /^(?:input|textarea|select)$/i;
+
+function CallApprovalCard({ approval }: { approval: NonNullable<CallState["approval"]> }) {
+  const rpc = useSpaceRpc();
+  return approval.block.outgoingDraft ? (
+    <OutgoingDraftCard
+      block={approval.block}
+      canAnswer
+      onAnswer={(value, client) => answerCallApproval(approval.effectId, value, client)}
+    />
+  ) : (
+    <AskCard
+      block={approval.block}
+      rpc={rpc}
+      canAnswer
+      canDismiss={false}
+      onDismiss={async () => {}}
+      onAnswer={(value) => answerCallApproval(approval.effectId, value, rpc)}
+    />
+  );
+}
 
 function callClock(seconds: number): string {
   const minutes = Math.floor(seconds / 60);
@@ -169,23 +190,9 @@ export function CallCard({ onSettings }: { onSettings: () => void }) {
       >
         {approval ? (
           <div>
-            {approval.block.outgoingDraft ? (
-              <OutgoingDraftCard
-                key={approval.effectId}
-                block={approval.block}
-                canAnswer
-                onAnswer={(value) => answerCallApproval(approval.effectId, value)}
-              />
-            ) : (
-              <AskCard
-                key={approval.effectId}
-                block={approval.block}
-                canAnswer
-                canDismiss={false}
-                onDismiss={async () => {}}
-                onAnswer={(value) => answerCallApproval(approval.effectId, value)}
-              />
-            )}
+            <SpaceRpcProvider spaceId={call.spaceId}>
+              <CallApprovalCard key={approval.effectId} approval={approval} />
+            </SpaceRpcProvider>
           </div>
         ) : null}
         {call.transcriptOpen ? (

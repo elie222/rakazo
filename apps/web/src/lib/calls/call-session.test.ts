@@ -275,7 +275,6 @@ describe("call session", () => {
           blocks: [{ kind: "text", text: "continue the current task" }],
         },
       });
-      await vi.advanceTimersByTimeAsync(0);
       recovered.send({
         ...userMessageEvent("call-1"),
         id: "event-16",
@@ -696,6 +695,9 @@ describe("call session", () => {
       show([first, second]);
       await feed.refresh();
       expect(getSnapshot()?.approval?.effectId).toBe("effect-1");
+      await heard("allow");
+      expect(getSnapshot()?.caption).toBe("");
+      expect(answer).not.toHaveBeenCalled();
       show([{ ...first, status: "answered" }, second]);
       await answerCallApproval("effect-1", "allow");
       expect(getSnapshot()?.approval?.effectId).toBe("effect-2");
@@ -708,6 +710,29 @@ describe("call session", () => {
           answer: "deny",
         }),
       );
+    } finally {
+      forgetSignedInUser();
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("reconciles an approval already answered by another client after a rejected tap", async () => {
+    vi.stubGlobal("window", { addEventListener: vi.fn() });
+    try {
+      syncCallIdentity("me");
+      const turn = callerMessage("check the site");
+      const card = approvalMessage();
+      const feed = await approvalWait(turn, card);
+      getThread.mockResolvedValue(snapshot([turn, card], { ...waitingRun!, userId: "me" }));
+      await feed?.refresh();
+      answer.mockRejectedValueOnce(new Error("no longer awaiting an answer"));
+      getThread.mockResolvedValue(snapshot([turn, answered(card)]));
+      await expect(answerCallApproval("effect-1", "allow")).rejects.toThrow(
+        "no longer awaiting an answer",
+      );
+      expect(getSnapshot()?.approval).toBeNull();
+      await expect(answerCallApproval("effect-1", "allow")).rejects.toThrow();
+      expect(answer).toHaveBeenCalledOnce();
     } finally {
       forgetSignedInUser();
       vi.unstubAllGlobals();
@@ -767,6 +792,7 @@ describe("call session", () => {
           answerCallApproval("effect-1", decision === "allow" ? "deny" : "allow"),
         ).rejects.toThrow();
         expect(answer).toHaveBeenCalledTimes(1);
+        getThread.mockResolvedValueOnce(waiting("me"));
         pending.reject(new Error("offline"));
         await expect(first).rejects.toThrow("offline");
         await answerCallApproval("effect-1", decision);
@@ -1990,22 +2016,29 @@ function interim(transcript: string) {
 }
 
 function eventStream() {
-  let deliver: ((result: IteratorResult<ProductEvent>) => void) | undefined;
-  const events: AsyncIterable<ProductEvent> = {
-    [Symbol.asyncIterator]() {
-      return {
-        next: () => {
-          const next = deferred<IteratorResult<ProductEvent>>();
-          deliver = next.resolve;
-          return next.promise;
-        },
-      };
-    },
-  };
+  const queue: ProductEvent[] = [];
+  let ready = deferred<void>();
+  let ended = false;
+  async function* events() {
+    while (!ended || queue.length) {
+      const next = queue.shift();
+      if (next) yield next;
+      else {
+        await ready.promise;
+        ready = deferred<void>();
+      }
+    }
+  }
   return {
-    events,
-    send: (event: ProductEvent) => deliver?.({ value: event, done: false }),
-    end: () => deliver?.({ value: undefined, done: true }),
+    events: events(),
+    send(event: ProductEvent) {
+      queue.push(event);
+      ready.resolve();
+    },
+    end() {
+      ended = true;
+      ready.resolve();
+    },
   };
 }
 

@@ -6,6 +6,7 @@ import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { CallState } from "../../lib/calls/call-session";
 import { answerCallApproval, endCall } from "../../lib/calls/call-session";
+import { rpcForSpace } from "../../lib/query/rpc";
 import { CallCard } from "./CallCard";
 
 vi.mock("@lingui/react/macro", () => ({
@@ -132,6 +133,7 @@ it("reviews an outgoing draft and sends the edited values from the call", async 
   };
   render({
     caption: "Microphone disconnected",
+    spaceId: "original-call-space",
     approval: {
       runId: "run",
       messageId: "draft",
@@ -170,6 +172,7 @@ it("reviews an outgoing draft and sends the edited values from the call", async 
   expect(answerCallApproval).toHaveBeenCalledWith(
     "draft-effect",
     JSON.stringify({ outgoingDraft: { ...values, body: "Tomorrow at four" } }),
+    rpcForSpace("original-call-space"),
   );
 });
 
