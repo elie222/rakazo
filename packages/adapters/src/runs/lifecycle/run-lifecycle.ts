@@ -182,7 +182,7 @@ export const RUN_SETUP_FAILURE_LIMIT = 8;
 /** The most of a setup failure's reason an attempt keeps; the log line has the whole error. */
 export const RUN_SETUP_FAILURE_REASON_MAX = 2_000;
 
-/** A paused turn's pending tool is not offered right now, such as while the user's own computer is offline. */
+/** A paused turn's pending tool is not offered right now, such as after the user unpaired their computer. */
 export class PausedTurnToolsUnavailableError extends Error {
   constructor() {
     super(
