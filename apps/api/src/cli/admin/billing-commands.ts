@@ -290,7 +290,12 @@ async function invoiceCredits(
     fromInvoiceMicros: purchase?.amountMicros ?? 0n,
     // Includes holds for calls still running.
     usedMicros: lot?.usedMicros ?? 0n,
-    expiredMicros: lot?.expiredMicros ?? 0n,
+    // Credits past their expiry already left the balance, though the reconciler may not have
+    // marked them expired yet.
+    expiredMicros:
+      lot?.expiresAt && lot.expiresAt <= new Date()
+        ? lot.amountMicros - lot.usedMicros
+        : (lot?.expiredMicros ?? 0n),
     balanceMicros: account.balanceMicros,
     byModel: spent
       .map(({ model, _sum }) => ({ model: model ?? "unknown", micros: -(_sum.amountMicros ?? 0n) }))
@@ -310,15 +315,19 @@ function refundPlan(credits: InvoiceCredits | null, paidMinor: number, full: boo
   const bought = credits?.fromInvoiceMicros ?? 0n;
   const used = credits && credits.usedMicros < bought ? credits.usedMicros : bought;
   const paid = BigInt(paidMinor);
-  // Rounded up, so the credits the kept amount buys back always cover what was used.
-  const kept = full || bought === 0n ? 0n : (used * paid + bought - 1n) / bought;
+  // Sync grants whole cents in proportion to what stays paid, so keep the least payment whose
+  // grant covers the cents used.
+  const boughtCents = bought / 10_000n;
+  const usedCents = (used + 9_999n) / 10_000n;
+  const kept =
+    full || boughtCents === 0n ? 0n : (usedCents * paid + boughtCents - 1n) / boughtCents;
   if (kept >= paid)
     throw new AdminCommandError(
       "This invoice's credits are all used, so nothing is left to refund. Add --full to refund the whole charge.",
     );
   // Sync shrinks the purchase to what the kept amount buys, cutting expired credits first; only
   // the cut from credits still available comes off the balance.
-  const remaining = (bought * kept) / paid;
+  const remaining = ((boughtCents * kept) / paid) * 10_000n;
   const available = (amount: bigint, expired: bigint) => {
     const left = amount - used - expired;
     return left > 0n ? left : 0n;

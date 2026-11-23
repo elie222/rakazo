@@ -129,7 +129,8 @@ export async function stripeInvoiceRefund(
     if (
       existing &&
       live.length === 1 &&
-      existing.metadata?.[REFUND_MARK] === "1" &&
+      // Full refunds sent before the mark existed carry none.
+      (existing.metadata?.[REFUND_MARK] === "1" || existing.amount === charge.amount) &&
       existing.amount === charge.amount_refunded &&
       (amountMinor === undefined || amountMinor === existing.amount)
     )
