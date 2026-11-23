@@ -4,10 +4,11 @@ import type { ComposerMention } from "@rakazo/core";
 import { mentionChipKey } from "@rakazo/core";
 import type { Ref } from "react";
 import type { ScrollViewInstance } from "react-native";
-import { Pressable, ScrollView, Text, View } from "react-native";
+import { ScrollView, Text, View } from "react-native";
 import { useMobileTokens } from "../../lib/native/native";
 import { BotAvatar } from "../bots/bot-avatar";
 import { NativeSymbol } from "../native/native-symbol";
+import { ComposerPickerRow } from "./composer-picker-row";
 
 const MENTION_ROW_HEIGHT = 44;
 const MENTION_ROW_PADDING = 14;
@@ -61,17 +62,15 @@ export function ComposerMentionPicker({
               }}
             />
           ) : null}
-          <Pressable
-            accessibilityRole="button"
+          <ComposerPickerRow
             accessibilityLabel={t`@${ph({ name: mention.name })}`}
-            accessibilityState={{ selected: index === highlightedIndex }}
+            selected={index === highlightedIndex}
             onPress={() => onPick(mention)}
             style={{
               flexDirection: "row",
               alignItems: "center",
               gap: MENTION_ROW_GAP,
               minHeight: MENTION_ROW_HEIGHT,
-              backgroundColor: index === highlightedIndex ? tokens.muted : undefined,
               paddingHorizontal: MENTION_ROW_PADDING,
             }}
           >
@@ -95,7 +94,7 @@ export function ComposerMentionPicker({
                 {mention.subtitle}
               </Text>
             ) : null}
-          </Pressable>
+          </ComposerPickerRow>
         </View>
       ))}
     </ScrollView>
