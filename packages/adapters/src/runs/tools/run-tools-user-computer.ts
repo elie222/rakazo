@@ -246,7 +246,7 @@ async function outsideEventDelivery(
  */
 export async function botChainFromOwner(
   prisma: PrismaClient,
-  run: { userId: string; spaceId: string; sourceMessageId: string | null },
+  run: { userId: string; spaceId: string; botId: string; sourceMessageId: string | null },
   access: UserComputerAccess,
   maxHops = BOT_MESSAGE_MAX_HOPS,
 ): Promise<boolean> {
@@ -304,8 +304,13 @@ export async function botChainFromOwner(
     if (sender.trigger === "routine") return access.routines && scheduledRoutine(sender);
     if (sender.trigger === "messaging")
       return access.messaging && (await ownerDirectMessage(prisma, sender, access));
+    // The bot that took in the event stays off the computer, even when work comes back to it.
     if (sender.trigger === "webhook")
-      return access.webhookChains && (await outsideEventDelivery(prisma, sender));
+      return (
+        access.webhookChains &&
+        sender.botId !== run.botId &&
+        (await outsideEventDelivery(prisma, sender))
+      );
     if (sender.trigger === "user" || sender.trigger === "follow_up") {
       const source = sender.sourceMessageId
         ? await prisma.message.findUnique({

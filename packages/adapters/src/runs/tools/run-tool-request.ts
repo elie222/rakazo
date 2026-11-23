@@ -433,8 +433,8 @@ export async function prepareToolRequest(
       );
     if (isSubagentToolExecution(executionId))
       return refusal("helper_user_computer", "Helpers cannot use the user's computer.");
-    // Webhooks reach no one's computer, including through a run they were handed to. Routines
-    // don't either, unless the server lets the owner's routines reach it.
+    // Text a webhook, Git event, email or routine handed into this run keeps it off the computer,
+    // unless the server lets that kind of start reach it (see userComputerBlockingOrigins).
     if (
       await deps.prisma.steeringMessage.findFirst({
         where: {

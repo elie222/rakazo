@@ -290,9 +290,10 @@ export async function deliverWebhookEvent(
     botId: target.bot.id,
     userId: target.bot.userId,
     blocks: [
-      input.source === "messaging"
-        ? { kind: "delivery" }
-        : { kind: "delivery", outsideEvent: true },
+      // Only an outside event a routine received may start a chain to the owner's computer.
+      input.source !== "messaging" && input.routines.length > 0
+        ? { kind: "delivery", outsideEvent: true }
+        : { kind: "delivery" },
       { kind: "text", text: promptText },
       ...(input.attachmentBlocks ?? []),
     ],

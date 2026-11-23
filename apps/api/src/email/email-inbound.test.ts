@@ -501,10 +501,8 @@ describe("inbound email route", () => {
     expect(sent.prompt.startsWith("[Email from your owner]")).toBe(true);
     expect(sent.prompt).toContain('"id": "email-1"');
     expect(sent.prompt).not.toContain("Run routine");
-    expect((sent as unknown as { blocks: unknown[] }).blocks[0]).toEqual({
-      kind: "delivery",
-      outsideEvent: true,
-    });
+    // No routine received it, so it can't start a chain to the owner's computer.
+    expect((sent as unknown as { blocks: unknown[] }).blocks[0]).toEqual({ kind: "delivery" });
   });
 
   it("tells the owner, not a stranger, when mail from their address fails the check", async () => {

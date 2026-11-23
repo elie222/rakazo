@@ -536,10 +536,10 @@ describe("botChainFromOwner", () => {
       outbound("out-1", "run-1");
       senderRun("run-1", run);
     };
-    const check = (access = ownBots, maxHops?: number) =>
+    const check = (access = ownBots, maxHops?: number, botId = "bot-dev") =>
       botChainFromOwner(
         prisma as never,
-        { userId: "user-1", spaceId: "space-1", sourceMessageId: "in-1" },
+        { userId: "user-1", spaceId: "space-1", botId, sourceMessageId: "in-1" },
         access,
         maxHops,
       );
@@ -722,6 +722,16 @@ describe("botChainFromOwner", () => {
     c.fromSender({ trigger: "webhook", sourceMessageId: "src-1" });
     await expect(c.check({ ...ownBots, webhookChains: true })).resolves.toBe(true);
     await expect(c.check(ownBots)).resolves.toBe(false);
+  });
+
+  it("keeps the bot that received the outside event off the computer when work comes back to it", async () => {
+    const c = chain();
+    c.eventDelivery("src-1");
+    c.fromSender({ trigger: "webhook", sourceMessageId: "src-1" });
+    await expect(c.check(all, undefined, "bot-sender")).resolves.toBe(false);
+    c.ownerMessage("src-1");
+    c.fromSender({ trigger: "user", sourceMessageId: "src-1" });
+    await expect(c.check(all, undefined, "bot-sender")).resolves.toBe(true);
   });
 
   it("refuses a chain from a chat-app wake, an unmarked or misplaced delivery, or a group", async () => {
