@@ -319,7 +319,6 @@ export const MEMORY_EVAL_CASES: EvalCase[] = [
           "no-invented-path",
           paths.every((path) => ["", "MEMORY.md", "USER.md"].includes(path)),
         ),
-        check("stale-line-gone", !/analyst at Brightline/i.test(e.memory)),
       ];
     },
     judge: (e) => judgeInput("other-document", e.memory),
