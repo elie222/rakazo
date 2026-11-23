@@ -4,6 +4,8 @@ import { ROUTINE_NAME_MAX_LENGTH } from "@rakazo/contracts";
 import { cronFromPreset, isOneShotRoutineCrons, routineRepeats, wallClock } from "@rakazo/core";
 import {
   Button,
+  Field,
+  FieldLabel,
   Input,
   InputGroup,
   InputGroupAddon,
@@ -297,11 +299,11 @@ export function RoutineEditor({
             ) : null}
 
             {repeats ? (
-              <div className="text-body text-muted-foreground">
-                <label htmlFor={`${fieldId}-ends`}>
+              <Field>
+                <FieldLabel htmlFor={`${fieldId}-ends`} className="font-normal">
                   <Trans>Ends</Trans>
-                </label>
-                <InputGroup className="mt-2">
+                </FieldLabel>
+                <InputGroup>
                   <InputGroupInput
                     id={`${fieldId}-ends`}
                     type="date"
@@ -321,7 +323,7 @@ export function RoutineEditor({
                     </InputGroupAddon>
                   ) : null}
                 </InputGroup>
-              </div>
+              </Field>
             ) : null}
 
             {needsOneShotArm ? (

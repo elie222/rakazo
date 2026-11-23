@@ -1,17 +1,16 @@
 import { useLingui } from "@lingui/react/macro";
-import { dayOfLocalDate } from "../../lib/native/calendar-day";
 import { SettingsDateRow, settingsDateRowAvailable } from "../settings/settings-date-row";
 import { SettingsGroup, SettingsSwitch } from "../settings/settings-group";
-
-const WEEK_MS = 7 * 86_400_000;
 
 export function RoutineEndDate({
   endsOn,
   today,
+  firstDay,
   onChange,
 }: {
   endsOn: string;
   today: string;
+  firstDay: string;
   onChange: (endsOn: string) => void;
 }) {
   const { t } = useLingui();
@@ -21,7 +20,7 @@ export function RoutineEndDate({
       <SettingsSwitch
         label={t`End date`}
         value={Boolean(endsOn)}
-        onChange={(on) => onChange(on ? dayOfLocalDate(new Date(Date.now() + WEEK_MS)) : "")}
+        onChange={(on) => onChange(on ? firstDay : "")}
       />
       {endsOn ? (
         <SettingsDateRow title={t`Ends`} day={endsOn} minimumDay={today} onChange={onChange} />

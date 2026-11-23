@@ -1,7 +1,7 @@
 import type { Routine, RoutineEmailSenders } from "@rakazo/contracts";
-import { isEndOfZonedDay, wallClock, zonedEndDateTime } from "../primitives/time.js";
+import { DAY_MS, isEndOfZonedDay, wallClock, zonedEndDateTime } from "../primitives/time.js";
 import type { CronPreset } from "./schedule.js";
-import { isOneShotRoutineCrons, presetFromCron } from "./schedule.js";
+import { isOneShotRoutineCrons, nextCronDateAcross, presetFromCron } from "./schedule.js";
 
 /** The fields every routine editor changes; an editor that offers more triggers adds its own. */
 export type RoutineDraft = {
@@ -70,6 +70,13 @@ export function routineEndUpdate(
   const endsAt = routineDraftEndsAt(endsOn, repeats, routine.timezone);
   if (endsAt === null) return routine.endsAt ? { endsAt: null } : {};
   return endsOn === endsOnDay(routine) ? {} : { endsAt };
+}
+
+export function defaultRoutineEndDay(crons: string[], timezone: string, now = new Date()): string {
+  const weekAhead = new Date(now.getTime() + 7 * DAY_MS);
+  const next = nextCronDateAcross(crons, now, timezone);
+  const later = next && next.getTime() > weekAhead.getTime() ? next : weekAhead;
+  return wallClock(later, timezone).slice(0, 10);
 }
 
 export function formatRoutineEnd(endsAt: string, timezone: string, locale: string): string {

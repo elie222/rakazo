@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  defaultRoutineEndDay,
   draftFromRoutine,
   formatRoutineEnd,
   routineComputerUpdate,
@@ -84,6 +85,12 @@ describe("routine end in an editor", () => {
     expect(
       routineCopy(routine, "Deals (copy)", Date.parse("2026-12-01T00:00:00.000Z")),
     ).toMatchObject({ endsAt: null, active: false });
+  });
+
+  it("suggests a week ahead, or the next run when that comes later", () => {
+    const now = new Date("2026-11-23T12:00:00.000Z");
+    expect(defaultRoutineEndDay(["0 9 * * *"], "UTC", now)).toBe("2026-11-30");
+    expect(defaultRoutineEndDay(["0 9 15 * *"], "UTC", now)).toBe("2026-12-15");
   });
 
   it("names the time only when the routine ends before its day is over", () => {

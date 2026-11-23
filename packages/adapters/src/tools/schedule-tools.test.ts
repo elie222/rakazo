@@ -2021,6 +2021,7 @@ describe("schedule tools with events", () => {
     const prisma = accountZonePrisma(
       {
         routine: { create, findMany: noRoutines },
+        user: { findUnique: vi.fn(async () => null) },
         bot: {
           findFirst: vi.fn(async () => ({ id: "bot-1", userId: options.botUserId ?? "user-1" })),
           findUnique: vi.fn(async () => ({ ...stored })),
@@ -2043,6 +2044,24 @@ describe("schedule tools with events", () => {
     } as unknown as Parameters<typeof createScheduleFromTool>[0];
     return { deps, create, enqueue, put, key, notices };
   }
+
+  it("makes no webhook key for a routine whose end it refuses", async () => {
+    const { deps, create, put } = eventDeps();
+    const result = await createScheduleFromTool(deps, {
+      ...owner,
+      ...scheduleCreateFields({
+        name: "Deploys",
+        prompt: "Summarize the deploy",
+        on: { webhook: true },
+        endAt: "2031-01-01",
+      }),
+    });
+    expect(result).toEqual({
+      error: expect.stringContaining("Only a repeating schedule or a watch can have an end date."),
+    });
+    expect(put).not.toHaveBeenCalled();
+    expect(create).not.toHaveBeenCalled();
+  });
 
   it("creates a routine only a webhook starts, and keeps its key from the result", async () => {
     const { deps, create, enqueue, put, key, notices } = eventDeps();

@@ -9,7 +9,12 @@ vi.mock("@rakazo/db", async (importOriginal) => ({
   ...db,
 }));
 
-import { deleteSpentRoutine, routineEndError, routineEnded } from "./routine-end.js";
+import {
+  deleteSpentRoutine,
+  deleteStrandedEndedRoutines,
+  routineEndError,
+  routineEnded,
+} from "./routine-end.js";
 
 const now = new Date("2026-11-23T12:00:00.000Z");
 const daily = {
@@ -138,5 +143,44 @@ describe("deleteSpentRoutine", () => {
     });
     await expect(deleteSpentRoutine(deps, input)).resolves.toBe(false);
     expect(deleteMany).not.toHaveBeenCalled();
+  });
+});
+
+describe("deleteStrandedEndedRoutines", () => {
+  it("deletes an ended routine with no run under way once its last run is an hour old", async () => {
+    const stranded = {
+      ...daily,
+      id: "routine-1",
+      spaceId: "space-1",
+      botId: "bot-1",
+      userId: "user-1",
+      threadId: null,
+      name: "Black Friday deals",
+      nextRunAt: null,
+      endsAt: new Date("2026-11-23T23:59:59.999Z"),
+    };
+    const findMany = vi.fn(async () => [stranded]);
+    const deleteMany = vi.fn(async () => ({ count: 1 }));
+    const deps = {
+      prisma: {
+        routine: { findMany, findUnique: vi.fn(async () => stranded), deleteMany },
+        bot: { findUnique: vi.fn(async () => null) },
+      },
+      events: { notify: vi.fn(), publishSpaceChange: vi.fn(async () => undefined) },
+    } as unknown as Parameters<typeof deleteStrandedEndedRoutines>[0];
+
+    await deleteStrandedEndedRoutines(deps, now);
+
+    expect(findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          active: true,
+          nextRunAt: null,
+          OR: [{ lastRunAt: null }, { lastRunAt: { lt: new Date("2026-11-23T11:00:00.000Z") } }],
+          runs: { none: { status: { in: expect.any(Array) } } },
+        }),
+      }),
+    );
+    expect(deleteMany).toHaveBeenCalledOnce();
   });
 });

@@ -653,12 +653,16 @@ export async function createScheduleFromTool(
   }
   // The timing is checked again at the insert, in the zone it is saved in; checking it here
   // first means a routine that cannot be saved makes no key.
-  if (!eventsOnly && (events.webhookEnabled || events.githubEnabled)) {
-    const timing = resolveScheduleTiming(
-      input.schedule,
-      input.timezone ?? (await userTimeZone(deps.prisma, input.userId)),
-    );
-    if (!timing.ok) return { error: timing.error };
+  if ((events.webhookEnabled || events.githubEnabled) && (!eventsOnly || input.endAt)) {
+    const zone = input.timezone ?? (await userTimeZone(deps.prisma, input.userId));
+    const timing = eventsOnly ? null : resolveScheduleTiming(input.schedule, zone);
+    if (timing && !timing.ok) return { error: timing.error };
+    const end = newRoutineEnd(input.endAt, zone, {
+      crons: timing?.ok ? [timing.cron] : [],
+      watch: null,
+      nextRunAt: timing?.ok ? timing.nextRunAt : null,
+    });
+    if ("error" in end) return { error: `${end.error} ${nowIn(zone)}` };
   }
   const keyError = await ensureWebhookKey(
     deps,
@@ -881,9 +885,14 @@ async function createWatchFromTool(
   } catch (error) {
     return { error: error instanceof Error ? error.message : "Invalid change trigger." };
   }
+  const nextRunAt = firstWatchCheck();
+  if ((input.events.webhookEnabled || input.events.githubEnabled) && input.endAt) {
+    const zone = input.timezone ?? (await userTimeZone(deps.prisma, input.userId));
+    const end = newRoutineEnd(input.endAt, zone, { crons: [], watch: parsed.data, nextRunAt });
+    if ("error" in end) return { error: `${end.error} ${nowIn(zone)}` };
+  }
   const keyError = await ensureWebhookKey(deps, input, input.events);
   if (keyError) return { error: keyError };
-  const nextRunAt = firstWatchCheck();
   // As with a timed routine, a defaulted zone is read under a share lock in the same
   // transaction as the insert, so a zone change cannot cross the creation.
   const insertWatch = (client: Pick<Prisma.TransactionClient, "routine">, timezone: string) => {

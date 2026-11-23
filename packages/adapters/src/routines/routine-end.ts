@@ -188,3 +188,25 @@ export async function deleteEndedRoutine(
     { oneShots: false },
   );
 }
+
+const STRANDED_AFTER_MS = 60 * 60_000;
+
+export async function deleteStrandedEndedRoutines(
+  deps: SpentRoutineDeps,
+  now = new Date(),
+): Promise<void> {
+  const stranded = await deps.prisma.routine.findMany({
+    where: {
+      active: true,
+      nextRunAt: null,
+      endsAt: { not: null },
+      OR: [{ lastRunAt: null }, { lastRunAt: { lt: new Date(now.getTime() - STRANDED_AFTER_MS) } }],
+      runs: { none: { status: { in: [...ACTIVE_RUN_STATUSES] } } },
+    },
+    select: { id: true, spaceId: true, userId: true },
+    take: 50,
+  });
+  for (const routine of stranded) {
+    await deleteEndedRoutine(deps, { ...routine, routineId: routine.id });
+  }
+}

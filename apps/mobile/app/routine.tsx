@@ -5,6 +5,7 @@ import { ROUTINE_NAME_MAX_LENGTH } from "@rakazo/contracts";
 import {
   cronFromPreset,
   defaultCronPreset,
+  defaultRoutineEndDay,
   draftFromRoutine,
   emptyRoutineDraft,
   formatRoutineEnd,
@@ -362,8 +363,9 @@ function RoutineEditor({
   const source = base ?? template;
   const kept = source ? routineWithDraftTriggers(source, draft) : null;
   const webTriggers = kept ? routineWebTriggers(kept) : [];
-  const repeats =
-    !locked && routineRepeats(draft.schedules.map(cronFromPreset), Boolean(kept?.watch));
+  const draftCrons = draft.schedules.map(cronFromPreset);
+  const repeats = !locked && routineRepeats(draftCrons, Boolean(kept?.watch));
+  const zone = draft.timezone ?? deviceTimeZone() ?? "UTC";
 
   // On Android, back leaves the form for the routine instead of leaving the routine.
   useEffect(() => {
@@ -576,10 +578,8 @@ function RoutineEditor({
           {repeats ? (
             <RoutineEndDate
               endsOn={draft.endsOn}
-              today={wallClock(new Date(), draft.timezone ?? deviceTimeZone() ?? "UTC").slice(
-                0,
-                10,
-              )}
+              today={wallClock(new Date(), zone).slice(0, 10)}
+              firstDay={defaultRoutineEndDay(draftCrons, zone)}
               onChange={(endsOn) => update({ endsOn })}
             />
           ) : null}
