@@ -971,6 +971,7 @@ app.whenReady().then(async () => {
   } else {
     await openInitialServer(target.url);
   }
+  deepLinks?.markStartupReady();
 });
 app.on("window-all-closed", () => {
   // A hidden session probe (defaultSessionHasOriginData) can be the only window

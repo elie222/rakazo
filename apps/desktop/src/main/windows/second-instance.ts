@@ -118,7 +118,7 @@ export function createDeepLinkController(deps: {
 
 /** Wires single-instance, protocol registration, and macOS open-url events to desktop state. */
 export function registerDeepLinkHandlers(
-  electronApp: Pick<App, "isPackaged" | "isReady" | "on" | "setAsDefaultProtocolClient">,
+  electronApp: Pick<App, "isPackaged" | "on" | "setAsDefaultProtocolClient">,
   options: {
     initialArgv: readonly string[];
     isOpening: () => boolean;
@@ -126,6 +126,7 @@ export function registerDeepLinkHandlers(
     showSetup?: () => void;
   },
 ) {
+  let startupReady = false;
   const isBusy = () => options.isOpening() || isSetupSaveInProgress();
   const showSetup = options.showSetup ?? (() => showSetupWindow(desktop.setupError));
   const controller = createDeepLinkController({
@@ -137,7 +138,7 @@ export function registerDeepLinkHandlers(
     onRevealMainWindow: () => clearTimeout(desktop.warmWindowTimer),
     reopenIfClosed: () => {
       if (
-        !electronApp.isReady() ||
+        !startupReady ||
         (desktop.setupWindow !== null && !desktop.setupWindow.isDestroyed()) ||
         (desktop.mainWindow !== null && !desktop.mainWindow.isDestroyed()) ||
         isBusy()
@@ -155,6 +156,9 @@ export function registerDeepLinkHandlers(
   });
   return {
     ...controller,
+    markStartupReady() {
+      startupReady = true;
+    },
     registerProtocol() {
       // Only packaged builds register the OS protocol handler so dev/test runs do not clobber it.
       if (electronApp.isPackaged) {

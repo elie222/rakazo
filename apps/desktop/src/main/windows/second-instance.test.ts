@@ -271,11 +271,10 @@ describe("registerDeepLinkHandlers", () => {
     desktop.currentTargetUrl = null;
   });
 
-  it("opens setup when open-url arrives with all windows closed and no server configured", () => {
+  it("waits until startup finishes before opening setup on open-url with no configured server", () => {
     const listeners = new Map<string, (...args: unknown[]) => void>();
     const electronApp = {
       isPackaged: true,
-      isReady: () => true,
       on: vi.fn((event: string, listener: (...args: unknown[]) => void) => {
         listeners.set(event, listener);
       }),
@@ -287,16 +286,28 @@ describe("registerDeepLinkHandlers", () => {
     desktop.mainWindow = null;
     desktop.currentTargetUrl = null;
 
-    registerDeepLinkHandlers(electronApp as never, {
+    const handlers = registerDeepLinkHandlers(electronApp as never, {
       initialArgv: ["Rakazo"],
       isOpening: () => false,
       reopenTarget,
       showSetup,
     });
 
-    const preventDefault = vi.fn();
-    listeners.get("open-url")?.({ preventDefault }, "rakazo://app/bot-unconfigured");
-    expect(preventDefault).toHaveBeenCalledOnce();
+    // During startup, open-url only queues without opening setup prematurely.
+    const preventDefaultEarly = vi.fn();
+    listeners.get("open-url")?.({ preventDefault: preventDefaultEarly }, "rakazo://app/bot-early");
+    expect(preventDefaultEarly).toHaveBeenCalledOnce();
+    expect(showSetup).not.toHaveBeenCalled();
+    expect(reopenTarget).not.toHaveBeenCalled();
+
+    // Once startup has finished, open-url with all windows closed opens setup.
+    handlers.markStartupReady();
+    const preventDefaultLate = vi.fn();
+    listeners.get("open-url")?.(
+      { preventDefault: preventDefaultLate },
+      "rakazo://app/bot-unconfigured",
+    );
+    expect(preventDefaultLate).toHaveBeenCalledOnce();
     expect(showSetup).toHaveBeenCalledOnce();
     expect(reopenTarget).not.toHaveBeenCalled();
   });
