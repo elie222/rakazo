@@ -55,6 +55,15 @@ export function pageMutationOptions(queries: SpaceQueries, queryClient: QueryCli
       },
       onError: reconcile,
     },
+    setChatUpdates: {
+      mutationFn: (input: Parameters<typeof queries.pages.setChatUpdates.call>[0]) =>
+        queries.pages.setChatUpdates.call(input),
+      onSuccess: (summary: PageSummary, input: { pageId: string }) => {
+        patch(input.pageId, { chatUpdates: summary.chatUpdates });
+        void relist();
+      },
+      onError: reconcile,
+    },
     remove: {
       // NOT_FOUND: another tab deleted it first, which is the outcome asked for.
       mutationFn: (input: Parameters<typeof queries.pages.remove.call>[0]) =>

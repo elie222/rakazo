@@ -17,6 +17,7 @@ const detail = (overrides: Partial<PageDetail> = {}): PageDetail => ({
   visibility: "private",
   currentVersion: 2,
   pinned: false,
+  chatUpdates: true,
   createdAt: "2026-10-30T10:00:00.000Z",
   updatedAt: "2026-10-30T11:00:00.000Z",
   version: 2,

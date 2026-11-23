@@ -12,6 +12,7 @@ const detail = (id: string, title: string): PageDetail => ({
   visibility: "private",
   currentVersion: 1,
   pinned: false,
+  chatUpdates: true,
   createdAt: "2026-10-30T00:00:00.000Z",
   updatedAt: "2026-10-30T00:00:00.000Z",
   version: 1,

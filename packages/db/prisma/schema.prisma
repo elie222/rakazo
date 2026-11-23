@@ -2145,6 +2145,8 @@ model Page {
   shareSecretId  String?       @unique
   shareSecret    Secret?       @relation(fields: [shareSecretId], references: [id], onDelete: SetNull)
   pinnedAt       DateTime?
+  /// False keeps the bot's later saves of this page out of the chat; its first save still shows.
+  chatUpdates    Boolean       @default(true)
   currentVersion Int           @default(1)
   createdAt      DateTime      @default(now())
   /// Set when the page's content or title changes; pinning or sharing it is not an update.

@@ -151,6 +151,11 @@ export function renamePage(pageId: string, title: string) {
   return rpc("pages/rename", { pageId, title }).finally(() => pageReads.delete(pageId));
 }
 
+/** Whether the bot's later saves of the page post a card in the chat. */
+export function setPageChatUpdates(pageId: string, chatUpdates: boolean) {
+  return rpc("pages/setChatUpdates", { pageId, chatUpdates });
+}
+
 export function removePage(pageId: string) {
   return rpc("pages/remove", { pageId })
     .catch((error: unknown) => {

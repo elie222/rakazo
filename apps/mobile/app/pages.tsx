@@ -15,7 +15,7 @@ import { rpc } from "../lib/api/api";
 import { formatActivityRelativeTime } from "../lib/inbox/activity";
 import { useMobileTokens, useResolvedAppearance } from "../lib/native/native";
 import { PageLoadFailure } from "../lib/pages/page-load-failure";
-import { getLatestPage, removePage, renamePage } from "../lib/pages/pages";
+import { getLatestPage, removePage, renamePage, setPageChatUpdates } from "../lib/pages/pages";
 import { usePagedPages } from "../lib/pages/use-paged-pages";
 
 /** The bot's pages, pinned first and then most recently updated. */
@@ -86,6 +86,11 @@ export default function PagesScreen() {
         refresh,
         failed(t`Could not pin the page.`),
       );
+    } else if (action === "chatUpdates") {
+      void setPageChatUpdates(page.id, !page.chatUpdates).then(
+        refresh,
+        failed(t`Could not change this page's chat updates.`),
+      );
     } else if (action === "delete") {
       Alert.alert(
         t`Delete ${ph({ name: page.title })}?`,
@@ -116,6 +121,10 @@ export default function PagesScreen() {
           { id: "share", title: t`Share` },
           ...(page.visibility === "link" ? [{ id: "copy", title: t`Copy link` }] : []),
           { id: "pin", title: page.pinned ? t`Unpin` : t`Pin` },
+          {
+            id: "chatUpdates",
+            title: page.chatUpdates ? t`Mute updates in chat` : t`Show updates in chat`,
+          },
           { id: "delete", title: t`Delete`, attributes: { destructive: true } },
         ]}
         onPressAction={(event) => act(page, event.nativeEvent.event)}

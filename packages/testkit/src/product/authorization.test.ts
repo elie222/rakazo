@@ -536,6 +536,7 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["pages/rename"],
       ["pages/setVisibility"],
       ["pages/pin"],
+      ["pages/setChatUpdates"],
       ["pages/remove"],
       ["usage/list"],
       ["usage/summary"],

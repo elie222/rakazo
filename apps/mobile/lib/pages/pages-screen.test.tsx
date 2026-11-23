@@ -11,6 +11,7 @@ type Summary = {
   id: string;
   title: string;
   pinned: boolean;
+  chatUpdates: boolean;
   visibility: PageVisibility;
   updatedAt: string;
 };
@@ -108,6 +109,10 @@ vi.mock("../api/api", () => ({
       if (host.loseAnswer) throw new TypeError("Network request failed");
       return proc === "pages/pin" ? { ...page } : { ok: true };
     }
+    if (proc === "pages/setChatUpdates") {
+      page!.chatUpdates = input.chatUpdates as unknown as boolean;
+      return { ...page };
+    }
     if (proc === "pages/setVisibility") {
       page!.visibility = input.visibility as Summary["visibility"];
       return { visibility: page!.visibility, shareUrl: null };
@@ -132,7 +137,14 @@ const actions = (title: string) => host.menus.get(title)?.actions.map((action) =
 async function library() {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   host.server = [
-    { id: "p1", title: "Plan", pinned: false, visibility: "private", updatedAt: "2026-01-01" },
+    {
+      id: "p1",
+      title: "Plan",
+      pinned: false,
+      chatUpdates: true,
+      visibility: "private",
+      updatedAt: "2026-01-01",
+    },
   ];
   host.menus.clear();
   const container = document.createElement("div");
@@ -214,6 +226,16 @@ it("shows what the server has after a rename, pin or delete whose answer was los
   await act(async () => host.alert!.find((each) => each.text === "Delete")!.onPress?.());
   expect(rows(container)).toEqual(["Pages this bot builds for you appear here."]);
   host.loseAnswer = false;
+  await act(async () => root.unmount());
+});
+
+it("mutes and unmutes a page's updates in the chat from its menu", async () => {
+  const { root } = await library();
+  const item = () => host.menus.get("Plan")!.actions.find((action) => action.id === "chatUpdates");
+  expect(item()).toMatchObject({ title: "Mute updates in chat" });
+  await act(async () => host.menus.get("Plan")!.press("chatUpdates"));
+  expect(host.server[0]!.chatUpdates).toBe(false);
+  expect(item()).toMatchObject({ title: "Show updates in chat" });
   await act(async () => root.unmount());
 });
 

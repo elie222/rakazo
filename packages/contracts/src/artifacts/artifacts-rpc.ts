@@ -180,6 +180,9 @@ export const artifactsRpc = {
         z.strictObject({ visibility: PageVisibilitySchema, shareUrl: z.string().nullable() }),
       ),
     pin: oc.input(z.strictObject({ pageId: Id, pinned: z.boolean() })).output(PageSummarySchema),
+    setChatUpdates: oc
+      .input(z.strictObject({ pageId: Id, chatUpdates: z.boolean() }))
+      .output(PageSummarySchema),
     remove: oc.input(z.strictObject({ pageId: Id })).output(z.object({ ok: z.literal(true) })),
   },
 };

@@ -222,6 +222,7 @@ async function savePage(ctx: RunContext, call: ToolCall) {
           title: true,
           visibility: true,
           currentVersion: true,
+          chatUpdates: true,
           versions: { orderBy: { version: "desc" }, take: 1, select: { source: true } },
         },
       })
@@ -341,7 +342,9 @@ async function savePage(ctx: RunContext, call: ToolCall) {
   try {
     // A routine speaks only through its final reply, which may be silence, so refreshing a
     // page it already showed posts no card; its first save still does.
-    if (!page || run.trigger !== "routine") await publishMessage(deps, run, "bot", [block]);
+    // The user can also mute a page's later saves, so a page refreshed often stays out of the chat.
+    if (!page || (run.trigger !== "routine" && page.chatUpdates))
+      await publishMessage(deps, run, "bot", [block]);
   } catch (error) {
     // The page is saved; only its card in the chat is missing, so the bot can still link it.
     return {
@@ -354,7 +357,12 @@ async function savePage(ctx: RunContext, call: ToolCall) {
   const result = {
     ...saved,
     ...pageSharingHint(page?.visibility),
-    mention: `Mention it in your reply as [${linkText}](page:${saved.pageId})`,
+    ...(page && !page.chatUpdates
+      ? {
+          chatUpdatesOff:
+            "The user turned off chat updates for this page: do not announce, link or summarize this save in your reply unless they asked for it.",
+        }
+      : { mention: `Mention it in your reply as [${linkText}](page:${saved.pageId})` }),
   };
   return check.warnings?.length ? { ...result, warnings: check.warnings } : result;
 }

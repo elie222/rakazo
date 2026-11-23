@@ -7,7 +7,7 @@ import { PagesList } from "./PagesList";
 
 const rename = vi.hoisted(() => vi.fn());
 const pageItems = vi.hoisted(() => ({
-  current: [] as { id: string; title: string; updatedAt: string }[],
+  current: [] as { id: string; title: string; updatedAt: string; chatUpdates?: boolean }[],
 }));
 const pageRead = vi.hoisted(() => ({ isError: false, isPending: false, refetch: vi.fn() }));
 const page = (index: number) => ({
@@ -24,7 +24,7 @@ vi.mock("../../lib/query/query", () => ({
 }));
 vi.mock("../../lib/pages/pages", () => ({ useOpenPage: () => vi.fn() }));
 vi.mock("../../lib/pages/page-actions", () => ({
-  pageMutationOptions: () => ({ pin: {}, remove: {}, rename: {} }),
+  pageMutationOptions: () => ({ pin: {}, remove: {}, rename: {}, setChatUpdates: {} }),
 }));
 vi.mock("@tanstack/react-query", () => ({
   useQueryClient: () => ({}),
@@ -170,6 +170,24 @@ it("previews nothing at all while the bot has no pages", async () => {
   expect(host.childElementCount).toBe(0);
   await act(async () => root.unmount());
 });
+
+it.each([true, false])(
+  "offers to flip whether a page's updates show in the chat (%s)",
+  async (chatUpdates) => {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    pageItems.current = [{ ...page(1), chatUpdates }];
+    const root = createRoot(document.body.appendChild(document.createElement("div")));
+    await act(async () => root.render(<PagesList botId="bot-1" />));
+    const label = chatUpdates ? "Mute updates in chat" : "Show updates in chat";
+    await act(async () => {
+      [...document.querySelectorAll("button")]
+        .find((button) => button.textContent === label)!
+        .click();
+    });
+    expect(rename).toHaveBeenCalledWith({ pageId: "page-1", chatUpdates: !chatUpdates });
+    await act(async () => root.unmount());
+  },
+);
 
 it("previews the latest three pages and links the heading to the whole list", async () => {
   pageItems.current = [1, 2, 3, 4].map(page);
