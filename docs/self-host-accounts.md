@@ -28,6 +28,32 @@ months, or both. Whoever owns an organization with that verified email receives 
 open the app, whether they signed up before or after the grant. A grant can be revoked until it is
 received.
 
+## Set up a team
+
+A team shares one organization. Everyone in it gets their own private space, and shares the spaces
+they choose.
+
+1. **Let teammates sign up.** An invitation does not bypass signup policy. Keep
+   `SIGNUPS_ENABLED=true` and list the team's addresses or domain in `SIGNUP_ALLOWLIST`, or provision
+   them through [SSO](#openid-connect-sso) or [SCIM](#directory-provisioning-scim).
+2. **Give everyone a model.** Teammates without a model of their own use the
+   [deployment model](./self-host-models.md#deployment-model), billed to the operator's key. Each
+   person can still connect their own.
+3. **Invite them to the organization.** In **Settings → Organization → Members**, enter an email
+   and choose **Invite**. The invitee signs in with that address and chooses **Join**. Without
+   [email](#verification-and-password-recovery-email), nothing is sent: choose **Copy invite link**
+   on the pending invitation and send it yourself. Invitations expire after 7 days.
+4. **Share spaces.** In a space's **Settings**, **Invite** lists organization members to add
+   directly. See [Share a space](./spaces.md#share-a-space).
+
+The owner and admins invite people, change roles and remove members; the owner can't be removed. A
+removed member's spaces that nobody else uses pass to whoever removed them. Members are managed on
+web and desktop.
+
+SSO and SCIM create accounts but don't add anyone to an organization: invite them after their first
+sign-in. Organization admins are unrelated to `RAKAZO_ADMIN_EMAILS`, and a self-hosted server has no
+seats or billing unless you [set it up](./self-host-billing.md).
+
 ## Email verification and sign-in codes
 
 With a nonempty signup allowlist and SMTP configured, users—including existing accounts—must

@@ -120,8 +120,8 @@ Compose bot homes mount only their own subdirectory of the application volume us
 - [Configuration](./self-host-configuration.md): how settings reach each service, run limits, the
   database and outbound proxies.
 - [Secrets](./self-host-secrets.md): the required keys and how to keep them.
-- [Sign-in and accounts](./self-host-accounts.md): who can sign up, email, SSO, passkeys and
-  passwords.
+- [Sign-in and accounts](./self-host-accounts.md): who can sign up, [setting up a team](./self-host-accounts.md#set-up-a-team),
+  email, SSO, passkeys and passwords.
 - [Models](./self-host-models.md): model providers, local models, approvals, media generation and
   voice.
 - [Tools and integrations](./self-host-integrations.md): web search, memory, MCP servers,
