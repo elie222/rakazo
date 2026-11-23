@@ -390,7 +390,7 @@ export const fleetTools: ConnectorTool[] = [
   {
     name: "archive_bot",
     description:
-      "Archive another bot in this space. Archiving stops its work and routines, hides it from the active list, and preserves its conversation, memory, and files for the user to restore or delete later. confirm_name must exactly match its name. This cannot archive you.",
+      "Archive a bot in this space, yourself included. Archiving stops its work and routines, hides it from the active list, and preserves its conversation, memory, and files for the user to restore or delete later. confirm_name must exactly match its name. Archiving yourself ends your work once this reply is sent.",
     inputSchema: {
       type: "object",
       properties: {

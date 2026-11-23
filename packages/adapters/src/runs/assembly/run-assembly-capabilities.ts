@@ -11,7 +11,7 @@ import {
   messagingDmSurfaceNote,
   nonOwnerChatPrivacyBlock,
 } from "@rakazo/core";
-import { availableInSpace, parseComputerMode } from "@rakazo/db";
+import { availableInSpace, mayBeChannelMessage, parseComputerMode } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { createApprovedEffectReplayQueue } from "../../approvals/approval-effect.js";
 import { appendOutsideText, taskPromptIsOutside } from "../../approvals/review-target-sources.js";
@@ -67,6 +67,7 @@ import {
   selectBuiltinToolsForRun,
   unavailableBuiltinToolReasons,
 } from "../tools/run-tool-selection.js";
+import { historyMyChatsAllowed } from "../tools/run-tools-memory.js";
 import type { UserComputerState } from "../tools/run-tools-user-computer.js";
 import { USER_COMPUTER_SHELL_TOOL, userComputerOwner } from "../tools/run-tools-user-computer.js";
 import {
@@ -664,6 +665,8 @@ export async function selectRunTools(
   const { checkpointLoadError, turnCheckpoint } = parts.saved;
   const {
     bot,
+    channelId,
+    conversationRun,
     nonOwnerChatRun,
     sourceBlocks,
     task,
@@ -690,6 +693,16 @@ export async function selectRunTools(
     userComputerShell,
     voiceCall,
   } = parts.capabilities;
+  const myChatsAllowed = historyMyChatsAllowed(
+    conversationRun,
+    parts.records.origin?.sourceMessage ?? sourceMessage,
+    nonOwnerChatRun ||
+      Boolean(
+        channelId ||
+          conversationThread.externalConversationId ||
+          (sourceMessage && mayBeChannelMessage(sourceMessage)),
+      ),
+  );
   // In a group the members are the room's; a bot elsewhere messages the Space's other bots. A
   // routine with its owner's computer messages none, nor reads their names and descriptions.
   const teammates =
@@ -734,6 +747,7 @@ export async function selectRunTools(
           }),
         ),
       historyRetrievalEnabled: contextStrategy !== "current" && !unknownChannelSourceId,
+      historyMyChats: myChatsAllowed,
       ownPromptOnly: ownerComputerRoutine,
       meetingTranscriptsAvailable: parts.meetingTranscriptsAvailable,
       graphicalToolsAllowed,
@@ -847,6 +861,7 @@ export async function selectRunTools(
   const approvedEffectReplays = createApprovedEffectReplayQueue(approvedEffects);
   return {
     teammates,
+    myChatsAllowed,
     strategicBuiltins,
     connectorTools,
     trustLoaders,

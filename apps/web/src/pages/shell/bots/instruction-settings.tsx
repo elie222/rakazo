@@ -1,19 +1,30 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import { ORPCError } from "@orpc/client";
-import type { Bot } from "@rakazo/contracts";
+import type { ListedBot } from "@rakazo/contracts";
 import { BOT_INSTRUCTIONS_MAX_LENGTH } from "@rakazo/contracts";
 import { Button, Disclosure, Textarea } from "@rakazo/ui-web";
 import { Popover, PopoverContent, PopoverTrigger } from "@rakazo/ui-web/components/ui/popover";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { History } from "lucide-react";
-import { useId, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { useSave, useSpaceQueries } from "../../../lib/query/query";
 import { errorText } from "../../../lib/query/user-error";
 
 type Change = { kind: "edit" } | { kind: "restore"; versionId: string } | { kind: "reload" };
 
-export function InstructionSettings({ bot }: { bot: Bot }) {
+export function InstructionSettings({ bot }: { bot: ListedBot }) {
   const { i18n, t } = useLingui();
   const queries = useSpaceQueries();
+  const queryClient = useQueryClient();
+  const detailOptions = queries.bots.get.queryOptions({ input: { botId: bot.id } });
+  const { data: detail, refetch } = useQuery(detailOptions);
+  const history = detail?.instructionHistory;
+  const lastRosterInstructions = useRef(bot.instructions);
+  useEffect(() => {
+    if (lastRosterInstructions.current === bot.instructions) return;
+    lastRosterInstructions.current = bot.instructions;
+    void refetch();
+  }, [bot.instructions, refetch]);
   const id = useId();
   const [previousBot, setPreviousBot] = useState(bot);
   const [current, setCurrent] = useState(bot);
@@ -40,7 +51,9 @@ export function InstructionSettings({ bot }: { bot: Bot }) {
           ? rpc.bots.get({ botId: bot.id })
           : rpc.bots.update({ botId: bot.id, instructions, expectedInstructions: baseline }),
     stale: (input) => (input.kind === "reload" ? [] : [queries.bots.list.key()]),
-    onSaved: (updated) => {
+    onSaved: async (updated) => {
+      await queryClient.cancelQueries({ queryKey: detailOptions.queryKey });
+      queryClient.setQueryData(detailOptions.queryKey, updated);
       setConflict(false);
       setCurrent(updated);
       setInstructions(updated.instructions);
@@ -60,7 +73,7 @@ export function InstructionSettings({ bot }: { bot: Bot }) {
         >
           <Trans>Instructions</Trans>
         </label>
-        {current.instructionHistory?.length ? (
+        {history?.length ? (
           <Popover>
             <PopoverTrigger
               render={
@@ -79,7 +92,7 @@ export function InstructionSettings({ bot }: { bot: Bot }) {
               className="max-h-96 overflow-y-auto"
               aria-label={t`Instruction history`}
             >
-              {current.instructionHistory.map((version) => (
+              {history.map((version) => (
                 <div key={version.id} className="mt-2 text-body">
                   <Disclosure
                     summary={

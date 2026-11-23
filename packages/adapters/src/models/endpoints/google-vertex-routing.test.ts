@@ -94,10 +94,7 @@ describe("project-scoped model connections", () => {
         contextWindow: 1_048_576,
         maxTokens: 65_536,
       });
-      expect(entry?.thinkingLevels).toEqual(
-        expect.arrayContaining(["low", "medium", "high", "xhigh"]),
-      );
-      expect(entry?.thinkingLevels).not.toContain("minimal");
+      expect(entry?.thinkingLevels).toEqual(["low", "medium", "high"]);
       if (provider === config.provider)
         expect(entry?.routingFields).toEqual(["projectId", "region"]);
     }

@@ -244,13 +244,10 @@ export function modelsRoutes(ctx: RouterContext) {
         return { ok: true as const };
       }),
       connect: authed.models.connect.handler(async ({ context, input }) => {
-        const { record } = await startModelConnect(
-          deps,
-          context.actor,
-          "api_key",
-          input.provider,
-          input.surface,
-        );
+        const { record } = await startModelConnect(deps, context.actor, "api_key", input.provider, {
+          surface: input.surface,
+          appVersion: input.appVersion,
+        });
         try {
           const saved = await connectModelCredential(context.actor, input, context.signal);
           record(input.provider, { name: "model_connected" });
@@ -356,7 +353,7 @@ export function modelsRoutes(ctx: RouterContext) {
           context.actor,
           "oauth",
           input.provider,
-          input.surface,
+          { surface: input.surface, appVersion: input.appVersion },
         );
         const startedAt = new Date();
         return deps.oauthLogins
