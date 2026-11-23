@@ -523,6 +523,10 @@ export async function sendThreadMessage(
     releaseTakeover,
   );
   if (existing) return existing;
+  const requestedReplyQuote = sent.replyQuote?.trim() || undefined;
+  if (requestedReplyQuote && !sent.replyToMessageId) {
+    throw new ORPCError("BAD_REQUEST", { message: "replyQuote requires replyToMessageId." });
+  }
   // From here on, a key the member pasted is only in the vault.
   const pasted = await preparePastedSecrets(
     { prisma: deps.prisma, secretStore: deps.secrets },
@@ -533,10 +537,6 @@ export async function sendThreadMessage(
   // Live events carry the call id so a spoken turn joins the call card on first
   // paint; without it the bubble shows loose until a refetch reads the nonce.
   const callId = callIdFromClientNonce(input.clientNonce);
-  const requestedReplyQuote = input.replyQuote?.trim() || undefined;
-  if (requestedReplyQuote && !input.replyToMessageId) {
-    throw new ORPCError("BAD_REQUEST", { message: "replyQuote requires replyToMessageId." });
-  }
 
   const commit = () =>
     deps.prisma.$transaction(async (tx) => {
