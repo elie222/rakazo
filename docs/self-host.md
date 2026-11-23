@@ -9,8 +9,11 @@ English | [简体中文](./zh-CN/self-host.md)
 
 ## What you need
 
-- Docker Engine 26 or newer with the Compose plugin, curl and OpenSSL. Nothing else is needed for
-  the published images.
+- A server with 2 vCPUs and 4 GB of RAM. Rakazo itself uses about 1 GB; each running bot computer
+  can use up to 2 GB (`RAKAZO_COMPUTER_MEMORY`), so add memory for several busy bots or use a
+  remote computer provider.
+- Docker Engine 26 or newer with the Compose plugin, curl and OpenSSL. On Linux, running the
+  installer as root installs Docker for you. Nothing else is needed for the published images.
 - A model: an OpenRouter key, a connection added in the app after signup, or a model server you
   run yourself ([models](./self-host-models.md)).
 - For a public host, a domain and TLS ([production deployment](./self-host-production.md)).
@@ -41,7 +44,9 @@ Signup and local Docker computers work without an E2B account. Optional remote p
 `SANDBOX_PROVIDER` to `e2b`, `novita`, `daytona`, `createos`, or `boat` and add the matching API key. The published-images
 Compose stack requires `SANDBOX_SUPERVISOR_TOKEN` for every provider; leave it empty and `compose up` fails closed.
 
-Optional: set `OPENROUTER_API_KEY` or connect a model in the UI after signup. Other providers,
+Optional: set `OPENROUTER_API_KEY` or connect a model in the UI after signup. Claude Pro or Max
+and eligible ChatGPT plans connect with their own sign-in in **Settings → Models**
+([model subscriptions](./model-subscriptions.md)). Other providers,
 local models and approvals are covered in [models](./self-host-models.md).
 
 The example defaults to `latest`, which follows stable releases only. Every publish is multi-arch
