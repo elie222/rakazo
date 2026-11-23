@@ -43,63 +43,66 @@ export default function SpacesSettings() {
             <ActivityIndicator color={native.secondaryLabel} />
           )
         ) : (
-          <SettingsGroup
-            label={only?.name}
-            footer={t`Spaces keep work apart. Bots, chats, memory and computers never cross between them.`}
-          >
-            {only ? (
+          <>
+            <SettingsGroup label={only?.name}>
+              {only ? (
+                <SettingsRow
+                  key="members"
+                  accessibilityRole="button"
+                  chevron="right"
+                  title={t`Members`}
+                  // Members lives on the root stack, so it closes the sheet first.
+                  onPress={() =>
+                    openFromSettingsSheet(router, {
+                      pathname: "/space-members",
+                      params: { spaceId: only.id },
+                    })
+                  }
+                />
+              ) : null}
+              {only && customized ? (
+                <SettingsRow
+                  key="space-settings"
+                  accessibilityRole="button"
+                  chevron="right"
+                  title={t`Settings for this Space`}
+                  onPress={() =>
+                    router.push({
+                      pathname: "/space",
+                      params: { spaceId: only.id, name: only.name },
+                    })
+                  }
+                />
+              ) : null}
+              {only
+                ? null
+                : spaces.map((space) => (
+                    <SettingsRow
+                      key={space.id}
+                      accessibilityRole="button"
+                      chevron="right"
+                      title={space.name}
+                      onPress={() =>
+                        router.push({
+                          pathname: "/space",
+                          params: { spaceId: space.id, name: space.name },
+                        })
+                      }
+                    />
+                  ))}
+            </SettingsGroup>
+            <SettingsGroup
+              footer={t`Spaces keep work apart. Bots, chats, memory and computers never cross between them.`}
+            >
               <SettingsRow
-                key="members"
+                key="new-space"
                 accessibilityRole="button"
-                chevron="right"
-                title={t`Members`}
-                // Members lives on the root stack, so it closes the sheet first.
-                onPress={() =>
-                  openFromSettingsSheet(router, {
-                    pathname: "/space-members",
-                    params: { spaceId: only.id },
-                  })
-                }
+                tinted
+                title={t`New private space`}
+                onPress={() => openFromSettingsSheet(router, "/new-space")}
               />
-            ) : null}
-            {only && customized ? (
-              <SettingsRow
-                key="space-settings"
-                accessibilityRole="button"
-                chevron="right"
-                title={t`Settings for this Space`}
-                onPress={() =>
-                  router.push({
-                    pathname: "/space",
-                    params: { spaceId: only.id, name: only.name },
-                  })
-                }
-              />
-            ) : null}
-            {only
-              ? null
-              : spaces.map((space) => (
-                  <SettingsRow
-                    key={space.id}
-                    accessibilityRole="button"
-                    chevron="right"
-                    title={space.name}
-                    onPress={() =>
-                      router.push({
-                        pathname: "/space",
-                        params: { spaceId: space.id, name: space.name },
-                      })
-                    }
-                  />
-                ))}
-            <SettingsRow
-              key="new-space"
-              accessibilityRole="button"
-              tinted
-              title={t`New private space`}
-              onPress={() => openFromSettingsSheet(router, "/new-space")}
-            />
-          </SettingsGroup>
+            </SettingsGroup>
+          </>
         )}
       </ScrollView>
     </SafeAreaView>

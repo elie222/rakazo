@@ -119,6 +119,7 @@ it("offers one Space's members under its name and a new Space, leaving settings 
   await render();
   expect(rows()).toEqual(["Members", "New private space"]);
   expect(container.querySelector("h2")?.textContent).toBe("Personal");
+  expect(container.querySelector("section")?.textContent).not.toContain("New private space");
   expect(container.querySelector("p")?.textContent).toBe(
     "Spaces keep work apart. Bots, chats, memory and computers never cross between them.",
   );
