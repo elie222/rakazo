@@ -156,7 +156,15 @@ export const ToolChoiceCaseSchema = z
         origin: z.url(),
         name: z.string().min(1),
         dashboard: z.string().min(1),
-        login: z.object({ email: z.string().min(1), password: z.string().min(1) }).optional(),
+        login: z
+          .object({
+            email: z.string().min(1),
+            password: z.string().min(1),
+            /** Shown instead of signing in, even with the right email and password. */
+            refusal: z.string().min(1).optional(),
+          })
+          .strict()
+          .optional(),
       })
       .strict()
       .optional(),

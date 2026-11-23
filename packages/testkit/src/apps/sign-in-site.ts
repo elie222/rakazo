@@ -16,7 +16,7 @@ export type SignInSiteOptions = {
   /** What the signed-in dashboard shows, so a reply can be checked against it. */
   dashboard: string;
   /** The site signs in with this email and password instead of emailing a code. */
-  login?: { email: string; password: string };
+  login?: { email: string; password: string; refusal?: string };
 };
 
 export type SignInMail = { from: string; fromName: string; subject: string; text: string };
@@ -136,11 +136,12 @@ export class SignInSite implements BrowserProvider {
     this.state.emailsEntered.push(this.email);
     if (
       this.email.toLowerCase() === login?.email.toLowerCase() &&
-      this.password === login.password
+      this.password === login.password &&
+      !login.refusal
     ) {
       this.state.signedIn = true;
       this.error = "";
-    } else this.error = "Incorrect email or password.";
+    } else this.error = login?.refusal ?? "Incorrect email or password.";
     return undefined;
   }
 
