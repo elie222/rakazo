@@ -230,11 +230,11 @@ it("clears saved drafts and the returning-user mark only once the account is del
   }
 });
 
-it("keeps sign-in from starting SSO by itself after the account is deleted", async () => {
+it("keeps sign-in from starting SSO by itself once deletion is asked, even if the answer is lost", async () => {
   vi.stubGlobal("location", { assign: vi.fn() });
   try {
     vi.mocked(fetchAccountSecurity).mockResolvedValue({ ...security, freshOidcAuth: true });
-    vi.mocked(authClient.deleteUser).mockResolvedValue({ data: { success: true }, error: null });
+    vi.mocked(authClient.deleteUser).mockRejectedValue(new Error("Network"));
     await render();
     await click("Delete");
     await act(async () => deleteButton().click());

@@ -195,6 +195,9 @@ export function DeleteAccountForm({
                 onSecurity?.(current);
                 if (!current.hasPassword && !current.freshOidcAuth && !code.trim()) return;
                 if (current.hasPassword && !password) return;
+                // Held before asking, as for sign-out: once the account is gone, the provider's
+                // session would sign straight into a new one, even if this answer is lost.
+                holdSsoAutoStart();
                 const result = await authClient.deleteUser(
                   current.hasPassword ? { password } : code.trim() ? { token: code.trim() } : {},
                 );
@@ -202,8 +205,6 @@ export function DeleteAccountForm({
                   throw new Error(authErrorText(result.error, t`Could not continue`));
                 clearComposerDrafts();
                 forgetSignedIn();
-                // The provider's session would otherwise sign straight into a new account.
-                holdSsoAutoStart();
                 window.location.assign("/sign-in");
               })
             }
