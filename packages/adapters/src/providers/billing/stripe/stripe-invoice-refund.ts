@@ -80,6 +80,11 @@ export async function stripeInvoiceRefund(
       ),
     );
   const charge = intent.latest_charge;
+  // One-time credits are bought through a checkout session, which their purchase is listed under.
+  const [session] = await api.listPages(
+    `/v1/checkout/sessions?payment_intent=${encodeURIComponent(payment.payment.payment_intent)}`,
+    z.object({ id: z.string(), mode: z.string() }),
+  );
   if (
     !charge?.paid ||
     !charge.captured ||
@@ -95,6 +100,7 @@ export async function stripeInvoiceRefund(
     invoiceId: invoice.id,
     invoiceNumber: invoice.number,
     createdAt: new Date(invoice.created * 1000).toISOString(),
+    creditPurchaseId: session?.mode === "payment" ? session.id : invoice.id,
     amountMinor: invoice.amount_paid,
     currency: invoice.currency,
   };

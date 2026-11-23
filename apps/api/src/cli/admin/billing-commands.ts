@@ -187,9 +187,10 @@ async function refundBilling(
     refund.currency === "usd"
       ? `$${(refund.amountMinor / 100).toFixed(2)} USD`
       : `${refund.amountMinor} minor units of ${refund.currency.toUpperCase()}`;
+  // Only context for the operator: a refund already sent must still report its outcome.
   const [credits, plan] = await Promise.all([
-    invoiceCredits(context, organizationId, refund),
-    provider.getCustomerSubscription(customerId),
+    bestEffort("read refund credit summary", invoiceCredits(context, organizationId, refund)),
+    bestEffort("read refund subscription", provider.getCustomerSubscription(customerId)),
   ]);
   const renews = !!plan && plan.status !== "canceled" && !plan.cancelAtPeriodEnd;
   const reference = refund.invoiceNumber ?? refund.invoiceId;
@@ -210,11 +211,13 @@ async function refundBilling(
 async function invoiceCredits(
   { prisma }: AdminContext,
   organizationId: string,
-  refund: { invoiceId: string; createdAt: string },
+  refund: { creditPurchaseId: string; createdAt: string },
 ) {
   const [account, entry] = await Promise.all([
     prisma.modelCreditAccount.findUnique({ where: { organizationId } }),
-    prisma.modelCreditEntry.findUnique({ where: { source: `purchase:${refund.invoiceId}` } }),
+    prisma.modelCreditEntry.findUnique({
+      where: { source: `purchase:${refund.creditPurchaseId}` },
+    }),
   ]);
   if (!account) return null;
   // An invoice that bought no credits, such as an own-key plan, still shows the balance.
@@ -224,13 +227,14 @@ async function invoiceCredits(
     by: ["model"],
     where: {
       organizationId,
+      // Holds for calls still running count too: the balance already excludes them.
       callId: { not: null },
-      pending: false,
       createdAt: { gte: purchase?.createdAt ?? new Date(refund.createdAt) },
     },
     _sum: { amountMicros: true },
   });
-  const bought = purchase?.amountMicros ?? 0n;
+  // What the invoice still funds: a synced refund lowers it to zero.
+  const fromInvoice = purchase?.amountMicros ?? 0n;
   const byModel = spent
     .map(({ model, _sum }) => ({
       model: model ?? "unknown",
@@ -240,11 +244,11 @@ async function invoiceCredits(
     .toSorted((a, b) => b.usd - a.usd);
   const usd = (micros: bigint) => Number(micros) / 1e6;
   return {
-    bought: usd(bought),
+    fromInvoice: usd(fromInvoice),
     spentSincePaid: usd(-spent.reduce((total, { _sum }) => total + (_sum.amountMicros ?? 0n), 0n)),
     byModel,
     balance: usd(account.balanceMicros),
-    balanceAfterRefund: usd(account.balanceMicros - bought),
+    balanceAfterRefund: usd(account.balanceMicros - fromInvoice),
   };
 }
 
@@ -254,9 +258,9 @@ function creditLines(
 ) {
   const usd = (value: number) => `${value < 0 ? "-" : ""}$${Math.abs(value).toFixed(2)}`;
   return [
-    `Credits: ${usd(credits.bought)} from this invoice, ${usd(credits.spentSincePaid)} spent since it was paid, balance ${usd(credits.balance)}.`,
+    `Credits: ${usd(credits.fromInvoice)} from this invoice, ${usd(credits.spentSincePaid)} spent since it was paid, balance ${usd(credits.balance)}.`,
     ...credits.byModel.map(({ model, usd: spent }) => `  ${model} ${usd(spent)}`),
-    ...(preview && credits.bought > 0
+    ...(preview && credits.fromInvoice > 0
       ? [
           `The refund takes back this invoice's credits, leaving a balance of ${usd(credits.balanceAfterRefund)}.`,
         ]

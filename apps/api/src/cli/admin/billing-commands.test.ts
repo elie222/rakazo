@@ -35,6 +35,7 @@ const email = "person@example.test";
 const preview = {
   invoiceId: "in_fixture",
   invoiceNumber: "EXAMPLE-0001",
+  creditPurchaseId: "in_fixture",
   createdAt: "2030-01-01T00:00:00.000Z",
   amountMinor: 1000,
   currency: "usd",
@@ -82,7 +83,7 @@ describe("operator billing writes", () => {
     const result = await refund(context);
     expect(mocks.refundInvoice).toHaveBeenCalledWith("cus_fixture", undefined, false);
     expect(result.json).toMatchObject({
-      credits: { bought: 10, spentSincePaid: 0.32, balanceAfterRefund: -0.32 },
+      credits: { fromInvoice: 10, spentSincePaid: 0.32, balanceAfterRefund: -0.32 },
       subscriptionRenews: true,
     });
     expect(result.text).toContain("Add EXAMPLE-0001 --confirm");

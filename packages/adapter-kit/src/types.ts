@@ -1854,6 +1854,8 @@ export interface BillingInvoiceRefund {
   invoiceNumber: string | null;
   /** When the invoice was created, as an ISO timestamp. */
   createdAt: string;
+  /** The id the provider's credit purchases list the invoice's payment under. */
+  creditPurchaseId: string;
   amountMinor: number;
   currency: string;
   state: "refundable" | "pending" | "succeeded";

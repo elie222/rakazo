@@ -32,6 +32,7 @@ const charge = {
 
 function fixture(options?: {
   invoices?: (typeof invoice)[];
+  sessions?: Array<{ id: string; mode: string }>;
   payments?: (typeof payment)[];
   charge?: Partial<typeof charge>;
   cacheFirstRefundError?: boolean;
@@ -54,6 +55,9 @@ function fixture(options?: {
         case "/v1/invoice_payments":
           expect(url.searchParams.get("invoice")).toBe(invoice.id);
           return list(options?.payments ?? [payment]);
+        case "/v1/checkout/sessions":
+          expect(url.searchParams.get("payment_intent")).toBe("pi_fixture");
+          return list(options?.sessions ?? []);
         case "/v1/payment_intents/pi_fixture":
           expect(url.searchParams.get("expand[]")).toBe("latest_charge");
           return Response.json({ latest_charge: latestCharge });
@@ -82,6 +86,7 @@ describe("operator invoice refunds", () => {
       invoiceId: invoice.id,
       invoiceNumber,
       createdAt: new Date(invoice.created * 1000).toISOString(),
+      creditPurchaseId: invoice.id,
       amountMinor: invoice.amount_paid,
       currency: invoice.currency,
       state: "refundable",
@@ -112,6 +117,13 @@ describe("operator invoice refunds", () => {
     });
     await expect(provider.refundInvoice(customer, undefined, false)).resolves.toMatchObject({
       invoiceId: invoice.id,
+    });
+  });
+
+  it("names one-time credits by the checkout session that bought them", async () => {
+    const { provider } = fixture({ sessions: [{ id: "cs_fixture", mode: "payment" }] });
+    await expect(provider.refundInvoice(customer, invoiceNumber, false)).resolves.toMatchObject({
+      creditPurchaseId: "cs_fixture",
     });
   });
 
