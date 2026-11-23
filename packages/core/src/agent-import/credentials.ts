@@ -59,13 +59,20 @@ export function credentialRanges(text: string): TextRange[] {
           end: close ? close.index + close[0].length : text.length,
         });
       } else {
-        found.push({ start: shape.group ? end - (match[1]?.length ?? 0) : match.index, end });
+        // A token that ends a sentence leaves the period out.
+        let last = end;
+        while (text[last - 1] === ".") last -= 1;
+        found.push({ start: shape.group ? end - (match[1]?.length ?? 0) : match.index, end: last });
       }
     }
   }
-  found.sort((a, b) => a.start - b.start);
+  return joinRanges(found);
+}
+
+/** The ranges in order, with overlapping ones joined. */
+export function joinRanges(found: readonly TextRange[]): TextRange[] {
   const ranges: TextRange[] = [];
-  for (const range of found) {
+  for (const range of [...found].sort((a, b) => a.start - b.start)) {
     const last = ranges.at(-1);
     if (last && range.start < last.end) last.end = Math.max(last.end, range.end);
     else ranges.push({ ...range });

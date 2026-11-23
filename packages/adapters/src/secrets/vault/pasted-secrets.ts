@@ -1,6 +1,6 @@
 import type { SecretStore } from "@rakazo/adapter-kit";
 import { commandVariableName } from "@rakazo/contracts";
-import { credentialRanges } from "@rakazo/core";
+import { credentialRanges, joinRanges } from "@rakazo/core";
 import type { Prisma, PrismaClient } from "@rakazo/db";
 import { TransactionConflictError } from "@rakazo/db";
 import { persistPreparedSecret } from "../secret-persistence.js";
@@ -10,11 +10,22 @@ import { prepareBotSecret } from "./vault-save.js";
 
 const PASTED_NAME = "pasted-key";
 
-/** The text with each credential-shaped value swapped for the variable it is saved as. */
+/** Each credential-shaped value, and every other place the same value appears, in order. */
+function pastedRanges(text: string) {
+  const found = credentialRanges(text);
+  const ranges = [...found];
+  for (const value of new Set(found.map(({ start, end }) => text.slice(start, end)))) {
+    for (let at = text.indexOf(value); at !== -1; at = text.indexOf(value, at + value.length))
+      ranges.push({ start: at, end: at + value.length });
+  }
+  return joinRanges(ranges);
+}
+
+/** The text with each pasted value swapped for the variable it is saved as. */
 export function swapPastedValues(text: string, variableOf: (value: string) => string): string {
   let swapped = "";
   let at = 0;
-  for (const { start, end } of credentialRanges(text)) {
+  for (const { start, end } of pastedRanges(text)) {
     swapped += `${text.slice(at, start)}[saved as $${variableOf(text.slice(start, end))}]`;
     at = end;
   }
@@ -41,7 +52,7 @@ export async function preparePastedSecrets(
   text: string | undefined,
 ): Promise<PastedSecrets> {
   const values = new Set(
-    credentialRanges(text ?? "").map(({ start, end }) => text?.slice(start, end) ?? ""),
+    pastedRanges(text ?? "").map(({ start, end }) => text?.slice(start, end) ?? ""),
   );
   if (!text || !values.size) return { text, store: async () => {}, persist: (commit) => commit() };
   const { prisma, secretStore } = deps;
@@ -57,41 +68,44 @@ export async function preparePastedSecrets(
     ).map((row) => commandVariableName(row.name)),
   );
   const prepared: Awaited<ReturnType<typeof prepareBotSecret>>[] = [];
-  for (const value of values) {
-    if (variables.has(value)) continue;
-    let name = PASTED_NAME;
-    for (let suffix = 2; taken.has(commandVariableName(name)); suffix++)
-      name = `${PASTED_NAME}-${suffix}`;
-    const variable = commandVariableName(name);
-    taken.add(variable);
-    variables.set(value, variable);
-    prepared.push(
-      await prepareBotSecret({
-        prisma,
-        secretStore,
-        scope,
-        destination: { name, origin: "", auth: { type: "command" } },
-        plaintext: value,
-        createOnly: true,
-      }),
-    );
+  // Another send took the name first. This one fails as a conflict; sent again, it picks another.
+  const conflict = (error: unknown) => {
+    throw isSecretAlreadySaved(error) ? new TransactionConflictError(VAULT_CHANGED) : error;
+  };
+  const persist = <T>(commit: () => Promise<T>) =>
+    prepared.reduceRight(
+      (inner, item) => () => persistPreparedSecret(prisma, secretStore, item, inner),
+      commit,
+    )();
+  try {
+    for (const value of values) {
+      if (variables.has(value)) continue;
+      let name = PASTED_NAME;
+      for (let suffix = 2; taken.has(commandVariableName(name)); suffix++)
+        name = `${PASTED_NAME}-${suffix}`;
+      const variable = commandVariableName(name);
+      taken.add(variable);
+      variables.set(value, variable);
+      prepared.push(
+        await prepareBotSecret({
+          prisma,
+          secretStore,
+          scope,
+          destination: { name, origin: "", auth: { type: "command" } },
+          plaintext: value,
+          createOnly: true,
+        }).catch(conflict),
+      );
+    }
+  } catch (error) {
+    // The values already stored for this message are deleted with it.
+    return persist(() => Promise.reject(error));
   }
   return {
     text: swapPastedValues(text, (value) => variables.get(value) ?? PASTED_NAME),
     async store(tx) {
-      for (const item of prepared) {
-        // Another send took the name first. This one fails as a conflict; sent again, it picks another.
-        await item.store(tx).catch((error: unknown) => {
-          throw isSecretAlreadySaved(error) ? new TransactionConflictError(VAULT_CHANGED) : error;
-        });
-      }
+      for (const item of prepared) await item.store(tx).catch(conflict);
     },
-    persist(commit) {
-      const run = prepared.reduceRight(
-        (inner, item) => () => persistPreparedSecret(prisma, secretStore, item, inner),
-        commit,
-      );
-      return run();
-    },
+    persist,
   };
 }

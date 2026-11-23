@@ -72,6 +72,11 @@ describe("credential ranges", () => {
     expect(found(`Authorization: Bearer ${token}`)).toEqual([token]);
   });
 
+  it("leaves out the period after a token that ends a sentence", () => {
+    const token = body(40);
+    expect(found(`Send Bearer ${token}.`)).toEqual([token]);
+  });
+
   it("joins a key inside a Bearer token into one range", () => {
     const key = join("sk", "-ant-api03-", body(60));
     expect(found(`Bearer ${key}`)).toEqual([key]);

@@ -16,4 +16,11 @@ describe("swapPastedValues", () => {
       "Use [saved as $PASTED_KEY] here,\n`[saved as $PASTED_KEY_2]` there and [saved as $PASTED_KEY] again.",
     );
   });
+
+  it("also swaps the same value where it appears without its shape", () => {
+    const token = "Ab3dE5gH7jK9mN1pQ2rS4tU6vW8xY0zA";
+    expect(swapPastedValues(`Bearer ${token}\nTOKEN=${token}`, () => "PASTED_KEY")).toBe(
+      "Bearer [saved as $PASTED_KEY]\nTOKEN=[saved as $PASTED_KEY]",
+    );
+  });
 });
