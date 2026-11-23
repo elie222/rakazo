@@ -12,7 +12,7 @@ vi.mock("electron", () => ({
     handle: (channel: string, listener: Listener) => mocks.invoke.set(channel, listener),
     on: vi.fn(),
   },
-  app: { quit: vi.fn() },
+  app: { quit: vi.fn(), isPackaged: true },
   BrowserWindow: vi.fn(),
   screen: { getPrimaryDisplay: () => ({ workAreaSize: { width: 1200, height: 800 } }) },
   shell: { openExternal: vi.fn() },
@@ -147,5 +147,70 @@ describe("showSetupWindow", () => {
     await expect(save).resolves.toEqual({ ok: true });
     expect(destroy).toHaveBeenCalledOnce();
     expect(onAppReady).toHaveBeenCalledOnce();
+  });
+
+  it("does not fire onAppReady early when setup closes during an in-progress save rollback", async () => {
+    let closedHandler: (() => void) | undefined;
+    let crashed = false;
+    const main = {
+      isDestroyed: () => false,
+      hide: vi.fn(),
+      show: vi.fn(),
+      focus: vi.fn(),
+      webContents: {
+        once: vi.fn(),
+        removeListener: vi.fn(),
+        isCrashed: () => crashed,
+      },
+    };
+    desktop.mainWindow = main as unknown as BrowserWindow;
+    desktop.currentTargetUrl = "https://previous.example";
+    desktop.setupWindow = null;
+
+    // Create a real setup window via showSetupWindow so its closed listener is wired.
+    const createdSetup = {
+      ...fakeWindow(),
+      once: vi.fn((event: string, listener: () => void) => {
+        if (event === "closed") closedHandler = listener;
+      }),
+      destroy: vi.fn(() => {
+        desktop.setupWindow = null;
+        closedHandler?.();
+      }),
+      loadFile: vi.fn(() => Promise.resolve()),
+      webContents: {
+        mainFrame: {},
+        setWindowOpenHandler: vi.fn(),
+      },
+    };
+    const { BrowserWindow: MockBrowserWindow } = await import("electron");
+    vi.mocked(MockBrowserWindow).mockImplementationOnce(function mockWindow() {
+      return createdSetup as unknown as BrowserWindow;
+    });
+    showSetupWindow();
+    const setupEvent = {
+      sender: createdSetup.webContents,
+      senderFrame: createdSetup.webContents.mainFrame,
+    } as unknown as IpcCaller;
+
+    const save = mocks.invoke.get("desktop.setup.save")?.(setupEvent, {
+      mode: "existing",
+      serverUrl: SERVER,
+      headers: {},
+    });
+    // Closing setup while save is still running must not fire onAppReady against the old server.
+    closedHandler?.();
+    expect(onAppReady).not.toHaveBeenCalled();
+
+    // Re-attach setupWindow and simulate renderer crashing when destroySetupWindow runs so save rolls back.
+    desktop.setupWindow = createdSetup as unknown as BrowserWindow;
+    createdSetup.destroy.mockImplementationOnce(() => {
+      desktop.setupWindow = null;
+      closedHandler?.();
+      crashed = true;
+    });
+    opening.resolve(true);
+    await expect(save).resolves.toMatchObject({ ok: false });
+    expect(onAppReady).not.toHaveBeenCalled();
   });
 });

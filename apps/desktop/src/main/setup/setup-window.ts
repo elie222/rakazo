@@ -69,7 +69,7 @@ function restoreAppWindowAfterSetup() {
   clearTimeout(desktop.warmWindowTimer);
   desktop.mainWindow.show();
   desktop.mainWindow.focus();
-  onAppReadyCallback?.();
+  if (!setupSaveInProgress) onAppReadyCallback?.();
 }
 /** Watch for a renderer crash until setup is persisted (or the switch is abandoned). */
 function watchRendererUntilCommitted(win: BrowserWindow) {

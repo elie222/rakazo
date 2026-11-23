@@ -1,3 +1,4 @@
+import { bestEffort } from "@rakazo/logging";
 import type { BrowserWindow } from "electron";
 
 export const DEEP_LINK_SCHEME = "rakazo";
@@ -108,6 +109,12 @@ export function shouldRegisterDeepLinkProtocol(isPackaged: boolean): boolean {
   return isPackaged;
 }
 
+function isNavigationAbort(error: unknown): boolean {
+  if (typeof error !== "object" || error === null) return false;
+  const { code, errno } = error as { code?: unknown; errno?: unknown };
+  return code === "ERR_ABORTED" || errno === -3;
+}
+
 /** Navigates the existing app window in place while preserving its session and partition. */
 export function navigateWindowToDeepLink(
   win: BrowserWindow,
@@ -118,6 +125,12 @@ export function navigateWindowToDeepLink(
   const targetUrl = resolveDeepLinkTarget(deepLink, currentTargetUrl);
   if (targetUrl === null) return false;
   if (win.webContents.getURL() === targetUrl) return true;
-  void win.webContents.loadURL(targetUrl).catch(() => undefined);
+  void bestEffort(
+    "navigate to desktop deep link",
+    win.webContents.loadURL(targetUrl).catch((error: unknown) => {
+      if (isNavigationAbort(error)) return;
+      throw error;
+    }),
+  );
   return true;
 }

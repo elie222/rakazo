@@ -1,5 +1,6 @@
+import { getLogger } from "@rakazo/logging";
 import type { BrowserWindow } from "electron";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   extractDeepLinkFromArgv,
   navigateWindowToDeepLink,
@@ -176,11 +177,31 @@ describe("navigateWindowToDeepLink", () => {
     expect(alive.webContents.loadURL).not.toHaveBeenCalled();
   });
 
-  it("swallows navigation aborts so rapid deep links do not reject unhandled", async () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("ignores ERR_ABORTED navigation aborts without logging a warning", async () => {
+    const warn = vi.spyOn(getLogger(), "warn").mockImplementation(() => undefined);
     const win = fakeWindow();
-    win.webContents.loadURL.mockRejectedValueOnce(new Error("ERR_ABORTED"));
+    const aborted = Object.assign(new Error("ERR_ABORTED"), { code: "ERR_ABORTED", errno: -3 });
+    win.webContents.loadURL.mockRejectedValueOnce(aborted);
     const link = parseDeepLink("rakazo://app/bot-42")!;
     expect(navigateWindowToDeepLink(win, link, "https://rakazo.example")).toBe(true);
-    await Promise.resolve();
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it("logs unexpected load failures through bestEffort", async () => {
+    const warn = vi.spyOn(getLogger(), "warn").mockImplementation(() => undefined);
+    const win = fakeWindow();
+    const failure = new Error("ERR_CONNECTION_REFUSED");
+    win.webContents.loadURL.mockRejectedValueOnce(failure);
+    const link = parseDeepLink("rakazo://app/bot-42")!;
+    expect(navigateWindowToDeepLink(win, link, "https://rakazo.example")).toBe(true);
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(warn).toHaveBeenCalledWith("best effort failed: navigate to desktop deep link", {
+      error: failure,
+    });
   });
 });

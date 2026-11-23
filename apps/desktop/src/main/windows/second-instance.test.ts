@@ -201,4 +201,35 @@ describe("createDeepLinkController", () => {
       "https://rakazo.example/app/bot-mac",
     );
   });
+
+  it("queues a deep link while appOpener is still loading the main window", () => {
+    let opening = true;
+    const main = fakeWindow();
+
+    const controller = createDeepLinkController({
+      initialArgv: ["Rakazo"],
+      setupWindow: () => null,
+      mainWindow: () => main,
+      currentTargetUrl: () => "https://rakazo.example",
+      isOpening: () => opening,
+      onRevealMainWindow: vi.fn(),
+      reopenIfClosed: vi.fn(),
+    });
+
+    expect(controller.handleArgv(["Rakazo", "rakazo://app/bot-reopen"])).toEqual({
+      kind: "queued",
+      deepLink: { kind: "bot", botId: "bot-reopen", search: "", hash: "" },
+    });
+    expect(main.webContents.loadURL).not.toHaveBeenCalled();
+
+    // Still loading: applyPending keeps the link queued.
+    controller.applyPending();
+    expect(main.webContents.loadURL).not.toHaveBeenCalled();
+
+    // Once opening completes, applyPending navigates once.
+    opening = false;
+    controller.applyPending();
+    expect(main.webContents.loadURL).toHaveBeenCalledOnce();
+    expect(main.webContents.loadURL).toHaveBeenCalledWith("https://rakazo.example/app/bot-reopen");
+  });
 });

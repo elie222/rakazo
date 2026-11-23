@@ -40,6 +40,7 @@ export function handleSecondInstance(input: {
   setupWindow: BrowserWindow | null;
   mainWindow: BrowserWindow | null;
   currentTargetUrl: string | null;
+  isOpening?: boolean;
   onRevealMainWindow?: () => void;
 }): SecondInstanceResult {
   const win = secondInstanceWindow(input.setupWindow, input.mainWindow);
@@ -52,7 +53,7 @@ export function handleSecondInstance(input: {
   if (deepLink === null) return win === null ? { kind: "none" } : { kind: "focused" };
 
   const setupOpen = input.setupWindow !== null && !input.setupWindow.isDestroyed();
-  if (setupOpen) return { kind: "queued", deepLink };
+  if (setupOpen || input.isOpening === true) return { kind: "queued", deepLink };
 
   if (
     input.mainWindow !== null &&
@@ -74,13 +75,14 @@ export function createDeepLinkController(deps: {
   setupWindow: () => BrowserWindow | null;
   mainWindow: () => BrowserWindow | null;
   currentTargetUrl: () => string | null;
+  isOpening?: () => boolean;
   onRevealMainWindow: () => void;
   reopenIfClosed: () => void;
 }) {
   let pending: ParsedDeepLink | null = extractDeepLinkFromArgv(deps.initialArgv);
 
   function applyPending() {
-    if (pending === null) return;
+    if (pending === null || deps.isOpening?.() === true) return;
     const setup = deps.setupWindow();
     if (setup !== null && !setup.isDestroyed()) return;
     const main = deps.mainWindow();
@@ -97,6 +99,7 @@ export function createDeepLinkController(deps: {
       setupWindow: deps.setupWindow(),
       mainWindow: deps.mainWindow(),
       currentTargetUrl: deps.currentTargetUrl(),
+      isOpening: deps.isOpening?.(),
       onRevealMainWindow: deps.onRevealMainWindow,
     });
     if (result.kind === "queued") pending = result.deepLink;
@@ -127,6 +130,7 @@ export function registerDeepLinkHandlers(
     setupWindow: () => desktop.setupWindow,
     mainWindow: () => desktop.mainWindow,
     currentTargetUrl: () => desktop.currentTargetUrl,
+    isOpening: options.isOpening,
     onRevealMainWindow: () => clearTimeout(desktop.warmWindowTimer),
     reopenIfClosed: () => {
       if (
