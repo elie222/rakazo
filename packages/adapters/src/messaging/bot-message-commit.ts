@@ -48,16 +48,23 @@ export async function commitBotMessageDelivery<
           await tx.$queryRaw`SELECT id FROM threads WHERE id = ${threadId} FOR UPDATE`;
         }
         if (input.nonce) {
-          const already = await tx.message.findUnique({
-            where: {
-              threadId_clientNonce: {
-                threadId: input.nonce.threadId,
-                clientNonce: input.nonce.clientNonce,
+          // Probe the key on the route's own stamp thread and on the sender's:
+          // the chat path stamps the delivered message on the target's thread
+          // while the ticket path stamps its echo on the sender's, and a
+          // reassignment between attempts can flip the route, so one probe
+          // domain would let the same tool call deliver through both.
+          for (const threadId of [...new Set([input.nonce.threadId, input.run.threadId])]) {
+            const already = await tx.message.findUnique({
+              where: {
+                threadId_clientNonce: {
+                  threadId,
+                  clientNonce: input.nonce.clientNonce,
+                },
               },
-            },
-            select: { id: true },
-          });
-          if (already) return replayed();
+              select: { id: true },
+            });
+            if (already) return replayed();
+          }
         }
         const senderStillRunning = await tx.run.findFirst({
           where: {

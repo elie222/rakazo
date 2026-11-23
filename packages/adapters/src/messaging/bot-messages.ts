@@ -288,13 +288,16 @@ export async function messageBot(
     },
     async (tx) => {
       // Echo into the sender's chat in the same transaction so a failed notify
-      // cannot leave one side delivered and the other blank.
+      // cannot leave one side delivered and the other blank. The echo also
+      // carries the delivery key, making the sender's thread a stamp domain
+      // both routes share (see the probe in commitBotMessageDelivery).
       const outbound = await createThreadMessageInTransaction(tx, {
         threadId: run.threadId,
         role: "bot",
         blocks: [outboundBlock],
         botId: run.botId,
         runId: run.id,
+        ...(deliveryKey ? { clientNonce: deliveryKey } : {}),
         markUnread: options?.forceUnread === true && !ticketOrigin,
         allowCancelledRun: returnFrom === "ended",
         lease: runLeaseFor(deps, run.id),

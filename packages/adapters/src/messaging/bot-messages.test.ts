@@ -798,6 +798,62 @@ describe("hop lookup", () => {
 });
 
 describe("hardening", () => {
+  /**
+   * A ticket-tagged explicit send whose ticket can be reassigned between
+   * attempts, and whose delivery-key probe sees the messages earlier attempts
+   * committed (the fake's message rows): reassignment flips the route between
+   * the ticket path and the ordinary chat path, and the same effect key must
+   * not deliver through both.
+   */
+  function reassignmentHarness(startAssignee: string) {
+    const sourceBlocks = [
+      {
+        kind: "bot_message_received",
+        fromBotId: "bot-sender",
+        fromBotName: "Researcher",
+        text: "What quota applies?",
+        hop: 1,
+        intent: "request",
+        ticketRef: "OPS-7",
+      },
+    ];
+    const harness = deps({
+      hopBlocks: sourceBlocks,
+      board: { id: "board-1", ticketPrefix: "OPS" },
+      ticket: { id: "ticket-7", assigneeBotId: startAssignee },
+      bots: [
+        { id: "bot-sender", name: "Researcher", title: "", thread: { id: "thread-sender" } },
+        { id: "bot-other", name: "Planner", title: "", thread: { id: "thread-other" } },
+      ],
+    });
+    let assignee = startAssignee;
+    (
+      harness.deps.prisma.ticket as unknown as { findFirst: ReturnType<typeof vi.fn> }
+    ).findFirst.mockImplementation(async () => ({ id: "ticket-7", assigneeBotId: assignee }));
+    harness.tx.message.findUnique.mockImplementation(
+      async (args: {
+        where?: { threadId_clientNonce?: { threadId: string; clientNonce: string } };
+      }) => {
+        const probe = args?.where?.threadId_clientNonce;
+        if (probe) {
+          const committed = harness.tx.message.create.mock.calls
+            .map(([call]) => call.data as { threadId: string; clientNonce?: string })
+            .find(
+              (data) => data.threadId === probe.threadId && data.clientNonce === probe.clientNonce,
+            );
+          return committed ? { id: "message-delivered" } : null;
+        }
+        return { blocks: sourceBlocks };
+      },
+    );
+    return {
+      ...harness,
+      reassign: (next: string) => {
+        assignee = next;
+      },
+    };
+  }
+
   it("does not deliver twice when the tool call is re-executed", async () => {
     const harness = deps({ alreadyDelivered: { id: "message-1" } });
     const sent = await messageBot(harness.deps, run, sender, {
@@ -823,6 +879,78 @@ describe("hardening", () => {
         data: expect.objectContaining({ clientNonce: "bot-message:call-1" }),
       }),
     );
+  });
+
+  it("does not deliver twice when a reassignment moves the reply off the ticket", async () => {
+    // First attempt: the target owns the ticket, so the explicit result goes to
+    // the ticket path. A reassignment then flips the route; the retry with the
+    // same effect key must replay instead of delivering to the chat as well.
+    const harness = reassignmentHarness("bot-sender");
+    const senderRun = {
+      ...run,
+      threadId: "thread-helper",
+      botId: "bot-helper",
+      sourceMessageId: "message-source",
+    };
+    const send = () =>
+      messageBot(
+        harness.deps,
+        senderRun,
+        { id: "bot-helper", name: "Surveyor" },
+        {
+          bot_id: "bot-sender",
+          message: "Quota is five.",
+          intent: "result",
+          deliveryKey: "call-1",
+        },
+      );
+    const first = await send();
+    expect(first).toMatchObject({ ok: true });
+    expect(harness.tx.ticketComment.create).toHaveBeenCalledTimes(1);
+    harness.reassign("bot-other");
+    const retried = await send();
+    expect(retried).toMatchObject({ ok: true, replayed: true });
+    // One comment, one assignee wake from the first attempt; the ordinary
+    // path's second inbound, task and run never start.
+    expect(harness.tx.ticketComment.create).toHaveBeenCalledTimes(1);
+    expect(harness.tx.task.create).toHaveBeenCalledTimes(1);
+    expect(harness.tx.run.create).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not deliver twice when a reassignment moves the reply onto the ticket", async () => {
+    // First attempt: the target does not own the ticket, so the send takes the
+    // ordinary path. A reassignment then makes it the assignee; the retry with
+    // the same effect key must replay instead of commenting on the ticket too.
+    const harness = reassignmentHarness("bot-other");
+    const senderRun = {
+      ...run,
+      threadId: "thread-helper",
+      botId: "bot-helper",
+      sourceMessageId: "message-source",
+    };
+    const send = () =>
+      messageBot(
+        harness.deps,
+        senderRun,
+        { id: "bot-helper", name: "Surveyor" },
+        {
+          bot_id: "bot-sender",
+          message: "Quota is five.",
+          intent: "result",
+          deliveryKey: "call-1",
+        },
+      );
+    const first = await send();
+    expect(first).toMatchObject({ ok: true });
+    expect(harness.tx.ticketComment.create).toHaveBeenCalledTimes(1);
+    harness.reassign("bot-sender");
+    const retried = await send();
+    expect(retried).toMatchObject({ ok: true, replayed: true });
+    // One comment and one recipient task/run from the first attempt; the
+    // ticket path adds no second comment or assignee wake.
+    expect(harness.tx.ticketComment.create).toHaveBeenCalledTimes(1);
+    expect(harness.tx.task.create).toHaveBeenCalledTimes(1);
+    expect(harness.tx.run.create).toHaveBeenCalledTimes(1);
   });
 
   it("still delivers when the caller supplies no delivery key", async () => {
