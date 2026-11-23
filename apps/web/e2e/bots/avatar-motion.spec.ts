@@ -140,12 +140,23 @@ test("organic avatars hold still while idle and stop working motion while offscr
     async (svg: SVGSVGElement, phase: number) => {
       const body = (mode: string) =>
         svg.querySelector<SVGPathElement>(`.rakazo-mascot-avatar-body-${mode}`)!;
-      svg.parentElement!.querySelector("button")!.click();
-      await new Promise((resolve) => setTimeout(resolve, 0));
+      const morph = () => body("working").querySelector("animate");
+      // The morph mounts in the same commit as the layout effect that syncs it, so once it
+      // exists it is on the shared clock.
+      const animate = await new Promise<SVGAnimateElement>((resolve) => {
+        const found = () => {
+          const element = morph();
+          if (!element) return;
+          observer.disconnect();
+          resolve(element);
+        };
+        const observer = new MutationObserver(found);
+        observer.observe(svg, { childList: true, subtree: true });
+        svg.parentElement!.querySelector("button")!.click();
+        found();
+      });
       // Whole milliseconds: the duration comes back as float seconds.
-      const duration = Math.round(
-        body("working").querySelector("animate")!.getSimpleDuration() * 1000,
-      );
+      const duration = Math.round(animate.getSimpleDuration() * 1000);
       return {
         duration,
         offset: (svg.getCurrentTime() * 1000 - Date.now() - phase) % duration,
