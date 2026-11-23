@@ -371,7 +371,13 @@ describe("saving a page's pictures", () => {
     );
   }
 
-  function withFiles(ctx: unknown, artifact: { storageKey: string } | null, bytes?: Uint8Array) {
+  function withFiles(
+    ctx: unknown,
+    artifact: { storageKey: string } | null,
+    bytes?: Uint8Array,
+    trustedSites: string[] = [],
+    rules: unknown[] = [],
+  ) {
     const run = ctx as {
       deps: Record<string, unknown> & { prisma: Record<string, unknown> };
       trust: Record<string, unknown>;
@@ -379,10 +385,11 @@ describe("saving a page's pictures", () => {
     run.deps.prisma.artifact = { findFirst: vi.fn(async () => artifact) };
     run.deps.prisma.externalEffect = { findFirst: vi.fn(async () => null) };
     run.deps.artifacts = { get: vi.fn(async () => bytes) };
+    Object.assign(run, { tools: { offered: [{ name: "web_fetch" }] } });
     Object.assign(run.trust, {
       searchResultUrls: new Set<string>(),
-      loadTrustedSites: async () => new Set<string>(),
-      loadApprovalRules: async () => [],
+      loadTrustedSites: async () => new Set(trustedSites),
+      loadApprovalRules: async () => rules,
     });
     return ctx as never;
   }
@@ -432,9 +439,43 @@ describe("saving a page's pictures", () => {
     )) as Record<string, unknown>;
     expect(result).toMatchObject({ unchanged: true, error: expect.stringMatching(/nothing/) });
     expect(result.problems).toEqual([
-      "Image hotel: example.com is new to this chat; open the address with web_fetch first, then save again.",
+      "Image hotel: example.com needs approval first; open the address with web_fetch, then save again.",
     ]);
     expect(tx.page.create).not.toHaveBeenCalled();
+  });
+
+  it("fetches no web picture for a bot whose web fetching is turned off", async () => {
+    const tx = { page: { create: vi.fn() } };
+    const ctx = withFiles(context(tx), null, undefined, ["example.com"]);
+    Object.assign(ctx, { tools: { offered: [] } });
+    const result = (await pageTools.save_page!(
+      ctx,
+      call({
+        title: "Trip",
+        source: pictured("hotel"),
+        images: { hotel: "https://img.example.com/lobby.jpg" },
+      }),
+    )) as Record<string, unknown>;
+    expect(result.problems).toEqual(["Image hotel: this bot cannot fetch web addresses."]);
+    expect(tx.page.create).not.toHaveBeenCalled();
+  });
+
+  it("refuses a web picture from a trusted site a rule blocks or asks about", async () => {
+    for (const effect of ["deny", "require_approval"]) {
+      const tx = { page: { create: vi.fn() } };
+      const rule = { effect, matchKind: "site", matchValue: "example.com" };
+      const ctx = withFiles(context(tx), null, undefined, ["example.com"], [rule]);
+      const result = (await pageTools.save_page!(
+        ctx,
+        call({
+          title: "Trip",
+          source: pictured("hotel"),
+          images: { hotel: "https://img.example.com/lobby.jpg" },
+        }),
+      )) as Record<string, unknown>;
+      expect(result.problems).toEqual([expect.stringMatching(/needs approval first/)]);
+      expect(tx.page.create).not.toHaveBeenCalled();
+    }
   });
 
   it("keeps earlier pictures the new source still shows and drops the rest", async () => {

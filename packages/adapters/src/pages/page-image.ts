@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { ATTACHMENT_IMAGE_MAX_EDGE, ATTACHMENT_MAX_BYTES } from "@rakazo/contracts";
+import { getLogger } from "@rakazo/logging";
 import { detectImageMimeType } from "../media/image-mime-type.js";
 import type { SafeWebFetchOptions } from "../web/web-ssrf.js";
 import { fetchSafeWebBytes } from "../web/web-ssrf.js";
@@ -39,7 +40,8 @@ export async function encodePageImage(bytes: Uint8Array): Promise<EncodedPageIma
       data: data.toString("base64"),
       hash: createHash("sha256").update(data).digest("hex"),
     };
-  } catch {
+  } catch (error) {
+    getLogger().warn("page_image.decode_failed", { error });
     return "the picture could not be read";
   }
 }

@@ -1,6 +1,6 @@
 import type { PageImages } from "@rakazo/contracts";
 import { PAGE_IMAGE_NAME, PAGE_IMAGES_MAX } from "@rakazo/contracts";
-import { siteAlwaysAllowed } from "@rakazo/core";
+import { resolveActionApprovalDetail, siteAlwaysAllowed } from "@rakazo/core";
 import { normalizedHttpUrl, urlSite } from "@rakazo/core/egress";
 import type { Prisma } from "@rakazo/db";
 import { pageImagesNamedIn } from "@rakazo/db";
@@ -34,9 +34,12 @@ export function parsePageImageSources(value: unknown): PageImageSources | string
 }
 
 async function addressGiven(ctx: RunContext, url: string, site: string): Promise<boolean> {
+  const rules = await ctx.trust.loadApprovalRules();
+  if (resolveActionApprovalDetail({ toolName: "web_fetch", site, rules }).decision !== "allow")
+    return false;
   if (ctx.trust.searchResultUrls.has(url)) return true;
   if ((await ctx.trust.loadTrustedSites()).has(site)) return true;
-  if (siteAlwaysAllowed(await ctx.trust.loadApprovalRules(), site)) return true;
+  if (siteAlwaysAllowed(rules, site)) return true;
   const fetched = await ctx.deps.prisma.externalEffect.findFirst({
     where: {
       runId: ctx.runId,
@@ -87,8 +90,10 @@ async function pictureBytes(
     const url = normalizedHttpUrl(source);
     const site = url ? urlSite(url) : undefined;
     if (!url || !site) return "not a valid web address";
+    if (!ctx.tools.offered.some((tool) => tool.name === "web_fetch"))
+      return "this bot cannot fetch web addresses";
     if (!(await addressGiven(ctx, url, site)))
-      return `${site} is new to this chat; open the address with web_fetch first, then save again`;
+      return `${site} needs approval first; open the address with web_fetch, then save again`;
     return fetchPageImage(url);
   }
   const artifact = await deps.prisma.artifact.findFirst({
