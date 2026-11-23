@@ -327,12 +327,13 @@ function LayoutContent() {
     subscribeSessionGeneration,
     currentReadySessionGeneration,
   );
-  useHardwareShortcuts(ready, callSession);
+  const pathname = usePathname();
+  useHardwareShortcuts(ready, callSession, pathname === "/paywall");
   useEffect(() => {
     if (!ready) return;
     return startIncomingCalls();
   }, [ready, callSession]);
-  const screen = analyticsScreen(usePathname());
+  const screen = analyticsScreen(pathname);
   useEffect(() => setMobileMonitoringScreen(screen), [screen]);
   useEffect(() => {
     const surface = Platform.OS;
@@ -447,7 +448,9 @@ function LayoutContent() {
                               <CallKeyboardContext.Provider
                                 value={Platform.OS === "ios" ? false : call}
                               >
-                                <ModalHardwareEscape dismiss={() => navigation.goBack()} />
+                                {options.gestureEnabled !== false ? (
+                                  <ModalHardwareEscape dismiss={() => navigation.goBack()} />
+                                ) : null}
                                 {children}
                               </CallKeyboardContext.Provider>
                             </InboxBesideContext.Provider>

@@ -43,8 +43,16 @@ afterEach(async () => {
   await act(() => root.unmount());
 });
 
-function Shortcuts({ dismiss, stop }: { dismiss?: () => void; stop?: () => void }) {
-  useHardwareShortcuts(true, 0);
+function Shortcuts({
+  dismiss,
+  stop,
+  blocked = false,
+}: {
+  dismiss?: () => void;
+  stop?: () => void;
+  blocked?: boolean;
+}) {
+  useHardwareShortcuts(true, 0, blocked);
   useHardwareEscape("modal", dismiss ?? null);
   useHardwareEscape("thread", stop ?? null);
   return null;
@@ -90,4 +98,18 @@ it.each([
   act(() => native.dispatch?.({ key, presented: false }));
 
   expect(native.navigate).toHaveBeenCalledExactlyOnceWith(route);
+});
+
+it("keeps hardware shortcuts from leaving a blocking screen", async () => {
+  const dismiss = vi.fn();
+  await act(async () => root.render(<Shortcuts dismiss={dismiss} blocked />));
+
+  act(() => {
+    native.dispatch?.({ key: "Escape", presented: true });
+    native.dispatch?.({ key: "k", presented: true });
+    native.dispatch?.({ key: "n", presented: true });
+  });
+
+  expect(dismiss).not.toHaveBeenCalled();
+  expect(native.navigate).not.toHaveBeenCalled();
 });

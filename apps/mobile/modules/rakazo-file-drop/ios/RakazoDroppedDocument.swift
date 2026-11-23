@@ -100,12 +100,19 @@ enum RakazoDroppedDocument {
     var payload: [String: Any] = ["name": name, "mimeType": type?.preferredMIMEType ?? "", "size": size]
     guard let type else { return payload }
     let image = type.conforms(to: .image)
-    guard size <= maxBytes * (image ? resizeHeadroom : 1) else { return payload }
+    let limit = maxBytes * (image ? resizeHeadroom : 1)
+    guard size <= limit else { return payload }
     let destination = directory.appendingPathComponent(UUID().uuidString)
     do {
       let manager = FileManager.default
       try manager.createDirectory(at: directory, withIntermediateDirectories: true)
-      try manager.copyItem(at: source, to: destination)
+      guard manager.createFile(atPath: destination.path, contents: nil) else { return payload }
+      let actualSize = try copyBytes(from: source, to: destination, limit: limit)
+      payload["size"] = actualSize
+      if actualSize > limit {
+        try manager.removeItem(at: destination)
+        return payload
+      }
     } catch {
       try? FileManager.default.removeItem(at: destination)
       return payload
@@ -118,5 +125,19 @@ enum RakazoDroppedDocument {
       payload["height"] = dimensions[kCGImagePropertyPixelHeight]
     }
     return payload
+  }
+
+  private static func copyBytes(from source: URL, to destination: URL, limit: Int) throws -> Int {
+    let input = try FileHandle(forReadingFrom: source)
+    defer { try? input.close() }
+    let output = try FileHandle(forWritingTo: destination)
+    defer { try? output.close() }
+    var size = 0
+    while let data = try input.read(upToCount: min(64 * 1024, limit - size + 1)), !data.isEmpty {
+      size += data.count
+      if size > limit { return size }
+      try output.write(contentsOf: data)
+    }
+    return size
   }
 }

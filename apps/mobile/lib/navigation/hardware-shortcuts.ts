@@ -44,7 +44,7 @@ export function useHardwareEscape(kind: EscapeAction, action: (() => void) | nul
   );
 }
 
-export function useHardwareShortcuts(ready: boolean, session: number) {
+export function useHardwareShortcuts(ready: boolean, session: number, blocked: boolean) {
   const router = useRouter();
   const [signedInSession, setSignedInSession] = useState<number | null>(null);
   useEffect(() => {
@@ -59,7 +59,7 @@ export function useHardwareShortcuts(ready: boolean, session: number) {
   }, [ready, session]);
   const enabled = ready && signedInSession === session;
   const handle = useEffectEvent(({ key, presented }: ShortcutEvent) => {
-    if (!enabled) return;
+    if (!enabled || blocked) return;
     if (key === "Escape") {
       const layer = presented ? "modal" : "thread";
       [...escapeActions[layer]].at(-1)?.();
