@@ -271,6 +271,7 @@ export async function provisionComputer(
   if (isLiveSuspending(existing)) {
     const settled = await waitForSuspendToSettle(deps.prisma, existing, context);
     if (!settled) throw busy("not_ready");
+    context.signal.throwIfAborted();
     existing = settled;
   }
   if (existing.state === "quarantined") throw new ComputerRecoveryRequiredError();
