@@ -125,7 +125,7 @@ export function SidebarFooter({
   return (
     <div
       data-testid="sidebar-footer"
-      className={`flex shrink-0 items-center gap-2 bg-transparent ${mini ? "flex-col px-1 py-2" : "gap-3 ps-5 pe-2.5 py-3"}`}
+      className={`flex shrink-0 items-center bg-transparent ${mini ? "flex-col gap-2 px-1 py-2" : "gap-3 ps-5 pe-2.5 py-3"}`}
     >
       <Popover open={open} onOpenChange={onOpenChange}>
         <PopoverTrigger
