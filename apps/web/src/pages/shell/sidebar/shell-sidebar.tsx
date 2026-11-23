@@ -19,7 +19,6 @@ import { useBilling } from "../../../components/billing/SubscriptionGate";
 import { CreateOrganizationDialog } from "../../../components/spaces/CreateOrganizationDialog";
 import { InviteDialog } from "../../../components/spaces/InviteDialog";
 import { useSignOut } from "../../../lib/auth/sign-out";
-import { desktopBridge, windowChromeKind } from "../../../lib/platform/desktop";
 import type { BotsSidebarDensity } from "../../../lib/preferences/bots-sidebar-density-pref";
 import { useQueryUserId } from "../../../lib/query/query";
 import { switchOrganization, useOrganizations } from "../../../lib/spaces/organizations";
@@ -54,10 +53,6 @@ function resetFadeWhenUnscrollable(event: UIEvent<HTMLDivElement>) {
     animation.play();
   }
 }
-
-// The rail's edge starts below the traffic lights, so they and the toggle beside them read as one bar.
-const DARWIN_RAIL_EDGE =
-  "group-data-[side=left]:border-r-0 group-data-[side=right]:border-l-0 after:absolute after:end-0 after:top-13 after:bottom-0 after:w-px after:bg-sidebar-border";
 
 type User = { name?: string | null; email?: string; image?: string | null };
 
@@ -173,7 +168,7 @@ export function ShellSidebar({
           isMobile
             ? `absolute inset-y-0 start-0 z-40 flex w-[calc(100%-48px)] max-w-[316px] shrink-0 flex-col border-e border-sidebar-border bg-sidebar transition-transform duration-200 ease-out motion-reduce:transition-none ${mobileOpen ? "translate-x-0" : "-translate-x-full rtl:translate-x-full"}`
             : // The sidebar is fixed to the window edge, so it steps aside for the rail there.
-              `h-full overflow-hidden border-sidebar-border ${rail ? "data-[side=left]:left-23 data-[side=right]:right-23" : ""} ${mini && !rail && windowChromeKind(desktopBridge()) === "darwin" ? DARWIN_RAIL_EDGE : ""}`
+              `h-full overflow-hidden border-sidebar-border ${rail ? "data-[side=left]:left-23 data-[side=right]:right-23" : ""}`
         }
       >
         <SidebarHeader
