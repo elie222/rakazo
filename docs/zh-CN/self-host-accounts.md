@@ -132,7 +132,7 @@ SSO 注册会先遵守关闭注册和部署允许名单，再创建账号。允�
 
 ### 登录提示
 
-`OIDC_AUTHORIZATION_PARAMS` 会给每次跳转到提供商的请求加上固定参数，格式为用 `&` 连接的 `name=value`（值里含有 `&` 或 `=` 时需 URL 编码）。可用于提供商自带的提示，跳过账号或组织选择：
+`OIDC_AUTHORIZATION_PARAMS` 会给每次跳转到提供商的请求加上默认参数，格式为用 `&` 连接的 `name=value`。值按表单编码读取：`&`、`=` 和 `+` 要写成 `%26`、`%3D` 和 `%2B`，因为单独的 `+` 会被读成空格。可用于提供商自带的提示，跳过账号或组织选择：
 
 | 提供商 | 设置 | 效果 |
 | --- | --- | --- |
@@ -142,7 +142,7 @@ SSO 注册会先遵守关闭注册和部署允许名单，再创建账号。允�
 | Okta | `idp=<identity provider id>` | 直接跳转到该身份提供商。 |
 | 任意 | `prompt=select_account` | 即使只登录了一个账号，也询问使用哪个账号。 |
 
-可以组合使用，例如 `domain_hint=example.com&prompt=select_account`。请求由 API 生成，所以这些参数对网页、桌面和移动端登录以及绑定都生效。如果其中包含登录流程自己设置的参数（`client_id`、`redirect_uri`、`response_type`、`response_mode`、`scope`、`state`、`nonce`、`code_challenge`、`code_challenge_method`、`request` 或 `request_uri`），API 会拒绝启动。上文的显式重新认证仍会发送 `prompt=login` 和 `max_age=0`，不受这里的设置影响。提示只会缩短提供商的页面，谁能登录仍由提供商和本部署的注册规则决定。
+可以组合使用，例如 `domain_hint=example.com&prompt=select_account`；同一个参数名只能出现一次。是否采用提示由提供商决定（例如 Entra 租户可以设置为忽略 `domain_hint`），设置后请实际登录一次确认。登录请求自己带上的同名参数会覆盖这里的默认值。请求由 API 生成，所以这些参数对网页、桌面和移动端登录以及绑定都生效。如果其中包含登录流程自己设置的参数（`client_id`、`redirect_uri`、`response_type`、`response_mode`、`scope`、`state`、`nonce`、`code_challenge`、`code_challenge_method`、`request` 或 `request_uri`），API 会拒绝启动。上文的显式重新认证仍会发送 `prompt=login` 和 `max_age=0`，不受这里的设置影响。提示只会缩短提供商的页面，谁能登录仍由提供商和本部署的注册规则决定。
 
 ## Google 和 Apple 登录
 

@@ -375,6 +375,11 @@ describe("OIDC environment", () => {
       );
     },
   );
+  it("refuses an authorization parameter set twice", () => {
+    expect(() =>
+      loadEnv({ ...base, ...oidc, OIDC_AUTHORIZATION_PARAMS: "prompt=select_account&prompt=none" }),
+    ).toThrow("OIDC_AUTHORIZATION_PARAMS sets prompt twice");
+  });
   it("guards password-only lockout without contacting discovery", () => {
     expect(() => loadEnv({ ...base, AUTH_PASSWORD_ENABLED: "false" })).toThrow(/requires OIDC/);
     expect(loadEnv({ ...base, ...oidc, AUTH_PASSWORD_ENABLED: "false" }).passwordAuth).toBe(false);

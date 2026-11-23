@@ -36,12 +36,13 @@ const PROTOCOL_AUTHORIZATION_PARAMS = new Set([
   "state",
 ]);
 
-/** Reads `name=value&name=value`, refusing names the sign-in flow owns. */
+/** Reads `name=value&name=value`, refusing names the sign-in flow owns and names set twice. */
 export function oidcAuthorizationParams(value: string | undefined): Record<string, string> {
   const params: Record<string, string> = {};
   for (const [name, param] of new URLSearchParams(value?.trim() ?? "")) {
     if (!name || PROTOCOL_AUTHORIZATION_PARAMS.has(name.toLowerCase()))
       throw new Error(`OIDC_AUTHORIZATION_PARAMS cannot set ${name || "an unnamed parameter"}`);
+    if (name in params) throw new Error(`OIDC_AUTHORIZATION_PARAMS sets ${name} twice`);
     params[name] = param;
   }
   return params;

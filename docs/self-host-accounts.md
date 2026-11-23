@@ -240,9 +240,10 @@ reflects discovery, not a guarantee that the provider's token endpoint is curren
 
 ### Sign-in hints
 
-`OIDC_AUTHORIZATION_PARAMS` adds fixed parameters to every request that sends someone to the
-provider, written as `name=value` pairs joined with `&` (URL-encode a value that contains `&`
-or `=`). Use it for the hints a provider offers to skip its account or organization picker:
+`OIDC_AUTHORIZATION_PARAMS` adds default parameters to every request that sends someone to the
+provider, written as `name=value` pairs joined with `&`. Values are form-encoded: write `&`, `=`
+and `+` as `%26`, `%3D` and `%2B`, since a bare `+` is read as a space. Use it for the hints a
+provider offers to skip its account or organization picker:
 
 | Provider | Setting | Effect |
 | --- | --- | --- |
@@ -252,8 +253,10 @@ or `=`). Use it for the hints a provider offers to skip its account or organizat
 | Okta | `idp=<identity provider id>` | Sends people to that identity provider. |
 | Any | `prompt=select_account` | Asks which account to use, even when only one is signed in. |
 
-Several can be combined, for example `domain_hint=example.com&prompt=select_account`. The
-parameters apply to web, desktop and mobile sign-in and to linking, because the API builds the
+Several can be combined, for example `domain_hint=example.com&prompt=select_account`; a name
+may appear only once. The provider decides whether to honor a hint (an Entra tenant can be set to
+ignore `domain_hint`, for example), so check the sign-in once after setting one. A sign-in request
+that sends its own value for a parameter overrides the default here. The parameters apply to web, desktop and mobile sign-in and to linking, because the API builds the
 request. The API refuses to start if they name a parameter the sign-in flow sets itself
 (`client_id`, `redirect_uri`, `response_type`, `response_mode`, `scope`, `state`, `nonce`,
 `code_challenge`, `code_challenge_method`, `request` or `request_uri`). The explicit
