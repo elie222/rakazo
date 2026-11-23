@@ -15,29 +15,17 @@ export interface OidcConfig {
   name: string;
   scopes: string[];
   allowSignupBypass: boolean;
-  /**
-   * When true, a missing `email_verified` may be satisfied by `xms_edov`
-   * (email domain owner verified). Off unless the deployment opts in, so a
-   * provider that emits that name is not treated as mailbox proof by default.
-   */
-  trustXmsEdov: boolean;
+  /** Read instead of `email_verified` when the ID token omits it, for IdPs that name it differently. */
+  emailVerifiedClaim?: string;
 }
 
-/** JSON boolean true, or the string "true" in any capitalization. Nothing else. */
-function verifiedEmailClaim(value: unknown): boolean {
-  return value === true || (typeof value === "string" && value.toLowerCase() === "true");
-}
-
-/**
- * Whether the ID token proved the profile email.
- * The standard `email_verified` claim wins. `xms_edov` is only a fallback when
- * that claim is absent and the deployment opted in: a present false or other
- * non-true `email_verified` stays unverified.
- */
-export function oidcEmailVerified(profile: Record<string, unknown>, trustXmsEdov = false): boolean {
-  if (verifiedEmailClaim(profile.email_verified)) return true;
-  if (!trustXmsEdov || profile.email_verified !== undefined) return false;
-  return verifiedEmailClaim(profile.xms_edov);
+/** Whether the ID token proved the profile email: boolean `true` or the string "true", any case. */
+export function oidcEmailVerified(profile: Record<string, unknown>, fallbackClaim?: string) {
+  const claim =
+    profile.email_verified === undefined && fallbackClaim
+      ? profile[fallbackClaim]
+      : profile.email_verified;
+  return claim === true || (typeof claim === "string" && claim.toLowerCase() === "true");
 }
 
 /** Discovery never gates API startup. Failed attempts share exponential backoff. */
@@ -59,7 +47,7 @@ export function oidcDiscovery(config: OidcConfig) {
         },
         requireIdTokenVerification: true,
         mapProfileToUser: (profile) => ({
-          emailVerified: oidcEmailVerified(profile, config.trustXmsEdov),
+          emailVerified: oidcEmailVerified(profile, config.emailVerifiedClaim),
         }),
       },
     ],

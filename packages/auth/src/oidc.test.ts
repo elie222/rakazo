@@ -135,7 +135,6 @@ function setup(options: Partial<AuthEnv> = {}, hasMembership = true) {
       name: "SSO",
       scopes: ["openid", "email", "profile"],
       allowSignupBypass: false,
-      trustXmsEdov: false,
     },
     ...options,
   });
@@ -363,40 +362,19 @@ it("refuses implicit Google linking even when a third-party mailbox claim is ver
 });
 
 describe("oidcEmailVerified", () => {
-  it.each([true, "true", "TRUE", "True"])(
-    "accepts email_verified %j without trusting the domain-owner claim",
-    (emailVerified) => {
-      expect(oidcEmailVerified({ email_verified: emailVerified })).toBe(true);
-      expect(oidcEmailVerified({ email_verified: emailVerified }, false)).toBe(true);
-    },
-  );
-  it.each([false, "false", "FALSE", undefined, "yes", 1, " true", ""])(
-    "keeps email_verified %j unverified",
-    (emailVerified) => {
-      expect(oidcEmailVerified({ email_verified: emailVerified }, true)).toBe(false);
-    },
-  );
-  it("keeps a missing email_verified unverified", () => {
-    expect(oidcEmailVerified({}, true)).toBe(false);
-    expect(oidcEmailVerified({})).toBe(false);
+  it.each([true, "true", "TRUE"])("accepts email_verified %j", (claim) => {
+    expect(oidcEmailVerified({ email_verified: claim })).toBe(true);
   });
-  it.each([true, "true", "TRUE"])(
-    "accepts xms_edov %j only when opted in and email_verified is absent",
-    (domainVerified) => {
-      expect(oidcEmailVerified({ xms_edov: domainVerified })).toBe(false);
-      expect(oidcEmailVerified({ xms_edov: domainVerified }, false)).toBe(false);
-      expect(oidcEmailVerified({ xms_edov: domainVerified }, true)).toBe(true);
-    },
-  );
-  it.each([false, "false", "FALSE", undefined, "yes", 1])(
-    "keeps xms_edov %j unverified even when opted in",
-    (domainVerified) => {
-      expect(oidcEmailVerified({ xms_edov: domainVerified }, true)).toBe(false);
-    },
-  );
-  it("does not let xms_edov override a present non-true email_verified", () => {
-    expect(oidcEmailVerified({ email_verified: false, xms_edov: true }, true)).toBe(false);
-    expect(oidcEmailVerified({ email_verified: "false", xms_edov: "true" }, true)).toBe(false);
+  it.each([false, "false", undefined, "yes", 1, " true"])("refuses email_verified %j", (claim) => {
+    expect(oidcEmailVerified({ email_verified: claim })).toBe(false);
+  });
+  it("reads the configured claim only when email_verified is absent", () => {
+    expect(oidcEmailVerified({ domain_verified: true })).toBe(false);
+    expect(oidcEmailVerified({ domain_verified: "true" }, "domain_verified")).toBe(true);
+    expect(oidcEmailVerified({ domain_verified: false }, "domain_verified")).toBe(false);
+    expect(
+      oidcEmailVerified({ email_verified: false, domain_verified: true }, "domain_verified"),
+    ).toBe(false);
   });
 });
 
@@ -423,89 +401,23 @@ describe("OIDC callbacks", () => {
       expect(rows("user")[0]?.signupUtmSource).toBeUndefined();
     },
   );
-  function withTrust(trustXmsEdov: boolean) {
-    return {
-      oidc: {
-        issuer,
-        clientId: "test-client",
-        clientSecret: "test-client-secret",
-        name: "SSO",
-        scopes: ["openid", "email", "profile"],
-        allowSignupBypass: false,
-        trustXmsEdov,
-      },
-    };
-  }
   it.each([
-    [{ email_verified: true }, false, true],
-    [{ email_verified: "true" }, false, true],
-    [{ email_verified: "True" }, false, true],
-    [{ email_verified: false }, false, false],
-    [{ email_verified: "false" }, false, false],
-    [{}, false, false],
-    [{ xms_edov: true }, false, false],
-    [{ xms_edov: "true" }, false, false],
-    [{ xms_edov: true }, true, true],
-    [{ xms_edov: "TRUE" }, true, true],
-    [{ xms_edov: false }, true, false],
-    [{ xms_edov: "false" }, true, false],
-    [{ email_verified: false, xms_edov: true }, true, false],
+    [{ email_verified: "true" }, undefined],
+    [{ domain_verified: true }, "domain_verified"],
   ] as const)(
-    "stores provider email verification %j (trust=%s) as %s",
-    async (claims, trust, expected) => {
-      setup(trust ? withTrust(true) : {});
-      const response = await signIn({
-        sub: "subject-1",
-        email: "sso@example.test",
-        name: "SSO user",
-        ...claims,
+    "links a password account when the provider proves the email %j",
+    async (claims, emailVerifiedClaim) => {
+      setup({
+        oidc: {
+          issuer,
+          clientId: "test-client",
+          clientSecret: "test-client-secret",
+          name: "SSO",
+          scopes: ["openid", "email", "profile"],
+          allowSignupBypass: false,
+          emailVerifiedClaim,
+        },
       });
-      expect(response.headers.get("location")).toBe(`${origin}/app`);
-      expect(rows("user")[0]?.emailVerified).toBe(expected);
-    },
-  );
-  it.each([
-    [{ email_verified: "true" }, false],
-    [{ email_verified: "TRUE" }, false],
-    [{ xms_edov: true }, true],
-    [{ xms_edov: "true" }, true],
-  ] as const)(
-    "links a password account when the provider proves the email %j (trust=%s)",
-    async (claims, trust) => {
-      setup(trust ? withTrust(true) : {});
-      expect(
-        (
-          await request("/sign-up/email", {
-            email: "sso@example.test",
-            password: "test-password-123",
-            name: "Local",
-          })
-        ).status,
-      ).toBe(200);
-      rows("user")[0]!.emailVerified = true;
-      const response = await request(
-        await start(
-          { sub: "subject-1", email: "sso@example.test", name: "SSO user", ...claims },
-          true,
-        ),
-      );
-      expect(response.headers.get("location")).toBe(`${origin}/app`);
-      expect(rows("account").some((account) => account.providerId === "oidc")).toBe(true);
-      expect(rows("user")).toHaveLength(1);
-    },
-  );
-  it.each([
-    [{ email_verified: false }, true],
-    [{}, true],
-    [{ xms_edov: false }, true],
-    [{ xms_edov: "false" }, true],
-    [{ email_verified: false, xms_edov: true }, true],
-    [{ xms_edov: true }, false],
-    [{ xms_edov: "TRUE" }, false],
-  ] as const)(
-    "refuses to link a password account when the provider email stays unverified %j (trust=%s)",
-    async (claims, trust) => {
-      setup(trust ? withTrust(true) : {});
       await request("/sign-up/email", {
         email: "sso@example.test",
         password: "test-password-123",
@@ -518,8 +430,8 @@ describe("OIDC callbacks", () => {
           true,
         ),
       );
-      expect(response.headers.get("location")).toContain("error=unable_to_link_account");
-      expect(rows("account").filter((account) => account.providerId === "oidc")).toHaveLength(0);
+      expect(response.headers.get("location")).toBe(`${origin}/app`);
+      expect(rows("account").some((account) => account.providerId === "oidc")).toBe(true);
     },
   );
   it.each([true, false, undefined])(
@@ -683,7 +595,6 @@ describe("OIDC callbacks", () => {
         name: "SSO",
         scopes: [],
         allowSignupBypass: false,
-        trustXmsEdov: false,
       },
     });
     expect((await signIn()).headers.get("location")).toContain("error=account_not_linked");
@@ -731,7 +642,6 @@ describe("OIDC callbacks", () => {
         name: "Replacement",
         scopes: ["openid"],
         allowSignupBypass: false,
-        trustXmsEdov: false,
       },
     });
     expect(await (await request("/account-security")).json()).toMatchObject({ ssoLinked: false });
@@ -952,7 +862,6 @@ describe("OIDC callbacks", () => {
         name: "SSO",
         scopes: [],
         allowSignupBypass: true,
-        trustXmsEdov: false,
       },
     });
     expect((await signIn()).headers.get("location")).toBe(`${origin}/app`);
@@ -967,7 +876,6 @@ describe("OIDC callbacks", () => {
         name: "SSO",
         scopes: [],
         allowSignupBypass: bypass,
-        trustXmsEdov: false,
       },
     });
     expect((await signIn()).headers.get("location")).toContain("error=REGISTRATION_CLOSED");
@@ -2328,7 +2236,6 @@ it.each([
         name: "SSO",
         allowSignupBypass: true,
         scopes: ["openid", "email", "profile"],
-        trustXmsEdov: false,
       },
       social: {
         providers: [

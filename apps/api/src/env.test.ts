@@ -422,24 +422,11 @@ describe("OIDC environment", () => {
     expect(loadEnv({ ...base, ...oidc }).oidc).toMatchObject({
       name: "SSO",
       allowSignupBypass: false,
-      trustXmsEdov: false,
       scopes: ["openid", "email", "profile"],
     });
     expect(
       loadEnv({ ...base, ...oidc, OIDC_ALLOW_SIGNUP_BYPASS: "true" }).oidc?.allowSignupBypass,
     ).toBe(true);
-  });
-  it("trusts the domain-owner email claim only when opted in", () => {
-    expect(loadEnv({ ...base, ...oidc }).oidc?.trustXmsEdov).toBe(false);
-    expect(loadEnv({ ...base, ...oidc, OIDC_TRUST_XMS_EDOV: "true" }).oidc?.trustXmsEdov).toBe(
-      true,
-    );
-    expect(loadEnv({ ...base, ...oidc, OIDC_TRUST_XMS_EDOV: "false" }).oidc?.trustXmsEdov).toBe(
-      false,
-    );
-    expect(() => loadEnv({ ...base, ...oidc, OIDC_TRUST_XMS_EDOV: "yes" })).toThrow(
-      "OIDC_TRUST_XMS_EDOV must be true or false",
-    );
   });
 });
 

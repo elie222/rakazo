@@ -224,7 +224,6 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
     "AUTH_PASSWORD_ENABLED",
     "AUTH_BREACHED_PASSWORD_CHECK_ENABLED",
     "OIDC_ALLOW_SIGNUP_BYPASS",
-    "OIDC_TRUST_XMS_EDOV",
   ]) {
     const value = source[key];
     if (value && !["true", "false"].includes(value))
@@ -254,7 +253,7 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
             .split(/[\s,]+/)
             .filter(Boolean),
           allowSignupBypass: source.OIDC_ALLOW_SIGNUP_BYPASS === "true",
-          trustXmsEdov: source.OIDC_TRUST_XMS_EDOV === "true",
+          emailVerifiedClaim: optional(source.OIDC_EMAIL_VERIFIED_CLAIM),
         }
       : undefined;
   const social = socialAuthFromFields({
