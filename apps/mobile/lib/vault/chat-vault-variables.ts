@@ -4,7 +4,7 @@ import type { BotSecretMetadata } from "@rakazo/contracts";
 import { commandVariableName } from "@rakazo/contracts";
 import { useQuery } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
-import { useMemo, useState, useSyncExternalStore } from "react";
+import { useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { Alert } from "react-native";
 import { selectedSpaceId, subscribeSpaceSelection } from "../api/api";
 import { queryClient, rpcQuery } from "../query/query";
@@ -49,9 +49,22 @@ export function useChatVaultVariables(): VaultVariables {
     if (spaceVault && spaceId) add(space.data, { spaceId });
     return byName;
   }, [read, account.data, space.data, spaceVault, spaceId]);
+  // Each saved placeholder the Vault as read lacks is read again once: it may be new, such as a
+  // key pasted into the message just sent.
+  const asked = useRef(new Set<string>());
+  const { refetch: refetchAccount } = account;
+  const { refetch: refetchSpace } = space;
   return useMemo(
     () => ({
-      want: () => setWanted(true),
+      want: (saved) => {
+        setWanted(true);
+        if (!vaults) return;
+        const unread = saved.filter((name) => !vaults.has(name) && !asked.current.has(name));
+        if (unread.length === 0) return;
+        for (const name of unread) asked.current.add(name);
+        void refetchAccount();
+        if (spaceVault) void refetchSpace();
+      },
       names: vaults && new Set(vaults.keys()),
       open: (name) => {
         const found = vaults?.get(name);
@@ -60,6 +73,6 @@ export function useChatVaultVariables(): VaultVariables {
       denied: () => Alert.alert(t`You don't have access to this Vault secret.`),
       openLabel: (variable) => t`Open ${variable} in Vault`,
     }),
-    [vaults, router, t],
+    [vaults, router, t, refetchAccount, refetchSpace, spaceVault],
   );
 }

@@ -4,7 +4,7 @@ import type { BotSecretMetadata, SettingsScope } from "@rakazo/contracts";
 import { commandVariableName } from "@rakazo/contracts";
 import { toast } from "@rakazo/ui-web";
 import { useQuery } from "@tanstack/react-query";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useSpaceQueries } from "../../lib/query/query";
 
 /**
@@ -44,9 +44,22 @@ export function useChatVaultVariables(
     if (spaceVault) add("space", space.data);
     return byName;
   }, [read, account.data, space.data, spaceVault]);
+  // Each saved placeholder the Vault as read lacks is read again once: it may be new, such as a
+  // key pasted into the message just sent.
+  const asked = useRef(new Set<string>());
+  const { refetch: refetchAccount } = account;
+  const { refetch: refetchSpace } = space;
   return useMemo(
     () => ({
-      want: () => setWanted(true),
+      want: (saved) => {
+        setWanted(true);
+        if (!vaults) return;
+        const unread = saved.filter((name) => !vaults.has(name) && !asked.current.has(name));
+        if (unread.length === 0) return;
+        for (const name of unread) asked.current.add(name);
+        void refetchAccount();
+        if (spaceVault) void refetchSpace();
+      },
       names: vaults && new Set(vaults.keys()),
       open: (name) => {
         const found = vaults?.get(name);
@@ -55,6 +68,6 @@ export function useChatVaultVariables(
       denied: () => toast(t`You don't have access to this Vault secret.`),
       openLabel: (variable) => t`Open ${variable} in Vault`,
     }),
-    [vaults, openVault, t],
+    [vaults, openVault, t, refetchAccount, refetchSpace, spaceVault],
   );
 }

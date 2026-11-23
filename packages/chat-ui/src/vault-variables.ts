@@ -6,8 +6,11 @@ import { rewriteOutsideCode } from "./markdown";
  * them only once a message on screen could name one.
  */
 export type VaultVariables = {
-  /** Asks the app to read the viewer's variables. */
-  want(): void;
+  /**
+   * Asks the app to read the viewer's variables, with the names of the saved placeholders the text
+   * holds: one the Vault as read doesn't have may have been saved since, so it is read again.
+   */
+  want(saved: readonly string[]): void;
   /** Each `$NAME` the viewer's Vaults export, once read. */
   names: ReadonlySet<string> | undefined;
   /** Opens the viewer's Vault at the item exported as `$name`. */
@@ -18,7 +21,7 @@ export type VaultVariables = {
   openLabel(variable: string): string;
 };
 
-/** A chat's Vault variables; outside a chat, `$NAME` stays plain text. */
+/** The Vault variables of the messages and pages drawn below; without it `$NAME` stays text. */
 export const VaultVariablesContext = createContext<VaultVariables | null>(null);
 
 /** A `$NAME` drawn as a Vault link: the viewer's own item, or a secret they can't open. */
@@ -31,14 +34,17 @@ const VARIABLE = /(^|[^\p{L}\p{N}_$\\])\$([A-Za-z_][A-Za-z0-9_]*)(?![\p{L}\p{N}_
 // What the server writes where it took a pasted value out of a message and saved it to its
 // author's Vault. It marks the name as a Vault secret, also for a reader who can't open it.
 const SAVED_PLACEHOLDER_OPEN = "[saved as ";
+const SAVED_PLACEHOLDER = /\[saved as \$([A-Za-z_][A-Za-z0-9_]*)\]/g;
 
 /** The chat's Vault variables once they are read, asked for when this text could name one. */
 export function useVaultVariables(text: string): VaultVariables | null {
   const vault = useContext(VaultVariablesContext);
   const mayName = vault !== null && MAY_NAME_VARIABLE.test(text);
+  const saved = mayName ? [...text.matchAll(SAVED_PLACEHOLDER)].map((match) => match[1]!) : [];
+  const savedList = saved.join(" ");
   useEffect(() => {
-    if (mayName) vault?.want();
-  }, [mayName, vault]);
+    if (mayName) vault?.want(savedList ? savedList.split(" ") : []);
+  }, [mayName, vault, savedList]);
   return mayName && vault?.names ? vault : null;
 }
 

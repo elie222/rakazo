@@ -41,7 +41,7 @@ function Probe() {
 /** As a message naming a variable does, then once the reads land. */
 async function readVariables() {
   await act(async () => root.render(createElement(Probe)));
-  await act(async () => variables?.want());
+  await act(async () => variables?.want([]));
   await vi.waitFor(() => expect(variables?.names).toBeDefined());
   return variables!;
 }

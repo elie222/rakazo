@@ -128,6 +128,15 @@ describe("Vault variables in chat", () => {
     expect(toast).toHaveBeenCalledWith("You don't have access to this Vault secret.");
   });
 
+  it("reads the Vault again once for a saved placeholder it didn't have, as one just pasted", async () => {
+    vault.list.mockResolvedValueOnce([]).mockResolvedValue([item("pasted-key", "command")]);
+    await render("Deploy with [saved as $PASTED_KEY]");
+    await vi.waitFor(() => expect(container.querySelector("button")?.dataset.access).toBe("own"));
+    expect(vault.list).toHaveBeenCalledTimes(2);
+    await tap("$PASTED_KEY");
+    expect(openVault).toHaveBeenCalledWith("account", "pasted-key");
+  });
+
   it("reads no Vault for a chat that names no variable", async () => {
     await render("Costs $5 today");
     expect(vault.list).not.toHaveBeenCalled();
