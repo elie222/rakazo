@@ -67,7 +67,7 @@ describe.skipIf(!enabled)("keys pasted into a chat message (PostgreSQL)", () => 
     await close?.();
   });
 
-  function send(text: string) {
+  function send(text: string, to = target) {
     return runAsTenant(actor, () =>
       sendThreadMessage(
         {
@@ -78,8 +78,12 @@ describe.skipIf(!enabled)("keys pasted into a chat message (PostgreSQL)", () => 
           secrets,
         },
         actor,
-        target,
-        { text, clientNonce: randomUUID() },
+        to,
+        {
+          text,
+          mentions: to.kind === "group" ? to.memberBotIds : [],
+          clientNonce: randomUUID(),
+        },
       ),
     );
   }
@@ -108,21 +112,47 @@ describe.skipIf(!enabled)("keys pasted into a chat message (PostgreSQL)", () => 
     expect(await secrets.load(item.ciphertext, item.id)).toBe(key);
   });
 
-  it("names a key already saved as a command variable by its saved name", async () => {
+  it("names a key already saved by its saved name in the bot chat, but anew in a group chat", async () => {
+    const saved = { userId: actor.userId, spaceId: actor.spaceId };
     await runAsTenant(actor, () =>
       storeBotSecret({
         prisma,
         secretStore: secrets,
-        scope: { userId: actor.userId, spaceId: actor.spaceId },
+        scope: saved,
         destination: { name: "deploy-key", origin: "", auth: { type: "command" } },
         plaintext: key,
       }),
     );
+    const botId = target.kind === "bot" ? target.botId : "";
+    const peer = await system.bot.create({
+      data: { ...saved, name: "Beta", color: "primary", thread: { create: saved } },
+    });
+    const group = await system.chatGroup.create({
+      data: {
+        ...saved,
+        name: "Group",
+        members: { create: [{ botId }, { botId: peer.id }] },
+        thread: { create: saved },
+      },
+      include: { thread: true },
+    });
 
     await send(`Use ${key}`);
+    await send(`Use ${key}`, {
+      kind: "group",
+      groupId: group.id,
+      threadId: group.thread!.id,
+      groupName: group.name,
+      members: [],
+      memberBotIds: [botId, peer.id],
+    });
 
     expect(await stored()).toContain("Use [saved as $DEPLOY_KEY]");
-    expect(await system.vaultCredential.count({ where: { userId: actor.userId } })).toBe(1);
+    const message = await system.message.findFirstOrThrow({
+      where: { threadId: group.thread!.id, role: "user" },
+    });
+    expect(JSON.stringify(message)).toMatch(/Use \[saved as \$PASTED_KEY_[0-9A-F]{6}\]/);
+    expect(await system.vaultCredential.count({ where: { userId: actor.userId } })).toBe(2);
   });
 
   it("names a key blocked for bots by its saved name instead of copying it", async () => {
