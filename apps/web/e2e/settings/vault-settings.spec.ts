@@ -270,6 +270,10 @@ test("saves a contact, a card billed to it, and a login from Settings, showing n
   await editor.getByRole("button", { name: "Add an authenticator key", exact: true }).click();
   await editor.getByLabel("Authenticator key", { exact: true }).fill("not a key");
   await expect(editor.getByText("This authenticator key can't be read.")).toBeVisible();
+  // The key is marked invalid and its message is what describes it.
+  const keyInput = editor.getByLabel("Authenticator key", { exact: true });
+  await expect(keyInput).toHaveAttribute("aria-invalid", "true");
+  await expect(keyInput).toHaveAccessibleDescription("This authenticator key can't be read.");
   await expect(editor.getByRole("button", { name: "Save", exact: true })).toBeDisabled();
   await captureScreenshot(page, testInfo, "vault-invalid-key");
   // A server from before authenticator keys saves the login but drops its key: the login says so.
@@ -404,7 +408,7 @@ test("imports logins from a CSV export after a review", async ({ page }, testInf
   // More logins than the empty Vault holds: the review counts and lists those that don't fit.
   const big = [
     "url,password",
-    ...Array.from({ length: 106 }, (_, index) => `https://s${index}.example.test,fake-pass`),
+    ...Array.from({ length: 1_006 }, (_, index) => `https://s${index}.example.test,fake-pass`),
   ].join("\n");
   await vault.getByTestId("vault-import-file").setInputFiles({
     name: "big.csv",
@@ -412,9 +416,9 @@ test("imports logins from a CSV export after a review", async ({ page }, testInf
     buffer: Buffer.from(big),
   });
   const full = page.getByTestId("vault-import-page");
-  await expect(full.getByTestId("vault-import-count")).toHaveText(["To add100", "Vault full6"]);
+  await expect(full.getByTestId("vault-import-count")).toHaveText(["To add1000", "Vault full6"]);
   await expect(full.getByTestId("vault-import-problems")).toContainText(
-    "Row 102 · s100.example.test · Vault full",
+    "Row 1002 · s1000.example.test · Vault full",
   );
   await expect(full.getByTestId("vault-import-problems")).toContainText("And 1 more");
   await captureScreenshot(page, testInfo, "vault-import-full");

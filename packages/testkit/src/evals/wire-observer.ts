@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { isRecord } from "@rakazo/core";
 
 /** Synthetic eval transport evidence, after SDK serialization. No prompt or request identifiers. */
 export type DiagnosticWireObservation = {
@@ -24,8 +25,6 @@ const cursors = new Set([
   ...Array.from({ length: 11 }, (_, i) => `segment-${Math.imul(i + 74, 48271) >>> 0}`),
 ]);
 const cursor = (value: unknown): value is string => typeof value === "string" && cursors.has(value);
-const object = (value: unknown): value is Record<string, unknown> =>
-  typeof value === "object" && value !== null && !Array.isArray(value);
 
 /** The upstream receives the exact input/init; only whitelisted synthetic controls survive parsing. */
 export function diagnosticWireFetch(
@@ -51,7 +50,7 @@ export function diagnosticWireFetch(
           };
         } else {
           const body: unknown = JSON.parse(init.body);
-          if (object(body) && body.model === modelId) {
+          if (isRecord(body) && body.model === modelId) {
             observation = {
               request: observations.length + 1,
               availability: "unavailable",
@@ -60,12 +59,12 @@ export function diagnosticWireFetch(
             if (Array.isArray(body.messages)) {
               const calls = new Map<string, string | undefined>();
               for (const message of body.messages) {
-                if (!object(message) || !Array.isArray(message.tool_calls)) continue;
+                if (!isRecord(message) || !Array.isArray(message.tool_calls)) continue;
                 for (const call of message.tool_calls) {
                   if (
-                    !object(call) ||
+                    !isRecord(call) ||
                     typeof call.id !== "string" ||
-                    !object(call.function) ||
+                    !isRecord(call.function) ||
                     call.function.name !== "CRM_READ_DIAGNOSTIC"
                   )
                     continue;
@@ -75,14 +74,17 @@ export function diagnosticWireFetch(
                   } catch {
                     /* Unavailable controls remain unknown. */
                   }
-                  calls.set(call.id, object(args) && cursor(args.cursor) ? args.cursor : undefined);
+                  calls.set(
+                    call.id,
+                    isRecord(args) && cursor(args.cursor) ? args.cursor : undefined,
+                  );
                 }
               }
               const results: NonNullable<DiagnosticWireObservation["results"]> = [];
               for (const message of body.messages) {
                 if (results.length >= 30) break;
                 if (
-                  !object(message) ||
+                  !isRecord(message) ||
                   message.role !== "tool" ||
                   typeof message.tool_call_id !== "string" ||
                   !calls.has(message.tool_call_id) ||
@@ -95,7 +97,7 @@ export function diagnosticWireFetch(
                 } catch {
                   /* JSON validity is evidence; text is never retained. */
                 }
-                const parsed = object(result) ? result : undefined;
+                const parsed = isRecord(result) ? result : undefined;
                 const valid = parsed !== undefined;
                 const nextCursorPresent = valid && Object.hasOwn(parsed, "nextCursor");
                 const next =

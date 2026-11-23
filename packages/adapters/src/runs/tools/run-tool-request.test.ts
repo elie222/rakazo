@@ -78,6 +78,41 @@ describe("prepareToolRequest: update_bot owner settings after outside content", 
   });
 });
 
+describe("prepareToolRequest: after the bot archived itself", () => {
+  const archived = { error: "You are archived, so no more tools can run. Send your reply." };
+  function call(name: string, args: Record<string, unknown>) {
+    const { ctx, request } = ownBotUpdateCall();
+    Object.assign(ctx.bot, { name: "Scout" });
+    Object.assign(ctx.state, { selfArchived: true });
+    return prepareToolRequest(ctx as never, { ...request(), name, args });
+  }
+
+  it("refuses every other tool, including archiving another bot", async () => {
+    await expect(call("message_user", { text: "Done" })).resolves.toEqual(archived);
+    await expect(call("run_subagent", { task: "More work" })).resolves.toEqual(archived);
+    await expect(call("archive_bot", { confirm_name: "Peer", bot_id: "peer-1" })).resolves.toEqual(
+      archived,
+    );
+    await expect(call("archive_bot", { confirm_name: "Peer" })).resolves.toEqual(archived);
+  });
+
+  it("still lets a retried archive of itself reconcile", async () => {
+    await expect(call("archive_bot", { confirm_name: "Scout" })).resolves.not.toEqual(archived);
+    await expect(
+      call("archive_bot", { confirm_name: "Scout", bot_id: "bot-1" }),
+    ).resolves.not.toEqual(archived);
+    await expect(call("archive_bot", { confirm_name: "Scout", bot_id: "" })).resolves.not.toEqual(
+      archived,
+    );
+  });
+
+  it("refuses on a resumed run whose bot is already archived", async () => {
+    const { ctx, request } = ownBotUpdateCall();
+    Object.assign(ctx.bot, { name: "Scout", archivedAt: new Date("2026-11-23T12:00:00.000Z") });
+    await expect(prepareToolRequest(ctx as never, request())).resolves.toEqual(archived);
+  });
+});
+
 describe("private task tools after shared-channel messages", () => {
   it.each([
     "schedule_create",
@@ -88,6 +123,7 @@ describe("private task tools after shared-channel messages", () => {
     "skill_create",
     "skill_update",
     "skill_delete",
+    "remove_mcp_server",
   ])("refuses %s for original and claimed shared-channel messages", async (name) => {
     for (const originalChannel of [true, false]) {
       const ctx = {
@@ -96,6 +132,7 @@ describe("private task tools after shared-channel messages", () => {
         },
         run: {},
         bot: {},
+        state: {},
         runId: "run-1",
         source: { messagingChannelRun: originalChannel },
       };
@@ -113,6 +150,7 @@ describe("private task tools after shared-channel messages", () => {
         deps: { prisma: { steeringMessage: { findFirst: async () => null } } },
         run: { trigger },
         bot: {},
+        state: {},
         runId: "run-1",
         source: { messagingChannelRun: false },
       };
@@ -123,6 +161,94 @@ describe("private task tools after shared-channel messages", () => {
             { name, args: {}, executionId: "call-1" } as ToolRequest,
           ),
         ).resolves.toBeUndefined();
+      }
+    },
+  );
+});
+
+describe("schedule tools on another bot's routines", () => {
+  function managedRoutineCall(input: {
+    fleetManagement?: boolean;
+    ownerStartedRun?: boolean;
+    outsideMessage?: boolean;
+    trigger?: string;
+  }) {
+    const ctx = {
+      deps: {
+        prisma: {
+          steeringMessage: { findFirst: async () => null },
+          bot: {
+            findUnique: async () => ({ fleetManagement: input.fleetManagement ?? true }),
+            findMany: async ({ where }: { where: { id?: string; name?: string } }) =>
+              [
+                { id: "child", name: "Child" },
+                { id: "bot-1", name: "Me" },
+              ].filter((row) => (where.id ? row.id === where.id : row.name === where.name)),
+          },
+        },
+      },
+      run: { trigger: input.trigger ?? "user" },
+      fleetRun: { spaceId: "space-1" },
+      bot: { id: "bot-1", name: "Me" },
+      state: {},
+      runId: "run-1",
+      source: { messagingChannelRun: false, ownerStartedRun: input.ownerStartedRun ?? true },
+      trust: { receivedOutsideMessage: async () => input.outsideMessage ?? false },
+    };
+    return (name: string, args: Record<string, unknown>) => {
+      const request = { name, args, executionId: "call-1" } as ToolRequest;
+      return { prepared: prepareToolRequest(ctx as never, request), request };
+    };
+  }
+
+  it.each(["schedule_list", "schedule_update", "schedule_cancel"])(
+    "%s needs bot management and a run the owner started",
+    async (name) => {
+      const off = managedRoutineCall({ fleetManagement: false })(name, { bot_name: "Child" });
+      await expect(off.prepared).resolves.toEqual({
+        error: "Bot management is off for this bot, so it reaches only its own routines.",
+      });
+      const fromOthers = managedRoutineCall({ ownerStartedRun: false })(name, { bot_id: "child" });
+      await expect(fromOthers.prepared).resolves.toEqual({
+        error: "Bot management tools need a run you started.",
+      });
+      const own = managedRoutineCall({ fleetManagement: false })(name, { routineId: "r" });
+      await expect(own.prepared).resolves.toBeUndefined();
+    },
+  );
+
+  it("acts on the named bot's id, and treats passing its own id as its own routines", async () => {
+    const byName = managedRoutineCall({})("schedule_cancel", { bot_name: "Child", name: "r" });
+    await expect(byName.prepared).resolves.toBeUndefined();
+    expect(byName.request.args).toEqual({ bot_id: "child", bot_name: "Child", name: "r" });
+    const self = managedRoutineCall({ fleetManagement: false })("schedule_update", {
+      bot_id: " bot-1 ",
+      routineId: "r",
+    });
+    await expect(self.prepared).resolves.toBeUndefined();
+    expect(self.request.args).toEqual({ routineId: "r" });
+  });
+
+  it("holds a change for approval once outside text reached the run, and never a list", async () => {
+    const call = managedRoutineCall({ outsideMessage: true });
+    for (const name of ["schedule_update", "schedule_cancel"]) {
+      const { prepared, request } = call(name, { bot_id: "child", routineId: "r" });
+      await expect(prepared).resolves.toBeUndefined();
+      expect(request).toMatchObject({ heldForApproval: true, ignoresAllowRules: true });
+    }
+    const list = call("schedule_list", { bot_id: "child" });
+    await expect(list.prepared).resolves.toBeUndefined();
+    expect(list.request.heldForApproval).toBeUndefined();
+  });
+
+  it.each(["webhook", "bot_message", "spawn", "tickets"])(
+    "holds a %s run's change to, or list of, another bot's routines for the owner",
+    async (trigger) => {
+      const call = managedRoutineCall({ ownerStartedRun: false, trigger });
+      for (const name of ["schedule_cancel", "schedule_list"]) {
+        const { prepared, request } = call(name, { bot_id: "child", routineId: "r" });
+        await expect(prepared).resolves.toBeUndefined();
+        expect(request).toMatchObject({ heldForApproval: true, ignoresAllowRules: true });
       }
     },
   );
@@ -626,6 +752,7 @@ describe("the user's computer after a routine or webhook joined the run", () => 
       deps: { prisma: { steeringMessage: { findFirst } }, userDevices: {} },
       run: { trigger: "user" },
       bot: {},
+      state: {},
       runId: "run-1",
       source: { messagingChannelRun: false, userComputerOwner: "user-1" },
     };

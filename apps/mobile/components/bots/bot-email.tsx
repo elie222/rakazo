@@ -113,7 +113,7 @@ export function useBotEmailRows({
       <SettingsRow
         key="address"
         accessibilityRole="button"
-        accessibilityLabel={t`Copy ${address}`}
+        accessibilityLabel={copied ? t`Copied` : t`Copy ${address}`}
         title={address}
         trailing={
           <NativeSymbol
@@ -185,7 +185,9 @@ export function BotEmailAddressesGroup() {
         <SettingsRow
           key={row.botId}
           accessibilityRole="button"
-          accessibilityLabel={t`Copy ${ph({ address: row.address })}`}
+          accessibilityLabel={
+            copied?.address === row.address ? t`Copied` : t`Copy ${ph({ address: row.address })}`
+          }
           title={row.botName}
           detail={row.address}
           trailing={

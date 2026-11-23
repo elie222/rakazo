@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 
 function collapsedSidebarSectionsStorageKey(userId: string | null | undefined): string | null {
   if (!userId) return null;
@@ -41,11 +41,15 @@ function readCollapsedSidebarSections(userId: string | null | undefined): Set<st
 }
 
 export function useSidebarExpansion(userId: string | null | undefined) {
-  const [collapsedSidebarSections, setCollapsedSidebarSections] = useState(() => new Set<string>());
-
-  useEffect(() => {
+  // Read while rendering, so a remounted sidebar never paints its sections open for a frame.
+  const [collapsedSidebarSections, setCollapsedSidebarSections] = useState(() =>
+    readCollapsedSidebarSections(userId),
+  );
+  const [loadedFor, setLoadedFor] = useState(userId);
+  if (loadedFor !== userId) {
+    setLoadedFor(userId);
     setCollapsedSidebarSections(readCollapsedSidebarSections(userId));
-  }, [userId]);
+  }
   const toggleSidebarSection = useCallback(
     (key: string) => {
       setCollapsedSidebarSections((previous) =>

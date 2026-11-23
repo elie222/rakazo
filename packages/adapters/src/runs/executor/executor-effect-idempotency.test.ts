@@ -218,6 +218,7 @@ function fixture(runId = "run-1") {
     vaultCredential: { findMany: vi.fn(async () => []) },
     agentSkill: { findMany: vi.fn(async () => []) },
     scratchpadItem: {
+      count: vi.fn(async () => 0),
       findMany: vi.fn(async () => scratchpadRows),
       create: vi.fn(
         async ({

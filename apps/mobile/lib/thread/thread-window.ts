@@ -9,9 +9,9 @@ import {
 import type { Dispatch, RefObject, SetStateAction } from "react";
 import { rpc } from "../api/api";
 import type { MobileSnapshot } from "../api/mobile-types";
+import { isVerifiedScopeCurrent } from "../api/verified-scope";
 import type { SavedChatsScope } from "../inbox/saved-chats";
 import { liveSavedChatsScope } from "../inbox/saved-chats";
-import { isIntegrationsScopeCurrent } from "../integrations/integrations-cache";
 import type { ThreadScrollBehavior } from "./scroll/thread-scroll";
 import type { ThreadJumpAnchor } from "./thread-jump";
 
@@ -76,7 +76,7 @@ export async function applyThreadMessageJump(
   jump.jumpGeneration.current += 1;
   const jumpId = jump.jumpGeneration.current;
   const scope = await liveSavedChatsScope();
-  if (!scope || !isIntegrationsScopeCurrent(scope)) return;
+  if (!scope || !isVerifiedScopeCurrent(scope)) return;
   const [snap, page] = await Promise.all([
     rpc("threads/get", threadTarget),
     rpc("threads/messages", {
@@ -89,7 +89,7 @@ export async function applyThreadMessageJump(
   if (
     epoch !== jump.historyEpoch.current ||
     jumpId !== jump.jumpGeneration.current ||
-    !isIntegrationsScopeCurrent(scope)
+    !isVerifiedScopeCurrent(scope)
   )
     return;
   if (target.groupId && jump.activeGroupId.current !== target.groupId) return;

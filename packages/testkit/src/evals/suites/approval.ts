@@ -60,6 +60,8 @@ export const ApprovalCaseSchema = z
         ActionApprovalRuleSchema.pick({ effect: true, matchKind: true, matchValue: true }).strict(),
       )
       .optional(),
+    /** For `schedule_update`, the routine's stored prompt the edit replaces. */
+    currentRoutinePrompt: z.string().optional(),
     expected: z.enum(["pass", "ask"]),
     why: z.string().min(1),
   })

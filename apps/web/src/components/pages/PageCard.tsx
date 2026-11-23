@@ -1,4 +1,6 @@
 import { Trans, useLingui } from "@lingui/react/macro";
+import type { PageVisibility } from "@rakazo/contracts";
+import { pageSharingLabel } from "@rakazo/i18n/page-review";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { formatRelativeTime } from "../../lib/locale/relative-time";
 import { PageFrame } from "./PageFrame";
@@ -134,14 +136,13 @@ export function PageCard({
   onOpen,
   updated = false,
   updatedAt,
-  shared = false,
+  visibility,
   failed = false,
 }: {
   title: string;
   /** When the page last changed, said under its title. */
   updatedAt?: string;
-  /** Anyone with the link can open it. */
-  shared?: boolean;
+  visibility?: PageVisibility;
   document: string | null;
   /** The page could not be read, so its preview stops looking like it is loading. */
   failed?: boolean;
@@ -152,6 +153,7 @@ export function PageCard({
 }) {
   const { t } = useLingui();
   const when = updatedAt ? formatRelativeTime(updatedAt) : "";
+  const sharing = pageSharingLabel(visibility);
   return (
     <div
       data-testid="page-card"
@@ -171,8 +173,10 @@ export function PageCard({
             ) : updated ? (
               <Trans>Page · Updated below</Trans>
             ) : when ? (
-              shared ? (
-                <Trans>Page · Shared · {when}</Trans>
+              sharing ? (
+                <Trans>
+                  Page · {sharing} · {when}
+                </Trans>
               ) : (
                 <Trans>Page · {when}</Trans>
               )

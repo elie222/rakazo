@@ -17,6 +17,7 @@ import {
   isApprovalAskBlock,
   isOwnerStartedRun,
   isSecretAskBlock,
+  lastingWriteKind,
   outboundSiteGate,
   outsideRunToolRequiresApproval,
   ownComputerActionNeedsReview,
@@ -65,6 +66,9 @@ describe("toolRequiresApproval", () => {
     expect(toolRequiresApproval("secret_request", false)).toBe(true);
     expect(toolRequiresApproval("forget_secret", false)).toBe(true);
     expect(toolRequiresApproval("forget_memory", false)).toBe(true);
+    expect(toolRequiresApproval("delete_shared_memory", false)).toBe(true);
+    expect(toolRequiresApproval("skill_delete", false)).toBe(true);
+    expect(toolRequiresApproval("remove_mcp_server", false)).toBe(true);
     expect(toolRequiresApproval("list_secrets", false)).toBe(false);
     // A random value the bot cannot read exposes nothing, and never replaces a saved credential.
     expect(toolRequiresApproval("generate_secret", false)).toBe(false);
@@ -955,6 +959,68 @@ describe("connectorReadRequiresApproval", () => {
 
   it("asks before a read on a new connector once the run is tainted", () => {
     expect(connectorReadRequiresApproval({ tainted: true, connectorTrusted: false })).toBe(true);
+  });
+});
+
+describe("lastingWriteKind", () => {
+  it("names the write that outlives the run", () => {
+    expect(lastingWriteKind({ toolName: "remember", args: {}, savedContextWrite: true })).toBe(
+      "memory",
+    );
+    expect(lastingWriteKind({ toolName: "schedule_create", args: { prompt: "p" } })).toBe(
+      "routine",
+    );
+    expect(lastingWriteKind({ toolName: "create_child_routine", args: { prompt: "p" } })).toBe(
+      "routine",
+    );
+    expect(lastingWriteKind({ toolName: "schedule_update", args: { on: "email" } })).toBe(
+      "routine",
+    );
+    expect(lastingWriteKind({ toolName: "update_bot", args: { instructions: "i" } })).toBe(
+      "instructions",
+    );
+  });
+
+  it("leaves pauses, new times, other settings and other paths to their own rubric", () => {
+    expect(lastingWriteKind({ toolName: "schedule_update", args: { active: false } })).toBe(
+      undefined,
+    );
+    expect(lastingWriteKind({ toolName: "schedule_update", args: { cron: "0 9 * * *" } })).toBe(
+      undefined,
+    );
+    expect(
+      lastingWriteKind({ toolName: "schedule_update", args: { prompt: "  ", active: false } }),
+    ).toBe(undefined);
+    expect(lastingWriteKind({ toolName: "update_bot", args: { model: "m" } })).toBe(undefined);
+    expect(
+      lastingWriteKind({ toolName: "update_bot", args: { model: "m", instructions: "  " } }),
+    ).toBe(undefined);
+    expect(
+      lastingWriteKind({
+        toolName: "update_bot",
+        args: { instructions: "i", instructions_offset: 0 },
+      }),
+    ).toBe(undefined);
+    // A null or blank offset is not a paged read: the update still writes the instructions.
+    expect(
+      lastingWriteKind({
+        toolName: "update_bot",
+        args: { instructions: "i", instructions_offset: null },
+      }),
+    ).toBe("instructions");
+    expect(
+      lastingWriteKind({
+        toolName: "update_bot",
+        args: { instructions: "i", instructionsOffset: "" },
+      }),
+    ).toBe("instructions");
+    expect(
+      lastingWriteKind({ toolName: "set_child_instructions", args: { instructions: "i" } }),
+    ).toBe(undefined);
+    expect(lastingWriteKind({ toolName: "remember", args: {} })).toBe(undefined);
+    expect(
+      lastingWriteKind({ toolName: "schedule_create", args: { prompt: "p" }, newSite: true }),
+    ).toBe(undefined);
   });
 });
 

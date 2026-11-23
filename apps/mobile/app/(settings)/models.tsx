@@ -3,10 +3,12 @@ import {
   canonicalPiProviderId,
   compatibleEndpointPresets,
   OPENAI_COMPATIBLE_PROVIDER_ID,
+  providerDisplayName,
   savedCompatibleEndpointMatches,
 } from "@rakazo/contracts";
 import { isFirstModelConnection, popularModelProvidersFirst } from "@rakazo/core";
 import { fetchFresh } from "@rakazo/core/query";
+import { localizeModelEntry } from "@rakazo/i18n/model-provider";
 import { isCancelledError, useQuery } from "@tanstack/react-query";
 import type { Href } from "expo-router";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
@@ -169,13 +171,13 @@ export default function Models() {
     });
 
   /** Every provider, popular first, plus the hosted presets of the compatible one. */
-  const allProviders = useMemo(() => {
+  const allProviders = (() => {
     const grouped = new Map<string, ConnectableProvider>();
     for (const entry of catalog) {
       if (grouped.has(entry.provider)) continue;
       grouped.set(entry.provider, {
         id: entry.provider,
-        name: entry.providerName ?? entry.provider,
+        name: providerDisplayName(localizeModelEntry(entry)),
       });
     }
     const all = [...grouped.values()];
@@ -186,10 +188,10 @@ export default function Models() {
       (provider) => provider.id,
       (provider) => provider.name,
     );
-  }, [catalog]);
+  })();
 
   // Deployment-funded providers stay listed so people can still add their own key.
-  const providers = useMemo(() => {
+  const providers = (() => {
     const connected = new Set(credentials.map((entry) => canonicalPiProviderId(entry.provider)));
     const savedPreset = (baseUrl: string) =>
       credentials.some(
@@ -202,7 +204,7 @@ export default function Models() {
         ? !savedPreset(provider.baseUrl)
         : !connected.has(canonicalPiProviderId(provider.id)),
     );
-  }, [allProviders, credentials]);
+  })();
 
   const providerKey = (provider: ConnectableProvider) =>
     `connect:${provider.id}:${provider.baseUrl ?? ""}`;

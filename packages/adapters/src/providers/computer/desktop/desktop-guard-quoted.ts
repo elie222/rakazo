@@ -236,7 +236,7 @@ function wordsHaveLifecycleHazard(words: readonly string[]): boolean {
     if (/(?:\.browser-profiles|--user-data-dir)/.test(folded)) return true;
     if (/(?:\/tmp\/\.x11-unix|\/tmp\/\.x\d+-lock)/.test(folded)) return true;
     const base = folded.split("/").at(-1) ?? "";
-    if (/^(?:kill|pkill|killall|xkill)$/.test(base)) return true;
+    if (/^(?:kill|pkill|killall|killall5|xkill)$/.test(base)) return true;
     if (base === "systemctl" || base === "service") sawService = true;
     if (/^(?:stop|restart|kill)$/.test(base)) sawServiceAction = true;
   }
@@ -289,7 +289,7 @@ export function quotedHeredocLifecycleHazard(body: string): boolean {
 
 type SplicePiece = { segments: string[]; holes: string[][] };
 
-const SPLICE_SOLO_COMMANDS = ["kill", "pkill", "killall", "xkill"];
+const SPLICE_SOLO_COMMANDS = ["kill", "pkill", "killall", "killall5", "xkill"];
 
 const SPLICE_SERVICE_COMMANDS = ["systemctl", "service"];
 
@@ -699,7 +699,7 @@ function overflowLifecycle(piece: SplicePiece): {
   const { segments, holes } = foldedSplice(piece);
   const none = { hazard: false, service: false, action: false };
   if (holes.length === 0) return none;
-  for (const name of ["kill", "pkill", "killall", "xkill"]) {
+  for (const name of ["kill", "pkill", "killall", "killall5", "xkill"]) {
     if (basenamePossible(segments, holes, name))
       return { hazard: true, service: false, action: false };
   }

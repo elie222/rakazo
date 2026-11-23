@@ -178,7 +178,7 @@ export async function deleteAccountContent(
 }
 
 type OrganizationDeletionDeps = SpaceDeletionDeps & {
-  billing?: Pick<BillingService, "cancelForDeletedOrganization">;
+  billing?: Pick<BillingService, "cancelOrganizationSubscriptions">;
 };
 
 /**
@@ -247,7 +247,7 @@ export async function deleteOrganization(
     stillLeased();
     await keepOrganizationTrialUse(deps.prisma, organizationId);
     stillLeased();
-    await deps.billing?.cancelForDeletedOrganization(organizationId);
+    await deps.billing?.cancelOrganizationSubscriptions(organizationId);
     billingCancelled = true;
     stillLeased();
     const inOrganization = { spaceId: { in: spaceIds } };

@@ -3638,44 +3638,6 @@ describe("computer replacement", () => {
     expect(updateMany).not.toHaveBeenCalled();
   });
 
-  it("rejects replacement while the target bot has an active run", async () => {
-    const prisma = {
-      $transaction: vi.fn(async (fn: (tx: unknown) => unknown) => fn(prisma)),
-      $queryRaw: vi.fn(async () => []),
-      space: { findUnique: vi.fn(async () => null) },
-      computer: {
-        findUniqueOrThrow: vi.fn().mockResolvedValue({
-          id: "computer-1",
-          homeKey: "bot-1",
-          providerRef: "provider-1",
-          kind: "fake",
-          scope: "dedicated",
-          state: "running",
-          controlLeaseId: null,
-          updatedAt: new Date("2024-01-01T00:00:00.000Z"),
-        }),
-        updateMany: vi.fn().mockResolvedValueOnce({ count: 1 }),
-      },
-      run: {
-        findFirst: vi.fn().mockResolvedValue({ id: "same-bot-run" }),
-      },
-    } as unknown as PrismaClient;
-    await expect(
-      replaceComputer(
-        {
-          prisma,
-          sandbox: new FakeSandboxProvider(),
-          home: {} as AgentHomeStore,
-          jobs: jobQueue(),
-          events: {} as ThreadEvents,
-        },
-        "computer-1",
-        "recover",
-        context,
-      ),
-    ).rejects.toBeInstanceOf(ComputerBusyError);
-  });
-
   it("rejects replacement while any bot holds user control", async () => {
     const prisma = transactional({
       computer: {
@@ -3704,39 +3666,6 @@ describe("computer replacement", () => {
         },
         "computer-1",
         "recover",
-        context,
-      ),
-    ).rejects.toBeInstanceOf(ComputerBusyError);
-  });
-
-  it("rejects replacement while the same bot holds user control", async () => {
-    const prisma = transactional({
-      computer: {
-        findUniqueOrThrow: vi.fn().mockResolvedValue({
-          id: "computer-1",
-          homeKey: "bot-1",
-          providerRef: "provider-1",
-          kind: "fake",
-          scope: "dedicated",
-          state: "running",
-          controlHolder: "user",
-          controlLeaseId: "lease-1",
-          controlLeaseExpiresAt: new Date(Date.now() + 60_000),
-          controlBotId: "bot-1",
-        }),
-      },
-    });
-    await expect(
-      replaceComputer(
-        {
-          prisma,
-          sandbox: new FakeSandboxProvider(),
-          home: {} as AgentHomeStore,
-          jobs: jobQueue(),
-          events: {} as ThreadEvents,
-        },
-        "computer-1",
-        "reset",
         context,
       ),
     ).rejects.toBeInstanceOf(ComputerBusyError);

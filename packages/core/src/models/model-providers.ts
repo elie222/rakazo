@@ -1,6 +1,7 @@
 import type { Bot, ModelApiProtocol, ModelCatalogEntry, ModelSettings } from "@rakazo/contracts";
 import {
   canonicalPiProviderId,
+  modelConnectionNames,
   normalizeOpenAiCompatibleBaseUrl,
   OPENAI_COMPATIBLE_PROVIDER_ID,
   selectCompatibleModelCredential,
@@ -139,6 +140,7 @@ const DEEPSEEK_DISPLAY_MODEL_IDS: Record<string, string> = {
 };
 
 export type ConnectedModelChoice = {
+  preserveModelOrder?: boolean;
   key: string;
   provider: string;
   modelId: string;
@@ -155,11 +157,16 @@ type CatalogModelRef = {
   id: string;
   label: string;
   providerName?: string;
+  subscriptionName?: string;
+  auth?: ModelCatalogEntry["auth"];
   placeholder?: boolean;
   images?: boolean;
 };
 
 type CredentialModelRef = {
+  preserveModelOrder?: boolean;
+  id?: string;
+  authKind?: string;
   provider: string;
   label: string;
   modelId?: string | null;
@@ -229,6 +236,7 @@ export function resolveSelectableModelId(
 
 function freeFormChoice(credential: CredentialModelRef, modelId: string): ConnectedModelChoice {
   return {
+    preserveModelOrder: credential.preserveModelOrder,
     key: modelOptionKey(credential.provider, modelId),
     provider: credential.provider,
     modelId,
@@ -238,10 +246,14 @@ function freeFormChoice(credential: CredentialModelRef, modelId: string): Connec
   };
 }
 
-function catalogChoices(providerModels: readonly CatalogModelRef[]): ConnectedModelChoice[] {
+function catalogChoices(
+  providerModels: readonly CatalogModelRef[],
+  preserveModelOrder?: boolean,
+): ConnectedModelChoice[] {
   return providerModels.map((entry) => {
     const modelId = resolveSelectableModelId(providerModels, entry.provider, entry.id);
     return {
+      ...(preserveModelOrder ? { preserveModelOrder: true } : {}),
       key: modelOptionKey(entry.provider, modelId),
       provider: entry.provider,
       modelId,
@@ -294,7 +306,7 @@ export function credentialForModel<C extends CredentialModelRef>(
  * The connection a model row runs on, in the order runs choose it: its pinned connection, else
  * one whose saved model is this one, else the most preferred connection for its provider.
  */
-export function connectionForModelChoice<C extends CredentialModelRef & { id: string }>(
+export function connectionForModelChoice<C extends CredentialModelRef>(
   credentials: readonly C[],
   choice: {
     provider: string;
@@ -308,12 +320,10 @@ export function connectionForModelChoice<C extends CredentialModelRef & { id: st
   const provider = credentials.filter(
     (entry) => canonicalPiProviderId(entry.provider) === canonicalPiProviderId(choice.provider),
   );
-  return (
-    provider.find((entry) => entry.modelId === choice.modelId) ??
-    [...provider].sort(
-      (left, right) => (left.preferenceRank ?? Infinity) - (right.preferenceRank ?? Infinity),
-    )[0]
+  const preferred = [...provider].sort(
+    (left, right) => (left.preferenceRank ?? Infinity) - (right.preferenceRank ?? Infinity),
   );
+  return preferred.find((entry) => entry.modelId === choice.modelId) ?? preferred[0];
 }
 
 /**
@@ -328,12 +338,16 @@ export function connectedModelChoices(
 ): ConnectedModelChoice[] {
   const choices: ConnectedModelChoice[] = [];
   const seen = new Set<string>();
+  const modelsByProvider = new Map<string, CatalogModelRef[]>();
+  for (const entry of catalog) {
+    if (entry.placeholder) continue;
+    const provider = canonicalPiProviderId(entry.provider);
+    const models = modelsByProvider.get(provider) ?? [];
+    models.push(entry);
+    modelsByProvider.set(provider, models);
+  }
   for (const credential of credentials) {
-    const providerModels = catalog.filter(
-      (entry) =>
-        canonicalPiProviderId(entry.provider) === canonicalPiProviderId(credential.provider) &&
-        !entry.placeholder,
-    );
+    const providerModels = modelsByProvider.get(canonicalPiProviderId(credential.provider)) ?? [];
     const raw = credential.modelId?.trim() ?? "";
     const resolved = raw ? resolveSelectableModelId(providerModels, credential.provider, raw) : "";
     const resolvedInCatalog = providerModels.some(
@@ -355,18 +369,37 @@ export function connectedModelChoices(
           })
         : raw && !resolvedInCatalog
           ? [freeFormChoice(credential, resolved || raw)]
-          : catalogChoices(providerModels);
+          : catalogChoices(providerModels, credential.preserveModelOrder);
     choices.push(...next);
   }
-  choices.push(...catalogChoices(catalog.filter((entry) => entry.managed && !entry.placeholder)));
-  return choices.filter((choice) => {
+  const unique = (choice: ConnectedModelChoice) => {
     if (seen.has(choice.key)) return false;
     seen.add(choice.key);
     return true;
+  };
+  const connected = choices.filter(unique).map((choice) => {
+    const models = modelsByProvider.get(canonicalPiProviderId(choice.provider)) ?? [];
+    const exact = models.find((entry) => entry.id === choice.modelId);
+    const entry = exact ?? models[0];
+    if (!entry?.subscriptionName) return choice;
+    const serving = connectionForModelChoice(credentials, choice);
+    const { connectionName: providerLabel } = modelConnectionNames(entry, serving);
+    return {
+      ...choice,
+      providerLabel,
+      label: withConnectionName(choice.modelLabel ?? choice.modelId, providerLabel),
+    };
   });
+  return [
+    ...connected,
+    ...catalogChoices(catalog.filter((entry) => entry.managed && !entry.placeholder)).filter(
+      unique,
+    ),
+  ];
 }
 
 export type ChatModelChoice = {
+  preserveModelOrder?: boolean;
   key: string;
   label: string;
   provider?: string;
@@ -401,7 +434,40 @@ export function groupModelChoices(choices: readonly ChatModelChoice[], query: st
       title: choice.title ?? vendor?.[2] ?? choice.modelLabel ?? choice.label,
     });
   }
+  for (const section of sections) {
+    if (!section.heading) continue;
+    const own = section.data.filter((c) => c.preserveModelOrder);
+    const others = newestModelsFirst(
+      section.data
+        .filter((c) => !c.preserveModelOrder)
+        .map((choice) => ({ id: choice.modelId ?? "", choice })),
+    ).map((entry) => entry.choice);
+    section.data = [...others, ...own];
+  }
   return sections;
+}
+
+/**
+ * The version a model id starts with, such as `[6, 1]` for `gpt-6.1-sol` or `[4, 5]` for
+ * `x-4-5`. A part followed by letters is a size or variant, as in `llama-3-8b`, not a version.
+ */
+function modelVersion(id: string): number[] {
+  const match = /\d+(?:[.-]\d{1,2}(?![\da-z]))*/i.exec(id);
+  return match ? match[0].split(/[.-]/).map(Number) : [];
+}
+
+/** Models with a higher version in their id first; the catalog's order otherwise stays. */
+export function newestModelsFirst<T extends { id: string }>(models: readonly T[]): T[] {
+  const versions = new Map(models.map((model) => [model.id, modelVersion(model.id)]));
+  return [...models].sort((left, right) => {
+    const a = versions.get(left.id) ?? [];
+    const b = versions.get(right.id) ?? [];
+    for (let index = 0; index < Math.max(a.length, b.length); index++) {
+      const difference = (b[index] ?? -1) - (a[index] ?? -1);
+      if (difference) return difference;
+    }
+    return 0;
+  });
 }
 
 /**

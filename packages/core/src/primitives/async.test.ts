@@ -1,5 +1,13 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { abortableDelay, anySignal, deadlineSignal, requestDeadline, withAbort } from "./async.js";
+import {
+  abortableDelay,
+  anySignal,
+  deadlineSignal,
+  mapConcurrent,
+  requestDeadline,
+  withAbort,
+} from "./async.js";
+import { deferred, flush } from "./async.test-support.js";
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -139,5 +147,47 @@ describe("requestDeadline", () => {
     const parent = new AbortController();
     parent.abort("gone");
     expect(requestDeadline(1_000, "Too slow.", parent.signal).signal.reason).toBe("gone");
+  });
+});
+
+describe("mapConcurrent", () => {
+  it("runs at most `limit` calls at once and keeps the items' order", async () => {
+    const pending = Array.from({ length: 5 }, () => deferred<string>());
+    const started: number[] = [];
+    const done = mapConcurrent([0, 1, 2, 3, 4], 2, (item) => {
+      started.push(item);
+      return pending[item]!.promise;
+    });
+    await flush();
+    expect(started).toEqual([0, 1]);
+    pending[1]!.resolve("b");
+    await flush();
+    expect(started).toEqual([0, 1, 2]);
+    pending[2]!.resolve("c");
+    pending[0]!.resolve("a");
+    await flush();
+    expect(started).toEqual([0, 1, 2, 3, 4]);
+    pending[4]!.resolve("e");
+    pending[3]!.resolve("d");
+    await expect(done).resolves.toEqual(["a", "b", "c", "d", "e"]);
+  });
+
+  it("resolves an empty list without calling", async () => {
+    const fn = vi.fn();
+    await expect(mapConcurrent([], 4, fn)).resolves.toEqual([]);
+    expect(fn).not.toHaveBeenCalled();
+  });
+
+  it("rejects with the first failure and starts nothing after it", async () => {
+    const first = deferred<number>();
+    const started: number[] = [];
+    const done = mapConcurrent([0, 1, 2, 3], 2, (item) => {
+      started.push(item);
+      return item === 1 ? Promise.reject(new Error("locked")) : first.promise;
+    });
+    await expect(done).rejects.toThrow("locked");
+    first.resolve(0);
+    await flush();
+    expect(started).toEqual([0, 1]);
   });
 });

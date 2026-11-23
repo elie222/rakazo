@@ -1,11 +1,15 @@
 import * as z from "zod";
 import { Id } from "../ids.js";
 
+export const MAX_TRANSCRIPTION_VOCABULARY_LENGTH = 500;
+
 export const VoiceCatalogEntrySchema = z.object({
   id: z.string(),
   name: z.string(),
   description: z.string(),
   transcribe: z.boolean(),
+  /** The connection accepts vocabulary hints for transcription. */
+  transcriptionVocabulary: z.boolean().optional(),
   keyless: z.boolean().optional(),
   /** The connection takes an optional speech model id that overrides the provider default. */
   speechModel: z.boolean().optional(),
@@ -52,6 +56,7 @@ export const VoiceCredentialSchema = z.object({
   sttEndpoint: z.string().default(""),
   ttsModel: z.string().default(""),
   sttModel: z.string().default(""),
+  transcriptionVocabulary: z.string().optional(),
 });
 export type VoiceCredential = z.infer<typeof VoiceCredentialSchema>;
 

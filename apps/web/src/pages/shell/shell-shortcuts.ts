@@ -8,6 +8,8 @@ export type ShellShortcut =
   | { type: DesktopMenuCommand }
   | { type: "focus-composer" }
   | { type: "quote-selection" }
+  | { type: "model-picker" }
+  | { type: "thinking-level" }
   | { type: "bot"; index: number };
 
 /**
@@ -46,13 +48,19 @@ function quoteChord(host: ShortcutHost) {
   return { key: "L", shift: !host.desktop };
 }
 
+/** A Cmd/Ctrl chord's keys as the platform writes them. */
+export function chordKeys(host: Pick<ShortcutHost, "apple">, key: string, shift = false) {
+  return [host.apple ? "⌘" : "Ctrl", ...(shift ? [host.apple ? "⇧" : "Shift"] : []), key];
+}
+
+/** A chord's keys as one label, the way Apple writes them run together and others join with +. */
+export function chordLabel(host: Pick<ShortcutHost, "apple">, keys: readonly string[]) {
+  return keys.join(host.apple ? "" : "+");
+}
+
 export function quoteShortcutKeys(host: ShortcutHost) {
   const chord = quoteChord(host);
-  return [
-    host.apple ? "⌘" : "Ctrl",
-    ...(chord.shift ? [host.apple ? "⇧" : "Shift"] : []),
-    chord.key,
-  ];
+  return chordKeys(host, chord.key, chord.shift);
 }
 
 export function isQuoteShortcut(event: KeyboardEvent, host: ShortcutHost) {
@@ -63,10 +71,10 @@ export function isQuoteShortcut(event: KeyboardEvent, host: ShortcutHost) {
 
 /** The chord `isQuoteShortcut` answers, written the way the pill shows it. */
 export function quoteShortcutLabel(host: ShortcutHost) {
-  return quoteShortcutKeys(host).join(host.apple ? "" : "+");
+  return chordLabel(host, quoteShortcutKeys(host));
 }
 
-function isComposingKey(event: KeyboardEvent) {
+export function isComposingKey(event: KeyboardEvent) {
   // The legacy IME key code also covers composition-boundary keydowns.
   return event.isComposing || event.keyCode === 229;
 }
@@ -102,7 +110,10 @@ export function shellShortcut(event: KeyboardEvent, host: ShortcutHost): ShellSh
     // Browsers open a private window on this chord before the page sees it.
     if (host.desktop && key === "n") return { type: "new-group" };
     if (host.desktop && key === "f") return { type: "search" };
-    if (key === "m") return { type: "integrations" };
+    // Chrome opens its tab search on this chord before the page sees it.
+    if (host.desktop && key === "a") return { type: "integrations" };
+    if (key === "m") return { type: "model-picker" };
+    if (key === "e") return { type: "thinking-level" };
     // The code, because Shift turns the comma into another character on most layouts.
     if (event.code === "Comma") return { type: "chat-panel" };
   }
@@ -130,6 +141,19 @@ export function shellShortcut(event: KeyboardEvent, host: ShortcutHost): ShellSh
     return { type: event.key === "ArrowLeft" ? "back" : "forward" };
   }
   return null;
+}
+
+/**
+ * What Find does about the side panel. A panel that floats over the chat would hide the bar, so a
+ * details panel closes first; a panel holding a form keeps its unsaved input and Find waits.
+ */
+export function findPanelAction(
+  overlaysChat: boolean,
+  panelOpen: boolean,
+  chatPanelOpen: boolean,
+): "open" | "close-panel" | "refuse" {
+  if (!overlaysChat || !panelOpen) return "open";
+  return chatPanelOpen ? "close-panel" : "refuse";
 }
 
 /** A printable key pressed outside any text field, which belongs in the composer. */

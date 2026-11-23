@@ -1,7 +1,8 @@
 import type { Actor, Bot } from "@rakazo/contracts";
+import { FIRST_BOT_SPAWN_KEY } from "@rakazo/contracts";
 import { describe, expect, it, vi } from "vitest";
 import type { FirstBotDeps } from "./first-bot.js";
-import { ensureFirstBot, FIRST_BOT_SPAWN_KEY } from "./first-bot.js";
+import { ensureFirstBot } from "./first-bot.js";
 
 const actor: Actor = {
   userId: "user-1",

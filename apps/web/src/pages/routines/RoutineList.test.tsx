@@ -124,3 +124,19 @@ it("offers no switch to restart a one-shot that already ran", async () => {
   const toggle = container.querySelector('[aria-label="Turn Routine 1 on or off"]');
   expect(toggle?.hasAttribute("data-disabled")).toBe(true);
 });
+
+it("names a routine's owner only when it is another member's", async () => {
+  await render({
+    routines: [
+      { ...routine(1), runsAs: { name: "Dana", isViewer: false } },
+      { ...routine(2), runsAs: { name: "Riley", isViewer: true } },
+      routine(3),
+      { ...routine(4), runsAs: null },
+    ],
+  });
+  expect(
+    [...container.querySelectorAll('[data-testid="routine-owner"]')].map(
+      (node) => node.textContent,
+    ),
+  ).toEqual(["Dana"]);
+});

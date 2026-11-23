@@ -2,6 +2,7 @@ import type {
   AnalyticsModelSignInEndReason,
   AnalyticsModelSignInErrorClass,
 } from "@rakazo/contracts";
+import { MODEL_SIGN_IN_EXPIRED_ERROR } from "@rakazo/contracts";
 
 /** Kept with a sign-in whose steps are measured: the app it began in and which try it is. */
 export type PiOAuthMeasure = { surface?: string; attempt: number };
@@ -74,10 +75,25 @@ function refusalClass(message: string): AnalyticsModelSignInErrorClass {
   if (/state mismatch|missing authorization code|invalid_grant|invalid code/i.test(message)) {
     return "invalid_code";
   }
+  // The provider's 400 `request_failed` asks the client to retry later.
+  if (/could not reach the provider|\brequest_failed\b/i.test(message)) return "unavailable";
   const match = HTTP_STATUS.exec(message);
   const status = Number(match?.[1] ?? match?.[2] ?? match?.[3]);
   if (status === 429) return "rate_limited";
   if (status >= 500) return "unavailable";
   if (status >= 400) return "rejected";
   return "other";
+}
+
+export const SIGN_IN_EXPIRED = MODEL_SIGN_IN_EXPIRED_ERROR;
+
+/** What the person reads for a sign-in that ended: never the provider's own words. */
+export function signInFailureText({ reason, errorClass }: PiOAuthEnd): string {
+  if (reason === "expired") return SIGN_IN_EXPIRED;
+  if (errorClass === "denied") return "Sign-in was declined. Start again.";
+  if (errorClass === "invalid_code") return "That code did not work. Start again.";
+  if (errorClass === "unavailable" || errorClass === "rate_limited") {
+    return "Sign-in is unavailable right now. Try again in a minute.";
+  }
+  return "Sign-in failed. Start again.";
 }

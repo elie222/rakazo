@@ -6,8 +6,7 @@ import {
   SandboxUnavailableError,
   SandboxUnresponsiveError,
 } from "@rakazo/adapter-kit";
-import { parseRetryAfter, redactSecrets } from "@rakazo/core";
-import { readBodyCapped } from "../../../web/web-ssrf.js";
+import { parseRetryAfter, readErrorTextWithin, redactSecrets } from "@rakazo/core";
 
 const MAX_BOAT_ERROR_RESPONSE_BYTES = 16 * 1024;
 const BOAT_ERROR_RESPONSE_TIMEOUT_MS = 2_000;
@@ -291,12 +290,13 @@ async function readErrorBody(
   response: Response,
   signal?: AbortSignal,
 ): Promise<Record<string, unknown> | undefined> {
-  const readSignal = signal
-    ? AbortSignal.any([signal, AbortSignal.timeout(BOAT_ERROR_RESPONSE_TIMEOUT_MS)])
-    : AbortSignal.timeout(BOAT_ERROR_RESPONSE_TIMEOUT_MS);
+  const text = await readErrorTextWithin(response, {
+    maxBytes: MAX_BOAT_ERROR_RESPONSE_BYTES,
+    timeoutMs: BOAT_ERROR_RESPONSE_TIMEOUT_MS,
+    signal,
+  });
   try {
-    const bytes = await readBodyCapped(response, MAX_BOAT_ERROR_RESPONSE_BYTES, readSignal);
-    const body: unknown = JSON.parse(new TextDecoder().decode(bytes));
+    const body: unknown = JSON.parse(text);
     return body !== null && typeof body === "object" && !Array.isArray(body)
       ? (body as Record<string, unknown>)
       : undefined;

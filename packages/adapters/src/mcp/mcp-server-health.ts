@@ -1,3 +1,4 @@
+import type { OAuthDiscoveryState } from "@modelcontextprotocol/sdk/client/auth.js";
 import type { McpServerHealth } from "@rakazo/contracts";
 import { MCP_OAUTH_CLIENT_REQUIRED } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
@@ -15,6 +16,20 @@ export function needsMcpOAuthClient(error: unknown, depth = 0): boolean {
   if (depth > 5 || !(error instanceof Error)) return false;
   if (error.message.includes(MCP_DYNAMIC_REGISTRATION_UNSUPPORTED)) return true;
   return needsMcpOAuthClient(error.cause, depth + 1);
+}
+
+export type FailedOAuthRequest = { href: string; method: string; status: number };
+
+/** Whether the authorization server turned away our client registration as not allowed
+ * (401 or 403 at its registration endpoint): it accepts only clients registered with it
+ * out of band, so the user must enter one. */
+export function refusedRegistration(
+  failed: FailedOAuthRequest | undefined,
+  discovery: OAuthDiscoveryState | undefined,
+): boolean {
+  if (failed?.method !== "POST" || (failed.status !== 401 && failed.status !== 403)) return false;
+  const endpoint = discovery?.authorizationServerMetadata?.registration_endpoint;
+  return endpoint !== undefined && new URL(endpoint).href === failed.href;
 }
 
 /** A health observation to persist on an MCP server row. `checkedAt` defaults to now. */

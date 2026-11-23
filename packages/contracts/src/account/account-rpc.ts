@@ -10,7 +10,12 @@ import { AiConsentQuerySchema, AiConsentStatusSchema } from "./ai-consent.js";
 import { AnalyticsModelSignInStepInput, AnalyticsScreenInput } from "./analytics.js";
 import { AuditEventListInputSchema, AuditEventPageSchema } from "./audit-events.js";
 import { AppBootstrapSchema, MeSchema, SignupSurveySchema } from "./me.js";
-import { AppLocaleSchema, AvatarStyleSchema, TimeZoneSchema } from "./preferences.js";
+import {
+  AppLocaleSchema,
+  AvatarStyleSchema,
+  ChatPreferencesPatchSchema,
+  TimeZoneSchema,
+} from "./preferences.js";
 import { SecurityEventListInputSchema, SecurityEventSchema } from "./security-events.js";
 
 export const accountRpc = {
@@ -29,6 +34,7 @@ export const accountRpc = {
           scope: z.string(),
           version: z.string(),
           keys: z.array(z.string()).min(1).max(200),
+          pageId: z.string().optional(),
           /** The settings copy the reviewed recipients came from, as in `status`. */
           settingsScope: SettingsScopeSchema.optional(),
         }),
@@ -46,6 +52,10 @@ export const accountRpc = {
             avatarStyle: AvatarStyleSchema.optional(),
             /** Restyles every bot not pinned to another set, and is what new bots get. */
             botAvatarSet: BotAvatarSetSchema.optional(),
+            chatPreferences: ChatPreferencesPatchSchema.refine(
+              (patch) => Object.values(patch).some((value) => value !== undefined),
+              { message: "Nothing to update" },
+            ).optional(),
             timezone: TimeZoneSchema.nullable().optional(),
             /** The language the app runs in, so emails can be written in it. */
             locale: AppLocaleSchema.optional(),
@@ -56,6 +66,7 @@ export const accountRpc = {
             (input) =>
               input.avatarStyle !== undefined ||
               input.botAvatarSet !== undefined ||
+              input.chatPreferences !== undefined ||
               input.timezone !== undefined ||
               input.locale !== undefined ||
               input.labs !== undefined,

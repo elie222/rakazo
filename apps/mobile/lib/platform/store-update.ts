@@ -4,7 +4,7 @@ import * as Application from "expo-application";
 import { Linking, Platform } from "react-native";
 import { queryClient } from "../query/query";
 
-const OFFICIAL_BUNDLE_ID = "com.rakazo.app";
+export const OFFICIAL_BUNDLE_ID = "com.rakazo.app";
 const STORE_LOOKUP_URL = "https://itunes.apple.com/lookup";
 
 /** True when dotted version `latest` is ahead of `current`; false when either is unreadable. */

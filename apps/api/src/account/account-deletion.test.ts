@@ -70,7 +70,7 @@ describe("deleteOrganization lease", () => {
   it("preserves billing and files when the calendar provider cannot disconnect", async () => {
     const outage = new Error("calendar provider unavailable");
     const disconnectSpace = vi.fn().mockRejectedValue(outage);
-    const cancelForDeletedOrganization = vi.fn();
+    const cancelOrganizationSubscriptions = vi.fn();
     const remove = vi.fn();
     prisma.meetingCalendarConnection.findFirst.mockResolvedValueOnce({ id: "calendar-1" });
 
@@ -78,7 +78,7 @@ describe("deleteOrganization lease", () => {
       deleteOrganization(
         deps({
           meetingCalendar: { disconnectSpace },
-          billing: { cancelForDeletedOrganization },
+          billing: { cancelOrganizationSubscriptions },
           artifacts: { remove },
         }),
         "user-1",
@@ -86,7 +86,7 @@ describe("deleteOrganization lease", () => {
       ),
     ).rejects.toMatchObject({ kind: "SERVICE_UNAVAILABLE", cause: outage });
     expect(disconnectSpace).toHaveBeenCalledWith("space-1");
-    expect(cancelForDeletedOrganization).not.toHaveBeenCalled();
+    expect(cancelOrganizationSubscriptions).not.toHaveBeenCalled();
     expect(prisma.artifact.findMany).not.toHaveBeenCalled();
     expect(remove).not.toHaveBeenCalled();
     expect(releaseOrganizationDeletionClaim).toHaveBeenCalledWith(prisma, {
@@ -148,7 +148,7 @@ describe("deleteOrganization lease", () => {
     const deleting = deleteOrganization(
       deps({
         billing: {
-          cancelForDeletedOrganization: () => {
+          cancelOrganizationSubscriptions: () => {
             billingCalled = true;
             return billing.promise;
           },

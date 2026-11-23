@@ -5,11 +5,13 @@ import { Bell, PanelLeftClose, PanelLeftOpen, Plus, Search } from "lucide-react"
 import { IconTooltip } from "../../../components/IconTooltip";
 import { WindowChrome } from "../../../components/WindowChrome";
 import { desktopBridge } from "../../../lib/platform/desktop";
+import { useAppRail } from "../app-rail";
 import { BotCreatePicker } from "../bots/bot-picker";
 import type { Panel } from "../right-panel-state";
 
 // A size class, since the Button sizes any svg without one to 16px.
 const ICON = "size-4.5";
+const TOGGLE_ICON = `${ICON} rtl:rotate-180`;
 const STROKE = 1.75;
 
 export function SidebarHeader({
@@ -26,6 +28,7 @@ export function SidebarHeader({
   setPanel,
   navigate,
   setNewSpaceOpen,
+  openAgentImport,
   setCreateBotOpen,
 }: {
   mini?: boolean;
@@ -41,10 +44,13 @@ export function SidebarHeader({
   setPanel: (panel: Panel) => void;
   navigate: (path: string) => void;
   setNewSpaceOpen: (open: boolean) => void;
+  openAgentImport: () => void;
   setCreateBotOpen: (open: boolean) => void;
 }) {
   const { t } = useLingui();
   const hasWindowChrome = Boolean(desktopBridge());
+  // The rail holds the window controls from md up; the phone drawer still needs them.
+  const rail = useAppRail();
   const toggleLabel = mini ? t`Show bots` : t`Minimize bots`;
   // In the icon rail the actions stack, so a label above or below covers its neighbour.
   const labelSide = mini ? "inline-end" : undefined;
@@ -61,19 +67,19 @@ export function SidebarHeader({
         onClick={() => setBotsSidebarCollapsedPref(!mini)}
       >
         {mini ? (
-          <PanelLeftOpen className={ICON} strokeWidth={STROKE} aria-hidden="true" />
+          <PanelLeftOpen className={TOGGLE_ICON} strokeWidth={STROKE} aria-hidden="true" />
         ) : (
-          <PanelLeftClose className={ICON} strokeWidth={STROKE} aria-hidden="true" />
+          <PanelLeftClose className={TOGGLE_ICON} strokeWidth={STROKE} aria-hidden="true" />
         )}
       </Button>
     </IconTooltip>
   );
   return (
     <div
-      className={`app-drag flex items-center ${mini ? `flex-col gap-1 px-0 pb-3 ${hasWindowChrome ? "pt-4" : "pt-2"}` : "justify-between px-3 pb-3 pt-[14px]"}`}
+      className={`app-drag flex items-center ${mini ? `flex-col gap-1 px-0 pb-3 ${hasWindowChrome && !rail ? "pt-4" : "pt-2"}` : "justify-between px-3 pb-3 pt-[14px]"}`}
     >
       <div className={`flex items-center ${mini ? "flex-col gap-2" : "gap-2"}`}>
-        {hasWindowChrome ? <WindowChrome /> : null}
+        {hasWindowChrome ? <WindowChrome className={rail ? "md:hidden" : undefined} /> : null}
         {toggle}
       </div>
       {/* Fits beside the macOS window controls at the narrowest sidebar width. */}
@@ -142,6 +148,11 @@ export function SidebarHeader({
                   setCreateMenuOpen(false);
                   setMobileSidebarOpen(false);
                   setCreateBotOpen(true);
+                }}
+                onImportAgent={() => {
+                  setCreateMenuOpen(false);
+                  setMobileSidebarOpen(false);
+                  openAgentImport();
                 }}
                 onOpenBot={(id) => {
                   setCreateMenuOpen(false);

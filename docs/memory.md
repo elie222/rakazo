@@ -105,6 +105,9 @@ remains enabled, and sharing knowledge never bypasses the receiving Space's acce
 Separate from memory, each bot keeps a short list of **Open work**: things it has started and not
 finished. It is in the bot's settings. You can add items for it, or mark them complete.
 
+With daily check-ins on, an item nobody touches for 14 days is set aside automatically. Set-aside
+items wait behind **Show more**, where you can reopen them, and the bot can still read them.
+
 ## Memory across spaces
 
 Memory never crosses [spaces](./spaces.md). A bot in one space can't read notes from another.

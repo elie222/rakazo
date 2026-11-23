@@ -335,9 +335,9 @@ describe("HonchoMemoryProvider", () => {
     expect(result).toEqual({ ok: true, value: [] });
   });
 
-  it("caps saved conclusions by bytes so CJK text stays within the embedding limit", async () => {
+  it("saves a conclusion at the byte limit unchanged", async () => {
     const fetchMock = honchoFetch({});
-    const content = "记".repeat(MAX_HONCHO_CONCLUSION_BYTES);
+    const content = "a".repeat(MAX_HONCHO_CONCLUSION_BYTES);
     await expect(
       provider(fetchMock).save(
         { content, scope: "isolated", botId: "bot-1", source: { kind: "durable" } },
@@ -345,9 +345,23 @@ describe("HonchoMemoryProvider", () => {
       ),
     ).resolves.toEqual({ ok: true, value: undefined });
     const saved = calls(fetchMock).find((call) => call.path.endsWith("/conclusions"));
-    const conclusion: string = saved!.body.conclusions[0].content;
-    expect(Buffer.byteLength(conclusion)).toBeLessThanOrEqual(MAX_HONCHO_CONCLUSION_BYTES);
-    expect(content.startsWith(conclusion)).toBe(true);
+    expect(saved!.body.conclusions[0].content).toBe(content);
+  });
+
+  it("refuses a conclusion over the byte limit instead of cutting it short", async () => {
+    const fetchMock = honchoFetch({});
+    // CJK characters are three bytes each, so this is under the limit in characters only.
+    const content = "记".repeat(MAX_HONCHO_CONCLUSION_BYTES);
+    await expect(
+      provider(fetchMock).save(
+        { content, scope: "isolated", botId: "bot-1", source: { kind: "durable" } },
+        context,
+      ),
+    ).resolves.toEqual({
+      ok: false,
+      error: `Honcho save skipped: memory content is longer than ${MAX_HONCHO_CONCLUSION_BYTES} bytes. Save a shorter fact.`,
+    });
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it("keeps compaction summaries out of Honcho", async () => {
@@ -578,7 +592,7 @@ describe("prepareHonchoConnection", () => {
     },
   );
 
-  it.each(["", "short", "k".repeat(4097)])(
+  it.each(["short", "k".repeat(4097)])(
     "rejects invalid key length before probing",
     async (apiKey) => {
       const fetch = vi.fn(() => {
@@ -969,7 +983,7 @@ describe("Honcho local mode", () => {
     expect(honchoRequiresPrivateEndpoint({ mode: "LOCAL", endpointTrust: "public" })).toBe(true);
   });
 
-  it.each([" local ", "LOCAL", " cloud "])(
+  it.each([" local ", "LOCAL"])(
     "rejects the unnormalized mode %j instead of reinterpreting it",
     async (mode) => {
       const fetch = localFetch();

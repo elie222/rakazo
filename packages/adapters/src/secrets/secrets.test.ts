@@ -1,6 +1,6 @@
 import * as crypto from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
-import { EncryptedSecretStore } from "./secrets.js";
+import { EncryptedSecretStore, isPermanentDecryptFailure } from "./secrets.js";
 
 vi.mock("node:crypto", async (importOriginal) => {
   const actual = await importOriginal<typeof crypto>();
@@ -40,5 +40,13 @@ describe("EncryptedSecretStore", () => {
     await store.load(record.ciphertext, record.id);
 
     await expect(store.load(record.ciphertext, "another-record")).rejects.toThrow();
+  });
+
+  it("reports a malformed legacy value as a permanent decrypt failure", async () => {
+    const store = new EncryptedSecretStore("test-only-encryption-key");
+    const error = await store
+      .load("not-really-a-secret", "record")
+      .catch((caught: unknown) => caught);
+    expect(isPermanentDecryptFailure(error)).toBe(true);
   });
 });
