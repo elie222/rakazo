@@ -22,7 +22,8 @@ interface TableSpec {
     | "botEmailMessage"
     | "meetingSession"
     | "nativeCalendarRequest"
-    | "task";
+    | "task"
+    | "pageImage";
   /** Scans return them in this order as `values`. */
   columns: string[];
   json: boolean;
@@ -164,6 +165,17 @@ const TABLES: TableSpec[] = [
       Prisma.sql`UPDATE bot_email_messages SET "fromAddress" = ${row.fromAddress as string},
         "fromName" = ${row.fromName as string}, subject = ${row.subject as string},
         text = ${row.text as string}, "searchTokens" = NULL WHERE id = ${id}`,
+  },
+  {
+    model: "PageImage",
+    delegate: "pageImage",
+    columns: ["data"],
+    json: false,
+    scan: (cursor, limit) => Prisma.sql`
+      SELECT id, jsonb_build_array(data) AS values, "spaceId", "pageId" AS owner FROM page_images
+      WHERE id > ${cursor} ORDER BY id LIMIT ${limit}`,
+    writePlaintext: (id, row) =>
+      Prisma.sql`UPDATE page_images SET data = ${row.data as string} WHERE id = ${id}`,
   },
 ];
 
@@ -415,6 +427,8 @@ export async function contentEncryptionStatus(
     SELECT 'native_calendar_requests', count(*) FILTER (WHERE operation IS NOT NULL OR result IS NOT NULL),
       count(*) FILTER (WHERE NOT jsonb_exists(operation, '$sealed') OR NOT jsonb_exists(result, '$sealed'))
       FROM native_calendar_requests
+    UNION ALL
+    SELECT 'page_images', count(*), count(*) FILTER (WHERE data NOT LIKE 'rkz1:%') FROM page_images
   `;
     },
     { timeout: 60 * 60_000 },

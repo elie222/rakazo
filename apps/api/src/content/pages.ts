@@ -1,7 +1,14 @@
 import { createHash, randomBytes } from "node:crypto";
 import type { SecretStore } from "@rakazo/adapter-kit";
 import { forgetPageShareSecrets } from "@rakazo/adapters";
-import type { Actor, PageDetail, PageSummary, PageVisibility, SharedPage } from "@rakazo/contracts";
+import type {
+  Actor,
+  PageDetail,
+  PageImageSource,
+  PageSummary,
+  PageVisibility,
+  SharedPage,
+} from "@rakazo/contracts";
 import { pageReviewPath, pageShareTokenFromSlug, pageShareUrl } from "@rakazo/contracts";
 import { ClientError, escapeSearchWildcards } from "@rakazo/core";
 import type { PageShareSecret, Prisma, PrismaClient, ThreadEvents } from "@rakazo/db";
@@ -10,6 +17,8 @@ import {
   IsolationError,
   isRecordNotFound,
   lockPage,
+  pageVersionImages,
+  readPageVersionImage,
   runAsSystem,
   signalPage,
   signalPageUsers,
@@ -177,7 +186,7 @@ export async function getPage(
   const [stored, owner] = await Promise.all([
     deps.prisma.pageVersion.findUnique({
       where: { pageId_version: { pageId: row.id, version } },
-      select: { code: true },
+      select: { id: true, code: true, images: true },
     }),
     deps.prisma.user.findUnique({
       where: { id: actor.userId },
@@ -189,6 +198,7 @@ export async function getPage(
     ...pageSummary(row),
     version,
     code: stored.code,
+    images: pageVersionImages(stored),
     owner: { name: owner?.name ?? "", image: owner?.image ?? null },
     // Cards skip the secret store; a token it cannot read hides only the link.
     shareUrl: input.link
@@ -430,10 +440,7 @@ export async function removePage(deps: PageDeps, actor: Actor, pageId: string) {
 }
 
 /** The current version of a page shared by link, or null for any token that does not open one. */
-export async function readSharedPage(
-  prisma: PrismaClient,
-  token: string,
-): Promise<SharedPage | null> {
+async function sharedPageVersion(prisma: PrismaClient, token: string) {
   if (pageShareTokenFromSlug(token) !== token) return null;
   const page = await runAsSystem("page share link", () =>
     prisma.page.findUnique({
@@ -453,14 +460,36 @@ export async function readSharedPage(
   const version = await runAsSystem("page share link", () =>
     prisma.pageVersion.findUnique({
       where: { pageId_version: { pageId: page.id, version: page.currentVersion } },
-      select: { code: true },
+      select: { id: true, pageId: true, code: true, images: true },
     }),
   );
-  if (!version) return null;
+  return version ? { page, version } : null;
+}
+
+export async function readSharedPage(
+  prisma: PrismaClient,
+  token: string,
+): Promise<SharedPage | null> {
+  const shared = await sharedPageVersion(prisma, token);
+  if (!shared) return null;
+  const { page, version } = shared;
   return {
     title: page.title,
     code: version.code,
+    images: pageVersionImages(version),
     version: page.currentVersion,
     updatedAt: page.updatedAt.toISOString(),
   };
+}
+
+export async function readSharedPageImage(
+  prisma: PrismaClient,
+  token: string,
+  imageId: string,
+): Promise<PageImageSource | null> {
+  const shared = await sharedPageVersion(prisma, token);
+  if (!shared) return null;
+  return runAsSystem("page share link image", () =>
+    readPageVersionImage(prisma, shared.version, imageId),
+  );
 }

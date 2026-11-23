@@ -357,3 +357,125 @@ describe("saving a shared page", () => {
     },
   );
 });
+
+describe("saving a page's pictures", () => {
+  const pictured = (...names: string[]) =>
+    `const App = () => (\n  <Page title="Trip">\n${names.map((name) => `    <Image src="image:${name}" alt="${name}" />\n`).join("")}  </Page>\n);\nexport default App;\n`;
+
+  async function png() {
+    const { default: sharp } = await import("sharp");
+    return new Uint8Array(
+      await sharp({ create: { width: 8, height: 8, channels: 3, background: "#123456" } })
+        .png()
+        .toBuffer(),
+    );
+  }
+
+  function withFiles(ctx: unknown, artifact: { storageKey: string } | null, bytes?: Uint8Array) {
+    const run = ctx as {
+      deps: Record<string, unknown> & { prisma: Record<string, unknown> };
+      trust: Record<string, unknown>;
+    };
+    run.deps.prisma.artifact = { findFirst: vi.fn(async () => artifact) };
+    run.deps.prisma.externalEffect = { findFirst: vi.fn(async () => null) };
+    run.deps.artifacts = { get: vi.fn(async () => bytes) };
+    Object.assign(run.trust, {
+      searchResultUrls: new Set<string>(),
+      loadTrustedSites: async () => new Set<string>(),
+      loadApprovalRules: async () => [],
+    });
+    return ctx as never;
+  }
+
+  it("keeps a chat file's picture with a new page under the name its source shows", async () => {
+    const tx = {
+      page: { create: vi.fn(async () => ({ id: "page-1", title: "Trip", spaceId: "space-1" })) },
+      pageImage: {
+        findUnique: vi.fn(async () => null),
+        create: vi.fn(async () => ({ id: "image-1" })),
+      },
+      pageVersion: { updateMany: vi.fn() },
+    };
+    const ctx = withFiles(context(tx), { storageKey: "object:1" }, await png());
+    const result = (await pageTools.save_page!(
+      ctx,
+      call({ title: "Trip", source: pictured("hotel"), images: { hotel: "artifact-1" } }),
+    )) as Record<string, unknown>;
+    expect(result).toMatchObject({ pageId: "page-1", version: 1 });
+    expect(result.warnings).toBeUndefined();
+    expect(tx.pageImage.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        pageId: "page-1",
+        spaceId: "space-1",
+        mimeType: "image/webp",
+        width: 8,
+        height: 8,
+      }),
+      select: { id: true },
+    });
+    expect(tx.pageVersion.updateMany).toHaveBeenCalledWith({
+      where: { pageId: "page-1", version: 1 },
+      data: { images: { hotel: "image-1" } },
+    });
+  });
+
+  it("refuses a web picture from a site this run was not given, and saves nothing", async () => {
+    const tx = { page: { create: vi.fn() } };
+    const ctx = withFiles(context(tx), null);
+    const result = (await pageTools.save_page!(
+      ctx,
+      call({
+        title: "Trip",
+        source: pictured("hotel"),
+        images: { hotel: "https://img.example.com/lobby.jpg?q=note" },
+      }),
+    )) as Record<string, unknown>;
+    expect(result).toMatchObject({ unchanged: true, error: expect.stringMatching(/nothing/) });
+    expect(result.problems).toEqual([
+      "Image hotel: example.com is new to this chat; open the address with web_fetch first, then save again.",
+    ]);
+    expect(tx.page.create).not.toHaveBeenCalled();
+  });
+
+  it("keeps earlier pictures the new source still shows and drops the rest", async () => {
+    const tx = {
+      page: {
+        updateMany: vi.fn(async () => ({ count: 1 })),
+        findUniqueOrThrow: vi.fn(async () => ({ title: "Trip" })),
+      },
+      pageVersion: { create: vi.fn() },
+    };
+    const ctx = context(tx, { currentVersion: 1 });
+    (
+      ctx as { deps: { prisma: { page: { findFirst: () => Promise<unknown> } } } }
+    ).deps.prisma.page.findFirst = async () => ({
+      id: "page-1",
+      title: "Trip",
+      visibility: "private",
+      currentVersion: 1,
+      versions: [
+        { id: "v1", source: pictured("hotel", "logo"), images: { hotel: "i1", logo: "i2" } },
+      ],
+    });
+    const result = (await pageTools.save_page!(
+      ctx,
+      call({ pageId: "page-1", source: pictured("hotel", "beach") }),
+    )) as Record<string, unknown>;
+    expect(tx.pageVersion.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({ version: 2, images: { hotel: "i1" } }),
+    });
+    expect(result.warnings).toEqual([
+      "image:beach is not one of this page's images, so it is left out.",
+    ]);
+  });
+
+  it("lists each picture a shared page would gain on its approval card", async () => {
+    const held = request({
+      pageId: "page-1",
+      source: pictured("hotel"),
+      images: { hotel: "https://img.example.com/lobby.jpg" },
+    });
+    await holdSharedPageSave(context({}, { currentVersion: 1, visibility: "link" }), held as never);
+    expect(held.fleetSummary?.lines).toContain("+ Image hotel: https://img.example.com/lobby.jpg");
+  });
+});

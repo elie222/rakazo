@@ -13,6 +13,7 @@ import {
 import { ErrorBoundary, ErrorPanel, ErrorTitle } from "./kit/boundary.js";
 import { helpers, kit } from "./kit/index.js";
 import { PageLanguage } from "./kit/labels.js";
+import { setPageImages } from "./kit/media.js";
 import { PAGE_STYLES } from "./kit/styles.js";
 
 /** What the host's boot script passes to `RakazoPage.mount`; `code` comes from `pageViewerCode`. */
@@ -21,6 +22,7 @@ type PageBoot = {
   theme: "light" | "dark";
   errorTitle: string;
   lang?: string;
+  images?: Record<string, string>;
   review?: boolean;
   reviewAnchor?: string;
   reviewAnchorOccurrence?: number;
@@ -147,6 +149,7 @@ function reportSections(host: HTMLElement, anchor?: string, anchorOccurrence?: n
 
 function mount(boot: PageBoot) {
   document.documentElement.dataset.theme = boot.theme === "light" ? "light" : "dark";
+  setPageImages(boot.images);
   reportHeight();
   const host =
     document.getElementById("root") ?? document.body.appendChild(document.createElement("div"));

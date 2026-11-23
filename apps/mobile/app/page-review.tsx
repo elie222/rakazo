@@ -42,10 +42,10 @@ function Review({ pageId }: { pageId: string }) {
     targetRpcQuery(ACCOUNT_SETTINGS, "pageReviews/draft", { pageId, requestId: draftId ?? "" }),
     { enabled: Boolean(page?.owner && draftId) },
   );
-  const { code: source, sections } = pageReviewContent({
+  const { shown, sections } = pageReviewContent({
     page,
     showingDraft: Boolean(draftId),
-    draftCode: draft.isError ? undefined : draft.data?.code,
+    draft: draft.isError ? undefined : draft.data,
     reported: anchors,
   });
   const apiBase = currentApiBase();
@@ -57,7 +57,7 @@ function Review({ pageId }: { pageId: string }) {
           ...read.queryKey,
           "document",
           apiBase,
-          source,
+          shown,
           theme,
           !draftId,
           runtimeError,
@@ -66,13 +66,13 @@ function Review({ pageId }: { pageId: string }) {
       }).queryKey,
       gcTime: 0,
       queryFn: () =>
-        pageDocument(apiBase, source!, theme, runtimeError, {
+        pageDocument(apiBase, { ...shown!, pageId }, theme, runtimeError, {
           review: !draftId,
           reviewAnchor: revision?.anchor.section,
           reviewAnchorOccurrence: revision?.anchor.sectionOccurrence,
         }),
     },
-    { enabled: source !== undefined },
+    { enabled: shown !== undefined },
   );
   usePageReviewSignals();
   const publish = useSave({
@@ -168,7 +168,7 @@ function Review({ pageId }: { pageId: string }) {
             style={[styles.banner, { color: tokens.mutedForeground }]}
           >{t`Revision ${ph({ version: page.version })}`}</Text>
         ) : null}
-        {document.data && source !== undefined ? (
+        {document.data && shown !== undefined ? (
           <SandboxedHtmlPreview
             html={document.data}
             background={tokens.background}

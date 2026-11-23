@@ -244,6 +244,12 @@ export const conversationTools: ConnectorTool[] = [
             required: ["find", "replace"],
           },
         },
+        images: {
+          type: "object",
+          description:
+            'Pictures to keep with the page, each shown in the source as "image:<name>". Map each name to an http(s) address, a chat file\'s artifactId or a path on your computer. Later saves keep the ones the source still shows.',
+          additionalProperties: { type: "string" },
+        },
       },
     },
   },

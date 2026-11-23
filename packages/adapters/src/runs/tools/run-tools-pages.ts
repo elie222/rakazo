@@ -1,7 +1,12 @@
 import type { MessageBlock } from "@rakazo/contracts";
-import { PAGE_TITLE_MAX_LENGTH, PageTitleSchema } from "@rakazo/contracts";
+import {
+  PAGE_IMAGE_PREFIX,
+  PAGE_IMAGES_MAX,
+  PAGE_TITLE_MAX_LENGTH,
+  PageTitleSchema,
+} from "@rakazo/contracts";
 import { CARD_TITLE_ESCAPED_CHARACTERS, containsSecret, redactSecrets } from "@rakazo/core";
-import { isUniqueViolation, signalPage, signalPageUsers } from "@rakazo/db";
+import { isUniqueViolation, pageVersionImages, signalPage, signalPageUsers } from "@rakazo/db";
 import { bestEffort } from "@rakazo/logging";
 import { checkPageSource, PAGE_KIT_GUIDE } from "@rakazo/page-kit/validate";
 import { MAX_APPROVAL_DETAIL_LENGTH } from "../../approvals/approval-ask.js";
@@ -11,6 +16,13 @@ import { markReadOutsideContent, neverAsks } from "../assembly/run-context.js";
 import { publishMessage } from "../assembly/run-messages.js";
 import type { ToolCall, ToolHandlers } from "./run-tool-gate.js";
 import type { ToolRequest } from "./run-tool-request.js";
+import type { PageImageSources } from "./run-tools-page-images.js";
+import {
+  keptPageImageNames,
+  parsePageImageSources,
+  preparePageImages,
+  storePageImages,
+} from "./run-tools-page-images.js";
 
 const MAX_EDITS = 50;
 
@@ -69,6 +81,12 @@ function reachablePage(ctx: RunContext, pageId: string) {
 function editsGiven(args: Record<string, unknown>): boolean {
   // Serializers send unused optional fields blank, an empty list included.
   return Array.isArray(args.edits) ? args.edits.length > 0 : argumentGiven(args.edits);
+}
+
+function imagesGiven(args: Record<string, unknown>): boolean {
+  return (
+    typeof args.images === "object" && args.images !== null && Object.keys(args.images).length > 0
+  );
 }
 
 /** The page a save would store: the given source, or the current source with the edits applied. */
@@ -148,7 +166,8 @@ export async function holdSharedPageSave(
   request.effectRequest = args;
   if (args.help === true || !argumentGiven(args.pageId)) return undefined;
   const hasTitle = argumentGiven(args.title);
-  if (!argumentGiven(args.source) && !editsGiven(args) && !hasTitle) return undefined;
+  if (!argumentGiven(args.source) && !editsGiven(args) && !hasTitle && !imagesGiven(args))
+    return undefined;
   if (argumentGiven(args.source) && editsGiven(args)) return undefined;
   if (await neverAsks(ctx)) return undefined;
   const page = await ctx.deps.prisma.page.findFirst({
@@ -167,13 +186,20 @@ export async function holdSharedPageSave(
   const proposed = proposedSource(current, args);
   if (!proposed.ok) return undefined;
   const check = checkPageSource(proposed.source);
-  if (!check.ok || containsSecret([proposed.source, check.code], ctx.secrets)) return undefined;
+  const sources = imagesGiven(args) ? parsePageImageSources(args.images) : {};
+  if (typeof sources === "string") return undefined;
+  if (
+    !check.ok ||
+    containsSecret([proposed.source, check.code, ...Object.values(sources)], ctx.secrets)
+  )
+    return undefined;
   const lines = [
     // The title as it would be stored.
     ...(parsedTitle
       ? [`Title: ${redactSecrets(parsedTitle.data, ctx.secrets).slice(0, PAGE_TITLE_MAX_LENGTH)}`]
       : []),
     ...changedLines(current, proposed.source),
+    ...Object.entries(sources).map(([name, source]) => `+ Image ${name}: ${source}`),
   ];
   // Measured as the card shows it, redacted, so nothing an approval covers is cut off.
   if (redactSecrets(lines.join("\n"), ctx.secrets).length > MAX_APPROVAL_DETAIL_LENGTH)
@@ -206,7 +232,10 @@ async function savePage(ctx: RunContext, call: ToolCall) {
   const pageId = argumentGiven(args.pageId) ? String(args.pageId) : undefined;
   const hasSource = argumentGiven(args.source);
   const hasEdits = editsGiven(args);
+  const hasImages = imagesGiven(args);
   if (hasSource && hasEdits) return { error: "Send either source or edits, not both." };
+  const sources: PageImageSources | string = hasImages ? parsePageImageSources(args.images) : {};
+  if (typeof sources === "string") return { error: sources, unchanged: true };
   let title: string | undefined;
   if (argumentGiven(args.title)) {
     const parsed = PageTitleSchema.safeParse(args.title);
@@ -222,14 +251,20 @@ async function savePage(ctx: RunContext, call: ToolCall) {
           title: true,
           visibility: true,
           currentVersion: true,
-          versions: { orderBy: { version: "desc" }, take: 1, select: { source: true } },
+          versions: {
+            orderBy: { version: "desc" },
+            take: 1,
+            select: { id: true, source: true, images: true },
+          },
         },
       })
     : null;
   if (pageId && !page) return { error: "No page with that pageId belongs to this bot or chat." };
-  const current = page?.versions[0]?.source ?? "";
+  const currentVersion = page?.versions[0];
+  const current = currentVersion?.source ?? "";
+  const previousImages = currentVersion ? pageVersionImages(currentVersion) : {};
 
-  if (page && !hasSource && !hasEdits && !title) {
+  if (page && !hasSource && !hasEdits && !title && !hasImages) {
     // The stored source may hold outside text an earlier run put in the page, so reading it
     // taints this run like any other outside content; saves only confirm this run's own write.
     await markReadOutsideContent(ctx, current);
@@ -239,6 +274,7 @@ async function savePage(ctx: RunContext, call: ToolCall) {
       title: page.title,
       ...pageSharingHint(page.visibility),
       source: current,
+      ...(Object.keys(previousImages).length ? { images: Object.keys(previousImages) } : {}),
     };
   }
   if (!page && hasEdits) return { error: "edits need the pageId of the page to change." };
@@ -263,12 +299,25 @@ async function savePage(ctx: RunContext, call: ToolCall) {
     return { error: "The page has problems; nothing was saved.", problems: check.errors };
   }
   // A page can be shared by link, so it never stores a value this run keeps secret.
-  if (containsSecret([source, check.code], ctx.secrets)) {
+  if (containsSecret([source, check.code, ...Object.values(sources)], ctx.secrets)) {
     return {
       error: "The page contains a secret value; nothing was saved. Remove it and save again.",
       unchanged: true,
     };
   }
+
+  const kept = keptPageImageNames(previousImages, sources, source);
+  if (kept.length > PAGE_IMAGES_MAX)
+    return { error: `A page shows at most ${PAGE_IMAGES_MAX} images.`, unchanged: true };
+  const unused = Object.keys(sources).filter((name) => !kept.includes(name));
+  const used = Object.fromEntries(Object.entries(sources).filter(([name]) => kept.includes(name)));
+  const prepared = await preparePageImages(ctx, call, used);
+  if ("problems" in prepared)
+    return {
+      error: "Some images could not be added; nothing was saved.",
+      problems: prepared.problems,
+      unchanged: true,
+    };
 
   const unapproved =
     page !== null &&
@@ -289,6 +338,13 @@ async function savePage(ctx: RunContext, call: ToolCall) {
             versions: { create: { version: 1, title: title!, source, code: check.code } },
           },
         });
+        if (Object.keys(prepared.images).length) {
+          const images = await storePageImages(tx, created, {}, prepared.images, source);
+          await tx.pageVersion.updateMany({
+            where: { pageId: created.id, version: 1 },
+            data: { images },
+          });
+        }
         return { pageId: created.id, version: 1, title: created.title };
       }
       const version = page.currentVersion + 1;
@@ -319,8 +375,15 @@ async function savePage(ctx: RunContext, call: ToolCall) {
         nextTitle = kept;
         await tx.page.update({ where: { id: page.id }, data: { title: kept } });
       }
+      const images = await storePageImages(
+        tx,
+        { id: page.id, spaceId: run.spaceId },
+        previousImages,
+        prepared.images,
+        source,
+      );
       await tx.pageVersion.create({
-        data: { pageId: page.id, version, title: nextTitle, source, code: check.code },
+        data: { pageId: page.id, version, title: nextTitle, source, code: check.code, images },
       });
       return { pageId: page.id, version, title: nextTitle };
     });
@@ -356,7 +419,19 @@ async function savePage(ctx: RunContext, call: ToolCall) {
     ...pageSharingHint(page?.visibility),
     mention: `Mention it in your reply as [${linkText}](page:${saved.pageId})`,
   };
-  return check.warnings?.length ? { ...result, warnings: check.warnings } : result;
+  const warnings = [
+    ...(check.warnings ?? []),
+    ...unused.map((name) => `Image ${name} was not saved: the source never shows image:${name}.`),
+    ...missingImages(source, kept),
+  ];
+  return warnings.length ? { ...result, warnings } : result;
+}
+
+function missingImages(source: string, kept: string[]): string[] {
+  const named = source.match(/image:[A-Za-z0-9][A-Za-z0-9_.-]{0,63}/g) ?? [];
+  return [...new Set(named)]
+    .filter((reference) => !kept.includes(reference.slice(PAGE_IMAGE_PREFIX.length)))
+    .map((reference) => `${reference} is not one of this page's images, so it is left out.`);
 }
 
 class PageChangedError extends Error {}

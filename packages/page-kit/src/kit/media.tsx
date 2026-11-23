@@ -10,11 +10,26 @@ import { useWords } from "./labels.js";
 const text = (value: unknown) =>
   typeof value === "string" || typeof value === "number" ? String(value).trim() : "";
 
+const DATA_IMAGE = /^data:image\/[a-z0-9.+-]+[;,]/i;
+const PAGE_IMAGE = "image:";
+let pageImages = new Map<string, string>();
+
+export function setPageImages(images: unknown) {
+  pageImages = new Map(
+    images && typeof images === "object"
+      ? Object.entries(images).filter(
+          (entry): entry is [string, string] =>
+            typeof entry[1] === "string" && DATA_IMAGE.test(entry[1]),
+        )
+      : [],
+  );
+}
+
 /** The viewer loads nothing from the network, so pictures come embedded in the page. */
 function imageSource(value: unknown): string | undefined {
-  return typeof value === "string" && /^data:image\/[a-z0-9.+-]+[;,]/i.test(value)
-    ? value
-    : undefined;
+  if (typeof value !== "string") return undefined;
+  if (value.startsWith(PAGE_IMAGE)) return pageImages.get(value.slice(PAGE_IMAGE.length));
+  return DATA_IMAGE.test(value) ? value : undefined;
 }
 
 /** Sound and video may also be a blob the page made itself. */
