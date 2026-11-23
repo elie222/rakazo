@@ -86,7 +86,8 @@ export function formatUpdateLabel(update: AppUpdateIdentity): string {
   return t`OTA ${id}`;
 }
 
-export function getAppVersionInfo(): AppVersionInfo {
+/** The store version and build, from the native module or else the expo config. */
+function storeVersion(): { version: string | null; build: string | null } {
   let applicationVersion: string | null = null;
   let buildVersion: string | null = null;
   try {
@@ -96,24 +97,20 @@ export function getAppVersionInfo(): AppVersionInfo {
     // Hosts without the native module still get the expo config fallback below.
   }
   const fallback = fallbackNativeVersion();
+  return { version: applicationVersion ?? fallback.version, build: buildVersion ?? fallback.build };
+}
+
+export function getAppVersionInfo(): AppVersionInfo {
+  const { version, build } = storeVersion();
   return {
-    nativeLabel: formatNativeVersionLabel(
-      applicationVersion ?? fallback.version,
-      buildVersion ?? fallback.build,
-    ),
+    nativeLabel: formatNativeVersionLabel(version, build),
     update: resolveUpdateIdentity(),
   };
 }
 
 /** Store version plus the running update, as measurement names the app: `1.0.17+ee3d3f95`. */
 export function analyticsAppVersion(): string | undefined {
-  let version: string | null = null;
-  try {
-    version = readString(Application.nativeApplicationVersion);
-  } catch {
-    // Hosts without the native module fall back to the expo config below.
-  }
-  version ??= fallbackNativeVersion().version;
+  const { version } = storeVersion();
   if (!version) return undefined;
   const update = resolveUpdateIdentity();
   const candidate = update.kind === "ota" ? `${version}+${update.id}` : version;
