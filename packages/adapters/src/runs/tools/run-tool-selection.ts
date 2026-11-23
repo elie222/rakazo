@@ -3,7 +3,12 @@ import {
   FLEET_TOOL_NAMES,
   FLEET_WRITE_TOOL_NAMES,
 } from "@rakazo/contracts";
-import { BACKGROUND_HELPER_TRIGGER, isBackgroundRunTrigger, isOwnerStartedRun } from "@rakazo/core";
+import {
+  approvalCardExpires,
+  BACKGROUND_HELPER_TRIGGER,
+  isBackgroundRunTrigger,
+  isOwnerStartedRun,
+} from "@rakazo/core";
 import { selectCloudAgentTools } from "../../cloud-agents/cloud-agent-tools-select.js";
 import { READ_MEETING_TRANSCRIPT } from "../../meetings/meeting-chat.tool-definition.js";
 import { selectMemoryTools } from "../../memory/memory-tools.js";
@@ -220,8 +225,10 @@ export function selectBuiltinToolsForRun(options: {
       !disabled.has(tool.name) &&
       (options.trigger !== "created" || CREATED_RUN_TOOL_NAMES.has(tool.name)) &&
       (options.trigger !== BACKGROUND_HELPER_TRIGGER || !SUBAGENT_HIDDEN_TOOLS.has(tool.name)) &&
+      // A run nobody is watching is offered them too; its writes wait for the owner's approval.
       (!FLEET_TOOL_NAMES_SET.has(tool.name) ||
-        (Boolean(options.fleetManagement) && ownerStartedRun)) &&
+        (Boolean(options.fleetManagement) &&
+          (ownerStartedRun || approvalCardExpires(options.trigger)))) &&
       (ownerStartedRun || (tool.name !== "update_preferences" && tool.name !== "feedback")) &&
       (options.paymentWalletEnabled || !PURCHASE_TOOL_NAMES.has(tool.name)) &&
       (options.mediaImagesEnabled || tool.name !== "generate_image") &&
