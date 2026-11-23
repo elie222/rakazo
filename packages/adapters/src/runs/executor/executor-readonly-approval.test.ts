@@ -5194,7 +5194,46 @@ describe("user_computer_shell", () => {
     gateway.connected.mockResolvedValue(linux);
     gateway.list = async () => [
       { ...device, connected: false },
-      { ...linux, connected: true },
+      { ...linux, connected: true, bound: true },
+    ];
+    f.setCalls([]);
+    await f.run(true);
+    expect(f.runtimeRun.mock.calls.at(-1)?.[0].turnCheckpoint).toBeUndefined();
+    expect(requests).toEqual([]);
+  });
+
+  it("does not resume a paused screen call while the computer it would run on has no screen control", async () => {
+    const { gateway, requests } = devices(true, true);
+    const f = fixture({ ...ownRun, userDevices: gateway });
+    f.setCalls([call("ls")]);
+    f.pauseWithTurnCheckpoint("call-1", {
+      version: 1,
+      systemPrompt: "You are Assistant.",
+      pendingToolCallId: "call-1",
+      messages: [
+        { role: "user", content: "List my files", timestamp: new Date(0) },
+        {
+          role: "assistant",
+          content: [
+            {
+              type: "toolCall",
+              id: "call-1",
+              name: "use_tool",
+              arguments: { name: "user_computer_observe", arguments: { app: "Finder" } },
+            },
+          ],
+          stopReason: "toolUse",
+        },
+      ] as never,
+    });
+    await f.run();
+    expect(f.turnCheckpoints).toHaveLength(1);
+    f.effects[0]!.status = "approved";
+    const linux = { deviceId: "device-2", name: "Server", platform: "linux" };
+    gateway.connected.mockResolvedValue(linux);
+    gateway.list = async () => [
+      { ...linux, connected: true, bound: true },
+      { ...device, connected: true },
     ];
     f.setCalls([]);
     await f.run(true);

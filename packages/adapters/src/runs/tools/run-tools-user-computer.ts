@@ -243,12 +243,16 @@ export async function offlineUserComputerCalls(
     if (!USER_COMPUTER_TOOLS.has(call.name)) continue;
     const target = requestedComputer(call.arguments);
     if (target.error) continue;
-    // Without an id, only a computer that can run this tool counts: a connected one that cannot
-    // would take the call and refuse it.
-    const reachable = target.computerId
-      ? computers.filter((computer) => computer.deviceId === target.computerId)
-      : computers.filter((computer) => !userComputerMismatch(call.name, computer));
-    if (reachable.length && !reachable.some((computer) => computer.connected)) offline.add(call.id);
+    if (target.computerId) {
+      const named = computers.filter((computer) => computer.deviceId === target.computerId);
+      if (named.length && !named.some((computer) => computer.connected)) offline.add(call.id);
+      continue;
+    }
+    // Without an id the call runs on the bound computer, so it waits until that one can run it,
+    // while any paired computer could. With none that could, the call reports it.
+    if (!computers.some((computer) => !userComputerMismatch(call.name, computer))) continue;
+    const bound = computers.find((computer) => computer.bound);
+    if (!bound || userComputerMismatch(call.name, bound)) offline.add(call.id);
   }
   return offline;
 }
