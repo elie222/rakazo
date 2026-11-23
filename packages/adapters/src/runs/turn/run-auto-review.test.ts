@@ -1,6 +1,4 @@
 import type { AgentRunRequest, AutoReviewRequest } from "@rakazo/adapter-kit";
-import { flush } from "@rakazo/core/test-async";
-import { installAuditEventStore } from "@rakazo/db";
 import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
 import { afterEach, expect, it, vi } from "vitest";
 import type { AutoReviewCandidate } from "../../approvals/auto-review-backups.js";
@@ -544,13 +542,14 @@ it("still builds a decision-model checker when data retention is not restricted"
   ).resolves.toBeDefined();
 });
 
-it("passes the data retention choice to a language-model checker", async () => {
+it("passes the data retention choice and who pays to a language-model checker", async () => {
   const run = vi.fn(async function* (_request: AgentRunRequest) {
     yield { type: "done", text: '{"decision":"ask","reason":"Requires review."}' };
   });
   vi.mocked(resolveModelKey).mockResolvedValueOnce({
     apiKey: "fixture-model-key",
     zeroDataRetention: true,
+    billing: "api_key",
   } as Awaited<ReturnType<typeof resolveModelKey>>);
   const provider = await autoReviewCheckerProvider(
     {
@@ -562,129 +561,8 @@ it("passes the data retention choice to a language-model checker", async () => {
     { provider: "openrouter", model: "example/model" },
   );
   await provider.review(reviewRequest, reviewContext);
-  expect(run.mock.calls[0]?.[0].model).toMatchObject({ zeroDataRetention: true });
-});
-
-function shadowedDeps(billingEnabled: boolean, createUsage = vi.fn()) {
-  return {
-    billingEnabled,
-    prisma: {
-      $transaction: async (work: (tx: unknown) => unknown) =>
-        work({
-          usageRecord: { createMany: createUsage, updateMany: vi.fn() },
-          modelCreditEntry: { findUnique: async () => null },
-        }),
-    },
-    secretStore: {},
-  } as unknown as ExecutorDeps;
-}
-
-function stubDecisionFetch() {
-  const fetchMock = vi.fn(async (_url: string, init: RequestInit) => {
-    const { model } = JSON.parse(String(init.body));
-    return Response.json({
-      model,
-      answers: {
-        decision: {
-          type: "choice",
-          choice: model === TRIAL_MODEL ? "pass" : "ask",
-          confidence: 0.9,
-        },
-      },
-      usage: { input_tokens: 10, output_tokens: 0, cost: 0.0001 },
-    });
+  expect(run.mock.calls[0]?.[0].model).toMatchObject({
+    zeroDataRetention: true,
+    billing: "api_key",
   });
-  vi.stubGlobal("fetch", fetchMock);
-  return fetchMock;
-}
-
-const TRIAL_MODEL = "microsoft/microsoft-decision-1.1";
-
-function stubShadowEnv() {
-  vi.stubEnv("OPENROUTER_API_KEY", "fake-operator-key");
-  vi.stubEnv("TYPESAFE_API_KEY", "");
-  vi.stubEnv("RAKAZO_AUTO_REVIEW_PROVIDER", "");
-  vi.stubEnv("RAKAZO_AUTO_REVIEW_MODEL", "");
-  vi.stubEnv("RAKAZO_AUTO_REVIEW_SHADOW_MODEL", TRIAL_MODEL);
-}
-
-it("runs the deployment's trial model beside the included reviewer without changing its decision", async () => {
-  stubShadowEnv();
-  const fetchMock = stubDecisionFetch();
-  const createUsage = vi.fn();
-  const deps = shadowedDeps(true, createUsage);
-  const createAudit = vi.fn();
-  installAuditEventStore({
-    auditEvent: { createMany: createAudit },
-    space: { findUnique: async () => ({ organizationId: "organization", name: "Space" }) },
-    user: { findUnique: async () => null },
-    member: { findMany: async () => [] },
-  } as never);
-  try {
-    const included = await includedAutoReviewChecker(deps);
-    const provider = await autoReviewCheckerProvider(
-      deps,
-      { ...reviewScope, effectId: "effect" },
-      { memberChecker: false, registerSecrets: vi.fn() },
-      included!,
-    );
-    await expect(provider.review(reviewRequest, reviewContext)).resolves.toEqual({
-      decision: "ask",
-      model: "openrouter/typesafe/jev-1.14",
-    });
-    await vi.waitFor(() => expect(createAudit).toHaveBeenCalledOnce());
-    expect(createAudit.mock.calls[0]?.[0].data).toEqual([
-      expect.objectContaining({
-        action: "approval.shadow_reviewed",
-        outcome: "success",
-        runId: "run",
-        targetId: "fixture_action",
-        metadata: expect.objectContaining({
-          effectId: "effect",
-          decision: "ask",
-          passProbability: 0.05,
-          shadowDecision: "pass",
-          shadowModel: `openrouter/${TRIAL_MODEL}`,
-          shadowPassProbability: 0.95,
-          shadowLatencyMs: expect.any(Number),
-        }),
-      }),
-    ]);
-    // Both calls go out on the operator's key; the trial's spend is its own operation.
-    expect(fetchMock).toHaveBeenCalledTimes(2);
-    for (const [, init] of fetchMock.mock.calls)
-      expect(init.headers).toMatchObject({ Authorization: "Bearer fake-operator-key" });
-    expect(createUsage).toHaveBeenCalledWith({
-      data: [
-        expect.objectContaining({
-          model: TRIAL_MODEL,
-          fundingSource: "operator",
-          operationId: "shadow:auto-review:run:effect",
-        }),
-      ],
-      skipDuplicates: true,
-    });
-  } finally {
-    installAuditEventStore(undefined);
-  }
-});
-
-it.each([
-  ["a member's own decision checker", true, true],
-  ["a self-hosted deployment's decision checker", false, false],
-])("runs no trial model beside %s", async (_, memberChecker, billingEnabled) => {
-  stubShadowEnv();
-  if (!memberChecker) vi.mocked(findConnectedModelCredential).mockResolvedValueOnce(null);
-  const fetchMock = stubDecisionFetch();
-  const provider = await autoReviewCheckerProvider(
-    shadowedDeps(billingEnabled),
-    reviewScope,
-    { memberChecker, registerSecrets: vi.fn() },
-    { provider: "openrouter", model: "typesafe/jev-1.14" },
-  );
-  await expect(provider.review(reviewRequest, reviewContext)).resolves.toMatchObject({
-    decision: "ask",
-  });
-  await flush();
-  expect(fetchMock).toHaveBeenCalledOnce();
 });

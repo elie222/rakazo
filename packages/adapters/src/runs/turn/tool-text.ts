@@ -7,3 +7,9 @@ export function textContentArg(value: unknown, fallback: string): string {
   if (typeof value === "object") return JSON.stringify(value, null, 2);
   return String(value);
 }
+
+/** How long computer_act waits before observing; a missing (null) or unreadable value is 350. */
+export function settleMsArg(value: unknown): number {
+  const settleMs = value == null || value === "" ? Number.NaN : Number(value);
+  return Number.isFinite(settleMs) ? settleMs : 350;
+}

@@ -9,7 +9,9 @@ import type {
 import {
   DEFAULT_COMPATIBLE_STT_MODEL,
   DEFAULT_COMPATIBLE_TTS_MODEL,
+  MAX_TRANSCRIPTION_VOCABULARY_LENGTH,
   OPENAI_COMPATIBLE_PROVIDER_ID,
+  savedVoiceTranscriptionVocabulary,
   voiceConnectionForm,
 } from "@rakazo/contracts";
 import { fetchFresh, writeSaved } from "@rakazo/core/query";
@@ -43,7 +45,14 @@ import { speakText } from "../../lib/voice/voice";
 
 const DEVICE_CHOICE = "device";
 
-const CONNECTION_FIELDS = ["speechModel", "baseUrl", "ttsModel", "sttModel", "sttBaseUrl"] as const;
+const CONNECTION_FIELDS = [
+  "speechModel",
+  "baseUrl",
+  "ttsModel",
+  "sttModel",
+  "sttBaseUrl",
+  "transcriptionVocabulary",
+] as const;
 type VoiceField = "voiceId" | (typeof CONNECTION_FIELDS)[number];
 
 /** A Space's override is read from that Space even when another one is selected. */
@@ -112,6 +121,7 @@ export default function VoiceSettings() {
   const [speechModel, setSpeechModel] = useState(cached?.credential?.speechModel ?? "");
   const [baseUrl, setBaseUrl] = useState(cached?.credential?.endpoint ?? "");
   const [ttsModel, setTtsModel] = useState(cached?.credential?.ttsModel ?? "");
+  const [transcriptionVocabulary, setTranscriptionVocabulary] = useState<string>();
   const [sttModel, setSttModel] = useState(cached?.credential?.sttModel ?? "");
   const [sttBaseUrl, setSttBaseUrl] = useState(cached?.credential?.sttEndpoint ?? "");
   const [sttApiKey, setSttApiKey] = useState("");
@@ -121,11 +131,21 @@ export default function VoiceSettings() {
     baseUrl,
     ttsModel,
     sttModel,
+    transcriptionVocabulary,
     sttBaseUrl,
     apiKey,
     sttApiKey,
   });
-  connection.current = { speechModel, baseUrl, ttsModel, sttModel, sttBaseUrl, apiKey, sttApiKey };
+  connection.current = {
+    speechModel,
+    baseUrl,
+    ttsModel,
+    sttModel,
+    transcriptionVocabulary,
+    sttBaseUrl,
+    apiKey,
+    sttApiKey,
+  };
   // Fields typed into since the last load; an opening refresh keeps them only while their
   // provider stays selected.
   const edited = useRef(new Set<VoiceField>());
@@ -188,6 +208,7 @@ export default function VoiceSettings() {
         ["sttBaseUrl", setSttBaseUrl, cred?.sttEndpoint],
       ];
       for (const [field, set, value] of fields) if (!edited.current.has(field)) set(value ?? "");
+      if (!edited.current.has("transcriptionVocabulary")) setTranscriptionVocabulary(undefined);
       if (cred) {
         const nextVoices = await fetchFresh(queryClient, voicesRead(target, selected), fresh);
         if (revision === loadRevision.current) setVoices(nextVoices);
@@ -418,6 +439,9 @@ export default function VoiceSettings() {
               baseUrl: baseUrl.trim(),
               ttsModel: ttsModel.trim() || undefined,
               sttModel: sttModel.trim() || undefined,
+              ...(selected.transcriptionVocabulary && edited.current.has("transcriptionVocabulary")
+                ? { transcriptionVocabulary }
+                : {}),
               sttBaseUrl: sttBaseUrl.trim(),
               sttApiKey: sentSttApiKey.trim(),
             }
@@ -458,6 +482,10 @@ export default function VoiceSettings() {
       // A key typed meanwhile stays pinned to the address it was typed for.
       if (connection.current.apiKey !== sent.apiKey) edited.current.add("baseUrl");
       if (connection.current.sttApiKey !== sent.sttApiKey) edited.current.add("sttBaseUrl");
+      if (connection.current.transcriptionVocabulary !== sent.transcriptionVocabulary) {
+        edited.current.add("baseUrl");
+        edited.current.add("sttBaseUrl");
+      }
       await load(selected.id, { keepForm: true }).catch((err: unknown) =>
         setError(errorText(err, t`Could not load voice settings`)),
       );
@@ -703,6 +731,29 @@ export default function VoiceSettings() {
                   placeholderTextColor={native.tertiaryLabel}
                   style={styles.input}
                 />
+                {selected.transcriptionVocabulary ? (
+                  <>
+                    <Text style={styles.fieldLabel}>{t`Transcription vocabulary`}</Text>
+                    <TextInput
+                      accessibilityLabel={t`Transcription vocabulary`}
+                      autoCapitalize="none"
+                      autoCorrect={false}
+                      maxLength={MAX_TRANSCRIPTION_VOCABULARY_LENGTH}
+                      placeholder={t`Names and terms (optional)`}
+                      placeholderTextColor={native.tertiaryLabel}
+                      value={
+                        transcriptionVocabulary ??
+                        savedVoiceTranscriptionVocabulary(credential, baseUrl, sttBaseUrl)
+                      }
+                      onChangeText={edit("transcriptionVocabulary", (value) => {
+                        edited.current.add("baseUrl");
+                        edited.current.add("sttBaseUrl");
+                        setTranscriptionVocabulary(value);
+                      })}
+                      style={styles.input}
+                    />
+                  </>
+                ) : null}
                 <Text style={styles.fieldLabel}>{t`Transcription server URL`}</Text>
                 <TextInput
                   accessibilityLabel={t`Transcription server URL`}

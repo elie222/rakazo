@@ -147,6 +147,7 @@ describe("Stripe prepaid model credits", () => {
     expect(created?.params.get("recurring[interval]")).toBe("month");
     expect(byokTierOf("rakazo_byok_pro_monthly_4900")).toBe("pro");
     expect(byokTierOf("rakazo_byok_max_yearly_142800")).toBe("max");
+    expect(byokTierOf("rakazo_byok_ultra_monthly_19900")).toBe("ultra");
     expect(byokTierOf("rakazo_byok_monthly_1500")).toBe("standard");
     expect(byokTierOf("rakazo_byok_yearly_14400")).toBe("standard");
     expect(byokTierOf(null)).toBe("standard");

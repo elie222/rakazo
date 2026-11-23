@@ -216,9 +216,18 @@ export function columnMinWidths(columns: string[], rows: string[][]): Record<num
 }
 
 // Leading = + - @ after any whitespace would be evaluated as a formula by
-// spreadsheet apps; prefix a quote so exports stay inert.
+// spreadsheet apps; prefix a quote so exports stay inert. Plain numbers
+// ("-12.5", "+4", "-3%") and a lone "-" placeholder are not formulas, so they
+// pass through and stay numeric in the sheet.
 const FORMULA_PREFIX = /^\s*[=+\-@]/;
-const neutralizeFormula = (value: string) => (FORMULA_PREFIX.test(value) ? `'${value}` : value);
+// Deliberately stricter than parseNumericText, which ignores spaces and
+// currency symbols anywhere in the cell: only digits, one sign, grouping commas,
+// a decimal part and a trailing % stay unquoted.
+const PLAIN_NUMBER = /^[+-]?(?:(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?|\.\d+)%?$/;
+const neutralizeFormula = (value: string) =>
+  FORMULA_PREFIX.test(value) && value.trim() !== "-" && !PLAIN_NUMBER.test(value.trim())
+    ? `'${value}`
+    : value;
 
 export function tableToCsv(columns: string[], rows: string[][]): string {
   const cell = (value: string) => {

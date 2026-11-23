@@ -363,6 +363,62 @@ describePostgres("content encryption (PostgreSQL)", () => {
       await prisma.message.delete({ where: { id }, select: { id: true } });
     }));
 
+  it("encrypts the text that starts a run, reads older plaintext and migrates it both ways", () =>
+    runAsSystem("test fixture", async () => {
+      const stored = async (id: string) =>
+        (await raw.query<{ prompt: string }>(`SELECT prompt FROM tasks WHERE id = $1`, [id]))
+          .rows[0]!.prompt;
+      const task = await prisma.task.create({
+        data: {
+          spaceId,
+          botId,
+          threadId,
+          userId,
+          prompt: "Log in with KESTREL-4471",
+          status: "queued",
+        },
+      });
+      expect(task.prompt).toBe("Log in with KESTREL-4471");
+      expect(await stored(task.id)).toMatch(/^rkz1:/);
+      expect(await stored(task.id)).not.toContain("KESTREL");
+      await prisma.task.update({
+        where: { id: task.id },
+        data: { prompt: "Answer: KESTREL-4472" },
+        select: { id: true },
+      });
+      expect(await stored(task.id)).not.toContain("KESTREL");
+      const nested = await prisma.thread.findUnique({
+        where: { id: threadId },
+        select: { tasks: { where: { id: task.id }, select: { prompt: true } } },
+      });
+      expect(nested?.tasks).toEqual([{ prompt: "Answer: KESTREL-4472" }]);
+
+      const legacy = `enc-task-plain-${suffix}`;
+      // As the previous release stores it.
+      await raw.query(
+        `INSERT INTO tasks (id, "spaceId", "botId", "threadId", "userId", prompt, status, "updatedAt")
+         VALUES ($1, $2, $3, $4, $5, 'Book the OSPREY table', 'queued', now())`,
+        [legacy, spaceId, botId, threadId, userId],
+      );
+      const plaintext = async () =>
+        (await contentEncryptionStatus(prisma)).tables.find((t) => t.table === "tasks")!.plaintext;
+      expect(await plaintext()).toBeGreaterThan(0);
+      expect((await prisma.task.findUnique({ where: { id: legacy } }))?.prompt).toBe(
+        "Book the OSPREY table",
+      );
+      await migrateContent(prisma, { mode: "encrypt" });
+      expect(await stored(legacy)).toMatch(/^rkz1:/);
+      expect(await stored(legacy)).not.toContain("OSPREY");
+      expect((await prisma.task.findUnique({ where: { id: legacy } }))?.prompt).toBe(
+        "Book the OSPREY table",
+      );
+      await migrateContent(prisma, { mode: "decrypt" });
+      expect(await stored(legacy)).toBe("Book the OSPREY table");
+      expect(await stored(task.id)).toBe("Answer: KESTREL-4472");
+      await migrateContent(prisma, { mode: "encrypt" });
+      await prisma.task.deleteMany({ where: { id: { in: [task.id, legacy] } } });
+    }));
+
   it("encrypts memory, revisions, event payloads and thread summaries", () =>
     runAsSystem("test fixture", async () => {
       const doc = await prisma.memoryDocument.create({

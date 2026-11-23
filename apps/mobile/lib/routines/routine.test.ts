@@ -96,4 +96,13 @@ describe("routineRowDetail", () => {
       "Every day at 6:00 AM (UTC)",
     );
   });
+
+  it("names another member a routine runs as, and stays quiet about the viewer's own", () => {
+    const row = (runsAs: Routine["runsAs"]) =>
+      routineRowDetail(routine({ crons: ["30 8 * * 1-5"], runsAs }), "UTC");
+    expect(row({ name: "Dana", isViewer: false })).toBe("Weekdays at 8:30 AM, Dana");
+    expect(row({ name: "Riley", isViewer: true })).toBe("Weekdays at 8:30 AM");
+    expect(row(null)).toBe("Weekdays at 8:30 AM");
+    expect(row(undefined)).toBe("Weekdays at 8:30 AM");
+  });
 });

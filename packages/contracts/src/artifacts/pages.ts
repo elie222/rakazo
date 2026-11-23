@@ -20,7 +20,7 @@ export const PageSourceSchema = z
     `Page source must fit within ${PAGE_SOURCE_MAX_BYTES} UTF-8 bytes`,
   );
 
-export const PageVisibilitySchema = z.enum(["private", "link"]);
+export const PageVisibilitySchema = z.enum(["private", "people", "link"]);
 export type PageVisibility = z.infer<typeof PageVisibilitySchema>;
 
 /**

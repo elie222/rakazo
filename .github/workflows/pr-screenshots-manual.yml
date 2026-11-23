@@ -1,0 +1,51 @@
+name: PR screenshots (manual)
+
+# Captures screenshots for a pull request that did not get them. Run it with
+# `gh workflow run pr-screenshots-manual.yml -f pr=<number>`; it uses the pull request's current head.
+on:
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: Pull request number
+        required: true
+        type: number
+
+permissions:
+  actions: read
+  contents: read
+  pull-requests: write
+
+jobs:
+  head:
+    name: Find the head commit
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      pull-requests: read
+    outputs:
+      sha: ${{ steps.head.outputs.sha }}
+    steps:
+      - id: head
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ inputs.pr }}
+        run: |
+          set -euo pipefail
+          echo "sha=$(gh api "repos/$GITHUB_REPOSITORY/pulls/$PR" --jq .head.sha)" >> "$GITHUB_OUTPUT"
+
+  screenshots:
+    needs: head
+    uses: ./.github/workflows/pr-screenshots.yml
+    permissions:
+      actions: read
+      contents: read
+      pull-requests: write
+    with:
+      head_sha: ${{ needs.head.outputs.sha }}
+      pull_request: ${{ fromJSON(inputs.pr) }}
+    secrets:
+      CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+      CODEX_SUBSCRIPTION_AUTH: ${{ secrets.CODEX_SUBSCRIPTION_AUTH }}
+      GH_DEPENDENCY_UPDATES_PAT: ${{ secrets.GH_DEPENDENCY_UPDATES_PAT }}
+      S3_ACCESS_KEY_ID: ${{ secrets.S3_ACCESS_KEY_ID }}
+      S3_SECRET_ACCESS_KEY: ${{ secrets.S3_SECRET_ACCESS_KEY }}

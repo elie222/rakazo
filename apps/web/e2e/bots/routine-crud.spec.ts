@@ -12,6 +12,29 @@ import {
   signup,
 } from "../helpers/helpers";
 
+test("closing an edited new routine asks before discarding changes", async ({ page }, testInfo) => {
+  await signup(page, `routine-discard-${Date.now()}@rakazo.test`, "password12", "Routine draft");
+  await completeOnboarding(page);
+  await openBotPanel(page);
+  await page.getByTestId("routine-create-button").click();
+
+  const editor = page.getByTestId("side-panel");
+  const name = editor.locator("label:has-text('Name') input");
+  await name.fill("Morning report");
+  await editor.getByRole("button", { name: "Close", exact: true }).click();
+
+  const dialog = page.getByRole("alertdialog", { name: "Discard unsaved changes?" });
+  const cancel = dialog.getByRole("button", { name: "Cancel", exact: true });
+  await expect(dialog).toBeVisible();
+  await expect(cancel).toBeVisible();
+  await expect(dialog.getByRole("button", { name: "Discard", exact: true })).toBeVisible();
+  await captureScreenshot(page, testInfo, "routine-editor-discard-unsaved");
+
+  await cancel.click();
+  await expect(dialog).toBeHidden();
+  await expect(name).toHaveValue("Morning report");
+});
+
 async function addScheduleTrigger(page: Page, freq: string) {
   await page.getByRole("button", { name: "Add trigger" }).click();
   await page.getByRole("menuitem", { name: "On a schedule" }).hover();
@@ -173,6 +196,9 @@ test("routine editing updates in place, preserves timezone, deletion persists, a
   });
   await page.getByRole("button", { name: /Model check/ }).click();
   await page.getByRole("button", { name: "Advanced", exact: true }).click();
+  // The owner of the routine and its bot, with a computer paired, may let its runs use it.
+  await page.getByRole("switch", { name: "Use my computer" }).click();
+  await captureScreenshot(page, testInfo, "routine-use-my-computer");
   await modelSelect.click();
   // The option reads "llama-3.3-70b (<connection name>)".
   await page.getByRole("option", { name: /^llama-3\.3-70b\b/ }).click();
@@ -181,6 +207,7 @@ test("routine editing updates in place, preserves timezone, deletion persists, a
     modelProvider: "openai-compatible",
     modelId: "llama-3.3-70b",
     thinkingLevel: null,
+    useComputer: true,
   });
   await expect(page.getByRole("button", { name: /Model check/ })).toContainText("llama-3.3-70b");
 

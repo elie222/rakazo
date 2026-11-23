@@ -357,23 +357,23 @@ export function useThreadSync({
     const previousHeight = scrollElement?.scrollHeight ?? 0;
     const epoch = historyEpoch.current;
     const before = snapshot.olderCursor;
+    const stillCurrent = () =>
+      epoch === historyEpoch.current &&
+      activeBotId.current === targetBotId &&
+      activeGroupId.current === targetGroupId;
     setLoadingOlder(true);
     try {
       const page = await rpc.threads.messages({
         ...(targetGroupId ? { groupId: targetGroupId } : { botId: targetBotId! }),
         before,
       });
-      if (
-        epoch !== historyEpoch.current ||
-        activeBotId.current !== targetBotId ||
-        activeGroupId.current !== targetGroupId
-      )
-        return;
+      if (!stillCurrent()) return;
       expandedHistoryThread.current = page.threadId;
       updateSnapshot((prev) => prependThreadMessagePage(prev, page));
       window.requestAnimationFrame(() => {
         const element = messageScroll.current;
-        if (!element) return;
+        // The saved row and height belong to this history and this particular viewport.
+        if (!element || element !== scrollElement || !stillCurrent()) return;
         element.scrollTop +=
           anchorRow?.isConnected && anchorTop !== null
             ? anchorRow.offsetTop - anchorTop

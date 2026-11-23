@@ -3,6 +3,7 @@
 import type { Deferred } from "@rakazo/core/test-async";
 import { deferred, flush } from "@rakazo/core/test-async";
 import type * as UiWeb from "@rakazo/ui-web";
+import { toast } from "@rakazo/ui-web";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ComponentProps, ReactNode } from "react";
 import { act } from "react";
@@ -45,12 +46,24 @@ vi.mock("@rakazo/ui-web", async (importOriginal) => {
   return {
     ...actual,
     Button: (props: ComponentProps<"button">) => <button {...props} />,
-    Dialog: Container,
+    Dialog: ({
+      children,
+      onOpenChange,
+    }: {
+      children?: ReactNode;
+      onOpenChange: (open: boolean) => void;
+    }) => (
+      <div>
+        {children}
+        <button type="button" aria-label="Close" onClick={() => onOpenChange(false)} />
+      </div>
+    ),
     DialogContent: Container,
     DialogHeader: Container,
     DialogTitle: Container,
     Input: (props: ComponentProps<"input">) => <input {...props} />,
     Textarea: (props: ComponentProps<"textarea">) => <textarea {...props} />,
+    toast: { error: vi.fn() },
   };
 });
 
@@ -102,7 +115,11 @@ beforeEach(() => {
   client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
 });
 
-async function renderBoard(stream?: AsyncIterable<{ ticketId?: string }>, refusal?: unknown) {
+async function renderBoard(
+  stream?: AsyncIterable<{ ticketId?: string }>,
+  refusal?: unknown,
+  entry = "/app/board",
+) {
   api.boards.subscribe.mockReset();
   api.boards.subscribe.mockResolvedValue(
     stream ?? {
@@ -116,7 +133,7 @@ async function renderBoard(stream?: AsyncIterable<{ ticketId?: string }>, refusa
   await act(async () =>
     root.render(
       <QueryClientProvider client={client}>
-        <MemoryRouter initialEntries={["/app/board"]}>
+        <MemoryRouter initialEntries={[entry]}>
           <BoardPage />
         </MemoryRouter>
       </QueryClientProvider>,
@@ -132,6 +149,46 @@ async function renderBoard(stream?: AsyncIterable<{ ticketId?: string }>, refusa
     },
   };
 }
+
+it.each(["/app/board", "/app/board?view=table"])(
+  "shows loading until the first ticket list confirms %s is empty",
+  async (entry) => {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    api.bots.list.mockResolvedValue([bot("bot-1", "Helper")]);
+    const firstList = deferred<{ tickets: ReturnType<typeof ticket>[] }>();
+    api.tickets.list.mockReset().mockReturnValue(firstList.promise);
+    const page = await renderBoard(undefined, undefined, entry);
+    try {
+      expect(page.container.textContent).not.toContain("No tickets yet");
+      expect(page.container.querySelector('[role="status"][aria-label="Loading"]')).not.toBeNull();
+
+      await act(async () => firstList.resolve({ tickets: [] }));
+      await settle();
+      expect(page.container.querySelector('[data-slot="spinner"]')).toBeNull();
+      expect(page.container.textContent).toContain("No tickets yet");
+    } finally {
+      await page.cleanup();
+      vi.unstubAllGlobals();
+    }
+  },
+);
+
+it("does not show loading or an empty board after the first ticket list fails", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  api.bots.list.mockResolvedValue([bot("bot-1", "Helper")]);
+  api.tickets.list.mockReset().mockRejectedValue(new Error("Tickets unavailable"));
+  const page = await renderBoard();
+  try {
+    expect(page.container.querySelector('[role="alert"]')?.textContent).toContain(
+      "Tickets unavailable",
+    );
+    expect(page.container.querySelector('[data-slot="spinner"]')).toBeNull();
+    expect(page.container.textContent).not.toContain("No tickets yet");
+  } finally {
+    await page.cleanup();
+    vi.unstubAllGlobals();
+  }
+});
 
 it("renders status columns and opens a ticket with comments", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
@@ -173,18 +230,60 @@ it("renders status columns and opens a ticket with comments", async () => {
       "5m ago",
     ]);
     expect(
-      Array.from(page.container.querySelectorAll('[role="combobox"]')).every((node) =>
+      Array.from(page.container.querySelectorAll('form [role="combobox"]')).every((node) =>
         node.classList.contains("w-full"),
       ),
     ).toBe(true);
     const submitButtons = page.container.querySelectorAll('button[type="submit"]');
-    expect(Array.from(submitButtons).map((node) => node.parentElement?.className)).toEqual([
-      "flex justify-end",
-      "flex justify-end",
-    ]);
+    expect(Array.from(submitButtons).map((node) => node.textContent)).toEqual(["Comment"]);
     expect(api.tickets.comments).toHaveBeenCalledWith({ ticketId: "ticket-1" }, expect.anything());
   } finally {
     await page.cleanup();
+  }
+});
+
+it("returns a dragged ticket to its column when the status change fails", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  api.bots.list.mockResolvedValue([bot("bot-1", "Helper")]);
+  api.tickets.list.mockResolvedValue({
+    tickets: [ticket("Ship", "ticket-1", "todo", "RAK-1", "bot-1")],
+  });
+  const moving = deferred();
+  api.tickets.comments.mockReset().mockResolvedValue([]);
+  api.tickets.update.mockReset().mockReturnValue(moving.promise);
+  const page = await renderBoard();
+  try {
+    const card = () => page.container.querySelector('[data-testid="board-card-ticket-1"]')!;
+    const done = page.container.querySelector('[aria-labelledby="board-column-done"]')!;
+    const data = new Map<string, string>();
+    const dataTransfer = {
+      setData: (type: string, value: string) => data.set(type, value),
+      getData: (type: string) => data.get(type),
+    };
+    const dragEvent = (type: string) =>
+      Object.assign(new Event(type, { bubbles: true, cancelable: true }), { dataTransfer });
+
+    await act(async () => card().dispatchEvent(dragEvent("dragstart")));
+    await act(async () => done.dispatchEvent(dragEvent("drop")));
+    expect(api.tickets.update).toHaveBeenCalledExactlyOnceWith({
+      id: "ticket-1",
+      status: "done",
+    });
+    expect(card().parentElement).toBe(done);
+    await act(async () => (card() as HTMLButtonElement).click());
+    const status = page.container.querySelector<HTMLButtonElement>('[id$="-status"]')!;
+    expect(status.textContent).toBe("Done");
+    expect(status.disabled).toBe(true);
+
+    await act(async () => moving.reject(new TypeError("Failed to fetch")));
+    expect(card().parentElement?.getAttribute("aria-labelledby")).toBe("board-column-todo");
+    expect(status.textContent).toBe("To do");
+    expect(status.disabled).toBe(false);
+    expect(toast.error).toHaveBeenCalledExactlyOnceWith("Could not reach the server");
+    expect(page.container.querySelector('[role="alert"]')).toBeNull();
+  } finally {
+    await page.cleanup();
+    vi.unstubAllGlobals();
   }
 });
 
@@ -204,7 +303,7 @@ it("creates a ticket without a status picker", async () => {
     expect(
       Array.from(page.container.querySelectorAll("label")).map((label) => label.textContent),
     ).not.toContain("Status");
-    const input = page.container.querySelector("input")!;
+    const input = page.container.querySelector<HTMLInputElement>('input[id$="-title"]')!;
     await act(async () => {
       Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
         input,
@@ -262,19 +361,36 @@ it("saves only edits and refreshes comments for the open ticket", async () => {
       ).click(),
     );
     await settle();
+    const description = page.container.querySelector<HTMLTextAreaElement>(
+      '[data-testid="ticket-description"]',
+    )!;
+    async function editDescription(value: string) {
+      await act(async () => {
+        Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(
+          description,
+          value,
+        );
+        description.dispatchEvent(new Event("input", { bubbles: true }));
+      });
+    }
+    await editDescription("Draft details");
     const calls = api.tickets.comments.mock.calls.length;
     await act(async () => live.event("ticket-2"));
     expect(api.tickets.comments).toHaveBeenCalledTimes(calls);
     api.tickets.comments.mockResolvedValue([{ id: "comment-2", body: "Bot progress" }]);
     api.tickets.list.mockResolvedValue({
-      tickets: [ticket("Ship", "ticket-1", "doing", "RAK-1", "bot-2", "Details")],
+      tickets: [ticket("Ship", "ticket-1", "doing", "RAK-1", "bot-2", "Bot updated the details")],
     });
     await act(async () => live.event("ticket-1"));
     await settle();
     expect(page.container.querySelector('[data-testid="ticket-comments"]')?.textContent).toContain(
       "Bot progress",
     );
-    const input = page.container.querySelector("input")!;
+    expect(description.value).toBe("Draft details");
+    await editDescription("Details");
+    expect(description.value).toBe("Bot updated the details");
+
+    const input = page.container.querySelector<HTMLInputElement>('input[id$="-title"]')!;
     await act(async () => {
       Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
         input,
@@ -414,6 +530,8 @@ it("reopens with cached tickets and refreshes them in the background", async () 
   try {
     // Painted from the cache while the refresh is still out.
     expect(page.container.textContent).toContain("Cached");
+    expect(page.container.querySelector('[data-slot="spinner"]')).toBeNull();
+    expect(page.container.textContent).not.toContain("No tickets yet");
     await act(async () => finish?.resolve({ tickets: [ticket("Fresh", "ticket-1")] }));
     await act(async () => {
       await vi.waitFor(() => expect(page.container.textContent).toContain("Fresh"));
@@ -512,7 +630,7 @@ async function openNewTicket(page: { container: HTMLElement }, title: string) {
       .find((button) => button.textContent === "New ticket")!
       .click(),
   );
-  const input = page.container.querySelector("input")!;
+  const input = page.container.querySelector<HTMLInputElement>('input[id$="-title"]')!;
   await act(async () => {
     Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, title);
     input.dispatchEvent(new Event("input", { bubbles: true }));
@@ -590,6 +708,117 @@ it("closes a saved ticket even when the board cannot be read again", async () =>
     // Left open with an error, a second Create would add the ticket twice.
     expect(form.create()).toBeUndefined();
     expect(api.tickets.create).toHaveBeenCalledTimes(1);
+  } finally {
+    await page.cleanup();
+    vi.unstubAllGlobals();
+  }
+});
+
+async function selectHighPriority(container: HTMLElement) {
+  const priority = container.querySelector<HTMLButtonElement>('[id$="-priority"]')!;
+  await act(async () => priority.click());
+  const high = Array.from(document.querySelectorAll<HTMLElement>('[role="option"]')).find(
+    (option) => option.textContent === "High",
+  )!;
+  await act(async () => high.click());
+  return priority;
+}
+
+it("keeps a live ticket update when an older save response has the same timestamp", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  api.bots.list.mockResolvedValue([bot("bot-1", "Helper")]);
+  const original = ticket("Ship", "ticket-1", "todo", "RAK-1", "bot-1");
+  const saved = { ...original, priority: "high" };
+  const liveTicket = { ...saved, title: "Ship today", status: "doing" };
+  const response = deferred<typeof saved>();
+  api.tickets.list.mockReset().mockResolvedValue({ tickets: [original] });
+  api.tickets.comments.mockReset().mockResolvedValue([]);
+  api.tickets.update.mockReset().mockReturnValue(response.promise);
+  const live = liveStream();
+  const page = await renderBoard(live.stream);
+  try {
+    const card = () =>
+      page.container.querySelector<HTMLButtonElement>('[data-testid="board-card-ticket-1"]')!;
+    await act(async () => card().click());
+    const priority = await selectHighPriority(page.container);
+
+    api.tickets.list.mockResolvedValue({ tickets: [liveTicket] });
+    await act(async () => live.event(original.id));
+    await settle();
+    expect(card().textContent).toContain("Ship today");
+
+    api.tickets.list.mockRejectedValue(new TypeError("Failed to fetch"));
+    await act(async () => response.resolve(saved));
+    await settle();
+    expect(priority.disabled).toBe(false);
+    expect(card().textContent).toContain("Ship today");
+    expect(card().parentElement?.getAttribute("aria-labelledby")).toBe("board-column-doing");
+  } finally {
+    await page.cleanup();
+    vi.unstubAllGlobals();
+  }
+});
+
+it("reports a failed dropdown save after the ticket dialog closes", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  vi.mocked(toast.error).mockClear();
+  api.bots.list.mockResolvedValue([bot("bot-1", "Helper")]);
+  const original = ticket("Ship", "ticket-1", "todo", "RAK-1", "bot-1");
+  const response = deferred();
+  api.tickets.list.mockReset().mockResolvedValue({ tickets: [original] });
+  api.tickets.comments.mockReset().mockResolvedValue([]);
+  api.tickets.update.mockReset().mockReturnValue(response.promise);
+  const page = await renderBoard();
+  try {
+    const card = page.container.querySelector<HTMLButtonElement>(
+      '[data-testid="board-card-ticket-1"]',
+    )!;
+    await act(async () => card.click());
+    await selectHighPriority(page.container);
+    const close = page.container.querySelector<HTMLButtonElement>('button[aria-label="Close"]')!;
+    await act(async () => close.click());
+    expect(page.container.querySelector('[id$="-priority"]')).toBeNull();
+
+    await act(async () => response.reject(new TypeError("Failed to fetch")));
+    expect(toast.error).toHaveBeenCalledExactlyOnceWith("Could not reach the server");
+    expect(card.textContent).not.toContain("High");
+  } finally {
+    await page.cleanup();
+    vi.unstubAllGlobals();
+  }
+});
+
+it("clears an earlier comment error before saving a dropdown choice", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  api.bots.list.mockResolvedValue([bot("bot-1", "Helper")]);
+  const original = ticket("Ship", "ticket-1", "todo", "RAK-1", "bot-1");
+  const updated = { ...original, priority: "high" };
+  api.tickets.list.mockReset().mockResolvedValue({ tickets: [original] });
+  api.tickets.comments.mockReset().mockResolvedValue([]);
+  api.tickets.comment.mockReset().mockRejectedValue(new TypeError("Failed to fetch"));
+  api.tickets.update.mockReset().mockImplementation(async () => {
+    api.tickets.list.mockResolvedValue({ tickets: [updated] });
+    return updated;
+  });
+  const page = await renderBoard();
+  try {
+    await openTicketAndComment(page, "A draft comment");
+    expect(page.container.querySelector('[role="alert"]')?.textContent).toBe(
+      "Could not reach the server",
+    );
+
+    const priority = await selectHighPriority(page.container);
+    await settle();
+
+    expect(api.tickets.update).toHaveBeenCalledExactlyOnceWith({
+      id: "ticket-1",
+      priority: "high",
+    });
+    expect(priority.textContent).toBe("High");
+    expect(page.container.querySelector('[role="alert"]')).toBeNull();
+    expect(
+      page.container.querySelector<HTMLTextAreaElement>('textarea[aria-label="Comment"]')?.value,
+    ).toBe("A draft comment");
   } finally {
     await page.cleanup();
     vi.unstubAllGlobals();

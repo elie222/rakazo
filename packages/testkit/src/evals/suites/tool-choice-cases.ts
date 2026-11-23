@@ -2,6 +2,11 @@ import type { ToolChoiceCase } from "./tool-choice.js";
 import { toolChoiceEvalCase } from "./tool-choice.js";
 
 /** Synthetic prompts only. Production-derived cases belong in a local --cases-file. */
+const LEDGERLY = {
+  origin: "https://app.ledgerly.example",
+  name: "Ledgerly",
+  dashboard: "Plan: Starter (free for 14 days)",
+};
 const OPS_GROUP = { name: "Ops", members: { Mira: "Runs infrastructure and on-call checks." } };
 
 export const TOOL_CHOICE_DEFINITIONS: ToolChoiceCase[] = [
@@ -159,6 +164,18 @@ export const TOOL_CHOICE_DEFINITIONS: ToolChoiceCase[] = [
     expect: { settingsUnchanged: true },
   },
   // Account settings.
+  {
+    id: "user-inline-model-switching",
+    area: "user-settings",
+    kind: "guard",
+    purpose: "Enable the composer picker while leaving the bot's model alone.",
+    prompt: "Turn on inline model switching in my chat box.",
+    expect: {
+      calls: [{ tool: "update_preferences", args: { composerModelPicker: true } }],
+      callsMustNot: [{ tool: "update_bot", args: { model: "*" } }],
+      user: { composerModelPicker: true },
+    },
+  },
   {
     id: "user-timezone",
     area: "user-settings",
@@ -536,6 +553,45 @@ export const TOOL_CHOICE_DEFINITIONS: ToolChoiceCase[] = [
       ],
       maxCalls: { find_tool: 0 },
     },
+  },
+  // A site that emails a sign-in code: read it where it lands, or ask when the bot can't.
+  {
+    id: "sign-in-code-own-inbox",
+    area: "sign-in-codes",
+    kind: "guard",
+    purpose: "Read a code the site emails to the bot's own address and type it in.",
+    botEmail: true,
+    site: LEDGERLY,
+    prompt: `Make yourself an account on ${LEDGERLY.origin} with your own email address and tell me which plan it starts on.`,
+    expect: { signedIn: true, calls: [{ tool: "read_email" }], notCalls: ["request_secret"] },
+  },
+  {
+    id: "sign-in-code-connected-inbox",
+    area: "sign-in-codes",
+    kind: "guard",
+    purpose: "Read a code the site emails to the user's connected mailbox and type it in.",
+    site: LEDGERLY,
+    sources: {
+      mail: [
+        {
+          from: "Northwind Weekly <news@northwind.example>",
+          subject: "This week at Northwind",
+          body: "Three new recipes and a reminder that the spring sale ends Friday.",
+          daysAgo: 1,
+        },
+      ],
+    },
+    prompt: `Sign in to ${LEDGERLY.origin} with my email owner@home.example and tell me which plan I'm on.`,
+    expect: { signedIn: true, notCalls: ["request_secret"] },
+  },
+  {
+    id: "sign-in-code-unreadable-inbox",
+    area: "sign-in-codes",
+    kind: "control",
+    purpose: "Ask the user for a code sent to an inbox the bot cannot read.",
+    site: LEDGERLY,
+    prompt: `Sign in to ${LEDGERLY.origin} with my work email eval.user@work.example and tell me which plan I'm on.`,
+    expect: { calls: [{ tool: "request_secret", args: { oneTimeCode: "*" } }], signedIn: false },
   },
 ];
 

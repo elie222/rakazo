@@ -6,9 +6,11 @@ import { parseArgs } from "node:util";
 import type { AgentContextStrategy, AgentRunRequest } from "@rakazo/adapter-kit";
 import { ModelConnectInputSchema, ReplyModeSchema } from "@rakazo/contracts";
 import { loadRootEnv } from "@rakazo/core/node/load-root-env";
+import { z } from "zod";
 import type { EvalCase } from "../evals/cases.js";
 import {
   EVAL_CASES,
+  EVAL_INBOUND_EMAIL,
   HISTORY_EVAL_CASES,
   HISTORY_JUDGE_CALIBRATION,
   PRODUCT_JUDGE_CALIBRATION,
@@ -20,6 +22,7 @@ import {
   caseKey,
   codeRevision,
   firstRequestFetch,
+  requestBodyFetch,
   runFingerprint,
   workingDiffHash,
 } from "../evals/fingerprint.js";
@@ -29,7 +32,7 @@ import { HISTORY_FIXTURE_VERSION, HISTORY_JUDGE_VERSION } from "../evals/history
 import type { DiagnosticToolObservation, HistoryDiagnostic } from "../evals/history-observer.js";
 import { observeSyntheticHistory } from "../evals/history-observer.js";
 import type { EvalJudge, JudgeInput } from "../evals/judge.js";
-import { createEvalJudge } from "../evals/judge.js";
+import { createEvalJudge, judgeSettings } from "../evals/judge.js";
 import type { CacheDecisionMeasurement, EvalPricing, MeasuredCall } from "../evals/measurement.js";
 import { measureCalls, SpendBudget, validatePricing } from "../evals/measurement.js";
 import type { TrialResult } from "../evals/report.js";
@@ -43,7 +46,7 @@ import {
 } from "../evals/report.js";
 import { ROUTINE_MODE_SUITE } from "../evals/routine-mode.js";
 import type { CasePlan } from "../evals/run-store.js";
-import { judgeIdentity, RunStore } from "../evals/run-store.js";
+import { RunStore } from "../evals/run-store.js";
 import {
   APPS_EVAL_CASES,
   APPS_FIXTURE_VERSION,
@@ -128,9 +131,11 @@ async function main() {
       model: { type: "string" },
       "api-key-env": { type: "string" },
       "base-url": { type: "string" },
+      /** JSON object merged into every eval model request body, such as a gateway's routing. */
+      "request-body": { type: "string" },
       "context-window": { type: "string" },
       "max-output-tokens": { type: "string" },
-      trials: { type: "string", default: "3" },
+      trials: { type: "string", default: "1" },
       case: { type: "string", multiple: true },
       "cases-file": { type: "string" },
       "timeout-ms": { type: "string", default: "180000" },
@@ -339,6 +344,7 @@ async function main() {
       provider: string;
       rubricVersion: string;
       pricing: EvalPricing;
+      settings: ReturnType<typeof judgeSettings>;
       calibration: Array<{ expected: boolean; pass: boolean; reason: string }>;
       modelCalls: number;
       costUsd: number | null;
@@ -447,6 +453,9 @@ async function main() {
   budget = new SpendBudget(report.spendCapUsd, pricing);
   const liveBudget = budget;
   const connection = parsedConnection.data;
+  const requestBody = values["request-body"]
+    ? z.record(z.string(), z.unknown()).parse(JSON.parse(values["request-body"]))
+    : undefined;
   report.model = connection.modelId!;
   report.provider = connection.provider;
   Object.assign(report, { cacheCapabilities: connection.cacheCapabilities ?? null });
@@ -489,11 +498,19 @@ async function main() {
         "A valid judge pricing file with explicit rates is required; no inference was scheduled",
       );
     }
+    const judgeModel = {
+      ...judgeConnection,
+      id: judgeConnection.modelId!,
+      allowPrivateEndpoint: true,
+      maxImagesPerPrompt: judgeConnection.maxImagesPerPrompt ?? undefined,
+      maxTokens: judgeConnection.maxTokens ?? 2048,
+    };
     report.judge = {
       model: judgeConnection.modelId!,
       provider: judgeConnection.provider,
       rubricVersion: suiteJudge.version,
       pricing: judgePricing,
+      settings: judgeSettings(judgeModel),
       calibration: [],
       modelCalls: 0,
       costUsd: null,
@@ -520,17 +537,7 @@ async function main() {
     const collect: NonNullable<AgentRunRequest["onUsage"]> = (usage) => {
       if (usage.callId) judgeCalls.set(usage.callId, { id: usage.callId, ...usage });
     };
-    const rawJudge = createEvalJudge(
-      runtime,
-      {
-        ...judgeConnection,
-        id: judgeConnection.modelId!,
-        allowPrivateEndpoint: true,
-        maxImagesPerPrompt: judgeConnection.maxImagesPerPrompt ?? undefined,
-        maxTokens: judgeConnection.maxTokens ?? 2048,
-      },
-      collect,
-    );
+    const rawJudge = createEvalJudge(runtime, judgeModel, collect);
     const judgeSecrets = [judgeConnection.apiKey ?? "", judgeConnection.baseUrl ?? ""];
     judge = async (input, signal) => {
       try {
@@ -750,7 +757,7 @@ async function main() {
         known && known.kind !== "run" && known.trials.some((t) => t.trial === planned.trial)
           ? { plan: known }
           : {};
-      const modelFetch = firstRequestFetch(
+      const fingerprintedFetch = firstRequestFetch(
         observeWire
           ? diagnosticWireFetch(dispatcherFetch, connection.modelId!, wireDiagnostics)
           : dispatcherFetch,
@@ -777,7 +784,7 @@ async function main() {
                   trials: controls.trials,
                   strategy: planned.strategy!,
                   fingerprint,
-                  judge: judgeIdentity(report.judge),
+                  judge: report.judge,
                 })
               : { kind: "run" };
           plans.set(key, plan);
@@ -788,6 +795,9 @@ async function main() {
         },
         scenario,
       );
+      const modelFetch = requestBody
+        ? requestBodyFetch(fingerprintedFetch, connection.modelId!, requestBody)
+        : fingerprintedFetch;
       if (!stored.plan) {
         const ran = {
           ...(await runTrial(scenario, planned.trial, {
@@ -796,7 +806,7 @@ async function main() {
             connection,
             pricing,
             judge,
-            createApp: async (composio, messaging, witnesses) => {
+            createApp: async (composio, messaging, witnesses, site) => {
               const sandbox = new EvalSandboxProvider(scenario.computer);
               let acceptingCalls = true;
               const cacheDecisions: CacheDecisionMeasurement[] = [];
@@ -864,6 +874,8 @@ async function main() {
                 composio,
                 messaging,
                 web: composio.web,
+                ...(site ? { browser: site } : {}),
+                ...(scenario.botEmail ? { inboundEmail: EVAL_INBOUND_EMAIL } : {}),
                 ...(wakesRoutines(scenario) ? witnesses : {}),
                 messagingOpenSignup: false,
                 defaultProvider: connection.provider,

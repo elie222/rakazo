@@ -5,6 +5,7 @@ import {
   ComputerSizeSchema,
   CREDITS_SANDBOX_ALLOWANCE_PERCENT,
   computerSizesUpTo,
+  SPEECH_ALLOWANCE_PERCENT,
   TRIAL_SANDBOX_ALLOWANCE_CENTS,
 } from "@rakazo/contracts";
 import type { PrismaClient } from "../database/client.js";
@@ -68,17 +69,7 @@ export async function sandboxAllowancePlan(
   ]);
   if (!settings?.modelCreditsEnabled) return null;
   const billing = organization?.billing;
-  const live = hasBillingAccess(billing?.status ?? null);
-  const periodStart =
-    live && billing?.currentPeriodStartsAt && billing.currentPeriodStartsAt <= now
-      ? billing.currentPeriodStartsAt
-      : null;
-  const since = periodStart
-    ? // A yearly plan's allowance still renews monthly, on the day its period began.
-      billing?.byokInterval === "year"
-      ? latestMonthlyAnniversary(periodStart, now)
-      : periodStart
-    : new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+  const { live, periodStart, since } = allowancePeriod(billing, now);
   const tier = byokTierOf(organization?.modelCredits?.mode, billing);
   const creditShare = (cents: number) =>
     Math.floor((cents * CREDITS_SANDBOX_ALLOWANCE_PERCENT) / 100);
@@ -145,6 +136,83 @@ export async function sandboxAllowancePlan(
       ? null
       : reset;
   return { limitCents, extraCents, since, resetsAt };
+}
+
+/** The monthly allowance period an organization's billing puts it in. */
+function allowancePeriod(
+  billing:
+    | {
+        status: string | null;
+        currentPeriodStartsAt: Date | null;
+        byokInterval: string | null;
+      }
+    | null
+    | undefined,
+  now: Date,
+) {
+  const live = hasBillingAccess(billing?.status ?? null);
+  const periodStart =
+    live && billing?.currentPeriodStartsAt && billing.currentPeriodStartsAt <= now
+      ? billing.currentPeriodStartsAt
+      : null;
+  const since = periodStart
+    ? // A yearly plan's allowance still renews monthly, on the day its period began.
+      billing?.byokInterval === "year"
+      ? latestMonthlyAnniversary(periodStart, now)
+      : periodStart
+    : new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+  return { live, periodStart, since };
+}
+
+/**
+ * What the organization may spend on deployment-funded speech this period, in micros, and when
+ * the period began: a share of its plan's monthly price. Without a live plan or a trial it gets
+ * nothing; a deployment without model-credit billing never limits speech (null).
+ */
+export async function speechAllowancePlan(
+  prisma: Pick<PrismaClient, "deploymentSettings" | "organization">,
+  organizationId: string,
+  now = new Date(),
+): Promise<{ limitMicros: bigint; since: Date } | null> {
+  const [settings, organization] = await Promise.all([
+    prisma.deploymentSettings.findUnique({
+      where: { id: "default" },
+      select: { modelCreditsEnabled: true },
+    }),
+    prisma.organization.findUnique({
+      where: { id: organizationId },
+      select: {
+        billing: {
+          select: {
+            creditAmountCents: true,
+            status: true,
+            cancelAtPeriodEnd: true,
+            currentPeriodStartsAt: true,
+            currentPeriodEndsAt: true,
+            byokInterval: true,
+            byokTier: true,
+            byokPriceCents: true,
+          },
+        },
+      },
+    }),
+  ]);
+  if (!settings?.modelCreditsEnabled) return null;
+  const billing = organization?.billing;
+  const { live, since } = allowancePeriod(billing, now);
+  // A paid tier counts only while its subscription is live; a lapsed one pays for nothing.
+  const tier = byokTierOf(null, billing);
+  const ended = billing?.currentPeriodEndsAt != null && billing.currentPeriodEndsAt <= now;
+  const planCents =
+    !live || ended || (billing?.status === "trialing" && billing.cancelAtPeriodEnd)
+      ? 0
+      : billing?.status === "trialing"
+        ? (BYOK_TIERS.standard.monthlyPriceCents ?? 0)
+        : tier
+          ? (BYOK_TIERS[tier].monthlyPriceCents ?? 0)
+          : (billing?.creditAmountCents ?? 0);
+  // One cent is 10,000 micros, so a percent of it is 100.
+  return { limitMicros: BigInt(planCents) * BigInt(SPEECH_ALLOWANCE_PERCENT) * 100n, since };
 }
 
 async function grantedAllowanceCents(

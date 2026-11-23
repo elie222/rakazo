@@ -33,6 +33,12 @@ describe("formatFileSize", () => {
     expect(fileSizeParts(1024, "de")).toEqual({ amount: "1", unit: "KB" });
   });
 
+  it("localises the size label without changing units or rounding", () => {
+    expect(formatFileSize(1536, "fr")).toBe("1,5 KB");
+    expect(formatFileSize(1536, "en")).toBe("1.5 KB");
+    expect(formatFileSize(1000 * 1024, "en")).toBe("1000 KB");
+  });
+
   it("returns nothing for an unknown size", () => {
     expect(formatFileSize(Number.NaN)).toBe("");
     expect(formatFileSize(Number.POSITIVE_INFINITY)).toBe("");

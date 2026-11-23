@@ -173,6 +173,40 @@ describe("bounded context selection", () => {
       budget.contextWindow - budget.outputReserve,
     );
   });
+  it("shortens short results of a protected batch when that is the only way to fit", () => {
+    const calls = Array.from({ length: 10 }, (_, i) => ({
+      type: "toolCall",
+      id: `call${i}`,
+      name: "read_file",
+      arguments: { path: `example${i}.txt` },
+    }));
+    const messages = [
+      { role: "assistant", content: calls },
+      ...calls.map((call) => ({
+        role: "toolResult",
+        toolCallId: call.id,
+        toolName: call.name,
+        content: "0123456789abcdef".repeat(16),
+      })),
+      user("Please continue."),
+    ];
+    const fits = { contextWindow: 2763, outputReserve: 0, systemPrompt: "", tools: [] };
+    const selected = selectContext(messages, { budget: fits, strategy: "current" });
+    expect(selected.messages).toHaveLength(12);
+    expect(selected.truncatedToolResults).toBe(10);
+    expect(
+      selected.messages.slice(1, 11).map((m) => (m as { toolCallId?: string }).toolCallId),
+    ).toEqual(calls.map((call) => call.id));
+    expect(selected.estimatedInputTokens).toBeLessThanOrEqual(fits.contextWindow);
+    expect(() =>
+      selectContext(messages, { budget: { ...fits, contextWindow: 1500 }, strategy: "current" }),
+    ).toThrow(ContextBudgetError);
+    const roomy = selectContext(messages, {
+      budget: { ...fits, contextWindow: 10000 },
+      strategy: "current",
+    });
+    expect(roomy.truncatedToolResults).toBe(0);
+  });
   it("preserves actual images while shortening result text and fails if the image alone cannot fit", () => {
     const image = { type: "image", data: "a".repeat(10000), mimeType: "image/png" };
     const call = {

@@ -623,6 +623,40 @@ describe("setup", () => {
     expect(element("stack-detail").textContent).toBe("3 MB descargados");
   });
 
+  it.each([
+    { language: "English", locale: ENGLISH, separator: ".", template: "{size} downloaded" },
+    {
+      language: "Polish",
+      locale: { lang: "pl", dir: "ltr", messages: PL_MESSAGES } satisfies RakazoSetup["locale"],
+      separator: ",",
+      template: "Pobrano {size}",
+    },
+  ])("formats installer download sizes in $language", async ({ locale, separator, template }) => {
+    const ui = await boot(null, locale);
+    selectMode("new");
+    submitForm();
+    ui.startResult.resolve(stackState("pulling"));
+    await flush();
+    expect(element("stack-detail").textContent).toBe("");
+
+    const sizes = [
+      [42, "42 B"],
+      [2_500, "3 kB"],
+      [2_500_000, "3 MB"],
+      [1_000_000_000, `1${separator}0 GB`],
+      [1_150_000_000, `1${separator}2 GB`],
+      [1_400_000_000, `1${separator}4 GB`],
+    ] as const;
+    for (const [bytes, size] of sizes) {
+      const stack = { ...stackState("pulling"), layerBytes: { layer: bytes } };
+      ui.pushStackState(stack);
+      await flush();
+      ui.resolveStackState(stack);
+      await flush();
+      expect(element("stack-detail").textContent).toBe(template.replace("{size}", size));
+    }
+  });
+
   it("renders Polish setup controls and interpolates connection and download status", async () => {
     const ui = await boot(null, { lang: "pl", dir: "ltr", messages: PL_MESSAGES });
     expect(document.documentElement.lang).toBe("pl");

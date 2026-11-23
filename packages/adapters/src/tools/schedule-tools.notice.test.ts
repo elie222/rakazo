@@ -113,6 +113,7 @@ describe("routine rows from the schedule tools", () => {
     const deps = {
       prisma: {
         routine: {
+          count: vi.fn(async () => 1),
           findFirst: vi.fn(async () => ({ id: "routine-1", name: "Daily", threadId: "thread" })),
           deleteMany: vi.fn(async () => ({ count: 1 })),
         },
@@ -129,7 +130,13 @@ describe("routine rows from the schedule tools", () => {
 
   it("cancel of a routine that is not found leaves no row", async () => {
     const deps = {
-      prisma: { routine: { findFirst: vi.fn(async () => null), deleteMany: vi.fn() } },
+      prisma: {
+        routine: {
+          count: vi.fn(async () => 0),
+          findFirst: vi.fn(async () => null),
+          deleteMany: vi.fn(),
+        },
+      },
       events: { append: vi.fn() },
       jobs: jobs(),
     } as unknown as Parameters<typeof cancelScheduleFromTool>[0];

@@ -1,6 +1,13 @@
-/** Deployment-wide catalog probing switch; tests opt in with injected transports. */
+/**
+ * Deployment-wide catalog probing switch; tests opt in with injected transports. Unset or blank
+ * means on. Anything but off/false/0/no or on/true/1/yes is refused, so a spelling the operator
+ * meant as "off" can't leave outbound catalog fetches running.
+ */
 export function liveModelCatalogEnabled(source: NodeJS.ProcessEnv = process.env): boolean {
-  return source.RAKAZO_LIVE_MODEL_CATALOG?.trim().toLowerCase() !== "off";
+  const value = source.RAKAZO_LIVE_MODEL_CATALOG?.trim().toLowerCase();
+  if (!value || ["on", "true", "1", "yes"].includes(value)) return true;
+  if (["off", "false", "0", "no"].includes(value)) return false;
+  throw new Error("RAKAZO_LIVE_MODEL_CATALOG must be on or off");
 }
 
 export type CatalogFetch<T> = { attempted: false } | { attempted: true; models: T[] | undefined };

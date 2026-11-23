@@ -48,6 +48,7 @@ type Props = {
   links?: NavLink[];
   onLink?: (link: NavLink) => void;
   onArtifacts: () => void;
+  onSharedPages?: () => void;
   onSettings: () => void;
   /** How much of the member's allowance is used; the Usage row shows only with one. */
   usage?: string | null;
@@ -82,6 +83,7 @@ export function SidebarFooter({
   links = [],
   onLink,
   onArtifacts,
+  onSharedPages,
   onSettings,
   usage,
   onUsage,
@@ -219,11 +221,23 @@ export function SidebarFooter({
               <FolderOpen className="text-muted-foreground" strokeWidth={1.75} />
               <Trans>Artifacts</Trans>
             </Button>
-            {onBoard ? (
+            {onSharedPages ? (
               <Button
                 variant="ghost"
                 size="lg"
                 className="w-full justify-start gap-2.5 font-normal"
+                onClick={onSharedPages}
+              >
+                <BookOpen className="text-muted-foreground" strokeWidth={1.75} />
+                <Trans>Pages shared with you</Trans>
+              </Button>
+            ) : null}
+            {/* From md up the rail opens the Board, so only the phone drawer lists it here. */}
+            {onBoard ? (
+              <Button
+                variant="ghost"
+                size="lg"
+                className="w-full justify-start gap-2.5 font-normal md:hidden"
                 onClick={onBoard}
               >
                 <SquareKanban className="text-muted-foreground" strokeWidth={1.75} />

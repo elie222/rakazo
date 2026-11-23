@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { flush } from "@rakazo/core/test-async";
+import { deferred, flush } from "@rakazo/core/test-async";
 import type { ReactNode } from "react";
 import { act, useEffect } from "react";
 import type { Root } from "react-dom/client";
@@ -24,7 +24,7 @@ vi.mock("../native/native", () => ({
   useThemedStyles: (create: () => unknown) => create(),
 }));
 vi.mock("../i18n/i18n", () => ({ useUiLocale: () => "en" }));
-vi.mock("../routines/cron", () => ({ cronLabels: () => ({}) }));
+vi.mock("@rakazo/i18n/cron", () => ({ cronLabels: () => ({}) }));
 vi.mock("../api/api", () => ({
   rpc: mocks.rpc,
   currentApiBase: () => "https://app.example.test",
@@ -160,6 +160,37 @@ function expectNothingOpened() {
   expect(mocks.addToSearchInbox).not.toHaveBeenCalled();
   expect(mocks.openFromSettingsSheet).not.toHaveBeenCalled();
 }
+
+it.each([
+  { name: "a catalogue with other templates", templates: [{ ...template, id: "different" }] },
+  { name: "an empty catalogue", templates: [] },
+])("shows the selected template is unavailable in $name without Retry", async ({ templates }) => {
+  mocks.rpc.mockResolvedValueOnce(templates);
+  await render();
+  expect(container.textContent).toContain("This template is no longer available.");
+  expect(container.textContent).not.toContain("Could not load templates");
+  expect(container.querySelector("button")).toBeNull();
+  expect(reads()).toBe(1);
+});
+
+it("shows loading and offers Retry for a catalogue read failure", async () => {
+  const first = deferred<(typeof template)[]>();
+  mocks.rpc.mockImplementationOnce(() => first.promise).mockResolvedValueOnce([template]);
+  await render();
+  expect(container.querySelector('[role="status"]')).not.toBeNull();
+  expect(container.querySelector("button")).toBeNull();
+
+  await act(async () => first.reject(new Error("Catalogue could not be reached")));
+  await settle();
+  expect(container.textContent).not.toContain("This template is no longer available.");
+  expect(action().textContent).toBe("Retry");
+
+  await act(async () => action().click());
+  await settle();
+  expect(reads()).toBe(2);
+  expect(action().textContent).toBe("Create bot");
+  expectNothingOpened();
+});
 
 it("creates the template's bot as previewed, busy meanwhile, then opens its chat", async () => {
   const create = hold("bots/createFromTemplate");

@@ -1,5 +1,6 @@
 import type { ModelCredential } from "@rakazo/contracts";
 import { describe, expect, it } from "vitest";
+import { newestModelsFirst } from "./model-providers.js";
 import {
   catalogEntryFor,
   connectionModels,
@@ -11,7 +12,6 @@ import {
   modelSettingsFields,
   modelSettingsRequest,
   modelThinkingLevels,
-  newestModelsFirst,
 } from "./model-settings-form.js";
 
 const COMPATIBLE = "openai-compatible";

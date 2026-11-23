@@ -1,8 +1,9 @@
 import { ph, t } from "@lingui/core/macro";
-import type { ComputerMode, ComputerStatus as ContractComputerStatus } from "@rakazo/contracts";
+import type { ComputerStatus as ContractComputerStatus } from "@rakazo/contracts";
 import { isLocalhostOrLoopbackIp, isPrivateNetworkHost } from "@rakazo/contracts";
 import type { ScreenPageState } from "@rakazo/core";
 import { isRetryableError, SCREEN_PAGE_STATES } from "@rakazo/core";
+import { computerLabel } from "@rakazo/i18n/computer-usage";
 
 /**
  * Computer lifecycle calls create, start or stop a container (booting, switching between the
@@ -174,10 +175,6 @@ export function controlLabel(computer: ComputerStatus | null, name: string) {
   if (computer?.busyBotName) return t`${ph({ name: computer.busyBotName })} is using it`;
   if (computer?.state === "suspended") return t`Asleep`;
   return computerLabel(computer?.mode, name);
-}
-
-export function computerLabel(mode: ComputerMode | undefined, name: string) {
-  return mode === "dedicated" ? t`${name}’s computer` : t`Team Computer`;
 }
 
 /**

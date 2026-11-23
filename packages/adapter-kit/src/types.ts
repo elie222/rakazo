@@ -308,8 +308,12 @@ export interface SandboxKindCapabilities {
   storedHomeIsBackup: boolean;
   /** The provider can read the disk of a stopped sandbox without starting it. */
   readStoppedFiles?: boolean;
+  /** Largest file one transfer can carry, when the provider's transport is tighter than the server's limit. */
+  maxFileBytes?: number;
   /** The provider confirms machine size for size-based allowance accounting. */
   sizedUsage?: boolean;
+  /** On the desktop app's own server, the person may give bots the host machine instead. */
+  offersHostComputer?: boolean;
 }
 
 export interface SandboxCapabilities {
@@ -618,9 +622,18 @@ export interface AgentSteeringMessage {
 /** Adapter-supplied cache policy metadata; absent fields mean unknown. */
 export type CacheCapabilities = ConnectionCacheCapabilities;
 
+/** Who pays for a model call: the user's subscription or key, the deployment, or its credits. */
+export type ModelBilling =
+  | "subscription"
+  | "api_key"
+  | "custom_endpoint"
+  | "credits"
+  | "deployment";
+
 export interface AgentRunModel {
   /** Server-side spending authorization, carried with the resolved credential. */
   callObserver?: ModelCallObserver;
+  billing?: ModelBilling;
   cacheCapabilities?: CacheCapabilities;
   provider: string;
   id: string;
@@ -728,6 +741,8 @@ export interface AgentRunRequest {
   /** Server verified legacy attachment bytes remain available to file tools. */
   currentTurnImageFileFallback?: boolean;
   tools: ConnectorTool[];
+  /** Why each built-in tool this run was not offered is unavailable, keyed by tool name. */
+  unavailableToolReasons?: Readonly<Record<string, string>>;
   model: AgentRunModel;
   /** Optional explicitly authenticated vision target for same-run computer mode. */
   computerModel?: AgentRunModel;
@@ -756,7 +771,11 @@ export interface AgentRunRequest {
    */
   yieldSignal?: AbortSignal;
   /** Human answer or takeover outcome for the pending interaction. Never secret input. */
-  resumeToolResult?: { content: Array<{ type: "text"; text: string }> };
+  resumeToolResult?: {
+    content: Array<{ type: "text"; text: string }>;
+    /** History rows fully represented by the restored turn and its human answer. */
+    historyMessageIds?: string[];
+  };
   script?: ScriptedTurn[];
   /**
    * FYI bot-message wakes and scheduled routines may finish with no text.
@@ -893,6 +912,7 @@ export type AgentRuntimeEvent =
       callId?: string;
       operationKind?: UsageOperationKind;
       agentId?: string;
+      billing?: ModelBilling;
     } & AgentUsage)
   | { type: "checkpoint"; blob: string }
   /**
@@ -994,6 +1014,7 @@ export interface VoiceTranscribeRequest {
 
 export interface BackgroundJobPayloads {
   "run.continue": { runId: string };
+  "page.revise": { requestId: string };
   "routine.wakeup": { routineId: string; scheduledFor: string };
   /** Run a failed routine run once more; the payload names the failed run. */
   "routine.retry": { runId: string };
@@ -1146,6 +1167,7 @@ export type SecretCleanupKind =
   | "secret_tables"
   | "messaging_installation"
   | "deployment_computer_provider"
+  | "deployment_model"
   | "purchase_request"
   | "purchase_card"
   | "purchase_token"
@@ -1441,6 +1463,8 @@ export interface WebFetchResult {
   title: string;
   text: string;
   truncated: boolean;
+  /** The URL served a picture rather than a page: its raw bytes, with `text` left empty. */
+  image?: Uint8Array;
 }
 
 /** Page-level browser on the bot computer (DOM refs), not a hosted browser vendor. */
@@ -1822,6 +1846,20 @@ export interface BillingPlanPayment {
   createdAt: Date;
   /** Every payment on it refunded in full, or lost to a dispute. */
   reversed: boolean;
+}
+
+export interface BillingInvoiceRefund {
+  invoiceId: string;
+  /** The number on the customer's receipt; null when the provider gave the invoice none. */
+  invoiceNumber: string | null;
+  /** When the invoice was created, as an ISO timestamp. */
+  createdAt: string;
+  /** The id the provider's credit purchases list the invoice's payment under; read on a preview. */
+  creditPurchaseId: string;
+  amountMinor: number;
+  currency: string;
+  state: "refundable" | "pending" | "succeeded";
+  refundId?: string;
 }
 
 export interface BillingCreditCheckoutRequest {

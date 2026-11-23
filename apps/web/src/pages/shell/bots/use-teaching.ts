@@ -1,6 +1,7 @@
 import { fetchFresh } from "@rakazo/core/query";
 import type { RefObject } from "react";
 import { useCallback, useState } from "react";
+import { settleTeachComputerInput } from "../../../components/teach/teach-computer-input-chain";
 import type { spaceQueries } from "../../../lib/query/query";
 import { queryClient } from "../../../lib/query/query";
 import type { createSpaceRpc } from "../../../lib/query/rpc";
@@ -35,6 +36,7 @@ export function useTeaching({
     if (!recording) return;
     setTeachBusy(true);
     try {
+      await settleTeachComputerInput(id);
       await rpc.skills.stop({ skillId: recording.id });
       await refreshThreadRef.current(id);
       closeComputer();

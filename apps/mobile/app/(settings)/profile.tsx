@@ -14,8 +14,6 @@ import {
 } from "../../components/settings/settings-group";
 import { NameDialog } from "../../components/ui/name-dialog";
 import { createAccountNameEditor } from "../../lib/account/account-name-editor";
-import { rpc } from "../../lib/api/api";
-import type { MobileMe } from "../../lib/api/mobile-types";
 import { errorText } from "../../lib/api/user-error";
 import { mobileTokens } from "../../lib/appearance/appearance";
 import {
@@ -31,11 +29,13 @@ import {
   passkeysAvailable,
   renamePasskey,
 } from "../../lib/auth/passkey";
+import { promptPasskeyName } from "../../lib/auth/passkey-name-prompt";
 import { continueWithSso } from "../../lib/auth/sso";
 import { dateLocaleForUi, useUiLocale } from "../../lib/i18n/i18n";
-import { promptSectionName } from "../../lib/inbox/sections/section-name-prompt";
 import { useSideInsets } from "../../lib/layout/side-insets";
 import { useResolvedAppearance, useThemedStyles } from "../../lib/native/native";
+import { accountRpcQuery, queryClient } from "../../lib/query/query";
+import { useScreenQuery } from "../../lib/query/screen-query";
 import { createSettingsPageStyles } from "../../lib/settings/settings-page-styles";
 import {
   loadTrustedLinkSites,
@@ -54,7 +54,8 @@ export default function Profile() {
   const colorScheme = useResolvedAppearance();
   const [providers, setProviders] = useState<SignInProvider[]>([]);
 
-  const [me, setMe] = useState<MobileMe | null>(null);
+  const meRead = accountRpcQuery("me");
+  const me = useScreenQuery(meRead).data;
   const account = accountDisplay(me ?? {}, t`Your account`);
   const [nameDialogOpen, setNameDialogOpen] = useState(false);
   const [nameDraft, setNameDraft] = useState("");
@@ -63,18 +64,16 @@ export default function Profile() {
   const currentName = account.label === me?.email ? "" : displayName(me?.name, "");
 
   const nameSaving = useRef(false);
-  const nameSaveVersion = useRef(0);
   const { saveName, editName, closeNameDialog } = createAccountNameEditor({
     currentName,
     pending: nameSaving,
-    saveVersion: nameSaveVersion,
     Platform,
     Alert,
     errorText,
     updateAccountName,
-    refresh: () => rpc("me"),
-    onSaved: (name) => setMe((current) => (current ? { ...current, name } : current)),
-    onRefreshed: setMe,
+    onSaved: (name) =>
+      queryClient.setQueryData(meRead.queryKey, (current) => current && { ...current, name }),
+    markStale: () => queryClient.invalidateQueries({ queryKey: meRead.queryKey }),
     setNameDraft,
     setNamePending,
     setNameError,
@@ -103,21 +102,6 @@ export default function Profile() {
     }
   }, [t]);
   const trustedSites = useTrustedLinkSites();
-
-  // Read on every visit, so a failed read retries when the page is shown again.
-  useFocusEffect(
-    useCallback(() => {
-      let active = true;
-      void rpc("me")
-        .then((next) => {
-          if (active) setMe(next);
-        })
-        .catch(() => undefined);
-      return () => {
-        active = false;
-      };
-    }, []),
-  );
 
   useEffect(() => {
     void fetchAccountSecurity()
@@ -152,7 +136,7 @@ export default function Profile() {
 
   function passkeyMenuAction(passkey: MobilePasskey, name: string, action: string) {
     if (action === "rename") {
-      promptSectionName({
+      promptPasskeyName({
         title: t`Rename`,
         cancelLabel: t`Cancel`,
         submitLabel: t`Save`,

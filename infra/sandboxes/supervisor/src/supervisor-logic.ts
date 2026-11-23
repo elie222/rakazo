@@ -582,8 +582,9 @@ export function containerActionSteps(
 
 export function normalizeWorkspaceRelative(value: string) {
   const normalized = value.replace(/\\/g, "/").replace(/^\/+/, "");
-  const segments = normalized.split("/").filter(Boolean);
-  if (segments.some((segment) => segment === "." || segment === "..")) {
+  // "." stays where it is, so "." and "./notes" mean the root and notes; only ".." can leave.
+  const segments = normalized.split("/").filter((segment) => segment && segment !== ".");
+  if (segments.includes("..")) {
     throw new Error("path escapes the computer workspace");
   }
   return segments.join("/");
@@ -761,11 +762,15 @@ export function demuxDockerStream(buffer: Buffer): { stdout: string; stderr: str
 
 /**
  * Environment for commands in a computer: the bot's shell tool and the user's terminal share
- * it. Neither exec sets a Docker `User`, so both run as the container's workspace user.
+ * it, including this screen's CDP port. Neither exec sets a Docker `User`, so both run as the
+ * container's workspace user.
  */
-export function computerCommandEnv(layout: { display: string }) {
+export function computerCommandEnv(
+  layout: Pick<ReturnType<typeof screenPorts>, "display" | "debugPort">,
+) {
   return [
     `DISPLAY=${layout.display}`,
+    `RAKAZO_CDP_PORT=${layout.debugPort}`,
     "HOME=/home/rakazo",
     "PATH=/home/rakazo/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
     "NPM_CONFIG_PREFIX=/home/rakazo/.local",

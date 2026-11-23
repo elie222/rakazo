@@ -1,4 +1,4 @@
-import { deadlineSignal, withAbort } from "@rakazo/core";
+import { deadlineSignal, sliceWellFormed, withAbort } from "@rakazo/core";
 import { bestEffort } from "@rakazo/logging";
 import { readBodyCapped } from "../../../web/web-ssrf.js";
 
@@ -104,7 +104,7 @@ function parseItems(data: unknown): MnemoverseItem[] | null {
     if (!content) continue;
     parsed.push({
       atomId: row.atom_id,
-      content: content.slice(0, MAX_MEMORY_CONTENT_CHARS),
+      content: sliceWellFormed(content, MAX_MEMORY_CONTENT_CHARS),
       relevance: typeof row.relevance === "number" ? row.relevance : 0,
       domain: row.domain,
     });
@@ -136,7 +136,7 @@ export async function readMnemoverse(
   signal?: AbortSignal,
 ): Promise<MnemoverseResponse<MnemoverseItem[]>> {
   const reply = await request(config, "recall", "POST", "/memory/read", {
-    body: { query: query.slice(0, MAX_QUERY_CHARS), domain, top_k: boundedLimit(limit) },
+    body: { query: sliceWellFormed(query, MAX_QUERY_CHARS), domain, top_k: boundedLimit(limit) },
     signal,
   });
   if (!reply.ok) return { ok: false, error: reply.error };

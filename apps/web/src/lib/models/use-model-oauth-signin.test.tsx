@@ -7,19 +7,23 @@ import { useModelOAuthSignIn } from "./use-model-oauth-signin";
 
 const models = vi.hoisted(() => ({ beginOAuth: vi.fn(), cancelOAuth: vi.fn() }));
 const analytics = vi.hoisted(() => ({ modelSignInStep: vi.fn() }));
+const desktop = vi.hoisted(() => ({ bridge: undefined as unknown }));
 vi.mock("../query/space-rpc", () => ({ useSpaceRpc: () => ({ models, analytics }) }));
 vi.mock("../platform/desktop", () => ({
   analyticsSurface: () => "web",
-  desktopBridge: () => undefined,
+  desktopBridge: () => desktop.bridge,
   oauthStateOf: () => undefined,
   onDesktopOAuthCallback: vi.fn(),
 }));
-vi.mock("./model-auth", () => ({
-  waitForModelOAuth: (_loginId: string, signal: AbortSignal) =>
-    new Promise<void>((resolve) =>
-      signal.addEventListener("abort", () => resolve(), { once: true }),
-    ),
-}));
+const waitForModelOAuth = vi.hoisted(() =>
+  vi.fn(
+    (_login: unknown, signal: AbortSignal) =>
+      new Promise<void>((resolve) =>
+        signal.addEventListener("abort", () => resolve(), { once: true }),
+      ),
+  ),
+);
+vi.mock("./model-auth", () => ({ waitForModelOAuth }));
 
 const verificationUri = "https://example.test/device";
 let latest: ReturnType<typeof useModelOAuthSignIn>;
@@ -47,6 +51,7 @@ beforeEach(() => {
   act(() => root.render(<Harness />));
 });
 afterEach(() => {
+  desktop.bridge = undefined;
   act(() => root.unmount());
   container.remove();
   vi.restoreAllMocks();
@@ -54,41 +59,39 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-it("reports an opened tab without treating noopener's null result as a block", async () => {
-  const document = window.document.implementation.createHTMLDocument();
-  const popup = { opener: window, document };
-  const navigate = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(function (
-    this: HTMLAnchorElement,
-  ) {
-    expect(popup.opener).toBeNull();
-    expect(this.rel).toBe("noreferrer");
-    expect(this.href).toBe(verificationUri);
+it("leaves a link sign-in's page to the person's click, since a tab opened later is blocked", async () => {
+  models.beginOAuth.mockResolvedValue({
+    mode: "auth-url",
+    loginId: "login",
+    verificationUri,
+    expiresInSeconds: 300,
   });
-  // A browser opens the tab but returns null when noopener/noreferrer is requested.
-  vi.spyOn(window, "open").mockImplementation((_url, _target, features) =>
-    features?.includes("noopener") || features?.includes("noreferrer")
-      ? null
-      : (popup as unknown as Window),
-  );
+  const open = vi.spyOn(window, "open");
   await act(async () => {
     void latest.startSubscriptionSignIn({ provider: "subscription" });
   });
-  expect(latest.popupBlocked).toBe(false);
-  expect(navigate).toHaveBeenCalledOnce();
+  expect(open).not.toHaveBeenCalled();
+  expect(latest.oauth).toMatchObject({ mode: "auth-url", verificationUri });
   expect(onError).not.toHaveBeenCalled();
-  expect(models.beginOAuth.mock.calls[0]?.[0]).toMatchObject({ surface: "web" });
-  expect(analytics.modelSignInStep.mock.calls).toEqual([
-    [{ loginId: "login", step: "page_opened" }],
-  ]);
+  expect(models.beginOAuth.mock.calls[0]?.[0]).toMatchObject({ surface: "web", codePage: true });
+  expect(analytics.modelSignInStep).not.toHaveBeenCalled();
 });
 
-it("reports a blocked tab and keeps the manual sign-in details", async () => {
-  vi.spyOn(window, "open").mockReturnValue(null);
+it("asks for a code page on a desktop that cannot open the browser itself", async () => {
+  desktop.bridge = { oauth: { onCallback: () => () => undefined } };
   await act(async () => {
     void latest.startSubscriptionSignIn({ provider: "subscription" });
   });
-  expect(latest.popupBlocked).toBe(true);
-  expect(latest.oauth?.verificationUri).toBe(verificationUri);
+  expect(models.beginOAuth.mock.calls[0]?.[0]).toMatchObject({ codePage: true });
+});
+
+it("shows a device code before its page opens, leaving the opening to the person", async () => {
+  const open = vi.spyOn(window, "open");
+  await act(async () => {
+    void latest.startSubscriptionSignIn({ provider: "subscription" });
+  });
+  expect(open).not.toHaveBeenCalled();
+  expect(latest.oauth).toMatchObject({ userCode: "ABCD-1234", verificationUri });
   expect(onError).not.toHaveBeenCalled();
   expect(analytics.modelSignInStep).not.toHaveBeenCalled();
 
@@ -102,4 +105,73 @@ it("reports a blocked tab and keeps the manual sign-in details", async () => {
     [{ loginId: "login", step: "page_opened" }],
     [{ loginId: "login", step: "code_copied" }],
   ]);
+});
+
+it("ends a code waiting to be pasted when it expires, and says so", async () => {
+  vi.useFakeTimers();
+  try {
+    models.beginOAuth.mockResolvedValue({
+      mode: "auth-url",
+      loginId: "login",
+      verificationUri,
+      expiresInSeconds: 300,
+    });
+    vi.spyOn(window, "open").mockReturnValue(null);
+    await act(async () => {
+      void latest.startSubscriptionSignIn({ provider: "subscription" });
+    });
+    expect(latest.oauth).toMatchObject({ mode: "auth-url" });
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(299_999);
+    });
+    expect(onError).not.toHaveBeenCalled();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1);
+    });
+
+    expect(onError).toHaveBeenCalledExactlyOnceWith("This code expired. Start again.");
+    expect(latest.oauth).toBeNull();
+    expect(models.cancelOAuth).toHaveBeenCalledExactlyOnceWith({
+      loginId: "login",
+      reason: "interrupted",
+    });
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it("tells the server why a sign-in stopped: Cancel, a newer choice, or leaving", async () => {
+  await act(async () => {
+    void latest.startSubscriptionSignIn({ provider: "subscription" });
+  });
+  act(() => latest.cancelOAuthAttempt());
+  expect(latest.oauth).toBeNull();
+
+  await act(async () => {
+    void latest.startSubscriptionSignIn({ provider: "subscription" });
+  });
+  act(() => latest.cancelOAuthAttempt("replaced"));
+
+  await act(async () => {
+    void latest.startSubscriptionSignIn({ provider: "subscription" });
+  });
+  act(() => root.unmount());
+  root = createRoot(container);
+
+  expect(models.cancelOAuth.mock.calls).toEqual([
+    [{ loginId: "login", reason: "cancelled" }],
+    [{ loginId: "login", reason: "replaced" }],
+    [{ loginId: "login", reason: "left" }],
+  ]);
+});
+
+it("tells the server a sign-in the app gave up on was interrupted, not cancelled", async () => {
+  waitForModelOAuth.mockRejectedValueOnce(new Error("Sign-in timed out"));
+  await act(async () => {
+    await latest.startSubscriptionSignIn({ provider: "subscription" });
+  });
+
+  expect(onError).toHaveBeenCalledWith("Sign-in timed out");
+  expect(models.cancelOAuth.mock.calls).toEqual([[{ loginId: "login", reason: "interrupted" }]]);
 });

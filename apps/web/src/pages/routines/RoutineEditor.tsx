@@ -1,16 +1,19 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { Routine } from "@rakazo/contracts";
-import { cronFromPreset } from "@rakazo/core";
+import { ROUTINE_NAME_MAX_LENGTH } from "@rakazo/contracts";
+import { cronFromPreset, isOneShotRoutineCrons } from "@rakazo/core";
 import { Button, Input, Switch, Textarea } from "@rakazo/ui-web";
 import { useQuery } from "@tanstack/react-query";
 import { ChevronLeft, X } from "lucide-react";
-import { useId } from "react";
+import { useId, useState } from "react";
 import { useIdentityConfirmation } from "../../components/account/ConfirmIdentityDialog";
+import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { useSpaceQueries } from "../../lib/query/query";
 import type { RoutineDraftState } from "../../lib/routines/routine-draft";
-import { routineNeedsOneShotArm } from "../../lib/routines/routine-draft";
+import { routineDraftDirty, routineNeedsOneShotArm } from "../../lib/routines/routine-draft";
 import { RoutineRunHistory } from "./RoutineRunHistory";
 import { RoutineSchedule } from "./RoutineSchedule";
+import { RoutineOwnerNote } from "./routine-editor/access-note";
 import { AddTriggerMenu } from "./routine-editor/add-trigger-menu";
 import { RoutineModelSettings } from "./routine-editor/model-settings";
 import {
@@ -35,6 +38,8 @@ export function RoutineEditor({
   onBack,
   onClose,
   onSave,
+  onSetActive,
+  onCopy,
   onTestRun,
   onDelete,
   onEnsureWebhook,
@@ -55,6 +60,10 @@ export function RoutineEditor({
   onBack: () => void;
   onClose: () => void;
   onSave: () => void;
+  /** Turns another member's routine on or off at once, since nothing else in it can be saved. */
+  onSetActive: (active: boolean) => void;
+  /** Opens a new routine like another member's, which runs as the viewer once saved. */
+  onCopy: () => void;
   onTestRun: () => void;
   onDelete: () => void;
   onEnsureWebhook: () => Promise<void>;
@@ -63,6 +72,16 @@ export function RoutineEditor({
 }) {
   const { t } = useLingui();
   const fieldId = useId();
+  // Going back or closing with unsaved edits asks first; a clean editor leaves at once.
+  const [leaving, setLeaving] = useState<(() => void) | null>(null);
+  // The run time a one-time routine starts with is made from the clock, so remember it per routine.
+  // Only an unarmed one-time routine starts with one; any other keeps an edit made while saving.
+  const openedRunAt = () =>
+    editing && routineNeedsOneShotArm(editing, editing.crons) ? draft.runAtLocal : "";
+  const [opened, setOpened] = useState(() => ({ editing, runAtLocal: openedRunAt() }));
+  if (opened.editing !== editing) setOpened({ editing, runAtLocal: openedRunAt() });
+  const leave = (exit: () => void) =>
+    routineDraftDirty(draft, editing, opened.runAtLocal) ? setLeaving(() => exit) : exit();
   const { withIdentityConfirmation, identityDialog } = useIdentityConfirmation();
   // Closing the confirmation is a choice, and other failures show as the editor's error.
   const revealWebhook = () => void withIdentityConfirmation(onRevealWebhook).catch(() => undefined);
@@ -88,6 +107,8 @@ export function RoutineEditor({
     Boolean(draft.emailSenders) ||
     Boolean(draft.watch);
   const canTest = Boolean(editing) && !saving && !running;
+  // Only the owner changes another member's routine; anyone may still turn it on or off.
+  const readOnly = editing?.editable === false;
   const needsOneShotArm =
     editing != null && routineNeedsOneShotArm(editing, draft.schedules.map(cronFromPreset));
 
@@ -97,7 +118,7 @@ export function RoutineEditor({
         <Button
           variant="ghost"
           size="icon"
-          onClick={onBack}
+          onClick={() => leave(onBack)}
           className="text-muted-foreground"
           aria-label={t`Back`}
         >
@@ -109,13 +130,15 @@ export function RoutineEditor({
         <Button
           variant="ghost"
           size="icon"
-          onClick={onClose}
+          onClick={() => leave(onClose)}
           className="text-muted-foreground"
           aria-label={t`Close`}
         >
           <X className="size-4.5" strokeWidth={1.75} />
         </Button>
       </div>
+
+      <RoutineOwnerNote routine={editing} />
 
       <div className="mb-5 flex items-center justify-between gap-3">
         <label
@@ -125,7 +148,11 @@ export function RoutineEditor({
           <Switch
             id={`${fieldId}-active`}
             checked={draft.active}
-            onCheckedChange={(active) => onChange({ ...draft, active })}
+            // Arming a one-time routine sets when it runs, which only its owner decides.
+            disabled={readOnly && (saving || needsOneShotArm)}
+            onCheckedChange={(active) =>
+              readOnly ? onSetActive(active) : onChange({ ...draft, active })
+            }
           />
           <Trans>Active</Trans>
         </label>
@@ -148,140 +175,162 @@ export function RoutineEditor({
         </p>
       ) : null}
 
-      <label htmlFor={`${fieldId}-name`} className="block text-body text-muted-foreground">
-        <Trans>Name</Trans>
-        <Input
-          id={`${fieldId}-name`}
-          value={draft.name}
-          placeholder={t`Name this routine`}
-          onChange={(e) => onChange({ ...draft, name: e.target.value })}
-          className="mt-2"
-        />
-      </label>
+      <fieldset disabled={readOnly} className="min-w-0">
+        <label htmlFor={`${fieldId}-name`} className="block text-body text-muted-foreground">
+          <Trans>Name</Trans>
+          <Input
+            id={`${fieldId}-name`}
+            value={draft.name}
+            maxLength={ROUTINE_NAME_MAX_LENGTH}
+            placeholder={t`Name this routine`}
+            onChange={(e) => onChange({ ...draft, name: e.target.value })}
+            className="mt-2"
+          />
+        </label>
 
-      <label htmlFor={`${fieldId}-prompt`} className="mt-5 block text-body text-muted-foreground">
-        <Trans>Instruction</Trans>
-        <Textarea
-          id={`${fieldId}-prompt`}
-          value={draft.prompt}
-          placeholder={t`What should this routine do each time it runs?`}
-          onChange={(e) => onChange({ ...draft, prompt: e.target.value })}
-          rows={4}
-          className="mt-2"
-        />
-      </label>
+        <label htmlFor={`${fieldId}-prompt`} className="mt-5 block text-body text-muted-foreground">
+          <Trans>Instruction</Trans>
+          <Textarea
+            id={`${fieldId}-prompt`}
+            value={draft.prompt}
+            placeholder={t`What should this routine do each time it runs?`}
+            onChange={(e) => onChange({ ...draft, prompt: e.target.value })}
+            rows={4}
+            className="mt-2"
+          />
+        </label>
 
-      <div className="mt-5 text-body text-muted-foreground">
-        <div className="flex items-center gap-2">
-          <Trans>When to run</Trans>
-          <span className="text-label text-muted-foreground/70">{timezone}</span>
-          <RoutineModelSettings draft={draft} onChange={onChange} fieldId={fieldId} />
-        </div>
-
-        <div className="mt-2 space-y-2">
-          {draft.schedules.map((preset, index) => (
-            <RoutineSchedule
-              key={index}
-              value={preset}
-              onChange={(next) =>
-                onChange({
-                  ...draft,
-                  schedules: draft.schedules.map((item, i) => (i === index ? next : item)),
-                })
-              }
-              onRemove={() =>
-                onChange({ ...draft, schedules: draft.schedules.filter((_, i) => i !== index) })
-              }
+        <div className="mt-5 text-body text-muted-foreground">
+          <div className="flex items-center gap-2">
+            <Trans>When to run</Trans>
+            <span className="text-label text-muted-foreground/70">{timezone}</span>
+            <RoutineModelSettings
+              draft={draft}
+              onChange={onChange}
+              fieldId={fieldId}
+              computerOffered={editing?.useComputer !== undefined}
             />
-          ))}
+          </div>
 
-          {draft.webhookEnabled ? (
-            <InboundTriggerCard
-              kind="webhook"
-              saved={Boolean(editing)}
-              path={webhook.path}
-              secret={webhook.secret}
-              configured={webhook.configured}
-              onRemove={() => onChange({ ...draft, webhookEnabled: false })}
-              onRotate={() => void onEnsureWebhook()}
-              onReveal={revealWebhook}
-              onHide={onHideWebhook}
-            />
-          ) : null}
-
-          {draft.githubEnabled ? (
-            <InboundTriggerCard
-              kind="github"
-              saved={Boolean(editing)}
-              path={githubPath}
-              secret={webhook.secret}
-              configured={webhook.configured}
-              onRemove={() => onChange({ ...draft, githubEnabled: false })}
-              onRotate={() => void onEnsureWebhook()}
-              onReveal={revealWebhook}
-              onHide={onHideWebhook}
-            />
-          ) : null}
-
-          {draft.watch ? (
-            <WatchTriggerCard
-              watch={draft.watch}
-              state={editing?.watch ? editing.watchState : null}
-              onChange={(watch) => onChange({ ...draft, watch })}
-              onRemove={() => onChange({ ...draft, watch: null })}
-            />
-          ) : null}
-
-          {draft.messageProvider ? (
-            <MessageTriggerCard
-              provider={draft.messageProvider}
-              onRemove={() => onChange({ ...draft, messageProvider: null })}
-            />
-          ) : null}
-
-          {/* Shown without email too, so a server that stopped receiving mail still lets it go. */}
-          {draft.emailSenders ? (
-            <EmailTriggerCard
-              key={bot.id}
-              bot={bot}
-              domain={email?.domain ?? null}
-              address={email?.address ?? null}
-              senders={draft.emailSenders}
-              onChange={(emailSenders) => onChange({ ...draft, emailSenders })}
-              onRemove={() => onChange({ ...draft, emailSenders: null })}
-            />
-          ) : null}
-
-          {needsOneShotArm ? (
-            <label htmlFor={`${fieldId}-run-at`} className="block text-body text-muted-foreground">
-              <Trans>Run at</Trans>
-              <Input
-                id={`${fieldId}-run-at`}
-                type="datetime-local"
-                value={draft.runAtLocal}
-                onChange={(e) => onChange({ ...draft, runAtLocal: e.target.value })}
-                aria-label={t`Run at`}
-                className="mt-2"
+          <div className="mt-2 space-y-2">
+            {draft.schedules.map((preset, index) => (
+              <RoutineSchedule
+                key={index}
+                value={preset}
+                onChange={(next) =>
+                  onChange({
+                    ...draft,
+                    schedules: draft.schedules.map((item, i) => (i === index ? next : item)),
+                  })
+                }
+                onRemove={() =>
+                  onChange({ ...draft, schedules: draft.schedules.filter((_, i) => i !== index) })
+                }
               />
-            </label>
-          ) : null}
-        </div>
+            ))}
 
-        <AddTriggerMenu
-          draft={draft}
-          onChange={onChange}
-          fieldId={fieldId}
-          messageProviders={messageProviders}
-          emailAvailable={Boolean(email)}
-          webhookConfigured={webhook.configured}
-          onEnsureWebhook={onEnsureWebhook}
-        />
-      </div>
+            {draft.webhookEnabled ? (
+              <InboundTriggerCard
+                kind="webhook"
+                saved={Boolean(editing)}
+                path={webhook.path}
+                secret={webhook.secret}
+                configured={webhook.configured}
+                onRemove={() => onChange({ ...draft, webhookEnabled: false })}
+                onRotate={() => void onEnsureWebhook()}
+                onReveal={revealWebhook}
+                onHide={onHideWebhook}
+              />
+            ) : null}
+
+            {draft.githubEnabled ? (
+              <InboundTriggerCard
+                kind="github"
+                saved={Boolean(editing)}
+                path={githubPath}
+                secret={webhook.secret}
+                configured={webhook.configured}
+                onRemove={() => onChange({ ...draft, githubEnabled: false })}
+                onRotate={() => void onEnsureWebhook()}
+                onReveal={revealWebhook}
+                onHide={onHideWebhook}
+              />
+            ) : null}
+
+            {draft.watch ? (
+              <WatchTriggerCard
+                watch={draft.watch}
+                state={editing?.watch ? editing.watchState : null}
+                onChange={(watch) => onChange({ ...draft, watch })}
+                onRemove={() => onChange({ ...draft, watch: null })}
+              />
+            ) : null}
+
+            {draft.messageProvider ? (
+              <MessageTriggerCard
+                provider={draft.messageProvider}
+                onRemove={() => onChange({ ...draft, messageProvider: null })}
+              />
+            ) : null}
+
+            {/* Shown without email too, so a server that stopped receiving mail still lets it go. */}
+            {draft.emailSenders ? (
+              <EmailTriggerCard
+                key={bot.id}
+                bot={bot}
+                domain={email?.domain ?? null}
+                address={email?.address ?? null}
+                senders={draft.emailSenders}
+                onChange={(emailSenders) => onChange({ ...draft, emailSenders })}
+                onRemove={() => onChange({ ...draft, emailSenders: null })}
+              />
+            ) : null}
+
+            {needsOneShotArm ? (
+              <label
+                htmlFor={`${fieldId}-run-at`}
+                className="block text-body text-muted-foreground"
+              >
+                <Trans>Run at</Trans>
+                <Input
+                  id={`${fieldId}-run-at`}
+                  type="datetime-local"
+                  value={draft.runAtLocal}
+                  onChange={(e) => onChange({ ...draft, runAtLocal: e.target.value })}
+                  aria-label={t`Run at`}
+                  className="mt-2"
+                />
+              </label>
+            ) : null}
+          </div>
+
+          {readOnly ? null : (
+            <AddTriggerMenu
+              draft={draft}
+              onChange={onChange}
+              fieldId={fieldId}
+              messageProviders={messageProviders}
+              emailAvailable={Boolean(email)}
+              webhookConfigured={webhook.configured}
+              onEnsureWebhook={onEnsureWebhook}
+            />
+          )}
+        </div>
+      </fieldset>
 
       <div className="mt-5">
-        <Button disabled={saving || running || !hasTriggers} onClick={onSave}>
-          {saving ? t`Saving…` : t`Save`}
-        </Button>
+        {readOnly ? (
+          // A one-time routine is set up from chat, so it has no copy here.
+          isOneShotRoutineCrons(editing.crons) ? null : (
+            <Button variant="secondary" disabled={saving || running} onClick={onCopy}>
+              <Trans>Make a copy</Trans>
+            </Button>
+          )
+        ) : (
+          <Button disabled={saving || running || !hasTriggers} onClick={onSave}>
+            {saving ? t`Saving…` : t`Save`}
+          </Button>
+        )}
       </div>
       {error ? (
         <p role="alert" className="mt-3 text-body-sm text-destructive">
@@ -291,6 +340,17 @@ export function RoutineEditor({
 
       {editing ? <RoutineRunHistory key={editing.id} routineId={editing.id} /> : null}
       {identityDialog}
+      <ConfirmDialog
+        open={leaving !== null}
+        onCancel={() => setLeaving(null)}
+        title={<Trans>Discard unsaved changes?</Trans>}
+        confirmLabel={<Trans>Discard</Trans>}
+        onConfirm={() => {
+          const exit = leaving;
+          setLeaving(null);
+          exit?.();
+        }}
+      />
     </div>
   );
 }

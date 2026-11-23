@@ -1032,10 +1032,7 @@ export class NativeStackController extends StackLifecycle {
       WAKEUP_DRIVER: "graphile",
       AGENT_RUNTIME: "pi",
       SANDBOX_PROVIDER: "local-vm",
-      // The host bridge is addressed for containers; these processes are on the host itself.
-      SANDBOX_HOST_URL: this.deps.hostComputer
-        ? this.deps.hostComputer.url.replace("//host.docker.internal:", "//127.0.0.1:")
-        : "",
+      SANDBOX_HOST_URL: this.deps.hostComputer?.url ?? "",
       SANDBOX_HOST_TOKEN: this.deps.hostComputer?.token ?? "",
       // As on Docker: content stays on this computer, under its own disk encryption.
       CONTENT_ENCRYPTION: "off",

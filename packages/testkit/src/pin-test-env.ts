@@ -1,6 +1,17 @@
 import { randomUUID } from "node:crypto";
-import { afterAll } from "vitest";
+import { afterAll, afterEach, vi } from "vitest";
 import { pinLocalSecretStore } from "./pin-secret-store.js";
+
+// Files that share loaded modules must not leave fake timers behind for the next file. Vitest
+// undoes spies and stubs only before each test, so a file's last ones are undone here as well.
+afterEach(() => {
+  vi.useRealTimers();
+});
+afterAll(() => {
+  vi.restoreAllMocks();
+  vi.unstubAllEnvs();
+  vi.unstubAllGlobals();
+});
 
 const dom = (
   globalThis as typeof globalThis & {

@@ -501,3 +501,30 @@ describe("oversized Supermemory answers", () => {
     expect(result).not.toEqual({ ok: false, error: "Supermemory response is too large." });
   });
 });
+
+describe("supermemory emoji limits", () => {
+  it("does not cut an emoji in half when saving", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response("", { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const limit = MAX_MEMORY_CONTENT_CHARS - 1;
+    await saveSupermemoryMemory(`${"x".repeat(limit)}😀 tail`, "rakazo:bot-123", config);
+    const body = JSON.parse(fetchMock.mock.calls[0]![1].body);
+    expect(body.content).toBe("x".repeat(limit));
+    vi.unstubAllGlobals();
+  });
+
+  it("does not cut an emoji in half in a recalled memory", async () => {
+    const limit = MAX_MEMORY_CONTENT_CHARS - 1;
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValue(
+          new Response(JSON.stringify({ results: [{ memory: `${"x".repeat(limit)}😀 tail` }] })),
+        ),
+    );
+    const result = await searchSupermemory("anything", "rakazo:bot-123", config);
+    expect(result.ok && result.results[0]?.memory).toBe("x".repeat(limit));
+    vi.unstubAllGlobals();
+  });
+});
