@@ -58,6 +58,8 @@ export function browserReadyCommand(
     "        launch_browser",
     "        deadline=$((SECONDS + 20))",
     "      fi",
+    "    else",
+    "      unanswered=0",
     "    fi",
     // The browser found running can be closed, by its window or a home save, before its port
     // answers. Start it again once rather than wait out a browser that is gone.
