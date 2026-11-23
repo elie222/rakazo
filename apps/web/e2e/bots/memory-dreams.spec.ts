@@ -19,9 +19,10 @@ test("memory dreams: empty state, a dream now, and paused while memory is off", 
   await expect(page.getByTestId("bot-dream-now")).toBeEnabled();
   await captureScreenshot(page, testInfo, "memory-dreams-empty");
 
-  // Dreaming now records a run at once; its row reads as working while it starts.
+  // Dreaming now records a run at once; the row shows the dream whether it is still running or
+  // already finished.
   await page.getByTestId("bot-dream-now").click();
-  await expect(page.getByTestId("bot-dreams")).toContainText("Working");
+  await expect(page.getByTestId("bot-dreams").getByRole("listitem")).toHaveCount(1);
   await captureScreenshot(page, testInfo, "memory-dreams-record");
 
   // Turning both banks off pauses dreams instead of leaving a dead control.

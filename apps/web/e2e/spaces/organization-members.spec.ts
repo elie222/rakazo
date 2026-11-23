@@ -109,7 +109,11 @@ test("an owner invites someone to the organization, who joins with a private Spa
   // A Space's owner picks them from the organization instead of sending a link.
   await ownerPage.keyboard.press("Escape");
   const sidebar = ownerPage.locator("aside").first();
-  await sidebar.getByRole("button", { name: "Settings for Team" }).press("Enter");
+  await sidebar.getByRole("button", { name: "Actions for Team" }).press("Enter");
+  await ownerPage
+    .getByRole("menu", { name: "Actions for space" })
+    .getByRole("menuitem", { name: "Settings" })
+    .click();
   const spaceSettings = ownerPage.getByTestId("space-members-settings");
   await spaceSettings.getByRole("button", { name: "Invite" }).click();
   await expect(ownerPage.getByRole("menuitem", { name: "Copy invite link" })).toBeVisible();

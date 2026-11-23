@@ -131,7 +131,7 @@ test("bot creation, editing, and deletion persist", async ({ page }, testInfo) =
     await input.press("Enter");
   }
   const descriptionInput = page.getByRole("textbox", {
-    name: "How other bots see it",
+    name: "Description",
     exact: true,
   });
   await editName("Researcher");

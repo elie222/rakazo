@@ -7,7 +7,6 @@ import {
   completeOnboarding,
   createNamedBot,
   openBotLibrary,
-  openBotPanel,
   rpc,
   signup,
 } from "../helpers/helpers";
@@ -1266,7 +1265,7 @@ test("specific people review a version and lose access when removed", async ({
     await page.getByRole("button", { name: "Close page", exact: true }).click();
     const card = page.getByTestId("page-card").filter({ hasText: title });
     await expect(card).toContainText("Page · Specific people");
-    await openBotPanel(page);
+    await openBotLibrary(page);
     const library = page.getByTestId("bot-pages").filter({ visible: true });
     await expect(library.getByRole("listitem").filter({ hasText: title })).toContainText(
       "Specific people",
