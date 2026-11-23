@@ -109,8 +109,9 @@ function readFileRangeResult(
   };
   // The full range with no continuation note can be shorter than one line less, so check it
   // apart; below `wanted` the note is always present and the length grows with every line.
-  if (JSON.stringify(rangeResult(wanted)).length <= TOOL_RESULT_TEXT_LIMIT) {
-    return rangeResult(wanted);
+  const requestedRange = rangeResult(wanted);
+  if (JSON.stringify(requestedRange).length <= TOOL_RESULT_TEXT_LIMIT) {
+    return requestedRange;
   }
   let lo = 0;
   let hi = wanted - 1;
