@@ -14,6 +14,7 @@ import type {
 } from "@rakazo/core";
 import {
   bindComposerMention,
+  clampMentionHighlightIndex,
   composerMentionQuery,
   composerMentionSegments,
   composerMentionsForPrompt,
@@ -21,17 +22,17 @@ import {
   composerSlashOptions,
   composerSlashQuery,
   filterComposerMentionTargets,
-  mentionChipKey,
   removeComposerSlashQuery,
   resolveComposerMentionBackspace,
   resolveComposerMentionEdit,
+  resolveMentionPickerKey,
   serializeComposerPrompt,
   truncateSlashDescription,
 } from "@rakazo/core";
 import { MAX_FONT_SCALE } from "@rakazo/ui-tokens";
 import type { Ref } from "react";
 import { useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
-import type { TextInputInstance, ViewStyle } from "react-native";
+import type { ScrollViewInstance, TextInputInstance, ViewStyle } from "react-native";
 import {
   AppState,
   Pressable,
@@ -48,10 +49,10 @@ import { useComposerHardwareEnterPreference } from "../../lib/composer/composer-
 import type { ComposerModel } from "../../lib/composer/composer-model";
 import { useMobileTokens, useResolvedAppearance } from "../../lib/native/native";
 import type { ComposerSnapshot } from "../../lib/thread/send/thread-feedback";
-import { BotAvatar } from "../bots/bot-avatar";
 import { GlassSurface } from "../native/glass-surface";
 import { NativeSymbol } from "../native/native-symbol";
 import { ComposerKeyboard } from "./composer-keyboard";
+import { ComposerMentionPicker } from "./composer-mention-picker";
 import { ModelChip, TrailingControls } from "./composer-model-chip";
 import { DictationBar } from "./dictation-bar";
 
@@ -74,10 +75,6 @@ export type ThreadComposerHandle = {
 
 const DRAFT_SAVE_DELAY_MS = 500;
 const MENTION_PICKER_MAX_ROWS = 5;
-const MENTION_ROW_HEIGHT = 44;
-const MENTION_ROW_PADDING = 14;
-const MENTION_ROW_GAP = 12;
-const MENTION_AVATAR_SIZE = 24;
 
 type ThreadComposerProps = {
   ref: Ref<ThreadComposerHandle>;
@@ -313,7 +310,14 @@ export function ThreadComposer({
     slashQuery !== null && mentionQuery === null
       ? composerSlashOptions(slashQuery, agentSkills, (action) => slashActionLabel(action.id))
       : { skills: [], actions: [] };
+  const pickerScroll = useRef<ScrollViewInstance>(null);
+  const pickerRowOffsets = useRef<number[]>([]);
+  const [pickerIndex, setPickerIndex] = useState(0);
+  const optionCount = mentionOptions.length || slashSkillOptions.length + slashActionOptions.length;
+  const activePickerIndex = clampMentionHighlightIndex(pickerIndex, optionCount);
+
   function updatePickerQueries(value: string, start: number, end = start) {
+    setPickerIndex(0);
     // One skill per message: a chosen skill keeps the slash menu closed.
     setSlashQuery(
       selectedSkill ? null : composerSlashQuery(value, start, end, bindingsRef.current),
@@ -468,12 +472,43 @@ export function ThreadComposer({
     (!canSend && dictation.status === "idle");
 
   const enterToSend = useComposerHardwareEnterPreference();
-  const hardwareEnterEnabled =
-    enterToSend &&
-    !sendBlocked &&
-    mentionOptions.length === 0 &&
-    slashSkillOptions.length === 0 &&
-    slashActionOptions.length === 0;
+  const hardwareKeys = optionCount
+    ? ["Enter", "ArrowUp", "ArrowDown", "Escape", "Tab"]
+    : enterToSend && !sendBlocked
+      ? ["Enter"]
+      : [];
+
+  function onHardwareKey(key: string) {
+    const action = resolveMentionPickerKey({
+      key,
+      optionCount,
+      highlightedIndex: activePickerIndex,
+      enterToSend,
+    });
+    switch (action.type) {
+      case "complete": {
+        const mention = mentionOptions[action.index];
+        const skill = slashSkillOptions[action.index];
+        const slashAction = slashActionOptions[action.index - slashSkillOptions.length];
+        if (mention) insertMention(mention);
+        else if (skill) insertSkill(skill);
+        else if (slashAction) runSlashAction(slashAction.id);
+        break;
+      }
+      case "move":
+        setPickerIndex(action.index);
+        pickerScroll.current?.scrollTo({ y: pickerRowOffsets.current[action.index] ?? 0 });
+        break;
+      case "dismiss":
+        completedSelection.current = nativeSelection.current.start;
+        setMentionQuery(null);
+        setSlashQuery(null);
+        break;
+      case "send":
+        if (!sendBlocked) sendOrFinish();
+        break;
+    }
+  }
 
   const sendButton = (
     <Pressable
@@ -502,70 +537,19 @@ export function ThreadComposer({
   return (
     <>
       {mentionOptions.length ? (
-        <ScrollView
-          testID="mention-picker"
-          keyboardShouldPersistTaps="handled"
-          style={{
-            flexGrow: 0,
-            flexShrink: 1,
-            marginTop: 12,
-            borderRadius: 14,
-            borderWidth: 1,
-            borderColor: tokens.border,
-            backgroundColor: tokens.card,
-            overflow: "hidden",
+        <ComposerMentionPicker
+          mentions={mentionOptions}
+          scrollRef={pickerScroll}
+          highlightedIndex={activePickerIndex}
+          onRowLayout={(index, y) => {
+            pickerRowOffsets.current[index] = y;
           }}
-        >
-          {mentionOptions.map((mention, index) => (
-            <View key={mentionChipKey(mention)}>
-              {index > 0 ? (
-                <View
-                  style={{
-                    height: 1,
-                    marginStart: MENTION_ROW_PADDING + MENTION_AVATAR_SIZE + MENTION_ROW_GAP,
-                    backgroundColor: tokens.border,
-                  }}
-                />
-              ) : null}
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel={t`@${ph({ name: mention.name })}`}
-                onPress={() => insertMention(mention)}
-                style={{
-                  flexDirection: "row",
-                  alignItems: "center",
-                  gap: MENTION_ROW_GAP,
-                  minHeight: MENTION_ROW_HEIGHT,
-                  paddingHorizontal: MENTION_ROW_PADDING,
-                }}
-              >
-                <MentionOptionIcon mention={mention} />
-                <Text
-                  numberOfLines={1}
-                  style={{ flexShrink: 1, color: tokens.foreground, fontSize: 17 }}
-                >
-                  {mention.name}
-                </Text>
-                {mention.kind === "routine" || mention.kind === "connector" ? (
-                  <Text
-                    numberOfLines={1}
-                    style={{
-                      flex: 1,
-                      textAlign: "right",
-                      color: tokens.mutedForeground,
-                      fontSize: 13,
-                    }}
-                  >
-                    {mention.subtitle}
-                  </Text>
-                ) : null}
-              </Pressable>
-            </View>
-          ))}
-        </ScrollView>
+          onPick={insertMention}
+        />
       ) : null}
       {slashSkillOptions.length || slashActionOptions.length ? (
         <ScrollView
+          ref={pickerScroll}
           testID="slash-picker"
           keyboardShouldPersistTaps="handled"
           style={{
@@ -579,18 +563,23 @@ export function ThreadComposer({
             overflow: "hidden",
           }}
         >
-          {slashSkillOptions.map((skill) => (
+          {slashSkillOptions.map((skill, index) => (
             <Pressable
               key={skill.id}
               accessibilityRole="button"
               accessibilityLabel={t`Skill ${ph({ name: skill.name })}`}
               onPress={() => insertSkill(skill)}
+              accessibilityState={{ selected: index === activePickerIndex }}
+              onLayout={(event) => {
+                pickerRowOffsets.current[index] = event.nativeEvent.layout.y;
+              }}
               style={{
                 flexDirection: "row",
                 alignItems: "flex-start",
                 gap: 10,
                 paddingHorizontal: 14,
                 paddingVertical: 10,
+                backgroundColor: index === activePickerIndex ? tokens.muted : undefined,
               }}
             >
               <NativeSymbol
@@ -610,18 +599,27 @@ export function ThreadComposer({
               </View>
             </Pressable>
           ))}
-          {slashActionOptions.map((action) => (
+          {slashActionOptions.map((action, index) => (
             <Pressable
               key={action.id}
               accessibilityRole="button"
               accessibilityLabel={slashActionLabel(action.id)}
               onPress={() => runSlashAction(action.id)}
+              accessibilityState={{
+                selected: slashSkillOptions.length + index === activePickerIndex,
+              }}
+              onLayout={(event) => {
+                pickerRowOffsets.current[slashSkillOptions.length + index] =
+                  event.nativeEvent.layout.y;
+              }}
               style={{
                 flexDirection: "row",
                 alignItems: "center",
                 gap: 10,
                 paddingHorizontal: 14,
                 paddingVertical: 10,
+                backgroundColor:
+                  slashSkillOptions.length + index === activePickerIndex ? tokens.muted : undefined,
               }}
             >
               <NativeSymbol
@@ -674,10 +672,8 @@ export function ThreadComposer({
           fallbackStyle={styles.composerFill}
         >
           <ComposerKeyboard
-            enabled={hardwareEnterEnabled}
-            onHardwareEnter={() => {
-              if (hardwareEnterEnabled) sendOrFinish();
-            }}
+            keys={hardwareKeys}
+            onHardwareKey={(event) => onHardwareKey(event.nativeEvent.key)}
             style={{
               flex: stacked ? undefined : 1,
               // Room for the text comes first; the model chip shrinks instead.
@@ -949,44 +945,5 @@ export function ThreadComposer({
         </GlassSurface>
       </View>
     </>
-  );
-}
-
-function MentionOptionIcon({ mention }: { mention: ComposerMention }) {
-  const tokens = useMobileTokens();
-  if (mention.kind === "bot") {
-    return (
-      <BotAvatar
-        color={mention.color ?? tokens.mutedForeground}
-        avatarSet={mention.avatarSet}
-        identity={mention.id}
-        size={MENTION_AVATAR_SIZE}
-      />
-    );
-  }
-  const symbol =
-    mention.kind === "routine"
-      ? ({ ios: "clock", android: "time-outline" } as const)
-      : mention.kind === "connector"
-        ? ({ ios: "puzzlepiece.extension", android: "extension-puzzle-outline" } as const)
-        : ({ ios: "person.3.fill", android: "people" } as const);
-  return (
-    <View
-      style={{
-        width: MENTION_AVATAR_SIZE,
-        height: MENTION_AVATAR_SIZE,
-        borderRadius: MENTION_AVATAR_SIZE / 2,
-        backgroundColor: tokens.muted,
-        alignItems: "center",
-        justifyContent: "center",
-      }}
-    >
-      <NativeSymbol
-        ios={symbol.ios}
-        android={symbol.android}
-        size={14}
-        color={tokens.mutedForeground}
-      />
-    </View>
   );
 }

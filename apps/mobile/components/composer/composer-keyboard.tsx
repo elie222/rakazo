@@ -6,8 +6,8 @@ import { View } from "react-native";
 type ComposerKeyboardProps = {
   children: ReactNode;
   style: ViewProps["style"];
-  enabled: boolean;
-  onHardwareEnter: () => void;
+  keys: string[];
+  onHardwareKey: (event: { nativeEvent: { key: string } }) => void;
 };
 
 const NativeComposerKeyboard = requireOptionalNativeModule("RakazoComposerKeyboard")

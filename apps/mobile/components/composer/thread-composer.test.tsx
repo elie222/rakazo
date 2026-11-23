@@ -201,23 +201,26 @@ vi.mock("expo", () => ({
     () =>
     ({
       children,
-      enabled,
-      onHardwareEnter,
+      keys,
+      onHardwareKey,
     }: {
       children: ReactNode;
-      enabled: boolean;
-      onHardwareEnter: () => void;
+      keys: string[];
+      onHardwareKey: (event: { nativeEvent: { key: string } }) => void;
     }) =>
       createElement(
         "div",
         null,
         children,
-        createElement("button", {
-          type: "button",
-          "aria-label": "Hardware Enter",
-          disabled: !enabled,
-          onClick: onHardwareEnter,
-        }),
+        ["Enter", "ArrowDown", "Escape"].map((key) =>
+          createElement("button", {
+            key,
+            type: "button",
+            "aria-label": `Hardware ${key}`,
+            disabled: !keys.includes(key),
+            onClick: () => onHardwareKey({ nativeEvent: { key } }),
+          }),
+        ),
       ),
 }));
 vi.mock("expo-secure-store", () => ({ getItemAsync: vi.fn(), setItemAsync: vi.fn() }));
@@ -935,12 +938,40 @@ describe("thread composer isolation", () => {
     expect(props.send).not.toHaveBeenCalled();
   });
 
-  it("leaves an unfinished mention in the draft on hardware Enter", () => {
+  it("completes a mention before a later Enter sends the draft", () => {
     type("Ask @He");
+    press("Hardware Enter");
+    expect(composer.current!.snapshot().mentions).toEqual([bot]);
+    expect(props.send).not.toHaveBeenCalled();
 
     press("Hardware Enter");
+    expect(props.send).toHaveBeenCalledOnce();
+  });
 
-    expect(props.send).not.toHaveBeenCalled();
+  it("selects the highlighted skill even with Enter to send disabled", async () => {
+    await act(() => setComposerEnterToSendPreference(false));
+    try {
+      const other = { ...skill, id: "skill-2", name: "Drawing" };
+      render({ agentSkills: [other, skill] });
+      type("/");
+      press("Hardware ArrowDown");
+
+      press("Hardware Enter");
+
+      expect(composer.current!.snapshot().skill).toEqual(skill);
+      expect(props.send).not.toHaveBeenCalled();
+    } finally {
+      await act(() => setComposerEnterToSendPreference(true));
+    }
+  });
+
+  it("dismisses the picker with Escape and keeps the draft", () => {
+    type("Ask @He");
+
+    press("Hardware Escape");
+
+    expect(container.querySelector('[data-testid="mention-picker"]')).toBeNull();
+    expect(composer.current!.snapshot().promptText).toBe("Ask @He");
   });
 
   it("leaves hardware Enter blocked while dictation is transcribing", () => {
