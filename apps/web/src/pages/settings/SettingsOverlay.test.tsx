@@ -223,25 +223,21 @@ it("lists the spaces under Spaces and opens the one picked", async () => {
   }
 });
 
-it("shows a lone space's members under Spaces instead of a page of its own", async () => {
-  const onNewSpace = vi.fn();
+it("lists a lone space by name and opens its own page", async () => {
+  const onOpenSpace = vi.fn();
   const { container, cleanup } = await render({
     space: acme,
     spaces: [acme],
-    onNewSpace,
-    section: "space",
+    onOpenSpace,
+    section: "spaces",
   });
   try {
-    expect(
-      container.querySelector("[data-settings-section]")?.getAttribute("data-settings-section"),
-    ).toBe("spaces");
-    expect(container.querySelector('[data-testid="space-members"]')?.textContent).toBe("space-a");
-    expect(container.querySelector('[data-testid="space-settings"]')).toBeNull();
-    const create = [...container.querySelectorAll("button")].find(
-      (item) => item.textContent === "New private space",
+    expect(container.querySelector('[data-testid="settings-spaces"]')?.textContent).toContain(
+      "Acme",
     );
-    await act(async () => create?.click());
-    expect(onNewSpace).toHaveBeenCalled();
+    expect(container.querySelector('[data-testid="space-members"]')).toBeNull();
+    await act(async () => button(container, "Manage Acme").click());
+    expect(onOpenSpace).toHaveBeenCalledWith("space-a");
   } finally {
     await cleanup();
   }

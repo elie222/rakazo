@@ -1,6 +1,10 @@
 import { oc } from "@orpc/contract";
 import * as z from "zod";
-import { AnalyticsSurface, ModelSignInCancelReason } from "../account/analytics.js";
+import {
+  AnalyticsAppVersion,
+  AnalyticsSurface,
+  ModelSignInCancelReason,
+} from "../account/analytics.js";
 import { Id, ThinkingLevelSchema } from "../ids.js";
 import { SettingsScopeSchema, settingsScopeInput } from "../settings-scope.js";
 import { DeploymentModelSettingsSchema, DeploymentModelUpdateSchema } from "./deployment-model.js";
@@ -62,7 +66,14 @@ export const modelsRpc = {
       .input(modelChoiceListSchema(ModelRoleChoiceSchema))
       .output(z.object({ ok: z.literal(true) })),
     connect: oc
-      .input(ModelConnectInputSchema.and(z.object({ surface: AnalyticsSurface.optional() })))
+      .input(
+        ModelConnectInputSchema.and(
+          z.object({
+            surface: AnalyticsSurface.optional(),
+            appVersion: AnalyticsAppVersion.optional(),
+          }),
+        ),
+      )
       .output(ModelCredentialSchema),
     /** Deployment-wide switch for plain-HTTP model endpoints; reads and edits are admin-only. */
     httpEndpointsAllowed: oc.output(z.object({ allowed: z.boolean() })),
@@ -102,6 +113,7 @@ export const modelsRpc = {
           /** No loopback listener (web, mobile): the provider shows a code to paste instead. */
           codePage: z.boolean().optional(),
           surface: AnalyticsSurface.optional(),
+          appVersion: AnalyticsAppVersion.optional(),
         }),
       )
       .output(ModelOAuthBeginSchema),

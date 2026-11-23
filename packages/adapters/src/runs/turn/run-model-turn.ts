@@ -227,6 +227,7 @@ function modelTurnRequest(
       // A background helper is not offered the history tools, so it gets no guidance on them.
       historyRetrievalEnabled:
         contextStrategy !== "current" && tools.some((tool) => tool.name === "search_history"),
+      historyMyChats: ctx.source.myChatsAllowed,
       computerInstruction,
       pageBrowserAllowed,
       taskCatalogInstruction,

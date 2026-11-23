@@ -7,7 +7,6 @@ import {
   redactSecrets,
   renderBotDirectory,
 } from "@rakazo/core";
-import { mayBeChannelMessage } from "@rakazo/db";
 import { bestEffort } from "@rakazo/logging";
 import { loadBotGroupDirectory } from "../../bots/group-handoff.js";
 import { parsePlaybook } from "../../bots/teaching-session.js";
@@ -21,7 +20,6 @@ import { builtinAgentSkillRecords } from "../../tools/skill-tools.js";
 import type { RunExecutorServices, RunHold } from "../lifecycle/run-attempt.js";
 import { buildApprovalContinuation } from "../lifecycle/run-effects.js";
 import { createReplyState } from "../lifecycle/run-progress.js";
-import { historyMyChatsAllowed } from "../tools/run-tools-memory.js";
 import { withLatestStepScreenshot, withRecentTurnImages } from "../turn/run-turn-images.js";
 import { missingTurnImagesInstruction } from "../turn/run-turn-images.prompt.js";
 import { checkpointAnswerHistory } from "./checkpoint-answer-history.js";
@@ -87,8 +85,6 @@ export async function createRunContext(
     task,
     thread,
     conversationThread,
-    conversationRun,
-    origin,
   } = parts.records;
   const { connectedPlugins, context, memoryScope, runAbortController, semanticMemory } =
     parts.connected;
@@ -115,7 +111,6 @@ export async function createRunContext(
     ownerStartedRun,
     pageBrowserAllowed,
     replyMode,
-    sourceMessage,
     userComputerOwnerId,
     voiceCall,
   } = parts.capabilities;
@@ -123,6 +118,7 @@ export async function createRunContext(
     approvedEffectReplays,
     connectorTools,
     initiallyTainted,
+    myChatsAllowed,
     initialOutsideText,
     searchResultUrls,
     strategicBuiltins,
@@ -200,16 +196,7 @@ export async function createRunContext(
       channelId,
       historySearchBeforeSeq,
       conversationThreadId: conversationThread.id,
-      myChatsAllowed: historyMyChatsAllowed(
-        conversationRun,
-        origin?.sourceMessage ?? sourceMessage,
-        nonOwnerChatRun ||
-          Boolean(
-            channelId ||
-              conversationThread.externalConversationId ||
-              (sourceMessage && mayBeChannelMessage(sourceMessage)),
-          ),
-      ),
+      myChatsAllowed,
       voiceCall,
       callEndRun,
       callClientNonce: callClientNonceForRun,

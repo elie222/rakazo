@@ -108,14 +108,15 @@ test("a new space starts empty, is renamed in its settings, and is deleted with 
   await expect(page).not.toHaveURL(/\/onboarding/);
   await expect(sidebar.getByRole("button", { name: /^Chief/ })).toHaveCount(1);
 
-  // With one Space left, Spaces shows its members and a way to start another, not a page of its own.
+  // With one Space left, Spaces still names it, and its members are on its own page.
   await page.goto("/app?settings=spaces");
   const single = page.getByTestId("user-settings");
-  await expect(single.getByTestId("space-members-settings")).toBeVisible();
-  await expect(single.getByRole("button", { name: "Invite" })).toBeVisible();
   await expect(single.getByRole("button", { name: "New private space" })).toBeVisible();
-  await expect(single.getByRole("button", { name: /^Manage / })).toHaveCount(0);
+  await expect(single.getByTestId("space-members-settings")).toHaveCount(0);
   await captureScreenshot(page, testInfo, "settings-spaces-single");
+  await single.getByRole("button", { name: /^Manage / }).click();
+  await expect(single.getByTestId("space-members-settings")).toBeVisible();
+  await expect(single.getByTestId("space-setting-overrides")).toHaveCount(0);
 });
 
 test("deleting the last bot in a space stays in the app after first use", {

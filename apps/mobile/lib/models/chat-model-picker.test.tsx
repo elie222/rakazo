@@ -97,6 +97,7 @@ const catalog = Array.from({ length: 11 }, (_, index) => ({
   ...(index === 1 ? { live: true } : {}),
 }));
 
+vi.mock("../platform/app-version", () => ({ analyticsAppVersion: () => undefined }));
 vi.mock("../layout/side-insets", () => ({ useSideInsets: () => ({}) }));
 vi.mock("react-native-safe-area-context", () => ({
   useSafeAreaInsets: () => ({ bottom: 34 }),

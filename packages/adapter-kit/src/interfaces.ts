@@ -638,10 +638,13 @@ export interface BillingProvider {
    * Credits never count.
    */
   listPlanPayments?(customerId: string, since: Date): Promise<BillingPlanPayment[]>;
-  /** Inspects or fully refunds the card payment for a customer-owned invoice. */
+  /**
+   * Inspects or fully refunds the card payment for a customer-owned paid invoice, named by its
+   * number or id; without one, the newest paid invoice.
+   */
   refundInvoice?(
     customerId: string,
-    invoiceNumber: string,
+    invoice: string | undefined,
     confirm: boolean,
   ): Promise<BillingInvoiceRefund | null>;
   setMonthlyCredits?(customerId: string, amountCents: number): Promise<void>;
