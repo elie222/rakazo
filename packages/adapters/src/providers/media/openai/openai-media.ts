@@ -62,10 +62,15 @@ export class OpenAIMediaGenerationProvider implements MediaGenerationProvider {
         ...input,
         costMicros: (usage) => {
           const rates = MODELS.get(this.options.imageModel);
-          if (!rates?.outputToken || usage.output_tokens === undefined) return undefined;
+          // A partial count would undercharge, so the image is then charged at its saved price.
+          if (
+            !rates?.outputToken ||
+            usage.input_tokens === undefined ||
+            usage.output_tokens === undefined
+          )
+            return undefined;
           return (
-            (usage.input_tokens ?? 0) * (rates.textToken ?? 0) +
-            usage.output_tokens * rates.outputToken
+            usage.input_tokens * (rates.textToken ?? 0) + usage.output_tokens * rates.outputToken
           );
         },
       },

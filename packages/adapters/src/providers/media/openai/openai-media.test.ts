@@ -70,6 +70,19 @@ describe("images API media generation", () => {
       costMicros: 30_100,
     });
   });
+  it("leaves an image with no input count to its saved price", async () => {
+    const fetch = vi
+      .fn<typeof globalThis.fetch>()
+      .mockResolvedValueOnce(json({ ...image(PNG), usage: { output_tokens: 1_000 } }));
+    const provider = new OpenAIMediaGenerationProvider({
+      apiKey: "fake-key",
+      imageModel: "gpt-image-2",
+      fetch,
+    });
+    expect(await provider.generateImage({ prompt: "draw" }, context)).not.toHaveProperty(
+      "costMicros",
+    );
+  });
   it("defaults to the vendor endpoint", async () => {
     const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValueOnce(json(image(PNG)));
     await new OpenAIMediaGenerationProvider({
