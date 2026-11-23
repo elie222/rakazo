@@ -94,6 +94,7 @@ const BRIDGE_ENV = {
 export function claudeCodeEnv(
   source: NodeJS.ProcessEnv = process.env,
   extra: Record<string, string> = {},
+  emptyConfigDir?: string,
 ): Record<string, string> {
   const env: Record<string, string> = {};
   for (const [key, value] of Object.entries(source)) {
@@ -103,7 +104,11 @@ export function claudeCodeEnv(
   }
   const token =
     source.RAKAZO_CLAUDE_CODE_SETUP_TOKEN === "1" ? source[OPT_IN_TOKEN_NAME] : undefined;
-  if (token) env[OPT_IN_TOKEN_NAME] = token;
+  if (token) {
+    env[OPT_IN_TOKEN_NAME] = token;
+    // The token needs no stored profile, and the CLI tells the model the profile's email.
+    if (emptyConfigDir) env.CLAUDE_CONFIG_DIR = emptyConfigDir;
+  }
   return { ...env, ...BRIDGE_ENV, ...extra };
 }
 
