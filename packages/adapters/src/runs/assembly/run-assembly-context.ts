@@ -380,7 +380,6 @@ export async function buildTurnPrompt(
           endsAt: true,
           active: true,
           nextRunAt: true,
-          lastRunAt: true,
         },
       }),
     );

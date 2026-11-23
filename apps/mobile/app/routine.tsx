@@ -11,6 +11,7 @@ import {
   isOneShotRoutineCrons,
   routineCopy,
   routineRepeats,
+  wallClock,
 } from "@rakazo/core";
 import { Stack, useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
@@ -573,7 +574,14 @@ function RoutineEditor({
             </SettingsGroup>
           ) : null}
           {repeats ? (
-            <RoutineEndDate endsOn={draft.endsOn} onChange={(endsOn) => update({ endsOn })} />
+            <RoutineEndDate
+              endsOn={draft.endsOn}
+              today={wallClock(new Date(), base?.timezone ?? deviceTimeZone() ?? "UTC").slice(
+                0,
+                10,
+              )}
+              onChange={(endsOn) => update({ endsOn })}
+            />
           ) : null}
           {locked ? null : (
             <SettingsGroup>

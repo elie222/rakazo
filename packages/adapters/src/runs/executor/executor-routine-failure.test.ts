@@ -138,7 +138,7 @@ async function failRun(scenario: Scenario) {
             scenario.nextRunAt === undefined
               ? new Date(NOW.getTime() + 24 * 60 * MINUTE)
               : scenario.nextRunAt,
-          ...(scenario.endsAt ? { endsAt: scenario.endsAt, active: false } : {}),
+          ...(scenario.endsAt ? { endsAt: scenario.endsAt, active: true, watch: null } : {}),
           ...(scenario.oneShot ? { userId: "user-1", active: false, lastRunAt: NOW } : {}),
         };
       }),

@@ -25,34 +25,27 @@ beforeEach(() => vi.useFakeTimers({ now }));
 afterEach(() => vi.useRealTimers());
 
 describe("routineEnded", () => {
-  it("counts a routine as ended only once no run is left before its end", () => {
-    const endsAt = new Date("2026-11-30T23:59:59.999Z");
+  const endsAt = new Date("2026-11-30T23:59:59.999Z");
+
+  it("counts a routine as ended only while it is on with no run left", () => {
+    expect(routineEnded({ ...daily, active: true, nextRunAt: null, endsAt })).toBe(true);
     expect(routineEnded({ ...daily, endsAt })).toBe(false);
-    expect(routineEnded({ ...daily, endsAt: null })).toBe(false);
-    expect(routineEnded({ ...daily, active: false, nextRunAt: null, endsAt })).toBe(false);
-    expect(
-      routineEnded({
-        ...daily,
-        active: false,
-        nextRunAt: null,
-        endsAt: new Date("2026-11-24T08:00:00.000Z"),
-      }),
-    ).toBe(true);
+    expect(routineEnded({ ...daily, active: true, nextRunAt: null, endsAt: null })).toBe(false);
   });
 
-  it("counts a watch's next check against its end", () => {
-    const watch = { kind: "http", url: "https://example.com", everyMinutes: 60 };
-    const stopped = { ...daily, crons: [], watch, active: false, nextRunAt: null };
-    expect(routineEnded({ ...stopped, endsAt: new Date("2026-11-23T12:30:00.000Z") })).toBe(true);
-    expect(routineEnded({ ...stopped, endsAt: new Date("2026-11-23T13:30:00.000Z") })).toBe(false);
+  it("never counts a paused routine as ended, so running it by hand keeps it", () => {
+    expect(routineEnded({ ...daily, active: false, nextRunAt: null, endsAt })).toBe(false);
   });
 });
 
 describe("routineEndError", () => {
   const routine = { crons: ["0 9 * * *"], watch: null, nextRunAt: daily.nextRunAt };
+  const both = { end: true, nextRun: true };
 
   it("accepts an end after the next run", () => {
-    expect(routineEndError({ ...routine, endsAt: new Date("2026-11-30T00:00:00Z") })).toBeNull();
+    expect(routineEndError({ ...routine, endsAt: new Date("2026-11-30T00:00:00Z") }, both)).toBe(
+      null,
+    );
   });
 
   it.each([
@@ -62,8 +55,26 @@ describe("routineEndError", () => {
     [{ endsAt: new Date("2026-11-24T08:00:00Z") }, "The end date is before the next run."],
   ])("refuses %j", (patch, error) => {
     expect(
-      routineEndError({ ...routine, endsAt: new Date("2026-11-30T00:00:00Z"), ...patch }),
+      routineEndError({ ...routine, endsAt: new Date("2026-11-30T00:00:00Z"), ...patch }, both),
     ).toBe(error);
+  });
+
+  it("refuses an end on a routine that no longer repeats even when the end is unchanged", () => {
+    expect(
+      routineEndError(
+        { ...routine, crons: [], nextRunAt: null, endsAt: new Date("2026-11-30T00:00:00Z") },
+        { end: false, nextRun: false },
+      ),
+    ).toBe("Only a repeating schedule or a watch can have an end date.");
+  });
+
+  it("lets a routine past its end be paused without touching the end", () => {
+    expect(
+      routineEndError(
+        { ...routine, nextRunAt: null, endsAt: new Date("2026-11-22T00:00:00Z") },
+        { end: false, nextRun: true },
+      ),
+    ).toBeNull();
   });
 });
 
@@ -88,7 +99,7 @@ describe("deleteSpentRoutine", () => {
     userId: "user-1",
     threadId: "thread-1",
     name: "Black Friday deals",
-    active: false,
+    active: true,
     nextRunAt: null,
     webhookEnabled: false,
     githubEnabled: false,
@@ -106,7 +117,7 @@ describe("deleteSpentRoutine", () => {
     await expect(deleteSpentRoutine(deps, input)).resolves.toBe(true);
 
     expect(deleteMany).toHaveBeenCalledWith({
-      where: expect.objectContaining({ id: "routine-1", userId: "user-1", endsAt, active: false }),
+      where: expect.objectContaining({ id: "routine-1", userId: "user-1", endsAt, active: true }),
     });
     expect(publishSpaceChange).toHaveBeenCalledWith("space-1", "routines");
     expect(db.createThreadMessageInTransaction).toHaveBeenCalledWith(
@@ -119,8 +130,12 @@ describe("deleteSpentRoutine", () => {
     expect(notify).toHaveBeenCalledWith("thread-1", 3);
   });
 
-  it("keeps a paused routine that still has runs left before its end", async () => {
-    const { deps, deleteMany } = setup({ ...spent, endsAt: new Date("2026-11-30T00:00:00Z") });
+  it("keeps a paused routine, whatever is left before its end", async () => {
+    const { deps, deleteMany } = setup({
+      ...spent,
+      active: false,
+      endsAt: new Date("2026-11-23T23:59:59.999Z"),
+    });
     await expect(deleteSpentRoutine(deps, input)).resolves.toBe(false);
     expect(deleteMany).not.toHaveBeenCalled();
   });

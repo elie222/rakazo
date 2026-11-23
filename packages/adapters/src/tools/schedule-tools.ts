@@ -19,12 +19,11 @@ import {
   unevenInterval,
   wallClock,
   zonedDateTime,
-  zonedEndDateTime,
 } from "@rakazo/core";
 import type { PrismaClient, ThreadEvents } from "@rakazo/db";
 import { Prisma, runAsSystemInTransaction } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
-import { routineEndError } from "../routines/routine-end.js";
+import { newRoutineEnd, routineEndError, routineEndFromText } from "../routines/routine-end.js";
 import { postRoutineNotice, routineEditChange, routineEdited } from "../routines/routine-notice.js";
 import type { RoutineEvents } from "../routines/routine-triggers.js";
 import {
@@ -290,38 +289,6 @@ export function describeRoutineTiming(row: {
     nextRun: row.nextRunAt ? local(row.nextRunAt) : null,
     ...(row.endsAt ? { endAt: local(row.endsAt) } : {}),
   };
-}
-
-function routineEndFromTool(
-  value: string | undefined,
-  timezone: string,
-): { endsAt: Date | null | undefined } | { error: string } {
-  if (value === undefined) return { endsAt: undefined };
-  if (value.trim().toLowerCase() === "none") return { endsAt: null };
-  const endsAt = zonedEndDateTime(value, timezone);
-  return endsAt
-    ? { endsAt }
-    : { error: 'endAt must be an ISO date or datetime, or "none" to remove the end.' };
-}
-
-function toolRoutineEndError(
-  routine: Parameters<typeof routineEndError>[0],
-  timezone: string,
-): string | undefined {
-  const error = routineEndError(routine);
-  return error ? `${error} ${nowIn(timezone)}` : undefined;
-}
-
-function newRoutineEnd(
-  endAt: string | undefined,
-  timezone: string,
-  timing: { crons: string[]; watch: unknown; nextRunAt: Date | null },
-): { endsAt: Date | null } | { error: string } {
-  const end = routineEndFromTool(endAt, timezone);
-  if ("error" in end) return end;
-  const endsAt = end.endsAt ?? null;
-  const error = toolRoutineEndError({ ...timing, endsAt }, timezone);
-  return error ? { error } : { endsAt };
 }
 
 function validateRepeatingCron(cron: string): string | null {
@@ -703,7 +670,7 @@ export async function createScheduleFromTool(
       watch: null,
       nextRunAt: eventsOnly ? null : resolved.nextRunAt,
     });
-    if ("error" in end) return { error: end.error } as const;
+    if ("error" in end) return { error: `${end.error} ${nowIn(timezone)}` } as const;
     wakeAt = eventsOnly ? undefined : resolved.nextRunAt;
     return client.routine.create({
       data: {
@@ -825,8 +792,9 @@ export async function scheduleCreateError(
   const timezone = async () => input.timezone ?? (await userTimeZone(prisma, input.userId));
   const endError = async (timing: { crons: string[]; watch: unknown; nextRunAt: Date | null }) => {
     if (input.endAt === undefined) return undefined;
-    const end = newRoutineEnd(input.endAt, await timezone(), timing);
-    return "error" in end ? end.error : undefined;
+    const zone = await timezone();
+    const end = newRoutineEnd(input.endAt, zone, timing);
+    return "error" in end ? `${end.error} ${nowIn(zone)}` : undefined;
   };
   if (input.schedule.watch !== undefined) {
     const parsed = scheduleWatch(input.schedule);
@@ -911,7 +879,7 @@ async function createWatchFromTool(
   // transaction as the insert, so a zone change cannot cross the creation.
   const insertWatch = (client: Pick<Prisma.TransactionClient, "routine">, timezone: string) => {
     const end = newRoutineEnd(input.endAt, timezone, { crons: [], watch: parsed.data, nextRunAt });
-    if ("error" in end) return { error: end.error } as const;
+    if ("error" in end) return { error: `${end.error} ${nowIn(timezone)}` } as const;
     return client.routine.create({
       data: {
         spaceId: input.spaceId,
@@ -1137,7 +1105,7 @@ export async function updateScheduleFromTool(
     }
     timezone = parsed.data;
   }
-  const end = routineEndFromTool(input.endAt, timezone);
+  const end = routineEndFromText(input.endAt, timezone);
   if ("error" in end) return end;
   const endsAt = end.endsAt === undefined ? existing.endsAt : end.endsAt;
   const endChanged = endsAt?.getTime() !== existing.endsAt?.getTime();
@@ -1238,13 +1206,11 @@ export async function updateScheduleFromTool(
   if (crons.length === 0 && existing.watch == null && !hasRoutineEvents(events)) {
     return { error: "A routine needs a schedule or an event. Cancel it instead." };
   }
-  if (endChanged || nextRunAt?.getTime() !== existing.nextRunAt?.getTime()) {
-    const endError = toolRoutineEndError(
-      { endsAt, crons, watch: existing.watch, nextRunAt },
-      timezone,
-    );
-    if (endError) return { error: endError };
-  }
+  const endError = routineEndError(
+    { endsAt, crons, watch: existing.watch, nextRunAt },
+    { end: endChanged, nextRun: nextRunAt?.getTime() !== existing.nextRunAt?.getTime() },
+  );
+  if (endError) return { error: `${endError} ${nowIn(timezone)}` };
   const eventsChanged =
     JSON.stringify(routineEventsView(events)) !== JSON.stringify(routineEventsView(existing));
   // Events the bot sends were checked against the bot's creator, so their key is made even when

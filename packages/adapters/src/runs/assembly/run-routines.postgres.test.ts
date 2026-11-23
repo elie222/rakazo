@@ -139,7 +139,7 @@ describePostgres("routine tick prompt and model consistency (PostgreSQL)", () =>
       system.routine.create({
         data: { ...identity, name: "reminder", prompt: "remind me", ...spent, ...data },
       });
-    const [done, rescheduled, recurring, webhook, busy, paused, ended, endsLater] =
+    const [done, rescheduled, recurring, webhook, busy, paused, ended, pausedPastEnd] =
       await Promise.all([
         create({}),
         create({ active: true, nextRunAt: new Date(Date.now() + 60 * 60_000) }),
@@ -147,8 +147,8 @@ describePostgres("routine tick prompt and model consistency (PostgreSQL)", () =>
         create({ webhookEnabled: true }),
         create({}),
         create({ lastRunAt: null }),
+        create({ crons: ["0 9 * * *"], active: true, endsAt: new Date(Date.now() - 60_000) }),
         create({ crons: ["0 9 * * *"], endsAt: new Date(Date.now() - 60_000) }),
-        create({ crons: ["* * * * *"], endsAt: new Date(Date.now() + 60 * 60_000) }),
       ]);
     const task = await system.task.create({
       data: { ...identity, prompt: "remind me", status: "completed" },
@@ -171,7 +171,7 @@ describePostgres("routine tick prompt and model consistency (PostgreSQL)", () =>
         },
       },
     };
-    const all = [done, rescheduled, recurring, webhook, busy, paused, ended, endsLater];
+    const all = [done, rescheduled, recurring, webhook, busy, paused, ended, pausedPastEnd];
     for (const routine of all)
       await deleteSpentRoutine(deps, { ...identity, routineId: routine.id });
 
@@ -180,7 +180,7 @@ describePostgres("routine tick prompt and model consistency (PostgreSQL)", () =>
       select: { id: true },
     });
     expect(left.map((row) => row.id).sort()).toEqual(
-      [rescheduled.id, recurring.id, webhook.id, busy.id, paused.id, endsLater.id].sort(),
+      [rescheduled.id, recurring.id, webhook.id, busy.id, paused.id, pausedPastEnd.id].sort(),
     );
     expect(published).toEqual([`${identity.spaceId}:routines`, `${identity.spaceId}:routines`]);
     await expect(

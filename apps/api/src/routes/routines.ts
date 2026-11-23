@@ -159,7 +159,10 @@ export function routinesRoutes(ctx: RouterContext) {
         }
         await assertRoutineModel(deps, context.actor, input, codexCatalog);
         const data = routineRowData(context.actor, input, routineNextRunAt(input));
-        const endError = routineEndError({ ...data, watch: input.watch });
+        const endError = routineEndError(
+          { ...data, watch: input.watch },
+          { end: true, nextRun: true },
+        );
         if (endError) throw new ClientError("BAD_REQUEST", endError);
         const row = await deps.prisma.routine.create({ data });
         await announceRoutine(context.actor, bot, row);
@@ -320,10 +323,11 @@ export function routinesRoutes(ctx: RouterContext) {
               ? null
               : new Date(input.endsAt);
         const endChanged = endsAt?.getTime() !== existing.endsAt?.getTime();
-        if (endChanged || nextRunAt?.getTime() !== existing.nextRunAt?.getTime()) {
-          const endError = routineEndError({ endsAt, crons, watch, nextRunAt });
-          if (endError) throw new ClientError("BAD_REQUEST", endError);
-        }
+        const endError = routineEndError(
+          { endsAt, crons, watch, nextRunAt },
+          { end: endChanged, nextRun: nextRunAt?.getTime() !== existing.nextRunAt?.getTime() },
+        );
+        if (endError) throw new ClientError("BAD_REQUEST", endError);
         // What a watch read is not the owner's words, so it never runs as a turn in the chat.
         const inChat = watch ? false : input.inChat;
         const computerPromptHash =

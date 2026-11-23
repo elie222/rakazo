@@ -26,7 +26,6 @@ import { findPendingRoutineTick, routineTimerNonce } from "../../routines/routin
 import {
   deleteSpentRoutine,
   endRoutinePastItsEnd,
-  routineEnded,
   runBeforeEnd,
 } from "../../routines/routine-end.js";
 import { routineGroupThreadId } from "../../routines/routine-thread.js";
@@ -212,6 +211,8 @@ export async function wakeRoutine(deps: ExecutorDeps, routineId: string, schedul
     watchTick?.run ? watchTick.nextRunAt : nextScheduledRunAt(routine, scheduledAt),
     routine.endsAt,
   );
+  const lastRunBeforeEnd =
+    routine.endsAt !== null && nextRunAt === null && !isOneShotRoutineCrons(routine.crons);
   const skillRecords = await listAgentSkillRecords(deps.prisma, {
     spaceId: routine.spaceId,
     userId: routine.userId,
@@ -230,7 +231,7 @@ export async function wakeRoutine(deps: ExecutorDeps, routineId: string, schedul
       data: {
         lastRunAt: new Date(),
         nextRunAt,
-        ...(nextRunAt ? {} : { active: false }),
+        ...(nextRunAt || lastRunBeforeEnd ? {} : { active: false }),
         ...(watchTick?.run ? { watchState: watchTick.state } : {}),
       },
     });
@@ -380,11 +381,7 @@ export async function retryRoutineRun(deps: ExecutorDeps, runId: string) {
     select: {
       active: true,
       crons: true,
-      timezone: true,
-      watch: true,
-      endsAt: true,
       nextRunAt: true,
-      lastRunAt: true,
       userId: true,
       bot: { select: { archivedAt: true } },
       space: { select: { deletingAt: true } },
@@ -402,13 +399,12 @@ export async function retryRoutineRun(deps: ExecutorDeps, runId: string) {
     await notifyAbandonedRetry();
     return;
   }
-  // A one-time routine turns itself off when it fires, and so does a routine's last run before its
-  // end, so only another one counts as paused. A routine someone else has since taken over must not
-  // retry on its former owner's accounts.
+  // A one-time routine turns itself off when it fires, so only a recurring one counts as paused.
+  // A routine someone else has since taken over must not retry on its former owner's accounts.
   if (
     !routine ||
     routine.userId !== failed.userId ||
-    (!routine.active && !isOneShotRoutineCrons(routine.crons) && !routineEnded(routine)) ||
+    (!routine.active && !isOneShotRoutineCrons(routine.crons)) ||
     routine.bot.archivedAt
   ) {
     await notifyAbandonedRetry();

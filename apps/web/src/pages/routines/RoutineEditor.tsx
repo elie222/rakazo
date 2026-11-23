@@ -1,7 +1,7 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { Routine } from "@rakazo/contracts";
 import { ROUTINE_NAME_MAX_LENGTH } from "@rakazo/contracts";
-import { cronFromPreset, isOneShotRoutineCrons, routineRepeats } from "@rakazo/core";
+import { cronFromPreset, isOneShotRoutineCrons, routineRepeats, wallClock } from "@rakazo/core";
 import {
   Button,
   Input,
@@ -306,7 +306,7 @@ export function RoutineEditor({
                     id={`${fieldId}-ends`}
                     type="date"
                     value={draft.endsOn}
-                    min={new Date().toLocaleDateString("en-CA")}
+                    min={wallClock(new Date(), timezone).slice(0, 10)}
                     onChange={(e) => onChange({ ...draft, endsOn: e.target.value })}
                   />
                   {draft.endsOn && !readOnly ? (

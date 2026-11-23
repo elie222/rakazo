@@ -147,33 +147,35 @@ describe("recurring routine catch-up", () => {
 });
 
 describe("a routine with an end", () => {
-  it("turns off on its last run before the end and schedules no later run", async () => {
+  it("stays on with no later run on its last run before the end", async () => {
     const { executor, tx, enqueue, scheduledAt } = pendingTimerFixture(false, {
       endsAt: new Date(),
     });
     await executor.wakeRoutine("routine-1", scheduledAt.toISOString());
     expect(tx.routine.updateMany).toHaveBeenCalledWith(
-      expect.objectContaining({
-        data: expect.objectContaining({ nextRunAt: null, active: false }),
-      }),
+      expect.objectContaining({ data: expect.objectContaining({ nextRunAt: null }) }),
+    );
+    expect(tx.routine.updateMany).not.toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ active: false }) }),
     );
     expect(tx.run.create).toHaveBeenCalledOnce();
     expect(enqueue).not.toHaveBeenCalledWith(expect.objectContaining({ name: "routine.wakeup" }));
   });
 
   it("ends without running when woken past its end", async () => {
-    const { executor, prisma, routine, scheduledAt } = pendingTimerFixture(false, {
+    const { executor, prisma, scheduledAt } = pendingTimerFixture(false, {
       endsAt: new Date(Date.now() - 60_000),
     });
-    prisma.routine.findUnique
-      .mockResolvedValueOnce(routine)
-      .mockResolvedValueOnce({ ...routine, active: false, nextRunAt: null });
     await executor.wakeRoutine("routine-1", scheduledAt.toISOString());
-    expect(prisma.routine.updateMany).toHaveBeenCalledWith({
-      where: { id: "routine-1", userId: "user-1", active: true, nextRunAt: scheduledAt },
-      data: { active: false, nextRunAt: null },
+    expect(prisma.routine.deleteMany).toHaveBeenCalledWith({
+      where: expect.objectContaining({
+        id: "routine-1",
+        userId: "user-1",
+        active: true,
+        nextRunAt: scheduledAt,
+      }),
     });
-    expect(prisma.routine.deleteMany).toHaveBeenCalledOnce();
+    expect(prisma.routine.updateMany).not.toHaveBeenCalled();
     expect(prisma.$transaction).not.toHaveBeenCalled();
   });
 });

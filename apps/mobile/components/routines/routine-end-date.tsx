@@ -7,9 +7,11 @@ const WEEK_MS = 7 * 86_400_000;
 
 export function RoutineEndDate({
   endsOn,
+  today,
   onChange,
 }: {
   endsOn: string;
+  today: string;
   onChange: (endsOn: string) => void;
 }) {
   const { t } = useLingui();
@@ -22,12 +24,7 @@ export function RoutineEndDate({
         onChange={(on) => onChange(on ? dayOfLocalDate(new Date(Date.now() + WEEK_MS)) : "")}
       />
       {endsOn ? (
-        <SettingsDateRow
-          title={t`Ends`}
-          day={endsOn}
-          minimumDay={dayOfLocalDate(new Date())}
-          onChange={onChange}
-        />
+        <SettingsDateRow title={t`Ends`} day={endsOn} minimumDay={today} onChange={onChange} />
       ) : null}
     </SettingsGroup>
   );
