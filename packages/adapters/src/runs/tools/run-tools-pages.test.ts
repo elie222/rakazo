@@ -385,7 +385,10 @@ describe("saving a page's pictures", () => {
     run.deps.prisma.artifact = { findFirst: vi.fn(async () => artifact) };
     run.deps.prisma.externalEffect = { findFirst: vi.fn(async () => null) };
     run.deps.artifacts = { get: vi.fn(async () => bytes) };
-    Object.assign(run, { tools: { offered: [{ name: "web_fetch" }] } });
+    Object.assign(run, {
+      tools: { offered: [{ name: "web_fetch" }] },
+      context: { signal: new AbortController().signal },
+    });
     Object.assign(run.trust, {
       searchResultUrls: new Set<string>(),
       loadTrustedSites: async () => new Set(trustedSites),
@@ -455,6 +458,23 @@ describe("saving a page's pictures", () => {
     )) as Record<string, unknown>;
     expect(result.problems).toEqual(["Image hotel: no chat file with that artifactId."]);
     expect(get).not.toHaveBeenCalled();
+  });
+
+  it("reads no more pictures once the run is stopped", async () => {
+    const tx = { page: { create: vi.fn() } };
+    const ctx = withFiles(context(tx), { storageKey: "object:1" }, await png());
+    const stop = new AbortController();
+    stop.abort(new Error("stopped"));
+    Object.assign(ctx, { context: { signal: stop.signal } });
+    await expect(
+      pageTools.save_page!(
+        ctx,
+        call({ title: "Trip", source: pictured("hotel"), images: { hotel: "artifact-1" } }),
+      ),
+    ).rejects.toThrow("stopped");
+    const deps = (ctx as { deps: { artifacts: { get: ReturnType<typeof vi.fn> } } }).deps;
+    expect(deps.artifacts.get).not.toHaveBeenCalled();
+    expect(tx.page.create).not.toHaveBeenCalled();
   });
 
   it("refuses an images value that is not a map, and ignores a blank one", async () => {

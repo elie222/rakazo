@@ -97,7 +97,7 @@ async function pictureBytes(
       return "this bot cannot fetch web addresses";
     if (!(await addressGiven(ctx, url, site)))
       return `${site} needs approval first; open the address with web_fetch, then save again`;
-    return fetchPageImage(url);
+    return fetchPageImage(url, { signal: context.signal });
   }
   const artifact = await deps.prisma.artifact.findFirst({
     where: reachableFiles(ctx, [source]),
@@ -131,6 +131,7 @@ export async function preparePageImages(
 ): Promise<{ images: Record<string, EncodedPageImage> } | { problems: string[] }> {
   const entries: (readonly [string, EncodedPageImage | string])[] = [];
   for (const [name, source] of Object.entries(sources)) {
+    ctx.context.signal.throwIfAborted();
     const bytes = await pictureBytes(ctx, call, source);
     entries.push([name, typeof bytes === "string" ? bytes : await encodePageImage(bytes)]);
   }
