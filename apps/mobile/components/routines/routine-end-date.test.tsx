@@ -23,7 +23,7 @@ const props = { today: "2031-11-23", firstDay: "2031-11-30" };
 it("still lets an end be removed where no date picker is available", () => {
   const onChange = vi.fn();
   const group = RoutineEndDate({ ...props, endsOn: "2031-12-24", onChange });
-  const [toggle, row] = group?.props.children;
+  const [toggle, row] = group ? group.props.children : [];
   expect(row.props).toMatchObject({ title: "Ends", value: "Dec 24, 2031" });
   toggle.props.onChange(false);
   expect(onChange).toHaveBeenCalledWith("");
