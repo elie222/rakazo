@@ -543,7 +543,6 @@ export async function sendThreadMessage(
     { prisma: deps.prisma, secretStore: deps.secrets },
     actor,
     sent.text,
-    target.kind === "bot" ? "own" : "shared",
   ).catch(replayWinner);
   if ("replay" in pasted) return pasted.replay;
   const input = { ...sent, text: pasted.text };

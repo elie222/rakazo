@@ -74,28 +74,41 @@ export type PastedSecrets = {
 
 /**
  * Moves each key a member pasted into a chat message to their vault as a command variable, so
- * the value is never kept in the conversation or sent to the model. In the author's own chat, a
- * value already saved as a command variable keeps that name, even where bots are blocked from it:
- * a copy would undo the owner's choice in every Space sharing the vault. A new one, and every one
- * in a shared chat, is `PASTED_KEY_` and a random suffix: another member's run resolves a name
- * in their own vault, so a name the author already uses could give it their different item.
+ * the value is never kept in the conversation or sent to the model. Each is saved as `PASTED_KEY_`
+ * and a random suffix, even a value already saved: another member's run resolves a name in their
+ * own vault, and any chat can gain members, so a name the author already uses could give that run
+ * their different item. A copy of a value the owner blocked or limited for bots is saved blocked,
+ * so it never undoes that choice.
  */
 export async function preparePastedSecrets(
   deps: { prisma: PrismaClient; secretStore: SecretStore },
   author: { userId: string; spaceId: string },
   text: string | undefined,
-  chat: "own" | "shared",
 ): Promise<PastedSecrets> {
   const ranges = pastedRanges(text ?? "");
   const values = new Set(ranges.map(({ start, end }) => text?.slice(start, end) ?? ""));
   if (!text || !values.size) return { text, store: async () => {}, persist: (commit) => commit() };
   const { prisma, secretStore } = deps;
   const scope = { userId: author.userId, spaceId: author.spaceId };
+  const { env, used } = await loadCommandVariables(prisma, secretStore, scope);
+  const itemOf = new Map(used.map((item) => [commandVariableName(item.name), item.id]));
+  const restricted = new Set(
+    (
+      await prisma.vaultCredential.findMany({
+        where: {
+          id: { in: [...itemOf.values()] },
+          OR: [{ policy: { not: "allow" } }, { limits: { some: {} } }],
+        },
+        select: { id: true },
+      })
+    ).map((row) => row.id),
+  );
+  const blocked = new Set(
+    Object.entries(env).flatMap(([variable, value]) =>
+      restricted.has(itemOf.get(variable) ?? "") ? [value] : [],
+    ),
+  );
   const variables = new Map<string, string>();
-  if (chat === "own") {
-    const { env } = await loadCommandVariables(prisma, secretStore, scope);
-    for (const [variable, value] of Object.entries(env)) variables.set(value, variable);
-  }
   const taken = new Set(
     (
       await prisma.vaultCredential.findMany({
@@ -116,7 +129,6 @@ export async function preparePastedSecrets(
     )();
   try {
     for (const value of values) {
-      if (variables.has(value)) continue;
       let name: string;
       do name = `${PASTED_NAME}-${randomBytes(3).toString("hex")}`;
       while (taken.has(commandVariableName(name)));
@@ -131,6 +143,7 @@ export async function preparePastedSecrets(
           destination: { name, origin: "", auth: { type: "command" } },
           plaintext: value,
           createOnly: true,
+          ...(blocked.has(value) && { policy: "off" as const }),
         }).catch(conflict),
       );
     }
