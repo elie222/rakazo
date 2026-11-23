@@ -643,14 +643,21 @@ export function botsRoutes(ctx: RouterContext) {
           },
           { replace: false },
         );
-        // Audited here rather than in the table, so a call that keeps the key records nothing.
         if (created) {
+          // Audited here rather than in the table, so a call that keeps the key records nothing.
           await recordSecurityEvent({
             type: "credential.created",
             userId: context.actor.userId,
             spaceId: context.actor.spaceId,
             metadata: { procedure: "bots.ensureWebhookSecret", kind: "webhook", botId: bot.id },
           });
+        } else {
+          // Nothing saved: the bot kept its key, or was deleted while the new one was sealed.
+          const current = await deps.prisma.bot.findUnique({
+            where: { id: bot.id },
+            select: { webhookSecretId: true },
+          });
+          if (!current?.webhookSecretId) throw new ClientError("NOT_FOUND", "Not Found");
         }
         return {
           ...(created ? { secret: created } : {}),

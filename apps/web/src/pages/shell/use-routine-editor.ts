@@ -92,10 +92,13 @@ export function useRoutineEditor({
   const webhookKeyGenerations = useRef(new Map<string, number>());
   const bumpWebhookKeyGeneration = (botId: string) =>
     webhookKeyGenerations.current.set(botId, (webhookKeyGenerations.current.get(botId) ?? 0) + 1);
-  const ensureWebhookSecret = (botId: string) =>
-    sharedInflight(webhookSecretProvisionRef.current, botId, async () => {
-      // The server keeps a key the bot already has, so only a new one comes back to show.
-      const { secret } = await rpc.bots.ensureWebhookSecret({ botId });
+  // `replace` is the Rotate action; otherwise the server keeps a key the bot already has, and
+  // only a new key comes back to show.
+  const requestWebhookSecret = (botId: string, replace: boolean) =>
+    sharedInflight(webhookSecretProvisionRef.current, `${replace}:${botId}`, async () => {
+      const { secret } = replace
+        ? await rpc.bots.rotateWebhookSecret({ botId })
+        : await rpc.bots.ensureWebhookSecret({ botId });
       if (secret) {
         bumpWebhookKeyGeneration(botId);
         showWebhookSecret(botId, secret);
@@ -125,6 +128,15 @@ export function useRoutineEditor({
       ? t`Only the bot's creator can set its webhook key.`
       : errorText(error, fallback);
   const routineSaveRequest = useRef(0);
+  async function changeWebhookSecret(targetBotId: string, replace: boolean) {
+    const request = routineSaveRequest.current;
+    try {
+      await requestWebhookSecret(targetBotId, replace);
+    } catch (error) {
+      if (routineSaveRequest.current !== request || activeBotId.current !== targetBotId) return;
+      setRoutineError(webhookErrorText(error, t`Could not create the webhook key`));
+    }
+  }
   const routineRunPending = useRef(false);
   const addSkillRoutine = useCallback((name: string, prompt: string) => {
     setRoutineDraft({ ...emptyRoutineDraftState(), name, prompt });
@@ -177,18 +189,8 @@ export function useRoutineEditor({
         error: routineError,
         onBack: () => setPanel("settings"),
         onClose: () => setPanel(null),
-        onEnsureWebhook: async () => {
-          const targetBotId = active.id;
-          const request = routineSaveRequest.current;
-          try {
-            await ensureWebhookSecret(targetBotId);
-          } catch (error) {
-            if (routineSaveRequest.current !== request || activeBotId.current !== targetBotId) {
-              return;
-            }
-            setRoutineError(webhookErrorText(error, t`Could not create the webhook key`));
-          }
-        },
+        onEnsureWebhook: () => changeWebhookSecret(active.id, false),
+        onRotateWebhook: () => changeWebhookSecret(active.id, true),
         onRevealWebhook: async () => {
           const targetBotId = active.id;
           const request = routineSaveRequest.current;
@@ -249,7 +251,7 @@ export function useRoutineEditor({
               !active.webhookConfigured &&
               !routineWebhookSecret
             ) {
-              await ensureWebhookSecret(targetBotId).catch((error: unknown) => {
+              await requestWebhookSecret(targetBotId, false).catch((error: unknown) => {
                 throw new Error(webhookErrorText(error, t`Could not create the webhook key`));
               });
             }

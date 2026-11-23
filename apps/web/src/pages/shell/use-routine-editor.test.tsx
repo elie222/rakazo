@@ -45,6 +45,7 @@ let finishUpdate: Deferred<Routine>;
 const update = vi.fn();
 const create = vi.fn();
 const ensureWebhookSecret = vi.fn();
+const rotateWebhookSecret = vi.fn();
 const testRun = vi.fn();
 const openGroup = vi.fn();
 const refreshThread = vi.fn(async () => ({}) as never);
@@ -55,7 +56,7 @@ function Harness() {
   editor = useRoutineEditor({
     rpc: {
       routines: { update, create, testRun },
-      bots: { ensureWebhookSecret },
+      bots: { ensureWebhookSecret, rotateWebhookSecret },
     } as unknown as ReturnType<typeof createSpaceRpc>,
     active: activeBot,
     activeBotId,
@@ -240,6 +241,15 @@ it("shows no key when the bot already had one", async () => {
   });
   expect(editor.editorProps!.webhook.secret).toBeNull();
   expect(editor.editorProps!.error).toBeNull();
+});
+
+it("replaces the key when asked to rotate it", async () => {
+  rotateWebhookSecret.mockResolvedValue({ secret: "secret-new" });
+  await act(async () => {
+    await editor.editorProps!.onRotateWebhook();
+  });
+  expect(ensureWebhookSecret).not.toHaveBeenCalled();
+  expect(editor.editorProps!.webhook.secret).toBe("secret-new");
 });
 
 it("shows why a key cannot be set instead of leaving the rejection unhandled", async () => {

@@ -82,6 +82,7 @@ function Harness({ editing }: { editing: Routine | null }) {
       onTestRun={noop}
       onDelete={noop}
       onEnsureWebhook={async () => {}}
+      onRotateWebhook={async () => {}}
       onRevealWebhook={async () => {}}
       onHideWebhook={noop}
     />
