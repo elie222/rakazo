@@ -82,6 +82,32 @@ describe("credential ranges", () => {
     expect(found(`Bearer ${key}`)).toEqual([key]);
   });
 
+  describe("AWS secret access keys", () => {
+    const id = join("AK", "IA", "ABCDEFGHIJ234567");
+    const secret = join(body(20), "/", body(19));
+
+    it("covers one under its name", () => {
+      const other = join(body(19), "+", body(20));
+      expect(found(`AWS_SECRET_ACCESS_KEY=${secret}\n{ "SecretAccessKey": "${other}" }`)).toEqual([
+        secret,
+        other,
+      ]);
+    });
+
+    it("covers an unnamed one beside its access key id", () => {
+      expect(found(`Access key ID,Secret access key\n${id},${secret}`)).toEqual([id, secret]);
+    });
+
+    it("leaves out an unnamed one with no access key id beside it", () => {
+      expect(found(`Checksum ${secret}`)).toEqual([]);
+    });
+
+    it("leaves out a hex digest beside an access key id", () => {
+      const digest = "3f9a1c7e5b2d4f6a8c0e1b3d5f7a9c2e4b6d8f0a";
+      expect(found(`${id} was rotated in commit ${digest}`)).toEqual([id]);
+    });
+  });
+
   it("covers a private key through its END line", () => {
     const key = join(
       "-----BEGIN ",

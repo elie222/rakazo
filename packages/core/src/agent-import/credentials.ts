@@ -8,6 +8,11 @@
  * ("sk-...", "sk-your-key-here", "Bearer <token>") do not count. A hyphenated word long
  * enough and with a digit ("sk-learn-…-v2-…") still does: over-flagging only unticks an item.
  */
+const AWS_KEY_ID = /\b(?:AKIA|ASIA)[0-9A-Z]{16}\b/g;
+const AWS_SECRET = /(?<![A-Za-z0-9/+=])[A-Za-z0-9/+]{40}(?![A-Za-z0-9/+=])/g;
+/** How far from an access key id an unnamed secret access key may sit. */
+const AWS_NEARBY = 100;
+
 const SHAPES: {
   pattern: RegExp;
   /** Only the first group must look random. */
@@ -26,7 +31,14 @@ const SHAPES: {
   { pattern: /\bgithub_pat_[A-Za-z0-9_]{22,}/g },
   { pattern: /\bxox[abposr]-[A-Za-z0-9-]{10,}/g },
   // AWS access key ids, long-term (AKIA) and temporary (ASIA).
-  { pattern: /\b(?:AKIA|ASIA)[0-9A-Z]{16}\b/g },
+  { pattern: AWS_KEY_ID },
+  // An AWS secret access key under the name the CLI, SDKs and STS answers give it.
+  {
+    pattern:
+      /\b(?:aws[_-]?)?secret[_-]?access[_-]?key["']?\s*[:=]\s*["']?([A-Za-z0-9/+]{40})(?![A-Za-z0-9/+=])/gi,
+    random: true,
+    group: true,
+  },
   { pattern: /\bAIza[0-9A-Za-z_-]{35}(?![0-9A-Za-z_-])/g },
   { pattern: /\bglpat-[A-Za-z0-9_-]{20,}/g },
   { pattern: /\bhf_[A-Za-z0-9]{30,}/g },
@@ -70,6 +82,28 @@ export function credentialMatches(text: string): TextRange[] {
         found.push({ start: shape.group ? end - (match[1]?.length ?? 0) : match.index, end: last });
       }
     }
+  }
+  return [...found, ...awsSecretsBesideIds(text)];
+}
+
+/**
+ * A 40-character secret access key pasted next to its access key id without a name, as the
+ * console's download and most notes hold the pair. Mixed case and a digit leave out hex digests.
+ */
+function awsSecretsBesideIds(text: string): TextRange[] {
+  const ids = [...text.matchAll(AWS_KEY_ID)].map((match) => match.index);
+  if (!ids.length) return [];
+  const found: TextRange[] = [];
+  let next = 0;
+  for (const match of text.matchAll(AWS_SECRET)) {
+    const value = match[0];
+    if (!/[a-z]/.test(value) || !/[A-Z]/.test(value) || !/\d/.test(value)) continue;
+    const start = match.index;
+    const end = start + value.length;
+    // Both lists are in order, so ids that end too far before this value never count again.
+    while (next < ids.length && (ids[next] ?? 0) + 20 < start - AWS_NEARBY) next++;
+    const id = ids[next];
+    if (id !== undefined && id <= end + AWS_NEARBY) found.push({ start, end });
   }
   return found;
 }

@@ -1,5 +1,10 @@
 import { randomUUID } from "node:crypto";
-import { EncryptedSecretStore, storeBotSecret } from "@rakazo/adapters";
+import {
+  EncryptedSecretStore,
+  MAX_PASTED_KEYS,
+  storeBotSecret,
+  TooManyPastedKeysError,
+} from "@rakazo/adapters";
 import type { Actor } from "@rakazo/contracts";
 import { deferred } from "@rakazo/core/test-async";
 import type { PrismaClient } from "@rakazo/db";
@@ -93,9 +98,11 @@ describe.skipIf(!enabled)("keys pasted into a chat message (PostgreSQL)", () => 
 
     const written = await stored();
     expect(written).not.toContain(key);
-    expect(written).toContain("Deploy with [saved as $PASTED_KEY] please");
+    const variable = /Deploy with \[saved as \$(PASTED_KEY_[0-9A-F]{6})\] please/.exec(
+      written,
+    )?.[1];
     const item = await system.vaultCredential.findFirstOrThrow({
-      where: { userId: actor.userId, name: "pasted-key" },
+      where: { userId: actor.userId, name: variable?.toLowerCase().replaceAll("_", "-") },
     });
     expect(item.auth).toEqual({ type: "command" });
     expect(await secrets.load(item.ciphertext, item.id)).toBe(key);
@@ -134,6 +141,17 @@ describe.skipIf(!enabled)("keys pasted into a chat message (PostgreSQL)", () => 
 
     expect(await stored()).toContain("Use [saved as $DEPLOY_KEY]");
     expect(await system.vaultCredential.count({ where: { userId: actor.userId } })).toBe(1);
+  });
+
+  it("refuses a message with more keys than one message may save and keeps none of it", async () => {
+    const keys = Array.from({ length: MAX_PASTED_KEYS + 1 }, (_, n) => `${key}${n}`);
+
+    await expect(send(keys.join(" "))).rejects.toBeInstanceOf(TooManyPastedKeysError);
+
+    expect(await system.message.count({ where: { threadId: target.threadId, role: "user" } })).toBe(
+      0,
+    );
+    expect(await system.vaultCredential.count({ where: { userId: actor.userId } })).toBe(0);
   });
 
   // A secret card's answer locks the thread and then the vault; a send must not take them the
