@@ -20,6 +20,8 @@ import { SandboxRequestRejectedError } from "@rakazo/adapter-kit";
 import { getLogger } from "@rakazo/logging";
 import type { FakeBrowserProviderOptions } from "../../browser/fake-browser.js";
 import { FakeBrowserProvider } from "../../browser/fake-browser.js";
+import { PAGE_BROWSER_TIMED_OUT } from "./computer-screens.js";
+import { logPageBrowserFailure } from "./page-browser-failure.js";
 
 const DETACHED_MESSAGE = "Page browser is not attached to this computer's Chrome.";
 /** What a routed sandbox answers when the computer's provider has no page browser. */
@@ -257,7 +259,7 @@ export class ComputerBrowserProvider implements BrowserProvider {
     };
     let live = await this.runLive(computer, probe, context);
     // A busy page often answers the next probe; the probe presses nothing, so one retry is safe.
-    if (live?.ok !== true && live?.error?.startsWith("Page browser timed out;"))
+    if (live?.ok !== true && live?.error?.startsWith(`${PAGE_BROWSER_TIMED_OUT};`))
       live = await this.runLive(computer, probe, context);
     if (live?.ok !== true) {
       // The check started and failed (timed out, killed, a page it could not read).
@@ -345,19 +347,22 @@ export class ComputerBrowserProvider implements BrowserProvider {
           throw new Error("Unconfirmed page actions");
         }
       }
+      if (result?.ok === false) logPageBrowserFailure(computer, request, context, result);
       return result;
     } catch (error) {
       context.signal.throwIfAborted();
       // The request was refused before it reached the page: settled, nothing was done.
-      if (error instanceof SandboxRequestRejectedError) {
-        return { ok: false, uncertain: false, error: error.message };
-      }
-      return {
-        uncertain: request.command === "act",
-        ok: false,
-        error: error instanceof Error ? error.message : String(error),
-        fallback: "computer_act",
-      };
+      const failed =
+        error instanceof SandboxRequestRejectedError
+          ? { ok: false as const, uncertain: false, error: error.message }
+          : {
+              uncertain: request.command === "act",
+              ok: false as const,
+              error: error instanceof Error ? error.message : String(error),
+              fallback: "computer_act" as const,
+            };
+      logPageBrowserFailure(computer, request, context, failed);
+      return failed;
     }
   }
 }
