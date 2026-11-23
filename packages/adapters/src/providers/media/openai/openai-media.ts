@@ -49,8 +49,11 @@ export function openAIImageCost(model: string, body: unknown) {
   const parsed = usageBody.safeParse(body);
   if (!price || !parsed.success) return undefined;
   const { input_tokens, output_tokens, input_tokens_details } = parsed.data.usage;
-  const imageIn = input_tokens_details?.image_tokens ?? 0;
-  const text = input_tokens_details?.text_tokens ?? input_tokens - imageIn;
+  // Input the details leave out is the other kind, so every counted token is priced.
+  const textIn = input_tokens_details?.text_tokens;
+  const imageIn =
+    input_tokens_details?.image_tokens ?? (textIn === undefined ? 0 : input_tokens - textIn);
+  const text = textIn ?? input_tokens - imageIn;
   const usd =
     (text * price.text + imageIn * price.imageIn + output_tokens * price.imageOut) / 1_000_000;
   return { usd, source: "price_list" as const };

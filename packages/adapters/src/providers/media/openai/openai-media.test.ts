@@ -1,7 +1,7 @@
 import type { AdapterContext } from "@rakazo/adapter-kit";
 import { ATTACHMENT_MAX_BASE64_LENGTH, ATTACHMENT_MAX_BYTES } from "@rakazo/contracts";
 import { describe, expect, it, vi } from "vitest";
-import { OpenAIMediaGenerationProvider } from "./openai-media.js";
+import { OpenAIMediaGenerationProvider, openAIImageCost } from "./openai-media.js";
 
 const context: AdapterContext = {
   spaceId: "space",
@@ -73,6 +73,17 @@ describe("images API media generation", () => {
     const { cost } = await provider.generateImage({ prompt: "draw" }, context);
     expect(cost?.source).toBe("price_list");
     expect(cost?.usd).toBeCloseTo((50 * 5 + 1000 * 30) / 1_000_000, 10);
+  });
+  it("prices input the details leave out as image input", () => {
+    const usage = {
+      input_tokens: 100,
+      input_tokens_details: { text_tokens: 40 },
+      output_tokens: 0,
+    };
+    expect(openAIImageCost("gpt-image-2", { usage })?.usd).toBeCloseTo(
+      (40 * 5 + 60 * 8) / 1_000_000,
+      10,
+    );
   });
   it("defaults to the vendor endpoint", async () => {
     const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValueOnce(json(image(PNG)));
