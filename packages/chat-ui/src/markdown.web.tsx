@@ -14,8 +14,6 @@ import {
 import type { Components } from "react-markdown";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import remarkParse from "remark-parse";
-import { unified } from "unified";
 import type { HastNode } from "./table-utils";
 import "./markdown.web.css";
 import "./markdown-table.css";
@@ -34,7 +32,7 @@ import {
   useCopyText,
 } from "@rakazo/ui-web";
 import { CheckIcon, CopyIcon, GlobeIcon, ImageIcon } from "./icons";
-import type { ChatMarkdownProps } from "./markdown";
+import type { ChatMarkdownProps, SplitSource } from "./markdown";
 import {
   closeUnterminatedFence,
   inlineMarkdownImageSrc,
@@ -53,6 +51,7 @@ import {
   remoteImageRenders,
   remoteMarkdownImage,
   sanitizeMarkdownUrl,
+  splitSource,
   useLinkFavicon,
 } from "./markdown";
 import { useMarkdownCopy } from "./markdown-copy";
@@ -834,12 +833,19 @@ function renderFinishedMarkdown(source: string) {
 }
 
 const MarkdownBlock = memo(function MarkdownBlock({
-  source,
+  source: written,
   streaming,
+  variables,
 }: {
   source: string;
   streaming: boolean;
+  /** The viewer's Vault variables, drawn as links; a block that stays the same is not redone. */
+  variables: ReadonlySet<string> | undefined;
 }) {
+  const source = useMemo(
+    () => (variables ? withVaultVariables(written, variables) : written),
+    [written, variables],
+  );
   const parsed = streaming ? closeUnterminatedFence(source) : source;
   return (
     <StreamingSourceContext.Provider value={streaming ? source : undefined}>
@@ -850,55 +856,6 @@ const MarkdownBlock = memo(function MarkdownBlock({
   );
 });
 
-// A block is keyed by its kind and how many of that kind precede it, as react-markdown keys
-// elements, so a table keeps its sort, page and dialog when text before it changes.
-type SourceBlock = { start: number; source: string; type: string; key: string };
-type SplitSource = { text: string; blocks: SourceBlock[] };
-
-const blockParser = unified().use(remarkParse).use(remarkGfm);
-// Link and footnote definitions apply to the whole document, so such text is never split.
-const definition = /\]:/;
-
-/**
- * Top-level blocks of streamed text. Appended text can still change the last block, or join the
- * one before it (a list continued after a blank line), so only those two are parsed again.
- */
-function splitSource(text: string, previous: SplitSource | undefined): SplitSource {
-  const whole = { text, blocks: [{ start: 0, source: text, type: "root", key: "root-0" }] };
-  if (definition.test(text)) return whole;
-  const kept = previous && text.startsWith(previous.text) ? previous.blocks.slice(0, -2) : [];
-  const from = previous?.blocks[kept.length]?.start ?? 0;
-  const tail = text.slice(from);
-  let parsed: { start: number; type: string }[];
-  try {
-    parsed = blockParser.parse(tail).children.map((child, index) => ({
-      start: index === 0 ? 0 : tail.lastIndexOf("\n", (child.position?.start.offset ?? 1) - 1) + 1,
-      type: child.type,
-    }));
-  } catch {
-    return whole;
-  }
-  if (parsed.length === 0) parsed = [{ start: 0, type: "root" }];
-  const counts = new Map<string, number>();
-  for (const block of kept) counts.set(block.type, (counts.get(block.type) ?? 0) + 1);
-  return {
-    text,
-    blocks: [
-      ...kept,
-      ...parsed.map(({ start, type }, index) => {
-        const count = counts.get(type) ?? 0;
-        counts.set(type, count + 1);
-        return {
-          start: from + start,
-          source: tail.slice(start, parsed[index + 1]?.start ?? tail.length),
-          type,
-          key: `${type}-${count}`,
-        };
-      }),
-    ],
-  };
-}
-
 export const ChatMarkdown = memo(function ChatMarkdown({
   children,
   streaming = false,
@@ -907,19 +864,15 @@ export const ChatMarkdown = memo(function ChatMarkdown({
 }: ChatMarkdownProps) {
   const { request, dialog } = useExternalLinkConfirm();
   const variables = useVaultVariables(children)?.names;
-  const source = useMemo(
-    () => (variables ? withVaultVariables(children, variables) : children),
-    [children, variables],
-  );
   // A streamed reply stays split once it finishes, so its blocks are not drawn again.
   const [split, setSplit] = useState(streaming);
   if (streaming && !split) setSplit(true);
   const previousSplit = useRef<SplitSource | undefined>(undefined);
   const blocks = useMemo(() => {
     if (!split) return undefined;
-    previousSplit.current = splitSource(source, previousSplit.current);
+    previousSplit.current = splitSource(children, previousSplit.current);
     return previousSplit.current.blocks;
-  }, [source, split]);
+  }, [children, split]);
 
   const inlineChips = useMemo(() => ({ renderMention, onOpenPage }), [renderMention, onOpenPage]);
   return (
@@ -938,11 +891,12 @@ export const ChatMarkdown = memo(function ChatMarkdown({
                     <MarkdownBlock
                       source={block.source}
                       streaming={streaming && index === blocks.length - 1}
+                      variables={variables}
                     />
                   </Fragment>
                 ))
               ) : (
-                <MarkdownBlock source={source} streaming={streaming} />
+                <MarkdownBlock source={children} streaming={streaming} variables={variables} />
               )}
             </PlainTextOnFailure>
           </LinkFaviconsPausedContext.Provider>

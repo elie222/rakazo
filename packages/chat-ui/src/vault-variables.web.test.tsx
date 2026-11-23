@@ -4,8 +4,14 @@ import type { ReactNode } from "react";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { describe, expect, it, vi } from "vitest";
+import { rewriteOutsideCode } from "./markdown";
 import type { VaultVariables } from "./markdown.web";
 import { ChatMarkdown, LinkifiedText, VaultVariablesContext } from "./markdown.web";
+
+vi.mock("./markdown", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./markdown")>();
+  return { ...actual, rewriteOutsideCode: vi.fn(actual.rewriteOutsideCode) };
+});
 
 function fakeVault(names: string[] | undefined) {
   return {
@@ -22,13 +28,17 @@ async function mount(vault: VaultVariables, node: ReactNode) {
   const container = document.createElement("div");
   document.body.appendChild(container);
   const root = createRoot(container);
-  await act(async () => {
-    root.render(
-      <VaultVariablesContext.Provider value={vault}>{node}</VaultVariablesContext.Provider>,
-    );
-  });
+  const render = async (next: ReactNode) => {
+    await act(async () => {
+      root.render(
+        <VaultVariablesContext.Provider value={vault}>{next}</VaultVariablesContext.Provider>,
+      );
+    });
+  };
+  await render(node);
   return {
     container,
+    render,
     chips: () => [
       ...container.querySelectorAll<HTMLButtonElement>("button.rk-chat-vault-variable"),
     ],
@@ -97,6 +107,19 @@ describe("web Vault variables", () => {
     const view = await mount(vault, <LinkifiedText>{"Use [saved as $PASTED_KEY]"}</LinkifiedText>);
     expect(vault.want).toHaveBeenCalled();
     expect(view.chips()).toEqual([]);
+    await view.cleanup();
+  });
+
+  it("links variables in a streamed reply again only in the block a chunk changes", async () => {
+    const vault = fakeVault(["DEPLOY_KEY"]);
+    const first = "Use $DEPLOY_KEY here.\n\nThen";
+    const view = await mount(vault, <ChatMarkdown streaming>{first}</ChatMarkdown>);
+    vi.mocked(rewriteOutsideCode).mockClear();
+    await view.render(<ChatMarkdown streaming>{`${first} $DEPLOY_KEY again`}</ChatMarkdown>);
+    expect(vi.mocked(rewriteOutsideCode).mock.calls.map(([text]) => text)).toEqual([
+      "Then $DEPLOY_KEY again",
+    ]);
+    expect(view.chips()).toHaveLength(2);
     await view.cleanup();
   });
 

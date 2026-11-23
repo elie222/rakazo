@@ -1,5 +1,16 @@
-import { createContext, useContext, useEffect } from "react";
-import { rewriteOutsideCode } from "./markdown";
+import type { BotSecretMetadata } from "@rakazo/contracts";
+import { commandVariableName } from "@rakazo/contracts";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import type { SplitSource } from "./markdown";
+import { rewriteOutsideCode, splitSource } from "./markdown";
 
 /**
  * The viewer's own Vault command variables and what tapping one in a message does. The app reads
@@ -89,9 +100,12 @@ const VAULT_URL_PREFIX = "rakazo-vault:";
 const DENIED_MARK = "#denied";
 const VAULT_URL = /^rakazo-vault:([A-Za-z_][A-Za-z0-9_]*)(#denied)?$/;
 
-/** Bot Markdown with each `$NAME` drawn as a Vault link, outside code and links, made a link. */
+/** Bot Markdown with each `$NAME` drawn as a Vault link, outside code, links and HTML, made a link. */
 export function withVaultVariables(markdown: string, names: ReadonlySet<string>): string {
-  if (!MAY_NAME_VARIABLE.test(markdown)) return markdown;
+  // Most text names none of the viewer's variables, so it is never parsed.
+  if (vaultVariableParts(markdown, names).every((part) => typeof part === "string")) {
+    return markdown;
+  }
   return rewriteOutsideCode(
     markdown,
     (run) =>
@@ -112,4 +126,95 @@ export function withVaultVariables(markdown: string, names: ReadonlySet<string>)
 export function markdownVaultVariable(href: string | undefined): VaultVariableLink | undefined {
   const match = href ? VAULT_URL.exec(href) : null;
   return match ? { name: match[1]!, denied: Boolean(match[2]) } : undefined;
+}
+
+/**
+ * `withVaultVariables` for a reply that may still be streaming: once split, only the blocks new
+ * text can change are rewritten again, so each chunk costs the same however long the reply is.
+ */
+export function useVaultVariableMarkdown(
+  markdown: string,
+  names: ReadonlySet<string> | undefined,
+  streaming: boolean,
+): string {
+  // As the web reply does, a streamed reply stays split once it finishes.
+  const [split, setSplit] = useState(streaming);
+  if (streaming && !split) setSplit(true);
+  const previousSplit = useRef<SplitSource | undefined>(undefined);
+  const linked = useRef<{ names: ReadonlySet<string>; blocks: Map<string, string> } | undefined>(
+    undefined,
+  );
+  return useMemo(() => {
+    if (!names) return markdown;
+    if (!split) return withVaultVariables(markdown, names);
+    previousSplit.current = splitSource(markdown, previousSplit.current);
+    const previous = linked.current?.names === names ? linked.current.blocks : undefined;
+    const blocks = new Map<string, string>();
+    const result = previousSplit.current.blocks
+      .map(({ source }) => {
+        const block = previous?.get(source) ?? withVaultVariables(source, names);
+        blocks.set(source, block);
+        return block;
+      })
+      .join("");
+    linked.current = { names, blocks };
+    return result;
+  }, [markdown, names, split]);
+}
+
+/** One Vault the app read, and what opening an item there needs. */
+export type VaultRead<Where> = { items: readonly BotSecretMetadata[]; where: Where };
+
+/**
+ * What both apps make of their Vault reads: the command variables they export, and `want`, which
+ * asks for the reads and reads again for a saved placeholder they lack. `reads` is undefined until
+ * every Vault is read; a later one holds a name an earlier one also exports, as a Space's own Vault
+ * does over the account's. `readsOf` names what was read, such as the Space, so a name checked in
+ * one is checked again in another. `readAgain` reads every Vault again and says whether it worked;
+ * a name is checked only once it did, and one that failed is tried again on the next `want`.
+ */
+export function useVaultVariableReads<Where>({
+  reads,
+  readsOf,
+  setWanted,
+  readAgain,
+}: {
+  reads: readonly VaultRead<Where>[] | undefined;
+  readsOf: string;
+  setWanted: (wanted: true) => void;
+  readAgain: () => Promise<boolean>;
+}) {
+  const byName = useMemo(() => {
+    if (!reads) return undefined;
+    const found = new Map<string, { item: string; where: Where }>();
+    for (const { items, where } of reads)
+      for (const item of items)
+        if (item.auth?.type === "command")
+          found.set(commandVariableName(item.name), { item: item.name, where });
+    return found;
+  }, [reads]);
+  const checked = useRef(new Set<string>());
+  const reading = useRef(new Set<string>());
+  const want = useCallback(
+    (saved: readonly string[]) => {
+      setWanted(true);
+      if (!byName) return;
+      const unread = saved
+        .filter((name) => !byName.has(name))
+        .map((name) => `${readsOf}\n${name}`)
+        .filter((key) => !checked.current.has(key) && !reading.current.has(key));
+      if (unread.length === 0) return;
+      for (const key of unread) reading.current.add(key);
+      void readAgain().then((read) => {
+        for (const key of unread) {
+          reading.current.delete(key);
+          if (read) checked.current.add(key);
+        }
+      });
+    },
+    [byName, readsOf, setWanted, readAgain],
+  );
+  const names = useMemo(() => byName && new Set(byName.keys()), [byName]);
+  const find = useCallback((name: string) => byName?.get(name), [byName]);
+  return { want, names, find };
 }

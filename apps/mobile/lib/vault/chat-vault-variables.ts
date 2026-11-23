@@ -1,13 +1,15 @@
 import { useLingui } from "@lingui/react/macro";
-import type { VaultVariables } from "@rakazo/chat-ui/native";
-import type { BotSecretMetadata } from "@rakazo/contracts";
-import { commandVariableName } from "@rakazo/contracts";
+import type { VaultRead, VaultVariables } from "@rakazo/chat-ui/vault-variables";
+import { useVaultVariableReads } from "@rakazo/chat-ui/vault-variables";
 import { useQuery } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
-import { useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { useCallback, useMemo, useState, useSyncExternalStore } from "react";
 import { Alert } from "react-native";
 import { selectedSpaceId, subscribeSpaceSelection } from "../api/api";
 import { queryClient, rpcQuery } from "../query/query";
+
+/** Where the Vault screen opens an item: the account's Vault, or the Space's own. */
+type VaultOwner = { spaceId?: string };
 
 /**
  * The viewer's command variables in the account's Vault and the selected Space's own, read once a
@@ -35,44 +37,39 @@ export function useChatVaultVariables(): VaultVariables {
     },
     queryClient,
   );
-  const read = overrides.isSuccess && account.data && (!spaceVault || space.data);
-  const vaults = useMemo(() => {
-    if (!read) return undefined;
-    const byName = new Map<string, { item: string; spaceId?: string }>();
-    const add = (items: readonly BotSecretMetadata[] | undefined, owner?: { spaceId: string }) => {
-      for (const item of items ?? [])
-        if (item.auth?.type === "command")
-          byName.set(commandVariableName(item.name), { item: item.name, ...owner });
-    };
-    add(account.data);
+  const reads = useMemo(() => {
+    if (!overrides.isSuccess || !account.data) return undefined;
+    const vaults: VaultRead<VaultOwner>[] = [{ items: account.data, where: {} }];
+    if (!spaceVault || !spaceId) return vaults;
     // The Space's own Vault is the one its bots use, so it holds a name both export.
-    if (spaceVault && spaceId) add(space.data, { spaceId });
-    return byName;
-  }, [read, account.data, space.data, spaceVault, spaceId]);
-  // Each saved placeholder the Vault as read lacks is read again once: it may be new, such as a
-  // key pasted into the message just sent.
-  const asked = useRef(new Set<string>());
+    return space.data ? [...vaults, { items: space.data, where: { spaceId } }] : undefined;
+  }, [overrides.isSuccess, account.data, space.data, spaceVault, spaceId]);
   const { refetch: refetchAccount } = account;
   const { refetch: refetchSpace } = space;
+  const readAgain = useCallback(async () => {
+    const results = await Promise.all(
+      spaceVault ? [refetchAccount(), refetchSpace()] : [refetchAccount()],
+    );
+    return results.every((result) => result.isSuccess);
+  }, [refetchAccount, refetchSpace, spaceVault]);
+  const { want, names, find } = useVaultVariableReads({
+    reads,
+    readsOf: spaceId ?? "",
+    setWanted,
+    readAgain,
+  });
   return useMemo(
     () => ({
-      want: (saved) => {
-        setWanted(true);
-        if (!vaults) return;
-        const unread = saved.filter((name) => !vaults.has(name) && !asked.current.has(name));
-        if (unread.length === 0) return;
-        for (const name of unread) asked.current.add(name);
-        void refetchAccount();
-        if (spaceVault) void refetchSpace();
-      },
-      names: vaults && new Set(vaults.keys()),
+      want,
+      names,
       open: (name) => {
-        const found = vaults?.get(name);
-        if (found) router.push({ pathname: "/vault", params: found });
+        const found = find(name);
+        if (found)
+          router.push({ pathname: "/vault", params: { item: found.item, ...found.where } });
       },
       denied: () => Alert.alert(t`You don't have access to this Vault secret.`),
       openLabel: (variable) => t`Open ${variable} in Vault`,
     }),
-    [vaults, router, t, refetchAccount, refetchSpace, spaceVault],
+    [want, names, find, router, t],
   );
 }

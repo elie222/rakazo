@@ -10,7 +10,7 @@ import { useNativeLinkConfirm } from "./native/links";
 import type { MentionLink } from "./native/native-markdown";
 import { NativeMarkdown } from "./native/native-markdown";
 import { layout, markdownStyles } from "./native/styles";
-import { useVaultVariables, withVaultVariables } from "./vault-variables";
+import { useVaultVariableMarkdown, useVaultVariables } from "./vault-variables";
 
 const markdownParser = createMarkdownIt();
 // Every code block needs a fence, four spaces or a tab; every bot row asks, so most skip the parse.
@@ -40,10 +40,10 @@ export const ChatMarkdown = memo(function ChatMarkdown({
   colorScheme?: ResolvedAppearance;
 }) {
   const openLink = useNativeLinkConfirm();
-  const variables = useVaultVariables(children)?.names;
-  const markdown = useMemo(
-    () => (variables ? withVaultVariables(children, variables) : children),
-    [children, variables],
+  const markdown = useVaultVariableMarkdown(
+    children,
+    useVaultVariables(children)?.names,
+    streaming,
   );
   const fenceStyles = useMemo(() => markdownStyles(palette), [palette]);
   const diagramSurface = useMemo(

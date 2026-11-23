@@ -9,6 +9,7 @@
     "./model-discovery": "./src/use-compatible-model-discovery.ts",
     "./native": "./src/markdown.native.tsx",
     "./page-state": "./src/page-state.ts",
+    "./vault-variables": "./src/vault-variables.ts",
     "./web": "./src/markdown.web.tsx"
   },
   "scripts": {

@@ -1016,6 +1016,20 @@ describe("native Vault variables", () => {
     await view.cleanup();
   });
 
+  it("leaves a variable a reply links by hand plain unless the viewer has it", async () => {
+    const variables = vault(["DEPLOY_KEY"]);
+    const view = await mount(
+      <VaultVariablesContext.Provider value={variables}>
+        <ChatMarkdown>{"[reveal](rakazo-vault:OTHER)"}</ChatMarkdown>
+      </VaultVariablesContext.Provider>,
+    );
+    expect(variantFor("rakazo-vault:OTHER")).toMatchObject({ underline: false });
+    expect(variantFor("rakazo-vault:DEPLOY_KEY")).toMatchObject({ underline: true });
+    await pressLink("rakazo-vault:OTHER");
+    expect(variables.open).not.toHaveBeenCalled();
+    await view.cleanup();
+  });
+
   it("says another person's saved placeholder can't be opened, and leaves $HOME as text", async () => {
     const variables = vault(["PASTED_KEY"]);
     const view = await mount(
