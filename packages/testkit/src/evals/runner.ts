@@ -314,6 +314,10 @@ export async function runTrial(
           content: scenario.botMemory,
         });
       }
+      for (const [path, content] of Object.entries(scenario.botMemoryDocuments ?? {}))
+        await prisma.memoryDocument.create({
+          data: { ...persistedBot, botId, scope: "bot", path, content },
+        });
       if (scenario.peer) {
         const created = await rpc<{ id: string }>(app, cookie, "bots/create", {
           name: scenario.peer.name,
