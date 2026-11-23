@@ -169,6 +169,24 @@ export function firstRequestFetch(
   };
 }
 
+/**
+ * Adds fields to the JSON body of every request for the eval model, such as a gateway's upstream
+ * routing. It wraps the fingerprinting fetch, so the added fields are part of the fingerprint.
+ */
+export function requestBodyFetch(
+  upstream: typeof fetch,
+  modelId: string,
+  extra: Record<string, unknown>,
+): typeof fetch {
+  return (input, init) => {
+    if (typeof init?.body !== "string" || !isFor(input, init.body, modelId))
+      return upstream(input, init);
+    const body: unknown = JSON.parse(init.body);
+    if (!body || typeof body !== "object" || Array.isArray(body)) return upstream(input, init);
+    return upstream(input, { ...init, body: JSON.stringify({ ...body, ...extra }) });
+  };
+}
+
 /** Most protocols name the model in the body; some put it in the path. */
 function isFor(input: Parameters<typeof fetch>[0], body: string, modelId: string) {
   const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;

@@ -3,6 +3,7 @@ import type {
   AgentContextStrategy,
   AgentRuntime,
   BillingProvider,
+  BrowserProvider,
   ConnectorProvider,
   JobPublisher,
   ManagedConnectorProvider,
@@ -222,6 +223,8 @@ type CreateAppOverrides = Partial<AppEnv> & {
   now?: () => Date;
   /** Test-only web search and fetch. */
   web?: WebProvider;
+  /** Test-only page browser. */
+  browser?: BrowserProvider;
 };
 
 async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
@@ -245,6 +248,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     contextStrategy,
     userDevices: userDevicesOverride,
     web,
+    browser,
     now,
     ...envOverrides
   } = overrides;
@@ -581,6 +585,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
       userDevices: botUserDevices,
       paymentWallet,
       web,
+      browser,
       stoppingSignal: shutdown.signal,
       shutdownSignal: runDrain.signal,
       now,
