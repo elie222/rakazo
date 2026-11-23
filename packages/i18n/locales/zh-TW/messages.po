@@ -313,7 +313,7 @@ msgstr "已獲得 {count} 個月免費"
 #. js-lingui-explicit-id
 #: packages/i18n/src/billing.ts
 msgid "/RQB8K"
-msgstr ""
+msgstr "{count} 個月"
 
 #: apps/mobile/app/(settings)/plugin.tsx
 #: apps/mobile/components/cards/ask-receipt.tsx
@@ -902,7 +902,7 @@ msgstr "100K"
 
 #: apps/mobile/app/(settings)/model-connection.tsx
 msgid "2. Get a sign-in code"
-msgstr ""
+msgstr "2. 取得登入代碼"
 
 #: apps/web/src/pages/shell/bots/bot-settings-sections.tsx
 msgid "200K"
@@ -945,7 +945,7 @@ msgstr "由模型核准例行操作，其餘的再詢問你。"
 
 #: apps/web/src/pages/shell/host-computer-prompt.tsx
 msgid "A sandbox limits access to your computer for added security. Using {hostLabel} lets bots work with your local files and tools."
-msgstr ""
+msgstr "沙箱會限制對你電腦的存取，以提升安全性。使用 {hostLabel} 可讓機器人使用你的本機檔案和工具。"
 
 #: apps/mobile/lib/bots/bot-template-copy.ts
 #: apps/web/src/components/bot-templates/bot-template-copy.ts
@@ -1710,7 +1710,7 @@ msgstr "套用"
 #: apps/mobile/lib/cards/ask-action-label.ts
 #: apps/web/src/components/messages/AskCard.tsx
 msgid "Apply now"
-msgstr ""
+msgstr "立即套用"
 
 #: apps/web/src/components/teach/SkillDraftCard.tsx
 msgid "Approval boundaries"
@@ -2252,7 +2252,7 @@ msgstr "按鈕「{button}」· 讀取自頁面，未核實"
 
 #: apps/web/src/pages/settings/UsageSettingsPanel.tsx
 msgid "Cached"
-msgstr ""
+msgstr "快取"
 
 #: apps/web/src/pages/shell/meetings/meeting-calendar.tsx
 msgid "Calendar options"
@@ -2899,7 +2899,7 @@ msgstr "摺疊 {name}"
 
 #: apps/web/src/pages/shell/app-rail.tsx
 msgid "Collapse sidebar"
-msgstr ""
+msgstr "收合側邊欄"
 
 #: apps/mobile/components/bots/bot-look-picker.tsx
 #: apps/web/src/pages/shell/bots/avatar-studio-popover.tsx
@@ -2956,7 +2956,7 @@ msgstr "留言"
 #. js-lingui-explicit-id
 #: packages/i18n/src/plugin-catalog.ts
 msgid "Communication"
-msgstr ""
+msgstr "溝通"
 
 #: apps/web/src/pages/settings/AccountSettingsOverlay.tsx
 msgid "Compact"
@@ -3199,7 +3199,7 @@ msgstr "請在「模型」中連接你自己的 API 金鑰，或在「帳務」�
 #. js-lingui-explicit-id
 #: packages/i18n/src/plugin-catalog.ts
 msgid "Connected"
-msgstr ""
+msgstr "已連線"
 
 #: apps/mobile/app/(settings)/bot-template.tsx
 #: apps/mobile/app/(settings)/computers.tsx
@@ -3647,7 +3647,7 @@ msgstr "無法繼續"
 
 #: apps/mobile/lib/auth/use-subscription-sign-in.ts
 msgid "Could not copy the code. Try again."
-msgstr ""
+msgstr "無法複製代碼。請再試一次。"
 
 #: apps/mobile/app/page-share.tsx
 #: apps/mobile/app/pages.tsx
@@ -4110,7 +4110,7 @@ msgstr "無法開啟訊息"
 
 #: apps/mobile/app/(settings)/model-connection.tsx
 msgid "Could not open security settings. Try again."
-msgstr ""
+msgstr "無法開啟安全性設定。請再試一次。"
 
 #: apps/web/src/components/bot-templates/bot-templates-dialog.tsx
 msgid "Could not open the bot"
@@ -4118,7 +4118,7 @@ msgstr "無法開啟機器人"
 
 #: apps/mobile/lib/auth/use-subscription-sign-in.ts
 msgid "Could not open the sign-in page. Try again."
-msgstr ""
+msgstr "無法開啟登入頁面。請再試一次。"
 
 #: apps/mobile/app/meeting-transcript.tsx
 msgid "Could not open the transcript"
@@ -4668,7 +4668,7 @@ msgstr "無法載入你的錢包"
 
 #: apps/mobile/components/thread/thread-error-notice.tsx
 msgid "Couldn't refresh. Showing the last loaded messages."
-msgstr ""
+msgstr "無法重新整理。正在顯示上次載入的訊息。"
 
 #: apps/mobile/app/computer.tsx
 msgid "Couldn't start the computer"
@@ -4914,7 +4914,7 @@ msgstr "深色"
 #. js-lingui-explicit-id
 #: packages/i18n/src/plugin-catalog.ts
 msgid "Data"
-msgstr ""
+msgstr "資料"
 
 #: apps/web/src/pages/settings/AccountSettingsOverlay.tsx
 msgid "Data"
@@ -4927,7 +4927,7 @@ msgstr "日期範圍"
 #. js-lingui-explicit-id
 #: packages/i18n/src/billing.ts
 msgid "/ITcnz"
-msgstr ""
+msgstr "天"
 
 #: packages/i18n/src/cron.ts
 msgid "day"
@@ -5214,7 +5214,7 @@ msgstr "描述"
 #. js-lingui-explicit-id
 #: packages/i18n/src/plugin-catalog.ts
 msgid "Design"
-msgstr ""
+msgstr "設計"
 
 #: apps/web/src/components/DesktopUpdates.tsx
 msgid "Desktop app"
@@ -5238,7 +5238,7 @@ msgstr "詳細資訊"
 #. js-lingui-explicit-id
 #: packages/i18n/src/plugin-catalog.ts
 msgid "Developer"
-msgstr ""
+msgstr "開發者"
 
 #: apps/mobile/app/bot-settings.tsx
 msgid "Device voice"
@@ -5284,7 +5284,7 @@ msgstr "停用工具"
 #. js-lingui-explicit-id
 #: packages/i18n/src/plugin-catalog.ts
 msgid "Disabled"
-msgstr ""
+msgstr "已停用"
 
 #: apps/mobile/lib/messages/routine-event-label.ts
 #: apps/web/src/pages/shell/chat/routine-event-row.tsx
@@ -5308,7 +5308,7 @@ msgstr "捨棄錄製內容"
 
 #: apps/web/src/pages/routines/RoutineEditor.tsx
 msgid "Discard unsaved changes?"
-msgstr ""
+msgstr "要捨棄未儲存的變更嗎？"
 
 #: apps/mobile/components/cards/OutgoingDraftCard.tsx
 #: apps/web/src/components/messages/OutgoingDraftCard.tsx
@@ -5401,7 +5401,7 @@ msgstr "關閉錯誤"
 #: apps/mobile/components/vault/vault-item-editor.tsx
 #: apps/web/src/components/vault/VaultItemEditor.tsx
 msgid "Dismiss request"
-msgstr ""
+msgstr "忽略要求"
 
 #: apps/mobile/components/thread/ask-block.tsx
 #: apps/mobile/components/thread/message-bubble.tsx
@@ -5822,7 +5822,7 @@ msgstr "展開 {name}"
 
 #: apps/web/src/pages/shell/app-rail.tsx
 msgid "Expand sidebar"
-msgstr ""
+msgstr "展開側邊欄"
 
 #: apps/web/src/components/messages/markdown-copy.tsx
 msgid "Expand table"
@@ -5986,7 +5986,7 @@ msgstr "篩選器"
 #. js-lingui-explicit-id
 #: packages/i18n/src/plugin-catalog.ts
 msgid "Finance"
-msgstr ""
+msgstr "財務"
 
 #: apps/web/src/components/pages/PagesList.tsx
 msgid "Find a page"
@@ -6327,7 +6327,7 @@ msgstr "隱藏"
 
 #: apps/mobile/components/vault/login-fields-editor.tsx
 msgid "Hide {field}"
-msgstr ""
+msgstr "隱藏{field}"
 
 #: apps/mobile/components/thread/message-bubble.tsx
 msgid "Hide {label}"
@@ -6335,7 +6335,7 @@ msgstr "隱藏 {label}"
 
 #: apps/web/src/pages/shell/sidebar/sidebar-header.tsx
 msgid "Hide chat list"
-msgstr ""
+msgstr "隱藏聊天列表"
 
 #: apps/mobile/components/inbox/inbox-header.tsx
 msgid "Hide chats"
@@ -6537,7 +6537,7 @@ msgstr "此機器人中"
 
 #: apps/mobile/app/(settings)/model-connection.tsx
 msgid "In your browser, sign in and paste this code when asked. Then return to Rakazo."
-msgstr ""
+msgstr "在瀏覽器中登入，並在出現提示時貼上此代碼。然後返回 Rakazo。"
 
 #: apps/web/src/pages/settings/BillingSettingsPanel.tsx
 msgid "Inactive"
@@ -6709,7 +6709,7 @@ msgstr "隔離"
 
 #: apps/web/src/pages/space/artifact-preview-pane.tsx
 msgid "Isolated preview: no access to your account"
-msgstr ""
+msgstr "隔離預覽：無法存取你的帳戶"
 
 #: apps/mobile/app/new-space.tsx
 msgid "It could not be opened. Try again from the sidebar."
@@ -7045,7 +7045,7 @@ msgstr "正在載入模型目錄…"
 
 #: apps/web/src/pages/settings/UsageSettingsPanel.tsx
 msgid "Loading model name…"
-msgstr ""
+msgstr "正在載入模型名稱…"
 
 #: apps/web/src/components/pages/PageNotice.tsx
 msgid "Loading page…"
@@ -7251,7 +7251,7 @@ msgstr "Markdown 表格"
 #. js-lingui-explicit-id
 #: packages/i18n/src/plugin-catalog.ts
 msgid "Marketing"
-msgstr ""
+msgstr "行銷"
 
 #: packages/i18n/src/thinking-level.ts
 msgid "Max"
@@ -7422,19 +7422,19 @@ msgstr "給 {name} 發訊息"
 
 #: apps/web/src/pages/shell/chat/message-hover-actions.tsx
 msgid "Message actions"
-msgstr ""
+msgstr "訊息操作"
 
 #: apps/web/src/pages/shell/chat/message-hover-actions.tsx
 msgid "Message actions, {speakerName}"
-msgstr ""
+msgstr "訊息操作，{speakerName}"
 
 #: apps/web/src/pages/shell/chat/message-hover-actions.tsx
 msgid "Message actions, {speakerName}, {when}"
-msgstr ""
+msgstr "訊息操作，{speakerName}，{when}"
 
 #: apps/web/src/pages/shell/chat/message-hover-actions.tsx
 msgid "Message actions, {when}"
-msgstr ""
+msgstr "訊息操作，{when}"
 
 #: apps/web/src/pages/shell/composer/composer.tsx
 msgid "Message composer"
@@ -7544,7 +7544,7 @@ msgstr "模型 ID"
 
 #: apps/web/src/pages/settings/UsageSettingsPanel.tsx
 msgid "Model name unavailable"
-msgstr ""
+msgstr "無法取得模型名稱"
 
 #: apps/web/src/components/models/FoundModelPicker.tsx
 #: apps/web/src/pages/model-settings/role-model-picker.tsx
@@ -7653,7 +7653,7 @@ msgstr "下移"
 
 #: apps/web/src/components/messages/AskCard.tsx
 msgid "Move from another assistant"
-msgstr ""
+msgstr "從其他助理轉移"
 
 #: apps/web/src/pages/shell/create-delete-dialogs.tsx
 msgid "Move them to your shared memory."
@@ -7760,7 +7760,7 @@ msgstr "需要電子郵件地址"
 #. js-lingui-explicit-id
 #: packages/i18n/src/plugin-catalog.ts
 msgid "Needs an OAuth client ID"
-msgstr ""
+msgstr "需要 OAuth 用戶端 ID"
 
 #: apps/web/src/components/integrations/McpServerHealthLine.tsx
 #: packages/i18n/src/user-error.ts
@@ -7782,7 +7782,7 @@ msgstr "需要輸入"
 #. js-lingui-explicit-id
 #: packages/i18n/src/plugin-catalog.ts
 msgid "Needs sign-in"
-msgstr ""
+msgstr "需要登入"
 
 #: packages/i18n/src/activity.ts
 msgid "Needs takeover"
@@ -8242,7 +8242,7 @@ msgstr "尚未檢查"
 #. js-lingui-explicit-id
 #: packages/i18n/src/plugin-catalog.ts
 msgid "Not connected"
-msgstr ""
+msgstr "未連線"
 
 #: apps/web/src/pages/shell/bots/agent-import-plan.tsx
 msgid "Not imported"
@@ -8318,7 +8318,7 @@ msgstr "Rakazo 不使用"
 #. js-lingui-explicit-id
 #: packages/i18n/src/plugin-catalog.ts
 msgid "Not working"
-msgstr ""
+msgstr "無法正常工作"
 
 #: apps/web/src/components/integrations/McpServerHealthLine.tsx
 msgid "Not working"
@@ -9040,7 +9040,7 @@ msgstr "預覽草稿"
 
 #: apps/web/src/pages/space/artifact-preview-pane.tsx
 msgid "Preview isn't available for this file type. Download it to view it."
-msgstr ""
+msgstr "此檔案類型無法預覽。請下載後檢視。"
 
 #: apps/web/src/pages/shell/chat/chat-find-bar.tsx
 msgid "Previous match"
@@ -9091,7 +9091,7 @@ msgstr "擁有專屬機器人與群組的私人工作空間。"
 #. js-lingui-explicit-id
 #: packages/i18n/src/plugin-catalog.ts
 msgid "Productivity"
-msgstr ""
+msgstr "生產力"
 
 #: apps/mobile/app/_layout.tsx
 #: apps/mobile/components/thread/header/chat-header-title.tsx
@@ -9133,7 +9133,7 @@ msgstr "供應商"
 
 #: apps/mobile/components/models/model-role-settings.tsx
 msgid "Provider connected. Choose a model."
-msgstr ""
+msgstr "供應商已連線。請選擇模型。"
 
 #: apps/mobile/components/cards/run-error-sheet.tsx
 msgid "Provider message"
@@ -9383,7 +9383,7 @@ msgstr "正在重建電腦"
 #. js-lingui-explicit-id
 #: packages/i18n/src/plugin-catalog.ts
 msgid "Recruiting & HR"
-msgstr ""
+msgstr "招募與人資"
 
 #: apps/web/src/pages/integrations/McpServerForm.tsx
 msgid "Redirect URI"
@@ -10084,7 +10084,7 @@ msgstr "當此機器人收到來自這個供應商且通過驗證的訊息時執
 #. js-lingui-explicit-id
 #: packages/i18n/src/plugin-catalog.ts
 msgid "Sales & CRM"
-msgstr ""
+msgstr "銷售與 CRM"
 
 #: apps/mobile/app/(settings)/team-conversation.tsx
 msgid "Same as {bot}"
@@ -10101,7 +10101,7 @@ msgstr "與主模型相同"
 
 #: apps/web/src/pages/shell/host-computer-prompt.tsx
 msgid "Sandbox"
-msgstr ""
+msgstr "沙箱"
 
 #: packages/i18n/src/cron.ts
 msgid "Saturday"
@@ -10417,7 +10417,7 @@ msgstr "安全"
 #. js-lingui-explicit-id
 #: packages/i18n/src/plugin-catalog.ts
 msgid "Security & Ops"
-msgstr ""
+msgstr "資安與維運"
 
 #: apps/mobile/app/(settings)/vault.tsx
 #: apps/mobile/components/vault/vault-item-editor.tsx
@@ -10682,7 +10682,7 @@ msgstr "顯示"
 
 #: apps/mobile/components/vault/login-fields-editor.tsx
 msgid "Show {field}"
-msgstr ""
+msgstr "顯示{field}"
 
 #: apps/mobile/components/thread/message-bubble.tsx
 msgid "Show {label}"
@@ -10696,7 +10696,7 @@ msgstr "顯示全部"
 
 #: apps/web/src/pages/shell/app-rail.tsx
 msgid "Show chat list"
-msgstr ""
+msgstr "顯示聊天列表"
 
 #: apps/mobile/components/thread/header/chat-route-header.tsx
 msgid "Show chats"
@@ -11326,7 +11326,7 @@ msgstr "使用自己的 AI 訂閱"
 
 #: apps/mobile/lib/auth/use-subscription-sign-in.ts
 msgid "Subscription connected."
-msgstr ""
+msgstr "訂閱已連線。"
 
 #: apps/web/src/pages/auth/Paywall.tsx
 msgid "Subscription required"
@@ -12232,7 +12232,7 @@ msgstr "試用"
 #. js-lingui-explicit-id
 #: packages/i18n/src/billing.ts
 msgid "Nlt+k3"
-msgstr ""
+msgstr "試用將於 {day} 結束"
 
 #: apps/mobile/app/(settings)/billing.tsx
 #: apps/web/src/components/billing/ModelCredits.tsx
@@ -12378,7 +12378,7 @@ msgstr "取消關聯"
 
 #: apps/web/src/pages/settings/UsageSettingsPanel.tsx
 msgid "Unlisted model"
-msgstr ""
+msgstr "未列出的模型"
 
 #: apps/mobile/components/calls/CallCard.tsx
 #: apps/web/src/components/call/CallCard.tsx
@@ -13372,7 +13372,7 @@ msgstr "試用期的電腦時數已用完。"
 #. js-lingui-explicit-id
 #: packages/i18n/src/vault.ts
 msgid "Your Vault is full. Remove items you no longer need, then try again."
-msgstr ""
+msgstr "你的保管庫已滿。請移除不再需要的項目，然後再試一次。"
 
 #: packages/i18n/src/user-error.ts
 msgid "Your voice provider is out of credit."

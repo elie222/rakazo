@@ -312,7 +312,7 @@ msgstr "Zdobyte bezpłatne miesiące: {count}"
 #. js-lingui-explicit-id
 #: packages/i18n/src/billing.ts
 msgid "/RQB8K"
-msgstr ""
+msgstr "{count} mies."
 
 #: apps/mobile/app/(settings)/plugin.tsx
 #: apps/mobile/components/cards/ask-receipt.tsx
@@ -901,7 +901,7 @@ msgstr "100K"
 
 #: apps/mobile/app/(settings)/model-connection.tsx
 msgid "2. Get a sign-in code"
-msgstr ""
+msgstr "2. Uzyskaj kod logowania"
 
 #: apps/web/src/pages/shell/bots/bot-settings-sections.tsx
 msgid "200K"
@@ -944,7 +944,7 @@ msgstr "Model zatwierdza rutynowe działania, a o resztę pyta ciebie."
 
 #: apps/web/src/pages/shell/host-computer-prompt.tsx
 msgid "A sandbox limits access to your computer for added security. Using {hostLabel} lets bots work with your local files and tools."
-msgstr ""
+msgstr "Piaskownica ogranicza dostęp do komputera, zwiększając bezpieczeństwo. Gdy wybierzesz {hostLabel}, boty będą mogły pracować z Twoimi lokalnymi plikami i narzędziami."
 
 #: apps/mobile/lib/bots/bot-template-copy.ts
 #: apps/web/src/components/bot-templates/bot-template-copy.ts
@@ -1709,7 +1709,7 @@ msgstr "Zastosuj"
 #: apps/mobile/lib/cards/ask-action-label.ts
 #: apps/web/src/components/messages/AskCard.tsx
 msgid "Apply now"
-msgstr ""
+msgstr "Zastosuj teraz"
 
 #: apps/web/src/components/teach/SkillDraftCard.tsx
 msgid "Approval boundaries"
@@ -2251,7 +2251,7 @@ msgstr "Przycisk „{button}” · odczytane ze strony, niesprawdzone"
 
 #: apps/web/src/pages/settings/UsageSettingsPanel.tsx
 msgid "Cached"
-msgstr ""
+msgstr "Z pamięci podręcznej"
 
 #: apps/web/src/pages/shell/meetings/meeting-calendar.tsx
 msgid "Calendar options"
@@ -2898,7 +2898,7 @@ msgstr "Zwiń {name}"
 
 #: apps/web/src/pages/shell/app-rail.tsx
 msgid "Collapse sidebar"
-msgstr ""
+msgstr "Zwiń pasek boczny"
 
 #: apps/mobile/components/bots/bot-look-picker.tsx
 #: apps/web/src/pages/shell/bots/avatar-studio-popover.tsx
@@ -2955,7 +2955,7 @@ msgstr "Komentarze"
 #. js-lingui-explicit-id
 #: packages/i18n/src/plugin-catalog.ts
 msgid "Communication"
-msgstr ""
+msgstr "Komunikacja"
 
 #: apps/web/src/pages/settings/AccountSettingsOverlay.tsx
 msgid "Compact"
@@ -3198,7 +3198,7 @@ msgstr "Połącz własny klucz API w Modelach lub wybierz środki Rakazo w Rozli
 #. js-lingui-explicit-id
 #: packages/i18n/src/plugin-catalog.ts
 msgid "Connected"
-msgstr ""
+msgstr "Połączono"
 
 #: apps/mobile/app/(settings)/bot-template.tsx
 #: apps/mobile/app/(settings)/computers.tsx
@@ -3646,7 +3646,7 @@ msgstr "Nie udało się kontynuować"
 
 #: apps/mobile/lib/auth/use-subscription-sign-in.ts
 msgid "Could not copy the code. Try again."
-msgstr ""
+msgstr "Nie udało się skopiować kodu. Spróbuj ponownie."
 
 #: apps/mobile/app/page-share.tsx
 #: apps/mobile/app/pages.tsx
@@ -4109,7 +4109,7 @@ msgstr "Nie udało się otworzyć wiadomości"
 
 #: apps/mobile/app/(settings)/model-connection.tsx
 msgid "Could not open security settings. Try again."
-msgstr ""
+msgstr "Nie udało się otworzyć ustawień zabezpieczeń. Spróbuj ponownie."
 
 #: apps/web/src/components/bot-templates/bot-templates-dialog.tsx
 msgid "Could not open the bot"
@@ -4117,7 +4117,7 @@ msgstr "Nie udało się otworzyć bota"
 
 #: apps/mobile/lib/auth/use-subscription-sign-in.ts
 msgid "Could not open the sign-in page. Try again."
-msgstr ""
+msgstr "Nie udało się otworzyć strony logowania. Spróbuj ponownie."
 
 #: apps/mobile/app/meeting-transcript.tsx
 msgid "Could not open the transcript"
@@ -4667,7 +4667,7 @@ msgstr "Nie udało się wczytać portfela"
 
 #: apps/mobile/components/thread/thread-error-notice.tsx
 msgid "Couldn't refresh. Showing the last loaded messages."
-msgstr ""
+msgstr "Nie udało się odświeżyć. Wyświetlane są ostatnio wczytane wiadomości."
 
 #: apps/mobile/app/computer.tsx
 msgid "Couldn't start the computer"
@@ -4913,7 +4913,7 @@ msgstr "Ciemny"
 #. js-lingui-explicit-id
 #: packages/i18n/src/plugin-catalog.ts
 msgid "Data"
-msgstr ""
+msgstr "Dane"
 
 #: apps/web/src/pages/settings/AccountSettingsOverlay.tsx
 msgid "Data"
@@ -4926,7 +4926,7 @@ msgstr "Zakres dat"
 #. js-lingui-explicit-id
 #: packages/i18n/src/billing.ts
 msgid "/ITcnz"
-msgstr ""
+msgstr "dzień"
 
 #: packages/i18n/src/cron.ts
 msgid "day"
@@ -5213,7 +5213,7 @@ msgstr "Opis"
 #. js-lingui-explicit-id
 #: packages/i18n/src/plugin-catalog.ts
 msgid "Design"
-msgstr ""
+msgstr "Projektowanie"
 
 #: apps/web/src/components/DesktopUpdates.tsx
 msgid "Desktop app"
@@ -5237,7 +5237,7 @@ msgstr "Szczegóły"
 #. js-lingui-explicit-id
 #: packages/i18n/src/plugin-catalog.ts
 msgid "Developer"
-msgstr ""
+msgstr "Programowanie"
 
 #: apps/mobile/app/bot-settings.tsx
 msgid "Device voice"
@@ -5283,7 +5283,7 @@ msgstr "Wyłącz narzędzie"
 #. js-lingui-explicit-id
 #: packages/i18n/src/plugin-catalog.ts
 msgid "Disabled"
-msgstr ""
+msgstr "Wyłączono"
 
 #: apps/mobile/lib/messages/routine-event-label.ts
 #: apps/web/src/pages/shell/chat/routine-event-row.tsx
@@ -5307,7 +5307,7 @@ msgstr "Odrzuć nagranie"
 
 #: apps/web/src/pages/routines/RoutineEditor.tsx
 msgid "Discard unsaved changes?"
-msgstr ""
+msgstr "Odrzucić niezapisane zmiany?"
 
 #: apps/mobile/components/cards/OutgoingDraftCard.tsx
 #: apps/web/src/components/messages/OutgoingDraftCard.tsx
@@ -5400,7 +5400,7 @@ msgstr "Zamknij błąd"
 #: apps/mobile/components/vault/vault-item-editor.tsx
 #: apps/web/src/components/vault/VaultItemEditor.tsx
 msgid "Dismiss request"
-msgstr ""
+msgstr "Odrzuć prośbę"
 
 #: apps/mobile/components/thread/ask-block.tsx
 #: apps/mobile/components/thread/message-bubble.tsx
@@ -5821,7 +5821,7 @@ msgstr "Rozwiń {name}"
 
 #: apps/web/src/pages/shell/app-rail.tsx
 msgid "Expand sidebar"
-msgstr ""
+msgstr "Rozwiń pasek boczny"
 
 #: apps/web/src/components/messages/markdown-copy.tsx
 msgid "Expand table"
@@ -5985,7 +5985,7 @@ msgstr "Filtry"
 #. js-lingui-explicit-id
 #: packages/i18n/src/plugin-catalog.ts
 msgid "Finance"
-msgstr ""
+msgstr "Finanse"
 
 #: apps/web/src/components/pages/PagesList.tsx
 msgid "Find a page"
@@ -6326,7 +6326,7 @@ msgstr "Ukryj"
 
 #: apps/mobile/components/vault/login-fields-editor.tsx
 msgid "Hide {field}"
-msgstr ""
+msgstr "Ukryj {field}"
 
 #: apps/mobile/components/thread/message-bubble.tsx
 msgid "Hide {label}"
@@ -6334,7 +6334,7 @@ msgstr "Ukryj {label}"
 
 #: apps/web/src/pages/shell/sidebar/sidebar-header.tsx
 msgid "Hide chat list"
-msgstr ""
+msgstr "Ukryj listę czatów"
 
 #: apps/mobile/components/inbox/inbox-header.tsx
 msgid "Hide chats"
@@ -6536,7 +6536,7 @@ msgstr "W tym bocie"
 
 #: apps/mobile/app/(settings)/model-connection.tsx
 msgid "In your browser, sign in and paste this code when asked. Then return to Rakazo."
-msgstr ""
+msgstr "W przeglądarce zaloguj się i wklej ten kod, gdy pojawi się prośba. Następnie wróć do Rakazo."
 
 #: apps/web/src/pages/settings/BillingSettingsPanel.tsx
 msgid "Inactive"
@@ -6708,7 +6708,7 @@ msgstr "Odizolowane"
 
 #: apps/web/src/pages/space/artifact-preview-pane.tsx
 msgid "Isolated preview: no access to your account"
-msgstr ""
+msgstr "Odizolowany podgląd: brak dostępu do Twojego konta"
 
 #: apps/mobile/app/new-space.tsx
 msgid "It could not be opened. Try again from the sidebar."
@@ -7044,7 +7044,7 @@ msgstr "Wczytywanie katalogu modeli…"
 
 #: apps/web/src/pages/settings/UsageSettingsPanel.tsx
 msgid "Loading model name…"
-msgstr ""
+msgstr "Wczytywanie nazwy modelu…"
 
 #: apps/web/src/components/pages/PageNotice.tsx
 msgid "Loading page…"
@@ -7250,7 +7250,7 @@ msgstr "Tabela Markdown"
 #. js-lingui-explicit-id
 #: packages/i18n/src/plugin-catalog.ts
 msgid "Marketing"
-msgstr ""
+msgstr "Marketing"
 
 #: packages/i18n/src/thinking-level.ts
 msgid "Max"
@@ -7421,19 +7421,19 @@ msgstr "Napisz do {name}"
 
 #: apps/web/src/pages/shell/chat/message-hover-actions.tsx
 msgid "Message actions"
-msgstr ""
+msgstr "Akcje wiadomości"
 
 #: apps/web/src/pages/shell/chat/message-hover-actions.tsx
 msgid "Message actions, {speakerName}"
-msgstr ""
+msgstr "Akcje wiadomości, {speakerName}"
 
 #: apps/web/src/pages/shell/chat/message-hover-actions.tsx
 msgid "Message actions, {speakerName}, {when}"
-msgstr ""
+msgstr "Akcje wiadomości, {speakerName}, {when}"
 
 #: apps/web/src/pages/shell/chat/message-hover-actions.tsx
 msgid "Message actions, {when}"
-msgstr ""
+msgstr "Akcje wiadomości, {when}"
 
 #: apps/web/src/pages/shell/composer/composer.tsx
 msgid "Message composer"
@@ -7543,7 +7543,7 @@ msgstr "Identyfikator modelu"
 
 #: apps/web/src/pages/settings/UsageSettingsPanel.tsx
 msgid "Model name unavailable"
-msgstr ""
+msgstr "Nazwa modelu niedostępna"
 
 #: apps/web/src/components/models/FoundModelPicker.tsx
 #: apps/web/src/pages/model-settings/role-model-picker.tsx
@@ -7652,7 +7652,7 @@ msgstr "Przenieś w dół"
 
 #: apps/web/src/components/messages/AskCard.tsx
 msgid "Move from another assistant"
-msgstr ""
+msgstr "Przenieś z innego asystenta"
 
 #: apps/web/src/pages/shell/create-delete-dialogs.tsx
 msgid "Move them to your shared memory."
@@ -7759,7 +7759,7 @@ msgstr "Wymaga adresu e-mail"
 #. js-lingui-explicit-id
 #: packages/i18n/src/plugin-catalog.ts
 msgid "Needs an OAuth client ID"
-msgstr ""
+msgstr "Wymaga identyfikatora klienta OAuth"
 
 #: apps/web/src/components/integrations/McpServerHealthLine.tsx
 #: packages/i18n/src/user-error.ts
@@ -7781,7 +7781,7 @@ msgstr "Wymaga danych"
 #. js-lingui-explicit-id
 #: packages/i18n/src/plugin-catalog.ts
 msgid "Needs sign-in"
-msgstr ""
+msgstr "Wymaga zalogowania"
 
 #: packages/i18n/src/activity.ts
 msgid "Needs takeover"
@@ -8241,7 +8241,7 @@ msgstr "Jeszcze nie sprawdzono"
 #. js-lingui-explicit-id
 #: packages/i18n/src/plugin-catalog.ts
 msgid "Not connected"
-msgstr ""
+msgstr "Nie połączono"
 
 #: apps/web/src/pages/shell/bots/agent-import-plan.tsx
 msgid "Not imported"
@@ -8317,7 +8317,7 @@ msgstr "Nieużywane przez Rakazo"
 #. js-lingui-explicit-id
 #: packages/i18n/src/plugin-catalog.ts
 msgid "Not working"
-msgstr ""
+msgstr "Nie działa"
 
 #: apps/web/src/components/integrations/McpServerHealthLine.tsx
 msgid "Not working"
@@ -9039,7 +9039,7 @@ msgstr "Podgląd wersji roboczej"
 
 #: apps/web/src/pages/space/artifact-preview-pane.tsx
 msgid "Preview isn't available for this file type. Download it to view it."
-msgstr ""
+msgstr "Podgląd nie jest dostępny dla tego typu pliku. Pobierz go, aby go wyświetlić."
 
 #: apps/web/src/pages/shell/chat/chat-find-bar.tsx
 msgid "Previous match"
@@ -9090,7 +9090,7 @@ msgstr "Prywatny obszar roboczy z własnymi botami i grupami."
 #. js-lingui-explicit-id
 #: packages/i18n/src/plugin-catalog.ts
 msgid "Productivity"
-msgstr ""
+msgstr "Produktywność"
 
 #: apps/mobile/app/_layout.tsx
 #: apps/mobile/components/thread/header/chat-header-title.tsx
@@ -9132,7 +9132,7 @@ msgstr "Dostawca"
 
 #: apps/mobile/components/models/model-role-settings.tsx
 msgid "Provider connected. Choose a model."
-msgstr ""
+msgstr "Połączono z dostawcą. Wybierz model."
 
 #: apps/mobile/components/cards/run-error-sheet.tsx
 msgid "Provider message"
@@ -9382,7 +9382,7 @@ msgstr "Odtwarzanie komputera"
 #. js-lingui-explicit-id
 #: packages/i18n/src/plugin-catalog.ts
 msgid "Recruiting & HR"
-msgstr ""
+msgstr "Rekrutacja i HR"
 
 #: apps/web/src/pages/integrations/McpServerForm.tsx
 msgid "Redirect URI"
@@ -10083,7 +10083,7 @@ msgstr "Uruchamia się, gdy bot otrzyma zweryfikowaną wiadomość od tego dosta
 #. js-lingui-explicit-id
 #: packages/i18n/src/plugin-catalog.ts
 msgid "Sales & CRM"
-msgstr ""
+msgstr "Sprzedaż i CRM"
 
 #: apps/mobile/app/(settings)/team-conversation.tsx
 msgid "Same as {bot}"
@@ -10100,7 +10100,7 @@ msgstr "Tak samo jak główny model"
 
 #: apps/web/src/pages/shell/host-computer-prompt.tsx
 msgid "Sandbox"
-msgstr ""
+msgstr "Piaskownica"
 
 #: packages/i18n/src/cron.ts
 msgid "Saturday"
@@ -10416,7 +10416,7 @@ msgstr "Bezpieczeństwo"
 #. js-lingui-explicit-id
 #: packages/i18n/src/plugin-catalog.ts
 msgid "Security & Ops"
-msgstr ""
+msgstr "Bezpieczeństwo i operacje"
 
 #: apps/mobile/app/(settings)/vault.tsx
 #: apps/mobile/components/vault/vault-item-editor.tsx
@@ -10681,7 +10681,7 @@ msgstr "Pokaż"
 
 #: apps/mobile/components/vault/login-fields-editor.tsx
 msgid "Show {field}"
-msgstr ""
+msgstr "Pokaż {field}"
 
 #: apps/mobile/components/thread/message-bubble.tsx
 msgid "Show {label}"
@@ -10695,7 +10695,7 @@ msgstr "Pokaż wszystkie"
 
 #: apps/web/src/pages/shell/app-rail.tsx
 msgid "Show chat list"
-msgstr ""
+msgstr "Pokaż listę czatów"
 
 #: apps/mobile/components/thread/header/chat-route-header.tsx
 msgid "Show chats"
@@ -11325,7 +11325,7 @@ msgstr "Subskrybuj z własnym AI"
 
 #: apps/mobile/lib/auth/use-subscription-sign-in.ts
 msgid "Subscription connected."
-msgstr ""
+msgstr "Połączono subskrypcję."
 
 #: apps/web/src/pages/auth/Paywall.tsx
 msgid "Subscription required"
@@ -12231,7 +12231,7 @@ msgstr "Okres próbny"
 #. js-lingui-explicit-id
 #: packages/i18n/src/billing.ts
 msgid "Nlt+k3"
-msgstr ""
+msgstr "Okres próbny kończy się {day}"
 
 #: apps/mobile/app/(settings)/billing.tsx
 #: apps/web/src/components/billing/ModelCredits.tsx
@@ -12377,7 +12377,7 @@ msgstr "Odłącz"
 
 #: apps/web/src/pages/settings/UsageSettingsPanel.tsx
 msgid "Unlisted model"
-msgstr ""
+msgstr "Model spoza listy"
 
 #: apps/mobile/components/calls/CallCard.tsx
 #: apps/web/src/components/call/CallCard.tsx
@@ -13371,7 +13371,7 @@ msgstr "Godziny pracy komputera w okresie próbnym zostały wykorzystane."
 #. js-lingui-explicit-id
 #: packages/i18n/src/vault.ts
 msgid "Your Vault is full. Remove items you no longer need, then try again."
-msgstr ""
+msgstr "Twój sejf jest pełny. Usuń niepotrzebne elementy i spróbuj ponownie."
 
 #: packages/i18n/src/user-error.ts
 msgid "Your voice provider is out of credit."

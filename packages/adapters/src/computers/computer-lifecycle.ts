@@ -315,6 +315,13 @@ export async function provisionComputer(
       await recordComputerRunStart(deps.prisma, existing, runningSince);
       const damaged = await (async () => {
         await prepare(ref);
+        await ensureComputerWorkspaceLayout(
+          deps.sandbox,
+          ref,
+          parseComputerMode(existing.scope),
+          context.botId ? { id: context.botId, workspacePath: layout?.workspacePath } : undefined,
+          context,
+        );
       })().then(
         () => false,
         (error: unknown) => {
@@ -324,13 +331,6 @@ export async function provisionComputer(
         },
       );
       if (!damaged) {
-        await ensureComputerWorkspaceLayout(
-          deps.sandbox,
-          ref,
-          parseComputerMode(existing.scope),
-          context.botId ? { id: context.botId, workspacePath: layout?.workspacePath } : undefined,
-          context,
-        );
         logProvisioned(ref, "reuse");
         return ref;
       }
