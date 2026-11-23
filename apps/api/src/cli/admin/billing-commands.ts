@@ -157,7 +157,13 @@ async function refundBilling(
             : {}),
         });
         attempted = true;
-        const result = await invoiceRefund(customerId, invoice, true, planned?.refundMinor);
+        // With --full, an earlier partial refund is a conflict, not the refund asked for.
+        const result = await invoiceRefund(
+          customerId,
+          invoice,
+          true,
+          planned?.refundMinor ?? (full ? match.refund.amountMinor : undefined),
+        );
         if (!result || result.state === "refundable")
           throw new AdminCommandError(
             "The refund could not be confirmed. Preview the refund again.",
@@ -286,6 +292,8 @@ async function invoiceCredits(
     }),
   ]);
   return {
+    // Purchases from before credit lots existed get theirs on the account's next credit use.
+    usageKnown: !purchase || !!lot || purchase.amountMicros === 0n,
     // What the invoice still funds: a synced refund lowers it.
     fromInvoiceMicros: purchase?.amountMicros ?? 0n,
     // Includes holds for calls still running.
@@ -312,6 +320,10 @@ type InvoiceCredits = NonNullable<Awaited<ReturnType<typeof invoiceCredits>>>;
  * balance lands near zero instead of below it.
  */
 function refundPlan(credits: InvoiceCredits | null, paidMinor: number, full: boolean) {
+  if (!full && credits && !credits.usageKnown)
+    throw new AdminCommandError(
+      "This purchase's credit use is not recorded yet. Add --full to refund the whole charge.",
+    );
   const bought = credits?.fromInvoiceMicros ?? 0n;
   const used = credits && credits.usedMicros < bought ? credits.usedMicros : bought;
   const paid = BigInt(paidMinor);
