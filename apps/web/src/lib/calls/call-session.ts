@@ -40,7 +40,7 @@ import { recheckSessionOnUnauthorized, rpc } from "../query/rpc.js";
 import { errorText } from "../query/user-error";
 import { pickUp } from "./call-pickup.js";
 import { dictation, usesServerDictation } from "./dictation.js";
-import { openRealtimeCall, SIGNED_IN_USER_KEY, selectedRealtimeModel } from "./realtime-call.js";
+import { openRealtimeCall, SIGNED_IN_USER_KEY } from "./realtime-call.js";
 import { speaker } from "./tts.js";
 
 /** `ringing` until the call picks up; the rest describe the conversation. */
@@ -202,14 +202,17 @@ export function startCall(call: {
     heard: "",
     exchanges: [],
   };
-  const realtimeModel = !call.answered && !call.classic && selectedRealtimeModel(identity);
-  if (realtimeModel && typeof RTCPeerConnection !== "undefined") {
+  if (!call.answered && !call.classic && typeof RTCPeerConnection !== "undefined") {
     const currentId = callId;
     let connected = false;
     realtimeCall = openRealtimeCall({
       callId: currentId,
       botId: call.botId,
-      model: realtimeModel,
+      onUnavailable() {
+        if (callId !== currentId || !state) return;
+        realtimeCall = undefined;
+        startCall({ ...call, classic: true });
+      },
       onReady() {
         if (callId !== currentId || !state) return;
         connected = true;

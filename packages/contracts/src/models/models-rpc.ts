@@ -23,6 +23,7 @@ import {
   ModelRoleUpdateSchema,
   ModelRoleViewSchema,
 } from "./model-roles.js";
+import { RealtimeCallSettingsSchema, RealtimeCallStateSchema } from "./realtime-call.js";
 import {
   MAX_TRANSCRIPTION_VOCABULARY_LENGTH,
   VoiceCatalogEntrySchema,
@@ -221,5 +222,10 @@ export const modelsRpc = {
         }),
       )
       .output(z.object({ ready: z.boolean(), utterances: z.array(z.string()) })),
+    /** Account-wide realtime call settings, kept apart from the voice that reads replies aloud. */
+    realtime: {
+      get: oc.output(RealtimeCallStateSchema),
+      set: oc.input(RealtimeCallSettingsSchema).output(RealtimeCallStateSchema),
+    },
   },
 };

@@ -59,6 +59,7 @@ import { aiConsentStatus, allowAiConsent } from "../account/ai-consent.js";
 import { createAccessGrant, listAccessGrants, revokeAccessGrant } from "../auth/access-grants.js";
 import { requireAdmin } from "../auth/admins.js";
 import type { BillingService } from "../billing/billing.js";
+import { realtimeCallState, saveRealtimeCallSettings } from "../calls/realtime-settings.js";
 import {
   accountVoiceCatalog,
   disconnectVoiceCredential,
@@ -683,6 +684,19 @@ export function accountRoutes(ctx: RouterContext) {
         );
         return toVoiceStatus(cred);
       }),
+      realtime: {
+        get: authed.voice.realtime.get.handler(async ({ context }) =>
+          realtimeCallState(deps.prisma, context.actor, deps.env?.phoneCallsEnabled === true),
+        ),
+        set: authed.voice.realtime.set.handler(async ({ context, input }) =>
+          saveRealtimeCallSettings(
+            deps.prisma,
+            context.actor,
+            deps.env?.phoneCallsEnabled === true,
+            input,
+          ),
+        ),
+      },
       setSpeechModel: authed.voice.setSpeechModel.handler(async ({ context, input }) =>
         updateVoiceSpeechModel(deps, context.actor, { ...input, signal: context.signal }),
       ),

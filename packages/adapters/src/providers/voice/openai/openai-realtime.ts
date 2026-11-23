@@ -1,11 +1,20 @@
 import { once } from "node:events";
+import type { RealtimeCallCapability, RealtimeCallSettings } from "@rakazo/contracts";
 import { deadlineSignal } from "@rakazo/core";
 import { bestEffort } from "@rakazo/logging";
 import WebSocket from "ws";
-import type { RealtimeVoiceEvent, RealtimeVoiceProvider } from "../../../voice/realtime-voice.js";
+import type {
+  RealtimeVoiceEvent,
+  RealtimeVoiceHistoryItem,
+  RealtimeVoiceProvider,
+  RealtimeVoiceTool,
+} from "../../../voice/realtime-voice.js";
 
 const origin = "https://api.openai.com/v1/realtime";
-const realtimeVoices = new Set([
+/** marin and cedar first: the provider recommends them for realtime speech. */
+const voices = [
+  "marin",
+  "cedar",
   "alloy",
   "ash",
   "ballad",
@@ -14,15 +23,109 @@ const realtimeVoices = new Set([
   "sage",
   "shimmer",
   "verse",
-  "marin",
-  "cedar",
-]);
-const models = [
-  { id: "gpt-realtime-1.5", label: "GPT Realtime 1.5" },
-  { id: "gpt-realtime-2", label: "GPT Realtime 2" },
-  { id: "gpt-realtime-2.1", label: "GPT Realtime 2.1" },
-  { id: "gpt-realtime-2.1-mini", label: "GPT Realtime 2.1 mini" },
 ] as const;
+const voiceSet = new Set<string>(voices);
+const shared: RealtimeCallCapability[] = [
+  "voice",
+  "speed",
+  "patience",
+  "noiseReduction",
+  "language",
+  "vadThreshold",
+  "silenceMs",
+  "maxOutputTokens",
+];
+const reasoning: RealtimeCallCapability[] = [...shared, "thinking"];
+const models = [
+  { id: "gpt-realtime-2.1", label: "GPT Realtime 2.1", capabilities: reasoning },
+  { id: "gpt-realtime-2.1-mini", label: "GPT Realtime 2.1 mini", capabilities: shared },
+  { id: "gpt-realtime-2", label: "GPT Realtime 2", capabilities: reasoning },
+  { id: "gpt-realtime-1.5", label: "GPT Realtime 1.5", capabilities: shared },
+];
+const eagerness = { patient: "low", balanced: "medium", quick: "high" } as const;
+const effort = { fast: "minimal", balanced: "low", thorough: "medium" } as const;
+const noise = { headset: { type: "near_field" }, room: { type: "far_field" }, off: null } as const;
+const transcriptionModel = "gpt-transcribe";
+const languageNames = new Intl.DisplayNames(["en"], { type: "language" });
+
+/** The GA session object for one call; unsupported settings are left out, not guessed. */
+export function realtimeSession(input: {
+  settings: RealtimeCallSettings;
+  voiceId: string;
+  instructions: string;
+  tools: readonly RealtimeVoiceTool[];
+}) {
+  const { settings } = input;
+  const model = models.find((entry) => entry.id === settings.model);
+  if (!model) throw new Error("Unknown realtime model");
+  const can = (capability: RealtimeCallCapability) => model.capabilities.includes(capability);
+  const language = can("language") ? settings.language : undefined;
+  // No patience keeps today's quiet-gap detection; a chosen one ends turns by meaning.
+  const patience = can("patience") ? settings.patience : undefined;
+  const turnDetection = patience
+    ? {
+        type: "semantic_vad",
+        eagerness: eagerness[patience],
+        interrupt_response: true,
+        create_response: true,
+      }
+    : {
+        type: "server_vad",
+        ...(can("vadThreshold") && settings.vadThreshold !== undefined
+          ? { threshold: settings.vadThreshold }
+          : {}),
+        ...(can("silenceMs") && settings.silenceMs !== undefined
+          ? { silence_duration_ms: settings.silenceMs }
+          : {}),
+        interrupt_response: true,
+        create_response: true,
+      };
+  const voice = voiceSet.has(input.voiceId) ? input.voiceId : "marin";
+  return {
+    type: "realtime",
+    model: model.id,
+    instructions: language
+      ? `${input.instructions}\n\nThe caller speaks ${languageNames.of(language) ?? language}. Answer in that language unless they switch.`
+      : input.instructions,
+    output_modalities: ["audio"],
+    ...(can("maxOutputTokens") && settings.maxOutputTokens !== undefined
+      ? { max_output_tokens: settings.maxOutputTokens }
+      : {}),
+    ...(can("thinking") && settings.thinking
+      ? { reasoning: { effort: effort[settings.thinking] } }
+      : {}),
+    audio: {
+      input: {
+        transcription: { model: transcriptionModel, ...(language ? { language } : {}) },
+        ...(can("noiseReduction") && settings.noiseReduction
+          ? { noise_reduction: noise[settings.noiseReduction] }
+          : {}),
+        turn_detection: turnDetection,
+      },
+      output: {
+        voice,
+        ...(can("speed") && settings.speed !== undefined ? { speed: settings.speed } : {}),
+      },
+    },
+    tools: input.tools.map((tool) => ({ type: "function", ...tool })),
+  };
+}
+
+/** Earlier chat turns as text items, chained from the conversation root so speech lands after them. */
+export function historyItems(history: readonly RealtimeVoiceHistoryItem[]) {
+  return history.map((message, index) => ({
+    type: "conversation.item.create",
+    previous_item_id: index === 0 ? "root" : `history_${index - 1}`,
+    item: {
+      id: `history_${index}`,
+      type: "message",
+      role: message.role === "bot" ? "assistant" : "user",
+      content: [
+        { type: message.role === "bot" ? "output_text" : "input_text", text: message.text },
+      ],
+    },
+  }));
+}
 
 export function parseRealtimeVoiceEvent(source: string): RealtimeVoiceEvent | undefined {
   let event: Record<string, unknown>;
@@ -44,17 +147,23 @@ export function parseRealtimeVoiceEvent(source: string): RealtimeVoiceEvent | un
     if (!response || typeof response.id !== "string") return;
     if (event.type === "response.created")
       return { kind: "responseStart", responseId: response.id };
-    const taskIds =
+    const toolCalls =
       response.status === "completed" && Array.isArray(response.output)
         ? response.output.flatMap((item) =>
             item?.type === "function_call" &&
-            item.name === "ask_bot" &&
+            typeof item.name === "string" &&
             typeof item.call_id === "string"
-              ? [item.call_id]
+              ? [
+                  {
+                    id: item.call_id,
+                    name: item.name,
+                    args: typeof item.arguments === "string" ? item.arguments : "{}",
+                  },
+                ]
               : [],
           )
         : [];
-    return { kind: "responseDone", responseId: response.id, taskIds };
+    return { kind: "responseDone", responseId: response.id, toolCalls };
   }
   const user = event.type === "conversation.item.input_audio_transcription.completed";
   if (
@@ -74,30 +183,9 @@ export function parseRealtimeVoiceEvent(source: string): RealtimeVoiceEvent | un
 
 export const openaiRealtimeVoice: RealtimeVoiceProvider = {
   models,
-  async connect({ offer, model, apiKey, voiceId, instructions, signal }) {
-    if (!models.some((entry) => entry.id === model)) throw new Error("Unknown realtime model");
-    const session = {
-      type: "realtime",
-      model,
-      instructions,
-      output_modalities: ["audio"],
-      audio: {
-        input: {
-          transcription: { model: "gpt-4o-mini-transcribe" },
-          turn_detection: { type: "server_vad", interrupt_response: true, create_response: true },
-        },
-        output: { voice: realtimeVoices.has(voiceId) ? voiceId : "marin" },
-      },
-      tools: [
-        {
-          type: "function",
-          name: "ask_bot",
-          description:
-            "Hand the user's current request to their bot when it needs more chat history, memory, skills, tools, or longer work. Do not claim a result before it returns.",
-          parameters: { type: "object", properties: {}, additionalProperties: false },
-        },
-      ],
-    };
+  voices,
+  async connect({ offer, apiKey, settings, voiceId, instructions, history, tools, signal }) {
+    const session = realtimeSession({ settings, voiceId, instructions, tools });
     const form = new FormData();
     form.set("sdp", offer);
     form.set("session", JSON.stringify(session));
@@ -134,6 +222,7 @@ export const openaiRealtimeVoice: RealtimeVoiceProvider = {
       void hangUp();
       throw error;
     }
+    for (const item of historyItems(history)) socket.send(JSON.stringify(item));
     let speaking = false;
     let responsePending = false;
     const respond = () => {
@@ -162,16 +251,12 @@ export const openaiRealtimeVoice: RealtimeVoiceProvider = {
           if (event.kind === "responseDone") respond();
         });
       },
-      taskResult(callId, outcome) {
+      toolResult(callId, output) {
         if (socket.readyState !== WebSocket.OPEN) return;
         socket.send(
           JSON.stringify({
             type: "conversation.item.create",
-            item: {
-              type: "function_call_output",
-              call_id: callId,
-              output: JSON.stringify({ status: outcome }),
-            },
+            item: { type: "function_call_output", call_id: callId, output: JSON.stringify(output) },
           }),
         );
         responsePending = true;

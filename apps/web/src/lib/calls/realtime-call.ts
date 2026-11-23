@@ -1,38 +1,48 @@
+import type { RealtimeCallState } from "@rakazo/contracts";
+import { chosenRealtimeModel } from "@rakazo/contracts";
 import type { CallExchange } from "@rakazo/core";
 import { deadlineSignal } from "@rakazo/core";
 import { reportClientError } from "../platform/monitoring.js";
-import { selectedSpaceId, withSpaceHeaders } from "../query/rpc.js";
+import { rpc, selectedSpaceId, withSpaceHeaders } from "../query/rpc.js";
 
 const endpoint = "/api/voice/realtime";
 export const SIGNED_IN_USER_KEY = "rakazo.signedInUser";
+/** Earlier releases kept the model choice on the device; it moves to the account once. */
+const legacyModelKey = (userId: string) => `rakazo.realtimeCallModel.${userId}`;
 
-export function realtimePreferenceUser() {
-  return localStorage.getItem(SIGNED_IN_USER_KEY);
-}
+/** How long a call waits for the settings before it starts the standard call. */
+const SETTINGS_DEADLINE_MS = 5_000;
 
-export function selectedRealtimeModel(userId: string | null | undefined) {
-  return userId ? (localStorage.getItem(`rakazo.realtimeCallModel.${userId}`) ?? "") : "";
-}
-
-export function setRealtimeModel(userId: string, model: string) {
-  localStorage.setItem(`rakazo.realtimeCallModel.${userId}`, model);
-}
-
-export async function realtimeVoiceModels(spaceId: string | null, signal: AbortSignal) {
-  const response = await fetch(`${endpoint}/models`, {
-    headers: withSpaceHeaders({}, spaceId),
-    signal,
-  });
-  if (!response.ok) return [];
-  const body: { models: { id: string; label: string }[] } = await response.json();
-  return body.models;
+/**
+ * The account's realtime settings, after moving a device-only model choice onto the account
+ * when the account has none yet and a connected provider still offers it. The device value
+ * is dropped only once nothing is left to move, so a failed save tries again next time.
+ */
+export async function loadRealtimeCallState(signal?: AbortSignal): Promise<RealtimeCallState> {
+  const state = await rpc.voice.realtime.get(undefined, { signal });
+  const userId = localStorage.getItem(SIGNED_IN_USER_KEY);
+  const legacy = userId ? localStorage.getItem(legacyModelKey(userId)) : null;
+  if (!userId || legacy === null) return state;
+  const provider = state.providers.find((entry) =>
+    entry.models.some((model) => model.id === legacy),
+  );
+  const moved =
+    state.settings.model || !provider
+      ? state
+      : await rpc.voice.realtime.set(
+          { ...state.settings, provider: provider.provider, model: legacy },
+          { signal },
+        );
+  localStorage.removeItem(legacyModelKey(userId));
+  return moved;
 }
 
 export function openRealtimeCall(input: {
   callId: string;
   botId: string;
-  model: string;
   onReady(): void;
+  /** No realtime model is chosen or offered; the caller starts the standard call instead. */
+  onUnavailable(): void;
   onPhase(phase: "listening" | "thinking" | "speaking"): void;
   onTranscript(exchange: CallExchange): void;
   onFailure(): void;
@@ -124,8 +134,24 @@ export function openRealtimeCall(input: {
   });
 
   void (async () => {
+    // Without readable settings the standard call is the safe default, not an error toast.
+    const state = await loadRealtimeCallState(
+      deadlineSignal(SETTINGS_DEADLINE_MS, controller.signal),
+    ).catch((error: unknown) => {
+      reportClientError(error, "rpc.transport");
+      return null;
+    });
+    if (!state || !chosenRealtimeModel(state)) {
+      if (close()) input.onUnavailable();
+      return;
+    }
+    if (controller.signal.aborted) return;
+    // "Off" means no noise reduction at all, so the browser's own filter stops too.
     stream = await navigator.mediaDevices.getUserMedia({
-      audio: { echoCancellation: true, noiseSuppression: true },
+      audio: {
+        echoCancellation: true,
+        noiseSuppression: state.settings.noiseReduction !== "off",
+      },
     });
     if (controller.signal.aborted) {
       for (const track of stream.getTracks()) track.stop();
@@ -144,11 +170,15 @@ export function openRealtimeCall(input: {
       body: JSON.stringify({
         callId: input.callId,
         botId: input.botId,
-        model: input.model,
         offer: offer.sdp,
       }),
       signal: deadlineSignal(20_000, controller.signal),
     });
+    // Realtime was switched off after the settings were read: the standard call takes over.
+    if (response.status === 409) {
+      if (close()) input.onUnavailable();
+      return;
+    }
     if (!response.ok) throw new Error("Realtime call could not connect");
     await peer.setRemoteDescription({ type: "answer", sdp: await response.text() });
   })().catch(fail);

@@ -865,7 +865,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
   mountVoiceHttpRoutes(app, { prisma, secrets, env }, (c) => sessionActor(c.req.raw));
   mountRealtimeVoiceRoutes(
     app,
-    { prisma, secrets, env, jobs, events, sandbox, notifications, analytics },
+    { prisma, secrets, env, jobs, events, sandbox, notifications, analytics, memory },
     async (c, recheck) => (await requestSession(c.req.raw, recheck))?.actor ?? null,
     (origin) => isTrustedOrigin(origin, env),
     env.phoneCallsEnabled,

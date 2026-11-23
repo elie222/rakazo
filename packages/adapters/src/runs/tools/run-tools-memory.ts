@@ -5,6 +5,7 @@ import {
   isDeletableMemoryDocument,
   MEMORY_INDEX_PATH,
 } from "@rakazo/contracts";
+import type { HistoryScope, PrismaClient } from "@rakazo/db";
 import { readHistory, searchHistory } from "@rakazo/db";
 import { redactConnectorPayload } from "../../integrations/connector-safety.js";
 import { editMemory } from "../../memory/memory-tools.js";
@@ -41,6 +42,40 @@ export function withoutBlankFields(args: Record<string, unknown>): Record<string
   );
 }
 
+/**
+ * search_history / read_history within an already-authorized scope. Runs and realtime calls
+ * share it so both validate, redact and cap the response the same way.
+ */
+export async function lookUpHistory(
+  prisma: PrismaClient,
+  scope: HistoryScope,
+  name: string,
+  args: Record<string, unknown>,
+  secrets: string[],
+) {
+  const given = withoutBlankFields(args);
+  let response: Awaited<ReturnType<typeof searchHistory | typeof readHistory>>;
+  if (name === "search_history") {
+    const parsed = HistorySearchInputSchema.safeParse(given);
+    if (!parsed.success) return { error: argsError(parsed.error) };
+    response = await searchHistory(prisma, scope, parsed.data);
+  } else {
+    const parsed = HistoryReadInputSchema.safeParse(given);
+    if (!parsed.success) return { error: argsError(parsed.error) };
+    response = await readHistory(prisma, scope, parsed.data);
+  }
+  const redacted = redactConnectorPayload(response, secrets);
+  // Redaction can expand short synthetic credentials; never let Pi clip the JSON.
+  if (Buffer.byteLength(JSON.stringify(redacted), "utf8") > 11_000) {
+    return {
+      untrusted: true,
+      error:
+        "Redacted history exceeds the response budget. Retry with limit 1 or a narrower linked run.",
+    };
+  }
+  return { response, redacted };
+}
+
 async function readHistoryTool(ctx: RunContext, call: ToolCall) {
   const { deps, run } = ctx;
   const { name, args } = call;
@@ -62,26 +97,9 @@ async function readHistoryTool(ctx: RunContext, call: ToolCall) {
     searchAt: run.createdAt,
     ...(run.trigger === "routine" ? { ownerOnly: run.userId } : {}),
   };
-  const given = withoutBlankFields(args);
-  let response: Awaited<ReturnType<typeof searchHistory | typeof readHistory>>;
-  if (name === "search_history") {
-    const parsed = HistorySearchInputSchema.safeParse(given);
-    if (!parsed.success) return call.finish({ error: argsError(parsed.error) });
-    response = await searchHistory(deps.prisma, scope, parsed.data);
-  } else {
-    const parsed = HistoryReadInputSchema.safeParse(given);
-    if (!parsed.success) return call.finish({ error: argsError(parsed.error) });
-    response = await readHistory(deps.prisma, scope, parsed.data);
-  }
-  const redacted = redactConnectorPayload(response, ctx.secrets);
-  // Redaction can expand short synthetic credentials; never let Pi clip the JSON.
-  if (Buffer.byteLength(JSON.stringify(redacted), "utf8") > 11_000) {
-    return call.finish({
-      untrusted: true,
-      error:
-        "Redacted history exceeds the response budget. Retry with limit 1 or a narrower linked run.",
-    });
-  }
+  const lookup = await lookUpHistory(deps.prisma, scope, name, args, ctx.secrets);
+  if ("error" in lookup) return call.finish(lookup);
+  const { response, redacted } = lookup;
   // Files the bot can now see are copied before its next computer tool.
   ctx.computer.copyEarlierFiles(
     response.messages.flatMap((message) =>

@@ -15,6 +15,7 @@ import { recheckSessionOnUnauthorized, rpc } from "../query/rpc.js";
 import { pickUp } from "./call-pickup.js";
 import { ECHO_GUARD_MS, endCall, getSnapshot, startCall, toggleMute } from "./call-session";
 import { dictation, usesServerDictation } from "./dictation.js";
+import { openRealtimeCall } from "./realtime-call.js";
 import { speaker } from "./tts.js";
 
 // The macro compiles away in the app build; tests run the source, so tag the template as-is.
@@ -39,6 +40,15 @@ vi.mock("./dictation.js", () => ({
     stop: vi.fn(),
     subscribe: vi.fn(() => () => undefined),
   },
+}));
+
+vi.mock("./realtime-call.js", () => ({
+  SIGNED_IN_USER_KEY: "rakazo.signedInUser",
+  // Settings come from the server; here realtime is off, so the call hands over at once.
+  openRealtimeCall: vi.fn((input: { onUnavailable(): void }) => {
+    void Promise.resolve().then(() => input.onUnavailable());
+    return { stop: vi.fn(async () => undefined), mute: vi.fn() };
+  }),
 }));
 
 vi.mock("./tts.js", () => ({
@@ -98,6 +108,22 @@ describe("call session", () => {
   afterEach(() => {
     endCall();
     vi.useRealTimers();
+  });
+
+  it("starts exactly one standard call when realtime calls are off", async () => {
+    vi.stubGlobal("RTCPeerConnection", class {});
+    try {
+      startCall({ botId: "call-bot", botName: "Ada" });
+      await vi.waitFor(() => expect(pickUp).toHaveBeenCalledOnce());
+      expect(openRealtimeCall).toHaveBeenCalledOnce();
+      expect(pickUp).toHaveBeenCalledWith(expect.anything(), { ring: true });
+      // The picked-up standard call goes on to listening, as any classic call does.
+      await vi.waitFor(() =>
+        expect(getSnapshot()).toMatchObject({ botId: "call-bot", phase: "listening" }),
+      );
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it("starts listening for the bot on the call", async () => {

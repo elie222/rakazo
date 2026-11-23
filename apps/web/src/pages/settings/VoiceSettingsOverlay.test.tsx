@@ -16,6 +16,7 @@ const voice = vi.hoisted(() => ({
   disconnect: vi.fn(),
   setVoice: vi.fn(),
   setSpeechModel: vi.fn(),
+  realtime: { get: vi.fn(), set: vi.fn() },
 }));
 
 const { speak, activeCall } = vi.hoisted(() => ({
@@ -32,7 +33,11 @@ vi.mock("../../lib/query/rpc", () => ({
 }));
 vi.mock("@lingui/react/macro", () => {
   const t = (parts: TemplateStringsArray) => parts.join("");
-  return { useLingui: () => ({ t }), Trans: ({ children }: { children: ReactNode }) => children };
+  const i18n = { locale: "en", number: (value: number) => String(value) };
+  return {
+    useLingui: () => ({ t, i18n }),
+    Trans: ({ children }: { children: ReactNode }) => children,
+  };
 });
 vi.mock("@rakazo/ui-web", async (importOriginal) => {
   const { OptionSelect } = await importOriginal<typeof UiWeb>();
@@ -52,6 +57,8 @@ vi.mock("@rakazo/ui-web", async (importOriginal) => {
     FieldLabel: ({ children, htmlFor }: { children?: ReactNode; htmlFor?: string }) => (
       <label htmlFor={htmlFor}>{children}</label>
     ),
+    FieldDescription: Container,
+    Disclosure: Container,
     Input: (props: ComponentProps<"input">) => <input {...props} />,
     OptionSelect,
   };
@@ -1486,4 +1493,53 @@ describe("the API key stays with the server URL it was typed for", () => {
       vi.unstubAllGlobals();
     }
   });
+});
+
+it("keeps realtime calls off by default and saves a chosen model on the account", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const offered = {
+    available: true,
+    providers: [
+      {
+        provider: "voice-provider",
+        models: [{ id: "voice-model", label: "Voice model", capabilities: ["speed"] }],
+        voices: ["voice-a"],
+      },
+    ],
+  };
+  voice.catalog.mockResolvedValue([
+    { id: "fish-audio", name: "Fish Audio", description: "", transcribe: true },
+  ]);
+  voice.credentials.mockResolvedValue([fish]);
+  voice.status.mockResolvedValue({ ready: true, provider: fish.provider });
+  voice.voices.mockResolvedValue([{ id: fish.voiceId, label: "Aria" }]);
+  voice.realtime.get.mockResolvedValue({ ...offered, settings: { provider: "", model: "" } });
+  voice.realtime.set.mockImplementation(async (settings) => ({ ...offered, settings }));
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  const labelled = (text: string) => {
+    const label = [...container.querySelectorAll("label")].find((l) => l.textContent === text);
+    return label ? (document.getElementById(label.htmlFor) ?? undefined) : undefined;
+  };
+  try {
+    await act(async () => {
+      root.render(
+        withQueries(<VoiceSettingsOverlay embedded scope="account" onClose={() => undefined} />),
+      );
+    });
+    await vi.waitFor(() => expect(labelled("Realtime call model")).toBeDefined());
+    expect(labelled("Realtime call model")?.textContent).toContain("Standard call");
+    expect(labelled("Speaking speed")).toBeUndefined();
+    await choose(labelled("Realtime call model"), "Voice model");
+    expect(voice.realtime.set).toHaveBeenCalledWith({
+      provider: "voice-provider",
+      model: "voice-model",
+    });
+    await vi.waitFor(() => expect(labelled("Speaking speed")).toBeDefined());
+  } finally {
+    await act(async () => root.unmount());
+    container.remove();
+    vi.unstubAllGlobals();
+  }
 });

@@ -20,7 +20,14 @@ function setup(options: { signedIn?: boolean; enabled?: boolean } = {}) {
 describe("realtime voice HTTP admission", () => {
   it("keeps calls unavailable when the server has disabled voice calls", async () => {
     const { app } = setup({ enabled: false });
-    expect((await app.request("/api/voice/realtime/models")).status).toBe(404);
+    expect(
+      (
+        await app.request("/api/voice/realtime", {
+          method: "POST",
+          headers: { origin: "http://localhost" },
+        })
+      ).status,
+    ).toBe(404);
   });
 
   it("rejects cross-origin offers before authenticating", async () => {
@@ -36,7 +43,7 @@ describe("realtime voice HTTP admission", () => {
     expect(authenticate).not.toHaveBeenCalled();
   });
 
-  it("does not issue sessions or reveal model configuration to an anonymous caller", async () => {
+  it("does not issue sessions to an anonymous caller", async () => {
     const { app } = setup();
     expect(
       (
@@ -46,7 +53,6 @@ describe("realtime voice HTTP admission", () => {
         })
       ).status,
     ).toBe(401);
-    expect((await app.request("/api/voice/realtime/models")).status).toBe(401);
   });
 
   it("rejects malformed and oversized user-controlled offers", async () => {

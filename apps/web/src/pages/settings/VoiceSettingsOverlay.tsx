@@ -23,7 +23,6 @@ import {
   DialogContent,
   DialogTitle,
   Field,
-  FieldDescription,
   FieldLabel,
   Input,
   OptionSelect,
@@ -33,16 +32,11 @@ import { useQueryClient } from "@tanstack/react-query";
 import { XIcon } from "lucide-react";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { useCallSession } from "../../lib/calls/call-session";
-import {
-  realtimePreferenceUser,
-  realtimeVoiceModels,
-  selectedRealtimeModel,
-  setRealtimeModel,
-} from "../../lib/calls/realtime-call";
 import { speaker } from "../../lib/calls/tts";
 import { useSpaceQueries } from "../../lib/query/query";
 import { useBoundSpaceId, useSpaceRpc } from "../../lib/query/space-rpc";
 import { errorText } from "../../lib/query/user-error";
+import { RealtimeCallSettingsSection } from "./RealtimeCallSettings";
 
 export function VoiceSettingsOverlay({
   onClose,
@@ -83,12 +77,6 @@ export function VoiceSettingsOverlay({
   const call = useCallSession();
   const apiKeyId = useId();
   const voiceSelectId = useId();
-  const realtimeModelId = useId();
-  const userId = realtimePreferenceUser();
-  const [realtimeModels, setRealtimeModels] = useState<
-    Awaited<ReturnType<typeof realtimeVoiceModels>>
-  >([]);
-  const [realtimeModel, chooseRealtimeModel] = useState(() => selectedRealtimeModel(userId));
   const speechModelId = useId();
   const baseUrlId = useId();
   const ttsModelId = useId();
@@ -116,18 +104,6 @@ export function VoiceSettingsOverlay({
     models: [],
   });
   const speechModelChoices = modelList.provider === provider ? modelList.models : NO_MODELS;
-  useEffect(() => {
-    if (!userId || !status?.provider || scope !== "account") return;
-    const controller = new AbortController();
-    void realtimeVoiceModels(spaceId, controller.signal)
-      .then((models) => {
-        if (!controller.signal.aborted) setRealtimeModels(models);
-      })
-      .catch(() => {
-        if (!controller.signal.aborted) setRealtimeModels([]);
-      });
-    return () => controller.abort();
-  }, [scope, status?.provider, status?.ready, spaceId, userId]);
   const [apiKey, setApiKey] = useState("");
   const [voiceId, setVoiceId] = useState(
     cached?.credential?.voiceId || (cached?.credential ? (cached.voices[0]?.id ?? "") : ""),
@@ -813,37 +789,7 @@ export function VoiceSettingsOverlay({
                   />
                 )}
               </Field>
-              {scope === "account" &&
-              status?.provider === provider &&
-              userId &&
-              realtimeModels.length ? (
-                <Field className="mt-6">
-                  <FieldLabel htmlFor={realtimeModelId}>
-                    <Trans>Realtime call model</Trans>
-                  </FieldLabel>
-                  <OptionSelect
-                    id={realtimeModelId}
-                    value={
-                      realtimeModels.some((model) => model.id === realtimeModel)
-                        ? realtimeModel
-                        : ""
-                    }
-                    options={[
-                      { value: "", label: t`Standard call` },
-                      ...realtimeModels.map((model) => ({ value: model.id, label: model.label })),
-                    ]}
-                    onValueChange={(model) => {
-                      setRealtimeModel(userId, model);
-                      chooseRealtimeModel(model);
-                    }}
-                  />
-                  <FieldDescription>
-                    <Trans>
-                      Realtime calls share audio and recent chat context with the voice provider.
-                    </Trans>
-                  </FieldDescription>
-                </Field>
-              ) : null}
+              {scope === "account" ? <RealtimeCallSettingsSection /> : null}
               {selected.speechModel ? (
                 <Field className="mt-6">
                   <FieldLabel htmlFor={speechModelId}>
