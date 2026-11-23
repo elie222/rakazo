@@ -291,13 +291,18 @@ export type ModelSettingsRequest =
   | { status: "invalid"; field: ModelSettingsInvalidField }
   | { status: "ready"; settings: ModelSettings };
 
-/** The settings a form saves. Empty fields follow the model card. */
+/**
+ * The settings a form saves. Empty fields follow the model card. `followedThinkingLevel` is the
+ * level the form opened at for a model without its own; saving it unchanged keeps the model
+ * following its connection's level and the default.
+ */
 export function modelSettingsRequest(input: {
   fields: ModelSettingsFields;
   provider: string;
   entry: SettingsEntry | undefined;
+  followedThinkingLevel?: ThinkingLevel;
 }): ModelSettingsRequest {
-  const { fields, provider, entry } = input;
+  const { fields, provider, entry, followedThinkingLevel } = input;
   const settings: ModelSettings = {};
   if (fields.contextWindow.trim()) {
     const contextWindow = parseModelContextWindow(fields.contextWindow.trim());
@@ -321,7 +326,8 @@ export function modelSettingsRequest(input: {
   if (modelCapabilitiesConfigurable(provider, entry)) {
     settings.images = fields.images;
     settings.reasoning = fields.thinkingLevel !== "off";
-    if (settings.reasoning) settings.thinkingLevel = fields.thinkingLevel;
+    if (settings.reasoning && fields.thinkingLevel !== followedThinkingLevel)
+      settings.thinkingLevel = fields.thinkingLevel;
   }
   if (fields.images && fields.maxImagesPerPrompt.trim()) {
     const maxImagesPerPrompt = parseModelMaxImagesPerPrompt(fields.maxImagesPerPrompt.trim());

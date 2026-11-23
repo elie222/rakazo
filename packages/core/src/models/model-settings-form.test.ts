@@ -94,7 +94,7 @@ describe("credentialModelSettings", () => {
 });
 
 describe("modelSettingsFields", () => {
-  it("starts unset switches from what the model already does, so a limit save keeps them", () => {
+  it("starts unset fields from what the model already does, so a limit save keeps them", () => {
     const fields = modelSettingsFields({ maxTokens: 1_024 }, { images: true, reasoning: true });
     expect(fields).toMatchObject({ images: true, thinkingLevel: "medium" });
     expect(
@@ -102,10 +102,11 @@ describe("modelSettingsFields", () => {
         fields: { ...fields, maxTokens: "2048" },
         provider: "zai",
         entry: { live: true },
+        followedThinkingLevel: fields.thinkingLevel,
       }),
     ).toEqual({
       status: "ready",
-      settings: { maxTokens: 2_048, images: true, reasoning: true, thinkingLevel: "medium" },
+      settings: { maxTokens: 2_048, images: true, reasoning: true },
     });
     expect(modelSettingsFields({ images: false }, { images: true }).images).toBe(false);
   });

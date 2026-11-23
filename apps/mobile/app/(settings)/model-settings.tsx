@@ -174,7 +174,8 @@ function ModelSettingsForm(route: ModelRoute) {
   const { credential } = shown;
   const provider = credential.provider;
   const thinkingLevels = modelSettingsThinkingLevels(credential, entry);
-  const saved = modelSettingsFields(credentialModelSettings(credential, modelId), entry, {
+  const own = credentialModelSettings(credential, modelId);
+  const saved = modelSettingsFields(own, entry, {
     level: modelDefaultThinkingLevel(credential, modelId),
     levels: thinkingLevels,
   });
@@ -196,7 +197,12 @@ function ModelSettingsForm(route: ModelRoute) {
 
   function save() {
     Keyboard.dismiss();
-    const request = modelSettingsRequest({ fields, provider, entry });
+    const request = modelSettingsRequest({
+      fields,
+      provider,
+      entry,
+      followedThinkingLevel: own.thinkingLevel ? undefined : saved.thinkingLevel,
+    });
     if (request.status === "invalid") {
       announce({
         error:
