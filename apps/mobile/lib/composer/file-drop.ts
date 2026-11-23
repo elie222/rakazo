@@ -20,7 +20,7 @@ type FileDropModule = {
   addListener(event: "onDropStarted", listener: () => void): { remove(): void };
 };
 
-// Android drops and iOS image pastes. Absent on web and in binaries built before the module existed.
+// Android and iOS drops, plus iOS image pastes. Absent on web and in binaries built before the module existed.
 function nativeFileDrop(): FileDropModule | null {
   return requireOptionalNativeModule<FileDropModule>("RakazoFileDrop");
 }

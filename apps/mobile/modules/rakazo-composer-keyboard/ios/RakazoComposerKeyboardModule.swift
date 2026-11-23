@@ -1,4 +1,5 @@
 import ExpoModulesCore
+import RakazoFileDrop
 import UIKit
 
 public final class RakazoComposerKeyboardModule: Module {
@@ -37,6 +38,13 @@ public final class RakazoComposerKeyboardModule: Module {
 final class RakazoComposerKeyboardView: ExpoView {
   let onHardwareKey = EventDispatcher()
   var keys: [String] = []
+
+  override func didMoveToWindow() {
+    super.didMoveToWindow()
+    if window != nil, !interactions.contains(where: { $0 is UIDropInteraction }) {
+      RakazoFileDropModule.installDropTarget(on: self)
+    }
+  }
 
   private lazy var commands = [
     "Enter": command("\r", key: "Enter"),
