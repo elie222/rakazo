@@ -10,19 +10,12 @@ type Handler = (event: { progress: number; height: number }) => void;
 
 const mocks = vi.hoisted(() => ({
   handlers: {} as Record<string, Handler | undefined>,
-  events: new Map<string, () => void>(),
   input: { value: null as object | null },
   reaction: null as null | (() => void),
 }));
 
 vi.mock("react-native-keyboard-controller", () => ({
   KeyboardController: { isVisible: () => false },
-  KeyboardEvents: {
-    addListener: (name: string, callback: () => void) => {
-      mocks.events.set(name, callback);
-      return { remove: () => mocks.events.delete(name) };
-    },
-  },
   useKeyboardHandler: (handlers: Record<string, Handler>) => {
     mocks.handlers = handlers;
   },
@@ -118,7 +111,7 @@ describe("useThreadKeyboard", () => {
     keyboardEnd(1);
     focus(false);
     act(() => vi.advanceTimersByTime(KEYBOARD_SETTLE_MS));
-    act(() => mocks.events.get("keyboardWillShow")?.());
+    act(() => mocks.handlers.onStart?.({ progress: 1, height: 300 }));
     expect(keyboard.avoiding).toBe(true);
   });
 });
