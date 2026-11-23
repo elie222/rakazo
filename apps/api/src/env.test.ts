@@ -363,9 +363,9 @@ describe("OIDC environment", () => {
       loadEnv({
         ...base,
         ...oidc,
-        OIDC_AUTHORIZATION_PARAMS: "domain_hint=example.test&hd=example.test",
+        OIDC_AUTHORIZATION_PARAMS: "domain_hint=example.test&constructor=x",
       }).oidc?.authorizationParams,
-    ).toEqual({ domain_hint: "example.test", hd: "example.test" });
+    ).toEqual({ domain_hint: "example.test", constructor: "x" });
   });
   it.each(["state=fixed", "Redirect_URI=https://attacker.example.test", "=value"])(
     "refuses authorization parameter %s, which the sign-in flow owns",

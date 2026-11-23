@@ -245,13 +245,13 @@ provider, written as `name=value` pairs joined with `&`. Values are form-encoded
 and `+` as `%26`, `%3D` and `%2B`, since a bare `+` is read as a space. Use it for the hints a
 provider offers to skip its account or organization picker:
 
-| Provider | Setting | Effect |
-| --- | --- | --- |
-| Microsoft Entra ID | `domain_hint=example.com` | Goes straight to your organization's sign-in, including a federated identity provider if your domain uses one. |
-| Google Workspace | `hd=example.com` | Offers only accounts in that domain. |
-| Keycloak | `kc_idp_hint=<alias>` | Skips the Keycloak login page for the linked identity provider with that alias. |
-| Okta | `idp=<identity provider id>` | Sends people to that identity provider. |
-| Any | `prompt=select_account` | Asks which account to use, even when only one is signed in. |
+| Provider           | Setting                      | Effect                                                                                                         |
+| ------------------ | ---------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| Microsoft Entra ID | `domain_hint=example.com`    | Goes straight to your organization's sign-in, including a federated identity provider if your domain uses one. |
+| Google Workspace   | `hd=example.com`             | Offers only accounts in that domain.                                                                           |
+| Keycloak           | `kc_idp_hint=<alias>`        | Skips the Keycloak login page for the linked identity provider with that alias.                                |
+| Okta               | `idp=<identity provider id>` | Sends people to that identity provider.                                                                        |
+| Any                | `prompt=select_account`      | Asks which account to use, even when only one is signed in.                                                    |
 
 Several can be combined, for example `domain_hint=example.com&prompt=select_account`; a name
 may appear only once. The provider decides whether to honor a hint (an Entra tenant can be set to
