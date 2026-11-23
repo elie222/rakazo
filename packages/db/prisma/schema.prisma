@@ -182,7 +182,7 @@ model PushRegistration {
 /// Encrypted call registrations per installation. Legacy message push remains compatible.
 model CallPushDevice {
   id String @id
-  expoTokenDigest String? @unique
+  pushTokenDigest String? @unique
   voipTokenDigest String? @unique
   userId String
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)

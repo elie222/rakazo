@@ -7,7 +7,7 @@ type Row = {
   userId: string;
   sessionId: string;
   ciphertext: string;
-  expoTokenDigest?: string | null;
+  pushTokenDigest?: string | null;
   voipTokenDigest?: string | null;
 };
 function fixture() {

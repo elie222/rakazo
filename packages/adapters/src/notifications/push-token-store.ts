@@ -100,11 +100,11 @@ export class PrismaPushTokenStore implements PushTokenStore {
             },
             { recordId: `call-push:${id}` },
           );
-          const expoTokenDigest = merged.expoToken ? credentialDigest(merged.expoToken) : null;
+          const pushTokenDigest = merged.expoToken ? credentialDigest(merged.expoToken) : null;
           const voipTokenDigest = merged.voipToken ? credentialDigest(merged.voipToken) : null;
           // One physical push token has one owner, even after reinstall or account handover.
           const duplicates = [
-            ...(expoTokenDigest ? [{ expoTokenDigest }] : []),
+            ...(pushTokenDigest ? [{ pushTokenDigest }] : []),
             ...(voipTokenDigest ? [{ voipTokenDigest }] : []),
           ];
           if (duplicates.length)
@@ -113,7 +113,7 @@ export class PrismaPushTokenStore implements PushTokenStore {
             userId,
             sessionId,
             ciphertext: sealed.ciphertext,
-            expoTokenDigest,
+            pushTokenDigest,
             voipTokenDigest,
           };
           await tx.callPushDevice.upsert({ where: { id }, create: { id, ...data }, update: data });
@@ -188,7 +188,7 @@ export class PrismaPushTokenStore implements PushTokenStore {
               voipTokenDigest: registration.voipToken
                 ? credentialDigest(registration.voipToken)
                 : null,
-              expoTokenDigest: registration.expoToken
+              pushTokenDigest: registration.expoToken
                 ? credentialDigest(registration.expoToken)
                 : null,
             },
