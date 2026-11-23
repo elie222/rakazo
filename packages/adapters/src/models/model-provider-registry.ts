@@ -66,7 +66,7 @@ export interface ModelProviderDefinition {
   media?: {
     images?: true;
     video?: true;
-    create(connection: { apiKey: string }): MediaGenerationProvider;
+    create(connection: { apiKey: string; zeroDataRetention?: boolean }): MediaGenerationProvider;
   };
 }
 
@@ -122,9 +122,10 @@ export const modelProviders = {
     media: {
       images: true,
       video: true,
-      create: ({ apiKey }) =>
+      create: ({ apiKey, zeroDataRetention }) =>
         new OpenRouterMediaGenerationProvider({
           apiKey,
+          zeroDataRetention,
           imageModel: "openai/gpt-image-2",
           videoModel: "google/veo-3.1-lite",
         }),
