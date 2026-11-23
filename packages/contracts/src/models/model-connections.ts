@@ -115,6 +115,7 @@ export const ModelApiProtocolSchema = z.enum([
 export type ModelApiProtocol = z.infer<typeof ModelApiProtocolSchema>;
 
 export const ModelCredentialSchema = z.object({
+  preserveModelOrder: z.boolean().optional(),
   /** Computed space preference order; credentials themselves remain newest first. */
   preferenceRank: z.number().int().nonnegative().optional(),
   ...ModelContextLimitsSchema.shape,
@@ -400,6 +401,8 @@ export const CompatibleEndpointPresetSchema = z.object({
   id: z.string().optional(),
   name: z.string(),
   baseUrl: z.string(),
+  /** The model list can be loaded before the connection has a key. */
+  publicModels: z.boolean().optional(),
 });
 export type CompatibleEndpointPreset = z.infer<typeof CompatibleEndpointPresetSchema>;
 
@@ -415,6 +418,9 @@ export const ModelCatalogEntrySchema = z.object({
   creditOfferingId: Id.optional(),
   provider: z.string(),
   providerName: z.string().optional(),
+  /** What a signed-in connection is called, by the plan people pay for. */
+  subscriptionName: z.string().optional(),
+  subscriptionNameId: z.string().optional(),
   id: z.string(),
   label: z.string(),
   billing: z.string(),
@@ -423,6 +429,10 @@ export const ModelCatalogEntrySchema = z.object({
   authHint: z.string().optional(),
   subscription: z.boolean().optional(),
   signIn: ModelOAuthSignInModeSchema.optional(),
+  /** A setting the provider makes the user turn on before its sign-in can work; shown before the sign-in starts. */
+  signInSetup: z
+    .object({ label: z.string(), url: z.string().url(), note: z.string().optional() })
+    .optional(),
   reasoning: z.boolean().optional(),
   thinkingLevels: z.array(ThinkingLevelSchema).optional(),
   /** Uncustomized capabilities for forms on other connections of the same provider. */

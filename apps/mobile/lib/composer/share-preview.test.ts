@@ -43,4 +43,51 @@ describe("share preview", () => {
     expect(preview.fileCount).toBe(3);
     expect(preview.fileName).toBeNull();
   });
+  it("previews filename-based photos with missing or generic MIME types", () => {
+    const images = [
+      { uri: "file:///shared/photo.jpeg", name: "photo.jpeg", mimeType: null },
+      {
+        uri: "content://shared/1",
+        name: "picture.PNG",
+        mimeType: "application/octet-stream",
+      },
+    ];
+    const preview = sharePreview({
+      ...base,
+      files: [...images, { uri: "content://shared/2", name: "notes.pdf", mimeType: null }],
+    });
+    expect(preview.images).toEqual(images);
+    expect(preview.extraImages).toBe(0);
+    expect(preview.fileCount).toBe(1);
+    expect(preview.fileName).toBe("notes.pdf");
+  });
+  it("falls back to URI extensions when the filename has no type", () => {
+    const images = [
+      { uri: "file:///shared/photo.JPG", name: "file", mimeType: null },
+      {
+        uri: "content://shared/picture.png?download=1#preview",
+        name: "file",
+        mimeType: "application/octet-stream",
+      },
+    ];
+    const preview = sharePreview({ ...base, files: images });
+    expect(preview.images).toEqual(images);
+    expect(preview.fileCount).toBe(0);
+  });
+  it("keeps real files generic and respects explicit non-image MIME types", () => {
+    const preview = sharePreview({
+      ...base,
+      files: [
+        { uri: "file:///shared/notes.pdf", name: "notes.pdf", mimeType: null },
+        { uri: "content://shared/1", name: "archive.zip", mimeType: "application/octet-stream" },
+        { uri: "content://shared/2", name: "photo.jpg", mimeType: "application/pdf" },
+        { uri: "content://shared/3", name: "photo.png", mimeType: "application/x-custom" },
+        { uri: "file:///shared/photo.jpg.pdf", name: "photo.jpg.pdf", mimeType: null },
+        { uri: "content://shared/file?name=photo.jpg", name: "file", mimeType: null },
+      ],
+    });
+    expect(preview.images).toEqual([]);
+    expect(preview.fileCount).toBe(6);
+    expect(preview.fileName).toBeNull();
+  });
 });

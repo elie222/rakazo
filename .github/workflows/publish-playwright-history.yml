@@ -1,0 +1,48 @@
+name: Publish Playwright history
+
+on:
+  workflow_call:
+    inputs:
+      entry:
+        description: The run's history entry, as JSON
+        required: true
+        type: string
+    secrets:
+      S3_ACCESS_KEY_ID:
+        required: false
+      S3_SECRET_ACCESS_KEY:
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  history:
+    name: Add run to Playwright history
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # The shared history and dashboard are a read-modify-write, so runs take turns.
+    # Each run's gallery and PR comment are published before this job and never wait on it.
+    concurrency:
+      group: playwright-publication
+      cancel-in-progress: false
+      queue: max
+    steps:
+      # Both callers (workflow_run and the nightly schedule) run on the default branch,
+      # so this checks out trusted code, never a pull request's revision.
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-workspace
+      - name: Publish history and dashboard
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.S3_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.S3_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ${{ vars.S3_REGION }}
+          AWS_EC2_METADATA_DISABLED: "true"
+          S3_BUCKET: ${{ vars.S3_BUCKET }}
+          S3_ENDPOINT: ${{ vars.S3_ENDPOINT }}
+          ENTRY: ${{ inputs.entry }}
+        run: |
+          printf '%s\n' "$ENTRY" > "$RUNNER_TEMP/history-entry.json"
+          bash scripts/publish-playwright-history.sh "$RUNNER_TEMP/history-entry.json"

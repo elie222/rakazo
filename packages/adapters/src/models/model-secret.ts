@@ -1,4 +1,5 @@
 import type { OAuthCredential } from "@earendil-works/pi-ai";
+import type { ModelBilling } from "@rakazo/adapter-kit";
 import type {
   ModelApiProtocol,
   ModelContextLimits,
@@ -318,4 +319,19 @@ export function secretValuesToRedact(secret: StoredModelSecret): string[] {
     ].filter((value): value is string => Boolean(value));
   if (secret.reconnectRequired) return [];
   return [secret.credential.access, secret.credential.refresh].filter(Boolean);
+}
+
+const STORED_MODEL_SECRET_BILLING = {
+  oauth: "subscription",
+  api_key: "api_key",
+  openai_compatible: "custom_endpoint",
+} as const satisfies Record<StoredModelSecret["kind"], ModelBilling>;
+
+/** Who pays for a call: credits when metered, else the user's stored connection, else the deployment. */
+export function modelBilling(funding: {
+  credits?: boolean;
+  secret?: Pick<StoredModelSecret, "kind">;
+}): ModelBilling {
+  if (funding.credits) return "credits";
+  return funding.secret ? STORED_MODEL_SECRET_BILLING[funding.secret.kind] : "deployment";
 }

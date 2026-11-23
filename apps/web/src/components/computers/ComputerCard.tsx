@@ -3,6 +3,7 @@ import { Trans } from "@lingui/react/macro";
 import { ChatMarkdown } from "@rakazo/chat-ui/web";
 import type { ComputerReleaseReason, MessageBlock } from "@rakazo/contracts";
 import {
+  plainTextFromMarkdown,
   TAKEOVER_COMPUTER_DONE_STATE,
   TAKEOVER_COMPUTER_PENDING_STATE,
   TAKEOVER_COMPUTER_SKIPPED_STATE,
@@ -209,7 +210,7 @@ function SettledComputerCard({
         <Header>
           {expanded ? null : (
             <span className="min-w-0 truncate text-body-lg text-muted-foreground" dir="auto">
-              {label} · {block.text}
+              {label} · {plainTextFromMarkdown(block.text)}
             </span>
           )}
         </Header>

@@ -57,6 +57,43 @@ describe("media generation connection", () => {
         MEDIA_GENERATION_BASE_URL: "https://media.example.test",
       })?.capabilities,
     ).toEqual({ images: true, video: false, offline: false });
+    // A blank base URL falls back to the provider's own default instead of failing to parse.
+    expect(
+      createMediaGenerationProvider({
+        MEDIA_GENERATION_PROVIDER: "fal",
+        MEDIA_GENERATION_API_KEY: "fake-key",
+        MEDIA_GENERATION_IMAGE_MODEL: "fal-ai/flux/schnell",
+        MEDIA_GENERATION_BASE_URL: " ",
+      })?.id,
+    ).toBe("fal");
+  });
+  it("selects the images API provider for images only", () => {
+    const env = {
+      MEDIA_GENERATION_PROVIDER: "openai",
+      MEDIA_GENERATION_API_KEY: "fake-key",
+      MEDIA_GENERATION_IMAGE_MODEL: "image-model",
+    };
+    expect(createMediaGenerationProvider(env)?.capabilities).toEqual({
+      images: true,
+      video: false,
+      offline: false,
+    });
+    expect(createMediaGenerationProvider({ ...env, MEDIA_GENERATION_BASE_URL: "" })?.id).toBe(
+      "openai",
+    );
+    expect(() =>
+      createMediaGenerationProvider({ ...env, MEDIA_GENERATION_VIDEO_MODEL: "video-model" }),
+    ).toThrow("images only");
+    expect(() =>
+      createMediaGenerationProvider({
+        ...env,
+        MEDIA_GENERATION_IMAGE_MODEL: "",
+        MEDIA_GENERATION_VIDEO_MODEL: "video-model",
+      }),
+    ).toThrow("images only");
+    expect(() => createMediaGenerationProvider({ ...env, MEDIA_GENERATION_API_KEY: "" })).toThrow(
+      "credentials",
+    );
   });
   it("has an offline image and async video implementation", async () => {
     const provider = new FakeMediaGenerationProvider();

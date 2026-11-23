@@ -77,8 +77,8 @@ private struct WatchChats: View {
   let connection: WatchConnection
   @Environment(\.scenePhase) private var phase
   @State private var scope: UUID?
-  @State private var chats: [WatchChat] = []
-  @State private var path: [WatchChat] = []
+  @State private var chats: [WatchChatRow] = []
+  @State private var path: [WatchChatRow.ID] = []
   @State private var failure: WatchFailure?
   @State private var loading = false
   @State private var needsReload = false
@@ -93,18 +93,21 @@ private struct WatchChats: View {
         } else if chats.isEmpty {
           Text("No chats in this Space")
         }
-        ForEach(chats) { chat in
-          NavigationLink(chat.name, value: chat)
+        ForEach(chats) { row in
+          NavigationLink(value: row.id) { WatchChatSummary(row: row) }
         }
       }
       .navigationTitle("Chats")
       .toolbar {
-        Button("Refresh", systemImage: "arrow.clockwise") { Task { await load() } }
-          .disabled(loading)
+        ToolbarItem(placement: .topBarTrailing) {
+          Button("Refresh", systemImage: "arrow.clockwise") { Task { await load() } }
+            .labelStyle(.iconOnly)
+            .disabled(loading)
+        }
       }
-      .navigationDestination(for: WatchChat.self) { chat in
-        if let scope {
-          WatchConversation(connection: connection, chat: chat, scope: scope) {
+      .navigationDestination(for: WatchChatRow.ID.self) { id in
+        if let scope, let row = chats.first(where: { $0.id == id }) {
+          WatchConversation(connection: connection, row: row, scope: scope) {
             path = []
             await load()
           }
@@ -161,9 +164,59 @@ private struct WatchChats: View {
   }
 }
 
+private struct WatchChatSummary: View {
+  let row: WatchChatRow
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 4) {
+      HStack(spacing: 8) {
+        WatchAvatar(row: row)
+        VStack(alignment: .leading, spacing: 0) {
+          Text(row.chat.name).font(.headline).lineLimit(1)
+          if let date = WatchDate.parse(row.updatedAt) {
+            Text(WatchDate.label(date)).font(.footnote).foregroundStyle(.secondary)
+          }
+        }
+      }
+      let preview = row.preview.split(whereSeparator: \.isNewline).joined(separator: " ")
+      if !preview.isEmpty {
+        Text(preview).font(.footnote).foregroundStyle(.secondary).lineLimit(2)
+      }
+    }
+    .padding(.vertical, 4)
+  }
+}
+
+private struct WatchAvatar: View {
+  let row: WatchChatRow
+  var size: CGFloat = 32
+
+  var body: some View {
+    let color = row.color.flatMap(Color.init(hex:)) ?? Color.gray
+    Group {
+      if let data = row.avatar, let image = UIImage(data: data) {
+        Image(uiImage: image).resizable().scaledToFill()
+      } else {
+        ZStack {
+          color
+          if row.chat.kind == .group {
+            Image(systemName: "person.2.fill").font(.system(size: size * 0.4))
+          } else {
+            Text(row.chat.name.prefix(1).uppercased()).font(.system(size: size * 0.5, weight: .semibold))
+          }
+        }
+        .foregroundStyle(row.color.map(Color.isLight(hex:)) == true ? .black : .white)
+      }
+    }
+    .frame(width: size, height: size)
+    .clipShape(Circle())
+    .accessibilityHidden(true)
+  }
+}
+
 private struct WatchConversation: View {
   let connection: WatchConnection
-  let chat: WatchChat
+  let row: WatchChatRow
   let scope: UUID
   let reloadChats: () async -> Void
 
@@ -177,48 +230,48 @@ private struct WatchConversation: View {
   @State private var sendingText: String?
   @State private var needsRefresh = false
 
+  private var chat: WatchChat { row.chat }
+  private var tint: Color { row.color.flatMap(Color.init(hex:)) ?? Color.gray }
+
   var body: some View {
-    List {
-      if let failure { Text(failure.label) }
-      Button("Message", systemImage: "square.and.pencil") { editing = true }
-        .disabled(working || failure == .signIn || failure == .unlockPhone)
-        .sheet(isPresented: $editing) {
-          VStack {
-            TextField("Message", text: $draft)
-            Button("Send") { startSend() }
-              .disabled(working || draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+    ScrollViewReader { proxy in
+      ScrollView {
+        VStack(spacing: 6) {
+          if working && messages.isEmpty { ProgressView() }
+          ForEach(messages) { message in
+            if !message.text.isEmpty { WatchBubble(message: message, tint: tint) }
+            if let prompt = message.prompt {
+              NavigationLink {
+                WatchReview(prompt: prompt, busy: $working) { answer in
+                  startAnswer(message.id, prompt: prompt, answer: answer)
+                }
+              } label: {
+                Label {
+                  Text(prompt.kind == .phone ? "Continue on iPhone" : prompt.title).lineLimit(3)
+                } icon: {
+                  Image(systemName: prompt.kind == .approval ? "hand.raised" : "questionmark.bubble")
+                }
+              }
+            }
           }
-          .padding(.horizontal)
+          if botWorking {
+            ProgressView()
+              .frame(maxWidth: .infinity, alignment: .leading)
+              .accessibilityLabel("Working")
+          }
+          if let failure {
+            Text(failure.label).font(.footnote).foregroundStyle(.secondary)
+          }
+          TextField("Message", text: $draft)
+            .onSubmit { startSend() }
+            .disabled(working || failure == .signIn || failure == .unlockPhone)
+            .id(Self.composer)
         }
-      if botWorking {
-        Label("Working", systemImage: "hourglass")
-          .foregroundStyle(.secondary)
+        .padding(.horizontal, 4)
       }
-      ForEach(messages.reversed()) { message in
-        if let prompt = message.prompt {
-          NavigationLink {
-            WatchReview(prompt: prompt, busy: $working) { answer in
-              startAnswer(message.id, prompt: prompt, answer: answer)
-            }
-          } label: {
-            Label {
-              Text(prompt.kind == .phone ? "Continue on iPhone" : prompt.title)
-                .lineLimit(3)
-            } icon: {
-              Image(systemName: prompt.kind == .approval ? "hand.raised" : "questionmark.bubble")
-            }
-          }
-        }
-        if !message.text.isEmpty {
-          VStack(alignment: .leading, spacing: 4) {
-            if message.fromUser {
-              Text("You").font(.caption2).foregroundStyle(.secondary)
-            }
-            Text(message.text)
-          }
-        }
-      }
-      if working && messages.isEmpty { ProgressView() }
+      .defaultScrollAnchor(.bottom)
+      .onChange(of: messages.last?.id) { proxy.scrollTo(Self.composer, anchor: .bottom) }
+      .onChange(of: botWorking) { proxy.scrollTo(Self.composer, anchor: .bottom) }
     }
     .onChange(of: connection.chatRevision) {
       guard phase == .active else { return }
@@ -231,8 +284,11 @@ private struct WatchConversation: View {
     }
     .navigationTitle(chat.name)
     .toolbar {
-      Button("Refresh", systemImage: "arrow.clockwise") { Task { await refresh() } }
-        .disabled(working)
+      ToolbarItem(placement: .topBarTrailing) {
+        Button("Refresh", systemImage: "arrow.clockwise") { Task { await refresh() } }
+          .labelStyle(.iconOnly)
+          .disabled(working)
+      }
     }
     .task(id: connection.reachable && phase == .active) {
       if connection.reachable && phase == .active { await refresh() }
@@ -240,7 +296,7 @@ private struct WatchConversation: View {
     }
   }
 
-  @State private var editing = false
+  private static let composer = "composer"
 
   private func refresh() async {
     guard !working else {
@@ -271,9 +327,8 @@ private struct WatchConversation: View {
   }
 
   private func startSend() {
-    guard !working else { return }
+    guard !working, !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
     working = true
-    editing = false
     Task { await send() }
   }
 
@@ -308,6 +363,117 @@ private struct WatchConversation: View {
       messages.removeAll { $0.id == id }
       await read()
     }
+  }
+}
+
+private struct WatchBubble: View {
+  let message: WatchMessage
+  let tint: Color
+
+  var body: some View {
+    let alignment: HorizontalAlignment = message.fromUser ? .trailing : .leading
+    VStack(alignment: alignment, spacing: 2) {
+      if let author = message.author {
+        Text(author).font(.caption2).foregroundStyle(.secondary)
+      }
+      // People's messages show as typed, the way the phone shows them.
+      Text(message.fromUser || message.author != nil
+        ? AttributedString(message.text) : WatchMarkdown.render(message.text))
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .background(
+          message.fromUser ? Color.gray.opacity(0.4) : tint.opacity(0.3),
+          in: RoundedRectangle(cornerRadius: 16))
+    }
+    .frame(maxWidth: .infinity, alignment: Alignment(horizontal: alignment, vertical: .center))
+    .padding(message.fromUser ? .leading : .trailing, 16)
+  }
+}
+
+/// Renders the Markdown bots write with what a watch `Text` can show: inline styles, headings
+/// as bold lines, bullets and code blocks.
+enum WatchMarkdown {
+  static func render(_ text: String) -> AttributedString {
+    var result = AttributedString()
+    var fence: String?
+    var first = true
+    for raw in text.split(separator: "\n", omittingEmptySubsequences: false) {
+      var line = String(raw)
+      let trimmed = line.trimmingCharacters(in: .whitespaces)
+      if let open = fence, trimmed.hasPrefix(open) {
+        fence = nil
+        continue
+      }
+      if fence == nil, let open = ["```", "~~~"].first(where: trimmed.hasPrefix) {
+        fence = open
+        continue
+      }
+      // Table rows read as cells side by side; their divider lines add nothing.
+      if fence == nil, trimmed.hasPrefix("|") {
+        if trimmed.allSatisfy({ "|-: ".contains($0) }) { continue }
+        line = trimmed.trimmingCharacters(in: CharacterSet(charactersIn: "| "))
+          .components(separatedBy: "|")
+          .map { $0.trimmingCharacters(in: .whitespaces) }
+          .joined(separator: "  ")
+      }
+      if !first { result += AttributedString("\n") }
+      first = false
+      if fence != nil {
+        var code = AttributedString(line)
+        code.font = Font.system(.footnote, design: .monospaced)
+        result += code
+        continue
+      }
+      var heading = false
+      if let marker = line.range(of: #"^#{1,6}\s+"#, options: .regularExpression) {
+        line.removeSubrange(marker)
+        if let closing = line.range(of: #"\s+#+\s*$"#, options: .regularExpression) {
+          line.removeSubrange(closing)
+        }
+        heading = true
+      } else if let marker = line.range(of: #"^\s*[-*+]\s+"#, options: .regularExpression) {
+        let indent = line[marker].prefix { $0 == " " }
+        line.replaceSubrange(marker, with: indent + "• ")
+      }
+      var part =
+        (try? AttributedString(
+          markdown: line, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)))
+        ?? AttributedString(line)
+      if heading { part.font = Font.headline }
+      result += part
+    }
+    return result
+  }
+}
+
+private enum WatchDate {
+  static func parse(_ value: String) -> Date? {
+    let formatter = ISO8601DateFormatter()
+    formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+    if let date = formatter.date(from: value) { return date }
+    formatter.formatOptions = [.withInternetDateTime]
+    return formatter.date(from: value)
+  }
+
+  static func label(_ date: Date) -> String {
+    Calendar.current.isDateInToday(date)
+      ? date.formatted(date: .omitted, time: .shortened)
+      : date.formatted(.dateTime.month(.defaultDigits).day())
+  }
+}
+
+private extension Color {
+  init?(hex: String) {
+    guard hex.count == 7, let value = UInt32(hex.dropFirst(), radix: 16) else { return nil }
+    self.init(
+      red: Double((value >> 16) & 0xFF) / 255, green: Double((value >> 8) & 0xFF) / 255,
+      blue: Double(value & 0xFF) / 255)
+  }
+
+  static func isLight(hex: String) -> Bool {
+    guard let value = UInt32(hex.dropFirst(), radix: 16) else { return false }
+    let components = [16, 8, 0].map { Double((value >> $0) & 0xFF) / 255 }
+    return 0.299 * components[0] + 0.587 * components[1] + 0.114 * components[2] > 0.6
   }
 }
 

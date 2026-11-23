@@ -22,6 +22,11 @@ export function takeoverComputerSettledState(reason: unknown): TakeoverComputerS
   return TAKEOVER_COMPUTER_DONE_STATE;
 }
 
+/** A computer card still asking the person to take control. */
+export function isPendingTakeoverComputer(block: MessageBlock): boolean {
+  return block.kind === "computer" && block.state === TAKEOVER_COMPUTER_PENDING_STATE;
+}
+
 /**
  * Settle pending takeover computer cards. Returns null when none are pending,
  * so a second release or resume does not write the message again.
@@ -33,7 +38,7 @@ export function releasedTakeoverComputerBlocks(
   const state = takeoverComputerSettledState(reason);
   let changed = false;
   const next = blocks.map((block) => {
-    if (block.kind !== "computer" || block.state !== TAKEOVER_COMPUTER_PENDING_STATE) return block;
+    if (!isPendingTakeoverComputer(block)) return block;
     changed = true;
     return { ...block, state };
   });

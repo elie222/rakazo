@@ -118,11 +118,15 @@ export async function loadTurnContext(
     messages,
     messagingChannelRun,
     nonOwnerChatRun,
+    ownerComputerRoutine,
     peerMessage,
     task,
     thread,
     ticketBoardEnabled,
   } = parts.records;
+  // Memory, the scratchpad and tickets hold text other runs and members wrote, which a routine
+  // with its owner's computer never reads.
+  const savedContextHidden = nonOwnerChatRun || ownerComputerRoutine;
   const { context, discoveredPromise, memoryScope, semanticMemory } = parts.connected;
   const { compactedHistory, threadContext } = parts.thread;
   let history = compactedHistory.history.map(
@@ -203,6 +207,7 @@ export async function loadTurnContext(
   const compacted = thread.historyCompactedUpToSeq != null;
   const recallPromise =
     threadContext.includeSemanticRecall &&
+    !ownerComputerRoutine &&
     semanticMemory &&
     memoryScope &&
     capabilities?.recallOnRequestOnly !== true &&
@@ -223,14 +228,16 @@ export async function loadTurnContext(
     await Promise.all([
       discoveredPromise,
       loadCurrentTurnImages(deps, turnBlocks, context),
-      nonOwnerChatRun ? Promise.resolve("") : loadAgentMemoryContext(deps.memory, bot.id, context),
-      nonOwnerChatRun
+      savedContextHidden
+        ? Promise.resolve("")
+        : loadAgentMemoryContext(deps.memory, bot.id, context),
+      savedContextHidden
         ? Promise.resolve("")
         : loadAgentScratchpadContext(deps, {
             spaceId: run.spaceId,
             botId: bot.id,
           }),
-      nonOwnerChatRun || !ticketBoardEnabled
+      savedContextHidden || !ticketBoardEnabled
         ? Promise.resolve(undefined)
         : loadAgentTicketContext(deps, {
             spaceId: run.spaceId,
@@ -238,7 +245,7 @@ export async function loadTurnContext(
           }),
       recallPromise,
     ]);
-  const semanticMemoryEnabled = Boolean(semanticMemory) && !nonOwnerChatRun;
+  const semanticMemoryEnabled = Boolean(semanticMemory) && !savedContextHidden;
   let recalledMemory = "";
   let recallSucceeded = false;
   if (recalled) {

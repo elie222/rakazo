@@ -10,7 +10,6 @@ vi.mock("react-native", () => ({
   Pressable: () => null,
   View: () => null,
 }));
-vi.mock("expo-router", () => ({ router: { push } }));
 vi.mock("../../../lib/appearance/appearance", () => ({
   mobileTokens: () => ({ foreground: "#000" }),
 }));
@@ -33,7 +32,7 @@ beforeEach(() => {
 });
 const alone: ChatSplit = { split: false, inboxHidden: false };
 const header = (params: object, split = alone, canInvite = false) =>
-  chatRouteHeader({ key: "thread-1", params }, split, canInvite);
+  chatRouteHeader({ key: "thread-1", params }, split, { push } as never, canInvite);
 const rightItems = (options: ReturnType<typeof chatRouteHeader>) =>
   options.unstable_headerRightItems?.({ tintColor: undefined } as never) ?? [];
 const leftItems = (options: ReturnType<typeof chatRouteHeader>) =>

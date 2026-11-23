@@ -113,6 +113,7 @@ SOURCE_WORKFLOWS = {
     "preview": ".github/workflows/preview-deploy.yml",
     "e2e": ".github/workflows/publish-playwright-report.yml",
 }
+MANUAL_WORKFLOW = ".github/workflows/pr-screenshots-manual.yml"
 
 
 def trusted_artifact(repo: str, name: str, workflows: list[str]) -> bool:
@@ -128,7 +129,7 @@ def trusted_artifact(repo: str, name: str, workflows: list[str]) -> bool:
                 continue
             run = api(f"repos/{repo}/actions/runs/{artifact['workflow_run']['id']}")
             if (
-                run["event"] == "workflow_run"
+                run["event"] == ("workflow_dispatch" if run["path"].split("@", 1)[0] == MANUAL_WORKFLOW else "workflow_run")
                 and run["path"].split("@", 1)[0] in workflows
                 and run["head_repository"]["full_name"] == repo
             ):
@@ -153,7 +154,7 @@ def sources_ready(repo: str, pr: str, sha: str) -> bool:
 def assessed(repo: str, pr: str, sha: str) -> bool:
     if not re.fullmatch(r"[0-9a-f]{40}", sha) or not re.fullmatch(r"[1-9][0-9]*", pr):
         raise ValueError("Expected a pull request number and commit SHA")
-    return trusted_artifact(repo, f"pr-screenshot-reviewed-{pr}-{sha}", list(SOURCE_WORKFLOWS.values()))
+    return trusted_artifact(repo, f"pr-screenshot-reviewed-{pr}-{sha}", [*SOURCE_WORKFLOWS.values(), MANUAL_WORKFLOW])
 
 
 def clean_caption(value: object) -> str:

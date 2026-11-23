@@ -16,16 +16,24 @@ vi.mock("react-native", () => ({
     children,
     disabled,
     accessibilityLabel,
+    accessibilityHint,
     onPress,
   }: {
     children?: ReactNode;
     disabled?: boolean;
     accessibilityLabel?: string;
+    accessibilityHint?: string;
     onPress?: () => void;
   }) =>
     createElement(
       "button",
-      { type: "button", disabled, "aria-label": accessibilityLabel, onClick: onPress },
+      {
+        type: "button",
+        disabled,
+        "aria-label": accessibilityLabel,
+        "aria-description": accessibilityHint,
+        onClick: onPress,
+      },
       children,
     ),
 }));
@@ -104,7 +112,8 @@ it("draws the inbox's bot from the route alone, before the chat publishes anythi
   expect(avatar()?.getAttribute("data-status")).toBe("running");
   expect(name()?.textContent).toBe("Helper");
   expect(name()?.getAttribute("data-placeholder")).toBe("false");
-  expect(button().getAttribute("aria-label")).toBe("Profile");
+  expect(button().getAttribute("aria-label")).toBe("Helper");
+  expect(button().getAttribute("aria-description")).toBe("Profile");
 });
 
 it("reserves the avatar for an unknown bot and marks a missing name as a placeholder", () => {
@@ -112,6 +121,13 @@ it("reserves the avatar for an unknown bot and marks a missing name as a placeho
   expect(avatar()?.getAttribute("data-color")).toBe("slot");
   expect(name()?.textContent).toBe("Bot");
   expect(name()?.getAttribute("data-placeholder")).toBe("true");
+  expect(button().getAttribute("aria-label")).toBe("Bot");
+});
+
+it("uses the same safe fallback as the visible title for an opaque name", () => {
+  render({ groupId: "group-opaque", name: "__opaque_fixture__" });
+  expect(name()?.textContent).toBe("Group");
+  expect(button().getAttribute("aria-label")).toBe("Group");
 });
 
 it("shows what the open chat publishes, in the same title", () => {
@@ -143,6 +159,8 @@ it("opens group settings with a visible group mark before members load, and keep
   render({ groupId: "group-1", name: "Team" });
   expect(avatar()).toBeNull();
   expect(seats()?.getAttribute("data-members")).toBe("");
+  expect(button().getAttribute("aria-label")).toBe("Team");
+  expect(button().getAttribute("aria-description")).toBe("Group settings");
   act(() => button().click());
   expect(push).toHaveBeenCalledWith({
     pathname: "/group-settings",
@@ -151,6 +169,9 @@ it("opens group settings with a visible group mark before members load, and keep
   render({ botId: "bot-1", name: "Helper", readOnly: "1" });
   expect(button().disabled).toBe(true);
   expect(button().getAttribute("aria-label")).toBe("Helper");
+  expect(button().getAttribute("aria-description")).toBeNull();
+  act(() => button().click());
+  expect(push).toHaveBeenCalledTimes(1);
 });
 
 it("keeps each screen's title its own, even for two screens of the same chat", () => {

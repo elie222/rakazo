@@ -1,13 +1,21 @@
 import type { ConnectorTool } from "@rakazo/adapter-kit";
-import { BOT_INSTRUCTIONS_MAX_LENGTH, ThinkingLevelSchema } from "@rakazo/contracts";
+import {
+  BOT_INSTRUCTIONS_MAX_LENGTH,
+  ComputerModeSchema,
+  MemoryScopeSchema,
+  ReplyModeSchema,
+  ThinkingLevelSchema,
+} from "@rakazo/contracts";
 import { getLogger } from "@rakazo/logging";
 import { Type } from "typebox";
 import { MAX_APPROVAL_DETAIL_LENGTH } from "../../../approvals/approval-ask.js";
 import { argumentGiven } from "../../../bots/update-bot-patch.js";
 import {
+  localSchemaReference,
   normalizeOpenAiToolParameters,
   openAiToolParametersNeedNormalization,
 } from "../../../models/endpoints/openai-tool-parameters.js";
+import { SELECTED_SCHEMA_MAX_BYTES } from "../../../tools/lazy-tool-catalog.js";
 
 export function parametersFor(tool: ConnectorTool) {
   const builtin = builtinParameters(tool);
@@ -51,7 +59,7 @@ function withDeclaredDescriptions<T>(schema: T, declared: unknown): T {
  * degrade to a permissive object instead of failing every turn for the whole bot. */
 function safeJsonSchemaParameters(tool: ConnectorTool) {
   try {
-    return jsonSchemaParameters(tool.inputSchema);
+    return jsonSchemaParameters(inlineLocalReferences(tool.inputSchema));
   } catch (error) {
     getLogger().error(`unsupported input schema for tool ${tool.name}`, error);
     return Type.Object({});
@@ -121,6 +129,12 @@ function builtinParameters(tool: ConnectorTool) {
       thinkingLevel: Type.Optional(stringEnum(ThinkingLevelSchema.options, {})),
       readAloud: Type.Optional(Type.Boolean()),
       voice: Type.Optional(Type.String()),
+      replyMode: Type.Optional(stringEnum(ReplyModeSchema.options, {})),
+      teamChatAmbientEnabled: Type.Optional(Type.Boolean()),
+      teamChatRules: Type.Optional(Type.String()),
+      memoryScope: Type.Optional(stringEnum(MemoryScopeSchema.options, {})),
+      disableTools: Type.Optional(Type.Array(Type.String())),
+      computer: Type.Optional(stringEnum(ComputerModeSchema.options, {})),
       bot_id: Type.Optional(Type.String()),
     });
   }
@@ -180,6 +194,68 @@ function builtinParameters(tool: ConnectorTool) {
     });
   }
   return undefined;
+}
+
+const MAX_INLINED_REFERENCES = 2000;
+// Keywords whose values are data, not schemas.
+const SCHEMA_MAPS = new Set(["properties", "patternProperties", "$defs", "definitions"]);
+const DATA_KEYWORDS = new Set(["enum", "const", "default", "examples", "example"]);
+
+/** Replace every same-document `$ref` with a copy of its target, because jsonField cannot read
+ * references and would turn each one into a string. A reference already being expanded (a
+ * recursive schema) or past the expansion cap becomes a free-form object. Definitions stay only
+ * while a reference that cannot be resolved (remote, missing) still points at them. Copies that
+ * would grow the schema past the size a selected tool's own schema may have throw, as an
+ * oversized schema does, so the caller degrades the tool. */
+function inlineLocalReferences(schema: Record<string, unknown>): Record<string, unknown> {
+  let budget = MAX_INLINED_REFERENCES;
+  let bytes = Buffer.byteLength(JSON.stringify(schema), "utf8");
+  const targetBytes = new Map<unknown, number>();
+  let unresolved = false;
+  const walk = (node: unknown, active: readonly string[]): unknown => {
+    if (Array.isArray(node)) return node.map((item) => walk(item, active));
+    if (node == null || typeof node !== "object") return node;
+    const record = node as Record<string, unknown>;
+    const ref = record.$ref;
+    if (typeof ref === "string") {
+      const target = localSchemaReference(schema, ref);
+      const { $ref: _ref, ...siblings } = record;
+      if (target !== null && typeof target === "object" && !Array.isArray(target)) {
+        if (active.includes(ref) || budget <= 0) {
+          return { type: "object", ...walkEntries(siblings, active) };
+        }
+        budget -= 1;
+        if (!targetBytes.has(target)) {
+          targetBytes.set(target, Buffer.byteLength(JSON.stringify(target), "utf8"));
+        }
+        bytes += targetBytes.get(target) ?? 0;
+        if (bytes > SELECTED_SCHEMA_MAX_BYTES) throw new Error("Tool schema is too large");
+        return { ...(walk(target, [...active, ref]) as object), ...walkEntries(siblings, active) };
+      }
+      unresolved = true;
+    }
+    return walkEntries(record, active);
+  };
+  const walkEntries = (record: Record<string, unknown>, active: readonly string[]) =>
+    Object.fromEntries(
+      Object.entries(record).map(([key, value]) => [
+        key,
+        DATA_KEYWORDS.has(key)
+          ? value
+          : SCHEMA_MAPS.has(key) && value !== null && typeof value === "object"
+            ? walkSchemaMap(value as Record<string, unknown>, active)
+            : walk(value, active),
+      ]),
+    );
+  // Property names are free text, so a field called "default" is still a schema.
+  const walkSchemaMap = (map: Record<string, unknown>, active: readonly string[]) =>
+    Object.fromEntries(Object.entries(map).map(([name, child]) => [name, walk(child, active)]));
+  const inlined = walkEntries(schema, []);
+  if (!unresolved) {
+    delete inlined.$defs;
+    delete inlined.definitions;
+  }
+  return inlined;
 }
 
 export function jsonSchemaParameters(
@@ -347,14 +423,25 @@ const FLEET_STRING_ARGS = [
   "section",
   "instructions",
   "expected_version",
+  "replyMode",
+  "teamChatRules",
+  "memoryScope",
+  "computer",
 ] as const;
-const FLEET_LIST_ARGS = ["bot_ids", "bot_names", "add_bot_ids", "remove_bot_ids"] as const;
+const FLEET_LIST_ARGS = [
+  "bot_ids",
+  "bot_names",
+  "add_bot_ids",
+  "remove_bot_ids",
+  "disableTools",
+] as const;
 const FLEET_FLAG_ARGS = [
   "pinned",
   "clear_section",
   "clear",
   "use_attached_image",
   "readAloud",
+  "teamChatAmbientEnabled",
 ] as const;
 
 /**

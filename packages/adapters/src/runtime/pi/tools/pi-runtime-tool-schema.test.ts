@@ -772,6 +772,21 @@ describe("bot management tool parameters", () => {
     },
   );
 
+  it("passes update_bot's settings through and drops a stored-shape settings object", () => {
+    const args = {
+      bot_id: "b1",
+      replyMode: "messages",
+      teamChatAmbientEnabled: false,
+      teamChatRules: "Answer questions only.",
+      memoryScope: "isolated",
+      disableTools: ["web_search"],
+      computer: "dedicated",
+    };
+    expect(
+      prepareFleetArguments("update_bot", { ...args, settings: { fleetManagement: true } }),
+    ).toEqual(args);
+  });
+
   it("keeps the instruction text exactly as sent", () => {
     const args = { bot_id: "b1", instructions: "  Keep\n spacing ", expected_version: "v1" };
     expect(prepareFleetArguments("set_child_instructions", args)).toEqual(args);

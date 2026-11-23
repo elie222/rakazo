@@ -159,6 +159,10 @@ test("sidebar resize follows RTL and reduced motion", async ({ page }, testInfo)
   await expect(sidebar).toHaveCSS("width", "240px");
   const box = (await sidebar.boundingBox())!;
   expect(Math.round(box.x + box.width)).toBe(1300);
+  await expect(sidebar.getByTestId("minimize-bots-sidebar").locator("svg")).toHaveCSS(
+    "rotate",
+    "180deg",
+  );
 });
 
 test("narrow desktop keeps the chat width when both panels are open", async ({

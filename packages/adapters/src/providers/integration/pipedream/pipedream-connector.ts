@@ -7,7 +7,7 @@ import type {
   ConnectorTool,
   ManagedConnectorProvider,
 } from "@rakazo/adapter-kit";
-import { ResponseTooLargeError } from "@rakazo/core";
+import { readResponseWithin } from "@rakazo/core";
 import { isVitestRuntime } from "@rakazo/core/node/test-runtime";
 import { getLogger } from "@rakazo/logging";
 import { catalogToolPrefix } from "../../../approvals/approval-effect.js";
@@ -32,7 +32,6 @@ import {
   lazyCatalogTools,
   resolveCatalogCall,
 } from "../../../tools/lazy-tool-catalog.js";
-import { readBodyCapped, withAbort } from "../../../web/web-ssrf.js";
 
 const API_BASE = "https://api.pipedream.com";
 const MCP_ENDPOINT = "https://remote.mcp.pipedream.net/v3";
@@ -597,23 +596,10 @@ function approvedAccounts(context: AdapterContext, app: string): ApprovedAccount
 }
 
 async function readPipedreamBody(response: Response, signal: AbortSignal): Promise<string> {
-  const declared = Number(response.headers.get("content-length") ?? 0);
-  if (Number.isFinite(declared) && declared > MAX_PIPEDREAM_RESPONSE_BYTES) {
-    const cancel = response.body?.cancel() ?? Promise.resolve();
-    // A hanging cancel must not outlive the shared deadline.
-    await withAbort(
-      cancel.catch(() => undefined),
-      signal,
-    ).catch(() => undefined);
-    throw new ResponseTooLargeError("Pipedream response is too large.");
-  }
-  try {
-    const bytes = await readBodyCapped(response, MAX_PIPEDREAM_RESPONSE_BYTES, signal);
-    return new TextDecoder().decode(bytes);
-  } catch (error) {
-    if (error instanceof ResponseTooLargeError) {
-      throw new ResponseTooLargeError("Pipedream response is too large.", { cause: error });
-    }
-    throw error;
-  }
+  const bytes = await readResponseWithin(response, {
+    maxBytes: MAX_PIPEDREAM_RESPONSE_BYTES,
+    tooLargeMessage: "Pipedream response is too large.",
+    signal,
+  });
+  return new TextDecoder().decode(bytes);
 }

@@ -2,6 +2,7 @@ import { ph } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
 import type { ThinkingLevel } from "@rakazo/contracts";
 import { botModelPick, botModelState, modelOptionKey } from "@rakazo/core";
+import { localizeModelEntry } from "@rakazo/i18n/model-provider";
 import { thinkingLevelLabel } from "@rakazo/i18n/thinking-level";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { Alert, View } from "react-native";
@@ -46,7 +47,7 @@ export default function ChatModelScreen() {
   const state = ready
     ? botModelState({
         credentials: credentials.data,
-        catalog: catalog.data,
+        catalog: catalog.data.map(localizeModelEntry),
         me: me.data,
         modelKey: pendingKey ?? savedKey,
         spaceDefaultLabel: t`Space default`,

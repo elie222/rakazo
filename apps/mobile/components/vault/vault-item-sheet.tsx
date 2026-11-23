@@ -8,14 +8,14 @@ import {
   otherSitesText,
   vaultKind,
 } from "@rakazo/contracts";
+import { siteHost } from "@rakazo/core";
 import { vaultBotsLine } from "@rakazo/i18n/vault";
 import * as Clipboard from "expo-clipboard";
 import { useState } from "react";
-import { Modal, Platform, ScrollView, StyleSheet, Text, View } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { Modal, ScrollView, StyleSheet, Text, View } from "react-native";
 import { formatActivityRelativeTime } from "../../lib/inbox/activity";
+import { useSheetPadding } from "../../lib/layout/side-insets";
 import { native, useThemedStyles } from "../../lib/native/native";
-import { siteHost } from "../../lib/vault/secret-destination";
 import { readableItem, vaultKindLabel, vaultKindSymbol } from "../../lib/vault/vault";
 import { NativeActionButton } from "../native/native-action-button";
 import { NativeSymbol } from "../native/native-symbol";
@@ -55,7 +55,7 @@ export function VaultItemSheet({
 }) {
   const { t } = useLingui();
   const styles = useThemedStyles(createStyles);
-  const insets = useSafeAreaInsets();
+  const sheetPadding = useSheetPadding();
   const readable = readableItem(item);
   const kind = readable ? vaultKind(readable.auth.type) : undefined;
   const symbol = kind ? vaultKindSymbol(kind) : { ios: "questionmark", android: "help" };
@@ -126,16 +126,7 @@ export function VaultItemSheet({
 
   return (
     <Modal visible animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
-      <View
-        accessibilityViewIsModal
-        style={[
-          styles.sheet,
-          {
-            paddingTop: Platform.OS === "ios" ? 12 : insets.top + 12,
-            paddingBottom: insets.bottom,
-          },
-        ]}
-      >
+      <View accessibilityViewIsModal style={[styles.sheet, sheetPadding]}>
         <View style={styles.header}>
           {usesOpen ? (
             <NativeActionButton

@@ -39,7 +39,6 @@ export function RoutineList({
     >
       <SettingsGroup>
         {routines.map((routine) => {
-          const deletable = canDelete && routine.editable !== false;
           const deleteLabel = t`Delete ${ph({ name: routine.name })}`;
           const switchLabel = t`Active: ${ph({ name: routine.name })}`;
           return (
@@ -49,8 +48,8 @@ export function RoutineList({
               accessibilityLabel={routineRowLabel(routine)}
               // The row is one element for screen readers, so its switch and delete are actions.
               accessibilityActions={[
-                ...(routine.editable === false ? [] : [{ name: "toggle", label: switchLabel }]),
-                ...(deletable ? [{ name: "delete", label: deleteLabel }] : []),
+                { name: "toggle", label: switchLabel },
+                ...(canDelete ? [{ name: "delete", label: deleteLabel }] : []),
               ]}
               onAccessibilityAction={({ nativeEvent }) =>
                 nativeEvent.actionName === "delete"
@@ -60,11 +59,10 @@ export function RoutineList({
               title={routine.name}
               detail={routineRowDetail(routine, timeZone)}
               onPress={() => onOpen(routine)}
-              onLongPress={deletable ? () => onDelete(routine) : undefined}
+              onLongPress={canDelete ? () => onDelete(routine) : undefined}
               trailing={
                 <NativeSwitch
                   accessibilityLabel={switchLabel}
-                  disabled={routine.editable === false}
                   value={routine.active}
                   onValueChange={(active) => onToggle(routine, active)}
                 />

@@ -228,6 +228,37 @@ it("translates every size unit and rolls up instead of 1,024.0 KB or 1,536.0 MB"
   expect(sizes).toEqual(["«512 B»", "«1 KB»", "«1 MB»", "«1.5 GB»", "«1.5 TB»"]);
 });
 
+it("aligns filenames and the download divider with the reading direction", async () => {
+  await act(async () =>
+    root?.render(
+      <>
+        <ArtifactFileCard
+          target={{ botId: "bot-1" }}
+          artifactId="notes-1"
+          name="notes.txt"
+          mimeType="text/plain"
+          size={33}
+        />
+        <ArtifactFileCard
+          target={{ botId: "bot-1" }}
+          artifactId="archive-1"
+          name="archive.zip"
+          mimeType="application/zip"
+          size={33}
+        />
+      </>,
+    ),
+  );
+  const preview = container.querySelector('button[aria-label="Preview notes.txt"]')!;
+  const download = container.querySelector('button[aria-label="Download notes.txt"]')!;
+  const archive = [...container.querySelectorAll("button")].find((button) =>
+    button.textContent?.includes("archive.zip"),
+  )!;
+  expect(preview.classList.contains("text-start")).toBe(true);
+  expect(archive.classList.contains("text-start")).toBe(true);
+  expect(download.classList.contains("border-s")).toBe(true);
+});
+
 it("previews plain text in the app instead of only offering a download", async () => {
   mocks.fetch.mockResolvedValue(new TextEncoder().encode("1. Confirm the pricing page copy."));
   await act(async () =>

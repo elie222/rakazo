@@ -126,14 +126,14 @@ export default function MeetingsDialog({
                   {list.data.meetings.map((meeting) => {
                     const canRead = meeting.transcriptAvailable;
                     const canLeave = canLeaveMeeting(meeting.status);
+                    const platform = meetingPlatformLabel(meeting.platform);
+                    const time = canRead || !canLeave ? meetingTime(meeting.createdAt) : "";
                     return (
                       <li key={meeting.id} className="flex items-center justify-between gap-3 py-3">
                         <div className="min-w-0">
-                          <p className="font-medium">{meetingPlatformLabel(meeting.platform)}</p>
+                          <p className="font-medium">{platform}</p>
                           {!canLeave ? (
-                            <p className="text-body-sm text-muted-foreground">
-                              {meetingTime(meeting.createdAt)}
-                            </p>
+                            <p className="text-body-sm text-muted-foreground">{time}</p>
                           ) : null}
                           {canRead || meeting.error ? null : (
                             <p role="status" className="text-body-sm text-muted-foreground">
@@ -145,7 +145,11 @@ export default function MeetingsDialog({
                           ) : null}
                         </div>
                         {canRead ? (
-                          <Button variant="ghost" onClick={() => select(meeting.id)}>
+                          <Button
+                            variant="ghost"
+                            aria-label={t`View transcript: ${platform}, ${time}`}
+                            onClick={() => select(meeting.id)}
+                          >
                             <Trans>View transcript</Trans>
                             <ChevronRight className="size-4 rtl:rotate-180" />
                           </Button>

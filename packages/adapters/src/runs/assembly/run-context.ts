@@ -18,7 +18,7 @@ import type {
   ToolStepCall,
 } from "@rakazo/contracts";
 import type { ToolStepOutcome } from "@rakazo/core";
-import { createStreamingRedactor } from "@rakazo/core";
+import { createStreamingRedactor, toolResultTaintsRun } from "@rakazo/core";
 import {
   isToolEffectIdempotencyKey,
   toolEffectIdempotencyKey,
@@ -34,6 +34,7 @@ import {
   approvalPausedToolResult,
   approvedEffectOccurrence,
 } from "../../approvals/approval-effect.js";
+import { appendOutsideText } from "../../approvals/review-target-sources.js";
 import type { ComputerExecutionLease } from "../../computers/computer-lifecycle.js";
 import type { UnchangedVisualStreak } from "../../computers/screens/computer-tools.js";
 import type { selectRunConnections } from "../../integrations/connection-context.js";
@@ -214,6 +215,18 @@ export interface RunState {
    */
   tainted: boolean;
   /**
+   * Whether outside content other than the owner's own computer output (its shell, screen and
+   * computer list) entered the run. Only the routine gate on that computer reads it, so a routine
+   * can take several steps there without asking each time (see userComputerGate).
+   */
+  taintedBeyondOwnComputer?: boolean;
+  /**
+   * The text of the outside content this run read (tool results, the task of a run someone else
+   * started, replayed history), normalized and capped, so Auto Review can tell which targets of a call only that
+   * content named (see outsideOnlyTargets).
+   */
+  outsideText: string;
+  /**
    * The instructions this attempt's model works from: the attempt-start snapshot its prompt
    * was built with, restored from the turn checkpoint on resume, and advanced only after a
    * successful own-instruction write in this attempt. Own instruction writes guard on it, so
@@ -230,6 +243,11 @@ export interface RunState {
   walletHosts: Set<string>;
   /** Where the page browser last said its page was, which picks a login's site to fill on. */
   pageUrl?: string;
+  /**
+   * A desktop action ran since the page browser last reported `pageUrl`, so the page may have
+   * changed: Auto Review treats what a page action types as going to a site the run was not given.
+   */
+  pageUrlUncertain?: boolean;
   vaultUses: Set<string>;
   handedOff: boolean;
   terminalCheckpointComplete: boolean;
@@ -251,7 +269,10 @@ export interface RunComputerContext {
   graphical: boolean;
   graphicalToolsAllowed: boolean;
   pageBrowserAllowed: boolean;
+  /** Screenshots reach some model: this run's, a computer model, or a checkpoint resolver. */
   acceptsImages: boolean;
+  /** This run's own model sees images, so read_file and web_fetch can hand it pictures. */
+  modelSeesImages: boolean;
   heldForTakeover: boolean;
 }
 
@@ -270,6 +291,8 @@ export interface RunSource {
   peerMessage: Awaited<ReturnType<typeof loadBotMessageContext>>;
   /** Whose own computer user_computer_shell may reach (see userComputerOwner). */
   userComputerOwner: string | undefined;
+  /** A routine run its owner let use their computer: it may call only the tools it was offered. */
+  ownerComputerRoutine: boolean;
 }
 
 export interface RunTools {
@@ -422,18 +445,37 @@ export async function neverAsks(ctx: RunContext) {
 
 export async function isRunTainted(ctx: RunContext) {
   const { state } = ctx;
-  if (state.tainted) return true;
+  // Own-computer output alone still leaves outside messages to check for.
+  if (state.taintedBeyondOwnComputer) return true;
   state.earlierAttempt ??= ctx.deps.prisma.attempt
     .count({ where: { runId: ctx.runId } })
     .then((count) => count > 1);
-  if ((await state.earlierAttempt) || (await ctx.trust.receivedOutsideMessage()))
+  if ((await state.earlierAttempt) || (await ctx.trust.receivedOutsideMessage())) {
     state.tainted = true;
+    state.taintedBeyondOwnComputer = true;
+  }
   return state.tainted;
 }
 
-/** Fresh outside input applies the existing action protections for this run. */
-export async function markReadOutsideContent(ctx: RunContext) {
+/** Like isRunTainted, but the owner's own computer output does not count. */
+export async function isRunTaintedBeyondOwnComputer(ctx: RunContext) {
+  await isRunTainted(ctx);
+  return ctx.state.taintedBeyondOwnComputer === true;
+}
+
+/**
+ * Fresh outside input applies the existing action protections for this run, and its text is kept
+ * so Auto Review can tell which targets of a later call only it named.
+ */
+export async function markReadOutsideContent(
+  ctx: RunContext,
+  content?: unknown,
+  from?: { ownComputer: boolean },
+) {
   ctx.state.tainted = true;
+  if (!from?.ownComputer) ctx.state.taintedBeyondOwnComputer = true;
+  if (content !== undefined)
+    ctx.state.outsideText = appendOutsideText(ctx.state.outsideText, content);
 }
 
 /** A change landed after this attempt's snapshot; only a fresh run can apply the rewrite. */
@@ -534,6 +576,10 @@ export function restoreTurnCheckpointEffects(
   const effects = ctx.state.effects;
   try {
     const saved = restoreTurnCheckpoint(turnCheckpoint, model);
+    // The saved turn's tool results are outside content this run already read.
+    for (const message of saved.messages)
+      if (message.role === "toolResult" && toolResultTaintsRun(message.toolName))
+        ctx.state.outsideText = appendOutsideText(ctx.state.outsideText, message.content);
     const unresolved = new Set(unresolvedTurnCheckpointCalls(saved.messages));
     const namedTools = namedAgentTools(partitionTools(ctx.tools.offered).listed);
     const available = new Set(namedTools.map((tool) => tool.name));

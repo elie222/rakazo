@@ -127,8 +127,27 @@ describe("memory outcome grading", () => {
     expect(failed("full", evidence("# Assistant\n\nOffice door code: 5829\n"))).toEqual([]);
   });
 
+  it("grades proactive saving by whether a save happened, and never the secret", () => {
+    const saved = [remember(1, "Daughter Mia: peanut allergy.")];
+    expect(failed("proactive-allergy", evidence("# Assistant\n\n"))).toEqual(["saved-unprompted"]);
+    expect(failed("proactive-allergy", evidence("# Assistant\n\nMia: peanuts.\n", saved))).toEqual(
+      [],
+    );
+    expect(failed("proactive-one-off", evidence("", saved))).toEqual(["nothing-saved"]);
+    expect(failed("proactive-known", evidence("", []))).toEqual([]);
+    expect(
+      failed("proactive-secret", evidence("", [remember(1, "Guest Wi-Fi: Sunflower-4471")])),
+    ).toEqual(["secret-not-saved"]);
+    expect(
+      failed("proactive-secret", evidence("Guest Wi-Fi: sunflower-four-four-seven-one")),
+    ).toEqual(["secret-not-saved"]);
+    expect(failed("proactive-secret", evidence("", [remember(1, "Has a guest Wi-Fi.")]))).toEqual(
+      [],
+    );
+  });
+
   it("leaves meaning to a versioned judge with labelled anchors for every rubric", () => {
-    for (const c of MEMORY_EVAL_CASES) {
+    for (const c of MEMORY_EVAL_CASES.filter((c) => c.judge)) {
       const input = c.judge?.(evidence("# Assistant\n\n"));
       expect(input?.rubric.startsWith(`${MEMORY_JUDGE_VERSION}:`)).toBe(true);
       const anchors = MEMORY_JUDGE_CALIBRATION.filter((a) => a.input.rubric === input?.rubric);

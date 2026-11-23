@@ -76,15 +76,30 @@ export const RoutineSchema = z.object({
   /** Computed by the server; absent on older servers. Not a worker-health diagnosis. */
   scheduleDelayed: z.boolean().optional(),
   createdAt: z.string(),
-  /** Older servers send false for another member's routine; any member can now change it. */
+  /**
+   * False for another member's routine: only its owner changes it, while others may still turn it
+   * on or off, run it, copy it or delete it. Absent from servers where any member could change it.
+   */
   editable: z.boolean().optional(),
+  /**
+   * Whose accounts and approval rules its runs use: that member's display name and whether it is
+   * the viewer, never an id. Null when that member is no longer in the Space; absent on older servers.
+   */
+  runsAs: z.object({ name: z.string(), isViewer: z.boolean() }).nullable().optional(),
+  /**
+   * Whether its runs may use the viewer's own paired computer. Present only when the viewer owns
+   * the routine and its bot and has a computer paired, so only they see the switch.
+   */
+  useComputer: z.boolean().optional(),
 });
 export type Routine = z.infer<typeof RoutineSchema>;
+
+export const ROUTINE_NAME_MAX_LENGTH = 80;
 
 export const CreateRoutineInput = z
   .object({
     botId: Id,
-    name: z.string().min(1).max(80),
+    name: z.string().min(1).max(ROUTINE_NAME_MAX_LENGTH),
     prompt: z.string().min(1),
     crons: z.array(z.string().min(1)).default([]),
     timezone: TimeZoneSchema.default("UTC"),
@@ -131,3 +146,14 @@ export const CreateRoutineInput = z
     }
   });
 export type CreateRoutineInput = z.infer<typeof CreateRoutineInput>;
+
+/** Where a sender posts to start a bot's routines: its webhook, or its Git events. */
+export function botInboundPath(botId: string, kind: "webhook" | "github"): string {
+  return `/api/v1/bots/${botId}/${kind}`;
+}
+
+/** The full address a sender posts to: `origin` is the published inbound origin, else the app's own. */
+export function botInboundUrl(origin: string, botId: string, kind: "webhook" | "github"): string {
+  const base = origin.endsWith("/") ? origin.slice(0, -1) : origin;
+  return `${base}${botInboundPath(botId, kind)}`;
+}

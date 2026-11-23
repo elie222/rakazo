@@ -14,7 +14,7 @@ import type { PinnedThreadWindow } from "./thread-window";
 import { applyThreadMessageJump } from "./thread-window";
 
 vi.mock("../api/api", () => ({ rpc: vi.fn() }));
-vi.mock("../integrations/integrations-cache", () => ({ isIntegrationsScopeCurrent: () => true }));
+vi.mock("../api/verified-scope", () => ({ isVerifiedScopeCurrent: () => true }));
 vi.mock("../inbox/saved-chats", () => ({ liveSavedChatsScope: async () => ({}) }));
 
 type JumpTarget = { botId?: string; groupId?: string; messageId: string };

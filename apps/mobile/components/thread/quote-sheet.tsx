@@ -2,9 +2,9 @@ import { t } from "@lingui/core/macro";
 import { truncateReplyQuote } from "@rakazo/contracts";
 import { typeScale } from "@rakazo/ui-tokens";
 import { useMemo, useState } from "react";
-import { Modal, Platform, ScrollView, TextInput, View } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { Modal, ScrollView, TextInput, View } from "react-native";
 import type { MobileMessage } from "../../lib/api/mobile-types";
+import { useSheetPadding } from "../../lib/layout/side-insets";
 import { quotableMessageSegments } from "../../lib/messages/message-presentation";
 import { useMobileTokens } from "../../lib/native/native";
 import { NativeActionButton } from "../native/native-action-button";
@@ -19,7 +19,7 @@ export function QuoteSheet({
   onQuote: (excerpt: string) => void;
 }) {
   const tokens = useMobileTokens();
-  const insets = useSafeAreaInsets();
+  const sheetPadding = useSheetPadding();
   const segments = useMemo(() => quotableMessageSegments(message.role, message.blocks), [message]);
   const [selection, setSelection] = useState<{
     segment: number;
@@ -40,9 +40,7 @@ export function QuoteSheet({
         style={{
           flex: 1,
           backgroundColor: tokens.background,
-          // Page sheets clear the notch on iOS; Android modals are full-screen.
-          paddingTop: Platform.OS === "ios" ? 12 : insets.top + 12,
-          paddingBottom: insets.bottom,
+          ...sheetPadding,
         }}
       >
         <View

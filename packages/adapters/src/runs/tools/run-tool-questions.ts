@@ -71,7 +71,7 @@ async function askInRun(
   const ref = { spaceId: run.spaceId, threadId: message.threadId, messageId: message.id };
   const take = async (expire: boolean): Promise<ToolQuestionAnswer | undefined> => {
     const { answer, seq } = await takeToolQuestionAnswer(deps.prisma, ref, { expire });
-    if (seq !== undefined) await bestEffort("tool question", deps.events.notify(ref.threadId, seq));
+    if (seq !== undefined) await deps.events.notify(ref.threadId, seq);
     if (answer?.action !== "accept") return answer;
     const opened = key.open(answer.sealedValues);
     const checked = opened === undefined ? undefined : parsedValues(question, opened);

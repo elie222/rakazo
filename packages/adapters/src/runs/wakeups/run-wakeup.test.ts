@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
-import type { BackgroundJobHandlers, JobPublisher } from "@rakazo/adapter-kit";
+import type { BackgroundJobHandlers, JobPublisher, JobQueueOrder } from "@rakazo/adapter-kit";
 import { runContinueJob } from "@rakazo/adapter-kit";
 import { deferred, flush } from "@rakazo/core/test-async";
 import type { PrismaClient } from "@rakazo/db";
@@ -58,7 +58,7 @@ function fixture() {
     enqueue: vi.fn(),
     cancel: vi.fn(),
     close: vi.fn(),
-  } as unknown as JobPublisher;
+  } as unknown as JobPublisher & JobQueueOrder;
   const starter = new RunStarter(realtime);
   const publisher = new RunJobPublisher(prisma, background, starter);
   const host = new RunWorkerHost(prisma, realtime, starter, { intervalMs: 100 });

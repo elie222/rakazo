@@ -7,7 +7,7 @@ import {
   STRATEGIC_INITIATIVE_NONCE_PREFIX,
   THREAD_LOCK_TRANSACTION_OPTIONS,
 } from "@rakazo/db";
-import { getLogger } from "@rakazo/logging";
+import { bestEffort, getLogger } from "@rakazo/logging";
 import { modelCreditBillingEnabled } from "../runs/turn/run-model.js";
 import { wakeRun } from "../runs/wakeups/wake-run.js";
 import { initiativePrompt } from "./strategic-initiative.prompt.js";
@@ -16,6 +16,8 @@ const STRATEGIC_INITIATIVE_INTERVAL_MS = 24 * 60 * 60 * 1000;
 // A failed check-in usually means the bot's model setup is broken; retrying daily only repeats it.
 const FAILED_CHECK_IN_BACKOFF_MS = 7 * STRATEGIC_INITIATIVE_INTERVAL_MS;
 const STALE_SCRATCHPAD_ITEM_MS = 12 * 60 * 60 * 1000;
+// Nobody has touched it for two weeks, so it stops counting as open.
+const PARK_SCRATCHPAD_ITEM_MS = 14 * STRATEGIC_INITIATIVE_INTERVAL_MS;
 const MAX_ITEMS_IN_PROMPT = 5;
 const MAX_STALE_ITEMS_SCANNED = 50;
 const STRATEGIC_INITIATIVE_SAFE_TOOL_NAMES = new Set(["ask_user"]);
@@ -32,6 +34,70 @@ type StrategicBot = {
     updatedAt: Date;
   }>;
 };
+
+/** A follow-up covers its item until it fires and for a day after, like a check-in. */
+function pendingFollowUps(now: Date): Prisma.RoutineWhereInput {
+  return {
+    crons: { has: ONCE_ROUTINE_CRON },
+    OR: [
+      { active: true },
+      { lastRunAt: { gt: new Date(now.getTime() - STRATEGIC_INITIATIVE_INTERVAL_MS) } },
+    ],
+  };
+}
+
+/**
+ * Parks open work nobody has touched for two weeks, so the list holds what is still live.
+ * Its own pass, because a busy or waiting bot is skipped by the check-in. Work a pending
+ * follow-up covers stays open.
+ */
+export async function parkForgottenOpenWork(deps: {
+  prisma: PrismaClient;
+  now: Date;
+  pageSize: number;
+}): Promise<number> {
+  const forgotten = {
+    status: "open",
+    updatedAt: { lte: new Date(deps.now.getTime() - PARK_SCRATCHPAD_ITEM_MS) },
+  };
+  const tidied = { archivedAt: null, dailyCheckIns: true, space: { deletingAt: null } };
+  let parked = 0;
+  let cursor: string | undefined;
+  for (;;) {
+    const bots = await deps.prisma.bot.findMany({
+      where: {
+        ...tidied,
+        scratchpadItems: { some: forgotten },
+        ...(cursor ? { id: { gt: cursor } } : {}),
+      },
+      select: {
+        id: true,
+        routines: { where: pendingFollowUps(deps.now), select: { id: true } },
+      },
+      orderBy: { id: "asc" },
+      take: deps.pageSize,
+    });
+    if (bots.length === 0) return parked;
+    cursor = bots[bots.length - 1]!.id;
+    for (const bot of bots) {
+      // The age, coverage and the bot's settings are part of the write, so an item touched or a
+      // bot switched off since the read is left alone.
+      const { count } = await deps.prisma.scratchpadItem.updateMany({
+        where: {
+          botId: bot.id,
+          bot: tidied,
+          ...forgotten,
+          ...(bot.routines.length
+            ? { NOT: bot.routines.map((routine) => ({ notes: { contains: routine.id } })) }
+            : {}),
+        },
+        data: { status: "parked" },
+      });
+      if (count > 0) getLogger().info("open_work.parked", { "bot.id": bot.id, count });
+      parked += count;
+    }
+  }
+}
 
 function strategicBotEligibility(now: Date): Prisma.BotWhereInput {
   return {
@@ -79,14 +145,20 @@ export function createStrategicInitiativeReconciler(deps: {
     if (sweeping || (lastRun !== undefined && now.getTime() - lastRun < 60 * 60 * 1000)) return;
     sweeping = true;
     // Runs beside the reconciler pass so a large sweep never delays run recovery.
-    void (async () =>
-      reconcileStrategicInitiatives({
+    void (async () => {
+      // Parked first, so a check-in is never spent on work that has just been set aside.
+      await bestEffort(
+        "park forgotten open work",
+        parkForgottenOpenWork({ prisma: deps.prisma, now, pageSize: 100 }),
+      );
+      return reconcileStrategicInitiatives({
         prisma: deps.prisma,
         jobs: deps.jobs,
         billingEnabled: await modelCreditBillingEnabled(deps),
         now,
         pageSize: 100,
-      }))()
+      });
+    })()
       .then(
         () => {
           lastRun = now.getTime();
@@ -133,19 +205,7 @@ export async function reconcileStrategicInitiatives(deps: {
           orderBy: [{ updatedAt: "asc" }, { id: "asc" }],
           take: MAX_STALE_ITEMS_SCANNED,
         },
-        // A follow-up covers its item until it fires and for a day after, like a check-in.
-        routines: {
-          where: {
-            crons: { has: ONCE_ROUTINE_CRON },
-            OR: [
-              { active: true },
-              {
-                lastRunAt: { gt: new Date(deps.now.getTime() - STRATEGIC_INITIATIVE_INTERVAL_MS) },
-              },
-            ],
-          },
-          select: { id: true },
-        },
+        routines: { where: pendingFollowUps(deps.now), select: { id: true } },
       },
       orderBy: { id: "asc" },
       take: deps.pageSize,

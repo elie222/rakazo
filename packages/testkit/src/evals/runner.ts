@@ -17,7 +17,12 @@ import {
   splitToolHistory,
 } from "@rakazo/core";
 import type { createDb } from "@rakazo/db";
-import { createThreadEvents, readJsonColumn, storedMessageBlocks } from "@rakazo/db";
+import {
+  chatPreferencesSelect,
+  createThreadEvents,
+  readJsonColumn,
+  storedMessageBlocks,
+} from "@rakazo/db";
 import { z } from "zod";
 import type { HostedApp } from "../apps/mcp-host.js";
 import { hostOverMcp } from "../apps/mcp-host.js";
@@ -606,7 +611,13 @@ export async function runTrial(
       const { userId, ...botSettings } = bot;
       const user = await prisma.user.findUniqueOrThrow({
         where: { id: userId },
-        select: { email: true, name: true, timezone: true, marketingEmailOptOutAt: true },
+        select: {
+          email: true,
+          name: true,
+          timezone: true,
+          marketingEmailOptOutAt: true,
+          ...chatPreferencesSelect,
+        },
       });
       const { marketingEmailOptOutAt, ...userSettings } = user;
       return {
@@ -1254,8 +1265,8 @@ export async function runTrial(
         "memory-snapshot": evidence.memory,
       }).map(([key, value]) => [key, value === null ? null : redact(value, secrets)]),
     );
-    // Kept so a new rubric can grade the trial again without running the bot.
-    if (scenario.judge || scenario.observe) result.evidence = evidenceSnapshot(evidence, secrets);
+    // Kept so a changed check or rubric can grade the trial again without running the bot.
+    result.evidence = evidenceSnapshot(evidence, secrets);
     const grading = { judge: options.judge, deadline, secrets };
     await judgeOutcome(scenario, evidence, result, grading);
     if (handles.harnessIssues?.length) result.harnessIssues = [...handles.harnessIssues];

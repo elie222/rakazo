@@ -49,7 +49,6 @@ COMPUTER_MAX_ACTIVE_UNBILLED_MS=0 # 不按运行时长计费的提供商（Docke
 SANDBOX_COMMAND_TIMEOUT_MS=300000 # 5 分钟后停止 shell 命令
 MAX_TOOL_CALLS_PER_TURN=  # 可选的 Pi 单轮工具调用熔断值；未设置或为 0 表示不限
 RAKAZO_MESSAGE_USER_MAX_CHARS=500 # message_user 的长度上限；旁白仍为 500
-BOT_MESSAGE_MAX_HOPS=6    # 一条 bot 到 bot 消息链最多可经过的跳数，超过后拒绝下一条
 E2B_API_KEY=              # SANDBOX_PROVIDER=e2b 时使用
 NOVITA_API_KEY=           # SANDBOX_PROVIDER=novita 时使用；需先构建其模板
 DAYTONA_API_KEY=          # SANDBOX_PROVIDER=daytona 时使用

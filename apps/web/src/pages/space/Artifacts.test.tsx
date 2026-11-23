@@ -17,6 +17,7 @@ const api = vi.hoisted(() => ({
 }));
 vi.mock("../../lib/copy-text", () => ({ useCopyText: () => [false, api.copy] }));
 const rpcClient = vi.hoisted(() => ({ artifacts: api, bootstrap: vi.fn() }));
+const uiLocale = vi.hoisted(() => ({ current: "en" }));
 vi.mock("../../lib/query/rpc", () => ({
   rpc: rpcClient,
   rpcForSpace: () => rpcClient,
@@ -34,7 +35,10 @@ vi.mock("../../lib/locale/relative-time", () => ({ formatRelativeTime: () => "ju
 vi.mock("@lingui/react/macro", () => {
   const t = (parts: TemplateStringsArray, ...values: unknown[]) =>
     parts.reduce((text, part, index) => text + part + (values[index] ?? ""), "");
-  return { useLingui: () => ({ t }), Trans: ({ children }: { children: ReactNode }) => children };
+  return {
+    useLingui: () => ({ t, i18n: { locale: uiLocale.current } }),
+    Trans: ({ children }: { children: ReactNode }) => children,
+  };
 });
 vi.mock("@rakazo/chat-ui/web", () => ({
   ChatMarkdown: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
@@ -141,6 +145,7 @@ function typeSearch(container: HTMLElement, value: string) {
 
 let queryClient: QueryClient;
 beforeEach(() => {
+  uiLocale.current = "en";
   queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
 });
 
@@ -148,17 +153,19 @@ async function renderArtifacts(entry = "/app/artifacts") {
   const container = document.createElement("div");
   document.body.append(container);
   const root = createRoot(container);
-  await act(async () =>
-    root.render(
-      <QueryClientProvider client={queryClient}>
-        <MemoryRouter initialEntries={[entry]}>
-          <Routes>
-            <Route path="/app/artifacts/:artifactId?" element={<ArtifactsPage />} />
-          </Routes>
-        </MemoryRouter>
-      </QueryClientProvider>,
-    ),
-  );
+  const rerender = () =>
+    act(async () =>
+      root.render(
+        <QueryClientProvider client={queryClient}>
+          <MemoryRouter initialEntries={[entry]}>
+            <Routes>
+              <Route path="/app/artifacts/:artifactId?" element={<ArtifactsPage />} />
+            </Routes>
+          </MemoryRouter>
+        </QueryClientProvider>,
+      ),
+    );
+  await rerender();
   // Let query results reach the screen.
   if (vi.isFakeTimers()) {
     await act(async () => vi.advanceTimersByTimeAsync(0));
@@ -167,6 +174,7 @@ async function renderArtifacts(entry = "/app/artifacts") {
   }
   return {
     container,
+    rerender,
     async cleanup() {
       await act(async () => root.unmount());
       container.remove();
@@ -301,6 +309,68 @@ it("reopens with cached artifacts and refreshes them in the background", async (
     vi.unstubAllGlobals();
   }
 });
+
+it.each([
+  { locale: "fr", legacy: false },
+  { locale: "de", legacy: false },
+  { locale: "fr", legacy: true },
+])(
+  "starts This week on Monday in $locale (without Intl week info: $legacy)",
+  async ({ locale, legacy }) => {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    if (legacy) {
+      const browserIntl = Object.create(Intl);
+      Object.defineProperty(browserIntl, "Locale", {
+        value: class {
+          constructor(readonly baseName: string) {}
+        },
+      });
+      vi.stubGlobal("Intl", browserIntl);
+    }
+    vi.useFakeTimers();
+    const sunday = new Date(2026, 10, 15, 23, 59, 59);
+    vi.setSystemTime(sunday);
+    api.listSpace.mockReset().mockResolvedValue({
+      items: [
+        artifact("Monday report", "monday", new Date(2026, 10, 9, 0, 0, 0).toISOString()),
+        artifact("Sunday report", "sunday", sunday.toISOString()),
+      ],
+      nextCursor: null,
+    });
+    const page = await renderArtifacts();
+    try {
+      const select = page.container.querySelector<HTMLSelectElement>(
+        'select[aria-label="Filter by date"]',
+      )!;
+      await act(async () => {
+        select.value = "week";
+        select.dispatchEvent(new Event("change", { bubbles: true }));
+      });
+      // English and Hebrew keep their Sunday week start; French and German include last Monday.
+      expect(page.container.textContent).toContain("Sunday report");
+      expect(page.container.textContent).not.toContain("Monday report");
+      uiLocale.current = locale;
+      await page.rerender();
+      expect(page.container.textContent).toContain("Monday report");
+      uiLocale.current = "he";
+      await page.rerender();
+      expect(page.container.textContent).not.toContain("Monday report");
+      expect(page.container.textContent).toContain("Sunday report");
+      uiLocale.current = locale;
+      await page.rerender();
+      expect(page.container.textContent).toContain("Monday report");
+
+      await act(async () => vi.advanceTimersByTimeAsync(1000));
+      expect(page.container.textContent).not.toContain("Monday report");
+      expect(page.container.textContent).not.toContain("Sunday report");
+    } finally {
+      await page.cleanup();
+      queryClient.clear();
+      vi.useRealTimers();
+      vi.unstubAllGlobals();
+    }
+  },
+);
 
 it.each([
   ["today", new Date(2026, 10, 12, 23, 59, 59)],
