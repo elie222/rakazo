@@ -1,4 +1,5 @@
 import { ORPCError } from "@orpc/server";
+import { routineJobKey } from "@rakazo/adapter-kit";
 import {
   archiveBot,
   carriedBotModelPin,
@@ -420,6 +421,11 @@ export function botsRoutes(ctx: RouterContext) {
       }),
       update: authed.bots.update.handler(async ({ context, input }) => {
         const existing = await repos.getBot(context.actor, input.botId);
+        const instructionsChanged =
+          input.instructions !== undefined && input.instructions !== existing.instructions;
+        const toolsChanged =
+          input.disabledBuiltinTools !== undefined &&
+          !sameDisabledTools(existing.disabledBuiltinTools, input.disabledBuiltinTools);
         if (input.sectionId) {
           const section = await deps.prisma.botSection.findFirst({
             where: {
@@ -509,6 +515,9 @@ export function botsRoutes(ctx: RouterContext) {
         for (const setting of changedBotSettings(existing, input)) {
           deps.analytics?.capture(context.actor.userId, { name: "bot_setting_changed", setting });
         }
+        if (instructionsChanged || toolsChanged) {
+          await pauseOtherMembersRoutines(deps, context.actor, existing);
+        }
         const bots = await repos.listBots(context.actor);
         const bot = bots.find((b) => b.id === input.botId);
         if (!bot) throw new IsolationError();
@@ -528,6 +537,7 @@ export function botsRoutes(ctx: RouterContext) {
           expectedInstructions: input.expectedInstructions,
           instructionRestore: { versionId: input.versionId, undo: input.undo },
         });
+        await pauseOtherMembersRoutines(deps, context.actor, bot);
         return (await repos.listBots(context.actor)).find((bot) => bot.id === input.botId)!;
       }),
       setComputer: authed.bots.setComputer.handler(async ({ context, input }) => {
@@ -867,4 +877,49 @@ export function botsRoutes(ctx: RouterContext) {
 function duplicateBotName(name: string) {
   const label = displayName(name, "");
   return label ? `${label.slice(0, 75)} copy` : "";
+}
+
+function sameDisabledTools(a: readonly string[] | undefined, b: readonly string[]): boolean {
+  const left = new Set(a ?? []);
+  const right = new Set(b);
+  return left.size === right.size && [...left].every((tool) => right.has(tool));
+}
+
+/**
+ * A routine runs with its owner's accounts, so changing a bot's instructions or tools
+ * pauses other members' active routines on that bot until they re-enable them.
+ */
+async function pauseOtherMembersRoutines(
+  deps: Pick<RouterDeps, "prisma" | "jobs" | "events">,
+  actor: Pick<Actor, "spaceId" | "userId">,
+  bot: { id: string; threadId?: string | null },
+) {
+  const paused = await deps.prisma.routine.updateManyAndReturn({
+    where: {
+      botId: bot.id,
+      spaceId: actor.spaceId,
+      userId: { not: actor.userId },
+      active: true,
+    },
+    data: {
+      active: false,
+      nextRunAt: null,
+      resumeOnRestore: false,
+    },
+    select: { id: true },
+  });
+  if (paused.length === 0) return;
+  await Promise.all(paused.map((routine) => deps.jobs?.cancel?.(routineJobKey(routine.id))));
+  await deps.events?.publishSpaceChange?.(actor.spaceId, "routines");
+  if (bot.threadId) {
+    for (const routine of paused) {
+      await deps.events?.append?.({
+        spaceId: actor.spaceId,
+        threadId: bot.threadId,
+        botId: bot.id,
+        type: "routine.updated",
+        payload: { routineId: routine.id, active: false },
+      });
+    }
+  }
 }
