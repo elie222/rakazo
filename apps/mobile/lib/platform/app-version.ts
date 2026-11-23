@@ -103,3 +103,19 @@ export function getAppVersionInfo(): AppVersionInfo {
     update: resolveUpdateIdentity(),
   };
 }
+
+/** Store version plus the running update, as measurement names the app: `1.0.17+ee3d3f95`. */
+export function analyticsAppVersion(): string | undefined {
+  let version: string | null = null;
+  try {
+    version = readString(Application.nativeApplicationVersion);
+  } catch {
+    // Hosts without the native module fall back to the expo config below.
+  }
+  version ??= fallbackNativeVersion().version;
+  if (!version || !/^\d+(\.\d+){0,3}$/.test(version)) return undefined;
+  const update = resolveUpdateIdentity();
+  return update.kind === "ota" && /^[0-9a-f]{8}$/.test(update.id)
+    ? `${version}+${update.id}`
+    : version;
+}
