@@ -60,7 +60,8 @@ export function pageMutationOptions(queries: SpaceQueries, queryClient: QueryCli
         queries.pages.setChatUpdates.call(input),
       onSuccess: (summary: PageSummary, input: { pageId: string }) => {
         patch(input.pageId, { chatUpdates: summary.chatUpdates });
-        void relist();
+        // The menu reads the list row, so it stays disabled until the row shows the change.
+        return relist();
       },
       onError: reconcile,
     },
