@@ -10,11 +10,11 @@ import {
 } from "../../model-credits/offerings.js";
 import { approvedModelCreditMaterial } from "../../model-credits/routing.js";
 import { hostedModelCreditObserver } from "../../models/credits/model-credit-observer.js";
-import { httpModelEndpointsAllowed } from "../../models/http-model-endpoints.js";
 import {
   loadAdminDeploymentModelKey,
   matchingAdminDeploymentModel,
 } from "../../models/deployment-model.js";
+import { httpModelEndpointsAllowed } from "../../models/http-model-endpoints.js";
 import {
   persistRefreshedModelCredential,
   refreshStoredModelCredential,
