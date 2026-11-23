@@ -69,7 +69,11 @@ import {
 } from "../tools/run-tool-selection.js";
 import { historyMyChatsAllowed } from "../tools/run-tools-memory.js";
 import type { UserComputerState } from "../tools/run-tools-user-computer.js";
-import { USER_COMPUTER_SHELL_TOOL, userComputerOwner } from "../tools/run-tools-user-computer.js";
+import {
+  hasScreenControl,
+  USER_COMPUTER_SHELL_TOOL,
+  userComputerOwner,
+} from "../tools/run-tools-user-computer.js";
 import {
   modelCreditBillingEnabled,
   resolvedModelRunFields,
@@ -576,10 +580,7 @@ export async function resolveRunCapabilities(
     );
     if (computers?.length) {
       userComputerShell = computers.some((computer) => !computer.screenOnly);
-      // The macOS and Windows desktops fetch a screen driver; Linux has none yet.
-      userComputerScreen = computers.some(
-        (computer) => computer.platform === "darwin" || computer.platform === "win32",
-      );
+      userComputerScreen = computers.some((computer) => hasScreenControl(computer.platform));
       if (userComputerShell || userComputerScreen) userComputer = "paired";
     } else if (computers) userComputer = "unpaired";
   }

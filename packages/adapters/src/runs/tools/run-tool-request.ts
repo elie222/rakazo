@@ -73,7 +73,7 @@ import { refusal } from "../turn/tool-refusal.js";
 import { BUILTIN_AGENT_TOOL_NAMES, FLEET_WRITE_TOOL_NAMES_SET } from "./run-tool-selection.js";
 import { holdSharedPageSave } from "./run-tools-pages.js";
 import { scheduleCreateRefusal, scheduleUpdatePreview } from "./run-tools-tasks.js";
-import { USER_COMPUTER_TOOLS } from "./run-tools-user-computer.js";
+import { USER_COMPUTER_TOOLS, userComputerCallRefusal } from "./run-tools-user-computer.js";
 
 /** A tool call resolved to the tool it runs and the exact request an approval covers. */
 export interface ToolRequest {
@@ -468,6 +468,10 @@ export async function prepareToolRequest(
         "user_computer_unavailable",
         "The user's computer is not available in this run.",
       );
+    const mismatch = USER_COMPUTER_TOOLS.has(name)
+      ? await userComputerCallRefusal(ctx, name, args)
+      : undefined;
+    if (mismatch) return refusal("user_computer_unsupported", mismatch);
   }
   // The card shows and the effect stores the events in their short form, so padding can't hide one.
   if ((name === "schedule_create" || name === "schedule_update") && "on" in args) {

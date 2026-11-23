@@ -235,7 +235,7 @@ export const computerTools: ConnectorTool[] = [
   {
     name: "user_computer_list",
     description:
-      "List the user's connected, allowed computers with computerId, name and bound (the computer used when computerId is omitted). Pass computerId to user_computer_shell, user_computer_observe or user_computer_act to target one explicitly.",
+      "List the user's connected, allowed computers with computerId, name, platform and bound (the computer used when computerId is omitted). Pass computerId to user_computer_shell, user_computer_observe or user_computer_act to target one explicitly.",
     inputSchema: { type: "object", properties: {} },
   },
   {

@@ -21,6 +21,7 @@ import { builtinAgentSkillRecords } from "../../tools/skill-tools.js";
 import type { RunExecutorServices, RunHold } from "../lifecycle/run-attempt.js";
 import { buildApprovalContinuation } from "../lifecycle/run-effects.js";
 import { createReplyState } from "../lifecycle/run-progress.js";
+import { offlineUserComputerCalls } from "../tools/run-tools-user-computer.js";
 import { withLatestStepScreenshot, withRecentTurnImages } from "../turn/run-turn-images.js";
 import { missingTurnImagesInstruction } from "../turn/run-turn-images.prompt.js";
 import { checkpointAnswerHistory } from "./checkpoint-answer-history.js";
@@ -36,7 +37,11 @@ import type {
 import type { ThreadHistory, TurnContext } from "./run-assembly-history.js";
 import type { ConnectedRun, RunRecords, SavedTurn } from "./run-assembly-records.js";
 import type { RunContext, RunState } from "./run-context.js";
-import { restoreTurnCheckpointEffects, seedIntroEffectOccurrences } from "./run-context.js";
+import {
+  restoreTurnCheckpointEffects,
+  resumingCheckpointCalls,
+  seedIntroEffectOccurrences,
+} from "./run-context.js";
 import {
   connectedPluginsInstruction,
   taughtSkillsInstruction,
@@ -340,14 +345,22 @@ export async function buildTurnPrompt(
       )}\n\n${taskPrompt}`
     : taskPrompt;
   if (turnCheckpoint) {
+    const model = { provider: runModelProvider, id: runModelId };
+    // Computer tools are offered by what is paired, so a paused call checks its computer is up.
+    const offlineCalls =
+      userComputerOwnerId && deps.userDevices
+        ? await offlineUserComputerCalls(
+            deps.userDevices,
+            userComputerOwnerId,
+            resumingCheckpointCalls(turnCheckpoint, model),
+          )
+        : undefined;
     turnCheckpoint = restoreTurnCheckpointEffects(
       ctx,
       turnCheckpoint,
-      {
-        provider: runModelProvider,
-        id: runModelId,
-      },
+      model,
       savedComputerMode?.mode,
+      offlineCalls,
     );
     if (checkpointModelResolver && !turnCheckpoint)
       throw new Error("Pinned computer mode checkpoint cannot be restored");

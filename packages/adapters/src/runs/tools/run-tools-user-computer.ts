@@ -3,11 +3,12 @@ import type { AgentToolExecutionResult, ProcessEvent } from "@rakazo/adapter-kit
 import type { ApprovalMode } from "@rakazo/core";
 import { redactSecrets } from "@rakazo/core";
 import { sandboxCommandTimeoutMs } from "@rakazo/core/node/sandbox-command";
-import { getLogger } from "@rakazo/logging";
+import { bestEffort, getLogger } from "@rakazo/logging";
 import { z } from "zod";
 import type { HostComputerEnvironment } from "../../computers/host/host-computer-protocol.js";
 import { nativeShellCommandArgv } from "../../computers/host/native-shell.js";
 import {
+  hasScreenControl,
   USER_COMPUTER_ACT_TOOL,
   USER_COMPUTER_OBSERVE_TOOL,
   USER_COMPUTER_SCREEN_TOOLS,
@@ -15,7 +16,7 @@ import {
   USER_COMPUTER_TOOLS,
   userComputerAppName,
 } from "../../computers/host/user-computer-tools.js";
-import type { UserDevice } from "../../computers/host/user-device-protocol.js";
+import type { UserDevice, UserDeviceGateway } from "../../computers/host/user-device-protocol.js";
 import {
   isRunningShellCommand,
   observeShellCommand,
@@ -32,6 +33,7 @@ import { isRunTaintedBeyondOwnComputer } from "../assembly/run-context.js";
 import type { ToolCall } from "./run-tool-gate.js";
 
 export {
+  hasScreenControl,
   USER_COMPUTER_ACT_TOOL,
   USER_COMPUTER_OBSERVE_TOOL,
   USER_COMPUTER_SCREEN_TOOLS,
@@ -165,8 +167,30 @@ async function connectedUserComputer(ctx: RunContext, computerId?: string) {
     getLogger().warn("user_computer.lookup_failed", { error });
     return { error: LOOKUP_FAILED };
   }
-  return device
-    ? { owner, devices, deviceId: device.deviceId, screenOnly: device.screenOnly === true }
+  return device ? { owner, devices, device } : undefined;
+}
+
+/** Why the computer a call reaches cannot run that tool: offered while any paired one can. */
+function userComputerMismatch(name: string, device: UserDevice): string | undefined {
+  if (USER_COMPUTER_SCREEN_TOOLS.has(name))
+    return hasScreenControl(device.platform) ? undefined : NO_SCREEN_CONTROL;
+  return device.screenOnly ? SCREEN_ONLY : undefined;
+}
+
+/**
+ * Checked before the approval card, so the user is not asked about a call that computer cannot
+ * run. Offline or unchecked is left to the call, which reports it.
+ */
+export async function userComputerCallRefusal(
+  ctx: RunContext,
+  name: string,
+  args: Record<string, unknown>,
+): Promise<string | undefined> {
+  const target = requestedComputer(args);
+  if (target.error) return undefined;
+  const connected = await connectedUserComputer(ctx, target.computerId);
+  return connected && !("error" in connected)
+    ? userComputerMismatch(name, connected.device)
     : undefined;
 }
 
@@ -176,12 +200,37 @@ const TARGET_UNAVAILABLE =
   "The selected computer is disconnected or not allowed for this user. Use user_computer_list to see available computers.";
 const SCREEN_ONLY =
   "That computer offers only screen control, so it cannot run commands. Use the screen tools there, or ask the user to connect a computer that can.";
+const NO_SCREEN_CONTROL =
+  "That computer has no screen control. Use user_computer_list and pass the computerId of a Mac or Windows computer.";
 
 function requestedComputer(args: Record<string, unknown>): { computerId?: string; error?: string } {
   if (args.computerId === undefined) return {};
   if (typeof args.computerId !== "string" || !args.computerId.trim() || args.computerId.length > 64)
     return { error: "computerId must be a non-empty computer id from user_computer_list." };
   return { computerId: args.computerId };
+}
+
+/**
+ * A paused turn's calls whose computer is offline now, so restoring it waits as it would for a
+ * tool not offered. A failed lookup is not offline: the call checks again and reports it.
+ */
+export async function offlineUserComputerCalls(
+  devices: UserDeviceGateway,
+  owner: string,
+  calls: readonly { id: string; name: string; arguments: Record<string, unknown> }[],
+): Promise<Set<string>> {
+  const offline = new Set<string>();
+  for (const call of calls) {
+    if (!USER_COMPUTER_TOOLS.has(call.name)) continue;
+    const target = requestedComputer(call.arguments);
+    if (target.error) continue;
+    const device = await bestEffort(
+      "check the paused call's computer",
+      devices.connected(owner, target.computerId),
+    );
+    if (device === null) offline.add(call.id);
+  }
+  return offline;
 }
 
 export async function userComputerList(ctx: RunContext, call: ToolCall) {
@@ -193,6 +242,7 @@ export async function userComputerList(ctx: RunContext, call: ToolCall) {
     .map((device) => ({
       computerId: device.deviceId,
       name: device.name,
+      platform: device.platform,
       bound: device.bound === true,
     }));
   return call.finish({ computers });
@@ -208,9 +258,10 @@ export async function userComputerShell(ctx: RunContext, call: ToolCall) {
       error: target.computerId ? TARGET_UNAVAILABLE : USER_COMPUTER_UNAVAILABLE,
     });
   if ("error" in connected) return call.finish(connected);
-  // Offered while any paired computer takes commands, so the one connected now may not.
-  if (connected.screenOnly) return call.finish({ error: SCREEN_ONLY });
-  const { owner, devices, deviceId } = connected;
+  const mismatch = userComputerMismatch(call.name, connected.device);
+  if (mismatch) return call.finish({ error: mismatch });
+  const { owner, devices } = connected;
+  const { deviceId } = connected.device;
   const { signal } = ctx.context;
   const command = String(call.args.command ?? "");
   try {
@@ -299,7 +350,10 @@ async function userComputerScreen(ctx: RunContext, call: ToolCall, request: Scre
       error: target.computerId ? TARGET_UNAVAILABLE : USER_COMPUTER_UNAVAILABLE,
     });
   if ("error" in connected) return call.finish(connected);
-  const { owner, devices, deviceId } = connected;
+  const mismatch = userComputerMismatch(call.name, connected.device);
+  if (mismatch) return call.finish({ error: mismatch });
+  const { owner, devices } = connected;
+  const { deviceId } = connected.device;
   const { signal } = ctx.context;
   try {
     const value = await lastValue(

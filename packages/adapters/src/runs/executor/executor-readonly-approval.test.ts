@@ -5127,6 +5127,41 @@ describe("user_computer_shell", () => {
     expect(f.pauseRunForInput).not.toHaveBeenCalled();
   });
 
+  it("does not resume a paused call while its paired computer is offline", async () => {
+    const { gateway, requests } = devices(true, true);
+    const f = fixture({ ...ownRun, userDevices: gateway });
+    f.setCalls([call("ls")]);
+    f.pauseWithTurnCheckpoint("call-1", {
+      version: 1,
+      systemPrompt: "You are Assistant.",
+      pendingToolCallId: "call-1",
+      messages: [
+        { role: "user", content: "List my files", timestamp: new Date(0) },
+        {
+          role: "assistant",
+          content: [
+            {
+              type: "toolCall",
+              id: "call-1",
+              name: "user_computer_shell",
+              arguments: { command: "ls" },
+            },
+          ],
+          stopReason: "toolUse",
+        },
+      ] as never,
+    });
+    await f.run();
+    expect(f.turnCheckpoints).toHaveLength(1);
+    f.effects[0]!.status = "approved";
+    gateway.connected.mockResolvedValue(null);
+    f.setCalls([]);
+    // A turn pinned to a computer model retries setup instead; this one replays the approval.
+    await f.run(true);
+    expect(f.runtimeRun.mock.calls.at(-1)?.[0].turnCheckpoint).toBeUndefined();
+    expect(requests).toEqual([]);
+  });
+
   it("tells the bot when the desktop went offline after the tool was offered", async () => {
     const { gateway, requests } = devices();
     const f = fixture({ ...ownRun, userDevices: gateway });
@@ -5137,7 +5172,7 @@ describe("user_computer_shell", () => {
       status: "completed",
       request: { command: "hostname" },
     });
-    gateway.connected.mockResolvedValueOnce(device).mockResolvedValueOnce(null);
+    gateway.connected.mockResolvedValueOnce(device).mockResolvedValue(null);
     f.setCalls([call("ls")]);
     await f.run();
     expect(f.results).toEqual([
@@ -5291,6 +5326,22 @@ describe("user computer screen control", () => {
     await f.run();
     expect(f.pauseRunForInput).toHaveBeenCalledTimes(2);
     expect(f.pauseRunForInput.mock.calls[1]).toEqual([card("Mail")]);
+  });
+
+  it("refuses a computer with no screen control before asking about the app", async () => {
+    const { gateway, requests } = devices("linux");
+    gateway.list = async () => [
+      { deviceId: "mac", name: "Laptop", platform: "darwin", connected: false },
+      { deviceId: "device-1", name: "Laptop", platform: "linux", connected: true },
+    ];
+    const f = fixture({ ...ownRun, userDevices: gateway });
+    f.setCalls([observe("TextEdit")]);
+    await f.run();
+    expect(f.pauseRunForInput).not.toHaveBeenCalled();
+    expect(f.results).toEqual([
+      { error: expect.stringContaining("That computer has no screen control.") },
+    ]);
+    expect(requests).toEqual([]);
   });
 
   it("refuses malformed actions before reaching the computer", async () => {

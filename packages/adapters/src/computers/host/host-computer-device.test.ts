@@ -21,6 +21,7 @@ describe("this computer's screen on the desktop app's own server", () => {
   let root: string;
   let server: Awaited<ReturnType<typeof startHostComputerServer>>;
   let computerHost: string | null;
+  let updatedAt: Date;
   const screen: HostScreen = {
     observe: vi.fn(async (_scope, app) => ({ app, tree: "[1] button Save" })),
     act: vi.fn(async () => ({ completed: 1 })),
@@ -28,7 +29,7 @@ describe("this computer's screen on the desktop app's own server", () => {
   };
   const prisma = {
     deploymentSettings: {
-      findUnique: async () => ({ computerHost, updatedAt: grantedAt }),
+      findUnique: async () => ({ computerHost, updatedAt }),
     },
   } as unknown as PrismaClient;
 
@@ -37,6 +38,7 @@ describe("this computer's screen on the desktop app's own server", () => {
     server = await startHostComputerServer({ root, token, hostname: "127.0.0.1", screen });
     server.setEnabled(true);
     computerHost = "this-mac";
+    updatedAt = grantedAt;
   });
   afterEach(async () => {
     await server.close();
@@ -89,6 +91,14 @@ describe("this computer's screen on the desktop app's own server", () => {
       expect.objectContaining({ deviceId: HOST_COMPUTER_DEVICE_ID, connected: false }),
     ]);
     computerHost = "docker";
+    expect(await devices.list("user")).toEqual([]);
+  });
+
+  it("forgets the last answer once access is turned off and on again", async () => {
+    const devices = gateway();
+    await devices.list("user");
+    server.setEnabled(false);
+    updatedAt = new Date("2026-11-02T00:00:00Z");
     expect(await devices.list("user")).toEqual([]);
   });
 
