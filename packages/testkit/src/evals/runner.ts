@@ -80,6 +80,8 @@ export type EvalActor = {
 export type TrialOptions = {
   pricing?: EvalPricing;
   connection: ModelConnectInput;
+  /** The connection is the deployment's own model, so the account connects none of its own. */
+  deploymentModel?: boolean;
   timeoutMs: number;
   judge?: EvalJudge;
   maxToolCalls: number;
@@ -144,6 +146,10 @@ export async function runTrial(
   let messagingAddress = "";
   let messagingOriginThreadId: string | null = null;
   const secrets = [options.connection.apiKey ?? "", options.connection.baseUrl ?? ""];
+  // The deployment's own model already serves every bot that names none.
+  const botModel = options.deploymentModel
+    ? {}
+    : { modelProvider: options.connection.provider, modelId: options.connection.modelId };
 
   let phase: FailureCategory = "harness";
   const seenTools = new Map<string, { name: string }>();
@@ -252,7 +258,7 @@ export async function runTrial(
       });
       if (!signup.ok) throw new EvalFailure("harness", `Fixture signup failed (${signup.status})`);
       cookie = sessionCookieHeader(signup);
-      await rpc(app, cookie, "models/connect", options.connection);
+      if (!options.deploymentModel) await rpc(app, cookie, "models/connect", options.connection);
       // Added the way a person adds a remote MCP server: an endpoint and a bearer token.
       for (const [index, service] of apps.entries())
         await rpc(app, cookie, "mcp/servers/create", {
@@ -285,8 +291,7 @@ export async function runTrial(
       await discardBotIntroRun(trial, cookie, botId);
       await rpc(app, cookie, "bots/update", {
         botId,
-        modelProvider: options.connection.provider,
-        modelId: options.connection.modelId,
+        ...botModel,
         replyMode: options.replyMode,
       });
       if (scenario.botEmail) {
@@ -345,8 +350,7 @@ export async function runTrial(
         await discardBotIntroRun(trial, cookie, created.id);
         await rpc(app, cookie, "bots/update", {
           botId: created.id,
-          modelProvider: options.connection.provider,
-          modelId: options.connection.modelId,
+          ...botModel,
           replyMode: options.replyMode,
         });
         peer = { id: created.id, name: scenario.peer.name };
@@ -386,8 +390,7 @@ export async function runTrial(
           if (roles)
             await rpc(app, cookie, "bots/update", {
               botId: member.id,
-              modelProvider: options.connection.provider,
-              modelId: options.connection.modelId,
+              ...botModel,
             });
           memberIds.set(name, member.id);
         }
