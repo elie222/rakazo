@@ -5342,6 +5342,8 @@ describe("user computer screen control", () => {
     expect(f.results).toEqual([
       { error: expect.stringContaining("That computer has no screen control.") },
     ]);
+    // An effect left behind would count as the owner allowing this app.
+    expect(f.effects).toEqual([]);
     expect(requests).toEqual([]);
   });
 

@@ -408,6 +408,17 @@ export async function gateToolCall(
       ),
     };
   }
+  // Refused before its card and before any effect, which a later call would count as approval.
+  // A resumed approval skips this; the call checks again when it runs.
+  if (
+    plan === "ask" &&
+    USER_COMPUTER_TOOLS.has(name) &&
+    nextApprovedTool !== name &&
+    !approvedEffectKey
+  ) {
+    const mismatch = await userComputerCallRefusal(ctx, name, args);
+    if (mismatch) return { result: refusal("user_computer_unsupported", mismatch) };
+  }
   // A pay click counts against the user's spending limit, unless it pays with a wallet purchase,
   // which was counted when it was requested. One the limit refuses is refused before the card; the
   // handler counts it for good just before the press.
@@ -760,12 +771,7 @@ async function settleToolUncertainty(
 }
 
 /** Ask the owner through an approval card. Parallel calls share the first call's pause. */
-async function requestApproval(ctx: RunContext, call: ToolCall, card: ApprovalCardOptions) {
-  // Never ask about a call the user's computer cannot run; answering it now closes its effect.
-  if (USER_COMPUTER_TOOLS.has(call.name)) {
-    const mismatch = await userComputerCallRefusal(ctx, call.name, call.args);
-    if (mismatch) return call.finish({ error: mismatch });
-  }
+function requestApproval(ctx: RunContext, call: ToolCall, card: ApprovalCardOptions) {
   const { approval } = ctx.state;
   // Parallel calls can need approval at once. Only the first saves the turn and shows
   // its card; the others wait for that pause. Otherwise a later call's save could make
