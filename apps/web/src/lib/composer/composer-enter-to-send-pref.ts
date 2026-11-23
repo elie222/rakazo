@@ -6,6 +6,7 @@ import {
 } from "@rakazo/core";
 import { useSyncExternalStore } from "react";
 import { createStoredPreference } from "../preferences/stored-preference";
+import { useEventListener } from "../use-event-listener";
 
 export { COMPOSER_ENTER_TO_SEND_STORAGE_KEY };
 
@@ -25,18 +26,23 @@ const keyboardListeners = new Set<() => void>();
 
 function detectHardwareKeyboard(event: KeyboardEvent) {
   if (
+    hardwareKeyboardDetected ||
     event.keyCode === 229 ||
     !isHardwareTypingKey(event) ||
     window.matchMedia?.("(any-pointer: fine)").matches !== true
   )
     return;
   hardwareKeyboardDetected = true;
-  window.removeEventListener("keydown", detectHardwareKeyboard, true);
   for (const listener of keyboardListeners) listener();
 }
 
-if (typeof window !== "undefined") {
-  window.addEventListener("keydown", detectHardwareKeyboard, true);
+export function useComposerEnterKeyboardDetection() {
+  useEventListener(
+    typeof window === "undefined" ? null : window,
+    "keydown",
+    detectHardwareKeyboard,
+    true,
+  );
 }
 
 function get(): boolean {

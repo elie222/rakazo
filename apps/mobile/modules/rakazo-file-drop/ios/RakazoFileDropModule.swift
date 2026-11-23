@@ -3,6 +3,11 @@ import ObjectiveC
 import UIKit
 import UniformTypeIdentifiers
 
+@MainActor
+public protocol RakazoDocumentDropTarget: AnyObject {
+  var dropTargetKey: String? { get }
+}
+
 /// Images pasted into a chat's text field arrive as dropped files, the same payload
 /// Android sends for a drop, so the chat attaches them like any other file. Text
 /// pasted with them still goes into the field.
@@ -76,7 +81,8 @@ public class RakazoFileDropModule: Module {
   private final class ComposerDropDelegate: NSObject, UIDropInteractionDelegate {
     func dropInteraction(_ interaction: UIDropInteraction, canHandle session: UIDropSession) -> Bool {
       let limits = RakazoFileDropModule.limits
-      return limits.enabled && limits.maxFiles > 0 && session.localDragSession == nil
+      return (interaction.view as? RakazoDocumentDropTarget)?.dropTargetKey != nil
+        && limits.enabled && limits.maxFiles > 0 && session.localDragSession == nil
         && session.items.contains { RakazoDroppedDocument.accepts($0.itemProvider) }
     }
 
@@ -87,14 +93,16 @@ public class RakazoFileDropModule: Module {
     }
 
     func dropInteraction(_ interaction: UIDropInteraction, performDrop session: UIDropSession) {
-      guard dropInteraction(interaction, canHandle: session) else { return }
+      guard dropInteraction(interaction, canHandle: session),
+        let key = (interaction.view as? RakazoDocumentDropTarget)?.dropTargetKey
+      else { return }
       let providers = session.items.map(\.itemProvider).filter(RakazoDroppedDocument.accepts)
-      RakazoFileDropModule.current?.attachDocuments(providers, limits: RakazoFileDropModule.limits)
+      RakazoFileDropModule.current?.attachDocuments(providers, limits: RakazoFileDropModule.limits, targetKey: key)
     }
   }
 
-  private func attachDocuments(_ providers: [NSItemProvider], limits: Limits) {
-    sendAttachments(providers, limits: limits) { provider, _ in
+  private func attachDocuments(_ providers: [NSItemProvider], limits: Limits, targetKey: String) {
+    sendAttachments(providers, limits: limits, targetKey: targetKey) { provider, _ in
       RakazoDroppedDocument.startCopy(
         provider, into: Self.root, maxBytes: limits.maxBytes, resizeHeadroom: Self.resizeHeadroom,
         after: self.initialSweep)
@@ -159,6 +167,7 @@ public class RakazoFileDropModule: Module {
 
   private func sendAttachments(
     _ providers: [NSItemProvider], limits: Limits,
+    targetKey: String? = nil,
     skippedName: (NSItemProvider) -> String = { $0.suggestedName ?? "file" },
     start: (NSItemProvider, URL) -> () -> [String: Any]
   ) {
@@ -176,7 +185,9 @@ public class RakazoFileDropModule: Module {
       if !files.contains(where: { $0["uri"] != nil }) {
         try? FileManager.default.removeItem(at: directory)
       }
-      self.sendEvent("onFilesDropped", ["files": files, "skipped": skipped])
+      var payload: [String: Any] = ["files": files, "skipped": skipped]
+      if let targetKey { payload["targetKey"] = targetKey }
+      self.sendEvent("onFilesDropped", payload)
     }
   }
 

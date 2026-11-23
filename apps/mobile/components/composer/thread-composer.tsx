@@ -81,6 +81,7 @@ type ThreadComposerProps = {
   ref: Ref<ThreadComposerHandle>;
   /** Where the unsent text is kept; without it the draft lives only while mounted. */
   draftScope?: ComposerDraftScope;
+  dropTargetKey?: string;
   onMentionRequested?: () => void;
   agentSkills: AgentSkillCatalogEntry[];
   composerMentionTargets: ReturnType<typeof buildComposerMentionOptions>;
@@ -106,6 +107,7 @@ type ThreadComposerProps = {
 export function ThreadComposer({
   ref,
   draftScope,
+  dropTargetKey,
   onMentionRequested,
   agentSkills,
   composerMentionTargets,
@@ -669,6 +671,7 @@ export function ThreadComposer({
           fallbackStyle={styles.composerFill}
         >
           <ComposerKeyboard
+            dropTargetKey={dropTargetKey}
             keys={hardwareKeys}
             onHardwareKey={(event) => onHardwareKey(event.nativeEvent.key)}
             style={{

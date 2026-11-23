@@ -698,6 +698,7 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
               key={threadKey}
               ref={composer.composerRef}
               draftScope={draftScope}
+              dropTargetKey={attachments.dropTargetKey}
               agentSkills={agentSkills}
               composerMentionTargets={composerMentionTargets}
               onMentionRequested={onMentionRequested}

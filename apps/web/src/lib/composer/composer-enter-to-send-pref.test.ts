@@ -1,7 +1,12 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+// @vitest-environment jsdom
+
+import { act, createElement } from "react";
+import { createRoot } from "react-dom/client";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type * as ComposerEnterToSendPref from "./composer-enter-to-send-pref.js";
 
 const storageKey = "rakazo.composerEnterToSend";
+let root: ReturnType<typeof createRoot> | undefined;
 let mod: typeof ComposerEnterToSendPref;
 
 function memoryStorage() {
@@ -17,23 +22,29 @@ function keydown(key: string, shiftKey = false) {
 }
 
 async function loadPreference(finePointer = false, anyFinePointer = finePointer) {
+  if (root) act(() => root?.unmount());
   vi.resetModules();
-  vi.stubGlobal(
-    "window",
-    Object.assign(new EventTarget(), {
-      matchMedia: (query: string) => ({
-        matches:
-          query === "(pointer: fine)"
-            ? finePointer
-            : query === "(any-pointer: fine)" && anyFinePointer,
-      }),
-    }),
-  );
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  vi.stubGlobal("matchMedia", (query: string) => ({
+    matches:
+      query === "(pointer: fine)" ? finePointer : query === "(any-pointer: fine)" && anyFinePointer,
+  }));
   vi.stubGlobal("localStorage", memoryStorage());
   mod = await import("./composer-enter-to-send-pref.js");
+  function Detector() {
+    mod.useComposerEnterKeyboardDetection();
+    return null;
+  }
+  const mounted = createRoot(document.createElement("div"));
+  root = mounted;
+  act(() => mounted.render(createElement(Detector)));
 }
 
 beforeEach(() => loadPreference());
+afterEach(() => {
+  act(() => root?.unmount());
+  root = undefined;
+});
 
 describe("composerEnterToSendPreference", () => {
   it("detects a shifted first typing key on a touch device with a trackpad", async () => {

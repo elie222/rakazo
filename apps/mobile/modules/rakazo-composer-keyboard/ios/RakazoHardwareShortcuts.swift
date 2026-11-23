@@ -30,6 +30,8 @@ enum RakazoHardwareShortcuts {
     let modifiers = key.modifierFlags.intersection([.command, .control, .shift, .alternate])
     let presented = topPresentation(from: window.rootViewController)
     if modifiers == [], key.keyCode == .keyboardEscape {
+      let focused = firstResponder(in: window)
+      if let input = focused as? UITextInput, input.markedTextRange != nil { return false }
       if let presented {
         if let modal = NSClassFromString("RCTFabricModalHostViewController"),
           presented.isKind(of: modal), let controller = presented.presentationController,
@@ -43,8 +45,13 @@ enum RakazoHardwareShortcuts {
         guard let screen = NSClassFromString("RNSScreen"), presented.isKind(of: screen) else {
           return false
         }
-      } else if !stopsThread || composerHandlesEscape(in: window) {
-        return false
+      } else {
+        guard stopsThread else { return false }
+        if let focused, focused is UITextInput {
+          let composer = sequence(first: focused, next: { $0.superview })
+            .lazy.compactMap { $0 as? RakazoComposerKeyboardView }.first
+          guard let composer, !composer.handlesEscape else { return false }
+        }
       }
       dispatch("Escape", presented != nil)
       return true
@@ -64,10 +71,8 @@ enum RakazoHardwareShortcuts {
     return top
   }
 
-  private static func composerHandlesEscape(in view: UIView) -> Bool {
-    if let composer = view as? RakazoComposerKeyboardView, composer.handlesEscape {
-      return true
-    }
-    return view.subviews.contains(where: composerHandlesEscape)
+  private static func firstResponder(in view: UIView) -> UIView? {
+    if view.isFirstResponder { return view }
+    return view.subviews.lazy.compactMap { firstResponder(in: $0) }.first
   }
 }

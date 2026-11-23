@@ -28,6 +28,9 @@ public final class RakazoComposerKeyboardModule: Module {
 
     View(RakazoComposerKeyboardView.self) {
       Events("onHardwareKey")
+      Prop("dropTargetKey") { (view: RakazoComposerKeyboardView, key: String?) in
+        view.dropTargetKey = key
+      }
       Prop("keys") { (view: RakazoComposerKeyboardView, keys: [String]) in
         view.keys = keys
       }
@@ -35,7 +38,8 @@ public final class RakazoComposerKeyboardModule: Module {
   }
 }
 
-final class RakazoComposerKeyboardView: ExpoView {
+final class RakazoComposerKeyboardView: ExpoView, RakazoDocumentDropTarget {
+  var dropTargetKey: String?
   let onHardwareKey = EventDispatcher()
   var keys: [String] = []
 
