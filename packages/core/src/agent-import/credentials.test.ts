@@ -86,8 +86,8 @@ describe("credential ranges", () => {
     const id = join("AK", "IA", "ABCDEFGHIJ234567");
     const secret = join(body(20), "/", body(19));
 
-    it("covers one under its name", () => {
-      const other = join(body(19), "+", body(20));
+    it("covers one under its name, even with no digit", () => {
+      const other = join("AbcdEfgh".repeat(4), "/", "IjkLmn", "+");
       expect(found(`AWS_SECRET_ACCESS_KEY=${secret}\n{ "SecretAccessKey": "${other}" }`)).toEqual([
         secret,
         other,

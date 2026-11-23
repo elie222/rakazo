@@ -32,11 +32,11 @@ const SHAPES: {
   { pattern: /\bxox[abposr]-[A-Za-z0-9-]{10,}/g },
   // AWS access key ids, long-term (AKIA) and temporary (ASIA).
   { pattern: AWS_KEY_ID },
-  // An AWS secret access key under the name the CLI, SDKs and STS answers give it.
+  // An AWS secret access key under the name the CLI, SDKs and STS answers give it. The name is
+  // enough: a real one may happen to hold no digit.
   {
     pattern:
       /\b(?:aws[_-]?)?secret[_-]?access[_-]?key["']?\s*[:=]\s*["']?([A-Za-z0-9/+]{40})(?![A-Za-z0-9/+=])/gi,
-    random: true,
     group: true,
   },
   { pattern: /\bAIza[0-9A-Za-z_-]{35}(?![0-9A-Za-z_-])/g },
