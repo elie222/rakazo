@@ -2,7 +2,7 @@ import { ph } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
 import type { PlanLimits, UsageSummary } from "@rakazo/contracts";
 import { hasLab, modelCreditsUsd } from "@rakazo/contracts";
-import { accountDisplay, formatTimeUntil } from "@rakazo/core";
+import { accountDisplay, formatSpendUsd, formatTimeUntil } from "@rakazo/core";
 import type { Href } from "expo-router";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import type { ComponentProps } from "react";
@@ -173,13 +173,6 @@ export default function Account() {
         value={t`${ph({ amount: usd.format(creditsUsd) })} left`}
       />
     ) : null;
-  // Cents and below, so a few cheap images never round to nothing.
-  const spend = new Intl.NumberFormat(dateLocaleForUi(locale), {
-    style: "currency",
-    currency: "USD",
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 4,
-  });
   const mediaUsd = usage?.ownKeyMediaUsd ?? 0;
   const mediaRow =
     mediaUsd > 0 ? (
@@ -187,7 +180,7 @@ export default function Account() {
         key="own-key-media"
         accessible
         title={t`Images and video`}
-        value={t`${ph({ amount: spend.format(mediaUsd) })} this month`}
+        value={t`${ph({ amount: formatSpendUsd(mediaUsd, dateLocaleForUi(locale)) })} this month`}
       />
     ) : null;
   const period = { session: t`Session`, week: t`Weekly`, month: t`Monthly` };

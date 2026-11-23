@@ -1,7 +1,7 @@
 import { useLingui } from "@lingui/react/macro";
 import type { PlanLimitWindow } from "@rakazo/contracts";
 import { modelCreditsUsd, planUsagePercent } from "@rakazo/contracts";
-import { formatTimeUntil } from "@rakazo/core";
+import { formatSpendUsd, formatTimeUntil } from "@rakazo/core";
 import { Progress } from "@rakazo/ui-web";
 import { useQuery } from "@tanstack/react-query";
 import { useSpaceQueries } from "../../lib/query/query";
@@ -27,18 +27,6 @@ function useFormatUsd() {
   const { i18n } = useLingui();
   return (value: number) =>
     new Intl.NumberFormat(i18n.locale, { style: "currency", currency: "USD" }).format(value);
-}
-
-/** Cents and below, so a few cheap images never round to nothing. */
-function useFormatSpend() {
-  const { i18n } = useLingui();
-  return (value: number) =>
-    new Intl.NumberFormat(i18n.locale, {
-      style: "currency",
-      currency: "USD",
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 4,
-    }).format(value);
 }
 
 /** What the account menu shows beside Usage, or null when there is nothing to watch. */
@@ -77,11 +65,10 @@ function WindowUsage({ window }: { window: PlanLimitWindow }) {
 
 /** Each subscription's allowances and the credit balance; the caller frames them. */
 export function PlanUsageRows() {
-  const { t } = useLingui();
+  const { t, i18n } = useLingui();
   const { plans, creditsUsd } = usePlanUsage();
   const mediaUsd = useOwnKeyMediaUsd();
   const usd = useFormatUsd();
-  const spend = useFormatSpend();
   return (
     <div className="divide-y divide-border">
       {plans.map((plan) => (
@@ -117,7 +104,7 @@ export function PlanUsageRows() {
         >
           <span className="text-body font-medium text-foreground">{t`Images and video`}</span>
           <span className="text-body tabular-nums text-foreground">
-            {t`${spend(mediaUsd)} this month`}
+            {t`${formatSpendUsd(mediaUsd, i18n.locale)} this month`}
           </span>
         </div>
       ) : null}

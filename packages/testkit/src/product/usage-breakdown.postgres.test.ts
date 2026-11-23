@@ -348,6 +348,34 @@ describeBreakdown("usage.breakdown", () => {
     expect(usage.totals).toMatchObject({ modelCalls: 1, costUsd: 1 });
   });
 
+  it("leaves this month's own-key media total unknown when a generation had no price", async () => {
+    vi.setSystemTime(new Date("2026-03-15T12:00:00.000Z"));
+    const cookie = await signup(app, `usage-media-unpriced-${stamp}@rakazo.test`, "Unpriced");
+    const bot = await rpc<{ id: string }>(app, cookie, "bots/create", {
+      name: "Sketcher",
+      title: "",
+      description: "",
+      instructions: "",
+      notifyOnFinish: false,
+    });
+    const thread = await prisma.thread.findFirstOrThrow({ where: { botId: bot.id } });
+    await prisma.usageRecord.createMany({
+      data: [0.0412, null].map((costUsd) => ({
+        spaceId: thread.spaceId,
+        userId: thread.userId,
+        botId: bot.id,
+        provider: "p",
+        model: "lab/draw",
+        operationKind: "image",
+        billing: "api_key",
+        costUsd,
+        createdAt: new Date("2026-03-02T00:00:00.000Z"),
+      })),
+    });
+    const summary = await rpc<UsageSummary>(app, cookie, "usage/summary");
+    expect(summary.ownKeyMediaUsd).toBeNull();
+  });
+
   it.each([
     ["Pacific/Kiritimati", 14],
     ["Asia/Calcutta", 5.5],

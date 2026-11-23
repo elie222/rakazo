@@ -91,6 +91,16 @@ export function spendingPeriodStart(
   return zonedDateTime(first.toISOString().slice(0, 10), zone) ?? first;
 }
 
+/** Dollars spent, to four decimals so a few cheap generations never round to nothing. */
+export function formatSpendUsd(value: number, locale = "en-US"): string {
+  return new Intl.NumberFormat(locale, {
+    style: "currency",
+    currency: "USD",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 4,
+  }).format(value);
+}
+
 /**
  * An amount in minor units as money, such as "$12.50". With `wholeWithoutCents`, a whole amount
  * drops its cents, as prices show: "$12".

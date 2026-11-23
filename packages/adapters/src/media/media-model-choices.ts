@@ -7,7 +7,7 @@ import type {
 import { ClientError } from "@rakazo/core";
 import type { ModelRoleTarget, PrismaClient } from "@rakazo/db";
 import { getModelRole, updateModelRole } from "@rakazo/db";
-import { getLogger } from "@rakazo/logging";
+import { bestEffort } from "@rakazo/logging";
 import type { MediaModelOption } from "./media-models.js";
 import type { MediaConnection } from "./media-sources.js";
 import { mediaChoice, mediaConnections, ROLE_KIND } from "./media-sources.js";
@@ -36,11 +36,8 @@ async function offeredModels(
 ): Promise<MediaModelOption[]> {
   const list = connection.media[ROLE_KIND[role]];
   if (!list) return [];
-  const models = await list.models().catch((error: unknown) => {
-    // An unreadable catalog still leaves the default, which runs without it.
-    getLogger().warn("media.model_catalog_unavailable", { "media.role": role, error });
-    return [];
-  });
+  // An unreadable catalog still leaves the default, which runs without it.
+  const models = (await bestEffort(`read the ${role} model catalog`, list.models())) ?? [];
   return models.some((model) => model.id === list.defaultModel.id)
     ? models
     : [list.defaultModel, ...models];

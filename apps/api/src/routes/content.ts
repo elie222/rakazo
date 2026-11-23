@@ -61,8 +61,10 @@ export function contentRoutes(ctx: RouterContext) {
         createdAt: { gte: zonedDateTime(`${month}-01`, timezone)! },
       },
       _sum: { costUsd: true },
+      _count: { _all: true, costUsd: true },
     });
-    return total._sum.costUsd ?? 0;
+    // A generation without a price would make the sum read low, so the total is unknown.
+    return total._count.costUsd === total._count._all ? (total._sum.costUsd ?? 0) : null;
   };
   return {
     artifacts: {

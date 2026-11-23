@@ -97,6 +97,7 @@ export async function callMediaTool(ctx: RunContext, call: ToolCall, recoverOnly
     )?.();
   } catch (error) {
     if (!(error instanceof SecretStoreUnavailableError)) throw error;
+    getLogger().warn("media.secret_store_unavailable", { error });
   }
   if (!source) return { error: "Media generation is unavailable." };
   const mediaGeneration = source.provider;
