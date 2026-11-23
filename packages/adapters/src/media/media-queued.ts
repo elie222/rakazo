@@ -12,6 +12,8 @@ export async function queuedMediaMicros(
   const jobs = await prisma.externalEffect.findMany({
     where: {
       kind: MEDIA_JOB_KIND,
+      // Images finish within their turn and are charged there; only videos keep running.
+      request: { path: ["tool"], equals: "generate_video" },
       status: { in: ["media_pending", "media_polling"] },
       space: { organizationId },
     },
