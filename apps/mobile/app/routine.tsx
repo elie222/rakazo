@@ -577,7 +577,8 @@ function RoutineEditor({
                   accessibilityRole="button"
                   tinted
                   title={t`Add email trigger`}
-                  onPress={() => update({ emailSenders: "owner" })}
+                  // An email trigger's bot never gets the owner's computer.
+                  onPress={() => update({ emailSenders: "owner", useComputer: undefined })}
                 />
               ) : null}
             </SettingsGroup>
@@ -593,6 +594,17 @@ function RoutineEditor({
           onChange={(emailSenders) => update({ emailSenders })}
           onRemove={() => update({ emailSenders: null })}
         />
+      ) : null}
+      {/* Only the owner, with a computer paired, sees it; a watch's runs never get the computer. */}
+      {base?.useComputer !== undefined && !base.inChat && !kept?.watch && !draft.emailSenders ? (
+        <SettingsGroup>
+          <SettingsSwitch
+            key="computer"
+            label={t`Use my computer`}
+            value={draft.useComputer ?? base.useComputer}
+            onChange={(useComputer) => update({ useComputer })}
+          />
+        </SettingsGroup>
       ) : null}
       {base ? (
         <SettingsGroup>

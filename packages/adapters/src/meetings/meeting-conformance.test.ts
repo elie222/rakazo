@@ -1,4 +1,5 @@
 import type { MeetingJoinRequest, MeetingProvider } from "@rakazo/adapter-kit";
+import { serializeError } from "@rakazo/logging";
 import { describe, expect, it } from "vitest";
 import { MeetingEmulator } from "../providers/meeting/emulator/meeting-emulator.js";
 import { RecallMeetingProvider } from "../providers/meeting/recall/recall-meeting.js";
@@ -194,7 +195,7 @@ describe("Recall leave refusals", () => {
         calls.push(`${init?.method} ${new URL(String(url)).pathname}`);
         if (init?.method === "POST") {
           return code
-            ? Response.json({ code }, { status: 400 })
+            ? Response.json({ code, detail: "fake-provider-detail" }, { status: 400 })
             : new Response(null, { status: 400 });
         }
         return Response.json({
@@ -212,13 +213,24 @@ describe("Recall leave refusals", () => {
     expect(calls).toEqual([`POST /api/v1/bot/${BOT_ID}/leave_call/`, `GET /api/v1/bot/${BOT_ID}/`]);
   });
 
-  it.each(["cannot_command_unstarted_bot", "invalid_request", undefined])(
-    "keeps a leave refusal visible when shutdown is unconfirmed (%s)",
-    async (code) => {
+  it.each([
+    ["cannot_command_unstarted_bot", "unstarted_bot"],
+    ["fake-provider-code", "other_code"],
+    [undefined, "unreadable_invalid_or_missing"],
+  ])(
+    "reports only the safe classification and rechecked status for a leave refusal (%s)",
+    async (code, classification) => {
       const { provider } = providerWithLeaveRefusal(code);
-      await expect(provider.leave(BOT_ID, signal)).rejects.toThrow(
-        "Meeting provider could not remove participant (HTTP 400)",
-      );
+      await expect(provider.leave(BOT_ID, signal).catch(serializeError)).resolves.toEqual({
+        name: "Error",
+        message: "Meeting provider could not remove participant (HTTP 400)",
+        stack: expect.any(String),
+        cause: {
+          name: "Error",
+          message: `Meeting leave refusal: ${classification} (follow-up status: joined)`,
+          stack: expect.any(String),
+        },
+      });
     },
   );
 });

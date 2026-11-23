@@ -193,6 +193,32 @@ describe.skipIf(!enabled)("typed replies to waiting cards (PostgreSQL)", () => {
     ).toMatchObject({ blocks: fixture.message.blocks });
   }
 
+  it("uses the owner's first composer reply as the resumed intro's source", async () => {
+    const intro = await waitingCard(question, threadId, botId, "created");
+    const nonce = randomUUID();
+    const reply = await send(privateTarget(), "Look up the other bot's chat", nonce);
+    expect(reply.runId).toBe(intro.run.id);
+    const source = await system.message.findFirstOrThrow({
+      where: { threadId, seq: reply.seq },
+    });
+    expect(
+      await system.run.findUniqueOrThrow({
+        where: { id: intro.run.id },
+        include: { sourceMessage: true },
+      }),
+    ).toMatchObject({
+      status: "queued",
+      trigger: "user",
+      sourceMessage: { id: source.id, threadId, role: "user", authorUserId: actor.userId },
+    });
+
+    expect(await send(privateTarget(), "Look up the other bot's chat", nonce)).toMatchObject({
+      runId: intro.run.id,
+      seq: reply.seq,
+    });
+    expect(await system.message.count({ where: { threadId, role: "user" } })).toBe(1);
+  });
+
   it.each(["bot", "group"] as const)(
     "retires questions that are no longer latest in a %s send and starts one normal run",
     async (kind) => {

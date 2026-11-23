@@ -60,7 +60,7 @@ import {
   MODEL_CONNECT_TIMEOUT_MS,
   modelConnectionRequest,
 } from "../../lib/models/model-connection-request";
-import { analyticsSurface } from "../../lib/native/analytics-surface";
+import { analyticsClient } from "../../lib/native/analytics-surface";
 import { native, useThemedStyles } from "../../lib/native/native";
 import { useScreenHeader } from "../../lib/navigation/screen-header";
 import { ACCOUNT_SETTINGS, settingsRpc } from "../../lib/query/settings-target";
@@ -423,7 +423,7 @@ export default function ModelConnection() {
     try {
       const saved = await rpc(
         "models/connect",
-        { ...connect.input, surface: analyticsSurface() },
+        { ...connect.input, ...analyticsClient() },
         { timeoutMs: MODEL_CONNECT_TIMEOUT_MS },
       );
       adoptSavedCredential(saved);

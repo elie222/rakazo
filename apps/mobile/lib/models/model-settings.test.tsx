@@ -73,6 +73,7 @@ const { push, back, replace, params, rpcCalls, saved, pinnedTo, focus } = vi.hoi
 }));
 const settingsRouter = { push, back, replace };
 
+vi.mock("../platform/app-version", () => ({ analyticsAppVersion: () => undefined }));
 vi.mock("../api/session", () => ({ currentSessionGeneration: () => 1 }));
 vi.mock("../layout/side-insets", () => ({ useSideInsets: () => ({}) }));
 vi.mock("../api/api", () => ({

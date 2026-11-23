@@ -215,6 +215,12 @@ export interface RunState {
    */
   tainted: boolean;
   /**
+   * Whether outside content other than the owner's own computer output (its shell, screen and
+   * computer list) entered the run. Only the routine gate on that computer reads it, so a routine
+   * can take several steps there without asking each time (see userComputerGate).
+   */
+  taintedBeyondOwnComputer?: boolean;
+  /**
    * The text of the outside content this run read (tool results, the task of a run someone else
    * started, replayed history), normalized and capped, so Auto Review can tell which targets of a call only that
    * content named (see outsideOnlyTargets).
@@ -229,6 +235,8 @@ export interface RunState {
    * attempt refuses own instruction writes rather than guessing.
    */
   ownInstructionsBaseline: string | undefined;
+  /** Set once this run archives its own bot: it may only finish its reply. */
+  selfArchived?: true;
   earlierAttempt: Promise<boolean> | undefined;
   /**
    * Hosts of the sites this run typed an approved wallet purchase into (fill_card, fill_pay_token):
@@ -285,6 +293,8 @@ export interface RunSource {
   peerMessage: Awaited<ReturnType<typeof loadBotMessageContext>>;
   /** Whose own computer user_computer_shell may reach (see userComputerOwner). */
   userComputerOwner: string | undefined;
+  /** A routine run its owner let use their computer: it may call only the tools it was offered. */
+  ownerComputerRoutine: boolean;
 }
 
 export interface RunTools {
@@ -437,21 +447,35 @@ export async function neverAsks(ctx: RunContext) {
 
 export async function isRunTainted(ctx: RunContext) {
   const { state } = ctx;
-  if (state.tainted) return true;
+  // Own-computer output alone still leaves outside messages to check for.
+  if (state.taintedBeyondOwnComputer) return true;
   state.earlierAttempt ??= ctx.deps.prisma.attempt
     .count({ where: { runId: ctx.runId } })
     .then((count) => count > 1);
-  if ((await state.earlierAttempt) || (await ctx.trust.receivedOutsideMessage()))
+  if ((await state.earlierAttempt) || (await ctx.trust.receivedOutsideMessage())) {
     state.tainted = true;
+    state.taintedBeyondOwnComputer = true;
+  }
   return state.tainted;
+}
+
+/** Like isRunTainted, but the owner's own computer output does not count. */
+export async function isRunTaintedBeyondOwnComputer(ctx: RunContext) {
+  await isRunTainted(ctx);
+  return ctx.state.taintedBeyondOwnComputer === true;
 }
 
 /**
  * Fresh outside input applies the existing action protections for this run, and its text is kept
  * so Auto Review can tell which targets of a later call only it named.
  */
-export async function markReadOutsideContent(ctx: RunContext, content?: unknown) {
+export async function markReadOutsideContent(
+  ctx: RunContext,
+  content?: unknown,
+  from?: { ownComputer: boolean },
+) {
   ctx.state.tainted = true;
+  if (!from?.ownComputer) ctx.state.taintedBeyondOwnComputer = true;
   if (content !== undefined)
     ctx.state.outsideText = appendOutsideText(ctx.state.outsideText, content);
 }

@@ -142,7 +142,10 @@ export function accountRoutes(ctx: RouterContext) {
         const billing = requireBilling(deps);
         const started =
           input.funding === "credits"
-            ? await startModelConnect(deps, context.actor, "credits", undefined, input.surface)
+            ? await startModelConnect(deps, context.actor, "credits", undefined, {
+                surface: input.surface,
+                appVersion: input.appVersion,
+              })
             : undefined;
         const selected = await billing.selectFunding(
           context.actor,

@@ -86,6 +86,9 @@ export const BotSchema = z.object({
     .nullable()
     .optional(),
 });
+export const ListedBotSchema = BotSchema.omit({ instructionHistory: true });
+export type ListedBot = z.infer<typeof ListedBotSchema>;
+
 export type Bot = z.infer<typeof BotSchema>;
 
 /** The caller identity and request needed by every incoming-call surface. */

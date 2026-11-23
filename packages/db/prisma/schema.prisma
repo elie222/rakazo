@@ -1613,6 +1613,11 @@ model Routine {
   /// Runs as a turn in its chat, with the whole conversation, waiting while the bot is busy there.
   /// Otherwise it runs on time alongside other work, with its recent results and the chat's last messages.
   inChat         Boolean   @default(false)
+  /// While set, a run may use the owner's own computer if its prompt hashes to this (see
+  /// routineRunUsesOwnerComputer). Only the owner sets it, in the app. A database trigger clears it
+  /// when the prompt, owner or bot changes, or it starts running in its chat or watching, and
+  /// another when the owner pairs or unpairs a computer.
+  computerPromptHash String?
   webhookEnabled Boolean   @default(false)
   githubEnabled  Boolean   @default(false)
   messageProvider String?

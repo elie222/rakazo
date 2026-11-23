@@ -101,6 +101,36 @@ describe("sidebarGroupsForSpaces", () => {
     ]);
   });
 
+  it("shows pinned chats as untitled tiles and names the list after them by its Space", () => {
+    const input = space("space-1", "Personal", {
+      canRename: true,
+      bots: [{ ...chat("pin", "Pinned bot"), pinned: true }, chat("loose", "Loose bot")],
+    });
+    expect(
+      sidebarGroupsForSpaces([input], "", { pinned: "Pinned", unassigned: "Unassigned" }).map(
+        (group) => [group.title, group.tiles, group.canOpenSpaceSettings],
+      ),
+    ).toEqual([
+      [null, true, false],
+      ["Personal", false, true],
+    ]);
+  });
+
+  it("keeps the Space name above the tiles when every chat is pinned", () => {
+    const input = {
+      ...space("space-1", "Personal", { bots: [{ ...chat("pin", "Pinned bot"), pinned: true }] }),
+      hasGuests: true,
+    };
+    expect(sidebarGroupsForSpaces([input], "")).toEqual([
+      expect.objectContaining({
+        title: "Personal",
+        tiles: true,
+        hasGuests: true,
+        canOpenSpaceSettings: true,
+      }),
+    ]);
+  });
+
   it("names the only space on the header that holds its settings", () => {
     const [group] = sidebarGroupsForSpaces([space("space-1", "Personal", { canRename: true })], "");
 
