@@ -172,7 +172,10 @@ async function connectedUserComputer(ctx: RunContext, computerId?: string) {
 }
 
 /** Why the computer a call reaches cannot run that tool: offered while any paired one can. */
-function userComputerMismatch(name: string, device: UserDevice): string | undefined {
+function userComputerMismatch(
+  name: string,
+  device: { platform?: string; screenOnly?: boolean },
+): string | undefined {
   if (USER_COMPUTER_SCREEN_TOOLS.has(name))
     return hasScreenControl(device.platform) ? undefined : NO_SCREEN_CONTROL;
   return device.screenOnly ? SCREEN_ONLY : undefined;
@@ -240,9 +243,11 @@ export async function offlineUserComputerCalls(
     if (!USER_COMPUTER_TOOLS.has(call.name)) continue;
     const target = requestedComputer(call.arguments);
     if (target.error) continue;
+    // Without an id, only a computer that can run this tool counts: a connected one that cannot
+    // would take the call and refuse it.
     const reachable = target.computerId
       ? computers.filter((computer) => computer.deviceId === target.computerId)
-      : computers;
+      : computers.filter((computer) => !userComputerMismatch(call.name, computer));
     if (reachable.length && !reachable.some((computer) => computer.connected)) offline.add(call.id);
   }
   return offline;
