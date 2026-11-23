@@ -477,14 +477,18 @@ describe("saving a page's pictures", () => {
     expect(tx.page.create).not.toHaveBeenCalled();
   });
 
-  it("refuses an images value that is not a map, and ignores a blank one", async () => {
-    const tx = { page: { create: vi.fn(async () => ({ id: "page-1", title: "Trip" })) } };
+  it("refuses an images value that is not a map", async () => {
+    const tx = { page: { create: vi.fn() } };
     const refused = (await pageTools.save_page!(
       context(tx),
       call({ title: "Trip", source: pictured("hotel"), images: "https://img.example.com/a.jpg" }),
     )) as Record<string, unknown>;
     expect(refused).toMatchObject({ error: "images must be an object of names to sources." });
     expect(tx.page.create).not.toHaveBeenCalled();
+  });
+
+  it("treats a blank images value as not sent", async () => {
+    const tx = { page: { create: vi.fn(async () => ({ id: "page-1", title: "Trip" })) } };
     const saved = (await pageTools.save_page!(
       context(tx),
       call({ title: "Trip", source: source("Trip"), images: [] }),
