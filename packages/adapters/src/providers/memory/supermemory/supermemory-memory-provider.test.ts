@@ -230,7 +230,9 @@ function fakeSupermemory(namespaces: Record<string, Record<string, string>>) {
       if (kind === "search") {
         const live = Object.entries(memories).filter(([key]) => !forgotten.has(`${tag}/${key}`));
         return json({
-          results: live.map(([key, memory]) => ({ id: key, memory, similarity: 0.9 })),
+          results: live
+            .slice(0, (JSON.parse(String(init.body)) as { limit: number }).limit)
+            .map(([key, memory]) => ({ id: key, memory, similarity: 0.9 })),
         });
       }
       if (init.method === "GET") {
@@ -281,6 +283,38 @@ describe("Supermemory forget", () => {
     expect(server.forgets).toHaveLength(2);
   });
 
+  it("keeps searching until no copy of the fact remains", async () => {
+    const copies = Object.fromEntries(
+      Array.from({ length: 12 }, (_, index) => [`mem_${index}`, "Prefers tea"]),
+    );
+    const server = fakeSupermemory({ [OWN]: copies });
+    const result = await provider().forget(
+      { id: "mem_0", scope: "isolated", botId: "bot-1" },
+      context,
+    );
+    expect(result.ok).toBe(true);
+    expect(server.forgets).toHaveLength(12);
+    expect(server.forgets.at(-1)).toBe(`${OWN}/mem_0`);
+  });
+
+  it("reports a memory Supermemory did not forget", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (_url: string, init: RequestInit) =>
+        Response.json(
+          init.method === "DELETE"
+            ? { count: 0, matches: [], errors: [{ id: "mem_h", error: "Memory not found" }] }
+            : { id: "mem_h", memory: "Summary", isForgotten: false },
+        ),
+      ),
+    );
+    const result = await provider().forget(
+      { id: "mem_h", entity: "rakazo:bot-1:history:2", scope: "isolated", botId: "bot-1" },
+      context,
+    );
+    expect(result).toMatchObject({ ok: false });
+  });
+
   it("never reaches the Space's shared memory from an isolated bot", async () => {
     const server = fakeSupermemory({ [WORKSPACE]: { mem_shared: "Prefers tea" } });
     const request = { id: "mem_shared", scope: "isolated" as const, botId: "bot-1" };
@@ -288,7 +322,7 @@ describe("Supermemory forget", () => {
       ok: false,
       error: "That memory belongs to another bot or Space.",
     });
-    expect((await provider().forget(request, context)).ok).toBe(true);
+    expect(await provider().forget(request, context)).toMatchObject({ ok: false });
     expect(server.forgets).toEqual([]);
   });
 

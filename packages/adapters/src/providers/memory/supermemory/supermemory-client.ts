@@ -300,8 +300,16 @@ export async function forgetSupermemoryMemories(
         signal: requestSignal(signal),
       },
     );
+    if (response.ok) {
+      const body = (await readSupermemoryJson(response).catch(() => null)) as {
+        errors?: unknown;
+      } | null;
+      const failed = Array.isArray(body?.errors) ? body.errors.length : 0;
+      return failed === 0
+        ? { ok: true }
+        : { ok: false, error: `Supermemory could not forget ${failed} of ${ids.length} memories.` };
+    }
     try {
-      if (response.ok) return { ok: true };
       if (response.status === 403) {
         return {
           ok: false,
