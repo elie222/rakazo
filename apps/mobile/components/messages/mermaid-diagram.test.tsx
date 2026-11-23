@@ -6,7 +6,7 @@ import { createRoot } from "react-dom/client";
 import { expect, it, vi } from "vitest";
 
 const webview = vi.hoisted(() => ({
-  props: undefined as undefined | { onRenderProcessGone?: () => void },
+  props: undefined as undefined | { dataDetectorTypes?: unknown },
 }));
 
 vi.mock("react-native", () => ({
@@ -14,7 +14,7 @@ vi.mock("react-native", () => ({
   StyleSheet: { create: (styles: unknown) => styles, hairlineWidth: 1 },
 }));
 vi.mock("react-native-webview", () => ({
-  WebView: (props: { onRenderProcessGone?: () => void }) => {
+  WebView: (props: { dataDetectorTypes?: unknown }) => {
     webview.props = props;
     return createElement("rn-webview");
   },
@@ -26,25 +26,22 @@ vi.mock("../../lib/api/api", () => ({
 
 import { MermaidDiagram } from "./mermaid-diagram";
 
-it("falls back to the code block when the diagram's renderer process dies", async () => {
+// Android's native WebView reads the prop as a list without converting it, and a plain string
+// crashes the app as the WebView is created; only the iOS wrapper accepts a string.
+it("gives the WebView its data detector types as a list", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
-  const container = document.createElement("div");
-  const root = createRoot(container);
+  const root = createRoot(document.createElement("div"));
   await act(async () =>
     root.render(
       <MermaidDiagram
         source={"flowchart TD\n  A --> B\n  B --> C"}
         palette={lightTokens}
         colorScheme="light"
-        fallback={<pre>code block</pre>}
+        fallback={null}
       />,
     ),
   );
-  expect(container.querySelector("rn-webview")).not.toBeNull();
 
-  await act(async () => webview.props?.onRenderProcessGone?.());
-
-  expect(container.querySelector("rn-webview")).toBeNull();
-  expect(container.textContent).toBe("code block");
+  expect(webview.props?.dataDetectorTypes).toEqual(["none"]);
   await act(async () => root.unmount());
 });
