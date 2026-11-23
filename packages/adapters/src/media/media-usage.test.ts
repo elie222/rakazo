@@ -10,6 +10,7 @@ function deps(input: {
   status?: string;
   chargedMicros?: number;
   pendingMicros?: number;
+  pendingCharged?: boolean;
 }) {
   const prisma = {
     externalEffect: {
@@ -38,6 +39,7 @@ function deps(input: {
       aggregate: vi.fn().mockResolvedValue({ _sum: { amountCents: null } }),
     },
     includedUsageCharge: {
+      findMany: vi.fn().mockResolvedValue(input.pendingCharged ? [{ source: "media:job" }] : []),
       aggregate: vi.fn().mockResolvedValue({ _sum: { amountMicros: input.chargedMicros ?? 0 } }),
     },
     $queryRaw: vi.fn().mockResolvedValue([]),
@@ -71,6 +73,18 @@ describe("hosted media pricing", () => {
   it("counts generations still running against the balance", async () => {
     const busy = deps({ billing: true, status: "active", pendingMicros: 5_980_000 });
     expect(await priceMediaGeneration(busy, provider, "space", "image")).toHaveProperty("error");
+  });
+
+  it("counts a running video once its charge is written", async () => {
+    const charged = deps({
+      billing: true,
+      status: "active",
+      pendingMicros: 5_980_000,
+      pendingCharged: true,
+    });
+    expect(await priceMediaGeneration(charged, provider, "space", "image")).toHaveProperty(
+      "charge",
+    );
   });
 
   it("refuses during a trial", async () => {
