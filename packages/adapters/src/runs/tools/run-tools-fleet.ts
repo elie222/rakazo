@@ -64,7 +64,9 @@ async function archiveBot(ctx: RunContext, call: ToolCall) {
     context,
   );
   if ("error" in archived) return call.finish(archived);
-  const result = archived.botId === bot.id ? { ...archived, note: SELF_ARCHIVED_NOTE } : archived;
+  const self = archived.botId === bot.id;
+  if (self) ctx.state.selfArchived = true;
+  const result = self ? { ...archived, note: SELF_ARCHIVED_NOTE } : archived;
   if (!(await call.persistEffectResult(result))) return uncertainEffectResult(name);
   try {
     await publishMessage(deps, run, "bot", [

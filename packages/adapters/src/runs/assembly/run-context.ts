@@ -235,6 +235,8 @@ export interface RunState {
    * attempt refuses own instruction writes rather than guessing.
    */
   ownInstructionsBaseline: string | undefined;
+  /** Set once this run archives its own bot: it may only finish its reply. */
+  selfArchived?: true;
   earlierAttempt: Promise<boolean> | undefined;
   /**
    * Hosts of the sites this run typed an approved wallet purchase into (fill_card, fill_pay_token):

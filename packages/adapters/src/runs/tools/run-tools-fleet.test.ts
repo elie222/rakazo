@@ -92,6 +92,7 @@ describe("archive_bot", () => {
       bot: { id: "bot-1", name: "Scout" },
       thread: { id: "thread-1" },
       context: {},
+      state: {} as { selfArchived?: true },
     };
     const result = fleetTools.archive_bot!(
       ctx as never,
@@ -103,11 +104,11 @@ describe("archive_bot", () => {
         persistEffectResult: async () => true,
       } as never,
     );
-    return { result, append };
+    return { result, append, state: ctx.state };
   }
 
   it("archives the asking bot itself and tells it to finish its reply", async () => {
-    const { result } = archive("bot-1");
+    const { result, state } = archive("bot-1");
     await expect(result).resolves.toEqual({
       ok: true,
       botId: "bot-1",
@@ -120,13 +121,16 @@ describe("archive_bot", () => {
       expect.anything(),
     );
     expect(publishMessage).toHaveBeenCalled();
+    expect(state.selfArchived).toBe(true);
   });
 
   it("reports another bot's archive without the note", async () => {
-    await expect(archive("peer-1").result).resolves.toEqual({
+    const { result, state } = archive("peer-1");
+    await expect(result).resolves.toEqual({
       ok: true,
       botId: "peer-1",
       name: "Scout",
     });
+    expect(state.selfArchived).toBeUndefined();
   });
 });

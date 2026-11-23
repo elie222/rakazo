@@ -78,6 +78,38 @@ describe("prepareToolRequest: update_bot owner settings after outside content", 
   });
 });
 
+describe("prepareToolRequest: after the bot archived itself", () => {
+  const archived = { error: "You are archived, so no more tools can run. Send your reply." };
+  function call(name: string, args: Record<string, unknown>) {
+    const { ctx, request } = ownBotUpdateCall();
+    Object.assign(ctx.bot, { name: "Scout" });
+    Object.assign(ctx.state, { selfArchived: true });
+    return prepareToolRequest(ctx as never, { ...request(), name, args });
+  }
+
+  it("refuses every other tool, including archiving another bot", async () => {
+    await expect(call("message_user", { text: "Done" })).resolves.toEqual(archived);
+    await expect(call("run_subagent", { task: "More work" })).resolves.toEqual(archived);
+    await expect(call("archive_bot", { confirm_name: "Peer", bot_id: "peer-1" })).resolves.toEqual(
+      archived,
+    );
+    await expect(call("archive_bot", { confirm_name: "Peer" })).resolves.toEqual(archived);
+  });
+
+  it("still lets a retried archive of itself reconcile", async () => {
+    await expect(call("archive_bot", { confirm_name: "Scout" })).resolves.not.toEqual(archived);
+    await expect(
+      call("archive_bot", { confirm_name: "Scout", bot_id: "bot-1" }),
+    ).resolves.not.toEqual(archived);
+  });
+
+  it("refuses on a resumed run whose bot is already archived", async () => {
+    const { ctx, request } = ownBotUpdateCall();
+    Object.assign(ctx.bot, { name: "Scout", archivedAt: new Date("2026-11-23T12:00:00.000Z") });
+    await expect(prepareToolRequest(ctx as never, request())).resolves.toEqual(archived);
+  });
+});
+
 describe("private task tools after shared-channel messages", () => {
   it.each([
     "schedule_create",
@@ -97,6 +129,7 @@ describe("private task tools after shared-channel messages", () => {
         },
         run: {},
         bot: {},
+        state: {},
         runId: "run-1",
         source: { messagingChannelRun: originalChannel },
       };
@@ -114,6 +147,7 @@ describe("private task tools after shared-channel messages", () => {
         deps: { prisma: { steeringMessage: { findFirst: async () => null } } },
         run: { trigger },
         bot: {},
+        state: {},
         runId: "run-1",
         source: { messagingChannelRun: false },
       };
@@ -152,6 +186,7 @@ describe("schedule tools on another bot's routines", () => {
       run: { trigger: "user" },
       fleetRun: { spaceId: "space-1" },
       bot: { id: "bot-1", name: "Me" },
+      state: {},
       runId: "run-1",
       source: { messagingChannelRun: false, ownerStartedRun: input.ownerStartedRun ?? true },
       trust: { receivedOutsideMessage: async () => input.outsideMessage ?? false },
@@ -701,6 +736,7 @@ describe("the user's computer after a routine or webhook joined the run", () => 
       deps: { prisma: { steeringMessage: { findFirst } }, userDevices: {} },
       run: { trigger: "user" },
       bot: {},
+      state: {},
       runId: "run-1",
       source: { messagingChannelRun: false, userComputerOwner: "user-1" },
     };
