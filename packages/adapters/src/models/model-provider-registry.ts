@@ -74,6 +74,7 @@ export interface ModelProviderDefinition {
     /** A model left out is the list's default. */
     create(connection: {
       apiKey: string;
+      zeroDataRetention?: boolean;
       imageModel?: string;
       videoModel?: string;
     }): MediaGenerationProvider;
@@ -148,9 +149,10 @@ export const modelProviders = {
     media: {
       images: openRouterImages,
       video: openRouterVideo,
-      create: ({ apiKey, imageModel, videoModel }) =>
+      create: ({ apiKey, zeroDataRetention, imageModel, videoModel }) =>
         new OpenRouterMediaGenerationProvider({
           apiKey,
+          zeroDataRetention,
           imageModel: imageModel ?? openRouterImages.defaultModel.id,
           videoModel: videoModel ?? openRouterVideo.defaultModel.id,
         }),

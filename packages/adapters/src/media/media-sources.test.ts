@@ -6,15 +6,22 @@ import { mediaVideoProviderForSource, resolveRunMediaSources } from "./media-sou
 
 const scope = { userId: "owner", spaceId: "space" };
 
+type Connection = { id: string; provider: string };
+
+/** `connections` are newest first, as the lookup orders them. */
 function deps(
-  connection: { id: string; provider: string } | null,
+  connections: Connection | Connection[] | null,
   chosen: Array<{ role: string; credentialId: string; modelId: string }> = [],
 ): MediaSourceDeps {
+  const list = connections === null ? [] : [connections].flat();
   return {
     prisma: {
       userModelCredential: {
-        findFirst: vi.fn().mockResolvedValue(connection && { ...connection, secretId: "secret" }),
-        findMany: vi.fn().mockResolvedValue(connection ? [{ ...connection, label: "Key" }] : []),
+        findFirst: vi.fn(async ({ where }: { where: { id?: string } }) => {
+          const found = list.find((connection) => !where.id || connection.id === where.id);
+          return found ? { ...found, secretId: "secret" } : null;
+        }),
+        findMany: vi.fn(async () => list.map((connection) => ({ ...connection, label: "Key" }))),
       },
       spaceSettingOverride: { findUnique: vi.fn().mockResolvedValue(null) },
       userModelRoleChoice: {
@@ -24,7 +31,7 @@ function deps(
             .map((row) => ({
               ...row,
               position: 0,
-              provider: connection?.provider ?? "openai",
+              provider: list.find((item) => item.id === row.credentialId)?.provider ?? "openai",
               thinkingLevel: null,
               creditOfferingId: null,
             })),
@@ -55,6 +62,21 @@ describe("run media sources", () => {
       provider: "openai",
     });
     expect(await settle(sources.video)).toEqual({ record: { kind: "hosted" }, provider: "fake" });
+  });
+
+  it("uses an older connection for video when the newest one makes only images", async () => {
+    const sources = await resolveRunMediaSources(
+      deps([
+        { id: "newer", provider: "openai" },
+        { id: "older", provider: "openrouter" },
+      ]),
+      scope,
+    );
+    expect(await settle(sources.image)).toMatchObject({ provider: "openai" });
+    expect(await settle(sources.video)).toEqual({
+      record: { kind: "connection", connectionId: "older", model: "google/veo-3.1-lite" },
+      provider: "openrouter",
+    });
   });
 
   it("uses the deployment's provider when the owner has no connection that makes media", async () => {

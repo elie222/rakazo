@@ -57,6 +57,8 @@ export class OpenRouterMediaGenerationProvider implements MediaGenerationProvide
       apiKey: string;
       imageModel?: string;
       videoModel?: string;
+      /** Route only to endpoints that keep no prompts, as the connection asks. */
+      zeroDataRetention?: boolean;
       baseUrl?: string;
       fetch?: typeof fetch;
       resolveHostname?: ResolveHostname;
@@ -81,6 +83,7 @@ export class OpenRouterMediaGenerationProvider implements MediaGenerationProvide
         model,
         cost: openRouterCost,
         ...input,
+        extraBody: this.routing(),
       },
       context,
     );
@@ -95,6 +98,7 @@ export class OpenRouterMediaGenerationProvider implements MediaGenerationProvide
     if (!parsed.success) throw new MediaGenerationError("invalid_input");
     const job = this.job(
       await this.request("/videos", context, {
+        ...this.routing(),
         model,
         prompt: parsed.data.prompt,
         duration: VIDEO_SECONDS,
@@ -113,6 +117,9 @@ export class OpenRouterMediaGenerationProvider implements MediaGenerationProvide
     validateGeneratedMedia(output, "video");
     const cost = openRouterCost(body);
     return { id, status: "completed", output: cost ? { ...output, cost } : output };
+  }
+  private routing() {
+    return this.options.zeroDataRetention ? { provider: { zdr: true } } : {};
   }
   private job(body: unknown): PendingJob | { id: string; status: "completed" } {
     const parsed = videoJob.safeParse(body);

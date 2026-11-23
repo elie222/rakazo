@@ -155,7 +155,9 @@ async function connectionProvider(
     getLogger().warn("media.connection_secret_unreadable", { "media.connection_id": connectionId });
     return undefined;
   }
-  return secret.kind === "api_key" ? media.create({ apiKey: secret.key, ...models }) : undefined;
+  return secret.kind === "api_key"
+    ? media.create({ apiKey: secret.key, zeroDataRetention: secret.zeroDataRetention, ...models })
+    : undefined;
 }
 
 /** The provider that made, or will keep checking, a video job saved with this source. */

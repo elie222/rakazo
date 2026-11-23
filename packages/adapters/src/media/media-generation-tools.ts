@@ -15,6 +15,8 @@ import type { MediaSourceRecord } from "./media-sources.js";
 import type { OwnKeyMediaSpend } from "./media-spend.js";
 
 export const MEDIA_JOB_KIND = "media_generation_job";
+export const MEDIA_UNAVAILABLE = "Media generation is unavailable.";
+export const VIDEO_JOB_UNAVAILABLE = "Video job is unavailable.";
 const FILE_EXTENSIONS: Record<GeneratedMedia["mimeType"], string> = {
   "image/png": "png",
   "image/jpeg": "jpg",
@@ -52,7 +54,7 @@ export async function generateMediaFromTool(options: {
   const { provider, prisma, context, run, args } = options;
   const video = options.name === "generate_video";
   if (!(video ? provider.capabilities.video : provider.capabilities.images))
-    return { error: "Media generation is unavailable." };
+    return { error: MEDIA_UNAVAILABLE };
   try {
     if (
       args.jobId !== undefined &&
@@ -75,7 +77,7 @@ export async function generateMediaFromTool(options: {
           run: { userId: run.userId, botId: run.botId, threadId: run.threadId },
         },
       });
-      if (!reservation) return { error: "Video job is unavailable." };
+      if (!reservation) return { error: VIDEO_JOB_UNAVAILABLE };
       const saved = savedJob.safeParse(reservation.result);
       if (!saved.success || saved.data.provider !== provider.id)
         return {
