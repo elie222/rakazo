@@ -157,8 +157,9 @@ export const ToolChoiceCaseSchema = z
     expect: ExpectSchema,
   })
   .strict()
-  .refine(({ group, from }) => !(group && from), {
-    message: "group puts the bot in a group but keeps its own chat; from sends the prompt instead",
+  .refine(({ group, from }) => !(group && from && !("routine" in from)), {
+    message:
+      "group puts the bot in a group but keeps its own chat; only a routine can send its prompt there",
   })
   .refine(
     ({ kind, expect }) =>
