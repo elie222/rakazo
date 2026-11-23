@@ -1,22 +1,30 @@
+import type * as Db from "@rakazo/db";
 import type { ModelRoleTarget, PrismaClient } from "@rakazo/db";
+import { updateModelRole } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
+import { clearOpenRouterMediaModelsForTest } from "../providers/media/openrouter/openrouter-media-models.js";
 import {
   MediaModelUnavailableError,
   mediaModelsView,
   setMediaModel,
 } from "./media-model-choices.js";
 
+vi.mock("@rakazo/db", async (importOriginal) => ({
+  ...(await importOriginal<typeof Db>()),
+  updateModelRole: vi.fn(),
+}));
+
 const target: ModelRoleTarget = { userId: "owner", spaceId: "space", scope: "account" };
 
 function prisma(
-  connections: Array<{ id: string; label: string }>,
+  connections: Array<{ id: string; label: string; provider?: string }>,
   chosen: { credentialId: string; modelId: string } | null = null,
 ) {
   return {
     userModelCredential: {
       findMany: vi
         .fn()
-        .mockResolvedValue(connections.map((row) => ({ ...row, provider: "openai" }))),
+        .mockResolvedValue(connections.map((row) => ({ provider: "openai", ...row }))),
     },
     userModelRoleChoice: {
       findMany: vi.fn(async ({ where }: { where: { role: string } }) =>
@@ -67,5 +75,24 @@ describe("media model choices", () => {
       await expect(
         setMediaModel(db, target, role, { credentialId: "key", modelId }),
       ).rejects.toBeInstanceOf(MediaModelUnavailableError);
+  });
+
+  it("keeps a pick while the connection's model catalog cannot be read", async () => {
+    clearOpenRouterMediaModelsForTest();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(null, { status: 503 })),
+    );
+    const db = prisma([{ id: "key", label: "Work", provider: "openrouter" }]);
+    try {
+      await setMediaModel(db, target, "image", { credentialId: "key", modelId: "lab/draw" });
+      expect(updateModelRole).toHaveBeenCalledWith(db, target, "image", {
+        primary: { provider: "openrouter", modelId: "lab/draw", credentialId: "key" },
+        backups: [],
+      });
+    } finally {
+      vi.unstubAllGlobals();
+      clearOpenRouterMediaModelsForTest();
+    }
   });
 });

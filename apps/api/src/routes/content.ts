@@ -1,6 +1,5 @@
-import type { UsageOperationKind } from "@rakazo/adapter-kit";
 import { planLimitsReader, readMemberPlanLimits, resolveBotWorkspacePath } from "@rakazo/adapters";
-import type { ExportManifest } from "@rakazo/contracts";
+import type { ExportManifest, UsageRecord } from "@rakazo/contracts";
 import { attachmentMaxBytes, MediaModelRoleSchema, resolveBotAvatarSet } from "@rakazo/contracts";
 import {
   AttachmentValidationError,
@@ -127,7 +126,6 @@ export function contentRoutes(ctx: RouterContext) {
             spaceId: context.actor.spaceId,
             userId: context.actor.userId,
             fundingSource: "customer",
-            operationKind: { notIn: MEDIA_OPERATION_KINDS },
           },
           orderBy: { createdAt: "desc" },
           take: 100,
@@ -151,7 +149,7 @@ export function contentRoutes(ctx: RouterContext) {
           usageSource: row.usageSource,
           callId: row.callId,
           operationId: row.operationId,
-          operationKind: row.operationKind as UsageOperationKind,
+          operationKind: row.operationKind as UsageRecord["operationKind"],
           parentRunId: row.parentRunId,
           agentId: row.agentId,
           createdAt: row.createdAt.toISOString(),

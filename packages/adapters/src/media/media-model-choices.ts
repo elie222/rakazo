@@ -8,6 +8,7 @@ import { ClientError } from "@rakazo/core";
 import type { ModelRoleTarget, PrismaClient } from "@rakazo/db";
 import { getModelRole, updateModelRole } from "@rakazo/db";
 import { bestEffort } from "@rakazo/logging";
+import { isMediaModelId } from "./images-api.js";
 import type { MediaModelOption } from "./media-models.js";
 import type { MediaConnection } from "./media-sources.js";
 import { mediaChoice, mediaConnections, ROLE_KIND } from "./media-sources.js";
@@ -29,18 +30,24 @@ export class MediaModelUnavailableError extends ClientError {
   }
 }
 
-/** The connection's models for the media, its default first when the list leaves it out. */
+/**
+ * The connection's models for the media, its default first when the list leaves it out.
+ * `listed` is false when the catalog could not be read, leaving only the default.
+ */
 async function offeredModels(
   role: MediaModelRole,
   connection: MediaConnection,
-): Promise<MediaModelOption[]> {
+): Promise<{ models: MediaModelOption[]; listed: boolean }> {
   const list = connection.media[ROLE_KIND[role]];
-  if (!list) return [];
-  // An unreadable catalog still leaves the default, which runs without it.
-  const models = (await bestEffort(`read the ${role} model catalog`, list.models())) ?? [];
-  return models.some((model) => model.id === list.defaultModel.id)
-    ? models
-    : [list.defaultModel, ...models];
+  if (!list) return { models: [], listed: true };
+  const read = await bestEffort(`read the ${role} model catalog`, list.models());
+  const models = read ?? [];
+  return {
+    models: models.some((model) => model.id === list.defaultModel.id)
+      ? models
+      : [list.defaultModel, ...models],
+    listed: read !== undefined,
+  };
 }
 
 async function roleView(
@@ -52,7 +59,7 @@ async function roleView(
   const lists = await Promise.all(
     offering.map(async (connection) => ({
       connection,
-      models: await offeredModels(role, connection),
+      models: (await offeredModels(role, connection)).models,
     })),
   );
   const options = lists.flatMap(({ connection, models }) =>
@@ -110,9 +117,13 @@ export async function setMediaModel(
   const connection = (await mediaConnections(prisma, target.userId)).find(
     (item) => item.id === choice.credentialId,
   );
-  if (!connection) throw new MediaModelUnavailableError();
-  const models = await offeredModels(role, connection);
-  if (!models.some((model) => model.id === choice.modelId)) throw new MediaModelUnavailableError();
+  if (!connection?.media[ROLE_KIND[role]]) throw new MediaModelUnavailableError();
+  const { models, listed } = await offeredModels(role, connection);
+  // While the catalog is unreadable, a pick from an earlier list is kept rather than refused.
+  if (
+    listed ? !models.some((model) => model.id === choice.modelId) : !isMediaModelId(choice.modelId)
+  )
+    throw new MediaModelUnavailableError();
   await updateModelRole(prisma, target, role, {
     primary: {
       provider: connection.provider,

@@ -20,11 +20,15 @@ export const UsageRecordSchema = z.object({
   usageSource: z.string().nullable().optional(),
   callId: z.string().nullable().optional(),
   operationId: z.string().nullable().optional(),
-  operationKind: z.enum(["answer", "setup", "retrieval", "subagent", "compaction"]).optional(),
+  operationKind: z
+    .enum(["answer", "setup", "retrieval", "subagent", "compaction", "image", "video"])
+    .optional(),
   parentRunId: z.string().nullable().optional(),
   agentId: z.string().nullable().optional(),
   createdAt: z.string(),
 });
+
+export type UsageRecord = z.infer<typeof UsageRecordSchema>;
 
 /** Token and cost totals are null when any counted call lacks that figure. */
 const UsageTotalsSchema = z.object({
