@@ -1,6 +1,7 @@
 import { setImmediate } from "node:timers/promises";
 import type { JobPublisher, NotificationProvider } from "@rakazo/adapter-kit";
 import { routineWakeupJob, runContinueJob } from "@rakazo/adapter-kit";
+import type { LabFeature } from "@rakazo/contracts";
 import { BACKGROUND_HELPER_TRIGGER, stuckWorkStatusMessages } from "@rakazo/core";
 import type { DatabaseOutage, Pool, PrismaClient, ThreadEvents } from "@rakazo/db";
 import { databaseOutage, reconcileComputerRuns, storedMessageBlocks } from "@rakazo/db";
@@ -134,6 +135,13 @@ export function createJobReconciler(
     reconcileChatDelivery?: () => Promise<void>;
     /** The process's database outage streak; defaults to the shared one. */
     outage?: DatabaseOutage;
+    /**
+     * Deployment-wide lab flags, as the runtime env supplies them to executor
+     * delivery: a recovered ticket outcome must evaluate assignee eligibility
+     * with the same settings, or a deployment-wide board enablement recovers
+     * the answer while the assignee stays idle.
+     */
+    deploymentLabs?: readonly LabFeature[];
   },
   options: { intervalMs?: number; batchSize?: number; maxPagesPerPass?: number } = {},
 ) {
@@ -307,7 +315,7 @@ export function createJobReconciler(
                 ? "status"
                 : ("result" as const);
             const returned = await returnBotMessageOutcome(
-              { prisma: deps.prisma, jobs: deps.jobs, events },
+              { prisma: deps.prisma, jobs: deps.jobs, events, deploymentLabs: deps.deploymentLabs },
               run,
               { id: run.botId, name: run.bot.name },
               text,

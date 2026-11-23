@@ -603,6 +603,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
           paymentWallet,
           mediaGeneration,
           billingEnabled: modelCreditsEnabled,
+          deploymentLabs: env.deploymentLabs,
         },
         {},
         { messagingDelivery, teamChat },

@@ -122,6 +122,37 @@ export async function listTicketComments(
   });
 }
 
+/**
+ * Write one ticket comment and touch the ticket's `updatedAt`, inside the
+ * caller's transaction — the write every comment path shares, from the comment
+ * tool to bot-message ticket delivery. Body handling and input validation stay
+ * with the caller; the row comes back with the author relations the comment
+ * DTO needs.
+ */
+export async function createTicketComment(
+  tx: Pick<Prisma.TransactionClient, "ticketComment" | "ticket">,
+  input: {
+    spaceId: string;
+    ticketId: string;
+    body: string;
+    authorBotId?: string | null;
+    authorUserId?: string | null;
+  },
+) {
+  const comment = await tx.ticketComment.create({
+    include: { authorBot: { select: { name: true } }, authorUser: { select: { name: true } } },
+    data: {
+      ticketId: input.ticketId,
+      spaceId: input.spaceId,
+      authorBotId: input.authorBotId ?? null,
+      authorUserId: input.authorUserId ?? null,
+      body: input.body,
+    },
+  });
+  await tx.ticket.update({ where: { id: input.ticketId }, data: { updatedAt: new Date() } });
+  return comment;
+}
+
 export function toTicketCommentDto(
   row: TicketCommentRow & {
     authorBot: { name: string } | null;

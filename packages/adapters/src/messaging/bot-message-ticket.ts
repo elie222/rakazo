@@ -2,7 +2,11 @@ import type { MessageBlock } from "@rakazo/contracts";
 import { parseTicketRef } from "@rakazo/contracts";
 import { clampBotMessage } from "@rakazo/core";
 import type { Prisma, PrismaClient } from "@rakazo/db";
-import { appendEventInTransaction, createThreadMessageInTransaction } from "@rakazo/db";
+import {
+  appendEventInTransaction,
+  createThreadMessageInTransaction,
+  createTicketComment,
+} from "@rakazo/db";
 import { bestEffort } from "@rakazo/logging";
 import { runLeaseFor } from "../runs/assembly/run-messages.js";
 import type { ExecutorDeps } from "../runs/executor/executor-deps.js";
@@ -67,15 +71,12 @@ export async function recordTicketExchangeComment(
   tx: Prisma.TransactionClient,
   input: { spaceId: string; ticketId: string; botId: string; body: string },
 ): Promise<void> {
-  await tx.ticketComment.create({
-    data: {
-      ticketId: input.ticketId,
-      spaceId: input.spaceId,
-      authorBotId: input.botId,
-      body: clampBotMessage(input.body),
-    },
+  await createTicketComment(tx, {
+    spaceId: input.spaceId,
+    ticketId: input.ticketId,
+    body: clampBotMessage(input.body),
+    authorBotId: input.botId,
   });
-  await tx.ticket.update({ where: { id: input.ticketId }, data: { updatedAt: new Date() } });
 }
 
 /**

@@ -462,6 +462,14 @@ describe("inbound wake prompt", () => {
     expect(wake).toContain("ticket OPS-7");
     expect(wake).not.toContain("keep the user informed");
     expect(wake).toContain("instead of the user's chat");
+    // The final written response is the answer path: it returns to the asking
+    // bot and lands on the ticket without another message_bot send. An interim
+    // clarification is the only message_bot use, named with its intent.
+    expect(wake).toContain("Answer it in your final written response");
+    expect(wake).toContain("returned to Researcher automatically");
+    expect(wake).toContain("recorded as a comment on ticket OPS-7");
+    expect(wake).toContain('with intent "question"');
+    expect(wake).not.toContain("Answer it if you can with message_bot");
   });
 
   it("keeps a ticket-originated FYI off the user's chat", () => {

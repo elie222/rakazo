@@ -10,6 +10,7 @@ import { sliceWellFormed } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import {
   allocateTicketNumber,
+  createTicketComment,
   ensureBoard,
   findTicket,
   listTicketComments,
@@ -278,20 +279,15 @@ export async function commentTicket(
   const board = await ensureBoard(deps.prisma, input.spaceId);
   const ticket = await findTicket(deps.prisma, input.spaceId, board, { id: input.id });
   if (!ticket) return { error: "Ticket not found." };
-  const row = await deps.prisma.$transaction(async (tx) => {
-    const comment = await tx.ticketComment.create({
-      include: { authorBot: { select: { name: true } }, authorUser: { select: { name: true } } },
-      data: {
-        ticketId: ticket.id,
-        spaceId: input.spaceId,
-        authorBotId: input.botId ?? null,
-        authorUserId: input.userId ?? null,
-        body: parsed.data.body,
-      },
-    });
-    await tx.ticket.update({ where: { id: ticket.id }, data: { updatedAt: new Date() } });
-    return comment;
-  });
+  const row = await deps.prisma.$transaction((tx) =>
+    createTicketComment(tx, {
+      spaceId: input.spaceId,
+      ticketId: ticket.id,
+      body: parsed.data.body,
+      authorBotId: input.botId,
+      authorUserId: input.userId,
+    }),
+  );
   await deps.onTicketChange?.({
     spaceId: input.spaceId,
     boardId: board.id,

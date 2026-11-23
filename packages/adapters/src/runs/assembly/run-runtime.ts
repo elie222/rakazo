@@ -391,6 +391,7 @@ export function createRunReconciler(
     | "billingEnabled"
     | "mediaGeneration"
     | "secretStore"
+    | "deploymentLabs"
   > & {
     cloudAgent: NonNullable<ExecutorDeps["cloudAgent"]> | null;
     userCloudAgents?: ExecutorDeps["userCloudAgents"];
@@ -409,6 +410,7 @@ export function createRunReconciler(
     prisma,
     jobs,
     events: deps.events,
+    deploymentLabs: deps.deploymentLabs,
     notifications: deps.notifications,
     ...workerOnly,
     reconcileChatDelivery:

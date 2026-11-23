@@ -135,7 +135,7 @@ export function buildBotMessageWakePrompt(args: {
         : `This is a ${intent} for work you delegated. Relay it to the user now, and include the actual substance — the real names, dates, numbers, and details ${safeName} sent — not just a note that a ${intent} arrived. A reply like "the summary came through" or "it's done" without repeating what it says is not acceptable. Do not stay silent and do not merely acknowledge it.`
       : intent === "question"
         ? ticket
-          ? `This is a question about delegated work that came out of ${safeName}'s work on ticket ${ticket}. Answer it if you can with message_bot (bot_id ${safeId}); keep the coordination for that work on ticket ${ticket} (ticket_comment, ticket_update) instead of the user's chat.`
+          ? `This is a question about delegated work that came out of ${safeName}'s work on ticket ${ticket}. Answer it in your final written response: it is returned to ${safeName} automatically and recorded as a comment on ticket ${ticket}. Use message_bot with bot_id ${safeId} only for a useful interim clarification, with intent "question"; keep the coordination for that work on ticket ${ticket} (ticket_comment, ticket_update) instead of the user's chat.`
           : `This is a question about delegated work. Answer it if you can, then continue the coordination and keep the user informed.`
         : intent === "fyi"
           ? ticket

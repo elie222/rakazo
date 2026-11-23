@@ -696,7 +696,10 @@ describe("createJobReconciler", () => {
     const events = { notify: vi.fn() } as unknown as ThreadEvents;
     vi.mocked(returnBotMessageOutcome).mockResolvedValue(true).mockResolvedValueOnce(false);
 
-    const reconciler = createJobReconciler({ prisma, jobs, events }, { batchSize: 1 });
+    const reconciler = createJobReconciler(
+      { prisma, jobs, events, deploymentLabs: ["board"] },
+      { batchSize: 1 },
+    );
 
     await reconciler.reconcileOnce();
     await reconciler.reconcileOnce();
@@ -717,7 +720,7 @@ describe("createJobReconciler", () => {
       }),
     );
     expect(returnBotMessageOutcome).toHaveBeenCalledWith(
-      { prisma, jobs, events },
+      { prisma, jobs, events, deploymentLabs: ["board"] },
       terminalRun,
       { id: "bot-1", name: "Researcher" },
       "Finished.",
