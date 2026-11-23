@@ -53,7 +53,7 @@ test("memory and skills are readable and editable in the app", async ({ page }, 
   )!;
   await expect(retiredRow).toBeVisible();
   await expect(spaceDocs.getByText("MEMORY.md")).toHaveCount(0);
-  await memoryRow(memoryNotesPreview(seededShared.content)).click();
+  await memoryRow(memoryNotesPreview(seededShared)).click();
   const docEditor = spaceDocs.locator("textarea");
   const marker = `Edited in e2e ${stamp}`;
   await docEditor.fill(`# Memory\n\n${marker}\n`);
@@ -102,6 +102,16 @@ test("memory and skills are readable and editable in the app", async ({ page }, 
     expect.objectContaining({ id: sharedDocument.id, content: latestMarker, revision: 3 }),
   );
   await captureScreenshot(page, testInfo, "84-space-memory-conflict");
+  // Download exports the saved notes, so it waits while the editor holds unsaved text.
+  await expect(spaceDocs.getByRole("button", { name: "Download", exact: true })).toBeDisabled();
+  const conflictNotice = spaceDocs.getByText(
+    "Document changed. Reopen to edit the latest version.",
+    { exact: true },
+  );
+  await spaceDocs.getByRole("button", { name: "Cancel", exact: true }).click();
+  await expect(conflictNotice).toHaveCount(0);
+  await memoryRow(latestMarker).click();
+  await expect(docEditor).toHaveValue(latestMarker);
   const downloadPromise = page.waitForEvent("download");
   // Download sits with the open editor, so it exports the main notes.
   await spaceDocs.getByRole("button", { name: "Download", exact: true }).click();
@@ -112,17 +122,6 @@ test("memory and skills are readable and editable in the app", async ({ page }, 
   expect(exported).not.toContain(retiredContent);
   expect(exported).not.toContain(marker);
   expect(exported).not.toContain("# Chief");
-  // Exporting must not hide why Save stays disabled.
-  const conflictNotice = spaceDocs.getByText(
-    "Document changed. Reopen to edit the latest version.",
-    { exact: true },
-  );
-  await expect(conflictNotice).toBeVisible();
-  await expect(spaceDocs.getByRole("button", { name: "Save", exact: true })).toBeDisabled();
-  await spaceDocs.getByRole("button", { name: "Cancel", exact: true }).click();
-  await expect(conflictNotice).toHaveCount(0);
-  await memoryRow(latestMarker).click();
-  await expect(docEditor).toHaveValue(latestMarker);
 
   // Any shared document but MEMORY.md can be deleted after a confirmation.
   // MEMORY.md editor is open again after the reopen above; do not toggle it closed.

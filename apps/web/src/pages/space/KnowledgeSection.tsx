@@ -314,7 +314,7 @@ function MemoryDocumentLabel({ doc }: { doc: MemoryDocument }) {
       </span>
     );
   }
-  const preview = memoryNotesPreview(doc.content);
+  const preview = memoryNotesPreview(doc);
   return (
     <span
       className={`line-clamp-2 min-w-0 text-body font-normal ${preview ? "text-foreground" : "text-muted-foreground"}`}

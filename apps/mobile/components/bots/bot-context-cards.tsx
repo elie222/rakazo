@@ -181,7 +181,7 @@ const PREVIEW_LENGTH = 80;
 function memoryRowTitle(doc: { path: string; content: string }): string {
   const name = memoryDocumentName(doc.path);
   if (name) return name;
-  const preview = memoryNotesPreview(doc.content);
+  const preview = memoryNotesPreview(doc);
   return preview.length > PREVIEW_LENGTH
     ? `${preview.slice(0, PREVIEW_LENGTH).trimEnd()}…`
     : preview;

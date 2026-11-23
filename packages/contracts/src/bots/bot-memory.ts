@@ -19,13 +19,17 @@ export function memoryDocumentName(path: string): string | null {
   return path.replace(/\.md$/i, "") || path;
 }
 
-/** The first note in a memory document, skipping headings. */
-export function memoryNotesPreview(content: string): string {
-  for (const line of content.split("\n")) {
-    const text = line.trim();
-    if (text && !text.startsWith("#")) return text;
-  }
-  return "";
+/**
+ * The first note in a memory document, past any headings. Notes made only of headings show
+ * their first heading's text. An untouched index shows nothing.
+ */
+export function memoryNotesPreview(doc: Pick<MemoryDocument, "path" | "content">): string {
+  if (isEmptyBotMemory(doc)) return "";
+  const lines = doc.content
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+  return lines.find((line) => !line.startsWith("#")) ?? (lines[0] ?? "").replace(/^#+\s*/, "");
 }
 
 export const MemoryScopeSchema = z.enum(["isolated", "shared"]);

@@ -27,9 +27,11 @@ describe("memory document names", () => {
   });
 
   it("previews the first note, past any heading", () => {
-    expect(memoryNotesPreview("# Fixture\n\nPrefers short replies.\nSecond note.\n")).toBe(
+    const preview = (content: string) => memoryNotesPreview({ path: "MEMORY.md", content });
+    expect(preview("# Fixture\n\nPrefers short replies.\nSecond note.\n")).toBe(
       "Prefers short replies.",
     );
-    expect(memoryNotesPreview("# Fixture\n\n")).toBe("");
+    expect(preview("# Fixture\n\n")).toBe("");
+    expect(preview("# Alice\n\n## Preferences\n")).toBe("Alice");
   });
 });
