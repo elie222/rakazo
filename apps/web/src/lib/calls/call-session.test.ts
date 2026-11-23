@@ -559,6 +559,39 @@ describe("call session", () => {
     );
   });
 
+  it("finds the caller's waiting approval beside other active runs and retires it on acknowledgement", async () => {
+    vi.stubGlobal("window", { addEventListener: vi.fn() });
+    try {
+      syncCallIdentity("me");
+      const approval = approvalMessage();
+      const primary = { ...runningRun!, id: "work", userId: "me" };
+      const secret = { ...askMessage("code", { input: "secret" }), runId: "other" };
+      const pending = {
+        ...snapshot([approval, secret], primary),
+        activeRuns: [
+          primary,
+          { ...waitingRun!, userId: "me" },
+          { ...waitingRun!, id: "other", userId: "someone-else" },
+        ],
+      };
+      await answeredCall({ botId: "call-bot", botName: "Ada" });
+      const feed = vi.mocked(runThreadSubscription).mock.calls.at(-1)![0];
+      getThread.mockResolvedValue(pending);
+      await feed.refresh();
+      expect(getSnapshot()?.approval?.messageId).toBe(approval.id);
+      expect(dictation.stop).toHaveBeenCalledWith("cancel");
+      getThread.mockRejectedValueOnce(new Error("refresh offline"));
+      await answerCallApproval(approval.id, "deny");
+      expect(getSnapshot()?.approval).toBeNull();
+      await feed.refresh();
+      expect(getSnapshot()?.approval).toBeNull();
+      expect(answer).toHaveBeenCalledOnce();
+    } finally {
+      forgetSignedInUser();
+      vi.unstubAllGlobals();
+    }
+  });
+
   it.each(["allow", "deny"])(
     "resumes the owner's call after tapping %s on its approval",
     async (decision) => {

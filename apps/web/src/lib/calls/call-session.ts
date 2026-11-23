@@ -128,6 +128,8 @@ let bargedIn = false;
 let awaitingReply = false;
 /** The run whose approval card the caller was sent to answer on screen. */
 let approvalRunId: string | null = null;
+/** A successful tap is authoritative even while the thread feed still shows the old card. */
+const acceptedApprovalIds = new Set<string>();
 let awaitedRunId: string | null = null;
 const finishedRunIds = new Set<string>();
 /** Counting down an interim phrase heard over the reply, before it counts as cutting in. */
@@ -328,6 +330,7 @@ function dropCall(): void {
   speaker.stop();
   thread = null;
   spokenMessageIds.clear();
+  acceptedApprovalIds.clear();
   spokenMemory.clear();
   replySpeech.clear();
   streamRunId = null;
@@ -574,16 +577,24 @@ function commit(next: ThreadSnapshot | null) {
 }
 
 function pendingApproval(snapshot: ThreadSnapshot): CallState["approval"] {
-  const runId = approvalRunId ?? awaitedRunId ?? snapshot.run?.id;
-  if (!identity || !runId || pendingCallSecretAsk(snapshot)) return null;
+  if (!identity) return null;
+  const followedRun = approvalRunId ?? awaitedRunId;
   const ids = answerableAskMessageIds(snapshot, identity);
-  const message = snapshot.messages.findLast((entry) => entry.runId === runId && ids.has(entry.id));
-  const block = message?.blocks.find(
-    (part) => part.kind === "ask" && part.status !== "answered" && isApprovalAskBlock(part),
-  );
-  return message?.runId && block?.kind === "ask"
-    ? { messageId: message.id, runId: message.runId, block }
-    : null;
+  for (let i = snapshot.messages.length - 1; i >= 0; i--) {
+    const message = snapshot.messages[i];
+    if (
+      !message?.runId ||
+      (followedRun && message.runId !== followedRun) ||
+      !ids.has(message.id) ||
+      acceptedApprovalIds.has(message.id)
+    )
+      continue;
+    const block = message.blocks.find(
+      (part) => part.kind === "ask" && part.status !== "answered" && isApprovalAskBlock(part),
+    );
+    if (block?.kind === "ask") return { messageId: message.id, runId: message.runId, block };
+  }
+  return null;
 }
 
 /** Only the on-screen card submits a decision. Follow the resumed run even if the mic is idle. */
@@ -607,6 +618,9 @@ export async function answerCallApproval(messageId: string, answer: string): Pro
   } finally {
     release();
   }
+  if (feed !== currentFeed) return;
+  acceptedApprovalIds.add(messageId);
+  if (state?.approval?.messageId === messageId) set({ approval: null, caption: "" });
   await bestEffort("refresh call after approval", currentFeed?.load());
 }
 
@@ -709,13 +723,17 @@ async function handleTranscript(text: string) {
   const turnCallId = callId;
   const closing = isFarewell(text);
   // An approval is only answered on screen, next to its details; a spoken reply would be refused.
-  if (turn.kind === "approve_on_screen") {
+  const onScreen = state.approval ?? (turn.kind === "approve_on_screen" ? turn : null);
+  if (onScreen) {
     // The caption covers a card the call never read; once tapped, it must not pass for the reply.
-    spokenMessageIds.add(turn.messageId);
-    approvalRunId = turn.runId;
+    spokenMessageIds.add(onScreen.messageId);
+    approvalRunId = onScreen.runId;
     awaitingReply = true;
     if (closing) hangUpAfterReply = true;
-    set({ heard: "", caption: t`Approve or deny it on screen.` });
+    set({
+      heard: "",
+      caption: acceptedApprovalIds.has(onScreen.messageId) ? "" : t`Approve or deny it on screen.`,
+    });
     void listen();
     return;
   }
