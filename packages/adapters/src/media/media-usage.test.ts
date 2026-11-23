@@ -13,18 +13,16 @@ function deps(input: {
 }) {
   const prisma = {
     externalEffect: {
-      findMany: vi
-        .fn()
-        .mockResolvedValue(
-          input.pendingMicros
-            ? [
-                {
-                  id: "job",
-                  request: { charge: { organizationId: "org", micros: input.pendingMicros } },
-                },
-              ]
-            : [],
-        ),
+      findMany: vi.fn().mockResolvedValue(
+        input.pendingMicros
+          ? [
+              {
+                id: "job",
+                request: { charge: { organizationId: "org", micros: input.pendingMicros } },
+              },
+            ]
+          : [],
+      ),
     },
     space: { findUnique: vi.fn().mockResolvedValue({ organizationId: "org" }) },
     deploymentSettings: {
