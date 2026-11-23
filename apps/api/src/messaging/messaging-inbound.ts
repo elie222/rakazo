@@ -1552,7 +1552,7 @@ async function handleChannelEvent(
     text: event.content,
     hop: 0,
   };
-  const prompt = `[Group "${channel.name ?? "group"}", ${fromLabel}]: ${event.content}`;
+  const prompt = `[Group "${sanitizeMessagingLabel(channel.name ?? "group")}", ${sanitizeMessagingLabel(fromLabel)}]: ${event.content}`;
   for (const member of approved) {
     const identity = await deps.prisma.messagingIdentity.findUnique({
       where: { id: member.identityId! },

@@ -22,6 +22,7 @@ import {
   chatAppTakeoverText,
   nextBotMessageHop,
   pageLinksAsTitles,
+  sanitizeMessagingLabel,
   teamChatResponseText,
 } from "@rakazo/core";
 import type { DatabaseOutage, Prisma, PrismaClient, ThreadEvents } from "@rakazo/db";
@@ -1159,7 +1160,7 @@ export class MessagingDelivery {
               botId: peerIdentity.botId,
               userId: peerIdentity.userId,
               blocks: [block],
-              prompt: `[Group "${channel.name ?? "group"}" — ${fromLabel}]: ${text}`,
+              prompt: `[Group "${sanitizeMessagingLabel(channel.name ?? "group")}" — ${sanitizeMessagingLabel(fromLabel)}]: ${text}`,
               trigger: "messaging",
               clientNonce,
               crossSpaceSenderBotId: identity.botId,
