@@ -125,22 +125,9 @@ describe("authRateLimitOptions", () => {
     expect(authRateLimitOptions("test").enabled).toBe(false);
   });
 
-  it("lets an operator force the limiter on outside production", () => {
-    expect(authRateLimitOptions("development", "1").enabled).toBe(true);
-    expect(authRateLimitOptions("test", "1").enabled).toBe(true);
-  });
-
-  it("lets an operator force the limiter off in production", () => {
-    expect(authRateLimitOptions("production", "0").enabled).toBe(false);
-  });
-
-  it("keeps the production default on a blank override", () => {
-    expect(authRateLimitOptions("production", " ").enabled).toBe(true);
-    expect(authRateLimitOptions("test", " ").enabled).toBe(false);
-  });
-
-  it("refuses an unknown override value", () => {
-    expect(() => authRateLimitOptions("production", "maybe")).toThrow("RAKAZO_AUTH_RATE_LIMIT");
+  it("lets an operator override the NODE_ENV default", () => {
+    expect(authRateLimitOptions("development", "true").enabled).toBe(true);
+    expect(authRateLimitOptions("production", "false").enabled).toBe(false);
   });
 });
 

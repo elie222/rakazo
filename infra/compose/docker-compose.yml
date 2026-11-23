@@ -39,8 +39,7 @@ x-app-environment: &app-environment # Runtime
   WORKSPACE_SAVE_MAX_GB:
   RAKAZO_UPDATE_RESTART_SUPERVISOR:
   TICKET_BOARD_ENABLED:
-  # Sign-in and credential limiter: 1 forces it on, 0 off, unset follows NODE_ENV.
-  RAKAZO_AUTH_RATE_LIMIT:
+  AUTH_RATE_LIMIT_ENABLED:
   USER_DEVICES_ENABLED:
   RAKAZO_MESSAGE_USER_MAX_CHARS:
   TEACH_RECORDING_TTL_MS:
