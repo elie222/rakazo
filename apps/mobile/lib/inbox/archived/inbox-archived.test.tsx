@@ -411,6 +411,13 @@ describe("bot profile menu actions", () => {
     expect(mocks.addToSearchInbox).toHaveBeenCalledOnce();
     expect(mocks.router.dismissAll).not.toHaveBeenCalled();
     expect(mocks.router.push).not.toHaveBeenCalled();
+
+    // Back on the profile, it duplicates again.
+    mocks.isFocused.mockReturnValue(true);
+    mocks.rpc.mockResolvedValueOnce({ id: "bot-d", name: "Bot (copy 2)" });
+    act(() => action("Duplicate").onPress());
+    await flush();
+    expect(mocks.rpc.mock.calls.filter(([path]) => path === "bots/duplicate")).toHaveLength(2);
   });
 
   it("says when a bot could not be duplicated and stays on the profile", async () => {

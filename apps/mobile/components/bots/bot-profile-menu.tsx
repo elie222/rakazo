@@ -54,7 +54,7 @@ export function useBotProfileActions(botId: string, name: string): BotProfileAct
       if (navigation.isFocused())
         Alert.alert(t`Could not duplicate bot`, errorText(error, t`Try again.`));
     },
-    closesScreen: true,
+    // Not `closesScreen`: a profile left open under Edit stays mounted and must be able to duplicate again.
   });
   return [
     {
