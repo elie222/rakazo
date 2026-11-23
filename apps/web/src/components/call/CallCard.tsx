@@ -5,6 +5,7 @@ import { Captions, ChevronDown, Mic, MicOff, PhoneOff, Settings } from "lucide-r
 import { useNavigate, useParams } from "react-router-dom";
 import type { CallState } from "../../lib/calls/call-session";
 import {
+  answerCallApproval,
   endCall,
   setCallMinimized,
   toggleMute,
@@ -12,6 +13,7 @@ import {
   useCallSession,
 } from "../../lib/calls/call-session";
 import { useEventListener } from "../../lib/use-event-listener";
+import { AskCard } from "../messages/AskCard";
 import { CallWindow } from "./CallWindow";
 
 const BARS = [9, 15, 21, 15, 9];
@@ -46,6 +48,7 @@ export function CallCard({ onSettings }: { onSettings: () => void }) {
   };
   useEventListener(onCall ? window : null, "keydown", onKey);
   if (!call || call.minimized) return null;
+  const { approval } = call;
   const onBotScreen = botId === call.botId;
   const ringing = call.phase === "ringing";
   const activity =
@@ -96,7 +99,12 @@ export function CallCard({ onSettings }: { onSettings: () => void }) {
         </Button>
       </div>
 
-      <div className="relative flex flex-1 flex-col items-center justify-center gap-4 py-6 md:flex-none">
+      <div
+        className={cn(
+          "relative flex flex-1 flex-col items-center justify-center gap-4 py-6 md:flex-none",
+          call.approval && "hidden",
+        )}
+      >
         <button
           type="button"
           aria-label={t`Open chat with ${call.botName}`}
@@ -150,7 +158,18 @@ export function CallCard({ onSettings }: { onSettings: () => void }) {
         ) : null}
       </div>
 
-      {call.transcriptOpen ? (
+      {approval ? (
+        <div className="my-3 min-h-0 flex-1 overflow-y-auto md:max-h-[60dvh] md:flex-auto">
+          <AskCard
+            key={approval.messageId}
+            block={approval.block}
+            canAnswer
+            canDismiss={false}
+            onDismiss={async () => {}}
+            onAnswer={(value) => answerCallApproval(approval.messageId, value)}
+          />
+        </div>
+      ) : call.transcriptOpen ? (
         <div className="mb-4 flex flex-col gap-1.5 border-t border-border pt-2.5 text-body leading-[1.45]">
           {call.exchanges.slice(-TRANSCRIPT_LINES).map((exchange, index) => (
             <p

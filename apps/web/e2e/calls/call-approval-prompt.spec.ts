@@ -21,8 +21,13 @@ test("a call answers each turn and sends the caller to the screen for an approva
     timeout: 60_000,
   });
   await finishClip(page);
-  await expect(call.getByText("Approve or deny it on screen.", { exact: true })).toBeVisible();
+  await expect(call.getByRole("button", { name: "Allow once", exact: true })).toBeVisible();
+  const deny = call.getByRole("button", { name: "Deny", exact: true });
+  await expect(deny).toBeVisible();
   await captureScreenshot(page, testInfo, "call-approval-prompt");
+  await deny.click();
+  await expect(deny).toHaveCount(0);
+  await expect(call).toBeVisible();
 });
 
 /** Connects the scripted voice and calls the bot, with the caller's words and playback in the test's hands. */

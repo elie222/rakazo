@@ -2,6 +2,7 @@ import { t } from "@lingui/core/macro";
 import type { BotAvatarSet, ProductEvent, ThreadMessage, ThreadSnapshot } from "@rakazo/contracts";
 import type { CallExchange } from "@rakazo/core";
 import {
+  answerableAskMessageIds,
   CALL_FAREWELL_TIMEOUT_MS,
   callClientNonce,
   callRunStatus,
@@ -27,6 +28,7 @@ import {
   spokenMemory,
   withBotSpeech,
 } from "@rakazo/core";
+import { bestEffort } from "@rakazo/logging/best-effort";
 import { getGlobalBroadcastChannel } from "better-auth/client";
 import { useSyncExternalStore } from "react";
 import {
@@ -56,6 +58,11 @@ export interface CallState {
   /** The call window is tucked away; the call keeps running. */
   minimized: boolean;
   transcriptOpen: boolean;
+  approval: {
+    messageId: string;
+    runId: string;
+    block: Extract<ThreadMessage["blocks"][number], { kind: "ask" }>;
+  } | null;
   caption: string;
   heard: string;
   exchanges: CallExchange[];
@@ -193,6 +200,7 @@ export function startCall(call: {
     muted: false,
     minimized: false,
     transcriptOpen: false,
+    approval: null,
     caption: "",
     heard: "",
     exchanges: [],
@@ -555,8 +563,51 @@ function commit(next: ThreadSnapshot | null) {
     else finishedRunIds.add(run.id);
   }
   thread = next;
+  const approval = pendingApproval(next);
+  if (
+    state &&
+    (state.approval?.block !== approval?.block || state.approval?.messageId !== approval?.messageId)
+  )
+    set({ approval });
   reactToThread();
   return next;
+}
+
+function pendingApproval(snapshot: ThreadSnapshot): CallState["approval"] {
+  const runId = approvalRunId ?? awaitedRunId ?? snapshot.run?.id;
+  if (!identity || !runId || pendingCallSecretAsk(snapshot)) return null;
+  const ids = answerableAskMessageIds(snapshot, identity);
+  const message = snapshot.messages.findLast((entry) => entry.runId === runId && ids.has(entry.id));
+  const block = message?.blocks.find(
+    (part) => part.kind === "ask" && part.status !== "answered" && isApprovalAskBlock(part),
+  );
+  return message?.runId && block?.kind === "ask"
+    ? { messageId: message.id, runId: message.runId, block }
+    : null;
+}
+
+/** Only the on-screen card submits a decision. Follow the resumed run even if the mic is idle. */
+export async function answerCallApproval(messageId: string, answer: string): Promise<void> {
+  const approval = state?.approval;
+  if (!state || !approval || approval.messageId !== messageId)
+    throw new Error(t`Could not submit this answer`);
+  const currentFeed = feed;
+  approvalRunId = approval.runId;
+  awaitingReply = true;
+  spokenMessageIds.add(messageId);
+  const request = rpc.threads.answer({
+    botId: state.botId,
+    runId: approval.runId,
+    messageId,
+    answer,
+  });
+  const release = callSends.track(callId, request);
+  try {
+    await request;
+  } finally {
+    release();
+  }
+  await bestEffort("refresh call after approval", currentFeed?.load());
 }
 
 /** The tail of playback reaches the microphone after the audio element ends. */

@@ -13,7 +13,16 @@ import { deferred } from "@rakazo/core/test-async";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { recheckSessionOnUnauthorized, rpc } from "../query/rpc.js";
 import { pickUp } from "./call-pickup.js";
-import { ECHO_GUARD_MS, endCall, getSnapshot, startCall, toggleMute } from "./call-session";
+import {
+  answerCallApproval,
+  ECHO_GUARD_MS,
+  endCall,
+  forgetSignedInUser,
+  getSnapshot,
+  startCall,
+  syncCallIdentity,
+  toggleMute,
+} from "./call-session";
 import { dictation, usesServerDictation } from "./dictation.js";
 import { speaker } from "./tts.js";
 
@@ -549,6 +558,46 @@ describe("call session", () => {
       expect.objectContaining({ messageId: "message-1" }),
     );
   });
+
+  it.each(["allow", "deny"])(
+    "resumes the owner's call after tapping %s on its approval",
+    async (decision) => {
+      vi.stubGlobal("window", { addEventListener: vi.fn() });
+      try {
+        syncCallIdentity("me");
+        const turn = callerMessage("check the site");
+        const approval = approvalMessage();
+        const feed = await approvalWait(turn, approval);
+        const waiting = (userId: string) => snapshot([turn, approval], { ...waitingRun!, userId });
+        getThread.mockResolvedValue(waiting("someone-else"));
+        await feed?.refresh();
+        expect(getSnapshot()?.approval).toBeNull();
+        getThread.mockResolvedValue(waiting("me"));
+        await feed?.refresh();
+        expect(getSnapshot()?.approval?.block).toEqual(approval.blocks[0]);
+        getThread.mockResolvedValue(
+          snapshot([turn, answered(approval), botMessage("done", "Ready to continue.")]),
+        );
+        await answerCallApproval(approval.id, decision);
+        expect(answer).toHaveBeenCalledWith({
+          botId: "call-bot",
+          runId: "run-1",
+          messageId: approval.id,
+          answer: decision,
+        });
+        expect(getSnapshot()?.approval).toBeNull();
+        expect(speak).toHaveBeenLastCalledWith(
+          "Ready to continue.",
+          expect.objectContaining({ messageId: "done" }),
+        );
+        await finishSpeaking();
+        expect(getSnapshot()?.phase).toBe("listening");
+      } finally {
+        forgetSignedInUser();
+        vi.unstubAllGlobals();
+      }
+    },
+  );
 
   it("speaks only an approval's own reply to the tap, and keeps spoken answers off it", async () => {
     const turn = callerMessage("check the site");
