@@ -245,8 +245,21 @@ describe("editMemory", () => {
     });
   });
 
-  it("changes the first of identical entries", () => {
-    expect(editMemory("a\nb\na\n", [replace("a", "c")])).toEqual({ content: "c\nb\na\n" });
+  it("changes every copy of a repeated entry", () => {
+    expect(editMemory("a\nb\na\n", [replace("a", "c")])).toEqual({ content: "c\nb\n" });
+  });
+
+  it("matches a multi-line old_text that differs only in spacing", () => {
+    const doc = "- Trip:\n  Lisbon \u2014 May\n- Likes tea\n";
+    expect(editMemory(doc, [remove("- Trip:\nLisbon - May")])).toEqual({
+      content: "- Likes tea\n",
+    });
+  });
+
+  it("refuses a replace with no new content", () => {
+    expect(editMemory(memory, [replace("London", " ")])).toMatchObject({
+      error: expect.stringContaining("Use remove"),
+    });
   });
 
   it("answers a missed old_text with the closest entries by shared words", () => {

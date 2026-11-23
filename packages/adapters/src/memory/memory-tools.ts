@@ -1,7 +1,8 @@
 import type { ConnectorTool } from "@rakazo/adapter-kit";
 import { BOT_MEMORY_MAX_BYTES } from "@rakazo/contracts";
 import { byteLength } from "@rakazo/core";
-import { z } from "zod";
+import type { z } from "zod";
+import type { RememberInputSchema } from "../tools/builtin-conversation.tool-definition.js";
 
 const SEMANTIC_MEMORY_TOOL_NAMES = new Set([
   "recall_memory",
@@ -39,17 +40,6 @@ export function appendMemoryFact(existing: string, fact: string): string {
   return existing ? `${existing}${existing.endsWith("\n") ? "" : "\n"}${next}\n` : `${next}\n`;
 }
 
-export const RememberInputSchema = z.object({
-  operations: z
-    .array(
-      z.object({
-        action: z.enum(["add", "replace", "remove"]),
-        content: z.string().optional(),
-        old_text: z.string().optional(),
-      }),
-    )
-    .min(1),
-});
 type MemoryOperation = z.infer<typeof RememberInputSchema>["operations"][number];
 export type MemoryEdit = { content: string } | { error: string; entries: string[] };
 type EntryRange = { start: number; end: number };
@@ -90,33 +80,40 @@ function applyOperation(current: string, operation: MemoryOperation): MemoryEdit
       ? { content: appendMemoryFact(current, fact) }
       : { error: "add needs content.", entries: [] };
   }
+  if (operation.action === "replace" && !fact)
+    return { error: "replace needs content. Use remove to drop an entry.", entries: [] };
   const target = (operation.old_text ?? "").trim().replace(/\r\n/g, "\n");
   if (!target) return { error: `${operation.action} needs old_text.`, entries: [] };
   const lines = current.replace(/\r\n/g, "\n").split("\n");
-  const found = findEntry(lines, target);
+  const found = findEntries(lines, target);
   if ("error" in found) return found;
-  const next = operation.action === "replace" && fact ? fact.split("\n") : [];
-  return {
-    content: [...lines.slice(0, found.start), ...next, ...lines.slice(found.end + 1)].join("\n"),
-  };
+  // Copies of one entry state one fact, so all of them change: the first is replaced, the rest go.
+  for (const [index, range] of [...found.entries()].reverse()) {
+    const next = index === 0 && operation.action === "replace" ? fact.split("\n") : [];
+    lines.splice(range.start, range.end - range.start + 1, ...next);
+  }
+  return { content: lines.join("\n") };
 }
 
 /**
- * The entry (line, or lines for a multi-line quote) old_text names: a whole entry first,
- * then an exact quote, then one that differs only in quotes, dashes or spacing. Identical
- * matches count as one, so a duplicated entry can still be changed.
+ * The entry (line, or lines for a multi-line quote) old_text names, with any identical
+ * copies: a whole entry first, then an exact quote, then one that differs only in quotes,
+ * dashes or spacing.
  */
-function findEntry(
+function findEntries(
   lines: string[],
   target: string,
-): EntryRange | { error: string; entries: string[] } {
+): EntryRange[] | { error: string; entries: string[] } {
   const tiers = [
     () => lines.flatMap((line, i) => (line.trim() === target ? [{ start: i, end: i }] : [])),
     () => quoted(lines, target),
     () => {
       const loose = normalized(target);
+      const span = target.split("\n").length;
       return lines.flatMap((line, i) =>
-        line.trim() && normalized(line).includes(loose) ? [{ start: i, end: i }] : [],
+        line.trim() && normalized(lines.slice(i, i + span).join("\n")).includes(loose)
+          ? [{ start: i, end: Math.min(i + span, lines.length) - 1 }]
+          : [],
       );
     },
   ];
@@ -124,7 +121,11 @@ function findEntry(
     const matches = tier();
     if (!matches.length) continue;
     const texts = new Set(matches.map((m) => lines.slice(m.start, m.end + 1).join("\n")));
-    if (texts.size === 1) return matches[0]!;
+    if (texts.size === 1) {
+      const copies: EntryRange[] = [];
+      for (const m of matches) if (m.start > (copies.at(-1)?.end ?? -1)) copies.push(m);
+      return copies;
+    }
     return {
       error: "old_text matches more than one entry. Quote more of the one to change.",
       entries: [...texts],

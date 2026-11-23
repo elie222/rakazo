@@ -64,7 +64,7 @@ describe("built-in tool bridge", () => {
     // managed bot's routines; update_bot carries the settings its owner can change;
     // update_preferences includes the chat model picker and reply streaming; remember takes a
     // list of operations so one call can make room and add.
-    expect(definitionBytes(listed)).toBeLessThanOrEqual(36_650);
+    expect(definitionBytes(listed)).toBeLessThanOrEqual(36_710);
     expect(deferred.map((tool) => tool.name)).toEqual(
       expect.arrayContaining(["render_plot", "create_space", "generate_secret", "scratchpad_add"]),
     );

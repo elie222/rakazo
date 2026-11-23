@@ -513,7 +513,7 @@ pnpm test:evals --suite silence --list
 pnpm test:evals --live --suite silence --connection <private-connection.json> --pricing <pricing.json> --judge-connection <private-judge-connection.json> --judge-pricing <judge-pricing.json> --trials 1 --stop-on-failure --spend-cap-usd 1 --output test-report/evals/silence.json
 ```
 
-The six synthetic cases cover unchanged releases, an empty successful listing,
+The five synthetic cases cover unchanged releases, an empty successful listing,
 a new release followed by an identical check, an unavailable source, and release
 notes that try to override the owner's silence instruction. A routine is created
 through the product API with notifications enabled, then awakened through the

@@ -13,6 +13,22 @@ import { z } from "zod";
 import { messageUserMaxLength } from "../runs/lifecycle/user-progress.js";
 import { allowPrivateHttpSecretOrigins } from "../secrets/bot-secrets.js";
 
+export const RememberInputSchema = z.object({
+  operations: z
+    .array(
+      z.object({
+        action: z.enum(["add", "replace", "remove"]),
+        content: z.string().optional(),
+        old_text: z.string().optional(),
+      }),
+    )
+    .min(1),
+  path: z
+    .string()
+    .optional()
+    .describe(`Another of your memory documents to edit. Defaults to ${MEMORY_INDEX_PATH}.`),
+});
+
 // The owner flag can land in process.env after static imports run (loadRootEnv
 // parses .env once the entry module is already executing), so the model-facing
 // surface is built lazily on first tool access instead of at module scope.
@@ -280,28 +296,7 @@ export const conversationTools: ConnectorTool[] = [
   {
     name: "remember",
     description: `Edit your memory. Each entry is one short declarative fact, not an instruction to yourself; task progress, one-off details and promises do not belong. Operations apply all or none, and the ${BOT_MEMORY_MAX_BYTES / 1024} KB limit counts only the result, so one call can make room and add.`,
-    inputSchema: {
-      type: "object",
-      properties: {
-        operations: {
-          type: "array",
-          items: {
-            type: "object",
-            properties: {
-              action: { type: "string", enum: ["add", "replace", "remove"] },
-              content: { type: "string" },
-              old_text: { type: "string" },
-            },
-            required: ["action"],
-          },
-        },
-        path: {
-          type: "string",
-          description: `Another of your memory documents to edit. Defaults to ${MEMORY_INDEX_PATH}.`,
-        },
-      },
-      required: ["operations"],
-    },
+    inputSchema: z.toJSONSchema(RememberInputSchema, { io: "input" }),
   },
   {
     name: "save_shared_memory",

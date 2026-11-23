@@ -7,9 +7,10 @@ import {
 } from "@rakazo/contracts";
 import { readHistory, searchHistory } from "@rakazo/db";
 import { redactConnectorPayload } from "../../integrations/connector-safety.js";
-import { editMemory, RememberInputSchema } from "../../memory/memory-tools.js";
+import { editMemory } from "../../memory/memory-tools.js";
 import { MAX_RECALLED_MEMORIES } from "../../runtime/context/history-compaction.prompt.js";
 import { sharedMemorySaveError } from "../../tools/builtin.tool-definition.js";
+import { RememberInputSchema } from "../../tools/builtin-conversation.tool-definition.js";
 import type { RunContext } from "../assembly/run-context.js";
 import { markReadOutsideContent } from "../assembly/run-context.js";
 import { argsError } from "../turn/tool-args.js";
