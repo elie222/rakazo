@@ -63,7 +63,7 @@ test("hosted compatible providers appear in onboarding and require a key", async
   await expect(page.getByRole("button", { name: "Find models", exact: true })).toHaveCount(0);
   await expect(models).toHaveText("first-model");
   expect(probes).toEqual([
-    { baseUrl: "https://api.concentrate.ai/v1", apiProtocol: "chat-completions" },
+    { baseUrl: "https://api.concentrate.ai/v1", apiProtocol: "responses" },
   ]);
   await expect(continueButton).toBeDisabled();
   await captureScreenshot(page, testInfo, "onboarding-concentrate");
