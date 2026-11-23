@@ -517,21 +517,24 @@ export function mcpRoutes(ctx: RouterContext) {
             let seqs: Array<{ threadId: string; seq: number }> = [];
             // Under allBots the assignments stay as they were, so choosing agents again restores them.
             if (!input.allBots) {
-              const botIds = [...new Set(input.botIds)];
+              const requested = [...new Set(input.botIds)];
               // Any bot in the Space can use the member's own servers, as assignments.replace allows.
               const bots = await tx.bot.findMany({
-                where: { spaceId: owner.spaceId, id: { in: botIds } },
-                select: { id: true },
+                where: { spaceId: owner.spaceId, id: { in: requested } },
+                select: { id: true, archivedAt: true },
               });
-              if (bots.length !== botIds.length) throw new IsolationError();
+              if (bots.length !== requested.length) throw new IsolationError();
+              // A bot archived since the choice was loaded is no longer offered, so it gains nothing.
+              const botIds = bots.filter((bot) => !bot.archivedAt).map((bot) => bot.id);
               // Archived bots are not offered to choose from, so their assignments stay for a restore.
               const previous = await tx.botMcpServer.findMany({
                 where: { ...owner, serverId: server.id, bot: { archivedAt: null } },
                 select: { botId: true },
               });
+              // A bot named in the choice is never removed, even one restored since the read above.
               const removed = previous
                 .map((row) => row.botId)
-                .filter((botId) => !botIds.includes(botId));
+                .filter((botId) => !requested.includes(botId));
               await tx.botMcpServer.deleteMany({
                 where: { ...owner, serverId: server.id, botId: { in: removed } },
               });
