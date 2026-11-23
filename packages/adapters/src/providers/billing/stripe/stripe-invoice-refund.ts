@@ -83,11 +83,6 @@ export async function stripeInvoiceRefund(
       ),
     );
   const charge = intent.latest_charge;
-  // One-time credits are bought through a checkout session, which their purchase is listed under.
-  const [session] = await api.listPages(
-    `/v1/checkout/sessions?payment_intent=${encodeURIComponent(payment.payment.payment_intent)}`,
-    z.object({ id: z.string(), mode: z.string() }),
-  );
   if (
     !charge?.paid ||
     !charge.captured ||
@@ -98,6 +93,15 @@ export async function stripeInvoiceRefund(
     charge.payment_method_details?.type !== "card"
   )
     throw new ClientError("CONFLICT", "The invoice must match a settled, undisputed card charge");
+
+  // One-time credits are bought through a checkout session, which their purchase is listed under.
+  // Only the preview's credit summary needs it, so a confirmation never waits on it.
+  const [session] = confirm
+    ? []
+    : await api.listPages(
+        `/v1/checkout/sessions?payment_intent=${encodeURIComponent(payment.payment.payment_intent)}`,
+        z.object({ id: z.string(), mode: z.string() }),
+      );
 
   const result = {
     invoiceId: invoice.id,

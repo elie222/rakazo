@@ -189,10 +189,11 @@ async function refundBilling(
       : `${refund.amountMinor} minor units of ${refund.currency.toUpperCase()}`;
   // Only context for the operator: a refund already sent must still report its outcome.
   const [credits, plan] = await Promise.all([
-    bestEffort("read refund credit summary", invoiceCredits(context, organizationId, refund)),
+    bestEffort("read refund credit summary", invoiceCredits(context, organizationId, match.refund)),
     bestEffort("read refund subscription", provider.getCustomerSubscription(customerId)),
   ]);
-  const renews = !!plan && plan.status !== "canceled" && !plan.cancelAtPeriodEnd;
+  const renews =
+    plan === undefined ? null : !!plan && plan.status !== "canceled" && !plan.cancelAtPeriodEnd;
   const reference = refund.invoiceNumber ?? refund.invoiceId;
   return {
     text: [
@@ -202,6 +203,9 @@ async function refundBilling(
         ? `Add ${reference} --confirm to refund the full charge.`
         : status,
       ...(renews ? ["The subscription still renews. Stop it with billing cancel."] : []),
+      ...(renews === null
+        ? ["Could not read the subscription. Check whether it still renews."]
+        : []),
     ].join("\n"),
     json: { organizationId, ...refund, credits, subscriptionRenews: renews },
   };
