@@ -14,7 +14,7 @@ const id = z.string().uuid();
 const date = z.iso.datetime({ offset: true }).transform((value) => new Date(value));
 const metadata = z.object({ meetingSessionId: z.string().max(128).optional() }).optional();
 const botRef = z.object({ id, metadata });
-const completedBotRefusal = z.object({ code: z.literal("cannot_command_completed_bot") });
+const botCommandRefusal = z.object({ code: z.string().min(1) });
 const recording = z.object({ id, status: z.object({ code: z.string() }).optional() });
 const artifact = z.object({
   id,
@@ -154,7 +154,11 @@ export class RecallMeetingProvider implements MeetingProvider {
     const response = await this.call(`bot/${id.parse(externalId)}/leave_call/`, signal, "POST");
     if (response.status !== 400) cancelResponseBody(response);
     if (response.ok) return undefined;
-    const completed = response.status === 400 && (await isCompletedBotRefusal(response, signal));
+    const refusal =
+      response.status === 400 ? await classifyBotCommandRefusal(response, signal) : undefined;
+    const error = new Error(
+      `Meeting provider could not remove participant (HTTP ${response.status})`,
+    );
     if (response.status === 400 || response.status === 404) {
       const actual = await this.get(externalId, signal);
       if (!actual) return { externalId, occurredAt: new Date(), status: "ended" as const };
@@ -167,9 +171,15 @@ export class RecallMeetingProvider implements MeetingProvider {
       }
       // Recall can refuse commands as soon as the bot starts shutting down.
       // Keep the observed status authoritative while shutdown is still in progress.
-      if (completed) return undefined;
+      if (refusal === "completed_bot") return undefined;
+      if (refusal) {
+        // The existing error report serializes the cause. Keep it limited to normalized values.
+        error.cause = new Error(
+          `Meeting leave refusal: ${refusal} (follow-up status: ${actual.status ?? "unknown"})`,
+        );
+      }
     }
-    throw new Error(`Meeting provider could not remove participant (HTTP ${response.status})`);
+    throw error;
   }
 
   async requestTranscript(recordingId: string, signal: AbortSignal) {
@@ -347,12 +357,23 @@ export class RecallMeetingProvider implements MeetingProvider {
   }
 }
 
-async function isCompletedBotRefusal(response: Response, signal: AbortSignal) {
+async function classifyBotCommandRefusal(response: Response, signal: AbortSignal) {
   try {
     const body = await readBoundedJsonResponse<unknown>(response, 8 * 1024, signal);
-    return completedBotRefusal.safeParse(body).success;
+    const parsed = botCommandRefusal.safeParse(body);
+    if (!parsed.success) return "unreadable_invalid_or_missing";
+    switch (parsed.data.code) {
+      case "cannot_command_completed_bot":
+        return "completed_bot";
+      case "cannot_command_unstarted_bot":
+        return "unstarted_bot";
+      default:
+        return "other_code";
+    }
   } catch (error) {
-    if (error instanceof SyntaxError || error instanceof ResponseBodyTooLargeError) return false;
+    if (error instanceof SyntaxError || error instanceof ResponseBodyTooLargeError) {
+      return "unreadable_invalid_or_missing";
+    }
     throw error;
   }
 }
