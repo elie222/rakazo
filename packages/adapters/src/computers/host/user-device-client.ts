@@ -17,7 +17,8 @@ import {
 export const USER_DEVICE_MAX_MESSAGE_BYTES = HOST_COMPUTER_MAX_BYTES + 4096;
 const PING_INTERVAL_MS = 30_000;
 const BUSY_MESSAGE = "Local computer is busy. Try again shortly.";
-const NOT_ALLOWED_MESSAGE = "Not allowed on this computer";
+const NOT_ALLOWED_MESSAGE =
+  'Not allowed on this computer. Turn on "Let bots use this computer" in Settings → Computers.';
 
 export interface UserDeviceClientOptions {
   serverUrl: string;

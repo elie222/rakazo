@@ -55,6 +55,7 @@ export interface RakazoDesktopDevice {
   deviceId: string | null;
   name: string;
   allowed: boolean;
+  declined?: boolean;
 }
 
 /**

@@ -11,7 +11,11 @@ import { useQueryUserId, useSave } from "../../lib/query/query";
 import { rpc } from "../../lib/query/rpc";
 import { SettingsGroup, SettingsRow } from "../settings/SettingsRows";
 
-type ThisComputer = { allowed: boolean; setAllowed: (allowed: boolean) => Promise<unknown> };
+type ThisComputer = {
+  allowed: boolean;
+  declined?: boolean;
+  setAllowed: (allowed: boolean) => Promise<unknown>;
+};
 
 /** A remote server pairs this computer; the app-managed local stack runs bots on it directly. */
 async function thisComputerAccess(
@@ -19,7 +23,8 @@ async function thisComputerAccess(
 ): Promise<ThisComputer | null> {
   const device = desktop?.device;
   const paired = await device?.state().catch(() => null);
-  if (device && paired) return { allowed: paired.allowed, setAllowed: device.setAllowed };
+  if (device && paired)
+    return { allowed: paired.allowed, declined: paired.declined, setAllowed: device.setAllowed };
   const computer = desktop?.computer;
   if (!computer?.managesHostChoice) return null;
   const me = await rpc.me();
@@ -124,7 +129,13 @@ export function ComputerDeviceSettings() {
               }
             />
           }
-        />
+        >
+          {thisComputer.declined ? (
+            <p className="text-body-sm text-muted-foreground">
+              <Trans>Declined on this computer</Trans>
+            </p>
+          ) : null}
+        </SettingsRow>
       ) : null}
       {devicesFailed ? (
         <SettingsRow

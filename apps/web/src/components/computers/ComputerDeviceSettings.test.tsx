@@ -140,11 +140,11 @@ it("lists computers with their status and removes one", async () => {
 
 it("turns this computer on and off through the desktop app only", async () => {
   vi.mocked(listUserDevices).mockResolvedValue([]);
-  const state = { deviceId: null, name: "Laptop", allowed: false };
+  const state = { deviceId: "d1", name: "Laptop", allowed: false, declined: true };
   const device = {
     state: vi.fn(async () => state),
     setAllowed: vi.fn(async (allowed: boolean) => {
-      Object.assign(state, { allowed, deviceId: "d1" });
+      Object.assign(state, { allowed, declined: !allowed });
       return state;
     }),
   };
@@ -152,12 +152,14 @@ it("turns this computer on and off through the desktop app only", async () => {
   await renderSettings();
   const toggle = host.querySelector<HTMLInputElement>('[data-testid="this-computer-toggle"]')!;
   expect(host.textContent).toContain("Let bots use this computer");
+  expect(host.textContent).toContain("Declined on this computer");
   expect(toggle.checked).toBe(false);
 
   vi.mocked(listUserDevices).mockResolvedValue([laptop]);
   await act(async () => toggle.click());
   expect(device.setAllowed).toHaveBeenCalledWith(true);
   expect(toggle.checked).toBe(true);
+  expect(host.textContent).not.toContain("Declined on this computer");
   expect(host.textContent).toContain("LaptopConnected");
 });
 
@@ -182,9 +184,11 @@ it("shows every connected computer as connected", async () => {
 
 it("stays off and reports it when turning this computer on fails", async () => {
   vi.mocked(listUserDevices).mockResolvedValue([]);
+  let declined = true;
   const device = {
-    state: vi.fn(async () => ({ deviceId: null, name: "Laptop", allowed: false })),
+    state: vi.fn(async () => ({ deviceId: null, name: "Laptop", allowed: false, declined })),
     setAllowed: vi.fn(async () => {
+      declined = false;
       throw new Error("Could not pair this computer");
     }),
   };
@@ -193,6 +197,8 @@ it("stays off and reports it when turning this computer on fails", async () => {
   const toggle = host.querySelector<HTMLInputElement>('[data-testid="this-computer-toggle"]')!;
   await act(async () => toggle.click());
   expect(device.setAllowed).toHaveBeenCalledWith(true);
+  expect(device.state).toHaveBeenCalledTimes(2);
+  expect(host.textContent).not.toContain("Declined on this computer");
   expect(toggle.checked).toBe(false);
   expect(host.querySelector('[role="alert"]')?.textContent).toBe("Could not change");
 });

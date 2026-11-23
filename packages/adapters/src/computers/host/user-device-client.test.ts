@@ -199,7 +199,10 @@ describe("user device client", () => {
     expect(received[0]).toEqual({
       type: "frame",
       id: "a",
-      frame: { error: "Not allowed on this computer" },
+      frame: {
+        error:
+          'Not allowed on this computer. Turn on "Let bots use this computer" in Settings → Computers.',
+      },
     });
 
     ws.send(
@@ -259,7 +262,8 @@ describe("user device client", () => {
     await until(() => received.some((frame) => frame.id === "long" && "error" in frame.frame));
     await until(() => received.some((frame) => frame.id === "wait"));
     expect(received.find((frame) => frame.id === "wait")?.frame).toEqual({
-      error: "Not allowed on this computer",
+      error:
+        'Not allowed on this computer. Turn on "Let bots use this computer" in Settings → Computers.',
     });
     answer?.resolve(true);
     ask = false;
