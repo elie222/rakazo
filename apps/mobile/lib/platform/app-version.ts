@@ -1,4 +1,5 @@
 import { ph, t } from "@lingui/core/macro";
+import { AnalyticsAppVersion } from "@rakazo/contracts";
 import * as Application from "expo-application";
 import Constants from "expo-constants";
 import * as Updates from "expo-updates";
@@ -113,9 +114,8 @@ export function analyticsAppVersion(): string | undefined {
     // Hosts without the native module fall back to the expo config below.
   }
   version ??= fallbackNativeVersion().version;
-  if (!version || !/^\d+(\.\d+){0,3}$/.test(version)) return undefined;
+  if (!version) return undefined;
   const update = resolveUpdateIdentity();
-  return update.kind === "ota" && /^[0-9a-f]{8}$/.test(update.id)
-    ? `${version}+${update.id}`
-    : version;
+  const candidate = update.kind === "ota" ? `${version}+${update.id}` : version;
+  return AnalyticsAppVersion.safeParse(candidate).success ? candidate : undefined;
 }

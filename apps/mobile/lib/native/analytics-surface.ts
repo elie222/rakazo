@@ -12,6 +12,7 @@ export function analyticsClient(): {
   appVersion?: string;
 } {
   const surface = analyticsSurface();
+  if (!surface) return {};
   const appVersion = analyticsAppVersion();
-  return { ...(surface ? { surface } : {}), ...(appVersion ? { appVersion } : {}) };
+  return { surface, ...(appVersion ? { appVersion } : {}) };
 }
