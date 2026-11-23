@@ -8,8 +8,16 @@ import {
   COMPUTER_UNRESPONSIVE_ERROR,
   isComputerAllowanceUsed,
 } from "@rakazo/contracts";
-import { ComputerRecoveryRequiredError } from "../../computers/computer-lifecycle.js";
-import { ComputerWaitTimedOutError } from "../../computers/run-computer-wait.js";
+import {
+  ComputerBusyError,
+  ComputerRecoveryRequiredError,
+  ComputerSpaceDeletingError,
+  provisionComputer,
+} from "../../computers/computer-lifecycle.js";
+import {
+  ComputerWaitTimedOutError,
+  startComputerWaitingOutBusy,
+} from "../../computers/run-computer-wait.js";
 import { isSandboxDamagedError } from "../../computers/sandbox/sandbox-errors.js";
 
 const COMPUTER_RUN_ERRORS = new Set([
@@ -84,4 +92,20 @@ export function lazyRunComputer(start: () => Promise<ComputerRef>, onFailure?: (
       if (failed) throw failure;
     },
   };
+}
+
+/**
+ * Start the bot's computer for a run. A busy computer is waited out, bounded, instead of failing
+ * the run and replaying it; a Space being deleted is not.
+ */
+export function provisionRunComputer(
+  deps: Parameters<typeof provisionComputer>[0],
+  computerId: string,
+  context: Parameters<typeof provisionComputer>[2],
+): Promise<ComputerRef> {
+  return startComputerWaitingOutBusy(
+    () => provisionComputer(deps, computerId, context, "bot"),
+    (error) => error instanceof ComputerBusyError && !(error instanceof ComputerSpaceDeletingError),
+    context.signal,
+  );
 }
