@@ -594,8 +594,9 @@ export function resumingCheckpointCalls(
 ) {
   try {
     return resumingTurnCheckpointCalls(restoreTurnCheckpoint(turnCheckpoint, model));
-  } catch {
-    // Restoring it falls back the same way.
+  } catch (error) {
+    // Restoring it falls back the same way, so the computer check has nothing to wait for.
+    getLogger().warn("run.turn_checkpoint_unreadable", { error });
     return [];
   }
 }
