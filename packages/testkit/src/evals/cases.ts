@@ -135,6 +135,8 @@ export type EvalCase = {
   botSetup?: BotSetup;
   /** The bot's MEMORY.md, written through the memory API before the first step. */
   botMemory?: string;
+  /** The bot's other private memory documents by path, as an agent import leaves them. */
+  botMemoryDocuments?: Record<string, string>;
   taughtSkill?: true;
   history?: ReturnType<typeof historyFixture>;
   configure?: (services: EvalServices) => void;

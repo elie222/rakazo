@@ -1257,6 +1257,26 @@ describe("built-in public compatible host", () => {
     expect(String(transport.mock.calls[0]?.[0])).toBe("https://ollama.com/api/balance");
     expect(transport).toHaveBeenCalledTimes(2);
   });
+  it("verifies a DeepInfra key and lists only its chat models", async () => {
+    const transport = vi.fn(async (input: RequestInfo | URL) =>
+      String(input).endsWith("/v1/me")
+        ? new Response(null)
+        : Response.json({
+            data: [
+              { id: "chat-model", metadata: { tags: ["chat", "vision"] } },
+              { id: "embedding-model", metadata: { tags: ["embeddings"] } },
+              { id: "untagged-model", metadata: null },
+            ],
+          }),
+    );
+    await expect(
+      probeOpenAiCompatibleModels(
+        { baseUrl: "https://api.deepinfra.com/v1/openai", apiKey: "fake-key" },
+        transport,
+      ),
+    ).resolves.toEqual(["chat-model", "untagged-model"]);
+    expect(String(transport.mock.calls[0]?.[0])).toBe("https://api.deepinfra.com/v1/me");
+  });
   it("does not verify unrelated compatible servers and rejects missing keys", async () => {
     const transport = vi.fn();
     await verifyOpenAiCompatibleApiKey({ baseUrl: "https://other.test/v1" }, transport);
