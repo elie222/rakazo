@@ -260,8 +260,11 @@ export function useThreadVoiceCall({
           })
           .catch(() => undefined);
       }
-    } catch {
-      if (activeBotId.current === targetBotId) router.push("/voice");
+    } catch (err) {
+      // A failed check is not missing setup: show why instead of opening Voice settings.
+      if (activeBotId.current === targetBotId) {
+        Alert.alert(t`Could not start the call`, errorText(err, t`Try again.`));
+      }
     } finally {
       voiceCallStarting.current = false;
     }

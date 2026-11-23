@@ -3,6 +3,7 @@
 import { act, createElement } from "react";
 import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
+import { Alert } from "react-native";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { MobileBot, MobileMessage, MobileSnapshot } from "../api/mobile-types";
 import { blockText } from "../api/mobile-types";
@@ -11,12 +12,14 @@ import type { CallState } from "../calls/call-session";
 import { getSnapshot as getCallSnapshot, startCall } from "../calls/call-session";
 import { loadCallGreetingEnabled } from "../calls/call-sounds";
 import { takeShortcutVoiceChat } from "../calls/voice-chat-intent";
+import { loadDeviceVoiceEnabled } from "../voice/device-voice";
 import { speakQueue, speakText } from "../voice/voice";
 import { useAutoSpeakReply, useSpeakMessages, useThreadVoiceCall } from "./thread-voice";
 
+const router = vi.hoisted(() => ({ push: vi.fn(), replace: vi.fn() }));
 vi.mock("expo-router", () => ({
   useNavigation: () => ({ isFocused: () => true }),
-  useRouter: () => ({ push: vi.fn(), replace: vi.fn() }),
+  useRouter: () => router,
 }));
 vi.mock("react-native", () => ({
   Alert: { alert: vi.fn() },
@@ -52,7 +55,7 @@ vi.mock("../calls/call-session", () => ({
   startCall: vi.fn(() => "call-1"),
 }));
 vi.mock("../calls/call-sounds", () => ({ loadCallGreetingEnabled: vi.fn(async () => true) }));
-vi.mock("../voice/device-voice", () => ({ loadDeviceVoiceEnabled: async () => true }));
+vi.mock("../voice/device-voice", () => ({ loadDeviceVoiceEnabled: vi.fn(async () => true) }));
 vi.mock("../voice/dictation", () => ({ available: async () => true }));
 vi.mock("../voice/voice", () => ({
   speakQueue: vi.fn(async () => true),
@@ -98,6 +101,8 @@ describe("useThreadVoiceCall hand-over", () => {
   beforeEach(async () => {
     vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
     vi.mocked(startCall).mockClear();
+    router.push.mockClear();
+    vi.mocked(Alert.alert).mockClear();
     vi.mocked(takeShortcutVoiceChat).mockReset().mockReturnValue(false);
     vi.mocked(loadCallGreetingEnabled).mockReset().mockResolvedValue(true);
     await saveSessionToken("fake-token-a");
@@ -144,6 +149,17 @@ describe("useThreadVoiceCall hand-over", () => {
         }),
       }),
     );
+  });
+
+  it("shows why a call could not start instead of opening Voice settings", async () => {
+    vi.mocked(loadDeviceVoiceEnabled).mockResolvedValueOnce(false);
+    render("riley");
+    await act(async () => {
+      await startVoiceCall?.();
+    });
+    expect(startCall).not.toHaveBeenCalled();
+    expect(router.push).not.toHaveBeenCalled();
+    expect(Alert.alert).toHaveBeenCalledWith("Could not start the call", "Unauthorized");
   });
 
   it("starts fresh and put-through calls straight to listening with the greeting off", async () => {
