@@ -204,6 +204,7 @@ async function* spaceRecords(
         groupId: ownGroup(page.groupId),
         title: page.title,
         pinnedAt: isoOrNull(page.pinnedAt),
+        chatUpdates: page.chatUpdates,
         currentVersion: page.currentVersion,
         createdAt: iso(page.createdAt),
         updatedAt: iso(page.updatedAt),

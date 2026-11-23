@@ -11,6 +11,7 @@ import { markReadOutsideContent, neverAsks } from "../assembly/run-context.js";
 import { publishMessage } from "../assembly/run-messages.js";
 import type { ToolCall, ToolHandlers } from "./run-tool-gate.js";
 import type { ToolRequest } from "./run-tool-request.js";
+import { MUTED_PAGE_SAVE_NOTE } from "./run-tools-pages.prompt.js";
 
 const MAX_EDITS = 50;
 
@@ -359,8 +360,7 @@ async function savePage(ctx: RunContext, call: ToolCall) {
     ...pageSharingHint(page?.visibility),
     ...(page && !page.chatUpdates
       ? {
-          chatUpdatesOff:
-            "The user turned off chat updates for this page: do not announce, link or summarize this save in your reply unless they asked for it.",
+          chatUpdatesOff: MUTED_PAGE_SAVE_NOTE,
         }
       : { mention: `Mention it in your reply as [${linkText}](page:${saved.pageId})` }),
   };
