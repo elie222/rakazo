@@ -7,6 +7,7 @@ import type {
 } from "@rakazo/adapter-kit";
 import { LAST_SIGN_IN_COOKIE, PartnerClickId, SignupAttribution } from "@rakazo/contracts";
 import {
+  canonicalEmail,
   displayName,
   emailAllowed,
   isMessagingEmail,
@@ -295,6 +296,7 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
               clientId: google.clientId,
               clientSecret: google.clientSecret,
               mapProfileToUser: async (profile) => ({
+                ...(profile.email ? { email: canonicalEmail(profile.email) } : {}),
                 // An explicit link already proves control of the local account through
                 // signed OAuth state; historical mailbox proof alone never admits signup.
                 emailVerified:
@@ -394,7 +396,7 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
         const builtinSocial = providerId === "google" || providerId === "apple";
         if (!builtinSocial && providerId !== "oidc") return;
         const verified = user.emailVerified === true;
-        const email = String(user.email ?? "").toLowerCase();
+        const email = canonicalEmail(String(user.email ?? ""));
         if (isMessagingEmail(email)) return { error: "EMAIL_NOT_AVAILABLE" };
         if (source.action === "create-user") {
           const policy = admission(ctx?.headers);
@@ -412,7 +414,7 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
             if (!verified) return { error: "unable_to_link_account" };
             const target = await ctx.context.internalAdapter.findUserById(String(user.id));
             if (!target?.emailVerified) return { error: "unable_to_link_account" };
-            if (target.email.toLowerCase() !== email) return { error: "email_does_not_match" };
+            if (canonicalEmail(target.email) !== email) return { error: "email_does_not_match" };
           }
           return;
         }
@@ -435,19 +437,25 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
           return;
         }
         if (source.action === "sign-in" && user.id) {
-          const collision = await ctx.context.internalAdapter.findUserByEmail(email);
-          if (collision && collision.user.id !== user.id) return { error: "account_not_linked" };
           const stored = await ctx.context.internalAdapter.findUserById(user.id);
+          // The same mailbox keeps its stored spelling, which an account made before
+          // addresses were canonical may share with another account.
+          const sameMailbox = Boolean(stored && canonicalEmail(stored.email) === email);
+          if (!sameMailbox) {
+            const collision = await ctx.context.internalAdapter.findUserByEmail(email);
+            if (collision && collision.user.id !== user.id) return { error: "account_not_linked" };
+          }
           const credential = await ctx.context.internalAdapter.findCredentialAccount(user.id);
-          if (credential?.password && stored?.email.toLowerCase() !== email)
-            return { error: "email_does_not_match" };
+          if (credential?.password && !sameMailbox) return { error: "email_does_not_match" };
           // A previous verified claim must not mask a later false/missing claim, and an
           // unverified claim must not move the account onto an address nobody proved.
           await ctx.context.internalAdapter.updateUser(
             user.id,
-            verified || stored?.email.toLowerCase() === email
-              ? { email, emailVerified: verified }
-              : { emailVerified: false },
+            sameMailbox
+              ? { emailVerified: verified }
+              : verified
+                ? { email, emailVerified: verified }
+                : { emailVerified: false },
           );
         }
       },
@@ -576,10 +584,14 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
             throw new APIError("BAD_REQUEST", { message: "Invalid authorizationURL" });
           }
         }
-        for (const value of [ctx.body?.email, ctx.body?.newEmail]) {
-          if (typeof value === "string" && isMessagingEmail(value)) {
+        // One mailbox is one account: every lookup and write sees the stored form.
+        for (const field of ["email", "newEmail"] as const) {
+          const value = ctx.body?.[field];
+          if (typeof value !== "string") continue;
+          if (isMessagingEmail(value)) {
             throw new APIError("BAD_REQUEST", { message: "Email is not available" });
           }
+          ctx.body[field] = canonicalEmail(value);
         }
         if (
           env.passwordAuth === false &&
@@ -611,9 +623,7 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
           // A code for an unknown address creates an account, so it passes the
           // same registration policy as password signup. A refused address is
           // answered like any other so replies do not reveal which accounts exist.
-          const email = String(ctx.body?.email ?? "")
-            .trim()
-            .toLowerCase();
+          const email = String(ctx.body?.email ?? "");
           if (!(await ctx.context.internalAdapter.findUserByEmail(email))) {
             const policy = admission(ctx.headers);
             if (!policy.enabled || !emailAllowed(email, policy.allowlist)) {
@@ -916,6 +926,7 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
             return {
               data: {
                 ...user,
+                ...(user.email ? { email: canonicalEmail(user.email) } : {}),
                 signupSurface: attribution.surface,
                 signupUtmSource: attribution.utmSource,
                 signupUtmMedium: attribution.utmMedium,
@@ -937,6 +948,7 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
             return {
               data: {
                 ...user,
+                ...(user.email ? { email: canonicalEmail(user.email) } : {}),
                 ...(user.name !== undefined ? { name: displayName(user.name, "") } : {}),
               },
             };

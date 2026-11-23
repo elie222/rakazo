@@ -1,6 +1,7 @@
 import { ORPCError } from "@orpc/server";
 import type { AccessGrant, AccessGrantInput } from "@rakazo/contracts";
 import { AccessGrantInputSchema } from "@rakazo/contracts";
+import { canonicalEmail } from "@rakazo/core";
 import type { Prisma, PrismaClient } from "@rakazo/db";
 import { extendByokFreePeriod, FREE_MONTH_DAYS, reconcileCreditPurchase } from "@rakazo/db";
 
@@ -38,7 +39,10 @@ export async function createAccessGrant(
 ): Promise<AccessGrant> {
   const data = AccessGrantInputSchema.parse(input);
   return accessGrantDto(
-    await prisma.accessGrant.create({ data: { ...data, createdById }, include: WITH_CREATOR }),
+    await prisma.accessGrant.create({
+      data: { ...data, email: canonicalEmail(data.email), createdById },
+      include: WITH_CREATOR,
+    }),
   );
 }
 
@@ -65,7 +69,7 @@ export async function applyAccessGrants(
     OR: [{ organizationId: null }, { organizationId }],
   };
   const grants = await prisma.accessGrant.findMany({
-    where: { email: input.email.toLowerCase(), ...pending },
+    where: { email: canonicalEmail(input.email), ...pending },
   });
   if (grants.length === 0) return;
   const user = await prisma.user.findUnique({

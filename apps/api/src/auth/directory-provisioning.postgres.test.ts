@@ -342,6 +342,46 @@ describePostgres("directory provisioning over SCIM (PostgreSQL)", () => {
     expect(await system.scimUser.findFirstOrThrow({ where: { userId: user.id } })).toBeTruthy();
   });
 
+  it("links a Gmail account by its own spelling and keeps a made account on gmail.com", async () => {
+    // A pair kept under both spellings from before addresses were canonical.
+    const kept = await system.user.create({
+      data: {
+        id: "kept-googlemail",
+        name: "Kept",
+        email: "kept@googlemail.com",
+        emailVerified: true,
+      },
+    });
+    await system.user.create({
+      data: { id: "kept-twin", name: "Twin", email: "kept@gmail.com", emailVerified: true },
+    });
+    const linked = await scim(
+      "POST",
+      "/Users",
+      userResource("kept@googlemail.com", "directory-kept"),
+    );
+    expect(linked.status).toBe(201);
+    expect(await system.scimUser.findFirstOrThrow({ where: { userId: kept.id } })).toBeTruthy();
+
+    // An account the directory made is saved, and kept, as gmail.com.
+    const made = await scim(
+      "POST",
+      "/Users",
+      userResource("made@googlemail.com", "directory-made"),
+    );
+    expect(made.status).toBe(201);
+    const { id } = (await made.json()) as { id: string };
+    expect((await accountOf("made@gmail.com")).id).toEqual(expect.any(String));
+    const replaced = await scim(
+      "PUT",
+      `/Users/${id}`,
+      userResource("made@googlemail.com", "directory-made"),
+    );
+    expect(replaced.status).toBe(200);
+    expect(await system.user.count({ where: { email: "made@googlemail.com" } })).toBe(0);
+    expect((await accountOf("made@gmail.com")).id).toEqual(expect.any(String));
+  });
+
   it("leaves two accounts that differ only by case to the operator", async () => {
     await system.user.createMany({
       data: [

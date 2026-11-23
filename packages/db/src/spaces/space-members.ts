@@ -1,5 +1,5 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
-import { ClientError, displayName } from "@rakazo/core";
+import { ClientError, canonicalEmail, displayName } from "@rakazo/core";
 import { GUEST_ROLE, isOwnerRole } from "../billing/billing.js";
 import { computerScopeKey, userControlHeldBy } from "../computers/computers.js";
 import type { PrismaClient } from "../database/client.js";
@@ -14,7 +14,6 @@ import type { RunTeardownTarget } from "./groups.js";
 import { snapshotRunTeardownTargets } from "./groups.js";
 import {
   invitationEmailAllowance,
-  normalizeEmail,
   OrganizationAdminRequiredError,
   organizationRole,
   recordInvitationEmail,
@@ -270,7 +269,7 @@ export async function createSpaceInvite(
 }> {
   const token = randomBytes(32).toString("base64url");
   const expiresAt = new Date(Date.now() + SPACE_INVITE_TTL_MS);
-  const to = input.email && normalizeEmail(input.email.address);
+  const to = input.email && canonicalEmail(input.email.address);
   const mail =
     input.email && to ? { ...input.email, to, recipient: input.email.recipientKey(to) } : null;
   const email = await prisma.$transaction(async (tx) => {

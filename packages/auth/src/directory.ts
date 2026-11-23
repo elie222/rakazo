@@ -1,5 +1,5 @@
 import type { SCIMOptions } from "@better-auth/scim";
-import { displayName, isMessagingEmail } from "@rakazo/core";
+import { canonicalEmail, displayName, isMessagingEmail } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import type { BetterAuthOptions } from "better-auth";
 import { betterAuth } from "better-auth";
@@ -50,25 +50,33 @@ export async function createDirectory(
   const { scim } = await import("@better-auth/scim");
   const identity: SCIMOptions["identity"] = {
     resolveUser: async ({ resource }, { database }) => {
-      const email = resource.primaryEmail.toLowerCase();
+      const typed = resource.primaryEmail.trim().toLowerCase();
+      const email = canonicalEmail(typed);
       // Messaging addresses belong to chat-app accounts; creating one is refused below.
       if (isMessagingEmail(email)) return { action: "create" };
       type Match = { id: string; emailVerified: boolean };
-      // Accounts store emails lowercased. One an older release wrote with capitals is found
-      // by case; two that differ only by case are a conflict for the operator to resolve.
-      const exact = await database.findOne<Match>({
-        model: "user",
-        where: [{ field: "email", value: email }],
-      });
-      const [existing, other] = exact
-        ? [exact]
-        : await database.findMany<Match>({
-            model: "user",
-            where: [{ field: "email", value: email, mode: "insensitive" }],
-            limit: 2,
-          });
-      if (other)
-        throw new APIError("CONFLICT", { message: "More than one account has this email" });
+      // Accounts store emails canonical and lowercased. The spelling sent is tried first, so an
+      // account kept under it from before addresses were canonical is not taken for its twin.
+      // One an older release wrote with capitals is found by case; two that differ only by
+      // case are a conflict for the operator to resolve.
+      let existing: Match | undefined;
+      for (const value of new Set([typed, email])) {
+        const exact = await database.findOne<Match>({
+          model: "user",
+          where: [{ field: "email", value }],
+        });
+        const [match, other] = exact
+          ? [exact]
+          : await database.findMany<Match>({
+              model: "user",
+              where: [{ field: "email", value, mode: "insensitive" }],
+              limit: 2,
+            });
+        if (other)
+          throw new APIError("CONFLICT", { message: "More than one account has this email" });
+        existing = match;
+        if (existing) break;
+      }
       if (!existing) return { action: "create" };
       // Only a proven mailbox is the directory's person: anyone could have signed up with the
       // address first.
@@ -92,11 +100,24 @@ export async function createDirectory(
       if (changed || !active) options.onAccountChange({ userId, active, changed });
     },
   };
+  // An address is saved canonical, except for a pair kept under both spellings from before
+  // addresses were canonical: the account stored under its own spelling keeps it.
+  const storedEmail = async (address: string) => {
+    const email = canonicalEmail(address);
+    const typed = address.trim().toLowerCase();
+    if (typed === email) return email;
+    const stored = await prisma.user.count({ where: { email: { in: [typed, email] } } });
+    return stored === 2 ? typed : email;
+  };
   const userData = async (user: { email?: string; name?: string }) => {
     if (user.email && isMessagingEmail(user.email))
       throw new APIError("BAD_REQUEST", { message: "Email is not available" });
     return {
-      data: { ...user, ...(user.name !== undefined ? { name: displayName(user.name, "") } : {}) },
+      data: {
+        ...user,
+        ...(user.email ? { email: await storedEmail(user.email) } : {}),
+        ...(user.name !== undefined ? { name: displayName(user.name, "") } : {}),
+      },
     };
   };
   return betterAuth({

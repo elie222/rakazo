@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { canonicalEmail } from "@rakazo/core";
 import type { BetterAuthPlugin } from "better-auth";
 import { APIError, getOAuthState } from "better-auth/api";
 import { genericOAuth } from "better-auth/plugins";
@@ -35,7 +36,10 @@ export function oidcDiscovery(config: OidcConfig) {
           return oidcAccountSubject(config.issuer, profile.sub);
         },
         requireIdTokenVerification: true,
-        mapProfileToUser: (profile) => ({ emailVerified: profile.email_verified === true }),
+        mapProfileToUser: (profile) => ({
+          ...(typeof profile.email === "string" ? { email: canonicalEmail(profile.email) } : {}),
+          emailVerified: profile.email_verified === true,
+        }),
       },
     ],
   });

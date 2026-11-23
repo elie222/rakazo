@@ -1,3 +1,5 @@
+import { canonicalEmail, canonicalEmailDomain } from "./email-address.js";
+
 export function parseAllowlist(raw: string | undefined): string[] {
   if (!raw) return [];
   return raw
@@ -8,12 +10,12 @@ export function parseAllowlist(raw: string | undefined): string[] {
 
 export function emailAllowed(email: string, allowlist: string[]): boolean {
   if (allowlist.length === 0) return true;
-  const normalized = email.trim().toLowerCase();
+  const normalized = canonicalEmail(email);
   const parts = normalized.split("@");
   const domain = parts.length === 2 ? parts[1] : undefined;
   return allowlist.some((entry) => {
-    if (entry.startsWith("@")) return domain === entry.slice(1);
-    return normalized === entry;
+    if (entry.startsWith("@")) return domain === canonicalEmailDomain(entry.slice(1));
+    return normalized === canonicalEmail(entry);
   });
 }
 

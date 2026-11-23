@@ -1,7 +1,9 @@
 // Operator control: model-credit-cap.js set <email> <total-usd> | clear|status <email>
+
 import { contentKeyProviderFromEnv, unwrapEnvFromKeyManager } from "@rakazo/adapters";
 import { createDb, modelCreditCapStatus, runAsSystem, setModelCreditCap } from "@rakazo/db";
 import { loadEnv } from "../env.js";
+import { accountByEmail } from "./account-by-email.js";
 
 const [action, address, dollars, ...extra] = process.argv.slice(2);
 const validAmount = dollars !== undefined && /^(?:0|[1-9]\d{0,4})(?:\.\d{1,6})?$/.test(dollars);
@@ -24,16 +26,7 @@ const env = loadEnv();
 const { prisma, pool } = createDb(env.databaseUrl, { keyProvider: contentKeyProviderFromEnv() });
 try {
   await runAsSystem("manage an account's model credit cap", async () => {
-    const email = address.trim().toLowerCase();
-    const exact = await prisma.user.findUnique({ where: { email }, select: { id: true } });
-    const matches = exact
-      ? [exact]
-      : await prisma.user.findMany({
-          where: { email: { equals: email, mode: "insensitive" } },
-          select: { id: true },
-          take: 2,
-        });
-    const user = matches.length === 1 ? matches[0] : null;
+    const user = await accountByEmail(prisma, address);
     if (!user) throw new Error("No single account has that email");
     const status =
       action === "status"

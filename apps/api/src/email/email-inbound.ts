@@ -4,7 +4,7 @@ import type { InboundEmail } from "@rakazo/adapters";
 import { INBOUND_EMAIL_MAX_BYTES, readInboundEmail } from "@rakazo/adapters";
 import type { RoutineEmailSenders } from "@rakazo/contracts";
 import { ATTACHMENT_MAX_COUNT } from "@rakazo/contracts";
-import { AttachmentValidationError, sanitizeMessagingLabel } from "@rakazo/core";
+import { AttachmentValidationError, canonicalEmail, sanitizeMessagingLabel } from "@rakazo/core";
 import { hasValidBearerToken } from "@rakazo/core/node/secrets-guard";
 import type { EmailAttachment, ThreadEvents } from "@rakazo/db";
 import {
@@ -117,7 +117,9 @@ export async function receiveBotEmail(deps: EmailInboundDeps, recipient: string,
   }
 
   const sender = email.from.address;
-  const ownerEmail = owner?.email.trim().toLowerCase() || null;
+  const senderMailbox = canonicalEmail(sender);
+  // The same mailbox under another spelling of its domain is still the owner.
+  const ownerEmail = owner ? canonicalEmail(owner.email) || null : null;
   const named = (addresses: string[]) =>
     addresses.some((address) => recipientName(address, deps.domain) === target);
   const addressed = named(email.to) || named(email.cc);
@@ -142,9 +144,9 @@ export async function receiveBotEmail(deps: EmailInboundDeps, recipient: string,
   const allowed: RoutineEmailSenders[] =
     ineligible || ownerEmail === null
       ? []
-      : sender === ownerEmail
+      : senderMailbox === ownerEmail
         ? ["owner", "domain"]
-        : domainOf(sender) === domainOf(ownerEmail)
+        : domainOf(senderMailbox) === domainOf(ownerEmail)
           ? ["domain"]
           : [];
   // Filtered in the query, so routines this sender cannot start never crowd out ones it can.
@@ -172,7 +174,10 @@ export async function receiveBotEmail(deps: EmailInboundDeps, recipient: string,
   // Without a routine, the owner's own mail to the bot starts it, as a chat message would: only
   // from an address they confirmed, and only sent to the bot, not copied on mail for someone else.
   const ownerMessage =
-    !notOwnerWords && sender === ownerEmail && owner?.emailVerified === true && named(email.to);
+    !notOwnerWords &&
+    senderMailbox === ownerEmail &&
+    owner?.emailVerified === true &&
+    named(email.to);
   const starts = matched.length > 0 || ownerMessage;
 
   // Every message is saved, whoever sent it: sign-up codes and receipts come from strangers. The
@@ -191,14 +196,15 @@ export async function receiveBotEmail(deps: EmailInboundDeps, recipient: string,
   if (!saved) return ignored("inbox full");
   if (!starts) {
     // BCC'd mail never starts anything whatever its signature, so it never earns a note either.
-    if (!email.authenticated && sender === ownerEmail && addressed) {
+    if (!email.authenticated && senderMailbox === ownerEmail && addressed) {
       await noteUnverifiedOwnerMail(
         deps,
         { id: bot.id, spaceId: bot.spaceId, threadId: bot.thread.id },
         target,
       );
     }
-    const reason = (sender === ownerEmail ? notOwnerWords : ineligible) ?? "sender not allowed";
+    const reason =
+      (senderMailbox === ownerEmail ? notOwnerWords : ineligible) ?? "sender not allowed";
     getLogger().info("inbound email saved without a run", {
       reason,
       ...(email.unauthenticatedReason
