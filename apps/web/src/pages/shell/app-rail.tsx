@@ -42,7 +42,7 @@ function AppRail() {
     <nav
       data-testid="app-rail"
       aria-label={t`Sections`}
-      className="app-drag hidden w-18 shrink-0 flex-col items-center gap-2 border-e border-sidebar-border bg-sidebar pt-4 pb-3 md:flex"
+      className="app-drag hidden w-23 shrink-0 flex-col items-center gap-2 border-e border-sidebar-border bg-sidebar pt-5 pb-3 md:flex"
     >
       {desktopBridge() ? <WindowChrome className="mb-2" /> : null}
       <RailLink to="/app" label={t`Chats`} active={!onBoard}>
