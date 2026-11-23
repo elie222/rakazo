@@ -1393,6 +1393,7 @@ export class McpOAuthBroker {
       if (
         needsMcpOAuthClient(error) ||
         (!loaded.material.oauthClient &&
+          !networkFetch.refusedRedirect() &&
           refusedRegistration(networkFetch.failedRequest(), provider.discoveryState()))
       )
         throw new McpOAuthClientRequiredError(server.revision);

@@ -2531,6 +2531,14 @@ describe("MCP OAuth", () => {
     expect(error).toBeInstanceOf(McpOAuthClientRequiredError);
   });
 
+  it("keeps a forbidden redirect address a refusal rather than asking for a client", async () => {
+    const error = await rejectedOAuthBegin(() =>
+      Response.json({ error: "invalid_redirect_uri" }, { status: 403 }),
+    );
+
+    expect(error).not.toBeInstanceOf(McpOAuthClientRequiredError);
+  });
+
   describe("with a pre-registered client", () => {
     const oauthClient = { client_id: "registered-client", client_secret: "registered-secret" };
     const AUTH_SERVER = "https://auth.example.test/";
