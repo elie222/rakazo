@@ -17,6 +17,9 @@ export function normalizeBotWorkspacePath(raw: string): string | null {
   const segments = value.replace(/\\/g, "/").split("/").filter(Boolean);
   if (segments.some((segment) => segment === "..")) return null;
   const normalized = segments.filter((segment) => segment !== ".").join("/");
+  // "bots" is where a Team Computer keeps each bot's own folder, so a custom folder may not
+  // point into another bot's.
+  if (normalized === "bots" || normalized.startsWith("bots/")) return null;
   return normalized || null;
 }
 

@@ -516,7 +516,7 @@ export function contentRoutes(ctx: RouterContext) {
           }),
           (async () => {
             const exported: ExportManifest["files"] = [];
-            const directory = resolveBotWorkspacePath(computerMode, bot.id, "");
+            const directory = resolveBotWorkspacePath(computerMode, bot.id, "", bot.workspacePath);
             // Root dotfiles contain computer state rather than portable bot files.
             for await (const file of deps.home.exportHome(homeKey, exportContext, {
               directory,

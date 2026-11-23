@@ -32,6 +32,12 @@ describe("normalizeBotWorkspacePath", () => {
     expect(normalizeBotWorkspacePath("projects/..")).toBeNull();
     expect(normalizeBotWorkspacePath("projects/.../x")).toBe("projects/.../x");
   });
+
+  it("rejects the per-bot folder root", () => {
+    expect(normalizeBotWorkspacePath("bots")).toBeNull();
+    expect(normalizeBotWorkspacePath("bots/bot-2")).toBeNull();
+    expect(normalizeBotWorkspacePath("projects/bots")).toBe("projects/bots");
+  });
 });
 
 describe("UpdateBotInput workspacePath", () => {

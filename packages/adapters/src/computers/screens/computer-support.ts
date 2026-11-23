@@ -117,7 +117,10 @@ export function teamBotWorkspaceDirectory(botId: string): string {
  */
 function customWorkspaceBase(workspacePath: string | null | undefined): string | undefined {
   if (!workspacePath) return undefined;
-  return normalizeWorkspacePath(workspacePath);
+  const normalized = normalizeWorkspacePath(workspacePath);
+  // "bots" is where each bot keeps its own folder, so never treat another bot's as this one's.
+  if (normalized === "bots" || normalized.startsWith("bots/")) return undefined;
+  return normalized;
 }
 
 /**

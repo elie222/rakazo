@@ -221,6 +221,12 @@ describe("custom workspace folder", () => {
     );
   });
 
+  it("ignores a folder that points into another bot's", () => {
+    expect(resolveBotUploadPath("team", "bot-1", "secret.txt", "bots/bot-2")).toBe(
+      "bots/bot-1/secret.txt",
+    );
+  });
+
   it("shows a Team Computer bot's folder-relative listing against its folder", () => {
     const base = "acme/research";
     expect(

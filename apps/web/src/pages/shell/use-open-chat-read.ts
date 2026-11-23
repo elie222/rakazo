@@ -15,10 +15,13 @@ export function useOpenChatRead(input: {
   markBotReadIfVisible: (botId: string) => void;
 }) {
   const { active, activeGroup, groupId, now, markGroupReadOnReply, markBotReadIfVisible } = input;
+  const activeId = active?.id;
   const woke = active ? chatWoke(active, now) : activeGroup ? chatWoke(activeGroup, now) : false;
   useEffect(() => {
     if (!woke) return;
     if (groupId) markGroupReadOnReply(groupId);
-    else if (active) markBotReadIfVisible(active.id);
-  }, [woke, active, groupId, markGroupReadOnReply, markBotReadIfVisible]);
+    // Only the id: a roster refresh replaces the bot object while the chat stays awake, and the
+    // read request must not repeat for the same chat.
+    else if (activeId) markBotReadIfVisible(activeId);
+  }, [woke, activeId, groupId, markGroupReadOnReply, markBotReadIfVisible]);
 }

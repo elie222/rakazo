@@ -75,11 +75,19 @@ function dreamPrisma(
     bot: { update: vi.fn(async () => ({})) },
     thread: { create: vi.fn(async () => ({ id: "dream-thread" })) },
     task: { create: vi.fn(async () => ({ id: "dream-task" })) },
-    run: { create: vi.fn(async () => ({ id: "dream-run" })) },
+    run: {
+      create: vi.fn(async () => ({ id: "dream-run" })),
+      findFirst: vi.fn(async () => null) as ReturnType<typeof vi.fn>,
+    },
   };
   const prisma = {
     bot: {
-      findMany: vi.fn(async () => options.bots ?? [bot()]),
+      findMany: vi.fn(async (args?: { where?: { id?: { gt?: string } }; take?: number }) => {
+        const all = options.bots ?? [bot()];
+        const after = args?.where?.id?.gt;
+        const page = after ? all.filter((candidate) => candidate.id > after) : all;
+        return page.slice(0, args?.take ?? page.length);
+      }),
       findFirst: vi.fn(async () => options.bots?.[0] ?? bot()),
     },
     run: {
@@ -198,6 +206,17 @@ describe("reconcileMemoryDreams", () => {
     expect(tx.run.create).not.toHaveBeenCalled();
   });
 
+  it("does not start while a run began after the sweep checked", async () => {
+    const jobs = jobPublisher();
+    const { prisma, tx } = dreamPrisma({
+      messages: [userMessage(5, "I moved to Lisbon.")],
+    });
+    tx.run.findFirst.mockResolvedValueOnce({ id: "active-run" });
+    await reconcileMemoryDreams({ prisma, jobs, now: () => NOW });
+    expect(tx.memoryDream.create).not.toHaveBeenCalled();
+    expect(jobs.enqueueIn).not.toHaveBeenCalled();
+  });
+
   it("runs at once when eight user messages are waiting", async () => {
     const jobs = jobPublisher();
     const { prisma, tx } = dreamPrisma({
@@ -310,6 +329,24 @@ describe("reconcileMemoryDreams", () => {
     const { prisma, tx } = dreamPrisma();
     await reconcileMemoryDreams({ prisma, jobs, now: () => NOW });
     expect(tx.memoryDream.create).not.toHaveBeenCalled();
+  });
+
+  it("scans past the first page of bots", async () => {
+    const jobs = jobPublisher();
+    const bots = Array.from({ length: 21 }, (_, index) =>
+      bot({
+        id: `bot-${String(index + 1).padStart(2, "0")}`,
+        thread: { id: `thread-${index + 1}` },
+      }),
+    );
+    const { prisma, raw } = dreamPrisma({ bots });
+    await reconcileMemoryDreams({ prisma, jobs, now: () => NOW });
+    // Bots with nothing new stay eligible, so the pass pages on rather than stopping at the first
+    // batch and never reaching later bots.
+    expect(raw.bot.findMany).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ where: expect.objectContaining({ id: { gt: "bot-20" } }) }),
+    );
   });
 });
 
