@@ -73,6 +73,7 @@ describe.skipIf(!enabled)("message authors (PostgreSQL)", () => {
           events: { notify } as never,
           jobs: { enqueue } as never,
           sandbox: {} as never,
+          secrets: {} as never,
         },
         actor,
         target,

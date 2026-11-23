@@ -4,8 +4,9 @@ import type {
   NotificationProvider,
   ProductAnalytics,
   SandboxProvider,
+  SecretStore,
 } from "@rakazo/adapter-kit";
-import { notifyMemberMessage, wakeRun } from "@rakazo/adapters";
+import { notifyMemberMessage, preparePastedSecrets, wakeRun } from "@rakazo/adapters";
 import type { Actor, GroupMember, MessageBlock, ReplyPreview } from "@rakazo/contracts";
 import {
   GROUP_MEMBER_MIN,
@@ -492,11 +493,12 @@ export async function sendThreadMessage(
     maxAttachmentsPerMessage?: number;
     analytics?: ProductAnalytics;
     sandbox: SandboxProvider;
+    secrets: SecretStore;
     notifications?: NotificationProvider;
   },
   actor: Actor,
   target: ThreadTarget,
-  input: {
+  sent: {
     text?: string;
     artifactIds?: string[];
     imageHandling?: "confirm" | "file";
@@ -517,10 +519,17 @@ export async function sendThreadMessage(
   const existing = await replayExistingSend(
     deps,
     target.threadId,
-    input.clientNonce,
+    sent.clientNonce,
     releaseTakeover,
   );
   if (existing) return existing;
+  // From here on, a key the member pasted is only in the vault.
+  const pasted = await preparePastedSecrets(
+    { prisma: deps.prisma, secretStore: deps.secrets },
+    actor,
+    sent.text,
+  );
+  const input = { ...sent, text: pasted.text };
   // Live events carry the call id so a spoken turn joins the call card on first
   // paint; without it the bubble shows loose until a refetch reads the nonce.
   const callId = callIdFromClientNonce(input.clientNonce);
@@ -533,6 +542,7 @@ export async function sendThreadMessage(
     deps.prisma.$transaction(async (tx) => {
       // A Space being deleted takes no new turns; its lock comes before the group and thread rows.
       if (!(await spaceTakesWork(tx, actor.spaceId))) throw new SpaceDeletionInProgressError();
+      await pasted.store(tx);
       const author = await loadMessageAuthor(tx, actor.userId);
       let routineRuns: Array<{ id: string; status: string }> = [];
       let replyToMessageId: string | undefined;
@@ -1115,16 +1125,18 @@ export async function sendThreadMessage(
       return { message, runs, routineRuns, eventSeq: event.seq };
     }, THREAD_LOCK_TRANSACTION_OPTIONS);
 
-  const committed = await withTransactionRetry(commit).catch(async (error) => {
-    const winner = await replayExistingSend(
-      deps,
-      target.threadId,
-      input.clientNonce,
-      releaseTakeover,
-    );
-    if (winner) return { replay: winner } as const;
-    throw error;
-  });
+  const committed = await pasted
+    .persist(() => withTransactionRetry(commit))
+    .catch(async (error) => {
+      const winner = await replayExistingSend(
+        deps,
+        target.threadId,
+        input.clientNonce,
+        releaseTakeover,
+      );
+      if (winner) return { replay: winner } as const;
+      throw error;
+    });
   if ("replay" in committed) return committed.replay;
   deps.analytics?.capture(
     actor.userId,

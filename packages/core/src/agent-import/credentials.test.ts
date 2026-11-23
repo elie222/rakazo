@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { looksLikeCredential } from "./credentials.js";
+import { credentialRanges, looksLikeCredential } from "./credentials.js";
 import { parseAgentImport } from "./index.js";
 
 // Synthetic values, built from parts so no scanner mistakes this file for a leak.
@@ -54,6 +54,41 @@ describe("credential shapes", () => {
     "placeholder-openrouter-key",
   ])("ignores %s", (text) => {
     expect(looksLikeCredential(text)).toBe(false);
+  });
+});
+
+describe("credential ranges", () => {
+  const found = (text: string) =>
+    credentialRanges(text).map(({ start, end }) => text.slice(start, end));
+
+  it("covers each key and nothing around it", () => {
+    const openai = join("sk", "-proj-", body(40));
+    const github = join("gh", "p_", body(36));
+    expect(found(`Use ${openai}, then \`${github}\`.`)).toEqual([openai, github]);
+  });
+
+  it("covers only the token after Bearer", () => {
+    const token = body(40);
+    expect(found(`Authorization: Bearer ${token}`)).toEqual([token]);
+  });
+
+  it("joins a key inside a Bearer token into one range", () => {
+    const key = join("sk", "-ant-api03-", body(60));
+    expect(found(`Bearer ${key}`)).toEqual([key]);
+  });
+
+  it("covers a private key through its END line", () => {
+    const key = join(
+      "-----BEGIN ",
+      "OPENSSH PRIVATE",
+      " KEY-----\nAAAA\nBBBB\n-----END OPENSSH PRIVATE KEY-----",
+    );
+    expect(found(`Here:\n${key}\nThanks`)).toEqual([key]);
+  });
+
+  it("covers a private key with no END line to the end of the text", () => {
+    const key = join("-----BEGIN ", "RSA PRIVATE", " KEY-----\nAAAA\nBBBB");
+    expect(found(`Here:\n${key}`)).toEqual([key]);
   });
 });
 

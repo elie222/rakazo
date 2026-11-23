@@ -107,7 +107,13 @@ describe.skipIf(!enabled)("typed replies to waiting cards (PostgreSQL)", () => {
   function send(target: ThreadTarget, text = "Paris", clientNonce: string = randomUUID()) {
     return runAsTenant(actor, () =>
       sendThreadMessage(
-        { prisma, sandbox: {} as never, events: { notify } as never, jobs: { enqueue } as never },
+        {
+          prisma,
+          sandbox: {} as never,
+          secrets: {} as never,
+          events: { notify } as never,
+          jobs: { enqueue } as never,
+        },
         actor,
         target,
         { text, mentions: target.kind === "group" ? [botId] : [], clientNonce },
@@ -361,7 +367,13 @@ describe.skipIf(!enabled)("typed replies to waiting cards (PostgreSQL)", () => {
     });
     const result = await runAsTenant(actor, () =>
       sendThreadMessage(
-        { prisma, sandbox: {} as never, events: { notify } as never, jobs: { enqueue } as never },
+        {
+          prisma,
+          sandbox: {} as never,
+          secrets: {} as never,
+          events: { notify } as never,
+          jobs: { enqueue } as never,
+        },
         actor,
         groupTarget,
         {
@@ -421,7 +433,13 @@ describe.skipIf(!enabled)("typed replies to waiting cards (PostgreSQL)", () => {
   function sendConfirmedImage(artifactId: string, text: string) {
     return runAsTenant(actor, () =>
       sendThreadMessage(
-        { prisma, sandbox: {} as never, events: { notify } as never, jobs: { enqueue } as never },
+        {
+          prisma,
+          sandbox: {} as never,
+          secrets: {} as never,
+          events: { notify } as never,
+          jobs: { enqueue } as never,
+        },
         actor,
         privateTarget(),
         { text, artifactIds: [artifactId], imageHandling: "confirm", clientNonce: randomUUID() },
@@ -467,7 +485,13 @@ describe.skipIf(!enabled)("typed replies to waiting cards (PostgreSQL)", () => {
       });
       const result = await runAsTenant(actor, () =>
         sendThreadMessage(
-          { prisma, sandbox: {} as never, events: { notify } as never, jobs: { enqueue } as never },
+          {
+            prisma,
+            sandbox: {} as never,
+            secrets: {} as never,
+            events: { notify } as never,
+            jobs: { enqueue } as never,
+          },
           actor,
           target,
           {
@@ -760,6 +784,7 @@ describe.skipIf(!enabled)("typed replies to waiting cards (PostgreSQL)", () => {
           {
             prisma: db,
             sandbox: {} as never,
+            secrets: {} as never,
             events: { notify } as never,
             jobs: { enqueue } as never,
           },
@@ -835,6 +860,7 @@ describe.skipIf(!enabled)("typed replies to waiting cards (PostgreSQL)", () => {
         {
           prisma,
           sandbox: sandbox as never,
+          secrets: {} as never,
           events: { notify } as never,
           jobs: { enqueue } as never,
         },
@@ -968,6 +994,7 @@ describe.skipIf(!enabled)("typed replies to waiting cards (PostgreSQL)", () => {
           {
             prisma: failing as PrismaClient,
             sandbox: {} as never,
+            secrets: {} as never,
             events: { notify } as never,
             jobs: { enqueue } as never,
           },
