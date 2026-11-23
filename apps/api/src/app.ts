@@ -117,7 +117,7 @@ import { isTrustedOrigin, MOBILE_AUTH_ORIGINS } from "./auth/trusted-origins.js"
 import { mountUserDeviceRoutes } from "./auth/user-devices.js";
 import { createBillingService } from "./billing/billing.js";
 import { mountBillingRoutes } from "./billing/billing-webhook.js";
-import { mountRealtimeVoiceRoutes } from "./calls/realtime-voice.js";
+import { mountRealtimeCalls } from "./calls/realtime-voice.js";
 import { createSpeechSummarizer } from "./calls/speech-summary.js";
 import { mountVoiceHttpRoutes } from "./calls/voice.js";
 import { homeRetentionSweep } from "./computers/home-retention.js";
@@ -863,14 +863,8 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
   mountAccountExportRoute(app, { prisma, auth, artifacts, home });
   mountAuditExportRoute(app, { prisma, sessionActor });
   mountVoiceHttpRoutes(app, { prisma, secrets, env }, (c) => sessionActor(c.req.raw));
-  mountRealtimeVoiceRoutes(
-    app,
-    { prisma, secrets, env, jobs, events, sandbox, notifications, analytics, memory },
-    async (c, recheck) => (await requestSession(c.req.raw, recheck))?.actor ?? null,
-    (origin) => isTrustedOrigin(origin, env),
-    env.phoneCallsEnabled,
-    shutdown.signal,
-  );
+  const calls = { prisma, secrets, env, jobs, events, sandbox, notifications, analytics, memory };
+  mountRealtimeCalls(app, calls, requestSession, shutdown.signal);
   mountAccountImportRoute(
     app,
     { ...spaceDeletionDeps, maxArtifactBytes: env.maxUploadSizeBytes },

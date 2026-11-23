@@ -27,7 +27,9 @@ import {
 import { bestEffort } from "@rakazo/logging";
 import type { Context, Hono } from "hono";
 import { z } from "zod";
+import { isTrustedOrigin } from "../auth/trusted-origins.js";
 import { assertTeachingSendAllowed } from "../bots/taught-skills.js";
+import type { AppEnv } from "../env.js";
 import { readBoundedBody } from "../http/http-body.js";
 import { resolveThreadTarget, sendThreadMessage, threadHead } from "../threads/thread-target.js";
 import { realtimeCallState } from "./realtime-settings.js";
@@ -86,6 +88,23 @@ export function realtimeInstructions(input: {
     input.botInstructions.slice(0, 6000),
     ...(input.memory ? [input.memory] : []),
   ].join("\n\n");
+}
+
+/** The routes as the app mounts them: its session reader, its trusted origins and its call switch. */
+export function mountRealtimeCalls(
+  app: Hono,
+  deps: RealtimeDeps & { env: AppEnv },
+  requestSession: (request: Request, recheck?: boolean) => Promise<{ actor: Actor } | null>,
+  shutdown: AbortSignal,
+) {
+  mountRealtimeVoiceRoutes(
+    app,
+    deps,
+    async (c, recheck) => (await requestSession(c.req.raw, recheck))?.actor ?? null,
+    (origin) => isTrustedOrigin(origin, deps.env),
+    deps.env.phoneCallsEnabled,
+    shutdown,
+  );
 }
 
 export function mountRealtimeVoiceRoutes(
