@@ -427,9 +427,8 @@ export class HonchoMemoryProvider implements SemanticMemoryProvider {
     const recallable = (conclusion: { observerId: string; observedId: string }) =>
       conclusion.observedId === SHARED_PEER_ID && observers.includes(conclusion.observerId);
     const fact = found.value;
-    // Nothing there to delete: a retried forget ends here as done.
-    if (!fact) return { ok: true, value: { id, expired: true, reason: request.reason ?? null } };
     if (
+      !fact ||
       fact.id !== id ||
       !recallable(fact) ||
       (request.entity && fact.observerId !== request.entity)
