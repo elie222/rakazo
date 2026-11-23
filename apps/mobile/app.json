@@ -112,9 +112,21 @@
       "expo-apple-authentication"
     ],
     "locales": {
+      "de": "./locales/de.json",
       "es": "./locales/es.json",
+      "fr": "./locales/fr.json",
+      "he": "./locales/he.json",
+      "hi": "./locales/hi.json",
+      "ja": "./locales/ja.json",
+      "ko": "./locales/ko.json",
+      "nl": "./locales/nl.json",
       "pl": "./locales/pl.json",
-      "th": "./locales/th.json"
+      "pt-BR": "./locales/pt-BR.json",
+      "ru": "./locales/ru.json",
+      "th": "./locales/th.json",
+      "tr": "./locales/tr.json",
+      "zh-Hans": "./locales/zh-Hans.json",
+      "zh-Hant": "./locales/zh-Hant.json"
     },
     "ios": {
       "bundleIdentifier": "com.rakazo.app",
