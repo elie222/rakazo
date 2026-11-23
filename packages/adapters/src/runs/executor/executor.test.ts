@@ -605,7 +605,7 @@ describe("run tool selection", () => {
     }
   });
 
-  it("offers bot management tools only with the switch on and only on runs the owner started", () => {
+  it("offers bot management tools with the switch on, on runs the owner started or nobody is watching", () => {
     const fleetTools = (
       trigger: string,
       fleetManagement: boolean,
@@ -635,8 +635,9 @@ describe("run tool selection", () => {
     // A routine and the owner's own chat-app conversation are theirs.
     expect(fleetTools("routine", true)).toEqual(all);
     expect(fleetTools("messaging", true)).toEqual(all);
+    // Nobody is watching these, so their writes wait for the owner's approval.
     for (const trigger of ["bot_message", "spawn", "tickets", "webhook"]) {
-      expect(fleetTools(trigger, true), trigger).toEqual([]);
+      expect(fleetTools(trigger, true), trigger).toEqual(all);
     }
     expect(fleetTools("user", true, false, ["list_fleet", "create_group"])).toEqual(
       all.filter((name) => name !== "list_fleet" && name !== "create_group"),
@@ -1759,7 +1760,7 @@ describe("userTurnInstructions", () => {
     expect(narrowed).not.toContain("needs the owner's approval");
     expect(narrowed).not.toContain("set_child_instructions");
     expect(clauseFor("user", false)).toBeUndefined();
-    expect(clauseFor("bot_message", true)).toBeUndefined();
+    expect(clauseFor("follow_up", true)).toBeUndefined();
     expect(clauseFor("follow_up", true, false)).toBeUndefined();
   });
 

@@ -134,6 +134,7 @@ describe("schedule tools on another bot's routines", () => {
     fleetManagement?: boolean;
     ownerStartedRun?: boolean;
     outsideMessage?: boolean;
+    trigger?: string;
   }) {
     const ctx = {
       deps: {
@@ -149,7 +150,7 @@ describe("schedule tools on another bot's routines", () => {
           },
         },
       },
-      run: { trigger: "user" },
+      run: { trigger: input.trigger ?? "user" },
       fleetRun: { spaceId: "space-1" },
       bot: { id: "bot-1", name: "Me" },
       runId: "run-1",
@@ -201,6 +202,19 @@ describe("schedule tools on another bot's routines", () => {
     await expect(list.prepared).resolves.toBeUndefined();
     expect(list.request.heldForApproval).toBeUndefined();
   });
+
+  it.each(["webhook", "bot_message", "spawn", "tickets"])(
+    "holds a %s run's change for the owner's approval, and lets it list",
+    async (trigger) => {
+      const call = managedRoutineCall({ ownerStartedRun: false, trigger });
+      const { prepared, request } = call("schedule_cancel", { bot_id: "child", routineId: "r" });
+      await expect(prepared).resolves.toBeUndefined();
+      expect(request).toMatchObject({ heldForApproval: true, ignoresAllowRules: true });
+      const list = call("schedule_list", { bot_id: "child" });
+      await expect(list.prepared).resolves.toBeUndefined();
+      expect(list.request.heldForApproval).toBeUndefined();
+    },
+  );
 });
 
 describe("prepareToolRequest: a saved login that asks first", () => {
