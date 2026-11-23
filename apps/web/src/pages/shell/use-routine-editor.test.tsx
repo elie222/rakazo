@@ -210,8 +210,11 @@ it("shows a revealed webhook secret only for the bot it belongs to", async () =>
 });
 
 it("keeps each bot's revealed secret when key requests overlap", async () => {
-  const finishers: ((result: { secret: string }) => void)[] = [];
-  ensureWebhookSecret.mockImplementation(() => new Promise((resolve) => finishers.push(resolve)));
+  const finishFirst = deferred<{ secret: string }>();
+  const finishSecond = deferred<{ secret: string }>();
+  ensureWebhookSecret
+    .mockReturnValueOnce(finishFirst.promise)
+    .mockReturnValueOnce(finishSecond.promise);
   let first!: Promise<void>;
   act(() => {
     first = editor.editorProps!.onEnsureWebhook() as Promise<void>;
@@ -223,8 +226,8 @@ it("keeps each bot's revealed secret when key requests overlap", async () => {
     second = editor.editorProps!.onEnsureWebhook() as Promise<void>;
   });
   await act(async () => {
-    finishers[0]!({ secret: "secret-1" });
-    finishers[1]!({ secret: "secret-2" });
+    finishFirst.resolve({ secret: "secret-1" });
+    finishSecond.resolve({ secret: "secret-2" });
     await Promise.all([first, second]);
   });
   expect(editor.editorProps!.webhook.secret).toBe("secret-2");
