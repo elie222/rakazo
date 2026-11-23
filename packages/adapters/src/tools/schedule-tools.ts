@@ -666,6 +666,7 @@ export async function createScheduleFromTool(
       crons: timing?.ok ? [timing.cron] : [],
       watch: null,
       nextRunAt: timing?.ok ? timing.nextRunAt : null,
+      events: true,
     });
     if ("error" in end) return { error: `${end.error} ${nowIn(zone)}` };
   }
@@ -687,6 +688,7 @@ export async function createScheduleFromTool(
       crons: eventsOnly ? [] : [resolved.cron],
       watch: null,
       nextRunAt: eventsOnly ? null : resolved.nextRunAt,
+      events: hasRoutineEvents(events),
     });
     if ("error" in end) return { error: `${end.error} ${nowIn(timezone)}` } as const;
     wakeAt = eventsOnly ? undefined : resolved.nextRunAt;
@@ -811,7 +813,10 @@ export async function scheduleCreateError(
   const endError = async (timing: { crons: string[]; watch: unknown; nextRunAt: Date | null }) => {
     if (input.endAt === undefined) return undefined;
     const zone = await timezone();
-    const end = newRoutineEnd(input.endAt, zone, timing);
+    const end = newRoutineEnd(input.endAt, zone, {
+      ...timing,
+      events: hasRoutineEvents(events.events),
+    });
     return "error" in end ? `${end.error} ${nowIn(zone)}` : undefined;
   };
   if (input.schedule.watch !== undefined) {
@@ -893,7 +898,12 @@ async function createWatchFromTool(
   const nextRunAt = firstWatchCheck();
   if ((input.events.webhookEnabled || input.events.githubEnabled) && input.endAt) {
     const zone = input.timezone ?? (await userTimeZone(deps.prisma, input.userId));
-    const end = newRoutineEnd(input.endAt, zone, { crons: [], watch: parsed.data, nextRunAt });
+    const end = newRoutineEnd(input.endAt, zone, {
+      crons: [],
+      watch: parsed.data,
+      nextRunAt,
+      events: true,
+    });
     if ("error" in end) return { error: `${end.error} ${nowIn(zone)}` };
   }
   const keyError = await ensureWebhookKey(deps, input, input.events);
@@ -901,7 +911,12 @@ async function createWatchFromTool(
   // As with a timed routine, a defaulted zone is read under a share lock in the same
   // transaction as the insert, so a zone change cannot cross the creation.
   const insertWatch = (client: Pick<Prisma.TransactionClient, "routine">, timezone: string) => {
-    const end = newRoutineEnd(input.endAt, timezone, { crons: [], watch: parsed.data, nextRunAt });
+    const end = newRoutineEnd(input.endAt, timezone, {
+      crons: [],
+      watch: parsed.data,
+      nextRunAt,
+      events: hasRoutineEvents(input.events),
+    });
     if ("error" in end) return { error: `${end.error} ${nowIn(timezone)}` } as const;
     return client.routine.create({
       data: {
@@ -1241,7 +1256,7 @@ export async function updateScheduleFromTool(
     return { error: "A routine needs a schedule or an event. Cancel it instead." };
   }
   const endError = routineEndError(
-    { endsAt, crons, watch: existing.watch, nextRunAt },
+    { endsAt, crons, watch: existing.watch, nextRunAt, events: hasRoutineEvents(events) },
     {
       end: end.endsAt !== undefined && endChanged,
       nextRun: endChanged || nextRunAt?.getTime() !== existing.nextRunAt?.getTime(),

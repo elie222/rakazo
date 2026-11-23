@@ -45,7 +45,7 @@ describe("routineEnded", () => {
 });
 
 describe("routineEndError", () => {
-  const routine = { crons: ["0 9 * * *"], watch: null, nextRunAt: daily.nextRunAt };
+  const routine = { crons: ["0 9 * * *"], watch: null, nextRunAt: daily.nextRunAt, events: false };
   const both = { end: true, nextRun: true };
 
   it("accepts an end after the next run", () => {
@@ -57,6 +57,10 @@ describe("routineEndError", () => {
   it.each([
     [{ crons: ["@once"] }, "A one-time routine ends once it runs."],
     [{ crons: [] }, "Only a repeating schedule or a watch can have an end date."],
+    [
+      { events: true },
+      "A routine with webhook, Git, chat or email triggers can't have an end date.",
+    ],
     [{ endsAt: new Date("2026-11-23T11:00:00Z") }, "The end date must be in the future."],
     [{ endsAt: new Date("2026-11-24T08:00:00Z") }, "The end date is before the next run."],
   ])("refuses %j", (patch, error) => {

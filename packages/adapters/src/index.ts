@@ -204,7 +204,6 @@ export * from "./providers/web/parallel/parallel-web.js";
 export * from "./routines/release-watch.js";
 export { releaseRoutineBackoffs } from "./routines/routine-backoff.js";
 export {
-  beforeRoutineEnd,
   routineEndError,
   routineEnded,
   routineEndInZone,

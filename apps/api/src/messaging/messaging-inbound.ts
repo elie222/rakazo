@@ -12,7 +12,6 @@ import {
 } from "@rakazo/adapter-kit";
 import type { MessagingDelivery, OutboundLane } from "@rakazo/adapters";
 import {
-  beforeRoutineEnd,
   filesNotReceivedReply,
   inboundArrivalTime,
   MESSAGING_DM_OUTBOUND_CAP,
@@ -957,7 +956,6 @@ export async function wakeMessageRoutines(
       userId: target.userId,
       active: true,
       messageProvider: event.provider,
-      ...beforeRoutineEnd(),
     },
     select: {
       id: true,

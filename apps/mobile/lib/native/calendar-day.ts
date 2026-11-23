@@ -12,3 +12,11 @@ export function dayOfLocalDate(date: Date): string {
 export function dayOfUtcDate(date: Date): string {
   return date.toISOString().slice(0, 10);
 }
+
+export function formatCalendarDay(day: string, locale: string): string {
+  return localDateOfDay(day).toLocaleDateString(locale, {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+}

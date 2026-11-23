@@ -163,7 +163,16 @@ export function routinesRoutes(ctx: RouterContext) {
         await assertRoutineModel(deps, context.actor, input, codexCatalog);
         const data = routineRowData(context.actor, input, routineNextRunAt(input));
         const endError = routineEndError(
-          { ...data, watch: input.watch },
+          {
+            ...data,
+            watch: input.watch,
+            events: Boolean(
+              input.webhookEnabled ||
+                input.githubEnabled ||
+                input.messageProvider ||
+                input.emailSenders,
+            ),
+          },
           { end: true, nextRun: true },
         );
         if (endError) throw new ClientError("BAD_REQUEST", endError);
@@ -331,7 +340,13 @@ export function routinesRoutes(ctx: RouterContext) {
                 ? (armedOneShotAt ?? existing.nextRunAt)
                 : (recalculatedNextRunAt ?? existing.nextRunAt);
         const endError = routineEndError(
-          { endsAt, crons, watch, nextRunAt },
+          {
+            endsAt,
+            crons,
+            watch,
+            nextRunAt,
+            events: Boolean(webhookEnabled || githubEnabled || messageProvider || emailSenders),
+          },
           {
             end: input.endsAt !== undefined && endChanged,
             nextRun: endChanged || nextRunAt?.getTime() !== existing.nextRunAt?.getTime(),

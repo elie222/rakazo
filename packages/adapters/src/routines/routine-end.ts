@@ -6,17 +6,13 @@ import {
   zonedDateTime,
   zonedEndDateTime,
 } from "@rakazo/core";
-import type { Prisma, PrismaClient, ThreadEvents } from "@rakazo/db";
+import type { PrismaClient, ThreadEvents } from "@rakazo/db";
 import { bestEffort } from "@rakazo/logging";
 import { postRoutineNotice } from "./routine-notice.js";
 
 type RoutineTiming = { crons: string[]; watch: unknown };
 
 const repeats = (routine: RoutineTiming) => routineRepeats(routine.crons, routine.watch != null);
-
-export function beforeRoutineEnd(now = new Date()): Prisma.RoutineWhereInput {
-  return { OR: [{ endsAt: null }, { endsAt: { gt: now } }] };
-}
 
 export function runBeforeEnd(next: Date | null, endsAt: Date | null): Date | null {
   return next && endsAt && next.getTime() > endsAt.getTime() ? null : next;
@@ -31,7 +27,7 @@ export function routineEnded(
 }
 
 export function routineEndError(
-  routine: RoutineTiming & { endsAt: Date | null; nextRunAt: Date | null },
+  routine: RoutineTiming & { endsAt: Date | null; nextRunAt: Date | null; events: boolean },
   changed: { end: boolean; nextRun: boolean },
   now = new Date(),
 ): string | null {
@@ -39,6 +35,9 @@ export function routineEndError(
   if (!endsAt) return null;
   if (isOneShotRoutineCrons(routine.crons)) return "A one-time routine ends once it runs.";
   if (!repeats(routine)) return "Only a repeating schedule or a watch can have an end date.";
+  if (routine.events) {
+    return "A routine with webhook, Git, chat or email triggers can't have an end date.";
+  }
   if (changed.end && endsAt.getTime() <= now.getTime())
     return "The end date must be in the future.";
   if ((changed.end || changed.nextRun) && nextRunAt && nextRunAt.getTime() > endsAt.getTime()) {
@@ -68,7 +67,7 @@ export function routineEndFromText(
 export function newRoutineEnd(
   value: string | undefined,
   timezone: string,
-  timing: RoutineTiming & { nextRunAt: Date | null },
+  timing: RoutineTiming & { nextRunAt: Date | null; events: boolean },
 ): { endsAt: Date | null } | { error: string } {
   const end = routineEndFromText(value, timezone);
   if ("error" in end) return end;

@@ -2089,19 +2089,22 @@ describe("schedule tools with events", () => {
     return { deps, create, enqueue, put, key, notices };
   }
 
-  it("makes no webhook key for a routine whose end it refuses", async () => {
+  it("refuses an end on a routine events start, before making its webhook key", async () => {
     const { deps, create, put } = eventDeps();
     const result = await createScheduleFromTool(deps, {
       ...owner,
       ...scheduleCreateFields({
         name: "Deploys",
         prompt: "Summarize the deploy",
+        cron: "0 9 * * *",
         on: { webhook: true },
         endAt: "2031-01-01",
       }),
     });
     expect(result).toEqual({
-      error: expect.stringContaining("Only a repeating schedule or a watch can have an end date."),
+      error: expect.stringContaining(
+        "A routine with webhook, Git, chat or email triggers can't have an end date.",
+      ),
     });
     expect(put).not.toHaveBeenCalled();
     expect(create).not.toHaveBeenCalled();
