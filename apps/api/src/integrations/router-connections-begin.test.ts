@@ -902,4 +902,34 @@ describe("connection tool listing", () => {
       );
     }
   });
+
+  it("does not report a listing the client cancelled", async () => {
+    const sink = createTestSink();
+    installLogger(createLogger({ service: "rakazo-api", sinks: [sink] }));
+    const controller = new AbortController();
+    const listAppTools = vi.fn(async () => {
+      controller.abort();
+      throw new Error("Request was aborted.");
+    });
+    const client = createRouterClient(
+      createRouter({
+        prisma: { connection: { findFirst: async () => ({ id: "connection-1" }) } },
+        connectors: { managed: () => ({ discoverTools: vi.fn(), listAppTools }) },
+      } as unknown as RouterDeps),
+      {
+        context: {
+          actor: { spaceId: "workspace-1", userId: "user-1" },
+          signal: controller.signal,
+        } as never,
+      },
+    );
+    expect(await client.connections.tools({ connectorId: "example", provider: "example" })).toEqual(
+      [],
+    );
+    expect(listAppTools).toHaveBeenCalled();
+    expect(sink.events.filter((event) => event.level === "error")).toEqual([]);
+    expect(sink.events).toContainEqual(
+      expect.objectContaining({ level: "warn", message: "connections.tools cancelled" }),
+    );
+  });
 });

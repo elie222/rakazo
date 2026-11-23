@@ -2,8 +2,8 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import type { SecurityEventMetadata, SecurityEventType } from "@rakazo/contracts";
 import { getLogContext, getLogger, redactBindings } from "@rakazo/logging";
 import type { PrismaClient } from "../database/client.js";
-import { parsePositiveInteger } from "../database/client.js";
 import { runAsSystem } from "../database/row-security.js";
+import { parseRetentionDays } from "../history/retention-days.js";
 import { recordAuditEvent } from "./audit-events.js";
 
 export type { SecurityEventType } from "@rakazo/contracts";
@@ -45,6 +45,7 @@ const FAILURE_TYPES = new Set<SecurityEventType>([
 const NOT_AUDITED = new Set<SecurityEventType>([...FAILURE_TYPES, "deployment.settings.changed"]);
 /** Done to an account by the directory or the operator (`metadata.by`), not by the account itself. */
 const DONE_TO_ACCOUNT = new Set<SecurityEventType>([
+  "auth.account.delete_requested",
   "auth.account.deactivated",
   "auth.account.reactivated",
 ]);
@@ -110,7 +111,11 @@ export async function recordSecurityEvent(input: SecurityEventInput): Promise<vo
                 target: { type: "user", id: userId },
               }
             : {
-                actor: { type: "user", id: userId },
+                // The operator acted from the server on the account's behalf, not the account.
+                actor:
+                  by === "operator"
+                    ? { type: "system", label: "operator" }
+                    : { type: "user", id: userId },
                 target: typeof kind === "string" ? { type: kind } : undefined,
               }),
           spaceId: event.spaceId,
@@ -146,7 +151,8 @@ function bounded(value: unknown, max: number): string | null {
 export const DEFAULT_SECURITY_EVENT_RETENTION_DAYS = 90;
 
 export function securityEventRetentionDays(source: NodeJS.ProcessEnv = process.env): number {
-  return parsePositiveInteger(
+  return parseRetentionDays(
+    "SECURITY_EVENT_RETENTION_DAYS",
     source.SECURITY_EVENT_RETENTION_DAYS,
     DEFAULT_SECURITY_EVENT_RETENTION_DAYS,
   );

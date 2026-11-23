@@ -503,8 +503,27 @@ describe("page browser safety", () => {
         purchase: null,
       });
     }
-    // Any other failure asks, naming no page and approving no click: a check that started and broke,
-    // or a 500, which only an unhandled error answers.
+    // As a routed sandbox answers for a computer whose provider has no page browser.
+    reply = {
+      ok: false,
+      uncertain: false,
+      fallback: "computer_act",
+      error: "Page browser is unavailable on this computer.",
+    };
+    expect(await provider.purchaseCheck(computer, { actions }, baseContext)).toEqual({
+      purchase: null,
+    });
+    // A JavaScript dialog is open, so the page underneath takes no input: its type is passed on for
+    // the gate to judge.
+    for (const dialog of ["alert", "beforeunload", "confirm", "prompt"]) {
+      reply = { ok: true, url: "", title: "", site: "", purchase: null, dialog };
+      expect(await provider.purchaseCheck(computer, { actions }, baseContext)).toEqual({
+        purchase: null,
+        dialog,
+      });
+    }
+    // Any other failure throws, so the press is refused: a check that started and broke, or a 500,
+    // which only an unhandled error answers.
     for (const error of [
       "unknown command: purchase_check, and then some",
       "page browser failed: 500",
@@ -514,16 +533,32 @@ describe("page browser safety", () => {
       "Page browser unavailable or interrupted. Inspect the screen before continuing.",
     ]) {
       reply = { ok: false, error, fallback: "computer_act" };
-      expect(await provider.purchaseCheck(computer, { actions }, baseContext)).toEqual({
-        purchase: { steps: [], site: "", label: "", amount: "", amountSource: "page" },
-      });
+      await expect(provider.purchaseCheck(computer, { actions }, baseContext)).rejects.toThrow(
+        "could not read the page",
+      );
     }
+    // A check that ran but could not read the page is refused too, on a page with a host or none.
+    for (const site of ["shop.example.test", ""]) {
+      reply = {
+        ...answer,
+        site,
+        purchase: { steps: [], label: "", amount: "", amountFrom: "page", reason: "unreadable" },
+      };
+      await expect(provider.purchaseCheck(computer, { actions }, baseContext)).rejects.toThrow(
+        "could not read the page",
+      );
+    }
+    // Only a dialog the helper names lets an unreadable page through.
+    reply = { ...answer, dialog: "", purchase: { steps: [], reason: "unreadable" } };
+    await expect(provider.purchaseCheck(computer, { actions }, baseContext)).rejects.toThrow(
+      "could not read the page",
+    );
     const fake: ComputerRef = { id: "f", botId: "b", kind: "fake", providerRef: "f" };
     expect(await provider.purchaseCheck(fake, { actions }, baseContext)).toEqual({
       purchase: null,
     });
     // The timed-out check was probed twice.
-    expect(commands).toHaveLength(14);
+    expect(commands).toHaveLength(22);
   });
 
   describe("a timed-out purchase check", () => {
@@ -546,12 +581,12 @@ describe("page browser safety", () => {
       expect(liveDriver.mock.calls.map((call) => call[1])).toEqual([probe, probe]);
     });
 
-    it("still asks when the second probe times out too", async () => {
+    it("still refuses when the second probe times out too", async () => {
       const liveDriver = vi.fn().mockResolvedValue(timedOut);
       const provider = new ComputerBrowserProvider({ liveDriver });
-      expect(await provider.purchaseCheck(computer, { actions }, baseContext)).toEqual({
-        purchase: { steps: [], site: "", label: "", amount: "", amountSource: "page" },
-      });
+      await expect(provider.purchaseCheck(computer, { actions }, baseContext)).rejects.toThrow(
+        "could not read the page",
+      );
       expect(liveDriver).toHaveBeenCalledTimes(2);
     });
 
@@ -573,20 +608,17 @@ describe("page browser safety", () => {
     });
 
     it("retries no other failure, and a computer that cannot check still answers none", async () => {
-      for (const [error, purchase] of [
-        [
-          "Page browser unavailable or interrupted",
-          { steps: [], site: "", label: "", amount: "", amountSource: "page" },
-        ],
-        ["unknown command: purchase_check", null],
-      ] as const) {
+      for (const error of [
+        "Page browser unavailable or interrupted",
+        "unknown command: purchase_check",
+      ]) {
         const liveDriver = vi
           .fn()
           .mockResolvedValue({ ok: false, error, fallback: "computer_act" });
         const provider = new ComputerBrowserProvider({ liveDriver });
-        expect(await provider.purchaseCheck(computer, { actions }, baseContext)).toEqual({
-          purchase,
-        });
+        const checked = provider.purchaseCheck(computer, { actions }, baseContext);
+        if (error.startsWith("unknown command")) expect(await checked).toEqual({ purchase: null });
+        else await expect(checked).rejects.toThrow("could not read the page");
         expect(liveDriver).toHaveBeenCalledTimes(1);
       }
     });

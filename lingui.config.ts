@@ -29,6 +29,7 @@ export default defineConfig({
       include: [
         "<rootDir>/apps/web/src",
         "<rootDir>/packages/i18n/src",
+        "<rootDir>/packages/adapters/src/models/model-provider-registry.ts",
         "<rootDir>/apps/mobile/app",
         "<rootDir>/apps/mobile/components",
         "<rootDir>/apps/mobile/lib",

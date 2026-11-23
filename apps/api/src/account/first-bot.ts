@@ -1,12 +1,11 @@
 import type { Actor, Bot } from "@rakazo/contracts";
-import { BOT_COLOR_LIST } from "@rakazo/contracts";
+import { BOT_COLOR_LIST, FIRST_BOT_SPAWN_KEY } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
 import { runAsSystem } from "@rakazo/db";
 import { bestEffort } from "@rakazo/logging";
 
 const FIRST_BOT_NAME = "Chief";
 /** Also the key earlier web clients created it with, so their Chief is found, never duplicated. */
-export const FIRST_BOT_SPAWN_KEY = "onboarding:first";
 
 type BotCreate = {
   name: string;

@@ -17,3 +17,10 @@ const currentForeground = () => isForegroundState(AppState.currentState);
 export function useAppForeground(): boolean {
   return useSyncExternalStore(subscribe, currentForeground, currentForeground);
 }
+
+/** Wait for the app to become active again after an OS permission dialog. */
+export function useAppActive(): boolean {
+  return useSyncExternalStore(subscribe, currentActive, currentActive);
+}
+
+const currentActive = () => AppState.currentState === "active";

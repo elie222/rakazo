@@ -14,6 +14,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("../../../lib/query/rpc", () => {
   const rpc = {
+    // No earlier versions of the computer's files to restore.
+    computer: { homeVersions: vi.fn(async () => []) },
     bots: {
       get: vi.fn(),
       update: vi.fn(),
@@ -341,6 +343,31 @@ describe("BotSettings model choices", () => {
     expect(document.querySelector('[data-testid="bot-email"]')?.textContent).toContain(
       "scout@bots.test",
     );
+  });
+
+  it.each([
+    ["oauth", "Example Abonnement"],
+    ["api_key", "Example"],
+  ])("names the serving %s connection in bot settings", async (authKind, name) => {
+    i18n.load("de", { "Example subscription": "Example Abonnement" });
+    i18n.activate("de");
+    vi.mocked(rpc.models.credentials).mockResolvedValueOnce([
+      { id: "connection", provider: "example", label: "Example", authKind, hasKey: true },
+    ] as never);
+    vi.mocked(rpc.models.list).mockResolvedValueOnce([
+      {
+        provider: "example",
+        providerName: "Example",
+        subscriptionName: "Example subscription",
+        auth: "both",
+        id: "model",
+        label: "Model",
+        billing: "",
+      },
+    ] as never);
+    await render();
+    const option = (await openModelPicker()).find((row) => row.dataset.value === "example::model");
+    expect(option?.getAttribute("aria-label")).toBe(`Model (${name})`);
   });
 
   it("submits DeepSeek API ids and does not offer a display label", async () => {

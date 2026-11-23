@@ -114,7 +114,7 @@ export function attachDesktopStackProbe(
 }
 
 export function sharedPageHeaders(req: IncomingMessage, res: ServerResponse, next: () => void) {
-  if (req.url?.startsWith("/p/")) {
+  if (req.url?.startsWith("/p/") || /^\/review(?:[/?]|$)/.test(req.url ?? "")) {
     res.setHeader("x-robots-tag", "noindex, nofollow");
     res.setHeader("referrer-policy", "no-referrer");
   }

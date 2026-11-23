@@ -108,8 +108,12 @@ export const fileTools: ToolHandlers = {
     const { deps } = ctx;
     const { args } = call;
     const workspace = runWorkspace(ctx, call);
-    return readFileFromTool(deps.sandbox, workspace, args, (path, maxBytes) =>
-      readStoppedRunFile(ctx, path, maxBytes),
+    return readFileFromTool(
+      deps.sandbox,
+      workspace,
+      args,
+      (path, maxBytes) => readStoppedRunFile(ctx, path, maxBytes),
+      ctx.computer.modelSeesImages,
     );
   },
   async write_file(ctx, call) {
@@ -240,7 +244,12 @@ export async function saveWorkspaceFile(
   const { deps, run } = ctx;
   if (!deps.artifacts) throw new Error("artifact storage unavailable");
   return attachWorkspaceFileToThread(
-    { prisma: deps.prisma, artifacts: deps.artifacts, maxUploadSizeBytes: deps.maxUploadSizeBytes },
+    {
+      prisma: deps.prisma,
+      artifacts: deps.artifacts,
+      maxUploadSizeBytes: deps.maxUploadSizeBytes,
+      events: deps.events,
+    },
     {
       spaceId: run.spaceId,
       userId: run.userId,

@@ -432,7 +432,8 @@ it("keeps a share whose read settles between a warm link's commit and its effect
       <SettleOnCommit botId="bot-warm-b" />
     </>,
   );
-  await new Promise((resolve) => setTimeout(resolve, 50));
+  // Wait for the requeue itself: the passive effects run on the scheduler's clock, not a fixed delay.
+  await vi.waitFor(() => expect(retryIncomingShare).toHaveBeenCalledWith(share));
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
 
   // The share goes back to the queue, as when the read settles after the switch; it is not dropped.

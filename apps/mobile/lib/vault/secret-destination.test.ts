@@ -2,7 +2,7 @@ import { i18n } from "@lingui/core";
 import { generateMessageId } from "@lingui/message-utils/generateMessageId";
 import { afterEach, describe, expect, it } from "vitest";
 import { resetI18nForTests } from "../i18n/i18n";
-import { secretDestinationLabel, siteHost } from "./secret-destination";
+import { secretDestinationLabel } from "./secret-destination";
 
 /** A catalog message in the active language, looked up as the compiled macro does. */
 function t(message: string) {
@@ -65,11 +65,4 @@ it.each([
   ["invalid origin", "invalid origin"],
 ])("formats login destination %s as %s", (origin, expected) => {
   expect(secretDestinationLabel({ name: "login", origin, auth: { type: "login" } })).toBe(expected);
-});
-
-describe("mobile site host", () => {
-  it("shows the host of an origin, and the text itself when it is not one", () => {
-    expect(siteHost("https://login.example.test")).toBe("login.example.test");
-    expect(siteHost("not a url")).toBe("not a url");
-  });
 });

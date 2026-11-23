@@ -29,7 +29,7 @@ import { HISTORY_FIXTURE_VERSION, HISTORY_JUDGE_VERSION } from "../evals/history
 import type { DiagnosticToolObservation, HistoryDiagnostic } from "../evals/history-observer.js";
 import { observeSyntheticHistory } from "../evals/history-observer.js";
 import type { EvalJudge, JudgeInput } from "../evals/judge.js";
-import { createEvalJudge } from "../evals/judge.js";
+import { createEvalJudge, judgeSettings } from "../evals/judge.js";
 import type { CacheDecisionMeasurement, EvalPricing, MeasuredCall } from "../evals/measurement.js";
 import { measureCalls, SpendBudget, validatePricing } from "../evals/measurement.js";
 import type { TrialResult } from "../evals/report.js";
@@ -43,7 +43,7 @@ import {
 } from "../evals/report.js";
 import { ROUTINE_MODE_SUITE } from "../evals/routine-mode.js";
 import type { CasePlan } from "../evals/run-store.js";
-import { judgeIdentity, RunStore } from "../evals/run-store.js";
+import { RunStore } from "../evals/run-store.js";
 import {
   APPS_EVAL_CASES,
   APPS_FIXTURE_VERSION,
@@ -130,7 +130,7 @@ async function main() {
       "base-url": { type: "string" },
       "context-window": { type: "string" },
       "max-output-tokens": { type: "string" },
-      trials: { type: "string", default: "3" },
+      trials: { type: "string", default: "1" },
       case: { type: "string", multiple: true },
       "cases-file": { type: "string" },
       "timeout-ms": { type: "string", default: "180000" },
@@ -339,6 +339,7 @@ async function main() {
       provider: string;
       rubricVersion: string;
       pricing: EvalPricing;
+      settings: ReturnType<typeof judgeSettings>;
       calibration: Array<{ expected: boolean; pass: boolean; reason: string }>;
       modelCalls: number;
       costUsd: number | null;
@@ -489,11 +490,19 @@ async function main() {
         "A valid judge pricing file with explicit rates is required; no inference was scheduled",
       );
     }
+    const judgeModel = {
+      ...judgeConnection,
+      id: judgeConnection.modelId!,
+      allowPrivateEndpoint: true,
+      maxImagesPerPrompt: judgeConnection.maxImagesPerPrompt ?? undefined,
+      maxTokens: judgeConnection.maxTokens ?? 2048,
+    };
     report.judge = {
       model: judgeConnection.modelId!,
       provider: judgeConnection.provider,
       rubricVersion: suiteJudge.version,
       pricing: judgePricing,
+      settings: judgeSettings(judgeModel),
       calibration: [],
       modelCalls: 0,
       costUsd: null,
@@ -520,17 +529,7 @@ async function main() {
     const collect: NonNullable<AgentRunRequest["onUsage"]> = (usage) => {
       if (usage.callId) judgeCalls.set(usage.callId, { id: usage.callId, ...usage });
     };
-    const rawJudge = createEvalJudge(
-      runtime,
-      {
-        ...judgeConnection,
-        id: judgeConnection.modelId!,
-        allowPrivateEndpoint: true,
-        maxImagesPerPrompt: judgeConnection.maxImagesPerPrompt ?? undefined,
-        maxTokens: judgeConnection.maxTokens ?? 2048,
-      },
-      collect,
-    );
+    const rawJudge = createEvalJudge(runtime, judgeModel, collect);
     const judgeSecrets = [judgeConnection.apiKey ?? "", judgeConnection.baseUrl ?? ""];
     judge = async (input, signal) => {
       try {
@@ -777,7 +776,7 @@ async function main() {
                   trials: controls.trials,
                   strategy: planned.strategy!,
                   fingerprint,
-                  judge: judgeIdentity(report.judge),
+                  judge: report.judge,
                 })
               : { kind: "run" };
           plans.set(key, plan);

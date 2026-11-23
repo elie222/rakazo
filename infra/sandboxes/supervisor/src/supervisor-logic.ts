@@ -582,8 +582,9 @@ export function containerActionSteps(
 
 export function normalizeWorkspaceRelative(value: string) {
   const normalized = value.replace(/\\/g, "/").replace(/^\/+/, "");
-  const segments = normalized.split("/").filter(Boolean);
-  if (segments.some((segment) => segment === "." || segment === "..")) {
+  // "." stays where it is, so "." and "./notes" mean the root and notes; only ".." can leave.
+  const segments = normalized.split("/").filter((segment) => segment && segment !== ".");
+  if (segments.includes("..")) {
     throw new Error("path escapes the computer workspace");
   }
   return segments.join("/");

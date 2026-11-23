@@ -189,6 +189,11 @@ describeJourneys("required product journeys", () => {
           where: { botId: bot.id, status: { in: [...ACTIVE_RUN_STATUSES] } },
         })) === 0,
     );
+    // A bot without a computer simply has no earlier versions.
+    const { computerId } = await prisma.bot.findUniqueOrThrow({ where: { id: bot.id } });
+    await prisma.bot.update({ where: { id: bot.id }, data: { computerId: null } });
+    expect(await rpc(app, cookie, "computer/homeVersions", { botId: bot.id })).toEqual([]);
+    await prisma.bot.update({ where: { id: bot.id }, data: { computerId } });
     await rpc(app, cookie, "computer/boot", { botId: bot.id });
     const original = await prisma.bot.findUniqueOrThrow({
       where: { id: bot.id },

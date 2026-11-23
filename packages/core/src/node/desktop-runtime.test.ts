@@ -234,6 +234,20 @@ describe("shared Linux desktop lifecycle", () => {
     expect(ensureScreenCommand(0, "bot", "view")).not.toMatch(/-wait 5|-defer 5/);
   });
 
+  it("leaves key autorepeat to the process a person types into", () => {
+    const view = ensureScreenCommand(0, "bot", "view");
+    expect(view).toMatch(/nohup x11vnc [^\n]* -viewonly -repeat /);
+    expect(interactiveScreenCommand(true, "control")).not.toMatch(/x11vnc [^\n]* -repeat /);
+    // A viewer started before -repeat is replaced rather than reused.
+    const reuse = view.match(/! pgrep -f '([^']+)'"\$\{desktop_view_token\}"'([^']+)'/);
+    expect(reuse).not.toBeNull();
+    const pattern = new RegExp(`${reuse![1]}view${reuse![2]}`);
+    const viewer = (flags: string) =>
+      `/usr/bin/x11vnc -display :1 -forever -shared ${flags} -nopw -rfbport 0 -unixsock /tmp/rakazo/sockets/view-1-view -xkb -ncache 0`;
+    expect(viewer("-viewonly -repeat")).toMatch(pattern);
+    expect(viewer("-viewonly")).not.toMatch(pattern);
+  });
+
   it.each([undefined, "127.0.0.1", "localhost", "192.0.2.10", "0.0.0.0"])(
     "binds and identifies the configured gateway (%s)",
     (bindHost) => {
@@ -468,12 +482,85 @@ describe("shared Linux desktop lifecycle", () => {
     );
     const lines = command.split("\n");
     const unsetAt = lines.findIndex((line) => line.includes("unset LD_PRELOAD"));
-    const execAt = lines.findIndex((line) => line.startsWith("exec "));
+    const wrapperExecAt = lines.findIndex((line) => line.includes("rakazo-browser) exec "));
+    const directExecAt = lines.findIndex((line) => line.includes("*) exec "));
     expect(unsetAt).toBeGreaterThan(-1);
-    expect(execAt).toBeGreaterThan(unsetAt);
-    // A relaunch keeps the bot's tabs and session cookies, matching rakazo-browser.
-    expect(lines[execAt]).toContain("--restore-last-session");
+    expect(wrapperExecAt).toBeGreaterThan(unsetAt);
+    expect(directExecAt).toBeGreaterThan(unsetAt);
+    // rakazo-browser owns its flag set; browser-launch only hands it the profile and user args.
+    expect(lines[wrapperExecAt]).toContain("--user-data-dir=");
+    expect(lines[wrapperExecAt]).not.toContain("--test-type");
+    expect(lines[wrapperExecAt]).not.toContain("--remote-debugging-port=");
+    // Direct browser fallback keeps the bot's tabs and session cookies, matching rakazo-browser.
+    expect(lines[directExecAt]).toContain("--restore-last-session");
   });
+
+  it.skipIf(process.platform !== "linux")(
+    "hands rakazo-browser only the profile and extra args, keeping direct flags for raw browsers",
+    () => {
+      const root = mkdtempSync(path.join(tmpdir(), "desktop-browser-launcher-"));
+      roots.push(root);
+      const runtime = path.join(root, "runtime");
+      const wrapperBin = path.join(root, "wrapper-bin");
+      const rawBin = path.join(root, "raw-bin");
+      const wrapperArgs = path.join(root, "wrapper-args");
+      const rawArgs = path.join(root, "raw-args");
+      mkdirSync(runtime, { recursive: true });
+      mkdirSync(wrapperBin, { recursive: true });
+      mkdirSync(rawBin, { recursive: true });
+      const writeRecorder = (target: string, outFile: string) => {
+        writeFileSync(
+          target,
+          `#!/bin/sh\nprintf 'DISPLAY=%s\\n' "$DISPLAY" > ${shellQuote(outFile)}\nprintf '%s\\n' "$@" >> ${shellQuote(outFile)}\n`,
+          { mode: 0o755 },
+        );
+      };
+      writeRecorder(path.join(wrapperBin, "rakazo-browser"), wrapperArgs);
+      writeRecorder(path.join(rawBin, "google-chrome"), rawArgs);
+
+      const script = ensureScreenCommand(0, "bot", "token", env)
+        .replaceAll("/tmp/rakazo", runtime)
+        .replaceAll("/usr/share/novnc", root);
+      const launcherWritten = script.indexOf("\nchmod 700 ");
+      expect(launcherWritten).toBeGreaterThan(-1);
+      const writeLauncher = `command() { :; }\n${script.slice(0, script.indexOf("\n", launcherWritten + 1))}\n`;
+      const setup = spawnSync("bash", ["-eu", "-c", writeLauncher], {
+        encoding: "utf8",
+        timeout: 5_000,
+      });
+      expect(setup.status, setup.stderr).toBe(0);
+
+      const launcher = path.join(runtime, `browser-launch-${env.displayStart}`);
+      const profile = browserProfilePathForScreen("bot", env);
+      const { debugPort } = screenPorts(0, env);
+
+      const viaWrapper = spawnSync(launcher, ["https://example.test"], {
+        encoding: "utf8",
+        timeout: 5_000,
+        env: { PATH: `${wrapperBin}${path.delimiter}${process.env.PATH ?? ""}` },
+      });
+      expect(viaWrapper.status, viaWrapper.stderr).toBe(0);
+      expect(readFileSync(wrapperArgs, "utf8").trim().split("\n")).toEqual([
+        `DISPLAY=:${env.displayStart}`,
+        `--user-data-dir=${profile}`,
+        "https://example.test",
+      ]);
+
+      const viaRaw = spawnSync(launcher, ["https://example.test"], {
+        encoding: "utf8",
+        timeout: 5_000,
+        env: { PATH: `${rawBin}${path.delimiter}/usr/bin:/bin` },
+      });
+      expect(viaRaw.status, viaRaw.stderr).toBe(0);
+      const rawLines = readFileSync(rawArgs, "utf8").trim().split("\n");
+      expect(rawLines[0]).toBe(`DISPLAY=:${env.displayStart}`);
+      expect(rawLines).toContain("--test-type");
+      expect(rawLines).toContain("--restore-last-session");
+      expect(rawLines).toContain(`--remote-debugging-port=${debugPort}`);
+      expect(rawLines).toContain(`--user-data-dir=${profile}`);
+      expect(rawLines.at(-1)).toBe("https://example.test");
+    },
+  );
 
   it.skipIf(process.platform !== "linux").each([
     ["readable", false],
@@ -994,6 +1081,8 @@ describe("shared Linux desktop lifecycle", () => {
         [
           "#!/usr/bin/env python3",
           "import os, socket, sys, time",
+          "if not any(arg.startswith('--remote-debugging-port=') for arg in sys.argv[1:]):",
+          `    os.execv(sys.executable, [sys.executable, __file__, "--remote-debugging-port=${debugPort}", *sys.argv[1:]])`,
           `open(${JSON.stringify(launches)}, "a").write("launch\\n")`,
           "server = socket.socket()",
           "server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)",
@@ -1248,6 +1337,14 @@ describe("shared Linux desktop lifecycle", () => {
       [
         "#!/usr/bin/env python3",
         "import os, socket, sys, time",
+        "port = None",
+        "for arg in sys.argv[1:]:",
+        "    if arg.startswith('--remote-debugging-port='):",
+        "        port = int(arg.split('=', 1)[1])",
+        "if port is None:",
+        "    display = os.environ.get('DISPLAY', ':1').lstrip(':').split('.', 1)[0]",
+        "    port = 9221 + int(display)",
+        "    os.execv(sys.executable, [sys.executable, __file__, f'--remote-debugging-port={port}', *sys.argv[1:]])",
         "log = os.environ.get('BROWSER_LOG')",
         "if log:",
         "    handle = open(log, 'a')",
@@ -1257,12 +1354,6 @@ describe("shared Linux desktop lifecycle", () => {
         "pid_log = os.environ.get('PID_LOG')",
         "if pid_log:",
         "    open(pid_log, 'a').write(str(os.getpid()) + '\\n')",
-        "port = None",
-        "for arg in sys.argv[1:]:",
-        "    if arg.startswith('--remote-debugging-port='):",
-        "        port = int(arg.split('=', 1)[1])",
-        "if port is None:",
-        "    raise SystemExit('missing debugging port')",
         "server = socket.socket()",
         "server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)",
         "server.bind(('127.0.0.1', port))",

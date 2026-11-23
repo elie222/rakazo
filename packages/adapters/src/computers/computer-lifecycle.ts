@@ -16,6 +16,7 @@ import {
   SandboxUnresponsiveError,
 } from "@rakazo/adapter-kit";
 import type { ComputerSize, ComputerUpdate } from "@rakazo/contracts";
+import { COMPUTER_RECOVERY_REQUIRED_ERROR } from "@rakazo/contracts";
 import {
   ACTIVE_RUN_STATUSES,
   abortableDelay,
@@ -36,7 +37,7 @@ import {
   spaceTakesWork,
   withTransactionRetry,
 } from "@rakazo/db";
-import { getLogger } from "@rakazo/logging";
+import { bestEffort, getLogger } from "@rakazo/logging";
 import { resolveAgentHomePath } from "../storage/home.js";
 import { ObjectAgentHomeStore } from "../storage/home-object-store.js";
 import {
@@ -173,12 +174,13 @@ export class ComputerBusyError extends ClientError {
   }
 }
 
-/** A stop was not confirmed, so this computer must remain isolated until recovery. */
+/**
+ * A stop was not confirmed, or the system stayed damaged after its automatic recovery, so this
+ * computer remains isolated until recovery.
+ */
 export class ComputerRecoveryRequiredError extends Error {
   constructor() {
-    super(
-      "Computer requires recovery after an unconfirmed stop. Recover the computer to rebuild it.",
-    );
+    super(COMPUTER_RECOVERY_REQUIRED_ERROR);
     this.name = "ComputerRecoveryRequiredError";
   }
 }
@@ -211,6 +213,14 @@ async function computerOwnerLocale(
     return {};
   }
 }
+
+const RELEASED_CONTROL = {
+  controlHolder: "none",
+  controlLeaseId: null,
+  controlUserId: null,
+  controlLeaseExpiresAt: null,
+  controlBotId: null,
+} as const;
 
 export async function provisionComputer(
   deps: {
@@ -269,6 +279,7 @@ export async function provisionComputer(
     }
   }
   const homePath = resolveAgentHomePath(deps.home, existing.homeKey, deps.dataDir ?? "./data");
+  const size = await planComputerSize(deps.prisma, computerId);
 
   // Re-provisioning a live computer enters booting and revokes its screen URLs.
   // A provider-confirmed live reference needs setup, not a new lifecycle claim.
@@ -278,7 +289,7 @@ export async function provisionComputer(
     !existing.restorePending &&
     deps.sandbox.isRunning
   ) {
-    const ref = toComputerRef(existing);
+    const ref: ComputerRef = { ...toComputerRef(existing), startSize: size };
     const checking = performance.now();
     const running = await confirmedRunning(deps.sandbox, ref, context);
     providerReadyMs += performance.now() - checking;
@@ -300,7 +311,16 @@ export async function provisionComputer(
       });
       if (retained.count !== 1) throw busy("running_claim_lost");
       await recordComputerRunStart(deps.prisma, existing, runningSince);
-      const damaged = await prepare(ref).then(
+      const damaged = await (async () => {
+        await prepare(ref);
+        await ensureComputerWorkspaceLayout(
+          deps.sandbox,
+          ref,
+          parseComputerMode(existing.scope),
+          context.botId,
+          context,
+        );
+      })().then(
         () => false,
         (error: unknown) => {
           // Only the reconnect claim below can stop a damaged system back to its last good copy.
@@ -309,13 +329,6 @@ export async function provisionComputer(
         },
       );
       if (!damaged) {
-        await ensureComputerWorkspaceLayout(
-          deps.sandbox,
-          ref,
-          parseComputerMode(existing.scope),
-          context.botId,
-          context,
-        );
         logProvisioned(ref, "reuse");
         return ref;
       }
@@ -327,7 +340,6 @@ export async function provisionComputer(
   const startKind = (await deps.sandbox.provisionKind?.(existing.homeKey)) ?? existing.kind;
   if (await sandboxAllowanceUsedUp(deps, { spaceId: existing.spaceId, kind: startKind }))
     throw new SandboxAllowanceUsedError();
-  const size = await planComputerSize(deps.prisma, existing.spaceId);
 
   // If we first observe abandoned "booting", remember that stamp before waiting. A concurrent
   // reclaim bumps updatedAt while state stays "booting"; fencing the claim on the pre-wait
@@ -438,6 +450,7 @@ export async function provisionComputer(
   });
   if (claimed.count !== 1) throw busy("claim_lost");
   let provisioned: ComputerRef | undefined;
+  let recoverySpent = false;
   let incomplete = false;
   // A start that took over an abandoned boot cannot tell how far that boot restored, so it restores.
   const replaces = (ref: ComputerRef) =>
@@ -527,17 +540,41 @@ export async function provisionComputer(
       });
       if (claim.count !== 1) throw busy("restore_claim_lost");
     };
+    // Damage can surface in any setup command, not only in prepare, so all of setup is retried.
+    const setUp = async (current: ComputerRef) => {
+      await prepare(current);
+      // Provision chooses its kind again, so a host change since the check above can mount a
+      // cache that was not brought up to date. Failing rolls this computer back; the next start
+      // downloads.
+      if (cache && !hydrated && sandboxKindCapabilities(current.kind).serverHomeMount === "always")
+        throw new Error("Computer host changed while it was starting");
+      const restores = replaces(current);
+      if (restores) {
+        await onProgress?.("restoring");
+        await restoreComputerWorkspace(deps.home, deps.sandbox, existing.homeKey, current, context);
+      }
+      await onProgress?.("reconnecting");
+      await ensureComputerWorkspaceLayout(
+        deps.sandbox,
+        current,
+        parseComputerMode(existing.scope),
+        context.botId,
+        context,
+      );
+      return restores;
+    };
     let ref = await provision();
     provisioned = ref;
     await markReplacement(ref);
+    let replacement: boolean;
     try {
-      await prepare(ref);
+      replacement = await setUp(ref);
     } catch (error) {
-      if (
-        !isSandboxDamagedError(error) ||
-        !(await claimAutoRecovery(deps.prisma, existing, claimStamp))
-      )
+      if (!isSandboxDamagedError(error)) throw error;
+      if (!(await claimAutoRecovery(deps.prisma, existing, claimStamp))) {
+        recoverySpent = true;
         throw error;
+      }
       // Stopping keeps the provider's last good copy of a system that can no longer run anything,
       // and starting again resumes it, or replaces it from the saved workspace when that is newer.
       log.warn("computer.auto_recover", { provider: ref.kind, step: "stop", error });
@@ -549,11 +586,13 @@ export async function provisionComputer(
         ref = await provision();
         provisioned = ref;
         await markReplacement(ref);
-        await prepare(ref);
+        replacement = await setUp(ref);
       } catch (failure) {
         log.warn("computer.auto_recover", { provider: ref.kind, step: "failed", error: failure });
-        // Recover stays the way out; a failure on the way says less than the damage itself.
-        throw isSandboxDamagedError(failure) ? failure : error;
+        // Only damage that outlived the recovery parks the computer; any other failure on the
+        // way, such as a provider outage, is reported as itself and the next start tries again.
+        recoverySpent = isSandboxDamagedError(failure);
+        throw failure;
       }
       log.warn("computer.auto_recover", {
         provider: ref.kind,
@@ -561,23 +600,6 @@ export async function provisionComputer(
         operation: ref.fresh ? "replaced" : "resumed",
       });
     }
-    // Provision chooses its kind again, so a host change since the check above can mount a cache
-    // that was not brought up to date. Failing rolls this computer back; the next start downloads.
-    if (cache && !hydrated && sandboxKindCapabilities(ref.kind).serverHomeMount === "always")
-      throw new Error("Computer host changed while it was starting");
-    const replacement = replaces(ref);
-    if (replacement) {
-      await onProgress?.("restoring");
-      await restoreComputerWorkspace(deps.home, deps.sandbox, existing.homeKey, ref, context);
-    }
-    await onProgress?.("reconnecting");
-    await ensureComputerWorkspaceLayout(
-      deps.sandbox,
-      ref,
-      parseComputerMode(existing.scope),
-      context.botId,
-      context,
-    );
     // Bots deleted while this computer was not running could not remove their folders then.
     // Skip only plain reconnects; a provider may start or replace the computer during one.
     if (existing.scope === "team" && (!reconnecting || replacement || ref.started === true)) {
@@ -592,6 +614,12 @@ export async function provisionComputer(
     const continued =
       existing.state === "running" && existing.runningSince && !ref.started && !replacement;
     const runningSince = continued ? existing.runningSince! : new Date();
+    // Set the rate at the start of a stretch. If the provider cannot confirm size then, use
+    // Standard for that stretch. Reconnects preserve both the rate and the active-lifetime clock.
+    const usageSize =
+      ref.size ?? (sandboxKindCapabilities(ref.kind).sizedUsage ? "standard" : null);
+    const sizing =
+      !continued && usageSize ? { runningSize: usageSize, runningSizeSince: runningSince } : {};
     // One write stores the machine and leaves "booting", and the same transaction drops the
     // record that would delete the machine later: from here the computer answers for it.
     const activated = await deps.prisma.$transaction(async (tx) => {
@@ -610,6 +638,7 @@ export async function provisionComputer(
           kind: ref.kind,
           restorePending: false,
           runningSince,
+          ...sizing,
           ...(!reconnecting
             ? {
                 controlHolder: activeControl ? "user" : controlHolder,
@@ -640,21 +669,25 @@ export async function provisionComputer(
     // or lost at the provider without us.
     await recordComputerRunStart(
       deps.prisma,
-      { ...existing, kind: ref.kind, providerRef: ref.providerRef },
+      { ...existing, ...sizing, kind: ref.kind, providerRef: ref.providerRef },
       runningSince,
       existing.state === "running" ? "gone" : "reconciled",
     );
     logProvisioned(ref, replacement ? "create" : ref.started ? "resume" : "reuse");
-    return ref;
+    return { ...ref, startSize: size };
   } catch (error) {
     log.warn("computer.provision_failed", {
       provider: existing.kind,
       durationMs: Math.round(performance.now() - started),
       error,
     });
-    // A failed reconnect never owns an existing workspace, even if setup failed.
+    // The one automatic recovery was spent or failed, so this machine waits for Recover.
+    const damaged = recoverySpent && isSandboxDamagedError(error);
+    // A failed reconnect never owns an existing workspace, even if setup failed. A damaged one
+    // holds nothing readable, so it is stopped back to the provider's last good copy instead of
+    // billing while it waits.
     const rollbackError =
-      provisioned && (!reconnecting || provisioned.fresh === true)
+      provisioned && (!reconnecting || provisioned.fresh === true || damaged)
         ? await rollbackProvisionedComputer(deps.sandbox, provisioned, context, error)
         : undefined;
     const unsafeStop = isSandboxUnsafeStopError(error) || isSandboxUnsafeStopError(rollbackError);
@@ -663,6 +696,8 @@ export async function provisionComputer(
       (!reconnecting || (unsafeStop && provisioned?.fresh === true)) && rollbackError
         ? provisioned
         : undefined;
+    const parked = damaged && !rollbackError;
+    let released = false;
     try {
       await deps.prisma.$transaction(async (tx) => {
         const recorded = await tx.computer.updateMany({
@@ -675,7 +710,7 @@ export async function provisionComputer(
           },
           data: {
             state:
-              (reconnecting || rollbackError) && unsafeStop
+              damaged || ((reconnecting || rollbackError) && unsafeStop)
                 ? "quarantined"
                 : reconnecting && !existing.restorePending && !incomplete
                   ? "running"
@@ -687,9 +722,14 @@ export async function provisionComputer(
                   restorePending: replaces(kept),
                 }
               : {}),
-            ...(incomplete ? { restorePending: true } : {}),
+            // Nothing is ever saved from a damaged machine over the stored workspace.
+            ...(incomplete || damaged ? { restorePending: true } : {}),
+            // A damaged machine confirmed stopped has no screen to control, and a lease left on
+            // it would hold off Recover until it expired.
+            ...(parked ? RELEASED_CONTROL : {}),
           },
         });
+        released = parked && recorded.count === 1;
         // Stored, so its record goes too. One this write did not store keeps its record.
         if (kept && recorded.count === 1)
           await deps.jobs.cancelIn(tx, machineCleanupJobKey(kept.kind, kept.providerRef));
@@ -700,6 +740,11 @@ export async function provisionComputer(
         "Computer provisioning failed and its failure could not be recorded",
       );
     }
+    if (released)
+      await bestEffort(
+        "teaching recording of a damaged computer",
+        endTeachingWithLease(deps, existing.spaceId, existing.controlLeaseId),
+      );
     if (rollbackError) {
       // The provider was still down for the cleanup, which adds nothing to why the start failed.
       if (

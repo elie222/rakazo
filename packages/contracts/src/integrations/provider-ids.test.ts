@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { ComputerStatusSchema } from "../computers/computer.js";
 import { SandboxKind } from "../ids.js";
 import { appContract } from "../rpc/app-contract.js";
+import { CONNECTION_LABEL_MAX_LENGTH } from "./connections.js";
 import {
   IntegrationProviderConfigSchema,
   IntegrationSetupStateSchema,
@@ -52,6 +53,22 @@ describe("provider ids are opaque strings", () => {
       providers: [{ id: "a-provider-since-removed", configured: true }],
     };
     expect(IntegrationSetupStateSchema.parse(state)).toEqual(state);
+  });
+
+  it("holds a new connection's name to the bounds renaming uses", () => {
+    const begin = appContract.connections.begin["~orpc"].inputSchema!;
+    const rename = appContract.connections.rename["~orpc"].inputSchema!;
+    const long = "x".repeat(CONNECTION_LABEL_MAX_LENGTH + 1);
+    expect(begin.safeParse({ provider: "gmail", displayName: "   " }).success).toBe(false);
+    expect(begin.safeParse({ provider: "gmail", displayName: long }).success).toBe(false);
+    expect(begin.parse({ provider: "gmail", displayName: "  Work  " })).toMatchObject({
+      displayName: "Work",
+    });
+    expect(
+      begin.safeParse({ provider: "gmail", displayName: "x".repeat(CONNECTION_LABEL_MAX_LENGTH) })
+        .success,
+    ).toBe(true);
+    expect(rename.safeParse({ connectionId: "c1", displayName: long }).success).toBe(false);
   });
 
   it("leaves the connector a request omits for the server to choose", () => {

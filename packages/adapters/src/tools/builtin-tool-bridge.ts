@@ -70,6 +70,7 @@ const AREAS: Array<[area: string, matches: (name: string) => boolean]> = [
       /^(scratchpad_|ticket_)/.test(name) || ["board_tickets", "task_catalog"].includes(name),
   ],
   ["skills", (name) => name.startsWith("skill_")],
+  ["calendar", (name) => /calendar|reminder/.test(name)],
   ["schedules", (name) => name.startsWith("schedule_")],
   ["memory", (name) => name.includes("memory")],
   [

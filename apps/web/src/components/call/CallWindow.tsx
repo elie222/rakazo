@@ -1,7 +1,7 @@
 import { Dialog, DialogContent } from "@rakazo/ui-web/components/ui/dialog";
 import { useIsMobile } from "@rakazo/ui-web/hooks/use-mobile";
 import { cn } from "@rakazo/ui-web/lib/utils";
-import type { ReactNode } from "react";
+import type { KeyboardEventHandler, ReactNode } from "react";
 import { useRef } from "react";
 
 /**
@@ -13,6 +13,7 @@ export function CallWindow({
   children,
   ...attributes
 }: {
+  onKeyDown?: KeyboardEventHandler<HTMLDivElement>;
   "data-testid": string;
   role: "dialog" | "alertdialog";
   "aria-label": string;

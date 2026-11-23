@@ -122,13 +122,17 @@ function fakePrisma(users: Array<{ id: string; email: string; emailVerified: boo
   return { rows, prisma: { pluginSubmission, user } as never };
 }
 
-function routes(prisma: never, email = new EmailEmulator()) {
+function routes(
+  prisma: never,
+  email = new EmailEmulator(),
+  clientIp: () => string = () => "203.0.113.7",
+) {
   const app = pluginSubmissionRoutes({
     prisma,
     email,
     adminEmails: ["admin@example.test"],
     webOrigin: "https://app.example.test",
-    clientIp: () => "203.0.113.7",
+    clientIp,
     onEmailError: (error) => {
       throw error;
     },
@@ -220,6 +224,26 @@ describe("public plugin submissions", () => {
     }
     expect(statuses.slice(0, 10).every((status) => status === 201)).toBe(true);
     expect(statuses[10]).toBe(429);
+  });
+
+  it("stops mailing an admin inbox once a day's notices are spent", async () => {
+    const { rows, prisma } = fakePrisma();
+    let nextIp = 0;
+    const { submit, email } = routes(prisma, new EmailEmulator(), () => `198.51.100.${nextIp++}`);
+    // Distinct addresses and repositories: neither the per-IP window nor the per-sender
+    // confirmation window is what bounds the operator's mailbox here.
+    for (let index = 0; index < 22; index++) {
+      const response = await submit({
+        ...valid,
+        email: `person-${index}@example.test`,
+        source: `https://github.com/acme/plugin-${index}`,
+      });
+      expect(response.status).toBe(201);
+    }
+    expect(rows).toHaveLength(22);
+    await vi.waitFor(() =>
+      expect(email.sent.filter((message) => message.to === "admin@example.test")).toHaveLength(20),
+    );
   });
 });
 

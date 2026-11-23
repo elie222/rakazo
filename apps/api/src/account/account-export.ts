@@ -1,5 +1,5 @@
 import type { AdapterContext, AgentHomeStore, ArtifactStore } from "@rakazo/adapter-kit";
-import { resolveBotWorkspacePath } from "@rakazo/adapters";
+import { ObjectStorageUnavailableError, resolveBotWorkspacePath } from "@rakazo/adapters";
 import type { Auth } from "@rakazo/auth";
 import type {
   AccountExportExecutables,
@@ -95,7 +95,9 @@ export function zipStream(
           if (failure) throw failure;
         } catch (error) {
           if (error === failure || (!cancelled && !options.signal?.aborted)) {
-            getLogger().error("account.export.failed", error);
+            // An outage was already logged as a warning where the store failed.
+            if (!(error instanceof ObjectStorageUnavailableError))
+              getLogger().error("account.export.failed", error);
             throw error;
           }
           getLogger().warn("account.export.aborted", {

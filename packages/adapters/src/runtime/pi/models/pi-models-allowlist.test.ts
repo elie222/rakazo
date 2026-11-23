@@ -46,17 +46,24 @@ describe("model provider allowlist in the catalog", () => {
     expect(catalog.every((entry) => entry.provider === "openrouter")).toBe(true);
   });
 
-  it("drops a preset the list leaves out and keeps one it names", () => {
+  it("offers only the presets named in the allowlist", () => {
     process.env.RAKAZO_MODEL_PROVIDER_ALLOWLIST = OPENAI_COMPATIBLE_PROVIDER_ID;
     const withoutPreset = listPiCatalog().find(
       (entry) => entry.provider === OPENAI_COMPATIBLE_PROVIDER_ID,
     );
     expect(withoutPreset?.endpointPresets).toEqual([]);
 
-    process.env.RAKAZO_MODEL_PROVIDER_ALLOWLIST = `${OPENAI_COMPATIBLE_PROVIDER_ID},ollama-cloud`;
+    process.env.RAKAZO_MODEL_PROVIDER_ALLOWLIST = `${OPENAI_COMPATIBLE_PROVIDER_ID},concentrate`;
     const withPreset = listPiCatalog().find(
       (entry) => entry.provider === OPENAI_COMPATIBLE_PROVIDER_ID,
     );
-    expect(withPreset?.endpointPresets).toEqual(COMPATIBLE_ENDPOINT_PRESETS);
+    expect(withPreset?.endpointPresets).toEqual([
+      {
+        id: "concentrate",
+        name: "Concentrate AI",
+        baseUrl: "https://api.concentrate.ai/v1",
+        publicModels: true,
+      },
+    ]);
   });
 });

@@ -18,6 +18,7 @@ import { displayName, phoneCallSettings, ringingCall } from "@rakazo/core";
 import type { ComputerMode } from "../computers/computers.js";
 import {
   ensureComputerRecord,
+  newComputerKind,
   parseComputerMode,
   resolveDefaultComputerMode,
   teamComputerUserId,
@@ -483,9 +484,10 @@ export function createRepos(
       }
       const computerMode = input.computerMode ?? resolveDefaultComputerMode();
       const settings = await prisma.deploymentSettings.findUnique({ where: { id: "default" } });
-      const envKind = process.env.SANDBOX_PROVIDER ?? "docker";
-      const kind =
-        envKind === "docker" && settings?.computerHost === "this-mac" ? "desktop" : envKind;
+      const kind = newComputerKind(
+        process.env.SANDBOX_PROVIDER ?? "docker",
+        settings?.computerHost,
+      );
       const inTransaction = <T>(run: (tx: Prisma.TransactionClient) => Promise<T>) =>
         input.isolationLevel
           ? prisma.$transaction(run, { isolationLevel: input.isolationLevel })

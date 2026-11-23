@@ -43,7 +43,7 @@ export type ThreadHistory = {
 };
 
 /** Owns the chat's snapshot: what is committed, what is shown, and the history window refs. */
-export function useThreadSnapshot(): ThreadHistory {
+export function useThreadSnapshot(accountStreamReplies?: boolean | null): ThreadHistory {
   const [snap, setSnap] = useState<MobileSnapshot | null>(null);
   const [composingBots, setComposingBots] = useState("");
   const [showingSaved, setShowingSaved] = useState(false);
@@ -63,11 +63,12 @@ export function useThreadSnapshot(): ThreadHistory {
   const pinnedScrollMetrics = useRef({ offset: 0, viewport: 0, content: 0 });
   const loadingOlderContent = useRef(false);
   const loadingNewerContent = useRef(false);
-  const streamResponses = useSyncExternalStore(
+  const deviceStreamReplies = useSyncExternalStore(
     subscribeResponseStreaming,
     getCachedResponseStreamingEnabled,
     () => false,
   );
+  const streamResponses = accountStreamReplies ?? deviceStreamReplies;
   const streamResponsesRef = useRef(streamResponses);
   streamResponsesRef.current = streamResponses;
 

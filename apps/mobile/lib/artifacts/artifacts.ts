@@ -16,14 +16,6 @@ export function listSpaceArtifacts(input: RpcInput<"artifacts/listSpace">) {
   return rpc("artifacts/listSpace", input);
 }
 
-export function listArtifactVersions(familyId: string) {
-  return rpc("artifacts/listVersions", { familyId });
-}
-
-export function getArtifactById(artifactId: string) {
-  return rpc("artifacts/getById", { artifactId }, { timeoutMs: ARTIFACT_DOWNLOAD_TIMEOUT_MS });
-}
-
 export function removeArtifact(artifactId: string) {
   return rpc("artifacts/remove", { artifactId });
 }

@@ -15,11 +15,18 @@ import { fetchSafeWebBytes } from "../web/web-ssrf.js";
 import { FAKE_VIDEO_BASE64 } from "./fake-media-assets.js";
 
 export const mediaPromptSchema = z.object({ prompt: z.string().trim().min(1).max(4000) });
-export function validateGeneratedMedia(
-  output: GeneratedMedia,
-  mimeType: GeneratedMedia["mimeType"],
-) {
-  if (output.mimeType !== mimeType || !output.bytes.byteLength) {
+/** The image formats a generated image may arrive in; anything else is refused. */
+export const GENERATED_IMAGE_MIME_TYPES: ReadonlySet<string> = new Set<GeneratedMedia["mimeType"]>([
+  "image/png",
+  "image/jpeg",
+  "image/webp",
+]);
+export function validateGeneratedMedia(output: GeneratedMedia, kind: "image" | "video") {
+  const supported =
+    kind === "video"
+      ? output.mimeType === "video/mp4"
+      : GENERATED_IMAGE_MIME_TYPES.has(output.mimeType);
+  if (!supported || !output.bytes.byteLength) {
     throw new MediaGenerationError("provider_failure");
   }
   if (output.bytes.byteLength > ATTACHMENT_MAX_BYTES) {
@@ -201,7 +208,7 @@ export class FalMediaGenerationProvider implements MediaGenerationProvider {
       if (result.contentType?.split(";")[0]?.trim().toLowerCase() !== mimeType)
         throw new MediaGenerationError("provider_failure");
       const output = { bytes: result.body, mimeType } as GeneratedMedia;
-      validateGeneratedMedia(output, mimeType);
+      validateGeneratedMedia(output, video ? "video" : "image");
       return output;
     } catch (error) {
       context.signal.throwIfAborted();

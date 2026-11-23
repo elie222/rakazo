@@ -15,6 +15,7 @@ const fakeAgentState = vi.hoisted(() => ({
     | "background-subagent"
     | "parent-limit"
     | "parent-parallel"
+    | "parallel-steps"
     | "ask-pause"
     | "nested-ask-pause"
     | "tools-then-empty-failure"
@@ -148,7 +149,12 @@ vi.mock("@earendil-works/pi-agent-core", () => ({
             content: [{ type: "toolCall", id: "call-1", name: target.name, arguments: args }],
           },
         });
-        this.emit({ type: "tool_execution_start", toolName: target.name, args });
+        this.emit({
+          type: "tool_execution_start",
+          toolCallId: "call-1",
+          toolName: target.name,
+          args,
+        });
         const result = await target.execute("call-1", args);
         fakeAgentState.toolResult = result;
         this.emit({
@@ -319,6 +325,30 @@ vi.mock("@earendil-works/pi-agent-core", () => ({
           if (this.aborted) break;
           await shell.execute(`shell-${index}`, args);
         }
+        return;
+      }
+
+      if (fakeAgentState.mode === "parallel-steps") {
+        const result = { content: [] };
+        const start = (toolCallId: string, command: string) =>
+          this.emit({
+            type: "tool_execution_start",
+            toolCallId,
+            toolName: "shell",
+            args: { command },
+          });
+        const end = (toolCallId: string) =>
+          this.emit({
+            type: "tool_execution_end",
+            toolCallId,
+            toolName: "shell",
+            result,
+            isError: false,
+          });
+        start("call-a", "echo a");
+        start("call-b", "echo b");
+        end("call-b");
+        end("call-a");
         return;
       }
 
@@ -1204,6 +1234,56 @@ describe("Pi connector tool dispatch", () => {
     );
   });
 
+  it("tells the model why a built-in the run was not offered is unavailable", async () => {
+    const runWithUnavailable = (unavailableToolReasons?: Record<string, string>) => {
+      fakeAgentState.invoke = {
+        name: "use_tool",
+        args: { name: "message_bot", arguments: { bot_id: "b2", message: "hi" } },
+      };
+      const executeTool = vi.fn(async () => ({ ok: true }));
+      return {
+        executeTool,
+        run: async () => {
+          for await (const _event of new PiAgentRuntime().run(
+            {
+              botId: "b",
+              threadId: "t",
+              runId: "r",
+              prompt: "tell the other bot",
+              instructions: "",
+              history: [],
+              // A deferred tool exposes use_tool, through which the model names message_bot.
+              tools: [updateBotTool, scheduleCancelTool],
+              unavailableToolReasons,
+              model: { provider: "test", id: "dispatch-test-model" },
+              executeTool,
+            },
+            {
+              operationId: "1",
+              traceId: "1",
+              spaceId: "w",
+              userId: "u",
+              signal: new AbortController().signal,
+            },
+          )) {
+            // Exhaust the runtime event stream so tool execution completes.
+          }
+        },
+      };
+    };
+
+    const reason =
+      "message_bot is not available in group threads. Use handoff_to_bot with the group_id and the member's bot_id instead.";
+    const withReason = runWithUnavailable({ message_bot: reason });
+    await expect(withReason.run()).rejects.toThrow(reason);
+    expect(withReason.executeTool).not.toHaveBeenCalled();
+
+    const withoutReason = runWithUnavailable();
+    await expect(withoutReason.run()).rejects.toThrow(
+      "message_bot is not available. Use a name find_tool lists.",
+    );
+  });
+
   it("runs schedule tools, remember and request_secret sequentially", async () => {
     const executeTool = vi.fn(async () => ({ ok: true }));
     const runtime = new PiAgentRuntime();
@@ -1223,6 +1303,8 @@ describe("Pi connector tool dispatch", () => {
           destinationTool,
           builtinAgentTools.find((tool) => tool.name === "remember")!,
           builtinAgentTools.find((tool) => tool.name === "request_secret")!,
+          builtinAgentTools.find((tool) => tool.name === "computer_act")!,
+          builtinAgentTools.find((tool) => tool.name === "browser_act")!,
         ],
         model: { provider: "test", id: "dispatch-test-model" },
         executeTool,
@@ -1250,6 +1332,9 @@ describe("Pi connector tool dispatch", () => {
     expect(modes.get("remember")).toBe("sequential");
     // Two code requests in one batch would each wait on a card that one answer approves.
     expect(modes.get("request_secret")).toBe("sequential");
+    // Page and desktop actions can change the page a sibling page action would type into.
+    expect(modes.get("computer_act")).toBe("sequential");
+    expect(modes.get("browser_act")).toBe("sequential");
     expect(modes.get("destination_write")).toBe("default");
   });
 
@@ -2092,6 +2177,68 @@ describe("Pi connector tool dispatch", () => {
     });
   });
 
+  it("clears the step it showed once the tool ends", async () => {
+    fakeAgentState.mode = "terminating-tool";
+    const runtime = new PiAgentRuntime();
+    const events: Array<{ type: string; text?: string; activity?: boolean }> = [];
+
+    for await (const event of runtime.run(
+      {
+        botId: "b",
+        threadId: "t",
+        runId: "cleared-step",
+        prompt: "change your model",
+        instructions: "Use shell.",
+        history: [],
+        tools: [shellTool],
+        model: { provider: "test", id: "dispatch-test-model" },
+        executeTool: vi.fn(async () => terminatingToolResult(TERMINATING_REPLY, {})),
+      },
+      {
+        operationId: "cleared-step",
+        traceId: "cleared-step",
+        spaceId: "w",
+        userId: "u",
+        signal: new AbortController().signal,
+      },
+    )) {
+      events.push(event as (typeof events)[number]);
+    }
+
+    const steps = events.filter((event) => event.type === "progress" && event.activity);
+    expect(steps.map((event) => Boolean(event.text))).toEqual([true, false]);
+  });
+
+  it("shows a still-running parallel call's step when the shown one ends first", async () => {
+    fakeAgentState.mode = "parallel-steps";
+    const runtime = new PiAgentRuntime();
+    const steps: string[] = [];
+
+    for await (const event of runtime.run(
+      {
+        botId: "b",
+        threadId: "t",
+        runId: "parallel-steps",
+        prompt: "run both",
+        instructions: "Use shell.",
+        history: [],
+        tools: [shellTool],
+        model: { provider: "test", id: "dispatch-test-model" },
+      },
+      {
+        operationId: "parallel-steps",
+        traceId: "parallel-steps",
+        spaceId: "w",
+        userId: "u",
+        signal: new AbortController().signal,
+      },
+    )) {
+      if (event.type === "progress" && event.activity) steps.push(event.text);
+    }
+
+    expect(steps).toEqual(["Running: echo a", "Running: echo b", "Running: echo a", ""]);
+  });
+
   it("ends the run with the reply a terminating tool result carries", async () => {
     fakeAgentState.mode = "terminating-tool";
     const terminatingReply = TERMINATING_REPLY;
@@ -2298,14 +2445,21 @@ describe("Pi connector tool dispatch", () => {
     expect(events.filter((event) => (event as { type?: string }).type === "subagent")).toEqual([]);
   });
 
-  it("treats unset, empty, and non-positive MAX_TOOL_CALLS_PER_TURN as unlimited", () => {
+  it("reads MAX_TOOL_CALLS_PER_TURN strictly, with unset, empty, and 0 meaning unlimited", () => {
     expect(maxToolCallsPerTurn({})).toBe(0);
     expect(maxToolCallsPerTurn({ MAX_TOOL_CALLS_PER_TURN: "" })).toBe(0);
     expect(maxToolCallsPerTurn({ MAX_TOOL_CALLS_PER_TURN: "0" })).toBe(0);
-    expect(maxToolCallsPerTurn({ MAX_TOOL_CALLS_PER_TURN: "-5" })).toBe(0);
-    expect(maxToolCallsPerTurn({ MAX_TOOL_CALLS_PER_TURN: "abc" })).toBe(0);
-    expect(maxToolCallsPerTurn({ MAX_TOOL_CALLS_PER_TURN: "80" })).toBe(80);
-    expect(maxToolCallsPerTurn({ MAX_TOOL_CALLS_PER_TURN: " 12.9 " })).toBe(12);
+    expect(maxToolCallsPerTurn({ MAX_TOOL_CALLS_PER_TURN: "25" })).toBe(25);
+    expect(maxToolCallsPerTurn({ MAX_TOOL_CALLS_PER_TURN: " 80 " })).toBe(80);
+    for (const bad of ["25x", "-1", "1.5", "fifty", "1e3"])
+      expect(() => maxToolCallsPerTurn({ MAX_TOOL_CALLS_PER_TURN: bad })).toThrow(
+        /MAX_TOOL_CALLS_PER_TURN/,
+      );
+  });
+
+  it("refuses to construct the runtime when MAX_TOOL_CALLS_PER_TURN is malformed", () => {
+    process.env.MAX_TOOL_CALLS_PER_TURN = "50x";
+    expect(() => new PiAgentRuntime()).toThrow(/MAX_TOOL_CALLS_PER_TURN/);
   });
 
   it("lets a parallel tool batch finish before the optional fuse aborts", async () => {
@@ -2542,6 +2696,9 @@ describe("Pi connector tool dispatch", () => {
   it("gives an MCP tool's image to the model as an image instead of cutting it into the text", async () => {
     const png = Buffer.concat([
       Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+      Buffer.from([0, 0, 0, 13, 0x49, 0x48, 0x44, 0x52, 0, 0, 2, 0x80, 0, 0, 1, 0xe0]),
+      Buffer.alloc(9),
+      Buffer.from([0, 0, 0xea, 0x60, 0x49, 0x44, 0x41, 0x54]),
       Buffer.alloc(60_000, 7),
     ]).toString("base64");
     fakeAgentState.invoke = { name: "mcp__showcase__render_preview", args: { page: 1 } };
@@ -2777,5 +2934,52 @@ describe("Pi connector tool dispatch", () => {
       undefined,
       { onShellStillRunning: expect.any(Function) },
     );
+  });
+
+  it("treats a null computer_act observe or settle_ms as unset", async () => {
+    const computerActTool = builtinAgentTools.find((tool) => tool.name === "computer_act");
+    if (!computerActTool) throw new Error("missing computer_act");
+    const executeTool = vi.fn(async (_name: string, _args: Record<string, unknown>) => ({
+      ok: true,
+    }));
+    const runtime = new PiAgentRuntime();
+    const dispatch = async (args: Record<string, unknown>) => {
+      executeTool.mockClear();
+      fakeAgentState.invoke = { name: "computer_act", args };
+      for await (const _event of runtime.run(
+        {
+          botId: "b",
+          threadId: "t",
+          runId: "computer-act-args",
+          prompt: "click the button",
+          instructions: "Use computer_act.",
+          history: [],
+          tools: [computerActTool],
+          model: { provider: "test", id: "dispatch-test-model" },
+          executeTool,
+        },
+        { signal: new AbortController().signal },
+      )) {
+        // Exhaust the runtime event stream so tool dispatch completes.
+      }
+      return executeTool.mock.calls[0]?.[1];
+    };
+
+    // Providers send omitted optional fields as null; null must not turn observe off.
+    expect(await dispatch({ actions: [], observe: null, settle_ms: null })).toEqual({
+      actions: [],
+      observe: true,
+      settle_ms: 350,
+    });
+    expect(await dispatch({ actions: [] })).toEqual({
+      actions: [],
+      observe: true,
+      settle_ms: 350,
+    });
+    expect(await dispatch({ actions: [], observe: false })).toEqual({
+      actions: [],
+      observe: false,
+      settle_ms: 350,
+    });
   });
 });

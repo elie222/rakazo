@@ -105,17 +105,26 @@ export function pruneComputerScreenshotContext(
       remaining -= images;
       continue;
     }
+    // Keep this result's latest images that still fit the budget, then close it: every older
+    // result is pruned.
+    const keepFromImage = images - remaining;
+    let imagesSeen = 0;
     transformed ??= [...messages];
     transformed[index] = {
       ...message,
       content: [
-        ...message.content.filter((part) => part.type !== "image"),
+        ...message.content.filter((part) => {
+          if (part.type !== "image") return true;
+          imagesSeen += 1;
+          return imagesSeen > keepFromImage;
+        }),
         {
           type: "text",
           text: isComputerScreenshot(message) ? SCREENSHOT_REMOVED_NOTE : TOOL_IMAGE_REMOVED_NOTE,
         },
       ],
     };
+    remaining = 0;
   }
   return transformed ?? messages;
 }

@@ -29,8 +29,11 @@ Voice settings apply to every [space](./spaces.md). A space can customize them i
 
 ## Talk instead of typing
 
-Hold the microphone in the composer and speak; release to send. Slide up to lock recording so you
-don't have to keep holding.
+On web and desktop, hold the microphone in the composer and speak; release to send. Slide up to
+lock recording so you don't have to keep holding.
+
+On mobile, tap the microphone to dictate into the message box. Tap **Stop dictating** to finish,
+then review or send the text.
 
 ## Hear replies
 
@@ -40,7 +43,9 @@ don't have to keep holding.
 
 ## Call a bot
 
-Choose **Call** at the top of the chat to talk with the bot in real time. During a call you can
+On web and desktop, choose **Call** at the top of the chat. On mobile, open a one-to-one bot chat
+and tap the waveform **Call** button beside the empty message box. **Send** appears there instead
+when there's something to send. During a call you can
 **Mute**, open the **Transcript**, minimize the call and keep using the app, or **Hang up**. The
 transcript stays in the chat afterwards.
 

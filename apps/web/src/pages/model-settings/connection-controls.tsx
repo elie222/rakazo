@@ -1,11 +1,7 @@
-import { Plural, Trans, useLingui } from "@lingui/react/macro";
-import { Button, Disclosure, Input, Label, Switch } from "@rakazo/ui-web";
-import { Check, Copy } from "lucide-react";
+import { Trans, useLingui } from "@lingui/react/macro";
+import { Button, Disclosure, Input, Label, OptionSelect, Switch } from "@rakazo/ui-web";
 import { useEffect, useState } from "react";
-import {
-  ModelPreflightFeedback,
-  modelPreflightTestingLabel,
-} from "../../components/models/ModelConnectionPreflightNotice";
+import { SubscriptionSignInSteps } from "../../components/models/SubscriptionSignInSteps";
 import { CompatibleKeyField } from "./compatible-key-field";
 
 import type { ModelSettingsState } from "./use-model-settings";
@@ -29,17 +25,17 @@ export function ConnectionControls({
   needsRouting,
   needsGateway,
   needsProject,
+  modelId,
+  modelsForProvider,
+  setModelId,
+  setThinkingLevel,
   isOpenAiCompatible,
   oauth,
   oauthPending,
   pasteCode,
   pending,
-  popupBlocked,
-  preflightFailure,
-  preflightSuccess,
-  preflightTarget,
-  preflightTesting,
   selected,
+  selectionRevisionRef,
   setAccountId,
   setGatewayId,
   setProjectId,
@@ -48,7 +44,6 @@ export function ConnectionControls({
   setZeroDataRetention,
   submitOAuthCode,
   subscriptionSignIn,
-  testApiKeyConnection,
   updateApiKey,
   zeroDataRetention,
 }: Pick<
@@ -71,17 +66,17 @@ export function ConnectionControls({
   | "needsRouting"
   | "needsGateway"
   | "needsProject"
+  | "modelId"
+  | "modelsForProvider"
+  | "setModelId"
+  | "setThinkingLevel"
   | "isOpenAiCompatible"
   | "oauth"
   | "oauthPending"
   | "pasteCode"
   | "pending"
-  | "popupBlocked"
-  | "preflightFailure"
-  | "preflightSuccess"
-  | "preflightTarget"
-  | "preflightTesting"
   | "selected"
+  | "selectionRevisionRef"
   | "setAccountId"
   | "setGatewayId"
   | "setProjectId"
@@ -90,7 +85,6 @@ export function ConnectionControls({
   | "setZeroDataRetention"
   | "submitOAuthCode"
   | "subscriptionSignIn"
-  | "testApiKeyConnection"
   | "updateApiKey"
   | "zeroDataRetention"
 >) {
@@ -108,140 +102,31 @@ export function ConnectionControls({
   return !isOpenAiCompatible ? (
     <>
       {subscriptionSignIn && (credential?.authKind !== "oauth" || credential.reconnectRequired) ? (
-        <div className="mt-5 flex flex-wrap items-center gap-2 first:mt-0">
-          {oauth ? (
-            <div className="w-full rounded-xl border border-border px-4 py-3">
-              {oauth.mode === "auth-url" ? (
-                <>
-                  <p className="text-body-sm leading-[1.5] text-muted-foreground">
-                    <Trans>
-                      Sign in at{" "}
-                      <a
-                        href={oauth.verificationUri}
-                        onClick={() => reportSignInStep("page_opened")}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="text-foreground underline"
-                      >
-                        {new URL(oauth.verificationUri).hostname}
-                      </a>
-                      , then paste the code here.
-                    </Trans>
-                  </p>
-                  <div className="mt-3 flex items-center gap-2">
-                    <Input
-                      value={pasteCode}
-                      onChange={(e) => setPasteCode(e.target.value)}
-                      aria-label={t`Authorization code`}
-                      autoComplete="off"
-                      spellCheck={false}
-                      className="text-foreground md:text-body-sm"
-                    />
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      disabled={!pasteCode.trim()}
-                      onClick={() => void submitOAuthCode()}
-                    >
-                      <Trans>Submit</Trans>
-                    </Button>
-                  </div>
-                  <p className="mt-2 text-body-sm leading-[1.5] text-muted-foreground">
-                    <Plural
-                      value={Math.ceil(oauth.expiresInSeconds / 60)}
-                      one="Waiting for sign-in — the link expires in about # minute."
-                      other="Waiting for sign-in — the link expires in about # minutes."
-                    />
-                  </p>
-                </>
-              ) : (
-                <>
-                  <p className="text-body-sm leading-[1.5] text-muted-foreground">
-                    {popupBlocked ? (
-                      <Trans>
-                        Open{" "}
-                        <a
-                          href={oauth.verificationUri}
-                          onClick={() => reportSignInStep("page_opened")}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="text-foreground underline"
-                        >
-                          {oauth.verificationUri.replace(/^https:\/\//, "")}
-                        </a>{" "}
-                        and enter this code:
-                      </Trans>
-                    ) : (
-                      <Trans>
-                        A sign-in tab opened at{" "}
-                        <a
-                          href={oauth.verificationUri}
-                          onClick={() => reportSignInStep("page_opened")}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="text-foreground underline"
-                        >
-                          {oauth.verificationUri.replace(/^https:\/\//, "")}
-                        </a>
-                        . Enter this code there — this window keeps waiting:
-                      </Trans>
-                    )}
-                  </p>
-                  <div className="mt-2 flex items-center gap-3">
-                    <p className="font-mono text-heading2 tracking-[0.2em] text-foreground">
-                      {oauth.userCode}
-                    </p>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => copyOAuthCode(oauth.userCode)}
-                    >
-                      {codeCopied ? (
-                        <Check size={14} strokeWidth={1.8} aria-hidden="true" />
-                      ) : (
-                        <Copy size={14} strokeWidth={1.8} aria-hidden="true" />
-                      )}
-                      {codeCopied ? <Trans>Copied</Trans> : <Trans>Copy</Trans>}
-                    </Button>
-                  </div>
-                  <p className="mt-2 text-body-sm leading-[1.5] text-muted-foreground">
-                    <Plural
-                      value={Math.ceil(oauth.expiresInSeconds / 60)}
-                      one="Waiting for sign-in — the code expires in about # minute."
-                      other="Waiting for sign-in — the code expires in about # minutes."
-                    />
-                  </p>
-                </>
-              )}
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                className="mt-2 -ml-2 text-muted-foreground"
-                onClick={() => cancelOAuthAttempt()}
-              >
-                <Trans>Cancel</Trans>
-              </Button>
-            </div>
-          ) : (
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              disabled={busy}
-              onClick={() => beginSelectedSubscriptionSignIn()}
-            >
-              {oauthPending ? (
-                <Trans>Starting…</Trans>
-              ) : credential?.authKind === "oauth" ? (
+        <div className="mt-5 first:mt-0">
+          <SubscriptionSignInSteps
+            oauth={oauth}
+            setup={selected?.signInSetup}
+            startLabel={
+              credential?.authKind === "oauth" ? (
                 <Trans>Sign in again</Trans>
               ) : (
                 (selected?.oauthLabel ?? t`Sign in`)
-              )}
-            </Button>
-          )}
+              )
+            }
+            starting={oauthPending}
+            disabled={busy}
+            onStart={() => beginSelectedSubscriptionSignIn()}
+            onRestart={() => {
+              cancelOAuthAttempt("replaced");
+              beginSelectedSubscriptionSignIn();
+            }}
+            codeCopied={codeCopied}
+            onCopyCode={copyOAuthCode}
+            pasteCode={pasteCode}
+            onPasteCodeChange={setPasteCode}
+            onSubmitCode={() => void submitOAuthCode()}
+            onPageOpened={() => reportSignInStep("page_opened")}
+          />
         </div>
       ) : null}
 
@@ -318,6 +203,31 @@ export function ConnectionControls({
               />
             </label>
           ) : null}
+          {!credential && acceptsKey && modelsForProvider.length ? (
+            <label
+              className="mt-4 block text-body text-muted-foreground"
+              htmlFor="connection-model"
+            >
+              <Trans>Model</Trans>
+              <OptionSelect
+                id="connection-model"
+                aria-label={t`Model`}
+                options={modelsForProvider.map((entry) => ({
+                  value: entry.id,
+                  label: entry.label,
+                }))}
+                value={modelId}
+                onValueChange={(value) => {
+                  selectionRevisionRef.current += 1;
+                  setModelId(value);
+                  setThinkingLevel(null);
+                }}
+                disabled={busy}
+                size="lg"
+                className="mt-2 text-foreground"
+              />
+            </label>
+          ) : null}
           {selected?.dataRetentionControl ? (
             <div className="mt-4 flex items-center justify-between gap-3">
               <Label htmlFor="model-zero-data-retention" className="text-body font-normal">
@@ -332,17 +242,6 @@ export function ConnectionControls({
             </div>
           ) : null}
           <div className="mt-3 flex flex-wrap items-center gap-2">
-            {acceptsKey && selected?.catalogProbe ? (
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                disabled={busy || preflightTesting || apiKey.trim().length < 8}
-                onClick={() => void testApiKeyConnection()}
-              >
-                {modelPreflightTestingLabel(preflightTesting && preflightTarget === "api-key")}
-              </Button>
-            ) : null}
             <Button
               type="button"
               variant="secondary"
@@ -359,9 +258,6 @@ export function ConnectionControls({
               )}
             </Button>
           </div>
-          {preflightTarget === "api-key" ? (
-            <ModelPreflightFeedback success={preflightSuccess} failure={preflightFailure} />
-          ) : null}
         </div>
       ) : null}
 
@@ -377,44 +273,28 @@ export function ConnectionControls({
   ) : null;
 }
 
-export function CompatibleKeyControls({
+export function CompatibleKeyInput({
   apiKey,
-  busy,
-  connectKey,
   credential,
-  endpointPreset,
-  isOpenAiCompatible,
-  openAiCompatibleReady,
-  pending,
+  compatibleKeyRequired,
   updateApiKey,
-}: Pick<
-  ModelSettingsState,
-  | "apiKey"
-  | "busy"
-  | "connectKey"
-  | "credential"
-  | "endpointPreset"
-  | "isOpenAiCompatible"
-  | "openAiCompatibleReady"
-  | "pending"
-  | "updateApiKey"
->) {
+}: Pick<ModelSettingsState, "apiKey" | "credential" | "compatibleKeyRequired" | "updateApiKey">) {
   const { t } = useLingui();
-  return isOpenAiCompatible ? (
+  return (
     <div className="mt-5">
       <CompatibleKeyField
-        keyRequired={Boolean(endpointPreset)}
+        keyRequired={compatibleKeyRequired}
         className="block text-body text-muted-foreground"
       >
         <Input
           aria-label={t`API key`}
           value={apiKey}
           onChange={(event) => updateApiKey(event.target.value)}
-          required={Boolean(endpointPreset)}
+          required={compatibleKeyRequired}
           placeholder={
             credential?.hasKey
               ? t`Paste a replacement key`
-              : endpointPreset
+              : compatibleKeyRequired
                 ? undefined
                 : t`Optional`
           }
@@ -424,16 +304,6 @@ export function CompatibleKeyControls({
           className="mt-2 text-foreground"
         />
       </CompatibleKeyField>
-      <Button
-        type="button"
-        variant="secondary"
-        className="mt-3"
-        size="sm"
-        disabled={busy || !openAiCompatibleReady}
-        onClick={() => void connectKey()}
-      >
-        {pending === "connect" ? <Trans>Saving…</Trans> : <Trans>Save</Trans>}
-      </Button>
     </div>
-  ) : null;
+  );
 }

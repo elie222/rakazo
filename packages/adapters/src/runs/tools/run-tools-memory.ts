@@ -2,6 +2,7 @@ import { MemoryRevisionConflictError } from "@rakazo/adapter-kit";
 import {
   HistoryReadInputSchema,
   HistorySearchInputSchema,
+  isDeletableMemoryDocument,
   MEMORY_INDEX_PATH,
 } from "@rakazo/contracts";
 import { readHistory, searchHistory } from "@rakazo/db";
@@ -163,6 +164,23 @@ export const memoryTools: ToolHandlers = {
       throw error;
     }
   },
+  async delete_shared_memory(ctx, call) {
+    const { deps, context } = ctx;
+    const path = String(call.args.path ?? "").trim();
+    if (!path) return call.finish({ error: "path is required" });
+    if (!isDeletableMemoryDocument(path)) {
+      return call.finish({ error: `${path} cannot be deleted; edit its content instead.` });
+    }
+    const doc = (await deps.memory.read({ scope: "user", path }, context)).documents[0];
+    if (!doc) return call.finish({ error: `No shared memory document named ${path}.` });
+    // The id pins the document just read, so a newer one saved at the same path stays.
+    const { removed } = await deps.memory.remove(
+      { id: doc.id, scope: "user", path: doc.path },
+      context,
+    );
+    if (!removed) return call.finish({ error: `${path} was already deleted.` });
+    return call.finish({ ok: true, path: doc.path });
+  },
   async recall_memory(ctx, call) {
     const { bot, thread, context } = ctx;
     const { args } = call;
@@ -180,7 +198,7 @@ export const memoryTools: ToolHandlers = {
     );
     // All recalled knowledge is derived data; an omitted provider marker cannot certify it.
     if (response.ok && response.value.length > 0) {
-      await markReadOutsideContent(ctx);
+      await markReadOutsideContent(ctx, response.value);
     }
     return response;
   },
@@ -197,7 +215,7 @@ export const memoryTools: ToolHandlers = {
     if (!response.ok) return response;
     const text = response.value.trim();
     // Reflection is provider-generated prose; it cannot attest that its answer is clean.
-    if (text) await markReadOutsideContent(ctx);
+    if (text) await markReadOutsideContent(ctx, text);
     return { ok: true, value: text || "No relevant memories." };
   },
   search_history: readHistoryTool,
