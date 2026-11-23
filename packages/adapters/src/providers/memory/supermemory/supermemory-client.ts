@@ -21,7 +21,13 @@ export interface SupermemoryResult {
   memory: string;
   similarity: number;
   updatedAt?: string;
+  id?: string;
+  /** The namespace the memory was found in. */
+  containerTag: string;
 }
+
+/** Memory ids are short opaque tokens such as `mem_abc123`. */
+export const SUPERMEMORY_MEMORY_ID = /^[A-Za-z0-9_-]{1,128}$/;
 
 export type SupermemorySearchResponse =
   | { ok: true; results: SupermemoryResult[] }
@@ -82,7 +88,7 @@ function authHeaders(config: SupermemoryConnectionConfig): Record<string, string
   return { Authorization: `Bearer ${config.apiKey}`, "Content-Type": "application/json" };
 }
 
-function parseSearchResults(data: unknown): SupermemoryResult[] {
+function parseSearchResults(data: unknown, containerTag: string): SupermemoryResult[] {
   if (!data || typeof data !== "object") return [];
   const results = (data as { results?: unknown }).results;
   if (!Array.isArray(results)) return [];
@@ -90,6 +96,7 @@ function parseSearchResults(data: unknown): SupermemoryResult[] {
   for (const item of results) {
     if (!item || typeof item !== "object") continue;
     const row = item as {
+      id?: unknown;
       memory?: unknown;
       chunk?: unknown;
       similarity?: unknown;
@@ -103,6 +110,8 @@ function parseSearchResults(data: unknown): SupermemoryResult[] {
       memory,
       similarity: typeof row.similarity === "number" ? row.similarity : 0,
       ...(typeof row.system?.updatedAt === "string" ? { updatedAt: row.system.updatedAt } : {}),
+      ...(typeof row.id === "string" && SUPERMEMORY_MEMORY_ID.test(row.id) ? { id: row.id } : {}),
+      containerTag,
     });
   }
   return parsed;
@@ -139,7 +148,7 @@ export async function searchSupermemory(
     }
     return {
       ok: true,
-      results: parseSearchResults(await readSupermemoryJson(response, requestAbort)),
+      results: parseSearchResults(await readSupermemoryJson(response, requestAbort), containerTag),
     };
   } catch (error) {
     if (error instanceof ResponseTooLargeError) {
@@ -225,6 +234,81 @@ export async function deleteSupermemoryContainer(
       if (response.ok || response.status === 404) return { ok: true };
       if (response.status === 403) return { ok: false, error: SUPERMEMORY_DELETE_FORBIDDEN_ERROR };
       return { ok: false, error: `Supermemory container delete failed: ${response.status}` };
+    } finally {
+      await releaseUnreadBody(response);
+    }
+  } catch (error) {
+    return { ok: false, error: unreachableError(error) };
+  }
+}
+
+/** A memory in one namespace; `null` when that namespace has no memory with this id. */
+export async function getSupermemoryMemory(
+  id: string,
+  containerTag: string,
+  config: SupermemoryConnectionConfig,
+  signal?: AbortSignal,
+): Promise<
+  { ok: true; value: { memory: string; forgotten: boolean } | null } | { ok: false; error: string }
+> {
+  try {
+    const requestAbort = requestSignal(signal);
+    const response = await fetchSupermemory(
+      config,
+      requestUrl(
+        config.baseUrl,
+        namespacePath(containerTag, `/memories/${encodeURIComponent(id)}`),
+      ),
+      { method: "GET", headers: authHeaders(config), redirect: "error", signal: requestAbort },
+    );
+    if (!response.ok) {
+      await releaseUnreadBody(response);
+      return response.status === 404
+        ? { ok: true, value: null }
+        : { ok: false, error: `Supermemory memory lookup failed: ${response.status}` };
+    }
+    const row = (await readSupermemoryJson(response, requestAbort)) as {
+      memory?: unknown;
+      isForgotten?: unknown;
+    } | null;
+    if (typeof row?.memory !== "string") {
+      return { ok: false, error: "Supermemory returned an invalid memory." };
+    }
+    return { ok: true, value: { memory: row.memory, forgotten: row.isForgotten === true } };
+  } catch (error) {
+    if (error instanceof ResponseTooLargeError) return { ok: false, error: error.message };
+    return { ok: false, error: unreachableError(error) };
+  }
+}
+
+/** Forgets memories by id. Supermemory only forgets ids inside the namespace in the path. */
+export async function forgetSupermemoryMemories(
+  ids: string[],
+  containerTag: string,
+  config: SupermemoryConnectionConfig,
+  signal?: AbortSignal,
+): Promise<SupermemorySaveResponse> {
+  try {
+    const response = await fetchSupermemory(
+      config,
+      requestUrl(config.baseUrl, namespacePath(containerTag, "/memories")),
+      {
+        method: "DELETE",
+        headers: authHeaders(config),
+        body: JSON.stringify({ ids }),
+        redirect: "error",
+        signal: requestSignal(signal),
+      },
+    );
+    try {
+      if (response.ok) return { ok: true };
+      if (response.status === 403) {
+        return {
+          ok: false,
+          error: "Supermemory refused to forget: the API key cannot write here.",
+        };
+      }
+      return { ok: false, error: `Supermemory forget failed: ${response.status}` };
     } finally {
       await releaseUnreadBody(response);
     }

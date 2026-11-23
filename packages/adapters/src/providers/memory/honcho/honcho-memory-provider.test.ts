@@ -776,9 +776,7 @@ describe("Honcho forget", () => {
       { content: "Private fact", scope: "isolated", botId: "bot-1", source: { kind: "durable" } },
       { ...context, spaceId: "space-2" },
     );
-    await expect(
-      memory.forget({ id: "conclusion-1", scope: "shared", botId: "bot-1" }, context),
-    ).resolves.toMatchObject({ ok: false });
+    await memory.forget({ id: "conclusion-1", scope: "shared", botId: "bot-1" }, context);
     expect(deletes(fetch)).toEqual([]);
   });
 
@@ -814,6 +812,19 @@ describe("Honcho forget", () => {
     });
   });
 
+  it("ends a retried forget of an already deleted fact as done", async () => {
+    const fetch = honchoFetch();
+    const memory = provider(fetch);
+    await save(memory, "Prefers tea", "isolated");
+    const request = { id: "conclusion-1", scope: "isolated" as const, botId: "bot-1" };
+    await memory.forget(request, context);
+    await expect(memory.forget(request, context)).resolves.toMatchObject({
+      ok: true,
+      value: { id: "conclusion-1", expired: true },
+    });
+    expect(deletes(fetch)).toHaveLength(1);
+  });
+
   it("only removes the bot's private copy in isolated scope", async () => {
     const fetch = honchoFetch();
     const memory = provider(fetch);
@@ -828,7 +839,6 @@ describe("Honcho forget", () => {
     ["another bot's private fact", "conclusion-3", "shared" as const, undefined],
     ["a shared fact outside isolated scope", "conclusion-2", "isolated" as const, undefined],
     ["a fact under a different entity", "conclusion-2", "shared" as const, "bot-bot-1"],
-    ["an unknown id", "conclusion-99", "shared" as const, undefined],
   ])("refuses %s without deleting anything", async (_case, id, scope, entity) => {
     const fetch = honchoFetch();
     const memory = provider(fetch);

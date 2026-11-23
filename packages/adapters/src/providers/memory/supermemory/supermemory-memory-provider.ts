@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import type {
   AdapterContext,
   DurableMemoryScope,
+  SemanticMemoryForgetRequest,
   SemanticMemoryProvider,
   SemanticMemoryRecallRequest,
   SemanticMemoryResponse,
@@ -21,10 +22,14 @@ import type { ResolveHostname } from "../../../network/network-address.js";
 import type { SupermemoryConnectionConfig } from "./supermemory-client.js";
 import {
   deleteSupermemoryContainer,
+  forgetSupermemoryMemories,
+  getSupermemoryMemory,
   MAX_MEMORY_CONTENT_CHARS,
   probeSupermemory,
   SUPERMEMORY_CLOUD_BASE_URL,
+  SUPERMEMORY_MEMORY_ID,
   saveSupermemoryMemoryToContainers,
+  searchSupermemory,
   searchSupermemoryContainers,
 } from "./supermemory-client.js";
 
@@ -137,6 +142,12 @@ function historyContainerTag(botId: string, generation: number): string {
   return `rakazo:${botId}:history:${generation}`;
 }
 
+/** The bot's own compacted-history namespaces. */
+function isOwnHistoryTag(containerTag: string, botId: string): boolean {
+  const prefix = `rakazo:${botId}:history:`;
+  return containerTag.startsWith(prefix) && /^\d+$/.test(containerTag.slice(prefix.length));
+}
+
 function recallContainerTags(request: SemanticMemoryRecallRequest, spaceId: string): string[] {
   const tags = durableContainerTags(request.scope, request.botId, spaceId);
   return request.historyGeneration === undefined
@@ -206,6 +217,7 @@ export class SupermemoryMemoryProvider implements SemanticMemoryProvider {
             memory: item.memory,
             score: item.similarity,
             ...(item.updatedAt ? { updatedAt: item.updatedAt } : {}),
+            ...(item.id ? { id: item.id, entity: item.containerTag } : {}),
           })),
         }
       : result;
@@ -237,6 +249,69 @@ export class SupermemoryMemoryProvider implements SemanticMemoryProvider {
       context.signal,
     );
     return result.ok ? { ok: true, value: undefined } : result;
+  }
+
+  /**
+   * Supermemory forgets only ids inside the namespace named in the request, so trying each of the
+   * bot's recall namespaces cannot reach another bot's memory or another Space's.
+   */
+  async forget(
+    request: SemanticMemoryForgetRequest,
+    context: AdapterContext,
+  ): Promise<SemanticMemoryResponse<{ id: string; expired: boolean; reason: string | null }>> {
+    const id = request.id.trim();
+    if (!id) return { ok: false, error: "id is required" };
+    if (!SUPERMEMORY_MEMORY_ID.test(id)) {
+      return { ok: false, error: "Invalid Supermemory memory id." };
+    }
+    const durable = durableContainerTags(request.scope, request.botId, context.spaceId);
+    if (
+      request.entity &&
+      !durable.includes(request.entity) &&
+      !isOwnHistoryTag(request.entity, request.botId)
+    ) {
+      return { ok: false, error: "That memory belongs to another bot or Space." };
+    }
+    const blocked = await this.localBaseUrlBlock();
+    if (blocked) return { ok: false, error: blocked };
+    const connection = this.connectionForRequest();
+    const done = {
+      ok: true as const,
+      value: { id, expired: true, reason: request.reason ?? null },
+    };
+    const tags = request.entity ? [request.entity] : durable;
+    const lookups = await Promise.all(
+      tags.map((tag) => getSupermemoryMemory(id, tag, connection, context.signal)),
+    );
+    const index = lookups.findIndex((lookup) => lookup.ok && lookup.value);
+    if (index === -1) {
+      const failed = lookups.find((lookup) => !lookup.ok);
+      if (failed && !failed.ok) return failed;
+      // Nothing there to forget: a retried forget ends here as done.
+      return done;
+    }
+    const lookup = lookups[index]!;
+    const found = lookup.ok ? lookup.value : null;
+    if (!found || found.forgotten) return done;
+    const home = tags[index]!;
+    // A shared save stores the fact in two namespaces, and recall cites one. Forget the copies
+    // this bot could recall again first, then the cited memory, so a failed forget can be
+    // retried with the same id.
+    if (durable.includes(home)) {
+      const text = found.memory.trim();
+      for (const tag of durable) {
+        const copies = await searchSupermemory(text, tag, connection, undefined, context.signal);
+        if (!copies.ok) return copies;
+        const ids = copies.results
+          .filter((copy) => copy.id && copy.id !== id && copy.memory.trim() === text)
+          .map((copy) => copy.id!);
+        if (!ids.length) continue;
+        const forgotten = await forgetSupermemoryMemories(ids, tag, connection, context.signal);
+        if (!forgotten.ok) return forgotten;
+      }
+    }
+    const forgotten = await forgetSupermemoryMemories([id], home, connection, context.signal);
+    return forgotten.ok ? done : forgotten;
   }
 
   async purgeHistory(
