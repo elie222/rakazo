@@ -103,7 +103,7 @@ describe("userComputerOwner", () => {
     routineWatches: false,
     ownerMessage: false,
   };
-  const all = { routines: true, ownBots: true, messaging: true };
+  const all = { routines: true, ownBots: true, messaging: true, webhookChains: true };
 
   it("is the bot owner when their own message started the run", () => {
     expect(userComputerOwner(own)).toBe("user-1");
@@ -124,14 +124,14 @@ describe("userComputerOwner", () => {
   });
 
   it("is the owner for their own bot's routine when routines are allowed", () => {
-    const access = { routines: true, ownBots: false, messaging: false };
+    const access = { routines: true, ownBots: false, messaging: false, webhookChains: false };
     expect(userComputerOwner({ ...own, trigger: "routine", sourceRole: undefined, access })).toBe(
       "user-1",
     );
   });
 
   it("is the owner for a bot message whose chain they started, when own bots are allowed", () => {
-    const access = { routines: false, ownBots: true, messaging: false };
+    const access = { routines: false, ownBots: true, messaging: false, webhookChains: false };
     expect(
       userComputerOwner({
         ...own,
@@ -144,7 +144,7 @@ describe("userComputerOwner", () => {
   });
 
   it("is the owner for their own chat-app message, when chat apps are allowed", () => {
-    const access = { routines: false, ownBots: false, messaging: true };
+    const access = { routines: false, ownBots: false, messaging: true, webhookChains: false };
     const message = { ...own, trigger: "messaging", access, ownerMessage: true };
     expect(userComputerOwner(message)).toBe("user-1");
     expect(userComputerOwner({ ...message, access: NO_USER_COMPUTER_ACCESS })).toBeUndefined();
@@ -155,7 +155,10 @@ describe("userComputerOwner", () => {
   });
 
   it.each([
-    { trigger: "routine", access: { routines: false, ownBots: true, messaging: true } },
+    {
+      trigger: "routine",
+      access: { routines: false, ownBots: true, messaging: true, webhookChains: false },
+    },
     { trigger: "routine", access: all, runUserId: "user-2" },
     { trigger: "routine", access: all, messagingChannelRun: true },
     { trigger: "webhook", access: all },
@@ -163,7 +166,7 @@ describe("userComputerOwner", () => {
     { trigger: "bot_message", access: all, ownBotChain: false },
     {
       trigger: "bot_message",
-      access: { routines: true, ownBots: false, messaging: true },
+      access: { routines: true, ownBots: false, messaging: true, webhookChains: false },
       ownBotChain: true,
     },
     { trigger: "user", access: all, ownerMessage: true, sourceRole: "bot" },
@@ -414,9 +417,16 @@ describe("botChainFromOwner", () => {
     routines: false,
     ownBots: true,
     messaging: false,
+    webhookChains: false,
     verifiedChatApps: ["chat-a"],
   };
-  const all = { routines: true, ownBots: true, messaging: true, verifiedChatApps: ["chat-a"] };
+  const all = {
+    routines: true,
+    ownBots: true,
+    messaging: true,
+    webhookChains: true,
+    verifiedChatApps: ["chat-a"],
+  };
 
   function chain() {
     const messages = new Map<string, Message>();
@@ -450,6 +460,17 @@ describe("botChainFromOwner", () => {
     };
     const ownerMessage = (id: string, blocks: unknown[] = [{ kind: "text", text: "build it" }]) =>
       messages.set(id, { id, role: "user", blocks });
+    /** What a webhook, Git event or email routine delivered to the orchestrator, in its thread. */
+    const eventDelivery = (id: string, marked = true, threadId = "thread-sender") =>
+      messages.set(id, {
+        id,
+        role: "user",
+        blocks: [
+          marked ? { kind: "delivery", outsideEvent: true } : { kind: "delivery" },
+          { kind: "text", text: "Inbound webhook payload: ticket ENG-1" },
+        ],
+        threadId,
+      });
     /** The owner's message from the chat app linked to the orchestrator, in its thread. */
     const ownerChatMessage = (
       id: string,
@@ -528,6 +549,7 @@ describe("botChainFromOwner", () => {
       runReads,
       ownerMessage,
       ownerChatMessage,
+      eventDelivery,
       inbound,
       outbound,
       senderRun,
@@ -610,7 +632,7 @@ describe("botChainFromOwner", () => {
     c.fromSender({ trigger: "user", sourceMessageId: "owner-1" });
     c.ownerMessage("owner-1");
     c.steered.set("run-1", "webhook");
-    await expect(c.check(all)).resolves.toBe(false);
+    await expect(c.check({ ...all, webhookChains: false })).resolves.toBe(false);
     c.steered.set("run-1", "routine");
     await expect(c.check(ownBots)).resolves.toBe(false);
     await expect(c.check(all)).resolves.toBe(true);
@@ -692,6 +714,41 @@ describe("botChainFromOwner", () => {
     await expect(c.check(all)).resolves.toBe(false);
     c.ownerMessage("src-1");
     await expect(c.check(all)).resolves.toBe(false);
+  });
+
+  it("passes a chain that started at an outside event delivered to the owner's routine, when allowed", async () => {
+    const c = chain();
+    c.eventDelivery("src-1");
+    c.fromSender({ trigger: "webhook", sourceMessageId: "src-1" });
+    await expect(c.check({ ...ownBots, webhookChains: true })).resolves.toBe(true);
+    await expect(c.check(ownBots)).resolves.toBe(false);
+  });
+
+  it("refuses a chain from a chat-app wake, an unmarked or misplaced delivery, or a group", async () => {
+    const c = chain();
+    c.eventDelivery("src-1", false);
+    c.fromSender({ trigger: "webhook", sourceMessageId: "src-1" });
+    await expect(c.check(all)).resolves.toBe(false);
+    c.eventDelivery("src-1", true, "thread-9");
+    await expect(c.check(all)).resolves.toBe(false);
+    c.eventDelivery("src-1");
+    c.fromSender({ trigger: "webhook", sourceMessageId: "src-1", groupId: "g1" });
+    await expect(c.check(all)).resolves.toBe(false);
+    c.fromSender({ trigger: "webhook", sourceMessageId: "src-1", userId: "user-2" });
+    await expect(c.check(all)).resolves.toBe(false);
+    c.fromSender({ trigger: "webhook", sourceMessageId: null });
+    await expect(c.check(all)).resolves.toBe(false);
+  });
+
+  it("lets outside events handed into a running chain sender count once they may start one", async () => {
+    const c = chain();
+    c.ownerMessage("src-1");
+    c.fromSender({ trigger: "user", sourceMessageId: "src-1" });
+    c.steered.set("run-1", "webhook");
+    await expect(c.check({ ...all, webhookChains: false })).resolves.toBe(false);
+    await expect(c.check(all)).resolves.toBe(true);
+    c.steered.set("run-1", "routine");
+    await expect(c.check({ ...all, routines: false })).resolves.toBe(false);
   });
 });
 

@@ -106,6 +106,11 @@ export interface AppEnv extends MessagingEnvironmentValues {
    * it themselves from a chat app they linked. Default off.
    */
   userDevicesAllowMessaging: boolean;
+  /**
+   * USER_DEVICES_ALLOW_WEBHOOK_CHAINS=true lets a chain of a user's own bots reach their computer
+   * when it started at a webhook, Git event or email their routine received. Default off.
+   */
+  userDevicesAllowWebhookChains: boolean;
   /** COMPUTER_SETTINGS_ENABLED=true lets Settings choose where computers run. Default off. */
   computerSettingsEnabled: boolean;
   /** Operator menu links that frame a same-origin page (RAKAZO_NAV_LINKS). */
@@ -331,6 +336,11 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
     userDevicesAllowMessaging: parseEnvFlag(
       "USER_DEVICES_ALLOW_MESSAGING",
       source.USER_DEVICES_ALLOW_MESSAGING,
+      false,
+    ),
+    userDevicesAllowWebhookChains: parseEnvFlag(
+      "USER_DEVICES_ALLOW_WEBHOOK_CHAINS",
+      source.USER_DEVICES_ALLOW_WEBHOOK_CHAINS,
       false,
     ),
     computerSettingsEnabled: source.COMPUTER_SETTINGS_ENABLED === "true",

@@ -67,8 +67,9 @@ In every [approval mode](./approvals.md), a bot asks before it first uses each a
 on a connected server before its first command there too, unless a Block rule refuses it. **Allow
 in this space** covers the rest of that space, in any chat. Bots use your apps only in chats you
 start with your own bots, never from routines or other people's messages. A self-hosted server can
-also allow scheduled routines, requests between your own bots, and your own messages from a chat app
-you linked (see [Feature switches](./self-host-configuration.md#feature-switches)).
+also allow scheduled routines, requests between your own bots (including ones a webhook, Git event
+or email started), and your own messages from a chat app you linked (see
+[Feature switches](./self-host-configuration.md#feature-switches)).
 
 > [!WARNING]
 > A bot with access to your computer can read your files and run programs as you. Only turn it on

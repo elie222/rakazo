@@ -278,6 +278,11 @@ async function main() {
         process.env.USER_DEVICES_ALLOW_MESSAGING,
         false,
       ),
+      webhookChains: parseEnvFlag(
+        "USER_DEVICES_ALLOW_WEBHOOK_CHAINS",
+        process.env.USER_DEVICES_ALLOW_WEBHOOK_CHAINS,
+        false,
+      ),
     },
     paymentWallet,
     stoppingSignal: shutdown.signal,

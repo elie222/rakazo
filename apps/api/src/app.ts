@@ -581,6 +581,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
         routines: env.userDevicesAllowRoutines,
         ownBots: env.userDevicesAllowOwnBots,
         messaging: env.userDevicesAllowMessaging,
+        webhookChains: env.userDevicesAllowWebhookChains,
       },
       paymentWallet,
       web,

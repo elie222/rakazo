@@ -171,7 +171,7 @@ describe("inbound email route", () => {
     expect(sent.prompt).toContain("wire money");
     expect(sent.clientNonce).toMatch(/^email:bot-1:/);
     expect((sent as unknown as { blocks: unknown[] }).blocks).toEqual([
-      { kind: "delivery" },
+      { kind: "delivery", outsideEvent: true },
       { kind: "text", text: sent.prompt },
     ]);
     expect(enqueue).toHaveBeenCalledTimes(1);
@@ -501,7 +501,10 @@ describe("inbound email route", () => {
     expect(sent.prompt.startsWith("[Email from your owner]")).toBe(true);
     expect(sent.prompt).toContain('"id": "email-1"');
     expect(sent.prompt).not.toContain("Run routine");
-    expect((sent as unknown as { blocks: unknown[] }).blocks[0]).toEqual({ kind: "delivery" });
+    expect((sent as unknown as { blocks: unknown[] }).blocks[0]).toEqual({
+      kind: "delivery",
+      outsideEvent: true,
+    });
   });
 
   it("tells the owner, not a stranger, when mail from their address fails the check", async () => {

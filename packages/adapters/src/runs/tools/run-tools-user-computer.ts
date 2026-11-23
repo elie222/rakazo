@@ -49,14 +49,16 @@ const USER_COMPUTER_UNAVAILABLE =
 
 /**
  * Which runs besides the owner's own chat may reach their paired computer: their routines, chains
- * of their own bots that started where the computer was reachable, and their own messages from a
- * chat app they linked. Server switches USER_DEVICES_ALLOW_ROUTINES, USER_DEVICES_ALLOW_OWN_BOTS
- * and USER_DEVICES_ALLOW_MESSAGING, all off by default.
+ * of their own bots that started where the computer was reachable (or, with `webhookChains`, at a
+ * webhook, Git event or email their routine received), and their own messages from a chat app they
+ * linked. Server switches USER_DEVICES_ALLOW_ROUTINES, USER_DEVICES_ALLOW_OWN_BOTS,
+ * USER_DEVICES_ALLOW_MESSAGING and USER_DEVICES_ALLOW_WEBHOOK_CHAINS, all off by default.
  */
 export type UserComputerAccess = {
   routines: boolean;
   ownBots: boolean;
   messaging: boolean;
+  webhookChains: boolean;
   /** Chat apps whose platform vouches for each sender; only their linked messages count. */
   verifiedChatApps?: readonly string[];
 };
@@ -65,6 +67,7 @@ export const NO_USER_COMPUTER_ACCESS: UserComputerAccess = {
   routines: false,
   ownBots: false,
   messaging: false,
+  webhookChains: false,
 };
 
 /**
@@ -209,16 +212,37 @@ export async function userComputerTrust(
 
 /** Outside tasks whose text, once handed into a run, keeps it from the owner's computer. */
 export function userComputerBlockingOrigins(access: UserComputerAccess): string[] {
-  return access.routines ? ["webhook"] : ["routine", "webhook"];
+  return [...(access.routines ? [] : ["routine"]), ...(access.webhookChains ? [] : ["webhook"])];
+}
+
+/**
+ * Whether a webhook-triggered run's source is a webhook, Git event or email its bot received, as
+ * the delivery marked it, in its own thread. A chat-app wake is not marked.
+ */
+async function outsideEventDelivery(
+  prisma: PrismaClient,
+  run: { threadId: string; sourceMessageId: string | null },
+): Promise<boolean> {
+  if (!run.sourceMessageId) return false;
+  const source = await prisma.message.findUnique({
+    where: { id: run.sourceMessageId },
+    select: { id: true, role: true, blocks: true, threadId: true },
+  });
+  if (source?.role !== "user" || source.threadId !== run.threadId) return false;
+  const read = readMessageBlocks(source);
+  return (
+    read.intact &&
+    read.blocks.some((block) => block.kind === "delivery" && block.outsideEvent === true)
+  );
 }
 
 /**
  * Whether the bot message that started a run comes from a chain the owner started: each sender run
  * is theirs, in this Space, on one of their bots, outside a group chat, took in no blocked outside
  * task, and the first one started where their computer is reachable (their own message, or a
- * scheduled routine or their own linked chat-app message when allowed). The caller checks that the
- * receiving run is the owner's own. A link that is missing, unreadable or past the hop limit
- * refuses.
+ * scheduled routine, their own linked chat-app message, or a webhook, Git event or email their
+ * routine received, when allowed). The caller checks that the receiving run is the owner's own. A
+ * link that is missing, unreadable or past the hop limit refuses.
  */
 export async function botChainFromOwner(
   prisma: PrismaClient,
@@ -280,6 +304,8 @@ export async function botChainFromOwner(
     if (sender.trigger === "routine") return access.routines && scheduledRoutine(sender);
     if (sender.trigger === "messaging")
       return access.messaging && (await ownerDirectMessage(prisma, sender, access));
+    if (sender.trigger === "webhook")
+      return access.webhookChains && (await outsideEventDelivery(prisma, sender));
     if (sender.trigger === "user" || sender.trigger === "follow_up") {
       const source = sender.sourceMessageId
         ? await prisma.message.findUnique({

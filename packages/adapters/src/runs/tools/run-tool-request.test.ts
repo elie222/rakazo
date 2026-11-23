@@ -695,7 +695,7 @@ describe("prepareToolRequest: a saved login that asks first", () => {
 describe("the user's computer after a routine or webhook joined the run", () => {
   function userComputerCall(
     claimed: boolean,
-    access?: { routines: boolean; ownBots: boolean; messaging: boolean },
+    access?: { routines: boolean; ownBots: boolean; messaging: boolean; webhookChains: boolean },
   ) {
     const findFirst = vi.fn(async (_query: { where: Record<string, unknown> }) =>
       claimed ? { id: "steering-1" } : null,
@@ -741,6 +741,7 @@ describe("the user's computer after a routine or webhook joined the run", () => 
       routines: true,
       ownBots: false,
       messaging: false,
+      webhookChains: false,
     });
     await expect(prepareToolRequest(ctx as never, request)).resolves.toBeUndefined();
     expect(findFirst.mock.calls.at(-1)?.[0].where).toEqual({
@@ -755,6 +756,7 @@ describe("the user's computer after a routine or webhook joined the run", () => 
       routines: true,
       ownBots: true,
       messaging: true,
+      webhookChains: true,
     });
     await expect(prepareToolRequest(ctx as never, request)).resolves.toEqual({
       error: "The user's computer is not available in this run.",

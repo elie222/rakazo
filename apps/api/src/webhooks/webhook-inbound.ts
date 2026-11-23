@@ -290,7 +290,9 @@ export async function deliverWebhookEvent(
     botId: target.bot.id,
     userId: target.bot.userId,
     blocks: [
-      { kind: "delivery" },
+      input.source === "messaging"
+        ? { kind: "delivery" }
+        : { kind: "delivery", outsideEvent: true },
       { kind: "text", text: promptText },
       ...(input.attachmentBlocks ?? []),
     ],
