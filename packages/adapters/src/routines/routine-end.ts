@@ -2,6 +2,8 @@ import {
   ACTIVE_RUN_STATUSES,
   isOneShotRoutineCrons,
   routineRepeats,
+  wallClock,
+  zonedDateTime,
   zonedEndDateTime,
 } from "@rakazo/core";
 import type { PrismaClient, ThreadEvents } from "@rakazo/db";
@@ -39,6 +41,12 @@ export function routineEndError(
     return "The end date is before the next run.";
   }
   return null;
+}
+
+export function routineEndInZone(endsAt: Date | null, from: string, to: string): Date | null {
+  if (!endsAt || from === to) return endsAt;
+  const moved = zonedDateTime(wallClock(endsAt, from), to);
+  return moved ? new Date(moved.getTime() + endsAt.getUTCMilliseconds()) : endsAt;
 }
 
 export function routineEndFromText(
@@ -200,8 +208,14 @@ export async function deleteStrandedEndedRoutines(
       active: true,
       nextRunAt: null,
       endsAt: { not: null },
-      OR: [{ lastRunAt: null }, { lastRunAt: { lt: new Date(now.getTime() - STRANDED_AFTER_MS) } }],
-      runs: { none: { status: { in: [...ACTIVE_RUN_STATUSES] } } },
+      runs: {
+        none: {
+          OR: [
+            { status: { in: [...ACTIVE_RUN_STATUSES] } },
+            { updatedAt: { gt: new Date(now.getTime() - STRANDED_AFTER_MS) } },
+          ],
+        },
+      },
     },
     select: { id: true, spaceId: true, userId: true },
     take: 50,

@@ -14,6 +14,7 @@ import {
   routineEdited,
   routineEndError,
   routineEnded,
+  routineEndInZone,
   runBeforeEnd,
   stableStringify,
   validateRoutineWatch,
@@ -283,7 +284,7 @@ export function routinesRoutes(ctx: RouterContext) {
           (input.timezone !== undefined && input.timezone !== existing.timezone);
         const endsAt =
           input.endsAt === undefined
-            ? existing.endsAt
+            ? routineEndInZone(existing.endsAt, existing.timezone, timezone)
             : input.endsAt === null
               ? null
               : new Date(input.endsAt);
@@ -331,7 +332,10 @@ export function routinesRoutes(ctx: RouterContext) {
                 : (recalculatedNextRunAt ?? existing.nextRunAt);
         const endError = routineEndError(
           { endsAt, crons, watch, nextRunAt },
-          { end: endChanged, nextRun: nextRunAt?.getTime() !== existing.nextRunAt?.getTime() },
+          {
+            end: input.endsAt !== undefined && endChanged,
+            nextRun: nextRunAt?.getTime() !== existing.nextRunAt?.getTime(),
+          },
         );
         if (endError) throw new ClientError("BAD_REQUEST", endError);
         // What a watch read is not the owner's words, so it never runs as a turn in the chat.

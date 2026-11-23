@@ -51,6 +51,7 @@ import {
 import { recordVaultItemUse } from "../secrets/vault/vault-activity.js";
 import type { SafeWebFetchOptions } from "../web/web-ssrf.js";
 import { fetchSafeHttpRequest } from "../web/web-ssrf.js";
+import { endRoutinePastItsEnd, runBeforeEnd } from "./routine-end.js";
 import { ROUTINE_WATCH_NOTE_START, routineWatchNote } from "./routine-watch.prompt.js";
 import { resolveWatchArgs } from "./routine-watch-args.js";
 
@@ -854,7 +855,11 @@ export type RoutineWatchTickDeps = RoutineWatchDeps & {
   jobs: JobPublisher;
 };
 
-type TickRoutine = RoutineWatchTarget & { name: string };
+type TickRoutine = RoutineWatchTarget & {
+  name: string;
+  threadId?: string | null;
+  endsAt?: Date | null;
+};
 
 export type RoutineWatchTick =
   | { run: false }
@@ -963,6 +968,15 @@ export async function tickRoutineWatch(
       nextRunAt,
       note: routineWatchNote(describeRoutineWatch(watch), outcome.state.detail),
     };
+  }
+  const { endsAt } = routine;
+  if (endsAt && !runBeforeEnd(nextRunAt, endsAt)) {
+    await endRoutinePastItsEnd(
+      deps,
+      { ...routine, threadId: routine.threadId ?? null, endsAt },
+      scheduledAt,
+    );
+    return { run: false };
   }
   const claimed = await deps.prisma.routine.updateMany({
     where: { id: routine.id, userId: routine.userId, active: true, nextRunAt: scheduledAt },

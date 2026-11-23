@@ -14,6 +14,7 @@ import {
   deleteStrandedEndedRoutines,
   routineEndError,
   routineEnded,
+  routineEndInZone,
 } from "./routine-end.js";
 
 const now = new Date("2026-11-23T12:00:00.000Z");
@@ -147,7 +148,7 @@ describe("deleteSpentRoutine", () => {
 });
 
 describe("deleteStrandedEndedRoutines", () => {
-  it("deletes an ended routine with no run under way once its last run is an hour old", async () => {
+  it("deletes an ended routine once none of its runs has been under way for an hour", async () => {
     const stranded = {
       ...daily,
       id: "routine-1",
@@ -176,11 +177,27 @@ describe("deleteStrandedEndedRoutines", () => {
         where: expect.objectContaining({
           active: true,
           nextRunAt: null,
-          OR: [{ lastRunAt: null }, { lastRunAt: { lt: new Date("2026-11-23T11:00:00.000Z") } }],
-          runs: { none: { status: { in: expect.any(Array) } } },
+          runs: {
+            none: {
+              OR: [
+                { status: { in: expect.any(Array) } },
+                { updatedAt: { gt: new Date("2026-11-23T11:00:00.000Z") } },
+              ],
+            },
+          },
         }),
       }),
     );
     expect(deleteMany).toHaveBeenCalledOnce();
+  });
+});
+
+describe("routineEndInZone", () => {
+  it("keeps the end's local day and time when the routine moves zone", () => {
+    const newYorkEnd = new Date("2026-12-01T04:59:59.999Z");
+    expect(routineEndInZone(newYorkEnd, "America/New_York", "Asia/Tokyo")?.toISOString()).toBe(
+      "2026-11-30T14:59:59.999Z",
+    );
+    expect(routineEndInZone(null, "America/New_York", "Asia/Tokyo")).toBeNull();
   });
 });

@@ -28,6 +28,7 @@ import {
   routineEndError,
   routineEnded,
   routineEndFromText,
+  routineEndInZone,
   runBeforeEnd,
 } from "../routines/routine-end.js";
 import { postRoutineNotice, routineEditChange, routineEdited } from "../routines/routine-notice.js";
@@ -470,7 +471,11 @@ export async function changeUserTimezone(
       const relabeled: string[] = [];
       for (const routine of routines) {
         const nextRunAt = nextRunAtAfterTimezoneMove(routine, timezone);
-        if (nextRunAt?.getTime() === routine.nextRunAt?.getTime()) {
+        const endsAt = routineEndInZone(routine.endsAt, routine.timezone, timezone);
+        if (
+          nextRunAt?.getTime() === routine.nextRunAt?.getTime() &&
+          endsAt?.getTime() === routine.endsAt?.getTime()
+        ) {
           relabeled.push(routine.id);
           continue;
         }
@@ -483,7 +488,7 @@ export async function changeUserTimezone(
             timezone: user.timezone,
             nextRunAt: routine.nextRunAt,
           },
-          data: { timezone, nextRunAt },
+          data: { timezone, nextRunAt, endsAt },
         });
         if (count === 1 && routine.active && nextRunAt) {
           woken.push({ id: routine.id, nextRunAt });
@@ -1125,7 +1130,10 @@ export async function updateScheduleFromTool(
   }
   const end = routineEndFromText(input.endAt, timezone);
   if ("error" in end) return end;
-  const endsAt = end.endsAt === undefined ? existing.endsAt : end.endsAt;
+  const endsAt =
+    end.endsAt === undefined
+      ? routineEndInZone(existing.endsAt, existing.timezone, timezone)
+      : end.endsAt;
   const endChanged = endsAt?.getTime() !== existing.endsAt?.getTime();
   const hasTiming = SCHEDULE_TIMING_FIELDS.some((field) =>
     isScheduleValueProvided(input.schedule[field]),
@@ -1233,7 +1241,10 @@ export async function updateScheduleFromTool(
   }
   const endError = routineEndError(
     { endsAt, crons, watch: existing.watch, nextRunAt },
-    { end: endChanged, nextRun: nextRunAt?.getTime() !== existing.nextRunAt?.getTime() },
+    {
+      end: end.endsAt !== undefined && endChanged,
+      nextRun: nextRunAt?.getTime() !== existing.nextRunAt?.getTime(),
+    },
   );
   if (endError) return { error: `${endError} ${nowIn(timezone)}` };
   const eventsChanged =

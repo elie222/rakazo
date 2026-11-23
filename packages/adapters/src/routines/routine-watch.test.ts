@@ -189,6 +189,20 @@ describe("tickRoutineWatch", () => {
     return { deps, routine, updateMany, messages };
   }
 
+  it("ends a routine whose quiet check leaves no check before its end", async () => {
+    const { deps, routine, updateMany } = setup({ data: { items: [] } });
+    const deleteMany = vi.fn(async () => ({ count: 1 }));
+    Object.assign(deps.prisma.routine, { deleteMany });
+    const endsAt = new Date(Date.now() + 60_000);
+    expect(await tickRoutineWatch(deps, { ...routine, endsAt }, target, scheduledAt)).toEqual({
+      run: false,
+    });
+    expect(deleteMany).toHaveBeenCalledWith({
+      where: expect.objectContaining({ id: "routine-1", nextRunAt: scheduledAt, endsAt }),
+    });
+    expect(updateMany).not.toHaveBeenCalled();
+  });
+
   it("reschedules temporary HTTP failures at the watch interval without disabling it", async () => {
     const { deps, routine, updateMany, messages } = setup(
       {},
