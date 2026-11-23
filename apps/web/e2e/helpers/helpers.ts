@@ -162,7 +162,10 @@ export async function openBotMemory(page: Page) {
 /** Opens the bot panel and switches to its Computer tab (preview, recovery, own computer). */
 export async function openBotComputer(page: Page) {
   await openBotPanel(page);
-  await page.getByTestId("bot-tab-computer").click();
+  await expect(async () => {
+    await page.getByTestId("bot-tab-computer").click();
+    await expect(page.getByTestId("computer-preview")).toBeVisible({ timeout: 2_000 });
+  }).toPass({ timeout: 20_000 });
 }
 
 /** Opens the bot panel and switches to its Library tab (pages and files). */
