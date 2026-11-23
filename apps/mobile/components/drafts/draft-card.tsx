@@ -11,7 +11,7 @@ import {
   draftSegments,
   newClientId,
 } from "@rakazo/core";
-import { bestEffort } from "@rakazo/logging";
+import { bestEffort } from "@rakazo/logging/best-effort";
 import { fontWeight, typeScale } from "@rakazo/ui-tokens";
 import * as Clipboard from "expo-clipboard";
 import { useState } from "react";
