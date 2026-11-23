@@ -106,9 +106,7 @@ async function pictureBytes(
   if (artifact) {
     if (!deps.artifacts) return "file storage is unavailable";
     if (artifact.size > PAGE_IMAGE_SOURCE_MAX_BYTES) return "the picture is larger than 10 MB";
-    return deps.artifacts
-      .get(artifact.storageKey, context)
-      .catch(() => "the file could not be read");
+    return deps.artifacts.get(artifact.storageKey, context);
   }
   if (!ctx.tools.offered.some((tool) => tool.name === "read_file"))
     return "no chat file with that artifactId";
