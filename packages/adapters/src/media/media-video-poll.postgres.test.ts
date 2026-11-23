@@ -15,6 +15,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { createArtifactStore } from "../storage/artifact-store-factory.js";
 import { FakeMediaGenerationProvider } from "./media-generation-provider.js";
 import { generateMediaFromTool } from "./media-generation-tools.js";
+import type { MediaSourceRecord } from "./media-sources.js";
 import {
   MEDIA_POLL_DEADLINE_MS,
   mediaDelivery,
@@ -137,6 +138,7 @@ describePostgres("background video delivery (PostgreSQL)", () => {
         events: { notify: vi.fn(async () => undefined) },
         artifacts: createArtifactStore(dataDir, prisma, {}),
         mediaGeneration: media,
+        secretStore: { load: async () => "" },
         ...limits,
       };
     };
@@ -148,7 +150,10 @@ describePostgres("background video delivery (PostgreSQL)", () => {
       userId: user.id,
       spaceId: user.id,
     };
-    const submit = async (ended: "completed" | "cancelled" = "completed") => {
+    const submit = async (
+      ended: "completed" | "cancelled" = "completed",
+      source: MediaSourceRecord = { kind: "hosted" },
+    ) => {
       const deps = process();
       const result = await runAsTenant(tenant, () =>
         generateMediaFromTool({
@@ -156,6 +161,7 @@ describePostgres("background video delivery (PostgreSQL)", () => {
           args: { prompt: "a lighthouse at dusk" },
           executionId: randomUUID(),
           provider: media,
+          source,
           prisma,
           context: {
             operationId: randomUUID(),
@@ -271,6 +277,17 @@ describePostgres("background video delivery (PostgreSQL)", () => {
     expect(wakes).toHaveLength(1);
     expect(wakes[0]!.task.prompt).toContain("failed");
     expect(h.media.submissions).toBe(1);
+  });
+
+  it("reports a video failed once the connection that made it is gone", async () => {
+    const h = await setup();
+    const jobId = await h.submit("completed", { kind: "connection", connectionId: randomUUID() });
+    h.media.remote = "completed";
+    await h.poll(jobId);
+    expect(h.media.polls).toBe(0);
+    expect((await h.job(jobId)).status).toBe("media_failed");
+    expect(await h.messages()).toHaveLength(0);
+    expect(await h.wakes()).toHaveLength(1);
   });
 
   it("keeps checking through provider errors without resubmitting", async () => {

@@ -10,6 +10,7 @@ import {
 import { bestEffort } from "@rakazo/logging";
 import { loadBotGroupDirectory } from "../../bots/group-handoff.js";
 import { parsePlaybook } from "../../bots/teaching-session.js";
+import type { RunMediaSources } from "../../media/media-sources.js";
 import { lateRoutineRunInstruction } from "../../routines/routine-lateness.prompt.js";
 import { routineRunInstruction } from "../../routines/routine-run.prompt.js";
 import { formatCompactedSummary } from "../../runtime/context/history-compaction.prompt.js";
@@ -57,6 +58,7 @@ export async function createRunContext(
     tools: SelectedRunTools;
     computerInstructions: ComputerInstructions;
     meetingChat: boolean;
+    media: RunMediaSources;
   },
 ) {
   const { web, mediaGeneration, paidServices, browser } = services;
@@ -173,7 +175,7 @@ export async function createRunContext(
 
   const ctx: RunContext = {
     deps,
-    providers: { web, mediaGeneration, paidServices, browser, cloudAgent },
+    providers: { web, mediaGeneration, media: parts.media, paidServices, browser, cloudAgent },
     run,
     runId,
     workerId,

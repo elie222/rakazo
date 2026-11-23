@@ -70,6 +70,22 @@ describe("OpenRouter media generation", () => {
       duration: 4,
     });
   });
+  it("asks for no-retention endpoints on images and videos when the connection does", async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>();
+    fetch
+      .mockResolvedValueOnce(json({ data: [{ b64_json: Buffer.from(PNG).toString("base64") }] }))
+      .mockResolvedValueOnce(json({ id: "job-1", status: "pending" }, { status: 202 }));
+    const provider = new OpenRouterMediaGenerationProvider({
+      apiKey: "fake-key",
+      ...both,
+      zeroDataRetention: true,
+      fetch,
+    });
+    await provider.generateImage({ prompt: "draw" }, context);
+    await provider.generateVideo({ prompt: "move" }, context);
+    for (const [, init] of fetch.mock.calls)
+      expect(JSON.parse(init?.body as string)).toMatchObject({ provider: { zdr: true } });
+  });
   it("reports progress while the job runs", async () => {
     const { fetch, provider } = setup(
       both,
