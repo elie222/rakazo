@@ -47,6 +47,14 @@ Asking for a dinner idea, the user mentioned in passing that their daughter Mia 
 Asking for an invoice table design, the user mentioned in passing that their team decided the billing service will use Postgres rather than MongoDB, without asking the bot to remember it. Pass only if the memory records that the billing service uses Postgres. Fail if it is missing, or records MongoDB as the choice.`,
   role: `${preamble}
 Asking for a hello message to a new team, the user mentioned in passing that they just started as head of support at Lumen Health, without asking the bot to remember it. Pass only if the memory records that the user is head of support at Lumen Health. Fail if it is missing, or gives another role or company.`,
+  "time-zone": `${preamble}
+Asking for meeting times, the user mentioned in passing that they are in Singapore and work 9 to 6 their time, without asking the bot to remember it. Pass only if the memory records that the user is in Singapore or its time zone, and their working hours of 9 to 6. Fail if either is missing or wrong.`,
+  partner: `${preamble}
+Asking for a gift idea, the user mentioned in passing that their wife is named Noa and loves pottery, without asking the bot to remember it. Pass only if the memory records that the user's wife is Noa. Fail if it is missing, or gives another name or relationship.`,
+  "call-hours": `${preamble}
+Asking for a scheduling reply, the user mentioned in passing that they never take calls before 10 in the morning, without asking the bot to remember it. Pass only if the memory records that the user takes no calls before 10am. Fail if it is missing or gives another time.`,
+  vegetarian: `${preamble}
+Asking for a lunch order, the user mentioned in passing that they are vegetarian, without asking the bot to remember it. Pass only if the memory records that the user is vegetarian. Fail if it is missing or records another diet.`,
   "other-document": `${preamble}
 The memory joins two documents. The second, USER.md, said the user works as a data analyst at Brightline Logistics. The user then said they left Brightline and are now a data engineer at Tidewater Analytics. Pass only if the memory gives Tidewater Analytics as the user's current employer and no entry still presents Brightline Logistics as their current employer. Recording Brightline as a former employer is fine. Fail if entries disagree about where the user works now.`,
   "full-memory": `${preamble}
@@ -156,6 +164,20 @@ export const MEMORY_JUDGE_CALIBRATION = [
     ),
     pass: false,
   },
+  {
+    input: judgeInput(
+      "time-zone",
+      "# Assistant\n\nIn Singapore (UTC+8); works 9:00-18:00 local.\n",
+    ),
+    pass: true,
+  },
+  { input: judgeInput("time-zone", "# Assistant\n\nBased in Singapore.\n"), pass: false },
+  { input: judgeInput("partner", "# Assistant\n\nWife: Noa (loves pottery).\n"), pass: true },
+  { input: judgeInput("partner", "# Assistant\n\nSister Noa likes pottery.\n"), pass: false },
+  { input: judgeInput("call-hours", "# Assistant\n\nNo calls before 10:00.\n"), pass: true },
+  { input: judgeInput("call-hours", "# Assistant\n\nNo calls after 10am.\n"), pass: false },
+  { input: judgeInput("vegetarian", "# Assistant\n\nVegetarian.\n"), pass: true },
+  { input: judgeInput("vegetarian", "# Assistant\n\nLikes Thai food.\n"), pass: false },
   { input: judgeInput("allergy", "# Assistant\n\nDaughter Mia: peanut allergy.\n"), pass: true },
   {
     input: judgeInput("allergy", "# Assistant\n\nMia (daughter) is allergic to shellfish.\n"),
@@ -377,6 +399,23 @@ export const MEMORY_EVAL_CASES: EvalCase[] = [
         "role",
         "I just started as head of support at Lumen Health, so I'll be leaning on you a lot. Can you draft a short hello message to my new team?",
       ],
+      // Held out: never tune the prompt against these four.
+      [
+        "time-zone",
+        "I need a weekly slot for a call with a colleague in New York. I'm in Singapore and work 9 to 6 my time. What times overlap?",
+      ],
+      [
+        "partner",
+        "My wife Noa's birthday is in two weeks and she loves pottery. Any gift ideas under $100?",
+      ],
+      [
+        "call-hours",
+        "Can you draft a reply to Jordan offering three slots on Thursday for our catch-up? I never take calls before 10am.",
+      ],
+      [
+        "vegetarian",
+        "Ordering lunch for the team from a Thai place. I'm vegetarian, so what should I get for myself?",
+      ],
     ] as const
   ).map(
     ([kind, ask]): EvalCase => ({
@@ -393,11 +432,24 @@ export const MEMORY_EVAL_CASES: EvalCase[] = [
     [
       ["small-talk", "Ugh, it's been raining all week here. How's your day going?"],
       ["one-off", "How many grams is 2 cups of flour? Baking a cake tonight."],
+      // Held out: never tune the prompt against these three.
+      [
+        "one-off-personal",
+        "My sister's flight lands at 6:40 tonight at gate B12. Can you write her a quick text saying I'll meet her at arrivals?",
+      ],
+      [
+        "temporary",
+        "I'm at the airport right now and my flight is delayed two hours. What can I do to pass the time?",
+      ],
+      [
+        "progress",
+        "I just finished the first two sections of the quarterly report. Can you suggest a title for it?",
+      ],
     ] as const
   ).map(
     ([kind, ask]): EvalCase => ({
       id: `memory-proactive-${kind}`,
-      purpose: "Small talk and one-off task details are not saved.",
+      purpose: "Small talk, one-off task details, temporary states and progress are not saved.",
       connections: [],
       steps: [{ ask }],
       grade: (e) => [check("nothing-saved", saves(e).length === 0)],
