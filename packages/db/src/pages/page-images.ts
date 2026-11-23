@@ -33,7 +33,7 @@ export async function readPageVersionImage(
   return image ? { src: `data:${image.mimeType};base64,${image.data}` } : null;
 }
 
-const IMAGE_REFERENCE = /image:([A-Za-z0-9][A-Za-z0-9_.-]{0,63})/g;
+const IMAGE_REFERENCE = /(?<![\w-])image:([A-Za-z0-9][A-Za-z0-9_.-]{0,63})/g;
 
 export function pageImageNames(source: string): Set<string> {
   return new Set([...source.matchAll(IMAGE_REFERENCE)].map((match) => match[1]!));
