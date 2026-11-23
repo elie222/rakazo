@@ -297,6 +297,27 @@ describe("Supermemory forget", () => {
     expect(server.forgets.at(-1)).toBe(`${OWN}/mem_0`);
   });
 
+  it("does not forget a copy again while search still lists it", async () => {
+    const server = fakeSupermemory({ [OWN]: { mem_a: "Prefers tea", mem_b: "Prefers tea" } });
+    const search = vi.mocked(fetch).getMockImplementation()!;
+    vi.mocked(fetch).mockImplementation(async (url, init) =>
+      String(url).endsWith("/search")
+        ? Response.json({
+            results: [
+              { id: "mem_a", memory: "Prefers tea", similarity: 1 },
+              { id: "mem_b", memory: "Prefers tea", similarity: 1 },
+            ],
+          })
+        : search(url, init),
+    );
+    const result = await provider().forget(
+      { id: "mem_a", scope: "isolated", botId: "bot-1" },
+      context,
+    );
+    expect(result.ok).toBe(true);
+    expect(server.forgets).toEqual([`${OWN}/mem_b`, `${OWN}/mem_a`]);
+  });
+
   it("reports a memory Supermemory did not forget", async () => {
     vi.stubGlobal(
       "fetch",

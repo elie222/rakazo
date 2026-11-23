@@ -307,12 +307,13 @@ export class SupermemoryMemoryProvider implements SemanticMemoryProvider {
     if (durable.includes(home)) {
       const text = found.memory.trim();
       // Forgotten copies leave the search, so search again until none remain.
+      const forgottenIds = new Set([id]);
       for (const tag of durable) {
         for (let round = 0; ; round++) {
           const copies = await searchSupermemory(text, tag, connection, undefined, context.signal);
           if (!copies.ok) return copies;
           const ids = copies.results
-            .filter((copy) => copy.id && copy.id !== id && copy.memory.trim() === text)
+            .filter((copy) => copy.id && !forgottenIds.has(copy.id) && copy.memory.trim() === text)
             .map((copy) => copy.id!);
           if (!ids.length) break;
           if (round === MAX_COPY_SEARCHES) {
@@ -320,6 +321,7 @@ export class SupermemoryMemoryProvider implements SemanticMemoryProvider {
           }
           const forgotten = await forgetSupermemoryMemories(ids, tag, connection, context.signal);
           if (!forgotten.ok) return forgotten;
+          for (const copyId of ids) forgottenIds.add(copyId);
         }
       }
     }
