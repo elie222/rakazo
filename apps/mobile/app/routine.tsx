@@ -368,7 +368,7 @@ function RoutineEditor({
 
   async function save() {
     if (busy.current) return;
-    const timezone = base?.timezone ?? deviceTimeZone() ?? "UTC";
+    const timezone = deviceTimeZone() ?? "UTC";
     const request = routineSaveRequest(draft, base, botId, timezone, template);
     if ("error" in request) {
       setSaveError(

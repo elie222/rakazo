@@ -154,7 +154,7 @@ export function useRoutineEditor({
         draft: routineDraft,
         onChange: setRoutineDraft,
         editing: editingRoutine,
-        timezone: editingRoutine?.timezone ?? timezone ?? localTimezone(),
+        timezone: routineDraft.timezone ?? timezone ?? localTimezone(),
         webhook: {
           path: appBotInboundUrl(inboundOrigin, active.id, "webhook"),
           secret: routineWebhookSecret,
@@ -308,7 +308,7 @@ export function useRoutineEditor({
                 name: routineDraft.name || t`Routine`,
                 prompt: routineDraft.prompt || t`Check in.`,
                 crons,
-                timezone: timezone ?? localTimezone(),
+                timezone: routineDraft.timezone ?? timezone ?? localTimezone(),
                 active: routineDraft.active,
                 notify: true,
                 webhookEnabled: routineDraft.webhookEnabled,
