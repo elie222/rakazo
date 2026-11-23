@@ -104,12 +104,12 @@ export function claudeCodeEnv(
   }
   const token =
     source.RAKAZO_CLAUDE_CODE_SETUP_TOKEN === "1" ? source[OPT_IN_TOKEN_NAME] : undefined;
-  if (token) {
-    env[OPT_IN_TOKEN_NAME] = token;
-    // The token needs no stored profile, and the CLI tells the model the profile's email.
-    if (emptyConfigDir) env.CLAUDE_CONFIG_DIR = emptyConfigDir;
-  }
-  return { ...env, ...BRIDGE_ENV, ...extra };
+  if (!token) return { ...env, ...BRIDGE_ENV, ...extra };
+  // The token needs no stored profile, and the CLI tells the model the profile's email.
+  const config: Record<string, string> = emptyConfigDir
+    ? { CLAUDE_CONFIG_DIR: emptyConfigDir }
+    : {};
+  return { ...env, [OPT_IN_TOKEN_NAME]: token, ...config, ...BRIDGE_ENV, ...extra };
 }
 
 const stoppedProcesses = new WeakSet<ChildProcess>();
