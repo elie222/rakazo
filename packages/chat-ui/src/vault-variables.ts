@@ -116,7 +116,7 @@ export function withVaultVariables(markdown: string, names: ReadonlySet<string>)
           typeof part === "string"
             ? part
             : // Escaped so the name reads as itself, never as math or emphasis.
-              `[\\$${part.name.replace(/_/g, "\\_")}](${VAULT_URL_PREFIX}${part.name}${part.denied ? DENIED_MARK : ""})`,
+              `[\\$${part.name.replace(/[\\_]/g, "\\$&")}](${VAULT_URL_PREFIX}${part.name}${part.denied ? DENIED_MARK : ""})`,
         )
         .join(""),
     new Map(),
