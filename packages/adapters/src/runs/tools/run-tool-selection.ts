@@ -89,10 +89,15 @@ export const FLEET_WRITE_TOOL_NAMES_SET: ReadonlySet<string> = new Set(FLEET_WRI
  */
 const CREATED_RUN_TOOL_NAMES = new Set(["ask_user", "update_bot"]);
 
-/** Messaging and media tools a background run is not offered (see selectBuiltinToolsForRun). */
+/**
+ * User-facing and group messaging and media tools a background run is not offered (see
+ * selectBuiltinToolsForRun). Same-space message_bot stays available so a ticket run can hold
+ * the ordinary conversational exchanges its work needs (a capacity question, a scope
+ * clarification) without leaking into the owner's chat; substantive cross-agent work still
+ * routes through the ticket itself.
+ */
 const BACKGROUND_DROPPED_TOOL_NAMES: ReadonlySet<string> = new Set([
   "message_user",
-  "message_bot",
   "handoff_to_bot",
   "message_agent",
   "generate_image",

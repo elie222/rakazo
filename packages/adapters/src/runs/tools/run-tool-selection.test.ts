@@ -1,7 +1,25 @@
 import { describe, expect, it } from "vitest";
-import { BUILTIN_AGENT_TOOL_NAMES, unavailableBuiltinToolReasons } from "./run-tool-selection.js";
+import {
+  BUILTIN_AGENT_TOOL_NAMES,
+  selectBuiltinToolsForRun,
+  unavailableBuiltinToolReasons,
+} from "./run-tool-selection.js";
 
 const none: { name: string }[] = [];
+
+/** Minimal options for selectBuiltinToolsForRun: only what the filters under test need. */
+function selectFor(trigger: string, extra: Record<string, unknown> = {}) {
+  return selectBuiltinToolsForRun({
+    graphicalToolsAllowed: true,
+    groupId: null,
+    trigger,
+    semanticMemoryEnabled: false,
+    messagingChannelRun: false,
+    ticketBoardEnabled: true,
+    hasTeammates: true,
+    ...extra,
+  }).map((tool) => tool.name);
+}
 
 describe("unavailableBuiltinToolReasons", () => {
   it("explains a group thread's missing message_bot and points to handoff_to_bot", () => {
@@ -33,12 +51,14 @@ describe("unavailableBuiltinToolReasons", () => {
   it("explains a background run's dropped messaging and media tools", () => {
     const reasons = unavailableBuiltinToolReasons({ groupId: null, trigger: "tickets" }, none);
 
-    expect(reasons.message_bot).toBe(
-      "message_bot is not available in a background run. Report through ticket_comment instead.",
+    expect(reasons.message_user).toBe(
+      "message_user is not available in a background run. Report through ticket_comment instead.",
     );
     expect(reasons.generate_image).toBe(
       "generate_image is not available in a background run. Report through ticket_comment instead.",
     );
+    // Same-space bot messaging stays available: a ticket run can need a quick clarification.
+    expect(reasons.message_bot).toBeUndefined();
   });
 
   it("explains a tool the bot turned off", () => {
@@ -79,5 +99,29 @@ describe("unavailableBuiltinToolReasons", () => {
 
     expect(reasons).not.toHaveProperty("not_a_tool");
     for (const name of Object.keys(reasons)) expect(BUILTIN_AGENT_TOOL_NAMES.has(name)).toBe(true);
+  });
+});
+
+describe("selectBuiltinToolsForRun", () => {
+  it("offers same-space message_bot in a ticket-triggered background run", () => {
+    const names = selectFor("tickets");
+
+    expect(names).toContain("message_bot");
+  });
+
+  it("still drops user-facing, group and cross-space messaging and media in a background run", () => {
+    const names = selectFor("tickets");
+
+    expect(names).not.toContain("message_user");
+    expect(names).not.toContain("handoff_to_bot");
+    expect(names).not.toContain("message_agent");
+    expect(names).not.toContain("generate_image");
+    expect(names).not.toContain("generate_video");
+  });
+
+  it("keeps dropping message_bot in a background run when the bot has no teammates", () => {
+    const names = selectFor("tickets", { hasTeammates: false });
+
+    expect(names).not.toContain("message_bot");
   });
 });

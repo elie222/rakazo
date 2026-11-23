@@ -4824,8 +4824,11 @@ describe("ticket board tool capability", () => {
       trigger: "tickets",
       ticketBoardEnabled: true,
     }).map((tool) => tool.name);
-    for (const name of ["message_bot", "handoff_to_bot", "message_agent"])
+    // Same-space message_bot stays available for the quick clarifications ticket work needs;
+    // group handoff, cross-space messaging and the owner's chat stay out of a background run.
+    for (const name of ["handoff_to_bot", "message_agent"])
       expect(backgroundNames).not.toContain(name);
+    expect(backgroundNames).toContain("message_bot");
   });
 });
 
