@@ -11,7 +11,12 @@ export const MediaModelChoiceSchema = z.object({
 });
 export type MediaModelChoice = z.infer<typeof MediaModelChoiceSchema>;
 
-export const MediaModelOptionSchema = MediaModelChoiceSchema.extend({ label: z.string() });
+/** A model one connection makes; `provider` and `modelId` are how its usage is recorded. */
+export const MediaModelOptionSchema = MediaModelChoiceSchema.extend({
+  label: z.string(),
+  provider: z.string(),
+  connectionLabel: z.string(),
+});
 export type MediaModelOption = z.infer<typeof MediaModelOptionSchema>;
 
 /**

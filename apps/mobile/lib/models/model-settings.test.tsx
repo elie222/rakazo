@@ -1042,7 +1042,13 @@ it("paints a revisit from cache without a spinner and refreshes behind it", asyn
 });
 
 it("offers the image models the member's keys make and saves the one chosen", async () => {
-  const option = (modelId: string, label: string) => ({ credentialId: "key", modelId, label });
+  const option = (modelId: string, label: string) => ({
+    credentialId: "key",
+    modelId,
+    label,
+    provider: "lab",
+    connectionLabel: "Work",
+  });
   saved.media = {
     image: {
       options: [option("draw-2", "Draw 2"), option("draw-mini", "Draw Mini")],
@@ -1053,11 +1059,17 @@ it("offers the image models the member's keys make and saves the one chosen", as
   await remount(async () => {
     await act(async () => root.render(createElement(Models)));
   });
-  const menu = container.querySelector('[aria-label="Image model"]')!;
-  expect(menu.textContent).toContain("Draw 2");
-  expect(container.querySelector('[aria-label="Video model"]')).toBeNull();
-  const mini = [...menu.querySelectorAll("button")].find((b) => b.textContent === "Draw Mini")!;
-  await act(async () => mini.click());
+  expect(container.textContent).not.toContain("Video model");
+  const row = [...container.querySelectorAll("button")].find((button) =>
+    button.textContent?.includes("Draw 2"),
+  )!;
+  await act(async () => row.click());
+  const request = modelPickerRequest(
+    (push.mock.calls.at(-1)![0] as { params: { requestId: string } }).params.requestId,
+  )!;
+  expect(request.title).toBe("Image model");
+  expect(request.choices.map((choice) => choice.modelLabel)).toEqual(["Draw 2", "Draw Mini"]);
+  await act(async () => request.onSelect(request.choices[1]!));
   expect(rpcCalls.find(([procedure]) => procedure === "models/setMedia")?.[1]).toEqual({
     role: "image",
     credentialId: "key",
@@ -1066,8 +1078,10 @@ it("offers the image models the member's keys make and saves the one chosen", as
   });
   await vi.waitFor(() =>
     expect(
-      container.querySelector('[aria-label="Image model"] [aria-pressed="true"]')?.textContent,
-    ).toBe("Draw Mini"),
+      [...container.querySelectorAll("button")].some((button) =>
+        button.textContent?.includes("Draw Mini"),
+      ),
+    ).toBe(true),
   );
 });
 

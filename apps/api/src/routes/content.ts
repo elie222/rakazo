@@ -35,9 +35,9 @@ const usageTimezoneAliases = new Map([
   ["asia/saigon", "Asia/Ho_Chi_Minh"],
 ]);
 
-/** Images and videos made on a member's own key; model usage totals leave them out. */
+/** Images and videos made on a member's own key. They count no tokens, so token totals skip them. */
 const MEDIA_OPERATION_KINDS = [...MediaModelRoleSchema.options];
-const modelUsage = Prisma.sql`AND u."operationKind" NOT IN (${Prisma.join(MEDIA_OPERATION_KINDS)})`;
+const isMedia = Prisma.sql`u."operationKind" IN (${Prisma.join(MEDIA_OPERATION_KINDS)})`;
 
 export function contentRoutes(ctx: RouterContext) {
   const { deps, repos, favicons, groupRepos, authed, refreshExpiredCredential } = ctx;
@@ -48,23 +48,6 @@ export function contentRoutes(ctx: RouterContext) {
     });
     const saved = member?.timezone ?? "UTC";
     return validTimezoneOrUtc(usageTimezoneAliases.get(saved.toLowerCase()) ?? saved);
-  };
-  const ownKeyMediaThisMonth = async (actor: { spaceId: string; userId: string }) => {
-    const timezone = await usageTimezone(actor.userId);
-    const month = wallClock(new Date(), timezone).slice(0, 7);
-    const total = await deps.prisma.usageRecord.aggregate({
-      where: {
-        spaceId: actor.spaceId,
-        userId: actor.userId,
-        operationKind: { in: MEDIA_OPERATION_KINDS },
-        billing: "api_key",
-        createdAt: { gte: zonedDateTime(`${month}-01`, timezone)! },
-      },
-      _sum: { costUsd: true },
-      _count: { _all: true, costUsd: true },
-    });
-    // A generation without a price would make the sum read low, so the total is unknown.
-    return total._count.costUsd === total._count._all ? (total._sum.costUsd ?? 0) : null;
   };
   return {
     artifacts: {
@@ -196,7 +179,6 @@ export function contentRoutes(ctx: RouterContext) {
           spaceId: context.actor.spaceId,
           userId: context.actor.userId,
           fundingSource: "customer",
-          operationKind: { notIn: MEDIA_OPERATION_KINDS },
         };
         const sums = {
           inputTokens: true,
@@ -205,7 +187,7 @@ export function contentRoutes(ctx: RouterContext) {
           costUsd: true,
         } as const;
         const counts = { _all: true, ...sums } as const;
-        const [result, modelGroups, runGroups, ownKeyMediaUsd] = await Promise.all([
+        const [result, modelGroups, runGroups, mediaGroups] = await Promise.all([
           deps.prisma.usageRecord.aggregate({ where, _sum: sums, _count: counts }),
           deps.prisma.usageRecord.groupBy({
             by: ["provider", "model"],
@@ -214,17 +196,32 @@ export function contentRoutes(ctx: RouterContext) {
             _count: counts,
           }),
           deps.prisma.usageRecord.groupBy({ by: ["runId", "parentRunId"], where }),
-          ownKeyMediaThisMonth(context.actor),
+          deps.prisma.usageRecord.groupBy({
+            by: ["provider", "model"],
+            where: { ...where, operationKind: { in: MEDIA_OPERATION_KINDS } },
+            _count: { _all: true },
+          }),
         ]);
+        const mediaCalls = (group?: { provider: string; model: string }) =>
+          mediaGroups
+            .filter(
+              (row) => !group || (row.provider === group.provider && row.model === group.model),
+            )
+            .reduce((total, row) => total + row._count._all, 0);
         const runs = new Set(runGroups.map((row) => row.parentRunId ?? row.runId).filter(Boolean))
           .size;
         // A total that skips rows without a count would understate spend, so it reads as unknown.
-        const completeSums = (group: {
-          _sum: Record<keyof typeof sums, number | null>;
-          _count: Record<keyof typeof counts, number>;
-        }) => {
+        const completeSums = (
+          group: {
+            _sum: Record<keyof typeof sums, number | null>;
+            _count: Record<keyof typeof counts, number>;
+          },
+          media: number,
+        ) => {
           const complete = (field: keyof typeof sums) =>
-            group._count[field] === group._count._all ? (group._sum[field] ?? 0) : null;
+            group._count[field] + (field === "costUsd" ? 0 : media) === group._count._all
+              ? (group._sum[field] ?? 0)
+              : null;
           return {
             inputTokens: complete("inputTokens"),
             outputTokens: complete("outputTokens"),
@@ -234,14 +231,13 @@ export function contentRoutes(ctx: RouterContext) {
           };
         };
         return {
-          ...completeSums(result),
+          ...completeSums(result, mediaCalls()),
           runs,
-          ownKeyMediaUsd,
           models: modelGroups
             .map((group) => ({
               provider: group.provider,
               model: group.model,
-              ...completeSums(group),
+              ...completeSums(group, mediaCalls(group)),
             }))
             .sort(
               (a, b) => (b.totalTokens ?? 0) - (a.totalTokens ?? 0) || b.modelCalls - a.modelCalls,
@@ -317,11 +313,11 @@ export function contentRoutes(ctx: RouterContext) {
           COUNT(*)::bigint AS "modelCalls",
           COUNT(DISTINCT COALESCE(u."parentRunId", u."runId")) FILTER (WHERE COALESCE(u."parentRunId", u."runId") IS NOT NULL)::bigint AS runs,
           SUM(u."inputTokens")::double precision AS "inputTokens",
-          BOOL_AND(u."inputTokens" IS NOT NULL) AS "inputComplete",
+          BOOL_AND(u."inputTokens" IS NOT NULL OR ${isMedia}) AS "inputComplete",
           SUM(u."outputTokens")::double precision AS "outputTokens",
-          BOOL_AND(u."outputTokens" IS NOT NULL) AS "outputComplete",
+          BOOL_AND(u."outputTokens" IS NOT NULL OR ${isMedia}) AS "outputComplete",
           SUM(u."totalTokens")::double precision AS "totalTokens",
-          BOOL_AND(u."totalTokens" IS NOT NULL) AS "totalComplete",
+          BOOL_AND(u."totalTokens" IS NOT NULL OR ${isMedia}) AS "totalComplete",
           SUM(u."costUsd")::double precision AS "costUsd",
           BOOL_AND(u."costUsd" IS NOT NULL) AS "costComplete"
         `;
@@ -333,7 +329,7 @@ export function contentRoutes(ctx: RouterContext) {
                 tx.$queryRaw<TotalsRow[]>(Prisma.sql`
             SELECT ${totalsSelect}
             FROM usage_records u
-            WHERE u."spaceId" = ${where.spaceId} AND u."userId" = ${where.userId} AND u."fundingSource" = 'customer' ${modelUsage}
+            WHERE u."spaceId" = ${where.spaceId} AND u."userId" = ${where.userId} AND u."fundingSource" = 'customer'
               ${rangeFilter} ${modelFilter} ${botFilter}
           `),
                 // Rows from before cache reads were measured hold a zero and no total, so a zero
@@ -341,9 +337,9 @@ export function contentRoutes(ctx: RouterContext) {
                 tx.$queryRaw<ModelRow[]>(Prisma.sql`
             SELECT u.provider, u.model, ${totalsSelect},
               SUM(u."cacheReadTokens")::double precision AS "cachedTokens",
-              BOOL_AND(COALESCE(u."cacheReadTokens" > 0 OR (u."cacheReadTokens" = 0 AND u."totalTokens" IS NOT NULL), false)) AS "cachedComplete"
+              BOOL_AND(COALESCE(u."cacheReadTokens" > 0 OR (u."cacheReadTokens" = 0 AND u."totalTokens" IS NOT NULL), false) OR ${isMedia}) AS "cachedComplete"
             FROM usage_records u
-            WHERE u."spaceId" = ${where.spaceId} AND u."userId" = ${where.userId} AND u."fundingSource" = 'customer' ${modelUsage}
+            WHERE u."spaceId" = ${where.spaceId} AND u."userId" = ${where.userId} AND u."fundingSource" = 'customer'
               ${rangeFilter} ${modelFilter} ${botFilter}
             GROUP BY u.provider, u.model
             ORDER BY COALESCE(SUM(u."totalTokens"), 0) DESC, COUNT(*) DESC
@@ -352,15 +348,15 @@ export function contentRoutes(ctx: RouterContext) {
             SELECT to_char(u."createdAt" AT TIME ZONE 'UTC' AT TIME ZONE ${timezone}, 'YYYY-MM-DD') AS bucket,
               COUNT(*)::bigint AS "modelCalls",
               SUM(u."inputTokens")::double precision AS "inputTokens",
-              BOOL_AND(u."inputTokens" IS NOT NULL) AS "inputComplete",
+              BOOL_AND(u."inputTokens" IS NOT NULL OR ${isMedia}) AS "inputComplete",
               SUM(u."outputTokens")::double precision AS "outputTokens",
-              BOOL_AND(u."outputTokens" IS NOT NULL) AS "outputComplete",
+              BOOL_AND(u."outputTokens" IS NOT NULL OR ${isMedia}) AS "outputComplete",
               SUM(u."totalTokens")::double precision AS "totalTokens",
-              BOOL_AND(u."totalTokens" IS NOT NULL) AS "totalComplete",
+              BOOL_AND(u."totalTokens" IS NOT NULL OR ${isMedia}) AS "totalComplete",
               SUM(u."costUsd")::double precision AS "costUsd",
               BOOL_AND(u."costUsd" IS NOT NULL) AS "costComplete"
             FROM usage_records u
-            WHERE u."spaceId" = ${where.spaceId} AND u."userId" = ${where.userId} AND u."fundingSource" = 'customer' ${modelUsage}
+            WHERE u."spaceId" = ${where.spaceId} AND u."userId" = ${where.userId} AND u."fundingSource" = 'customer'
               ${rangeFilter} ${modelFilter} ${botFilter}
             GROUP BY bucket
             ORDER BY bucket ASC
@@ -374,7 +370,7 @@ export function contentRoutes(ctx: RouterContext) {
             FROM usage_records u
             LEFT JOIN bots b ON b.id = u."botId"
             LEFT JOIN bot_deletions bd ON bd.id = u."botId"
-            WHERE u."spaceId" = ${where.spaceId} AND u."userId" = ${where.userId} AND u."fundingSource" = 'customer' ${modelUsage}
+            WHERE u."spaceId" = ${where.spaceId} AND u."userId" = ${where.userId} AND u."fundingSource" = 'customer'
               AND u."botId" IS NOT NULL
               ${rangeFilter}
             GROUP BY u."botId", b.id, b.name, bd.name
@@ -383,7 +379,7 @@ export function contentRoutes(ctx: RouterContext) {
                 tx.$queryRaw<{ provider: string; model: string }[]>(Prisma.sql`
             SELECT u.provider, u.model
             FROM usage_records u
-            WHERE u."spaceId" = ${where.spaceId} AND u."userId" = ${where.userId} AND u."fundingSource" = 'customer' ${modelUsage}
+            WHERE u."spaceId" = ${where.spaceId} AND u."userId" = ${where.userId} AND u."fundingSource" = 'customer'
               ${rangeFilter}
             GROUP BY u.provider, u.model
             ORDER BY COALESCE(SUM(u."totalTokens"), 0) DESC, COUNT(*) DESC

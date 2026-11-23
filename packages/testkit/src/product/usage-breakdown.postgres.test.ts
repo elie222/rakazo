@@ -306,8 +306,7 @@ describeBreakdown("usage.breakdown", () => {
     expect(names(elsewhere)).toEqual(["Elsewhere"]);
   }, 150000);
 
-  it("totals this month's own-key media apart from model usage", async () => {
-    vi.setSystemTime(new Date("2026-03-15T12:00:00.000Z"));
+  it("counts own-key media in cost and models without making token totals unknown", async () => {
     const cookie = await signup(app, `usage-media-${stamp}@rakazo.test`, "Media");
     const bot = await rpc<{ id: string }>(app, cookie, "bots/create", {
       name: "Painter",
@@ -317,63 +316,41 @@ describeBreakdown("usage.breakdown", () => {
       notifyOnFinish: false,
     });
     const thread = await prisma.thread.findFirstOrThrow({ where: { botId: bot.id } });
-    const media = (
-      operationKind: string,
-      costUsd: number,
-      createdAt: string,
-      billing = "api_key",
-    ) => ({
+    const row = (operationKind: string, model: string, costUsd: number, tokens: number | null) => ({
       spaceId: thread.spaceId,
       userId: thread.userId,
       botId: bot.id,
       provider: "p",
-      model: "lab/draw",
+      model,
       operationKind,
-      billing,
+      billing: "api_key",
       costUsd,
-      createdAt: new Date(createdAt),
+      inputTokens: tokens,
+      outputTokens: tokens,
+      totalTokens: tokens === null ? null : tokens * 2,
     });
     await prisma.usageRecord.createMany({
       data: [
-        media("image", 0.0412, "2026-03-02T00:00:00.000Z"),
-        media("video", 0.2, "2026-03-14T00:00:00.000Z"),
-        // Last month's, and a model call, count elsewhere.
-        media("video", 5, "2026-02-27T00:00:00.000Z"),
-        media("answer", 1, "2026-03-14T00:00:00.000Z"),
+        row("answer", "lab/chat", 1, 500),
+        row("image", "lab/draw", 0.04, null),
+        row("video", "lab/clip", 0.2, null),
       ],
     });
-    const summary = await rpc<UsageSummary>(app, cookie, "usage/summary");
-    expect(summary.ownKeyMediaUsd).toBeCloseTo(0.2412, 10);
     const usage = await rpc<UsageBreakdown>(app, cookie, "usage/breakdown", { range: "all" });
-    expect(usage.totals).toMatchObject({ modelCalls: 1, costUsd: 1 });
-  });
-
-  it("leaves this month's own-key media total unknown when a generation had no price", async () => {
-    vi.setSystemTime(new Date("2026-03-15T12:00:00.000Z"));
-    const cookie = await signup(app, `usage-media-unpriced-${stamp}@rakazo.test`, "Unpriced");
-    const bot = await rpc<{ id: string }>(app, cookie, "bots/create", {
-      name: "Sketcher",
-      title: "",
-      description: "",
-      instructions: "",
-      notifyOnFinish: false,
-    });
-    const thread = await prisma.thread.findFirstOrThrow({ where: { botId: bot.id } });
-    await prisma.usageRecord.createMany({
-      data: [0.0412, null].map((costUsd) => ({
-        spaceId: thread.spaceId,
-        userId: thread.userId,
-        botId: bot.id,
-        provider: "p",
-        model: "lab/draw",
-        operationKind: "image",
-        billing: "api_key",
-        costUsd,
-        createdAt: new Date("2026-03-02T00:00:00.000Z"),
-      })),
-    });
+    expect(usage.totals).toMatchObject({ modelCalls: 3, totalTokens: 1000 });
+    expect(usage.totals.costUsd).toBeCloseTo(1.24, 10);
+    expect(usage.modelOptions.map((option) => option.model).sort()).toEqual([
+      "lab/chat",
+      "lab/clip",
+      "lab/draw",
+    ]);
     const summary = await rpc<UsageSummary>(app, cookie, "usage/summary");
-    expect(summary.ownKeyMediaUsd).toBeNull();
+    expect(summary).toMatchObject({ modelCalls: 3, totalTokens: 1000 });
+    expect(summary.costUsd).toBeCloseTo(1.24, 10);
+    expect(summary.models?.find((model) => model.model === "lab/draw")?.costUsd).toBeCloseTo(
+      0.04,
+      10,
+    );
   });
 
   it.each([

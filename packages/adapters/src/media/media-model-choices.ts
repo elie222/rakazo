@@ -59,21 +59,28 @@ async function roleView(
     models.map((model) => ({
       credentialId: connection.id,
       modelId: model.id,
-      label: offering.length > 1 ? `${model.label} (${connection.label})` : model.label,
+      label: model.label,
+      provider: connection.provider,
+      connectionLabel: connection.label,
     })),
   );
   const choice = mediaChoice(role, connections, chosen);
-  const selected = choice && { credentialId: choice.connection.id, modelId: choice.model };
+  if (!choice) return { options, selected: null };
+  const selected = { credentialId: choice.connection.id, modelId: choice.model };
   // A chosen model a catalog no longer lists stays visible as what bots still use.
   if (
-    selected &&
     !options.some(
       (option) =>
         option.credentialId === selected.credentialId && option.modelId === selected.modelId,
     )
   )
-    options.unshift({ ...selected, label: selected.modelId });
-  return { options, selected: selected ?? null };
+    options.unshift({
+      ...selected,
+      label: selected.modelId,
+      provider: choice.connection.provider,
+      connectionLabel: choice.connection.label,
+    });
+  return { options, selected };
 }
 
 /** The image and video models the member's own connections offer, and the ones bots use. */

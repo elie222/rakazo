@@ -347,6 +347,7 @@ export default function Models() {
                 target={target}
                 scope={target.scope}
                 readKey={mediaRead.queryKey}
+                openPicker={pushModelPicker}
               />
             ) : null}
             {/* Connections are the account's in every Space, so a Space's override lists only its models. */}

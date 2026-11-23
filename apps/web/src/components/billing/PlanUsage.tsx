@@ -1,7 +1,7 @@
 import { useLingui } from "@lingui/react/macro";
 import type { PlanLimitWindow } from "@rakazo/contracts";
 import { modelCreditsUsd, planUsagePercent } from "@rakazo/contracts";
-import { formatSpendUsd, formatTimeUntil } from "@rakazo/core";
+import { formatTimeUntil } from "@rakazo/core";
 import { Progress } from "@rakazo/ui-web";
 import { useQuery } from "@tanstack/react-query";
 import { useSpaceQueries } from "../../lib/query/query";
@@ -14,13 +14,6 @@ export function usePlanUsage() {
   const { data } = useQuery({ ...queries.usage.limits.queryOptions(), staleTime: 60_000 });
   const plans = data ?? [];
   return { plans, creditsUsd: modelCreditsUsd(status) };
-}
-
-/** What images and videos on the member's own keys cost this month; null when nothing. */
-function useOwnKeyMediaUsd() {
-  const queries = useSpaceQueries();
-  const { data } = useQuery({ ...queries.usage.summary.queryOptions(), staleTime: 60_000 });
-  return data?.ownKeyMediaUsd || null;
 }
 
 function useFormatUsd() {
@@ -65,9 +58,8 @@ function WindowUsage({ window }: { window: PlanLimitWindow }) {
 
 /** Each subscription's allowances and the credit balance; the caller frames them. */
 export function PlanUsageRows() {
-  const { t, i18n } = useLingui();
+  const { t } = useLingui();
   const { plans, creditsUsd } = usePlanUsage();
-  const mediaUsd = useOwnKeyMediaUsd();
   const usd = useFormatUsd();
   return (
     <div className="divide-y divide-border">
@@ -97,26 +89,14 @@ export function PlanUsageRows() {
           <span className="text-body tabular-nums text-foreground">{t`${usd(creditsUsd)} left`}</span>
         </div>
       ) : null}
-      {mediaUsd !== null ? (
-        <div
-          data-testid="own-key-media-spend"
-          className="flex items-baseline justify-between gap-3 px-4 py-3"
-        >
-          <span className="text-body font-medium text-foreground">{t`Images and video`}</span>
-          <span className="text-body tabular-nums text-foreground">
-            {t`${formatSpendUsd(mediaUsd, i18n.locale)} this month`}
-          </span>
-        </div>
-      ) : null}
     </div>
   );
 }
 
-/** Settings > Usage; renders nothing for a member with no subscription, credits or own-key media. */
+/** Settings > Usage; renders nothing for a member with no subscription or credits. */
 export function PlanUsage() {
   const { plans, creditsUsd } = usePlanUsage();
-  const mediaUsd = useOwnKeyMediaUsd();
-  if (!plans.length && creditsUsd === null && mediaUsd === null) return null;
+  if (!plans.length && creditsUsd === null) return null;
   return (
     <div className="mb-3 rounded-xl border border-border">
       <PlanUsageRows />

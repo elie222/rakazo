@@ -71,6 +71,7 @@ const breakdown = {
   ],
   modelOptions: [
     { provider: "subscription", model: "example-large" },
+    { provider: "media", model: "example-draw" },
     { provider: "retired", model: "opaque-legacy-id" },
   ],
   totals: {
@@ -78,8 +79,8 @@ const breakdown = {
     inputTokens: 910_000,
     outputTokens: 86_000,
     totalTokens: 996_000,
-    costUsd: 4.2,
-    modelCalls: 180,
+    costUsd: 4.44,
+    modelCalls: 186,
   },
   models: [
     ...summary.models.map((model) => ({
@@ -91,6 +92,17 @@ const breakdown = {
       modelCalls: model.modelCalls - 1,
       cachedTokens: 0,
     })),
+    // Images made on the member's own key count no tokens.
+    {
+      provider: "media",
+      model: "example-draw",
+      inputTokens: 0,
+      outputTokens: 0,
+      totalTokens: 0,
+      costUsd: 0.24,
+      modelCalls: 6,
+      cachedTokens: 0,
+    },
     {
       provider: "retired",
       model: "opaque-legacy-id",
@@ -190,6 +202,23 @@ test("account menu shows the usage hint and Usage shows allowances and credits o
       },
     });
   });
+  const draw = {
+    credentialId: "media-key",
+    modelId: "example-draw",
+    label: "Example Draw",
+    provider: "media",
+    connectionLabel: "Work",
+  };
+  await page.route("**/rpc/models/media", (route) =>
+    route.fulfill({
+      json: {
+        json: {
+          image: { options: [draw], selected: draw },
+          video: { options: [], selected: null },
+        },
+      },
+    }),
+  );
   await page.route("**/rpc/usage/limits", (route) => route.fulfill({ json: { json: plans } }));
   await page.route("**/rpc/usage/summary", (route) => route.fulfill({ json: { json: summary } }));
   await page.route("**/rpc/usage/breakdown", (route) => {
@@ -243,6 +272,9 @@ test("account menu shows the usage hint and Usage shows allowances and credits o
   );
   const unlisted = settings.getByRole("cell", { name: "Unlisted model", exact: true });
   await expect(unlisted).toBeVisible();
+  await expect(settings.getByRole("row").filter({ hasText: "Example Draw" })).toContainText(
+    "$0.24",
+  );
   await expect(settings).not.toContainText("opaque-legacy-id");
   await unlisted.scrollIntoViewIfNeeded();
   await captureScreenshot(page, testInfo, "usage-model-labels");
@@ -310,13 +342,8 @@ test("account menu shows the usage hint and Usage shows allowances and credits o
   await page.route("**/rpc/billing/status", (route) =>
     route.fulfill({ json: { json: creditStatus } }),
   );
-  // Images and videos made on the member's own key, which Rakazo prices but does not charge.
-  await page.route("**/rpc/usage/summary", (route) =>
-    route.fulfill({ json: { json: { ...summary, ownKeyMediaUsd: 0.2412 } } }),
-  );
   await page.reload();
   await openUserSettings(page, "usage");
   await expect(page.getByTestId("credit-balance")).toContainText("$12.50 left");
-  await expect(page.getByTestId("own-key-media-spend")).toContainText("$0.2412 this month");
   await captureScreenshot(page, testInfo, "usage-limits-settings-credits");
 });

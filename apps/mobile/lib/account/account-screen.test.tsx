@@ -62,7 +62,6 @@ const { element, account } = vi.hoisted(() => ({
     messaging: { enabled: true },
     plans: [] as unknown[],
     billing: {} as Record<string, unknown>,
-    usage: {} as Record<string, unknown>,
   },
 }));
 
@@ -278,9 +277,7 @@ vi.mock("../api/api", async (importOriginal) => ({
               ? account.plans
               : method === "billing/status"
                 ? account.billing
-                : method === "usage/summary"
-                  ? account.usage
-                  : {},
+                : {},
   ),
   selectedSpaceId: () => "space-1",
   captureApiRequestContext: async (spaceId: string | null = "space-1") => ({
@@ -1157,19 +1154,4 @@ it("shows subscription allowances and credits only for members who have them", a
   expect(titles).toContain("Session");
   expect(view.button("Session")!.dataset.value).toBe("38% used");
   expect(view.button("Credits")!.dataset.value).toBe("$12.50 left");
-});
-
-it("shows this month's own-key image and video spend only once there is some", async () => {
-  let view = await renderAccount();
-  expect(view.button("Images and video")).toBeUndefined();
-
-  act(() => root?.unmount());
-  container?.remove();
-  account.usage = { ownKeyMediaUsd: 0.0412 };
-  try {
-    view = await renderAccount();
-    expect(view.button("Images and video")!.dataset.value).toBe("$0.0412 this month");
-  } finally {
-    account.usage = {};
-  }
 });

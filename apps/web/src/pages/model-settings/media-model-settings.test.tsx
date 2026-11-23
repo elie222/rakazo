@@ -14,41 +14,31 @@ vi.mock("../../lib/query/rpc", () => {
   const rpc = { models };
   return { rpc, rpcForSpace: () => rpc, createSpaceRpc: () => rpc, selectedSpaceId: () => "s" };
 });
-vi.mock("@rakazo/ui-web", () => ({
-  SectionHeading: ({ children }: { children: ReactNode }) => <h3>{children}</h3>,
-  OptionSelect: ({
-    value,
-    options,
-    disabled,
-    onValueChange,
-    "aria-label": label,
-  }: {
-    value: string | null;
-    options: Array<{ value: string; label: string }>;
-    disabled: boolean;
-    onValueChange: (value: string) => void;
-    "aria-label": string;
-  }) => (
-    <select
-      aria-label={label}
-      disabled={disabled}
-      value={value ?? ""}
-      onChange={(event) => onValueChange(event.target.value)}
-    >
-      {options.map((option) => (
-        <option key={option.value} value={option.value}>
-          {option.label}
-        </option>
-      ))}
-    </select>
-  ),
+vi.mock("@lingui/react/macro", () => ({
+  useLingui: () => ({
+    t: (parts: TemplateStringsArray, ...values: string[]) =>
+      parts.reduce((text, part, i) => text + part + (values[i] ?? ""), ""),
+  }),
+  Trans: ({ children }: { children?: ReactNode }) => children,
 }));
 
 const images: MediaModelsView = {
   image: {
     options: [
-      { credentialId: "key", modelId: "lab/draw", label: "Draw" },
-      { credentialId: "key", modelId: "lab/sketch", label: "Sketch" },
+      {
+        credentialId: "key",
+        modelId: "lab/draw",
+        label: "Draw",
+        provider: "lab",
+        connectionLabel: "Work",
+      },
+      {
+        credentialId: "key",
+        modelId: "lab/sketch",
+        label: "Sketch",
+        provider: "lab",
+        connectionLabel: "Work",
+      },
     ],
     selected: { credentialId: "key", modelId: "lab/draw" },
   },
@@ -59,6 +49,15 @@ let host: HTMLDivElement;
 let root: ReturnType<typeof createRoot>;
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  vi.stubGlobal(
+    "ResizeObserver",
+    class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    },
+  );
+  Element.prototype.scrollIntoView = () => undefined;
   i18n.load("en", {});
   i18n.activate("en");
   notifyManager.setScheduler((callback) => callback());
@@ -88,13 +87,14 @@ it("offers only the media a connection makes, and saves the chosen model", async
     );
   });
   await act(flush);
-  expect(host.querySelector('[aria-label="Video model"]')).toBeNull();
-  const select = host.querySelector<HTMLSelectElement>('[aria-label="Image model"]')!;
-  expect(select.selectedOptions[0]?.textContent).toBe("Draw");
-  await act(async () => {
-    select.value = JSON.stringify(["key", "lab/sketch"]);
-    select.dispatchEvent(new Event("change", { bubbles: true }));
-  });
+  expect(host.querySelector('[data-testid="model-role-video"]')).toBeNull();
+  const trigger = host.querySelector<HTMLButtonElement>('button[aria-label="Change Image model"]')!;
+  expect(trigger.textContent).toBe("DrawWork");
+  await act(async () => trigger.click());
+  const sketch = [...document.querySelectorAll<HTMLElement>('[role="option"]')].find(
+    (option) => option.textContent === "Sketch",
+  );
+  await act(async () => sketch!.click());
   await act(flush);
   expect(models.setMedia).toHaveBeenCalledWith(
     expect.objectContaining({ role: "image", credentialId: "key", modelId: "lab/sketch" }),

@@ -2,7 +2,7 @@ import { ph } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
 import type { PlanLimits, UsageSummary } from "@rakazo/contracts";
 import { hasLab, modelCreditsUsd } from "@rakazo/contracts";
-import { accountDisplay, formatSpendUsd, formatTimeUntil } from "@rakazo/core";
+import { accountDisplay, formatTimeUntil } from "@rakazo/core";
 import type { Href } from "expo-router";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import type { ComponentProps } from "react";
@@ -173,16 +173,6 @@ export default function Account() {
         value={t`${ph({ amount: usd.format(creditsUsd) })} left`}
       />
     ) : null;
-  const mediaUsd = usage?.ownKeyMediaUsd ?? 0;
-  const mediaRow =
-    mediaUsd > 0 ? (
-      <SettingsRow
-        key="own-key-media"
-        accessible
-        title={t`Images and video`}
-        value={t`${ph({ amount: formatSpendUsd(mediaUsd, dateLocaleForUi(locale)) })} this month`}
-      />
-    ) : null;
   const period = { session: t`Session`, week: t`Weekly`, month: t`Monthly` };
   const planGroups = plans.map((plan) => (
     <SettingsGroup
@@ -282,7 +272,6 @@ export default function Account() {
             <SettingsGroup>
               {usageBlock}
               {creditsRow}
-              {mediaRow}
             </SettingsGroup>
             {planGroups}
             {usageModels}
@@ -301,7 +290,6 @@ export default function Account() {
           />
           {focus !== "usage" ? usageBlock : null}
           {focus !== "usage" ? creditsRow : null}
-          {focus !== "usage" ? mediaRow : null}
         </SettingsGroup>
         {focus !== "usage" ? planGroups : null}
 

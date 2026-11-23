@@ -41,7 +41,9 @@ describe("media model choices", () => {
     expect(view.image.options[0]).toEqual({
       credentialId: "newer",
       modelId: "gpt-image-2",
-      label: "GPT Image 2 (Work)",
+      label: "GPT Image 2",
+      provider: "openai",
+      connectionLabel: "Work",
     });
     expect(view.image.options.some((option) => option.credentialId === "older")).toBe(true);
     expect(view.video).toEqual({ options: [], selected: null });

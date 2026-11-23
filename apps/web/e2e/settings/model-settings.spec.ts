@@ -581,7 +581,7 @@ test("image and video models are chosen from the connections that make them", as
           {
             id: "media-key",
             provider: "openrouter",
-            label: "Media",
+            label: "Work",
             hasKey: true,
             isDefault: false,
           },
@@ -589,16 +589,23 @@ test("image and video models are chosen from the connections that make them", as
       },
     });
   });
+  const option = (modelId: string, label: string) => ({
+    credentialId: "media-key",
+    modelId,
+    label,
+    provider: "openrouter",
+    connectionLabel: "Work",
+  });
   let view: MediaModelsView = {
     image: {
       options: [
-        { credentialId: "media-key", modelId: "example/draw", label: "Example: Draw" },
-        { credentialId: "media-key", modelId: "example/sketch", label: "Example: Sketch" },
+        option("example/draw", "Example: Draw"),
+        option("example/sketch", "Example: Sketch"),
       ],
       selected: { credentialId: "media-key", modelId: "example/draw" },
     },
     video: {
-      options: [{ credentialId: "media-key", modelId: "example/clip", label: "Example: Clip" }],
+      options: [option("example/clip", "Example: Clip")],
       selected: { credentialId: "media-key", modelId: "example/clip" },
     },
   };
@@ -618,11 +625,14 @@ test("image and video models are chosen from the connections that make them", as
   });
   await page.reload();
   await openUserSettings(page, "models");
-  const image = page.getByRole("combobox", { name: "Image model" });
-  await expect(image).toHaveText("Example: Draw");
-  await expect(page.getByRole("combobox", { name: "Video model" })).toHaveText("Example: Clip");
-  await chooseOption(image, "Example: Sketch");
-  await expect(image).toHaveText("Example: Sketch");
+  const image = page.getByRole("button", { name: "Change Image model" });
+  await expect(image).toHaveText("Example: DrawWork");
+  await expect(page.getByRole("button", { name: "Change Video model" })).toHaveText(
+    "Example: ClipWork",
+  );
+  await image.click();
+  await page.getByRole("option", { name: "Example: Sketch" }).click();
+  await expect(image).toHaveText("Example: SketchWork");
   expect(view.image.selected).toEqual({ credentialId: "media-key", modelId: "example/sketch" });
   await page.getByTestId("model-role-video").scrollIntoViewIfNeeded();
   await captureScreenshot(page, testInfo, "model-settings-media-models");
