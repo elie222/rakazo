@@ -73,6 +73,7 @@ describe("bot tool permissions", () => {
   it("describes bounded cross-chat keyword fanout and authorized reads", () => {
     const tools = selectBuiltinToolsForRun({
       historyRetrievalEnabled: true,
+      historyMyChats: true,
       graphicalToolsAllowed: false,
       groupId: null,
       trigger: "user",
@@ -89,6 +90,41 @@ describe("bot tool permissions", () => {
     expect(tools.find((tool) => tool.name === "read_history")?.inputSchema).toMatchObject({
       properties: { threadId: { type: "string" } },
     });
+  });
+
+  it("offers no cross-chat history search to a run that may not use it", () => {
+    const search = selectBuiltinToolsForRun({
+      historyRetrievalEnabled: true,
+      graphicalToolsAllowed: false,
+      groupId: null,
+      trigger: "routine",
+      semanticMemoryEnabled: false,
+      messagingChannelRun: false,
+    }).find((tool) => tool.name === "search_history")!;
+    expect(JSON.stringify(search)).not.toContain("my_chats");
+    const instructions = (historyMyChats: boolean) =>
+      userTurnInstructions({
+        botInstructions: "",
+        groupContext: undefined,
+        messagingContext: undefined,
+        redactedMemoryContext: undefined,
+        redactedScratchpadContext: undefined,
+        hasHistoricalContext: false,
+        historyRetrievalEnabled: true,
+        historyMyChats,
+        computerInstruction: "",
+        pageBrowserAllowed: false,
+        workspaceInstruction: "",
+        agentEnvironmentInstruction: undefined,
+        botDirectory: undefined,
+        pluginLine: undefined,
+        agentSkillsLine: undefined,
+        taughtSkillsLine: undefined,
+        replyGuidance: "",
+      }).join("\n");
+    expect(instructions(false)).toContain("search_history");
+    expect(instructions(false)).not.toContain("my_chats");
+    expect(instructions(true)).toContain("scope my_chats");
   });
 
   it("never lets self-edit change disabled tools alongside an allowed field", () => {
