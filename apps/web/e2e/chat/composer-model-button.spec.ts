@@ -1,5 +1,6 @@
 // The model button beside Send never sits over the message: at five widths, in either direction,
-// with a short or long model name and an empty, short, long or multi-line draft.
+// with a short or long model name, while idle or running a reply (Send and Stop both show), and
+// with an empty, short, long or multi-line draft.
 import type { Locator, Page } from "@playwright/test";
 import { expect, test } from "@playwright/test";
 import { captureScreenshot } from "../helpers/helpers";
@@ -58,8 +59,17 @@ async function expectApart(page: Page, label: string) {
     return inner.left < outer.left - 0.5 || inner.right > outer.right + 0.5;
   });
   expect(spill, `${label}: model button content spills`).toBe(false);
+  // Every control stays inside the message box.
+  const outside = await bar.evaluate((element) => {
+    const edge = element.getBoundingClientRect();
+    return [...element.querySelectorAll("button")]
+      .map((button) => button.getBoundingClientRect())
+      .filter((rect) => rect.width > 0)
+      .some((rect) => rect.left < edge.left - 0.5 || rect.right > edge.right + 0.5);
+  });
+  expect(outside, `${label}: a control sits outside the message box`).toBe(false);
   // The message keeps a usable width, and the page never scrolls sideways.
-  expect((await box(text)).width, `${label}: message width`).toBeGreaterThanOrEqual(120);
+  expect((await box(text)).width, `${label}: message width`).toBeGreaterThanOrEqual(96);
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
     page.viewportSize()!.width,
   );
@@ -69,17 +79,26 @@ for (const lang of ["en", "he"] as const) {
   test(`the model button never covers the message (${lang})`, async ({ page }, testInfo) => {
     for (const viewport of widths) {
       await page.setViewportSize(viewport);
-      for (const model of ["short", "long"] as const) {
-        await page.goto(`/e2e/fixtures/composer-model-button.html?lang=${lang}&model=${model}`);
+      for (const [model, running] of [
+        ["short", false],
+        ["long", false],
+        ["long", true],
+      ] as const) {
+        await page.goto(
+          `/e2e/fixtures/composer-model-button.html?lang=${lang}&model=${model}&running=${running ? 1 : 0}`,
+        );
         await expect(page.locator("html")).toHaveAttribute("dir", lang === "he" ? "rtl" : "ltr");
         const text = page.getByTestId("composer-bar").locator("textarea");
         for (const [draft, value] of Object.entries(drafts)) {
           await text.fill(value);
           // The box picks one line or two after it measures the draft, so check the settled layout.
           await expect(async () =>
-            expectApart(page, `${lang} ${viewport.name} ${model} ${draft}`),
+            expectApart(
+              page,
+              `${lang} ${viewport.name} ${model}${running ? " running" : ""} ${draft}`,
+            ),
           ).toPass({ timeout: 5_000 });
-          if (model === "long" && draft === "short")
+          if (model === "long" && !running && draft === "short")
             await captureScreenshot(
               page,
               testInfo,

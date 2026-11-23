@@ -1,6 +1,6 @@
 // The real message box with the model button beside Send, for layout checks at any width, in
 // either direction (?lang=he), with a short or long model name (?model=long) and an optional
-// detail such as the thinking level (?detail=).
+// detail such as the thinking level (?detail=), and while a reply is running (?running=1).
 import { I18nProvider } from "@lingui/react";
 import type { ChatModelChoice } from "@rakazo/core";
 import { modelMark } from "@rakazo/core";
@@ -16,6 +16,7 @@ const params = new URLSearchParams(location.search);
 const locale = normalizeUiLocale(params.get("lang") ?? "en");
 const long = params.get("model") === "long";
 const detail = params.get("detail") ?? undefined;
+const running = params.get("running") === "1";
 
 const choices: ChatModelChoice[] = [
   long
@@ -36,7 +37,7 @@ function Fixture() {
         <Composer
           artifactTarget={{ botId: "bot-1" }}
           activeName="Ada"
-          running={false}
+          running={running}
           pendingAttachments={[]}
           attachmentNotice={null}
           sendError={null}
