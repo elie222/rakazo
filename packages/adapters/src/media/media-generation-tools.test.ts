@@ -39,6 +39,7 @@ function setup() {
     args: { prompt: "draw" } as Record<string, unknown>,
     executionId: "execution",
     provider,
+    source: { kind: "hosted" as const },
     prisma: {
       externalEffect,
       artifact: { findFirst: vi.fn().mockResolvedValue(null) },

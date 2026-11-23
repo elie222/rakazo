@@ -8,7 +8,9 @@ import {
 import type { Artifact, Prisma } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { resolveBotWorkspacePath } from "../../computers/screens/computer-support.js";
-import { generateMediaFromTool } from "../../media/media-generation-tools.js";
+import { generateMediaFromTool, MEDIA_JOB_KIND } from "../../media/media-generation-tools.js";
+import type { MediaSource } from "../../media/media-sources.js";
+import { mediaProviderForSource, readMediaJobSource } from "../../media/media-sources.js";
 import { mediaDelivery, scheduleMediaPoll } from "../../media/media-video-poll.js";
 import {
   desktopGuardApplies,
@@ -52,24 +54,41 @@ async function artifactGroupId(ctx: RunContext): Promise<string | undefined> {
   return conversation?.groupId ?? undefined;
 }
 
+/** A video checked by its job id keeps the source that made it, even if the run's has changed. */
+async function savedJobSource(ctx: RunContext, jobId: unknown): Promise<MediaSource | undefined> {
+  if (typeof jobId !== "string") return undefined;
+  const job = await ctx.deps.prisma.externalEffect.findFirst({
+    where: { id: jobId, kind: MEDIA_JOB_KIND, spaceId: ctx.run.spaceId },
+    select: { id: true, request: true },
+  });
+  const record = job && readMediaJobSource(job);
+  if (!record) return undefined;
+  const deps = { ...ctx.deps, mediaGeneration: ctx.providers.mediaGeneration };
+  return { record, provider: () => mediaProviderForSource(deps, ctx.run.userId, record) };
+}
+
 /** Generate an image or video, or with recoverOnly, only resume a job an earlier attempt started. */
 export async function callMediaTool(ctx: RunContext, call: ToolCall, recoverOnly = false) {
   const { deps, run, thread, context } = ctx;
   const { name, args, executionId, applied } = call;
-  const mediaGeneration = ctx.providers.mediaGeneration;
   if (
     (name !== "generate_image" && name !== "generate_video") ||
     isBackgroundRunTrigger(run.trigger) ||
-    !mediaGeneration ||
     !deps.artifacts
   )
     return { error: "Media generation is unavailable." };
+  const source =
+    (await savedJobSource(ctx, args.jobId)) ??
+    (name === "generate_image" ? ctx.providers.media.image : ctx.providers.media.video);
+  const mediaGeneration = await source?.provider();
+  if (!source || !mediaGeneration) return { error: "Media generation is unavailable." };
   const result = await generateMediaFromTool({
     name,
     args,
     executionId: applied?.effect.id ?? executionId,
     recoverOnly,
     provider: mediaGeneration,
+    source: source.record,
     prisma: deps.prisma,
     context,
     run,

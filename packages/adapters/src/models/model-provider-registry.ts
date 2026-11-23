@@ -1,4 +1,4 @@
-import type { ModelUsageLookup } from "@rakazo/adapter-kit";
+import type { MediaGenerationProvider, ModelUsageLookup } from "@rakazo/adapter-kit";
 import type {
   ModelCatalogEntry,
   ModelOAuthSignInMode,
@@ -10,6 +10,7 @@ import {
   CLAUDE_CODE_CREDENTIAL_SOURCE,
   CLAUDE_CODE_PROVIDER_ID,
 } from "../providers/cli-model/claude-code/provider-id.js";
+import { OpenAIMediaGenerationProvider } from "../providers/media/openai/openai-media.js";
 import { OpenRouterUsageLookup } from "./endpoints/openrouter-usage.js";
 
 /**
@@ -60,6 +61,12 @@ export interface ModelProviderDefinition {
   routingFields?: ModelRoutingField[];
   /** A connection can ask that requests only reach endpoints that keep no prompts or replies. */
   dataRetentionControl?: true;
+  /** An API key connection can also generate media, which bots then use instead of the hosted provider. */
+  media?: {
+    images?: true;
+    video?: true;
+    create(connection: { apiKey: string }): MediaGenerationProvider;
+  };
 }
 
 const bearer = (apiKey: string) => ({ Authorization: `Bearer ${apiKey}` });
@@ -93,7 +100,14 @@ export const modelProviders = {
       },
     },
   },
-  openai: { recommendedModel: "gpt-6-luna" },
+  openai: {
+    recommendedModel: "gpt-6-luna",
+    media: {
+      images: true,
+      create: ({ apiKey }) =>
+        new OpenAIMediaGenerationProvider({ apiKey, imageModel: "gpt-image-1" }),
+    },
+  },
   openrouter: {
     usageLookup: (apiKey: string) => new OpenRouterUsageLookup(apiKey),
     recommendedModel: "anthropic/claude-haiku-5.5",

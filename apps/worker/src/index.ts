@@ -285,7 +285,6 @@ async function main() {
       cloudAgent,
       userCloudAgents: connectors.userCloudAgents,
       paymentWallet,
-      mediaGeneration,
     },
     {
       leadership: createPostgresReconciliationLeadership(pool),

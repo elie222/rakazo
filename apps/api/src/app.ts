@@ -601,7 +601,6 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
           cloudAgent,
           userCloudAgents,
           paymentWallet,
-          mediaGeneration,
           billingEnabled: modelCreditsEnabled,
         },
         {},

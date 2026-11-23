@@ -11,6 +11,7 @@ import type { ExternalEffect, Prisma, PrismaClient } from "@rakazo/db";
 import { isUniqueViolation } from "@rakazo/db";
 import { z } from "zod";
 import { mediaPromptSchema, validateGeneratedMedia } from "./media-generation-provider.js";
+import type { MediaSourceRecord } from "./media-sources.js";
 
 export const MEDIA_JOB_KIND = "media_generation_job";
 const FILE_EXTENSIONS: Record<GeneratedMedia["mimeType"], string> = {
@@ -31,6 +32,8 @@ export async function generateMediaFromTool(options: {
   /** Recover only persisted state; never submit a new billed generation. */
   recoverOnly?: boolean;
   provider: MediaGenerationProvider;
+  /** Saved with a new job, so later checks rebuild its provider and metering knows who paid. */
+  source: MediaSourceRecord;
   prisma: PrismaClient;
   context: AdapterContext;
   run: { id: string; threadId: string; botId: string; userId: string; spaceId: string };
@@ -128,6 +131,7 @@ export async function generateMediaFromTool(options: {
                   tool: options.name,
                   prompt: input.data.prompt,
                   executionId: options.executionId,
+                  mediaSource: options.source,
                   ...(options.threadGeneration === undefined
                     ? {}
                     : { threadGeneration: options.threadGeneration }),
