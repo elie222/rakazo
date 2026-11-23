@@ -1,12 +1,13 @@
-import type { SandboxProvider } from "@rakazo/adapter-kit";
+import type { MediaGenerationProvider, SandboxProvider } from "@rakazo/adapter-kit";
 import type * as Adapters from "@rakazo/adapters";
-import { BillingEmulator, includedUsage } from "@rakazo/adapters";
+import { BillingEmulator, sandboxAllowance } from "@rakazo/adapters";
 import type { Actor } from "@rakazo/contracts";
 import { BYOK_TIERS } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
 import {
   asSystem,
   billingAccountForOrganization,
+  chargeMedia,
   createDb,
   planComputerSize,
   spaceHasModelAccess,
@@ -17,7 +18,7 @@ import { createBillingService } from "./billing.js";
 // Computer use is read from runs and deployment settings that other suites share; tests set it.
 vi.mock("@rakazo/adapters", async (importOriginal) => ({
   ...(await importOriginal<typeof Adapters>()),
-  includedUsage: vi.fn(async () => null),
+  sandboxAllowance: vi.fn(async () => null),
 }));
 
 const dbTests = process.env.VERIFY_DATABASE && process.env.DATABASE_URL ? describe : describe.skip;
@@ -317,7 +318,7 @@ dbTests("own-key plan", () => {
     await expect(service.changeTier(actor, "pro")).rejects.toMatchObject({ code: "CONFLICT" });
   });
 
-  it("moves to a smaller tier only once this month's usage fits it", async () => {
+  it("moves to a smaller tier only once this month's computer use fits it", async () => {
     const customer = (await billingAccountForOrganization(prisma, organizationId))!.customerId;
     for (const subscription of provider.subscriptions) subscription.status = "canceled";
     await service.sync(customer);
@@ -330,25 +331,58 @@ dbTests("own-key plan", () => {
       sandbox: { describe: () => ({ id: "fake" }) } as SandboxProvider,
       webOrigin: "https://example.test",
     });
-    // $25 of usage, more than Pro's $21 a month.
-    vi.mocked(includedUsage).mockResolvedValue({
+    // $25 of computer time, more than Pro's $20 a month.
+    vi.mocked(sandboxAllowance).mockResolvedValue({
       limitMicros: 40_000_000,
       usedMicros: 25_000_000,
       resetsAt: null,
-      trial: false,
     });
     await expect(metered.changeTier(actor, "pro")).rejects.toMatchObject({ code: "CONFLICT" });
     await expect(metered.changeTier(actor, "standard")).rejects.toMatchObject({
       code: "CONFLICT",
     });
-    vi.mocked(includedUsage).mockResolvedValue({
+    vi.mocked(sandboxAllowance).mockResolvedValue({
       limitMicros: 40_000_000,
       usedMicros: 15_000_000,
       resetsAt: null,
-      trial: false,
     });
     await metered.changeTier(actor, "pro");
     await expect(metered.status(actor)).resolves.toMatchObject({ byokTier: "pro" });
-    vi.mocked(includedUsage).mockResolvedValue(null);
+    vi.mocked(sandboxAllowance).mockResolvedValue(null);
+  });
+
+  it("reports the paid plan's media balance apart from computer hours", async () => {
+    const withMedia = createBillingService({
+      prisma,
+      provider,
+      mediaGeneration: {
+        prices: { imageMicros: 40_000, videoMicros: 0 },
+      } as MediaGenerationProvider,
+      webOrigin: "https://example.test",
+    });
+    await chargeMedia(prisma, {
+      organizationId,
+      source: `media:${organizationId}`,
+      kind: "image",
+      amountMicros: 380_000,
+    });
+    const settings = await prisma.deploymentSettings.findUnique({ where: { id: "default" } });
+    await prisma.deploymentSettings.upsert({
+      where: { id: "default" },
+      create: { id: "default", modelCreditsEnabled: true },
+      update: { modelCreditsEnabled: true },
+    });
+    try {
+      await expect(withMedia.status(actor)).resolves.toMatchObject({
+        media: { leftCents: 62, limitCents: 100 },
+      });
+    } finally {
+      if (settings)
+        await prisma.deploymentSettings.update({
+          where: { id: "default" },
+          data: { modelCreditsEnabled: settings.modelCreditsEnabled },
+        });
+      else await prisma.deploymentSettings.delete({ where: { id: "default" } });
+    }
   });
 });

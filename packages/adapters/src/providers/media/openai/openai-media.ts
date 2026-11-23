@@ -11,20 +11,22 @@ import {
   mediaBaseUrl,
   requestImagesApiImage,
 } from "../../../media/images-api.js";
+import { UNKNOWN_MODEL_PRICES } from "../../../media/media-generation-provider.js";
 import type { ResolveHostname } from "../../../web/web-ssrf.js";
 
 const API = "https://api.openai.com/v1";
 /**
- * The highest price of one square image at the quality the server picks by default, in
- * micro-dollars; any other model is charged the most expensive one's.
+ * Per model: the most one image costs at the auto size and quality this adapter requests (high
+ * quality, the dearer of square and landscape), and the token rates its usage is billed at, all in
+ * micro-dollars. Models without token usage are charged their image price.
  */
-const IMAGE_MICROS = new Map([
-  ["gpt-image-1", 167_000],
-  ["gpt-image-1-mini", 36_000],
-  ["dall-e-3", 80_000],
-  ["dall-e-2", 20_000],
+const MODELS = new Map<string, { imageMicros: number; textToken?: number; outputToken?: number }>([
+  ["gpt-image-2", { imageMicros: 211_000, textToken: 5, outputToken: 30 }],
+  ["gpt-image-1", { imageMicros: 250_000, textToken: 5, outputToken: 40 }],
+  ["gpt-image-1-mini", { imageMicros: 52_000, textToken: 2, outputToken: 8 }],
+  ["dall-e-3", { imageMicros: 40_000 }],
+  ["dall-e-2", { imageMicros: 20_000 }],
 ]);
-const DEFAULT_IMAGE_MICROS = 167_000;
 
 /**
  * The Images API (`POST /images/generations`). Servers that speak the same API work through the
@@ -47,13 +49,26 @@ export class OpenAIMediaGenerationProvider implements MediaGenerationProvider {
     this.endpoint = `${mediaBaseUrl(options.baseUrl ?? API)}/images/generations`;
     checkMediaModelId(options.imageModel);
     this.prices = {
-      imageMicros: IMAGE_MICROS.get(options.imageModel) ?? DEFAULT_IMAGE_MICROS,
+      imageMicros: MODELS.get(options.imageModel)?.imageMicros ?? UNKNOWN_MODEL_PRICES.imageMicros,
       videoMicros: 0,
     };
   }
   generateImage(input: MediaGenerationInput, context: AdapterContext): Promise<GeneratedMedia> {
     return requestImagesApiImage(
-      { ...this.options, endpoint: this.endpoint, model: this.options.imageModel, ...input },
+      {
+        ...this.options,
+        endpoint: this.endpoint,
+        model: this.options.imageModel,
+        ...input,
+        costMicros: (usage) => {
+          const rates = MODELS.get(this.options.imageModel);
+          if (!rates?.outputToken || usage.output_tokens === undefined) return undefined;
+          return (
+            (usage.input_tokens ?? 0) * (rates.textToken ?? 0) +
+            usage.output_tokens * rates.outputToken
+          );
+        },
+      },
       context,
     );
   }

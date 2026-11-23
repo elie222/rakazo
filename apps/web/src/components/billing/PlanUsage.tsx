@@ -13,7 +13,7 @@ export function usePlanUsage() {
   const { status } = useBilling();
   const { data } = useQuery({ ...queries.usage.limits.queryOptions(), staleTime: 60_000 });
   const plans = data ?? [];
-  return { plans, creditsUsd: modelCreditsUsd(status) };
+  return { plans, creditsUsd: modelCreditsUsd(status), media: status?.media };
 }
 
 function useFormatUsd() {
@@ -59,7 +59,7 @@ function WindowUsage({ window }: { window: PlanLimitWindow }) {
 /** Each subscription's allowances and the credit balance; the caller frames them. */
 export function PlanUsageRows() {
   const { t } = useLingui();
-  const { plans, creditsUsd } = usePlanUsage();
+  const { plans, creditsUsd, media } = usePlanUsage();
   const usd = useFormatUsd();
   return (
     <div className="divide-y divide-border">
@@ -89,14 +89,25 @@ export function PlanUsageRows() {
           <span className="text-body tabular-nums text-foreground">{t`${usd(creditsUsd)} left`}</span>
         </div>
       ) : null}
+      {media ? (
+        <div
+          data-testid="media-balance"
+          className="flex items-baseline justify-between gap-3 px-4 py-3"
+        >
+          <span className="text-body font-medium text-foreground">{t`Images and video`}</span>
+          <span className="text-body tabular-nums text-foreground">
+            {t`${usd(media.leftCents / 100)} of ${usd(media.limitCents / 100)} left`}
+          </span>
+        </div>
+      ) : null}
     </div>
   );
 }
 
 /** Settings > Usage; renders nothing for a member with no subscription or credits. */
 export function PlanUsage() {
-  const { plans, creditsUsd } = usePlanUsage();
-  if (!plans.length && creditsUsd === null) return null;
+  const { plans, creditsUsd, media } = usePlanUsage();
+  if (!plans.length && creditsUsd === null && !media) return null;
   return (
     <div className="mb-3 rounded-xl border border-border">
       <PlanUsageRows />

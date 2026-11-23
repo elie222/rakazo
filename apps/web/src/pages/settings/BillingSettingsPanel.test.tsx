@@ -73,7 +73,7 @@ const status = {
   byokPriceCents: 2000,
   balanceUsd: 0,
   monthlyAmountCents: null,
-  includedUsageLeftCents: 200,
+  computerHoursLeft: 2,
   cancelAtPeriodEnd: false,
   trialAvailable: false,
 };
@@ -105,7 +105,7 @@ beforeEach(() => {
         });
       }
       return Response.json({
-        json: trialEnded ? { ...status, state: "active", includedUsageLeftCents: 600 } : status,
+        json: trialEnded ? { ...status, state: "active", computerHoursLeft: 25 } : status,
       });
     }),
   );

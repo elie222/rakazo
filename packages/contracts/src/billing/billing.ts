@@ -19,17 +19,14 @@ export const SANDBOX_SIZE_HOURLY_COST_MICROS = {
 export function computerSizesUpTo(max: ComputerSize): ComputerSize[] {
   return ComputerSizeSchema.options.slice(0, ComputerSizeSchema.options.indexOf(max) + 1);
 }
-/**
- * What a trial may spend on computers, in cents; ending the trial early starts the full included
- * usage. Trials get no hosted media.
- */
-export const TRIAL_INCLUDED_USAGE_CENTS = 300;
-/** The share of a monthly credit plan an organization may also spend as included usage. */
-export const CREDITS_INCLUDED_USAGE_PERCENT = 20;
-/** What each paid tier's included usage adds for hosted image and video generation, in cents. */
-export const MEDIA_INCLUDED_USAGE_CENTS = 100;
+/** What a trial may spend on computers, in cents; ending the trial early starts the full allowance. */
+export const TRIAL_SANDBOX_ALLOWANCE_CENTS = 300;
+/** The share of a monthly credit plan an organization may also spend on computers. */
+export const CREDITS_SANDBOX_ALLOWANCE_PERCENT = 20;
 /** The share of a plan's monthly price an organization may spend on included speech. */
 export const SPEECH_ALLOWANCE_PERCENT = 20;
+/** What a paid plan may spend each month on hosted image and video generation, in cents. */
+export const MEDIA_ALLOWANCE_CENTS = 100;
 
 /** Computer hours an allowance in cents buys. */
 export function sandboxAllowanceHours(
@@ -48,50 +45,45 @@ export interface ByokTierTerms {
   monthlyPriceCents: number | null;
   /** Yearly price in cents; `null` offers the tier monthly only. */
   annualPriceCents: number | null;
-  /** What the organization may spend on computers and hosted media each month, in cents. */
-  includedUsageCents: number;
+  /** What the organization may spend on computers each month, in cents. */
+  computerAllowanceCents: number;
   computerSize: ComputerSize;
 }
 
 /**
  * The own-model plan's tiers, in order. Standard is the plan new organizations start on; the
- * others add included usage and may offer bigger computers.
+ * others add computer hours and may offer bigger computers.
  */
 export const BYOK_TIERS: Record<ByokTier, ByokTierTerms> = {
   standard: {
     name: "Standard",
     monthlyPriceCents: 1500,
     annualPriceCents: 14400,
-    includedUsageCents: 500 + MEDIA_INCLUDED_USAGE_CENTS,
+    computerAllowanceCents: 500,
     computerSize: "standard",
   },
   pro: {
     name: "Pro",
     monthlyPriceCents: 4900,
     annualPriceCents: 46800,
-    includedUsageCents: 2000 + MEDIA_INCLUDED_USAGE_CENTS,
+    computerAllowanceCents: 2000,
     computerSize: "large",
   },
   max: {
     name: "Max",
     monthlyPriceCents: 9900,
     annualPriceCents: 94800,
-    includedUsageCents: 4000 + MEDIA_INCLUDED_USAGE_CENTS,
+    computerAllowanceCents: 4000,
     computerSize: "xlarge",
   },
   ultra: {
     name: "Ultra",
     monthlyPriceCents: 19900,
     annualPriceCents: 190800,
-    includedUsageCents: 12000 + MEDIA_INCLUDED_USAGE_CENTS,
+    computerAllowanceCents: 12000,
     computerSize: "xlarge",
   },
 };
-
-/** The part of a tier's included usage that is not set aside for media, in cents. */
-export function tierComputerCents(tier: ByokTier): number {
-  return BYOK_TIERS[tier].includedUsageCents - MEDIA_INCLUDED_USAGE_CENTS;
-}
 
 /** The tier's price for new subscriptions billed every `interval`; null when it is not offered. */
 export function byokTierPriceCents(tier: ByokTier, interval: ByokInterval): number | null {
@@ -164,9 +156,6 @@ export const BillingStatusSchema = z.object({
         monthlyPriceCents: z.number().int().positive(),
         annualPriceCents: z.number().int().positive().nullable(),
         computerSize: ComputerSizeSchema,
-        /** The tier's monthly included usage. Absent from older servers. */
-        includedUsageCents: z.number().int().nonnegative().optional(),
-        /** Hours the included usage buys on computers, leaving the part set aside for media. */
         computerHours: z.number().nonnegative(),
         /** The advertised size is a maximum and hours are measured at Standard. */
         computerSizeChoice: z.literal(true).optional(),
@@ -203,18 +192,19 @@ export const BillingStatusSchema = z.object({
   currentPeriodEndsAt: z.string().nullable(),
   cancelAtPeriodEnd: z.boolean(),
   hasCustomer: z.boolean(),
-  /**
-   * Included usage left this period, in cents, shared by computers and hosted media; absent when
-   * nothing is metered.
-   */
-  includedUsageLeftCents: z.number().int().nonnegative().nullable().optional(),
-  /** Next included usage renewal, distinct from a yearly subscription payment. */
-  includedUsageResetAt: z.string().nullable().optional(),
+  /** Computer hours left in the current allowance period; absent when computers have no limit. */
+  computerHoursLeft: z.number().nonnegative().nullable().optional(),
   /** Hours are counted at the Standard size's rate; larger sizes use them faster. */
   standardComputerHours: z.literal(true).optional(),
-  // compat-shim(after v0.15.0): mobile apps released before included usage read these two.
-  computerHoursLeft: z.number().nonnegative().nullable().optional(),
+  /** Next allowance renewal, distinct from a yearly subscription payment. */
   computerHoursResetAt: z.string().nullable().optional(),
+  /**
+   * This period's balance for hosted image and video generation, apart from computer hours;
+   * absent where hosted media is not metered or the plan includes none.
+   */
+  media: z
+    .object({ leftCents: z.number().int().nonnegative(), limitCents: z.number().int().positive() })
+    .optional(),
   /** Present once the organization has subscribed: its invite link and free months earned. */
   referral: z
     .object({ url: z.string().url(), rewards: z.number().int().nonnegative() })
@@ -242,13 +232,13 @@ export function paymentOverdue(status: BillingStatus): boolean {
   );
 }
 
-/** A trial set to cancel, which gets no included usage until it is renewed. */
+/** A trial set to cancel, which gets no computer hours until it is renewed. */
 export function isCancelledTrial(status: BillingStatus): boolean {
   return status.state === "trialing" && status.cancelAtPeriodEnd;
 }
 
-/** Why included usage ran out: a trial's smaller amount, a cancelled trial, or the plan's. */
-export function includedUsageOut(status: BillingStatus): "trial" | "cancelled_trial" | "plan" {
+/** Why computers ran out of hours: a trial's smaller allowance, a cancelled trial, or the plan's. */
+export function computerHoursOut(status: BillingStatus): "trial" | "cancelled_trial" | "plan" {
   if (status.state !== "trialing") return "plan";
   return status.cancelAtPeriodEnd ? "cancelled_trial" : "trial";
 }

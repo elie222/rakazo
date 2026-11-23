@@ -71,16 +71,19 @@ const queueStatus = z.object({
 const fileResult = z.object({ url: z.string().url() });
 
 /**
- * Prices of the models this adapter knows at the size it requests, in micro-dollars. Any other
- * model is charged a conservative default, so an unknown model never runs below its cost.
+ * What a generation from a model an adapter has no price for is assumed to cost, in micro-dollars:
+ * as much as the dearer common models, so the balance is never checked against too little.
  */
+export const UNKNOWN_MODEL_PRICES = { imageMicros: 200_000, videoMicros: 800_000 };
+
+/** fal's prices at the defaults this adapter requests, in micro-dollars. */
 const FAL_IMAGE_MICROS = new Map([
+  // Billed per megapixel, rounded up; the default 1024x768 is one.
   ["fal-ai/flux/schnell", 3_000],
   ["fal-ai/flux/dev", 25_000],
 ]);
-const FAL_VIDEO_MICROS = new Map([["fal-ai/wan/v2.2-a14b/text-to-video", 400_000]]);
-const FAL_DEFAULT_IMAGE_MICROS = 100_000;
-const FAL_DEFAULT_VIDEO_MICROS = 1_000_000;
+// 81 frames billed at 16 per second, 720p.
+const FAL_VIDEO_MICROS = new Map([["fal-ai/wan/v2.2-a14b/text-to-video", 410_000]]);
 
 /** fal queue HTTP protocol; model-specific parameters stay within this adapter. */
 export class FalMediaGenerationProvider implements MediaGenerationProvider {
@@ -118,8 +121,10 @@ export class FalMediaGenerationProvider implements MediaGenerationProvider {
       offline: false,
     };
     this.prices = {
-      imageMicros: FAL_IMAGE_MICROS.get(options.imageModel ?? "") ?? FAL_DEFAULT_IMAGE_MICROS,
-      videoMicros: FAL_VIDEO_MICROS.get(options.videoModel ?? "") ?? FAL_DEFAULT_VIDEO_MICROS,
+      imageMicros:
+        FAL_IMAGE_MICROS.get(options.imageModel ?? "") ?? UNKNOWN_MODEL_PRICES.imageMicros,
+      videoMicros:
+        FAL_VIDEO_MICROS.get(options.videoModel ?? "") ?? UNKNOWN_MODEL_PRICES.videoMicros,
     };
   }
   private path(raw: string) {

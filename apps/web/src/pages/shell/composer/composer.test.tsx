@@ -173,9 +173,9 @@ it.each([
 });
 
 it.each([
-  ["active", false, "This month's included usage is used up.", "Upgrade"],
-  ["trialing", false, "Your trial's included usage is used up.", "Start plan now"],
-  ["trialing", true, "Cancelled trials have no included usage.", "Renew plan"],
+  ["active", false, "This month's computer hours are used up.", "Upgrade"],
+  ["trialing", false, "Your trial's computer hours are used up.", "Start plan now"],
+  ["trialing", true, "Cancelled trials have no computer hours.", "Renew plan"],
 ] as const)(
   "says why computer hours ran out on a %s plan (cancelling: %s) and opens billing",
   (state, cancelAtPeriodEnd, summary, label) => {
@@ -202,7 +202,7 @@ it("offers no billing action to a member who cannot manage the plan", () => {
     runErrorId: "failed-run",
   });
   const error = container?.querySelector('[data-testid="composer-error"]');
-  expect(error?.textContent).toContain("This month's included usage is used up.");
+  expect(error?.textContent).toContain("This month's computer hours are used up.");
   expect(error?.querySelector('[data-testid="composer-error-action"]')).toBeNull();
 });
 

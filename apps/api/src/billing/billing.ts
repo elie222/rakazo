@@ -5,6 +5,7 @@ import type {
   BillingProvider,
   BillingSubscriptionSnapshot,
   BillingSubscriptionStatus,
+  MediaGenerationProvider,
   PartnerProgram,
   ProductAnalytics,
   RealtimeFanout,
@@ -18,8 +19,8 @@ import {
 } from "@rakazo/adapter-kit";
 import {
   holdsBillingSubscription,
-  includedUsage,
-  includedUsageLeftCents,
+  mediaBalance,
+  sandboxAllowance,
   sandboxDisplayedHourMicros,
   sandboxHoursLeft,
   sandboxKindCapabilities,
@@ -154,6 +155,8 @@ export function createBillingService(deps: {
   provider: BillingProvider;
   /** Prices computer time for the monthly allowance; without it none is shown. */
   sandbox?: SandboxProvider;
+  /** The deployment's hosted media provider; without one no media balance is shown. */
+  mediaGeneration?: MediaGenerationProvider;
   realtime?: RealtimeFanout;
   managedModelsAvailable?: boolean;
   /** The session cookie lives on the web origin, which also proxies /api to this server. */
@@ -591,14 +594,14 @@ export function createBillingService(deps: {
       };
       const to = target(from);
       if (!to) throw conflict();
-      // Smaller included usage takes effect at once, so this period's use must already fit it;
-      // otherwise an upgrade could buy a period's usage and a downgrade refund almost all of it.
-      const allowanceCents = BYOK_TIERS[to.tier].includedUsageCents;
-      if (allowanceCents < BYOK_TIERS[from.tier].includedUsageCents) {
-        const usage = await includedUsage({ prisma, sandbox: deps.sandbox }, organizationId);
-        if (usage && usage.usedMicros > (allowanceCents * MICROS_PER_DOLLAR) / 100)
+      // A smaller allowance takes effect at once, so this period's computer use must already fit it;
+      // otherwise an upgrade could buy a period's hours and a downgrade refund almost all of it.
+      const allowanceCents = BYOK_TIERS[to.tier].computerAllowanceCents;
+      if (allowanceCents < BYOK_TIERS[from.tier].computerAllowanceCents && deps.sandbox) {
+        const allowance = await sandboxAllowance({ prisma, sandbox: deps.sandbox }, organizationId);
+        if (allowance && allowance.usedMicros > (allowanceCents * MICROS_PER_DOLLAR) / 100)
           throw new ORPCError("CONFLICT", {
-            message: "This month's usage is more than the smaller plan includes",
+            message: "This month's computer use is more than the smaller plan includes",
           });
       }
       const changed = await provider.changeByokPlan!(account.customerId, account.subscriptionId, {
@@ -728,10 +731,14 @@ export function createBillingService(deps: {
             getLogger().error("access grant failed", error),
           );
         const sized = supportsComputerSizing();
-        const [credits, account, usage, days, hadTrial] = await Promise.all([
+        const media = deps.mediaGeneration?.prices;
+        const [credits, account, computerAllowance, mediaLeft, days, hadTrial] = await Promise.all([
           unexpiredCreditAccount(prisma, organizationId),
           billingAccountForOrganization(prisma, organizationId),
-          includedUsage({ prisma, sandbox: deps.sandbox }, organizationId),
+          deps.sandbox ? sandboxAllowance({ prisma, sandbox: deps.sandbox }, organizationId) : null,
+          media && (media.imageMicros > 0 || media.videoMicros > 0)
+            ? mediaBalance(prisma, organizationId)
+            : null,
           trialDays(organizationId),
           organizationOwnerHadTrial(prisma, organizationId, "byok"),
         ]);
@@ -783,18 +790,24 @@ export function createBillingService(deps: {
           currentPeriodEndsAt: account?.currentPeriodEndsAt?.toISOString() ?? null,
           cancelAtPeriodEnd: account?.cancelAtPeriodEnd ?? false,
           hasCustomer: Boolean(account),
-          includedUsageLeftCents: usage && includedUsageLeftCents(usage),
-          includedUsageResetAt: usage?.resetsAt?.toISOString() ?? null,
-          ...(sized && { standardComputerHours: true as const }),
-          // compat-shim(after v0.15.0): mobile apps released before included usage read these.
           computerHoursLeft:
-            usage && deps.sandbox
-              ? sandboxHoursLeft(
-                  usage,
-                  sized ? SANDBOX_SIZE_HOURLY_COST_MICROS.standard : hourMicros,
-                )
-              : null,
-          computerHoursResetAt: deps.sandbox ? (usage?.resetsAt?.toISOString() ?? null) : null,
+            computerAllowance &&
+            sandboxHoursLeft(
+              computerAllowance,
+              sized ? SANDBOX_SIZE_HOURLY_COST_MICROS.standard : hourMicros,
+            ),
+          ...(sized && { standardComputerHours: true as const }),
+          computerHoursResetAt: computerAllowance?.resetsAt?.toISOString() ?? null,
+          ...(mediaLeft?.limitMicros && {
+            media: {
+              // A cent is 10,000 micros; a part-spent cent shows as spent.
+              leftCents: Math.max(
+                0,
+                Math.floor((mediaLeft.limitMicros - mediaLeft.usedMicros) / 10_000),
+              ),
+              limitCents: mediaLeft.limitMicros / 10_000,
+            },
+          }),
           referral: await referrals.status(organizationId, isOwner),
         };
       }

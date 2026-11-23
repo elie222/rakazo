@@ -1,5 +1,5 @@
 import type { PrismaClient } from "@rakazo/db";
-import { runAsSystem } from "@rakazo/db";
+import { JsonColumnMismatchError, reportJsonColumnOnce, runAsSystem } from "@rakazo/db";
 import { MEDIA_JOB_KIND, savedMediaCharge } from "./media-generation-tools.js";
 
 /**
@@ -8,7 +8,7 @@ import { MEDIA_JOB_KIND, savedMediaCharge } from "./media-generation-tools.js";
  * poll deadline closes every one of them.
  */
 export async function queuedMediaMicros(
-  prisma: Pick<PrismaClient, "externalEffect" | "includedUsageCharge">,
+  prisma: Pick<PrismaClient, "externalEffect" | "mediaCharge">,
   organizationId: string,
 ): Promise<number> {
   const jobs = await prisma.externalEffect.findMany({
@@ -23,15 +23,22 @@ export async function queuedMediaMicros(
   });
   if (!jobs.length) return 0;
   const charged = await runAsSystem("charges of an organization's queued videos", () =>
-    prisma.includedUsageCharge.findMany({
+    prisma.mediaCharge.findMany({
       where: { source: { in: jobs.map((job) => `media:${job.id}`) } },
       select: { source: true },
     }),
   );
   const done = new Set(charged.map((charge) => charge.source));
-  return jobs.reduce((sum, job) => {
-    if (done.has(`media:${job.id}`)) return sum;
-    const charge = savedMediaCharge(job);
-    return sum + (charge?.organizationId === organizationId ? charge.micros : 0);
-  }, 0);
+  let micros = 0;
+  for (const job of jobs) {
+    if (done.has(`media:${job.id}`)) continue;
+    try {
+      const charge = savedMediaCharge(job);
+      if (charge?.organizationId === organizationId) micros += charge.micros;
+    } catch (error) {
+      if (!(error instanceof JsonColumnMismatchError)) throw error;
+      reportJsonColumnOnce("Unreadable media job request", error.row);
+    }
+  }
+  return micros;
 }

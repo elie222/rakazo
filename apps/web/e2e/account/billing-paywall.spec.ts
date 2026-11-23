@@ -2,9 +2,9 @@ import type { Route } from "@playwright/test";
 import { expect, test } from "@playwright/test";
 import type { BillingStatus } from "@rakazo/contracts";
 import {
+  BYOK_TIERS,
   SANDBOX_SIZE_HOURLY_COST_MICROS,
   sandboxAllowanceHours,
-  tierComputerCents,
 } from "@rakazo/contracts";
 import {
   captureScreenshot,
@@ -40,7 +40,6 @@ const tiers: NonNullable<BillingStatus["byokTiers"]> = [
     monthlyPriceCents: 1500,
     annualPriceCents: 14400,
     computerSize: "standard",
-    includedUsageCents: 600,
     computerHours: 25,
   },
   {
@@ -49,7 +48,6 @@ const tiers: NonNullable<BillingStatus["byokTiers"]> = [
     monthlyPriceCents: 4900,
     annualPriceCents: 46800,
     computerSize: "large",
-    includedUsageCents: 2100,
     computerHours: 100,
   },
   {
@@ -58,7 +56,6 @@ const tiers: NonNullable<BillingStatus["byokTiers"]> = [
     monthlyPriceCents: 9900,
     annualPriceCents: 94800,
     computerSize: "xlarge",
-    includedUsageCents: 4100,
     computerHours: 200,
   },
   {
@@ -67,7 +64,6 @@ const tiers: NonNullable<BillingStatus["byokTiers"]> = [
     monthlyPriceCents: 19900,
     annualPriceCents: 190800,
     computerSize: "xlarge",
-    includedUsageCents: 12100,
     computerHours: 600,
   },
 ];
@@ -161,7 +157,7 @@ test("choose your own key or monthly credits, then add a one-time top-up", async
       state: "active",
       hasCustomer: true,
       price: { ...price, amount: 3000 },
-      includedUsageLeftCents: 437,
+      computerHoursLeft: 13,
     });
     await route.fulfill({ json: { json: { url: new URL("/app", page.url()).href } } });
   });
@@ -170,8 +166,8 @@ test("choose your own key or monthly credits, then add a one-time top-up", async
   expect(purchase).toEqual({ amountCents: 3000, monthly: true });
   const settings = await openUserSettings(page, "billing");
   await expect(settings.getByText("$30.00", { exact: true })).toBeVisible();
-  await expect(settings.getByText("Included usage left", { exact: true })).toBeVisible();
-  await expect(settings.getByText("$4.37", { exact: true })).toBeVisible();
+  await expect(settings.getByText("Computer hours left", { exact: true })).toBeVisible();
+  await expect(settings.getByText("13", { exact: true })).toBeVisible();
   await captureScreenshot(page, testInfo, "billing-credit-balance");
   await page.route("**/rpc/billing/computerUsage", (route) =>
     route.fulfill({
@@ -388,7 +384,7 @@ test("start the own-key plan billed yearly", async ({ page }, testInfo) => {
   expect(selected).toEqual({ funding: "byok", interval: "year" });
 });
 
-test("end an own-key trial early to get full included usage", async ({ page }, testInfo) => {
+test("end an own-key trial early to get full computer hours", async ({ page }, testInfo) => {
   await signup(page, `trial-end-${Date.now()}@rakazo.test`, "password12", "Demo Customer");
   await completeOnboarding(page);
   await page.route("**/api/auth/capabilities", async (route) => {
@@ -409,22 +405,20 @@ test("end an own-key trial early to get full included usage", async ({ page }, t
     trialEndsAt: "2030-01-15T12:00:00.000Z",
     currentPeriodEndsAt: "2030-01-15T12:00:00.000Z",
     hasCustomer: true,
-    includedUsageLeftCents: 100,
+    computerHoursLeft: 4,
   });
   await page.route("**/rpc/billing/status", (route) => route.fulfill({ json: { json: trial } }));
   let ended = false;
   await page.route("**/rpc/billing/endTrial", async (route) => {
     ended = true;
     await route.fulfill({
-      json: { json: { ...trial, state: "active", trialEndsAt: null, includedUsageLeftCents: 600 } },
+      json: { json: { ...trial, state: "active", trialEndsAt: null, computerHoursLeft: 25 } },
     });
   });
   await page.reload();
   const settings = await openUserSettings(page, "billing");
   await expect(
-    settings.getByText("Trials get less usage and no image or video generation.", {
-      exact: true,
-    }),
+    settings.getByText("Trials get fewer hours to prevent abuse.", { exact: true }),
   ).toBeVisible();
   await captureScreenshot(page, testInfo, "billing-trial-computer-hours");
   await settings.getByRole("button", { name: "Start plan now", exact: true }).click();
@@ -435,7 +429,7 @@ test("end an own-key trial early to get full included usage", async ({ page }, t
   await expect.poll(() => ended).toBe(true);
 });
 
-test("a cancelled trial explains its missing included usage and offers renewal", async ({
+test("a cancelled trial explains its missing computer hours and offers renewal", async ({
   page,
 }, testInfo) => {
   await signup(page, `trial-cancelled-${Date.now()}@rakazo.test`, "password12", "Demo Customer");
@@ -459,7 +453,7 @@ test("a cancelled trial explains its missing included usage and offers renewal",
     trialEndsAt: "2030-01-15T12:00:00.000Z",
     currentPeriodEndsAt: "2030-01-15T12:00:00.000Z",
     hasCustomer: true,
-    includedUsageLeftCents: 0,
+    computerHoursLeft: 0,
   });
   await page.route("**/rpc/billing/status", (route) => route.fulfill({ json: { json: trial } }));
   let portalOpened = false;
@@ -470,7 +464,7 @@ test("a cancelled trial explains its missing included usage and offers renewal",
   await page.reload();
   const settings = await openUserSettings(page, "billing");
   await expect(
-    settings.getByText("Cancelled trials have no included usage.", { exact: true }),
+    settings.getByText("Cancelled trials have no computer hours.", { exact: true }),
   ).toBeVisible();
   await expect(settings.getByRole("button", { name: "Start plan now" })).toHaveCount(0);
   await captureScreenshot(page, testInfo, "billing-cancelled-trial-computer-hours");
@@ -544,7 +538,7 @@ test("move an own-key plan to a bigger tier", async ({ page }, testInfo) => {
       ...offer,
       computerSizeChoice: true,
       computerHours: sandboxAllowanceHours(
-        tierComputerCents(offer.tier),
+        BYOK_TIERS[offer.tier].computerAllowanceCents,
         SANDBOX_SIZE_HOURLY_COST_MICROS.standard,
       ),
     })),
@@ -565,7 +559,7 @@ test("move an own-key plan to a bigger tier", async ({ page }, testInfo) => {
       byokPriceCents: 19900,
       byokAnnualPriceCents: 190800,
       byokTier: "ultra",
-      includedUsageLeftCents: 12100,
+      computerHoursLeft: 2400,
     };
     await route.fulfill({ json: { json: status } });
   });
@@ -576,7 +570,9 @@ test("move an own-key plan to a bigger tier", async ({ page }, testInfo) => {
   await page.reload();
   const settings = await openUserSettings(page, "billing");
   const plan = settings.getByTestId("own-key-plan");
-  await expect(plan.getByText("Up to 4 vCPU and 8 GB, $6 included usage a month")).toBeVisible();
+  await expect(
+    plan.getByText("Up to 4 vCPU and 8 GB, 100 Standard computer hours a month"),
+  ).toBeVisible();
   await plan.getByRole("combobox", { name: "Plan" }).click();
   await expect(page.getByRole("option", { name: /Max · \$99 \/ month/ })).toBeVisible();
   await captureScreenshot(page, testInfo, "billing-own-key-tiers");
@@ -589,7 +585,7 @@ test("move an own-key plan to a bigger tier", async ({ page }, testInfo) => {
   await confirm.getByRole("button", { name: "Switch", exact: true }).click();
   await expect.poll(() => changedTo).toBe("ultra");
   await expect(plan.getByText("$199 / month", { exact: true })).toBeVisible();
-  const ultraComputer = "Up to 16 vCPU and 32 GB, $121 included usage a month";
+  const ultraComputer = "Up to 16 vCPU and 32 GB, 2400 Standard computer hours a month";
   await expect(plan.getByText(ultraComputer)).toBeVisible();
   await plan.getByRole("button", { name: /Switch to yearly.*20%/ }).click();
   const yearly = page.getByRole("alertdialog", { name: "Switch to yearly?" });
@@ -600,9 +596,7 @@ test("move an own-key plan to a bigger tier", async ({ page }, testInfo) => {
   await plan.getByRole("combobox", { name: "Plan" }).click();
   const ultra = page.getByRole("option", { name: /Ultra · \$1,908 \/ year/ });
   await expect(
-    ultra.getByText(
-      "$121 included usage a month, about 2,400 Standard computer hours. Up to Extra large",
-    ),
+    ultra.getByText("2,400 bot computer hours/month at Standard size · Up to Extra large"),
   ).toBeVisible();
   await captureScreenshot(page, testInfo, "billing-own-key-tiers-yearly");
 });
@@ -628,7 +622,7 @@ test("computers settings set each cloud computer's size within the plan", async 
           byokTier: "pro",
           state: "active",
           hasCustomer: true,
-          includedUsageLeftCents: 2100,
+          computerHoursLeft: 400,
           standardComputerHours: true,
         }),
       },
@@ -714,8 +708,8 @@ test("yearly billing shows the monthly computer reset separately from renewal", 
     state: "active",
     hasCustomer: true,
     currentPeriodEndsAt: "2031-01-15T12:00:00.000Z",
-    includedUsageLeftCents: 3600,
-    includedUsageResetAt: "2030-02-15T12:00:00.000Z",
+    computerHoursLeft: 180,
+    computerHoursResetAt: "2030-02-15T12:00:00.000Z",
   });
   await page.route("**/rpc/billing/status", (route) => route.fulfill({ json: { json: status } }));
   await page.reload();

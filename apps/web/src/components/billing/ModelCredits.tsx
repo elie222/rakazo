@@ -337,18 +337,16 @@ export function ModelCreditsSettings({
           </div>
         ) : null}
       </div>
-      {status.includedUsageLeftCents != null ? (
+      {status.computerHoursLeft != null ? (
         <div className="rounded-xl border border-border p-5">
           <h3 className="text-body text-muted-foreground">
-            <Trans>Included usage left</Trans>
+            <Trans>Computer hours left</Trans>
           </h3>
-          <p className="mt-2 text-display font-medium tabular-nums">
-            {formatBillingAmount(status.includedUsageLeftCents, "usd", i18n.locale || "en")}
-          </p>
-          {status.includedUsageResetAt ? (
+          <p className="mt-2 text-display font-medium tabular-nums">{status.computerHoursLeft}</p>
+          {status.computerHoursResetAt ? (
             <p className="mt-2 text-body text-muted-foreground">
               <Trans>
-                Resets {formatBillingDate(status.includedUsageResetAt, i18n.locale || "en")}
+                Resets {formatBillingDate(status.computerHoursResetAt, i18n.locale || "en")}
               </Trans>
             </p>
           ) : null}
@@ -358,7 +356,7 @@ export function ModelCreditsSettings({
           {status.canManage && status.state === "trialing" && !status.cancelAtPeriodEnd ? (
             <>
               <p className="mt-2 text-body text-muted-foreground">
-                <Trans>Trials get less usage and no image or video generation.</Trans>
+                <Trans>Trials get fewer hours to prevent abuse.</Trans>
               </p>
               <Button
                 className="mt-5"
@@ -372,7 +370,7 @@ export function ModelCreditsSettings({
           ) : isCancelledTrial(status) ? (
             <>
               <p className="mt-2 text-body text-muted-foreground">
-                <Trans>Cancelled trials have no included usage.</Trans>
+                <Trans>Cancelled trials have no computer hours.</Trans>
               </p>
               {status.canManage && status.hasCustomer ? (
                 <Button

@@ -12,7 +12,7 @@ import {
   allowedComputerSizes,
   COMPUTER_SIZE_PLAN_SELECT,
   effectiveComputerSize,
-  includedUsagePlan,
+  sandboxAllowancePlan,
   sandboxRunHoursByComputer,
 } from "@rakazo/db";
 
@@ -90,7 +90,7 @@ export async function readComputerUsage(
   spaceId: string,
 ) {
   const now = new Date();
-  const plan = await includedUsagePlan(prisma, organizationId, now);
+  const plan = await sandboxAllowancePlan(prisma, organizationId, now);
   if (!plan) return { computers: [], otherHours: 0 };
 
   const runs = await sandboxRunHoursByComputer(prisma, organizationId, plan.since, now);

@@ -4,6 +4,8 @@ export type MediaGenerationInput = { prompt: string };
 export type GeneratedMedia = {
   bytes: Uint8Array;
   mimeType: "image/png" | "image/jpeg" | "image/webp" | "video/mp4";
+  /** What the provider reported this generation cost, in micro-dollars, when it reports one. */
+  costMicros?: number;
 };
 export type MediaVideoJob =
   | { id: string; status: "queued" | "running"; progress?: number }
@@ -13,8 +15,9 @@ export interface MediaGenerationProvider {
   readonly id: string;
   readonly capabilities: { images: boolean; video: boolean; offline: boolean };
   /**
-   * What one generated image and one video clip, as this provider requests them, cost in
-   * micro-dollars. Charged to the organization's included usage where billing is on.
+   * The most one image and one video clip, as this provider requests them, cost in micro-dollars.
+   * Checked against the organization's media balance before submitting, and charged when the
+   * provider does not report the actual cost.
    */
   readonly prices: { imageMicros: number; videoMicros: number };
   generateImage(input: MediaGenerationInput, context: AdapterContext): Promise<GeneratedMedia>;

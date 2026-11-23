@@ -491,7 +491,7 @@ model Organization {
   billing      BillingAccount?
   modelCredits ModelCreditAccount?
   computerAllowanceGrants ComputerAllowanceGrant[]
-  includedUsageCharges IncludedUsageCharge[]
+  mediaCharges MediaCharge[]
   referralCode ReferralCode?
   referredBy   Referral?           @relation("ReferredOrganization")
   referrals    Referral[]          @relation("ReferrerOrganization")
@@ -600,20 +600,20 @@ model ComputerAllowanceGrant {
   @@map("computer_allowance_grants")
 }
 
-/// Included usage spent on something other than computer time, such as a generated image. Kept
-/// apart from the run that spent it, so deleting a bot or Space does not give the usage back.
-model IncludedUsageCharge {
+/// Hosted image and video generation an organization spent its monthly media balance on. Kept
+/// apart from the run that spent it, so deleting a bot or Space does not give the balance back.
+model MediaCharge {
   id             String       @id @default(cuid())
   organizationId String
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  /// What was charged, such as `media:<external effect id>`; unique so a retry charges once.
+  /// The generation charged, as `media:<external effect id>`; unique so a retry charges once.
   source         String       @unique
   kind           String
   amountMicros   Int
   createdAt      DateTime     @default(now())
 
   @@index([organizationId, createdAt])
-  @@map("included_usage_charges")
+  @@map("media_charges")
 }
 
 model PluginSubmission {

@@ -2209,10 +2209,6 @@ describe("Team Computer wake", () => {
       computerAllowanceGrant: {
         aggregate: vi.fn().mockResolvedValue({ _sum: { amountCents: null } }),
       },
-      externalEffect: { findMany: vi.fn().mockResolvedValue([]) },
-      includedUsageCharge: {
-        aggregate: vi.fn().mockResolvedValue({ _sum: { amountMicros: null } }),
-      },
       // $10 of a $50 plan, at the default $0.10 an hour.
       $queryRaw: vi.fn().mockResolvedValue([{ kind: "e2b", hours: 100 }]),
     });

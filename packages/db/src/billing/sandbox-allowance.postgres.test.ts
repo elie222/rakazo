@@ -2,11 +2,11 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { PrismaClient } from "../database/client.js";
 import { createDb } from "../database/client.js";
 import { asSystem, runAsTenant } from "../database/row-security.js";
+import { chargeMedia, mediaChargedMicros } from "./media-charges.js";
 import {
-  chargeIncludedUsage,
   grantComputerAllowance,
-  includedUsageChargedMicros,
-  includedUsagePlan,
+  mediaAllowancePlan,
+  sandboxAllowancePlan,
   sandboxRunHours,
   sandboxRunHoursByComputer,
   speechAllowancePlan,
@@ -133,14 +133,20 @@ describePostgres("computer allowance hours (PostgreSQL)", () => {
       },
     });
     try {
-      expect(await includedUsagePlan(prisma, organizationId, now)).toMatchObject({
-        limitCents: 2_100,
+      expect(await sandboxAllowancePlan(prisma, organizationId, now)).toMatchObject({
+        limitCents: 2_000,
         extraCents: 0,
       });
       // Speech gets a fifth of the tier's list price, renewing with the same period.
       expect(await speechAllowancePlan(prisma, organizationId, now)).toEqual({
         limitMicros: 9_800_000n,
         since: periodStart,
+      });
+      // Media gets its own dollar balance on the same period, apart from computer hours.
+      expect(await mediaAllowancePlan(prisma, organizationId, now)).toEqual({
+        limitMicros: 1_000_000,
+        since: periodStart,
+        trial: false,
       });
       await grantComputerAllowance(prisma, organizationId, 2_500);
       const grant = await prisma.computerAllowanceGrant.findFirstOrThrow({
@@ -151,8 +157,8 @@ describePostgres("computer allowance hours (PostgreSQL)", () => {
         where: { id: grant.id },
         data: { createdAt: new Date("2026-03-09T00:00:00.000Z") },
       });
-      const during = await includedUsagePlan(prisma, organizationId, now);
-      expect(during).toMatchObject({ limitCents: 4_600, extraCents: 2_500 });
+      const during = await sandboxAllowancePlan(prisma, organizationId, now);
+      expect(during).toMatchObject({ limitCents: 4_500, extraCents: 2_500 });
       expect(
         await prisma.billingAuditEvent.findUnique({
           where: { source: `computer-allowance:${grant.id}` },
@@ -167,12 +173,12 @@ describePostgres("computer allowance hours (PostgreSQL)", () => {
           currentPeriodEndsAt: new Date("2026-05-05T00:00:00.000Z"),
         },
       });
-      const next = await includedUsagePlan(
+      const next = await sandboxAllowancePlan(
         prisma,
         organizationId,
         new Date("2026-04-10T00:00:00.000Z"),
       );
-      expect(next).toMatchObject({ limitCents: 2_100, extraCents: 0 });
+      expect(next).toMatchObject({ limitCents: 2_000, extraCents: 0 });
 
       // An operator can still give a cancelled trial hours; the period renews nothing for it.
       await prisma.billingAccount.update({
@@ -188,7 +194,7 @@ describePostgres("computer allowance hours (PostgreSQL)", () => {
         data: { organizationId, amountCents: 1_000, createdAt: new Date("2026-06-03T00:00:00Z") },
       });
       expect(
-        await includedUsagePlan(prisma, organizationId, new Date("2026-06-05T00:00:00Z")),
+        await sandboxAllowancePlan(prisma, organizationId, new Date("2026-06-05T00:00:00Z")),
       ).toMatchObject({ limitCents: 1_000, extraCents: 1_000, resetsAt: null });
 
       // Once the plan lapses into granted credit, grants from its paid periods stay spent.
@@ -216,7 +222,7 @@ describePostgres("computer allowance hours (PostgreSQL)", () => {
         data: { organizationId, amountCents: 300, createdAt: new Date("2026-08-02T00:00:00Z") },
       });
       expect(
-        await includedUsagePlan(prisma, organizationId, new Date("2026-08-05T00:00:00Z")),
+        await sandboxAllowancePlan(prisma, organizationId, new Date("2026-08-05T00:00:00Z")),
       ).toMatchObject({ limitCents: 1_000 + 300, extraCents: 300 });
 
       // A plan that stopped mid-period still has a future end; a grant after it stopped counts.
@@ -231,7 +237,7 @@ describePostgres("computer allowance hours (PostgreSQL)", () => {
         data: { organizationId, amountCents: 200, createdAt: new Date("2026-08-10T00:00:00Z") },
       });
       expect(
-        await includedUsagePlan(prisma, organizationId, new Date("2026-08-12T00:00:00Z")),
+        await sandboxAllowancePlan(prisma, organizationId, new Date("2026-08-12T00:00:00Z")),
       ).toMatchObject({ limitCents: 1_000 + 500, extraCents: 500 });
 
       // A lapsed yearly plan renewed monthly, so only grants from its last month still count.
@@ -244,7 +250,7 @@ describePostgres("computer allowance hours (PostgreSQL)", () => {
         },
       });
       expect(
-        await includedUsagePlan(prisma, organizationId, new Date("2026-08-25T00:00:00Z")),
+        await sandboxAllowancePlan(prisma, organizationId, new Date("2026-08-25T00:00:00Z")),
       ).toMatchObject({ limitCents: 1_000, extraCents: 0 });
     } finally {
       await prisma.billingAccount.deleteMany({ where: { organizationId } });
@@ -255,21 +261,21 @@ describePostgres("computer allowance hours (PostgreSQL)", () => {
     }
   });
 
-  it("charges included usage once per source, kept apart from the Space", async () => {
+  it("charges hosted media once per source, kept apart from the Space", async () => {
     const charge = {
       organizationId,
       source: `media:${suffix}`,
       kind: "image",
       amountMicros: 40_000,
     };
-    await chargeIncludedUsage(prisma, charge);
-    await chargeIncludedUsage(prisma, charge);
-    expect(await includedUsageChargedMicros(prisma, organizationId, since)).toBe(40_000);
-    expect(await includedUsageChargedMicros(prisma, otherOrganizationId, since)).toBe(0);
+    await chargeMedia(prisma, charge);
+    await chargeMedia(prisma, charge);
+    expect(await mediaChargedMicros(prisma, organizationId, since)).toBe(40_000);
+    expect(await mediaChargedMicros(prisma, otherOrganizationId, since)).toBe(0);
     // Tenants never read the ledger directly.
     expect(
       await runAsTenant({ userId: "nobody", spaceId }, () =>
-        db.includedUsageCharge.count({ where: { organizationId } }),
+        db.mediaCharge.count({ where: { organizationId } }),
       ),
     ).toBe(0);
   });

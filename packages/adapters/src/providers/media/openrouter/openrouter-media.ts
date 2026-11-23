@@ -18,6 +18,7 @@ import {
 } from "../../../media/images-api.js";
 import {
   mediaPromptSchema,
+  UNKNOWN_MODEL_PRICES,
   validateGeneratedMedia,
 } from "../../../media/media-generation-provider.js";
 import type { ResolveHostname } from "../../../web/web-ssrf.js";
@@ -29,11 +30,23 @@ const DOWNLOAD_TIMEOUT_MS = 120_000;
 const MAX_JSON_BYTES = 100_000;
 const VIDEO_SECONDS = 4;
 /**
- * Models here are chosen freely and priced per model, so every one is charged at least what the
- * dearer ones cost, in micro-dollars.
+ * Per model, the most one image (auto size and quality) or one four-second video with its default
+ * audio costs, from OpenRouter's published prices, in micro-dollars. Each response reports what
+ * the generation actually cost, and that is what is charged.
  */
-const IMAGE_MICROS = 170_000;
-const VIDEO_SECOND_MICROS = 500_000;
+const IMAGE_MICROS = new Map([
+  ["openai/gpt-image-2", 211_000],
+  ["openai/gpt-image-1", 250_000],
+  ["openai/gpt-image-1-mini", 52_000],
+  ["google/gemini-2.5-flash-image", 40_000],
+]);
+const VIDEO_MICROS = new Map([
+  ["google/veo-3.1-lite", 320_000],
+  ["google/veo-3.1-fast", 480_000],
+  ["google/veo-3.1", 1_600_000],
+]);
+const usageCost = z.object({ usage: z.object({ cost: z.number().nonnegative() }) });
+const costMicros = (cost: number) => Math.round(cost * 1_000_000);
 const JOB_ID_PATTERN = /^[\w-]{1,200}$/;
 const videoJob = z.object({
   id: z.string().regex(JOB_ID_PATTERN),
@@ -50,7 +63,7 @@ type PendingJob = Exclude<MediaVideoJob, { status: "completed" }>;
 export class OpenRouterMediaGenerationProvider implements MediaGenerationProvider {
   readonly id = "openrouter";
   readonly capabilities;
-  readonly prices = { imageMicros: IMAGE_MICROS, videoMicros: VIDEO_SECOND_MICROS * VIDEO_SECONDS };
+  readonly prices;
   private readonly baseUrl: string;
   constructor(
     private readonly options: {
@@ -70,12 +83,22 @@ export class OpenRouterMediaGenerationProvider implements MediaGenerationProvide
       video: Boolean(options.videoModel),
       offline: false,
     };
+    this.prices = {
+      imageMicros: IMAGE_MICROS.get(options.imageModel ?? "") ?? UNKNOWN_MODEL_PRICES.imageMicros,
+      videoMicros: VIDEO_MICROS.get(options.videoModel ?? "") ?? UNKNOWN_MODEL_PRICES.videoMicros,
+    };
   }
   generateImage(input: MediaGenerationInput, context: AdapterContext): Promise<GeneratedMedia> {
     const model = this.options.imageModel;
     if (!model) return Promise.reject(new MediaGenerationError("unsupported"));
     return requestImagesApiImage(
-      { ...this.options, endpoint: `${this.baseUrl}/images`, model, ...input },
+      {
+        ...this.options,
+        endpoint: `${this.baseUrl}/images`,
+        model,
+        ...input,
+        costMicros: (usage) => (usage.cost === undefined ? undefined : costMicros(usage.cost)),
+      },
       context,
     );
   }
@@ -99,10 +122,16 @@ export class OpenRouterMediaGenerationProvider implements MediaGenerationProvide
   }
   async pollVideo(id: string, context: AdapterContext): Promise<MediaVideoJob> {
     if (!JOB_ID_PATTERN.test(id)) throw new MediaGenerationError("invalid_input");
-    const job = this.job(await this.request(`/videos/${id}`, context));
+    const body = await this.request(`/videos/${id}`, context);
+    const job = this.job(body);
     if (job.id !== id) throw new MediaGenerationError("provider_failure");
     if (job.status !== "completed") return job;
-    const output = { bytes: await this.content(id, context), mimeType: "video/mp4" } as const;
+    const cost = usageCost.safeParse(body);
+    const output = {
+      bytes: await this.content(id, context),
+      mimeType: "video/mp4",
+      ...(cost.success ? { costMicros: costMicros(cost.data.usage.cost) } : {}),
+    } as const;
     validateGeneratedMedia(output, "video");
     return { id, status: "completed", output };
   }

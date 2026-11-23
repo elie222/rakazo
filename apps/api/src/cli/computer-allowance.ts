@@ -1,6 +1,6 @@
 // Operator control: computer-allowance.js grant <organization-id> <extra-usd> | status <organization-id>
 import { contentKeyProviderFromEnv, unwrapEnvFromKeyManager } from "@rakazo/adapters";
-import { createDb, grantComputerAllowance, includedUsagePlan, runAsSystem } from "@rakazo/db";
+import { createDb, grantComputerAllowance, runAsSystem, sandboxAllowancePlan } from "@rakazo/db";
 import { loadEnv } from "../env.js";
 
 const [action, organizationId, dollars, ...extra] = process.argv.slice(2);
@@ -32,14 +32,14 @@ try {
       select: { id: true },
     });
     if (!organization) throw new Error("No organization has that id");
-    let plan = await includedUsagePlan(prisma, organizationId, new Date());
+    let plan = await sandboxAllowancePlan(prisma, organizationId, new Date());
     if (!plan) {
       process.stdout.write("Computers are not limited on this deployment.\n");
       return;
     }
     if (action === "grant") {
       await grantComputerAllowance(prisma, organizationId, amountCents!);
-      plan = (await includedUsagePlan(prisma, organizationId, new Date()))!;
+      plan = (await sandboxAllowancePlan(prisma, organizationId, new Date()))!;
     }
     // Hours left are what Billing shows; it prices runs with the provider, which this cannot.
     const usd = (cents: number) => `$${(cents / 100).toFixed(2)}`;

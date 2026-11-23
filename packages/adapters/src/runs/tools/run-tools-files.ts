@@ -12,7 +12,7 @@ import { resolveBotWorkspacePath } from "../../computers/screens/computer-suppor
 import { generateMediaFromTool, MEDIA_JOB_KIND } from "../../media/media-generation-tools.js";
 import type { MediaSource, ResolvedMediaSource } from "../../media/media-sources.js";
 import { mediaProviderForSource, readMediaJobSource } from "../../media/media-sources.js";
-import { priceMediaGeneration } from "../../media/media-usage.js";
+import { hostedMediaPrice } from "../../media/media-usage.js";
 import { mediaDelivery, scheduleMediaPoll } from "../../media/media-video-poll.js";
 import {
   desktopGuardApplies,
@@ -112,11 +112,7 @@ export async function callMediaTool(ctx: RunContext, call: ToolCall, recoverOnly
     context,
     run,
     threadGeneration: thread.historyCompactionGeneration,
-    // Only the deployment's own provider is metered; an owner's key bills the owner directly.
-    ...(source.record.kind === "hosted" && {
-      price: (kind: "image" | "video") =>
-        priceMediaGeneration(deps, mediaGeneration, run.spaceId, kind),
-    }),
+    price: hostedMediaPrice(deps.prisma, source, run.spaceId),
     ...mediaDelivery({ ...deps, artifacts: deps.artifacts }, run, {
       providerId: mediaGeneration.id,
       groupId: await artifactGroupId(ctx),

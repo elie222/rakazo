@@ -1,9 +1,9 @@
 import type { BillingStatus } from "@rakazo/contracts";
-import { includedUsageOut } from "@rakazo/contracts";
+import { computerHoursOut } from "@rakazo/contracts";
 import { normalizeRunError } from "@rakazo/core";
 import { describe, expect, it } from "vitest";
 import {
-  includedUsageOutCopy,
+  computerHoursOutCopy,
   runErrorActionLabel,
   runErrorDiagnostic,
   runErrorWhatHappened,
@@ -88,12 +88,12 @@ describe("the one recovery action", () => {
 
 describe("computer hours out", () => {
   it.each([
-    ["trialing", false, "Your trial's included usage is used up.", "Start plan now"],
-    ["trialing", true, "Cancelled trials have no included usage.", "Renew plan"],
-    ["active", false, "This month's included usage is used up.", "Upgrade"],
+    ["trialing", false, "Your trial's computer hours are used up.", "Start plan now"],
+    ["trialing", true, "Cancelled trials have no computer hours.", "Renew plan"],
+    ["active", false, "This month's computer hours are used up.", "Upgrade"],
   ] as const)("names why a %s plan (cancelling: %s) ran out", (state, cancel, summary, action) => {
     const status = { state, cancelAtPeriodEnd: cancel } as BillingStatus;
-    expect(includedUsageOutCopy(includedUsageOut(status))).toEqual({ summary, action });
+    expect(computerHoursOutCopy(computerHoursOut(status))).toEqual({ summary, action });
   });
 
   it("leaves the headline to explain spent hours", () => {

@@ -28,7 +28,16 @@ const imagesResponse = z.object({
       z.union([z.object({ b64_json: z.string().min(1) }), z.object({ url: z.string().min(1) })]),
     )
     .min(1),
+  usage: z
+    .object({
+      cost: z.number().nonnegative().optional(),
+      input_tokens: z.number().int().nonnegative().optional(),
+      output_tokens: z.number().int().nonnegative().optional(),
+    })
+    .optional()
+    .catch(undefined),
 });
+export type ImagesApiUsage = NonNullable<z.infer<typeof imagesResponse>["usage"]>;
 
 /** The base URL without a trailing slash, refusing credentials, queries and fragments. */
 export function mediaBaseUrl(raw: string): string {
@@ -70,6 +79,8 @@ export async function requestImagesApiImage(
     prompt: string;
     fetch?: typeof fetch;
     resolveHostname?: ResolveHostname;
+    /** What the response's usage says the image cost, in micro-dollars, if it says. */
+    costMicros?: (usage: ImagesApiUsage) => number | undefined;
   },
   context: AdapterContext,
 ): Promise<GeneratedMedia> {
@@ -115,7 +126,13 @@ export async function requestImagesApiImage(
   const mimeType = detectImageMimeType(bytes);
   if (!mimeType || !GENERATED_IMAGE_MIME_TYPES.has(mimeType))
     throw new MediaGenerationError("provider_failure");
-  const output = { bytes, mimeType } as GeneratedMedia;
+  const usage = result.data.usage;
+  const costMicros = usage && options.costMicros?.(usage);
+  const output = {
+    bytes,
+    mimeType,
+    ...(costMicros === undefined ? {} : { costMicros }),
+  } as GeneratedMedia;
   validateGeneratedMedia(output, "image");
   return output;
 }

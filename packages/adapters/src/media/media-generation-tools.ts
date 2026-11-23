@@ -8,11 +8,11 @@ import { MediaGenerationError } from "@rakazo/adapter-kit";
 import type { MessageBlock } from "@rakazo/contracts";
 import { messageBlockForArtifact } from "@rakazo/core";
 import type { ExternalEffect, Prisma, PrismaClient } from "@rakazo/db";
-import { chargeIncludedUsage, isUniqueViolation, readJsonColumn } from "@rakazo/db";
+import { chargeMedia, isUniqueViolation, readJsonColumn } from "@rakazo/db";
 import { z } from "zod";
 import { mediaPromptSchema, validateGeneratedMedia } from "./media-generation-provider.js";
-import type { MediaCharge } from "./media-usage.js";
 import type { MediaSourceRecord } from "./media-sources.js";
+import type { MediaCharge } from "./media-usage.js";
 
 export const MEDIA_JOB_KIND = "media_generation_job";
 const FILE_EXTENSIONS: Record<GeneratedMedia["mimeType"], string> = {
@@ -40,17 +40,26 @@ export function savedMediaCharge(effect: Pick<ExternalEffect, "id" | "request">)
   ).charge;
 }
 
-/** Charges a completed generation the price saved when it was submitted, once per reservation. */
-async function chargeCompleted(prisma: PrismaClient, reservation: ExternalEffect, video: boolean) {
+/**
+ * Charges a finished hosted generation once per reservation: what the provider reported it cost
+ * when it did, else the price saved at submission.
+ */
+async function chargeCompleted(
+  prisma: PrismaClient,
+  reservation: ExternalEffect,
+  video: boolean,
+  reportedMicros?: number,
+) {
   const charge = savedMediaCharge(reservation);
   if (!charge) return;
-  await chargeIncludedUsage(prisma, {
+  await chargeMedia(prisma, {
     organizationId: charge.organizationId,
     source: `media:${reservation.id}`,
     kind: video ? "video" : "image",
-    amountMicros: charge.micros,
+    amountMicros: reportedMicros ?? charge.micros,
   });
 }
+
 export async function generateMediaFromTool(options: {
   name: "generate_image" | "generate_video";
   args: Record<string, unknown>;
@@ -259,6 +268,8 @@ export async function generateMediaFromTool(options: {
         status: output.status,
         ...("progress" in output ? { progress: output.progress } : {}),
       };
+    // The provider has made it, so it is charged even if storing it fails below.
+    await chargeCompleted(prisma, reservation, video, output.output.costMicros);
     const fetched = {
       provider: provider.id,
       ...("id" in output ? { jobId: output.id } : {}),
@@ -282,7 +293,6 @@ export async function generateMediaFromTool(options: {
         });
       throw error;
     }
-    await chargeCompleted(prisma, reservation, video);
     await options.publish(attached.block, reservation.id, attached.artifactId);
     return { status: "completed", artifactId: attached.artifactId };
   } catch (error) {
