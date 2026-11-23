@@ -95,7 +95,8 @@ export function MermaidDiagram({ source, palette, colorScheme, fallback }: Merma
           style={[styles.webview, { height: drawn ? diagram.height : 1 }]}
           javaScriptEnabled
           allowsLinkPreview={false}
-          dataDetectorTypes="none"
+          // A list: Android's native view crashes on a plain string.
+          dataDetectorTypes={["none"]}
           javaScriptCanOpenWindowsAutomatically={false}
           domStorageEnabled={false}
           allowFileAccess={false}
