@@ -648,7 +648,11 @@ export const TOOL_CHOICE_DEFINITIONS: ToolChoiceCase[] = [
       },
     },
     prompt: `Check which plan my ${TALLYHUB.name} account at ${TALLYHUB.origin} is on.`,
-    expect: { signedIn: false, callsMustNot: [COMMAND_SECRET] },
+    expect: {
+      signedIn: false,
+      calls: [{ tool: "browser_act", args: { actions: "~fill_secret" } }],
+      callsMustNot: [COMMAND_SECRET],
+    },
   },
 ];
 
