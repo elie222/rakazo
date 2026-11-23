@@ -14,6 +14,7 @@ import {
 import { COMPOSER_ENTER_TO_SEND_STORAGE_KEY } from "../composer/composer-enter-to-send-pref";
 import { selectedSpaceId, selectSpace } from "../query/rpc";
 import { LOG_OUT_FAILED_KEY, signOut, syncLogOutFailure, useSignOut } from "./sign-out";
+import { ssoAutoStartAllowed } from "./sso-auto-start";
 
 const { requestSignOut, endCallBeforeSignOut } = vi.hoisted(() => ({
   requestSignOut: vi.fn(),
@@ -75,6 +76,11 @@ describe("signOut", () => {
     // Other tabs reload when the signed-in user is cleared.
     expect(localStorage.getItem(SIGNED_IN_USER_KEY)).toBeNull();
     expect(selectedSpaceId()).toBeNull();
+  });
+
+  it("keeps sign-in from starting SSO by itself afterwards", async () => {
+    await signOut("/sign-in");
+    expect(ssoAutoStartAllowed()).toBe(false);
   });
 
   it("leaves no saved draft for whoever uses this browser next", async () => {

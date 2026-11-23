@@ -37,6 +37,7 @@ import {
   signInNext,
 } from "./lib/auth/sign-in-next";
 import { syncLogOutFailure } from "./lib/auth/sign-out";
+import { releaseSsoAutoStart } from "./lib/auth/sso-auto-start";
 import { completeSsoCallback, SSO_CALLBACK_PATH } from "./lib/auth/sso-flow";
 import { getLabs, subscribeLabs } from "./lib/bootstrap";
 import { syncWebLogoAvatarIdentity } from "./lib/bots/logo-avatar-activity";
@@ -159,7 +160,10 @@ function SessionApp() {
     syncWebLogoAvatarIdentity(analyticsUserId ?? null);
     syncCallIdentity(analyticsUserId ?? null);
     syncLogOutFailure(gate === "authenticated");
-    if (gate === "authenticated") rememberSignedIn();
+    if (gate === "authenticated") {
+      rememberSignedIn();
+      releaseSsoAutoStart();
+    }
   }, [gate, analyticsUserId]);
   useEffect(() => {
     if (gate === "authenticated" || gate === "anonymous") setQueryUser(analyticsUserId ?? null);

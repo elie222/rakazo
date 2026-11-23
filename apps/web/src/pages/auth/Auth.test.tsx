@@ -9,6 +9,7 @@ import type { AuthCapabilities } from "../../lib/auth/auth-capabilities";
 import { fetchAuthCapabilities } from "../../lib/auth/auth-capabilities";
 import type * as Passkeys from "../../lib/auth/passkeys";
 import { usePasskeysSupported } from "../../lib/auth/passkeys";
+import { holdSsoAutoStart } from "../../lib/auth/sso-auto-start";
 import { clearSpaceSelection } from "../../lib/query/rpc";
 import { AuthPage } from "./Auth";
 
@@ -101,6 +102,7 @@ afterEach(async () => {
   host.remove();
   vi.restoreAllMocks();
   delete window.rakazoDesktop;
+  localStorage.clear();
 });
 async function render(mode: "in" | "up" | "forgot" = "in", entry = "/") {
   await act(async () =>
@@ -303,6 +305,46 @@ it("keeps SSO available for retry while an authorization request is pending", as
   expect(button.disabled).toBe(false);
   await act(async () => button.click());
   expect(authClient.signIn.social).toHaveBeenCalledTimes(2);
+});
+
+const ssoOnly: AuthCapabilities = {
+  ...capabilities,
+  sso: { name: "Example", availability: "available" },
+};
+
+it("starts the only provider once, and waits for a click on the next visit", async () => {
+  vi.mocked(fetchAuthCapabilities).mockResolvedValue(ssoOnly);
+  await render("in", "/sign-in?next=%2Finvite%2Fabc");
+  expect(authClient.signIn.social).toHaveBeenCalledOnce();
+  expect(authClient.signIn.social).toHaveBeenCalledWith(
+    expect.objectContaining({ provider: "oidc", callbackURL: "/invite/abc" }),
+  );
+  // Back from the provider lands here again and must not send the person straight back.
+  await act(async () => root.unmount());
+  root = createRoot(host);
+  await render();
+  expect(authClient.signIn.social).toHaveBeenCalledOnce();
+  expect(host.textContent).toContain("Continue with Example");
+});
+
+it("waits for a click after the provider returned an error", async () => {
+  vi.mocked(fetchAuthCapabilities).mockResolvedValue(ssoOnly);
+  await render("in", "/sign-in?error=access_denied");
+  expect(authClient.signIn.social).not.toHaveBeenCalled();
+});
+
+it("waits for a click after signing out", async () => {
+  holdSsoAutoStart();
+  vi.mocked(fetchAuthCapabilities).mockResolvedValue(ssoOnly);
+  await render();
+  expect(authClient.signIn.social).not.toHaveBeenCalled();
+});
+
+it("waits for a click on desktop, where sign-in opens a window", async () => {
+  window.rakazoDesktop = {} as NonNullable<Window["rakazoDesktop"]>;
+  vi.mocked(fetchAuthCapabilities).mockResolvedValue(ssoOnly);
+  await render();
+  expect(authClient.signIn.social).not.toHaveBeenCalled();
 });
 
 const codeCapabilities: AuthCapabilities = {
