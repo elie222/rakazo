@@ -219,5 +219,5 @@ const bots = [
 
 const document = { format: "grok-bot-export", version: 1, bots };
 const output = join(dirname(fileURLToPath(import.meta.url)), "agent-factory-export.json");
-writeFileSync(output, JSON.stringify(document, null, 2) + "\n");
+writeFileSync(output, `${JSON.stringify(document, null, 2)}\n`);
 console.log(`Wrote ${output} (${bots.length} bots, tz=${timeZone})`);

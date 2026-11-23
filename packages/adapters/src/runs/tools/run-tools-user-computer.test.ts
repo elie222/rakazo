@@ -326,7 +326,7 @@ describe("a bot bound to one computer", () => {
       [],
       "device-9",
     );
-    const connected = vi.fn(async (owner: string, id?: string) => ({
+    const connected = vi.fn(async (_owner: string, id?: string) => ({
       deviceId: id ?? "other",
       name: "Desk PC",
       platform: "linux",

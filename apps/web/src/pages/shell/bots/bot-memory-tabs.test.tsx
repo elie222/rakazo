@@ -51,7 +51,9 @@ vi.mock("../../space/KnowledgeSection", () => ({
 const roots: Array<{ unmount: () => void }> = [];
 afterEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", false);
-  roots.splice(0).forEach((root) => act(() => root.unmount()));
+  roots.splice(0).forEach((root) => {
+    act(() => root.unmount());
+  });
   document.body.innerHTML = "";
 });
 

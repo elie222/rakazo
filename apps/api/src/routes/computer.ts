@@ -590,7 +590,12 @@ export function computerRoutes(ctx: RouterContext) {
         }
         await keepComputerAwake(deps, computer.id);
         const storedPath = callerWorkspacePath(() =>
-          resolveBotWorkspacePath(parseComputerMode(computer.scope), bot.id, input.path, bot.workspacePath),
+          resolveBotWorkspacePath(
+            parseComputerMode(computer.scope),
+            bot.id,
+            input.path,
+            bot.workspacePath,
+          ),
         );
         const bytes = await deps.sandbox
           .readFile(
@@ -637,7 +642,12 @@ export function computerRoutes(ctx: RouterContext) {
         }
         await keepComputerAwake(deps, computer.id);
         const storedPath = callerWorkspacePath(() =>
-          resolveBotUploadPath(parseComputerMode(computer.scope), bot.id, input.path, bot.workspacePath),
+          resolveBotUploadPath(
+            parseComputerMode(computer.scope),
+            bot.id,
+            input.path,
+            bot.workspacePath,
+          ),
         );
         await deps.sandbox.writeFile(
           await wakeableComputerRef(deps.prisma, computer),

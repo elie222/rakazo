@@ -1,6 +1,5 @@
 import type { MessageBlock } from "@rakazo/contracts";
-import { DEFAULT_MAX_CONCURRENT_HELPERS } from "@rakazo/contracts";
-import { canonicalPiProviderId } from "@rakazo/contracts";
+import { canonicalPiProviderId, DEFAULT_MAX_CONCURRENT_HELPERS } from "@rakazo/contracts";
 import {
   ACTIVE_RUN_STATUSES,
   BACKGROUND_HELPER_TRIGGER,

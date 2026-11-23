@@ -241,7 +241,7 @@ test("create group from + and see two bots in one transcript", async ({ page }, 
   const replyButton = firstMessage.getByRole("button", { name: "Reply" });
   await expect(replyButton).toBeVisible();
   await replyButton.click();
-  const excerpt = await firstMessage.getByTestId("message-user-bubble").innerText();
+  const excerpt = (await firstMessage.getByTestId("message-user-bubble").textContent()) ?? "";
   await expect(page.getByTestId("reply-chip")).toContainText(`You: ${excerpt.split(/\r?\n/u)[0]}`);
   await expect(
     page.getByTestId("reply-chip").getByRole("button", { name: "Cancel reply" }),

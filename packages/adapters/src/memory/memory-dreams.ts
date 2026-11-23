@@ -441,7 +441,7 @@ export async function recordMemoryDream(
     where: { runId: run.id },
     select: { id: true, status: true, botId: true, spaceId: true },
   });
-  if (!dream || dream.status !== "queued") return;
+  if (dream?.status !== "queued") return;
   const revisions = await prisma.memoryRevision.findMany({
     where: { sourceRunId: run.id },
     select: {
@@ -507,7 +507,7 @@ export async function settleMemoryDream(deps: DreamDeps, dreamId: string): Promi
     where: { id: dreamId },
     select: { id: true, runId: true, status: true },
   });
-  if (!dream || dream.status !== "queued") return;
+  if (dream?.status !== "queued") return;
   if (!dream.runId) {
     await deps.prisma.memoryDream.update({
       where: { id: dream.id },

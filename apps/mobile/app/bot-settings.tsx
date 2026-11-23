@@ -24,7 +24,6 @@ import {
   parseModelOptionKey,
   resolveSelectableModelId,
 } from "@rakazo/core";
-import { thinkingLevelLabel } from "@rakazo/i18n/thinking-level";
 import { typeScale } from "@rakazo/ui-tokens";
 import { Stack, useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import type { Voice } from "expo-speech";
@@ -52,7 +51,6 @@ import {
   SettingsSwitch,
 } from "../components/settings/settings-group";
 import { GrowingTextInput } from "../components/ui/growing-text-input";
-import type { MenuPickerChoice } from "../components/ui/menu-picker";
 import { MenuPicker, MenuPickerMenu } from "../components/ui/menu-picker";
 import { Chevron } from "../components/ui/row-accessories";
 import type { MobileModel, MobileModelCredential } from "../lib/api/mobile-types";

@@ -172,14 +172,14 @@ usage 行改为 "X of 1200 tokens"。
 
 ## 4. 数据模型与契约汇总
 
-| 变更                               | 类型                              |
-| ---------------------------------- | --------------------------------- |
-| `MemoryDream.reason`               | 新列（可空，旧行 null 视为 idle） |
-| `MemoryDream.undoneAt`             | 新列（可空）                      |
-| `Bot.memoryTidiedHash`             | 新列（可空）                      |
-| `MemoryRevision.sourceKind`        | 新列（可空，null = user）         |
-| `MemoryDocument.description`       | 新列（可空）                      |
-| `Space.dreamRetention`             | 新列（可空，默认 100）            |
+| 变更                         | 类型                              |
+| ---------------------------- | --------------------------------- |
+| `MemoryDream.reason`         | 新列（可空，旧行 null 视为 idle） |
+| `MemoryDream.undoneAt`       | 新列（可空）                      |
+| `Bot.memoryTidiedHash`       | 新列（可空）                      |
+| `MemoryRevision.sourceKind`  | 新列（可空，null = user）         |
+| `MemoryDocument.description` | 新列（可空）                      |
+| `Space.dreamRetention`       | 新列（可空，默认 100）            |
 
 RPC：`memory.undoDream`、`memory.revisions`、`memory.revision`、`memory.restore`、
 `memory.dreamRetention`、`memory.setDreamRetention`；`MemoryPromptBudget` 增加 token 字段

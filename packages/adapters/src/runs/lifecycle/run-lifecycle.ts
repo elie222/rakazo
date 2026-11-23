@@ -1,5 +1,4 @@
 import {
-  SandboxDamagedError,
   SandboxDiskTooLargeError,
   SandboxRateLimitError,
   SandboxUnavailableError,

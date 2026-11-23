@@ -167,12 +167,12 @@ Web / Electron：
 
 ### 3.1 可选触发模型
 
-| 方案 | 触发依据 | 与参考产品一致 | 主要问题 |
-| --- | --- | --- | --- |
-| A | 运行时实际观察到的 input token | 是 | 需要把观察值带进完成路径 |
-| B | 保留最近 N 条消息 | 部分 | 100K/200K 无法诚实表达 |
-| C | 字符数 / 字节数 | 否 | 与模型 token 差异大，用户无法理解 |
-| D | 固定时间 / 每轮都压缩 | 否 | 费用不可控，破坏缓存 |
+| 方案 | 触发依据                       | 与参考产品一致 | 主要问题                          |
+| ---- | ------------------------------ | -------------- | --------------------------------- |
+| A    | 运行时实际观察到的 input token | 是             | 需要把观察值带进完成路径          |
+| B    | 保留最近 N 条消息              | 部分           | 100K/200K 无法诚实表达            |
+| C    | 字符数 / 字节数                | 否             | 与模型 token 差异大，用户无法理解 |
+| D    | 固定时间 / 每轮都压缩          | 否             | 费用不可控，破坏缓存              |
 
 ### 3.2 选定方案
 
@@ -200,12 +200,12 @@ Web / Electron：
 
 设置名：`Compact conversation` / `压缩对话`。
 
-| 模式 | 存储值 | 触发条件 | 说明 |
-| --- | --- | --- | --- |
-| 自动（默认） | `automatic` | 未压缩消息 ≥ 100 条 | 当前行为；总结最早 50 条，保留最近 50 条 |
-| 提早 | `earlier` | 观察 input token ≥ 模型窗口 × 0.5 | 更早压缩，适合长对话、费用敏感 |
-| 接近上限 | `near_limit` | 观察 input token ≥ 模型窗口 × 0.8 | 更晚压缩，保留更多原文 |
-| 指定数量 | `custom` | 观察 input token ≥ 用户阈值 | 阈值 20,000–1,000,000，且不超过窗口 × 0.9 |
+| 模式         | 存储值       | 触发条件                          | 说明                                      |
+| ------------ | ------------ | --------------------------------- | ----------------------------------------- |
+| 自动（默认） | `automatic`  | 未压缩消息 ≥ 100 条               | 当前行为；总结最早 50 条，保留最近 50 条  |
+| 提早         | `earlier`    | 观察 input token ≥ 模型窗口 × 0.5 | 更早压缩，适合长对话、费用敏感            |
+| 接近上限     | `near_limit` | 观察 input token ≥ 模型窗口 × 0.8 | 更晚压缩，保留更多原文                    |
+| 指定数量     | `custom`     | 观察 input token ≥ 用户阈值       | 阈值 20,000–1,000,000，且不超过窗口 × 0.9 |
 
 补充规则：
 
@@ -494,8 +494,7 @@ if (
 
 ```ts
 function shouldCompactConversation(input) {
-  const uncompacted =
-    input.nextMessageSeq - (input.compactedUpToSeq ?? -1) - 1;
+  const uncompacted = input.nextMessageSeq - (input.compactedUpToSeq ?? -1) - 1;
 
   if (
     input.mode === "automatic" ||
@@ -519,10 +518,7 @@ function shouldCompactConversation(input) {
           input.customTokens ?? DEFAULT_CUSTOM_COMPACTION_TOKENS,
           Math.floor(input.contextWindow * MAX_CONVERSATION_COMPACTION_WINDOW_RATIO),
         )
-      : Math.floor(
-          input.contextWindow *
-            (input.mode === "earlier" ? 0.5 : 0.8),
-        );
+      : Math.floor(input.contextWindow * (input.mode === "earlier" ? 0.5 : 0.8));
 
   return input.observedInputTokens >= threshold;
 }
@@ -624,16 +620,16 @@ maxToolCallsPerTurn: bot.maxToolCallsPerTurn ?? undefined,
 
 ### 6.10 失败与恢复
 
-| 场景 | 行为 |
-| --- | --- |
-| usage 回调未触发 | 回退 `automatic` 消息计数 |
-| 模型窗口未知 | 回退 `automatic` |
-| 摘要 provider 失败 | 现有 job 重试；游标不前进 |
-| 摘要超长 | 设置 `historyCompactionRetryAfterSeq`；不前进 |
-| 数据库短暂不可用 | 现有 job 重试；不阻塞 turn 完成 |
-| 用户修改压缩设置 | 下一个 turn 生效；进行中的 job 使用已入队参数 |
-| 用户修改工具上限 | 下一个 turn 生效；resume 的 attempt 使用新值 |
-| job 进程崩溃 | 现有 job 重试；run 已持久化 |
+| 场景               | 行为                                          |
+| ------------------ | --------------------------------------------- |
+| usage 回调未触发   | 回退 `automatic` 消息计数                     |
+| 模型窗口未知       | 回退 `automatic`                              |
+| 摘要 provider 失败 | 现有 job 重试；游标不前进                     |
+| 摘要超长           | 设置 `historyCompactionRetryAfterSeq`；不前进 |
+| 数据库短暂不可用   | 现有 job 重试；不阻塞 turn 完成               |
+| 用户修改压缩设置   | 下一个 turn 生效；进行中的 job 使用已入队参数 |
+| 用户修改工具上限   | 下一个 turn 生效；resume 的 attempt 使用新值  |
+| job 进程崩溃       | 现有 job 重试；run 已持久化                   |
 
 ### 6.11 安全与隐私
 
@@ -892,16 +888,16 @@ custom 输入：
 
 ## 11. 风险登记
 
-| 风险 | 影响 | 缓解 |
-| --- | --- | --- |
-| token 观察值缺失 | 设置不生效 | 回退 automatic；日志 skipped 原因 |
-| 摘要本身超过阈值 | 每轮重复压缩 | 最小 5 条新消息 + 90% 夹紧 + 摘要大小上限 |
-| fallback 模型窗口更小 | 压缩偏晚 | 现有 context selection 先失败；后续可记录 active window |
-| 旧服务器静默丢弃字段 | 假开关 | 字段缺失时隐藏 UI |
-| 迁移锁表 | 发布延迟 | additive default 列；Postgres 11+ 快速默认 |
-| 工具上限过低 | 任务被截断 | 软停止、可继续；范围 1–1000 |
-| 设置保存竞态 | 覆盖新值 | 复用 `enqueueSave` 串行队列和回滚 |
-| UI 文案过多 | 违背极简 | 说明只放在 footer；不重复控件文案 |
+| 风险                  | 影响         | 缓解                                                    |
+| --------------------- | ------------ | ------------------------------------------------------- |
+| token 观察值缺失      | 设置不生效   | 回退 automatic；日志 skipped 原因                       |
+| 摘要本身超过阈值      | 每轮重复压缩 | 最小 5 条新消息 + 90% 夹紧 + 摘要大小上限               |
+| fallback 模型窗口更小 | 压缩偏晚     | 现有 context selection 先失败；后续可记录 active window |
+| 旧服务器静默丢弃字段  | 假开关       | 字段缺失时隐藏 UI                                       |
+| 迁移锁表              | 发布延迟     | additive default 列；Postgres 11+ 快速默认              |
+| 工具上限过低          | 任务被截断   | 软停止、可继续；范围 1–1000                             |
+| 设置保存竞态          | 覆盖新值     | 复用 `enqueueSave` 串行队列和回滚                       |
+| UI 文案过多           | 违背极简     | 说明只放在 footer；不重复控件文案                       |
 
 ## 12. 开放问题
 

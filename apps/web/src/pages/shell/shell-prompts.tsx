@@ -16,7 +16,7 @@ export function ShellPrompts({
   bootstrapMe: Me | null | undefined;
   setBootstrapMe: Dispatch<SetStateAction<Me | null | undefined>>;
   active: { id: string } | undefined;
-  refreshThread: (botId: string) => Promise<unknown> | void;
+  refreshThread: (botId: string) => Promise<unknown> | undefined;
 }) {
   return (
     <>

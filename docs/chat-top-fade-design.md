@@ -101,13 +101,13 @@ Electron 运行的就是同一份 Web UI，因此只需要改 Web。
 
 现有层级：
 
-| 层 | z-index | 说明 |
-| --- | --- | --- |
-| 输入区 | 30 | `Shell.tsx:1225`，底部悬浮 |
-| 搜索条、侧栏 | 20 | 顶部搜索与右侧面板 |
-| 顶部拖拽条、`ChatHeader` | 10 | 胶囊与按钮 |
-| 消息悬停操作 | 1 | 单条消息的悬停层 |
-| 对话滚动内容 | auto | `Transcript` |
+| 层                       | z-index | 说明                       |
+| ------------------------ | ------- | -------------------------- |
+| 输入区                   | 30      | `Shell.tsx:1225`，底部悬浮 |
+| 搜索条、侧栏             | 20      | 顶部搜索与右侧面板         |
+| 顶部拖拽条、`ChatHeader` | 10      | 胶囊与按钮                 |
+| 消息悬停操作             | 1       | 单条消息的悬停层           |
+| 对话滚动内容             | auto    | `Transcript`               |
 
 目前没有顶部渐变。头部的 `Button variant="floating"` 已自带 `bg-muted/90` 和
 `backdrop-blur`（`packages/ui-web/src/components/ui/button.tsx:25`），所以胶囊在遮罩之上
@@ -136,12 +136,12 @@ Electron 运行的就是同一份 Web UI，因此只需要改 Web。
 
 ## 4. 方案比较
 
-| 方案 | 结论 | 原因 |
-| --- | --- | --- |
-| A. 对话列内的绝对定位遮罩，CSS 两层渐变 + 模糊 | **采用** | 不改布局、不加状态、不拦截事件，静止在顶部时自然不可见 |
-| B. 给 `Transcript` 加遮罩 | 否决 | 只能淡出不能模糊；会裁切悬停层、焦点环和容器内浮层 |
-| C. 监听 `scrollTop`，滚动后才显示 | 否决 | 需要同步初始状态、跳转、恢复和动画；静止时遮罩本来就不可见，没有收益 |
-| D. 改成不透明固定头栏 | 否决 | 改变现有“内容从头部下方滚过”的产品视觉，并占用内容高度 |
+| 方案                                           | 结论     | 原因                                                                 |
+| ---------------------------------------------- | -------- | -------------------------------------------------------------------- |
+| A. 对话列内的绝对定位遮罩，CSS 两层渐变 + 模糊 | **采用** | 不改布局、不加状态、不拦截事件，静止在顶部时自然不可见               |
+| B. 给 `Transcript` 加遮罩                      | 否决     | 只能淡出不能模糊；会裁切悬停层、焦点环和容器内浮层                   |
+| C. 监听 `scrollTop`，滚动后才显示              | 否决     | 需要同步初始状态、跳转、恢复和动画；静止时遮罩本来就不可见，没有收益 |
+| D. 改成不透明固定头栏                          | 否决     | 改变现有“内容从头部下方滚过”的产品视觉，并占用内容高度               |
 
 方案 A 的关键前提已经在当前布局里成立：内容顶部留白（80/84px）等于遮罩高度，所以
 `scrollTop = 0` 时遮罩只覆盖空白背景，不会压暗第一条消息或“加载更早消息”按钮。
@@ -171,14 +171,14 @@ Composer 外层          z-30（在对话列之外）
 
 ### 5.2 尺寸与视觉
 
-| 项 | 值 | 说明 |
-| --- | --- | --- |
-| 头部高度 | 60px | `py-3` + 36px 控件 |
-| 遮罩高度 | 80px / 84px | 与内容顶部留白、`scroll-padding-top` 完全一致；`md` 起为 84px |
-| 背景渐变 | `--background` 0% → 60% 不透明 35% → 透明 100% | 与 Codync 一致 |
-| 模糊半径 | 20px | 与 Codync 一致 |
-| 模糊遮罩 | 顶部全模糊 → 50% 高度完全透明 | 模糊不进入已经清晰的内容区 |
-| 断点 | 48rem（Tailwind `md`） | 与 `--chat-top-clearance` 的响应式值一致 |
+| 项       | 值                                             | 说明                                                          |
+| -------- | ---------------------------------------------- | ------------------------------------------------------------- |
+| 头部高度 | 60px                                           | `py-3` + 36px 控件                                            |
+| 遮罩高度 | 80px / 84px                                    | 与内容顶部留白、`scroll-padding-top` 完全一致；`md` 起为 84px |
+| 背景渐变 | `--background` 0% → 60% 不透明 35% → 透明 100% | 与 Codync 一致                                                |
+| 模糊半径 | 20px                                           | 与 Codync 一致                                                |
+| 模糊遮罩 | 顶部全模糊 → 50% 高度完全透明                  | 模糊不进入已经清晰的内容区                                    |
+| 断点     | 48rem（Tailwind `md`）                         | 与 `--chat-top-clearance` 的响应式值一致                      |
 
 ### 5.3 单一来源
 
@@ -314,14 +314,14 @@ export function ChatTopFade() {
 
 ## 6. 改动清单
 
-| 文件 | 改动 |
-| --- | --- |
-| `docs/chat-top-fade-design.md` | 本文档 |
-| `apps/web/src/pages/shell/chat/chat-top-fade.tsx` | 新增遮罩组件 |
-| `apps/web/src/pages/shell/chat/chat-top-fade.css` | 新增两层渐变与降级规则 |
-| `apps/web/src/pages/Shell.tsx` | 对话列声明 `--chat-top-clearance`，渲染 `<ChatTopFade />` |
-| `apps/web/src/pages/shell/chat/transcript.tsx` | 顶部留白和滚动对齐改用 `--chat-top-clearance` |
-| `apps/web/e2e/chat/chat-header.spec.ts` | 断言遮罩存在，保留命中测试，更新明暗两套截图 |
+| 文件                                              | 改动                                                      |
+| ------------------------------------------------- | --------------------------------------------------------- |
+| `docs/chat-top-fade-design.md`                    | 本文档                                                    |
+| `apps/web/src/pages/shell/chat/chat-top-fade.tsx` | 新增遮罩组件                                              |
+| `apps/web/src/pages/shell/chat/chat-top-fade.css` | 新增两层渐变与降级规则                                    |
+| `apps/web/src/pages/Shell.tsx`                    | 对话列声明 `--chat-top-clearance`，渲染 `<ChatTopFade />` |
+| `apps/web/src/pages/shell/chat/transcript.tsx`    | 顶部留白和滚动对齐改用 `--chat-top-clearance`             |
+| `apps/web/e2e/chat/chat-header.spec.ts`           | 断言遮罩存在，保留命中测试，更新明暗两套截图              |
 
 没有契约、RPC、数据库、迁移或环境变量改动。
 
