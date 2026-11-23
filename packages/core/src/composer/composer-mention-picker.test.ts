@@ -198,7 +198,7 @@ describe("isHardwareTypingKey", () => {
     },
   );
 
-  it.each(["shiftKey", "ctrlKey", "metaKey", "altKey", "isComposing"] as const)(
+  it.each(["ctrlKey", "metaKey", "altKey", "isComposing"] as const)(
     "ignores a printable key with %s",
     (flag) => {
       expect(isHardwareTypingKey({ key: "x", [flag]: true })).toBe(false);

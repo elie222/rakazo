@@ -8,14 +8,12 @@ export type MentionPickerKeyAction =
 /** A printable key outside shortcuts and IME composition is evidence of keyboard typing. */
 export function isHardwareTypingKey(event: {
   key: string;
-  shiftKey?: boolean;
   ctrlKey?: boolean;
   metaKey?: boolean;
   altKey?: boolean;
   isComposing?: boolean;
 }): boolean {
   return (
-    !event.shiftKey &&
     !event.ctrlKey &&
     !event.metaKey &&
     !event.altKey &&

@@ -24,7 +24,12 @@ let hardwareKeyboardDetected = false;
 const keyboardListeners = new Set<() => void>();
 
 function detectHardwareKeyboard(event: KeyboardEvent) {
-  if (event.keyCode === 229 || !isHardwareTypingKey(event)) return;
+  if (
+    event.keyCode === 229 ||
+    !isHardwareTypingKey(event) ||
+    window.matchMedia?.("(any-pointer: fine)").matches !== true
+  )
+    return;
   hardwareKeyboardDetected = true;
   window.removeEventListener("keydown", detectHardwareKeyboard, true);
   for (const listener of keyboardListeners) listener();

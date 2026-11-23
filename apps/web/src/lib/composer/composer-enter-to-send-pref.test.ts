@@ -12,16 +12,21 @@ function memoryStorage() {
   };
 }
 
-function keydown(key: string) {
-  window.dispatchEvent(Object.assign(new Event("keydown"), { key }));
+function keydown(key: string, shiftKey = false) {
+  window.dispatchEvent(Object.assign(new Event("keydown"), { key, shiftKey }));
 }
 
-async function loadPreference(finePointer = false) {
+async function loadPreference(finePointer = false, anyFinePointer = finePointer) {
   vi.resetModules();
   vi.stubGlobal(
     "window",
     Object.assign(new EventTarget(), {
-      matchMedia: (query: string) => ({ matches: query === "(pointer: fine)" && finePointer }),
+      matchMedia: (query: string) => ({
+        matches:
+          query === "(pointer: fine)"
+            ? finePointer
+            : query === "(any-pointer: fine)" && anyFinePointer,
+      }),
     }),
   );
   vi.stubGlobal("localStorage", memoryStorage());
@@ -31,18 +36,24 @@ async function loadPreference(finePointer = false) {
 beforeEach(() => loadPreference());
 
 describe("composerEnterToSendPreference", () => {
-  it("keeps newline as the default until a typing key is detected on a coarse pointer device", () => {
+  it("detects a shifted first typing key on a touch device with a trackpad", async () => {
+    await loadPreference(false, true);
     const preference = mod.composerEnterToSendPreference;
     const changes: boolean[] = [];
     const unsubscribe = preference.subscribe(() => changes.push(preference.get()));
 
     keydown("Enter");
     expect(preference.get()).toBe(false);
-    keydown("a");
+    keydown("A", true);
 
     expect(changes).toEqual([true]);
     expect(localStorage.getItem(storageKey)).toBeNull();
     unsubscribe();
+  });
+
+  it("keeps newline as the default when a touch-only browser emits printable keydowns", () => {
+    keydown("a");
+    expect(mod.composerEnterToSendPreference.get()).toBe(false);
   });
 
   it("keeps the desktop default for pasted or restored drafts", async () => {
@@ -51,7 +62,8 @@ describe("composerEnterToSendPreference", () => {
     expect(mod.composerEnterToSendPreference.get()).toBe(true);
   });
 
-  it("honors stored off even after a hardware typing key", () => {
+  it("honors stored off even after a hardware typing key", async () => {
+    await loadPreference(false, true);
     localStorage.setItem(storageKey, "off");
 
     keydown("a");
@@ -65,7 +77,8 @@ describe("composerEnterToSendPreference", () => {
     expect(mod.composerEnterToSendPreference.get()).toBe(true);
   });
 
-  it("detects a keyboard even when local storage is unavailable", () => {
+  it("detects a keyboard even when local storage is unavailable", async () => {
+    await loadPreference(false, true);
     vi.stubGlobal("localStorage", undefined);
 
     keydown("a");

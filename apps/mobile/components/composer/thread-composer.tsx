@@ -484,7 +484,7 @@ export function ThreadComposer({
   function onHardwareKey(key: string) {
     const action = resolveMentionPickerKey({
       key: key === "CommandEnter" ? "Enter" : key,
-      metaKey: key === "CommandEnter" && optionCount === 0,
+      metaKey: key === "CommandEnter",
       optionCount,
       highlightedIndex: activePickerIndex,
       enterToSend,

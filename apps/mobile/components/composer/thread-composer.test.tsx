@@ -951,6 +951,15 @@ describe("thread composer isolation", () => {
     expect(props.send).not.toHaveBeenCalled();
   });
 
+  it("sends on Command+Enter with a mention picker open", () => {
+    type("Ask @He");
+
+    press("Hardware CommandEnter");
+
+    expect(props.send).toHaveBeenCalledOnce();
+    expect(composer.current!.snapshot().mentions).toEqual([]);
+  });
+
   it("completes a mention before a later Enter sends the draft", () => {
     type("Ask @He");
     press("Hardware Enter");
