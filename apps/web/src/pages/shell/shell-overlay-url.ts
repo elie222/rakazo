@@ -21,7 +21,13 @@ export type SettingsSection = (typeof SETTINGS_SECTIONS)[number];
 
 /** The shell overlay a URL opens; the URL is its only source of truth so links and reloads keep it. */
 export type ShellOverlay =
-  | { kind: "settings"; section: SettingsSection; spaceId: string | null }
+  | {
+      kind: "settings";
+      section: SettingsSection;
+      spaceId: string | null;
+      /** The Vault item the section opens at. */
+      item?: string;
+    }
   | { kind: "integrations" }
   | { kind: "skills" }
   | { kind: "templates" }
@@ -32,6 +38,7 @@ export type ShellOverlay =
 const OVERLAY_KEYS = [
   "settings",
   "space",
+  "item",
   "integrations",
   "skills",
   "templates",
@@ -47,10 +54,12 @@ function isSettingsSection(value: string): value is SettingsSection {
 export function readShellOverlay(params: URLSearchParams): ShellOverlay {
   const section = params.get("settings");
   if (section !== null) {
+    const item = params.get("item");
     return {
       kind: "settings",
       section: isSettingsSection(section) ? section : "general",
       spaceId: params.get("space") || null,
+      ...(item ? { item } : {}),
     };
   }
   if (params.has("integrations")) return { kind: "integrations" };
@@ -73,6 +82,7 @@ export function withShellOverlay(params: URLSearchParams, overlay: ShellOverlay)
   if (overlay?.kind === "settings") {
     next.set("settings", overlay.section);
     if (overlay.spaceId) next.set("space", overlay.spaceId);
+    if (overlay.item) next.set("item", overlay.item);
   } else if (overlay?.kind === "mcp") {
     next.set("mcp", overlay.serverId ?? "");
   } else if (overlay) {

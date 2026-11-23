@@ -21,6 +21,7 @@ export function SpaceSettingsPanel({
   onLeft,
   onClose,
   onBusyChange,
+  vaultItem,
 }: {
   space: SettingsSpace;
   /** The only Space follows the account, so its overrides show only once one was customized. */
@@ -31,6 +32,8 @@ export function SpaceSettingsPanel({
   onLeft: (activeSpaceId: string) => void;
   onClose: () => void;
   onBusyChange?: (busy: boolean) => void;
+  /** The item the Space's own Vault opens at. */
+  vaultItem?: string;
 }) {
   const { t } = useLingui();
   const nameId = useId();
@@ -110,6 +113,7 @@ export function SpaceSettingsPanel({
         hideUntilCustomized={lone}
         onClose={onClose}
         onBusyChange={setOverridesBusy}
+        vaultItem={vaultItem}
       />
       {space.canDelete ? (
         <Button

@@ -23,11 +23,14 @@ export function SpaceSettingOverrides({
   onClose,
   onBusyChange,
   hideUntilCustomized = false,
+  vaultItem,
 }: {
   onClose: () => void;
   onBusyChange?: (busy: boolean) => void;
   /** Shows nothing while the Space follows every account setting. */
   hideUntilCustomized?: boolean;
+  /** The item the Space's own Vault opens at. */
+  vaultItem?: string;
 }) {
   const { t } = useLingui();
   const queries = useSpaceQueries();
@@ -85,7 +88,14 @@ export function SpaceSettingOverrides({
     {
       id: "credentials",
       label: t`Vault`,
-      panel: () => <VaultSettings scope="space" onBusyChange={setVaultBusy} />,
+      panel: () => (
+        <VaultSettings
+          key={vaultItem}
+          scope="space"
+          initialItem={vaultItem}
+          onBusyChange={setVaultBusy}
+        />
+      ),
       busy: vaultBusy,
       // Going back to the defaults deletes the Space's own credentials.
       resetConfirmation: t`Delete this Space's credentials?`,

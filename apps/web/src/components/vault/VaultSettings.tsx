@@ -52,9 +52,12 @@ type Editing = { kind: VaultKind; mode: "new" | "edit"; initial?: VaultEditorIni
 /** The items in the account's vault, or in the bound Space's own once it customizes them. */
 export function VaultSettings({
   scope,
+  initialItem,
   onBusyChange,
 }: {
   scope: SettingsScope;
+  /** The item to open with, such as one a message names. */
+  initialItem?: string;
   onBusyChange?: (busy: boolean) => void;
 }) {
   const { t } = useLingui();
@@ -82,7 +85,7 @@ export function VaultSettings({
   const subtitle = useVaultSubtitle();
   const [filter, setFilter] = useState<VaultKind | "all">("all");
   const [search, setSearch] = useState("");
-  const [opened, setOpened] = useState<string | null>(null);
+  const [opened, setOpened] = useState<string | null>(initialItem ?? null);
   const [editing, setEditing] = useState<Editing | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);

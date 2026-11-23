@@ -58,9 +58,13 @@ function escapeRegExp(value: string): string {
 
 const mentionParser = unified().use(remarkParse).use(remarkGfm);
 
-type MentionTrees = Map<string, ReturnType<typeof mentionParser.parse> | null>;
+export type MentionTrees = Map<string, ReturnType<typeof mentionParser.parse> | null>;
 
-function rewriteOutsideCode(
+/**
+ * Markdown with `rewrite` applied to its text outside code and links. With `skipLinks`, images
+ * and link definitions are left alone too, and mention links are never rewritten.
+ */
+export function rewriteOutsideCode(
   text: string,
   rewrite: (part: string) => string,
   trees: MentionTrees,

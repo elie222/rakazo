@@ -4,8 +4,10 @@ import { typeScale } from "@rakazo/ui-tokens";
 import type { ReactNode } from "react";
 import { Fragment, memo } from "react";
 import type { TextStyle } from "react-native";
-import { Text, View } from "react-native";
+import { Platform, Text, View } from "react-native";
 import { linkFaviconOrigin, plainTextLinkParts } from "../markdown";
+import type { VaultVariableLink, VaultVariables } from "../vault-variables";
+import { useVaultVariables, vaultVariableParts } from "../vault-variables";
 import { MarkdownPageChip } from "./chips";
 import { contraryDirection } from "./direction";
 import { ISOLATE, LinkFavicon, POP_ISOLATE, useNativeLinkConfirm, WORD_JOINER } from "./links";
@@ -19,6 +21,8 @@ type LinkifiedTextProps = {
   /** Renders the runs between links, which are plain strings by default. */
   renderText?: (text: string) => ReactNode;
   onOpenPage?: (pageId: string) => void;
+  /** Written by another person, whose saved placeholders name their own Vault. */
+  fromOtherPerson?: boolean;
 };
 
 const BLOCK_LENGTH = 1000;
@@ -59,8 +63,10 @@ export const LinkifiedText = memo(function LinkifiedText({
   palette,
   renderText,
   onOpenPage,
+  fromOtherPerson = false,
 }: LinkifiedTextProps) {
   const openLink = useNativeLinkConfirm();
+  const vault = useVaultVariables(children);
   const labelStyle: TextStyle = {
     color,
     fontWeight: "500",
@@ -73,10 +79,29 @@ export const LinkifiedText = memo(function LinkifiedText({
     <Text key={key} style={style}>
       {plainTextLinkParts(text).map((part, index) => {
         if (part.type === "text") {
-          return renderText ? (
-            <Fragment key={index}>{renderText(part.value)}</Fragment>
-          ) : (
-            part.value
+          const runs = vault?.names
+            ? vaultVariableParts(part.value, vault.names, fromOtherPerson)
+            : [part.value];
+          return (
+            <Fragment key={index}>
+              {runs.map((run, at) =>
+                typeof run !== "string" ? (
+                  <VaultVariableText
+                    key={at}
+                    variable={run}
+                    vault={vault!}
+                    color={color}
+                    linkColor={linkColor}
+                    // Muted text is too faint on the sender's own filled bubble.
+                    faint={fromOtherPerson ? palette.mutedForeground : color}
+                  />
+                ) : renderText ? (
+                  <Fragment key={at}>{renderText(run)}</Fragment>
+                ) : (
+                  run
+                ),
+              )}
+            </Fragment>
           );
         }
         if (part.type === "page") {
@@ -132,3 +157,46 @@ export const LinkifiedText = memo(function LinkifiedText({
   if (blocks.length === 1) return paragraph(children);
   return <View>{blocks.map((block, index) => paragraph(block, index))}</View>;
 });
+
+const MONO_FONT = Platform.select({ ios: "Menlo", default: "monospace" });
+
+/** A `$NAME` that opens the viewer's Vault at it, or says they can't open that secret. */
+function VaultVariableText({
+  variable,
+  vault,
+  color,
+  linkColor,
+  faint,
+}: {
+  variable: VaultVariableLink;
+  vault: VaultVariables;
+  color: string;
+  linkColor: string;
+  faint: string;
+}) {
+  const text = `$${variable.name}`;
+  return variable.denied ? (
+    <Text
+      accessibilityRole="button"
+      style={{ color: faint, fontFamily: MONO_FONT }}
+      onPress={vault.denied}
+    >
+      {text}
+    </Text>
+  ) : (
+    <Text
+      accessibilityRole="link"
+      accessibilityLabel={vault.openLabel(text)}
+      style={{
+        color,
+        fontFamily: MONO_FONT,
+        fontWeight: "500",
+        textDecorationLine: "underline",
+        textDecorationColor: linkColor,
+      }}
+      onPress={() => vault.open(variable.name)}
+    >
+      {text}
+    </Text>
+  );
+}

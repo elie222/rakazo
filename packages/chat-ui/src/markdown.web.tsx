@@ -61,6 +61,14 @@ import { MarkdownTable, MarkdownTableSourceContext } from "./markdown-table";
 import { isMermaidFence, mermaidSvgImage } from "./mermaid";
 import { useMermaidSvg } from "./mermaid.web";
 import { PAGE_ICON } from "./page-icon";
+import type { VaultVariableLink } from "./vault-variables";
+import {
+  markdownVaultVariable,
+  useVaultVariables,
+  VaultVariablesContext,
+  vaultVariableParts,
+  withVaultVariables,
+} from "./vault-variables";
 
 function preserveSkippedTableText() {
   return (tree: HastNode) => {
@@ -567,6 +575,8 @@ function MarkdownAnchor({
   const loadRemote = useContext(RemoteImagesContext);
   const { renderMention, onOpenPage: openPage } = useContext(InlineChipsContext);
   const href = typeof props.href === "string" ? props.href : "";
+  const variable = markdownVaultVariable(href);
+  if (variable) return <VaultVariableChip variable={variable} />;
   const pageId = markdownPageId(href);
   if (pageId) {
     return (
@@ -623,6 +633,25 @@ function PageChip({
     </button>
   ) : (
     <span>{children}</span>
+  );
+}
+
+/** A `$NAME` that opens the viewer's Vault at it, or says they can't open that secret. */
+function VaultVariableChip({ variable }: { variable: VaultVariableLink }) {
+  const vault = useContext(VaultVariablesContext);
+  const text = `$${variable.name}`;
+  // A link written into a reply opens only a variable the viewer has.
+  if (!vault || (!variable.denied && !vault.names?.has(variable.name))) return <span>{text}</span>;
+  return (
+    <button
+      type="button"
+      className="rk-chat-vault-variable"
+      data-access={variable.denied ? "none" : "own"}
+      aria-label={variable.denied ? undefined : vault.openLabel(text)}
+      onClick={() => (variable.denied ? vault.denied() : vault.open(variable.name))}
+    >
+      {text}
+    </button>
   );
 }
 
@@ -715,16 +744,26 @@ class PlainTextOnFailure extends Component<{ text: string; children: ReactNode }
 export function LinkifiedText({
   children,
   onOpenPage,
+  fromOtherPerson = false,
 }: {
   children: string;
   onOpenPage?: (pageId: string) => void;
+  /** Written by another person, whose saved placeholders name their own Vault. */
+  fromOtherPerson?: boolean;
 }) {
   const { request, dialog } = useExternalLinkConfirm();
+  const vault = useVaultVariables(children);
   return (
     <ConfirmLinkContext.Provider value={request}>
       {plainTextLinkParts(children).map((part, index) =>
         part.type === "text" ? (
-          part.value
+          vault?.names ? (
+            vaultVariableParts(part.value, vault.names, fromOtherPerson).map((run, at) =>
+              typeof run === "string" ? run : <VaultVariableChip key={at} variable={run} />,
+            )
+          ) : (
+            part.value
+          )
         ) : part.type === "page" ? (
           <PageChip key={index} pageId={part.pageId} openPage={onOpenPage}>
             {part.value}
@@ -749,7 +788,10 @@ const rehypePlugins = [preserveSkippedTableText];
 
 // MarkdownImage decides what an image source may do, so it receives the source as written.
 function urlTransform(url: string, key: string) {
-  return key === "src" || markdownMentionId(url) || markdownPageId(url)
+  return key === "src" ||
+    markdownMentionId(url) ||
+    markdownPageId(url) ||
+    markdownVaultVariable(url)
     ? url
     : (sanitizeMarkdownUrl(url, true) ?? "");
 }
@@ -864,15 +906,20 @@ export const ChatMarkdown = memo(function ChatMarkdown({
   onOpenPage,
 }: ChatMarkdownProps) {
   const { request, dialog } = useExternalLinkConfirm();
+  const variables = useVaultVariables(children)?.names;
+  const source = useMemo(
+    () => (variables ? withVaultVariables(children, variables) : children),
+    [children, variables],
+  );
   // A streamed reply stays split once it finishes, so its blocks are not drawn again.
   const [split, setSplit] = useState(streaming);
   if (streaming && !split) setSplit(true);
   const previousSplit = useRef<SplitSource | undefined>(undefined);
   const blocks = useMemo(() => {
     if (!split) return undefined;
-    previousSplit.current = splitSource(children, previousSplit.current);
+    previousSplit.current = splitSource(source, previousSplit.current);
     return previousSplit.current.blocks;
-  }, [children, split]);
+  }, [source, split]);
 
   const inlineChips = useMemo(() => ({ renderMention, onOpenPage }), [renderMention, onOpenPage]);
   return (
@@ -895,7 +942,7 @@ export const ChatMarkdown = memo(function ChatMarkdown({
                   </Fragment>
                 ))
               ) : (
-                <MarkdownBlock source={children} streaming={streaming} />
+                <MarkdownBlock source={source} streaming={streaming} />
               )}
             </PlainTextOnFailure>
           </LinkFaviconsPausedContext.Provider>
@@ -917,3 +964,5 @@ export {
 export type { MarkdownCopy } from "./markdown-copy";
 export { defaultMarkdownCopy, MarkdownCopyProvider } from "./markdown-copy";
 export { MarkdownLinkPromptProvider } from "./markdown-link-prompt";
+export type { VaultVariables } from "./vault-variables";
+export { VaultVariablesContext } from "./vault-variables";

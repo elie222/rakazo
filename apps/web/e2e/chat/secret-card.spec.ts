@@ -463,3 +463,33 @@ test("uses a login for this run only when Save to Vault is turned off on its car
   await expect(page.getByText(password)).toHaveCount(0);
   await captureScreenshot(page, testInfo, "login-card-sent");
 });
+
+test("opens the Vault at a variable a message names, and says a secret it can't open is not theirs", async ({
+  page,
+}, testInfo) => {
+  const stamp = Date.now();
+  await signup(page, `vault-variable-${stamp}@rakazo.test`, "password12", "Vault Variable");
+  await completeOnboarding(page);
+  await rpc(page, "vault/put", {
+    destination: { name: "deploy-key", auth: { type: "command" } },
+    value: `fake-deploy-${stamp}`,
+  });
+
+  const composer = page.getByPlaceholder(/Message/);
+  await composer.fill("Deploy with $DEPLOY_KEY, not [saved as $TEAM_KEY] or $HOME");
+  await page.keyboard.press("Enter");
+  const bubble = page.getByTestId("message-user-bubble").filter({ hasText: "Deploy with" });
+  const own = bubble.getByRole("button", { name: "Open $DEPLOY_KEY in Vault" });
+  await expect(own).toBeVisible({ timeout: 15_000 });
+  await expect(bubble.getByRole("button")).toHaveCount(2);
+  await captureScreenshot(page, testInfo, "vault-variable-chat");
+
+  await bubble.getByRole("button", { name: "$TEAM_KEY", exact: true }).click();
+  await expect(page.getByText("You don't have access to this Vault secret.")).toBeVisible();
+
+  await own.click();
+  const detail = page.getByTestId("vault-item-detail");
+  await expect(detail).toBeVisible();
+  await expect(detail.getByText("$DEPLOY_KEY", { exact: true })).toBeVisible();
+  await captureScreenshot(page, testInfo, "vault-variable-opened");
+});

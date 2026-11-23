@@ -26,6 +26,7 @@ import {
   useLinkFavicons,
 } from "../markdown";
 import { isMermaidFence } from "../mermaid";
+import { markdownVaultVariable, VaultVariablesContext } from "../vault-variables";
 import { CodeFence, MermaidDiagramContext, MermaidFence, ProseFence } from "./code";
 import { RemoteMarkdownImage } from "./images";
 import type { FenceStyles } from "./styles";
@@ -35,9 +36,11 @@ const BLOCK_GAP = 8;
 const WEBSITE_LINK = "^[Hh][Tt][Tt][Pp][Ss]?://";
 const MENTION_LINK = "^rakazo-mention:";
 const PAGE_LINK = "^page:";
+const VAULT_LINK = "^rakazo-vault:";
+const DENIED_VAULT_LINK = "^rakazo-vault:.*#denied$";
 // Addresses the app will not open (any scheme but these) read as plain text, as they do on web.
 const UNOPENABLE_LINK =
-  "^(?![Hh][Tt][Tt][Pp][Ss]?:|[Mm][Aa][Ii][Ll][Tt][Oo]:|[Tt][Ee][Ll]:|rakazo-mention:|page:)";
+  "^(?![Hh][Tt][Tt][Pp][Ss]?:|[Mm][Aa][Ii][Ll][Tt][Oo]:|[Tt][Ee][Ll]:|rakazo-mention:|page:|rakazo-vault:)";
 
 /** How a mention link draws and opens: its bot's color, or nothing for a bot that is gone. */
 export type MentionLink = { color: string; open: () => void };
@@ -79,6 +82,13 @@ function nativeMarkdownStyle(
     },
     [MENTION_LINK]: { color: palette.foreground, underline: false },
     [PAGE_LINK]: { color: palette.foreground, underline: pagesOpen },
+    // A secret in someone else's Vault reads quieter than one the reader can open.
+    [DENIED_VAULT_LINK]: {
+      color: palette.mutedForeground,
+      underline: false,
+      fontFamily: MONO_FONT,
+    },
+    [VAULT_LINK]: { color: palette.foreground, underline: true, fontFamily: MONO_FONT },
   });
   return {
     paragraph: { ...text, lineHeight: typeScale.body.lineHeight },
@@ -258,8 +268,15 @@ export function NativeMarkdown({
     [loadRemote],
   );
 
+  const vault = useContext(VaultVariablesContext);
   const onLinkPress = useCallback(
     ({ url }: { url: string }) => {
+      const variable = markdownVaultVariable(url);
+      if (variable) {
+        if (variable.denied) vault?.denied();
+        else vault?.open(variable.name);
+        return;
+      }
       const mentionId = markdownMentionId(url);
       if (mentionId) {
         mentionLink?.(mentionId)?.open();
@@ -272,7 +289,7 @@ export function NativeMarkdown({
       }
       if (sanitizeMarkdownUrl(url)) onOpenLink(url);
     },
-    [mentionLink, onOpenPage, onOpenLink],
+    [mentionLink, onOpenPage, onOpenLink, vault],
   );
 
   return (

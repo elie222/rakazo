@@ -178,7 +178,7 @@ export function SettingsOverlays({
             setOverlay(null);
             void leftSpace(spaceId, activeSpaceId);
           }}
-          onOpenSpace={(spaceId) => setOverlay({ ...overlay, section: "space", spaceId })}
+          onOpenSpace={(spaceId) => setOverlay({ kind: "settings", section: "space", spaceId })}
           onNewSpace={() => {
             setOverlay(null);
             openNewSpace();
@@ -189,7 +189,11 @@ export function SettingsOverlays({
           }}
           email={user?.email}
           section={overlay.section}
-          onSectionChange={(section) => setOverlay({ ...overlay, section })}
+          vaultItem={overlay.item}
+          // Another section never opens at the Vault item this one was opened at.
+          onSectionChange={(section) =>
+            setOverlay({ kind: "settings", section, spaceId: overlay.spaceId })
+          }
           billingEnabled={bootstrapMe?.billingEnabled === true}
           sandboxProvider={bootstrapMe?.sandboxProvider}
           computerSettingsEnabled={bootstrapMe?.computerSettingsEnabled === true}

@@ -262,7 +262,12 @@ import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import type { TextProps } from "react-native";
 import { Pressable } from "react-native";
-import type { LinkFavicons, MentionLink, MermaidDiagramProps } from "./markdown.native";
+import type {
+  LinkFavicons,
+  MentionLink,
+  MermaidDiagramProps,
+  VaultVariables,
+} from "./markdown.native";
 import {
   ChatMarkdown,
   CodeCopyButtonContext,
@@ -272,6 +277,7 @@ import {
   MermaidDiagramContext,
   markdownCodeBlocks,
   RemoteImagesContext,
+  VaultVariablesContext,
 } from "./markdown.native";
 import { RemoteMarkdownImage } from "./native/images";
 import { textBlocks } from "./native/linkified-text";
@@ -974,6 +980,91 @@ describe("native markdown page links", () => {
     expect(openPage).toHaveBeenCalledTimes(1);
     expect(alert).not.toHaveBeenCalled();
     expect(linking.openURL).not.toHaveBeenCalled();
+    await view.cleanup();
+  });
+});
+
+describe("native Vault variables", () => {
+  const vault = (names: string[]) =>
+    ({
+      want: vi.fn(),
+      names: new Set(names),
+      open: vi.fn(),
+      denied: vi.fn(),
+      openLabel: (variable: string) => `Open ${variable} in Vault`,
+    }) satisfies VaultVariables;
+
+  it("links the viewer's own variable in a reply, quieter for a placeholder they can't open", async () => {
+    const variables = vault(["DEPLOY_KEY"]);
+    const view = await mount(
+      <VaultVariablesContext.Provider value={variables}>
+        <ChatMarkdown>{"Use $DEPLOY_KEY and [saved as $PASTED_KEY], not $HOME."}</ChatMarkdown>
+      </VaultVariablesContext.Provider>,
+    );
+    expect(nativeProps().markdown).toBe(
+      "Use [\\$DEPLOY\\_KEY](rakazo-vault:DEPLOY_KEY) and [saved as [\\$PASTED\\_KEY](rakazo-vault:PASTED_KEY#denied)], not $HOME.",
+    );
+    expect(variantFor("rakazo-vault:DEPLOY_KEY")).toMatchObject({ underline: true });
+    expect(variantFor("rakazo-vault:PASTED_KEY#denied")).toMatchObject({
+      color: darkTokens.mutedForeground,
+      underline: false,
+    });
+    await pressLink("rakazo-vault:DEPLOY_KEY");
+    expect(variables.open).toHaveBeenCalledWith("DEPLOY_KEY");
+    await pressLink("rakazo-vault:PASTED_KEY#denied");
+    expect(variables.denied).toHaveBeenCalledTimes(1);
+    await view.cleanup();
+  });
+
+  it("says another person's saved placeholder can't be opened, and leaves $HOME as text", async () => {
+    const variables = vault(["PASTED_KEY"]);
+    const view = await mount(
+      <VaultVariablesContext.Provider value={variables}>
+        <LinkifiedText
+          color={darkTokens.foreground}
+          linkColor={darkTokens.foreground}
+          palette={darkTokens}
+          fromOtherPerson
+        >
+          {"Use [saved as $PASTED_KEY] with $HOME"}
+        </LinkifiedText>
+      </VaultVariablesContext.Provider>,
+    );
+    const [chip, ...rest] = view.container.querySelectorAll<HTMLElement>(
+      "[data-accessibility-role='button']",
+    );
+    expect(rest).toEqual([]);
+    expect(chip?.textContent).toBe("$PASTED_KEY");
+    expect(view.container.textContent).toBe("Use [saved as $PASTED_KEY] with $HOME");
+    await act(async () => {
+      chip?.click();
+    });
+    expect(variables.denied).toHaveBeenCalledTimes(1);
+    expect(variables.open).not.toHaveBeenCalled();
+    await view.cleanup();
+  });
+
+  it("opens the viewer's own variable from a message they sent", async () => {
+    const variables = vault(["DEPLOY_KEY"]);
+    const view = await mount(
+      <VaultVariablesContext.Provider value={variables}>
+        <LinkifiedText
+          color={darkTokens.chatUserForeground}
+          linkColor={darkTokens.chatUserForeground}
+          palette={darkTokens}
+        >
+          {"Deploy with $DEPLOY_KEY"}
+        </LinkifiedText>
+      </VaultVariablesContext.Provider>,
+    );
+    const chip = view.container.querySelector<HTMLElement>(
+      "[data-accessibility-label='Open $DEPLOY_KEY in Vault']",
+    );
+    expect(chip?.dataset.accessibilityRole).toBe("link");
+    await act(async () => {
+      chip?.click();
+    });
+    expect(variables.open).toHaveBeenCalledWith("DEPLOY_KEY");
     await view.cleanup();
   });
 });

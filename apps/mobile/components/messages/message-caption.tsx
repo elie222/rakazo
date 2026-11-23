@@ -56,6 +56,7 @@ export function MessageCaption({
           : undefined
       }
       onOpenPage={openPage}
+      fromOtherPerson={received}
     >
       {text}
     </LinkifiedText>
