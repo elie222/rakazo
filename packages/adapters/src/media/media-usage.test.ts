@@ -1,7 +1,11 @@
 import type { MediaGenerationProvider } from "@rakazo/adapter-kit";
 import type { PrismaClient } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
-import { hostedMediaPrice, priceMediaGeneration } from "./media-usage.js";
+import {
+  hostedMediaPrice,
+  hostedMediaWithinAllowance,
+  priceMediaGeneration,
+} from "./media-usage.js";
 
 const provider = { prices: { imageMicros: 40_000, videoMicros: 0 } } as MediaGenerationProvider;
 
@@ -103,5 +107,16 @@ describe("hosted media pricing", () => {
   it("never prices media made with the owner's own connection", () => {
     const own = { record: { kind: "connection", connectionId: "c" } as const, provider };
     expect(hostedMediaPrice(prisma({ billing: true }), own, "space")).toBeUndefined();
+  });
+  it("stops offering hosted media one generation of which costs more than the monthly balance", async () => {
+    const dear = {
+      capabilities: { images: true, video: true, offline: false },
+      prices: { imageMicros: 40_000, videoMicros: 1_600_000 },
+      generateImage: vi.fn(),
+    } as unknown as MediaGenerationProvider;
+    const metered = await hostedMediaWithinAllowance(prisma({ billing: true }), dear);
+    expect(metered?.capabilities).toEqual({ images: true, video: false, offline: false });
+    expect(metered?.generateImage).toBe(dear.generateImage);
+    expect(await hostedMediaWithinAllowance(prisma({ billing: false }), dear)).toBe(dear);
   });
 });

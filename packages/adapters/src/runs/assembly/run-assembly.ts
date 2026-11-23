@@ -1,5 +1,6 @@
 import { bestEffort } from "@rakazo/logging";
 import { resolveRunMediaSources } from "../../media/media-sources.js";
+import { hostedMediaWithinAllowance } from "../../media/media-usage.js";
 import { isMeetingChat, recentChatMeetings } from "../../meetings/meeting-chat.js";
 import { recentMeetingContext } from "../../meetings/meeting-chat.prompt.js";
 import { READ_MEETING_TRANSCRIPT } from "../../meetings/meeting-chat.tool-definition.js";
@@ -46,7 +47,13 @@ export async function assembleRunTurn(services: RunExecutorServices, hold: RunHo
     : [];
   const media = hold.deps.artifacts
     ? await resolveRunMediaSources(
-        { ...hold.deps, mediaGeneration: services.mediaGeneration },
+        {
+          ...hold.deps,
+          mediaGeneration: await hostedMediaWithinAllowance(
+            hold.deps.prisma,
+            services.mediaGeneration,
+          ),
+        },
         hold.run.userId,
       )
     : {};

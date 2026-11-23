@@ -360,12 +360,14 @@ dbTests("own-key plan", () => {
       } as MediaGenerationProvider,
       webOrigin: "https://example.test",
     });
-    await chargeMedia(prisma, {
-      organizationId,
-      source: `media:${organizationId}`,
-      kind: "image",
-      amountMicros: 380_000,
-    });
+    await prisma.$transaction((tx) =>
+      chargeMedia(tx, {
+        organizationId,
+        source: `media:${organizationId}`,
+        kind: "image",
+        amountMicros: 380_000,
+      }),
+    );
     const settings = await prisma.deploymentSettings.findUnique({ where: { id: "default" } });
     await prisma.deploymentSettings.upsert({
       where: { id: "default" },

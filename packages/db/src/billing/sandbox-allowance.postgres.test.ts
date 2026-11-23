@@ -268,8 +268,8 @@ describePostgres("computer allowance hours (PostgreSQL)", () => {
       kind: "image",
       amountMicros: 40_000,
     };
-    await chargeMedia(prisma, charge);
-    await chargeMedia(prisma, charge);
+    await prisma.$transaction((tx) => chargeMedia(tx, charge));
+    await prisma.$transaction((tx) => chargeMedia(tx, charge));
     expect(await mediaChargedMicros(prisma, organizationId, since)).toBe(40_000);
     expect(await mediaChargedMicros(prisma, otherOrganizationId, since)).toBe(0);
     // Tenants never read the ledger directly.

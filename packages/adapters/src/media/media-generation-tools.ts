@@ -8,7 +8,7 @@ import { MediaGenerationError } from "@rakazo/adapter-kit";
 import type { MessageBlock } from "@rakazo/contracts";
 import { messageBlockForArtifact } from "@rakazo/core";
 import type { ExternalEffect, Prisma, PrismaClient } from "@rakazo/db";
-import { chargeMedia, isUniqueViolation, readJsonColumn } from "@rakazo/db";
+import { isUniqueViolation, readJsonColumn } from "@rakazo/db";
 import { z } from "zod";
 import { mediaPromptSchema, validateGeneratedMedia } from "./media-generation-provider.js";
 import type { MediaSourceRecord } from "./media-sources.js";
@@ -30,6 +30,9 @@ const savedCharge = z.object({
   charge: z.object({ organizationId: z.string(), micros: z.number().int().positive() }).optional(),
 });
 
+/** A finished hosted generation's charge, committed with its stored output. */
+export type StoredMediaCharge = { organizationId: string; kind: string; amountMicros: number };
+
 /** The price a generation saved when it was submitted; none where nothing is metered. */
 export function savedMediaCharge(effect: Pick<ExternalEffect, "id" | "request">) {
   return readJsonColumn(
@@ -38,26 +41,6 @@ export function savedMediaCharge(effect: Pick<ExternalEffect, "id" | "request">)
     { table: "external_effects", column: "request", id: effect.id },
     "reject",
   ).charge;
-}
-
-/**
- * Charges a finished hosted generation once per reservation: what the provider reported it cost
- * when it did, else the price saved at submission.
- */
-async function chargeCompleted(
-  prisma: PrismaClient,
-  reservation: ExternalEffect,
-  video: boolean,
-  reportedMicros?: number,
-) {
-  const charge = savedMediaCharge(reservation);
-  if (!charge) return;
-  await chargeMedia(prisma, {
-    organizationId: charge.organizationId,
-    source: `media:${reservation.id}`,
-    kind: video ? "video" : "image",
-    amountMicros: reportedMicros ?? charge.micros,
-  });
 }
 
 export async function generateMediaFromTool(options: {
@@ -77,7 +60,7 @@ export async function generateMediaFromTool(options: {
   attach: (
     output: GeneratedMedia,
     name: string,
-    job: { id: string; result: { provider: string; jobId?: string } },
+    job: { id: string; result: { provider: string; jobId?: string }; charge?: StoredMediaCharge },
   ) => Promise<{ artifactId: string; block: MessageBlock }>;
   publish: (block: MessageBlock, jobId: string, artifactId: string) => Promise<unknown>;
   /** Commits with a video's provider failure, so whatever follows it cannot be lost. */
@@ -196,10 +179,11 @@ export async function generateMediaFromTool(options: {
         where: { id: saved.artifactId, spaceId: run.spaceId, userId: run.userId, botId: run.botId },
       });
       if (!artifact) return { error: "Generated attachment is unavailable." };
-      await chargeCompleted(prisma, reservation, video);
       await options.publish(messageBlockForArtifact(artifact), reservation.id, artifact.id);
       return { status: "completed", artifactId: artifact.id };
     }
+    // Read before the provider is asked, so a request that cannot be read discards no output.
+    const charge = savedMediaCharge(reservation);
     if (video && typeof args.jobId === "string") {
       const claim = await prisma.externalEffect.updateMany({
         where: {
@@ -268,8 +252,6 @@ export async function generateMediaFromTool(options: {
         status: output.status,
         ...("progress" in output ? { progress: output.progress } : {}),
       };
-    // The provider has made it, so it is charged even if storing it fails below.
-    await chargeCompleted(prisma, reservation, video, output.output.costMicros);
     const fetched = {
       provider: provider.id,
       ...("id" in output ? { jobId: output.id } : {}),
@@ -281,7 +263,20 @@ export async function generateMediaFromTool(options: {
       attached = await options.attach(
         output.output,
         `generated-${reservation.id}.${FILE_EXTENSIONS[output.output.mimeType]}`,
-        { id: reservation.id, result: fetched },
+        {
+          id: reservation.id,
+          result: fetched,
+          // Charged with the stored output: what the provider reported it cost, else the saved price.
+          ...(charge
+            ? {
+                charge: {
+                  organizationId: charge.organizationId,
+                  kind: video ? "video" : "image",
+                  amountMicros: output.output.costMicros ?? charge.micros,
+                },
+              }
+            : {}),
+        },
       );
     } catch (error) {
       // A finished video that could not be stored releases its claim, so a later check retries

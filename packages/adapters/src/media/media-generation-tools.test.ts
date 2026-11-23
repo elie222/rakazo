@@ -30,7 +30,6 @@ function setup() {
     update: vi.fn().mockResolvedValue(row),
     updateMany: vi.fn().mockResolvedValue({ count: 1 }),
   };
-  const mediaCharge = { createMany: vi.fn().mockResolvedValue({ count: 1 }) };
   const attach = vi.fn().mockResolvedValue({
     artifactId: "artifact",
     block: { kind: "image", artifactId: "artifact", name: "generated.png" },
@@ -44,7 +43,6 @@ function setup() {
     source: { kind: "hosted" as const },
     prisma: {
       externalEffect,
-      mediaCharge,
       artifact: { findFirst: vi.fn().mockResolvedValue(null) },
     } as unknown as PrismaClient,
     context,
@@ -52,7 +50,7 @@ function setup() {
     attach,
     publish,
   };
-  return { options, externalEffect, mediaCharge, provider, attach, publish, row };
+  return { options, externalEffect, provider, attach, publish, row };
 }
 
 describe("bot media tools", () => {
@@ -100,8 +98,8 @@ describe("bot media tools", () => {
     );
     expect(publish).toHaveBeenCalledTimes(1);
   });
-  it("saves the submission's price and charges it before the image is published", async () => {
-    const { options, externalEffect, mediaCharge, publish } = setup();
+  it("saves the submission's price and charges it with the stored image", async () => {
+    const { options, externalEffect, attach } = setup();
     const charge = { organizationId: "org", micros: 40_000 };
     externalEffect.create.mockImplementation(async ({ data }) => ({
       id: "local-job",
@@ -112,18 +110,14 @@ describe("bot media tools", () => {
     const result = await generateMediaFromTool({ ...options, price: async () => ({ charge }) });
     expect(result).toMatchObject({ status: "completed" });
     expect(externalEffect.create.mock.calls[0]?.[0].data.request).toMatchObject({ charge });
-    expect(mediaCharge.createMany).toHaveBeenCalledWith({
-      data: [
-        { organizationId: "org", source: "media:local-job", kind: "image", amountMicros: 40_000 },
-      ],
-      skipDuplicates: true,
+    expect(attach.mock.calls[0]?.[2].charge).toEqual({
+      organizationId: "org",
+      kind: "image",
+      amountMicros: 40_000,
     });
-    expect(mediaCharge.createMany.mock.invocationCallOrder[0]).toBeLessThan(
-      publish.mock.invocationCallOrder[0]!,
-    );
   });
   it("charges what the provider reported instead of the saved price", async () => {
-    const { options, externalEffect, mediaCharge, provider } = setup();
+    const { options, externalEffect, attach, provider } = setup();
     vi.spyOn(provider, "generateImage").mockResolvedValue({
       bytes: new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
       mimeType: "image/png",
@@ -137,7 +131,7 @@ describe("bot media tools", () => {
     }));
     const charge = { organizationId: "org", micros: 40_000 };
     await generateMediaFromTool({ ...options, price: async () => ({ charge }) });
-    expect(mediaCharge.createMany.mock.calls[0]?.[0].data[0].amountMicros).toBe(12_000);
+    expect(attach.mock.calls[0]?.[2].charge.amountMicros).toBe(12_000);
   });
   it("submits nothing when the media balance cannot cover the price", async () => {
     const { options, externalEffect, provider } = setup();

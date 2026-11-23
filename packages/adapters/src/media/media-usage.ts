@@ -1,8 +1,10 @@
 import type { MediaGenerationProvider } from "@rakazo/adapter-kit";
+import { MEDIA_ALLOWANCE_CENTS } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
 import { mediaAllowancePlan, mediaChargedMicros } from "@rakazo/db";
 import { queuedMediaMicros } from "./media-queued.js";
 import type { ResolvedMediaSource } from "./media-sources.js";
+import { MEDIA_REFUSALS } from "./media-usage.prompt.js";
 
 /** What a submitted hosted generation charges once it completes. */
 export type MediaCharge = { organizationId: string; micros: number };
@@ -42,20 +44,13 @@ export async function priceMediaGeneration(
     where: { id: spaceId },
     select: { organizationId: true },
   });
-  if (!space) return { error: "Media generation is unavailable." };
+  if (!space) return { error: MEDIA_REFUSALS.unavailable };
   const balance = await mediaBalance(prisma, space.organizationId);
   if (!balance) return { charge: null };
-  if (balance.trial)
-    return {
-      error:
-        "Image and video generation is unavailable during a trial. It starts with the paid plan.",
-    };
-  if (!balance.limitMicros)
-    return {
-      error: "Image and video generation needs a paid plan. The owner can subscribe in Billing.",
-    };
+  if (balance.trial) return { error: MEDIA_REFUSALS.trial };
+  if (!balance.limitMicros) return { error: MEDIA_REFUSALS.noPlan };
   if (balance.limitMicros - balance.usedMicros < micros)
-    return { error: `Not enough media balance left this month for this ${kind}.` };
+    return { error: MEDIA_REFUSALS.balance(kind) };
   return { charge: { organizationId: space.organizationId, micros } };
 }
 
@@ -71,4 +66,34 @@ export function hostedMediaPrice(
 ) {
   if (source.record.kind !== "hosted") return undefined;
   return (kind: "image" | "video") => priceMediaGeneration(prisma, source.provider, spaceId, kind);
+}
+
+/**
+ * The deployment's provider without any media whose one generation costs more than a whole
+ * monthly balance where billing meters it, so a bot is never offered a tool that is refused
+ * on every call.
+ */
+export async function hostedMediaWithinAllowance(
+  prisma: Pick<PrismaClient, "deploymentSettings">,
+  provider: MediaGenerationProvider | undefined,
+): Promise<MediaGenerationProvider | undefined> {
+  const limit = MEDIA_ALLOWANCE_CENTS * 10_000;
+  const images = provider?.capabilities.images && provider.prices.imageMicros > limit;
+  const video = provider?.capabilities.video && provider.prices.videoMicros > limit;
+  if (!provider || !(images || video)) return provider;
+  const settings = await prisma.deploymentSettings.findUnique({
+    where: { id: "default" },
+    select: { modelCreditsEnabled: true },
+  });
+  if (!settings?.modelCreditsEnabled) return provider;
+  // The same provider, read through its prototype chain, with only these capabilities changed.
+  return Object.create(provider, {
+    capabilities: {
+      value: {
+        ...provider.capabilities,
+        images: provider.capabilities.images && !images,
+        video: provider.capabilities.video && !video,
+      },
+    },
+  }) as MediaGenerationProvider;
 }
