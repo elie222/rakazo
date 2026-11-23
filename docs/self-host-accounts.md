@@ -47,8 +47,7 @@ they choose.
    directly. See [Share a space](./spaces.md#share-a-space).
 
 The owner and admins invite people, change roles and remove members; the owner can't be removed. A
-removed member's spaces that nobody else uses pass to whoever removed them. Members are managed on
-web and desktop.
+removed member's spaces that nobody else uses pass to whoever removed them.
 
 SSO and SCIM create accounts but don't add anyone to an organization: invite them after their first
 sign-in. Organization admins are unrelated to `RAKAZO_ADMIN_EMAILS`, and a self-hosted server has no
