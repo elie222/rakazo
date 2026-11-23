@@ -222,10 +222,10 @@ test("sidebar snaps its layout during a held drag in both directions", async ({
   const origin = edge.x + 4;
   await page.mouse.down();
   for (const [distance, width, mini, frame] of [
-    [48, 72, true, "01-mini-before-snap"],
+    [48, 92, true, "01-mini-before-snap"],
     [112, 240, false, "02-expanded-on-snap"],
-    [240, 312, false, "03-expanded-resizing"],
-    [60, 72, true, "04-mini-on-snap-back"],
+    [240, 332, false, "03-expanded-resizing"],
+    [40, 92, true, "04-mini-on-snap-back"],
   ] as const) {
     await page.mouse.move(origin + distance, edge.y + 300);
     await expect(sidebar).toHaveCSS("width", `${width}px`);
