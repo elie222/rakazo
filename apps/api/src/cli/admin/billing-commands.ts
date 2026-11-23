@@ -25,15 +25,15 @@ export const billingCancelCommand: AdminCommand = {
 
 export const billingRefundCommand: AdminCommand = {
   path: ["billing", "refund"],
-  usage: "<email> [<invoice-number-or-id>] [--confirm]",
-  flags: ["confirm"],
+  usage: "<email> [<invoice-number-or-id>] [--full] [--confirm]",
+  flags: ["confirm", "full"],
   parse: ([address, invoice, ...extra], flags) => {
     const email = adminEmail(address);
     const confirm = flags.confirm === true;
     if (!email || extra.length || (invoice && !BILLING_REFERENCE.test(invoice))) return null;
     // Refunding money names the invoice the preview showed, never whichever is newest by then.
     if (confirm && !invoice) return null;
-    return (context) => refundBilling(context, email, invoice, confirm);
+    return (context) => refundBilling(context, email, invoice, confirm, flags.full === true);
   },
 };
 
@@ -103,6 +103,7 @@ async function refundBilling(
   email: string,
   invoice: string | undefined,
   confirm: boolean,
+  full: boolean,
 ) {
   const { provider, accounts, userId } = await billingAccounts(context, email);
   const invoiceRefund = provider.refundInvoice?.bind(provider);
@@ -127,6 +128,11 @@ async function refundBilling(
 
   const { customerId, organizationId } = match.account;
   let { refund } = match;
+  const plan = async () => {
+    const credits = await invoiceCredits(context, organizationId, match.refund);
+    return { credits, ...refundPlan(credits, match.refund.amountMinor, full) };
+  };
+  let planned = refund.state === "refundable" ? await plan() : null;
   if (confirm) {
     let attempted = false;
     try {
@@ -138,14 +144,26 @@ async function refundBilling(
           )
         )
           throw new AdminCommandError("The billing account changed. Preview the refund again.");
+        // Read again under the lease, so credits used since the preview are kept too. A refund
+        // the preview already found is reported as it is, never planned again.
+        planned = match.refund.state === "refundable" ? await plan() : null;
         await recordAuditEvent({
           action: "billing.invoice.refund_requested",
           actor: { type: "system", label: "operator" },
           organizationId,
           target: { type: "invoice", id: match.refund.invoiceId },
+          ...(planned
+            ? { metadata: { refundMinor: planned.refundMinor, keptMinor: planned.keptMinor } }
+            : {}),
         });
         attempted = true;
-        const result = await invoiceRefund(customerId, invoice, true);
+        // With --full, an earlier partial refund is a conflict, not the refund asked for.
+        const result = await invoiceRefund(
+          customerId,
+          invoice,
+          true,
+          planned?.refundMinor ?? (full ? match.refund.amountMinor : undefined),
+        );
         if (!result || result.state === "refundable")
           throw new AdminCommandError(
             "The refund could not be confirmed. Preview the refund again.",
@@ -158,7 +176,7 @@ async function refundBilling(
           metadata: {
             refundId: result.refundId,
             status: result.state,
-            amountMinor: result.amountMinor,
+            amountMinor: result.refundedMinor,
             currency: result.currency,
           },
         });
@@ -178,30 +196,45 @@ async function refundBilling(
         );
     }
   }
-  const status = {
-    refundable: "Add --confirm to refund the full charge.",
-    pending: "Refund pending.",
-    succeeded: "Refund succeeded.",
-  }[refund.state];
-  const amount =
+  const money = (minor: number) =>
     refund.currency === "usd"
-      ? `$${(refund.amountMinor / 100).toFixed(2)} USD`
-      : `${refund.amountMinor} minor units of ${refund.currency.toUpperCase()}`;
+      ? `$${(minor / 100).toFixed(2)}`
+      : `${minor} minor units of ${refund.currency.toUpperCase()}`;
   // Only context for the operator: a refund already sent must still report its outcome.
-  const [credits, plan] = await Promise.all([
-    bestEffort("read refund credit summary", invoiceCredits(context, organizationId, match.refund)),
+  const [after, subscription] = await Promise.all([
+    refund.state === "refundable"
+      ? planned?.credits
+      : bestEffort(
+          "read refund credit summary",
+          invoiceCredits(context, organizationId, match.refund),
+        ),
     bestEffort("read refund subscription", provider.getCustomerSubscription(customerId)),
   ]);
   const renews =
-    plan === undefined ? null : !!plan && plan.status !== "canceled" && !plan.cancelAtPeriodEnd;
+    subscription === undefined
+      ? null
+      : !!subscription && subscription.status !== "canceled" && !subscription.cancelAtPeriodEnd;
   const reference = refund.invoiceNumber ?? refund.invoiceId;
+  const outcome =
+    refund.state === "refundable" && planned
+      ? [
+          planned.keptMinor
+            ? `Refund ${money(planned.refundMinor)} and keep ${money(planned.keptMinor)} for the credits used.`
+            : `Refund the full ${money(planned.refundMinor)}.`,
+          ...(planned.balanceAfter !== null
+            ? [`The balance after the refund is ${usd(planned.balanceAfter)}.`]
+            : []),
+          `Add ${invoice ? "" : `${reference} `}${full ? "--full " : ""}--confirm to refund it${planned.keptMinor ? ", or --full to refund the whole charge" : ""}.`,
+        ]
+      : [
+          `Refund of ${money(refund.refundedMinor ?? refund.amountMinor)} ${refund.state}.`,
+          ...(after ? [`Balance ${usd(after.balanceMicros)}.`] : []),
+        ];
   return {
     text: [
-      `Invoice ${reference} (${refund.invoiceId}) for organization ${organizationId}, ${amount}, dated ${refund.createdAt.slice(0, 10)}.`,
-      ...(credits ? creditLines(credits, refund.state === "refundable") : []),
-      refund.state === "refundable" && !invoice
-        ? `Add ${reference} --confirm to refund the full charge.`
-        : status,
+      `Invoice ${reference} (${refund.invoiceId}) for organization ${organizationId}, ${money(refund.amountMinor)}, dated ${refund.createdAt.slice(0, 10)}.`,
+      ...(refund.state === "refundable" && after ? creditLines(after) : []),
+      ...outcome,
       ...(renews ? ["The subscription still renews. Stop it with billing cancel."] : []),
       ...(renews === null
         ? ["Could not read the subscription. Check whether it still renews."]
@@ -211,13 +244,24 @@ async function refundBilling(
       organizationId,
       ...refund,
       creditPurchaseId: match.refund.creditPurchaseId,
-      credits,
+      credits: after
+        ? {
+            fromInvoice: dollars(after.fromInvoiceMicros),
+            used: dollars(after.usedMicros),
+            balance: dollars(after.balanceMicros),
+            byModel: after.byModel.map(({ model, micros }) => ({ model, usd: dollars(micros) })),
+          }
+        : null,
+      ...(planned?.balanceAfter != null
+        ? { balanceAfterRefund: dollars(planned.balanceAfter) }
+        : {}),
+      ...(planned ? { refundMinor: planned.refundMinor, keptMinor: planned.keptMinor } : {}),
       subscriptionRenews: renews,
     },
   };
 }
 
-/** Model credits the invoice bought, what the organization spent since, and its balance. */
+/** Model credits the invoice bought and used, what the organization spent since, and its balance. */
 async function invoiceCredits(
   { prisma }: AdminContext,
   organizationId: string,
@@ -233,49 +277,95 @@ async function invoiceCredits(
   ]);
   // An invoice that bought no credits, such as an own-key plan, still shows the balance.
   const purchase = entry?.organizationId === organizationId ? entry : null;
-  // The purchase is recorded once the payment settles, which can be well after the invoice date.
-  const spent = await prisma.modelCreditEntry.groupBy({
-    by: ["model"],
-    where: {
-      organizationId,
-      // Holds for calls still running count too: the balance already excludes them.
-      callId: { not: null },
-      createdAt: { gte: purchase?.createdAt ?? new Date(refund.createdAt) },
-    },
-    _sum: { amountMicros: true },
-  });
-  // What the invoice still funds: a synced refund lowers it to zero.
-  const fromInvoice = purchase?.amountMicros ?? 0n;
-  const byModel = spent
-    .map(({ model, _sum }) => ({
-      model: model ?? "unknown",
-      usd: Number(-(_sum.amountMicros ?? 0n)) / 1e6,
-    }))
-    .filter(({ usd }) => usd > 0)
-    .toSorted((a, b) => b.usd - a.usd);
-  const usd = (micros: bigint) => Number(micros) / 1e6;
+  const [lot, spent] = await Promise.all([
+    purchase ? prisma.modelCreditLot.findUnique({ where: { id: purchase.id } }) : null,
+    // The purchase is recorded once the payment settles, which can be well after the invoice date.
+    prisma.modelCreditEntry.groupBy({
+      by: ["model"],
+      where: {
+        organizationId,
+        // Holds for calls still running count too: the balance already excludes them.
+        callId: { not: null },
+        createdAt: { gte: purchase?.createdAt ?? new Date(refund.createdAt) },
+      },
+      _sum: { amountMicros: true },
+    }),
+  ]);
   return {
-    fromInvoice: usd(fromInvoice),
-    spentSincePaid: usd(-spent.reduce((total, { _sum }) => total + (_sum.amountMicros ?? 0n), 0n)),
-    byModel,
-    balance: usd(account.balanceMicros),
-    balanceAfterRefund: usd(account.balanceMicros - fromInvoice),
+    // Purchases from before credit lots existed get theirs on the account's next credit use.
+    usageKnown: !purchase || !!lot || purchase.amountMicros === 0n,
+    // What the invoice still funds: a synced refund lowers it.
+    fromInvoiceMicros: purchase?.amountMicros ?? 0n,
+    // Includes holds for calls still running.
+    usedMicros: lot?.usedMicros ?? 0n,
+    // Credits past their expiry already left the balance, though the reconciler may not have
+    // marked them expired yet.
+    expiredMicros:
+      lot?.expiresAt && lot.expiresAt <= new Date()
+        ? lot.amountMicros - lot.usedMicros
+        : (lot?.expiredMicros ?? 0n),
+    balanceMicros: account.balanceMicros,
+    byModel: spent
+      .map(({ model, _sum }) => ({ model: model ?? "unknown", micros: -(_sum.amountMicros ?? 0n) }))
+      .filter(({ micros }) => micros > 0n)
+      .toSorted((a, b) => Number(b.micros - a.micros)),
   };
 }
 
-function creditLines(
-  credits: NonNullable<Awaited<ReturnType<typeof invoiceCredits>>>,
-  preview: boolean,
-) {
-  const usd = (value: number) => `${value < 0 ? "-" : ""}$${Math.abs(value).toFixed(2)}`;
+type InvoiceCredits = NonNullable<Awaited<ReturnType<typeof invoiceCredits>>>;
+
+/**
+ * How much of the charge to refund. Unless `full`, it keeps the share of the payment that paid
+ * for credits already used: billing sync then cuts the purchase down to those credits, so the
+ * balance lands near zero instead of below it.
+ */
+function refundPlan(credits: InvoiceCredits | null, paidMinor: number, full: boolean) {
+  if (!full && credits && !credits.usageKnown)
+    throw new AdminCommandError(
+      "This purchase's credit use is not recorded yet. Add --full to refund the whole charge.",
+    );
+  const bought = credits?.fromInvoiceMicros ?? 0n;
+  const used = credits && credits.usedMicros < bought ? credits.usedMicros : bought;
+  const paid = BigInt(paidMinor);
+  // Sync grants whole cents in proportion to what stays paid, so keep the least payment whose
+  // grant covers the cents used.
+  const boughtCents = bought / 10_000n;
+  const usedCents = (used + 9_999n) / 10_000n;
+  const kept =
+    full || boughtCents === 0n ? 0n : (usedCents * paid + boughtCents - 1n) / boughtCents;
+  if (kept >= paid)
+    throw new AdminCommandError(
+      "This invoice's credits are all used, so nothing is left to refund. Add --full to refund the whole charge.",
+    );
+  // Sync shrinks the purchase to what the kept amount buys, cutting expired credits first; only
+  // the cut from credits still available comes off the balance.
+  const remaining = ((boughtCents * kept) / paid) * 10_000n;
+  const available = (amount: bigint, expired: bigint) => {
+    const left = amount - used - expired;
+    return left > 0n ? left : 0n;
+  };
+  const expired = credits?.expiredMicros ?? 0n;
+  const expiredAfter = expired - (bought - remaining) > 0n ? expired - (bought - remaining) : 0n;
+  const balanceAfter = credits
+    ? credits.balanceMicros - available(bought, expired) + available(remaining, expiredAfter)
+    : null;
+  return { refundMinor: Number(paid - kept), keptMinor: Number(kept), balanceAfter };
+}
+
+function dollars(micros: bigint) {
+  return Number(micros) / 1e6;
+}
+
+function usd(micros: bigint) {
+  const cents = Number(micros < 0n ? -micros : micros) / 1e4;
+  return `${micros < 0n ? "-" : ""}$${(Math.round(cents) / 100).toFixed(2)}`;
+}
+
+function creditLines(credits: InvoiceCredits) {
   return [
-    `Credits: ${usd(credits.fromInvoice)} from this invoice, ${usd(credits.spentSincePaid)} spent since it was paid, balance ${usd(credits.balance)}.`,
-    ...credits.byModel.map(({ model, usd: spent }) => `  ${model} ${usd(spent)}`),
-    ...(preview && credits.fromInvoice > 0
-      ? [
-          `The refund takes back this invoice's credits, leaving a balance of ${usd(credits.balanceAfterRefund)}.`,
-        ]
-      : []),
+    `Credits: ${usd(credits.fromInvoiceMicros)} from this invoice, ${usd(credits.usedMicros)} of them used, balance ${usd(credits.balanceMicros)}.`,
+    ...(credits.byModel.length ? ["Spent since it was paid:"] : []),
+    ...credits.byModel.map(({ model, micros }) => `  ${model} ${usd(micros)}`),
   ];
 }
 
