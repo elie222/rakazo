@@ -73,25 +73,20 @@ export type PageContent = {
 
 export function usePageContent(
   page: { code: string; images: PageImages } | null | undefined,
-  scope: QueryKey,
-  read: (imageId: string) => Promise<PageImageSource>,
+  readImage: PageContent["readImage"],
 ): PageContent | undefined {
-  const key = JSON.stringify(scope);
-  const latest = useRef(read);
-  latest.current = read;
+  const latest = useRef(readImage);
+  latest.current = readImage;
   return useMemo(
     () =>
       page
         ? {
             code: page.code,
             images: page.images,
-            readImage: (imageId: string) => ({
-              queryKey: [...(JSON.parse(key) as unknown[]), imageId],
-              queryFn: () => latest.current(imageId),
-            }),
+            readImage: (imageId: string) => latest.current(imageId),
           }
         : undefined,
-    [page, key],
+    [page],
   );
 }
 
@@ -100,9 +95,11 @@ export function useReviewedPageContent(
   page: { code: string; images: PageImages; version: number } | undefined,
 ): PageContent | undefined {
   const queries = useSpaceQueries();
-  return usePageContent(pageId ? page : undefined, queries.pageReviews.image.key(), (imageId) =>
-    queries.pageReviews.image.call({ pageId: pageId!, version: page!.version, imageId }),
-  );
+  return usePageContent(pageId ? page : undefined, (imageId) => ({
+    queryKey: [...queries.pageReviews.image.key(), imageId],
+    queryFn: () =>
+      queries.pageReviews.image.call({ pageId: pageId!, version: page!.version, imageId }),
+  }));
 }
 
 function usePageImages(content: PageContent | undefined): Record<string, string> | undefined {

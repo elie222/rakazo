@@ -50,9 +50,10 @@ function SharedPageBody() {
     enabled: token !== null,
     retry: false,
   });
-  const content = usePageContent(shared.data, ["shared-page", token, "image"], (imageId) =>
-    readSharedPageImage(token!, imageId),
-  );
+  const content = usePageContent(shared.data, (imageId) => ({
+    queryKey: ["shared-page", token, "image", imageId],
+    queryFn: () => readSharedPageImage(token!, imageId),
+  }));
   const viewer = usePageDocument(content);
   const title = shared.data?.title;
   useEffect(() => {
