@@ -384,7 +384,13 @@ type JobReconcilerDeps = Parameters<typeof createJobReconciler>[0];
 export function createRunReconciler(
   deps: Pick<
     ExecutorDeps,
-    "prisma" | "jobs" | "events" | "notifications" | "billingEnabled" | "secretStore"
+    | "prisma"
+    | "jobs"
+    | "events"
+    | "notifications"
+    | "billingEnabled"
+    | "mediaGeneration"
+    | "secretStore"
   > & {
     cloudAgent: NonNullable<ExecutorDeps["cloudAgent"]> | null;
     userCloudAgents?: ExecutorDeps["userCloudAgents"];
@@ -396,7 +402,7 @@ export function createRunReconciler(
   > = {},
   chat: { messagingDelivery?: MessagingDelivery; teamChat?: TeamChat } = {},
 ) {
-  const { prisma, jobs, cloudAgent, paymentWallet } = deps;
+  const { prisma, jobs, cloudAgent, paymentWallet, mediaGeneration } = deps;
   const { messagingDelivery, teamChat } = chat;
   const chatHistoryDays = chatHistoryRetentionDays();
   return createJobReconciler({
@@ -425,7 +431,7 @@ export function createRunReconciler(
     reconcileCloudAgents: () =>
       reconcileCloudAgents({ prisma, jobs, cloudAgent, userCloudAgents: deps.userCloudAgents }),
     reconcilePurchases: () => reconcilePurchases({ prisma, jobs, paymentWallet }),
-    reconcileMediaVideos: () => reconcileMediaVideos({ prisma, jobs }),
+    reconcileMediaVideos: () => reconcileMediaVideos({ prisma, jobs, mediaGeneration }),
     reconcileComputerUpdates: () => reconcileComputerUpdates({ prisma, jobs, events: deps.events }),
     reconcileSecurityEventRetention: createSecurityEventPruner(
       prisma,

@@ -48,11 +48,13 @@ export function readMediaJobSource(job: { id: string; request: unknown }) {
   }
 }
 
-/** A source a run may generate with. Its provider is built only when a tool first uses it. */
-export interface MediaSource {
+export interface ResolvedMediaSource {
   record: MediaSourceRecord;
-  provider: () => Promise<MediaGenerationProvider | undefined>;
+  provider: MediaGenerationProvider;
 }
+
+/** Where a run's media of one kind comes from, settled only when a tool first uses it. */
+export type MediaSource = () => Promise<ResolvedMediaSource | undefined>;
 
 export interface RunMediaSources {
   image?: MediaSource;
@@ -91,7 +93,14 @@ async function connectionProvider(
     where: { id: connection.secretId, userId, spaceId: null },
   });
   if (!row) return undefined;
-  const secret = parseModelSecret(await deps.secretStore.load(row.ciphertext, row.id));
+  const plaintext = await deps.secretStore.load(row.ciphertext, row.id);
+  let secret: ReturnType<typeof parseModelSecret>;
+  try {
+    secret = parseModelSecret(plaintext);
+  } catch {
+    // A secret that decrypts but does not parse is as unusable as a removed connection.
+    return undefined;
+  }
   return secret.kind === "api_key" ? media.create({ apiKey: secret.key }) : undefined;
 }
 
@@ -120,20 +129,19 @@ export async function resolveRunMediaSources(
     select: { id: true, provider: true },
   });
   const media = connection && connectionMedia(connection.provider);
-  let own: Promise<MediaGenerationProvider | undefined> | undefined;
-  const ownSource = connection
-    ? {
-        record: { kind: "connection" as const, connectionId: connection.id },
-        provider: () => {
-          own ??= connectionProvider(deps, userId, connection.id);
-          return own;
-        },
-      }
-    : undefined;
   const hosted = deps.mediaGeneration;
-  const hostedSource = { record: HOSTED, provider: () => Promise.resolve(hosted) };
-  return {
-    image: media?.images ? ownSource : hosted?.capabilities.images ? hostedSource : undefined,
-    video: media?.video ? ownSource : hosted?.capabilities.video ? hostedSource : undefined,
+  let own: Promise<MediaGenerationProvider | undefined> | undefined;
+  const source = (kind: "images" | "video"): MediaSource | undefined => {
+    const fallback = hosted?.capabilities[kind] ? { record: HOSTED, provider: hosted } : undefined;
+    if (!connection || !media?.[kind]) return fallback && (() => Promise.resolve(fallback));
+    return async () => {
+      own ??= connectionProvider(deps, userId, connection.id);
+      const provider = await own;
+      // A connection removed or left unreadable since leaves the media to the deployment.
+      return provider
+        ? { record: { kind: "connection", connectionId: connection.id }, provider }
+        : fallback;
+    };
   };
+  return { image: source("images"), video: source("video") };
 }

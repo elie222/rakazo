@@ -341,7 +341,13 @@ async function queueWake(
  * Re-enqueue unfinished videos whose poll was lost, for example to a worker restart. A healthy
  * job is checked at least every five minutes, so only one untouched for longer is picked up.
  */
-export async function reconcileMediaVideos(deps: Pick<MediaVideoDeps, "prisma" | "jobs">) {
+export async function reconcileMediaVideos(
+  deps: Pick<MediaVideoDeps, "prisma" | "jobs" | "mediaGeneration">,
+) {
+  // Without hosted video only a connection's jobs can progress; hosted ones wait, unpolled.
+  const madeBy = deps.mediaGeneration?.capabilities.video
+    ? {}
+    : { AND: [{ request: { path: ["mediaSource", "kind"], equals: "connection" } }] };
   const now = Date.now();
   const pageSize = 100;
   let after: string | undefined;
@@ -349,6 +355,7 @@ export async function reconcileMediaVideos(deps: Pick<MediaVideoDeps, "prisma" |
     const page = await deps.prisma.externalEffect.findMany({
       where: {
         ...VIDEO_JOB,
+        ...madeBy,
         status: { in: PENDING_STATUSES },
         updatedAt: { lt: new Date(now - STALLED_MS) },
       },
