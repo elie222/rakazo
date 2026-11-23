@@ -33,7 +33,6 @@ import {
   createAgentHomeStore,
   createArtifactStore,
   createCloudAgentConnection,
-  createCodingCliConnection,
   createConnectorRuntime,
   createDubPartnerProgram,
   createLifecycleEmailSender,
@@ -121,6 +120,7 @@ import { createBillingService } from "./billing/billing.js";
 import { mountBillingRoutes } from "./billing/billing-webhook.js";
 import { createSpeechSummarizer } from "./calls/speech-summary.js";
 import { mountVoiceHttpRoutes } from "./calls/voice.js";
+import { createCodingCliFromEnv } from "./coding-cli-wiring.js";
 import { homeRetentionSweep } from "./computers/home-retention.js";
 import { localSignupAdmitter, mountLocalComputerHost } from "./computers/local-settings.js";
 import { mountScreenTarget } from "./computers/screen-proxy.js";
@@ -528,11 +528,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     CURSOR_API_KEY: env.cursorApiKey,
     CLOUD_AGENT_SPACE_ID: env.cloudAgentSpaceId,
   });
-  const codingCli = createCodingCliConnection({
-    CODING_CLI_PROVIDER: env.codingCliProvider,
-    CURSOR_API_KEY: env.cursorApiKey,
-    CODING_CLI_BIN: process.env.CODING_CLI_BIN,
-  });
+  const codingCli = createCodingCliFromEnv(env);
   const paymentWallet = await createPaymentWalletProvider({
     PAYMENT_WALLET_PROVIDER: env.paymentWalletProvider,
     PAYMENT_WALLET_CLIENT_ID: env.paymentWalletClientId,
