@@ -58,6 +58,16 @@ function Chat({ children, other }: { children: string; other?: string }) {
   );
 }
 
+function Pair() {
+  const variables = useChatVaultVariables(openVault);
+  return (
+    <VaultVariablesContext.Provider value={variables}>
+      <LinkifiedText>{"Use [saved as $FIRST_KEY]"}</LinkifiedText>
+      <LinkifiedText>{"Use [saved as $SECOND_KEY]"}</LinkifiedText>
+    </VaultVariablesContext.Provider>
+  );
+}
+
 async function render(text: string, other?: string) {
   await act(async () => {
     root.render(
@@ -136,6 +146,20 @@ describe("Vault variables in chat", () => {
     expect(vault.list).toHaveBeenCalledTimes(2);
     await tap("$PASTED_KEY");
     expect(openVault).toHaveBeenCalledWith("account", "pasted-key");
+  });
+
+  it("reads the Vault again once for two messages naming different new placeholders", async () => {
+    vault.list.mockResolvedValue([]);
+    await act(async () => {
+      root.render(
+        <QueryClientProvider client={queryClient}>
+          <Pair />
+        </QueryClientProvider>,
+      );
+    });
+    await vi.waitFor(() => expect(vault.list).toHaveBeenCalledTimes(2));
+    await act(flush);
+    expect(vault.list).toHaveBeenCalledTimes(2);
   });
 
   it("keeps that read for the viewer's own placeholder, not another person's", async () => {

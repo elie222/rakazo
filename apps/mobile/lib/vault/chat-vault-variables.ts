@@ -47,8 +47,10 @@ export function useChatVaultVariables(): VaultVariables {
   const { refetch: refetchAccount } = account;
   const { refetch: refetchSpace } = space;
   const readAgain = useCallback(async () => {
+    // A read already under way for another name answers this one too.
+    const again = { cancelRefetch: false };
     const results = await Promise.all(
-      spaceVault ? [refetchAccount(), refetchSpace()] : [refetchAccount()],
+      spaceVault ? [refetchAccount(again), refetchSpace(again)] : [refetchAccount(again)],
     );
     return results.every((result) => result.isSuccess);
   }, [refetchAccount, refetchSpace, spaceVault]);

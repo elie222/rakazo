@@ -100,12 +100,14 @@ const VAULT_URL_PREFIX = "rakazo-vault:";
 const DENIED_MARK = "#denied";
 const VAULT_URL = /^rakazo-vault:([A-Za-z_][A-Za-z0-9_]*)(#denied)?$/;
 
+// Most text names none of the viewer's variables, so it is never parsed.
+function namesVaultVariable(text: string, names: ReadonlySet<string>): boolean {
+  return vaultVariableParts(text, names).some((part) => typeof part !== "string");
+}
+
 /** Bot Markdown with each `$NAME` drawn as a Vault link, outside code, links and HTML, made a link. */
 export function withVaultVariables(markdown: string, names: ReadonlySet<string>): string {
-  // Most text names none of the viewer's variables, so it is never parsed.
-  if (vaultVariableParts(markdown, names).every((part) => typeof part === "string")) {
-    return markdown;
-  }
+  if (!namesVaultVariable(markdown, names)) return markdown;
   return rewriteOutsideCode(
     markdown,
     (run) =>
@@ -145,7 +147,7 @@ export function useVaultVariableMarkdown(
     undefined,
   );
   return useMemo(() => {
-    if (!names) return markdown;
+    if (!names || !namesVaultVariable(markdown, names)) return markdown;
     if (!split) return withVaultVariables(markdown, names);
     previousSplit.current = splitSource(markdown, previousSplit.current);
     const previous = linked.current?.names === names ? linked.current.blocks : undefined;

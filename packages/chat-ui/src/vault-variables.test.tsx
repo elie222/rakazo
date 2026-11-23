@@ -6,7 +6,7 @@ import { act, createElement } from "react";
 import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { rewriteOutsideCode } from "./markdown";
+import { rewriteOutsideCode, splitSource } from "./markdown";
 import type { VaultRead } from "./vault-variables";
 import {
   useVaultVariableMarkdown,
@@ -16,7 +16,11 @@ import {
 
 vi.mock("./markdown", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./markdown")>();
-  return { ...actual, rewriteOutsideCode: vi.fn(actual.rewriteOutsideCode) };
+  return {
+    ...actual,
+    rewriteOutsideCode: vi.fn(actual.rewriteOutsideCode),
+    splitSource: vi.fn(actual.splitSource),
+  };
 });
 
 const command = (name: string) => ({ name, auth: { type: "command" } }) as BotSecretMetadata;
@@ -27,6 +31,7 @@ let container: HTMLDivElement;
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.mocked(rewriteOutsideCode).mockClear();
+  vi.mocked(splitSource).mockClear();
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
@@ -70,6 +75,16 @@ describe("useVaultVariableMarkdown", () => {
     expect(vi.mocked(rewriteOutsideCode).mock.calls.map(([text]) => text)).toEqual([
       "And once more with $KEY",
     ]);
+  });
+
+  it("splits no streamed reply that names none of the viewer's variables", async () => {
+    function Reply({ text }: { text: string }) {
+      useVaultVariableMarkdown(text, new Set(["KEY"]), true);
+      return null;
+    }
+    await act(async () => root.render(createElement(Reply, { text: "```sh\necho $HOME" })));
+    await act(async () => root.render(createElement(Reply, { text: "```sh\necho $HOME\nls" })));
+    expect(splitSource).not.toHaveBeenCalled();
   });
 });
 
