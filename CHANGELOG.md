@@ -51,6 +51,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Android dictation no longer cancels itself once a transcribing voice provider is connected, and wide code blocks and tables in Android chats scroll sideways.
 - Computers no longer leak a session D-Bus daemon per command, which could hit the process limit on long-running computers. Desktop setup restores the missing screen-sharing tool, so a bot's Linux computer starts again.
 - A busy thread that delegates work no longer keeps reconnecting and delivering messages late.
+- Replies from local model servers that cache the prompt are no longer slowed down while a computer's disk is nearly full.
 - Replying to a bot's welcome question or daily check-in counts as your turn, so the bot can search your other chats from that reply.
 - Typing on a computer from the phone browser no longer erases text after the Space-bar gesture moves the caret.
 - Teaching by demonstration keeps its last inputs and never moves them into the next recording.
