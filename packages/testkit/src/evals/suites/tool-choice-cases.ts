@@ -395,7 +395,10 @@ export const TOOL_CHOICE_DEFINITIONS: ToolChoiceCase[] = [
     group: OPS_GROUP,
     prompt: "Let the Ops group know last night's backup finished.",
     expect: {
-      calls: [{ tool: "post_to_group", args: { message: "~backup" } }],
+      anyOf: [
+        { tool: "post_to_group", args: { group_id: "*", message: "~backup" } },
+        { tool: "post_to_group", args: { group_name: "~ops", message: "~backup" } },
+      ],
       notCalls: ["handoff_to_bot", "message_bot"],
       maxCalls: { post_to_group: 1 },
     },
