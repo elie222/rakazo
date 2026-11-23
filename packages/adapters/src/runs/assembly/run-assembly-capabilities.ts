@@ -477,8 +477,7 @@ export async function resolveRunCapabilities(
     provider: runModelProvider,
     id: runModelId,
     ...(credential ? { connectionId: credential.id } : {}),
-    ...resolvedModelRunFields(resolved),
-    thinkingLevel: thinkingLevel ?? null,
+    ...resolvedModelRunFields(resolved, thinkingLevel),
   };
   // Saved identities win on resume, including when the setting was cleared meanwhile.
   const computerModel =

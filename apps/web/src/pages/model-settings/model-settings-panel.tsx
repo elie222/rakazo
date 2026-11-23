@@ -5,12 +5,15 @@ import type { ModelSettingsFields as Fields } from "@rakazo/core";
 import {
   credentialModelSettings,
   modelCapabilitiesConfigurable,
+  modelDefaultThinkingLevel,
   modelHasOwnSettings,
   modelSettingsDefaults,
   modelSettingsFields,
   modelSettingsRequest,
+  modelSettingsThinkingLevels,
 } from "@rakazo/core";
 import { writeSaved } from "@rakazo/core/query";
+import { thinkingLevelLabel } from "@rakazo/i18n/thinking-level";
 import { Button, ModelSettingsFields } from "@rakazo/ui-web";
 import { useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
@@ -30,7 +33,12 @@ export function ModelSettingsPanel({
 }) {
   const { t } = useLingui();
   const provider = credential.provider;
-  const saved = modelSettingsFields(credentialModelSettings(credential, modelId), entry);
+  const thinkingLevels = modelSettingsThinkingLevels(credential, entry);
+  const own = credentialModelSettings(credential, modelId);
+  const saved = modelSettingsFields(own, entry, {
+    level: modelDefaultThinkingLevel(credential, modelId),
+    levels: thinkingLevels,
+  });
   // Unedited fields follow what is saved, including after a save or reset.
   const [edited, setEdited] = useState<Fields | null>(null);
   const fields = edited ?? saved;
@@ -78,7 +86,12 @@ export function ModelSettingsPanel({
   }
 
   function save() {
-    const request = modelSettingsRequest({ fields, provider, entry });
+    const request = modelSettingsRequest({
+      fields,
+      provider,
+      entry,
+      followedThinkingLevel: own.thinkingLevel ? undefined : saved.thinkingLevel,
+    });
     if (request.status === "invalid") {
       persist.reset();
       setError(
@@ -124,9 +137,13 @@ export function ModelSettingsPanel({
         maxImagesPerPrompt={fields.maxImagesPerPrompt}
         onMaxImagesPerPromptChange={(maxImagesPerPrompt) => update({ maxImagesPerPrompt })}
         maxImagesLabel={t`Maximum images per request`}
-        reasoning={fields.reasoning}
-        onReasoningChange={(reasoning) => update({ reasoning })}
-        reasoningLabel={t`Supports thinking`}
+        thinkingLevel={fields.thinkingLevel}
+        thinkingLevels={thinkingLevels.map((level) => ({
+          value: level,
+          label: thinkingLevelLabel(level),
+        }))}
+        onThinkingLevelChange={(thinkingLevel) => update({ thinkingLevel })}
+        thinkingLabel={t`Thinking`}
       />
       {dirty || customized ? (
         <div className="mt-4 flex items-center gap-2">
