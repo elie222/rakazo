@@ -53,6 +53,7 @@ vi.mock("@rakazo/ui-web", () => {
     }: ComponentProps<"button"> & { variant?: string; size?: string }) => <button {...props} />,
     Badge: ({ children }: { children?: ReactNode }) => <span>{children}</span>,
     Field: Container,
+    FieldGroup: Container,
     FieldLabel: ({ htmlFor, children }: ComponentProps<"label">) => (
       <label htmlFor={htmlFor}>{children}</label>
     ),
@@ -370,4 +371,93 @@ it("previews a new markdown file as it will read, and keeps the text to write", 
   expect(container.querySelector<HTMLTextAreaElement>("#skill-file-text")?.value).toBe(
     "# Tone\nShort.",
   );
+});
+
+it("lets whatever closes the skill ask about unsaved changes first", async () => {
+  api.list.mockResolvedValue([report]);
+  api.get.mockResolvedValue(saved(report));
+  api.listFiles.mockResolvedValue([{ path: "NOTES.md", bytes: 6 }]);
+  api.getFile.mockResolvedValue({ path: "NOTES.md", content: "# Tone" });
+  let guard: ((go: () => void) => void) | null = null;
+  const close = vi.fn();
+  await show(
+    <AgentSkills
+      onGuard={(next) => {
+        guard = next;
+      }}
+    />,
+  );
+  expect(guard).toBeNull();
+  await click("weekly-report");
+  await click("NOTES.md");
+  await click("Edit");
+  await type(container.querySelector("textarea")!, "Changed");
+  await act(async () => guard?.(close));
+  expect(close).not.toHaveBeenCalled();
+  expect(container.textContent).toContain("Your changes are not saved.");
+  await click("Discard");
+  expect(close).toHaveBeenCalledOnce();
+});
+
+it("asks before Cancel drops a new skill that has text", async () => {
+  api.list.mockResolvedValue([report]);
+  await show();
+  await click("New skill");
+  await type(container.querySelector<HTMLInputElement>("#skill-name")!, "draft");
+  await click("Cancel");
+  expect(container.textContent).toContain("Your changes are not saved.");
+  await click("Discard");
+  expect(hasButton("weekly-report")).toBe(true);
+  expect(api.create).not.toHaveBeenCalled();
+});
+
+it("never adds a file over one the skill already has", async () => {
+  api.list.mockResolvedValue([report]);
+  api.get.mockResolvedValue(saved(report));
+  api.listFiles.mockResolvedValue([{ path: "NOTES.md", bytes: 6 }]);
+  await show();
+  await click("weekly-report");
+  await click("Add file");
+  await type(container.querySelector<HTMLInputElement>("#skill-file-path")!, "NOTES.md");
+  expect(container.textContent).toContain("This skill already has a file at that path.");
+  expect(button("Save").disabled).toBe(true);
+  await type(container.querySelector<HTMLInputElement>("#skill-file-path")!, "NOTES-2.md");
+  expect(button("Save").disabled).toBe(false);
+});
+
+it("drops a refused save's message once the person moves on", async () => {
+  api.list.mockResolvedValue([report]);
+  api.get.mockResolvedValue(saved(report));
+  api.listFiles.mockResolvedValue([{ path: "NOTES.md", bytes: 6 }]);
+  api.getFile.mockResolvedValue({ path: "NOTES.md", content: "# Tone" });
+  api.update.mockRejectedValue(
+    new ORPCError("BAD_REQUEST", { message: "Skill files must contain plain text." }),
+  );
+  await show();
+  await click("weekly-report");
+  await click("NOTES.md");
+  await click("Edit");
+  await type(container.querySelector("textarea")!, "Changed");
+  await click("Save");
+  await vi.waitFor(() =>
+    expect(container.textContent).toContain("Skill files must contain plain text."),
+  );
+  await click("Cancel");
+  await click("SKILL.md");
+  await click("Edit");
+  expect(container.textContent).not.toContain("Skill files must contain plain text.");
+});
+
+it("says the file list could not load instead of showing a shorter folder", async () => {
+  api.list.mockResolvedValue([report]);
+  api.get.mockResolvedValue(saved(report));
+  api.listFiles.mockRejectedValueOnce(new Error("offline"));
+  api.listFiles.mockResolvedValue([{ path: "NOTES.md", bytes: 6 }]);
+  await show();
+  await click("weekly-report");
+  expect(container.textContent).toContain("Could not load files");
+  expect(hasButton("Add file")).toBe(false);
+  await click("Retry");
+  expect(hasButton("NOTES.md")).toBe(true);
+  expect(container.textContent).not.toContain("Could not load files");
 });

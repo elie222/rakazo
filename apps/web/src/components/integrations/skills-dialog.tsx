@@ -17,7 +17,7 @@ import {
 } from "@rakazo/ui-web";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ChevronLeft, LayoutTemplate, X } from "lucide-react";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useSpaceQueries } from "../../lib/query/query";
 import { AgentSkills } from "../skills/agent-skills";
 import type { PluginSelection } from "./plugin-marketplace";
@@ -54,6 +54,9 @@ export function SkillsDialog({
   const [importing, setImporting] = useState(false);
   // A skill open as its own page fills the dialog; the plugin and browse lists come back after.
   const [skillOpen, setSkillOpen] = useState(false);
+  // An open skill checks for unsaved changes before the dialog closes over it.
+  const skillGuard = useRef<((go: () => void) => void) | null>(null);
+  const close = () => (skillGuard.current ? skillGuard.current(onClose) : onClose());
   const [gitSource, setGitSource] = useState("");
   const catalog = useQuery(
     queries.marketplace.catalog.queryOptions({ input: { query: "" }, staleTime: 60_000 }),
@@ -160,7 +163,12 @@ export function SkillsDialog({
             </h3>
           )}
           <div className="px-2.5">
-            <AgentSkills onOpenChange={setSkillOpen} />
+            <AgentSkills
+              onOpenChange={setSkillOpen}
+              onGuard={(guard) => {
+                skillGuard.current = guard;
+              }}
+            />
           </div>
         </section>
         {skillOpen ? null : (
@@ -276,7 +284,7 @@ export function SkillsDialog({
     <Dialog
       open
       onOpenChange={(open) => {
-        if (!open) onClose();
+        if (!open) close();
       }}
     >
       <DialogContent showCloseButton={false} size="xl" className="bg-card">
@@ -285,7 +293,7 @@ export function SkillsDialog({
             <Trans>Skills</Trans>
           </DialogTitle>
           <div className="flex items-center gap-2">
-            {!selection && !importing && onOpenTemplates ? (
+            {!selection && !importing && !skillOpen && onOpenTemplates ? (
               <Button
                 variant="ghost"
                 size="sm"
@@ -296,7 +304,7 @@ export function SkillsDialog({
                 <Trans>Templates</Trans>
               </Button>
             ) : null}
-            {!selection && !importing ? (
+            {!selection && !importing && !skillOpen ? (
               <Button variant="ghost" size="sm" onClick={() => setImporting(true)}>
                 <Trans>From GitHub</Trans>
               </Button>

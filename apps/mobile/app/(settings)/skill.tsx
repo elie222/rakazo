@@ -153,6 +153,19 @@ function SkillEditor({ id }: { id?: string }) {
             style={styles.editor}
           />
         )}
+        {skill && filesQuery.error ? (
+          <View style={styles.files}>
+            <Text accessibilityRole="alert" style={styles.error}>
+              {errorText(filesQuery.error, t`Could not load files`)}
+            </Text>
+            <NativeActionButton
+              fill={false}
+              label={t`Retry`}
+              onPress={() => void filesQuery.refetch()}
+              prominence="secondary"
+            />
+          </View>
+        ) : null}
         {skill && files.length ? (
           <View testID="skill-files" style={styles.files}>
             <Text style={styles.section}>{t`Files`}</Text>

@@ -42,7 +42,9 @@ vi.mock("../api/api", () => ({
   }),
 }));
 vi.mock("../api/session", () => ({ currentSessionGeneration: () => 1 }));
+vi.mock("../platform/app-foreground", () => ({ useAppForeground: () => true }));
 vi.mock("expo-router", () => ({
+  useFocusEffect: () => undefined,
   useLocalSearchParams: () => mocks.params,
   useRouter: () => ({ back: mocks.back, push: mocks.push }),
   useNavigation: () => ({
@@ -186,12 +188,16 @@ function hold(write: string) {
   mocks.rpc.mockImplementation((proc: string, body: Record<string, unknown>) =>
     proc === "agentSkills/get"
       ? Promise.resolve(own)
-      : proc === write
-        ? new Promise((resolve, reject) => {
-            finish = (outcome) =>
-              outcome ? reject(outcome) : resolve({ ...own, content: body.content ?? own.content });
-          })
-        : Promise.reject(new Error(`Unexpected ${proc}`)),
+      : proc === "agentSkills/listFiles"
+        ? Promise.resolve([])
+        : proc === write
+          ? new Promise((resolve, reject) => {
+              finish = (outcome) =>
+                outcome
+                  ? reject(outcome)
+                  : resolve({ ...own, content: body.content ?? own.content });
+            })
+          : Promise.reject(new Error(`Unexpected ${proc}`)),
   );
   return {
     finish: (outcome?: Error) => act(async () => finish(outcome)),
@@ -385,7 +391,11 @@ it.each(writes)(
     for (const [index, message] of ["Name taken", "Name taken", ""].entries()) {
       const pending = deferred<never>();
       mocks.rpc.mockImplementation((proc: string) =>
-        proc === "agentSkills/get" ? Promise.resolve(own) : pending.promise,
+        proc === "agentSkills/get"
+          ? Promise.resolve(own)
+          : proc === "agentSkills/listFiles"
+            ? Promise.resolve([])
+            : pending.promise,
       );
       await start();
       expect(mocks.rpc).toHaveBeenCalledWith(write, expect.anything(), pinned);
@@ -422,7 +432,11 @@ it.each(writes)(
       await renderWithWrite();
       const pending = deferred<never>();
       mocks.rpc.mockImplementation((proc: string) =>
-        proc === "agentSkills/get" ? Promise.resolve(own) : pending.promise,
+        proc === "agentSkills/get"
+          ? Promise.resolve(own)
+          : proc === "agentSkills/listFiles"
+            ? Promise.resolve([])
+            : pending.promise,
       );
       await start();
       expect(mocks.rpc).toHaveBeenCalledWith(write, expect.anything(), pinned);
@@ -530,4 +544,27 @@ it("says a skill file could not load and retries", async () => {
   await act(async () => retry?.click());
   await act(flush);
   expect(container.textContent).toContain("Tone");
+});
+
+it("says a skill's files could not load and retries the list", async () => {
+  mocks.params = { id: own.id };
+  let failFiles = true;
+  mocks.rpc.mockImplementation(async (proc: string) => {
+    if (proc === "agentSkills/get") return own;
+    if (proc === "agentSkills/listFiles") {
+      if (failFiles) throw new Error("offline");
+      return [{ path: "NOTES.md", bytes: 4 }];
+    }
+    throw new Error(`Unexpected ${proc}`);
+  });
+  await act(async () => root.render(<SkillScreen />));
+  await act(flush);
+  await act(flush);
+  const retry = [...container.querySelectorAll("button")].find((b) => b.textContent === "Retry");
+  expect(retry).toBeTruthy();
+  failFiles = false;
+  await act(async () => retry?.click());
+  await act(flush);
+  await act(flush);
+  expect(container.querySelector('[aria-label="NOTES.md"]')).not.toBeNull();
 });

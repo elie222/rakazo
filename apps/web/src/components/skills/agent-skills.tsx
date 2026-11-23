@@ -16,7 +16,14 @@ type Opened = { skillId: string } | { creating: true } | null;
  * Your own skills in this space, plus the built-in ones; plugin skills are listed by plugin. A
  * skill opens as its own page, its files beside the one being read.
  */
-export function AgentSkills({ onOpenChange }: { onOpenChange?: (open: boolean) => void }) {
+export function AgentSkills({
+  onOpenChange,
+  onGuard,
+}: {
+  onOpenChange?: (open: boolean) => void;
+  /** Receives the open skill's unsaved-changes check, or null when none is open. */
+  onGuard?: (guard: ((go: () => void) => void) | null) => void;
+}) {
   const { t } = useLingui();
   const queries = useSpaceQueries();
   // The same list the composer offers as skill mentions, so a change here shows there at once.
@@ -39,6 +46,7 @@ export function AgentSkills({ onOpenChange }: { onOpenChange?: (open: boolean) =
         onBack={() => setOpened(null)}
         onCreated={(skillId) => setOpened({ skillId })}
         onDeleted={() => setOpened(null)}
+        onGuard={onGuard}
       />
     );
   }

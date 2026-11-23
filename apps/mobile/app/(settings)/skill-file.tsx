@@ -1,5 +1,4 @@
 import { useLingui } from "@lingui/react/macro";
-import { useQuery } from "@tanstack/react-query";
 import { useLocalSearchParams } from "expo-router";
 import { ActivityIndicator, Platform, ScrollView, StyleSheet, Text } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -9,7 +8,8 @@ import { mobileTokens } from "../../lib/appearance/appearance";
 import { useSideInsets } from "../../lib/layout/side-insets";
 import { native, useThemedStyles } from "../../lib/native/native";
 import { useScreenHeader } from "../../lib/navigation/screen-header";
-import { queryClient, rpcQuery } from "../../lib/query/query";
+import { rpcQuery } from "../../lib/query/query";
+import { useScreenQuery } from "../../lib/query/screen-query";
 
 /** One file kept beside a skill's SKILL.md, shown exactly as written. */
 export default function SkillFileScreen() {
@@ -17,12 +17,9 @@ export default function SkillFileScreen() {
   const sideInsets = useSideInsets();
   const styles = useThemedStyles(createStyles);
   const { t } = useLingui();
-  const fileQuery = useQuery(
-    {
-      ...rpcQuery("agentSkills/getFile", { skillId: id ?? "", path: path ?? "" }),
-      enabled: Boolean(id && path),
-    },
-    queryClient,
+  const fileQuery = useScreenQuery(
+    rpcQuery("agentSkills/getFile", { skillId: id ?? "", path: path ?? "" }),
+    { enabled: Boolean(id && path) },
   );
   const file = fileQuery.data;
 

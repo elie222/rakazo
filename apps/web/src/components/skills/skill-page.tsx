@@ -3,10 +3,19 @@ import { ORPCError } from "@orpc/client";
 import { ChatMarkdown } from "@rakazo/chat-ui/web";
 import type { AgentSkill, AgentSkillCatalogEntry } from "@rakazo/contracts";
 import { formatFileSize, parseSkillMd } from "@rakazo/core";
-import { Badge, Button, Field, FieldLabel, Input, Skeleton, Textarea } from "@rakazo/ui-web";
+import {
+  Badge,
+  Button,
+  Field,
+  FieldGroup,
+  FieldLabel,
+  Input,
+  Skeleton,
+  Textarea,
+} from "@rakazo/ui-web";
 import { skipToken, useQuery } from "@tanstack/react-query";
 import { ChevronLeft, FileText, Folder, Plus } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useSave, useSpaceQueries } from "../../lib/query/query";
 import {
   AvailabilityControl,
@@ -55,11 +64,14 @@ export function SkillPage({
   onBack,
   onCreated,
   onDeleted,
+  onGuard,
 }: {
   skillId?: string;
   onBack: () => void;
   onCreated: (skillId: string) => void;
   onDeleted: () => void;
+  /** Hands the page's leave check to whatever can close it, such as the dialog around it. */
+  onGuard?: (guard: ((go: () => void) => void) | null) => void;
 }) {
   const { t } = useLingui();
   const queries = useSpaceQueries();
@@ -103,10 +115,17 @@ export function SkillPage({
       return error.message;
     return t`Could not save`;
   };
+  const clearErrors = () => {
+    saveDocument.reset();
+    saveFile.reset();
+    removeFile.reset();
+    removeSkill.reset();
+  };
   const stopEditing = () => {
     setDraft(null);
     setBaseline(null);
     setLeaving(null);
+    clearErrors();
   };
   /** Leaving the open file asks first while it has changes that were not saved. */
   const leave = (go: () => void) => {
@@ -168,6 +187,14 @@ export function SkillPage({
     onSaved: onDeleted,
     closesScreen: true,
   });
+  const leaveRef = useRef(leave);
+  useEffect(() => {
+    leaveRef.current = leave;
+  });
+  useEffect(() => {
+    onGuard?.((go) => leaveRef.current(go));
+    return () => onGuard?.(null);
+  }, [onGuard]);
   const busy =
     saveDocument.pending || saveFile.pending || removeFile.pending || removeSkill.pending;
   const error =
@@ -200,6 +227,7 @@ export function SkillPage({
     setDraft(next);
     setBaseline(next);
     setArmed(null);
+    clearErrors();
   };
   const save = () => {
     if (!draft || busy) return;
@@ -209,6 +237,14 @@ export function SkillPage({
 
   const open = (next: string) => leave(() => setPath(next));
   const rows = skillFileRows(files);
+  const newPath = adding?.path.trim() ?? "";
+  // A new file never replaces one the skill has; that is what Edit is for.
+  const pathTaken = files.some((file) => file.path === newPath);
+  const unsavedHere = (rowPath: string) =>
+    changed &&
+    (draft?.kind === "file"
+      ? draft.path === rowPath
+      : draft?.kind === "document" && rowPath === SKILL_DOCUMENT);
 
   return (
     <div data-testid="skill-page" className="space-y-4">
@@ -231,7 +267,7 @@ export function SkillPage({
               availability={skill.availability}
               onChanged={async () => {
                 const here = await skillQuery.refetch();
-                if (here.isError) onBack();
+                if (here.isError) leave(onBack);
               }}
             />
           ) : null}
@@ -287,20 +323,14 @@ export function SkillPage({
                   // Held while a save refreshes, so its result never pulls the page back.
                   disabled={busy}
                   onClick={() => open(row.path)}
-                  className="h-auto min-h-8 w-full justify-start gap-2.5 px-2.5 py-1.5 text-body-sm font-normal aria-[current=true]:bg-dialog"
+                  className="w-full justify-start gap-2.5 px-2.5 text-body-sm font-normal aria-[current=true]:bg-dialog"
                   style={{ paddingInlineStart: `${0.625 + row.depth}rem` }}
                 >
                   <FileText aria-hidden="true" className="size-4 shrink-0 text-muted-foreground" />
                   <span className="min-w-0 flex-1 truncate text-start" dir="auto">
                     {row.name}
                   </span>
-                  {changed && draft?.kind === "file" && draft.path === row.path ? (
-                    <span className="size-1.5 shrink-0 rounded-full bg-foreground">
-                      <span className="sr-only">
-                        <Trans>Unsaved changes</Trans>
-                      </span>
-                    </span>
-                  ) : changed && draft?.kind === "document" && row.path === SKILL_DOCUMENT ? (
+                  {unsavedHere(row.path) ? (
                     <span className="size-1.5 shrink-0 rounded-full bg-foreground">
                       <span className="sr-only">
                         <Trans>Unsaved changes</Trans>
@@ -314,30 +344,42 @@ export function SkillPage({
                 </Button>
               ),
             )}
-            {canEdit && adding ? (
-              <div className="flex min-h-8 items-center gap-2.5 rounded-lg bg-dialog px-2.5 py-1">
-                <FileText aria-hidden="true" className="size-4 shrink-0 text-muted-foreground" />
-                <input
-                  id="skill-file-path"
-                  aria-label={t`New file path`}
-                  value={adding.path}
-                  onChange={(event) => setAdding({ ...adding, path: event.target.value })}
-                  placeholder="references/notes.md"
-                  maxLength={240}
-                  disabled={busy}
-                  // biome-ignore lint/a11y/noAutofocus: the row appears because the person asked for a new file.
-                  autoFocus
-                  className="min-w-0 flex-1 bg-transparent text-body-sm outline-none placeholder:text-muted-foreground"
-                  dir="auto"
-                />
+            {filesQuery.isError ? (
+              <div role="alert" className="flex items-center gap-2 px-2.5 py-1 text-body-sm">
+                <span className="min-w-0 flex-1 text-destructive">
+                  <Trans>Could not load files</Trans>
+                </span>
+                <Button variant="ghost" size="sm" onClick={() => void filesQuery.refetch()}>
+                  <Trans>Retry</Trans>
+                </Button>
               </div>
-            ) : canEdit ? (
+            ) : null}
+            {canEdit && adding ? (
+              <Input
+                id="skill-file-path"
+                size="default"
+                aria-label={t`New file path`}
+                value={adding.path}
+                onChange={(event) => setAdding({ ...adding, path: event.target.value })}
+                placeholder="references/notes.md"
+                maxLength={240}
+                disabled={busy}
+                autoFocus
+                className="text-body-sm"
+                dir="auto"
+              />
+            ) : canEdit && !filesQuery.isError ? (
               <Button
                 variant="ghost"
                 type="button"
                 disabled={busy}
-                onClick={() => leave(() => setAdding({ path: "", text: "" }))}
-                className="h-auto min-h-8 w-full justify-start gap-2.5 px-2.5 py-1.5 text-body-sm font-normal text-muted-foreground"
+                onClick={() =>
+                  leave(() => {
+                    clearErrors();
+                    setAdding({ path: "", text: "" });
+                  })
+                }
+                className="w-full justify-start gap-2.5 px-2.5 text-body-sm font-normal text-muted-foreground"
               >
                 <Plus aria-hidden="true" className="size-4 shrink-0" />
                 <Trans>Add file</Trans>
@@ -361,8 +403,8 @@ export function SkillPage({
                 <span className="flex-1" />
                 <Button
                   size="sm"
-                  disabled={busy || !adding.path.trim()}
-                  onClick={() => saveFile.run({ path: adding.path.trim(), content: adding.text })}
+                  disabled={busy || !newPath || pathTaken}
+                  onClick={() => saveFile.run({ path: newPath, content: adding.text })}
                 >
                   <Trans>Save</Trans>
                 </Button>
@@ -370,7 +412,13 @@ export function SkillPage({
                   <Trans>Cancel</Trans>
                 </Button>
               </div>
-              {error ? <p className="text-body-sm text-destructive">{error}</p> : null}
+              {pathTaken ? (
+                <p className="text-body-sm text-destructive">
+                  <Trans>This skill already has a file at that path. Open it to change it.</Trans>
+                </p>
+              ) : error ? (
+                <p className="text-body-sm text-destructive">{error}</p>
+              ) : null}
               <TextEditor
                 id="skill-file-text"
                 label={t`File text`}
@@ -398,7 +446,7 @@ export function SkillPage({
                       variant="ghost"
                       size="sm"
                       disabled={busy}
-                      onClick={creating ? onBack : stopEditing}
+                      onClick={creating ? () => leave(onBack) : stopEditing}
                     >
                       <Trans>Cancel</Trans>
                     </Button>
@@ -588,7 +636,7 @@ function DocumentEditor({
 }) {
   const { t } = useLingui();
   return (
-    <div className="space-y-3">
+    <FieldGroup>
       <Field>
         <FieldLabel htmlFor="skill-name">
           <Trans>Name</Trans>
@@ -629,6 +677,6 @@ function DocumentEditor({
           disabled={disabled}
         />
       </Field>
-    </div>
+    </FieldGroup>
   );
 }
