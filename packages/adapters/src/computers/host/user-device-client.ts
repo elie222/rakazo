@@ -8,6 +8,7 @@ import type { HostComputerCall } from "./host-computer-runner.js";
 import { createHostComputerRunner } from "./host-computer-runner.js";
 import type { UserDeviceClientMessage, UserDeviceRevokeReason } from "./user-device-protocol.js";
 import {
+  USER_DEVICE_NAMED_CONTROLS_HEADER,
   USER_DEVICE_REVOKED_HEADER,
   userDeviceRevokeReason,
   userDeviceServerMessage,
@@ -84,7 +85,12 @@ export function startUserDeviceClient(options: UserDeviceClientOptions) {
   function connect() {
     if (stopped) return;
     const ws = new WebSocket(url, {
-      headers: { authorization: `Bearer ${options.token}` },
+      headers: {
+        authorization: `Bearer ${options.token}`,
+        ...(process.platform === "win32" && options.screen
+          ? { [USER_DEVICE_NAMED_CONTROLS_HEADER]: "1" }
+          : {}),
+      },
       maxPayload: USER_DEVICE_MAX_MESSAGE_BYTES,
       handshakeTimeout: 15_000,
       followRedirects: false,

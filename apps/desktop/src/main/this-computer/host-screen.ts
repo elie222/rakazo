@@ -193,9 +193,9 @@ export function createDesktopHostScreen(options: {
       unlocked();
       return screen.observe(scope, app, observeOptions);
     },
-    act: async (scope, app, actions) => {
+    act: async (scope, app, actions, actOptions) => {
       unlocked();
-      return screen.act(scope, app, actions);
+      return screen.act(scope, app, actions, actOptions);
     },
     close: () => screen.close(),
   };

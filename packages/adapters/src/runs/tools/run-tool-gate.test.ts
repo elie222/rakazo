@@ -30,6 +30,20 @@ vi.mock("../lifecycle/run-effects.js", async (importOriginal) => ({
   }),
 }));
 
+it.each([
+  [{ kind: "clickControl", name: "Save" }, "role"],
+  [{ kind: "setControl", name: "Summary", role: "textfield" }, "value"],
+])("rejects incomplete named actions before approval (%j)", async (action, missing) => {
+  const request = {
+    name: "user_computer_act",
+    args: { app: "Notepad", actions: [action] },
+  } as unknown as ToolRequest;
+  const outcome = await gateToolCall({} as never, request, undefined);
+  expect(outcome).toEqual({
+    result: { error: expect.stringContaining(`actions.0.${missing}`) },
+  });
+});
+
 const loginUse = {
   kind: "login" as const,
   login: "work",

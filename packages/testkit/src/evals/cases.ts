@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import type { UserDeviceGateway } from "@rakazo/adapters";
 import type { AppEmulator } from "../apps/app-emulator.js";
 import { SHAPES_PICTURE, shapesPng } from "./fixtures/shapes-png.js";
 import type { HistoryExpectation, HistoryFixture, HistoryScenario } from "./history-fixtures.js";
@@ -38,8 +39,22 @@ export type Step =
   | { fromPeer: string }
   /** A member posts a handoff through the real group delivery path. */
   | { fromMember: string; text: string };
+type UserComputerEvidence = {
+  saved: Record<string, string> | null;
+  toolCalls: number;
+  screenshots: number;
+};
+
+export type UserComputerFixture = {
+  gateway: UserDeviceGateway;
+  /** Allow this synthetic desktop trial to complete without an approval turn. */
+  allowWithoutApproval?: true;
+  snapshot(): UserComputerEvidence;
+};
+
 export type Evidence = {
   text: string;
+  userComputer?: UserComputerEvidence;
   delegation?: {
     helpers: Array<{
       status: string;
@@ -135,6 +150,8 @@ export type EvalCase = {
   taughtSkill?: true;
   history?: ReturnType<typeof historyFixture>;
   configure?: (services: EvalServices) => void;
+  /** A fresh, synthetic paired device for each trial. */
+  userComputer?: () => UserComputerFixture;
   fixtureData?: unknown; // What configure and apps serve, so the run fingerprint sees it change.
   /**
    * Services the bot reaches as MCP servers the user added, built fresh for each trial on the

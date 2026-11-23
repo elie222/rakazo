@@ -161,6 +161,17 @@ describe("Cua host screen", () => {
     ]);
   });
 
+  it("rejects Windows-only actions before executing any part of a batch", async () => {
+    const { screen, calls } = driver(runningTextEdit);
+    await expect(
+      screen.act(scope, "TextEdit", [
+        { kind: "menu", path: ["File", "New"] },
+        { kind: "clickControl", name: "Save", role: "button" },
+      ]),
+    ).rejects.toThrow("Named control actions are available on Windows");
+    expect(calls).toEqual([]);
+  });
+
   it("follows the front window when an action replaces it", async () => {
     let opened = false;
     const { screen, calls } = driver({

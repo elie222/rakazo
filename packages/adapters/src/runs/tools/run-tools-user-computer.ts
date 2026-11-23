@@ -24,7 +24,11 @@ import type {
   HostScreenActResult,
   HostScreenObservation,
 } from "../../computers/screens/host-screen.js";
-import { HOST_SCREEN_MAX_ACTIONS, hostScreenAction } from "../../computers/screens/host-screen.js";
+import {
+  HOST_SCREEN_MAX_ACTIONS,
+  hostScreenAction,
+  isNamedHostScreenAction,
+} from "../../computers/screens/host-screen.js";
 import type { RunContext } from "../assembly/run-context.js";
 import { isRunTaintedBeyondOwnComputer } from "../assembly/run-context.js";
 import type { ToolCall } from "./run-tool-gate.js";
@@ -156,7 +160,9 @@ async function connectedUserComputer(ctx: RunContext, computerId?: string) {
   const devices = ctx.deps.userDevices;
   const device =
     owner && devices ? await devices.connected(owner, computerId).catch(() => null) : null;
-  return owner && devices && device ? { owner, devices, deviceId: device.deviceId } : undefined;
+  return owner && devices && device
+    ? { owner, devices, deviceId: device.deviceId, platform: device.platform }
+    : undefined;
 }
 
 const TARGET_UNAVAILABLE =
@@ -252,17 +258,21 @@ export function userComputerObserve(ctx: RunContext, call: ToolCall) {
   });
 }
 
+export function parseUserComputerActions(input: unknown) {
+  const actions = screenActions.safeParse(input);
+  if (actions.success) return { actions: actions.data };
+  const issue = actions.error.issues[0];
+  const where = issue?.path.length ? `actions.${issue.path.join(".")}: ` : "actions: ";
+  return { error: `${where}${issue?.message ?? "invalid"}` };
+}
+
 export function userComputerAct(ctx: RunContext, call: ToolCall) {
-  const actions = screenActions.safeParse(call.args.actions);
-  if (!actions.success) {
-    const issue = actions.error.issues[0];
-    const where = issue?.path.length ? `actions.${issue.path.join(".")}: ` : "actions: ";
-    return call.finish({ error: `${where}${issue?.message ?? "invalid"}` });
-  }
+  const parsed = parseUserComputerActions(call.args.actions);
+  if (parsed.error !== undefined) return call.finish({ error: parsed.error });
   return userComputerScreen(ctx, call, {
     method: "screenAct",
     app: userComputerAppName(call.args.app),
-    actions: actions.data,
+    actions: parsed.actions,
   });
 }
 
@@ -280,19 +290,36 @@ async function userComputerScreen(ctx: RunContext, call: ToolCall, request: Scre
     return call.finish({
       error: target.computerId ? TARGET_UNAVAILABLE : USER_COMPUTER_UNAVAILABLE,
     });
-  const { owner, devices, deviceId } = connected;
+  const { owner, devices, deviceId, platform } = connected;
+  if (
+    platform !== "win32" &&
+    request.method === "screenAct" &&
+    request.actions.some(isNamedHostScreenAction)
+  )
+    return call.finish({
+      error: "Named control actions are available on Windows. Use element numbers here.",
+    });
+  const showImage =
+    ctx.computer.acceptsImages && (platform !== "win32" || call.args.includeScreenshot === true);
   const { signal } = ctx.context;
   try {
     const value = await lastValue(
       devices.request<HostScreenObservation | HostScreenActResult>(
         owner,
-        { ...request, botId: ctx.bot.id, runId: ctx.runId },
+        {
+          ...request,
+          ...(platform === "win32" ? { includeScreenshot: showImage } : {}),
+          botId: ctx.bot.id,
+          runId: ctx.runId,
+        },
         signal,
         deviceId,
       ),
     );
     if (request.method === "screenObserve")
-      return call.finish(screenToolResult(ctx, value as HostScreenObservation, "observed"));
+      return call.finish(
+        screenToolResult(ctx, value as HostScreenObservation, "observed", showImage),
+      );
     const acted = value as HostScreenActResult;
     const total = request.actions.length;
     const note = `completed ${acted.completed} of ${total} action${total === 1 ? "" : "s"}${
@@ -300,7 +327,7 @@ async function userComputerScreen(ctx: RunContext, call: ToolCall, request: Scre
     }`;
     return call.finish(
       acted.observation
-        ? screenToolResult(ctx, acted.observation, note)
+        ? screenToolResult(ctx, acted.observation, note, showImage)
         : { completed: acted.completed, ...(acted.error ? { error: note } : {}) },
     );
   } catch (error) {
@@ -318,8 +345,9 @@ function screenToolResult(
   ctx: RunContext,
   observation: HostScreenObservation,
   note: string,
+  showImage: boolean,
 ): AgentToolExecutionResult {
-  const image = ctx.computer.acceptsImages ? observation.image : undefined;
+  const image = showImage ? observation.image : undefined;
   const details = {
     app: observation.app,
     ...(observation.title ? { title: redactSecrets(observation.title, ctx.secrets) } : {}),

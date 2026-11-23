@@ -78,7 +78,12 @@ import { reviewToolCall } from "./run-tool-review.js";
 import { BUILTIN_AGENT_TOOL_NAMES, READ_ONLY_AGENT_TOOLS } from "./run-tool-selection.js";
 import { callMediaTool } from "./run-tools-files.js";
 import { callPaidService } from "./run-tools-integrations.js";
-import { USER_COMPUTER_TOOLS, userComputerGate } from "./run-tools-user-computer.js";
+import {
+  parseUserComputerActions,
+  USER_COMPUTER_ACT_TOOL,
+  USER_COMPUTER_TOOLS,
+  userComputerGate,
+} from "./run-tools-user-computer.js";
 
 export type AppliedEffect = Awaited<ReturnType<typeof recordEffect>>;
 
@@ -130,6 +135,10 @@ export async function gateToolCall(
     request;
   const { replayEffectToolName } = request;
   let { args, effectRequest } = request;
+  if (name === USER_COMPUTER_ACT_TOOL) {
+    const { error } = parseUserComputerActions(args.actions);
+    if (error) return { result: refusal("screen_actions_invalid", error) };
+  }
   const viaConnector = !BUILTIN_AGENT_TOOL_NAMES.has(name);
   // Declared effect of the operation this call dispatches (installed API method and
   // flag). Install config is immutable per route resource, so it cannot drift before

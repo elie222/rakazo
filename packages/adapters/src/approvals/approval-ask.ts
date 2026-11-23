@@ -503,6 +503,13 @@ function screenActionLine(value: unknown): string {
       return `type ${JSON.stringify(String(action.text ?? ""))}${at}`;
     case "set":
       return `set${at} to ${JSON.stringify(String(action.value ?? ""))}`;
+    case "clickControl":
+    case "setControl": {
+      const control = `${String(action.role ?? "")} ${JSON.stringify(String(action.name ?? ""))}`;
+      return action.kind === "clickControl"
+        ? `click ${control}`
+        : `set ${control} to ${JSON.stringify(String(action.value ?? ""))}`;
+    }
     case "key":
       return `key ${[...(Array.isArray(action.modifiers) ? action.modifiers : []), action.key].join("+")}`;
     case "scroll":

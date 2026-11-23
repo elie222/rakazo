@@ -228,6 +228,43 @@ describe("userComputerShell", () => {
   });
 });
 
+describe("screen tool screenshots", () => {
+  it.each([
+    ["win32", undefined, true, false],
+    ["win32", false, true, false],
+    ["win32", true, true, true],
+    ["win32", true, false, false],
+    ["darwin", undefined, true, true],
+    ["darwin", false, true, true],
+  ] as const)(
+    "uses the screenshot preference on %s (%s, vision %s)",
+    async (platform, includeScreenshot, acceptsImages, expectImage) => {
+      const observation = {
+        app: "Notes",
+        tree: "Window",
+        image: { mimeType: "image/png", data: "image-data", width: 12, height: 34 },
+      };
+      for (const tool of [userComputerObserve, userComputerAct]) {
+        const { ctx, call, requests } = setup(async function* () {
+          yield tool === userComputerObserve ? observation : { completed: 1, observation };
+        });
+        ctx.computer = { acceptsImages } as RunContext["computer"];
+        ctx.deps.userDevices!.connected = async () => ({ deviceId: "d", name: "Desk", platform });
+        const result = await tool(
+          ctx,
+          call({ app: "Notes", includeScreenshot, actions: [{ kind: "wait", ms: 0 }] }),
+        );
+        expect(result).toMatchObject({ kind: "agent_tool_result", content: expect.any(Array) });
+        expect(result).toHaveProperty("content.length", expectImage ? 2 : 1);
+        expect(requests[0]).toHaveProperty("method");
+        if (platform === "win32")
+          expect(requests[0]).toHaveProperty("includeScreenshot", expectImage);
+        else expect(requests[0]).not.toHaveProperty("includeScreenshot");
+      }
+    },
+  );
+});
+
 describe("explicit computer targeting", () => {
   it("pins every shell request to the selected computer", async () => {
     const { ctx, call, deviceIds } = setup(async function* () {

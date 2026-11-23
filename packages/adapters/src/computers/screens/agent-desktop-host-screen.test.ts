@@ -1,3 +1,4 @@
+import { setTimeout as sleep } from "node:timers/promises";
 import { describe, expect, it, vi } from "vitest";
 import type { AgentDesktopEnvelope } from "./agent-desktop-host-screen.js";
 import {
@@ -30,7 +31,10 @@ const snapshot = {
 };
 const screenshot = { data: "iVBORw0KGgo=", format: "png", width: 880, height: 448 };
 
-type Handler = (args: readonly string[]) => AgentDesktopEnvelope;
+type Handler = (
+  args: readonly string[],
+  signal: AbortSignal,
+) => AgentDesktopEnvelope | Promise<AgentDesktopEnvelope>;
 const ok = (data: unknown): AgentDesktopEnvelope => ({ ok: true, data });
 const refused = (code: string, retry = "safe", message?: string): AgentDesktopEnvelope => ({
   ok: false,
@@ -46,9 +50,11 @@ function cli(handlers: Record<string, Handler> = {}) {
     screenshot: () => ok(screenshot),
     ...handlers,
   };
-  const run = vi.fn(async (args: readonly string[]) => {
+  const run = vi.fn(async (args: readonly string[], signal: AbortSignal) => {
     calls.push([...args]);
-    return all[args[0]!]?.(args) ?? ok({ disposition: { delivery: "delivered_unverified" } });
+    return (
+      all[args[0]!]?.(args, signal) ?? ok({ disposition: { delivery: "delivered_unverified" } })
+    );
   });
   const screen = createAgentDesktopHostScreen({ run, selfPid: 99 });
   const acted = () =>
@@ -59,7 +65,7 @@ function cli(handlers: Record<string, Handler> = {}) {
 describe("agent-desktop host screen", () => {
   it("observes the app's front restored window as numbered rows and a screenshot", async () => {
     const { screen, calls } = cli();
-    await expect(screen.observe(scope, "Notepad")).resolves.toEqual({
+    await expect(screen.observe(scope, "Notepad", { includeScreenshot: true })).resolves.toEqual({
       app: "notepad",
       title: "Untitled - Notepad",
       tree: [
@@ -87,6 +93,120 @@ describe("agent-desktop host screen", () => {
     const observed = await screen.observe(scope, "notepad.exe", { query: "--save" });
     expect(observed.tree).toBe('- [4] button "Save"');
     expect(calls).toContainEqual(expect.arrayContaining(["find", "--text=--save"]));
+    expect(observed.image).toBeUndefined();
+    expect(calls.some(([name]) => name === "screenshot")).toBe(false);
+  });
+
+  it("waits for a control introduced by an earlier action, then takes an optional screenshot", async () => {
+    let opened = false;
+    let searches = 0;
+    const { screen, acted, calls } = cli({
+      click: () => {
+        opened = true;
+        return ok({});
+      },
+      find: (args) => {
+        expect(opened).toBe(true);
+        expect(args).toEqual(
+          expect.arrayContaining([
+            "--window-id",
+            "w-8",
+            "--name=Text editor",
+            "--role=textfield",
+            "--exact",
+          ]),
+        );
+        searches++;
+        return searches === 1
+          ? ok({ matches: [], total_matches: 0 })
+          : ok({
+              matches: [{ name: "Text editor", role: "textfield", ref_id: "@s0000000b:e9" }],
+              total_matches: 1,
+            });
+      },
+    });
+    await screen.observe(scope, "notepad");
+    expect(calls.some(([name]) => name === "screenshot")).toBe(false);
+    const result = await screen.act(
+      scope,
+      "notepad",
+      [
+        { kind: "click", element: 2 },
+        { kind: "setControl", name: "Text editor", role: "textfield", value: "Welcome" },
+        { kind: "click", element: 2 },
+      ],
+      { includeScreenshot: true },
+    );
+    expect(result).toMatchObject({ completed: 3, observation: { image: { width: 880 } } });
+    expect(searches).toBe(2);
+    expect(acted().filter(([cmd]) => cmd !== "find")).toEqual([
+      ["click", "--", "@s0000000a:e2"],
+      ["set-value", "--", "@s0000000b:e9", "Welcome"],
+      ["click", "--", "@s0000000a:e2"],
+    ]);
+  });
+
+  it.each([
+    [{ matches: [], total_matches: 0 }, "Couldn't find a unique"],
+    [{ matches: [{ ref_id: "@s0000000b:e9" }], total_matches: 2 }, "More than one"],
+    [
+      { matches: [{ ref_id: "@s0000000b:e9" }], total_matches: 1, truncated: true },
+      "Couldn't find a unique",
+    ],
+    [
+      { matches: [{ name: "save", role: "button", ref_id: "@s0000000b:e9" }], total_matches: 1 },
+      "Couldn't find a unique",
+    ],
+    [
+      { matches: [{ name: "Save", role: "button" }], total_matches: 1 },
+      "has no actionable element",
+    ],
+  ])("stops the batch if a named control can't be resolved (%j)", async (data, error) => {
+    const { screen, acted, calls } = cli({ find: () => ok(data) });
+    const result = await screen.act(scope, "notepad", [
+      { kind: "clickControl", name: "Save", role: "button", waitMs: 0 },
+      { kind: "key", key: "escape" },
+    ]);
+    expect(result).toMatchObject({ completed: 0, error: expect.stringContaining(error) });
+    expect(acted().map(([name]) => name)).toEqual(["find"]);
+    expect(calls.some(([name]) => name === "screenshot")).toBe(false);
+  });
+
+  it("allows one complete lookup when waitMs is zero", async () => {
+    const { screen, acted } = cli({
+      async find() {
+        await sleep(300);
+        return ok({
+          matches: [{ name: "Save", role: "button", ref_id: "@s0000000b:e9" }],
+          total_matches: 1,
+        });
+      },
+    });
+    const result = await screen.act(scope, "notepad", [
+      { kind: "clickControl", name: "Save", role: "button", waitMs: 0 },
+    ]);
+    expect(result.completed).toBe(1);
+    expect(acted().map(([name]) => name)).toEqual(["find", "click"]);
+  });
+
+  it("aborts a slow lookup and stops before acting on its result", async () => {
+    let lookup: AbortSignal | undefined;
+    const { screen, acted } = cli({
+      find: (_args, signal) => {
+        lookup = signal;
+        return new Promise(() => {});
+      },
+    });
+    const result = await screen.act(scope, "notepad", [
+      { kind: "clickControl", name: "Save", role: "button", waitMs: 100 },
+      { kind: "key", key: "escape" },
+    ]);
+    expect(lookup?.aborted).toBe(true);
+    expect(result).toMatchObject({
+      completed: 0,
+      error: expect.stringContaining("Couldn't find a unique"),
+    });
+    expect(acted().map(([name]) => name)).toEqual(["find"]);
   });
 
   it("drives only the exact program named, never a near match or itself", async () => {
@@ -279,12 +399,14 @@ describe("agent-desktop host screen", () => {
           : ok({ ...screenshot, width: 3200, height: 1600 }),
     );
     const screen = createAgentDesktopHostScreen({ run, selfPid: 99, fitImage });
-    await expect(screen.observe(scope, "notepad")).resolves.toMatchObject({
+    await expect(
+      screen.observe(scope, "notepad", { includeScreenshot: true }),
+    ).resolves.toMatchObject({
       image: { data: Buffer.from("small").toString("base64"), width: 1568, height: 784 },
     });
     expect(fitImage).toHaveBeenCalledWith(expect.any(Buffer), 1568);
     const { screen: refusing } = cli({ screenshot: () => refused("PERM_DENIED") });
-    const observed = await refusing.observe(scope, "notepad");
+    const observed = await refusing.observe(scope, "notepad", { includeScreenshot: true });
     expect(observed.image).toBeUndefined();
     expect(observed.tree).toContain("[1]");
   });

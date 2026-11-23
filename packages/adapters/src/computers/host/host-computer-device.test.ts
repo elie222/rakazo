@@ -94,7 +94,7 @@ describe("this computer's screen on the desktop app's own server", () => {
     expect(screen.observe).toHaveBeenCalledWith(
       expect.objectContaining({ botId: "bot" }),
       "Notepad",
-      { query: undefined },
+      { query: undefined, includeScreenshot: true },
     );
 
     await expect(
