@@ -318,7 +318,20 @@ MEDIA_GENERATION_API_KEY=replace-with-media-api-key
 MEDIA_GENERATION_IMAGE_MODEL=gpt-image-1
 ```
 
-`MEDIA_GENERATION_PROVIDER` accepts `disabled` (the default), `fal`, `openai`, or `fake`
+`openrouter` makes images through OpenRouter's Images API (`POST /images`) and four-second
+videos through its video jobs API (`POST /videos`); set either model or both:
+
+```dotenv
+MEDIA_GENERATION_PROVIDER=openrouter
+MEDIA_GENERATION_BASE_URL=https://openrouter.ai/api/v1
+MEDIA_GENERATION_API_KEY=replace-with-media-api-key
+MEDIA_GENERATION_IMAGE_MODEL=openai/gpt-image-1-mini
+MEDIA_GENERATION_VIDEO_MODEL=google/veo-3.1-fast
+```
+
+The video model must accept a four-second duration.
+
+`MEDIA_GENERATION_PROVIDER` accepts `disabled` (the default), `fal`, `openai`, `openrouter`, or `fake`
 (for offline testing only). The base URL is optional and defaults to the provider's URL above.
 Only set the image/video model fields for capabilities you want enabled; `openai` takes an
 image model only. Compatible servers can use the same connection fields; models must support

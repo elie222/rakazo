@@ -39,6 +39,8 @@ import {
   BrowserStillRunningError,
   BrowserStoppedReleaseError,
   ComputerScreenUnavailableError,
+  PAGE_BROWSER_INTERRUPTED,
+  PAGE_BROWSER_TIMED_OUT,
   screenSessionKey,
 } from "./computer-screens.js";
 import {
@@ -112,6 +114,14 @@ export class LinuxDesktop {
     const result = await this.host.run(computer, command, context);
     if (result.code === 75) throw new ComputerScreenUnavailableError();
     if (result.code === BROWSER_STILL_RUNNING_EXIT) throw new BrowserStillRunningError();
+    // Logged before the exit is judged: the restarted browser can still fail to come up.
+    if (startsScreen && result.stdout.includes("RAKAZO_BROWSER_RESTARTED=unresponsive")) {
+      getLogger().warn("computer.browser_restarted", {
+        "sandbox.id": computer.id,
+        provider: computer.kind,
+        reason: "unresponsive",
+      });
+    }
     // Only the screen startup script sets this status; an app the desktop launched may exit with it.
     if (startsScreen && result.code === SCREEN_NOT_READY_EXIT) {
       // Only the first line: the rest is the browser's or display's own log.
@@ -299,7 +309,7 @@ export class LinuxDesktop {
     );
     if (result.code === 124) {
       throw new Error(
-        `Page browser timed out; the page may be busy or blocked by a dialog. ${
+        `${PAGE_BROWSER_TIMED_OUT}; the page may be busy or blocked by a dialog. ${
           request.command === "act"
             ? "Inspect the screen before continuing."
             : "Retry once before using other tools."
@@ -307,7 +317,7 @@ export class LinuxDesktop {
       );
     }
     if (Buffer.byteLength(result.stdout) > PAGE_BROWSER_MAX_OUTPUT)
-      throw new Error("Page browser unavailable or interrupted");
+      throw new Error(PAGE_BROWSER_INTERRUPTED);
     // Exit 2 is the page browser refusing the command before touching the page (an older
     // computer image does not know it). Pass its reply on, so a caller can tell "cannot
     // check" from a check that failed.
@@ -315,7 +325,7 @@ export class LinuxDesktop {
       const refused = refusedCommand(result.stdout);
       if (refused) return refused;
     }
-    if (result.code !== 0) throw new Error("Page browser unavailable or interrupted");
+    if (result.code !== 0) throw new Error(PAGE_BROWSER_INTERRUPTED);
     return JSON.parse(result.stdout) as PageBrowserResult;
   }
 

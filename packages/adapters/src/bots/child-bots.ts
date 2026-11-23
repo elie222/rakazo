@@ -256,6 +256,8 @@ export async function archiveSpawnedBot(
   deps: BotLifecycleDeps,
   input: {
     spawnedByBotId: string;
+    /** The run asking, which finishes its reply even when it archives its own bot. */
+    runId: string;
     userId: string;
     spaceId: string;
     confirmName: string;
@@ -292,11 +294,8 @@ export async function archiveSpawnedBot(
   const target = matches[0]!;
   const confirmed = confirmSpawnedBotName(confirmName, target.name);
   if (!confirmed.ok) return confirmed;
-  if (target.id === input.spawnedByBotId) {
-    return { error: "A bot cannot archive itself with archive_bot." };
-  }
-
-  await archiveBot(deps, target, context);
+  const self = target.id === input.spawnedByBotId;
+  await archiveBot(deps, target, context, self ? { keepRunId: input.runId } : undefined);
   return { ok: true as const, botId: target.id, name: target.name };
 }
 
@@ -304,6 +303,7 @@ export async function archiveBot(
   deps: BotLifecycleDeps,
   bot: LifecycleBot,
   context: AdapterContext,
+  options?: { keepRunId?: string },
 ) {
   const [dedicated, activeRuns, activeRoutines] = await Promise.all([
     deps.prisma.computer.findUnique({
@@ -317,7 +317,11 @@ export async function archiveBot(
       },
     }),
     deps.prisma.run.findMany({
-      where: { botId: bot.id, status: { in: [...ACTIVE_RUN_STATUSES] } },
+      where: {
+        botId: bot.id,
+        status: { in: [...ACTIVE_RUN_STATUSES] },
+        ...(options?.keepRunId ? { id: { not: options.keepRunId } } : {}),
+      },
       select: { id: true, taskId: true, userId: true, spaceId: true },
     }),
     deps.prisma.routine.findMany({
@@ -337,7 +341,11 @@ export async function archiveBot(
       where: { botId: bot.id },
       data: { active: false, nextRunAt: null },
     });
-    await expireComputerExecutionLeases(tx, { botId: bot.id });
+    // The asking run keeps its computer lease until it ends, so its heartbeat does not abort it.
+    await expireComputerExecutionLeases(tx, {
+      botId: bot.id,
+      ...(options?.keepRunId ? { runId: { not: options.keepRunId } } : {}),
+    });
     // Archiving ends a person's control of the bot's screen, and the recording made under it.
     const held = await tx.computer.findMany({
       where: { controlBotId: bot.id, controlLeaseId: { not: null } },

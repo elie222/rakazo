@@ -226,7 +226,7 @@ function secretGuidance(disabled?: ReadonlySet<string>): string[] {
   }
   if (builtinOffered(disabled, "request_secret") && builtinOffered(disabled, "browser_act")) {
     clauses.push(
-      "For a sign-in code, use browser_act fill_code with secret if list_secrets shows the login's authenticatorCode; otherwise request_secret oneTimeCode and fill_code, never chat.",
+      "For a sign-in code, use browser_act fill_code with secret if list_secrets shows the login's authenticatorCode. If the site sent the code to an inbox you can read, yours or the user's connected email, read it there and type it with browser_act; otherwise request_secret oneTimeCode and fill_code, never chat.",
     );
   }
   if (builtinOffered(disabled, "generate_secret")) {
@@ -478,7 +478,7 @@ export function userTurnInstructions(parts: {
     offeredBuiltinClause(
       parts.disabledBuiltinTools,
       "archive_bot",
-      "archive_bot safely archives another bot in this space. Use it when the user asks to remove that bot or when it is finished and unused. The user can restore it or permanently delete it later. confirm_name must exactly match its name.",
+      "archive_bot safely archives a bot in this space, yourself included. Use it when the user asks to remove a bot, or when another bot is finished and unused. The user can restore it or permanently delete it later. confirm_name must exactly match its name.",
     ),
     fleetClause(
       parts.offeredFleetTools,

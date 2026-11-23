@@ -416,12 +416,11 @@ export async function buildTurnPrompt(
       ),
     });
   }
-  if (recalledMemory) {
-    historicalContext.push({
-      role: "user",
-      content: redactSecrets(recalledMemory, runSecrets),
-    });
-  }
+  // Recall changes with each run's request, so it goes after the kept history: placed before
+  // it, the history would no longer be a prefix the provider's prompt cache can reuse.
+  const recalledContext: AgentRunRequest["history"] = recalledMemory
+    ? [{ role: "user", content: redactSecrets(recalledMemory, runSecrets) }]
+    : [];
   const resumeHistory = turnCheckpoint
     ? await checkpointAnswerHistory(
         deps.prisma,
@@ -448,7 +447,7 @@ export async function buildTurnPrompt(
         context,
       )
     : replayHistory;
-  const runtimeHistory = [...historicalContext, ...historyWithImages];
+  const runtimeHistory = [...historicalContext, ...historyWithImages, ...recalledContext];
   const groupDirectory =
     conversationThread.groupId || ownerComputerRoutine
       ? undefined
@@ -462,7 +461,7 @@ export async function buildTurnPrompt(
     agentSkillsLine,
     taskPrompt,
     prompt,
-    historicalContext,
+    hasHistoricalContext: historicalContext.length + recalledContext.length > 0,
     runtimeHistory,
     resumeHistoryMessageIds: resumeHistory?.representedMessageIds,
     resumeAnswerReplyContexts: resumeHistory?.answerReplyContexts,

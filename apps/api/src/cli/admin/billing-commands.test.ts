@@ -10,7 +10,10 @@ const mocks = vi.hoisted(() => ({
   recordAuditEvent: vi.fn(),
 }));
 vi.mock("./billing-provider.js", () => ({
-  adminBillingProvider: () => ({ refundInvoice: mocks.refundInvoice }),
+  adminBillingProvider: () => ({
+    refundInvoice: mocks.refundInvoice,
+    getCustomerSubscription: async () => ({ status: "active", cancelAtPeriodEnd: false }),
+  }),
 }));
 vi.mock("../../billing/billing.js", () => ({
   createBillingService: () => ({
@@ -26,18 +29,33 @@ vi.mock("@rakazo/db", async (importOriginal) => ({
   ...(await importOriginal<object>()),
   ownedBillingAccounts: async () => [{ organizationId: "org_fixture", customerId: "cus_fixture" }],
   recordAuditEvent: mocks.recordAuditEvent,
+  unexpiredCreditAccount: async () => ({ balanceMicros: 9_680_000n }),
 }));
 
 const email = "person@example.test";
 const preview = {
   invoiceId: "in_fixture",
+  invoiceNumber: "EXAMPLE-0001",
+  creditPurchaseId: "in_fixture",
+  createdAt: "2030-01-01T00:00:00.000Z",
   amountMinor: 1000,
   currency: "usd",
   state: "refundable",
 };
 const context = {
   env: {},
-  prisma: { user: { findMany: async () => [{ id: "user_fixture", email }] } },
+  prisma: {
+    user: { findMany: async () => [{ id: "user_fixture", email }] },
+    modelCreditAccount: { findUnique: async () => ({ balanceMicros: 9_680_000n }) },
+    modelCreditEntry: {
+      findUnique: async () => ({
+        organizationId: "org_fixture",
+        amountMicros: 10_000_000n,
+        createdAt: new Date("2030-01-01T00:00:05Z"),
+      }),
+      groupBy: async () => [{ model: "example/model", _sum: { amountMicros: -320_000n } }],
+    },
+  },
 } as unknown as AdminContext;
 
 beforeEach(() => {
@@ -58,6 +76,18 @@ describe("operator billing writes", () => {
     const cancel = billingCancelCommand.parse([email], { confirm: true })!;
     await expect(cancel(context)).rejects.toThrow("Billing sync failed");
     expect(mocks.recordAuditEvent).toHaveBeenCalledTimes(1);
+  });
+
+  it("previews the newest invoice with the credits its refund takes back", async () => {
+    mocks.refundInvoice.mockResolvedValueOnce(preview);
+    const refund = billingRefundCommand.parse([email], {})!;
+    const result = await refund(context);
+    expect(mocks.refundInvoice).toHaveBeenCalledWith("cus_fixture", undefined, false);
+    expect(result.json).toMatchObject({
+      credits: { fromInvoice: 10, spentSincePaid: 0.32, balanceAfterRefund: -0.32 },
+      subscriptionRenews: true,
+    });
+    expect(result.text).toContain("Add EXAMPLE-0001 --confirm");
   });
 
   it("audits a refund request before sending it and reconciles after an uncertain response", async () => {
