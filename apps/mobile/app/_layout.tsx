@@ -84,6 +84,7 @@ import { loadLinkFavicon } from "../lib/messages/link-favicons";
 import { OpenPageContext } from "../lib/messages/message-mentions";
 import { loadHapticsPreference } from "../lib/native/haptics";
 import { native, useMobileTokens, useResolvedAppearance } from "../lib/native/native";
+import { useHardwareEscape, useHardwareShortcuts } from "../lib/navigation/hardware-shortcuts";
 import { useNavigatorMounted } from "../lib/navigation/navigator-mounted";
 import { clearAppBadge } from "../lib/notifications/app-badge";
 import {
@@ -282,6 +283,11 @@ function ChatContentProviders({
 
 export const unstable_settings = { anchor: "index" };
 
+function ModalHardwareEscape({ dismiss }: { dismiss: () => void }) {
+  useHardwareEscape("modal", dismiss);
+  return null;
+}
+
 function LayoutContent() {
   const call = useCallActive();
   const { t } = useLingui();
@@ -321,6 +327,7 @@ function LayoutContent() {
     subscribeSessionGeneration,
     currentReadySessionGeneration,
   );
+  useHardwareShortcuts(ready, callSession);
   useEffect(() => {
     if (!ready) return;
     return startIncomingCalls();
@@ -440,6 +447,7 @@ function LayoutContent() {
                               <CallKeyboardContext.Provider
                                 value={Platform.OS === "ios" ? false : call}
                               >
+                                <ModalHardwareEscape dismiss={() => navigation.goBack()} />
                                 {children}
                               </CallKeyboardContext.Provider>
                             </InboxBesideContext.Provider>

@@ -473,14 +473,17 @@ export function ThreadComposer({
 
   const enterToSend = useComposerHardwareEnterPreference();
   const hardwareKeys = optionCount
-    ? ["Enter", "ArrowUp", "ArrowDown", "Escape", "Tab"]
-    : enterToSend && !sendBlocked
-      ? ["Enter"]
-      : [];
+    ? ["Enter", "CommandEnter", "ArrowUp", "ArrowDown", "Escape", "Tab"]
+    : sendBlocked
+      ? []
+      : enterToSend
+        ? ["Enter", "CommandEnter"]
+        : ["CommandEnter"];
 
   function onHardwareKey(key: string) {
     const action = resolveMentionPickerKey({
-      key,
+      key: key === "CommandEnter" ? "Enter" : key,
+      metaKey: key === "CommandEnter" && optionCount === 0,
       optionCount,
       highlightedIndex: activePickerIndex,
       enterToSend,

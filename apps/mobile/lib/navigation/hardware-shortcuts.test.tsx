@@ -1,0 +1,76 @@
+// @vitest-environment jsdom
+
+import { act } from "react";
+import { createRoot } from "react-dom/client";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { useHardwareEscape, useHardwareShortcuts } from "./hardware-shortcuts";
+
+const native = vi.hoisted(() => ({
+  dispatch: undefined as ((event: { key: string; presented: boolean }) => void) | undefined,
+  navigate: vi.fn(),
+}));
+vi.mock("expo-modules-core", () => ({
+  requireOptionalNativeModule: () => ({
+    addListener: (_: string, listener: typeof native.dispatch) => {
+      native.dispatch = listener;
+      return {
+        remove: () => {
+          native.dispatch = undefined;
+        },
+      };
+    },
+  }),
+}));
+vi.mock("expo-router", async () => ({
+  useFocusEffect: (await import("react")).useEffect,
+  useRouter: () => ({ navigate: native.navigate }),
+}));
+vi.mock("../api/session", () => ({ loadSessionToken: async () => "test-session" }));
+
+let root: ReturnType<typeof createRoot>;
+beforeEach(() => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  root = createRoot(document.createElement("div"));
+  native.navigate.mockClear();
+});
+afterEach(async () => {
+  await act(() => root.unmount());
+});
+
+function Shortcuts({ dismiss, stop }: { dismiss?: () => void; stop?: () => void }) {
+  useHardwareShortcuts(true, 0);
+  useHardwareEscape("modal", dismiss ?? null);
+  useHardwareEscape("thread", stop ?? null);
+  return null;
+}
+
+it("closes the presented route without stopping its underlying thread", async () => {
+  const dismiss = vi.fn();
+  const stop = vi.fn();
+  await act(async () => root.render(<Shortcuts dismiss={dismiss} stop={stop} />));
+
+  act(() => native.dispatch?.({ key: "Escape", presented: true }));
+
+  expect(dismiss).toHaveBeenCalledOnce();
+  expect(stop).not.toHaveBeenCalled();
+});
+
+it("stops a thread on Escape when the navigator is not presenting a sheet", async () => {
+  const stop = vi.fn();
+  await act(async () => root.render(<Shortcuts stop={stop} />));
+
+  act(() => native.dispatch?.({ key: "Escape", presented: false }));
+
+  expect(stop).toHaveBeenCalledOnce();
+});
+
+it.each([
+  ["k", "/search"],
+  ["n", "/new-group"],
+])("navigates on Command+%s", async (key, route) => {
+  await act(async () => root.render(<Shortcuts />));
+
+  act(() => native.dispatch?.({ key, presented: false }));
+
+  expect(native.navigate).toHaveBeenCalledExactlyOnceWith(route);
+});

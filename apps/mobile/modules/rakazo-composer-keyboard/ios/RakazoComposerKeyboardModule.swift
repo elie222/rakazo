@@ -5,6 +5,26 @@ public final class RakazoComposerKeyboardModule: Module {
   public func definition() -> ModuleDefinition {
     Name("RakazoComposerKeyboard")
 
+    Events("onShortcut")
+    Function("setThreadEscapeEnabled") { (enabled: Bool) in
+      DispatchQueue.main.async {
+        RakazoHardwareShortcuts.stopsThread = enabled
+      }
+    }
+    OnStartObserving { [weak self] in
+      DispatchQueue.main.async {
+        RakazoHardwareShortcuts.dispatch = { [weak self] key, presented in
+          self?.sendEvent("onShortcut", ["key": key, "presented": presented])
+        }
+        _ = RakazoHardwareShortcuts.install
+      }
+    }
+    OnStopObserving {
+      DispatchQueue.main.async {
+        RakazoHardwareShortcuts.dispatch = nil
+      }
+    }
+
     View(RakazoComposerKeyboardView.self) {
       Events("onHardwareKey")
       Prop("keys") { (view: RakazoComposerKeyboardView, keys: [String]) in
@@ -20,16 +40,19 @@ final class RakazoComposerKeyboardView: ExpoView {
 
   private lazy var commands = [
     "Enter": command("\r", key: "Enter"),
+    "CommandEnter": command("\r", key: "CommandEnter", modifiers: .command),
     "ArrowUp": command(UIKeyCommand.inputUpArrow, key: "ArrowUp"),
     "ArrowDown": command(UIKeyCommand.inputDownArrow, key: "ArrowDown"),
     "Escape": command(UIKeyCommand.inputEscape, key: "Escape"),
     "Tab": command("\t", key: "Tab"),
   ]
 
-  private func command(_ input: String, key: String) -> UIKeyCommand {
+  private func command(
+    _ input: String, key: String, modifiers: UIKeyModifierFlags = []
+  ) -> UIKeyCommand {
     let command = UIKeyCommand(
       title: "", action: #selector(handleHardwareKey(_:)), input: input,
-      modifierFlags: [], propertyList: key
+      modifierFlags: modifiers, propertyList: key
     )
     // UITextView otherwise handles Return and arrow keys before this responder.
     command.wantsPriorityOverSystemBehavior = true
@@ -41,6 +64,11 @@ final class RakazoComposerKeyboardView: ExpoView {
       return super.keyCommands
     }
     return keys.compactMap { commands[$0] }
+  }
+
+  var handlesEscape: Bool {
+    guard keys.contains("Escape"), let input = focusedInput(in: self) else { return false }
+    return input.markedTextRange == nil
   }
 
   @objc private func handleHardwareKey(_ command: UIKeyCommand) {

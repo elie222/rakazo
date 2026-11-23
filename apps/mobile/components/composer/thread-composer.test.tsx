@@ -212,7 +212,7 @@ vi.mock("expo", () => ({
         "div",
         null,
         children,
-        ["Enter", "ArrowDown", "Escape"].map((key) =>
+        ["Enter", "CommandEnter", "ArrowDown", "Escape"].map((key) =>
           createElement("button", {
             key,
             type: "button",
@@ -915,6 +915,19 @@ describe("thread composer isolation", () => {
       press("Hardware Enter");
 
       expect(props.send).not.toHaveBeenCalled();
+    } finally {
+      await act(() => setComposerEnterToSendPreference(true));
+    }
+  });
+
+  it("sends with Command+Enter when the Enter toggle is off", async () => {
+    await act(() => setComposerEnterToSendPreference(false));
+    try {
+      type("A message");
+
+      press("Hardware CommandEnter");
+
+      expect(props.send).toHaveBeenCalledOnce();
     } finally {
       await act(() => setComposerEnterToSendPreference(true));
     }
