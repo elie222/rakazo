@@ -1893,7 +1893,10 @@ export interface BillingSubscriptionSnapshot {
   currentPeriodEndsAt: Date | null;
   cancelAtPeriodEnd: boolean;
   endedAt: Date | null;
-  /** When the latest invoice was settled, if it billed anything: a trial's free invoice is no payment. */
+  /**
+   * When the latest invoice was settled, if it billed anything: a trial's free invoice is no
+   * payment. For a subscription that no longer grants access, its first paid invoice counts too.
+   */
   paidAt?: Date;
   /** The flat own-key plan, which grants access without credits. */
   byokPlan?: boolean;
