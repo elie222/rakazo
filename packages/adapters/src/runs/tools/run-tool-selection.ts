@@ -9,6 +9,7 @@ import { READ_MEETING_TRANSCRIPT } from "../../meetings/meeting-chat.tool-defini
 import { selectMemoryTools } from "../../memory/memory-tools.js";
 import { filterImageReturningComputerTools } from "../../models/model-vision.js";
 import { builtinAgentTools } from "../../tools/builtin.tool-definition.js";
+import { searchHistoryThisChat } from "../../tools/builtin-memory.tool-definition.js";
 import {
   filterBuiltinToolsForRun,
   filterBuiltinToolsForThread,
@@ -131,6 +132,8 @@ export function selectBuiltinToolsForRun(options: {
   ticketBoardEnabled?: boolean;
   phoneCallsEnabled?: boolean;
   historyRetrievalEnabled?: boolean;
+  /** See historyMyChatsAllowed; otherwise search_history offers only this chat. */
+  historyMyChats?: boolean;
   /** A routine with its owner's computer: only OWN_PROMPT_ONLY_TOOLS. */
   ownPromptOnly?: boolean;
   meetingTranscriptsAvailable?: boolean;
@@ -189,12 +192,17 @@ export function selectBuiltinToolsForRun(options: {
     !options.groupId &&
     !options.messagingChannelRun;
   const emailMailbox = Boolean(options.emailInbox) || emailClaimOffered;
+  const builtins = options.historyMyChats
+    ? builtinAgentTools
+    : builtinAgentTools.map((tool) =>
+        tool.name === "search_history" ? searchHistoryThisChat : tool,
+      );
   return selectCloudAgentTools(
     selectMemoryTools(
       filterBuiltinToolsForRun(
         filterBuiltinToolsForThread(
           filterPageBrowserTools(
-            filterImageReturningComputerTools(builtinAgentTools, options.graphicalToolsAllowed),
+            filterImageReturningComputerTools(builtins, options.graphicalToolsAllowed),
             options.pageBrowserAllowed ?? options.graphicalToolsAllowed,
           ),
           options.groupId,
