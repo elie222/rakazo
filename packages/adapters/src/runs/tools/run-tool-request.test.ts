@@ -204,15 +204,14 @@ describe("schedule tools on another bot's routines", () => {
   });
 
   it.each(["webhook", "bot_message", "spawn", "tickets"])(
-    "holds a %s run's change for the owner's approval, and lets it list",
+    "holds a %s run's change to, or list of, another bot's routines for the owner",
     async (trigger) => {
       const call = managedRoutineCall({ ownerStartedRun: false, trigger });
-      const { prepared, request } = call("schedule_cancel", { bot_id: "child", routineId: "r" });
-      await expect(prepared).resolves.toBeUndefined();
-      expect(request).toMatchObject({ heldForApproval: true, ignoresAllowRules: true });
-      const list = call("schedule_list", { bot_id: "child" });
-      await expect(list.prepared).resolves.toBeUndefined();
-      expect(list.request.heldForApproval).toBeUndefined();
+      for (const name of ["schedule_cancel", "schedule_list"]) {
+        const { prepared, request } = call(name, { bot_id: "child", routineId: "r" });
+        await expect(prepared).resolves.toBeUndefined();
+        expect(request).toMatchObject({ heldForApproval: true, ignoresAllowRules: true });
+      }
     },
   );
 });
