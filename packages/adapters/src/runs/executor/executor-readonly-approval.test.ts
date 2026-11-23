@@ -2724,6 +2724,21 @@ describe("bot management tool gating", () => {
     },
   );
 
+  it("holds reading another bot's instructions on a bot_message run for the owner", async () => {
+    const f = fixture({
+      name: "list_fleet",
+      builtin: true,
+      fleetManagement: true,
+      trigger: "bot_message",
+    });
+    f.setCalls([{ args: { bot_id: "child-1" }, executionId: "call-1" }]);
+    await f.run();
+    expect(f.pauseRunForInput).toHaveBeenCalledOnce();
+    expect(f.effects).toEqual([
+      expect.objectContaining({ kind: "list_fleet", status: "intended" }),
+    ]);
+  });
+
   it("asks after a channel or webhook message even with an Always allow rule for the tool", async () => {
     const f = fixture({
       name: "create_group",

@@ -500,7 +500,13 @@ export async function prepareToolRequest(
     // Text from a channel or webhook, or whatever started a run nobody is watching, may have asked
     // for it, so it goes through the approval mode, and an Always allow rule saved for calls the
     // owner asked for does not skip it.
-    if (fleetWrite && (unattended || (await ctx.trust.receivedOutsideMessage()))) {
+    // Reading another bot's full instructions waits too: a run nobody is watching may answer a bot
+    // from another Space.
+    const readsInstructions = unattended && name === "list_fleet" && argumentGiven(args.bot_id);
+    if (
+      readsInstructions ||
+      (fleetWrite && (unattended || (await ctx.trust.receivedOutsideMessage())))
+    ) {
       request.heldForApproval = true;
       request.ignoresAllowRules = true;
     }
