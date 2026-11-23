@@ -279,18 +279,28 @@ export const conversationTools: ConnectorTool[] = [
   },
   {
     name: "remember",
-    description: `Save one short new fact to your memory, one call per fact. To change or drop a fact, pass old_text from its entry with new or empty content. Holds ${BOT_MEMORY_MAX_BYTES / 1024} KB.`,
+    description: `Edit your memory. Each entry is one short declarative fact, not an instruction to yourself; task progress, one-off details and promises do not belong. Operations apply all or none, and the ${BOT_MEMORY_MAX_BYTES / 1024} KB limit counts only the result, so one call can make room and add.`,
     inputSchema: {
       type: "object",
       properties: {
-        content: { type: "string" },
-        old_text: { type: "string" },
+        operations: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              action: { type: "string", enum: ["add", "replace", "remove"] },
+              content: { type: "string" },
+              old_text: { type: "string" },
+            },
+            required: ["action"],
+          },
+        },
         path: {
           type: "string",
           description: `Another of your memory documents to edit. Defaults to ${MEMORY_INDEX_PATH}.`,
         },
       },
-      required: ["content"],
+      required: ["operations"],
     },
   },
   {

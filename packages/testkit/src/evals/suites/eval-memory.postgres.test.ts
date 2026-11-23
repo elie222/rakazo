@@ -20,14 +20,14 @@ const lastTool = (request: ModelEmulatorRequest) =>
 /** One remember call, then a reply once its result is back. */
 function save(
   id: string,
-  args: { content: string; old_text?: string },
+  operations: Array<{ action: string; content?: string; old_text?: string }>,
   before: (request: ModelEmulatorRequest) => void,
   reply?: string,
 ): ModelEmulatorStep[] {
   return [
     {
       expect: before,
-      response: { type: "tool", id, name: "remember", arguments: args },
+      response: { type: "tool", id, name: "remember", arguments: { operations } },
     },
     ...(reply
       ? [
@@ -47,15 +47,21 @@ function movedCity(rewrite: boolean): ModelEmulatorStep[] {
   return [
     ...save(
       "save-london",
-      { content: "Lives in London." },
+      [{ action: "add", content: "Lives in London." }],
       (r) => expect(prompt(r)).toContain("I live in London"),
       "Noted.",
     ),
     ...save(
       "save-berlin",
       rewrite
-        ? { content: "Lives in Berlin (moved from London).", old_text: "Lives in London." }
-        : { content: "Moved to Berlin." },
+        ? [
+            {
+              action: "replace",
+              content: "Lives in Berlin (moved from London).",
+              old_text: "Lives in London.",
+            },
+          ]
+        : [{ action: "add", content: "Moved to Berlin." }],
       (r) => {
         expect(prompt(r)).toContain("Lives in London.");
         expect(prompt(r)).not.toContain("I live in London");
@@ -84,7 +90,7 @@ function fullMemory(consolidate: boolean): ModelEmulatorStep[] {
       type: "tool",
       id: "save-code",
       name: "remember",
-      arguments: { content: "Office door code: 5829" },
+      arguments: { operations: [{ action: "add", content: "Office door code: 5829" }] },
     },
   };
   const refused = (r: ModelEmulatorRequest) => {
@@ -96,19 +102,13 @@ function fullMemory(consolidate: boolean): ModelEmulatorStep[] {
     return [first, { expect: refused, response: { type: "text", text: "Saved your code." } }];
   return [
     first,
-    {
-      expect: refused,
-      response: {
-        type: "tool",
-        id: "drop-duplicate",
-        name: "remember",
-        arguments: { content: "", old_text: duplicate },
-      },
-    },
     ...save(
-      "save-code-again",
-      { content: "Office door code: 5829" },
-      (r) => expect(JSON.parse(String(lastTool(r)?.content))).toMatchObject({ ok: true }),
+      "make-room-and-save",
+      [
+        { action: "remove", old_text: duplicate },
+        { action: "add", content: "Office door code: 5829" },
+      ],
+      refused,
       "Saved your door code.",
     ),
   ];

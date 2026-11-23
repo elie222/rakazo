@@ -86,8 +86,14 @@ function builtinParameters(tool: ConnectorTool) {
   }
   if (tool.name === "remember") {
     return Type.Object({
-      content: Type.String(),
-      old_text: Type.Optional(Type.String()),
+      operations: Type.Array(
+        Type.Object({
+          action: stringEnum(["add", "replace", "remove"], {}),
+          content: Type.Optional(Type.String()),
+          old_text: Type.Optional(Type.String()),
+        }),
+        { minItems: 1 },
+      ),
       path: Type.Optional(Type.String()),
     });
   }

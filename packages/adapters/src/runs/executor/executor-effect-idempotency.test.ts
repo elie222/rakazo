@@ -448,7 +448,7 @@ describe("mutating tool effect idempotency keys", () => {
     f.setCalls([
       {
         name: "remember",
-        args: { path: "MEMORY.md", content: "team preference" },
+        args: { path: "MEMORY.md", operations: [{ action: "add", content: "team preference" }] },
         executionId: "call_0",
       },
       {
@@ -465,7 +465,7 @@ describe("mutating tool effect idempotency keys", () => {
     expect(f.effects.map((effect) => effect.idempotencyKey)).toEqual([
       toolEffectIdempotencyKey("run-a", "remember", {
         path: "MEMORY.md",
-        content: "team preference",
+        operations: [{ action: "add", content: "team preference" }],
       }),
       toolEffectIdempotencyKey("run-a", "scratchpad_add", {
         title: "follow up with design",
@@ -492,7 +492,10 @@ describe("mutating tool effect idempotency keys", () => {
     f.setCalls([
       {
         name: "remember",
-        args: { path: "MEMORY.md", content: "The client is Combient." },
+        args: {
+          path: "MEMORY.md",
+          operations: [{ action: "add", content: "The client is Combient." }],
+        },
         executionId: "call_0",
       },
     ]);
@@ -517,7 +520,11 @@ describe("mutating tool effect idempotency keys", () => {
         { id: "memory", path: "MEMORY.md", content: "existing\n", revision: 2 },
       );
       f.setCalls([
-        { name: "remember", args: { path, content: "new fact" }, executionId: "call_0" },
+        {
+          name: "remember",
+          args: { path, operations: [{ action: "add", content: "new fact" }] },
+          executionId: "call_0",
+        },
       ]);
 
       await f.run();
@@ -544,7 +551,10 @@ describe("mutating tool effect idempotency keys", () => {
     f.setCalls([
       {
         name: "remember",
-        args: { path: "MEMORY.md", content: "The client is Combient." },
+        args: {
+          path: "MEMORY.md",
+          operations: [{ action: "add", content: "The client is Combient." }],
+        },
         executionId: "call_0",
       },
     ]);
@@ -570,7 +580,7 @@ describe("mutating tool effect idempotency keys", () => {
     f.setCalls([
       {
         name: "remember",
-        args: { path: "MEMORY.md", content: "durable fact" },
+        args: { path: "MEMORY.md", operations: [{ action: "add", content: "durable fact" }] },
         executionId: "call_0",
       },
     ]);
@@ -594,7 +604,7 @@ describe("mutating tool effect idempotency keys", () => {
     first.setCalls([
       {
         name: "remember",
-        args: { path: "MEMORY.md", content: "first bot note" },
+        args: { path: "MEMORY.md", operations: [{ action: "add", content: "first bot note" }] },
         executionId: "call_0",
       },
     ]);
@@ -606,7 +616,7 @@ describe("mutating tool effect idempotency keys", () => {
     second.setCalls([
       {
         name: "remember",
-        args: { path: "MEMORY.md", content: "second bot note" },
+        args: { path: "MEMORY.md", operations: [{ action: "add", content: "second bot note" }] },
         executionId: "call_0",
       },
     ]);
@@ -616,11 +626,11 @@ describe("mutating tool effect idempotency keys", () => {
     expect(second.effects.map((effect) => effect.idempotencyKey)).toEqual([
       toolEffectIdempotencyKey("run-1", "remember", {
         path: "MEMORY.md",
-        content: "first bot note",
+        operations: [{ action: "add", content: "first bot note" }],
       }),
       toolEffectIdempotencyKey("run-2", "remember", {
         path: "MEMORY.md",
-        content: "second bot note",
+        operations: [{ action: "add", content: "second bot note" }],
       }),
     ]);
     expect(second.results[0]).toEqual({ ok: true });
@@ -631,7 +641,7 @@ describe("mutating tool effect idempotency keys", () => {
     f.setCalls([
       {
         name: "remember",
-        args: { path: "MEMORY.md", content: "durable fact" },
+        args: { path: "MEMORY.md", operations: [{ action: "add", content: "durable fact" }] },
         executionId: "call_0",
       },
     ]);
@@ -642,7 +652,7 @@ describe("mutating tool effect idempotency keys", () => {
     f.setCalls([
       {
         name: "remember",
-        args: { path: "MEMORY.md", content: "durable fact" },
+        args: { path: "MEMORY.md", operations: [{ action: "add", content: "durable fact" }] },
         executionId: "call_0",
       },
     ]);
@@ -653,7 +663,7 @@ describe("mutating tool effect idempotency keys", () => {
     expect(f.effects[0]?.idempotencyKey).toBe(
       toolEffectIdempotencyKey("run-retry", "remember", {
         path: "MEMORY.md",
-        content: "durable fact",
+        operations: [{ action: "add", content: "durable fact" }],
       }),
     );
     expect(f.results[1]).toEqual({ ok: true });
@@ -664,7 +674,7 @@ describe("mutating tool effect idempotency keys", () => {
     f.setCalls([
       {
         name: "remember",
-        args: { path: "MEMORY.md", content: "durable fact" },
+        args: { path: "MEMORY.md", operations: [{ action: "add", content: "durable fact" }] },
         executionId: "toolu_abc",
       },
     ]);
@@ -675,7 +685,7 @@ describe("mutating tool effect idempotency keys", () => {
     f.setCalls([
       {
         name: "remember",
-        args: { path: "MEMORY.md", content: "durable fact" },
+        args: { path: "MEMORY.md", operations: [{ action: "add", content: "durable fact" }] },
         executionId: "toolu_xyz",
       },
     ]);
@@ -686,7 +696,7 @@ describe("mutating tool effect idempotency keys", () => {
     expect(f.effects[0]?.idempotencyKey).toBe(
       toolEffectIdempotencyKey("run-replay-id", "remember", {
         path: "MEMORY.md",
-        content: "durable fact",
+        operations: [{ action: "add", content: "durable fact" }],
       }),
     );
     expect(f.results[1]).toEqual({ ok: true });
@@ -697,12 +707,12 @@ describe("mutating tool effect idempotency keys", () => {
     f.setCalls([
       {
         name: "remember",
-        args: { path: "MEMORY.md", content: "first fact" },
+        args: { path: "MEMORY.md", operations: [{ action: "add", content: "first fact" }] },
         executionId: "call_0",
       },
       {
         name: "remember",
-        args: { path: "MEMORY.md", content: "second fact" },
+        args: { path: "MEMORY.md", operations: [{ action: "add", content: "second fact" }] },
         executionId: "call_0",
       },
     ]);
@@ -724,13 +734,13 @@ describe("mutating tool effect idempotency keys", () => {
       kind: "remember",
       idempotencyKey: "call_0",
       status: "completed",
-      request: { path: "MEMORY.md", content: "legacy fact" },
+      request: { path: "MEMORY.md", operations: [{ action: "add", content: "legacy fact" }] },
       result: { ok: true, legacy: true },
     });
     f.setCalls([
       {
         name: "remember",
-        args: { path: "MEMORY.md", content: "legacy fact" },
+        args: { path: "MEMORY.md", operations: [{ action: "add", content: "legacy fact" }] },
         executionId: "call_0",
       },
     ]);
@@ -743,7 +753,10 @@ describe("mutating tool effect idempotency keys", () => {
   });
 
   it("replays a legacy scoped key that included the provider tool-call id", async () => {
-    const args = { path: "MEMORY.md", content: "legacy scoped fact" };
+    const args = {
+      path: "MEMORY.md",
+      operations: [{ action: "add", content: "legacy scoped fact" }],
+    };
     const f = fixture("run-legacy-scoped");
     f.effects.push({
       id: "legacy-scoped-1",
@@ -784,12 +797,12 @@ describe("mutating tool effect idempotency keys", () => {
       kind: "remember",
       idempotencyKey: "call_0",
       status: "intended",
-      request: { path: "MEMORY.md", content: "old fact" },
+      request: { path: "MEMORY.md", operations: [{ action: "add", content: "old fact" }] },
     });
     f.setCalls([
       {
         name: "remember",
-        args: { path: "MEMORY.md", content: "new fact" },
+        args: { path: "MEMORY.md", operations: [{ action: "add", content: "new fact" }] },
         executionId: "call_0",
       },
     ]);
@@ -801,14 +814,14 @@ describe("mutating tool effect idempotency keys", () => {
     expect(f.effects[1]?.idempotencyKey).toBe(
       toolEffectIdempotencyKey("run-legacy-mismatch", "remember", {
         path: "MEMORY.md",
-        content: "new fact",
+        operations: [{ action: "add", content: "new fact" }],
       }),
     );
     expect(f.results[0]).toEqual({ ok: true });
   });
 
   it("executes two identical-args mutating calls in one live run", async () => {
-    const args = { path: "MEMORY.md", content: "same fact" };
+    const args = { path: "MEMORY.md", operations: [{ action: "add", content: "same fact" }] };
     const f = fixture("run-live-repeat");
     f.setCalls([
       { name: "remember", args, executionId: "call_a" },
@@ -829,7 +842,10 @@ describe("mutating tool effect idempotency keys", () => {
   });
 
   it("replays a legacy scoped key when restart assigns a new tool-call id", async () => {
-    const args = { path: "MEMORY.md", content: "legacy scoped fact" };
+    const args = {
+      path: "MEMORY.md",
+      operations: [{ action: "add", content: "legacy scoped fact" }],
+    };
     const f = fixture("run-legacy-new-id");
     f.effects.push({
       id: "legacy-scoped-old-id",
