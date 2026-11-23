@@ -25,6 +25,11 @@ export const AnalyticsScreen = z.enum([
   "plans",
 ]);
 export const AnalyticsSurface = z.enum(["web", "desktop", "ios", "android"]);
+/** The app's store version, plus `+` and the short id of the over-the-air update it runs. */
+export const AnalyticsAppVersion = z
+  .string()
+  .max(40)
+  .regex(/^\d+(\.\d+){0,3}(\+[0-9a-f]{8})?$/);
 export const AnalyticsScreenInput = z
   .object({
     screen: AnalyticsScreen,
@@ -138,7 +143,13 @@ export const AnalyticsEvent = z.discriminatedUnion("name", [
       errorKind: AnalyticsErrorKind,
     })
     .strict(),
-  z.object({ name: z.literal("model_connect_started"), ...modelConnect }).strict(),
+  z
+    .object({
+      name: z.literal("model_connect_started"),
+      ...modelConnect,
+      appVersion: AnalyticsAppVersion.optional(),
+    })
+    .strict(),
   z
     .object({
       name: z.literal("model_connected"),

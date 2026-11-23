@@ -15,6 +15,17 @@ export interface OidcConfig {
   name: string;
   scopes: string[];
   allowSignupBypass: boolean;
+  /** Read instead of `email_verified` when the ID token omits it, for IdPs that name it differently. */
+  emailVerifiedClaim?: string;
+}
+
+/** Whether the ID token proved the profile email: boolean `true` or the string "true", any case. */
+export function oidcEmailVerified(profile: Record<string, unknown>, fallbackClaim?: string) {
+  const claim =
+    profile.email_verified === undefined && fallbackClaim
+      ? profile[fallbackClaim]
+      : profile.email_verified;
+  return claim === true || (typeof claim === "string" && claim.toLowerCase() === "true");
 }
 
 /** Discovery never gates API startup. Failed attempts share exponential backoff. */
@@ -35,7 +46,9 @@ export function oidcDiscovery(config: OidcConfig) {
           return oidcAccountSubject(config.issuer, profile.sub);
         },
         requireIdTokenVerification: true,
-        mapProfileToUser: (profile) => ({ emailVerified: profile.email_verified === true }),
+        mapProfileToUser: (profile) => ({
+          emailVerified: oidcEmailVerified(profile, config.emailVerifiedClaim),
+        }),
       },
     ],
   });

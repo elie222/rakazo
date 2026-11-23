@@ -253,6 +253,7 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
             .split(/[\s,]+/)
             .filter(Boolean),
           allowSignupBypass: source.OIDC_ALLOW_SIGNUP_BYPASS === "true",
+          emailVerifiedClaim: optional(source.OIDC_EMAIL_VERIFIED_CLAIM),
         }
       : undefined;
   const social = socialAuthFromFields({

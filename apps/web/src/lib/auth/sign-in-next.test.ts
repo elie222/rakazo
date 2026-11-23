@@ -35,3 +35,8 @@ it("returns to a Page review or the shared Pages list, including a trailing slas
   for (const next of ["//review/page-1", "/review//", "/review/../app", "/review/%2fapp"])
     expect(signInNext(next)).toBeNull();
 });
+
+it("returns to a bot's chat", () => {
+  expect(signInNext("/app/bot_1-A")).toBe("/app/bot_1-A");
+  expect(signInNext("/app/bot/../../admin")).toBeNull();
+});

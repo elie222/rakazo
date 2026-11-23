@@ -187,6 +187,14 @@ export default function SettingsLayout() {
           glassHeaderOptions((route.params as { name?: string } | undefined)?.name ?? "")
         }
       />
+      {/* Titled by the screen once the server loads. */}
+      <Stack.Screen
+        name="mcp-server"
+        options={{
+          ...glassHeaderOptions(""),
+          contentStyle: { backgroundColor: native.groupedPage },
+        }}
+      />
       <Stack.Screen name="integration-setup" options={glassHeaderOptions(t`Server integrations`)} />
     </Stack>
   );

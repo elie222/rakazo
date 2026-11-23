@@ -1,17 +1,18 @@
-import type {
-  AdapterContext,
-  ArtifactStore,
-  JobPublisher,
-  MediaGenerationProvider,
-} from "@rakazo/adapter-kit";
+import type { AdapterContext, ArtifactStore, JobPublisher } from "@rakazo/adapter-kit";
 import { mediaPollJob } from "@rakazo/adapter-kit";
 import type { Prisma, PrismaClient, ThreadEvents } from "@rakazo/db";
+import { chargeMedia } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { persistMessageInTransaction } from "../runs/assembly/run-messages.js";
 import { wakeRun } from "../runs/wakeups/wake-run.js";
 import { mediaVideoWakePrompt } from "../runs/wakeups/wakes.prompt.js";
 import { attachWorkspaceFileToThread } from "../storage/thread-artifacts.js";
+import type { StoredMediaCharge } from "./media-generation-tools.js";
 import { generateMediaFromTool, MEDIA_JOB_KIND } from "./media-generation-tools.js";
+import type { MediaSourceDeps } from "./media-sources.js";
+import { mediaVideoProviderForSource, readMediaJobSource } from "./media-sources.js";
+import type { OwnKeyMediaSpend } from "./media-spend.js";
+import { recordOwnKeyMediaSpend } from "./media-spend.js";
 
 /** A short video takes minutes; one still unfinished after this is reported as failed. */
 export const MEDIA_POLL_DEADLINE_MS = 60 * 60_000;
@@ -25,13 +26,12 @@ const PENDING_STATUSES = ["media_pending", "media_polling"];
 /** Images share the job kind but finish within their turn; only videos are polled. */
 const VIDEO_JOB = { kind: MEDIA_JOB_KIND, request: { path: ["tool"], equals: "generate_video" } };
 
-export interface MediaVideoDeps {
+export interface MediaVideoDeps extends MediaSourceDeps {
   prisma: PrismaClient;
   jobs: JobPublisher;
   events: Pick<ThreadEvents, "notify" | "publishSpaceChange">;
   artifacts?: ArtifactStore;
   maxUploadSizeBytes?: number;
-  mediaGeneration?: MediaGenerationProvider;
 }
 
 type MediaRun = { id: string; threadId: string; botId: string; userId: string; spaceId: string };
@@ -75,7 +75,12 @@ export function mediaDelivery(
     attach: (
       output: { bytes: Uint8Array },
       fileName: string,
-      job: { id: string; result: { provider: string; jobId?: string } },
+      job: {
+        id: string;
+        result: { provider: string; jobId?: string };
+        charge?: StoredMediaCharge;
+        spend?: OwnKeyMediaSpend;
+      },
     ) =>
       attachWorkspaceFileToThread(
         {
@@ -106,6 +111,8 @@ export function mediaDelivery(
               },
             });
             if (!checkpointed.count) throw new Error("Media attachment was already checkpointed");
+            if (job.charge) await chargeMedia(tx, { ...job.charge, source: `media:${job.id}` });
+            if (job.spend) await recordOwnKeyMediaSpend(tx, run, job.id, job.spend);
           },
         },
       ),
@@ -184,9 +191,8 @@ async function recipientRemains(
  * failed or expired one is marked failed; either way the bot gets one turn to follow up.
  */
 export async function pollMediaVideo(deps: MediaVideoDeps, payload: { jobId: string }) {
-  const provider = deps.mediaGeneration;
   const artifacts = deps.artifacts;
-  if (!provider?.capabilities.video || !artifacts) return;
+  if (!artifacts) return;
   const job = await deps.prisma.externalEffect.findFirst({
     where: { id: payload.jobId, ...VIDEO_JOB, status: { in: PENDING_STATUSES } },
     select: {
@@ -207,6 +213,12 @@ export async function pollMediaVideo(deps: MediaVideoDeps, payload: { jobId: str
   });
   if (!job) return;
   const { thread, ...run } = job.run;
+  const source = readMediaJobSource(job);
+  const provider = source && (await mediaVideoProviderForSource(deps, run.userId, source));
+  // A hosted job waits for the deployment to offer video again; one whose connection is gone
+  // or whose source is unreadable can never finish, so it is reported failed below.
+  const lost = !provider?.capabilities.video;
+  if (lost && source?.kind === "hosted") return;
   const saved = (job.request as { threadGeneration?: unknown }).threadGeneration;
   const threadGeneration = typeof saved === "number" ? saved : undefined;
   const expired = Date.now() - job.createdAt.getTime() >= MEDIA_POLL_DEADLINE_MS;
@@ -232,6 +244,30 @@ export async function pollMediaVideo(deps: MediaVideoDeps, payload: { jobId: str
     }
     wakeRunId = await queueWake(tx, job.id, run, status === "completed");
   };
+  // Only a released or abandoned claim is taken, so a check still in flight decides instead.
+  const fail = () =>
+    deps.prisma.$transaction(async (tx) => {
+      const failed = await tx.externalEffect.updateMany({
+        where: {
+          id: job.id,
+          OR: [
+            { status: "media_pending" },
+            {
+              status: "media_polling",
+              updatedAt: { lt: new Date(Date.now() - ABANDONED_POLL_LOCK_MS) },
+            },
+          ],
+        },
+        data: { status: "media_failed" },
+      });
+      if (failed.count) await onSettled(tx, "failed");
+      return failed.count > 0;
+    });
+  if (!source || !provider || lost) {
+    if (!(await fail())) await scheduleMediaPoll(deps.jobs, job.id, job.createdAt);
+    if (wakeRunId) await wakeRun(deps.jobs, wakeRunId);
+    return;
+  }
   const operationId = `media.poll:${job.id}`;
   const context: AdapterContext = {
     operationId,
@@ -247,6 +283,7 @@ export async function pollMediaVideo(deps: MediaVideoDeps, payload: { jobId: str
     executionId: operationId,
     recoverOnly: true,
     provider,
+    source,
     prisma: deps.prisma,
     context,
     run,
@@ -265,27 +302,9 @@ export async function pollMediaVideo(deps: MediaVideoDeps, payload: { jobId: str
     !settled &&
     expired &&
     (!unanswered || Date.now() - job.createdAt.getTime() >= MEDIA_POLL_DEADLINE_MS + ERROR_GRACE_MS)
-  ) {
-    // Still unfinished after the final check: report it failed. Only a released or abandoned
-    // claim is taken, so a check still in flight decides instead.
-    settled = await deps.prisma.$transaction(async (tx) => {
-      const failed = await tx.externalEffect.updateMany({
-        where: {
-          id: job.id,
-          OR: [
-            { status: "media_pending" },
-            {
-              status: "media_polling",
-              updatedAt: { lt: new Date(Date.now() - ABANDONED_POLL_LOCK_MS) },
-            },
-          ],
-        },
-        data: { status: "media_failed" },
-      });
-      if (failed.count) await onSettled(tx, "failed");
-      return failed.count > 0;
-    });
-  }
+  )
+    // Still unfinished after the final check: report it failed.
+    settled = await fail();
   // Still running, briefly locked by another check, or a provider error: try again later.
   if (!settled) await scheduleMediaPoll(deps.jobs, job.id, job.createdAt);
   if (wakeRunId) await wakeRun(deps.jobs, wakeRunId);
@@ -336,7 +355,10 @@ async function queueWake(
 export async function reconcileMediaVideos(
   deps: Pick<MediaVideoDeps, "prisma" | "jobs" | "mediaGeneration">,
 ) {
-  if (!deps.mediaGeneration?.capabilities.video) return;
+  // Without hosted video only a connection's jobs can progress; hosted ones wait, unpolled.
+  const madeBy = deps.mediaGeneration?.capabilities.video
+    ? {}
+    : { AND: [{ request: { path: ["mediaSource", "kind"], equals: "connection" } }] };
   const now = Date.now();
   const pageSize = 100;
   let after: string | undefined;
@@ -344,6 +366,7 @@ export async function reconcileMediaVideos(
     const page = await deps.prisma.externalEffect.findMany({
       where: {
         ...VIDEO_JOB,
+        ...madeBy,
         status: { in: PENDING_STATUSES },
         updatedAt: { lt: new Date(now - STALLED_MS) },
       },

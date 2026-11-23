@@ -138,7 +138,7 @@ function modelTurnRequest(
   const {
     agentSkillsLine,
     botDirectory,
-    historicalContext,
+    hasHistoricalContext,
     pluginLine,
     prompt,
     runtimeHistory,
@@ -220,10 +220,11 @@ function modelTurnRequest(
       redactedScratchpadContext,
       currentTurnDataInPrompt,
       redactedTicketContext: ticketContext ? redactSecrets(ticketContext, runSecrets) : undefined,
-      hasHistoricalContext: historicalContext.length > 0,
+      hasHistoricalContext,
       // A background helper is not offered the history tools, so it gets no guidance on them.
       historyRetrievalEnabled:
         contextStrategy !== "current" && tools.some((tool) => tool.name === "search_history"),
+      historyMyChats: ctx.source.myChatsAllowed,
       computerInstruction,
       pageBrowserAllowed,
       taskCatalogInstruction,

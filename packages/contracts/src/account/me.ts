@@ -1,5 +1,5 @@
 import * as z from "zod";
-import { BotSchema, BotSectionSchema } from "../bots/bot.js";
+import { BotSectionSchema, ListedBotSchema } from "../bots/bot.js";
 import { BotAvatarSetSchema } from "../bots/bot-avatar.js";
 import { NavLinkSchema } from "../clients/nav-links.js";
 import { Id } from "../ids.js";
@@ -96,10 +96,10 @@ export function signupSurveyAsksTeamSize(use: SignupSurvey["use"]): boolean {
 
 export const AppBootstrapSchema = z.object({
   me: MeSchema,
-  bots: z.array(BotSchema),
+  bots: z.array(ListedBotSchema),
   groups: z.array(GroupSchema),
   botSections: z.array(BotSectionSchema),
-  archivedBots: z.array(BotSchema),
+  archivedBots: z.array(ListedBotSchema),
   archivedGroups: z.array(GroupSchema),
   thread: ThreadSnapshotSchema.nullable(),
   routines: z.array(RoutineSchema),

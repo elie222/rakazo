@@ -37,6 +37,7 @@ import { CompatibleKeyInput, ConnectionControls } from "./connection-controls";
 import { DeploymentModelSettings } from "./deployment-model-settings";
 import type { ModelRoleConnectIntent } from "./ModelRoleSettings";
 import { ModelRoleSettings, useModelRole } from "./ModelRoleSettings";
+import { MediaModelSettings } from "./media-model-settings";
 import { ModelSettingsPanel } from "./model-settings-panel";
 import { ProviderPage } from "./provider-page";
 import { ConnectionNameField, ProvidersSection } from "./providers-section";
@@ -478,6 +479,14 @@ export function ModelSettingsOverlay({
               panel={connectionAt === "status" ? panelFor(true) : null}
             />
           ) : null}
+          {firstConnection ? null : (
+            <MediaModelSettings
+              userId={me.userId}
+              spaceId={me.spaceId}
+              scope={scope}
+              connectionIds={credentials.map((credential) => credential.id)}
+            />
+          )}
           {scope === "space" || firstConnection ? null : (
             <ProvidersSection
               credentials={credentials}

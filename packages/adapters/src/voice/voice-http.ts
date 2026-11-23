@@ -214,7 +214,23 @@ export function voiceRequestError(
   // The provider's own text stays in the cause: a server error can carry its internals.
   if (status >= 500)
     return new VoiceProviderUnavailableError(undefined, { cause: new Error(message) });
-  return new Error(message);
+  return new VoiceProviderRefusedError(message, status, reasonCode(rawBody));
+}
+
+/** The provider refused a request it could not serve, such as a voice the chosen model lacks. */
+export class VoiceProviderRefusedError extends Error {
+  /** The provider's machine-readable reason, safe to log, unlike its message. */
+  readonly reason: string | undefined;
+
+  constructor(
+    message: string,
+    readonly status: number,
+    reason?: string,
+  ) {
+    super(message);
+    this.name = "VoiceProviderRefusedError";
+    this.reason = reason && /^[\w.-]{1,64}$/.test(reason) ? reason : undefined;
+  }
 }
 
 export async function requireOk(res: Response, provider: string, what: string): Promise<Response> {

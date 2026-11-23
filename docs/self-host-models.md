@@ -232,8 +232,8 @@ provider not on it is not offered, a key for it is refused on save and on import
 switched to it, and its runs fail with a clear error. An unset or empty list means every provider,
 exactly the behavior without it.
 
-Hosted OpenAI-compatible presets include Ollama Cloud (`ollama-cloud`) and Concentrate AI
-(`concentrate`). Choose either in **Settings → Models**, enter its API key, and select
+Hosted OpenAI-compatible presets include Ollama Cloud (`ollama-cloud`), Concentrate AI
+(`concentrate`) and DeepInfra (`deepinfra`). Choose one in **Settings → Models**, enter its API key, and select
 a model. Rakazo loads the list automatically. Their HTTPS hosts remain available with `RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC=0`.
 If you set a provider allowlist, include `openai-compatible` and the ids of the presets you
 want to keep. Leaving out a preset id hides it and removes its host exemption.
@@ -318,7 +318,20 @@ MEDIA_GENERATION_API_KEY=replace-with-media-api-key
 MEDIA_GENERATION_IMAGE_MODEL=gpt-image-1
 ```
 
-`MEDIA_GENERATION_PROVIDER` accepts `disabled` (the default), `fal`, `openai`, or `fake`
+`openrouter` makes images through OpenRouter's Images API (`POST /images`) and four-second
+videos through its video jobs API (`POST /videos`); set either model or both:
+
+```dotenv
+MEDIA_GENERATION_PROVIDER=openrouter
+MEDIA_GENERATION_BASE_URL=https://openrouter.ai/api/v1
+MEDIA_GENERATION_API_KEY=replace-with-media-api-key
+MEDIA_GENERATION_IMAGE_MODEL=openai/gpt-image-1-mini
+MEDIA_GENERATION_VIDEO_MODEL=google/veo-3.1-fast
+```
+
+The video model must accept a four-second duration.
+
+`MEDIA_GENERATION_PROVIDER` accepts `disabled` (the default), `fal`, `openai`, `openrouter`, or `fake`
 (for offline testing only). The base URL is optional and defaults to the provider's URL above.
 Only set the image/video model fields for capabilities you want enabled; `openai` takes an
 image model only. Compatible servers can use the same connection fields; models must support

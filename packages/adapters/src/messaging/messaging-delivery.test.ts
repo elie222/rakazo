@@ -556,7 +556,7 @@ function createSurface() {
 
 const bytes = (storageKey: string) => new TextEncoder().encode(storageKey);
 
-function setup(options: { messaging?: MessagingSurface } = {}) {
+function setup(options: { messaging?: MessagingSurface; webOrigin?: string } = {}) {
   const world = createWorld();
   const jobs = createJobs();
   const prisma = createPrisma(world, jobs);
@@ -578,6 +578,7 @@ function setup(options: { messaging?: MessagingSurface } = {}) {
     events: events as unknown as MessagingDeliveryDeps["events"],
     jobs,
     artifacts,
+    webOrigin: options.webOrigin,
   });
   return {
     ...surface,
@@ -1067,6 +1068,31 @@ describe("deliverRun to a 1:1 chat", () => {
     await t.delivery.deliverRun("run-1");
 
     expect(bodies(t)).toEqual([`Send the email to Sam?\n${CHAT_APP_ASK_NOTE}`]);
+  });
+
+  it("links a pending approval to its bot's chat in the app when the web origin is set", async () => {
+    const t = setup({ webOrigin: "https://app.example.test" });
+    addRun(t.world, {
+      status: "waiting_input",
+      replies: [
+        {
+          id: "ask-1",
+          blocks: [
+            {
+              kind: "ask",
+              text: "Run this command?",
+              detail: "rm -rf ~/projects/old",
+              approvalEffectId: "effect-1",
+              status: "pending",
+            },
+          ],
+        },
+      ],
+    });
+    await t.delivery.deliverRun("run-1");
+    const [body] = bodies(t);
+    expect(body).toBe("Run this command?\nAnswer in the app: https://app.example.test/app/bot-1");
+    expect(body).not.toContain("rm -rf");
   });
 
   it("keeps an approval's detail in the app and skips a question its ended run cannot use", async () => {

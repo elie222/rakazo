@@ -53,6 +53,21 @@ describe("approved credit connection routing", () => {
       where: { id: "operator-secret", userId: "operator", spaceId: null },
     });
   });
+  it("runs a credit-funded model at the level its stored connection saved for it", async () => {
+    const deps = setup(offering.provider, {
+      kind: "api_key",
+      key: "fake-key",
+      models: { [offering.modelId]: { reasoning: true, thinkingLevel: "high" } },
+    } as never);
+    await expect(
+      approvedModelCreditMaterial(
+        deps.prisma as never,
+        deps.secrets,
+        offering.provider,
+        offering.modelId,
+      ),
+    ).resolves.toMatchObject({ reasoning: true, thinkingLevel: "high" });
+  });
   it("carries zero data retention from the stored connection to the credit-funded run", async () => {
     const deps = setup("openrouter", {
       kind: "api_key",

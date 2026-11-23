@@ -226,6 +226,7 @@ async function failRun(scenario: Scenario) {
             }
           : null,
       ),
+      findMany: vi.fn(async () => []),
     },
     deploymentSettings: {
       findUnique: vi.fn(async () => ({

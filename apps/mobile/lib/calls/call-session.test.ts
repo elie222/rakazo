@@ -103,6 +103,7 @@ const audio = vi.hoisted(() => ({
 }));
 const expoAudioMock = vi.hoisted(() => () => ({
   AudioModule: {
+    getRecordingPermissionsAsync: () => audio.permission,
     requestRecordingPermissionsAsync: () => audio.permission,
     AudioRecorder: class {
       constructor(options: unknown) {
@@ -2906,7 +2907,10 @@ describe("mobile call microphone after hang-up", () => {
       started.resolve();
       await pendingImport.promise;
       return {
-        AudioModule: { requestRecordingPermissionsAsync: requestPermission },
+        AudioModule: {
+          getRecordingPermissionsAsync: requestPermission,
+          requestRecordingPermissionsAsync: requestPermission,
+        },
         RecordingPresets: { HIGH_QUALITY: {} },
         setAudioModeAsync: async () => undefined,
       };

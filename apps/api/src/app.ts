@@ -3,6 +3,7 @@ import type {
   AgentContextStrategy,
   AgentRuntime,
   BillingProvider,
+  BrowserProvider,
   ConnectorProvider,
   JobPublisher,
   ManagedConnectorProvider,
@@ -113,7 +114,7 @@ import { scimDirectory } from "./auth/directory-route.js";
 import { requestSessions } from "./auth/request-session.js";
 import { createAuthResponseAudit } from "./auth/security-audit.js";
 import { accountLifecycleHooks } from "./auth/session-hooks.js";
-import { isTrustedOrigin, MOBILE_AUTH_ORIGINS } from "./auth/trusted-origins.js";
+import { isTrustedOrigin, mobileAuthOrigins } from "./auth/trusted-origins.js";
 import { mountUserDeviceRoutes } from "./auth/user-devices.js";
 import { createBillingService } from "./billing/billing.js";
 import { mountBillingRoutes } from "./billing/billing-webhook.js";
@@ -222,6 +223,8 @@ type CreateAppOverrides = Partial<AppEnv> & {
   now?: () => Date;
   /** Test-only web search and fetch. */
   web?: WebProvider;
+  /** Test-only page browser. */
+  browser?: BrowserProvider;
 };
 
 async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
@@ -245,6 +248,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     contextStrategy,
     userDevices: userDevicesOverride,
     web,
+    browser,
     now,
     ...envOverrides
   } = overrides;
@@ -369,11 +373,14 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
   const billingProvider: BillingProvider | undefined =
     billingOverride ??
     (stripeBilling ? new StripeBillingProvider(stripeBilling) : localBillingEmulator);
+  // One instance: chat runs submit videos and, in single-process mode, background polls finish them.
+  const mediaGeneration = createMediaGenerationProvider();
   const billing = billingProvider
     ? createBillingService({
         prisma,
         provider: billingProvider,
         sandbox,
+        mediaGeneration,
         realtime,
         webOrigin: env.webOrigin,
         managedModelsAvailable: resolveDeploymentModel().configured,
@@ -493,7 +500,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
               headers,
             )
         : undefined,
-    extraOrigins: [...MOBILE_AUTH_ORIGINS, ...env.extraAuthOrigins],
+    extraOrigins: [...mobileAuthOrigins(env.nodeEnv), ...env.extraAuthOrigins],
     androidAppCertFingerprints: env.passkeyAndroidCertFingerprints,
     ...accountLifecycleHooks({
       spaceDeletion: spaceDeletionDeps,
@@ -527,8 +534,15 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
   // One cache serves models.list, selection validation, and run-time model
   // resolution alike, so a list call warms the run path in this process.
   const codexCatalog = new CodexCatalogCache();
-  // One instance: chat runs submit videos and, in single-process mode, background polls finish them.
-  const mediaGeneration = createMediaGenerationProvider();
+  // The computers bots may reach: paired desktops, and this server's own screen when it has one.
+  const botUserDevices =
+    userDevicesOverride ??
+    withHostComputerScreen(userDevices, {
+      prisma,
+      sandboxKind: env.sandboxProvider,
+      url: env.sandboxOptions.hostComputerUrl,
+      token: env.sandboxOptions.hostComputerToken,
+    });
   const { runtime, executor, jobHandlers, messagingDelivery, teamChat, pageRevisions } =
     createRunRuntime(runtimeEnv, connectors, {
       billingEnabled: modelCreditsEnabled,
@@ -569,16 +583,10 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
         ? (id: string) => messagingInstallations.isActive(id)
         : undefined,
       cloudAgent,
-      userDevices:
-        userDevicesOverride ??
-        withHostComputerScreen(userDevices, {
-          prisma,
-          sandboxKind: env.sandboxProvider,
-          url: env.sandboxOptions.hostComputerUrl,
-          token: env.sandboxOptions.hostComputerToken,
-        }),
+      userDevices: botUserDevices,
       paymentWallet,
       web,
+      browser,
       stoppingSignal: shutdown.signal,
       shutdownSignal: runDrain.signal,
       now,
@@ -659,6 +667,9 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     });
 
   const router = createRouter({
+    // Only computers people paired: nothing clears a routine's "Use my computer" when this
+    // server's own screen is turned off and on again.
+    userDevices: userDevicesOverride ?? userDevices,
     pageRevisions,
     meetings,
     meetingCalendar,

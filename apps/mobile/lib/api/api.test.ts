@@ -1,6 +1,5 @@
 import type { Deferred } from "@rakazo/core/test-async";
 import { deferred } from "@rakazo/core/test-async";
-import { getArtifactById } from "../artifacts/artifacts";
 
 vi.mock("../settings/ai-consent", () => ({
   promptAiConsent: vi.fn(),
@@ -13,8 +12,10 @@ import { isServerUnreachable } from "@rakazo/core";
 import * as SecureStore from "expo-secure-store";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { listUserDevices, removeUserDevice } from "../account/user-devices";
+import { artifactContentRead } from "../artifacts/artifact-detail-read";
 import { changePassword } from "../auth/api-auth.js";
 import { resumeLiveNotifications } from "../notifications/live-notifications.js";
+import { queryClient } from "../query/query";
 import { promptAiConsent, promptPageRevisionConsent } from "../settings/ai-consent";
 import type { UnsentDisk } from "../thread/send/thread-feedback.js";
 import { configureUnsentSends } from "../thread/send/thread-feedback.js";
@@ -277,7 +278,7 @@ describe("mobile API requests", () => {
       }),
     );
 
-    const result = getArtifactById("artifact-1").then(
+    const result = queryClient.fetchQuery(artifactContentRead("artifact-1")).then(
       (value) => ({ value }),
       (error: unknown) => ({ error }),
     );
@@ -294,7 +295,7 @@ describe("mobile API requests", () => {
       vi.fn(async () => new Response(new ReadableStream({ cancel }))),
     );
 
-    const pending = getArtifactById("artifact-1");
+    const pending = queryClient.fetchQuery({ ...artifactContentRead("artifact-1"), staleTime: 0 });
     const rejection = expect(pending).rejects.toThrow("Request timed out");
     await vi.advanceTimersByTimeAsync(119_999);
     expect(cancel).not.toHaveBeenCalled();
