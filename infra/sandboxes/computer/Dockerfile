@@ -110,14 +110,22 @@ RUN apt-get update && apt-get upgrade -y --no-install-recommends && apt-get inst
   && chmod +x /usr/bin/fbsetbg \
   && ln -sfn /bin/true /usr/bin/xmessage
 # Google Chrome or Brave replaces Chromium only when built with BROWSER=chrome
-# or BROWSER=brave. The default build installs Chromium above, so this step does
-# nothing for it. repo_add_once=false keeps Chrome's package from adding a
-# second repository entry without the pinned key.
+# or BROWSER=brave. For the default Chromium build, remove Debian's conflicting
+# or duplicate /etc/chromium.d defaults (--enable-gpu-rasterization, --disable-pings,
+# duplicate --no-default-browser-check / --disable-dev-shm-usage, and empty
+# --load-extension=) while keeping --enable-remote-extensions so /usr/bin/chromium
+# does not inject --disable-background-networking and --disable-extensions-except=.
+# repo_add_once=false keeps Chrome's package from adding a second repository entry
+# without the pinned key.
 COPY --from=chrome-keyring /google-chrome.gpg /usr/share/keyrings/google-chrome.gpg
 RUN set -eux; \
     [ "$BROWSER" = chrome ] || rm /usr/share/keyrings/google-chrome.gpg; \
     case "$BROWSER" in \
-      chromium) ;; \
+      chromium) \
+        rm -f /etc/chromium.d/default-flags /etc/chromium.d/dev-shm; \
+        printf '%s\n' \
+          'export CHROMIUM_FLAGS="$CHROMIUM_FLAGS --enable-remote-extensions"' \
+          > /etc/chromium.d/extensions ;; \
       chrome) \
         echo "deb [signed-by=/usr/share/keyrings/google-chrome.gpg arch=amd64] https://dl.google.com/linux/chrome/deb/ stable main" \
           > /etc/apt/sources.list.d/google-chrome.list; \
