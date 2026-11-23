@@ -417,7 +417,10 @@ export async function gateToolCall(
     !approvedEffectKey
   ) {
     const mismatch = await userComputerCallRefusal(ctx, name, args);
-    if (mismatch) return { result: refusal("user_computer_unsupported", mismatch) };
+    if (mismatch) {
+      await auditToolCall(ctx, name, "denied", { reason: "user_computer_unsupported" });
+      return { result: refusal("user_computer_unsupported", mismatch) };
+    }
   }
   // A pay click counts against the user's spending limit, unless it pays with a wallet purchase,
   // which was counted when it was requested. One the limit refuses is refused before the card; the
