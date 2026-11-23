@@ -24,6 +24,7 @@ const mocks = vi.hoisted(() => ({
   rpc: vi.fn(),
   alert: vi.fn(),
   removeFromSearchInbox: vi.fn(),
+  addToSearchInbox: vi.fn(),
   loadArchived: vi.fn(),
   getCurrentRoute: vi.fn(),
   router: {
@@ -115,6 +116,8 @@ vi.mock("../../appearance/appearance", () => ({ mobileTokens: () => ({}) }));
 vi.mock("../../api/user-error", () => ({ errorText: () => "failure" }));
 vi.mock("../../search/search-inbox", () => ({
   removeFromSearchInbox: mocks.removeFromSearchInbox,
+  addToSearchInbox: mocks.addToSearchInbox,
+  searchInboxSession: () => ({ generation: 0, apiBase: "https://example.test" }),
 }));
 vi.mock("../../layout/side-insets", () => ({ useSideInsets: () => ({}) }));
 vi.mock("../../thread/scroll/thread-edges", () => ({ threadEdgeOptions: () => ({}) }));
@@ -158,6 +161,7 @@ beforeEach(() => {
   mocks.rpc.mockReset();
   mocks.alert.mockReset();
   mocks.removeFromSearchInbox.mockReset();
+  mocks.addToSearchInbox.mockReset();
   for (const route of Object.values(mocks.router)) route.mockReset();
   container = document.createElement("div");
   root = createRoot(container);
@@ -332,7 +336,7 @@ describe("archived count", () => {
   });
 });
 
-describe("bot profile menu archive notifications", () => {
+describe("bot profile menu actions", () => {
   function renderActions() {
     let actions: { text: string; onPress: () => void }[] = [];
     function Header() {
@@ -367,6 +371,41 @@ describe("bot profile menu archive notifications", () => {
     expect(mocks.removeFromSearchInbox).toHaveBeenCalledOnce();
     expect(mocks.alert).toHaveBeenCalledExactlyOnceWith("Could not archive bot", "failure");
     stop();
+  });
+
+  it("opens the copy's chat once it is duplicated, and only once for repeated taps", async () => {
+    const action = renderActions();
+    const finish = deferred<{ id: string; name: string }>();
+    mocks.rpc.mockReturnValueOnce(finish.promise);
+    act(() => action("Duplicate").onPress());
+    act(() => action("Duplicate").onPress());
+    await flush();
+    expect(mocks.rpc).toHaveBeenCalledExactlyOnceWith(
+      "bots/duplicate",
+      { botId: "bot-b" },
+      expect.objectContaining({ requestContext: expect.anything() }),
+    );
+    expect(mocks.router.push).not.toHaveBeenCalled();
+    const copy = { id: "bot-c", name: "Bot (copy)" };
+    await act(async () => finish.resolve(copy));
+    expect(mocks.addToSearchInbox).toHaveBeenCalledWith(
+      { kind: "bot", bot: copy },
+      expect.anything(),
+    );
+    expect(mocks.router.dismissAll).toHaveBeenCalledOnce();
+    expect(mocks.router.push).toHaveBeenCalledExactlyOnceWith({
+      pathname: "/thread",
+      params: { botId: "bot-c", name: "Bot (copy)" },
+    });
+  });
+
+  it("says when a bot could not be duplicated and stays on the profile", async () => {
+    const action = renderActions();
+    mocks.rpc.mockRejectedValueOnce(new Error("offline"));
+    act(() => action("Duplicate").onPress());
+    await flush();
+    expect(mocks.alert).toHaveBeenCalledExactlyOnceWith("Could not duplicate bot", "failure");
+    expect(mocks.router.dismissAll).not.toHaveBeenCalled();
   });
 
   it.each([false, true])(

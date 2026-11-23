@@ -10,9 +10,13 @@ import {
   confirmDeleteBot,
 } from "../../lib/bots/bot-lifecycle";
 import { notifyArchivedChatsChanged } from "../../lib/inbox/archived/archived-chats";
+import { notifyInboxChanged, openChatFromInbox } from "../../lib/inbox/inbox-changes";
 import { useResolvedAppearance } from "../../lib/native/native";
 import { iosAtLeast } from "../../lib/native/native-controls";
 import { useConfirmationGuard } from "../../lib/native/use-confirmation-guard";
+import { useSave } from "../../lib/query/query";
+import type { SearchInboxSession } from "../../lib/search/search-inbox";
+import { addToSearchInbox, searchInboxSession } from "../../lib/search/search-inbox";
 import { useLeaveDeletedChat } from "../../lib/thread/use-leave-deleted-chat";
 import { NativeSymbol } from "../native/native-symbol";
 
@@ -33,7 +37,25 @@ export function useBotProfileActions(botId: string, name: string): BotProfileAct
     router.dismissAll();
     router.replace("/");
   }
+  const duplicate = useSave({
+    save: (_: { askedIn: SearchInboxSession }, send) => send("bots/duplicate", { botId }),
+    // The copy's chat opens the way a new bot's does.
+    onSaved: (copy, { askedIn }) => {
+      notifyInboxChanged();
+      addToSearchInbox({ kind: "bot", bot: copy }, askedIn);
+      router.dismissAll();
+      const href = { pathname: "/thread" as const, params: { botId: copy.id, name: copy.name } };
+      if (!openChatFromInbox(href)) router.push(href);
+    },
+    onFailed: (error) => Alert.alert(t`Could not duplicate bot`, errorText(error, t`Try again.`)),
+    closesScreen: true,
+  });
   return [
+    {
+      id: "duplicate",
+      text: t`Duplicate`,
+      onPress: () => duplicate.run({ askedIn: searchInboxSession() }),
+    },
     {
       id: "clear",
       text: t`Clear conversation`,
