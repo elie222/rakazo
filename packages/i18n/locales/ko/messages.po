@@ -757,7 +757,7 @@ msgstr "@{0}"
 #. placeholder {1}: mention.subtitle
 #: apps/web/src/pages/shell/composer/composer-parts.tsx
 msgid "@{0}, {1}"
-msgstr ""
+msgstr "@{0}, {1}"
 
 #: apps/mobile/components/composer/thread-composer.tsx
 msgid "@{name}"
@@ -3720,11 +3720,11 @@ msgstr "{name}을 다운로드하지 못했습니다. 다시 시도해 주세요
 
 #: apps/mobile/components/media/image-artifact-viewer.tsx
 msgid "Could not download image"
-msgstr ""
+msgstr "이미지를 다운로드하지 못했습니다"
 
 #: apps/mobile/app/artifact.tsx
 msgid "Could not download this artifact"
-msgstr ""
+msgstr "이 아티팩트를 다운로드하지 못했습니다"
 
 #: apps/mobile/app/(settings)/plugin.tsx
 #: apps/web/src/components/integrations/plugin-marketplace.tsx
@@ -3884,7 +3884,7 @@ msgstr "MCP 서버 목록을 불러오지 못했습니다."
 
 #: apps/web/src/pages/plugins/plugin-browse.tsx
 msgid "Could not load MCP servers."
-msgstr ""
+msgstr "MCP 서버 목록을 불러오지 못했습니다."
 
 #: apps/mobile/app/(settings)/organization-members.tsx
 #: apps/mobile/app/space-members.tsx
@@ -4647,7 +4647,7 @@ msgstr "만들기"
 #: apps/mobile/components/integrations/add-custom-integration.tsx
 #: apps/web/src/pages/plugins/source-form.tsx
 msgid "Create a personal access token"
-msgstr ""
+msgstr "개인 액세스 토큰 만들기"
 
 #. placeholder {0}: bot.name
 #: apps/web/src/pages/shell/create-delete-dialogs.tsx
@@ -7073,7 +7073,7 @@ msgstr "서비스 관리"
 #: apps/mobile/app/(settings)/integrations.tsx
 #: apps/web/src/pages/plugins/plugin-browse.tsx
 msgid "Managed apps haven’t been enabled on this server."
-msgstr ""
+msgstr "이 서버에서는 관리형 앱이 활성화되지 않았습니다."
 
 #: apps/web/src/pages/plugins/domain-search.tsx
 msgid "Manual"
@@ -7781,7 +7781,7 @@ msgstr "다음"
 
 #: apps/web/src/pages/shell/chat/image-gallery.tsx
 msgid "Next image"
-msgstr ""
+msgstr "다음 이미지"
 
 #: apps/web/src/pages/shell/chat/chat-find-bar.tsx
 msgid "Next match"
@@ -7878,7 +7878,7 @@ msgstr "일치하는 항목 없음"
 
 #: apps/web/src/pages/plugins/plugin-browse.tsx
 msgid "No matches in your current catalogs."
-msgstr ""
+msgstr "현재 카탈로그에 일치하는 항목이 없습니다."
 
 #: apps/mobile/app/artifacts.tsx
 #: apps/web/src/pages/space/Artifacts.tsx
@@ -8391,7 +8391,7 @@ msgstr "음성 열기"
 
 #: apps/web/src/pages/shell/chat/use-read-aloud.ts
 msgid "Open Voice settings"
-msgstr ""
+msgstr "음성 설정 열기"
 
 #: apps/mobile/components/bots/bot-context-cards.tsx
 #: apps/web/src/pages/space/ScratchpadSection.tsx
@@ -8719,7 +8719,7 @@ msgstr "개인"
 #: apps/mobile/components/integrations/add-custom-integration.tsx
 #: apps/web/src/pages/plugins/source-form.tsx
 msgid "Personal access token"
-msgstr ""
+msgstr "개인 액세스 토큰"
 
 #: apps/mobile/components/vault/vault-item-editor.tsx
 #: apps/mobile/components/vault/vault-item-sheet.tsx
@@ -8877,7 +8877,7 @@ msgstr "이 파일 형식은 미리보기를 지원하지 않습니다. 다운�
 
 #: apps/web/src/pages/shell/chat/image-gallery.tsx
 msgid "Previous image"
-msgstr ""
+msgstr "이전 이미지"
 
 #: apps/web/src/pages/shell/chat/chat-find-bar.tsx
 msgid "Previous match"
@@ -10030,7 +10030,7 @@ msgstr "저장 시각"
 #: apps/mobile/app/artifact.tsx
 #: apps/mobile/components/media/image-artifact-viewer.tsx
 msgid "Saved to Photos"
-msgstr ""
+msgstr "사진 보관함에 저장됨"
 
 #. js-lingui-explicit-id
 #: packages/i18n/src/vault.ts
@@ -10188,11 +10188,11 @@ msgstr "모델 검색"
 
 #: apps/mobile/components/integrations/integration-catalog-search.tsx
 msgid "Search public MCP directory"
-msgstr ""
+msgstr "공개 MCP 디렉터리 검색"
 
 #: apps/web/src/pages/plugins/plugin-browse.tsx
 msgid "Search public MCP directory for “{term}”"
-msgstr ""
+msgstr "공개 MCP 디렉터리에서 “{term}” 검색"
 
 #: apps/web/src/pages/shell/sidebar/shell-sidebar.tsx
 msgid "Search runs"
@@ -10528,7 +10528,7 @@ msgstr "보기"
 #. placeholder {0}: image.name
 #: apps/web/src/pages/shell/chat/image-gallery.tsx
 msgid "Show {0}"
-msgstr ""
+msgstr "{0} 보기"
 
 #: apps/mobile/components/vault/login-fields-editor.tsx
 msgid "Show {field}"
@@ -11559,7 +11559,7 @@ msgstr "생각 깊이: {level}"
 #: apps/mobile/components/thread/thread-screen.tsx
 #: apps/web/src/pages/shell/chat/transcript.tsx
 msgid "Thinking…"
-msgstr ""
+msgstr "생각 중…"
 
 #: packages/i18n/src/user-error.ts
 msgid "This account is deactivated"
@@ -11852,7 +11852,7 @@ msgstr "이 구독 로그인 방식은 아직 Rakazo에서 지원되지 않습�
 
 #: apps/mobile/app/(settings)/bot-template.tsx
 msgid "This template is no longer available."
-msgstr ""
+msgstr "이 템플릿은 더 이상 사용할 수 없습니다."
 
 #: apps/mobile/app/(settings)/bot-template.tsx
 #: apps/web/src/components/bot-templates/bot-templates-dialog.tsx
@@ -12456,7 +12456,7 @@ msgstr "기본 모델 사용"
 #: apps/mobile/app/routine.tsx
 #: apps/web/src/pages/routines/routine-editor/model-settings.tsx
 msgid "Use my computer"
-msgstr ""
+msgstr "내 컴퓨터 사용"
 
 #: apps/web/src/components/billing/ModelCredits.tsx
 msgid "Use my subscription or API key"

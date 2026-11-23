@@ -757,7 +757,7 @@ msgstr "@{0}"
 #. placeholder {1}: mention.subtitle
 #: apps/web/src/pages/shell/composer/composer-parts.tsx
 msgid "@{0}, {1}"
-msgstr ""
+msgstr "@{0}, {1}"
 
 #: apps/mobile/components/composer/thread-composer.tsx
 msgid "@{name}"
@@ -3720,11 +3720,11 @@ msgstr "{name} konnte nicht heruntergeladen werden. Versuche es erneut."
 
 #: apps/mobile/components/media/image-artifact-viewer.tsx
 msgid "Could not download image"
-msgstr ""
+msgstr "Bild konnte nicht heruntergeladen werden"
 
 #: apps/mobile/app/artifact.tsx
 msgid "Could not download this artifact"
-msgstr ""
+msgstr "Dieses Artefakt konnte nicht heruntergeladen werden"
 
 #: apps/mobile/app/(settings)/plugin.tsx
 #: apps/web/src/components/integrations/plugin-marketplace.tsx
@@ -3884,7 +3884,7 @@ msgstr "MCP-Server konnten nicht geladen werden"
 
 #: apps/web/src/pages/plugins/plugin-browse.tsx
 msgid "Could not load MCP servers."
-msgstr ""
+msgstr "MCP-Server konnten nicht geladen werden."
 
 #: apps/mobile/app/(settings)/organization-members.tsx
 #: apps/mobile/app/space-members.tsx
@@ -4647,7 +4647,7 @@ msgstr "Erstellen"
 #: apps/mobile/components/integrations/add-custom-integration.tsx
 #: apps/web/src/pages/plugins/source-form.tsx
 msgid "Create a personal access token"
-msgstr ""
+msgstr "Persönliches Zugriffstoken erstellen"
 
 #. placeholder {0}: bot.name
 #: apps/web/src/pages/shell/create-delete-dialogs.tsx
@@ -7073,7 +7073,7 @@ msgstr "Anbieter verwalten"
 #: apps/mobile/app/(settings)/integrations.tsx
 #: apps/web/src/pages/plugins/plugin-browse.tsx
 msgid "Managed apps haven’t been enabled on this server."
-msgstr ""
+msgstr "Verwaltete Apps sind auf diesem Server nicht aktiviert."
 
 #: apps/web/src/pages/plugins/domain-search.tsx
 msgid "Manual"
@@ -7781,7 +7781,7 @@ msgstr "Weiter"
 
 #: apps/web/src/pages/shell/chat/image-gallery.tsx
 msgid "Next image"
-msgstr ""
+msgstr "Nächstes Bild"
 
 #: apps/web/src/pages/shell/chat/chat-find-bar.tsx
 msgid "Next match"
@@ -7878,7 +7878,7 @@ msgstr "Keine Treffer"
 
 #: apps/web/src/pages/plugins/plugin-browse.tsx
 msgid "No matches in your current catalogs."
-msgstr ""
+msgstr "Keine Treffer in deinen aktuellen Katalogen."
 
 #: apps/mobile/app/artifacts.tsx
 #: apps/web/src/pages/space/Artifacts.tsx
@@ -8391,7 +8391,7 @@ msgstr "Sprache öffnen"
 
 #: apps/web/src/pages/shell/chat/use-read-aloud.ts
 msgid "Open Voice settings"
-msgstr ""
+msgstr "Stimmeinstellungen öffnen"
 
 #: apps/mobile/components/bots/bot-context-cards.tsx
 #: apps/web/src/pages/space/ScratchpadSection.tsx
@@ -8719,7 +8719,7 @@ msgstr "Privat"
 #: apps/mobile/components/integrations/add-custom-integration.tsx
 #: apps/web/src/pages/plugins/source-form.tsx
 msgid "Personal access token"
-msgstr ""
+msgstr "Persönliches Zugriffstoken"
 
 #: apps/mobile/components/vault/vault-item-editor.tsx
 #: apps/mobile/components/vault/vault-item-sheet.tsx
@@ -8877,7 +8877,7 @@ msgstr "Für diesen Dateityp ist keine Vorschau verfügbar. Lade die Datei herun
 
 #: apps/web/src/pages/shell/chat/image-gallery.tsx
 msgid "Previous image"
-msgstr ""
+msgstr "Vorheriges Bild"
 
 #: apps/web/src/pages/shell/chat/chat-find-bar.tsx
 msgid "Previous match"
@@ -10030,7 +10030,7 @@ msgstr "Gespeichert am"
 #: apps/mobile/app/artifact.tsx
 #: apps/mobile/components/media/image-artifact-viewer.tsx
 msgid "Saved to Photos"
-msgstr ""
+msgstr "In Fotos gespeichert"
 
 #. js-lingui-explicit-id
 #: packages/i18n/src/vault.ts
@@ -10188,11 +10188,11 @@ msgstr "Modelle suchen"
 
 #: apps/mobile/components/integrations/integration-catalog-search.tsx
 msgid "Search public MCP directory"
-msgstr ""
+msgstr "Öffentliches MCP-Verzeichnis durchsuchen"
 
 #: apps/web/src/pages/plugins/plugin-browse.tsx
 msgid "Search public MCP directory for “{term}”"
-msgstr ""
+msgstr "Öffentliches MCP-Verzeichnis nach „{term}“ durchsuchen"
 
 #: apps/web/src/pages/shell/sidebar/shell-sidebar.tsx
 msgid "Search runs"
@@ -10528,7 +10528,7 @@ msgstr "Anzeigen"
 #. placeholder {0}: image.name
 #: apps/web/src/pages/shell/chat/image-gallery.tsx
 msgid "Show {0}"
-msgstr ""
+msgstr "{0} anzeigen"
 
 #: apps/mobile/components/vault/login-fields-editor.tsx
 msgid "Show {field}"
@@ -11559,7 +11559,7 @@ msgstr "Denkmodus: {level}"
 #: apps/mobile/components/thread/thread-screen.tsx
 #: apps/web/src/pages/shell/chat/transcript.tsx
 msgid "Thinking…"
-msgstr ""
+msgstr "Denkt nach…"
 
 #: packages/i18n/src/user-error.ts
 msgid "This account is deactivated"
@@ -11852,7 +11852,7 @@ msgstr "Diese Abonnementanmeldung ist in Rakazo noch nicht verfügbar. Verwende 
 
 #: apps/mobile/app/(settings)/bot-template.tsx
 msgid "This template is no longer available."
-msgstr ""
+msgstr "Diese Vorlage ist nicht mehr verfügbar."
 
 #: apps/mobile/app/(settings)/bot-template.tsx
 #: apps/web/src/components/bot-templates/bot-templates-dialog.tsx
@@ -12456,7 +12456,7 @@ msgstr "Hauptmodell verwenden"
 #: apps/mobile/app/routine.tsx
 #: apps/web/src/pages/routines/routine-editor/model-settings.tsx
 msgid "Use my computer"
-msgstr ""
+msgstr "Meinen Computer nutzen"
 
 #: apps/web/src/components/billing/ModelCredits.tsx
 msgid "Use my subscription or API key"

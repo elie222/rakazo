@@ -758,7 +758,7 @@ msgstr "@{0}"
 #. placeholder {1}: mention.subtitle
 #: apps/web/src/pages/shell/composer/composer-parts.tsx
 msgid "@{0}, {1}"
-msgstr ""
+msgstr "@{0}，{1}"
 
 #: apps/mobile/components/composer/thread-composer.tsx
 msgid "@{name}"
@@ -3721,11 +3721,11 @@ msgstr "無法下載 {name}。請重試。"
 
 #: apps/mobile/components/media/image-artifact-viewer.tsx
 msgid "Could not download image"
-msgstr ""
+msgstr "無法下載圖片"
 
 #: apps/mobile/app/artifact.tsx
 msgid "Could not download this artifact"
-msgstr ""
+msgstr "無法下載此成品"
 
 #: apps/mobile/app/(settings)/plugin.tsx
 #: apps/web/src/components/integrations/plugin-marketplace.tsx
@@ -3885,7 +3885,7 @@ msgstr "無法載入 MCP 伺服器"
 
 #: apps/web/src/pages/plugins/plugin-browse.tsx
 msgid "Could not load MCP servers."
-msgstr ""
+msgstr "無法載入 MCP 伺服器。"
 
 #: apps/mobile/app/(settings)/organization-members.tsx
 #: apps/mobile/app/space-members.tsx
@@ -4648,7 +4648,7 @@ msgstr "建立"
 #: apps/mobile/components/integrations/add-custom-integration.tsx
 #: apps/web/src/pages/plugins/source-form.tsx
 msgid "Create a personal access token"
-msgstr ""
+msgstr "建立個人存取權杖"
 
 #. placeholder {0}: bot.name
 #: apps/web/src/pages/shell/create-delete-dialogs.tsx
@@ -7074,7 +7074,7 @@ msgstr "管理供應商"
 #: apps/mobile/app/(settings)/integrations.tsx
 #: apps/web/src/pages/plugins/plugin-browse.tsx
 msgid "Managed apps haven’t been enabled on this server."
-msgstr ""
+msgstr "此伺服器尚未啟用受管理的應用程式。"
 
 #: apps/web/src/pages/plugins/domain-search.tsx
 msgid "Manual"
@@ -7782,7 +7782,7 @@ msgstr "下一步"
 
 #: apps/web/src/pages/shell/chat/image-gallery.tsx
 msgid "Next image"
-msgstr ""
+msgstr "下一張圖片"
 
 #: apps/web/src/pages/shell/chat/chat-find-bar.tsx
 msgid "Next match"
@@ -7879,7 +7879,7 @@ msgstr "沒有相符項目"
 
 #: apps/web/src/pages/plugins/plugin-browse.tsx
 msgid "No matches in your current catalogs."
-msgstr ""
+msgstr "目前的目錄中沒有相符項目。"
 
 #: apps/mobile/app/artifacts.tsx
 #: apps/web/src/pages/space/Artifacts.tsx
@@ -8392,7 +8392,7 @@ msgstr "開啟語音設定"
 
 #: apps/web/src/pages/shell/chat/use-read-aloud.ts
 msgid "Open Voice settings"
-msgstr ""
+msgstr "開啟語音設定"
 
 #: apps/mobile/components/bots/bot-context-cards.tsx
 #: apps/web/src/pages/space/ScratchpadSection.tsx
@@ -8720,7 +8720,7 @@ msgstr "個人"
 #: apps/mobile/components/integrations/add-custom-integration.tsx
 #: apps/web/src/pages/plugins/source-form.tsx
 msgid "Personal access token"
-msgstr ""
+msgstr "個人存取權杖"
 
 #: apps/mobile/components/vault/vault-item-editor.tsx
 #: apps/mobile/components/vault/vault-item-sheet.tsx
@@ -8878,7 +8878,7 @@ msgstr "此檔案類型無法預覽。請下載後檢視。"
 
 #: apps/web/src/pages/shell/chat/image-gallery.tsx
 msgid "Previous image"
-msgstr ""
+msgstr "上一張圖片"
 
 #: apps/web/src/pages/shell/chat/chat-find-bar.tsx
 msgid "Previous match"
@@ -10031,7 +10031,7 @@ msgstr "儲存時間"
 #: apps/mobile/app/artifact.tsx
 #: apps/mobile/components/media/image-artifact-viewer.tsx
 msgid "Saved to Photos"
-msgstr ""
+msgstr "已儲存到「照片」"
 
 #. js-lingui-explicit-id
 #: packages/i18n/src/vault.ts
@@ -10189,11 +10189,11 @@ msgstr "搜尋模型"
 
 #: apps/mobile/components/integrations/integration-catalog-search.tsx
 msgid "Search public MCP directory"
-msgstr ""
+msgstr "搜尋公開 MCP 目錄"
 
 #: apps/web/src/pages/plugins/plugin-browse.tsx
 msgid "Search public MCP directory for “{term}”"
-msgstr ""
+msgstr "在公開 MCP 目錄中搜尋「{term}」"
 
 #: apps/web/src/pages/shell/sidebar/shell-sidebar.tsx
 msgid "Search runs"
@@ -10529,7 +10529,7 @@ msgstr "顯示"
 #. placeholder {0}: image.name
 #: apps/web/src/pages/shell/chat/image-gallery.tsx
 msgid "Show {0}"
-msgstr ""
+msgstr "顯示 {0}"
 
 #: apps/mobile/components/vault/login-fields-editor.tsx
 msgid "Show {field}"
@@ -11560,7 +11560,7 @@ msgstr "思考：{level}"
 #: apps/mobile/components/thread/thread-screen.tsx
 #: apps/web/src/pages/shell/chat/transcript.tsx
 msgid "Thinking…"
-msgstr ""
+msgstr "思考中…"
 
 #: packages/i18n/src/user-error.ts
 msgid "This account is deactivated"
@@ -11853,7 +11853,7 @@ msgstr "此訂閱登入在 Rakazo 中尚不可用。請使用部署憑證或選�
 
 #: apps/mobile/app/(settings)/bot-template.tsx
 msgid "This template is no longer available."
-msgstr ""
+msgstr "此範本已無法使用。"
 
 #: apps/mobile/app/(settings)/bot-template.tsx
 #: apps/web/src/components/bot-templates/bot-templates-dialog.tsx
@@ -12457,7 +12457,7 @@ msgstr "使用主要模型"
 #: apps/mobile/app/routine.tsx
 #: apps/web/src/pages/routines/routine-editor/model-settings.tsx
 msgid "Use my computer"
-msgstr ""
+msgstr "使用我的電腦"
 
 #: apps/web/src/components/billing/ModelCredits.tsx
 msgid "Use my subscription or API key"
