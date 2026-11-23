@@ -20,6 +20,7 @@ import {
 import {
   holdsBillingSubscription,
   mediaBalance,
+  mediaWithinAllowance,
   sandboxAllowance,
   sandboxDisplayedHourMicros,
   sandboxHoursLeft,
@@ -731,12 +732,15 @@ export function createBillingService(deps: {
             getLogger().error("access grant failed", error),
           );
         const sized = supportsComputerSizing();
-        const media = deps.mediaGeneration?.prices;
+        const media = deps.mediaGeneration;
+        const fits = media && mediaWithinAllowance(media);
         const [credits, account, computerAllowance, mediaLeft, days, hadTrial] = await Promise.all([
           unexpiredCreditAccount(prisma, organizationId),
           billingAccountForOrganization(prisma, organizationId),
           deps.sandbox ? sandboxAllowance({ prisma, sandbox: deps.sandbox }, organizationId) : null,
-          media && (media.imageMicros > 0 || media.videoMicros > 0)
+          media &&
+          ((fits?.images && media.prices.imageMicros > 0) ||
+            (fits?.video && media.prices.videoMicros > 0))
             ? mediaBalance(prisma, organizationId)
             : null,
           trialDays(organizationId),

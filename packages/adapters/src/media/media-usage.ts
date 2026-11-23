@@ -68,6 +68,15 @@ export function hostedMediaPrice(
   return (kind: "image" | "video") => priceMediaGeneration(prisma, source.provider, spaceId, kind);
 }
 
+/** Which media the provider offers at a price one monthly balance can pay at least once. */
+export function mediaWithinAllowance(provider: MediaGenerationProvider) {
+  const limit = MEDIA_ALLOWANCE_CENTS * 10_000;
+  return {
+    images: provider.capabilities.images && provider.prices.imageMicros <= limit,
+    video: provider.capabilities.video && provider.prices.videoMicros <= limit,
+  };
+}
+
 /**
  * The deployment's provider without any media whose one generation costs more than a whole
  * monthly balance where billing meters it, so a bot is never offered a tool that is refused
@@ -77,9 +86,9 @@ export async function hostedMediaWithinAllowance(
   prisma: Pick<PrismaClient, "deploymentSettings">,
   provider: MediaGenerationProvider | undefined,
 ): Promise<MediaGenerationProvider | undefined> {
-  const limit = MEDIA_ALLOWANCE_CENTS * 10_000;
-  const images = provider?.capabilities.images && provider.prices.imageMicros > limit;
-  const video = provider?.capabilities.video && provider.prices.videoMicros > limit;
+  const fits = provider && mediaWithinAllowance(provider);
+  const images = provider?.capabilities.images && !fits?.images;
+  const video = provider?.capabilities.video && !fits?.video;
   if (!provider || !(images || video)) return provider;
   const settings = await prisma.deploymentSettings.findUnique({
     where: { id: "default" },

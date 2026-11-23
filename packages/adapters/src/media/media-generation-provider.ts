@@ -82,8 +82,8 @@ const FAL_IMAGE_MICROS = new Map([
   ["fal-ai/flux/schnell", 3_000],
   ["fal-ai/flux/dev", 25_000],
 ]);
-// 81 frames billed at 16 per second, 720p.
-const FAL_VIDEO_MICROS = new Map([["fal-ai/wan/v2.2-a14b/text-to-video", 410_000]]);
+// The 65 frames requested, billed at 16 per second and 480p's per-second rate, rounded up.
+const FAL_VIDEO_MICROS = new Map([["fal-ai/wan/v2.2-a14b/text-to-video", 163_000]]);
 
 /** fal queue HTTP protocol; model-specific parameters stay within this adapter. */
 export class FalMediaGenerationProvider implements MediaGenerationProvider {

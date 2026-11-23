@@ -356,6 +356,7 @@ dbTests("own-key plan", () => {
       prisma,
       provider,
       mediaGeneration: {
+        capabilities: { images: true, video: false, offline: false },
         prices: { imageMicros: 40_000, videoMicros: 0 },
       } as MediaGenerationProvider,
       webOrigin: "https://example.test",

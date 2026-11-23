@@ -108,7 +108,7 @@ describe("OpenRouter media generation", () => {
     expect(init?.redirect).toBe("error");
     expect(new Headers(init?.headers).get("authorization")).toBe("Bearer fake-key");
   });
-  it("reports what an image and a finished video cost", async () => {
+  it("reports what an image cost", async () => {
     const image = setup(
       both,
       json({ data: [{ b64_json: Buffer.from(PNG).toString("base64") }], usage: { cost: 0.039 } }),
@@ -116,6 +116,8 @@ describe("OpenRouter media generation", () => {
     expect(await image.provider.generateImage({ prompt: "draw" }, context)).toMatchObject({
       costMicros: 39_000,
     });
+  });
+  it("reports what a finished video cost", async () => {
     const video = setup(
       both,
       json({ id: "job-1", status: "completed", usage: { cost: 0.2, is_byok: false } }),
