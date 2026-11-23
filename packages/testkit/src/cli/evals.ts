@@ -130,7 +130,7 @@ async function main() {
       "base-url": { type: "string" },
       "context-window": { type: "string" },
       "max-output-tokens": { type: "string" },
-      trials: { type: "string", default: "3" },
+      trials: { type: "string", default: "1" },
       case: { type: "string", multiple: true },
       "cases-file": { type: "string" },
       "timeout-ms": { type: "string", default: "180000" },

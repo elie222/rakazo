@@ -236,7 +236,7 @@ test("takeover, routine, plugins, and export are reachable", async ({ page }, te
   await expect(page.getByTestId("connection-detail")).toHaveCount(0);
   await expect(linearRow.getByRole("button", { name: "Add Linear", exact: true })).toBeVisible();
 
-  // Custom sources live behind one menu: GitHub, then MCP → OpenAPI → GraphQL → Executor.
+  // The Add menu lists custom source kinds before the direct MCP presets.
   await page.getByRole("button", { name: "Add custom", exact: true }).click();
   const addItems = page.getByRole("menuitem");
   await expect(addItems).toHaveText([
@@ -244,6 +244,9 @@ test("takeover, routine, plugins, and export are reachable", async ({ page }, te
     "MCP server",
     "OpenAPI",
     "GraphQL",
+    "GitHub",
+    "Linear",
+    "Notion",
     "Executor",
     "Browse MCP servers",
     "Search by domain",
@@ -369,11 +372,13 @@ test("sign-in, spawn, and stop work in the shell", async ({ page }, testInfo) =>
     if (message.type() === "error") browserErrors.push(message.text());
   });
   page.on("requestfailed", (request) => {
-    // Leaving a page closes the live streams and the usage probe it held open.
+    // Leaving a page closes its live streams. A live signal replaces any in-flight account read.
+    const pathname = new URL(request.url()).pathname;
     if (
-      request.failure()?.errorText === "net::ERR_ABORTED" &&
-      (request.url().includes("/rpc/notifications/subscribe") ||
-        request.url().includes("/rpc/usage/limits"))
+      (pathname === "/rpc/notifications/subscribe" ||
+        pathname === "/rpc/notifications/subscribeCalls" ||
+        pathname === "/rpc/me") &&
+      request.failure()?.errorText === "net::ERR_ABORTED"
     )
       return;
     failedRequests.push(

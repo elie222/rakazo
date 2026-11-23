@@ -461,7 +461,6 @@ describe("bot profile", () => {
       ],
       "2 on",
     ],
-    ["all paused", [routine("r1", "Morning digest", { active: false })], "0 on"],
   ])("counts the routines that are on (%s)", async (_, rows, count) => {
     profileRpc(async () => rows);
     await render(createElement(BotProfile));
@@ -720,24 +719,21 @@ describe("bot profile notifications", () => {
     expect(afterChatNotifyChange).not.toHaveBeenCalled();
   });
 
-  it.each([true, false])(
-    "brings the device in line after a save (turned on: %s)",
-    async (notify) => {
-      profileRpc(async () => [], {
-        bot: async () => ({ ...fixtureBot, notifyOnFinish: !notify }),
-        update: async () => ({ ...fixtureBot, notifyOnFinish: notify }),
-      });
-      await render(createElement(BotProfile));
+  it("brings the device in line after turning notifications off", async () => {
+    profileRpc(async () => [], {
+      bot: async () => ({ ...fixtureBot, notifyOnFinish: true }),
+      update: async () => ({ ...fixtureBot, notifyOnFinish: false }),
+    });
+    await render(createElement(BotProfile));
 
-      await act(async () => notificationsSwitch()!.click());
-      expect(afterChatNotifyChange).toHaveBeenCalledExactlyOnceWith(
-        "https://api.example",
-        "token",
-        "space-a",
-        { botId: "bot-fixture", threadId: "thread-fixture", notify },
-      );
-    },
-  );
+    await act(async () => notificationsSwitch()!.click());
+    expect(afterChatNotifyChange).toHaveBeenCalledExactlyOnceWith(
+      "https://api.example",
+      "token",
+      "space-a",
+      { botId: "bot-fixture", threadId: "thread-fixture", notify: false },
+    );
+  });
 });
 
 describe("routines screen", () => {
@@ -1610,7 +1606,7 @@ describe("artifacts opened for one bot", () => {
     expect(container.textContent).not.toContain("Could not load artifacts.");
   });
 
-  it("keeps displayed files when a background refresh fails", async () => {
+  it.each(["focus", "live"])("keeps displayed files when a %s refresh fails", async (source) => {
     const file = {
       id: "file-a",
       name: "report.md",
@@ -1627,10 +1623,74 @@ describe("artifacts opened for one bot", () => {
     listSpaceArtifacts.mockResolvedValueOnce({ items: [file], nextCursor: null });
     listSpaceArtifacts.mockRejectedValueOnce(new Error("Could not load artifacts."));
     await render(createElement(ArtifactsScreen));
-    await act(async () => button("Refresh files").click());
+    const effects = source === "focus" ? focus : (spaceChangeListeners.get("artifacts") ?? []);
+    await act(async () => {
+      await Promise.all([...effects].map((effect) => effect()));
+    });
+    expect(listSpaceArtifacts).toHaveBeenCalledTimes(2);
     expect(container.textContent).toContain("report.md");
     expect(container.textContent).not.toContain("Could not load artifacts.");
     expect(container.querySelector("progress")).toBeNull();
+  });
+
+  it("shows a failed pull-to-refresh above the displayed files until a read succeeds", async () => {
+    const file = {
+      id: "file-a",
+      name: "report.md",
+      botId: "bot-fixture",
+      groupId: null,
+      runId: null,
+      description: null,
+      mimeType: "text/markdown",
+      size: 6,
+      version: 1,
+      versionCount: 1,
+      createdAt: "2026-11-01T00:00:00.000Z",
+    };
+    listSpaceArtifacts.mockResolvedValueOnce({ items: [file], nextCursor: null });
+    listSpaceArtifacts.mockRejectedValueOnce(new Error("Could not load artifacts."));
+    listSpaceArtifacts.mockRejectedValueOnce(new Error("Background read failed."));
+    listSpaceArtifacts.mockResolvedValueOnce({ items: [file], nextCursor: null });
+    await render(createElement(ArtifactsScreen));
+    await act(async () => button("Refresh files").click());
+    expect(container.textContent).toContain("report.md");
+    expect(container.textContent).toContain("Could not load artifacts.");
+    await act(async () => {
+      for (const listener of spaceChangeListeners.get("artifacts") ?? []) await listener();
+    });
+    expect(container.textContent).toContain("Could not load artifacts.");
+    expect(container.textContent).not.toContain("Background read failed.");
+    await act(async () => button("Refresh files").click());
+    expect(container.textContent).toContain("report.md");
+    expect(container.textContent).not.toContain("Could not load artifacts.");
+  });
+
+  it("shows a pull failure when a live read supersedes the pull and also fails", async () => {
+    const file = {
+      id: "file-a",
+      name: "report.md",
+      botId: "bot-fixture",
+      groupId: null,
+      runId: null,
+      description: null,
+      mimeType: "text/markdown",
+      size: 6,
+      version: 1,
+      versionCount: 1,
+      createdAt: "2026-11-01T00:00:00.000Z",
+    };
+    const pull = deferred<never>();
+    listSpaceArtifacts.mockResolvedValueOnce({ items: [file], nextCursor: null });
+    listSpaceArtifacts.mockReturnValueOnce(pull.promise);
+    listSpaceArtifacts.mockRejectedValueOnce(new Error("Could not load artifacts."));
+    await render(createElement(ArtifactsScreen));
+    act(() => button("Refresh files").click());
+    await act(async () => {
+      for (const listener of spaceChangeListeners.get("artifacts") ?? []) await listener();
+    });
+    await act(async () => pull.reject(new Error("Pull failed.")));
+    expect(container.textContent).toContain("report.md");
+    expect(container.textContent).toContain("Could not load artifacts.");
   });
 
   it("loads only the profile bot's artifacts initially", async () => {

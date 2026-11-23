@@ -2,7 +2,7 @@ import { mkdtemp, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type { PortableFile, SandboxProvider, StreamedPortableFile } from "@rakazo/adapter-kit";
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   fakeBoatProvider as fakeBoat,
   routeFakeBoatDownloads,
@@ -13,11 +13,9 @@ import { HostComputerSandbox } from "../host/host-computer-sandbox.js";
 import { startHostComputerServer } from "../host/host-computer-server.js";
 import { provisionPrepared } from "./sandbox-test-support.js";
 
-let restoreFetch: () => void;
-beforeAll(() => {
-  restoreFetch = routeFakeBoatDownloads();
+beforeEach(() => {
+  routeFakeBoatDownloads();
 });
-afterAll(() => restoreFetch());
 
 const context = {
   operationId: "sandbox-fault-test",

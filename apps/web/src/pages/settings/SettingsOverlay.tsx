@@ -24,11 +24,7 @@ import {
 } from "../../components/computers/ComputerDeviceSettings";
 import { computersAreUnavailable } from "../../components/computers/ComputersUnavailableHint";
 import { ApprovalRulesSettings } from "../../components/settings/ApprovalRulesSettings";
-import {
-  SETTINGS_CONTENT_WIDTH,
-  SettingsGroup,
-  SettingsRow,
-} from "../../components/settings/SettingsRows";
+import { SETTINGS_CONTENT_WIDTH } from "../../components/settings/SettingsRows";
 import { VaultSettings } from "../../components/vault/VaultSettings";
 import { canChooseOwnComputer } from "../../lib/computers/computer-sandbox";
 import { desktopBridge } from "../../lib/platform/desktop";
@@ -52,6 +48,7 @@ import type { OrganizationPage } from "./OrganizationSettingsPanel";
 import { OrganizationOptionsMenu, OrganizationSettingsPanel } from "./OrganizationSettingsPanel";
 import { PaymentWalletSettingsPanel } from "./PaymentWalletSettingsPanel";
 import { SpaceSettingsPanel } from "./SpaceSettingsPanel";
+import { SpacesSettingsPanel } from "./SpacesSettingsPanel";
 import { useSettingsNavItems } from "./settings-nav";
 import { UsageSettingsPanel } from "./UsageSettingsPanel";
 import { VoiceSettingsOverlay } from "./VoiceSettingsOverlay";
@@ -60,6 +57,7 @@ export function SettingsOverlay({
   space,
   spaces = [],
   onOpenSpace,
+  onNewSpace,
   onRenameSpace,
   onDeleteSpace,
   email,
@@ -94,6 +92,7 @@ export function SettingsOverlay({
   space?: SettingsSpace | null;
   spaces?: { id: string; name: string }[];
   onOpenSpace?: (spaceId: string) => void;
+  onNewSpace?: () => void;
   onRenameSpace?: (spaceId: string, name: string, client: RpcClient) => Promise<void>;
   onDeleteSpace?: (spaceId: string) => Promise<void>;
   email?: string | null;
@@ -168,7 +167,10 @@ export function SettingsOverlay({
     (requestedSection === "updates" && !showUpdates) ||
     (requestedSection === "labs" && labsAvailable.length === 0)
       ? "general"
-      : requestedSection;
+      : // A lone Space has no page of its own; Spaces shows what it has.
+        requestedSection === "space" && spaces.length <= 1
+        ? "spaces"
+        : requestedSection;
   const panelBusy = memoryBusy || voiceBusy;
   // Only a space's own page binds to it; every other section, memory included, acts on the
   // space the app is showing.
@@ -316,8 +318,8 @@ export function SettingsOverlay({
             >
               {navItems.map((item) => {
                 const Icon = item.icon;
-                // A space's page is reached from General, so General stays marked.
-                const active = item.id === (section === "space" ? "general" : section);
+                // A space's page is reached from Spaces, so Spaces stays marked.
+                const active = item.id === (section === "space" ? "spaces" : section);
                 return (
                   <button
                     key={item.id}
@@ -363,7 +365,7 @@ export function SettingsOverlay({
                     className="-ms-2 shrink-0"
                     aria-label={t`Back`}
                     disabled={panelBusy}
-                    onClick={() => onSectionChange("general")}
+                    onClick={() => onSectionChange("spaces")}
                   >
                     <ChevronLeft className="rtl:rotate-180" />
                   </Button>
@@ -412,41 +414,28 @@ export function SettingsOverlay({
                   }
                 >
                   {section === "general" ? (
-                    <div className="space-y-8">
-                      <GeneralSettingsPanels
-                        email={email}
-                        name={name}
-                        onNameSaved={onNameSaved}
-                        timezone={timezone}
-                        onTimezoneChange={onTimezoneChange}
-                        botAvatarSet={botAvatarSet}
-                        onBotAvatarSetChange={onBotAvatarSetChange}
-                        onAccountImported={onAccountImported}
-                        onImportAgent={onImportAgent}
-                      />
-                      {/* One space is just the app, so there is nothing to tell apart or manage. */}
-                      {spaces.length > 1 && onOpenSpace ? (
-                        <SettingsGroup title={t`Spaces`} data-testid="settings-spaces">
-                          {spaces.map((option) => (
-                            <SettingsRow
-                              key={option.id}
-                              label={<p className="break-words">{option.name}</p>}
-                              control={
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  className="rounded-full"
-                                  aria-label={t`Manage ${option.name}`}
-                                  onClick={() => onOpenSpace(option.id)}
-                                >
-                                  {t`Manage`}
-                                </Button>
-                              }
-                            />
-                          ))}
-                        </SettingsGroup>
-                      ) : null}
-                    </div>
+                    <GeneralSettingsPanels
+                      email={email}
+                      name={name}
+                      onNameSaved={onNameSaved}
+                      timezone={timezone}
+                      onTimezoneChange={onTimezoneChange}
+                      botAvatarSet={botAvatarSet}
+                      onBotAvatarSetChange={onBotAvatarSetChange}
+                      onAccountImported={onAccountImported}
+                      onImportAgent={onImportAgent}
+                    />
+                  ) : null}
+                  {section === "spaces" ? (
+                    <SpacesSettingsPanel
+                      space={space ?? null}
+                      spaces={spaces}
+                      onOpenSpace={(spaceId) => onOpenSpace?.(spaceId)}
+                      onNewSpace={onNewSpace && (() => leaveSettings(onNewSpace))}
+                      onLeft={(spaceId, activeSpaceId) => onLeftSpace?.(spaceId, activeSpaceId)}
+                      onClose={requestClose}
+                      onBusyChange={setVoiceBusy}
+                    />
                   ) : null}
                   {section === "space" && space ? (
                     <SpaceSettingsPanel

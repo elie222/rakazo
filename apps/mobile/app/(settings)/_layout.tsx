@@ -129,6 +129,13 @@ export default function SettingsLayout() {
         })}
       />
       <Stack.Screen
+        name="spaces"
+        options={{
+          ...glassHeaderOptions(t`Spaces`),
+          contentStyle: { backgroundColor: native.groupedPage },
+        }}
+      />
+      <Stack.Screen
         name="organization"
         options={{
           ...glassHeaderOptions(t`Organization`),

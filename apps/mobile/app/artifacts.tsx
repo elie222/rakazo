@@ -29,6 +29,7 @@ import type { MobileBot } from "../lib/api/mobile-types";
 import { useSpaceChanges } from "../lib/api/roster-signals";
 import { errorText } from "../lib/api/user-error";
 import { mobileTokens } from "../lib/appearance/appearance";
+import { isMediaArtifact, mediaArtifactGallery } from "../lib/artifacts/artifact-gallery";
 import type { MobileArtifactSummary } from "../lib/artifacts/artifacts";
 import {
   listSpaceArtifacts,
@@ -88,9 +89,11 @@ export default function ArtifactsScreen() {
   const [loadingMore, setLoadingMore] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [refreshError, setRefreshError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [searchPageFailed, setSearchPageFailed] = useState(false);
   const loadingMoreRef = useRef(false);
+  const pullingRef = useRef(false);
   const loadedPagesRef = useRef(1);
   const generationRef = useRef(0);
   const loadingPageRef = useRef(false);
@@ -118,6 +121,8 @@ export default function ArtifactsScreen() {
 
   const load = useCallback(
     async (botId: string | null, madeByBots: boolean, mode: "replace" | "refresh" | "live") => {
+      // A read that starts during a pull-to-refresh supersedes it, so it reports its failure.
+      const forPull = pullingRef.current;
       const pageCount = mode === "live" ? loadedPagesRef.current : 1;
       const generation = ++generationRef.current;
       loadingPageRef.current = true;
@@ -128,6 +133,7 @@ export default function ArtifactsScreen() {
       setSearchPageFailed(false);
       setLoadError(null);
       if (mode === "replace") {
+        setRefreshError(null);
         loadedPagesRef.current = 1;
         setItems(null);
         setNext(null);
@@ -150,9 +156,12 @@ export default function ArtifactsScreen() {
         loadedPagesRef.current = loaded;
         setItems(nextItems);
         setNext(page.nextCursor ? { cursor: page.nextCursor, botId, madeByBots } : null);
+        setRefreshError(null);
       } catch (error) {
         if (generation !== generationRef.current) return;
-        setLoadError(errorText(error, t`Could not load artifacts.`));
+        const message = errorText(error, t`Could not load artifacts.`);
+        setLoadError(message);
+        if (forPull) setRefreshError(message);
       } finally {
         if (generation === generationRef.current) {
           loadingPageRef.current = false;
@@ -206,10 +215,13 @@ export default function ArtifactsScreen() {
   }, [activeBotId, madeByBots, nextCursor]);
 
   async function refresh() {
+    if (pullingRef.current) return;
     setRefreshing(true);
+    pullingRef.current = true;
     try {
       await load(activeBotId, madeByBots, "refresh");
     } finally {
+      pullingRef.current = false;
       setRefreshing(false);
     }
   }
@@ -245,6 +257,11 @@ export default function ArtifactsScreen() {
     if (!queryActive) return items;
     return items.filter((item) => matchesArtifactQuery(item, query));
   }, [items, query, queryActive]);
+  const mediaGallery = useMemo(() => mediaArtifactGallery(filtered ?? []), [filtered]);
+  const mediaGalleryParam = useMemo(
+    () => (mediaGallery.length > 1 ? JSON.stringify(mediaGallery) : undefined),
+    [mediaGallery],
+  );
   const botsById = useMemo(() => new Map((bots ?? []).map((bot) => [bot.id, bot])), [bots]);
 
   useEffect(() => {
@@ -343,6 +360,11 @@ export default function ArtifactsScreen() {
                 />
               ))}
             </ScrollView>
+            {items !== null && refreshError ? (
+              <Text accessibilityRole="alert" style={[styles.empty, styles.refreshError]}>
+                {refreshError}
+              </Text>
+            ) : null}
           </View>
         }
         style={[styles.listView, sideInsets]}
@@ -405,7 +427,17 @@ export default function ArtifactsScreen() {
           <ArtifactRow
             item={item}
             bot={activeBotId === null && item.botId ? botsById.get(item.botId) : undefined}
-            onPress={() => router.push({ pathname: "/artifact", params: { artifactId: item.id } })}
+            onPress={() =>
+              router.push({
+                pathname: "/artifact",
+                params: {
+                  artifactId: item.id,
+                  ...(mediaGalleryParam && isMediaArtifact(item)
+                    ? { gallery: mediaGalleryParam }
+                    : {}),
+                },
+              })
+            }
             onLongPress={() => confirmDelete(item)}
           />
         )}
@@ -541,6 +573,7 @@ function createStyles() {
       paddingHorizontal: 24,
       paddingTop: 8,
     },
+    refreshError: { color: tokens.destructive, paddingBottom: 8 },
     footer: { paddingVertical: 20 },
     row: { flexDirection: "row", gap: 12, paddingHorizontal: 16, paddingVertical: 12 },
     rowPressed: { opacity: 0.6 },

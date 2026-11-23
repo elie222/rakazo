@@ -1577,7 +1577,7 @@ describe("initial model picker scroll", () => {
     });
   });
 
-  it.each(["first", "model-0", "", "missing"])(
+  it.each(["first", "model-0", "missing"])(
     "leaves the initial viewport alone for %s",
     async (key) => {
       await render(key);

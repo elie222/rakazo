@@ -14,6 +14,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const state = vi.hoisted(() => ({
   pending: { text: "https://example.com", files: [], arrivedAt: 0, generation: 1 } as unknown,
   cancel: vi.fn(),
+  choose: vi.fn(() => true),
   dismissTo: vi.fn(),
   reset: vi.fn(),
   prevented: new Set<string>() as ReadonlySet<string>,
@@ -71,6 +72,7 @@ vi.mock("../composer/incoming-share", () => ({
   getIncomingShare: () => state.pending,
   subscribeIncomingShare: () => () => {},
   cancelIncomingShare: state.cancel,
+  chooseIncomingShareThread: state.choose,
 }));
 vi.mock("../native/native", () => ({ useMobileTokens: () => ({}) }));
 vi.mock("react-native-safe-area-context", () => ({ useSafeAreaInsets: () => ({ top: 0 }) }));
@@ -163,6 +165,7 @@ describe("share route", () => {
     expect(state.cancel).not.toHaveBeenCalled();
     expect(state.dismissTo).not.toHaveBeenCalled();
     expect(state.pending).toBe(share);
+    expect(state.choose).toHaveBeenCalledExactlyOnceWith("example");
     expect(state.reset).toHaveBeenCalledExactlyOnceWith({
       type: "RESET",
       payload: {
@@ -178,6 +181,7 @@ describe("share route", () => {
       container.querySelectorAll("button")[1]?.click();
     });
     expect(state.reset).toHaveBeenCalledOnce();
+    expect(state.choose).toHaveBeenCalledOnce();
     expect(state.cancel).not.toHaveBeenCalled();
   });
 });

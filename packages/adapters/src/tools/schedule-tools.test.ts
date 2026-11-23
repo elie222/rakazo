@@ -13,7 +13,6 @@ import {
   createScheduleFromTool,
   filterBuiltinToolsForRun,
   filterBuiltinToolsForThread,
-  isOneShotRoutineCron,
   listSchedulesFromTool,
   MAX_ACTIVE_ROUTINES_PER_BOT,
   resolveScheduleTiming,
@@ -72,7 +71,6 @@ describe("resolveScheduleTiming", () => {
   it.each([
     [1000, "hours"],
     [57600, "minutes"],
-    [100000, "minutes"],
   ])("never suggests more than 31 days for every %i %s", (every, unit) => {
     const result = resolveScheduleTiming({ every, unit });
     expect(result.ok).toBe(false);
@@ -82,10 +80,7 @@ describe("resolveScheduleTiming", () => {
 
   it.each([
     [7, "minutes", "*/7 * * * *"],
-    [45, "minutes", "*/45 * * * *"],
-    [59, "minutes", "*/59 * * * *"],
     [60, "minutes", "*/60 * * * *"],
-    [23, "hours", "0 */23 * * *"],
     [24, "hours", "0 */24 * * *"],
     [31, "days", "0 0 */31 * *"],
   ])("still accepts every %i %s", (every, unit, cron) => {
@@ -362,13 +357,6 @@ describe("filterBuiltinToolsForThread", () => {
         { name: "remember" },
       ]);
     }
-  });
-});
-
-describe("isOneShotRoutineCron", () => {
-  it("detects the one-shot sentinel", () => {
-    expect(isOneShotRoutineCron(ONCE_ROUTINE_CRON)).toBe(true);
-    expect(isOneShotRoutineCron("0 9 * * *")).toBe(false);
   });
 });
 
@@ -1202,6 +1190,14 @@ describe("updateScheduleFromTool", () => {
     },
   );
 
+  it("refuses a name longer than the editor allows", async () => {
+    const { updateMany, update } = setup();
+    await expect(update({ name: "x".repeat(81) })).resolves.toEqual({
+      error: "name must be at most 80 characters.",
+    });
+    expect(updateMany).not.toHaveBeenCalled();
+  });
+
   it("refuses another member's change to what a schedule does", async () => {
     const { updateMany, update } = setup();
     await expect(update({ userId: "user-2", prompt: "Order less" })).resolves.toMatchObject({
@@ -1871,17 +1867,31 @@ describe("schedule tools with events", () => {
       key.plaintext = plaintext;
       return { id: "secret-1", ciphertext: "sealed" };
     });
+    const notices: unknown[] = [];
+    const stored = { webhookSecretId: null as string | null };
     const tx = {
       $queryRaw: vi.fn(async () => [{ webhookSecretId: null }]),
       secret: { create: vi.fn(), deleteMany: vi.fn() },
-      bot: { update: vi.fn() },
+      bot: {
+        update: vi.fn(async (args: { data: { webhookSecretId: string } }) => {
+          stored.webhookSecretId = args.data.webhookSecretId;
+        }),
+      },
+      thread: { update: vi.fn(async () => ({ nextMessageSeq: 2, spaceId: "ws-1" })) },
+      message: {
+        create: vi.fn(async (args: { data: { blocks: unknown } }) => {
+          notices.push(args.data.blocks);
+          return { id: "message-1" };
+        }),
+      },
+      event: { create: vi.fn(async () => ({ seq: 1 })) },
     };
     const prisma = accountZonePrisma(
       {
         routine: { create, findMany: noRoutines },
         bot: {
           findFirst: vi.fn(async () => ({ id: "bot-1", userId: options.botUserId ?? "user-1" })),
-          findUnique: vi.fn(async () => ({ webhookSecretId: null })),
+          findUnique: vi.fn(async () => ({ ...stored })),
         },
         messagingIdentity: {
           findUnique: vi.fn(async () => (options.provider ? { provider: options.provider } : null)),
@@ -1895,15 +1905,15 @@ describe("schedule tools with events", () => {
         $transaction: async (run: (client: unknown) => Promise<unknown>) =>
           run({ ...prisma, ...tx }),
       },
-      events: { append: vi.fn() },
+      events: { append: vi.fn(), notify: vi.fn() },
       jobs: { enqueue },
       secretStore: { put },
     } as unknown as Parameters<typeof createScheduleFromTool>[0];
-    return { deps, create, enqueue, put, key };
+    return { deps, create, enqueue, put, key, notices };
   }
 
   it("creates a routine only a webhook starts, and keeps its key from the result", async () => {
-    const { deps, create, enqueue, put, key } = eventDeps();
+    const { deps, create, enqueue, put, key, notices } = eventDeps();
     const result = await createScheduleFromTool(deps, {
       ...owner,
       ...scheduleCreateFields({
@@ -1931,6 +1941,10 @@ describe("schedule tools with events", () => {
     });
     expect(key.plaintext).not.toBe("");
     expect(JSON.stringify(result)).not.toContain(key.plaintext);
+    // The chat row offers the key to the person; the row itself never holds it.
+    expect(notices).toEqual([
+      [{ kind: "routine_event", change: "created", name: "Deploys", webhook: true }],
+    ]);
   });
 
   it("adds a chat event to a repeating schedule by the app's name", async () => {

@@ -151,6 +151,8 @@ export interface RouterDeps {
     deploymentVoice?: NonNullable<VoiceDeps["env"]>["deploymentVoice"];
     /** Domain of bots' email addresses; unset when this server receives no email. */
     inboundEmailDomain?: string;
+    /** The public origin webhooks reach, when an ingress provider publishes one. */
+    publishedInboundOrigin?: string;
     navLinks?: NavLink[];
     adminEmails?: string[];
     /** Labs features this deployment turns on for every account. */
@@ -217,6 +219,7 @@ export function createRouter(deps: RouterDeps) {
 export function routerEnv(env: AppEnv): RouterDeps["env"] {
   return {
     inboundEmailDomain: env.inboundEmail?.domain,
+    publishedInboundOrigin: env.publishedInboundOrigin,
     deploymentLabs: env.deploymentLabs,
     deploymentVoice: env.deploymentVoice,
     phoneCallsEnabled: env.phoneCallsEnabled,

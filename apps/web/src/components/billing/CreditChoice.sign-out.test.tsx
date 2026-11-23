@@ -66,7 +66,9 @@ vi.mock("@rakazo/ui-web", () => {
 });
 
 import { LOG_OUT_FAILED_KEY, syncLogOutFailure } from "../../lib/auth/sign-out";
-import { CreditChoice } from "./ModelCredits";
+import { CreditChoice } from "./CreditChoice";
+
+i18n.activate("en");
 
 i18n.activate("en");
 

@@ -361,6 +361,7 @@ describePostgres("shared spaces: invites and membership (PostgreSQL)", () => {
         userId: invitee.id,
         name: "Groceries",
         prompt: "List groceries",
+        computerPromptHash: "invitee-approved",
         crons: ["0 9 * * 1"],
         watchState: { fingerprint: "invitee-account" },
         accountFailures: 3,
@@ -452,6 +453,8 @@ describePostgres("shared spaces: invites and membership (PostgreSQL)", () => {
       system.routine.findUniqueOrThrow({ where: { id: routine.id } }),
     ).resolves.toMatchObject({
       userId: owner.id,
+      // The member approved it for their own computer, not the owner's.
+      computerPromptHash: null,
       active: false,
       nextRunAt: null,
       watchState: null,

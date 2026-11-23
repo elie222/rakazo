@@ -159,7 +159,6 @@ import { handleHttpError } from "./rpc-errors.js";
 import type { SpaceDeletionDeps } from "./spaces/space-deletion.js";
 import { afterSpaceDeparture } from "./spaces/space-departure.js";
 import { cspReportRoutes } from "./telemetry/csp-report.js";
-import { createExperiments } from "./telemetry/experiments.js";
 import { monitoringRoutes } from "./telemetry/monitoring.js";
 import { mountWebhookHttpRoutes } from "./webhooks/webhook.js";
 
@@ -379,7 +378,6 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
         webOrigin: env.webOrigin,
         managedModelsAvailable: resolveDeploymentModel().configured,
         analytics,
-        experiments: createExperiments(env.experiments),
         partnerProgram,
         scheduleLifecycleEmail:
           lifecycleEmailKinds.length > 0
@@ -458,15 +456,6 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
   const userDevices = userDeviceHub
     ? new UserDevices({ prisma, forwardSecret: userDeviceSecret, hub: userDeviceHub })
     : undefined;
-  // What runs reach: the deployment's own host computer plus paired devices, or a test override.
-  const effectiveUserDevices =
-    userDevicesOverride ??
-    withHostComputerScreen(userDevices, {
-      prisma,
-      sandboxKind: env.sandboxProvider,
-      url: env.sandboxOptions.hostComputerUrl,
-      token: env.sandboxOptions.hostComputerToken,
-    });
   const deviceSessions = {
     prisma,
     devices: userDevices ?? new UserDevices({ prisma, forwardSecret: userDeviceSecret }),
@@ -540,6 +529,15 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
   const codexCatalog = new CodexCatalogCache();
   // One instance: chat runs submit videos and, in single-process mode, background polls finish them.
   const mediaGeneration = createMediaGenerationProvider();
+  // The computers bots may reach: paired desktops, and this server's own screen when it has one.
+  const botUserDevices =
+    userDevicesOverride ??
+    withHostComputerScreen(userDevices, {
+      prisma,
+      sandboxKind: env.sandboxProvider,
+      url: env.sandboxOptions.hostComputerUrl,
+      token: env.sandboxOptions.hostComputerToken,
+    });
   const { runtime, executor, jobHandlers, messagingDelivery, teamChat, pageRevisions } =
     createRunRuntime(runtimeEnv, connectors, {
       billingEnabled: modelCreditsEnabled,
@@ -580,7 +578,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
         ? (id: string) => messagingInstallations.isActive(id)
         : undefined,
       cloudAgent,
-      userDevices: effectiveUserDevices,
+      userDevices: botUserDevices,
       paymentWallet,
       web,
       stoppingSignal: shutdown.signal,
@@ -663,6 +661,9 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     });
 
   const router = createRouter({
+    // Only computers people paired: nothing clears a routine's "Use my computer" when this
+    // server's own screen is turned off and on again.
+    userDevices: userDevicesOverride ?? userDevices,
     pageRevisions,
     meetings,
     meetingCalendar,
@@ -689,7 +690,6 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     pluginMarketplaceRead,
     cloudAgent,
     userCloudAgents,
-    userDevices: effectiveUserDevices,
     paymentWallet,
     codexCatalog,
     prisma,

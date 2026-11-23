@@ -15,6 +15,7 @@ import {
 } from "@rakazo/contracts";
 import {
   AttachmentValidationError,
+  attachmentStoredName,
   ClientError,
   decodeAttachmentBase64,
   inferAttachmentMimeType,
@@ -201,6 +202,8 @@ async function storeOwnedArtifact(
   },
 ) {
   const { mimeType, bytes } = input;
+  // An Office file keeps its type's own extension (attachmentStoredName).
+  input = { ...input, name: attachmentStoredName(input.name, mimeType) };
   const context = createAdapterContext(actor, input.botId, `artifact-create:${input.botId}`);
   const stored = await deps.artifacts.put({ name: input.name, mimeType, bytes }, context);
   const hash = createHash("sha256").update(bytes).digest("hex");

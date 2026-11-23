@@ -39,6 +39,8 @@ export const IntegrationCatalogSurfaceSchema = z.object({
 });
 export type IntegrationCatalogSurface = z.infer<typeof IntegrationCatalogSurfaceSchema>;
 
+/** The shortest query clients send to the public integration catalog. */
+export const CATALOG_SEARCH_QUERY_MIN_LENGTH = 2;
 /** The longest query the integration catalog search accepts. */
 export const CATALOG_SEARCH_QUERY_MAX_LENGTH = 253;
 

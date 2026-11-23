@@ -18,7 +18,8 @@ server integration credentials, or deployment updates, and cannot read deploymen
 There is no app-admin role, first-user privilege, or `ADMINS` list. Workspace owners manage only their own workspace.
 
 `RAKAZO_ADMIN_EMAILS` names accounts, comma-separated, that review plugin submissions, add stdio
-MCP servers ([integrations](self-host-integrations.md)), and, on deployments that sell model
+MCP servers ([integrations](self-host-integrations.md)), choose the model for everyone
+([models](self-host-models.md#default-for-everyone)), and, on deployments that sell model
 credits, give free access at `/admin/access`. An account counts only once its email is verified.
 It grants nothing else.
 

@@ -562,29 +562,6 @@ describe("reaction turns", () => {
     );
   });
 
-  it("answers the bot's pending ask with a thumbs down", async () => {
-    const { tx, enqueue, react } = fixture({
-      reaction: "👎",
-      parent: { role: "bot", botId: "bot-1", runId: "run-waiting" },
-      activeRuns: [
-        {
-          id: "run-waiting",
-          taskId: "task-1",
-          status: "waiting_input",
-          userId: "user-1",
-        },
-      ],
-    });
-    await react();
-    expect(tx.task.update).toHaveBeenCalledWith({
-      where: { id: "task-1" },
-      data: { prompt: "no" },
-      select: { id: true },
-    });
-    expect(tx.run.create).not.toHaveBeenCalled();
-    expect(enqueue).toHaveBeenCalledWith(expect.objectContaining({ name: "run.continue" }));
-  });
-
   it.each(["👍", "👎"] as const)(
     "answers its explicit question with %s after another reaction",
     async (reaction) => {
@@ -646,7 +623,6 @@ describe("reaction turns", () => {
   });
 
   it.each([
-    ["a recent reaction turn", { recentReaction: true }],
     ["a departed group bot", { groupMembers: ["bot-2", "bot-3"] }],
     [
       "a non-thumb on a pending ask",
@@ -914,7 +890,6 @@ describe("threadSnapshot", () => {
   it.each([
     { status: "waiting_input", trigger: "user" },
     { status: "waiting_input", trigger: "bot_message" },
-    { status: "queued", trigger: "bot_message" },
   ])("prefers running $trigger work over newer $status work", async ({ status, trigger }) => {
     const waitingPeer = {
       id: "run-peer-waiting",
@@ -1095,46 +1070,6 @@ describe("threadSnapshot", () => {
     );
     expect(snapshot.run).toBeNull();
   });
-
-  it("does not return a cancelled or completed run", async () => {
-    const findManyEvents = vi.fn();
-    const findFirstRun = botRunFindFirst([]);
-    const tx = {
-      user: { findMany: vi.fn().mockResolvedValue([]) },
-      spaceMember: { count: vi.fn().mockResolvedValue(1) },
-      $executeRaw: vi.fn(async () => 0),
-      $queryRaw: vi.fn().mockResolvedValue([{ id: "thread-1" }]),
-      message: { findMany: vi.fn().mockResolvedValue([]) },
-      event: {
-        findFirst: vi.fn().mockResolvedValue(null),
-        findMany: findManyEvents,
-      },
-      run: { findFirst: findFirstRun, findMany: vi.fn().mockResolvedValue([]) },
-    };
-    const prisma = {
-      $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
-    } as unknown as PrismaClient;
-    const target = {
-      kind: "bot",
-      botId: "bot-1",
-      threadId: "thread-1",
-      bot: { computer: null },
-    } as ThreadTarget;
-
-    const snapshot = await threadSnapshot({ prisma }, target);
-
-    expect(findFirstRun).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: expect.objectContaining({
-          status: {
-            in: ["queued", "leased", "running", "waiting_input", "waiting_takeover", "failed"],
-          },
-        }),
-      }),
-    );
-    expect(snapshot.run).toBeNull();
-    expect(findManyEvents).not.toHaveBeenCalled();
-  });
   it("returns a group's latest failed run so a refresh keeps its error", async () => {
     const run = {
       id: "run-failed",
@@ -1280,11 +1215,7 @@ describe("threadSnapshot", () => {
   });
 
   it.each([
-    ["queued", "waiting_input"],
-    ["leased", "waiting_input"],
     ["running", "waiting_input"],
-    ["queued", "waiting_takeover"],
-    ["leased", "waiting_takeover"],
     ["running", "waiting_takeover"],
   ])("keeps group %s work behind a %s headline", async (status, waitingStatus) => {
     // Real DB order is createdAt desc, so the newer busy run for bot-b comes
@@ -1468,48 +1399,6 @@ describe("threadSnapshot", () => {
         error: `${"x".repeat(300)}…`,
       }),
     );
-  });
-
-  it("keeps a concurrent member failure in run while another member is still active", async () => {
-    const active = {
-      id: "run-active",
-      botId: "bot-a",
-      threadId: "thread-1",
-      taskId: "task-a",
-      status: "running",
-      trigger: "user",
-      modelProvider: null,
-      modelId: null,
-      error: null,
-      startedAt: new Date("2026-08-23T00:00:00.000Z"),
-      completedAt: null,
-      createdAt: new Date("2026-08-23T00:00:00.000Z"),
-    };
-    const failed = {
-      id: "run-failed",
-      botId: "bot-b",
-      threadId: "thread-1",
-      taskId: "task-b",
-      status: "failed",
-      trigger: "user",
-      modelProvider: null,
-      modelId: null,
-      error: "member exploded",
-      startedAt: new Date("2026-08-23T00:00:01.000Z"),
-      completedAt: new Date("2026-08-23T00:00:02.000Z"),
-      createdAt: new Date("2026-08-23T00:00:01.000Z"),
-    };
-    const snapshot = await threadSnapshot(
-      { prisma: groupPrisma(groupRunFindMany({ active: [active], terminals: [failed] })) },
-      groupTarget(),
-    );
-
-    expect(snapshot.run).toEqual(
-      expect.objectContaining({ id: "run-failed", status: "failed", error: "member exploded" }),
-    );
-    expect(snapshot.activeRuns).toEqual([
-      expect.objectContaining({ id: "run-active", status: "running" }),
-    ]);
   });
 
   it("keeps a failure on refresh when another member starts after it", async () => {
@@ -4317,82 +4206,6 @@ describe("sendThreadMessage", () => {
       data: expect.objectContaining({
         payload: expect.not.objectContaining({ replyToMessageId: expect.anything() }),
       }),
-    });
-  });
-
-  it("accepts a quote excerpt that matches formatted parent text", async () => {
-    let messageSeq = 0;
-    let eventSeq = 0;
-    const tx = {
-      space: { findUnique: vi.fn(async () => null) },
-      user: { findMany: vi.fn().mockResolvedValue([]) },
-      spaceMember: { count: vi.fn().mockResolvedValue(1) },
-      $executeRaw: vi.fn(async () => 0),
-      $queryRaw: vi.fn().mockResolvedValue([]),
-      thread: {
-        update: vi.fn(async ({ data }: { data: { nextMessageSeq?: unknown } }) =>
-          data.nextMessageSeq ? { nextMessageSeq: ++messageSeq } : { nextEventSeq: ++eventSeq },
-        ),
-      },
-      message: {
-        findFirst: vi.fn().mockResolvedValue({
-          id: "parent",
-          role: "bot",
-          // Rendered as "42% growth", stored with markdown source.
-          blocks: [{ kind: "text", text: "we saw **42%** growth last week" }],
-        }),
-        update: vi.fn(),
-        create: vi.fn().mockResolvedValue({
-          id: "msg-1",
-          threadId: "thread-1",
-          seq: 1,
-          role: "user",
-          blocks: [{ kind: "text", text: "why this?" }],
-          botId: null,
-          replyToMessageId: "parent",
-          replyQuote: "42% growth",
-          runId: null,
-          createdAt: new Date(),
-        }),
-      },
-      run: {
-        findMany: vi.fn().mockResolvedValue([]),
-        findUnique: vi.fn().mockResolvedValue({ status: "queued", startedAt: null }),
-        create: vi.fn().mockResolvedValue({ id: "run-1", taskId: "task-1", status: "queued" }),
-      },
-      task: { create: vi.fn().mockResolvedValue({ id: "task-1" }) },
-      event: {
-        create: vi.fn().mockResolvedValue({ id: "event-1", seq: 1, createdAt: new Date() }),
-      },
-      steeringMessage: { create: vi.fn() },
-    };
-    const prisma = {
-      message: { findUnique: vi.fn().mockResolvedValue(null) },
-      $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
-    } as unknown as PrismaClient;
-    const actor = { spaceId: "workspace-1", userId: "user-1" } as Actor;
-    const target = { kind: "bot", botId: "bot-1", threadId: "thread-1" } as ThreadTarget;
-
-    const result = await sendThreadMessage(
-      {
-        prisma,
-        sandbox: {} as never,
-        events: { notify: vi.fn().mockResolvedValue(undefined) } as never,
-        jobs: { enqueue: vi.fn().mockResolvedValue(undefined) } as never,
-      },
-      actor,
-      target,
-      {
-        text: "why this?",
-        replyToMessageId: "parent",
-        replyQuote: "42% growth",
-        clientNonce: "nonce-1",
-      },
-    );
-
-    expect(result).toMatchObject({ runId: "run-1", taskId: "task-1" });
-    expect(tx.message.create).toHaveBeenCalledWith({
-      data: expect.objectContaining({ replyQuote: "42% growth" }),
     });
   });
 

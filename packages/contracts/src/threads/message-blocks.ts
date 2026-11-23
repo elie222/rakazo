@@ -215,6 +215,8 @@ export const MessageBlock = z.discriminatedUnion("kind", [
     kind: z.literal("routine_event"),
     change: RoutineEventChange,
     name: z.string().max(200),
+    /** A webhook starts the routine: the creator's client can show its URL and the bot's key. */
+    webhook: z.literal(true).optional(),
   }),
   /**
    * Marks a user message as what woke the bot (a webhook, an email, a chat message). Its text

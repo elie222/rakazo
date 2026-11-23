@@ -1,5 +1,10 @@
 import type { ModelUsageLookup } from "@rakazo/adapter-kit";
-import type { ModelCatalogEntry, ModelOAuthSignInMode, ModelRoutingField } from "@rakazo/contracts";
+import type {
+  ModelCatalogEntry,
+  ModelOAuthSignInMode,
+  ModelRoutingField,
+  ThinkingLevel,
+} from "@rakazo/contracts";
 import { bestEffort } from "@rakazo/logging";
 import {
   CLAUDE_CODE_CREDENTIAL_SOURCE,
@@ -20,6 +25,8 @@ export interface ModelProviderDefinition {
   subscriptionNameId?: string;
   /** The model a new connection preselects; only an exact catalog id. */
   recommendedModel?: string;
+  /** What a new subscription sign-in runs, where the plan covers a stronger model than a key. */
+  subscriptionModel?: { id: string; thinkingLevel: ThinkingLevel };
   /** Bundled or live-listed ids the provider refuses agent runs for every new account. */
   unservedModels?: readonly string[];
   /** A read-only authenticated endpoint that tells a rejected key from a valid one. */
@@ -28,6 +35,8 @@ export interface ModelProviderDefinition {
     headers(apiKey: string): Record<string, string>;
     rejected(response: Response): Promise<boolean>;
   };
+  /** A connection needs host configuration beyond an API key. */
+  requiresHostConfiguration?: true;
   /** A deployment-wide key operators set in the environment, and the model it runs. */
   deployment?: { keyEnv: string; defaultModel: string };
   /** Optional authenticated recovery of a dispatched request. */
@@ -63,12 +72,14 @@ const subscriptionNames = {
 };
 
 export const modelProviders = {
+  local: { requiresHostConfiguration: true },
   "openai-compatible": { preserveModelOrder: true },
   "openai-codex": {
     displayName: "OpenAI Codex",
     subscriptionName: subscriptionNames.codex.message,
     subscriptionNameId: subscriptionNames.codex.id,
-    recommendedModel: "gpt-6-luna",
+    recommendedModel: "gpt-6.1-sol",
+    subscriptionModel: { id: "gpt-6.1-sol", thinkingLevel: "low" },
     signIn: {
       mode: "device-code",
       loginLabel: "Sign in with ChatGPT",
@@ -96,6 +107,7 @@ export const modelProviders = {
   },
   anthropic: {
     recommendedModel: "claude-haiku-5-5",
+    subscriptionModel: { id: "claude-opus-5-5", thinkingLevel: "low" },
     subscriptionName: subscriptionNames.anthropic.message,
     subscriptionNameId: subscriptionNames.anthropic.id,
     deployment: { keyEnv: "ANTHROPIC_API_KEY", defaultModel: "claude-sonnet-5" },

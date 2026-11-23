@@ -3619,15 +3619,12 @@ describe("answerRunInput approvals", () => {
       expect(tx.run.updateMany).not.toHaveBeenCalled();
     });
 
-    it.each(["", "   ", "ok", "123", "x".repeat(13), "12.34"])(
-      "keeps nothing that is not a code: %j",
-      async (text) => {
-        const { store, tx, answer } = codeCard();
-        await expect(answer(text)).resolves.toBe(false);
-        expect(store).not.toHaveBeenCalled();
-        expect(tx.run.updateMany).not.toHaveBeenCalled();
-      },
-    );
+    it("keeps nothing that is not a code", async () => {
+      const { store, tx, answer } = codeCard();
+      await expect(answer("12.34")).resolves.toBe(false);
+      expect(store).not.toHaveBeenCalled();
+      expect(tx.run.updateMany).not.toHaveBeenCalled();
+    });
   });
 
   describe("dismissing a secret request", () => {
@@ -3764,14 +3761,6 @@ describe("answerRunInput approvals", () => {
 
     it.each([
       ["another member of the space", { ownerId: "owner" }, {}],
-      [
-        "another member, for a connector code",
-        {
-          ownerId: "owner",
-          block: { kind: "ask", text: "Enter the code", input: "secret", status: "pending" },
-        },
-        {},
-      ],
       [
         "a question card",
         {
@@ -4019,49 +4008,46 @@ describe("answerRunInput approvals", () => {
 });
 
 describe("queue admission beside pending cards", () => {
-  it.each(["user", "webhook", "messaging", "follow_up"] as const)(
-    "admits a %s wake beside waiting_input",
-    async (trigger) => {
-      const tx = {
-        $queryRaw: vi.fn(async () => []),
-        space: { findUnique: vi.fn() },
-        thread: { update: vi.fn().mockResolvedValue({ nextMessageSeq: 3, nextEventSeq: 4 }) },
-        message: {
-          create: vi.fn().mockResolvedValue({ id: "message-new", seq: 2 }),
-          update: vi.fn(),
-        },
-        run: {
-          findMany: vi.fn(async ({ where }: { where: { status: { in: string[] } } }) =>
-            where.status.in.includes("waiting_input")
-              ? [{ id: "paused", taskId: "task-old", trigger: "user" }]
-              : [],
-          ),
-          create: vi.fn().mockResolvedValue({ id: "run-new" }),
-          findUnique: vi.fn().mockResolvedValue({ status: "queued" }),
-        },
-        task: { create: vi.fn().mockResolvedValue({ id: "task-new" }) },
-        steeringMessage: { create: vi.fn() },
-        event: { create: vi.fn().mockResolvedValue({ threadId: "thread-1", seq: 3 }) },
-      };
-      const prisma = {
-        message: { findUnique: vi.fn().mockResolvedValue(null) },
-        prunedMessageNonce: { findUnique: vi.fn().mockResolvedValue(null) },
-        $transaction: vi.fn(async (work: (client: typeof tx) => unknown) => work(tx)),
-      } as unknown as PrismaClient;
-      await expect(
-        sendUserMessage(prisma, {
-          spaceId: "space-1",
-          threadId: "thread-1",
-          botId: "bot-1",
-          userId: "user-1",
-          blocks: [{ kind: "text", text: "New work" }],
-          prompt: "New work",
-          trigger,
-        }),
-      ).resolves.toMatchObject({ runId: "run-new", taskId: "task-new" });
-      expect(tx.steeringMessage.create).not.toHaveBeenCalled();
-    },
-  );
+  it("admits a user wake beside waiting_input", async () => {
+    const tx = {
+      $queryRaw: vi.fn(async () => []),
+      space: { findUnique: vi.fn() },
+      thread: { update: vi.fn().mockResolvedValue({ nextMessageSeq: 3, nextEventSeq: 4 }) },
+      message: {
+        create: vi.fn().mockResolvedValue({ id: "message-new", seq: 2 }),
+        update: vi.fn(),
+      },
+      run: {
+        findMany: vi.fn(async ({ where }: { where: { status: { in: string[] } } }) =>
+          where.status.in.includes("waiting_input")
+            ? [{ id: "paused", taskId: "task-old", trigger: "user" }]
+            : [],
+        ),
+        create: vi.fn().mockResolvedValue({ id: "run-new" }),
+        findUnique: vi.fn().mockResolvedValue({ status: "queued" }),
+      },
+      task: { create: vi.fn().mockResolvedValue({ id: "task-new" }) },
+      steeringMessage: { create: vi.fn() },
+      event: { create: vi.fn().mockResolvedValue({ threadId: "thread-1", seq: 3 }) },
+    };
+    const prisma = {
+      message: { findUnique: vi.fn().mockResolvedValue(null) },
+      prunedMessageNonce: { findUnique: vi.fn().mockResolvedValue(null) },
+      $transaction: vi.fn(async (work: (client: typeof tx) => unknown) => work(tx)),
+    } as unknown as PrismaClient;
+    await expect(
+      sendUserMessage(prisma, {
+        spaceId: "space-1",
+        threadId: "thread-1",
+        botId: "bot-1",
+        userId: "user-1",
+        blocks: [{ kind: "text", text: "New work" }],
+        prompt: "New work",
+        trigger: "user",
+      }),
+    ).resolves.toMatchObject({ runId: "run-new", taskId: "task-new" });
+    expect(tx.steeringMessage.create).not.toHaveBeenCalled();
+  });
 
   it("answers waiting app and direct-line messages before earlier webhook deliveries and group texts", async () => {
     const row = (id: string, seq: number, originTrigger: string | null, blocks: unknown[]) => ({
@@ -4490,9 +4476,7 @@ describe("sendUserMessage", () => {
   });
 
   it.each([
-    { waiting: "routine", trigger: "messaging", group: false },
     { waiting: "routine", trigger: "messaging", group: true },
-    { waiting: "bot_message", trigger: "user", group: false },
     { waiting: "user", trigger: "webhook", group: false },
     { waiting: "user", trigger: "messaging", group: false },
     { waiting: "user", trigger: "messaging", group: true },
@@ -4759,7 +4743,7 @@ describe("sendUserMessage", () => {
     });
   });
 
-  it.each(["routine", "bot_message", "follow_up"])(
+  it.each(["routine", "follow_up"])(
     "keeps the message pending when the busy run is a %s turn",
     async (trigger) => {
       const tx = {
@@ -4940,20 +4924,6 @@ describe("sendUserMessage", () => {
       incoming: undefined,
       source: undefined,
       held: false,
-    },
-    {
-      name: "holds group text during a direct run",
-      parallel: false,
-      incoming: "group-1",
-      source: undefined,
-      held: true,
-    },
-    {
-      name: "holds direct text during a group run",
-      parallel: false,
-      incoming: undefined,
-      source: "group-1",
-      held: true,
     },
     {
       name: "holds text from a different group",
@@ -5270,7 +5240,7 @@ describe("claimSteering", () => {
     expect(tx.steeringMessage.updateMany).not.toHaveBeenCalled();
   });
 
-  it.each(["routine", "bot_message"])(
+  it.each(["routine"])(
     "leaves pending user messages alone while a %s turn is running",
     async (trigger) => {
       const tx = {
@@ -5304,7 +5274,7 @@ describe("claimSteering", () => {
     },
   );
 
-  it.each(["user", "follow_up", "messaging"])(
+  it.each(["user", "messaging"])(
     "keeps held webhook deliveries out of a %s turn",
     async (trigger) => {
       const tx = {

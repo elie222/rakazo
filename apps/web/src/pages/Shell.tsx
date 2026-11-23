@@ -5,6 +5,7 @@ import { chatWoke } from "@rakazo/core";
 import { bestEffort } from "@rakazo/logging/best-effort";
 import { Button } from "@rakazo/ui-web";
 import { useIsMobile } from "@rakazo/ui-web/hooks/use-mobile";
+import { useQuery } from "@tanstack/react-query";
 import { Plus } from "lucide-react";
 import { Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
@@ -17,11 +18,11 @@ import { authClient } from "../lib/auth/auth";
 import { peekBootstrapSeed } from "../lib/bootstrap";
 import { toolActivityPreference } from "../lib/chat/tool-activity-preference";
 import { composerEnterToSendPreference } from "../lib/composer/composer-enter-to-send-pref";
-import { composerModelPickerPreference } from "../lib/models/composer-model-picker-preference";
 import { PagesProvider, usePagesForChat } from "../lib/pages/pages";
 import { desktopBridge } from "../lib/platform/desktop";
 import { usePreloadRecoveryState } from "../lib/platform/preload-recovery";
 import { botsSidebarDensityPreference } from "../lib/preferences/bots-sidebar-density-pref";
+import { chatPreferencesQuery, useChatPreferences } from "../lib/preferences/chat-preferences";
 import {
   lastChatKey,
   lastChatOf,
@@ -32,6 +33,7 @@ import {
 import type { RpcClient } from "../lib/query/rpc";
 import { createSpaceRpc, selectedSpaceId } from "../lib/query/rpc";
 import { SpaceRpcProvider } from "../lib/query/space-rpc";
+import { InboundOriginProvider } from "../lib/routines/inbound-url";
 import { useAppSidebar } from "./shell/app-rail";
 import type { CreateBotDialogInput } from "./shell/bots/create-bot-dialog";
 import { useTeaching } from "./shell/bots/use-teaching";
@@ -161,12 +163,16 @@ function SpaceShell() {
   });
   const { collapsedSidebarSections, toggleSidebarSection } = useSidebarExpansion(userId);
   const search = useSidebarSearch({ rpc, navigate });
-  const thread = useThreadState();
-  const { snapshot } = thread;
-  const showToolActivity = toolActivityPreference.use();
-  const botsSidebarDensity = botsSidebarDensityPreference.use();
+  const { data: me } = useQuery({
+    ...chatPreferencesQuery(queries, userId),
+    placeholderData: bootstrapMe && bootstrapMe.userId === userId ? bootstrapMe : undefined,
+  });
+  const chatPreferences = useChatPreferences(me?.chatPreferences);
   const enterToSend = composerEnterToSendPreference.use();
-  const showComposerModel = composerModelPickerPreference.use();
+  const showToolActivity = toolActivityPreference.use();
+  const thread = useThreadState(chatPreferences.streamReplies);
+  const { snapshot } = thread;
+  const botsSidebarDensity = botsSidebarDensityPreference.use();
   const rightPanel = useRightPanel({ searchParams, setSearchParams });
   const { panel, setPanel, modelFocusRequest, setModelFocusRequest } = rightPanel;
   const [peerConversation, setPeerConversation] = usePreloadRecoveryState<{
@@ -257,6 +263,7 @@ function SpaceShell() {
     snapshot,
     callBotId: call?.botId,
     activeBotId,
+    openVoiceSettings: () => openSettings("voice"),
   });
   const read = useChatRead({ rpc, active, groupId, activeGroup, setBots, setGroups });
   // A chat that wakes while it is open is already seen: read it, which ends the snooze.
@@ -314,6 +321,7 @@ function SpaceShell() {
     active,
     activeBotId,
     timezone: bootstrapMe?.timezone,
+    inboundOrigin: bootstrapMe?.inboundOrigin,
     setBots,
     refreshThread,
     openGroup: (id) => navigate(`/app/g/${id}`),
@@ -330,7 +338,7 @@ function SpaceShell() {
   const recordingSkill = activeTaughtSkills.find((skill) => skill.status === "recording") ?? null;
   const modelShortcuts = useComposerModelShortcuts({
     botId: inGroup ? undefined : active?.id,
-    enabled: showComposerModel && !recordingSkill,
+    enabled: chatPreferences.composerModelPicker && !recordingSkill,
   });
   const {
     chatPanelOpen,
@@ -772,7 +780,7 @@ function SpaceShell() {
             running={composerRunning}
             enterToSend={enterToSend}
             sendColors={userBubble}
-            modelPicker={showComposerModel ? modelShortcuts.pickerProps : null}
+            modelPicker={chatPreferences.composerModelPicker ? modelShortcuts.pickerProps : null}
             onBotSaved={(updated) =>
               setBots((current) => current.map((bot) => (bot.id === updated.id ? updated : bot)))
             }
@@ -803,8 +811,8 @@ function SpaceShell() {
             scrollRef={thread.messageScroll}
             scrollRequest={scrollRequest}
             onScrollRequestHandled={clearScrollRequest}
-            followRequest={composer.sentCount}
             {...view.transcriptProps}
+            {...composer.transcriptProps}
             markedUnreadMessageId={read.markedUnreadMessageId}
             showToolActivity={showToolActivity}
             unreadAfterSeq={read.unreadAfterSeq}
@@ -953,6 +961,7 @@ function SpaceShell() {
           setPeerConversation={setPeerConversation}
           active={active}
           peerBot={view.resolveBot}
+          openNewSpace={() => dialogs.setNewSpaceOpen(true)}
         />
       </Suspense>
 
@@ -961,7 +970,7 @@ function SpaceShell() {
         onOpenChange={setShortcutsOpen}
         host={{ desktop: Boolean(desktopBridge()), apple: isApplePlatform() }}
         dictation={Boolean(bootstrapMe?.phoneCallsEnabled)}
-        modelPicker={showComposerModel}
+        modelPicker={chatPreferences.composerModelPicker}
       />
 
       {computerOpen && computerBot ? (
@@ -991,7 +1000,9 @@ function SpaceShell() {
   return (
     <SpaceRpcProvider spaceId={shellSpaceId}>
       {initialBotsLoaded || initialLoadFailed ? (
-        <PagesProvider value={pages}>{shell}</PagesProvider>
+        <InboundOriginProvider value={bootstrapMe?.inboundOrigin}>
+          <PagesProvider value={pages}>{shell}</PagesProvider>
+        </InboundOriginProvider>
       ) : (
         <PageLoading />
       )}

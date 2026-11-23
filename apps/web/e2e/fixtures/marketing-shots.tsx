@@ -181,6 +181,7 @@ function RoutineShot() {
     modelKey: "",
     thinkingLevel: "",
     inChat: false,
+    useComputer: false,
     watch: null,
   });
   return (

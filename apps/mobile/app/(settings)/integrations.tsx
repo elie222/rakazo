@@ -1,20 +1,15 @@
 import { ph } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
-import type {
-  CapabilityInstall,
-  Connection,
-  ConnectionCatalogItem,
-  McpServer,
-  McpSourcePreset,
-  PluginMarketplaceEntry,
-} from "@rakazo/contracts";
+import type { CapabilityInstall, ConnectionCatalogItem } from "@rakazo/contracts";
 import { SUBMIT_PLUGIN_URL } from "@rakazo/contracts";
 import {
+  addedMcpEndpoints,
   browsablePlugins,
   buildFeaturedConnectorTiles,
   CONNECTION_CATALOG_PAGE_SIZE,
   catalogItemAccounts,
   catalogItemKey,
+  featuredMcpPresets,
   filterConnectionCatalogItems,
   filterPluginBrands,
   filterPlugins,
@@ -35,7 +30,6 @@ import { AddCustomForm, AddCustomMenu } from "../../components/integrations/add-
 import { ConnectedApps, SavedServerRow } from "../../components/integrations/connected-apps";
 import { ConnectorIcon } from "../../components/integrations/connector-icon";
 import { IntegrationCatalogSearch } from "../../components/integrations/integration-catalog-search";
-import type { ConnectionTool } from "../../components/integrations/integration-detail";
 import { IntegrationDetail } from "../../components/integrations/integration-detail";
 import { PLUGIN_PAGE_SIZE, PluginSection } from "../../components/integrations/integration-plugins";
 import {
@@ -47,20 +41,9 @@ import { useCustomSourceForm } from "../../components/integrations/use-custom-so
 import { NativeActionButton } from "../../components/native/native-action-button";
 import { MenuPicker } from "../../components/ui/menu-picker";
 import { Chevron } from "../../components/ui/row-accessories";
-import { rpc } from "../../lib/api/api";
+import { selectedSpaceId } from "../../lib/api/api";
 import { errorText } from "../../lib/api/user-error";
 import { loadLastBotId } from "../../lib/inbox/last-bot";
-import type {
-  IntegrationsCacheScope,
-  IntegrationsSnapshot,
-} from "../../lib/integrations/integrations-cache";
-import {
-  integrationsCacheScope,
-  isIntegrationsScopeCurrent,
-  persistedIntegrationsCacheScope,
-  readIntegrationsCache,
-  writeIntegrationsCache,
-} from "../../lib/integrations/integrations-cache";
 import type { PluginParams } from "../../lib/integrations/plugin-marketplace";
 import {
   gitImportParams,
@@ -72,6 +55,8 @@ import { useSideInsets } from "../../lib/layout/side-insets";
 import { native, useThemedStyles } from "../../lib/native/native";
 import { iosAtLeast } from "../../lib/native/native-controls";
 import { openExternalUrl } from "../../lib/platform/open-url";
+import { queryClient, rpcQuery } from "../../lib/query/query";
+import { useScreenQuery } from "../../lib/query/screen-query";
 
 export default function Integrations() {
   const sideInsets = useSideInsets();
@@ -83,101 +68,171 @@ export default function Integrations() {
   const { t } = useLingui();
   const { width } = useWindowDimensions();
   const catalogColumns = width >= 480 ? 2 : 1;
-  const [catalog, setCatalog] = useState<ConnectionCatalogItem[]>([]);
-  const [connections, setConnections] = useState<Connection[]>([]);
   const [query, setQuery] = useState("");
   const [visibleCount, setVisibleCount] = useState(CONNECTION_CATALOG_PAGE_SIZE);
-  const [mcpServers, setMcpServers] = useState<McpServer[]>([]);
-  const [mcpError, setMcpError] = useState<string | null>(null);
-  const [sources, setSources] = useState<CapabilityInstall[]>([]);
-  const [pluginInstalls, setPluginInstalls] = useState<CapabilityInstall[]>([]);
-  const [pluginEntries, setPluginEntries] = useState<PluginMarketplaceEntry[]>([]);
-  const [pluginsState, setPluginsState] = useState<"loading" | "ready" | "partial">("loading");
   const [category, setCategory] = useState("");
   const [pluginCount, setPluginCount] = useState(PLUGIN_PAGE_SIZE);
-  const [sourcePresets, setSourcePresets] = useState<McpSourcePreset[]>([]);
   const [oauthServerId, setOauthServerId] = useState<string | null>(null);
-  const [pending, setPending] = useState<string | null>(null);
-  const [catalogError, setCatalogError] = useState<string | null>(null);
   const [lastBotId, setLastBotId] = useState("");
-  const [catalogReady, setCatalogReady] = useState(false);
   const [labelDrafts, setLabelDrafts] = useState<Record<string, string>>({});
-  const [detailKey, setDetailKey] = useState<{ connectorId: string; slug: string } | null>(null);
-  const [tools, setTools] = useState<ConnectionTool[]>([]);
-  const [toolsLoading, setToolsLoading] = useState(false);
+  const [openApp, setOpenApp] = useState<{
+    connectorId: string;
+    slug: string;
+    spaceId: string | null;
+  } | null>(null);
+  const spaceId = selectedSpaceId();
+  // An app opened in one Space closes on switching to another, with its unsaved label edits.
+  if (openApp && openApp.spaceId !== spaceId) {
+    setOpenApp(null);
+    setLabelDrafts({});
+  }
+  const detailKey = openApp?.spaceId === spaceId ? openApp : null;
   const [toolsOpen, setToolsOpen] = useState(true);
-  const [toolsTick, setToolsTick] = useState(0);
-  const connectionAttempt = useRef<AbortController | null>(null);
 
-  const cacheScope = useRef<IntegrationsCacheScope | null>(null);
-  const snapshot = useRef<IntegrationsSnapshot>({ catalog: [], connections: [] });
-  const mounted = useRef(false);
-  const focusGeneration = useRef(0);
-  const refreshGeneration = useRef(0);
-  const sourcesGeneration = useRef(0);
+  const catalogRead = rpcQuery("connections/catalog");
+  const listRead = rpcQuery("connections/list");
+  const connectionsRead = {
+    ...listRead,
+    queryFn: async (context: Parameters<typeof listRead.queryFn>[0]) => {
+      // The catalog call reconciles connection rows, so they are listed after it answers.
+      await queryClient.fetchQuery({ ...catalogRead, staleTime: 0 });
+      return listRead.queryFn(context);
+    },
+  };
+  const serversRead = rpcQuery("mcp/servers/list");
+  const installsRead = rpcQuery("capabilities/list");
+  const presetsRead = rpcQuery("capabilities/sourcePresets");
+  const marketplaceRead = rpcQuery("marketplace/catalog", { query: "" });
+  const toolsRead = rpcQuery(
+    "connections/tools",
+    detailKey
+      ? { connectorId: detailKey.connectorId, provider: detailKey.slug }
+      : { connectorId: "", provider: "" },
+  );
+  const catalogQuery = useScreenQuery(catalogRead);
+  const connectionsQuery = useScreenQuery(connectionsRead);
+  const serversQuery = useScreenQuery(serversRead);
+  const installsQuery = useScreenQuery(installsRead);
+  const presetsQuery = useScreenQuery(presetsRead);
+  const marketplaceQuery = useScreenQuery(marketplaceRead);
+  const toolsQuery = useScreenQuery(toolsRead, { enabled: Boolean(detailKey) });
+  const screenQueries = [
+    catalogQuery,
+    connectionsQuery,
+    serversQuery,
+    installsQuery,
+    presetsQuery,
+    marketplaceQuery,
+  ];
+  /** What any change on this screen makes out of date: every list on it, and an app's tools. */
+  const stale = [
+    ...[catalogRead, listRead, serversRead, installsRead, presetsRead, marketplaceRead].map(
+      (read) => read.queryKey,
+    ),
+    toolsRead.queryKey.slice(0, -1),
+  ];
 
-  function applySnapshot(next: IntegrationsSnapshot) {
-    snapshot.current = next;
-    setCatalog(next.catalog);
-    setConnections(next.connections);
-    setCatalogReady(true);
-    setLabelDrafts((current) =>
-      Object.fromEntries(
-        next.connections
-          .filter((row) => row.status === "connected" || row.status === "pending")
-          .map((row) => [row.id, current[row.id] ?? row.displayName]),
-      ),
-    );
+  const catalog = catalogQuery.data ?? [];
+  const connections = connectionsQuery.data ?? [];
+  const catalogReady = catalogQuery.data !== undefined && connectionsQuery.data !== undefined;
+  const mcpServers = serversQuery.data ?? [];
+  const installs = installsQuery.data ?? [];
+  const sources = installs.filter(
+    (item) => item.kind === "mcp" || item.kind === "api" || item.kind === "graphql",
+  );
+  const addedEndpoints = addedMcpEndpoints(sources, mcpServers);
+  const pluginInstalls = installs.filter((item) => item.kind === "plugin");
+  // A server without presets (or a failed request) offers none, never another server's.
+  const sourcePresets = presetsQuery.data ?? [];
+  const pluginEntries = marketplaceQuery.data?.entries ?? [];
+  const pluginsState =
+    (!marketplaceQuery.data && !marketplaceQuery.isError) ||
+    (marketplaceQuery.isError && marketplaceQuery.isFetching)
+      ? "loading"
+      : marketplaceQuery.isError || marketplaceQuery.data?.unavailableRegistries.length
+        ? "partial"
+        : "ready";
+  const tools = toolsQuery.data ?? [];
+  const toolsLoading = Boolean(detailKey) && toolsQuery.isLoading;
+
+  function refresh() {
+    for (const screenQuery of screenQueries) void screenQuery.refetch({ cancelRefetch: false });
   }
 
-  function saveSnapshot(next: IntegrationsSnapshot) {
-    const scope = cacheScope.current;
-    if (!mounted.current || !scope || !isIntegrationsScopeCurrent(scope)) return;
-    // A mutation invalidates any earlier background refresh.
-    refreshGeneration.current += 1;
-    applySnapshot(next);
-    writeIntegrationsCache(scope, next);
+  const {
+    connect,
+    revokeAccount,
+    renameAccount,
+    uninstall,
+    authorizeMcp,
+    stopConnecting,
+    resetFailures,
+    pending: accountPending,
+    failure,
+    mcpFailure,
+    resetMcpFailure,
+  } = useConnectionActions({
+    catalogRead,
+    connectionsRead,
+    stale,
+    connections,
+    labelDrafts,
+    setLabelDrafts,
+    lastBotId,
+    setLastBotId,
+    closeDetail,
+    captureFocus,
+  });
+  const {
+    addOptions,
+    adding,
+    startAdding,
+    startCatalogMcp,
+    removeSource,
+    pending: sourcePending,
+    formProps,
+  } = useCustomSourceForm({
+    sourcePresets: sourcePresets.filter(({ url }) => !url || !addedEndpoints.has(url)),
+    stale,
+    authorizeMcp,
+    setOauthServerId,
+    captureFocus,
+    onStart: () => closeDetail(),
+  });
+  const pending = accountPending ?? sourcePending;
+  const loadFailure = catalogQuery.error ?? connectionsQuery.error;
+  const catalogError =
+    failure ?? (loadFailure ? errorText(loadFailure, t`Could not load integrations`) : null);
+  const mcpError =
+    mcpFailure ??
+    (serversQuery.error ? errorText(serversQuery.error, t`Could not load MCP servers`) : null);
+
+  function retry() {
+    resetFailures();
+    resetMcpFailure();
+    refresh();
   }
 
-  function captureConnectionScope() {
-    const scope = cacheScope.current;
-    const focus = focusGeneration.current;
-    return () => {
-      const current = cacheScope.current;
-      return (
-        !!scope &&
-        !!current &&
-        mounted.current &&
-        focus === focusGeneration.current &&
-        isIntegrationsScopeCurrent(scope) &&
-        scope.userId === current.userId &&
-        scope.spaceId === current.spaceId
-      );
-    };
+  // Counted per focus, so work started before the screen was left never acts on a later visit.
+  const focus = useRef({ shown: false, visit: 0 });
+  function captureFocus() {
+    const visit = focus.current.visit;
+    return () => focus.current.shown && focus.current.visit === visit;
   }
-
-  function updateAccount(row: Connection) {
-    const connections = [
-      ...snapshot.current.connections.filter((entry) => entry.id !== row.id),
-      row,
-    ];
-    saveSnapshot({
-      connections,
-      catalog: snapshot.current.catalog.map((item) =>
-        item.connectorId === row.connectorId && item.slug === row.provider
-          ? {
-              ...item,
-              connected: connections.some(
-                (entry) =>
-                  entry.connectorId === item.connectorId &&
-                  entry.provider === item.slug &&
-                  entry.status === "connected",
-              ),
-            }
-          : item,
-      ),
-    });
-  }
+  useFocusEffect(
+    useCallback(() => {
+      focus.current = { shown: true, visit: focus.current.visit + 1 };
+      let cancelled = false;
+      void loadLastBotId().then((id) => {
+        if (!cancelled) setLastBotId(id);
+      });
+      return () => {
+        cancelled = true;
+        focus.current = { ...focus.current, shown: false };
+        stopConnecting();
+      };
+    }, [stopConnecting]),
+  );
 
   const catalogsReady = integrationCatalogsReady({
     catalogLoaded: catalogReady,
@@ -186,6 +241,14 @@ export default function Integrations() {
     pluginsUnavailable: pluginsState === "partial",
   });
   const featuredTiles = useMemo(() => buildFeaturedConnectorTiles(catalog), [catalog]);
+  const directReady =
+    !catalogQuery.isPending && !installsQuery.isPending && !serversQuery.isPending;
+  const directPresets =
+    category || !directReady
+      ? []
+      : featuredMcpPresets(sourcePresets, query).filter(
+          ({ name }) => !catalog.some((item) => item.name.toLowerCase() === name.toLowerCase()),
+        );
   const showFeatured = !query.trim();
   const catalogApps = useMemo(() => filterConnectionCatalogItems(catalog, query), [catalog, query]);
   const renderedApps = catalogApps.slice(0, visibleCount);
@@ -227,222 +290,6 @@ export default function Integrations() {
     );
   }, [catalog, detailKey]);
 
-  function clearStaleScope() {
-    if (!cacheScope.current || isIntegrationsScopeCurrent(cacheScope.current)) return;
-    cacheScope.current = null;
-    refreshGeneration.current += 1;
-    sourcesGeneration.current += 1;
-    applySnapshot({ catalog: [], connections: [] });
-    setCatalogReady(false);
-    setSources([]);
-    setPluginInstalls([]);
-    setPluginEntries([]);
-    setPluginsState("loading");
-    setMcpServers([]);
-    setMcpError(null);
-    setDetailKey(null);
-    setLabelDrafts({});
-    setPending(null);
-    connectionAttempt.current?.abort();
-  }
-
-  async function refresh() {
-    const focus = focusGeneration.current;
-    clearStaleScope();
-    let scope: IntegrationsCacheScope;
-    try {
-      scope = await integrationsCacheScope();
-    } catch (reason) {
-      if (!mounted.current || focus !== focusGeneration.current) return;
-      if (cacheScope.current && !isIntegrationsScopeCurrent(cacheScope.current)) {
-        clearStaleScope();
-        return refresh();
-      }
-      throw reason;
-    }
-    if (!mounted.current || focus !== focusGeneration.current) return;
-    if (!isIntegrationsScopeCurrent(scope)) {
-      clearStaleScope();
-      return refresh();
-    }
-    setPluginsState("loading");
-    const previous = cacheScope.current;
-    if (previous && (previous.userId !== scope.userId || previous.spaceId !== scope.spaceId)) {
-      applySnapshot({ catalog: [], connections: [] });
-      setCatalogReady(false);
-      setSources([]);
-      setPluginInstalls([]);
-      setPluginEntries([]);
-      setMcpServers([]);
-      setMcpError(null);
-      setDetailKey(null);
-      setLabelDrafts({});
-      setSourcePresets([]);
-    }
-    cacheScope.current = scope;
-    if (!previous || previous.userId !== scope.userId || previous.spaceId !== scope.spaceId) {
-      const cached = readIntegrationsCache(scope);
-      if (cached) applySnapshot(cached);
-    }
-    const generation = ++refreshGeneration.current;
-    const sourceGeneration = ++sourcesGeneration.current;
-    void rpc("mcp/servers/list")
-      .then((servers) => {
-        if (
-          mounted.current &&
-          focus === focusGeneration.current &&
-          isIntegrationsScopeCurrent(scope) &&
-          sourceGeneration === sourcesGeneration.current
-        ) {
-          setMcpServers(servers);
-          setMcpError(null);
-        }
-      })
-      .catch((reason) => {
-        if (
-          mounted.current &&
-          focus === focusGeneration.current &&
-          isIntegrationsScopeCurrent(scope) &&
-          sourceGeneration === sourcesGeneration.current
-        )
-          setMcpError(errorText(reason, t`Could not load MCP servers`));
-      });
-    void rpc("capabilities/list")
-      .then((installs) => {
-        if (
-          mounted.current &&
-          isIntegrationsScopeCurrent(scope) &&
-          sourceGeneration === sourcesGeneration.current
-        ) {
-          setSources(
-            installs.filter(
-              (item) => item.kind === "mcp" || item.kind === "api" || item.kind === "graphql",
-            ),
-          );
-          setPluginInstalls(installs.filter((item) => item.kind === "plugin"));
-        }
-      })
-      .catch(() => undefined);
-    // A server without presets (or a failed request) offers none, never another server's.
-    const applyPresets = (presets: McpSourcePreset[]) => {
-      if (
-        mounted.current &&
-        isIntegrationsScopeCurrent(scope) &&
-        sourceGeneration === sourcesGeneration.current
-      )
-        setSourcePresets(presets);
-    };
-    void rpc("capabilities/sourcePresets")
-      .then(applyPresets)
-      .catch(() => applyPresets([]));
-    void rpc("marketplace/catalog", { query: "" })
-      .then((result) => {
-        if (
-          mounted.current &&
-          isIntegrationsScopeCurrent(scope) &&
-          sourceGeneration === sourcesGeneration.current
-        ) {
-          setPluginEntries(result.entries);
-          setPluginsState(result.unavailableRegistries.length ? "partial" : "ready");
-        }
-      })
-      .catch(() => {
-        if (mounted.current && sourceGeneration === sourcesGeneration.current)
-          setPluginsState("partial");
-      });
-    setCatalogError(null);
-    let next: IntegrationsSnapshot;
-    try {
-      // The catalog call reconciles connection rows, so list them after it.
-      const catalog = await rpc("connections/catalog");
-      const connections = await rpc("connections/list");
-      next = { catalog, connections };
-    } catch (reason) {
-      if (!mounted.current || focus !== focusGeneration.current) return;
-      if (!isIntegrationsScopeCurrent(scope)) return refresh();
-      if (generation === refreshGeneration.current) throw reason;
-      return;
-    }
-    if (!mounted.current || focus !== focusGeneration.current) return;
-    if (!isIntegrationsScopeCurrent(scope)) return refresh();
-    if (generation !== refreshGeneration.current) return;
-    applySnapshot(next);
-    writeIntegrationsCache(scope, next);
-  }
-
-  async function retryRefresh(isCurrent?: () => boolean) {
-    const focus = focusGeneration.current;
-    try {
-      await refresh();
-    } catch (reason) {
-      if (
-        (!isCurrent || isCurrent()) &&
-        mounted.current &&
-        focus === focusGeneration.current &&
-        (!cacheScope.current || isIntegrationsScopeCurrent(cacheScope.current))
-      ) {
-        setCatalogError(errorText(reason, t`Could not load integrations`));
-      }
-    }
-  }
-
-  useFocusEffect(
-    useCallback(() => {
-      mounted.current = true;
-      focusGeneration.current += 1;
-      let cancelled = false;
-      clearStaleScope();
-      void (async () => {
-        const scope = await persistedIntegrationsCacheScope();
-        if (cancelled) return;
-        if (scope && isIntegrationsScopeCurrent(scope)) {
-          cacheScope.current = scope;
-          const cached = readIntegrationsCache(scope);
-          if (cached) applySnapshot(cached);
-        }
-        await retryRefresh();
-      })();
-      void loadLastBotId().then((id) => {
-        if (!cancelled) setLastBotId(id);
-      });
-      return () => {
-        cancelled = true;
-        mounted.current = false;
-        focusGeneration.current += 1;
-        refreshGeneration.current += 1;
-        sourcesGeneration.current += 1;
-        connectionAttempt.current?.abort();
-        setPending(null);
-      };
-    }, []),
-  );
-
-  useEffect(() => {
-    if (!detailKey) {
-      setTools([]);
-      setToolsLoading(false);
-      return;
-    }
-    let cancelled = false;
-    setToolsLoading(true);
-    void rpc("connections/tools", {
-      connectorId: detailKey.connectorId,
-      provider: detailKey.slug,
-    })
-      .then((list) => {
-        if (!cancelled) setTools(list);
-      })
-      .catch(() => {
-        if (!cancelled) setTools([]);
-      })
-      .finally(() => {
-        if (!cancelled) setToolsLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [detailKey, toolsTick]);
-
   useEffect(() => {
     if (!appToOpen || !catalogReady) return;
     const item = catalog.find((entry) => catalogItemKey(entry) === appToOpen);
@@ -462,47 +309,20 @@ export default function Integrations() {
   }
 
   function openDetail(item: ConnectionCatalogItem) {
-    setCatalogError(null);
+    resetFailures();
     setToolsOpen(true);
-    setDetailKey({ connectorId: item.connectorId, slug: item.slug });
+    setOpenApp({ connectorId: item.connectorId, slug: item.slug, spaceId: selectedSpaceId() });
   }
 
-  function closeDetail() {
-    setDetailKey(null);
-    setTools([]);
+  function closeDetail(item?: ConnectionCatalogItem) {
+    setOpenApp((open) =>
+      !item || (open?.connectorId === item.connectorId && open.slug === item.slug) ? null : open,
+    );
   }
 
   function itemConnected(item: ConnectionCatalogItem) {
     return isCatalogItemConnected(connections, item);
   }
-
-  const { connect, revokeAccount, renameAccount, uninstall, authorizeMcp } = useConnectionActions({
-    connections,
-    labelDrafts,
-    setLabelDrafts,
-    lastBotId,
-    setLastBotId,
-    connectionAttempt,
-    captureConnectionScope,
-    updateAccount,
-    refresh,
-    retryRefresh,
-    setPending,
-    setCatalogError,
-    setMcpError,
-    onToolsChanged: () => setToolsTick((tick) => tick + 1),
-    closeDetail,
-  });
-  const { addOptions, adding, startAdding, removeSource, formProps } = useCustomSourceForm({
-    sourcePresets,
-    captureConnectionScope,
-    retryRefresh,
-    authorizeMcp,
-    setPending,
-    setSources,
-    setOauthServerId,
-    onStart: closeDetail,
-  });
 
   function renderCatalogActions(item: ConnectionCatalogItem, label: string) {
     const key = catalogItemKey(item);
@@ -526,7 +346,7 @@ export default function Integrations() {
         disabled={connecting}
         fill={false}
         label={connecting ? t`Working…` : t`Add`}
-        onPress={() => void connect(item)}
+        onPress={() => connect(item)}
         prominence="secondary"
       />
     );
@@ -599,7 +419,7 @@ export default function Integrations() {
         },
       ],
     } satisfies NativeStackNavigationOptions);
-  }, [navigation, sourcePresets, t]);
+  }, [navigation, presetsQuery.data, installsQuery.data, serversQuery.data, t]);
 
   return (
     <SafeAreaView edges={["bottom"]} style={styles.screen}>
@@ -667,9 +487,9 @@ export default function Integrations() {
                 oauthServerId={oauthServerId}
                 pluginParamsFor={installedParams}
                 onOpenPlugin={openPlugin}
-                onAuthorize={(serverId) => void authorizeMcp(serverId)}
-                onRetry={() => void retryRefresh()}
-                onRemoveSource={(source) => void removeSource(source)}
+                onAuthorize={authorizeMcp}
+                onRetry={retry}
+                onRemoveSource={removeSource}
               />
             ) : null}
             {!detailItem && !filtering ? (
@@ -692,7 +512,7 @@ export default function Integrations() {
                     server={server}
                     pending={pending}
                     oauthServerId={oauthServerId}
-                    onAuthorize={(serverId) => void authorizeMcp(serverId)}
+                    onAuthorize={authorizeMcp}
                   />
                 ))}
               </View>
@@ -704,7 +524,7 @@ export default function Integrations() {
                 <NativeActionButton
                   label={t`Retry`}
                   fill={false}
-                  onPress={() => void retryRefresh()}
+                  onPress={retry}
                   prominence="secondary"
                 />
               </View>
@@ -721,11 +541,11 @@ export default function Integrations() {
                 toolsLoading={toolsLoading}
                 toolsOpen={toolsOpen}
                 setToolsOpen={setToolsOpen}
-                onBack={closeDetail}
-                onUninstall={() => void uninstall(detailItem)}
-                onRename={(row) => void renameAccount(row)}
-                onRevoke={(row) => void revokeAccount(row)}
-                onConnect={() => void connect(detailItem)}
+                onBack={() => closeDetail()}
+                onUninstall={() => uninstall(detailItem)}
+                onRename={renameAccount}
+                onRevoke={revokeAccount}
+                onConnect={() => connect(detailItem)}
                 onOpenChatApp={() => router.push("/messaging")}
               />
             ) : (
@@ -755,14 +575,46 @@ export default function Integrations() {
                 {catalogsReady && catalog.length === 0 && plugins.length === 0 && !filtering ? (
                   <Text
                     style={styles.secondary}
-                  >{t`Configure a plugin catalog on the server to connect apps.`}</Text>
+                  >{t`Managed apps haven’t been enabled on this server.`}</Text>
                 ) : null}
+
+                {directPresets
+                  .filter(
+                    ({ url }) =>
+                      !url ||
+                      !(showFeatured
+                        ? addedEndpoints.has(url)
+                        : savedServerMatches.some(({ endpoint }) => endpoint === url)),
+                  )
+                  .map((preset) => (
+                    <View key={preset.id} style={styles.row}>
+                      <ConnectorIcon name={preset.name} size={LOGO_SIZE} />
+                      <Text numberOfLines={1} style={[styles.title, styles.grow]}>
+                        {preset.name}
+                      </Text>
+                      {preset.url && addedEndpoints.has(preset.url) ? (
+                        <Text style={styles.secondary}>{t`Added`}</Text>
+                      ) : (
+                        <NativeActionButton
+                          fill={false}
+                          label={t`Connect`}
+                          accessibilityLabel={t`Connect ${ph({ name: preset.name })}`}
+                          onPress={() =>
+                            startAdding({ id: preset.id, label: preset.name, kind: "mcp", preset })
+                          }
+                          prominence="secondary"
+                        />
+                      )}
+                    </View>
+                  ))}
 
                 {catalogReady && catalog.length > 0 && !category ? (
                   <View style={catalogColumns === 2 ? styles.catalogGrid : styles.catalogStack}>
                     {showFeatured
                       ? featuredTiles.map((tile) => {
                           const item = tile.item;
+                          if (!item && directPresets.some(({ name }) => name === tile.label))
+                            return null;
                           const key = item ? catalogItemKey(item) : tile.id;
                           const disabled = tile.missing || !item;
                           if (item && !tile.missing) {
@@ -799,14 +651,17 @@ export default function Integrations() {
                 {noMatch && category ? (
                   <Text style={styles.secondary}>{t`No apps match your search.`}</Text>
                 ) : null}
-                {catalogsReady ? (
+                {catalogsReady && directReady ? (
                   <IntegrationCatalogSearch
                     query={query}
                     hidden={Boolean(category)}
-                    noLocalMatch={noMatch}
+                    noLocalMatch={noMatch && directPresets.length === 0}
+                    excludedNames={[...catalog, ...directPresets].map(({ name }) => name)}
+                    addedEndpoints={addedEndpoints}
+                    onOpenMcp={startCatalogMcp}
                     onChanged={(serverId) => {
                       if (serverId) setOauthServerId(serverId);
-                      void retryRefresh();
+                      refresh();
                     }}
                   />
                 ) : null}
@@ -822,10 +677,7 @@ export default function Integrations() {
                 <PluginSection
                   pluginsState={pluginsState}
                   catalogReady={catalogReady}
-                  onRetry={() => {
-                    setPluginsState("loading");
-                    void retryRefresh();
-                  }}
+                  onRetry={refresh}
                   filtering={filtering}
                   pluginMatches={pluginMatches}
                   brandMatches={brandMatches}

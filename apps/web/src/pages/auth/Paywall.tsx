@@ -6,7 +6,7 @@ import { Button } from "@rakazo/ui-web";
 import { Check } from "lucide-react";
 import { useState } from "react";
 import { AccountMenu } from "../../components/account/AccountMenu";
-import { CreditChoice } from "../../components/billing/ModelCredits";
+import { CreditChoice } from "../../components/billing/CreditChoice";
 import { useSignOut } from "../../lib/auth/sign-out";
 import type { RpcClient } from "../../lib/query/rpc";
 import { AuthFrame, submitClass } from "./Auth";

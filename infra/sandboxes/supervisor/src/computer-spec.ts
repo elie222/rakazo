@@ -43,6 +43,7 @@ export const COMPUTER_IMAGE_CONTEXT_FILES = [
   "page_secrets.py",
   "install-agent-browser.sh",
   "rakazo-browser.desktop",
+  "mimeapps.list",
   "browser-policy.json",
   "embed.html",
   "clipboard-bridge.js",

@@ -7,11 +7,14 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { ApiRequestContext, RpcArgs } from "../api/api";
 import { captureApiRequestContext, currentApiBase, rpc, selectedSpaceId } from "../api/api";
 import { currentSessionGeneration } from "../api/session";
+import type { RpcReadMeta } from "./saved-reads";
 import type { SettingsTarget } from "./settings-target";
 
 /**
  * Screens paint what they last saw and refresh it in the background, so reopening a settings
- * screen does not wait on the network again. Kept in memory only; saved chats own the disk.
+ * screen does not wait on the network again. The reads `saved-reads.ts` lists also keep their
+ * last answer on disk, so a cold launch paints it too; the rest stay in memory. A form's read
+ * (`formRead`) carries no read meta, so it is never seeded from disk.
  */
 export const queryClient = new QueryClient({
   defaultOptions: {
@@ -50,35 +53,53 @@ function requestScope(context: ApiRequestContext, account: boolean): string {
 function scopedRpcQuery<P extends RpcPath>(
   scopeKey: () => string[],
   proc: P,
-  input?: RpcInput<P>,
+  input: RpcInput<P> | undefined,
+  space: RpcReadMeta["space"],
   spaceId?: string,
+  timeoutMs?: number,
 ) {
   type T = RpcOutput<P>;
   const scope = scopeKey();
   const queryKey = [...scope, proc, input ?? {}] as unknown as DataTag<QueryKey, T, Error>;
+  const read: RpcReadMeta = {
+    proc,
+    input,
+    apiBase: currentApiBase(),
+    sessionGeneration: currentSessionGeneration(),
+    space,
+  };
   const queryFn: QueryFunction<T> = async ({ signal }) => {
     if (scopeKey().join("\n") !== scope.join("\n"))
       throw new Error(t`Something went wrong. Try again.`);
     const requestContext = await captureApiRequestContext(spaceId);
-    const answer = await rpc(proc, ...([input, { signal, requestContext }] as RpcArgs<P>));
+    const answer = await rpc(
+      proc,
+      ...([input, { signal, requestContext, timeoutMs }] as RpcArgs<P>),
+    );
     if (scopeKey().join("\n") !== scope.join("\n"))
       throw new Error(t`Something went wrong. Try again.`);
     return answer;
   };
-  return { queryKey, queryFn };
+  return { queryKey, queryFn, meta: { rpc: read } };
 }
 
 /**
  * One rpc read in the current scope (server, session, space). Its answer is only cached under
  * the scope it was sent in. A `spaceId` sends it to that Space instead of the selected one.
  */
-export function rpcQuery<P extends RpcPath>(proc: P, input?: RpcInput<P>, spaceId?: string) {
-  return scopedRpcQuery(() => spaceScope(spaceId), proc, input, spaceId);
+export function rpcQuery<P extends RpcPath>(
+  proc: P,
+  input?: RpcInput<P>,
+  spaceId?: string,
+  options?: { timeoutMs?: number },
+) {
+  const space = { id: spaceId ?? selectedSpaceId() ?? null };
+  return scopedRpcQuery(() => spaceScope(spaceId), proc, input, space, spaceId, options?.timeoutMs);
 }
 
 /** One rpc read of the signed-in user's own data, the same in every space: cached once per session. */
 export function accountRpcQuery<P extends RpcPath>(proc: P, input?: RpcInput<P>) {
-  return scopedRpcQuery(sessionScope, proc, input);
+  return scopedRpcQuery(sessionScope, proc, input, null);
 }
 
 /**

@@ -12,6 +12,10 @@ import { approvedModelCreditMaterial } from "../../model-credits/routing.js";
 import { hostedModelCreditObserver } from "../../models/credits/model-credit-observer.js";
 import { httpModelEndpointsAllowed } from "../../models/http-model-endpoints.js";
 import {
+  loadAdminDeploymentModelKey,
+  matchingAdminDeploymentModel,
+} from "../../models/deployment-model.js";
+import {
   persistRefreshedModelCredential,
   refreshStoredModelCredential,
   resolveStoredModelAuth,
@@ -281,9 +285,18 @@ export class ModelTeamChatEngagementJudge implements TeamChatEngagementJudge {
         provider,
         modelId,
       );
+      const admin =
+        !hosted &&
+        !pinned &&
+        !mainModel &&
+        matchingAdminDeploymentModel(settings, provider, modelId);
       const apiKey =
         material?.apiKey ??
-        (provider === this.deps.deploymentProvider ? this.deps.deploymentModelKey : undefined);
+        (admin
+          ? await loadAdminDeploymentModelKey(this.deps.secrets, admin.cipher)
+          : provider === this.deps.deploymentProvider
+            ? this.deps.deploymentModelKey
+            : undefined);
       const callObserver = settings?.modelCreditsEnabled
         ? await hostedModelCreditObserver(this.deps.prisma, scope)
         : undefined;

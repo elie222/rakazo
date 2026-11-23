@@ -3,7 +3,6 @@ import {
   BILLING_CANCELLATION_REASONS,
   ByokIntervalSchema,
   ByokTierSchema,
-  PlanLayoutSchema,
 } from "../billing/billing.js";
 import { RUN_ERROR_KINDS, RunTriggerSchema } from "../runs/runs.js";
 import { SIGNUP_SURVEY_TEAM_SIZES, SIGNUP_SURVEY_USES } from "./me.js";
@@ -30,8 +29,6 @@ export const AnalyticsScreenInput = z
   .object({
     screen: AnalyticsScreen,
     surface: AnalyticsSurface,
-    /** On the plans screen: the layout it showed. */
-    planLayout: PlanLayoutSchema.optional(),
   })
   .strict();
 export const AnalyticsBotSetting = z.enum([
