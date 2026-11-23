@@ -264,6 +264,7 @@ test("bot creation, editing, and deletion persist", async ({ page }, testInfo) =
 
   // Long instructions scroll inside their box instead of stretching the narrow panel.
   await settings.getByTestId("bot-tab-details").click();
+  await settings.getByRole("button", { name: "Edit", exact: true }).click();
   const instructionsInput = settings.getByRole("textbox", { name: "Instructions", exact: true });
   await instructionsInput.fill(
     Array.from(
