@@ -14,6 +14,7 @@ import {
 } from "../../lib/calls/call-session";
 import { useEventListener } from "../../lib/use-event-listener";
 import { AskCard } from "../messages/AskCard";
+import { OutgoingDraftCard } from "../messages/OutgoingDraftCard";
 import { CallWindow } from "./CallWindow";
 
 const BARS = [9, 15, 21, 15, 9];
@@ -160,14 +161,23 @@ export function CallCard({ onSettings }: { onSettings: () => void }) {
 
       {approval ? (
         <div className="my-3 min-h-0 flex-1 overflow-y-auto md:max-h-[60dvh] md:flex-auto">
-          <AskCard
-            key={approval.messageId}
-            block={approval.block}
-            canAnswer
-            canDismiss={false}
-            onDismiss={async () => {}}
-            onAnswer={(value) => answerCallApproval(approval.messageId, value)}
-          />
+          {approval.block.outgoingDraft ? (
+            <OutgoingDraftCard
+              key={approval.messageId}
+              block={approval.block}
+              canAnswer
+              onAnswer={(value) => answerCallApproval(approval.messageId, value)}
+            />
+          ) : (
+            <AskCard
+              key={approval.messageId}
+              block={approval.block}
+              canAnswer
+              canDismiss={false}
+              onDismiss={async () => {}}
+              onAnswer={(value) => answerCallApproval(approval.messageId, value)}
+            />
+          )}
         </div>
       ) : call.transcriptOpen ? (
         <div className="mb-4 flex flex-col gap-1.5 border-t border-border pt-2.5 text-body leading-[1.45]">

@@ -1,5 +1,5 @@
 import { Trans, useLingui } from "@lingui/react/macro";
-import type { MessageBlock, ThreadMessage } from "@rakazo/contracts";
+import type { MessageBlock } from "@rakazo/contracts";
 import {
   OutgoingDraftValues,
   outgoingDraftAnswer,
@@ -8,40 +8,30 @@ import {
 import { Button, Input, Textarea } from "@rakazo/ui-web";
 import { Mail, MessageSquare } from "lucide-react";
 import { useId, useState } from "react";
-import type { ArtifactTarget } from "../../lib/pages/artifact-open";
 import { useSave } from "../../lib/query/query";
+import type { RpcClient } from "../../lib/query/rpc";
 import { errorText } from "../../lib/query/user-error";
 import { BuiCard } from "../ai/primitives";
 
 export function OutgoingDraftCard({
   block,
-  message,
-  target,
+  onAnswer,
   canAnswer,
 }: {
   block: Extract<MessageBlock, { kind: "ask" }>;
-  message: ThreadMessage;
-  target: ArtifactTarget;
+  onAnswer: (answer: string, rpc: RpcClient) => Promise<unknown>;
   canAnswer: boolean;
 }) {
   const draft = block.outgoingDraft!;
   const { t } = useLingui();
   const id = useId();
   const [values, setValues] = useState(draft.values);
-  const answer = useSave({
-    save: (input: string, rpc) =>
-      rpc.threads.answer({
-        ...target,
-        runId: message.runId!,
-        messageId: message.id,
-        answer: input,
-      }),
-  });
+  const answer = useSave({ save: onAnswer });
   const { status, shown, isEmail } = outgoingDraftPresentation(
     block,
     draft.values,
     values,
-    canAnswer && Boolean(message.runId),
+    canAnswer,
     !answer.pending && !answer.error ? answer.input : undefined,
   );
   const open = status === "pending";

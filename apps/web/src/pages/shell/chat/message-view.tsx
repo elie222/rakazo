@@ -672,9 +672,15 @@ export const MessageView = memo(function MessageView({
                 {block.outgoingDraft ? (
                   <OutgoingDraftCard
                     block={block}
-                    message={message}
-                    target={artifactTarget}
-                    canAnswer={canAnswer}
+                    canAnswer={canAnswer && Boolean(message.runId)}
+                    onAnswer={(answer, client) =>
+                      client.threads.answer({
+                        ...artifactTarget,
+                        runId: message.runId!,
+                        messageId: message.id,
+                        answer,
+                      })
+                    }
                   />
                 ) : (
                   <AskCard

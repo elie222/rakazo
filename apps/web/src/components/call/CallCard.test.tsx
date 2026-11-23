@@ -1,18 +1,22 @@
 // @vitest-environment jsdom
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { CallState } from "../../lib/calls/call-session";
-import { endCall } from "../../lib/calls/call-session";
+import { answerCallApproval, endCall } from "../../lib/calls/call-session";
 import { CallCard } from "./CallCard";
 
 vi.mock("@lingui/react/macro", () => ({
+  Trans: ({ children }: { children: ReactNode }) => children,
   useLingui: () => ({
     t: (parts: TemplateStringsArray, ...values: unknown[]) => String.raw(parts, ...values),
   }),
 }));
 vi.mock("@rakazo/ui-web", () => ({
+  Input: "input",
+  Textarea: "textarea",
   BotAvatar: () => null,
   cn: (...classes: unknown[]) => classes.filter(Boolean).join(" "),
   defaultBotAvatarValue: () => "",
@@ -23,6 +27,7 @@ vi.mock("@rakazo/ui-web", () => ({
 vi.mock("react-router-dom", () => ({ useNavigate: () => vi.fn(), useParams: () => ({}) }));
 let session: CallState | null = null;
 vi.mock("../../lib/calls/call-session", () => ({
+  answerCallApproval: vi.fn(async () => undefined),
   endCall: vi.fn(),
   setCallMinimized: vi.fn(),
   toggleMute: vi.fn(),
@@ -56,7 +61,13 @@ function render(call: Partial<CallState> | null) {
         ...call,
       } as CallState)
     : null;
-  act(() => root.render(<CallCard onSettings={vi.fn()} />));
+  act(() =>
+    root.render(
+      <QueryClientProvider client={new QueryClient()}>
+        <CallCard onSettings={vi.fn()} />
+      </QueryClientProvider>,
+    ),
+  );
 }
 beforeEach(() => {
   vi.useFakeTimers();
@@ -109,6 +120,52 @@ it("leaves focus in the app beside the desktop card", async () => {
   expect(container.querySelector('[data-testid="call-view"]')).not.toBeNull();
   expect(document.activeElement).toBe(composer);
   expect(composer.closest('[aria-hidden="true"]')).toBeNull();
+});
+
+it("reviews an outgoing draft and sends the edited values from the call", async () => {
+  viewport(375);
+  const values = {
+    kind: "email" as const,
+    to: "sam@example.test",
+    subject: "Meeting",
+    body: "Today at three",
+  };
+  render({
+    approval: {
+      runId: "run",
+      messageId: "draft",
+      block: {
+        kind: "ask",
+        text: "Review draft",
+        status: "pending",
+        outgoingDraft: {
+          source: "Mail",
+          keys: { to: "to", subject: "subject", body: "body" },
+          values,
+        },
+      },
+    },
+  });
+  const draft = document.querySelector(
+    '[data-testid="call-view"] [data-testid="outgoing-draft-card"]',
+  )!;
+  expect(draft.querySelector("textarea")?.value).toBe(values.to);
+  const body = draft.querySelector<HTMLTextAreaElement>('textarea[aria-label="Message"]')!;
+  expect(body.value).toBe(values.body);
+  act(() => {
+    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(
+      body,
+      "Tomorrow at four",
+    );
+    body.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await act(async () =>
+    [...draft.querySelectorAll("button")].find((button) => button.textContent === "Send")!.click(),
+  );
+  expect(answerCallApproval).toHaveBeenCalledWith(
+    "draft",
+    JSON.stringify({ outgoingDraft: { ...values, body: "Tomorrow at four" } }),
+  );
 });
 
 it("keeps the running clock readable without including ticks in the live status", async () => {
