@@ -123,6 +123,16 @@ describe("web Vault variables", () => {
     await view.cleanup();
   });
 
+  it("asks for the viewer's variables for a reply that only links one by hand", async () => {
+    const vault = fakeVault(undefined);
+    const view = await mount(
+      vault,
+      <ChatMarkdown>{"[key](rakazo-vault:DEPLOY_KEY)"}</ChatMarkdown>,
+    );
+    expect(vault.want).toHaveBeenCalled();
+    await view.cleanup();
+  });
+
   it("opens no variable a reply links by hand unless the viewer has it, in the reply's words", async () => {
     const vault = fakeVault(["DEPLOY_KEY"]);
     const view = await mount(

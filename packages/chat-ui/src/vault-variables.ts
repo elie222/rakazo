@@ -53,7 +53,9 @@ const SAVED_PLACEHOLDER = /\[saved as \$([A-Za-z_][A-Za-z0-9_]*)\]/g;
  */
 export function useVaultVariables(text: string, fromOtherPerson = false): VaultVariables | null {
   const vault = useContext(VaultVariablesContext);
-  const mayName = vault !== null && MAY_NAME_VARIABLE.test(text);
+  // A link a reply wrote by hand names a variable without a `$` before it.
+  const mayName =
+    vault !== null && (MAY_NAME_VARIABLE.test(text) || text.includes(VAULT_URL_PREFIX));
   const saved =
     mayName && !fromOtherPerson
       ? [...text.matchAll(SAVED_PLACEHOLDER)].map((match) => match[1]!)
