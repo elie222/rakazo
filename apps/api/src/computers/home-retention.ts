@@ -108,8 +108,8 @@ export function homeRetentionSweep(
       const rechecked = new Set<string>();
       const remove = async (id: string, organizationId: string, reason: HomeDeletionReason) => {
         if (reason === "unused" && !rechecked.has(organizationId)) {
-          rechecked.add(organizationId);
           await recheckPayment(deps, organizationId);
+          rechecked.add(organizationId);
         }
         await removeHome(prisma, id);
       };
