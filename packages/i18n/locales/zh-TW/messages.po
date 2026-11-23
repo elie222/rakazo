@@ -137,6 +137,12 @@ msgstr "{0} MB"
 msgid "{0} occurrences"
 msgstr "{0} 次"
 
+#. placeholder {0}: usd(media.leftCents / 100)
+#. placeholder {1}: usd(media.limitCents / 100)
+#: apps/web/src/components/billing/PlanUsage.tsx
+msgid "{0} of {1} left"
+msgstr ""
+
 #. placeholder {0}: sender.name
 #: apps/web/src/pages/settings/ExternalConversationSettings.tsx
 msgid "{0} rollup hours"
@@ -412,6 +418,10 @@ msgstr "{label}，下方"
 #: apps/web/src/components/messages/markdown-copy.tsx
 msgid "{label}, empty"
 msgstr "{label}，空白"
+
+#: apps/mobile/app/(settings)/account.tsx
+msgid "{left} of {limit} left"
+msgstr ""
 
 #: apps/mobile/components/settings/space-bots-model.tsx
 msgid "{moved, plural, one {# bot now uses the space default.} other {# bots now use the space default.}}"
@@ -1306,6 +1316,7 @@ msgstr "將新增"
 msgid "Admin"
 msgstr "管理員"
 
+#: apps/mobile/app/(settings)/mcp-server.tsx
 #: apps/mobile/app/bot-settings.tsx
 #: apps/mobile/components/models/compatible-endpoint-form.tsx
 #: apps/mobile/components/routines/routine-schedule-editor.tsx
@@ -1359,6 +1370,7 @@ msgstr "全部 {credit} 都用於模型用量。"
 msgid "All {price} goes to model usage."
 msgstr "{price} 全數用於模型使用。"
 
+#: apps/mobile/app/(settings)/mcp-server.tsx
 #: apps/mobile/app/artifacts.tsx
 #: apps/mobile/components/vault/vault-item-editor.tsx
 #: apps/web/src/components/integrations/agent-access.tsx
@@ -1839,6 +1851,7 @@ msgstr "驗證"
 msgid "Authenticator key"
 msgstr "驗證器金鑰"
 
+#: apps/mobile/app/(settings)/mcp-server.tsx
 #: apps/web/src/pages/integrations/McpServerForm.tsx
 msgid "Authorization parameters (optional)"
 msgstr "授權參數（選填）"
@@ -1970,6 +1983,7 @@ msgstr "基本驗證（{username}）"
 msgid "Bearer"
 msgstr "Bearer"
 
+#: apps/mobile/app/(settings)/mcp-server.tsx
 #: apps/mobile/components/integrations/add-custom-integration.tsx
 #: apps/mobile/components/vault/vault-item-editor.tsx
 #: apps/mobile/components/vault/vault-item-sheet.tsx
@@ -1979,6 +1993,10 @@ msgstr "Bearer"
 #: apps/web/src/pages/plugins/source-form.tsx
 msgid "Bearer token"
 msgstr "Bearer 權杖"
+
+#: apps/mobile/app/(settings)/mcp-server.tsx
+msgid "Bearer token (optional)"
+msgstr ""
 
 #: apps/mobile/app/(settings)/_layout.tsx
 #: apps/mobile/app/(settings)/account.tsx
@@ -2120,6 +2138,7 @@ msgstr "機器人的模型"
 msgid "Both"
 msgstr "兩者都有"
 
+#: apps/mobile/app/(settings)/mcp-server.tsx
 #: apps/mobile/components/vault/vault-item-editor.tsx
 #: apps/mobile/components/vault/vault-item-sheet.tsx
 #: apps/web/src/components/vault/VaultItemAccess.tsx
@@ -2272,6 +2291,7 @@ msgstr "無法讀取影像"
 #: apps/mobile/app/(settings)/billing.tsx
 #: apps/mobile/app/(settings)/computers.tsx
 #: apps/mobile/app/(settings)/general.tsx
+#: apps/mobile/app/(settings)/mcp-server.tsx
 #: apps/mobile/app/(settings)/memory-note.tsx
 #: apps/mobile/app/(settings)/model-connection.tsx
 #: apps/mobile/app/(settings)/organization-members.tsx
@@ -2414,6 +2434,11 @@ msgstr "卡片"
 msgid "Category"
 msgstr "類別"
 
+#. placeholder {0}: titles[role]
+#: apps/web/src/pages/model-settings/media-model-settings.tsx
+msgid "Change {0}"
+msgstr ""
+
 #: apps/web/src/pages/model-settings/ModelRoleSettings.tsx
 msgid "Change {name}"
 msgstr "更改 {name}"
@@ -2552,6 +2577,7 @@ msgstr "正在檢查電腦設定…"
 msgid "Checking connection…"
 msgstr "正在檢查連線…"
 
+#: apps/mobile/app/(settings)/mcp-server.tsx
 #: apps/mobile/app/server.tsx
 #: apps/web/src/components/computers/ComputersUnavailableHint.tsx
 #: apps/web/src/components/DesktopUpdates.tsx
@@ -2568,6 +2594,7 @@ msgid "Choose a bot shape, color, or upload an image"
 msgstr "選擇機器人形狀和顏色，或上傳圖片"
 
 #: apps/mobile/app/(settings)/models.tsx
+#: apps/mobile/components/models/media-model-settings.tsx
 #: apps/web/src/pages/model-settings/ModelSettingsOverlay.tsx
 #: apps/web/src/pages/shell/composer/composer-error.tsx
 msgid "Choose a model"
@@ -2626,6 +2653,7 @@ msgstr "選擇加入方式後，文字紀錄將與此空間共用。"
 msgid "Chosen bots"
 msgstr "指定的機器人"
 
+#: apps/mobile/app/(settings)/mcp-server.tsx
 #: apps/mobile/components/vault/vault-item-editor.tsx
 msgid "Chosen bots"
 msgstr "指定的機器人"
@@ -3625,6 +3653,7 @@ msgstr "無法刪除機器人"
 msgid "Could not delete group"
 msgstr "無法刪除群組"
 
+#: apps/mobile/app/(settings)/mcp-server.tsx
 #: apps/web/src/pages/integrations/McpServersOverlay.tsx
 msgid "Could not delete MCP server"
 msgstr "無法刪除 MCP 伺服器"
@@ -3878,6 +3907,7 @@ msgid "Could not load integrations"
 msgstr "無法載入整合"
 
 #: apps/mobile/app/(settings)/integrations.tsx
+#: apps/mobile/app/(settings)/mcp-server.tsx
 #: apps/web/src/pages/integrations/McpServersOverlay.tsx
 #: apps/web/src/pages/plugins/use-plugin-connections.ts
 msgid "Could not load MCP servers"
@@ -4232,6 +4262,7 @@ msgstr "無法執行例行任務"
 
 #: apps/mobile/app/(settings)/general.tsx
 #: apps/mobile/app/(settings)/labs.tsx
+#: apps/mobile/app/(settings)/mcp-server.tsx
 #: apps/mobile/app/(settings)/memory-note.tsx
 #: apps/mobile/app/(settings)/team-conversation.tsx
 #: apps/mobile/components/vault/vault-item-editor.tsx
@@ -4268,6 +4299,7 @@ msgstr "無法儲存電腦設定"
 msgid "Could not save group"
 msgstr "無法儲存群組"
 
+#: apps/mobile/components/models/media-model-settings.tsx
 #: apps/web/src/pages/onboarding/use-onboarding-model.ts
 msgid "Could not save model"
 msgstr "無法儲存模型"
@@ -4443,6 +4475,10 @@ msgstr "無法開始登入"
 msgid "Could not start teaching"
 msgstr "無法開始教學"
 
+#: apps/mobile/lib/thread/thread-voice.ts
+msgid "Could not start the call"
+msgstr ""
+
 #: apps/mobile/components/cards/AskActions.tsx
 msgid "Could not submit answer"
 msgstr "無法提交回答"
@@ -4477,6 +4513,7 @@ msgstr "無法切換空間"
 msgid "Could not take control"
 msgstr "無法接管"
 
+#: apps/mobile/app/(settings)/mcp-server.tsx
 #: apps/web/src/pages/integrations/McpServersOverlay.tsx
 msgid "Could not test MCP server"
 msgstr "無法測試 MCP 伺服器"
@@ -4920,6 +4957,7 @@ msgstr "OpenClaw 預設內容"
 msgid "Default scope"
 msgstr "預設範圍"
 
+#: apps/mobile/app/(settings)/mcp-server.tsx
 #: apps/mobile/app/(settings)/memory-note.tsx
 #: apps/mobile/app/(settings)/organization.tsx
 #: apps/mobile/app/(settings)/profile.tsx
@@ -4995,6 +5033,7 @@ msgstr "要刪除 {name} 及其 {count} 個機器人嗎？"
 msgid "Delete {name} and its bot?"
 msgstr "要刪除 {name} 及其機器人嗎？"
 
+#: apps/mobile/app/(settings)/mcp-server.tsx
 #: apps/mobile/app/(settings)/memory-note.tsx
 #: apps/mobile/app/(settings)/profile.tsx
 #: apps/mobile/app/(settings)/skill.tsx
@@ -6128,6 +6167,7 @@ msgstr "請結束通話，再輸入螢幕上的驗證碼。"
 msgid "Haptics"
 msgstr "觸覺回饋"
 
+#: apps/mobile/app/(settings)/mcp-server.tsx
 #: apps/web/src/pages/routines/routine-editor/trigger-cards.tsx
 msgid "Header"
 msgstr "標頭"
@@ -6140,6 +6180,7 @@ msgstr "標頭「{header}」"
 msgid "Header {name}"
 msgstr "標頭 {name}"
 
+#: apps/mobile/app/(settings)/mcp-server.tsx
 #: apps/mobile/components/integrations/header-rows-editor.tsx
 #: apps/mobile/components/vault/vault-item-editor.tsx
 #: apps/web/src/components/models/ModelHeadersEditor.tsx
@@ -6149,6 +6190,7 @@ msgstr "標頭 {name}"
 msgid "Header name"
 msgstr "標頭名稱"
 
+#: apps/mobile/app/(settings)/mcp-server.tsx
 #: apps/mobile/components/integrations/header-rows-editor.tsx
 #: apps/web/src/components/models/ModelHeadersEditor.tsx
 #: apps/web/src/pages/integrations/McpServerForm.tsx
@@ -6350,9 +6392,19 @@ msgstr "此模型尚未設定圖片輸入。"
 msgid "Image input is not configured for this model."
 msgstr "此模型尚未設定圖片輸入。"
 
+#: apps/mobile/components/models/media-model-settings.tsx
+#: apps/web/src/pages/model-settings/media-model-settings.tsx
+msgid "Image model"
+msgstr ""
+
 #: apps/web/src/pages/shell/bots/avatar-studio-popover.tsx
 msgid "Image upload area"
 msgstr "圖片上傳區域"
+
+#: apps/mobile/app/(settings)/account.tsx
+#: apps/web/src/components/billing/PlanUsage.tsx
+msgid "Images and video"
+msgstr ""
 
 #: apps/mobile/app/(settings)/vault.tsx
 #: apps/web/src/components/settings/AccountDataSettings.tsx
@@ -6397,6 +6449,10 @@ msgstr "會議中"
 #: apps/web/src/components/integrations/plugin-marketplace.tsx
 msgid "In this bot"
 msgstr "此機器人中"
+
+#: apps/mobile/app/(settings)/mcp-server.tsx
+msgid "In use"
+msgstr ""
 
 #: apps/mobile/app/(settings)/model-connection.tsx
 msgid "In your browser, sign in and paste this code when asked. Then return to Rakazo."
@@ -6668,6 +6724,7 @@ msgstr "保留在內文中"
 msgid "Keep memories"
 msgstr "保留記憶"
 
+#: apps/mobile/app/(settings)/mcp-server.tsx
 #: apps/web/src/pages/integrations/McpServerForm.tsx
 msgid "Keep tool results whole"
 msgstr "保留完整工具結果"
@@ -6930,6 +6987,7 @@ msgstr "正在載入語音供應商…"
 #: apps/mobile/app/(settings)/bot-template.tsx
 #: apps/mobile/app/(settings)/bot-templates.tsx
 #: apps/mobile/app/(settings)/computers.tsx
+#: apps/mobile/app/(settings)/mcp-server.tsx
 #: apps/mobile/app/(settings)/memory-note.tsx
 #: apps/mobile/app/(settings)/memory.tsx
 #: apps/mobile/app/(settings)/plugin.tsx
@@ -7035,7 +7093,6 @@ msgid "Make member"
 msgstr "設為成員"
 
 #: apps/web/src/pages/settings/BillingSettingsPanel.tsx
-#: apps/web/src/pages/settings/SpacesSettingsPanel.tsx
 msgid "Manage"
 msgstr "管理"
 
@@ -7534,6 +7591,7 @@ msgstr "已靜音"
 msgid "My computers"
 msgstr "我的電腦"
 
+#: apps/mobile/app/(settings)/mcp-server.tsx
 #: apps/mobile/app/(settings)/organization.tsx
 #: apps/mobile/app/bot-settings.tsx
 #: apps/mobile/app/group-settings.tsx
@@ -7664,6 +7722,10 @@ msgstr "新增"
 msgid "New API key"
 msgstr "新增 API 金鑰"
 
+#: apps/mobile/app/(settings)/mcp-server.tsx
+msgid "New bearer token"
+msgstr ""
+
 #: apps/mobile/app/_layout.tsx
 #: apps/mobile/components/inbox/inbox-render-item.tsx
 #: apps/mobile/lib/inbox/create-chooser.ts
@@ -7698,6 +7760,10 @@ msgstr "新增群組"
 #: apps/web/src/pages/shell/use-palette-actions.ts
 msgid "New group chat"
 msgstr "新增群組聊天"
+
+#: apps/mobile/app/(settings)/mcp-server.tsx
+msgid "New header value"
+msgstr ""
 
 #: apps/mobile/app/(settings)/vault.tsx
 msgid "New item"
@@ -8114,6 +8180,10 @@ msgstr "暫不"
 msgid "Not on an HTTPS site"
 msgstr "不是 HTTPS 網站"
 
+#: apps/web/src/pages/plugins/source-form.tsx
+msgid "Not reviewed by Rakazo. Only add it if you trust this address."
+msgstr ""
+
 #. js-lingui-explicit-id
 #: packages/i18n/src/vault.ts
 msgid "Not saved"
@@ -8194,10 +8264,16 @@ msgstr "OAuth"
 msgid "OAuth authorization was cancelled."
 msgstr "OAuth 授權已取消。"
 
+#: apps/mobile/app/(settings)/mcp-server.tsx
+msgid "OAuth client"
+msgstr ""
+
+#: apps/mobile/app/(settings)/mcp-server.tsx
 #: apps/web/src/pages/integrations/McpServerForm.tsx
 msgid "OAuth client ID (optional)"
 msgstr "OAuth 客戶端 ID（選填）"
 
+#: apps/mobile/app/(settings)/mcp-server.tsx
 #: apps/web/src/pages/integrations/McpServerForm.tsx
 msgid "OAuth client secret (optional)"
 msgstr "OAuth 客戶端金鑰（選填）"
@@ -8205,6 +8281,10 @@ msgstr "OAuth 客戶端金鑰（選填）"
 #: apps/web/src/pages/integrations/McpOAuthCallback.tsx
 msgid "OAuth connection failed"
 msgstr "OAuth 連線失敗"
+
+#: packages/i18n/src/thinking-level.ts
+msgid "Off"
+msgstr ""
 
 #: apps/mobile/app/(settings)/computers.tsx
 #: apps/web/src/components/computers/ComputerDeviceSettings.tsx
@@ -8977,6 +9057,10 @@ msgstr "供應商訊息"
 msgid "Providers"
 msgstr "供應商"
 
+#: apps/web/src/pages/plugins/plugin-browse.tsx
+msgid "Public MCP directory"
+msgstr ""
+
 #: apps/mobile/lib/api/endpoint.ts
 msgid "Public servers need https://. HTTP only works on your local network."
 msgstr "公開伺服器需要使用 https://。HTTP 僅適用於區域網路。"
@@ -9719,6 +9803,7 @@ msgstr "恢復通知"
 #: apps/mobile/app/(settings)/computers.tsx
 #: apps/mobile/app/(settings)/general.tsx
 #: apps/mobile/app/(settings)/integrations.tsx
+#: apps/mobile/app/(settings)/mcp-server.tsx
 #: apps/mobile/app/(settings)/memory-note.tsx
 #: apps/mobile/app/(settings)/memory.tsx
 #: apps/mobile/app/(settings)/plugin.tsx
@@ -9945,6 +10030,7 @@ msgstr "沙箱"
 msgid "Saturday"
 msgstr "週六"
 
+#: apps/mobile/app/(settings)/mcp-server.tsx
 #: apps/mobile/app/(settings)/memory-note.tsx
 #: apps/mobile/app/(settings)/model-connection.tsx
 #: apps/mobile/app/(settings)/model-settings.tsx
@@ -10116,6 +10202,7 @@ msgstr "排程例行任務"
 msgid "Scheduled tasks"
 msgstr "排程任務"
 
+#: apps/mobile/app/(settings)/mcp-server.tsx
 #: apps/web/src/pages/integrations/McpServerForm.tsx
 msgid "Scopes (optional)"
 msgstr "範圍（選填）"
@@ -10360,6 +10447,7 @@ msgid "Sent"
 msgstr "已傳送"
 
 #: apps/mobile/app/_layout.tsx
+#: apps/mobile/app/(settings)/mcp-server.tsx
 #: apps/mobile/app/server.tsx
 msgid "Server"
 msgstr "伺服器"
@@ -10372,6 +10460,7 @@ msgstr "伺服器整合"
 msgid "Server name"
 msgstr "伺服器名稱"
 
+#: apps/mobile/app/(settings)/mcp-server.tsx
 #: apps/mobile/app/(settings)/voice.tsx
 #: apps/mobile/components/models/compatible-endpoint-form.tsx
 #: apps/web/src/components/integrations/IntegrationSetup.tsx
@@ -11074,6 +11163,7 @@ msgstr "正在開始…"
 msgid "State or region"
 msgstr "州或地區"
 
+#: apps/mobile/app/(settings)/mcp-server.tsx
 #: apps/mobile/components/cards/run-error-sheet.tsx
 #: apps/web/src/pages/space/ActivityList.tsx
 #: apps/web/src/pages/space/board-views.tsx
@@ -11212,11 +11302,6 @@ msgstr "支持 Rakazo"
 msgid "Supports images"
 msgstr "支援圖片"
 
-#: apps/mobile/app/(settings)/model-settings.tsx
-#: apps/web/src/pages/model-settings/model-settings-panel.tsx
-msgid "Supports thinking"
-msgstr "支援思考"
-
 #. Switches the account's timezone to this device's
 #: apps/mobile/app/(settings)/billing.tsx
 #: apps/mobile/components/settings/space-bots-model.tsx
@@ -11342,6 +11427,7 @@ msgstr "條款"
 msgid "Test"
 msgstr "測試"
 
+#: apps/mobile/app/(settings)/mcp-server.tsx
 #: apps/web/src/pages/integrations/McpServersOverlay.tsx
 msgid "Test connection"
 msgstr "測試連線"
@@ -11537,10 +11623,12 @@ msgstr "無法讀取已儲存的設定，請移除後重新新增。"
 msgid "They get {weeks} weeks free."
 msgstr "對方可免費使用 {weeks} 週。"
 
+#: apps/mobile/app/(settings)/model-settings.tsx
 #: apps/mobile/app/bot-settings.tsx
 #: apps/mobile/app/chat-model.tsx
 #: apps/mobile/components/models/model-role-settings.tsx
 #: apps/web/src/components/call/CallCard.tsx
+#: apps/web/src/pages/model-settings/model-settings-panel.tsx
 #: apps/web/src/pages/model-settings/ModelRoleSettings.tsx
 #: apps/web/src/pages/routines/routine-editor/model-settings.tsx
 #: apps/web/src/pages/shell/bots/bot-settings-sections.tsx
@@ -12042,6 +12130,10 @@ msgstr "轉錄伺服器 URL"
 #: apps/web/src/pages/settings/VoiceSettingsOverlay.tsx
 msgid "Transcription vocabulary"
 msgstr "轉寫詞彙"
+
+#: apps/mobile/app/(settings)/mcp-server.tsx
+msgid "Transport"
+msgstr ""
 
 #: apps/mobile/app/(settings)/team-conversation.tsx
 #: apps/web/src/pages/settings/ExternalConversationSettings.tsx
@@ -12583,6 +12675,11 @@ msgstr "版本"
 #: apps/mobile/app/artifact.tsx
 msgid "Versions"
 msgstr "版本"
+
+#: apps/mobile/components/models/media-model-settings.tsx
+#: apps/web/src/pages/model-settings/media-model-settings.tsx
+msgid "Video model"
+msgstr ""
 
 #: apps/mobile/components/integrations/integration-plugins.tsx
 #: apps/web/src/pages/plugins/plugin-browse.tsx
