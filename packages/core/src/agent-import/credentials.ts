@@ -46,6 +46,11 @@ export type TextRange = { start: number; end: number };
 
 /** Where each credential-shaped value is in the text, in order, overlapping ones joined. */
 export function credentialRanges(text: string): TextRange[] {
+  return joinRanges(credentialMatches(text));
+}
+
+/** Each shape's match on its own, in no particular order; matches may overlap. */
+export function credentialMatches(text: string): TextRange[] {
   const found: TextRange[] = [];
   for (const shape of SHAPES) {
     for (const match of text.matchAll(shape.pattern)) {
@@ -66,7 +71,7 @@ export function credentialRanges(text: string): TextRange[] {
       }
     }
   }
-  return joinRanges(found);
+  return found;
 }
 
 /** The ranges in order, with overlapping ones joined. */

@@ -527,12 +527,24 @@ export async function sendThreadMessage(
   if (requestedReplyQuote && !sent.replyToMessageId) {
     throw new ORPCError("BAD_REQUEST", { message: "replyQuote requires replyToMessageId." });
   }
+  // A concurrent send with the same nonce that won is this send's receipt.
+  const replayWinner = async (error: unknown) => {
+    const winner = await replayExistingSend(
+      deps,
+      target.threadId,
+      sent.clientNonce,
+      releaseTakeover,
+    );
+    if (winner) return { replay: winner } as const;
+    throw error;
+  };
   // From here on, a key the member pasted is only in the vault.
   const pasted = await preparePastedSecrets(
     { prisma: deps.prisma, secretStore: deps.secrets },
     actor,
     sent.text,
-  );
+  ).catch(replayWinner);
+  if ("replay" in pasted) return pasted.replay;
   const input = { ...sent, text: pasted.text };
   // Live events carry the call id so a spoken turn joins the call card on first
   // paint; without it the bubble shows loose until a refetch reads the nonce.
@@ -1125,18 +1137,7 @@ export async function sendThreadMessage(
       return { message, runs, routineRuns, eventSeq: event.seq };
     }, THREAD_LOCK_TRANSACTION_OPTIONS);
 
-  const committed = await pasted
-    .persist(() => withTransactionRetry(commit))
-    .catch(async (error) => {
-      const winner = await replayExistingSend(
-        deps,
-        target.threadId,
-        input.clientNonce,
-        releaseTakeover,
-      );
-      if (winner) return { replay: winner } as const;
-      throw error;
-    });
+  const committed = await pasted.persist(() => withTransactionRetry(commit)).catch(replayWinner);
   if ("replay" in committed) return committed.replay;
   deps.analytics?.capture(
     actor.userId,

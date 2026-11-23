@@ -23,4 +23,12 @@ describe("swapPastedValues", () => {
       "Bearer [saved as $PASTED_KEY]\nTOKEN=[saved as $PASTED_KEY]",
     );
   });
+
+  it("swaps a repeated token even when its match joins a longer range", () => {
+    const token = "Ab3dE5gH7jK9mN1pQ2rS4tU6vW8xY0zA";
+    const block = ["-----BEGIN ", "RSA PRIVATE", " KEY-----\nBearer ", token].join("");
+    expect(swapPastedValues(`TOKEN=${token}\n${block}`, () => "PASTED_KEY")).toBe(
+      "TOKEN=[saved as $PASTED_KEY]\n[saved as $PASTED_KEY]",
+    );
+  });
 });

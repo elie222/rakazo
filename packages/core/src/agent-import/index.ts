@@ -59,7 +59,12 @@ export {
   stripAgentImportSecrets,
 } from "./config.js";
 export type { TextRange } from "./credentials.js";
-export { credentialRanges, joinRanges, looksLikeCredential } from "./credentials.js";
+export {
+  credentialMatches,
+  credentialRanges,
+  joinRanges,
+  looksLikeCredential,
+} from "./credentials.js";
 export { AGENT_IMPORT_PROMPT } from "./document.js";
 export type {
   GrokBot,

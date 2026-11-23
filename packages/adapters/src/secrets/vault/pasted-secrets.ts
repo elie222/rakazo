@@ -1,6 +1,6 @@
 import type { SecretStore } from "@rakazo/adapter-kit";
 import { commandVariableName } from "@rakazo/contracts";
-import { credentialRanges, joinRanges } from "@rakazo/core";
+import { credentialMatches, joinRanges } from "@rakazo/core";
 import type { Prisma, PrismaClient } from "@rakazo/db";
 import { TransactionConflictError } from "@rakazo/db";
 import { persistPreparedSecret } from "../secret-persistence.js";
@@ -10,9 +10,9 @@ import { prepareBotSecret } from "./vault-save.js";
 
 const PASTED_NAME = "pasted-key";
 
-/** Each credential-shaped value, and every other place the same value appears, in order. */
+/** Each credential-shaped value, and every other place one of its matches appears, in order. */
 function pastedRanges(text: string) {
-  const found = credentialRanges(text);
+  const found = credentialMatches(text);
   const ranges = [...found];
   for (const value of new Set(found.map(({ start, end }) => text.slice(start, end)))) {
     for (let at = text.indexOf(value); at !== -1; at = text.indexOf(value, at + value.length))
