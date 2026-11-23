@@ -44,7 +44,9 @@ export type PastedSecrets = {
 /**
  * Moves each key a member pasted into a chat message to their vault as a command variable, so
  * the value is never kept in the conversation or sent to the model. A value already saved as a
- * command variable keeps that name; a new one is `PASTED_KEY`, then `PASTED_KEY_2`, and so on.
+ * command variable keeps that name, even where bots are blocked from it: a copy would undo the
+ * owner's choice in every Space sharing the vault. A new one is `PASTED_KEY`, then
+ * `PASTED_KEY_2`, and so on.
  */
 export async function preparePastedSecrets(
   deps: { prisma: PrismaClient; secretStore: SecretStore },

@@ -1,10 +1,12 @@
 import { randomUUID } from "node:crypto";
 import { EncryptedSecretStore, storeBotSecret } from "@rakazo/adapters";
 import type { Actor } from "@rakazo/contracts";
+import { deferred } from "@rakazo/core/test-async";
 import type { PrismaClient } from "@rakazo/db";
 import {
   asSystem,
   createDb,
+  lockSpaceSettings,
   provisionMessagingIdentity,
   runAsSystem,
   runAsTenant,
@@ -22,6 +24,7 @@ const key = ["sk", "-proj-", randomUUID().replaceAll("-", ""), "Zz9"].join("");
 describe.skipIf(!enabled)("keys pasted into a chat message (PostgreSQL)", () => {
   let prisma: PrismaClient;
   let system: PrismaClient;
+  let pool: ReturnType<typeof createDb>["pool"];
   let close: () => Promise<void>;
   let actor: Actor;
   let target: ThreadTarget;
@@ -31,6 +34,7 @@ describe.skipIf(!enabled)("keys pasted into a chat message (PostgreSQL)", () => 
     const db = createDb(databaseUrl!);
     prisma = db.prisma;
     system = asSystem(prisma);
+    pool = db.pool;
     close = async () => {
       await prisma.$disconnect();
       await db.pool.end();
@@ -113,4 +117,64 @@ describe.skipIf(!enabled)("keys pasted into a chat message (PostgreSQL)", () => 
     expect(await stored()).toContain("Use [saved as $DEPLOY_KEY]");
     expect(await system.vaultCredential.count({ where: { userId: actor.userId } })).toBe(1);
   });
+
+  it("names a key blocked for bots by its saved name instead of copying it", async () => {
+    await runAsTenant(actor, () =>
+      storeBotSecret({
+        prisma,
+        secretStore: secrets,
+        scope: { userId: actor.userId, spaceId: actor.spaceId },
+        destination: { name: "deploy-key", origin: "", auth: { type: "command" } },
+        plaintext: key,
+        policy: "off",
+      }),
+    );
+
+    await send(`Use ${key}`);
+
+    expect(await stored()).toContain("Use [saved as $DEPLOY_KEY]");
+    expect(await system.vaultCredential.count({ where: { userId: actor.userId } })).toBe(1);
+  });
+
+  // A secret card's answer locks the thread and then the vault; a send must not take them the
+  // other way round, or each waits on the other until one is aborted.
+  it("commits alongside a secret card answer that holds the thread", async () => {
+    const probe = await runAsSystem("lock probe", () => pool.connect());
+    const threadLocked = deferred<string>();
+    const resumed = deferred();
+    let sending: Promise<unknown> = Promise.resolve();
+    const answer = system.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM threads WHERE id = ${target.threadId} FOR UPDATE`;
+      const [row] = await tx.$queryRaw<Array<{ xactId: string }>>`
+        SELECT pg_current_xact_id()::text AS "xactId"`;
+      threadLocked.resolve(row?.xactId ?? "");
+      await resumed.promise;
+      // Gives up before the send's deadlock check would abort and retry the send instead.
+      await tx.$executeRaw`SET LOCAL lock_timeout = '500ms'`;
+      await lockSpaceSettings(tx, actor);
+      await tx.$queryRaw`SELECT id FROM "user" WHERE id = ${actor.userId} FOR UPDATE`;
+    });
+    try {
+      const xactId = await threadLocked.promise;
+      sending = send(`Deploy with ${key}`);
+      sending.catch(() => undefined);
+      await vi.waitFor(
+        async () => {
+          const waiting = await probe.query(
+            "SELECT count(*)::int AS n FROM pg_locks WHERE locktype = 'transactionid' AND NOT granted AND transactionid::text = $1",
+            [xactId],
+          );
+          expect(waiting.rows[0].n).toBeGreaterThan(0);
+        },
+        { timeout: 5_000 },
+      );
+      resumed.resolve();
+      await expect(answer).resolves.toBeUndefined();
+      await expect(sending).resolves.toBeDefined();
+    } finally {
+      resumed.resolve();
+      await Promise.allSettled([answer, sending]);
+      probe.release();
+    }
+  }, 20_000);
 });

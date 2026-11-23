@@ -554,7 +554,6 @@ export async function sendThreadMessage(
     deps.prisma.$transaction(async (tx) => {
       // A Space being deleted takes no new turns; its lock comes before the group and thread rows.
       if (!(await spaceTakesWork(tx, actor.spaceId))) throw new SpaceDeletionInProgressError();
-      await pasted.store(tx);
       const author = await loadMessageAuthor(tx, actor.userId);
       let routineRuns: Array<{ id: string; status: string }> = [];
       let replyToMessageId: string | undefined;
@@ -661,6 +660,8 @@ export async function sendThreadMessage(
         );
         // Match message counter locking before inspecting runs, without changing counters on rejection.
         await tx.$queryRaw`SELECT id FROM threads WHERE id = ${target.threadId} FOR UPDATE`;
+        // The vault after the thread, as a secret card's answer locks them.
+        await pasted.store(tx);
         routineRuns = (await startRoutines?.(tx)) ?? [];
         const activeRuns = await tx.run.findMany({
           where: {
@@ -887,6 +888,7 @@ export async function sendThreadMessage(
       );
       // Group ownership is locked first, then the thread, as in the normal write path.
       await tx.$queryRaw`SELECT id FROM threads WHERE id = ${target.threadId} FOR UPDATE`;
+      await pasted.store(tx);
       routineRuns = (await startRoutines?.(tx)) ?? [];
       let activeRuns = await tx.run.findMany({
         where: {
