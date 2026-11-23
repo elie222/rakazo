@@ -33,7 +33,7 @@ export async function listAccessGrants(prisma: PrismaClient): Promise<AccessGran
 
 export async function createAccessGrant(
   prisma: PrismaClient,
-  createdById: string,
+  createdById: string | null,
   input: AccessGrantInput,
 ): Promise<AccessGrant> {
   const data = AccessGrantInputSchema.parse(input);
