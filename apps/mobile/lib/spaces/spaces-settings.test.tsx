@@ -61,8 +61,22 @@ vi.mock("react-native", () => ({
 vi.mock("react-native-safe-area-context", () => ({ SafeAreaView: element("div") }));
 vi.mock("../../components/ui/load-failure", () => ({ LoadFailure: () => null }));
 vi.mock("../../components/settings/settings-group", () => ({
-  SettingsGroup: ({ footer, children }: { footer?: string; children?: ReactNode }) =>
-    createElement("section", null, children, footer ? createElement("p", null, footer) : null),
+  SettingsGroup: ({
+    label,
+    footer,
+    children,
+  }: {
+    label?: string;
+    footer?: string;
+    children?: ReactNode;
+  }) =>
+    createElement(
+      "section",
+      null,
+      label ? createElement("h2", null, label) : null,
+      children,
+      footer ? createElement("p", null, footer) : null,
+    ),
   SettingsRow: ({ title, onPress }: { title: string; onPress?: () => void }) =>
     createElement("button", { type: "button", onClick: onPress }, title),
 }));
@@ -100,10 +114,12 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-it("offers one Space's members and a new Space, leaving settings for both", async () => {
+it("offers one Space's members under its name and a new Space, leaving settings for both", async () => {
   state.spaces = [{ id: "space-1", name: "Personal" }];
   await render();
   expect(rows()).toEqual(["Members", "New private space"]);
+  expect(container.querySelector("h2")?.textContent).toBe("Personal");
+  expect(container.querySelector("section")?.textContent).not.toContain("New private space");
   expect(container.querySelector("p")?.textContent).toBe(
     "Spaces keep work apart. Bots, chats, memory and computers never cross between them.",
   );
