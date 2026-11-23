@@ -101,6 +101,9 @@ describe("prepareToolRequest: after the bot archived itself", () => {
     await expect(
       call("archive_bot", { confirm_name: "Scout", bot_id: "bot-1" }),
     ).resolves.not.toEqual(archived);
+    await expect(call("archive_bot", { confirm_name: "Scout", bot_id: "" })).resolves.not.toEqual(
+      archived,
+    );
   });
 
   it("refuses on a resumed run whose bot is already archived", async () => {

@@ -393,21 +393,21 @@ async function askingLoginUse(
   return approved;
 }
 
-/**
- * Check bot-management and instruction-proposal preconditions, and canonicalize the
- * requests whose approval card shows resolved names. Updates the request in place.
- */
 function archivesItself(
   bot: { id: string; name: string },
   name: string,
   args: Record<string, unknown>,
 ) {
   if (name !== "archive_bot") return false;
-  const botId = args.bot_id ?? args.botId;
-  if (botId !== undefined) return String(botId) === bot.id;
+  const botId = args.bot_id || args.botId;
+  if (botId) return String(botId) === bot.id;
   return String(args.confirm_name ?? args.confirmName ?? "").trim() === bot.name;
 }
 
+/**
+ * Check bot-management and instruction-proposal preconditions, and canonicalize the
+ * requests whose approval card shows resolved names. Updates the request in place.
+ */
 export async function prepareToolRequest(
   ctx: RunContext,
   request: ToolRequest,
