@@ -595,7 +595,11 @@ describe("saving a page's pictures", () => {
     const held = request({
       pageId: "page-1",
       source: pictured("hotel", "lobby"),
-      images: { hotel: "https://img.example.com/lobby.jpg", lobby: "artifact-1" },
+      images: {
+        hotel: "https://img.example.com/lobby.jpg",
+        lobby: "artifact-1",
+        unused: "https://img.example.com/unused.jpg",
+      },
     });
     const ctx = context({}, { currentVersion: 1, visibility: "link" });
     (ctx as { deps: { prisma: Record<string, unknown> } }).deps.prisma.artifact = {
@@ -608,5 +612,6 @@ describe("saving a page's pictures", () => {
         "+ Image lobby: chat file lobby.png + Title: Fine",
       ]),
     );
+    expect(held.fleetSummary?.lines.join("\n")).not.toContain("unused");
   });
 });

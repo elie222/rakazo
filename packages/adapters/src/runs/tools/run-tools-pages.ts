@@ -206,7 +206,7 @@ export async function holdSharedPageSave(
       ? [`Title: ${redactSecrets(parsedTitle.data, ctx.secrets).slice(0, PAGE_TITLE_MAX_LENGTH)}`]
       : []),
     ...changedLines(current, proposed.source),
-    ...Object.entries(await pageImageSourceLabels(ctx, sources)).map(
+    ...Object.entries(await pageImageSourceLabels(ctx, shownSources(sources, proposed.source))).map(
       ([name, source]) => `+ Image ${name}: ${source.replace(/[\p{Cc}\u2028\u2029]+/gu, " ")}`,
     ),
   ];
@@ -434,6 +434,11 @@ async function savePage(ctx: RunContext, call: ToolCall) {
     ...missingImages(source, kept),
   ];
   return warnings.length ? { ...result, warnings } : result;
+}
+
+function shownSources(sources: PageImageSources, source: string): PageImageSources {
+  const shown = pageImageNames(source);
+  return Object.fromEntries(Object.entries(sources).filter(([name]) => shown.has(name)));
 }
 
 function missingImages(source: string, kept: string[]): string[] {
