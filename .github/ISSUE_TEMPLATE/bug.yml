@@ -1,6 +1,5 @@
 name: Bug report
 description: Something is broken in Rakazo
-title: "[Bug]: "
 labels:
   - bug
 body:
