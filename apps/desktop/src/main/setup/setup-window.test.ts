@@ -40,11 +40,13 @@ function fakeWindow() {
 let page: ReturnType<typeof fakeWindow>;
 let opening: ReturnType<typeof deferred<boolean>>;
 const settleLocalStack = vi.fn<() => Promise<void>>();
+const onAppReady = vi.fn();
 
 beforeEach(() => {
   page = fakeWindow();
   opening = deferred<boolean>();
   settleLocalStack.mockReset().mockResolvedValue(undefined);
+  onAppReady.mockReset();
   desktop.setupWindow = page as unknown as BrowserWindow;
   desktop.mainWindow = null;
   desktop.setupError = null;
@@ -60,6 +62,7 @@ beforeEach(() => {
     recoverFromCrashedSave: vi.fn(),
     stopStackLeftBehind: vi.fn(),
     settleLocalStack,
+    onAppReady,
   } as unknown as Parameters<typeof registerSetupIpc>[0]);
 });
 afterEach(() => {
@@ -127,7 +130,22 @@ describe("showSetupWindow", () => {
     });
     opening.resolve(false);
     await save;
+    expect(onAppReady).not.toHaveBeenCalled();
     showSetupWindow("Could not reach the server.");
     expect(page.reload).toHaveBeenCalledOnce();
+  });
+
+  it("notifies onAppReady after saving a server and closing setup", async () => {
+    const destroy = vi.fn();
+    (page as unknown as { destroy: ReturnType<typeof vi.fn> }).destroy = destroy;
+    const save = mocks.invoke.get("desktop.setup.save")?.(page.event, {
+      mode: "existing",
+      serverUrl: SERVER,
+      headers: {},
+    });
+    opening.resolve(true);
+    await expect(save).resolves.toEqual({ ok: true });
+    expect(destroy).toHaveBeenCalledOnce();
+    expect(onAppReady).toHaveBeenCalledOnce();
   });
 });

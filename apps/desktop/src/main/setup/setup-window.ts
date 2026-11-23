@@ -14,6 +14,7 @@ import { managedLocalOpenUrl, parseSetupInput, RAKAZO_CLOUD_URL } from "./setup-
 import { writeSetup } from "./setup-store.js";
 
 let setupSaveInProgress = false;
+let onAppReadyCallback: (() => void) | undefined;
 function createSetupWindow() {
   const icon = developmentIcon();
   const win = new BrowserWindow({
@@ -68,6 +69,7 @@ function restoreAppWindowAfterSetup() {
   clearTimeout(desktop.warmWindowTimer);
   desktop.mainWindow.show();
   desktop.mainWindow.focus();
+  onAppReadyCallback?.();
 }
 /** Watch for a renderer crash until setup is persisted (or the switch is abandoned). */
 function watchRendererUntilCommitted(win: BrowserWindow) {
@@ -111,6 +113,8 @@ type SetupIpcDeps = {
   stopStackLeftBehind: (previousMode: DesktopSetup["mode"] | undefined) => void;
   /** Picks the stack This computer runs on, if launch left that open. */
   settleLocalStack: () => Promise<void>;
+  /** Runs once the app window is committed and setup is closed (e.g. pending deep link). */
+  onAppReady?: () => void;
 };
 
 /** The setup window's IPC. The channel map keeps a connected Rakazo server from calling any of it. */
@@ -125,7 +129,9 @@ export function registerSetupIpc({
   recoverFromCrashedSave,
   stopStackLeftBehind,
   settleLocalStack,
+  onAppReady,
 }: SetupIpcDeps) {
+  onAppReadyCallback = onAppReady;
   // Synchronous so the setup page has its language before it first paints.
   handleIpc("desktop.setup.locale", () => ({
     lang: desktopLocale(),
@@ -224,6 +230,7 @@ export function registerSetupIpc({
         }
         // Only now is the switch final; a crash rollback above may restore the local server.
         stopStackLeftBehind(previousSetup?.mode);
+        onAppReady?.();
         return { ok: true };
       } catch {
         const outcome = abandonPendingAppSwitch(previousSetup, previousUrl);
