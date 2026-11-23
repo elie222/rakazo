@@ -174,11 +174,11 @@ export class StripeBillingProvider implements BillingProvider {
     };
   }
 
-  refundInvoice(customerId: string, invoiceNumber: string, confirm: boolean) {
+  refundInvoice(customerId: string, invoice: string | undefined, confirm: boolean) {
     return stripeInvoiceRefund(
       { request: this.request.bind(this), listPages: this.listPages.bind(this) },
       customerId,
-      invoiceNumber,
+      invoice,
       confirm,
     );
   }
