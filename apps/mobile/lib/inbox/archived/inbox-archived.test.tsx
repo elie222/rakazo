@@ -399,6 +399,11 @@ describe("bot profile menu actions", () => {
       pathname: "/thread",
       params: { botId: "bot-c", name: "Bot (copy)" },
     });
+
+    // A tap while the profile is still closing makes no second copy.
+    act(() => action("Duplicate").onPress());
+    await flush();
+    expect(mocks.rpc.mock.calls.filter(([path]) => path === "bots/duplicate")).toHaveLength(1);
   });
 
   it("keeps the screen opened over the profile when the copy lands", async () => {

@@ -2,6 +2,7 @@ import { MenuView } from "@expo/ui/community/menu";
 import { useLingui } from "@lingui/react/macro";
 import type { NativeStackNavigationOptions } from "expo-router";
 import { useNavigation, useRouter } from "expo-router";
+import { useRef } from "react";
 import { Alert, View } from "react-native";
 import { errorText } from "../../lib/api/user-error";
 import {
@@ -38,6 +39,8 @@ export function useBotProfileActions(botId: string, name: string): BotProfileAct
     router.dismissAll();
     router.replace("/");
   }
+  // Set once the copy's chat is opening, so a tap before this profile closes makes no second copy.
+  const leaving = useRef(false);
   const duplicate = useSave({
     save: (_: { askedIn: SearchInboxSession }, send) => send("bots/duplicate", { botId }),
     // The copy's chat opens the way a new bot's does.
@@ -46,6 +49,7 @@ export function useBotProfileActions(botId: string, name: string): BotProfileAct
       addToSearchInbox({ kind: "bot", bot: copy }, askedIn);
       // Opened Edit meanwhile: leave that screen as it is.
       if (!navigation.isFocused()) return;
+      leaving.current = true;
       router.dismissAll();
       const href = { pathname: "/thread" as const, params: { botId: copy.id, name: copy.name } };
       if (!openChatFromInbox(href)) router.push(href);
@@ -60,7 +64,9 @@ export function useBotProfileActions(botId: string, name: string): BotProfileAct
     {
       id: "duplicate",
       text: t`Duplicate`,
-      onPress: () => duplicate.run({ askedIn: searchInboxSession() }),
+      onPress: () => {
+        if (!leaving.current) duplicate.run({ askedIn: searchInboxSession() });
+      },
     },
     {
       id: "clear",
