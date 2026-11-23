@@ -1278,6 +1278,7 @@ describe("dictation engine choice", () => {
     expect(webSpeechNeedsServerFallback("network", true)).toBe(true);
     expect(webSpeechNeedsServerFallback("service-not-allowed", true)).toBe(true);
     expect(webSpeechNeedsServerFallback("network", false)).toBe(false);
+    expect(webSpeechNeedsServerFallback("language-not-supported", false)).toBe(false);
     expect(webSpeechNeedsServerFallback("not-allowed", true)).toBe(false);
     expect(webSpeechNeedsServerFallback("aborted", true)).toBe(false);
     expect(webSpeechNeedsServerFallback(undefined, true)).toBe(false);
@@ -1743,7 +1744,7 @@ describe("Dictation web speech", () => {
     );
   });
 
-  it.each(["network", "service-not-allowed"])(
+  it.each(["network", "service-not-allowed", "language-not-supported"])(
     "falls back to server transcription when Web Speech fails with %s",
     async (error) => {
       const instances: Array<{

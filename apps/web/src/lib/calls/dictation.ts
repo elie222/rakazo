@@ -48,7 +48,11 @@ const ENDPOINT_TICK_MS = 80;
 const SILENCE_RMS = 0.035;
 export const MAX_ENDPOINT_RECORDING_MS = 30_000;
 /** Web Speech codes that mean the cloud recognizer cannot be used. */
-const WEB_SPEECH_SERVICE_ERRORS = new Set(["network", "service-not-allowed"]);
+const WEB_SPEECH_SERVICE_ERRORS = new Set([
+  "network",
+  "service-not-allowed",
+  "language-not-supported",
+]);
 
 export function webSpeechAvailable(): boolean {
   return Boolean(speechRecognitionCtor());
