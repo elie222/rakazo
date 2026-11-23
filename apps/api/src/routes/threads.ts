@@ -224,8 +224,20 @@ export function threadsRoutes(ctx: RouterContext) {
         const target = await resolveThreadTarget(deps.prisma, context.actor, input);
         const peerRunCache = new Map<string, Promise<boolean>>();
         const backgroundRunCache = new Map<string, Promise<boolean>>();
-        const events = withHeartbeats(context, (signal) =>
-          deps.events.follow(target.threadId, input.cursor, signal),
+        // Filter before the event becomes a frame. A dropped peer or background event still
+        // re-checks the session, and it must not restart the silence window.
+        const events = withHeartbeats(
+          context,
+          (signal) => deps.events.follow(target.threadId, input.cursor, signal),
+          async (event) => {
+            if (await isPeerRun(deps.prisma, event.runId, peerRunCache)) {
+              return shouldForwardPeerThreadEvent(event);
+            }
+            if (await isBackgroundRun(deps.prisma, event.runId, backgroundRunCache)) {
+              return shouldForwardBackgroundThreadEvent(event);
+            }
+            return true;
+          },
         );
         for await (const event of events) {
           if (event === HEARTBEAT) {
@@ -241,11 +253,6 @@ export function threadsRoutes(ctx: RouterContext) {
               payload: {},
             };
             continue;
-          }
-          if (await isPeerRun(deps.prisma, event.runId, peerRunCache)) {
-            if (!shouldForwardPeerThreadEvent(event)) continue;
-          } else if (await isBackgroundRun(deps.prisma, event.runId, backgroundRunCache)) {
-            if (!shouldForwardBackgroundThreadEvent(event)) continue;
           }
           yield event;
         }

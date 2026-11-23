@@ -8,15 +8,14 @@ import type { CatalogReads, PiOAuthPersist } from "@rakazo/adapters";
 import {
   assertModelProviderAllowed,
   compatibleEndpointPreset,
+  listModelCredentials,
   listPiCatalog,
   ModelSignInError,
-  modelCredentialDto,
   oauthCredentialEmail,
   prepareStoredModelAuth,
   probeCatalogProviderModels,
   probeOpenAiCompatibleModels,
   providerCatalogCache,
-  resolveMemberMainModel,
   selectDefaultCredentialId,
   serializeModelSecret,
   storedOpenAiCompatibleProbeHeaders,
@@ -36,7 +35,6 @@ import { ClientError, clampCatalogThinkingLevel } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import {
   appliedModelRole,
-  comparePreferenceOrder,
   defaultModelCredentialCandidates,
   deleteUnreferencedCredentialSecret,
   deploymentModelChangesScope,
@@ -44,7 +42,6 @@ import {
   getModelRole,
   modelCredentialProviderFilter,
   modelRoleTarget,
-  newestModelCredentialOrder,
   Prisma,
   runAsSystemInTransaction,
   saveModelPreference,
@@ -165,79 +162,15 @@ export function modelsRoutes(ctx: RouterContext) {
         withServingConnections(context.actor, await chatCatalog(context.actor)),
       ),
       credentials: authed.models.credentials.handler(async ({ context }) => {
-        const [rows, main] = await Promise.all([
-          deps.prisma.userModelCredential.findMany({
-            where: { userId: context.actor.userId },
-            include: { userPreferences: { where: { userId: context.actor.userId } } },
-            orderBy: newestModelCredentialOrder,
-          }),
-          resolveMemberMainModel({ prisma: deps.prisma, secretStore: deps.secrets }, context.actor),
-        ]);
-        const secrets = rows.length
-          ? await deps.prisma.secret.findMany({
-              where: {
-                id: { in: rows.map((row) => row.secretId) },
-                userId: context.actor.userId,
-                spaceId: null,
-              },
-              select: { id: true, ciphertext: true },
-            })
-          : [];
-        const ciphertextById = new Map(secrets.map((secret) => [secret.id, secret.ciphertext]));
-        const preferenceRanks = new Map(
-          rows
-            .flatMap((row) => row.userPreferences)
-            .sort(comparePreferenceOrder)
-            .map((preference, index) => [preference.credentialId, index]),
-        );
-        return Promise.all(
-          rows.map(async ({ userPreferences, ...row }) => {
-            const preference = userPreferences[0];
-            const own = {
-              ...row,
-              defaultModel: preference?.modelId ?? null,
-              thinkingLevel: preference?.thinkingLevel ?? null,
-            };
-            const runsMain = main?.credential && main.credential.id === row.id;
-            const dto = (plaintext?: string) => {
-              const listed = modelCredentialDto(own, plaintext);
-              // The connection running the main model shows that model, as apps read it,
-              // while its own model stays enabled.
-              const shown = runsMain
-                ? modelCredentialDto(
-                    {
-                      ...row,
-                      isDefault: true,
-                      defaultModel: main.modelId,
-                      thinkingLevel: main.thinkingLevel ?? null,
-                    },
-                    plaintext,
-                  )
-                : listed;
-              return {
-                ...shown,
-                ...(shown.enabledModelIds
-                  ? {
-                      enabledModelIds: [
-                        ...new Set([...shown.enabledModelIds, ...(listed.enabledModelIds ?? [])]),
-                      ],
-                    }
-                  : {}),
-                ...(preference
-                  ? { preferenceRank: preferenceRanks.get(preference.credentialId) }
-                  : {}),
-              };
-            };
-            const ciphertext = ciphertextById.get(row.secretId);
-            if (!ciphertext) return dto();
-            try {
-              return dto(await deps.secrets.load(ciphertext, row.secretId));
-            } catch (error) {
-              if (error instanceof SecretStoreUnavailableError) throw secretStoreOutage(error);
-              return dto();
-            }
-          }),
-        );
+        try {
+          return await listModelCredentials(
+            { prisma: deps.prisma, secretStore: deps.secrets },
+            context.actor,
+            { showMainModel: true },
+          );
+        } catch (error) {
+          throw secretStoreOutage(error);
+        }
       }),
       forRole: authed.models.forRole.handler(async ({ context, input }) =>
         modelRoleCatalog(context.actor, input.role),
@@ -311,13 +244,10 @@ export function modelsRoutes(ctx: RouterContext) {
         return { ok: true as const };
       }),
       connect: authed.models.connect.handler(async ({ context, input }) => {
-        const { record } = await startModelConnect(
-          deps,
-          context.actor,
-          "api_key",
-          input.provider,
-          input.surface,
-        );
+        const { record } = await startModelConnect(deps, context.actor, "api_key", input.provider, {
+          surface: input.surface,
+          appVersion: input.appVersion,
+        });
         try {
           const saved = await connectModelCredential(context.actor, input, context.signal);
           record(input.provider, { name: "model_connected" });
@@ -423,7 +353,7 @@ export function modelsRoutes(ctx: RouterContext) {
           context.actor,
           "oauth",
           input.provider,
-          input.surface,
+          { surface: input.surface, appVersion: input.appVersion },
         );
         const startedAt = new Date();
         return deps.oauthLogins

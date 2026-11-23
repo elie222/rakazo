@@ -351,8 +351,8 @@ async function commitAnswerRunInput(
     }
   }
 
-  // Answering the creation intro's or a daily check-in's question resumes as the user's
-  // turn: with the conversation and every tool, to get going on that answer.
+  // A composer reply to the creation intro or a daily check-in starts the user's turn.
+  // Preserve its source so the resumed run can prove who started it.
   const answersOpener =
     run.trigger === "created" ||
     (run.trigger === "routine" &&
@@ -373,7 +373,12 @@ async function commitAnswerRunInput(
     },
     data: {
       status: "queued",
-      ...(resumedTrigger !== run.trigger ? { trigger: resumedTrigger } : {}),
+      ...(resumedTrigger !== run.trigger
+        ? {
+            trigger: resumedTrigger,
+            ...(input.answerMessageId ? { sourceMessageId: input.answerMessageId } : {}),
+          }
+        : {}),
       ...(choiceAsk ? { checkpoint: null } : {}),
     },
   });

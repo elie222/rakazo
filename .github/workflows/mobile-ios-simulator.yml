@@ -1,0 +1,106 @@
+name: mobile-ios-simulator
+
+# Proves the iOS app still compiles, with no Apple account, certificate or secret: generates the
+# native project from apps/mobile (expo prebuild), builds it for the iOS Simulator with code signing
+# off, and checks what App Review reads in the bundle (bundle id, encryption claim, permission
+# prompts and their translations). The .app is kept as an UNSIGNED simulator artifact, never for
+# testers. Runs when a pull request changes the app's native setup, and by hand. Store builds stay
+# on EAS (eas.json).
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/mobile-ios-simulator.yml
+      - apps/mobile/app.json
+      - apps/mobile/app.config.ts
+      - apps/mobile/eas.json
+      - apps/mobile/package.json
+      - apps/mobile/plugins/**
+      - apps/mobile/modules/**
+      - apps/mobile/native/**
+      - apps/mobile/ios-intents/**
+      - apps/mobile/ios-watch/**
+      - apps/mobile/ios-widgets/**
+      - apps/mobile/locales/**
+      - pnpm-lock.yaml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mobile-ios-simulator-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ios-simulator:
+    name: iOS Simulator build (unsigned)
+    # EAS builds with Xcode 27 (eas.json), and the app needs the iOS 27 SDK. GitHub's macos-26 image
+    # tops out at Xcode 26; the xcode-27 image is GitHub's hosted macOS image with Xcode 27.
+    runs-on: xcode-27
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-workspace
+        with:
+          filter: "@rakazo/mobile..."
+      - name: Use the newest Xcode on the runner (27 or later)
+        run: |
+          set -euo pipefail
+          xcode="$(ls -d /Applications/Xcode_*.app | sort -V | tail -1)"
+          sudo xcode-select -s "$xcode/Contents/Developer"
+          xcodebuild -version
+          major="$(xcodebuild -version | awk '/^Xcode /{split($2, v, "."); print v[1]; exit}')"
+          test "${major:-0}" -ge 27 || { echo "::error::Xcode $major is too old: the app needs the iOS 27 SDK"; exit 1; }
+      - name: Generate the iOS project
+        run: pnpm --filter @rakazo/mobile exec expo prebuild --platform ios --clean
+        env:
+          CI: "1"
+      - name: Build for the Simulator, code signing off
+        working-directory: apps/mobile/ios
+        run: |
+          set -euo pipefail
+          workspace="$(ls -d ./*.xcworkspace | head -1)"
+          scheme="$(basename "$workspace" .xcworkspace)"
+          xcodebuild -workspace "$workspace" -scheme "$scheme" -configuration Release \
+            -sdk iphonesimulator -destination "generic/platform=iOS Simulator" \
+            -derivedDataPath build CODE_SIGNING_ALLOWED=NO COMPILER_INDEX_STORE_ENABLE=NO build | tail -n 200
+      - name: Check the app bundle
+        working-directory: apps/mobile
+        run: |
+          set -euo pipefail
+          app="$(find ios/build/Build/Products/Release-iphonesimulator -maxdepth 1 -name '*.app' -print -quit)"
+          test -n "$app" || { echo "::error::No .app was built"; exit 1; }
+          plist="$app/Info.plist"
+          read_plist() { /usr/libexec/PlistBuddy -c "Print :$1" "$plist" 2>/dev/null; }
+          # What the bundle should carry comes from app.json, so this check needs no edits when it changes.
+          app_json() { node -e 'const c = require("./app.json").expo; console.log(eval(process.argv[1]))' "$1"; }
+          bundle_id="$(app_json 'c.ios.bundleIdentifier')"
+          test "$(read_plist CFBundleIdentifier)" = "$bundle_id" ||
+            { echo "::error::Bundle id is $(read_plist CFBundleIdentifier), app.json says $bundle_id"; exit 1; }
+          if [ "$(app_json 'c.ios.config?.usesNonExemptEncryption')" = "false" ]; then
+            test "$(read_plist ITSAppUsesNonExemptEncryption)" = "false" ||
+              { echo "::error::ITSAppUsesNonExemptEncryption is not false"; exit 1; }
+          fi
+          # Prompts from app.json's infoPlist, plus the ones the config plugins add.
+          prompts="$(app_json 'Object.keys(c.ios.infoPlist ?? {}).filter((k) => k.endsWith("UsageDescription")).join(" ")')"
+          for key in $prompts NSCameraUsageDescription NSPhotoLibraryUsageDescription NSMicrophoneUsageDescription \
+            NSSpeechRecognitionUsageDescription; do
+            test -n "$(read_plist "$key")" || { echo "::error::$key is missing or empty in Info.plist"; exit 1; }
+          done
+          # Every language in app.json's locales gets its translated prompts in the bundle.
+          for lang in $(app_json 'Object.keys(c.locales ?? {}).join(" ")'); do
+            strings="$app/$lang.lproj/InfoPlist.strings"
+            test -f "$strings" || { echo "::error::No $lang permission prompts in the app"; exit 1; }
+            plutil -lint "$strings" >/dev/null
+          done
+          echo "OK: $(basename "$app") $(read_plist CFBundleShortVersionString), unsigned Simulator build"
+          ditto -c -k --keepParent "$app" "$RUNNER_TEMP/ios-simulator-unsigned.zip"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: ios-UNSIGNED-simulator-${{ github.sha }}
+          path: ${{ runner.temp }}/ios-simulator-unsigned.zip
+          if-no-files-found: error
+          retention-days: 7

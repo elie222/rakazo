@@ -80,21 +80,36 @@ export function sidebarGroupsForSpaces<TBot extends SidebarChat, TGroup extends 
       ];
       grouped.sort((a, b) => order.indexOf(a.key) - order.indexOf(b.key));
     }
-    const sections = grouped.map((group, index) => ({
+    // Pinned chats show as tiles under no heading of their own, so without saved sections the
+    // list after them is simply the Space's.
+    const headed = grouped.map((group) =>
+      group.key === "pinned" || (group.key === "unassigned" && space.botSections.length === 0)
+        ? { ...group, title: null }
+        : group,
+    );
+    // A Space whose chats are all pinned keeps its name above the tiles.
+    const listIndex = headed.findIndex((group) => group.key !== "pinned");
+    const firstHeader = showSpaceNames || listIndex < 0 ? 0 : listIndex;
+    const sections = headed.map((group, index) => ({
       ...group,
+      tiles: group.key === "pinned",
       sectionId: group.key.startsWith("section:") ? group.key.slice("section:".length) : null,
       key: showSpaceNames ? `space:${space.id}:${group.key}` : group.key,
       // The first header needs a title so it can host the Space settings button.
-      title: showSpaceNames ? space.name : index === 0 && !group.title ? space.name : group.title,
+      title: showSpaceNames
+        ? space.name
+        : index === firstHeader && !group.title
+          ? space.name
+          : group.title,
       subtitle: showSpaceNames && group.title ? group.title : undefined,
       showLock: showSpaceNames,
       shared: space.shared === true,
       // Once per Space: every heading that names it, or a lone Space's first heading.
-      hasGuests: space.hasGuests === true && (showSpaceNames || index === 0),
+      hasGuests: space.hasGuests === true && (showSpaceNames || index === firstHeader),
       emptySpaceId: undefined as string | undefined,
       spaceId: space.id,
       spaceName: space.name,
-      canOpenSpaceSettings: index === 0,
+      canOpenSpaceSettings: index === firstHeader,
     }));
     if (sections.length > 0) return sections;
     // Keep empty spaces selectable; chat clicks are the only switch control.
@@ -108,6 +123,7 @@ export function sidebarGroupsForSpaces<TBot extends SidebarChat, TGroup extends 
           title: showSpaceNames ? space.name : section.name,
           subtitle: showSpaceNames ? section.name : undefined,
           bots: [] as (typeof sections)[number]["bots"],
+          tiles: false,
           sectionId: section.id as string | null,
           showLock: showSpaceNames,
           shared: space.shared === true,
@@ -128,6 +144,7 @@ export function sidebarGroupsForSpaces<TBot extends SidebarChat, TGroup extends 
         title: space.name,
         subtitle: undefined,
         bots: [],
+        tiles: false,
         sectionId: null,
         showLock: showSpaceNames,
         shared: space.shared === true,

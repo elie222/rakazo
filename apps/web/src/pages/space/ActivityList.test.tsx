@@ -4,7 +4,7 @@ import { notifyManager, QueryClient, QueryClientProvider } from "@tanstack/react
 import type { ComponentProps, ReactNode } from "react";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
-import { afterAll, beforeAll, expect, it, vi } from "vitest";
+import { afterAll, beforeAll, beforeEach, expect, it, vi } from "vitest";
 
 const runs = vi.hoisted(() => ({ list: vi.fn() }));
 vi.mock("../../lib/query/rpc", () => ({
@@ -64,8 +64,8 @@ const run = {
   updatedAt: new Date().toISOString(),
 };
 
+beforeEach(() => vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true));
 beforeAll(() => {
-  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   notifyManager.setNotifyFunction((notify) => act(notify));
 });
 afterAll(() => {

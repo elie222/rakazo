@@ -181,7 +181,7 @@ export const computerTools: ConnectorTool[] = [
   },
   {
     name: "read_file",
-    description: `Read a UTF-8 text file from this bot's home. On a Team Computer, relative paths use the bot folder and shared/... accesses shared work. Open visual or binary files with open_path instead. Long files come back in line ranges; follow nextOffset. Over ${READ_FILE_MAX_KB} KB, use shell.`,
+    description: `Read a UTF-8 text file or an image from this bot's home. On a Team Computer, relative paths use the bot folder and shared/... accesses shared work. Open other binary files with open_path. Long text comes in line ranges; follow nextOffset. Text over ${READ_FILE_MAX_KB} KB: use shell.`,
     inputSchema: {
       type: "object",
       properties: {
@@ -208,7 +208,7 @@ export const computerTools: ConnectorTool[] = [
   {
     name: "attach_file",
     description:
-      "Attach a workspace file from this bot's home to the chat thread as an image or common file. The user sees it; you do not. The file stays in place; users can open it from the message and from the Artifacts tab. For a self-contained HTML page, document, or anything else meant to be viewed on its own — give it name and description: a title and a one-line summary. Skip them for an ordinary attachment like a log file or export. To UPDATE something you already made, call this again with the exact same name — it becomes a new version of that same artifact instead of a separate one; a different name always starts a new artifact.",
+      "Attach a workspace file from this bot's home to the chat thread as an image or common file. The user sees it. The file stays in place; users can open it from the message and from the Artifacts tab. For a self-contained HTML page, document, or anything else meant to be viewed on its own — give it name and description: a title and a one-line summary. Skip them for an ordinary attachment like a log file or export. To UPDATE something you already made, call this again with the exact same name — it becomes a new version of that same artifact instead of a separate one; a different name always starts a new artifact.",
     inputSchema: {
       type: "object",
       properties: {

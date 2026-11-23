@@ -179,6 +179,8 @@ export const McpSourcePresetSchema = z.object({
   /** The server signs the person in itself (OAuth), so no token is asked for. Otherwise
    * the preset connects with a bearer token. */
   signIn: z.boolean().optional(),
+  featured: z.boolean().optional(),
+  credentialHelpUrl: z.url({ protocol: /^https$/ }).optional(),
 });
 export type McpSourcePreset = z.infer<typeof McpSourcePresetSchema>;
 

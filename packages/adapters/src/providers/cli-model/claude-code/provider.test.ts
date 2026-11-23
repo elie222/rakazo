@@ -130,15 +130,20 @@ async function run(
 }
 
 describe.skipIf(process.platform === "win32")("Claude Code CLI provider", () => {
-  beforeAll(() => {
+  // Registration reads these once, and the tests check the CLI never sees the secrets.
+  const stubServerEnv = () => {
     for (const [name, value] of Object.entries(SERVER_SECRETS)) vi.stubEnv(name, value);
     vi.stubEnv("PI_DEFAULT_PROVIDER", CLAUDE_CODE_PROVIDER_ID);
     vi.stubEnv("PI_DEFAULT_MODEL", MODEL_ID);
     vi.stubEnv("PI_DEFAULT_CREDENTIALS", "host");
+  };
+  beforeAll(() => {
+    stubServerEnv();
     models = registerClaudeCodeProvider(builtinModels(), { modelId: MODEL_ID });
     model = models.getModel(CLAUDE_CODE_PROVIDER_ID, MODEL_ID)!;
   });
   beforeEach(() => {
+    stubServerEnv();
     configureProvider(async () => undefined);
   });
   afterAll(() => {

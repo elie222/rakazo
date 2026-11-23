@@ -112,6 +112,14 @@ export class LinuxDesktop {
     const result = await this.host.run(computer, command, context);
     if (result.code === 75) throw new ComputerScreenUnavailableError();
     if (result.code === BROWSER_STILL_RUNNING_EXIT) throw new BrowserStillRunningError();
+    // Logged before the exit is judged: the restarted browser can still fail to come up.
+    if (startsScreen && result.stdout.includes("RAKAZO_BROWSER_RESTARTED=unresponsive")) {
+      getLogger().warn("computer.browser_restarted", {
+        "sandbox.id": computer.id,
+        provider: computer.kind,
+        reason: "unresponsive",
+      });
+    }
     // Only the screen startup script sets this status; an app the desktop launched may exit with it.
     if (startsScreen && result.code === SCREEN_NOT_READY_EXIT) {
       // Only the first line: the rest is the browser's or display's own log.
@@ -602,11 +610,14 @@ export const PREPARE_LINUX_DESKTOP = [
   "  apt_update",
   // A restored disk can keep a package's record without its files, and a plain install of a
   // package APT thinks is present does nothing.
-  `  if ! $root env DEBIAN_FRONTEND=noninteractive ${APT} install -y -qq --reinstall --no-remove $missing; then`,
+  "  packages=$missing",
+  // The dependency owns the executable. Reinstalling websockify alone leaves it missing.
+  '  case "$missing " in *" websockify "*) packages="$packages python3-websockify" ;; esac',
+  `  if ! $root env DEBIAN_FRONTEND=noninteractive ${APT} install -y -qq --reinstall --no-remove $packages; then`,
   // Provider images can arrive with unrelated, unfinished package dependencies. Let APT
   // solve those without specifying the desktop packages, and never remove existing tools.
   `    $root env DEBIAN_FRONTEND=noninteractive ${APT} install -y -qq --fix-broken --no-remove`,
-  `    $root env DEBIAN_FRONTEND=noninteractive ${APT} install -y -qq --reinstall --no-remove $missing`,
+  `    $root env DEBIAN_FRONTEND=noninteractive ${APT} install -y -qq --reinstall --no-remove $packages`,
   "  fi",
   // An install APT reports as done can still leave a tool out; the screen would then fail later.
   ...FIND_MISSING_DESKTOP_TOOLS.map((line) => `  ${line}`),
