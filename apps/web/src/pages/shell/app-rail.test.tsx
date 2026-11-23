@@ -63,3 +63,17 @@ it("leaves the page alone when the board is off", async () => {
   expect(host.textContent).toContain("chats");
   expect(host.querySelector('[data-testid="app-rail"]')).toBeNull();
 });
+
+it("makes the rail wider than the macOS traffic lights only on desktop macOS", async () => {
+  const rail = () => host.querySelector('[data-testid="app-rail"]')!.className;
+  await render("/app/board", true);
+  expect(rail()).toContain("w-18");
+  window.rakazoDesktop = { platform: "darwin" } as never;
+  try {
+    await render("/app/board", true);
+    expect(rail()).toContain("w-22");
+    expect(rail()).not.toContain("w-18");
+  } finally {
+    delete window.rakazoDesktop;
+  }
+});

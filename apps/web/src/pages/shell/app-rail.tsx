@@ -6,7 +6,7 @@ import { createContext, Suspense, use } from "react";
 import { Link, Outlet, useMatch } from "react-router-dom";
 import { IconTooltip } from "../../components/IconTooltip";
 import { WindowChrome } from "../../components/WindowChrome";
-import { desktopBridge } from "../../lib/platform/desktop";
+import { desktopBridge, windowChromeKind } from "../../lib/platform/desktop";
 
 const AppRailContext = createContext(false);
 
@@ -33,16 +33,18 @@ export function AppRailLayout({ enabled }: { enabled: boolean }) {
   );
 }
 
-/** As wide as the macOS window controls, which sit at its top on desktop. */
+/** Wide enough for the macOS window controls, which sit at its top on desktop. */
 function AppRail() {
   const { t } = useLingui();
   // Matched like the route itself, so a trailing slash still marks the Board.
   const onBoard = useMatch("/app/board") !== null;
+  // The traffic lights end close to the 72px strip, so leave room before the border.
+  const width = windowChromeKind(desktopBridge()) === "darwin" ? "w-22" : "w-18";
   return (
     <nav
       data-testid="app-rail"
       aria-label={t`Sections`}
-      className="app-drag hidden w-18 shrink-0 flex-col items-center gap-2 border-e border-sidebar-border bg-sidebar pt-4 pb-3 md:flex"
+      className={`app-drag hidden ${width} shrink-0 flex-col items-center gap-2 border-e border-sidebar-border bg-sidebar pt-4 pb-3 md:flex`}
     >
       {desktopBridge() ? <WindowChrome className="mb-2" /> : null}
       <RailLink to="/app" label={t`Chats`} active={!onBoard}>
