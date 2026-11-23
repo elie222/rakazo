@@ -141,7 +141,9 @@ export const botsRpc = {
       )
       .output(z.array(MemoryDreamSchema)),
     /** Dreams kept per bot in this Space; null keeps the default of 100. */
-    dreamRetention: oc.output(z.object({ dreamRetention: z.number().int().nullable() })),
+    dreamRetention: oc.output(
+      z.object({ dreamRetention: z.number().int().nullable(), canManage: z.boolean() }),
+    ),
     setDreamRetention: oc
       .input(z.object({ dreamRetention: z.number().int().min(20).max(500).nullable() }))
       .output(z.object({ dreamRetention: z.number().int().nullable() })),

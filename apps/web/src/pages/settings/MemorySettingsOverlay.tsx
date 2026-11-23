@@ -394,32 +394,38 @@ function DreamRetentionSection() {
           ones are deleted with their hidden chats.
         </Trans>
       </p>
-      <div className="mt-3 flex items-end gap-2">
-        <Field className="w-32">
-          <FieldLabel htmlFor={inputId}>
-            <Trans>Dreams per bot</Trans>
-          </FieldLabel>
-          <Input
-            id={inputId}
-            type="number"
-            min={MIN_DREAM_RETENTION}
-            max={MAX_DREAM_RETENTION}
-            step={10}
-            value={draft}
-            disabled={save.pending || retention.isPending}
-            onChange={(event) => setDraft(event.target.value)}
-          />
-        </Field>
-        <Button
-          variant="secondary"
-          size="sm"
-          type="button"
-          disabled={!valid || value === (current ?? DEFAULT_DREAM_RETENTION) || save.pending}
-          onClick={() => save.run({ value })}
-        >
-          <Trans>Save limit</Trans>
-        </Button>
-      </div>
+      {retention.data?.canManage === false ? (
+        <p className="mt-3 text-body-sm text-muted-foreground">
+          <Trans>Only the Space owner can change how many dreams are kept.</Trans>
+        </p>
+      ) : (
+        <div className="mt-3 flex items-end gap-2">
+          <Field className="w-32">
+            <FieldLabel htmlFor={inputId}>
+              <Trans>Dreams per bot</Trans>
+            </FieldLabel>
+            <Input
+              id={inputId}
+              type="number"
+              min={MIN_DREAM_RETENTION}
+              max={MAX_DREAM_RETENTION}
+              step={10}
+              value={draft}
+              disabled={save.pending || retention.isPending}
+              onChange={(event) => setDraft(event.target.value)}
+            />
+          </Field>
+          <Button
+            variant="secondary"
+            size="sm"
+            type="button"
+            disabled={!valid || value === (current ?? DEFAULT_DREAM_RETENTION) || save.pending}
+            onClick={() => save.run({ value })}
+          >
+            <Trans>Save limit</Trans>
+          </Button>
+        </div>
+      )}
       {save.error ? (
         <p className="mt-2 text-body-sm text-destructive">
           {errorText(save.error, t`Could not save the dream limit`)}

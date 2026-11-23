@@ -53,7 +53,7 @@
 ## R3：QA 验收（git event / webhook）
 
 - **拥有者**：`qa`
-- **触发**：`Git event`（仓库 webhook 的 `pull_request` + `push` 事件）或 CI 完成 webhook（`Add trigger → Webhook`，把 URL+key 给 CI 流程 POST）
+- **触发**：CI 完成 webhook（`Add trigger → Webhook`，把 URL+key 给 CI 流程 POST）。只在 reviewer 通过且 CI 绿时发送；PR 打开或更新本身不是验收信号。
 - **指令**：
 
 ```text

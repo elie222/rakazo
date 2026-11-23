@@ -111,6 +111,7 @@
 .stream-sweep {
   position: absolute;
   inset: 0;
+  z-index: 1;
   overflow: hidden;
   border-radius: var(--radius);
   pointer-events: none;
