@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   createDeepLinkController,
   handleSecondInstance,
+  registerDeepLinkHandlers,
   revealSecondInstanceWindow,
   secondInstanceWindow,
 } from "./second-instance.js";
@@ -231,5 +232,35 @@ describe("createDeepLinkController", () => {
     controller.applyPending();
     expect(main.webContents.loadURL).toHaveBeenCalledOnce();
     expect(main.webContents.loadURL).toHaveBeenCalledWith("https://rakazo.example/app/bot-reopen");
+  });
+});
+
+describe("registerDeepLinkHandlers", () => {
+  it("registers the rakazo protocol only for packaged builds", () => {
+    const packagedApp = {
+      isPackaged: true,
+      isReady: () => true,
+      on: vi.fn(),
+      setAsDefaultProtocolClient: vi.fn(),
+    };
+    registerDeepLinkHandlers(packagedApp as never, {
+      initialArgv: ["Rakazo.exe"],
+      isOpening: () => false,
+      reopenTarget: vi.fn(),
+    }).registerProtocol();
+    expect(packagedApp.setAsDefaultProtocolClient).toHaveBeenCalledWith("rakazo");
+
+    const devApp = {
+      isPackaged: false,
+      isReady: () => true,
+      on: vi.fn(),
+      setAsDefaultProtocolClient: vi.fn(),
+    };
+    registerDeepLinkHandlers(devApp as never, {
+      initialArgv: ["electron", "."],
+      isOpening: () => false,
+      reopenTarget: vi.fn(),
+    }).registerProtocol();
+    expect(devApp.setAsDefaultProtocolClient).not.toHaveBeenCalled();
   });
 });

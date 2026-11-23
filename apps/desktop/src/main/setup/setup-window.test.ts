@@ -1,5 +1,5 @@
 import { deferred } from "@rakazo/core/test-async";
-import type { BrowserWindow } from "electron";
+import { BrowserWindow } from "electron";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { desktop } from "../desktop-state.js";
 import type { IpcCaller } from "../ipc/ipc.js";
@@ -190,8 +190,7 @@ describe("showSetupWindow", () => {
         setWindowOpenHandler: vi.fn(),
       },
     };
-    const { BrowserWindow: MockBrowserWindow } = await import("electron");
-    vi.mocked(MockBrowserWindow).mockImplementationOnce(function mockWindow() {
+    vi.mocked(BrowserWindow).mockImplementationOnce(function mockWindow() {
       return createdSetup as unknown as BrowserWindow;
     });
     showSetupWindow();
@@ -251,8 +250,7 @@ describe("showSetupWindow", () => {
         setWindowOpenHandler: vi.fn(),
       },
     };
-    const { BrowserWindow: MockBrowserWindow } = await import("electron");
-    vi.mocked(MockBrowserWindow).mockImplementationOnce(function mockWindow() {
+    vi.mocked(BrowserWindow).mockImplementationOnce(function mockWindow() {
       return createdSetup as unknown as BrowserWindow;
     });
     registerSetupIpc({

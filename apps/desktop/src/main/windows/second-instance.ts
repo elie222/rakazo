@@ -7,7 +7,6 @@ import {
   extractDeepLinkFromArgv,
   navigateWindowToDeepLink,
   parseDeepLink,
-  shouldRegisterDeepLinkProtocol,
 } from "./deep-link.js";
 
 /** The window a duplicate launch raises: setup while onboarding, main after. */
@@ -155,7 +154,8 @@ export function registerDeepLinkHandlers(
   return {
     ...controller,
     registerProtocol() {
-      if (shouldRegisterDeepLinkProtocol(electronApp.isPackaged)) {
+      // Only packaged builds register the OS protocol handler so dev/test runs do not clobber it.
+      if (electronApp.isPackaged) {
         electronApp.setAsDefaultProtocolClient(DEEP_LINK_SCHEME);
       }
     },

@@ -104,11 +104,6 @@ export function resolveDeepLinkTarget(
   return resolved.href;
 }
 
-/** Only packaged builds register the OS protocol handler so dev/test runs do not clobber it. */
-export function shouldRegisterDeepLinkProtocol(isPackaged: boolean): boolean {
-  return isPackaged;
-}
-
 function isNavigationAbort(error: unknown): boolean {
   if (typeof error !== "object" || error === null) return false;
   const { code, errno } = error as { code?: unknown; errno?: unknown };

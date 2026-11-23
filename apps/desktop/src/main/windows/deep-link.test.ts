@@ -7,7 +7,6 @@ import {
   navigateWindowToDeepLink,
   parseDeepLink,
   resolveDeepLinkTarget,
-  shouldRegisterDeepLinkProtocol,
 } from "./deep-link.js";
 
 describe("parseDeepLink", () => {
@@ -128,13 +127,6 @@ describe("resolveDeepLinkTarget", () => {
     expect(resolveDeepLinkTarget(link, "not-a-url")).toBeNull();
     expect(resolveDeepLinkTarget(link, "file:///tmp/index.html")).toBeNull();
     expect(resolveDeepLinkTarget(link, "data:text/html,hi")).toBeNull();
-  });
-});
-
-describe("shouldRegisterDeepLinkProtocol", () => {
-  it("registers only for packaged builds", () => {
-    expect(shouldRegisterDeepLinkProtocol(true)).toBe(true);
-    expect(shouldRegisterDeepLinkProtocol(false)).toBe(false);
   });
 });
 
