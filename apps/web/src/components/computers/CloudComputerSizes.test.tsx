@@ -55,6 +55,17 @@ vi.mock("@rakazo/ui-web", () => ({
       ))}
     </select>
   ),
+  Field: ({
+    orientation: _orientation,
+    children,
+    ...props
+  }: ComponentProps<"div"> & { orientation?: string }) => <div {...props}>{children}</div>,
+  FieldLabel: ({ children, ...props }: ComponentProps<"label">) => (
+    // biome-ignore lint/a11y/noLabelWithoutControl: the mock spreads the caller's htmlFor.
+    <label {...props}>{children}</label>
+  ),
+  FieldDescription: ({ children, ...props }: ComponentProps<"p">) => <p {...props}>{children}</p>,
+  FieldTitle: ({ children, ...props }: ComponentProps<"div">) => <div {...props}>{children}</div>,
 }));
 
 const cloud: CloudComputers = {
