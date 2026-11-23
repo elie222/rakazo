@@ -3660,6 +3660,39 @@ describe("outbound destinations", () => {
     },
   );
 
+  it("puts per-run recall after the kept history, so history stays a stable cached prefix", async () => {
+    const f = fixture({
+      memoryProvider: {
+        describe: () => ({ capabilities: { recall: true, save: true, recallEachRun: true } }),
+        recall: vi.fn(async () => ({
+          ok: true as const,
+          value: [{ memory: "The dog is named Pixel.", score: 0.9 }],
+        })),
+        save: vi.fn(),
+        purgeHistory: vi.fn(),
+      },
+    });
+    f.prisma.message.findMany.mockResolvedValue([
+      {
+        id: "history-1",
+        seq: 1,
+        role: "bot",
+        botId: null,
+        runId: null,
+        createdAt: new Date("2026-11-01T00:00:00Z"),
+        steeringMessages: [],
+        blocks: [{ kind: "text", text: "An earlier reply" }],
+      },
+    ] as never);
+    f.setCalls([]);
+    await f.run();
+    const history = f.runtimeRun.mock.calls[0]?.[0].history as Array<{ content: string }>;
+    expect(history.map((message) => message.content)).toEqual([
+      "An earlier reply",
+      expect.stringContaining("The dog is named Pixel."),
+    ]);
+  });
+
   it("keeps read trust to the installed resource the run used, not its name prefix", async () => {
     reviewMock.mockReset();
     reviewMock.mockResolvedValue({ decision: "ask", reason: "Unexpected lookup", model: "mock" });
