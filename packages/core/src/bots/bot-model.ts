@@ -1,4 +1,4 @@
-import type { ModelCatalogEntry, ModelCredential, ThinkingLevel } from "@rakazo/contracts";
+import type { ModelCatalogEntry, ModelCredential } from "@rakazo/contracts";
 import { modelMark } from "../models/model-marks.js";
 import {
   chatModelChoices,
@@ -8,7 +8,7 @@ import {
   parseModelOptionKey,
   resolveSelectableModelId,
 } from "../models/model-providers.js";
-import { modelThinkingLevels } from "../models/model-settings-form.js";
+import { modelDefaultThinkingLevel, modelThinkingLevels } from "../models/model-settings-form.js";
 
 type SpaceDefault = { defaultProvider: string | null; defaultModel: string | null };
 
@@ -92,7 +92,7 @@ export function botModelState({
   const thinkingLevels = modelThinkingLevels(credential, entry, modelId).filter(
     (level) => level !== "off",
   );
-  const defaultThinkingLevel: ThinkingLevel = credential?.thinkingLevel ?? "medium";
+  const defaultThinkingLevel = modelDefaultThinkingLevel(credential, modelId, thinkingLevels);
 
   return {
     selectedModel,

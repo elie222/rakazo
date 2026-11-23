@@ -3,37 +3,25 @@ import { canonicalPiProviderId } from "@rakazo/contracts";
 
 /** Apply provider protocol capabilities before catalog and runtime selection. */
 export function applyPiModelCompatibility(models: MutableModels): MutableModels {
-  // Pi 1.5.x predates Hydrogen. Keep this override only until the bundled catalog catches up.
-  // https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/gemini/4-hydrogen
-  for (const id of ["google", "google-vertex"]) {
-    const provider = models.getProvider?.(id);
-    const sibling = provider?.getModels().find((model) => model.id === "gemini-4-argon");
-    if (
-      !provider ||
-      !sibling ||
-      provider.getModels().some((model) => model.id === "gemini-4-hydrogen")
-    )
-      continue;
-    const hydrogen = {
-      ...sibling,
-      id: "gemini-4-hydrogen",
-      name: "Gemini 4 Hydrogen",
-      contextWindow: 1_048_576,
-      // A single streaming segment; automatic long-decode continuation is not implemented.
-      maxTokens: 65_536,
-      cost: { input: 1.5, output: 7.5, cacheRead: 0.075, cacheWrite: 0 },
-      thinkingLevelMap: {
-        off: null,
-        minimal: null,
-        low: "low",
-        medium: "medium",
-        high: "high",
-        xhigh: "xhigh",
-        max: null,
-      },
-    };
-    const entries = [...provider.getModels(), hydrogen];
-    models.setProvider({ ...provider, getModels: () => entries });
+  // Pi's catalog maps some Gemini levels to efforts its Google request builder rejects
+  // ("Unsupported Google thinking level mapping"), so those levels clamp to a supported one.
+  for (const provider of models.getProviders?.() ?? []) {
+    const original = provider.getModels();
+    if (!original.some(hasUnsendableGoogleLevel)) continue;
+    const sendable = original.map((model) =>
+      hasUnsendableGoogleLevel(model)
+        ? {
+            ...model,
+            thinkingLevelMap: Object.fromEntries(
+              Object.entries(model.thinkingLevelMap ?? {}).map(([level, effort]) => [
+                level,
+                isSendableGoogleEffort(effort) ? effort : null,
+              ]),
+            ),
+          }
+        : model,
+    );
+    models.setProvider({ ...provider, getModels: () => sendable });
   }
   const provider = models.getProvider?.("amazon-bedrock");
   if (provider) {
@@ -75,4 +63,18 @@ function defaultsToDeveloperRole(model: Model<Api>): boolean {
   if (model.api !== "openai-completions" || !model.reasoning) return false;
   const compat = model.compat as { supportsDeveloperRole?: boolean } | undefined;
   return compat?.supportsDeveloperRole === undefined;
+}
+
+const GOOGLE_APIS = new Set(["google-generative-ai", "google-vertex"]);
+const GOOGLE_EFFORTS = new Set(["minimal", "low", "medium", "high"]);
+
+function isSendableGoogleEffort(effort: string | null | undefined): boolean {
+  return typeof effort !== "string" || GOOGLE_EFFORTS.has(effort.toLowerCase());
+}
+
+function hasUnsendableGoogleLevel(model: Model<Api>): boolean {
+  return (
+    GOOGLE_APIS.has(model.api) &&
+    Object.values(model.thinkingLevelMap ?? {}).some((effort) => !isSendableGoogleEffort(effort))
+  );
 }

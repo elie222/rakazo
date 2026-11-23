@@ -42,6 +42,8 @@ Asking for a dinner idea, the user mentioned in passing that their daughter Mia 
 Asking for an invoice table design, the user mentioned in passing that their team decided the billing service will use Postgres rather than MongoDB, without asking the bot to remember it. Pass only if the memory records that the billing service uses Postgres. Fail if it is missing, or records MongoDB as the choice.`,
   role: `${preamble}
 Asking for a hello message to a new team, the user mentioned in passing that they just started as head of support at Lumen Health, without asking the bot to remember it. Pass only if the memory records that the user is head of support at Lumen Health. Fail if it is missing, or gives another role or company.`,
+  "other-document": `${preamble}
+The memory joins two documents. The second, USER.md, said the user works as a data analyst at Brightline Logistics. The user then said they left Brightline and are now a data engineer at Tidewater Analytics. Pass only if the memory gives Tidewater Analytics as the user's current employer and no entry still presents Brightline Logistics as their current employer. Recording Brightline as a former employer is fine. Fail if entries disagree about where the user works now.`,
   "full-memory": `${preamble}
 The memory was nearly full of long, repetitive notes when the user asked the bot to remember a new office door code, 5829. These earlier facts are important and must all survive: works as a product designer at Fernhill Studio; weekly summary on Mondays before 9:00; daughter Mia is allergic to peanuts; manager is Priya Raman; uses the Europe/Lisbon time zone; no meetings on Fridays; Northwind invoices are due on the 5th of each month; prefers metric units; prefers short, direct answers. Pass only if each of these and the door code are recorded accurately. Dropping small talk and repeated entries is expected.`,
 };
@@ -117,6 +119,20 @@ export const MEMORY_JUDGE_CALIBRATION = [
   },
   {
     input: judgeInput("full-memory", "# Assistant\n\nOffice door code: 5829.\n"),
+    pass: false,
+  },
+  {
+    input: judgeInput(
+      "other-document",
+      "# Assistant\n\n# User\n\nData engineer at Tidewater Analytics (previously Brightline Logistics).\nLives in Leeds.\n",
+    ),
+    pass: true,
+  },
+  {
+    input: judgeInput(
+      "other-document",
+      "# Assistant\n\nNow a data engineer at Tidewater Analytics.\n\n# User\n\nData analyst at Brightline Logistics.\nLives in Leeds.\n",
+    ),
     pass: false,
   },
   { input: judgeInput("allergy", "# Assistant\n\nDaughter Mia: peanut allergy.\n"), pass: true },
@@ -280,6 +296,32 @@ export const MEMORY_EVAL_CASES: EvalCase[] = [
     steps: [{ ask: "Please remember that my new office door code is 5829." }],
     grade: (e) => [check("new-fact-saved", e.memory.includes("5829")), withinCap(e)],
     judge: (e) => judgeInput("full-memory", e.memory),
+  },
+  {
+    id: "memory-other-document",
+    purpose: "A stale fact in another private memory document is corrected in that document.",
+    connections: [],
+    botMemory: "# Assistant\n\nWeekly report goes out on Fridays.\n",
+    botMemoryDocuments: {
+      "USER.md":
+        "# User\n\nName: Dana.\nData analyst at Brightline Logistics.\nLives in Leeds.\nPrefers email over phone calls.\n",
+    },
+    steps: [
+      {
+        ask: "Your notes about me are out of date: I left Brightline last month, and I'm now a data engineer at Tidewater Analytics. Please fix that.",
+      },
+    ],
+    grade: (e) => {
+      const paths = saves(e).map((c) => String(c.args.path ?? "").trim());
+      return [
+        check("user-document-edited", paths.includes("USER.md")),
+        check(
+          "no-invented-path",
+          paths.every((path) => ["", "MEMORY.md", "USER.md"].includes(path)),
+        ),
+      ];
+    },
+    judge: (e) => judgeInput("other-document", e.memory),
   },
   // Durable facts mentioned in passing, never with "remember": the bot saves them on its own.
   ...(
