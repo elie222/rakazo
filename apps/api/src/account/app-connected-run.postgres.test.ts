@@ -24,6 +24,8 @@ describe.skipIf(!enabled)("connecting an app from a bot's card (PostgreSQL)", ()
   let actor: Actor;
   const suffix = randomUUID();
   const organizationId = `app-connected-org-${suffix}`;
+  const userId = `app-connected-user-${suffix}`;
+  const otherUserId = `app-connected-other-${suffix}`;
   const connectors = {
     defaultConnectorId: "catalog",
     managed: () => ({ catalog: async () => [{ ...app, connected: true }] }),
@@ -33,11 +35,11 @@ describe.skipIf(!enabled)("connecting an app from a bot's card (PostgreSQL)", ()
     runAsSystem("app connected fixture", async () => {
       db = createDb(process.env.DATABASE_URL!);
       prisma = db.prisma;
-      const userId = `app-connected-user-${suffix}`;
       const spaceId = `app-connected-space-${suffix}`;
-      await prisma.user.create({
-        data: { id: userId, name: "Connect", email: `${userId}@example.test`, emailVerified: true },
-      });
+      for (const id of [userId, otherUserId])
+        await prisma.user.create({
+          data: { id, name: "Connect", email: `${id}@example.test`, emailVerified: true },
+        });
       await prisma.organization.create({
         data: { id: organizationId, name: "Connect", slug: organizationId, createdAt: new Date() },
       });
@@ -51,14 +53,14 @@ describe.skipIf(!enabled)("connecting an app from a bot's card (PostgreSQL)", ()
     runAsSystem("app connected fixture", async () => {
       if (!prisma) return;
       await prisma.organization.deleteMany({ where: { id: organizationId } });
-      await prisma.user.deleteMany({ where: { id: actor?.userId } });
+      await prisma.user.deleteMany({ where: { id: { in: [userId, otherUserId] } } });
       await prisma.$disconnect();
       await db.pool.end();
     }),
   );
 
   /** A bot whose finished run asked for Slack, beside an onboarding card that no run posted. */
-  async function chat() {
+  async function chat(askedBy = userId) {
     return runAsSystem("app connected fixture", async () => {
       const bot = await prisma.bot.create({
         data: {
@@ -87,7 +89,7 @@ describe.skipIf(!enabled)("connecting an app from a bot's card (PostgreSQL)", ()
           botId: bot.id,
           threadId,
           taskId: task.id,
-          userId: actor.userId,
+          userId: askedBy,
           status: "completed",
           trigger: "user",
         },
@@ -150,6 +152,16 @@ describe.skipIf(!enabled)("connecting an app from a bot's card (PostgreSQL)", ()
     const jobs = { enqueue: vi.fn(async () => undefined) };
 
     await connect(jobs, botId, threadId, onboarding.id);
+
+    expect(await followUps(threadId, cardRunId)).toHaveLength(0);
+    expect(jobs.enqueue).not.toHaveBeenCalled();
+  });
+
+  it("starts nothing when someone else in the Space connects the app another person asked for", async () => {
+    const { botId, threadId, cardRunId, card } = await chat(otherUserId);
+    const jobs = { enqueue: vi.fn(async () => undefined) };
+
+    await connect(jobs, botId, threadId, card.id);
 
     expect(await followUps(threadId, cardRunId)).toHaveLength(0);
     expect(jobs.enqueue).not.toHaveBeenCalled();

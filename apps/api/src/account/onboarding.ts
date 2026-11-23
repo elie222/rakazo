@@ -388,7 +388,7 @@ export async function markAppConnected(
     const events = [];
     // Only the card connected from, when this bot's run posted it, has a run waiting on it;
     // onboarding's cards and other copies of the card do not. It flips once under the lock.
-    let waiting = false;
+    let cardRunId: string | null = null;
     for (const message of messages) {
       const next = changeMessageBlocks(message, (block) => {
         if (block.kind === "app_connect" && block.organizationConnectionId !== shared?.id)
@@ -401,7 +401,8 @@ export async function markAppConnected(
         );
       });
       if (!next) continue;
-      if (message.id === messageId && message.runId && message.botId === bot.id) waiting = true;
+      if (message.id === messageId && message.runId && message.botId === bot.id)
+        cardRunId = message.runId;
       await tx.message.update({ where: { id: message.id }, data: { blocks: next.stored } });
       events.push(
         await appendEventInTransaction(tx, {
@@ -411,7 +412,14 @@ export async function markAppConnected(
         }),
       );
     }
-    const runId = waiting
+    // In a shared chat, the bot carries on only for the person whose request asked for the app.
+    const asker = cardRunId
+      ? await tx.run.findFirst({
+          where: { id: cardRunId, threadId: thread.id, userId: actor.userId },
+          select: { id: true },
+        })
+      : null;
+    const runId = asker
       ? await queueConnectedRun(tx, actor, {
           botId: bot.id,
           threadId: thread.id,
