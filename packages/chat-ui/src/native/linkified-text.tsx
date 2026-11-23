@@ -66,7 +66,7 @@ export const LinkifiedText = memo(function LinkifiedText({
   fromOtherPerson = false,
 }: LinkifiedTextProps) {
   const openLink = useNativeLinkConfirm();
-  const vault = useVaultVariables(children);
+  const vault = useVaultVariables(children, fromOtherPerson);
   const labelStyle: TextStyle = {
     color,
     fontWeight: "500",

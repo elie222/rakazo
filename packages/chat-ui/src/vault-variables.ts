@@ -36,11 +36,17 @@ const VARIABLE = /(^|[^\p{L}\p{N}_$\\])\$([A-Za-z_][A-Za-z0-9_]*)(?![\p{L}\p{N}_
 const SAVED_PLACEHOLDER_OPEN = "[saved as ";
 const SAVED_PLACEHOLDER = /\[saved as \$([A-Za-z_][A-Za-z0-9_]*)\]/g;
 
-/** The chat's Vault variables once they are read, asked for when this text could name one. */
-export function useVaultVariables(text: string): VaultVariables | null {
+/**
+ * The chat's Vault variables once they are read, asked for when this text could name one. Another
+ * person's saved placeholders never open the viewer's Vault, so they ask for no read again.
+ */
+export function useVaultVariables(text: string, fromOtherPerson = false): VaultVariables | null {
   const vault = useContext(VaultVariablesContext);
   const mayName = vault !== null && MAY_NAME_VARIABLE.test(text);
-  const saved = mayName ? [...text.matchAll(SAVED_PLACEHOLDER)].map((match) => match[1]!) : [];
+  const saved =
+    mayName && !fromOtherPerson
+      ? [...text.matchAll(SAVED_PLACEHOLDER)].map((match) => match[1]!)
+      : [];
   const savedList = saved.join(" ");
   useEffect(() => {
     if (mayName) vault?.want(savedList ? savedList.split(" ") : []);

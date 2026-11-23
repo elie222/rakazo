@@ -752,7 +752,7 @@ export function LinkifiedText({
   fromOtherPerson?: boolean;
 }) {
   const { request, dialog } = useExternalLinkConfirm();
-  const vault = useVaultVariables(children);
+  const vault = useVaultVariables(children, fromOtherPerson);
   return (
     <ConfirmLinkContext.Provider value={request}>
       {plainTextLinkParts(children).map((part, index) =>

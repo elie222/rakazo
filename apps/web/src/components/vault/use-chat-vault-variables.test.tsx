@@ -48,20 +48,21 @@ let root: Root;
 let queryClient: QueryClient;
 const openVault = vi.fn<(scope: SettingsScope, item: string) => void>();
 
-function Chat({ children }: { children: string }) {
+function Chat({ children, other }: { children: string; other?: string }) {
   const variables = useChatVaultVariables(openVault);
   return (
     <VaultVariablesContext.Provider value={variables}>
+      {other ? <LinkifiedText fromOtherPerson>{other}</LinkifiedText> : null}
       <LinkifiedText>{children}</LinkifiedText>
     </VaultVariablesContext.Provider>
   );
 }
 
-async function render(text: string) {
+async function render(text: string, other?: string) {
   await act(async () => {
     root.render(
       <QueryClientProvider client={queryClient}>
-        <Chat>{text}</Chat>
+        <Chat other={other}>{text}</Chat>
       </QueryClientProvider>,
     );
   });
@@ -135,6 +136,22 @@ describe("Vault variables in chat", () => {
     expect(vault.list).toHaveBeenCalledTimes(2);
     await tap("$PASTED_KEY");
     expect(openVault).toHaveBeenCalledWith("account", "pasted-key");
+  });
+
+  it("keeps that read for the viewer's own placeholder, not another person's", async () => {
+    vault.list.mockResolvedValue([]);
+    await render("Deploy", "Use [saved as $DEPLOY_KEY]");
+    await vi.waitFor(() => expect(vault.list).toHaveBeenCalledTimes(1));
+    await act(flush);
+    expect(vault.list).toHaveBeenCalledTimes(1);
+    // The viewer then saves their own key of that name, and their message names it.
+    vault.list.mockResolvedValue([item("deploy-key", "command")]);
+    await render("Mine is [saved as $DEPLOY_KEY]", "Use [saved as $DEPLOY_KEY]");
+    await vi.waitFor(() =>
+      expect(
+        [...container.querySelectorAll("button")].map((button) => button.dataset.access),
+      ).toEqual(["none", "own"]),
+    );
   });
 
   it("reads no Vault for a chat that names no variable", async () => {
