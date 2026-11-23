@@ -60,11 +60,19 @@ vi.mock("../../components/settings/settings-group", () => ({
     title,
     value,
     onPress,
+    accessibilityState,
   }: {
     title: string;
     value?: string;
     onPress?: () => void;
-  }) => createElement("button", { type: "button", onClick: onPress }, title, value),
+    accessibilityState?: { disabled?: boolean };
+  }) =>
+    createElement(
+      "button",
+      { type: "button", onClick: onPress, "aria-disabled": accessibilityState?.disabled },
+      title,
+      value,
+    ),
   SettingsSwitch: () => null,
 }));
 vi.mock("../../components/ui/menu-picker", () => ({
@@ -72,18 +80,22 @@ vi.mock("../../components/ui/menu-picker", () => ({
     choices,
     disabled,
     onChange,
+    children,
   }: {
     choices: Array<{ key: string; label: string }>;
     disabled?: boolean;
     onChange: (key: string) => void;
-  }) =>
-    choices.map((choice) =>
+    children?: ReactNode;
+  }) => [
+    children,
+    ...choices.map((choice) =>
       createElement(
         "button",
         { key: choice.key, type: "button", disabled, onClick: () => onChange(choice.key) },
         choice.label,
       ),
     ),
+  ],
 }));
 vi.mock("../../components/thread/routine-event-row", () => ({ WebhookKeyButton: () => null }));
 vi.mock("../../components/ui/growing-text-input", () => ({ GrowingTextInput: () => null }));
@@ -269,7 +281,12 @@ it("holds the triggers until a new webhook's key request settles", async () => {
   await press("Webhook");
   expect(button("Remove Webhook")?.disabled).toBe(true);
   expect(button("On a schedule")?.disabled).toBe(true);
+  // The rows say so too, for screen readers.
+  const held = () =>
+    [...container.querySelectorAll('[aria-disabled="true"]')].map((row) => row.textContent);
+  expect(held()).toEqual(["Webhook", "Add trigger"]);
   await act(async () => key.resolve(undefined));
+  expect(held()).toEqual([]);
   expect(button("Remove Webhook")?.disabled).toBe(false);
   expect(button("On a schedule")?.disabled).toBe(false);
 });

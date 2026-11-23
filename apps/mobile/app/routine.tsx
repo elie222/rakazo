@@ -599,35 +599,40 @@ function RoutineEditor({
               ))}
           {webTriggers.length ? (
             <SettingsGroup>
-              {webTriggers.map((trigger) => (
-                <MenuPickerMenu
-                  key={trigger.key}
-                  label={trigger.label}
-                  value=""
-                  disabled={trigger.key === "webhookEnabled" && webhookKey.pending}
-                  choices={[
-                    {
-                      key: "remove",
-                      label: t`Remove ${ph({ name: trigger.label })}`,
-                      destructive: true,
-                    },
-                  ]}
-                  onChange={() =>
-                    update(
-                      trigger.key === "webhookEnabled" || trigger.key === "githubEnabled"
-                        ? { [trigger.key]: false }
-                        : { [trigger.key]: null },
-                    )
-                  }
-                >
-                  <SettingsRow
-                    title={trigger.label}
-                    accessible
-                    accessibilityRole="button"
-                    accessibilityLabel={trigger.label}
-                  />
-                </MenuPickerMenu>
-              ))}
+              {webTriggers.map((trigger) => {
+                const held = trigger.key === "webhookEnabled" && webhookKey.pending;
+                return (
+                  <MenuPickerMenu
+                    key={trigger.key}
+                    label={trigger.label}
+                    value=""
+                    disabled={held}
+                    choices={[
+                      {
+                        key: "remove",
+                        label: t`Remove ${ph({ name: trigger.label })}`,
+                        destructive: true,
+                      },
+                    ]}
+                    onChange={() =>
+                      update(
+                        trigger.key === "webhookEnabled" || trigger.key === "githubEnabled"
+                          ? { [trigger.key]: false }
+                          : { [trigger.key]: null },
+                      )
+                    }
+                  >
+                    <SettingsRow
+                      title={trigger.label}
+                      accessible
+                      accessibilityRole="button"
+                      accessibilityLabel={trigger.label}
+                      accessibilityState={{ disabled: held }}
+                      dimmed={held}
+                    />
+                  </MenuPickerMenu>
+                );
+              })}
             </SettingsGroup>
           ) : null}
           {repeats ? (
@@ -654,6 +659,8 @@ function RoutineEditor({
                   accessible
                   accessibilityRole="button"
                   accessibilityLabel={t`Add trigger`}
+                  accessibilityState={{ disabled: webhookKey.pending }}
+                  dimmed={webhookKey.pending}
                 />
               </MenuPickerMenu>
             </SettingsGroup>
