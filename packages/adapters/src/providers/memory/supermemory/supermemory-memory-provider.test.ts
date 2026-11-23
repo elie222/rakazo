@@ -283,20 +283,6 @@ describe("Supermemory forget", () => {
     expect(server.forgets).toHaveLength(2);
   });
 
-  it("keeps searching until no copy of the fact remains", async () => {
-    const copies = Object.fromEntries(
-      Array.from({ length: 12 }, (_, index) => [`mem_${index}`, "Prefers tea"]),
-    );
-    const server = fakeSupermemory({ [OWN]: copies });
-    const result = await provider().forget(
-      { id: "mem_0", scope: "isolated", botId: "bot-1" },
-      context,
-    );
-    expect(result.ok).toBe(true);
-    expect(server.forgets).toHaveLength(12);
-    expect(server.forgets.at(-1)).toBe(`${OWN}/mem_0`);
-  });
-
   it("does not forget a copy again while search still lists it", async () => {
     const server = fakeSupermemory({ [OWN]: { mem_a: "Prefers tea", mem_b: "Prefers tea" } });
     const search = vi.mocked(fetch).getMockImplementation()!;
@@ -330,7 +316,7 @@ describe("Supermemory forget", () => {
       ),
     );
     const result = await provider().forget(
-      { id: "mem_h", entity: "rakazo:bot-1:history:2", scope: "isolated", botId: "bot-1" },
+      { id: "mem_h", entity: OWN, scope: "isolated", botId: "bot-1" },
       context,
     );
     expect(result).toMatchObject({ ok: false });
@@ -347,10 +333,10 @@ describe("Supermemory forget", () => {
     expect(server.forgets).toEqual([]);
   });
 
-  it("refuses another bot's namespace and a malformed id before calling Supermemory", async () => {
+  it("refuses another bot's namespace, chat history and a malformed id before calling Supermemory", async () => {
     const server = fakeSupermemory({});
     const request = { scope: "shared" as const, botId: "bot-1" };
-    for (const entity of ["rakazo:bot-2", "rakazo:bot-2:history:1", "rakazo:bot-1:history:x"]) {
+    for (const entity of ["rakazo:bot-2", "rakazo:bot-2:history:1", "rakazo:bot-1:history:2"]) {
       expect((await provider().forget({ ...request, id: "mem_a", entity }, context)).ok).toBe(
         false,
       );
@@ -358,17 +344,6 @@ describe("Supermemory forget", () => {
     expect((await provider().forget({ ...request, id: "../x" }, context)).ok).toBe(false);
     expect(fetch).not.toHaveBeenCalled();
     expect(server.forgets).toEqual([]);
-  });
-
-  it("forgets a memory from the bot's own compacted history", async () => {
-    const history = "rakazo:bot-1:history:2";
-    const server = fakeSupermemory({ [history]: { mem_h: "Summary" } });
-    const result = await provider().forget(
-      { id: "mem_h", entity: history, scope: "isolated", botId: "bot-1" },
-      context,
-    );
-    expect(result.ok).toBe(true);
-    expect(server.forgets).toEqual([`${history}/mem_h`]);
   });
 });
 

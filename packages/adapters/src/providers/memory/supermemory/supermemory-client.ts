@@ -46,7 +46,9 @@ function namespacePath(containerTag: string, suffix = ""): string {
 
 function requestUrl(baseUrl: string, path: string): string {
   const url = parseServiceBaseUrl(baseUrl);
-  url.pathname = `${url.pathname.replace(/\/+$/, "")}${path}`;
+  let base = url.pathname;
+  while (base.endsWith("/")) base = base.slice(0, -1);
+  url.pathname = `${base}${path}`;
   return url.href;
 }
 
@@ -197,7 +199,13 @@ export async function searchSupermemoryContainers(
   const byMemory = new Map<string, SupermemoryResult>();
   for (const result of successful.flatMap((response) => response.results)) {
     const existing = byMemory.get(result.memory);
-    if (!existing || result.similarity > existing.similarity) byMemory.set(result.memory, result);
+    // A copy with an id wins, so the fact keeps a citation the bot can forget by.
+    const better =
+      !existing ||
+      (Boolean(result.id) === Boolean(existing.id)
+        ? result.similarity > existing.similarity
+        : Boolean(result.id));
+    if (better) byMemory.set(result.memory, result);
   }
   return {
     ok: true,

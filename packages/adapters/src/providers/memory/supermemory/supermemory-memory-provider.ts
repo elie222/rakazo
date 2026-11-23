@@ -142,15 +142,6 @@ function historyContainerTag(botId: string, generation: number): string {
   return `rakazo:${botId}:history:${generation}`;
 }
 
-/** Searches for copies of a forgotten fact in one namespace, each finding up to five. */
-const MAX_COPY_SEARCHES = 20;
-
-/** The bot's own compacted-history namespaces. */
-function isOwnHistoryTag(containerTag: string, botId: string): boolean {
-  const prefix = `rakazo:${botId}:history:`;
-  return containerTag.startsWith(prefix) && /^\d+$/.test(containerTag.slice(prefix.length));
-}
-
 function recallContainerTags(request: SemanticMemoryRecallRequest, spaceId: string): string[] {
   const tags = durableContainerTags(request.scope, request.botId, spaceId);
   return request.historyGeneration === undefined
@@ -206,6 +197,8 @@ export class SupermemoryMemoryProvider implements SemanticMemoryProvider {
     if (!request.query.trim()) return { ok: true, value: [] };
     const blocked = await this.localBaseUrlBlock();
     if (blocked) return { ok: false, error: blocked };
+    // Only durable facts are cited: chat summaries rotate with the chat and are not forgotten one by one.
+    const durable = durableContainerTags(request.scope, request.botId, context.spaceId);
     const result = await searchSupermemoryContainers(
       request.query,
       recallContainerTags(request, context.spaceId),
@@ -220,7 +213,9 @@ export class SupermemoryMemoryProvider implements SemanticMemoryProvider {
             memory: item.memory,
             score: item.similarity,
             ...(item.updatedAt ? { updatedAt: item.updatedAt } : {}),
-            ...(item.id ? { id: item.id, entity: item.containerTag } : {}),
+            ...(item.id && item.containerTag && durable.includes(item.containerTag)
+              ? { id: item.id, entity: item.containerTag }
+              : {}),
           })),
         }
       : result;
@@ -268,11 +263,7 @@ export class SupermemoryMemoryProvider implements SemanticMemoryProvider {
       return { ok: false, error: "Invalid Supermemory memory id." };
     }
     const durable = durableContainerTags(request.scope, request.botId, context.spaceId);
-    if (
-      request.entity &&
-      !durable.includes(request.entity) &&
-      !isOwnHistoryTag(request.entity, request.botId)
-    ) {
+    if (request.entity && !durable.includes(request.entity)) {
       return { ok: false, error: "That memory belongs to another bot or Space." };
     }
     const blocked = await this.localBaseUrlBlock();
@@ -304,26 +295,17 @@ export class SupermemoryMemoryProvider implements SemanticMemoryProvider {
     // A shared save stores the fact in two namespaces, and recall cites one. Forget the copies
     // this bot could recall again first, then the cited memory, so a failed forget can be
     // retried with the same id.
-    if (durable.includes(home)) {
-      const text = found.memory.trim();
-      // Forgotten copies leave the search, so search again until none remain.
-      const forgottenIds = new Set([id]);
-      for (const tag of durable) {
-        for (let round = 0; ; round++) {
-          const copies = await searchSupermemory(text, tag, connection, undefined, context.signal);
-          if (!copies.ok) return copies;
-          const ids = copies.results
-            .filter((copy) => copy.id && !forgottenIds.has(copy.id) && copy.memory.trim() === text)
-            .map((copy) => copy.id!);
-          if (!ids.length) break;
-          if (round === MAX_COPY_SEARCHES) {
-            return { ok: false, error: "Supermemory forget found too many copies. Retry this id." };
-          }
-          const forgotten = await forgetSupermemoryMemories(ids, tag, connection, context.signal);
-          if (!forgotten.ok) return forgotten;
-          for (const copyId of ids) forgottenIds.add(copyId);
-        }
-      }
+    const text = found.memory.trim();
+    // One search per namespace keeps the forget bounded.
+    for (const tag of durable) {
+      const copies = await searchSupermemory(text, tag, connection, undefined, context.signal);
+      if (!copies.ok) return copies;
+      const ids = copies.results
+        .filter((copy) => copy.id && copy.id !== id && copy.memory.trim() === text)
+        .map((copy) => copy.id!);
+      if (!ids.length) continue;
+      const forgotten = await forgetSupermemoryMemories(ids, tag, connection, context.signal);
+      if (!forgotten.ok) return forgotten;
     }
     const forgotten = await forgetSupermemoryMemories([id], home, connection, context.signal);
     return forgotten.ok ? done : forgotten;
