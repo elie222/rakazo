@@ -3,6 +3,7 @@ import { routineJobKey, routineWakeupJob } from "@rakazo/adapter-kit";
 import {
   botEventRoutines,
   firstWatchCheck,
+  hasRoutineEvents,
   listAgentSkillRecords,
   lockOwnerComputerApproval,
   ownerComputerRefusal,
@@ -166,12 +167,7 @@ export function routinesRoutes(ctx: RouterContext) {
           {
             ...data,
             watch: input.watch,
-            events: Boolean(
-              input.webhookEnabled ||
-                input.githubEnabled ||
-                input.messageProvider ||
-                input.emailSenders,
-            ),
+            events: hasRoutineEvents(input),
           },
           { end: true, nextRun: true },
         );
@@ -345,7 +341,12 @@ export function routinesRoutes(ctx: RouterContext) {
             crons,
             watch,
             nextRunAt,
-            events: Boolean(webhookEnabled || githubEnabled || messageProvider || emailSenders),
+            events: hasRoutineEvents({
+              webhookEnabled,
+              githubEnabled,
+              messageProvider,
+              emailSenders,
+            }),
           },
           {
             end: input.endsAt !== undefined && endChanged,

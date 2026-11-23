@@ -282,6 +282,19 @@ function nowIn(timezone: string): string {
   return `It is now ${localDateTime(now, timezone) ?? now.toISOString()} in ${timezone}.`;
 }
 
+function withNow(error: string, timezone: string): string {
+  return `${error} ${nowIn(timezone)}`;
+}
+
+function toolRoutineEnd(
+  value: string | undefined,
+  timezone: string,
+  timing: Parameters<typeof newRoutineEnd>[2],
+): { endsAt: Date | null } | { error: string } {
+  const end = newRoutineEnd(value, timezone, timing);
+  return "error" in end ? { error: withNow(end.error, timezone) } : end;
+}
+
 /** The stored timing as the bot should report it: in the routine's timezone, with the next run and end. */
 export function describeRoutineTiming(row: {
   crons: string[];
@@ -662,13 +675,13 @@ export async function createScheduleFromTool(
     const zone = input.timezone ?? (await userTimeZone(deps.prisma, input.userId));
     const timing = eventsOnly ? null : resolveScheduleTiming(input.schedule, zone);
     if (timing && !timing.ok) return { error: timing.error };
-    const end = newRoutineEnd(input.endAt, zone, {
+    const end = toolRoutineEnd(input.endAt, zone, {
       crons: timing?.ok ? [timing.cron] : [],
       watch: null,
       nextRunAt: timing?.ok ? timing.nextRunAt : null,
       events: true,
     });
-    if ("error" in end) return { error: `${end.error} ${nowIn(zone)}` };
+    if ("error" in end) return end;
   }
   const keyError = await ensureWebhookKey(
     deps,
@@ -684,13 +697,13 @@ export async function createScheduleFromTool(
       ? { ok: true, cron: "", nextRunAt: new Date(0), oneShot: false }
       : resolveScheduleTiming(input.schedule, timezone);
     if (!resolved.ok) return { error: resolved.error } as const;
-    const end = newRoutineEnd(input.endAt, timezone, {
+    const end = toolRoutineEnd(input.endAt, timezone, {
       crons: eventsOnly ? [] : [resolved.cron],
       watch: null,
       nextRunAt: eventsOnly ? null : resolved.nextRunAt,
       events: hasRoutineEvents(events),
     });
-    if ("error" in end) return { error: `${end.error} ${nowIn(timezone)}` } as const;
+    if ("error" in end) return { error: end.error } as const;
     wakeAt = eventsOnly ? undefined : resolved.nextRunAt;
     return client.routine.create({
       data: {
@@ -813,11 +826,11 @@ export async function scheduleCreateError(
   const endError = async (timing: { crons: string[]; watch: unknown; nextRunAt: Date | null }) => {
     if (input.endAt === undefined) return undefined;
     const zone = await timezone();
-    const end = newRoutineEnd(input.endAt, zone, {
+    const end = toolRoutineEnd(input.endAt, zone, {
       ...timing,
       events: hasRoutineEvents(events.events),
     });
-    return "error" in end ? `${end.error} ${nowIn(zone)}` : undefined;
+    return "error" in end ? end.error : undefined;
   };
   if (input.schedule.watch !== undefined) {
     const parsed = scheduleWatch(input.schedule);
@@ -898,26 +911,26 @@ async function createWatchFromTool(
   const nextRunAt = firstWatchCheck();
   if ((input.events.webhookEnabled || input.events.githubEnabled) && input.endAt) {
     const zone = input.timezone ?? (await userTimeZone(deps.prisma, input.userId));
-    const end = newRoutineEnd(input.endAt, zone, {
+    const end = toolRoutineEnd(input.endAt, zone, {
       crons: [],
       watch: parsed.data,
       nextRunAt,
       events: true,
     });
-    if ("error" in end) return { error: `${end.error} ${nowIn(zone)}` };
+    if ("error" in end) return end;
   }
   const keyError = await ensureWebhookKey(deps, input, input.events);
   if (keyError) return { error: keyError };
   // As with a timed routine, a defaulted zone is read under a share lock in the same
   // transaction as the insert, so a zone change cannot cross the creation.
   const insertWatch = (client: Pick<Prisma.TransactionClient, "routine">, timezone: string) => {
-    const end = newRoutineEnd(input.endAt, timezone, {
+    const end = toolRoutineEnd(input.endAt, timezone, {
       crons: [],
       watch: parsed.data,
       nextRunAt,
       events: hasRoutineEvents(input.events),
     });
-    if ("error" in end) return { error: `${end.error} ${nowIn(timezone)}` } as const;
+    if ("error" in end) return { error: end.error } as const;
     return client.routine.create({
       data: {
         spaceId: input.spaceId,
@@ -1262,7 +1275,7 @@ export async function updateScheduleFromTool(
       nextRun: endChanged || nextRunAt?.getTime() !== existing.nextRunAt?.getTime(),
     },
   );
-  if (endError) return { error: `${endError} ${nowIn(timezone)}` };
+  if (endError) return { error: withNow(endError, timezone) };
   const eventsChanged =
     JSON.stringify(routineEventsView(events)) !== JSON.stringify(routineEventsView(existing));
   // Events the bot sends were checked against the bot's creator, so their key is made even when
