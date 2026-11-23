@@ -45,7 +45,8 @@ export function showSetupWindow(error: string | null = null) {
 
   let win: BrowserWindow;
   if (desktop.setupWindow !== null && !desktop.setupWindow.isDestroyed()) {
-    if (error !== null) desktop.setupWindow.reload();
+    // A save the page is awaiting answers with the error itself; reloading would drop what was typed.
+    if (error !== null && !setupSaveInProgress) desktop.setupWindow.reload();
     win = desktop.setupWindow;
   } else {
     win = createSetupWindow();
@@ -150,6 +151,7 @@ export function registerSetupIpc({
     if (setupSaveInProgress || appOpener.busy())
       return { ok: false, error: t("A connection attempt is already running.") };
     setupSaveInProgress = true;
+    desktop.setupError = null;
     const previousSetup = desktop.currentSetup;
     const previousUrl = desktop.currentTargetUrl;
     try {
@@ -166,6 +168,7 @@ export function registerSetupIpc({
       // Only open the exact origin selected and authenticated by the managed stack.
       let openSetup = setup;
       if (setup.mode === "new") {
+        await settleLocalStack();
         const managedUrl = managedLocalOpenUrl(setup.serverUrl, desktop.localStack.webUrl());
         if (managedUrl === null || !(await desktop.localStack.matchesDesiredStack())) {
           return {
@@ -186,9 +189,13 @@ export function registerSetupIpc({
         desktop.currentSetup = previousSetup;
         configureHeaderSession(desktop.mainWindow?.webContents.session);
         syncHostComputerAccess();
+        // The opener reports why through showSetupWindow; hand it to the page as this answer.
+        const detail = desktop.setupError;
+        desktop.setupError = null;
         return {
           ok: false,
-          error: t("Could not open that server. The previous instance was left unchanged."),
+          error:
+            detail ?? t("Could not open that server. The previous instance was left unchanged."),
         };
       }
 

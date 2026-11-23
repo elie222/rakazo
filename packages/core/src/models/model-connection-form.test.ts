@@ -6,6 +6,7 @@ import {
   compatibleConnectionReady,
   connectionFormFields,
   connectionFormModelId,
+  dataRetentionDirty,
   modelConnectRequest,
 } from "./model-connection-form.js";
 
@@ -293,6 +294,73 @@ describe("modelConnectRequest", () => {
         credentialId: "credential-fixture",
       },
     });
+  });
+});
+
+describe("zero data retention form", () => {
+  const gateway = { provider: "example-gateway", providerName: "Gateway", id: "jev" };
+  const withControl = { ...gateway, dataRetentionControl: true as const };
+
+  it("shows the toggle only for a provider that offers it, from the saved connection", () => {
+    const catalogWithControl = [
+      { provider: "example-gateway", id: "jev", dataRetentionControl: true as const },
+    ];
+    const fields = (credentialFixture?: ModelCredential) =>
+      connectionFormFields({
+        catalog: catalogWithControl,
+        provider: "example-gateway",
+        modelId: "jev",
+        credential: credentialFixture,
+      });
+    expect(fields().zeroDataRetention).toBe(false);
+    expect(
+      fields(credential({ provider: "example-gateway", zeroDataRetention: true }))
+        .zeroDataRetention,
+    ).toBe(true);
+    expect(
+      connectionFormFields({ catalog, provider: "example-gateway", modelId: "jev" }),
+    ).not.toHaveProperty("zeroDataRetention");
+  });
+
+  it("always sends an explicit value so turning it off clears it", () => {
+    const saved = credential({
+      provider: "example-gateway",
+      modelId: "jev",
+      zeroDataRetention: true,
+    });
+    const off = modelConnectRequest({
+      form: draft({ zeroDataRetention: false }),
+      selected: withControl,
+      credential: saved,
+      credentialId: saved.id,
+    });
+    expect(off.status === "ready" && off.input).toMatchObject({ zeroDataRetention: false });
+    const omitted = modelConnectRequest({
+      form: draft({ apiKey: "sk-long-enough" }),
+      selected: withControl,
+      credentialId: null,
+    });
+    expect(omitted.status === "ready" && omitted.input).toMatchObject({ zeroDataRetention: false });
+  });
+
+  it("sends nothing for a provider without the control, even if the form holds a value", () => {
+    const request = modelConnectRequest({
+      form: draft({ apiKey: "sk-long-enough", zeroDataRetention: true }),
+      selected: gateway,
+      credentialId: null,
+    });
+    expect(request.status === "ready" && request.input).not.toHaveProperty("zeroDataRetention");
+  });
+
+  it("is dirty only when the toggle differs from the saved connection", () => {
+    const saved = credential({ provider: "example-gateway", zeroDataRetention: true });
+    expect(dataRetentionDirty(withControl, false, saved)).toBe(true);
+    expect(dataRetentionDirty(withControl, true, saved)).toBe(false);
+    expect(dataRetentionDirty(withControl, true, credential({ provider: "example-gateway" }))).toBe(
+      true,
+    );
+    expect(dataRetentionDirty(withControl, false, undefined)).toBe(false);
+    expect(dataRetentionDirty({ dataRetentionControl: undefined }, true, undefined)).toBe(false);
   });
 });
 

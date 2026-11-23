@@ -1,3 +1,4 @@
+import { getSupportedThinkingLevels } from "@earendil-works/pi-ai";
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
 import { describe, expect, it } from "vitest";
 import { applyPiModelCompatibility } from "./pi-model-compat.js";
@@ -48,4 +49,41 @@ describe("provider compatibility boundaries", () => {
     expect(openai).toBeDefined();
     expect(applyPiModelCompatibility(original).getProvider("openai")).toBe(openai);
   });
+});
+
+// Observed: "Unsupported Google thinking level mapping for google/gemini-4-neon: xhigh -> xhigh".
+it.each([
+  ["google", "gemini-4-neon"],
+  ["google-vertex", "gemini-4-hydrogen"],
+  ["opencode", "gemini-4-neon"],
+])("sends Extra high to %s/%s as Google's highest level", async (provider, id) => {
+  const models = applyPiModelCompatibility(builtinModels());
+  const model = models.getModel(provider, id);
+  expect(model).toBeDefined();
+  if (!model) return;
+  expect(getSupportedThinkingLevels(model)).not.toContain("xhigh");
+  let thinkingLevel: unknown;
+  const result = await models
+    .streamSimple(
+      model,
+      { messages: [{ role: "user", content: "Fixture request.", timestamp: 1 }] },
+      {
+        apiKey: "fixture-key",
+        reasoning: "xhigh",
+        maxRetries: 0,
+        fetch: async (_input, init) => {
+          const body = JSON.parse(String(init?.body)) as {
+            generationConfig?: { thinkingConfig?: { thinkingLevel?: string } };
+          };
+          thinkingLevel = body.generationConfig?.thinkingConfig?.thinkingLevel;
+          return new Response(
+            'data: {"candidates":[{"content":{"role":"model","parts":[{"text":"Ready"}]},"finishReason":"STOP"}]}\n\n',
+            { headers: { "content-type": "text/event-stream" } },
+          );
+        },
+      },
+    )
+    .result();
+  expect(result.errorMessage).toBeUndefined();
+  expect(thinkingLevel).toBe("HIGH");
 });

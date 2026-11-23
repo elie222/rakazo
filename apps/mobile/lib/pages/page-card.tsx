@@ -3,6 +3,7 @@ import { useLingui } from "@lingui/react/macro";
 import { PageIcon } from "@rakazo/chat-ui/native";
 import type { MessageBlock, PageDetail } from "@rakazo/contracts";
 import { pageCardSuperseded } from "@rakazo/core";
+import { pageSharingLabel } from "@rakazo/i18n/page-review";
 import { useRouter } from "expo-router";
 import { createContext, useContext, useEffect, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
@@ -107,6 +108,7 @@ export function PageCard({ block, messageId }: { block: PageBlock; messageId: st
   const newest = useContext(NewestPageCards);
   const state = pageCardState(block, detail);
   const updatedBelow = state.status === "ready" && pageCardSuperseded(newest, messageId, block);
+  const sharing = state.status === "ready" ? pageSharingLabel(state.detail.visibility) : undefined;
   const deleted = state.status === "deleted";
   return (
     <Pressable
@@ -139,7 +141,7 @@ export function PageCard({ block, messageId }: { block: PageBlock; messageId: st
             {state.title}
           </Text>
           <Text numberOfLines={1} style={[styles.kind, { color: tokens.mutedForeground }]}>
-            {deleted ? t`Deleted` : updatedBelow ? t`Updated below` : t`Page`}
+            {deleted ? t`Deleted` : updatedBelow ? t`Updated below` : (sharing ?? t`Page`)}
           </Text>
         </View>
       </View>

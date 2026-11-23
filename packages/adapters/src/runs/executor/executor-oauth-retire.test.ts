@@ -121,7 +121,12 @@ function oauthPrisma() {
   } = {
     $transaction: vi.fn(async (callback: (txArg: typeof tx) => Promise<unknown>) => callback(tx)),
     userModelCredential: {
-      findMany: vi.fn(async () => [...state.credentials]),
+      findMany: vi.fn(async () =>
+        state.credentials.map((credential) => ({
+          ...credential,
+          userPreferences: state.preferences.filter((row) => row.credentialId === credential.id),
+        })),
+      ),
       findFirst: vi.fn(async () => state.credentials[0] ?? null),
     },
     userModelPreference: {

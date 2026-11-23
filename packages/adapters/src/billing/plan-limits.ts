@@ -4,6 +4,10 @@ import type { PlanLimits, PlanLimitWindow } from "@rakazo/contracts";
 import { readBoundedJsonResponse } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import { bestEffort } from "@rakazo/logging";
+import {
+  modelProviderAllowed,
+  modelProviderAllowlist,
+} from "../models/model-provider-allowlist.js";
 import { parseModelSecret } from "../models/model-secret.js";
 import {
   ANTHROPIC_OAUTH_PROVIDER,
@@ -210,7 +214,14 @@ export async function readMemberPlanLimits(
   onExpiredToken: (secretId: string, provider: string) => void,
 ): Promise<PlanLimits[]> {
   const rows = await prisma.userModelCredential.findMany({
-    where: { userId, provider: { in: PLAN_LIMIT_PROVIDERS } },
+    where: {
+      userId,
+      provider: {
+        in: PLAN_LIMIT_PROVIDERS.filter((provider) =>
+          modelProviderAllowed(modelProviderAllowlist(), provider),
+        ),
+      },
+    },
     select: { id: true, provider: true, label: true, secretId: true },
     orderBy: { createdAt: "asc" },
   });

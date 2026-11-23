@@ -53,6 +53,8 @@ export type MessagingChannelMembership = z.infer<typeof MessagingChannelMembersh
 
 export const MessagingAgentConnectionSchema = z.object({
   id: Id,
+  /** The caller's own bot on this connection. */
+  botId: Id,
   peerBotName: z.string(),
   peerOwnerLabel: z.string(),
   status: z.enum(["pending", "approved", "declined", "revoked"]),

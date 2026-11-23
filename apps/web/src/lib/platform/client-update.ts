@@ -96,6 +96,7 @@ export function createClientUpdates(deps: ClientUpdateDeps) {
     return Boolean(element.isContentEditable && element.textContent);
   };
   const safe = (moment: Moment): boolean => {
+    if (moment === "hidden" && deps.document.visibilityState !== "hidden") return false;
     const held = moment === "required" ? deps.holdsWorkInFlight() : deps.holdsUnsavedWork();
     if (editing() || held) return false;
     if (hasOpenDialog(deps.document)) {

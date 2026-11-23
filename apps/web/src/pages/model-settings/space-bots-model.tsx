@@ -1,3 +1,4 @@
+import { plural } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
 import type { Bot } from "@rakazo/contracts";
 import { botsWithOwnModel } from "@rakazo/core";
@@ -79,8 +80,9 @@ export function SpaceBotsModelButton({ mainModelKey }: { mainModelKey: string })
       const stay = next ? botsWithOwnModel(next) : [];
       if (!changed || !stay.length) return;
       const names = stay.map((bot) => bot.name).join(", ");
+      const count = stay.length;
       toast(
-        stay.length === 1 ? t`${names} keeps its own model` : t`${names} keep their own model`,
+        t`${plural(count, { one: `${names} keeps its own model`, other: `${names} keep their own model` })}`,
         {
           id: "space-bots-model",
           action: { label: t`Use main model`, onClick: () => switchLatest.current(stay) },

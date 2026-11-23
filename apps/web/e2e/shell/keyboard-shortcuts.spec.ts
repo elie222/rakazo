@@ -17,6 +17,25 @@ test("keyboard shortcuts list and focus the composer", async ({ page }, testInfo
   await expect(dialog.getByText("New group chat")).toHaveCount(0);
   await captureScreenshot(page, testInfo, "keyboard-shortcuts");
 
+  // Each chord keeps its key order when the page is right to left.
+  await page.locator("html").evaluate((element) => element.setAttribute("dir", "rtl"));
+  const keys = dialog
+    .locator("dl > div")
+    .filter({ hasText: "Chat details" })
+    .locator('[data-slot="kbd"]');
+  const order = await keys.evaluateAll((elements) => {
+    const left = (element: Element) => element.getBoundingClientRect().left;
+    const text = (element: Element) => element.textContent;
+    return {
+      dom: elements.map(text),
+      visual: [...elements].sort((a, b) => left(a) - left(b)).map(text),
+    };
+  });
+  expect(order.dom).toHaveLength(3);
+  expect(order.visual).toEqual(order.dom);
+  await captureScreenshot(page, testInfo, "keyboard-shortcuts-rtl");
+  await page.locator("html").evaluate((element) => element.setAttribute("dir", "ltr"));
+
   await page.keyboard.press("Escape");
   await expect(dialog).toBeHidden();
   await composer.blur();

@@ -3,11 +3,14 @@
 Rakazo gives you persistent AI bots. Each one has its own conversations, memory, routines, and
 computer, and keeps working on the web, desktop, and mobile apps.
 
-## Create your first bot
+## Start with your first bot
 
 1. Sign in at [app.rakazo.com](https://app.rakazo.com), or run your own instance with the
    [self-hosting guide](./self-host.md).
-2. Tell the bot its job in plain words. It asks for anything else it needs.
+2. When you set up a new account, Rakazo creates your first bot, **Chief**. On the web and
+   desktop, Chief's chat opens automatically. On mobile, tap **Chief** in the bot list. If
+   there isn't a bot in your current space, choose **New bot**.
+3. Tell the bot its job in plain words. It asks for anything else it needs.
 
 More in [Bots and chats](./bots-and-chats.md).
 

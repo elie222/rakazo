@@ -15,11 +15,12 @@ import {
 } from "./fingerprint.js";
 import { regradeTrial } from "./grading.js";
 import type { EvalJudge } from "./judge.js";
+import type { JudgeSettings, RecordedJudge } from "./judge-identity.js";
 import { SpendBudget } from "./measurement.js";
 import type { TrialResult } from "./report.js";
 import { emptyTrial, evidenceSnapshot } from "./report.js";
 import type { StoredReport } from "./run-store.js";
-import { judgeIdentity, RunStore } from "./run-store.js";
+import { RunStore } from "./run-store.js";
 
 const connection: ModelConnectInput = {
   provider: "openai-compatible",
@@ -216,9 +217,24 @@ function trial(n: number, overrides: Partial<TrialResult> = {}): TrialResult {
     ...overrides,
   };
 }
+const settings: JudgeSettings = {
+  endpoint: "0123456789ab",
+  maxOutputTokens: 2048,
+  reasoning: null,
+  thinkingLevel: null,
+};
+const judgeOf = (
+  rubricVersion = "meaning-v1",
+  overrides: Partial<RecordedJudge> = {},
+): RecordedJudge => ({ model: "judge-model", rubricVersion, settings, ...overrides });
 const report = (
   trials: TrialResult[],
-  options: { fingerprint?: string | null; rubric?: string; startedAt?: string } = {},
+  options: {
+    fingerprint?: string | null;
+    rubric?: string;
+    startedAt?: string;
+    judge?: RecordedJudge;
+  } = {},
 ): StoredReport => ({
   suite: "recall",
   startedAt: options.startedAt ?? "2026-11-13T00:00:00.000Z",
@@ -227,7 +243,7 @@ const report = (
   fixtureVersion: "recall-v1",
   caseFixtureVersions: { lease: "recall-v1" },
   codeRevision: "abc",
-  judge: { model: "judge-model", rubricVersion: options.rubric ?? "meaning-v1" },
+  judge: options.judge ?? judgeOf(options.rubric),
   ...(options.fingerprint === null
     ? {}
     : {
@@ -253,7 +269,7 @@ describe("run store", () => {
       trials: 3,
       strategy: "current",
       fingerprint,
-      judge: judgeIdentity({ model: "judge-model", rubricVersion: rubric }),
+      judge: judgeOf(rubric),
     });
 
   it("indexes each run with its counts and keeps a rerun beside the first", () => {
@@ -290,16 +306,33 @@ describe("run store", () => {
         trials: 3,
         strategy: "current",
         fingerprint: "f1",
-        judge: judgeIdentity({
-          provider: "other",
-          model: "judge-model",
-          rubricVersion: "meaning-v1",
-        }),
+        judge: judgeOf("meaning-v1", { provider: "other" }),
       }),
     ).toMatchObject({ kind: "regrade" });
     // Once a regrade is stored, the newer judge reuses it.
     s.save(report([trial(1), trial(2)], { rubric: "meaning-v2" }));
     expect(plan(s, "f1", "meaning-v2")).toMatchObject({ kind: "reuse" });
+  });
+
+  it("regrades under other judge settings, and when the stored run never recorded them", () => {
+    const s = store();
+    s.save(report([trial(1)]));
+    const planWith = (judge: RecordedJudge) =>
+      s.plan({ scenario, trials: 3, strategy: "current", fingerprint: "f1", judge });
+    expect(planWith(judgeOf())).toMatchObject({ kind: "reuse" });
+    expect(
+      planWith(judgeOf("meaning-v1", { settings: { ...settings, thinkingLevel: "high" } })),
+    ).toMatchObject({ kind: "regrade" });
+    expect(
+      planWith(judgeOf("meaning-v1", { settings: { ...settings, endpoint: null } })),
+    ).toMatchObject({ kind: "regrade" });
+
+    // A run from before judge settings were recorded may have been graded under others.
+    const { settings: _, ...unrecorded } = judgeOf();
+    s.save(report([trial(1)], { fingerprint: "f2", judge: unrecorded }));
+    expect(
+      s.plan({ scenario, trials: 3, strategy: "current", fingerprint: "f2", judge: judgeOf() }),
+    ).toMatchObject({ kind: "regrade" });
   });
 
   it("never reuses legacy reports, infrastructure failures, or trials it cannot regrade", () => {
@@ -323,9 +356,48 @@ describe("run store", () => {
       ]),
     );
     expect(plan(s)).toEqual({ kind: "run" });
+    // A case checked in code alone needs its evidence too: its checks may have changed.
+    const plain: EvalCase = { ...scenario, judge: undefined, observe: undefined };
+    s.save(report([trial(1, { evidence: undefined })], { fingerprint: "f9" }));
+    expect(
+      s.plan({ scenario: plain, trials: 3, strategy: "current", fingerprint: "f9", judge: null }),
+    ).toEqual({ kind: "run" });
     // A trial that failed before grading needs no evidence: no judge ever saw it.
-    s.save(report([trial(1, { status: "failed", category: "agent", criteria: [] })]));
+    s.save(
+      report([
+        trial(1, { status: "failed", category: "agent", criteria: [], evidence: undefined }),
+      ]),
+    );
     expect(plan(s)).toMatchObject({ kind: "reuse", trials: [{ trial: 1 }] });
+  });
+
+  it("regrades stored trials when a case's checks change but its inputs do not", async () => {
+    const s = store();
+    s.save(report([trial(1), trial(2)]));
+    const planFor = (current: EvalCase) =>
+      s.plan({
+        scenario: current,
+        trials: 3,
+        strategy: "current",
+        fingerprint: "f1",
+        judge: judgeOf(),
+      });
+    expect(planFor(scenario)).toMatchObject({ kind: "reuse" });
+    const stricter: EvalCase = {
+      ...scenario,
+      grade: (e) => [{ id: "answered", pass: e.text.includes("60 days") }],
+    };
+    const changed = planFor(stricter);
+    expect(changed).toMatchObject({ kind: "regrade", trials: [{ trial: 1 }, { trial: 2 }] });
+    const judge = vi.fn<EvalJudge>(async () => ({ pass: true, reason: "fine" }));
+    const [first] = (changed as { trials: TrialResult[] }).trials;
+    expect(await regradeTrial(stricter, first!, judge, 1000)).toMatchObject({
+      status: "failed",
+      reason: "Outcome criteria failed",
+      criteria: [{ id: "answered", pass: false }],
+    });
+    // A judge is asked about meaning only once the checks hold.
+    expect(judge).not.toHaveBeenCalled();
   });
 
   it("keeps stored trial numbers when an earlier trial is not usable", () => {
@@ -374,7 +446,7 @@ describe("regrading a stored trial", () => {
     });
   });
 
-  it("keeps a deterministic failure and a trial that never reached grading as stored", async () => {
+  it("grades a deterministic failure again and keeps a trial that never reached grading", async () => {
     const judge = vi.fn<EvalJudge>(async () => ({ pass: true, reason: "fine" }));
     const failed = trial(1, {
       status: "failed",
@@ -382,12 +454,20 @@ describe("regrading a stored trial", () => {
       reason: "Outcome criteria failed",
       criteria: [{ id: "answered", pass: false }],
       judgment: undefined,
+      evidence: evidence(""),
     });
     expect(await regradeTrial(scenario, failed, judge, 1000)).toMatchObject({
       status: "failed",
       reason: "Outcome criteria failed",
+      criteria: [{ id: "answered", pass: false }],
     });
-    const early = trial(2, { status: "failed", category: "product", criteria: [], reason: "x" });
+    const early = trial(2, {
+      status: "failed",
+      category: "product",
+      criteria: [],
+      reason: "x",
+      evidence: undefined,
+    });
     expect(await regradeTrial(scenario, early, judge, 1000)).toEqual(early);
     expect(judge).not.toHaveBeenCalled();
   });
@@ -414,6 +494,28 @@ describe("regrading a stored trial", () => {
     expect(JSON.stringify(evidenceSnapshot({ key: "sk-live123 and k1" }, ["k1"]))).toBe(
       '{"key":"[redacted] and [redacted]"}',
     );
+  });
+
+  it("grades a trial that had no criteria and gives checks back the dates they were graded on", async () => {
+    const judge = vi.fn<EvalJudge>(async () => ({ pass: true, reason: "fine" }));
+    const dated: EvalCase = {
+      ...scenario,
+      judge: undefined,
+      observe: undefined,
+      grade: (e) => [
+        { id: "clock", pass: (e as unknown as { now: Date }).now.getTime() === 1_000 },
+      ],
+    };
+    const empty = trial(1, {
+      status: "failed",
+      category: "agent",
+      criteria: [],
+      evidence: evidenceSnapshot({ now: new Date(1_000) }, []),
+    });
+    expect(await regradeTrial(dated, empty, judge, 1000)).toMatchObject({
+      status: "passed",
+      criteria: [{ id: "clock", pass: true }],
+    });
   });
 
   it("labels a regraded failure the way the run did", async () => {

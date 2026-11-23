@@ -38,7 +38,7 @@ vi.mock("../../api/api", () => ({
   selectedSpaceId: () => "space-a",
   subscribeServerReachable: () => () => {},
 }));
-vi.mock("../../integrations/integrations-cache", () => ({}));
+vi.mock("../../api/verified-scope", () => ({}));
 vi.mock("./outbox-disk", () => ({
   outboxDisk: {
     admit: () => true,
@@ -53,7 +53,7 @@ vi.mock("../../api/session", () => ({
   currentReadySessionGeneration: () => state.generation,
   currentSessionGeneration: () => state.generation,
   loadSessionToken: async () => state.token,
-  loadVerifiedIntegrationsScope: async () => ({
+  loadVerifiedScope: async () => ({
     apiBase: "https://api.example.test",
     userId: "user-a",
     spaceId: "space-a",

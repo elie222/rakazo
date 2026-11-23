@@ -1,6 +1,10 @@
 import { ORPCError } from "@orpc/server";
 import type { CodexLiveCatalog, parseModelSecret } from "@rakazo/adapters";
-import { findConnectedModelCredential, validateConnectedModelChoice } from "@rakazo/adapters";
+import {
+  assertModelProviderAllowed,
+  findConnectedModelCredential,
+  validateConnectedModelChoice,
+} from "@rakazo/adapters";
 import type { Actor } from "@rakazo/contracts";
 import { OPENAI_COMPATIBLE_PROVIDER_ID, usableModelId } from "@rakazo/contracts";
 import { modelRoleTarget, runAsSystem } from "@rakazo/db";
@@ -142,6 +146,7 @@ export async function assertRoutineModel(
   codexCatalog: CodexLiveCatalog,
 ) {
   if (!model.modelProvider || !model.modelId) return;
+  assertModelProviderAllowed(model.modelProvider);
   const message = await validateConnectedModelChoice(
     deps.prisma,
     deps.secrets,

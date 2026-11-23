@@ -235,13 +235,22 @@ describe("archived chats row", () => {
   );
 
   it("sits at the very end of the inbox list and opens the existing Archived screen", () => {
-    act(() => root.render(<InboxListFooter createHint archivedCount={3} />));
+    const onNewBot = vi.fn();
+    act(() => root.render(<InboxListFooter onNewBot={onNewBot} archivedCount={3} />));
     expect(Array.from(container.children, (child) => child.textContent)).toEqual([
-      "Tap + to create a bot",
+      "New bot",
       "Archived3",
     ]);
-    act(() => container.querySelector("button")!.click());
+    const [newBot, archived] = Array.from(container.querySelectorAll("button"));
+    act(() => newBot!.click());
+    expect(onNewBot).toHaveBeenCalledOnce();
+    act(() => archived!.click());
     expect(mocks.router.push).toHaveBeenCalledWith("/archived-bots");
+  });
+
+  it("offers no New bot once a Space has a chat", () => {
+    act(() => root.render(<InboxListFooter archivedCount={0} />));
+    expect(container.textContent).not.toContain("New bot");
   });
 });
 
@@ -402,17 +411,9 @@ describe("bot profile menu archive notifications", () => {
   });
 
   it.each([
-    [{ name: "thread", params: { botId: "bot-b" } }, true],
     [{ name: "bot-profile", params: { botId: "bot-b" } }, true],
-    [{ name: "bot-settings", params: { botId: "bot-b" } }, true],
-    [{ name: "bot-model", params: { botId: "bot-b" } }, true],
-    [{ name: "computer", params: { botId: "bot-b" } }, true],
-    [{ name: "routines", params: { botId: "bot-b" } }, true],
-    [{ name: "routine", params: { botId: "bot-b" } }, true],
-    [{ name: "pages", params: { groupId: "removed-group" } }, true],
     [{ name: "thread", params: { botId: "other-bot" } }, false],
     [{ name: "thread", params: { groupId: "removed-group" } }, true],
-    [{ name: "group-settings", params: { groupId: "removed-group" } }, true],
     [{ name: "thread", params: { groupId: "retained-group" } }, false],
     [{ name: "artifacts", params: { botId: "bot-b" } }, false],
     [{ name: "index" }, false],

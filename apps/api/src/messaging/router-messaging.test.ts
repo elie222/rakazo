@@ -640,6 +640,7 @@ describe("messaging.connections", () => {
       json: [
         {
           id: "ac-1",
+          botId: "bot-1",
           peerBotName: "Helper",
           peerOwnerLabel: "Bob",
           status: "pending",
@@ -656,7 +657,12 @@ describe("messaging.connections", () => {
     const response = await call(handler, actor, "messaging/connections/list");
     await expect(response.json()).resolves.toEqual({
       json: [
-        expect.objectContaining({ peerBotName: "agent", peerOwnerLabel: "owner", incoming: false }),
+        expect.objectContaining({
+          botId: "bot-1",
+          peerBotName: "agent",
+          peerOwnerLabel: "owner",
+          incoming: false,
+        }),
       ],
     });
   });

@@ -27,6 +27,7 @@ const defaultCatalogLoaders: Record<UiLocale, CatalogLoader> = {
   nl: () => import("@rakazo/i18n/locales/nl/messages.po") as Promise<CatalogModule>,
   ja: () => import("@rakazo/i18n/locales/ja/messages.po") as Promise<CatalogModule>,
   pl: () => import("@rakazo/i18n/locales/pl/messages.po") as Promise<CatalogModule>,
+  th: () => import("@rakazo/i18n/locales/th/messages.po") as Promise<CatalogModule>,
 };
 
 let catalogLoaders: Record<UiLocale, CatalogLoader> = defaultCatalogLoaders;

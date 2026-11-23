@@ -12,7 +12,11 @@ import type {
 } from "@rakazo/adapter-kit";
 import { routineJobKey, routineWakeupJob } from "@rakazo/adapter-kit";
 import type { RoutineWatch, RoutineWatchState } from "@rakazo/contracts";
-import { RoutineWatchSchema, RoutineWatchStateSchema } from "@rakazo/contracts";
+import {
+  ROUTINE_WATCH_MIN_MINUTES,
+  RoutineWatchSchema,
+  RoutineWatchStateSchema,
+} from "@rakazo/contracts";
 import type { ActionApprovalRule } from "@rakazo/core";
 import {
   connectorKindFromToolName,
@@ -48,6 +52,7 @@ import { recordVaultItemUse } from "../secrets/vault/vault-activity.js";
 import type { SafeWebFetchOptions } from "../web/web-ssrf.js";
 import { fetchSafeHttpRequest } from "../web/web-ssrf.js";
 import { ROUTINE_WATCH_NOTE_START, routineWatchNote } from "./routine-watch.prompt.js";
+import { resolveWatchArgs } from "./routine-watch-args.js";
 
 /**
  * The checker behind a routine's "when something changes" trigger. It never
@@ -89,6 +94,7 @@ export type RoutineWatchTarget = {
   spaceId: string;
   userId: string;
   botId: string;
+  timezone?: string | null;
   watch: unknown;
   watchState: unknown;
 };
@@ -117,6 +123,26 @@ export function parseRoutineWatchState(value: unknown): RoutineWatchState | null
   return parsed.success ? parsed.data : null;
 }
 
+/** A new or re-armed watch takes its first reading a moment from now. */
+export function firstWatchCheck(): Date {
+  return new Date(Date.now() + 2_000);
+}
+
+/** A watch with a new check interval, held to the same bounds as the routine's settings. */
+export function watchWithInterval(
+  watch: RoutineWatch | null,
+  everyMinutes: unknown,
+): { watch: RoutineWatch } | { error: string } {
+  if (!watch) return { error: "everyMinutes is only for a routine that watches for changes." };
+  const parsed = RoutineWatchSchema.safeParse({ ...watch, everyMinutes });
+  if (!parsed.success) {
+    return {
+      error: `everyMinutes must be a whole number from ${ROUTINE_WATCH_MIN_MINUTES} to 1440.`,
+    };
+  }
+  return { watch: parsed.data };
+}
+
 export function nextRoutineWatchAt(watch: Pick<RoutineWatch, "everyMinutes">, from: Date): Date {
   return new Date(from.getTime() + watch.everyMinutes * 60_000);
 }
@@ -142,7 +168,7 @@ export async function checkRoutineWatch(
     watch.kind === "http"
       ? await readHttp(deps, watch, routine.id)
       : watch.kind === "tool"
-        ? await readTool(deps, routine, watch)
+        ? await readTool(deps, routine, watch, now)
         : await readComputer(deps, routine, watch);
   return compareReading(previous, reading, now);
 }
@@ -707,6 +733,7 @@ async function readTool(
   deps: RoutineWatchDeps,
   routine: RoutineWatchTarget,
   watch: RoutineWatch,
+  now: Date,
 ): Promise<Reading> {
   const connector = deps.connector;
   if (!connector) throw new RoutineWatchError("No integrations are available to check.");
@@ -720,7 +747,8 @@ async function readTool(
   }
   // Discovery waits on every provider; the tool call gets its own full budget.
   ctx.signal = AbortSignal.timeout(CHECK_TIMEOUT_MS);
-  const call = { tool: toolName, args: watch.args ?? {}, executionId: ctx.operationId };
+  const args = resolveWatchArgs(watch.args ?? {}, now, routine.timezone);
+  const call = { tool: toolName, args, executionId: ctx.operationId };
   const tool = tools.find((candidate) => candidate.name === toolName);
   const resolved = tool
     ? { call: { ...call, route: tool.route }, tool }
@@ -919,7 +947,7 @@ export async function tickRoutineWatch(
         spaceId: routine.spaceId,
         ...target,
         role: "bot",
-        text: `I paused the **${routine.name}** routine because its change check failed: ${reason}\n\nTell me how to fix it, or turn the routine back on once it's sorted.`,
+        text: `I paused the **${routine.name}** routine because its change check failed: ${reason}\n\nReply here and I'll help fix it.`,
       });
     }
     return { run: false };
@@ -958,7 +986,7 @@ export async function tickRoutineWatch(
 
 /** A line in the routine's thread without a model run. */
 export async function postRoutineWatchMessage(
-  deps: Pick<RoutineWatchDeps, "prisma" | "events">,
+  deps: { prisma: PrismaClient; events: Pick<ThreadEvents, "notify"> },
   input: {
     spaceId: string;
     threadId: string;
@@ -988,7 +1016,7 @@ export async function postRoutineWatchMessage(
       });
       return event.seq;
     });
-    if (seq !== undefined) await deps.events.notify(input.threadId, seq).catch(() => undefined);
+    if (seq !== undefined) await deps.events.notify(input.threadId, seq);
   } catch {
     // Best effort: the routine's state is already saved.
   }
@@ -1016,14 +1044,11 @@ export async function validateRoutineWatch(
   const routine = { ...target, id: "validate", watch, watchState: null };
   const ctx = deps.prisma ? await toolContext(deps.prisma, routine) : context(routine);
   const name = watch.tool ?? "";
+  const args = resolveWatchArgs(watch.args ?? {}, new Date());
   const tool =
     (await deps.connector.discoverTools(ctx)).find((tool) => tool.name === name) ??
-    (
-      await deps.connector.resolveCall?.(
-        { tool: name, args: watch.args ?? {}, executionId: ctx.operationId },
-        ctx,
-      )
-    )?.tool;
+    (await deps.connector.resolveCall?.({ tool: name, args, executionId: ctx.operationId }, ctx))
+      ?.tool;
   if (!tool) throw new RoutineWatchError(`No connected integration has a tool named ${name}.`);
   assertWatchToolReadOnly(name, declaredRead(tool));
 }

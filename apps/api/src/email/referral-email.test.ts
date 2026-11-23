@@ -1,6 +1,7 @@
 import type { TransactionalEmailProvider } from "@rakazo/adapter-kit";
+import { writeEmailCopyDir } from "@rakazo/auth/test-email-copy";
 import { deferred } from "@rakazo/core/test-async";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { startHourlySweep } from "../http/hourly-sweep.js";
 import { unsubscribeUrl } from "./marketing-email.js";
 import { sendReferralEmails } from "./referral-email.js";
@@ -57,6 +58,10 @@ function fixture() {
   return { user, deps, findMany, create, sweep: sendReferralEmails(deps) };
 }
 
+const copyDir = writeEmailCopyDir({ referral: true });
+beforeEach(() => {
+  vi.stubEnv("EMAIL_COPY_DIR", copyDir);
+});
 afterEach(() => vi.useRealTimers());
 
 describe("day-one referral email", () => {
@@ -87,7 +92,7 @@ describe("day-one referral email", () => {
     expect(f.deps.email.send).toHaveBeenCalledWith(
       expect.objectContaining({
         to: "alex@example.com",
-        subject: "Invite a friend",
+        subject: "Test subject",
         headers: {
           "List-Unsubscribe": `<${unsubscribeUrl(origin, secret, "user-1")}>`,
           "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",

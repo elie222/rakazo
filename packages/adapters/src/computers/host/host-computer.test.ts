@@ -21,8 +21,14 @@ import {
   ensureComputerWorkspaceLayout,
   removeComputerWorkspaceDirectories,
 } from "../computer-workspace.js";
+import { sandboxKindCapabilities } from "../sandbox/sandbox-kind-capabilities.js";
 import { assertSandboxReadLimit } from "../sandbox/sandbox-test-support.js";
-import { hostComputerDeadlineMs } from "./host-computer-protocol.js";
+import {
+  HOST_COMPUTER_MAX_BYTES,
+  HOST_COMPUTER_MAX_FILE_BYTES,
+  HOST_COMPUTER_TRANSFER_MAX_FILE_BYTES,
+  hostComputerDeadlineMs,
+} from "./host-computer-protocol.js";
 import { HostComputerSandbox } from "./host-computer-sandbox.js";
 import { startHostComputerServer } from "./host-computer-server.js";
 import { nativeShellCommandArgv } from "./native-shell.js";
@@ -544,3 +550,12 @@ it.each([1, 5 * 60_000, 15 * 60_000, 60 * 60_000])(
     ).toBe(timeoutMs + 30_000);
   },
 );
+
+describe("host computer transfer limit", () => {
+  it("declares the largest file one frame can carry", () => {
+    const limit = sandboxKindCapabilities("desktop").maxFileBytes;
+    expect(limit).toBe(HOST_COMPUTER_TRANSFER_MAX_FILE_BYTES);
+    expect(limit).toBeLessThanOrEqual(HOST_COMPUTER_MAX_FILE_BYTES);
+    expect(Math.ceil((limit ?? 0) / 3) * 4).toBeLessThanOrEqual(HOST_COMPUTER_MAX_BYTES);
+  });
+});

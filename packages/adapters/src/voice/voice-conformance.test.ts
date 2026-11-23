@@ -12,6 +12,7 @@ import {
   OpenAiCompatibleVoiceProvider,
   serializeOpenAiCompatibleVoiceSecret,
 } from "../providers/voice/openai-compatible/openai-compatible-voice.js";
+import { OpenRouterVoiceProvider } from "../providers/voice/openrouter/openrouter-voice.js";
 import {
   SCRIPTED_TRANSCRIPT,
   ScriptedVoiceProvider,
@@ -189,6 +190,29 @@ const fixtures: Record<VoiceProviderId, VoiceConformanceFixture> = {
         Response.json({ voices: [{ voice_id: "voice-1", name: "Eve" }] }),
       "POST https://api.x.ai/v1/tts": { answer: audio, json: ["text", "voice_id"] },
       "POST https://api.x.ai/v1/stt": { answer: transcript, form: ["file"] },
+    },
+  },
+  openrouter: {
+    provider: () => new OpenRouterVoiceProvider(),
+    apiKey: TEST_KEY,
+    auth: bearer,
+    routes: {
+      "GET https://openrouter.ai/api/v1/key": () => Response.json({ data: {} }),
+      "GET https://openrouter.ai/api/v1/models": {
+        answer: () =>
+          Response.json({
+            data: [{ id: "mistralai/voxtral-mini-tts-2603", supported_voices: ["en_paul"] }],
+          }),
+        query: ["output_modalities"],
+      },
+      "POST https://openrouter.ai/api/v1/audio/speech": {
+        answer: audio,
+        json: ["model", "voice", "input", "response_format"],
+      },
+      "POST https://openrouter.ai/api/v1/audio/transcriptions": {
+        answer: transcript,
+        form: ["model", "file"],
+      },
     },
   },
   "openai-compatible": {

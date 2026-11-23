@@ -27,7 +27,9 @@ RAKAZO_LOCAL_REASONING_MODELS=qwen3:4b
 
 จากคอนเทนเนอร์ให้ชี้ไปที่ LAN หรือ `host.docker.internal` (Docker Desktop) อย่าเปิดบริการที่ละเอียดอ่อนโดยไม่มีการยืนยันตัวตนบน loopback ขณะ bot ทำงาน ปล่อย `RAKAZO_LOCAL_MODELS` ว่างเพื่อปิด
 
-ใน **ตั้งค่า (Settings) → Models** เลือก **Ollama Cloud** วาง API key จาก ollama.com แล้ว **Find models** ได้โดยไม่ต้องตั้ง env
+ใน **การตั้งค่า (Settings) → โมเดล (Models)** เลือก **Ollama Cloud** แล้ววาง API key จาก ollama.com
+ระบบจะโหลดรายการโมเดลโดยอัตโนมัติ ให้เลือกโมเดลที่ต้องการจากรายการโดยไม่ต้องตั้งค่าตัวแปรสภาพแวดล้อม
+หากรายการที่โหลดมาไม่มีโมเดลที่ต้องการ ให้เลือก **โมเดลอื่น… (Other model…)** แล้วกรอก **ID โมเดล** เอง
 
 ผู้ใช้เชื่อม OpenAI-compatible เองจาก **Connect a model** ใส่ base URL, model id และ key (ถ้ามี)
 

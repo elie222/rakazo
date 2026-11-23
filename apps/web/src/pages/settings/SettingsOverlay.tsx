@@ -9,19 +9,26 @@ import {
   DialogDescription,
   DialogTitle,
 } from "@rakazo/ui-web";
+import { useQuery } from "@tanstack/react-query";
 import { ChevronLeft, ChevronRight, XIcon } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { PlanUsage } from "../../components/billing/PlanUsage";
+import {
+  CloudComputerSizes,
+  useCloudComputers,
+} from "../../components/computers/CloudComputerSizes";
+import {
+  ComputerDeviceSettings,
+  userDevicesQuery,
+  useThisComputer,
+} from "../../components/computers/ComputerDeviceSettings";
 import { computersAreUnavailable } from "../../components/computers/ComputersUnavailableHint";
 import { ApprovalRulesSettings } from "../../components/settings/ApprovalRulesSettings";
-import {
-  SETTINGS_CONTENT_WIDTH,
-  SettingsGroup,
-  SettingsRow,
-} from "../../components/settings/SettingsRows";
+import { SETTINGS_CONTENT_WIDTH } from "../../components/settings/SettingsRows";
 import { VaultSettings } from "../../components/vault/VaultSettings";
 import { canChooseOwnComputer } from "../../lib/computers/computer-sandbox";
 import { desktopBridge } from "../../lib/platform/desktop";
+import { useQueryUserId } from "../../lib/query/query";
 import type { RpcClient } from "../../lib/query/rpc";
 import { SpaceRpcProvider } from "../../lib/query/space-rpc";
 import { useEventListener } from "../../lib/use-event-listener";
@@ -41,6 +48,7 @@ import type { OrganizationPage } from "./OrganizationSettingsPanel";
 import { OrganizationOptionsMenu, OrganizationSettingsPanel } from "./OrganizationSettingsPanel";
 import { PaymentWalletSettingsPanel } from "./PaymentWalletSettingsPanel";
 import { SpaceSettingsPanel } from "./SpaceSettingsPanel";
+import { SpacesSettingsPanel } from "./SpacesSettingsPanel";
 import { useSettingsNavItems } from "./settings-nav";
 import { UsageSettingsPanel } from "./UsageSettingsPanel";
 import { VoiceSettingsOverlay } from "./VoiceSettingsOverlay";
@@ -49,6 +57,7 @@ export function SettingsOverlay({
   space,
   spaces = [],
   onOpenSpace,
+  onNewSpace,
   onRenameSpace,
   onDeleteSpace,
   email,
@@ -83,6 +92,7 @@ export function SettingsOverlay({
   space?: SettingsSpace | null;
   spaces?: { id: string; name: string }[];
   onOpenSpace?: (spaceId: string) => void;
+  onNewSpace?: () => void;
   onRenameSpace?: (spaceId: string, name: string, client: RpcClient) => Promise<void>;
   onDeleteSpace?: (spaceId: string) => Promise<void>;
   email?: string | null;
@@ -130,12 +140,23 @@ export function SettingsOverlay({
   // A new object holds the hint for another four seconds; null lets it go.
   const [recoveryHold, setRecoveryHold] = useState<object | null>(null);
   const keepComputerRecovery = recoveryHold !== null;
-  const showComputer =
+  const showComputerSetup =
     computerSettingsEnabled &&
     (canConfigureComputers ||
       canChooseOwnComputer(sandboxProvider) ||
       keepComputerRecovery ||
       computersAreUnavailable(sandboxProvider));
+  const cloud = useCloudComputers();
+  const devices = useQuery(userDevicesQuery(useQueryUserId()));
+  const { thisComputer, plainHttp } = useThisComputer();
+  const showComputer =
+    showComputerSetup ||
+    (cloud.data?.computers.length ?? 0) > 0 ||
+    cloud.isError ||
+    (devices.data?.length ?? 0) > 0 ||
+    devices.isError ||
+    thisComputer !== null ||
+    plainHttp;
   const showUpdates = Boolean(desktopBridge()?.update);
   // A section that isn't available yet (billing before its flag loads) shows General until it is.
   const section =
@@ -294,8 +315,8 @@ export function SettingsOverlay({
             >
               {navItems.map((item) => {
                 const Icon = item.icon;
-                // A space's page is reached from General, so General stays marked.
-                const active = item.id === (section === "space" ? "general" : section);
+                // A space's page is reached from Spaces, so Spaces stays marked.
+                const active = item.id === (section === "space" ? "spaces" : section);
                 return (
                   <button
                     key={item.id}
@@ -341,7 +362,7 @@ export function SettingsOverlay({
                     className="-ms-2 shrink-0"
                     aria-label={t`Back`}
                     disabled={panelBusy}
-                    onClick={() => onSectionChange("general")}
+                    onClick={() => onSectionChange("spaces")}
                   >
                     <ChevronLeft className="rtl:rotate-180" />
                   </Button>
@@ -390,46 +411,30 @@ export function SettingsOverlay({
                   }
                 >
                   {section === "general" ? (
-                    <div className="space-y-8">
-                      <GeneralSettingsPanels
-                        email={email}
-                        name={name}
-                        onNameSaved={onNameSaved}
-                        timezone={timezone}
-                        onTimezoneChange={onTimezoneChange}
-                        botAvatarSet={botAvatarSet}
-                        onBotAvatarSetChange={onBotAvatarSetChange}
-                        onAccountImported={onAccountImported}
-                        onImportAgent={onImportAgent}
-                      />
-                      {/* One space is just the app, so there is nothing to tell apart or manage. */}
-                      {spaces.length > 1 && onOpenSpace ? (
-                        <SettingsGroup title={t`Spaces`} data-testid="settings-spaces">
-                          {spaces.map((option) => (
-                            <SettingsRow
-                              key={option.id}
-                              label={<p className="break-words">{option.name}</p>}
-                              control={
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  className="rounded-full"
-                                  aria-label={t`Manage ${option.name}`}
-                                  onClick={() => onOpenSpace(option.id)}
-                                >
-                                  {t`Manage`}
-                                </Button>
-                              }
-                            />
-                          ))}
-                        </SettingsGroup>
-                      ) : null}
-                    </div>
+                    <GeneralSettingsPanels
+                      email={email}
+                      name={name}
+                      onNameSaved={onNameSaved}
+                      timezone={timezone}
+                      onTimezoneChange={onTimezoneChange}
+                      botAvatarSet={botAvatarSet}
+                      onBotAvatarSetChange={onBotAvatarSetChange}
+                      onAccountImported={onAccountImported}
+                      onImportAgent={onImportAgent}
+                    />
+                  ) : null}
+                  {section === "spaces" ? (
+                    <SpacesSettingsPanel
+                      spaces={spaces}
+                      onOpenSpace={(spaceId) => onOpenSpace?.(spaceId)}
+                      onNewSpace={onNewSpace && (() => leaveSettings(onNewSpace))}
+                    />
                   ) : null}
                   {section === "space" && space ? (
                     <SpaceSettingsPanel
                       key={space.id}
                       space={space}
+                      lone={spaces.length <= 1}
                       onRename={(name, client) =>
                         onRenameSpace?.(space.id, name, client) ?? Promise.resolve()
                       }
@@ -459,16 +464,24 @@ export function SettingsOverlay({
                     </>
                   ) : null}
                   {section === "computer" && showComputer ? (
-                    <ComputerSettingsPanel
-                      sandboxProvider={sandboxProvider}
-                      onSandboxProviderChange={(next) => {
-                        onSandboxProviderChange?.(next);
-                        holdComputerRecovery();
-                      }}
-                      onRecoveryDismissed={releaseComputerRecovery}
-                      canConfigureComputers={canConfigureComputers}
-                      computerSettingsEnabled={computerSettingsEnabled}
-                    />
+                    <div className="space-y-8">
+                      {showComputerSetup ? (
+                        <ComputerSettingsPanel
+                          sandboxProvider={sandboxProvider}
+                          onSandboxProviderChange={(next) => {
+                            onSandboxProviderChange?.(next);
+                            holdComputerRecovery();
+                          }}
+                          onRecoveryDismissed={releaseComputerRecovery}
+                          canConfigureComputers={canConfigureComputers}
+                          computerSettingsEnabled={computerSettingsEnabled}
+                        />
+                      ) : null}
+                      <CloudComputerSizes
+                        onUpgrade={billingEnabled ? () => onSectionChange("billing") : undefined}
+                      />
+                      <ComputerDeviceSettings />
+                    </div>
                   ) : null}
                   {section === "labs" ? (
                     <LabsSettingsPanel

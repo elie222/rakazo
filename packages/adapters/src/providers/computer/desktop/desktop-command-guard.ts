@@ -577,7 +577,7 @@ function tokenizeProtectedShellCommand(
   }
 }
 
-const KILL_COMMANDS = /^(?:kill|pkill|killall|xkill)$/;
+const KILL_COMMANDS = /^(?:kill|pkill|killall|killall5|xkill)$/;
 const SERVICE_COMMANDS = /^(?:systemctl|service)$/;
 const BROWSER_PROFILE_PATH = /(?:\.browser-profiles|--user-data-dir)/;
 const X11_PATH = /(?:\/tmp\/\.x11-unix|\/tmp\/\.x\d+-lock)/;

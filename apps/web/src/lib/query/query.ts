@@ -92,7 +92,7 @@ export function lastChatOf(
  */
 export function seedOnLeave(
   previous: AppBootstrap,
-  latest: Omit<AppBootstrap, "thread" | "routines">,
+  latest: Omit<AppBootstrap, "thread" | "routines" | "firstBotDue">,
   chat: ChatTarget | undefined,
   snapshot: AppBootstrap["thread"],
 ): AppBootstrap {

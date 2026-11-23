@@ -1,16 +1,13 @@
 import { useLingui } from "@lingui/react/macro";
 import type { RunActivityRow } from "@rakazo/contracts";
 import { activitySections } from "@rakazo/core";
+import { activityPreview, runStatusLabel } from "@rakazo/i18n/activity";
 import type { Href } from "expo-router";
 import type { ReactElement, ReactNode } from "react";
 import { useMemo } from "react";
 import { Text, View } from "react-native";
 import type { MobileBot, MobileGroup } from "../../lib/api/mobile-types";
-import {
-  activityPreview,
-  activityStatusLabel,
-  formatActivityRelativeTime,
-} from "../../lib/inbox/activity";
+import { formatActivityRelativeTime } from "../../lib/inbox/activity";
 import type { InboxRowAction } from "../../lib/inbox/inbox-swipe";
 import { inboxRowActionList } from "../../lib/inbox/inbox-swipe";
 import type { SpaceActivityStatus } from "../../lib/inbox/use-space-activity";
@@ -237,7 +234,7 @@ function ActivityRow({
   detailed: boolean;
   onPress: () => void;
 }) {
-  const status = activityStatusLabel(run.status);
+  const status = runStatusLabel(run.status);
   const snippet = activityPreview(run);
   const preview = detailed ? (snippet ? `${status}: ${snippet}` : status) : snippet;
   // Compact rows hide tags, so the group stays in the title.

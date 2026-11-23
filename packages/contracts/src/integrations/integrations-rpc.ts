@@ -10,8 +10,8 @@ import {
 } from "./approvals.js";
 import {
   CATALOG_SEARCH_QUERY_MAX_LENGTH,
-  CONNECTION_LABEL_MAX_LENGTH,
   ConnectionCatalogItemSchema,
+  ConnectionLabelSchema,
   ConnectionSchema,
   IntegrationCatalogResultSchema,
 } from "./connections.js";
@@ -200,7 +200,7 @@ export const integrationsRpc = {
           /** Omitted for the server's default connector. */
           connectorId: z.string().optional(),
           provider: z.string(),
-          displayName: z.string(),
+          displayName: ConnectionLabelSchema,
         }),
       )
       .output(z.object({ connectionId: Id, authorizationUrl: z.string().nullable() })),
@@ -211,7 +211,7 @@ export const integrationsRpc = {
       .input(
         z.object({
           connectionId: Id,
-          displayName: z.string().trim().min(1).max(CONNECTION_LABEL_MAX_LENGTH),
+          displayName: ConnectionLabelSchema,
         }),
       )
       .output(ConnectionSchema),

@@ -17,6 +17,7 @@ export const HI_MESSAGES: Record<string, string> = {
   Redo: "फिर से करें",
   Cut: "काटें",
   Copy: "कॉपी करें",
+  "Copy Link Address": "लिंक का पता कॉपी करें",
   Paste: "पेस्ट करें",
   "Paste and Match Style": "पेस्ट करें और स्टाइल मिलाएँ",
   Delete: "डिलीट करें",

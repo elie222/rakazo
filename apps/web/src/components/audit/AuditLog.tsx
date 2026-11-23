@@ -64,7 +64,7 @@ export function AuditLog({
   spaceId: string;
   onBack: () => void;
 }) {
-  const { t } = useLingui();
+  const { t, i18n } = useLingui();
   const log = useInfiniteQuery(
     {
       queryKey: ["audit-log", organizationId, spaceId],
@@ -141,7 +141,9 @@ export function AuditLog({
                     <span key={label}>{label}</span>
                   ))}
                 </span>
-                <time dateTime={event.createdAt}>{new Date(event.createdAt).toLocaleString()}</time>
+                <time dateTime={event.createdAt}>
+                  {new Date(event.createdAt).toLocaleString(i18n.locale)}
+                </time>
               </div>
             </li>
           ))}

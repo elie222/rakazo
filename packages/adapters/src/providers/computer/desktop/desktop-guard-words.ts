@@ -9,6 +9,10 @@ export const STATIC_SHELL_EXPANSIONS: Readonly<Record<string, string>> = {
   USER: "rakazo",
   WORKSPACE: "/home/rakazo/workspace",
   XDG_CONFIG_HOME: "/home/rakazo/.config",
+  // The last exit status and the argument count expand to digits only, so they cannot spell a
+  // protected command, process or path. Process ids ($$, $!) stay unresolved: they can name a process.
+  "?": "0",
+  "#": "0",
 };
 
 export const SAFE_SHELL_CONTROL_OPS = new Set([

@@ -121,11 +121,15 @@ describe("a save that succeeded stays a success when the read after it fails", (
 
   beforeEach(() => {
     vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
-    voice.catalog
-      .mockReset()
-      .mockResolvedValue([
-        { id: "openai-compatible", name: "Self-hosted", description: "", transcribe: true },
-      ]);
+    voice.catalog.mockReset().mockResolvedValue([
+      {
+        id: "openai-compatible",
+        name: "Self-hosted",
+        description: "",
+        transcribe: true,
+        freeformVoice: true,
+      },
+    ]);
     // The first read opens the form; the one after the save fails.
     voice.credentials.mockReset().mockResolvedValueOnce([saved]).mockRejectedValue(failure);
     voice.status.mockReset().mockResolvedValue({ ready: true, provider: "openai-compatible" });
@@ -206,11 +210,15 @@ it("applies the voice a reconnect saved when the read after it fails", async () 
   };
   // The new address makes the server pick another voice.
   const connected = { ...saved, endpoint: "https://speech-b.example/v1", voiceId: "voice_new" };
-  voice.catalog
-    .mockReset()
-    .mockResolvedValue([
-      { id: "openai-compatible", name: "Self-hosted", description: "", transcribe: true },
-    ]);
+  voice.catalog.mockReset().mockResolvedValue([
+    {
+      id: "openai-compatible",
+      name: "Self-hosted",
+      description: "",
+      transcribe: true,
+      freeformVoice: true,
+    },
+  ]);
   voice.credentials.mockReset().mockResolvedValueOnce([saved]).mockRejectedValue({});
   voice.status.mockReset().mockResolvedValue({ ready: true, provider: "openai-compatible" });
   voice.voices.mockReset().mockResolvedValue([]);

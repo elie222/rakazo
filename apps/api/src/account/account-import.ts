@@ -7,7 +7,13 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { createInterface } from "node:readline";
 import type { AdapterContext } from "@rakazo/adapter-kit";
-import { normalizeWorkspacePath, resolveBotWorkspacePath } from "@rakazo/adapters";
+import {
+  carriedBotModelPin,
+  carriedRoutineModelPin,
+  normalizeWorkspacePath,
+  ObjectStorageUnavailableError,
+  resolveBotWorkspacePath,
+} from "@rakazo/adapters";
 import type {
   AccountExportManifest,
   AccountExportRecord,
@@ -37,6 +43,7 @@ import {
   SpaceLimitError,
 } from "@rakazo/db";
 import { bestEffort, getLogger } from "@rakazo/logging";
+import { markExpectedFailure } from "@rakazo/logging/hono";
 import { pageViewerCode } from "@rakazo/page-kit/compile";
 import { checkPageSource } from "@rakazo/page-kit/validate";
 import type { Hono } from "hono";
@@ -784,9 +791,7 @@ class AccountImporter implements ArchiveSink {
             // What a watch read is not the owner's words, so it never runs as a turn in the chat.
             inChat: record.inChat && !record.watch,
             messageProvider: record.messageProvider,
-            modelProvider: record.modelProvider,
-            modelId: record.modelId,
-            thinkingLevel: record.thinkingLevel,
+            ...carriedRoutineModelPin(record),
             watch: jsonValue(record.watch),
             createdAt: new Date(record.createdAt),
           },
@@ -894,9 +899,7 @@ class AccountImporter implements ArchiveSink {
       avatarSet: resolveBotAvatarSet(record.avatarSet),
       // Bot ids pick the avatar shape; keep the look the bot had.
       avatarFamily: organicAvatarFamily(record.id),
-      modelProvider: record.modelProvider,
-      modelId: record.modelId,
-      thinkingLevel: record.thinkingLevel,
+      ...carriedBotModelPin(record),
       disabledBuiltinTools: record.disabledBuiltinTools,
       seed: async (tx, botId) => {
         await tx.bot.update({
@@ -1190,6 +1193,11 @@ export function mountAccountImportRoute(
     } catch (error) {
       if (error instanceof AccountImportError)
         return c.json({ error: error.message }, error.status);
+      // The store already logged its outage as a warning; the person can try again.
+      if (error instanceof ObjectStorageUnavailableError) {
+        markExpectedFailure();
+        return c.json({ error: error.message }, 503);
+      }
       getLogger().error("account import failed", error);
       return c.json({ error: "The import failed." }, 500);
     }

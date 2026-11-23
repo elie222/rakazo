@@ -7,12 +7,12 @@ import type {
   SpaceMemoryConfig,
 } from "@rakazo/contracts";
 import { parseLabs } from "@rakazo/contracts";
+import type { connectedAppMarks } from "@rakazo/core";
 import { writeSaved } from "@rakazo/core/query";
 import type { RefObject } from "react";
 import { lazyOverlay } from "../../components/ErrorBoundary";
 import { setLabs } from "../../lib/bootstrap";
 import { invalidateVoiceConsent } from "../../lib/calls/voice-consent";
-import type { connectedAppMarks } from "../../lib/integrations/connected-apps";
 import type { SpaceQueries } from "../../lib/query/query";
 import { queryClient } from "../../lib/query/query";
 import type { createSpaceRpc, RpcClient } from "../../lib/query/rpc";
@@ -146,6 +146,7 @@ export function SettingsOverlays({
   setPeerConversation,
   active,
   peerBot,
+  openNewSpace,
 }: {
   rpc: ReturnType<typeof createSpaceRpc>;
   queries: SpaceQueries;
@@ -169,6 +170,7 @@ export function SettingsOverlays({
   setPeerConversation: (peer: null) => void;
   active: Bot | undefined;
   peerBot: (botId: string) => { color: string; avatarSet?: BotAvatarSet } | undefined;
+  openNewSpace: () => void;
 }) {
   const voiceStatusKey = queries.voice.status.queryKey();
   return (
@@ -188,6 +190,10 @@ export function SettingsOverlays({
             void leftSpace(spaceId, activeSpaceId);
           }}
           onOpenSpace={(spaceId) => setOverlay({ ...overlay, section: "space", spaceId })}
+          onNewSpace={() => {
+            setOverlay(null);
+            openNewSpace();
+          }}
           name={user?.name ?? ""}
           onNameSaved={async () => {
             await refetchSession();

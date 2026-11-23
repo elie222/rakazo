@@ -53,6 +53,28 @@ describe("approved credit connection routing", () => {
       where: { id: "operator-secret", userId: "operator", spaceId: null },
     });
   });
+  it("carries zero data retention from the stored connection to the credit-funded run", async () => {
+    const deps = setup("openrouter", {
+      kind: "api_key",
+      key: "fake-key",
+      zeroDataRetention: true,
+    } as never);
+    vi.stubEnv(
+      "MODEL_CREDIT_OFFERINGS",
+      JSON.stringify({
+        defaultOfferingId: offering.id,
+        offerings: [{ ...offering, provider: "openrouter" }],
+      }),
+    );
+    await expect(
+      approvedModelCreditMaterial(
+        deps.prisma as never,
+        deps.secrets,
+        "openrouter",
+        offering.modelId,
+      ),
+    ).resolves.toMatchObject({ zeroDataRetention: true });
+  });
   it("refuses an unapproved model before reading any credential", async () => {
     const deps = setup();
     await expect(

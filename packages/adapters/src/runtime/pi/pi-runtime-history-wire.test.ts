@@ -296,8 +296,27 @@ describe("history on the wire", () => {
     expect(JSON.stringify(body.messages)).not.toContain("[tool calls this reply made]");
   });
 
-  it("sends Anthropic earlier tool steps as tool_use and tool_result blocks", async () => {
-    const body = await wireBody(anthropic, anthropicReply, { history: toolReply, tools });
+  it.each([
+    ["plain text", { command: "ls ext" }, { command: "ls ext" }],
+    [
+      "malformed Unicode",
+      {
+        command: "echo \uD800",
+        values: ["\uDC00", "🌿", "\\ud800"],
+        nested: { "field\uFFFD": "valid", "field\uD800": "malformed", "🌿": "leaf" },
+      },
+      {
+        command: "echo \uFFFD",
+        values: ["\uFFFD", "🌿", "\\ud800"],
+        nested: { "field\uFFFD": "valid", "🌿": "leaf" },
+      },
+    ],
+  ])("sends Anthropic earlier tool steps with %s", async (_label, args, expectedInput) => {
+    const history = structuredClone(toolReply);
+    const segment = history[1]?.segments?.[0];
+    if (!segment || !("steps" in segment)) throw new Error("Expected a saved tool step");
+    segment.steps[0]!.calls![0]!.arguments = JSON.stringify(args);
+    const body = await wireBody(anthropic, anthropicReply, { history, tools });
     const messages = body.messages as Array<{
       role: string;
       content: Array<Record<string, unknown>>;
@@ -311,7 +330,8 @@ describe("history on the wire", () => {
     ]);
     const use = messages[1]!.content.find((part) => part.type === "tool_use");
     expect(messages[1]!.content[0]).toMatchObject({ type: "text", text: "Installing it." });
-    expect(use).toMatchObject({ name: "shell", input: { command: "ls ext" } });
+    expect(use?.name).toBe("shell");
+    expect(use?.input).toEqual(expectedInput);
     expect(messages[2]!.content[0]).toMatchObject({
       type: "tool_result",
       tool_use_id: use!.id,

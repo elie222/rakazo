@@ -46,6 +46,7 @@ function pendingTimerFixture(reuse = true) {
     taskId: "task-1",
     leaseFence: 0,
     updatedAt: scheduledAt,
+    task: { prompt: "check current work" },
   };
   const tx = {
     $queryRaw: vi.fn(async () => []),

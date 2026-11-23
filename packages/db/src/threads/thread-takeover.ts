@@ -1,12 +1,12 @@
 import type { RealtimeFanout } from "@rakazo/adapter-kit";
-import { MessageBlock as MessageBlockSchema } from "@rakazo/contracts";
-import { releasedTakeoverComputerBlocks } from "@rakazo/core";
+import { isPendingTakeoverComputer, takeoverComputerSettledState } from "@rakazo/core";
 import { draftRecordingsOfLeaseInTransaction } from "../bots/teaching-recordings.js";
 import type { Prisma, PrismaClient } from "../database/client.js";
 import { THREAD_LOCK_TRANSACTION_OPTIONS } from "../database/transaction-retry.js";
 import { publishSpaceChange } from "../spaces/space-changes.js";
 import { notifyRealtime } from "./event-stream.js";
 import { appendEventInTransaction, transientRunEventsWhere } from "./events.js";
+import { changeMessageBlocks, readMessageBlocks } from "./message-blocks.js";
 import type { RunLease } from "./messages.js";
 
 export type TakeoverAnswer = "done" | "skipped";
@@ -251,12 +251,11 @@ async function hasPendingTakeoverCard(
 ): Promise<boolean> {
   const messages = await tx.message.findMany({
     where: { threadId, runId, role: "bot" },
-    select: { blocks: true },
+    select: { id: true, blocks: true },
   });
-  return messages.some((message) => {
-    const parsed = MessageBlockSchema.array().safeParse(message.blocks);
-    return parsed.success && releasedTakeoverComputerBlocks(parsed.data, "done") !== null;
-  });
+  return messages.some((message) =>
+    readMessageBlocks(message).blocks.some(isPendingTakeoverComputer),
+  );
 }
 
 async function settleReleasedTakeoverCardsInTransaction(
@@ -275,14 +274,16 @@ async function settleReleasedTakeoverCardsInTransaction(
     select: { id: true, blocks: true },
   });
   let lastSeq: number | null = null;
+  const settledState = takeoverComputerSettledState(input.reason);
   for (const message of messages) {
-    const parsed = MessageBlockSchema.array().safeParse(message.blocks);
-    if (!parsed.success) continue;
-    const blocks = releasedTakeoverComputerBlocks(parsed.data, input.reason);
-    if (!blocks) continue;
+    // Only the card changes: a sibling block a later release does not know stays in the row.
+    const edited = changeMessageBlocks(message, (block) =>
+      isPendingTakeoverComputer(block) ? { ...block, state: settledState } : block,
+    );
+    if (!edited) continue;
     await tx.message.update({
       where: { id: message.id },
-      data: { blocks: blocks as Prisma.InputJsonValue },
+      data: { blocks: edited.stored },
     });
     const updated = await appendEventInTransaction(tx, {
       spaceId: input.spaceId,
@@ -291,7 +292,7 @@ async function settleReleasedTakeoverCardsInTransaction(
       type: "thread.message.updated",
       runId: input.runId,
       lease: input.lease,
-      payload: { messageId: message.id, role: "bot", blocks },
+      payload: { messageId: message.id, role: "bot", blocks: edited.blocks },
     });
     lastSeq = updated.seq;
   }

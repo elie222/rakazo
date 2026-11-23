@@ -314,6 +314,84 @@ dbTests("model credits ledger", () => {
     await expireModelCredits(prisma, organizationId, nextRenewal);
     expect(await balance()).toBe(0n);
   });
+  it("gives a month that repaid a spent top-up's dispute back its own expiry when the dispute is won", async () => {
+    const topup = (disputedCents: number) =>
+      reconcileCreditPurchase(
+        prisma,
+        organizationId,
+        { id: `${organizationId}-topup`, amountCents: 1000, disputedCents },
+        beforeRenewal,
+      );
+    await topup(0);
+    await settleModelCredits(prisma, await reserve(10), 10, beforeRenewal);
+    await topup(1000);
+    expect(await balance()).toBe(-10_000_000n);
+    await grant("monthly", 1000, renewal);
+    expect(await balance()).toBe(0n);
+    await topup(0);
+    expect(await balance()).toBe(10_000_000n);
+    const lots = await prisma.modelCreditLot.findMany({ where: { organizationId } });
+    expect(lots.filter((lot) => lot.availableMicros > 0n && lot.expiresAt === null)).toEqual([]);
+    await expireModelCredits(prisma, organizationId, renewal);
+    expect(await balance()).toBe(0n);
+  });
+  it.each([
+    ["first", "second"],
+    ["second", "first"],
+  ])(
+    "gives a month back its own expiry when it repaid a dispute on a top-up that repaid another, winning %s first",
+    async (wonFirst, wonLast) => {
+      const topup = (name: string, disputedCents: number) =>
+        reconcileCreditPurchase(
+          prisma,
+          organizationId,
+          { id: `${organizationId}-${name}`, amountCents: 1000, disputedCents },
+          beforeRenewal,
+        );
+      await topup("first", 0);
+      await settleModelCredits(prisma, await reserve(10), 10, beforeRenewal);
+      await topup("first", 1000);
+      await topup("second", 0);
+      expect(await balance()).toBe(0n);
+      await topup("second", 1000);
+      await grant("monthly", 1000, renewal);
+      expect(await balance()).toBe(0n);
+      await topup(wonFirst, 0);
+      expect(await balance()).toBe(10_000_000n);
+      await topup(wonLast, 0);
+      expect(await balance()).toBe(20_000_000n);
+      const lasting = await prisma.modelCreditLot.aggregate({
+        where: { organizationId, expiresAt: null },
+        _sum: { availableMicros: true },
+      });
+      expect(lasting._sum.availableMicros).toBe(10_000_000n);
+      await expireModelCredits(prisma, organizationId, renewal);
+      expect(await balance()).toBe(10_000_000n);
+    },
+  );
+  it("forgets a returned dispute repayment, so a later dispute after the month expired still reconciles", async () => {
+    const topup = (disputedCents: number, now = beforeRenewal) =>
+      reconcileCreditPurchase(
+        prisma,
+        organizationId,
+        { id: `${organizationId}-topup`, amountCents: 1000, disputedCents },
+        now,
+      );
+    await topup(0);
+    await settleModelCredits(prisma, await reserve(10), 10, beforeRenewal);
+    await topup(1000);
+    await grant("monthly", 1000, renewal);
+    await topup(0);
+    const purchase = await prisma.modelCreditEntry.findUniqueOrThrow({
+      where: { source: `purchase:${organizationId}-topup` },
+    });
+    expect(purchase.allocations).toEqual([]);
+    await expireModelCredits(prisma, organizationId, renewal);
+    await topup(500, nextRenewal);
+    expect(await balance()).toBe(-5_000_000n);
+    await topup(0, nextRenewal);
+    expect(await balance()).toBe(0n);
+  });
   it("leaves lapsed credits out of a read without expiring them", async () => {
     await grant("topup", 2000);
     await grant("monthly", 1000, renewal);

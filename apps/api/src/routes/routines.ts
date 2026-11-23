@@ -1,9 +1,17 @@
 import { ORPCError } from "@orpc/server";
 import { routineJobKey, routineWakeupJob } from "@rakazo/adapter-kit";
 import {
-  finishRoutineHandover,
+  botEventRoutines,
+  firstWatchCheck,
+  listAgentSkillRecords,
+  lockOwnerComputerApproval,
+  ownerComputerRefusal,
   parseRoutineWatch,
+  postRoutineNotice,
   RoutineWatchError,
+  routineComputerFingerprint,
+  routineEditChange,
+  routineEdited,
   stableStringify,
   validateRoutineWatch,
   wakeRun,
@@ -16,6 +24,7 @@ import {
   hasMixedOneShotSchedule,
   isOneShotRoutineCrons,
 } from "@rakazo/core";
+import type { PrismaClient } from "@rakazo/db";
 import { IsolationError, isRecordNotFound, Prisma } from "@rakazo/db";
 import { assertRoutineModel } from "../bots/model-pins.js";
 import { assertEmailTrigger } from "../email/bot-email-address.js";
@@ -23,14 +32,15 @@ import { listRoutineRuns } from "../routines/routine-runs.js";
 import {
   assertRoutineSchedule,
   createRoutineTestRun,
-  firstWatchCheck,
+  findRoutineTestRun,
   listRoutinesDto,
-  mapRoutine,
   nextRoutineDate,
   routineNextRunAt,
   routineRowData,
+  routineRunNowTarget,
   routineTestRunNonce,
-  routineTestTarget,
+  routineView,
+  routineViews,
 } from "../routines/routines.js";
 import type { RouterContext } from "./context.js";
 
@@ -50,6 +60,66 @@ async function assertRoutineWatch(
 
 export function routinesRoutes(ctx: RouterContext) {
   const { deps, repos, announceRoutine, codexCatalog, agentSkills, authed } = ctx;
+
+  /**
+   * "Use my computer" on: the fingerprint of the prompt the owner's editor showed, which this same
+   * update stores, while they have a computer paired and the routine may use it (see
+   * ownerComputerRefusal).
+   */
+  async function approveComputerPrompt(routine: {
+    id: string;
+    spaceId: string;
+    userId: string;
+    botId: string;
+    botUserId: string;
+    threadId: string | null;
+    prompt: string | undefined;
+    inChat: boolean;
+    watch: RoutineWatch | null;
+    eventTriggered: boolean;
+  }): Promise<string> {
+    const { prompt } = routine;
+    if (prompt === undefined || !(await deps.userDevices?.pairedSince(routine.userId))) {
+      throw new ClientError("BAD_REQUEST", "This routine can't use your computer.");
+    }
+    const [otherEventRoutines, thread, skills] = await Promise.all([
+      deps.prisma.routine.count({
+        where: { ...botEventRoutines([routine.botId]), id: { not: routine.id } },
+      }),
+      routine.threadId
+        ? deps.prisma.thread.findUnique({
+            where: { id: routine.threadId },
+            select: { groupId: true },
+          })
+        : null,
+      listAgentSkillRecords(deps.prisma, routine),
+    ]);
+    const fingerprint = routineComputerFingerprint(prompt, skills);
+    const refused = ownerComputerRefusal({
+      ownerId: routine.userId,
+      userId: routine.userId,
+      botUserId: routine.botUserId,
+      inChat: routine.inChat,
+      watch: routine.watch,
+      groupThread: Boolean(thread?.groupId),
+      botEventRoutines: routine.eventTriggered || otherEventRoutines > 0,
+      current: fingerprint,
+    });
+    if (refused === "event_routines") {
+      throw new ClientError(
+        "BAD_REQUEST",
+        "A bot with webhook, email, git or chat app triggers can't use your computer.",
+      );
+    }
+    if (refused === "text_changed") {
+      throw new ClientError("BAD_REQUEST", "A routine that uses a skill can't use your computer.");
+    }
+    if (refused || !fingerprint) {
+      throw new ClientError("BAD_REQUEST", "This routine can't use your computer.");
+    }
+    return fingerprint;
+  }
+
   return {
     routines: {
       listForMentions: authed.routines.listForMentions.handler(async ({ context, input }) => {
@@ -66,9 +136,10 @@ export function routinesRoutes(ctx: RouterContext) {
         const rows = await deps.prisma.routine.findMany({
           where: { botId: { in: bots.map((bot) => bot.id) }, spaceId: actor.spaceId },
         });
+        const views = await routineViews(deps, actor, rows);
         return bots.map((bot) => ({
           botId: bot.id,
-          routines: rows.filter((row) => row.botId === bot.id).map(mapRoutine),
+          routines: views.filter((routine) => routine.botId === bot.id),
         }));
       }),
       history: authed.routines.history.handler(async ({ context, input }) =>
@@ -90,7 +161,15 @@ export function routinesRoutes(ctx: RouterContext) {
           data: routineRowData(context.actor, input, routineNextRunAt(input)),
         });
         await announceRoutine(context.actor, bot, row);
-        return mapRoutine(row);
+        await postRoutineNotice(deps, {
+          spaceId: context.actor.spaceId,
+          threadId: row.threadId ?? bot.thread?.id,
+          botId: bot.id,
+          change: "created",
+          name: row.name,
+          routine: { webhookEnabled: row.webhookEnabled, active: row.active },
+        });
+        return await routineView(deps, context.actor, row);
       }),
       update: authed.routines.update.handler(async ({ context, input }) => {
         // Archived bots keep their routines paused, so resolve an active parent before any write.
@@ -102,6 +181,14 @@ export function routinesRoutes(ctx: RouterContext) {
           },
         });
         if (!existing) throw new ORPCError("NOT_FOUND");
+        // A routine runs with its owner's accounts, so only they change what it does. Anyone in
+        // the Space may still turn it on or off, which keeps it theirs.
+        if (existing.userId !== context.actor.userId) {
+          const { routineId: _routineId, active: _active, ...changes } = input;
+          if (Object.values(changes).some((value) => value !== undefined)) {
+            throw new ClientError("FORBIDDEN", "Only the routine's owner can change it.");
+          }
+        }
         const bot = await repos.getBot(context.actor, existing.botId);
         const active = input.active ?? existing.active;
         const crons = input.crons ?? existing.crons;
@@ -224,6 +311,24 @@ export function routinesRoutes(ctx: RouterContext) {
               : isOneShotRoutineCrons(crons)
                 ? (armedOneShotAt ?? existing.nextRunAt)
                 : (recalculatedNextRunAt ?? existing.nextRunAt);
+        // What a watch read is not the owner's words, so it never runs as a turn in the chat.
+        const inChat = watch ? false : input.inChat;
+        const computerPromptHash =
+          input.useComputer === undefined
+            ? undefined
+            : input.useComputer
+              ? await approveComputerPrompt({
+                  ...existing,
+                  // The text the owner's editor showed, never a stored one they may not have seen.
+                  prompt: input.prompt,
+                  inChat: inChat ?? existing.inChat,
+                  watch,
+                  botUserId: bot.userId,
+                  eventTriggered: Boolean(
+                    webhookEnabled || githubEnabled || messageProvider || emailSenders,
+                  ),
+                })
+              : null;
         const writesSchedule = nextRunAt?.getTime() !== existing.nextRunAt?.getTime();
         // An explicit on/off must not undo an enable, a disable or a finished one-shot that landed
         // after the read; neither may a schedule change computed from the old on/off state.
@@ -231,8 +336,8 @@ export function routinesRoutes(ctx: RouterContext) {
         // Re-check the parent in the write itself so an archive that lands after the read wins.
         // Model and schedule patches must also match the snapshot they were computed from, so a
         // tick that fired after the read is not rewound onto an occurrence that already ran.
-        const row = await deps.prisma.routine
-          .update({
+        const writeRoutine = (client: Prisma.TransactionClient) =>
+          client.routine.update({
             where: {
               id: existing.id,
               bot: { archivedAt: null },
@@ -251,8 +356,6 @@ export function routinesRoutes(ctx: RouterContext) {
               ...(writesActive ? { active: existing.active } : {}),
             },
             data: {
-              // A routine runs with its owner's accounts, so whoever edits it takes it over.
-              userId: context.actor.userId,
               name: input.name,
               prompt: input.prompt,
               crons: input.crons,
@@ -261,49 +364,55 @@ export function routinesRoutes(ctx: RouterContext) {
               // An explicit on or off is the member's own choice, so a restore must not undo it.
               ...(input.active !== undefined ? { resumeOnRestore: false } : {}),
               notify: input.notify,
-              // What a watch read is not the owner's words, so it never runs as a turn in the chat.
-              inChat: watch ? false : input.inChat,
+              inChat,
+              // Changing the prompt without this clears it (see the routines table's trigger).
+              ...(computerPromptHash === undefined ? {} : { computerPromptHash }),
               webhookEnabled: input.webhookEnabled,
               githubEnabled: input.githubEnabled,
               messageProvider: input.messageProvider,
               emailSenders: input.emailSenders,
               ...(touchesModel ? { modelProvider, modelId, thinkingLevel } : {}),
-              // A changed watch starts from a fresh baseline, and so does one that now reads
-              // a different person's accounts.
+              // A changed watch starts from a fresh baseline.
               ...(input.watch === undefined
                 ? {}
                 : { watch: (input.watch as Prisma.InputJsonValue | null) ?? Prisma.DbNull }),
-              ...(watchChanged || existing.userId !== context.actor.userId
-                ? { watchState: Prisma.DbNull }
-                : {}),
+              ...(watchChanged ? { watchState: Prisma.DbNull } : {}),
               ...(writesSchedule ? { nextRunAt } : {}),
             },
-          })
-          .catch(async (error: unknown) => {
-            if (isRecordNotFound(error)) {
-              if (
-                await deps.prisma.routine.findFirst({
-                  where: {
-                    id: existing.id,
-                    spaceId: context.actor.spaceId,
-                    bot: { archivedAt: null },
-                  },
-                  select: { id: true },
-                })
-              ) {
-                throw new ClientError("CONFLICT", "Routine changed; retry.");
-              }
-              throw new ClientError("NOT_FOUND", "Not Found");
+          });
+        const write =
+          typeof computerPromptHash === "string"
+            ? deps.prisma.$transaction(async (tx) => {
+                // Pairing checked again under the lock a device change takes, so a computer
+                // paired or unpaired since the check above can't leave this approval standing.
+                await lockOwnerComputerApproval(tx, existing.userId);
+                if (!(await deps.userDevices?.pairedSince(existing.userId))) {
+                  throw new ClientError("BAD_REQUEST", "This routine can't use your computer.");
+                }
+                // The table's trigger clears an approval left unchanged by a rename; this
+                // update approves the routine afresh, so it starts from none.
+                await tx.$executeRaw`UPDATE "routines" SET "computerPromptHash" = NULL WHERE "id" = ${existing.id}`;
+                return writeRoutine(tx);
+              })
+            : writeRoutine(deps.prisma);
+        const row = await write.catch(async (error: unknown) => {
+          if (isRecordNotFound(error)) {
+            if (
+              await deps.prisma.routine.findFirst({
+                where: {
+                  id: existing.id,
+                  spaceId: context.actor.spaceId,
+                  bot: { archivedAt: null },
+                },
+                select: { id: true },
+              })
+            ) {
+              throw new ClientError("CONFLICT", "Routine changed; retry.");
             }
-            throw error;
-          });
-        if (existing.userId !== context.actor.userId) {
-          await finishRoutineHandover(deps, {
-            id: row.id,
-            previousUserId: existing.userId,
-            userId: context.actor.userId,
-          });
-        }
+            throw new ClientError("NOT_FOUND", "Not Found");
+          }
+          throw error;
+        });
         if (bot.thread) {
           await deps.events.append({
             spaceId: context.actor.spaceId,
@@ -326,54 +435,71 @@ export function routinesRoutes(ctx: RouterContext) {
             await deps.jobs.cancel(routineJobKey(row.id));
           }
         }
-        return mapRoutine(row);
+        if (routineEdited(existing, row)) {
+          await postRoutineNotice(deps, {
+            spaceId: context.actor.spaceId,
+            threadId: existing.threadId ?? bot.thread?.id,
+            botId: bot.id,
+            change: routineEditChange(existing, row),
+            name: row.name,
+            routine: { webhookEnabled: row.webhookEnabled, active: row.active },
+          });
+        }
+        return await routineView(deps, context.actor, row);
       }),
       remove: authed.routines.remove.handler(async ({ context, input }) => {
-        // Any member can change a routine, so any member can delete one.
+        // Any member can delete a routine, as they can turn it off.
         const existing = await deps.prisma.routine.findFirst({
           where: { id: input.routineId, spaceId: context.actor.spaceId },
         });
         if (!existing) throw new IsolationError();
         await deps.prisma.routine.delete({ where: { id: existing.id } });
         await deps.jobs.cancel(routineJobKey(existing.id));
+        await postRoutineNotice(deps, {
+          spaceId: context.actor.spaceId,
+          threadId: existing.threadId,
+          botId: existing.botId,
+          change: "deleted",
+          name: existing.name,
+        });
         return { ok: true as const };
       }),
       testRun: authed.routines.testRun.handler(async ({ context, input }) => {
-        const target = await routineTestTarget(deps.prisma, repos, context.actor, input.routineId);
-        const { threadId } = target;
         const nonce = input.clientNonce
           ? routineTestRunNonce(context.actor, input.clientNonce)
           : undefined;
-        const findExisting = async () =>
-          nonce
-            ? deps.prisma.run.findFirst({
-                where: { threadId, userId: context.actor.userId, clientNonce: nonce },
-                select: { id: true },
-              })
-            : null;
+        const findExisting = (db: Pick<PrismaClient, "run"> = deps.prisma) =>
+          findRoutineTestRun(db, context.actor, input.routineId, nonce);
+        // Access is checked first, so a retry can't return a run for a bot the caller lost.
+        const target = await routineRunNowTarget(
+          deps.prisma,
+          repos,
+          context.actor,
+          input.routineId,
+        );
+        // The group chat a run went to, so the client can follow it there.
+        const runResult = (run: { id: string; thread: { groupId: string | null } }) => ({
+          runId: run.id,
+          groupId: run.thread.groupId,
+        });
         const existing = await findExisting();
-        if (existing) return { runId: existing.id };
+        if (existing) return runResult(existing);
         const skillRecords = await agentSkills.listWithContent(context.actor);
         const prompt = expandSkillReferencesInPrompt(target.routine.prompt, skillRecords);
-        let run: { id: string };
+        let run: { id: string; thread: { groupId: string | null } };
         try {
           // Task + run must commit together so a nonce collision cannot leave an orphan queued Task.
           run = await deps.prisma.$transaction(async (tx) => {
-            const existing = nonce
-              ? await tx.run.findFirst({
-                  where: { threadId, clientNonce: nonce },
-                  select: { id: true },
-                })
-              : null;
+            const existing = await findExisting(tx);
             return existing ?? createRoutineTestRun(tx, context.actor, target, prompt, nonce);
           });
         } catch (error) {
           const existing = await findExisting();
-          if (existing) return { runId: existing.id };
+          if (existing) return runResult(existing);
           throw error;
         }
         await wakeRun(deps.jobs, run.id);
-        return { runId: run.id };
+        return runResult(run);
       }),
     },
   };

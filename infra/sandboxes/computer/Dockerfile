@@ -110,14 +110,22 @@ RUN apt-get update && apt-get upgrade -y --no-install-recommends && apt-get inst
   && chmod +x /usr/bin/fbsetbg \
   && ln -sfn /bin/true /usr/bin/xmessage
 # Google Chrome or Brave replaces Chromium only when built with BROWSER=chrome
-# or BROWSER=brave. The default build installs Chromium above, so this step does
-# nothing for it. repo_add_once=false keeps Chrome's package from adding a
-# second repository entry without the pinned key.
+# or BROWSER=brave. For the default Chromium build, remove Debian's conflicting
+# or duplicate /etc/chromium.d defaults (--enable-gpu-rasterization, --disable-pings,
+# duplicate --no-default-browser-check / --disable-dev-shm-usage, and empty
+# --load-extension=) while keeping --enable-remote-extensions so /usr/bin/chromium
+# does not inject --disable-background-networking and --disable-extensions-except=.
+# repo_add_once=false keeps Chrome's package from adding a second repository entry
+# without the pinned key.
 COPY --from=chrome-keyring /google-chrome.gpg /usr/share/keyrings/google-chrome.gpg
 RUN set -eux; \
     [ "$BROWSER" = chrome ] || rm /usr/share/keyrings/google-chrome.gpg; \
     case "$BROWSER" in \
-      chromium) ;; \
+      chromium) \
+        rm -f /etc/chromium.d/default-flags /etc/chromium.d/dev-shm; \
+        printf '%s\n' \
+          'export CHROMIUM_FLAGS="$CHROMIUM_FLAGS --enable-remote-extensions"' \
+          > /etc/chromium.d/extensions ;; \
       chrome) \
         echo "deb [signed-by=/usr/share/keyrings/google-chrome.gpg arch=amd64] https://dl.google.com/linux/chrome/deb/ stable main" \
           > /etc/apt/sources.list.d/google-chrome.list; \
@@ -204,6 +212,9 @@ COPY --chmod=755 rakazo-focus-or-launch /usr/local/bin/rakazo-focus-or-launch
 COPY --chmod=755 rakazo-page-browser /usr/local/bin/rakazo-page-browser
 COPY --chmod=644 page_secrets.py /usr/local/lib/rakazo/page_secrets.py
 COPY --chmod=644 rakazo-browser.desktop /usr/share/applications/rakazo-browser.desktop
+# Every type start.sh would register for rakazo-browser, so a boot whose home does not
+# override them skips the slow xdg-mime and xdg-settings calls.
+COPY --chmod=644 mimeapps.list /etc/xdg/mimeapps.list
 # Rakazo keeps credentials itself; the browser's save prompts would cover pages.
 # Pop-ups open: one a page opens after making a report would be blocked unseen.
 COPY --chmod=644 browser-policy.json /etc/chromium/policies/managed/rakazo-browser.json
@@ -223,7 +234,7 @@ RUN ldconfig \
   && sed -i 's/\r$//' /usr/local/bin/rakazo-computer /usr/local/lib/rakazo-user-env.sh /usr/local/bin/rakazo-computer-control /usr/local/bin/rakazo-browser /usr/local/bin/rakazo-focus-or-launch /usr/local/bin/rakazo-page-browser \
     /usr/local/lib/rakazo/page_secrets.py \
     /etc/rakazo/fluxbox/init /etc/rakazo/fluxbox/apps /etc/rakazo/fluxbox/menu \
-    /etc/profile.d/rakazo-local-bin.sh
+    /etc/profile.d/rakazo-local-bin.sh /etc/xdg/mimeapps.list
 # Agent-authored scripts often use the unversioned name. Keep it on the installed Python 3.
 RUN ln -s /usr/bin/python3 /usr/local/bin/python \
   && python -c 'import sys; assert sys.version_info.major == 3'
@@ -234,6 +245,9 @@ EXPOSE 7070 6080 6081 6082 6083 6084 6085 6086 6087 6088 6089 6090 6091 6092 609
 ENV LD_PRELOAD=/usr/local/lib/libnss_wrapper.so \
     NSS_WRAPPER_PASSWD=/tmp/rakazo-nss/passwd \
     NSS_WRAPPER_GROUP=/tmp/rakazo-nss/group
+# All execs share the boot session bus. An absent socket gives a connection
+# error without triggering D-Bus autolaunch.
+ENV DBUS_SESSION_BUS_ADDRESS=unix:path=/tmp/rakazo/session-bus
 USER 1000:1000
 # Start Bash without the wrapper; user-env enables it once both files exist.
 CMD ["/usr/bin/env", "-u", "LD_PRELOAD", "/usr/local/bin/rakazo-computer"]

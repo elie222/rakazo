@@ -21,6 +21,7 @@ import {
   publishMidTurnNarration,
   recordExplicitNoResponse,
   showNarrationStatus,
+  shownProgress,
   tryFlushPendingTools,
 } from "../lifecycle/run-progress.js";
 import {
@@ -247,7 +248,7 @@ async function streamProgress(ctx: RunContext, event: RuntimeEvent<"progress">) 
       botId: bot.id,
       type: "thread.progress",
       runId,
-      payload: { delta: reply.pendingProgress, streaming: true },
+      payload: { delta: reply.pendingProgress, streaming: true, ...shownProgress(ctx) },
     });
     reply.pendingProgress = "";
     reply.lastProgressAt = Date.now();

@@ -3,6 +3,7 @@ import type { PrismaClient } from "../database/client.js";
 import { createDb } from "../database/client.js";
 import { asSystem, runAsSystem } from "../database/row-security.js";
 import { provisionMessagingIdentity } from "../messaging/messaging.js";
+import { sendUserMessage } from "../threads/events.js";
 import { pruneChatHistory } from "./history-retention.js";
 
 const databaseUrl = process.env.DATABASE_URL;
@@ -28,6 +29,7 @@ describePostgres("chat history retention (PostgreSQL)", () => {
   async function seed(ages: number[], cursor: number | null) {
     await system.event.deleteMany({ where: { threadId } });
     await system.message.deleteMany({ where: { threadId } });
+    await system.prunedMessageNonce.deleteMany({ where: { threadId } });
     await system.run.deleteMany({ where: { threadId } });
     await system.task.deleteMany({ where: { threadId } });
     await system.message.createMany({
@@ -166,5 +168,35 @@ describePostgres("chat history retention (PostgreSQL)", () => {
     await seed([5, 1], null);
     expect(await prune()).toBe(0);
     expect(await seqs()).toEqual([0, 1]);
+  });
+
+  it("still recognizes a delivery whose message it deleted", async () => {
+    await seed([90, 5], null);
+    const clientNonce = "github:bot:delivery-digest";
+    await system.message.update({ where: { id: `${threadId}-m0` }, data: { clientNonce } });
+    await prune();
+    expect(await seqs()).toEqual([1]);
+
+    const replayed = await runAsSystem("test replay", () =>
+      sendUserMessage(system, {
+        spaceId,
+        threadId,
+        botId,
+        userId,
+        blocks: [{ kind: "text", text: "Replayed delivery" }],
+        prompt: "Replayed delivery",
+        trigger: "webhook",
+        clientNonce,
+      }),
+    );
+    expect(replayed).toEqual({
+      messageId: `${threadId}-m0`,
+      seq: 0,
+      taskId: null,
+      runId: null,
+      pruned: true,
+    });
+    expect(await seqs()).toEqual([1]);
+    expect(await system.run.count({ where: { threadId } })).toBe(0);
   });
 });

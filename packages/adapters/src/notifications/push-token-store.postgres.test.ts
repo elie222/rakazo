@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { deferred } from "@rakazo/core/test-async";
 import { createDb, runAsSystem, runAsTenant } from "@rakazo/db";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
@@ -188,5 +189,67 @@ suite("database push registrations", () => {
     await deletion;
     await rejected;
     expect(await api.list(user("a"))).toEqual([]);
+  });
+
+  it("removes a handed-over or unregistered device from the table the previous release sends from", async () => {
+    const migration = (name: string) =>
+      readFileSync(
+        new URL(`../../../db/prisma/migrations/${name}/migration.sql`, import.meta.url),
+        "utf8",
+      );
+    const previous = migration("20261226120000_push_registrations");
+    const owner = createDb(process.env.DATABASE_MIGRATION_URL ?? process.env.DATABASE_URL!);
+    const legacy = async () =>
+      (
+        await owner.pool.query<{ userId: string }>(
+          'SELECT "userId" FROM "push_tokens" WHERE "userId" LIKE $1 ORDER BY "userId"',
+          [`${prefix}%`],
+        )
+      ).rows.map((row) => row.userId);
+    const sendFromPreviousRelease = async (id: string, device: string) => {
+      const row = await runAsSystem("read fixture registration", () =>
+        a.prisma.pushRegistration.findFirstOrThrow({
+          where: { userId: user(id), tokenDigest: credentialDigest(token(device)) },
+        }),
+      );
+      await owner.pool.query(
+        'INSERT INTO "push_tokens" ("userId", "ciphertext", "tokenDigest", "sessionId", "updatedAt") VALUES ($1, $2, $3, $4, now())',
+        [row.userId, row.ciphertext, row.tokenDigest, row.sessionId],
+      );
+    };
+    try {
+      // The database as the previous release left it, partway through the deploy.
+      await owner.pool.query(`
+        CREATE TABLE "push_tokens" (
+          "userId" TEXT NOT NULL PRIMARY KEY REFERENCES "user"("id") ON DELETE CASCADE,
+          "ciphertext" TEXT NOT NULL,
+          "tokenDigest" TEXT NOT NULL UNIQUE,
+          "sessionId" TEXT NOT NULL,
+          "updatedAt" TIMESTAMP(3) NOT NULL,
+          "presentation" TEXT
+        );
+        GRANT SELECT, INSERT, UPDATE, DELETE ON "push_tokens" TO PUBLIC;
+        ${previous.slice(previous.indexOf("CREATE FUNCTION push_tokens_mirror"))}
+        ${migration("20261231130000_push_registrations_unmirror")}`);
+
+      await api.save(user("a"), token("shared"), session("a"));
+      await sendFromPreviousRelease("a", "shared");
+      expect(await legacy()).toEqual([user("a")]);
+      expect(await api.list(user("a"))).toHaveLength(1);
+
+      await worker.save(user("b"), token("shared"), session("b"));
+      expect(await legacy()).toEqual([]);
+      await sendFromPreviousRelease("b", "shared");
+      expect(await legacy()).toEqual([user("b")]);
+      await api.remove(user("b"), credentialDigest(token("shared")));
+      expect(await legacy()).toEqual([]);
+    } finally {
+      await owner.pool.query(`
+        DROP TRIGGER IF EXISTS push_registrations_unmirror ON "push_registrations";
+        DROP FUNCTION IF EXISTS push_registrations_unmirror();
+        DROP TABLE IF EXISTS "push_tokens";
+        DROP FUNCTION IF EXISTS push_tokens_mirror();`);
+      await owner.pool.end();
+    }
   });
 });

@@ -12,10 +12,12 @@ import { createAssistantMessageEventStream } from "@earendil-works/pi-ai";
 import type {
   AgentRuntimeEvent,
   AgentUsage,
+  ModelBilling,
   ModelCallObserver,
   UsageOperationKind,
 } from "@rakazo/adapter-kit";
 import { getLogger } from "@rakazo/logging";
+import { withDataRetentionPayload } from "../../../models/endpoints/data-retention.js";
 import { withGoogleToolHistory } from "../../../models/endpoints/google-tool-history.js";
 import { openRouterInferenceFetch } from "../../../models/endpoints/openrouter-usage.js";
 import { estimateModelContextTokens } from "../../../models/model-context.js";
@@ -25,6 +27,7 @@ import type { ContextBudget } from "../../context/context-selection.js";
 import { estimateTextTokens, lowTextTokens } from "../../context/context-selection.js";
 import type { RejectedProviderRequest } from "../../provider-request-shape.js";
 import { withRejectedRequestCapture } from "../../provider-request-shape.js";
+import { LOCAL_PROVIDER_ID } from "../models/pi-local-provider-id.js";
 import { requestedPiCacheWriteRetention, resolvePiCacheRetention } from "./pi-cache-retention.js";
 import { recordPiTelemetryContent, withPiTelemetrySpan } from "./pi-telemetry.js";
 
@@ -36,9 +39,11 @@ const sseObserved = new WeakSet<ReportedUsageFields>();
 const dispatchedRequests = new WeakSet<ReportedUsageFields>();
 const reportedCosts = new WeakMap<ReportedUsageFields, number>();
 const reportedValues = new WeakMap<ReportedUsageFields, Map<keyof AgentUsage, number>>();
+/** Calls whose reported prompt count includes any cache reads, itemized or not. */
+const cacheInclusivePrompts = new WeakSet<ReportedUsageFields>();
 export function normalizePiUsage(
   usage: Partial<Usage> | undefined,
-  model: Pick<Model<Api>, "cost">,
+  model: Pick<Model<Api>, "cost" | "provider">,
   reported: ReportedUsageFields = new Set(),
 ): AgentUsage {
   // A rejected request never generated, so every token count is zero — even if the
@@ -76,9 +81,15 @@ export function normalizePiUsage(
     ) &&
     inputTokens !== null &&
     outputTokens !== null &&
-    (model.cost.cacheRead === 0 || cacheReadTokens !== null) &&
+    // A prompt count that includes cache reads prices any it does not itemize at the full
+    // input rate: exact when nothing was cached, and never below the real cost.
+    (model.cost.cacheRead === 0 ||
+      cacheReadTokens !== null ||
+      cacheInclusivePrompts.has(reported)) &&
     (model.cost.cacheWrite === 0 || cacheWriteTokens !== null);
   const providerCost = reportedCosts.get(reported);
+  // A local server has no price, so its calls cost nothing rather than an unknown amount.
+  const free = model.provider === LOCAL_PROVIDER_ID && providerCost === undefined && !rejected;
   return {
     providerRequestId: reportedRequestIds.get(reported) ?? null,
     inputTokens,
@@ -89,17 +100,19 @@ export function normalizePiUsage(
     reasoningTokens: token(usage?.reasoning, "reasoningTokens"),
     totalTokens,
     costUsd:
-      (rejected ? 0 : providerCost) ??
+      (rejected || free ? 0 : providerCost) ??
       (costKnown && typeof usage?.cost?.total === "number" && Number.isFinite(usage.cost.total)
         ? usage.cost.total
         : null),
     costSource: rejected
       ? "provider-rejection"
-      : providerCost !== undefined
-        ? "provider-reported"
-        : costKnown
-          ? "pi-catalog-estimate"
-          : null,
+      : free
+        ? "free-endpoint"
+        : providerCost !== undefined
+          ? "provider-reported"
+          : costKnown
+            ? "pi-catalog-estimate"
+            : null,
     pricingSnapshot: model.cost ? JSON.parse(JSON.stringify(model.cost)) : null,
     pricingVersion:
       rejected || providerCost !== undefined ? null : costKnown ? "pi-ai-1.3.0" : null,
@@ -171,6 +184,7 @@ async function observeUsageEvent(
       usage.prompt_tokens !== undefined ||
       event.response !== undefined ||
       usage.input_tokens_details !== undefined;
+    if (typeof rawInput === "number" && includesCache) cacheInclusivePrompts.add(reported);
     const rawRead =
       usage.prompt_tokens_details?.cached_tokens ??
       usage.input_tokens_details?.cached_tokens ??
@@ -338,6 +352,7 @@ export function observedPiStream(
     agentId?: string;
     userId?: string;
     runId?: string;
+    billing?: ModelBilling;
   } = {
     operationKind: "answer",
   },
@@ -353,6 +368,9 @@ export function observedPiStream(
 ) {
   const stream = createAssistantMessageEventStream();
   const reported: ReportedUsageFields = new Set();
+  // Pi's Google adapters count every prompt token the response does not report as cached as input.
+  if (model.api === "google-generative-ai" || model.api === "google-vertex")
+    cacheInclusivePrompts.add(reported);
   const callId = randomUUID();
   const emitUsage = async (usage: AgentUsage, operationKind = attribution.operationKind) => {
     const event = {
@@ -363,6 +381,7 @@ export function observedPiStream(
       callId,
       agentId: attribution.agentId,
       operationKind,
+      billing: attribution.billing,
     };
     try {
       await hooks?.recordUsage?.(event);
@@ -455,11 +474,14 @@ export function observedPiStream(
         // Each guarded reservation covers one HTTP attempt, not hidden SDK retries.
         const historyOptions = withGoogleToolHistory(
           model,
-          withChatCompletionsCompatibility(model, {
-            ...options,
-            ...(cacheRetention ? { cacheRetention } : {}),
-            ...(observer ? { maxRetries: 0 } : {}),
-          }),
+          withDataRetentionPayload(
+            model,
+            withChatCompletionsCompatibility(model, {
+              ...options,
+              ...(cacheRetention ? { cacheRetention } : {}),
+              ...(observer ? { maxRetries: 0 } : {}),
+            }),
+          ),
         );
         // Innermost on the fetch chain, so a rejection records the body exactly as it was sent.
         const streamOptions = hooks?.onRejectedRequest
