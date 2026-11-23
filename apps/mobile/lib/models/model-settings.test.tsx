@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { i18n } from "@lingui/core";
 import type {
   MediaModelsView,
   ModelCatalogEntry,
@@ -368,6 +369,10 @@ async function renderConnection(request: Partial<ModelConnectionRequest> = {}) {
   });
   await act(async () => root.render(createElement(ModelConnection)));
 }
+
+// The shared level labels read the active catalog.
+i18n.load("en", {});
+i18n.activate("en");
 
 beforeEach(async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
