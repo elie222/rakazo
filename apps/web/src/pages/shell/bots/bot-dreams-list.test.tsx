@@ -67,6 +67,7 @@ const dream = (overrides: Partial<MemoryDream> = {}): MemoryDream => ({
   finishedAt: "2026-02-02T23:31:00.000Z",
   createdAt: "2026-02-02T23:30:00.000Z",
   ...overrides,
+  runId: overrides.runId === undefined ? "run-1" : overrides.runId,
 });
 
 describe("DreamsList", () => {
@@ -128,5 +129,13 @@ describe("DreamsList", () => {
     );
     await act(async () => button?.click());
     expect(dreamNow).toHaveBeenCalledWith({ dreamId: "dream-9" });
+  });
+
+  it("offers no undo for a dream an import kept without its run", () => {
+    dreams.push(dream({ id: "dream-9", reason: "manual", runId: null }));
+    const container = render();
+    expect(
+      [...container.querySelectorAll("button")].some((entry) => entry.textContent === "Undo"),
+    ).toBe(false);
   });
 });

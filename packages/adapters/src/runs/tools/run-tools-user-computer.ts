@@ -3,6 +3,7 @@ import type { AgentToolExecutionResult, ProcessEvent } from "@rakazo/adapter-kit
 import type { ApprovalMode } from "@rakazo/core";
 import { redactSecrets } from "@rakazo/core";
 import { sandboxCommandTimeoutMs } from "@rakazo/core/node/sandbox-command";
+import { getLogger } from "@rakazo/logging";
 import { z } from "zod";
 import type { HostComputerEnvironment } from "../../computers/host/host-computer-protocol.js";
 import { nativeShellCommandArgv } from "../../computers/host/native-shell.js";
@@ -159,7 +160,12 @@ async function connectedUserComputer(ctx: RunContext, computerId?: string) {
   if (pinned && computerId && computerId !== pinned) return undefined;
   const device =
     owner && devices
-      ? await devices.connected(owner, pinned ?? computerId).catch(() => null)
+      ? await devices.connected(owner, pinned ?? computerId).catch((error) => {
+          // A lookup that fails is not a computer that is gone; name the failure before the
+          // bot reads it as unavailable.
+          getLogger().warn("user computer lookup failed", { error });
+          return null;
+        })
       : null;
   return owner && devices && device ? { owner, devices, deviceId: device.deviceId } : undefined;
 }

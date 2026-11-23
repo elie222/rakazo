@@ -19,6 +19,7 @@ import {
   normalizeBotWorkspacePath,
 } from "@rakazo/contracts";
 import type { ChatModelChoice } from "@rakazo/core";
+import { approvalModeLabel } from "@rakazo/i18n/approval-mode";
 import { thinkingLevelLabel } from "@rakazo/i18n/thinking-level";
 import {
   Button,
@@ -464,10 +465,10 @@ export function ApprovalModeRow({
           disabled={disabled}
           onValueChange={(next) => onChange(next === "" ? null : (next as ApprovalMode))}
           options={[
-            { value: "", label: t`Space default` },
-            { value: "ask", label: t`Ask` },
-            { value: "auto", label: t`Auto` },
-            { value: "never", label: t`Never ask` },
+            { value: "", label: approvalModeLabel("space") },
+            { value: "ask", label: approvalModeLabel("ask") },
+            { value: "auto", label: approvalModeLabel("auto") },
+            { value: "never", label: approvalModeLabel("never") },
           ]}
         />
       </Field>

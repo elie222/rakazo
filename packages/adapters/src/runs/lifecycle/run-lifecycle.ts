@@ -141,11 +141,14 @@ export async function failRunBeforeTurn(
     );
   } else if (run.trigger === MEMORY_DREAM_TRIGGER) {
     // A dream fails silently; its record says why and the Memory page shows it.
-    await recordMemoryDream(deps.prisma, run, {
-      status: "failed",
-      summary: message,
-      errorKind: "run-failed",
-    }).catch((error) => getLogger().error("memory dream record", error));
+    await bestEffort(
+      "record the memory dream",
+      recordMemoryDream(deps.prisma, run, {
+        status: "failed",
+        summary: message,
+        errorKind: "run-failed",
+      }),
+    );
   } else if (!failed.continuationRunId) {
     await notifyRun(deps, run, {
       kind: "failure",

@@ -115,7 +115,10 @@ export function DreamsList({ botId, memoryOff }: { botId: string; memoryOff: boo
     stale: [queries.memory.dreams.queryKey({ input: { botId } })],
   });
   // Only the newest finished dream can go back, and the server says so too.
-  const undoableId = dreams.find((dream) => dream.status === "completed" && !dream.undoneAt)?.id;
+  // An imported dream kept no run to undo, so it offers no Undo.
+  const undoableId = dreams.find(
+    (dream) => dream.status === "completed" && !dream.undoneAt && dream.runId,
+  )?.id;
   if (memoryOff) {
     return (
       <p data-testid="bot-dreams-paused" className="text-body-sm text-muted-foreground">

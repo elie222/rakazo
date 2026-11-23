@@ -59,6 +59,8 @@ export const MemoryDreamReasonSchema = z.enum(["idle", "batch", "tidy", "review"
 export type MemoryDreamReason = z.infer<typeof MemoryDreamReasonSchema>;
 export const MemoryDreamSchema = z.object({
   id: Id,
+  /** The run that did the work; null when an imported dream has no run to undo. */
+  runId: Id.nullable().default(null),
   status: MemoryDreamStatusSchema,
   reason: MemoryDreamReasonSchema.default("idle"),
   summary: z.string().nullable(),

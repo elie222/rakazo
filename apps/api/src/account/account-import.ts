@@ -331,6 +331,8 @@ class SpaceImport {
   readonly homes = new Map<string, string>();
   readonly receivedArtifacts = new Set<string>();
   readonly receivedHomeFiles = new Set<string>();
+  /** Documents the import skipped; their revisions follow and are skipped too. */
+  readonly skippedMemoryDocuments = new Set<string>();
   boardId: string | null = null;
   maxTicketNumber = 0;
   recordsDone = false;
@@ -736,6 +738,7 @@ class AccountImporter implements ArchiveSink {
         );
         if (invalid) {
           getLogger().warn("account.import.memory_document_skipped", { reason: invalid });
+          space.skippedMemoryDocuments.add(record.id);
           return;
         }
         const botId = record.botId === null ? null : space.mapped(record.botId);
@@ -770,6 +773,7 @@ class AccountImporter implements ArchiveSink {
         return;
       }
       case "memory_revision": {
+        if (space.skippedMemoryDocuments.has(record.documentId)) return;
         const documentId = space.mapped(record.documentId);
         await prisma.memoryRevision.create({
           data: {

@@ -8,7 +8,7 @@ import {
   MAX_TOOL_CALLS_PER_TURN_LIMIT,
   MIN_CUSTOM_CONVERSATION_COMPACTION_TOKENS,
 } from "@rakazo/contracts";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { errorText } from "../../lib/api/user-error";
 import { useConversationCompactionChoices } from "../../lib/bots/bot-settings-choices";
 import { useSave } from "../../lib/query/query";
@@ -66,6 +66,16 @@ export function BotAgentSettings({
       onError(errorText(error, t`Could not save agent settings`));
     },
   });
+  // A field can commit while another save is in flight, and `run` drops that call. Keep the
+  // newest draft and send it once the save finishes, so a later edit is never only on screen.
+  const queued = useRef<Draft | null>(null);
+  useEffect(() => {
+    if (save.pending || !queued.current) return;
+    const next = queued.current;
+    queued.current = null;
+    if (save.input === next) return;
+    save.run(next);
+  }, [save.pending, save.input, save.run]);
 
   useEffect(() => {
     const next = draftFromBot(bot);
@@ -81,7 +91,8 @@ export function BotAgentSettings({
     const next = { ...draft, ...patch };
     setDraft(next);
     onError("");
-    save.run(next);
+    queued.current = next;
+    if (!save.pending) save.run(next);
   }
 
   function commitTasksAtOnce() {

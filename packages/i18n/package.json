@@ -6,6 +6,7 @@
   "type": "module",
   "exports": {
     "./activity": "./src/activity.ts",
+    "./approval-mode": "./src/approval-mode.ts",
     "./billing": "./src/billing.ts",
     "./bot-removal": "./src/bot-removal.ts",
     "./computer-preview": "./src/computer-preview.ts",

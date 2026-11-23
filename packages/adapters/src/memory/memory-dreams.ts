@@ -612,6 +612,7 @@ export async function listMemoryDreams(
     ...(input.cursor ? { cursor: { id: input.cursor }, skip: 1 } : {}),
     select: {
       id: true,
+      runId: true,
       status: true,
       reason: true,
       summary: true,
@@ -630,6 +631,7 @@ export async function listMemoryDreams(
 
 function toMemoryDream(row: {
   id: string;
+  runId: string | null;
   status: string;
   reason: string | null;
   summary: string | null;
@@ -644,6 +646,7 @@ function toMemoryDream(row: {
 }): MemoryDream {
   return {
     id: row.id,
+    runId: row.runId,
     status:
       row.status === "completed" ? "completed" : row.status === "failed" ? "failed" : "queued",
     reason: dreamReason(row.reason),
@@ -724,6 +727,7 @@ export async function startManualMemoryDream(
     where: { id: started.dreamId },
     select: {
       id: true,
+      runId: true,
       status: true,
       reason: true,
       summary: true,
@@ -834,6 +838,7 @@ export async function undoMemoryDream(
           data: { undoneAt: new Date() },
           select: {
             id: true,
+            runId: true,
             status: true,
             reason: true,
             summary: true,

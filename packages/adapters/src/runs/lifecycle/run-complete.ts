@@ -13,7 +13,7 @@ import {
   redactSecrets,
   withoutLastToolStepNotes,
 } from "@rakazo/core";
-import { getLogger } from "@rakazo/logging";
+import { bestEffort, getLogger } from "@rakazo/logging";
 import { resolveBotWorkspacePath } from "../../computers/screens/computer-support.js";
 import {
   answeredSteeringMessageIds,
@@ -182,8 +182,9 @@ export async function completeRun(ctx: RunContext) {
     );
   }
   if (run.trigger === MEMORY_DREAM_TRIGGER) {
-    await recordMemoryDream(deps.prisma, run, { status: "completed", summary: text }).catch(
-      (error) => getLogger().error("memory dream record", error),
+    await bestEffort(
+      "record the memory dream",
+      recordMemoryDream(deps.prisma, run, { status: "completed", summary: text }),
     );
   }
   const notifyBody = completionNotificationPreview(text);

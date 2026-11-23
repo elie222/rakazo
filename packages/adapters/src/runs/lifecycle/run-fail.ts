@@ -17,7 +17,7 @@ import {
   userRunError,
 } from "@rakazo/core";
 import { isDatabaseUnavailable, retryWhileDatabaseUnavailable } from "@rakazo/db";
-import { getLogger } from "@rakazo/logging";
+import { bestEffort, getLogger } from "@rakazo/logging";
 import { sanitizedError } from "@rakazo/logging/monitoring";
 import { recordMemoryDream } from "../../memory/memory-dreams.js";
 import { returnBotMessageOutcome } from "../../messaging/bot-messages.js";
@@ -219,11 +219,14 @@ export async function failRun(
     );
   }
   if (run.trigger === MEMORY_DREAM_TRIGGER) {
-    await recordMemoryDream(deps.prisma, run, {
-      status: "failed",
-      summary: message,
-      errorKind: "run-failed",
-    }).catch((recordError) => getLogger().error("memory dream record", recordError));
+    await bestEffort(
+      "record the memory dream",
+      recordMemoryDream(deps.prisma, run, {
+        status: "failed",
+        summary: message,
+        errorKind: "run-failed",
+      }),
+    );
   }
   // A refusal of the deployment's own key is the operator's problem, not the user's.
   const refusal =

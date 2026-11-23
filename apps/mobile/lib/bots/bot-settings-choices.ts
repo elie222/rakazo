@@ -1,5 +1,6 @@
 import { useLingui } from "@lingui/react/macro";
 import type { ThinkingLevel } from "@rakazo/contracts";
+import { approvalModeLabel } from "@rakazo/i18n/approval-mode";
 import { thinkingLevelLabel } from "@rakazo/i18n/thinking-level";
 import { useMemo } from "react";
 import type { MenuPickerChoice } from "../../components/ui/menu-picker";
@@ -18,15 +19,14 @@ export function useThinkingChoices(options: readonly ThinkingLevel[]): MenuPicke
 
 /** The bot's own approval-mode rows, the Space's default first. */
 export function useApprovalModeChoices(): MenuPickerChoice[] {
-  const { t } = useLingui();
   return useMemo(
     () => [
-      { key: "space", label: t`Space default` },
-      { key: "ask", label: t`Ask` },
-      { key: "auto", label: t`Auto` },
-      { key: "never", label: t`Never ask` },
+      { key: "space", label: approvalModeLabel("space") },
+      { key: "ask", label: approvalModeLabel("ask") },
+      { key: "auto", label: approvalModeLabel("auto") },
+      { key: "never", label: approvalModeLabel("never") },
     ],
-    [t],
+    [],
   );
 }
 
