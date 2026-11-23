@@ -2,6 +2,7 @@ import type { AdapterContext, GeneratedMedia } from "@rakazo/adapter-kit";
 import { MediaGenerationError } from "@rakazo/adapter-kit";
 import { ATTACHMENT_MAX_BASE64_LENGTH, ATTACHMENT_MAX_BYTES } from "@rakazo/contracts";
 import { deadlineSignal, ResponseTooLargeError } from "@rakazo/core";
+import { bestEffort } from "@rakazo/logging";
 import { z } from "zod";
 import type { ResolveHostname } from "../web/web-ssrf.js";
 import { fetchSafeWebBytes, readBodyCapped } from "../web/web-ssrf.js";
@@ -89,7 +90,8 @@ export async function requestImagesApiImage(
       redirect: "error",
     });
     if (!response.ok) {
-      await response.body?.cancel();
+      // Not awaited: a cancel that never settles must not hold the error back.
+      void bestEffort("cancel media response", response.body?.cancel());
       throw mediaHttpError(response.status);
     }
     body = JSON.parse(

@@ -8,6 +8,7 @@ import type {
 import { MediaGenerationError } from "@rakazo/adapter-kit";
 import { ATTACHMENT_MAX_BYTES } from "@rakazo/contracts";
 import { deadlineSignal, ResponseTooLargeError } from "@rakazo/core";
+import { bestEffort } from "@rakazo/logging";
 import { z } from "zod";
 import {
   checkMediaModelId,
@@ -125,7 +126,8 @@ export class OpenRouterMediaGenerationProvider implements MediaGenerationProvide
     const signal = deadlineSignal(DOWNLOAD_TIMEOUT_MS, context.signal);
     const response = await this.fetch(`/videos/${id}/content?index=0`, context, signal);
     if (response.headers.get("content-type")?.split(";")[0]?.trim().toLowerCase() !== "video/mp4") {
-      await response.body?.cancel();
+      // Not awaited: a cancel that never settles must not hold the error back.
+      void bestEffort("cancel media response", response.body?.cancel());
       throw new MediaGenerationError("provider_failure");
     }
     return this.read(context, () => readBodyCapped(response, ATTACHMENT_MAX_BYTES, signal));
@@ -149,7 +151,8 @@ export class OpenRouterMediaGenerationProvider implements MediaGenerationProvide
         redirect: "error",
       });
       if (!response.ok) {
-        await response.body?.cancel();
+        // Not awaited: a cancel that never settles must not hold the error back.
+        void bestEffort("cancel media response", response.body?.cancel());
         throw mediaHttpError(response.status);
       }
       return response;
