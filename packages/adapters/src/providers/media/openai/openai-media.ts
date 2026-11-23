@@ -6,58 +6,34 @@ import type {
   MediaVideoJob,
 } from "@rakazo/adapter-kit";
 import { MediaGenerationError } from "@rakazo/adapter-kit";
-import { z } from "zod";
 import {
   checkMediaModelId,
   mediaBaseUrl,
   requestImagesApiImage,
 } from "../../../media/images-api.js";
+import { UNKNOWN_MODEL_PRICES } from "../../../media/media-generation-provider.js";
 import type { ResolveHostname } from "../../../web/web-ssrf.js";
 
 const API = "https://api.openai.com/v1";
+/**
+ * Per model: the most one image costs at the auto size and quality this adapter requests (high
+ * quality, the dearer of square and landscape), and the token rates its usage is billed at, all in
+ * micro-dollars. Models without token usage are charged their image price.
+ */
+const MODELS = new Map<string, { imageMicros: number; textToken?: number; outputToken?: number }>([
+  ["gpt-image-2", { imageMicros: 211_000, textToken: 5, outputToken: 30 }],
+  ["gpt-image-1", { imageMicros: 250_000, textToken: 5, outputToken: 40 }],
+  ["gpt-image-1-mini", { imageMicros: 52_000, textToken: 2, outputToken: 8 }],
+  ["dall-e-3", { imageMicros: 40_000 }],
+  ["dall-e-2", { imageMicros: 20_000 }],
+]);
 
-/** USD per million tokens: prompt text, image input, and image output. */
-type TokenPrices = { text: number; imageIn: number; imageOut: number };
-
-/** The image models a key can choose, newest first, with the provider's published token prices. */
-export const OPENAI_IMAGE_MODELS: ReadonlyArray<{ id: string; label: string; price: TokenPrices }> =
-  [
-    { id: "gpt-image-2", label: "GPT Image 2", price: { text: 5, imageIn: 8, imageOut: 30 } },
-    { id: "gpt-image-1", label: "GPT Image 1", price: { text: 5, imageIn: 10, imageOut: 40 } },
-    {
-      id: "gpt-image-1-mini",
-      label: "GPT Image 1 Mini",
-      price: { text: 2, imageIn: 2.5, imageOut: 8 },
-    },
-  ];
-
-const tokens = z.number().int().nonnegative();
-const usageBody = z.object({
-  usage: z.object({
-    output_tokens: tokens,
-    input_tokens: tokens,
-    input_tokens_details: z
-      .object({ text_tokens: tokens, image_tokens: tokens })
-      .partial()
-      .optional(),
-  }),
-});
-
-/** Prices the response's token usage from the model's list price; undefined for an unlisted model. */
-export function openAIImageCost(model: string, body: unknown) {
-  const price = OPENAI_IMAGE_MODELS.find((entry) => entry.id === model)?.price;
-  const parsed = usageBody.safeParse(body);
-  if (!price || !parsed.success) return undefined;
-  const { input_tokens, output_tokens, input_tokens_details } = parsed.data.usage;
-  // Input the details leave out is the other kind, so every counted token is priced.
-  const textIn = input_tokens_details?.text_tokens;
-  const imageIn =
-    input_tokens_details?.image_tokens ?? (textIn === undefined ? 0 : input_tokens - textIn);
-  const text = textIn ?? input_tokens - imageIn;
-  const usd =
-    (text * price.text + imageIn * price.imageIn + output_tokens * price.imageOut) / 1_000_000;
-  return { usd, source: "price_list" as const };
-}
+/** The image models a key's picker offers, newest first. */
+export const OPENAI_IMAGE_MODELS = [
+  { id: "gpt-image-2", label: "GPT Image 2" },
+  { id: "gpt-image-1", label: "GPT Image 1" },
+  { id: "gpt-image-1-mini", label: "GPT Image 1 Mini" },
+] as const;
 
 /**
  * The Images API (`POST /images/generations`). Servers that speak the same API work through the
@@ -66,6 +42,7 @@ export function openAIImageCost(model: string, body: unknown) {
 export class OpenAIMediaGenerationProvider implements MediaGenerationProvider {
   readonly id = "openai";
   readonly capabilities = { images: true, video: false, offline: false };
+  readonly prices;
   private readonly endpoint: string;
   constructor(
     private readonly options: {
@@ -78,6 +55,10 @@ export class OpenAIMediaGenerationProvider implements MediaGenerationProvider {
   ) {
     this.endpoint = `${mediaBaseUrl(options.baseUrl ?? API)}/images/generations`;
     checkMediaModelId(options.imageModel);
+    this.prices = {
+      imageMicros: MODELS.get(options.imageModel)?.imageMicros ?? UNKNOWN_MODEL_PRICES.imageMicros,
+      videoMicros: 0,
+    };
   }
   generateImage(input: MediaGenerationInput, context: AdapterContext): Promise<GeneratedMedia> {
     return requestImagesApiImage(
@@ -85,8 +66,20 @@ export class OpenAIMediaGenerationProvider implements MediaGenerationProvider {
         ...this.options,
         endpoint: this.endpoint,
         model: this.options.imageModel,
-        cost: (body) => openAIImageCost(this.options.imageModel, body),
         ...input,
+        costMicros: (usage) => {
+          const rates = MODELS.get(this.options.imageModel);
+          // A partial count would undercharge, so the image is then charged at its saved price.
+          if (
+            !rates?.outputToken ||
+            usage.input_tokens === undefined ||
+            usage.output_tokens === undefined
+          )
+            return undefined;
+          return (
+            usage.input_tokens * (rates.textToken ?? 0) + usage.output_tokens * rates.outputToken
+          );
+        },
       },
       context,
     );

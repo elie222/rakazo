@@ -5,6 +5,7 @@ import {
   botSecretDestinationSchema,
   GenerateSecretInput,
   LOGIN_FIELD_LIMIT,
+  MEMORY_INDEX_PATH,
   SecretAskPurpose,
   SecretHttpRequest,
 } from "@rakazo/contracts";
@@ -284,6 +285,10 @@ export const conversationTools: ConnectorTool[] = [
       properties: {
         content: { type: "string" },
         old_text: { type: "string" },
+        path: {
+          type: "string",
+          description: `Another of your memory documents to edit. Defaults to ${MEMORY_INDEX_PATH}.`,
+        },
       },
       required: ["content"],
     },

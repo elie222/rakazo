@@ -1,7 +1,7 @@
 import type { AdapterContext } from "@rakazo/adapter-kit";
 import { ATTACHMENT_MAX_BASE64_LENGTH, ATTACHMENT_MAX_BYTES } from "@rakazo/contracts";
 import { describe, expect, it, vi } from "vitest";
-import { OpenAIMediaGenerationProvider, openAIImageCost } from "./openai-media.js";
+import { OpenAIMediaGenerationProvider } from "./openai-media.js";
 
 const context: AdapterContext = {
   spaceId: "space",
@@ -54,35 +54,33 @@ describe("images API media generation", () => {
       n: 1,
     });
   });
-  it("prices a listed model's image from the token usage the response reports", async () => {
-    const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValueOnce(
-      json({
-        ...image(PNG),
-        usage: {
-          input_tokens: 50,
-          input_tokens_details: { text_tokens: 50, image_tokens: 0 },
-          output_tokens: 1000,
-        },
-      }),
-    );
+  it("prices a known model's image from the tokens it used", async () => {
+    const fetch = vi
+      .fn<typeof globalThis.fetch>()
+      .mockResolvedValueOnce(
+        json({ ...image(PNG), usage: { input_tokens: 20, output_tokens: 1_000 } }),
+      );
     const provider = new OpenAIMediaGenerationProvider({
       apiKey: "fake-key",
       imageModel: "gpt-image-2",
       fetch,
     });
-    const { cost } = await provider.generateImage({ prompt: "draw" }, context);
-    expect(cost?.source).toBe("price_list");
-    expect(cost?.usd).toBeCloseTo((50 * 5 + 1000 * 30) / 1_000_000, 10);
+    // 20 text tokens at $5 and 1,000 image tokens at $30 per million.
+    expect(await provider.generateImage({ prompt: "draw" }, context)).toMatchObject({
+      costMicros: 30_100,
+    });
   });
-  it("prices input the details leave out as image input", () => {
-    const usage = {
-      input_tokens: 100,
-      input_tokens_details: { text_tokens: 40 },
-      output_tokens: 0,
-    };
-    expect(openAIImageCost("gpt-image-2", { usage })?.usd).toBeCloseTo(
-      (40 * 5 + 60 * 8) / 1_000_000,
-      10,
+  it("leaves an image with no input count to its saved price", async () => {
+    const fetch = vi
+      .fn<typeof globalThis.fetch>()
+      .mockResolvedValueOnce(json({ ...image(PNG), usage: { output_tokens: 1_000 } }));
+    const provider = new OpenAIMediaGenerationProvider({
+      apiKey: "fake-key",
+      imageModel: "gpt-image-2",
+      fetch,
+    });
+    expect(await provider.generateImage({ prompt: "draw" }, context)).not.toHaveProperty(
+      "costMicros",
     );
   });
   it("defaults to the vendor endpoint", async () => {

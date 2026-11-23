@@ -9,6 +9,7 @@ const invoice = {
   customer,
   currency: "usd",
   amount_paid: 1000,
+  created: 1_800_000_000,
 };
 const payment = {
   id: "inpay_fixture",
@@ -30,6 +31,8 @@ const charge = {
 };
 
 function fixture(options?: {
+  invoices?: (typeof invoice)[];
+  sessions?: Array<{ id: string; mode: string }>;
   payments?: (typeof payment)[];
   charge?: Partial<typeof charge>;
   cacheFirstRefundError?: boolean;
@@ -48,10 +51,13 @@ function fixture(options?: {
         case "/v1/invoices":
           expect(url.searchParams.get("customer")).toBe(customer);
           expect(url.searchParams.get("status")).toBe("paid");
-          return list([invoice]);
+          return list(options?.invoices ?? [invoice]);
         case "/v1/invoice_payments":
           expect(url.searchParams.get("invoice")).toBe(invoice.id);
           return list(options?.payments ?? [payment]);
+        case "/v1/checkout/sessions":
+          expect(url.searchParams.get("payment_intent")).toBe("pi_fixture");
+          return list(options?.sessions ?? []);
         case "/v1/payment_intents/pi_fixture":
           expect(url.searchParams.get("expand[]")).toBe("latest_charge");
           return Response.json({ latest_charge: latestCharge });
@@ -78,6 +84,9 @@ describe("operator invoice refunds", () => {
     const { provider, writes } = fixture();
     await expect(provider.refundInvoice(customer, invoiceNumber, false)).resolves.toEqual({
       invoiceId: invoice.id,
+      invoiceNumber,
+      createdAt: new Date(invoice.created * 1000).toISOString(),
+      creditPurchaseId: invoice.id,
       amountMinor: invoice.amount_paid,
       currency: invoice.currency,
       state: "refundable",
@@ -92,6 +101,36 @@ describe("operator invoice refunds", () => {
       charge: "ch_fixture",
       amount: "1000",
       reason: "requested_by_customer",
+    });
+  });
+
+  it("finds an invoice by its id, or the newest one that charged when none is named", async () => {
+    const older = {
+      ...invoice,
+      id: "in_older",
+      number: "EXAMPLE-0000",
+      created: invoice.created - 1,
+    };
+    const trial = {
+      ...invoice,
+      id: "in_trial",
+      number: "EXAMPLE-0002",
+      created: invoice.created + 1,
+      amount_paid: 0,
+    };
+    const { provider } = fixture({ invoices: [older, invoice, trial] });
+    await expect(provider.refundInvoice(customer, invoice.id, false)).resolves.toMatchObject({
+      invoiceNumber,
+    });
+    await expect(provider.refundInvoice(customer, undefined, false)).resolves.toMatchObject({
+      invoiceId: invoice.id,
+    });
+  });
+
+  it("names one-time credits by the checkout session that bought them", async () => {
+    const { provider } = fixture({ sessions: [{ id: "cs_fixture", mode: "payment" }] });
+    await expect(provider.refundInvoice(customer, invoiceNumber, false)).resolves.toMatchObject({
+      creditPurchaseId: "cs_fixture",
     });
   });
 

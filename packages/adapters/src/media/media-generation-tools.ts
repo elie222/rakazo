@@ -8,11 +8,12 @@ import { MediaGenerationError } from "@rakazo/adapter-kit";
 import type { MessageBlock } from "@rakazo/contracts";
 import { messageBlockForArtifact } from "@rakazo/core";
 import type { ExternalEffect, Prisma, PrismaClient } from "@rakazo/db";
-import { isUniqueViolation } from "@rakazo/db";
+import { isUniqueViolation, readJsonColumn } from "@rakazo/db";
 import { z } from "zod";
 import { mediaPromptSchema, validateGeneratedMedia } from "./media-generation-provider.js";
 import type { MediaSourceRecord } from "./media-sources.js";
 import type { OwnKeyMediaSpend } from "./media-spend.js";
+import type { MediaCharge } from "./media-usage.js";
 
 export const MEDIA_JOB_KIND = "media_generation_job";
 export const MEDIA_UNAVAILABLE = "Media generation is unavailable.";
@@ -28,6 +29,23 @@ const savedJob = z.object({
   jobId: z.string().optional(),
   artifactId: z.string().optional(),
 });
+const savedCharge = z.object({
+  charge: z.object({ organizationId: z.string(), micros: z.number().int().positive() }).optional(),
+});
+
+/** A finished hosted generation's charge, committed with its stored output. */
+export type StoredMediaCharge = { organizationId: string; kind: string; amountMicros: number };
+
+/** The price a generation saved when it was submitted; none where nothing is metered. */
+export function savedMediaCharge(effect: Pick<ExternalEffect, "id" | "request">) {
+  return readJsonColumn(
+    savedCharge,
+    effect.request,
+    { table: "external_effects", column: "request", id: effect.id },
+    "reject",
+  ).charge;
+}
+
 export async function generateMediaFromTool(options: {
   name: "generate_image" | "generate_video";
   args: Record<string, unknown>;
@@ -45,11 +63,18 @@ export async function generateMediaFromTool(options: {
   attach: (
     output: GeneratedMedia,
     name: string,
-    job: { id: string; result: { provider: string; jobId?: string }; spend?: OwnKeyMediaSpend },
+    job: {
+      id: string;
+      result: { provider: string; jobId?: string };
+      charge?: StoredMediaCharge;
+      spend?: OwnKeyMediaSpend;
+    },
   ) => Promise<{ artifactId: string; block: MessageBlock }>;
   publish: (block: MessageBlock, jobId: string, artifactId: string) => Promise<unknown>;
   /** Commits with a video's provider failure, so whatever follows it cannot be lost. */
   onSettled?: (tx: Prisma.TransactionClient, status: "failed") => Promise<void>;
+  /** Prices a new submission, or refuses it; without one nothing is charged. */
+  price?: (kind: "image" | "video") => Promise<{ charge: MediaCharge | null } | { error: string }>;
 }) {
   const { provider, prisma, context, run, args } = options;
   const video = options.name === "generate_video";
@@ -120,6 +145,10 @@ export async function generateMediaFromTool(options: {
         if (options.recoverOnly) return undefined;
         const input = mediaPromptSchema.safeParse(args);
         if (!input.success) return { error: "A prompt of 1–4000 characters is required." };
+        const priced = options.price
+          ? await options.price(video ? "video" : "image")
+          : { charge: null };
+        if ("error" in priced) return { error: priced.error };
         // A unique slot makes the per-run cap durable even across concurrent calls/restarts.
         for (let slot = 0; slot < 2; slot++) {
           try {
@@ -134,6 +163,7 @@ export async function generateMediaFromTool(options: {
                   tool: options.name,
                   prompt: input.data.prompt,
                   executionId: options.executionId,
+                  ...(priced.charge ? { charge: priced.charge } : {}),
                   mediaSource: options.source,
                   ...(options.threadGeneration === undefined
                     ? {}
@@ -160,6 +190,8 @@ export async function generateMediaFromTool(options: {
       await options.publish(messageBlockForArtifact(artifact), reservation.id, artifact.id);
       return { status: "completed", artifactId: artifact.id };
     }
+    // Read before the provider is asked, so a request that cannot be read discards no output.
+    const charge = savedMediaCharge(reservation);
     if (video && typeof args.jobId === "string") {
       const claim = await prisma.externalEffect.updateMany({
         where: {
@@ -242,6 +274,16 @@ export async function generateMediaFromTool(options: {
         {
           id: reservation.id,
           result: fetched,
+          // Charged with the stored output: what the provider reported it cost, else the saved price.
+          ...(charge
+            ? {
+                charge: {
+                  organizationId: charge.organizationId,
+                  kind: video ? "video" : "image",
+                  amountMicros: output.output.costMicros ?? charge.micros,
+                },
+              }
+            : {}),
           // compat-shim(after v0.15.0): a job the previous release saved names no model to record.
           ...(options.source.kind === "connection" && options.source.model
             ? {
@@ -249,7 +291,7 @@ export async function generateMediaFromTool(options: {
                   role: video ? "video" : "image",
                   provider: provider.id,
                   model: options.source.model,
-                  cost: output.output.cost,
+                  costMicros: output.output.costMicros,
                 },
               }
             : {}),

@@ -508,8 +508,8 @@ describe("mutating tool effect idempotency keys", () => {
     expect(f.results[0]).toEqual({ ok: true });
   });
 
-  it.each(["", "  MEMORY.md  ", "other.md", "bot"])(
-    "writes MEMORY.md whatever path %j the model passes",
+  it.each(["", "  MEMORY.md  ", "bot"])(
+    "writes MEMORY.md when path %j names no other memory document",
     async (path) => {
       const f = fixture("run-path");
       f.memoryDocuments.push(

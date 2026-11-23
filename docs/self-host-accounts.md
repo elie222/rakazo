@@ -166,6 +166,7 @@ OIDC_NAME=SSO
 OIDC_SCOPES=openid email profile
 AUTH_PASSWORD_ENABLED=true
 OIDC_ALLOW_SIGNUP_BYPASS=false
+OIDC_EMAIL_VERIFIED_CLAIM=
 ```
 
 The issuer must be HTTPS and exactly match the discovery document's issuer. Rakazo loads
@@ -189,9 +190,15 @@ and a native auth browser session. The `rakazo` app scheme is trusted by the aut
 never register a client secret in the mobile app. Mobile stores the resulting session with
 SecureStore, like password sign-in. Native builds need the Expo WebBrowser module.
 
-Provider emails are verified only when `email_verified` is the boolean `true`. False or missing
-claims stay unverified, including on subsequent sign-ins, and an unverified claim never changes
-the account's email. Sign-in never links accounts by email, except to claim an account
+Provider emails are verified when `email_verified` is the boolean `true` or the string `true`
+in any capitalization. Any other value, including `false` and a missing claim, stays unverified
+on every sign-in, and an unverified claim never changes the account's email. If your provider
+omits `email_verified` and proves the email in a claim of its own, name that claim in
+`OIDC_EMAIL_VERIFIED_CLAIM`; it is read the same way, only when `email_verified` is absent. For
+Microsoft Entra ID, add the optional ID token claims `email` and `xms_edov` under **Token
+configuration** and set `OIDC_EMAIL_VERIFIED_CLAIM=xms_edov`.
+
+Sign-in never links accounts by email, except to claim an account
 [directory provisioning](#directory-provisioning-scim) created.
 If an email belongs to another account, sign in to that existing account and choose **Link SSO**
 in account settings. Linking requires an authenticated session, a verified provider email and

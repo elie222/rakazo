@@ -1,11 +1,13 @@
 import type { AdapterContext, ArtifactStore, JobPublisher } from "@rakazo/adapter-kit";
 import { mediaPollJob } from "@rakazo/adapter-kit";
 import type { Prisma, PrismaClient, ThreadEvents } from "@rakazo/db";
+import { chargeMedia } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { persistMessageInTransaction } from "../runs/assembly/run-messages.js";
 import { wakeRun } from "../runs/wakeups/wake-run.js";
 import { mediaVideoWakePrompt } from "../runs/wakeups/wakes.prompt.js";
 import { attachWorkspaceFileToThread } from "../storage/thread-artifacts.js";
+import type { StoredMediaCharge } from "./media-generation-tools.js";
 import { generateMediaFromTool, MEDIA_JOB_KIND } from "./media-generation-tools.js";
 import type { MediaSourceDeps } from "./media-sources.js";
 import { mediaVideoProviderForSource, readMediaJobSource } from "./media-sources.js";
@@ -76,6 +78,7 @@ export function mediaDelivery(
       job: {
         id: string;
         result: { provider: string; jobId?: string };
+        charge?: StoredMediaCharge;
         spend?: OwnKeyMediaSpend;
       },
     ) =>
@@ -108,6 +111,7 @@ export function mediaDelivery(
               },
             });
             if (!checkpointed.count) throw new Error("Media attachment was already checkpointed");
+            if (job.charge) await chargeMedia(tx, { ...job.charge, source: `media:${job.id}` });
             if (job.spend) await recordOwnKeyMediaSpend(tx, run, job.id, job.spend);
           },
         },

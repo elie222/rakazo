@@ -106,6 +106,7 @@ OIDC_NAME=SSO
 OIDC_SCOPES=openid email profile
 AUTH_PASSWORD_ENABLED=true
 OIDC_ALLOW_SIGNUP_BYPASS=false
+OIDC_EMAIL_VERIFIED_CLAIM=
 ```
 
 Issuer 必须是 HTTPS，并与发现文档中的 issuer 完全一致。Rakazo 加载 `<issuer>/.well-known/openid-configuration`，用发现 JWKS 校验 ID token 的 issuer、audience 和 nonce，并使用带 PKCE 的授权码流程。额外 scope 可以用空格或逗号分隔；`openid email profile` 总是会请求。`OIDC_NAME` 是按钮标签，默认为 “SSO”。密钥只在 API 上保留；Compose 会清除 worker 的 OIDC 凭据。能力端点只暴露标签、发现可用性和已启用的登录方式。
@@ -118,7 +119,7 @@ https://app.example.com/api/auth/callback/oidc
 
 网页、桌面和移动端使用同一个提供商回调 URI。Electron 在共享应用会话的沙箱内嵌弹出窗口中完成 SSO，再返回主窗口。移动端在 API 上完成回调，然后通过 Better Auth 的 Expo 授权代理和原生认证浏览器会话返回 `rakazo://sign-in`（绑定或重新认证时为 `rakazo://account`）。认证服务器信任 `rakazo` 应用 scheme；不要在移动应用中注册客户端密钥。移动端像密码登录一样，把结果会话保存在 SecureStore。原生构建需要 Expo WebBrowser 模块。
 
-提供商邮箱只有在 `email_verified` 为布尔值 `true` 时才算已验证。false 或缺失会保持未验证，后续登录也一样；未验证声明不会更改账号邮箱。登录不会仅凭邮箱自动绑定账号，除了认领[目录供应](#目录供应scim)创建的账号。如果邮箱属于另一个账号，请登录该账号并在账号设置中选择 **Link SSO**。绑定要求已认证会话、提供商邮箱已验证且邮箱一致。有邮件投递时，账号只有邮箱验证后才能绑定 SSO。没有邮件时，未验证账号只能从已登录它的浏览器绑定，移动应用不能绑定。之后用 issuer 和提供商 subject 识别绑定关系。更换 issuer 不会复用旧身份。旧 issuer 的绑定仍会保存，但不算当前提供商的绑定，因此 **Link SSO** 会重新可用。请在已登录的现有账号上绑定新身份；已认证会话、已验证邮箱和邮箱一致的检查仍然适用。恢复旧 issuer 后，它的现有绑定可再次使用。
+提供商邮箱在 `email_verified` 为布尔值 `true` 或字符串 `true`（不区分大小写）时算已验证。其他值，包括 `false` 和缺失，都会保持未验证，后续登录也一样；未验证声明不会更改账号邮箱。如果提供商不发送 `email_verified`，而是用自己的声明证明邮箱，请在 `OIDC_EMAIL_VERIFIED_CLAIM` 中填写该声明名；只有在缺少 `email_verified` 时才按同样规则读取它。Microsoft Entra ID 需在 **Token configuration** 中添加可选 ID 令牌声明 `email` 和 `xms_edov`，并设置 `OIDC_EMAIL_VERIFIED_CLAIM=xms_edov`。登录不会仅凭邮箱自动绑定账号，除了认领[目录供应](#目录供应scim)创建的账号。如果邮箱属于另一个账号，请登录该账号并在账号设置中选择 **Link SSO**。绑定要求已认证会话、提供商邮箱已验证且邮箱一致。有邮件投递时，账号只有邮箱验证后才能绑定 SSO。没有邮件时，未验证账号只能从已登录它的浏览器绑定，移动应用不能绑定。之后用 issuer 和提供商 subject 识别绑定关系。更换 issuer 不会复用旧身份。旧 issuer 的绑定仍会保存，但不算当前提供商的绑定，因此 **Link SSO** 会重新可用。请在已登录的现有账号上绑定新身份；已认证会话、已验证邮箱和邮箱一致的检查仍然适用。恢复旧 issuer 后，它的现有绑定可再次使用。
 
 普通 SSO 登录和绑定可以复用身份提供商的现有会话。它们不能为删除账号提供新的认证证明。账号设置中的显式重新认证流程会请求 `prompt=login` 和 `max_age=0`，把回调绑定到同一个 issuer 和 subject，并要求发起会话保持有效。只有该回调会给结果会话授予证明，在提供商认证后五分钟过期（回调延迟不会延长）。验证过的 ID token 必须包含与请求一致的 `auth_time`（允许 60 秒时钟偏差），且不超过五分钟。缺失、过期或无效声明都会失败。OAuth 回调是一次性的，并发请求也一样。密码验证和邮箱删除验证码仍可用。删除验证码必须通过账号设置或带 CSRF 保护的 `POST /api/auth/delete-user` 提交；GET 删除回调已禁用。
 

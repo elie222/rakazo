@@ -351,4 +351,15 @@ test("account menu shows the usage hint and Usage shows allowances and credits o
   await openUserSettings(page, "usage");
   await expect(page.getByTestId("credit-balance")).toContainText("$12.50 left");
   await captureScreenshot(page, testInfo, "usage-limits-settings-credits");
+
+  // A paid plan's media balance sits beside credits, apart from computer hours.
+  await page.route("**/rpc/billing/status", (route) =>
+    route.fulfill({
+      json: { json: { ...creditStatus, media: { leftCents: 62, limitCents: 100 } } },
+    }),
+  );
+  await page.reload();
+  await openUserSettings(page, "usage");
+  await expect(page.getByTestId("media-balance")).toContainText("$0.62 of $1.00 left");
+  await captureScreenshot(page, testInfo, "usage-media-balance");
 });

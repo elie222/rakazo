@@ -298,7 +298,7 @@ describePostgres("background video delivery (PostgreSQL)", () => {
     vi.spyOn(h.media, "pollVideo").mockImplementation(async (id, context) => {
       const job = await finish(id, context);
       return job.status === "completed"
-        ? { ...job, output: { ...job.output, cost: { usd: 0.2, source: "provider" } } }
+        ? { ...job, output: { ...job.output, costMicros: 200_000 } }
         : job;
     });
     expect(await h.check(jobId, source)).toMatchObject({ status: "completed" });
@@ -310,7 +310,6 @@ describePostgres("background video delivery (PostgreSQL)", () => {
         provider: h.media.id,
         model: "lab/clip",
         costUsd: 0.2,
-        costSource: "provider",
         billing: "api_key",
         runId: h.user.run.id,
       },

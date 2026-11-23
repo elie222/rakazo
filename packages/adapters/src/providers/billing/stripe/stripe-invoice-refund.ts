@@ -8,6 +8,7 @@ const invoiceSchema = z.object({
   customer: z.string(),
   currency: z.string(),
   amount_paid: z.number().int().nonnegative(),
+  created: z.number().int(),
 });
 const paymentSchema = z.object({
   invoice: z.string(),
@@ -40,14 +41,19 @@ type StripeInvoiceApi = {
 export async function stripeInvoiceRefund(
   api: StripeInvoiceApi,
   customerId: string,
-  invoiceNumber: string,
+  reference: string | undefined,
   confirm: boolean,
 ): Promise<BillingInvoiceRefund | null> {
   const invoices = await api.listPages(
     `/v1/invoices?customer=${encodeURIComponent(customerId)}&status=paid`,
     invoiceSchema,
   );
-  const matches = invoices.filter((invoice) => invoice.number === invoiceNumber);
+  const matches = reference
+    ? invoices.filter((invoice) => invoice.number === reference || invoice.id === reference)
+    : invoices
+        .filter((invoice) => invoice.amount_paid > 0)
+        .toSorted((a, b) => b.created - a.created)
+        .slice(0, 1);
   if (!matches.length) return null;
   const [invoice] = matches;
   if (matches.length !== 1 || !invoice || invoice.customer !== customerId)
@@ -88,8 +94,20 @@ export async function stripeInvoiceRefund(
   )
     throw new ClientError("CONFLICT", "The invoice must match a settled, undisputed card charge");
 
+  // One-time credits are bought through a checkout session, which their purchase is listed under.
+  // Only the preview's credit summary needs it, so a confirmation never waits on it.
+  const [session] = confirm
+    ? []
+    : await api.listPages(
+        `/v1/checkout/sessions?payment_intent=${encodeURIComponent(payment.payment.payment_intent)}`,
+        z.object({ id: z.string(), mode: z.string() }),
+      );
+
   const result = {
     invoiceId: invoice.id,
+    invoiceNumber: invoice.number,
+    createdAt: new Date(invoice.created * 1000).toISOString(),
+    creditPurchaseId: session?.mode === "payment" ? session.id : invoice.id,
     amountMinor: invoice.amount_paid,
     currency: invoice.currency,
   };

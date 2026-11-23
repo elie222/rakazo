@@ -50,16 +50,6 @@ describe("OpenRouter media generation", () => {
       n: 1,
     });
   });
-  it("returns the cost the image response reports", async () => {
-    const { provider } = setup(
-      both,
-      json({ data: [{ b64_json: Buffer.from(PNG).toString("base64") }], usage: { cost: 0.0412 } }),
-    );
-    expect((await provider.generateImage({ prompt: "draw" }, context)).cost).toEqual({
-      usd: 0.0412,
-      source: "provider",
-    });
-  });
   it("submits a four-second video job", async () => {
     const { fetch, provider } = setup(
       both,
@@ -121,19 +111,37 @@ describe("OpenRouter media generation", () => {
         polling_url: "/api/v1/videos/job-1",
         status: "completed",
         unsigned_urls: ["https://storage.example.test/video.mp4"],
-        usage: { cost: 0.2, is_byok: false },
       }),
       mp4(),
     );
     expect(await provider.pollVideo("job-1", context)).toEqual({
       id: "job-1",
       status: "completed",
-      output: { mimeType: "video/mp4", bytes: MP4, cost: { usd: 0.2, source: "provider" } },
+      output: { mimeType: "video/mp4", bytes: MP4 },
     });
     const [url, init] = fetch.mock.calls[1]!;
     expect(url).toBe("https://openrouter.ai/api/v1/videos/job-1/content?index=0");
     expect(init?.redirect).toBe("error");
     expect(new Headers(init?.headers).get("authorization")).toBe("Bearer fake-key");
+  });
+  it("reports what an image cost", async () => {
+    const image = setup(
+      both,
+      json({ data: [{ b64_json: Buffer.from(PNG).toString("base64") }], usage: { cost: 0.039 } }),
+    );
+    expect(await image.provider.generateImage({ prompt: "draw" }, context)).toMatchObject({
+      costMicros: 39_000,
+    });
+  });
+  it("reports what a finished video cost", async () => {
+    const video = setup(
+      both,
+      json({ id: "job-1", status: "completed", usage: { cost: 0.2, is_byok: false } }),
+      mp4(),
+    );
+    expect(await video.provider.pollVideo("job-1", context)).toMatchObject({
+      output: { costMicros: 200_000 },
+    });
   });
   it.each(["failed", "cancelled", "expired"])("reports a %s job as failed", async (status) => {
     const { provider } = setup(
