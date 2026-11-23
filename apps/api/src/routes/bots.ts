@@ -626,7 +626,18 @@ export function botsRoutes(ctx: RouterContext) {
       }),
       ensureWebhookSecret: authed.bots.ensureWebhookSecret.handler(async ({ context, input }) => {
         const bot = await repos.getBot(context.actor, input.botId);
+        const existing = {
+          path: botInboundPath(bot.id, "webhook"),
+          webhookConfigured: true as const,
+        };
         if (bot.userId !== context.actor.userId) {
+          // Any member can add a webhook to their routine on a bot that has a key; only making one
+          // is the creator's.
+          const current = await deps.prisma.bot.findUnique({
+            where: { id: bot.id },
+            select: { webhookSecretId: true },
+          });
+          if (current?.webhookSecretId) return existing;
           throw new ClientError("FORBIDDEN", "Only the bot's creator can set its webhook key.");
         }
         // Without `replace`, a key the bot already has is kept, and of two calls at once only one
