@@ -867,8 +867,15 @@ function renderEnsureScreenCommand(
     // An open port is not enough: a browser whose main thread is stuck keeps its port but stops
     // answering DevTools, so the screen shows a frozen page and every page tool times out. Its
     // backlog also fills, so even connecting can hang: every check here has a time limit.
+    "port_open() {",
+    `  timeout 2 bash -c 'exec 7<>/dev/tcp/127.0.0.1/$1' desktop ${layout.debugPort} 2>/dev/null`,
+    "}",
     "browser_answers() {",
     `  timeout 2 bash -c ${shellQuote(`exec 7<>/dev/tcp/127.0.0.1/$1 && printf 'GET /json/version HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n' >&7 && IFS= read -r line <&7 && case "$line" in "HTTP/1."*" 200"*) exit 0 ;; esac; exit 1`)} desktop ${layout.debugPort} 2>/dev/null`,
+    "}",
+    // A browser this call started is ready once its port opens; one already open must answer.
+    "browser_ready() {",
+    '  if [ "$found_open" -eq 1 ]; then browser_answers; else port_open; fi',
     "}",
     `restarted_file=${pidFile}-restarted`,
     // At most one forced restart per screen in ten minutes, so a page that hangs the browser
@@ -887,7 +894,7 @@ function renderEnsureScreenCommand(
     'while [ "$SECONDS" -lt "$deadline" ]; do',
     "  if browser_running; then",
     "    answer=0",
-    "    browser_answers || answer=$?",
+    "    browser_ready || answer=$?",
     '    [ "$answer" -eq 0 ] && break',
     // 124: connected, or still connecting, with no answer in time. A refused port is still starting.
     '    if [ "$found_open" -eq 1 ] && [ "$answer" -eq 124 ]; then',
@@ -897,8 +904,10 @@ function renderEnsureScreenCommand(
     "        relaunched=1",
     "        found_open=0",
     `        hung=$(cat ${pidFile} 2>/dev/null || true)`,
-    '        kill -KILL "$hung" 2>/dev/null || true',
+    '        browser_matches "$hung" && kill -KILL "$hung" 2>/dev/null || true',
     '        for i in $(seq 1 40); do browser_matches "$hung" || break; sleep 0.25; done',
+    // A browser that outlives SIGKILL still holds the profile: a second one must not open it.
+    '        browser_matches "$hung" && break',
     '        date +%s >"$restarted_file"',
     "        echo RAKAZO_BROWSER_RESTARTED=unresponsive",
     "        launch_browser",
@@ -915,7 +924,7 @@ function renderEnsureScreenCommand(
     "  fi",
     "  sleep 0.25",
     "done",
-    "if ! browser_running || ! browser_answers; then",
+    "if ! browser_running || ! browser_ready; then",
     `  echo "computer browser CDP not ready on ${layout.debugPort} (running=$(browser_running && echo yes || echo no))" >&2`,
     `  tail -c 4000 ${log}-browser.log >&2 || true`,
     `  exit ${SCREEN_NOT_READY_EXIT}`,

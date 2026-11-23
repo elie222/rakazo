@@ -701,6 +701,7 @@ describe("shared Linux desktop lifecycle", () => {
           "    client.close()",
         ].join("\n"),
       );
+      writeFileSync(path.join(bin, "websockify"), "#!/bin/sh\n", { mode: 0o755 });
       writeFileSync(
         path.join(bin, "rakazo-browser"),
         `#!/bin/sh\nexec python3 ${fake} "$@" --remote-debugging-port=${screenPorts(0, env).debugPort}\n`,
@@ -708,6 +709,7 @@ describe("shared Linux desktop lifecycle", () => {
       );
       const script = ensureScreenCommand(0, "bot", "token", env)
         .replaceAll("/tmp/rakazo", root)
+        .replaceAll("/usr/share/novnc", root)
         .replaceAll(env.homeDir, path.join(root, "home"));
       // Stop once the browser is ready; the viewer after it is covered elsewhere.
       const browserReady = script.slice(0, script.indexOf(`\nmkdir -p ${root}/desktop-targets `));
@@ -721,10 +723,12 @@ describe("shared Linux desktop lifecycle", () => {
         const file = readdirSync(root).find(
           (name) => name.startsWith("browser-pid-") && !name.endsWith("-restarted"),
         );
-        return Number(readFileSync(path.join(root, file!), "utf8"));
+        if (!file) throw new Error("no browser was started");
+        return Number(readFileSync(path.join(root, file), "utf8"));
       };
       try {
-        expect(ensure().status).toBe(0);
+        const started = ensure();
+        expect(started.status, started.stderr).toBe(0);
         // A stopped process keeps its port open and never answers, as a hung browser does.
         process.kill(browserPid(), "SIGSTOP");
         const restarted = ensure();
@@ -735,9 +739,9 @@ describe("shared Linux desktop lifecycle", () => {
         const again = ensure();
         expect(again.status).toBe(77);
         expect(again.stdout).not.toContain("RAKAZO_BROWSER_RESTARTED");
-        expect(again.stderr).toContain("computer browser not answering");
+        expect(again.stderr).toContain("computer browser CDP not ready");
       } finally {
-        process.kill(browserPid(), "SIGKILL");
+        spawnSync("pkill", ["-KILL", "-f", fake]);
       }
     },
   );
@@ -1141,6 +1145,7 @@ describe("shared Linux desktop lifecycle", () => {
         preservePrimaryDisplay: true,
       };
       const { debugPort } = screenPorts(0, screenEnv);
+      writeFileSync(path.join(bin, "websockify"), "#!/bin/sh\n", { mode: 0o755 });
       writeFileSync(
         path.join(bin, "rakazo-browser"),
         [
@@ -1430,8 +1435,14 @@ describe("shared Linux desktop lifecycle", () => {
         "        request = connection.recv(1024)",
         "    except socket.timeout:",
         "        request = b''",
-        "    connection.close()",
+        // The screen check asks for the version; Browser.close asks for it and then connects.
         "    if b'GET /json/version' in request:",
+        '        body = b\'{"webSocketDebuggerUrl": "ws://127.0.0.1:%d/devtools/browser/fake"}\' % port',
+        "        connection.sendall(b'HTTP/1.1 200 OK\\r\\nContent-Length: %d\\r\\n\\r\\n' % len(body) + body)",
+        "        connection.close()",
+        "        continue",
+        "    connection.close()",
+        "    if b'GET /devtools/' in request:",
         "        break",
         "",
       ].join("\n"),
