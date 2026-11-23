@@ -533,6 +533,20 @@ describe("routines.update", () => {
     expect(update.mock.calls[0]![0].data).not.toHaveProperty("nextRunAt");
   });
 
+  it("resumes a routine on its last run when its end is removed", async () => {
+    const { call, update, enqueue } = fixture(false, false, {
+      ...recurring,
+      nextRunAt: null,
+      endsAt: new Date(Date.now() + 60 * 60_000),
+    });
+    expect((await call({ endsAt: null, runAt: undefined })).status).toBe(200);
+    expect(update.mock.calls[0]![0].data).toMatchObject({
+      endsAt: null,
+      nextRunAt: expect.any(Date),
+    });
+    expect(enqueue).toHaveBeenCalledOnce();
+  });
+
   it("leaves the schedule alone when an edit does not change it", async () => {
     const { call, update, enqueue } = fixture(false, false, recurring);
     expect((await call({ name: "Renamed", runAt: undefined })).status).toBe(200);

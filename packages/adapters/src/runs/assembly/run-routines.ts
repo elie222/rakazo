@@ -227,6 +227,7 @@ export async function wakeRoutine(deps: ExecutorDeps, routineId: string, schedul
         userId: routine.userId,
         active: true,
         nextRunAt: scheduledAt,
+        endsAt: routine.endsAt,
         bot: { archivedAt: null },
       },
       data: {

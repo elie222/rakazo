@@ -28,6 +28,7 @@ import {
   routineEndError,
   routineEnded,
   routineEndFromText,
+  runBeforeEnd,
 } from "../routines/routine-end.js";
 import { postRoutineNotice, routineEditChange, routineEdited } from "../routines/routine-notice.js";
 import type { RoutineEvents } from "../routines/routine-triggers.js";
@@ -1178,14 +1179,21 @@ export async function updateScheduleFromTool(
     nextRunAt = carried ?? resolved.nextRunAt;
   } else if (active && watchChanged) {
     nextRunAt = firstWatchCheck();
-  } else if (active && !(existing.active && existing.nextRunAt) && !routineEnded(existing)) {
+  } else if (
+    active &&
+    !(existing.active && existing.nextRunAt) &&
+    (!routineEnded(existing) || endChanged)
+  ) {
     // Resuming: a watch checks right away, a repeat picks its next occurrence from now.
     if (existing.watch != null) nextRunAt = firstWatchCheck();
     else if (oneShot) {
       if (!existing.nextRunAt || existing.nextRunAt.getTime() <= Date.now()) {
         return { error: "This one-time schedule has no time left; give a new runAt." };
       }
-    } else nextRunAt = nextCronDateAcross(crons, new Date(), timezone);
+    } else {
+      const next = nextCronDateAcross(crons, new Date(), timezone);
+      nextRunAt = routineEnded(existing) ? runBeforeEnd(next, endsAt) : next;
+    }
   }
   if (!active) nextRunAt = null;
 

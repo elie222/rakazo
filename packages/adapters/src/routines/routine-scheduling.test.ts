@@ -148,13 +148,13 @@ describe("recurring routine catch-up", () => {
 
 describe("a routine with an end", () => {
   it("stays on with no later run on its last run before the end", async () => {
-    const { executor, tx, enqueue, scheduledAt } = pendingTimerFixture(false, {
-      endsAt: new Date(),
-    });
+    const endsAt = new Date();
+    const { executor, tx, enqueue, scheduledAt } = pendingTimerFixture(false, { endsAt });
     await executor.wakeRoutine("routine-1", scheduledAt.toISOString());
-    expect(tx.routine.updateMany).toHaveBeenCalledWith(
-      expect.objectContaining({ data: expect.objectContaining({ nextRunAt: null }) }),
-    );
+    expect(tx.routine.updateMany).toHaveBeenCalledWith({
+      where: expect.objectContaining({ endsAt }),
+      data: expect.objectContaining({ nextRunAt: null }),
+    });
     expect(tx.routine.updateMany).not.toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ active: false }) }),
     );

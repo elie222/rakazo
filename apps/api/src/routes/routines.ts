@@ -14,6 +14,7 @@ import {
   routineEdited,
   routineEndError,
   routineEnded,
+  runBeforeEnd,
   stableStringify,
   validateRoutineWatch,
   wakeRun,
@@ -280,11 +281,22 @@ export function routinesRoutes(ctx: RouterContext) {
           (input.crons !== undefined &&
             JSON.stringify(input.crons) !== JSON.stringify(existing.crons)) ||
           (input.timezone !== undefined && input.timezone !== existing.timezone);
+        const endsAt =
+          input.endsAt === undefined
+            ? existing.endsAt
+            : input.endsAt === null
+              ? null
+              : new Date(input.endsAt);
+        const endChanged = endsAt?.getTime() !== existing.endsAt?.getTime();
+        const onLastRun = routineEnded(existing);
+        const resumes = !existing.nextRunAt && (!onLastRun || endChanged);
         const recalculatedNextRunAt =
           crons.length > 0 &&
           !isOneShotRoutineCrons(crons) &&
-          (scheduleChanged || (active && !existing.nextRunAt && !routineEnded(existing)))
-            ? nextRoutineDate(crons, timezone)
+          (scheduleChanged || (active && resumes))
+            ? onLastRun
+              ? runBeforeEnd(nextRoutineDate(crons, timezone), endsAt)
+              : nextRoutineDate(crons, timezone)
             : null;
         let armedOneShotAt: Date | null = null;
         if (active && isOneShotRoutineCrons(crons) && !existing.nextRunAt && !existing.lastRunAt) {
@@ -309,7 +321,7 @@ export function routinesRoutes(ctx: RouterContext) {
           ? null
           : watch
             ? // Turning a watch on, or changing it, checks right away; otherwise keep its rhythm.
-              !existing.active || watchChanged || (!existing.nextRunAt && !routineEnded(existing))
+              !existing.active || watchChanged || resumes
               ? firstWatchCheck()
               : existing.nextRunAt
             : crons.length === 0
@@ -317,13 +329,6 @@ export function routinesRoutes(ctx: RouterContext) {
               : isOneShotRoutineCrons(crons)
                 ? (armedOneShotAt ?? existing.nextRunAt)
                 : (recalculatedNextRunAt ?? existing.nextRunAt);
-        const endsAt =
-          input.endsAt === undefined
-            ? existing.endsAt
-            : input.endsAt === null
-              ? null
-              : new Date(input.endsAt);
-        const endChanged = endsAt?.getTime() !== existing.endsAt?.getTime();
         const endError = routineEndError(
           { endsAt, crons, watch, nextRunAt },
           { end: endChanged, nextRun: nextRunAt?.getTime() !== existing.nextRunAt?.getTime() },

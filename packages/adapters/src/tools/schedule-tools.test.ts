@@ -1484,6 +1484,24 @@ describe("updateScheduleFromTool", () => {
     expect(enqueue).not.toHaveBeenCalled();
   });
 
+  it("resumes a routine on its last run when its end moves later", async () => {
+    const { updateMany, enqueue, update } = setup({
+      ...weekly,
+      nextRunAt: null,
+      endsAt: new Date("2026-10-25T00:00:00Z"),
+    });
+    await expect(update({ endAt: "2026-12-31" })).resolves.toMatchObject({
+      ok: true,
+      nextRunAt: "2026-10-26T09:00:00.000Z",
+    });
+    expect(updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ nextRunAt: new Date("2026-10-26T09:00:00.000Z") }),
+      }),
+    );
+    expect(enqueue).toHaveBeenCalledOnce();
+  });
+
   it("pauses with active false and cancels the wakeup", async () => {
     const { updateMany, cancel, enqueue, update } = setup();
     await expect(update({ active: false })).resolves.toMatchObject({
