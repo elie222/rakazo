@@ -61,6 +61,7 @@ export function RoutineModelSettings({
   const defaultThinkingLevel = modelDefaultThinkingLevel(
     selectedCredential,
     selectedModel?.modelId,
+    thinkingOptions,
   );
 
   return (

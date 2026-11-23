@@ -211,6 +211,10 @@ describe("modelDefaultThinkingLevel", () => {
     expect(modelDefaultThinkingLevel(credential(), "other")).toBe("medium");
     expect(modelDefaultThinkingLevel(undefined, null)).toBe("medium");
   });
+
+  it("names the level the runtime moves the default to when the model lacks it", () => {
+    expect(modelDefaultThinkingLevel(undefined, "thinker", ["high"])).toBe("high");
+  });
 });
 
 describe("modelSettingsRequest", () => {

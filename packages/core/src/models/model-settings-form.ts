@@ -251,13 +251,19 @@ export function savedThinkingLevel(
   return ThinkingLevelSchema.safeParse(connection.thinkingLevel).data ?? null;
 }
 
-/** The level a model thinks at when no chat, bot or role picks one. */
+/**
+ * The level a model thinks at when no chat, bot or role picks one, moved to the nearest of
+ * `levels` when given, as the runtime does.
+ */
 export function modelDefaultThinkingLevel(
   credential: (SettingsCredential & Pick<ModelCredential, "modelId" | "thinkingLevel">) | undefined,
   modelId: string | null | undefined,
+  levels?: readonly ThinkingLevel[],
 ): ThinkingLevel {
   const own = credential && modelId ? credentialModelSettings(credential, modelId) : undefined;
-  return savedThinkingLevel(own?.thinkingLevel, credential, modelId) ?? DEFAULT_THINKING_LEVEL;
+  const level =
+    savedThinkingLevel(own?.thinkingLevel, credential, modelId) ?? DEFAULT_THINKING_LEVEL;
+  return (clampCatalogThinkingLevel(level, levels) as ThinkingLevel | null) ?? level;
 }
 
 /**

@@ -92,7 +92,7 @@ export function botModelState({
   const thinkingLevels = modelThinkingLevels(credential, entry, modelId).filter(
     (level) => level !== "off",
   );
-  const defaultThinkingLevel = modelDefaultThinkingLevel(credential, modelId);
+  const defaultThinkingLevel = modelDefaultThinkingLevel(credential, modelId, thinkingLevels);
 
   return {
     selectedModel,
