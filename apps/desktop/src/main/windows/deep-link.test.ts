@@ -1,3 +1,4 @@
+import { flush } from "@rakazo/core/test-async";
 import { getLogger } from "@rakazo/logging";
 import type { BrowserWindow } from "electron";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -188,7 +189,7 @@ describe("navigateWindowToDeepLink", () => {
     win.webContents.loadURL.mockRejectedValueOnce(aborted);
     const link = parseDeepLink("rakazo://app/bot-42")!;
     expect(navigateWindowToDeepLink(win, link, "https://rakazo.example")).toBe(true);
-    await new Promise((resolve) => setImmediate(resolve));
+    await flush();
     expect(warn).not.toHaveBeenCalled();
   });
 
@@ -199,9 +200,10 @@ describe("navigateWindowToDeepLink", () => {
     win.webContents.loadURL.mockRejectedValueOnce(failure);
     const link = parseDeepLink("rakazo://app/bot-42")!;
     expect(navigateWindowToDeepLink(win, link, "https://rakazo.example")).toBe(true);
-    await new Promise((resolve) => setImmediate(resolve));
-    expect(warn).toHaveBeenCalledWith("best effort failed: navigate to desktop deep link", {
-      error: failure,
+    await vi.waitFor(() => {
+      expect(warn).toHaveBeenCalledWith("best effort failed: navigate to desktop deep link", {
+        error: failure,
+      });
     });
   });
 });

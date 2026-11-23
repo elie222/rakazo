@@ -542,6 +542,12 @@ async function recoverFromCrashedSave(
   showSetupWindow(message);
   return message;
 }
+async function reopenTargetServer(url: string) {
+  if (!(await appOpener.open(url))) return;
+  commitPendingAppSwitch();
+  deepLinks?.applyPending();
+}
+
 // A second launch on Linux/Windows would rerun host-computer setup, overwrite
 // the saved token and restart the local stack under the running instance.
 const hasSingleInstanceLock = app.requestSingleInstanceLock();
@@ -552,13 +558,7 @@ if (!hasSingleInstanceLock) {
   deepLinks = registerDeepLinkHandlers(app, {
     initialArgv: process.argv,
     isOpening: () => appOpener.busy(),
-    reopenTarget: (url) =>
-      void appOpener.open(url).then((opened) => {
-        if (opened) {
-          commitPendingAppSwitch();
-          deepLinks?.applyPending();
-        }
-      }),
+    reopenTarget: (url) => void reopenTargetServer(url),
   });
 }
 app.whenReady().then(async () => {
@@ -937,7 +937,7 @@ app.whenReady().then(async () => {
     }
     if (appOpener.busy()) return;
     if (desktop.currentTargetUrl === null) showSetupWindow(desktop.setupError);
-    else void openInitialServer(desktop.currentTargetUrl);
+    else void reopenTargetServer(desktop.currentTargetUrl);
   });
 
   if (target.kind === "setup") {
