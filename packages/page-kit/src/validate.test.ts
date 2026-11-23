@@ -232,7 +232,7 @@ describe("checkPageSource", () => {
   it("warns, without refusing, about icon names the kit does not have and offers close ones", () => {
     const result = checkPageSource(
       page(
-        'const stops = [{ title: "Fly", icon: "airplane" }, { title: "Stay", icon: "hotel" }];\nconst App = () => <Page title="t">\n<Icon name="alert-triangle" />\n<Callout icon="HomeSweet" lead="x" />\n<Steps steps={stops} />\n</Page>;',
+        'const stops = [{ title: "Fly", icon: "airplane" }, { title: "Stay", icon: "hotel" }];\nconst App = () => <Page title="t">\n<Icon name="alert-triangle" />\n<Callout icon={"HomeSweet"} lead="x" />\n<Steps steps={stops} />\n</Page>;',
       ),
     );
     expect(result).toEqual({
@@ -244,6 +244,16 @@ describe("checkPageSource", () => {
         'line 4: no kit icon is named "HomeSweet", and an unknown icon draws nothing. Pick one from the icon list in the guide.',
       ],
     });
+  });
+
+  it("leaves the icon props of the page's own components alone", () => {
+    expect(
+      checkPageSource(
+        page(
+          'const Badge = ({ icon }) => <b>{icon}</b>;\nconst Icon = ({ name }) => <i>{name}</i>;\nconst App = () => <><Badge icon="logo" /><Icon name="logo" /></>;',
+        ),
+      ),
+    ).toEqual({ ok: true, code: expect.any(String) });
   });
 
   it("rejects a component named like a kit component that uses that component inside itself", () => {

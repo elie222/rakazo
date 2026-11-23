@@ -96,13 +96,13 @@ export function checkPageSource(source: string): PageSourceCheck {
   let defaults = 0;
   const blocked = new Set<string>();
   let tag = "";
+  const icons: { name: string; line: number; tag: string }[] = [];
   tokens.forEach((token, index) => {
     const text = source.slice(token.start, token.end);
     const line = lineOf(token.start);
-    if (token.type === TokenType.string && namesIcon(tokens, index, source, tag)) {
-      const name = text.slice(1, -1);
-      if (name && !isPageIcon(name)) warnings.push(`line ${line}: ${unknownIconMessage(name)}`);
-    }
+    const iconOf =
+      token.type === TokenType.string ? iconTarget(tokens, index, source, tag) : undefined;
+    if (iconOf !== undefined) icons.push({ name: text.slice(1, -1), line, tag: iconOf });
     if (token.type === TokenType._import) {
       const problem = importProblem(tokens, index, source);
       if (problem) errors.push(`line ${line}: ${problem}`);
@@ -189,6 +189,10 @@ export function checkPageSource(source: string): PageSourceCheck {
   });
   for (const { name, start } of selfRenderingKitNames(tokens, source)) {
     errors.push(`line ${lineOf(start)}: ${selfRenderingMessage(name)}`);
+  }
+  for (const icon of icons) {
+    if (!icon.name || isPageIcon(icon.name) || declared.has(icon.tag)) continue;
+    warnings.push(`line ${icon.line}: ${unknownIconMessage(icon.name)}`);
   }
   for (const [name, line] of tags) {
     if (GIVEN.has(name) || declared.has(name)) continue;
@@ -285,18 +289,28 @@ function importProblem(tokens: Tokens, start: number, source: string): string | 
     : undefined;
 }
 
-function namesIcon(tokens: Tokens, index: number, source: string, tag: string): boolean {
-  const before = tokens[index - 2];
-  if (!before) return false;
-  const key = source.slice(before.start, before.end);
-  if (tokens[index - 1]?.type === TokenType.eq && before.type === TokenType.jsxName) {
-    return key === "icon" || (key === "name" && tag === "Icon");
+function iconTarget(
+  tokens: Tokens,
+  index: number,
+  source: string,
+  tag: string,
+): string | undefined {
+  const braced =
+    tokens[index - 1]?.type === TokenType.braceL && tokens[index + 1]?.type === TokenType.braceR;
+  const at = braced ? index - 1 : index;
+  const key = tokens[at - 2];
+  if (!key) return undefined;
+  const word = source.slice(key.start, key.end);
+  if (tokens[at - 1]?.type === TokenType.eq && key.type === TokenType.jsxName) {
+    const kitProp = (word === "icon" && tag === "Callout") || (word === "name" && tag === "Icon");
+    return kitProp ? tag : undefined;
   }
-  return (
+  const objectKey =
+    !braced &&
     tokens[index - 1]?.type === TokenType.colon &&
-    (before.type === TokenType.name || before.type === TokenType.string) &&
-    key.replace(/^["']|["']$/g, "") === "icon"
-  );
+    (key.type === TokenType.name || key.type === TokenType.string) &&
+    word.replace(/^["']|["']$/g, "") === "icon";
+  return objectKey ? "" : undefined;
 }
 
 function unknownIconMessage(name: string): string {

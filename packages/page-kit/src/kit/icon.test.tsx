@@ -13,12 +13,15 @@ it("draws nothing for a name outside the set, including object keys", () => {
   expect(html(<Icon name="toString" />)).toBe("");
 });
 
-it("names an icon only when given a label and mirrors only directional ones", () => {
+it("names an icon only when given a label", () => {
   expect(html(<Icon name="plane" />)).toContain('aria-hidden="true"');
   const labelled = html(<Icon name="plane" label="Flight" />);
   expect(labelled).toContain('role="img"');
   expect(labelled).toContain('aria-label="Flight"');
   expect(labelled).not.toContain("aria-hidden");
+});
+
+it("mirrors only icons that point along the reading direction", () => {
   expect(html(<Icon name="arrow-right" />)).toContain("data-mirror");
   expect(html(<Icon name="plane" />)).not.toContain("data-mirror");
 });
