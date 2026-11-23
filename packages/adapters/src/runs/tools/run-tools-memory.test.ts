@@ -138,3 +138,49 @@ describe("deleting a shared memory document", () => {
     });
   });
 });
+
+describe("remembering in another private memory document", () => {
+  const remember = (args: Record<string, unknown>, documents: unknown[]) => {
+    const memory = {
+      read: vi.fn(async () => ({ documents })),
+      commit: vi.fn(async () => ({})),
+    };
+    const ctx = {
+      runId: "run-1",
+      bot: { id: "bot-1" },
+      thread: { id: "thread-1" },
+      context: {},
+      deps: { memory },
+    };
+    const result = memoryTools.remember!(
+      ctx as never,
+      { args, finish: (value: unknown) => value } as never,
+    );
+    return { memory, result };
+  };
+
+  it("edits one entry and leaves the rest of the document", async () => {
+    const { memory, result } = remember(
+      { path: "USER.md", old_text: "Lives in Paris", content: "- Lives in Berlin" },
+      [{ path: "USER.md", content: "# User\n- Lives in Paris\n- Likes tea\n", revision: 3 }],
+    );
+    await expect(result).resolves.toEqual({ ok: true });
+    expect(memory.read).toHaveBeenCalledWith({ scope: "bot", botId: "bot-1", path: "USER.md" }, {});
+    expect(memory.commit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        path: "USER.md",
+        content: "# User\n- Lives in Berlin\n- Likes tea\n",
+        expectedRevision: 3,
+      }),
+      {},
+    );
+  });
+
+  it("never creates a new document", async () => {
+    const { memory, result } = remember({ path: "notes.md", content: "- A fact" }, []);
+    await expect(result).resolves.toEqual({
+      error: "You have no memory document named notes.md. Leave path out to save to MEMORY.md.",
+    });
+    expect(memory.commit).not.toHaveBeenCalled();
+  });
+});

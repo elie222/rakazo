@@ -102,12 +102,18 @@ export const memoryTools: ToolHandlers = {
   async remember(ctx, call) {
     const { deps, runId, bot, thread, context } = ctx;
     const { args } = call;
-    // One document per bot keeps the size cap meaningful.
-    const path = MEMORY_INDEX_PATH;
+    // A save may edit any document the bot already has, such as an imported one, but only
+    // the index is created by a save, so the size cap still bounds what a bot adds.
+    const path = String(args.path ?? "").trim() || MEMORY_INDEX_PATH;
     // A concurrent save changes the revision, so re-read and apply the edit again.
     for (let attempt = 1; ; attempt += 1) {
       const snapshot = await deps.memory.read({ scope: "bot", botId: bot.id, path }, context);
       const existing = snapshot.documents[0];
+      if (!existing && path !== MEMORY_INDEX_PATH) {
+        return call.finish({
+          error: `You have no memory document named ${path}. Leave path out to save to ${MEMORY_INDEX_PATH}.`,
+        });
+      }
       const edit = editMemory(
         existing?.content ?? "",
         String(args.content ?? ""),
