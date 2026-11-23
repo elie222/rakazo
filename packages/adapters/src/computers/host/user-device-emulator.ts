@@ -20,7 +20,15 @@ export class UserDeviceEmulator implements UserDeviceGateway {
 
   async list(userId: string) {
     const device = (await this.connected(userId))!;
-    return [{ deviceId: device.deviceId, name: device.name, connected: true, bound: true }];
+    return [
+      {
+        deviceId: device.deviceId,
+        name: device.name,
+        platform: device.platform,
+        connected: true,
+        bound: true,
+      },
+    ];
   }
 
   async pairedSince(_userId: string): Promise<Date> {

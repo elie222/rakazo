@@ -223,6 +223,17 @@ describe("userComputerShell", () => {
     expect(requests).toEqual([]);
   });
 
+  it("does not ask the user to reconnect when the lookup fails", async () => {
+    const { ctx, call, requests } = setup(async function* () {});
+    ctx.deps.userDevices!.connected = async () => {
+      throw new Error("database unavailable");
+    };
+    expect(await userComputerShell(ctx, call({ command: "ls" }))).toEqual({
+      error: expect.stringContaining("could not be checked"),
+    });
+    expect(requests).toEqual([]);
+  });
+
   it("refuses commands on a computer that offers only its screen", async () => {
     const { ctx, call, requests } = setup(async function* () {});
     ctx.deps.userDevices!.connected = async () => ({

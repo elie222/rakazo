@@ -3,6 +3,7 @@ import type { AgentToolExecutionResult, ProcessEvent } from "@rakazo/adapter-kit
 import type { ApprovalMode } from "@rakazo/core";
 import { redactSecrets } from "@rakazo/core";
 import { sandboxCommandTimeoutMs } from "@rakazo/core/node/sandbox-command";
+import { getLogger } from "@rakazo/logging";
 import { z } from "zod";
 import type { HostComputerEnvironment } from "../../computers/host/host-computer-protocol.js";
 import { nativeShellCommandArgv } from "../../computers/host/native-shell.js";
@@ -14,6 +15,7 @@ import {
   USER_COMPUTER_TOOLS,
   userComputerAppName,
 } from "../../computers/host/user-computer-tools.js";
+import type { UserDevice } from "../../computers/host/user-device-protocol.js";
 import {
   isRunningShellCommand,
   observeShellCommand,
@@ -154,12 +156,21 @@ async function lastValue<T>(values: AsyncIterable<T>): Promise<T> {
 async function connectedUserComputer(ctx: RunContext, computerId?: string) {
   const owner = ctx.source.userComputerOwner;
   const devices = ctx.deps.userDevices;
-  const device =
-    owner && devices ? await devices.connected(owner, computerId).catch(() => null) : null;
-  return owner && devices && device
+  if (!owner || !devices) return undefined;
+  let device: UserDevice | null;
+  try {
+    device = await devices.connected(owner, computerId);
+  } catch (error) {
+    // A failed lookup is not a disconnected computer: asking the user to reconnect would mislead.
+    getLogger().warn("user_computer.lookup_failed", { error });
+    return { error: LOOKUP_FAILED };
+  }
+  return device
     ? { owner, devices, deviceId: device.deviceId, screenOnly: device.screenOnly === true }
     : undefined;
 }
+
+const LOOKUP_FAILED = "The user's computer could not be checked just now. Try again shortly.";
 
 const TARGET_UNAVAILABLE =
   "The selected computer is disconnected or not allowed for this user. Use user_computer_list to see available computers.";
@@ -196,6 +207,7 @@ export async function userComputerShell(ctx: RunContext, call: ToolCall) {
     return call.finish({
       error: target.computerId ? TARGET_UNAVAILABLE : USER_COMPUTER_UNAVAILABLE,
     });
+  if ("error" in connected) return call.finish(connected);
   // Offered while any paired computer takes commands, so the one connected now may not.
   if (connected.screenOnly) return call.finish({ error: SCREEN_ONLY });
   const { owner, devices, deviceId } = connected;
@@ -286,6 +298,7 @@ async function userComputerScreen(ctx: RunContext, call: ToolCall, request: Scre
     return call.finish({
       error: target.computerId ? TARGET_UNAVAILABLE : USER_COMPUTER_UNAVAILABLE,
     });
+  if ("error" in connected) return call.finish(connected);
   const { owner, devices, deviceId } = connected;
   const { signal } = ctx.context;
   try {

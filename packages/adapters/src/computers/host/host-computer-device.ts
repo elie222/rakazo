@@ -21,6 +21,9 @@ export function withHostComputerScreen(
   if (!sandboxKindCapabilities(options.sandboxKind).offersHostComputer || !url || !token)
     return devices;
   const host = new HostComputerSandbox(url, token);
+  // Kept from the last answer, so a missed one leaves it listed as offline rather than unpaired:
+  // runs offer its tools by what is listed, and that must not change while access stays on.
+  let lastPlatform: string | undefined;
 
   // Approvals count from the latest settings change, so turning access off and on asks again.
   async function enabledSince() {
@@ -40,6 +43,7 @@ export function withHostComputerScreen(
         AbortSignal.timeout(5_000),
       ))
         environment = value;
+      if (environment) lastPlatform = environment.platform;
       return environment
         ? {
             deviceId: HOST_COMPUTER_DEVICE_ID,
@@ -63,16 +67,17 @@ export function withHostComputerScreen(
     async list(userId) {
       const paired = (await devices?.list(userId)) ?? [];
       const local = await hostDevice();
-      return local
+      const platform = local?.platform ?? ((await enabledSince()) ? lastPlatform : undefined);
+      return platform
         ? [
             ...paired,
             {
-              deviceId: local.deviceId,
-              name: local.name,
-              platform: local.platform,
-              connected: true,
+              deviceId: HOST_COMPUTER_DEVICE_ID,
+              name: "This computer",
+              platform,
+              connected: Boolean(local),
               screenOnly: true,
-              bound: !paired.some((device) => device.bound),
+              bound: Boolean(local) && !paired.some((device) => device.bound),
             },
           ]
         : paired;
