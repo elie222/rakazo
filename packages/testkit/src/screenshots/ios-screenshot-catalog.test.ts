@@ -18,6 +18,7 @@ const UNCOVERED: Record<string, string> = {
   meetings: "the catalog fixtures do not enable a meeting provider",
   "model-settings": "opens only for a model the catalog cannot describe; the fixtures connect none",
   share: "Android only: iOS has no share extension yet",
+  "skill-file": "the catalog fixtures do not include a skill reference file",
 };
 
 /** Route names under app/, without route groups, layouts, or Expo Router hooks. */
