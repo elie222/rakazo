@@ -11,7 +11,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Security
 
 - Changing an MCP server's URL no longer carries its stored bearer token, header values or an OAuth client that never signed in to the new address. Before, the connection check after saving sent the old token to the new URL.
-- Choosing which bots can use an MCP server keeps the access of archived bots, and lets you pick bots a teammate made in the same Space. That access still applies only in runs the server's owner starts.
 - `RAKAZO_NAV_LINKS` also rejects links to the app's own routes written in other letter cases or percent-encoded, such as `/API/me`, matching how the bundled proxy routes them.
 - Password managers no longer fill or save in the vault's login fields.
 - The web server refuses to start when its build id is not a plain timestamp, so a malformed id cannot touch files outside the asset archive.
@@ -47,6 +46,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- Changing which bots can use an MCP server no longer removes it from archived bots, so a restored bot gets its servers back. You can also choose a teammate's bot in the same Space, and it uses the server only in runs the server's owner starts.
 - The mobile app no longer restarts in a loop on phones set to Arabic, Persian or Urdu, and iOS permission prompts appear in every language the app ships.
 - Android dictation no longer cancels itself once a transcribing voice provider is connected, and wide code blocks and tables in Android chats scroll sideways.
 - Computers no longer leak a session D-Bus daemon per command, which could hit the process limit on long-running computers. Desktop setup restores the missing screen-sharing tool, so a bot's Linux computer starts again.
