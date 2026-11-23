@@ -266,6 +266,19 @@ it("adds a webhook, makes the bot's key first, then saves the trigger", async ()
   });
 });
 
+it("turns Use my computer off when a webhook is added, revoking its approval", async () => {
+  const approved = { ...routine, useComputer: true };
+  state.useBotRoutines.mockReturnValue({ routines: [approved] });
+  await act(async () => root.render(createElement(RoutineDetail)));
+  state.rpc.mockResolvedValue({ secret: "fake-key" });
+  await press("Edit routine");
+  await press("Webhook");
+  await press("Save");
+  expect(state.saveBotRoutine).toHaveBeenCalledWith("bot-1", {
+    update: { routineId: "routine-1", webhookEnabled: true, useComputer: false },
+  });
+});
+
 it("takes the webhook back off when only the bot's creator can make its key", async () => {
   state.rpc.mockRejectedValue(Object.assign(new Error("Forbidden"), { code: "FORBIDDEN" }));
   await press("Edit routine");

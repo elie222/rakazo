@@ -61,6 +61,11 @@ export function routineDraftEventTriggered(
   );
 }
 
+/** Whether a trigger other than email starts it from outside, which keeps the owner's computer off. */
+export function outsideEventTriggers(triggers: Pick<Routine, RoutineWebTrigger>): boolean {
+  return Boolean(triggers.webhookEnabled || triggers.githubEnabled || triggers.messageProvider);
+}
+
 /** A one-shot is set up from chat with its run time; its schedule can't change here. */
 export function routineScheduleLocked(routine: Routine | null): boolean {
   return Boolean(routine && isOneShotRoutineCrons(routine.crons));
@@ -105,7 +110,9 @@ function routineChanges(draft: MobileRoutineDraft, routine: Routine) {
       useComputer: draft.useComputer,
       name: name ?? routine.name,
       prompt: prompt ?? routine.prompt,
-      eventTriggered: Boolean(draft.emailSenders || draft.webhookEnabled),
+      eventTriggered:
+        Boolean(draft.emailSenders) ||
+        outsideEventTriggers(routineWithDraftTriggers(routine, draft)),
     }),
   };
 }

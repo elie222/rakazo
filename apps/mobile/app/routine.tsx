@@ -45,6 +45,7 @@ import { deviceTimeZone, routineTriggerRows, routineWebTriggers } from "../lib/r
 import type { MobileRoutineDraft } from "../lib/routines/routine-draft";
 import {
   draftWebTriggers,
+  outsideEventTriggers,
   routineDraftChanged,
   routineDraftEventTriggered,
   routineSaveRequest,
@@ -496,10 +497,11 @@ function RoutineEditor({
   function addTrigger(key: string) {
     if (key === "schedule") update({ schedules: [...draft.schedules, defaultCronPreset()] });
     // A bot that outside events start never gets the owner's computer.
-    if (key === "email") update({ emailSenders: "owner", useComputer: undefined });
+    // Turned off, not left unset, so the save revokes the approval as web does.
+    if (key === "email") update({ emailSenders: "owner", useComputer: false });
     if (key === "webhook") {
       webhookKey.run({ webhookEnabled: draft.webhookEnabled, useComputer: draft.useComputer });
-      update({ webhookEnabled: true, useComputer: undefined });
+      update({ webhookEnabled: true, useComputer: false });
     }
   }
   return (
@@ -686,7 +688,7 @@ function RoutineEditor({
       !base.inChat &&
       !kept.watch &&
       !draft.emailSenders &&
-      !draft.webhookEnabled ? (
+      !outsideEventTriggers(kept) ? (
         <SettingsGroup>
           <SettingsSwitch
             key="computer"
