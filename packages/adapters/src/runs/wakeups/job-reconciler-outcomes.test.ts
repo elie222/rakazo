@@ -125,20 +125,29 @@ describe("createJobReconciler bot-message outcome recovery", () => {
     } as unknown as PrismaClient;
     const { jobs, enqueue } = publisher();
     const events = { notify: vi.fn() } as unknown as ThreadEvents;
+    const onTicketChange = vi.fn(async () => undefined);
     const takeClaim = () => {
       claimAvailable = false;
     };
-    return { prisma, jobs, events, enqueue, tx, takeClaim };
+    return { prisma, jobs, events, enqueue, tx, takeClaim, onTicketChange };
   }
 
   it("recovers a ticket-tagged answer with the deployment's board lab, waking the assignee", async () => {
-    const { prisma, jobs, events, enqueue, tx } = harness();
+    const { prisma, jobs, events, enqueue, tx, onTicketChange } = harness();
 
     const reconciler = createJobReconciler(
-      { prisma, jobs, events, deploymentLabs: ["board"] },
+      { prisma, jobs, events, deploymentLabs: ["board"], onTicketChange },
       { batchSize: 1 },
     );
     await reconciler.reconcileOnce();
+    // The recovered comment refreshes the board, like every committed comment.
+    expect(onTicketChange).toHaveBeenCalledWith({
+      spaceId: "space-1",
+      boardId: "board-1",
+      ticketId: "ticket-7",
+      assigneeBotId: null,
+      wakeAssignee: false,
+    });
 
     // The answer comment commits, authored by the replying bot.
     expect(tx.ticketComment.create).toHaveBeenCalledWith(
@@ -185,10 +194,10 @@ describe("createJobReconciler bot-message outcome recovery", () => {
   });
 
   it("replays a recovered outcome without a second comment or continuation", async () => {
-    const { prisma, jobs, events, tx, takeClaim } = harness();
+    const { prisma, jobs, events, tx, takeClaim, onTicketChange } = harness();
 
     const reconciler = createJobReconciler(
-      { prisma, jobs, events, deploymentLabs: ["board"] },
+      { prisma, jobs, events, deploymentLabs: ["board"], onTicketChange },
       { batchSize: 1 },
     );
     await reconciler.reconcileOnce();
@@ -200,5 +209,6 @@ describe("createJobReconciler bot-message outcome recovery", () => {
     expect(tx.ticketComment.create).toHaveBeenCalledTimes(1);
     expect(tx.task.create).toHaveBeenCalledTimes(1);
     expect(tx.run.create).toHaveBeenCalledTimes(1);
+    expect(onTicketChange).toHaveBeenCalledTimes(1);
   });
 });

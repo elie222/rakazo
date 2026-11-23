@@ -287,6 +287,7 @@ async function main() {
       paymentWallet,
       mediaGeneration,
       deploymentLabs: env.deploymentLabs,
+      onTicketChange: ticketChanges,
     },
     {
       leadership: createPostgresReconciliationLeadership(pool),

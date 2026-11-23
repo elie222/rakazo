@@ -105,6 +105,7 @@ async function runTurn(
     intent,
     hop: 1,
     repliesToRequest: options.repliesToRequest ?? false,
+    blocksIntact: true,
   });
   const run = {
     id: "run-1",

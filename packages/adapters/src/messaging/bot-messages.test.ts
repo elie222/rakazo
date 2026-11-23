@@ -1746,6 +1746,93 @@ describe("ticket-originated bot messages", () => {
     );
   });
 
+  it("refreshes the board for a chat-path exchange recorded on the ticket", async () => {
+    // The asker is not the assignee, so the send takes the ordinary path — but
+    // its ticket comment must still signal the board, like every other comment.
+    const harness = deps({
+      hopBlocks: [
+        {
+          kind: "bot_message_received",
+          fromBotId: "bot-target",
+          fromBotName: "Analyst",
+          text: "Which quota applies?",
+          hop: 1,
+          intent: "question",
+          ticketRef: "OPS-7",
+        },
+      ],
+      board,
+      ticket,
+    });
+    const sent = await messageBot(
+      harness.deps,
+      { ...run, id: "run-2", sourceMessageId: "message-source" },
+      sender,
+      {
+        bot_id: "bot-target",
+        message: "Use staging; production is frozen.",
+        intent: "result",
+      },
+    );
+
+    expect(sent).toMatchObject({ ok: true });
+    expect(harness.onTicketChange).toHaveBeenCalledTimes(1);
+    expect(harness.onTicketChange).toHaveBeenCalledWith({
+      spaceId: "workspace-1",
+      boardId: "board-1",
+      ticketId: "ticket-7",
+      assigneeBotId: null,
+      wakeAssignee: false,
+    });
+  });
+
+  it("does not return an answer twice when the requester takes the ticket after an explicit reply", async () => {
+    // The helper answered the asking bot in its chat while that bot did not own
+    // the ticket, so nothing claimed the outcome. A reassignment then makes the
+    // asker the assignee: the automatic return must settle on the explicit
+    // answer instead of posting a second ticket comment and wake.
+    const harness = deps({ hopBlocks: clarification, board, ticket });
+    (
+      harness.deps.prisma.message as unknown as { findMany: ReturnType<typeof vi.fn> }
+    ).findMany.mockResolvedValue([
+      {
+        id: "m-explicit",
+        blocks: [
+          {
+            kind: "bot_message_sent",
+            toBotId: "bot-sender",
+            toBotName: "Researcher",
+            text: "Quota is five.",
+            intent: "result",
+          },
+        ],
+      },
+    ]);
+    const returned = await returnBotMessageOutcome(
+      harness.deps,
+      {
+        ...run,
+        id: "run-3",
+        threadId: "thread-helper",
+        botId: "bot-helper",
+        sourceMessageId: "message-source",
+      },
+      { id: "bot-helper", name: "Surveyor" },
+      "Quota is five.",
+    );
+
+    expect(returned).toBe(true);
+    expect(harness.deps.prisma.run.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ id: "run-3", botOutcomeReturnedAt: null }),
+      }),
+    );
+    expect(harness.tx.ticketComment.create).not.toHaveBeenCalled();
+    expect(harness.tx.task.create).not.toHaveBeenCalled();
+    expect(harness.tx.run.create).not.toHaveBeenCalled();
+    expect(harness.enqueue).not.toHaveBeenCalled();
+  });
+
   it("wakes an assignee whose board access comes from the deployment labs", async () => {
     // A deployment that enables boards globally: the owner has no personal lab entry,
     // so the wake must consult the deployment flags the executor supplies.

@@ -289,9 +289,14 @@ export function runSendsFinishNotification(trigger: string): boolean {
  */
 export function botMessageReportsToTicket(
   trigger: string,
-  peer: { ticketRef?: string; repliesToRequest?: boolean } | undefined,
+  peer: { ticketRef?: string; repliesToRequest?: boolean; blocksIntact?: boolean } | undefined,
 ): boolean {
-  return trigger === "bot_message" && peer?.ticketRef !== undefined;
+  // A source row that lost entries may have lost its ticket tag, so the missing
+  // marker is never taken as permission for the owner's chat surfaces — the
+  // same restrictive reading `mayBeChannelMessage` gives a dropped channel tag.
+  return (
+    trigger === "bot_message" && (peer?.ticketRef !== undefined || peer?.blocksIntact === false)
+  );
 }
 
 /** User-facing text for completion notifications; empty when only tool/step activity remains. */

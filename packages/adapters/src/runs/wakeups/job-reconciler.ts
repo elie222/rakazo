@@ -11,6 +11,7 @@ import { reconcileCallRequests } from "../../calls/call-request.js";
 import { scheduleComputerControlExpiry } from "../../computers/screens/computer-control.js";
 import { returnBotMessageOutcome } from "../../messaging/bot-messages.js";
 import { returnHelperOutcome } from "../../tasks/background-helpers.js";
+import type { TicketChangeNotifier } from "../../tasks/ticket-changes.js";
 import { messageBlocksText } from "../assembly/run-replies.prompt.js";
 import { findRunRecoveryBlockers } from "../lifecycle/run-recovery.js";
 import { reconcileStuckWork } from "../lifecycle/stuck-work.js";
@@ -142,6 +143,8 @@ export function createJobReconciler(
      * the answer while the assignee stays idle.
      */
     deploymentLabs?: readonly LabFeature[];
+    /** Notifies ticket changes, so a recovered outcome's comment refreshes the board. */
+    onTicketChange?: TicketChangeNotifier;
   },
   options: { intervalMs?: number; batchSize?: number; maxPagesPerPass?: number } = {},
 ) {
@@ -315,7 +318,13 @@ export function createJobReconciler(
                 ? "status"
                 : ("result" as const);
             const returned = await returnBotMessageOutcome(
-              { prisma: deps.prisma, jobs: deps.jobs, events, deploymentLabs: deps.deploymentLabs },
+              {
+                prisma: deps.prisma,
+                jobs: deps.jobs,
+                events,
+                deploymentLabs: deps.deploymentLabs,
+                onTicketChange: deps.onTicketChange,
+              },
               run,
               { id: run.botId, name: run.bot.name },
               text,

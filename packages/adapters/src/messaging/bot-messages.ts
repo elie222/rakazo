@@ -1,4 +1,5 @@
 import type { BotMessageIntent, MessageBlock } from "@rakazo/contracts";
+import type { BotMessageContext } from "@rakazo/core";
 import {
   BOT_MESSAGE_MAX_LENGTH,
   BOT_MESSAGE_TOO_LONG,
@@ -16,6 +17,7 @@ import type { PrismaClient } from "@rakazo/db";
 import {
   appendEventInTransaction,
   createThreadMessageInTransaction,
+  readMessageBlocks,
   storedMessageBlocks,
 } from "@rakazo/db";
 import { bestEffort, getLogger } from "@rakazo/logging";
@@ -47,20 +49,43 @@ export async function currentBotMessageHop(
   return botMessageContext(blocks)?.hop ?? 0;
 }
 
+/**
+ * The context a bot-message source carries, or — when its row exists but lost
+ * entries — a marker that says so. The marker's fields read as absent so every
+ * optional-chained consumer treats it as an unparseable source, while
+ * `blocksIntact: false` lets a deciding reader take the restrictive answer.
+ */
+export type LoadedBotMessageContext =
+  | (BotMessageContext & { repliesToRequest: boolean; blocksIntact: boolean })
+  | {
+      blocksIntact: false;
+      kind?: undefined;
+      fromBotId?: undefined;
+      fromBotName?: undefined;
+      text?: undefined;
+      intent?: undefined;
+      hop?: undefined;
+      ticketRef?: undefined;
+      repliesToRequest?: undefined;
+    };
+
 export async function loadBotMessageContext(
   prisma: PrismaClient,
   sourceMessageId: string | null | undefined,
-) {
+): Promise<LoadedBotMessageContext | undefined> {
   if (!sourceMessageId) return undefined;
   const source = await prisma.message.findUnique({
     where: { id: sourceMessageId },
     select: { blocks: true, replyTo: { select: { id: true, blocks: true } } },
   });
-  const context = botMessageContext(
-    source ? storedMessageBlocks({ id: sourceMessageId, blocks: source.blocks }) : [],
-  );
-  if (!context) return undefined;
-  const replyBlocks = source?.replyTo ? storedMessageBlocks(source.replyTo) : [];
+  if (!source) return undefined;
+  const stored = readMessageBlocks({ id: sourceMessageId, blocks: source.blocks });
+  const context = botMessageContext(stored.blocks);
+  // A row that lost entries may have lost the ticket tag or the whole exchange
+  // marker: readers that decide from this context get the restrictive answer
+  // through `blocksIntact`, so the marker is returned instead of nothing.
+  if (!context) return stored.intact ? undefined : { blocksIntact: false };
+  const replyBlocks = source.replyTo ? storedMessageBlocks(source.replyTo) : [];
   const repliesToRequest =
     (context.intent === "result" || context.intent === "status" || context.intent === "fyi") &&
     replyBlocks.some(
@@ -69,7 +94,7 @@ export async function loadBotMessageContext(
         block.toBotId === context.fromBotId &&
         (block.intent === undefined || block.intent === "request" || block.intent === "question"),
     );
-  return { ...context, repliesToRequest };
+  return { ...context, repliesToRequest, blocksIntact: stored.intact };
 }
 
 /** Bots named in a resolution error; a large Space must not turn one tool result into a wall. */
@@ -390,6 +415,21 @@ export async function messageBot(
   await deps.events.notify(targetThreadId, committed.targetEventSeq);
   await deps.events.notify(run.threadId, committed.senderEventSeq);
   await wakeRun(deps.jobs, committed.runId);
+  if (ticket) {
+    // Board refresh only: the comment above is the durable record and the
+    // recipient's wake was committed with it, so a lost nudge loses nothing —
+    // the same best-effort shape the ticket outcome path uses.
+    await bestEffort(
+      "bot message ticket board refresh",
+      deps.onTicketChange?.({
+        spaceId: run.spaceId,
+        boardId: ticket.boardId,
+        ticketId: ticket.ticketId,
+        assigneeBotId: null,
+        wakeAssignee: false,
+      }),
+    );
+  }
   return {
     ok: true as const,
     botId: target.id,
@@ -417,7 +457,10 @@ async function requesterBot(
   source?: Awaited<ReturnType<typeof loadBotMessageContext>>,
 ): Promise<{ id: string; name: string } | undefined> {
   const context = source ?? (await loadBotMessageContext(prisma, run.sourceMessageId));
-  if (!context) return undefined;
+  // A context without a sender (a source row that lost its entries) names no
+  // requester to resolve: the outcome then belongs on the ticket, not on
+  // whatever bot happens to sort first.
+  if (!context?.fromBotId) return undefined;
   const sourceIntent = context.intent ?? "request";
   if (sourceIntent !== "request" && sourceIntent !== "question") return undefined;
   // messageBot reaches only active bots of this space, so an archived or deleted
@@ -427,6 +470,24 @@ async function requesterBot(
     select: { id: true, name: true },
   });
   return requester ?? undefined;
+}
+
+/** Whether the run already sent this bot an explicit terminal result. */
+async function sentResultToBot(
+  prisma: PrismaClient,
+  run: DelegatedRun,
+  botId: string,
+): Promise<boolean> {
+  const sent = await prisma.message.findMany({
+    where: { threadId: run.threadId, runId: run.id },
+    select: { id: true, blocks: true },
+  });
+  return sent.some((message) =>
+    storedMessageBlocks(message).some(
+      (block) =>
+        block.kind === "bot_message_sent" && block.toBotId === botId && block.intent === "result",
+    ),
+  );
 }
 
 /** Return a delegated run's terminal outcome unless it already sent one explicitly. */
@@ -446,7 +507,10 @@ export async function returnBotMessageOutcome(
   // continuation. A request or question whose requester went away is different: that
   // outcome still belongs on the ticket, where its assignee picks it up.
   const sourceSolicitedReply =
-    source?.intent === undefined || source.intent === "request" || source.intent === "question";
+    !source ||
+    source.intent === undefined ||
+    source.intent === "request" ||
+    source.intent === "question";
   if (source?.ticketRef) {
     // A ticket-originated clarification: the outcome belongs on that ticket's workflow,
     // not in any owner's chat. The claim inside the delivery transaction makes the
@@ -464,6 +528,14 @@ export async function returnBotMessageOutcome(
       return true;
     }
     if (sourceSolicitedReply && (!requester || ticket.assigneeBotId === requester.id)) {
+      // An explicit result this run already sent the asking bot settles the
+      // outcome even when it took the chat path, which claims nothing: a later
+      // reassignment or archival must not re-deliver that answer as a second
+      // ticket comment and assignee wake.
+      if (source.fromBotId && (await sentResultToBot(deps.prisma, run, source.fromBotId))) {
+        await markBotOutcomeReturned(deps.prisma, run.id);
+        return true;
+      }
       // The asking bot still owns the ticket — or is archived and can no longer take a
       // reply: either way the outcome lands on the ticket as a comment that wakes its
       // current assignee. Only the sender-thread echo needs a requester to address.
@@ -496,20 +568,9 @@ export async function returnBotMessageOutcome(
     // Handled: nothing to deliver. Return true so callers do not release a reservation.
     return true;
   }
-  const sent = await deps.prisma.message.findMany({
-    where: { threadId: run.threadId, runId: run.id },
-    select: { id: true, blocks: true },
-  });
   // Only an explicit result counts as a terminal outcome. Interim message_bot
   // status updates must not suppress the automatic final return.
-  const alreadyReturned = sent.some((message) =>
-    storedMessageBlocks(message).some(
-      (block) =>
-        block.kind === "bot_message_sent" &&
-        block.toBotId === requesterId &&
-        block.intent === "result",
-    ),
-  );
+  const alreadyReturned = await sentResultToBot(deps.prisma, run, requesterId);
   if (alreadyReturned) {
     await markBotOutcomeReturned(deps.prisma, run.id);
     return true;

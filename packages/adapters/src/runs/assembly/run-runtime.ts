@@ -392,6 +392,7 @@ export function createRunReconciler(
     | "mediaGeneration"
     | "secretStore"
     | "deploymentLabs"
+    | "onTicketChange"
   > & {
     cloudAgent: NonNullable<ExecutorDeps["cloudAgent"]> | null;
     userCloudAgents?: ExecutorDeps["userCloudAgents"];
@@ -411,6 +412,7 @@ export function createRunReconciler(
     jobs,
     events: deps.events,
     deploymentLabs: deps.deploymentLabs,
+    onTicketChange: deps.onTicketChange,
     notifications: deps.notifications,
     ...workerOnly,
     reconcileChatDelivery:

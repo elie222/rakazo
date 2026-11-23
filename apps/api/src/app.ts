@@ -604,6 +604,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
           mediaGeneration,
           billingEnabled: modelCreditsEnabled,
           deploymentLabs: env.deploymentLabs,
+          onTicketChange: ticketChanges,
         },
         {},
         { messagingDelivery, teamChat },

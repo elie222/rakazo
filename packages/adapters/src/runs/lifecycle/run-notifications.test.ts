@@ -78,8 +78,20 @@ describe("ticket-originated collaboration notifications", () => {
   it("keeps ordinary bot messages and other triggers owner-facing", () => {
     expect(botMessageReportsToTicket("bot_message", undefined)).toBe(false);
     expect(botMessageReportsToTicket("bot_message", { repliesToRequest: true })).toBe(false);
+    expect(
+      botMessageReportsToTicket("bot_message", { repliesToRequest: true, blocksIntact: true }),
+    ).toBe(false);
     expect(botMessageReportsToTicket("user", { ticketRef: "OPS-7" })).toBe(false);
     expect(botMessageReportsToTicket("tickets", { ticketRef: "OPS-7" })).toBe(false);
+  });
+
+  it("treats a source row that lost entries as ticket-originated", () => {
+    // The ticket tag may have been dropped with them, so the missing marker is
+    // never taken as permission for the owner's chat surfaces.
+    expect(botMessageReportsToTicket("bot_message", { blocksIntact: false })).toBe(true);
+    expect(
+      botMessageReportsToTicket("bot_message", { ticketRef: "OPS-7", blocksIntact: false }),
+    ).toBe(true);
   });
 });
 
