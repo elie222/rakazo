@@ -347,6 +347,7 @@ function fixture({
   let offeredTools: string[] = [];
   let instructions = "";
   let modelInput = "";
+  let cachedPrefix = "";
   let checkpointCapture:
     | { executionId: string; checkpoint: Omit<TurnCheckpoint, "provider" | "model"> }
     | undefined;
@@ -604,6 +605,7 @@ function fixture({
     offeredTools = request.tools.map((tool) => tool.name);
     instructions = request.instructions ?? "";
     modelInput = JSON.stringify([request.instructions, request.prompt, request.history]);
+    cachedPrefix = JSON.stringify([request.tools, request.instructions]);
     if (checkpointCapture) {
       // The runtime hands the executor a capture it can serialize when the turn pauses.
       const pending = checkpointCapture;
@@ -745,6 +747,7 @@ function fixture({
     instructions: () => instructions,
     /** Everything the model read: instructions and messages. */
     modelInput: () => modelInput,
+    cachedPrefix: () => cachedPrefix,
     cancelAtInstructionCommit() {
       transactionalPrisma.$queryRaw.mockImplementation(async (...values: unknown[]) => {
         if (String(values[0]).includes("FROM threads")) run.status = "cancelled";
@@ -4518,7 +4521,8 @@ describe("user_computer_shell", () => {
   function devices(connected = true, paired = connected, pairedAt = new Date(0)) {
     const requests: Array<{ userId: string; request: HostComputerRequest }> = [];
     const gateway = {
-      list: async (): ReturnType<UserDeviceGateway["list"]> => [],
+      list: async (): ReturnType<UserDeviceGateway["list"]> =>
+        paired ? [{ ...device, connected }] : [],
       connected: vi.fn(async (_userId: string) => (connected ? device : null)),
       pairedSince: vi.fn(async (_userId: string) => (paired ? pairedAt : null)),
       async *request<T>(userId: string, request: HostComputerRequest) {
@@ -4561,16 +4565,27 @@ describe("user_computer_shell", () => {
     expect(gateway.connected).toHaveBeenCalledWith("user-1");
   });
 
-  it.each([
-    ["paired but offline", true],
-    ["not paired", false],
-  ])("tells the bot how to connect the owner's computer when it is %s", async (_label, paired) => {
-    const { gateway } = devices(false, paired);
-    const f = fixture({ ...ownRun, trigger: "follow_up", userDevices: gateway });
+  it("tells the bot how to connect the owner's computer when none is paired", async () => {
+    const f = fixture({ ...ownRun, trigger: "follow_up", userDevices: devices(false).gateway });
     await f.run();
     expect(f.offeredTools()).not.toContain("user_computer_shell");
     expect(f.instructions()).toContain(offlineLine);
     expect(f.instructions()).not.toContain(line);
+  });
+
+  it("keeps the tools and system prompt byte-identical when the computer disconnects", async () => {
+    const seen = async (connected: boolean) => {
+      const f = fixture({ ...ownRun, userDevices: devices(connected, true).gateway });
+      await f.run();
+      return { prefix: f.cachedPrefix(), input: f.modelInput() };
+    };
+    const online = await seen(true);
+    const offline = await seen(false);
+    expect(offline.prefix).toBe(online.prefix);
+    expect(online.prefix).toContain("user_computer_shell");
+    // The connection travels with the turn instead.
+    expect(online.input).toContain("The user's computer is connected.");
+    expect(offline.input).toContain("The user's computer is not connected right now.");
   });
 
   it.each<[string, Parameters<typeof fixture>[0]]>([
@@ -4591,7 +4606,6 @@ describe("user_computer_shell", () => {
 
   it.each<[string, Parameters<typeof fixture>[0]]>([
     ["no desktop gateway", {}],
-    ["a disconnected desktop", { userDevices: devices(false).gateway }],
     [
       "a disabled tool",
       { userDevices: devices().gateway, disabledBuiltinTools: ["user_computer_shell"] },
@@ -4648,11 +4662,11 @@ describe("user_computer_shell", () => {
       expect(requests).toEqual([]);
     });
 
-    it("tells the bot how to connect the owner's computer when it is offline", async () => {
+    it("still offers it while the owner's paired computer is offline", async () => {
       const f = fixture({ ...ownRoutine, userDevices: devices(false, true).gateway });
       await f.run();
-      expect(f.offeredTools()).not.toContain("user_computer_shell");
-      expect(f.instructions()).toContain(offlineLine);
+      expect(f.offeredTools()).toContain("user_computer_shell");
+      expect(f.modelInput()).toContain("The user's computer is not connected right now.");
     });
 
     it.each<[string, Parameters<typeof fixture>[0]]>([
@@ -5146,7 +5160,9 @@ describe("user computer screen control", () => {
   function devices(platform = "darwin", screenOnly?: boolean) {
     const requests: HostComputerRequest[] = [];
     const gateway = {
-      list: async (): ReturnType<UserDeviceGateway["list"]> => [],
+      list: async (): ReturnType<UserDeviceGateway["list"]> => [
+        { deviceId: "device-1", name: "Laptop", platform, connected: true, screenOnly },
+      ],
       connected: vi.fn(async (_userId: string) => ({
         deviceId: "device-1",
         name: "Laptop",
@@ -5165,10 +5181,10 @@ describe("user computer screen control", () => {
     } satisfies UserDeviceGateway;
     return { gateway, requests };
   }
-  it("offers screen targeting when a different connected computer supports it", async () => {
+  it("offers screen control while the paired Mac that supports it is offline", async () => {
     const { gateway } = devices("linux");
     gateway.list = async () => [
-      { deviceId: "mac", name: "Laptop", platform: "darwin", connected: true },
+      { deviceId: "mac", name: "Laptop", platform: "darwin", connected: false },
     ];
     const f = fixture({
       name: "user_computer_observe",
@@ -5200,7 +5216,7 @@ describe("user computer screen control", () => {
       ],
     });
 
-  it("is offered only with a connected Mac or Windows PC", async () => {
+  it("is offered only with a paired Mac or Windows PC", async () => {
     for (const platform of ["darwin", "win32"]) {
       const connected = fixture({ ...ownRun, userDevices: devices(platform).gateway });
       await connected.run();

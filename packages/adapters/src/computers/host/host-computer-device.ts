@@ -71,6 +71,7 @@ export function withHostComputerScreen(
               name: local.name,
               platform: local.platform,
               connected: true,
+              screenOnly: true,
               bound: !paired.some((device) => device.bound),
             },
           ]

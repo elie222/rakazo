@@ -40,6 +40,7 @@ import { restoreTurnCheckpointEffects, seedIntroEffectOccurrences } from "./run-
 import {
   connectedPluginsInstruction,
   taughtSkillsInstruction,
+  userComputerTurnInstruction,
   voiceCallInstruction,
 } from "./run-instructions.prompt.js";
 import { loadSharedSpaceNote } from "./shared-space-note.js";
@@ -291,7 +292,14 @@ export async function buildTurnPrompt(
   } = parts.turnContext;
   const { resolved, runModelId, runModelProvider } = parts.model;
   const { attachedFilesPrompt, modelSeesImages } = parts.computer;
-  const { callEndRun, disabledBuiltinTools, ownerStartedRun, voiceCall } = parts.capabilities;
+  const {
+    callEndRun,
+    disabledBuiltinTools,
+    ownerStartedRun,
+    userComputer,
+    userComputerOwnerId,
+    voiceCall,
+  } = parts.capabilities;
   const { approvedEffects, tools } = parts.tools;
   const { ctx } = parts;
   // A routine with its owner's computer runs the exact text they approved, skills already expanded,
@@ -383,6 +391,14 @@ export async function buildTurnPrompt(
     if (routine && lateSince)
       lateRoutineNote = lateRoutineRunInstruction(lateSince, executionStartedAt, routine.timezone);
   }
+  // Unknown when the lookup fails: each computer call checks again and says what it finds.
+  const userComputerConnected =
+    userComputer === "paired" && userComputerOwnerId && deps.userDevices
+      ? await bestEffort(
+          "check whether the user's computer is connected",
+          deps.userDevices.connected(userComputerOwnerId),
+        )
+      : undefined;
   // Other members' account names are text the owner of a routine with their computer never approved.
   const sharedSpaceNote =
     people && !ownerComputerRoutine
@@ -404,6 +420,10 @@ export async function buildTurnPrompt(
       userTimeZone,
       previousMessageAt(historyMessages, currentTurnMessage?.id),
     )}\n</current_time>`,
+    // Per-turn for the same reason: a desktop connecting must not change the cacheable prefix.
+    userComputerConnected === undefined
+      ? undefined
+      : `<user_computer>\n${userComputerTurnInstruction(Boolean(userComputerConnected))}\n</user_computer>`,
     lateRoutineNote,
     sharedSpaceNote,
   ]

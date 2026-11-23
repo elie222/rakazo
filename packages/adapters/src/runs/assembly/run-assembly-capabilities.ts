@@ -12,7 +12,7 @@ import {
   nonOwnerChatPrivacyBlock,
 } from "@rakazo/core";
 import { mayBeChannelMessage, parseComputerMode } from "@rakazo/db";
-import { getLogger } from "@rakazo/logging";
+import { bestEffort, getLogger } from "@rakazo/logging";
 import { createApprovedEffectReplayQueue } from "../../approvals/approval-effect.js";
 import { appendOutsideText, taskPromptIsOutside } from "../../approvals/review-target-sources.js";
 import { loadGroupContext } from "../../bots/group-handoff.js";
@@ -567,16 +567,21 @@ export async function resolveRunCapabilities(
     deps.userDevices &&
     !disabledBuiltinTools.has(USER_COMPUTER_SHELL_TOOL)
   ) {
-    const device = await deps.userDevices.connected(userComputerOwnerId).catch(() => null);
-    if (device) {
-      userComputer = "connected";
-      userComputerShell = !device.screenOnly;
+    // Offered by what is paired, never by what is connected now: a desktop connecting or
+    // disconnecting would otherwise change the tools and system prompt, the provider's whole
+    // cached prefix. Each call checks the connection again, and the turn says whether it is up.
+    const computers = await bestEffort(
+      "list the user's paired computers",
+      deps.userDevices.list(userComputerOwnerId),
+    );
+    if (computers?.length) {
+      userComputerShell = computers.some((computer) => !computer.screenOnly);
       // The macOS and Windows desktops fetch a screen driver; Linux has none yet.
-      const computers = await deps.userDevices.list(userComputerOwnerId);
-      userComputerScreen = [device, ...computers.filter((computer) => computer.connected)].some(
+      userComputerScreen = computers.some(
         (computer) => computer.platform === "darwin" || computer.platform === "win32",
       );
-    } else userComputer = "offline";
+      if (userComputerShell || userComputerScreen) userComputer = "paired";
+    } else if (computers) userComputer = "unpaired";
   }
   const cloudAgent = await cloudAgentPromise;
   // Revocation blocks new instructions, but existing owned agents still need cleanup.

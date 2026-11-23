@@ -214,6 +214,29 @@ describe("userComputerShell", () => {
     });
   });
 
+  it("refuses without a request while the computer is offline", async () => {
+    const { ctx, call, requests } = setup(async function* () {});
+    ctx.deps.userDevices!.connected = async () => null;
+    expect(await userComputerShell(ctx, call({ command: "ls" }))).toEqual({
+      error: expect.stringContaining("not connected"),
+    });
+    expect(requests).toEqual([]);
+  });
+
+  it("refuses commands on a computer that offers only its screen", async () => {
+    const { ctx, call, requests } = setup(async function* () {});
+    ctx.deps.userDevices!.connected = async () => ({
+      deviceId: "this-computer",
+      name: "This computer",
+      platform: "darwin",
+      screenOnly: true,
+    });
+    expect(await userComputerShell(ctx, call({ command: "ls" }))).toEqual({
+      error: expect.stringContaining("only screen control"),
+    });
+    expect(requests).toEqual([]);
+  });
+
   it("passes the run's abort to the device and rethrows it", async () => {
     const { ctx, call, controller, signals } = setup(async function* (signal) {
       yield* [];

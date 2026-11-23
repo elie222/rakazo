@@ -38,8 +38,8 @@ export {
   userComputerAppName,
 };
 
-/** Whether the run's owner has their desktop connected, or could connect one. */
-export type UserComputerState = "connected" | "offline" | undefined;
+/** Whether the run's owner has a desktop paired, or could pair one. */
+export type UserComputerState = "paired" | "unpaired" | undefined;
 
 const USER_COMPUTER_UNAVAILABLE =
   'The user\'s computer is not connected. If the task needs it, ask them to open the Rakazo desktop app and turn on "Let bots use this computer" in its settings.';
@@ -156,11 +156,15 @@ async function connectedUserComputer(ctx: RunContext, computerId?: string) {
   const devices = ctx.deps.userDevices;
   const device =
     owner && devices ? await devices.connected(owner, computerId).catch(() => null) : null;
-  return owner && devices && device ? { owner, devices, deviceId: device.deviceId } : undefined;
+  return owner && devices && device
+    ? { owner, devices, deviceId: device.deviceId, screenOnly: device.screenOnly === true }
+    : undefined;
 }
 
 const TARGET_UNAVAILABLE =
   "The selected computer is disconnected or not allowed for this user. Use user_computer_list to see available computers.";
+const SCREEN_ONLY =
+  "That computer offers only screen control, so it cannot run commands. Use the screen tools there, or ask the user to connect a computer that can.";
 
 function requestedComputer(args: Record<string, unknown>): { computerId?: string; error?: string } {
   if (args.computerId === undefined) return {};
@@ -192,6 +196,8 @@ export async function userComputerShell(ctx: RunContext, call: ToolCall) {
     return call.finish({
       error: target.computerId ? TARGET_UNAVAILABLE : USER_COMPUTER_UNAVAILABLE,
     });
+  // Offered while any paired computer takes commands, so the one connected now may not.
+  if (connected.screenOnly) return call.finish({ error: SCREEN_ONLY });
   const { owner, devices, deviceId } = connected;
   const { signal } = ctx.context;
   const command = String(call.args.command ?? "");
