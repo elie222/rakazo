@@ -16,8 +16,12 @@ export function resolveMobileUiLocale(): string {
  */
 export function applyMobileUiDirection(locale = "en") {
   const rtl = textDirectionForLocale(locale) === "rtl";
-  // Always allow RTL so a later locale switch can take effect after relaunch.
-  I18nManager.allowRTL(true);
+  // Allow RTL only for an RTL UI locale. React Native computes isRTL as
+  // forced || (allowed && device language is RTL), so allowRTL(true) with forceRTL(false) left
+  // isRTL true on an Arabic, Persian or Urdu phone whose UI is LTR (no UI locale for its
+  // language): every start saw the mismatch and reloaded again, and the app never got past the
+  // splash screen. A switch to an RTL locale allows RTL itself, then reloads.
+  I18nManager.allowRTL(rtl);
   if (I18nManager.isRTL === rtl) return rtl;
 
   // forceRTL persists and only takes effect after reload / next cold start.

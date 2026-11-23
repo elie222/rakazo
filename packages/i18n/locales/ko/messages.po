@@ -242,6 +242,10 @@ msgstr "{channel} {id}"
 msgid "{channel} {id}, {date}"
 msgstr "{channel} {id}, {date}"
 
+#: apps/web/src/pages/shell/sidebar/sidebar-roster.tsx
+msgid "{chatCount, plural, one {# chat} other {# chats}}"
+msgstr "{chatCount, plural, other {채팅 #개}}"
+
 #: apps/web/src/components/vault/VaultItemEditor.tsx
 msgid "{commandVariable} is reserved and cannot be used as a command variable. Choose another name."
 msgstr "{commandVariable}은(는) 예약되어 있어 명령 변수로 사용할 수 없습니다. 다른 이름을 선택하세요."
@@ -749,6 +753,12 @@ msgstr "{vcpus} vCPU, {memoryGb} GB, 월 {hours}시간 컴퓨터"
 msgid "@{0}"
 msgstr "@{0}"
 
+#. placeholder {0}: mention.name
+#. placeholder {1}: mention.subtitle
+#: apps/web/src/pages/shell/composer/composer-parts.tsx
+msgid "@{0}, {1}"
+msgstr "@{0}, {1}"
+
 #: apps/mobile/components/composer/thread-composer.tsx
 msgid "@{name}"
 msgstr "@{name}"
@@ -994,8 +1004,8 @@ msgid "Accounts"
 msgstr "계정"
 
 #. placeholder {0}: bot.name
-#. placeholder {0}: group.spaceName
 #. placeholder {0}: page.title
+#. placeholder {0}: section.name
 #: apps/web/src/components/pages/PagesList.tsx
 #: apps/web/src/pages/integrations/McpServersOverlay.tsx
 #: apps/web/src/pages/shell/chat/bot-context-menu.tsx
@@ -1011,10 +1021,6 @@ msgstr "{label} 작업"
 #: apps/web/src/pages/shell/sidebar/archived-chats.tsx
 msgid "Actions for {name}"
 msgstr "{name} 작업"
-
-#: apps/web/src/pages/shell/shell-dialogs.tsx
-msgid "Actions for space"
-msgstr "스페이스 작업"
 
 #: apps/mobile/app/routine.tsx
 #: apps/web/src/pages/routines/RoutineEditor.tsx
@@ -1258,6 +1264,7 @@ msgstr "추가됨"
 #: apps/mobile/app/(settings)/integrations.tsx
 #: apps/mobile/app/(settings)/plugin.tsx
 #: apps/mobile/app/(settings)/skills.tsx
+#: apps/mobile/components/integrations/integration-catalog-search.tsx
 #: apps/mobile/components/integrations/integration-plugins.tsx
 #: apps/web/src/components/integrations/plugin-marketplace.tsx
 #: apps/web/src/pages/plugins/parts.tsx
@@ -2466,6 +2473,10 @@ msgstr "채팅 세부정보"
 msgid "Chat from {name}"
 msgstr "{name}에서 채팅"
 
+#: apps/web/src/pages/shell/sidebar/archived-chats.tsx
+msgid "Chat restored, but the list could not refresh."
+msgstr "채팅을 복원했지만 목록을 새로 고칠 수 없습니다."
+
 #: apps/mobile/app/_layout.tsx
 #: apps/mobile/app/bot-settings.tsx
 msgid "Chat settings"
@@ -2719,7 +2730,7 @@ msgstr "컴퓨터 닫기"
 msgid "Close image"
 msgstr "이미지 닫기"
 
-#: apps/web/src/pages/shell/chat/message-cards.tsx
+#: apps/web/src/pages/shell/chat/image-gallery.tsx
 msgid "Close image preview"
 msgstr "이미지 미리보기 닫기"
 
@@ -2964,11 +2975,6 @@ msgstr "컴퓨터를 사용할 수 있습니다. 계속하려면 새로고침하
 msgid "Computers are off on this server."
 msgstr "이 서버에서는 컴퓨터가 꺼져 있습니다."
 
-#: apps/mobile/app/(settings)/integrations.tsx
-#: apps/web/src/pages/plugins/plugin-browse.tsx
-msgid "Configure a plugin catalog on the server to connect apps."
-msgstr "앱을 연결하려면 서버에 플러그인 카탈로그를 구성하세요."
-
 #: apps/web/src/pages/space/KnowledgeSection.tsx
 msgid "Confirm delete"
 msgstr "삭제 확인"
@@ -2988,6 +2994,7 @@ msgstr "비밀번호 확인"
 msgid "Confirm removal"
 msgstr "삭제 확인"
 
+#: apps/mobile/app/(settings)/integrations.tsx
 #: apps/mobile/app/(settings)/messaging.tsx
 #: apps/mobile/app/(settings)/plugin.tsx
 #: apps/mobile/app/(settings)/voice.tsx
@@ -3018,6 +3025,7 @@ msgstr "{0} 연결"
 msgid "Connect {app}"
 msgstr "{app} 연결"
 
+#: apps/mobile/app/(settings)/integrations.tsx
 #: apps/mobile/app/(settings)/wallet.tsx
 #: apps/mobile/components/cards/AppConnectCard.tsx
 #: apps/mobile/components/integrations/add-custom-integration.tsx
@@ -3333,6 +3341,10 @@ msgstr "다이어그램 소스 복사"
 msgid "Copy invite link"
 msgstr "초대 링크 복사"
 
+#: apps/mobile/components/thread/routine-event-row.tsx
+msgid "Copy key"
+msgstr "키 복사"
+
 #: apps/mobile/app/page-share.tsx
 #: apps/mobile/app/pages.tsx
 #: apps/web/src/components/pages/PublicPageShell.tsx
@@ -3353,6 +3365,10 @@ msgstr "검토 링크 복사"
 #: apps/web/src/components/messages/markdown-copy.tsx
 msgid "Copy rows"
 msgstr "행 복사"
+
+#: apps/mobile/components/thread/routine-event-row.tsx
+msgid "Copy URL"
+msgstr "URL 복사"
 
 #: apps/web/src/pages/settings/UsageSettingsPanel.tsx
 msgid "Cost"
@@ -3702,6 +3718,14 @@ msgstr "{0}을 다운로드하지 못했습니다. 다시 시도해 주세요."
 msgid "Could not download {name}. Try again."
 msgstr "{name}을 다운로드하지 못했습니다. 다시 시도해 주세요."
 
+#: apps/mobile/components/media/image-artifact-viewer.tsx
+msgid "Could not download image"
+msgstr "이미지를 다운로드하지 못했습니다"
+
+#: apps/mobile/app/artifact.tsx
+msgid "Could not download this artifact"
+msgstr "이 아티팩트를 다운로드하지 못했습니다"
+
 #: apps/mobile/app/(settings)/plugin.tsx
 #: apps/web/src/components/integrations/plugin-marketplace.tsx
 msgid "Could not enable tools"
@@ -3750,6 +3774,7 @@ msgid "Could not leave space"
 msgstr "스페이스에서 나가지 못했습니다"
 
 #: apps/mobile/app/(settings)/computers.tsx
+#: apps/mobile/components/ui/app-error-boundary.tsx
 #: apps/mobile/lib/account/user-devices.ts
 #: apps/web/src/components/account/PasskeySettings.tsx
 #: apps/web/src/components/computers/CloudComputerSizes.tsx
@@ -3841,8 +3866,11 @@ msgstr "그룹을 불러오지 못했습니다"
 msgid "Could not load image"
 msgstr "이미지를 불러오지 못했습니다"
 
+#: apps/web/src/components/integrations/skills-dialog.tsx
+msgid "Could not load installed skill packs."
+msgstr "설치된 스킬 팩을 불러올 수 없습니다."
+
 #: apps/mobile/app/(settings)/integrations.tsx
-#: apps/mobile/lib/integrations/integrations-cache.ts
 #: apps/web/src/pages/plugins/PluginsOverlay.tsx
 #: apps/web/src/pages/plugins/use-plugin-connections.ts
 msgid "Could not load integrations"
@@ -3852,6 +3880,10 @@ msgstr "연동 목록을 불러오지 못했습니다."
 #: apps/web/src/pages/integrations/McpServersOverlay.tsx
 #: apps/web/src/pages/plugins/use-plugin-connections.ts
 msgid "Could not load MCP servers"
+msgstr "MCP 서버 목록을 불러오지 못했습니다."
+
+#: apps/web/src/pages/plugins/plugin-browse.tsx
+msgid "Could not load MCP servers."
 msgstr "MCP 서버 목록을 불러오지 못했습니다."
 
 #: apps/mobile/app/(settings)/organization-members.tsx
@@ -4174,6 +4206,10 @@ msgstr "비밀번호를 재설정할 수 없습니다"
 msgid "Could not restore bot"
 msgstr "봇을 복원하지 못했습니다"
 
+#: apps/web/src/pages/shell/sidebar/archived-chats.tsx
+msgid "Could not restore chat. Try again."
+msgstr "채팅을 복원할 수 없습니다. 다시 시도하세요."
+
 #: apps/mobile/components/computers/computer-home-versions.tsx
 #: apps/web/src/components/computers/ComputerHomeVersions.tsx
 msgid "Could not restore files"
@@ -4199,6 +4235,7 @@ msgstr "루틴을 실행할 수 없습니다"
 #: apps/mobile/app/(settings)/team-conversation.tsx
 #: apps/mobile/components/vault/vault-item-editor.tsx
 #: apps/web/src/pages/integrations/McpServersOverlay.tsx
+#: apps/web/src/pages/settings/AccountSettingsOverlay.tsx
 #: apps/web/src/pages/settings/ExternalConversationSettings.tsx
 #: apps/web/src/pages/shell/bots/bot-panel.tsx
 #: apps/web/src/pages/shell/create-delete-dialogs.tsx
@@ -4363,6 +4400,8 @@ msgstr "자격 증명을 표시할 수 없습니다"
 msgid "Could not show the item"
 msgstr "항목을 표시하지 못했습니다"
 
+#: apps/mobile/components/thread/routine-event-row.tsx
+#: apps/web/src/pages/shell/chat/routine-event-row.tsx
 #: apps/web/src/pages/shell/use-routine-editor.ts
 msgid "Could not show the webhook key"
 msgstr "웹훅 키를 표시할 수 없습니다"
@@ -4605,6 +4644,11 @@ msgstr "국가"
 msgid "Create"
 msgstr "만들기"
 
+#: apps/mobile/components/integrations/add-custom-integration.tsx
+#: apps/web/src/pages/plugins/source-form.tsx
+msgid "Create a personal access token"
+msgstr "개인 액세스 토큰 만들기"
+
 #. placeholder {0}: bot.name
 #: apps/web/src/pages/shell/create-delete-dialogs.tsx
 msgid "Create a section and move {0} into it."
@@ -4750,7 +4794,6 @@ msgstr "사용자 지정 서버 {host}"
 msgid "Customer support"
 msgstr "고객 지원"
 
-#: apps/mobile/app/(settings)/space.tsx
 #: apps/web/src/pages/settings/SpaceSettingOverrides.tsx
 msgid "Customize"
 msgstr "맞춤설정"
@@ -4997,7 +5040,6 @@ msgstr "섹션 삭제"
 
 #: apps/mobile/components/inbox/inbox-render-item.tsx
 #: apps/web/src/pages/settings/SpaceSettingsPanel.tsx
-#: apps/web/src/pages/shell/shell-dialogs.tsx
 msgid "Delete space"
 msgstr "스페이스 삭제"
 
@@ -5311,6 +5353,7 @@ msgstr "계정이 없나요?"
 #: apps/mobile/components/cards/ImportSetupCard.tsx
 #: apps/mobile/components/messages/select-text-sheet.tsx
 #: apps/mobile/components/thread/ask-block.tsx
+#: apps/mobile/components/thread/routine-event-row.tsx
 #: apps/mobile/components/vault/vault-item-sheet.tsx
 #: apps/mobile/lib/board/board.ts
 #: apps/web/src/components/computers/ComputerCard.tsx
@@ -5334,6 +5377,7 @@ msgstr "아래"
 msgid "Downgrade at renewal"
 msgstr "갱신 시 다운그레이드"
 
+#: apps/mobile/app/artifact.tsx
 #: apps/web/src/pages/space/Artifacts.tsx
 #: apps/web/src/pages/space/KnowledgeSection.tsx
 msgid "Download"
@@ -5344,6 +5388,7 @@ msgstr "다운로드"
 msgid "Download {0}"
 msgstr "{0} 다운로드"
 
+#: apps/mobile/components/media/image-artifact-viewer.tsx
 #: apps/web/src/components/messages/ArtifactFileCard.tsx
 msgid "Download {name}"
 msgstr "{name} 다운로드"
@@ -6182,6 +6227,10 @@ msgstr "대화 기록 숨기기"
 msgid "Hide transcript: {title}, {duration}"
 msgstr "대화 기록 숨기기: {title}, {duration}"
 
+#: apps/web/src/pages/shell/chat/routine-event-row.tsx
+msgid "Hide webhook key"
+msgstr "웹훅 키 숨기기"
+
 #: apps/web/src/components/models/ProviderSettingsForm.tsx
 #: apps/web/src/pages/space/ticket-priority.ts
 #: packages/i18n/src/thinking-level.ts
@@ -6985,12 +7034,12 @@ msgid "Make member"
 msgstr "멤버로 지정"
 
 #: apps/web/src/pages/settings/BillingSettingsPanel.tsx
-#: apps/web/src/pages/settings/SettingsOverlay.tsx
+#: apps/web/src/pages/settings/SpacesSettingsPanel.tsx
 msgid "Manage"
 msgstr "관리"
 
 #. placeholder {0}: option.name
-#: apps/web/src/pages/settings/SettingsOverlay.tsx
+#: apps/web/src/pages/settings/SpacesSettingsPanel.tsx
 msgid "Manage {0}"
 msgstr "{0} 관리"
 
@@ -7020,6 +7069,11 @@ msgstr "다른 봇 관리"
 #: apps/web/src/pages/model-settings/ModelRoleSettings.tsx
 msgid "Manage provider"
 msgstr "서비스 관리"
+
+#: apps/mobile/app/(settings)/integrations.tsx
+#: apps/web/src/pages/plugins/plugin-browse.tsx
+msgid "Managed apps haven’t been enabled on this server."
+msgstr "이 서버에서는 관리형 앱이 활성화되지 않았습니다."
 
 #: apps/web/src/pages/plugins/domain-search.tsx
 msgid "Manual"
@@ -7130,9 +7184,9 @@ msgstr "멤버"
 
 #: apps/mobile/app/_layout.tsx
 #: apps/mobile/app/(settings)/_layout.tsx
-#: apps/mobile/app/(settings)/account.tsx
 #: apps/mobile/app/(settings)/organization-members.tsx
 #: apps/mobile/app/(settings)/organization.tsx
+#: apps/mobile/app/(settings)/spaces.tsx
 #: apps/mobile/app/space-members.tsx
 #: apps/mobile/components/inbox/inbox-render-item.tsx
 #: apps/web/src/components/spaces/OrganizationMembersSettings.tsx
@@ -7537,6 +7591,11 @@ msgstr "자동 실행 이름을 입력하세요."
 msgid "Name your Bot"
 msgstr "봇 이름 정하기"
 
+#: apps/mobile/app/(settings)/voice.tsx
+#: apps/web/src/pages/settings/VoiceSettingsOverlay.tsx
+msgid "Names and terms (optional)"
+msgstr "이름 및 용어(선택 사항)"
+
 #: apps/web/src/lib/chat/roster-status.ts
 msgid "Needs an answer"
 msgstr "답변 필요"
@@ -7672,7 +7731,9 @@ msgid "New password"
 msgstr "새 비밀번호"
 
 #: apps/mobile/app/_layout.tsx
+#: apps/mobile/app/(settings)/spaces.tsx
 #: apps/mobile/lib/inbox/create-chooser.ts
+#: apps/web/src/pages/settings/SpacesSettingsPanel.tsx
 #: apps/web/src/pages/shell/bots/bot-picker.tsx
 #: apps/web/src/pages/shell/use-palette-actions.ts
 msgid "New private space"
@@ -7717,6 +7778,10 @@ msgstr "최신 댓글"
 #: apps/mobile/app/new-group.tsx
 msgid "Next"
 msgstr "다음"
+
+#: apps/web/src/pages/shell/chat/image-gallery.tsx
+msgid "Next image"
+msgstr "다음 이미지"
 
 #: apps/web/src/pages/shell/chat/chat-find-bar.tsx
 msgid "Next match"
@@ -7807,8 +7872,13 @@ msgstr "이미 종료된 요청입니다"
 #: apps/mobile/app/(settings)/approval-rule-add.tsx
 #: apps/web/src/components/settings/ApprovalRulesSettings.tsx
 #: apps/web/src/components/vault/VaultSettings.tsx
+#: apps/web/src/pages/shell/chat/chat-find-bar.tsx
 msgid "No matches"
 msgstr "일치하는 항목 없음"
+
+#: apps/web/src/pages/plugins/plugin-browse.tsx
+msgid "No matches in your current catalogs."
+msgstr "현재 카탈로그에 일치하는 항목이 없습니다."
 
 #: apps/mobile/app/artifacts.tsx
 #: apps/web/src/pages/space/Artifacts.tsx
@@ -8196,6 +8266,8 @@ msgstr "{host}에서 보낸 코드만 입력하세요."
 msgid "Only me"
 msgstr "나만"
 
+#: apps/mobile/components/thread/routine-event-row.tsx
+#: apps/web/src/pages/shell/chat/routine-event-row.tsx
 #: apps/web/src/pages/shell/use-routine-editor.ts
 msgid "Only the bot's creator can see its webhook key."
 msgstr "봇을 만든 사람만 웹훅 키를 볼 수 있습니다."
@@ -8316,6 +8388,10 @@ msgstr "설정 열기"
 #: apps/mobile/lib/thread/thread-voice.ts
 msgid "Open Voice"
 msgstr "음성 열기"
+
+#: apps/web/src/pages/shell/chat/use-read-aloud.ts
+msgid "Open Voice settings"
+msgstr "음성 설정 열기"
 
 #: apps/mobile/components/bots/bot-context-cards.tsx
 #: apps/web/src/pages/space/ScratchpadSection.tsx
@@ -8640,6 +8716,11 @@ msgstr "페르소나"
 msgid "Personal"
 msgstr "개인"
 
+#: apps/mobile/components/integrations/add-custom-integration.tsx
+#: apps/web/src/pages/plugins/source-form.tsx
+msgid "Personal access token"
+msgstr "개인 액세스 토큰"
+
 #: apps/mobile/components/vault/vault-item-editor.tsx
 #: apps/mobile/components/vault/vault-item-sheet.tsx
 #: apps/web/src/components/vault/VaultItemDetail.tsx
@@ -8793,6 +8874,10 @@ msgstr "초안 미리보기"
 #: apps/web/src/pages/space/Artifacts.tsx
 msgid "Preview isn't available for this file type. Download it to view it."
 msgstr "이 파일 형식은 미리보기를 지원하지 않습니다. 다운로드하여 확인하세요."
+
+#: apps/web/src/pages/shell/chat/image-gallery.tsx
+msgid "Previous image"
+msgstr "이전 이미지"
 
 #: apps/web/src/pages/shell/chat/chat-find-bar.tsx
 msgid "Previous match"
@@ -9136,6 +9221,7 @@ msgstr "채용 및 인사"
 msgid "Redirect URI"
 msgstr "리디렉션 URI"
 
+#: apps/mobile/app/board.tsx
 #: apps/web/src/App.tsx
 #: apps/web/src/components/ErrorBoundary.tsx
 msgid "Refresh"
@@ -9845,6 +9931,11 @@ msgstr "{botName}와(과) 동일"
 msgid "Same as main model"
 msgstr "기본 모델과 동일"
 
+#: apps/mobile/app/(settings)/space.tsx
+#: apps/web/src/pages/settings/SpaceSettingOverrides.tsx
+msgid "Same as your account"
+msgstr "계정과 동일"
+
 #: apps/web/src/pages/shell/host-computer-prompt.tsx
 msgid "Sandbox"
 msgstr "샌드박스"
@@ -9896,6 +9987,7 @@ msgstr "토요일"
 msgid "Save"
 msgstr "저장"
 
+#: apps/mobile/components/integrations/add-custom-integration.tsx
 #: apps/web/src/pages/plugins/source-form.tsx
 msgid "Save and sign in"
 msgstr "저장하고 로그인"
@@ -9934,6 +10026,11 @@ msgstr "{name}을(를) 기기에 저장했습니다"
 #: apps/web/src/components/computers/ComputerHomeVersions.tsx
 msgid "Saved at"
 msgstr "저장 시각"
+
+#: apps/mobile/app/artifact.tsx
+#: apps/mobile/components/media/image-artifact-viewer.tsx
+msgid "Saved to Photos"
+msgstr "사진 보관함에 저장됨"
 
 #. js-lingui-explicit-id
 #: packages/i18n/src/vault.ts
@@ -10081,10 +10178,6 @@ msgstr "도메인으로 검색"
 msgid "Search integrations.sh"
 msgstr "integrations.sh 검색"
 
-#: apps/web/src/pages/plugins/plugin-browse.tsx
-msgid "Search MCP servers for “{query}”"
-msgstr "MCP 서버에서 “{query}” 검색"
-
 #: apps/web/src/components/models/FoundModelPicker.tsx
 #: apps/web/src/pages/model-settings/compatible-model-fields.tsx
 #: apps/web/src/pages/model-settings/provider-page.tsx
@@ -10094,8 +10187,12 @@ msgid "Search models"
 msgstr "모델 검색"
 
 #: apps/mobile/components/integrations/integration-catalog-search.tsx
-msgid "Search more apps"
-msgstr "앱 더 검색"
+msgid "Search public MCP directory"
+msgstr "공개 MCP 디렉터리 검색"
+
+#: apps/web/src/pages/plugins/plugin-browse.tsx
+msgid "Search public MCP directory for “{term}”"
+msgstr "공개 MCP 디렉터리에서 “{term}” 검색"
 
 #: apps/web/src/pages/shell/sidebar/shell-sidebar.tsx
 msgid "Search runs"
@@ -10122,6 +10219,7 @@ msgstr "검색: {0}"
 
 #: apps/mobile/app/search.tsx
 #: apps/web/src/pages/plugins/domain-search.tsx
+#: apps/web/src/pages/plugins/plugin-browse.tsx
 #: apps/web/src/pages/space/SpaceSearch.tsx
 msgid "Searching…"
 msgstr "검색 중…"
@@ -10300,10 +10398,20 @@ msgstr "설정"
 #: apps/web/src/pages/settings/SettingsOverlay.tsx
 #: apps/web/src/pages/shell/bots/bot-panel.tsx
 #: apps/web/src/pages/shell/keyboard-shortcuts-dialog.tsx
-#: apps/web/src/pages/shell/shell-dialogs.tsx
 #: apps/web/src/pages/shell/sidebar/sidebar-footer.tsx
 msgid "Settings"
 msgstr "설정"
+
+#. placeholder {0}: group.spaceName
+#: apps/web/src/pages/shell/sidebar/sidebar-roster.tsx
+msgid "Settings for {0}"
+msgstr "{0} 설정"
+
+#: apps/mobile/app/(settings)/space.tsx
+#: apps/mobile/app/(settings)/spaces.tsx
+#: apps/web/src/pages/settings/SpaceSettingOverrides.tsx
+msgid "Settings for this Space"
+msgstr "이 스페이스 설정"
 
 #: apps/mobile/components/cards/change-undo.tsx
 #: apps/web/src/components/messages/AskCard.tsx
@@ -10417,6 +10525,11 @@ msgstr "게스트와 공유됨"
 msgid "Show"
 msgstr "보기"
 
+#. placeholder {0}: image.name
+#: apps/web/src/pages/shell/chat/image-gallery.tsx
+msgid "Show {0}"
+msgstr "{0} 보기"
+
 #: apps/mobile/components/vault/login-fields-editor.tsx
 msgid "Show {field}"
 msgstr "{field} 표시"
@@ -10485,6 +10598,11 @@ msgstr "대화 기록 표시"
 #: apps/mobile/components/calls/VoiceChatCard.tsx
 msgid "Show transcript: {title}, {duration}"
 msgstr "대화 기록 표시: {title}, {duration}"
+
+#: apps/mobile/components/thread/routine-event-row.tsx
+#: apps/web/src/pages/shell/chat/routine-event-row.tsx
+msgid "Show webhook key"
+msgstr "웹훅 키 표시"
 
 #: apps/web/src/pages/settings/AccountSettingsOverlay.tsx
 msgid "Sidebar density"
@@ -10746,6 +10864,7 @@ msgstr "문제가 발생했습니다. 다시 시도하세요."
 #: apps/mobile/app/page-share.tsx
 #: apps/mobile/components/calls/IncomingCall.tsx
 #: apps/mobile/lib/api/api.ts
+#: apps/mobile/lib/api/verified-scope.ts
 #: apps/mobile/lib/calls/call-deps.ts
 #: apps/mobile/lib/calls/incoming-calls.ts
 #: apps/mobile/lib/query/query.ts
@@ -10811,9 +10930,16 @@ msgstr "스페이스 기본값"
 msgid "Space limit reached"
 msgstr "스페이스 한도 도달"
 
-#: apps/web/src/pages/settings/SettingsOverlay.tsx
+#: apps/mobile/app/(settings)/_layout.tsx
+#: apps/mobile/app/(settings)/account.tsx
+#: apps/web/src/pages/settings/settings-nav.ts
 msgid "Spaces"
 msgstr "스페이스"
+
+#: apps/mobile/app/(settings)/spaces.tsx
+#: apps/web/src/pages/settings/settings-nav.ts
+msgid "Spaces keep work apart. Bots, chats, memory and computers never cross between them."
+msgstr "스페이스는 작업을 분리합니다. 봇, 채팅, 기억, 컴퓨터는 스페이스 간에 절대 공유되지 않습니다."
 
 #: apps/mobile/app/(settings)/organization-members.tsx
 #: apps/web/src/components/spaces/OrganizationMembersSettings.tsx
@@ -11430,6 +11556,11 @@ msgstr "사고: {0}"
 msgid "Thinking: {level}"
 msgstr "생각 깊이: {level}"
 
+#: apps/mobile/components/thread/thread-screen.tsx
+#: apps/web/src/pages/shell/chat/transcript.tsx
+msgid "Thinking…"
+msgstr "생각 중…"
+
 #: packages/i18n/src/user-error.ts
 msgid "This account is deactivated"
 msgstr "이 계정은 비활성화되었습니다"
@@ -11720,6 +11851,10 @@ msgid "This subscription sign-in is not available in Rakazo yet. Use a deploymen
 msgstr "이 구독 로그인 방식은 아직 Rakazo에서 지원되지 않습니다. 서버에 설정된 인증 정보를 사용하거나 다른 서비스를 선택하세요."
 
 #: apps/mobile/app/(settings)/bot-template.tsx
+msgid "This template is no longer available."
+msgstr "이 템플릿은 더 이상 사용할 수 없습니다."
+
+#: apps/mobile/app/(settings)/bot-template.tsx
 #: apps/web/src/components/bot-templates/bot-templates-dialog.tsx
 msgid "This template was just updated. Check it again."
 msgstr "이 템플릿이 방금 업데이트되었습니다. 다시 확인하세요."
@@ -11901,6 +12036,11 @@ msgstr "텍스트 변환 응답이 너무 큽니다."
 #: apps/web/src/pages/settings/VoiceSettingsOverlay.tsx
 msgid "Transcription server URL"
 msgstr "텍스트 변환 서버 URL"
+
+#: apps/mobile/app/(settings)/voice.tsx
+#: apps/web/src/pages/settings/VoiceSettingsOverlay.tsx
+msgid "Transcription vocabulary"
+msgstr "전사 어휘"
 
 #: apps/mobile/app/(settings)/team-conversation.tsx
 #: apps/web/src/pages/settings/ExternalConversationSettings.tsx
@@ -12271,6 +12411,14 @@ msgstr "사용자 지정 서버 사용"
 msgid "Use a found model"
 msgstr "찾은 모델 중에서 선택"
 
+#: apps/web/src/pages/settings/SpaceSettingOverrides.tsx
+msgid "Use account settings"
+msgstr "계정 설정 사용"
+
+#: apps/web/src/pages/settings/SpaceSettingOverrides.tsx
+msgid "Use account settings for {label}"
+msgstr "{label}에 계정 설정 사용"
+
 #: packages/i18n/src/user-error.ts
 msgid "Use an account with the same email address"
 msgstr "같은 이메일 주소의 계정을 사용하세요"
@@ -12282,14 +12430,6 @@ msgstr "http 또는 https URL을 사용하세요"
 #: apps/mobile/app/server.tsx
 msgid "Use default server"
 msgstr "기본 서버 사용"
-
-#: apps/web/src/pages/settings/SpaceSettingOverrides.tsx
-msgid "Use defaults"
-msgstr "기본값 사용"
-
-#: apps/web/src/pages/settings/SpaceSettingOverrides.tsx
-msgid "Use defaults for {label}"
-msgstr "{label}에 기본값 사용"
 
 #: apps/mobile/app/(settings)/plugin.tsx
 #: apps/web/src/components/integrations/plugin-marketplace.tsx
@@ -12312,6 +12452,11 @@ msgstr "문자, 숫자, 점, 대시 또는 밑줄을 사용하세요"
 #: apps/web/src/pages/model-settings/space-bots-model.tsx
 msgid "Use main model"
 msgstr "기본 모델 사용"
+
+#: apps/mobile/app/routine.tsx
+#: apps/web/src/pages/routines/routine-editor/model-settings.tsx
+msgid "Use my computer"
+msgstr "내 컴퓨터 사용"
 
 #: apps/web/src/components/billing/ModelCredits.tsx
 msgid "Use my subscription or API key"
@@ -12735,11 +12880,9 @@ msgstr "작업 지침"
 #: apps/mobile/app/sign-in.tsx
 #: apps/mobile/components/inbox/inbox-rows.tsx
 #: apps/mobile/components/integrations/integration-detail.tsx
-#: apps/mobile/components/thread/thread-screen.tsx
 #: apps/web/src/components/messages/ToolActivityDisclosure.tsx
 #: apps/web/src/lib/chat/roster-status.ts
 #: apps/web/src/pages/auth/Auth.tsx
-#: apps/web/src/pages/shell/chat/transcript.tsx
 msgid "Working…"
 msgstr "처리 중…"
 
@@ -12875,10 +13018,6 @@ msgstr "내 데이터"
 #: apps/web/src/components/bot-templates/bot-template-copy.ts
 msgid "Your day at a glance, every weekday morning"
 msgstr "평일 아침마다 하루 일정을 한눈에 보여 줍니다"
-
-#: apps/web/src/pages/settings/SpaceSettingOverrides.tsx
-msgid "Your defaults"
-msgstr "내 기본값"
 
 #: apps/mobile/app/(settings)/computers.tsx
 #: apps/web/src/components/computers/ComputerDeviceSettings.tsx

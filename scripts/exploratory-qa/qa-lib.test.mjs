@@ -109,6 +109,8 @@ test("model text stays inside code blocks, so links, images, markup and mentions
   assert.equal(codeBlock("a\u0007b\u007f"), "```text\nab\n```");
   assert.equal(codeBlock(""), "```text\nNot recorded\n```");
   assert.equal(codeBlock("x".repeat(50), 10), `\`\`\`text\n${"x".repeat(9)}…\n\`\`\``);
+  assert.equal(codeBlock(`${"x".repeat(7)}😀bc`, 10), `\`\`\`text\n${"x".repeat(7)}😀…\n\`\`\``);
+  assert.equal(codeBlock(`${"x".repeat(8)}😀b`, 10), `\`\`\`text\n${"x".repeat(8)}…\n\`\`\``);
 
   const hostile =
     "```\n[click](https://evil.example) ![img](https://evil.example/x.png) <img src=x> @octocat";

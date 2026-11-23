@@ -1,7 +1,7 @@
 import type { TransactionalEmailProvider } from "@rakazo/adapter-kit";
 import { writeEmailCopyDir } from "@rakazo/auth/test-email-copy";
 import { deferred } from "@rakazo/core/test-async";
-import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { startHourlySweep } from "../http/hourly-sweep.js";
 import { unsubscribeUrl } from "./marketing-email.js";
 import { sendReferralEmails } from "./referral-email.js";
@@ -58,8 +58,9 @@ function fixture() {
   return { user, deps, findMany, create, sweep: sendReferralEmails(deps) };
 }
 
-beforeAll(() => {
-  vi.stubEnv("EMAIL_COPY_DIR", writeEmailCopyDir({ referral: true }));
+const copyDir = writeEmailCopyDir({ referral: true });
+beforeEach(() => {
+  vi.stubEnv("EMAIL_COPY_DIR", copyDir);
 });
 afterEach(() => vi.useRealTimers());
 

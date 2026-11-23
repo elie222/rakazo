@@ -11,6 +11,8 @@ export type AdminDbContext = {
   prisma: PrismaClient;
   secrets: SecretStore;
   apiUrl: string;
+  /** The public origin webhooks reach, when an ingress provider publishes one. */
+  inboundOrigin?: string;
   signal: AbortSignal;
 };
 

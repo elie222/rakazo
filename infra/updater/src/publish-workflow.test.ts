@@ -168,6 +168,7 @@ describe("server image publish workflow", () => {
     const locks = [
       suites.jobs["static-checks"],
       suites.jobs["unit-tests-shard"],
+      suites.jobs["unit-tests-processes"],
       suites.jobs["test-integration-shard"],
       ci.jobs["publish-server-image"],
     ].map((job) => job?.concurrency);
@@ -182,7 +183,12 @@ describe("server image publish workflow", () => {
     for (const name of ["tests", "publish-server-image"]) {
       expect(ci.jobs[name]?.needs, name).toBeUndefined();
     }
-    for (const name of ["static-checks", "unit-tests-shard", "test-integration-shard"]) {
+    for (const name of [
+      "static-checks",
+      "unit-tests-shard",
+      "unit-tests-processes",
+      "test-integration-shard",
+    ]) {
       expect(suites.jobs[name]?.needs, name).toBeUndefined();
     }
   });

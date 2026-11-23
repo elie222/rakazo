@@ -2,7 +2,7 @@
 // middleware, API proxy, static files and SPA fallback. Listens on WEB_HOST (127.0.0.1) and
 // WEB_PORT (5173), and reads the rest of its environment as `vite preview` does.
 import type { Stats } from "node:fs";
-import { createReadStream, statSync } from "node:fs";
+import { createReadStream, realpathSync, statSync } from "node:fs";
 import type { IncomingMessage } from "node:http";
 import http from "node:http";
 import https from "node:https";
@@ -225,7 +225,12 @@ export function createWebServer(root: string, env: NodeJS.ProcessEnv): http.Serv
   return server;
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+/** Node loads the entry by its real path, so an install reached through a symlink must match too. */
+export function isEntrypoint(argv1: string | undefined, moduleUrl: string): boolean {
+  return argv1 !== undefined && moduleUrl === pathToFileURL(realpathSync(argv1)).href;
+}
+
+if (isEntrypoint(process.argv[1], import.meta.url)) {
   const server = createWebServer(path.resolve(import.meta.dirname, ".."), process.env);
   const host = process.env.WEB_HOST || "127.0.0.1";
   const port = Number(process.env.WEB_PORT || 5173);

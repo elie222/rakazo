@@ -53,6 +53,16 @@ describe("botWebhookKey", () => {
     expect(recordSecurityEvent).not.toHaveBeenCalled();
   });
 
+  it("prints the published inbound address when the deployment has one", async () => {
+    storeBotWebhookKey.mockResolvedValue(null);
+    const result = await botWebhookKey(
+      { ...context, inboundOrigin: "https://hooks.example.test" },
+      "bot_1",
+      false,
+    );
+    expect(result.json.url).toBe("https://hooks.example.test/api/v1/bots/bot_1/webhook");
+  });
+
   it("replaces the key on rotate", async () => {
     storeBotWebhookKey.mockResolvedValue("rotated");
     await botWebhookKey(context, "bot_1", true);

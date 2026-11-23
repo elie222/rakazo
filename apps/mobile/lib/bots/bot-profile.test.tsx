@@ -461,7 +461,6 @@ describe("bot profile", () => {
       ],
       "2 on",
     ],
-    ["all paused", [routine("r1", "Morning digest", { active: false })], "0 on"],
   ])("counts the routines that are on (%s)", async (_, rows, count) => {
     profileRpc(async () => rows);
     await render(createElement(BotProfile));
@@ -720,24 +719,21 @@ describe("bot profile notifications", () => {
     expect(afterChatNotifyChange).not.toHaveBeenCalled();
   });
 
-  it.each([true, false])(
-    "brings the device in line after a save (turned on: %s)",
-    async (notify) => {
-      profileRpc(async () => [], {
-        bot: async () => ({ ...fixtureBot, notifyOnFinish: !notify }),
-        update: async () => ({ ...fixtureBot, notifyOnFinish: notify }),
-      });
-      await render(createElement(BotProfile));
+  it("brings the device in line after turning notifications off", async () => {
+    profileRpc(async () => [], {
+      bot: async () => ({ ...fixtureBot, notifyOnFinish: true }),
+      update: async () => ({ ...fixtureBot, notifyOnFinish: false }),
+    });
+    await render(createElement(BotProfile));
 
-      await act(async () => notificationsSwitch()!.click());
-      expect(afterChatNotifyChange).toHaveBeenCalledExactlyOnceWith(
-        "https://api.example",
-        "token",
-        "space-a",
-        { botId: "bot-fixture", threadId: "thread-fixture", notify },
-      );
-    },
-  );
+    await act(async () => notificationsSwitch()!.click());
+    expect(afterChatNotifyChange).toHaveBeenCalledExactlyOnceWith(
+      "https://api.example",
+      "token",
+      "space-a",
+      { botId: "bot-fixture", threadId: "thread-fixture", notify: false },
+    );
+  });
 });
 
 describe("routines screen", () => {

@@ -17,6 +17,7 @@ const mocks = vi.hoisted(() => ({
   alert: vi.fn(),
   openAuthSessionAsync: vi.fn(async () => ({ type: "dismiss" })),
 }));
+vi.mock("../platform/app-version", () => ({ analyticsAppVersion: () => undefined }));
 vi.mock("../layout/side-insets", () => ({ useSideInsets: () => ({}) }));
 vi.mock("../i18n/i18n", () => ({ dateLocaleForUi: () => mocks.locale }));
 vi.mock("./referral", () => ({ rememberReferral: vi.fn() }));

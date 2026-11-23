@@ -118,6 +118,7 @@
       "approval-rule-add",
       "vault",
       "archived-bots",
+      "spaces",
       "space",
       "space-members"
     ]

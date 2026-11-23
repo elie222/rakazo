@@ -36,6 +36,7 @@ import type { AgentAccess } from "../integrations/agent-access";
 import { SettingsPageHeader } from "../settings/SettingsPageHeader";
 import type { VaultAuth } from "./kinds";
 import { LoginFieldsInput } from "./LoginFieldsInput";
+import { passwordManagerIgnore } from "./password-manager-ignore";
 import { VaultItemAccess } from "./VaultItemAccess";
 
 /** What the editor hands back: a destination and the value to save, in the shape vault.put takes. */
@@ -471,6 +472,7 @@ function EditorForm({
         data-testid="vault-editor-value"
         type="password"
         autoComplete="new-password"
+        {...passwordManagerIgnore}
         spellCheck={false}
         disabled={busy}
         placeholder={placeholder}
@@ -515,6 +517,7 @@ function EditorForm({
                 ? text("otp", t`Authenticator key`, otp, setOtp, {
                     type: "password",
                     autoComplete: "new-password",
+                    ...passwordManagerIgnore,
                     "aria-invalid": keyUnreadable ? true : undefined,
                     "aria-describedby": keyUnreadable ? keyErrorId : undefined,
                   })

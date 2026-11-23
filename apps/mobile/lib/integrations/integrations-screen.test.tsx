@@ -627,7 +627,7 @@ it("keeps loaded plugins showing while the screen reads them again", async () =>
 });
 
 it("waits for the new Space's plugins after a switch with a cached empty catalog", async () => {
-  const guidance = "Configure a plugin catalog on the server to connect apps.";
+  const guidance = "Managed apps haven’t been enabled on this server.";
   await render();
   await act(async () => catalog.resolve([]));
   await settle();
@@ -710,39 +710,45 @@ it.each(["rename", "revoke", "uninstall", "connect"])(
 );
 
 it("shows registered MCP servers with connector initials and sentence case statuses", async () => {
+  const endpoint = "https://mcp.saved.example.test/mcp";
   const fallback = state.rpc.getMockImplementation();
-  state.rpc.mockImplementation((proc: string) =>
-    proc === "mcp/servers/list"
-      ? Promise.resolve([
-          {
-            id: "saved",
-            name: "Saved server",
-            enabled: true,
-            hasSecret: true,
-            health: { status: "ok" },
-          },
-          { id: "open", name: "Open server", enabled: true, hasSecret: false, health: {} },
-          {
-            id: "client",
-            name: "Client server",
-            enabled: true,
-            hasSecret: false,
-            oauthClientId: null,
-            // Signing in again can't help until a client ID is entered.
-            oauthStatus: "reconnect",
-            health: { status: "error", code: MCP_OAUTH_CLIENT_REQUIRED },
-          },
-          { id: "broken", name: "Broken server", enabled: true, health: { status: "error" } },
-          {
-            id: "expired",
-            name: "Expired server",
-            enabled: true,
-            oauthStatus: "reconnect",
-            health: { status: "ok" },
-          },
-        ])
-      : fallback?.(proc),
-  );
+  state.rpc.mockImplementation((proc: string) => {
+    if (proc === "capabilities/sourcePresets")
+      return Promise.resolve([
+        { id: "saved", name: "Saved server", url: endpoint, signIn: true, featured: true },
+      ]);
+    if (proc === "mcp/servers/list")
+      return Promise.resolve([
+        {
+          id: "saved",
+          name: "Saved server",
+          endpoint,
+          enabled: true,
+          hasSecret: true,
+          health: { status: "ok" },
+        },
+        { id: "open", name: "Open server", enabled: true, hasSecret: false, health: {} },
+        {
+          id: "client",
+          name: "Client server",
+          enabled: true,
+          hasSecret: false,
+          oauthClientId: null,
+          // Signing in again can't help until a client ID is entered.
+          oauthStatus: "reconnect",
+          health: { status: "error", code: MCP_OAUTH_CLIENT_REQUIRED },
+        },
+        { id: "broken", name: "Broken server", enabled: true, health: { status: "error" } },
+        {
+          id: "expired",
+          name: "Expired server",
+          enabled: true,
+          oauthStatus: "reconnect",
+          health: { status: "ok" },
+        },
+      ]);
+    return fallback?.(proc);
+  });
   await render();
   const rows = container.querySelectorAll('[data-testid="registered-mcp-server"]');
   expect([...rows].map((row) => row.textContent)).toEqual([
@@ -778,6 +784,7 @@ it("shows registered MCP servers with connector initials and sentence case statu
   });
   const matches = container.querySelectorAll('[data-testid="registered-mcp-server"]');
   expect([...matches].map((row) => row.textContent)).toEqual(["SSaved serverConnected"]);
+  expect(container.textContent?.match(/Saved server/g)).toHaveLength(1);
   expect(container.textContent).not.toContain("No apps match your search.");
 
   await act(async () => matches[0]?.querySelector("button")?.click());
@@ -1575,7 +1582,7 @@ it("looks a search up in the public catalog only when asked, and signs in from t
   expect(container.textContent).toContain("No apps match your search.");
   expect(state.rpc).not.toHaveBeenCalledWith("capabilities/catalogSearch", expect.anything());
 
-  await press("Search more apps");
+  await press("Search public MCP directory");
   expect(state.rpc).toHaveBeenCalledWith(
     "capabilities/catalogSearch",
     { query: "tracker", usePublicCatalog: true },
@@ -1611,7 +1618,7 @@ it("offers Connect on a catalog server whose sign-in failed", async () => {
   await act(async () => catalog.resolve([]));
   await settle();
   await searchFor("tracker");
-  await press("Search more apps");
+  await press("Search public MCP directory");
   await press("Connect");
 
   expect(container.querySelector('[data-testid="registered-mcp-server"]')?.textContent).toBe(
@@ -1632,7 +1639,7 @@ it("shows a catalog server added while another category was open", async () => {
   await act(async () => catalog.resolve([]));
   await settle();
   await searchFor("tracker");
-  await press("Search more apps");
+  await press("Search public MCP directory");
   await press("Connect");
   await press("Security & Ops");
   await act(async () => browser.resolve({ type: "cancel" }));
@@ -1644,7 +1651,7 @@ it("shows a catalog server added while another category was open", async () => {
   );
 });
 
-it("does not offer a catalog server that needs a key", async () => {
+it("opens the credential form for a catalog server that needs a token", async () => {
   const fallback = state.rpc.getMockImplementation();
   state.rpc.mockImplementation((proc: string, args: unknown) =>
     proc === "capabilities/catalogSearch"
@@ -1655,12 +1662,16 @@ it("does not offer a catalog server that needs a key", async () => {
   await act(async () => catalog.resolve([]));
   await settle();
   await searchFor("tracker");
-  await press("Search more apps");
+  await press("Search public MCP directory");
 
-  expect(container.querySelector('[data-testid="integration-catalog-search"]')?.textContent).toBe(
-    "No apps match your search.",
+  await press("Connect");
+  expect(container.querySelector('input[placeholder="Bearer token"]')).not.toBeNull();
+  expect(container.querySelector('input[value="https://mcp.tracker.example/mcp"]')).not.toBeNull();
+  expect(state.rpc).not.toHaveBeenCalledWith(
+    "mcp/servers/connect",
+    expect.anything(),
+    expect.anything(),
   );
-  expect(container.textContent?.match(/No apps match your search\./g)).toHaveLength(1);
 });
 
 it("does not say nothing matched when the screen lists a match but the catalog finds none", async () => {
@@ -1674,7 +1685,7 @@ it("does not say nothing matched when the screen lists a match but the catalog f
   await act(async () => catalog.resolve([item]));
   await settle();
   await searchFor("example");
-  await press("Search more apps");
+  await press("Search public MCP directory");
 
   expect(container.textContent).toContain("Example app");
   expect(container.textContent).not.toContain("No apps match your search.");

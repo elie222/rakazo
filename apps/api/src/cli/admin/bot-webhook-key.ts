@@ -1,4 +1,5 @@
 import { storeBotWebhookKey } from "@rakazo/adapters";
+import { botInboundUrl } from "@rakazo/contracts";
 import { recordSecurityEvent } from "@rakazo/db";
 import type { AdminCommand, AdminDbContext, AdminResult } from "./admin-command.js";
 import { AdminCommandError } from "./admin-command.js";
@@ -28,7 +29,7 @@ export async function botWebhookKey(
   });
   if (!bot) throw new AdminCommandError("No bot has that id");
   if (bot.archivedAt) throw new AdminCommandError("That bot is archived; restore it first");
-  const url = new URL(`/api/v1/bots/${bot.id}/webhook`, context.apiUrl).toString();
+  const url = botInboundUrl(context.inboundOrigin ?? context.apiUrl, bot.id, "webhook");
   const key = await storeBotWebhookKey(
     { prisma: context.prisma, secretStore: context.secrets },
     bot,

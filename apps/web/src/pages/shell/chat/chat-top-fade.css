@@ -1,0 +1,28 @@
+/*
+ * The transcript scrolls under the floating header. The parent fades it into the
+ * background; the pseudo-element blurs the content behind it and masks the blur
+ * out by half its height, so the transition has no hard edge.
+ */
+.chat-top-fade {
+  height: var(--chat-top-clearance);
+  background: linear-gradient(
+    to bottom,
+    var(--background) 0%,
+    color-mix(in srgb, var(--background) 60%, transparent) 35%,
+    transparent 100%
+  );
+}
+
+.chat-top-fade::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  backdrop-filter: blur(20px);
+  mask-image: linear-gradient(to bottom, #000, transparent 50%);
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .chat-top-fade::before {
+    backdrop-filter: none;
+  }
+}

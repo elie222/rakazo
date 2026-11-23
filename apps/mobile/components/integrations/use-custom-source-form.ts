@@ -1,5 +1,6 @@
 import { useLingui } from "@lingui/react/macro";
 import type { CapabilityInstall, McpSourcePreset } from "@rakazo/contracts";
+import type { CatalogMcpServer } from "@rakazo/core";
 import { customMcpServerInput } from "@rakazo/core";
 import type { QueryKey } from "@tanstack/react-query";
 import { useRef, useState } from "react";
@@ -156,6 +157,14 @@ export function useCustomSourceForm({
     addOptions,
     adding,
     startAdding,
+    startCatalogMcp({ name, source, auth }: CatalogMcpServer) {
+      onStart();
+      beginSource("mcp");
+      setName(name);
+      setUrl(source);
+      setSourceAuth(auth?.type ?? "none");
+      setAuthHeader(auth?.headerName ?? "x-api-key");
+    },
     removeSource(source: CapabilityInstall) {
       clearSourceError();
       remove.run(source);

@@ -1064,7 +1064,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
         {
           question: "Czy mogę używać subskrypcji Claude Pro/Max lub ChatGPT Plus/Pro?",
           answer:
-            "Tak. Zaloguj się przez ChatGPT z odpowiednim planem. Aby używać Claude Pro lub Max, hostuj Rakazo samodzielnie z kodu źródłowego tylko dla siebie i uruchamiaj je przez oficjalne Claude Code CLI zalogowane na Twoje konto. Możesz też połączyć klucz API. Szczegóły opisano na stronie Model subscriptions w dokumentacji.",
+            "Tak. W ustawieniach modeli Rakazo zaloguj się planem Claude Pro lub Max albo odpowiednim planem ChatGPT. Możesz też połączyć klucz API. Szczegóły opisano na stronie Model subscriptions w dokumentacji.",
         },
         {
           question: "Czy mogę uruchomić model lokalnie?",
@@ -1430,7 +1430,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
         {
           question: "Kann ich mein Claude Pro/Max- oder ChatGPT Plus/Pro-Abo nutzen?",
           answer:
-            "Ja. Melde dich mit einem passenden Plan über ChatGPT an. Für Claude Pro oder Max hostest du Rakazo aus dem Quellcode nur für dich selbst und betreibst es über die offizielle Claude Code CLI, angemeldet mit deinem Konto. Du kannst auch einen API-Schlüssel verbinden. Details findest du unter Model subscriptions in der Dokumentation.",
+            "Ja. Melde dich in den Modelleinstellungen von Rakazo mit deinem Claude Pro- oder Max-Plan oder einem passenden ChatGPT-Plan an. Du kannst auch einen API-Schlüssel verbinden. Details findest du unter Model subscriptions in der Dokumentation.",
         },
         {
           question: "Kann ich ein lokales Modell nutzen?",
@@ -1601,7 +1601,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
         {
           question: "Claude Pro/Max 또는 ChatGPT Plus/Pro 구독을 쓸 수 있나요?",
           answer:
-            "네. 해당 요금제로 ChatGPT에 로그인하세요. Claude Pro나 Max를 쓰려면 소스 코드에서 Rakazo를 본인 전용으로 직접 호스팅하고, 본인 계정으로 로그인한 공식 Claude Code CLI를 통해 실행하세요. API 키를 연결해도 됩니다. 자세한 내용은 문서의 Model subscriptions를 확인하세요.",
+            "네. Rakazo의 모델 설정에서 Claude Pro 또는 Max 요금제나 해당 ChatGPT 요금제로 로그인하세요. API 키를 연결해도 됩니다. 자세한 내용은 문서의 Model subscriptions를 확인하세요.",
         },
         {
           question: "로컬 모델을 쓸 수 있나요?",
@@ -1763,7 +1763,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
         {
           question: "可以用我的 Claude Pro/Max 或 ChatGPT Plus/Pro 订阅吗？",
           answer:
-            "可以。使用符合条件的套餐登录 ChatGPT。若要使用 Claude Pro 或 Max，请从源码自行托管仅供你本人使用的 Rakazo，并通过用你的账号登录的官方 Claude Code CLI 运行。你也可以连接 API 密钥。详情见文档中的 Model subscriptions。",
+            "可以。在 Rakazo 的模型设置中，用你的 Claude Pro 或 Max 套餐，或符合条件的 ChatGPT 套餐登录。你也可以连接 API 密钥。详情见文档中的 Model subscriptions。",
         },
         {
           question: "可以用本地模型吗？",
@@ -1938,7 +1938,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
         {
           question: "Claude Pro/Max や ChatGPT Plus/Pro のサブスクリプションを使えますか？",
           answer:
-            "はい。対象プランで ChatGPT にサインインしてください。Claude Pro または Max を使う場合は、Rakazo をソースコードから自分専用にセルフホストし、自分のアカウントでサインインした公式の Claude Code CLI 経由で動かします。API キーを接続することもできます。詳しくはドキュメントの Model subscriptions をご覧ください。",
+            "はい。Rakazo のモデル設定で、Claude Pro または Max のプラン、あるいは対象の ChatGPT プランでサインインしてください。API キーを接続することもできます。詳しくはドキュメントの Model subscriptions をご覧ください。",
         },
         {
           question: "ローカルモデルを使えますか？",
@@ -2121,7 +2121,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
         {
           question: "¿Puedo usar mi suscripción a Claude Pro/Max o ChatGPT Plus/Pro?",
           answer:
-            "Sí. Inicia sesión con ChatGPT con un plan compatible. Para usar Claude Pro o Max, aloja Rakazo desde el código fuente solo para ti y ejecútalo con la CLI oficial de Claude Code, con tu propia cuenta. También puedes conectar una clave de API. Consulta Model subscriptions en la documentación para más detalles.",
+            "Sí. En la configuración de modelos de Rakazo, inicia sesión con tu plan Claude Pro o Max, o con un plan compatible de ChatGPT. También puedes conectar una clave de API. Consulta Model subscriptions en la documentación para más detalles.",
         },
         {
           question: "¿Puedo usar un modelo local?",
@@ -2310,7 +2310,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
         {
           question: "Puis-je utiliser mon abonnement Claude Pro/Max ou ChatGPT Plus/Pro ?",
           answer:
-            "Oui. Connectez-vous avec ChatGPT si votre offre est éligible. Pour Claude Pro ou Max, auto-hébergez Rakazo à partir du code source pour vous seul et faites-le tourner via la CLI officielle Claude Code, connectée à votre compte. Vous pouvez aussi connecter une clé API. Voir Model subscriptions dans la documentation pour les détails.",
+            "Oui. Dans les réglages des modèles de Rakazo, connectez-vous avec votre offre Claude Pro ou Max, ou avec une offre ChatGPT éligible. Vous pouvez aussi connecter une clé API. Consultez Model subscriptions dans la documentation pour en savoir plus.",
         },
         {
           question: "Puis-je utiliser un modèle local ?",
@@ -2496,7 +2496,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
         {
           question: "Posso usar minha assinatura do Claude Pro/Max ou ChatGPT Plus/Pro?",
           answer:
-            "Sim. Entre com o ChatGPT em um plano elegível. Para usar Claude Pro ou Max, hospede o Rakazo a partir do código-fonte só para você e execute-o pela CLI oficial do Claude Code, conectada à sua conta. Você também pode conectar uma chave de API. Veja Model subscriptions na documentação para mais detalhes.",
+            "Sim. Nas configurações de modelos do Rakazo, entre com seu plano Claude Pro ou Max ou com um plano elegível do ChatGPT. Você também pode conectar uma chave de API. Veja Model subscriptions na documentação para mais detalhes.",
         },
         {
           question: "Posso usar um modelo local?",
@@ -2679,7 +2679,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
         {
           question: "Kan ik mijn Claude Pro/Max- of ChatGPT Plus/Pro-abonnement gebruiken?",
           answer:
-            "Ja. Log in met ChatGPT met een geschikt abonnement. Voor Claude Pro of Max host je Rakazo vanuit de broncode alleen voor jezelf en draai je het via de officiële Claude Code CLI, ingelogd met je eigen account. Je kunt ook een API-sleutel koppelen. Zie Model subscriptions in de documentatie voor details.",
+            "Ja. Log in via de modelinstellingen van Rakazo met je Claude Pro- of Max-abonnement, of met een geschikt ChatGPT-abonnement. Je kunt ook een API-sleutel koppelen. Zie Model subscriptions in de documentatie voor details.",
         },
         {
           question: "Kan ik een lokaal model draaien?",
@@ -2862,7 +2862,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
         {
           question: "Можно ли использовать подписку Claude Pro/Max или ChatGPT Plus/Pro?",
           answer:
-            "Да. Войдите через ChatGPT с подходящим тарифом. Чтобы использовать Claude Pro или Max, разверните Rakazo из исходного кода только для себя и запускайте его через официальный Claude Code CLI, вошедший в ваш аккаунт. Можно также подключить API-ключ. Подробности — на странице Model subscriptions в документации.",
+            "Да. В настройках моделей Rakazo войдите с тарифом Claude Pro или Max либо с подходящим тарифом ChatGPT. Можно также подключить API-ключ. Подробности см. на странице Model subscriptions в документации.",
         },
         {
           question: "Можно ли запустить локальную модель?",
@@ -3045,7 +3045,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
         {
           question: "Claude Pro/Max veya ChatGPT Plus/Pro aboneliğimi kullanabilir miyim?",
           answer:
-            "Evet. Uygun bir planla ChatGPT ile giriş yapın. Claude Pro veya Max kullanmak için Rakazo'yu kaynak koddan yalnızca kendiniz için barındırın ve kendi hesabınızla giriş yapılmış resmi Claude Code CLI üzerinden çalıştırın. Bir API anahtarı da bağlayabilirsiniz. Ayrıntılar için belgelerdeki Model subscriptions sayfasına bakın.",
+            "Evet. Rakazo'nun model ayarlarında Claude Pro veya Max planınızla ya da uygun bir ChatGPT planıyla giriş yapın. Bir API anahtarı da bağlayabilirsiniz. Ayrıntılar için belgelerdeki Model subscriptions sayfasına bakın.",
         },
         {
           question: "Yerel bir model çalıştırabilir miyim?",
@@ -3221,7 +3221,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
         {
           question: "אפשר להשתמש במנוי Claude Pro/Max או ChatGPT Plus/Pro שלי?",
           answer:
-            "כן. התחברו עם ChatGPT בתוכנית מתאימה. כדי להשתמש ב-Claude Pro או Max, ארחו את Rakazo מקוד המקור לשימושכם בלבד והריצו אותו דרך ה-CLI הרשמי של Claude Code, מחובר לחשבון שלכם. אפשר גם לחבר מפתח API. פרטים נוספים בעמוד Model subscriptions בתיעוד.",
+            "כן. בהגדרות המודלים של Rakazo, התחברו עם תוכנית Claude Pro או Max, או עם תוכנית ChatGPT מתאימה. אפשר גם לחבר מפתח API. לפרטים, ראו את Model subscriptions בתיעוד.",
         },
         {
           question: "אפשר להריץ מודל מקומי?",
@@ -3403,7 +3403,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
         {
           question: "क्या मेरा Claude Pro/Max या ChatGPT Plus/Pro सब्सक्रिप्शन इस्तेमाल हो सकता है?",
           answer:
-            "हाँ। योग्य प्लान के साथ ChatGPT से साइन इन करें। Claude Pro या Max इस्तेमाल करने के लिए Rakazo को सोर्स कोड से सिर्फ़ अपने लिए खुद होस्ट करें और अपने खाते से साइन इन किए गए आधिकारिक Claude Code CLI के ज़रिए चलाएँ। आप API कुंजी भी जोड़ सकते हैं। विवरण के लिए डॉक्स में Model subscriptions देखें।",
+            "हाँ। Rakazo की मॉडल सेटिंग्स में अपने Claude Pro या Max प्लान, या किसी योग्य ChatGPT प्लान से साइन इन करें। आप API कुंजी भी जोड़ सकते हैं। विवरण के लिए डॉक्स में Model subscriptions देखें।",
         },
         {
           question: "क्या लोकल मॉडल चलाया जा सकता है?",
@@ -3565,7 +3565,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
         {
           question: "可以用我的 Claude Pro/Max 或 ChatGPT Plus/Pro 訂閱嗎？",
           answer:
-            "可以。使用符合資格的方案登入 ChatGPT。若要使用 Claude Pro 或 Max，請從原始碼自行託管僅供你本人使用的 Rakazo，並透過以你的帳號登入的官方 Claude Code CLI 執行。你也可以連接 API 金鑰。詳情請見文件中的 Model subscriptions。",
+            "可以。在 Rakazo 的模型設定中，以你的 Claude Pro 或 Max 方案，或符合資格的 ChatGPT 方案登入。你也可以連接 API 金鑰。詳情請見文件中的 Model subscriptions。",
         },
         {
           question: "可以執行本機模型嗎？",

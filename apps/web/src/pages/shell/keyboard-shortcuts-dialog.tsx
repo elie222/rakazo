@@ -88,7 +88,7 @@ export function KeyboardShortcutsDialog({
                 <dt className="text-foreground">{row.label}</dt>
                 <dd className="flex shrink-0 items-center gap-2">
                   {row.keys.map((chord) => (
-                    <KbdGroup key={chord.join("+")}>
+                    <KbdGroup key={chord.join("+")} dir="ltr">
                       {chord.map((key) => (
                         <Kbd key={key}>{key}</Kbd>
                       ))}

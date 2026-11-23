@@ -17,15 +17,23 @@ import {
   splitToolHistory,
 } from "@rakazo/core";
 import type { createDb } from "@rakazo/db";
-import { createThreadEvents, readJsonColumn, storedMessageBlocks } from "@rakazo/db";
+import {
+  chatPreferencesSelect,
+  createThreadEvents,
+  readJsonColumn,
+  storedMessageBlocks,
+} from "@rakazo/db";
 import { z } from "zod";
+import { MailEmulator, address as mailAddress } from "../apps/mail.js";
 import type { HostedApp } from "../apps/mcp-host.js";
 import { hostOverMcp } from "../apps/mcp-host.js";
+import type { SignInMail } from "../apps/sign-in-site.js";
+import { SignInSite } from "../apps/sign-in-site.js";
 import { discardBotIntroRun } from "../discard-bot-intro.js";
 import { sessionCookieHeader } from "../index.js";
 import { asSystem } from "../system-db.js";
 import type { EvalCase, Evidence, SettingsSnapshot } from "./cases.js";
-import { EMPTY_SETTINGS, wakesRoutines } from "./cases.js";
+import { EMPTY_SETTINGS, EVAL_BOT_EMAIL_NAME, EVAL_INBOUND_EMAIL, wakesRoutines } from "./cases.js";
 import { EvalFailure, judgeOutcome, observe, settle, withinDeadline } from "./grading.js";
 import type { HistoryMessage } from "./history-fixtures.js";
 import type { DiagnosticToolObservation, HistoryDiagnostic } from "./history-observer.js";
@@ -83,6 +91,7 @@ export type TrialOptions = {
       realtime: SilenceObserver;
       now: () => Date;
     },
+    site?: SignInSite,
   ) => Promise<EvalApp>;
 };
 const WAITING_STATUSES = ["waiting_input", "waiting_approval", "paused"];
@@ -103,6 +112,7 @@ export async function runTrial(
   });
   scenario.configure?.(services);
   const apps = scenario.apps?.(new Date()) ?? [];
+  const site = scenario.site ? new SignInSite(scenario.site) : undefined;
   const hostedApps: HostedApp[] = [];
   const notifications = new CapturingNotificationProvider();
   const realtime = new SilenceObserver();
@@ -185,7 +195,7 @@ export async function runTrial(
     // A forced wake runs now; the agent is told it is the routine's due time instead.
     let clockShiftMs = 0;
     const now = () => new Date(Date.now() + clockShiftMs);
-    handles = await options.createApp(services, messaging, { notifications, realtime, now });
+    handles = await options.createApp(services, messaging, { notifications, realtime, now }, site);
     const prisma = asSystem(handles.prisma);
     db = prisma;
     realtime.attach(prisma);
@@ -196,6 +206,39 @@ export async function runTrial(
       );
     const trial = handles;
     const { app } = trial;
+    // The site's mail lands in whichever inbox owns the address typed, or nowhere the bot can read.
+    const deliverSiteMail = async (to: string, mail: SignInMail) => {
+      const recipient = mailAddress(to);
+      if (
+        scenario.botEmail &&
+        recipient === `${EVAL_BOT_EMAIL_NAME}@${EVAL_INBOUND_EMAIL.domain}`
+      ) {
+        const owner = actors[0]!;
+        await prisma.botEmailMessage.create({
+          data: {
+            spaceId: owner.spaceId,
+            botId: owner.botId,
+            key: randomUUID(),
+            references: [],
+            fromAddress: mail.from,
+            fromName: mail.fromName,
+            verified: true,
+            to: [recipient],
+            cc: [],
+            subject: mail.subject,
+            text: mail.text,
+          },
+        });
+        return;
+      }
+      for (const service of apps)
+        if (service instanceof MailEmulator && service.account.email === recipient)
+          service.receive({
+            from: `${mail.fromName} <${mail.from}>`,
+            subject: mail.subject,
+            body: mail.text,
+          });
+    };
     const setupActor = async () => {
       const signup = await app.request("/api/auth/sign-up/email", {
         method: "POST",
@@ -245,6 +288,12 @@ export async function runTrial(
         modelId: options.connection.modelId,
         replyMode: options.replyMode,
       });
+      if (scenario.botEmail) {
+        // Trials share the database, so an earlier trial's bot may hold the name.
+        await prisma.botEmailAddress.deleteMany({ where: { name: EVAL_BOT_EMAIL_NAME } });
+        await rpc(app, cookie, "bots/claimEmailAddress", { botId, name: EVAL_BOT_EMAIL_NAME });
+      }
+      if (site) site.deliver = (to, mail) => deliverSiteMail(to, mail);
       // Direct synthetic fixture state, so setup never depends on the behavior under test.
       if (scenario.botSetup)
         await prisma.bot.update({ where: { id: botId }, data: scenario.botSetup });
@@ -606,7 +655,13 @@ export async function runTrial(
       const { userId, ...botSettings } = bot;
       const user = await prisma.user.findUniqueOrThrow({
         where: { id: userId },
-        select: { email: true, name: true, timezone: true, marketingEmailOptOutAt: true },
+        select: {
+          email: true,
+          name: true,
+          timezone: true,
+          marketingEmailOptOutAt: true,
+          ...chatPreferencesSelect,
+        },
       });
       const { marketingEmailOptOutAt, ...userSettings } = user;
       return {
@@ -1173,6 +1228,7 @@ export async function runTrial(
         : undefined;
     const evidence: Evidence = {
       text: lastText,
+      ...(site ? { site: structuredClone(site.state) } : {}),
       ...(delegation ? { delegation } : {}),
       ...(historySummary ? { historySummary } : {}),
       replies,

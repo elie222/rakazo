@@ -2,6 +2,7 @@ import type { ReactNode, RefObject } from "react";
 import { useRef } from "react";
 import { CallReturnBar } from "../../../components/call/CallCard";
 import { ChatFindBar } from "./chat-find-bar";
+import "./chat-top-fade.css";
 
 /** The open chat's column beside the sidebar: its floating header, find bar, body and composer. */
 export function ChatColumn({
@@ -51,6 +52,12 @@ export function ChatColumn({
       >
         {/* Only the pills take input; the gaps pass clicks and scrolling to the transcript. */}
         <div aria-hidden="true" className="app-drag absolute inset-x-0 top-0 z-10 h-3" />
+        {/* Fades the transcript where it scrolls under the header; its height is the transcript's top clearance. */}
+        <div
+          aria-hidden="true"
+          data-testid="chat-top-fade"
+          className="chat-top-fade pointer-events-none absolute inset-x-0 top-0 z-[5] print:hidden"
+        />
         {findOpen ? (
           <div className="absolute end-3 top-14 z-20">
             <ChatFindBar scope={chatColumnRef} inputRef={findInputRef} onClose={onCloseFind} />

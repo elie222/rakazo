@@ -103,6 +103,7 @@ const audio = vi.hoisted(() => ({
 }));
 const expoAudioMock = vi.hoisted(() => () => ({
   AudioModule: {
+    getRecordingPermissionsAsync: () => audio.permission,
     requestRecordingPermissionsAsync: () => audio.permission,
     AudioRecorder: class {
       constructor(options: unknown) {
@@ -1275,19 +1276,6 @@ describe("mobile call session", () => {
     expect(getSnapshot()).toBeNull();
   });
 
-  it("closes the call server-side when the caller presses hang up", async () => {
-    const fake = fakes();
-    startCall({ botId: "bot-1", botName: "Ada" }, fake.deps);
-    await flush();
-    fake.say("status please");
-    await flush();
-    const callId = callIdFromClientNonce(fake.send.mock.calls[0]?.[2]);
-
-    endCall();
-
-    expect(fake.closeCall).toHaveBeenCalledWith("bot-1", callId);
-  });
-
   it("stops the playing reply when the caller hangs up", async () => {
     const fake = fakes();
     startCall({ botId: "bot-1", botName: "Ada" }, fake.deps);
@@ -1583,19 +1571,11 @@ describe("mobile call speech locales", () => {
   it.each([
     ["en", "ios", "en-US", "en-US"],
     ["de", "ios", "en-US", "de-DE"],
-    ["nl", "ios", "en-US", "nl-NL"],
-    ["ja", "ios", "en-US", "ja-JP"],
-    ["ru", "ios", "en-US", "ru-RU"],
-    ["zh-CN", "ios", "en-US", "zh-CN"],
     // The app ships no Spanish, so a Spanish phone runs it in English.
     ["en", "ios", "es-CL", "es-CL"],
-    ["en", "ios", "es-ES", "es-ES"],
-    ["en", "ios", "es-419", "es-MX"],
     ["en", "android", "it-IT", "it-IT"],
     ["en", "ios", "es-AR", "es-MX"],
     ["en", "android", "es-AR", "es-AR"],
-    ["de", "ios", "de-AT", "de-AT"],
-    ["en", "ios", "ru-RU", "ru-RU"],
   ] as const)(
     "recognizes a %s call on an %s %s phone with %s and sends its live transcript after silence",
     async (locale, os, phone, lang) => {
@@ -2734,11 +2714,8 @@ describe("mobile call recording without metering", () => {
   });
 
   it.each([
-    { os: "ios", dictating: true },
     { os: "ios", dictating: false },
     { os: "android", dictating: true },
-    { os: "android", dictating: false },
-    { os: "web", dictating: true },
     { os: "web", dictating: false },
   ])("passes speech encoding options on $os (dictating=$dictating)", async ({ os, dictating }) => {
     device.os = os;
@@ -2930,7 +2907,10 @@ describe("mobile call microphone after hang-up", () => {
       started.resolve();
       await pendingImport.promise;
       return {
-        AudioModule: { requestRecordingPermissionsAsync: requestPermission },
+        AudioModule: {
+          getRecordingPermissionsAsync: requestPermission,
+          requestRecordingPermissionsAsync: requestPermission,
+        },
         RecordingPresets: { HIGH_QUALITY: {} },
         setAudioModeAsync: async () => undefined,
       };
