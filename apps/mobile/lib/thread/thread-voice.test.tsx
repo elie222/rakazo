@@ -5,6 +5,7 @@ import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
 import { Alert } from "react-native";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { rpc } from "../api/api";
 import type { MobileBot, MobileMessage, MobileSnapshot } from "../api/mobile-types";
 import { blockText } from "../api/mobile-types";
 import { clearSessionToken, currentSessionGeneration, saveSessionToken } from "../api/session";
@@ -48,6 +49,7 @@ vi.mock("../api/api", () => ({
   rpc: vi.fn(async () => {
     throw new Error("Unauthorized");
   }),
+  selectedSpaceId: () => "space-riley",
 }));
 vi.mock("../calls/call-session", () => ({
   getSnapshot: vi.fn((): null => null),
@@ -160,6 +162,24 @@ describe("useThreadVoiceCall hand-over", () => {
     expect(startCall).not.toHaveBeenCalled();
     expect(router.push).not.toHaveBeenCalled();
     expect(Alert.alert).toHaveBeenCalledWith("Could not start the call", "Unauthorized");
+  });
+
+  it("opens the Space's own Voice settings when the Space overrides voice", async () => {
+    vi.mocked(loadDeviceVoiceEnabled).mockResolvedValueOnce(false);
+    vi.mocked(rpc).mockImplementation((async (proc: string) => {
+      if (proc === "voice/status") return { ready: false, transcribe: false };
+      if (proc === "spaceSettings/overrides") return ["voice"];
+      throw new Error("Unauthorized");
+    }) as typeof rpc);
+    render("riley");
+    await act(async () => {
+      await startVoiceCall?.();
+    });
+    vi.mocked(rpc).mockReset().mockRejectedValue(new Error("Unauthorized"));
+    expect(router.push).toHaveBeenCalledWith({
+      pathname: "/voice",
+      params: { spaceId: "space-riley" },
+    });
   });
 
   it("starts fresh and put-through calls straight to listening with the greeting off", async () => {
