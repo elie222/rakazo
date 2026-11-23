@@ -1,5 +1,5 @@
 import { t } from "@lingui/core/macro";
-import type { computerHoursOut } from "@rakazo/contracts";
+import type { includedUsageOut } from "@rakazo/contracts";
 import type { normalizeRunError, RunErrorRecovery } from "@rakazo/core";
 
 /** The label of the one action that fixes the failure; transient failures have none. */
@@ -38,17 +38,17 @@ function readable(value: string) {
 }
 
 /** Why computers ran out of hours, and the billing action that gives them more. */
-export function computerHoursOutCopy(reason: ReturnType<typeof computerHoursOut>) {
+export function includedUsageOutCopy(reason: ReturnType<typeof includedUsageOut>) {
   switch (reason) {
     case "trial":
       return {
-        summary: t`Your trial's computer hours are used up.`,
+        summary: t`Your trial's included usage is used up.`,
         action: t`Start plan now`,
       };
     case "cancelled_trial":
-      return { summary: t`Cancelled trials have no computer hours.`, action: t`Renew plan` };
+      return { summary: t`Cancelled trials have no included usage.`, action: t`Renew plan` };
     default:
-      return { summary: t`This month's computer hours are used up.`, action: t`Upgrade` };
+      return { summary: t`This month's included usage is used up.`, action: t`Upgrade` };
   }
 }
 

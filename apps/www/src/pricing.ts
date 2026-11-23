@@ -2,9 +2,10 @@ import type { ByokTier } from "@rakazo/contracts";
 import {
   BYOK_TIERS,
   byokTierPriceCents,
+  MEDIA_INCLUDED_USAGE_CENTS,
   MODEL_CREDIT_AMOUNTS,
   TRIAL_DAYS,
-  TRIAL_SANDBOX_ALLOWANCE_CENTS,
+  TRIAL_INCLUDED_USAGE_CENTS,
 } from "@rakazo/contracts";
 import { APP_URL, SELF_HOST_GUIDE_PATH } from "./site";
 
@@ -111,17 +112,18 @@ const TIERS = (Object.keys(BYOK_TIERS) as ByokTier[]).flatMap((tier) => {
       name: terms.name,
       monthlyCents: monthly ?? 0,
       price: monthly === null ? "Free" : `${dollars(monthly)}/mo`,
-      computerAllowanceCents: terms.computerAllowanceCents,
+      includedUsageCents: terms.includedUsageCents,
     },
   ];
 });
 
 /** Compare allowances at the same size without assuming a provider's hourly rate. */
 function tierComputerCell(tier: (typeof TIERS)[number]): PricingCell {
-  const usage = tier.computerAllowanceCents / STANDARD.computerAllowanceCents;
+  const computerCents = (cents: number) => cents - MEDIA_INCLUDED_USAGE_CENTS;
+  const usage = computerCents(tier.includedUsageCents) / computerCents(STANDARD.includedUsageCents);
   return {
     label: usage === 1 ? "Included" : `${usage}× the allowance`,
-    detail: `${dollars(tier.computerAllowanceCents)} in computer time a month. ${COMPUTER_TIME_NOTE}`,
+    detail: `${dollars(tier.includedUsageCents)} a month for computer time and generated images and video. ${COMPUTER_TIME_NOTE}`,
   };
 }
 
@@ -195,7 +197,7 @@ export const PRICING_COMPARISON = {
         false,
         ...TIERS.map(() => ({
           label: `${TRIAL_DAYS} days`,
-          detail: `Includes ${dollars(TRIAL_SANDBOX_ALLOWANCE_CENTS)} in computer time`,
+          detail: `Includes ${dollars(TRIAL_INCLUDED_USAGE_CENTS)} in computer time`,
         })),
         false,
       ],

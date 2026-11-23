@@ -19,6 +19,7 @@ function setup() {
   const row = {
     id: "local-job",
     status: "media_pending",
+    request: {},
     result: { provider: "fake", jobId: "remote-job" },
   };
   const externalEffect = {
@@ -29,6 +30,7 @@ function setup() {
     update: vi.fn().mockResolvedValue(row),
     updateMany: vi.fn().mockResolvedValue({ count: 1 }),
   };
+  const includedUsageCharge = { createMany: vi.fn().mockResolvedValue({ count: 1 }) };
   const attach = vi.fn().mockResolvedValue({
     artifactId: "artifact",
     block: { kind: "image", artifactId: "artifact", name: "generated.png" },
@@ -41,6 +43,7 @@ function setup() {
     provider,
     prisma: {
       externalEffect,
+      includedUsageCharge,
       artifact: { findFirst: vi.fn().mockResolvedValue(null) },
     } as unknown as PrismaClient,
     context,
@@ -48,7 +51,7 @@ function setup() {
     attach,
     publish,
   };
-  return { options, externalEffect, provider, attach, publish, row };
+  return { options, externalEffect, includedUsageCharge, provider, attach, publish, row };
 }
 
 describe("bot media tools", () => {
@@ -95,6 +98,38 @@ describe("bot media tools", () => {
       expect.objectContaining({ id: "local-job" }),
     );
     expect(publish).toHaveBeenCalledTimes(1);
+  });
+  it("saves the submission's price and charges it once the image is stored", async () => {
+    const { options, externalEffect, includedUsageCharge, publish } = setup();
+    const charge = { organizationId: "org", micros: 40_000 };
+    externalEffect.create.mockImplementation(async ({ data }) => ({
+      id: "local-job",
+      status: "media_submitting",
+      request: data.request,
+      result: data.result,
+    }));
+    const result = await generateMediaFromTool({ ...options, price: async () => ({ charge }) });
+    expect(result).toMatchObject({ status: "completed" });
+    expect(externalEffect.create.mock.calls[0]?.[0].data.request).toMatchObject({ charge });
+    expect(includedUsageCharge.createMany).toHaveBeenCalledWith({
+      data: [
+        { organizationId: "org", source: "media:local-job", kind: "image", amountMicros: 40_000 },
+      ],
+      skipDuplicates: true,
+    });
+    expect(includedUsageCharge.createMany.mock.invocationCallOrder[0]).toBeLessThan(
+      publish.mock.invocationCallOrder[0]!,
+    );
+  });
+  it("submits nothing when included usage cannot cover the price", async () => {
+    const { options, externalEffect, provider } = setup();
+    const generate = vi.spyOn(provider, "generateImage");
+    const error = "Not enough included usage left for this image.";
+    expect(await generateMediaFromTool({ ...options, price: async () => ({ error }) })).toEqual({
+      error,
+    });
+    expect(externalEffect.create).not.toHaveBeenCalled();
+    expect(generate).not.toHaveBeenCalled();
   });
   it("names an attached image after the format the provider returned", async () => {
     const { options, provider, attach } = setup();

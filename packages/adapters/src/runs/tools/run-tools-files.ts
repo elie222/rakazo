@@ -9,6 +9,7 @@ import type { Artifact, Prisma } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { resolveBotWorkspacePath } from "../../computers/screens/computer-support.js";
 import { generateMediaFromTool } from "../../media/media-generation-tools.js";
+import { priceMediaGeneration } from "../../media/media-usage.js";
 import { mediaDelivery, scheduleMediaPoll } from "../../media/media-video-poll.js";
 import {
   desktopGuardApplies,
@@ -74,6 +75,7 @@ export async function callMediaTool(ctx: RunContext, call: ToolCall, recoverOnly
     context,
     run,
     threadGeneration: thread.historyCompactionGeneration,
+    price: (kind) => priceMediaGeneration(deps, mediaGeneration, run.spaceId, kind),
     ...mediaDelivery({ ...deps, artifacts: deps.artifacts }, run, {
       providerId: mediaGeneration.id,
       groupId: await artifactGroupId(ctx),

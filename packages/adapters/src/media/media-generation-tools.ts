@@ -8,9 +8,10 @@ import { MediaGenerationError } from "@rakazo/adapter-kit";
 import type { MessageBlock } from "@rakazo/contracts";
 import { messageBlockForArtifact } from "@rakazo/core";
 import type { ExternalEffect, Prisma, PrismaClient } from "@rakazo/db";
-import { isUniqueViolation } from "@rakazo/db";
+import { chargeIncludedUsage, isUniqueViolation, readJsonColumn } from "@rakazo/db";
 import { z } from "zod";
 import { mediaPromptSchema, validateGeneratedMedia } from "./media-generation-provider.js";
+import type { MediaCharge } from "./media-usage.js";
 
 export const MEDIA_JOB_KIND = "media_generation_job";
 const FILE_EXTENSIONS: Record<GeneratedMedia["mimeType"], string> = {
@@ -24,6 +25,26 @@ const savedJob = z.object({
   jobId: z.string().optional(),
   artifactId: z.string().optional(),
 });
+const savedCharge = z.object({
+  charge: z.object({ organizationId: z.string(), micros: z.number().int().positive() }).optional(),
+});
+
+/** Charges a completed generation the price saved when it was submitted, once per reservation. */
+async function chargeCompleted(prisma: PrismaClient, reservation: ExternalEffect, video: boolean) {
+  const { charge } = readJsonColumn(
+    savedCharge,
+    reservation.request,
+    { table: "external_effects", column: "request", id: reservation.id },
+    "reject",
+  );
+  if (!charge) return;
+  await chargeIncludedUsage(prisma, {
+    organizationId: charge.organizationId,
+    source: `media:${reservation.id}`,
+    kind: video ? "video" : "image",
+    amountMicros: charge.micros,
+  });
+}
 export async function generateMediaFromTool(options: {
   name: "generate_image" | "generate_video";
   args: Record<string, unknown>;
@@ -44,6 +65,8 @@ export async function generateMediaFromTool(options: {
   publish: (block: MessageBlock, jobId: string, artifactId: string) => Promise<unknown>;
   /** Commits with a video's provider failure, so whatever follows it cannot be lost. */
   onSettled?: (tx: Prisma.TransactionClient, status: "failed") => Promise<void>;
+  /** Prices a new submission, or refuses it; without one nothing is charged. */
+  price?: (kind: "image" | "video") => Promise<{ charge: MediaCharge | null } | { error: string }>;
 }) {
   const { provider, prisma, context, run, args } = options;
   const video = options.name === "generate_video";
@@ -114,6 +137,10 @@ export async function generateMediaFromTool(options: {
         if (options.recoverOnly) return undefined;
         const input = mediaPromptSchema.safeParse(args);
         if (!input.success) return { error: "A prompt of 1–4000 characters is required." };
+        const priced = options.price
+          ? await options.price(video ? "video" : "image")
+          : { charge: null };
+        if ("error" in priced) return { error: priced.error };
         // A unique slot makes the per-run cap durable even across concurrent calls/restarts.
         for (let slot = 0; slot < 2; slot++) {
           try {
@@ -128,6 +155,7 @@ export async function generateMediaFromTool(options: {
                   tool: options.name,
                   prompt: input.data.prompt,
                   executionId: options.executionId,
+                  ...(priced.charge ? { charge: priced.charge } : {}),
                   ...(options.threadGeneration === undefined
                     ? {}
                     : { threadGeneration: options.threadGeneration }),
@@ -150,6 +178,7 @@ export async function generateMediaFromTool(options: {
         where: { id: saved.artifactId, spaceId: run.spaceId, userId: run.userId, botId: run.botId },
       });
       if (!artifact) return { error: "Generated attachment is unavailable." };
+      await chargeCompleted(prisma, reservation, video);
       await options.publish(messageBlockForArtifact(artifact), reservation.id, artifact.id);
       return { status: "completed", artifactId: artifact.id };
     }
@@ -244,6 +273,7 @@ export async function generateMediaFromTool(options: {
         });
       throw error;
     }
+    await chargeCompleted(prisma, reservation, video);
     await options.publish(attached.block, reservation.id, attached.artifactId);
     return { status: "completed", artifactId: attached.artifactId };
   } catch (error) {

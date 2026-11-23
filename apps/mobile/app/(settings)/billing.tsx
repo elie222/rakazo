@@ -235,19 +235,22 @@ export default function BillingScreen() {
           />
         ) : null}
       </SettingsGroup>
-      {status.computerHoursLeft != null ? (
+      {status.includedUsageLeftCents != null ? (
         <SettingsGroup
           footer={
             endTrial
-              ? t`Trials get fewer hours to prevent abuse.`
+              ? t`Trials get less usage and no image or video generation.`
               : cancelledTrial
-                ? t`Cancelled trials have no computer hours.`
+                ? t`Cancelled trials have no included usage.`
                 : undefined
           }
         >
-          <SettingsRow title={t`Computer hours left`} value={String(status.computerHoursLeft)} />
-          {status.computerHoursResetAt ? (
-            <SettingsRow title={t`Resets`} value={formatDate(status.computerHoursResetAt)} />
+          <SettingsRow
+            title={t`Included usage left`}
+            value={formatBillingAmount(status.includedUsageLeftCents, "usd", locale)}
+          />
+          {status.includedUsageResetAt ? (
+            <SettingsRow title={t`Resets`} value={formatDate(status.includedUsageResetAt)} />
           ) : null}
           {status.canManage ? (
             <SettingsRow

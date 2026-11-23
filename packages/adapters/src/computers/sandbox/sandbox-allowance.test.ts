@@ -5,7 +5,7 @@ import type { PrismaClient } from "@rakazo/db";
 import { planComputerSize } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
 import {
-  sandboxAllowance,
+  includedUsage,
   sandboxAllowanceUsedUp,
   sandboxHourlyCostMicros,
   sandboxHoursLeft,
@@ -28,6 +28,7 @@ function allowanceDeps(input: {
   sandbox?: Partial<SandboxProvider>;
   granted?: { creditCents: number; since: Date };
   extraCents?: number;
+  chargedMicros?: number;
 }) {
   const prisma = {
     deploymentSettings: {
@@ -60,6 +61,9 @@ function allowanceDeps(input: {
     computerAllowanceGrant: {
       aggregate: vi.fn().mockResolvedValue({ _sum: { amountCents: input.extraCents ?? null } }),
     },
+    includedUsageCharge: {
+      aggregate: vi.fn().mockResolvedValue({ _sum: { amountMicros: input.chargedMicros ?? null } }),
+    },
     $queryRaw: vi.fn(async (_query: { values: unknown[] }) => input.hours ?? []),
   };
   return {
@@ -74,20 +78,21 @@ function allowanceDeps(input: {
 describe("computer allowance", () => {
   it("has no limit without model-credit billing", async () => {
     const { deps, prisma } = allowanceDeps({ billing: false, mode: "byok" });
-    expect(await sandboxAllowance(deps, "organization")).toBeNull();
+    expect(await includedUsage(deps, "organization")).toBeNull();
     expect(prisma.$queryRaw).not.toHaveBeenCalled();
   });
 
-  it("gives an own-key organization $5 a period", async () => {
+  it("gives an own-key organization $6 a period", async () => {
     const { deps } = allowanceDeps({
       billing: true,
       mode: "byok",
       hours: [{ kind: "daytona", hours: 2.5 }],
     });
-    expect(await sandboxAllowance(deps, "organization", new Date("2026-03-17T08:30:00Z"))).toEqual({
-      limitMicros: 5_000_000,
+    expect(await includedUsage(deps, "organization", new Date("2026-03-17T08:30:00Z"))).toEqual({
+      limitMicros: 6_000_000,
       usedMicros: 2.5 * SANDBOX_HOURLY_COST_MICROS,
       resetsAt: new Date("2026-04-01T00:00:00Z"),
+      trial: false,
     });
   });
 
@@ -102,25 +107,25 @@ describe("computer allowance", () => {
         { kind: "boat", size: null, hours: 1 },
       ],
     });
-    expect((await sandboxAllowance(deps, "organization"))?.usedMicros).toBe(550_000);
+    expect((await includedUsage(deps, "organization"))?.usedMicros).toBe(550_000);
   });
 
   it("gives a live own-key subscription its tier's allowance", async () => {
     const limit = async (status: string, byokTier: ByokTier | null) =>
       (
-        await sandboxAllowance(
+        await includedUsage(
           allowanceDeps({ billing: true, mode: "byok", subscription: { status, byokTier } }).deps,
           "organization",
         )
       )?.limitMicros;
-    expect(await limit("active", "pro")).toBe(20_000_000);
-    expect(await limit("active", "ultra")).toBe(120_000_000);
+    expect(await limit("active", "pro")).toBe(21_000_000);
+    expect(await limit("active", "ultra")).toBe(121_000_000);
     // An overdue plan's tier waits for its payment.
-    expect(await limit("past_due", "max")).toBe(5_000_000);
+    expect(await limit("past_due", "max")).toBe(6_000_000);
     // Rows synced before tiers existed are Standard.
-    expect(await limit("active", null)).toBe(5_000_000);
+    expect(await limit("active", null)).toBe(6_000_000);
     // A lapsed plan's tier no longer applies.
-    expect(await limit("canceled", "max")).toBe(5_000_000);
+    expect(await limit("canceled", "max")).toBe(6_000_000);
     // Every tier's trial gets the trial allowance.
     expect(await limit("trialing", "ultra")).toBe(3_000_000);
   });
@@ -134,7 +139,7 @@ describe("computer allowance", () => {
       subscription: { status: "active", byokTier: "pro", currentPeriodStartsAt: periodStart },
       extraCents: 1_500,
     });
-    expect((await sandboxAllowance(deps, "organization", now))?.limitMicros).toBe(35_000_000);
+    expect((await includedUsage(deps, "organization", now))?.limitMicros).toBe(36_000_000);
     expect(prisma.computerAllowanceGrant.aggregate).toHaveBeenCalledWith({
       where: { organizationId: "organization", createdAt: { gte: periodStart } },
       _sum: { amountCents: true },
@@ -143,7 +148,7 @@ describe("computer allowance", () => {
 
   it("gives a monthly credit plan a fifth of its amount", async () => {
     const { deps } = allowanceDeps({ billing: true, mode: "credits", creditAmountCents: 5000 });
-    expect((await sandboxAllowance(deps, "organization"))?.limitMicros).toBe(10_000_000);
+    expect((await includedUsage(deps, "organization"))?.limitMicros).toBe(10_000_000);
   });
 
   it.each<[string | null, string]>([
@@ -155,12 +160,12 @@ describe("computer allowance", () => {
       mode,
       subscription: { status: "active", byokTier: "pro", byokPriceCents: 4900 },
     });
-    expect((await sandboxAllowance(deps, "organization"))?.limitMicros).toBe(20_000_000);
+    expect((await includedUsage(deps, "organization"))?.limitMicros).toBe(21_000_000);
   });
 
   it("gives nothing without a monthly plan", async () => {
     const { deps } = allowanceDeps({ billing: true, mode: "credits", creditAmountCents: null });
-    expect((await sandboxAllowance(deps, "organization"))?.limitMicros).toBe(0);
+    expect((await includedUsage(deps, "organization"))?.limitMicros).toBe(0);
   });
 
   it.each([
@@ -178,7 +183,7 @@ describe("computer allowance", () => {
         subscription: status ? { status } : undefined,
       });
       expect(
-        (await sandboxAllowance(deps, "organization", new Date("2026-03-17T08:30:00Z")))?.resetsAt,
+        (await includedUsage(deps, "organization", new Date("2026-03-17T08:30:00Z")))?.resetsAt,
       ).toBeNull();
     },
   );
@@ -196,7 +201,7 @@ describe("computer allowance", () => {
       },
     });
     expect(
-      (await sandboxAllowance(deps, "organization", new Date("2026-04-01T00:00:00Z")))?.resetsAt,
+      (await includedUsage(deps, "organization", new Date("2026-04-01T00:00:00Z")))?.resetsAt,
     ).toEqual(resetsAt);
   });
 
@@ -207,7 +212,7 @@ describe("computer allowance", () => {
       mode: "credits",
       granted: { creditCents: 5000, since },
     });
-    expect((await sandboxAllowance(deps, "organization"))?.limitMicros).toBe(10_000_000);
+    expect((await includedUsage(deps, "organization"))?.limitMicros).toBe(10_000_000);
     expect(prisma.$queryRaw.mock.calls[0]?.[0].values).toContainEqual(since);
   });
 
@@ -218,7 +223,7 @@ describe("computer allowance", () => {
       creditAmountCents: 2000,
       granted: { creditCents: 5000, since: new Date() },
     });
-    expect((await sandboxAllowance(deps, "organization"))?.limitMicros).toBe(4_000_000);
+    expect((await includedUsage(deps, "organization"))?.limitMicros).toBe(4_000_000);
     expect(prisma.accessGrant.aggregate).not.toHaveBeenCalled();
   });
 
@@ -228,13 +233,13 @@ describe("computer allowance", () => {
       mode: "byok",
       subscription: { status: "trialing" },
     });
-    expect((await sandboxAllowance(trial.deps, "organization"))?.limitMicros).toBe(3_000_000);
+    expect((await includedUsage(trial.deps, "organization"))?.limitMicros).toBe(3_000_000);
     const cancelled = allowanceDeps({
       billing: true,
       mode: "byok",
       subscription: { status: "trialing", cancelAtPeriodEnd: true },
     });
-    expect((await sandboxAllowance(cancelled.deps, "organization"))?.limitMicros).toBe(0);
+    expect((await includedUsage(cancelled.deps, "organization"))?.limitMicros).toBe(0);
   });
 
   it("keeps the full allowance for a paid plan set to cancel", async () => {
@@ -243,7 +248,7 @@ describe("computer allowance", () => {
       mode: "byok",
       subscription: { status: "active", cancelAtPeriodEnd: true },
     });
-    expect((await sandboxAllowance(deps, "organization"))?.limitMicros).toBe(5_000_000);
+    expect((await includedUsage(deps, "organization"))?.limitMicros).toBe(6_000_000);
   });
 
   it("counts from the start of the billing period, up to now", async () => {
@@ -254,7 +259,7 @@ describe("computer allowance", () => {
       subscription: { status: "active", currentPeriodStartsAt: periodStart },
     });
     const now = new Date("2026-03-17T08:30:00.000Z");
-    await sandboxAllowance(deps, "organization", now);
+    await includedUsage(deps, "organization", now);
     const values = prisma.$queryRaw.mock.calls[0]?.[0].values;
     expect(values).toContainEqual(periodStart);
     expect(values).toContainEqual(now);
@@ -272,7 +277,7 @@ describe("computer allowance", () => {
           byokInterval: "year",
         },
       });
-      await sandboxAllowance(deps, "organization", new Date(now));
+      await includedUsage(deps, "organization", new Date(now));
       // The query reads `now`, `now`, then `since`.
       return prisma.$queryRaw.mock.calls[0]?.[0].values[2];
     };
@@ -300,7 +305,7 @@ describe("computer allowance", () => {
         byokInterval: "year",
       },
     });
-    expect((await sandboxAllowance(deps, "organization", new Date(now)))?.resetsAt).toEqual(
+    expect((await includedUsage(deps, "organization", new Date(now)))?.resetsAt).toEqual(
       new Date(expected),
     );
   });
@@ -317,7 +322,7 @@ describe("computer allowance", () => {
       },
     });
     expect(
-      (await sandboxAllowance(deps, "organization", new Date("2026-04-01T00:00:00Z")))?.resetsAt,
+      (await includedUsage(deps, "organization", new Date("2026-04-01T00:00:00Z")))?.resetsAt,
     ).toEqual(resetsAt);
   });
 
@@ -333,11 +338,7 @@ describe("computer allowance", () => {
         currentPeriodEndsAt: null,
       },
     });
-    const allowance = await sandboxAllowance(
-      deps,
-      "organization",
-      new Date("2026-04-01T00:00:00Z"),
-    );
+    const allowance = await includedUsage(deps, "organization", new Date("2026-04-01T00:00:00Z"));
     expect(prisma.$queryRaw.mock.calls[0]?.[0].values[2]).toEqual(periodStart);
     expect(allowance?.resetsAt).toBeNull();
   });
@@ -355,11 +356,7 @@ describe("computer allowance", () => {
           byokInterval: "year",
         },
       });
-      const allowance = await sandboxAllowance(
-        deps,
-        "organization",
-        new Date("2026-04-10T00:00:00Z"),
-      );
+      const allowance = await includedUsage(deps, "organization", new Date("2026-04-10T00:00:00Z"));
       expect(prisma.$queryRaw.mock.calls[0]?.[0].values[2]).toEqual(
         new Date("2026-04-01T00:00:00Z"),
       );
@@ -380,7 +377,7 @@ describe("computer allowance", () => {
         },
       });
       expect(
-        (await sandboxAllowance(deps, "organization", new Date("2026-04-01T00:00:00Z")))?.resetsAt,
+        (await includedUsage(deps, "organization", new Date("2026-04-01T00:00:00Z")))?.resetsAt,
       ).toBeNull();
     }
   });
@@ -398,13 +395,9 @@ describe("computer allowance", () => {
         currentPeriodEndsAt: new Date("2027-01-20T14:00:00Z"),
       },
     });
-    const allowance = await sandboxAllowance(
-      deps,
-      "organization",
-      new Date("2026-04-01T00:00:00Z"),
-    );
+    const allowance = await includedUsage(deps, "organization", new Date("2026-04-01T00:00:00Z"));
     expect(allowance?.resetsAt).toBeNull();
-    expect(allowance?.limitMicros).toBe(40_000_000);
+    expect(allowance?.limitMicros).toBe(41_000_000);
   });
 
   it("counts the calendar month without a live subscription", async () => {
@@ -417,9 +410,21 @@ describe("computer allowance", () => {
       },
     });
     const now = new Date("2026-03-17T08:30:00.000Z");
-    await sandboxAllowance(deps, "organization", now);
+    await includedUsage(deps, "organization", now);
     const values = prisma.$queryRaw.mock.calls[0]?.[0].values;
     expect(values).toContainEqual(new Date("2026-03-01T00:00:00.000Z"));
+  });
+
+  it("counts what hosted media charged alongside computer time", async () => {
+    const { deps } = allowanceDeps({
+      billing: true,
+      mode: "byok",
+      hours: [{ kind: "boat", hours: 1 }],
+      chargedMicros: 150_000,
+    });
+    expect((await includedUsage(deps, "organization"))?.usedMicros).toBe(
+      SANDBOX_HOURLY_COST_MICROS + 150_000,
+    );
   });
 
   it("counts only computers that bill while running", async () => {
@@ -434,7 +439,7 @@ describe("computer allowance", () => {
         billsWhileRunning: (computer) => computer.kind === "boat",
       },
     });
-    expect((await sandboxAllowance(deps, "organization"))?.usedMicros).toBe(400_000);
+    expect((await includedUsage(deps, "organization"))?.usedMicros).toBe(400_000);
   });
 });
 
@@ -455,8 +460,8 @@ describe("computer allowance used up", () => {
   const paid = { spaceId: "space", kind: "e2b" };
 
   it("stops a billed computer only once the period's allowance is spent", async () => {
-    expect(await sandboxAllowanceUsedUp(usedUpDeps(24), paid)).toBe(false);
-    expect(await sandboxAllowanceUsedUp(usedUpDeps(25), paid)).toBe(true);
+    expect(await sandboxAllowanceUsedUp(usedUpDeps(29), paid)).toBe(false);
+    expect(await sandboxAllowanceUsedUp(usedUpDeps(30), paid)).toBe(true);
   });
 
   it("never stops a free computer or one whose space is gone", async () => {

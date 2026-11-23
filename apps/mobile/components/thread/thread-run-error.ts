@@ -1,9 +1,9 @@
-import { computerHoursOut } from "@rakazo/contracts";
+import { includedUsageOut } from "@rakazo/contracts";
 import { useQuery } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
 import { useEffect, useState } from "react";
 import type { MobileSnapshot } from "../../lib/api/mobile-types";
-import { computerHoursOutCopy, runErrorActionLabel } from "../../lib/cards/run-error-presentation";
+import { includedUsageOutCopy, runErrorActionLabel } from "../../lib/cards/run-error-presentation";
 import { openModelSettings } from "../../lib/models/model-settings";
 import { queryClient, rpcQuery } from "../../lib/query/query";
 import { useRunError } from "../cards/run-error-sheet";
@@ -28,7 +28,7 @@ export function useThreadRunError(run: MobileSnapshot["run"] | undefined, botId?
     if (asksBilling) void refetch({ cancelRefetch: false });
   }, [asksBilling, failedRunId, refetch]);
   const billing = billingQuery.data ?? null;
-  const hoursOut = needsPlan && billing ? computerHoursOutCopy(computerHoursOut(billing)) : null;
+  const hoursOut = needsPlan && billing ? includedUsageOutCopy(includedUsageOut(billing)) : null;
   const normalizedRunError =
     classified && hoursOut ? { ...classified, summary: hoursOut.summary } : classified;
   const label = needsPlan

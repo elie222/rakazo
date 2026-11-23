@@ -5,7 +5,12 @@ import {
   SANDBOX_SIZE_HOURLY_COST_MICROS,
 } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
-import { MICROS_PER_DOLLAR, sandboxAllowancePlan, sandboxRunHours } from "@rakazo/db";
+import {
+  includedUsageChargedMicros,
+  includedUsagePlan,
+  MICROS_PER_DOLLAR,
+  sandboxRunHours,
+} from "@rakazo/db";
 import { sandboxKindCapabilities } from "./sandbox-kind-capabilities.js";
 
 type AllowanceDeps = { prisma: PrismaClient; sandbox: SandboxProvider };
@@ -28,24 +33,41 @@ export function sandboxDisplayedHourMicros(sandbox: SandboxProvider): number {
     : SANDBOX_HOURLY_COST_MICROS;
 }
 
-/** This period's computer allowance and spend, in micro-dollars; null when it has no limit. */
-export async function sandboxAllowance(
-  deps: AllowanceDeps,
+/**
+ * This period's included usage and what computers and hosted media spent of it, in micro-dollars;
+ * null when nothing is metered.
+ */
+export async function includedUsage(
+  deps: Pick<AllowanceDeps, "prisma"> & { sandbox?: SandboxProvider },
   organizationId: string,
   now = new Date(),
-): Promise<{ limitMicros: number; usedMicros: number; resetsAt: Date | null } | null> {
-  const plan = await sandboxAllowancePlan(deps.prisma, organizationId, now);
+): Promise<{
+  limitMicros: number;
+  usedMicros: number;
+  resetsAt: Date | null;
+  trial: boolean;
+} | null> {
+  const plan = await includedUsagePlan(deps.prisma, organizationId, now);
   if (plan === null) return null;
-  const runs = await sandboxRunHours(deps.prisma, organizationId, plan.since, now);
-  const usedMicros = runs.reduce(
-    (sum, run) => sum + run.hours * sandboxHourlyCostMicros(deps.sandbox, run),
-    0,
-  );
+  const [runs, chargedMicros] = await Promise.all([
+    sandboxRunHours(deps.prisma, organizationId, plan.since, now),
+    includedUsageChargedMicros(deps.prisma, organizationId, plan.since),
+  ]);
+  const { sandbox } = deps;
+  const computerMicros = sandbox
+    ? runs.reduce((sum, run) => sum + run.hours * sandboxHourlyCostMicros(sandbox, run), 0)
+    : 0;
   return {
     limitMicros: (plan.limitCents * MICROS_PER_DOLLAR) / 100,
-    usedMicros: Math.round(usedMicros),
+    usedMicros: Math.round(computerMicros) + chargedMicros,
     resetsAt: plan.resetsAt,
+    trial: plan.trial,
   };
+}
+
+/** Whole cents left, rounded down so a balance never reads as more than it is. */
+export function includedUsageLeftCents(usage: { limitMicros: number; usedMicros: number }) {
+  return Math.floor((Math.max(0, usage.limitMicros - usage.usedMicros) * 100) / MICROS_PER_DOLLAR);
 }
 
 /** Whole hours, or tenths under one hour, so time that is left never reads as zero. */
@@ -57,7 +79,7 @@ export function sandboxHoursLeft(
   return hours >= 1 ? Math.floor(hours) : Math.floor(hours * 10) / 10;
 }
 
-/** Whether a computer of this kind bills and its organization spent this period's allowance. */
+/** Whether a computer of this kind bills and its organization spent this period's included usage. */
 export async function sandboxAllowanceUsedUp(
   deps: AllowanceDeps,
   computer: { spaceId: string; kind: string },
@@ -68,6 +90,6 @@ export async function sandboxAllowanceUsedUp(
     select: { organizationId: true },
   });
   if (!space) return false;
-  const allowance = await sandboxAllowance(deps, space.organizationId);
+  const allowance = await includedUsage(deps, space.organizationId);
   return allowance !== null && allowance.usedMicros >= allowance.limitMicros;
 }

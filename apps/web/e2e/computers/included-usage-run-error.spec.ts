@@ -18,7 +18,7 @@ function billingStatus(overrides: Partial<BillingStatus>): BillingStatus {
     hasCustomer: true,
     funding: "byok",
     byokPriceCents: 1500,
-    computerHoursLeft: 0,
+    includedUsageLeftCents: 0,
     ...overrides,
   };
 }
@@ -35,24 +35,24 @@ const plans = [
   {
     name: "trial",
     status: { state: "trialing", trialEndsAt: new Date(Date.now() + 3 * 86_400_000).toISOString() },
-    summary: "Your trial's computer hours are used up.",
+    summary: "Your trial's included usage is used up.",
     action: "Start plan now",
   },
   {
     name: "plan",
     status: {},
-    summary: "This month's computer hours are used up.",
+    summary: "This month's included usage is used up.",
     action: "Upgrade",
   },
 ] as const;
 
 for (const plan of plans) {
-  test(`a run out of computer hours on the ${plan.name} says why and opens billing`, async ({
+  test(`a run out of included usage on the ${plan.name} says why and opens billing`, async ({
     page,
   }, testInfo) => {
     await signup(
       page,
-      `computer-hours-${plan.name}-${Date.now()}@rakazo.test`,
+      `included-usage-${plan.name}-${Date.now()}@rakazo.test`,
       "password12",
       "Hours Out",
     );
@@ -65,7 +65,7 @@ for (const plan of plans) {
     await page.route("**/rpc/bootstrap", (route) => enableBilling(route, "bootstrap"));
     const status = billingStatus(plan.status);
     await page.route("**/rpc/billing/status", (route) => route.fulfill({ json: { json: status } }));
-    // The scripted runtime fails the run; the snapshot reports it as the computer allowance would.
+    // The scripted runtime fails the run; the snapshot reports it as spent included usage would.
     await page.route("**/rpc/threads/get", async (route) => {
       const response = await route.fetch();
       const body = (await response.json()) as { json?: { run?: { error?: string | null } } };
@@ -79,14 +79,14 @@ for (const plan of plans) {
     await page.getByRole("button", { name: "Send" }).click();
     const error = page.getByTestId("composer-error");
     await expect(error).toContainText(plan.summary, { timeout: 30_000 });
-    await captureScreenshot(page, testInfo, `computer-hours-out-${plan.name}`);
+    await captureScreenshot(page, testInfo, `included-usage-out-${plan.name}`);
 
     const action = error.getByTestId("composer-error-action");
     await expect(action).toHaveText(plan.action);
     await action.click();
     const settings = page.getByTestId("user-settings");
     await expect(settings).toHaveAttribute("data-settings-section", "billing");
-    await expect(settings.getByText("Computer hours left", { exact: true })).toBeVisible();
-    await captureScreenshot(page, testInfo, `computer-hours-out-${plan.name}-billing`);
+    await expect(settings.getByText("Included usage left", { exact: true })).toBeVisible();
+    await captureScreenshot(page, testInfo, `included-usage-out-${plan.name}-billing`);
   });
 }

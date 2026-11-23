@@ -28,6 +28,17 @@ const MAX_RESPONSE_BYTES = Math.ceil(ATTACHMENT_MAX_BASE64_LENGTH * (1 + 4 / 64)
 const MODEL_ID_PATTERN = /^[\w.:/@+-]{1,200}$/;
 const BASE64_PATTERN = /^[A-Za-z0-9+/]*={0,2}$/;
 const IMAGE_DOWNLOAD_TIMEOUT_MS = 60_000;
+/**
+ * The highest price of one square image at the quality the server picks by default, in
+ * micro-dollars; any other model is charged the most expensive one's.
+ */
+const IMAGE_MICROS: Record<string, number> = {
+  "gpt-image-1": 167_000,
+  "gpt-image-1-mini": 36_000,
+  "dall-e-3": 80_000,
+  "dall-e-2": 20_000,
+};
+const DEFAULT_IMAGE_MICROS = 167_000;
 const imagesResponse = z.object({
   data: z
     .array(
@@ -43,6 +54,7 @@ const imagesResponse = z.object({
 export class OpenAIMediaGenerationProvider implements MediaGenerationProvider {
   readonly id = "openai";
   readonly capabilities = { images: true, video: false, offline: false };
+  readonly prices;
   private readonly endpoint: string;
   constructor(
     private readonly options: {
@@ -63,6 +75,10 @@ export class OpenAIMediaGenerationProvider implements MediaGenerationProvider {
     )
       throw new Error("Invalid media generation base URL");
     if (!MODEL_ID_PATTERN.test(options.imageModel)) throw new Error("Invalid media model id");
+    this.prices = {
+      imageMicros: IMAGE_MICROS[options.imageModel] ?? DEFAULT_IMAGE_MICROS,
+      videoMicros: 0,
+    };
     this.endpoint = `${url.href.replace(/\/$/, "")}/images/generations`;
   }
   async generateImage(

@@ -12,6 +12,11 @@ export type MediaVideoJob =
 export interface MediaGenerationProvider {
   readonly id: string;
   readonly capabilities: { images: boolean; video: boolean; offline: boolean };
+  /**
+   * What one generated image and one video clip, as this provider requests them, cost in
+   * micro-dollars. Charged to the organization's included usage where billing is on.
+   */
+  readonly prices: { imageMicros: number; videoMicros: number };
   generateImage(input: MediaGenerationInput, context: AdapterContext): Promise<GeneratedMedia>;
   generateVideo(input: MediaGenerationInput, context: AdapterContext): Promise<MediaVideoJob>;
   pollVideo(id: string, context: AdapterContext): Promise<MediaVideoJob>;

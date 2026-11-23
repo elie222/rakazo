@@ -18,7 +18,8 @@ import {
 } from "@rakazo/adapter-kit";
 import {
   holdsBillingSubscription,
-  sandboxAllowance,
+  includedUsage,
+  includedUsageLeftCents,
   sandboxDisplayedHourMicros,
   sandboxHoursLeft,
   sandboxKindCapabilities,
@@ -590,14 +591,14 @@ export function createBillingService(deps: {
       };
       const to = target(from);
       if (!to) throw conflict();
-      // A smaller allowance takes effect at once, so this period's computer use must already fit it;
-      // otherwise an upgrade could buy a period's hours and a downgrade refund almost all of it.
-      const allowanceCents = BYOK_TIERS[to.tier].computerAllowanceCents;
-      if (allowanceCents < BYOK_TIERS[from.tier].computerAllowanceCents && deps.sandbox) {
-        const allowance = await sandboxAllowance({ prisma, sandbox: deps.sandbox }, organizationId);
-        if (allowance && allowance.usedMicros > (allowanceCents * MICROS_PER_DOLLAR) / 100)
+      // Smaller included usage takes effect at once, so this period's use must already fit it;
+      // otherwise an upgrade could buy a period's usage and a downgrade refund almost all of it.
+      const allowanceCents = BYOK_TIERS[to.tier].includedUsageCents;
+      if (allowanceCents < BYOK_TIERS[from.tier].includedUsageCents) {
+        const usage = await includedUsage({ prisma, sandbox: deps.sandbox }, organizationId);
+        if (usage && usage.usedMicros > (allowanceCents * MICROS_PER_DOLLAR) / 100)
           throw new ORPCError("CONFLICT", {
-            message: "This month's computer use is more than the smaller plan includes",
+            message: "This month's usage is more than the smaller plan includes",
           });
       }
       const changed = await provider.changeByokPlan!(account.customerId, account.subscriptionId, {
@@ -727,10 +728,10 @@ export function createBillingService(deps: {
             getLogger().error("access grant failed", error),
           );
         const sized = supportsComputerSizing();
-        const [credits, account, computerAllowance, days, hadTrial] = await Promise.all([
+        const [credits, account, usage, days, hadTrial] = await Promise.all([
           unexpiredCreditAccount(prisma, organizationId),
           billingAccountForOrganization(prisma, organizationId),
-          deps.sandbox ? sandboxAllowance({ prisma, sandbox: deps.sandbox }, organizationId) : null,
+          includedUsage({ prisma, sandbox: deps.sandbox }, organizationId),
           trialDays(organizationId),
           organizationOwnerHadTrial(prisma, organizationId, "byok"),
         ]);
@@ -782,14 +783,14 @@ export function createBillingService(deps: {
           currentPeriodEndsAt: account?.currentPeriodEndsAt?.toISOString() ?? null,
           cancelAtPeriodEnd: account?.cancelAtPeriodEnd ?? false,
           hasCustomer: Boolean(account),
-          computerHoursLeft:
-            computerAllowance &&
-            sandboxHoursLeft(
-              computerAllowance,
-              sized ? SANDBOX_SIZE_HOURLY_COST_MICROS.standard : hourMicros,
-            ),
+          includedUsageLeftCents: usage && includedUsageLeftCents(usage),
+          includedUsageResetAt: usage?.resetsAt?.toISOString() ?? null,
           ...(sized && { standardComputerHours: true as const }),
-          computerHoursResetAt: computerAllowance?.resetsAt?.toISOString() ?? null,
+          // compat-shim(after v0.15.0): mobile apps released before included usage read these.
+          computerHoursLeft:
+            usage &&
+            sandboxHoursLeft(usage, sized ? SANDBOX_SIZE_HOURLY_COST_MICROS.standard : hourMicros),
+          computerHoursResetAt: usage?.resetsAt?.toISOString() ?? null,
           referral: await referrals.status(organizationId, isOwner),
         };
       }

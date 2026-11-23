@@ -2,21 +2,36 @@ import { i18n } from "@lingui/core";
 import { t } from "@lingui/core/macro";
 import type { BillingStatus, ComputerMode, ComputerSize } from "@rakazo/contracts";
 import { COMPUTER_SIZE_SPECS, SANDBOX_SIZE_HOURLY_COST_MICROS } from "@rakazo/contracts";
+import { formatBillingAmount } from "./billing.js";
 
-export function tierComputerDescription(offer: NonNullable<BillingStatus["byokTiers"]>[number]) {
-  const { vcpus, memoryGb } = COMPUTER_SIZE_SPECS[offer.computerSize];
-  const hours = offer.computerHours;
-  return offer.computerSizeChoice
-    ? t`Up to ${vcpus} vCPU and ${memoryGb} GB, ${hours} Standard computer hours a month`
-    : t`${vcpus} vCPU, ${memoryGb} GB, ${hours} computer hours a month`;
+type TierOffer = NonNullable<BillingStatus["byokTiers"]>[number];
+
+function includedUsageAmount(offer: TierOffer) {
+  return offer.includedUsageCents === undefined
+    ? null
+    : formatBillingAmount(offer.includedUsageCents, "usd", i18n.locale || "en");
 }
 
-export function tierComputerSummary(offer: NonNullable<BillingStatus["byokTiers"]>[number]) {
-  if (!offer.computerSizeChoice) return tierComputerDescription(offer);
+export function tierComputerDescription(offer: TierOffer) {
+  const { vcpus, memoryGb } = COMPUTER_SIZE_SPECS[offer.computerSize];
+  const usage = includedUsageAmount(offer);
+  if (!usage)
+    return offer.computerSizeChoice
+      ? t`Up to ${vcpus} vCPU and ${memoryGb} GB`
+      : t`${vcpus} vCPU, ${memoryGb} GB`;
+  return offer.computerSizeChoice
+    ? t`Up to ${vcpus} vCPU and ${memoryGb} GB, ${usage} included usage a month`
+    : t`${vcpus} vCPU, ${memoryGb} GB, ${usage} included usage a month`;
+}
+
+export function tierComputerSummary(offer: TierOffer) {
+  const usage = includedUsageAmount(offer);
+  if (!offer.computerSizeChoice || !usage) return tierComputerDescription(offer);
   const hours = new Intl.NumberFormat(i18n.locale || "en").format(offer.computerHours);
-  if (offer.computerSize === "standard") return t`${hours} bot computer hours/month`;
+  if (offer.computerSize === "standard")
+    return t`${usage} included usage a month, about ${hours} computer hours`;
   const size = offer.computerSize === "large" ? t`Large` : t`Extra large`;
-  return t`${hours} bot computer hours/month at Standard size · Up to ${size}`;
+  return t`${usage} included usage a month, about ${hours} Standard computer hours. Up to ${size}`;
 }
 
 /** The size's name with how many times faster than Standard it uses computer hours. */

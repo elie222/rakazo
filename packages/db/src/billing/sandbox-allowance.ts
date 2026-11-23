@@ -3,10 +3,10 @@ import {
   BYOK_TIERS,
   ByokTierSchema,
   ComputerSizeSchema,
-  CREDITS_SANDBOX_ALLOWANCE_PERCENT,
+  CREDITS_INCLUDED_USAGE_PERCENT,
   computerSizesUpTo,
   SPEECH_ALLOWANCE_PERCENT,
-  TRIAL_SANDBOX_ALLOWANCE_CENTS,
+  TRIAL_INCLUDED_USAGE_CENTS,
 } from "@rakazo/contracts";
 import type { PrismaClient } from "../database/client.js";
 import { Prisma } from "../database/client.js";
@@ -31,18 +31,25 @@ function byokTierOf(
 }
 
 /**
- * The organization's computer allowance in cents and the moment its period began, or null when
- * it has no limit: a deployment without model-credit billing never limits computers. The period
- * is the subscription's billing period, or the calendar month in UTC without one. A cancelled
+ * The organization's included usage in cents, which computers and hosted media both spend, and
+ * the moment its period began, or null when nothing is metered: a deployment without model-credit
+ * billing never limits either. The period is the subscription's billing period, or the calendar
+ * month in UTC without one. A cancelled
  * trial gets nothing more from its plan. Credit an admin granted, without a monthly plan, brings its
  * share once. Extra allowance an operator granted counts only in the period it was granted in, and
  * is not a reset: when the plan renews nothing, `resetsAt` stays null.
  */
-export async function sandboxAllowancePlan(
+export async function includedUsagePlan(
   prisma: PrismaClient,
   organizationId: string,
   now = new Date(),
-): Promise<{ limitCents: number; extraCents: number; since: Date; resetsAt: Date | null } | null> {
+): Promise<{
+  limitCents: number;
+  extraCents: number;
+  since: Date;
+  resetsAt: Date | null;
+  trial: boolean;
+} | null> {
   const [settings, organization] = await Promise.all([
     prisma.deploymentSettings.findUnique({
       where: { id: "default" },
@@ -71,8 +78,7 @@ export async function sandboxAllowancePlan(
   const billing = organization?.billing;
   const { live, periodStart, since } = allowancePeriod(billing, now);
   const tier = byokTierOf(organization?.modelCredits?.mode, billing);
-  const creditShare = (cents: number) =>
-    Math.floor((cents * CREDITS_SANDBOX_ALLOWANCE_PERCENT) / 100);
+  const creditShare = (cents: number) => Math.floor((cents * CREDITS_INCLUDED_USAGE_PERCENT) / 100);
   if (billing?.status !== "trialing" && !tier && !billing?.creditAmountCents) {
     // Granted credit without a monthly plan: its share is one pool, spent since the first grant.
     const granted = await prisma.accessGrant.aggregate({
@@ -104,6 +110,7 @@ export async function sandboxAllowancePlan(
         extraCents,
         since,
         resetsAt: null,
+        trial: false,
       };
     }
   }
@@ -111,9 +118,9 @@ export async function sandboxAllowancePlan(
     billing?.status === "trialing"
       ? billing.cancelAtPeriodEnd
         ? 0
-        : TRIAL_SANDBOX_ALLOWANCE_CENTS
+        : TRIAL_INCLUDED_USAGE_CENTS
       : tier
-        ? BYOK_TIERS[tier].computerAllowanceCents
+        ? BYOK_TIERS[tier].includedUsageCents
         : creditShare(billing?.creditAmountCents ?? 0);
   const extraCents = await grantedAllowanceCents(prisma, organizationId, since);
   const limitCents = baseCents + extraCents;
@@ -135,7 +142,7 @@ export async function sandboxAllowancePlan(
     (live && billing?.cancelAtPeriodEnd)
       ? null
       : reset;
-  return { limitCents, extraCents, since, resetsAt };
+  return { limitCents, extraCents, since, resetsAt, trial: billing?.status === "trialing" };
 }
 
 /** The monthly allowance period an organization's billing puts it in. */
@@ -227,6 +234,31 @@ async function grantedAllowanceCents(
     }),
   );
   return granted._sum.amountCents ?? 0;
+}
+
+/** Included usage the organization spent since `since` on anything but computer time, in micros. */
+export async function includedUsageChargedMicros(
+  prisma: Pick<PrismaClient, "includedUsageCharge">,
+  organizationId: string,
+  since: Date,
+): Promise<number> {
+  const charged = await runAsSystem("included usage charges across an organization", () =>
+    prisma.includedUsageCharge.aggregate({
+      where: { organizationId, createdAt: { gte: since } },
+      _sum: { amountMicros: true },
+    }),
+  );
+  return charged._sum.amountMicros ?? 0;
+}
+
+/** Charges included usage once per `source`; a repeat for the same source changes nothing. */
+export async function chargeIncludedUsage(
+  prisma: Pick<PrismaClient, "includedUsageCharge">,
+  charge: { organizationId: string; source: string; kind: string; amountMicros: number },
+): Promise<void> {
+  await runAsSystem("charge an organization's included usage", () =>
+    prisma.includedUsageCharge.createMany({ data: [charge], skipDuplicates: true }),
+  );
 }
 
 /** Operator-only: extra allowance for the organization's current period, kept in the journal. */

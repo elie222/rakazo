@@ -1,6 +1,6 @@
 import { i18n } from "@lingui/core";
 import { useLingui } from "@lingui/react/macro";
-import { computerHoursOut } from "@rakazo/contracts";
+import { includedUsageOut } from "@rakazo/contracts";
 import { isModelRequiredSendError, normalizeRunError } from "@rakazo/core";
 import { translateRunError } from "@rakazo/i18n/run-error";
 import { Button } from "@rakazo/ui-web";
@@ -121,14 +121,14 @@ export function ComposerError({
     : null;
   // The one action that fixes the failure; a transient one already says to try again.
   const recovery = sendError ? undefined : normalizedRunError?.recovery;
-  const hoursOut = recovery === "plan" && billing ? computerHoursOut(billing) : null;
+  const hoursOut = recovery === "plan" && billing ? includedUsageOut(billing) : null;
   const hoursOutSummary =
     hoursOut === "trial"
-      ? t`Your trial's computer hours are used up.`
+      ? t`Your trial's included usage is used up.`
       : hoursOut === "cancelled_trial"
-        ? t`Cancelled trials have no computer hours.`
+        ? t`Cancelled trials have no included usage.`
         : hoursOut === "plan"
-          ? t`This month's computer hours are used up.`
+          ? t`This month's included usage is used up.`
           : null;
   const recoveryAction =
     recovery === "model"

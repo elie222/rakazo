@@ -1565,7 +1565,7 @@ describe("monthly computer allowance", () => {
       billsWhileRunning: true,
       runningSince: new Date(now - 60_000),
       backgroundWorkProbeCode: 0,
-      computerHours: 25,
+      computerHours: 30,
     });
     harness.prisma.run.findFirst.mockResolvedValue({ id: "executing" });
 
@@ -1600,7 +1600,7 @@ describe("monthly computer allowance", () => {
       billsWhileRunning: true,
       runningSince: new Date(now - 60_000),
       backgroundWorkProbeCode: 0,
-      computerHours: 24,
+      computerHours: 29,
     });
 
     await sleepComputerIfIdle(harness.deps, harness.computer.id);
@@ -1613,7 +1613,7 @@ describe("monthly computer allowance", () => {
     const harness = idleHarness({
       billsWhileRunning: true,
       runningSince: new Date(now - 60_000),
-      computerHours: 25,
+      computerHours: 30,
     });
     Object.assign(harness.computer, {
       controlHolder: "user",
@@ -1637,7 +1637,7 @@ describe("monthly computer allowance", () => {
       billsWhileRunning: true,
       runningSince: new Date(now - 60_000),
       codingAgent: "codex",
-      computerHours: 25,
+      computerHours: 30,
     });
 
     await sleepComputerIfIdle(harness.deps, harness.computer.id);
@@ -2084,6 +2084,7 @@ function idleHarness(
       findUnique: vi.fn(async () => ({ modelCredits: { mode: "byok" }, billing: null })),
     },
     computerAllowanceGrant: { aggregate: vi.fn(async () => ({ _sum: { amountCents: null } })) },
+    includedUsageCharge: { aggregate: vi.fn(async () => ({ _sum: { amountMicros: null } })) },
     space: { findUnique: vi.fn(async () => ({ organizationId: "organization" })) },
     thread: { update: vi.fn().mockResolvedValue({ nextMessageSeq: 1, nextEventSeq: 1 }) },
     message: {
