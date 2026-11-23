@@ -444,6 +444,19 @@ describe("saving a page's pictures", () => {
     expect(tx.page.create).not.toHaveBeenCalled();
   });
 
+  it("starts no computer for a picture path when the bot cannot read computer files", async () => {
+    const tx = { page: { create: vi.fn() } };
+    const ctx = withFiles(context(tx), null);
+    const get = vi.fn();
+    Object.assign(ctx, { computer: { get } });
+    const result = (await pageTools.save_page!(
+      ctx,
+      call({ title: "Trip", source: pictured("hotel"), images: { hotel: "photos/hotel.png" } }),
+    )) as Record<string, unknown>;
+    expect(result.problems).toEqual(["Image hotel: no chat file with that artifactId."]);
+    expect(get).not.toHaveBeenCalled();
+  });
+
   it("refuses an images value that is not a map, and ignores a blank one", async () => {
     const tx = { page: { create: vi.fn(async () => ({ id: "page-1", title: "Trip" })) } };
     const refused = (await pageTools.save_page!(

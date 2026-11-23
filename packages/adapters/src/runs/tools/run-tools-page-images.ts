@@ -110,6 +110,8 @@ async function pictureBytes(
       .get(artifact.storageKey, context)
       .catch(() => "the file could not be read");
   }
+  if (!ctx.tools.offered.some((tool) => tool.name === "read_file"))
+    return "no chat file with that artifactId";
   try {
     return await deps.sandbox.readFile(
       await ctx.computer.get("tool", call.name),
