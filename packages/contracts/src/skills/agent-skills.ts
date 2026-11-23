@@ -93,6 +93,24 @@ const AgentSkillFileInput = z.strictObject({
     ),
 });
 
+/** A file stored beside a skill's SKILL.md, without its text. */
+export const AgentSkillFileEntrySchema = z.object({
+  path: z.string(),
+  /** UTF-8 size of the file's text. */
+  bytes: z.number().int().nonnegative(),
+});
+export type AgentSkillFileEntry = z.infer<typeof AgentSkillFileEntrySchema>;
+
+/**
+ * Names one stored file of a skill. Only an exact stored path matches, so this needs no path
+ * rules of its own; plugin files may use paths a personal skill could not.
+ */
+export const AgentSkillFileRef = z.object({
+  skillId: Id,
+  path: z.string().min(1).max(1024),
+});
+export type AgentSkillFileRef = z.infer<typeof AgentSkillFileRef>;
+
 export const UpdateAgentSkillInput = z
   .object({
     skillId: Id,

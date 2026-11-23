@@ -264,6 +264,15 @@ export function memoryRoutes(ctx: RouterContext) {
       remove: authed.agentSkills.remove.handler(async ({ context, input }) =>
         agentSkills.remove(context.actor, input.skillId),
       ),
+      listFiles: authed.agentSkills.listFiles.handler(async ({ context, input }) =>
+        agentSkills.listFiles(context.actor, input.skillId),
+      ),
+      getFile: authed.agentSkills.getFile.handler(async ({ context, input }) =>
+        agentSkills.getFile(context.actor, input),
+      ),
+      removeFile: authed.agentSkills.removeFile.handler(async ({ context, input }) =>
+        agentSkills.removeFile(context.actor, input),
+      ),
     },
   };
 }

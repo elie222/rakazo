@@ -189,19 +189,40 @@ test("memory and skills are readable and editable in the app", async ({ page }, 
   await expect(builtinSkill).toBeVisible();
   await expect(builtinSkill.getByText("Built-in", { exact: true })).toBeVisible();
   await knowledge.getByRole("button", { name: "New skill", exact: true }).click();
-  const editor = knowledge.locator("textarea");
-  await editor.fill(
-    [
-      "---",
-      "name: greet-politely",
-      "description: Say hello before anything else.",
-      "---",
-      "",
-      "Always open with a greeting.",
-    ].join("\n"),
-  );
+  await knowledge.getByLabel("Name", { exact: true }).fill("greet-politely");
+  await knowledge
+    .getByLabel("Description", { exact: true })
+    .fill("Say hello before anything else.");
+  await knowledge.getByLabel("Instructions", { exact: true }).fill("Always open with a greeting.");
   await captureScreenshot(page, testInfo, "81-knowledge-skill-editor");
   await knowledge.getByRole("button", { name: "Save", exact: true }).click();
+  // A saved skill opens as a folder: its files beside the one being read.
+  const skillPage = knowledge.getByTestId("skill-page");
+  const files = skillPage.getByRole("navigation", { name: "Files", exact: true });
+  await expect(
+    skillPage.getByRole("heading", { name: "greet-politely", exact: true }),
+  ).toBeVisible();
+  await expect(skillPage.getByText("Always open with a greeting.")).toBeVisible();
+  await expect(files.getByRole("button", { name: "SKILL.md", exact: true })).toHaveAttribute(
+    "aria-current",
+    "true",
+  );
+
+  // A reference file is named in the tree and written beside it, then read as it will look.
+  await files.getByRole("button", { name: "Add file", exact: true }).click();
+  await files.getByLabel("New file path", { exact: true }).fill("references/tone.md");
+  await skillPage.getByLabel("File text", { exact: true }).fill("# Tone\n\nWarm, never stiff.");
+  await skillPage.getByRole("button", { name: "Preview", exact: true }).click();
+  await expect(skillPage.getByRole("heading", { name: "Tone", exact: true })).toBeVisible();
+  await captureScreenshot(page, testInfo, "83-skill-new-file-preview");
+  await skillPage.getByRole("button", { name: "Save", exact: true }).click();
+  const toneFile = files.getByRole("button", { name: /^tone\.md/ });
+  await expect(toneFile).toHaveAttribute("aria-current", "true");
+  await expect(files.getByText("references/", { exact: true })).toBeVisible();
+  await expect(skillPage.getByText("Warm, never stiff.")).toBeVisible();
+  await captureScreenshot(page, testInfo, "84-skill-folder");
+
+  await skillPage.getByRole("button", { name: "All skills", exact: true }).click();
   const skillRow = knowledge.getByRole("button", { name: /greet-politely/ });
   await expect(skillRow).toBeVisible();
   await expect(knowledge.getByText("Say hello before anything else.")).toBeVisible();
@@ -221,7 +242,7 @@ test("memory and skills are readable and editable in the app", async ({ page }, 
   await composer.fill("");
   await openSkills();
 
-  // A provider-owned skill uses the same viewer without mutation controls.
+  // A provider-owned skill opens the same folder without mutation controls.
   await page.route(
     "**/rpc/agentSkills/get",
     async (route) => {
@@ -235,47 +256,41 @@ test("memory and skills are readable and editable in the app", async ({ page }, 
     { times: 1 },
   );
   await skillRow.click();
-  await expect(editor).toHaveAttribute("readonly", "");
-  await expect(knowledge.getByText("Plugin", { exact: true })).toBeVisible();
-  await expect(knowledge.getByRole("button", { name: "Save", exact: true })).toHaveCount(0);
-  await expect(knowledge.getByRole("button", { name: "Delete", exact: true })).toHaveCount(0);
-  await knowledge.getByRole("button", { name: "Close", exact: true }).click();
-  await skillRow.click();
-  await expect(editor).toHaveValue(/Always open with a greeting/);
-  await editor.fill(
-    [
-      "---",
-      "name: greet-politely",
-      "description: Say hello before anything else.",
-      "---",
-      "",
-      "Open with a warm greeting.",
-    ].join("\n"),
-  );
-  let releaseSkillRefresh!: () => void;
-  const skillRefreshGate = new Promise<void>((resolve) => {
-    releaseSkillRefresh = resolve;
-  });
-  await page.route(
-    "**/rpc/agentSkills/list",
-    async (route) => {
-      await skillRefreshGate;
-      await route.continue();
-    },
-    { times: 1 },
-  );
-  await knowledge.getByRole("button", { name: "Save", exact: true }).click();
-  try {
-    await expect(editor).toBeHidden();
-    await expect(skillRow).toBeDisabled();
-    await captureScreenshot(page, testInfo, "85-skill-refresh-pending");
-  } finally {
-    releaseSkillRefresh();
+  await expect(skillPage.getByText("Plugin", { exact: true })).toBeVisible();
+  await expect(skillPage.getByText("Always open with a greeting.")).toBeVisible();
+  for (const name of ["Edit", "Delete skill", "Add file"]) {
+    await expect(skillPage.getByRole("button", { name, exact: true })).toHaveCount(0);
   }
+  await skillPage.getByRole("button", { name: "All skills", exact: true }).click();
+
+  // Edits are saved only with Save; leaving with changes asks first.
   await skillRow.click();
-  await expect(editor).toHaveValue(/warm greeting/);
-  await knowledge.getByRole("button", { name: "Delete", exact: true }).click();
-  await knowledge.getByRole("button", { name: "Confirm delete", exact: true }).click();
+  await skillPage.getByRole("button", { name: "Edit", exact: true }).click();
+  await skillPage.getByLabel("Instructions", { exact: true }).fill("Open with a warm greeting.");
+  await toneFile.click();
+  await expect(skillPage.getByRole("alert")).toContainText("Your changes are not saved.");
+  await captureScreenshot(page, testInfo, "85-skill-unsaved-changes");
+  await skillPage.getByRole("button", { name: "Keep editing", exact: true }).click();
+  await skillPage.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(skillPage.getByText("Open with a warm greeting.")).toBeVisible();
+  const saved = await rpc<Array<{ id: string; name: string }>>(page, "agentSkills/list", {});
+  const skillId = saved.find((entry) => entry.name === "greet-politely")?.id;
+  expect(await rpc<{ content: string }>(page, "agentSkills/get", { skillId })).toEqual(
+    expect.objectContaining({ content: expect.stringContaining("Open with a warm greeting.") }),
+  );
+
+  await toneFile.click();
+  await skillPage.getByRole("button", { name: "Edit", exact: true }).click();
+  await skillPage.getByRole("button", { name: "Delete file", exact: true }).click();
+  await skillPage.getByRole("button", { name: "Delete this file?", exact: true }).click();
+  await expect(toneFile).toHaveCount(0);
+  expect(await rpc(page, "agentSkills/listFiles", { skillId })).toEqual([]);
+
+  // Deleting the skill sits at the foot of its SKILL.md form.
+  await files.getByRole("button", { name: "SKILL.md", exact: true }).click();
+  await skillPage.getByRole("button", { name: "Edit", exact: true }).click();
+  await skillPage.getByRole("button", { name: "Delete skill", exact: true }).click();
+  await skillPage.getByRole("button", { name: "Confirm delete", exact: true }).click();
   await expect(skillRow).toBeHidden();
   await closeSkills();
   await composer.fill("/");

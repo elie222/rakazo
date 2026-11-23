@@ -545,4 +545,86 @@ describe("personal skill attachments", () => {
     expect(agentSkill.findFirst.mock.calls[0]?.[0]).not.toHaveProperty("omit");
     expect(agentSkill.findFirst.mock.calls[1]?.[0]).toMatchObject({ omit: { files: true } });
   });
+
+  it("lists a skill's files with their sizes and reads one by its exact path", async () => {
+    const files = { "templates/report.html": "<p>€</p>", "notes.md": "Fictitious notes." };
+    const { prisma } = setup([savedSkill("Review", "user", files)]);
+
+    expect(await rpc(prisma, "listFiles", { skillId })).toEqual({
+      status: 200,
+      json: [
+        { path: "notes.md", bytes: 17 },
+        { path: "templates/report.html", bytes: 10 },
+      ],
+    });
+    expect(await rpc(prisma, "getFile", { skillId, path: "templates/report.html" })).toEqual({
+      status: 200,
+      json: { path: "templates/report.html", content: "<p>€</p>" },
+    });
+    for (const path of ["./notes.md", "NOTES.md", "../notes.md", "__proto__", "toString"]) {
+      expect((await rpc(prisma, "getFile", { skillId, path })).status).toBe(404);
+    }
+  });
+
+  it("lists and reads plugin skill files but finds none on built-in skills", async () => {
+    const { prisma } = setup([savedSkill("Billing", "plugin", { "rates.md": "Rates" })]);
+    expect((await rpc(prisma, "listFiles", { skillId })).json).toEqual([
+      { path: "rates.md", bytes: 5 },
+    ]);
+    expect((await rpc(prisma, "getFile", { skillId, path: "rates.md" })).json).toEqual({
+      path: "rates.md",
+      content: "Rates",
+    });
+    expect(await rpc(prisma, "listFiles", { skillId: "builtin:Interrogate" })).toEqual({
+      status: 200,
+      json: [],
+    });
+    expect((await rpc(prisma, "listFiles", { skillId: "builtin:Nope" })).status).toBe(404);
+    expect(
+      (await rpc(prisma, "getFile", { skillId: "builtin:Interrogate", path: "x.md" })).status,
+    ).toBe(404);
+  });
+
+  it.each([{ userId: "other-user", allSpaces: true }, { spaceId: "other-space" }])(
+    "hides the files of a skill out of reach %j",
+    async (overrides) => {
+      const { prisma } = setup([
+        { ...savedSkill("Review", "user", { "notes.md": "Secret" }), ...overrides },
+      ]);
+      expect((await rpc(prisma, "listFiles", { skillId })).status).toBe(404);
+      expect((await rpc(prisma, "getFile", { skillId, path: "notes.md" })).status).toBe(404);
+      expect((await rpc(prisma, "removeFile", { skillId, path: "notes.md" })).status).toBe(404);
+      expect((await rpc(prisma, "listFiles", { skillId }, null)).status).toBe(401);
+    },
+  );
+
+  it("removes one file of a personal skill and keeps the rest", async () => {
+    const files = { "notes.md": "Notes", "templates/report.html": "<p></p>" };
+    const row = savedSkill("Review", "user", files);
+    const { prisma } = setup([row]);
+    const document = row.content;
+
+    expect(await rpc(prisma, "removeFile", { skillId, path: "notes.md" })).toEqual({
+      status: 200,
+      json: { ok: true },
+    });
+    expect(row.files).toEqual({ "templates/report.html": "<p></p>" });
+    expect(row.content).toBe(document);
+    expect((await rpc(prisma, "removeFile", { skillId, path: "notes.md" })).status).toBe(404);
+    expect(
+      (await rpc(prisma, "removeFile", { skillId, path: "templates/report.html" })).json,
+    ).toEqual({ ok: true });
+    expect(row.files).toEqual({});
+    expect((await rpc(prisma, "listFiles", { skillId })).json).toEqual([]);
+  });
+
+  it.each(["plugin", "builtin", "unknown"])(
+    "refuses to remove a file of a %s skill",
+    async (source) => {
+      const row = savedSkill("Billing", source, { "rates.md": "Rates" });
+      const { prisma } = setup([row]);
+      expect((await rpc(prisma, "removeFile", { skillId, path: "rates.md" })).status).toBe(400);
+      expect(row.files).toEqual({ "rates.md": "Rates" });
+    },
+  );
 });

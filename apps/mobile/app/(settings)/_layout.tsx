@@ -171,6 +171,8 @@ export default function SettingsLayout() {
       />
       {/* Titled by the screen once the skill loads. */}
       <Stack.Screen name="skill" options={glassHeaderOptions("")} />
+      {/* Titled by the screen with the file's name. */}
+      <Stack.Screen name="skill-file" options={glassHeaderOptions("")} />
       <Stack.Screen
         name="memory"
         options={{

@@ -28,7 +28,7 @@ vi.mock("../../lib/query/query", () => {
   };
   return { useSpaceQueries: () => queries };
 });
-vi.mock("../../pages/space/KnowledgeSection", () => ({
+vi.mock("../skills/agent-skills", () => ({
   AgentSkills: () => <p>Personal skill fixture</p>,
 }));
 vi.mock("../../lib/query/rpc", () => ({ rpc: {} }));

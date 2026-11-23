@@ -6,6 +6,8 @@ import { botId } from "../rpc/inputs.js";
 import {
   AccountItemSchema,
   AgentSkillCatalogEntrySchema,
+  AgentSkillFileEntrySchema,
+  AgentSkillFileRef,
   AgentSkillSchema,
   AvailabilityKindSchema,
   CreateAgentSkillInput,
@@ -67,6 +69,12 @@ export const skillsRpc = {
     create: oc.input(CreateAgentSkillInput).output(AgentSkillSchema),
     update: oc.input(UpdateAgentSkillInput).output(AgentSkillSchema),
     remove: oc.input(z.object({ skillId: Id })).output(z.object({ ok: z.literal(true) })),
+    /** The files beside a skill's SKILL.md, without their text. */
+    listFiles: oc.input(z.object({ skillId: Id })).output(z.array(AgentSkillFileEntrySchema)),
+    getFile: oc
+      .input(AgentSkillFileRef)
+      .output(z.object({ path: z.string(), content: z.string() })),
+    removeFile: oc.input(AgentSkillFileRef).output(z.object({ ok: z.literal(true) })),
   },
   availability: {
     set: oc

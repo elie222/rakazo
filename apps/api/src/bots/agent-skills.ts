@@ -1,12 +1,20 @@
 import { ORPCError } from "@orpc/server";
 import {
   BUILTIN_AGENT_SKILLS,
-  MAX_SKILL_FILES,
-  MAX_SKILL_FILES_BYTES,
+  readSkillFiles,
+  removeSkillFile,
   renameSkillInRoutines,
+  SkillFileError,
   signalRenamedRoutines,
+  writeSkillFile,
 } from "@rakazo/adapters";
-import type { Actor, AgentSkill, AgentSkillSource } from "@rakazo/contracts";
+import type {
+  Actor,
+  AgentSkill,
+  AgentSkillFileEntry,
+  AgentSkillFileRef,
+  AgentSkillSource,
+} from "@rakazo/contracts";
 import { UpdateAgentSkillInput } from "@rakazo/contracts";
 import type { SkillSource } from "@rakazo/core";
 import {
@@ -24,15 +32,9 @@ import {
   availableInSpace,
   IsolationError,
   isUniqueViolation,
-  JsonObject,
-  Prisma,
-  readJsonColumn,
   runAsSystemInTransaction,
   spaceAvailability,
-  TransactionConflictError,
-  withTransactionRetry,
 } from "@rakazo/db";
-import { z } from "zod";
 import { userAddedAvailability } from "../spaces/name-claims.js";
 
 type AgentSkillRow = {
@@ -139,22 +141,12 @@ export function resolveSkillContent(input: {
   };
 }
 
-// Preserve the original keys. A record parser can silently drop "__proto__".
-const StoredSkillFiles = z.custom<Record<string, string>>((value) => {
-  const parsed = JsonObject.safeParse(value);
-  return (
-    parsed.success &&
-    !Object.hasOwn(parsed.data, "__proto__") &&
-    Object.values(parsed.data).every((content) => typeof content === "string")
-  );
-});
-
 export function createAgentSkillsService(
   prisma: PrismaClient,
   events?: Pick<ThreadEvents, "publishSpaceChange">,
 ) {
-  async function owned(actor: Actor, skillId: string, db: Prisma.TransactionClient = prisma) {
-    const row = await db.agentSkill.findFirst({
+  async function owned(actor: Actor, skillId: string) {
+    const row = await prisma.agentSkill.findFirst({
       where: { id: skillId, ...availableInSpace(actor) },
       omit: { files: true },
       include: { availableIn: AVAILABILITY_SELECT },
@@ -172,68 +164,31 @@ export function createAgentSkillsService(
     });
   }
 
+  /** Turn a refused file change into the answer the API gives for it. */
+  function fileRefusal(error: unknown): never {
+    if (!(error instanceof SkillFileError)) throw error;
+    if (error.refusal === "missing") throw new IsolationError();
+    throw new ClientError("BAD_REQUEST", error.message);
+  }
+
   async function updateFile(
     actor: Actor,
     skillId: string,
     file: NonNullable<UpdateAgentSkillInput["file"]>,
   ): Promise<AgentSkill> {
-    const where = { id: skillId, ...availableInSpace(actor) };
-    return withTransactionRetry(() =>
-      prisma.$transaction(async (tx) => {
-        const existing = await tx.agentSkill.findFirst({
-          where,
-          include: { availableIn: AVAILABILITY_SELECT },
-        });
-        if (!existing) throw new IsolationError();
-        if (existing.source !== "user") {
-          throw new ClientError("BAD_REQUEST", "Only personal skills can have files updated.");
-        }
-        const current =
-          existing.files === null
-            ? {}
-            : readJsonColumn(
-                StoredSkillFiles,
-                existing.files,
-                { table: "agent_skills", column: "files", id: skillId },
-                "reject",
-              );
-        if (Object.hasOwn(current, file.path) && current[file.path] === file.content) {
-          return mapAgentSkill(existing);
-        }
+    await writeSkillFile(prisma, actor, skillId, file).catch(fileRefusal);
+    return mapAgentSkill(await owned(actor, skillId));
+  }
 
-        const files = { ...current, [file.path]: file.content };
-        const contents = Object.values(files);
-        if (contents.length > MAX_SKILL_FILES) {
-          throw new ClientError(
-            "BAD_REQUEST",
-            `A skill can have at most ${MAX_SKILL_FILES} files.`,
-          );
-        }
-        if (
-          contents.reduce((bytes, text) => bytes + Buffer.byteLength(text), 0) >
-          MAX_SKILL_FILES_BYTES
-        ) {
-          throw new ClientError(
-            "BAD_REQUEST",
-            `Skill files can use at most ${MAX_SKILL_FILES_BYTES} UTF-8 bytes in total.`,
-          );
-        }
-
-        // Compare the file map itself. Document edits can commit without invalidating this write.
-        const updated = await tx.agentSkill.updateMany({
-          where: {
-            ...where,
-            source: "user",
-            files: { equals: existing.files ?? Prisma.AnyNull },
-          },
-          data: { files },
-        });
-        if (updated.count !== 1) {
-          throw new TransactionConflictError("The skill changed while saving its file. Try again.");
-        }
-        return mapAgentSkill(await owned(actor, skillId, tx));
-      }),
-    );
+  /** A skill's files in this space; built-in skills have none. */
+  async function filesOf(actor: Actor, skillId: string): Promise<Record<string, string>> {
+    if (skillId.startsWith("builtin:")) {
+      if (!builtinCatalog().some((skill) => skill.id === skillId)) throw new IsolationError();
+      return {};
+    }
+    const files = await readSkillFiles(prisma, actor, skillId);
+    if (!files) throw new IsolationError();
+    return files;
   }
 
   return {
@@ -387,6 +342,28 @@ export function createAgentSkillsService(
       }
       await signalRenamedRoutines(events, renamedRoutineSpaces);
       return mapAgentSkill(await owned(actor, existing.id));
+    },
+
+    async listFiles(actor: Actor, skillId: string): Promise<AgentSkillFileEntry[]> {
+      const files = await filesOf(actor, skillId);
+      return Object.keys(files)
+        .sort()
+        .map((path) => ({ path, bytes: Buffer.byteLength(files[path] ?? "") }));
+    },
+
+    async getFile(
+      actor: Actor,
+      input: AgentSkillFileRef,
+    ): Promise<{ path: string; content: string }> {
+      const files = await filesOf(actor, input.skillId);
+      // Only an exact stored path matches, so no path can reach outside the skill.
+      if (!Object.hasOwn(files, input.path)) throw new IsolationError();
+      return { path: input.path, content: files[input.path] ?? "" };
+    },
+
+    async removeFile(actor: Actor, input: AgentSkillFileRef): Promise<{ ok: true }> {
+      await removeSkillFile(prisma, actor, input.skillId, input.path).catch(fileRefusal);
+      return { ok: true };
     },
 
     async remove(actor: Actor, skillId: string): Promise<{ ok: true }> {
