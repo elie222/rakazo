@@ -65,11 +65,13 @@ describe("media", () => {
         <Image src="image:missing" alt="Missing" />
         <Image src="image:constructor" alt="Prototype" />
         <Gallery photos={[{ src: "image:hotel", alt: "Lobby" }, { src: "image:missing" }]} />
+        <ProductCard title="Quay Hotel" photos={["image:hotel", "image:missing"]} />
       </>,
     );
     expect(all("img").map((img) => [img.getAttribute("src"), img.getAttribute("alt")])).toEqual([
       [PNG, "Hotel"],
       [PNG, "Lobby"],
+      [PNG, "Quay Hotel"],
     ]);
   });
 

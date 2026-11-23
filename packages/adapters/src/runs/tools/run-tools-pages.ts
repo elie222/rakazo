@@ -25,6 +25,7 @@ import type { ToolRequest } from "./run-tool-request.js";
 import type { PageImageSources } from "./run-tools-page-images.js";
 import {
   keptPageImageNames,
+  pageImageSourceLabels,
   parsePageImageSources,
   preparePageImages,
   storePageImages,
@@ -205,7 +206,9 @@ export async function holdSharedPageSave(
       ? [`Title: ${redactSecrets(parsedTitle.data, ctx.secrets).slice(0, PAGE_TITLE_MAX_LENGTH)}`]
       : []),
     ...changedLines(current, proposed.source),
-    ...Object.entries(sources).map(([name, source]) => `+ Image ${name}: ${source}`),
+    ...Object.entries(await pageImageSourceLabels(ctx, sources)).map(
+      ([name, source]) => `+ Image ${name}: ${source}`,
+    ),
   ];
   // Measured as the card shows it, redacted, so nothing an approval covers is cut off.
   if (redactSecrets(lines.join("\n"), ctx.secrets).length > MAX_APPROVAL_DETAIL_LENGTH)

@@ -49,12 +49,40 @@ async function addressGiven(ctx: RunContext, url: string, site: string): Promise
   return fetched !== null;
 }
 
+function reachableFiles(ctx: RunContext, ids: string[]) {
+  const { run, bot, thread } = ctx;
+  return {
+    id: { in: ids },
+    spaceId: run.spaceId,
+    userId: run.userId,
+    OR: thread.groupId ? [{ botId: bot.id }, { groupId: thread.groupId }] : [{ botId: bot.id }],
+  };
+}
+
+export async function pageImageSourceLabels(
+  ctx: RunContext,
+  sources: PageImageSources,
+): Promise<PageImageSources> {
+  if (Object.keys(sources).length === 0) return sources;
+  const files = await ctx.deps.prisma.artifact.findMany({
+    where: reachableFiles(ctx, Object.values(sources)),
+    select: { id: true, name: true },
+  });
+  const names = new Map(files.map((file) => [file.id, file.name]));
+  return Object.fromEntries(
+    Object.entries(sources).map(([name, source]) => [
+      name,
+      names.has(source) ? `chat file ${names.get(source)}` : source,
+    ]),
+  );
+}
+
 async function pictureBytes(
   ctx: RunContext,
   call: ToolCall,
   source: string,
 ): Promise<Uint8Array | string> {
-  const { deps, run, bot, thread, context } = ctx;
+  const { deps, bot, context } = ctx;
   if (/^https?:\/\//i.test(source)) {
     const url = normalizedHttpUrl(source);
     const site = url ? urlSite(url) : undefined;
@@ -64,12 +92,7 @@ async function pictureBytes(
     return fetchPageImage(url);
   }
   const artifact = await deps.prisma.artifact.findFirst({
-    where: {
-      id: source,
-      spaceId: run.spaceId,
-      userId: run.userId,
-      OR: thread.groupId ? [{ botId: bot.id }, { groupId: thread.groupId }] : [{ botId: bot.id }],
-    },
+    where: reachableFiles(ctx, [source]),
     select: { storageKey: true },
   });
   if (artifact) {
