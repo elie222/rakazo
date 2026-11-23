@@ -926,6 +926,8 @@ function oauthFetch(
   publicError: (error: unknown, message: string) => Error;
   /** The last answer received was a refusal of the redirect address (RFC 7591). */
   refusedRedirect: () => boolean;
+  /** The last request, when its answer was a failure. */
+  failedRequest: () => FailedOAuthRequest | undefined;
 } {
   const url = new URL(endpoint);
   const localHttp = url.protocol === "http:" && isLocalhostOrLoopbackIp(url.hostname);
@@ -960,12 +962,20 @@ function oauthFetch(
   let lastAnswerFailed = false;
   // The most recent answer's own rejection, so an earlier one cannot explain a later failure.
   let lastRejection: OAuthRejection | undefined;
+  let lastFailedRequest: FailedOAuthRequest | undefined;
   const recordingFetch: typeof fetch = async (input, init) => {
+    lastFailedRequest = undefined;
     try {
       const response = await fallbackFetch(input, init);
       lastAnswerFailed = !response.ok;
       lastRejection = undefined;
       if (!response.ok) {
+        const request = input instanceof Request ? input : undefined;
+        lastFailedRequest = {
+          href: request ? request.url : new URL(String(input)).href,
+          method: (init?.method ?? request?.method ?? "GET").toUpperCase(),
+          status: response.status,
+        };
         const next = await readOAuthRejection(response);
         if (next) rejection = next;
         lastRejection = next;
@@ -982,6 +992,7 @@ function oauthFetch(
     fetch: recordingFetch,
     close: () => safeFetch.close(),
     refusedRedirect: () => lastRejection?.code === "invalid_redirect_uri",
+    failedRequest: () => lastFailedRequest,
     publicError: (error, message) => {
       if (error instanceof McpOAuthStoreError) return error;
       const secrets = oauthMaterialSecrets(material);
@@ -1096,6 +1107,20 @@ function withoutRequestCredentials(material: OAuthMaterial): OAuthMaterial {
 }
 
 type OAuthRejection = { status: number; code: string; description: string };
+
+type FailedOAuthRequest = { href: string; method: string; status: number };
+
+/** Whether the authorization server turned away our client registration as not allowed
+ * (401 or 403 at its registration endpoint): it accepts only clients registered with it
+ * out of band, so the user must enter one. */
+function refusedRegistration(
+  failed: FailedOAuthRequest | undefined,
+  discovery: OAuthDiscoveryState | undefined,
+): boolean {
+  if (failed?.method !== "POST" || (failed.status !== 401 && failed.status !== 403)) return false;
+  const endpoint = discovery?.authorizationServerMetadata?.registration_endpoint;
+  return endpoint !== undefined && new URL(endpoint).href === failed.href;
+}
 
 const OAUTH_ERROR_BODY_MAX_CHARS = 8_000;
 // A JavaScript character is at most 3 UTF-8 bytes, so a longer body cannot pass the character cap.
@@ -1374,7 +1399,12 @@ export class McpOAuthBroker {
       }
     } catch (error) {
       if (error instanceof McpOAuthServerMismatchError) throw error;
-      if (needsMcpOAuthClient(error)) throw new McpOAuthClientRequiredError(server.revision);
+      if (
+        needsMcpOAuthClient(error) ||
+        (!loaded.material.oauthClient &&
+          refusedRegistration(networkFetch.failedRequest(), provider.discoveryState()))
+      )
+        throw new McpOAuthClientRequiredError(server.revision);
       // A client entered by hand was registered with its own redirect; only a registration
       // this attempt made can be made again with another one.
       retryOnLoopback =
