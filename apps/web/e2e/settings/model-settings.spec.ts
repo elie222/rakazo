@@ -581,7 +581,7 @@ test("image and video models are chosen from the connections that make them", as
           {
             id: "media-key",
             provider: "openrouter",
-            label: "Work",
+            label: "OpenRouter",
             hasKey: true,
             isDefault: false,
           },
@@ -594,19 +594,19 @@ test("image and video models are chosen from the connections that make them", as
     modelId,
     label,
     provider: "openrouter",
-    connectionLabel: "Work",
+    connectionLabel: "OpenRouter",
   });
   let view: MediaModelsView = {
     image: {
       options: [
-        option("example/draw", "Example: Draw"),
-        option("example/sketch", "Example: Sketch"),
+        option("openai/gpt-image-2", "OpenAI: GPT Image 2"),
+        option("google/gemini-2.5-flash-image", "Google: Gemini 2.5 Flash Image"),
       ],
-      selected: { credentialId: "media-key", modelId: "example/draw" },
+      selected: { credentialId: "media-key", modelId: "openai/gpt-image-2" },
     },
     video: {
-      options: [option("example/clip", "Example: Clip")],
-      selected: { credentialId: "media-key", modelId: "example/clip" },
+      options: [option("openai/sora-2", "OpenAI: Sora 2")],
+      selected: { credentialId: "media-key", modelId: "openai/sora-2" },
     },
   };
   await page.route("**/rpc/models/media", (route) => route.fulfill({ json: { json: view } }));
@@ -626,14 +626,17 @@ test("image and video models are chosen from the connections that make them", as
   await page.reload();
   await openUserSettings(page, "models");
   const image = page.getByRole("button", { name: "Change Image model" });
-  await expect(image).toHaveText("Example: DrawWork");
+  await expect(image).toHaveText("OpenAI: GPT Image 2OpenRouter");
   await expect(page.getByRole("button", { name: "Change Video model" })).toHaveText(
-    "Example: ClipWork",
+    "OpenAI: Sora 2OpenRouter",
   );
   await image.click();
-  await page.getByRole("option", { name: "Example: Sketch" }).click();
-  await expect(image).toHaveText("Example: SketchWork");
-  expect(view.image.selected).toEqual({ credentialId: "media-key", modelId: "example/sketch" });
+  await page.getByRole("option", { name: "Google: Gemini 2.5 Flash Image" }).click();
+  await expect(image).toHaveText("Google: Gemini 2.5 Flash ImageOpenRouter");
+  expect(view.image.selected).toEqual({
+    credentialId: "media-key",
+    modelId: "google/gemini-2.5-flash-image",
+  });
   await page.getByTestId("model-role-video").scrollIntoViewIfNeeded();
   await captureScreenshot(page, testInfo, "model-settings-media-models");
 });
