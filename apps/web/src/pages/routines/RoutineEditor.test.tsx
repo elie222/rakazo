@@ -223,3 +223,8 @@ it("offers an end date only on a repeating routine and removes it with its butto
   await render({ ...routine, crons: [ONCE_ROUTINE_CRON] } as Routine);
   expect(host.querySelector("input[type=date]")).toBeNull();
 });
+
+it("offers no end date on a routine a webhook starts", async () => {
+  await render({ ...routine, webhookEnabled: true } as Routine);
+  expect(host.querySelector("input[type=date]")).toBeNull();
+});

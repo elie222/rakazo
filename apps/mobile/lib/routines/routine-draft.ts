@@ -4,10 +4,10 @@ import {
   cronFromPreset,
   draftFromRoutine,
   isOneShotRoutineCrons,
+  routineCanEnd,
   routineComputerUpdate,
   routineDraftEndsAt,
   routineEndUpdate,
-  routineRepeats,
 } from "@rakazo/core";
 import type { RoutineWebTrigger } from "./routine";
 import { routineTriggerNames } from "./routine";
@@ -31,6 +31,16 @@ export function routineWithDraftTriggers(routine: Routine, draft: MobileRoutineD
     ...(draft.messageProvider === null ? { messageProvider: null } : {}),
     ...(draft.watch === null ? { watch: null } : {}),
   };
+}
+
+export function routineDraftEventTriggered(
+  draft: MobileRoutineDraft,
+  source: Routine | null,
+): boolean {
+  const kept = source ? routineWithDraftTriggers(source, draft) : null;
+  return Boolean(
+    draft.emailSenders || kept?.webhookEnabled || kept?.githubEnabled || kept?.messageProvider,
+  );
 }
 
 /** A one-shot is set up from chat with its run time; its schedule can't change here. */
@@ -65,9 +75,10 @@ function routineChanges(draft: MobileRoutineDraft, routine: Routine) {
     ...routineEndUpdate(
       routine,
       draft.endsOn,
-      routineRepeats(
+      routineCanEnd(
         routineScheduleLocked(routine) ? routine.crons : crons,
         draft.watch !== null && routine.watch !== null,
+        routineDraftEventTriggered(draft, routine),
       ),
     ),
     ...routineComputerUpdate(routine, {
@@ -127,7 +138,7 @@ export function routineSaveRequest(
     const zone = draft.timezone ?? timezone;
     const endsAt = routineDraftEndsAt(
       draft.endsOn,
-      routineRepeats(crons, Boolean(kept?.watch)),
+      routineCanEnd(crons, Boolean(kept?.watch), routineDraftEventTriggered(draft, copyOf)),
       zone,
     );
     return {

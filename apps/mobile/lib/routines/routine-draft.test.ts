@@ -29,6 +29,14 @@ const routine: Routine = {
 };
 
 describe("routineSaveRequest", () => {
+  it("clears the end when an email trigger is added, which takes no end", () => {
+    const ending = { ...routine, endsAt: "2031-11-30T17:00:00.000Z" };
+    const draft = draftFromRoutine(ending);
+    expect(routineSaveRequest({ ...draft, emailSenders: "owner" }, ending, "bot-1", "UTC")).toEqual(
+      { update: { routineId: ending.id, emailSenders: "owner", endsAt: null } },
+    );
+  });
+
   it("sends an end only when its day changes, and on a new routine as that day ends", () => {
     const ending = { ...routine, endsAt: "2031-11-30T17:00:00.000Z" };
     const draft = draftFromRoutine(ending);

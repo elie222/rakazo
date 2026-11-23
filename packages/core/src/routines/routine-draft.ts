@@ -55,6 +55,14 @@ export function draftFromRoutine(
   };
 }
 
+export function routineCanEnd(
+  crons: string[],
+  watching: boolean,
+  eventTriggered: boolean,
+): boolean {
+  return !eventTriggered && routineRepeats(crons, watching);
+}
+
 export function routineRepeats(crons: string[], watching: boolean): boolean {
   return watching || (crons.length > 0 && !isOneShotRoutineCrons(crons));
 }

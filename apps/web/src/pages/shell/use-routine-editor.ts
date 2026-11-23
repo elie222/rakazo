@@ -5,11 +5,11 @@ import { isIdentityConfirmationRequired } from "@rakazo/contracts";
 import {
   cronFromPreset,
   localTimezone,
+  routineCanEnd,
   routineComputerUpdate,
   routineCopy,
   routineDraftEndsAt,
   routineEndUpdate,
-  routineRepeats,
 } from "@rakazo/core";
 import type { ComponentProps, Dispatch, RefObject, SetStateAction } from "react";
 import { useCallback, useMemo, useRef, useState } from "react";
@@ -252,7 +252,11 @@ export function useRoutineEditor({
               });
             }
             const crons = routineDraft.schedules.map(cronFromPreset);
-            const repeats = routineRepeats(crons, watch !== null);
+            const repeats = routineCanEnd(
+              crons,
+              watch !== null,
+              routineDraftEventTriggered(routineDraft),
+            );
             const model = routineDraft.modelKey ? parseModelOptionKey(routineDraft.modelKey) : null;
             const routineModel = {
               modelProvider: model?.provider ?? null,

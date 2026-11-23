@@ -10,8 +10,8 @@ import {
   emptyRoutineDraft,
   formatRoutineEnd,
   isOneShotRoutineCrons,
+  routineCanEnd,
   routineCopy,
-  routineRepeats,
   wallClock,
 } from "@rakazo/core";
 import { Stack, useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
@@ -43,6 +43,7 @@ import { deviceTimeZone, routineTriggerRows, routineWebTriggers } from "../lib/r
 import type { MobileRoutineDraft } from "../lib/routines/routine-draft";
 import {
   routineDraftChanged,
+  routineDraftEventTriggered,
   routineSaveRequest,
   routineScheduleLocked,
   routineWithDraftTriggers,
@@ -364,7 +365,9 @@ function RoutineEditor({
   const kept = source ? routineWithDraftTriggers(source, draft) : null;
   const webTriggers = kept ? routineWebTriggers(kept) : [];
   const draftCrons = draft.schedules.map(cronFromPreset);
-  const repeats = !locked && routineRepeats(draftCrons, Boolean(kept?.watch));
+  const repeats =
+    !locked &&
+    routineCanEnd(draftCrons, Boolean(kept?.watch), routineDraftEventTriggered(draft, source));
   const zone = draft.timezone ?? deviceTimeZone() ?? "UTC";
 
   // On Android, back leaves the form for the routine instead of leaving the routine.

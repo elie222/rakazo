@@ -1,7 +1,7 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { Routine } from "@rakazo/contracts";
 import { ROUTINE_NAME_MAX_LENGTH } from "@rakazo/contracts";
-import { cronFromPreset, isOneShotRoutineCrons, routineRepeats, wallClock } from "@rakazo/core";
+import { cronFromPreset, isOneShotRoutineCrons, routineCanEnd, wallClock } from "@rakazo/core";
 import {
   Button,
   Field,
@@ -21,7 +21,11 @@ import { useIdentityConfirmation } from "../../components/account/ConfirmIdentit
 import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { useSpaceQueries } from "../../lib/query/query";
 import type { RoutineDraftState } from "../../lib/routines/routine-draft";
-import { routineDraftDirty, routineNeedsOneShotArm } from "../../lib/routines/routine-draft";
+import {
+  routineDraftDirty,
+  routineDraftEventTriggered,
+  routineNeedsOneShotArm,
+} from "../../lib/routines/routine-draft";
 import { RoutineRunHistory } from "./RoutineRunHistory";
 import { RoutineSchedule } from "./RoutineSchedule";
 import { RoutineOwnerNote } from "./routine-editor/access-note";
@@ -122,7 +126,11 @@ export function RoutineEditor({
   const readOnly = editing?.editable === false;
   const draftCrons = draft.schedules.map(cronFromPreset);
   const needsOneShotArm = editing != null && routineNeedsOneShotArm(editing, draftCrons);
-  const repeats = routineRepeats(draftCrons, draft.watch !== null);
+  const repeats = routineCanEnd(
+    draftCrons,
+    draft.watch !== null,
+    routineDraftEventTriggered(draft),
+  );
 
   return (
     <div>
