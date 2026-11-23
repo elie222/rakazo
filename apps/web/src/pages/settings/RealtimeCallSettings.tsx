@@ -107,10 +107,10 @@ export function RealtimeCallSettingsSection() {
 
   return (
     <section className="mt-8 border-t pt-6" aria-labelledby={ids.model}>
-      <h3 className="text-sm font-medium">
+      <h3 className="text-body font-medium">
         <Trans>Realtime calls</Trans>
       </h3>
-      <p className="mt-1 text-sm text-muted-foreground">
+      <p className="mt-1 text-body text-muted-foreground">
         <Trans>
           Realtime calls share audio, recent chat messages and your bot's memory with the voice
           provider. The bot can look up older messages during the call.
@@ -281,7 +281,7 @@ export function RealtimeCallSettingsSection() {
           {can("vadThreshold") || can("silenceMs") || can("maxOutputTokens") ? (
             <Disclosure
               className="mt-6"
-              summary={<span className="text-sm font-medium">{t`Advanced`}</span>}
+              summary={<span className="text-body font-medium">{t`Advanced`}</span>}
               contentClassName="mt-4"
             >
               {!settings.patience && can("vadThreshold") ? (
@@ -358,7 +358,7 @@ export function RealtimeCallSettingsSection() {
         </>
       ) : null}
       {error ? (
-        <p role="alert" className="mt-3 text-sm text-destructive">
+        <p role="alert" className="mt-3 text-body text-destructive">
           {error}
         </p>
       ) : null}
