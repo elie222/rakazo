@@ -17,6 +17,13 @@ CREATE TABLE "memory_dreams" (
     CONSTRAINT "memory_dreams_pkey" PRIMARY KEY ("id")
 );
 
+-- Same policies as memory_documents (20261021140000_row_level_security).
+ALTER TABLE "memory_dreams" ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "memory_dreams_tenant" ON "memory_dreams"
+    USING ("spaceId" = NULLIF(current_setting('app.space_id', true), ''));
+CREATE POLICY "memory_dreams_system" ON "memory_dreams"
+    USING ((SELECT app_rls_bypass()));
+
 -- CreateIndex
 CREATE UNIQUE INDEX "memory_dreams_runId_key" ON "memory_dreams"("runId");
 

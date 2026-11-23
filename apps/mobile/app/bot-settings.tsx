@@ -461,6 +461,18 @@ function BotSettings() {
     closesScreen: true,
   });
 
+  const trimmedWorkspacePath = workspacePath.trim();
+  const normalizedWorkspacePath = trimmedWorkspacePath
+    ? normalizeBotWorkspacePath(trimmedWorkspacePath)
+    : null;
+  // An invalid folder normalizes to null, which looks like the saved default. Count any nonempty
+  // input that cannot be normalized as dirty, so Save stays reachable and its validation can say
+  // what is wrong.
+  const workspacePathChanged =
+    trimmedWorkspacePath !== "" && normalizedWorkspacePath === null
+      ? true
+      : normalizedWorkspacePath !== (bot?.workspacePath ?? null);
+
   const dirty =
     bot &&
     (description.trim() !== (bot.description ?? "") ||
@@ -468,8 +480,7 @@ function BotSettings() {
       color !== bot.color ||
       avatarSet !== resolveBotAvatarSet(bot.avatarSet) ||
       computerMode !== bot.computerMode ||
-      (workspacePath.trim() ? normalizeBotWorkspacePath(workspacePath.trim()) : null) !==
-        (bot.workspacePath ?? null) ||
+      workspacePathChanged ||
       (approvalMode === "space" ? null : approvalMode) !== (bot.approvalMode ?? null) ||
       useOwnMemory !== bot.useOwnMemory ||
       useSharedMemory !== bot.useSharedMemory ||

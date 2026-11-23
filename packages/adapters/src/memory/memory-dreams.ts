@@ -118,12 +118,19 @@ async function recentUserMessages(
     createdAt: row.createdAt,
     text: blocksToAgentHistoryText(storedMessageBlocks(row)),
   }));
+  // Oldest first, so the cursor (the last kept message's seq) never passes a message the dream
+  // did not read. A single message over the budget is truncated rather than dropped, or the
+  // oldest pending messages would never be consolidated.
   let used = 0;
   const kept: typeof messages = [];
-  for (const message of [...messages].reverse()) {
-    used += message.text.length;
-    if (used > MEMORY_DREAM_MESSAGE_BYTES) break;
-    kept.unshift(message);
+  for (const message of messages) {
+    const remaining = MEMORY_DREAM_MESSAGE_BYTES - used;
+    if (remaining <= 0) break;
+    const characters = [...message.text];
+    const keptCharacters = characters.slice(0, remaining);
+    const text = keptCharacters.join("");
+    kept.push(keptCharacters.length === characters.length ? message : { ...message, text });
+    used += keptCharacters.length;
   }
   return kept;
 }
@@ -746,23 +753,31 @@ export async function undoMemoryDream(
   });
   if (!revisions.length)
     throw new ClientError("CONFLICT", "This dream changed nothing, so there is nothing to undo.");
+  // A dream can write one document more than once. Undo checks the document's live revision
+  // against the dream's last write, and restores the content from before its first.
+  const writes = new Map<string, { first: number; last: number }>();
+  for (const revision of revisions) {
+    const write = writes.get(revision.documentId);
+    if (!write)
+      writes.set(revision.documentId, { first: revision.revision, last: revision.revision });
+    else {
+      write.first = Math.min(write.first, revision.revision);
+      write.last = Math.max(write.last, revision.revision);
+    }
+  }
   return withTransactionRetry(() =>
     prisma.$transaction(
       async (tx) => {
-        for (const revision of revisions) {
+        for (const [documentId, write] of writes) {
           const document = await tx.memoryDocument.findUnique({
-            where: { id: revision.documentId },
+            where: { id: documentId },
             select: { id: true, revision: true, spaceId: true },
           });
           // A document written since the dream cannot go back without losing that write.
-          if (
-            !document ||
-            document.spaceId !== input.spaceId ||
-            document.revision !== revision.revision
-          )
+          if (!document || document.spaceId !== input.spaceId || document.revision !== write.last)
             throw new ClientError("CONFLICT", "Memory changed since; nothing undone.");
           const previous = await tx.memoryRevision.findFirst({
-            where: { documentId: document.id, revision: { lt: revision.revision } },
+            where: { documentId: document.id, revision: { lt: write.first } },
             orderBy: { revision: "desc" },
             select: { content: true },
           });

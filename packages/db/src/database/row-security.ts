@@ -115,6 +115,7 @@ export const ROW_SECURITY_MODELS: ReadonlySet<string> = new Set([
   "PrunedMessageNonce",
   "Event",
   "MemoryDocument",
+  "MemoryDream",
   "MeetingSession",
   "MeetingAllowanceUse",
   "MeetingCalendarAuthorization",

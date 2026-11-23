@@ -239,6 +239,7 @@ function sourceRecords(): AccountExportRecord[] {
       documentId: "src-memory-bot",
       revision: 1,
       content: "older memory",
+      sourceKind: "user",
       sourceThreadId: "src-thread-bot",
       createdAt: at,
     },

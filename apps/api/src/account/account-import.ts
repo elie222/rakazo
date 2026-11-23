@@ -777,8 +777,33 @@ class AccountImporter implements ArchiveSink {
             documentId,
             revision: record.revision,
             content: record.content,
-            sourceKind: "import",
+            // Archives from older servers carry no provenance; those revisions were imported too.
+            sourceKind: record.sourceKind ?? "import",
             sourceThreadId: space.optional(record.sourceThreadId),
+            createdAt: new Date(record.createdAt),
+          },
+        });
+        return;
+      }
+      case "memory_dream": {
+        const botId = space.mapped(record.botId);
+        await prisma.memoryDream.create({
+          data: {
+            id: newId(),
+            spaceId,
+            botId,
+            threadId: space.optional(record.threadId),
+            status: record.status,
+            reason: record.reason,
+            summary: record.summary,
+            changedPaths: record.changedPaths,
+            added: record.added,
+            archived: record.archived,
+            sourceSeq: record.sourceSeq,
+            errorKind: record.errorKind,
+            undoneAt: record.undoneAt === null ? null : new Date(record.undoneAt),
+            startedAt: record.startedAt === null ? null : new Date(record.startedAt),
+            finishedAt: record.finishedAt === null ? null : new Date(record.finishedAt),
             createdAt: new Date(record.createdAt),
           },
         });

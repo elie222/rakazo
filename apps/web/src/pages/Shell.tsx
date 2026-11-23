@@ -1,13 +1,12 @@
 import { Trans } from "@lingui/react/macro";
 import type { Bot } from "@rakazo/contracts";
 import { DEFAULT_NEW_BOT_AVATAR_SET, hasLab } from "@rakazo/contracts";
-import { chatWoke } from "@rakazo/core";
 import { bestEffort } from "@rakazo/logging/best-effort";
 import { Button } from "@rakazo/ui-web";
 import { useIsMobile } from "@rakazo/ui-web/hooks/use-mobile";
 import { useQuery } from "@tanstack/react-query";
 import { Plus } from "lucide-react";
-import { Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { Suspense, useCallback, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useParams } from "react-router-dom";
 import { CallCard } from "../components/call/CallCard";
@@ -15,7 +14,6 @@ import { IncomingCall } from "../components/call/IncomingCall";
 import { PageLoading } from "../components/PageLoading";
 import { PageViewHost } from "../components/pages/PageViewHost";
 import { authClient } from "../lib/auth/auth";
-import { peekBootstrapSeed } from "../lib/bootstrap";
 import { toolActivityPreference } from "../lib/chat/tool-activity-preference";
 import { composerEnterToSendPreference } from "../lib/composer/composer-enter-to-send-pref";
 import { PagesProvider, usePagesForChat } from "../lib/pages/pages";
@@ -23,13 +21,7 @@ import { desktopBridge } from "../lib/platform/desktop";
 import { usePreloadRecoveryState } from "../lib/platform/preload-recovery";
 import { botsSidebarDensityPreference } from "../lib/preferences/bots-sidebar-density-pref";
 import { chatPreferencesQuery, useChatPreferences } from "../lib/preferences/chat-preferences";
-import {
-  lastChatKey,
-  lastChatOf,
-  queryClient,
-  spaceQueries,
-  spaceSeedKey,
-} from "../lib/query/query";
+import { queryClient, spaceQueries } from "../lib/query/query";
 import type { RpcClient } from "../lib/query/rpc";
 import { createSpaceRpc, selectedSpaceId } from "../lib/query/rpc";
 import { SpaceRpcProvider } from "../lib/query/space-rpc";
@@ -79,6 +71,7 @@ import { useSpaceEpoch } from "./shell/space-switch";
 import { useActiveChat } from "./shell/use-active-chat";
 import { useBotCall } from "./shell/use-bot-call";
 import { useBrowserNotifications } from "./shell/use-browser-notifications";
+import { useOpenChatRead } from "./shell/use-open-chat-read";
 import { usePaletteActions } from "./shell/use-palette-actions";
 import { useReportedUiLocale } from "./shell/use-reported-ui-locale";
 import { useRightPanel, useRightPanelRestore } from "./shell/use-right-panel";
@@ -90,6 +83,7 @@ import { useShellSettings } from "./shell/use-shell-settings";
 import { useShellShortcutActions } from "./shell/use-shell-shortcut-actions";
 import { useShellStatus } from "./shell/use-shell-status";
 import { useSpaceActions } from "./shell/use-space-actions";
+import { useSpaceShellSeed } from "./shell/use-space-shell-seed";
 import { useOpenSpaceChat } from "./shell/use-space-switch";
 
 export function ShellPage() {
@@ -106,15 +100,7 @@ function SpaceShell() {
   const userId = session.data?.user.id;
   // Held from the first render, so Cmd/Ctrl+N works before the sidebar has data.
   const [createMenuOpen, setCreateMenuOpen] = useState(false);
-  // A revisited space, or the shell reopened from another page, starts from what it showed
-  // last time while its fresh bootstrap loads.
-  const [{ seed, startChat }] = useState(() => {
-    const primed = peekBootstrapSeed(botId);
-    if (primed) return { seed: primed, startChat: undefined };
-    const cached = queryClient.getQueryData(spaceSeedKey(userId ?? null, shellSpaceId));
-    const lastChat = queryClient.getQueryData(lastChatKey(userId ?? null, shellSpaceId));
-    return { seed: cached, startChat: botId || groupId ? undefined : lastChatOf(cached, lastChat) };
-  });
+  const { seed, startChat } = useSpaceShellSeed(botId, groupId, userId ?? null, shellSpaceId);
   const {
     navigate,
     navigationRevision,
@@ -266,17 +252,14 @@ function SpaceShell() {
     openVoiceSettings: () => openSettings("voice"),
   });
   const read = useChatRead({ rpc, active, groupId, activeGroup, setBots, setGroups });
-  // A chat that wakes while it is open is already seen: read it, which ends the snooze.
-  const openChatWoke = active
-    ? chatWoke(active, snoozeNow)
-    : activeGroup
-      ? chatWoke(activeGroup, snoozeNow)
-      : false;
-  useEffect(() => {
-    if (!openChatWoke) return;
-    if (groupId) read.markGroupReadOnReply(groupId);
-    else if (active) read.markBotReadIfVisible(active.id);
-  }, [openChatWoke]);
+  useOpenChatRead({
+    active,
+    activeGroup,
+    groupId,
+    now: snoozeNow,
+    markGroupReadOnReply: read.markGroupReadOnReply,
+    markBotReadIfVisible: read.markBotReadIfVisible,
+  });
   const {
     refreshThread,
     refreshGroupThread,

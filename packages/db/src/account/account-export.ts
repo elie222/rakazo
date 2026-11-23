@@ -413,6 +413,7 @@ async function* spaceRecords(
             documentId: document.id,
             revision: row.revision,
             content: row.content,
+            sourceKind: row.sourceKind,
             sourceThreadId: ownThread(row.sourceThreadId),
             createdAt: iso(row.createdAt),
           };
@@ -422,6 +423,35 @@ async function* spaceRecords(
     }
     if (documents.length < PAGE) break;
     cursor = documents.at(-1)!.id;
+  }
+
+  for (let cursor = ""; ; ) {
+    const dreams = await prisma.memoryDream.findMany({
+      where: { ...tenant, botId: { in: [...botIds] }, id: { gt: cursor } },
+      orderBy: { id: "asc" },
+      take: PAGE,
+    });
+    for (const dream of dreams)
+      yield {
+        type: "memory_dream",
+        id: dream.id,
+        botId: dream.botId,
+        threadId: ownThread(dream.threadId),
+        status: dream.status,
+        reason: dream.reason,
+        summary: dream.summary,
+        changedPaths: dream.changedPaths,
+        added: dream.added,
+        archived: dream.archived,
+        sourceSeq: dream.sourceSeq,
+        errorKind: dream.errorKind,
+        undoneAt: isoOrNull(dream.undoneAt),
+        startedAt: isoOrNull(dream.startedAt),
+        finishedAt: isoOrNull(dream.finishedAt),
+        createdAt: iso(dream.createdAt),
+      };
+    if (dreams.length < PAGE) break;
+    cursor = dreams.at(-1)!.id;
   }
 
   const routines = await prisma.routine.findMany({

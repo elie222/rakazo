@@ -226,6 +226,18 @@ describe("reconcileMemoryDreams", () => {
     );
   });
 
+  it("advances past an oversized message instead of dropping it", async () => {
+    const jobs = jobPublisher();
+    const { prisma, tx } = dreamPrisma({
+      messages: [userMessage(5, "x".repeat(40_000)), userMessage(6, "new fact")],
+    });
+    await reconcileMemoryDreams({ prisma, jobs, now: () => NOW });
+    // The cursor is the message the dream actually read; trimming here would strand it forever.
+    expect(tx.memoryDream.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ sourceSeq: 5 }) }),
+    );
+  });
+
   it("stays quiet when another dream started inside the cooldown", async () => {
     const jobs = jobPublisher();
     const { prisma, tx } = dreamPrisma({
@@ -587,6 +599,36 @@ describe("undoMemoryDream", () => {
     await undoMemoryDream(prisma, { spaceId: "space-1", dreamId: "dream-1" });
     expect(tx.memoryDocument.delete).toHaveBeenCalledWith({ where: { id: "doc-1" } });
     expect(tx.memoryRevision.create).not.toHaveBeenCalled();
+  });
+
+  it("undoes a document the dream wrote more than once", async () => {
+    const fixture = dreamPrisma();
+    fixture.raw.memoryDream.findFirst
+      .mockResolvedValueOnce(dreamRow)
+      .mockResolvedValueOnce({ id: "dream-1" });
+    fixture.raw.memoryRevision.findMany.mockResolvedValueOnce([
+      { documentId: "doc-1", revision: 2 },
+      { documentId: "doc-1", revision: 3 },
+    ]);
+    const { prisma, tx } = fixture;
+    tx.memoryDocument.findUnique.mockResolvedValueOnce({
+      id: "doc-1",
+      revision: 3,
+      spaceId: "space-1",
+    });
+    tx.memoryRevision.findFirst.mockResolvedValueOnce({ content: "before" });
+    tx.memoryDocument.update.mockResolvedValueOnce({ revision: 4 });
+    tx.memoryDream.update.mockResolvedValueOnce({ ...dreamRow, undoneAt: NOW });
+
+    await undoMemoryDream(prisma, { spaceId: "space-1", dreamId: "dream-1" });
+    // The live revision is the dream's last write; the content comes from before its first.
+    expect(tx.memoryRevision.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { documentId: "doc-1", revision: { lt: 2 } } }),
+    );
+    expect(tx.memoryDocument.update).toHaveBeenCalledWith({
+      where: { id: "doc-1" },
+      data: { content: "before", revision: 4 },
+    });
   });
 
   it("refuses once the memory changed since the dream", async () => {
