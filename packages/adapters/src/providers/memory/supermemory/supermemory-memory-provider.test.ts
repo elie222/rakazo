@@ -210,6 +210,143 @@ describe("SupermemoryMemoryProvider", () => {
   });
 });
 
+const WORKSPACE = "rakazo:workspace:workspace-1";
+const OWN = "rakazo:bot-1";
+
+/** An in-memory server: each namespace holds memories by id, and forgets only its own ids. */
+function fakeSupermemory(namespaces: Record<string, Record<string, string>>) {
+  const forgotten = new Set<string>();
+  const forgets: string[] = [];
+  const json = (body: unknown, status = 200) =>
+    new Response(JSON.stringify(body), {
+      status,
+      headers: { "content-type": "application/json" },
+    });
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (url: string, init: RequestInit) => {
+      const [, , tag, kind, id] = new URL(url).pathname.split("/").map(decodeURIComponent);
+      const memories = namespaces[tag!] ?? {};
+      if (kind === "search") {
+        const live = Object.entries(memories).filter(([key]) => !forgotten.has(`${tag}/${key}`));
+        return json({
+          results: live
+            .slice(0, (JSON.parse(String(init.body)) as { limit: number }).limit)
+            .map(([key, memory]) => ({ id: key, memory, similarity: 0.9 })),
+        });
+      }
+      if (init.method === "GET") {
+        const memory = memories[id!];
+        return memory === undefined
+          ? json({ error: "Memory not found" }, 404)
+          : json({ id, memory, isForgotten: forgotten.has(`${tag}/${id}`) });
+      }
+      const { ids } = JSON.parse(String(init.body)) as { ids: string[] };
+      const matches = ids.filter((key) => memories[key] !== undefined);
+      for (const key of matches) {
+        forgotten.add(`${tag}/${key}`);
+        forgets.push(`${tag}/${key}`);
+      }
+      return json({ count: matches.length, matches, errors: [] });
+    }),
+  );
+  return { forgets };
+}
+
+describe("Supermemory forget", () => {
+  it("cites each recalled memory's id and namespace", async () => {
+    fakeSupermemory({ [OWN]: { mem_a: "Prefers tea" } });
+    const recalled = await provider().recall(
+      { query: "tea", scope: "isolated", botId: "bot-1", limit: 5 },
+      context,
+    );
+    expect(recalled).toEqual({
+      ok: true,
+      value: [{ memory: "Prefers tea", score: 0.9, id: "mem_a", entity: OWN }],
+    });
+  });
+
+  it("forgets a shared fact in both namespaces, the cited copy last, and a retry is done", async () => {
+    const server = fakeSupermemory({
+      [WORKSPACE]: { mem_shared: "Prefers tea", mem_other: "Lives in Paris" },
+      [OWN]: { mem_own: "Prefers tea" },
+    });
+    const forget = () =>
+      provider().forget(
+        { id: "mem_shared", entity: WORKSPACE, scope: "shared", botId: "bot-1", reason: "wrong" },
+        context,
+      );
+    const done = { ok: true, value: { id: "mem_shared", expired: true, reason: "wrong" } };
+    expect(await forget()).toEqual(done);
+    expect(server.forgets).toEqual([`${OWN}/mem_own`, `${WORKSPACE}/mem_shared`]);
+    expect(await forget()).toEqual(done);
+    expect(server.forgets).toHaveLength(2);
+  });
+
+  it("does not forget a copy again while search still lists it", async () => {
+    const server = fakeSupermemory({ [OWN]: { mem_a: "Prefers tea", mem_b: "Prefers tea" } });
+    const search = vi.mocked(fetch).getMockImplementation()!;
+    vi.mocked(fetch).mockImplementation(async (url, init) =>
+      String(url).endsWith("/search")
+        ? Response.json({
+            results: [
+              { id: "mem_a", memory: "Prefers tea", similarity: 1 },
+              { id: "mem_b", memory: "Prefers tea", similarity: 1 },
+            ],
+          })
+        : search(url, init),
+    );
+    const result = await provider().forget(
+      { id: "mem_a", scope: "isolated", botId: "bot-1" },
+      context,
+    );
+    expect(result.ok).toBe(true);
+    expect(server.forgets).toEqual([`${OWN}/mem_b`, `${OWN}/mem_a`]);
+  });
+
+  it("reports a memory Supermemory did not forget", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (_url: string, init: RequestInit) =>
+        Response.json(
+          init.method === "DELETE"
+            ? { count: 0, matches: [], errors: [{ id: "mem_h", error: "Memory not found" }] }
+            : { id: "mem_h", memory: "Summary", isForgotten: false },
+        ),
+      ),
+    );
+    const result = await provider().forget(
+      { id: "mem_h", entity: OWN, scope: "isolated", botId: "bot-1" },
+      context,
+    );
+    expect(result).toMatchObject({ ok: false });
+  });
+
+  it("never reaches the Space's shared memory from an isolated bot", async () => {
+    const server = fakeSupermemory({ [WORKSPACE]: { mem_shared: "Prefers tea" } });
+    const request = { id: "mem_shared", scope: "isolated" as const, botId: "bot-1" };
+    expect(await provider().forget({ ...request, entity: WORKSPACE }, context)).toEqual({
+      ok: false,
+      error: "That memory belongs to another bot or Space.",
+    });
+    expect(await provider().forget(request, context)).toMatchObject({ ok: false });
+    expect(server.forgets).toEqual([]);
+  });
+
+  it("refuses another bot's namespace, chat history and a malformed id before calling Supermemory", async () => {
+    const server = fakeSupermemory({});
+    const request = { scope: "shared" as const, botId: "bot-1" };
+    for (const entity of ["rakazo:bot-2", "rakazo:bot-2:history:1", "rakazo:bot-1:history:2"]) {
+      expect((await provider().forget({ ...request, id: "mem_a", entity }, context)).ok).toBe(
+        false,
+      );
+    }
+    expect((await provider().forget({ ...request, id: "../x" }, context)).ok).toBe(false);
+    expect(fetch).not.toHaveBeenCalled();
+    expect(server.forgets).toEqual([]);
+  });
+});
+
 const credentials = { apiKey: "sm_test_key" };
 const privateResolver = async () => [{ address: "172.18.0.4", family: 4 as const }];
 const publicResolver = async () => [{ address: "203.0.113.10", family: 4 as const }];
