@@ -134,3 +134,32 @@ it("waits for a page's pictures and leaves out one that cannot be read", async (
   );
   await act(async () => root.unmount());
 });
+
+it("reads a page's picture once however often the page opens", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  vi.stubGlobal("matchMedia", () => ({
+    matches: false,
+    addEventListener() {},
+    removeEventListener() {},
+  }));
+  vi.stubGlobal("fetch", async () => new Response("/*kit*/"));
+  const read = vi.fn(async () => ({ src: "data:image/webp;base64,AAAA" }));
+  let shown: string | null = null;
+  function Page() {
+    shown = usePageDocument(content({ hotel: "i1" }, read)).document;
+    return null;
+  }
+  for (let open = 0; open < 2; open++) {
+    const root = createRoot(document.body.appendChild(document.createElement("div")));
+    await act(async () =>
+      root.render(
+        <QueryClientProvider client={queryClient}>
+          <Page />
+        </QueryClientProvider>,
+      ),
+    );
+    await vi.waitFor(() => expect(shown).toContain("data:image/webp;base64,AAAA"));
+    await act(async () => root.unmount());
+  }
+  expect(read).toHaveBeenCalledTimes(1);
+});

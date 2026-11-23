@@ -121,6 +121,7 @@ function usePageImages(content: PageContent | undefined): Record<string, string>
     queries: entries.map(([, imageId]) => ({
       ...content!.readImage(imageId),
       staleTime: Number.POSITIVE_INFINITY,
+      refetchOnMount: false,
     })),
     combine,
   });
