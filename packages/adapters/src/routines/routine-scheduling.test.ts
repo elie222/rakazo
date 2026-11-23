@@ -163,9 +163,8 @@ describe("a routine with an end", () => {
   });
 
   it("ends without running when woken past its end", async () => {
-    const { executor, prisma, scheduledAt } = pendingTimerFixture(false, {
-      endsAt: new Date(Date.now() - 60_000),
-    });
+    const endsAt = new Date(Date.now() - 60_000);
+    const { executor, prisma, scheduledAt } = pendingTimerFixture(false, { endsAt });
     await executor.wakeRoutine("routine-1", scheduledAt.toISOString());
     expect(prisma.routine.deleteMany).toHaveBeenCalledWith({
       where: expect.objectContaining({
@@ -173,6 +172,7 @@ describe("a routine with an end", () => {
         userId: "user-1",
         active: true,
         nextRunAt: scheduledAt,
+        endsAt,
       }),
     });
     expect(prisma.routine.updateMany).not.toHaveBeenCalled();

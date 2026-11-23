@@ -1,15 +1,16 @@
-import { ACTIVE_RUN_STATUSES, isOneShotRoutineCrons, zonedEndDateTime } from "@rakazo/core";
+import {
+  ACTIVE_RUN_STATUSES,
+  isOneShotRoutineCrons,
+  routineRepeats,
+  zonedEndDateTime,
+} from "@rakazo/core";
 import type { PrismaClient, ThreadEvents } from "@rakazo/db";
 import { bestEffort } from "@rakazo/logging";
 import { postRoutineNotice } from "./routine-notice.js";
 
 type RoutineTiming = { crons: string[]; watch: unknown };
 
-function routineRepeats(routine: RoutineTiming): boolean {
-  return (
-    routine.watch != null || (routine.crons.length > 0 && !isOneShotRoutineCrons(routine.crons))
-  );
-}
+const repeats = (routine: RoutineTiming) => routineRepeats(routine.crons, routine.watch != null);
 
 export function runBeforeEnd(next: Date | null, endsAt: Date | null): Date | null {
   return next && endsAt && next.getTime() > endsAt.getTime() ? null : next;
@@ -19,10 +20,7 @@ export function routineEnded(
   routine: RoutineTiming & { endsAt: Date | null; active: boolean; nextRunAt: Date | null },
 ): boolean {
   return (
-    routine.endsAt !== null &&
-    routine.active &&
-    routine.nextRunAt === null &&
-    routineRepeats(routine)
+    routine.endsAt !== null && routine.active && routine.nextRunAt === null && repeats(routine)
   );
 }
 
@@ -34,7 +32,7 @@ export function routineEndError(
   const { endsAt, nextRunAt } = routine;
   if (!endsAt) return null;
   if (isOneShotRoutineCrons(routine.crons)) return "A one-time routine ends once it runs.";
-  if (!routineRepeats(routine)) return "Only a repeating schedule or a watch can have an end date.";
+  if (!repeats(routine)) return "Only a repeating schedule or a watch can have an end date.";
   if (changed.end && endsAt.getTime() <= now.getTime())
     return "The end date must be in the future.";
   if ((changed.end || changed.nextRun) && nextRunAt && nextRunAt.getTime() > endsAt.getTime()) {
@@ -144,10 +142,16 @@ async function deleteIfSpent(
 
 export async function endRoutinePastItsEnd(
   deps: SpentRoutineDeps,
-  routine: EndedRoutine & { id: string; userId: string },
+  routine: EndedRoutine & { id: string; userId: string; endsAt: Date | null },
   scheduledAt: Date,
 ): Promise<void> {
-  const due = { id: routine.id, userId: routine.userId, active: true, nextRunAt: scheduledAt };
+  const due = {
+    id: routine.id,
+    userId: routine.userId,
+    active: true,
+    nextRunAt: scheduledAt,
+    endsAt: routine.endsAt,
+  };
   const deleted = await deps.prisma.routine.deleteMany({
     where: { ...due, runs: { none: { status: { in: [...ACTIVE_RUN_STATUSES] } } } },
   });
@@ -165,4 +169,18 @@ export async function endRoutinePastItsEnd(
       deps.events.publishSpaceChange?.(routine.spaceId, "routines"),
     );
   }
+}
+
+export async function stopFailedLastRun(
+  deps: { prisma: PrismaClient },
+  run: { routineId: string | null; userId: string },
+): Promise<void> {
+  const { routineId, userId } = run;
+  if (!routineId) return;
+  const stop = async () =>
+    deps.prisma.routine.updateMany({
+      where: { id: routineId, userId, active: true, nextRunAt: null, endsAt: { not: null } },
+      data: { active: false },
+    });
+  await bestEffort("stop a routine whose last run failed", stop());
 }

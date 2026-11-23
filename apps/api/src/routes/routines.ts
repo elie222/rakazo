@@ -13,6 +13,7 @@ import {
   routineEditChange,
   routineEdited,
   routineEndError,
+  routineEnded,
   stableStringify,
   validateRoutineWatch,
   wakeRun,
@@ -282,7 +283,7 @@ export function routinesRoutes(ctx: RouterContext) {
         const recalculatedNextRunAt =
           crons.length > 0 &&
           !isOneShotRoutineCrons(crons) &&
-          (scheduleChanged || (active && !existing.nextRunAt))
+          (scheduleChanged || (active && !existing.nextRunAt && !routineEnded(existing)))
             ? nextRoutineDate(crons, timezone)
             : null;
         let armedOneShotAt: Date | null = null;
@@ -308,7 +309,7 @@ export function routinesRoutes(ctx: RouterContext) {
           ? null
           : watch
             ? // Turning a watch on, or changing it, checks right away; otherwise keep its rhythm.
-              !existing.active || watchChanged || !existing.nextRunAt
+              !existing.active || watchChanged || (!existing.nextRunAt && !routineEnded(existing))
               ? firstWatchCheck()
               : existing.nextRunAt
             : crons.length === 0

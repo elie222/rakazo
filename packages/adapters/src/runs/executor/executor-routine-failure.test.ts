@@ -144,6 +144,7 @@ async function failRun(scenario: Scenario) {
       }),
       count: vi.fn(async () => 0),
       deleteMany: vi.fn(async () => ({ count: 1 })),
+      updateMany: vi.fn(async () => ({ count: 1 })),
     },
     chatGroup: { findMany: vi.fn(async () => []) },
     event: { count: vi.fn(async () => scenario.toolCalls ?? 0) },
@@ -425,6 +426,18 @@ describe("a routine run's prompt", () => {
     expect(prompt(runtimeRun)).toContain(
       "It is the last run: the routine reaches its end date and is deleted after it",
     );
+  });
+
+  it("turns a routine off when its last run fails for good", async () => {
+    const { prisma } = await failRun({
+      error: new Error("Invalid API key"),
+      nextRunAt: null,
+      endsAt: new Date(NOW.getTime() + 60 * MINUTE),
+    });
+    expect(prisma.routine.updateMany).toHaveBeenCalledWith({
+      where: expect.objectContaining({ active: true, nextRunAt: null, endsAt: { not: null } }),
+      data: { active: false },
+    });
   });
 
   it("leaves other runs and daily check-ins without it", async () => {

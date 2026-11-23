@@ -1471,6 +1471,19 @@ describe("updateScheduleFromTool", () => {
     });
   });
 
+  it("renames a routine on its last run without resuming its schedule", async () => {
+    const { updateMany, enqueue, update } = setup({
+      ...weekly,
+      nextRunAt: null,
+      endsAt: new Date("2026-10-25T00:00:00Z"),
+    });
+    await expect(update({ name: "Last groceries" })).resolves.toMatchObject({ ok: true });
+    expect(updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({ data: { name: "Last groceries" } }),
+    );
+    expect(enqueue).not.toHaveBeenCalled();
+  });
+
   it("pauses with active false and cancels the wakeup", async () => {
     const { updateMany, cancel, enqueue, update } = setup();
     await expect(update({ active: false })).resolves.toMatchObject({

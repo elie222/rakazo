@@ -27,6 +27,7 @@ import {
   deleteSpentRoutine,
   endRoutinePastItsEnd,
   runBeforeEnd,
+  stopFailedLastRun,
 } from "../../routines/routine-end.js";
 import { routineGroupThreadId } from "../../routines/routine-thread.js";
 import {
@@ -363,6 +364,7 @@ export async function notifyRoutineRetryAttemptsExhausted(deps: ExecutorDeps, ru
     select: { id: true },
   });
   if (supersedingRun) return;
+  await stopFailedLastRun(deps, failed);
   await notifyFailedRoutineRun(deps, failed, { retryOnFailure: true });
 }
 
@@ -394,7 +396,10 @@ export async function retryRoutineRun(deps: ExecutorDeps, runId: string) {
     select: { id: true },
   });
   if (laterRun) return;
-  const notifyAbandonedRetry = () => notifyFailedRoutineRun(deps, failed, { retryOnFailure: true });
+  const notifyAbandonedRetry = async () => {
+    await stopFailedLastRun(deps, failed);
+    await notifyFailedRoutineRun(deps, failed, { retryOnFailure: true });
+  };
   if (routine && routineNextRunIsNear(routine.nextRunAt, Date.now())) {
     await notifyAbandonedRetry();
     return;

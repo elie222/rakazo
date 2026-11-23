@@ -203,7 +203,7 @@ export * from "./providers/web/keyless-http/keyless-http-web.js";
 export * from "./providers/web/parallel/parallel-web.js";
 export * from "./routines/release-watch.js";
 export { releaseRoutineBackoffs } from "./routines/routine-backoff.js";
-export { routineEndError, runBeforeEnd } from "./routines/routine-end.js";
+export { routineEndError, routineEnded, runBeforeEnd } from "./routines/routine-end.js";
 export * from "./routines/routine-notice.js";
 export * from "./routines/routine-owner-computer.js";
 export { routineGroupThreadId } from "./routines/routine-thread.js";

@@ -23,6 +23,7 @@ import {
   backOffRoutineAfterAccountError,
   modelAccountRefusal,
 } from "../../routines/routine-backoff.js";
+import { stopFailedLastRun } from "../../routines/routine-end.js";
 import { pauseRoutineAfterRepeatedFailures } from "../../routines/routine-failure-pause.js";
 import { isStrategicInitiativeRun } from "../../routines/strategic-initiative.js";
 import { rejectedRequestsOf } from "../../runtime/provider-request-shape.js";
@@ -236,6 +237,9 @@ export async function failRun(
     );
   }
   const retrying = !failed.continuationRunId && (await scheduleRoutineRetry(deps, run, error));
+  if (run.trigger === "routine" && !failed.continuationRunId && !retrying) {
+    await stopFailedLastRun(deps, run);
+  }
   // The user's own model connection failing, or a spent allowance, is theirs to fix; a retry
   // still due gets its chance first.
   if (

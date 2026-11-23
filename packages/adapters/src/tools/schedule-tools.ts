@@ -23,7 +23,12 @@ import {
 import type { PrismaClient, ThreadEvents } from "@rakazo/db";
 import { Prisma, runAsSystemInTransaction } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
-import { newRoutineEnd, routineEndError, routineEndFromText } from "../routines/routine-end.js";
+import {
+  newRoutineEnd,
+  routineEndError,
+  routineEnded,
+  routineEndFromText,
+} from "../routines/routine-end.js";
 import { postRoutineNotice, routineEditChange, routineEdited } from "../routines/routine-notice.js";
 import type { RoutineEvents } from "../routines/routine-triggers.js";
 import {
@@ -1173,7 +1178,7 @@ export async function updateScheduleFromTool(
     nextRunAt = carried ?? resolved.nextRunAt;
   } else if (active && watchChanged) {
     nextRunAt = firstWatchCheck();
-  } else if (active && !(existing.active && existing.nextRunAt)) {
+  } else if (active && !(existing.active && existing.nextRunAt) && !routineEnded(existing)) {
     // Resuming: a watch checks right away, a repeat picks its next occurrence from now.
     if (existing.watch != null) nextRunAt = firstWatchCheck();
     else if (oneShot) {
