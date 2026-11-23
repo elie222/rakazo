@@ -603,6 +603,7 @@ async function readBoundedJson(
 const KEY_CHECK_URLS: Record<string, string> = {
   "ollama.com": "https://ollama.com/api/balance",
   "api.deepinfra.com": "https://api.deepinfra.com/v1/me",
+  "api.bf16.ai": "https://api.bf16.ai/v1/models",
 };
 
 /** Some compatible servers expose their model list without authenticating. */

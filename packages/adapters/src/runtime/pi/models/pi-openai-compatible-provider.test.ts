@@ -1277,6 +1277,19 @@ describe("built-in public compatible host", () => {
     ).resolves.toEqual(["chat-model", "untagged-model"]);
     expect(String(transport.mock.calls[0]?.[0])).toBe("https://api.deepinfra.com/v1/me");
   });
+
+  it("verifies bf16.ai keys against /v1/models and rejects 401", async () => {
+    const transport = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(new Response(JSON.stringify({ error: "unauthorized" }), { status: 401 }));
+    await expect(
+      verifyOpenAiCompatibleApiKey(
+        { baseUrl: "https://api.bf16.ai/v1", apiKey: "sk-bf16-v1-invalid" },
+        transport,
+      ),
+    ).rejects.toThrow();
+    expect(String(transport.mock.calls[0]?.[0])).toBe("https://api.bf16.ai/v1/models");
+  });
   it("does not verify unrelated compatible servers and rejects missing keys", async () => {
     const transport = vi.fn();
     await verifyOpenAiCompatibleApiKey({ baseUrl: "https://other.test/v1" }, transport);

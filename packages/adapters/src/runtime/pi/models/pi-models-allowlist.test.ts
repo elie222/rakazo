@@ -66,5 +66,18 @@ describe("model provider allowlist in the catalog", () => {
         apiProtocol: "responses",
       },
     ]);
+
+    process.env.RAKAZO_MODEL_PROVIDER_ALLOWLIST = `${OPENAI_COMPATIBLE_PROVIDER_ID},bf16`;
+    const withBf16 = listPiCatalog().find(
+      (entry) => entry.provider === OPENAI_COMPATIBLE_PROVIDER_ID,
+    );
+    expect(withBf16?.endpointPresets).toEqual([
+      {
+        id: "bf16",
+        name: "bf16.ai",
+        baseUrl: "https://api.bf16.ai/v1",
+        publicModels: true,
+      },
+    ]);
   });
 });
