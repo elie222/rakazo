@@ -112,6 +112,14 @@ export class LinuxDesktop {
     const result = await this.host.run(computer, command, context);
     if (result.code === 75) throw new ComputerScreenUnavailableError();
     if (result.code === BROWSER_STILL_RUNNING_EXIT) throw new BrowserStillRunningError();
+    // Logged before the exit is judged: the restarted browser can still fail to come up.
+    if (startsScreen && result.stdout.includes("RAKAZO_BROWSER_RESTARTED=unresponsive")) {
+      getLogger().warn("computer.browser_restarted", {
+        "sandbox.id": computer.id,
+        provider: computer.kind,
+        reason: "unresponsive",
+      });
+    }
     // Only the screen startup script sets this status; an app the desktop launched may exit with it.
     if (startsScreen && result.code === SCREEN_NOT_READY_EXIT) {
       // Only the first line: the rest is the browser's or display's own log.
