@@ -788,9 +788,13 @@ export function createBillingService(deps: {
           ...(sized && { standardComputerHours: true as const }),
           // compat-shim(after v0.15.0): mobile apps released before included usage read these.
           computerHoursLeft:
-            usage &&
-            sandboxHoursLeft(usage, sized ? SANDBOX_SIZE_HOURLY_COST_MICROS.standard : hourMicros),
-          computerHoursResetAt: usage?.resetsAt?.toISOString() ?? null,
+            usage && deps.sandbox
+              ? sandboxHoursLeft(
+                  usage,
+                  sized ? SANDBOX_SIZE_HOURLY_COST_MICROS.standard : hourMicros,
+                )
+              : null,
+          computerHoursResetAt: deps.sandbox ? (usage?.resetsAt?.toISOString() ?? null) : null,
           referral: await referrals.status(organizationId, isOwner),
         };
       }

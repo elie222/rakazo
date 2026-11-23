@@ -45,6 +45,7 @@ export async function includedUsage(
   limitMicros: number;
   usedMicros: number;
   resetsAt: Date | null;
+  since: Date;
   trial: boolean;
 } | null> {
   const plan = await includedUsagePlan(deps.prisma, organizationId, now);
@@ -61,6 +62,7 @@ export async function includedUsage(
     limitMicros: (plan.limitCents * MICROS_PER_DOLLAR) / 100,
     usedMicros: Math.round(computerMicros) + chargedMicros,
     resetsAt: plan.resetsAt,
+    since: plan.since,
     trial: plan.trial,
   };
 }

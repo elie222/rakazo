@@ -226,7 +226,7 @@ function secretGuidance(disabled?: ReadonlySet<string>): string[] {
   }
   if (builtinOffered(disabled, "request_secret") && builtinOffered(disabled, "browser_act")) {
     clauses.push(
-      "For a sign-in code, use browser_act fill_code with secret if list_secrets shows the login's authenticatorCode; otherwise request_secret oneTimeCode and fill_code, never chat.",
+      "For a sign-in code, use browser_act fill_code with secret if list_secrets shows the login's authenticatorCode; for a code sent to the user, request_secret oneTimeCode and fill_code, never chat.",
     );
   }
   if (builtinOffered(disabled, "generate_secret")) {
@@ -478,7 +478,7 @@ export function userTurnInstructions(parts: {
     offeredBuiltinClause(
       parts.disabledBuiltinTools,
       "archive_bot",
-      "archive_bot safely archives another bot in this space. Use it when the user asks to remove that bot or when it is finished and unused. The user can restore it or permanently delete it later. confirm_name must exactly match its name.",
+      "archive_bot safely archives a bot in this space, yourself included. Use it when the user asks to remove a bot, or when another bot is finished and unused. The user can restore it or permanently delete it later. confirm_name must exactly match its name.",
     ),
     fleetClause(
       parts.offeredFleetTools,
@@ -576,7 +576,9 @@ export function botEmailInstruction(
 ): string {
   return [
     `Your email address is ${address}.`,
-    tools.read ? "Every email sent to it is saved to your inbox; check it with read_email." : "",
+    tools.read
+      ? "Every email sent to it is saved to your inbox; check it with read_email. When a site emails a sign-in code to this address, read it there and type it with browser_act instead of requesting it."
+      : "",
     tools.send ? "Send email from it with send_email." : "",
     tools.delete ? "Delete emails from your inbox with delete_email." : "",
   ]

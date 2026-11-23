@@ -74,13 +74,11 @@ const fileResult = z.object({ url: z.string().url() });
  * Prices of the models this adapter knows at the size it requests, in micro-dollars. Any other
  * model is charged a conservative default, so an unknown model never runs below its cost.
  */
-const FAL_IMAGE_MICROS: Record<string, number> = {
-  "fal-ai/flux/schnell": 3_000,
-  "fal-ai/flux/dev": 25_000,
-};
-const FAL_VIDEO_MICROS: Record<string, number> = {
-  "fal-ai/wan/v2.2-a14b/text-to-video": 400_000,
-};
+const FAL_IMAGE_MICROS = new Map([
+  ["fal-ai/flux/schnell", 3_000],
+  ["fal-ai/flux/dev", 25_000],
+]);
+const FAL_VIDEO_MICROS = new Map([["fal-ai/wan/v2.2-a14b/text-to-video", 400_000]]);
 const FAL_DEFAULT_IMAGE_MICROS = 100_000;
 const FAL_DEFAULT_VIDEO_MICROS = 1_000_000;
 
@@ -120,8 +118,8 @@ export class FalMediaGenerationProvider implements MediaGenerationProvider {
       offline: false,
     };
     this.prices = {
-      imageMicros: FAL_IMAGE_MICROS[options.imageModel ?? ""] ?? FAL_DEFAULT_IMAGE_MICROS,
-      videoMicros: FAL_VIDEO_MICROS[options.videoModel ?? ""] ?? FAL_DEFAULT_VIDEO_MICROS,
+      imageMicros: FAL_IMAGE_MICROS.get(options.imageModel ?? "") ?? FAL_DEFAULT_IMAGE_MICROS,
+      videoMicros: FAL_VIDEO_MICROS.get(options.videoModel ?? "") ?? FAL_DEFAULT_VIDEO_MICROS,
     };
   }
   private path(raw: string) {

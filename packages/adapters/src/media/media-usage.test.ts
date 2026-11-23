@@ -5,8 +5,27 @@ import { priceMediaGeneration } from "./media-usage.js";
 
 const provider = { prices: { imageMicros: 40_000, videoMicros: 0 } } as MediaGenerationProvider;
 
-function deps(input: { billing: boolean; status?: string; chargedMicros?: number }) {
+function deps(input: {
+  billing: boolean;
+  status?: string;
+  chargedMicros?: number;
+  pendingMicros?: number;
+}) {
   const prisma = {
+    externalEffect: {
+      findMany: vi
+        .fn()
+        .mockResolvedValue(
+          input.pendingMicros
+            ? [
+                {
+                  id: "job",
+                  request: { charge: { organizationId: "org", micros: input.pendingMicros } },
+                },
+              ]
+            : [],
+        ),
+    },
     space: { findUnique: vi.fn().mockResolvedValue({ organizationId: "org" }) },
     deploymentSettings: {
       findUnique: vi.fn().mockResolvedValue({ modelCreditsEnabled: input.billing }),
@@ -49,6 +68,11 @@ describe("hosted media pricing", () => {
   it("refuses once included usage cannot cover the price", async () => {
     const spent = deps({ billing: true, status: "active", chargedMicros: 5_980_000 });
     expect(await priceMediaGeneration(spent, provider, "space", "image")).toHaveProperty("error");
+  });
+
+  it("counts generations still running against the balance", async () => {
+    const busy = deps({ billing: true, status: "active", pendingMicros: 5_980_000 });
+    expect(await priceMediaGeneration(busy, provider, "space", "image")).toHaveProperty("error");
   });
 
   it("refuses during a trial", async () => {

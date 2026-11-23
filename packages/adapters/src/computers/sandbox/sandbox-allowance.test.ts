@@ -92,6 +92,7 @@ describe("computer allowance", () => {
       limitMicros: 6_000_000,
       usedMicros: 2.5 * SANDBOX_HOURLY_COST_MICROS,
       resetsAt: new Date("2026-04-01T00:00:00Z"),
+      since: new Date("2026-03-01T00:00:00Z"),
       trial: false,
     });
   });
