@@ -380,7 +380,8 @@ export class ExpoPushProvider implements NotificationProvider {
             body: text,
             data,
             ...(message.sender ? { mutableContent: true } : {}),
-            ...(urgent ? { priority: "high" } : {}),
+            // iOS delivers a push without `sound` silently, whatever the device settings say.
+            ...(urgent ? { priority: "high", sound: "default" } : {}),
           };
     let payload = build();
     while (Buffer.byteLength(JSON.stringify(payload)) > MAX_PUSH_PAYLOAD_BYTES && bodyChars > 1) {
