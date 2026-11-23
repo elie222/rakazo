@@ -88,6 +88,19 @@ describe("ticket changes", () => {
     expect(s.transaction).not.toHaveBeenCalled();
     expect(s.enqueue).not.toHaveBeenCalled();
   });
+  it("retries a wake that lost a lock race instead of dropping it", async () => {
+    // The wake locks the ticket row before inserting its thread-referencing
+    // rows, while a concurrent ticket-tagged delivery takes those locks in the
+    // opposite order; Postgres may pick this transaction as the deadlock
+    // victim, and a wake lost after the assignment committed is never retried.
+    const s = setup(["board"]);
+    s.transaction.mockRejectedValueOnce(
+      Object.assign(new Error("deadlock detected"), { code: "P2034" }),
+    );
+    await s.changes(change);
+    expect(s.createRun).toHaveBeenCalledTimes(1);
+    expect(s.enqueue).toHaveBeenCalledTimes(1);
+  });
   it("does not wake an unassigned ticket", async () => {
     const s = setup(["board"]);
     await s.changes({ ...change, assigneeBotId: null });

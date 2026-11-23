@@ -7,6 +7,7 @@ import {
   TicketStatusSchema,
 } from "@rakazo/contracts";
 import type { Prisma, PrismaClient } from "@rakazo/db";
+import { withTransactionRetry } from "@rakazo/db";
 import { wakeRun } from "../runs/wakeups/wake-run.js";
 import { ticketWakePrompt } from "../runs/wakeups/wakes.prompt.js";
 
@@ -87,13 +88,20 @@ export async function wakeTicketAssignee(
   deps: { prisma: PrismaClient; jobs: JobPublisher; deploymentLabs?: readonly LabFeature[] },
   input: { spaceId: string; ticketId: string; botId: string },
 ): Promise<void> {
-  const runId = await deps.prisma.$transaction((tx) =>
-    createTicketAssigneeWakeRun(tx, {
-      spaceId: input.spaceId,
-      ticketId: input.ticketId,
-      requireAssigneeBotId: input.botId,
-      deploymentLabs: deps.deploymentLabs,
-    }),
+  // The wake locks the ticket row before inserting its thread-referencing rows,
+  // while a concurrent ticket-tagged delivery takes those locks in the opposite
+  // order, so this transaction can be the deadlock victim. The assignment it
+  // answers already committed, so losing that race must run the wake again
+  // rather than drop it — the same retry every delivery transaction uses.
+  const runId = await withTransactionRetry(() =>
+    deps.prisma.$transaction((tx) =>
+      createTicketAssigneeWakeRun(tx, {
+        spaceId: input.spaceId,
+        ticketId: input.ticketId,
+        requireAssigneeBotId: input.botId,
+        deploymentLabs: deps.deploymentLabs,
+      }),
+    ),
   );
   if (!runId) return;
   await wakeRun(deps.jobs, runId);
