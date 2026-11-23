@@ -43,6 +43,7 @@ export async function stripeInvoiceRefund(
   customerId: string,
   reference: string | undefined,
   confirm: boolean,
+  amountMinor?: number,
 ): Promise<BillingInvoiceRefund | null> {
   const invoices = await api.listPages(
     `/v1/invoices?customer=${encodeURIComponent(customerId)}&status=paid`,
@@ -116,14 +117,21 @@ export async function stripeInvoiceRefund(
       `/v1/refunds?charge=${encodeURIComponent(charge.id)}`,
       refundSchema,
     );
-    const existing = refunds.find(
-      (refund) =>
-        refund.amount === charge.amount &&
-        (refund.status === "pending" || refund.status === "succeeded"),
+    const live = refunds.filter(
+      (refund) => refund.status === "pending" || refund.status === "succeeded",
     );
-    if (existing) return { ...result, ...refundStatus(existing) };
+    const [existing] = live;
+    // One refund for the whole refunded amount is this command's own, maybe from a lost response.
+    if (existing && live.length === 1 && existing.amount === charge.amount_refunded)
+      return { ...result, ...refundStatus(existing) };
     throw new ClientError("CONFLICT", "This charge has a previous refund. Review it in billing.");
   }
+  const amount = amountMinor ?? charge.amount;
+  if (!Number.isSafeInteger(amount) || amount <= 0 || amount > charge.amount)
+    throw new ClientError(
+      "BAD_REQUEST",
+      "The refund must be more than zero and at most the charge",
+    );
   if (!confirm) return { ...result, state: "refundable" };
   // The transport reuses a key for retries within this request. A later confirmation checks
   // refund state again and uses a fresh key, so it can recover from a cached provider error.
@@ -131,11 +139,11 @@ export async function stripeInvoiceRefund(
   const refund = refundSchema.parse(
     await api.request("POST", "/v1/refunds", {
       charge: charge.id,
-      amount: charge.amount,
+      amount,
       reason: "requested_by_customer",
     }),
   );
-  if (refund.amount !== charge.amount)
+  if (refund.amount !== amount)
     throw new ClientError("CONFLICT", "The refund amount needs review in billing");
   return { ...result, ...refundStatus(refund) };
 }
@@ -143,5 +151,5 @@ export async function stripeInvoiceRefund(
 function refundStatus(refund: z.infer<typeof refundSchema>) {
   if (refund.status !== "succeeded" && refund.status !== "pending")
     throw new ClientError("CONFLICT", "The refund needs review in billing");
-  return { state: refund.status, refundId: refund.id };
+  return { state: refund.status, refundId: refund.id, refundedMinor: refund.amount };
 }

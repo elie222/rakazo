@@ -69,6 +69,7 @@ function fixture(options?: {
           });
           if (options?.cacheFirstRefundError && writes.at(-1)?.key === writes[0]?.key)
             return Response.json({ error: { message: "Cached refund error" } }, { status: 500 });
+          refund.amount = Number(new URLSearchParams(String(init?.body)).get("amount"));
           latestCharge.amount_refunded = refund.amount;
           return Response.json(refund);
         default:
@@ -132,6 +133,18 @@ describe("operator invoice refunds", () => {
     await expect(provider.refundInvoice(customer, invoiceNumber, false)).resolves.toMatchObject({
       creditPurchaseId: "cs_fixture",
     });
+  });
+
+  it("refunds part of the charge and recognizes that refund on a repeat", async () => {
+    const { provider, writes } = fixture();
+    await expect(provider.refundInvoice(customer, invoiceNumber, true, 600)).resolves.toMatchObject(
+      { state: "pending", refundedMinor: 600 },
+    );
+    await expect(provider.refundInvoice(customer, invoiceNumber, true, 600)).resolves.toMatchObject(
+      { refundedMinor: 600 },
+    );
+    expect(writes).toHaveLength(1);
+    expect(new URLSearchParams(writes[0]?.body).get("amount")).toBe("600");
   });
 
   it("uses a fresh key on a new confirmation after a cached request error", async () => {
