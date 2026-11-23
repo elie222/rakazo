@@ -1,5 +1,6 @@
 import type { BrowserWindow } from "electron";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { desktop } from "../desktop-state.js";
 import {
   createDeepLinkController,
   handleSecondInstance,
@@ -262,5 +263,41 @@ describe("registerDeepLinkHandlers", () => {
       reopenTarget: vi.fn(),
     }).registerProtocol();
     expect(devApp.setAsDefaultProtocolClient).not.toHaveBeenCalled();
+  });
+
+  afterEach(() => {
+    desktop.setupWindow = null;
+    desktop.mainWindow = null;
+    desktop.currentTargetUrl = null;
+  });
+
+  it("opens setup when open-url arrives with all windows closed and no server configured", () => {
+    const listeners = new Map<string, (...args: unknown[]) => void>();
+    const electronApp = {
+      isPackaged: true,
+      isReady: () => true,
+      on: vi.fn((event: string, listener: (...args: unknown[]) => void) => {
+        listeners.set(event, listener);
+      }),
+      setAsDefaultProtocolClient: vi.fn(),
+    };
+    const reopenTarget = vi.fn();
+    const showSetup = vi.fn();
+    desktop.setupWindow = null;
+    desktop.mainWindow = null;
+    desktop.currentTargetUrl = null;
+
+    registerDeepLinkHandlers(electronApp as never, {
+      initialArgv: ["Rakazo"],
+      isOpening: () => false,
+      reopenTarget,
+      showSetup,
+    });
+
+    const preventDefault = vi.fn();
+    listeners.get("open-url")?.({ preventDefault }, "rakazo://app/bot-unconfigured");
+    expect(preventDefault).toHaveBeenCalledOnce();
+    expect(showSetup).toHaveBeenCalledOnce();
+    expect(reopenTarget).not.toHaveBeenCalled();
   });
 });

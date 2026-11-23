@@ -1,6 +1,6 @@
 import type { App, BrowserWindow } from "electron";
 import { desktop } from "../desktop-state.js";
-import { isSetupSaveInProgress } from "../setup/setup-window.js";
+import { isSetupSaveInProgress, showSetupWindow } from "../setup/setup-window.js";
 import type { ParsedDeepLink } from "./deep-link.js";
 import {
   DEEP_LINK_SCHEME,
@@ -123,9 +123,11 @@ export function registerDeepLinkHandlers(
     initialArgv: readonly string[];
     isOpening: () => boolean;
     reopenTarget: (url: string) => void;
+    showSetup?: () => void;
   },
 ) {
   const isBusy = () => options.isOpening() || isSetupSaveInProgress();
+  const showSetup = options.showSetup ?? (() => showSetupWindow(desktop.setupError));
   const controller = createDeepLinkController({
     initialArgv: options.initialArgv,
     setupWindow: () => desktop.setupWindow,
@@ -138,12 +140,12 @@ export function registerDeepLinkHandlers(
         !electronApp.isReady() ||
         (desktop.setupWindow !== null && !desktop.setupWindow.isDestroyed()) ||
         (desktop.mainWindow !== null && !desktop.mainWindow.isDestroyed()) ||
-        desktop.currentTargetUrl === null ||
         isBusy()
       ) {
         return;
       }
-      options.reopenTarget(desktop.currentTargetUrl);
+      if (desktop.currentTargetUrl === null) showSetup();
+      else options.reopenTarget(desktop.currentTargetUrl);
     },
   });
   electronApp.on("second-instance", (_event, argv) => controller.handleArgv(argv));
