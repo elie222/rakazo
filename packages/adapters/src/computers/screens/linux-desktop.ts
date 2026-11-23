@@ -141,6 +141,13 @@ export class LinuxDesktop {
       context,
       true,
     );
+    if (output.includes("RAKAZO_BROWSER_RESTARTED=unresponsive")) {
+      getLogger().warn("computer.browser_restarted", {
+        "sandbox.id": computer.id,
+        provider: computer.kind,
+        reason: "unresponsive",
+      });
+    }
     const match = output.match(/RAKAZO_DESKTOP=(\d+):([a-zA-Z0-9_-]+)/);
     if (!match) throw new ComputerScreenUnavailableError();
     const index = Number(match[1]);
