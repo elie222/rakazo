@@ -9,6 +9,16 @@ import {
   toolEventsFromArg,
 } from "./routine-triggers.js";
 
+// Cleanup of an unheld key is covered against PostgreSQL in webhook-key.postgres.test.ts.
+vi.mock("../secrets/secret-persistence.js", () => ({
+  persistPreparedSecret: (
+    _prisma: unknown,
+    _store: unknown,
+    _written: unknown,
+    commit: () => unknown,
+  ) => commit(),
+}));
+
 const bot = { id: "bot-1", userId: "owner-1" };
 const none = { webhook: false, git: false, chat: null, email: null };
 
