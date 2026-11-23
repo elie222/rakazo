@@ -1,6 +1,6 @@
 import type { JobPublisher, TransactionalEmail } from "@rakazo/adapter-kit";
 import { lifecycleEmailJob } from "@rakazo/adapter-kit";
-import { emailLocale, modelConnectionEmail } from "@rakazo/auth";
+import { agentImportEmail, emailLocale, modelConnectionEmail } from "@rakazo/auth";
 import type { LifecycleEmailKind } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
 import { unsubscribeUrl } from "./marketing-email.js";
@@ -8,7 +8,10 @@ import { unsubscribeUrl } from "./marketing-email.js";
 /** How long after a plan starts the model-connection mail is due. */
 export const MODEL_CONNECTION_EMAIL_DELAY_MS = 24 * 60 * 60 * 1000;
 
-/** Queues a lifecycle mail for an organization's owner; present only where account mail is on. */
+/** How long after a plan starts the agent-import mail is due: a day after the one above. */
+export const AGENT_IMPORT_EMAIL_DELAY_MS = 2 * MODEL_CONNECTION_EMAIL_DELAY_MS;
+
+/** Queues a lifecycle mail for an organization's owner; present only where some mail is on. */
 export type ScheduleLifecycleEmail = (
   kind: LifecycleEmailKind,
   target: { organizationId: string; userId: string },
@@ -25,6 +28,7 @@ const TEMPLATES: Record<
   ) => Promise<TransactionalEmail>
 > = {
   "model-connection": modelConnectionEmail,
+  "agent-import": agentImportEmail,
 };
 
 /**
@@ -34,6 +38,8 @@ const TEMPLATES: Record<
  * moves their one job.
  */
 export function lifecycleEmailScheduler(deps: {
+  /** The kinds whose copy the deployment supplies; any other kind is never queued. */
+  kinds: readonly LifecycleEmailKind[];
   prisma: PrismaClient;
   jobs: Pick<JobPublisher, "enqueue">;
   webOrigin: string;
@@ -42,6 +48,7 @@ export function lifecycleEmailScheduler(deps: {
   secret: string;
 }): ScheduleLifecycleEmail {
   return async (kind, target, dueAt) => {
+    if (!deps.kinds.includes(kind)) return;
     const user = await deps.prisma.user.findUnique({
       where: { id: target.userId },
       select: { email: true, name: true, locale: true },

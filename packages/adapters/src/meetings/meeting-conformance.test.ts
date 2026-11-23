@@ -1,4 +1,5 @@
 import type { MeetingJoinRequest, MeetingProvider } from "@rakazo/adapter-kit";
+import { serializeError } from "@rakazo/logging";
 import { describe, expect, it } from "vitest";
 import { MeetingEmulator } from "../providers/meeting/emulator/meeting-emulator.js";
 import { RecallMeetingProvider } from "../providers/meeting/recall/recall-meeting.js";
@@ -10,8 +11,9 @@ import {
   TRANSCRIPT_ID,
   webhookSecret,
 } from "../providers/meeting/recall/recall-meeting-emulator.test-support.js";
+import { parseMeetingUrl } from "./meeting-link.js";
 import { configuredMeetingMedia } from "./meeting-media-grant.js";
-import { parseMeetingUrl } from "./meeting-service.js";
+import { configuredMeetingSpaces } from "./meeting-provider.js";
 
 const input: MeetingJoinRequest = {
   sessionId: "meeting-session-123",
@@ -22,7 +24,10 @@ const input: MeetingJoinRequest = {
 };
 const signal = new AbortController().signal;
 
-function real(emulator = new RecallMeetingEmulator(), prefix: "webhook" | "svix" = "webhook") {
+function real(
+  emulator: Pick<RecallMeetingEmulator, "fetch"> = new RecallMeetingEmulator(),
+  prefix: "webhook" | "svix" = "webhook",
+) {
   return new RecallMeetingProvider({
     origin: "https://us-east-1.recall.ai",
     apiKey: "fake-key",
@@ -30,6 +35,15 @@ function real(emulator = new RecallMeetingEmulator(), prefix: "webhook" | "svix"
     fetch: emulator.fetch,
   });
 }
+
+it("enables all Spaces only when the operator explicitly asks for them", () => {
+  const provider = real();
+  expect(configuredMeetingSpaces(provider, { MEETING_SPACE_IDS: " * " })).toBeUndefined();
+  expect(configuredMeetingSpaces(provider, {})).toEqual(new Set());
+  expect(configuredMeetingSpaces(provider, { MEETING_SPACE_IDS: "space-a, space-b" })).toEqual(
+    new Set(["space-a", "space-b"]),
+  );
+});
 
 describe.each<{ name: string; create(): MeetingProvider }>([
   { name: "meeting emulator", create: () => new MeetingEmulator() },
@@ -107,6 +121,63 @@ describe("Recall transcripts and delivery over the wire emulator", () => {
     },
   );
 
+  it.each([
+    ["bot_kicked_from_waiting_room"],
+    ["timeout_exceeded_waiting_room"],
+    ["call_ended_by_platform_waiting_room_timeout"],
+  ])("reports a waiting-room call end (%s) as an admission failure", (subCode) => {
+    const provider = real();
+    const delivery = signedMeetingEvent({
+      event: "bot.call_ended",
+      data: {
+        data: { updated_at: "2026-11-19T19:30:00.000Z", sub_code: subCode },
+        bot: { id: BOT_ID, metadata: { meetingSessionId: input.sessionId } },
+      },
+    });
+    expect(provider.verifyWebhook(delivery.raw, delivery.headers)).toEqual({
+      sessionId: input.sessionId,
+      externalId: BOT_ID,
+      occurredAt: new Date("2026-11-19T19:30:00.000Z"),
+      status: "failed",
+      error: "admission",
+    });
+  });
+
+  it.each([[undefined], ["call_ended_by_host"]])(
+    "keeps an ordinary call end (%s) as processing",
+    (subCode) => {
+      const provider = real();
+      const delivery = signedMeetingEvent({
+        event: "bot.call_ended",
+        data: {
+          data: { updated_at: "2026-11-19T19:30:00.000Z", sub_code: subCode },
+          bot: { id: BOT_ID, metadata: { meetingSessionId: input.sessionId } },
+        },
+      });
+      const observation = provider.verifyWebhook(delivery.raw, delivery.headers);
+      expect(observation).toMatchObject({ externalId: BOT_ID, status: "processing" });
+      expect(observation).not.toHaveProperty("error");
+    },
+  );
+
+  it("reports a fatal waiting-room exit as an admission failure", () => {
+    const provider = real();
+    const delivery = signedMeetingEvent({
+      event: "bot.fatal",
+      data: {
+        data: {
+          updated_at: "2026-11-19T19:30:00.000Z",
+          sub_code: "waiting_room_timeout",
+        },
+        bot: { id: BOT_ID, metadata: { meetingSessionId: input.sessionId } },
+      },
+    });
+    expect(provider.verifyWebhook(delivery.raw, delivery.headers)).toMatchObject({
+      status: "failed",
+      error: "admission",
+    });
+  });
+
   it("exposes an unambiguous capacity rejection and retry delay", async () => {
     const emulator = new RecallMeetingEmulator();
     emulator.joinStatus = 507;
@@ -114,6 +185,54 @@ describe("Recall transcripts and delivery over the wire emulator", () => {
       retryAfterMs: 30_000,
     });
   });
+});
+
+describe("Recall leave refusals", () => {
+  function providerWithLeaveRefusal(code?: string) {
+    const calls: string[] = [];
+    const provider = real({
+      fetch: async (url, init) => {
+        calls.push(`${init?.method} ${new URL(String(url)).pathname}`);
+        if (init?.method === "POST") {
+          return code
+            ? Response.json({ code, detail: "fake-provider-detail" }, { status: 400 })
+            : new Response(null, { status: 400 });
+        }
+        return Response.json({
+          id: BOT_ID,
+          status_changes: [{ code: "in_call_recording", created_at: "2026-11-19T19:30:00.000Z" }],
+        });
+      },
+    });
+    return { provider, calls };
+  }
+
+  it("accepts a completed-bot refusal before the bot lookup reflects the shutdown", async () => {
+    const { provider, calls } = providerWithLeaveRefusal("cannot_command_completed_bot");
+    await expect(provider.leave(BOT_ID, signal)).resolves.toBeUndefined();
+    expect(calls).toEqual([`POST /api/v1/bot/${BOT_ID}/leave_call/`, `GET /api/v1/bot/${BOT_ID}/`]);
+  });
+
+  it.each([
+    ["cannot_command_unstarted_bot", "unstarted_bot"],
+    ["fake-provider-code", "other_code"],
+    [undefined, "unreadable_invalid_or_missing"],
+  ])(
+    "reports only the safe classification and rechecked status for a leave refusal (%s)",
+    async (code, classification) => {
+      const { provider } = providerWithLeaveRefusal(code);
+      await expect(provider.leave(BOT_ID, signal).catch(serializeError)).resolves.toEqual({
+        name: "Error",
+        message: "Meeting provider could not remove participant (HTTP 400)",
+        stack: expect.any(String),
+        cause: {
+          name: "Error",
+          message: `Meeting leave refusal: ${classification} (follow-up status: joined)`,
+          stack: expect.any(String),
+        },
+      });
+    },
+  );
 });
 
 it("validates common links and preserves Zoom's opaque passcode", () => {
@@ -128,9 +247,68 @@ it("validates common links and preserves Zoom's opaque passcode", () => {
     key: "/abc-defg-hij",
   });
   expect(() => parseMeetingUrl("https://meet.google.com.evil.example/abc-defg-hij")).toThrow(
-    "valid Zoom",
+    "Enter a valid Zoom, Google Meet, or Microsoft Teams link.",
   );
-  expect(() => parseMeetingUrl("http://127.0.0.1:8080/j/123456789")).toThrow("valid Zoom");
+  expect(() => parseMeetingUrl("http://127.0.0.1:8080/j/123456789")).toThrow(
+    "Enter a valid Zoom, Google Meet, or Microsoft Teams link.",
+  );
+});
+
+it("sends a Teams meeting link and its passcode to the provider", async () => {
+  const meeting = parseMeetingUrl(
+    "https://teams.cloud.microsoft/meet/123456789012?p=fake%2Bpasscode&ref=invite",
+  );
+  const emulator = new RecallMeetingEmulator();
+  const provider = real(emulator);
+  expect(provider.describe().capabilities.platforms).toContain(meeting.platform);
+  await provider.join(
+    {
+      ...input,
+      platform: meeting.platform,
+      meetingUrl: meeting.url,
+      mediaUrl: "https://example.test/camera",
+    },
+    signal,
+  );
+  expect(emulator.requests[0]?.body).toMatchObject({
+    meeting_url: "https://teams.cloud.microsoft/meet/123456789012?p=fake%2Bpasscode",
+    variant: { microsoft_teams: "web_4_core" },
+  });
+});
+
+it("accepts 16-digit Teams meeting IDs", () => {
+  expect(
+    parseMeetingUrl("https://teams.microsoft.com/meet/1234567890123456?p=fakePasscode"),
+  ).toEqual({
+    platform: "microsoft_teams",
+    url: "https://teams.microsoft.com/meet/1234567890123456?p=fakePasscode",
+    key: "1234567890123456",
+  });
+  expect(() => parseMeetingUrl("https://teams.microsoft.com/meet/123456789012345678901")).toThrow(
+    "Enter a valid Zoom, Google Meet, or Microsoft Teams link.",
+  );
+});
+
+it("preserves Teams meeting context and rejects look-alike or non-meeting links", () => {
+  const path = "/l/meetup-join/19%3Ameeting_Fake%2Bthread%40thread.v2/0";
+  const context = "%7B%22Tid%22%3A%22fake-tenant%22%7D";
+  const invite = `https://teams.microsoft.com${path}?context=${context}`;
+  expect(parseMeetingUrl(`${invite}&ref=invite#ignored`)).toEqual({
+    platform: "microsoft_teams",
+    url: invite,
+    key: "19:meeting_Fake+thread@thread.v2",
+  });
+  const rawPlusInvite = `https://teams.microsoft.com/l/meetup-join/19%3Ameeting_Fake+thread%40thread.v2/0?context=${context}`;
+  expect(parseMeetingUrl(rawPlusInvite)).toMatchObject({
+    url: rawPlusInvite,
+    key: "19:meeting_Fake+thread@thread.v2",
+  });
+  expect(() => parseMeetingUrl(`https://teams.microsoft.com.example.test${path}`)).toThrow(
+    "Enter a valid Zoom, Google Meet, or Microsoft Teams link.",
+  );
+  expect(() => parseMeetingUrl("https://teams.microsoft.com/download")).toThrow(
+    "Enter a valid Zoom, Google Meet, or Microsoft Teams link.",
+  );
 });
 
 it.each([

@@ -2,7 +2,7 @@ import type { ConnectorCatalogItem } from "@rakazo/adapter-kit";
 import { planLiveConnectionSync } from "@rakazo/adapters";
 import type { Actor } from "@rakazo/contracts";
 import { availableChatApps, isAvailableChatApp } from "@rakazo/core";
-import type { Prisma, PrismaClient } from "@rakazo/db";
+import type { Prisma } from "@rakazo/db";
 import { IsolationError, recordSecurityEvent } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { connectionCreatedEvent } from "../auth/security-audit.js";
@@ -12,10 +12,12 @@ import {
   connectionContext,
   revokeConnection,
 } from "../integrations/connection-flows.js";
+import { recordToolConnected } from "../integrations/tool-connect-analytics.js";
+import type { RouterDeps } from "../router.js";
 import type { RouterContext } from "./context.js";
 
 async function reconcileConnections(
-  prisma: PrismaClient,
+  { prisma, analytics }: Pick<RouterDeps, "prisma" | "analytics">,
   owner: Pick<Actor, "spaceId" | "userId">,
   connectorId: string,
   connectedProviders: string[],
@@ -39,6 +41,7 @@ async function reconcileConnections(
         displayName: true,
         status: true,
         updatedAt: true,
+        createdAt: true,
         providerRef: true,
       },
       // Breaks a tie between attempts begun at the same moment in favour of the later row.
@@ -106,6 +109,8 @@ async function reconcileConnections(
     });
   for (const id of connectedIds) {
     await recordSecurityEvent(connectionCreatedEvent("connections.catalog", id, owner));
+    const row = rows.find((candidate) => candidate.id === id);
+    if (row) recordToolConnected(analytics, owner.userId, row);
   }
 }
 
@@ -136,7 +141,7 @@ export function connectionsRoutes(ctx: RouterContext) {
               const nowConnected = items.filter((item) => item.connected).map((item) => item.slug);
               if (nowConnected.length > 0 || reconnectRefs.length > 0) {
                 await reconcileConnections(
-                  deps.prisma,
+                  deps,
                   context.actor,
                   provider.describe().id,
                   nowConnected,
@@ -243,10 +248,14 @@ export function connectionsRoutes(ctx: RouterContext) {
             description: tool.description,
           }));
         } catch (error) {
-          getLogger().error("connections.tools failed", error, {
-            connectorId: input.connectorId,
-            provider: input.provider,
-          });
+          const fields = { connectorId: input.connectorId, provider: input.provider };
+          // The client went away before the list came back.
+          if (context.signal?.aborted)
+            getLogger().warn("connections.tools cancelled", {
+              ...fields,
+              error: error instanceof Error ? error.message : String(error),
+            });
+          else getLogger().error("connections.tools failed", error, fields);
           return [];
         }
       }),

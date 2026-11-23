@@ -113,6 +113,56 @@ describe("blind index tokens", () => {
     expect(tokens.has(querySearchTokens(key, "photo", "word")[0]!)).toBe(false);
     expect(tokens.has(querySearchTokens(key, "photo", "prefix")[0]!)).toBe(true);
   });
+
+  describe("Han pair tokens", () => {
+    const pairKey = { ...key, key: Buffer.alloc(32, 1) };
+    const pairQuery = (query: string) => querySearchTokens(pairKey, query, "han-pair");
+    const indexes = (text: string) => {
+      const input = { words: text, strings: ["text", text] };
+      return {
+        legacy: searchTokens(pairKey, input),
+        indexed: searchTokens(pairKey, input, { hanPairs: true }),
+      };
+    };
+
+    it("indexes Han and mixed boundary pairs under the row key alongside original tokens", () => {
+      const { legacy, indexed } = indexes("我们今天讨论部署API服务，另见９𠮷Ｂ");
+      expect(indexed).toEqual(expect.arrayContaining(legacy));
+      for (const query of ["我们", "部署", "署A", "I服", "PI服务", "9𠮷", "𠮷b", "（部署）"]) {
+        const tokens = pairQuery(query);
+        expect(tokens).not.toHaveLength(0);
+        expect(indexed).toEqual(expect.arrayContaining(tokens));
+        expect(legacy).not.toEqual(expect.arrayContaining(tokens));
+      }
+      const otherKey = { ...pairKey, key: Buffer.alloc(32, 2) };
+      for (const query of ["部署", "9𠮷"]) {
+        expect(indexed).not.toEqual(
+          expect.arrayContaining(querySearchTokens(otherKey, query, "han-pair")),
+        );
+      }
+      for (const query of ["API", "A 署", "署，A", "𠮷"]) expect(pairQuery(query)).toEqual([]);
+    });
+
+    it("keeps the long Han and number counterexample to 11 added pair tokens", () => {
+      const text = Array.from({ length: 12_000 }, (_, index) => `中${100_000 + index}`).join("");
+      const { legacy, indexed } = indexes(text);
+      expect(text).toHaveLength(84_000);
+      expect(legacy).toHaveLength(13);
+      expect(indexed).toHaveLength(24);
+      expect(indexed).toEqual(expect.arrayContaining(legacy));
+      expect(indexed).toEqual(expect.arrayContaining(pairQuery("9中")));
+    });
+
+    it("bounds the added tokens for many distinct pairs and keeps legacy tokens after the cap", () => {
+      const chars = Array.from({ length: 514 }, (_, index) => String.fromCodePoint(0x4e00 + index));
+      const { legacy, indexed } = indexes(`${chars.join("")} searchable`);
+      expect(indexed).toHaveLength(legacy.length + 512);
+      expect(indexed).toEqual(expect.arrayContaining(legacy));
+      expect(indexed).toEqual(expect.arrayContaining(pairQuery(chars.slice(511, 513).join(""))));
+      expect(indexed).not.toEqual(expect.arrayContaining(pairQuery(chars.slice(512).join(""))));
+      expect(pairQuery(chars.join(""))).toHaveLength(512);
+    });
+  });
 });
 
 describe("artifact stream", () => {

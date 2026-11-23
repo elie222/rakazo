@@ -1,11 +1,11 @@
 import { ORPCError } from "@orpc/server";
 import { VoiceAccountError } from "@rakazo/adapter-kit";
-import { NoVoiceConfigured } from "@rakazo/adapters";
+import { NoVoiceConfigured, VoiceProviderRefusedError } from "@rakazo/adapters";
 import type { VoiceAccountErrorCode } from "@rakazo/contracts";
 import { ConnectionSetupError } from "@rakazo/contracts";
 import { ClientError } from "@rakazo/core";
 import { IsolationError } from "@rakazo/db";
-import { getLogger } from "@rakazo/logging";
+import { getLogContext, getLogger } from "@rakazo/logging";
 import { markExpectedFailure } from "@rakazo/logging/hono";
 import type { Context } from "hono";
 import { clientErrorStatus } from "../client-error-status.js";
@@ -24,8 +24,9 @@ export function voiceHttpError(c: Context, error: unknown) {
   }
   if (error instanceof ClientError) {
     const status = clientErrorStatus(error.kind);
-    // An outage the caller is told to wait out is still a failure to look at.
-    if (status >= 500) {
+    // An outage the caller is told to wait out is still a failure to look at, unless its thrower
+    // logged it as expected.
+    if (status >= 500 && !getLogContext()["error.expected"]) {
       getLogger().error("voice request unavailable", {
         route: c.req.path,
         reason: error.cause instanceof Error ? error.cause.name : error.kind,
@@ -54,6 +55,9 @@ export function voiceHttpError(c: Context, error: unknown) {
   getLogger().warn("voice request failed", {
     route: c.req.path,
     reason: error instanceof Error ? error.name : "unknown",
+    ...(error instanceof VoiceProviderRefusedError
+      ? { "provider.status": error.status, "provider.reason": error.reason }
+      : {}),
   });
   if (isVoiceProviderFailure(error)) markExpectedFailure();
   return c.json({ error: message }, 502);
@@ -64,6 +68,7 @@ export function isVoiceProviderFailure(error: unknown) {
   return (
     error instanceof Error &&
     (Object.getPrototypeOf(error) === Error.prototype ||
+      error instanceof VoiceProviderRefusedError ||
       error instanceof ConnectionSetupError ||
       error.name === "AbortError" ||
       error.name === "TimeoutError")

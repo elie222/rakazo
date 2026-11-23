@@ -28,6 +28,8 @@ vi.mock("./run-tool-gate.js", async (importOriginal) => ({
       claimOrReturn: async () => undefined,
     },
   })),
+}));
+vi.mock("./run-tool-audit.js", () => ({
   auditToolCall: vi.fn(async (_ctx: unknown, tool: string, outcome: string, metadata: unknown) => {
     audited.push({ tool, outcome, metadata });
   }),
@@ -231,7 +233,7 @@ describe("dispatchTool audit outcomes", () => {
   it("records an ordinary successful call as a success", async () => {
     const ctx = dispatchContext(true);
     const result = await applyTool(ctx as never, "update_preferences", {}, "call-1");
-    expect(result).toEqual({ timezone: "UTC", marketingEmails: true });
+    expect(result).toMatchObject({ timezone: "UTC", marketingEmails: true });
     expect(audited).toEqual([
       {
         tool: "update_preferences",
@@ -319,13 +321,14 @@ describe("daily check-in dispatch restriction", () => {
     "update_bot",
     "update_preferences",
     "gmail_send",
+    "message_user",
   ])("rejects %s before resolving, approving or executing it", async (name) => {
     const ctx = {
       ...dispatchContext(false),
       run: { trigger: "routine", clientNonce: "strategic-initiative:bot-1:1" },
     };
     expect(await applyTool(ctx as never, name, {}, "call-1")).toEqual({
-      error: "Daily check-ins can only ask or message the user.",
+      error: "Daily check-ins can only ask the user. Put any reminder in your final reply.",
     });
     expect(audited).toEqual([]);
     // Kept for the log line of a loop this refusal goes on to cause.

@@ -68,6 +68,9 @@ export function MentionPicker({
   onHighlight: (mention: ComposerMention) => void;
 }) {
   const { t } = useLingui();
+  // Options sharing a name (a bot and a group, say) are told apart by their visible subtitle.
+  const nameCounts = new Map<string, number>();
+  for (const { name } of options) nameCounts.set(name, (nameCounts.get(name) ?? 0) + 1);
   return (
     <div
       id={listboxId}
@@ -79,6 +82,8 @@ export function MentionPicker({
       {options.map((mention, index) => {
         const optionId = `${listboxId}-option-${index}`;
         const highlighted = index === activeIndex;
+        const labelWithSubtitle =
+          Boolean(mention.subtitle) && (nameCounts.get(mention.name) ?? 0) > 1;
         return (
           <button
             id={optionId}
@@ -86,7 +91,9 @@ export function MentionPicker({
             type="button"
             role="option"
             aria-selected={highlighted}
-            aria-label={t`@${mention.name}`}
+            aria-label={
+              labelWithSubtitle ? t`@${mention.name}, ${mention.subtitle}` : t`@${mention.name}`
+            }
             onMouseDown={(event) => event.preventDefault()}
             onClick={() => onPick(mention)}
             // Opening the list under a stationary pointer must not steal the keyboard highlight.
@@ -232,7 +239,7 @@ export function ComposerActions({
       } as CSSProperties)
     : undefined;
   // An empty draft keeps the quiet disabled look either way; the bot's color shows once it can go.
-  const sendClassName = `size-8 shrink-0 rounded-full transition-transform active:scale-95 disabled:bg-primary-disabled disabled:text-foreground/30 disabled:opacity-100 ${sendColors ? "bg-chat-user text-chat-user-foreground hover:bg-chat-user/90" : ""}`;
+  const sendClassName = `shrink-0 rounded-full transition-transform active:scale-95 disabled:bg-primary-disabled disabled:text-foreground/30 disabled:opacity-100 ${sendColors ? "bg-chat-user text-chat-user-foreground hover:bg-chat-user/90" : ""}`;
   return (
     <div
       ref={actionsRef}
@@ -262,7 +269,7 @@ export function ComposerActions({
             aria-label={t`Stop`}
             disabled={stopDisabled}
             onClick={onStop}
-            className="size-8 rounded-full border border-border bg-muted text-foreground/80 shadow-sm transition-colors hover:bg-accent hover:text-foreground"
+            className="rounded-full border border-border bg-muted text-foreground/80 shadow-sm transition-colors hover:bg-accent hover:text-foreground"
           >
             <Square size={11} strokeWidth={0} fill="currentColor" />
           </Button>

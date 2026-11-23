@@ -37,24 +37,54 @@ test("onboarding cannot continue with an empty or failed model catalog", async (
   }
 });
 
-test("Ollama Cloud onboarding requires a key before continuing", async ({ page }) => {
+test("hosted compatible providers appear in onboarding and require a key", async ({
+  page,
+}, testInfo) => {
   await page.route("**/rpc/me", async (route) => {
     const response = await route.fetch();
     const body = (await response.json()) as { json: Record<string, unknown> };
     await route.fulfill({ response, json: { json: { ...body.json, needsModel: true } } });
   });
+  const probes: Array<{ baseUrl: string; apiKey?: string }> = [];
+  await page.route("**/rpc/models/probeOpenAiCompatible", (route) => {
+    probes.push(route.request().postDataJSON().json);
+    return route.fulfill({ json: { json: { models: ["first-model", "second-model"] } } });
+  });
   const stamp = Date.now();
-  await signup(page, `ollama-${stamp}@rakazo.test`, "password12", "Model setup");
+  await signup(page, `hosted-models-${stamp}@rakazo.test`, "password12", "Model setup");
   await expect(page.getByRole("heading", { name: "Connect a model" })).toBeVisible();
-  await page.getByRole("combobox", { name: "Provider" }).click();
-  await page.getByRole("option", { name: "Ollama Cloud", exact: true }).click();
-  await page.getByLabel("Model id", { exact: true }).fill("test-model");
+  const providerPicker = page.getByRole("combobox", { name: "Provider" });
   const continueButton = page.getByRole("button", { name: "Continue", exact: true });
-  await expect(continueButton).toBeDisabled();
   const apiKey = page.getByLabel("API key", { exact: true });
+  const models = page.getByRole("button", { name: "Models from server", exact: true });
+  await providerPicker.click();
+  await page.getByRole("option", { name: "Concentrate AI", exact: true }).click();
+  await expect(page.getByLabel("OpenAI-compatible server URL", { exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Find models", exact: true })).toHaveCount(0);
+  await expect(models).toHaveText("first-model");
+  expect(probes).toEqual([
+    { baseUrl: "https://api.concentrate.ai/v1", apiProtocol: "chat-completions" },
+  ]);
+  await expect(continueButton).toBeDisabled();
+  await captureScreenshot(page, testInfo, "onboarding-concentrate");
+  await apiKey.fill("fake-concentrate-key");
+  await models.click();
+  await page.getByText("second-model", { exact: true }).click();
+  await expect(models).toHaveText("second-model");
+  await expect(continueButton).toBeEnabled();
+
+  await providerPicker.click();
+  await page.getByRole("option", { name: "Ollama Cloud", exact: true }).click();
+  await expect(page.getByLabel("OpenAI-compatible server URL", { exact: true })).toHaveCount(0);
+  await expect(continueButton).toBeDisabled();
   await apiKey.fill("   ");
   await expect(continueButton).toBeDisabled();
-  await apiKey.fill("fake-test-key");
+  await apiKey.fill("fake-ollama-key");
+  await expect(models).toHaveText("first-model");
+  expect(probes.at(-1)).toMatchObject({
+    baseUrl: "https://ollama.com/v1",
+    apiKey: "fake-ollama-key",
+  });
   await expect(continueButton).toBeEnabled();
   await apiKey.fill("");
   await expect(continueButton).toBeDisabled();

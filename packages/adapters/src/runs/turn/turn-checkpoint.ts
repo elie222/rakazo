@@ -1,5 +1,8 @@
+import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import type { Message, ToolCall } from "@earendil-works/pi-ai";
 import type { AgentRunModel } from "@rakazo/adapter-kit";
+import { TRANSCRIPT_RESULT_OMITTED } from "../../meetings/meeting-chat.prompt.js";
+import { READ_MEETING_TRANSCRIPT } from "../../meetings/meeting-chat.tool-definition.js";
 import { withoutThinkingFrom } from "../../runtime/thinking-signatures.js";
 
 export interface ComputerModeSelection {
@@ -41,7 +44,20 @@ export interface TurnCheckpoint {
 }
 
 export function serializeTurnCheckpoint(checkpoint: TurnCheckpoint): string {
-  return JSON.stringify(checkpoint);
+  return JSON.stringify({
+    ...checkpoint,
+    messages: checkpoint.messages.map(withoutSavedMeetingResult),
+  });
+}
+
+/** Keep the wire result paired with its call while leaving the transcript in its authorized store. */
+export function withoutSavedMeetingResult<T extends AgentMessage>(message: T): T {
+  if (message.role !== "toolResult" || message.toolName !== READ_MEETING_TRANSCRIPT) return message;
+  return {
+    ...message,
+    content: [{ type: "text", text: TRANSCRIPT_RESULT_OMITTED }],
+    details: undefined,
+  };
 }
 
 export function restoreTurnCheckpoint(
@@ -59,7 +75,7 @@ export function restoreTurnCheckpoint(
   ) {
     throw new Error("Unsupported turn checkpoint");
   }
-  const messages = [...checkpoint.messages];
+  const messages = checkpoint.messages.map(withoutSavedMeetingResult);
   while (messages.at(-1)?.role === "assistant") {
     const tail = messages.at(-1)!;
     if (tail.role !== "assistant" || (tail.stopReason !== "aborted" && tail.stopReason !== "error"))

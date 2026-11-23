@@ -36,12 +36,15 @@ export async function readBoundedBody(request: Request, maxBytes: number): Promi
 
 /**
  * Reads a request body as bytes without buffering more than maxBytes. A declared length is
- * allocated before any byte arrives, so call this only after the caller is authenticated.
+ * allocated before any byte arrives, so call this only after the caller is authenticated,
+ * unless `preallocateFromContentLength` is false: a caller that must read the body first (a
+ * signed webhook) says so and gets the chunk-joined path instead.
  */
 export async function readBoundedBytes(
   request: Request,
   maxBytes: number,
   signal?: AbortSignal,
+  options: { preallocateFromContentLength?: boolean } = {},
 ): Promise<Uint8Array | null> {
   const contentLengthHeader = request.headers.get("content-length");
   let declared: number | null = null;
@@ -51,7 +54,7 @@ export async function readBoundedBytes(
       cancelBody(request.body);
       return null;
     }
-    declared = contentLength;
+    if (options.preallocateFromContentLength !== false) declared = contentLength;
   }
 
   if (!request.body) return new Uint8Array();

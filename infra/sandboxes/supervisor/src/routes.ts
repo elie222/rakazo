@@ -47,12 +47,11 @@ import {
   controlViaLoopback,
   dataDir,
   docker,
-  ensureComputerImage,
   inspectSupervisorContainer,
   screenNetworkMode,
   supervisorToken,
 } from "./context.js";
-import { computerEgressMode, ensureRestrictedEgressEnforced } from "./egress.js";
+import { computerEgressMode, computerEgressReport, ensureComputerEgress } from "./egress.js";
 import {
   applyContainerActions,
   observeContainer,
@@ -145,6 +144,7 @@ app.use("*", async (c, next) => {
 });
 
 app.get("/health", (c) => c.json({ ok: true, image: COMPUTER_IMAGE }));
+app.get("/diagnostics/egress", (c) => c.text(computerEgressReport()));
 
 app.use("/computers", limitSupervisorRequestBody);
 app.use("/computers/*", limitSupervisorRequestBody);
@@ -166,8 +166,7 @@ app.post("/computers", async (c) => {
       spaceId: body.spaceId,
     });
     return await withBotLifecycleLock(body.botId, async () => {
-      await ensureComputerImage();
-      await ensureRestrictedEgressEnforced();
+      await ensureComputerEgress();
       const runtimeInfo = await inspectSupervisorContainer();
       // A containerized supervisor's host paths (data directory, Docker socket) are known only now.
       assertComputerMountSources(

@@ -1,4 +1,5 @@
 import type { PrismaClient } from "@rakazo/db";
+import { sandboxKindCapabilities } from "../sandbox/sandbox-kind-capabilities.js";
 import type { HostComputerEnvironment, HostComputerRequest } from "./host-computer-protocol.js";
 import { HostComputerSandbox } from "./host-computer-sandbox.js";
 import { UserDeviceOfflineError } from "./user-device-gateway.js";
@@ -17,7 +18,8 @@ export function withHostComputerScreen(
   options: { prisma: PrismaClient; sandboxKind: string; url?: string; token?: string },
 ): UserDeviceGateway | undefined {
   const { prisma, url, token } = options;
-  if (options.sandboxKind !== "docker" || !url || !token) return devices;
+  if (!sandboxKindCapabilities(options.sandboxKind).offersHostComputer || !url || !token)
+    return devices;
   const host = new HostComputerSandbox(url, token);
 
   // Approvals count from the latest settings change, so turning access off and on asks again.
@@ -53,8 +55,26 @@ export function withHostComputerScreen(
   }
 
   return {
-    async connected(userId) {
-      return (await devices?.connected(userId)) ?? hostDevice();
+    async connected(userId, deviceId) {
+      if (deviceId === HOST_COMPUTER_DEVICE_ID) return hostDevice();
+      const paired = await devices?.connected(userId, deviceId);
+      return paired ?? (deviceId === undefined ? hostDevice() : null);
+    },
+    async list(userId) {
+      const paired = (await devices?.list(userId)) ?? [];
+      const local = await hostDevice();
+      return local
+        ? [
+            ...paired,
+            {
+              deviceId: local.deviceId,
+              name: local.name,
+              platform: local.platform,
+              connected: true,
+              bound: !paired.some((device) => device.bound),
+            },
+          ]
+        : paired;
     },
     async pairedSince(userId) {
       return (await devices?.pairedSince(userId)) ?? enabledSince();

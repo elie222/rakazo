@@ -1,4 +1,5 @@
 import type { MessageBlock } from "@rakazo/contracts";
+import { AGENT_IMPORT_ASK_ACTION_ID } from "@rakazo/contracts";
 import { isRetiredImportSetup, isToolActivityBlock } from "@rakazo/core";
 import { MAX_QUOTABLE_SOURCE_LENGTH, visibleTextFromMarkdown } from "@rakazo/core/message-quote";
 
@@ -8,7 +9,8 @@ export function isCenteredAgentEvent(blocks: readonly MessageBlock[]): boolean {
       block.kind === "handoff" ||
       block.kind === "bot_message_sent" ||
       block.kind === "bot_message_received" ||
-      block.kind === "channel_message",
+      block.kind === "channel_message" ||
+      block.kind === "routine_event",
   );
 }
 
@@ -46,11 +48,44 @@ export function messagePresentationSegments(
   return content.length > 0 ? [{ kind: "content", blocks: content }] : [];
 }
 
+/** Keep standalone cards between the contiguous bubble content around them. */
+export function splitMessageBlocks(
+  blocks: MessageBlock[],
+  isStandalone: (block: MessageBlock) => boolean,
+): MessageBlock[][] {
+  if (!blocks.some(isStandalone)) return [blocks];
+  const pieces: MessageBlock[][] = [];
+  for (const block of blocks) {
+    const previous = pieces.at(-1);
+    if (isStandalone(block) || !previous || isStandalone(previous[0]!)) {
+      pieces.push([block]);
+    } else {
+      previous.push(block);
+    }
+  }
+  return pieces;
+}
+
+export function hasMessageSenderContent(blocks: readonly MessageBlock[]): boolean {
+  if (blocks.some((block) => block.kind === "ask") || isCenteredAgentEvent(blocks)) return false;
+  if (blocks.every((block) => block.kind === "app_connect" || block.kind === "mcp_approval")) {
+    return false;
+  }
+  return messagePresentationSegments(blocks).length > 0;
+}
+
 export function hasVisibleMessagePresentation(blocks: readonly MessageBlock[]): boolean {
   return blocks.some(
     (block) =>
       !isToolActivityBlock(block) && !isDismissedChoice(block) && !isRetiredImportSetup(block),
   );
+}
+
+type AskBlock = Extract<MessageBlock, { kind: "ask" }>;
+
+/** The options a question offers here: the agent import is in the web and desktop apps only. */
+export function askOptions(block: AskBlock): NonNullable<AskBlock["actions"]> {
+  return (block.actions ?? []).filter((action) => action.id !== AGENT_IMPORT_ASK_ACTION_ID);
 }
 
 type ChoiceBlock = Extract<MessageBlock, { kind: "choice" }>;

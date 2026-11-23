@@ -48,6 +48,7 @@ import {
   CreateScratchpadItemInput,
   ScratchpadItemSchema,
   ScratchpadItemStatusSchema,
+  ScratchpadItemTitle,
 } from "./scratchpad.js";
 
 export const botsRpc = {
@@ -101,7 +102,10 @@ export const botsRpc = {
         webhookConfigured: z.literal(true),
       }),
     ),
-    revealWebhookSecret: oc.input(botId).output(z.object({ secret: z.string() })),
+    revealWebhookSecret: oc
+      .input(botId)
+      // `url` is set when the deployment publishes its webhooks at a public address.
+      .output(z.object({ secret: z.string(), url: z.string().optional() })),
   },
   botSections: {
     list: oc.output(z.array(BotSectionSchema)),
@@ -173,7 +177,7 @@ export const botsRpc = {
       .input(
         z.object({
           itemId: Id,
-          title: z.string().min(1).max(200).optional(),
+          title: ScratchpadItemTitle.optional(),
           status: ScratchpadItemStatusSchema.optional(),
           notes: z.string().max(4_000).optional(),
         }),

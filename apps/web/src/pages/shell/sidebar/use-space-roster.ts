@@ -14,7 +14,7 @@ import { replaceEqualDeep } from "@tanstack/react-query";
 import type { RefObject } from "react";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useLocation } from "react-router-dom";
-import { takeInitialBootstrap } from "../../../lib/bootstrap";
+import { applyAccountCapabilities, takeInitialBootstrap } from "../../../lib/bootstrap";
 import {
   initialBootstrapTarget,
   linkedBotRoute,
@@ -65,12 +65,32 @@ export function useSpaceRoster({
   const savingBotOrderRef = useRef(false);
   const [botSections, setBotSections] = useState<BotSection[]>(seed?.botSections ?? []);
   const [spaces, setSpaces] = useState<Space[]>(seed?.spaces ?? []);
+  // Until the server says otherwise, an account with nothing in sight is treated as new.
+  const [firstBotDue, setFirstBotDue] = useState(true);
   const [archivedBots, setArchivedBots] = useState<Bot[]>(seed?.archivedBots ?? []);
   const [archivedGroups, setArchivedGroups] = useState<Group[]>(seed?.archivedGroups ?? []);
   const [initialBotsLoaded, setInitialBotsLoaded] = useState(Boolean(seed));
   // A failed first load falls back to the shell, whose re-reads and footer can still recover.
   const [initialLoadFailed, setInitialLoadFailed] = useState(false);
   const [bootstrapMe, setBootstrapMe] = useState<Me | null | undefined>(seed?.me);
+  // Set when the first load failed without a seed: roster re-reads then fetch the account too,
+  // or what it decides (Labs, Billing, ...) would stay hidden until a reload.
+  const meMissingRef = useRef(false);
+  const accountLoadFailed = useCallback(() => {
+    meMissingRef.current = true;
+    setBootstrapMe(null);
+  }, []);
+  // An account arriving another way (a settings save) is newer than a pending re-read, and a
+  // shell that is gone must not apply its account over the next one's.
+  useEffect(() => {
+    if (bootstrapMe) meMissingRef.current = false;
+  }, [bootstrapMe]);
+  useEffect(
+    () => () => {
+      meMissingRef.current = false;
+    },
+    [],
+  );
   const callsEnabledRef = useRef(false);
   useEffect(() => {
     callsEnabledRef.current = bootstrapMe?.phoneCallsEnabled === true;
@@ -99,6 +119,20 @@ export function useSpaceRoster({
       const botOrderEpoch = botOrderEpochRef.current;
       const preserveBotOrder = savingBotOrderRef.current || pendingBotOrderRef.current !== null;
       const archivedRequest = includeArchived ? ++archivedBotsRefreshEpoch.current : null;
+      if (meMissingRef.current) {
+        // Apart from the roster, so a failing account read cannot hold it back. The RPC client
+        // reports a transport failure and the API a server one; the flag stays set, so the next
+        // re-read tries again.
+        void rpc.me().then(
+          (me) => {
+            if (!meMissingRef.current) return;
+            meMissingRef.current = false;
+            applyAccountCapabilities(me);
+            setBootstrapMe((previous) => previous ?? me);
+          },
+          () => {},
+        );
+      }
       const [navigation, archived, archivedGroupList] = await Promise.all([
         rpc.spaces.list(),
         includeArchived ? rpc.bots.listArchived() : Promise.resolve(null),
@@ -128,6 +162,7 @@ export function useSpaceRoster({
       setBotSections((previous) => replaceEqualDeep(previous, sections));
       setGroups((previous) => replaceEqualDeep(previous, groupList));
       setSpaces((previous) => replaceEqualDeep(previous, navigation.spaces));
+      setFirstBotDue(navigation.firstBotDue !== false);
       setInitialBotsLoaded(true);
       botsRefreshApplied.current = request;
       const route = liveRoute();
@@ -138,11 +173,13 @@ export function useSpaceRoster({
         archived?.length === 0 &&
         groupList.length === 0 &&
         archivedGroupList?.length === 0 &&
-        !navigation.spaces.some((space) => space.hasContent)
+        !navigation.spaces.some((space) => space.hasContent) &&
+        navigation.firstBotDue !== false
       ) {
-        // Only the very first bot everywhere needs onboarding. An empty
-        // current space with content elsewhere stays in the app so the
-        // space can be switched to or deleted instead of trapping the user.
+        // Only the very first bot everywhere needs onboarding, which the server
+        // says: an empty space beside used ones, or in a new organization of
+        // someone who has chatted before, stays in the app so it can be
+        // switched from, filled or deleted instead of trapping the user.
         navigate("/onboarding", { replace: true });
         return;
       }
@@ -232,6 +269,8 @@ export function useSpaceRoster({
     botSections,
     spaces,
     setSpaces,
+    firstBotDue,
+    setFirstBotDue,
     archivedBots,
     setArchivedBots,
     archivedGroups,
@@ -243,6 +282,7 @@ export function useSpaceRoster({
     setInitialLoadFailed,
     bootstrapMe,
     setBootstrapMe,
+    accountLoadFailed,
     callsEnabledRef,
     botsRefreshApplied,
     switchingSpace,
@@ -303,10 +343,12 @@ export function useSpaceBootstrap({
     setArchivedGroups,
     spaces,
     setSpaces,
+    setFirstBotDue,
     setInitialBotsLoaded,
     setInitialLoadFailed,
     bootstrapMe,
     setBootstrapMe,
+    accountLoadFailed,
     callsEnabledRef,
     botsRefreshApplied,
     switchingSpace,
@@ -327,7 +369,7 @@ export function useSpaceBootstrap({
     }
   }
   const seedStateRef = useRef<
-    | (Omit<AppBootstrap, "thread" | "routines" | "me"> & {
+    | (Omit<AppBootstrap, "thread" | "routines" | "me" | "firstBotDue"> & {
         me?: Me | null;
         chat: ChatTarget | undefined;
       })
@@ -380,6 +422,7 @@ export function useSpaceBootstrap({
           setArchivedGroups(bootstrap.archivedGroups);
           setGroups(groupList);
           setSpaces(bootstrap.spaces);
+          setFirstBotDue(bootstrap.firstBotDue !== false);
           setInitialBotsLoaded(true);
         }
         // A seeded shell already loads its chat live; this older copy must not replace it.
@@ -416,7 +459,8 @@ export function useSpaceBootstrap({
           bootstrap.archivedBots.length === 0 &&
           groupList.length === 0 &&
           bootstrap.archivedGroups.length === 0 &&
-          !bootstrap.spaces.some((space) => space.hasContent)
+          !bootstrap.spaces.some((space) => space.hasContent) &&
+          bootstrap.firstBotDue !== false
         ) {
           navigate("/onboarding", { replace: true });
           return;
@@ -430,7 +474,7 @@ export function useSpaceBootstrap({
       })
       .catch(() => {
         if (cancelled) return;
-        if (!seed) setBootstrapMe(null);
+        if (!seed) accountLoadFailed();
         return refreshBots(true).catch(() => {
           if (!cancelled) setInitialLoadFailed(true);
         });

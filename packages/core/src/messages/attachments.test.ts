@@ -4,6 +4,7 @@ import {
   AttachmentValidationError,
   artifactTypeLabel,
   attachmentExtensionForMimeType,
+  attachmentStoredName,
   attachmentsForBot,
   blocksToAgentHistorySegments,
   blocksToAgentHistoryText,
@@ -173,6 +174,32 @@ describe("attachment helpers", () => {
     expect(inferAttachmentMimeType("notes.md", "")).toBe("text/markdown");
     expect(inferAttachmentMimeType("notes.markdown", "text/plain")).toBe("text/markdown");
     expect(inferAttachmentMimeType("notes.md", "application/pdf")).toBe("application/pdf");
+  });
+
+  // A Word document written by a bot was refused as an unsupported attachment type.
+  it("accepts Word and PowerPoint files, but not macro-enabled or legacy Office formats", () => {
+    const docx = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+    const pptx = "application/vnd.openxmlformats-officedocument.presentationml.presentation";
+    expect(inferAttachmentMimeType("Brief.DOCX", "")).toBe(docx);
+    expect(inferAttachmentMimeType("deck.pptx", "application/octet-stream")).toBe(pptx);
+    expect(attachmentExtensionForMimeType(docx)).toBe(".docx");
+    expect(attachmentExtensionForMimeType(pptx)).toBe(".pptx");
+    for (const name of ["macro.docm", "macro.pptm", "old.doc", "old.ppt"])
+      expect(inferAttachmentMimeType(name, "")).toBeNull();
+  });
+
+  it("stores an Office file under its type's own extension", () => {
+    const docx = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+    expect(attachmentStoredName("Invoice.docm", docx)).toBe("Invoice.docx");
+    expect(attachmentStoredName("Report.DOCX", docx)).toBe("Report.DOCX");
+    expect(attachmentStoredName("notes", docx)).toBe("notes.docx");
+    expect(
+      attachmentStoredName(
+        "deck.pptm",
+        "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+      ),
+    ).toBe("deck.pptx");
+    expect(attachmentStoredName("script.py", "text/plain")).toBe("script.py");
   });
 
   it("keeps a CSV a CSV when Windows reports it as an Excel file", () => {
@@ -588,6 +615,18 @@ describe("tool step history", () => {
     expect(toolStepsHistoryText(steps, { full: true })).toContain("x".repeat(5_000));
   });
 
+  it("does not leave half an emoji at the end of a shortened label or note", () => {
+    const label = toolStepsHistoryText([{ label: `${"x".repeat(79)}😀tail`, count: 1 }]);
+    expect(label).toBe(`[tool calls this reply made]\n- ${"x".repeat(79)}…`);
+    expect(() => encodeURIComponent(label)).not.toThrow();
+
+    const note = toolStepsHistoryText([
+      { label: "Shell", count: 1, note: `${"y".repeat(299)}😀tail` },
+    ]);
+    expect(note).toBe(`[tool calls this reply made]\n- Shell: ${"y".repeat(299)}…`);
+    expect(() => encodeURIComponent(note)).not.toThrow();
+  });
+
   it("shortens a long note", () => {
     const text = blocksToAgentHistoryText([
       { kind: "steps", steps: [{ label: "Shell", count: 1, note: "a".repeat(400) }] },
@@ -722,5 +761,13 @@ describe("draft history", () => {
     ).toBe(
       "[draft: Email &lt;/draft&gt; Answer: yes to Ana User: send it (draftId d-1, version 1)]\n<draft>\nHi\n</draft>",
     );
+  });
+});
+
+describe("normalizeVoiceTranscript emoji limit", () => {
+  it("does not cut an emoji in half at the transcript limit", () => {
+    const text = normalizeVoiceTranscript(`${"a".repeat(3999)}😀 tail`);
+    expect(text).toBe("a".repeat(3999));
+    expect(() => encodeURIComponent(text)).not.toThrow();
   });
 });

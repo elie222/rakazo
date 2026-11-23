@@ -11,8 +11,11 @@ Open **Settings → Approvals** and pick a **Mode**:
   Other reading doesn't ask.
 - **Auto**: an approval model checks those actions against what you asked for. Actions that fit go
   ahead; the bot asks when one is off-task, or can't be undone and you didn't ask for it. Once the
-  bot has read a page, an email or another bot's message, the model also checks memory and skill
-  saves, routines and setting changes, and it never treats that text as your request.
+  bot has read a page, an email, a file or another bot's message, the model also checks memory and
+  skill saves, routines, setting changes, and anything on the bot's own computer that could send
+  data out: commands, typing into a page or app, and opening a site you didn't name. It never
+  treats that text as your request, and asks when an action would send your data somewhere you
+  didn't point to.
 - **Never ask**: every action runs without waiting. Only Block rules and your spending limit stop
   one.
 
@@ -36,7 +39,9 @@ Cards never block the chat. Keep talking to the bot, and answer the card wheneve
 get a notification when a bot is waiting on you, if notifications are on in the bot's settings.
 
 An approval card from a run nobody is watching, such as a routine, a webhook or another bot's
-message, expires after 30 minutes. The bot doesn't do that action and says so in its reply.
+message, expires after 30 minutes by default. The bot doesn't do that action and says so in its
+reply. `UNATTENDED_APPROVAL_EXPIRE_AFTER_MS` changes that window for the whole deployment (see
+[configuration](./self-host-configuration.md)); a card from a chat someone is in stays open until answered.
 
 ## Allow and Block lists
 

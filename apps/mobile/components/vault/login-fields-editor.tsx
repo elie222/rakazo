@@ -1,7 +1,9 @@
+import { ph } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
 import type { LoginFieldInput } from "@rakazo/contracts";
 import { LOGIN_FIELD_LIMIT } from "@rakazo/contracts";
 import type { RefObject } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { TextInputInstance } from "react-native";
 import { StyleSheet, Text, TextInput, View } from "react-native";
 import { mobileTokens } from "../../lib/appearance/appearance";
@@ -22,13 +24,16 @@ export function emptyLoginField(fields: readonly LoginFieldRow[]): LoginFieldRow
 }
 
 /**
- * The values of a website login, each with a Hidden switch. With `labels` the fields are fixed and
- * shown by those names; without them the person names, adds and removes fields.
+ * The values of a website login. With `labels` the fields are fixed and shown by those names;
+ * without them the person names, adds and removes fields. A Hidden switch says which values are
+ * typed only into password fields. `hiddenFixed` leaves it out where the labels can't be wrong (the
+ * default Username and Password) and gives each secret field an eye to check it while typing.
  */
 export function LoginFieldsEditor({
   fields,
   onChange,
   labels,
+  hiddenFixed = false,
   editable,
   inputs,
   onEndEditing,
@@ -37,6 +42,8 @@ export function LoginFieldsEditor({
   fields: readonly LoginFieldRow[];
   onChange: (update: (fields: LoginFieldRow[]) => LoginFieldRow[]) => void;
   labels?: readonly string[];
+  /** Fields keep the Hidden setting they start with; only for fixed `labels`. */
+  hiddenFixed?: boolean;
   editable: boolean;
   /** The value inputs by position, for focus and for clearing before the sheet closes. */
   inputs: RefObject<(TextInputInstance | null)[]>;
@@ -45,6 +52,30 @@ export function LoginFieldsEditor({
 }) {
   const { t } = useLingui();
   const styles = useThemedStyles(createStyles);
+  // Fields shown while typing; their saved Hidden setting is unchanged.
+  const [shown, setShown] = useState<ReadonlySet<number>>(new Set());
+  const isShown = (field: LoginFieldRow) => shown.has(field.id);
+  // A field that is emptied (a failed save clears every value) is masked again, so what is typed
+  // next starts hidden.
+  const previous = useRef(fields);
+  useEffect(() => {
+    const emptied = fields
+      .filter(
+        (field) =>
+          field.value === "" &&
+          previous.current.some((before) => before.id === field.id && before.value !== ""),
+      )
+      .map((field) => field.id);
+    previous.current = fields;
+    if (emptied.length === 0) return;
+    setShown((current) => new Set([...current].filter((id) => !emptied.includes(id))));
+  }, [fields]);
+  const toggleShown = (id: number) =>
+    setShown((current) => {
+      const next = new Set(current);
+      if (!next.delete(id)) next.add(id);
+      return next;
+    });
   const change = (id: number, patch: Partial<LoginFieldInput>) =>
     onChange((current) =>
       current.map((field) => (field.id === id ? { ...field, ...patch } : field)),
@@ -85,7 +116,7 @@ export function LoginFieldsEditor({
                 ) : null}
               </View>
             )}
-            <View style={[styles.row, styles.separated]}>
+            <View style={[styles.row, hiddenFixed ? undefined : styles.separated]}>
               <TextInput
                 ref={(node) => {
                   inputs.current[index] = node;
@@ -95,7 +126,7 @@ export function LoginFieldsEditor({
                 onChangeText={(value) => change(field.id, { value })}
                 placeholder={name}
                 placeholderTextColor={styles.placeholder.color}
-                secureTextEntry={field.hidden}
+                secureTextEntry={field.hidden && !isShown(field)}
                 {...loginFieldTraits(field.hidden)}
                 autoCorrect={false}
                 autoCapitalize="none"
@@ -106,16 +137,34 @@ export function LoginFieldsEditor({
                 onEndEditing={(event) => onEndEditing(event.nativeEvent.text)}
                 style={styles.input}
               />
+              {hiddenFixed && field.hidden ? (
+                <NativeActionButton
+                  accessibilityLabel={
+                    isShown(field) ? t`Hide ${ph({ field: name })}` : t`Show ${ph({ field: name })}`
+                  }
+                  icon={
+                    isShown(field)
+                      ? { ios: "eye.slash", android: "eye-off-outline" }
+                      : { ios: "eye", android: "eye-outline" }
+                  }
+                  prominence="quiet"
+                  onPress={() => toggleShown(field.id)}
+                  style={styles.reveal}
+                />
+              ) : null}
             </View>
-            <View style={styles.row}>
-              <Text style={styles.switchLabel}>{t`Hidden`}</Text>
-              <NativeSwitch
-                accessibilityLabel={t`Hidden`}
-                disabled={!editable}
-                value={field.hidden}
-                onValueChange={(hidden) => change(field.id, { hidden })}
-              />
-            </View>
+            {hiddenFixed ? null : (
+              <View style={styles.row}>
+                <Text style={styles.switchLabel}>{t`Hidden`}</Text>
+                <NativeSwitch
+                  accessibilityLabel={t`Hidden`}
+                  accessibilityHint={name}
+                  disabled={!editable}
+                  value={field.hidden}
+                  onValueChange={(hidden) => change(field.id, { hidden })}
+                />
+              </View>
+            )}
           </View>
         );
       })}
@@ -141,6 +190,7 @@ function createStyles() {
     separated: { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: tokens.border },
     input: { flex: 1, minWidth: 0, paddingVertical: 16, color: tokens.foreground },
     remove: { minWidth: 44, minHeight: 44, marginRight: -8 },
+    reveal: { marginRight: -4, alignSelf: "center" },
     switchLabel: { flex: 1, color: tokens.foreground, fontSize: 17 },
     placeholder: { color: tokens.faintForeground },
   });

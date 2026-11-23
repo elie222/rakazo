@@ -9,9 +9,18 @@ import { ErrorNotice } from "../../../components/ErrorNotice";
 import { useSave, useSpaceQueries } from "../../../lib/query/query";
 import { errorDetails } from "../../../lib/query/user-error";
 import { useEventListener } from "../../../lib/use-event-listener";
+import { MeetingCalendar } from "./meeting-calendar";
 import { MeetingTranscript } from "./meeting-transcript";
 
-export default function MeetingsDialog({ botId, onClose }: { botId: string; onClose: () => void }) {
+export default function MeetingsDialog({
+  botId,
+  showCalendar,
+  onClose,
+}: {
+  botId: string;
+  showCalendar: boolean;
+  onClose: () => void;
+}) {
   const { t } = useLingui();
   const [selected, select] = useState<string>();
   const [url, setUrl] = useState("");
@@ -20,7 +29,7 @@ export default function MeetingsDialog({ botId, onClose }: { botId: string; onCl
   const list = useQuery(read);
   useEventListener(window, "focus", () => void list.refetch({ cancelRefetch: false }));
   const join = useSave({
-    save: (url: string, rpc) => rpc.meetings.join({ botId, url }),
+    save: (url: string, rpc) => rpc.meetings.join({ botId, url, shareTranscript: true }),
     stale: [read.queryKey],
     onSaved: () => setUrl(""),
   });
@@ -68,6 +77,7 @@ export default function MeetingsDialog({ botId, onClose }: { botId: string; onCl
               {list.data?.enabled ? (
                 <form
                   className="flex flex-col gap-2"
+                  noValidate
                   onSubmit={(event) => {
                     event.preventDefault();
                     if (url.trim() && !busy) join.run(url.trim());
@@ -81,7 +91,6 @@ export default function MeetingsDialog({ botId, onClose }: { botId: string; onCl
                       id="meeting-link"
                       type="url"
                       aria-describedby="meeting-capture-notice"
-                      placeholder={t`Zoom or Google Meet link`}
                       autoComplete="off"
                       value={url}
                       disabled={busy}
@@ -90,13 +99,13 @@ export default function MeetingsDialog({ botId, onClose }: { botId: string; onCl
                         setUrl(event.target.value);
                       }}
                     />
-                    <Button type="submit" disabled={busy || !url.trim()}>
+                    <Button size="lg" type="submit" disabled={busy || !url.trim()}>
                       <Trans>Join meeting</Trans>
                     </Button>
                   </div>
                   <p id="meeting-capture-notice" className="text-body-sm text-muted-foreground">
                     <Trans>
-                      Only send the bot if you have permission to record and transcribe the meeting.
+                      Get permission to record and share the transcript with this Space.
                     </Trans>
                   </p>
                 </form>
@@ -117,14 +126,14 @@ export default function MeetingsDialog({ botId, onClose }: { botId: string; onCl
                   {list.data.meetings.map((meeting) => {
                     const canRead = meeting.transcriptAvailable;
                     const canLeave = canLeaveMeeting(meeting.status);
+                    const platform = meetingPlatformLabel(meeting.platform);
+                    const time = canRead || !canLeave ? meetingTime(meeting.createdAt) : "";
                     return (
                       <li key={meeting.id} className="flex items-center justify-between gap-3 py-3">
                         <div className="min-w-0">
-                          <p className="font-medium">{meetingPlatformLabel(meeting.platform)}</p>
+                          <p className="font-medium">{platform}</p>
                           {!canLeave ? (
-                            <p className="text-body-sm text-muted-foreground">
-                              {meetingTime(meeting.createdAt)}
-                            </p>
+                            <p className="text-body-sm text-muted-foreground">{time}</p>
                           ) : null}
                           {canRead || meeting.error ? null : (
                             <p role="status" className="text-body-sm text-muted-foreground">
@@ -136,7 +145,11 @@ export default function MeetingsDialog({ botId, onClose }: { botId: string; onCl
                           ) : null}
                         </div>
                         {canRead ? (
-                          <Button variant="ghost" onClick={() => select(meeting.id)}>
+                          <Button
+                            variant="ghost"
+                            aria-label={t`View transcript: ${platform}, ${time}`}
+                            onClick={() => select(meeting.id)}
+                          >
                             <Trans>View transcript</Trans>
                             <ChevronRight className="size-4 rtl:rotate-180" />
                           </Button>
@@ -153,6 +166,9 @@ export default function MeetingsDialog({ botId, onClose }: { botId: string; onCl
                     );
                   })}
                 </ul>
+              ) : null}
+              {list.data?.enabled ? (
+                <MeetingCalendar botId={botId} initiallyOpen={showCalendar} />
               ) : null}
             </div>
           )}

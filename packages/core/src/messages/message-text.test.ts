@@ -1,6 +1,10 @@
 import type { ThreadMessage } from "@rakazo/contracts";
 import { describe, expect, it } from "vitest";
-import { copyableMessageText, selectableMessageText } from "./message-text.js";
+import {
+  copyableMessagesText,
+  copyableMessageText,
+  selectableMessageText,
+} from "./message-text.js";
 
 function message(blocks: ThreadMessage["blocks"]): ThreadMessage {
   return { id: "m_1", threadId: "t_1", seq: 1, role: "bot", blocks, createdAt: "2026-08-29" };
@@ -87,5 +91,30 @@ describe("copyableMessageText", () => {
     const indented = message([{ kind: "text", text: "    indented\nnext  " }]);
     expect(selectableMessageText(indented)).toBe("    indented\nnext  ");
     expect(copyableMessageText(indented)).toBe("indented\nnext");
+  });
+});
+
+describe("copyableMessagesText", () => {
+  it("joins messages in the order given with a blank line between them", () => {
+    expect(
+      copyableMessagesText([
+        message([{ kind: "text", text: "first" }]),
+        message([{ kind: "text", text: "  second\nline  " }]),
+      ]),
+    ).toBe("first\n\nsecond\nline");
+  });
+
+  it("skips a message with nothing to copy instead of leaving a gap", () => {
+    const card = message([{ kind: "card", lines: [] }]);
+    expect(
+      copyableMessagesText([
+        message([{ kind: "text", text: "a" }]),
+        card,
+        message([{ kind: "text", text: "   " }]),
+        message([{ kind: "text", text: "b" }]),
+      ]),
+    ).toBe("a\n\nb");
+    expect(copyableMessagesText([card])).toBe("");
+    expect(copyableMessagesText([])).toBe("");
   });
 });

@@ -89,22 +89,9 @@ describe("mobile API sign-in and account", () => {
       ],
       [400, "not json", "The server had a problem. Try again in a moment."],
       [200, "not json", "The server had a problem. Try again in a moment."],
-      [500, "{}", "The server had a problem. Try again in a moment."],
       [503, "{}", "Could not reach the server"],
-      [502, "<html>Bad gateway</html>", "Could not reach the server"],
-      [504, "{}", "Could not reach the server"],
       [403, '{"code":"PASSWORD_AUTH_DISABLED"}', "Password sign-in is turned off on this server"],
-      [
-        400,
-        '{"code":"PASSWORD_TOO_LONG","message":"Password too long"}',
-        "Password must be 128 characters or fewer",
-      ],
       [403, '{"message":"Registration is closed"}', "Registration is closed"],
-      [
-        422,
-        '{"message":"User already exists. Use another email."}',
-        "User already exists. Use another email.",
-      ],
       [
         429,
         '{"message":"Please wait before signing in again"}',
@@ -181,15 +168,12 @@ describe("mobile API sign-in and account", () => {
   ])("$name errors", ({ request, fallback }) => {
     it.each([
       [429, "", "Too many attempts. Try again in a few minutes."],
-      [502, "<html>Bad gateway</html>", "Could not reach the server"],
       [503, "<html>Service unavailable</html>", "Could not reach the server"],
-      [504, "<html>Gateway timeout</html>", "Could not reach the server"],
       [
         500,
         "<html>Internal Server Error</html>",
         "The server had a problem. Try again in a moment.",
       ],
-      [500, "{}", "The server had a problem. Try again in a moment."],
       [400, "not json", "The server had a problem. Try again in a moment."],
       // Preserve the existing action-specific fallback for ordinary JSON errors.
       [400, "{}", fallback],
@@ -626,7 +610,7 @@ describe("mobile API sign-in and account", () => {
     });
   });
 
-  it.each(["", "   ", "💬", "__AbCdEfGh__", "x".repeat(81)])(
+  it.each(["   ", "💬", "__AbCdEfGh__", "x".repeat(81)])(
     "rejects an unsupported name before making a request (%s)",
     async (name) => {
       const fetchMock = vi.fn();

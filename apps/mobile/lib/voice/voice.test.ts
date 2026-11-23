@@ -8,7 +8,7 @@ import { Platform } from "react-native";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { allowPromptedAiConsent, captureApiRequestContext, currentApiBase, rpc } from "../api/api";
 import { promptAiConsent } from "../settings/ai-consent";
-import { DEVICE_VOICE_KEY } from "./device-voice";
+import { DEVICE_VOICE_KEY, saveDeviceVoiceEnabled } from "./device-voice";
 import {
   activateVoiceAudio,
   createSpeechOwner,
@@ -16,6 +16,7 @@ import {
   getVoicePlaybackState,
   pauseVoicePlayback,
   playSpeechClip,
+  queueSpeech,
   resumeVoicePlayback,
   setCallAudio,
   setDictationAudio,
@@ -320,6 +321,87 @@ describe("hosted voice playback controls", () => {
   afterEach(() => {
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
+  });
+
+  it("says a call's next text after the one playing, rendering its clip meanwhile", async () => {
+    const requested: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (_url: string, init?: { body?: unknown }) => {
+        const body = JSON.parse(String(init?.body ?? "{}")) as { text?: string };
+        requested.push(body.text ?? "");
+        return new Response(new Uint8Array([1, 2, 3]), { status: 200 });
+      }),
+    );
+    vi.mocked(rpc).mockImplementation(async (_proc, input) => {
+      return { ready: true, utterances: [(input as { text: string }).text] } as never;
+    });
+    const owner = createSpeechOwner();
+
+    const first = queueSpeech("Booked.", { botId: "bot-1", owner });
+    await waitFor(() => ControllableAudio.instances[0]?.paused === false);
+    const second = queueSpeech("The hotel is close.", { botId: "bot-1", owner });
+    await waitFor(() => requested.length === 2);
+    expect(requested).toEqual(["Booked.", "The hotel is close."]);
+    expect(ControllableAudio.instances).toHaveLength(1);
+    expect(getVoicePlaybackState()).toMatchObject({ status: "playing", botId: "bot-1" });
+
+    ControllableAudio.instances[0]?.onended?.();
+    await expect(first).resolves.toBe(true);
+    await waitFor(() => ControllableAudio.instances[1]?.paused === false);
+    ControllableAudio.instances[1]?.onended?.();
+    await expect(second).resolves.toBe(true);
+    expect(getVoicePlaybackState()).toEqual({ status: "idle", canPause: false });
+  });
+
+  it("stops a call's queued speech for its owner, and reports a missing voice", async () => {
+    const owner = createSpeechOwner();
+    const first = queueSpeech("Booked.", { owner });
+    const second = queueSpeech("The hotel is close.", { owner });
+    await waitFor(() => ControllableAudio.instances[0]?.paused === false);
+
+    stopSpeaking(owner);
+    await expect(first).resolves.toBe(true);
+    await expect(second).resolves.toBe(true);
+    expect(ControllableAudio.instances).toHaveLength(1);
+    expect(getVoicePlaybackState()).toEqual({ status: "idle", canPause: false });
+
+    vi.mocked(rpc).mockResolvedValue({ ready: false, utterances: [] } as never);
+    await expect(queueSpeech("Hello.", { owner })).resolves.toBe(false);
+  });
+
+  it("speaks a call's later text on this device once it is chosen mid-call", async () => {
+    const requested: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (_url: string, init?: { body?: unknown }) => {
+        const body = JSON.parse(String(init?.body ?? "{}")) as { text?: string };
+        requested.push(body.text ?? "");
+        return new Response(new Uint8Array([1, 2, 3]), { status: 200 });
+      }),
+    );
+    vi.mocked(rpc).mockImplementation(async (_proc, input) => {
+      return { ready: true, utterances: [(input as { text: string }).text] } as never;
+    });
+    const spokenOnDevice: string[] = [];
+    vi.mocked(Speech.speak).mockImplementation((text, options) => {
+      spokenOnDevice.push(text);
+      options?.onDone?.();
+    });
+    const owner = createSpeechOwner();
+
+    const first = queueSpeech("Booked.", { botId: "bot-1", owner });
+    await vi.waitFor(() => expect(ControllableAudio.instances[0]?.paused).toBe(false));
+    ControllableAudio.instances[0]?.onended?.();
+    await expect(first).resolves.toBe(true);
+
+    vi.mocked(SecureStore.getItemAsync).mockImplementation(async (key) =>
+      key === DEVICE_VOICE_KEY ? "1" : null,
+    );
+    await saveDeviceVoiceEnabled(true);
+    await expect(queueSpeech("The hotel is close.", { botId: "bot-1", owner })).resolves.toBe(true);
+    expect(spokenOnDevice).toEqual(["The hotel is close."]);
+    expect(requested).toEqual(["Booked."]);
   });
 
   it("reports idle with no control before anything is speaking", () => {
@@ -1310,6 +1392,30 @@ describe("on-device speech", () => {
     // The superseded call speech settles as not spoken, not as a voice setup failure.
     utterances[0]!.stopped();
     await expect(call).resolves.toBe(false);
+  });
+
+  it("says a call's queued texts in order on the device voice, and stops them for the owner", async () => {
+    vi.mocked(SecureStore.getItemAsync).mockResolvedValue("1");
+    const calls: Array<{ text: string; options: Parameters<typeof Speech.speak>[1] }> = [];
+    vi.mocked(Speech.speak).mockImplementation((text, options) => {
+      calls.push({ text, options });
+    });
+    const owner = createSpeechOwner();
+
+    const first = queueSpeech("Booked.", { owner });
+    const second = queueSpeech("The hotel is close.", { owner });
+    await flushDeviceSpeechImport();
+    expect(calls.map((call) => call.text)).toEqual(["Booked."]);
+    calls[0]?.options?.onDone?.();
+    await expect(first).resolves.toBe(true);
+    await flushDeviceSpeechImport();
+    expect(calls.map((call) => call.text)).toEqual(["Booked.", "The hotel is close."]);
+
+    stopSpeaking(owner);
+    expect(Speech.stop).toHaveBeenCalledOnce();
+    calls[1]?.options?.onStopped?.();
+    await expect(second).resolves.toBe(true);
+    expect(rpc).not.toHaveBeenCalled();
   });
 
   it("speaks locally and never touches the network when the device voice is on", async () => {

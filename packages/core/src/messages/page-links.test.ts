@@ -53,6 +53,30 @@ describe("pageLinksAsTitles", () => {
     }
   });
 
+  it.each(["~~~", "```"])("leaves %s fences inside a multiline quote as written", (fence) => {
+    const code = [
+      `> ${fence}md`,
+      "> [Example](page:p1)",
+      ">",
+      `> ${fence.slice(1)}`,
+      "> [Another example](page:p2)",
+      `> ${fence}${fence[0]}  `,
+    ].join("\n");
+    expect(
+      pageLinksAsTitles(`> [Before](page:p3)\n${code}\n> [After](page:p4)\n\n[Outside](page:p5)`),
+    ).toBe(`> Before\n${code}\n> After\n\nOutside`);
+  });
+
+  it("ends an unclosed fence at the end of its own quote", () => {
+    const nested = "> > ~~~\r\n> > [Example](page:p1)";
+    const separate = "> ~~~\r\n> [Another example](page:p4)";
+    expect(
+      pageLinksAsTitles(
+        `${nested}\r\n> [Parent](page:p2)\r\n\r\n[Outside](page:p3)\r\n\r\n${separate}`,
+      ),
+    ).toBe(`${nested}\r\n> Parent\r\n\r\nOutside\r\n\r\n${separate}`);
+  });
+
   it("stays linear on 100 KB of brackets that never close", () => {
     for (const input of [
       "[".repeat(100_000),
@@ -64,6 +88,7 @@ describe("pageLinksAsTitles", () => {
       Array.from({ length: 400 }, (_, n) => `${"`".repeat(n + 1)}x`).join(""),
       `${"```\n".repeat(20_000)}`,
       `${"~~~\n".repeat(20_000)}`,
+      "> > ~~~\n> > [example](page:p1)\n> [link](page:p2)\n\n".repeat(5_000),
       // Long fences with text after them, which close nothing, over many short closers.
       `${"````x\n".repeat(20_000)}${"```\n".repeat(20_000)}`,
       // Fences getting shorter, then many short ones: each long fence looks past them all.

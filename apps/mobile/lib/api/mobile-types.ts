@@ -60,6 +60,7 @@ export type MobileMe = Pick<
   | "labs"
   | "labsAvailable"
   | "botAvatarSet"
+  | "chatPreferences"
 >;
 export type MobileModel = ModelCatalogEntry;
 /** Shared DTO includes headerNames only; header values remain in the server secret. */

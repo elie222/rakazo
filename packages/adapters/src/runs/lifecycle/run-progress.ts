@@ -131,7 +131,7 @@ export function canPostLongTaskHeadsUp(ctx: RunContext) {
   );
 }
 
-export function progressSinceBudgetStart(reply: ReplyState) {
+function progressSinceBudgetStart(reply: ReplyState) {
   return reply.midTurnProgressCount - reply.progressBudgetStart;
 }
 
@@ -159,6 +159,8 @@ export async function publishInterimMessage(ctx: RunContext, text: string, markU
   );
   reply.midTurnUserTexts.push(text);
   reply.publishedMidTurnUserMessage = true;
+  // Text held back earlier is older than what the person now has, so it is no reply.
+  reply.lastDiscardedMidTurnNarration = "";
   if (run.trigger === "messaging" && !ctx.source.channelId) {
     // Sent from here while the turn carries on; its rows' backup jobs cover a failed send.
     const delivery = deps.messagingDelivery;
@@ -241,6 +243,14 @@ export function holdsTransientProgress(ctx: Pick<RunContext, "run" | "allowSilen
   );
 }
 
+/**
+ * Marks streamed text the person reads as the reply, so a call can say it while it is written.
+ * Messages-mode text stays private and is never marked.
+ */
+export function shownProgress(ctx: Pick<RunContext, "replyMode">) {
+  return ctx.replyMode === "chat" ? { shown: true as const } : {};
+}
+
 export async function flushProgress(ctx: RunContext) {
   const { deps, run, runId, bot, thread } = ctx;
   const { reply } = ctx.state;
@@ -262,8 +272,8 @@ export async function flushProgress(ctx: RunContext) {
     // The first flush replaces the "working…" placeholder outright — a delta here
     // would otherwise get appended straight onto it with no separator.
     payload: reply.hasStreamedText
-      ? { delta: reply.pendingProgress, streaming: true }
-      : { text: reply.pendingProgress, streaming: true },
+      ? { delta: reply.pendingProgress, streaming: true, ...shownProgress(ctx) }
+      : { text: reply.pendingProgress, streaming: true, ...shownProgress(ctx) },
   });
   reply.hasStreamedText = true;
   reply.pendingProgress = "";

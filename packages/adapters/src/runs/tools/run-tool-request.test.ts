@@ -88,6 +88,7 @@ describe("private task tools after shared-channel messages", () => {
     "skill_create",
     "skill_update",
     "skill_delete",
+    "remove_mcp_server",
   ])("refuses %s for original and claimed shared-channel messages", async (name) => {
     for (const originalChannel of [true, false]) {
       const ctx = {
@@ -126,6 +127,80 @@ describe("private task tools after shared-channel messages", () => {
       }
     },
   );
+});
+
+describe("schedule tools on another bot's routines", () => {
+  function managedRoutineCall(input: {
+    fleetManagement?: boolean;
+    ownerStartedRun?: boolean;
+    outsideMessage?: boolean;
+  }) {
+    const ctx = {
+      deps: {
+        prisma: {
+          steeringMessage: { findFirst: async () => null },
+          bot: {
+            findUnique: async () => ({ fleetManagement: input.fleetManagement ?? true }),
+            findMany: async ({ where }: { where: { id?: string; name?: string } }) =>
+              [
+                { id: "child", name: "Child" },
+                { id: "bot-1", name: "Me" },
+              ].filter((row) => (where.id ? row.id === where.id : row.name === where.name)),
+          },
+        },
+      },
+      run: { trigger: "user" },
+      fleetRun: { spaceId: "space-1" },
+      bot: { id: "bot-1", name: "Me" },
+      runId: "run-1",
+      source: { messagingChannelRun: false, ownerStartedRun: input.ownerStartedRun ?? true },
+      trust: { receivedOutsideMessage: async () => input.outsideMessage ?? false },
+    };
+    return (name: string, args: Record<string, unknown>) => {
+      const request = { name, args, executionId: "call-1" } as ToolRequest;
+      return { prepared: prepareToolRequest(ctx as never, request), request };
+    };
+  }
+
+  it.each(["schedule_list", "schedule_update", "schedule_cancel"])(
+    "%s needs bot management and a run the owner started",
+    async (name) => {
+      const off = managedRoutineCall({ fleetManagement: false })(name, { bot_name: "Child" });
+      await expect(off.prepared).resolves.toEqual({
+        error: "Bot management is off for this bot, so it reaches only its own routines.",
+      });
+      const fromOthers = managedRoutineCall({ ownerStartedRun: false })(name, { bot_id: "child" });
+      await expect(fromOthers.prepared).resolves.toEqual({
+        error: "Bot management tools need a run you started.",
+      });
+      const own = managedRoutineCall({ fleetManagement: false })(name, { routineId: "r" });
+      await expect(own.prepared).resolves.toBeUndefined();
+    },
+  );
+
+  it("acts on the named bot's id, and treats passing its own id as its own routines", async () => {
+    const byName = managedRoutineCall({})("schedule_cancel", { bot_name: "Child", name: "r" });
+    await expect(byName.prepared).resolves.toBeUndefined();
+    expect(byName.request.args).toEqual({ bot_id: "child", bot_name: "Child", name: "r" });
+    const self = managedRoutineCall({ fleetManagement: false })("schedule_update", {
+      bot_id: " bot-1 ",
+      routineId: "r",
+    });
+    await expect(self.prepared).resolves.toBeUndefined();
+    expect(self.request.args).toEqual({ routineId: "r" });
+  });
+
+  it("holds a change for approval once outside text reached the run, and never a list", async () => {
+    const call = managedRoutineCall({ outsideMessage: true });
+    for (const name of ["schedule_update", "schedule_cancel"]) {
+      const { prepared, request } = call(name, { bot_id: "child", routineId: "r" });
+      await expect(prepared).resolves.toBeUndefined();
+      expect(request).toMatchObject({ heldForApproval: true, ignoresAllowRules: true });
+    }
+    const list = call("schedule_list", { bot_id: "child" });
+    await expect(list.prepared).resolves.toBeUndefined();
+    expect(list.request.heldForApproval).toBeUndefined();
+  });
 });
 
 describe("prepareToolRequest: a saved login that asks first", () => {
@@ -354,7 +429,7 @@ describe("prepareToolRequest: a saved login that asks first", () => {
     ).toEqual({ error: expect.stringContaining("separate browser_act calls") });
   });
 
-  it("signs in and pays in separate calls, whether the purchase check finds one or fails", async () => {
+  it("signs in and pays in separate calls, and signs in nowhere when the check fails", async () => {
     const { ctx, request } = await setup();
     const found = {
       steps: [],
@@ -363,12 +438,15 @@ describe("prepareToolRequest: a saved login that asks first", () => {
       amount: "$5",
       amountSource: "page",
     };
-    for (const purchaseCheck of [
-      async () => ({ purchase: found }),
-      async () => {
-        throw new Error("page gone");
-      },
-    ]) {
+    for (const [purchaseCheck, error] of [
+      [async () => ({ purchase: found }), "separate browser_act calls"],
+      [
+        async () => {
+          throw new Error("page gone");
+        },
+        "couldn't be read",
+      ],
+    ] as const) {
       const paying = {
         ...ctx(),
         providers: { browser: { purchaseCheck } },
@@ -378,7 +456,7 @@ describe("prepareToolRequest: a saved login that asks first", () => {
         actions: [fill("work", "Password"), { kind: "click", ref: "e2" }],
       });
       expect(await prepareToolRequest(paying as never, prepared)).toEqual({
-        error: expect.stringContaining("separate browser_act calls"),
+        error: expect.stringContaining(error),
       });
       expect(prepared.loginUse).toBeUndefined();
       expect(prepared.purchase).toBeUndefined();
@@ -611,5 +689,43 @@ describe("prepareToolRequest: a saved login that asks first", () => {
         lines: [],
       });
     });
+  });
+});
+
+describe("the user's computer after a routine or webhook joined the run", () => {
+  function userComputerCall(claimed: boolean) {
+    const findFirst = vi.fn(async (_query: { where: Record<string, unknown> }) =>
+      claimed ? { id: "steering-1" } : null,
+    );
+    const ctx = {
+      deps: { prisma: { steeringMessage: { findFirst } }, userDevices: {} },
+      run: { trigger: "user" },
+      bot: {},
+      runId: "run-1",
+      source: { messagingChannelRun: false, userComputerOwner: "user-1" },
+    };
+    const request = {
+      name: "user_computer_shell",
+      args: {},
+      executionId: JSON.stringify(["pi-tool", "main", "call-1"]),
+    } as ToolRequest;
+    return { ctx, request, findFirst };
+  }
+
+  it("refuses once the run has read a handed-over routine or webhook task", async () => {
+    const { ctx, request, findFirst } = userComputerCall(true);
+    await expect(prepareToolRequest(ctx as never, request)).resolves.toEqual({
+      error: "The user's computer is not available in this run.",
+    });
+    expect(findFirst.mock.calls.at(-1)?.[0].where).toEqual({
+      runId: "run-1",
+      claimedAt: { not: null },
+      originTrigger: { in: ["routine", "webhook"] },
+    });
+  });
+
+  it("stays available in the owner's own run", async () => {
+    const { ctx, request } = userComputerCall(false);
+    await expect(prepareToolRequest(ctx as never, request)).resolves.toBeUndefined();
   });
 });

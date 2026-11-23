@@ -1,6 +1,8 @@
 import { t } from "@lingui/core/macro";
 import type { SettingsScope } from "@rakazo/contracts";
+import type { SpeechFeed } from "@rakazo/core";
 import {
+  createSpeechFeed,
   ensureAiDataConsent,
   readVoiceAudio,
   readVoiceError,
@@ -26,7 +28,7 @@ import { subscribeSessionGeneration } from "../api/session";
 import { errorText, voiceAccountErrorText } from "../api/user-error";
 import { promptAiConsent } from "../settings/ai-consent";
 import { voiceForBot } from "./bot-voices";
-import { loadDeviceVoiceEnabled } from "./device-voice";
+import { loadDeviceVoiceEnabled, subscribeDeviceVoiceChoice } from "./device-voice";
 
 /** Who is speaking, for the dock: it is mounted outside any one thread's bot list. */
 export type PlaybackSpeaker = { name?: string; color?: string };
@@ -411,6 +413,123 @@ async function speakPrepared(text: string, opts: SpeechOptions, epoch: number): 
   }
 }
 
+/** The server has no voice to speak with. */
+class NoVoice extends Error {}
+
+type QueuedSpeech = {
+  feed: SpeechFeed;
+  epoch: number;
+  owner?: SpeechOwner;
+  control: VoiceControl;
+  /** Texts pushed and not yet said. */
+  pending: number;
+};
+
+let queuedSpeech: QueuedSpeech | null = null;
+
+// A queue keeps the voice it opened with, so a new choice ends it and the next text reopens one.
+subscribeDeviceVoiceChoice(() => {
+  const queued = queuedSpeech;
+  queuedSpeech = null;
+  if (!queued) return;
+  queued.feed.stop();
+  if (activeControl === queued.control) setPlayback(IDLE_PLAYBACK, null);
+});
+
+/**
+ * Says `text` once what the same owner queued before has been said, rendering the next clip
+ * while the current one plays, so a call can say a reply sentence by sentence as the bot
+ * writes it. Resolves to false when no voice is set up. Any other speech, or Stop, ends it.
+ */
+export async function queueSpeech(text: string, opts: SpeechOptions = {}): Promise<boolean> {
+  let queued = queuedSpeech;
+  if (
+    !queued ||
+    queued.feed.stopped ||
+    queued.owner !== opts.owner ||
+    !isCurrentSpeech(queued.epoch)
+  ) {
+    queued = openQueuedSpeech(opts);
+    queuedSpeech = queued;
+  }
+  const { feed, epoch, control } = queued;
+  queued.pending += 1;
+  if (activeControl !== control) {
+    setPlayback(
+      { status: "playing", botId: opts.botId, messageId: opts.messageId, canPause: false },
+      control,
+    );
+  }
+  try {
+    await feed.push(text);
+    return true;
+  } catch (error) {
+    if (error instanceof NoVoice) return false;
+    // A newer Play or Stop owns the outcome, as in speakQueue.
+    if (!isCurrentSpeech(epoch)) return true;
+    throw error;
+  } finally {
+    queued.pending -= 1;
+    if (queued.pending === 0 && isCurrentSpeech(epoch) && activeControl === control) {
+      setPlayback(IDLE_PLAYBACK, null);
+    }
+  }
+}
+
+function openQueuedSpeech(opts: SpeechOptions): QueuedSpeech {
+  const epoch = beginSpeech(opts.owner);
+  // A read failure must not send reply text through hosted voice: see speakPrepared.
+  const onDevice = loadDeviceVoiceEnabled().catch(() => true);
+  const context = opts.requestContext
+    ? Promise.resolve(opts.requestContext)
+    : captureApiRequestContext();
+  const session = new HostedSession(startHostedSpeechSession());
+  let engine: Promise<{ Speech: typeof ExpoSpeech; voice?: string }> | undefined;
+  const deviceEngine = () => {
+    engine ??= loadExpoSpeech().then(async (Speech) => ({
+      Speech,
+      voice: opts.botId ? await voiceForBot(opts.botId).catch(() => undefined) : undefined,
+    }));
+    return engine;
+  };
+  // The device voice plays an utterance itself; a hosted voice plays the audio rendered for it.
+  const feed = createSpeechFeed<string | Uint8Array>({
+    prepare: async (text, signal) => {
+      if (await onDevice) return toUtterances(text);
+      const prepared = await rpc(
+        "voice/prepare",
+        { text, voiceId: opts.voiceId, botId: opts.botId, scope: opts.scope },
+        { requestContext: await context, signal },
+      );
+      if (!prepared.ready) throw new NoVoice();
+      return prepared.utterances;
+    },
+    render: async (utterance, signal) =>
+      (await onDevice) ? utterance : renderUtterance(utterance, opts, await context, signal),
+    play: async (clip, _utterance, signal) => {
+      const device = typeof clip === "string" ? await deviceEngine() : undefined;
+      if (signal.aborted) return;
+      const stop = () => (device ? void device.Speech.stop() : session.stop());
+      signal.addEventListener("abort", stop, { once: true });
+      try {
+        if (typeof clip !== "string") await playSpeechClip(clip, session);
+        else if (device) await speakOneUtterance(device.Speech, clip, device.voice);
+      } finally {
+        signal.removeEventListener("abort", stop);
+      }
+    },
+  });
+  const control: VoiceControl = {
+    pause() {},
+    resume() {},
+    stop() {
+      feed.stop();
+      setPlayback(IDLE_PLAYBACK, null);
+    },
+  };
+  return { feed, epoch, owner: opts.owner, control, pending: 0 };
+}
+
 let deviceSpeechSession = 0;
 
 function startDeviceSpeechSession(): number {
@@ -551,8 +670,10 @@ async function renderUtterance(
   text: string,
   opts: SpeechOptions,
   requestContext: ApiRequestContext,
+  /** Stopping the speech it is for cancels the request. */
+  signal?: AbortSignal,
 ): Promise<Uint8Array> {
-  const deadline = requestDeadline(VOICE_RESPONSE_TIMEOUT_MS, "Voice request timed out.");
+  const deadline = requestDeadline(VOICE_RESPONSE_TIMEOUT_MS, "Voice request timed out.", signal);
   try {
     const res = await withAbort(
       fetchServer(

@@ -15,42 +15,15 @@ it("guards repeated starts synchronously and permits another after completion", 
   expect(guard.begin()).not.toBeNull();
 });
 
-it("invalidates picker requests without allowing overlapping issuance", () => {
+it("invalidates a request on exit or another action without allowing overlapping issuance", () => {
   const guard = createMessagingLinkGuard();
   const request = guard.begin()!;
-  expect(guard.invalidate(true)).toBe(true);
+  guard.invalidate();
   expect(request.isCurrent()).toBe(false);
   expect(guard.begin()).toBeNull();
   request.finish();
   expect(guard.begin()!.isCurrent()).toBe(true);
 });
-
-it("preserves workspace requests and displayed codes across picker changes", () => {
-  const guard = createMessagingLinkGuard();
-  const workspace = guard.begin(false)!;
-  expect(guard.invalidate(true)).toBe(false);
-  expect(workspace.isCurrent()).toBe(true);
-  workspace.finish();
-  expect(guard.invalidate(true)).toBe(false);
-  expect(workspace.isCurrent()).toBe(true);
-  const picker = guard.begin()!;
-  expect(workspace.isCurrent()).toBe(false);
-  expect(guard.invalidate(true)).toBe(true);
-  expect(picker.isCurrent()).toBe(false);
-});
-
-it.each([true, false])(
-  "invalidates all request kinds on exit or another action (%s)",
-  (pickerBound) => {
-    const guard = createMessagingLinkGuard();
-    const request = guard.begin(pickerBound)!;
-    expect(guard.invalidate()).toBe(true);
-    expect(request.isCurrent()).toBe(false);
-    expect(guard.begin()).toBeNull();
-    request.finish();
-    expect(guard.begin()).not.toBeNull();
-  },
-);
 
 it("shares only pending issuance across guards in the same scope", () => {
   const scope = {};

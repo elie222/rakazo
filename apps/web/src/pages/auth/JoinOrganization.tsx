@@ -89,7 +89,7 @@ export function JoinOrganizationPage() {
           else navigate("/app", { replace: true });
         }}
       >
-        <Button type="submit" className={submitClass}>
+        <Button type="submit" size="xl" className={submitClass}>
           {state.kind === "error" ? <Trans>Retry</Trans> : <Trans>Open Rakazo</Trans>}
         </Button>
       </AuthFrame>
@@ -113,7 +113,7 @@ export function JoinOrganizationPage() {
           {joinError}
         </p>
       ) : null}
-      <Button type="submit" disabled={join.pending} className={cn(submitClass, "mt-6")}>
+      <Button type="submit" size="xl" disabled={join.pending} className={cn(submitClass, "mt-6")}>
         <Trans>Join</Trans>
       </Button>
     </AuthFrame>

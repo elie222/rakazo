@@ -1,7 +1,17 @@
 import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { ensureScreenCommand } from "@rakazo/core/node/desktop-runtime";
 import { describe, expect, it } from "vitest";
+
+it("sets an explicit Unix session bus address in the computer image environment", () => {
+  const image = new URL("../../../../infra/sandboxes/computer/", import.meta.url);
+  const dockerfile = readFileSync(new URL("Dockerfile", image), "utf8");
+  const startup = readFileSync(new URL("start.sh", image), "utf8");
+  // A Unix-only address makes clients fail to connect when the socket is absent.
+  expect(dockerfile).toMatch(/^ENV DBUS_SESSION_BUS_ADDRESS=unix:path=\/tmp\/rakazo\/[\w-]+$/m);
+  expect(startup).toContain('dbus-daemon --session --fork --address="$DBUS_SESSION_BUS_ADDRESS"');
+});
 
 describe.skipIf(process.env.RUN_COMPUTER_REPLAY_DOCKER !== "1")(
   "computer image user identity",
@@ -46,8 +56,6 @@ describe.skipIf(process.env.RUN_COMPUTER_REPLAY_DOCKER !== "1")(
               "for i in $(seq 1 200); do [ -s /tmp/rakazo/dbus-session ] && xdpyinfo -display :1 >/dev/null 2>&1 && break; sleep 0.05; done; " +
                 "test -s /tmp/rakazo/dbus-session; xdpyinfo -display :1 >/dev/null; " +
                 'getent passwd "$(id -u)"; getent group "$(id -g)"; ' +
-                'eval "$(dbus-launch --sh-syntax)"; test -n "$DBUS_SESSION_BUS_ADDRESS"; ' +
-                'kill "$DBUS_SESSION_BUS_PID"; ' +
                 'fc-list | grep -q "Noto Color Emoji"; ' +
                 'python3 -c \'import json; assert json.load(open("/etc/chromium/policies/managed/rakazo-browser.json"))["PasswordManagerEnabled"] is False\'',
             ],
@@ -55,6 +63,24 @@ describe.skipIf(process.env.RUN_COMPUTER_REPLAY_DOCKER !== "1")(
           );
           expect(result).toContain(`:x:${uid}:${gid}:`);
           expect(result).toContain(`:x:${gid}:`);
+          const getBusId = [
+            "dbus-send",
+            "--session",
+            "--print-reply=literal",
+            "--dest=org.freedesktop.DBus",
+            "/org/freedesktop/DBus",
+            "org.freedesktop.DBus.GetId",
+          ];
+          const execOptions = { encoding: "utf8", timeout: 10_000 } as const;
+          const bootBus = execFileSync(
+            "docker",
+            ["exec", name, "sh", "-ec", '. /tmp/rakazo/dbus-session; exec "$@"', "sh", ...getBusId],
+            execOptions,
+          ).trim();
+          expect(bootBus).toMatch(/^[0-9a-f]{32}$/);
+          expect(execFileSync("docker", ["exec", name, ...getBusId], execOptions).trim()).toBe(
+            bootBus,
+          );
           execFileSync(
             "docker",
             [

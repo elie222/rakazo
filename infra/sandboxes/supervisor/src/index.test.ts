@@ -318,8 +318,15 @@ describe("sandbox supervisor input containment", () => {
     expect(normalizeWorkspaceRelative("/notes\\result.txt")).toBe("notes/result.txt");
     expect(normalizeWorkspaceRelative("//notes///result.txt")).toBe("notes/result.txt");
     expect(() => normalizeWorkspaceRelative("../outside")).toThrow(/escapes/);
-    expect(() => normalizeWorkspaceRelative("notes/./result.txt")).toThrow(/escapes/);
     expect(() => normalizeWorkspaceRelative("notes/../outside")).toThrow(/escapes/);
+    expect(() => normalizeWorkspaceRelative("a/../../x")).toThrow(/escapes/);
+  });
+
+  it("drops current-directory segments the way the adapter does", () => {
+    expect(normalizeWorkspaceRelative("./report.html")).toBe("report.html");
+    expect(normalizeWorkspaceRelative("a/./b")).toBe("a/b");
+    expect(normalizeWorkspaceRelative(".")).toBe("");
+    expect(normalizeWorkspaceRelative("./")).toBe("");
   });
 
   it("requires both bot and workspace identities to match", () => {

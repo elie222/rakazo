@@ -13,21 +13,13 @@ import { ChevronDown } from "lucide-react";
 import { useSave, useSpaceQueries } from "../../lib/query/query";
 import { errorText } from "../../lib/query/user-error";
 
+export { reachesOtherSpaces } from "@rakazo/core";
+
 /** The user's spaces; choosing where something is available only matters with two or more. */
 export function useOwnSpaces(): Array<{ id: string; name: string }> {
   const queries = useSpaceQueries();
   const spaces = useQuery(queries.spaces.list.queryOptions());
   return spaces.data?.spaces ?? [];
-}
-
-/** True when removing an item takes it from more than this one space. */
-export function reachesOtherSpaces(
-  availability: SpaceAvailability | undefined,
-  spaceCount: number,
-): boolean {
-  return (
-    spaceCount > 1 && Boolean(availability?.allSpaces || (availability?.spaceIds.length ?? 0) > 1)
-  );
 }
 
 /** A muted note for list rows on items that are not available everywhere. */
@@ -100,9 +92,9 @@ export function AvailabilityControl({
           render={
             <Button
               variant="ghost"
-              size="sm"
+              size="xs"
               disabled={saving}
-              className="h-6 gap-1 px-1.5 text-label font-normal text-foreground"
+              className="gap-1 px-1.5 text-label font-normal text-foreground"
             />
           }
         >

@@ -55,6 +55,24 @@ name: Thread
           timeout: 3000
       - takeScreenshot: 04-message-actions
       - tapOn: "Copy"
+- longPressOn:
+    text: ".*The fixture workspace is ready.*"
+- extendedWaitUntil:
+    visible: ".*Select messages.*"
+    timeout: 8000
+    optional: true
+- runFlow:
+    when:
+      visible: ".*Select messages.*"
+    commands:
+      - tapOn: "Select messages"
+      - extendedWaitUntil:
+          visible: ".*1 selected.*"
+          timeout: 8000
+      - waitForAnimationToEnd:
+          timeout: 3000
+      - takeScreenshot: 04b-select-messages
+      - tapOn: "Cancel"
 - openLink: "rakazo:///thread?botId=${RAKAZO_SCREENSHOT_BOT_ID}&name=Researcher"
 - scrollUntilVisible:
     element: ".*launch-notes.txt.*"

@@ -546,6 +546,7 @@ private fun latestReply(
 
 private val TABLE_ROW = Regex("\\s*\\|(.+)\\|\\s*")
 private val BREAK_LINE = Regex("\\s*[-*_]{3,}\\s*")
+private val ATX_CLOSING_MARKER = Regex("(^|\\n)( {0,3}#{1,6}(?=[ \\t])[^\\n]*?)[ \\t]#+[ \\t]*(?=\\n|\\z)")
 private val FENCE_OPEN = Regex("^ {0,3}(`{3,}|~{3,})(.*)$")
 private const val PAYLOAD_MARK = '\uE000'
 /** A preview is one line. Cap the source so one huge reply cannot stall the poll loop. */
@@ -974,6 +975,11 @@ internal fun markdownToPreview(markdown: String): String {
   val source = boundedPreviewSource(markdown)
   var text = source.text.replace(mark, markToken)
   text = takeFencedCode(text, stash, source.truncated)
+  // Recognize the closing marker before inline formatting changes the line.
+  text = ATX_CLOSING_MARKER.replace(text) { match ->
+    if (source.truncated && match.range.last == text.lastIndex) match.value
+    else match.groupValues[1] + match.groupValues[2] + " "
+  }
   text = takeInlineCode(text, stash)
   text = takeEscapes(text, stash)
   text = takeLinks(text)

@@ -7,6 +7,7 @@ import {
   isAllowedAttachmentMimeType,
   isAttachmentImageMimeType,
 } from "@rakazo/contracts";
+import { sliceWellFormed } from "../primitives/utf8.js";
 import { isApprovalAskBlock, isSecretAskBlock } from "../runs/action-approval.js";
 
 export class AttachmentValidationError extends Error {
@@ -140,7 +141,7 @@ export function normalizeVoiceTranscript(value: string | null | undefined): stri
       return code >= 32 && !(code >= 0x7f && code <= 0x9f);
     })
     .join("");
-  return printable.trim().slice(0, VOICE_TRANSCRIPT_MAX_CHARS);
+  return sliceWellFormed(printable.trim(), VOICE_TRANSCRIPT_MAX_CHARS);
 }
 
 export function promptTextForAttachments(
@@ -185,7 +186,7 @@ export function toolStepsHistoryText(
   const lines = shown.map((step) => {
     const name =
       !full && step.label.length > TOOL_STEP_LABEL_MAX_CHARS
-        ? `${step.label.slice(0, TOOL_STEP_LABEL_MAX_CHARS)}…`
+        ? `${sliceWellFormed(step.label, TOOL_STEP_LABEL_MAX_CHARS)}…`
         : step.label;
     const counted = Number(step.count) > 1 ? `${name} ×${step.count}` : name;
     const outcome = toolStepOutcomeText(step);
@@ -193,7 +194,7 @@ export function toolStepsHistoryText(
     const whole = typeof step.note === "string" ? step.note.replace(/\s+/g, " ").trim() : "";
     const note =
       !full && whole.length > TOOL_STEP_NOTE_MAX_CHARS
-        ? `${whole.slice(0, TOOL_STEP_NOTE_MAX_CHARS)}…`
+        ? `${sliceWellFormed(whole, TOOL_STEP_NOTE_MAX_CHARS)}…`
         : whole;
     return note ? `- ${label}: ${note}` : `- ${label}`;
   });
@@ -351,6 +352,8 @@ const EXTENSION_MIME_TYPES: Record<string, AttachmentMimeType> = {
   ".csv": "text/csv",
   ".xls": "application/vnd.ms-excel",
   ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
   ".html": "text/html",
   ".htm": "text/html",
   ".json": "application/json",
@@ -379,6 +382,8 @@ const MIME_TYPE_EXTENSIONS: Record<AttachmentMimeType, string> = {
   "text/csv": ".csv",
   "application/vnd.ms-excel": ".xls",
   "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": ".xlsx",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document": ".docx",
+  "application/vnd.openxmlformats-officedocument.presentationml.presentation": ".pptx",
   "text/html": ".html",
   "application/json": ".json",
   "application/zip": ".zip",
@@ -436,6 +441,26 @@ export function inferAttachmentMimeType(
 
 export function attachmentExtensionForMimeType(mimeType: string): string {
   return isAllowedAttachmentMimeType(mimeType) ? MIME_TYPE_EXTENSIONS[mimeType] : "";
+}
+
+const OFFICE_MIME_TYPES: ReadonlySet<string> = new Set([
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+]);
+
+/**
+ * The name an Office file is stored and downloaded under ends in its type's own extension, so a file accepted as a
+ * Word document cannot be saved as "Invoice.docm" (a macro-enabled name) and opened by Office as one. Other types keep
+ * the name they were given.
+ */
+export function attachmentStoredName(name: string, mimeType: string): string {
+  if (!OFFICE_MIME_TYPES.has(mimeType)) return name;
+  const extension = attachmentExtensionForMimeType(mimeType);
+  if (name.toLowerCase().endsWith(extension)) return name;
+  const dot = name.lastIndexOf(".");
+  const stem = dot > 0 ? name.slice(0, dot) : name;
+  return `${stem}${extension}`;
 }
 
 /** Where a run copies an attached file in the bot's workspace; history tools report the same path. */

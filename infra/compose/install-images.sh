@@ -384,18 +384,13 @@ configure_computer_egress() {
 }
 
 remove_replaced_images() {
-  local ref repo id tag repos=" "
+  local ref origin origins=" "
   while IFS= read -r ref; do
-    repo="${ref%@*}"
-    [[ "${repo##*/}" != *:* ]] || repo="${repo%:*}"
-    repo="${repo#docker.io/}"
-    repos+="${repo#library/} "
+    origin=$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.source"}}' "$ref" 2>/dev/null) || continue
+    [[ -n "$origin" && "$origins" != *" ${origin} "* ]] || continue
+    origins+="${origin} "
+    docker image prune --force --filter "label=org.opencontainers.image.source=${origin}" >/dev/null 2>&1 || true
   done < <(docker compose --env-file "$ENV_FILE" "${compose_files[@]}" config --images 2>/dev/null)
-  [[ "$repos" != " " ]] || return 0
-  while read -r id repo tag; do
-    [[ "$tag" == "<none>" && "$repos" == *" ${repo} "* ]] || continue
-    docker image rm "$id" >/dev/null 2>&1 || true
-  done < <(docker image ls --no-trunc --format '{{.ID}} {{.Repository}} {{.Tag}}' 2>/dev/null)
 }
 
 for filename in "${required_files[@]}"; do

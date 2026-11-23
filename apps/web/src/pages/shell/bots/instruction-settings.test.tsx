@@ -18,9 +18,13 @@ vi.mock("../../../lib/query/rpc", () => {
   const rpc = { bots: api };
   return { rpc, rpcForSpace: () => rpc, createSpaceRpc: () => rpc, selectedSpaceId: () => null };
 });
+const appLocale = vi.hoisted(() => ({ current: "en" }));
 vi.mock("@lingui/react/macro", () => ({
   Trans: ({ children }: { children: ReactNode }) => children,
-  useLingui: () => ({ t: (parts: TemplateStringsArray) => parts.join("") }),
+  useLingui: () => ({
+    i18n: { locale: appLocale.current },
+    t: (parts: TemplateStringsArray) => parts.join(""),
+  }),
 }));
 
 import { useSpaceQueries } from "../../../lib/query/query";
@@ -49,6 +53,7 @@ let host: HTMLDivElement;
 let root: Root;
 beforeEach(async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  appLocale.current = "en";
   for (const call of Object.values(api)) call.mockReset();
   api.list.mockResolvedValue([bot]);
   host = document.createElement("div");
@@ -102,6 +107,31 @@ it("keeps history behind its label action and restores with the current baseline
     expectedInstructions: "Current",
   });
   expect(host.querySelector("textarea")?.value).toBe("Earlier");
+});
+
+it("names the history dialog after its trigger", async () => {
+  await act(async () =>
+    host.querySelector<HTMLButtonElement>('[aria-label="Instruction history"]')!.click(),
+  );
+  const dialog = document.body.querySelector('[role="dialog"]')!;
+  expect(dialog.getAttribute("aria-label")).toBe("Instruction history");
+});
+
+it("dates the history in the app language, not the system one", async () => {
+  appLocale.current = "fr";
+  await act(async () =>
+    root.render(
+      <QueryClientProvider client={new QueryClient()}>
+        <InstructionSettings bot={{ ...bot }} />
+      </QueryClientProvider>,
+    ),
+  );
+  await act(async () =>
+    host.querySelector<HTMLButtonElement>('[aria-label="Instruction history"]')!.click(),
+  );
+  const created = new Date("2026-10-01T00:00:00Z");
+  expect(document.body.textContent).toContain(created.toLocaleString("fr"));
+  expect(created.toLocaleString("fr")).not.toBe(created.toLocaleString("en"));
 });
 
 it("holds the field while an edit saves, then reads the bots again", async () => {

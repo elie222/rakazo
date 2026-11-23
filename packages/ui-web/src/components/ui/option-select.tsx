@@ -1,4 +1,5 @@
 import { cn } from "@rakazo/ui-web/lib/utils";
+import type { FieldSize } from "../../lib/control-size.js";
 import {
   Select,
   SelectContent,
@@ -39,7 +40,7 @@ function OptionSelect<T extends string>({
   onValueChange: (value: T) => void;
   disabled?: boolean;
   required?: boolean;
-  size?: "sm" | "default";
+  size?: FieldSize;
   className?: string;
   "aria-label"?: string;
   "aria-labelledby"?: string;
@@ -62,11 +63,12 @@ function OptionSelect<T extends string>({
         aria-label={ariaLabel}
         aria-labelledby={labelledBy}
         data-testid={testId}
-        className={cn("w-full data-[size=default]:h-9", className)}
+        className={cn("w-full", className)}
       >
         <SelectValue />
       </SelectTrigger>
-      <SelectContent>
+      {/* As wide as its longest option, never narrower than the button. */}
+      <SelectContent className="w-max max-w-(--available-width) min-w-(--anchor-width)">
         <SelectGroup>
           {options.map((option) => (
             <SelectItem key={option.value} value={option.value} disabled={option.disabled}>

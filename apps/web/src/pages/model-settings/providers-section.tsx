@@ -1,4 +1,5 @@
 import { Trans, useLingui } from "@lingui/react/macro";
+import { useListSearch } from "@rakazo/chat-ui/hooks";
 import { MAX_MODEL_CONNECTION_LABEL } from "@rakazo/contracts";
 import {
   Button,
@@ -21,7 +22,6 @@ import { useRef, useState } from "react";
 import type { ModelCredential } from "../../lib/models/model-auth";
 import { useSave, useSpaceQueries } from "../../lib/query/query";
 import { errorText } from "../../lib/query/user-error";
-import { useListSearch } from "../../lib/use-list-search";
 import type { ConnectableProvider } from "./role-model-picker";
 
 /** Every connection the member has, with the way to add another, even for a connected provider. */
@@ -133,12 +133,13 @@ export function ConnectionNameField({
             event.stopPropagation();
             setName(null);
           }}
-          className="h-10 text-foreground"
+          size="lg"
+          className="text-foreground"
         />
         <Button
           type="submit"
           variant="secondary"
-          className="h-10"
+          size="lg"
           disabled={saving || disabled || !trimmed}
         >
           {saving ? <Trans>Saving…</Trans> : <Trans>Save</Trans>}

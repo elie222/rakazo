@@ -11,14 +11,22 @@ import {
 import { approvedModelCreditMaterial } from "../../model-credits/routing.js";
 import { hostedModelCreditObserver } from "../../models/credits/model-credit-observer.js";
 import {
+  loadAdminDeploymentModelKey,
+  matchingAdminDeploymentModel,
+} from "../../models/deployment-model.js";
+import {
   persistRefreshedModelCredential,
   refreshStoredModelCredential,
   resolveStoredModelAuth,
   retireToReconnectMarker,
 } from "../../models/model-credential-refresh.js";
 import { outermostJsonObject } from "../../models/model-json.js";
+import {
+  modelProviderAllowed,
+  modelProviderAllowlist,
+} from "../../models/model-provider-allowlist.js";
 import { deploymentModelRole, resolveMemberMainModel } from "../../models/model-roles.js";
-import { secretValuesToRedact } from "../../models/model-secret.js";
+import { modelBilling, secretValuesToRedact } from "../../models/model-secret.js";
 import {
   hasHostedModelCredits,
   validateCreditOfferingChoice,
@@ -206,9 +214,14 @@ export class ModelTeamChatEngagementJudge implements TeamChatEngagementJudge {
     );
     const requestedProvider = this.deps.providerOverride ?? bot.modelProvider;
     const requestedModel = this.deps.modelOverride ?? bot.modelId;
-    const overrideCredential = requestedProvider
-      ? await findModelCredential(this.deps.prisma, scope, requestedProvider)
-      : null;
+    const allowlist = modelProviderAllowlist();
+    const refused = (provider: string | null | undefined) =>
+      provider != null && !modelProviderAllowed(allowlist, provider);
+    // A member's own key for a refused provider is never read, even for the operator's judge.
+    const overrideCredential =
+      requestedProvider && !refused(requestedProvider)
+        ? await findModelCredential(this.deps.prisma, scope, requestedProvider)
+        : null;
     const explicitJudgeOverride = Boolean(this.deps.providerOverride && this.deps.modelOverride);
     const useOverride = Boolean(
       requestedProvider &&
@@ -235,16 +248,21 @@ export class ModelTeamChatEngagementJudge implements TeamChatEngagementJudge {
       settings,
       deployment: { provider: this.deps.deploymentProvider, model: this.deps.deploymentModel },
     }).primary;
-    const credential = useOverride ? overrideCredential : (main?.credential ?? null);
-    const provider = useOverride ? requestedProvider : (main ?? fallback)?.provider;
-    const modelId = useOverride ? requestedModel : (main ?? fallback)?.modelId;
+    // The operator's own judge setting is deployment configuration, not a user choice, so
+    // the allowlist never refuses it. Any other pin the list refuses is skipped rather than
+    // failing the decision, so a member with an allowed main model still gets one.
+    const pinned = useOverride && (explicitJudgeOverride || !refused(requestedProvider));
+    const mainModel = main && !refused(main.provider) ? main : null;
+    const credential = pinned ? overrideCredential : (mainModel?.credential ?? null);
+    const provider = pinned ? requestedProvider : (mainModel ?? fallback)?.provider;
+    const modelId = pinned ? requestedModel : (mainModel ?? fallback)?.modelId;
     if (!provider || !modelId) return null;
 
     const hosted =
       settings?.modelCreditsEnabled &&
       (await hasHostedModelCredits(this.deps.prisma, scope, provider));
-    if (!useOverride && main?.credentialId && !credential) return null;
-    const offeringId = !useOverride ? main?.creditOfferingId : undefined;
+    if (!pinned && mainModel?.credentialId && !credential) return null;
+    const offeringId = !pinned ? mainModel?.creditOfferingId : undefined;
     if (
       offeringId &&
       (!settings?.modelCreditsEnabled ||
@@ -266,14 +284,30 @@ export class ModelTeamChatEngagementJudge implements TeamChatEngagementJudge {
         provider,
         modelId,
       );
+      const admin =
+        !hosted &&
+        !pinned &&
+        !mainModel &&
+        matchingAdminDeploymentModel(settings, provider, modelId);
       const apiKey =
         material?.apiKey ??
-        (provider === this.deps.deploymentProvider ? this.deps.deploymentModelKey : undefined);
+        (admin
+          ? await loadAdminDeploymentModelKey(this.deps.secrets, admin.cipher)
+          : provider === this.deps.deploymentProvider
+            ? this.deps.deploymentModelKey
+            : undefined);
       const callObserver = settings?.modelCreditsEnabled
         ? await hostedModelCreditObserver(this.deps.prisma, scope)
         : undefined;
       return {
-        model: { provider, id: modelId, ...material, ...(apiKey ? { apiKey } : {}), callObserver },
+        model: {
+          provider,
+          id: modelId,
+          ...material,
+          ...(apiKey ? { apiKey } : {}),
+          callObserver,
+          billing: modelBilling({ credits: Boolean(callObserver || material) }),
+        },
       };
     }
 
@@ -298,6 +332,7 @@ export class ModelTeamChatEngagementJudge implements TeamChatEngagementJudge {
     );
     const parsed = auth.secret;
     const modelSettings = connectionModelSettings(parsed, provider, modelId, credential);
+    const billing = modelBilling({ secret: parsed });
     const limit = {
       ...(modelSettings.maxTokens !== undefined ? { maxTokens: modelSettings.maxTokens } : {}),
       ...(modelSettings.contextWindow !== undefined
@@ -311,6 +346,7 @@ export class ModelTeamChatEngagementJudge implements TeamChatEngagementJudge {
         model: {
           provider,
           id: modelId,
+          billing,
           ...limit,
           oauth: {
             credential: { ...parsed.credential },
@@ -337,6 +373,7 @@ export class ModelTeamChatEngagementJudge implements TeamChatEngagementJudge {
         model: {
           provider,
           id: modelId,
+          billing,
           apiKey: parsed.apiKey,
           baseUrl: parsed.baseUrl,
           headers: parsed.headers,
@@ -351,9 +388,11 @@ export class ModelTeamChatEngagementJudge implements TeamChatEngagementJudge {
       model: {
         provider,
         id: modelId,
+        billing,
         apiKey: auth.apiKey,
         projectId: parsed.projectId,
         region: parsed.region,
+        zeroDataRetention: parsed.zeroDataRetention,
         ...limit,
         ...context,
       },

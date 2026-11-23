@@ -1,13 +1,13 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { BillingStatus } from "@rakazo/contracts";
 import { paymentOverdue } from "@rakazo/contracts";
+import { formatBillingPrice } from "@rakazo/i18n/billing";
 import { Button } from "@rakazo/ui-web";
 import { Check } from "lucide-react";
 import { useState } from "react";
 import { AccountMenu } from "../../components/account/AccountMenu";
-import { CreditChoice } from "../../components/billing/ModelCredits";
+import { CreditChoice } from "../../components/billing/CreditChoice";
 import { useSignOut } from "../../lib/auth/sign-out";
-import { formatBillingPrice } from "../../lib/billing/billing";
 import type { RpcClient } from "../../lib/query/rpc";
 import { AuthFrame, submitClass } from "./Auth";
 
@@ -102,7 +102,7 @@ function LegacyPaywallPage({ status, client }: { status: BillingStatus; client: 
           </ul>
         ) : null}
         {showCheckout ? (
-          <Button type="submit" size="lg" disabled={pending || signingOut} className={submitClass}>
+          <Button type="submit" size="xl" disabled={pending || signingOut} className={submitClass}>
             {status.trialAvailable ? (
               <Trans>Start {trialDays}-day free trial</Trans>
             ) : (
@@ -113,7 +113,7 @@ function LegacyPaywallPage({ status, client }: { status: BillingStatus; client: 
         {showPortal ? (
           <Button
             type="button"
-            size="lg"
+            size="xl"
             variant={showCheckout ? "secondary" : "default"}
             disabled={pending || signingOut}
             className={submitClass}

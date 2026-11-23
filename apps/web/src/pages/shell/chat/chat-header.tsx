@@ -1,8 +1,10 @@
 import { useLingui } from "@lingui/react/macro";
 import type { Bot, Group, ThreadSnapshot } from "@rakazo/contracts";
+import { MEETING_CALENDAR_RETURN_PARAM } from "@rakazo/contracts";
 import { BotAvatar, Button, GroupAvatar } from "@rakazo/ui-web";
 import { Gift, Menu, Phone, Video } from "lucide-react";
-import { lazy, Suspense, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
+import { useParams, useSearchParams } from "react-router-dom";
 import { useBilling } from "../../../components/billing/SubscriptionGate";
 import { IconTooltip } from "../../../components/IconTooltip";
 import { InviteDialog } from "../../../components/spaces/InviteDialog";
@@ -45,45 +47,57 @@ export function ChatHeader({
   const [inviteOpen, setInviteOpen] = useState(false);
   const macChrome = windowChromeKind(desktopBridge()) === "darwin";
   return (
-    <div className="pointer-events-none absolute inset-x-0 top-0 z-10 grid grid-cols-[1fr_minmax(0,auto)_1fr] items-center gap-2 px-3 py-[13px] md:px-[22px] [&_button]:pointer-events-auto">
+    <div
+      data-testid="chat-header"
+      className="pointer-events-none absolute inset-x-0 top-0 z-10 grid grid-cols-[1fr_minmax(0,auto)_1fr] items-center gap-2 px-3 py-3 md:px-[22px] [&_button]:pointer-events-auto"
+    >
       <div className="flex items-center">
         {macChrome ? <WindowChrome className="md:hidden" /> : null}
         <Button
           variant="floating"
           size="icon-lg"
+          data-navigation-trigger=""
           aria-label={t`Open navigation`}
           onClick={onOpenNavigation}
           className="app-no-drag md:hidden"
         >
-          <Menu strokeWidth={1.7} className="size-[19px]" />
+          <Menu strokeWidth={1.75} className="size-4.5" />
         </Button>
       </div>
-      <Button
-        variant="floating"
-        data-testid="bot-settings-trigger"
-        aria-expanded={panelOpen}
-        onClick={onTogglePanel}
-        className="app-no-drag h-auto min-w-0 gap-2 py-1 ps-1 pe-3.5"
-      >
-        {inGroup ? (
-          <GroupAvatar members={activeSnapshot?.members ?? activeGroup?.members ?? []} size={26} />
-        ) : active ? (
-          <BotAvatar
-            avatarSet={active.avatarSet}
-            color={active.color}
-            identity={active.id}
-            size={26}
-            status={active.status}
-          />
-        ) : null}
-        <span className="min-w-0">
-          <span className="block truncate text-body-lg font-medium text-foreground" dir="auto">
-            {inGroup
-              ? (activeGroup?.name ?? activeSnapshot?.groupName ?? t`Group`)
-              : (active?.name ?? t`Select a bot`)}
+      {/* With no bot or group the chip has nothing to open, so it is left out. */}
+      {inGroup || active ? (
+        <Button
+          variant="floating"
+          data-testid="bot-settings-trigger"
+          aria-expanded={panelOpen}
+          onClick={onTogglePanel}
+          className="app-no-drag h-auto min-w-0 gap-2 py-1 ps-1 pe-3.5"
+        >
+          {inGroup ? (
+            <GroupAvatar
+              members={activeSnapshot?.members ?? activeGroup?.members ?? []}
+              size={26}
+            />
+          ) : active ? (
+            <BotAvatar
+              avatarSet={active.avatarSet}
+              color={active.color}
+              identity={active.id}
+              size={26}
+              status={active.status}
+            />
+          ) : null}
+          <span className="min-w-0">
+            <span className="block truncate text-body-lg font-medium text-foreground" dir="auto">
+              {inGroup
+                ? (activeGroup?.name ?? activeSnapshot?.groupName ?? t`Group`)
+                : active?.name}
+            </span>
           </span>
-        </span>
-      </Button>
+        </Button>
+      ) : (
+        <div />
+      )}
       <div className="flex items-center justify-self-end gap-2">
         {phoneCallsEnabled && !inGroup && active ? (
           <IconTooltip label={inCall ? t`Open call` : t`Call`}>
@@ -97,7 +111,7 @@ export function ChatHeader({
               data-voice-ready={voiceReady ? "" : undefined}
               className="app-no-drag"
             >
-              <Phone strokeWidth={1.6} className="size-[17px]" />
+              <Phone strokeWidth={1.75} className="size-4.5" />
             </Button>
           </IconTooltip>
         ) : null}
@@ -113,7 +127,7 @@ export function ChatHeader({
               onClick={() => setInviteOpen(true)}
               className="app-no-drag"
             >
-              <Gift strokeWidth={1.6} className="size-[17px]" />
+              <Gift strokeWidth={1.75} className="size-4.5" />
             </Button>
           </IconTooltip>
         ) : null}
@@ -127,7 +141,19 @@ export function ChatHeader({
 
 function MeetingsControl({ botId }: { botId: string }) {
   const { t } = useLingui();
-  const [open, setOpen] = useState(false);
+  const { botId: routeBotId } = useParams();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const returningToCalendar =
+    routeBotId === botId && searchParams.get(MEETING_CALENDAR_RETURN_PARAM) === "1";
+  const [view, setView] = useState<"closed" | "meetings" | "calendar">(
+    returningToCalendar ? "calendar" : "closed",
+  );
+  useEffect(() => {
+    if (!returningToCalendar) return;
+    const next = new URLSearchParams(searchParams);
+    next.delete(MEETING_CALENDAR_RETURN_PARAM);
+    setSearchParams(next, { replace: true });
+  }, [returningToCalendar, searchParams, setSearchParams]);
   return (
     <>
       <IconTooltip label={t`Meetings`}>
@@ -135,15 +161,19 @@ function MeetingsControl({ botId }: { botId: string }) {
           variant="floating"
           size="icon-lg"
           aria-label={t`Meetings`}
-          onClick={() => setOpen(true)}
+          onClick={() => setView("meetings")}
           className="app-no-drag"
         >
-          <Video strokeWidth={1.6} className="size-[17px]" />
+          <Video strokeWidth={1.75} className="size-4.5" />
         </Button>
       </IconTooltip>
-      {open ? (
+      {view !== "closed" ? (
         <Suspense>
-          <MeetingsDialog botId={botId} onClose={() => setOpen(false)} />
+          <MeetingsDialog
+            botId={botId}
+            showCalendar={view === "calendar"}
+            onClose={() => setView("closed")}
+          />
         </Suspense>
       ) : null}
     </>

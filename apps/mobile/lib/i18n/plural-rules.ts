@@ -3,7 +3,8 @@ import { polishPluralCategory } from "@rakazo/core";
 /** The plural category of a whole number, for the languages mobile ships. */
 export function pluralCategory(locale: string, count: number): Intl.LDMLPluralRule {
   const language = locale.split("-")[0];
-  if (language === "zh" || language === "ja" || language === "ko") return "other";
+  if (language === "zh" || language === "ja" || language === "ko" || language === "th")
+    return "other";
   // French, Portuguese and Hindi read 0 as singular.
   if (language === "fr" || language === "pt" || language === "hi")
     return count <= 1 ? "one" : "other";

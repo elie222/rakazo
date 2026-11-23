@@ -29,7 +29,7 @@ export function ListSearchInput({
   if (command) return <CommandInput {...shared} onValueChange={setQuery} />;
 
   return (
-    <InputGroup className="shrink-0 h-8! rounded-lg! border-input/30 bg-input/30 shadow-none! *:data-[slot=input-group-addon]:pl-2!">
+    <InputGroup className="shrink-0 rounded-lg! border-input/30 bg-input/30 shadow-none! *:data-[slot=input-group-addon]:pl-2!">
       <InputGroupAddon>
         <Search className="size-4 shrink-0 opacity-50" aria-hidden="true" />
       </InputGroupAddon>

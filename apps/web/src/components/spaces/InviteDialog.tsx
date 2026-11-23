@@ -69,6 +69,7 @@ export function InviteDialog({
         ) : null}
         {/* Shown as well, so the link can be copied by hand where the clipboard is unavailable. */}
         <Input
+          size="lg"
           readOnly
           aria-label={t`Invite link`}
           value={referral.url}

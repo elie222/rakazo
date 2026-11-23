@@ -9,6 +9,7 @@ import {
   onAppear,
   onDisappear,
   onGeometryChange,
+  onScrollPhaseChange,
   refreshable,
   scrollContentBackground,
 } from "@expo/ui/swift-ui/modifiers";
@@ -25,6 +26,8 @@ import { canScrollNativeList, scrollNativeListToRow } from "../../lib/native/nat
 import { NativeInsetList } from "../native/native-inset-list";
 import { NativeListRowContext } from "../native/native-list-row";
 import { NativeRow } from "../native/native-row";
+import type { OpenSwipe } from "./inbox-swipe-context";
+import { InboxSwipeContext } from "./inbox-swipe-context";
 import type { NativeInboxListProps } from "./native-inbox-list";
 import { UnreadJumpOverlay } from "./unread-jump-overlay";
 
@@ -109,19 +112,25 @@ export function NativeInboxList<Item>({
   footer,
   gutters,
   column,
+  width,
   avatarViewport,
   onRefresh,
   signals,
   showJumpPills,
 }: NativeInboxListProps<Item>) {
   const hostRef = useRef(null);
+  const openSwipe = useRef<OpenSwipe | null>(null);
   const floatingHeader = useFloatingHeaderInset() > 0;
   const headerInset = useTopBarInset();
-  const { bottom } = useSafeAreaInsets();
+  const { bottom, left, right } = useSafeAreaInsets();
   const visibility = useVisibleRows(avatarViewport);
   // Hosted content sizes its row, so it is given the width the list gives a row: the width of
-  // the last spacer, which fills its row.
-  const [rowWidth, setRowWidth] = useState<number>();
+  // the last spacer, which fills its row. That spacer reports only while it is on screen, so a
+  // resize after it scrolls away (dragging the split divider) moves the measured width by the
+  // change in the room the rows get.
+  const room = width - left - right - gutters.left - gutters.right;
+  const [measured, setMeasured] = useState<{ row: number; room: number }>();
+  const rowWidth = measured && measured.row + room - measured.room;
   const rowInsets = listRowInsets({
     top: 0,
     leading: gutters.left,
@@ -165,7 +174,13 @@ export function NativeInboxList<Item>({
       hostRef={hostRef}
       variant="plain"
       background={native.page}
-      modifiers={[scrollContentBackground("hidden"), refreshable(onRefresh)]}
+      modifiers={[
+        scrollContentBackground("hidden"),
+        refreshable(onRefresh),
+        onScrollPhaseChange((phase) => {
+          if (phase === "interacting") openSwipe.current?.close();
+        }),
+      ]}
     >
       {spacer("top", headerInset)}
       {/* Rows wait for the measured width: one laid out before it keeps its first size. */}
@@ -189,8 +204,13 @@ export function NativeInboxList<Item>({
       {spacer(
         "bottom",
         floatingHeader ? bottom + 32 : 32,
-        onGeometryChange(({ width }) => {
-          if (width > 0) setRowWidth((current) => (current === width ? current : width));
+        onGeometryChange((frame) => {
+          if (frame.width > 0)
+            setMeasured((current) =>
+              current?.row === frame.width && current.room === room
+                ? current
+                : { row: frame.width, room },
+            );
         }),
       )}
     </NativeInsetList>
@@ -199,7 +219,7 @@ export function NativeInboxList<Item>({
   // refresh does) never rebuilds the native list.
   return (
     <View style={{ flex: 1 }}>
-      {list}
+      <InboxSwipeContext.Provider value={openSwipe}>{list}</InboxSwipeContext.Provider>
       {showJumpPills && canScrollNativeList ? (
         // Centred over the inbox column.
         <View
@@ -218,12 +238,13 @@ export function NativeInboxList<Item>({
             viewport={avatarViewport}
             topInset={headerInset}
             bottomInset={bottom}
-            onJump={(index) =>
+            onJump={(index) => {
+              openSwipe.current?.close();
               void scrollNativeListToRow(
                 findNodeHandle(hostRef.current) ?? null,
                 firstItemRow + index,
-              )
-            }
+              );
+            }}
           />
         </View>
       ) : null}

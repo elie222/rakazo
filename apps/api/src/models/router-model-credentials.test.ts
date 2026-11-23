@@ -167,6 +167,48 @@ describe("model credential persistence", () => {
     }
   });
 
+  it("refuses zero data retention for a provider that cannot enforce it, and stores nothing", async () => {
+    const { deps, handler } = persistDeps();
+    const response = await call(handler, "models/connect", {
+      provider: "anthropic",
+      apiKey: "fake-long-enough-key",
+      modelId: "claude-sonnet-4-5",
+      zeroDataRetention: true,
+    });
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toMatchObject({
+      json: {
+        code: "DATA_RETENTION_UNSUPPORTED",
+        message: expect.stringContaining("cannot restrict data retention"),
+      },
+    });
+    expect(deps.secrets.put).not.toHaveBeenCalled();
+  });
+
+  it("hands the zero data retention choice to the connection builder", async () => {
+    const { handler } = persistDeps();
+    const build = vi.spyOn(adapters, "buildModelConnectPlaintext").mockImplementation(() => {
+      throw new Error("stop after validation");
+    });
+    try {
+      for (const zeroDataRetention of [true, false]) {
+        await call(handler, "models/connect", {
+          provider: "openrouter",
+          apiKey: "fake-long-enough-key",
+          modelId: "example/model",
+          zeroDataRetention,
+        });
+        expect(build).toHaveBeenLastCalledWith(
+          expect.objectContaining({ zeroDataRetention }),
+          undefined,
+          expect.anything(),
+        );
+      }
+    } finally {
+      build.mockRestore();
+    }
+  });
+
   it("does not persist a stringified null model id from subscription sign-in", async () => {
     const setup = persistDeps();
     const { upsert } = setup;
@@ -353,6 +395,24 @@ describe("model credential persistence", () => {
       createMany: ReturnType<typeof vi.fn>;
     };
     expect(roles.createMany).not.toHaveBeenCalled();
+  });
+
+  it("still makes a first connection the main model when makeDefault is omitted", async () => {
+    const { deps, handler } = persistDeps();
+
+    const response = await call(handler, "models/connect", {
+      provider: "test-provider",
+      apiKey: "sk-test-key-123",
+      modelId: "only-model",
+    });
+
+    expect(response.status).toBe(200);
+    const roles = deps.prisma.userModelRoleChoice as unknown as {
+      createMany: ReturnType<typeof vi.fn>;
+    };
+    expect(roles.createMany).toHaveBeenCalledWith({
+      data: [expect.objectContaining({ role: "main", modelId: "only-model" })],
+    });
   });
 
   it("makes the connection's model the main model when asked, through the role table", async () => {
@@ -725,6 +785,20 @@ describe("model credential persistence", () => {
     });
     const response = await call(handler, "models/beginOAuth", { provider: "openai-codex" });
     expect(response.status).toBe(503);
+  });
+
+  it("passes the app's reason for stopping a sign-in, and none from an older app", async () => {
+    const { deps, handler } = persistDeps();
+    const cancel = vi.fn().mockResolvedValue(undefined);
+    Object.assign(deps.oauthLogins, { cancel });
+
+    await call(handler, "models/cancelOAuth", { loginId: "login-1", reason: "left" });
+    await call(handler, "models/cancelOAuth", { loginId: "login-2" });
+
+    expect(cancel.mock.calls).toEqual([
+      ["login-1", expect.objectContaining({ userId: actor.userId }), "left"],
+      ["login-2", expect.objectContaining({ userId: actor.userId }), undefined],
+    ]);
   });
 
   it("tells the user to restart a pasted-code sign-in that is gone", async () => {

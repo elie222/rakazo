@@ -4,6 +4,10 @@ import * as z from "zod";
 export const McpOAuthClientKindSchema = z.literal("mobile").optional();
 export type McpOAuthClientKind = z.infer<typeof McpOAuthClientKindSchema>;
 
+/** The app can read the code from a loopback redirect itself, as the desktop app's sign-in
+ * window does, so a server that registers only loopback redirects can still be signed in to. */
+export const McpCapturesLoopbackSchema = z.boolean().optional();
+
 /** The deep link the web callback hands a mobile app's MCP sign-in back to. */
 export const MOBILE_MCP_OAUTH_CALLBACK_URL = "rakazo://mcp-oauth";
 /** Starts the state of a sign-in the mobile app began, so the web callback hands it back. */

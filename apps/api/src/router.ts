@@ -1,3 +1,4 @@
+import { createHmac } from "node:crypto";
 import type {
   AgentHomeStore,
   ArtifactStore,
@@ -14,10 +15,12 @@ import type {
   CloudAgentConnection,
   CodexLiveCatalog,
   ConnectorRegistry,
+  createPageRevisions,
   FaviconResolver,
   IntegrationProviderSettings,
   McpConnector,
   McpOAuthBroker,
+  MeetingCalendarService,
   MeetingService,
   MemoryProviderResolver,
   MessagingDelivery,
@@ -31,6 +34,7 @@ import type {
   RemoteConnectorDependencies,
   TicketChangeNotifier,
   UserCloudAgents,
+  UserDeviceGateway,
   verifyModelServesAgents,
   WorkActivities,
 } from "@rakazo/adapters";
@@ -39,6 +43,8 @@ import type { LabFeature, ModelCredential, NavLink } from "@rakazo/contracts";
 import type { BoardEvents, PrismaClient, ThreadEvents } from "@rakazo/db";
 import type { BillingService } from "./billing/billing.js";
 import type { VoiceDeps } from "./calls/voice.js";
+import type { AppEnv } from "./env.js";
+import { meetingCalendarRoutes } from "./meetings/calendar/calendar-routes.js";
 import type { createMeetingAnswers } from "./meetings/meeting-answers.js";
 import { meetingRoutes } from "./meetings/meeting-routes.js";
 import { accountRoutes } from "./routes/account.js";
@@ -72,6 +78,7 @@ export { callMarkerClientNonce } from "./routes/threads.js";
 
 export interface RouterDeps {
   meetings?: MeetingService;
+  meetingCalendar?: MeetingCalendarService;
   meetingAnswers?: ReturnType<typeof createMeetingAnswers>;
   pushTokens: PushTokenStore;
   /** Absent when the deployment cannot update a phone's live status card. */
@@ -83,12 +90,15 @@ export interface RouterDeps {
   userCloudAgents?: UserCloudAgents;
   /** The deployment's wallet provider; absent hides purchases. */
   paymentWallet?: PaymentWalletProvider | null;
+  /** The computers people paired, never this server's own screen; absent when none can be. */
+  userDevices?: Pick<UserDeviceGateway, "pairedSince">;
   prisma: PrismaClient;
   events: ThreadEvents;
   boardEvents: BoardEvents;
   ticketChanges: TicketChangeNotifier;
   auth: Auth;
   jobs: JobPublisher;
+  pageRevisions?: Pick<ReturnType<typeof createPageRevisions>, "start" | "recipient">;
   sandbox: SandboxProvider;
   memory: MemoryStore;
   memoryProviders: MemoryProviderResolver;
@@ -141,6 +151,8 @@ export interface RouterDeps {
     deploymentVoice?: NonNullable<VoiceDeps["env"]>["deploymentVoice"];
     /** Domain of bots' email addresses; unset when this server receives no email. */
     inboundEmailDomain?: string;
+    /** The public origin webhooks reach, when an ingress provider publishes one. */
+    publishedInboundOrigin?: string;
     navLinks?: NavLink[];
     adminEmails?: string[];
     /** Labs features this deployment turns on for every account. */
@@ -179,6 +191,7 @@ export function createRouter(deps: RouterDeps) {
   return os.router({
     ...accountRoutes(ctx),
     ...meetingRoutes(ctx),
+    ...meetingCalendarRoutes(ctx),
     ...spacesRoutes(ctx),
     ...organizationsRoutes(ctx),
     ...modelsRoutes(ctx),
@@ -200,4 +213,41 @@ export function createRouter(deps: RouterDeps) {
     ...paymentWalletRoutes(ctx),
     ...spendingLimitRoutes(ctx),
   });
+}
+
+/** What the procedures read from the deployment's settings. */
+export function routerEnv(env: AppEnv): RouterDeps["env"] {
+  return {
+    inboundEmailDomain: env.inboundEmail?.domain,
+    publishedInboundOrigin: env.publishedInboundOrigin,
+    deploymentLabs: env.deploymentLabs,
+    deploymentVoice: env.deploymentVoice,
+    phoneCallsEnabled: env.phoneCallsEnabled,
+    phoneCallRingSeconds: env.phoneCallRingSeconds,
+    navLinks: env.navLinks,
+    adminEmails: env.adminEmails,
+    maxUploadSizeBytes: env.maxUploadSizeBytes,
+    maxAttachmentsPerMessage: env.maxAttachmentsPerMessage,
+    agentRuntime: env.agentRuntime,
+    defaultProvider: env.defaultProvider,
+    defaultModel: env.defaultModel,
+    teamChatJudgeProvider: env.teamChatJudgeProvider,
+    teamChatJudgeModel: env.teamChatJudgeModel,
+    deploymentModelConfigured: env.deploymentModelConfigured,
+    deploymentModelHostCredentials: env.deploymentModelHostCredentials,
+    webOrigin: env.webOrigin,
+    privacyPolicyUrl: env.privacyPolicyUrl,
+    screenProxySecret: env.screenProxySecret,
+    invitationRecipientKey: createHmac("sha256", env.authSecret)
+      .update("organization-invitation-recipient")
+      .digest("hex"),
+    sandboxProvider: env.sandboxProvider,
+    gitSha: env.gitSha,
+    integrationsCatalogUrl: env.integrationsCatalogUrl,
+    mcpAllowPrivateEndpoint: env.mcpAllowPrivateEndpoint,
+    desktopHostChoiceEnabled: Boolean(env.desktopStackToken),
+    computerSettingsEnabled: env.computerSettingsEnabled,
+    mcpStdioEnabled: env.mcpStdioEnabled,
+    mcpStdioAllowedCommands: env.mcpStdioAllowedCommands,
+  };
 }

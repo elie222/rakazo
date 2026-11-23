@@ -18,7 +18,7 @@ import {
   runAsSystem,
   runAsTenant,
 } from "@rakazo/db";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { discardBotIntroFromCreate } from "../discard-bot-intro.js";
 import { asSystem } from "../system-db.js";
 
@@ -54,6 +54,101 @@ describeIntegration("run executor lifecycle", () => {
   afterAll(async () => {
     await handles?.stop();
     rmSync(dataDir, { recursive: true, force: true });
+  });
+
+  it.each([
+    { label: "user", trigger: "user", role: "user", canRead: true },
+    { label: "user-follow-up", trigger: "follow_up", role: "user", canRead: true },
+    { label: "bot-follow-up", trigger: "follow_up", role: "bot", canRead: false },
+  ] as const)("scopes meeting transcript access for $label chat turns", async (scenario) => {
+    const question = "What happened in the meeting before these?";
+    const seeded = await seedRun(`meeting-${scenario.label}`, question);
+    const source = await runAsSystem("test fixture", () =>
+      createThreadMessage(handles.prisma, {
+        threadId: seeded.thread.id,
+        role: scenario.role,
+        blocks: [{ kind: "text", text: question }],
+      }),
+    );
+    await db.run.update({
+      where: { id: seeded.run.id },
+      data: { trigger: scenario.trigger, sourceMessageId: source.id },
+    });
+    const closedAt = new Date(Date.now() - 60_000);
+    const identity = {
+      spaceId: seeded.me.spaceId,
+      userId: seeded.me.userId,
+      botId: seeded.bot.id,
+      provider: "emulator",
+      platform: "google_meet",
+      shareTranscript: true,
+      expiresAt: new Date(),
+    };
+    const meeting = await db.meetingSession.create({
+      data: {
+        ...identity,
+        status: "ready",
+        transcript: JSON.stringify([
+          { speaker: "Sam", startMs: 0, text: "The deadline is Friday." },
+        ]),
+        closedAt,
+      },
+    });
+    await db.meetingSession.createMany({
+      data: Array.from({ length: 5 }, (_, index) => ({
+        ...identity,
+        status: "processing",
+        closedAt: new Date(closedAt.getTime() + (index + 1) * 1_000),
+      })),
+    });
+    const originalRun = handles.runtime.run.bind(handles.runtime);
+    const read = vi.fn();
+    const runtime = vi
+      .spyOn(handles.runtime, "run")
+      .mockImplementation(async function* (request, context) {
+        if (request.runId !== seeded.run.id) {
+          yield* originalRun(request, context);
+          return;
+        }
+        const toolNames = request.tools.map(({ name }) => name);
+        read(request.prompt, toolNames);
+        if (!scenario.canRead) {
+          yield { type: "done", text: "Done." };
+          return;
+        }
+        yield {
+          type: "tool",
+          name: "read_meeting_transcript",
+          args: { meeting_id: meeting.id },
+          executionId: "read-meeting",
+        };
+        yield { type: "done", text: "The deadline is Friday." };
+      });
+    try {
+      await runAsTenant(seeded.me, () =>
+        handles.executor.continueRun(seeded.run.id, "meeting-worker"),
+      );
+      if (!scenario.canRead) {
+        expect(read).toHaveBeenCalledWith(
+          expect.not.stringContaining(meeting.id),
+          expect.not.arrayContaining(["read_meeting_transcript"]),
+        );
+        return;
+      }
+      expect(read).toHaveBeenCalledWith(
+        expect.stringContaining(meeting.id),
+        expect.arrayContaining(["read_meeting_transcript"]),
+      );
+      const completion = await db.event.findFirstOrThrow({
+        where: { runId: seeded.run.id, type: "agent.tool.completed" },
+      });
+      expect(completion.payload).toMatchObject({
+        name: "read_meeting_transcript",
+        outcome: "succeeded",
+      });
+    } finally {
+      runtime.mockRestore();
+    }
   });
 
   it("allows only one worker to claim a queued run", async () => {

@@ -174,6 +174,7 @@ export async function approvedModelCreditMaterial(
     gatewayId: secret.gatewayId,
     projectId: secret.projectId,
     region: secret.region,
+    zeroDataRetention: secret.zeroDataRetention,
     redact: secretValuesToRedact(secret),
   };
 }

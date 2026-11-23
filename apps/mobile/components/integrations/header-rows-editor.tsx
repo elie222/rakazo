@@ -42,6 +42,7 @@ export function HeaderRowsEditor({
           />
           <SettingsInputRow
             accessibilityLabel={t`Header value`}
+            accessibilityHint={row.name || undefined}
             placeholder={savedValuePlaceholder?.(row) ? "••••••••" : t`Header value`}
             autoCapitalize="none"
             autoCorrect={false}
@@ -59,6 +60,7 @@ export function HeaderRowsEditor({
           <SettingsRow
             title={t`Remove header`}
             accessibilityLabel={t`Remove header`}
+            accessibilityHint={row.name || undefined}
             destructive
             dimmed={disabled}
             disabled={disabled}

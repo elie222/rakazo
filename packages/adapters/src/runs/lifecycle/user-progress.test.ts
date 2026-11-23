@@ -43,6 +43,12 @@ describe("clampUserProgressMessage", () => {
     expect(clamped.endsWith("…")).toBe(true);
     expect(clampUserProgressMessage("x".repeat(4_000), 4_000)).toHaveLength(4_000);
   });
+
+  it("does not leave half an emoji before the ellipsis", () => {
+    const clamped = clampUserProgressMessage(`${"x".repeat(10)}${"😀".repeat(5)}`, 12);
+    expect(clamped).toBe(`${"x".repeat(10)}…`);
+    expect(() => encodeURIComponent(clamped)).not.toThrow();
+  });
 });
 
 describe("messageUserMaxLength", () => {
@@ -203,6 +209,12 @@ describe("narrationStatusLine", () => {
     expect(narrationStatusLine("  Checking\nthe   totals.  ")).toBe("Checking the totals.");
     const line = narrationStatusLine("x".repeat(NARRATION_STATUS_MAX_LENGTH + 5));
     expect(line).toBe(`${"x".repeat(NARRATION_STATUS_MAX_LENGTH)}…`);
+  });
+
+  it("does not leave half an emoji before the ellipsis", () => {
+    const line = narrationStatusLine(`${"a".repeat(59)}😀 tail`);
+    expect(line).toBe(`${"a".repeat(59)}…`);
+    expect(() => encodeURIComponent(line)).not.toThrow();
   });
 });
 

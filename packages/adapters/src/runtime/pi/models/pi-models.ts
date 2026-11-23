@@ -3,6 +3,7 @@ import { getSupportedThinkingLevels } from "@earendil-works/pi-ai";
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
 import type {
   CompatibleEndpointPreset,
+  ModelCatalogEntry,
   ModelOAuthSignInMode,
   ModelRoutingField,
   ThinkingLevel,
@@ -19,7 +20,14 @@ import {
   modelCreditOfferings,
 } from "../../../model-credits/offerings.js";
 import { cloudflareRoutingFields } from "../../../models/endpoints/cloudflare-ai-gateway.js";
-import { COMPATIBLE_ENDPOINT_PRESETS } from "../../../models/endpoints/openai-compatible-url.js";
+import {
+  COMPATIBLE_ENDPOINT_PRESETS,
+  compatibleEndpointPresetsFor,
+} from "../../../models/endpoints/openai-compatible-url.js";
+import {
+  modelProviderAllowed,
+  modelProviderAllowlist,
+} from "../../../models/model-provider-allowlist.js";
 import { modelProviderDefinition } from "../../../models/model-provider-registry.js";
 import { MODEL_CONNECT_TIMEOUT_MS } from "../pi-runtime-limits.js";
 import { maximumModelCallCost } from "../usage/pi-usage.js";
@@ -38,6 +46,8 @@ export type PiCatalogEntry = {
   recommended?: boolean;
   provider: string;
   providerName: string;
+  subscriptionName?: string;
+  subscriptionNameId?: string;
   id: string;
   label: string;
   billing: string;
@@ -46,6 +56,7 @@ export type PiCatalogEntry = {
   authHint?: string;
   subscription: boolean;
   signIn?: ModelOAuthSignInMode;
+  signInSetup?: ModelCatalogEntry["signInSetup"];
   reasoning?: boolean;
   thinkingLevels?: ThinkingLevel[];
   defaultCapabilities?: { images?: boolean; reasoning?: boolean; thinkingLevels?: ThinkingLevel[] };
@@ -58,6 +69,7 @@ export type PiCatalogEntry = {
   /** Provider models share one pinned HTTPS models-list base URL. */
   catalogProbe?: boolean;
   routingFields?: ModelRoutingField[];
+  dataRetentionControl?: true;
   endpointPresets?: CompatibleEndpointPreset[];
   live?: true;
 };
@@ -213,8 +225,24 @@ function pinnedCatalogProbeBaseUrl(
 
 export function listPiCatalog(): PiCatalogEntry[] {
   cachedCatalog ??= buildPiCatalog();
-  return cachedCatalog;
+  const allowlist = modelProviderAllowlist();
+  if (allowlist === null) return cachedCatalog;
+  // Built once per distinct list, not once per call: the catalog filters run per entry.
+  const key = process.env.RAKAZO_MODEL_PROVIDER_ALLOWLIST?.trim() ?? "";
+  if (filteredCatalogKey === key) return filteredCatalogEntries ?? cachedCatalog;
+  const entries = cachedCatalog.flatMap((entry) => {
+    if (!modelProviderAllowed(allowlist, entry.provider)) return [];
+    return entry.endpointPresets
+      ? [{ ...entry, endpointPresets: compatibleEndpointPresetsFor(allowlist) }]
+      : [entry];
+  });
+  filteredCatalogKey = key;
+  filteredCatalogEntries = entries;
+  return entries;
 }
+
+let filteredCatalogKey: string | undefined;
+let filteredCatalogEntries: PiCatalogEntry[] | undefined;
 
 let cachedCatalog: PiCatalogEntry[] | undefined;
 
@@ -260,6 +288,8 @@ function buildPiCatalog(): PiCatalogEntry[] {
       entries.push({
         provider: provider.id,
         providerName,
+        subscriptionName: definition?.subscriptionName,
+        subscriptionNameId: definition?.subscriptionNameId,
         id: model.id,
         recommended: isRecommendedCatalogModel(provider.id, model.id),
         label: catalogModelLabel(model.id, model.name, modelIds),
@@ -270,6 +300,7 @@ function buildPiCatalog(): PiCatalogEntry[] {
           provider.id === OPENAI_COMPATIBLE_PROVIDER_ID ? "Custom server" : signInMeta?.hint,
         subscription,
         signIn: signInMeta?.mode,
+        signInSetup: signInMeta?.setup,
         reasoning: Boolean(model.reasoning),
         thinkingLevels,
         // Compatibility metadata does not prove a model is served by a user's
@@ -284,6 +315,7 @@ function buildPiCatalog(): PiCatalogEntry[] {
             }),
         ...(probeBaseUrl ? { catalogProbe: true } : {}),
         ...(routingFields ? { routingFields } : {}),
+        ...(definition?.dataRetentionControl ? { dataRetentionControl: true as const } : {}),
       });
     }
   }
@@ -306,6 +338,9 @@ function buildPiCatalog(): PiCatalogEntry[] {
       reasoning: true,
       thinkingLevels: ["off", "minimal", "low", "medium", "high"],
       ...(catalogProbeBaseUrls.has("openrouter") ? { catalogProbe: true } : {}),
+      ...(modelProviderDefinition("openrouter")?.dataRetentionControl
+        ? { dataRetentionControl: true as const }
+        : {}),
     });
   }
 

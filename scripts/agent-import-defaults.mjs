@@ -32,8 +32,17 @@ if (git(openclaw, "rev-parse", "--is-shallow-repository").trim() !== "false") {
 const lines = [];
 for (const name of ["SOUL", "AGENTS", "USER", "IDENTITY"]) {
   const file = `docs/reference/templates/${name}.md`;
-  // Each commit that touched the file, with the path it had then (renames followed).
-  const log = git(openclaw, "log", "--follow", "--format=%H", "--name-only", "--", file)
+  // Follow each template's historical path; deletion commits have no blob to read.
+  const log = git(
+    openclaw,
+    "log",
+    "--follow",
+    "--diff-filter=d",
+    "--format=%H",
+    "--name-only",
+    "--",
+    file,
+  )
     .split("\n")
     .filter(Boolean);
   if (log.length === 0 || log.length % 2 !== 0) throw new Error(`unexpected git log for ${file}`);

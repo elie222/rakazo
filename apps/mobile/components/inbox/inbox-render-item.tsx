@@ -15,6 +15,7 @@ import type { InboxItem, InboxSpace } from "../../lib/inbox/inbox-spaces";
 import { canDeleteInboxSpace, inboxItemKey } from "../../lib/inbox/inbox-spaces";
 import type { useInboxChatActions } from "../../lib/inbox/use-inbox-chat-actions";
 import { native, useThemedStyles } from "../../lib/native/native";
+import { NativeActionButton } from "../native/native-action-button";
 import type { NativeRowMenu } from "../native/native-row";
 import { NativeRow } from "../native/native-row";
 import { NativeSymbol } from "../native/native-symbol";
@@ -30,20 +31,34 @@ type ChatActions = ReturnType<typeof useInboxChatActions>;
 // One empty list, so a row with no sections keeps its memoized render.
 const NO_SECTIONS: MobileBotSection[] = [];
 
-/** The end of the inbox list: the create hint while it is needed, then the archived chats. */
-export function InboxListFooter({
-  createHint,
-  archivedCount,
-}: {
-  createHint: boolean;
-  archivedCount: number;
-}) {
+/** Stands where the rows would be in a Space with no chats, and opens the same New bot screen. */
+export function InboxNewBot({ onPress }: { onPress: () => void }) {
   const styles = useThemedStyles(createInboxStyles);
   const { t } = useLingui();
+  return (
+    <View style={styles.newBot}>
+      <NativeActionButton
+        label={t`New bot`}
+        icon={{ ios: "plus", android: "add" }}
+        fill={false}
+        onPress={onPress}
+      />
+    </View>
+  );
+}
+
+/** The end of the inbox list: New bot while no Space has a chat, then the archived chats. */
+export function InboxListFooter({
+  onNewBot,
+  archivedCount,
+}: {
+  onNewBot?: () => void;
+  archivedCount: number;
+}) {
   const router = useRouter();
   return (
     <>
-      {createHint ? <Text style={styles.empty}>{t`Tap + to create a bot`}</Text> : null}
+      {onNewBot ? <InboxNewBot onPress={onNewBot} /> : null}
       <ArchivedChatsRow count={archivedCount} onPress={() => router.push("/archived-bots")} />
     </>
   );

@@ -2,7 +2,13 @@
  * No repository code is executed and no files are written to the host. */
 import { createHash } from "node:crypto";
 import { McpServerConfigInput, trimEndChars, trimStartChars } from "@rakazo/contracts";
-import { buildSkillMd, deadlineSignal, findSkillByName, parseSkillMd } from "@rakazo/core";
+import {
+  buildSkillMd,
+  deadlineSignal,
+  findSkillByName,
+  isRecord,
+  parseSkillMd,
+} from "@rakazo/core";
 import { z } from "zod";
 import { BUILTIN_AGENT_SKILLS } from "../tools/builtin-skills.prompt.js";
 import { fetchSafeWebText } from "../web/web-ssrf.js";
@@ -415,10 +421,6 @@ export async function fetchGitHubRepo(
   return { files, resolvedSha: sha };
 }
 
-function object(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
-}
-
 function companionRefusal(
   companions: Array<[string, string]>,
   agentSkillBundle = false,
@@ -633,8 +635,8 @@ function collectMcpServers(
     doc = null;
   }
   if (
-    !object(doc) ||
-    !object(doc.mcpServers) ||
+    !isRecord(doc) ||
+    !isRecord(doc.mcpServers) ||
     (schema &&
       (doc.$schema !== schema.replace("plugin.schema.json", "mcp.schema.json") ||
         Object.keys(doc).some((key) => !["$schema", "mcpServers"].includes(key))))
@@ -648,7 +650,7 @@ function collectMcpServers(
   }
   const out: PluginMcpServerEntry[] = [];
   for (const [name, entry] of Object.entries(doc.mcpServers)) {
-    if (!object(entry)) {
+    if (!isRecord(entry)) {
       skipped.push({ kind: "mcp_invalid", name, reason: "Server must be an object" });
       continue;
     }
@@ -746,7 +748,7 @@ export function parsePluginDirectory(input: {
   }
   if (manifestPath) {
     const raw: unknown = JSON.parse(files.get(manifestPath) ?? "");
-    if (!object(raw)) throw new Error("Plugin manifest must be an object");
+    if (!isRecord(raw)) throw new Error("Plugin manifest must be an object");
     rawManifest = raw;
     format =
       manifestPath === "plugin.json"

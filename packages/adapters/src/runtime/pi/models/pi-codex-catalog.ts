@@ -2,6 +2,7 @@ import type { OAuthCredential } from "@earendil-works/pi-ai";
 import type { SecretStore } from "@rakazo/adapter-kit";
 import type { ThinkingLevel } from "@rakazo/contracts";
 import { ThinkingLevelSchema } from "@rakazo/contracts";
+import { readResponseWithin } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import type { StoredModelSecret } from "../../../models/model-secret.js";
 import { parseModelSecret } from "../../../models/model-secret.js";
@@ -19,7 +20,7 @@ import { CHATGPT_OAUTH_PROVIDER, oauthCredentialAccountId } from "./pi-oauth.js"
  * backend for a newer compatibility view.
  */
 export const CODEX_MODELS_ENDPOINT = "https://chatgpt.com/backend-api/codex/models";
-const CODEX_CLIENT_VERSION = "0.159.3";
+const CODEX_CLIENT_VERSION = "0.169.1";
 
 const CODEX_CATALOG_TIMEOUT_MS = 12_000;
 const CODEX_CATALOG_HARD_DEADLINE_MS = CODEX_CATALOG_TIMEOUT_MS + 10_000;
@@ -123,29 +124,12 @@ export async function fetchCodexCatalog(
 }
 
 async function readBoundedText(response: Response): Promise<string | undefined> {
-  const declared = Number(response.headers.get("content-length") ?? 0);
-  if (declared > CODEX_CATALOG_MAX_BYTES) {
-    await response.body?.cancel().catch(() => undefined);
-    return undefined;
-  }
-  if (!response.body) return undefined;
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  let bytes = 0;
-  let text = "";
   try {
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      bytes += value.byteLength;
-      if (bytes > CODEX_CATALOG_MAX_BYTES) {
-        await reader.cancel().catch(() => undefined);
-        return undefined;
-      }
-      text += decoder.decode(value, { stream: true });
-    }
-    text += decoder.decode();
-    return text;
+    const bytes = await readResponseWithin(response, {
+      maxBytes: CODEX_CATALOG_MAX_BYTES,
+      tooLargeMessage: "Codex catalog response is too large",
+    });
+    return new TextDecoder().decode(bytes);
   } catch {
     return undefined;
   }
@@ -213,7 +197,7 @@ function parseReasoningEfforts(value: unknown): string[] | typeof INVALID {
 
 function parseContextWindow(value: unknown): number | undefined | typeof INVALID {
   if (value === undefined || value === null) return undefined;
-  if (typeof value !== "number" || !Number.isInteger(value) || value < 0 || value > 0xffffffff) {
+  if (typeof value !== "number" || !Number.isInteger(value) || value <= 0 || value > 0xffffffff) {
     return INVALID;
   }
   return value;
@@ -501,9 +485,13 @@ function withLiveFields(entry: PiCatalogEntry, model: CodexCatalogModel): PiCata
   // An explicit account answer decides image input. An omitted list keeps the entry's own.
   const withImages =
     model.supportsImages === undefined ? entry : { ...entry, images: model.supportsImages };
+  const withContext =
+    model.contextWindow === undefined
+      ? withImages
+      : { ...withImages, contextWindow: model.contextWindow };
   return thinkingLevels
-    ? { ...withImages, reasoning: true, thinkingLevels }
-    : { ...withImages, reasoning: entry.reasoning || model.reasoningEfforts.length > 0 };
+    ? { ...withContext, reasoning: true, thinkingLevels }
+    : { ...withContext, reasoning: entry.reasoning || model.reasoningEfforts.length > 0 };
 }
 
 function liveThinkingLevels(model: CodexCatalogModel): ThinkingLevel[] | undefined {

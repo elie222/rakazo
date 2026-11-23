@@ -30,9 +30,18 @@ export type RoutineDraftState = RoutineDraft & {
   modelKey: string;
   thinkingLevel: string;
   inChat: boolean;
+  /** Its runs may use the owner's own computer; see Routine.useComputer. */
+  useComputer: boolean;
   /** Null unless the routine starts when something changes. */
   watch: RoutineWatchDraft | null;
 };
+
+/** Whether outside events start it (webhook, Git, chat app or email), so it can't use the computer. */
+export function routineDraftEventTriggered(draft: RoutineDraftState): boolean {
+  return Boolean(
+    draft.webhookEnabled || draft.githubEnabled || draft.messageProvider || draft.emailSenders,
+  );
+}
 
 /** The change trigger as the editor holds it: free text until saved. */
 export type RoutineWatchDraft = {
@@ -131,6 +140,7 @@ export function emptyRoutineDraftState(): RoutineDraftState {
     modelKey: "",
     thinkingLevel: "",
     inChat: false,
+    useComputer: false,
     watch: null,
   };
 }
@@ -148,6 +158,26 @@ export function draftStateFromRoutine(routine: Routine): RoutineDraftState {
         : "",
     thinkingLevel: routine.thinkingLevel ?? "",
     inChat: routine.inChat,
+    useComputer: routine.useComputer ?? false,
     watch: watchDraftFromRoutine(routine.watch),
   };
+}
+
+/**
+ * Whether the draft differs from what the editor opened with: the saved routine, or a blank draft.
+ * The suggested run time of a one-time routine is made from the clock each time a draft is built,
+ * so it is compared with `openedRunAtLocal`, the value the open draft started with.
+ */
+export function routineDraftDirty(
+  draft: RoutineDraftState,
+  editing: Routine | null,
+  openedRunAtLocal: string,
+): boolean {
+  const initial = {
+    ...(editing ? draftStateFromRoutine(editing) : emptyRoutineDraftState()),
+    runAtLocal: openedRunAtLocal,
+  };
+  return (Object.keys(initial) as (keyof RoutineDraftState)[]).some(
+    (key) => JSON.stringify(draft[key]) !== JSON.stringify(initial[key]),
+  );
 }

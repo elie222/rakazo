@@ -642,10 +642,10 @@ describe("thread subscription recovery", () => {
     },
   );
 
-  it.each([403, 404, 426])("stops reconnecting on a %i", async (status) => {
+  it("stops reconnecting once the server retires this build", async () => {
     vi.useFakeTimers();
     const { callbacks } = setup();
-    callbacks.subscribe.mockRejectedValue(Object.assign(new Error("Refused"), { status }));
+    callbacks.subscribe.mockRejectedValue(Object.assign(new Error("Refused"), { status: 426 }));
     await expect(runThreadSubscription(callbacks)).resolves.toBeUndefined();
     await vi.advanceTimersByTimeAsync(60_000);
     expect(callbacks.subscribe).toHaveBeenCalledTimes(1);

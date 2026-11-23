@@ -4,6 +4,7 @@ import path from "node:path";
 import type { AdapterContext, ArtifactStore } from "@rakazo/adapter-kit";
 import type { PrismaClient } from "@rakazo/db";
 import { runAsSystem } from "@rakazo/db";
+import { MEETING_TRANSCRIPT_STORAGE_PREFIX } from "../meetings/meeting-transcript.js";
 import type { PushTokenStore } from "../notifications/push-token-store.js";
 import { PushSessionEndedError } from "../notifications/push-token-store.js";
 import type { LocalArtifactStore } from "./artifacts.js";
@@ -24,7 +25,10 @@ export async function migrateLocalArtifacts(
       signal.throwIfAborted();
       const rows = await prisma.artifact.findMany({
         where: {
-          storageKey: { not: { startsWith: "object:" } },
+          NOT: [
+            { storageKey: { startsWith: "object:" } },
+            { storageKey: { startsWith: MEETING_TRANSCRIPT_STORAGE_PREFIX } },
+          ],
           ...(cursor ? { id: { gt: cursor } } : {}),
         },
         orderBy: { id: "asc" },

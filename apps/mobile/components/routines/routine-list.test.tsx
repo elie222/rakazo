@@ -259,10 +259,10 @@ it("offers a red delete without the destructive role, and none while a delete ru
   expect(swift.actions).toBe(0);
 });
 
-it("disables the switch and delete for a routine only its creator can change", () => {
+it("keeps the switch and delete for a routine only its owner can change", () => {
   render({ routines: [routine("r1", "Morning digest", { editable: false })] });
-  expect(swift.actions).toBe(0);
+  expect(swift.actions).toBe(1);
   expect(swift.toggles).toHaveLength(1);
   expect(swift.toggles[0]!.label).toBe("Active: Morning digest");
-  expect(colour(swift.toggles[0]!.modifiers ?? [], "disabled")).toBe(true);
+  expect(colour(swift.toggles[0]!.modifiers ?? [], "disabled")).toBeUndefined();
 });

@@ -9,6 +9,7 @@ import {
   HostedModelCreditsRequiredError,
   ModelCreditAccountUnavailableError,
 } from "../models/credits/model-credit-observer.js";
+import { DataRetentionRefusedError } from "../models/endpoints/data-retention.js";
 import {
   ModelConnectionGoneError,
   UnavailableModelForAuthError,
@@ -65,7 +66,8 @@ export function autoReviewFailureCode(error: unknown): AutoReviewFailureCode {
     error instanceof ModelCreditConnectionUnavailableError
   )
     return "connection_unavailable";
-  if (error instanceof UnavailableModelForAuthError) return "model_unavailable";
+  if (error instanceof UnavailableModelForAuthError || error instanceof DataRetentionRefusedError)
+    return "model_unavailable";
   if (error instanceof DecisionProviderError)
     return error.kind === "authentication" ? "decision_auth" : "provider_construction";
   if (error instanceof AutoReviewSetupError) return "provider_construction";

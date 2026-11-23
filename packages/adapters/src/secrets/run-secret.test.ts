@@ -1,8 +1,8 @@
-import { encodeLoginSecret } from "@rakazo/contracts";
+import { encodeLoginSecret, FULL_VAULT_ANSWER, VAULT_ITEM_LIMIT } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
 import { runLoginKind } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
-import { storeBotSecret } from "./bot-secrets.js";
+import { storeBotSecret, VaultFullError } from "./bot-secrets.js";
 import { fakeDatabase } from "./bot-secrets.test-support.js";
 import {
   commitConsumedRunSecret,
@@ -232,6 +232,34 @@ describe("answering a login card that replaces a saved login's site", () => {
       "Remove the existing credential before changing its destination",
     );
     expect(db.rows()).toEqual(before);
+  });
+
+  it("refuses a new login when the vault is full, with an error the card can show", async () => {
+    const db = fakeDatabase();
+    for (let index = 0; index < VAULT_ITEM_LIMIT; index++)
+      db.rows().push({
+        id: `filler-${index}`,
+        userId: "user",
+        spaceId: null,
+        name: `filler-${index}`,
+        origin: WWW,
+        auth: { type: "login" },
+        ciphertext: "unread",
+      });
+    Object.assign(db.prisma, {
+      run: { findFirst: async () => ({ botId: "bot", userId: "user" }) },
+      message: {
+        findFirst: async () => ({
+          blocks: [
+            { kind: "ask", text: "Sign in", input: "secret", status: "pending", credential },
+          ],
+        }),
+      },
+    });
+    const refused = await answer(db).catch((error: unknown) => error);
+    expect(refused).toBeInstanceOf(VaultFullError);
+    expect((refused as Error).message).toBe(FULL_VAULT_ANSWER);
+    expect(db.rows()).toHaveLength(VAULT_ITEM_LIMIT);
   });
 });
 

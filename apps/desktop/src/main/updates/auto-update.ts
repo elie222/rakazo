@@ -66,7 +66,12 @@ const OFFLINE = [
 // Squirrel.Mac refuses to replace an app run from a disk image or a translocated download.
 const READ_ONLY = ["read-only volume"];
 // ShipIt's ditto prints the POSIX text; macOS localizes the same failure's description.
-const DISK_FULL = ["no space left on device", "enospc", "设备上无剩余空间"];
+const DISK_FULL = [
+  "no space left on device",
+  "enospc",
+  "设备上无剩余空间",
+  "no queda espacio en el dispositivo",
+];
 const SIGNATURE = ["code sign", "signature", "not signed", "notariz"];
 
 /** Error text can contain local paths or URLs, so renderer-visible messages stay generic. */
@@ -76,6 +81,8 @@ export function classifyUpdaterFailure(error: unknown): UpdaterFailure {
   if (error instanceof SignatureUnreachableError && error.status === undefined) {
     return { kind: "offline", message: null };
   }
+  // The release host failing or rate limiting the feed passes; the next check retries it.
+  if (transientHttpStatus(error)) return { kind: "offline", message: null };
   const text = (error instanceof Error ? error.message : String(error)).trim().toLowerCase();
   if (NO_RELEASES.some((needle) => text.includes(needle))) {
     return {
@@ -103,6 +110,12 @@ export function classifyUpdaterFailure(error: unknown): UpdaterFailure {
     kind: "other",
     message: t("The update could not be completed. Try again later."),
   };
+}
+
+function transientHttpStatus(error: unknown): boolean {
+  if (typeof error !== "object" || error === null || !("statusCode" in error)) return false;
+  const status = error.statusCode;
+  return typeof status === "number" && (status === 429 || (status >= 500 && status < 600));
 }
 
 export type UpdaterEvent =
@@ -305,9 +318,11 @@ export class DesktopUpdateController {
   /** Bumped by each download and updater error, so only the latest verification can finish. */
   private verificationAttempt = 0;
   private checkPromise: Promise<DesktopUpdateState> | null = null;
+  private emittedCheckErrors: Set<unknown> | null = null;
   private downloadPromise: Promise<DesktopUpdateState> | null = null;
   private checkWasRequested = false;
   private installStarted = false;
+  private readonly listeners = new Set<(state: DesktopUpdateState) => void>();
 
   constructor(
     private readonly environment: UpdaterEnvironment,
@@ -321,6 +336,20 @@ export class DesktopUpdateController {
 
   state() {
     return this.current;
+  }
+
+  /** Calls `listener` after every state change, including download progress. */
+  subscribe(listener: (state: DesktopUpdateState) => void) {
+    this.listeners.add(listener);
+    return () => {
+      this.listeners.delete(listener);
+    };
+  }
+
+  private set(next: DesktopUpdateState) {
+    if (next === this.current) return;
+    this.current = next;
+    for (const listener of this.listeners) listener(next);
   }
 
   private push(event: UpdaterEvent) {
@@ -337,7 +366,7 @@ export class DesktopUpdateController {
     ) {
       this.lastCheckWasOffline = false;
     }
-    this.current = reduceUpdateState(this.current, event, this.clock.iso());
+    this.set(reduceUpdateState(this.current, event, this.clock.iso()));
     if (event.type === "not-available" || event.type === "downloaded" || event.type === "failed") {
       this.checkWasRequested = false;
     }
@@ -394,7 +423,10 @@ export class DesktopUpdateController {
             downloadedFileFrom(payload),
           );
         });
-        updater.on("error", (error) => this.fail(error));
+        updater.on("error", (error) => {
+          this.emittedCheckErrors?.add(error);
+          this.fail(error);
+        });
         this.loadedUpdater = updater;
         return updater;
       })
@@ -446,13 +478,13 @@ export class DesktopUpdateController {
     this.checkWasRequested = userInitiated;
     // A prior empty feed freezes automatic checks; a manual retry clears that freeze.
     if (this.current.phase === "unsupported" && checkOptions.environmentSupportsUpdates) {
-      this.current = {
+      this.set({
         ...this.current,
         phase: "idle",
         availableVersion: null,
         percent: null,
         message: null,
-      };
+      });
       // Do not make the user wait out the launch-check interval to retry.
       this.lastCheck = 0;
     }
@@ -461,12 +493,20 @@ export class DesktopUpdateController {
     now = this.clock.now();
     if (!shouldCheck(this.current, now, this.lastCheck, checkOptions)) return this.current;
     this.lastCheck = now;
+    const emittedErrors = new Set<unknown>();
+    this.emittedCheckErrors = emittedErrors;
     try {
       await updater.checkForUpdates();
     } catch (error) {
-      if (this.current.phase === "idle" || this.current.phase === "checking") {
+      // The updater can emit and reject with the same error; the event already set the UI state.
+      if (
+        !emittedErrors.has(error) &&
+        (this.current.phase === "idle" || this.current.phase === "checking")
+      ) {
         this.push({ type: "failed", error, userInitiated: this.checkWasRequested });
       }
+    } finally {
+      this.emittedCheckErrors = null;
     }
     return this.current;
   }
@@ -516,7 +556,7 @@ export class DesktopUpdateController {
       return this.current;
     }
     this.installStarted = true;
-    this.current = { ...this.current, message: null };
+    this.set({ ...this.current, message: null });
     try {
       updater.quitAndInstall();
     } catch (error) {

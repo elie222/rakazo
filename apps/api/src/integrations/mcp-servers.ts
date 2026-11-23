@@ -7,17 +7,17 @@ import {
   mcpServerHealthDto,
   mcpStdioRefusal,
   recordMcpServerHealth,
+  removeMcpServerInTransaction,
 } from "@rakazo/adapters";
 import type { Actor, McpServer, McpServerConfigInput } from "@rakazo/contracts";
 import { ConnectionSetupError, mcpOAuthEnvReferences } from "@rakazo/contracts";
 import type { McpServer as McpServerRow, Prisma } from "@rakazo/db";
-import { itemSecretIn, spaceAvailability } from "@rakazo/db";
+import { assertNameFreeWhereAvailable, itemSecretIn, spaceAvailability } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { isAdmin } from "../auth/admins.js";
 import type { RouterDeps } from "../router.js";
 import { computerContext } from "../routes/shared.js";
-import { assertNameFreeWhereAvailable, userAddedAvailability } from "../spaces/name-claims.js";
-import { dismissMcpServerApprovals } from "./mcp-approval.js";
+import { userAddedAvailability } from "../spaces/name-claims.js";
 import type { McpSecretMaterial } from "./mcp-material.js";
 import { legacyMcpArgs } from "./mcp-material.js";
 
@@ -209,11 +209,7 @@ export function mcpCredentialRecords(
   return parsed.headers && parsed.env ? { headers: parsed.headers, env: parsed.env } : null;
 }
 
-export function createMcpServers(
-  deps: RouterDeps,
-  onboardingDeps: Parameters<typeof dismissMcpServerApprovals>[0],
-  mcpOAuth: McpOAuthBroker,
-) {
+export function createMcpServers(deps: RouterDeps, mcpOAuth: McpOAuthBroker) {
   const mcpAwaitsOAuth = async (server: McpServerRow, actor: Actor, oauth: McpOAuthSummary) => {
     if (oauth.status === "connected") return false;
     const secret = server.secretId
@@ -277,18 +273,6 @@ export function createMcpServers(
     const display = row.transport === "stdio" ? await shown("installing", null) : row;
     void probeMcpServer(row, actor);
     return display;
-  };
-  const removeMcpServerInTransaction = async (
-    tx: Prisma.TransactionClient,
-    actor: Actor,
-    server: { id: string; secretId: string | null },
-  ) => {
-    const painted = await dismissMcpServerApprovals(onboardingDeps, actor, server.id, tx);
-    await tx.mcpServer.delete({ where: { id: server.id } });
-    if (server.secretId) {
-      await tx.secret.deleteMany({ where: { id: server.secretId, ...itemSecretIn(actor) } });
-    }
-    return painted;
   };
   const prepareMcpServer = async (actor: Actor, input: McpServerConfigInput) => {
     await assertMcpRemoteEndpoint("endpoint" in input ? input.endpoint : null, deps);

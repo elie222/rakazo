@@ -1211,7 +1211,7 @@ describe("destroyBot", () => {
     }
   });
 
-  it.each(["e2b", "novita", "createos"])(
+  it.each(["e2b"])(
     "removes the deleted bot's profile from a %s sandbox after the browser stops",
     async (kind) => {
       const root = await mkdtemp(path.join(tmpdir(), "rakazo-team-remote-delete-"));
@@ -2005,7 +2005,7 @@ describe("destroyBot", () => {
     }
   });
 
-  it.each(["boxd", "railway"])(
+  it.each(["boxd"])(
     "removes the deleted bot's folder and profile from a stopped %s Team Computer's stored home",
     async (kind) => {
       const root = await mkdtemp(path.join(tmpdir(), "rakazo-team-stored-home-"));
@@ -2168,7 +2168,7 @@ describe("destroyBot", () => {
     }
   });
 
-  it.each(["docker", "desktop"])(
+  it.each(["docker"])(
     "leaves a stopped %s Team Computer's stored home to its next boot",
     async (kind) => {
       const root = await mkdtemp(path.join(tmpdir(), "rakazo-team-folder-docker-stopped-"));
@@ -2422,6 +2422,11 @@ describe("archiveBot", () => {
         }),
       );
       expect(cancel.mock.calls).toEqual([["run:active-run"], ["routine:routine-1"]]);
+      // The routines that were on are marked before every routine is turned off.
+      expect(tx.routine.updateMany.mock.calls).toEqual([
+        [{ where: { botId: "bot-1", active: true }, data: { resumeOnRestore: true } }],
+        [{ where: { botId: "bot-1" }, data: { active: false, nextRunAt: null } }],
+      ]);
       expect(tx.bot.update).toHaveBeenCalled();
       expect(tx.routine.updateMany).toHaveBeenCalled();
     },

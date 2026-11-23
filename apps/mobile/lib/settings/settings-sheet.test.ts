@@ -1,6 +1,10 @@
 import { readdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import {
+  MOBILE_MCP_OAUTH_CALLBACK_URL,
+  MOBILE_MEETING_CALENDAR_CALLBACK_URL,
+} from "@rakazo/contracts";
 import { describe, expect, it, vi } from "vitest";
 import { redirectSystemPath } from "../../app/+native-intent";
 import { receiveIncomingShare } from "../composer/incoming-share";
@@ -64,16 +68,19 @@ describe("settings links", () => {
   it.each([true, false])("opens the share target for cold/warm arrivals (%s)", (initial) => {
     expect(redirectSystemPath({ path: "rakazo://expo-sharing", initial })).toBe("/share");
   });
-  it("keeps the current screen when an MCP sign-in returns to the app", () => {
-    const close = vi.fn();
-    const unregister = registerSettingsSheet(close);
+  it.each([MOBILE_MCP_OAUTH_CALLBACK_URL, MOBILE_MEETING_CALENDAR_CALLBACK_URL])(
+    "keeps the current screen when a browser sign-in returns to %s",
+    (callback) => {
+      const close = vi.fn();
+      const unregister = registerSettingsSheet(close);
 
-    expect(
-      redirectSystemPath({ path: "rakazo://mcp-oauth?code=c&state=mobile-1", initial: false }),
-    ).toBe("");
-    expect(close).not.toHaveBeenCalled();
-    unregister();
-  });
+      expect(
+        redirectSystemPath({ path: `${callback}?code=c&state=mobile-1`, initial: false }),
+      ).toBe("");
+      expect(close).not.toHaveBeenCalled();
+      unregister();
+    },
+  );
   it("still clears old shares when an MCP sign-in link starts the app", () => {
     redirectSystemPath({ path: "rakazo://mcp-oauth?code=c&state=mobile-1", initial: true });
 

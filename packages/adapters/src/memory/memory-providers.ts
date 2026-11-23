@@ -1,5 +1,6 @@
 import { hindsightMemory } from "../providers/memory/hindsight/hindsight-memory.js";
 import { honchoMemory } from "../providers/memory/honcho/honcho-memory.js";
+import { mnemoverseMemory } from "../providers/memory/mnemoverse/mnemoverse-memory.js";
 import { serenityMemory } from "../providers/memory/serenity/serenity-memory.js";
 import { supermemoryMemory } from "../providers/memory/supermemory/supermemory-memory.js";
 import type { MemoryProviderDefinition } from "./memory-provider-descriptor.js";
@@ -13,6 +14,7 @@ export const memoryProviders = {
   serenity: serenityMemory,
   honcho: honchoMemory,
   hindsight: hindsightMemory,
+  mnemoverse: mnemoverseMemory,
 } satisfies Record<string, MemoryProviderDefinition>;
 
 /** An id this build has a memory provider for. Outside adapters a provider id is an opaque string. */

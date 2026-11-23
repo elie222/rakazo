@@ -108,6 +108,7 @@ vi.mock("react-native", () => {
     },
     useWindowDimensions: () => dimensions,
     View: Surface,
+    ActivityIndicator: () => null,
     ScrollView: Surface,
     Text: Surface,
     Pressable: ({
@@ -222,6 +223,8 @@ const dictation = vi.hoisted(() => ({
   status: "idle",
   toggle: vi.fn(),
   cancel: vi.fn(),
+  finish: vi.fn((_then: () => void) => {}),
+  onLevel: vi.fn(() => () => {}),
   onWords: (_text: string, _final?: boolean) => {},
 }));
 vi.mock("../../lib/composer/composer-dictation", () => ({
@@ -449,6 +452,15 @@ describe("thread composer isolation", () => {
 
   function pickerRows() {
     return [...container.querySelectorAll<HTMLButtonElement>('button[aria-label^="@"]')];
+  }
+  /** The accessibilityRole the composer passed to a rendered button's Pressable. */
+  function roleOf(button: HTMLElement) {
+    // The mocked Pressable does not forward its role to the DOM, so read its React props.
+    const fiberKey = Object.keys(button).find((key) => key.startsWith("__reactFiber$"));
+    const fiber = (button as unknown as Record<string, { return: { memoizedProps: object } }>)[
+      fiberKey!
+    ]!;
+    return (fiber.return.memoizedProps as { accessibilityRole?: string }).accessibilityRole;
   }
 
   it("lists one row per bot with its avatar and name, at most five", () => {
@@ -1216,6 +1228,28 @@ describe("thread composer isolation", () => {
     expect(composer.current!.snapshot().skill).toBeNull();
   });
 
+  it("announces mention, skill, action and remove-skill rows as buttons", () => {
+    type("@He");
+    expect(pickerRows()).not.toHaveLength(0);
+    for (const row of pickerRows()) expect(roleOf(row)).toBe("button");
+    type("/Wri");
+    const skillRow = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="Skill Writing"]',
+    )!;
+    expect(roleOf(skillRow)).toBe("button");
+    type("/settings");
+    const actionRow = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="Chat Settings"]',
+    )!;
+    expect(roleOf(actionRow)).toBe("button");
+    type("/Wri");
+    press("Skill {name}");
+    const removeChip = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="Remove skill Writing"]',
+    )!;
+    expect(roleOf(removeChip)).toBe("button");
+  });
+
   it("offers skills only mid-message and attaches a picked one without wiping the draft", () => {
     const picker = () => container.querySelector('[data-testid="slash-picker"]');
     type("Hello @He");
@@ -1294,22 +1328,49 @@ describe("thread composer isolation", () => {
     return container.querySelector<HTMLButtonElement>('button[aria-label="Send"]')!;
   }
 
-  it("keeps Send disabled while a dictation is still recording", () => {
+  it("shows how to stop or discard a dictation while it records", () => {
     dictation.status = "listening";
+    render();
+    expect(container.querySelector(labelled("Dictate"))).toBeNull();
+    press("Stop dictating");
+    expect(dictation.toggle).toHaveBeenCalledTimes(1);
+  });
+
+  it("sends a dictation once its words are in when Send is pressed while it records", () => {
+    type("Please");
+    press("Dictate");
+    dictation.status = "listening";
+    act(() => dictation.onWords("check"));
+    act(() => sendButton().click());
+    expect(props.send).not.toHaveBeenCalled();
+    const then = dictation.finish.mock.calls[0]![0];
+    act(() => {
+      dictation.status = "idle";
+      dictation.onWords("check the bank");
+      then();
+    });
+    expect(container.querySelector("input")!.value).toBe("Please check the bank");
+    expect(props.send).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps Send disabled while a dictation is being transcribed", () => {
+    dictation.status = "transcribing";
     type("Please check");
     const send = sendButton();
     expect(send.disabled).toBe(true);
     act(() => send.click());
     expect(props.send).not.toHaveBeenCalled();
+    expect(dictation.finish).not.toHaveBeenCalled();
   });
 
-  it("keeps Send disabled while dictating a message that is only an attachment", () => {
+  it("drops the words a discarded dictation added", () => {
+    type("Note");
+    press("Dictate");
     dictation.status = "listening";
-    render({ attachmentIds: ["file-1"] });
-    const send = sendButton();
-    expect(send.disabled).toBe(true);
-    act(() => send.click());
-    expect(props.send).not.toHaveBeenCalled();
+    act(() => dictation.onWords("call the bank"));
+    press("Cancel dictation");
+    expect(dictation.cancel).toHaveBeenCalled();
+    expect(container.querySelector("input")!.value).toBe("Note");
   });
 
   it("adds a provider's transcript after text typed while it recorded", () => {

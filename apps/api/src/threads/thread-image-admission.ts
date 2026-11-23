@@ -8,6 +8,8 @@ import {
   findConnectedModelCredential,
   knownModelImageInput,
   modelAcceptsImageInput,
+  modelProviderAllowed,
+  modelProviderAllowlist,
   parseModelSecret,
   resolveMemberMainModel,
   runModelChoice,
@@ -81,6 +83,8 @@ export async function assertThreadImageInput(
   const provider = running ? run.modelProvider : selected.provider;
   const id = running ? run.modelId : selected.id;
   if (!provider || !id) return;
+  // A refused provider's run fails with the allowlist's own refusal, so it is not probed here.
+  if (!modelProviderAllowed(modelProviderAllowlist(), provider)) return;
   let supportsImages = knownModelImageInput(provider, id);
   const credential = running ? overrideCredential : selected.credential;
   if (supportsImages === undefined && configuration && credential) {

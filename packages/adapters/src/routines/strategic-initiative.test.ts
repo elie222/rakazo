@@ -8,6 +8,7 @@ import {
   createStrategicInitiativeReconciler,
   filterStrategicInitiativeTools,
   isStrategicInitiativeRun,
+  parkForgottenOpenWork,
   reconcileStrategicInitiatives,
   strategicInitiativeToolAllowed,
 } from "./strategic-initiative.js";
@@ -86,6 +87,7 @@ function strategicPrisma(options: {
     spaceMember: {
       findUnique: vi.fn(async () => (options.member === false ? null : { id: "member-1" })),
     },
+    scratchpadItem: { updateMany: vi.fn(async () => ({ count: 2 })) },
     $queryRaw: vi.fn(async () => [{ id: "thread-1" }]),
     run,
     task,
@@ -346,7 +348,7 @@ describe("strategic initiative tool guard", () => {
         trigger: "routine",
         clientNonce: "strategic-initiative:bot-1:123",
       }).map((tool) => tool.name),
-    ).toEqual(["ask_user", "message_user"]);
+    ).toEqual(["ask_user"]);
   });
 
   it("does not filter regular runs", () => {
@@ -435,6 +437,16 @@ it("escapes scratchpad data and keeps instructions outside its wrapper", async (
   expect(tasks[0]?.prompt?.match(/<\/scratchpad_items>/g)).toHaveLength(1);
 });
 
+it("names only the tool a check-in has and keeps the exact silence sentinel", async () => {
+  const { prisma, tasks } = strategicPrisma({ bots: [candidate] });
+  const { jobs } = publisher();
+  await reconcileStrategicInitiatives({ prisma, jobs, now: new Date(), pageSize: 1 });
+  const prompt = tasks[0]?.prompt ?? "";
+  expect(prompt).toContain("exactly NO_RESPONSE");
+  expect(prompt).toContain("ask_user");
+  expect(prompt).not.toContain("message_user");
+});
+
 it.each([
   "computer_shell",
   "browser_act",
@@ -444,6 +456,7 @@ it.each([
   "update_bot",
   "gmail_send",
   "catalog_execute",
+  "message_user",
 ])("denies %s at the shared dispatch boundary", (name) => {
   expect(
     strategicInitiativeToolAllowed(name, {
@@ -480,6 +493,63 @@ it("queues every eligible bot across pages in one sweep", async () => {
     2,
   );
   expect(enqueue).toHaveBeenCalledTimes(2);
+});
+
+it("parks open work untouched for two weeks, except what a follow-up covers", async () => {
+  const now = new Date("2026-11-20T12:00:00.000Z");
+  const forgotten = { status: "open", updatedAt: { lte: new Date("2026-11-06T12:00:00.000Z") } };
+  const { prisma } = strategicPrisma({ bots: [] });
+  vi.mocked(prisma.bot.findMany)
+    .mockResolvedValueOnce([{ id: "bot-1", routines: [] }] as never)
+    .mockResolvedValueOnce([{ id: "bot-2", routines: [{ id: "routine-lease" }] }] as never)
+    .mockResolvedValueOnce([]);
+  expect(await parkForgottenOpenWork({ prisma, now, pageSize: 1 })).toBe(4);
+  // Every bot with daily check-ins on, whether or not a check-in could run for it now.
+  expect(prisma.bot.findMany).toHaveBeenNthCalledWith(
+    1,
+    expect.objectContaining({
+      where: {
+        archivedAt: null,
+        dailyCheckIns: true,
+        space: { deletingAt: null },
+        scratchpadItems: { some: forgotten },
+      },
+    }),
+  );
+  expect(prisma.bot.findMany).toHaveBeenNthCalledWith(
+    2,
+    expect.objectContaining({ where: expect.objectContaining({ id: { gt: "bot-1" } }) }),
+  );
+  // The write rechecks the bot, so one switched off or archived since the read is left alone.
+  const bot = { archivedAt: null, dailyCheckIns: true, space: { deletingAt: null } };
+  const writes = vi.mocked(prisma.scratchpadItem.updateMany).mock.calls.map(([args]) => args);
+  expect(writes).toEqual([
+    { where: { botId: "bot-1", bot, ...forgotten }, data: { status: "parked" } },
+    {
+      where: {
+        botId: "bot-2",
+        bot,
+        ...forgotten,
+        NOT: [{ notes: { contains: "routine-lease" } }],
+      },
+      data: { status: "parked" },
+    },
+  ]);
+});
+
+it("parks before checking in, and still checks in when parking fails", async () => {
+  const { prisma } = strategicPrisma({ bots: [candidate] });
+  const { jobs, enqueue } = publisher();
+  vi.mocked(prisma.scratchpadItem.updateMany).mockRejectedValueOnce(new Error("database down"));
+  const reconcile = createStrategicInitiativeReconciler({
+    prisma,
+    jobs,
+    billingEnabled: false,
+    now: () => new Date("2026-11-02T12:00:00Z"),
+  });
+  await reconcile();
+  await vi.waitFor(() => expect(enqueue).toHaveBeenCalledTimes(1));
+  expect(prisma.scratchpadItem.updateMany).toHaveBeenCalledTimes(1);
 });
 
 it.each(["owner", "billing"])("throttles bots skipped for %s for an hour", async (reason) => {
