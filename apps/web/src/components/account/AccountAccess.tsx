@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import { fetchAccountSecurity, requestAccountDeletionCode } from "../../lib/auth/account-security";
 import { authClient } from "../../lib/auth/auth";
 import { forgetSignedIn } from "../../lib/auth/returning-user";
+import { holdSsoAutoStart } from "../../lib/auth/sso-auto-start";
 import { runSsoFlow } from "../../lib/auth/sso-flow";
 import { clearComposerDrafts } from "../../lib/composer/composer-draft";
 import { useSave } from "../../lib/query/query";
@@ -201,6 +202,8 @@ export function DeleteAccountForm({
                   throw new Error(authErrorText(result.error, t`Could not continue`));
                 clearComposerDrafts();
                 forgetSignedIn();
+                // The provider's session would otherwise sign straight into a new account.
+                holdSsoAutoStart();
                 window.location.assign("/sign-in");
               })
             }

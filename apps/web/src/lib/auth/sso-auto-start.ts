@@ -14,11 +14,14 @@ export function ssoAutoStartAllowed(): boolean {
   }
 }
 
-export function holdSsoAutoStart(): void {
+/** Whether the hold was saved; an automatic start needs it, or Back would start again. */
+export function holdSsoAutoStart(): boolean {
   try {
     window.localStorage.setItem(SSO_AUTO_START_HELD_KEY, "1");
+    return true;
   } catch {
-    // Blocked storage never allows an automatic start.
+    // Full or blocked storage: the caller waits for a click.
+    return false;
   }
 }
 

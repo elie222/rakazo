@@ -27,10 +27,12 @@ export async function signOut(destination: string): Promise<void> {
     window.location.reload();
     return;
   }
+  // Held before asking: a lost answer can still mean the session ended. A sign-out that really
+  // failed reloads signed in, which releases it.
+  holdSsoAutoStart();
   const result = await authClient.signOut().catch(() => null);
   if (result && !result.error) {
     forgetSignedInUser();
-    holdSsoAutoStart();
     clearSpaceSelection();
     clearComposerDrafts();
     window.location.assign(destination);

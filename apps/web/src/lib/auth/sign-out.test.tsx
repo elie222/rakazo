@@ -78,7 +78,8 @@ describe("signOut", () => {
     expect(selectedSpaceId()).toBeNull();
   });
 
-  it("keeps sign-in from starting SSO by itself afterwards", async () => {
+  it("keeps sign-in from starting SSO by itself even when the answer is lost", async () => {
+    requestSignOut.mockRejectedValue(new Error("Network"));
     await signOut("/sign-in");
     expect(ssoAutoStartAllowed()).toBe(false);
   });

@@ -6,6 +6,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { fetchAccountSecurity, requestAccountDeletionCode } from "../../lib/auth/account-security";
 import { authClient } from "../../lib/auth/auth";
 import { hasSignedInBefore, rememberSignedIn } from "../../lib/auth/returning-user";
+import { ssoAutoStartAllowed } from "../../lib/auth/sso-auto-start";
 import { runSsoFlow } from "../../lib/auth/sso-flow";
 import { readComposerDraft, writeComposerDraft } from "../../lib/composer/composer-draft";
 import { createQueryRoot as createRoot } from "../../lib/query/query-root.test-support";
@@ -223,6 +224,21 @@ it("clears saved drafts and the returning-user mark only once the account is del
     expect(location.assign).toHaveBeenCalledWith("/sign-in");
     expect(readComposerDraft("bot:bot-1")).toBe("");
     expect(hasSignedInBefore()).toBe(false);
+  } finally {
+    vi.unstubAllGlobals();
+    localStorage.clear();
+  }
+});
+
+it("keeps sign-in from starting SSO by itself after the account is deleted", async () => {
+  vi.stubGlobal("location", { assign: vi.fn() });
+  try {
+    vi.mocked(fetchAccountSecurity).mockResolvedValue({ ...security, freshOidcAuth: true });
+    vi.mocked(authClient.deleteUser).mockResolvedValue({ data: { success: true }, error: null });
+    await render();
+    await click("Delete");
+    await act(async () => deleteButton().click());
+    expect(ssoAutoStartAllowed()).toBe(false);
   } finally {
     vi.unstubAllGlobals();
     localStorage.clear();

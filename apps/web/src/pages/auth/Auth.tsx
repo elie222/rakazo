@@ -117,15 +117,16 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
     };
   }, [mode, capabilityAttempt]);
 
-  // A server whose only way in is one provider starts it at once, but never after the provider
-  // sent back an error. Desktop keeps the click, as its sign-in opens a window.
+  // A server whose only way in is one provider starts it at once, on sign-up too since a first
+  // visit lands there, but never after the provider sent back an error. Desktop keeps the click,
+  // as its sign-in opens a window.
   const onlyProvider =
-    mode === "in" &&
+    (mode === "in" || (mode === "up" && reset?.registrationOpen !== false)) &&
     reset &&
     !reset.passwordAuth &&
     providers.length === 1 &&
     (!reset.sso || reset.sso.availability === "available") &&
-    !searchParams.get("error") &&
+    !searchParams.has("error") &&
     !desktopBridge()
       ? providers[0]?.id
       : undefined;
@@ -133,8 +134,7 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
   useEffect(() => {
     if (!onlyProvider || autoStarted.current || !ssoAutoStartAllowed()) return;
     autoStarted.current = true;
-    holdSsoAutoStart();
-    void signInWithProvider(onlyProvider);
+    if (holdSsoAutoStart()) void signInWithProvider(onlyProvider);
   }, [onlyProvider]);
 
   async function submit(e: React.FormEvent) {

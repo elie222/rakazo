@@ -9,7 +9,6 @@ import type { AuthCapabilities } from "../../lib/auth/auth-capabilities";
 import { fetchAuthCapabilities } from "../../lib/auth/auth-capabilities";
 import type * as Passkeys from "../../lib/auth/passkeys";
 import { usePasskeysSupported } from "../../lib/auth/passkeys";
-import { holdSsoAutoStart } from "../../lib/auth/sso-auto-start";
 import { clearSpaceSelection } from "../../lib/query/rpc";
 import { AuthPage } from "./Auth";
 
@@ -327,14 +326,24 @@ it("starts the only provider once, and waits for a click on the next visit", asy
   expect(host.textContent).toContain("Continue with Example");
 });
 
+it("starts the only provider from sign-up, where a first visit lands", async () => {
+  vi.mocked(fetchAuthCapabilities).mockResolvedValue(ssoOnly);
+  await render("up", "/sign-up");
+  expect(authClient.signIn.social).toHaveBeenCalledWith(
+    expect.objectContaining({ provider: "oidc", newUserCallbackURL: "/onboarding" }),
+  );
+});
+
 it("waits for a click after the provider returned an error", async () => {
   vi.mocked(fetchAuthCapabilities).mockResolvedValue(ssoOnly);
-  await render("in", "/sign-in?error=access_denied");
+  await render("in", "/sign-in?error=");
   expect(authClient.signIn.social).not.toHaveBeenCalled();
 });
 
-it("waits for a click after signing out", async () => {
-  holdSsoAutoStart();
+it("waits for a click when storage cannot save that it started", async () => {
+  vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+    throw new DOMException("Full", "QuotaExceededError");
+  });
   vi.mocked(fetchAuthCapabilities).mockResolvedValue(ssoOnly);
   await render();
   expect(authClient.signIn.social).not.toHaveBeenCalled();
