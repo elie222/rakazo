@@ -599,10 +599,9 @@ export function ProductCard({
   const title = text(item.title);
   if (!title) return null;
   const href = linkUrl(item.href);
-  const pictures = (Array.isArray(photos) ? photos : []).flatMap((photo) => {
-    const src = imageSource(photo);
-    return src ? [src] : [];
-  });
+  const pictures = (Array.isArray(photos) ? photos : []).flatMap(
+    (photo) => imageSource(photo) ?? [],
+  );
   const src = imageSource(item.image) ?? pictures[0];
   const height = px(imageHeight) ?? (compact ? 140 : 240);
   const media =
