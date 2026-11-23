@@ -66,7 +66,7 @@ export function CallCard({ onSettings }: { onSettings: () => void }) {
       data-testid="call-view"
       role="dialog"
       aria-label={t`Call with ${call.botName}`}
-      className="fixed inset-0 z-50 flex flex-col bg-background px-5 pt-[max(env(safe-area-inset-top),12px)] pb-[max(env(safe-area-inset-bottom),24px)] md:inset-auto md:end-4 md:top-16 md:w-[360px] md:rounded-[22px] md:border md:border-border md:bg-card md:px-4 md:pt-2 md:pb-5 md:shadow-lg"
+      className="fixed inset-0 z-50 flex flex-col bg-background px-5 pt-[max(env(safe-area-inset-top),12px)] pb-[max(env(safe-area-inset-bottom),24px)] md:inset-auto md:end-4 md:top-16 md:max-h-[calc(100dvh-5rem)] md:w-[360px] md:rounded-[22px] md:border md:border-border md:bg-card md:px-4 md:pt-2 md:pb-5 md:shadow-lg"
     >
       <div className="flex items-center gap-1">
         <Button
@@ -102,8 +102,8 @@ export function CallCard({ onSettings }: { onSettings: () => void }) {
 
       <div
         className={cn(
-          "relative flex flex-1 flex-col items-center justify-center gap-4 py-6 md:flex-none",
-          call.approval && "hidden",
+          "relative flex items-center justify-center",
+          approval ? "gap-2 py-2" : "flex-1 flex-col gap-4 py-6 md:flex-none",
         )}
       >
         <button
@@ -112,7 +112,10 @@ export function CallCard({ onSettings }: { onSettings: () => void }) {
           onClick={() => {
             if (!onBotScreen) navigate(`/app/${call.botId}`);
           }}
-          className="relative grid size-32 place-items-center md:size-24"
+          className={cn(
+            "relative grid place-items-center",
+            approval ? "size-10" : "size-32 md:size-24",
+          )}
         >
           {ringing ? (
             <span
@@ -125,7 +128,7 @@ export function CallCard({ onSettings }: { onSettings: () => void }) {
             avatarSet={call.botAvatarSet}
             color={call.botColor}
             identity={call.botId}
-            size={96}
+            size={approval ? 40 : 96}
           />
         </button>
         <div className="flex flex-col items-center gap-1 text-center">
@@ -137,7 +140,7 @@ export function CallCard({ onSettings }: { onSettings: () => void }) {
             <span aria-live="polite">{ringing ? t`Calling…` : activity}</span>
           </span>
         </div>
-        {!ringing ? (
+        {!ringing && !approval ? (
           <div className="flex h-7 items-center gap-[4px]" aria-hidden="true">
             {BARS.map((height, index) => (
               <span
@@ -159,53 +162,59 @@ export function CallCard({ onSettings }: { onSettings: () => void }) {
         ) : null}
       </div>
 
-      {approval ? (
-        <div className="my-3 min-h-0 flex-1 overflow-y-auto md:max-h-[60dvh] md:flex-auto">
-          {approval.block.outgoingDraft ? (
-            <OutgoingDraftCard
-              key={approval.messageId}
-              block={approval.block}
-              canAnswer
-              onAnswer={(value) => answerCallApproval(approval.messageId, value)}
-            />
-          ) : (
-            <AskCard
-              key={approval.messageId}
-              block={approval.block}
-              canAnswer
-              canDismiss={false}
-              onDismiss={async () => {}}
-              onAnswer={(value) => answerCallApproval(approval.messageId, value)}
-            />
-          )}
-        </div>
-      ) : call.transcriptOpen ? (
-        <div className="mb-4 flex flex-col gap-1.5 border-t border-border pt-2.5 text-body leading-[1.45]">
-          {call.exchanges.slice(-TRANSCRIPT_LINES).map((exchange, index) => (
-            <p
-              key={`${exchange.role}-${index + 1}-${exchange.text.slice(0, 24)}`}
-              className={cn(
-                "truncate",
-                exchange.role === "bot" ? "text-foreground" : "text-muted-foreground",
-              )}
-              dir="auto"
-            >
-              {exchange.text}
-            </p>
-          ))}
-          {call.caption || call.heard ? (
-            <p className="truncate text-muted-foreground/70" dir="auto">
-              {call.caption || call.heard}
-            </p>
-          ) : null}
-        </div>
-      ) : call.caption ? (
-        <p className="mb-4 text-center text-body text-muted-foreground" dir="auto">
-          {call.caption}
-        </p>
-      ) : null}
-
-      <div className="flex items-center justify-center gap-3">
+      <div
+        className={
+          approval ? "my-2 min-h-0 flex-1 space-y-2 overflow-y-auto md:flex-auto" : "contents"
+        }
+      >
+        {approval ? (
+          <div>
+            {approval.block.outgoingDraft ? (
+              <OutgoingDraftCard
+                key={approval.messageId}
+                block={approval.block}
+                canAnswer
+                onAnswer={(value) => answerCallApproval(approval.messageId, value)}
+              />
+            ) : (
+              <AskCard
+                key={approval.messageId}
+                block={approval.block}
+                canAnswer
+                canDismiss={false}
+                onDismiss={async () => {}}
+                onAnswer={(value) => answerCallApproval(approval.messageId, value)}
+              />
+            )}
+          </div>
+        ) : null}
+        {call.transcriptOpen ? (
+          <div className="mb-4 flex flex-col gap-1.5 border-t border-border pt-2.5 text-body leading-[1.45]">
+            {call.exchanges.slice(-TRANSCRIPT_LINES).map((exchange, index) => (
+              <p
+                key={`${exchange.role}-${index + 1}-${exchange.text.slice(0, 24)}`}
+                className={cn(
+                  "truncate",
+                  exchange.role === "bot" ? "text-foreground" : "text-muted-foreground",
+                )}
+                dir="auto"
+              >
+                {exchange.text}
+              </p>
+            ))}
+            {call.caption || call.heard ? (
+              <p className="truncate text-muted-foreground/70" dir="auto">
+                {call.caption || call.heard}
+              </p>
+            ) : null}
+          </div>
+        ) : call.caption ? (
+          <p className="mb-4 text-center text-body text-muted-foreground" dir="auto">
+            {call.caption}
+          </p>
+        ) : null}
+      </div>
+      <div className="flex shrink-0 items-center justify-center gap-3">
         <Button
           variant={call.muted ? "default" : "secondary"}
           size="icon-lg"

@@ -131,6 +131,7 @@ it("reviews an outgoing draft and sends the edited values from the call", async 
     body: "Today at three",
   };
   render({
+    caption: "Microphone disconnected",
     approval: {
       runId: "run",
       messageId: "draft",
@@ -149,6 +150,9 @@ it("reviews an outgoing draft and sends the edited values from the call", async 
   const draft = document.querySelector(
     '[data-testid="call-view"] [data-testid="outgoing-draft-card"]',
   )!;
+  expect(draft.closest('[data-testid="call-view"]')?.textContent).toContain(
+    "Microphone disconnected",
+  );
   expect(draft.querySelector("textarea")?.value).toBe(values.to);
   const body = draft.querySelector<HTMLTextAreaElement>('textarea[aria-label="Message"]')!;
   expect(body.value).toBe(values.body);

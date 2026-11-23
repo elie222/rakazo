@@ -25,7 +25,10 @@ test("a call answers each turn and sends the caller to the screen for an approva
   await expect(call.getByRole("button", { name: "Allow once", exact: true })).toBeVisible();
   const deny = call.getByRole("button", { name: "Deny", exact: true });
   await expect(deny).toBeVisible();
+  await expect(call.locator('[aria-live="polite"]')).toBeVisible();
   await captureScreenshot(page, testInfo, "call-approval-prompt");
+  await call.getByRole("button", { name: "Transcript" }).click();
+  await expect(call.getByText("show a fetch approval card", { exact: true })).toBeVisible();
   await deny.click();
   await expect(deny).toHaveCount(0);
   await expect(call).toBeVisible();
