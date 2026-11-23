@@ -252,6 +252,24 @@ it("replaces the key when asked to rotate it", async () => {
   expect(editor.editorProps!.webhook.secret).toBe("secret-new");
 });
 
+it("never shows a made key once a later rotation has landed", async () => {
+  const made = deferred<{ secret: string }>();
+  ensureWebhookSecret.mockReturnValue(made.promise);
+  rotateWebhookSecret.mockResolvedValue({ secret: "secret-rotated" });
+  let ensuring!: Promise<void>;
+  act(() => {
+    ensuring = editor.editorProps!.onEnsureWebhook() as Promise<void>;
+  });
+  await act(async () => {
+    await editor.editorProps!.onRotateWebhook();
+  });
+  await act(async () => {
+    made.resolve({ secret: "secret-revoked" });
+    await ensuring;
+  });
+  expect(editor.editorProps!.webhook.secret).toBe("secret-rotated");
+});
+
 it("shows why a key cannot be set instead of leaving the rejection unhandled", async () => {
   ensureWebhookSecret.mockRejectedValue(
     Object.assign(new Error("Forbidden"), { code: "FORBIDDEN", status: 403 }),

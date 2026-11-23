@@ -96,10 +96,13 @@ export function useRoutineEditor({
   // only a new key comes back to show.
   const requestWebhookSecret = (botId: string, replace: boolean) =>
     sharedInflight(webhookSecretProvisionRef.current, `${replace}:${botId}`, async () => {
+      const generation = webhookKeyGenerations.current.get(botId) ?? 0;
       const { secret } = replace
         ? await rpc.bots.rotateWebhookSecret({ botId })
         : await rpc.bots.ensureWebhookSecret({ botId });
-      if (secret) {
+      // A key made before a rotation that already landed is revoked, so it is never shown.
+      const superseded = !replace && (webhookKeyGenerations.current.get(botId) ?? 0) !== generation;
+      if (secret && !superseded) {
         bumpWebhookKeyGeneration(botId);
         showWebhookSecret(botId, secret);
       }
