@@ -190,7 +190,7 @@ export function McpServersOverlay({
     try {
       const config = mcpServerConfig(draft, editing);
       if (editing) {
-        await rpc.mcp.servers.update({
+        const update = {
           id: editing.id,
           config: {
             ...config,
@@ -198,15 +198,17 @@ export function McpServersOverlay({
             description: editing.description,
             enabled: editing.enabled,
           },
-        });
-        if (!sameMcpServerAccess(draft.access, accessOf(editing)))
-          await rpc.mcp.servers.agents({ id: editing.id, ...draft.access });
+        };
+        await (sameMcpServerAccess(draft.access, accessOf(editing))
+          ? rpc.mcp.servers.update(update)
+          : rpc.mcp.servers.save({ ...update, access: draft.access }));
         await refresh();
         resetForm();
         return;
       }
-      const created = await rpc.mcp.servers.create(config);
-      if (!draft.access.allBots) await rpc.mcp.servers.agents({ id: created.id, ...draft.access });
+      const created = draft.access.allBots
+        ? await rpc.mcp.servers.create(config)
+        : await rpc.mcp.servers.createForBots({ config, botIds: draft.access.botIds });
       await refresh();
       resetForm();
       // A remote server is checked in the background; wait for that check so a server

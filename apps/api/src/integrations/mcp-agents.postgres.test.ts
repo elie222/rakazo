@@ -199,4 +199,71 @@ describe.skipIf(!enabled)("MCP server agents (PostgreSQL)", () => {
       expect(await prisma.botMcpServer.count({ where: { serverId: server!.id } })).toBe(0);
     }),
   );
+
+  it(
+    "adds a server for chosen agents only, in the same save",
+    asActor(async () => {
+      const created = await client().mcp.servers.createForBots({
+        config: {
+          transport: "streamable_http",
+          slug: "tickets",
+          name: "Tickets",
+          endpoint: "https://mcp.tickets.test/mcp",
+          headers: {},
+          enabled: true,
+        },
+        botIds: [botIds.chief],
+      });
+      expect(created.allBots).toBe(false);
+      const rows = await prisma.botMcpServer.findMany({ where: { serverId: created.id } });
+      expect(rows.map((row) => row.botId)).toEqual([botIds.chief]);
+    }),
+  );
+
+  it(
+    "keeps a server's settings when the access saved with them is refused",
+    asActor(async () => {
+      const config = {
+        transport: "streamable_http" as const,
+        slug: "wiki",
+        name: "Wiki",
+        endpoint: "https://mcp.wiki.test/mcp",
+        headers: {},
+        enabled: true,
+      };
+      const server = await client().mcp.servers.create(config);
+      await expect(
+        client().mcp.servers.save({
+          id: server.id,
+          config: { ...config, name: "Renamed" },
+          access: { allBots: false, botIds: [otherSpaceBotId] },
+        }),
+      ).rejects.toThrow();
+      const kept = (await client().mcp.servers.list()).find((row) => row.id === server.id);
+      expect(kept).toMatchObject({ name: "Wiki", allBots: true });
+    }),
+  );
+
+  it(
+    "saves a server's settings and chosen agents in one call",
+    asActor(async () => {
+      const config = {
+        transport: "streamable_http" as const,
+        slug: "notes",
+        name: "Notes",
+        endpoint: "https://mcp.notes.test/mcp",
+        headers: {},
+        enabled: true,
+      };
+      const server = await client().mcp.servers.create(config);
+      const saved = await client().mcp.servers.save({
+        id: server.id,
+        config: { ...config, name: "Renamed" },
+        access: { allBots: false, botIds: [botIds.chief] },
+      });
+      expect(saved).toMatchObject({ name: "Renamed", allBots: false });
+      const rows = await prisma.botMcpServer.findMany({ where: { serverId: server.id } });
+      expect(rows.map((row) => row.botId)).toEqual([botIds.chief]);
+    }),
+  );
 });
