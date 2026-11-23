@@ -103,6 +103,7 @@ export function ThreadMessageList({
               ...columnPadding,
             }}
             keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "none"}
+            keyboardShouldPersistTaps="handled"
             maintainVisibleContentPosition={messageListPosition}
             scrollEventThrottle={16}
             {...pinnedListHandlers}
@@ -133,6 +134,7 @@ export function ThreadMessageList({
             style={styles.list}
             // On iOS a swipe down hides the keyboard, following the finger; Android keeps it open.
             keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "none"}
+            keyboardShouldPersistTaps="handled"
             // Inverted, so the bottom padding is the visual top, clear of the transparent header.
             contentContainerStyle={listContentStyle}
             // Follow changes to the recovery card while already at the newest content.
