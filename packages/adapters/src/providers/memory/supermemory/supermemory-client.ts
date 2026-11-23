@@ -289,6 +289,7 @@ export async function forgetSupermemoryMemories(
   signal?: AbortSignal,
 ): Promise<SupermemorySaveResponse> {
   try {
+    const requestAbort = requestSignal(signal);
     const response = await fetchSupermemory(
       config,
       requestUrl(config.baseUrl, namespacePath(containerTag, "/memories")),
@@ -297,13 +298,16 @@ export async function forgetSupermemoryMemories(
         headers: authHeaders(config),
         body: JSON.stringify({ ids }),
         redirect: "error",
-        signal: requestSignal(signal),
+        signal: requestAbort,
       },
     );
     if (response.ok) {
-      const body = (await readSupermemoryJson(response).catch(() => null)) as {
-        errors?: unknown;
-      } | null;
+      let body: { errors?: unknown } | null;
+      try {
+        body = (await readSupermemoryJson(response, requestAbort)) as { errors?: unknown } | null;
+      } catch {
+        return { ok: false, error: "Supermemory returned an unreadable forget response." };
+      }
       const failed = Array.isArray(body?.errors) ? body.errors.length : 0;
       return failed === 0
         ? { ok: true }
