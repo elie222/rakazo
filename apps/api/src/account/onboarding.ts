@@ -385,11 +385,24 @@ export async function markAppConnected(
       ? await tx.message.findMany({ where: { id: messageId, threadId: thread.id }, select })
       : [];
     const messages = [...new Map([...first, ...latest, ...own].map((m) => [m.id, m])).values()];
+    // A connection is the connecting member's own: in a shared chat, a card another member's run
+    // posted stays open for them to connect and carry on.
+    const runIds = messages.flatMap((message) => (message.runId ? [message.runId] : []));
+    const runs = runIds.length
+      ? await tx.run.findMany({
+          where: { id: { in: runIds }, threadId: thread.id },
+          select: { id: true, userId: true },
+        })
+      : [];
+    const askers = new Map(runs.map((run) => [run.id, run.userId]));
+    const someoneElses = (runId: string | null) =>
+      runId !== null && askers.has(runId) && askers.get(runId) !== actor.userId;
     const events = [];
     // Only the card connected from, when this bot's run posted it, has a run waiting on it;
     // onboarding's cards and other copies of the card do not. It flips once under the lock.
     let cardRunId: string | null = null;
     for (const message of messages) {
+      if (someoneElses(message.runId)) continue;
       const next = changeMessageBlocks(message, (block) => {
         if (block.kind === "app_connect" && block.organizationConnectionId !== shared?.id)
           return block;
@@ -413,19 +426,14 @@ export async function markAppConnected(
       );
     }
     // In a shared chat, the bot carries on only for the person whose request asked for the app.
-    const asker = cardRunId
-      ? await tx.run.findFirst({
-          where: { id: cardRunId, threadId: thread.id, userId: actor.userId },
-          select: { id: true },
-        })
-      : null;
-    const runId = asker
-      ? await queueConnectedRun(tx, actor, {
-          botId: bot.id,
-          threadId: thread.id,
-          prompt: appConnectedPrompt(entry.name),
-        })
-      : null;
+    const runId =
+      cardRunId && askers.get(cardRunId) === actor.userId
+        ? await queueConnectedRun(tx, actor, {
+            botId: bot.id,
+            threadId: thread.id,
+            prompt: appConnectedPrompt(entry?.name ?? provider),
+          })
+        : null;
     return { events, runId };
   }, THREAD_LOCK_TRANSACTION_OPTIONS);
   for (const event of events) await deps.events.notify(thread.id, event.seq);

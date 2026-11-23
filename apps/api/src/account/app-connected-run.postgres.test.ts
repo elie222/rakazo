@@ -3,7 +3,13 @@ import type { ConnectorRegistry } from "@rakazo/adapters";
 import type { Actor, MessageBlock } from "@rakazo/contracts";
 import { appConnectCard } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
-import { createDb, createThreadMessageInTransaction, runAsSystem, runAsTenant } from "@rakazo/db";
+import {
+  createDb,
+  createThreadMessageInTransaction,
+  runAsSystem,
+  runAsTenant,
+  storedMessageBlocks,
+} from "@rakazo/db";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { markAppConnected } from "./onboarding.js";
 
@@ -157,13 +163,25 @@ describe.skipIf(!enabled)("connecting an app from a bot's card (PostgreSQL)", ()
     expect(jobs.enqueue).not.toHaveBeenCalled();
   });
 
-  it("starts nothing when someone else in the Space connects the app another person asked for", async () => {
-    const { botId, threadId, cardRunId, card } = await chat(otherUserId);
+  it("leaves the card open when someone else in the Space connects the app another person asked for", async () => {
+    const { botId, threadId, cardRunId, card, onboarding } = await chat(otherUserId);
     const jobs = { enqueue: vi.fn(async () => undefined) };
 
     await connect(jobs, botId, threadId, card.id);
 
     expect(await followUps(threadId, cardRunId)).toHaveLength(0);
     expect(jobs.enqueue).not.toHaveBeenCalled();
+    // The person who asked can still connect from it and have the bot carry on.
+    const status = (id: string) =>
+      runAsSystem("app connected fixture", async () =>
+        storedMessageBlocks(
+          await prisma.message.findUniqueOrThrow({
+            where: { id },
+            select: { id: true, blocks: true },
+          }),
+        ).map((block) => (block.kind === "app_connect" ? block.status : block.kind)),
+      );
+    expect(await status(card.id)).toEqual(["pending"]);
+    expect(await status(onboarding.id)).toEqual(["connected"]);
   });
 });
