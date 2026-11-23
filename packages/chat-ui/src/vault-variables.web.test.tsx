@@ -123,14 +123,14 @@ describe("web Vault variables", () => {
     await view.cleanup();
   });
 
-  it("opens no variable a reply links by hand unless the viewer has it", async () => {
+  it("opens no variable a reply links by hand unless the viewer has it, in the reply's words", async () => {
     const vault = fakeVault(["DEPLOY_KEY"]);
     const view = await mount(
       vault,
       <ChatMarkdown>{"[reveal](rakazo-vault:OTHER) [key](rakazo-vault:DEPLOY_KEY)"}</ChatMarkdown>,
     );
-    expect(view.chips().map((chip) => chip.textContent)).toEqual(["$DEPLOY_KEY"]);
-    expect(view.container.textContent).toBe("$OTHER $DEPLOY_KEY");
+    expect(view.chips().map((chip) => chip.textContent)).toEqual(["key"]);
+    expect(view.container.textContent).toBe("reveal key");
     await view.cleanup();
   });
 });

@@ -575,7 +575,7 @@ function MarkdownAnchor({
   const { renderMention, onOpenPage: openPage } = useContext(InlineChipsContext);
   const href = typeof props.href === "string" ? props.href : "";
   const variable = markdownVaultVariable(href);
-  if (variable) return <VaultVariableChip variable={variable} />;
+  if (variable) return <VaultVariableChip variable={variable}>{props.children}</VaultVariableChip>;
   const pageId = markdownPageId(href);
   if (pageId) {
     return (
@@ -636,11 +636,19 @@ function PageChip({
 }
 
 /** A `$NAME` that opens the viewer's Vault at it, or says they can't open that secret. */
-function VaultVariableChip({ variable }: { variable: VaultVariableLink }) {
+function VaultVariableChip({
+  variable,
+  children,
+}: {
+  variable: VaultVariableLink;
+  /** The link's own wording, which a bot may have written instead of `$NAME`. */
+  children?: React.ReactNode;
+}) {
   const vault = useContext(VaultVariablesContext);
   const text = `$${variable.name}`;
   // A link written into a reply opens only a variable the viewer has.
-  if (!vault || (!variable.denied && !vault.names?.has(variable.name))) return <span>{text}</span>;
+  if (!vault || (!variable.denied && !vault.names?.has(variable.name)))
+    return <span>{children ?? text}</span>;
   return (
     <button
       type="button"
@@ -649,7 +657,7 @@ function VaultVariableChip({ variable }: { variable: VaultVariableLink }) {
       aria-label={variable.denied ? undefined : vault.openLabel(text)}
       onClick={() => (variable.denied ? vault.denied() : vault.open(variable.name))}
     >
-      {text}
+      {children ?? text}
     </button>
   );
 }
