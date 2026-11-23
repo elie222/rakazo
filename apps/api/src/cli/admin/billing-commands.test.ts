@@ -29,6 +29,7 @@ vi.mock("@rakazo/db", async (importOriginal) => ({
   ...(await importOriginal<object>()),
   ownedBillingAccounts: async () => [{ organizationId: "org_fixture", customerId: "cus_fixture" }],
   recordAuditEvent: mocks.recordAuditEvent,
+  unexpiredCreditAccount: async () => ({ balanceMicros: 9_680_000n }),
 }));
 
 const email = "person@example.test";

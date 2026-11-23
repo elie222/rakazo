@@ -1,6 +1,6 @@
 import type { BillingProvider } from "@rakazo/adapter-kit";
 import { createDubPartnerProgram, PostgresRealtimeFanout } from "@rakazo/adapters";
-import { ownedBillingAccounts, recordAuditEvent } from "@rakazo/db";
+import { ownedBillingAccounts, recordAuditEvent, unexpiredCreditAccount } from "@rakazo/db";
 import { bestEffort } from "@rakazo/logging";
 import { createBillingService } from "../../billing/billing.js";
 import { withCheckoutLease } from "../../billing/checkout-lease.js";
@@ -207,7 +207,13 @@ async function refundBilling(
         ? ["Could not read the subscription. Check whether it still renews."]
         : []),
     ].join("\n"),
-    json: { organizationId, ...refund, credits, subscriptionRenews: renews },
+    json: {
+      organizationId,
+      ...refund,
+      creditPurchaseId: match.refund.creditPurchaseId,
+      credits,
+      subscriptionRenews: renews,
+    },
   };
 }
 
@@ -217,13 +223,14 @@ async function invoiceCredits(
   organizationId: string,
   refund: { creditPurchaseId: string; createdAt: string },
 ) {
+  if (!(await prisma.modelCreditAccount.findUnique({ where: { organizationId } }))) return null;
+  // Credits that lapsed but are not expired yet would otherwise inflate the balance.
   const [account, entry] = await Promise.all([
-    prisma.modelCreditAccount.findUnique({ where: { organizationId } }),
+    unexpiredCreditAccount(prisma, organizationId),
     prisma.modelCreditEntry.findUnique({
       where: { source: `purchase:${refund.creditPurchaseId}` },
     }),
   ]);
-  if (!account) return null;
   // An invoice that bought no credits, such as an own-key plan, still shows the balance.
   const purchase = entry?.organizationId === organizationId ? entry : null;
   // The purchase is recorded once the payment settles, which can be well after the invoice date.
