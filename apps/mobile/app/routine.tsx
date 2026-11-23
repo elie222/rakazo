@@ -388,13 +388,13 @@ function RoutineEditor({
   const zone = draft.timezone ?? deviceTimeZone() ?? "UTC";
   // A webhook needs the bot's key. It is made once, by the bot's creator, as on web.
   const webhookKey = useSave({
-    save: async (_previous: boolean | undefined, send) => {
+    save: async (_previous: Pick<MobileRoutineDraft, "webhookEnabled" | "useComputer">, send) => {
       const bot = await send("bots/get", { botId });
       if (!bot.webhookConfigured) await send("bots/rotateWebhookSecret", { botId });
     },
     stale: [rpcQuery("bots/get", { botId }).queryKey],
     onFailed: (cause, previous) => {
-      update({ webhookEnabled: previous });
+      update(previous);
       setSaveError(
         errorCode(cause) === "FORBIDDEN"
           ? t`Only the bot's creator can set its webhook key.`
@@ -493,7 +493,7 @@ function RoutineEditor({
     // A bot that outside events start never gets the owner's computer.
     if (key === "email") update({ emailSenders: "owner", useComputer: undefined });
     if (key === "webhook") {
-      webhookKey.run(draft.webhookEnabled);
+      webhookKey.run({ webhookEnabled: draft.webhookEnabled, useComputer: draft.useComputer });
       update({ webhookEnabled: true, useComputer: undefined });
     }
   }
