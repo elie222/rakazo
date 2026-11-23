@@ -1,6 +1,6 @@
 import { ph } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
-import type { PlanLimits, UsageSummary } from "@rakazo/contracts";
+import type { BillingStatus, PlanLimits, UsageSummary } from "@rakazo/contracts";
 import { hasLab, modelCreditsUsd } from "@rakazo/contracts";
 import { accountDisplay, formatTimeUntil } from "@rakazo/core";
 import type { Href } from "expo-router";
@@ -64,6 +64,7 @@ export default function Account() {
   // Subscription allowances and a credit balance show only for members who have them.
   const [plans, setPlans] = useState<PlanLimits[]>([]);
   const [creditsUsd, setCreditsUsd] = useState<number | null>(null);
+  const [media, setMedia] = useState<BillingStatus["media"]>();
   // Messaging appears only on servers that have a chat app connected, as on web.
   const [messagingEnabled, setMessagingEnabled] = useState(false);
   const stacked = useStackedSettings();
@@ -119,7 +120,10 @@ export default function Account() {
       .then(setPlans)
       .catch(() => undefined);
     void rpc("billing/status")
-      .then((status) => setCreditsUsd(modelCreditsUsd(status)))
+      .then((status) => {
+        setCreditsUsd(modelCreditsUsd(status));
+        setMedia(status.media);
+      })
       .catch(() => undefined);
   }, []);
 
@@ -173,6 +177,14 @@ export default function Account() {
         value={t`${ph({ amount: usd.format(creditsUsd) })} left`}
       />
     ) : null;
+  const mediaRow = media ? (
+    <SettingsRow
+      key="media"
+      accessible
+      title={t`Images and video`}
+      value={t`${ph({ left: usd.format(media.leftCents / 100) })} of ${ph({ limit: usd.format(media.limitCents / 100) })} left`}
+    />
+  ) : null;
   const period = { session: t`Session`, week: t`Weekly`, month: t`Monthly` };
   const planGroups = plans.map((plan) => (
     <SettingsGroup
@@ -272,6 +284,7 @@ export default function Account() {
             <SettingsGroup>
               {usageBlock}
               {creditsRow}
+              {mediaRow}
             </SettingsGroup>
             {planGroups}
             {usageModels}
