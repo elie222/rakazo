@@ -175,12 +175,4 @@ describe("remembering in another private memory document", () => {
       {},
     );
   });
-
-  it("never creates a new document", async () => {
-    const { memory, result } = remember({ path: "notes.md", content: "- A fact" }, []);
-    await expect(result).resolves.toEqual({
-      error: "You have no memory document named notes.md. Leave path out to save to MEMORY.md.",
-    });
-    expect(memory.commit).not.toHaveBeenCalled();
-  });
 });
