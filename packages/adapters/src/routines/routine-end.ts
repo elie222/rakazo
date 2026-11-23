@@ -6,13 +6,17 @@ import {
   zonedDateTime,
   zonedEndDateTime,
 } from "@rakazo/core";
-import type { PrismaClient, ThreadEvents } from "@rakazo/db";
+import type { Prisma, PrismaClient, ThreadEvents } from "@rakazo/db";
 import { bestEffort } from "@rakazo/logging";
 import { postRoutineNotice } from "./routine-notice.js";
 
 type RoutineTiming = { crons: string[]; watch: unknown };
 
 const repeats = (routine: RoutineTiming) => routineRepeats(routine.crons, routine.watch != null);
+
+export function beforeRoutineEnd(now = new Date()): Prisma.RoutineWhereInput {
+  return { OR: [{ endsAt: null }, { endsAt: { gt: now } }] };
+}
 
 export function runBeforeEnd(next: Date | null, endsAt: Date | null): Date | null {
   return next && endsAt && next.getTime() > endsAt.getTime() ? null : next;

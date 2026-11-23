@@ -1,4 +1,5 @@
 import { SecretStoreUnavailableError } from "@rakazo/adapter-kit";
+import { beforeRoutineEnd } from "@rakazo/adapters";
 import { hasValidBearerToken } from "@rakazo/core/node/secrets-guard";
 import type { Hono } from "hono";
 import { readBoundedBody } from "../http/http-body.js";
@@ -65,6 +66,7 @@ export function mountWebhookHttpRoutes(app: Hono, deps: WebhookDeps) {
         userId: target.bot.userId,
         active: true,
         webhookEnabled: true,
+        ...beforeRoutineEnd(),
       },
       select: {
         id: true,

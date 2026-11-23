@@ -1,5 +1,6 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { SecretStoreUnavailableError } from "@rakazo/adapter-kit";
+import { beforeRoutineEnd } from "@rakazo/adapters";
 import type { Hono } from "hono";
 import { readBoundedBytes } from "../http/http-body.js";
 import { githubEventMetadataPrompt } from "../messaging/inbound-delivery.prompt.js";
@@ -196,6 +197,7 @@ export function mountGithubWebhookRoute(
         userId: target.bot.userId,
         active: true,
         githubEnabled: true,
+        ...beforeRoutineEnd(),
       },
       select: {
         id: true,

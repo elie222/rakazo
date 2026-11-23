@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import type { MessagingInboundAttachment } from "@rakazo/adapter-kit";
 import type { InboundEmail } from "@rakazo/adapters";
-import { INBOUND_EMAIL_MAX_BYTES, readInboundEmail } from "@rakazo/adapters";
+import { beforeRoutineEnd, INBOUND_EMAIL_MAX_BYTES, readInboundEmail } from "@rakazo/adapters";
 import type { RoutineEmailSenders } from "@rakazo/contracts";
 import { ATTACHMENT_MAX_COUNT } from "@rakazo/contracts";
 import { AttachmentValidationError, sanitizeMessagingLabel } from "@rakazo/core";
@@ -157,6 +157,7 @@ export async function receiveBotEmail(deps: EmailInboundDeps, recipient: string,
           userId: bot.userId,
           active: true,
           emailSenders: { in: allowed },
+          ...beforeRoutineEnd(),
         },
         select: {
           name: true,

@@ -1,6 +1,8 @@
 import { useLingui } from "@lingui/react/macro";
+import { dateLocaleForUi, useUiLocale } from "../../lib/i18n/i18n";
+import { localDateOfDay } from "../../lib/native/calendar-day";
 import { SettingsDateRow, settingsDateRowAvailable } from "../settings/settings-date-row";
-import { SettingsGroup, SettingsSwitch } from "../settings/settings-group";
+import { SettingsGroup, SettingsRow, SettingsSwitch } from "../settings/settings-group";
 
 export function RoutineEndDate({
   endsOn,
@@ -14,7 +16,9 @@ export function RoutineEndDate({
   onChange: (endsOn: string) => void;
 }) {
   const { t } = useLingui();
-  if (!settingsDateRowAvailable()) return null;
+  const locale = useUiLocale();
+  const pickable = settingsDateRowAvailable();
+  if (!pickable && !endsOn) return null;
   return (
     <SettingsGroup>
       <SettingsSwitch
@@ -22,9 +26,18 @@ export function RoutineEndDate({
         value={Boolean(endsOn)}
         onChange={(on) => onChange(on ? firstDay : "")}
       />
-      {endsOn ? (
+      {!endsOn ? null : pickable ? (
         <SettingsDateRow title={t`Ends`} day={endsOn} minimumDay={today} onChange={onChange} />
-      ) : null}
+      ) : (
+        <SettingsRow
+          title={t`Ends`}
+          value={localDateOfDay(endsOn).toLocaleDateString(dateLocaleForUi(locale), {
+            month: "short",
+            day: "numeric",
+            year: "numeric",
+          })}
+        />
+      )}
     </SettingsGroup>
   );
 }

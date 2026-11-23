@@ -403,6 +403,23 @@ describe("inbound webhook HTTP route", () => {
     );
   });
 
+  it("starts no routine whose end has passed", async () => {
+    const deps = createDeps({ routines: [] });
+    const app = mount(deps);
+    await app.request("/api/v1/bots/bot-1/webhook", {
+      method: "POST",
+      headers: { authorization: `Bearer ${SECRET}`, "content-type": "application/json" },
+      body: JSON.stringify({ event: "ping" }),
+    });
+    expect(deps.findRoutines).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          OR: [{ endsAt: null }, { endsAt: { gt: expect.any(Date) } }],
+        }),
+      }),
+    );
+  });
+
   it("keeps the bot model when matching routines chose different models", async () => {
     const deps = createDeps({
       routines: [
