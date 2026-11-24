@@ -1,13 +1,13 @@
 {
   "name": "@rakazo/desktop",
   "productName": "Rakazo",
-  "version": "0.15.0",
+  "version": "0.16.0",
   "author": {
     "name": "Rakazo"
   },
   "license": "Apache-2.0",
   "type": "module",
-  "main": "dist/main.js",
+  "main": "dist/launch.js",
   "scripts": {
     "dev": "pnpm build && electron .",
     "build": "node scripts/build.mjs && node scripts/copy-static.mjs && node scripts/build-speech.mjs",
@@ -63,7 +63,7 @@
     ],
     "extraMetadata": {
       "name": "rakazo",
-      "main": "dist/main.js"
+      "main": "dist/launch.js"
     },
     "mac": {
       "icon": "../../packages/ui-tokens/assets/Rakazo.icon",

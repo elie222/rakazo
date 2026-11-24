@@ -523,6 +523,25 @@ function fixture({
     userActionApprovalRule: { findMany: vi.fn(async () => (confirmationsOverride ? [] : rules)) },
     routine: {
       findMany: vi.fn(async () => routines),
+      // Read before a schedule_update's card, as the update reads the routine it changes.
+      findFirst: vi.fn(async () => ({
+        id: "routine-1",
+        threadId: "thread-1",
+        name: "Backups",
+        prompt: "Back up the files",
+        crons: ["0 9 * * *"],
+        timezone: "UTC",
+        userId: "user-1",
+        botId: run.botId,
+        active: true,
+        inChat: false,
+        watch: null,
+        nextRunAt: new Date("2100-01-01T09:00:00Z"),
+        webhookEnabled: false,
+        githubEnabled: false,
+        messageProvider: null,
+        emailSenders: null,
+      })),
       findUnique: vi.fn(async () =>
         routineId
           ? {

@@ -315,6 +315,19 @@ describe("Stripe billing HTTP boundary", () => {
     });
   });
 
+  it("still counts a subscription as paid once a later charge fails and it ends", async () => {
+    const { wire, provider } = setup();
+    const { customerId } = await provider.createCustomer(owner);
+    await provider.createCheckout({ customerId, seats: 1, ...urls });
+    wire.completeCheckout(customerId);
+    wire.billPeriod(customerId, "failed");
+    wire.setStatus(customerId, "canceled");
+    await expect(provider.getCustomerSubscription(customerId)).resolves.toMatchObject({
+      status: "canceled",
+      paidAt: expect.any(Date),
+    });
+  });
+
   it("reads the subscription's card fingerprint and credits the customer balance", async () => {
     const { wire, provider } = setup();
     const { customerId } = await provider.createCustomer(owner);

@@ -20,6 +20,42 @@ import {
 } from "./pi-runtime-tool-parameters.js";
 
 describe("jsonSchemaParameters", () => {
+  it("preserves unconstrained inputs in single and batched MCP calls", () => {
+    const input = { description: "Input for the selected tool." };
+    const context = { title: "Optional context" };
+    const call = {
+      type: "object",
+      properties: { path: { type: "string" }, input, context },
+      required: ["path", "input"],
+    };
+    const inputSchema = {
+      type: "object",
+      properties: { calls: { anyOf: [call, { type: "array", items: call }] } },
+      required: ["calls"],
+    };
+    const tool = { name: "mcp__fixture__call", description: "Call a tool", inputSchema };
+    const parameters = parametersFor(tool);
+    const wire = JSON.parse(JSON.stringify(parameters));
+    for (const branch of [wire.properties.calls.anyOf[0], wire.properties.calls.anyOf[1].items]) {
+      expect(branch.required).toEqual(["path", "input"]);
+      expect(branch.properties.input).toEqual(input);
+      expect(branch.properties.context).toEqual(context);
+    }
+
+    for (const value of [{ query: "example" }, ["example"], "example", 17, true, null]) {
+      const callArgs = { path: "fixture/tool", input: value };
+      for (const calls of [callArgs, [{ ...callArgs, context: { page: 1 } }]]) {
+        const args = { calls };
+        const validated = validateToolArguments(
+          { ...tool, parameters },
+          { type: "toolCall", id: "unconstrained-input", name: tool.name, arguments: args },
+        );
+        expect(validated).toEqual(args);
+        expect(parseConnectorToolArgs(inputSchema, validated)).toEqual(args);
+      }
+    }
+  });
+
   it.each(["number", "integer"])("preserves %s bounds through SDK validation", (type) => {
     const field = { type, minimum: 0, maximum: 20 };
     const inputSchema = {

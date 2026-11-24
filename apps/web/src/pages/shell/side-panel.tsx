@@ -98,7 +98,7 @@ export function ShellSidePanel({
               ) : null}
               <div className="ml-auto flex gap-1">
                 <Button
-                  variant="ghost"
+                  variant="floating"
                   size="icon"
                   aria-label={t`Close panel`}
                   onClick={() => setPanel(null)}

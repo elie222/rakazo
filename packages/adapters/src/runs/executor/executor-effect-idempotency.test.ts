@@ -266,6 +266,7 @@ function fixture(runId = "run-1") {
   });
   const executor = createRunExecutor({
     deploymentModelKey: "fixture-model-key",
+    now: () => new Date("2026-03-05T12:00:00.000Z"),
     prisma: {
       ...prisma,
       $transaction: async (work: (tx: typeof prisma) => Promise<unknown>) => work(prisma),
@@ -505,7 +506,7 @@ describe("mutating tool effect idempotency keys", () => {
     expect(f.memoryCommit).toHaveBeenCalledOnce();
     expect(f.memoryCommit.mock.calls[0]?.[0]).toMatchObject({
       path: "MEMORY.md",
-      content: "Save trip files to Drive.\nThe client is Combient.\n",
+      content: "Save trip files to Drive.\nThe client is Combient. (saved 2026-03-05)\n",
       expectedRevision: 2,
     });
     expect(f.results[0]).toEqual({ ok: true });
@@ -532,7 +533,7 @@ describe("mutating tool effect idempotency keys", () => {
       expect(f.memoryCommit).toHaveBeenCalledOnce();
       expect(f.memoryCommit.mock.calls[0]?.[0]).toMatchObject({
         path: "MEMORY.md",
-        content: "existing\nnew fact\n",
+        content: "existing\nnew fact (saved 2026-03-05)\n",
         expectedRevision: 2,
       });
       expect(f.results[0]).toEqual({ ok: true });
@@ -589,11 +590,11 @@ describe("mutating tool effect idempotency keys", () => {
 
     expect(f.memoryCommit).toHaveBeenCalledTimes(2);
     expect(f.memoryCommit.mock.calls[0]?.[0]).toMatchObject({
-      content: "durable fact\n",
+      content: "durable fact (saved 2026-03-05)\n",
       expectedRevision: 0,
     });
     expect(f.memoryCommit.mock.calls[1]?.[0]).toMatchObject({
-      content: "another writer fact\ndurable fact\n",
+      content: "another writer fact\ndurable fact (saved 2026-03-05)\n",
       expectedRevision: 1,
     });
     expect(f.results[0]).toEqual({ ok: true });

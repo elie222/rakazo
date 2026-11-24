@@ -30,7 +30,7 @@ import { useSideInsets } from "../../lib/layout/side-insets";
 import { announceToScreenReader } from "../../lib/native/announce";
 import { native, useThemedStyles } from "../../lib/native/native";
 import { useScreenHeader } from "../../lib/navigation/screen-header";
-import { formRead, refreshRpcQueries, rpcQuery, useSave } from "../../lib/query/query";
+import { formRead, rpcQuery, useSave } from "../../lib/query/query";
 import { useScreenQuery } from "../../lib/query/screen-query";
 
 type Draft = RemoteMcpServerEdit & { access: McpServerAccess };
@@ -92,19 +92,11 @@ function McpServerScreen({ id }: { id: string }) {
     save: async (next: Draft, send) => {
       if (!server) return;
       const config = configChanged ? remoteMcpServerUpdate(server, next) : null;
-      if (config) await send("mcp/servers/update", { id, config });
-      if (!accessChanged) return;
-      try {
-        await send("mcp/servers/agents", { id, ...next.access });
-      } catch (failure) {
-        if (config) {
-          // The settings above are saved: keep only the access edit, so a retry sends access
-          // alone, and show the saved settings before reporting the failure.
-          setEdits(({ access }) => (access ? { access } : {}));
-          await refreshRpcQueries("mcp/servers/list");
-        }
-        throw failure;
-      }
+      const access = accessChanged ? next.access : undefined;
+      // Settings and access go in one save, so neither is ever kept without the other.
+      if (config && access) await send("mcp/servers/save", { id, config, access });
+      else if (config) await send("mcp/servers/update", { id, config });
+      else if (access) await send("mcp/servers/agents", { id, ...access });
     },
     stale: [serversRead.queryKey, assignmentsRead.queryKey],
     onSaved: () => setEdits({}),
