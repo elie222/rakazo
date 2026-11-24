@@ -827,9 +827,10 @@ describe("scoped mobile outbox", () => {
       artifactIds: ["artifact-a"],
       routineIds: ["routine-1", "routine-2"],
       nativeCalendarDeviceKey: "phone-proof",
+      nativeClockDeviceKey: "clock-proof",
     });
     expect(retried).toEqual(first);
-    expect(foregroundClockDeviceKey).not.toHaveBeenCalled();
+    expect(foregroundClockDeviceKey).toHaveBeenCalledTimes(2);
   });
   it("sends the message itself when its routines were already started for this nonce", async () => {
     const mentions = [{ kind: "routine" as const, id: "routine-1", name: "Digest" }];

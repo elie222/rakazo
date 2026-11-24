@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { CalendarOperation, NativeClockOperation } from "@rakazo/contracts";
 import { NATIVE_CALENDAR_WINDOW_MS } from "@rakazo/contracts";
+import { toolEffectIdempotencyKey } from "@rakazo/core/node/approval-effect-key";
 import {
   asSystem,
   contentEncryptionStatus,
@@ -203,10 +204,13 @@ describe.skipIf(!url)("native phone request execution", () => {
     const inTenant = <T>(work: () => Promise<T>) => runAsTenant(origin, work);
     const deps = { prisma: db.prisma, events };
     const signal = new AbortController();
-    const request = () =>
-      inTenant(() => requestNativeCalendar(deps, record, lease, clockOperation, signal.signal));
+    const key = toolEffectIdempotencyKey(record.id, clockOperation.action, clockOperation.input);
+    const request = (effectKey = key) =>
+      inTenant(() =>
+        requestNativeCalendar(deps, record, lease, clockOperation, signal.signal, effectKey),
+      );
     const result = request();
-    const settled = Promise.allSettled([result]);
+    const settlements = [Promise.allSettled([result])];
     try {
       const [pending] = await vi.waitFor(
         async () => {
@@ -246,9 +250,34 @@ describe.skipIf(!url)("native phone request execution", () => {
       await expect(result).resolves.toEqual(receipt);
       expect(await inTenant(() => finishNativeCalendar(deps, origin, target, receipt))).toBe(false);
       await expect(request()).resolves.toEqual(receipt);
+      expect(await inTenant(() => pendingNativeCalendar(db.prisma, origin, botId))).toEqual([]);
+
+      const nextKey = toolEffectIdempotencyKey(
+        record.id,
+        clockOperation.action,
+        clockOperation.input,
+        1,
+      );
+      const nextResult = request(nextKey);
+      settlements.push(Promise.allSettled([nextResult]));
+      const nextId = { id: nextKey, runId: record.id, threadId };
+      await vi.waitFor(
+        async () => {
+          const rows = await inTenant(() => pendingNativeCalendar(db.prisma, origin, botId));
+          expect(rows).toMatchObject([{ id: nextKey, operation: clockOperation }]);
+        },
+        { timeout: 8_000 },
+      );
+      expect(await inTenant(() => claimNativeCalendar(db.prisma, origin, nextId))).not.toBeNull();
+      expect(
+        await inTenant(() => finishNativeCalendar(deps, origin, nextId, { status: "cancelled" })),
+      ).toBe(true);
+      await expect(nextResult).resolves.toEqual({ status: "cancelled" });
+      await expect(request()).resolves.toEqual(receipt);
+      await expect(request(nextKey)).resolves.toEqual({ status: "cancelled" });
     } finally {
       signal.abort();
-      await settled;
+      await Promise.all(settlements);
     }
   }, 20_000);
 
@@ -268,7 +297,14 @@ describe.skipIf(!url)("native phone request execution", () => {
     for (const record of [calendarOnly, withClock]) {
       await expect(
         runAsTenant(identity, () =>
-          requestNativeCalendar(deps, record, lease, clockOperation, new AbortController().signal),
+          requestNativeCalendar(
+            deps,
+            record,
+            lease,
+            clockOperation,
+            new AbortController().signal,
+            toolEffectIdempotencyKey(record.id, clockOperation.action, clockOperation.input),
+          ),
         ),
       ).resolves.toEqual({ status: "unavailable" });
     }

@@ -101,6 +101,7 @@ export async function deliverSend(
     artifactIds.push(id);
   }
   const deviceKey = groupTarget ? undefined : foregroundCalendarDeviceKey?.();
+  const clockKey = groupTarget ? undefined : foregroundClockDeviceKey?.();
   const message = {
     ...target,
     clientNonce: attempt.clientNonce,
@@ -112,19 +113,14 @@ export async function deliverSend(
     replyQuote: reroutedToGroup ? undefined : (payload.replyQuote ?? undefined),
     fromPage: reroutedToGroup ? undefined : payload.fromPage,
     ...(deviceKey && { nativeCalendarDeviceKey: deviceKey }),
+    ...(clockKey && { nativeClockDeviceKey: clockKey }),
   } as const;
   // The routines run in the same server operation as the message: both or neither.
   const sent = plan.shouldRunRoutines
     ? (await request("threads/sendWithRoutines", { ...message, routineIds: plan.routineIds })).send
     : undefined;
   // Runs already saved for this nonce return no message; the plain send saves or replays it.
-  const clockKey = sent || groupTarget ? undefined : foregroundClockDeviceKey?.();
-  const accepted =
-    sent ??
-    (await request("threads/send", {
-      ...message,
-      ...(clockKey && { nativeClockDeviceKey: clockKey }),
-    }));
+  const accepted = sent ?? (await request("threads/send", message));
   attempt.acceptedRun = { runId: accepted.runId, taskId: accepted.taskId };
   return accepted.seq;
 }

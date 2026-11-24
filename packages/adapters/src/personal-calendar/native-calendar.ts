@@ -17,7 +17,7 @@ import {
   NativeDeviceOperation,
 } from "@rakazo/contracts";
 import { deadlineSignal } from "@rakazo/core";
-import { approvalEffectKey } from "@rakazo/core/node/approval-effect-key";
+import { isToolEffectIdempotencyKey } from "@rakazo/core/node/approval-effect-key";
 import type { NativeCalendarRequest, PrismaClient, RunLease, ThreadEvents } from "@rakazo/db";
 import {
   assertRunCanWriteHistory,
@@ -299,6 +299,7 @@ export function requestNativeCalendar(
   lease: RunLease,
   operation: NativeClockOperation,
   parent: AbortSignal,
+  effectKey: string,
 ): Promise<NativeClockResponse>;
 export async function requestNativeCalendar(
   { prisma, events }: RequestDeps,
@@ -306,10 +307,16 @@ export async function requestNativeCalendar(
   lease: RunLease,
   operation: Operation,
   parent: AbortSignal,
+  effectKey?: string,
 ): Promise<Response> {
   const clock = isNativeClockOperation(operation);
   if (!clock && calendarOperationSource(operation) !== "device") return { status: "unavailable" };
   const { id: runId, userId, spaceId, threadId } = run;
+  const write = clock || isCalendarWrite(operation.action);
+  // The approved occurrence, not its arguments alone, owns the device request.
+  const id = clock ? effectKey : write ? calendarWriteKey(runId, operation) : randomUUID();
+  if (!id || (clock && !isToolEffectIdempotencyKey(id, runId, operation.action)))
+    return { status: "unavailable" };
   const owner = await prisma.run.findFirst({
     where: {
       ...privateRun(userId),
@@ -353,12 +360,6 @@ export async function requestNativeCalendar(
     deviceDigest,
     capability: clock ? "clock" : undefined,
   };
-  const write = clock || isCalendarWrite(operation.action);
-  const id = clock
-    ? approvalEffectKey(runId, operation.action, operation.input)
-    : write
-      ? calendarWriteKey(runId, operation)
-      : randomUUID();
   const row = await prisma.$transaction(async (tx) => {
     await assertRunCanWriteHistory(tx, runId, { lease });
     if (

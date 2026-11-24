@@ -15,6 +15,7 @@ export const phoneClockTool: ToolHandler = async (ctx, call) => {
     { owner: ctx.workerId, fence: ctx.fence },
     operation.data,
     ctx.context.signal,
+    call.effectKey,
   );
 
   switch (result.status) {
