@@ -101,6 +101,14 @@ function reduce(prev: LiveThreadSnapshot, event: ThreadSnapshotEvent): LiveThrea
   // The replay cursor follows every applied event, including ones that change nothing visible.
   const cursor = event.seq ?? prev.cursor;
   const advanced = () => (cursor === prev.cursor ? prev : { ...prev, cursor });
+  if (
+    prev.run?.retryable &&
+    ((event.type === "thread.message.created" && payload.role === "user") ||
+      (event.type === "run.started" && event.botId === prev.run.botId))
+  ) {
+    // Group chats can retain the failure banner after the conversation has moved on.
+    prev = { ...prev, run: { ...prev.run, retryable: false } };
+  }
   if (stopsRunHelpers(event)) {
     const messages = settleRunSubagents(prev.messages, event.runId);
     if (messages !== prev.messages) prev = { ...prev, messages };

@@ -2395,6 +2395,16 @@ describe("thread event reduction from sparse live events", () => {
     expect(next?.run).toMatchObject({ id: run.id, status: "failed", retryable: true });
   });
 
+  it.each([
+    ["a newer user message arrives", { type: "thread.message.created", payload: { role: "user" } }],
+    ["the same bot starts work", { type: "run.started", botId: "bot-a", runId: "run-b" }],
+  ])("keeps the group failure but removes retry when %s", (_, event) => {
+    const run = { id: "run-a", botId: "bot-a", status: "failed", retryable: true };
+    const initial = { ...liveSnapshot([]), groupId: "group-1", run };
+    const next = reduceThreadSnapshot(initial, { ...event, seq: 11 });
+    expect(next?.run).toEqual({ ...run, retryable: false });
+  });
+
   it("updates a cloud agent card from thread.cloud_agent", () => {
     const initial = liveSnapshot([
       liveMessage("msg-ca", [

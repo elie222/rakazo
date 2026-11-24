@@ -6,11 +6,14 @@ import type { PrismaClient } from "@rakazo/db";
 import {
   asSystem,
   createDb,
+  createGroupRepos,
+  createRepos,
   createThreadEvents,
   createThreadMessage,
   finalizeRun,
   provisionMessagingIdentity,
   runAsSystem,
+  runAsTenant,
 } from "@rakazo/db";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { RouterDeps } from "../router.js";
@@ -145,12 +148,62 @@ describe.skipIf(!enabled)("threads.retry (PostgreSQL)", () => {
     return { status: response.status, body: (await response.json()) as { json: unknown } };
   };
 
+  const useGroupThread = async () => {
+    const group = await runAsTenant(actor, async () => {
+      const peer = await createRepos(prisma).createBot(actor, {
+        name: "Test peer",
+        description: "",
+        instructions: "",
+        notifyOnFinish: false,
+      });
+      return createGroupRepos(prisma).createGroup(actor, {
+        name: "Test group",
+        botIds: [botId, peer.id],
+      });
+    });
+    threadId = (await system.thread.findFirstOrThrow({ where: { groupId: group.id } })).id;
+    return group.id;
+  };
+
   it("includes retry eligibility when the chat is opened after the failure", async () => {
     const { run } = await failedReply();
     const response = await call("get", { botId });
     expect(await response.json()).toMatchObject({
       json: { run: { id: run.id, retryable: true } },
     });
+  });
+
+  it("drops retry eligibility when someone sends a newer group message", async () => {
+    const groupId = await useGroupThread();
+    const { run } = await failedReply();
+    const before = await call("get", { groupId });
+    expect(await before.json()).toMatchObject({ json: { run: { id: run.id, retryable: true } } });
+    await createThreadMessage(system, {
+      threadId,
+      role: "user",
+      authorUserId: actor.userId,
+      blocks: [{ kind: "text", text: "Next topic." }],
+    });
+    const response = await call("get", { groupId });
+    const body = (await response.json()) as { json: { run: { id: string; retryable?: boolean } } };
+    expect(body.json.run.id).toBe(run.id);
+    expect(body.json.run.retryable).toBeUndefined();
+  });
+
+  it("drops retry eligibility while the failed group member is busy", async () => {
+    const groupId = await useGroupThread();
+    const { run } = await failedReply();
+    const work = { spaceId: actor.spaceId, botId, threadId, userId: actor.userId };
+    const task = await system.task.create({
+      data: { ...work, prompt: "Run a check.", status: "running" },
+    });
+    await system.run.create({
+      data: { ...work, taskId: task.id, status: "running", trigger: "routine" },
+    });
+    const response = await call("get", { groupId });
+    const body = (await response.json()) as { json: { run: { id: string; retryable?: boolean } } };
+    expect(body.json.run.id).toBe(run.id);
+    expect(body.json.run.retryable).toBeUndefined();
   });
 
   it.each([

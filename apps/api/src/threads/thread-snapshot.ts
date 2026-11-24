@@ -11,7 +11,7 @@ import { botRunStatuses, spaceIsShared } from "@rakazo/db";
 import { resolveComputerWork, toComputerStatus } from "../computers/computer-status.js";
 import { THREAD_MESSAGE_PAGE_SIZE } from "../routes/shared.js";
 import { loadMessagePage } from "./thread-message-pages.js";
-import { hasRetryableFailure } from "./thread-retry.js";
+import { findRetryableReplySource } from "./thread-retry.js";
 import type { ThreadTarget } from "./thread-target.js";
 
 export async function threadSnapshot(
@@ -124,7 +124,7 @@ export async function threadSnapshot(
         return {
           messagePage,
           last,
-          run: currentRun ? await mapRunWithFailure(tx, currentRun) : null,
+          run: currentRun ? await mapRunWithRetryEligibility(tx, currentRun, viewerId) : null,
           activeRuns,
           liveEvents,
           shared,
@@ -222,7 +222,11 @@ export async function threadSnapshot(
         failedRun:
           terminalRun?.status === "failed" &&
           !activeRuns.some((run) => run.retryOfRunId === terminalRun.id)
-            ? await mapRunWithFailure(tx, terminalRun)
+            ? await mapRunWithRetryEligibility(
+                tx,
+                terminalRun,
+                target.memberBotIds.includes(terminalRun.botId) ? viewerId : undefined,
+              )
             : null,
         liveEvents,
         memberStatuses,
@@ -303,9 +307,13 @@ function messagesWithLiveEvents(
   return [...persisted, ...live];
 }
 
-async function mapRunWithFailure(tx: Prisma.TransactionClient, run: Parameters<typeof mapRun>[0]) {
+async function mapRunWithRetryEligibility(
+  tx: Prisma.TransactionClient,
+  run: Parameters<typeof mapRun>[0] & { sourceMessageId: string | null },
+  viewerId: string | undefined,
+) {
   const mapped = mapRun(run);
-  if (run.status === "failed" && (await hasRetryableFailure(tx, run.threadId, run.id))) {
+  if (await findRetryableReplySource(tx, run, viewerId)) {
     return { ...mapped, retryable: true };
   }
   return mapped;

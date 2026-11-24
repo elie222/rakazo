@@ -25,7 +25,7 @@ class StaleRetryError extends ClientError {
 
 const failurePayload = z.object({ retryable: z.boolean().optional() });
 
-export async function hasRetryableFailure(
+async function hasRetryableFailure(
   tx: Prisma.TransactionClient,
   threadId: string,
   runId: string,
@@ -43,6 +43,47 @@ export async function hasRetryableFailure(
     "reject",
   );
   return payload.retryable === true;
+}
+
+/** The source can be retried only while this is still the sender's latest request and the bot is free. */
+export async function findRetryableReplySource(
+  tx: Prisma.TransactionClient,
+  run: {
+    id: string;
+    threadId: string;
+    botId: string;
+    userId: string;
+    status: string;
+    trigger: string;
+    sourceMessageId: string | null;
+  },
+  viewerId: string | undefined,
+) {
+  const { sourceMessageId, threadId, botId } = run;
+  if (
+    !sourceMessageId ||
+    run.userId !== viewerId ||
+    run.status !== "failed" ||
+    !canRetryRun({ ...run, retryable: await hasRetryableFailure(tx, threadId, run.id) }, viewerId)
+  ) {
+    return null;
+  }
+  const source = await tx.message.findFirst({
+    where: { id: sourceMessageId, threadId, role: "user", authorUserId: viewerId },
+    select: { id: true, seq: true, runId: true },
+  });
+  if (!source) return null;
+  const [newerMessage, busyRun] = await Promise.all([
+    tx.message.findFirst({
+      where: { threadId, role: "user", seq: { gt: source.seq } },
+      select: { id: true },
+    }),
+    tx.run.findFirst({
+      where: { threadId, botId, status: { in: [...ACTIVE_RUN_STATUSES] } },
+      select: { id: true },
+    }),
+  ]);
+  return newerMessage || busyRun ? null : source;
 }
 
 /**
@@ -83,44 +124,18 @@ export async function retryThreadRun(
         where: { id: runId, spaceId: actor.spaceId, threadId: target.threadId },
         include: {
           task: { select: { prompt: true } },
-          sourceMessage: { select: { id: true, seq: true, role: true, runId: true } },
         },
       });
       if (!failed) throw new IsolationError();
       const botId = failed.botId;
-      const source = failed.sourceMessage;
-      if (
-        !canRetryRun(
-          { ...failed, retryable: await hasRetryableFailure(tx, target.threadId, runId) },
-          actor.userId,
-        ) ||
-        source?.role !== "user" ||
-        (members && !members.some((member) => member.botId === botId))
-      ) {
+      if (members && !members.some((member) => member.botId === botId)) {
         throw new StaleRetryError();
       }
+      const source = await findRetryableReplySource(tx, failed, actor.userId);
+      if (!source) throw new StaleRetryError();
       if (target.kind === "bot") {
         await assertTeachingSendAllowed(tx, actor.spaceId, botId);
       }
-      const [newerMessage, busyRun] = await Promise.all([
-        tx.message.findFirst({
-          where: {
-            threadId: target.threadId,
-            role: "user",
-            seq: { gt: source.seq },
-          },
-          select: { id: true },
-        }),
-        tx.run.findFirst({
-          where: {
-            threadId: target.threadId,
-            botId,
-            status: { in: [...ACTIVE_RUN_STATUSES] },
-          },
-          select: { id: true },
-        }),
-      ]);
-      if (newerMessage || busyRun) throw new StaleRetryError();
       const task = await tx.task.create({
         data: {
           spaceId: actor.spaceId,
