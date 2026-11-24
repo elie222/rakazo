@@ -42,6 +42,13 @@ export const ThreadMessageSchema = z.object({
 });
 export type ThreadMessage = z.infer<typeof ThreadMessageSchema>;
 
+export const PinnedMessageSchema = z.object({
+  messageId: Id,
+  text: z.string(),
+  image: z.literal(true).optional(),
+});
+export type PinnedMessage = z.infer<typeof PinnedMessageSchema>;
+
 export function canReactToThreadMessage(message: Pick<ThreadMessage, "id" | "blocks">): boolean {
   return (
     !message.id.startsWith("progress:") &&

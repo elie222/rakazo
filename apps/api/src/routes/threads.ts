@@ -51,6 +51,7 @@ import {
   shouldForwardBackgroundThreadEvent,
   shouldForwardPeerThreadEvent,
 } from "../threads/thread-message-pages.js";
+import { listMessagePins, setMessagePin } from "../threads/thread-pins.js";
 import { reactToThreadMessage } from "../threads/thread-reactions.js";
 import {
   markThreadRead,
@@ -205,6 +206,17 @@ export function threadsRoutes(ctx: RouterContext) {
           includeArchived: true,
         });
         return threadSnapshot(deps, target, context.actor.userId);
+      }),
+      pins: authed.threads.pins.handler(async ({ context, input }) => {
+        const { threadId } = await resolveThreadTarget(deps.prisma, context.actor, input, {
+          includeArchived: true,
+        });
+        return listMessagePins(deps.prisma, threadId);
+      }),
+      setPin: authed.threads.setPin.handler(async ({ context, input }) => {
+        const { threadId } = await resolveThreadTarget(deps.prisma, context.actor, input);
+        await setMessagePin(deps.prisma, threadId, input.messageId, input.pinned);
+        return { ok: true };
       }),
       messages: authed.threads.messages.handler(async ({ context, input }) => {
         const target = await resolveThreadTarget(deps.prisma, context.actor, input, {

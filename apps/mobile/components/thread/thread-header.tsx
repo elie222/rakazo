@@ -33,6 +33,7 @@ export function useThreadHeader({
   currentBotStatus,
   composingBots,
   onCleared,
+  onShowPins,
 }: {
   botId?: string;
   groupId?: string;
@@ -48,6 +49,7 @@ export function useThreadHeader({
   composingBots: string;
   /** Runs once the server has cleared the conversation, from the bot's profile. */
   onCleared: () => void;
+  onShowPins?: () => void;
 }) {
   const colorScheme = useResolvedAppearance();
   const tokens = mobileTokens();
@@ -58,6 +60,10 @@ export function useThreadHeader({
   const router = useRouter();
   const [restoring, setRestoring] = useState(false);
   const canInvite = Boolean(useReferral());
+
+  const showPins = useRef(onShowPins);
+  showPins.current = onShowPins;
+  const hasPins = Boolean(onShowPins);
 
   const cleared = useRef(onCleared);
   cleared.current = onCleared;
@@ -107,6 +113,7 @@ export function useThreadHeader({
         onGroupSettings: () =>
           router.push({ pathname: "/group-settings", params: { groupId: groupId ?? "" } }),
         onInvite: canInvite && botId ? () => openInvite(router) : undefined,
+        onShowPins: hasPins ? () => showPins.current?.() : undefined,
       }),
       ...(readOnly
         ? trailingHeaderOptions(t`Restore`, () => void restoreConversation(), restoring)
@@ -121,6 +128,7 @@ export function useThreadHeader({
     groupId,
     inGroup,
     navigation,
+    hasPins,
     router,
     t,
     tokens,

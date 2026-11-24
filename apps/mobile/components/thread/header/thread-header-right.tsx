@@ -1,6 +1,6 @@
 import { t } from "@lingui/core/macro";
 import type { ImperativeRouter, NativeStackNavigationOptions } from "expo-router";
-import { Pressable } from "react-native";
+import { Pressable, View } from "react-native";
 import { iosAtLeast } from "../../../lib/native/native-controls";
 import { NativeSymbol } from "../../native/native-symbol";
 
@@ -8,58 +8,74 @@ export function openInvite(router: ImperativeRouter) {
   router.push("/invite");
 }
 
-/**
- * A chat header's right side: the group's settings button in a group, the invite gift in a bot
- * chat when the account can invite. The bot's own actions live in its profile, which the title
- * opens. The chat route declares it when the screen is created, so the title is centred against
- * it from the first frame; both use this one builder so the item never changes shape.
- */
+/** Chat actions keep their shape from the route's first frame through the live header. */
 export function threadHeaderRight({
   inGroup,
   readOnly,
   color,
   onGroupSettings,
   onInvite,
+  onShowPins,
 }: {
   inGroup: boolean;
   readOnly: boolean;
   color: string;
   onGroupSettings: () => void;
-  /** Opens the invite sheet; absent when the account cannot invite. */
   onInvite?: () => void;
+  onShowPins?: () => void;
 }): NativeStackNavigationOptions {
-  const label = inGroup ? t`Group settings` : t`Invite a friend`;
-  const onPress = inGroup ? onGroupSettings : onInvite;
-  // Undefined, not an empty list, so an older iOS header keeps a Restore button set elsewhere.
-  if (readOnly || !onPress) return { headerRight: undefined, unstable_headerRightItems: undefined };
+  const chatAction = inGroup
+    ? ({
+        title: t`Group settings`,
+        ios: "gearshape",
+        android: "settings-outline",
+        onPress: onGroupSettings,
+      } as const)
+    : onInvite
+      ? ({
+          title: t`Invite a friend`,
+          ios: "gift",
+          android: "gift-outline",
+          onPress: onInvite,
+        } as const)
+      : null;
+  const pinsAction = onShowPins
+    ? ({
+        title: t`Pinned messages`,
+        ios: "pin",
+        android: "pin-outline",
+        onPress: onShowPins,
+      } as const)
+    : null;
+  const actions = [chatAction, pinsAction].filter((action) => action !== null);
+  if (readOnly || !actions.length) {
+    return { headerRight: undefined, unstable_headerRightItems: undefined };
+  }
   return {
-    ...(iosAtLeast(26)
-      ? {
-          unstable_headerRightItems: () => [
-            {
-              type: "button" as const,
-              label,
-              accessibilityLabel: label,
-              icon: { type: "sfSymbol" as const, name: inGroup ? "gearshape" : "gift" },
-              onPress,
-            },
-          ],
-        }
-      : { unstable_headerRightItems: undefined }),
+    unstable_headerRightItems: iosAtLeast(26)
+      ? () =>
+          actions.map(({ title, ios, onPress }) => ({
+            type: "button",
+            label: title,
+            accessibilityLabel: title,
+            icon: { type: "sfSymbol", name: ios },
+            onPress,
+          }))
+      : undefined,
     headerRight: () => (
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel={label}
-        hitSlop={8}
-        onPress={onPress}
-      >
-        <NativeSymbol
-          ios={inGroup ? "gearshape" : "gift"}
-          android={inGroup ? "settings-outline" : "gift-outline"}
-          size={21}
-          color={color}
-        />
-      </Pressable>
+      <View style={{ flexDirection: "row", alignItems: "center", gap: 16 }}>
+        {actions.toReversed().map(({ title, ios, android, onPress }) => (
+          <Pressable
+            key={ios}
+            accessibilityRole="button"
+            accessibilityLabel={title}
+            hitSlop={8}
+            onPress={onPress}
+          >
+            <NativeSymbol ios={ios} android={android} size={21} color={color} />
+          </Pressable>
+        ))}
+      </View>
     ),
   };
 }

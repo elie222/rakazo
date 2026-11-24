@@ -50,6 +50,7 @@ export function useLatestRowActions(current: MessageRowActions): MessageRowActio
       speak: (message) => rowActionsRef.current.speak(message),
       react: (message, reaction) => rowActionsRef.current.react(message, reaction),
       markUnread: (message) => rowActionsRef.current.markUnread(message),
+      setPin: (pin) => rowActionsRef.current.setPin(pin),
       answer: (message, answer, fields, dismiss, remember) =>
         rowActionsRef.current.answer(message, answer, fields, dismiss, remember),
       openBot: (id, name) => rowActionsRef.current.openBot(id, name),
@@ -71,6 +72,7 @@ export function useThreadRows({
   userId,
   transcript,
   rowActions,
+  pinnedIds,
   botId,
   groupId,
   inGroup,
@@ -91,6 +93,7 @@ export function useThreadRows({
   userId: string;
   transcript: ReturnType<typeof useThreadTranscript>;
   rowActions: MessageRowActions;
+  pinnedIds?: ReadonlySet<string>;
   botId?: string;
   groupId?: string;
   inGroup: boolean;
@@ -185,6 +188,7 @@ export function useThreadRows({
           headerAdjacent={threadHeaderFloats() && message.id === visibleMessages[0]?.id}
           unreadDivider={message.id === unreadDividerId}
           markedUnread={message.id === markedUnreadMessageId}
+          pinned={pinnedIds?.has(message.id)}
           authorName={
             message.role === "user" ? otherAuthor(message.author, userId)?.name : undefined
           }
@@ -241,6 +245,7 @@ export function useThreadRows({
       visibleMessages[0]?.id,
       unreadDividerId,
       markedUnreadMessageId,
+      pinnedIds,
       columnWidth,
       userId,
       t,

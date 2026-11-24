@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
-import type { MessageMenuEntry, MessageMenuSymbol } from "./message-context-menu";
+import type { MessageMenuEntry } from "./message-context-menu";
 import { buildMessageContextMenu, messageMenuReaction } from "./message-context-menu";
 
-const labels: Record<MessageMenuSymbol, string> = {
+const labels = {
   reply: "Reply",
   copy: "Copy",
   react: "React",

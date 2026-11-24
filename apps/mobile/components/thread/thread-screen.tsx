@@ -16,6 +16,7 @@ import {
   workingRoutineName,
 } from "@rakazo/core";
 import { cronLabels } from "@rakazo/i18n/cron";
+import { bestEffort } from "@rakazo/logging/best-effort";
 import { useFocusEffect, useIsFocused, useLocalSearchParams, useRouter } from "expo-router";
 import { useHeaderHeight } from "expo-router/react-navigation";
 import { useCallback, useContext, useMemo, useRef, useState } from "react";
@@ -91,6 +92,7 @@ import { ThreadErrorNotice, ThreadFetchErrorNotice } from "./thread-error-notice
 import { useThreadHeader } from "./thread-header";
 import { LoadEarlierButton, ThreadWorkingFooter } from "./thread-list-controls";
 import { ThreadMessageList } from "./thread-message-list";
+import { useThreadPins } from "./thread-pins";
 import { useLatestRowActions, useThreadRows } from "./thread-rows";
 import { useThreadRunError } from "./thread-run-error";
 
@@ -336,20 +338,6 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
     ),
   });
 
-  useThreadHeader({
-    botId,
-    groupId,
-    inGroup,
-    readOnly,
-    displayName,
-    titleBot,
-    titleName,
-    groupMembers,
-    currentBotStatus,
-    composingBots,
-    onCleared: history.clear,
-  });
-
   useThreadFocus({
     botId,
     readOnly,
@@ -456,6 +444,41 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
     useThreadRunError(snap?.run, botId);
 
   // Event actions read the latest committed screen state without invalidating settled rows.
+  const jump = useCallback(
+    (id: string) => {
+      void bestEffort(
+        "jump to thread message",
+        applyMessageJump({
+          botId,
+          groupId,
+          messageId: reactionView.foldedInto.get(id) ?? id,
+        }),
+      );
+    },
+    [applyMessageJump, botId, groupId, reactionView.foldedInto],
+  );
+  const pins = useThreadPins(
+    groupId ? { groupId } : { botId },
+    Boolean((botId || groupId) && !readOnly),
+    focused,
+    jump,
+  );
+
+  useThreadHeader({
+    botId,
+    groupId,
+    inGroup,
+    readOnly,
+    displayName,
+    titleBot,
+    titleName,
+    groupMembers,
+    currentBotStatus,
+    composingBots,
+    onShowPins: pins.show,
+    onCleared: history.clear,
+  });
+
   const rowActions = useLatestRowActions({
     helperToggle: scroll.helperToggle,
     reply: (message) => {
@@ -480,13 +503,8 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
         pathname: "/image",
         params: { ...target, ...(groupId ? { groupId } : { botId }) },
       }),
-    jump: (messageId) => {
-      void applyMessageJump({
-        botId,
-        groupId,
-        messageId: reactionView.foldedInto.get(messageId) ?? messageId,
-      }).catch(() => undefined);
-    },
+    jump,
+    setPin: pins.set,
     dismissChoice: transcript.dismissChoice,
     openPeerChat: (peer) => {
       if (!botId) return;
@@ -509,6 +527,7 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
     userId,
     transcript,
     rowActions,
+    pinnedIds: pins.ids,
     botId,
     groupId,
     inGroup,

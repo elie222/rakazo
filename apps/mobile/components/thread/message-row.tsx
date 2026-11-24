@@ -10,6 +10,7 @@ import { canReactToThreadMessage, MESSAGE_REACTIONS } from "@rakazo/contracts";
 import type { ChildBotBlock, PeerExchange } from "@rakazo/core";
 import {
   canMarkMessageUnread,
+  canPinMessage,
   copyableMessageText,
   isPeerReceiptBlocks,
   liveMessageComposing,
@@ -63,6 +64,7 @@ export type MessageRowActions = {
   speak: (message: MobileMessage) => void;
   react: (message: MobileMessage, reaction: MessageReaction) => Promise<boolean>;
   markUnread: (message: MobileMessage) => void;
+  setPin: (input: { messageId: string; pinned: boolean }) => void;
   answer: (
     message: MobileMessage,
     answer: string,
@@ -101,6 +103,7 @@ type MessageRowProps = {
   headerAdjacent: boolean;
   unreadDivider: boolean;
   markedUnread: boolean;
+  pinned?: boolean;
   /** Someone else in a shared space wrote this message. */
   authorName?: string;
   replyAuthor: string;
@@ -145,6 +148,7 @@ export const MessageRow = memo(function MessageRow({
   headerAdjacent,
   unreadDivider,
   markedUnread,
+  pinned,
   authorName,
   replyAuthor,
   replyFallbackText,
@@ -230,9 +234,19 @@ export const MessageRow = memo(function MessageRow({
     const copyCode = () => {
       if (codeBlocks[0]) void Clipboard.setStringAsync(codeBlocks[0]).catch(() => undefined);
     };
+    const pinAction =
+      pinned !== undefined && (pinned || canPinMessage(message))
+        ? {
+            name: pinned ? ("unpin" as const) : ("pin" as const),
+            text: pinned ? t`Unpin message` : t`Pin message`,
+            icon: pinned ? ("pin-outline" as const) : ("pin" as const),
+            onPress: () => actions.setPin({ messageId: message.id, pinned: !pinned }),
+          }
+        : undefined;
     const menuActions = [
       ...(!readOnly ? [{ name: "reply", text: t`Reply`, onPress: reply }] : []),
       ...(includeUnread ? [{ name: "unread", text: t`Mark as unread`, onPress: markUnread }] : []),
+      ...(pinAction ? [pinAction] : []),
       ...(includeQuote ? [{ name: "quote", text: t`Quote`, onPress: quote }] : []),
       ...(includeReact
         ? [
@@ -273,6 +287,7 @@ export const MessageRow = memo(function MessageRow({
         selectMessages: t`Select messages`,
         unread: t`Mark as unread`,
       },
+      pin: pinAction,
       reactions: MESSAGE_REACTIONS,
       include: {
         reply: !readOnly,
@@ -312,6 +327,7 @@ export const MessageRow = memo(function MessageRow({
                   },
                 ]
               : []),
+            ...(pinAction ? [pinAction] : []),
             ...(includeQuote
               ? [
                   {
@@ -387,6 +403,7 @@ export const MessageRow = memo(function MessageRow({
         if (id === "select") select();
         if (id === "selectMessages") selectMessages();
         if (id === "unread") markUnread();
+        if (id === pinAction?.name) pinAction.onPress();
       },
       actionProps: {
         onLongPress: Platform.OS === "ios" ? undefined : openSheet,
@@ -403,6 +420,7 @@ export const MessageRow = memo(function MessageRow({
     message,
     actions,
     markedUnread,
+    pinned,
     readOnly,
     onCall,
     colorScheme,

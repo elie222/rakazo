@@ -10,6 +10,7 @@ import { IconTooltip } from "../../../components/IconTooltip";
 import { InviteDialog } from "../../../components/spaces/InviteDialog";
 import { WindowChrome } from "../../../components/WindowChrome";
 import { desktopBridge, windowChromeKind } from "../../../lib/platform/desktop";
+import { MessagePinsMenu } from "./message-pins";
 
 const MeetingsDialog = lazy(() => import("../meetings/meetings-dialog"));
 
@@ -51,7 +52,7 @@ export function ChatHeader({
       data-testid="chat-header"
       className="pointer-events-none absolute inset-x-0 top-0 z-10 grid grid-cols-[1fr_minmax(0,auto)_1fr] items-center gap-2 px-3 pt-2 pb-3 md:px-[22px] [&_button]:pointer-events-auto"
     >
-      <div className="flex items-center">
+      <div className="flex items-center gap-2">
         {macChrome ? <WindowChrome className="md:hidden" /> : null}
         <Button
           variant="floating"
@@ -63,6 +64,7 @@ export function ChatHeader({
         >
           <Menu strokeWidth={1.75} className="size-4.5" />
         </Button>
+        <MessagePinsMenu />
       </div>
       {/* With no bot or group the chip has nothing to open, so it is left out. */}
       {inGroup || active ? (
