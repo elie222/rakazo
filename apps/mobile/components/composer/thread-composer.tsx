@@ -441,6 +441,8 @@ export function ThreadComposer({
     alignItems: "center",
     justifyContent: "center",
   } as const;
+  // Each control keeps the 44-point tap target iOS asks for around its 32-point circle.
+  const pillHitSlop = (44 - composerPillStyle.width) / 2;
 
   // One line of text with its padding, as measured while the box is empty. The pills and attach
   // button centre on it: the bar can grow past 44 (font scale, Android text metrics), and a fixed
@@ -470,7 +472,7 @@ export function ThreadComposer({
       accessibilityRole="button"
       accessibilityLabel={t`Send`}
       disabled={sendBlocked}
-      hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
+      hitSlop={pillHitSlop}
       onPress={sendOrFinish}
       style={{ marginBottom: pillInset, opacity: sendBlocked ? 0.5 : 1 }}
     >
@@ -646,14 +648,18 @@ export function ThreadComposer({
           actions={attachActions}
           colorScheme={colorScheme}
           onPressAction={(event) => attachFrom(event.nativeEvent.event)}
-          // The native menu host sizes to its child and drops the child's margin.
-          style={{ marginBottom: stacked ? 8 : pillInset }}
+          // The native menu host sizes to its child and drops the child's margin. The menu takes
+          // no hit slop, so its child is the full 44-point target, overlapping the space around it.
+          style={{
+            marginBottom: (stacked ? 8 : pillInset) - pillHitSlop,
+            marginHorizontal: -pillHitSlop,
+          }}
         >
           <View
             accessible
             accessibilityRole="button"
             accessibilityLabel={t`Attach file`}
-            style={composerPillStyle}
+            style={{ width: 44, height: 44, alignItems: "center", justifyContent: "center" }}
           >
             <NativeSymbol ios="plus" android="add" size={20} color={tokens.foreground} />
           </View>
@@ -894,7 +900,7 @@ export function ThreadComposer({
                 <Pressable
                   accessibilityRole="button"
                   accessibilityLabel={t`Dictate`}
-                  hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
+                  hitSlop={pillHitSlop}
                   onPress={toggleDictation}
                   style={{ marginBottom: pillInset }}
                 >
@@ -912,7 +918,7 @@ export function ThreadComposer({
                 <Pressable
                   accessibilityRole="button"
                   accessibilityLabel={t`Call`}
-                  hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
+                  hitSlop={pillHitSlop}
                   onPress={() => void startVoiceCall()}
                   style={{ marginBottom: pillInset }}
                 >
