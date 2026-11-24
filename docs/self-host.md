@@ -78,6 +78,39 @@ the local Docker computer. For in-stack Caddy plus remote E2B computers, use the
 [production Compose](./self-host-production.md#public-single-vm-deployment) path and `infra/compose/Caddyfile.prod`
 instead of this host proxy.
 
+### From a Docker panel
+
+Server panels that deploy a Compose file from a URL (Hostinger's Docker Manager, Coolify, Dokploy
+and similar) need no shell, installer or `.env`. Paste:
+
+```text
+https://raw.githubusercontent.com/elie222/rakazo/main/infra/compose/docker-compose.standalone.yml
+```
+
+It is the images Compose file with one addition: on first start, a one-shot `secrets` service
+generates every secret the installer would ([secrets checklist](./self-host-secrets.md)) into the
+`secrets` volume. Later starts reuse them and never replace one. Each service gets a copy of only
+the secrets it uses. A value you set as an environment variable in the panel always wins over the
+generated one, so set it before the first start or not at all: a changed database password or
+`ENCRYPTION_KEY` breaks an existing install.
+
+Set `RAKAZO_PUBLIC_URL` to the address people open, such as `https://app.example.com`, whenever
+they reach Rakazo by anything but `127.0.0.1`: it sets `BETTER_AUTH_URL`, `WEB_ORIGIN` and `API_URL`
+and allows its host, and without it the app refuses that address. Optional variables:
+
+- `OPENROUTER_API_KEY`, or add a model in the app after signup.
+- `RAKAZO_WEB_BIND`: the web port stays on `127.0.0.1:5173`, so nothing is public until you choose.
+  When the panel's proxy reaches the `web` service on port 5173 over Docker's network, leave it.
+  To open the app directly at the server's address, set `RAKAZO_WEB_BIND=0.0.0.0` and
+  `RAKAZO_PUBLIC_URL=http://<server-address>:5173`. That serves sign-in over plain HTTP, so use it
+  only to try Rakazo and put TLS in front before real use.
+
+The `secrets` volume holds `ENCRYPTION_KEY`, so back it up with the database: encrypted content
+cannot be read without it. Removing the stack's volumes deletes both.
+
+[Admin commands](#admin-commands) run through the same start step, which reads the generated
+secrets: `docker compose exec api sh /run/rakazo-secrets/start node dist/cli/admin.js …`.
+
 ### Restricted networks / mirror downloads
 
 If the installer, Compose downloads, or image pulls are blocked, use the
