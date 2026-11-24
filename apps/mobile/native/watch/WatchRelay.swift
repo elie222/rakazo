@@ -219,9 +219,12 @@ final class WatchRelay: NSObject, WCSessionDelegate {
           }
           return row
         }
+      let bots = sorted.filter { $0.0 == .bot }.prefix(100).map {
+        WatchBot(id: $0.1.id, name: String($0.1.name.prefix(60)), color: $0.1.color.flatMap(watchColor))
+      }
       // A watch message carries about 64 KB: drop pictures, then the oldest chats, to fit.
       let encoder = JSONEncoder()
-      while let data = try? encoder.encode(WatchReply(scope: scope, chats: rows)),
+      while let data = try? encoder.encode(WatchReply(scope: scope, chats: rows, bots: bots)),
         data.count > 60_000, !rows.isEmpty
       {
         if let index = rows.lastIndex(where: { $0.avatar != nil }) { rows[index].avatar = nil }
@@ -229,8 +232,7 @@ final class WatchRelay: NSObject, WCSessionDelegate {
         else { break }
       }
       chats = rows.map(\.chat)
-      return WatchReply(
-        scope: scope, chats: rows, allChats: rows.count == open.count, transcribe: transcribe)
+      return WatchReply(scope: scope, chats: rows, bots: bots, transcribe: transcribe)
     }
 
     guard let scope, request.scope == scope, let scopedSession, sameSession(scopedSession, session),

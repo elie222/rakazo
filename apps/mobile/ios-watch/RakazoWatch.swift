@@ -148,9 +148,10 @@ private struct WatchChats: View {
     .onChange(of: connection.rosterRevision) {
       needsReload = true
     }
-    .onChange(of: connection.identityRevision) {
+    .onChange(of: connection.identityRevision) { previous, _ in
       clearChats()
-      saveShelf([], allChats: true)
+      // The first revision after launch is not an account change; the next load replaces the face's bots.
+      if previous != nil { saveShelf([], rows: []) }
       needsReload = true
     }
     .onOpenURL { url in
@@ -180,11 +181,13 @@ private struct WatchChats: View {
     listen = true
   }
 
-  private func saveShelf(_ rows: [WatchChatRow], allChats: Bool) {
-    let listed = rows.map {
-      WatchShelfChat(kind: $0.chat.kind.rawValue, id: $0.id, name: $0.chat.name, color: $0.color, avatar: $0.avatar)
+  private func saveShelf(_ bots: [WatchBot], rows: [WatchChatRow]) {
+    let saved = bots.map { bot in
+      WatchShelfChat(
+        kind: WatchChat.Kind.bot.rawValue, id: bot.id, name: bot.name, color: bot.color,
+        avatar: rows.first { $0.chat.kind == .bot && $0.id == bot.id }?.avatar)
     }
-    guard WatchShelf.save(WatchShelf.merging(listed, allChats: allChats)) else { return }
+    guard WatchShelf.save(saved) else { return }
     WidgetCenter.shared.invalidateConfigurationRecommendations()
     WidgetCenter.shared.reloadTimelines(ofKind: WatchShelf.complicationKind)
   }
@@ -200,6 +203,7 @@ private struct WatchChats: View {
   private func load() async {
     guard !loading else { return }
     let identity = connection.identityRevision
+    let requested = voiceTarget
     loading = true
     defer { loading = false }
     do {
@@ -211,10 +215,11 @@ private struct WatchChats: View {
       chats = reply.chats ?? []
       canTranscribe = reply.transcribe
       failure = nil
-      saveShelf(chats.filter { $0.chat.kind == .bot }, allChats: reply.allChats == true)
+      saveShelf(reply.bots ?? [], rows: chats)
       openVoiceTarget()
-      // A bot that is gone opens nothing, and a later load must not start listening by itself.
-      voiceTarget = nil
+      // A tap during a load that did not ask for its bot asks again. A bot that is gone opens
+      // nothing, and a later load must not start listening by itself.
+      if voiceTarget != nil && requested == nil { Task { await load() } } else { voiceTarget = nil }
     } catch {
       guard !Task.isCancelled, identity == connection.identityRevision else { return }
       chats = []

@@ -23,6 +23,12 @@ struct WatchChatRow: Codable, Identifiable {
   var id: String { chat.id }
 }
 
+struct WatchBot: Codable {
+  let id: String
+  let name: String
+  var color: String?
+}
+
 struct WatchRequest: Codable {
   enum Action: String, Codable { case chats, thread, send, answer, transcribe }
   let action: Action
@@ -41,8 +47,8 @@ struct WatchRequest: Codable {
 struct WatchReply: Codable {
   var scope: UUID?
   var chats: [WatchChatRow]?
-  /// False when older chats were left out to fit one message.
-  var allChats: Bool?
+  /// The open bots the watch face can offer; the chat list may leave older ones out.
+  var bots: [WatchBot]?
   var messages: [WatchMessage]?
   var botWorking: Bool?
   /// Whether the server can turn a recording into text; nil when it could not say.

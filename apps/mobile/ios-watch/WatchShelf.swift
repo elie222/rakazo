@@ -47,13 +47,6 @@ enum WatchShelf {
     return components.url
   }
 
-  /// The list to save after a load: bots the load left out to fit one message stay on the face.
-  static func merging(_ listed: [WatchShelfChat], allChats: Bool) -> [WatchShelfChat] {
-    guard !allChats else { return listed }
-    let ids = Set(listed.map(\.id))
-    return listed + load().filter { !ids.contains($0.id) }
-  }
-
   static func voiceTarget(_ url: URL) -> (kind: String, id: String)? {
     guard url.scheme == "rakazo-watch", url.host == "voice",
       let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems,
