@@ -228,6 +228,32 @@ postgres("attach_file (PostgreSQL)", () => {
     expect(effect?.status).toBe("completed");
   });
 
+  it("returns the completed result when another attempt settles the attachment first", async () => {
+    const started = deferred();
+    const captured = deferred<Awaited<ReturnType<typeof observe>>>();
+    observe.mockImplementationOnce(() => {
+      started.resolve();
+      return captured.promise;
+    });
+    const before = await state();
+    const pending = attach({ screenshot: true }, { owner: "worker-1", fence: 1 });
+    await started.promise;
+    const posted = { ok: true, artifactId: "winning-attachment" };
+    try {
+      await fixture(async () => {
+        const changed = await prisma.externalEffect.updateMany({
+          where: { runId: run.id, kind: "attach_file", status: "intended" },
+          data: { status: "completed", result: posted },
+        });
+        expect(changed.count).toBe(1);
+      });
+    } finally {
+      captured.resolve(placeholderObservation("routine screenshot"));
+    }
+    await expect(pending).resolves.toEqual(posted);
+    expect(await state()).toEqual(before);
+  });
+
   it("retries the artifact transaction after a deadlock and posts once", async () => {
     bytes = new TextEncoder().encode("second image");
     // Postgres aborts a deadlock victim with 40P01. Raise one from inside the first

@@ -9,6 +9,10 @@ import {
 } from "@rakazo/core";
 import type { Artifact, Prisma } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
+import {
+  resolveDuplicateEffectGate,
+  uncertainEffectResult,
+} from "../../approvals/approval-effect.js";
 import { resolveBotWorkspacePath } from "../../computers/screens/computer-support.js";
 import {
   generateMediaFromTool,
@@ -40,6 +44,9 @@ import type { ToolCall, ToolHandlers } from "./run-tool-gate.js";
 import { captureBotScreen, recordComputerAction } from "./run-tools-computer.js";
 
 export type AttachmentBlock = Extract<MessageBlock, { kind: "image" | "file" }>;
+
+/** Rolls back the attachment when another attempt took ownership of its result. */
+class AttachmentEffectChangedError extends Error {}
 
 function runWorkspace(ctx: RunContext, call: ToolCall): RunWorkspace {
   return {
@@ -274,7 +281,7 @@ export const fileTools: ToolHandlers = {
                 lease,
               );
               if (call.applied && !(await call.persistEffectResult(result(artifact.id), tx))) {
-                throw new Error("Attachment was already handled by another attempt.");
+                throw new AttachmentEffectChangedError();
               }
             },
       );
@@ -286,6 +293,16 @@ export const fileTools: ToolHandlers = {
       return background ? call.finish(result(saved.artifactId)) : result(saved.artifactId);
     } catch (error) {
       ctx.context.signal.throwIfAborted();
+      if (error instanceof AttachmentEffectChangedError && call.applied) {
+        const effect = await deps.prisma.externalEffect.findUnique({
+          where: { id: call.applied.effect.id },
+          select: { status: true, result: true },
+        });
+        const settled = effect && resolveDuplicateEffectGate(effect, call.name);
+        return settled?.action === "return"
+          ? settled.result
+          : uncertainEffectResult(call.name, call.args);
+      }
       return fail(error instanceof Error ? error.message : "could not attach file");
     }
   },
