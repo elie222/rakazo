@@ -1,5 +1,5 @@
 import type { PageStateSave } from "@rakazo/chat-ui/hooks";
-import { usePageStateQueue } from "@rakazo/chat-ui/hooks";
+import { pageStateRetryable, usePageStateQueue } from "@rakazo/chat-ui/hooks";
 import type { QueryKey } from "@tanstack/react-query";
 import { useEffect, useRef } from "react";
 import { useAppForeground } from "../platform/app-foreground";
@@ -25,5 +25,8 @@ export function usePageStateSaver(
     if (foreground && !wasForeground.current) retry();
     wasForeground.current = foreground;
   }, [foreground, retry]);
-  return { save: queue.save, failed: saver.error !== null && !saver.pending };
+  return {
+    save: queue.save,
+    failed: saver.error !== null && !saver.pending && pageStateRetryable(saver.error),
+  };
 }

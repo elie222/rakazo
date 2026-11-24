@@ -4,7 +4,7 @@ import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { PageStateSave } from "./hooks";
-import { useNow, usePageStateQueue, useTimeout } from "./hooks";
+import { pageStateRetryable, useNow, usePageStateQueue, useTimeout } from "./hooks";
 
 let root: Root;
 let container: HTMLDivElement;
@@ -121,4 +121,6 @@ it("saves a page's changes one request at a time, retrying a failure and droppin
   queue.saved();
   queue.retry();
   expect(sent).toHaveLength(3);
+  expect(pageStateRetryable(new Error("offline"))).toBe(true);
+  expect(pageStateRetryable({ code: "PAGE_STATE_LIMIT" })).toBe(false);
 });

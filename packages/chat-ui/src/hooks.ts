@@ -38,6 +38,12 @@ export type PageStateSave = { pageId: string; values: PageState };
 
 const REFUSED = new Set(["BAD_REQUEST", "PAGE_STATE_LIMIT"]);
 
+/** Whether saving again could help: the server refuses the same values every time. */
+export function pageStateRetryable(error: unknown): boolean {
+  const code = errorCode(error);
+  return !(typeof code === "string" && REFUSED.has(code));
+}
+
 /**
  * What a reader changed on a page, saved one request at a time: changes made while one is out go
  * in the next, a failed one goes again with the next, and one the server refused is dropped.
@@ -68,8 +74,7 @@ export function usePageStateQueue(pageId: string, run: (save: PageStateSave) => 
     },
     failed(save: PageStateSave, error: unknown) {
       sending.current = false;
-      const code = errorCode(error);
-      if ((typeof code === "string" && REFUSED.has(code)) || save.pageId !== shown.current) {
+      if (!pageStateRetryable(error) || save.pageId !== shown.current) {
         next();
         return;
       }

@@ -65,11 +65,9 @@ function receive(event: MessageEvent) {
   const data = event.data as { type?: unknown; values?: unknown } | null;
   if (data?.type !== STATE_MESSAGE || !data.values || typeof data.values !== "object") return;
   const kept = data.values as Record<string, unknown>;
-  const now = Date.now();
   let dropped = false;
   for (const key of [...values.keys()]) {
-    if (Object.hasOwn(kept, key) || !SAVED_KEY.test(key) || unsent.has(key)) continue;
-    if (now - (changedAt.get(key) ?? Number.NEGATIVE_INFINITY) < OWN_CHANGE_MS) continue;
+    if (Object.hasOwn(kept, key) || !SAVED_KEY.test(key) || changedAt.has(key)) continue;
     values.delete(key);
     held.delete(key);
     dropped = true;
