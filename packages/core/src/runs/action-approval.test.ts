@@ -264,6 +264,13 @@ it("gates built-ins that change something only in runs outside text started", ()
   }
 });
 
+it("gates capturing a screen from a webhook while permitting ordinary file attachments", () => {
+  expect(outsideRunToolRequiresApproval("webhook", "attach_file", { screenshot: true })).toBe(true);
+  expect(outsideRunToolRequiresApproval("webhook", "attach_file", { path: "result.png" })).toBe(
+    false,
+  );
+});
+
 it("treats a declared write with a read-looking name as a write", () => {
   for (const name of ["read_profile_card", "find_validator_record", "get_status"]) {
     expect(toolRequiresApproval(name, true, false)).toBe(true);

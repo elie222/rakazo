@@ -194,8 +194,16 @@ export function toolRequiresApproval(
  * that changes something is gated there even if the owner's own runs never ask for it. It is gated
  * like any other consequential action: Always allow, the approval model or Never ask can pass it.
  */
-export function outsideRunToolRequiresApproval(trigger: string, toolName: string): boolean {
-  return trigger === "webhook" && !OUTSIDE_RUN_SAFE_BUILTIN_TOOLS.has(toolName);
+export function outsideRunToolRequiresApproval(
+  trigger: string,
+  toolName: string,
+  args?: Record<string, unknown>,
+): boolean {
+  return (
+    trigger === "webhook" &&
+    (!OUTSIDE_RUN_SAFE_BUILTIN_TOOLS.has(toolName) ||
+      (toolName === "attach_file" && args?.screenshot === true))
+  );
 }
 
 /**

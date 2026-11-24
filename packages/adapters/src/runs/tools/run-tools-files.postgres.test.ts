@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { deferred } from "@rakazo/core/test-async";
 import { createDb, createThreadEvents, runAsSystem } from "@rakazo/db";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { placeholderObservation } from "../../computers/screens/computer-support.js";
 import { LocalArtifactStore } from "../../storage/artifacts.js";
 import { attachFileWithScreenshot } from "../../tools/builtin-computer.tool-definition.js";
@@ -28,6 +28,7 @@ postgres("attach_file (PostgreSQL)", () => {
   let root = "";
   let run: { id: string; spaceId: string; userId: string; threadId: string; botId: string };
   let bytes = new Uint8Array();
+  const observe = vi.fn(async () => placeholderObservation("routine screenshot"));
 
   beforeAll(async () => {
     root = await mkdtemp(path.join(tmpdir(), "rakazo-attach-file-"));
@@ -96,7 +97,7 @@ postgres("attach_file (PostgreSQL)", () => {
         artifacts: new LocalArtifactStore(root),
         sandbox: {
           readFile: async () => bytes,
-          observe: async () => placeholderObservation("routine screenshot"),
+          observe,
         },
         events: createThreadEvents(prisma),
       } as unknown as ExecutorDeps,
@@ -144,14 +145,18 @@ postgres("attach_file (PostgreSQL)", () => {
             }),
           )
         : undefined;
+    const persistEffectResult = async (result: unknown, tx = client) =>
+      effect ? completeEffect(tx, effect.id, "intended", result) : true;
     const call = {
       name: "attach_file",
       args,
       executionId: `call-${randomUUID()}`,
       applied: effect && { effect },
-      persistEffectResult: async (result: unknown, tx = client) =>
-        effect ? completeEffect(tx, effect.id, "intended", result) : true,
-      finish: async (result: unknown) => result,
+      persistEffectResult,
+      finish: async (result: unknown) => {
+        await persistEffectResult(result);
+        return result;
+      },
     } as unknown as ToolCall;
     return runAsSystem("agent run tool call", () => fileTools.attach_file!(ctx, call));
   };
@@ -206,6 +211,25 @@ postgres("attach_file (PostgreSQL)", () => {
     );
     expect(effect).toMatchObject({ status: "completed", result: posted });
   });
+
+  it("settles a failed capture without posting an attachment", async () => {
+    observe.mockRejectedValueOnce(new Error("capture unavailable"));
+    const before = await state();
+    const result = await attach({ screenshot: true }, { owner: "worker-1", fence: 1 });
+    expect(result).toEqual({ error: "capture unavailable" });
+    expect(await state()).toEqual(before);
+    const effect = await fixture(() =>
+      prisma.externalEffect.findFirst({
+        where: {
+          runId: run.id,
+          kind: "attach_file",
+          result: { path: ["error"], equals: "capture unavailable" },
+        },
+      }),
+    );
+    expect(effect?.status).toBe("completed");
+  });
+
   it("retries the artifact transaction after a deadlock and posts once", async () => {
     bytes = new TextEncoder().encode("second image");
     // Postgres aborts a deadlock victim with 40P01. Raise one from inside the first

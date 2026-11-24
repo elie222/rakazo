@@ -5,6 +5,7 @@ import {
   inferAttachmentMimeType,
   isBackgroundRunTrigger,
   messageBlockForArtifact,
+  redactSecrets,
 } from "@rakazo/core";
 import type { Artifact, Prisma } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
@@ -224,28 +225,30 @@ export const fileTools: ToolHandlers = {
     const { deps, run, bot } = ctx;
     const screenshot = call.args.screenshot === true;
     let filePath = String(call.args.path ?? "");
+    const pathResult = screenshot ? {} : { path: filePath };
     const fail = async (error: string) => {
       await recordComputerAction(ctx, call, "attach_file", filePath, { error });
-      return call.finish({ error, path: filePath });
+      return call.finish({ error: redactSecrets(error, ctx.secrets), ...pathResult });
     };
-    let bytes: Uint8Array;
-    if (screenshot) {
-      if (filePath) return fail("Choose either a workspace path or a screenshot.");
-      if (!ctx.tools.builtins.includes(attachFileWithScreenshot)) {
-        return fail("Screenshot attachments are unavailable in this run.");
-      }
-      const observation = await captureBotScreen(ctx, call.name);
-      if ("error" in observation) return fail(observation.error);
-      const extension = observation.mimeType === "image/jpeg" ? "jpg" : "png";
-      filePath = `screenshot-${new Date().toISOString().replaceAll(":", "-")}.${extension}`;
-      bytes = observation.image;
-    } else {
-      const read = await readWorkspaceFile(ctx, call, filePath);
-      if ("error" in read) return fail(read.error);
-      bytes = read.bytes;
-    }
-    const result = (artifactId: string) => ({ ok: true, artifactId, path: filePath });
+    const result = (artifactId: string) => ({ ok: true, artifactId, ...pathResult });
     try {
+      let bytes: Uint8Array;
+      if (screenshot) {
+        if (filePath) return fail("Choose either a workspace path or a screenshot.");
+        if (!ctx.tools.builtins.includes(attachFileWithScreenshot)) {
+          return fail("Screenshot attachments are unavailable in this run.");
+        }
+        filePath = "screenshot";
+        const observation = await captureBotScreen(ctx, call.name);
+        if ("error" in observation) return fail(observation.error);
+        const extension = observation.mimeType === "image/jpeg" ? "jpg" : "png";
+        filePath = `screenshot-${new Date().toISOString().replaceAll(":", "-")}.${extension}`;
+        bytes = observation.image;
+      } else {
+        const read = await readWorkspaceFile(ctx, call, filePath);
+        if ("error" in read) return fail(read.error);
+        bytes = read.bytes;
+      }
       // Background runs post no message (publishMessage drops attachment blocks).
       const background = isBackgroundRunTrigger(run.trigger);
       const lease = runLeaseFor(deps, run.id);
@@ -287,6 +290,7 @@ export const fileTools: ToolHandlers = {
       await recordComputerAction(ctx, call, "attach_file", filePath);
       return background ? call.finish(result(saved.artifactId)) : result(saved.artifactId);
     } catch (error) {
+      ctx.context.signal.throwIfAborted();
       return fail(error instanceof Error ? error.message : "could not attach file");
     }
   },

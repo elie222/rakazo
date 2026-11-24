@@ -310,7 +310,7 @@ export async function gateToolCall(
       approvalToolNames.some(
         (toolName) =>
           toolRequiresApproval(toolName, viaConnector, declaredReadOnlyFor(toolName)) ||
-          (!viaConnector && outsideRunToolRequiresApproval(run.trigger, toolName)),
+          (!viaConnector && outsideRunToolRequiresApproval(run.trigger, toolName, args)),
       ));
   // A reviewed call still fails closed when its review errors, and keeps its approval key.
   const gated = requiresApprovalByDefault || reviewOnly;
