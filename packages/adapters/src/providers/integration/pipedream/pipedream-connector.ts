@@ -209,6 +209,7 @@ export class PipedreamConnector implements ManagedConnectorProvider {
                         route: connectorAccountRoute(tool, connection),
                       }));
                 } catch (error) {
+                  if (catalogApp !== undefined) throw error;
                   getLogger().error(
                     "pipedream account discovery failed",
                     sanitizeConnectorError(error),
@@ -220,6 +221,7 @@ export class PipedreamConnector implements ManagedConnectorProvider {
             )
           ).flat();
         } catch (error) {
+          if (catalogApp !== undefined) throw new Error(sanitizeConnectorError(error, [token]));
           // A single unavailable app must not hide tools from other connections.
           getLogger().error(
             `pipedream discovery failed for app ${app}:`,

@@ -541,6 +541,21 @@ it("stops polling a connection once another Space is selected", async () => {
   expect(state.rpc.mock.calls.filter(([proc]) => proc === "connections/complete")).toHaveLength(1);
 });
 
+it("shows when the connected app's tool permissions cannot load", async () => {
+  cached([item], [account]);
+  state.rpc.mockImplementation((proc: string) => {
+    if (proc === "connections/tools") return Promise.reject(new Error("Internal server error"));
+    if (proc === "connections/catalog") return Promise.resolve([item]);
+    if (proc === "connections/list") return Promise.resolve([account]);
+    return Promise.resolve([]);
+  });
+  await render();
+  await act(async () => button("Added")?.click());
+  await settle();
+
+  expect(container.textContent).toContain("Could not load permissions");
+});
+
 it.each(["Remove", "Uninstall"])(
   "keeps the revoked Added state after %s even if the following refresh fails",
   async (action) => {

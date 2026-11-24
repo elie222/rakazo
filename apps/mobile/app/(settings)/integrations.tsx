@@ -150,7 +150,7 @@ export default function Integrations() {
         ? "partial"
         : "ready";
   const tools = toolsQuery.data ?? [];
-  const toolsLoading = Boolean(detailKey) && toolsQuery.isLoading;
+  const toolsFailed = Boolean(detailKey) && toolsQuery.isError;
 
   function refresh() {
     for (const screenQuery of screenQueries) void screenQuery.refetch({ cancelRefetch: false });
@@ -527,7 +527,7 @@ export default function Integrations() {
                 labelDrafts={labelDrafts}
                 setLabelDrafts={setLabelDrafts}
                 tools={tools}
-                toolsLoading={toolsLoading}
+                toolsFailed={toolsFailed}
                 onBack={() => closeDetail()}
                 onUninstall={() => uninstall(detailItem)}
                 onRename={renameAccount}

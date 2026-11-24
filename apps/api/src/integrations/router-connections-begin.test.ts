@@ -951,6 +951,33 @@ describe("connection tool listing", () => {
     ]);
   });
 
+  it("returns an RPC error when the app tool catalog fails to load", async () => {
+    const handler = new RPCHandler(
+      createRouter({
+        prisma: { connection: { findFirst: async () => ({ id: "connection-1" }) } },
+        connectors: {
+          managed: () => ({
+            listAppTools: vi.fn().mockRejectedValue(new Error("Upstream catalog unavailable")),
+          }),
+        },
+      } as unknown as RouterDeps),
+    );
+    const response = await handle(
+      handler,
+      new Request("https://example.test/rpc/connections/tools", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ json: { connectorId: "example", provider: "example" } }),
+      }),
+      {
+        prefix: "/rpc",
+        context: { actor: { spaceId: "workspace-1", userId: "user-1" } as Actor },
+      },
+    );
+    expect(response.status).toBe(500);
+    expect(await response.text()).not.toContain("Upstream catalog unavailable");
+  });
+
   it("does not report a listing the client cancelled", async () => {
     const sink = createTestSink();
     installLogger(createLogger({ service: "rakazo-api", sinks: [sink] }));

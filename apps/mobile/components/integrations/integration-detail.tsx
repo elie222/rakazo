@@ -21,7 +21,7 @@ export function IntegrationDetail({
   labelDrafts,
   setLabelDrafts,
   tools,
-  toolsLoading,
+  toolsFailed,
   onBack,
   onUninstall,
   onRename,
@@ -35,7 +35,7 @@ export function IntegrationDetail({
   labelDrafts: Record<string, string>;
   setLabelDrafts: Dispatch<SetStateAction<Record<string, string>>>;
   tools: ConnectionTool[];
-  toolsLoading: boolean;
+  toolsFailed: boolean;
   onBack: () => void;
   onUninstall: () => void;
   onRename: (row: Connection) => void;
@@ -109,7 +109,11 @@ export function IntegrationDetail({
         />
       </View>
 
-      {!toolsLoading && tools.length > 0 ? (
+      {toolsFailed ? (
+        <Text accessibilityRole="alert" style={styles.error}>
+          {t`Could not load permissions`}
+        </Text>
+      ) : tools.length > 0 ? (
         <ToolPermissions tools={tools} slug={item.slug} />
       ) : null}
       {item.chatApp ? (

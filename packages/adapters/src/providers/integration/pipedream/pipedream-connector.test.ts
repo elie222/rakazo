@@ -535,6 +535,20 @@ describe("PipedreamConnector", () => {
     ]);
   });
 
+  it("rejects the settings catalog when its account's tools cannot be loaded", async () => {
+    const healthy = pipedreamMcpFetch({ gmail: ["send_email"] });
+    const fetch = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      const request = input instanceof Request ? input : new Request(input, init);
+      if (request.headers.get("x-pd-app-slug") === "gmail") {
+        return new Response("upstream down", { status: 503 });
+      }
+      return healthy(input, init);
+    });
+    const connector = new PipedreamConnector(FAKE_CONFIG, { ...TEST_NETWORK, fetch });
+
+    await expect(connector.listAppTools(connectedContext("gmail"), "gmail")).rejects.toThrow();
+  });
+
   it("lists catalog names grouped by connected app", async () => {
     const connector = new PipedreamConnector(FAKE_CONFIG, {
       ...TEST_NETWORK,

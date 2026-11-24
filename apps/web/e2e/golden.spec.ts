@@ -219,6 +219,26 @@ test("takeover, routine, plugins, and export are reachable", async ({ page }, te
   await reopenedPermission.click();
   await page.getByRole("option", { name: "Default", exact: true }).click();
   await expect(reopenedPermission).toHaveText("Default");
+  await page.route("**/rpc/connections/tools", (route) =>
+    route.fulfill({
+      status: 500,
+      json: {
+        json: {
+          defined: false,
+          code: "INTERNAL_SERVER_ERROR",
+          status: 500,
+          message: "Internal server error",
+        },
+      },
+    }),
+  );
+  await detailAgain.getByRole("button", { name: "Back", exact: true }).click();
+  await gmailTileAgain.click();
+  await expect(detailAgain.getByRole("alert")).toHaveText("Could not load permissions");
+  await expect(detailAgain.getByTestId("connection-tools")).toBeHidden();
+  await captureScreenshot(page, testInfo, "11a4-plugin-tools-unavailable");
+  await page.unroute("**/rpc/connections/tools");
+
   await detailAgain.getByRole("button", { name: "Uninstall", exact: true }).click();
   await expect(page.getByTestId("connection-detail")).toHaveCount(0);
   const gmailRowEmpty = page

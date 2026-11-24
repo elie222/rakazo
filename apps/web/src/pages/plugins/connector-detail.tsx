@@ -27,7 +27,7 @@ export function ConnectorDetail({
     labelDrafts,
     setLabelDrafts,
     tools,
-    toolsLoading,
+    toolsFailed,
     connect,
     revokeAccount,
     uninstall,
@@ -128,7 +128,11 @@ export function ConnectorDetail({
         </Button>
       </section>
 
-      {!toolsLoading && tools.length > 0 ? (
+      {toolsFailed ? (
+        <p role="alert" className="px-2 text-body-sm text-destructive">
+          <Trans>Could not load permissions</Trans>
+        </p>
+      ) : tools.length > 0 ? (
         <ToolPermissions tools={tools} slug={item.slug} />
       ) : null}
 
