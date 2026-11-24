@@ -29,8 +29,9 @@ export async function resolveVoiceCallPlan(
     deviceVoiceEnabled = true;
   }
 
-  const deviceDictationAvailable = deviceVoiceEnabled ? await deps.dictationAvailable() : false;
-  if (deviceVoiceEnabled && deviceDictationAvailable) {
+  // Composer dictation can use the recognizer independently of the speaking voice.
+  const preferDeviceDictation = deviceVoiceEnabled || purpose === "dictation";
+  if (preferDeviceDictation && (await deps.dictationAvailable())) {
     return { kind: "device", transcribe: false };
   }
 
@@ -40,10 +41,7 @@ export async function resolveVoiceCallPlan(
   }
 
   if (!status.transcribe) {
-    const canDictate = deviceVoiceEnabled
-      ? deviceDictationAvailable
-      : await deps.dictationAvailable();
-    if (!canDictate) return { kind: "dictation" };
+    if (preferDeviceDictation || !(await deps.dictationAvailable())) return { kind: "dictation" };
   }
 
   return { kind: "provider", transcribe: status.transcribe };
