@@ -766,11 +766,13 @@ export function demuxDockerStream(buffer: Buffer): { stdout: string; stderr: str
  * container's workspace user.
  */
 export function computerCommandEnv(
-  layout: Pick<ReturnType<typeof screenPorts>, "display" | "debugPort">,
+  layout: Pick<ReturnType<typeof screenPorts>, "display" | "debugPort"> | undefined,
 ) {
   return [
-    `DISPLAY=${layout.display}`,
-    `RAKAZO_CDP_PORT=${layout.debugPort}`,
+    // Without a screen, clear the container's DISPLAY=:1 so graphical commands fail.
+    ...(layout
+      ? [`DISPLAY=${layout.display}`, `RAKAZO_CDP_PORT=${layout.debugPort}`]
+      : ["DISPLAY="]),
     "HOME=/home/rakazo",
     "PATH=/home/rakazo/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
     "NPM_CONFIG_PREFIX=/home/rakazo/.local",

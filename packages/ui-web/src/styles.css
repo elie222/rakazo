@@ -148,6 +148,11 @@
   &:where(:hover, [data-active], [aria-pressed="true"], [aria-expanded="true"]) {
     background-image: linear-gradient(var(--accent), var(--accent));
   }
+  /* Hovering an open or pressed control deepens its tint, so the hover still shows. */
+  &:where(:hover):where([data-active], [aria-pressed="true"], [aria-expanded="true"]) {
+    background-image:
+      linear-gradient(var(--accent), var(--accent)), linear-gradient(var(--accent), var(--accent));
+  }
   @media (prefers-reduced-transparency: reduce) {
     background-color: var(--muted);
     backdrop-filter: none;

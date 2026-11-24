@@ -9,7 +9,10 @@ import { ClientError } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import * as z from "zod";
-import { ComposioConnector } from "../providers/integration/composio/composio-connector.js";
+import {
+  ComposioConnector,
+  sanitizeIntegrationError,
+} from "../providers/integration/composio/composio-connector.js";
 import { PipedreamConnector } from "../providers/integration/pipedream/pipedream-connector.js";
 import { credentialDigest } from "../secrets/credential-digest.js";
 
@@ -180,7 +183,11 @@ export class IntegrationProviderSettings {
     for (const id of INTEGRATION_PROVIDER_IDS) {
       void this.resolve(id)
         .then((provider) => provider?.warmDirectory?.())
-        .catch(() => undefined);
+        .catch((error: unknown) => {
+          getLogger().warn(`${id} catalog could not be loaded`, {
+            error: sanitizeIntegrationError(error),
+          });
+        });
     }
   }
 }
