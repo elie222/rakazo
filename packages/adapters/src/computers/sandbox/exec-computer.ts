@@ -506,11 +506,15 @@ function commandRequestArgv(
   timeoutMs: number,
 ): { argv: string[]; stdin?: Readable } {
   const cwd = workspaceCwd(WORKSPACE, request.cwd);
-  const cacheEnv = Object.entries(COMPUTER_CACHE_ENV).map(([name, value]) => {
+  const requested = request.env ?? {};
+  const cacheEnv = Object.entries(COMPUTER_CACHE_ENV).flatMap(([name, value]) => {
     if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) throw new Error(`invalid environment name ${name}`);
-    return `${name}=${value}`;
+    // The request's own value wins, as on main. It travels in the export script, which runs
+    // before `env`, so a cache argument would otherwise overwrite it.
+    if (Object.hasOwn(requested, name)) return [];
+    return [`${name}=${value}`];
   });
-  const exportScript = shellExportScript(request.env ?? {});
+  const exportScript = shellExportScript(requested);
   const timed = withTimeout(sandboxCommandArgv(request), timeoutMs);
   if (!exportScript) {
     return {
