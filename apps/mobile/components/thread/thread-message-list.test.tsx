@@ -153,16 +153,3 @@ it("swaps the live list's side padding for Android's mirrored inverted list only
   expect(pinned).toMatchObject({ paddingStart: 60, paddingEnd: 28 });
   await act(async () => root.unmount());
 });
-
-it.each([false, true])(
-  "delivers the first handled tap on the message list (pinned: %s)",
-  async (showPinnedPage) => {
-    const root = createRoot(container);
-    await act(async () =>
-      root.render(createElement(ThreadMessageList, listProps({ showPinnedPage }))),
-    );
-    const list = showPinnedPage ? native.scroll : native.flat;
-    expect(list?.keyboardShouldPersistTaps).toBe("handled");
-    await act(async () => root.unmount());
-  },
-);

@@ -54,7 +54,6 @@ import { NativeSymbol } from "../native/native-symbol";
 import { ComposerKeyboard } from "./composer-keyboard";
 import { ComposerMentionPicker } from "./composer-mention-picker";
 import { ModelChip, TrailingControls } from "./composer-model-chip";
-import { ComposerPickerRow } from "./composer-picker-row";
 import { DictationBar } from "./dictation-bar";
 
 type NativeEdit = {
@@ -81,7 +80,6 @@ type ThreadComposerProps = {
   ref: Ref<ThreadComposerHandle>;
   /** Where the unsent text is kept; without it the draft lives only while mounted. */
   draftScope?: ComposerDraftScope;
-  dropTargetKey?: string;
   onMentionRequested?: () => void;
   agentSkills: AgentSkillCatalogEntry[];
   composerMentionTargets: ReturnType<typeof buildComposerMentionOptions>;
@@ -107,7 +105,6 @@ type ThreadComposerProps = {
 export function ThreadComposer({
   ref,
   draftScope,
-  dropTargetKey,
   onMentionRequested,
   agentSkills,
   composerMentionTargets,
@@ -315,12 +312,13 @@ export function ThreadComposer({
       : { skills: [], actions: [] };
   const pickerScroll = useRef<ScrollViewInstance>(null);
   const pickerRowOffsets = useRef<number[]>([]);
-  const [pickerIndex, setPickerIndex] = useState(0);
+  const [pickerIndex, setPickerIndex] = useState<number | null>(null);
   const optionCount = mentionOptions.length || slashSkillOptions.length + slashActionOptions.length;
-  const activePickerIndex = clampMentionHighlightIndex(pickerIndex, optionCount);
+  const activePickerIndex =
+    pickerIndex === null ? null : clampMentionHighlightIndex(pickerIndex, optionCount);
 
   function updatePickerQueries(value: string, start: number, end = start) {
-    setPickerIndex(0);
+    setPickerIndex(null);
     // One skill per message: a chosen skill keeps the slash menu closed.
     setSlashQuery(
       selectedSkill ? null : composerSlashQuery(value, start, end, bindingsRef.current),
@@ -490,7 +488,7 @@ export function ThreadComposer({
       key: key === "CommandEnter" ? "Enter" : key,
       metaKey: key === "CommandEnter",
       optionCount,
-      highlightedIndex: activePickerIndex,
+      highlightedIndex: activePickerIndex ?? (key === "ArrowDown" ? optionCount - 1 : 0),
       enterToSend,
     });
     switch (action.type) {
@@ -572,11 +570,12 @@ export function ThreadComposer({
           }}
         >
           {slashSkillOptions.map((skill, index) => (
-            <ComposerPickerRow
+            <Pressable
+              accessibilityRole="button"
               key={skill.id}
               accessibilityLabel={t`Skill ${ph({ name: skill.name })}`}
               onPress={() => insertSkill(skill)}
-              selected={index === activePickerIndex}
+              accessibilityState={{ selected: index === activePickerIndex }}
               onLayout={(event) => {
                 pickerRowOffsets.current[index] = event.nativeEvent.layout.y;
               }}
@@ -586,6 +585,7 @@ export function ThreadComposer({
                 gap: 10,
                 paddingHorizontal: 14,
                 paddingVertical: 10,
+                backgroundColor: index === activePickerIndex ? tokens.muted : undefined,
               }}
             >
               <NativeSymbol
@@ -603,14 +603,17 @@ export function ThreadComposer({
                   {truncateSlashDescription(skill.description)}
                 </Text>
               </View>
-            </ComposerPickerRow>
+            </Pressable>
           ))}
           {slashActionOptions.map((action, index) => (
-            <ComposerPickerRow
+            <Pressable
+              accessibilityRole="button"
               key={action.id}
               accessibilityLabel={slashActionLabel(action.id)}
               onPress={() => runSlashAction(action.id)}
-              selected={slashSkillOptions.length + index === activePickerIndex}
+              accessibilityState={{
+                selected: slashSkillOptions.length + index === activePickerIndex,
+              }}
               onLayout={(event) => {
                 pickerRowOffsets.current[slashSkillOptions.length + index] =
                   event.nativeEvent.layout.y;
@@ -621,6 +624,8 @@ export function ThreadComposer({
                 gap: 10,
                 paddingHorizontal: 14,
                 paddingVertical: 10,
+                backgroundColor:
+                  slashSkillOptions.length + index === activePickerIndex ? tokens.muted : undefined,
               }}
             >
               <NativeSymbol
@@ -632,7 +637,7 @@ export function ThreadComposer({
               <Text style={{ color: tokens.foreground, fontSize: 14 }}>
                 {slashActionLabel(action.id)}
               </Text>
-            </ComposerPickerRow>
+            </Pressable>
           ))}
         </ScrollView>
       ) : null}
@@ -682,7 +687,6 @@ export function ThreadComposer({
           }}
         >
           <ComposerKeyboard
-            dropTargetKey={dropTargetKey}
             keys={hardwareKeys}
             onHardwareKey={(event) => onHardwareKey(event.nativeEvent.key)}
             style={{

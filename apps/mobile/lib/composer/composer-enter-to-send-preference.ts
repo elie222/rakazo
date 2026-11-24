@@ -1,11 +1,8 @@
-import {
-  COMPOSER_ENTER_TO_SEND_STORAGE_KEY,
-  parseComposerEnterToSend,
-  serializeComposerEnterToSend,
-} from "@rakazo/core";
 import { bestEffort } from "@rakazo/logging/best-effort";
 import * as SecureStore from "expo-secure-store";
 import { useSyncExternalStore } from "react";
+
+const COMPOSER_ENTER_TO_SEND_STORAGE_KEY = "rakazo.composerEnterToSend";
 
 let preference: boolean | null = null;
 const listeners = new Set<() => void>();
@@ -35,7 +32,7 @@ export async function loadComposerEnterToSendPreference(): Promise<void> {
     "read composer Enter preference",
     SecureStore.getItemAsync(COMPOSER_ENTER_TO_SEND_STORAGE_KEY),
   );
-  if (preference === null && raw !== undefined) update(parseComposerEnterToSend(raw));
+  if (preference === null && raw != null) update(raw !== "0");
 }
 
 let writes = Promise.resolve();
@@ -45,10 +42,7 @@ export async function setComposerEnterToSendPreference(enabled: boolean): Promis
   writes = writes.then(async () => {
     await bestEffort(
       "save composer Enter preference",
-      SecureStore.setItemAsync(
-        COMPOSER_ENTER_TO_SEND_STORAGE_KEY,
-        serializeComposerEnterToSend(enabled),
-      ),
+      SecureStore.setItemAsync(COMPOSER_ENTER_TO_SEND_STORAGE_KEY, enabled ? "1" : "0"),
     );
   });
   await writes;

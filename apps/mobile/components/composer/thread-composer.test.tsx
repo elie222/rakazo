@@ -942,15 +942,6 @@ describe("thread composer isolation", () => {
     expect(props.send).not.toHaveBeenCalled();
   });
 
-  it("keeps hardware Enter from sending a second message during a send", () => {
-    render({ sending: true });
-    type("Another message");
-
-    press("Hardware Enter");
-
-    expect(props.send).not.toHaveBeenCalled();
-  });
-
   it("sends on Command+Enter with a mention picker open", () => {
     type("Ask @He");
 
@@ -977,6 +968,7 @@ describe("thread composer isolation", () => {
       render({ agentSkills: [other, skill] });
       type("/");
       press("Hardware ArrowDown");
+      press("Hardware ArrowDown");
 
       press("Hardware Enter");
 
@@ -994,27 +986,6 @@ describe("thread composer isolation", () => {
 
     expect(container.querySelector('[data-testid="mention-picker"]')).toBeNull();
     expect(composer.current!.snapshot().promptText).toBe("Ask @He");
-  });
-
-  it("leaves hardware Enter blocked while dictation is transcribing", () => {
-    dictation.status = "transcribing";
-    render();
-    type("A message");
-
-    press("Hardware Enter");
-
-    expect(dictation.finish).not.toHaveBeenCalled();
-    expect(props.send).not.toHaveBeenCalled();
-  });
-
-  it("finishes dictation before sending on hardware Enter", () => {
-    dictation.status = "listening";
-    render();
-
-    press("Hardware Enter");
-
-    expect(dictation.finish).toHaveBeenCalledOnce();
-    expect(props.send).not.toHaveBeenCalled();
   });
 
   it("types 20 characters without rendering the parent and sends the latest ref snapshot", () => {

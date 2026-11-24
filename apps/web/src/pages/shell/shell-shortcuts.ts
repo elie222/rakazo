@@ -1,6 +1,5 @@
 import type { DesktopMenuCommand } from "@rakazo/contracts";
 import { isDesktopMenuCommand } from "@rakazo/contracts";
-import { resolveChatNavigationShortcut } from "@rakazo/core";
 import { useEffect, useEffectEvent } from "react";
 import { desktopBridge } from "../../lib/platform/desktop";
 import { useEventListener } from "../../lib/use-event-listener";
@@ -91,9 +90,10 @@ export function shellShortcut(event: KeyboardEvent, host: ShortcutHost): ShellSh
   if (key === "l" && isQuoteShortcut(event, host)) {
     return { type: "quote-selection" };
   }
-  const navigation = resolveChatNavigationShortcut(event);
-  if (navigation === "search") return { type: "command-menu" };
-  if (navigation === "new-chat") return { type: "new" };
+  if ((event.metaKey || event.ctrlKey) && !event.altKey && !event.shiftKey) {
+    if (key === "k") return { type: "command-menu" };
+    if (key === "n") return { type: "new" };
+  }
   const primary = primaryModifier(event, host.apple);
   // Some layouts need Shift for the slash, so Shift does not matter here.
   if (primary && !event.altKey && event.key === "/") return { type: "shortcuts" };

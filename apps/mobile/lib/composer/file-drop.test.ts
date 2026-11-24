@@ -164,23 +164,3 @@ it("consumes empty completions without shifting the next drop's owner", () => {
   removeSecond();
   removeFirst();
 });
-
-it("releases an iOS drop if its receiving chat left before the start event arrived", () => {
-  const removeOriginal = addDropTarget("original", vi.fn());
-  const other = vi.fn();
-  const removeOther = addDropTarget("other", other);
-  removeOriginal();
-
-  startDrop();
-  drop({
-    targetKey: "original",
-    files: [
-      { uri: "file:///fake/document", name: "notes.pdf", mimeType: "application/pdf", size: 1 },
-    ],
-  });
-
-  expect(other).not.toHaveBeenCalled();
-  const module = requireOptionalNativeModule("RakazoFileDrop") as { release: unknown };
-  expect(module.release).toHaveBeenCalledWith("file:///fake/document");
-  removeOther();
-});

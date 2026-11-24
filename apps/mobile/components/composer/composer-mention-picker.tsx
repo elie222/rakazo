@@ -4,11 +4,10 @@ import type { ComposerMention } from "@rakazo/core";
 import { mentionChipKey } from "@rakazo/core";
 import type { Ref } from "react";
 import type { ScrollViewInstance } from "react-native";
-import { ScrollView, Text, View } from "react-native";
+import { Pressable, ScrollView, Text, View } from "react-native";
 import { useMobileTokens } from "../../lib/native/native";
 import { BotAvatar } from "../bots/bot-avatar";
 import { NativeSymbol } from "../native/native-symbol";
-import { ComposerPickerRow } from "./composer-picker-row";
 
 const MENTION_ROW_HEIGHT = 44;
 const MENTION_ROW_PADDING = 14;
@@ -23,7 +22,7 @@ export function ComposerMentionPicker({
   onPick,
 }: {
   mentions: ComposerMention[];
-  highlightedIndex: number;
+  highlightedIndex: number | null;
   scrollRef: Ref<ScrollViewInstance>;
   onRowLayout: (index: number, y: number) => void;
   onPick: (mention: ComposerMention) => void;
@@ -62,9 +61,10 @@ export function ComposerMentionPicker({
               }}
             />
           ) : null}
-          <ComposerPickerRow
+          <Pressable
+            accessibilityRole="button"
             accessibilityLabel={t`@${ph({ name: mention.name })}`}
-            selected={index === highlightedIndex}
+            accessibilityState={{ selected: index === highlightedIndex }}
             onPress={() => onPick(mention)}
             style={{
               flexDirection: "row",
@@ -72,6 +72,7 @@ export function ComposerMentionPicker({
               gap: MENTION_ROW_GAP,
               minHeight: MENTION_ROW_HEIGHT,
               paddingHorizontal: MENTION_ROW_PADDING,
+              backgroundColor: index === highlightedIndex ? tokens.muted : undefined,
             }}
           >
             <MentionOptionIcon mention={mention} />
@@ -94,7 +95,7 @@ export function ComposerMentionPicker({
                 {mention.subtitle}
               </Text>
             ) : null}
-          </ComposerPickerRow>
+          </Pressable>
         </View>
       ))}
     </ScrollView>

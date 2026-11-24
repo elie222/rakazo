@@ -4,7 +4,6 @@ import { bestEffort } from "@rakazo/logging/best-effort";
 import type { Dispatch, SetStateAction } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { NavigateFunction } from "react-router-dom";
-import { useComposerEnterKeyboardDetection } from "../../lib/composer/composer-enter-to-send-pref";
 import { hasOpenDialog } from "../../lib/platform/has-open-dialog";
 import type { Panel } from "./right-panel-state";
 import type { ShellOverlay } from "./shell-overlay-url";
@@ -70,7 +69,6 @@ export function useShellShortcutActions({
   };
   refreshThread: (botId: string) => Promise<unknown>;
 }) {
-  useComposerEnterKeyboardDetection();
   const inGroup = Boolean(groupId);
   const chatPanelOpen = inGroup
     ? panel === "group-settings"

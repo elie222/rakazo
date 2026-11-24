@@ -290,7 +290,6 @@ export function ModelPickerList({
           >
             <SettingsRow
               accessibilityRole="button"
-              highlightOnHover
               accessibilityLabel={item.label}
               accessibilityHint={item.images === false ? t`Can't read images` : undefined}
               accessibilityState={{ selected }}

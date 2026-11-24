@@ -7,7 +7,6 @@ type ComposerKeyboardProps = {
   children: ReactNode;
   style: ViewProps["style"];
   keys: string[];
-  dropTargetKey?: string;
   onHardwareKey: (event: { nativeEvent: { key: string } }) => void;
 };
 

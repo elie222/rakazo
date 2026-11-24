@@ -19,7 +19,7 @@ import { cronLabels } from "@rakazo/i18n/cron";
 import { useFocusEffect, useIsFocused, useLocalSearchParams, useRouter } from "expo-router";
 import { useHeaderHeight } from "expo-router/react-navigation";
 import { useCallback, useContext, useMemo, useRef, useState } from "react";
-import { Alert, I18nManager, Platform, View } from "react-native";
+import { I18nManager, Platform, View } from "react-native";
 import { KeyboardAvoidingView } from "react-native-keyboard-controller";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useLiveStream } from "../../lib/api/roster-signals";
@@ -34,12 +34,11 @@ import { readableGutters } from "../../lib/layout/adaptive-layout";
 import { useContentBottomInset } from "../../lib/layout/content-bottom-inset";
 import { useSplitView } from "../../lib/layout/split-view";
 import { useThemedStyles } from "../../lib/native/native";
-import { useHardwareEscape } from "../../lib/navigation/hardware-shortcuts";
 import { NewestPageCards } from "../../lib/pages/page-card";
 import { useChatOnScreen } from "../../lib/pages/page-card-detail";
 import { useDeviceCalendar } from "../../lib/personal-calendar/use-device-calendar";
 import { useAppForeground } from "../../lib/platform/app-foreground";
-import { rpcQuery, useSave } from "../../lib/query/query";
+import { rpcQuery } from "../../lib/query/query";
 import { useScreenQuery } from "../../lib/query/screen-query";
 import { useInboxBot } from "../../lib/search/search-inbox";
 import {
@@ -392,23 +391,6 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
     showLatest,
   });
 
-  const stopRun = useSave({
-    save: (target: { botId: string } | { groupId: string }, send) => send("threads/stop", target),
-    stale: [],
-    onFailed: () => Alert.alert(t`Failed to stop`),
-  });
-  useHardwareEscape(
-    "thread",
-    focused &&
-      !readOnly &&
-      (inGroup ? activeGroupBots.length > 0 : isActiveStatus(currentBotStatus))
-      ? () => {
-          if (groupId) stopRun.run({ groupId });
-          else if (botId) stopRun.run({ botId });
-        }
-      : null,
-  );
-
   const composer = useThreadSend({
     botId,
     groupId,
@@ -699,7 +681,6 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
               key={threadKey}
               ref={composer.composerRef}
               draftScope={draftScope}
-              dropTargetKey={attachments.dropTargetKey}
               agentSkills={agentSkills}
               composerMentionTargets={composerMentionTargets}
               onMentionRequested={onMentionRequested}

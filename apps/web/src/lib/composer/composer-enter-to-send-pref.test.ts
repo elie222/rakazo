@@ -1,106 +1,94 @@
-// @vitest-environment jsdom
-
-import { act, createElement } from "react";
-import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type * as ComposerEnterToSendPref from "./composer-enter-to-send-pref.js";
 
-const storageKey = "rakazo.composerEnterToSend";
-let root: ReturnType<typeof createRoot> | undefined;
+import {
+  COMPOSER_ENTER_TO_SEND_STORAGE_KEY,
+  defaultComposerEnterToSend,
+  normalizeComposerEnterToSend,
+} from "./composer-enter-to-send-pref.js";
+
 let mod: typeof ComposerEnterToSendPref;
 
-function memoryStorage() {
-  const values = new Map<string, string>();
+function memoryStorage(initial: Record<string, string> = {}) {
+  const map = new Map<string, string>(Object.entries(initial));
   return {
-    getItem: (key: string) => values.get(key) ?? null,
-    setItem: (key: string, value: string) => values.set(key, value),
+    getItem: (key: string) => map.get(key) ?? null,
+    setItem: (key: string, value: string) => {
+      map.set(key, value);
+    },
   };
 }
 
-function keydown(key: string, shiftKey = false) {
-  window.dispatchEvent(Object.assign(new Event("keydown"), { key, shiftKey }));
-}
-
-async function loadPreference(finePointer = false, anyFinePointer = finePointer) {
-  if (root) act(() => root?.unmount());
+beforeEach(async () => {
   vi.resetModules();
-  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
-  vi.stubGlobal("matchMedia", (query: string) => ({
-    matches:
-      query === "(pointer: fine)" ? finePointer : query === "(any-pointer: fine)" && anyFinePointer,
-  }));
-  vi.stubGlobal("localStorage", memoryStorage());
   mod = await import("./composer-enter-to-send-pref.js");
-  function Detector() {
-    mod.useComposerEnterKeyboardDetection();
-    return null;
-  }
-  const mounted = createRoot(document.createElement("div"));
-  root = mounted;
-  act(() => mounted.render(createElement(Detector)));
-}
+});
 
-beforeEach(() => loadPreference());
-afterEach(() => {
-  act(() => root?.unmount());
-  root = undefined;
+describe("defaultComposerEnterToSend", () => {
+  it("defaults to sending on desktop and newline on touch", () => {
+    expect(defaultComposerEnterToSend(false)).toBe(true);
+    expect(defaultComposerEnterToSend(true)).toBe(false);
+  });
+});
+
+describe("normalizeComposerEnterToSend", () => {
+  it("parses stored flags", () => {
+    expect(normalizeComposerEnterToSend("1")).toBe(true);
+    expect(normalizeComposerEnterToSend("0")).toBe(false);
+    expect(normalizeComposerEnterToSend("true")).toBe(true);
+    expect(normalizeComposerEnterToSend("off")).toBe(false);
+  });
+
+  it("falls back to the device default for missing or unknown values", () => {
+    expect(normalizeComposerEnterToSend(null, false)).toBe(true);
+    expect(normalizeComposerEnterToSend(null, true)).toBe(false);
+    expect(normalizeComposerEnterToSend("maybe", false)).toBe(true);
+    expect(normalizeComposerEnterToSend("maybe", true)).toBe(false);
+  });
 });
 
 describe("composerEnterToSendPreference", () => {
-  it("detects a shifted first typing key on a touch device with a trackpad", async () => {
-    await loadPreference(false, true);
-    const preference = mod.composerEnterToSendPreference;
-    const changes: boolean[] = [];
-    const unsubscribe = preference.subscribe(() => changes.push(preference.get()));
+  function stubPointer(coarsePointer: boolean) {
+    vi.stubGlobal("window", {
+      matchMedia: vi.fn().mockReturnValue({ matches: coarsePointer }),
+    });
+  }
 
-    keydown("Enter");
-    expect(preference.get()).toBe(false);
-    keydown("A", true);
-
-    expect(changes).toEqual([true]);
-    expect(localStorage.getItem(storageKey)).toBeNull();
-    unsubscribe();
+  afterEach(() => {
+    vi.unstubAllGlobals();
   });
 
-  it("keeps newline as the default when a touch-only browser emits printable keydowns", () => {
-    keydown("a");
-    expect(mod.composerEnterToSendPreference.get()).toBe(false);
+  it.each([false, true])("reads the device default with coarse pointer %s", (coarsePointer) => {
+    stubPointer(coarsePointer);
+    vi.stubGlobal("localStorage", memoryStorage());
+    expect(mod.composerEnterToSendPreference.get()).toBe(!coarsePointer);
   });
 
-  it("keeps the desktop default for pasted or restored drafts", async () => {
-    await loadPreference(true);
-
-    expect(mod.composerEnterToSendPreference.get()).toBe(true);
-  });
-
-  it("honors stored off even after a hardware typing key", async () => {
-    await loadPreference(false, true);
-    localStorage.setItem(storageKey, "off");
-
-    keydown("a");
-
-    expect(mod.composerEnterToSendPreference.get()).toBe(false);
-  });
-
-  it("honors stored on before detecting a hardware keyboard", () => {
-    localStorage.setItem(storageKey, "true");
-
-    expect(mod.composerEnterToSendPreference.get()).toBe(true);
-  });
-
-  it("detects a keyboard even when local storage is unavailable", async () => {
-    await loadPreference(false, true);
+  it.each([false, true])("uses the detected pointer without storage: %s", (coarsePointer) => {
+    stubPointer(coarsePointer);
     vi.stubGlobal("localStorage", undefined);
+    expect(mod.composerEnterToSendPreference.get()).toBe(!coarsePointer);
+    expect(window.matchMedia).toHaveBeenCalledWith("(pointer: coarse)");
+  });
 
-    keydown("a");
-
-    expect(mod.composerEnterToSendPreference.get()).toBe(true);
+  it.each([
+    [false, "0", false],
+    [true, "1", true],
+  ] as const)("stored preference overrides coarse pointer %s", (coarsePointer, raw, expected) => {
+    stubPointer(coarsePointer);
+    vi.stubGlobal("localStorage", memoryStorage({ [COMPOSER_ENTER_TO_SEND_STORAGE_KEY]: raw }));
+    expect(mod.composerEnterToSendPreference.get()).toBe(expected);
   });
 
   it("saves the toggle as 1 or 0", () => {
-    mod.composerEnterToSendPreference.set(true);
-    expect(localStorage.getItem(storageKey)).toBe("1");
+    stubPointer(false);
+    const storage = memoryStorage();
+    vi.stubGlobal("localStorage", storage);
+    expect(mod.composerEnterToSendPreference.get()).toBe(true);
     mod.composerEnterToSendPreference.set(false);
-    expect(localStorage.getItem(storageKey)).toBe("0");
+    expect(mod.composerEnterToSendPreference.get()).toBe(false);
+    expect(storage.getItem(COMPOSER_ENTER_TO_SEND_STORAGE_KEY)).toBe("0");
+    mod.composerEnterToSendPreference.set(true);
+    expect(storage.getItem(COMPOSER_ENTER_TO_SEND_STORAGE_KEY)).toBe("1");
   });
 });

@@ -52,8 +52,6 @@ export * from "./calls/speech-locale.js";
 export * from "./calls/speech-text.js";
 export * from "./calls/voice-chat-groups.js";
 export * from "./calls/voice-response.js";
-export * from "./composer/chat-navigation-shortcut.js";
-export * from "./composer/composer-enter-to-send.js";
 export * from "./composer/composer-mention-bindings.js";
 export * from "./composer/composer-mention-picker.js";
 export * from "./composer/composer-mentions.js";
