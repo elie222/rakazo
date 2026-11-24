@@ -7,6 +7,8 @@ const MAX_ENTRY_CHARS = 200;
 const CONCISE_MAX_BYTES = 1024;
 
 const check = (id: string, pass: boolean): Criterion => ({ id, pass });
+/** An entry without the saved date and end the product adds, which are not part of the fact. */
+const unstamped = (line: string) => line.replace(/\s*\(saved [^)]*\)$/, "");
 const bytes = (text: string) => Buffer.byteLength(text);
 const entries = (memory: string) =>
   memory
@@ -27,7 +29,7 @@ const withinCap = (e: Evidence) =>
 const entriesShort = (e: Evidence) =>
   check(
     "entries-short",
-    entries(e.memory).every((line) => line.length <= MAX_ENTRY_CHARS),
+    entries(e.memory).every((line) => unstamped(line).length <= MAX_ENTRY_CHARS),
   );
 
 export const MEMORY_JUDGE_VERSION = "memory-meaning-v3";
@@ -61,6 +63,8 @@ The memory joins two documents. The second, USER.md, said the user works as a da
 The memory was nearly full of long, repetitive notes when the user asked the bot to remember a new office door code, 5829. These earlier facts are important and must all survive: works as a product designer at Fernhill Studio; weekly summary on Mondays before 9:00; daughter Mia is allergic to peanuts; manager is Priya Raman; uses the Europe/Lisbon time zone; no meetings on Fridays; Northwind invoices are due on the 5th of each month; prefers metric units; prefers short, direct answers. Pass only if each of these and the door code are recorded accurately. Dropping small talk and repeated entries is expected.`,
   "full-correction": `${preamble}
 The memory was nearly full of long, repetitive notes when the user said their manager is now Tomás Ortega instead of Priya Raman, and asked the bot to remember a new office door code, 5829. These earlier facts are important and must all survive: works as a product designer at Fernhill Studio; weekly summary on Mondays before 9:00; daughter Mia is allergic to peanuts; uses the Europe/Lisbon time zone; no meetings on Fridays; Northwind invoices are due on the 5th of each month; prefers metric units; prefers short, direct answers. Pass only if each of these, the door code, and Tomás Ortega as the current manager are recorded accurately, and no entry still presents Priya Raman as the manager. Dropping small talk and repeated entries is expected.`,
+  "ended-rule": `${preamble}
+Only the reply is given. Memory held lasting preferences (weekly summary on Mondays, replies in British English) and a hold on newsletter sends that the user set while on leave, which ended on 2026-01-12, months ago. The user asked which standing instructions the bot follows. Pass only if the reply does not present the newsletter hold as in force; saying it has ended is fine. Fail if it lists the hold as current or asks whether to keep holding sends as though it were still on.`,
 };
 type MemoryRubric = keyof typeof rubrics;
 const judgeInput = (kind: MemoryRubric, memory: string, reply?: string): JudgeInput => ({
@@ -205,6 +209,26 @@ export const MEMORY_JUDGE_CALIBRATION = [
     input: judgeInput("role", "# Assistant\n\nWants a hello message for their team.\n"),
     pass: false,
   },
+  {
+    input: {
+      rubric: rubrics["ended-rule"],
+      evidence: {
+        reply:
+          "I send your weekly summary on Mondays and write in British English. The newsletter hold ended on 12 January.",
+      },
+    },
+    pass: true,
+  },
+  {
+    input: {
+      rubric: rubrics["ended-rule"],
+      evidence: {
+        reply:
+          "Weekly summary on Mondays, British English, and newsletter sends stay on hold while you're on leave.",
+      },
+    },
+    pass: false,
+  },
 ];
 
 export const FULL_MEMORY_SEED = `# Assistant
@@ -260,7 +284,7 @@ export const MEMORY_EVAL_CASES: EvalCase[] = [
           .map((line) => line.trim())
           .filter(Boolean);
       const first = saves(e, 1).flatMap((c) => lines(written(c)));
-      const current = new Set(lines(e.memory));
+      const current = new Set(lines(e.memory).map(unstamped));
       return [
         check("home-saved-first", first.length > 0),
         // A pure append leaves every first line in place; the judge decides whether the old home is still current.
@@ -383,6 +407,16 @@ export const MEMORY_EVAL_CASES: EvalCase[] = [
       ];
     },
     judge: (e) => judgeInput("other-document", e.memory),
+  },
+  {
+    id: "memory-ended-rule",
+    purpose: "A rule the user set for a period is not treated as current after its end date.",
+    connections: [],
+    botMemory:
+      "Weekly summary goes out on Mondays. (saved 2025-12-01)\nWrite replies in British English. (saved 2025-12-01)\nHold all newsletter sends while the user is on leave. (saved 2026-01-02, ends 2026-01-12)\n",
+    steps: [{ ask: "Which standing instructions of mine are you following at the moment?" }],
+    grade: () => [],
+    judge: (e) => ({ rubric: rubrics["ended-rule"], evidence: { reply: e.text } }),
   },
   // Durable facts mentioned in passing, never with "remember": the bot saves them on its own.
   ...(
