@@ -9,7 +9,9 @@ const run = (text: string, unread: boolean): RoutineEvidence => ({
   unread,
   messages: text ? [[{ kind: "text", text }]] : [],
   progress: [],
-  notifications: [],
+  notifications: unread
+    ? [{ kind: "completion", title: "Bot", body: text, botId: "bot", threadId: "thread" }]
+    : [],
   calls: [],
   observedCompletion: true,
 });
@@ -47,6 +49,10 @@ describe("webhook silence grading", () => {
         evidence(run("Lint failed on release/2.3.", true), run("No response. Try again.", true)),
       ),
     ).toBe(false);
+  });
+  it("rejects a reported failure that sent no push", () => {
+    const reported = { ...run("Lint failed on release/2.3.", true), notifications: [] };
+    expect(passes(evidence(reported, run("", false)))).toBe(false);
   });
   it("rejects a failure that was never reported", () => {
     expect(passes(evidence(run("", false), run("", false)))).toBe(false);

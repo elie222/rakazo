@@ -84,6 +84,7 @@ function grade(e: Evidence, expected: Expected[]): Criterion[] {
       return [
         check(`${prefix}-reply-posted`, hasVisibleMessage(run) && run.text.trim().length > 0),
         check(`${prefix}-unread`, run.unread),
+        check(`${prefix}-one-push`, run.notifications.length === 1),
         check(`${prefix}-no-sentinel-leak`, !run.text.includes("NO_RESPONSE")),
       ];
     }),
