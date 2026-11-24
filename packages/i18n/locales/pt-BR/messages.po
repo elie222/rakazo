@@ -140,7 +140,7 @@ msgstr "{0} ocorrências"
 #. placeholder {1}: usd(media.limitCents / 100)
 #: apps/web/src/components/billing/PlanUsage.tsx
 msgid "{0} of {1} left"
-msgstr ""
+msgstr "{0} de {1} restantes"
 
 #. placeholder {0}: sender.name
 #: apps/web/src/pages/settings/ExternalConversationSettings.tsx
@@ -420,7 +420,7 @@ msgstr "{label}, vazio"
 
 #: apps/mobile/app/(settings)/account.tsx
 msgid "{left} of {limit} left"
-msgstr ""
+msgstr "{left} de {limit} restantes"
 
 #: apps/mobile/components/settings/space-bots-model.tsx
 msgid "{moved, plural, one {# bot now uses the space default.} other {# bots now use the space default.}}"
@@ -1995,7 +1995,7 @@ msgstr "Token portador"
 
 #: apps/mobile/app/(settings)/mcp-server.tsx
 msgid "Bearer token (optional)"
-msgstr ""
+msgstr "Token portador (opcional)"
 
 #: apps/mobile/app/(settings)/_layout.tsx
 #: apps/mobile/app/(settings)/account.tsx
@@ -2436,7 +2436,7 @@ msgstr "Categoria"
 #. placeholder {0}: titles[role]
 #: apps/web/src/pages/model-settings/media-model-settings.tsx
 msgid "Change {0}"
-msgstr ""
+msgstr "Alterar {0}"
 
 #: apps/web/src/pages/model-settings/ModelRoleSettings.tsx
 msgid "Change {name}"
@@ -4476,7 +4476,7 @@ msgstr "Não foi possível começar a ensinar"
 
 #: apps/mobile/lib/thread/thread-voice.ts
 msgid "Could not start the call"
-msgstr ""
+msgstr "Não foi possível iniciar a chamada"
 
 #: apps/mobile/components/cards/AskActions.tsx
 msgid "Could not submit answer"
@@ -6394,7 +6394,7 @@ msgstr "A entrada de imagens não está configurada para este modelo."
 #: apps/mobile/components/models/media-model-settings.tsx
 #: apps/web/src/pages/model-settings/media-model-settings.tsx
 msgid "Image model"
-msgstr ""
+msgstr "Modelo de imagem"
 
 #: apps/web/src/pages/shell/bots/avatar-studio-popover.tsx
 msgid "Image upload area"
@@ -6403,7 +6403,7 @@ msgstr "Área de envio de imagem"
 #: apps/mobile/app/(settings)/account.tsx
 #: apps/web/src/components/billing/PlanUsage.tsx
 msgid "Images and video"
-msgstr ""
+msgstr "Imagens e vídeo"
 
 #: apps/mobile/app/(settings)/vault.tsx
 #: apps/web/src/components/settings/AccountDataSettings.tsx
@@ -6451,7 +6451,7 @@ msgstr "Neste bot"
 
 #: apps/mobile/app/(settings)/mcp-server.tsx
 msgid "In use"
-msgstr ""
+msgstr "Em uso"
 
 #: apps/mobile/app/(settings)/model-connection.tsx
 msgid "In your browser, sign in and paste this code when asked. Then return to Rakazo."
@@ -7723,7 +7723,7 @@ msgstr "Nova chave de API"
 
 #: apps/mobile/app/(settings)/mcp-server.tsx
 msgid "New bearer token"
-msgstr ""
+msgstr "Novo token portador"
 
 #: apps/mobile/app/_layout.tsx
 #: apps/mobile/components/inbox/inbox-render-item.tsx
@@ -7762,7 +7762,7 @@ msgstr "Novo chat em grupo"
 
 #: apps/mobile/app/(settings)/mcp-server.tsx
 msgid "New header value"
-msgstr ""
+msgstr "Novo valor do cabeçalho"
 
 #: apps/mobile/app/(settings)/vault.tsx
 msgid "New item"
@@ -8181,7 +8181,7 @@ msgstr "Não está em um site HTTPS"
 
 #: apps/web/src/pages/plugins/source-form.tsx
 msgid "Not reviewed by Rakazo. Only add it if you trust this address."
-msgstr ""
+msgstr "Não revisado pelo Rakazo. Adicione apenas se você confiar neste endereço."
 
 #. js-lingui-explicit-id
 #: packages/i18n/src/vault.ts
@@ -8265,7 +8265,7 @@ msgstr "A autorização OAuth foi cancelada."
 
 #: apps/mobile/app/(settings)/mcp-server.tsx
 msgid "OAuth client"
-msgstr ""
+msgstr "Cliente OAuth"
 
 #: apps/mobile/app/(settings)/mcp-server.tsx
 #: apps/web/src/pages/integrations/McpServerForm.tsx
@@ -8283,7 +8283,7 @@ msgstr "Falha na conexão OAuth"
 
 #: packages/i18n/src/thinking-level.ts
 msgid "Off"
-msgstr ""
+msgstr "Desativado"
 
 #: apps/mobile/app/(settings)/computers.tsx
 #: apps/web/src/components/computers/ComputerDeviceSettings.tsx
@@ -9058,7 +9058,7 @@ msgstr "Provedores"
 
 #: apps/web/src/pages/plugins/plugin-browse.tsx
 msgid "Public MCP directory"
-msgstr ""
+msgstr "Diretório público de MCP"
 
 #: apps/mobile/lib/api/endpoint.ts
 msgid "Public servers need https://. HTTP only works on your local network."
@@ -12132,7 +12132,7 @@ msgstr "Vocabulário de transcrição"
 
 #: apps/mobile/app/(settings)/mcp-server.tsx
 msgid "Transport"
-msgstr ""
+msgstr "Transporte"
 
 #: apps/mobile/app/(settings)/team-conversation.tsx
 #: apps/web/src/pages/settings/ExternalConversationSettings.tsx
@@ -12678,7 +12678,7 @@ msgstr "Versões"
 #: apps/mobile/components/models/media-model-settings.tsx
 #: apps/web/src/pages/model-settings/media-model-settings.tsx
 msgid "Video model"
-msgstr ""
+msgstr "Modelo de vídeo"
 
 #: apps/mobile/components/integrations/integration-plugins.tsx
 #: apps/web/src/pages/plugins/plugin-browse.tsx

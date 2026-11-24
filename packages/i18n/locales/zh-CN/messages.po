@@ -140,7 +140,7 @@ msgstr "{0} 次"
 #. placeholder {1}: usd(media.limitCents / 100)
 #: apps/web/src/components/billing/PlanUsage.tsx
 msgid "{0} of {1} left"
-msgstr ""
+msgstr "剩余 {0}（共 {1}）"
 
 #. placeholder {0}: sender.name
 #: apps/web/src/pages/settings/ExternalConversationSettings.tsx
@@ -420,7 +420,7 @@ msgstr "{label}，空"
 
 #: apps/mobile/app/(settings)/account.tsx
 msgid "{left} of {limit} left"
-msgstr ""
+msgstr "剩余 {left}（共 {limit}）"
 
 #: apps/mobile/components/settings/space-bots-model.tsx
 msgid "{moved, plural, one {# bot now uses the space default.} other {# bots now use the space default.}}"
@@ -1995,7 +1995,7 @@ msgstr "Bearer token"
 
 #: apps/mobile/app/(settings)/mcp-server.tsx
 msgid "Bearer token (optional)"
-msgstr ""
+msgstr "Bearer token（可选）"
 
 #: apps/mobile/app/(settings)/_layout.tsx
 #: apps/mobile/app/(settings)/account.tsx
@@ -2436,7 +2436,7 @@ msgstr "类别"
 #. placeholder {0}: titles[role]
 #: apps/web/src/pages/model-settings/media-model-settings.tsx
 msgid "Change {0}"
-msgstr ""
+msgstr "更改{0}"
 
 #: apps/web/src/pages/model-settings/ModelRoleSettings.tsx
 msgid "Change {name}"
@@ -4476,7 +4476,7 @@ msgstr "无法开始教学"
 
 #: apps/mobile/lib/thread/thread-voice.ts
 msgid "Could not start the call"
-msgstr ""
+msgstr "无法发起通话"
 
 #: apps/mobile/components/cards/AskActions.tsx
 msgid "Could not submit answer"
@@ -6394,7 +6394,7 @@ msgstr "此模型尚未配置图片输入。"
 #: apps/mobile/components/models/media-model-settings.tsx
 #: apps/web/src/pages/model-settings/media-model-settings.tsx
 msgid "Image model"
-msgstr ""
+msgstr "图片模型"
 
 #: apps/web/src/pages/shell/bots/avatar-studio-popover.tsx
 msgid "Image upload area"
@@ -6403,7 +6403,7 @@ msgstr "图片上传区域"
 #: apps/mobile/app/(settings)/account.tsx
 #: apps/web/src/components/billing/PlanUsage.tsx
 msgid "Images and video"
-msgstr ""
+msgstr "图片和视频"
 
 #: apps/mobile/app/(settings)/vault.tsx
 #: apps/web/src/components/settings/AccountDataSettings.tsx
@@ -6451,7 +6451,7 @@ msgstr "已在此 Bot"
 
 #: apps/mobile/app/(settings)/mcp-server.tsx
 msgid "In use"
-msgstr ""
+msgstr "使用中"
 
 #: apps/mobile/app/(settings)/model-connection.tsx
 msgid "In your browser, sign in and paste this code when asked. Then return to Rakazo."
@@ -7723,7 +7723,7 @@ msgstr "新建 API 密钥"
 
 #: apps/mobile/app/(settings)/mcp-server.tsx
 msgid "New bearer token"
-msgstr ""
+msgstr "新的 Bearer token"
 
 #: apps/mobile/app/_layout.tsx
 #: apps/mobile/components/inbox/inbox-render-item.tsx
@@ -7762,7 +7762,7 @@ msgstr "新建群聊"
 
 #: apps/mobile/app/(settings)/mcp-server.tsx
 msgid "New header value"
-msgstr ""
+msgstr "新的请求头值"
 
 #: apps/mobile/app/(settings)/vault.tsx
 msgid "New item"
@@ -8181,7 +8181,7 @@ msgstr "不是 HTTPS 网站"
 
 #: apps/web/src/pages/plugins/source-form.tsx
 msgid "Not reviewed by Rakazo. Only add it if you trust this address."
-msgstr ""
+msgstr "未经 Rakazo 审核。仅在你信任此地址时添加。"
 
 #. js-lingui-explicit-id
 #: packages/i18n/src/vault.ts
@@ -8265,7 +8265,7 @@ msgstr "OAuth 授权已取消。"
 
 #: apps/mobile/app/(settings)/mcp-server.tsx
 msgid "OAuth client"
-msgstr ""
+msgstr "OAuth 客户端"
 
 #: apps/mobile/app/(settings)/mcp-server.tsx
 #: apps/web/src/pages/integrations/McpServerForm.tsx
@@ -8283,7 +8283,7 @@ msgstr "OAuth 连接失败"
 
 #: packages/i18n/src/thinking-level.ts
 msgid "Off"
-msgstr ""
+msgstr "关闭"
 
 #: apps/mobile/app/(settings)/computers.tsx
 #: apps/web/src/components/computers/ComputerDeviceSettings.tsx
@@ -9058,7 +9058,7 @@ msgstr "提供商"
 
 #: apps/web/src/pages/plugins/plugin-browse.tsx
 msgid "Public MCP directory"
-msgstr ""
+msgstr "公开 MCP 目录"
 
 #: apps/mobile/lib/api/endpoint.ts
 msgid "Public servers need https://. HTTP only works on your local network."
@@ -12132,7 +12132,7 @@ msgstr "转写词汇"
 
 #: apps/mobile/app/(settings)/mcp-server.tsx
 msgid "Transport"
-msgstr ""
+msgstr "传输方式"
 
 #: apps/mobile/app/(settings)/team-conversation.tsx
 #: apps/web/src/pages/settings/ExternalConversationSettings.tsx
@@ -12678,7 +12678,7 @@ msgstr "版本"
 #: apps/mobile/components/models/media-model-settings.tsx
 #: apps/web/src/pages/model-settings/media-model-settings.tsx
 msgid "Video model"
-msgstr ""
+msgstr "视频模型"
 
 #: apps/mobile/components/integrations/integration-plugins.tsx
 #: apps/web/src/pages/plugins/plugin-browse.tsx

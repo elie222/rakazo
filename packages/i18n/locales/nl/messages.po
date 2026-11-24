@@ -140,7 +140,7 @@ msgstr "{0} keer"
 #. placeholder {1}: usd(media.limitCents / 100)
 #: apps/web/src/components/billing/PlanUsage.tsx
 msgid "{0} of {1} left"
-msgstr ""
+msgstr "Nog {0} van {1} over"
 
 #. placeholder {0}: sender.name
 #: apps/web/src/pages/settings/ExternalConversationSettings.tsx
@@ -420,7 +420,7 @@ msgstr "{label}, leeg"
 
 #: apps/mobile/app/(settings)/account.tsx
 msgid "{left} of {limit} left"
-msgstr ""
+msgstr "Nog {left} van {limit} over"
 
 #: apps/mobile/components/settings/space-bots-model.tsx
 msgid "{moved, plural, one {# bot now uses the space default.} other {# bots now use the space default.}}"
@@ -1995,7 +1995,7 @@ msgstr "Bearer-token"
 
 #: apps/mobile/app/(settings)/mcp-server.tsx
 msgid "Bearer token (optional)"
-msgstr ""
+msgstr "Bearer-token (optioneel)"
 
 #: apps/mobile/app/(settings)/_layout.tsx
 #: apps/mobile/app/(settings)/account.tsx
@@ -2436,7 +2436,7 @@ msgstr "Categorie"
 #. placeholder {0}: titles[role]
 #: apps/web/src/pages/model-settings/media-model-settings.tsx
 msgid "Change {0}"
-msgstr ""
+msgstr "{0} wijzigen"
 
 #: apps/web/src/pages/model-settings/ModelRoleSettings.tsx
 msgid "Change {name}"
@@ -4476,7 +4476,7 @@ msgstr "Onderwijs starten mislukt"
 
 #: apps/mobile/lib/thread/thread-voice.ts
 msgid "Could not start the call"
-msgstr ""
+msgstr "Gesprek starten mislukt"
 
 #: apps/mobile/components/cards/AskActions.tsx
 msgid "Could not submit answer"
@@ -6394,7 +6394,7 @@ msgstr "Afbeeldingsinvoer is niet ingesteld voor dit model."
 #: apps/mobile/components/models/media-model-settings.tsx
 #: apps/web/src/pages/model-settings/media-model-settings.tsx
 msgid "Image model"
-msgstr ""
+msgstr "Afbeeldingsmodel"
 
 #: apps/web/src/pages/shell/bots/avatar-studio-popover.tsx
 msgid "Image upload area"
@@ -6403,7 +6403,7 @@ msgstr "Gebied voor afbeeldingsuploads"
 #: apps/mobile/app/(settings)/account.tsx
 #: apps/web/src/components/billing/PlanUsage.tsx
 msgid "Images and video"
-msgstr ""
+msgstr "Afbeeldingen en video"
 
 #: apps/mobile/app/(settings)/vault.tsx
 #: apps/web/src/components/settings/AccountDataSettings.tsx
@@ -6451,7 +6451,7 @@ msgstr "In deze bot"
 
 #: apps/mobile/app/(settings)/mcp-server.tsx
 msgid "In use"
-msgstr ""
+msgstr "In gebruik"
 
 #: apps/mobile/app/(settings)/model-connection.tsx
 msgid "In your browser, sign in and paste this code when asked. Then return to Rakazo."
@@ -7723,7 +7723,7 @@ msgstr "Nieuwe API-sleutel"
 
 #: apps/mobile/app/(settings)/mcp-server.tsx
 msgid "New bearer token"
-msgstr ""
+msgstr "Nieuw bearer-token"
 
 #: apps/mobile/app/_layout.tsx
 #: apps/mobile/components/inbox/inbox-render-item.tsx
@@ -7762,7 +7762,7 @@ msgstr "Nieuwe groepschat"
 
 #: apps/mobile/app/(settings)/mcp-server.tsx
 msgid "New header value"
-msgstr ""
+msgstr "Nieuwe headerwaarde"
 
 #: apps/mobile/app/(settings)/vault.tsx
 msgid "New item"
@@ -8181,7 +8181,7 @@ msgstr "Geen HTTPS-site"
 
 #: apps/web/src/pages/plugins/source-form.tsx
 msgid "Not reviewed by Rakazo. Only add it if you trust this address."
-msgstr ""
+msgstr "Niet gecontroleerd door Rakazo. Voeg het alleen toe als je dit adres vertrouwt."
 
 #. js-lingui-explicit-id
 #: packages/i18n/src/vault.ts
@@ -8265,7 +8265,7 @@ msgstr "De OAuth-autorisatie is geannuleerd."
 
 #: apps/mobile/app/(settings)/mcp-server.tsx
 msgid "OAuth client"
-msgstr ""
+msgstr "OAuth-client"
 
 #: apps/mobile/app/(settings)/mcp-server.tsx
 #: apps/web/src/pages/integrations/McpServerForm.tsx
@@ -8283,7 +8283,7 @@ msgstr "OAuth-verbinding mislukt"
 
 #: packages/i18n/src/thinking-level.ts
 msgid "Off"
-msgstr ""
+msgstr "Uit"
 
 #: apps/mobile/app/(settings)/computers.tsx
 #: apps/web/src/components/computers/ComputerDeviceSettings.tsx
@@ -9058,7 +9058,7 @@ msgstr "Aanbieders"
 
 #: apps/web/src/pages/plugins/plugin-browse.tsx
 msgid "Public MCP directory"
-msgstr ""
+msgstr "Openbare MCP-directory"
 
 #: apps/mobile/lib/api/endpoint.ts
 msgid "Public servers need https://. HTTP only works on your local network."
@@ -12132,7 +12132,7 @@ msgstr "Transcriptiewoordenlijst"
 
 #: apps/mobile/app/(settings)/mcp-server.tsx
 msgid "Transport"
-msgstr ""
+msgstr "Transport"
 
 #: apps/mobile/app/(settings)/team-conversation.tsx
 #: apps/web/src/pages/settings/ExternalConversationSettings.tsx
@@ -12678,7 +12678,7 @@ msgstr "Versies"
 #: apps/mobile/components/models/media-model-settings.tsx
 #: apps/web/src/pages/model-settings/media-model-settings.tsx
 msgid "Video model"
-msgstr ""
+msgstr "Videomodel"
 
 #: apps/mobile/components/integrations/integration-plugins.tsx
 #: apps/web/src/pages/plugins/plugin-browse.tsx
