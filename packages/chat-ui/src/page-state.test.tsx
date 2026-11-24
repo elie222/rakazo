@@ -37,5 +37,6 @@ it("saves a page's changes one request at a time, retrying a failure and droppin
 it("adds saved values to a page read that carries the reader's values, and only to one", () => {
   const read = { code: "x", readerState: { a: 1, b: 2 } };
   expect(withSavedValues(read, { b: 3 })).toEqual({ code: "x", readerState: { a: 1, b: 3 } });
-  expect(withSavedValues({ code: "old version" }, { b: 3 })).toEqual({ code: "old version" });
+  const older: { code: string; readerState?: { b: number } } = { code: "old version" };
+  expect(withSavedValues(older, { b: 3 })).toEqual({ code: "old version" });
 });
