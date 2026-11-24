@@ -213,7 +213,7 @@ function permissionGroup(label: string) {
     ?.parentElement;
 }
 
-it("shows pending capabilities as read-only and moves a granted capability to Authorized", async () => {
+it("shows only supported permissions and moves a granted permission to Authorized", async () => {
   const calendar = { kind: "calendar", granted: false };
   mocks.permissions.mockResolvedValue([calendar]);
   mocks.requestPermission.mockImplementation(async () => {
@@ -224,22 +224,7 @@ it("shows pending capabilities as read-only and moves a granted capability to Au
     "CalendarConnect",
   );
   expect(permissionGroup("Authorized")?.textContent).toBe("AuthorizedNone");
-  const development = permissionGroup("In development");
-  expect(development?.querySelector("button")).toBeNull();
-  expect(
-    [...(development?.querySelectorAll("[data-label]") ?? [])].map((row) =>
-      row.getAttribute("data-label"),
-    ),
-  ).toEqual([
-    "Alarm and timer",
-    "Android app usage",
-    "Android calendar",
-    "Contacts",
-    "Android file system",
-    "Android location",
-    "Notifications",
-    "SMS",
-  ]);
+  expect(permissionGroup("In development")).toBeUndefined();
 
   await act(async () => permissionGroup("Available")?.querySelector("button")?.click());
   await settle();
@@ -287,6 +272,15 @@ it("opens system settings when another prompt is unavailable and refreshes on re
     "CalendarConnect",
   );
   expect(permissionGroup("Authorized")?.textContent).toBe("AuthorizedNone");
+});
+
+it("shows no permission controls when the device has no supported permissions", async () => {
+  mocks.permissions.mockResolvedValue([]);
+  await render(<AppPermissionsSettings />);
+
+  expect(container.textContent).toContain("No app permissions to manage on this device");
+  expect(container.textContent).not.toContain("In development");
+  expect(container.querySelector("button")).toBeNull();
 });
 
 it("keeps a declined native prompt in Available", async () => {

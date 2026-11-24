@@ -34,16 +34,6 @@ export default function AppPermissionsSettings() {
     },
   });
   const apps = permissions.data ?? [];
-  const catalog = [
-    t`Alarm and timer`,
-    t`Android app usage`,
-    t`Android calendar`,
-    t`Contacts`,
-    t`Android file system`,
-    t`Android location`,
-    t`Notifications`,
-    t`SMS`,
-  ];
 
   function permissionRows(granted: boolean) {
     const group = apps.filter((app) => app.granted === granted);
@@ -68,10 +58,16 @@ export default function AppPermissionsSettings() {
         contentInsetAdjustmentBehavior="automatic"
       >
         {permissions.data ? (
-          <>
-            <SettingsGroup label={t`Available`}>{permissionRows(false)}</SettingsGroup>
-            <SettingsGroup label={t`Authorized`}>{permissionRows(true)}</SettingsGroup>
-          </>
+          apps.length ? (
+            <>
+              <SettingsGroup label={t`Available`}>{permissionRows(false)}</SettingsGroup>
+              <SettingsGroup label={t`Authorized`}>{permissionRows(true)}</SettingsGroup>
+            </>
+          ) : (
+            <SettingsGroup>
+              <SettingsRow title={t`No app permissions to manage on this device`} />
+            </SettingsGroup>
+          )
         ) : permissions.error ? (
           <SettingsGroup>
             <SettingsRow
@@ -90,11 +86,6 @@ export default function AppPermissionsSettings() {
               : errorText(permissions.error, t`Could not load permissions.`)}
           </Text>
         ) : null}
-        <SettingsGroup label={t`In development`}>
-          {catalog.map((title) => (
-            <SettingsRow key={title} title={title} />
-          ))}
-        </SettingsGroup>
       </ScrollView>
     </SafeAreaView>
   );
