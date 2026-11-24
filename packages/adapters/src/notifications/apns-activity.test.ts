@@ -81,6 +81,19 @@ describe("APNs work activity", () => {
     expect(await send()).toBe("unavailable");
   });
 
+  it("drops a start token Apple rejects once a card got through", async () => {
+    const reply = vi.fn<ApnsTransport>();
+    const push = new ApnsActivityProvider(config, reply);
+    const start = () =>
+      push.start("fake-start-token", { state: working, ended: false, urgent: true, at: 1_000 });
+    reply.mockResolvedValueOnce({ status: 400, reason: "BadDeviceToken" });
+    expect(await start()).toBe("unavailable");
+    reply.mockResolvedValueOnce({ status: 200 });
+    expect(await start()).toBe("sent");
+    reply.mockResolvedValueOnce({ status: 400, reason: "BadDeviceToken" });
+    expect(await start()).toBe("invalid");
+  });
+
   it("starts a card with the phone's start token, asking iOS for the card's own token", async () => {
     const transport = vi.fn<ApnsTransport>().mockResolvedValue({ status: 200 });
     const push = new ApnsActivityProvider(config, transport);
