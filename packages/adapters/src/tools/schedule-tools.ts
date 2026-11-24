@@ -351,7 +351,7 @@ async function routineEventsFor(
 function webhookKeyStore(
   deps: Pick<ScheduleToolDeps, "secretStore">,
   events: RoutineEvents,
-): { store?: Pick<SecretStore, "put"> } | { error: string } {
+): { store?: NonNullable<ScheduleToolDeps["secretStore"]> } | { error: string } {
   if (!events.webhookEnabled && !events.githubEnabled) return {};
   if (!deps.secretStore) return { error: "Webhook keys are not available on this server." };
   return { store: deps.secretStore };

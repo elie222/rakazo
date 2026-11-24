@@ -55,6 +55,16 @@ describe("routineSaveRequest", () => {
     expect("create" in created && created.create.endsAt).toBe("2031-12-24T22:59:59.999Z");
   });
 
+  it("gives a new routine with a webhook no end", () => {
+    const created = routineSaveRequest(
+      { ...draftFromRoutine(routine), webhookEnabled: true, endsOn: "2031-12-24" },
+      null,
+      "bot-1",
+      "UTC",
+    );
+    expect("create" in created && created.create.endsAt).toBeUndefined();
+  });
+
   it("sends Use my computer only when the owner flips it, and never to a copy", () => {
     const own = { ...routine, useComputer: false };
     const draft = draftFromRoutine(own);
