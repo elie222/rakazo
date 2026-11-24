@@ -26,6 +26,7 @@ import { bestEffort, getLogger } from "@rakazo/logging";
 import { routineRunModelPin } from "../../models/model-selection.js";
 import { protectedComputerLifecycleRefusal } from "../../providers/computer/desktop/desktop-command-guard.js";
 import { findPendingRoutineTick, routineTimerNonce } from "../../routines/routine-coalescing.js";
+import { routineGroupThreadId } from "../../routines/routine-thread.js";
 import {
   nextRoutineWatchAt,
   parseRoutineWatch,
@@ -212,25 +213,8 @@ export async function wakeRoutine(deps: ExecutorDeps, routineId: string, schedul
     return;
   }
   if (!bot?.thread) return;
-  const targetThread = routine.threadId
-    ? await deps.prisma.thread.findFirst({
-        where: {
-          id: routine.threadId,
-          spaceId: routine.spaceId,
-          OR: [
-            { botId: bot.id },
-            {
-              group: {
-                archivedAt: null,
-                members: { some: { botId: bot.id } },
-              },
-            },
-          ],
-        },
-        select: { id: true },
-      })
-    : null;
-  const thread = targetThread ?? bot.thread;
+  const targetThreadId = await routineGroupThreadId(deps.prisma, routine, bot.id);
+  const thread = targetThreadId ? { id: targetThreadId } : bot.thread;
   // A change trigger checks first, without a model; only news becomes a run.
   const watchTick =
     routine.watch == null
@@ -295,12 +279,25 @@ export async function wakeRoutine(deps: ExecutorDeps, routineId: string, schedul
         ...routineRunModelPin(current),
       });
       if (pending) return { ...pending, coalesced: true };
+      // Check after coalescing: a queued tick can be claimed while the lookup tries to reuse it.
+      // It still owns this timer's work until it finishes or its question is answered and resumed.
+      const activeTick = await tx.run.findFirst({
+        where: {
+          routineId: routine.id,
+          userId: routine.userId,
+          trigger: "routine",
+          status: { in: [...ACTIVE_RUN_STATUSES] },
+          clientNonce: { startsWith: routineTimerNonce(routine.id, "") },
+        },
+        select: { id: true },
+      });
+      if (activeTick) return "skipped" as const;
       // An edit racing an earlier tick can rewind the schedule onto an occurrence that already ran.
       const fired = await tx.run.findUnique({
         where: { spaceId_clientNonce: { spaceId: routine.spaceId, clientNonce: timerNonce } },
         select: { id: true },
       });
-      if (fired) return "fired" as const;
+      if (fired) return "skipped" as const;
     }
     const task = await tx.task.create({
       data: {
@@ -329,13 +326,13 @@ export async function wakeRoutine(deps: ExecutorDeps, routineId: string, schedul
     return { ...run, coalesced: false };
   });
   if (!claimed) return;
-  if (claimed === "fired") {
+  if (claimed === "skipped") {
     if (nextRunAt) await deps.jobs.enqueue(routineWakeupJob(routine.id, nextRunAt));
     return;
   }
   if ("cancelledEvents" in claimed && claimed.cancelledEvents) {
     for (const event of claimed.cancelledEvents) {
-      await deps.events.notify(event.threadId, event.seq).catch(() => undefined);
+      await deps.events.notify(event.threadId, event.seq);
     }
   }
   // Enqueue continuation first so a thread-signal failure cannot strand the run.

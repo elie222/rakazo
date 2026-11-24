@@ -51,6 +51,7 @@ function makePrisma(
         const row = store.find((item) => item.id === where.id && inScope(item, where));
         return row
           ? {
+              ...row,
               files: row.files ?? null,
               spaceId: row.spaceId,
               allSpaces: row.allSpaces === true,
@@ -216,6 +217,24 @@ describe("skill tools", () => {
       name: "billing",
       files: ["notes.txt", "references/rates.md"],
     });
+    expect(prisma.agentSkill.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ select: { id: true, name: true } }),
+    );
+    expect(prisma.agentSkill.findFirst).toHaveBeenCalledTimes(1);
+    expect(prisma.agentSkill.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          id: "plugin-1",
+          name: "billing",
+          userId: owner.userId,
+          OR: [
+            { spaceId: owner.spaceId },
+            { allSpaces: true },
+            { availableIn: { some: { spaceId: owner.spaceId } } },
+          ],
+        },
+      }),
+    );
     expect(
       await skillReadFromTool(prisma as never, owner, {
         name: "billing",
@@ -225,6 +244,12 @@ describe("skill tools", () => {
     expect(
       await skillReadFromTool(prisma as never, owner, { name: "billing", file: "../secrets.md" }),
     ).toMatchObject({ error: expect.stringContaining("No file") });
+
+    // Visibility can change between matching a name and fetching the document.
+    prisma.agentSkill.findFirst.mockResolvedValueOnce(null);
+    expect(await skillReadFromTool(prisma as never, owner, { name: "billing" })).toEqual({
+      error: "Skill not found.",
+    });
   });
 
   it("preserves extra frontmatter keys on update", async () => {

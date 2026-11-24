@@ -24,7 +24,7 @@ export const serviceTools: ConnectorTool[] = [
   {
     name: "web_fetch",
     description:
-      "Fetch a public http(s) page and return readable text (title + content). Read-only; no JavaScript. Use after web_search when you need the page itself.",
+      "Fetch a public http(s) page as readable text (title + content), or an image to look at. Read-only; no JavaScript. Use after web_search when you need the page itself.",
     inputSchema: {
       type: "object",
       properties: {

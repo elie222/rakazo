@@ -1,12 +1,11 @@
 import type { ConnectorTool } from "@rakazo/adapter-kit";
 import { HISTORY_QUERIES_MAX_BYTES, HISTORY_SEARCH_KINDS } from "@rakazo/contracts";
 
-/** History, email and memory tools. */
-export const memoryTools: ConnectorTool[] = [
-  {
+/** my_chats is offered only to runs historyMyChatsAllowed lets use it. */
+function searchHistoryTool(myChats: boolean): ConnectorTool {
+  return {
     name: "search_history",
-    description:
-      "Search literal keywords in earlier messages and their file names (default this_chat); every word of a query must match the same message. To find an earlier conversation, fan out 2–4 keyword variants via queries with scope my_chats; narrow by date or botId when hinted. my_chats requires a direct human app run. Returns at most five matches, newest first, grouped by chat; matchedQueryIndexes are zero-based indexes into queries. Then read_history around the best hits using their threadId. When nextSearch is present, call search_history with those arguments to continue. Coverage applies only to the requested literal query and range; an empty narrower query does not exhaust an unfinished broader query. Use read_history to check surrounding messages and corrections. Read a listed attachment at its path and name it in your answer.",
+    description: `Search literal keywords in earlier messages ${myChats ? "and their file names (default this_chat)" : "in this chat and their file names"}; every word of a query must match the same message.${myChats ? " To find an earlier conversation, fan out 2–4 keyword variants via queries with scope my_chats; narrow by date or botId when hinted. my_chats requires a direct human app run." : ""} Returns at most five matches, newest first, grouped by chat; matchedQueryIndexes are zero-based indexes into queries. Then read_history around the best hits using their threadId. When nextSearch is present, call search_history with those arguments to continue. Coverage applies only to the requested literal query and range; an empty narrower query does not exhaust an unfinished broader query. Use read_history to check surrounding messages and corrections. Read a listed attachment at its path and name it in your answer.`,
     inputSchema: {
       type: "object",
       properties: {
@@ -24,7 +23,7 @@ export const memoryTools: ConnectorTool[] = [
           minItems: 1,
           maxItems: 5,
         },
-        scope: { type: "string", enum: ["this_chat", "my_chats"] },
+        ...(myChats ? { scope: { type: "string", enum: ["this_chat", "my_chats"] } } : {}),
         botId: { type: "string" },
         kinds: {
           description:
@@ -72,7 +71,14 @@ export const memoryTools: ConnectorTool[] = [
         },
       ],
     },
-  },
+  };
+}
+
+export const searchHistoryThisChat = searchHistoryTool(false);
+
+/** History, email and memory tools. */
+export const memoryTools: ConnectorTool[] = [
+  searchHistoryTool(true),
   {
     name: "claim_email_address",
     description:
@@ -202,7 +208,7 @@ export const memoryTools: ConnectorTool[] = [
   {
     name: "save_memory",
     description:
-      "Store a durable fact in this bot's semantic memory (preferences, decisions, recurring context). Use for anything worth recalling in future conversations.",
+      "Store a durable fact in this bot's semantic memory, even one the user mentions in passing without asking.",
     inputSchema: {
       type: "object",
       properties: {

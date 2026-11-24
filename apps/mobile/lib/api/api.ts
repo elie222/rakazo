@@ -13,10 +13,10 @@ import {
   readBoundedJsonResponse,
   withAbort,
 } from "@rakazo/core";
+import { identityLabels } from "@rakazo/i18n/identity-display";
 import { clientCorrelationHeaders, responseCorrelation } from "@rakazo/logging/monitoring";
 import * as SecureStore from "expo-secure-store";
 import { followSelectedSpace, selectedSpaceChanged } from "../billing/referral";
-import { identityLabels } from "../bots/identity-display";
 import {
   newMobileAvatarSnapshotRequest,
   rememberMobileAvatarSnapshot,
@@ -33,7 +33,7 @@ import {
   clearSessionToken,
   currentSessionGeneration,
   loadSessionToken,
-  saveVerifiedIntegrationsScope,
+  saveVerifiedScope,
   sessionOnlyInMemory,
   sessionSaveInProgress,
   snapshotSessionToken,
@@ -883,7 +883,7 @@ async function request(
       typeof verifiedUser?.userId === "string" &&
       typeof verifiedUser.spaceId === "string"
     ) {
-      await saveVerifiedIntegrationsScope(requestSessionGeneration, {
+      await saveVerifiedScope(requestSessionGeneration, {
         apiBase: requestApiBase,
         userId: verifiedUser.userId,
         spaceId: requestSpaceId || verifiedUser.spaceId,

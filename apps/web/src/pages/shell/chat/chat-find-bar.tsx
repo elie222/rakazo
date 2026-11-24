@@ -170,7 +170,7 @@ export function ChatFindBar({
           className="shrink-0 px-1 text-label tabular-nums text-muted-foreground"
           aria-live="polite"
         >
-          {current + 1}/{ranges.length}
+          {ranges.length === 0 ? t`No matches` : `${current + 1}/${ranges.length}`}
         </span>
       ) : null}
       <Button

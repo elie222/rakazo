@@ -1,0 +1,11 @@
+{
+  "ios": {
+    "NSCameraUsageDescription": "Rakazo, bir bota gönderilen mesaja fotoğraf ekleyebilmeniz için kamerayı kullanır.",
+    "NSPhotoLibraryUsageDescription": "Rakazo, bir bota gönderilen mesaja görsel ekleyebilmeniz için fotoğraf arşivinizi kullanır.",
+    "NSPhotoLibraryAddUsageDescription": "Rakazo, Çıktılar'dan indirdiğiniz fotoğrafları ve videoları fotoğraf arşivinize kaydeder.",
+    "NSLocalNetworkUsageDescription": "Rakazo, yerel ağınızdaki kendi barındırdığınız Rakazo sunucusuna bağlanır.",
+    "NSMicrophoneUsageDescription": "Rakazo, botlarınızla sesli görüşmeler için mikrofonu kullanır.",
+    "NSSpeechRecognitionUsageDescription": "Rakazo, sesli görüşmeler sırasında konuşmanızı mesajlara dönüştürür.",
+    "NSFaceIDUsageDescription": "Rakazo'nun Face ID kullanmasına izin verin."
+  }
+}

@@ -1,5 +1,8 @@
 import { SandboxRateLimitError } from "@rakazo/adapter-kit";
-import type { RemoteDesktopSdk } from "../../../computers/sandbox/remote-desktop-sandbox.js";
+import type {
+  RemoteDesktop,
+  RemoteDesktopSdk,
+} from "../../../computers/sandbox/remote-desktop-sandbox.js";
 import { RemoteDesktopSandboxProvider } from "../../../computers/sandbox/remote-desktop-sandbox.js";
 import { E2B_COMPUTER_TEMPLATE, E2B_DESKTOP_TEMPLATE } from "./e2b-template.js";
 
@@ -44,11 +47,26 @@ function withRateLimitErrors(sdk: RemoteDesktopSdk): RemoteDesktopSdk {
         : error;
     }
   };
+  const wrapDesktop = (desktop: RemoteDesktop): RemoteDesktop => {
+    const files = desktop.files;
+    const wrappedFiles = {
+      makeDir: (...args: Parameters<typeof files.makeDir>) => limited(() => files.makeDir(...args)),
+      list: (...args: Parameters<typeof files.list>) => limited(() => files.list(...args)),
+      getInfo: (...args: Parameters<typeof files.getInfo>) => limited(() => files.getInfo(...args)),
+      read: (...args: Parameters<typeof files.read>) => limited(() => files.read(...args)),
+      write: (...args: Parameters<typeof files.write>) => limited(() => files.write(...args)),
+    };
+    // Keep the desktop's other members (class-instance methods on its prototype) by delegating
+    // through the prototype chain instead of spreading, which would drop them.
+    return Object.create(desktop, {
+      files: { value: wrappedFiles, writable: true, configurable: true },
+    }) as RemoteDesktop;
+  };
   const { isRunning } = sdk;
   return {
     ...sdk,
-    create: (...args) => limited(() => sdk.create(...args)),
-    connect: (...args) => limited(() => sdk.connect(...args)),
+    create: (...args) => limited(() => sdk.create(...args)).then(wrapDesktop),
+    connect: (...args) => limited(() => sdk.connect(...args)).then(wrapDesktop),
     pause: (...args) => limited(() => sdk.pause(...args)),
     kill: (...args) => limited(() => sdk.kill(...args)),
     ...(isRunning && { isRunning: (...args) => limited(() => isRunning(...args)) }),

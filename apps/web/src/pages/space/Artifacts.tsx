@@ -1047,7 +1047,7 @@ function PreviewPane({
               <div className="absolute bottom-3 end-3 flex items-center gap-1.5 rounded-full bg-black/70 px-2.5 py-1.5 text-caption text-white">
                 <Lock size={12} strokeWidth={2} />
                 <span>
-                  <Trans>Isolated preview — no access to your account</Trans>
+                  <Trans>Isolated preview: no access to your account</Trans>
                 </span>
               </div>
             ) : null}
@@ -1099,7 +1099,7 @@ function ArtifactPreview({ artifact, bytes }: { artifact: Artifact; bytes: Uint8
     case "none":
       return (
         <div className="grid h-full place-items-center px-6 text-center text-body text-muted-foreground/80">
-          <Trans>Preview isn't available for this file type — download it to view it.</Trans>
+          <Trans>Preview isn't available for this file type. Download it to view it.</Trans>
         </div>
       );
   }

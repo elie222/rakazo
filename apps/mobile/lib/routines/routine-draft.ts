@@ -1,6 +1,11 @@
 import type { Routine, RpcInput } from "@rakazo/contracts";
 import type { RoutineDraft } from "@rakazo/core";
-import { cronFromPreset, draftFromRoutine, isOneShotRoutineCrons } from "@rakazo/core";
+import {
+  cronFromPreset,
+  draftFromRoutine,
+  isOneShotRoutineCrons,
+  routineComputerUpdate,
+} from "@rakazo/core";
 import type { RoutineWebTrigger } from "./routine";
 import { routineTriggerNames } from "./routine";
 
@@ -8,7 +13,11 @@ import { routineTriggerNames } from "./routine";
  * The editor's draft. A web-only trigger is left out until the person removes it here, so a
  * draft only ever turns one off.
  */
-export type MobileRoutineDraft = RoutineDraft & Partial<Pick<Routine, RoutineWebTrigger>>;
+export type MobileRoutineDraft = RoutineDraft &
+  Partial<Pick<Routine, RoutineWebTrigger>> & {
+    /** Set once the owner flips "Use my computer"; see Routine.useComputer. */
+    useComputer?: boolean;
+  };
 
 /** The routine as this draft would leave it, for the triggers mobile can only remove. */
 export function routineWithDraftTriggers(routine: Routine, draft: MobileRoutineDraft): Routine {
@@ -38,9 +47,11 @@ function routineChanges(draft: MobileRoutineDraft, routine: Routine) {
   const crons = draft.schedules.map(cronFromPreset);
   // A schedule merely opened is not a change, even when the editor would spell it differently.
   const savedCrons = draftFromRoutine(routine).schedules.map(cronFromPreset);
+  const name = draft.name !== routine.name ? draft.name.trim() : undefined;
+  const prompt = draft.prompt !== routine.prompt ? draft.prompt.trim() : undefined;
   return {
-    ...(draft.name !== routine.name ? { name: draft.name.trim() } : {}),
-    ...(draft.prompt !== routine.prompt ? { prompt: draft.prompt.trim() } : {}),
+    ...(name !== undefined ? { name } : {}),
+    ...(prompt !== undefined ? { prompt } : {}),
     ...(!routineScheduleLocked(routine) && !sameCrons(crons, savedCrons) ? { crons } : {}),
     ...(draft.emailSenders !== routine.emailSenders ? { emailSenders: draft.emailSenders } : {}),
     ...(draft.active !== routine.active ? { active: draft.active } : {}),
@@ -48,6 +59,12 @@ function routineChanges(draft: MobileRoutineDraft, routine: Routine) {
     ...(draft.githubEnabled === false && routine.githubEnabled ? { githubEnabled: false } : {}),
     ...(draft.messageProvider === null && routine.messageProvider ? { messageProvider: null } : {}),
     ...(draft.watch === null && routine.watch ? { watch: null } : {}),
+    ...routineComputerUpdate(routine, {
+      useComputer: draft.useComputer,
+      name: name ?? routine.name,
+      prompt: prompt ?? routine.prompt,
+      eventTriggered: Boolean(draft.emailSenders),
+    }),
   };
 }
 
@@ -75,6 +92,7 @@ export function routineSaveRequest(
   draft: MobileRoutineDraft,
   routine: Routine | null,
   botId: string,
+  /** The device's zone, for a new routine that isn't a copy. */
   timezone: string,
   /**
    * For a new routine started as a copy: the triggers and settings it keeps from it. Not its model,
@@ -101,7 +119,7 @@ export function routineSaveRequest(
         name,
         prompt,
         crons,
-        timezone,
+        timezone: draft.timezone ?? timezone,
         active: draft.active,
         notify: kept?.notify ?? true,
         ...(draft.emailSenders ? { emailSenders: draft.emailSenders } : {}),

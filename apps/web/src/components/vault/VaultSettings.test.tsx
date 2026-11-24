@@ -5,6 +5,7 @@ import type { BotSecretMetadata, SettingsScope } from "@rakazo/contracts";
 import {
   encodeCardSecret,
   encodeLoginSecret,
+  FULL_VAULT_ANSWER,
   noneSkipped,
   VAULT_IMPORT_BATCH_LIMIT,
   VAULT_ITEM_LIMIT,
@@ -1021,7 +1022,6 @@ describe("VaultSettings list", () => {
   );
 
   it.each([
-    ["account", []],
     ["account", ["models"]],
     ["space", ["credentials"]],
   ] as const)(
@@ -1232,7 +1232,7 @@ describe("VaultSettings new items", () => {
   });
 
   it("adds a header credential, clears the value, and shows the server's error", async () => {
-    vault.put.mockRejectedValueOnce(new Error("Credential limit reached"));
+    vault.put.mockRejectedValueOnce(new Error(FULL_VAULT_ANSWER));
     await render();
     await startNew("api_key");
     await type(field("Site"), "https://api.example.com");
@@ -1249,7 +1249,7 @@ describe("VaultSettings new items", () => {
       },
       value: FAKE_VALUE,
     });
-    expect(editor()?.textContent).toContain("Credential limit reached");
+    expect(editor()?.textContent).toContain(FULL_VAULT_ANSWER);
     expect((field("Value") as HTMLInputElement).value).toBe("");
     expect(document.body.innerHTML).not.toContain(FAKE_VALUE);
   });

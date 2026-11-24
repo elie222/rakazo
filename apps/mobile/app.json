@@ -4,7 +4,7 @@
     "slug": "rakazo",
     "owner": "inbox-zero",
     "scheme": "rakazo",
-    "version": "1.0.17",
+    "version": "1.0.19",
     "orientation": "default",
     "userInterfaceStyle": "automatic",
     "icon": "./assets/icon.png",
@@ -37,6 +37,13 @@
         }
       ],
       "expo-localization",
+      [
+        "expo-media-library",
+        {
+          "savePhotosPermission": "Rakazo saves photos and videos you download from Artifacts to your photo library.",
+          "granularPermissions": []
+        }
+      ],
       [
         "expo-calendar",
         {
@@ -105,9 +112,21 @@
       "expo-apple-authentication"
     ],
     "locales": {
+      "de": "./locales/de.json",
       "es": "./locales/es.json",
+      "fr": "./locales/fr.json",
+      "he": "./locales/he.json",
+      "hi": "./locales/hi.json",
+      "ja": "./locales/ja.json",
+      "ko": "./locales/ko.json",
+      "nl": "./locales/nl.json",
       "pl": "./locales/pl.json",
-      "th": "./locales/th.json"
+      "pt-BR": "./locales/pt-BR.json",
+      "ru": "./locales/ru.json",
+      "th": "./locales/th.json",
+      "tr": "./locales/tr.json",
+      "zh-Hans": "./locales/zh-Hans.json",
+      "zh-Hant": "./locales/zh-Hant.json"
     },
     "ios": {
       "bundleIdentifier": "com.rakazo.app",
@@ -133,6 +152,7 @@
       }
     },
     "android": {
+      "blockedPermissions": ["android.permission.READ_MEDIA_VISUAL_USER_SELECTED"],
       "package": "com.rakazo.app",
       "versionCode": 10,
       "softwareKeyboardLayoutMode": "resize",

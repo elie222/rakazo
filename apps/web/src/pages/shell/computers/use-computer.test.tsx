@@ -650,6 +650,7 @@ it("still reads the screen when the refresh after this tab's release fails", asy
       }),
       refreshGroupThread: vi.fn(),
       onUpgrade: vi.fn(),
+      onSendError: vi.fn(),
     });
     return null;
   }
@@ -697,6 +698,7 @@ it("reads the new screen beside the thread refresh after this tab releases contr
       refreshThread,
       refreshGroupThread: vi.fn(),
       onUpgrade: vi.fn(),
+      onSendError: vi.fn(),
     });
     return null;
   }
@@ -767,6 +769,7 @@ it("closes the computer view on Escape, but not on the Escape that ends an IME c
       refreshThread: vi.fn(),
       refreshGroupThread: vi.fn(),
       onUpgrade: vi.fn(),
+      onSendError: vi.fn(),
     });
     // Stands in for the view's "Teach a task" goal box, whose popover lets a composing Escape bubble.
     return (
@@ -828,6 +831,7 @@ it("reads a running computer's screen for the bot panel without keeping it awake
       refreshThread: vi.fn(),
       refreshGroupThread: vi.fn(),
       onUpgrade: vi.fn(),
+      onSendError: vi.fn(),
     });
     return null;
   }
@@ -896,6 +900,7 @@ async function renderTakingControl(
       }),
       refreshGroupThread: vi.fn(),
       onUpgrade: vi.fn(),
+      onSendError: vi.fn(),
     });
     return null;
   }
@@ -1086,6 +1091,7 @@ it("offers Upgrade instead of a retry once the computer hours are spent", async 
       refreshThread: vi.fn(),
       refreshGroupThread: vi.fn(),
       onUpgrade,
+      onSendError: vi.fn(),
     });
     return <>{controls.computerScreenError}</>;
   }
@@ -1122,6 +1128,7 @@ it("offers Recover for a computer that failed to boot", async () => {
       refreshThread: vi.fn(),
       refreshGroupThread: vi.fn(),
       onUpgrade: vi.fn(),
+      onSendError: vi.fn(),
     });
     return <>{controls.computerScreenError}</>;
   }

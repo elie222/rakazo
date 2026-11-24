@@ -1,9 +1,9 @@
 import { t } from "@lingui/core/macro";
 import type { RunActivityRow } from "@rakazo/contracts";
+import { activityPreview } from "@rakazo/i18n/activity";
 import { describe, expect, it, vi } from "vitest";
 import {
   activityFiltersActive,
-  activityPreview,
   clearActivityFilterField,
   emptyActivityFilters,
   filterActivityRuns,

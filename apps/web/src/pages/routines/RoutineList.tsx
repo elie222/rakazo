@@ -3,10 +3,10 @@ import { Trans, useLingui } from "@lingui/react/macro";
 import type { Routine } from "@rakazo/contracts";
 import type { CronLabels } from "@rakazo/core";
 import { ENGLISH_CRON_LABELS, formatCron, isOneShotRoutineCrons } from "@rakazo/core";
+import { cronLabels } from "@rakazo/i18n/cron";
 import { Button, Empty, EmptyHeader, EmptyMedia, EmptyTitle, Switch } from "@rakazo/ui-web";
 import type { LucideIcon } from "lucide-react";
 import { Clock, Eye, GitBranch, Globe, Mail, MessageSquare, Plus, Repeat } from "lucide-react";
-import { cronLabels } from "../../lib/routines/cron";
 import { OwnerLabel } from "./routine-editor/access-note";
 
 export function routineTriggerSummary(

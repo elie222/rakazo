@@ -11,6 +11,7 @@ import {
 } from "@rakazo/contracts";
 import { canDeleteOrganization } from "@rakazo/core";
 import { writeSaved } from "@rakazo/core/query";
+import { formatBillingAmount } from "@rakazo/i18n/billing";
 import { botColors, botEyeColor, typeScale } from "@rakazo/ui-tokens";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import type { ComponentProps, ReactNode } from "react";
@@ -240,6 +241,9 @@ export default function Paywall() {
             else if (nativeEvent.event === "sign-out") void leave();
             else organizationAction(nativeEvent.event);
           }}
+          // The 44-point target reaches 2 points past the bar's inset so the icon stays put; the
+          // menu host drops its child's margin, so the offset sits on the host.
+          style={{ marginEnd: -2 }}
         >
           <View
             accessible
@@ -358,11 +362,12 @@ export default function Paywall() {
   const subscribed = dismissible ? subscribedPlan(status) : null;
   const annualCents = status.byokPriceCents ? status.byokAnnualPriceCents : null;
   const yearly = interval === "year" && annualCents;
-  const monthlyPrice = status.byokPriceCents ? `$${status.byokPriceCents / 100}` : null;
-  const annualMonthlyPrice = annualCents ? `$${Math.round(annualCents / 12) / 100}` : null;
+  const usd = (cents: number) => formatBillingAmount(cents, "usd", dateLocaleForUi());
+  const monthlyPrice = status.byokPriceCents ? usd(status.byokPriceCents) : null;
+  const annualMonthlyPrice = annualCents ? usd(Math.round(annualCents / 12)) : null;
   // What the chosen plan bills each period, as the terms and trial timeline state it.
-  const ownKeyPrice = yearly ? `$${yearly / 100}` : monthlyPrice;
-  const creditPrice = `$${amount / 100}`;
+  const ownKeyPrice = yearly ? usd(yearly) : monthlyPrice;
+  const creditPrice = usd(amount);
   const features: { label: string; ios: string; android: SymbolName; color: string }[] = [
     {
       label: t`Bots with their own computer`,
@@ -502,7 +507,7 @@ export default function Paywall() {
                   <MenuView
                     actions={MODEL_CREDIT_AMOUNTS.map((value) => ({
                       id: String(value),
-                      title: t`${ph({ price: `$${value / 100}` })} / month`,
+                      title: t`${ph({ price: usd(value) })} / month`,
                       state: amount === value ? ("on" as const) : ("off" as const),
                     }))}
                     onPressAction={({ nativeEvent }) => {
@@ -723,7 +728,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     paddingHorizontal: 20,
   },
-  account: { width: 40, height: 40, alignItems: "center", justifyContent: "center" },
+  account: { width: 44, height: 44, alignItems: "center", justifyContent: "center" },
   content: {
     width: "100%",
     maxWidth: FORM_COLUMN_WIDTH,

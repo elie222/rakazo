@@ -1,6 +1,7 @@
 import { Button, Menu, Section, Text, VStack } from "@expo/ui/swift-ui";
 import {
   contentShape,
+  disabled,
   font,
   foregroundStyle,
   frame,
@@ -20,7 +21,14 @@ import { boardRefreshFailure, ticketStatusLabel } from "./board";
 import type { BoardListProps } from "./board-list";
 
 /** A SwiftUI inset list: a section per column, and a pull-down menu on each ticket to move it. */
-export function BoardList({ sections, error, refreshFailures, onMove, onRefresh }: BoardListProps) {
+export function BoardList({
+  sections,
+  error,
+  refreshFailures,
+  moving = false,
+  onMove,
+  onRefresh,
+}: BoardListProps) {
   const { t } = useLingui();
   const headerInset = useFloatingHeaderInset();
   const edges = useInsetListEdges();
@@ -62,6 +70,7 @@ export function BoardList({ sections, error, refreshFailures, onMove, onRefresh 
           {section.tickets.map((ticket) => (
             <Menu
               key={ticket.id}
+              modifiers={[disabled(moving)]}
               label={
                 <VStack
                   alignment="leading"

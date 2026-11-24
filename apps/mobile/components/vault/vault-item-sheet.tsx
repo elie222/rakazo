@@ -8,6 +8,7 @@ import {
   otherSitesText,
   vaultKind,
 } from "@rakazo/contracts";
+import { siteHost } from "@rakazo/core";
 import { vaultBotsLine } from "@rakazo/i18n/vault";
 import * as Clipboard from "expo-clipboard";
 import { useState } from "react";
@@ -15,10 +16,10 @@ import { Modal, ScrollView, StyleSheet, Text, View } from "react-native";
 import { formatActivityRelativeTime } from "../../lib/inbox/activity";
 import { useSheetPadding } from "../../lib/layout/side-insets";
 import { native, useThemedStyles } from "../../lib/native/native";
-import { siteHost } from "../../lib/vault/secret-destination";
 import { readableItem, vaultKindLabel, vaultKindSymbol } from "../../lib/vault/vault";
 import { NativeActionButton } from "../native/native-action-button";
 import { NativeSymbol } from "../native/native-symbol";
+import { SheetBar, SheetBarBack, SheetBarClose } from "../native/sheet-bar";
 import { SettingsGroup, SettingsRow } from "../settings/settings-group";
 import { VaultTile } from "./vault-tile";
 
@@ -127,26 +128,26 @@ export function VaultItemSheet({
   return (
     <Modal visible animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
       <View accessibilityViewIsModal style={[styles.sheet, sheetPadding]}>
-        <View style={styles.header}>
-          {usesOpen ? (
-            <NativeActionButton
-              label={t`Back`}
-              onPress={() => setUsesOpen(false)}
-              prominence="plain"
-            />
-          ) : (
-            <NativeActionButton label={t`Done`} onPress={onClose} prominence="plain" />
-          )}
-          {readable && !usesOpen ? (
-            <NativeActionButton
-              disabled={busy}
-              fill={false}
-              label={t`Edit`}
-              onPress={onEdit}
-              prominence="plain"
-            />
-          ) : null}
-        </View>
+        <SheetBar
+          leading={
+            usesOpen ? (
+              <SheetBarBack label={t`Back`} onPress={() => setUsesOpen(false)} />
+            ) : (
+              <SheetBarClose label={t`Done`} onPress={onClose} />
+            )
+          }
+          trailing={
+            readable && !usesOpen ? (
+              <NativeActionButton
+                disabled={busy}
+                fill={false}
+                label={t`Edit`}
+                onPress={onEdit}
+                prominence="plain"
+              />
+            ) : null
+          }
+        />
         <ScrollView contentContainerStyle={styles.content}>
           <View style={styles.heading}>
             <VaultTile origin={kind === "login" ? item.origin : undefined} style={styles.tile}>
@@ -240,13 +241,6 @@ export function VaultItemSheet({
 function createStyles() {
   return StyleSheet.create({
     sheet: { flex: 1, backgroundColor: native.groupedPage },
-    header: {
-      flexDirection: "row",
-      justifyContent: "space-between",
-      alignItems: "center",
-      paddingHorizontal: 20,
-      paddingBottom: 12,
-    },
     content: { paddingHorizontal: 20, paddingBottom: 40, gap: 24 },
     heading: { flexDirection: "row", alignItems: "center", gap: 12 },
     headingText: { flex: 1 },

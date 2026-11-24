@@ -321,8 +321,11 @@ it("connects a self-hosted speech server by URL without a key", async () => {
 
 it.each([
   { field: "Server URL", value: "http://100.64.0.11:8880/v1" },
+  { field: "Transcription server URL", value: "http://100.64.0.12:9000" },
   { field: "Speech model", value: "new-model" },
   { field: "Transcription model", value: "new-transcriber" },
+  { field: "Transcription vocabulary", value: "Acme, Xyla" },
+  { field: "Transcription vocabulary", value: "" },
   { field: "API key", value: "replacement-test-key" },
 ])(
   "restores saved self-hosted fields and reconnects after editing $field",
@@ -335,9 +338,16 @@ it.each([
       endpoint: "http://100.64.0.10:8810/v1",
       ttsModel: "saved-speech",
       sttModel: "saved-transcription",
+      transcriptionVocabulary: "Saved term",
     };
     voice.catalog.mockResolvedValue([
-      { id: saved.provider, name: "Self-hosted", description: "", transcribe: true },
+      {
+        id: saved.provider,
+        name: "Self-hosted",
+        description: "",
+        transcribe: true,
+        transcriptionVocabulary: true,
+      },
     ]);
     voice.credentials.mockResolvedValue([saved]);
     voice.status.mockResolvedValue({
@@ -360,6 +370,9 @@ it.each([
       expect(labelledInput(container, "Server URL").value).toBe(saved.endpoint);
       expect(labelledInput(container, "Speech model").value).toBe(saved.ttsModel);
       expect(labelledInput(container, "Transcription model").value).toBe(saved.sttModel);
+      expect(labelledInput(container, "Transcription vocabulary").value).toBe(
+        saved.transcriptionVocabulary,
+      );
       expect(labelledInput(container, "API key").value).toBe("");
       await act(async () => {
         const input = labelledInput(container, field);
@@ -369,6 +382,9 @@ it.each([
         );
         input.dispatchEvent(new Event("input", { bubbles: true }));
       });
+      if (field === "Server URL" || field === "Transcription server URL") {
+        expect(labelledInput(container, "Transcription vocabulary").value).toBe("");
+      }
       await act(async () => {
         [...container.querySelectorAll("button")]
           .find((button) => button.textContent === "Reconnect")
@@ -384,6 +400,12 @@ it.each([
           sttModel: field === "Transcription model" ? value : saved.sttModel,
         }),
       );
+      const sent = voice.connect.mock.calls[0]?.[0];
+      if (field === "Transcription vocabulary") {
+        expect(sent).toHaveProperty("transcriptionVocabulary", value);
+      } else {
+        expect(sent).not.toHaveProperty("transcriptionVocabulary");
+      }
     } finally {
       await act(async () => root.unmount());
       container.remove();

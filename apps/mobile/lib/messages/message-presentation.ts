@@ -1,4 +1,5 @@
 import type { MessageBlock } from "@rakazo/contracts";
+import { AGENT_IMPORT_ASK_ACTION_ID } from "@rakazo/contracts";
 import { isRetiredImportSetup, isToolActivityBlock } from "@rakazo/core";
 import { MAX_QUOTABLE_SOURCE_LENGTH, visibleTextFromMarkdown } from "@rakazo/core/message-quote";
 
@@ -78,6 +79,13 @@ export function hasVisibleMessagePresentation(blocks: readonly MessageBlock[]): 
     (block) =>
       !isToolActivityBlock(block) && !isDismissedChoice(block) && !isRetiredImportSetup(block),
   );
+}
+
+type AskBlock = Extract<MessageBlock, { kind: "ask" }>;
+
+/** The options a question offers here: the agent import is in the web and desktop apps only. */
+export function askOptions(block: AskBlock): NonNullable<AskBlock["actions"]> {
+  return (block.actions ?? []).filter((action) => action.id !== AGENT_IMPORT_ASK_ACTION_ID);
 }
 
 type ChoiceBlock = Extract<MessageBlock, { kind: "choice" }>;

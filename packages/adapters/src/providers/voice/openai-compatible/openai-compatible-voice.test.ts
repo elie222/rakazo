@@ -174,6 +174,23 @@ describe("serializeOpenAiCompatibleVoiceSecret", () => {
     expect(backToMain.sttModel).toBe(DEFAULT_COMPATIBLE_STT_MODEL);
   });
 
+  it("keeps vocabulary only for the same transcription server and lets the user clear it", () => {
+    const connection = {
+      baseUrl: "http://192.168.1.20:8880",
+      sttBaseUrl: "http://192.168.1.30:9000",
+    };
+    const saved = serializeAsOwner({ ...connection, transcriptionVocabulary: " Acme, Xyla " });
+    const savedHint = (value: string) =>
+      openAiCompatibleVoiceServer(value)?.transcriptionVocabulary;
+
+    expect(savedHint(saved)).toBe("Acme, Xyla");
+    expect(savedHint(serializeAsOwner(connection, saved))).toBe("Acme, Xyla");
+    expect(
+      savedHint(serializeAsOwner({ ...connection, transcriptionVocabulary: "" }, saved)),
+    ).toBeUndefined();
+    expect(savedHint(serializeAsOwner({ ...connection, sttBaseUrl: "" }, saved))).toBeUndefined();
+  });
+
   it("keeps a transcription key when both servers use the same address", () => {
     const secret = serializeAsOwner({
       baseUrl: "https://speech.example.com/v1",
@@ -766,8 +783,28 @@ describe("OpenAiCompatibleVoiceProvider", () => {
     const form = calledInit(fetchMock).body as FormData;
     expect(form.get("model")).toBe(DEFAULT_COMPATIBLE_STT_MODEL);
     expect(form.get("response_format")).toBe("json");
+    expect(form.has("prompt")).toBe(false);
     expect(form.get("language")).toBe("en");
     expect((form.get("file") as File).name).toBe("speech.m4a");
+  });
+
+  it("redacts vocabulary and its embedded API key when echoed in a transcription error", async () => {
+    const apiKey = serializeAsOwner({
+      baseUrl: "http://192.168.1.20:8880",
+      apiKey: "example-key",
+      transcriptionVocabulary: "Acme, example-key, Xyla",
+    });
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(
+        Response.json({ detail: 'Unsupported prompt "Acme, example-key, Xyla"' }, { status: 400 }),
+      );
+    await expect(
+      provider(fetchMock).transcribe(
+        { audio: new Uint8Array([1]), mimeType: "audio/webm", apiKey },
+        ctx,
+      ),
+    ).rejects.toThrow('Unsupported prompt "[redacted]"');
   });
 
   it("transcribes on the separate transcription server and speaks on the main one", async () => {
@@ -776,6 +813,7 @@ describe("OpenAiCompatibleVoiceProvider", () => {
       sttBaseUrl: "http://192.168.1.30:9000",
       apiKey: "main-test-key",
       sttApiKey: "stt-test-key",
+      transcriptionVocabulary: "Acme, Xyla",
     });
     const fetchMock = vi
       .fn()
@@ -790,6 +828,8 @@ describe("OpenAiCompatibleVoiceProvider", () => {
     await provider(fetchMock).synthesize({ text: "hi", voiceId: "af_heart", apiKey: split }, ctx);
     expect(calledUrl(fetchMock, 0)).toBe("http://192.168.1.30:9000/v1/audio/transcriptions");
     expect(calledInit(fetchMock, 0).headers).toEqual({ authorization: "Bearer stt-test-key" });
+    expect((calledInit(fetchMock, 0).body as FormData).get("prompt")).toBe("Acme, Xyla");
+    expect(JSON.parse(calledInit(fetchMock, 1).body as string)).not.toHaveProperty("prompt");
     expect(calledUrl(fetchMock, 1)).toBe("http://192.168.1.20:8880/v1/audio/speech");
     expect(calledInit(fetchMock, 1).headers).toMatchObject({
       authorization: "Bearer main-test-key",

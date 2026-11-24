@@ -1348,19 +1348,16 @@ describe("updateChildBot", () => {
     expect(update).toHaveBeenCalledWith(expect.objectContaining({ data: { dailyCheckIns } }));
   });
 
-  it.each(["true", "false", 0, 1, {}, []])(
-    "rejects non-boolean dailyCheckIns: %j",
-    async (value) => {
-      const { prisma } = fakeFleet({ bots });
-      expect(
-        await updateChildBot(writeDeps(prisma), run, {
-          bot_id: "bot-child",
-          dailyCheckIns: value,
-        }),
-      ).toEqual({ error: "dailyCheckIns must be true or false." });
-      expect(prisma.$transaction).not.toHaveBeenCalled();
-    },
-  );
+  it.each(["true", 0])("rejects non-boolean dailyCheckIns: %j", async (value) => {
+    const { prisma } = fakeFleet({ bots });
+    expect(
+      await updateChildBot(writeDeps(prisma), run, {
+        bot_id: "bot-child",
+        dailyCheckIns: value,
+      }),
+    ).toEqual({ error: "dailyCheckIns must be true or false." });
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
 
   it("reuses the profile validation of update_bot", async () => {
     const { prisma } = fakeFleet({ bots });

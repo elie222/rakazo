@@ -103,7 +103,10 @@ export function plainText(text, max = 600) {
     })
     .join("")
     .trim();
-  return clean.length > max ? `${clean.slice(0, max - 1)}…` : clean;
+  if (clean.length <= max) return clean;
+  // Cut before a surrogate pair instead of through it.
+  const end = clean.codePointAt(max - 2) > 0xffff ? max - 2 : max - 1;
+  return `${clean.slice(0, end)}…`;
 }
 
 /** Model text for a public issue body, in a fenced code block so no Markdown, HTML or mention in it renders: the fence is longer than any backtick run the text holds. */

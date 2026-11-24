@@ -1,4 +1,5 @@
 import { CSP_REPORT_PATH } from "@rakazo/contracts/content-security-policy";
+import { isRecord } from "@rakazo/core";
 import { getLogger, redactSensitiveText } from "@rakazo/logging";
 import type { Context } from "hono";
 import { Hono } from "hono";
@@ -113,10 +114,6 @@ function field(value: unknown): string | undefined {
   return typeof value === "string" && value.length > 0
     ? value.slice(0, MAX_FIELD_LENGTH)
     : undefined;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 export function cspReportRoutes(

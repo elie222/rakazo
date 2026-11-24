@@ -10,13 +10,15 @@ import type { PrismaClient } from "@rakazo/db";
 import { appliedModelRole } from "@rakazo/db";
 import { resolveAutoReviewChecker } from "../approvals/auto-review.js";
 import { approvedModelCreditOffering, modelCreditOfferings } from "../model-credits/offerings.js";
+import type { SavedDeploymentModel } from "./deployment-model.js";
+import { adminDeploymentModel } from "./deployment-model.js";
 import type { ModelChoice, ModelCredential } from "./model-selection.js";
 import { findConnectedModelCredential } from "./model-selection.js";
 
 /** The deployment's configuration that stands in for a member who chose nothing. */
 export type DeploymentModelDefaults = {
-  /** The owner's saved default, ahead of the environment's. */
-  settings?: { defaultModelProvider: string | null; defaultModelId: string | null } | null;
+  /** The default saved for everyone, ahead of the environment's while it applies. */
+  settings?: SavedDeploymentModel | null;
   /** The environment's model, when the deployment can run it. */
   deployment?: { provider: string; model: string } | null;
   env?: NodeJS.ProcessEnv;
@@ -37,9 +39,13 @@ export function deploymentModelRole(
   }
   // No computer model means the main model works the screen itself.
   if (role === "computer") return { primary: null, backups: [] };
-  const provider = defaults.settings?.defaultModelProvider ?? defaults.deployment?.provider;
+  const admin = adminDeploymentModel(defaults.settings, defaults.env);
+  const provider =
+    admin?.provider ?? defaults.settings?.defaultModelProvider ?? defaults.deployment?.provider;
   const modelId =
-    usableModelId(defaults.settings?.defaultModelId) ?? usableModelId(defaults.deployment?.model);
+    admin?.modelId ??
+    usableModelId(defaults.settings?.defaultModelId) ??
+    usableModelId(defaults.deployment?.model);
   const offerings = modelCreditOfferings(defaults.env);
   if (
     offerings &&

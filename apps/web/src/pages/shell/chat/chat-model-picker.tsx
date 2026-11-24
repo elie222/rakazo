@@ -1,4 +1,5 @@
 import { Trans, useLingui } from "@lingui/react/macro";
+import { useListSearch } from "@rakazo/chat-ui/hooks";
 import type { ChatModelChoice, ModelMark } from "@rakazo/core";
 import { groupModelChoices, modelChoiceSearchText, modelMark } from "@rakazo/core";
 import {
@@ -20,7 +21,6 @@ import type { ReactNode } from "react";
 import { useId, useMemo, useState } from "react";
 import { ModelMarkIcon } from "../../../components/models/ModelMarkIcon";
 import { TextOnlyMark } from "../../../components/models/TextOnlyMark";
-import { useListSearch } from "../../../lib/use-list-search";
 
 /**
  * A bot's model as one settings row, or as a small button in the message box (`compact`): either

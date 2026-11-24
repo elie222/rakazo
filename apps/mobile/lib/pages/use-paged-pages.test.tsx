@@ -94,23 +94,34 @@ it("drops a Show more failure that started before a reload", async () => {
   read.mockResolvedValueOnce({ items: [page("a")], nextCursor: "c1" } as never);
   await act(async () => root.render(createElement(Probe)));
   const late = deferred<unknown>();
-  read.mockReturnValueOnce(late.promise.then(() => Promise.reject(new Error("offline"))) as never);
-  let shown: unknown = "pending";
-  await act(async () => {
-    hook.showMore().then(
-      () => {
-        shown = "quiet";
-      },
-      (error: unknown) => {
-        shown = error;
-      },
-    );
-  });
-  read.mockResolvedValueOnce({ items: [page("b")], nextCursor: null } as never);
+  read.mockReturnValueOnce(late.promise as never);
+  await act(async () => void hook.showMore());
+  read.mockResolvedValueOnce({ items: [page("b")], nextCursor: "c2" } as never);
   await act(async () => hook.refresh());
-  await act(async () => late.resolve(undefined));
-  expect(shown).toBe("quiet");
+  await act(async () => late.reject(new Error("offline")));
+  expect(hook.listed).toMatchObject({ status: "ready", paginationFailed: false });
   expect(items()).toEqual(["b"]);
+});
+
+it("reports a Show more failure until a retry succeeds or the list is read again", async () => {
+  const read = vi.mocked(rpc);
+  read.mockReset();
+  read.mockResolvedValueOnce({ items: [page("a")], nextCursor: "c1" } as never);
+  await act(async () => root.render(createElement(Probe)));
+  read.mockRejectedValueOnce(new Error("offline"));
+  await act(async () => hook.showMore());
+  expect(hook.listed).toMatchObject({ status: "ready", paginationFailed: true });
+  read.mockResolvedValueOnce({ items: [page("b")], nextCursor: "c2" } as never);
+  await act(async () => hook.showMore());
+  expect(read).toHaveBeenLastCalledWith("pages/list", { botId: "b1", limit: 5, cursor: "c1" });
+  expect(hook.listed).toMatchObject({ status: "ready", paginationFailed: false });
+  expect(items()).toEqual(["a", "b"]);
+
+  read.mockRejectedValueOnce(new Error("offline"));
+  await act(async () => hook.showMore());
+  read.mockResolvedValueOnce({ items: [page("a")], nextCursor: "c1" } as never);
+  await act(async () => hook.refresh());
+  expect(hook.listed).toMatchObject({ status: "ready", paginationFailed: false });
 });
 
 it("keeps the pages shown when the list comes back on screen, newest first", async () => {

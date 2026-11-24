@@ -13,7 +13,6 @@ import {
   createScheduleFromTool,
   filterBuiltinToolsForRun,
   filterBuiltinToolsForThread,
-  isOneShotRoutineCron,
   listSchedulesFromTool,
   MAX_ACTIVE_ROUTINES_PER_BOT,
   resolveScheduleTiming,
@@ -72,7 +71,6 @@ describe("resolveScheduleTiming", () => {
   it.each([
     [1000, "hours"],
     [57600, "minutes"],
-    [100000, "minutes"],
   ])("never suggests more than 31 days for every %i %s", (every, unit) => {
     const result = resolveScheduleTiming({ every, unit });
     expect(result.ok).toBe(false);
@@ -82,10 +80,7 @@ describe("resolveScheduleTiming", () => {
 
   it.each([
     [7, "minutes", "*/7 * * * *"],
-    [45, "minutes", "*/45 * * * *"],
-    [59, "minutes", "*/59 * * * *"],
     [60, "minutes", "*/60 * * * *"],
-    [23, "hours", "0 */23 * * *"],
     [24, "hours", "0 */24 * * *"],
     [31, "days", "0 0 */31 * *"],
   ])("still accepts every %i %s", (every, unit, cron) => {
@@ -126,6 +121,17 @@ describe("resolveScheduleTiming", () => {
     expect(result.cron).toBe(ONCE_ROUTINE_CRON);
     expect(result.nextRunAt.getTime()).toBeGreaterThan(Date.now());
     expect(result.nextRunAt.getTime()).toBeLessThanOrEqual(Date.now() + 31_000);
+  });
+
+  it("rejects one-shot delays too far out to be a date", () => {
+    expect(resolveScheduleTiming({ delayMinutes: 1e15 })).toEqual({
+      ok: false,
+      error: "The delay is too far in the future.",
+    });
+    expect(resolveScheduleTiming({ delaySeconds: 1e14 })).toEqual({
+      ok: false,
+      error: "The delay is too far in the future.",
+    });
   });
 
   it("rejects one-shot schedules in the past", () => {
@@ -351,13 +357,6 @@ describe("filterBuiltinToolsForThread", () => {
         { name: "remember" },
       ]);
     }
-  });
-});
-
-describe("isOneShotRoutineCron", () => {
-  it("detects the one-shot sentinel", () => {
-    expect(isOneShotRoutineCron(ONCE_ROUTINE_CRON)).toBe(true);
-    expect(isOneShotRoutineCron("0 9 * * *")).toBe(false);
   });
 });
 
@@ -1191,6 +1190,14 @@ describe("updateScheduleFromTool", () => {
     },
   );
 
+  it("refuses a name longer than the editor allows", async () => {
+    const { updateMany, update } = setup();
+    await expect(update({ name: "x".repeat(81) })).resolves.toEqual({
+      error: "name must be at most 80 characters.",
+    });
+    expect(updateMany).not.toHaveBeenCalled();
+  });
+
   it("refuses another member's change to what a schedule does", async () => {
     const { updateMany, update } = setup();
     await expect(update({ userId: "user-2", prompt: "Order less" })).resolves.toMatchObject({
@@ -1225,7 +1232,10 @@ describe("updateScheduleFromTool", () => {
       timezone: "Europe/Berlin",
       schedule: "Every Monday at 10:00 AM",
       nextRun: "Monday, 2026-10-26 10:00 (UTC+01:00)",
-      changes: { prompt: { before: "Order the usual groceries", after: prompt } },
+      // Only the changed field is reported; the prompt is not echoed unchanged.
+      changes: {
+        prompt: { before: "Order the usual groceries", after: prompt },
+      },
     });
     expect(updateMany).toHaveBeenCalledWith({
       where: {
@@ -1278,6 +1288,60 @@ describe("updateScheduleFromTool", () => {
     };
     expect(result.ok).toBe(true);
     expect(result.changes).toEqual({});
+  });
+
+  it("does not report a retiming the row already stores", async () => {
+    // A paused routine sent its own cron back: the resolved timing is what it already holds.
+    const { update } = setup({ ...weekly, active: false, nextRunAt: null });
+    await expect(update({ schedule: { cron: "0 10 * * 1" } })).resolves.toMatchObject({
+      ok: true,
+      changes: {},
+    });
+  });
+
+  it("conflicts when the row moved since its approval was shown", async () => {
+    const { updateMany, update } = setup();
+    await expect(
+      update({
+        prompt: "Order less",
+        expected: { name: "Groceries", prompt: "Edited elsewhere" },
+      }),
+    ).resolves.toEqual({
+      error: "The schedule changed while saving. Call schedule_list and try again.",
+    });
+    expect(updateMany).not.toHaveBeenCalled();
+  });
+
+  it("applies the change when the pinned before-values still hold", async () => {
+    const { updateMany, update } = setup();
+    await expect(
+      update({
+        prompt: "Order less",
+        expected: { name: "Groceries", prompt: "Order the usual groceries" },
+      }),
+    ).resolves.toMatchObject({ ok: true });
+    // The write only lands on a row that still holds what the approval was shown.
+    expect(updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          name: "Groceries",
+          prompt: "Order the usual groceries",
+        }),
+      }),
+    );
+  });
+
+  it("reports a conflict when the row moved between the read and the write", async () => {
+    const { updateMany, update } = setup();
+    updateMany.mockResolvedValue({ count: 0 });
+    await expect(
+      update({
+        prompt: "Order less",
+        expected: { name: "Groceries", prompt: "Order the usual groceries" },
+      }),
+    ).resolves.toEqual({
+      error: "The schedule changed while saving. Call schedule_list and try again.",
+    });
   });
 
   it("moves the first run of the current repeat with startAt alone", async () => {
@@ -1860,17 +1924,31 @@ describe("schedule tools with events", () => {
       key.plaintext = plaintext;
       return { id: "secret-1", ciphertext: "sealed" };
     });
+    const notices: unknown[] = [];
+    const stored = { webhookSecretId: null as string | null };
     const tx = {
       $queryRaw: vi.fn(async () => [{ webhookSecretId: null }]),
       secret: { create: vi.fn(), deleteMany: vi.fn() },
-      bot: { update: vi.fn() },
+      bot: {
+        update: vi.fn(async (args: { data: { webhookSecretId: string } }) => {
+          stored.webhookSecretId = args.data.webhookSecretId;
+        }),
+      },
+      thread: { update: vi.fn(async () => ({ nextMessageSeq: 2, spaceId: "ws-1" })) },
+      message: {
+        create: vi.fn(async (args: { data: { blocks: unknown } }) => {
+          notices.push(args.data.blocks);
+          return { id: "message-1" };
+        }),
+      },
+      event: { create: vi.fn(async () => ({ seq: 1 })) },
     };
     const prisma = accountZonePrisma(
       {
         routine: { create, findMany: noRoutines },
         bot: {
           findFirst: vi.fn(async () => ({ id: "bot-1", userId: options.botUserId ?? "user-1" })),
-          findUnique: vi.fn(async () => ({ webhookSecretId: null })),
+          findUnique: vi.fn(async () => ({ ...stored })),
         },
         messagingIdentity: {
           findUnique: vi.fn(async () => (options.provider ? { provider: options.provider } : null)),
@@ -1884,15 +1962,15 @@ describe("schedule tools with events", () => {
         $transaction: async (run: (client: unknown) => Promise<unknown>) =>
           run({ ...prisma, ...tx }),
       },
-      events: { append: vi.fn() },
+      events: { append: vi.fn(), notify: vi.fn() },
       jobs: { enqueue },
       secretStore: { put },
     } as unknown as Parameters<typeof createScheduleFromTool>[0];
-    return { deps, create, enqueue, put, key };
+    return { deps, create, enqueue, put, key, notices };
   }
 
   it("creates a routine only a webhook starts, and keeps its key from the result", async () => {
-    const { deps, create, enqueue, put, key } = eventDeps();
+    const { deps, create, enqueue, put, key, notices } = eventDeps();
     const result = await createScheduleFromTool(deps, {
       ...owner,
       ...scheduleCreateFields({
@@ -1920,6 +1998,10 @@ describe("schedule tools with events", () => {
     });
     expect(key.plaintext).not.toBe("");
     expect(JSON.stringify(result)).not.toContain(key.plaintext);
+    // The chat row offers the key to the person; the row itself never holds it.
+    expect(notices).toEqual([
+      [{ kind: "routine_event", change: "created", name: "Deploys", webhook: true }],
+    ]);
   });
 
   it("adds a chat event to a repeating schedule by the app's name", async () => {

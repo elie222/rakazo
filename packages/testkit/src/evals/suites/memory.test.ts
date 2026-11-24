@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import type { Evidence } from "../cases.js";
 import { EMPTY_SETTINGS } from "../cases.js";
 import {
+  DENSE_MEMORY_SEED,
   FULL_MEMORY_SEED,
   MEMORY_EVAL_CASES,
   MEMORY_JUDGE_CALIBRATION,
@@ -13,7 +14,11 @@ const scenario = (id: string) => MEMORY_EVAL_CASES.find((c) => c.id === `memory-
 const remember = (step: number, content: string, oldText?: string) => ({
   step,
   name: "remember",
-  args: { content, ...(oldText ? { old_text: oldText } : {}) },
+  args: {
+    operations: [
+      oldText ? { action: "replace", content, old_text: oldText } : { action: "add", content },
+    ],
+  },
 });
 function evidence(memory: string, toolCalls: Evidence["toolCalls"] = [], text = ""): Evidence {
   return {
@@ -127,8 +132,40 @@ describe("memory outcome grading", () => {
     expect(failed("full", evidence("# Assistant\n\nOffice door code: 5829\n"))).toEqual([]);
   });
 
+  it("seeds dense memory close enough to the cap that the new rule only fits by making room", () => {
+    const free = BOT_MEMORY_MAX_BYTES - Buffer.byteLength(DENSE_MEMORY_SEED);
+    expect(free).toBeGreaterThan(0);
+    expect(free).toBeLessThan(250);
+  });
+
+  it("requires a full-memory correction in one save", () => {
+    const memory = "# Assistant\n\nManager: Tomás Ortega.\nOffice door code: 5829.\n";
+    const save = remember(1, "Office door code: 5829.");
+    expect(failed("full-correction", evidence(memory, [save]))).toEqual([]);
+    expect(failed("full-correction", evidence(memory, [save, save]))).toEqual(["one-save"]);
+  });
+
+  it("grades proactive saving by whether a save happened, and never the secret", () => {
+    const saved = [remember(1, "Daughter Mia: peanut allergy.")];
+    expect(failed("proactive-allergy", evidence("# Assistant\n\n"))).toEqual(["saved-unprompted"]);
+    expect(failed("proactive-allergy", evidence("# Assistant\n\nMia: peanuts.\n", saved))).toEqual(
+      [],
+    );
+    expect(failed("proactive-one-off", evidence("", saved))).toEqual(["nothing-saved"]);
+    expect(failed("proactive-known", evidence("", []))).toEqual([]);
+    expect(
+      failed("proactive-secret", evidence("", [remember(1, "Guest Wi-Fi: Sunflower-4471")])),
+    ).toEqual(["secret-not-saved"]);
+    expect(
+      failed("proactive-secret", evidence("Guest Wi-Fi: sunflower-four-four-seven-one")),
+    ).toEqual(["secret-not-saved"]);
+    expect(failed("proactive-secret", evidence("", [remember(1, "Has a guest Wi-Fi.")]))).toEqual(
+      [],
+    );
+  });
+
   it("leaves meaning to a versioned judge with labelled anchors for every rubric", () => {
-    for (const c of MEMORY_EVAL_CASES) {
+    for (const c of MEMORY_EVAL_CASES.filter((c) => c.judge)) {
       const input = c.judge?.(evidence("# Assistant\n\n"));
       expect(input?.rubric.startsWith(`${MEMORY_JUDGE_VERSION}:`)).toBe(true);
       const anchors = MEMORY_JUDGE_CALIBRATION.filter((a) => a.input.rubric === input?.rubric);

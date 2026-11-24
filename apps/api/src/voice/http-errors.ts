@@ -1,6 +1,6 @@
 import { ORPCError } from "@orpc/server";
 import { VoiceAccountError } from "@rakazo/adapter-kit";
-import { NoVoiceConfigured } from "@rakazo/adapters";
+import { NoVoiceConfigured, VoiceProviderRefusedError } from "@rakazo/adapters";
 import type { VoiceAccountErrorCode } from "@rakazo/contracts";
 import { ConnectionSetupError } from "@rakazo/contracts";
 import { ClientError } from "@rakazo/core";
@@ -55,6 +55,9 @@ export function voiceHttpError(c: Context, error: unknown) {
   getLogger().warn("voice request failed", {
     route: c.req.path,
     reason: error instanceof Error ? error.name : "unknown",
+    ...(error instanceof VoiceProviderRefusedError
+      ? { "provider.status": error.status, "provider.reason": error.reason }
+      : {}),
   });
   if (isVoiceProviderFailure(error)) markExpectedFailure();
   return c.json({ error: message }, 502);
@@ -65,6 +68,7 @@ export function isVoiceProviderFailure(error: unknown) {
   return (
     error instanceof Error &&
     (Object.getPrototypeOf(error) === Error.prototype ||
+      error instanceof VoiceProviderRefusedError ||
       error instanceof ConnectionSetupError ||
       error.name === "AbortError" ||
       error.name === "TimeoutError")

@@ -2,6 +2,7 @@ import type { Server } from "node:http";
 import { createServer } from "node:http";
 import type { RakazoDesktopOAuthCallback } from "@rakazo/contracts";
 import { t } from "../i18n.js";
+import type { IpcHandler } from "../ipc/ipc.js";
 import { LOOPBACK_HOSTS, mcpLoopbackRefusalFrom } from "./oauth-callback.js";
 
 /** Native transport only: providers still own PKCE, token exchange and persistence. */
@@ -138,4 +139,56 @@ export async function openBrowserAuth(
     close();
     throw error;
   }
+}
+
+/**
+ * The `desktop.oauth.open` and `desktop.oauth.cancel` handlers, sharing the sign-ins in flight.
+ * `cancelAll` ends every one, as the app quits.
+ */
+export function createBrowserAuthHandlers(openExternal: (url: string) => Promise<unknown>) {
+  const attempts = new Map<string, AbortController>();
+  const open: IpcHandler<"desktop.oauth.open"> = async (event, url) => {
+    if (typeof url !== "string" || url.length > 16_384) throw new Error("Invalid sign-in request.");
+    if (attempts.has(url) || attempts.size >= 8) {
+      throw new Error(t("A sign-in attempt is already active. Cancel it and retry."));
+    }
+    const controller = new AbortController();
+    attempts.set(url, controller);
+    const stop = () => controller.abort();
+    const expiry = setTimeout(stop, 10 * 60_000);
+    expiry.unref();
+    event.sender.once("destroyed", stop);
+    event.sender.once("did-navigate", stop);
+    controller.signal.addEventListener(
+      "abort",
+      () => {
+        clearTimeout(expiry);
+        event.sender.removeListener("destroyed", stop);
+        event.sender.removeListener("did-navigate", stop);
+        if (attempts.get(url) === controller) attempts.delete(url);
+      },
+      { once: true },
+    );
+    try {
+      await openBrowserAuth(url, {
+        signal: controller.signal,
+        onClose: stop,
+        openExternal,
+        onCallback: (callback) => {
+          if (!event.sender.isDestroyed()) event.sender.send("desktop.oauth.callback", callback);
+        },
+      });
+    } catch {
+      controller.abort();
+      throw new Error(t("Could not open browser sign-in. Close other sign-in attempts and retry."));
+    }
+  };
+  const cancel: IpcHandler<"desktop.oauth.cancel"> = (_event, url) => {
+    if (typeof url === "string") attempts.get(url)?.abort();
+  };
+  const cancelAll = () => {
+    for (const attempt of attempts.values()) attempt.abort();
+    attempts.clear();
+  };
+  return { open, cancel, cancelAll };
 }

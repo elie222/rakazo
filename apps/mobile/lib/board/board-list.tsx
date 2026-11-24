@@ -29,12 +29,21 @@ export type BoardListProps = {
   error: string;
   /** Counts failed loads, so a repeat of the same error is announced again. */
   refreshFailures: number;
+  /** A move is saving: no other is offered until it ends. */
+  moving?: boolean;
   onMove: (ticket: Ticket, status: TicketStatus) => void;
   onRefresh: () => Promise<void>;
 };
 
 /** Settings-style groups, one per column; iOS renders the same groups as a SwiftUI list. */
-export function BoardList({ sections, error, refreshFailures, onMove, onRefresh }: BoardListProps) {
+export function BoardList({
+  sections,
+  error,
+  refreshFailures,
+  moving = false,
+  onMove,
+  onRefresh,
+}: BoardListProps) {
   const styles = useThemedStyles(createStyles);
   const stacked = useStackedSettings();
   const sideInsets = useSideInsets();
@@ -71,6 +80,7 @@ export function BoardList({ sections, error, refreshFailures, onMove, onRefresh 
               key={ticket.id}
               ticket={ticket}
               colorScheme={colorScheme}
+              moving={moving}
               onMove={onMove}
             />
           ))}
@@ -83,12 +93,18 @@ export function BoardList({ sections, error, refreshFailures, onMove, onRefresh 
 function TicketMoveRow({
   ticket,
   colorScheme,
+  moving,
   onMove,
-}: Pick<BoardListProps, "onMove"> & { ticket: Ticket; colorScheme: ResolvedAppearance }) {
+}: Pick<BoardListProps, "onMove"> & {
+  ticket: Ticket;
+  colorScheme: ResolvedAppearance;
+  moving: boolean;
+}) {
   const { t } = useLingui();
   const menu = useRef<MenuComponentRef>(null);
   // Android's menu host handles pointer input but is not itself accessible.
   const openMenu = Platform.OS === "android" ? () => menu.current?.show() : undefined;
+  if (moving) return <SettingsRow title={ticket.title} detail={ticket.ref} disabled dimmed />;
   return (
     <MenuView
       ref={menu}

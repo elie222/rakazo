@@ -21,7 +21,8 @@ interface TableSpec {
     | "thread"
     | "botEmailMessage"
     | "meetingSession"
-    | "nativeCalendarRequest";
+    | "nativeCalendarRequest"
+    | "task";
   /** Scans return them in this order as `values`. */
   columns: string[];
   json: boolean;
@@ -137,6 +138,18 @@ const TABLES: TableSpec[] = [
       WHERE id > ${cursor} AND "historyCompactionSummary" IS NOT NULL ORDER BY id LIMIT ${limit}`,
     writePlaintext: (id, row) =>
       Prisma.sql`UPDATE threads SET "historyCompactionSummary" = ${row.historyCompactionSummary as string} WHERE id = ${id}`,
+  },
+  {
+    model: "Task",
+    delegate: "task",
+    columns: ["prompt"],
+    json: false,
+    updatedAt: true,
+    scan: (cursor, limit) => Prisma.sql`
+      SELECT id, jsonb_build_array(prompt) AS values, "spaceId", "threadId" AS owner FROM tasks
+      WHERE id > ${cursor} ORDER BY id LIMIT ${limit}`,
+    writePlaintext: (id, row) =>
+      Prisma.sql`UPDATE tasks SET prompt = ${row.prompt as string} WHERE id = ${id}`,
   },
   {
     model: "BotEmailMessage",
@@ -366,7 +379,11 @@ export interface ContentEncryptionStatus {
 export async function contentEncryptionStatus(
   prisma: PrismaClient,
 ): Promise<{ tables: ContentEncryptionStatus[]; masterKeys: Record<string, number> }> {
-  const tables = await prisma.$queryRaw<Array<{ table: string; rows: bigint; plaintext: bigint }>>`
+  // Counting every row of a large table outlasts the app role's statement timeout.
+  const tables = await prisma.$transaction(
+    async (tx) => {
+      await tx.$executeRaw`SET LOCAL statement_timeout = 0`;
+      return tx.$queryRaw<Array<{ table: string; rows: bigint; plaintext: bigint }>>`
     SELECT 'messages' AS table, count(*) AS rows, count(*) FILTER (WHERE "searchTokens" IS NULL
       OR (cardinality("searchTokens") = 0 AND blocks <> '[]'::jsonb)) AS plaintext FROM messages
     UNION ALL
@@ -385,6 +402,8 @@ export async function contentEncryptionStatus(
     SELECT 'threads', count(*) FILTER (WHERE "historyCompactionSummary" IS NOT NULL),
       count(*) FILTER (WHERE "historyCompactionSummary" NOT LIKE 'rkz1:%') FROM threads
     UNION ALL
+    SELECT 'tasks', count(*), count(*) FILTER (WHERE prompt NOT LIKE 'rkz1:%') FROM tasks
+    UNION ALL
     SELECT 'bot_email_messages', count(*), count(*) FILTER (WHERE NOT (text LIKE 'rkz1:%'
       AND subject LIKE 'rkz1:%' AND "fromAddress" LIKE 'rkz1:%' AND "fromName" LIKE 'rkz1:%'))
       FROM bot_email_messages
@@ -397,6 +416,9 @@ export async function contentEncryptionStatus(
       count(*) FILTER (WHERE NOT jsonb_exists(operation, '$sealed') OR NOT jsonb_exists(result, '$sealed'))
       FROM native_calendar_requests
   `;
+    },
+    { timeout: 60 * 60_000 },
+  );
   const keys = await prisma.spaceKey.groupBy({ by: ["masterKeyId"], _count: { _all: true } });
   return {
     tables: tables.map((row) => ({

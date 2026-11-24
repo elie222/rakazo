@@ -1,5 +1,5 @@
 import type { ConnectorTool, ToolBatch } from "@rakazo/adapter-kit";
-import type { AskReceipt, MessageBlock } from "@rakazo/contracts";
+import type { AskReceipt, MessageBlock, RoutineUpdateApproval } from "@rakazo/contracts";
 import {
   BOT_INSTRUCTIONS_MAX_LENGTH,
   draftBatchEntry,
@@ -36,6 +36,8 @@ export type FleetCardSummary = {
   lines: string[];
   onceOnly?: boolean;
   receipt?: AskReceipt;
+  /** The routine preview's values, with secrets already redacted. */
+  routineUpdate?: RoutineUpdateApproval;
 };
 
 /**
@@ -101,15 +103,30 @@ export function buildApprovalAskBlock(
   }
   if (options?.summary) {
     // Built from what was resolved before the effect was recorded, not from what the model typed.
+    // The review reason leads, so the approver still sees why the call was held. It is redacted
+    // like every other card text, bounded like the title, and draws on the same length budget
+    // as the lines: a reason on top of a near-limit summary cuts the lines' tail only as far as
+    // the reason is long, never more, and no reason can push the detail past the limit.
+    const { routineUpdate } = options.summary;
+    const reason =
+      routineUpdate && options.reviewReason?.trim()
+        ? truncate(redactSecrets(options.reviewReason.trim(), secrets), MAX_APPROVAL_SUMMARY_LENGTH)
+        : undefined;
+    const lines = truncate(
+      redactSecrets(options.summary.lines.join("\n"), secrets),
+      reason
+        ? Math.max(0, approvalDetailLength(toolName) - reason.length - 2)
+        : approvalDetailLength(toolName),
+    );
     return {
       kind: "ask",
       approvalEffectId: effectId,
       text: truncate(redactSecrets(options.summary.title, secrets), MAX_APPROVAL_SUMMARY_LENGTH),
-      detail: truncate(
-        redactSecrets(options.summary.lines.join("\n"), secrets),
-        approvalDetailLength(toolName),
-      ),
+      detail: reason ? `${reason}\n${lines}` : lines,
       detailFormat: toolName === "set_child_instructions" ? "code" : "text",
+      ...(routineUpdate
+        ? { routineUpdate: { changes: routineUpdate.changes, ...(reason ? { reason } : {}) } }
+        : {}),
       ...(options.summary.receipt
         ? { receipt: redactReceipt(options.summary.receipt, secrets) }
         : {}),
@@ -117,7 +134,12 @@ export function buildApprovalAskBlock(
       actions:
         onceOnly || options.summary.onceOnly
           ? [
-              { id: "allow", label: "Allow once" },
+              // Approving a child bot's instruction replacement applies it at once, so the
+              // button names the action instead of a generic allow.
+              {
+                id: "allow",
+                label: toolName === "set_child_instructions" ? "Apply now" : "Allow once",
+              },
               { id: "deny", label: "Deny" },
             ]
           : [

@@ -2,6 +2,7 @@ import { implement, ORPCError } from "@orpc/server";
 import { SecretStoreUnavailableError } from "@rakazo/adapter-kit";
 import type { CatalogReads } from "@rakazo/adapters";
 import {
+  adminDeploymentModel,
   applyCodexLiveCatalog,
   applyProviderLiveCatalog,
   approvedModelCreditCatalogEntry,
@@ -310,17 +311,19 @@ export function createRouterContext(deps: RouterDeps) {
     role: ModelRole,
   ): Promise<Pick<ModelRoleView, "deploymentPrimary" | "deploymentIncluded">> => {
     if (role === "main") {
-      if (!deps.env.deploymentModelConfigured) return { deploymentPrimary: null };
+      const settings = await deps.prisma.deploymentSettings.findUnique({
+        where: { id: "default" },
+      });
+      if (!deps.env.deploymentModelConfigured && !adminDeploymentModel(settings))
+        return { deploymentPrimary: null };
       const access = await bestEffort(
         "read main model default funding",
-        deploymentModelAccess(deps, actor),
+        deploymentModelAccess(deps, actor, settings),
       );
       return {
         deploymentPrimary: access?.hasDeployment
           ? deploymentModelRole(role, {
-              settings: await deps.prisma.deploymentSettings.findUnique({
-                where: { id: "default" },
-              }),
+              settings,
               deployment: { provider: deps.env.defaultProvider, model: deps.env.defaultModel },
             }).primary
           : null,

@@ -26,5 +26,5 @@ appId: com.rakazo.app
     optional: true
 # A new account answers the signup survey before the inbox.
 - extendedWaitUntil:
-    visible: "Account|.*How did you hear about us.*"
+    visible: "Account|Settings|.*How did you hear about us.*"
     timeout: 40000

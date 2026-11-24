@@ -1,3 +1,5 @@
+import os from "node:os";
+
 export const DEFAULT_WARM_WINDOW_TTL_MS = 15 * 60_000;
 const MAX_TIMER_DELAY_MS = 2_147_483_647;
 
@@ -9,7 +11,15 @@ export function warmWindowTtlMs(value: string | undefined) {
     : DEFAULT_WARM_WINDOW_TTL_MS;
 }
 
-function windowChrome(platform: NodeJS.Platform) {
+/**
+ * Centers the traffic lights on the web shell's top bar (y 26) and its 92px icon rail (x 46).
+ * macOS 26 (Darwin 25) draws them 60px wide; earlier releases 52px.
+ */
+function trafficLightPosition(darwinRelease: string) {
+  return { x: Number.parseInt(darwinRelease, 10) >= 25 ? 16 : 20, y: 19 };
+}
+
+function windowChrome(platform: NodeJS.Platform, release: string) {
   const mac = platform === "darwin";
   return {
     // Keep in sync with webDarkTokens.background from @rakazo/ui-tokens (asserted in tests).
@@ -20,7 +30,7 @@ function windowChrome(platform: NodeJS.Platform) {
     autoHideMenuBar: true,
     frame: mac || platform === "win32",
     titleBarStyle: mac ? ("hiddenInset" as const) : undefined,
-    trafficLightPosition: mac ? { x: 16, y: 16 } : undefined,
+    trafficLightPosition: mac ? trafficLightPosition(release) : undefined,
   };
 }
 
@@ -33,13 +43,17 @@ export const APP_WINDOW_MIN_WIDTH = 390;
 export const APP_WINDOW_MIN_HEIGHT = 480;
 
 /** Opens as a window inside the screen's work area rather than filling it. */
-export function browserWindowOptions(platform: NodeJS.Platform, workArea: WorkArea) {
+export function browserWindowOptions(
+  platform: NodeJS.Platform,
+  workArea: WorkArea,
+  release = os.release(),
+) {
   return {
     width: Math.min(1280, Math.round(workArea.width * 0.8)),
     height: Math.min(840, Math.round(workArea.height * 0.85)),
     minWidth: Math.min(APP_WINDOW_MIN_WIDTH, workArea.width),
     minHeight: Math.min(APP_WINDOW_MIN_HEIGHT, workArea.height),
-    ...windowChrome(platform),
+    ...windowChrome(platform, release),
   };
 }
 
@@ -52,7 +66,11 @@ export function developmentIconFile(platform: NodeJS.Platform) {
 }
 
 /** The first-run setup window is smaller and keeps the same platform chrome. */
-export function setupWindowOptions(platform: NodeJS.Platform, workArea: WorkArea) {
+export function setupWindowOptions(
+  platform: NodeJS.Platform,
+  workArea: WorkArea,
+  release = os.release(),
+) {
   const width = Math.min(720, workArea.width);
   const height = Math.min(700, workArea.height);
   return {
@@ -60,6 +78,6 @@ export function setupWindowOptions(platform: NodeJS.Platform, workArea: WorkArea
     height,
     minWidth: Math.min(480, width),
     minHeight: Math.min(560, height),
-    ...windowChrome(platform),
+    ...windowChrome(platform, release),
   };
 }

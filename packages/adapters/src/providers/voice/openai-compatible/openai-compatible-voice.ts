@@ -15,7 +15,7 @@ import {
   DEFAULT_COMPATIBLE_TTS_MODEL,
   OPENAI_COMPATIBLE_PROVIDER_ID,
 } from "@rakazo/contracts";
-import { deadlineSignal } from "@rakazo/core";
+import { deadlineSignal, redactSecrets } from "@rakazo/core";
 import {
   assertAllowedOpenAiCompatibleUrl,
   assertHttpsForKeyedOpenAiCompatibleUrl,
@@ -72,6 +72,7 @@ export interface OpenAiCompatibleVoiceSecret {
   sttApiKey?: string;
   ttsModel: string;
   sttModel: string;
+  transcriptionVocabulary?: string;
 }
 
 /** Names the field a refused transcription URL came from; any other failure passes through. */
@@ -106,6 +107,7 @@ export function serializeOpenAiCompatibleVoiceSecret(
     sttApiKey?: string;
     ttsModel?: string;
     sttModel?: string;
+    transcriptionVocabulary?: string;
   },
   previousPlaintext?: string,
   policy?: { allowPrivate?: boolean },
@@ -145,12 +147,15 @@ export function serializeOpenAiCompatibleVoiceSecret(
       throw transcriptionUrlError(error);
     }
   }
+  const transcriptionVocabulary =
+    input.transcriptionVocabulary?.trim() ?? sameStt?.transcriptionVocabulary;
   const secret: OpenAiCompatibleVoiceSecret = {
     kind: "openai_compatible",
     baseUrl,
     ...(sttBaseUrl ? { sttBaseUrl: sttBaseUrl } : {}),
     ...(apiKey ? { apiKey } : {}),
     ...(sttApiKey ? { sttApiKey } : {}),
+    ...(transcriptionVocabulary ? { transcriptionVocabulary } : {}),
     ttsModel: modelIdOrDefault(
       input.ttsModel || same?.ttsModel,
       DEFAULT_COMPATIBLE_TTS_MODEL,
@@ -194,6 +199,10 @@ export function parseOpenAiCompatibleVoiceSecret(plaintext: string): OpenAiCompa
     ...(typeof record.sttApiKey === "string" && record.sttApiKey
       ? { sttApiKey: record.sttApiKey }
       : {}),
+    transcriptionVocabulary:
+      typeof record.transcriptionVocabulary === "string"
+        ? record.transcriptionVocabulary
+        : undefined,
     ttsModel: typeof record.ttsModel === "string" ? record.ttsModel : DEFAULT_COMPATIBLE_TTS_MODEL,
     sttModel: typeof record.sttModel === "string" ? record.sttModel : DEFAULT_COMPATIBLE_STT_MODEL,
   };
@@ -206,6 +215,7 @@ export interface OpenAiCompatibleVoiceServer {
   sttEndpoint: string;
   ttsModel: string;
   sttModel: string;
+  transcriptionVocabulary?: string;
 }
 
 /** Undefined when the saved secret is unreadable. Never includes the key. */
@@ -220,6 +230,7 @@ export function openAiCompatibleVoiceServer(
       sttEndpoint: secret.sttBaseUrl ? normalizeOpenAiCompatibleBaseUrl(secret.sttBaseUrl) : "",
       ttsModel: secret.ttsModel,
       sttModel: secret.sttModel,
+      transcriptionVocabulary: secret.transcriptionVocabulary,
     };
   } catch {
     return undefined;
@@ -230,10 +241,14 @@ export function openAiCompatibleVoiceServer(
  * Any private address is allowed, so echo only a short, single-line error from the
  * server: enough for "model not found", too little to read another service through it.
  */
-function serverError(status: number, what: string, body: unknown, apiKey?: string): Error {
-  const raw = voiceErrorDetail(body);
-  const redacted = apiKey ? raw.replaceAll(apiKey, "[redacted]") : raw;
-  const short = redacted
+function serverError(
+  status: number,
+  what: string,
+  body: unknown,
+  ...privateValues: (string | undefined)[]
+): Error {
+  const secrets = privateValues.filter((value): value is string => Boolean(value));
+  const short = redactSecrets(voiceErrorDetail(body), secrets)
     .replace(/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]+/gu, " ")
     .trim()
     .slice(0, MAX_SERVER_DETAIL_LENGTH);
@@ -551,6 +566,7 @@ export class OpenAiCompatibleVoiceProvider implements VoiceProvider {
     form.set("response_format", "json");
     const language = voiceLanguageHint(request.language);
     if (language) form.set("language", language);
+    if (secret.transcriptionVocabulary) form.set("prompt", secret.transcriptionVocabulary);
     form.set(
       "file",
       new Blob([new Uint8Array(request.audio)], { type: request.mimeType || "audio/webm" }),
@@ -566,7 +582,13 @@ export class OpenAiCompatibleVoiceProvider implements VoiceProvider {
     const raw = await readVoiceText(res);
     const type = mediaType(res);
     if (!res.ok) {
-      throw serverError(res.status, "transcribing", parseJson(raw), apiKey);
+      throw serverError(
+        res.status,
+        "transcribing",
+        parseJson(raw),
+        apiKey,
+        secret.transcriptionVocabulary,
+      );
     }
     if (type && type !== "text/plain" && type !== "application/json") {
       throw new Error(`${PROVIDER_NAME} did not return a transcript.`);
@@ -635,6 +657,7 @@ export const openAiCompatibleVoice: VoiceProviderDefinition = {
     name: "Self-hosted",
     description: "Any OpenAI-compatible speech server, like Kokoro or Whisper.",
     transcribe: true,
+    transcriptionVocabulary: true,
     freeformVoice: true,
   },
   listed: ({ allowPrivateEndpoint }) =>

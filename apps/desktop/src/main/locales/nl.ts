@@ -17,6 +17,7 @@ export const NL_MESSAGES: Record<string, string> = {
   Redo: "Opnieuw",
   Cut: "Knip",
   Copy: "Kopieer",
+  "Copy Link Address": "Kopieer linkadres",
   Paste: "Plak",
   "Paste and Match Style": "Plak en pas stijl aan",
   Delete: "Verwijder",

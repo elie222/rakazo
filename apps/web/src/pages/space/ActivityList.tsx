@@ -1,7 +1,7 @@
-import { t } from "@lingui/core/macro";
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { Bot, Group, RunActivityRow, RunStatus } from "@rakazo/contracts";
 import { activitySections } from "@rakazo/core";
+import { activityPreview, runStatusLabel } from "@rakazo/i18n/activity";
 import {
   BotAvatar,
   Button,
@@ -22,7 +22,6 @@ import { useId, useMemo, useState } from "react";
 import type { ActivityListFilters } from "../../lib/activity-list-filters";
 import {
   activityFiltersActive,
-  activityPreview,
   clearActivityFilterField,
   emptyActivityFilters,
   filterActivityRuns,
@@ -261,7 +260,7 @@ function ActivityFilters({
   const fromId = useId();
   const toId = useId();
   const filtersOn = activityFiltersActive(filters);
-  const statusLabelText = filters.status === "all" ? null : statusLabel(filters.status);
+  const statusLabelText = filters.status === "all" ? null : runStatusLabel(filters.status);
 
   return (
     <div className="flex flex-col">
@@ -282,7 +281,7 @@ function ActivityFilters({
                   { value: "all", label: t`All statuses` },
                   ...STATUS_FILTERS.map((status) => ({
                     value: status,
-                    label: statusLabel(status),
+                    label: runStatusLabel(status),
                   })),
                 ]}
               />
@@ -435,7 +434,7 @@ function ActivityRow({
 }) {
   const { t } = useLingui();
   const title = run.groupName ? `${run.botName}, ${run.groupName}` : run.botName;
-  const label = statusLabel(run.status);
+  const label = runStatusLabel(run.status);
   const activityLabel = t`${title}, ${label}`;
   const preview = activityPreview(run);
   return (
@@ -514,27 +513,4 @@ function ChatRow({
       </div>
     </button>
   );
-}
-
-export function statusLabel(status: RunActivityRow["status"]): string {
-  switch (status) {
-    case "queued":
-      return t`Queued`;
-    case "leased":
-      return t`Starting`;
-    case "running":
-      return t`Running`;
-    case "waiting_input":
-      return t`Needs input`;
-    case "waiting_takeover":
-      return t`Needs takeover`;
-    case "completed":
-      return t`Done`;
-    case "failed":
-      return t`Failed`;
-    case "cancelled":
-      return t`Cancelled`;
-    default:
-      return status;
-  }
 }

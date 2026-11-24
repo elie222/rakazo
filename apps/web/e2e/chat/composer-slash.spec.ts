@@ -4,11 +4,12 @@ import { captureScreenshot, completeOnboarding, rpc, signup } from "../helpers/h
 test("Enter picks the highlighted slash skill instead of sending", async ({ page }, testInfo) => {
   await signup(page, `slash-enter-${Date.now()}@rakazo.test`, "password12", "Slash Owner");
   await completeOnboarding(page);
+  const descriptionPrefix = `Review 👍🏽 ${"i".repeat(60)}`;
   await rpc(page, "agentSkills/create", {
     content: [
       "---",
       "name: weekly-review",
-      "description: Summarize the week's progress and blockers.",
+      `description: ${descriptionPrefix}👍🏽more`,
       "---",
       "",
       "List what shipped, what slipped, and what is blocked.",
@@ -21,6 +22,7 @@ test("Enter picks the highlighted slash skill instead of sending", async ({ page
     .getByTestId("slash-picker")
     .getByRole("option", { name: "Skill weekly-review", exact: true });
   await expect(skill).toHaveAttribute("aria-selected", "true");
+  await expect(skill.getByText(`${descriptionPrefix}…`, { exact: true })).toBeVisible();
   await captureScreenshot(page, testInfo, "composer-slash-highlight");
   await composer.press("Enter");
   await expect(page.getByRole("button", { name: "Remove skill weekly-review" })).toBeVisible();

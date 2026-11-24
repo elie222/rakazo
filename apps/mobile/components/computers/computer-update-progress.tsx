@@ -8,6 +8,7 @@ import { useEffect, useState, useSyncExternalStore } from "react";
 import {
   AccessibilityInfo,
   ActivityIndicator,
+  I18nManager,
   Modal,
   Pressable,
   StyleSheet,
@@ -22,10 +23,13 @@ import { GlassSurface } from "../native/glass-surface";
 import { NativeActionButton } from "../native/native-action-button";
 import { NativeSymbol } from "../native/native-symbol";
 
+const sheetPadding = 24;
+
 export function ComputerUpdateProgress() {
   const { t } = useLingui();
   const tokens = useMobileTokens();
   const insets = useSafeAreaInsets();
+  const { isRTL } = I18nManager;
   const pathname = usePathname();
   const { updates, openId } = useSyncExternalStore(
     computerUpdates.subscribe,
@@ -102,7 +106,17 @@ export function ComputerUpdateProgress() {
         onRequestClose={() => computerUpdates.open(null)}
       >
         {selected ? (
-          <View style={[styles.sheet, { backgroundColor: tokens.background }]}>
+          <View
+            style={[
+              styles.sheet,
+              {
+                backgroundColor: tokens.background,
+                // Insets are physical, but the sheet's padding follows layout direction.
+                paddingStart: sheetPadding + (isRTL ? insets.right : insets.left),
+                paddingEnd: sheetPadding + (isRTL ? insets.left : insets.right),
+              },
+            ]}
+          >
             <Text accessibilityRole="header" style={[styles.title, { color: tokens.foreground }]}>
               {title(selected)}
             </Text>
@@ -185,7 +199,7 @@ const styles = StyleSheet.create({
   },
   pillFallback: { borderWidth: 1, borderRadius: 14, paddingHorizontal: 12 },
   secondary: { fontSize: 12, textAlign: "center", marginTop: 3 },
-  sheet: { flex: 1, padding: 24, gap: 24 },
+  sheet: { flex: 1, padding: sheetPadding, gap: 24 },
   title: { fontSize: 22, fontWeight: "600" },
   step: { flexDirection: "row", alignItems: "center", gap: 16 },
 });

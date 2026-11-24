@@ -1,7 +1,8 @@
 import type { ConnectorProvider, JobPublisher, SecretStore } from "@rakazo/adapter-kit";
 import { routineJobKey, routineWakeupJob } from "@rakazo/adapter-kit";
-import type { RoutineWatch } from "@rakazo/contracts";
+import type { ChatPreferencesPatch, RoutineWatch } from "@rakazo/contracts";
 import {
+  ROUTINE_NAME_MAX_LENGTH,
   ROUTINE_WATCH_MIN_MINUTES,
   RoutineEmailSendersSchema,
   RoutineWatchSchema,
@@ -9,7 +10,6 @@ import {
 } from "@rakazo/contracts";
 import {
   cronFromPreset,
-  formatCron,
   isOneShotRoutineCron,
   isOneShotRoutineCrons,
   nextCronDate,
@@ -45,6 +45,7 @@ import {
 import { localDateTime } from "../runs/assembly/current-time.prompt.js";
 import type { ScheduleUnit } from "./schedule-intervals.js";
 import { intervalRangeError } from "./schedule-intervals.js";
+import { describeRoutineTiming, routineChanges } from "./schedule-update-view.js";
 
 export { isOneShotRoutineCron, ONCE_ROUTINE_CRON };
 
@@ -199,6 +200,9 @@ export function resolveScheduleTiming(
       if (!parsed) return { ok: false, error: "runAt must be a valid ISO datetime." };
       nextRunAt = parsed;
     }
+    if (Number.isNaN(nextRunAt.getTime())) {
+      return { ok: false, error: "The delay is too far in the future." };
+    }
     if (nextRunAt.getTime() <= Date.now()) {
       return { ok: false, error: `One-shot schedules must run in the future. ${nowIn(timezone)}` };
     }
@@ -270,21 +274,6 @@ function nowIn(timezone: string): string {
   return `It is now ${localDateTime(now, timezone) ?? now.toISOString()} in ${timezone}.`;
 }
 
-/** The stored timing as the bot should report it: in the routine's timezone, with the next run. */
-export function describeRoutineTiming(row: {
-  crons: string[];
-  timezone: string;
-  nextRunAt: Date | null;
-}) {
-  return {
-    timezone: row.timezone,
-    ...(row.crons.length ? { schedule: row.crons.map((cron) => formatCron(cron)).join("; ") } : {}),
-    nextRun: row.nextRunAt
-      ? (localDateTime(row.nextRunAt, row.timezone) ?? row.nextRunAt.toISOString())
-      : null,
-  };
-}
-
 function validateRepeatingCron(cron: string): string | null {
   const parts = cron.trim().split(/\s+/);
   if (parts.length !== 5) return "cron must be a 5-field cron expression.";
@@ -334,17 +323,31 @@ async function routineEventsFor(
   return resolveRoutineEvents(deps, bot, input.userId, parsed.on);
 }
 
+/**
+ * The store the bot's webhook key is made in for events that need one: none when they need none,
+ * or why there is none. Read only, so a preview answers the same as the save.
+ */
+function webhookKeyStore(
+  deps: Pick<ScheduleToolDeps, "secretStore">,
+  events: RoutineEvents,
+): { store?: Pick<SecretStore, "put"> } | { error: string } {
+  if (!events.webhookEnabled && !events.githubEnabled) return {};
+  if (!deps.secretStore) return { error: "Webhook keys are not available on this server." };
+  return { store: deps.secretStore };
+}
+
 /** Make the bot's webhook key if a webhook or Git event needs one and it has none yet. */
 async function ensureWebhookKey(
   deps: Pick<ScheduleToolDeps, "prisma" | "secretStore">,
   input: { spaceId: string; botId: string; userId: string },
   events: RoutineEvents,
 ): Promise<string | undefined> {
-  if (!events.webhookEnabled && !events.githubEnabled) return undefined;
-  if (!deps.secretStore) return "Webhook keys are not available on this server.";
+  const key = webhookKeyStore(deps, events);
+  if ("error" in key) return key.error;
+  if (!key.store) return undefined;
   // The result is the key; dropped here, so it never reaches the run, its result or a log.
   await storeBotWebhookKey(
-    { prisma: deps.prisma, secretStore: deps.secretStore },
+    { prisma: deps.prisma, secretStore: key.store },
     { id: input.botId, spaceId: input.spaceId, userId: input.userId },
     {
       operationId: "schedule.webhookKey",
@@ -411,7 +414,7 @@ export async function changeUserTimezone(
   },
   userId: string,
   timezone: string | null,
-  other?: {
+  other?: ChatPreferencesPatch & {
     locale?: string;
     botAvatarSet?: string;
     labs?: string[];
@@ -719,6 +722,7 @@ export async function createScheduleFromTool(
     botId: routineBotId,
     change: "created",
     name: row.name,
+    routine: { webhookEnabled: row.webhookEnabled, active: row.active },
   });
 
   return {
@@ -905,6 +909,7 @@ async function createWatchFromTool(
     botId: input.botId,
     change: "created",
     name: row.name,
+    routine: { webhookEnabled: row.webhookEnabled, active: row.active },
   });
   return {
     ok: true as const,
@@ -1018,13 +1023,23 @@ export async function updateScheduleFromTool(
     everyMinutes?: unknown;
     /** Replaces the routine's events; an empty object removes them. */
     on?: unknown;
+    /**
+     * The name and prompt an approval was shown against, each only when the call edits that
+     * field. A row that moved since then conflicts instead of being overwritten, like an
+     * instruction change.
+     */
+    expected?: { name?: string; prompt?: string };
   },
+  /** A preview answers what the save would change, or its error, and writes nothing. */
+  options: { preview?: boolean } = {},
 ) {
   const routineId = input.routineId.trim();
   if (!routineId) return { error: "routineId is required." };
   const name = input.name?.trim();
   const prompt = input.prompt?.trim();
   if (input.name !== undefined && !name) return { error: "name cannot be empty." };
+  if (name && name.length > ROUTINE_NAME_MAX_LENGTH)
+    return { error: `name must be at most ${ROUTINE_NAME_MAX_LENGTH} characters.` };
   if (input.prompt !== undefined && !prompt) return { error: "prompt cannot be empty." };
 
   const scope = {
@@ -1044,6 +1059,15 @@ export async function updateScheduleFromTool(
           bot: { archivedAt: null },
         })
       : { error: "Schedule not found." };
+  }
+  // An approval saw the row as it reads here; a field this call writes that moved since
+  // conflicts rather than being overwritten, so the saved change is never different from the
+  // one that was shown.
+  if (input.expected?.name !== undefined && input.expected.name !== existing.name) {
+    return { error: "The schedule changed while saving. Call schedule_list and try again." };
+  }
+  if (input.expected?.prompt !== undefined && input.expected.prompt !== existing.prompt) {
+    return { error: "The schedule changed while saving. Call schedule_list and try again." };
   }
   // A routine runs with its owner's accounts, so only they change what it does; anyone may pause
   // or resume it, which keeps it theirs.
@@ -1169,6 +1193,48 @@ export async function updateScheduleFromTool(
   }
   const eventsChanged =
     JSON.stringify(routineEventsView(events)) !== JSON.stringify(routineEventsView(existing));
+  const timing = describeRoutineTiming({ crons, timezone, nextRunAt });
+  const result = {
+    ok: true as const,
+    routineId: existing.id,
+    name: name ?? existing.name,
+    active,
+    crons,
+    nextRunAt: nextRunAt?.toISOString() ?? null,
+    oneShot: isOneShotRoutineCrons(crons),
+    ...timing,
+    ...(watch ? { everyMinutes: watch.everyMinutes } : {}),
+    ...(eventsChanged || input.on !== undefined ? eventsResult(events) : {}),
+    // An unchanged prompt is not echoed; an edited one appears only in `changes`, before and after.
+    changes: routineChanges(
+      {
+        name: existing.name,
+        prompt: existing.prompt,
+        inChat: existing.inChat,
+        active: existing.active,
+        ...describeRoutineTiming(existing),
+        everyMinutes: existingWatch?.everyMinutes,
+        on: routineEventsView(existing),
+      },
+      {
+        name: name ?? existing.name,
+        prompt: prompt ?? existing.prompt,
+        inChat: inChat ?? existing.inChat,
+        active,
+        ...timing,
+        everyMinutes: watch?.everyMinutes,
+        on: routineEventsView(events),
+      },
+    ),
+  };
+  // Everything above is a check or a read, so a preview stops here, short of each write, with
+  // the answer the save would give: a card built from it can only show a change the save makes.
+  if (options.preview) {
+    // The save makes the bot's webhook key for the events a call sets, and answers when it cannot.
+    if (input.on === undefined) return result;
+    const key = webhookKeyStore(deps, events);
+    return "error" in key ? { error: key.error } : result;
+  }
   // Events the bot sends were checked against the bot's creator, so their key is made even when
   // they match what is saved: a routine saved elsewhere may have none.
   if (input.on !== undefined) {
@@ -1199,6 +1265,8 @@ export async function updateScheduleFromTool(
       // only to the watch it was read with.
       ...(inChat ? { watch: { equals: Prisma.DbNull } } : {}),
       ...(watchChanged ? { watch: { equals: existing.watch as Prisma.InputJsonValue } } : {}),
+      ...(input.expected?.name !== undefined ? { name: input.expected.name } : {}),
+      ...(input.expected?.prompt !== undefined ? { prompt: input.expected.prompt } : {}),
     },
     data: {
       ...(name === undefined ? {} : { name }),
@@ -1211,9 +1279,10 @@ export async function updateScheduleFromTool(
   });
   if (count === 0) {
     return {
-      error: timingChanged
-        ? "The schedule changed while saving. Call schedule_list and try again."
-        : "Schedule not found.",
+      error:
+        timingChanged || input.expected
+          ? "The schedule changed while saving. Call schedule_list and try again."
+          : "Schedule not found.",
     };
   }
   await deps.events.publishSpaceChange?.(input.spaceId, "routines");
@@ -1249,76 +1318,11 @@ export async function updateScheduleFromTool(
       botId: input.botId,
       change: routineEditChange(existing, saved),
       name: saved.name,
+      routine: { webhookEnabled: saved.webhookEnabled, active: saved.active },
     });
   }
 
-  const timing = describeRoutineTiming({ crons, timezone, nextRunAt });
-  return {
-    ok: true as const,
-    routineId: existing.id,
-    name: name ?? existing.name,
-    active,
-    crons,
-    nextRunAt: nextRunAt?.toISOString() ?? null,
-    oneShot: isOneShotRoutineCrons(crons),
-    ...timing,
-    ...(watch ? { everyMinutes: watch.everyMinutes } : {}),
-    ...(eventsChanged || input.on !== undefined ? eventsResult(events) : {}),
-    // An unchanged prompt is not echoed; an edited one appears only in `changes`, before and after.
-    changes: routineChanges(
-      {
-        name: existing.name,
-        prompt: existing.prompt,
-        inChat: existing.inChat,
-        active: existing.active,
-        ...describeRoutineTiming(existing),
-        everyMinutes: existingWatch?.everyMinutes,
-        on: routineEventsView(existing),
-      },
-      {
-        name: name ?? existing.name,
-        prompt: prompt ?? existing.prompt,
-        inChat: inChat ?? existing.inChat,
-        active,
-        ...timing,
-        everyMinutes: watch?.everyMinutes,
-        on: routineEventsView(events),
-      },
-    ),
-  };
-}
-
-type RoutineView = {
-  name: string;
-  prompt: string;
-  inChat: boolean;
-  active: boolean;
-  timezone: string;
-  schedule?: string;
-  nextRun: string | null;
-  everyMinutes?: number;
-  on: ReturnType<typeof routineEventsView>;
-};
-
-/** Before and after for each field an update changed; a field that kept its value is left out. */
-function routineChanges(before: RoutineView, after: RoutineView) {
-  const changes: Record<string, { before: unknown; after: unknown }> = {};
-  for (const key of [
-    "name",
-    "prompt",
-    "inChat",
-    "active",
-    "timezone",
-    "schedule",
-    "nextRun",
-    "everyMinutes",
-    "on",
-  ] as const) {
-    if (JSON.stringify(before[key]) !== JSON.stringify(after[key])) {
-      changes[key] = { before: before[key] ?? null, after: after[key] ?? null };
-    }
-  }
-  return changes;
+  return result;
 }
 
 /** Cancel a bot routine, optionally restricted to the current group thread. */

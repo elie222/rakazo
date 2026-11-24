@@ -115,7 +115,9 @@ describe.skipIf(!databaseAvailable)("routine silence eval through the product", 
                   id: "remember-notified",
                   name: "remember",
                   arguments: {
-                    content: `Already notified the user: ${releaseReply}`,
+                    operations: [
+                      { action: "add", content: `Already notified the user: ${releaseReply}` },
+                    ],
                   },
                 }
               : { type: "text" as const, text: reply },
