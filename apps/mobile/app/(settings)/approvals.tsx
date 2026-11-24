@@ -7,6 +7,7 @@ import {
   approvalRuleEffectChoices,
   approvalRuleLabel,
   approvalRulePath,
+  withSavedApprovalRule,
 } from "@rakazo/core";
 import { useQuery } from "@tanstack/react-query";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
@@ -87,16 +88,7 @@ export default function ApprovalRules() {
         matchKind: rule.matchKind,
         matchValue: rule.matchValue,
       });
-      // Saving replaces every other rule on the same match, whatever its case.
-      const value = rule.matchValue.toLowerCase();
-      setRules((current) =>
-        current.flatMap((entry) => {
-          if (entry.id === rule.id) return [saved];
-          const sameMatch =
-            entry.matchKind === rule.matchKind && entry.matchValue.toLowerCase() === value;
-          return sameMatch ? [] : [entry];
-        }),
-      );
+      setRules((current) => withSavedApprovalRule(current, saved));
     },
   });
   const pending = change.pending;

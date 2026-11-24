@@ -1,5 +1,6 @@
 import type { SettingsScope } from "@rakazo/contracts";
-import { parseConnectionToolRuleValue, ScopedBatchAction } from "@rakazo/contracts";
+import { ScopedBatchAction } from "@rakazo/contracts";
+import { approvalRuleTargetKey } from "@rakazo/core";
 import * as z from "zod";
 import type { PrismaClient } from "../database/client.js";
 import { Prisma } from "../database/client.js";
@@ -73,12 +74,7 @@ export async function saveApprovalRule(
   await lockSpaceSettings(tx, scope);
   const account = (await confirmationsTarget(tx, scope, requested)) === "account";
   const owner = account ? `account:${scope.userId}` : `${scope.spaceId}:${scope.userId}`;
-  const matchKey = (value: string) => {
-    if (rule.matchKind !== "connection_tool") return value.toLowerCase();
-    const target = parseConnectionToolRuleValue(value);
-    return target ? JSON.stringify(target.slice(0, 2)) : value;
-  };
-  const value = matchKey(rule.matchValue);
+  const value = approvalRuleTargetKey(rule.matchKind, rule.matchValue);
   await tx.$queryRaw(Prisma.sql`
     SELECT pg_advisory_xact_lock(hashtextextended(${`approval-rule:${owner}:${rule.matchKind}:${value}`}, 0))::text AS "lock"
   `);
@@ -86,7 +82,7 @@ export async function saveApprovalRule(
   // insensitive mode: that is ILIKE, where "_" is a wildcard.
   const replaced = (rows: Array<{ id: string; effect: string; matchValue: string }>) =>
     rows
-      .filter((row) => matchKey(row.matchValue) === value)
+      .filter((row) => approvalRuleTargetKey(rule.matchKind, row.matchValue) === value)
       .filter((row) => row.effect !== rule.effect || row.matchValue !== rule.matchValue)
       .map((row) => row.id);
   const select = { id: true, effect: true, matchValue: true } as const;

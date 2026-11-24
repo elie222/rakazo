@@ -915,6 +915,30 @@ export function approvalRulePath(rule: ActionApprovalRule): string | undefined {
     : undefined;
 }
 
+/** The target within one match kind. Connection paths keep their case and ignore the display name. */
+export function approvalRuleTargetKey(matchKind: string, matchValue: string): string {
+  if (matchKind === "connection_tool") {
+    const target = parseConnectionToolRuleValue(matchValue);
+    if (target) return JSON.stringify([target[0], target[1]]);
+  }
+  return matchValue.toLowerCase();
+}
+
+export function withSavedApprovalRule(
+  current: StoredActionApprovalRule[],
+  saved: StoredActionApprovalRule,
+): StoredActionApprovalRule[] {
+  const target = approvalRuleTargetKey(saved.matchKind, saved.matchValue);
+  return [
+    ...current.filter(
+      (rule) =>
+        rule.matchKind !== saved.matchKind ||
+        approvalRuleTargetKey(rule.matchKind, rule.matchValue) !== target,
+    ),
+    saved,
+  ];
+}
+
 /** A built-in tool a person can add a rule for. */
 export type ApprovalRuleChoice = { matchKind: "tool"; matchValue: string; label: string };
 

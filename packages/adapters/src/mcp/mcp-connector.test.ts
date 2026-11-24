@@ -22,11 +22,12 @@ import { infisicalFake } from "../secrets/secret-store-fake.js";
 import { EncryptedSecretStore } from "../secrets/secrets.js";
 import { CATALOG_EXECUTE, DIRECT_TOOL_LIMIT } from "../tools/lazy-tool-catalog.js";
 import { MCP_CLOSE_TIMEOUT_MS } from "./mcp-close.js";
-import { allowlistDrift, DEFAULT_MCP_STDIO_IDLE_MS, McpConnector } from "./mcp-connector.js";
+import { DEFAULT_MCP_STDIO_IDLE_MS, McpConnector } from "./mcp-connector.js";
 import type { McpOAuthBroker, OAuthMaterial } from "./mcp-oauth.js";
 import { StoredMcpOAuthProvider } from "./mcp-oauth.js";
 import type * as reconnectCard from "./mcp-reconnect-card.js";
 import { reportExpiredMcpSignIn } from "./mcp-reconnect-card.js";
+import { allowlistDrift } from "./mcp-tool-permissions.js";
 import { McpSession } from "./mcp-transport.js";
 import { MCP_TOOL_TIMEOUT_MS } from "./remote-mcp.js";
 

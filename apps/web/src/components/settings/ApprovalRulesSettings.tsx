@@ -14,6 +14,7 @@ import {
   approvalRuleEffectChoices,
   approvalRuleLabel,
   approvalRulePath,
+  withSavedApprovalRule,
 } from "@rakazo/core";
 import { writeSaved } from "@rakazo/core/query";
 import {
@@ -108,15 +109,7 @@ export function ApprovalRulesSettings({ scope }: { scope: SettingsScope }) {
       matchKind: rule.matchKind,
       matchValue: rule.matchValue,
     });
-    // Saving replaces any other effect on the same match.
-    await setRules((current) => [
-      ...current.filter(
-        (other) =>
-          other.matchKind !== saved.matchKind ||
-          other.matchValue.toLowerCase() !== saved.matchValue.toLowerCase(),
-      ),
-      saved,
-    ]);
+    await setRules((current) => withSavedApprovalRule(current, saved));
   }
 
   const modeDetail =
