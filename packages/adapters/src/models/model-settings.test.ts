@@ -416,8 +416,12 @@ describe("compatible model defaults", () => {
     });
     expect(settings("own")).toEqual({ images: false, reasoning: false });
     const dto = modelCredentialDto(row, serializeModelSecret(hosted));
-    for (const id of ["plain", "text-only", "own"])
-      expect(credentialModelSettings(dto, id)).toEqual(settings(id));
+    for (const id of ["plain", "text-only", "own"]) {
+      const { images, reasoning } = settings(id);
+      expect(credentialModelSettings(dto, id)).toMatchObject({ images, reasoning });
+    }
+    // A listed limit is shown, not filled in, so saving the form keeps it the server's.
+    expect(credentialModelSettings(dto, "text-only").contextWindow).toBeUndefined();
   });
 
   it("keep thinking off where the whole connection turned it off", () => {
@@ -443,6 +447,15 @@ describe("compatible model defaults", () => {
     );
     expect(connectionModelSettings(hosted, row.provider, "big").maxTokens).toBe(32_768);
     expect(connectionModelSettings(hosted, row.provider, "small").maxTokens).toBe(16_000);
+    const listedText = parseModelSecret(
+      JSON.stringify({
+        kind: "openai_compatible",
+        baseUrl: "https://models.example.test/v1",
+        listedModels: { big: { maxTokens: 128_000, reasoning: false } },
+        models: { big: { reasoning: true } },
+      }),
+    );
+    expect(connectionModelSettings(listedText, row.provider, "big").maxTokens).toBe(32_768);
   });
 
   it("assume neither on a local server", () => {

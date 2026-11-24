@@ -36,7 +36,7 @@ import { modelProviderDefinition } from "./model-provider-registry.js";
 import type { StoredModelSecret } from "./model-secret.js";
 import { parseModelSecret, serializeModelSecret } from "./model-secret.js";
 import { enabledOpenAiCompatibleModelIds } from "./model-selection.js";
-import { compatibleModelDefaults, connectionModelSettings } from "./model-settings.js";
+import { connectionModelSettings } from "./model-settings.js";
 import {
   catalogKnowsModel,
   modelIdSupportsImages,
@@ -323,25 +323,14 @@ function listedEnabledModels(
   return kept.length > 0 ? { listedModels: Object.fromEntries(kept) } : {};
 }
 
-/**
- * What each compatible model runs with where its own settings say nothing. A model without its
- * own gets everything it runs with, so values saved for the whole connection count too.
- */
+/** What each compatible model runs with, for the apps to show where its own settings are empty. */
 function compatibleModelDefaultsDto(
   secret: Extract<StoredModelSecret, { kind: "openai_compatible" }>,
   row: { provider: string; defaultModel?: string | null; supportsImages?: boolean },
 ): { modelDefaults?: Record<string, ModelSettings> } {
   const entries = enabledOpenAiCompatibleModelIds(secret, row.defaultModel)
     .filter((id) => !catalogKnowsModel(row.provider, id))
-    .map(
-      (id) =>
-        [
-          id,
-          secret.models?.[id]
-            ? compatibleModelDefaults(secret, id)
-            : connectionModelSettings(secret, row.provider, id, row),
-        ] as const,
-    )
+    .map((id) => [id, connectionModelSettings(secret, row.provider, id, row)] as const)
     .filter(([, defaults]) => Object.keys(defaults).length > 0);
   return entries.length > 0 ? { modelDefaults: Object.fromEntries(entries) } : {};
 }

@@ -22,7 +22,14 @@ export function connectionModelSettings(
   const settings = savedModelSettings(secret, modelId, credential);
   if (!catalogKnowsModel(provider, modelId)) {
     if (secret.kind !== "openai_compatible") return settings;
-    return withModelDefaults(compatibleModelDefaults(secret, modelId), settings);
+    const merged = withModelDefaults(compatibleModelDefaults(secret, modelId), settings);
+    // The list names the model's ceiling; a request asks for the usual modest share of it.
+    if (settings.maxTokens === undefined && merged.maxTokens !== undefined)
+      merged.maxTokens = Math.min(
+        merged.maxTokens,
+        merged.reasoning ? REASONING_MODEL_MAX_TOKENS : DEFAULT_MODEL_MAX_TOKENS,
+      );
+    return merged;
   }
   const { images: _images, reasoning: _reasoning, thinkingLevel: _level, ...limits } = settings;
   return limits;
@@ -39,17 +46,8 @@ export function compatibleModelDefaults(
 ): ModelSettings {
   const listed = secret.listedModels?.[modelId.trim()] ?? {};
   const url = URL.parse(secret.baseUrl);
-  const defaults =
-    url && isPrivateOpenAiCompatibleHostname(url.hostname)
-      ? { ...listed }
-      : { images: true, reasoning: true, ...listed };
-  // The list names the model's ceiling; a request asks for the usual modest share of it.
-  if (defaults.maxTokens !== undefined)
-    defaults.maxTokens = Math.min(
-      defaults.maxTokens,
-      defaults.reasoning ? REASONING_MODEL_MAX_TOKENS : DEFAULT_MODEL_MAX_TOKENS,
-    );
-  return defaults;
+  if (url && isPrivateOpenAiCompatibleHostname(url.hostname)) return listed;
+  return { images: true, reasoning: true, ...listed };
 }
 
 function savedModelSettings(
