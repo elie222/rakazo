@@ -1114,8 +1114,9 @@ export function runModelChoice(
     return {
       modelProvider: run.modelProvider,
       modelId: run.modelId,
-      // A routine's explicit model is its own configuration, not the bot's current connection.
+      // A routine never sets a connection here; the direct-chat pilot snapshots one.
       thinkingLevel: run.thinkingLevel,
+      ...(run.modelCredentialId ? { modelCredentialId: run.modelCredentialId } : {}),
     };
   }
   return {

@@ -1339,6 +1339,9 @@ model Run {
   userId               String
   status               String
   trigger              String
+  // Only the opted-in direct-chat pilot sets these at enqueue time.
+  primaryRuntime       String?
+  modelCredentialId    String?
   modelProvider        String?
   modelId              String?
   thinkingLevel        String?
