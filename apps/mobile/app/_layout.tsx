@@ -334,7 +334,8 @@ function LayoutContent() {
     return startIncomingCalls();
   }, [ready, callSession]);
   const screen = analyticsScreen(pathname);
-  useEffect(() => setMobileMonitoringScreen(screen), [screen]);
+  const monitoringScreen = pathname === "/share" ? "share" : screen;
+  useEffect(() => setMobileMonitoringScreen(monitoringScreen), [monitoringScreen]);
   useEffect(() => {
     const surface = Platform.OS;
     if (!ready || !screen || (surface !== "ios" && surface !== "android")) return;
