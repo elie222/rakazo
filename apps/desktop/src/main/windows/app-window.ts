@@ -2,7 +2,7 @@ import { existsSync } from "node:fs";
 import { readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { Session } from "electron";
-import { app, BrowserWindow, Menu, net, screen, session, shell } from "electron";
+import { app, BrowserWindow, Menu, nativeTheme, net, screen, session, shell } from "electron";
 import {
   mcpLoopbackRefusalFrom,
   mcpOAuthCallbackFrom,
@@ -35,7 +35,12 @@ import {
   oauthPopupSessionPreferences,
   shouldOpenInAppPopup,
 } from "./window-open.js";
-import { browserWindowOptions, developmentIconFile, warmWindowTtlMs } from "./window-options.js";
+import {
+  appWindowBackground,
+  browserWindowOptions,
+  developmentIconFile,
+  warmWindowTtlMs,
+} from "./window-options.js";
 
 export const PROBE_TIMEOUT_MS = 8_000;
 /** The server or the network refused the page; the setup window says so and the server logs its side. */
@@ -153,6 +158,7 @@ export function createWindow(url: string, partition: string | null) {
   const icon = developmentIcon();
   const win = new BrowserWindow({
     ...browserWindowOptions(process.platform, screen.getPrimaryDisplay().workAreaSize),
+    backgroundColor: appWindowBackground(nativeTheme.shouldUseDarkColors),
     ...(icon ? { icon } : {}),
     webPreferences: {
       preload: path.join(import.meta.dirname, "preload.cjs"),

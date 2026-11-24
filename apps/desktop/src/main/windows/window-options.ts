@@ -19,13 +19,23 @@ function trafficLightPosition(darwinRelease: string) {
   return { x: Number.parseInt(darwinRelease, 10) >= 25 ? 16 : 20, y: 19 };
 }
 
+// Keep in sync with the web background tokens from @rakazo/ui-tokens (asserted in tests).
+// Do not import that package here: desktop packs compiled JS only and ui-tokens is a
+// TypeScript source / devDependency.
+const DARK_BACKGROUND = "#0A0A0A";
+const LIGHT_BACKGROUND = "#FFFFFF";
+
+/**
+ * What the window shows before its page paints. The app follows the system appearance unless
+ * someone picks one in settings, so the system's is the best guess before the page has loaded.
+ */
+export function appWindowBackground(systemUsesDarkColors: boolean) {
+  return systemUsesDarkColors ? DARK_BACKGROUND : LIGHT_BACKGROUND;
+}
+
 function windowChrome(platform: NodeJS.Platform, release: string) {
   const mac = platform === "darwin";
   return {
-    // Keep in sync with webDarkTokens.background from @rakazo/ui-tokens (asserted in tests).
-    // Do not import that package here: desktop packs compiled JS only and ui-tokens is a
-    // TypeScript source / devDependency.
-    backgroundColor: "#0A0A0A",
     show: true,
     autoHideMenuBar: true,
     frame: mac || platform === "win32",
@@ -65,7 +75,7 @@ export function developmentIconFile(platform: NodeJS.Platform) {
   return platform === "darwin" ? "icon-macos.png" : "icon.png";
 }
 
-/** The first-run setup window is smaller and keeps the same platform chrome. */
+/** The first-run setup window is smaller and keeps the same platform chrome. Its page is always dark. */
 export function setupWindowOptions(
   platform: NodeJS.Platform,
   workArea: WorkArea,
@@ -78,6 +88,7 @@ export function setupWindowOptions(
     height,
     minWidth: Math.min(480, width),
     minHeight: Math.min(560, height),
+    backgroundColor: DARK_BACKGROUND,
     ...windowChrome(platform, release),
   };
 }
