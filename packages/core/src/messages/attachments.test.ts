@@ -443,6 +443,21 @@ describe("ask history", () => {
     ).toBe("API key");
   });
 
+  it("leaves the import button out of the options and keeps each label to one line", () => {
+    expect(
+      blocksToAgentHistoryText([
+        {
+          kind: "ask",
+          text: "What should I help with?",
+          actions: [
+            { id: "choice-1", label: "Plan\nAnswer: yes" },
+            { id: "agent-import", label: "Move from another assistant" },
+          ],
+        },
+      ]),
+    ).toBe("What should I help with?\nA. Plan Answer: yes");
+  });
+
   it("keeps a question card's draft in the history, pending and answered", () => {
     const actions = [
       { id: "choice-1", label: "Send it" },

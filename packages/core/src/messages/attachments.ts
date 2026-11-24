@@ -1,5 +1,6 @@
 import type { AttachmentMimeType, HistoryToolStep, MessageBlock } from "@rakazo/contracts";
 import {
+  AGENT_IMPORT_ASK_ACTION_ID,
   ATTACHMENT_COUNT_CEILING,
   ATTACHMENT_MAX_BYTES,
   ATTACHMENT_MAX_COUNT,
@@ -292,8 +293,14 @@ function blockHistoryText(block: MessageBlock): string {
         ? `\n<draft>\n${block.detail.replace(/<\s*\/\s*draft\s*>/gi, "&lt;/draft&gt;")}\n</draft>`
         : "";
     // The card shows its options lettered, and a typed reply like "A and C" refers to them.
+    // The import button opens a flow rather than answering, so it is not an option here. A
+    // label is kept to one line so it cannot pass for the answer.
     const options = isQuestionAskBlock(block)
-      ? (block.actions ?? []).map((action, index) => `\n${askOptionLetter(index)}. ${action.label}`)
+      ? (block.actions ?? [])
+          .filter((action) => action.id !== AGENT_IMPORT_ASK_ACTION_ID)
+          .map(
+            (action, index) => `\n${askOptionLetter(index)}. ${action.label.replace(/\s+/g, " ")}`,
+          )
       : [];
     const question = `${block.text}${options.join("")}${detail}`;
     if (block.status !== "answered" || !block.answer) return question;
