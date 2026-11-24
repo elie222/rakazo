@@ -8,6 +8,7 @@ const IDLE_WAIT_MS = 60_000;
 
 export const deploymentModelChangesScope = "deployment:model";
 export const accountPreferencesChangesScope = (userId: string) => `preferences:${userId}`;
+export const mobileDeviceChangesScope = (userId: string) => `mobile-devices:${userId}`;
 
 const spaceChangesTopic = (spaceId: string) => `space-changes:${spaceId}`;
 

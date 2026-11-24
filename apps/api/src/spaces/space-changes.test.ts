@@ -1,6 +1,10 @@
 import { createRouterClient } from "@orpc/server";
 import type { Actor } from "@rakazo/contracts";
-import { accountPreferencesChangesScope, pageChangesScope } from "@rakazo/db";
+import {
+  accountPreferencesChangesScope,
+  mobileDeviceChangesScope,
+  pageChangesScope,
+} from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
 import type { RouterDeps } from "../router.js";
 import { createRouter } from "../router.js";
@@ -45,6 +49,7 @@ describe("notifications.subscribe space change signals", () => {
   it.each([
     ["pages", pageChangesScope],
     ["preferences", accountPreferencesChangesScope],
+    ["mobileDevices", mobileDeviceChangesScope],
   ] as const)(
     "delivers opening %s signals only on the signed-in account's topic",
     async (kind, scopeForUser) => {

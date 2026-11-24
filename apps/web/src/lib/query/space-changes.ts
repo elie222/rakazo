@@ -20,6 +20,7 @@ const READS: Record<ReadChangeKind, readonly Procedure[]> = {
   ],
   routines: [["routines", "list"]],
   nativeCalendar: [],
+  mobileDevices: [["mobileDevices", "list"]],
   meetingCalendar: [["meetingCalendar", "upcoming"]],
   meetings: [
     ["meetings", "list"],

@@ -2,7 +2,7 @@ import type { PrismaPushTokenStore, WorkActivities } from "@rakazo/adapters";
 import { removePiUserSessions } from "@rakazo/adapters";
 import type { AuthEnv } from "@rakazo/auth";
 import type { ThreadEvents } from "@rakazo/db";
-import { fullMembershipOrganizationIds } from "@rakazo/db";
+import { fullMembershipOrganizationIds, mobileDeviceChangesScope } from "@rakazo/db";
 import { bestEffort, getLogger } from "@rakazo/logging";
 import { deleteAccountContent } from "../account/account-deletion.js";
 import type { BillingService } from "../billing/billing.js";
@@ -62,11 +62,15 @@ export function accountLifecycleHooks(
   AuthEnv,
   "beforeDeleteUser" | "afterDeleteUser" | "afterDeleteSession" | "afterReplaceSession"
 > {
-  const { pushTokens, workActivities, deviceSessions } = deps;
+  const { pushTokens, workActivities, deviceSessions, events } = deps;
   return {
     ...accountDeletionHooks(deps),
     // The session change already happened, so a registration cleanup failure must not fail sign-out.
     afterDeleteSession: async (session) => {
+      await logged(
+        "mobile device change publish failed",
+        events.publishSpaceChange?.(mobileDeviceChangesScope(session.userId), "mobileDevices"),
+      );
       await logged("push token removal failed", pushTokens.endSession(session.userId, session.id));
       await logged(
         "live status card removal failed",
@@ -75,6 +79,10 @@ export function accountLifecycleHooks(
       await logged("user device revocation failed", endUserDeviceSession(deviceSessions, session));
     },
     afterReplaceSession: async (previous, session) => {
+      await logged(
+        "mobile device change publish failed",
+        events.publishSpaceChange?.(mobileDeviceChangesScope(session.userId), "mobileDevices"),
+      );
       await logged(
         "push token session update failed",
         pushTokens.endSession(session.userId, previous.id, session.id),

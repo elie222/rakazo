@@ -156,10 +156,23 @@ model Session {
   userId               String
   user                 User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   activeOrganizationId String?
+  mobileDevice         MobileDevice?
 
   @@unique([token])
   @@index([userId])
   @@map("session")
+}
+
+/// Presence for one signed-in mobile session. It ends when the session is deleted.
+model MobileDevice {
+  id         String   @id @default(uuid())
+  sessionId  String   @unique
+  session    Session  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  platform   String
+  name       String?
+  lastSeenAt DateTime
+
+  @@map("mobile_devices")
 }
 
 /// One row per signed-in device; a device token belongs to one account at a time.

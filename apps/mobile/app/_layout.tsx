@@ -40,6 +40,7 @@ import { floatingHeaderOptions, glassHeaderOptions } from "../components/native/
 import { NativeSymbol } from "../components/native/native-symbol";
 import { chatRouteHeader } from "../components/thread/header/chat-route-header";
 import { AppErrorBoundary } from "../components/ui/app-error-boundary";
+import { MobileDevicePresence } from "../lib/account/mobile-device-presence";
 import {
   currentApiBase,
   rpc,
@@ -421,6 +422,7 @@ function LayoutContent() {
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
+      <MobileDevicePresence ready={ready} />
       <KeyboardProvider>
         {ready ? (
           <ChatContentProviders loadRemoteImages={loadRemoteImages}>

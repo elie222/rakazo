@@ -148,6 +148,7 @@ export const SpaceChangeKind = z.enum([
   "meetingCalendar",
   "pages",
   "nativeCalendar",
+  "mobileDevices",
   "preferences",
 ]);
 export type SpaceChangeKind = z.infer<typeof SpaceChangeKind>;

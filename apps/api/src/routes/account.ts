@@ -42,6 +42,7 @@ import {
   listAuditEvents,
   listVoicePreferences,
   lockSpaceSettings,
+  mobileDeviceChangesScope,
   newestVoiceCredentialOrder,
   Prisma,
   pageChangesScope,
@@ -56,6 +57,7 @@ import {
 } from "@rakazo/db";
 import { bestEffort, getLogger } from "@rakazo/logging";
 import { aiConsentStatus, allowAiConsent } from "../account/ai-consent.js";
+import { listMobileDevices, recordMobileDeviceHeartbeat } from "../account/mobile-devices.js";
 import { createAccessGrant, listAccessGrants, revokeAccessGrant } from "../auth/access-grants.js";
 import { requireAdmin } from "../auth/admins.js";
 import type { BillingService } from "../billing/billing.js";
@@ -127,6 +129,17 @@ export function accountRoutes(ctx: RouterContext) {
     },
     health: os.health.handler(async () => ({ ok: true as const, version: "0.1.0" })),
     me: authed.me.handler(async ({ context }): Promise<Me> => meDto(deps, context.actor)),
+    mobileDevices: {
+      list: authed.mobileDevices.list.handler(({ context }) =>
+        listMobileDevices(deps.prisma, context.actor.userId),
+      ),
+      heartbeat: authed.mobileDevices.heartbeat.handler(async ({ context, input }) => {
+        const { userId } = context.actor;
+        await recordMobileDeviceHeartbeat(deps.prisma, userId, context.nativeSessionId, input);
+        await deps.events.publishSpaceChange?.(mobileDeviceChangesScope(userId), "mobileDevices");
+        return { ok: true as const };
+      }),
+    },
     cloudComputers: {
       list: authed.cloudComputers.list.handler(
         async ({ context }) => (await deps.billing?.cloudComputers(context.actor)) ?? null,
@@ -428,6 +441,7 @@ export function accountRoutes(ctx: RouterContext) {
           special?:
             | "meetingCalendar"
             | "nativeCalendar"
+            | "mobileDevices"
             | "pages"
             | "deploymentModel"
             | "preferences",
@@ -440,6 +454,8 @@ export function accountRoutes(ctx: RouterContext) {
           } else if (special === "nativeCalendar") {
             if (!context.nativeSessionId) return;
             scope = nativeCalendarScope({ spaceId, userId, sessionId: context.nativeSessionId });
+          } else if (special === "mobileDevices") {
+            scope = mobileDeviceChangesScope(userId);
           } else if (special === "pages") {
             scope = pageChangesScope(userId);
           } else if (special === "deploymentModel") {
@@ -457,6 +473,7 @@ export function accountRoutes(ctx: RouterContext) {
                   ? spaceChange === special
                   : spaceChange !== "meetingCalendar" &&
                     spaceChange !== "nativeCalendar" &&
+                    spaceChange !== "mobileDevices" &&
                     spaceChange !== "pages" &&
                     spaceChange !== "deploymentModel" &&
                     spaceChange !== "preferences"
@@ -487,6 +504,7 @@ export function accountRoutes(ctx: RouterContext) {
             spaceChanges(signal),
             spaceChanges(signal, "meetingCalendar"),
             spaceChanges(signal, "nativeCalendar"),
+            spaceChanges(signal, "mobileDevices"),
             spaceChanges(signal, "pages"),
             spaceChanges(signal, "deploymentModel"),
             spaceChanges(signal, "preferences"),

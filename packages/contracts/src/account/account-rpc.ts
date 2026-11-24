@@ -10,6 +10,7 @@ import { AiConsentQuerySchema, AiConsentStatusSchema } from "./ai-consent.js";
 import { AnalyticsModelSignInStepInput, AnalyticsScreenInput } from "./analytics.js";
 import { AuditEventListInputSchema, AuditEventPageSchema } from "./audit-events.js";
 import { AppBootstrapSchema, MeSchema, SignupSurveySchema } from "./me.js";
+import { MobileDeviceHeartbeatInputSchema, MobileDeviceSummarySchema } from "./mobile-devices.js";
 import {
   AppLocaleSchema,
   AvatarStyleSchema,
@@ -44,6 +45,10 @@ export const accountRpc = {
   },
   health: oc.output(z.object({ ok: z.literal(true), version: z.string() })),
   me: oc.output(MeSchema),
+  mobileDevices: {
+    list: oc.output(z.array(MobileDeviceSummarySchema)),
+    heartbeat: oc.input(MobileDeviceHeartbeatInputSchema).output(z.object({ ok: z.literal(true) })),
+  },
   preferences: {
     update: oc
       .input(

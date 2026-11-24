@@ -107,6 +107,7 @@ export const ROW_SECURITY_MODELS: ReadonlySet<string> = new Set([
   "MediaCharge",
   "PushRegistration",
   "CallPushDevice",
+  "MobileDevice",
   "WorkActivityToken",
   "WorkActivityStartToken",
   "EmailSend",
