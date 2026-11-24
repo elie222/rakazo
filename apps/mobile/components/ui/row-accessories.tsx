@@ -1,3 +1,4 @@
+import { I18nManager } from "react-native";
 import { native } from "../../lib/native/native";
 import { NativeSymbol } from "../native/native-symbol";
 
@@ -5,7 +6,7 @@ import { NativeSymbol } from "../native/native-symbol";
 export function Chevron({ expanded }: { expanded?: boolean }) {
   return (
     <NativeSymbol
-      android={expanded ? "chevron-down" : "chevron-forward"}
+      android={expanded ? "chevron-down" : I18nManager.isRTL ? "chevron-back" : "chevron-forward"}
       color={native.tertiaryLabel}
       ios={expanded ? "chevron.down" : "chevron.right"}
       size={14}

@@ -1,0 +1,11 @@
+{
+  "ios": {
+    "NSCameraUsageDescription": "Rakazo gebruikt de camera zodat je foto's kunt toevoegen aan een bericht aan een bot.",
+    "NSPhotoLibraryUsageDescription": "Rakazo gebruikt je fotobibliotheek zodat je afbeeldingen kunt toevoegen aan een bericht aan een bot.",
+    "NSPhotoLibraryAddUsageDescription": "Rakazo bewaart foto's en video's die je uit Artefacten downloadt in je fotobibliotheek.",
+    "NSLocalNetworkUsageDescription": "Rakazo maakt verbinding met een zelfgehoste Rakazo-server op je lokale netwerk.",
+    "NSMicrophoneUsageDescription": "Rakazo gebruikt de microfoon voor spraakgesprekken met je bots.",
+    "NSSpeechRecognitionUsageDescription": "Rakazo zet je spraak om in berichten tijdens spraakgesprekken.",
+    "NSFaceIDUsageDescription": "Sta Rakazo toe Face ID te gebruiken."
+  }
+}

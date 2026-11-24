@@ -31,9 +31,13 @@ export function signupRequiresEmailVerification(response: unknown): boolean {
   );
 }
 
+/** Spellings SIGNUPS_ENABLED accepts, after trimming and lower-casing. */
+export const SIGNUPS_ENABLED_VALUES = ["true", "false", "1", "0"] as const;
+
 export function signupsOpen(enabled: string | undefined): boolean {
   if (enabled === undefined) return true;
-  return enabled !== "false" && enabled !== "0";
+  const value = enabled.trim().toLowerCase();
+  return value !== "false" && value !== "0";
 }
 
 export function signupPolicyFromEnv(input: {

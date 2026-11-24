@@ -397,6 +397,24 @@ describe("model credential persistence", () => {
     expect(roles.createMany).not.toHaveBeenCalled();
   });
 
+  it("still makes a first connection the main model when makeDefault is omitted", async () => {
+    const { deps, handler } = persistDeps();
+
+    const response = await call(handler, "models/connect", {
+      provider: "test-provider",
+      apiKey: "sk-test-key-123",
+      modelId: "only-model",
+    });
+
+    expect(response.status).toBe(200);
+    const roles = deps.prisma.userModelRoleChoice as unknown as {
+      createMany: ReturnType<typeof vi.fn>;
+    };
+    expect(roles.createMany).toHaveBeenCalledWith({
+      data: [expect.objectContaining({ role: "main", modelId: "only-model" })],
+    });
+  });
+
   it("makes the connection's model the main model when asked, through the role table", async () => {
     const { upsert, deps, handler } = persistDeps();
 
@@ -767,6 +785,20 @@ describe("model credential persistence", () => {
     });
     const response = await call(handler, "models/beginOAuth", { provider: "openai-codex" });
     expect(response.status).toBe(503);
+  });
+
+  it("passes the app's reason for stopping a sign-in, and none from an older app", async () => {
+    const { deps, handler } = persistDeps();
+    const cancel = vi.fn().mockResolvedValue(undefined);
+    Object.assign(deps.oauthLogins, { cancel });
+
+    await call(handler, "models/cancelOAuth", { loginId: "login-1", reason: "left" });
+    await call(handler, "models/cancelOAuth", { loginId: "login-2" });
+
+    expect(cancel.mock.calls).toEqual([
+      ["login-1", expect.objectContaining({ userId: actor.userId }), "left"],
+      ["login-2", expect.objectContaining({ userId: actor.userId }), undefined],
+    ]);
   });
 
   it("tells the user to restart a pasted-code sign-in that is gone", async () => {

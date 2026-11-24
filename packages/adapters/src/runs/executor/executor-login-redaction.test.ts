@@ -126,6 +126,9 @@ async function runAfterFill(
     yield { type: "done" as const, text: reply };
   });
   const prisma = {
+    // Ask: these cover loop guards and redaction, not what the approval model checks.
+    userActionAutoReviewPreference: { findUnique: vi.fn(async () => ({ enabled: false })) },
+    actionAutoReviewPreference: { findUnique: vi.fn(async () => ({ enabled: false })) },
     space: { findUnique: vi.fn(async () => null) },
     spaceMember: { findUnique: async () => ({ id: "member-1" }) },
     $transaction: vi.fn(async (write: (tx: unknown) => unknown) => write(prisma)),

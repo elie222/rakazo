@@ -1,12 +1,15 @@
 import { readFile } from "node:fs/promises";
-import type { PlaywrightPrCommentScreenshot } from "./playwright-pr-screenshot-comment.js";
+import type {
+  PlaywrightPrCommentScreenshot,
+  PrChangedFile,
+} from "./playwright-pr-screenshot-comment.js";
 import { buildPlaywrightPrScreenshotComment } from "./playwright-pr-screenshot-comment.js";
 
-const [reviewPath, changedPathsPath] = process.argv.slice(2);
+const [reviewPath, changedFilesPath] = process.argv.slice(2);
 
-if (!reviewPath || !changedPathsPath) {
+if (!reviewPath || !changedFilesPath) {
   throw new Error(
-    "Usage: build-playwright-pr-screenshot-comment <review-json-path> <changed-paths-file>",
+    "Usage: build-playwright-pr-screenshot-comment <review-json-path> <changed-files-jsonl>",
   );
 }
 
@@ -14,10 +17,10 @@ const review = JSON.parse(await readFile(reviewPath, "utf8")) as {
   screenshots?: PlaywrightPrCommentScreenshot[];
   screenshotsUrl?: string;
 };
-const changedPaths = (await readFile(changedPathsPath, "utf8"))
+const changedFiles = (await readFile(changedFilesPath, "utf8"))
   .split(/\r?\n/)
-  .map((line) => line.trim())
-  .filter(Boolean);
+  .filter((line) => line.trim())
+  .map((line) => parseChangedFile(JSON.parse(line)));
 
 if (!Array.isArray(review.screenshots)) {
   throw new Error("review.json must include a screenshots array");
@@ -37,7 +40,7 @@ const sha = getRequiredEnvironmentVariable("PLAYWRIGHT_SHA");
 
 process.stdout.write(
   `${buildPlaywrightPrScreenshotComment({
-    changedPaths,
+    changedFiles,
     dashboardUrl,
     galleryUrl,
     runUrl,
@@ -46,6 +49,18 @@ process.stdout.write(
     sha,
   })}\n`,
 );
+
+function parseChangedFile(value: unknown): PrChangedFile {
+  const file = value as { changes?: unknown; filename?: unknown; patch?: unknown } | null;
+  if (typeof file?.filename !== "string") {
+    throw new Error("Each changed file needs a filename");
+  }
+  return {
+    filename: file.filename,
+    ...(typeof file.changes === "number" ? { changes: file.changes } : {}),
+    ...(typeof file.patch === "string" ? { patch: file.patch } : {}),
+  };
+}
 
 function getRequiredEnvironmentVariable(name: string): string {
   const value = process.env[name];

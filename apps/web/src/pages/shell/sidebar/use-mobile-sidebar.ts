@@ -1,6 +1,7 @@
 import type { TouchEvent } from "react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useEventListener } from "../../../lib/use-event-listener";
+import { isComposingKey } from "../shell-shortcuts";
 
 const MOBILE_SIDEBAR_SWIPE_EDGE_PX = 32;
 const MOBILE_SIDEBAR_SWIPE_DISTANCE_PX = 56;
@@ -16,6 +17,20 @@ function isRtl() {
 /** The phone sidebar drawer, opened by its button or a swipe in from the leading edge. */
 export function useMobileSidebar() {
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+  const restoreFocus = useRef(false);
+  useLayoutEffect(() => {
+    if (!mobileSidebarOpen && restoreFocus.current) {
+      restoreFocus.current = false;
+      const trigger = document.querySelector<HTMLButtonElement>("[data-navigation-trigger]");
+      const computerClose = document.querySelector<HTMLButtonElement>("[data-computer-close]");
+      const target =
+        computerClose ??
+        (trigger?.closest("[inert]")
+          ? document.querySelector<HTMLElement>('aside[data-panel]:not([data-panel="closed"])')
+          : trigger);
+      target?.focus({ preventScroll: true });
+    }
+  }, [mobileSidebarOpen]);
   const swipeRef = useRef<{ startX: number; startY: number } | null>(null);
 
   const [desktop] = useState(() => window.matchMedia("(min-width: 768px)"));
@@ -24,6 +39,16 @@ export function useMobileSidebar() {
   };
   useEffect(closeMobileSidebar, []);
   useEventListener(desktop, "change", closeMobileSidebar);
+  // Bubbling, so a control inside the drawer that handles Escape first (and prevents the default)
+  // keeps it open. The key is consumed here (default prevented) so the Escape handlers on window,
+  // like the reply preview's and the transcript's, leave their drafts alone.
+  useEventListener(document, "keydown", (event) => {
+    if (event.key !== "Escape" || isComposingKey(event) || event.defaultPrevented) return;
+    if (!mobileSidebarOpen || isDesktop()) return;
+    event.preventDefault();
+    restoreFocus.current = true;
+    setMobileSidebarOpen(false);
+  });
 
   const swipeHandlers = {
     onTouchStartCapture: (event: TouchEvent) => {

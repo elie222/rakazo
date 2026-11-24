@@ -6,6 +6,9 @@ import contextlib
 import io
 import re
 import pathlib
+import os
+import shutil
+import subprocess
 import tempfile
 import unittest
 from unittest import mock
@@ -360,7 +363,7 @@ class SourcesReadyTest(unittest.TestCase):
 
 
 class CodexConfigTest(unittest.TestCase):
-    def test_browser_only_configuration(self):
+    def test_agent_configuration(self):
         import tomllib
         adapter_spec = importlib.util.spec_from_file_location("adapter", SCRIPT.with_name("pr-screenshot-codex.py"))
         adapter = importlib.util.module_from_spec(adapter_spec)
@@ -369,16 +372,22 @@ class CodexConfigTest(unittest.TestCase):
             root = pathlib.Path(directory)
             mcp = root / "mcp.json"
             mcp.write_text(json.dumps({"mcpServers": {"playwright": {"command": "sudo", "args": ["--isolated"]}}}))
-            adapter.configure(mcp, root)
+            adapter.configure(mcp, root, 18899)
             config = tomllib.loads((root / "config.toml").read_text())
             self.assertEqual(config["permissions"]["screenshots"]["filesystem"][str(root)], "deny")
             self.assertEqual(config["web_search"], "disabled")
+            self.assertEqual(config["project_doc_max_bytes"], 0)
+            provider = config["model_providers"][config["model_provider"]]
+            self.assertEqual(provider["base_url"], "http://127.0.0.1:18899/backend-api/codex")
+            self.assertFalse(provider["requires_openai_auth"])
+            self.assertNotIn("shell_tool", config["features"])
             self.assertTrue(all(value is False for value in config["features"].values()))
             allowed = config["mcp_servers"]["playwright"]["enabled_tools"]
             self.assertIn("browser_take_screenshot", allowed)
             self.assertNotIn("browser_evaluate", allowed)
             self.assertNotIn("browser_file_upload", allowed)
-            self.assertEqual(json.loads((root / "schema.json").read_text())["required"], ["screenshots", "complete"])
+            self.assertEqual(config["mcp_servers"]["playwright"]["default_tools_approval_mode"], "approve")
+            self.assertEqual(json.loads((root / "schema.json").read_text())["required"], ["screenshots", "complete", "blocker"])
             output = io.StringIO()
             with contextlib.redirect_stdout(output):
                 self.assertEqual(shots.main(["x", "contract"]), 0)
@@ -438,6 +447,58 @@ class CliTest(unittest.TestCase):
                 self.assertEqual(shots.main(["x", "prepare", json.dumps(result), str(root), BASE, str(root / "out")]), 2)
                 self.assertFalse((root / "out").exists())
 
+
+class GalleryHelperTest(unittest.TestCase):
+    helper = SCRIPT.parents[2] / ".agents/skills/pr-watch/pr-screenshots"
+
+    @unittest.skipUnless(shutil.which("bash") and shutil.which("jq"), "needs Bash and jq")
+    def test_only_emits_the_current_head(self):
+        current, stale = "a" * 40, "b" * 40
+        gallery = "https://example.com/gallery/runs/200-1/screenshots/index.html"
+        for commit, ok in ((current, True), (stale, False), (None, False)):
+            with self.subTest(commit=commit), tempfile.TemporaryDirectory() as directory:
+                root = pathlib.Path(directory)
+                marker = f"<!-- screenshot-commit:{commit} -->" if commit else ""
+                body = f"<!-- rakazo-playwright-screenshots -->\n{marker}\n[Open screenshot gallery]({gallery})"
+                gh = root / "gh"
+                gh.write_text(f"""#!/usr/bin/env bash
+if [[ "$1" == pr ]]; then
+  echo {current}
+else
+  printf '%s\\n' "$COMMENTS"
+fi
+""")
+                curl = root / "curl"
+                curl.write_bytes(b"""#!/usr/bin/env bash
+case "$2" in
+  */runs/200-1/screenshots/manifest.json) printf '%s\\n' 'manifest requested' >&2
+    echo '{"screenshots":[{"captureType":"checkpoint","source":"sidebar.spec.ts","title":"Sidebar","fileName":"sidebar.png"}]}' ;;
+  *) exit 2 ;;
+esac
+""")
+                gh.chmod(0o755)
+                curl.chmod(0o755)
+                result = subprocess.run(
+                    [shutil.which("bash"), "-c", 'export PATH="$(cd "$1" && pwd):$PATH"; bash "$2" 42',
+                     "test", root.as_posix(), self.helper.as_posix()],
+                    env={
+                        **os.environ,
+                        "COMMENTS": json.dumps([[{"user": {"login": "github-actions[bot]"}, "body": body}]]),
+                    },
+                    check=False,
+                    capture_output=True,
+                    encoding="utf-8", errors="replace",
+                )
+                if ok:
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    self.assertIn(
+                        "![Sidebar](https://example.com/gallery/runs/200-1/screenshots/sidebar.png)",
+                        result.stdout,
+                    )
+                else:
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertEqual(result.stdout, "")
+                    self.assertNotIn("manifest requested", result.stderr)
 
 if __name__ == "__main__":
     unittest.main()

@@ -19,3 +19,12 @@ await build({
     "process.env.RAKAZO_PASSKEY_RP_ID": JSON.stringify(process.env.RAKAZO_PASSKEY_RP_ID ?? ""),
   },
 });
+
+// The entry Electron starts: turns on the compile cache, then loads the bundle above.
+await build({
+  entryPoints: ["src/main/launch.ts"],
+  outfile: "dist/launch.js",
+  platform: "node",
+  format: "esm",
+  target: "node24",
+});

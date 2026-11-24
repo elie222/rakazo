@@ -2,8 +2,9 @@ import { t } from "@lingui/core/macro";
 import { Trans, useLingui } from "@lingui/react/macro";
 import { ChatMarkdown } from "@rakazo/chat-ui/web";
 import type { AskReceipt, LoginFieldInput, ThreadMessage } from "@rakazo/contracts";
-import { BOT_INSTRUCTIONS_MAX_LENGTH } from "@rakazo/contracts";
+import { AGENT_IMPORT_ASK_ACTION_ID, BOT_INSTRUCTIONS_MAX_LENGTH } from "@rakazo/contracts";
 import {
+  askOptionLetter,
   isApprovalAskBlock,
   isQuestionAskBlock,
   isSecretAskBlock,
@@ -11,14 +12,24 @@ import {
   resolveAskChoice,
   selectedAskActionLabel,
 } from "@rakazo/core";
-import { Button, cn, Textarea } from "@rakazo/ui-web";
-import { Check } from "lucide-react";
+import { routineApprovalActionLabel } from "@rakazo/i18n/routine-approval";
+import {
+  Button,
+  cn,
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+  Textarea,
+} from "@rakazo/ui-web";
+import { Check, MoreHorizontal } from "lucide-react";
 import { useState } from "react";
 import type { RpcClient } from "../../lib/query/rpc";
 import { rpc as selectedSpaceRpc } from "../../lib/query/rpc";
 import { errorText } from "../../lib/query/user-error";
 import { BuiCard } from "../ai/primitives";
-import { OptionRow, optionLetter } from "./OptionRow";
+import { OptionRow } from "./OptionRow";
+import { RoutineApprovalDetail } from "./RoutineApprovalDetail";
 import { SecretAskCard } from "./SecretAskCard";
 
 export type AskBlock = Extract<ThreadMessage["blocks"][number], { kind: "ask" }>;
@@ -110,7 +121,10 @@ function approvalActionLabel(
 ): string {
   if (outcome === "created") return t`Create space`;
   if (outcome === "cancelled") return t`Cancel`;
-  if (id === "allow") return ALLOW_IN_SPACE.has(fallback) ? t`Allow in this space` : t`Allow once`;
+  if (id === "allow" && ALLOW_IN_SPACE.has(fallback)) return t`Allow in this space`;
+  // The server's label when approving makes the change itself, as replacing another bot's instructions.
+  if (id === "allow" && fallback === "Apply now") return t`Apply now`;
+  if (id === "allow") return t`Allow once`;
   if (id === "always") return site ? t`Always allow ${site}` : t`Always allow this tool`;
   if (id === "deny") return t`Deny`;
   return fallback;
@@ -127,6 +141,8 @@ export type AskCardProps = {
   onDismiss: () => Promise<void>;
   /** The chat's space; Undo goes there even if another tab selects a different space. */
   rpc?: RpcClient;
+  /** Opens the agent import, for the option a first bot's opening question offers. */
+  onOpenAgentImport?: () => void;
 };
 
 /** A question, approval or protected-input request from the bot. */
@@ -144,6 +160,7 @@ function PromptAskCard({
   answerIsSeparate,
   onAnswer,
   rpc = selectedSpaceRpc,
+  onOpenAgentImport,
 }: AskCardProps) {
   const { t } = useLingui();
   const [editing, setEditing] = useState(false);
@@ -157,7 +174,12 @@ function PromptAskCard({
   const answeredQuestion = answered && isQuestionAskBlock(block);
   const displayedAnswer = block.status === "answered" ? block.answer : acceptedAnswer;
   const approvalActions = isApprovalAskBlock(block) ? block.actions : undefined;
-  const askActions = block.actions;
+  // The import option opens the importer instead of answering, so it has no place once answered.
+  const askActions = block.actions?.filter(
+    (action) =>
+      action.id !== AGENT_IMPORT_ASK_ACTION_ID ||
+      (onOpenAgentImport && block.status !== "answered"),
+  );
   const displayActions = block.instructionUpdate
     ? askActions?.flatMap((action) =>
         action.id === "allow" ? [action, { id: "edit", label: t`Edit` }] : [action],
@@ -191,7 +213,11 @@ function PromptAskCard({
     }
   }
 
-  const { instructionUpdate, settingsUpdate } = block;
+  const { instructionUpdate, settingsUpdate, routineUpdate } = block;
+  const always = routineUpdate && displayActions?.find((action) => action.id === "always");
+  const inlineActions = always
+    ? displayActions?.filter((action) => action !== always)
+    : displayActions;
   const undo = instructionUpdate?.undoVersionId
     ? {
         label: t`Instructions updated`,
@@ -245,25 +271,35 @@ function PromptAskCard({
   return (
     <BuiCard
       data-testid={
-        block.instructionUpdate
-          ? "instruction-approval-card"
-          : isQuestionAskBlock(block)
-            ? "question-card"
-            : undefined
+        routineUpdate
+          ? "routine-approval-card"
+          : block.instructionUpdate
+            ? "instruction-approval-card"
+            : isQuestionAskBlock(block)
+              ? "question-card"
+              : undefined
       }
       className={cn(
-        "w-full min-w-0 max-w-xl px-5 py-4",
+        "w-full min-w-0 px-5 py-4",
+        routineUpdate ? "max-w-md" : "max-w-xl",
         answeredQuestion && "opacity-50 [&_button:disabled]:opacity-100",
       )}
     >
-      <div className="text-body-lg leading-[1.5] text-foreground">
+      <div
+        className={cn(
+          "text-body-lg leading-[1.5] text-foreground",
+          routineUpdate && "font-semibold",
+        )}
+      >
         {block.instructionUpdate ? (
           <Trans>Update instructions?</Trans>
         ) : (
           <ChatMarkdown>{block.text}</ChatMarkdown>
         )}
       </div>
-      {block.receipt ? (
+      {routineUpdate ? (
+        <RoutineApprovalDetail review={routineUpdate} />
+      ) : block.receipt ? (
         <AskReceiptView receipt={block.receipt} />
       ) : block.detail ? (
         <pre
@@ -304,14 +340,28 @@ function PromptAskCard({
           {askActions?.map((action, index) => (
             <OptionRow
               key={action.id}
-              letter={optionLetter(index)}
-              selected={chosenOption?.id === action.id}
+              letter={askOptionLetter(index)}
+              // Only an answered card says which option was chosen; before that they are plain actions.
+              selected={answered ? chosenOption?.id === action.id : undefined}
               disabled={answered || !canAnswer || submitting}
-              onClick={() => void submitAnswer(action.id)}
+              onClick={() =>
+                action.id === AGENT_IMPORT_ASK_ACTION_ID
+                  ? onOpenAgentImport?.()
+                  : void submitAnswer(action.id)
+              }
             >
-              {pendingAction === action.id ? <Trans>Sending…</Trans> : action.label}
+              {pendingAction === action.id ? (
+                <Trans>Sending…</Trans>
+              ) : action.id === AGENT_IMPORT_ASK_ACTION_ID ? (
+                <Trans>Move from another assistant</Trans>
+              ) : (
+                action.label
+              )}
             </OptionRow>
           ))}
+          {answered ? (
+            <span className="sr-only">{block.expired ? t`Expired` : t`Answered`}</span>
+          ) : null}
         </div>
       ) : typedAnswer ? (
         answerIsSeparate ? null : (
@@ -346,14 +396,19 @@ function PromptAskCard({
         <div className="mt-3.5 text-body font-medium text-muted-foreground">
           <Trans>No longer active</Trans>
         </div>
-      ) : displayActions?.length ? (
+      ) : inlineActions?.length ? (
         <div className="mt-3.5 flex flex-wrap gap-2">
-          {displayActions.map((action) => (
+          {inlineActions.map((action) => (
             <Button
               key={action.id}
               variant={action.id === "allow" ? "default" : "outline"}
               // Wraps long site names like the other cards' buttons.
-              className="h-auto min-h-8 min-w-0 whitespace-normal py-1 text-start"
+              size={routineUpdate ? "sm" : undefined}
+              className={
+                routineUpdate
+                  ? undefined
+                  : "h-auto min-h-8 min-w-0 whitespace-normal py-1 text-start"
+              }
               disabled={submitting}
               onClick={() =>
                 action.id === "edit" && block.instructionUpdate
@@ -372,10 +427,33 @@ function PromptAskCard({
                   t`Dismiss`
                 )
               ) : (
+                (routineUpdate && routineApprovalActionLabel(action.id)) ||
                 approvalActionLabel(action.id, action.label, action.outcome, block.site)
               )}
             </Button>
           ))}
+          {always ? (
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                aria-label={pendingAction === "always" ? t`Sending…` : t`More approval options`}
+                render={
+                  <Button
+                    variant="outline"
+                    size="icon-sm"
+                    className="ms-auto"
+                    disabled={submitting}
+                  />
+                }
+              >
+                <MoreHorizontal aria-hidden />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={() => void submitAnswer(always.id)}>
+                  {routineApprovalActionLabel(always.id)}
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          ) : null}
         </div>
       ) : null}
 

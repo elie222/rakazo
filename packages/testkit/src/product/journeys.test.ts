@@ -189,6 +189,11 @@ describeJourneys("required product journeys", () => {
           where: { botId: bot.id, status: { in: [...ACTIVE_RUN_STATUSES] } },
         })) === 0,
     );
+    // A bot without a computer simply has no earlier versions.
+    const { computerId } = await prisma.bot.findUniqueOrThrow({ where: { id: bot.id } });
+    await prisma.bot.update({ where: { id: bot.id }, data: { computerId: null } });
+    expect(await rpc(app, cookie, "computer/homeVersions", { botId: bot.id })).toEqual([]);
+    await prisma.bot.update({ where: { id: bot.id }, data: { computerId } });
     await rpc(app, cookie, "computer/boot", { botId: bot.id });
     const original = await prisma.bot.findUniqueOrThrow({
       where: { id: bot.id },
@@ -1997,7 +2002,7 @@ describeJourneys("required product journeys", () => {
     expect(bots.find((bot) => bot.id === source.id)?.fleetManagement).toBe(false);
   });
 
-  it("untrusted bot_message run cannot rewrite a child's instructions", async () => {
+  it("a bot_message run cannot rewrite a child's instructions without the owner", async () => {
     const cookie = await signup(app, `bot-management-trust-j-${stamp}@rakazo.test`, "Bot Manager");
     const parent = await rpc<Bot>(app, cookie, "bots/create", {
       name: "Chief",
@@ -2033,25 +2038,20 @@ describeJourneys("required product journeys", () => {
         select: { id: true, status: true },
       });
       peerRunId = peerRun?.id;
-      return Boolean(peerRun && ["completed", "failed", "cancelled"].includes(peerRun.status));
+      return Boolean(
+        peerRun && ["waiting_input", "completed", "failed", "cancelled"].includes(peerRun.status),
+      );
     });
-    const attempts = await prisma.event.findMany({
-      where: { runId: peerRunId, type: "agent.tool.completed" },
-      select: { payload: true },
-    });
-    expect(attempts.map((event) => event.payload)).toEqual([
-      expect.objectContaining({
-        name: "set_child_instructions",
-        outcome: "error",
-        error: "Bot management tools need a run you started.",
+    expect(
+      await prisma.externalEffect.count({
+        where: { runId: peerRunId, status: { in: ["approved", "completed"] } },
       }),
-    ]);
+    ).toBe(0);
     const after = await prisma.bot.findUniqueOrThrow({
       where: { id: scout!.id },
       select: { instructions: true },
     });
     expect(after.instructions).toBe(before.instructions);
-    await waitForDatabase(settled);
   });
 
   it("12b: a bot can silence and resume its own finish notifications", async () => {

@@ -77,6 +77,8 @@ interface HomeRetentionDeps {
   prisma: PrismaClient;
   email: TransactionalEmailProvider;
   appUrl: string;
+  /** Pulls the customer's subscription from the billing provider again. */
+  syncBilling: (customerId: string) => Promise<void>;
   onError: (error: unknown) => void;
 }
 
@@ -86,8 +88,8 @@ interface HomeRetentionDeps {
  * is read again right before each email and inside the deletion's transaction, so resubscribing
  * or using a bot in the meantime cancels it.
  *
- * Deleting clears the computer's pointer to its stored home and the key that decrypts it; the
- * worker's storage sweep then removes the unowned objects. The computer row and its provider
+ * Deleting clears the computer's pointer to its stored home, its kept versions and the key that
+ * decrypts them; the worker's storage sweep then removes the unowned objects. The computer row and its provider
  * reference stay, so a provider that keeps its own disk resumes it; any other computer, or one
  * whose provider copy has expired, starts empty next time. Computers whose stored
  * home is only a backup are skipped: they work in a copy on a host. Aborting stops it
@@ -103,6 +105,14 @@ export function homeRetentionSweep(
         where: { computer: { NOT: candidate } },
       });
       const warnings = new Map<string, Warning>();
+      const rechecked = new Set<string>();
+      const remove = async (id: string, organizationId: string, reason: HomeDeletionReason) => {
+        if (reason === "unused" && !rechecked.has(organizationId)) {
+          await recheckPayment(deps, organizationId);
+          rechecked.add(organizationId);
+        }
+        await removeHome(prisma, id);
+      };
       let cursor: string | undefined;
       while (!signal.aborted) {
         const now = new Date();
@@ -111,7 +121,7 @@ export function homeRetentionSweep(
           // The deletion keeps the date the email gave, unless something since moved it later.
           if (notice?.warnedAt && notice.deleteAfter && due && due.at <= notice.deleteAfter) {
             if (notice.deleteAfter <= now && !signal.aborted)
-              await removeHome(prisma, id).catch(deps.onError);
+              await remove(id, organizationId, due.reason).catch(deps.onError);
             continue;
           }
           const warnable = due && due.at.getTime() <= now.getTime() + WARNING_DAYS * DAY_MS;
@@ -235,6 +245,7 @@ export function deletionDates(sentAt: Date) {
  */
 async function warn(deps: HomeRetentionDeps, group: Warning) {
   const { prisma } = deps;
+  if (group.reason === "unused") await recheckPayment(deps, group.organizationId);
   await prisma.homeDeletionNotice.createMany({
     data: group.ids.map((computerId) => ({ computerId })),
     skipDuplicates: true,
@@ -306,6 +317,20 @@ async function warn(deps: HomeRetentionDeps, group: Warning) {
 }
 
 /**
+ * Asks the billing provider again whether an organization that subscribed but has no payment on
+ * record ever paid, before its homes go as unused. Accounts that stopped billing before payments
+ * were recorded have none stored, and a paid plan keeps homes longer. The checks after this one
+ * read eligibility again, so a payment found here moves the date.
+ */
+async function recheckPayment(deps: HomeRetentionDeps, organizationId: string) {
+  const account = await deps.prisma.billingAccount.findFirst({
+    where: { organizationId, subscribedAt: { not: null }, paidAt: null },
+    select: { customerId: true },
+  });
+  if (account) await deps.syncBilling(account.customerId);
+}
+
+/**
  * Clears the computer's stored home in one transaction that locks the computer and its notice
  * and reads eligibility again, so a start, a run or a plan that lands first cancels it. It also
  * locks the organization's billing and credit rows, and the organization row itself, which a new
@@ -353,6 +378,7 @@ async function removeHome(prisma: PrismaClient, computerId: string) {
         homeRevisionAt: null,
       },
     });
+    await tx.computerHomeVersion.deleteMany({ where: { computerId } });
     await tx.homeDeletionNotice.delete({ where: { computerId } });
     return true;
   });

@@ -1,37 +1,44 @@
 #!/usr/bin/env bash
-# Deploys a loaded preview image for one pull request and posts or updates its link, or, with
-# PR=main, the main branch's preview that screenshot runs compare against.
+# Deploys a loaded preview image for one pull request and posts or updates its link.
 # Runs from the base branch with deploy credentials, so it never runs the pull request's code:
 # the image only moves from the local Docker daemon to the host's registry.
 #
-# Env: PR (a number, or main), HEAD_SHA, IMAGE (local tag), FLY_API_TOKEN, FLY_ORG, REGION, GH_TOKEN, REPO,
-# APP_PREFIX (default rakazo-pr).
+# Env: PR, HEAD_SHA, IMAGE (local tag), FLY_API_TOKEN, FLY_ORG, REGION, GH_TOKEN, REPO,
+# APP_PREFIX (default rakazo-pr), MACHINE_HIGH_WATER (default 90).
 set -euo pipefail
 
-[[ $PR =~ ^([0-9]+|main)$ ]] || { echo "Bad pull request number" >&2; exit 1; }
+[[ $PR =~ ^[1-9][0-9]*$ ]] || { echo "Bad pull request number" >&2; exit 1; }
 [[ $HEAD_SHA =~ ^[0-9a-f]{40}$ ]] || { echo "Bad commit" >&2; exit 1; }
 app="${APP_PREFIX:-rakazo-pr}-$PR"
 here=$(cd "$(dirname "$0")" && pwd)
 
-# Main's preview starts empty on every deploy, so state screenshot runs leave behind never
-# accumulates.
-if [[ $PR == main ]] && flyctl status --app "$app" > /dev/null 2>&1; then
-  flyctl apps destroy "$app" --yes
+if ! python3 "$here/reclaim-capacity.py"; then
+  echo "::warning::Could not reclaim Fly preview capacity. Continuing with the deploy."
 fi
 
 flyctl status --app "$app" > /dev/null 2>&1 || flyctl apps create "$app" --org "$FLY_ORG"
-if [[ $(flyctl volumes list --app "$app" --json | jq length) == 0 ]]; then
-  flyctl volumes create preview_data --app "$app" --region "$REGION" --size 1 --yes
-fi
 
 flyctl auth docker
 remote="registry.fly.io/$app:$HEAD_SHA"
 docker tag "$IMAGE" "$remote"
-docker push --quiet "$remote"
+for attempt in 1 2 3; do
+  if output=$(docker push --quiet "$remote" 2>&1); then
+    printf '%s\n' "$output"
+    break
+  else
+    push_status=$?
+  fi
+  printf '%s\n' "$output" >&2
+  if [[ $attempt == 3 ]] || ! grep -Eq ': (500|502|503|504)([[:space:]]|$)' <<< "$output"; then
+    exit "$push_status"
+  fi
+  echo "Fly registry returned a server error. Retrying the image upload."
+  sleep "$((attempt * 5))"
+done
+
+# Fly can place a new volume using the Machine size and image when it provisions the mount.
 flyctl deploy --app "$app" --config "$here/fly.toml" --image "$remote" \
   --primary-region "$REGION" --ha=false
-
-[[ $PR != main ]] || exit 0
 
 marker="<!-- rakazo-preview -->"
 commit_marker=$(python3 "$here/../../.github/scripts/pr-screenshots.py" marker "$HEAD_SHA")

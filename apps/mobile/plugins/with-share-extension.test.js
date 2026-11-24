@@ -10,11 +10,20 @@ import { renameShareExtension, separateShareExtensionFiles } from "./with-share-
 const require = createRequire(import.meta.url);
 const plugins = require.resolve("expo/config-plugins");
 const expoRoot = dirname(require.resolve("expo/package.json"));
-const xcode = createRequire(require.resolve("@expo/config-plugins", { paths: [dirname(plugins)] }))(
-  "xcode",
+const requireExpoPlugin = createRequire(
+  require.resolve("@expo/config-plugins", { paths: [dirname(plugins)] }),
 );
+const xcode = requireExpoPlugin("xcode");
+const plist = requireExpoPlugin("@expo/plist").default;
 // The pinned expo-sharing prebuild code, so a change to its templates fails here.
 const sharing = (file) => require(`expo-sharing/plugin/build/ios/${file}`);
+
+it("clears iOS share metadata without clearing staged attachments", () => {
+  const module = readFileSync(require.resolve("expo-sharing/ios/SharingModule.swift"), "utf8");
+  const clearPayloads = /Function\("clearSharedPayloads"\) \{([^}]+)\}/.exec(module)?.[1];
+  expect(clearPayloads).toContain("removeObject(forKey: SHARE_INTO_DEFAULTS_KEY)");
+  expect(clearPayloads).not.toContain("ShareIntoFileStore");
+});
 
 function withTemplateProject(run) {
   const directory = mkdtempSync(join(tmpdir(), "rakazo-share-extension-"));
@@ -47,6 +56,23 @@ it("names the pinned expo-sharing extension after the app", () => {
     expect(renamed).toMatch(/<key>CFBundleDisplayName<\/key>\s*<string>Rakazo<\/string>/);
     // The bundle name and everything else are untouched.
     expect(renamed.replace("Rakazo", "$(PRODUCT_NAME)")).toBe(original);
+  });
+});
+
+it.each([
+  ["Notes & Tasks", "Notes &amp; Tasks"],
+  ["Notes < Drafts > Archive", "Notes &lt; Drafts &gt; Archive"],
+  ["Notes &amp; Tasks", "Notes &amp;amp; Tasks"],
+])("keeps %j as literal display text in the generated plist", (name, encodedName) => {
+  withTemplateProject((_, directory) => {
+    sharing("createInfoPlistFile").default(directory, "group.test.example", "example", {
+      supportsText: true,
+    });
+    const original = readFileSync(join(directory, "Info.plist"), "utf8");
+    const renamed = renameShareExtension(original, name);
+
+    expect(renamed).toContain(`<string>${encodedName}</string>`);
+    expect(plist.parse(renamed)).toEqual({ ...plist.parse(original), CFBundleDisplayName: name });
   });
 });
 

@@ -2,11 +2,12 @@ import { Trans, useLingui } from "@lingui/react/macro";
 import type { RakazoDesktop, UserDeviceSummary } from "@rakazo/contracts";
 import { secureHttpOrigin } from "@rakazo/contracts/network-host";
 import { Button, Label, Switch } from "@rakazo/ui-web";
+import { queryOptions, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Trash2 } from "lucide-react";
-import { useCallback, useEffect, useId, useState } from "react";
+import { useId } from "react";
 import { listUserDevices, removeUserDevice } from "../../lib/auth/user-devices";
 import { desktopBridge } from "../../lib/platform/desktop";
-import { useSave } from "../../lib/query/query";
+import { useQueryUserId, useSave } from "../../lib/query/query";
 import { rpc } from "../../lib/query/rpc";
 import { SettingsGroup, SettingsRow } from "../settings/SettingsRows";
 
@@ -38,44 +39,66 @@ function plainHttpDesktop(desktop: RakazoDesktop | undefined): boolean {
   return secureHttpOrigin(window.location.origin) === null;
 }
 
+/** The computers paired to this account; devices belong to the user, not to a Space. */
+export function userDevicesQuery(userId: string | null) {
+  return queryOptions({
+    queryKey: [`user:${userId ?? ""}`, "userDevices"],
+    queryFn: (): Promise<UserDeviceSummary[]> => listUserDevices(),
+  });
+}
+
+function thisComputerQuery(userId: string | null) {
+  const desktop = desktopBridge();
+  return queryOptions({
+    queryKey: [`user:${userId ?? ""}`, "thisComputer"],
+    queryFn: () => thisComputerAccess(desktop),
+    enabled: Boolean(desktop?.device || desktop?.computer?.managesHostChoice),
+  });
+}
+
+/**
+ * The switch that lets bots use this computer, or null where this window cannot offer it. A failed
+ * read keeps the last known switch rather than hiding it.
+ */
+export function useThisComputer() {
+  const userId = useQueryUserId();
+  const query = thisComputerQuery(userId);
+  return {
+    thisComputer: useQuery(query).data ?? null,
+    plainHttp: plainHttpDesktop(desktopBridge()),
+    queryKey: query.queryKey,
+  };
+}
+
 export function ComputerDeviceSettings() {
   const { t } = useLingui();
-  const desktop = desktopBridge();
-  const plainHttp = plainHttpDesktop(desktop);
-  const [devices, setDevices] = useState<UserDeviceSummary[]>([]);
-  const [thisComputer, setThisComputer] = useState<ThisComputer | null>(null);
+  const { thisComputer, plainHttp, queryKey: thisComputerKey } = useThisComputer();
+  const queryClient = useQueryClient();
+  const devicesQuery = userDevicesQuery(useQueryUserId());
+  const devicesRead = useQuery(devicesQuery);
+  const devices = devicesRead.data ?? [];
+  const devicesFailed = !devicesRead.data && devicesRead.isError;
   const switchId = useId();
-
-  const load = useCallback(async () => {
-    const [listed, local] = await Promise.all([
-      listUserDevices().catch(() => null),
-      // A failed profile read keeps the last known switch rather than hiding it.
-      thisComputerAccess(desktop).catch(() => undefined),
-    ]);
-    if (listed) setDevices(listed);
-    if (local !== undefined) setThisComputer(local);
-  }, [desktop]);
-
-  useEffect(() => {
-    void load();
-  }, [load]);
 
   // Neither change goes through the API: one is the desktop app's, the other a device route.
   const change = useSave({
     save: async ({ action }: { action: () => Promise<unknown>; failure: string }) => {
-      try {
-        await action();
-      } finally {
-        await load();
-      }
+      await action();
     },
+    stale: [devicesQuery.queryKey, thisComputerKey],
+    // A failed removal or pairing may still have changed something, so both are read again.
+    onFailed: () =>
+      Promise.all([
+        queryClient.invalidateQueries({ queryKey: devicesQuery.queryKey }),
+        queryClient.invalidateQueries({ queryKey: thisComputerKey }),
+      ]),
   });
   const pending = change.pending;
 
-  if (devices.length === 0 && !thisComputer && !plainHttp) return null;
+  if (devices.length === 0 && !devicesFailed && !thisComputer && !plainHttp) return null;
 
   return (
-    <SettingsGroup title={<Trans>Computers</Trans>} data-testid="computer-devices">
+    <SettingsGroup title={<Trans>Your devices</Trans>} data-testid="computer-devices">
       {plainHttp ? (
         <p className="px-4 py-3 text-body-sm text-muted-foreground">
           <Trans>Plain HTTP does not pair this computer. Use HTTPS, or a loopback server.</Trans>
@@ -100,6 +123,25 @@ export function ComputerDeviceSettings() {
                 })
               }
             />
+          }
+        />
+      ) : null}
+      {devicesFailed ? (
+        <SettingsRow
+          label={
+            <p className="text-destructive" role="alert">
+              <Trans>Could not load</Trans>
+            </p>
+          }
+          control={
+            <Button
+              variant="secondary"
+              size="sm"
+              disabled={devicesRead.isFetching}
+              onClick={() => void devicesRead.refetch()}
+            >
+              <Trans>Retry</Trans>
+            </Button>
           }
         />
       ) : null}

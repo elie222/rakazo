@@ -17,8 +17,13 @@ import type {
   UnreferencedMachine,
   UnreferencedMachineRecords,
 } from "@rakazo/adapter-kit";
-import { SandboxFileTooLargeError } from "@rakazo/adapter-kit";
-import { cancelResponseBody, ResponseTooLargeError } from "@rakazo/core";
+import { SandboxFileTooLargeError, SandboxUnavailableError } from "@rakazo/adapter-kit";
+import {
+  deadlineSignal,
+  ResponseTooLargeError,
+  readErrorTextWithin,
+  readResponseWithin,
+} from "@rakazo/core";
 import {
   browserProfilePathForScreen,
   DEFAULT_DESKTOP_ENV,
@@ -26,7 +31,6 @@ import {
 } from "@rakazo/core/node/desktop-runtime";
 import { boundedSandboxCommandTimeoutMs } from "@rakazo/core/node/sandbox-command";
 import { computerIdleSleepEnabled, sandboxIdleMs } from "../../../computers/computer-idle.js";
-import { PORTABLE_TRANSFER_BATCH_BYTES } from "../../../computers/computer-workspace.js";
 import {
   deleteUnreferencedMachine,
   recordUnreferencedMachine,
@@ -36,7 +40,10 @@ import {
   abortedCommandEvents,
   timedOutCommandEvents,
 } from "../../../computers/sandbox/sandbox-command-events.js";
-import { sandboxNotFoundError } from "../../../computers/sandbox/sandbox-errors.js";
+import {
+  isSandboxNotFoundError,
+  sandboxNotFoundError,
+} from "../../../computers/sandbox/sandbox-errors.js";
 import { shellExportScript } from "../../../computers/sandbox/sandbox-shell-environment.js";
 import { screenSessionKey } from "../../../computers/screens/computer-screens.js";
 import {
@@ -48,8 +55,8 @@ import {
   workspaceCwd,
   workspacePath,
 } from "../../../computers/screens/computer-support.js";
+import { observationSnapshot } from "../../../computers/screens/linux-desktop.js";
 import { shouldSkipPortableWorkspaceFile } from "../../../storage/workspace-save-policy.js";
-import { readBodyCapped } from "../../../web/web-ssrf.js";
 
 const CREATEOS_WORKSPACE = "/home/desktop/rakazo-home";
 const CREATEOS_BROWSER_PROFILES = `${CREATEOS_WORKSPACE}/.browser-profiles`;
@@ -179,25 +186,83 @@ for relative in ("Default/Preferences", "Local State"):
         json.dump(data, handle)
 `;
 
-/** True when this profile's browser is running. Renderers carry --type= and do not count. */
-const CHROME_PROFILE_RUNNING_SCRIPT = `
-import os, sys
-profile = sys.argv[1]
-flag = "--user-data-dir=" + profile
-for pid in os.listdir("/proc"):
-    if not pid.isdigit():
-        continue
+/**
+ * Python helpers the profile scripts start with. `profile_pids` yields this profile's browser
+ * processes as (pid, args, cmdline without the profile flag); renderers carry --type= and do not
+ * count. `debug_port` reads one's --remote-debugging-port, and `owns_port` is whether that process
+ * holds the port's listening socket. An unreadable process list raises, so no script mistakes it
+ * for a profile with no browser.
+ */
+const CHROME_PROFILE_PRELUDE = `
+import os
+
+def profile_pids(profile, root="/proc"):
+    flag = "--user-data-dir=" + profile
+    for pid in os.listdir(root):
+        if not pid.isdigit():
+            continue
+        try:
+            raw = open(root + "/" + pid + "/cmdline", "rb").read()
+        except OSError:
+            continue
+        text = raw.replace(b"\\0", b"\\n").decode("utf-8", "replace")
+        args = [line for line in text.split("\\n") if line]
+        joined = " " + text.replace("\\n", " ") + " "
+        if flag not in args and (" " + flag + " ") not in joined:
+            continue
+        stripped = text.replace(flag, "")
+        if "--type=" in stripped:
+            continue
+        yield pid, args, stripped
+
+def debug_port(args, stripped):
+    for arg in args:
+        if arg.startswith("--remote-debugging-port=") and arg.split("=", 1)[1].isdigit():
+            return int(arg.split("=", 1)[1])
+    marker = "--remote-debugging-port="
+    start = stripped.rfind(marker)
+    if start < 0:
+        return None
+    digits = []
+    index = start + len(marker)
+    while index < len(stripped) and stripped[index].isdigit():
+        digits.append(stripped[index])
+        index += 1
+    return int("".join(digits)) if digits else None
+
+def owns_port(pid, port, root="/proc"):
+    hexport = format(port, "X")
+    inodes = set()
+    for net in (root + "/net/tcp", root + "/net/tcp6"):
+        try:
+            handle = open(net, encoding="utf-8")
+        except OSError:
+            continue
+        with handle:
+            next(handle, None)
+            for line in handle:
+                fields = line.split()
+                if len(fields) < 10 or fields[1].rsplit(":", 1)[-1].upper() != hexport:
+                    continue
+                inodes.add(fields[9])
     try:
-        raw = open("/proc/" + pid + "/cmdline", "rb").read()
+        fds = os.listdir(root + "/" + pid + "/fd")
     except OSError:
-        continue
-    text = raw.replace(b"\\0", b"\\n").decode("utf-8", "replace")
-    args = [line for line in text.split("\\n") if line]
-    joined = " " + text.replace("\\n", " ") + " "
-    if flag not in args and (" " + flag + " ") not in joined:
-        continue
-    if "--type=" in text.replace(flag, ""):
-        continue
+        return False
+    for name in fds:
+        try:
+            link = os.readlink(root + "/" + pid + "/fd/" + name)
+        except OSError:
+            continue
+        if link.startswith("socket:[") and link[8:-1] in inodes:
+            return True
+    return False
+`;
+
+/** True when this profile's browser is running. */
+const CHROME_PROFILE_RUNNING_SCRIPT = `${CHROME_PROFILE_PRELUDE}
+import sys
+for _ in profile_pids(sys.argv[1]):
     raise SystemExit(0)
 raise SystemExit(1)
 `;
@@ -229,98 +294,24 @@ raise SystemExit(1)
  * Exit 0 when this profile's browser process owns its debugger socket.
  * argv: profile [port] [proc_root]. An empty port accepts the port on the command line.
  */
-export const CHROME_OWNS_DEBUG_PORT_SCRIPT = `
-import os, sys
+export const CHROME_OWNS_DEBUG_PORT_SCRIPT = `${CHROME_PROFILE_PRELUDE}
+import sys
 profile = sys.argv[1]
 expect = sys.argv[2] if len(sys.argv) > 2 and sys.argv[2] != "" else None
 root = sys.argv[3] if len(sys.argv) > 3 and sys.argv[3] != "" else "/proc"
-flag = "--user-data-dir=" + profile
-try:
-    names = os.listdir(root)
-except OSError:
-    raise SystemExit(1)
-for pid in names:
-    if not pid.isdigit():
-        continue
-    try:
-        raw = open(root + "/" + pid + "/cmdline", "rb").read()
-    except OSError:
-        continue
-    text = raw.replace(b"\\0", b"\\n").decode("utf-8", "replace")
-    args = [line for line in text.split("\\n") if line]
-    joined = " " + text.replace("\\n", " ") + " "
-    if flag not in args and (" " + flag + " ") not in joined:
-        continue
-    stripped = text.replace(flag, "")
-    if "--type=" in stripped:
-        continue
-    found = None
-    for arg in args:
-        if arg.startswith("--remote-debugging-port=") and arg.split("=", 1)[1].isdigit():
-            found = int(arg.split("=", 1)[1])
-            break
-    if found is None:
-        marker = "--remote-debugging-port="
-        start = stripped.rfind(marker)
-        if start >= 0:
-            digits = []
-            index = start + len(marker)
-            while index < len(stripped) and stripped[index].isdigit():
-                digits.append(stripped[index])
-                index += 1
-            if digits:
-                found = int("".join(digits))
+for pid, args, stripped in profile_pids(profile, root):
+    found = debug_port(args, stripped)
     if found is None or (expect is not None and str(found) != expect):
         continue
-    hexport = format(found, "X")
-    inodes = set()
-    for net in (root + "/net/tcp", root + "/net/tcp6"):
-        try:
-            handle = open(net, encoding="utf-8")
-        except OSError:
-            continue
-        with handle:
-            next(handle, None)
-            for line in handle:
-                fields = line.split()
-                if len(fields) < 10 or fields[1].rsplit(":", 1)[-1].upper() != hexport:
-                    continue
-                inodes.add(fields[9])
-    try:
-        fds = os.listdir(root + "/" + pid + "/fd")
-    except OSError:
-        continue
-    for name in fds:
-        try:
-            link = os.readlink(root + "/" + pid + "/fd/" + name)
-        except OSError:
-            continue
-        if link.startswith("socket:[") and link[8:-1] in inodes:
-            raise SystemExit(0)
+    if owns_port(pid, found, root):
+        raise SystemExit(0)
 raise SystemExit(1)
 `;
 
 /** Stop this profile's browser so a failed debugger bind cannot keep the profile. */
-const CHROME_STOP_PROFILE_SCRIPT = `
-import os, signal, sys, time
-profile = sys.argv[1]
-flag = "--user-data-dir=" + profile
-pids = []
-for pid in os.listdir("/proc"):
-    if not pid.isdigit():
-        continue
-    try:
-        raw = open("/proc/" + pid + "/cmdline", "rb").read()
-    except OSError:
-        continue
-    text = raw.replace(b"\\0", b"\\n").decode("utf-8", "replace")
-    args = [line for line in text.split("\\n") if line]
-    joined = " " + text.replace("\\n", " ") + " "
-    if flag not in args and (" " + flag + " ") not in joined:
-        continue
-    if "--type=" in text.replace(flag, ""):
-        continue
-    pids.append(int(pid))
+const CHROME_STOP_PROFILE_SCRIPT = `${CHROME_PROFILE_PRELUDE}
+import signal, sys, time
+pids = [int(pid) for pid, _, _ in profile_pids(sys.argv[1])]
 for pid in pids:
     try:
         os.kill(pid, signal.SIGTERM)
@@ -440,11 +431,11 @@ export class CreateOSSandboxProvider implements SandboxProvider {
             : { auto_pause_after_seconds: autoPause },
           context,
         ).catch((error: unknown) => {
-          if (isCreateOSSandboxGone(error)) throw error;
+          if (isSandboxNotFoundError(error)) throw error;
         });
         return this.ref(id, request.botId, false);
       } catch (error) {
-        if (!isCreateOSSandboxGone(error)) throw error;
+        if (!isSandboxNotFoundError(error)) throw error;
       }
     }
 
@@ -479,7 +470,7 @@ export class CreateOSSandboxProvider implements SandboxProvider {
     try {
       return (await this.getSandbox(computer.providerRef, context)).status === "running";
     } catch (error) {
-      if (isCreateOSSandboxGone(error)) return false;
+      if (isSandboxNotFoundError(error)) return false;
       throw error;
     }
   }
@@ -686,7 +677,7 @@ print(json.dumps(out))
       );
     } catch (error) {
       // The file can grow between the size check and the read.
-      if (options?.maxBytes !== undefined && error instanceof CreateOSResponseTooLargeError) {
+      if (options?.maxBytes !== undefined && error instanceof ResponseTooLargeError) {
         throw new SandboxFileTooLargeError(options.maxBytes, { cause: error });
       }
       throw error;
@@ -719,18 +710,14 @@ print(json.dumps(out))
     files: AsyncIterable<PortableFile>,
     context: AdapterContext,
   ): Promise<void> {
-    let batchBytes = 0;
     for await (const file of files) {
       if (shouldSkipPortableWorkspaceFile(file.path)) continue;
-      if (batchBytes > PORTABLE_TRANSFER_BATCH_BYTES) batchBytes = 0;
       await this.putFile(computer, file, context);
-      batchBytes += file.content.byteLength;
     }
   }
 
   async snapshot(computer: ComputerRef, context: AdapterContext) {
-    const observation = await this.observe(computer, context);
-    return { id: observation.frameId, createdAt: observation.capturedAt };
+    return observationSnapshot(await this.observe(computer, context));
   }
 
   async keepAlive(computer: ComputerRef): Promise<void> {
@@ -788,11 +775,11 @@ print(json.dumps(out))
     try {
       await this.postJson(`/v1/sandboxes/${encodeURIComponent(id)}/pause`, undefined, context);
     } catch (error) {
-      if (isCreateOSSandboxGone(error)) return;
+      if (isSandboxNotFoundError(error)) return;
       // Pause is only valid while running; CreateOS may already be pausing it on its own.
       if (!(error instanceof CreateOSHttpError && error.status === 409)) throw error;
       const current = await this.waitUntilSettled(id, context).catch((settleError: unknown) => {
-        if (isCreateOSSandboxGone(settleError)) return undefined;
+        if (isSandboxNotFoundError(settleError)) return undefined;
         throw settleError;
       });
       if (current && current.status !== "paused" && !GONE_CREATEOS_STATUSES.has(current.status)) {
@@ -1096,7 +1083,7 @@ print(json.dumps(out))
     try {
       await this.request("DELETE", `/v1/sandboxes/${encodeURIComponent(id)}`, context);
     } catch (error) {
-      if (!isCreateOSSandboxGone(error)) throw error;
+      if (!isSandboxNotFoundError(error)) throw error;
     }
   }
 
@@ -1301,78 +1288,17 @@ print(json.dumps(out))
     profile: string,
     context: AdapterContext,
   ): Promise<boolean> {
-    const script = `
-import os, sys, urllib.parse, urllib.request
+    const script = `${CHROME_PROFILE_PRELUDE}
+import sys, urllib.parse, urllib.request
 uri, profile = sys.argv[1], sys.argv[2]
-flag = "--user-data-dir=" + profile
 port = None
 owner = None
-for pid in os.listdir("/proc"):
-    if not pid.isdigit():
-        continue
-    try:
-        raw = open("/proc/" + pid + "/cmdline", "rb").read()
-    except OSError:
-        continue
-    text = raw.replace(b"\\0", b"\\n").decode("utf-8", "replace")
-    args = [line for line in text.split("\\n") if line]
-    joined = " " + text.replace("\\n", " ") + " "
-    if flag not in args and (" " + flag + " ") not in joined:
-        continue
-    stripped = text.replace(flag, "")
-    if "--type=" in stripped:
-        continue
-    found = None
-    for arg in args:
-        if arg.startswith("--remote-debugging-port=") and arg.split("=", 1)[1].isdigit():
-            found = int(arg.split("=", 1)[1])
-            break
-    if found is None:
-        marker = "--remote-debugging-port="
-        start = stripped.rfind(marker)
-        if start >= 0:
-            digits = []
-            index = start + len(marker)
-            while index < len(stripped) and stripped[index].isdigit():
-                digits.append(stripped[index])
-                index += 1
-            if digits:
-                found = int("".join(digits))
-    if found is None:
-        continue
-    port = found
-    owner = pid
-    break
-if port is None or owner is None:
-    raise SystemExit(1)
-hexport = format(port, "X")
-inodes = set()
-for net in ("/proc/net/tcp", "/proc/net/tcp6"):
-    try:
-        handle = open(net, encoding="utf-8")
-    except OSError:
-        continue
-    with handle:
-        next(handle, None)
-        for line in handle:
-            fields = line.split()
-            if len(fields) < 10 or fields[1].rsplit(":", 1)[-1].upper() != hexport:
-                continue
-            inodes.add(fields[9])
-owned = False
-try:
-    names = os.listdir("/proc/" + owner + "/fd")
-except OSError:
-    raise SystemExit(1)
-for name in names:
-    try:
-        link = os.readlink("/proc/" + owner + "/fd/" + name)
-    except OSError:
-        continue
-    if link.startswith("socket:[") and link[8:-1] in inodes:
-        owned = True
+for pid, args, stripped in profile_pids(profile):
+    port = debug_port(args, stripped)
+    if port is not None:
+        owner = pid
         break
-if not owned:
+if owner is None or not owns_port(owner, port):
     raise SystemExit(1)
 target = "http://127.0.0.1:" + str(port) + "/json/new?" + urllib.parse.quote(uri, safe="")
 for method in ("PUT", "GET"):
@@ -1495,7 +1421,7 @@ raise SystemExit(1)
       if (current && !TRANSITIONAL_CREATEOS_STATUSES.has(current.status)) return current;
       await delay(1_000, undefined, { signal: context.signal });
     }
-    throw new Error("CreateOS sandbox did not settle");
+    throw new SandboxUnavailableError({ cause: new Error("CreateOS sandbox did not settle") });
   }
 
   /**
@@ -1704,10 +1630,6 @@ function createosSandboxGone(id: string, reason: string, cause?: unknown): Error
   return sandboxNotFoundError(`CreateOS sandbox ${id} is gone (${reason})`, { cause });
 }
 
-function isCreateOSSandboxGone(error: unknown): boolean {
-  return error instanceof Error && error.name === "SandboxNotFoundError";
-}
-
 /**
  * CreateOS auto-pause is only a backstop: our sleep job checkpoints before it pauses, so
  * CreateOS must fire clearly after that job. Off when idle sleep is disabled, or when that
@@ -1761,52 +1683,25 @@ async function readCreateOSJson<T>(response: Response, signal: AbortSignal): Pro
   return JSON.parse(new TextDecoder().decode(bytes)) as T;
 }
 
-class CreateOSResponseTooLargeError extends Error {
-  constructor(maxBytes: number, options?: { cause?: unknown }) {
-    super(`CreateOS response exceeds ${maxBytes} bytes`, options);
-  }
-}
-
-async function readCreateOSBody(
+function readCreateOSBody(
   response: Response,
   maxBytes: number,
   signal: AbortSignal,
 ): Promise<Uint8Array> {
-  const declared = Number(response.headers.get("content-length") ?? 0);
-  if (Number.isFinite(declared) && declared > maxBytes) {
-    cancelResponseBody(response);
-    throw new CreateOSResponseTooLargeError(maxBytes);
-  }
-  const readSignal = AbortSignal.any([
-    signal,
-    AbortSignal.timeout(CREATEOS_SUCCESS_RESPONSE_TIMEOUT_MS),
-  ]);
-  try {
-    return await readBodyCapped(response, maxBytes, readSignal);
-  } catch (error) {
-    if (error instanceof ResponseTooLargeError) {
-      throw new CreateOSResponseTooLargeError(maxBytes, { cause: error });
-    }
-    throw error;
-  }
+  return readResponseWithin(response, {
+    maxBytes,
+    tooLargeMessage: `CreateOS response exceeds ${maxBytes} bytes`,
+    signal: deadlineSignal(CREATEOS_SUCCESS_RESPONSE_TIMEOUT_MS, signal),
+  });
 }
 
 async function readCreateOSErrorBody(response: Response, signal: AbortSignal): Promise<string> {
-  const declared = Number(response.headers.get("content-length") ?? 0);
-  if (Number.isFinite(declared) && declared > MAX_CREATEOS_ERROR_RESPONSE_BYTES) {
-    cancelResponseBody(response);
-    return "";
-  }
-  try {
-    const readSignal = AbortSignal.any([
-      signal,
-      AbortSignal.timeout(CREATEOS_ERROR_RESPONSE_TIMEOUT_MS),
-    ]);
-    const bytes = await readBodyCapped(response, MAX_CREATEOS_ERROR_RESPONSE_BYTES, readSignal);
-    return new TextDecoder().decode(bytes).slice(0, MAX_ERROR_BODY_CHARS);
-  } catch {
-    return "";
-  }
+  const text = await readErrorTextWithin(response, {
+    maxBytes: MAX_CREATEOS_ERROR_RESPONSE_BYTES,
+    timeoutMs: CREATEOS_ERROR_RESPONSE_TIMEOUT_MS,
+    signal,
+  });
+  return text.slice(0, MAX_ERROR_BODY_CHARS);
 }
 
 /** Once request() has ruled out a stopped sandbox, a 404 means a screen or file inside it is missing. */
@@ -1815,7 +1710,7 @@ function isMissingCreateOSResource(error: unknown): error is CreateOSHttpError {
 }
 
 function ignoreMissingCreateOSResource(error: unknown): void {
-  if (!isMissingCreateOSResource(error) && !isCreateOSSandboxGone(error)) throw error;
+  if (!isMissingCreateOSResource(error) && !isSandboxNotFoundError(error)) throw error;
 }
 
 function isTimeoutAbort(error: unknown): boolean {

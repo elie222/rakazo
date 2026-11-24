@@ -1,6 +1,5 @@
 import { t } from "@lingui/core/macro";
-import type { NativeStackNavigationOptions } from "expo-router";
-import { router } from "expo-router";
+import type { ImperativeRouter, NativeStackNavigationOptions } from "expo-router";
 import { Pressable } from "react-native";
 import { mobileTokens } from "../../../lib/appearance/appearance";
 import { setInboxHidden } from "../../../lib/layout/split-view";
@@ -28,6 +27,7 @@ export type ChatSplit = { split: boolean; inboxHidden: boolean; foldActive?: boo
 export function chatRouteHeader(
   route: { key?: string; params?: object },
   { split, inboxHidden, foldActive }: ChatSplit,
+  router: ImperativeRouter,
   canInvite = false,
 ): NativeStackNavigationOptions {
   const params = (route.params ?? {}) as ChatTitleParams;
@@ -44,7 +44,7 @@ export function chatRouteHeader(
       color,
       onGroupSettings: () =>
         router.push({ pathname: "/group-settings", params: { groupId: groupId ?? "" } }),
-      onInvite: canInvite && botId ? openInvite : undefined,
+      onInvite: canInvite && botId ? () => openInvite(router) : undefined,
     }),
     ...threadHeaderLeft({ split, inboxHidden, foldActive, color }),
     // An archived chat offers Restore; the open chat gives it its action.

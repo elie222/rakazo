@@ -68,6 +68,22 @@ describe("mobile i18n", () => {
   );
 
   it.each([
+    ["zh-CN", "公共服务器需要 https://。HTTP 仅适用于本地网络。"],
+    ["zh-TW", "公開伺服器需要使用 https://。HTTP 僅適用於區域網路。"],
+  ] as const)("shows the HTTPS validation error in %s", async (locale, error) => {
+    const { resetI18nForTests } = await import("./i18n");
+    const { probeApiBase } = await import("../api/endpoint");
+    resetI18nForTests(locale);
+
+    const fetchImpl = vi.fn<typeof fetch>();
+    await expect(probeApiBase("http://public.example", fetchImpl)).resolves.toEqual({
+      ok: false,
+      error,
+    });
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it.each([
     [1, "1 сообщение с Scout"],
     [2, "2 сообщения с Scout"],
     [5, "5 сообщений с Scout"],

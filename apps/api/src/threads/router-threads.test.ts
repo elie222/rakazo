@@ -327,7 +327,7 @@ describe("thread stream authorization", () => {
     vi.useRealTimers();
   });
 
-  function threadStream() {
+  function threadStream(trigger = "bot_message") {
     vi.useFakeTimers();
     const queued: ProductEvent[] = [];
     let waiting: Deferred<IteratorResult<ProductEvent>> | undefined;
@@ -368,7 +368,7 @@ describe("thread stream authorization", () => {
         }),
       },
       run: {
-        findUnique: vi.fn().mockResolvedValue({ trigger: "bot_message" }),
+        findUnique: vi.fn().mockResolvedValue({ trigger }),
       },
     } as unknown as PrismaClient;
     const deps = {
@@ -450,6 +450,76 @@ describe("thread stream authorization", () => {
     await expect(pending).rejects.toMatchObject({ code: "UNAUTHORIZED" });
     expect(stillAuthorized).toHaveBeenCalledTimes(1);
     expect(follow.return).toHaveBeenCalled();
+  });
+
+  /** The frame if that read has already settled, so a missing heartbeat fails instead of waiting. */
+  async function ready<T>(pending: Promise<T>): Promise<T | undefined> {
+    let result: T | undefined;
+    let settled = false;
+    const tracked = pending.then((value) => {
+      settled = true;
+      result = value;
+    });
+    await Promise.resolve();
+    await vi.advanceTimersByTimeAsync(0);
+    if (!settled) return undefined;
+    await tracked;
+    return result;
+  }
+
+  it.each([
+    ["peer", "bot_message", "run-peer"],
+    ["background", "tickets", "run-background"],
+  ] as const)("thread-subscribe-filtered-events-heartbeat (%s)", async (_kind, trigger, runId) => {
+    const { client, emit } = threadStream(trigger);
+    const started = Date.now();
+    const stream = await client.threads.subscribe({ botId: "bot-1", cursor: -1 });
+    const frames: number[] = [];
+    let pending = stream.next();
+
+    for (let seq = 1; seq <= 6; seq++) {
+      await vi.advanceTimersByTimeAsync(10_000);
+      const frame = await ready(pending);
+      if (frame) {
+        expect(frame).toMatchObject({ done: false, value: { type: "heartbeat" } });
+        frames.push(Date.now());
+        pending = stream.next();
+        await vi.advanceTimersByTimeAsync(0);
+      }
+      emit(seq, "hidden", { type: "thread.progress", runId, payload: {} });
+      expect(await ready(pending)).toBeUndefined();
+    }
+
+    expect(Date.now() - started).toBeGreaterThanOrEqual(60_000);
+    expect(frames).toEqual([
+      started + HEARTBEAT_MS,
+      started + HEARTBEAT_MS * 2,
+      started + HEARTBEAT_MS * 3,
+    ]);
+  });
+
+  it.each([
+    [
+      "peer",
+      "bot_message",
+      "run-peer",
+      {
+        type: "thread.message.created" as const,
+        payload: { blocks: [{ kind: "text", text: "peer body" }] },
+      },
+    ],
+    ["background", "tickets", "run-background", { type: "run.completed" as const, payload: {} }],
+  ] as const)("forwards a kept %s event unchanged", async (_kind, trigger, runId, kept) => {
+    const { client, emit } = threadStream(trigger);
+    const stream = await client.threads.subscribe({ botId: "bot-1", cursor: -1 });
+
+    emit(1, "hidden", { type: "thread.progress", runId, payload: {} });
+    emit(2, "kept", { runId, type: kept.type, payload: kept.payload });
+
+    await expect(stream.next()).resolves.toMatchObject({
+      value: { seq: 2, type: kept.type, runId, payload: kept.payload },
+    });
+    await stream.return(undefined);
   });
 });
 

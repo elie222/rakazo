@@ -58,6 +58,8 @@ export function createIntegrationsStyles() {
     secondary: { color: native.secondaryLabel, fontSize: 13 },
     inlineLink: { color: native.label, fontSize: 13, textDecorationLine: "underline" },
     pressed: { backgroundColor: native.fillPressed },
+    rowLink: { flex: 1, minWidth: 0, flexDirection: "row", alignItems: "center", gap: 10 },
+    dimmed: { opacity: 0.6 },
     searchRow: { flexDirection: "row", alignItems: "center", gap: 12 },
     searchInput: { flex: 1 },
     categoryPicker: { flexShrink: 1, maxWidth: "45%" },

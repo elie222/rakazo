@@ -25,6 +25,8 @@ export const ModelRoleUpdateSchema = ModelRoleSettingsSchema.partial();
 /** A member's choices plus what the deployment runs when they chose no model. */
 export const ModelRoleViewSchema = ModelRoleSettingsSchema.extend({
   deploymentPrimary: ModelRoleChoiceSchema.nullable().optional(),
+  /** The deployment pays for `deploymentPrimary`, so a member who keeps it is not charged. */
+  deploymentIncluded: z.boolean().optional(),
   /** Main role only: whether the model that runs reads images on the connection runs use. */
   seesImages: z.boolean().optional(),
 });

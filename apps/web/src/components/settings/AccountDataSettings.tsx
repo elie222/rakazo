@@ -2,6 +2,7 @@ import { Trans, useLingui } from "@lingui/react/macro";
 import { isIdentityConfirmationRequired } from "@rakazo/contracts";
 import { Button, Spinner } from "@rakazo/ui-web";
 import { useRef, useState } from "react";
+import { reportClientError } from "../../lib/platform/monitoring";
 import { useSave } from "../../lib/query/query";
 import { recheckSessionOnUnauthorized } from "../../lib/query/rpc";
 import { errorText } from "../../lib/query/user-error";
@@ -49,7 +50,10 @@ export function AccountDataSettings({
         } | null;
         throw new Error(typeof body?.error === "string" ? body.error : t`Could not continue`);
       }
-      await onImported?.().catch(() => undefined);
+      // The import worked; a failed refresh only delays the new Spaces, so report it, don't fail.
+      await onImported?.().catch((error: unknown) =>
+        reportClientError(error, "account.import.refresh"),
+      );
       return true;
     },
     onSaved: setImported,

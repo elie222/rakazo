@@ -8,6 +8,7 @@ import type {
   AgentRunRequest,
   BackgroundJobHandlers,
   JobPublisher,
+  JobQueueOrder,
 } from "@rakazo/adapter-kit";
 import type { ToolHistory } from "@rakazo/contracts";
 import type { Deferred } from "@rakazo/core/test-async";
@@ -209,7 +210,7 @@ describePostgres("a stopping process and the runs it is executing (PostgreSQL)",
         cancel: vi.fn(),
         cancelIn: vi.fn(),
         close: vi.fn(),
-      } as unknown as JobPublisher,
+      } as unknown as JobPublisher & JobQueueOrder,
       starter,
     );
     const turns: Turn[] = [];
