@@ -22,6 +22,7 @@ import { LAUNCH_CHECK_DELAY_MS } from "../updates/auto-update.js";
 import type { AppDocumentState } from "./app-document-state.js";
 import { waitForMountedAppDocument } from "./app-document-state.js";
 import { contextMenuTemplate } from "./context-menu.js";
+import { historyTarget } from "./history-navigation.js";
 import {
   bundledRendererCandidates,
   bundledRendererHeaders,
@@ -205,6 +206,22 @@ export function createWindow(url: string, partition: string | null) {
   win.webContents.on("context-menu", (_event, params) => {
     Menu.buildFromTemplate(contextMenuTemplate(params)).popup({ window: win });
   });
+  // Trackpad swipes and mouse side buttons step through the app's history, as in a browser.
+  // Each server has its own window, so its history starts at this server's first page.
+  const stepHistory = (gesture: string) => {
+    const history = win.webContents.navigationHistory;
+    const index = historyTarget(
+      gesture,
+      {
+        urls: history.getAllEntries().map((entry) => entry.url),
+        activeIndex: history.getActiveIndex(),
+      },
+      targetOrigin,
+    );
+    if (index !== null) history.goToIndex(index);
+  };
+  win.on("swipe", (_event, direction) => stepHistory(direction));
+  win.on("app-command", (_event, command) => stepHistory(command));
   win.webContents.on("will-navigate", keepOnAppOrigin);
   win.webContents.on("will-redirect", keepOnAppOrigin);
   // The popup has no address bar, so a loopback redirect would otherwise strand
