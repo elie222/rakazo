@@ -11,9 +11,9 @@ const actor: Actor = {
   isDeploymentOwner: false,
 };
 
-it("keeps instruction history out of the roster and returns it on the single-bot read", async () => {
+function spaceWithPhotoAvatars() {
   const createdAt = new Date("2026-08-19T00:00:00Z");
-  const color = `data:image/png;base64,${"aGVsbG8=".repeat(2000)}`;
+  const color = `data:image/png;base64,${"abcd".repeat(4000)}`;
   const instructionHistory = Array.from({ length: 20 }, (_, index) => ({
     id: `version-${index}`,
     instructions: "Past instructions. ".repeat(125),
@@ -91,6 +91,11 @@ it("keeps instruction history out of the roster and returns it on the single-bot
     return (JSON.parse(body) as { json: T }).json;
   }
 
+  return { call, color, bots, findMany, instructionHistory };
+}
+
+it("keeps instruction history out of the roster and returns it on the single-bot read", async () => {
+  const { call, color, bots, findMany, instructionHistory } = spaceWithPhotoAvatars();
   const roster = await call<SpaceNavigation>("spaces/list", {});
   expect(roster.current.bots).toHaveLength(bots.length);
   expect(roster.current.bots[0]?.color).toBe(color);
@@ -109,4 +114,16 @@ it("keeps instruction history out of the roster and returns it on the single-bot
   expect(findMany).toHaveBeenLastCalledWith(
     expect.objectContaining({ where: expect.objectContaining({ id: bot.id }) }),
   );
+});
+
+it("replaces inline photos with versioned files for roster clients that request them", async () => {
+  const { call, bots } = spaceWithPhotoAvatars();
+  const roster = await call<SpaceNavigation>("spaces/list", { avatarFiles: true });
+  for (const bot of roster.current.bots) {
+    expect(bot.color).toMatch(new RegExp(`^/api/v1/bot-avatars/space-1/${bot.id}/[a-f0-9]{32}$`));
+  }
+  expect(roster.spaces[0]?.bots.map((bot) => bot.color)).toEqual(
+    roster.current.bots.map((bot) => bot.color),
+  );
+  expect(roster.current.bots).toHaveLength(bots.length);
 });

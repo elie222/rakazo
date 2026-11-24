@@ -307,3 +307,26 @@ test("bot creation, editing, and deletion persist", async ({ page }, testInfo) =
   await expect(page.getByPlaceholder("Message Chief")).toBeVisible();
   await captureScreenshot(page, testInfo, "31-deleted-bot-fallback");
 });
+
+test("the sidebar displays a saved photo from its avatar file", async ({ page }, testInfo) => {
+  await signup(page, `avatar-file-${Date.now()}@rakazo.test`, "password12", "Avatar File");
+  await completeOnboarding(page);
+  await page.goto("/app");
+  await page.waitForURL(/\/app\/[^/]+$/);
+  await openBotSettings(page);
+  await page.getByTestId("avatar-studio-trigger").click();
+  const studio = page.getByTestId("avatar-studio");
+  await studio.getByRole("tab", { name: "Upload", exact: true }).click();
+  await studio.locator('input[type="file"]').setInputFiles({
+    name: "portrait.png",
+    mimeType: "image/png",
+    buffer: Buffer.from(
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGNgmHMBAAIMAW2+9uddAAAAAElFTkSuQmCC",
+      "base64",
+    ),
+  });
+  const portrait = page.locator("aside").first().locator('img[src^="/api/v1/bot-avatars/"]');
+  await expect(portrait).toBeVisible();
+  await expect(portrait).toHaveJSProperty("naturalWidth", 256);
+  await captureScreenshot(page, testInfo, "sidebar-avatar-file");
+});

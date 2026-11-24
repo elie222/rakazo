@@ -1,5 +1,5 @@
 import type { BotAvatarSet, BotColorDef } from "@rakazo/contracts";
-import { BOT_COLOR_LIST, BOT_COLORS } from "@rakazo/contracts";
+import { BOT_COLOR_LIST, BOT_COLORS, isBotAvatarFileUrl } from "@rakazo/contracts";
 import type { AvatarEyes, LogoAvatarActivity } from "@rakazo/core";
 import {
   avatarEyeRects,
@@ -52,9 +52,8 @@ export function parseBotAvatar(
   imageUrl?: string;
 } {
   if (!rawColor) return { color: "#F97316", isImage: false };
-  // Only data: image URLs are rendered. Arbitrary http(s)/blob values in `color`
-  // must not become <img src> (SSRF / tracking when other members view the bot).
-  if (rawColor.startsWith("data:image/")) {
+  // Arbitrary URLs would let someone track other members viewing the bot.
+  if (rawColor.startsWith("data:image/") || isBotAvatarFileUrl(rawColor)) {
     return { color: "#F97316", isImage: true, imageUrl: rawColor };
   }
   if (rawColor.includes("::shape_")) {

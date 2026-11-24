@@ -134,7 +134,7 @@ export function useSpaceRoster({
         );
       }
       const [navigation, archived, archivedGroupList] = await Promise.all([
-        rpc.spaces.list(),
+        rpc.spaces.list({ avatarFiles: true }),
         includeArchived ? rpc.bots.listArchived() : Promise.resolve(null),
         includeArchived ? rpc.groups.listArchived() : Promise.resolve(null),
       ]);

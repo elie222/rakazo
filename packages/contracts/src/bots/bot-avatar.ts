@@ -98,6 +98,18 @@ const HEX_COLOR = /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/;
 const SHAPE_SUFFIX = /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})::shape_\d+$/;
 const DATA_IMAGE = /^data:image\/(?:png|jpeg|webp|gif);base64,[A-Za-z0-9+/]+={0,2}$/;
 
+export const BOT_AVATAR_FILE_PATH = "/api/v1/bot-avatars";
+const AVATAR_FILE_URL = new RegExp(`^${BOT_AVATAR_FILE_PATH}/[\\w-]+/[\\w-]+/[a-f0-9]{32}$`);
+
+export function botAvatarFileUrl(spaceId: string, botId: string, version: string): string | null {
+  const url = `${BOT_AVATAR_FILE_PATH}/${spaceId}/${botId}/${version}`;
+  return isBotAvatarFileUrl(url) ? url : null;
+}
+
+export function isBotAvatarFileUrl(value: string): boolean {
+  return AVATAR_FILE_URL.test(value);
+}
+
 export type ParsedBotAvatar =
   | { kind: "image"; imageUrl: string }
   | { kind: "shape"; color: string; shapeIndex: number }
@@ -105,7 +117,7 @@ export type ParsedBotAvatar =
   | { kind: "other"; raw: string };
 
 export function parseBotAvatarValue(raw: string): ParsedBotAvatar {
-  if (raw.startsWith("data:image/")) {
+  if (raw.startsWith("data:image/") || isBotAvatarFileUrl(raw)) {
     return { kind: "image", imageUrl: raw };
   }
   if (raw.includes("::shape_")) {

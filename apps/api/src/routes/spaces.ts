@@ -28,6 +28,7 @@ import {
   spaceSettingOverrides,
 } from "@rakazo/db";
 import { hasChatHistory } from "../account/first-bot.js";
+import { rosterAvatarFile } from "../bots/bot-avatar-file.js";
 import { otherSpaceOfBot, otherSpaceOfGroup } from "../bots/bot-space.js";
 import { invitationRecipientKey, sendInvitationEmail } from "../email/invitation-email.js";
 import type { RouterDeps } from "../router.js";
@@ -69,8 +70,8 @@ export function spacesRoutes(ctx: RouterContext) {
       ),
     },
     spaces: {
-      list: authed.spaces.list.handler(async ({ context }) =>
-        spaceNavigationDto(deps, context.actor, repos, groupRepos),
+      list: authed.spaces.list.handler(async ({ context, input }) =>
+        spaceNavigationDto(deps, context.actor, repos, groupRepos, input?.avatarFiles),
       ),
       // Seeds a Space whose id does not exist yet; the member limit is checked inside.
       create: authed.spaces.create.handler(({ context, input }) =>
@@ -347,10 +348,41 @@ function spaceNavigationDto(
   actor: Actor,
   repos: ReturnType<typeof createRepos>,
   groupRepos: ReturnType<typeof createGroupRepos>,
+  avatarFiles = false,
 ): Promise<SpaceNavigation> {
   return runAsSystem("space navigation across the member's Spaces", () =>
     memberSpaceNavigation(deps, actor, repos, groupRepos),
-  );
+  ).then((navigation) => (avatarFiles ? withAvatarFiles(navigation) : navigation));
+}
+
+function withAvatarFiles(navigation: SpaceNavigation): SpaceNavigation {
+  function roster<
+    T extends {
+      id: string;
+      bots: { id: string; color: string }[];
+      groups: SpaceNavigation["spaces"][number]["groups"];
+    },
+  >(space: T): T {
+    return {
+      ...space,
+      bots: space.bots.map((bot) => ({
+        ...bot,
+        color: rosterAvatarFile(space.id, bot.id, bot.color),
+      })),
+      groups: space.groups.map((group) => ({
+        ...group,
+        members: group.members.map((member) => ({
+          ...member,
+          color: rosterAvatarFile(space.id, member.botId, member.color),
+        })),
+      })),
+    };
+  }
+  return {
+    ...navigation,
+    current: roster(navigation.current),
+    spaces: navigation.spaces.map(roster),
+  };
 }
 
 async function memberSpaceNavigation(

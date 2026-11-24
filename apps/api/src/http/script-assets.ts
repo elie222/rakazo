@@ -4,6 +4,7 @@ import { createRequire } from "node:module";
 import { PAGE_RUNTIME_PATH } from "@rakazo/core";
 import { buildPageRuntime } from "@rakazo/page-kit/runtime-build";
 import type { Hono } from "hono";
+import { matchesIfNoneMatch } from "./conditional-request.js";
 
 /**
  * The mobile app draws a chat diagram in a WebView that loads Mermaid from the server it already
@@ -53,10 +54,7 @@ export function mountScriptAssets(app: Hono) {
     app.get(path, async (c) => {
       const { body, etag, cacheControl } = await load();
       const headers = { "cache-control": cacheControl, etag, "x-content-type-options": "nosniff" };
-      const ifNoneMatch = c.req.header("if-none-match") ?? "";
-      // Match quoted tags as a whole: commas inside an opaque tag are not list separators.
-      const tags = [...ifNoneMatch.matchAll(/(?:^|,)\s*(?:W\/)?("[^"]*")\s*(?=,|$)/g)];
-      if (ifNoneMatch.trim() === "*" || tags.some(([, tag]) => tag === etag)) {
+      if (matchesIfNoneMatch(c.req.header("if-none-match"), etag)) {
         return c.body(null, 304, headers);
       }
       return c.body(body, 200, { ...headers, "content-type": "text/javascript; charset=utf-8" });
