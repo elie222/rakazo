@@ -757,7 +757,7 @@ describe("mobile call session", () => {
     }
   });
 
-  describe.each([false, true])("voice consent before a recorded clip (auto: %s)", (auto) => {
+  describe("voice consent before a recorded clip is uploaded", () => {
     const server = "https://api.example.test";
     let allowed = false;
     const prompt = vi.fn<(...args: unknown[]) => Promise<boolean>>();
@@ -796,14 +796,14 @@ describe("mobile call session", () => {
       vi.mocked(ensureVoiceConsent).mockReset();
     });
 
-    function ungreetedCall() {
-      const fake = fakes({ onDevice: true });
+    function ungreetedCall(autoLanguage = false) {
+      const fake = fakes({ onDevice: autoLanguage });
       const { transcribe: _transcribe, ...deps } = fake.deps;
       startCall(
         {
           botId: "bot-1",
           botName: "Ada",
-          autoLanguage: auto,
+          autoLanguage,
           transcribe: true,
           requestContext: {
             apiBase: server,
@@ -816,10 +816,10 @@ describe("mobile call session", () => {
       return fake;
     }
 
-    it("holds the upload until the caller allows the recipient", async () => {
+    it("holds automatic transcription until the caller allows the recipient", async () => {
       const answer = deferred<boolean>();
       prompt.mockReturnValueOnce(answer.promise);
-      const fake = ungreetedCall();
+      const fake = ungreetedCall(true);
       await flush();
       fake.say("spoken words");
       await flush();
