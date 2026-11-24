@@ -25,6 +25,7 @@ import {
 } from "../../composer/pick-attachments";
 import { attachmentCountSkipReason } from "../../composer/pick-attachments-filter";
 import { useFileDrop } from "../../composer/use-file-drop";
+import { reportMobileError } from "../../platform/monitoring";
 
 export type PendingAttachment = PickedAttachment & { threadKey: string };
 
@@ -290,8 +291,12 @@ export function useIncomingShareImport({
           retryIncomingShare(share);
           return;
         }
-        if (result.failedFiles.length)
+        if (result.failedFiles.length) {
+          reportMobileError(new Error("Shared files could not be read"), "mobile.share", {
+            action: "import",
+          });
           retryIncomingShare({ ...share, text: "", files: result.failedFiles });
+        }
         // A drop or a picker opened before the import can add files while it reads, so the
         // room left is settled against the draft as it is now, as in addAttachments.
         const maxCount = attachmentMaxCount(uploadConfig);

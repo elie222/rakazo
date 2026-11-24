@@ -43,6 +43,7 @@ vi.mock("../../composer/incoming-share", () => ({
   takeIncomingShare: vi.fn(),
 }));
 vi.mock("../../api/user-error", () => ({ errorText: (_: unknown, fallback: string) => fallback }));
+vi.mock("../../platform/monitoring", () => ({ reportMobileError: vi.fn() }));
 
 let root: Root;
 let attachments: ReturnType<typeof useThreadAttachments>;

@@ -129,6 +129,16 @@ describe("incoming share", () => {
     expect(take()).toBeNull();
     expect(hasIncomingShare()).toBe(true);
   });
+  it("can undo a stalled choice and leave the share available to pick again", () => {
+    state.payloads = [{ value: "https://example.com/a", shareType: "url" }];
+    receiveIncomingShare(true, false);
+    const releaseChoice = chooseIncomingShareThread("bot");
+    expect(releaseChoice).toBeTypeOf("function");
+    releaseChoice?.();
+    expect(take()).toBeNull();
+    chooseIncomingShareThread("other");
+    expect(takeIncomingShare("other")?.text).toBe("https://example.com/a");
+  });
   it("cancel clears and prevents a failed in-flight import reviving it", () => {
     receive();
     const share = take()!;
