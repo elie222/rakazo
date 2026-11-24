@@ -14,6 +14,7 @@ import {
 } from "../threads/events.js";
 import { createThreadMessageInTransaction } from "../threads/messages.js";
 import { createPendingSteeringRun, discardAnsweredSteering } from "../threads/thread-steering.js";
+import { settleReleasedTakeoverCardsInTransaction } from "../threads/thread-takeover.js";
 import { clearEndedRunState } from "./run-secrets.js";
 
 export interface ExpireStuckRunInput {
@@ -43,7 +44,7 @@ export async function expireStuckRun(
   await tx.$queryRaw`SELECT id FROM threads WHERE id = ${input.threadId} FOR UPDATE`;
   const current = await tx.run.findUnique({
     where: { id: input.runId },
-    select: { status: true, updatedAt: true },
+    select: { status: true, updatedAt: true, spaceId: true, botId: true },
   });
   // Re-read so the fence uses the same timestamp precision Prisma just loaded.
   if (
@@ -55,6 +56,17 @@ export async function expireStuckRun(
   }
   if (input.status === "waiting_takeover" && (await userHasTakeoverScreen(tx, input.runId))) {
     return null;
+  }
+  // Settled while the run can still write its history: the card asking for the screen would
+  // otherwise keep offering buttons for a run that ended. The thread lock keeps the run waiting.
+  if (input.status === "waiting_takeover") {
+    await settleReleasedTakeoverCardsInTransaction(tx, {
+      spaceId: current.spaceId,
+      threadId: input.threadId,
+      botId: current.botId,
+      runId: input.runId,
+      reason: "expired",
+    });
   }
   const cancelled = await tx.run.updateMany({
     where: { id: input.runId, status: input.status, updatedAt: current.updatedAt },

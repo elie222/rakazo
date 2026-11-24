@@ -258,7 +258,7 @@ async function hasPendingTakeoverCard(
   );
 }
 
-async function settleReleasedTakeoverCardsInTransaction(
+export async function settleReleasedTakeoverCardsInTransaction(
   tx: Prisma.TransactionClient,
   input: {
     spaceId: string;
