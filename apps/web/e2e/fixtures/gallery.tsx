@@ -7,7 +7,6 @@ import { Button } from "@rakazo/ui-web";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { buildApprovalAskBlock } from "../../../../packages/adapters/src/approvals/approval-ask";
 import { bootstrapI18n, i18n } from "../../src/lib/locale/i18n";
 import type { ResolvedAppearance } from "../../src/lib/preferences/ui-appearance";
 import { applyResolvedAppearance } from "../../src/lib/preferences/ui-appearance";
@@ -201,33 +200,22 @@ const approvalActions = [
   { id: "always", label: "Always allow this tool" },
   { id: "deny", label: "Deny" },
 ];
+// The card the server builds for a batched connected-app request (buildApprovalAskBlock with a
+// tools / tool_slug / arguments batch of a Drive file and a Gmail send).
 const batchedAppAction: Scenario = {
   id: "batched-app-action",
   label: "Batched app action",
   messages: [
     bot([
-      buildApprovalAskBlock(
-        "batch-effect",
-        "MULTI_EXECUTE",
-        {
-          tools: [
-            {
-              tool_slug: "GOOGLEDRIVE_GOOGLE_DRIVE_CREATE_FILE",
-              arguments: {
-                file_name: "Workshop notes.txt",
-                text_content:
-                  "The workshop starts at ten on Friday. We will review the sample designs and choose two to prototype. Please bring a sketch and one question for the group. After the session, we will collect feedback and share the next steps.",
-              },
-            },
-            {
-              tool_slug: "GMAIL_SEND_EMAIL",
-              arguments: { to_email: "sam@example.com" },
-            },
-          ],
-        },
-        [],
-        { batch: { items: "tools", action: "tool_slug", arguments: "arguments" } },
-      ),
+      {
+        kind: "ask",
+        approvalEffectId: "batch-effect",
+        text: "Allow Googledrive create file, Gmail send email?",
+        detail:
+          "Googledrive create file\nFile name: Workshop notes.txt\n\nGmail send email\nTo email: sam@example.com\n\nGoogledrive create file\nText content: The workshop starts at ten on Friday. We will review the sample designs and choose two to prototype. Please bring a sketch and one question for the group. After the session, we will collect feedback and share the next steps.",
+        status: "pending",
+        actions: approvalActions,
+      },
     ]),
   ],
 };
