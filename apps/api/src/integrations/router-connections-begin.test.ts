@@ -954,6 +954,40 @@ describe("connection tool listing", () => {
     ]);
   });
 
+  it("retains a write declaration when accounts disagree on a shared tool", async () => {
+    const listAppTools = vi.fn(async ({ connectedConnections }) =>
+      connectedConnections.map(({ id }: { id: string }) => ({
+        name: `list_messages_${id}`,
+        description: "List messages",
+        readOnly: id === "connection-1",
+        route: {
+          connectorId: "example",
+          resourceId: "mail",
+          toolName: "list_messages",
+          connectionId: id,
+        },
+      })),
+    );
+    const client = createRouterClient(
+      createRouter({
+        prisma: {
+          connection: { findMany: async () => [{ id: "connection-1" }, { id: "connection-2" }] },
+        },
+        connectors: { managed: () => ({ listAppTools }) },
+      } as unknown as RouterDeps),
+      { context: { actor: { spaceId: "workspace-1", userId: "user-1" } as never } },
+    );
+
+    expect(await client.connections.tools({ connectorId: "example", provider: "mail" })).toEqual([
+      {
+        name: "list_messages",
+        description: "List messages",
+        readOnly: false,
+        approvalKey: 'app-tool/["example","mail","list_messages"]',
+      },
+    ]);
+  });
+
   it("returns an RPC error when the app tool catalog fails to load", async () => {
     const handler = new RPCHandler(
       createRouter({

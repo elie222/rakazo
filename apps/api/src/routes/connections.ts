@@ -257,7 +257,11 @@ export function connectionsRoutes(ctx: RouterContext) {
             if (tool.batch || isLazyCatalogControlRoute(tool.route)) continue;
             const approvalKey = appToolApprovalKey(tool.route) ?? tool.name;
             const key = approvalKey.toLowerCase();
-            if (appTools.has(key)) continue;
+            const existing = appTools.get(key);
+            if (existing) {
+              if (tool.readOnly === false) existing.readOnly = false;
+              continue;
+            }
             appTools.set(key, {
               name: tool.route?.connectionId ? tool.route.toolName : tool.name,
               description: tool.description,
