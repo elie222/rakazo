@@ -178,6 +178,14 @@ final class WatchRelay: NSObject, WCSessionDelegate {
   private func handle(_ request: WatchRequest) async throws -> WatchReply {
     let revision = identityRevision
     let session = try currentSession()
+    // A recording's earlier parts only wait for the last one, which checks the account.
+    if request.action == .transcribe, let part = request.part, part + 1 < request.parts ?? 0 {
+      guard let scope, request.scope == scope, let scopedSession, sameSession(scopedSession, session),
+        let chat = request.chat, chats.contains(chat)
+      else { throw WatchFailure.reload }
+      _ = try receive(request)
+      return WatchReply()
+    }
     let userId = try await session.currentUserId()
     try verify(session, revision: revision)
 

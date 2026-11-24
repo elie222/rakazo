@@ -217,9 +217,10 @@ private struct WatchChats: View {
       failure = nil
       saveShelf(reply.bots ?? [], rows: chats)
       openVoiceTarget()
-      // A tap during a load that did not ask for its bot asks again. A bot that is gone opens
-      // nothing, and a later load must not start listening by itself.
-      if voiceTarget != nil && requested == nil { Task { await load() } } else { voiceTarget = nil }
+      // A tap during a load that asked for another bot or none asks again. A bot that is gone
+      // opens nothing, and a later load must not start listening by itself.
+      if voiceTarget != nil && voiceTarget != requested { Task { await load() } }
+      else { voiceTarget = nil }
     } catch {
       guard !Task.isCancelled, identity == connection.identityRevision else { return }
       chats = []
