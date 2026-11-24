@@ -202,6 +202,33 @@ it("shares the armed quote action with the pill and replaces quotes on new selec
   expect(props.onQuote).toHaveBeenCalledTimes(3);
 });
 
+it("keeps the quote draft for an Escape another handler consumed", () => {
+  Range.prototype.getBoundingClientRect = () =>
+    ({ top: 100, bottom: 120, left: 100, width: 40 }) as DOMRect;
+  act(() => root.render(<Transcript {...baseProps(history())} />));
+  selectText(container.querySelector('[data-message-id="m2"]')!, "cabins near");
+  const pill = () => document.querySelector("[data-quote-selection]");
+  expect(pill()).not.toBeNull();
+
+  // The phone drawer closing on Escape prevents the default on document.
+  const consume = (event: Event) => event.preventDefault();
+  document.addEventListener("keydown", consume);
+  act(() => {
+    document.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }),
+    );
+  });
+  document.removeEventListener("keydown", consume);
+  expect(pill()).not.toBeNull();
+
+  act(() => {
+    document.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }),
+    );
+  });
+  expect(pill()).toBeNull();
+});
+
 it("rejects cleared, outside and composer selections even before selectionchange", () => {
   Range.prototype.getBoundingClientRect = () =>
     ({ top: 100, bottom: 120, left: 100, width: 40 }) as DOMRect;

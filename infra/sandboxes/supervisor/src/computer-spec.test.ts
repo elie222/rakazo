@@ -651,7 +651,7 @@ describe("graphical computer spec", () => {
     expect(start).toMatch(/failed to set default web browser/);
     expect(start).toMatch(/xdg-settings set default-web-browser rakazo-browser\.desktop/);
     expect(start).not.toMatch(/xdg-mime default rakazo-browser\.desktop .*\|\| true/);
-    expect(start).toMatch(/x11vnc .* -viewonly /);
+    expect(start).toMatch(/x11vnc .* -viewonly -repeat /);
     expect(browser).toMatch(/\.browser-profiles\/chromium/);
     expect(browser).toMatch(/chromium-screen-\$DISPLAY_NUM/);
     expect(browser).toMatch(/USER_DATA_DIR_SET/);
@@ -1156,12 +1156,27 @@ describe("graphical computer spec", () => {
         });
         expect(run("pt_BR:pt").accept).toEqual(["--accept-lang=pt-BR,pt,en-US,en"]);
         expect(run("en-GB").accept).toEqual(["--accept-lang=en-GB,en"]);
+        expect(run("en").accept).toEqual(["--accept-lang=en-US,en"]);
+        expect(run("en:en_US").accept).toEqual(["--accept-lang=en-US,en"]);
+        expect(run("EN").accept).toEqual(["--accept-lang=en-US,en"]);
+        expect(run("en-US").accept).toEqual(["--accept-lang=en-US,en"]);
+        expect(run("en_US").accept).toEqual(["--accept-lang=en-US,en"]);
         for (const value of ["", "pl;id", "-x", "pl pl"]) expect(run(value).accept).toEqual([]);
       } finally {
         rmSync(temp, { recursive: true, force: true });
       }
     },
   );
+
+  it("cleans conflicting Debian /etc/chromium.d defaults in the Chromium computer image", () => {
+    const root = path.resolve(import.meta.dirname, "../../computer");
+    const dockerfile = readFileSync(path.join(root, "Dockerfile"), "utf8");
+    expect(dockerfile).toContain("rm -f /etc/chromium.d/default-flags /etc/chromium.d/dev-shm;");
+    expect(dockerfile).toContain(
+      "'export CHROMIUM_FLAGS=\"$CHROMIUM_FLAGS --enable-remote-extensions\"'",
+    );
+    expect(dockerfile).toContain("> /etc/chromium.d/extensions ;;");
+  });
 
   it.skipIf(process.platform === "win32")(
     "passes the operator's PAC URL to the browser as one flag, and nothing when unset",

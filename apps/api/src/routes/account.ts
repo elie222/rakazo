@@ -28,9 +28,11 @@ import {
 } from "@rakazo/core";
 import { urlSite } from "@rakazo/core/egress";
 import {
+  accountPreferencesChangesScope,
   auditLogAccess,
   auditLogScope,
   commitBotUpdate,
+  deploymentModelChangesScope,
   findAutoReviewPreference,
   findDefaultVoiceCredential,
   findModelCredential,
@@ -42,6 +44,7 @@ import {
   lockSpaceSettings,
   newestVoiceCredentialOrder,
   Prisma,
+  pageChangesScope,
   removeApprovalRule,
   runAsSystem,
   runAsTenant,
@@ -111,13 +114,7 @@ export function accountRoutes(ctx: RouterContext) {
     },
     analytics: {
       screen: authed.analytics.screen.handler(async ({ context, input }) => {
-        deps.analytics?.capture(
-          context.actor.userId,
-          { name: "screen_viewed", ...input },
-          undefined,
-          // The server only sends a plan layout while the test runs, so it is the exposure.
-          input.planLayout ? { "plan-layout": input.planLayout } : undefined,
-        );
+        deps.analytics?.capture(context.actor.userId, { name: "screen_viewed", ...input });
         return { ok: true as const };
       }),
       modelSignInStep: authed.analytics.modelSignInStep.handler(async ({ context, input }) => {
@@ -146,7 +143,10 @@ export function accountRoutes(ctx: RouterContext) {
         const billing = requireBilling(deps);
         const started =
           input.funding === "credits"
-            ? await startModelConnect(deps, context.actor, "credits", undefined, input.surface)
+            ? await startModelConnect(deps, context.actor, "credits", undefined, {
+                surface: input.surface,
+                appVersion: input.appVersion,
+              })
             : undefined;
         const selected = await billing.selectFunding(
           context.actor,
@@ -228,26 +228,29 @@ export function accountRoutes(ctx: RouterContext) {
           input.labs === undefined
             ? undefined
             : parseLabs(input.labs).filter((feature) => !deploymentLabs.includes(feature));
+        const data = {
+          ...(input.locale === undefined ? {} : { locale: input.locale }),
+          ...(botAvatarSet === undefined ? {} : { botAvatarSet }),
+          ...(labs === undefined ? {} : { labs }),
+          ...input.chatPreferences,
+        };
         if (input.timezone !== undefined) {
           // The routines that took the account zone keep their local schedule in the new
           // one, and the other fields commit in the same save. The move's row lock still
           // waits for any bot creation holding the user row, so no new bot is missed below.
-          await changeUserTimezone(deps, userId, input.timezone, {
-            ...(input.locale === undefined ? {} : { locale: input.locale }),
-            ...(botAvatarSet === undefined ? {} : { botAvatarSet }),
-            ...(labs === undefined ? {} : { labs }),
-          });
+          await changeUserTimezone(deps, userId, input.timezone, data);
         } else {
           await deps.prisma.user.update({
             where: { id: userId },
             // An avatar style from an older app is accepted and ignored: there is only one.
-            data: {
-              ...(input.locale === undefined ? {} : { locale: input.locale }),
-              ...(botAvatarSet === undefined ? {} : { botAvatarSet }),
-              ...(labs === undefined ? {} : { labs }),
-            },
+            data,
           });
         }
+        if (input.chatPreferences !== undefined)
+          await deps.events.publishSpaceChange?.(
+            accountPreferencesChangesScope(userId),
+            "preferences",
+          );
         if (botAvatarSet !== undefined) {
           // Every bot of this user not pinned to another set follows the new default, in every
           // space they own bots in, announced like any edit so other devices redraw it.
@@ -423,7 +426,12 @@ export function accountRoutes(ctx: RouterContext) {
         };
         const spaceChanges = async function* (
           signal: AbortSignal,
-          special?: "meetingCalendar" | "nativeCalendar",
+          special?:
+            | "meetingCalendar"
+            | "nativeCalendar"
+            | "pages"
+            | "deploymentModel"
+            | "preferences",
         ): AsyncGenerator<{ spaceChange: SpaceChangeKind }> {
           if (!followSpaceChanges) return;
           let scope = spaceId;
@@ -433,6 +441,12 @@ export function accountRoutes(ctx: RouterContext) {
           } else if (special === "nativeCalendar") {
             if (!context.nativeSessionId) return;
             scope = nativeCalendarScope({ spaceId, userId, sessionId: context.nativeSessionId });
+          } else if (special === "pages") {
+            scope = pageChangesScope(userId);
+          } else if (special === "deploymentModel") {
+            scope = deploymentModelChangesScope;
+          } else if (special === "preferences") {
+            scope = accountPreferencesChangesScope(userId);
           }
           // The app re-reads what these cover only on signals, so a failure ends the stream and
           // the app reconnects and re-reads. Alerts keep flowing for a while first, so a lasting
@@ -442,7 +456,11 @@ export function accountRoutes(ctx: RouterContext) {
               if (
                 special
                   ? spaceChange === special
-                  : spaceChange !== "meetingCalendar" && spaceChange !== "nativeCalendar"
+                  : spaceChange !== "meetingCalendar" &&
+                    spaceChange !== "nativeCalendar" &&
+                    spaceChange !== "pages" &&
+                    spaceChange !== "deploymentModel" &&
+                    spaceChange !== "preferences"
               )
                 yield { spaceChange };
             }
@@ -470,6 +488,9 @@ export function accountRoutes(ctx: RouterContext) {
             spaceChanges(signal),
             spaceChanges(signal, "meetingCalendar"),
             spaceChanges(signal, "nativeCalendar"),
+            spaceChanges(signal, "pages"),
+            spaceChanges(signal, "deploymentModel"),
+            spaceChanges(signal, "preferences"),
             organizationChanges(signal),
           ),
         );
@@ -637,6 +658,7 @@ export function accountRoutes(ctx: RouterContext) {
           sttApiKey: input.sttApiKey,
           ttsModel: input.ttsModel,
           sttModel: input.sttModel,
+          transcriptionVocabulary: input.transcriptionVocabulary,
           scope: input.scope,
           signal: context.signal,
         }),

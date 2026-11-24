@@ -28,7 +28,11 @@ import { knownModelImageInput, modelAcceptsImageInput } from "../../../models/mo
 import { resolveRuntimeModel } from "../../../runtime/pi/pi-runtime-models.js";
 import { scopedRuntimeModels } from "../../../runtime/pi/pi-runtime-scope.js";
 import { normalizePiUsage } from "../../../runtime/pi/usage/pi-usage.js";
-import { CLAUDE_CODE_NOT_INSTALLED_ERROR, CLAUDE_CODE_SIGNED_OUT_ERROR } from "./cli.js";
+import {
+  CLAUDE_CODE_NOT_INSTALLED_ERROR,
+  CLAUDE_CODE_SIGNED_OUT_ERROR,
+  claudeCodeEnv,
+} from "./cli.js";
 import {
   CLAUDE_CODE_PROVIDER_ID,
   claudeCodeModelIds,
@@ -131,15 +135,20 @@ async function run(
 }
 
 describe.skipIf(process.platform === "win32")("Claude Code CLI provider", () => {
-  beforeAll(() => {
+  // Registration reads these once, and the tests check the CLI never sees the secrets.
+  const stubServerEnv = () => {
     for (const [name, value] of Object.entries(SERVER_SECRETS)) vi.stubEnv(name, value);
     vi.stubEnv("PI_DEFAULT_PROVIDER", CLAUDE_CODE_PROVIDER_ID);
     vi.stubEnv("PI_DEFAULT_MODEL", MODEL_ID);
     vi.stubEnv("PI_DEFAULT_CREDENTIALS", "host");
+  };
+  beforeAll(() => {
+    stubServerEnv();
     models = registerClaudeCodeProvider(builtinModels(), { modelIds: [MODEL_ID] });
     model = models.getModel(CLAUDE_CODE_PROVIDER_ID, MODEL_ID)!;
   });
   beforeEach(() => {
+    stubServerEnv();
     configureProvider(async () => undefined);
   });
   afterAll(() => {
@@ -332,6 +341,41 @@ describe.skipIf(process.platform === "win32")("Claude Code CLI provider", () => 
       ENABLE_TOOL_SEARCH: "false",
       CLAUDE_CODE_MAX_OUTPUT_TOKENS: String(model.maxTokens),
     });
+  });
+
+  it("passes only the CLI's own token through when the operator opts in", async () => {
+    vi.stubEnv("RAKAZO_CLAUDE_CODE_SETUP_TOKEN", "1");
+    try {
+      const cli = fakeClaude("reply");
+      await run(hello);
+      const { env } = cli.read();
+
+      expect(env.CLAUDE_CODE_OAUTH_TOKEN).toBe(SERVER_SECRETS.CLAUDE_CODE_OAUTH_TOKEN);
+      expect(env).not.toHaveProperty("RAKAZO_CLAUDE_CODE_SETUP_TOKEN");
+      const { CLAUDE_CODE_OAUTH_TOKEN: _token, ...others } = SERVER_SECRETS;
+      for (const name of Object.keys(others)) expect(env).not.toHaveProperty(name);
+      const values = Object.values(env).join("\n");
+      for (const secret of Object.values(others)) expect(values).not.toContain(secret);
+    } finally {
+      vi.stubEnv("RAKAZO_CLAUDE_CODE_SETUP_TOKEN", "");
+    }
+  });
+
+  it("gives the CLI an empty config dir of its own with the setup token", async () => {
+    vi.stubEnv("CLAUDE_CONFIG_DIR", "/operator/claude");
+    try {
+      const cli = fakeClaude("reply");
+      await run(hello);
+      expect(cli.read().env.CLAUDE_CONFIG_DIR).toBe("/operator/claude");
+
+      vi.stubEnv("RAKAZO_CLAUDE_CODE_SETUP_TOKEN", "1");
+      await run(hello);
+      const { env } = cli.read();
+      expect(env.CLAUDE_CONFIG_DIR).toMatch(/rakazo-claude-code-request-[^/\\]+[/\\]config$/);
+    } finally {
+      vi.stubEnv("RAKAZO_CLAUDE_CODE_SETUP_TOKEN", "");
+      vi.stubEnv("CLAUDE_CONFIG_DIR", undefined);
+    }
   });
 
   it("reports a final result error after the streamed reply", async () => {
@@ -801,15 +845,44 @@ describe("personalCliAccessCheck", () => {
   });
 });
 
+describe("claudeCodeEnv", () => {
+  const server = { PATH: "/usr/bin", HOME: "/home/operator", ...SERVER_SECRETS };
+
+  it("adds exactly the CLI's own token, and only for RAKAZO_CLAUDE_CODE_SETUP_TOKEN=1", () => {
+    const off = claudeCodeEnv(server);
+    expect(off).not.toHaveProperty("CLAUDE_CODE_OAUTH_TOKEN");
+    for (const value of ["", "0", "true", "yes"]) {
+      expect(claudeCodeEnv({ ...server, RAKAZO_CLAUDE_CODE_SETUP_TOKEN: value })).toEqual(off);
+    }
+
+    const on = claudeCodeEnv({ ...server, RAKAZO_CLAUDE_CODE_SETUP_TOKEN: "1" });
+    expect(on).toEqual({ ...off, CLAUDE_CODE_OAUTH_TOKEN: SERVER_SECRETS.CLAUDE_CODE_OAUTH_TOKEN });
+  });
+
+  it("adds nothing when the operator opts in without a token", () => {
+    const { CLAUDE_CODE_OAUTH_TOKEN: _token, ...noToken } = server;
+    expect(claudeCodeEnv({ ...noToken, RAKAZO_CLAUDE_CODE_SETUP_TOKEN: "1" })).toEqual(
+      claudeCodeEnv(noToken),
+    );
+  });
+});
+
 describe("Claude Code bridge sources", () => {
-  it("never read, copy or forward the CLI's sign-in", () => {
+  it("never read or copy the CLI's sign-in, and name its token only for the opt-in", () => {
+    // The one allowed mention: the name of the token the operator can opt in to pass through.
+    const optIn = 'const OPT_IN_TOKEN_NAME = "CLAUDE_CODE_OAUTH_TOKEN";';
     const sources = [
       "provider-id.ts",
       "provider.ts",
       "../../../cli-models/personal-access.ts",
       "cli.ts",
       "stream.ts",
-    ].map((file) => readFileSync(fileURLToPath(new URL(`./${file}`, import.meta.url)), "utf8"));
+    ].map((file) => {
+      const source = readFileSync(fileURLToPath(new URL(`./${file}`, import.meta.url)), "utf8");
+      if (file !== "cli.ts") return source;
+      expect(source.split("\n").filter((line) => line === optIn)).toHaveLength(1);
+      return source.replace(optIn, "");
+    });
     for (const source of sources) {
       expect(source).not.toMatch(
         /\.credentials\.json|keychain|find-generic-password|setup-token|CLAUDE_CODE_OAUTH_TOKEN|ANTHROPIC_(?:API_KEY|AUTH_TOKEN|BASE_URL)|sk-ant-|homedir\(|["'`~/]\.claude\b/i,

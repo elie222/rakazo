@@ -326,6 +326,9 @@ function shortAddress(address: string): string {
   return `${scheme}${authority.includes("@") ? "…@" : ""}${host}…`;
 }
 
+// Beside the computer reshaping below, for the eval CLI, which reads the review args from here.
+export { changedTextReviewArgs } from "./changed-text-review-args.js";
+
 /**
  * What Auto Review sees of a call on the bot's own computer, from arguments already redacted for
  * review: a browser action also names the page it acts on (`pageUrl`, the browser's own report),

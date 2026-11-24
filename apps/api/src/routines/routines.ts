@@ -1,6 +1,17 @@
 import { ORPCError } from "@orpc/server";
 import { routineWakeupJob } from "@rakazo/adapter-kit";
-import { parseRoutineWatch, parseRoutineWatchState, routineRunModelPin } from "@rakazo/adapters";
+import type { OwnerComputerRefusal } from "@rakazo/adapters";
+import {
+  botEventRoutines,
+  firstWatchCheck,
+  listAgentSkillRecords,
+  ownerComputerRefusal,
+  parseRoutineWatch,
+  parseRoutineWatchState,
+  routineComputerFingerprint,
+  routineGroupThreadId,
+  routineRunModelPin,
+} from "@rakazo/adapters";
 import type { Actor, CreateRoutineInput, Routine } from "@rakazo/contracts";
 import { canonicalPiProviderId, RoutineEmailSendersSchema } from "@rakazo/contracts";
 import {
@@ -78,11 +89,6 @@ export function nextRoutineDate(crons: string[], timezone: string): Date {
   return next;
 }
 
-/** A new or re-armed watch takes its first reading a moment from now. */
-export function firstWatchCheck(): Date {
-  return new Date(Date.now() + 2_000);
-}
-
 export function mapRoutine(row: {
   id: string;
   botId: string;
@@ -135,18 +141,81 @@ export function mapRoutine(row: {
   };
 }
 
-type RoutineRow = Parameters<typeof mapRoutine>[0] & { userId: string };
+type RoutineRow = Parameters<typeof mapRoutine>[0] & {
+  userId: string;
+  threadId: string | null;
+  computerPromptHash: string | null;
+};
+
+type RoutineViewDeps = Pick<RouterDeps, "prisma" | "userDevices">;
+
+/** Refusals the owner can't undo in the routine's editor, so the switch is left out. */
+const SWITCH_HIDDEN: ReadonlySet<OwnerComputerRefusal> = new Set([
+  "other_owner",
+  "group",
+  "event_routines",
+]);
+
+/**
+ * "Use my computer" for each routine the viewer may switch it on for, while they have a computer
+ * paired (see ownerComputerRefusal). It shows on only while a run would still get the computer.
+ */
+async function computerSwitches(
+  deps: RoutineViewDeps,
+  actor: Actor,
+  rows: RoutineRow[],
+): Promise<Map<string, boolean>> {
+  const own = rows.filter((row) => row.userId === actor.userId);
+  if (own.length === 0 || !deps.userDevices) return new Map();
+  const botIds = [...new Set(own.map((row) => row.botId))];
+  const threadIds = [...new Set(own.flatMap((row) => (row.threadId ? [row.threadId] : [])))];
+  const [bots, eventRoutines, groupThreads, pairedSince] = await Promise.all([
+    deps.prisma.bot.findMany({ where: { id: { in: botIds } }, select: { id: true, userId: true } }),
+    deps.prisma.routine.findMany({ where: botEventRoutines(botIds), select: { botId: true } }),
+    deps.prisma.thread.findMany({
+      where: { id: { in: threadIds }, groupId: { not: null } },
+      select: { id: true },
+    }),
+    deps.userDevices.pairedSince(actor.userId),
+  ]);
+  if (!pairedSince) return new Map();
+  const botOwners = new Map(bots.map((bot) => [bot.id, bot.userId]));
+  const eventBots = new Set(eventRoutines.map((routine) => routine.botId));
+  const groups = new Set(groupThreads.map((thread) => thread.id));
+  const skills = own.some((row) => row.computerPromptHash)
+    ? await listAgentSkillRecords(deps.prisma, actor)
+    : [];
+  const switches = new Map<string, boolean>();
+  for (const row of own) {
+    const refused = ownerComputerRefusal({
+      ownerId: actor.userId,
+      userId: row.userId,
+      botUserId: botOwners.get(row.botId) ?? "",
+      inChat: row.inChat,
+      watch: row.watch,
+      groupThread: row.threadId !== null && groups.has(row.threadId),
+      botEventRoutines: eventBots.has(row.botId),
+      approved: row.computerPromptHash,
+      current: routineComputerFingerprint(row.prompt, skills),
+    });
+    if (refused && SWITCH_HIDDEN.has(refused)) continue;
+    switches.set(row.id, Boolean(row.computerPromptHash) && refused === null);
+  }
+  return switches;
+}
 
 /**
  * The routines as a member of the Space sees them, each with whose accounts it runs with: the
  * owner's display name and whether that is the viewer, never their id or email.
  */
 export async function routineViews(
-  prisma: PrismaClient,
+  deps: RoutineViewDeps,
   actor: Actor,
   rows: RoutineRow[],
 ): Promise<Routine[]> {
   if (rows.length === 0) return [];
+  const { prisma } = deps;
+  const computer = await computerSwitches(deps, actor, rows);
   const owners = await prisma.spaceMember.findMany({
     where: { spaceId: actor.spaceId, userId: { in: [...new Set(rows.map((row) => row.userId))] } },
     select: {
@@ -170,17 +239,18 @@ export async function routineViews(
         name === undefined
           ? null
           : { name: displayName(name, "Member"), isViewer: row.userId === actor.userId },
+      ...(computer.has(row.id) ? { useComputer: computer.get(row.id) } : {}),
     };
   });
 }
 
 /** One routine as `routineViews` shows it, for the one a member just created or changed. */
 export async function routineView(
-  prisma: PrismaClient,
+  deps: RoutineViewDeps,
   actor: Actor,
   row: RoutineRow,
 ): Promise<Routine> {
-  const [view] = await routineViews(prisma, actor, [row]);
+  const [view] = await routineViews(deps, actor, [row]);
   if (!view) throw new IsolationError();
   return view;
 }
@@ -190,7 +260,7 @@ export async function listRoutinesDto(deps: RouterDeps, actor: Actor, botId: str
   const rows = await deps.prisma.routine.findMany({
     where: { botId, spaceId: actor.spaceId },
   });
-  return routineViews(deps.prisma, actor, rows);
+  return routineViews(deps, actor, rows);
 }
 
 export function createRoutineAnnouncer(deps: RouterDeps) {
@@ -232,11 +302,52 @@ export async function routineTestTarget(
 }
 
 /**
+ * Run now: the same chat a scheduled tick would use, so a routine made in a group chat runs there.
+ * Spaces share their groups, so a member who may run the routine may see its group.
+ */
+export async function routineRunNowTarget(
+  prisma: PrismaClient,
+  repos: RouterContext["repos"],
+  actor: Actor,
+  routineId: string,
+) {
+  const target = await routineTestTarget(prisma, repos, actor, routineId);
+  const groupThreadId = await routineGroupThreadId(prisma, target.routine, target.botId);
+  return groupThreadId ? { ...target, threadId: groupThreadId } : target;
+}
+
+/**
  * The run key of a test run. The caller's id keeps another member from ever taking it, and the
  * previous release wrote `routine-test:<client nonce>` as given, so it can never write this prefix.
  */
 export function routineTestRunNonce(actor: Actor, clientNonce: string): string {
   return `routine-run:${actor.userId}:${clientNonce}`;
+}
+
+/** A test run and the group chat it went to, null when it ran in the bot's own chat. */
+const testRunSelect = { id: true, thread: { select: { groupId: true } } } as const;
+
+/**
+ * The run a nonce already created. The database keeps a nonce unique across the Space, so the
+ * lookup is never narrowed to a thread: a retry must find the original run even after its group
+ * was archived and the target moved to the bot's chat.
+ */
+export async function findRoutineTestRun(
+  db: Pick<PrismaClient, "run">,
+  actor: Actor,
+  routineId: string,
+  nonce: string | undefined,
+) {
+  if (!nonce) return null;
+  return db.run.findFirst({
+    where: {
+      spaceId: actor.spaceId,
+      userId: actor.userId,
+      routineId,
+      clientNonce: nonce,
+    },
+    select: testRunSelect,
+  });
 }
 
 /** Task + run commit together; a run already saved under the nonce fails the insert. */
@@ -276,6 +387,6 @@ export async function createRoutineTestRun(
       ...routineRunModelPin(currentModel),
       clientNonce: nonce,
     },
-    select: { id: true, status: true },
+    select: { ...testRunSelect, status: true },
   });
 }

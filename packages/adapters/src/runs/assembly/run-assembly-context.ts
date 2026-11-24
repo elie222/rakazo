@@ -7,10 +7,10 @@ import {
   redactSecrets,
   renderBotDirectory,
 } from "@rakazo/core";
-import { mayBeChannelMessage } from "@rakazo/db";
 import { bestEffort } from "@rakazo/logging";
 import { loadBotGroupDirectory } from "../../bots/group-handoff.js";
 import { parsePlaybook } from "../../bots/teaching-session.js";
+import type { RunMediaSources } from "../../media/media-sources.js";
 import { lateRoutineRunInstruction } from "../../routines/routine-lateness.prompt.js";
 import { routineRunInstruction } from "../../routines/routine-run.prompt.js";
 import { formatCompactedSummary } from "../../runtime/context/history-compaction.prompt.js";
@@ -21,9 +21,9 @@ import { builtinAgentSkillRecords } from "../../tools/skill-tools.js";
 import type { RunExecutorServices, RunHold } from "../lifecycle/run-attempt.js";
 import { buildApprovalContinuation } from "../lifecycle/run-effects.js";
 import { createReplyState } from "../lifecycle/run-progress.js";
-import { historyMyChatsAllowed } from "../tools/run-tools-memory.js";
 import { withLatestStepScreenshot, withRecentTurnImages } from "../turn/run-turn-images.js";
 import { missingTurnImagesInstruction } from "../turn/run-turn-images.prompt.js";
+import { checkpointAnswerHistory } from "./checkpoint-answer-history.js";
 import { formatCurrentTimeInstruction } from "./current-time.prompt.js";
 import { loadReplyContext } from "./reply-context.js";
 import type {
@@ -59,6 +59,7 @@ export async function createRunContext(
     tools: SelectedRunTools;
     computerInstructions: ComputerInstructions;
     meetingChat: boolean;
+    media: RunMediaSources;
   },
 ) {
   const { web, mediaGeneration, paidServices, browser } = services;
@@ -87,8 +88,6 @@ export async function createRunContext(
     task,
     thread,
     conversationThread,
-    conversationRun,
-    origin,
   } = parts.records;
   const { connectedPlugins, context, memoryScope, runAbortController, semanticMemory } =
     parts.connected;
@@ -100,6 +99,7 @@ export async function createRunContext(
     earlierFiles,
     getRunComputer,
     graphical,
+    modelSeesImages,
     runComputer,
     storedComputer,
     workspaceCheckpoint,
@@ -114,7 +114,6 @@ export async function createRunContext(
     ownerStartedRun,
     pageBrowserAllowed,
     replyMode,
-    sourceMessage,
     userComputerOwnerId,
     voiceCall,
   } = parts.capabilities;
@@ -122,6 +121,7 @@ export async function createRunContext(
     approvedEffectReplays,
     connectorTools,
     initiallyTainted,
+    myChatsAllowed,
     initialOutsideText,
     searchResultUrls,
     strategicBuiltins,
@@ -154,6 +154,7 @@ export async function createRunContext(
     overLimitActionCalls: 0,
     toolResults: new Map(),
     tainted: initiallyTainted,
+    taintedBeyondOwnComputer: initiallyTainted,
     outsideText: initialOutsideText,
     // A resumed turn replaces this with the baseline its saved prompt was built from.
     ownInstructionsBaseline: bot.instructions ?? "",
@@ -175,7 +176,7 @@ export async function createRunContext(
 
   const ctx: RunContext = {
     deps,
-    providers: { web, mediaGeneration, paidServices, browser, cloudAgent },
+    providers: { web, mediaGeneration, media: parts.media, paidServices, browser, cloudAgent },
     run,
     runId,
     workerId,
@@ -196,21 +197,13 @@ export async function createRunContext(
       channelId,
       historySearchBeforeSeq,
       conversationThreadId: conversationThread.id,
-      myChatsAllowed: historyMyChatsAllowed(
-        conversationRun,
-        origin?.sourceMessage ?? sourceMessage,
-        nonOwnerChatRun ||
-          Boolean(
-            channelId ||
-              conversationThread.externalConversationId ||
-              (sourceMessage && mayBeChannelMessage(sourceMessage)),
-          ),
-      ),
+      myChatsAllowed,
       voiceCall,
       callEndRun,
       callClientNonce: callClientNonceForRun,
       peerMessage,
       userComputerOwner: userComputerOwnerId,
+      ownerComputerRoutine: parts.records.ownerComputerRoutine,
     },
     computer: {
       stored: storedComputer,
@@ -228,6 +221,7 @@ export async function createRunContext(
       graphicalToolsAllowed,
       pageBrowserAllowed,
       acceptsImages,
+      modelSeesImages,
       heldForTakeover,
     },
     tools: {
@@ -277,10 +271,17 @@ export async function buildTurnPrompt(
   const { takeoverResume } = hold.takeover;
   const { checkpointModelResolver, savedComputerMode } = parts.saved;
   let { turnCheckpoint } = parts.saved;
-  const { agentSkills, nonOwnerChatRun, savedSkills, task, thread, conversationThread } =
-    parts.records;
+  const {
+    agentSkills,
+    nonOwnerChatRun,
+    ownerComputerRoutine,
+    savedSkills,
+    task,
+    thread,
+    conversationThread,
+  } = parts.records;
   const { connectedPlugins, context } = parts.connected;
-  const { compactedHistory, people } = parts.thread;
+  const { compactedHistory, people, speakers } = parts.thread;
   const {
     currentTurnImages,
     currentTurnMessage,
@@ -294,9 +295,17 @@ export async function buildTurnPrompt(
   const { callEndRun, disabledBuiltinTools, ownerStartedRun, voiceCall } = parts.capabilities;
   const { approvedEffects, tools } = parts.tools;
   const { ctx } = parts;
-  const pluginLine = connectedPluginsInstruction(connectedPlugins);
-  const runSavedSkills = nonOwnerChatRun ? [] : savedSkills;
-  const runAgentSkills = nonOwnerChatRun ? builtinAgentSkillRecords() : agentSkills;
+  // A routine with its owner's computer runs the exact text they approved, skills already expanded,
+  // and reads no app or skill names, which others can change after the owner approved it.
+  const pluginLine = ownerComputerRoutine
+    ? undefined
+    : connectedPluginsInstruction(connectedPlugins);
+  const runSavedSkills = nonOwnerChatRun || ownerComputerRoutine ? [] : savedSkills;
+  const runAgentSkills = ownerComputerRoutine
+    ? []
+    : nonOwnerChatRun
+      ? builtinAgentSkillRecords()
+      : agentSkills;
   const taughtSkillIndex = runSavedSkills.slice(0, 20);
   const taughtSkillsLine = taughtSkillsInstruction(
     taughtSkillIndex.map((skill) => ({
@@ -367,13 +376,19 @@ export async function buildTurnPrompt(
         select: { name: true, timezone: true },
       }),
     );
-    routineNote = routineRunInstruction(routine?.name, parts.records.historyReach === "recent");
+    // The name is not part of what the owner approved, and any of their runs can rename it.
+    routineNote = routineRunInstruction(
+      ownerComputerRoutine ? undefined : routine?.name,
+      parts.records.historyReach === "recent",
+    );
     if (routine && lateSince)
       lateRoutineNote = lateRoutineRunInstruction(lateSince, executionStartedAt, routine.timezone);
   }
-  const sharedSpaceNote = people
-    ? await loadSharedSpaceNote(deps.prisma, run.spaceId, run.userId)
-    : undefined;
+  // Other members' account names are text the owner of a routine with their computer never approved.
+  const sharedSpaceNote =
+    people && !ownerComputerRoutine
+      ? await loadSharedSpaceNote(deps.prisma, run.spaceId, run.userId)
+      : undefined;
   const readsHistory = parts.records.historyReach !== "none";
   // Per turn, after the history: the chat hears what moved in its threads without their replies.
   // Only the owner's own chat turns: a routine or a channel reads just what its history rules allow.
@@ -424,12 +439,21 @@ export async function buildTurnPrompt(
       ),
     });
   }
-  if (recalledMemory) {
-    historicalContext.push({
-      role: "user",
-      content: redactSecrets(recalledMemory, runSecrets),
-    });
-  }
+  // Recall changes with each run's request, so it goes after the kept history: placed before
+  // it, the history would no longer be a prefix the provider's prompt cache can reuse.
+  const recalledContext: AgentRunRequest["history"] = recalledMemory
+    ? [{ role: "user", content: redactSecrets(recalledMemory, runSecrets) }]
+    : [];
+  const resumeHistory = turnCheckpoint
+    ? await checkpointAnswerHistory(
+        deps.prisma,
+        run,
+        history,
+        parts.records.messages,
+        Boolean(speakers),
+      )
+    : undefined;
+  const replayHistory = resumeHistory?.history ?? history;
   const modelImageBudget =
     resolved.maxImagesPerPrompt === undefined
       ? undefined
@@ -439,17 +463,18 @@ export async function buildTurnPrompt(
   const historyWithImages = modelSeesImages
     ? await withLatestStepScreenshot(
         deps,
-        await withRecentTurnImages(deps, history, historyMessages, context, {
+        await withRecentTurnImages(deps, replayHistory, historyMessages, context, {
           skipMessageId: currentTurnMessage?.id,
           maxImages: modelImageBudget,
         }),
         context,
       )
-    : history;
-  const runtimeHistory = [...historicalContext, ...historyWithImages];
-  const groupDirectory = conversationThread.groupId
-    ? undefined
-    : await loadBotGroupDirectory(deps.prisma, run);
+    : replayHistory;
+  const runtimeHistory = [...historicalContext, ...historyWithImages, ...recalledContext];
+  const groupDirectory =
+    conversationThread.groupId || ownerComputerRoutine
+      ? undefined
+      : await loadBotGroupDirectory(deps.prisma, run);
   const botDirectory =
     [renderBotDirectory(parts.tools.teammates), groupDirectory].filter(Boolean).join("\n\n") ||
     undefined;
@@ -459,8 +484,10 @@ export async function buildTurnPrompt(
     agentSkillsLine,
     taskPrompt,
     prompt,
-    historicalContext,
+    hasHistoricalContext: historicalContext.length + recalledContext.length > 0,
     runtimeHistory,
+    resumeHistoryMessageIds: resumeHistory?.representedMessageIds,
+    resumeAnswerReplyContexts: resumeHistory?.answerReplyContexts,
     botDirectory,
     turnCheckpoint,
   };

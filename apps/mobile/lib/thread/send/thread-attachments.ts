@@ -266,9 +266,6 @@ export function useIncomingShareImport({
     setPendingAttachments,
     setAttachmentNotice,
   } = attachments;
-  // The share a settings refresh interrupted. It is retried on its own, so a
-  // share that arrived in the meantime is left for the picker, not taken here.
-  const interruptedShare = useRef<{ generation: number } | null>(null);
   const [retryTick, setRetryTick] = useState(0);
   // A warm link to another chat commits before this effect's cleanup runs; a read that settles
   // in between must not land in the state the new chat is about to replace. Set at commit, so a
@@ -279,14 +276,8 @@ export function useIncomingShareImport({
   }, [threadKey]);
   useEffect(() => {
     if (!threadKey || readOnly || !uploadConfig || importingShare.current) return;
-    const interrupted = interruptedShare.current;
-    interruptedShare.current = null;
-    const share = takeIncomingShare();
+    const share = takeIncomingShare(threadKey);
     if (!share) return;
-    if (interrupted && share.generation !== interrupted.generation) {
-      retryIncomingShare(share);
-      return;
-    }
     let active = true;
     importingShare.current = true;
     setShareImporting(true);
@@ -348,7 +339,6 @@ export function useIncomingShareImport({
         // Only a pass that settings cancelled is tried again; a file the reader
         // rejected is reported once instead of looping until the share expires.
         if (!active && isIncomingShareCurrent(share)) {
-          interruptedShare.current = share;
           retryIncomingShare(share);
           setRetryTick((tick) => tick + 1);
         }

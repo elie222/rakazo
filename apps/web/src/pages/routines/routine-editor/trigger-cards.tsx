@@ -3,6 +3,7 @@ import type { Routine, RoutineEmailSenders } from "@rakazo/contracts";
 import { ROUTINE_WATCH_MIN_MINUTES } from "@rakazo/contracts";
 import {
   Button,
+  cn,
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -320,12 +321,6 @@ export function InboundTriggerCard({
   onHide: () => void;
 }) {
   const { t } = useLingui();
-  const hidden = "••••••••";
-  const credential =
-    kind === "github"
-      ? { label: t`Secret`, value: secret ?? hidden }
-      : { label: t`Header`, value: `Authorization: Bearer ${secret ?? hidden}` };
-
   return (
     <div className="rounded-xl border border-border p-3">
       <div className="flex items-center gap-2.5 px-0.5">
@@ -370,25 +365,59 @@ export function InboundTriggerCard({
         </Button>
       </div>
       {saved && configured ? (
-        <div className="mt-2.5 space-y-2">
-          <CopyRow label={t`URL`} value={path} />
-          <CopyRow label={credential.label} value={credential.value} copyable={Boolean(secret)}>
-            <Button
-              variant="ghost"
-              size="icon-xs"
-              aria-label={secret ? t`Hide key` : t`Show key`}
-              onClick={secret ? onHide : onReveal}
-              className="text-muted-foreground"
-            >
-              {secret ? <EyeOff /> : <Eye />}
-            </Button>
-          </CopyRow>
-        </div>
+        <InboundKeyRows
+          kind={kind}
+          path={path}
+          secret={secret}
+          onReveal={onReveal}
+          onHide={onHide}
+          className="mt-2.5"
+        />
       ) : (
         <p className="mt-1.5 px-0.5 text-body-sm text-muted-foreground">
           <Trans>Available after saving</Trans>
         </p>
       )}
+    </div>
+  );
+}
+
+/** The URL and key a sender needs, with the key hidden until the person shows it. */
+export function InboundKeyRows({
+  kind,
+  path,
+  secret,
+  onReveal,
+  onHide,
+  className,
+}: {
+  kind: "webhook" | "github";
+  path: string;
+  secret: string | null;
+  onReveal: () => void;
+  onHide: () => void;
+  className?: string;
+}) {
+  const { t } = useLingui();
+  const hidden = "••••••••";
+  const credential =
+    kind === "github"
+      ? { label: t`Secret`, value: secret ?? hidden }
+      : { label: t`Header`, value: `Authorization: Bearer ${secret ?? hidden}` };
+  return (
+    <div className={cn("space-y-2", className)}>
+      <CopyRow label={t`URL`} value={path} />
+      <CopyRow label={credential.label} value={credential.value} copyable={Boolean(secret)}>
+        <Button
+          variant="ghost"
+          size="icon-xs"
+          aria-label={secret ? t`Hide key` : t`Show key`}
+          onClick={secret ? onHide : onReveal}
+          className="text-muted-foreground"
+        >
+          {secret ? <EyeOff /> : <Eye />}
+        </Button>
+      </CopyRow>
     </div>
   );
 }

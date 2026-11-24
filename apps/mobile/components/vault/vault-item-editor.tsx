@@ -14,10 +14,10 @@ import type { ReactNode } from "react";
 import { useRef, useState } from "react";
 import type { TextInputInstance, TextInputProps } from "react-native";
 import { Modal, Platform, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { MobileBot } from "../../lib/api/mobile-types";
 import { errorText } from "../../lib/api/user-error";
 import { mobileTokens } from "../../lib/appearance/appearance";
+import { useSheetPadding } from "../../lib/layout/side-insets";
 import { useThemedStyles } from "../../lib/native/native";
 import { useSecretSheetClose } from "../../lib/vault/secret-sheet-close";
 import type {
@@ -69,6 +69,7 @@ export function VaultItemEditor({
   botsNote,
   onClose,
   onSave,
+  onDismiss,
 }: {
   kind: VaultKind;
   /** The saved item being edited; without one the sheet adds an item. */
@@ -86,10 +87,12 @@ export function VaultItemEditor({
   /** Said under the bots when only some may use it, or when this Space's can't be chosen. */
   botsNote?: string;
   onSave: (save: VaultSave, policy?: VaultPolicy, access?: VaultBots) => Promise<void>;
+  /** Turns a bot's request down without a value; absent outside a request or when this viewer can't. */
+  onDismiss?: () => Promise<void>;
 }) {
   const { t } = useLingui();
   const styles = useThemedStyles(createStyles);
-  const insets = useSafeAreaInsets();
+  const sheetPadding = useSheetPadding();
   const inputs = useRef<(TextInputInstance | null)[]>([]);
   const [draft, setDraft] = useState<VaultDraft>(() => {
     const fields: LoginFieldRow[] = [
@@ -171,6 +174,21 @@ export function VaultItemEditor({
   const cancel = () => {
     if (!submitting) close();
   };
+
+  async function dismiss() {
+    if (submitting || !onDismiss) return;
+    clear();
+    setSubmitting(true);
+    setError(null);
+    try {
+      await onDismiss();
+      close();
+    } catch (err) {
+      setError(secretAnswerErrorText(err, t`Could not send answer`));
+    } finally {
+      setSubmitting(false);
+    }
+  }
 
   async function submit() {
     if (submitting || !save) return;
@@ -261,17 +279,7 @@ export function VaultItemEditor({
 
   return (
     <Modal visible animationType="slide" presentationStyle="pageSheet" onRequestClose={cancel}>
-      <View
-        accessibilityViewIsModal
-        style={[
-          styles.sheet,
-          // Page sheets clear the notch on iOS; Android modals are full-screen.
-          {
-            paddingTop: Platform.OS === "ios" ? 12 : insets.top + 12,
-            paddingBottom: insets.bottom,
-          },
-        ]}
-      >
+      <View accessibilityViewIsModal style={[styles.sheet, sheetPadding]}>
         <View style={styles.header}>
           <NativeActionButton
             disabled={submitting}
@@ -342,14 +350,17 @@ export function VaultItemEditor({
                 </View>
               )}
               {keyUnreadable ? (
-                <Text style={styles.error}>{t`This authenticator key can't be read.`}</Text>
+                <Text accessibilityLiveRegion="polite" style={styles.error}>
+                  {t`This authenticator key can't be read.`}
+                </Text>
               ) : null}
               {login && typedSites === "invalid" ? (
                 <Text
+                  accessibilityLiveRegion="polite"
                   style={styles.error}
                 >{t`Enter each site as an HTTPS address a login can be saved for.`}</Text>
               ) : login && typedSites === "too_many" ? (
-                <Text style={styles.error}>
+                <Text accessibilityLiveRegion="polite" style={styles.error}>
                   {t`Up to ${ph({ limit: VAULT_ALSO_ON_LIMIT })} sites.`}
                 </Text>
               ) : null}
@@ -624,6 +635,15 @@ export function VaultItemEditor({
             <Text accessibilityRole="alert" style={styles.error}>
               {error}
             </Text>
+          ) : null}
+          {onDismiss ? (
+            <NativeActionButton
+              label={t`Dismiss request`}
+              disabled={submitting || closing}
+              fill={false}
+              prominence="plain"
+              onPress={() => void dismiss()}
+            />
           ) : null}
         </ScrollView>
       </View>

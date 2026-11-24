@@ -1,0 +1,17 @@
+#cloud-config
+# Rakazo on a fresh Ubuntu server: paste this file into your host's "user data" field.
+# Both settings are optional. With no domain, Rakazo answers only on this server's loopback,
+# so reach it through an SSH tunnel. Log in and read the message for the next steps.
+write_files:
+  - path: /run/rakazo/settings.env
+    permissions: "0600"
+    content: |
+      # A hostname whose DNS points at this server, such as app.example.com. Serves Rakazo there with HTTPS.
+      RAKAZO_DOMAIN=
+      # A model for everyone on this server. You can also connect one in the app after signing up.
+      OPENROUTER_API_KEY=
+
+runcmd:
+  - mkdir -p /opt/rakazo
+  - curl -fsSL --retry 5 --retry-all-errors -o /opt/rakazo/setup-server.sh https://raw.githubusercontent.com/elie222/rakazo/main/infra/cloud-init/setup-server.sh
+  - bash /opt/rakazo/setup-server.sh

@@ -16,8 +16,8 @@ import {
 import { Navigate, Outlet, Route, Routes, useLocation, useSearchParams } from "react-router-dom";
 import { LoadingState } from "./components/ai/primitives";
 import { SubscriptionGate } from "./components/billing/SubscriptionGate";
+import { AiDataConsentPrompt } from "./components/call/AiDataConsentPrompt";
 import { CallLayout } from "./components/call/CallLayout";
-import { VoiceConsentPrompt } from "./components/call/VoiceConsentPrompt";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { MarkdownLinkPrompt } from "./components/messages/markdown-link-prompt";
 import { PageLoading } from "./components/PageLoading";
@@ -56,6 +56,9 @@ import { SharedPagePage } from "./pages/SharedPage";
 import { ShellPage } from "./pages/Shell";
 import { AppRailLayout } from "./pages/shell/app-rail";
 
+const PageReviewHost = lazyComponent(() =>
+  import("./components/pages/PageReviewHost").then((module) => module.default),
+);
 const AuthPage = lazyComponent(() => import("./pages/auth/Auth").then((module) => module.AuthPage));
 const PasswordResetPage = lazyComponent(() =>
   import("./pages/auth/Auth").then((module) => module.PasswordResetPage),
@@ -184,7 +187,7 @@ function SessionApp() {
   const user = session.data?.user;
   return (
     <QueryUserProvider value={user?.id ?? null}>
-      <VoiceConsentPrompt key={user?.id ?? "anonymous"} />
+      <AiDataConsentPrompt key={user?.id ?? "anonymous"} />
       <MarkdownLinkPrompt>
         <div className="h-full" data-rakazo-app-state="ready">
           <Suspense fallback={<PageLoading />}>
@@ -232,6 +235,16 @@ function SessionApp() {
               />
               <Route path="/reset-password" element={<PasswordResetPage />} />
               <Route path="/p/:slugToken" element={<SharedPagePage />} />
+              <Route
+                path="/review/:pageId?"
+                element={
+                  user ? (
+                    <PageReviewHost />
+                  ) : (
+                    <Navigate to={`/sign-in?next=${encodeURIComponent(pathname)}`} replace />
+                  )
+                }
+              />
               <Route
                 path={MCP_OAUTH_CALLBACK_PATH}
                 element={
@@ -312,7 +325,7 @@ function SessionApp() {
                       <Outlet />
                     </SubscriptionGate>
                   ) : (
-                    <Navigate to="/sign-in" replace />
+                    <Navigate to={`/sign-in?next=${encodeURIComponent(pathname)}`} replace />
                   )
                 }
               >

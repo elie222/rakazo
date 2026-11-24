@@ -9,7 +9,11 @@ import {
   sanitizeConnectorError,
 } from "../../integrations/connector-safety.js";
 import { mcpAppViewArguments, mcpAppViewResult } from "../../mcp/mcp-app.js";
-import { addMarketplaceConnector, addMcpServerFromTool } from "../../mcp/mcp-server-tool.js";
+import {
+  addMarketplaceConnector,
+  addMcpServerFromTool,
+  removeMcpServerFromTool,
+} from "../../mcp/mcp-server-tool.js";
 import { serviceCallFromTool, serviceSearchFromTool } from "../../payments/paid-service-tools.js";
 import { collectLogIds } from "../../providers/integration/composio/composio-connector.js";
 import { storeMcpAppHtml } from "../../storage/thread-artifacts.js";
@@ -172,7 +176,9 @@ export const integrationTools: ToolHandlers = {
   async web_fetch(ctx, call) {
     const { context } = ctx;
     const { args } = call;
-    return call.finish(await webFetchFromTool(ctx.providers.web, context, args));
+    return call.finish(
+      await webFetchFromTool(ctx.providers.web, context, args, ctx.computer.modelSeesImages),
+    );
   },
   async service_search(ctx, call) {
     const provider = ctx.providers.paidServices;
@@ -196,6 +202,9 @@ export const integrationTools: ToolHandlers = {
     const { deps, run, bot } = ctx;
     const { args, executionId } = call;
     return call.finish(await addMcpServerFromTool(deps, run, bot.id, args, executionId));
+  },
+  async remove_mcp_server(ctx, call) {
+    return call.finish(await removeMcpServerFromTool(ctx.deps, ctx.run, call.args));
   },
   async connect_app(ctx, call) {
     const { deps, run, runId, context, bot } = ctx;

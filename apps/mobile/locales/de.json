@@ -1,0 +1,11 @@
+{
+  "ios": {
+    "NSCameraUsageDescription": "Rakazo verwendet die Kamera, damit du Fotos an eine Nachricht an einen Bot anhängen kannst.",
+    "NSPhotoLibraryUsageDescription": "Rakazo verwendet deine Fotomediathek, damit du Bilder an eine Nachricht an einen Bot anhängen kannst.",
+    "NSPhotoLibraryAddUsageDescription": "Rakazo speichert Fotos und Videos, die du aus Artefakten herunterlädst, in deiner Fotomediathek.",
+    "NSLocalNetworkUsageDescription": "Rakazo verbindet sich mit einem selbst gehosteten Rakazo-Server in deinem lokalen Netzwerk.",
+    "NSMicrophoneUsageDescription": "Rakazo verwendet das Mikrofon für Sprachanrufe mit deinen Bots.",
+    "NSSpeechRecognitionUsageDescription": "Rakazo wandelt deine Sprache während Sprachanrufen in Nachrichten um.",
+    "NSFaceIDUsageDescription": "Erlaube Rakazo den Zugriff auf deine Face ID-Daten."
+  }
+}

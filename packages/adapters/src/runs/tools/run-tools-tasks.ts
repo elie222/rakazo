@@ -3,6 +3,7 @@ import {
   desktopProtectionGuardMessage,
   protectedComputerLifecycleRefusal,
 } from "../../providers/computer/desktop/desktop-command-guard.js";
+import { findRoutinesTarget } from "../../routines/routine-target.js";
 import {
   addScratchpadItemFromTool,
   completeScratchpadItemFromTool,
@@ -221,15 +222,17 @@ export const taskTools: ToolHandlers = {
     return call.finish(created);
   },
   async schedule_update(ctx, call) {
-    const { deps, run, bot, thread } = ctx;
+    const { deps, run } = ctx;
     const { args } = call;
+    const target = await routinesTarget(ctx, call.name, args);
+    if ("error" in target) return call.finish(target);
     return call.finish(
       await updateScheduleFromTool(deps, {
         spaceId: run.spaceId,
-        botId: bot.id,
+        botId: target.botId,
         userId: run.userId,
-        threadId: thread.id,
-        ...(thread.groupId ? { scopeThreadId: thread.id } : {}),
+        threadId: target.threadId,
+        ...(target.groupThreadId ? { scopeThreadId: target.groupThreadId } : {}),
         routineId: String(args.routineId ?? ""),
         name: isScheduleValueProvided(args.name) ? String(args.name) : undefined,
         prompt: isScheduleValueProvided(args.prompt) ? String(args.prompt) : undefined,
@@ -237,25 +240,30 @@ export const taskTools: ToolHandlers = {
         active: typeof args.active === "boolean" ? args.active : undefined,
         timezone: isScheduleValueProvided(args.timezone) ? String(args.timezone) : undefined,
         schedule: compactScheduleInput(scheduleTimingArgs(args)),
+        everyMinutes: isScheduleValueProvided(args.everyMinutes) ? args.everyMinutes : undefined,
         on: isScheduleValueProvided(args.on) ? args.on : undefined,
       }),
     );
   },
-  async schedule_list(ctx) {
-    const { deps, run, bot, thread } = ctx;
+  async schedule_list(ctx, call) {
+    const { deps, run } = ctx;
+    const target = await routinesTarget(ctx, call.name, call.args);
+    if ("error" in target) return target;
     return listSchedulesFromTool(deps, {
       spaceId: run.spaceId,
-      botId: bot.id,
-      ...(thread.groupId ? { groupThreadId: thread.id } : {}),
+      botId: target.botId,
+      ...(target.groupThreadId ? { groupThreadId: target.groupThreadId } : {}),
     });
   },
   async schedule_cancel(ctx, call) {
-    const { deps, run, bot, thread } = ctx;
+    const { deps, run } = ctx;
     const { args } = call;
+    const target = await routinesTarget(ctx, call.name, args);
+    if ("error" in target) return call.finish(target);
     const cancelled = await cancelScheduleFromTool(deps, {
       spaceId: run.spaceId,
-      botId: bot.id,
-      ...(thread.groupId ? { threadId: thread.id } : {}),
+      botId: target.botId,
+      ...(target.groupThreadId ? { threadId: target.groupThreadId } : {}),
       routineId: args.routineId ? String(args.routineId) : undefined,
       name: args.name ? String(args.name) : undefined,
     });
@@ -336,3 +344,8 @@ export const taskTools: ToolHandlers = {
     );
   },
 };
+
+function routinesTarget(ctx: RunContext, name: string, args: Record<string, unknown>) {
+  const { deps, fleetRun, bot, thread } = ctx;
+  return findRoutinesTarget({ prisma: deps.prisma, fleetRun, botId: bot.id, thread }, name, args);
+}

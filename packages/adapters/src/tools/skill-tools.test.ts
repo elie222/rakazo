@@ -10,12 +10,30 @@ import {
   skillUpdateFromTool,
 } from "./skill-tools.js";
 
-type Scope = { spaceId?: string; userId?: string; OR?: Array<{ spaceId?: string }> };
-/** The owner's rows here: added in this space (no fixture is available beyond one). */
+type Scope = {
+  spaceId?: string;
+  userId?: string;
+  name?: { equals: string } | string;
+  NOT?: { id: string };
+  OR?: Array<{ spaceId?: string; allSpaces?: boolean }>;
+};
+/** The owner's rows here: added in this space or available in all of the owner's spaces. */
 function inScope(row: Record<string, unknown>, where: Scope): boolean {
   if (where.userId && row.userId !== where.userId) return false;
   if (where.spaceId && row.spaceId !== where.spaceId) return false;
-  if (where.OR && !where.OR.some((branch) => branch.spaceId === row.spaceId)) return false;
+  if (
+    typeof where.name === "object" &&
+    String(row.name).toLowerCase() !== where.name.equals.toLowerCase()
+  )
+    return false;
+  if (where.NOT && row.id === where.NOT.id) return false;
+  if (
+    where.OR &&
+    !where.OR.some(
+      (branch) => branch.spaceId === row.spaceId || (branch.allSpaces && row.allSpaces === true),
+    )
+  )
+    return false;
   return true;
 }
 
@@ -31,7 +49,15 @@ function makePrisma(
       ),
       findFirst: vi.fn(async ({ where }: { where: Scope & { id: string } }) => {
         const row = store.find((item) => item.id === where.id && inScope(item, where));
-        return row ? { files: row.files ?? null } : null;
+        return row
+          ? {
+              ...row,
+              files: row.files ?? null,
+              spaceId: row.spaceId,
+              allSpaces: row.allSpaces === true,
+              availableIn: [],
+            }
+          : null;
       }),
       create: vi.fn(async ({ data }: { data: Record<string, unknown> }) => {
         const row = {
@@ -57,14 +83,13 @@ function makePrisma(
           where,
           data,
         }: {
-          where: Record<string, string>;
+          where: Scope & Record<string, unknown>;
           data: Record<string, unknown>;
         }) => {
           const index = store.findIndex(
             (row) =>
               row.id === where.id &&
-              row.spaceId === where.spaceId &&
-              row.userId === where.userId &&
+              inScope(row, where) &&
               row.source === where.source &&
               (where.name === undefined || row.name === where.name),
           );
@@ -79,13 +104,9 @@ function makePrisma(
         const [removed] = store.splice(index, 1);
         return removed;
       }),
-      deleteMany: vi.fn(async ({ where }: { where: Record<string, string> }) => {
+      deleteMany: vi.fn(async ({ where }: { where: Scope & Record<string, unknown> }) => {
         const index = store.findIndex(
-          (row) =>
-            row.id === where.id &&
-            row.spaceId === where.spaceId &&
-            row.userId === where.userId &&
-            row.source === where.source,
+          (row) => row.id === where.id && inScope(row, where) && row.source === where.source,
         );
         if (index < 0) return { count: 0 };
         store.splice(index, 1);
@@ -111,6 +132,8 @@ function makePrisma(
         },
       ),
     },
+    $executeRaw: vi.fn(async () => 0),
+    $queryRaw: vi.fn(async () => [{ bypass: null, key: null, login: "test" }]),
     _store: store,
     _routines: routines,
   };
@@ -194,6 +217,24 @@ describe("skill tools", () => {
       name: "billing",
       files: ["notes.txt", "references/rates.md"],
     });
+    expect(prisma.agentSkill.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ select: { id: true, name: true } }),
+    );
+    expect(prisma.agentSkill.findFirst).toHaveBeenCalledTimes(1);
+    expect(prisma.agentSkill.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          id: "plugin-1",
+          name: "billing",
+          userId: owner.userId,
+          OR: [
+            { spaceId: owner.spaceId },
+            { allSpaces: true },
+            { availableIn: { some: { spaceId: owner.spaceId } } },
+          ],
+        },
+      }),
+    );
     expect(
       await skillReadFromTool(prisma as never, owner, {
         name: "billing",
@@ -203,6 +244,12 @@ describe("skill tools", () => {
     expect(
       await skillReadFromTool(prisma as never, owner, { name: "billing", file: "../secrets.md" }),
     ).toMatchObject({ error: expect.stringContaining("No file") });
+
+    // Visibility can change between matching a name and fetching the document.
+    prisma.agentSkill.findFirst.mockResolvedValueOnce(null);
+    expect(await skillReadFromTool(prisma as never, owner, { name: "billing" })).toEqual({
+      error: "Skill not found.",
+    });
   });
 
   it("preserves extra frontmatter keys on update", async () => {
@@ -281,6 +328,71 @@ describe("skill tools", () => {
       "Run @Original here.",
       "Run @Original here.",
     ]);
+  });
+
+  it("edits and deletes the owner's skills that other spaces also use", async () => {
+    prisma = makePrisma(
+      [
+        {
+          id: "shared",
+          spaceId: "ws-2",
+          userId: "user-1",
+          allSpaces: true,
+          name: "Shared",
+          description: "d",
+          content: buildSkillMd({ name: "Shared", description: "d", body: "old" }),
+          source: "user",
+        },
+      ],
+      [
+        { id: "r1", userId: "user-1", spaceId: "ws-1", prompt: "Run @Shared." },
+        { id: "r2", userId: "user-1", spaceId: "ws-3", prompt: "Run @Shared." },
+      ],
+    );
+    const publishSpaceChange = vi.fn(async () => undefined);
+    const updated = await skillUpdateFromTool(
+      prisma as never,
+      owner,
+      { name: "Shared", newName: "Better", body: "new" },
+      { publishSpaceChange },
+    );
+    expect(updated).toMatchObject({ ok: true, name: "Better" });
+    expect(prisma._store[0]?.content).toContain("new");
+    expect(prisma._routines.map((row) => row.prompt)).toEqual(["Run @Better.", "Run @Better."]);
+    expect(publishSpaceChange.mock.calls).toEqual([
+      ["ws-1", "routines"],
+      ["ws-3", "routines"],
+    ]);
+
+    expect(await skillDeleteFromTool(prisma as never, owner, { name: "Better" })).toMatchObject({
+      ok: true,
+    });
+    expect(prisma._store).toHaveLength(0);
+  });
+
+  it("refuses a rename that would clash with a skill in another space it reaches", async () => {
+    const skill = (id: string, spaceId: string, name: string, allSpaces: boolean) => ({
+      id,
+      spaceId,
+      userId: "user-1",
+      allSpaces,
+      name,
+      description: "d",
+      content: buildSkillMd({ name, description: "d", body: "b" }),
+      source: "user",
+    });
+    prisma = makePrisma([
+      skill("shared", "ws-1", "Shared", true),
+      skill("local", "ws-2", "Taken", false),
+    ]);
+    const result = await skillUpdateFromTool(prisma as never, owner, {
+      name: "Shared",
+      newName: "Taken",
+    });
+    expect(result).toEqual({
+      error: "A skill with that name already exists in one of these spaces.",
+    });
+    expect(prisma._store[0]?.name).toBe("Shared");
   });
 
   it("leaves routines alone when another rename got there first", async () => {

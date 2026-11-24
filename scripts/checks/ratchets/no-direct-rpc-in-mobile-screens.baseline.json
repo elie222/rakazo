@@ -1,19 +1,13 @@
 {
   "apps/mobile/app/(settings)/account.tsx": 5,
   "apps/mobile/app/(settings)/archived-bots.tsx": 3,
-  "apps/mobile/app/(settings)/integrations.tsx": 17,
   "apps/mobile/app/(settings)/model-connection.tsx": 7,
-  "apps/mobile/app/(settings)/profile.tsx": 2,
   "apps/mobile/app/(settings)/vault.tsx": 11,
   "apps/mobile/app/(settings)/voice.tsx": 6,
   "apps/mobile/app/_layout.tsx": 1,
-  "apps/mobile/app/artifacts.tsx": 1,
-  "apps/mobile/app/board.tsx": 2,
-  "apps/mobile/app/bot-profile.tsx": 3,
-  "apps/mobile/app/bot-settings.tsx": 12,
   "apps/mobile/app/computer.tsx": 7,
   "apps/mobile/app/pages.tsx": 1,
-  "apps/mobile/app/routine.tsx": 1,
   "apps/mobile/components/cards/AppConnectCard.tsx": 3,
+  "apps/mobile/components/integrations/use-connection-actions.ts": 1,
   "apps/mobile/components/models/model-role-settings.tsx": 1
 }

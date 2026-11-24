@@ -18,7 +18,7 @@ import {
 } from "@rakazo/ui-web";
 import { ChevronLeft } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
+import { Link, Navigate, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { PasskeySignIn, usePasskeySignIn } from "../../components/account/PasskeySignIn";
 import { SocialSignInButtons } from "../../components/account/SocialSignInButtons";
 import { WindowChrome } from "../../components/WindowChrome";
@@ -65,6 +65,7 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
   // Signup triggers a session refresh that remounts the anonymous auth page.
   const sent = resetSent || searchParams.get("verify") === "email";
   const [reset, setReset] = useState<AuthCapabilities | null>(null);
+  const showAccountSwitch = mode !== "in" || reset?.registrationOpen !== false;
   const [capabilityError, setCapabilityError] = useState(false);
   const [capabilityAttempt, setCapabilityAttempt] = useState(0);
   const [codeSent, setCodeSent] = useState(false);
@@ -274,6 +275,9 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
   if (!sent && !reset && !capabilityError) {
     return <div className="h-full bg-background" />;
   }
+  if (!sent && mode === "up" && reset?.registrationOpen === false) {
+    return <Navigate to={`/sign-in${nextQuery}`} replace />;
+  }
 
   return (
     <AuthFrame
@@ -356,23 +360,25 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
                   {error}
                 </p>
               ) : null}
-              <p className="mt-8 text-center text-muted-foreground">
-                {mode === "in" ? (
-                  <>
-                    <Trans>Don’t have an account?</Trans>{" "}
-                    <Link to={`/sign-up${nextQuery}`} className="font-medium text-foreground">
-                      <Trans>Sign up</Trans>
-                    </Link>
-                  </>
-                ) : (
-                  <>
-                    <Trans>Already have an account?</Trans>{" "}
-                    <Link to={`/sign-in${nextQuery}`} className="font-medium text-foreground">
-                      <Trans>Sign in</Trans>
-                    </Link>
-                  </>
-                )}
-              </p>
+              {showAccountSwitch ? (
+                <p className="mt-8 text-center text-muted-foreground">
+                  {mode === "in" ? (
+                    <>
+                      <Trans>Don’t have an account?</Trans>{" "}
+                      <Link to={`/sign-up${nextQuery}`} className="font-medium text-foreground">
+                        <Trans>Sign up</Trans>
+                      </Link>
+                    </>
+                  ) : (
+                    <>
+                      <Trans>Already have an account?</Trans>{" "}
+                      <Link to={`/sign-in${nextQuery}`} className="font-medium text-foreground">
+                        <Trans>Sign in</Trans>
+                      </Link>
+                    </>
+                  )}
+                </p>
+              ) : null}
             </>
           ) : null}
           {reset?.passwordAuth && !chooser ? (
@@ -540,7 +546,7 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
                   <Trans>Back</Trans>
                 </Button>
               ) : null}
-              {codeStep ? null : (
+              {!codeStep && showAccountSwitch ? (
                 <p className="mt-8 text-center text-muted-foreground">
                   {mode === "in" ? (
                     <>
@@ -572,7 +578,7 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
                     </Link>
                   )}
                 </p>
-              )}
+              ) : null}
             </>
           ) : null}
         </>

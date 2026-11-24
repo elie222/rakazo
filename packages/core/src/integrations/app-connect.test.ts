@@ -1,6 +1,12 @@
 import type { ConnectionCatalogItem, MessageBlock } from "@rakazo/contracts";
+import { ConnectionLabelSchema } from "@rakazo/contracts";
 import { describe, expect, it } from "vitest";
-import { appConnectCard, connectedAppBlock, matchAppCatalog } from "./app-connect.js";
+import {
+  appConnectCard,
+  appConnectLabel,
+  connectedAppBlock,
+  matchAppCatalog,
+} from "./app-connect.js";
 
 const entry: ConnectionCatalogItem = {
   connectorId: "catalog",
@@ -33,5 +39,16 @@ describe("inline app cards", () => {
     for (const block of [other, text, connected])
       expect(connectedAppBlock(block, "catalog", "gcal", "first")).toBe(block);
     expect(card.description).toBe("Search events and schedule meetings.");
+  });
+});
+
+describe("appConnectLabel", () => {
+  it("sends a name the connection label schema accepts", () => {
+    const card = appConnectCard(entry);
+    expect(appConnectLabel(card)).toBe(card.name);
+    expect(
+      ConnectionLabelSchema.safeParse(appConnectLabel({ ...card, name: "B".repeat(200) })).success,
+    ).toBe(true);
+    expect(appConnectLabel({ ...card, name: " " })).toBe(card.provider);
   });
 });

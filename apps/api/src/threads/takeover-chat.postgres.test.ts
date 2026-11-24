@@ -789,8 +789,7 @@ describePostgres("chat replies during screen takeover (PostgreSQL)", () => {
         include: { thread: true },
       });
       const threadId = group.thread!.id;
-      await system.task.updateMany({ where: { id: fixture.run.taskId }, data: { threadId } });
-      await system.run.update({ where: { id: fixture.run.id }, data: { threadId } });
+      await moveRunToThread(fixture.run, threadId);
       const card = await system.message.create({
         data: {
           threadId,
@@ -1042,9 +1041,31 @@ describePostgres("chat replies during screen takeover (PostgreSQL)", () => {
     ).toBe(1);
   });
 
+  /**
+   * A task's prompt is encrypted for its thread, so the run gets a copy of its task there
+   * rather than moving the row.
+   */
+  async function moveRunToThread(run: { id: string; taskId: string }, threadId: string) {
+    const {
+      id,
+      threadId: _from,
+      createdAt,
+      updatedAt,
+      ...task
+    } = await system.task.findUniqueOrThrow({ where: { id: run.taskId } });
+    const moved = await system.task.create({ data: { ...task, threadId } });
+    const updated = await system.run.update({
+      where: { id: run.id },
+      data: { threadId, taskId: moved.id },
+    });
+    await system.task.delete({ where: { id }, select: { id: true } });
+    return updated;
+  }
+
   /** Ada's takeover wait from setup() moves into a group where Ben works too. */
   async function groupWithWaitingRun() {
-    const { actor, bot: ada, run, computer, sandbox, jobs, deps, control } = await setup();
+    const fixture = await setup();
+    const { actor, bot: ada, computer, sandbox, jobs, deps, control } = fixture;
     const { spaceId, userId } = actor;
     const bot = (name: string) =>
       system.bot.create({
@@ -1062,8 +1083,7 @@ describePostgres("chat replies during screen takeover (PostgreSQL)", () => {
       include: { thread: true },
     });
     const threadId = group.thread!.id;
-    await system.task.update({ where: { id: run.taskId }, data: { threadId } });
-    await system.run.update({ where: { id: run.id }, data: { threadId } });
+    const run = await moveRunToThread(fixture.run, threadId);
     const benTask = await system.task.create({
       data: { spaceId, userId, botId: ben.id, threadId, prompt: "Sign in.", status: "running" },
     });

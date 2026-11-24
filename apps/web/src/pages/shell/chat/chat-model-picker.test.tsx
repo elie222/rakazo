@@ -118,15 +118,16 @@ describe("ChatModelPicker", () => {
     act(() => trigger.click());
     expect(options()).toHaveLength(12);
     expect(document.querySelector("[cmdk-group-heading]")?.textContent).toBe("OpenRouter");
-    expect(options()[2]?.getAttribute("aria-label")).toBe("Model 2 (OpenRouter)");
+    expect(options()[1]?.textContent).toBe("Model 11");
+    expect(options()[10]?.getAttribute("aria-label")).toBe("Model 2 (OpenRouter)");
     const checked = options().filter((option) => option.getAttribute("data-checked") === "true");
     expect(checked.map((option) => option.textContent)).toEqual(["Model 2"]);
 
     search("MODEL 1");
     expect(options().map((option) => option.textContent)).toEqual([
-      "Model 1",
-      "Model 10",
       "Model 11",
+      "Model 10",
+      "Model 1",
     ]);
     search("vendor/model-7");
     expect(options().map((option) => option.textContent)).toEqual(["Model 7"]);

@@ -57,6 +57,7 @@ const EXPECTED: Record<KnownSandboxKind, Row> = {
   ],
   fake: [true, true, false, false, DEFAULT_SCREEN, "never", false, false],
 };
+const OFFERS_HOST_COMPUTER: string[] = ["docker", "local-vm"];
 const UNDECLARED: Row = [false, true, false, false, DEFAULT_SCREEN, "never", false, false];
 
 function capabilities([
@@ -93,7 +94,10 @@ describe("sandbox kind capabilities", () => {
   });
 
   it.each(knownSandboxKinds)("%s declares the pinned values", (kind) => {
-    expect(sandboxKindCapabilities(kind)).toEqual(capabilities(EXPECTED[kind]));
+    expect(sandboxKindCapabilities(kind)).toEqual({
+      ...capabilities(EXPECTED[kind]),
+      ...(OFFERS_HOST_COMPUTER.includes(kind) ? { offersHostComputer: true } : {}),
+    });
   });
 
   it.each(["unknown", "", null, undefined])("reads undeclared kind %j as before", (kind) => {
@@ -113,5 +117,8 @@ describe("sandbox kind capabilities", () => {
       "wuying",
     ]);
     expect(sandboxKindsWhere((entry) => entry.runsOnUserMachine)).toEqual(["desktop"]);
+    expect(sandboxKindsWhere((entry) => entry.offersHostComputer === true).sort()).toEqual(
+      OFFERS_HOST_COMPUTER,
+    );
   });
 });

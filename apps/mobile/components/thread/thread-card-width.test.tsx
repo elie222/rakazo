@@ -97,11 +97,13 @@ vi.mock("../../lib/native/native", () => ({
   useResolvedAppearance: () => "light",
 }));
 
+const linkConfirm = vi.hoisted(() => vi.fn());
+
 vi.mock("@rakazo/chat-ui/native", () => ({
   MarkdownLongPressContext: createContext(undefined),
   ChatMarkdown: ({ children }: { children: string }) => <p>{children}</p>,
   withBlockMentions: <T,>(blocks: T) => blocks,
-  useNativeLinkConfirm: () => vi.fn(),
+  useNativeLinkConfirm: () => linkConfirm,
 }));
 
 vi.mock("../messages/message-caption", () => ({
@@ -137,6 +139,7 @@ vi.mock("../native/native-action-button", () => ({
 vi.mock("./ask-block", () => ({ AskBlock: () => null }));
 vi.mock("../cards/AppConnectCard", () => ({ AppConnectCard: () => null }));
 vi.mock("../integrations/connector-icon", () => ({ ConnectorIcon: () => null }));
+vi.mock("./routine-event-row", () => ({ RoutineEventRows: () => null }));
 vi.mock("../media/audio-attachment", () => ({ AudioAttachment: () => null }));
 vi.mock("../cards/ChoiceCard", () => ({ ChoiceCard: () => null }));
 vi.mock("../cards/ImportSetupCard", () => ({ ImportSetupCard: () => null }));
@@ -399,7 +402,8 @@ describe("thread cards", () => {
     const link = container.querySelector('[role="link"]');
     expect(link?.getAttribute("aria-label")).toBe("Remote task: finished");
     act(() => (link as HTMLElement).click());
-    expect(Linking.openURL).toHaveBeenCalledWith("https://example.test/task");
+    expect(linkConfirm).toHaveBeenCalledWith("https://example.test/task");
+    expect(Linking.openURL).not.toHaveBeenCalled();
     act(() => link!.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true })));
     expect(onLongPress).toHaveBeenCalledTimes(1);
   });

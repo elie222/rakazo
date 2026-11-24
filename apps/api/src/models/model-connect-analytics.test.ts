@@ -66,13 +66,16 @@ describe("model connect analytics", () => {
     const { deps, capture } = measuredDeps(1);
     modelSetup.mockResolvedValue({ needsModel: true });
 
-    const started = await startModelConnect(deps, actor, "api_key", "openai", "desktop");
+    const started = await startModelConnect(deps, actor, "api_key", "openai", {
+      surface: "android",
+      appVersion: "1.0.17+ee3d3f95",
+    });
     started.record("openai", { name: "model_connected" });
 
-    expect(started.measure).toEqual({ surface: "desktop", attempt: 2 });
-    const tried = { method: "api_key", provider: "openai", surface: "desktop", attempt: 2 };
+    expect(started.measure).toEqual({ surface: "android", attempt: 2 });
+    const tried = { method: "api_key", provider: "openai", surface: "android", attempt: 2 };
     expect(capture.mock.calls).toEqual([
-      ["user-1", { name: "model_connect_started", ...tried }],
+      ["user-1", { name: "model_connect_started", ...tried, appVersion: "1.0.17+ee3d3f95" }],
       ["user-1", { name: "model_connected", ...tried }],
     ]);
   });
@@ -83,7 +86,9 @@ describe("model connect analytics", () => {
     modelSetup.mockRejectedValueOnce(new Error("db unavailable"));
 
     for (const method of ["oauth", "api_key"] as const) {
-      const started = await startModelConnect(deps, actor, method, "openai-codex", "web");
+      const started = await startModelConnect(deps, actor, method, "openai-codex", {
+        surface: "web",
+      });
       started.record("openai-codex", { name: "model_connected" });
       expect(started.measure).toBeUndefined();
     }
@@ -97,7 +102,9 @@ describe("model connect analytics", () => {
     modelSetup.mockResolvedValue({ needsModel: true });
     update.mockRejectedValueOnce(new Error("db unavailable"));
 
-    const started = await startModelConnect(deps, actor, "oauth", "openai-codex", "web");
+    const started = await startModelConnect(deps, actor, "oauth", "openai-codex", {
+      surface: "web",
+    });
     started.record("openai-codex", { name: "model_connected" });
 
     expect(started.measure).toBeUndefined();
@@ -108,7 +115,7 @@ describe("model connect analytics", () => {
     const { deps, capture } = measuredDeps();
     modelSetup.mockResolvedValue({ needsModel: true });
 
-    const started = await startModelConnect(deps, actor, "api_key", "openai", undefined);
+    const started = await startModelConnect(deps, actor, "api_key", "openai", {});
     started.record("openai", {
       name: "model_connect_failed",
       error: new Error(`${MODEL_KEY_REJECTED_ERROR} sk-private`),
@@ -156,7 +163,7 @@ describe("model connect analytics", () => {
   it("connects a credits choice at once when credits can run a model, else waits for the purchase", async () => {
     const { deps, capture, updateMany } = measuredDeps();
     modelSetup.mockResolvedValue({ needsModel: true });
-    const started = await startModelConnect(deps, actor, "credits", undefined, "ios");
+    const started = await startModelConnect(deps, actor, "credits", undefined, { surface: "ios" });
 
     await recordCreditsChoice(deps, actor, started);
     expect(capture).toHaveBeenCalledTimes(1);

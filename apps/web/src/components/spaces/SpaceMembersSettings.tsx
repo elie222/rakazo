@@ -1,5 +1,5 @@
 import { Trans, useLingui } from "@lingui/react/macro";
-import type { SpaceMember, SpaceMembers } from "@rakazo/contracts";
+import type { SpaceMember } from "@rakazo/contracts";
 import { accountDisplay, spaceInvitee } from "@rakazo/core";
 import {
   Badge,
@@ -16,16 +16,18 @@ import {
   InputGroupInput,
   toast,
 } from "@rakazo/ui-web";
+import { useQuery } from "@tanstack/react-query";
 import { Copy, Link, Mail, MoreHorizontal, UserPlus } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
-import { useSave } from "../../lib/query/query";
-import { useSpaceRpc } from "../../lib/query/space-rpc";
+import { useRef, useState } from "react";
+import { spaceQueries, useQueryUserId, useSave } from "../../lib/query/query";
 import { errorText } from "../../lib/query/user-error";
+import { useCopyInviteLink } from "../../lib/spaces/use-copy-invite-link";
 import { ConfirmDialog } from "../ConfirmDialog";
 import { SettingsGroup } from "../settings/SettingsRows";
 import { PersonRow } from "./PersonRow";
 
-type Confirm = { kind: "remove"; member: SpaceMember } | { kind: "leave" };
+/** A removal or a leave, with the Space it was asked for. */
+type Confirm = { spaceId: string } & ({ kind: "remove"; member: SpaceMember } | { kind: "leave" });
 
 export function SpaceMembersSettings({
   space,
@@ -35,156 +37,117 @@ export function SpaceMembersSettings({
   /** After leaving, with the space the server moved this person to. */
   onLeft: (activeSpaceId: string) => void;
 }) {
-  const rpc = useSpaceRpc();
   const { t } = useLingui();
-  const [members, setMembers] = useState<SpaceMembers | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [inviteUrl, setInviteUrl] = useState<string | null>(null);
+  const userId = useQueryUserId();
+  const membersQuery = (spaceId: string) =>
+    spaceQueries(userId, spaceId).spaces.members.list.queryOptions({ input: { spaceId } });
+  const query = useQuery(membersQuery(space.id));
+  const members = query.data ?? null;
+  /** A save re-reads the list of the Space it was made for, whichever is on screen by then. */
+  const stale = (ask: { spaceId: string }) => [membersQuery(ask.spaceId).queryKey];
+  const { manualLink: inviteUrl, copyLink, dismissManualLink } = useCopyInviteLink();
   /** The address being invited; null while the form is closed. */
   const [email, setEmail] = useState<string | null>(null);
-  const [inviting, setInviting] = useState(false);
   const [confirm, setConfirm] = useState<Confirm | null>(null);
-  const [confirming, setConfirming] = useState(false);
-  const [confirmError, setConfirmError] = useState<string | null>(null);
-  const [reload, setReload] = useState(0);
-  /** The Space the shown list belongs to. */
-  const shownSpace = useRef<string | null>(null);
-
-  // Not keyed on `t`: a new one each render must not reload the list.
-  useEffect(() => {
-    let active = true;
-    // Another space's people, error and link never show while this one loads; a reload of the
-    // same Space after adding someone keeps showing the list it replaces.
-    if (shownSpace.current !== space.id) {
-      shownSpace.current = null;
-      setMembers(null);
-      setEmail(null);
-    }
-    setError(null);
-    setInviteUrl(null);
-    rpc.spaces.members
-      .list({ spaceId: space.id })
-      .then((next) => {
-        if (!active) return;
-        shownSpace.current = space.id;
-        setMembers(next);
-      })
-      .catch((err: unknown) => {
-        if (active) setError(errorText(err, t`Could not load members`));
-      });
-    return () => {
-      active = false;
-    };
-  }, [rpc, space.id, reload]);
-
-  /** Copies the link; only when that fails is the link shown, to copy by hand. */
-  async function copy(url: string) {
-    try {
-      if (!navigator.clipboard) throw new Error("No clipboard");
-      await navigator.clipboard.writeText(url);
-      setInviteUrl(null);
-      toast(t`Invite link copied`);
-    } catch {
-      setInviteUrl(url);
-    }
+  /** The Space the form and link below belong to; another one's never show. */
+  const [formSpace, setFormSpace] = useState(space.id);
+  if (formSpace !== space.id) {
+    setFormSpace(space.id);
+    setEmail(null);
+    setConfirm(null);
+    dismissManualLink();
   }
+  /** The Space on screen when a save ends. */
+  const shownSpace = useRef(space.id);
+  shownSpace.current = space.id;
 
-  async function cancelInvites() {
-    setError(null);
-    try {
-      await rpc.spaces.invites.cancel({ spaceId: space.id });
-      setInviteUrl(null);
-      setMembers((current) => (current ? { ...current, openInvites: 0 } : current));
-    } catch (err) {
-      setError(errorText(err, t`Could not cancel invites`));
-    }
-  }
-
-  async function invite() {
-    if (inviting) return;
-    setInviting(true);
-    setError(null);
-    try {
-      const link = await rpc.spaces.invites.create({ spaceId: space.id });
-      setMembers((current) =>
-        current ? { ...current, openInvites: (current.openInvites ?? 0) + 1 } : current,
-      );
-      await copy(link.url);
-    } catch (err) {
-      setError(errorText(err, t`Could not create invite link`));
-    } finally {
-      setInviting(false);
-    }
-  }
-
-  async function runConfirm() {
-    if (!confirm || confirming) return;
-    setConfirming(true);
-    setConfirmError(null);
-    try {
-      if (confirm.kind === "remove") {
-        const { userId } = confirm.member;
-        await rpc.spaces.members.remove({ spaceId: space.id, userId });
-        setMembers((current) =>
-          current
-            ? { ...current, members: current.members.filter((item) => item.userId !== userId) }
-            : current,
-        );
-        // The removed person may be addable again, so the list is re-read from the server.
-        setReload((value) => value + 1);
-        setConfirm(null);
-      } else {
-        const result = await rpc.spaces.members.leave({ spaceId: space.id });
-        setConfirm(null);
-        onLeft(result.activeSpaceId);
-      }
-    } catch (err) {
-      setConfirmError(
-        errorText(
-          err,
-          confirm.kind === "remove" ? t`Could not remove member` : t`Could not leave space`,
-        ),
-      );
-    } finally {
-      setConfirming(false);
-    }
-  }
-
+  const linking = useSave({
+    save: (ask: { spaceId: string }, client) => client.spaces.invites.create(ask),
+    stale,
+    onSaved: (link) => copyLink(link.url),
+  });
+  const cancelling = useSave({
+    save: (ask: { spaceId: string }, client) => client.spaces.invites.cancel(ask),
+    stale,
+    onSaved: dismissManualLink,
+  });
+  const confirming = useSave({
+    save: async (ask: Confirm, client) => {
+      if (ask.kind === "leave") return client.spaces.members.leave({ spaceId: ask.spaceId });
+      await client.spaces.members.remove({ spaceId: ask.spaceId, userId: ask.member.userId });
+      return null;
+    },
+    // The removed person may be addable again, so the list is re-read from the server.
+    stale: (ask) => (ask.kind === "remove" ? stale(ask) : []),
+    onSaved: (left) => {
+      setConfirm(null);
+      if (left) onLeft(left.activeSpaceId);
+    },
+  });
   const adding = useSave({
     save: (ask: { spaceId: string; userId: string }, client) => client.spaces.members.add(ask),
-    onSaved: () => setReload((value) => value + 1),
+    stale,
   });
   const emailing = useSave({
     save: (ask: { spaceId: string; email: string }, client) => client.spaces.invites.create(ask),
+    stale,
     onSaved: async (sent, ask) => {
       if (ask.spaceId !== shownSpace.current) return;
       setEmail(null);
-      setMembers((current) =>
-        current ? { ...current, openInvites: (current.openInvites ?? 0) + 1 } : current,
-      );
       if (sent.emailed) toast(t`Invitation sent`);
-      else await copy(sent.url);
+      else await copyLink(sent.url);
     },
   });
-  // A failure to add or invite someone to another Space stays with that Space.
-  const addError =
-    adding.input?.spaceId === space.id && adding.error
-      ? errorText(adding.error, t`Could not add member`)
-      : emailing.input?.spaceId === space.id && emailing.error
-        ? errorText(emailing.error, t`Could not invite`)
-        : null;
+  /** The error line shows one failure: starting an action forgets the earlier ones. */
+  function forgetFailures() {
+    for (const save of [linking, cancelling, adding, emailing]) save.reset();
+  }
+  const loadError = query.error ? errorText(query.error, t`Could not load members`) : null;
+  // A failure in another Space stays with that Space.
+  const failed = (save: { input?: { spaceId: string }; error: Error | null }) =>
+    save.input?.spaceId === space.id ? save.error : null;
+  const linkingError = failed(linking);
+  const cancellingError = failed(cancelling);
+  const addingError = failed(adding);
+  const emailingError = failed(emailing);
+  // An action's failure is newer than a failed re-read, which keeps showing the list it had.
+  const error =
+    (linkingError
+      ? errorText(linkingError, t`Could not create invite link`)
+      : cancellingError
+        ? errorText(cancellingError, t`Could not cancel invites`)
+        : addingError
+          ? errorText(addingError, t`Could not add member`)
+          : emailingError
+            ? errorText(emailingError, t`Could not invite`)
+            : null) ?? loadError;
+  const confirmError = confirming.error
+    ? errorText(
+        confirming.error,
+        confirming.input?.kind === "remove" ? t`Could not remove member` : t`Could not leave space`,
+      )
+    : null;
   const invitee = members && email !== null ? spaceInvitee(members, email) : null;
   const organizationName = members?.organizationName ?? "";
 
   function inviteByEmail() {
     if (!invitee || email === null) return;
     if (invitee.kind === "outside") {
+      forgetFailures();
       emailing.run({ spaceId: space.id, email: email.trim() });
       return;
     }
     // Someone in the organization joins directly, and someone already here needs nothing.
-    if (invitee.kind === "addable") adding.run({ spaceId: space.id, userId: invitee.userId });
+    if (invitee.kind === "addable") addMember(invitee.userId);
     setEmail(null);
+  }
+  function addMember(userId: string) {
+    forgetFailures();
+    adding.run({ spaceId: space.id, userId });
+  }
+  function openConfirm(next: Confirm) {
+    confirming.reset();
+    setConfirm(next);
   }
   const canManage = members?.canManage === true;
   const memberName =
@@ -201,16 +164,13 @@ export function SpaceMembersSettings({
       {/* People already in the organization come first; an email or a link is for anyone else. */}
       <DropdownMenu>
         <DropdownMenuTrigger
-          render={<Button variant="ghost" size="sm" disabled={inviting || adding.pending} />}
+          render={<Button variant="ghost" size="sm" disabled={linking.pending || adding.pending} />}
         >
           {inviteLabel}
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-auto max-w-72 min-w-44">
           {addable.map((person) => (
-            <DropdownMenuItem
-              key={person.userId}
-              onClick={() => adding.run({ spaceId: space.id, userId: person.userId })}
-            >
+            <DropdownMenuItem key={person.userId} onClick={() => addMember(person.userId)}>
               <span className="truncate">{accountDisplay(person, person.email).label}</span>
             </DropdownMenuItem>
           ))}
@@ -224,7 +184,12 @@ export function SpaceMembersSettings({
             <Mail />
             <Trans>Invite by email</Trans>
           </DropdownMenuItem>
-          <DropdownMenuItem onClick={() => void invite()}>
+          <DropdownMenuItem
+            onClick={() => {
+              forgetFailures();
+              linking.run({ spaceId: space.id });
+            }}
+          >
             <Link />
             <Trans>Copy invite link</Trans>
           </DropdownMenuItem>
@@ -242,8 +207,11 @@ export function SpaceMembersSettings({
           <DropdownMenuContent align="end" className="w-auto min-w-44">
             <DropdownMenuItem
               // A link still being created would outlive the cancel.
-              disabled={inviting}
-              onClick={() => void cancelInvites()}
+              disabled={linking.pending}
+              onClick={() => {
+                forgetFailures();
+                cancelling.run({ spaceId: space.id });
+              }}
             >
               <Trans>Cancel open invites</Trans>
             </DropdownMenuItem>
@@ -256,10 +224,7 @@ export function SpaceMembersSettings({
       variant="ghost"
       size="sm"
       className="text-destructive hover:text-destructive"
-      onClick={() => {
-        setConfirmError(null);
-        setConfirm({ kind: "leave" });
-      }}
+      onClick={() => openConfirm({ kind: "leave", spaceId: space.id })}
     >
       <Trans>Leave space</Trans>
     </Button>
@@ -275,10 +240,7 @@ export function SpaceMembersSettings({
                 member={member}
                 onRemove={
                   canManage && member.role !== "owner"
-                    ? () => {
-                        setConfirmError(null);
-                        setConfirm({ kind: "remove", member });
-                      }
+                    ? () => openConfirm({ kind: "remove", member, spaceId: space.id })
                     : undefined
                 }
               />
@@ -325,9 +287,7 @@ export function SpaceMembersSettings({
           ) : null}
         </form>
       ) : null}
-      {members && (error || addError) ? (
-        <p className="px-1 text-body-sm text-destructive">{error ?? addError}</p>
-      ) : null}
+      {members && error ? <p className="px-1 text-body-sm text-destructive">{error}</p> : null}
       {canManage && inviteUrl ? (
         <InputGroup>
           <InputGroupInput
@@ -340,7 +300,7 @@ export function SpaceMembersSettings({
             <InputGroupButton
               size="icon-sm"
               aria-label={t`Copy invite link`}
-              onClick={() => void copy(inviteUrl)}
+              onClick={() => void copyLink(inviteUrl)}
             >
               <Copy />
             </InputGroupButton>
@@ -358,8 +318,8 @@ export function SpaceMembersSettings({
             )
           }
           error={confirmError}
-          busy={confirming}
-          onConfirm={() => void runConfirm()}
+          busy={confirming.pending}
+          onConfirm={() => confirming.run(confirm)}
           confirmLabel={confirm.kind === "remove" ? <Trans>Remove</Trans> : <Trans>Leave</Trans>}
         />
       ) : null}

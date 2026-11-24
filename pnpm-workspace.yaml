@@ -79,6 +79,7 @@ patchedDependencies:
   expo-speech@58.0.4: patches/expo-speech@58.0.4.patch
   fflate@0.8.3: patches/fflate@0.8.3.patch
   "@react-native-ai/apple@0.12.0": patches/@react-native-ai__apple@0.12.0.patch
+  react-native-enriched-markdown@1.2.0: patches/react-native-enriched-markdown@1.2.0.patch
 
 # Dependency install scripts run only when listed true. The false entries are
 # no-ops on supported Node versions or optional native speedups with JS fallbacks.

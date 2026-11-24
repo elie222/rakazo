@@ -19,8 +19,10 @@ import { ArrowUp, Square, X } from "lucide-react";
 import type { ComponentProps, CSSProperties, KeyboardEvent, ReactNode } from "react";
 import { useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ActiveBotGlyph } from "../../../components/ai/CollaborationMarker";
+import { toolActivityPreference } from "../../../lib/chat/tool-activity-preference";
 import { messageHasVisibleBlocks } from "../../../lib/chat/tool-activity-view";
 import { transcriptIsNearEnd } from "../../../lib/chat/transcript-scroll";
+import { composerEnterToSendPreference } from "../../../lib/composer/composer-enter-to-send-pref";
 import type { SpaceQueries } from "../../../lib/query/query";
 import { useSave } from "../../../lib/query/query";
 import type { createSpaceRpc } from "../../../lib/query/rpc";
@@ -51,8 +53,6 @@ export function ThreadPanel({
   topicId,
   topic,
   meId,
-  showToolActivity,
-  enterToSend,
   messageContext,
   onClose,
 }: {
@@ -63,12 +63,12 @@ export function ThreadPanel({
   /** The thread as the Threads list has it; undefined until that list loads. */
   topic: TopicSummary | undefined;
   meId: string | undefined;
-  showToolActivity: boolean;
-  enterToSend: boolean;
   messageContext: ThreadMessageContext;
   onClose: () => void;
 }) {
   const { t } = useLingui();
+  const showToolActivity = toolActivityPreference.use();
+  const enterToSend = composerEnterToSendPreference.use();
   const userBubble = useMemo(() => chatUserBubbleColors(bot.color, bot.id), [bot.color, bot.id]);
   const { snapshot, target, refresh } = useTopicThread({
     rpc,

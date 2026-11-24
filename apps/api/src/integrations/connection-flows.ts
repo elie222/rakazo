@@ -23,7 +23,7 @@ import {
 } from "@rakazo/adapters";
 import type { Actor, AppConnectClient, AppConnectOrigin } from "@rakazo/contracts";
 import { AppConnectOriginSchema, appConnectCallbackUrl } from "@rakazo/contracts";
-import { ClientError } from "@rakazo/core";
+import { ClientError, matchFeaturedConnectorId } from "@rakazo/core";
 import { normalizedHttpUrl } from "@rakazo/core/egress";
 import {
   IsolationError,
@@ -159,6 +159,28 @@ export async function beginConnection(
     : deps.connectors.managed(input.connectorId);
   if (!connector)
     throw new ClientError("BAD_REQUEST", `Connector ${input.connectorId} is not configured`);
+  const startedAt = Date.now();
+  let connectionId: string | undefined;
+  function logSetup(
+    outcome:
+      | "authorization_ready"
+      | "connected"
+      | "request_aborted"
+      | "auth_config_unavailable"
+      | "provider_failed"
+      | "invalid_authorization_url"
+      | "initial_save_failed"
+      | "save_failed"
+      | "superseded",
+  ) {
+    getLogger().info("tool connection setup", {
+      "connection.id": connectionId,
+      "connection.attempt_id": attempt,
+      "connection.app": matchFeaturedConnectorId(input.provider) ?? undefined,
+      "connection.setup_outcome": outcome,
+      "connection.elapsed_ms": Date.now() - startedAt,
+    });
+  }
   // Share the revoke scope lock so a slug-wide remote delete cannot miss a
   // row that is inserted after SELECT FOR UPDATE and before remote revoke.
   // Complete and revoke hold that lock across provider calls, so wait as long as they may.
@@ -201,7 +223,11 @@ export async function beginConnection(
         },
       });
     },
-  );
+  ).catch((error: unknown) => {
+    logSetup("initial_save_failed");
+    throw error;
+  });
+  connectionId = row.id;
   // Exactly what the first transaction wrote: this attempt's row, with no result saved on it.
   const unsavedRow = {
     id: row.id,
@@ -235,6 +261,13 @@ export async function beginConnection(
       connectionContext(context.actor, "connections.begin", context.signal),
     );
   } catch (error) {
+    logSetup(
+      error instanceof ConnectorAuthUnavailableError
+        ? "auth_config_unavailable"
+        : context.signal?.aborted && error === context.signal.reason
+          ? "request_aborted"
+          : "provider_failed",
+    );
     await markFailed();
     if (error instanceof ConnectorAuthUnavailableError) {
       getLogger().warn("connections.begin app has no usable auth config", {
@@ -259,6 +292,7 @@ export async function beginConnection(
   if (auth.authorizationUrl) {
     const authorizationUrl = normalizedHttpUrl(auth.authorizationUrl);
     if (!authorizationUrl) {
+      logSetup("invalid_authorization_url");
       await markFailed();
       if (leftover) await removeLeftoverAuthorization(deps, connector, leftover, false);
       throw new ClientError("SERVICE_UNAVAILABLE", "The app returned an invalid sign-in URL.");
@@ -294,14 +328,17 @@ export async function beginConnection(
     // The slot stayed busy, or the transaction or its job write failed, after the provider had
     // already answered. The row is marked failed first, or the removal would wait for it as for
     // a connection still in flight.
+    logSetup("save_failed");
     await markFailed();
     if (leftover) await removeLeftoverAuthorization(deps, connector, leftover, false);
     throw error;
   }
   if (!applied) {
+    logSetup("superseded");
     if (leftover) await removeLeftoverAuthorization(deps, connector, leftover, true);
     throw new IsolationError();
   }
+  logSetup(auth.authorizationUrl ? "authorization_ready" : "connected");
   if (!auth.authorizationUrl) {
     await recordSecurityEvent(connectionCreatedEvent("connections.begin", row.id, context.actor));
     recordToolConnected(deps.analytics, context.actor.userId, row);

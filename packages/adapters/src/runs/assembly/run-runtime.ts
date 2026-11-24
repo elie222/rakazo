@@ -1,5 +1,6 @@
 import { hostname } from "node:os";
 import type {
+  AgentRuntime,
   ArtifactStore,
   BackgroundJobPayloads,
   ConnectorProvider,
@@ -34,6 +35,8 @@ import { createConnectorStack } from "../../integrations/connector-registry.js";
 import type { RemoteConnectorDependencies } from "../../integrations/installed-connectors.js";
 import { InstalledConnectorProvider } from "../../integrations/installed-connectors.js";
 import { IntegrationProviderSettings } from "../../integrations/integration-provider-settings.js";
+import { createMarketplaceConnectors } from "../../integrations/marketplace-connectors.js";
+import type { PluginRepoFetcher, PluginTextReader } from "../../integrations/plugin-connectors.js";
 import { McpConnector, mcpStdioOptionsFromEnv } from "../../mcp/mcp-connector.js";
 import { McpOAuthBroker } from "../../mcp/mcp-oauth.js";
 import { reconcileMediaVideos } from "../../media/media-video-poll.js";
@@ -48,6 +51,7 @@ import {
   resolveDeploymentModel,
 } from "../../models/deployment-model.js";
 import { ExpoPushProvider } from "../../notifications/expo-push.js";
+import { createPageRevisions } from "../../pages/page-revision.js";
 import { reconcilePurchases } from "../../payments/purchase-poll.js";
 import { pruneExpiredNativeCalendarRequests } from "../../personal-calendar/native-calendar.js";
 import { T3CodeConnections } from "../../providers/cloud-agent/t3code/t3code-connections.js";
@@ -65,6 +69,7 @@ import {
 import { createStrategicInitiativeReconciler } from "../../routines/strategic-initiative.js";
 import { localModelsApiKey } from "../../runtime/pi/models/pi-local-provider-id.js";
 import type { SecretCleanupDeps } from "../../secrets/secret-cleanup.js";
+import { webOriginFromEnv } from "../../server/server-foundation.js";
 import { workspaceSaveLimits } from "../../storage/workspace-save-policy.js";
 import { createWebProvider } from "../../web/web-provider-factory.js";
 import { auditLogConfig, createAuditLogReconciler } from "../../webhooks/audit-forwarding.js";
@@ -102,6 +107,8 @@ export interface RunRuntimeEnv extends PipedreamEnvironmentValues {
   workspaceSaveLimits: WorkspaceExportLimits;
   /** Only names a bot's address to it; the API receives the mail. */
   inboundEmailDomain: string | undefined;
+  /** The web app's origin; an ask sent to a chat app links to the bot's chat there. */
+  webOrigin: string;
 }
 
 /** The worker's reading of the run runtime settings, values and defaults as the worker has them. */
@@ -135,6 +142,7 @@ export function runRuntimeEnvFromProcess(source: NodeJS.ProcessEnv): RunRuntimeE
     maxUploadSizeBytes: uploadSizeFromEnv(source),
     workspaceSaveLimits: workspaceSaveLimits(source),
     inboundEmailDomain: source.INBOUND_EMAIL_DOMAIN?.trim().toLowerCase() || undefined,
+    webOrigin: webOriginFromEnv(source),
   };
 }
 
@@ -233,7 +241,8 @@ type SetByRunRuntime =
   | "inboundEmailDomain"
   | "maxUploadSizeBytes"
   | "messaging"
-  | "messagingDelivery";
+  | "messagingDelivery"
+  | "marketplaceConnectors";
 
 /** The run executor and the background job handlers that drive it. */
 export function createRunRuntime(
@@ -243,6 +252,7 @@ export function createRunRuntime(
     /** Also keeps one sender's direct-message settles in order. */
     jobs: JobPublisher & JobQueueOrder;
     artifacts: ArtifactStore;
+    pageRevisionRuntime: AgentRuntime;
     messaging?: MessagingSurface;
     /** Whether a connected workspace still has its bot installed. */
     isMessagingInstallationActive?: (installationId: string) => Promise<boolean>;
@@ -250,6 +260,9 @@ export function createRunRuntime(
     meetingCalendarSync?: (job: BackgroundJobPayloads["meeting.calendar-sync"]) => Promise<void>;
     meetingWork?: (job: BackgroundJobPayloads["meeting.work"]) => Promise<unknown>;
     lifecycleEmail?: (job: BackgroundJobPayloads["email.lifecycle"]) => Promise<void>;
+    /** Where a chat's connect_app finds plugin marketplace connectors; tests read offline ones. */
+    pluginMarketplaceRead?: PluginTextReader;
+    pluginRepoFetcher?: PluginRepoFetcher;
   },
 ) {
   const {
@@ -258,6 +271,9 @@ export function createRunRuntime(
     lifecycleEmail,
     meetingWork,
     meetingCalendarSync,
+    pageRevisionRuntime,
+    pluginMarketplaceRead,
+    pluginRepoFetcher,
     ...executorDeps
   } = deps;
   const runtime = cliModelRuntime(env, deps.runtime, deps);
@@ -268,6 +284,7 @@ export function createRunRuntime(
         events: deps.events,
         jobs: deps.jobs,
         artifacts: deps.artifacts,
+        webOrigin: env.webOrigin,
       })
     : undefined;
   const teamChat = messaging
@@ -296,6 +313,11 @@ export function createRunRuntime(
   const executor = createRunExecutor({
     ...executorDeps,
     runtime,
+    marketplaceConnectors: createMarketplaceConnectors({
+      read: pluginMarketplaceRead,
+      fetcher: pluginRepoFetcher,
+      network: deps.secretHttp,
+    }),
     maxUploadSizeBytes: env.maxUploadSizeBytes,
     connector: connectors.stack.connector,
     connectors: connectors.stack.connector,
@@ -330,7 +352,15 @@ export function createRunRuntime(
     messagingDelivery,
     web: executorDeps.web ?? createWebProvider(),
   });
+  const pageRevisions = createPageRevisions({
+    prisma: deps.prisma,
+    events: deps.events,
+    jobs: deps.jobs,
+    runtime: cliModelRuntime(env, pageRevisionRuntime, deps),
+    resolveModel: executor.resolveModel,
+  });
   const jobHandlers = createBackgroundJobHandlers({
+    pageRevisionWork: pageRevisions.work,
     executor,
     prisma: deps.prisma,
     sandbox: deps.sandbox,
@@ -358,7 +388,7 @@ export function createRunRuntime(
     meetingWork,
     meetingCalendarSync,
   });
-  return { runtime, executor, jobHandlers, messagingDelivery, teamChat };
+  return { runtime, executor, jobHandlers, messagingDelivery, teamChat, pageRevisions };
 }
 
 type JobReconcilerDeps = Parameters<typeof createJobReconciler>[0];

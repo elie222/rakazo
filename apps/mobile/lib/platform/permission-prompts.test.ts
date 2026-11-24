@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
+import { UI_LOCALES } from "../i18n/ui-locale";
 
 type AppConfig = {
   expo: { locales?: Record<string, string>; ios?: { infoPlist?: Record<string, unknown> } };
@@ -9,8 +10,14 @@ type AppConfig = {
 const mobileRoot = resolve(import.meta.dirname, "..", "..");
 const config = JSON.parse(readFileSync(resolve(mobileRoot, "app.json"), "utf8")) as AppConfig;
 
+/** Apple's folder for a UI language: script subtags for Chinese, the language tag otherwise. */
+const APPLE_LOCALES: Record<string, string> = { "zh-CN": "zh-Hans", "zh-TW": "zh-Hant" };
+const translated = UI_LOCALES.filter((locale) => locale !== "en").map(
+  (locale) => APPLE_LOCALES[locale] ?? locale,
+);
+
 describe("iOS permission prompts", () => {
-  it.each(["es", "pl"])("has a %s version of every prompt the app shows", (locale) => {
+  it.each(translated)("has a %s version of every prompt the app shows", (locale) => {
     expect(config.expo.locales?.[locale]).toBe(`./locales/${locale}.json`);
     // Under `ios`: Expo writes top-level keys to Android resources too.
     const messages = (

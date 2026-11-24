@@ -26,6 +26,8 @@ model User {
   nativeCalendarRequests NativeCalendarRequest[]
   aiDataConsents AiDataConsent[]
   pages          Page[]
+  pageGrants PageGrant[]
+  pageComments PageComment[]
   id                          String                       @id
   name                        String
   email                       String
@@ -46,6 +48,9 @@ model User {
   avatarStyle                 String                       @default("organic")
   /// The icon set this user's bots wear unless one is pinned to another: "organic" or "rakazo".
   botAvatarSet                String                       @default("organic")
+  /// Null lets each client keep its previous device preference.
+  composerModelPicker          Boolean?
+  streamReplies                Boolean?
   /// IANA timezone such as "Pacific/Auckland". Null until set; bots then get UTC only.
   timezone                    String?
   /// The app language last chosen, such as "es" or "pt-BR". Null until an app reports it;
@@ -486,6 +491,7 @@ model Organization {
   billing      BillingAccount?
   modelCredits ModelCreditAccount?
   computerAllowanceGrants ComputerAllowanceGrant[]
+  mediaCharges MediaCharge[]
   referralCode ReferralCode?
   referredBy   Referral?           @relation("ReferredOrganization")
   referrals    Referral[]          @relation("ReferrerOrganization")
@@ -592,6 +598,22 @@ model ComputerAllowanceGrant {
 
   @@index([organizationId, createdAt])
   @@map("computer_allowance_grants")
+}
+
+/// Hosted image and video generation an organization spent its monthly media balance on. Kept
+/// apart from the run that spent it, so deleting a bot or Space does not give the balance back.
+model MediaCharge {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  /// The generation charged, as `media:<external effect id>`; unique so a retry charges once.
+  source         String       @unique
+  kind           String
+  amountMicros   Int
+  createdAt      DateTime     @default(now())
+
+  @@index([organizationId, createdAt])
+  @@map("media_charges")
 }
 
 model PluginSubmission {
@@ -826,6 +848,9 @@ model DeploymentSettings {
   ownerUserId                     String?
   defaultModelProvider            String?
   defaultModelId                  String?
+  /// The admin-managed model and its deployment-owned key.
+  deploymentModelProvider         String?
+  deploymentModelId               String?
   deploymentModelCredentialCipher String?
   computerHost                    String?
   /// Provider id for new computers chosen in Settings; null keeps SANDBOX_PROVIDER.
@@ -1616,6 +1641,11 @@ model Routine {
   /// Runs as a turn in its chat, with the whole conversation, waiting while the bot is busy there.
   /// Otherwise it runs on time alongside other work, with its recent results and the chat's last messages.
   inChat         Boolean   @default(false)
+  /// While set, a run may use the owner's own computer if its prompt hashes to this (see
+  /// routineRunUsesOwnerComputer). Only the owner sets it, in the app. A database trigger clears it
+  /// when the prompt, owner or bot changes, or it starts running in its chat or watching, and
+  /// another when the owner pairs or unpairs a computer.
+  computerPromptHash String?
   webhookEnabled Boolean   @default(false)
   githubEnabled  Boolean   @default(false)
   messageProvider String?
@@ -1632,6 +1662,8 @@ model Routine {
   nextRunAt      DateTime?
   /// Runs in a row the model provider refused for the account; each one spaces out the schedule.
   accountFailures Int      @default(0)
+  /// When failing runs last paused it; only runs after this count toward the next pause.
+  failurePausedAt DateTime?
   /// Archiving its bot turned it off; restoring the bot turns it back on.
   resumeOnRestore Boolean  @default(false)
   createdAt      DateTime  @default(now())
@@ -2129,6 +2161,8 @@ model Page {
   /// Set when the page's content or title changes; pinning or sharing it is not an update.
   updatedAt      DateTime      @default(now())
   versions       PageVersion[]
+  grants         PageGrant[]
+  comments       PageComment[]
 
   @@index([spaceId, userId, updatedAt])
   @@index([botId])
@@ -2149,6 +2183,62 @@ model PageVersion {
 
   @@unique([pageId, version])
   @@map("page_versions")
+}
+
+model PageGrant {
+  id             String @id @default(cuid())
+  pageId         String
+  page           Page   @relation(fields: [pageId], references: [id], onDelete: Cascade)
+  recipientEmail String
+  userId         String?
+  user           User?  @relation(fields: [userId], references: [id], onDelete: SetNull)
+  /// Retains the binding when the account is deleted. It takes a fresh grant to share the address again.
+  bound          Boolean @default(false)
+  firstVersion   Int
+
+  @@unique([pageId, recipientEmail])
+  @@index([userId, pageId])
+  @@map("page_grants")
+}
+
+model PageComment {
+  id         String @id @default(cuid())
+  pageId     String
+  page       Page   @relation(fields: [pageId], references: [id], onDelete: Cascade)
+  authorId   String?
+  author     User?  @relation(fields: [authorId], references: [id], onDelete: SetNull)
+  version    Int
+  section    String
+  sectionOccurrence Int?
+  body       String
+  createdAt  DateTime @default(now())
+  resolvedAt DateTime?
+  requests   PageRevisionRequest[]
+
+  @@index([pageId, createdAt, id])
+  @@map("page_comments")
+}
+
+model PageRevisionRequest {
+  id          String @id @default(cuid())
+  commentId   String
+  /// A reviewer can explicitly retry a terminal request once. Replays reuse the same retry.
+  retryOf     String? @unique
+  comment     PageComment @relation(fields: [commentId], references: [id], onDelete: Cascade)
+  requesterId String
+  /// The requester's Space whose AI-sharing permission covers this request.
+  consentSpaceId String?
+  /// The exact grant at submission. A later grant does not reinstate work from this one.
+  grantId     String?
+  status      String @default("pending")
+  createdAt   DateTime @default(now())
+  draftSource String?
+  draftCode   String?
+  resultVersion Int?
+
+  @@index([grantId])
+  @@index([commentId, createdAt])
+  @@map("page_revision_requests")
 }
 
 model UsageRecord {
@@ -2978,20 +3068,13 @@ model CapabilityInstallSpace {
   @@map("capability_install_spaces")
 }
 
-/// Operator grants; never purchased model credits. Counter includes uncertain reservations.
-model SpeechAllowance {
-  userId String @id
-  limitMicros BigInt
-  usedMicros BigInt @default(0)
-  expiresAt DateTime
-  @@map("speech_allowances")
-}
-
 /// Financial evidence survives chat deletion; contains no audio, transcripts or credentials.
 model SpeechCost {
   id String @id
   userId String
   spaceId String
+  /// The organization the Space belonged to when charged, so usage outlives the Space.
+  organizationId String?
   callId String?
   provider String
   operation String
@@ -3015,6 +3098,7 @@ model SpeechCost {
   updatedAt DateTime @default(now())
   @@index([userId, createdAt], map: "speech_costs_account")
   @@index([spaceId, createdAt], map: "speech_costs_space")
+  @@index([organizationId, createdAt], map: "speech_costs_organization")
   @@index([state, createdAt], map: "speech_costs_reconcile")
   @@map("speech_costs")
 }

@@ -307,6 +307,39 @@ describe("controls", () => {
     ]);
   });
 
+  it("distinguishes the select placeholder from a real empty value", () => {
+    const onChange = vi.fn();
+    const options = [
+      { value: "", label: "All regions" },
+      { value: "eu", label: "Europe" },
+    ];
+    const props = { options, placeholder: "Choose a region", onChange };
+    const view = render(<Select {...props} />);
+    const select = q<HTMLSelectElement>("select")!;
+    const placeholder = select.selectedOptions[0]!;
+    expect(placeholder.textContent).toBe("Choose a region");
+    expect(placeholder.disabled).toBe(true);
+    expect(options.map((option) => option.value)).not.toContain(placeholder.value);
+
+    const choose = (value: string) =>
+      act(() => {
+        select.value = value;
+        select.dispatchEvent(new Event("change", { bubbles: true }));
+      });
+    choose("");
+    expect(onChange).toHaveBeenLastCalledWith("");
+
+    view.rerender(<Select {...props} value="" />);
+    expect(select.selectedOptions[0]!.textContent).toBe("All regions");
+    expect(select.selectedOptions[0]!.disabled).toBe(false);
+
+    view.rerender(<Select {...props} value="missing" />);
+    expect(select.selectedOptions[0]!.textContent).toBe("Choose a region");
+    expect(select.options).toHaveLength(options.length + 1);
+    choose("eu");
+    expect(onChange).toHaveBeenLastCalledWith("eu");
+  });
+
   it("shows a select's placeholder until a listed value is chosen and reports the choice", () => {
     const onChange = vi.fn();
     const view = render(
@@ -399,6 +432,43 @@ describe("controls", () => {
     const buttons = host.querySelectorAll("button");
     expect(buttons).toHaveLength(200);
     expect(q('[aria-pressed="true"]')!.textContent).toBe("o240");
+  });
+
+  it("presses the segment for a numeric value and still reports the choice as a string", () => {
+    const onChange = vi.fn();
+    render(<Segmented options={[1, 2, 3]} value={2} onChange={onChange} />);
+    expect(q('[aria-pressed="true"]')!.textContent).toBe("2");
+    expect(host.querySelectorAll('[aria-pressed="false"]')).toHaveLength(2);
+    click(host.querySelectorAll("button")[2]!);
+    expect(onChange).toHaveBeenCalledWith("3");
+  });
+
+  it("presses the object option whose numeric value is chosen", () => {
+    render(
+      <Segmented
+        options={[
+          { value: 7, label: "Week" },
+          { value: 30, label: "Month" },
+        ]}
+        value={30}
+      />,
+    );
+    expect(q('[aria-pressed="true"]')!.textContent).toBe("Month");
+  });
+
+  it("keeps a numeric chosen segment when there are too many to list", () => {
+    const many = Array.from({ length: 250 }, (_, index) => index);
+    render(<Segmented value={240} options={many} />);
+    expect(host.querySelectorAll("button")).toHaveLength(200);
+    expect(q('[aria-pressed="true"]')!.textContent).toBe("240");
+  });
+
+  it("keeps string values pressed and reports the clicked value as a string", () => {
+    const onChange = vi.fn();
+    render(<Segmented options={["a", "b"]} value="a" onChange={onChange} />);
+    expect(q('[aria-pressed="true"]')!.textContent).toBe("a");
+    click(host.querySelectorAll("button")[1]!);
+    expect(onChange).toHaveBeenCalledWith("b");
   });
 
   it("shows a section's content again once the value that broke it is replaced", () => {

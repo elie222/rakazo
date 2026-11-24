@@ -3,6 +3,10 @@ export const SCRATCHPAD_PREAMBLE =
 export const SCRATCHPAD_CLOSING = "\n</scratchpad_open>";
 export const SCRATCHPAD_CUT_HINT = "\nNotes cut. Call scratchpad_list.";
 
+export function scratchpadParkedNote(count: number): string {
+  return `\n${count} parked. Call scratchpad_list to see them.`;
+}
+
 export function scratchpadMoreItemsNote(count: number): string {
   return `\n…and ${count} more. Call scratchpad_list to see the rest.`;
 }

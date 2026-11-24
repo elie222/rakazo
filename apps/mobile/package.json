@@ -28,7 +28,7 @@
     "start": "expo start",
     "android": "expo run:android",
     "ios": "expo run:ios",
-    "check": "cross-env EXPO_OFFLINE=1 expo install --check && tsc --noEmit -p tsconfig.json",
+    "check": "cross-env EXPO_OFFLINE=1 expo install --check && tsrs --noEmit -p tsconfig.json",
     "test": "vitest run --root ../.. apps/mobile/lib apps/mobile/components",
     "test:e2e": "maestro test .maestro/smoke.yaml"
   },
@@ -65,6 +65,7 @@
     "expo-keep-awake": "58.0.4",
     "expo-linking": "58.0.17",
     "expo-localization": "58.0.5",
+    "expo-media-library": "58.0.14",
     "expo-modules-core": "58.1.0",
     "expo-notifications": "58.1.9",
     "expo-router": "58.0.32",
@@ -92,7 +93,8 @@
     "react-native-svg": "15.16.0",
     "react-native-web": "0.21.4",
     "react-native-webview": "14.0.1",
-    "react-native-worklets": "0.13.0"
+    "react-native-worklets": "0.13.0",
+    "zod": "4.6.7"
   },
   "devDependencies": {
     "@lingui/babel-plugin-lingui-macro": "6.12.0",

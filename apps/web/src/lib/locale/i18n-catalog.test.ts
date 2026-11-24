@@ -311,17 +311,24 @@ it("renders Polish plural categories and interpolated values in every counted me
       expect(translation, entry.message).toContain(`${category} {`);
     }
     local.load("pl", { [id]: translation });
+    const message = entry.message ?? "";
+    const pluralNames = new Set(
+      [...message.matchAll(/\{(\w+),\s*plural,/g)].map((match) => match[1]),
+    );
+    const textNames = [...message.matchAll(/\{(\w+)(?=\s*[,}])/g)]
+      .map((match) => match[1])
+      .filter((name) => !pluralNames.has(name));
     for (const count of [0, 1, 2, 5, 12, 14, 21, 22, 25, 101, 102, 112, 1.5]) {
-      const values = Object.fromEntries(
-        [...(entry.message ?? "").matchAll(/\{(\w+)(?=\s*[,}])/g)].map((match) => [
-          match[1],
-          match[1] === "peer" || match[1] === "name" ? "Locale QA" : count,
-        ]),
-      );
+      const values = Object.fromEntries([
+        ...[...pluralNames].map((name) => [name, count]),
+        ...textNames.map((name) => [name, "Locale QA"]),
+      ]);
       const rendered = local._({ id, values });
-      expect(rendered, `${entry.message}: ${count}`).toContain(number.format(count));
+      if (message.includes("#")) {
+        expect(rendered, `${message}: ${count}`).toContain(number.format(count));
+      }
       expect(rendered).not.toMatch(/[{}]/);
-      if ("peer" in values || "name" in values) expect(rendered).toContain("Locale QA");
+      if (textNames.length > 0) expect(rendered).toContain("Locale QA");
     }
   }
 });

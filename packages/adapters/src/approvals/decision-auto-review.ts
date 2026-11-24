@@ -20,17 +20,11 @@ import {
   reviewTaskMaxChars,
   truncateReviewText,
 } from "./auto-review.prompt.js";
-import { passConfidenceFloor, passProbability } from "./decision-models.js";
+import { passConfidenceFloor } from "./decision-models.js";
 import type { DecisionCalibration } from "./model-descriptor.js";
 
 const MAX_BOT_CHARS = 240;
-export const APPROVAL_DECISION_RUBRIC_VERSION = "approval-v10";
-
-/** A decision model's verdict and, when it answered, its probability that the action may pass. */
-export interface DecisionVerdict {
-  result: AutoReviewResult;
-  passProbability?: number;
-}
+export const APPROVAL_DECISION_RUBRIC_VERSION = "approval-v11";
 export class DecisionAutoReviewProvider implements AutoReviewProvider {
   constructor(
     private readonly options: {
@@ -52,13 +46,9 @@ export class DecisionAutoReviewProvider implements AutoReviewProvider {
     };
   }
   async review(request: AutoReviewRequest, context: AdapterContext): Promise<AutoReviewResult> {
-    return (await this.judge(request, context)).result;
-  }
-  /** The verdict, with the model's probability that the action may pass when it answered. */
-  async judge(request: AutoReviewRequest, context: AdapterContext): Promise<DecisionVerdict> {
     const modelLabel = `${this.options.providerId}/${this.options.model}`;
     if (reviewArgsTooLong(request)) {
-      return { result: { decision: "ask", model: modelLabel, reason: TOO_LONG_TO_REVIEW } };
+      return { decision: "ask", model: modelLabel, reason: TOO_LONG_TO_REVIEW };
     }
     try {
       const result = await this.options.provider.decide(
@@ -98,20 +88,9 @@ export class DecisionAutoReviewProvider implements AutoReviewProvider {
       );
       const answer = result.answers.decision;
       const model = `${this.options.providerId}/${result.model}`;
-      const probability =
-        (answer?.choice === "pass" || answer?.choice === "ask") &&
-        typeof answer.confidence === "number"
-          ? {
-              passProbability: passProbability(
-                this.options.calibration,
-                answer.choice,
-                answer.confidence,
-              ),
-            }
-          : {};
-      if (answer?.choice === "ask") return { result: { decision: "ask", model }, ...probability };
+      if (answer?.choice === "ask") return { decision: "ask", model };
       if (answer?.choice !== "pass")
-        return { result: { decision: "error", model, reason: "Checker returned no decision." } };
+        return { decision: "error", model, reason: "Checker returned no decision." };
       if (
         typeof answer.confidence !== "number" ||
         answer.confidence <
@@ -120,8 +99,8 @@ export class DecisionAutoReviewProvider implements AutoReviewProvider {
             passConfidenceFloor(this.options.calibration))
       )
         // An unsure checker asks like any other ask: a reason saying so tells the person nothing.
-        return { result: { decision: "ask", model }, ...probability };
-      return { result: { decision: "pass", model }, ...probability };
+        return { decision: "ask", model };
+      return { decision: "pass", model };
     } catch (error) {
       const reason =
         error instanceof DecisionProviderError
@@ -133,9 +112,7 @@ export class DecisionAutoReviewProvider implements AutoReviewProvider {
               unavailable: "Checker timed out or failed.",
             }[error.kind]
           : "Checker returned no decision.";
-      return {
-        result: { decision: "error", model: modelLabel, reason: sanitizeAutoReviewReason(reason) },
-      };
+      return { decision: "error", model: modelLabel, reason: sanitizeAutoReviewReason(reason) };
     }
   }
 }

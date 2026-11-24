@@ -13,13 +13,19 @@ import { useSharedValue } from "react-native-reanimated";
 import { captureApiRequestContext, rpc } from "../api/api";
 import { currentSessionGeneration } from "../api/session";
 import { errorText } from "../api/user-error";
-import { deleteQuietly, recordAudio, recordClip, transcribeClip } from "../calls/call-session";
 import { resolveVoiceCallPlan } from "../calls/voice-call-entry";
 import { deviceLanguage, getActiveUiLocale } from "../i18n/i18n";
 import { appleTranscriber } from "../voice/apple-transcription";
 import { loadDeviceVoiceEnabled } from "../voice/device-voice";
 import * as dictation from "../voice/dictation";
 import { ensureVoiceConsent } from "../voice/voice";
+import {
+  deleteQuietly,
+  microphonePermission,
+  recordAudio,
+  recordClip,
+  transcribeClip,
+} from "../voice/voice-clip";
 import { QUIET_LEVELS, withLevel } from "./dictation-levels";
 
 /** A pause long enough to think in; one this long, or a mic that never hears anything, ends it. */
@@ -245,9 +251,7 @@ export function useComposerDictation({
       await ensureVoiceConsent(requestContext);
       if (session.current !== mine) return;
       // Ask for the microphone first: on Android its prompt reads as leaving the app.
-      const { AudioModule } = await import("expo-audio");
-      if (session.current !== mine) return;
-      await AudioModule.requestRecordingPermissionsAsync();
+      await microphonePermission(mine.cancel.signal);
       if (!(await goLive(mine))) return;
       const stopped = new AbortController();
       mine.finish = () => {

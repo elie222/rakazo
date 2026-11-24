@@ -1,7 +1,6 @@
 import type * as db from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
 import {
-  dismissMcpServerApprovals,
   queueMcpConnectedRun,
   resolveMcpApprovalCards,
   revertConnectedMcpApprovals,
@@ -11,22 +10,6 @@ vi.mock("@rakazo/db", async (original) => ({
   ...(await original<typeof db>()),
   appendEventInTransaction: vi.fn(async () => ({ seq: 1 })),
 }));
-
-/** PostgreSQL jsonb `@>` containment, which Prisma `array_contains` compiles to. */
-function jsonContains(value: unknown, needle: unknown): boolean {
-  if (Array.isArray(needle)) {
-    return (
-      Array.isArray(value) &&
-      needle.every((item) => value.some((candidate) => jsonContains(candidate, item)))
-    );
-  }
-  if (needle !== null && typeof needle === "object") {
-    if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
-    const record = value as Record<string, unknown>;
-    return Object.entries(needle).every(([key, item]) => jsonContains(record[key], item));
-  }
-  return value === needle;
-}
 
 type MessageQuery = { where?: { blocks?: { array_contains?: unknown } } };
 
@@ -234,69 +217,6 @@ describe("resolveMcpApprovalCards", () => {
       where: { id: "card-message" },
       data: {
         blocks: [{ ...blocks[0], status: "pending" }, blocks[1], blocks[2]],
-      },
-    });
-  });
-
-  it("dismisses connected and pending cards when the server is deleted", async () => {
-    const blocks = [
-      { kind: "mcp_approval", name: "A", serverId: "srv-a", status: "connected" },
-      { kind: "mcp_approval", name: "Open", serverId: "srv-a", status: "pending" },
-      { kind: "mcp_approval", name: "C", serverId: "srv-a", status: "dismissed" },
-    ];
-    const rows = [
-      {
-        id: "card-message",
-        botId: null,
-        threadId: "group-thread",
-        thread: { botId: "bot" },
-        blocks,
-      },
-      {
-        id: "mention",
-        botId: "bot",
-        threadId: "group-thread",
-        thread: { botId: "bot" },
-        blocks: [{ kind: "text", text: "server srv-a is gone" }],
-      },
-      {
-        id: "other-server",
-        botId: "bot",
-        threadId: "group-thread",
-        thread: { botId: "bot" },
-        blocks: [{ kind: "mcp_approval", name: "B", serverId: "srv-b", status: "connected" }],
-      },
-    ];
-    const { deps, actor, tx } = fixture(blocks);
-    tx.message.findMany.mockImplementation(async (query) => {
-      const needle = query.where?.blocks?.array_contains;
-      if (needle === undefined) return [];
-      return rows.filter((row) => jsonContains(row.blocks, needle));
-    });
-    await dismissMcpServerApprovals(deps, actor, "srv-a");
-    expect(deps.prisma.thread.findMany).not.toHaveBeenCalled();
-    expect(tx.message.findMany).toHaveBeenCalledWith({
-      where: {
-        thread: { spaceId: "space" },
-        blocks: { array_contains: [{ kind: "mcp_approval", serverId: "srv-a" }] },
-      },
-      select: {
-        id: true,
-        botId: true,
-        blocks: true,
-        threadId: true,
-        thread: { select: { botId: true } },
-      },
-    });
-    expect(tx.message.update).toHaveBeenCalledTimes(1);
-    expect(tx.message.update).toHaveBeenCalledWith({
-      where: { id: "card-message" },
-      data: {
-        blocks: [
-          { ...blocks[0], status: "dismissed" },
-          { ...blocks[1], status: "dismissed" },
-          blocks[2],
-        ],
       },
     });
   });

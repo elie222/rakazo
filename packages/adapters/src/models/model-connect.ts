@@ -31,6 +31,7 @@ import {
   compatibleEndpointPreset,
   normalizeOpenAiCompatibleBaseUrl,
 } from "./endpoints/openai-compatible-url.js";
+import { modelProviderDefinition } from "./model-provider-registry.js";
 import type { StoredModelSecret } from "./model-secret.js";
 import { parseModelSecret, serializeModelSecret } from "./model-secret.js";
 import { enabledOpenAiCompatibleModelIds } from "./model-selection.js";
@@ -344,6 +345,9 @@ export function modelCredentialDto(
     id: row.id,
     provider: canonicalPiProviderId(row.provider),
     label: row.label,
+    ...(modelProviderDefinition(row.provider)?.preserveModelOrder
+      ? { preserveModelOrder: true }
+      : {}),
     hasKey: storedModelSecretHasApiKey(plaintext),
     isDefault: row.isDefault ?? false,
     ...(row.defaultModel ? { modelId: row.defaultModel } : {}),

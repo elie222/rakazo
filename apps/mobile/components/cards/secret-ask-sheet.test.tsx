@@ -1,13 +1,15 @@
 // @vitest-environment jsdom
 
 import { BLOCKED_ITEM_ANSWER, UNCHOSEN_ITEM_ANSWER } from "@rakazo/contracts";
-import type { ReactNode, Ref } from "react";
+import { deferred } from "@rakazo/core/test-async";
+import type { CSSProperties, ReactNode, Ref } from "react";
 import { act } from "react";
 import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 const modal = vi.hoisted(() => ({ show: undefined as (() => void) | undefined }));
+const insets = vi.hoisted(() => ({ top: 0, bottom: 0, left: 0, right: 0 }));
 // Native commands sent to the fields, and each field's end-editing handler.
 const native = vi.hoisted(() => ({
   commands: [] as string[],
@@ -16,7 +18,22 @@ const native = vi.hoisted(() => ({
 
 vi.mock("react-native", async () => {
   const { useImperativeHandle, useRef } = await import("react");
-  const View = ({ children }: { children?: ReactNode }) => <div>{children}</div>;
+  const View = ({
+    children,
+    style = [],
+    accessibilityViewIsModal,
+  }: {
+    children?: ReactNode;
+    style?: CSSProperties[];
+    accessibilityViewIsModal?: boolean;
+  }) =>
+    accessibilityViewIsModal ? (
+      <div data-sheet style={Object.assign({}, ...style)}>
+        {children}
+      </div>
+    ) : (
+      <div>{children}</div>
+    );
   return {
     Modal: ({
       children,
@@ -101,7 +118,7 @@ vi.mock("react-native", async () => {
   };
 });
 vi.mock("react-native-safe-area-context", () => ({
-  useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }),
+  useSafeAreaInsets: () => insets,
 }));
 vi.mock("../../lib/appearance/appearance", () => ({ mobileTokens: () => ({}) }));
 vi.mock("../../lib/native/native", () => ({
@@ -110,15 +127,24 @@ vi.mock("../../lib/native/native", () => ({
 vi.mock("../native/native-action-button", () => ({
   NativeActionButton: ({
     label,
+    accessibilityLabel,
     onPress,
     disabled,
   }: {
-    label: string;
+    label?: string;
+    accessibilityLabel?: string;
     onPress: () => void;
     disabled?: boolean;
   }) => (
     <button type="button" onClick={onPress} disabled={disabled}>
-      {label}
+      {label ?? accessibilityLabel}
+    </button>
+  ),
+}));
+vi.mock("../native/sheet-close-button", () => ({
+  SheetCloseButton: ({ onPress }: { onPress: () => void }) => (
+    <button type="button" onClick={onPress}>
+      Close
     </button>
   ),
 }));
@@ -153,6 +179,7 @@ let container: HTMLDivElement;
 
 beforeEach(() => {
   vi.clearAllMocks();
+  Object.assign(insets, { left: 0, right: 0 });
   native.commands = [];
   native.endEditing = {};
   resetI18nForTests();
@@ -169,7 +196,7 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
-async function render(pending = true, loginFields?: string[]) {
+async function render(pending = true, loginFields?: string[], onDismiss?: () => Promise<void>) {
   await act(async () =>
     root.render(
       <SecretAskSheet
@@ -179,6 +206,7 @@ async function render(pending = true, loginFields?: string[]) {
         pending={pending}
         onClose={onClose}
         onSave={onSave}
+        onDismiss={onDismiss}
       />,
     ),
   );
@@ -210,6 +238,10 @@ function hiddenSwitches() {
   return [...container.querySelectorAll<HTMLInputElement>('input[aria-label="Hidden"]')];
 }
 
+function buttonLabels() {
+  return [...container.querySelectorAll("button")].map((item) => item.textContent);
+}
+
 function valueFields() {
   return [...container.querySelectorAll<HTMLInputElement>("input:not([type=checkbox])")];
 }
@@ -232,7 +264,8 @@ it("opens as a page sheet with the title, the default fields and the destination
   expect(password.type).toBe("password");
   expect(password.dataset.contentType).toBe("password");
   expect(password.dataset.autocomplete).toBe("current-password");
-  expect(hiddenSwitches().map((input) => input.checked)).toEqual([false, true]);
+  // Username and Password can't be wrong, so no switch asks.
+  expect(hiddenSwitches()).toEqual([]);
 });
 
 it("shows the default labels translated but saves them in English", async () => {
@@ -249,6 +282,20 @@ it("shows the default labels translated but saves them in English", async () => 
   await act(async () => button("Speichern").click());
 
   expect(onSave.mock.lastCall![0].map((answer) => answer.label)).toEqual(["Username", "Password"]);
+});
+
+it.each([
+  { left: 0, right: 72 },
+  { left: 72, right: 0 },
+])("keeps the sheet actions and fields inside the side insets (%j)", async ({ left, right }) => {
+  Object.assign(insets, { left, right });
+  await render();
+
+  const sheet = container.querySelector<HTMLElement>("[data-sheet]")!;
+  expect(sheet.style.paddingLeft).toBe(`${left}px`);
+  expect(sheet.style.paddingRight).toBe(`${right}px`);
+  expect(sheet.contains(button("Save"))).toBe(true);
+  expect(sheet.contains(field("Password"))).toBe(true);
 });
 
 it("starts an ID and a phone visible and a PIN hidden", async () => {
@@ -269,7 +316,7 @@ it("starts every field hidden when no label names an identifier", async () => {
   expect(hiddenSwitches().map((input) => input.checked)).toEqual([true, true]);
 });
 
-it("lets the person hide or show a field, and saves it as chosen", async () => {
+it("lets the person hide or show a field the bot named, and saves it as chosen", async () => {
   onSave.mockResolvedValue();
   await render(true, ["Email", "PIN"]);
 
@@ -290,6 +337,29 @@ it("lets the person hide or show a field, and saves it as chosen", async () => {
     [
       { label: "Email", value: "ada@example.test", hidden: false },
       { label: "PIN", value: "1234", hidden: true },
+    ],
+    true,
+  );
+});
+
+it("shows the password while typing but still saves it as secret", async () => {
+  onSave.mockResolvedValue();
+  await render();
+
+  await act(async () => button("Show Password").click());
+  expect(field("Password").type).toBe("text");
+  await act(async () => button("Hide Password").click());
+  expect(field("Password").type).toBe("password");
+  await act(async () => button("Show Password").click());
+
+  await type("Username", "ada");
+  await type("Password", "example-password");
+  await act(async () => button("Save").click());
+
+  expect(onSave).toHaveBeenCalledWith(
+    [
+      { label: "Username", value: "ada", hidden: false },
+      { label: "Password", value: "example-password", hidden: true },
     ],
     true,
   );
@@ -341,11 +411,9 @@ it("enables Save only once every field has a value", async () => {
   await type("Password", "example-password");
   expect(button("Save").disabled).toBe(false);
 
-  // A blank value counts only while it is hidden.
+  // A blank username counts as empty.
   await type("Username", "  ");
   expect(button("Save").disabled).toBe(true);
-  await act(async () => hiddenSwitches()[0]!.click());
-  expect(button("Save").disabled).toBe(false);
 });
 
 it("saves the default fields under their English labels, then clears them", async () => {
@@ -387,10 +455,7 @@ it("sends a login for this run only once Save to Vault is off, behind Continue",
   expect(saveToVault().checked).toBe(false);
   // Turning it off keeps what was typed.
   expect(field("Username").value).toBe("ada@example.test");
-  expect([...container.querySelectorAll("button")].map((item) => item.textContent)).toEqual([
-    "Cancel",
-    "Continue",
-  ]);
+  expect(buttonLabels()).toEqual(["Close", "Continue", "Show Password"]);
   await type("Password", "example-password");
   await act(async () => button("Continue").click());
 
@@ -459,14 +524,14 @@ async function nextFrame() {
   await act(async () => vi.advanceTimersToNextFrame());
 }
 
-it("closes on Cancel a frame after the edited field reports it is empty", async () => {
+it("closes on Close a frame after the edited field reports it is empty", async () => {
   vi.useFakeTimers();
   const seen = recordFieldsOnClose();
   await render();
   await type("Username", "ada");
   await type("Password", "example-password");
 
-  await act(async () => button("Cancel").click());
+  await act(async () => button("Close").click());
 
   expect(native.commands).toEqual([
     "clear Username",
@@ -525,10 +590,51 @@ it("closes after a delay when no field reports, as when the card is no longer pe
   expect(onSave).not.toHaveBeenCalled();
 });
 
-it("keeps Cancel and Save as the only sheet actions", async () => {
+it("keeps Close and Save as the only sheet actions", async () => {
   await render();
-  expect([...container.querySelectorAll("button")].map((item) => item.textContent)).toEqual([
-    "Cancel",
-    "Save",
-  ]);
+  expect(buttonLabels()).toEqual(["Close", "Save", "Show Password"]);
+});
+
+it("offers Dismiss request under the fields only when the request can be turned down", async () => {
+  const onDismiss = vi.fn(async () => undefined);
+  await render(true, undefined, onDismiss);
+  await type("Password", "example-password");
+  await act(async () => button("Dismiss request").click());
+  expect(onDismiss).toHaveBeenCalledTimes(1);
+  expect(onSave).not.toHaveBeenCalled();
+  expect(field("Password").value).toBe("");
+});
+
+it("shows a generic error when dismissing fails", async () => {
+  await render(true, undefined, async () => {
+    throw new Error("server detail");
+  });
+  await act(async () => button("Dismiss request").click());
+  expect(container.querySelector('[role="alert"]')?.textContent).toBe("Could not send answer");
+});
+
+it("stays open while a dismissal is in flight, so its failure shows", async () => {
+  const pending = deferred<void>();
+  await render(true, undefined, () => pending.promise);
+  await act(async () => button("Dismiss request").click());
+  await act(async () => button("Close").click());
+  expect(onClose).not.toHaveBeenCalled();
+
+  await act(async () => pending.reject(new Error("server detail")));
+  expect(container.querySelector('[role="alert"]')?.textContent).toBe("Could not send answer");
+});
+
+it("masks a shown password again once a failed save clears it", async () => {
+  onSave.mockRejectedValue(new Error("rejected"));
+  await render();
+  await act(async () => button("Show Password").click());
+  await type("Username", "ada");
+  await type("Password", "example-password");
+  expect(field("Password").type).toBe("text");
+
+  await act(async () => button("Save").click());
+
+  expect(field("Password").value).toBe("");
+  expect(field("Password").type).toBe("password");
+  expect(buttonLabels()).toContain("Show Password");
 });

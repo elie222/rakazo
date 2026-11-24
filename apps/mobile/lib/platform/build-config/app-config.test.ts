@@ -5,6 +5,10 @@ import appConfig from "../../../app.config";
 beforeEach(() => {
   vi.stubEnv("EAS_BUILD_PROFILE", "production");
   vi.stubEnv("EXPO_PUBLIC_API_URL", "https://app.example.com");
+  vi.stubEnv("RAKAZO_IOS_BUNDLE_ID", undefined);
+  vi.stubEnv("RAKAZO_APPLE_TEAM_ID", undefined);
+  vi.stubEnv("RAKAZO_EXPO_PROJECT_ID", undefined);
+  vi.stubEnv("RAKAZO_EXPO_OWNER", undefined);
 });
 
 afterEach(() => {
@@ -101,5 +105,242 @@ describe("mobile app config", () => {
     vi.stubEnv("GOOGLE_SERVICES_JSON", undefined);
 
     expect(appConfig(context(config))).toBe(config);
+  });
+
+  it("moves iOS bundle ID, team ID, share app group, and EAS extensions, and detaches upstream Expo defaults when no project ID is given", () => {
+    vi.stubEnv("RAKAZO_IOS_BUNDLE_ID", "com.example.rakazo");
+    vi.stubEnv("RAKAZO_APPLE_TEAM_ID", "TEAM123456");
+    const upstream: ExpoConfig = {
+      ...config,
+      owner: "upstream",
+      ios: { bundleIdentifier: "com.rakazo.app", supportsTablet: true },
+      plugins: [
+        "expo-router",
+        [
+          "expo-sharing",
+          {
+            ios: { enabled: true, appGroupId: "group.com.rakazo.app" },
+            android: { enabled: true },
+          },
+        ],
+      ],
+      extra: {
+        ...config.extra,
+        eas: {
+          projectId: "upstream-project",
+          build: {
+            experimental: {
+              ios: {
+                appExtensions: [
+                  {
+                    targetName: "RakazoWidgets",
+                    bundleIdentifier: "com.rakazo.app.widgets",
+                  },
+                  {
+                    targetName: "expo-sharing-extension",
+                    bundleIdentifier: "com.rakazo.app.expo-sharing-extension",
+                    entitlements: {
+                      "com.apple.security.application-groups": ["group.com.rakazo.app"],
+                    },
+                  },
+                  {
+                    targetName: "OtherExt",
+                    bundleIdentifier: "org.other.ext",
+                    entitlements: {
+                      "com.apple.security.application-groups": ["group.org.other"],
+                    },
+                  },
+                ],
+              },
+            },
+          },
+        },
+      },
+      updates: { url: "https://u.expo.dev/upstream-project", fallbackToCacheTimeout: 0 },
+    };
+
+    const actual = appConfig(context(upstream));
+    expect(actual).toEqual({
+      name: upstream.name,
+      slug: upstream.slug,
+      android: upstream.android,
+      ios: {
+        bundleIdentifier: "com.example.rakazo",
+        supportsTablet: true,
+        appleTeamId: "TEAM123456",
+        associatedDomains: ["webcredentials:app.example.com"],
+      },
+      plugins: [
+        "expo-router",
+        [
+          "expo-sharing",
+          {
+            ios: { enabled: true, appGroupId: "group.com.example.rakazo" },
+            android: { enabled: true },
+          },
+        ],
+      ],
+      extra: {
+        ...passkeys.extra,
+        iosAppGroup: "group.com.example.rakazo",
+        eas: {
+          build: {
+            experimental: {
+              ios: {
+                appExtensions: [
+                  {
+                    targetName: "RakazoWidgets",
+                    bundleIdentifier: "com.example.rakazo.widgets",
+                  },
+                  {
+                    targetName: "expo-sharing-extension",
+                    bundleIdentifier: "com.example.rakazo.expo-sharing-extension",
+                    entitlements: {
+                      "com.apple.security.application-groups": ["group.com.example.rakazo"],
+                    },
+                  },
+                  {
+                    targetName: "OtherExt",
+                    bundleIdentifier: "org.other.ext",
+                    entitlements: {
+                      "com.apple.security.application-groups": ["group.org.other"],
+                    },
+                  },
+                ],
+              },
+            },
+          },
+        },
+      },
+      updates: { enabled: false, fallbackToCacheTimeout: 0 },
+    });
+    expect(actual).not.toHaveProperty("owner");
+    expect(upstream.ios?.bundleIdentifier).toBe("com.rakazo.app");
+  });
+
+  it("points push tokens and OTA updates at a self-built app's own Expo project", () => {
+    vi.stubEnv("RAKAZO_EXPO_PROJECT_ID", "own-project");
+    vi.stubEnv("RAKAZO_EXPO_OWNER", "own-owner");
+    const upstream: ExpoConfig = {
+      ...config,
+      owner: "upstream",
+      extra: { ...config.extra, eas: { projectId: "upstream-project", build: { keep: true } } },
+      updates: { url: "https://u.expo.dev/upstream-project", fallbackToCacheTimeout: 0 },
+    };
+
+    expect(appConfig(context(upstream))).toEqual({
+      ...upstream,
+      ...passkeys,
+      owner: "own-owner",
+      extra: {
+        ...passkeys.extra,
+        eas: { projectId: "own-project", build: { keep: true } },
+      },
+      updates: { url: "https://u.expo.dev/own-project", fallbackToCacheTimeout: 0 },
+    });
+  });
+
+  it("drops upstream owner when RAKAZO_EXPO_PROJECT_ID is set without RAKAZO_EXPO_OWNER", () => {
+    vi.stubEnv("RAKAZO_EXPO_PROJECT_ID", "own-project");
+    const upstream: ExpoConfig = {
+      ...config,
+      owner: "upstream",
+      extra: { ...config.extra, eas: { projectId: "upstream-project" } },
+      updates: { url: "https://u.expo.dev/upstream-project" },
+    };
+
+    const actual = appConfig(context(upstream));
+    expect(actual).toEqual({
+      name: upstream.name,
+      slug: upstream.slug,
+      android: upstream.android,
+      ...passkeys,
+      extra: {
+        ...passkeys.extra,
+        eas: { projectId: "own-project" },
+      },
+      updates: { url: "https://u.expo.dev/own-project" },
+    });
+    expect(actual).not.toHaveProperty("owner");
+  });
+
+  it("combines self-signed iOS bundle and Expo project overrides without clobbering EAS config", () => {
+    vi.stubEnv("RAKAZO_IOS_BUNDLE_ID", "com.example.rakazo");
+    vi.stubEnv("RAKAZO_EXPO_PROJECT_ID", "own-project");
+    const upstream: ExpoConfig = {
+      ...config,
+      owner: "upstream",
+      ios: { bundleIdentifier: "com.rakazo.app" },
+      extra: {
+        ...config.extra,
+        eas: {
+          projectId: "upstream-project",
+          build: {
+            experimental: {
+              ios: {
+                appExtensions: [
+                  {
+                    targetName: "AgentNotifications",
+                    bundleIdentifier: "com.rakazo.app.notifications",
+                  },
+                ],
+              },
+            },
+          },
+        },
+      },
+      updates: { url: "https://u.expo.dev/upstream-project" },
+    };
+
+    const actual = appConfig(context(upstream));
+    expect(actual).toEqual({
+      name: upstream.name,
+      slug: upstream.slug,
+      android: upstream.android,
+      ios: {
+        bundleIdentifier: "com.example.rakazo",
+        associatedDomains: ["webcredentials:app.example.com"],
+      },
+      extra: {
+        ...passkeys.extra,
+        iosAppGroup: "group.com.example.rakazo",
+        eas: {
+          projectId: "own-project",
+          build: {
+            experimental: {
+              ios: {
+                appExtensions: [
+                  {
+                    targetName: "AgentNotifications",
+                    bundleIdentifier: "com.example.rakazo.notifications",
+                  },
+                ],
+              },
+            },
+          },
+        },
+      },
+      updates: { url: "https://u.expo.dev/own-project" },
+    });
+    expect(actual).not.toHaveProperty("owner");
+  });
+
+  it("rejects malformed bundle IDs, team IDs, and Expo project IDs", () => {
+    vi.stubEnv("RAKAZO_IOS_BUNDLE_ID", "not a bundle id");
+    expect(() => appConfig(context(config))).toThrow(
+      "RAKAZO_IOS_BUNDLE_ID must be a reverse-DNS bundle identifier.",
+    );
+
+    vi.stubEnv("RAKAZO_IOS_BUNDLE_ID", undefined);
+    vi.stubEnv("RAKAZO_APPLE_TEAM_ID", "Team (ABC123)");
+    expect(() => appConfig(context(config))).toThrow(
+      "RAKAZO_APPLE_TEAM_ID must be a 10-character Apple Developer Team ID.",
+    );
+
+    vi.stubEnv("RAKAZO_APPLE_TEAM_ID", undefined);
+    vi.stubEnv("RAKAZO_EXPO_PROJECT_ID", "https://u.expo.dev/abc");
+    expect(() => appConfig(context(config))).toThrow(
+      "RAKAZO_EXPO_PROJECT_ID must be an Expo project ID.",
+    );
   });
 });

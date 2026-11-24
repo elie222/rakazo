@@ -266,7 +266,7 @@ describe("bot management approval cards", () => {
       actions:
         toolName === "set_child_instructions"
           ? [
-              { id: "allow", label: "Allow once" },
+              { id: "allow", label: "Apply now" },
               { id: "deny", label: "Deny" },
             ]
           : [

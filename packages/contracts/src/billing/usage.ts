@@ -20,11 +20,15 @@ export const UsageRecordSchema = z.object({
   usageSource: z.string().nullable().optional(),
   callId: z.string().nullable().optional(),
   operationId: z.string().nullable().optional(),
-  operationKind: z.enum(["answer", "setup", "retrieval", "subagent", "compaction"]).optional(),
+  operationKind: z
+    .enum(["answer", "setup", "retrieval", "subagent", "compaction", "image", "video"])
+    .optional(),
   parentRunId: z.string().nullable().optional(),
   agentId: z.string().nullable().optional(),
   createdAt: z.string(),
 });
+
+export type UsageRecord = z.infer<typeof UsageRecordSchema>;
 
 export const UsageTotalFieldSchema = z.enum([
   "inputTokens",
@@ -89,6 +93,8 @@ export const UsageBreakdownModelSchema = UsageTotalsSchema.required().extend({
   ...ApiCost,
   provider: z.string(),
   model: z.string(),
+  /** Input read from the provider's cache, which `inputTokens` leaves out; null when any call lacks the figure. */
+  cachedTokens: z.number().nullable(),
 });
 export type UsageBreakdownModel = z.infer<typeof UsageBreakdownModelSchema>;
 

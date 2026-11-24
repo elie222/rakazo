@@ -270,6 +270,10 @@ test("saves a contact, a card billed to it, and a login from Settings, showing n
   await editor.getByRole("button", { name: "Add an authenticator key", exact: true }).click();
   await editor.getByLabel("Authenticator key", { exact: true }).fill("not a key");
   await expect(editor.getByText("This authenticator key can't be read.")).toBeVisible();
+  // The key is marked invalid and its message is what describes it.
+  const keyInput = editor.getByLabel("Authenticator key", { exact: true });
+  await expect(keyInput).toHaveAttribute("aria-invalid", "true");
+  await expect(keyInput).toHaveAccessibleDescription("This authenticator key can't be read.");
   await expect(editor.getByRole("button", { name: "Save", exact: true })).toBeDisabled();
   await captureScreenshot(page, testInfo, "vault-invalid-key");
   // A server from before authenticator keys saves the login but drops its key: the login says so.

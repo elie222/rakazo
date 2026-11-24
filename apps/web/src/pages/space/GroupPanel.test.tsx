@@ -205,6 +205,17 @@ describe("GroupSettings", () => {
     };
     await render({ onSave, group: refreshed });
     expect(container.querySelector<HTMLInputElement>("input")!.value).toBe("My edit");
+    expect(button("Show all").getAttribute("aria-expanded")).toBe("false");
+    const selectedRunner = container.querySelector<HTMLElement>(
+      '[role="checkbox"][aria-label="Remove Runner from the group"]',
+    );
+    expect(selectedRunner?.getAttribute("aria-checked")).toBe("true");
+    await act(async () => selectedRunner!.click());
+    const uncheckedRunner = container.querySelector<HTMLElement>(
+      '[role="checkbox"][aria-label="Add Runner to the group"]',
+    );
+    expect(uncheckedRunner?.getAttribute("aria-checked")).toBe("false");
+    await act(async () => uncheckedRunner!.click());
     await click("Save");
     expect(onSave).toHaveBeenCalledWith({ name: "My edit", botIds: undefined });
   });

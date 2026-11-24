@@ -5,16 +5,11 @@ import type { Boxd, Machine } from "@boxd-sh/sdk";
 import type {
   AdapterContext,
   CommandRequest,
-  ComputerActionRequest,
   ComputerFileEntry,
-  ComputerInput,
   ComputerRef,
-  ControlLeaseRef,
   PortableFile,
   ProcessEvent,
   SandboxProvider,
-  ScreenRequest,
-  TerminalRequest,
   UnreferencedMachine,
   UnreferencedMachineRecords,
   WorkspaceExportLimits,
@@ -32,7 +27,7 @@ import {
   BaseSnapshotCache,
   computerSnapshotName,
 } from "../../../computers/computer-base-snapshot.js";
-import { PortableFileBatcher } from "../../../computers/computer-workspace.js";
+import { batchesOf, writePortableFilesInBatches } from "../../../computers/computer-workspace.js";
 import {
   deleteUnreferencedMachine,
   recordUnreferencedMachine,
@@ -42,7 +37,10 @@ import {
   abortedCommandEvents,
   timedOutCommandEvents,
 } from "../../../computers/sandbox/sandbox-command-events.js";
-import { sandboxNotFoundError } from "../../../computers/sandbox/sandbox-errors.js";
+import {
+  isSandboxNotFoundError,
+  sandboxNotFoundError,
+} from "../../../computers/sandbox/sandbox-errors.js";
 import {
   shellExportScript,
   sourceEnvironmentCommand,
@@ -56,6 +54,7 @@ import {
 import {
   INSTALL_LINUX_BROWSER,
   LinuxDesktop,
+  LinuxDesktopSandbox,
   onBotScreen,
   PREPARE_LINUX_DESKTOP,
   VERIFY_LINUX_DESKTOP,
@@ -108,12 +107,12 @@ interface BoxdCommandResult {
   aborted: boolean;
 }
 
-export class BoxdSandboxProvider implements SandboxProvider {
+export class BoxdSandboxProvider extends LinuxDesktopSandbox implements SandboxProvider {
   billsWhileRunning(): boolean {
     return true;
   }
 
-  private readonly desktops = new LinuxDesktop({
+  protected readonly desktops = new LinuxDesktop({
     environment: async () => ({
       homeDir: HOME,
       workspaceDir: WORKSPACE,
@@ -156,6 +155,7 @@ export class BoxdSandboxProvider implements SandboxProvider {
     config: { org?: string; unreferencedMachines?: UnreferencedMachineRecords },
     client: BoxdSandboxClient,
   ) {
+    super();
     this.client = client;
     this.org = config.org;
     this.machines = config.unreferencedMachines;
@@ -192,7 +192,7 @@ export class BoxdSandboxProvider implements SandboxProvider {
         const started = await this.ensureRunning(request.providerRef, context.signal);
         return { ...this.ref(request.providerRef, request.botId, false), started };
       } catch (error) {
-        if (!isMachineGone(error)) throw error;
+        if (!isSandboxNotFoundError(error)) throw error;
         this.forget(request.providerRef);
       }
     }
@@ -370,44 +370,6 @@ export class BoxdSandboxProvider implements SandboxProvider {
     yield { type: "exit", code: result.exitCode };
   }
 
-  async connectScreen(computer: ComputerRef, request: ScreenRequest, context: AdapterContext) {
-    return this.desktops.connectScreen(computer, request, context);
-  }
-
-  async connectTerminal(computer: ComputerRef, request: TerminalRequest, context: AdapterContext) {
-    return this.desktops.connectTerminal(computer, request, context);
-  }
-
-  async setScreenControl(
-    computer: ComputerRef,
-    interactive: boolean,
-    context: AdapterContext,
-    controlToken?: string,
-  ) {
-    return this.desktops.setScreenControl(computer, interactive, context, controlToken);
-  }
-
-  async sendInput(
-    computer: ComputerRef,
-    input: ComputerInput,
-    _lease: ControlLeaseRef,
-    context: AdapterContext,
-  ) {
-    return this.desktops.sendInput(computer, input, context);
-  }
-
-  async observe(computer: ComputerRef, context: AdapterContext) {
-    return this.desktops.observe(computer, context);
-  }
-
-  async act(computer: ComputerRef, request: ComputerActionRequest, context: AdapterContext) {
-    return this.desktops.act(computer, request, context);
-  }
-
-  async releaseScreen(computer: ComputerRef, context: AdapterContext) {
-    return this.desktops.releaseScreen(computer, context);
-  }
-
   async listFiles(
     computer: ComputerRef,
     directory: string,
@@ -473,16 +435,11 @@ export class BoxdSandboxProvider implements SandboxProvider {
     if (files.some((file) => file.size > MAX_FILE_BYTES) || (limits && bytes > limits.maxBytes)) {
       throw new WorkspaceTooLargeError("bytes");
     }
-    const batcher = new PortableFileBatcher<(typeof files)[number]>(4, (file) => file.size);
-    const flush = async (batch: typeof files) => {
+    for (const batch of batchesOf(files, 4, (file) => file.size)) {
       context.signal.throwIfAborted();
-      return Promise.all(batch.map((file) => this.readWorkspaceFile(id, file)));
-    };
-    for (const file of files) {
-      const full = batcher.add(file);
-      if (full) for (const read of await flush(full)) if (read) yield read;
+      const reads = await Promise.all(batch.map((file) => this.readWorkspaceFile(id, file)));
+      for (const read of reads) if (read) yield read;
     }
-    for (const read of await flush(batcher.take())) if (read) yield read;
   }
 
   async importWorkspace(
@@ -492,22 +449,14 @@ export class BoxdSandboxProvider implements SandboxProvider {
   ) {
     const id = this.id(computer);
     await this.desktops.stopBrowsers(computer, context);
-    const batcher = new PortableFileBatcher<PortableFile>(4, (file) => file.content.byteLength);
-    const flush = async (batch: PortableFile[]) => {
-      context.signal.throwIfAborted();
-      await Promise.all(batch.map((file) => this.write(id, file)));
-    };
-    for await (const file of files) {
-      if (shouldSkipPortableWorkspaceFile(file.path)) continue;
-      const full = batcher.add(file);
-      if (full) await flush(full);
-    }
-    await flush(batcher.take());
-  }
-
-  async snapshot(computer: ComputerRef, context: AdapterContext) {
-    const observation = await this.observe(computer, context);
-    return { id: observation.frameId, createdAt: observation.capturedAt };
+    await writePortableFilesInBatches(
+      files,
+      4,
+      async (batch) => {
+        await Promise.all(batch.map((file) => this.write(id, file)));
+      },
+      context.signal,
+    );
   }
 
   /** Suspends the machine with its memory and disk; the next command wakes it in milliseconds. */
@@ -771,10 +720,6 @@ export async function createBoxdSandboxProvider(config: {
 
 function machineGone(id: string, cause?: unknown): Error {
   return sandboxNotFoundError(`boxd machine ${id} is gone`, { cause });
-}
-
-function isMachineGone(error: unknown): boolean {
-  return error instanceof Error && error.name === "SandboxNotFoundError";
 }
 
 /** Whether boxd answered a create with a refusal, which a delete would only meet again. */

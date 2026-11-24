@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+  APP_WINDOW_MIN_HEIGHT,
+  APP_WINDOW_MIN_WIDTH,
   browserWindowOptions,
   DEFAULT_WARM_WINDOW_TTL_MS,
   developmentIconFile,
@@ -11,10 +13,17 @@ const laptop = { width: 1440, height: 875 };
 
 describe("desktop window chrome", () => {
   it("uses native traffic lights on macOS", () => {
-    const opts = browserWindowOptions("darwin", laptop);
+    const opts = browserWindowOptions("darwin", laptop, "25.5.0");
     expect(opts.frame).toBe(true);
     expect(opts.titleBarStyle).toBe("hiddenInset");
-    expect(opts.trafficLightPosition).toEqual({ x: 16, y: 16 });
+    expect(opts.trafficLightPosition).toEqual({ x: 16, y: 19 });
+  });
+
+  it("moves the narrower pre-26 traffic lights in to stay centered on the rail", () => {
+    expect(browserWindowOptions("darwin", laptop, "24.6.0").trafficLightPosition).toEqual({
+      x: 20,
+      y: 19,
+    });
   });
 
   it("uses the native Windows frame in the app and setup windows", () => {
@@ -50,6 +59,17 @@ describe("app window size", () => {
     }
     const setup = setupWindowOptions("win32", small);
     expect(setup.minHeight).toBeLessThanOrEqual(setup.height);
+  });
+
+  it("cannot be resized below the phone layout, and never past a small screen", () => {
+    const opts = browserWindowOptions("darwin", laptop);
+    expect(opts.minWidth).toBe(APP_WINDOW_MIN_WIDTH);
+    expect(opts.minHeight).toBe(APP_WINDOW_MIN_HEIGHT);
+    expect(opts.minWidth).toBeLessThanOrEqual(opts.width);
+    expect(opts.minHeight).toBeLessThanOrEqual(opts.height);
+    const tiny = browserWindowOptions("darwin", { width: 300, height: 400 });
+    expect(tiny.minWidth).toBe(300);
+    expect(tiny.minHeight).toBe(400);
   });
 
   it("caps its size on large displays", () => {

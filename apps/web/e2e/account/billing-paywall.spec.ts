@@ -384,53 +384,6 @@ test("start the own-key plan billed yearly", async ({ page }, testInfo) => {
   expect(selected).toEqual({ funding: "byok", interval: "year" });
 });
 
-test("start a bigger tier's trial from the tiers layout", async ({ page }, testInfo) => {
-  await signup(page, `plan-tiers-${Date.now()}@rakazo.test`, "password12", "Demo Customer");
-  await completeOnboarding(page);
-  await page.route("**/api/auth/capabilities", async (route) => {
-    const response = await route.fetch();
-    await route.fulfill({ response, json: { ...(await response.json()), billing: true } });
-  });
-  await page.route("**/rpc/me", (route) => enableBilling(route, "me"));
-  await page.route("**/rpc/bootstrap", (route) => enableBilling(route, "bootstrap"));
-  const status = billingStatus({
-    creditPurchasesEnabled: true,
-    byokPriceCents: 1500,
-    byokAnnualPriceCents: 14400,
-    byokTiers: tiers,
-    planLayout: "tiers",
-    funding: null,
-    balanceUsd: 0,
-    monthlyAmountCents: null,
-  });
-  await page.route("**/rpc/billing/status", (route) => route.fulfill({ json: { json: status } }));
-  await page.reload();
-  await expect(page.getByRole("heading", { name: "Max" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Ultra" })).toHaveCount(0);
-  await expect(page.getByText("A 2× more powerful computer for your bot")).toBeVisible();
-  await expect(page.getByText("$49", { exact: true })).toBeVisible();
-  await expect(page.getByRole("combobox", { name: "Monthly credits" })).toContainText(
-    "$30 / month",
-  );
-  await captureScreenshot(page, testInfo, "billing-plan-tiers");
-  let selected: unknown;
-  await page.route("**/rpc/billing/selectFunding", async (route) => {
-    selected = route.request().postDataJSON().json;
-    await route.fulfill({ json: { json: { url: new URL("/app?paid", page.url()).href } } });
-  });
-  await page
-    .getByRole("group", { name: "Billing period" })
-    .getByRole("button", { name: /Yearly/ })
-    .click();
-  await expect(page.getByText("$39", { exact: true })).toBeVisible();
-  await Promise.all([
-    page.waitForURL(/[?&]paid/),
-    page.getByRole("button", { name: "Start Pro trial", exact: true }).click(),
-  ]);
-  await expect(page.getByRole("heading", { name: "Choose how to use Rakazo" })).toBeVisible();
-  expect(selected).toEqual({ funding: "byok", interval: "year", tier: "pro" });
-});
-
 test("end an own-key trial early to get full computer hours", async ({ page }, testInfo) => {
   await signup(page, `trial-end-${Date.now()}@rakazo.test`, "password12", "Demo Customer");
   await completeOnboarding(page);

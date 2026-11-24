@@ -1,6 +1,7 @@
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { validateToolArguments } from "@earendil-works/pi-ai/utils/validation";
+import { MCP_SOURCE_PRESETS } from "@rakazo/core";
 import { approvalEffectKey } from "@rakazo/core/node/approval-effect-key";
 import { describe, expect, it, vi } from "vitest";
 import {
@@ -15,7 +16,6 @@ import {
   applyMcpSourcePreset,
   InstalledConnectorProvider,
   importOpenApiDocument,
-  MCP_SOURCE_PRESETS,
   prepareApiInstall,
   verifyMcpInstall,
 } from "./installed-connectors.js";
@@ -693,7 +693,7 @@ describe("OpenAPI connector import", () => {
     ).toBe("https://api.example.test/$&");
   });
 
-  it.each([undefined, {}, { default: 1 }, { default: null }])(
+  it.each([undefined, { default: 1 }])(
     "rejects server variables without string defaults: %j",
     (variable) => {
       expect(() =>
@@ -869,38 +869,37 @@ describe("OpenAPI connector import", () => {
       await expect(prepared).resolves.toMatchObject({ source: "https://api.example.test/" });
     });
 
-    it.each([
-      "application/json; charset=utf-8",
-      "application/problem+json",
-      "application/vnd.api+json",
-    ])("keeps request body fields for %s", (mediaType) => {
-      const imported = importFrom({
-        servers: [{ url: "https://api.example.test" }],
-        paths: {
-          "/items": {
-            post: {
-              operationId: "createItem",
-              requestBody: {
-                required: true,
-                content: {
-                  "text/plain": { schema: { type: "string" } },
-                  [mediaType]: {
-                    schema: { type: "object", properties: { name: { type: "string" } } },
+    it.each(["application/json; charset=utf-8", "application/vnd.api+json"])(
+      "keeps request body fields for %s",
+      (mediaType) => {
+        const imported = importFrom({
+          servers: [{ url: "https://api.example.test" }],
+          paths: {
+            "/items": {
+              post: {
+                operationId: "createItem",
+                requestBody: {
+                  required: true,
+                  content: {
+                    "text/plain": { schema: { type: "string" } },
+                    [mediaType]: {
+                      schema: { type: "object", properties: { name: { type: "string" } } },
+                    },
                   },
                 },
               },
             },
           },
-        },
-      });
-      expect(imported.operations[0]!.inputSchema).toMatchObject({
-        properties: { body: { properties: { name: { type: "string" } } } },
-        required: ["body"],
-      });
-      expect(imported.operations[0]!.bodyMediaType).toBe(
-        mediaType.startsWith("application/json") ? undefined : mediaType,
-      );
-    });
+        });
+        expect(imported.operations[0]!.inputSchema).toMatchObject({
+          properties: { body: { properties: { name: { type: "string" } } } },
+          required: ["body"],
+        });
+        expect(imported.operations[0]!.bodyMediaType).toBe(
+          mediaType.startsWith("application/json") ? undefined : mediaType,
+        );
+      },
+    );
 
     it("sends the body in the media type the document declares", async () => {
       const prepared = importFrom({

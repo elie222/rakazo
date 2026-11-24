@@ -7,6 +7,7 @@ import { rpc, selectedSpaceId } from "../api/api";
 import { mobileThreadRefreshResult } from "../api/mobile-types";
 import { currentSessionGeneration } from "../api/session";
 import { errorText } from "../api/user-error";
+import { isVerifiedScopeCurrent } from "../api/verified-scope";
 import type { SavedChatsScope } from "../inbox/saved-chats";
 import {
   currentSavedChatsScope,
@@ -16,7 +17,6 @@ import {
   savedChatTarget,
   writeSavedThread,
 } from "../inbox/saved-chats";
-import { isIntegrationsScopeCurrent } from "../integrations/integrations-cache";
 import { onConversationCleared } from "./conversation-cleared";
 import { threadRefreshDelayMs } from "./refresh";
 import type { ThreadListScroll } from "./scroll/thread-list-scroll";
@@ -155,7 +155,7 @@ export function useThreadSync({
       !scope ||
       scope.sessionGeneration !== origin.sessionGeneration ||
       scope.selectionId !== origin.selectionId ||
-      !isIntegrationsScopeCurrent(scope)
+      !isVerifiedScopeCurrent(scope)
     )
       return;
     // Only the newest started refresh may commit. Threads also receive live

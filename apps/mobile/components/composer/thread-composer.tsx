@@ -452,6 +452,7 @@ export function ThreadComposer({
                 />
               ) : null}
               <Pressable
+                accessibilityRole="button"
                 accessibilityLabel={t`@${ph({ name: mention.name })}`}
                 onPress={() => insertMention(mention)}
                 style={{
@@ -505,6 +506,7 @@ export function ThreadComposer({
           {slashSkillOptions.map((skill) => (
             <Pressable
               key={skill.id}
+              accessibilityRole="button"
               accessibilityLabel={t`Skill ${ph({ name: skill.name })}`}
               onPress={() => insertSkill(skill)}
               style={{
@@ -535,6 +537,7 @@ export function ThreadComposer({
           {slashActionOptions.map((action) => (
             <Pressable
               key={action.id}
+              accessibilityRole="button"
               accessibilityLabel={slashActionLabel(action.id)}
               onPress={() => runSlashAction(action.id)}
               style={{
@@ -645,6 +648,7 @@ export function ThreadComposer({
                   {selectedSkill.name}
                 </Text>
                 <Pressable
+                  accessibilityRole="button"
                   accessibilityLabel={t`Remove skill ${ph({ name: selectedSkill.name })}`}
                   hitSlop={8}
                   onPress={() => {

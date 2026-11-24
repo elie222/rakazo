@@ -1,7 +1,11 @@
+import { skillReadFromTool } from "@rakazo/adapters";
 import type { Actor } from "@rakazo/contracts";
 import { buildSkillMd, parseSkillMd } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
+import { Prisma } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
+import type { RouterDeps } from "../router.js";
+import { appHandler, handle } from "../router-test-support.js";
 import { createAgentSkillsService, resolveSkillContent } from "./agent-skills.js";
 
 const actor: Actor = {
@@ -11,7 +15,7 @@ const actor: Actor = {
   isDeploymentOwner: true,
 };
 
-function savedSkill(name: string, source = "user") {
+function savedSkill(name: string, source = "user", files: Prisma.JsonValue = null) {
   return {
     id: "saved-1",
     spaceId: actor.spaceId,
@@ -20,32 +24,46 @@ function savedSkill(name: string, source = "user") {
     description: "Saved review recipe",
     content: buildSkillMd({ name, description: "Saved review recipe", body: "Saved steps" }),
     source,
+    files,
+    allSpaces: false,
+    availableIn: [] as { spaceId: string }[],
     createdAt: new Date(0),
     updatedAt: new Date(0),
   };
 }
 
-type SavedSkillRow = ReturnType<typeof savedSkill> & { allSpaces?: boolean };
+type SavedSkillRow = ReturnType<typeof savedSkill>;
 
 function setup(rows: SavedSkillRow[] = []) {
-  type Where = { id?: string; spaceId?: string; userId: string; source?: string; OR?: object[] };
-  const matches = (row: SavedSkillRow, where: object): boolean =>
-    Object.entries(where).every(([key, value]) =>
-      key === "OR"
-        ? (value as object[]).some((branch) => matches(row, branch))
-        : row[key as keyof typeof row] === value,
-    );
+  type Where = Prisma.AgentSkillWhereInput;
+  const matches = (row: SavedSkillRow, where: Where): boolean =>
+    Object.entries(where).every(([key, value]) => {
+      if (key === "OR") {
+        return where.OR?.some((branch) => matches(row, branch)) ?? false;
+      }
+      if (key === "availableIn") {
+        return row.availableIn.some((entry) => entry.spaceId === where.availableIn?.some?.spaceId);
+      }
+      if (key === "files") {
+        const expected = where.files?.equals;
+        return expected === Prisma.AnyNull
+          ? row.files === null
+          : JSON.stringify(row.files) === JSON.stringify(expected);
+      }
+      return row[key as keyof typeof row] === value;
+    });
   const agentSkill = {
     findMany: vi.fn(async ({ where }: { where: Where }) =>
-      rows.filter((row) => matches(row, where)),
+      rows.filter((row) => matches(row, where)).map((row) => ({ ...row })),
     ),
-    findFirst: vi.fn(async ({ where }: { where: Where }) =>
-      rows.find((row) => matches(row, where)),
-    ),
+    findFirst: vi.fn(async ({ where }: { where: Where }) => {
+      const row = rows.find((row) => matches(row, where));
+      return row ? { ...row } : null;
+    }),
     updateMany: vi.fn(async ({ where, data }: { where: Where; data: object }) => {
       const row = rows.find((row) => matches(row, where));
       if (!row) return { count: 0 };
-      Object.assign(row, data);
+      Object.assign(row, data, { updatedAt: new Date(row.updatedAt.getTime() + 1) });
       return { count: 1 };
     }),
     deleteMany: vi.fn(async ({ where }: { where: Where }) => {
@@ -75,15 +93,15 @@ function setup(rows: SavedSkillRow[] = []) {
     $queryRaw: vi.fn(async () => []),
   };
   const $transaction = vi.fn(async (run: (client: typeof tx) => unknown) => run(tx));
+  const prisma = { agentSkill, $transaction } as unknown as PrismaClient;
   const publishSpaceChange = vi.fn(async () => undefined);
   return {
     agentSkill,
+    prisma,
     routines,
     queryRaw: tx.$queryRaw,
     publishSpaceChange,
-    service: createAgentSkillsService({ agentSkill, $transaction } as unknown as PrismaClient, {
-      publishSpaceChange,
-    }),
+    service: createAgentSkillsService(prisma, { publishSpaceChange }),
   };
 }
 
@@ -277,4 +295,254 @@ describe("skill fields the caller wrote", () => {
       });
     },
   );
+});
+
+describe("personal skill attachments", () => {
+  const skillId = "saved-1";
+  const file = { path: "references/example.md", content: "Fictitious checklist.\n" };
+
+  async function rpc(
+    prisma: PrismaClient,
+    path: string,
+    input: unknown,
+    caller: Actor | null = actor,
+  ) {
+    const response = await handle(
+      appHandler({ prisma, env: {}, dataDir: "/tmp" } as RouterDeps),
+      new Request(`http://127.0.0.1/rpc/agentSkills/${path}`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ json: input }),
+      }),
+      { prefix: "/rpc", context: { actor: caller } },
+    );
+    return { status: response.status, json: (await response.json()).json };
+  }
+
+  it("adds and replaces one file through the update RPC and only reads it by its path", async () => {
+    const row = {
+      ...savedSkill("Review", "user", { "references/keep.txt": "Keep this." }),
+      content:
+        "---\r\nname: Review\r\ndescription: Saved review recipe\r\nextra: keep\r\n---\r\n\r\nSaved steps\r\n",
+    };
+    const { prisma } = setup([row]);
+    const before = await rpc(prisma, "get", { skillId });
+    const saved = await rpc(prisma, "update", { skillId, file });
+    expect(saved).toEqual({
+      status: 200,
+      json: { ...before.json, updatedAt: "1970-01-01T00:00:00.001Z" },
+    });
+    expect(await rpc(prisma, "get", { skillId })).toEqual(saved);
+    const catalog = await rpc(prisma, "list", undefined);
+    expect(catalog.status).toBe(200);
+    expect(catalog.json.find((skill: { id: string }) => skill.id === skillId)).toEqual({
+      id: skillId,
+      name: "Review",
+      description: "Saved review recipe",
+      source: "user",
+      readOnly: false,
+      availability: { allSpaces: false, spaceIds: [actor.spaceId] },
+    });
+    const read = (path?: string) =>
+      skillReadFromTool(prisma, actor, { name: "Review", file: path });
+    expect(await read()).toMatchObject({ files: [file.path, "references/keep.txt"].sort() });
+    expect(await read(file.path)).toEqual({
+      name: "Review",
+      file: file.path,
+      content: file.content,
+    });
+    const changed = { ...file, content: "Revised checklist." };
+    const replaced = await rpc(prisma, "update", { skillId, file: changed });
+    expect(replaced.status).toBe(200);
+    expect(await rpc(prisma, "update", { skillId, file: changed })).toEqual(replaced);
+    expect(await read(file.path)).toMatchObject({ content: changed.content });
+    expect(await read("references/keep.txt")).toMatchObject({ content: "Keep this." });
+    const oldClient = await rpc(prisma, "update", { skillId, body: "Updated steps" });
+    expect(oldClient.status).toBe(200);
+    expect(oldClient.json.content).toContain("Updated steps");
+    expect(await read(file.path)).toMatchObject({ content: changed.content });
+  });
+
+  it.each([
+    { userId: "other-user", allSpaces: true },
+    { spaceId: "other-space" },
+    { source: "plugin" },
+    { source: "builtin" },
+    { source: "unknown" },
+  ])("refuses to attach a file to an inaccessible or read-only skill %j", async (overrides) => {
+    const row = { ...savedSkill("Review"), ...overrides };
+    const { prisma } = setup([row]);
+    expect((await rpc(prisma, "update", { skillId, file })).status).toBe(
+      overrides.source ? 400 : 404,
+    );
+    expect(row.files).toBeNull();
+  });
+
+  it.each([{ allSpaces: true }, { availableIn: [{ spaceId: actor.spaceId }] }])(
+    "allows the owner to update a skill available from another Space %j",
+    async (availability) => {
+      const row = { ...savedSkill("Review"), spaceId: "other-space", ...availability };
+      const { prisma } = setup([row]);
+      expect((await rpc(prisma, "update", { skillId, file })).status).toBe(200);
+      expect(await skillReadFromTool(prisma, actor, { skillId, file: file.path })).toMatchObject({
+        content: file.content,
+      });
+    },
+  );
+
+  it("requires the existing signed-in user session", async () => {
+    const row = savedSkill("Review");
+    const { prisma } = setup([row]);
+    expect((await rpc(prisma, "update", { skillId, file }, null)).status).toBe(401);
+    expect(row.files).toBeNull();
+  });
+
+  it.each([
+    "/absolute.md",
+    "C:/absolute.md",
+    "references/../escape.md",
+    "references//example.md",
+    "./example.md",
+    "references\\example.md",
+    "references/%2e%2e/example.md",
+    "references/example.md ",
+    "references/example.md\n",
+    "SKILL.md",
+    "__proto__",
+    "constructor",
+    "x".repeat(241),
+  ])("rejects invalid path %j at the RPC boundary", async (path) => {
+    const row = savedSkill("Review");
+    const { prisma } = setup([row]);
+    expect((await rpc(prisma, "update", { skillId, file: { ...file, path } })).status).toBe(400);
+    expect(row.files).toBeNull();
+  });
+
+  it.each([
+    ["a NUL byte", "valid-looking\0text"],
+    ["a C1 control", "valid-looking\u0085text"],
+    ["an unpaired surrogate", "valid-looking\uD800text"],
+    ["more than 100000 UTF-8 bytes", "é".repeat(50_001)],
+    ["a non-string payload", [80, 75, 0]],
+  ])("rejects %s in a text attachment", async (_, content) => {
+    const row = savedSkill("Review");
+    const { prisma } = setup([row]);
+    expect((await rpc(prisma, "update", { skillId, file: { ...file, content } })).status).toBe(400);
+    expect(row.files).toBeNull();
+  });
+
+  it("validates writes made directly through the service", async () => {
+    const row = savedSkill("Review");
+    const { service } = setup([row]);
+    await expect(
+      service.update(actor, { skillId, file: { ...file, path: "../outside.md" } }),
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    expect(row.files).toBeNull();
+  });
+
+  it("rejects mixing the file write with a skill document edit", async () => {
+    const row = savedSkill("Review");
+    const { prisma } = setup([row]);
+    expect((await rpc(prisma, "update", { skillId, file, body: "Changed" })).status).toBe(400);
+    expect(row.files).toBeNull();
+    expect(row.content).toContain("Saved steps");
+  });
+
+  it.each([
+    {
+      limit: "count",
+      files: Object.fromEntries(
+        Array.from({ length: 40 }, (_, index) => [`note-${index}.txt`, ""]),
+      ),
+    },
+    {
+      limit: "bytes",
+      files: Object.fromEntries(
+        Array.from({ length: 4 }, (_, index) => [`note-${index}.txt`, "é".repeat(50_000)]),
+      ),
+    },
+  ])(
+    "enforces the aggregate $limit limit and allows replacements within budget",
+    async ({ files }) => {
+      const row = savedSkill("Review", "user", files);
+      const { prisma } = setup([row]);
+      expect((await rpc(prisma, "update", { skillId, file })).status).toBe(400);
+      expect(row.files).toEqual(files);
+      const replacement = { path: "note-0.txt", content: "" };
+      expect((await rpc(prisma, "update", { skillId, file: replacement })).status).toBe(200);
+      expect(row.files).toEqual({ ...files, "note-0.txt": "" });
+    },
+  );
+
+  it("preserves other attachments and a document edit when writes overlap", async () => {
+    const row = savedSkill("Review");
+    const { service, prisma } = setup([row]);
+    const secondFile = { path: "example", content: "Second\r\nexample\ttext 🌱" };
+    await Promise.all([
+      service.update(actor, { skillId, file }),
+      service.update(actor, { skillId, file: secondFile }),
+      service.update(actor, { skillId, description: "Edited at the same time", body: "New steps" }),
+    ]);
+    expect(row.description).toBe("Edited at the same time");
+    expect(row.content).toContain("New steps");
+    for (const expected of [file, secondFile]) {
+      expect(
+        await skillReadFromTool(prisma, actor, { skillId, file: expected.path }),
+      ).toMatchObject({
+        content: expected.content,
+      });
+    }
+  });
+
+  it("rechecks the file count after another writer fills the last slot", async () => {
+    const files = Object.fromEntries(
+      Array.from({ length: 39 }, (_, index) => [`note-${index}.txt`, ""]),
+    );
+    const row = savedSkill("Review", "user", files);
+    const { service } = setup([row]);
+    const otherFile = { ...file, path: "references/other.md" };
+    const results = await Promise.allSettled([
+      service.update(actor, { skillId, file }),
+      service.update(actor, { skillId, file: otherFile }),
+    ]);
+    expect(results).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ status: "fulfilled" }),
+        { status: "rejected", reason: expect.objectContaining({ code: "BAD_REQUEST" }) },
+      ]),
+    );
+    const winner = results[0].status === "fulfilled" ? file : otherFile;
+    expect(row.files).toEqual({ ...files, [winner.path]: winner.content });
+  });
+
+  it("refuses to overwrite an imported attachment map with an invalid stored shape", async () => {
+    const files = { "legacy.md": "Kept", "unknown.json": { value: "Kept too" } };
+    const row = savedSkill("Review", "user", files);
+    const { service } = setup([row]);
+    await expect(service.update(actor, { skillId, file })).rejects.toThrow(
+      "does not match its schema",
+    );
+    expect(row.files).toEqual(files);
+  });
+
+  it("omits attachment blobs from skill lookups and loads them only for file updates", async () => {
+    const row = savedSkill("Review", "user", { "references/notes.md": "Stored" });
+    const { agentSkill, service } = setup([row]);
+
+    await service.get(actor, { skillId });
+    expect(agentSkill.findFirst).toHaveBeenLastCalledWith(
+      expect.objectContaining({ omit: { files: true } }),
+    );
+
+    await service.get(actor, { name: "Review" });
+    expect(agentSkill.findMany).toHaveBeenLastCalledWith(
+      expect.objectContaining({ omit: { files: true } }),
+    );
+
+    agentSkill.findFirst.mockClear();
+    await service.update(actor, { skillId, file });
+    expect(agentSkill.findFirst).toHaveBeenCalledTimes(2);
+    expect(agentSkill.findFirst.mock.calls[0]?.[0]).not.toHaveProperty("omit");
+    expect(agentSkill.findFirst.mock.calls[1]?.[0]).toMatchObject({ omit: { files: true } });
+  });
 });

@@ -139,6 +139,9 @@ export function scheduleCreateBranch(
   };
 }
 
+/** Another bot in this space whose routines the call reaches; needs bot management. */
+const otherBotRoutineProperties = { bot_id: { type: "string" }, bot_name: { type: "string" } };
+
 /** Exactly one timing method. Null or blank leftovers stay valid so callers can ignore them. */
 const scheduleCreateInputSchema = {
   oneOf: [
@@ -362,13 +365,13 @@ export const workTools: ConnectorTool[] = [
   },
   {
     name: "schedule_list",
-    description: "List this bot's active and inactive schedules (routines).",
-    inputSchema: { type: "object", properties: {} },
+    description: "List this bot's active and inactive schedules (routines), or another bot's.",
+    inputSchema: { type: "object", properties: otherBotRoutineProperties },
   },
   {
     name: "schedule_update",
     description:
-      "Edit one of this bot's schedules by routineId instead of cancelling and recreating it. Send only what changes. Timing fields replace the current timing; startAt alone moves the next run of the current repeat. active false pauses it. The result's changes lists each field that changed with its before and after; the prompt is returned only there. It cannot change a watch's interval or timezone; the user can change the interval in the routine's settings on the web. on replaces the routine's events; {} removes them.",
+      "Edit one of this bot's schedules, or another bot's by bot_id or exact bot_name, by routineId instead of cancelling and recreating it. Send only what changes. Timing fields replace the current timing; startAt alone moves the next run of the current repeat. active false pauses it. The result's changes lists each field that changed with its before and after; the prompt is returned only there. A watch has no timing fields; everyMinutes changes how often it checks. on replaces the routine's events; {} removes them.",
     inputSchema: {
       type: "object",
       properties: {
@@ -382,19 +385,28 @@ export const workTools: ConnectorTool[] = [
         runAt: scheduleTimingSpecs.runAt,
         delayMinutes: scheduleTimingSpecs.delayMinutes,
         delaySeconds: scheduleTimingSpecs.delaySeconds,
+        everyMinutes: {
+          type: "integer",
+          minimum: 5,
+          maximum: 1440,
+          description: "A watch's check interval in minutes.",
+        },
         on: optionalRoutineEvents,
+        ...otherBotRoutineProperties,
       },
       required: ["routineId"],
     },
   },
   {
     name: "schedule_cancel",
-    description: "Cancel a schedule by routineId or exact name.",
+    description:
+      "Cancel a schedule by routineId or exact name; another bot's by bot_id or exact bot_name.",
     inputSchema: {
       type: "object",
       properties: {
         routineId: { type: "string" },
         name: { type: "string" },
+        ...otherBotRoutineProperties,
       },
     },
   },

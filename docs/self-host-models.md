@@ -35,6 +35,22 @@ The Compose files also pass the standard provider key variables the agent runtim
 (`OPENAI_API_KEY`, `GEMINI_API_KEY`, `MISTRAL_API_KEY`, `GROQ_API_KEY`, `XAI_API_KEY` and others) to
 the API and worker, for models that have no stored credential.
 
+### Default for everyone
+
+Admins (`RAKAZO_ADMIN_EMAILS`) can set the deployment model in **Settings → Models → Default for
+everyone** instead: choose a provider that connects with an API key, paste the key and pick the
+model. It replaces `PI_DEFAULT_PROVIDER` and `PI_DEFAULT_MODEL` for everyone without a model of
+their own, from their next run and without a restart; **Default** goes back to the environment's.
+The key is stored encrypted, is never shown again, and is redacted from run output like the
+environment's. Each change is recorded in the security audit log.
+
+`RAKAZO_MODEL_PROVIDER_ALLOWLIST` applies to it like any connection an account makes: a provider
+the list leaves out is not offered, and a saved one stops serving and the environment's model
+applies again. Deployments with model credits always run on the operator's own connection, so the
+block is not offered there and a saved choice is ignored. Calls the operator pays for, such as the
+deployment's approval checker, keep using the environment's keys. Messaging apps with open signup
+are turned on at startup only when the environment configures a model.
+
 `RAKAZO_LIVE_MODEL_CATALOG=off` (or `false`, `0`, `no`) disables provider and Codex live catalog probing; the default is on, and an unrecognized value stops the API at startup.
 
 ## Approvals
@@ -132,8 +148,9 @@ leave Rakazo through this URL. Leave `RAKAZO_LOCAL_MODELS` blank to disable the 
 
 ## Claude Code CLI
 
-With a Claude subscription, a server that only you use can run its deployment model through the
-official Claude Code CLI, signed in with your own account. For each model turn Rakazo starts the
+Claude Pro and Max plans already work on any install through **Sign in with Claude** in
+**Settings → Models** ([model subscriptions](./model-subscriptions.md)). As an alternative, a server
+that only you use can run its deployment model through the official Claude Code CLI, signed in with your own account. For each model turn Rakazo starts the
 `claude` command installed on the server and reads its reply. Rakazo never reads, stores, forwards
 or refreshes your Claude sign-in, and every request to Anthropic is the CLI's own. Rakazo keeps the
 conversation, tools, memory and approvals: the CLI only answers as the model, with its own tools,
@@ -145,8 +162,12 @@ What it needs:
   OS user. The official Docker images and the desktop app's local stack do not include Claude
   Code, and adding it to them is not supported.
 - Claude Code 2.1.280 or newer on that user's `PATH`, signed in once in a terminal as that user
-  with `claude auth login`. This route uses no Claude sign-in inside Rakazo and no Claude token,
-  so `claude setup-token` is not needed.
+  with `claude auth login`. On a server without a browser, the CLI can use the token
+  `claude setup-token` creates instead: set it as `CLAUDE_CODE_OAUTH_TOKEN` together with
+  `RAKAZO_CLAUDE_CODE_SETUP_TOKEN=1` in the API's and worker's environment. Either way there is
+  no Claude sign-in inside Rakazo. Prefer the token: with `claude auth login`, the CLI tells the
+  model the signed-in account's email, so bots may repeat it. With the token, the CLI runs with an
+  empty config directory of its own and the email stays out.
 - One account on the server. A Claude sign-in belongs to one person, so Rakazo refuses Claude Code
   runs while the server has more than one account (people who only message bots from chat apps do
   not count) or bills for model usage.
@@ -165,8 +186,9 @@ Anthropic's terms; see [Legal and compliance](https://code.claude.com/docs/en/le
 
 The CLI runs in an empty private temporary directory with an allowlisted environment. API keys and
 other server secrets, including `ANTHROPIC_API_KEY`, are never passed to it, so it always uses its
-own sign-in. Only the deployment model runs on Claude Code; it is not offered as a connection in
-**Settings → Models**.
+own sign-in. `RAKAZO_CLAUDE_CODE_SETUP_TOKEN=1` adds only `CLAUDE_CODE_OAUTH_TOKEN`, which the CLI
+reads and Rakazo does not. Only the deployment model runs on Claude Code; it is not offered as a
+connection in **Settings → Models**.
 
 ## Ollama Cloud
 
@@ -215,8 +237,8 @@ provider not on it is not offered, a key for it is refused on save and on import
 switched to it, and its runs fail with a clear error. An unset or empty list means every provider,
 exactly the behavior without it.
 
-Hosted OpenAI-compatible presets include Ollama Cloud (`ollama-cloud`) and Concentrate AI
-(`concentrate`). Choose either in **Settings → Models**, enter its API key, and select
+Hosted OpenAI-compatible presets include Ollama Cloud (`ollama-cloud`), Concentrate AI
+(`concentrate`) and DeepInfra (`deepinfra`). Choose one in **Settings → Models**, enter its API key, and select
 a model. Rakazo loads the list automatically. Their HTTPS hosts remain available with `RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC=0`.
 If you set a provider allowlist, include `openai-compatible` and the ids of the presets you
 want to keep. Leaving out a preset id hides it and removes its host exemption.
@@ -301,7 +323,20 @@ MEDIA_GENERATION_API_KEY=replace-with-media-api-key
 MEDIA_GENERATION_IMAGE_MODEL=gpt-image-1
 ```
 
-`MEDIA_GENERATION_PROVIDER` accepts `disabled` (the default), `fal`, `openai`, or `fake`
+`openrouter` makes images through OpenRouter's Images API (`POST /images`) and four-second
+videos through its video jobs API (`POST /videos`); set either model or both:
+
+```dotenv
+MEDIA_GENERATION_PROVIDER=openrouter
+MEDIA_GENERATION_BASE_URL=https://openrouter.ai/api/v1
+MEDIA_GENERATION_API_KEY=replace-with-media-api-key
+MEDIA_GENERATION_IMAGE_MODEL=openai/gpt-image-1-mini
+MEDIA_GENERATION_VIDEO_MODEL=google/veo-3.1-fast
+```
+
+The video model must accept a four-second duration.
+
+`MEDIA_GENERATION_PROVIDER` accepts `disabled` (the default), `fal`, `openai`, `openrouter`, or `fake`
 (for offline testing only). The base URL is optional and defaults to the provider's URL above.
 Only set the image/video model fields for capabilities you want enabled; `openai` takes an
 image model only. Compatible servers can use the same connection fields; models must support

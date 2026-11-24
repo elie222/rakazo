@@ -172,7 +172,7 @@ async function runInSpace(space: Space, options: RunOptions = {}) {
     chatGroup: { findMany: vi.fn(async () => []) },
     taughtSkill: { findMany: vi.fn(async () => options.taughtSkills ?? []) },
     agentSkill: { findMany: vi.fn(async (_args: unknown) => []) },
-    scratchpadItem: { findMany: vi.fn(async () => []) },
+    scratchpadItem: { findMany: vi.fn(async () => []), count: vi.fn(async () => 0) },
     externalEffect: { findMany: vi.fn(async () => []) },
     spaceSettingOverride: { findUnique: async () => null },
     userActionApprovalRule: { findMany: vi.fn(async () => []) },

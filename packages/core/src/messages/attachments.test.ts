@@ -4,6 +4,7 @@ import {
   AttachmentValidationError,
   artifactTypeLabel,
   attachmentExtensionForMimeType,
+  attachmentStoredName,
   attachmentsForBot,
   blocksToAgentHistorySegments,
   blocksToAgentHistoryText,
@@ -173,6 +174,32 @@ describe("attachment helpers", () => {
     expect(inferAttachmentMimeType("notes.md", "")).toBe("text/markdown");
     expect(inferAttachmentMimeType("notes.markdown", "text/plain")).toBe("text/markdown");
     expect(inferAttachmentMimeType("notes.md", "application/pdf")).toBe("application/pdf");
+  });
+
+  // A Word document written by a bot was refused as an unsupported attachment type.
+  it("accepts Word and PowerPoint files, but not macro-enabled or legacy Office formats", () => {
+    const docx = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+    const pptx = "application/vnd.openxmlformats-officedocument.presentationml.presentation";
+    expect(inferAttachmentMimeType("Brief.DOCX", "")).toBe(docx);
+    expect(inferAttachmentMimeType("deck.pptx", "application/octet-stream")).toBe(pptx);
+    expect(attachmentExtensionForMimeType(docx)).toBe(".docx");
+    expect(attachmentExtensionForMimeType(pptx)).toBe(".pptx");
+    for (const name of ["macro.docm", "macro.pptm", "old.doc", "old.ppt"])
+      expect(inferAttachmentMimeType(name, "")).toBeNull();
+  });
+
+  it("stores an Office file under its type's own extension", () => {
+    const docx = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+    expect(attachmentStoredName("Invoice.docm", docx)).toBe("Invoice.docx");
+    expect(attachmentStoredName("Report.DOCX", docx)).toBe("Report.DOCX");
+    expect(attachmentStoredName("notes", docx)).toBe("notes.docx");
+    expect(
+      attachmentStoredName(
+        "deck.pptm",
+        "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+      ),
+    ).toBe("deck.pptx");
+    expect(attachmentStoredName("script.py", "text/plain")).toBe("script.py");
   });
 
   it("keeps a CSV a CSV when Windows reports it as an Excel file", () => {

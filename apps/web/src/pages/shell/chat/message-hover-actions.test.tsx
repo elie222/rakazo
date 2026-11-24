@@ -191,3 +191,48 @@ it("offers Reply in thread only for a saved message, and only actions it was giv
   );
   expect(document.querySelector('button[aria-label="Reply in thread"]')).toBeNull();
 });
+
+it("names the action group after the message so each message's buttons are told apart", () => {
+  const group = container.querySelector('[role="group"]');
+  expect(group?.getAttribute("aria-label")).toMatch(/^Message actions, \S/);
+  expect(group?.querySelector('button[aria-label="Reply"]')).not.toBeNull();
+
+  const other = document.createElement("div");
+  document.body.appendChild(other);
+  const otherRoot = createRoot(other);
+  act(() =>
+    otherRoot.render(
+      <MessageHoverActions
+        message={{ ...message, id: "m2", createdAt: "2020-01-02T15:04:00.000Z" }}
+        side="start"
+        speakerName="Ada"
+        onReply={vi.fn()}
+        onMarkUnread={vi.fn()}
+        onReact={vi.fn<(message: ThreadMessage, reaction: MessageReaction) => Promise<void>>()}
+      />,
+    ),
+  );
+  const otherLabel = other.querySelector('[role="group"]')?.getAttribute("aria-label");
+  expect(otherLabel).toContain("Ada");
+  expect(otherLabel).not.toBe(group?.getAttribute("aria-label"));
+  act(() => otherRoot.unmount());
+  other.remove();
+});
+
+it.each([undefined, "Ada"])("omits a missing time from the action label for %s", (speakerName) => {
+  act(() =>
+    root.render(
+      <MessageHoverActions
+        message={{ ...message, createdAt: "invalid" }}
+        side="start"
+        speakerName={speakerName}
+        onReply={vi.fn()}
+        onMarkUnread={vi.fn()}
+        onReact={vi.fn<(message: ThreadMessage, reaction: MessageReaction) => Promise<void>>()}
+      />,
+    ),
+  );
+  expect(container.querySelector('[role="group"]')?.getAttribute("aria-label")).toBe(
+    speakerName ? "Message actions, Ada" : "Message actions",
+  );
+});

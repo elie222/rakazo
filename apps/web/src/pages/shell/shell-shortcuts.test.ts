@@ -6,6 +6,7 @@ import type { RakazoDesktop } from "../../lib/platform/desktop";
 import type { ShellShortcut, ShortcutHost } from "./shell-shortcuts";
 import {
   cycleBotId,
+  findPanelAction,
   quoteShortcutLabel,
   shellShortcut,
   startsTyping,
@@ -413,5 +414,24 @@ describe("useShellShortcuts", () => {
     expect(run.mock.calls).toEqual([[{ type: "search" }]]);
     await unmount();
     expect(stop).toHaveBeenCalled();
+  });
+});
+
+describe("findPanelAction", () => {
+  it("closes a details panel that floats over the chat", () => {
+    expect(findPanelAction(true, true, true)).toBe("close-panel");
+  });
+
+  it("keeps a panel that sits beside the chat", () => {
+    expect(findPanelAction(false, true, true)).toBe("open");
+    expect(findPanelAction(false, true, false)).toBe("open");
+  });
+
+  it("waits while a covering panel holds a form", () => {
+    expect(findPanelAction(true, true, false)).toBe("refuse");
+  });
+
+  it("opens when no panel is open", () => {
+    expect(findPanelAction(true, false, false)).toBe("open");
   });
 });

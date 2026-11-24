@@ -2,7 +2,7 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { modelListCost } from "@rakazo/adapters";
-import type { UsageBreakdown, UsageBreakdownInput } from "@rakazo/contracts";
+import type { UsageBreakdown, UsageBreakdownInput, UsageSummary } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { sessionCookieHeader } from "../index.js";
@@ -348,14 +348,136 @@ describeBreakdown("usage.breakdown", () => {
     expect(cacheOnly).toMatchObject({ apiCostEstimated: true });
     expect(cacheOnly?.incomplete).toContain("apiCostUsd");
 
+    // A call with no token count leaves the total as the sum of the others, marked partial.
+    const counted = (await get({ range: "30d", botId: alpha.id })).totals;
+    await prisma.usageRecord.create({
+      data: {
+        ...owner,
+        botId: alpha.id,
+        runId: runA1,
+        parentRunId: runA1,
+        provider: "p",
+        model: "interrupted",
+        costUsd: 0,
+      },
+    });
+    const partial = await get({ range: "30d", botId: alpha.id });
+    expect(partial.totals).toMatchObject({
+      modelCalls: counted.modelCalls + 1,
+      totalTokens: counted.totalTokens,
+    });
+    expect(partial.totals.incomplete).toContain("totalTokens");
+    expect(mixed.totals.incomplete).not.toContain("totalTokens");
+
+    // Input read from the cache is its own figure, unknown where a call did not measure it.
+    await prisma.usageRecord.createMany({
+      data: [40, 2].map((cacheReadTokens) => ({
+        ...owner,
+        botId: alpha.id,
+        runId: runA1,
+        parentRunId: runA1,
+        provider: "p",
+        model: "caching",
+        inputTokens: 1,
+        outputTokens: 1,
+        cacheReadTokens,
+        // A measured cache read counts even when the call reported no total.
+        totalTokens: cacheReadTokens === 2 ? null : cacheReadTokens + 2,
+      })),
+    });
+    const cached = await get({ range: "30d", botId: alpha.id });
+    expect(cached.models.find((m) => m.model === "caching")?.cachedTokens).toBe(42);
+    expect(cached.models.find((m) => m.model === "m1")?.cachedTokens).toBeNull();
+    // One call without the figure makes the model's sum unknown, even beside measured ones.
+    await prisma.usageRecord.createMany({
+      data: [5, null].map((cacheReadTokens) => ({
+        ...owner,
+        botId: alpha.id,
+        runId: runA1,
+        parentRunId: runA1,
+        provider: "p",
+        model: "mixed-cache",
+        inputTokens: 1,
+        outputTokens: 1,
+        cacheReadTokens,
+        totalTokens: 7,
+      })),
+    });
+    const mixedCache = await get({ range: "30d", botId: alpha.id });
+    expect(mixedCache.models.find((m) => m.model === "mixed-cache")?.cachedTokens).toBeNull();
+    // A row from before cache reads were measured holds a zero and no total: still unknown.
+    await prisma.usageRecord.create({
+      data: {
+        ...owner,
+        botId: alpha.id,
+        runId: runA1,
+        parentRunId: runA1,
+        provider: "p",
+        model: "caching",
+        inputTokens: 1,
+        outputTokens: 1,
+        cacheReadTokens: 0,
+      },
+    });
+    const older = await get({ range: "30d", botId: alpha.id });
+    expect(older.models.find((m) => m.model === "caching")?.cachedTokens).toBeNull();
+
     const elsewhere = await rpc<UsageBreakdown>(app, other, "usage/breakdown", { range: "all" });
     expect(summary(elsewhere)).toEqual({ runs: 1, calls: 1, tokens: 1_000_000 });
     expect(names(elsewhere)).toEqual(["Elsewhere"]);
   }, 150000);
 
+  it("counts own-key media in cost and models without making token totals unknown", async () => {
+    const cookie = await signup(app, `usage-media-${stamp}@rakazo.test`, "Media");
+    const bot = await rpc<{ id: string }>(app, cookie, "bots/create", {
+      name: "Painter",
+      title: "",
+      description: "",
+      instructions: "",
+      notifyOnFinish: false,
+    });
+    const thread = await prisma.thread.findFirstOrThrow({ where: { botId: bot.id } });
+    const row = (operationKind: string, model: string, costUsd: number, tokens: number | null) => ({
+      spaceId: thread.spaceId,
+      userId: thread.userId,
+      botId: bot.id,
+      provider: "p",
+      model,
+      operationKind,
+      billing: "api_key",
+      costUsd,
+      inputTokens: tokens,
+      outputTokens: tokens,
+      totalTokens: tokens === null ? null : tokens * 2,
+    });
+    await prisma.usageRecord.createMany({
+      data: [
+        row("answer", "lab/chat", 1, 500),
+        row("image", "lab/draw", 0.04, null),
+        row("video", "lab/clip", 0.2, null),
+      ],
+    });
+    const usage = await rpc<UsageBreakdown>(app, cookie, "usage/breakdown", { range: "all" });
+    expect(usage.totals).toMatchObject({ modelCalls: 3, totalTokens: 1000 });
+    expect(usage.totals.costUsd).toBeCloseTo(1.24, 10);
+    expect(usage.modelOptions.map((option) => option.model).sort()).toEqual([
+      "lab/chat",
+      "lab/clip",
+      "lab/draw",
+    ]);
+    const summary = await rpc<UsageSummary>(app, cookie, "usage/summary");
+    expect(summary).toMatchObject({ modelCalls: 3, totalTokens: 1000 });
+    expect(summary.costUsd).toBeCloseTo(1.24, 10);
+    expect(summary.models?.find((model) => model.model === "lab/draw")?.costUsd).toBeCloseTo(
+      0.04,
+      10,
+    );
+  });
+
   it.each([
     ["Pacific/Kiritimati", 14],
     ["Asia/Calcutta", 5.5],
+    ["Asia/Rangoon", 6.5],
     ["Asia/Saigon", 7],
     ["America/Indianapolis", -5],
   ])("cuts today and day buckets at midnight in %s", async (timezone, hours) => {

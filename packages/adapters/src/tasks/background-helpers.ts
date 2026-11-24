@@ -16,7 +16,6 @@ import {
   storedMessageBlocks,
   THREAD_LOCK_TRANSACTION_OPTIONS,
 } from "@rakazo/db";
-import { getLogger } from "@rakazo/logging";
 import { resolveModelChoice } from "../models/model-choice.js";
 import {
   PINNED_PROVIDER_NOT_CONNECTED,
@@ -245,9 +244,7 @@ export async function startBackgroundHelper(
     };
   }
   if (!committed) return started;
-  await deps.events.notify(thread.id, committed.eventSeq).catch((error) => {
-    getLogger().error("background helper card notification", error);
-  });
+  await deps.events.notify(thread.id, committed.eventSeq);
   await wakeRun(deps.jobs, committed.helperRunId);
   return started;
 }
@@ -430,8 +427,6 @@ export async function returnHelperOutcome(
     return { threadId: card.threadId, eventSeq, wakeRunId: wake.id };
   }, THREAD_LOCK_TRANSACTION_OPTIONS);
   if (!committed) return;
-  await deps.events.notify(committed.threadId, committed.eventSeq).catch((error) => {
-    getLogger().error("background helper card notification", error);
-  });
+  await deps.events.notify(committed.threadId, committed.eventSeq);
   if (committed.wakeRunId && deps.jobs) await wakeRun(deps.jobs, committed.wakeRunId);
 }

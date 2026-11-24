@@ -88,6 +88,7 @@ export const MessageView = memo(function MessageView({
   onOpenComputer,
   onReleaseComputer,
   onOpenImportSetup,
+  onOpenAgentImport,
   rpc,
   showToolActivity,
   onReply,
@@ -144,6 +145,8 @@ export const MessageView = memo(function MessageView({
   ) => Promise<void>;
   /** Opens where an imported item's setup is finished. */
   onOpenImportSetup?: (target: ImportSetupTarget) => void;
+  /** Opens the agent import, for the option a first bot's opening question offers. */
+  onOpenAgentImport?: () => void;
   rpc: ReturnType<typeof createSpaceRpc>;
   showToolActivity: boolean;
   /** Hover actions; one left out is not offered. */
@@ -262,6 +265,7 @@ export const MessageView = memo(function MessageView({
     <MessageHoverActions
       message={message}
       side={message.role === "user" ? "start" : "end"}
+      speakerName={speakerName ?? author?.name}
       onReply={onReply}
       onReplyInThread={onReplyInThread}
       onMarkUnread={onMarkUnread}
@@ -430,7 +434,9 @@ export const MessageView = memo(function MessageView({
               </div>
             );
           }
-          if (block.kind === "routine_event") return <RoutineEventRow key={i} block={block} />;
+          if (block.kind === "routine_event") {
+            return <RoutineEventRow key={i} block={block} botId={message.botId} rpc={rpc} />;
+          }
           if (block.kind === "meta") {
             return (
               <div
@@ -688,6 +694,7 @@ export const MessageView = memo(function MessageView({
                     }
                     onDismiss={() => onAnswer(message, "", undefined, true)}
                     rpc={rpc}
+                    onOpenAgentImport={onOpenAgentImport}
                   />
                 )}
                 {i === hoverAnchorIndex ? hoverActions : null}

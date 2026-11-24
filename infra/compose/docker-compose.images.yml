@@ -36,6 +36,11 @@ x-app-environment: &app-environment # Runtime
   OBJECT_STORAGE_SECRET_ACCESS_KEY:
   OBJECT_STORAGE_PREFIX:
   OBJECT_STORAGE_PATH_STYLE:
+  OBJECT_STORAGE_AUTH:
+  OBJECT_STORAGE_TENANT:
+  OBJECT_STORAGE_CLIENT_ID:
+  OBJECT_STORAGE_CERTIFICATE:
+  OBJECT_STORAGE_FEDERATED_TOKEN_FILE:
   WAKEUP_DRIVER: graphile
   AGENT_RUNTIME: pi
   API_URL: ${API_URL:-http://127.0.0.1:5173}
@@ -44,8 +49,8 @@ x-app-environment: &app-environment # Runtime
   WORKSPACE_SAVE_MAX_GB:
   RAKAZO_UPDATE_RESTART_SUPERVISOR:
   TICKET_BOARD_ENABLED:
+  AUTH_RATE_LIMIT_ENABLED:
   USER_DEVICES_ENABLED:
-  BOT_MESSAGE_MAX_HOPS:
   RAKAZO_MESSAGE_USER_MAX_CHARS:
   TEACH_RECORDING_TTL_MS:
   STUCK_WORK_NOTIFY_AFTER_MS:
@@ -63,7 +68,7 @@ x-app-environment: &app-environment # Runtime
   SMTP_URL:
   EMAIL_FROM:
   EMAIL_REPLY_TO:
-  WELCOME_EMAIL_ENABLED:
+  EMAIL_COPY_DIR: ${EMAIL_COPY_DIR:-/app/email-copy}
   RAKAZO_SECRETS_ALLOW_PRIVATE_HTTP:
   EXPO_ACCESS_TOKEN:
   APNS_VOIP_KEY_ID:
@@ -144,8 +149,6 @@ x-app-environment: &app-environment # Runtime
   RAKAZO_CLAUDE_CODE_COMMAND:
   RAKAZO_CLAUDE_CODE_MODELS:
   RAKAZO_TOOL_ACTIVATION:
-  RAKAZO_AUTO_REVIEW_SHADOW_MODEL:
-  RAKAZO_AUTO_REVIEW_SHADOW_SAMPLE_RATE:
   RELEASE_WATCH_EVAL_MODEL:
   FISH_TTS_MODEL:
   FISH_ASR_MODEL:
@@ -154,6 +157,15 @@ x-app-environment: &app-environment # Runtime
   MEDIA_GENERATION_API_KEY:
   MEDIA_GENERATION_IMAGE_MODEL:
   MEDIA_GENERATION_VIDEO_MODEL:
+  # Optional: publish only webhooks and other inbound deliveries at a public address, so the app
+  # can stay private. Off unless INGRESS_PROVIDER is set (docs/self-host-webhooks.md).
+  INGRESS_PROVIDER:
+  INGRESS_PUBLIC_URL:
+  INGRESS_PORT:
+  TAILSCALE_INGRESS_HOSTNAME:
+  TAILSCALE_INGRESS_TAILNET:
+  TAILSCALE_INGRESS_SERVE_CONFIG:
+  TAILSCALE_INGRESS_SOCKET:
   MEETING_PROVIDER:
   MEETING_API_KEY:
   MEETING_REGION:
@@ -201,6 +213,10 @@ x-app-environment: &app-environment # Runtime
   OPENCODE_API_KEY:
   QWEN_TOKEN_PLAN_API_KEY:
   QWEN_TOKEN_PLAN_CN_API_KEY:
+  QWEN_TOKEN_PLAN_INDIVIDUAL_API_KEY:
+  QWEN_TOKEN_PLAN_INDIVIDUAL_CN_API_KEY:
+  QWEN_TOKEN_PLAN_TEAM_API_KEY:
+  QWEN_TOKEN_PLAN_TEAM_CN_API_KEY:
   RADIUS_API_KEY:
   TOGETHER_API_KEY:
   XAI_API_KEY:
@@ -505,6 +521,8 @@ services:
     environment:
       <<: *app-environment
       # Sign-in, sessions, billing and inbound webhooks: API only.
+      # Where the ingress forwards to: the inbound listener, never the app port.
+      INGRESS_UPSTREAM_URL: http://api:${INGRESS_PORT:-3101}
       API_HOST: "0.0.0.0"
       API_PORT:
       BETTER_AUTH_SECRET:
@@ -526,6 +544,8 @@ services:
       OIDC_NAME: ${OIDC_NAME:-SSO}
       OIDC_SCOPES: ${OIDC_SCOPES:-openid email profile}
       OIDC_ALLOW_SIGNUP_BYPASS: ${OIDC_ALLOW_SIGNUP_BYPASS:-false}
+      OIDC_EMAIL_VERIFIED_CLAIM: ${OIDC_EMAIL_VERIFIED_CLAIM:-}
+      OIDC_AUTHORIZATION_PARAMS: ${OIDC_AUTHORIZATION_PARAMS:-}
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
       APPLE_CLIENT_ID: ${APPLE_CLIENT_ID:-}
@@ -561,6 +581,7 @@ services:
       - "127.0.0.1:${RAKAZO_API_PORT:-3100}:3100"
     volumes:
       - appdata:/data
+      - ingress:/run/ingress
     networks:
       - app
       - data
@@ -670,6 +691,32 @@ services:
       api:
         condition: service_healthy
 
+  # Opt-in (COMPOSE_PROFILES=tailscale-ingress with INGRESS_PROVIDER=tailscale): a tailnet node of
+  # its own that publishes only the API's inbound listener through Funnel. The app keeps its
+  # private name; this node's name is public (docs/self-host-webhooks.md).
+  tailscale-ingress:
+    image: ${TAILSCALE_IMAGE:-tailscale/tailscale:v1.94.2@sha256:95e528798bebe75f39b10e74e7051cf51188ee615934f232ba7ad06a3390ffa1}
+    profiles: [tailscale-ingress]
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      TS_AUTHKEY: ${TAILSCALE_INGRESS_AUTH_KEY:-}
+      TS_HOSTNAME: ${TAILSCALE_INGRESS_HOSTNAME:-}
+      TS_STATE_DIR: /var/lib/tailscale
+      TS_USERSPACE: "true"
+      # Shared with the API, which writes the serve config and reads the node's status here.
+      TS_SOCKET: /var/run/tailscale/tailscaled.sock
+      TS_SERVE_CONFIG: /var/run/tailscale/serve.json
+    volumes:
+      - tailscale-ingress-state:/var/lib/tailscale
+      - ingress:/var/run/tailscale
+    networks:
+      - app
+    depends_on:
+      api:
+        condition: service_healthy
+
   # Opt-in only: this process has root-equivalent Docker access, never a published port.
   updater:
     profiles: [updater]
@@ -714,6 +761,8 @@ services:
       retries: 10
 
 volumes:
+  ingress:
+  tailscale-ingress-state:
   pgdata:
   appdata:
   webassets:

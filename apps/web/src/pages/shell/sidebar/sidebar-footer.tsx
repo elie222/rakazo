@@ -48,6 +48,7 @@ type Props = {
   links?: NavLink[];
   onLink?: (link: NavLink) => void;
   onArtifacts: () => void;
+  onSharedPages?: () => void;
   onSettings: () => void;
   /** How much of the member's allowance is used; the Usage row shows only with one. */
   usage?: string | null;
@@ -82,6 +83,7 @@ export function SidebarFooter({
   links = [],
   onLink,
   onArtifacts,
+  onSharedPages,
   onSettings,
   usage,
   onUsage,
@@ -123,13 +125,13 @@ export function SidebarFooter({
   return (
     <div
       data-testid="sidebar-footer"
-      className={`flex shrink-0 items-center gap-2 bg-transparent ${mini ? "flex-col px-1 py-2" : "px-2.5 py-3"}`}
+      className={`flex shrink-0 items-center bg-transparent ${mini ? "flex-col gap-2 px-1 py-2" : "gap-3 ps-5 pe-2.5 py-3"}`}
     >
       <Popover open={open} onOpenChange={onOpenChange}>
         <PopoverTrigger
           data-testid="user-menu-trigger"
           aria-label={t`Account menu for ${name}`}
-          className="grid size-9 shrink-0 place-items-center overflow-hidden rounded-full bg-secondary text-body font-semibold text-secondary-foreground outline-none hover:ring-2 hover:ring-foreground/15 focus-visible:ring-2 focus-visible:ring-ring"
+          className="grid size-9.5 shrink-0 place-items-center overflow-hidden rounded-full bg-secondary text-body font-semibold text-secondary-foreground outline-none hover:ring-2 hover:ring-foreground/15 focus-visible:ring-2 focus-visible:ring-ring"
         >
           {image && failedImage !== image ? (
             <img
@@ -219,6 +221,17 @@ export function SidebarFooter({
               <FolderOpen className="text-muted-foreground" strokeWidth={1.75} />
               <Trans>Artifacts</Trans>
             </Button>
+            {onSharedPages ? (
+              <Button
+                variant="ghost"
+                size="lg"
+                className="w-full justify-start gap-2.5 font-normal"
+                onClick={onSharedPages}
+              >
+                <BookOpen className="text-muted-foreground" strokeWidth={1.75} />
+                <Trans>Pages shared with you</Trans>
+              </Button>
+            ) : null}
             {/* From md up the rail opens the Board, so only the phone drawer lists it here. */}
             {onBoard ? (
               <Button

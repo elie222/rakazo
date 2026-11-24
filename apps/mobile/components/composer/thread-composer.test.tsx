@@ -469,6 +469,15 @@ describe("thread composer isolation", () => {
   function pickerRows() {
     return [...container.querySelectorAll<HTMLButtonElement>('button[aria-label^="@"]')];
   }
+  /** The accessibilityRole the composer passed to a rendered button's Pressable. */
+  function roleOf(button: HTMLElement) {
+    // The mocked Pressable does not forward its role to the DOM, so read its React props.
+    const fiberKey = Object.keys(button).find((key) => key.startsWith("__reactFiber$"));
+    const fiber = (button as unknown as Record<string, { return: { memoizedProps: object } }>)[
+      fiberKey!
+    ]!;
+    return (fiber.return.memoizedProps as { accessibilityRole?: string }).accessibilityRole;
+  }
 
   it("lists one row per bot with its avatar and name, at most five", () => {
     const bots = ["Ada", "Ben", "Cleo", "Dan", "Eve", "Fay", "Gus"].map((name) => ({
@@ -1233,6 +1242,28 @@ describe("thread composer isolation", () => {
     expect(composer.current!.snapshot().skill).toEqual(skill);
     act(() => input.key({ nativeEvent: { key: "Backspace" } }));
     expect(composer.current!.snapshot().skill).toBeNull();
+  });
+
+  it("announces mention, skill, action and remove-skill rows as buttons", () => {
+    type("@He");
+    expect(pickerRows()).not.toHaveLength(0);
+    for (const row of pickerRows()) expect(roleOf(row)).toBe("button");
+    type("/Wri");
+    const skillRow = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="Skill Writing"]',
+    )!;
+    expect(roleOf(skillRow)).toBe("button");
+    type("/settings");
+    const actionRow = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="Chat Settings"]',
+    )!;
+    expect(roleOf(actionRow)).toBe("button");
+    type("/Wri");
+    press("Skill {name}");
+    const removeChip = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="Remove skill Writing"]',
+    )!;
+    expect(roleOf(removeChip)).toBe("button");
   });
 
   it("offers skills only mid-message and attaches a picked one without wiping the draft", () => {

@@ -37,9 +37,17 @@ vi.mock("../../components/settings/settings-group", () => ({
 let host: HTMLDivElement;
 let root: ReturnType<typeof createRoot>;
 
-function renderBoard(error: string) {
+function renderBoard(error: string, refreshFailures = 0) {
   return act(async () =>
-    root.render(<BoardList sections={[]} error={error} onMove={vi.fn()} onRefresh={vi.fn()} />),
+    root.render(
+      <BoardList
+        sections={[]}
+        error={error}
+        refreshFailures={refreshFailures}
+        onMove={vi.fn()}
+        onRefresh={vi.fn()}
+      />,
+    ),
   );
 }
 
@@ -57,10 +65,20 @@ afterEach(async () => {
 });
 
 it("shows a failed refresh as an alert that Android announces", async () => {
-  await renderBoard("Try again.");
+  await renderBoard("Try again.", 1);
 
-  expect(host.querySelector('[role="alert"]')?.textContent).toBe("Try again.");
-  expect(announce).toHaveBeenCalledExactlyOnceWith("Try again.");
+  expect(host.querySelector('[role="alert"]')?.textContent).toBe(
+    "Could not refresh the board. Try again.",
+  );
+  expect(announce).toHaveBeenCalledExactlyOnceWith("Could not refresh the board. Try again.");
+});
+
+it("announces every failed refresh, even when the message repeats", async () => {
+  await renderBoard("Try again.", 1);
+  await renderBoard("Try again.", 2);
+
+  expect(announce).toHaveBeenCalledTimes(2);
+  expect(announce).toHaveBeenLastCalledWith("Could not refresh the board. Try again.");
 });
 
 it("announces nothing while the board has no error", async () => {
@@ -72,8 +90,8 @@ it("announces nothing while the board has no error", async () => {
 
 it("announces an error once, when it appears rather than on every render", async () => {
   await renderBoard("");
-  await renderBoard("Try again.");
-  await renderBoard("Try again.");
+  await renderBoard("Try again.", 1);
+  await renderBoard("Try again.", 1);
 
-  expect(announce).toHaveBeenCalledExactlyOnceWith("Try again.");
+  expect(announce).toHaveBeenCalledExactlyOnceWith("Could not refresh the board. Try again.");
 });

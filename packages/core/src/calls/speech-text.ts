@@ -315,6 +315,7 @@ export function narrateTool(toolName: string): string | null {
     [/^archive_bot$/, "archiving a bot"],
     [/^remember$/, "writing a memory"],
     [/^save_shared_memory$/, "saving shared memory"],
+    [/^delete_shared_memory$/, "deleting shared memory"],
     [/^attach_file$/, "attaching a file"],
     [/^request_takeover$/, "asking you to take over"],
   ];

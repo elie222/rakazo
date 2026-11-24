@@ -170,6 +170,7 @@ describe("server image publish workflow", () => {
     const locks = [
       suites.jobs["static-checks"],
       suites.jobs["unit-tests-shard"],
+      suites.jobs["unit-tests-processes"],
       suites.jobs["test-integration-shard"],
       ci.jobs["publish-server-image"],
     ].map((job) => job?.concurrency);
@@ -184,14 +185,21 @@ describe("server image publish workflow", () => {
     for (const name of ["tests", "publish-server-image"]) {
       expect(ci.jobs[name]?.needs, name).toBeUndefined();
     }
-    for (const name of ["static-checks", "unit-tests-shard", "test-integration-shard"]) {
+    for (const name of [
+      "static-checks",
+      "unit-tests-shard",
+      "unit-tests-processes",
+      "test-integration-shard",
+    ]) {
       expect(suites.jobs[name]?.needs, name).toBeUndefined();
     }
   });
 
   it("keeps pull requests read-only and external actions pinned to a commit", () => {
     const validate = workflow.jobs.validate;
-    expect(validate.if).toBe("github.event_name == 'pull_request' && !github.event.repository.fork");
+    expect(validate.if).toBe(
+      "github.event_name == 'pull_request' && !github.event.repository.fork",
+    );
     expect(validate.permissions).toEqual({ contents: "read" });
     expect(workflow.jobs.publish.if).toContain("github.event_name != 'pull_request'");
     const build = validate.steps.find((step) => step.uses?.startsWith("docker/build-push-action@"));

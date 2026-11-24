@@ -1,16 +1,17 @@
 import { useLingui } from "@lingui/react/macro";
 import type { Bot } from "@rakazo/contracts";
 import { Button, Popover, PopoverContent, PopoverTrigger } from "@rakazo/ui-web";
-import { Bell, PanelLeftClose, PanelLeftOpen, Plus, Search } from "lucide-react";
+import { Bell, PanelLeft, PanelLeftClose, Plus, Search } from "lucide-react";
 import { IconTooltip } from "../../../components/IconTooltip";
 import { WindowChrome } from "../../../components/WindowChrome";
-import { desktopBridge } from "../../../lib/platform/desktop";
+import { desktopBridge, windowChromeKind } from "../../../lib/platform/desktop";
 import { useAppRail } from "../app-rail";
 import { BotCreatePicker } from "../bots/bot-picker";
 import type { Panel } from "../right-panel-state";
 
 // A size class, since the Button sizes any svg without one to 16px.
-const ICON = "size-4.5";
+const ICON = "size-4";
+const TOGGLE_ICON = `${ICON} rtl:rotate-180`;
 const STROKE = 1.75;
 
 export function SidebarHeader({
@@ -27,6 +28,7 @@ export function SidebarHeader({
   setPanel,
   navigate,
   setNewSpaceOpen,
+  openAgentImport,
   setCreateBotOpen,
 }: {
   mini?: boolean;
@@ -42,6 +44,7 @@ export function SidebarHeader({
   setPanel: (panel: Panel) => void;
   navigate: (path: string) => void;
   setNewSpaceOpen: (open: boolean) => void;
+  openAgentImport: () => void;
   setCreateBotOpen: (open: boolean) => void;
 }) {
   const { t } = useLingui();
@@ -53,27 +56,29 @@ export function SidebarHeader({
   const labelSide = mini ? "inline-end" : undefined;
   // In the rail the buttons share the bot tiles' box, so hover shapes line up.
   const railTile = mini ? "size-12 rounded-xl" : "";
+  // Beside the macOS traffic lights the toggle keeps one spot in both modes, just past the rail.
+  const pinnedToggle = windowChromeKind(desktopBridge()) === "darwin" && !rail;
   const toggle = (
     <IconTooltip label={toggleLabel} side={labelSide}>
       <Button
         variant="ghost"
         size="icon"
-        className={`app-no-drag hidden text-muted-foreground md:inline-flex ${railTile}`}
+        className={`app-no-drag hidden text-muted-foreground md:inline-flex ${mini && pinnedToggle ? "fixed start-23 top-2.5 z-20" : railTile}`}
         aria-label={toggleLabel}
         data-testid={mini ? "restore-bots-sidebar" : "minimize-bots-sidebar"}
         onClick={() => setBotsSidebarCollapsedPref(!mini)}
       >
         {mini ? (
-          <PanelLeftOpen className={ICON} strokeWidth={STROKE} aria-hidden="true" />
+          <PanelLeft className={TOGGLE_ICON} strokeWidth={STROKE} aria-hidden="true" />
         ) : (
-          <PanelLeftClose className={ICON} strokeWidth={STROKE} aria-hidden="true" />
+          <PanelLeftClose className={TOGGLE_ICON} strokeWidth={STROKE} aria-hidden="true" />
         )}
       </Button>
     </IconTooltip>
   );
   return (
     <div
-      className={`app-drag flex items-center ${mini ? `flex-col gap-1 px-0 pb-3 ${hasWindowChrome && !rail ? "pt-4" : "pt-2"}` : "justify-between px-3 pb-3 pt-[14px]"}`}
+      className={`app-drag flex items-center ${mini ? `flex-col gap-1 px-0 pb-3 ${hasWindowChrome && !rail ? "pt-5" : "pt-2"}` : "justify-between px-3 pt-2.5 pb-3"}`}
     >
       <div className={`flex items-center ${mini ? "flex-col gap-2" : "gap-2"}`}>
         {hasWindowChrome ? <WindowChrome className={rail ? "md:hidden" : undefined} /> : null}
@@ -145,6 +150,11 @@ export function SidebarHeader({
                   setCreateMenuOpen(false);
                   setMobileSidebarOpen(false);
                   setCreateBotOpen(true);
+                }}
+                onImportAgent={() => {
+                  setCreateMenuOpen(false);
+                  setMobileSidebarOpen(false);
+                  openAgentImport();
                 }}
                 onOpenBot={(id) => {
                   setCreateMenuOpen(false);

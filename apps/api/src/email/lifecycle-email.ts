@@ -11,7 +11,7 @@ export const MODEL_CONNECTION_EMAIL_DELAY_MS = 24 * 60 * 60 * 1000;
 /** How long after a plan starts the agent-import mail is due: a day after the one above. */
 export const AGENT_IMPORT_EMAIL_DELAY_MS = 2 * MODEL_CONNECTION_EMAIL_DELAY_MS;
 
-/** Queues a lifecycle mail for an organization's owner; present only where account mail is on. */
+/** Queues a lifecycle mail for an organization's owner; present only where some mail is on. */
 export type ScheduleLifecycleEmail = (
   kind: LifecycleEmailKind,
   target: { organizationId: string; userId: string },
@@ -38,6 +38,8 @@ const TEMPLATES: Record<
  * moves their one job.
  */
 export function lifecycleEmailScheduler(deps: {
+  /** The kinds whose copy the deployment supplies; any other kind is never queued. */
+  kinds: readonly LifecycleEmailKind[];
   prisma: PrismaClient;
   jobs: Pick<JobPublisher, "enqueue">;
   webOrigin: string;
@@ -46,6 +48,7 @@ export function lifecycleEmailScheduler(deps: {
   secret: string;
 }): ScheduleLifecycleEmail {
   return async (kind, target, dueAt) => {
+    if (!deps.kinds.includes(kind)) return;
     const user = await deps.prisma.user.findUnique({
       where: { id: target.userId },
       select: { email: true, name: true, locale: true },

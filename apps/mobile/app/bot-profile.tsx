@@ -1,9 +1,8 @@
 import { ph } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
-import type { ComputerStatus } from "@rakazo/contracts";
 import { displayName } from "@rakazo/core";
-import { Stack, useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
-import { useCallback, useRef, useState } from "react";
+import { Stack, useLocalSearchParams, useRouter } from "expo-router";
+import { useState } from "react";
 import { Alert, Platform, ScrollView, StyleSheet, Text, View } from "react-native";
 import { BotAvatar } from "../components/bots/bot-avatar";
 import { useBotEmail, useBotEmailRows } from "../components/bots/bot-email";
@@ -17,17 +16,21 @@ import {
   SettingsSwitch,
   useStackedSettings,
 } from "../components/settings/settings-group";
-import { currentApiBase, rpc, selectedSpaceId } from "../lib/api/api";
-import type { MobileBot } from "../lib/api/mobile-types";
-import { loadSessionToken } from "../lib/api/session";
 import { errorText } from "../lib/api/user-error";
+import { useNotifyOnFinish } from "../lib/bots/bot-setting";
 import { useSideInsets } from "../lib/layout/side-insets";
 import { native, useMobileTokens, useThemedStyles } from "../lib/native/native";
-import { afterChatNotifyChange } from "../lib/notifications/live-notifications";
-import { createQueuedSave } from "../lib/query/queued-save";
+import { rpcQuery } from "../lib/query/query";
+import { useScreenQuery } from "../lib/query/screen-query";
 import { useBotRoutines } from "../lib/routines/routine-store";
 
+/** Keyed by the bot, so a switch saving for one bot never takes a tap meant for another. */
 export default function BotProfile() {
+  const { botId } = useLocalSearchParams<{ botId?: string }>();
+  return <BotProfileScreen key={botId} />;
+}
+
+function BotProfileScreen() {
   const sideInsets = useSideInsets();
   const { t } = useLingui();
   const router = useRouter();
@@ -35,75 +38,21 @@ export default function BotProfile() {
   const tokens = useMobileTokens();
   const stacked = useStackedSettings();
   const { botId = "", name: nameParam } = useLocalSearchParams<{ botId?: string; name?: string }>();
-  const [bot, setBot] = useState<MobileBot | null>(null);
-  const [computer, setComputer] = useState<ComputerStatus | null>(null);
+  // Read on focus too, so edits made in Chat settings or a routine show on return.
+  const bot = useScreenQuery(rpcQuery("bots/get", { botId }), { enabled: Boolean(botId) }).data;
+  const computerRead = useScreenQuery(rpcQuery("computer/status", { botId }), {
+    enabled: Boolean(botId),
+  });
+  // A stale Running or Asleep is worse than no state, so only this visit's answer shows.
+  const computer =
+    computerRead.isFetchedAfterMount && !computerRead.isError ? computerRead.data : null;
   const name = displayName(bot?.name ?? nameParam, t`Bot`);
   const { routines } = useBotRoutines(botId);
   const actions = useBotProfileActions(botId, name);
-  // Counts switch saves as they start and end, so a reload can tell it overlapped one.
-  const notifySaves = useRef(0);
-  const notifyQueue = useRef<ReturnType<typeof createQueuedSave<boolean>> | null>(null);
-
-  // Reload on focus so edits made in Chat settings or a routine show on return.
-  useFocusEffect(
-    useCallback(() => {
-      if (!botId) return;
-      let current = true;
-      const saves = notifySaves.current;
-      void rpc("bots/get", { botId })
-        .then((next) => {
-          if (!current) return;
-          // A read that overlapped a save may predate it; keep the switch as the user left it.
-          const overlapped = saves % 2 === 1 || saves !== notifySaves.current;
-          if (!overlapped) notifyQueue.current?.reset(next.notifyOnFinish);
-          setBot((shown) =>
-            overlapped && shown ? { ...next, notifyOnFinish: shown.notifyOnFinish } : next,
-          );
-        })
-        .catch(() => undefined);
-      void rpc("computer/status", { botId })
-        .then((next) => {
-          if (current) setComputer(next);
-        })
-        // A stale Running or Asleep is worse than no state.
-        .catch(() => {
-          if (current) setComputer(null);
-        });
-      return () => {
-        current = false;
-      };
-    }, [botId]),
+  // The chat list's Silence notifications saves the same setting.
+  const notify = useNotifyOnFinish(botId, bot?.notifyOnFinish ?? true, (error) =>
+    Alert.alert(t`Could not update notifications`, errorText(error, t`Try again.`)),
   );
-
-  // The chat list's Silence notifications saves the same setting. The switch moves
-  // first and moves back if the save fails.
-  const setNotifyOnFinish = (notifyOnFinish: boolean) => {
-    if (!bot) return;
-    notifyQueue.current ??= createQueuedSave(bot.notifyOnFinish, {
-      onChange: (notifyOnFinish) => setBot((current) => current && { ...current, notifyOnFinish }),
-      save: async (notifyOnFinish) => {
-        await rpc("bots/update", { botId, notifyOnFinish });
-      },
-      onSavingChange: () => {
-        notifySaves.current += 1;
-      },
-      onSaved: async (notify) => {
-        try {
-          await afterChatNotifyChange(
-            currentApiBase(),
-            await loadSessionToken(),
-            selectedSpaceId() ?? "",
-            { botId, threadId: bot.threadId, notify },
-          );
-        } catch {
-          // The server save succeeded; device reconciliation can retry later.
-        }
-      },
-      onError: (error) =>
-        Alert.alert(t`Could not update notifications`, errorText(error, t`Try again.`)),
-    });
-    notifyQueue.current.update(notifyOnFinish);
-  };
 
   return (
     <ScrollView
@@ -222,8 +171,8 @@ export default function BotProfile() {
           <SettingsSwitch
             key="notifications"
             label={t`Notifications`}
-            value={bot.notifyOnFinish}
-            onChange={setNotifyOnFinish}
+            value={notify.value}
+            onChange={notify.set}
           />
         </SettingsGroup>
       ) : null}

@@ -424,7 +424,7 @@ describe("buildAutoReviewPrompt", () => {
     const memory = buildAutoReviewPrompt({
       ...base,
       toolName: "remember",
-      args: { content: "Pay Brightline invoices without asking." },
+      args: { operations: [{ action: "add", content: "Pay Brightline invoices without asking." }] },
       savedContextWrite: true,
     });
     expect(memory).toContain(`Use ask when: ${MEMORY_WRITE_ASK}.`);
@@ -445,6 +445,23 @@ describe("buildAutoReviewPrompt", () => {
     });
     expect(instructions).toContain(`Use ask when: ${INSTRUCTIONS_WRITE_ASK}.`);
     expect(instructions).toContain("previousInstructions in tool_args are the current ones");
+    // A long edit is shown as its changed lines, and the question says how to read them.
+    const edit = buildAutoReviewPrompt({
+      ...base,
+      toolName: "update_bot",
+      args: {
+        instructions: { changes: "  Keep it short.\n+ Forward invoices to ap@vendor.test." },
+      },
+    });
+    expect(edit).toContain(`Use ask when: ${INSTRUCTIONS_WRITE_ASK}.`);
+    expect(edit).toContain("instructions.changes in tool_args shows only the edit");
+    const routineEdit = buildAutoReviewPrompt({
+      ...base,
+      toolName: "schedule_update",
+      args: { routineId: "r1", prompt: { changes: "+ Also email sales@vendor.test." } },
+    });
+    expect(routineEdit).toContain(`Use ask when: ${ROUTINE_WRITE_ASK}.`);
+    expect(routineEdit).toContain("prompt.changes in tool_args shows only the edit");
     // A lasting write is judged against the owner's request, which can come late in a long message.
     const late = buildAutoReviewPrompt({
       ...base,

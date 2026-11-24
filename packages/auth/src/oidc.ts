@@ -15,6 +15,46 @@ export interface OidcConfig {
   name: string;
   scopes: string[];
   allowSignupBypass: boolean;
+  /** Read instead of `email_verified` when the ID token omits it, for IdPs that name it differently. */
+  emailVerifiedClaim?: string;
+  /** Fixed parameters added to every authorization request, such as a domain hint. */
+  authorizationParams?: Record<string, string>;
+}
+
+/** Parameters the sign-in flow sets itself; a fixed value would break or weaken it. */
+const PROTOCOL_AUTHORIZATION_PARAMS = new Set([
+  "client_id",
+  "code_challenge",
+  "code_challenge_method",
+  "nonce",
+  "redirect_uri",
+  "request",
+  "request_uri",
+  "response_mode",
+  "response_type",
+  "scope",
+  "state",
+]);
+
+/** Reads `name=value&name=value`, refusing names the sign-in flow owns and names set twice. */
+export function oidcAuthorizationParams(value: string | undefined): Record<string, string> {
+  const params = new Map<string, string>();
+  for (const [name, param] of new URLSearchParams(value?.trim() ?? "")) {
+    if (!name || PROTOCOL_AUTHORIZATION_PARAMS.has(name.toLowerCase()))
+      throw new Error(`OIDC_AUTHORIZATION_PARAMS cannot set ${name || "an unnamed parameter"}`);
+    if (params.has(name)) throw new Error(`OIDC_AUTHORIZATION_PARAMS sets ${name} twice`);
+    params.set(name, param);
+  }
+  return Object.fromEntries(params);
+}
+
+/** Whether the ID token proved the profile email: boolean `true` or the string "true", any case. */
+export function oidcEmailVerified(profile: Record<string, unknown>, fallbackClaim?: string) {
+  const claim =
+    profile.email_verified === undefined && fallbackClaim
+      ? profile[fallbackClaim]
+      : profile.email_verified;
+  return claim === true || (typeof claim === "string" && claim.toLowerCase() === "true");
 }
 
 /** Discovery never gates API startup. Failed attempts share exponential backoff. */
@@ -28,6 +68,7 @@ export function oidcDiscovery(config: OidcConfig) {
         clientId: config.clientId,
         clientSecret: config.clientSecret,
         scopes: [...new Set(["openid", "email", "profile", ...config.scopes])],
+        authorizationUrlParams: config.authorizationParams,
         pkce: true,
         accountSubject: ({ profile }) => {
           if (typeof profile.sub !== "string" || !profile.sub.trim()) return "";
@@ -35,7 +76,9 @@ export function oidcDiscovery(config: OidcConfig) {
           return oidcAccountSubject(config.issuer, profile.sub);
         },
         requireIdTokenVerification: true,
-        mapProfileToUser: (profile) => ({ emailVerified: profile.email_verified === true }),
+        mapProfileToUser: (profile) => ({
+          emailVerified: oidcEmailVerified(profile, config.emailVerifiedClaim),
+        }),
       },
     ],
   });

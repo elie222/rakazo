@@ -3,6 +3,7 @@ import type {
   Bot,
   BotAvatarSet,
   BotSection,
+  ListedBot,
   MessageBlock,
   SpaceBot,
 } from "@rakazo/contracts";
@@ -18,6 +19,7 @@ import { displayName, phoneCallSettings, ringingCall } from "@rakazo/core";
 import type { ComputerMode } from "../computers/computers.js";
 import {
   ensureComputerRecord,
+  newComputerKind,
   parseComputerMode,
   resolveDefaultComputerMode,
   teamComputerUserId,
@@ -79,7 +81,6 @@ function mapBot(
     name: string;
     description: string;
     instructions: string;
-    instructionHistory?: unknown;
     color: string;
     avatarSet?: string;
     notifyOnFinish: boolean;
@@ -113,7 +114,7 @@ function mapBot(
   runErrorId: string | null = null,
   updatedAt: Date = bot.updatedAt,
   incomingCall: Bot["incomingCall"] = null,
-): Bot {
+): ListedBot {
   if (!bot.thread) {
     throw new IsolationError("Bot is missing its thread");
   }
@@ -124,7 +125,6 @@ function mapBot(
     title: "",
     description: bot.description,
     instructions: bot.instructions,
-    instructionHistory: InstructionVersionSchema.array().parse(bot.instructionHistory ?? []),
     color: bot.color,
     avatarSet: resolveBotAvatarSet(bot.avatarSet),
     notifyOnFinish: bot.notifyOnFinish,
@@ -159,6 +159,12 @@ function mapBot(
     webhookConfigured: Boolean(bot.webhookSecretId),
     spawnKey: bot.spawnKey ?? null,
     incomingCall,
+  };
+}
+
+function botHistory(bot: { instructionHistory?: unknown }) {
+  return {
+    instructionHistory: InstructionVersionSchema.array().parse(bot.instructionHistory ?? []),
   };
 }
 
@@ -229,6 +235,70 @@ export function createRepos(
         threadStatus: threadRunStatus(bot.runs, bot.thread.id),
         runErrorId: rosterRunErrorId(bot.thread.runs[0], activeRun),
         updatedAt: rosterUpdatedAt(bot.thread.messages[0], bot.updatedAt).toISOString(),
+      };
+    });
+  }
+
+  async function readBotViews(
+    actor: Actor,
+    options: { archived?: boolean; botId?: string },
+  ): Promise<Bot[]> {
+    const bots = await withLatestBotRuns(
+      prisma,
+      await prisma.bot.findMany({
+        where: {
+          id: options.botId,
+          spaceId: actor.spaceId,
+          archivedAt: options.archived ? { not: null } : null,
+        },
+        omit: { instructionHistory: options.botId === undefined },
+        include: {
+          thread: { include: { reads: readStateFor(actor.userId) } },
+          runs: activeRunSelection,
+          computer: { select: { scope: true } },
+        },
+        orderBy: [{ pinned: "desc" }, { position: "asc" }, { createdAt: "asc" }],
+      }),
+    );
+    const threadIds = bots.flatMap((bot) => (bot.thread ? [bot.thread.id] : []));
+    const callMessages =
+      capabilities.phoneCallsEnabled && threadIds.length
+        ? await prisma.message.findMany({
+            where: {
+              threadId: { in: threadIds },
+              createdAt: {
+                gt: new Date(
+                  Date.now() -
+                    (capabilities.phoneCallRingSeconds ??
+                      phoneCallSettings().phoneCallRingSeconds) *
+                      1000,
+                ),
+              },
+              role: "bot",
+              clientNonce: { startsWith: "call:", endsWith: ":request" },
+            },
+            orderBy: { seq: "desc" },
+            distinct: ["threadId"],
+            select: { threadId: true, role: true, blocks: true },
+          })
+        : [];
+    const callsByThread = new Map(callMessages.map((message) => [message.threadId, message]));
+    const { previews, newestAt } = await botThreadPreviews(prisma, threadIds);
+    return bots.map((bot) => {
+      const threadId = bot.thread?.id;
+      const activeRun = primaryActiveRun(bot.runs);
+      const mapped = mapBot(
+        bot,
+        (threadId && previews.get(threadId)) || "",
+        activeRun?.status ?? "idle",
+        rosterRunErrorId(bot.thread?.runs[0], activeRun),
+        (threadId && newestAt.get(threadId)) || bot.updatedAt,
+        ringingCall(threadId && callsByThread.has(threadId) ? [callsByThread.get(threadId)!] : []),
+      );
+      return {
+        ...mapped,
+        threadStatus: threadRunStatus(bot.runs, mapped.threadId),
+        ...(options.botId !== undefined && botHistory(bot)),
       };
     });
   }
@@ -355,61 +425,14 @@ export function createRepos(
       });
     },
 
-    async listBots(actor: Actor, options: { archived?: boolean } = {}): Promise<Bot[]> {
-      const bots = await withLatestBotRuns(
-        prisma,
-        await prisma.bot.findMany({
-          where: {
-            spaceId: actor.spaceId,
-            archivedAt: options.archived ? { not: null } : null,
-          },
-          include: {
-            thread: { include: { reads: readStateFor(actor.userId) } },
-            runs: activeRunSelection,
-            computer: { select: { scope: true } },
-          },
-          orderBy: [{ pinned: "desc" }, { position: "asc" }, { createdAt: "asc" }],
-        }),
-      );
-      const threadIds = bots.flatMap((bot) => (bot.thread ? [bot.thread.id] : []));
-      const callMessages =
-        capabilities.phoneCallsEnabled && threadIds.length
-          ? await prisma.message.findMany({
-              where: {
-                threadId: { in: threadIds },
-                createdAt: {
-                  gt: new Date(
-                    Date.now() -
-                      (capabilities.phoneCallRingSeconds ??
-                        phoneCallSettings().phoneCallRingSeconds) *
-                        1000,
-                  ),
-                },
-                role: "bot",
-                clientNonce: { startsWith: "call:", endsWith: ":request" },
-              },
-              orderBy: { seq: "desc" },
-              distinct: ["threadId"],
-              select: { threadId: true, role: true, blocks: true },
-            })
-          : [];
-      const callsByThread = new Map(callMessages.map((message) => [message.threadId, message]));
-      const { previews, newestAt } = await botThreadPreviews(prisma, threadIds);
-      return bots.map((bot) => {
-        const threadId = bot.thread?.id;
-        const activeRun = primaryActiveRun(bot.runs);
-        const mapped = mapBot(
-          bot,
-          (threadId && previews.get(threadId)) || "",
-          activeRun?.status ?? "idle",
-          rosterRunErrorId(bot.thread?.runs[0], activeRun),
-          (threadId && newestAt.get(threadId)) || bot.updatedAt,
-          ringingCall(
-            threadId && callsByThread.has(threadId) ? [callsByThread.get(threadId)!] : [],
-          ),
-        );
-        return { ...mapped, threadStatus: threadRunStatus(bot.runs, mapped.threadId) };
-      });
+    async listBots(actor: Actor, options: { archived?: boolean } = {}): Promise<ListedBot[]> {
+      return readBotViews(actor, options);
+    },
+
+    async getBotView(actor: Actor, botId: string): Promise<Bot> {
+      const [bot] = await readBotViews(actor, { botId });
+      if (!bot) throw new IsolationError();
+      return bot;
     },
 
     listSpaceBotsForSpaces,
@@ -486,9 +509,10 @@ export function createRepos(
       }
       const computerMode = input.computerMode ?? resolveDefaultComputerMode();
       const settings = await prisma.deploymentSettings.findUnique({ where: { id: "default" } });
-      const envKind = process.env.SANDBOX_PROVIDER ?? "docker";
-      const kind =
-        envKind === "docker" && settings?.computerHost === "this-mac" ? "desktop" : envKind;
+      const kind = newComputerKind(
+        process.env.SANDBOX_PROVIDER ?? "docker",
+        settings?.computerHost,
+      );
       const inTransaction = <T>(run: (tx: Prisma.TransactionClient) => Promise<T>) =>
         input.isolationLevel
           ? prisma.$transaction(run, { isolationLevel: input.isolationLevel })
@@ -646,7 +670,7 @@ export function createRepos(
           }
         }
       }
-      return mapBot(bot);
+      return { ...mapBot(bot), ...botHistory(bot) };
     },
 
     async reorderBots(actor: Actor, botIds: string[]): Promise<void> {
@@ -699,7 +723,7 @@ export function createRepos(
           });
         }),
       );
-      return mapBot(updated);
+      return { ...mapBot(updated), ...botHistory(updated) };
     },
   };
 }

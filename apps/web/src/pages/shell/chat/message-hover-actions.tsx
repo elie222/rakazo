@@ -1,7 +1,8 @@
+import { i18n } from "@lingui/core";
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { MessageReaction, ThreadMessage } from "@rakazo/contracts";
 import { canReactToThreadMessage, MESSAGE_REACTIONS } from "@rakazo/contracts";
-import { canMarkMessageUnread, copyableMessageText } from "@rakazo/core";
+import { canMarkMessageUnread, copyableMessageText, formatTimeSeparator } from "@rakazo/core";
 import {
   CopyTextFallback,
   DropdownMenu,
@@ -24,11 +25,13 @@ import {
 } from "lucide-react";
 import { useState } from "react";
 import { MessageHoverMetadata } from "../../../components/messages/MessageHoverMetadata";
+import { isPendingSendMessage } from "../../../lib/composer/pending-send";
 
 /** The rail beside a message. An action whose callback is left out is not offered. */
 export function MessageHoverActions({
   message,
   side,
+  speakerName,
   onReply,
   onReplyInThread,
   onMarkUnread,
@@ -37,6 +40,8 @@ export function MessageHoverActions({
 }: {
   message: ThreadMessage;
   side: "start" | "end";
+  /** Names whose message this is, when the chat names speakers. */
+  speakerName?: string;
   onReply?: (message: ThreadMessage) => void;
   /** Opens the message's thread, starting it on first use. */
   onReplyInThread?: (message: ThreadMessage) => void;
@@ -54,7 +59,17 @@ export function MessageHoverActions({
 
   // Streaming progress bubbles keep hover free for selection / stop clicks.
   if (message.id.startsWith("progress:")) return null;
+  // A send the server has not confirmed has no stored message to act on yet.
+  if (isPendingSendMessage(message)) return null;
 
+  const when = formatTimeSeparator(message.createdAt, i18n.locale || "en", {
+    today: t`Today`,
+    yesterday: t`Yesterday`,
+  });
+  let groupLabel = t`Message actions`;
+  if (speakerName && when) groupLabel = t`Message actions, ${speakerName}, ${when}`;
+  else if (speakerName) groupLabel = t`Message actions, ${speakerName}`;
+  else if (when) groupLabel = t`Message actions, ${when}`;
   const copied = copiedNow && copiedText === copyableMessageText(message);
   // Synthetic rows (a live helper, a folded receipt) are not saved messages a thread can reply to.
   const threadable = onReplyInThread && !message.id.includes(":");
@@ -72,7 +87,13 @@ export function MessageHoverActions({
 
   return (
     <MessageHoverMetadata pinned={moreOpen || reactionsOpen || copied} side={side}>
-      <div data-testid="message-hover-actions" className="flex items-center gap-0.5">
+      {/* biome-ignore lint/a11y/useSemanticElements: a fieldset brings form styling the rail does not want */}
+      <div
+        data-testid="message-hover-actions"
+        role="group"
+        aria-label={groupLabel}
+        className="flex items-center gap-0.5"
+      >
         {onReact && canReactToThreadMessage(message) ? (
           <Popover open={reactionsOpen} onOpenChange={setReactionsOpen}>
             <PopoverTrigger aria-label={t`React`} className={iconButtonClass}>

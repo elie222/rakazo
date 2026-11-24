@@ -92,10 +92,8 @@ const button = (label: string) =>
   [...host.querySelectorAll("button")].find((item) => item.textContent?.includes(label));
 const click = (label: string) => act(async () => button(label)?.click());
 const dialog = () => host.querySelector<HTMLElement>('[data-testid="computer-update-dialog"]');
-const failureShown = () =>
-  [...host.querySelectorAll('[role="alert"]')].some(
-    (item) => item.textContent === "Could not complete action",
-  );
+const failureShown = (message = "refused") =>
+  [...host.querySelectorAll('[role="alert"]')].some((item) => item.textContent === message);
 const closeDialog = () =>
   act(async () =>
     dialog()?.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })),
@@ -154,4 +152,16 @@ it("opens a failed update again without its earlier error", async () => {
   await click("Recovery failed");
   expect(dialog()).not.toBeNull();
   expect(failureShown()).toBe(false);
+});
+
+it("shows why a Dismiss was refused, and plain copy for a technical failure", async () => {
+  await openFailed();
+  computer.dismissUpdate.mockRejectedValueOnce(new Error("Someone else is using this computer"));
+  await click("Dismiss");
+  expect(failureShown("Someone else is using this computer")).toBe(true);
+
+  computer.dismissUpdate.mockRejectedValueOnce(new Error("TypeError: cannot read properties"));
+  await click("Dismiss");
+  expect(failureShown("Could not complete action")).toBe(true);
+  expect(dialog()?.querySelectorAll('[role="alert"]')).toHaveLength(1);
 });

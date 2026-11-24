@@ -1,4 +1,5 @@
 import type { Api, Model, SimpleStreamOptions } from "@earendil-works/pi-ai";
+import { isRecord } from "@rakazo/core";
 
 // Google's documented marker for function calls whose original signature is unavailable:
 // https://ai.google.dev/gemini-api/docs/generate-content/thought-signatures#faqs
@@ -37,8 +38,4 @@ export function withGoogleToolHistory(
       return replacement === undefined ? payload : replacement;
     },
   };
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

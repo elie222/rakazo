@@ -1,3 +1,4 @@
+import { SecretStoreUnavailableError } from "@rakazo/adapter-kit";
 import type { MessageBlock } from "@rakazo/contracts";
 import { ATTACHMENT_MAX_BYTES } from "@rakazo/contracts";
 import {
@@ -8,7 +9,15 @@ import {
 import type { Artifact, Prisma } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { resolveBotWorkspacePath } from "../../computers/screens/computer-support.js";
-import { generateMediaFromTool } from "../../media/media-generation-tools.js";
+import {
+  generateMediaFromTool,
+  MEDIA_JOB_KIND,
+  MEDIA_UNAVAILABLE,
+  VIDEO_JOB_UNAVAILABLE,
+} from "../../media/media-generation-tools.js";
+import type { MediaSource, ResolvedMediaSource } from "../../media/media-sources.js";
+import { mediaVideoProviderForSource, readMediaJobSource } from "../../media/media-sources.js";
+import { hostedMediaPrice } from "../../media/media-usage.js";
 import { mediaDelivery, scheduleMediaPoll } from "../../media/media-video-poll.js";
 import {
   desktopGuardApplies,
@@ -52,28 +61,87 @@ async function artifactGroupId(ctx: RunContext): Promise<string | undefined> {
   return conversation?.groupId ?? undefined;
 }
 
+/**
+ * A video checked by its job id keeps the source that made it, even if the run's has changed;
+ * null when the job's saved request is unreadable, so no source is guessed for it.
+ */
+type SettledMediaJob = { status: "completed"; artifactId: string } | { status: "failed" };
+
+async function savedJobSource(
+  ctx: RunContext,
+  jobId: unknown,
+): Promise<MediaSource | { settled: SettledMediaJob } | null | undefined> {
+  if (typeof jobId !== "string") return undefined;
+  const { run } = ctx;
+  const job = await ctx.deps.prisma.externalEffect.findFirst({
+    where: {
+      id: jobId,
+      kind: MEDIA_JOB_KIND,
+      spaceId: run.spaceId,
+      run: { userId: run.userId, botId: run.botId, threadId: run.threadId },
+    },
+    select: { id: true, request: true, status: true, result: true },
+  });
+  if (!job) return undefined;
+  // A settled job needs no provider, so it still answers after its connection is removed.
+  const artifactId = settledArtifactId(job.result);
+  if (job.status === "media_completed" && artifactId)
+    return { settled: { status: "completed", artifactId } };
+  if (job.status === "media_failed") return { settled: { status: "failed" } };
+  const record = readMediaJobSource(job);
+  if (!record) return null;
+  const deps = { ...ctx.deps, mediaGeneration: ctx.providers.mediaGeneration };
+  return async () => {
+    const provider = await mediaVideoProviderForSource(deps, run.userId, record);
+    return provider && { record, provider };
+  };
+}
+
+function settledArtifactId(result: unknown): string | undefined {
+  if (!result || typeof result !== "object" || !("artifactId" in result)) return undefined;
+  return typeof result.artifactId === "string" ? result.artifactId : undefined;
+}
+
 /** Generate an image or video, or with recoverOnly, only resume a job an earlier attempt started. */
 export async function callMediaTool(ctx: RunContext, call: ToolCall, recoverOnly = false) {
   const { deps, run, thread, context } = ctx;
   const { name, args, executionId, applied } = call;
-  const mediaGeneration = ctx.providers.mediaGeneration;
   if (
     (name !== "generate_image" && name !== "generate_video") ||
     isBackgroundRunTrigger(run.trigger) ||
-    !mediaGeneration ||
     !deps.artifacts
   )
-    return { error: "Media generation is unavailable." };
+    return { error: MEDIA_UNAVAILABLE };
+  // Only a well-formed video check reads its saved job; anything else gets the tool's own refusal.
+  const saved =
+    name === "generate_video" && args.prompt === undefined
+      ? await savedJobSource(ctx, args.jobId)
+      : undefined;
+  if (saved === null) return { error: VIDEO_JOB_UNAVAILABLE };
+  if (saved && "settled" in saved) return saved.settled;
+  let source: ResolvedMediaSource | undefined;
+  try {
+    source = await (
+      saved ?? (name === "generate_image" ? ctx.providers.media.image : ctx.providers.media.video)
+    )?.();
+  } catch (error) {
+    if (!(error instanceof SecretStoreUnavailableError)) throw error;
+    getLogger().warn("media.connection_secret_unavailable", { "run.id": run.id, error });
+  }
+  if (!source) return { error: MEDIA_UNAVAILABLE };
+  const mediaGeneration = source.provider;
   const result = await generateMediaFromTool({
     name,
     args,
     executionId: applied?.effect.id ?? executionId,
     recoverOnly,
     provider: mediaGeneration,
+    source: source.record,
     prisma: deps.prisma,
     context,
     run,
     threadGeneration: thread.historyCompactionGeneration,
+    price: hostedMediaPrice(deps.prisma, source, run.spaceId),
     ...mediaDelivery({ ...deps, artifacts: deps.artifacts }, run, {
       providerId: mediaGeneration.id,
       groupId: await artifactGroupId(ctx),
@@ -108,8 +176,12 @@ export const fileTools: ToolHandlers = {
     const { deps } = ctx;
     const { args } = call;
     const workspace = runWorkspace(ctx, call);
-    return readFileFromTool(deps.sandbox, workspace, args, (path, maxBytes) =>
-      readStoppedRunFile(ctx, path, maxBytes),
+    return readFileFromTool(
+      deps.sandbox,
+      workspace,
+      args,
+      (path, maxBytes) => readStoppedRunFile(ctx, path, maxBytes),
+      ctx.computer.modelSeesImages,
     );
   },
   async write_file(ctx, call) {

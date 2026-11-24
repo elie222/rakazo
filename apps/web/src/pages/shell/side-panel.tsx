@@ -41,6 +41,7 @@ export function ShellSidePanel({
   onClearBot,
   discardChatAttachments,
   onCoversChat,
+  onOverlays,
 }: {
   rpc: ReturnType<typeof createSpaceRpc>;
   /** The open bot chat's threads; undefined in a group. */
@@ -52,8 +53,6 @@ export function ShellSidePanel({
         topicId: string | undefined;
         onOpen: (topicId: string) => void;
         meId: string | undefined;
-        showToolActivity: boolean;
-        enterToSend: boolean;
         messageContext: ThreadMessageContext;
       }
     | undefined;
@@ -78,6 +77,7 @@ export function ShellSidePanel({
   /** Drops a deleted chat's pending attachments with their previews. */
   discardChatAttachments: (threadKey: string) => void;
   onCoversChat: (covers: boolean) => void;
+  onOverlays: (overlays: boolean) => void;
 }) {
   const { t } = useLingui();
   // A thread opened from another chat, or the list in a group, has nothing to show here.
@@ -102,7 +102,13 @@ export function ShellSidePanel({
   }
 
   return (
-    <ResizableSidePanel open={open} panel={panel ?? "closed"} onCoversChat={onCoversChat}>
+    <ResizableSidePanel
+      open={open}
+      panel={panel ?? "closed"}
+      onCoversChat={onCoversChat}
+      onOverlays={onOverlays}
+      onEscape={panel === "settings" && !computerOpen ? () => setPanel(null) : undefined}
+    >
       {threadsView?.topicId ? (
         <ThreadPanel
           key={threadsView.topicId}
@@ -112,8 +118,6 @@ export function ShellSidePanel({
           topicId={threadsView.topicId}
           topic={threadsView.threads.topics.find((topic) => topic.id === threadsView.topicId)}
           meId={threadsView.threads.meId}
-          showToolActivity={threadsView.threads.showToolActivity}
-          enterToSend={threadsView.threads.enterToSend}
           messageContext={threadsView.threads.messageContext}
           onClose={() => setPanel(null)}
         />

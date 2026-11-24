@@ -448,12 +448,15 @@ export function streamClaudeCode(
       }
       if (model.reasoning && options.reasoning) args.push("--effort", EFFORT[options.reasoning]);
       const maxTokens = options.maxTokens ?? model.maxTokens;
+      const config = join(files, "config");
+      await mkdir(config, { mode: 0o700 });
       options.signal?.throwIfAborted();
       child = startClaudeCode(args, {
         cwd,
         env: claudeCodeEnv(
           process.env,
           maxTokens ? { CLAUDE_CODE_MAX_OUTPUT_TOKENS: String(maxTokens) } : {},
+          config,
         ),
       });
       const idleMs = modelStreamIdleTimeoutMs();

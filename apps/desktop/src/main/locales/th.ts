@@ -17,6 +17,7 @@ export const TH_MESSAGES: Record<string, string> = {
   Redo: "ทำซ้ำ",
   Cut: "ตัด",
   Copy: "คัดลอก",
+  "Copy Link Address": "คัดลอกที่อยู่ลิงก์",
   Paste: "วาง",
   "Paste and Match Style": "วางโดยใช้สไตล์เดียวกัน",
   Delete: "ลบ",

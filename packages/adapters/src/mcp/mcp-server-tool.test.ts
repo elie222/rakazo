@@ -7,6 +7,7 @@ import {
   deriveMcpSlug,
   needsOAuthProbe,
   parseMcpServerToolArgs,
+  removeMcpServerFromTool,
 } from "./mcp-server-tool.js";
 
 describe("deriveMcpSlug", () => {
@@ -279,6 +280,77 @@ describe("addMarketplaceConnector", () => {
       false,
       undefined,
     );
+  });
+});
+
+describe("removeMcpServerFromTool", () => {
+  const run = { spaceId: "space-1", userId: "user-1" };
+  function fixture(servers: Array<{ id: string; name: string; slug: string; transport: string }>) {
+    const tx = {
+      message: { findMany: vi.fn(async () => []), update: vi.fn() },
+      mcpServer: { delete: vi.fn() },
+      secret: { deleteMany: vi.fn() },
+    };
+    const deps = {
+      prisma: {
+        mcpServer: {
+          findMany: vi.fn(async () => servers.map((server) => ({ ...server, secretId: "sec-1" }))),
+        },
+        $transaction: vi.fn(async (work: (client: typeof tx) => unknown) => work(tx)),
+      },
+      events: { notify: vi.fn() },
+    } as unknown as ExecutorDeps;
+    return { deps, tx };
+  }
+
+  it("removes the owner's remote server and its credential", async () => {
+    const { deps, tx } = fixture([
+      { id: "srv-1", name: "Brex", slug: "brex", transport: "streamable_http" },
+    ]);
+    await expect(removeMcpServerFromTool(deps, run, { name: "brex" })).resolves.toEqual({
+      ok: true,
+      removed: "Brex",
+    });
+    expect(deps.prisma.mcpServer.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: expect.objectContaining({ userId: "user-1" }) }),
+    );
+    expect(tx.mcpServer.delete).toHaveBeenCalledWith({ where: { id: "srv-1" } });
+    expect(tx.secret.deleteMany).toHaveBeenCalledWith({
+      where: { id: "sec-1", userId: "user-1" },
+    });
+  });
+
+  it("prefers the server with that exact name over one whose name shares its slug", async () => {
+    const { deps, tx } = fixture([
+      { id: "srv-1", name: "Brex!", slug: "brex", transport: "sse" },
+      { id: "srv-2", name: "Brex", slug: "brex", transport: "sse" },
+    ]);
+    await expect(removeMcpServerFromTool(deps, run, { name: "Brex" })).resolves.toEqual({
+      ok: true,
+      removed: "Brex",
+    });
+    expect(tx.mcpServer.delete).toHaveBeenCalledWith({ where: { id: "srv-2" } });
+  });
+
+  it("leaves a local (stdio) server to Settings", async () => {
+    const { deps, tx } = fixture([
+      { id: "srv-1", name: "Local", slug: "local", transport: "stdio" },
+    ]);
+    await expect(removeMcpServerFromTool(deps, run, { name: "Local" })).resolves.toEqual({
+      error: "Local (stdio) MCP servers are removed in Settings.",
+    });
+    expect(tx.mcpServer.delete).not.toHaveBeenCalled();
+  });
+
+  it("names the remote servers it could remove when none match", async () => {
+    const { deps, tx } = fixture([
+      { id: "srv-1", name: "Brex", slug: "brex", transport: "sse" },
+      { id: "srv-2", name: "Local", slug: "local", transport: "stdio" },
+    ]);
+    await expect(removeMcpServerFromTool(deps, run, { name: "Linear" })).resolves.toEqual({
+      error: 'No MCP server named "Linear". Remote servers here: Brex.',
+    });
+    expect(tx.mcpServer.delete).not.toHaveBeenCalled();
   });
 });
 

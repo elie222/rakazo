@@ -12,10 +12,12 @@ import { ClientError, customMcpServerInput } from "@rakazo/core";
 import type { Prisma } from "@rakazo/db";
 import {
   AVAILABILITY_SELECT,
+  assertNameFreeWhereAvailable,
   availableInSpace,
   IsolationError,
   isUniqueViolation,
   itemSecretIn,
+  lockOwner,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import {
@@ -33,12 +35,7 @@ import {
   mcpAssignmentDto,
   mcpServerDto,
 } from "../integrations/mcp-servers.js";
-import {
-  assertNameFreeWhereAvailable,
-  lockOwner,
-  serverAvailability,
-  serverSecretSpace,
-} from "../spaces/name-claims.js";
+import { serverAvailability, serverSecretSpace } from "../spaces/name-claims.js";
 import type { RouterContext } from "./context.js";
 import { computerContext } from "./shared.js";
 
@@ -109,6 +106,314 @@ export function mcpRoutes(ctx: RouterContext) {
     if (!row) throw new IsolationError();
     if (row.runId) await wakeRun(deps.jobs, row.runId);
     return mcpAssignmentDto(row.assignment);
+  }
+
+  /** Leaves the server with `botIds` alone among the member's active bots, reopening the cards
+   * of any bot that loses it; returns those cards' events to send once the write commits. */
+  async function chooseMcpServerBots(
+    tx: Prisma.TransactionClient,
+    actor: Actor,
+    serverId: string,
+    botIds: string[],
+  ) {
+    const owner = { spaceId: actor.spaceId, userId: actor.userId };
+    const requested = [...new Set(botIds)];
+    // Any bot in the Space can use the member's own servers, as assignments.replace allows.
+    const bots = await tx.bot.findMany({
+      where: { spaceId: owner.spaceId, id: { in: requested } },
+      select: { id: true, archivedAt: true },
+    });
+    if (bots.length !== requested.length) throw new IsolationError();
+    // A bot archived since the choice was loaded is no longer offered, so it gains nothing.
+    const chosen = bots.filter((bot) => !bot.archivedAt).map((bot) => bot.id);
+    // Archived bots are not offered to choose from, so their assignments stay for a restore.
+    const previous = await tx.botMcpServer.findMany({
+      where: { ...owner, serverId, bot: { archivedAt: null } },
+      select: { botId: true },
+    });
+    // A bot named in the choice is never removed, even one restored since the read above.
+    const removed = previous.map((row) => row.botId).filter((botId) => !requested.includes(botId));
+    await tx.botMcpServer.deleteMany({ where: { ...owner, serverId, botId: { in: removed } } });
+    await tx.botMcpServer.createMany({
+      data: chosen.map((botId) => ({ ...owner, botId, serverId })),
+      skipDuplicates: true,
+    });
+    return (
+      await Promise.all(
+        removed.map((botId) =>
+          revertConnectedMcpApprovals(
+            onboardingDeps,
+            actor,
+            { botId, serverId, status: "pending" },
+            tx,
+          ),
+        ),
+      )
+    ).flat();
+  }
+
+  /** Adds a server for every bot, or for `botIds` alone when given, in one transaction. */
+  async function createMcpServer(actor: Actor, config: McpServerConfigInput, botIds?: string[]) {
+    const stored = await prepareMcpServer(actor, config);
+    // A refused save drops the credential stored for it.
+    const row = await persistPreparedSecret(deps.prisma, deps.secrets, stored ?? undefined, () =>
+      deps.prisma.$transaction(async (tx) => {
+        const row = await insertMcpServer(tx, actor, config, stored, {
+          everywhere: true,
+          allBots: !botIds,
+        });
+        // A new server has no assignments, so choosing reopens no cards.
+        if (botIds) await chooseMcpServerBots(tx, actor, row.id, botIds);
+        return row;
+      }),
+    ).catch((error: unknown) => {
+      // The slug comes from the name, so this is a second server with the same name.
+      if (isUniqueViolation(error))
+        throw new ClientError("CONFLICT", "An MCP server with that name already exists.");
+      throw error;
+    });
+    return announceMcpServer(row, actor);
+  }
+
+  /** Saves a server's settings and, when given, which bots can use it, in one transaction. */
+  async function updateMcpServer(
+    actor: Actor,
+    input: { id: string; config: McpServerConfigInput } | { id: string; secret: string },
+    access?: { allBots: boolean; botIds: string[] },
+  ) {
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const { existing, existingSecret } = await deps.prisma.$transaction(async (tx) => {
+        const existing = await tx.mcpServer.findFirst({
+          where: {
+            id: input.id,
+            ...availableInSpace(actor),
+          },
+        });
+        if (!existing) throw new IsolationError();
+        const existingSecret = existing.secretId
+          ? await tx.secret.findFirst({
+              where: {
+                id: existing.secretId,
+                ...itemSecretIn(actor),
+              },
+            })
+          : null;
+        return { existing, existingSecret };
+      });
+      let existingMaterial: Record<string, unknown> = {};
+      let malformedSecret = false;
+      let loadFailure: unknown;
+      if (existingSecret) {
+        let plaintext: string | undefined;
+        try {
+          plaintext = await deps.secrets.load(existingSecret.ciphertext, existingSecret.id);
+        } catch (failure) {
+          // Kept for an endpoint change, which must not go ahead without knowing what to drop.
+          loadFailure = failure;
+        }
+        if (plaintext !== undefined) {
+          try {
+            const value = JSON.parse(plaintext);
+            if (value && typeof value === "object" && !Array.isArray(value))
+              existingMaterial = value as Record<string, unknown>;
+            else malformedSecret = true;
+          } catch {
+            /* Existing malformed secrets are replaced only when new credentials are
+             * supplied, or dropped when the endpoint changes. */
+            malformedSecret = true;
+          }
+        }
+      }
+      const config =
+        "config" in input
+          ? input.config
+          : {
+              slug: existing.slug,
+              name: existing.name,
+              description: existing.description,
+              enabled: existing.enabled,
+              verbatimResults: existing.verbatimResults,
+              transport: existing.transport as "streamable_http" | "sse",
+              endpoint: existing.endpoint!,
+              headers: (existingMaterial.headers ?? {}) as Record<string, string>,
+              secret: input.secret,
+            };
+      if (!("config" in input) && existing.transport === "stdio") {
+        throw new ORPCError("BAD_REQUEST", { message: "A remote MCP server is required" });
+      }
+      const nextEndpoint = "endpoint" in config ? config.endpoint : null;
+      // Spellings of one URL, such as with and without a trailing slash, are one endpoint.
+      const endpointChanged =
+        existing.endpoint &&
+        nextEndpoint &&
+        URL.canParse(existing.endpoint) &&
+        URL.canParse(nextEndpoint)
+          ? new URL(existing.endpoint).href !== new URL(nextEndpoint).href
+          : existing.endpoint !== nextEndpoint;
+      if (endpointChanged) {
+        await assertMcpRemoteEndpoint(nextEndpoint, deps);
+      }
+      if (config.transport === "stdio") {
+        await assertMcpStdioCommand(config.command, actor, deps);
+        await assertMcpRemoteEndpoint(config.oauthClient?.authorizationServer, deps);
+      } else if (existing.transport === "stdio") {
+        await assertMcpStdioAdmin(actor, deps);
+      }
+      existingMaterial.args ??= legacyMcpArgs(existing.args);
+      const built = buildMcpUpdateMaterial(existingMaterial, config, {
+        clearOAuth: endpointChanged,
+        endpointChanged,
+        commandChanged: existing.command !== ("command" in config ? config.command : null),
+      });
+      // A malformed credential must not stay attached to a new endpoint.
+      const update: typeof built =
+        malformedSecret && endpointChanged && built.action === "keep"
+          ? { action: "store", material: {} }
+          : built;
+      // Without the stored credential, a move or a new one would lose what it keeps; only
+      // clearing it can go ahead.
+      if (
+        loadFailure !== undefined &&
+        (endpointChanged || update.action === "store") &&
+        !("clearCredential" in config && config.clearCredential)
+      )
+        throw loadFailure;
+      if (update.action === "store" && config.transport === "stdio") {
+        await assertMcpRemoteEndpoint(update.material.oauthClient?.authorization_server, deps);
+        assertMcpOAuthTemplates(
+          update.material.env ?? {},
+          update.material.files ?? {},
+          Boolean(update.material.oauthClient),
+        );
+      }
+      const stored =
+        update.action === "store" && Object.keys(update.material).length > 0
+          ? await deps.secrets.put(
+              JSON.stringify(update.material),
+              computerContext(actor, "mcp", "mcp.update"),
+            )
+          : null;
+      const clearing = update.action === "store" && Object.keys(update.material).length === 0;
+      const row = await persistPreparedSecret(deps.prisma, deps.secrets, stored ?? undefined, () =>
+        deps.prisma.$transaction(async (tx) => {
+          // A rename claims a name; availability changes take that lock before the secret,
+          // so this takes it first too and the two can never wait on each other.
+          if (config.slug !== existing.slug) await lockOwner(tx, actor.userId, "names:mcpServer");
+          await lockMcpOAuthMaterial(tx, input.id);
+          const current = await tx.mcpServer.findFirst({
+            where: {
+              id: input.id,
+              ...availableInSpace(actor),
+            },
+          });
+          if (!current) throw new IsolationError();
+          if (
+            current.revision !== existing.revision ||
+            current.secretId !== existing.secretId ||
+            current.endpoint !== existing.endpoint
+          )
+            return null;
+          if (current.secretId)
+            await tx.$queryRaw`SELECT id FROM secrets WHERE id = ${current.secretId} FOR UPDATE`;
+          const secret = current.secretId
+            ? await tx.secret.findFirst({
+                where: {
+                  id: current.secretId,
+                  ...itemSecretIn(actor),
+                },
+              })
+            : null;
+          if (secret?.ciphertext !== existingSecret?.ciphertext) return null;
+          if (config.slug !== current.slug)
+            await assertNameFreeWhereAvailable(
+              tx,
+              "mcpServer",
+              actor,
+              config.slug,
+              await serverAvailability(tx, current),
+              current.id,
+            );
+          if (stored) {
+            await tx.secret.create({
+              data: {
+                id: stored.id,
+                userId: actor.userId,
+                spaceId: await serverSecretSpace(tx, current),
+                kind: "mcp",
+                ciphertext: stored.ciphertext,
+              },
+            });
+          }
+          const updated = await tx.mcpServer.update({
+            where: { id: existing.id },
+            data: {
+              slug: config.slug,
+              name: config.name,
+              description: config.description,
+              transport: config.transport,
+              endpoint: nextEndpoint,
+              command: "command" in config ? config.command : null,
+              args: [],
+              hasArgs: update.action === "store" && Boolean(update.material.args?.length),
+              env: ("env" in config
+                ? Object.fromEntries(Object.keys(config.env).map((key) => [key, true]))
+                : {}) as Prisma.InputJsonValue,
+              // Omitted files are kept in the material, so the keys follow it.
+              ...(update.action === "store"
+                ? {
+                    files: Object.fromEntries(
+                      Object.keys(update.material.files ?? {}).map((key) => [key, true]),
+                    ) as Prisma.InputJsonValue,
+                  }
+                : {}),
+              // A stored material can drop headers the update sent, so the keys follow it.
+              headers: ("headers" in config
+                ? Object.fromEntries(
+                    Object.keys(
+                      update.action === "store"
+                        ? (update.material.headers ?? {})
+                        : endpointChanged
+                          ? Object.fromEntries(
+                              Object.entries(config.headers).filter(([, value]) => value),
+                            )
+                          : config.headers,
+                    ).map((key) => [key, true]),
+                  )
+                : {}) as Prisma.InputJsonValue,
+              enabled: config.enabled,
+              verbatimResults: config.verbatimResults,
+              ...(access ? { allBots: access.allBots } : {}),
+              revision: { increment: 1 },
+              // The old verdict is about the old config.
+              healthStatus: "unknown",
+              healthMessage: null,
+              healthToolCount: null,
+              healthCheckedAt: null,
+              ...(stored ? { secretId: stored.id } : clearing ? { secretId: null } : {}),
+            },
+          });
+          if ((stored || clearing) && existing.secretId)
+            await tx.secret.deleteMany({
+              where: {
+                id: existing.secretId,
+                ...itemSecretIn(actor),
+              },
+            });
+          // Under allBots the assignments stay as they were, so choosing agents again restores them.
+          const seqs =
+            access && !access.allBots
+              ? await chooseMcpServerBots(tx, actor, existing.id, access.botIds)
+              : [];
+          return { updated, seqs };
+        }),
+      );
+      if (row) {
+        for (const event of row.seqs) await deps.events.notify(event.threadId, event.seq);
+        const oauth = await mcpOAuth.summaryFor(row.updated, actor);
+        return mcpServerDto(await beginMcpProbe(row.updated, actor, oauth), oauth);
+      }
+    }
+    throw new ORPCError("CONFLICT", { message: "MCP credentials changed; retry" });
   }
 
   /** Starts a sign-in on the registered web callback; `botId` gets the server once it finishes. */
@@ -187,20 +492,12 @@ export function mcpRoutes(ctx: RouterContext) {
             ),
           );
         }),
-        create: authed.mcp.servers.create.handler(async ({ context, input }) => {
-          const stored = await prepareMcpServer(context.actor, input);
-          const row = await deps.prisma
-            .$transaction((tx) =>
-              insertMcpServer(tx, context.actor, input, stored, { everywhere: true }),
-            )
-            .catch((error: unknown) => {
-              // The slug comes from the name, so this is a second server with the same name.
-              if (isUniqueViolation(error))
-                throw new ClientError("CONFLICT", "An MCP server with that name already exists.");
-              throw error;
-            });
-          return announceMcpServer(row, context.actor);
-        }),
+        create: authed.mcp.servers.create.handler(({ context, input }) =>
+          createMcpServer(context.actor, input),
+        ),
+        createForBots: authed.mcp.servers.createForBots.handler(({ context, input }) =>
+          createMcpServer(context.actor, input.config, input.botIds),
+        ),
         connect: authed.mcp.servers.connect.handler(async ({ context, input }) => {
           const { actor } = context;
           const config = McpServerConfigInput.parse(
@@ -247,199 +544,13 @@ export function mcpRoutes(ctx: RouterContext) {
             await approveMcpAssignment(actor, { botId: input.botId, serverId });
           return { server, signIn };
         }),
-        update: authed.mcp.servers.update.handler(async ({ context, input }) => {
-          for (let attempt = 0; attempt < 5; attempt++) {
-            const { existing, existingSecret } = await deps.prisma.$transaction(async (tx) => {
-              const existing = await tx.mcpServer.findFirst({
-                where: {
-                  id: input.id,
-                  ...availableInSpace(context.actor),
-                },
-              });
-              if (!existing) throw new IsolationError();
-              const existingSecret = existing.secretId
-                ? await tx.secret.findFirst({
-                    where: {
-                      id: existing.secretId,
-                      ...itemSecretIn(context.actor),
-                    },
-                  })
-                : null;
-              return { existing, existingSecret };
-            });
-            let existingMaterial: Record<string, unknown> = {};
-            if (existingSecret) {
-              try {
-                const value = JSON.parse(
-                  await deps.secrets.load(existingSecret.ciphertext, existingSecret.id),
-                );
-                if (value && typeof value === "object" && !Array.isArray(value))
-                  existingMaterial = value as Record<string, unknown>;
-              } catch {
-                /* Existing malformed secrets are replaced only when new credentials are supplied. */
-              }
-            }
-            const config =
-              "config" in input
-                ? input.config
-                : {
-                    slug: existing.slug,
-                    name: existing.name,
-                    description: existing.description,
-                    enabled: existing.enabled,
-                    verbatimResults: existing.verbatimResults,
-                    transport: existing.transport as "streamable_http" | "sse",
-                    endpoint: existing.endpoint!,
-                    headers: (existingMaterial.headers ?? {}) as Record<string, string>,
-                    secret: input.secret,
-                  };
-            if (!("config" in input) && existing.transport === "stdio") {
-              throw new ORPCError("BAD_REQUEST", { message: "A remote MCP server is required" });
-            }
-            const nextEndpoint = "endpoint" in config ? config.endpoint : null;
-            if (existing.endpoint !== nextEndpoint) {
-              await assertMcpRemoteEndpoint(nextEndpoint, deps);
-            }
-            if (config.transport === "stdio") {
-              await assertMcpStdioCommand(config.command, context.actor, deps);
-              await assertMcpRemoteEndpoint(config.oauthClient?.authorizationServer, deps);
-            } else if (existing.transport === "stdio") {
-              await assertMcpStdioAdmin(context.actor, deps);
-            }
-            const endpointChanged = existing.endpoint !== nextEndpoint;
-            existingMaterial.args ??= legacyMcpArgs(existing.args);
-            const update = buildMcpUpdateMaterial(existingMaterial, config, {
-              clearOAuth: endpointChanged,
-              endpointChanged,
-              commandChanged: existing.command !== ("command" in config ? config.command : null),
-            });
-            if (update.action === "store" && config.transport === "stdio") {
-              await assertMcpRemoteEndpoint(
-                update.material.oauthClient?.authorization_server,
-                deps,
-              );
-              assertMcpOAuthTemplates(
-                update.material.env ?? {},
-                update.material.files ?? {},
-                Boolean(update.material.oauthClient),
-              );
-            }
-            const stored =
-              update.action === "store" && Object.keys(update.material).length > 0
-                ? await deps.secrets.put(
-                    JSON.stringify(update.material),
-                    computerContext(context.actor, "mcp", "mcp.update"),
-                  )
-                : null;
-            const clearing = update.action === "store" && Object.keys(update.material).length === 0;
-            const row = await persistPreparedSecret(
-              deps.prisma,
-              deps.secrets,
-              stored ?? undefined,
-              () =>
-                deps.prisma.$transaction(async (tx) => {
-                  // A rename claims a name; availability changes take that lock before the secret,
-                  // so this takes it first too and the two can never wait on each other.
-                  if (config.slug !== existing.slug)
-                    await lockOwner(tx, context.actor.userId, "names:mcpServer");
-                  await lockMcpOAuthMaterial(tx, input.id);
-                  const current = await tx.mcpServer.findFirst({
-                    where: {
-                      id: input.id,
-                      ...availableInSpace(context.actor),
-                    },
-                  });
-                  if (!current) throw new IsolationError();
-                  if (
-                    current.revision !== existing.revision ||
-                    current.secretId !== existing.secretId ||
-                    current.endpoint !== existing.endpoint
-                  )
-                    return null;
-                  if (current.secretId)
-                    await tx.$queryRaw`SELECT id FROM secrets WHERE id = ${current.secretId} FOR UPDATE`;
-                  const secret = current.secretId
-                    ? await tx.secret.findFirst({
-                        where: {
-                          id: current.secretId,
-                          ...itemSecretIn(context.actor),
-                        },
-                      })
-                    : null;
-                  if (secret?.ciphertext !== existingSecret?.ciphertext) return null;
-                  if (config.slug !== current.slug)
-                    await assertNameFreeWhereAvailable(
-                      tx,
-                      "mcpServer",
-                      context.actor,
-                      config.slug,
-                      await serverAvailability(tx, current),
-                      current.id,
-                    );
-                  if (stored) {
-                    await tx.secret.create({
-                      data: {
-                        id: stored.id,
-                        userId: context.actor.userId,
-                        spaceId: await serverSecretSpace(tx, current),
-                        kind: "mcp",
-                        ciphertext: stored.ciphertext,
-                      },
-                    });
-                  }
-                  const updated = await tx.mcpServer.update({
-                    where: { id: existing.id },
-                    data: {
-                      slug: config.slug,
-                      name: config.name,
-                      description: config.description,
-                      transport: config.transport,
-                      endpoint: nextEndpoint,
-                      command: "command" in config ? config.command : null,
-                      args: [],
-                      hasArgs: update.action === "store" && Boolean(update.material.args?.length),
-                      env: ("env" in config
-                        ? Object.fromEntries(Object.keys(config.env).map((key) => [key, true]))
-                        : {}) as Prisma.InputJsonValue,
-                      // Omitted files are kept in the material, so the keys follow it.
-                      ...(update.action === "store"
-                        ? {
-                            files: Object.fromEntries(
-                              Object.keys(update.material.files ?? {}).map((key) => [key, true]),
-                            ) as Prisma.InputJsonValue,
-                          }
-                        : {}),
-                      headers: ("headers" in config
-                        ? Object.fromEntries(Object.keys(config.headers).map((key) => [key, true]))
-                        : {}) as Prisma.InputJsonValue,
-                      enabled: config.enabled,
-                      verbatimResults: config.verbatimResults,
-                      revision: { increment: 1 },
-                      // The old verdict is about the old config.
-                      healthStatus: "unknown",
-                      healthMessage: null,
-                      healthToolCount: null,
-                      healthCheckedAt: null,
-                      ...(stored ? { secretId: stored.id } : clearing ? { secretId: null } : {}),
-                    },
-                  });
-                  if ((stored || clearing) && existing.secretId)
-                    await tx.secret.deleteMany({
-                      where: {
-                        id: existing.secretId,
-                        ...itemSecretIn(context.actor),
-                      },
-                    });
-                  return updated;
-                }),
-            );
-            if (row) {
-              const oauth = await mcpOAuth.summaryFor(row, context.actor);
-              return mcpServerDto(await beginMcpProbe(row, context.actor, oauth), oauth);
-            }
-          }
-          throw new ORPCError("CONFLICT", { message: "MCP credentials changed; retry" });
-        }),
+        update: authed.mcp.servers.update.handler(({ context, input }) =>
+          updateMcpServer(context.actor, input),
+        ),
+        /** A separate procedure, so a server too old to save access rejects it before saving the settings. */
+        save: authed.mcp.servers.save.handler(({ context, input }) =>
+          updateMcpServer(context.actor, input, input.access),
+        ),
         test: authed.mcp.servers.test.handler(async ({ context, input }) => {
           const scope = { id: input.id, ...availableInSpace(context.actor) };
           const server = await deps.prisma.mcpServer.findFirst({ where: scope });
@@ -479,44 +590,13 @@ export function mcpRoutes(ctx: RouterContext) {
               data: { allBots: input.allBots },
               include: { availableIn: AVAILABILITY_SELECT },
             });
-            let seqs: Array<{ threadId: string; seq: number }> = [];
             // Under allBots the assignments stay as they were, so choosing agents again restores them.
-            if (!input.allBots) {
-              const botIds = [...new Set(input.botIds)];
-              const bots = await tx.bot.findMany({
-                where: { ...owner, id: { in: botIds } },
-                select: { id: true },
-              });
-              if (bots.length !== botIds.length) throw new IsolationError();
-              const previous = await tx.botMcpServer.findMany({
-                where: { ...owner, serverId: server.id },
-                select: { botId: true },
-              });
-              const removed = previous
-                .map((row) => row.botId)
-                .filter((botId) => !botIds.includes(botId));
-              await tx.botMcpServer.deleteMany({
-                where: { ...owner, serverId: server.id, botId: { in: removed } },
-              });
-              await tx.botMcpServer.createMany({
-                data: botIds.map((botId) => ({ ...owner, botId, serverId: server.id })),
-                skipDuplicates: true,
-              });
-              seqs = (
-                await Promise.all(
-                  removed.map((botId) =>
-                    revertConnectedMcpApprovals(
-                      onboardingDeps,
-                      context.actor,
-                      { botId, serverId: server.id, status: "pending" },
-                      tx,
-                    ),
-                  ),
-                )
-              ).flat();
-            }
+            const seqs = input.allBots
+              ? []
+              : await chooseMcpServerBots(tx, context.actor, server.id, input.botIds);
+            // As assignments.all reads them: an archived bot's row stays but is not listed.
             const assignments = await tx.botMcpServer.findMany({
-              where: { ...owner, serverId: server.id },
+              where: { ...owner, serverId: server.id, bot: { archivedAt: null } },
               orderBy: { createdAt: "asc" },
             });
             return { server, assignments, seqs };

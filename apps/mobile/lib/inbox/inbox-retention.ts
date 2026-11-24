@@ -1,3 +1,4 @@
+import { isRecord } from "@rakazo/core";
 /** Retain unchanged JSON response branches, including rows moved within an ID-keyed list. */
 export function retainInboxValue<T>(current: T, next: T): T {
   if (current === next) return current;
@@ -25,10 +26,6 @@ export function retainInboxValue<T>(current: T, next: T): T {
     ) as T;
   }
   return next;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
 function hasId(value: unknown): value is Record<string, unknown> & { id: string } {

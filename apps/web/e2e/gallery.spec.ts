@@ -22,7 +22,7 @@ test("gallery shows a tool's question as plain text with its form", async ({ pag
   await expect(open!.getByText("Run **send_email** to sam@example.test?")).toBeVisible();
   await expect(open!.getByRole("checkbox", { name: "Approve this call" })).toBeVisible();
   await expect(open!.getByRole("textbox", { name: "Reason" })).toBeVisible();
-  await expect(open!.getByText("This call")).toBeVisible();
+  await expect(open!.getByText("This call", { exact: true })).toBeVisible();
   await expect(open!.getByRole("button", { name: "Accept" })).toBeEnabled();
   await expect(open!.getByRole("button", { name: "Decline" })).toBeEnabled();
   await expect(declined!.getByText("Declined", { exact: true })).toBeVisible();
