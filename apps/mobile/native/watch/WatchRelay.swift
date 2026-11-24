@@ -345,6 +345,8 @@ final class WatchRelay: NSObject, WCSessionDelegate {
     // The server answers 409 when no voice provider is set up.
     case 409: throw WatchFailure.noVoice
     case 403 where reply?.code == "AI_CONSENT_REQUIRED": throw WatchFailure.consent
+    // The voice provider account refused, for example out of credit: retrying will not help.
+    case 402, 403: throw WatchFailure.voiceAccount
     default: throw WatchFailure.voiceFailed
     }
   }

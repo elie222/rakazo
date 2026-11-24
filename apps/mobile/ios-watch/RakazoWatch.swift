@@ -148,10 +148,8 @@ private struct WatchChats: View {
     .onChange(of: connection.rosterRevision) {
       needsReload = true
     }
-    .onChange(of: connection.identityRevision) { previous, _ in
+    .onChange(of: connection.identityRevision) {
       clearChats()
-      // The first revision after launch is not an account change; the next load replaces the face's bots.
-      if previous != nil { saveShelf([], rows: []) }
       needsReload = true
     }
     .onOpenURL { url in
@@ -226,6 +224,8 @@ private struct WatchChats: View {
       chats = []
       scope = nil
       failure = error as? WatchFailure ?? .unavailable
+      // Signed out: the face stops offering the account's bots. Each load replaces them otherwise.
+      if failure == .signIn { saveShelf([], rows: []) }
     }
   }
 }
@@ -630,6 +630,7 @@ extension WatchFailure {
     case .answerUnconfirmed: "Answer unconfirmed. Go back and refresh."
     case .noVoice: "Voice messages aren’t set up."
     case .voiceFailed: "Couldn’t transcribe. Try again."
+    case .voiceAccount: "Check Voice settings on your iPhone."
     }
   }
 }

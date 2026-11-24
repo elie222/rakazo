@@ -40,7 +40,10 @@ struct WatchVoiceSheet: View {
       case .failed(let failure):
         Text(failure?.label ?? "Didn’t catch that.")
           .multilineTextAlignment(.center)
-        Button("Try Again", systemImage: "mic.fill") { attempt += 1 }
+        // These need the iPhone first, so another recording would fail the same way.
+        if failure != .voiceAccount && failure != .consent && failure != .signIn {
+          Button("Try Again", systemImage: "mic.fill") { attempt += 1 }
+        }
       }
     }
     // Closing the sheet cancels the attempt, so words that arrive later are never sent.
