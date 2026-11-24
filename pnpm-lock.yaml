@@ -313,12 +313,6 @@ importers:
 
   apps/desktop:
     dependencies:
-      '@rakazo/contracts':
-        specifier: workspace:*
-        version: link:../../packages/contracts
-      '@rakazo/logging':
-        specifier: workspace:*
-        version: link:../../packages/logging
       '@sentry/electron':
         specifier: 8.3.0
         version: 8.3.0(@babel/core@7.29.13(supports-color@8.1.1))
@@ -335,9 +329,15 @@ importers:
       '@rakazo/adapters':
         specifier: workspace:*
         version: link:../../packages/adapters
+      '@rakazo/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
       '@rakazo/core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@rakazo/logging':
+        specifier: workspace:*
+        version: link:../../packages/logging
       '@rakazo/ui-tokens':
         specifier: workspace:*
         version: link:../../packages/ui-tokens
@@ -1071,9 +1071,6 @@ importers:
       sharp:
         specifier: 0.35.5
         version: 0.35.5(@types/node@24.19.2)
-      shell-quote:
-        specifier: 1.12.0
-        version: 1.12.0
       typebox:
         specifier: 1.4.6
         version: 1.4.6
@@ -1111,6 +1108,9 @@ importers:
       fast-check:
         specifier: 4.10.2
         version: 4.10.2
+      shell-quote:
+        specifier: 1.12.0
+        version: 1.12.0
       typescript:
         specifier: 7.0.2
         version: 7.0.2
