@@ -323,14 +323,25 @@ function listedEnabledModels(
   return kept.length > 0 ? { listedModels: Object.fromEntries(kept) } : {};
 }
 
+/**
+ * What each compatible model runs with where its own settings say nothing. A model without its
+ * own gets everything it runs with, so values saved for the whole connection count too.
+ */
 function compatibleModelDefaultsDto(
   secret: Extract<StoredModelSecret, { kind: "openai_compatible" }>,
-  provider: string,
-  defaultModel: string | null | undefined,
+  row: { provider: string; defaultModel?: string | null; supportsImages?: boolean },
 ): { modelDefaults?: Record<string, ModelSettings> } {
-  const entries = enabledOpenAiCompatibleModelIds(secret, defaultModel)
-    .filter((id) => !catalogKnowsModel(provider, id))
-    .map((id) => [id, compatibleModelDefaults(secret, id)] as const)
+  const entries = enabledOpenAiCompatibleModelIds(secret, row.defaultModel)
+    .filter((id) => !catalogKnowsModel(row.provider, id))
+    .map(
+      (id) =>
+        [
+          id,
+          secret.models?.[id]
+            ? compatibleModelDefaults(secret, id)
+            : connectionModelSettings(secret, row.provider, id, row),
+        ] as const,
+    )
     .filter(([, defaults]) => Object.keys(defaults).length > 0);
   return entries.length > 0 ? { modelDefaults: Object.fromEntries(entries) } : {};
 }
@@ -445,7 +456,7 @@ export function modelCredentialDto(
         operatorVisionModels.has(id),
     ),
     ...(parsed.models ? { modelSettings: parsed.models } : {}),
-    ...compatibleModelDefaultsDto(parsed, row.provider, row.defaultModel),
+    ...compatibleModelDefaultsDto(parsed, row),
     thinkingLevels: compatibleModelThinkingLevels(parsed, row.defaultModel ?? "custom", row),
     modelId: row.defaultModel ?? undefined,
   };

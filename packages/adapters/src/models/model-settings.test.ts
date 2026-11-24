@@ -420,6 +420,19 @@ describe("compatible model defaults", () => {
       expect(credentialModelSettings(dto, id)).toEqual(settings(id));
   });
 
+  it("keep thinking off where the whole connection turned it off", () => {
+    const hosted = parseModelSecret(
+      JSON.stringify({
+        kind: "openai_compatible",
+        baseUrl: "https://models.example.test/v1",
+        reasoning: false,
+      }),
+    );
+    const dto = modelCredentialDto(row, serializeModelSecret(hosted));
+    expect(connectionModelSettings(hosted, row.provider, "plain").reasoning).toBe(false);
+    expect(credentialModelSettings(dto, "plain").reasoning).toBe(false);
+  });
+
   it("assume neither on a local server", () => {
     const local = secret("http://127.0.0.1:8000/v1");
     expect(connectionModelSettings(local, row.provider, "plain")).toEqual({});

@@ -172,7 +172,8 @@ type CredentialModelRef = {
   modelId?: string | null;
   enabledModelIds?: readonly string[] | null;
   modelSettings?: Readonly<Record<string, ModelSettings>>;
-  modelDefaults?: Readonly<Record<string, ModelSettings>>;
+  /** The enabled compatible models that read images, as the server runs them. */
+  visionModelIds?: readonly string[];
   isDefault?: boolean;
   preferenceRank?: number;
 };
@@ -359,13 +360,13 @@ export function connectedModelChoices(
       enabled.length > 0
         ? enabled.map((id) => {
             const known = providerModels.find((entry) => entry.id === id)?.images;
-            const own =
-              credential.modelSettings?.[id]?.images ?? credential.modelDefaults?.[id]?.images;
+            const own = credential.modelSettings?.[id]?.images;
+            const served = credential.visionModelIds?.includes(id);
             return {
               ...freeFormChoice(credential, id),
               images:
                 credential.provider === OPENAI_COMPATIBLE_PROVIDER_ID
-                  ? (own ?? known)
+                  ? (served ?? own ?? known)
                   : (known ?? own),
             };
           })

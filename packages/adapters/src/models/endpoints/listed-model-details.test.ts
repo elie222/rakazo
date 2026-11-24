@@ -25,13 +25,13 @@ describe("listedModelDetails", () => {
     ).toEqual({ contextWindow: 200_000, maxTokens: 64_000, images: true, reasoning: false });
   });
 
-  it("drops limits that do not fit together and keeps the capabilities", () => {
+  it("keeps the context window when the output limit leaves no room for input", () => {
     expect(
       listedModelDetails({
         max_input_tokens: 8_000,
         max_tokens: 8_000,
         capabilities: { image_input: { supported: true } },
       }),
-    ).toEqual({ images: true });
+    ).toEqual({ contextWindow: 8_000, images: true });
   });
 });

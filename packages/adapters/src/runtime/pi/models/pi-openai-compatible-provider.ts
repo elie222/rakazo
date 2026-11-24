@@ -678,7 +678,10 @@ export async function probeOpenAiCompatibleModels(
   return listOpenAiCompatibleModels(input, fetchImpl, signal, opts);
 }
 
-/** What the server's model list says about each model that reports anything. */
+/**
+ * What the server's model list says about each model that reports anything. For a connection
+ * being saved, whose key was already checked.
+ */
 export async function probeOpenAiCompatibleModelDetails(
   input: OpenAiCompatibleListInput,
   fetchImpl?: typeof fetch,
@@ -703,7 +706,7 @@ async function listOpenAiCompatibleModels(
     input.apiKey,
     Object.keys(input.headers ?? {}).length > 0,
   );
-  await verifyOpenAiCompatibleApiKey(input, fetchImpl, signal);
+  if (!details) await verifyOpenAiCompatibleApiKey(input, fetchImpl, signal);
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 5_000);
   const merged = signal ? AbortSignal.any([signal, controller.signal]) : controller.signal;

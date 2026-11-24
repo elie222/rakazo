@@ -1,5 +1,5 @@
 import type { ModelSettings } from "@rakazo/contracts";
-import { ModelSettingsSchema } from "@rakazo/contracts";
+import { ModelSettingsSchema, modelOutputLeavesInputRoom } from "@rakazo/contracts";
 
 /** What a server's model list says one model can do. */
 export type ListedModelDetails = Pick<
@@ -30,8 +30,8 @@ function listed(values: unknown, name: string): boolean | undefined {
 
 /**
  * Reads the fields model lists commonly carry: the capabilities and token limits of the
- * Anthropic-style list, and the modalities and parameters of the OpenRouter-style one. A value
- * out of range is left out, so the model falls back to its defaults for it.
+ * Anthropic-style list, and the modalities and parameters of the OpenRouter-style one. Limits
+ * out of range are left out, so the model falls back to its defaults for them.
  */
 export function listedModelDetails(entry: unknown): ListedModelDetails {
   const model = record(entry);
@@ -49,14 +49,25 @@ export function listedModelDetails(entry: unknown): ListedModelDetails {
       listed(record(model.architecture)?.input_modalities, "image"),
     reasoning: supported(capabilities?.thinking) ?? listed(model.supported_parameters, "reasoning"),
   };
+  // An output limit that leaves no room for input says nothing reliable; the window still does.
+  if (!modelOutputLeavesInputRoom(details.maxTokens, details.contextWindow))
+    details.maxTokens = undefined;
   const parsed = ModelSettingsSchema.safeParse(details);
-  if (parsed.success) return withoutUndefined(parsed.data);
-  const { contextWindow: _window, maxTokens: _tokens, ...capabilityDetails } = details;
-  return withoutUndefined(capabilityDetails);
+  return listedDetails(
+    parsed.success ? parsed.data : { images: details.images, reasoning: details.reasoning },
+  );
 }
 
-function withoutUndefined(details: ListedModelDetails): ListedModelDetails {
+/** The fields a model list can describe, without the ones it left out. */
+export function listedDetails({
+  contextWindow,
+  maxTokens,
+  images,
+  reasoning,
+}: ModelSettings): ListedModelDetails {
   return Object.fromEntries(
-    Object.entries(details).filter(([, value]) => value !== undefined),
-  ) as ListedModelDetails;
+    Object.entries({ contextWindow, maxTokens, images, reasoning }).filter(
+      ([, value]) => value !== undefined,
+    ),
+  );
 }

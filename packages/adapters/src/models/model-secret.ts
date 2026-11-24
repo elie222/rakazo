@@ -16,6 +16,7 @@ import {
   ThinkingLevelSchema,
 } from "@rakazo/contracts";
 import type { ListedModelDetails } from "./endpoints/listed-model-details.js";
+import { listedDetails } from "./endpoints/listed-model-details.js";
 
 const CORRUPT_MODEL_SECRET_MESSAGE =
   "Stored model credential is corrupt. Connect the provider again.";
@@ -40,12 +41,8 @@ function parsedListedModels(value: unknown): Record<string, ListedModelDetails> 
   const models = parsedModelSettings(value).models;
   if (!models) return undefined;
   const listed: Record<string, ListedModelDetails> = Object.create(null);
-  for (const [modelId, { contextWindow, maxTokens, images, reasoning }] of Object.entries(models)) {
-    const details = { contextWindow, maxTokens, images, reasoning };
-    listed[modelId] = Object.fromEntries(
-      Object.entries(details).filter(([, field]) => field !== undefined),
-    );
-  }
+  for (const [modelId, settings] of Object.entries(models))
+    listed[modelId] = listedDetails(settings);
   return listed;
 }
 
