@@ -31,6 +31,7 @@ type SettingsCredential = Pick<
   | "reasoning"
   | "visionModelIds"
   | "maxImagesPerPrompt"
+  | "modelDefaults"
 >;
 type SettingsEntry = Pick<ModelCatalogEntry, "live" | "contextWindow" | "maxTokens">;
 
@@ -168,24 +169,42 @@ export function connectionModels(
   ];
 }
 
-/** The values a model runs with when its fields are left empty. */
+/**
+ * The values a model runs with when its fields are left empty. `runs` is what the server says a
+ * compatible model runs with (`modelDefaults`).
+ */
 export function modelSettingsDefaults(
   provider: string,
   entry: SettingsEntry | undefined,
+  runs?: ModelSettings,
 ): { contextWindow?: number; maxTokens?: number } {
   if (provider === OPENAI_COMPATIBLE_PROVIDER_ID)
-    return { contextWindow: DEFAULT_MODEL_CONTEXT_WINDOW, maxTokens: DEFAULT_MODEL_MAX_TOKENS };
+    return {
+      contextWindow: runs?.contextWindow ?? DEFAULT_MODEL_CONTEXT_WINDOW,
+      maxTokens: runs?.maxTokens ?? DEFAULT_MODEL_MAX_TOKENS,
+    };
   return { contextWindow: entry?.contextWindow, maxTokens: entry?.maxTokens };
 }
 
 /**
  * The settings a model on this connection runs with: its own, else the values that were saved
- * for the whole connection before models had their own.
+ * for the whole connection before models had their own. Image input and thinking fall back to
+ * what the model does by default; limits stay empty so a form saves only the ones someone set.
  */
 export function credentialModelSettings(
   credential: SettingsCredential,
   modelId: string,
 ): ModelSettings {
+  const saved = savedModelSettings(credential, modelId);
+  const runs = credential.modelDefaults?.[modelId];
+  return {
+    ...(runs?.images !== undefined ? { images: runs.images } : {}),
+    ...(runs?.reasoning !== undefined ? { reasoning: runs.reasoning } : {}),
+    ...saved,
+  };
+}
+
+function savedModelSettings(credential: SettingsCredential, modelId: string): ModelSettings {
   const own = credential.modelSettings?.[modelId];
   if (own) return own;
   const compatible = credential.provider === OPENAI_COMPATIBLE_PROVIDER_ID;
@@ -306,9 +325,11 @@ export function modelSettingsRequest(input: {
   fields: ModelSettingsFields;
   provider: string;
   entry: SettingsEntry | undefined;
+  /** What the server says a compatible model runs with. */
+  runs?: ModelSettings;
   followedThinkingLevel?: ThinkingLevel;
 }): ModelSettingsRequest {
-  const { fields, provider, entry, followedThinkingLevel } = input;
+  const { fields, provider, entry, runs, followedThinkingLevel } = input;
   const settings: ModelSettings = {};
   if (fields.contextWindow.trim()) {
     const contextWindow = parseModelContextWindow(fields.contextWindow.trim());
@@ -320,7 +341,7 @@ export function modelSettingsRequest(input: {
     if (maxTokens === undefined) return { status: "invalid", field: "maxTokens" };
     settings.maxTokens = maxTokens;
   }
-  const defaults = modelSettingsDefaults(provider, entry);
+  const defaults = modelSettingsDefaults(provider, entry, runs);
   if (
     (settings.maxTokens !== undefined || settings.contextWindow !== undefined) &&
     !modelOutputLeavesInputRoom(
