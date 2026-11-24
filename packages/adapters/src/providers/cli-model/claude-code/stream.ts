@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type {
@@ -192,6 +192,28 @@ function conversationId(system: string, first: Frame | undefined): string {
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-4${hex.slice(13, 16)}-${variant}${hex.slice(17, 20)}-${hex.slice(20, 32)}`;
 }
 
+let sharedCwd: string | undefined;
+
+/**
+ * The CLI states its working directory in the prompt ahead of the history, so a new directory each
+ * turn ended the cached prefix at the first message. Turns share one empty private directory, and a
+ * new one replaces it once it is gone or no longer empty.
+ */
+async function claudeCodeCwd(): Promise<string> {
+  if (sharedCwd && (await isEmptyDirectory(sharedCwd))) return sharedCwd;
+  sharedCwd = await mkdtemp(join(tmpdir(), "rakazo-claude-code-cwd-"));
+  return sharedCwd;
+}
+
+async function isEmptyDirectory(dir: string): Promise<boolean> {
+  try {
+    return (await readdir(dir)).length === 0;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
+    throw error;
+  }
+}
+
 const EFFORT: Record<NonNullable<SimpleStreamOptions["reasoning"]>, string> = {
   minimal: "low",
   low: "low",
@@ -382,8 +404,7 @@ export function streamClaudeCode(
       const offeredCallNames = new Set(tools.map((tool) => tool.name));
       const frames = claudeCodeFrames(context, model);
       files = await mkdtemp(join(tmpdir(), "rakazo-claude-code-request-"));
-      const cwd = join(files, "cwd");
-      await mkdir(cwd, { mode: 0o700 });
+      const cwd = await claudeCodeCwd();
       await checkClaudeCode(cwd, options.signal);
       const systemFile = join(files, "system.md");
       await writeFile(systemFile, system, { mode: 0o600 });

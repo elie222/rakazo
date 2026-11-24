@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import type * as FsPromises from "node:fs/promises";
 import { writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -281,16 +281,27 @@ describe.skipIf(process.platform === "win32")("Claude Code CLI provider", () => 
     expect(cwdMode).toBe(0o700);
   });
 
-  it("uses a fresh empty directory for each turn and removes it afterward", async () => {
+  it("runs every turn in the same empty directory and removes each turn's files", async () => {
+    const cli = fakeClaude("reply");
+    await run(hello);
+    const first = cli.read();
+    const systemFile = first.args[first.args.indexOf("--system-prompt-file") + 1]!;
+    await vi.waitFor(() => expect(existsSync(systemFile)).toBe(false));
+    await run(hello);
+    // The CLI states its working directory ahead of the history, where a change ends the cache.
+    expect(cli.read().cwd).toBe(first.cwd);
+    expect(cli.read().cwdEntries).toEqual([]);
+  });
+
+  it("moves to a new empty directory when the shared one is no longer empty", async () => {
     const cli = fakeClaude("reply");
     await run(hello);
     const first = cli.read().cwd;
-    await vi.waitFor(() => expect(existsSync(first)).toBe(false));
+    writeFileSync(join(first, "CLAUDE.md"), "Planted instructions");
     await run(hello);
-    const second = cli.read().cwd;
-    expect(second).not.toBe(first);
+    expect(cli.read().cwd).not.toBe(first);
     expect(cli.read().cwdEntries).toEqual([]);
-    await vi.waitFor(() => expect(existsSync(second)).toBe(false));
+    rmSync(first, { recursive: true });
   });
 
   it("does not launch the model after cancellation during file setup", async () => {
