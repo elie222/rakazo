@@ -125,8 +125,9 @@ export function createDb(
     adapter,
     transactionOptions: { maxWait: CHECKOUT_TIMEOUT_MS },
   });
-  // Row-level security wraps everything else, so its findUnique rewrite still runs
-  // through content encryption. Text is cleaned for Postgres before any of them see it.
+  // Row-level security rewrites findUnique through the client it wraps, which must
+  // include content encryption. Prisma runs query callbacks in registration order,
+  // so text sanitization runs before sending the final write arguments to Postgres.
   const prisma = withTextSanitization(
     withRowLevelSecurity(
       withContentEncryption(client, contentKeys),
