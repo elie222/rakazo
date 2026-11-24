@@ -504,6 +504,7 @@ struct RakazoSession {
     } catch let error as URLError where error.code == .timedOut {
       return false
     }
+    try Task.checkCancellation()
     throw URLError(.networkConnectionLost)
   }
 
