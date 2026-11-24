@@ -167,10 +167,7 @@ export function SettingsOverlay({
     (requestedSection === "updates" && !showUpdates) ||
     (requestedSection === "labs" && labsAvailable.length === 0)
       ? "general"
-      : // A lone Space has no page of its own; Spaces shows what it has.
-        requestedSection === "space" && spaces.length <= 1
-        ? "spaces"
-        : requestedSection;
+      : requestedSection;
   const panelBusy = memoryBusy || voiceBusy;
   // Only a space's own page binds to it; every other section, memory included, acts on the
   // space the app is showing.
@@ -428,19 +425,16 @@ export function SettingsOverlay({
                   ) : null}
                   {section === "spaces" ? (
                     <SpacesSettingsPanel
-                      space={space ?? null}
                       spaces={spaces}
                       onOpenSpace={(spaceId) => onOpenSpace?.(spaceId)}
                       onNewSpace={onNewSpace && (() => leaveSettings(onNewSpace))}
-                      onLeft={(spaceId, activeSpaceId) => onLeftSpace?.(spaceId, activeSpaceId)}
-                      onClose={requestClose}
-                      onBusyChange={setVoiceBusy}
                     />
                   ) : null}
                   {section === "space" && space ? (
                     <SpaceSettingsPanel
                       key={space.id}
                       space={space}
+                      lone={spaces.length <= 1}
                       onRename={(name, client) =>
                         onRenameSpace?.(space.id, name, client) ?? Promise.resolve()
                       }

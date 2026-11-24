@@ -7,10 +7,10 @@ import {
   redactSecrets,
   renderBotDirectory,
 } from "@rakazo/core";
-import { mayBeChannelMessage } from "@rakazo/db";
 import { bestEffort } from "@rakazo/logging";
 import { loadBotGroupDirectory } from "../../bots/group-handoff.js";
 import { parsePlaybook } from "../../bots/teaching-session.js";
+import type { RunMediaSources } from "../../media/media-sources.js";
 import { lateRoutineRunInstruction } from "../../routines/routine-lateness.prompt.js";
 import { routineRunInstruction } from "../../routines/routine-run.prompt.js";
 import { formatCompactedSummary } from "../../runtime/context/history-compaction.prompt.js";
@@ -21,7 +21,6 @@ import { builtinAgentSkillRecords } from "../../tools/skill-tools.js";
 import type { RunExecutorServices, RunHold } from "../lifecycle/run-attempt.js";
 import { buildApprovalContinuation } from "../lifecycle/run-effects.js";
 import { createReplyState } from "../lifecycle/run-progress.js";
-import { historyMyChatsAllowed } from "../tools/run-tools-memory.js";
 import { withLatestStepScreenshot, withRecentTurnImages } from "../turn/run-turn-images.js";
 import { missingTurnImagesInstruction } from "../turn/run-turn-images.prompt.js";
 import { checkpointAnswerHistory } from "./checkpoint-answer-history.js";
@@ -37,7 +36,7 @@ import type {
 import type { ThreadHistory, TurnContext } from "./run-assembly-history.js";
 import type { ConnectedRun, RunRecords, SavedTurn } from "./run-assembly-records.js";
 import type { RunContext, RunState } from "./run-context.js";
-import { restoreTurnCheckpointEffects } from "./run-context.js";
+import { restoreTurnCheckpointEffects, seedIntroEffectOccurrences } from "./run-context.js";
 import {
   connectedPluginsInstruction,
   taughtSkillsInstruction,
@@ -59,6 +58,7 @@ export async function createRunContext(
     tools: SelectedRunTools;
     computerInstructions: ComputerInstructions;
     meetingChat: boolean;
+    media: RunMediaSources;
   },
 ) {
   const { web, mediaGeneration, paidServices, browser } = services;
@@ -77,7 +77,9 @@ export async function createRunContext(
     secrets: runSecrets,
   } = hold;
   const { heldForTakeover, takeoverResume } = hold.takeover;
-  const { storedTurnCheckpoint } = parts.saved;
+  const { introEffects, storedTurnCheckpoint } = parts.saved;
+  const effects = { counts: new Map<string, number>(), consumedIds: new Set<string>() };
+  seedIntroEffectOccurrences(effects, runId, introEffects);
   const {
     bot,
     channelId,
@@ -87,8 +89,6 @@ export async function createRunContext(
     task,
     thread,
     conversationThread,
-    conversationRun,
-    origin,
   } = parts.records;
   const { connectedPlugins, context, memoryScope, runAbortController, semanticMemory } =
     parts.connected;
@@ -115,7 +115,6 @@ export async function createRunContext(
     ownerStartedRun,
     pageBrowserAllowed,
     replyMode,
-    sourceMessage,
     userComputerOwnerId,
     voiceCall,
   } = parts.capabilities;
@@ -123,6 +122,7 @@ export async function createRunContext(
     approvedEffectReplays,
     connectorTools,
     initiallyTainted,
+    myChatsAllowed,
     initialOutsideText,
     searchResultUrls,
     strategicBuiltins,
@@ -139,10 +139,9 @@ export async function createRunContext(
     reply,
     approval: { pausePending: false, request: undefined },
     effects: {
-      counts: new Map(),
+      ...effects,
       occurrences: [],
       restoredPending: undefined,
-      consumedIds: new Set(),
       pendingTurnCheckpoints: new Map(),
       storedTurnCheckpoint,
     },
@@ -177,7 +176,7 @@ export async function createRunContext(
 
   const ctx: RunContext = {
     deps,
-    providers: { web, mediaGeneration, paidServices, browser, cloudAgent },
+    providers: { web, mediaGeneration, media: parts.media, paidServices, browser, cloudAgent },
     run,
     runId,
     workerId,
@@ -198,16 +197,7 @@ export async function createRunContext(
       channelId,
       historySearchBeforeSeq,
       conversationThreadId: conversationThread.id,
-      myChatsAllowed: historyMyChatsAllowed(
-        conversationRun,
-        origin?.sourceMessage ?? sourceMessage,
-        nonOwnerChatRun ||
-          Boolean(
-            channelId ||
-              conversationThread.externalConversationId ||
-              (sourceMessage && mayBeChannelMessage(sourceMessage)),
-          ),
-      ),
+      myChatsAllowed,
       voiceCall,
       callEndRun,
       callClientNonce: callClientNonceForRun,
@@ -429,12 +419,11 @@ export async function buildTurnPrompt(
       ),
     });
   }
-  if (recalledMemory) {
-    historicalContext.push({
-      role: "user",
-      content: redactSecrets(recalledMemory, runSecrets),
-    });
-  }
+  // Recall changes with each run's request, so it goes after the kept history: placed before
+  // it, the history would no longer be a prefix the provider's prompt cache can reuse.
+  const recalledContext: AgentRunRequest["history"] = recalledMemory
+    ? [{ role: "user", content: redactSecrets(recalledMemory, runSecrets) }]
+    : [];
   const resumeHistory = turnCheckpoint
     ? await checkpointAnswerHistory(
         deps.prisma,
@@ -461,7 +450,7 @@ export async function buildTurnPrompt(
         context,
       )
     : replayHistory;
-  const runtimeHistory = [...historicalContext, ...historyWithImages];
+  const runtimeHistory = [...historicalContext, ...historyWithImages, ...recalledContext];
   const groupDirectory =
     conversationThread.groupId || ownerComputerRoutine
       ? undefined
@@ -475,7 +464,7 @@ export async function buildTurnPrompt(
     agentSkillsLine,
     taskPrompt,
     prompt,
-    historicalContext,
+    hasHistoricalContext: historicalContext.length + recalledContext.length > 0,
     runtimeHistory,
     resumeHistoryMessageIds: resumeHistory?.representedMessageIds,
     resumeAnswerReplyContexts: resumeHistory?.answerReplyContexts,

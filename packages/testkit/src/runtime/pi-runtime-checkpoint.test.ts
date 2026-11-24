@@ -185,7 +185,11 @@ describe("paused turn context", () => {
                 name: "ask_user",
                 arguments: { question: "Which fixture?", options: ["One", "Two"] },
               },
-              { id: "tail", name: "remember", arguments: { content: "Fixture fact" } },
+              {
+                id: "tail",
+                name: "remember",
+                arguments: { operations: [{ action: "add", content: "Fixture fact" }] },
+              },
             ],
           },
         },

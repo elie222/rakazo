@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import type { AppEmulator } from "../apps/app-emulator.js";
+import type { SignInSiteOptions, SignInSiteState } from "../apps/sign-in-site.js";
 import { SHAPES_PICTURE, shapesPng } from "./fixtures/shapes-png.js";
 import type { HistoryExpectation, HistoryFixture, HistoryScenario } from "./history-fixtures.js";
 import {
@@ -71,6 +72,8 @@ export type Evidence = {
   notes: EvalServices["notes"];
   /** The case's connected services by kind, with every call and write they recorded. */
   apps?: Record<string, AppEmulator>;
+  /** What happened on the case's sign-in site. */
+  site?: SignInSiteState;
   /** Every service call in the trial, by any bot; `botId` says whose run made it. */
   calls: ServiceCall[];
   /** The bot under test, to tell its calls from a peer's. */
@@ -132,6 +135,8 @@ export type EvalCase = {
   botSetup?: BotSetup;
   /** The bot's MEMORY.md, written through the memory API before the first step. */
   botMemory?: string;
+  /** The bot's other private memory documents by path, as an agent import leaves them. */
+  botMemoryDocuments?: Record<string, string>;
   taughtSkill?: true;
   history?: ReturnType<typeof historyFixture>;
   configure?: (services: EvalServices) => void;
@@ -144,6 +149,13 @@ export type EvalCase = {
   routine?: { prompt: string; name?: string };
   teammates?: Array<{ name: string; description: string }>; // Other bots in the space; never run.
   wallet?: true; // The owner connected the offline wallet emulator, so purchase tools appear.
+  /**
+   * The only website the bot's page browser reaches; it emails a sign-in code to the address typed,
+   * or, with login, signs in with that email and password, saved in the user's vault.
+   */
+  site?: SignInSiteOptions;
+  /** The bot has its own email address, `assistant@` the eval inbound domain, with an inbox. */
+  botEmail?: true;
   /**
    * A second bot of the same user that fromPeer steps speak as. It shares the subject's computer
    * unless `ownComputer` gives it one of its own. In a fromPeer step, `{peerHome}` is replaced by
@@ -180,6 +192,12 @@ export type EvalCase = {
    */
   shellUnneeded?: true;
 };
+/** Synthetic inbound mail settings that give an eval bot its own address. */
+export const EVAL_INBOUND_EMAIL = {
+  domain: "bots.eval.example",
+  secret: "synthetic-eval-inbound-secret-not-real-0000",
+};
+export const EVAL_BOT_EMAIL_NAME = "assistant";
 /** A case that wakes a routine, seeded or authored, needs its pushes and completion observed. */
 export const wakesRoutines = (scenario: EvalCase) =>
   Boolean(scenario.routine) || scenario.steps.some((step) => "wakeRoutine" in step);

@@ -5,6 +5,7 @@ import {
   ComputerSizeSchema,
   CREDITS_SANDBOX_ALLOWANCE_PERCENT,
   computerSizesUpTo,
+  MEDIA_ALLOWANCE_CENTS,
   SPEECH_ALLOWANCE_PERCENT,
   TRIAL_SANDBOX_ALLOWANCE_CENTS,
 } from "@rakazo/contracts";
@@ -213,6 +214,49 @@ export async function speechAllowancePlan(
           : (billing?.creditAmountCents ?? 0);
   // One cent is 10,000 micros, so a percent of it is 100.
   return { limitMicros: BigInt(planCents) * BigInt(SPEECH_ALLOWANCE_PERCENT) * 100n, since };
+}
+
+/**
+ * What the organization may spend on hosted image and video generation this period, in micros,
+ * and when the period began. Only a live paid plan gets any: a trial or an organization without a
+ * plan gets none. A deployment without model-credit billing never meters media (null).
+ */
+export async function mediaAllowancePlan(
+  prisma: Pick<PrismaClient, "deploymentSettings" | "organization">,
+  organizationId: string,
+  now = new Date(),
+): Promise<{ limitMicros: number; since: Date; trial: boolean } | null> {
+  const [settings, organization] = await Promise.all([
+    prisma.deploymentSettings.findUnique({
+      where: { id: "default" },
+      select: { modelCreditsEnabled: true },
+    }),
+    prisma.organization.findUnique({
+      where: { id: organizationId },
+      select: {
+        billing: {
+          select: {
+            creditAmountCents: true,
+            status: true,
+            currentPeriodStartsAt: true,
+            currentPeriodEndsAt: true,
+            byokInterval: true,
+            byokTier: true,
+            byokPriceCents: true,
+          },
+        },
+      },
+    }),
+  ]);
+  if (!settings?.modelCreditsEnabled) return null;
+  const billing = organization?.billing;
+  const { live, since } = allowancePeriod(billing, now);
+  const trial = billing?.status === "trialing";
+  const ended = billing?.currentPeriodEndsAt != null && billing.currentPeriodEndsAt <= now;
+  const paid =
+    live && !ended && !trial && Boolean(byokTierOf(null, billing) || billing?.creditAmountCents);
+  // One cent is 10,000 micros.
+  return { limitMicros: paid ? MEDIA_ALLOWANCE_CENTS * 10_000 : 0, since, trial };
 }
 
 async function grantedAllowanceCents(

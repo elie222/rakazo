@@ -1,9 +1,18 @@
 import { oc } from "@orpc/contract";
 import * as z from "zod";
-import { AnalyticsSurface, ModelSignInCancelReason } from "../account/analytics.js";
+import {
+  AnalyticsAppVersion,
+  AnalyticsSurface,
+  ModelSignInCancelReason,
+} from "../account/analytics.js";
 import { Id, ThinkingLevelSchema } from "../ids.js";
 import { SettingsScopeSchema, settingsScopeInput } from "../settings-scope.js";
 import { DeploymentModelSettingsSchema, DeploymentModelUpdateSchema } from "./deployment-model.js";
+import {
+  MediaModelChoiceSchema,
+  MediaModelRoleSchema,
+  MediaModelsViewSchema,
+} from "./media-models.js";
 import {
   ModelApiProtocolSchema,
   ModelCatalogEntrySchema,
@@ -55,6 +64,18 @@ export const modelsRpc = {
         }),
       )
       .output(ModelRoleViewSchema),
+    media: oc
+      .input(z.object({ expectedUserId: Id.optional(), scope: SettingsScopeSchema.optional() }))
+      .output(MediaModelsViewSchema),
+    setMedia: oc
+      .input(
+        MediaModelChoiceSchema.extend({
+          role: MediaModelRoleSchema,
+          expectedUserId: Id.optional(),
+          scope: SettingsScopeSchema.optional(),
+        }),
+      )
+      .output(MediaModelsViewSchema),
     list: oc.output(z.array(ModelCatalogEntrySchema)),
     credentials: oc.output(z.array(ModelCredentialSchema)),
     backups: oc.output(z.array(ModelRoleChoiceSchema)),
@@ -62,7 +83,14 @@ export const modelsRpc = {
       .input(modelChoiceListSchema(ModelRoleChoiceSchema))
       .output(z.object({ ok: z.literal(true) })),
     connect: oc
-      .input(ModelConnectInputSchema.and(z.object({ surface: AnalyticsSurface.optional() })))
+      .input(
+        ModelConnectInputSchema.and(
+          z.object({
+            surface: AnalyticsSurface.optional(),
+            appVersion: AnalyticsAppVersion.optional(),
+          }),
+        ),
+      )
       .output(ModelCredentialSchema),
     probeOpenAiCompatible: oc
       .input(
@@ -97,6 +125,7 @@ export const modelsRpc = {
           /** No loopback listener (web, mobile): the provider shows a code to paste instead. */
           codePage: z.boolean().optional(),
           surface: AnalyticsSurface.optional(),
+          appVersion: AnalyticsAppVersion.optional(),
         }),
       )
       .output(ModelOAuthBeginSchema),

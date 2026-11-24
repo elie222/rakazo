@@ -1,4 +1,5 @@
 import type { AdapterContext, ComputerRef, PageBrowserCommand } from "@rakazo/adapter-kit";
+import * as Logging from "@rakazo/logging";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   createBrowserProvider,
@@ -169,6 +170,33 @@ describe("computer browser provider", () => {
     expect(
       await acting.act(computer, { actions: [{ kind: "click", ref: "e1" }] }, context),
     ).toMatchObject({ ok: true, completed: 1, tree, loading: true });
+  });
+
+  it("logs why a live page browser call failed, without the page's words", async () => {
+    const info = vi.fn();
+    vi.spyOn(Logging, "getLogger").mockReturnValue({ info } as never);
+    const computer: ComputerRef = { id: "c", botId: "b", kind: "docker", providerRef: "c" };
+    const context = { ...baseContext, botId: "bot-a", runId: "run-1" };
+    const provider = new ComputerBrowserProvider({
+      pages,
+      liveDriver: vi
+        .fn()
+        .mockRejectedValueOnce(new Error("Page browser timed out; the page may be busy."))
+        .mockResolvedValueOnce({ ok: false, error: 'Element "Pay Alice" not found' }),
+    });
+    await provider.snapshot(computer, {}, context);
+    await provider.act(computer, { actions: [{ kind: "click", ref: "e1" }] }, context);
+    const logged = info.mock.calls.filter(([event]) => event === "computer.page_browser_failed");
+    expect(logged.map(([, fields]) => fields)).toEqual([
+      expect.objectContaining({
+        "run.id": "run-1",
+        "browser.command": "snapshot",
+        "browser.failure": "timeout",
+      }),
+      expect.objectContaining({ "browser.command": "act", "browser.failure": "refused" }),
+    ]);
+    expect(JSON.stringify(logged)).not.toContain("Alice");
+    vi.restoreAllMocks();
   });
 
   it("returns computer_act when the live driver reports failure", async () => {
