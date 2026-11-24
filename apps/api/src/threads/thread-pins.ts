@@ -56,7 +56,7 @@ export async function setMessagePin(
 ) {
   await prisma.$transaction(async (tx) => {
     // Serialize the limit check with other pins in this thread and with clearing its history.
-    await tx.$queryRaw`SELECT id FROM threads WHERE id = ${threadId} FOR UPDATE`;
+    await tx.$queryRaw`SELECT id FROM threads WHERE id = ${threadId} FOR NO KEY UPDATE`;
     const where = { id: messageId, threadId };
     if (!pinned) {
       await tx.message.updateMany({ where, data: { pinnedAt: null } });

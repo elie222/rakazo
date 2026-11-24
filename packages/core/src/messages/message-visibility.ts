@@ -229,8 +229,7 @@ export function canPinMessage(
       (block) =>
         (block.kind === "text" && Boolean(block.text.trim())) ||
         block.kind === "image" ||
-        block.kind === "file" ||
-        block.kind === "page",
+        block.kind === "file",
     )
   );
 }

@@ -32,19 +32,19 @@ export function chatHistoryRetentionDays(source: NodeJS.ProcessEnv = process.env
  * Deletes one chunk of a chat's messages and events older than `cutoff`. Messages go as an
  * unbroken run from the oldest, so what stays is contiguous and history compaction (which
  * refuses a gap) keeps working. Returns how many rows went; 0 when nothing is due or the chat
- * must be left alone.
+ * must be left alone, and whether a pin was removed.
  */
 async function pruneThreadChunk(
   prisma: Pick<PrismaClient, "$transaction">,
   threadId: string,
   cutoff: Date,
-): Promise<number> {
+): Promise<{ removed: number; pinsRemoved: boolean }> {
   return withTransactionRetry(() =>
     prisma.$transaction(async (tx) => {
       // The lock every message writer takes: a send or a compaction save waits for this commit.
       const [thread] = await tx.$queryRaw<Array<{ id: string }>>`
         SELECT id FROM threads WHERE id = ${threadId} FOR NO KEY UPDATE`;
-      if (!thread) return 0;
+      if (!thread) return { removed: 0, pinsRemoved: false };
       // A waiting question or takeover is still answered from this chat, helpers' included.
       const active = await tx.run.findFirst({
         where: {
@@ -52,7 +52,7 @@ async function pruneThreadChunk(
         },
         select: { id: true },
       });
-      if (active) return 0;
+      if (active) return { removed: 0, pinsRemoved: false };
 
       const firstKept = await tx.message.findFirst({
         where: { threadId, createdAt: { gte: cutoff } },
@@ -73,7 +73,7 @@ async function pruneThreadChunk(
         where: { threadId, ...(Number.isFinite(stopAt) ? { seq: { lt: stopAt } } : {}) },
         orderBy: { seq: "asc" },
         take: CHUNK_SIZE,
-        select: { id: true, seq: true, clientNonce: true },
+        select: { id: true, seq: true, clientNonce: true, pinnedAt: true },
       });
       // Events repeat message content, so none that could belong to a message that stays goes:
       // only those older than the oldest message left after this chunk (and than the cutoff).
@@ -118,7 +118,10 @@ async function pruneThreadChunk(
       }
       if (oldEvents.length > 0)
         await tx.event.deleteMany({ where: { id: { in: oldEvents.map((event) => event.id) } } });
-      return due.length + oldEvents.length;
+      return {
+        removed: due.length + oldEvents.length,
+        pinsRemoved: due.some((message) => Boolean(message.pinnedAt)),
+      };
     }, THREAD_LOCK_TRANSACTION_OPTIONS),
   );
 }
@@ -132,27 +135,29 @@ export async function pruneChatHistory(
   prisma: PrismaClient,
   retentionDays: number,
   now = new Date(),
+  onPinsRemoved?: (spaceId: string) => void | Promise<void>,
 ): Promise<number> {
   const cutoff = new Date(now.getTime() - retentionDays * DAY_MS);
   let removed = 0;
   let after = "";
   for (;;) {
     // Only chats whose oldest message is past the window; one index probe per chat.
-    const page = await prisma.$queryRaw<Array<{ id: string }>>`
-      SELECT t.id FROM threads t
+    const page = await prisma.$queryRaw<Array<{ id: string; spaceId: string }>>`
+      SELECT t.id, t."spaceId" FROM threads t
       WHERE t.id > ${after}
         AND (SELECT m."createdAt" FROM messages m WHERE m."threadId" = t.id
              ORDER BY m.seq ASC LIMIT 1) < ${cutoff}::timestamp(3)
       ORDER BY t.id LIMIT ${THREAD_PAGE_SIZE}`;
-    for (const { id } of page) {
+    for (const { id, spaceId } of page) {
       for (;;) {
         // One chat that cannot be pruned (logged) must not stop the chats after it.
-        const count = await bestEffort(
+        const chunk = await bestEffort(
           `prune chat history of thread ${id}`,
           pruneThreadChunk(prisma, id, cutoff),
         );
-        if (!count) break;
-        removed += count;
+        if (!chunk?.removed) break;
+        removed += chunk.removed;
+        if (chunk.pinsRemoved) await onPinsRemoved?.(spaceId);
       }
     }
     const lastId = page.at(-1)?.id;
@@ -165,11 +170,18 @@ export async function pruneChatHistory(
 export function createChatHistoryPruner(
   prisma: PrismaClient,
   retentionDays: number,
-  options: { intervalMs?: number; now?: () => Date } = {},
+  options: {
+    intervalMs?: number;
+    now?: () => Date;
+    onPinsRemoved?: (spaceId: string) => void | Promise<void>;
+  } = {},
 ): () => Promise<void> {
   return createRetentionPruner(
     "chat.history",
-    (at) => runAsSystem("prune chat history", () => pruneChatHistory(prisma, retentionDays, at)),
+    (at) =>
+      runAsSystem("prune chat history", () =>
+        pruneChatHistory(prisma, retentionDays, at, options.onPinsRemoved),
+      ),
     options,
   );
 }
