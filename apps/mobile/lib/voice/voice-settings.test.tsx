@@ -34,6 +34,7 @@ vi.mock("./device-voice", () => ({
   loadDeviceVoiceEnabled: state.load,
   saveDeviceVoiceEnabled: state.save,
 }));
+vi.mock("expo-secure-store", () => ({ getItemAsync: async () => null }));
 vi.mock("../calls/call-sounds", () => ({
   loadCallGreetingEnabled: async () => true,
   loadCallSoundsEnabled: async () => true,

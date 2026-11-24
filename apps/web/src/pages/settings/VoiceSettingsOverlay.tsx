@@ -27,10 +27,12 @@ import {
   Input,
   OptionSelect,
   Spinner,
+  SwitchField,
 } from "@rakazo/ui-web";
 import { useQueryClient } from "@tanstack/react-query";
 import { XIcon } from "lucide-react";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { callAutoLanguage } from "../../lib/calls/call-language-preference";
 import { useCallSession } from "../../lib/calls/call-session";
 import { speaker } from "../../lib/calls/tts";
 import { useSpaceQueries } from "../../lib/query/query";
@@ -74,6 +76,7 @@ export function VoiceSettingsOverlay({
   });
   const { t } = useLingui();
   const call = useCallSession();
+  const autoLanguage = callAutoLanguage.use();
   const apiKeyId = useId();
   const voiceSelectId = useId();
   const speechModelId = useId();
@@ -850,6 +853,14 @@ export function VoiceSettingsOverlay({
             </>
           ) : null}
         </>
+      ) : null}
+      {scope === "account" ? (
+        <SwitchField
+          className="mt-6"
+          label={t`Detect call language automatically`}
+          checked={autoLanguage}
+          onCheckedChange={(checked) => callAutoLanguage.set(checked)}
+        />
       ) : null}
     </>
   );
