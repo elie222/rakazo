@@ -15,13 +15,16 @@ SIGNUP_ALLOWLIST=you@example.com,@company.com
 Server configuration belongs in the operator's environment. App accounts cannot change signup policy,
 server integration credentials, or deployment updates, and cannot read deployment security logs.
 
-There is no app-admin role, first-user privilege, or `ADMINS` list. Workspace owners manage only their own workspace.
+The first account to sign up gets no special rights. Two kinds of admin exist, and neither can
+change server configuration:
 
-`RAKAZO_ADMIN_EMAILS` names accounts, comma-separated, that review plugin submissions, add stdio
-MCP servers ([integrations](self-host-integrations.md)), choose the model for everyone
-([models](self-host-models.md#default-for-everyone)), and, on deployments that sell model
-credits, give free access at `/admin/access`. An account counts only once its email is verified.
-It grants nothing else.
+- **Server admins** are the accounts named in `RAKAZO_ADMIN_EMAILS`, comma-separated, once their
+  email is verified. They review plugin submissions, add stdio MCP servers
+  ([integrations](self-host-integrations.md)), choose the model for everyone
+  ([models](self-host-models.md#default-for-everyone)), and, on deployments that sell model
+  credits, give free access at `/admin/access`. Nothing else.
+- **Organization admins** manage the members of their own organization
+  ([Set up a team](#set-up-a-team)). They have no rights over the server or other organizations.
 
 A free-access grant names an email and gives up to $1,000 of model credits, up to 12 free own-key
 months, or both. Whoever owns an organization with that verified email receives it the next time they
@@ -47,12 +50,11 @@ they choose.
    directly. See [Share a space](./spaces.md#share-a-space).
 
 The owner and admins invite people, change roles and remove members; the owner can't be removed. A
-removed member's spaces that nobody else uses pass to whoever removed them. Members are managed on
-web and desktop.
+removed member's spaces that nobody else uses pass to whoever removed them.
 
 SSO and SCIM create accounts but don't add anyone to an organization: invite them after their first
-sign-in. Organization admins are unrelated to `RAKAZO_ADMIN_EMAILS`, and a self-hosted server has no
-seats or billing unless you [set it up](./self-host-billing.md).
+sign-in. A self-hosted server has no seats or billing unless you
+[set it up](./self-host-billing.md).
 
 ## Email verification and sign-in codes
 
@@ -193,6 +195,7 @@ OIDC_SCOPES=openid email profile
 AUTH_PASSWORD_ENABLED=true
 OIDC_ALLOW_SIGNUP_BYPASS=false
 OIDC_EMAIL_VERIFIED_CLAIM=
+OIDC_AUTHORIZATION_PARAMS=
 ```
 
 The issuer must be HTTPS and exactly match the discovery document's issuer. Rakazo loads
@@ -262,6 +265,32 @@ start while discovery is temporarily unavailable: the provider remains registere
 returns a temporary error, and background retries recover without restarting. Discovery is lazy
 on first use, refreshed in the background, and failures back off up to one minute. Availability
 reflects discovery, not a guarantee that the provider's token endpoint is currently reachable.
+
+### Sign-in hints
+
+`OIDC_AUTHORIZATION_PARAMS` adds default parameters to every request that sends someone to the
+provider, written as `name=value` pairs joined with `&`. Values are form-encoded: write `&`, `=`
+and `+` as `%26`, `%3D` and `%2B`, since a bare `+` is read as a space. Use it for the hints a
+provider offers to skip its account or organization picker:
+
+| Provider           | Setting                      | Effect                                                                                                         |
+| ------------------ | ---------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| Microsoft Entra ID | `domain_hint=example.com`    | Goes straight to your organization's sign-in, including a federated identity provider if your domain uses one. |
+| Google Workspace   | `hd=example.com`             | Offers only accounts in that domain.                                                                           |
+| Keycloak           | `kc_idp_hint=<alias>`        | Skips the Keycloak login page for the linked identity provider with that alias.                                |
+| Okta               | `idp=<identity provider id>` | Sends people to that identity provider.                                                                        |
+| Any                | `prompt=select_account`      | Asks which account to use, even when only one is signed in.                                                    |
+
+Several can be combined, for example `domain_hint=example.com&prompt=select_account`; a name
+may appear only once. The provider decides whether to honor a hint (an Entra tenant can be set to
+ignore `domain_hint`, for example), so check the sign-in once after setting one. A sign-in request
+that sends its own value for a parameter overrides the default here. The parameters apply to web, desktop and mobile sign-in and to linking, because the API builds the
+request. The API refuses to start if they name a parameter the sign-in flow sets itself
+(`client_id`, `redirect_uri`, `response_type`, `response_mode`, `scope`, `state`, `nonce`,
+`code_challenge`, `code_challenge_method`, `request` or `request_uri`). The explicit
+reauthentication above still sends `prompt=login` and `max_age=0`, whatever is set here. Hints only
+shorten the provider's screens: who may sign in is still decided by the provider and this
+deployment's signup rules.
 
 Account deletion keeps the existing password confirmation for password users. Users without a
 password may delete after explicit organization SSO reauthentication within five minutes; **Sign in again** starts a fresh

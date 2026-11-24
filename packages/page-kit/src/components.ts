@@ -70,6 +70,7 @@ export const PAGE_KIT_COMPONENTS = [
   "MonthView",
   "WeekView",
   "DayView",
+  "Icon",
 ] as const;
 
 export type PageKitComponentName = (typeof PAGE_KIT_COMPONENTS)[number];

@@ -1246,6 +1246,7 @@ export type McpOAuthSummary = {
   clientId: string | null;
   /** Whether the stored material holds a credential; a lone generation marker holds none. */
   credential: boolean;
+  hasBearerToken: boolean;
 };
 
 /** Whether the material holds anything beyond OAuth bookkeeping. */
@@ -1267,6 +1268,7 @@ function summarize(material: OAuthMaterial): McpOAuthSummary {
     status,
     clientId: material.oauthClient?.client_id ?? null,
     credential: hasCredential(material),
+    hasBearerToken: Boolean(material.secret),
   };
 }
 

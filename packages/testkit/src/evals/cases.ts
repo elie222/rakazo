@@ -35,6 +35,8 @@ export type Step =
       /** Skip the wake when the bot has already cancelled the routine it authored. */
       ifScheduled?: true;
     }
+  /** A JSON payload posted to the bot's webhook, which wakes its webhook routine. */
+  | { webhook: Record<string, unknown> }
   /** A request from the case's peer bot, delivered through message_bot's product path. */
   | { fromPeer: string }
   /** A member posts a handoff through the real group delivery path. */
@@ -146,7 +148,8 @@ export type EvalCase = {
    * trial's clock and served over streamable HTTP on loopback.
    */
   apps?: (now: Date) => AppEmulator[];
-  routine?: { prompt: string; name?: string };
+  /** With `webhook`, the routine runs on webhook deliveries instead of a schedule. */
+  routine?: { prompt: string; name?: string; webhook?: true };
   teammates?: Array<{ name: string; description: string }>; // Other bots in the space; never run.
   wallet?: true; // The owner connected the offline wallet emulator, so purchase tools appear.
   /**
@@ -200,7 +203,8 @@ export const EVAL_INBOUND_EMAIL = {
 export const EVAL_BOT_EMAIL_NAME = "assistant";
 /** A case that wakes a routine, seeded or authored, needs its pushes and completion observed. */
 export const wakesRoutines = (scenario: EvalCase) =>
-  Boolean(scenario.routine) || scenario.steps.some((step) => "wakeRoutine" in step);
+  Boolean(scenario.routine) ||
+  scenario.steps.some((step) => "wakeRoutine" in step || "webhook" in step);
 
 const check = (id: string, pass: boolean): Criterion => ({ id, pass });
 const read = (e: Evidence, name: string) =>

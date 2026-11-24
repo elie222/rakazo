@@ -80,6 +80,8 @@ export type EvalActor = {
 export type TrialOptions = {
   pricing?: EvalPricing;
   connection: ModelConnectInput;
+  /** The connection is the deployment's own model, so the account connects none of its own. */
+  deploymentModel?: boolean;
   timeoutMs: number;
   judge?: EvalJudge;
   maxToolCalls: number;
@@ -118,6 +120,7 @@ export async function runTrial(
   const notifications = new CapturingNotificationProvider();
   const realtime = new SilenceObserver();
   const routineRuns: RoutineEvidence[] = [];
+  let webhookSecret: string | undefined;
   const peerExchanges: NonNullable<Evidence["peerExchanges"]> = [];
   let handles: EvalApp | undefined;
   // The harness observes product state outside any request or job.
@@ -144,6 +147,10 @@ export async function runTrial(
   let messagingAddress = "";
   let messagingOriginThreadId: string | null = null;
   const secrets = [options.connection.apiKey ?? "", options.connection.baseUrl ?? ""];
+  // The deployment's own model already serves every bot that names none.
+  const botModel = options.deploymentModel
+    ? {}
+    : { modelProvider: options.connection.provider, modelId: options.connection.modelId };
 
   let phase: FailureCategory = "harness";
   const seenTools = new Map<string, { name: string }>();
@@ -252,7 +259,7 @@ export async function runTrial(
       });
       if (!signup.ok) throw new EvalFailure("harness", `Fixture signup failed (${signup.status})`);
       cookie = sessionCookieHeader(signup);
-      await rpc(app, cookie, "models/connect", options.connection);
+      if (!options.deploymentModel) await rpc(app, cookie, "models/connect", options.connection);
       // Added the way a person adds a remote MCP server: an endpoint and a bearer token.
       for (const [index, service] of apps.entries())
         await rpc(app, cookie, "mcp/servers/create", {
@@ -285,8 +292,7 @@ export async function runTrial(
       await discardBotIntroRun(trial, cookie, botId);
       await rpc(app, cookie, "bots/update", {
         botId,
-        modelProvider: options.connection.provider,
-        modelId: options.connection.modelId,
+        ...botModel,
         replyMode: options.replyMode,
       });
       if (scenario.botEmail) {
@@ -345,8 +351,7 @@ export async function runTrial(
         await discardBotIntroRun(trial, cookie, created.id);
         await rpc(app, cookie, "bots/update", {
           botId: created.id,
-          modelProvider: options.connection.provider,
-          modelId: options.connection.modelId,
+          ...botModel,
           replyMode: options.replyMode,
         });
         peer = { id: created.id, name: scenario.peer.name };
@@ -386,8 +391,7 @@ export async function runTrial(
           if (roles)
             await rpc(app, cookie, "bots/update", {
               botId: member.id,
-              modelProvider: options.connection.provider,
-              modelId: options.connection.modelId,
+              ...botModel,
             });
           memberIds.set(name, member.id);
         }
@@ -436,11 +440,19 @@ export async function runTrial(
         botId,
         name: scenario.routine.name ?? "Release watch",
         prompt: scenario.routine.prompt,
-        crons: ["0 9 * * *"],
+        crons: scenario.routine.webhook ? [] : ["0 9 * * *"],
+        ...(scenario.routine.webhook ? { webhookEnabled: true } : {}),
         timezone: "UTC",
         active: true,
         notify: true,
       });
+      if (scenario.routine.webhook)
+        ({ secret: webhookSecret } = await rpc<{ secret: string }>(
+          app,
+          cookie,
+          "bots/rotateWebhookSecret",
+          { botId },
+        ));
     }
     const botAuthor = (author: string | undefined) => {
       if (!author) return botId;
@@ -707,7 +719,7 @@ export async function runTrial(
         clearedToolCount = seenTools.size - (await countCurrentTools());
         continue;
       }
-      if (scenario.routine || "wakeRoutine" in step)
+      if (scenario.routine || "wakeRoutine" in step || "webhook" in step)
         await rpc(app, cookie, "threads/markRead", { botId });
       const notificationOffset = notifications.sent.length;
       let runId: string;
@@ -747,6 +759,22 @@ export async function runTrial(
           where: { id: runId },
           select: { sourceMessageId: true },
         }));
+      } else if ("webhook" in step) {
+        if (!webhookSecret)
+          throw new EvalFailure("harness", "A webhook step needs a webhook routine");
+        services.calls.length = 0;
+        const res = await app.request(`/api/v1/bots/${botId}/webhook`, {
+          method: "POST",
+          headers: {
+            authorization: `Bearer ${webhookSecret}`,
+            "content-type": "application/json",
+          },
+          body: JSON.stringify(step.webhook),
+        });
+        const delivered = (await res.json()) as { runId?: string | null };
+        if (!res.ok || !delivered.runId)
+          throw new EvalFailure("harness", `Webhook delivery did not start a run: ${res.status}`);
+        runId = delivered.runId;
       } else if ("fromPeer" in step) {
         if (!peer) throw new EvalFailure("harness", "A fromPeer step needs the case's peer bot");
         await deliverPeerMessage(
@@ -868,6 +896,7 @@ export async function runTrial(
               "ask" in next ||
               "slack" in next ||
               "wakeRoutine" in next ||
+              "webhook" in next ||
               "fromPeer" in next ||
               "fromMember" in next,
           )
@@ -1092,7 +1121,7 @@ export async function runTrial(
           reply: returned.length ? returned.join("\n") : null,
         });
       }
-      if ("wakeRoutine" in step) {
+      if ("wakeRoutine" in step || "webhook" in step) {
         const messages = await prisma.message.findMany({
           where: { runId, role: "bot" },
           select: { id: true, blocks: true },

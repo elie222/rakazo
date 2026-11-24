@@ -2,6 +2,11 @@
 
 Run Rakazo on a public server with automatic HTTPS, hardened hosts and zero-downtime deploys.
 
+For a personal server, the [one-line installer](./self-host.md#published-images-no-checkout) on any
+VPS with 4 GB of RAM, or the [Railway template](../infra/railway/README.md), is enough. Once your account
+exists on a public host, set `SIGNUPS_ENABLED=false` ([accounts](./self-host-accounts.md)) so nobody else
+can sign up. This page covers running Rakazo for many users.
+
 For a single-node cluster, see [Kubernetes / k3s installation](./self-host-kubernetes.md).
 Putting a cookie-based login gate in front of any deployment also needs
 [capability-aware screen routing](./self-host-kubernetes.md#add-a-login-gate-without-breaking-the-computer):

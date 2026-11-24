@@ -2,9 +2,13 @@ import { describe, expect, it } from "vitest";
 import {
   APP_WINDOW_MIN_HEIGHT,
   APP_WINDOW_MIN_WIDTH,
+  appWindowBackground,
   browserWindowOptions,
   DEFAULT_WARM_WINDOW_TTL_MS,
   developmentIconFile,
+  parseSavedBackground,
+  parseSavedWindowBounds,
+  restorableWindowBounds,
   setupWindowOptions,
   warmWindowTtlMs,
 } from "./window-options.js";
@@ -13,17 +17,10 @@ const laptop = { width: 1440, height: 875 };
 
 describe("desktop window chrome", () => {
   it("uses native traffic lights on macOS", () => {
-    const opts = browserWindowOptions("darwin", laptop, "25.5.0");
+    const opts = browserWindowOptions("darwin", laptop);
     expect(opts.frame).toBe(true);
     expect(opts.titleBarStyle).toBe("hiddenInset");
     expect(opts.trafficLightPosition).toEqual({ x: 16, y: 19 });
-  });
-
-  it("moves the narrower pre-26 traffic lights in to stay centered on the rail", () => {
-    expect(browserWindowOptions("darwin", laptop, "24.6.0").trafficLightPosition).toEqual({
-      x: 20,
-      y: 19,
-    });
   });
 
   it("uses the native Windows frame in the app and setup windows", () => {
@@ -87,7 +84,6 @@ describe("setup window chrome", () => {
       const app = browserWindowOptions(platform, laptop);
       expect(setup.frame).toBe(app.frame);
       expect(setup.titleBarStyle).toBe(app.titleBarStyle);
-      expect(setup.backgroundColor).toBe(app.backgroundColor);
     }
   });
 
@@ -127,11 +123,76 @@ describe("development icon", () => {
 });
 
 describe("window background", () => {
-  it("matches the web dark background token so startup chrome does not flash", async () => {
+  it("matches the web background token for the system appearance so the app does not flash", async () => {
+    const { webDarkTokens, webLightTokens } = await import("@rakazo/ui-tokens");
+    expect(appWindowBackground(null, true)).toBe(webDarkTokens.background);
+    expect(appWindowBackground(null, false)).toBe(webLightTokens.background);
+  });
+
+  it("opens in the background the page last painted while the system appearance is unchanged", () => {
+    const saved = parseSavedBackground(
+      JSON.stringify({ color: "#0A0A0A", systemUsesDarkColors: false }),
+    );
+    expect(appWindowBackground(saved, false)).toBe("#0A0A0A");
+  });
+
+  it("follows the system once it switches, when the page was following it", () => {
+    const saved = parseSavedBackground(
+      JSON.stringify({ color: "#0A0A0A", systemUsesDarkColors: true }),
+    );
+    expect(appWindowBackground(saved, false)).toBe(appWindowBackground(null, false));
+  });
+
+  it("keeps an appearance picked in settings after the system switches", () => {
+    const saved = parseSavedBackground(
+      JSON.stringify({ color: "#0A0A0A", systemUsesDarkColors: false }),
+    );
+    expect(appWindowBackground(saved, true)).toBe("#0A0A0A");
+  });
+
+  it("ignores a saved background that is not a color", () => {
+    expect(
+      parseSavedBackground(JSON.stringify({ color: "oklch(0.2 0 0)", systemUsesDarkColors: true })),
+    ).toBeNull();
+    expect(parseSavedBackground("#0A0A0A")).toBeNull();
+  });
+
+  it("keeps the always-dark setup page on the dark background", async () => {
     const { webDarkTokens } = await import("@rakazo/ui-tokens");
     for (const platform of ["darwin", "win32", "linux"] as const) {
-      expect(browserWindowOptions(platform, laptop).backgroundColor).toBe(webDarkTokens.background);
       expect(setupWindowOptions(platform, laptop).backgroundColor).toBe(webDarkTokens.background);
     }
+  });
+});
+
+describe("saved window bounds", () => {
+  const saved = { x: 100, y: 50, width: 1000, height: 700, maximized: true, fullScreen: false };
+  const primary = { x: 0, y: 25, width: 1440, height: 850 };
+  const external = { x: 1440, y: 0, width: 1920, height: 1080 };
+
+  it("reads back what was written", () => {
+    expect(parseSavedWindowBounds(JSON.stringify(saved))).toEqual(saved);
+  });
+
+  it.each([
+    "",
+    "{",
+    "null",
+    '{"x":1,"y":2,"width":0,"height":5}',
+    '{"x":"1","y":2,"width":3,"height":4}',
+  ])("ignores an unusable file (%s)", (text) => {
+    expect(parseSavedWindowBounds(text)).toBeNull();
+  });
+
+  it("restores a window that is on a connected display, even across two", () => {
+    expect(restorableWindowBounds(saved, [primary])).toBe(saved);
+    const spanning = { ...saved, x: 1000 };
+    expect(restorableWindowBounds(spanning, [primary, external])).toBe(spanning);
+  });
+
+  it("falls back to the default when the display it was on is gone", () => {
+    const onExternal = { ...saved, x: 2000 };
+    expect(restorableWindowBounds(onExternal, [primary])).toBeNull();
+    expect(restorableWindowBounds({ ...saved, x: 1100 }, [primary])).toBeNull();
   });
 });

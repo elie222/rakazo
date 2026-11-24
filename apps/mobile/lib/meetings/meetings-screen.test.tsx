@@ -95,6 +95,7 @@ vi.mock("../../components/settings/settings-group", () => ({
 vi.mock("../api/roster-signals", () => ({ useSpaceChanges: () => undefined }));
 vi.mock("../api/user-error", () => ({ errorText: (error: Error) => error.message }));
 vi.mock("../appearance/appearance", () => ({ mobileTokens: () => ({}) }));
+vi.mock("../i18n/i18n", () => ({ useDateLocale: () => "en-US" }));
 vi.mock("../layout/side-insets", () => ({ useSideInsets: () => ({}) }));
 vi.mock("../native/native", () => ({
   native: {},

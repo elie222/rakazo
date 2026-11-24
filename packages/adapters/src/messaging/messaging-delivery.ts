@@ -202,6 +202,10 @@ export class MessagingDelivery {
     this.outage = deps.outage ?? databaseOutage;
   }
 
+  private platformFor(provider: string) {
+    return this.deps.messaging.platforms().find((platform) => platform.provider === provider);
+  }
+
   /**
    * Records rows for one conversation in the caller's transaction. Under the conversation's
    * lock every writer takes positions after the newest committed row, so two writers' rows
@@ -957,9 +961,7 @@ export class MessagingDelivery {
       where: { runId: run.id, role: "bot" },
       orderBy: { seq: "asc" },
     });
-    const sendsFiles = this.deps.messaging
-      .platforms()
-      .some((platform) => platform.provider === identity.provider && platform.capabilities.files);
+    const platform = this.platformFor(identity.provider);
     const linkedPages = linkedPageIds(messages);
     // A run that ended, such as one cancelled or expired while it waited, leaves its question
     // pending with nothing to resume, so the chat app is not asked it.
@@ -971,7 +973,7 @@ export class MessagingDelivery {
           this.deps.webOrigin &&
           new URL(`/app/${encodeURIComponent(run.botId)}`, this.deps.webOrigin).href,
       });
-      const parts = body ? splitOutboundBody(identity.provider, body) : [];
+      const parts = body ? splitOutboundBody(platform?.outbound, body) : [];
       return {
         parts: parts.map((part, index) => ({
           idempotencyKey: index === 0 ? `msg:${message.id}` : `msg:${message.id}:${index + 1}`,
@@ -980,15 +982,16 @@ export class MessagingDelivery {
           body: part,
           sourceMessageId: message.id,
         })),
-        files: (sendsFiles && !onlyAsks ? extractArtifactIds(message.blocks) : []).map(
-          (artifactId) => ({
-            idempotencyKey: `msg:${message.id}:file:${artifactId}`,
-            kind: "dm",
-            identityId: identity.id,
-            body: "",
-            sourceMessageId: message.id,
-          }),
-        ),
+        files: (platform?.capabilities.files && !onlyAsks
+          ? extractArtifactIds(message.blocks)
+          : []
+        ).map((artifactId) => ({
+          idempotencyKey: `msg:${message.id}:file:${artifactId}`,
+          kind: "dm",
+          identityId: identity.id,
+          body: "",
+          sourceMessageId: message.id,
+        })),
       };
     });
     const sends = (reply: ReplyRows) => reply.parts.length + reply.files.length > 0;
@@ -1079,10 +1082,11 @@ export class MessagingDelivery {
     // One row per platform-sized part, like the DM path: the adapter truncates an oversized body
     // instead of failing, which would drop the reply's tail.
     const lane = { identityId: null, threadId: channel.threadId };
+    const outbound = this.platformFor(identity.provider)?.outbound;
     await this.recordReplies(
       lane,
       messages.map(({ message, text }) => ({
-        parts: splitOutboundBody(identity.provider, `${fromLabel}: ${text}`).map((part, index) => ({
+        parts: splitOutboundBody(outbound, `${fromLabel}: ${text}`).map((part, index) => ({
           idempotencyKey: index === 0 ? `msg:${message.id}` : `msg:${message.id}:${index + 1}`,
           kind: "group",
           threadId: channel.threadId,

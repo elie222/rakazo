@@ -1,6 +1,8 @@
 import type { CSSProperties, ReactNode } from "react";
 import { isValidElement, useCallback, useContext, useState } from "react";
+import { isPageIcon } from "../icon-names.js";
 import { finite } from "./dataviz.js";
+import { Glyph } from "./icon.js";
 import { Inline } from "./inline.js";
 import { objectItems } from "./items.js";
 import { useWords } from "./labels.js";
@@ -29,6 +31,7 @@ export type Metric = {
   better?: "up" | "down";
   /** A small trend line under the figure. */
   trend?: number[];
+  icon?: string;
 };
 
 function deltaDirection(delta: string | number): 1 | -1 | 0 {
@@ -115,7 +118,10 @@ export function Metrics({ metrics = [] }: { metrics?: Metric[] }) {
           <div className="rk-metric-value" title={textOf(metric.value) || undefined}>
             {metric.value}
           </div>
-          <div className="rk-metric-label">{metric.label}</div>
+          <div className="rk-metric-label">
+            <Glyph name={metric.icon} />
+            {metric.label}
+          </div>
           {finite(metric.delta) || (typeof metric.delta === "string" && metric.delta !== "") ? (
             <div className="rk-metric-detail">
               <Delta delta={metric.delta} better={metric.better} />
@@ -149,7 +155,7 @@ export function Status({ tone, children }: { tone?: Tone; children?: ReactNode }
 
 type StatusLabel = { label: ReactNode; tone?: Tone };
 
-type Property = { label: ReactNode; value: ReactNode };
+type Property = { label: ReactNode; value: ReactNode; icon?: string };
 
 export function Properties({ items = [] }: { items?: Property[] }) {
   const card = useContext(InGrid);
@@ -157,7 +163,10 @@ export function Properties({ items = [] }: { items?: Property[] }) {
     <dl className="rk-properties" data-card={card || undefined}>
       {objectItems(items).map((item, index) => (
         <div className="rk-property" key={index}>
-          <dt>{item.label}</dt>
+          <dt>
+            <Glyph name={item.icon} />
+            {item.label}
+          </dt>
           <dd>{item.value}</dd>
         </div>
       ))}
@@ -171,6 +180,7 @@ export type Row = {
   detail?: ReactNode;
   meta?: ReactNode;
   status?: StatusLabel;
+  icon?: string;
 };
 
 const present = (node: unknown) => node != null && node !== "" && node !== false;
@@ -179,7 +189,7 @@ const present = (node: unknown) => node != null && node !== "" && node !== false
 export function Rows({ rows = [] }: { rows?: Row[] }) {
   const shown = objectItems(rows);
   if (shown.length === 0) return null;
-  const leads = shown.some((row) => present(row.lead));
+  const leads = shown.some((row) => present(row.lead) || isPageIcon(row.icon));
   return (
     <ul className="rk-rows" data-leads={leads || undefined}>
       {shown.map((row, index) => {
@@ -189,7 +199,12 @@ export function Rows({ rows = [] }: { rows?: Row[] }) {
             : undefined;
         return (
           <li className="rk-row" key={index}>
-            {leads ? <span className="rk-row-lead">{row.lead}</span> : null}
+            {leads ? (
+              <span className="rk-row-lead">
+                <Glyph name={row.icon} />
+                {row.lead}
+              </span>
+            ) : null}
             <div className="rk-row-main">
               <div className="rk-row-title">
                 {row.title}
@@ -214,7 +229,7 @@ export function Rows({ rows = [] }: { rows?: Row[] }) {
   );
 }
 
-export type Step = { title: ReactNode; detail?: ReactNode };
+export type Step = { title: ReactNode; detail?: ReactNode; icon?: string };
 
 export function Steps({ steps = [] }: { steps?: Step[] }) {
   return (
@@ -225,7 +240,10 @@ export function Steps({ steps = [] }: { steps?: Step[] }) {
             {index + 1}
           </span>
           <div>
-            <div className="rk-step-title">{step.title}</div>
+            <div className="rk-step-title">
+              <Glyph name={step.icon} />
+              {step.title}
+            </div>
             {step.detail != null && step.detail !== "" ? (
               <div className="rk-step-detail">
                 <Inline>{step.detail}</Inline>

@@ -1435,6 +1435,35 @@ describe("SSO-only account deletion", () => {
     },
   );
 
+  it("sends configured authorization parameters on sign-in and reauthentication", async () => {
+    setup({
+      oidc: {
+        issuer,
+        clientId: "test-client",
+        clientSecret: "test-client-secret",
+        name: "SSO",
+        scopes: ["openid", "email", "profile"],
+        allowSignupBypass: false,
+        authorizationParams: { domain_hint: "example.test" },
+      },
+    });
+    await signIn();
+    const [ordinary, reauthentication] = await Promise.all(
+      [false, true].map(async (reauthenticate) => {
+        const response = await request("/sign-in/social", {
+          provider: "oidc",
+          callbackURL: `${origin}/app`,
+          disableRedirect: true,
+          additionalData: { reauthenticate },
+        });
+        return new URL(((await response.json()) as { url: string }).url);
+      }),
+    );
+    expect(ordinary!.searchParams.get("domain_hint")).toBe("example.test");
+    expect(reauthentication!.searchParams.get("domain_hint")).toBe("example.test");
+    expect(reauthentication!.searchParams.get("prompt")).toBe("login");
+  });
+
   it("keeps ordinary and explicit sign-in policy separate in concurrent requests", async () => {
     setup();
     await signIn();
