@@ -423,15 +423,16 @@ app.post("/computers/:id/exec", async (c) => {
     .parse(await c.req.json());
   const timeoutMs = boundedSandboxCommandTimeoutMs(body.timeoutMs);
   let container: Docker.Container;
-  let layout: ReturnType<typeof screenPorts>;
+  let layout: ReturnType<typeof screenPorts> | undefined;
   try {
     const managed = await managedContainer(id, headers.botId, headers.spaceId);
     // Docker would fail the exec inside the stream; answer up front so the caller can boot it.
     if (!managed.info.State.Running) return c.json({ error: "computer is not running" }, 409);
     container = managed.container;
     const screenId = headers.screenId || headers.botId || id;
-    const screenIndex = computerScreens.get(id)?.get(screenId)?.index ?? 0;
-    layout = screenPorts(screenIndex);
+    // Only the bot's own screen: without one, a graphical command fails instead of using another's.
+    const screenIndex = computerScreens.get(id)?.get(screenId)?.index;
+    layout = screenIndex === undefined ? undefined : screenPorts(screenIndex);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     return c.json({ stdout: "", stderr: message, code: 1 }, 200);
