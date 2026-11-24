@@ -27,7 +27,6 @@ import {
   newClientId,
   resolveComposerSendPlan,
 } from "@rakazo/core";
-import { bestEffort } from "@rakazo/logging/best-effort";
 import type { RefObject } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { readSeenRunErrorIds, rememberSeenRunErrorId } from "../../../lib/chat/run-error-storage";
@@ -203,15 +202,9 @@ export function useComposerActions({
         input: target.groupId !== undefined ? { groupId: target.groupId } : { botId: target.botId },
       }),
     ],
-    onSaved: async (_, target) => {
-      // A group keeps its failure on screen until dismissed, even once the retry starts.
+    onSaved: (_, target) => {
+      // Hide the old failure while the live retry signal refreshes the thread.
       setDismissedRunErrorIds((current) => new Set(current).add(target.runId));
-      if (!isActiveTarget(target)) return;
-      const refresh =
-        target.groupId !== undefined
-          ? refreshGroupThreadRef.current(target.groupId)
-          : refreshThreadRef.current(target.botId);
-      await bestEffort("refresh after retry", refresh);
     },
     onFailed: (error, target) => {
       if (isActiveTarget(target) && displayedRunErrorIdRef.current === target.runId) {

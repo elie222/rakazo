@@ -262,7 +262,7 @@ describe.skipIf(!enabled)("threads.retry (PostgreSQL)", () => {
     expect(enqueue).not.toHaveBeenCalled();
   });
 
-  it("refuses once the conversation moved on or the run was not a typed message", async () => {
+  it("refuses once a newer user message arrives", async () => {
     const { run } = await failedReply();
     await createThreadMessage(system, {
       threadId,
@@ -271,7 +271,10 @@ describe.skipIf(!enabled)("threads.retry (PostgreSQL)", () => {
       blocks: [{ kind: "text", text: "Never mind." }],
     });
     expect((await retry(run.id)).status).toBe(409);
+    expect(enqueue).not.toHaveBeenCalled();
+  });
 
+  it("refuses to retry a routine from the chat banner", async () => {
     const routine = await failedReply({ trigger: "routine" });
     expect((await retry(routine.run.id)).status).toBe(409);
     expect(enqueue).not.toHaveBeenCalled();

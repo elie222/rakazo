@@ -1,6 +1,5 @@
 import { computerHoursOut } from "@rakazo/contracts";
 import { canRetryRun } from "@rakazo/core";
-import { bestEffort } from "@rakazo/logging/best-effort";
 import { useQuery } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
 import { useEffect, useRef, useState } from "react";
@@ -19,14 +18,13 @@ export function useThreadRunError(
     botId?: string;
     groupId?: string;
     userId: string;
-    refresh: () => Promise<unknown>;
     isCurrentTarget: (botId?: string, groupId?: string) => boolean;
   },
 ) {
   const { botId } = thread;
   const router = useRouter();
   const [detailsOpen, setDetailsOpen] = useState(false);
-  // A group keeps its failure on screen until a newer run ends, so a retried one hides here.
+  // Hide the old failure while the live retry signal refreshes the thread.
   const [retriedRunId, setRetriedRunId] = useState<string | null>(null);
   const runError = run?.status === "failed" && retriedRunId !== run.id ? (run.error ?? null) : null;
   const classified = useRunError(runError, false);
@@ -76,11 +74,7 @@ export function useThreadRunError(
         ...(input.groupId ? { groupId: input.groupId } : { botId: input.botId! }),
         runId: input.runId,
       }),
-    onSaved: async (_, input) => {
-      setRetriedRunId(input.runId);
-      if (thread.isCurrentTarget(input.botId, input.groupId))
-        await bestEffort("refresh after retry", thread.refresh());
-    },
+    onSaved: (_, input) => setRetriedRunId(input.runId),
     onFailed: (error, input) => {
       if (
         thread.isCurrentTarget(input.botId, input.groupId) &&
