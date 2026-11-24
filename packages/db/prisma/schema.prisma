@@ -1650,6 +1650,7 @@ model Routine {
   watchState     Json?
   lastRunAt      DateTime?
   nextRunAt      DateTime?
+  endsAt         DateTime?
   /// Runs in a row the model provider refused for the account; each one spaces out the schedule.
   accountFailures Int      @default(0)
   /// When failing runs last paused it; only runs after this count toward the next pause.
@@ -1662,6 +1663,7 @@ model Routine {
 
   @@index([active, nextRunAt])
   @@index([spaceId, botId])
+  // routines_ends_at_idx (routines with an end) is raw SQL: Prisma cannot express partial indexes.
   @@map("routines")
 }
 
