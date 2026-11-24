@@ -27,7 +27,7 @@ import {
   splitErrorToolResultImages,
   transformMessages,
 } from "@earendil-works/pi-ai/api/transform-messages";
-import { bestEffort } from "@rakazo/logging";
+import { bestEffort, getLogger } from "@rakazo/logging";
 import { sanitizeSensitiveText } from "../../../runtime/pi/pi-runtime-errors.js";
 import { modelStreamIdleTimeoutMs } from "../../../runtime/pi/pi-runtime-limits.js";
 import type { ClaudeCodeProcess } from "./cli.js";
@@ -373,7 +373,12 @@ export function streamClaudeCode(
   void (async () => {
     let child: ClaudeCodeProcess | undefined;
     let files: string | undefined;
-    let taken: SavedSession | undefined;
+    /** The session this step continues, and the sessions it started, settled at the end. */
+    let taken: { session: SavedSession; key: string } | undefined;
+    let place: { configDir: string; cwd: string } | undefined;
+    const launched: string[] = [];
+    let saved: string | undefined;
+    let refused = false;
     const stop = () => child?.stop();
     options.signal?.addEventListener("abort", stop, { once: true });
     try {
@@ -396,9 +401,9 @@ export function streamClaudeCode(
         transcriptHashes(seed, messages),
         (index) => frames[index]?.type === "assistant",
       );
-      taken = resumable?.session;
+      taken = resumable;
       files = await mkdtemp(join(tmpdir(), "rakazo-claude-code-request-"));
-      const cwd = await workingFolder();
+      const cwd = workingFolder();
       await checkClaudeCode(cwd, options.signal);
       const systemFile = join(files, "system.md");
       await writeFile(systemFile, system, { mode: 0o600 });
@@ -454,6 +459,7 @@ export function streamClaudeCode(
         tokenConfigFolder,
       );
       const configDir = cliConfigDir(env);
+      place = { configDir, cwd };
       const idleMs = modelStreamIdleTimeoutMs();
 
       // A session that cannot be continued (gone, or refused by the CLI) is replayed in full.
@@ -462,6 +468,7 @@ export function streamClaudeCode(
         try {
           options.signal?.throwIfAborted();
           const sessionId = randomUUID();
+          launched.push(sessionId);
           child = startClaudeCode(
             [
               ...args,
@@ -527,6 +534,7 @@ export function streamClaudeCode(
               const content = assistantBlocks(output);
               if (replyId && content.length) {
                 const reply = { role: "assistant", content };
+                saved = sessionId;
                 saveSession(transcriptHashes(seed, [...messages, reply]).at(-1)!, {
                   id: sessionId,
                   replyId,
@@ -741,6 +749,13 @@ export function streamClaudeCode(
           if (!resume || answered || options.signal?.aborted || error instanceof Aborted) {
             throw error;
           }
+          refused = true;
+          getLogger().warn(
+            "Claude Code could not continue its session; replaying the conversation",
+            {
+              error: error instanceof Error ? error.message : String(error),
+            },
+          );
           child?.stop();
         }
       }
@@ -760,8 +775,12 @@ export function streamClaudeCode(
       options.signal?.removeEventListener("abort", stop);
       // One turn is all Rakazo asks for: the CLI is done once the reply is complete.
       child?.stop();
-      // The session continued from is replaced by its fork, or could not be continued.
-      if (taken) forgetSessionFiles(taken);
+      if (place) {
+        for (const id of launched) if (id !== saved) forgetSessionFiles({ id, ...place });
+      }
+      // A fork replaces the session it continued; one that was not used stays for the next try.
+      if (taken && (saved || refused)) forgetSessionFiles(taken.session);
+      else if (taken) saveSession(taken.key, taken.session);
       if (files)
         await bestEffort(
           "Remove Claude Code request files",

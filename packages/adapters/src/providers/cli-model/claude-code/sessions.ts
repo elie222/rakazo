@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
-import { mkdtempSync } from "node:fs";
-import { lstat, mkdir, readdir, rm, stat } from "node:fs/promises";
+import { lstatSync, mkdirSync, mkdtempSync, readdirSync } from "node:fs";
+import { readdir, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { bestEffort } from "@rakazo/logging";
@@ -47,7 +47,7 @@ export function transcriptHashes(seed: unknown, messages: unknown[]): string[] {
 export function takeSession(
   hashes: string[],
   isReply: (index: number) => boolean,
-): { session: SavedSession; held: number } | undefined {
+): { session: SavedSession; held: number; key: string } | undefined {
   // The last frame is the one to answer, so a session must end before it.
   for (let index = hashes.length - 2; index >= 0; index -= 1) {
     if (!isReply(index)) continue;
@@ -58,7 +58,7 @@ export function takeSession(
       forgetSessionFiles(session);
       return undefined;
     }
-    return { session, held: index + 1 };
+    return { session, held: index + 1, key: hashes[index]! };
   }
   return undefined;
 }
@@ -79,7 +79,7 @@ export function saveSession(hash: string, session: SavedSession): void {
 /** The CLI keeps a session's transcript in `<config dir>/projects/<folder named for its cwd>/`. */
 const projectFolders = new Map<string, string>();
 
-async function findProjectFolder(session: SavedSession): Promise<string | undefined> {
+async function findProjectFolder(session: { id: string; configDir: string }) {
   const projects = join(session.configDir, "projects");
   const entries = await readdir(projects, { withFileTypes: true }).catch((error: unknown) => {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
@@ -105,7 +105,7 @@ async function findProjectFolder(session: SavedSession): Promise<string | undefi
 }
 
 /** Removes a session Rakazo no longer continues, so the CLI's sessions do not pile up. */
-export function forgetSessionFiles(session: SavedSession): void {
+export function forgetSessionFiles(session: Omit<SavedSession, "replyId" | "savedAt">): void {
   void bestEffort(
     "Remove a finished Claude Code session",
     (async () => {
@@ -119,38 +119,38 @@ export function forgetSessionFiles(session: SavedSession): void {
   );
 }
 
-/** One private folder per process, created on first use. */
-function processFolder(prefix: string): () => string {
-  let folder: string | undefined;
+/**
+ * This OS user's private folder of this name, the same in every process, or else a new one of
+ * this process's own (when the shared one belongs to someone else, or is not empty when it must be).
+ */
+function privateFolder(name: string, empty: boolean): () => string {
+  let own: string | undefined;
   return () => {
-    folder ??= mkdtempSync(join(tmpdir(), prefix));
-    return folder;
+    const uid = process.getuid?.();
+    const folder = join(tmpdir(), `${name}-${uid ?? "user"}`);
+    try {
+      mkdirSync(folder, { mode: 0o700 });
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+    }
+    const info = lstatSync(folder);
+    const mine = info.isDirectory() && (uid === undefined || info.uid === uid);
+    if (mine && (info.mode & 0o077) === 0 && (!empty || readdirSync(folder).length === 0)) {
+      return folder;
+    }
+    own ??= mkdtempSync(join(tmpdir(), `${name}-`));
+    return own;
   };
 }
 
-const ownCwd = processFolder("rakazo-claude-code-cwd-");
+/** The CLI names its working folder in the first message, so every turn uses the same empty one. */
+export const workingFolder = privateFolder("rakazo-claude-code", true);
 
 /**
- * The CLI names its working folder in the first message, so every turn and every process uses
- * the same empty one. If that folder is not this user's private, empty folder, this process
- * makes its own.
+ * With the setup token the CLI gets a config dir of its own, without the operator's profile. It
+ * also holds the CLI's sessions, so it stays the same across turns and restarts.
  */
-export async function workingFolder(): Promise<string> {
-  const uid = process.getuid?.();
-  const folder = join(tmpdir(), `rakazo-claude-code-${uid ?? "cwd"}`);
-  try {
-    await mkdir(folder, { mode: 0o700 });
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
-  }
-  const info = await lstat(folder);
-  const own = info.isDirectory() && (uid === undefined || info.uid === uid);
-  if (own && (info.mode & 0o077) === 0 && (await readdir(folder)).length === 0) return folder;
-  return ownCwd();
-}
-
-/** With the setup token the CLI gets an empty config dir of its own, which also holds its sessions. */
-export const tokenConfigFolder = processFolder("rakazo-claude-code-config-");
+export const tokenConfigFolder = privateFolder("rakazo-claude-code-config", false);
 
 /** Where the CLI keeps its sign-in and sessions unless CLAUDE_CONFIG_DIR says otherwise. */
 const CLI_HOME_FOLDER = ".claude";
