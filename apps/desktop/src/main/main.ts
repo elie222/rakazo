@@ -12,9 +12,10 @@ import type {
   RakazoDesktopDevice,
 } from "@rakazo/contracts";
 import { bestEffort } from "@rakazo/logging";
-import type { BrowserWindow, Session } from "electron";
+import type { Session } from "electron";
 import {
   app,
+  BrowserWindow,
   clipboard,
   desktopCapturer,
   dialog,
@@ -116,6 +117,7 @@ import {
 } from "./this-computer/stop-local-stack.js";
 import type { ElectronAutoUpdater } from "./updates/auto-update.js";
 import { DesktopUpdateController } from "./updates/auto-update.js";
+import { installedBundleVersion } from "./updates/installed-version.js";
 import { verifyDownloadedLinuxUpdate } from "./updates/linux-update-signature.js";
 import { applicationMenuInstaller, followUpdateState, installUpdate } from "./windows/app-menu.js";
 import { createAppOpener } from "./windows/app-opener.js";
@@ -151,6 +153,7 @@ const updaterEnvironment = {
   packaged: app.isPackaged && existsSync(path.join(process.resourcesPath, "app-update.yml")),
   version: app.getVersion(),
   disabled: process.env.RAKAZO_DISABLE_AUTO_UPDATE === "1",
+  installedVersion: process.platform === "darwin" ? installedBundleVersion : undefined,
 };
 let hostScreen: HostScreen | undefined;
 markOnce("rk:main:module-evaluated");
@@ -970,6 +973,15 @@ app.on("quit", (_event, exitCode) => {
 });
 app.on("before-quit", (event) => {
   desktop.quitting = true;
+  // A ready update is staged before quitting; the updater quits again once it is.
+  const installing = desktop.desktopUpdater?.installBeforeQuit();
+  if (installing) {
+    event.preventDefault();
+    // Staging takes a few seconds; the app should look closed meanwhile.
+    for (const window of BrowserWindow.getAllWindows()) window.hide();
+    void installing.then(() => app.quit());
+    return;
+  }
   // Server processes this app runs itself stop with it; quit again once they have.
   if (desktop.localStack instanceof NativeStackController && desktop.localStack.hasProcesses()) {
     event.preventDefault();
