@@ -87,6 +87,7 @@ function mcpFetch(
   state: {
     failNext: boolean;
     initializations: number;
+    serverName?: string;
     /** Tool requests to answer 404, as a server that expired the session. */
     sessionNotFound?: number;
     /** Overrides the 404 with another rejection, e.g. the SDK's 400 after a restart. */
@@ -100,6 +101,7 @@ function mcpFetch(
       annotations?: { readOnlyHint?: boolean };
     }>;
     calls?: string[];
+    toolResult?: (name: string | undefined, args: unknown) => unknown;
     /** Answer tool calls with a JSON-RPC error, as a server whose tool failed. */
     rpcError?: boolean;
     /** Hold tool calls until the request is aborted, as a slow tool. */
@@ -123,7 +125,7 @@ function mcpFetch(
     const message = JSON.parse(await request.text()) as {
       id?: number;
       method?: string;
-      params?: { name?: string };
+      params?: { name?: string; arguments?: unknown };
     };
     if (
       (message.method === "tools/call" || message.method === "tools/list") &&
@@ -142,7 +144,7 @@ function mcpFetch(
         result: {
           protocolVersion: "2025-11-25",
           capabilities: { tools: {} },
-          serverInfo: { name: "test", version: "1" },
+          serverInfo: { name: state.serverName ?? "test", version: "1" },
         },
       });
     }
@@ -174,7 +176,9 @@ function mcpFetch(
       const reply = {
         jsonrpc: "2.0",
         id: message.id,
-        result: { content: [{ type: "text", text: "ok" }] },
+        result: state.toolResult?.(message.params?.name, message.params?.arguments) ?? {
+          content: [{ type: "text", text: "ok" }],
+        },
       };
       if (!state.announceListChanged) return Response.json(reply);
       state.announceListChanged = false;
@@ -4095,6 +4099,52 @@ describe("allowlistDrift", () => {
       stringAllowedCount: 1,
     });
   });
+});
+
+it("resolves a scoped batch against the MCP connection that advertises it", async () => {
+  const path = "tools.demo.renameNote";
+  const toolResult = vi.fn(() => ({
+    content: [{ type: "text", text: JSON.stringify({ items: [{ path }], missing: [] }) }],
+  }));
+  vi.stubGlobal(
+    "fetch",
+    mcpFetch({
+      failNext: false,
+      initializations: 0,
+      serverName: "Executor",
+      tools: [
+        { name: "call", inputSchema: { type: "object", properties: { calls: {} } } },
+        { name: "describe", inputSchema: { type: "object" } },
+      ],
+      toolResult,
+    }),
+  );
+  const connector = new McpConnector(
+    {
+      mcpServer: NO_SHARED_SERVERS,
+      botMcpServer: { findMany: vi.fn(async () => [ASSIGNMENT]) },
+    } as never,
+    new EncryptedSecretStore("fake-key"),
+    { network: TEST_NETWORK },
+  );
+  const signal = new AbortController().signal;
+  try {
+    const tools = await connector.discoverTools({
+      operationId: "test",
+      traceId: "test",
+      spaceId: "w1",
+      userId: "u1",
+      botId: "bot-1",
+      signal,
+    });
+    const scope = tools.find((tool) => tool.route?.toolName === "call")?.batch?.approvalScope;
+    expect(scope?.connectionId).toBe(ASSIGNMENT.serverId);
+    await expect(scope?.resolve([path], signal)).resolves.toBe(true);
+    expect(toolResult).toHaveBeenCalledExactlyOnceWith("describe", { paths: [path] });
+    expect(tools.find((tool) => tool.route?.toolName === "describe")?.batch).toBeUndefined();
+  } finally {
+    await connector.close();
+  }
 });
 
 it("preserves explicit MCP read-only annotations for unattended consumers", async () => {

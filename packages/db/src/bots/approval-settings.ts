@@ -1,4 +1,5 @@
 import type { SettingsScope } from "@rakazo/contracts";
+import { parseConnectionToolRuleValue } from "@rakazo/contracts";
 import type { PrismaClient } from "../database/client.js";
 import { Prisma } from "../database/client.js";
 import { lockSpaceSettings, settingsTarget } from "../spaces/space-settings.js";
@@ -50,8 +51,8 @@ export async function listApprovalRules(
 
 /**
  * Saves a rule once and drops any other effect on the same match in the same copy, so a match
- * has one rule. Matching ignores case, so the replacement does too; the lock keeps concurrent
- * saves of different effects from both landing. Runs inside the caller's transaction.
+ * has one rule. Tool paths on a connection match exactly, other targets ignore case, and the lock
+ * keeps concurrent saves of different effects from both landing. Runs in the caller's transaction.
  */
 export async function saveApprovalRule(
   tx: ConfirmationsTx,
@@ -62,7 +63,12 @@ export async function saveApprovalRule(
   await lockSpaceSettings(tx, scope);
   const account = (await confirmationsTarget(tx, scope, requested)) === "account";
   const owner = account ? `account:${scope.userId}` : `${scope.spaceId}:${scope.userId}`;
-  const value = rule.matchValue.toLowerCase();
+  const matchKey = (value: string) => {
+    if (rule.matchKind !== "connection_tool") return value.toLowerCase();
+    const target = parseConnectionToolRuleValue(value);
+    return target ? JSON.stringify(target.slice(0, 2)) : value;
+  };
+  const value = matchKey(rule.matchValue);
   await tx.$queryRaw(Prisma.sql`
     SELECT pg_advisory_xact_lock(hashtextextended(${`approval-rule:${owner}:${rule.matchKind}:${value}`}, 0))::text AS "lock"
   `);
@@ -70,7 +76,7 @@ export async function saveApprovalRule(
   // insensitive mode: that is ILIKE, where "_" is a wildcard.
   const replaced = (rows: Array<{ id: string; effect: string; matchValue: string }>) =>
     rows
-      .filter((row) => row.matchValue.toLowerCase() === value)
+      .filter((row) => matchKey(row.matchValue) === value)
       .filter((row) => row.effect !== rule.effect || row.matchValue !== rule.matchValue)
       .map((row) => row.id);
   const select = { id: true, effect: true, matchValue: true } as const;

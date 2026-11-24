@@ -6,6 +6,7 @@ import {
   approvalRuleApplies,
   approvalRuleEffectChoices,
   approvalRuleLabel,
+  approvalRulePath,
 } from "@rakazo/core";
 import { useQuery } from "@tanstack/react-query";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
@@ -179,6 +180,7 @@ export default function ApprovalRules() {
                       accessibilityRole="button"
                       dimmed={pending || !approvalRuleApplies(mode, effect)}
                       title={title}
+                      detail={approvalRulePath(rule)}
                     />
                   </MenuView>
                 );

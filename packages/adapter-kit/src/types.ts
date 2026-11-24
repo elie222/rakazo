@@ -361,6 +361,14 @@ export interface ToolBatch {
   items: string;
   action: string;
   arguments: string;
+  /** The same wrapper may accept one action object in place of an array. */
+  acceptsSingle?: boolean;
+  /** Resolve exact actions before approval and scope saved rules to this connection. */
+  approvalScope?: {
+    connectionId: string;
+    connectionName: string;
+    resolve: (paths: readonly string[], signal: AbortSignal) => Promise<boolean>;
+  };
   outgoingDrafts?: Readonly<Record<string, OutgoingDraftDescriptor>>;
 }
 
@@ -383,6 +391,8 @@ export interface ConnectorCall {
   connectionId?: string;
   executionId: string;
   route?: ConnectorRoute;
+  /** The gate resolved the actions against the routed resource's current configuration. */
+  verifyResourceRevision?: boolean;
   /** Read the tool's app after a successful call. Only a caller that shows it asks. */
   withApp?: boolean;
 }

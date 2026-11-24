@@ -12,6 +12,7 @@ import {
   loginAnswerValue,
   MessageBlock as MessageBlockSchema,
   normalizeOneTimeCode,
+  parseConnectionToolRuleValue,
 } from "@rakazo/contracts";
 import {
   ACTIVE_RUN_STATUSES,
@@ -465,7 +466,15 @@ async function commitAnswerRunInput(
         await saveApprovalRule(
           tx,
           { userId: approvalUserId!, spaceId: input.spaceId },
-          { effect: "always_allow", matchKind: site ? "site" : "tool", matchValue: tool },
+          {
+            effect: "always_allow",
+            matchKind: site
+              ? "site"
+              : parseConnectionToolRuleValue(tool)
+                ? "connection_tool"
+                : "tool",
+            matchValue: tool,
+          },
         );
       }
     }

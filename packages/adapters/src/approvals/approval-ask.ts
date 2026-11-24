@@ -9,6 +9,7 @@ import {
 import {
   batchActions,
   CARD_TITLE_ESCAPED_CHARACTERS,
+  connectionToolActionLabel,
   instructionUpdateDiff,
   messagingProviderName,
   redactSecrets,
@@ -239,6 +240,8 @@ export function buildApprovalAskBlock(
     };
   }
   const fetchSite = webFetchSite(toolName, args);
+  const scopedBatch =
+    options?.batch?.approvalScope && batchActions(options.batch, args).actions.length > 1;
   const summary = describeApprovalAction(toolName, args, options?.batch, secrets);
   const detail = formatApprovalDetail(
     toolName,
@@ -273,7 +276,11 @@ export function buildApprovalAskBlock(
               { id: "allow", label: "Allow once" },
               {
                 id: "always",
-                label: fetchSite ? `Always allow ${fetchSite}` : "Always allow this tool",
+                label: fetchSite
+                  ? `Always allow ${fetchSite}`
+                  : scopedBatch
+                    ? "Always allow these tools"
+                    : "Always allow this tool",
               },
               { id: "deny", label: "Deny" },
             ],
@@ -295,7 +302,11 @@ function batchActionNames(
   const batch = batchShape && batchActions(batchShape, args);
   if (!batch?.actions.length) return undefined;
   return [
-    ...batch.actions.map((action) => readableToolName(redactSecrets(action, secrets))),
+    ...batch.actions.map((action) =>
+      (batchShape?.approvalScope ? connectionToolActionLabel : readableToolName)(
+        redactSecrets(action, secrets),
+      ),
+    ),
     ...(batch.complete ? [] : ["…"]),
   ].join(", ");
 }
@@ -347,6 +358,7 @@ function formatApprovalDetail(
   if (reviewReason?.trim()) {
     lines.push(reviewReason.trim().replace(/\u2014|\u2013/g, "-"));
   }
+  if (batch?.approvalScope) lines.push(batch.approvalScope.connectionName);
   if (toolName === "create_space") {
     lines.push(
       "Bots, groups, chats, files, memory, and integrations in this space stay separate from other spaces.",
@@ -359,7 +371,8 @@ function formatApprovalDetail(
       secrets,
       SITE_SENDING_TOOLS.has(toolName) ? ["url", "method", "body"] : undefined,
     );
-  const items = batch ? args[batch.items] : undefined;
+  const value = batch ? args[batch.items] : undefined;
+  const items = Array.isArray(value) ? value : batch?.acceptsSingle ? [value] : undefined;
   if (batch && Array.isArray(items)) {
     // An entry repeated back to back with the same action and arguments is shown once, with how
     // many times it runs; entries are compared as sent, since two raw names can read the same.
@@ -381,14 +394,22 @@ function formatApprovalDetail(
       else
         entries.push({
           key,
-          name: raw ? readableToolName(redactSecrets(raw, secrets)) : "…",
+          name: raw
+            ? batch.approvalScope
+              ? redactSecrets(raw, secrets)
+              : readableToolName(redactSecrets(raw, secrets))
+            : "…",
           args: entryArgs,
           runs: 1,
         });
     }
     // The title already names a lone named action that runs once, so its arguments need no heading.
     // An unnamed entry keeps its "…" heading, so the card shows the action is unknown.
-    const single = entries.length === 1 && entries[0]?.runs === 1 && entries[0].name !== "…";
+    const single =
+      !batch.approvalScope &&
+      entries.length === 1 &&
+      entries[0]?.runs === 1 &&
+      entries[0].name !== "…";
     // Every action and its destinations first, then each action's long text.
     const later: string[] = [];
     for (const { name, args: entryArgs, runs } of entries) {

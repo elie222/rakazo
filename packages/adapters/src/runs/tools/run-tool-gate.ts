@@ -1,6 +1,8 @@
 import type { AgentToolExecutionObserver, ConnectorCall } from "@rakazo/adapter-kit";
+import { connectionToolRuleValue } from "@rakazo/contracts";
 import {
   approvalModeFromPreference,
+  approvalRuleLabel,
   batchActions,
   clicksBeforeTyping,
   connectorKindFromToolName,
@@ -127,8 +129,8 @@ export async function gateToolCall(
   observer: AgentToolExecutionObserver | undefined,
 ): Promise<GateOutcome> {
   const { deps, run, runId, context } = ctx;
-  const { name, executionId, connectorCall, resolvedTool, nextApprovedTool, approvedEffectKey } =
-    request;
+  const { name, executionId, resolvedTool, nextApprovedTool, approvedEffectKey } = request;
+  let { connectorCall } = request;
   const { replayEffectToolName } = request;
   let { args, effectRequest } = request;
   const viaConnector = !BUILTIN_AGENT_TOOL_NAMES.has(name);
@@ -140,6 +142,26 @@ export async function gateToolCall(
   // A batch tool names the actions it runs in its arguments, so rules and the read/write
   // check look at each action, never the batch tool. An entry naming no action asks.
   const batch = connectorTool?.batch ? batchActions(connectorTool.batch, args) : undefined;
+  const approvalScope = connectorTool?.batch?.approvalScope;
+  if (approvalScope) {
+    let resolved = false;
+    try {
+      resolved = Boolean(
+        batch?.complete && (await approvalScope.resolve(batch.actions, context.signal)),
+      );
+    } catch {
+      // A failed lookup may include connection details in its error. Refuse without exposing them.
+    }
+    if (!resolved) {
+      return {
+        result: refusal(
+          "connector_actions_unresolved",
+          "Could not verify every action on this connection.",
+        ),
+      };
+    }
+    connectorCall = { ...connectorCall, verifyResourceRevision: true };
+  }
   const unidentifiedAction = Boolean(batch && !batch.complete);
   const approvalName = connectorCall.route?.connectionId ? connectorCall.route.toolName : name;
   const approvalToolNames = batch?.actions.length ? batch.actions : [approvalName];
@@ -151,9 +173,11 @@ export async function gateToolCall(
       connectorCall.route?.toolName === CATALOG_LOAD);
   // A batch tool declared as a write makes each of its actions one.
   const declaredReadOnlyFor = (toolName: string) =>
-    toolName === approvalName || toolName === name || declaredReadOnly === false
-      ? declaredReadOnly
-      : ctx.tools.connector.get(toolName)?.readOnly;
+    approvalScope
+      ? false
+      : toolName === approvalName || toolName === name || declaredReadOnly === false
+        ? declaredReadOnly
+        : ctx.tools.connector.get(toolName)?.readOnly;
   const connectorProviders = ctx.tools.connectedPlugins.map((plugin) => plugin.provider);
   const connectorKind = connectorKindFromToolName(approvalName, connectorProviders);
   const watch = name === "schedule_create" ? watchFromTool(args.watch) : undefined;
@@ -331,8 +355,11 @@ export async function gateToolCall(
           ? connectorKind
           : connectorKindFromToolName(toolName, connectorProviders),
       readOnly: declaredReadOnlyFor(toolName),
+      connectionId: approvalScope?.connectionId,
     })),
-    wrapper: batch ? { name, connectorKind } : undefined,
+    wrapper: batch
+      ? { name, connectorKind, aliases: approvalName === name ? undefined : [approvalName] }
+      : undefined,
     site: fetchSite,
     rules: await ctx.trust.loadApprovalRules(),
   });
@@ -475,7 +502,18 @@ export async function gateToolCall(
           effectRequest,
           executionId,
           ctx.state.effects.consumedIds,
-          batch && (batch.complete ? batch.actions : []),
+          batch &&
+            (batch.complete
+              ? batch.actions.map((action) =>
+                  approvalScope
+                    ? connectionToolRuleValue(
+                        approvalScope.connectionId,
+                        action,
+                        approvalScope.connectionName,
+                      )
+                    : action,
+                )
+              : []),
         );
 
   // Refuse a repeat of a tool the user denied earlier in this run. Refusals carry a result,
@@ -681,7 +719,13 @@ export async function gateToolCall(
 function blockingRuleSuffix(resolved: ReturnType<typeof resolveActionApprovalForTools>): string {
   const labels = decisiveActionApprovalRules(resolved).map((rule) => {
     const value = rule.matchValue.trim().replace(/\s+/g, " ");
-    return JSON.stringify(rule.matchKind === "site" ? value : humanizeToolName(value));
+    return JSON.stringify(
+      rule.matchKind === "connection_tool"
+        ? approvalRuleLabel(rule)
+        : rule.matchKind === "site"
+          ? value
+          : humanizeToolName(value),
+    );
   });
   if (labels.length === 0) return "";
   return ` by the saved ${labels.length === 1 ? "rule" : "rules"} ${labels.join(", ")}`;

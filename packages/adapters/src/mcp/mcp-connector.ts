@@ -37,6 +37,7 @@ import {
   redactConnectorPayload,
   sanitizeConnectorError,
 } from "../integrations/connector-safety.js";
+import { executorApprovalFields } from "../providers/integration/executor/executor-approval.js";
 import { appendToolCompletionAudit } from "../runs/turn/tool-completion-audit.js";
 import { credentialDigest } from "../secrets/credential-digest.js";
 import type { CatalogEntry } from "../tools/lazy-tool-catalog.js";
@@ -544,9 +545,11 @@ export class McpConnector implements ConnectorProvider {
         // the session and other calls on it carry on.
         const listing = new AbortController();
         try {
+          let peer: string | undefined;
           const listed = await withDeadline(
             this.withSession(server, context, (session) => {
               entry = this.sessions.get(key);
+              peer = session.client.getServerVersion()?.name;
               return session.listTools({
                 signal: AbortSignal.any([context.signal, listing.signal]),
                 refresh: idle || refresh(assignment.serverId, server.slug),
@@ -570,6 +573,11 @@ export class McpConnector implements ConnectorProvider {
               name: `mcp__${assignment.server.slug}__${tool.name}`,
               description: tool.description ?? tool.name,
               ...mcpToolFields(tool, server.transport === "stdio" ? undefined : server.endpoint),
+              ...executorApprovalFields(peer, tool, server, (name, args, signal) =>
+                this.withSession(server, context, (session) =>
+                  session.callTool(name, args, { signal }),
+                ),
+              ),
               route: {
                 connectorId: "mcp",
                 resourceId: assignment.serverId,
@@ -747,6 +755,10 @@ export class McpConnector implements ConnectorProvider {
     }
     if (!assignment || !mcpToolAllowed(assignment, call.route.toolName)) {
       yield { type: "error", message: "MCP tool is not assigned to this bot" };
+      return;
+    }
+    if (call.verifyResourceRevision && assignment.server.revision !== call.route.resourceRevision) {
+      yield { type: "error", message: "MCP connection changed before the call could run" };
       return;
     }
     // Capture material before callTool so a concurrent eviction/replace cannot

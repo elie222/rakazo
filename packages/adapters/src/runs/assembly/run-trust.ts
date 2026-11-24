@@ -1,4 +1,5 @@
 import type { MessageBlock } from "@rakazo/contracts";
+import { parseConnectionToolRuleValue } from "@rakazo/contracts";
 import type { ActionApprovalRule } from "@rakazo/core";
 import {
   BACKGROUND_HELPER_TRIGGER,
@@ -287,7 +288,9 @@ export function createRunTrustLoaders(
               .filter((row) => !BUILTIN_AGENT_TOOL_NAMES.has(row.kind))
               .flatMap((row) =>
                 connectorTrustKeys(
-                  storedBatchActions(row.batchActions),
+                  storedBatchActions(row.batchActions)?.map(
+                    (action) => parseConnectionToolRuleValue(action)?.[1] ?? action,
+                  ),
                   boundDirectApprovalDetails(row.request, CATALOG_APPROVAL_TOOL)?.route ??
                     catalogApprovalDetails(row.request, CATALOG_APPROVAL_TOOL)?.route,
                   connectorKindFromToolName(row.kind, providers),

@@ -294,6 +294,21 @@ const approvals: Scenario = {
     ]),
     bot([
       {
+        kind: "ask",
+        approvalEffectId: "scoped-batch",
+        text: "Allow Notes rename note, Notes archive note?",
+        detail:
+          "Notes Personal\ntools.notes.renameNote\nTitle: Trip notes\ntools.notes.archiveNote",
+        status: "pending",
+        actions: [
+          { id: "allow", label: "Allow once" },
+          { id: "always", label: "Always allow these tools" },
+          { id: "deny", label: "Deny" },
+        ],
+      },
+    ]),
+    bot([
+      {
         // As the adapters' purchase card words a pay click, with the order lines the page lists.
         kind: "ask",
         approvalEffectId: "effect-6",
