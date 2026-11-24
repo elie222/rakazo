@@ -653,9 +653,9 @@ export function ThreadComposer({
             accessible
             accessibilityRole="button"
             accessibilityLabel={t`Attach file`}
-            style={[composerPillStyle, { backgroundColor: tokens.muted }]}
+            style={composerPillStyle}
           >
-            <NativeSymbol ios="plus" android="add" size={17} color={tokens.mutedForeground} />
+            <NativeSymbol ios="plus" android="add" size={20} color={tokens.foreground} />
           </View>
         </MenuView>
         <View
@@ -664,7 +664,8 @@ export function ThreadComposer({
             flexDirection: stacked ? "column" : "row",
             alignItems: stacked ? "stretch" : "flex-end",
             // Keeps text clear of the call/send button even when it runs to the trailing edge (RTL).
-            gap: 8,
+            columnGap: 12,
+            rowGap: 8,
           }}
         >
           <View
@@ -897,17 +898,14 @@ export function ThreadComposer({
                   onPress={toggleDictation}
                   style={{ marginBottom: pillInset }}
                 >
-                  <GlassSurface
-                    style={composerPillStyle}
-                    fallbackStyle={{ backgroundColor: tokens.muted }}
-                  >
+                  <View style={composerPillStyle}>
                     <NativeSymbol
                       ios="mic"
                       android="mic-outline"
-                      size={15}
-                      color={tokens.mutedForeground}
+                      size={18}
+                      color={tokens.foreground}
                     />
-                  </GlassSurface>
+                  </View>
                 </Pressable>
               )}
               {!canSend && botId && !onCall ? (

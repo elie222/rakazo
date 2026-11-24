@@ -1446,7 +1446,7 @@ describe("thread composer isolation", () => {
       type(draft);
       const button = container.querySelector(`button[aria-label="${label}"]`)!;
       // The text and the trailing buttons share a row that keeps space between them.
-      expect(style(button.parentElement!).gap).toBeGreaterThan(0);
+      expect(style(button.parentElement!).columnGap).toBeGreaterThan(0);
     }
   });
 });
