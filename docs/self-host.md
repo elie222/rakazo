@@ -94,10 +94,10 @@ the secrets it uses. A value you set as an environment variable in the panel alw
 generated one, so set it before the first start or not at all: a changed database password or
 `ENCRYPTION_KEY` breaks an existing install.
 
-Nothing else is required. Optional variables:
+Set `RAKAZO_PUBLIC_URL` to the address people open, such as `https://app.example.com`, whenever
+they reach Rakazo by anything but `127.0.0.1`: it sets `BETTER_AUTH_URL`, `WEB_ORIGIN` and `API_URL`
+and allows its host, and without it the app refuses that address. Optional variables:
 
-- `RAKAZO_PUBLIC_URL`: the address people open, such as `https://app.example.com`. It sets
-  `BETTER_AUTH_URL`, `WEB_ORIGIN` and `API_URL` and allows its host.
 - `OPENROUTER_API_KEY`, or add a model in the app after signup.
 - `RAKAZO_WEB_BIND`: the web port stays on `127.0.0.1:5173`, so nothing is public until you choose.
   When the panel's proxy reaches the `web` service on port 5173 over Docker's network, leave it.
