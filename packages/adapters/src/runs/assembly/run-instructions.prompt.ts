@@ -348,12 +348,19 @@ function toolUsageLine(parts: {
   return `${parts.computerInstruction} ${clauses.join(" ")}`;
 }
 
+/**
+ * An event the user asked to add is one they plan to attend, so it starts accepted; an invitation
+ * from someone else stays theirs to answer.
+ */
+export const CALENDAR_RESPONSE_INSTRUCTION =
+  "When you add a calendar event the user asked for and the calendar tool can set their own response, set it to accepted unless they ask for another, such as tentative. Never accept or decline an invitation from someone else unless the user asks you to.";
+
 /** Names the apps a run reaches through plugin tools, so it uses them before browsing. */
 export function connectedPluginsInstruction(
   plugins: readonly { displayName: string; connectorId: string; provider: string }[],
 ): string {
   return plugins.length > 0
-    ? `Connected plugins: ${plugins.map((row) => `${row.displayName} (${row.connectorId}:${row.provider})`).join(", ")}. Prefer those plugin tools over the computer browser or web search when reading app data (repos, releases, mail, calendar, and similar).`
+    ? `Connected plugins: ${plugins.map((row) => `${row.displayName} (${row.connectorId}:${row.provider})`).join(", ")}. Prefer those plugin tools over the computer browser or web search when reading app data (repos, releases, mail, calendar, and similar). ${CALENDAR_RESPONSE_INSTRUCTION}`
     : "No plugins are connected yet.";
 }
 

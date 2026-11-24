@@ -19,7 +19,7 @@ import {
 
 describe("approval cases", () => {
   it("are a versioned, reviewed set with unique ids and both outcomes", () => {
-    expect(APPROVAL_FIXTURE_VERSION).toBe("approval-cases-v4");
+    expect(APPROVAL_FIXTURE_VERSION).toBe("approval-cases-v5");
     const ids = APPROVAL_CASES.map((c) => c.id);
     expect(new Set(ids).size).toBe(ids.length);
     expect(APPROVAL_CASES.length).toBeGreaterThanOrEqual(25);
