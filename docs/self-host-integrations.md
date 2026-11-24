@@ -394,6 +394,8 @@ CURSOR_API_KEY=replace-with-your-key
 
 `CURSOR_API_KEY` is the same variable used for hosted Cursor cloud agents when those are enabled; you may use one key for both or only enable one feature. `CODING_CLI_PROVIDER=cursor` does not enable `CLOUD_AGENT_PROVIDER`. Optionally set `CODING_CLI_BIN` to the executable name (one token, default `agent`).
 
+The key is bound to the Space in `CLOUD_AGENT_SPACE_ID`, the same variable that scopes cloud agents: only that Space can run the coding CLI. Without `CLOUD_AGENT_SPACE_ID` the feature stays off. Set it on the API and the worker.
+
 The tool participates in the existing action-approval rules and auto-review policy, like `cloud_agent_launch`.
 
 ## Payments

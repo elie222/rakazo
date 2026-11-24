@@ -66,6 +66,7 @@ import {
   selectBuiltinToolsForRun,
   unavailableBuiltinToolReasons,
 } from "../tools/run-tool-selection.js";
+import { codingCliConfigured } from "../tools/run-tools-coding-cli.js";
 import { historyMyChatsAllowed } from "../tools/run-tools-memory.js";
 import type { UserComputerState } from "../tools/run-tools-user-computer.js";
 import { USER_COMPUTER_SHELL_TOOL, userComputerOwner } from "../tools/run-tools-user-computer.js";
@@ -741,7 +742,7 @@ export async function selectRunTools(
       paidServicesEnabled: Boolean(paidServices),
       cloudAgentEnabled: Boolean(cloudAgent),
       cloudAgentCleanupEnabled,
-      codingCliEnabled: Boolean(deps.codingCli),
+      codingCliEnabled: codingCliConfigured(deps.codingCli, run.spaceId),
       paymentWalletEnabled,
       messagingChannelRun: nonOwnerChatRun,
       voiceCall,

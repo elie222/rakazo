@@ -4,9 +4,11 @@ import type { ToolHandlers } from "./run-tool-gate.js";
 
 export const codingCliTools: ToolHandlers = {
   async coding_cli_run(ctx, call) {
-    const { deps, bot, context } = ctx;
+    const { deps, bot, context, run } = ctx;
     const connection = deps.codingCli;
-    if (!connection) return call.finish({ error: "The coding CLI is not configured." });
+    if (!codingCliConfigured(connection, run.spaceId)) {
+      return call.finish({ error: "The coding CLI is not configured." });
+    }
     const cwd = resolveBotWorkspaceCwd(ctx.computer.mode, bot.id, undefined);
     return call.finish(
       await connection.execute(
@@ -30,6 +32,10 @@ export const codingCliTools: ToolHandlers = {
   },
 };
 
-export function codingCliConfigured(connection: CodingCliConnection | null | undefined): boolean {
-  return Boolean(connection);
+/** The deployment's coding CLI key may be used only by the Space it is bound to. */
+export function codingCliConfigured(
+  connection: CodingCliConnection | null | undefined,
+  spaceId: string,
+): connection is CodingCliConnection {
+  return Boolean(connection && connection.spaceId === spaceId);
 }
