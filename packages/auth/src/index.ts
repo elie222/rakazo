@@ -48,6 +48,8 @@ import {
   sessionForAuthHook,
   signedBearer,
 } from "./account-security.js";
+import type { VerifiedApiKey } from "./api-keys.js";
+import { apiKeys, verifiedApiKey } from "./api-keys.js";
 import { createAppleClientSecretCache } from "./apple-client-secret.js";
 import { breachedPasswordCheck } from "./breached-password.js";
 import { DEACTIVATED_AT_FIELD } from "./directory.js";
@@ -70,6 +72,8 @@ import type { TokenKey } from "./token-storage.js";
 import { encryptStoredOAuthTokens, openIdToken, sealIdToken } from "./token-storage.js";
 
 export { agentImportEmail } from "./agent-import-email.js";
+export type { VerifiedApiKey } from "./api-keys.js";
+export { API_KEY_NAME_MAX_LENGTH, API_KEY_PREFIX } from "./api-keys.js";
 export type { DirectoryAccountChange } from "./directory.js";
 export { createDirectory } from "./directory.js";
 export {
@@ -524,6 +528,7 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
             }) as BetterAuthPlugin,
           ]
         : []),
+      apiKeys(),
       // Marks the method on the sign-in page; written only alongside a new session cookie.
       lastLoginMethod({ cookieName: LAST_SIGN_IN_COOKIE }),
       organization({
@@ -967,6 +972,20 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
       issueAccountExportToken((await auth.$context).internalAdapter, userId),
     consumeAccountExportToken: async (token: string) =>
       consumeAccountExportToken((await auth.$context).internalAdapter, token),
+    /** A new key for the account; its plaintext is in the result and nowhere else. */
+    createApiKey: async (userId: string, name: string) =>
+      (await (auth.api as unknown as ApiKeyEndpoints).createApiKey({ body: { userId, name } })) as {
+        id: string;
+        key: string;
+        name: string;
+        start: string | null;
+        createdAt: Date;
+      },
+    /** Checks a presented key and counts it against the key's rate limit. */
+    verifyApiKey: async (key: string): Promise<VerifiedApiKey> =>
+      verifiedApiKey(
+        await (auth.api as unknown as ApiKeyEndpoints).verifyApiKey({ body: { key } }),
+      ),
     disposeOidcDiscovery: () => {
       discovery?.dispose();
     },
@@ -974,6 +993,12 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
 }
 
 export type Auth = ReturnType<typeof createAuth>;
+
+/** The plugin's server endpoints; the plugin is registered as a plain BetterAuthPlugin. */
+type ApiKeyEndpoints = {
+  createApiKey: (input: { body: { userId: string; name: string } }) => Promise<unknown>;
+  verifyApiKey: (input: { body: { key: string } }) => Promise<Parameters<typeof verifiedApiKey>[0]>;
+};
 
 async function revokeUnprovenCredentials(prisma: PrismaClient, userId: string) {
   // Auth requests carry a database context, which a batch $transaction([...]) cannot.
@@ -1132,7 +1157,8 @@ function loopbackTwinOrigins(origin: string): string[] {
  * route under it stays closed, including ones a future plugin version adds.
  */
 export function isBlockedAuthPath(path: string): boolean {
-  return path.startsWith("/organization");
+  // API keys are managed through the app's procedures, which ask the person to confirm it's them.
+  return path.startsWith("/organization") || path.startsWith("/api-key");
 }
 
 /** Set while the directory has turned the account off. */

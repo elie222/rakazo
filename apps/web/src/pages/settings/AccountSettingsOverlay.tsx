@@ -38,6 +38,7 @@ import {
 } from "../../components/computers/ComputersUnavailableHint";
 import { DesktopUpdateSection } from "../../components/DesktopUpdates";
 import { AccountDataSettings } from "../../components/settings/AccountDataSettings";
+import { ApiKeysSettings } from "../../components/settings/ApiKeysSettings";
 import { SettingsGroup, SettingsRow } from "../../components/settings/SettingsRows";
 import { TrustedLinkSitesSettings } from "../../components/settings/TrustedLinkSitesSettings";
 import { authClient } from "../../lib/auth/auth";
@@ -555,6 +556,8 @@ export function GeneralSettingsPanels({
           <PasskeySettings />
         </SettingsGroup>
       ) : null}
+
+      <ApiKeysSettings />
 
       <SettingsGroup title={<Trans>Data</Trans>} data-testid="account-data">
         <AccountDataSettings onImported={onAccountImported} onImportAgent={onImportAgent} />

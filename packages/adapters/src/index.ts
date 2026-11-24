@@ -309,7 +309,9 @@ export { ObjectStorageUnavailableError } from "./storage/object-storage-common.j
 export * from "./storage/storage-migration.js";
 export { workspaceSaveLimits } from "./storage/workspace-save-policy.js";
 export { returnHelperOutcome, startBackgroundHelper } from "./tasks/background-helpers.js";
+export * from "./tasks/public-task.js";
 export * from "./tasks/scratchpad-tools.js";
+export * from "./tasks/task-callbacks.js";
 export * from "./tasks/task-catalog.js";
 export { TASK_CATALOG_GUIDANCE } from "./tasks/task-catalog.prompt.js";
 export * from "./tasks/ticket-changes.js";

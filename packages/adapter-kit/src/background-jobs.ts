@@ -26,6 +26,7 @@ const payloadSchemas = {
   "routine.retry": z.object({ runId: z.string().min(1) }),
   "computer.update": z.object({ updateId: z.string().min(1) }),
   "computer.sleep": z.object({ computerId: z.string().min(1) }),
+  "task.callback": z.object({ taskId: z.string().min(1) }),
   "computer.control-expire": z.object({
     computerId: z.string().min(1),
     leaseId: z.string().min(1),
@@ -198,6 +199,20 @@ export class RetryJobLaterError extends Error {
   ) {
     super(`Retry no sooner than ${delayMs}ms`, options);
   }
+}
+
+/** Failed deliveries back off between these attempts; the task is rechecked by a new job. */
+export const TASK_CALLBACK_MAX_ATTEMPTS = 8;
+
+/** One job per task: a new one replaces the one pending. */
+export function taskCallbackJob(taskId: string, availableAt: Date): BackgroundJob {
+  return {
+    name: "task.callback",
+    payload: { taskId },
+    availableAt,
+    replaceKey: `task.callback:${taskId}`,
+    maxAttempts: TASK_CALLBACK_MAX_ATTEMPTS,
+  };
 }
 
 export function runJobKey(runId: string): string {

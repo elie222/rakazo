@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { scim } from "@better-auth/scim";
 import { getAuthTables } from "better-auth/db";
 import { describe, expect, it } from "vitest";
+import { apiKeys } from "./api-keys.js";
 
 const PRISMA_TYPES: Record<string, string> = {
   string: "String",
@@ -28,6 +29,33 @@ function prismaModels(schema: string): Map<string, string[]> {
   return models;
 }
 
+function expectModelsMatch(tables: ReturnType<typeof getAuthTables>[string][]) {
+  const models = prismaModels(
+    readFileSync(new URL("../../db/prisma/schema.prisma", import.meta.url), "utf8"),
+  );
+  for (const table of tables) {
+    const model = `${table.modelName[0]!.toUpperCase()}${table.modelName.slice(1)}`;
+    const expected = [
+      "id: String",
+      ...Object.entries(table.fields).map(
+        ([field, { type, required }]) =>
+          `${field}: ${PRISMA_TYPES[String(type)] ?? String(type)}${required === false ? "?" : ""}`,
+      ),
+    ];
+    expect(models.get(model)?.sort(), model).toEqual(expected.sort());
+  }
+}
+
+describe("api key table", () => {
+  it("matches the API key plugin's schema, which reads and writes it directly", () => {
+    const tables = Object.values(getAuthTables({ plugins: [apiKeys()] })).filter(
+      (table) => table.modelName === "apiKey",
+    );
+    expect(tables).toHaveLength(1);
+    expectModelsMatch(tables);
+  });
+});
+
 describe("directory provisioning tables", () => {
   it("match the SCIM plugin's schema, which reads and writes them directly", () => {
     const plugin = scim({
@@ -44,19 +72,6 @@ describe("directory provisioning tables", () => {
       table.modelName.startsWith("scim"),
     );
     expect(tables.length).toBeGreaterThan(0);
-    const models = prismaModels(
-      readFileSync(new URL("../../db/prisma/schema.prisma", import.meta.url), "utf8"),
-    );
-    for (const table of tables) {
-      const model = `${table.modelName[0]!.toUpperCase()}${table.modelName.slice(1)}`;
-      const expected = [
-        "id: String",
-        ...Object.entries(table.fields).map(
-          ([field, { type, required }]) =>
-            `${field}: ${PRISMA_TYPES[String(type)] ?? String(type)}${required === false ? "?" : ""}`,
-        ),
-      ];
-      expect(models.get(model)?.sort(), model).toEqual(expected.sort());
-    }
+    expectModelsMatch(tables);
   });
 });
