@@ -130,6 +130,8 @@ export function BotSettings({
   const [tab, setTab] = useState<BotPanelTab>("details");
   // Read only once its tab has been opened: listing versions reads object storage.
   const [computerTabVisited, setComputerTabVisited] = useState(false);
+  // Read only once its tab has been opened: the Library tab loads a bot's files.
+  const [libraryTabVisited, setLibraryTabVisited] = useState(false);
   // A memory save that conflicted waits for the reader even after they leave the tab.
   const [memoryAttention, setMemoryAttention] = useState(false);
   const queryClient = useQueryClient();
@@ -139,6 +141,7 @@ export function BotSettings({
     // Files change from outside the panel; arriving on the tab reads them fresh instead of
     // showing whatever the first visit loaded.
     if (value === "library") {
+      setLibraryTabVisited(true);
       void queryClient.invalidateQueries({ queryKey: queries.artifacts.listSpace.key() });
     }
   }
@@ -728,11 +731,13 @@ export function BotSettings({
             </SettingsCard>
           </TabsContent>
           <TabsContent keepMounted value="library" className="space-y-6 pt-4">
-            <BotLibrary
-              botId={bot.id}
-              botName={bot.name}
-              onOpenAllPages={() => onViewChange?.("pages")}
-            />
+            {libraryTabVisited ? (
+              <BotLibrary
+                botId={bot.id}
+                botName={bot.name}
+                onOpenAllPages={() => onViewChange?.("pages")}
+              />
+            ) : null}
           </TabsContent>
           <TabsContent keepMounted value="memory" className="space-y-6 pt-4">
             <ErrorBoundary fallback={<SectionLoadFailed />}>
