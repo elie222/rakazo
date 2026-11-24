@@ -7,7 +7,7 @@ import type {
   CalendarResponse,
 } from "@rakazo/contracts";
 import { CalendarResults } from "@rakazo/contracts";
-import type { ExpoCalendar as AndroidCalendar, ExpoCalendarEvent } from "expo-calendar";
+import type * as ExpoCalendar from "expo-calendar";
 import { requireOptionalNativeModule } from "expo-modules-core";
 import { Alert, Platform } from "react-native";
 import { dateLocaleForUi } from "../i18n/i18n";
@@ -36,11 +36,50 @@ type AppleCalendar = {
 };
 
 const apple = () => requireOptionalNativeModule<AppleCalendar>("RakazoCalendar");
+export type DeviceCalendarPermissionKind = "calendar" | "reminders";
+
+function readPermission(expo: typeof ExpoCalendar, kind: DeviceCalendarPermissionKind) {
+  return kind === "reminders" ? expo.getRemindersPermissions() : expo.getCalendarPermissions();
+}
+
+function requestPermission(expo: typeof ExpoCalendar, kind: DeviceCalendarPermissionKind) {
+  return kind === "reminders"
+    ? expo.requestRemindersPermissions()
+    : expo.requestCalendarPermissions();
+}
+
+/** The capabilities whose device authorization is managed by this settings screen. */
+export async function readAppleCalendarPermissions() {
+  if (Platform.OS !== "ios" || !apple()) return [];
+  const expo = await import("expo-calendar");
+  return Promise.all(
+    (["calendar", "reminders"] as const).map(async (kind) => {
+      const { granted } = await readPermission(expo, kind);
+      return { kind, granted };
+    }),
+  );
+}
+
+/** May direct a new tap to Settings when the OS has already ruled out another prompt. */
+export async function requestAppleCalendarPermission(
+  kind: DeviceCalendarPermissionKind,
+): Promise<"settings" | undefined> {
+  if (Platform.OS !== "ios" || !apple()) return;
+  const expo = await import("expo-calendar");
+  const permission = await readPermission(expo, kind);
+  if (permission.granted) return;
+  if (!permission.canAskAgain) return "settings";
+  const result = await requestPermission(expo, kind);
+  // On iOS only an undetermined permission remains askable. If the request returns
+  // without a decision, offer Settings. A recorded denial stays in the app.
+  if (!result.granted && result.canAskAgain) return "settings";
+}
+
 type Prepared = { perform: () => Promise<CalendarResponse> } | CalendarResponse;
 const ok = (data: unknown): CalendarResponse => ({ status: "ok", data });
 const unavailable: CalendarResponse = { status: "unavailable" };
 
-function androidInfo(calendar: AndroidCalendar): CalendarInfo {
+function androidInfo(calendar: ExpoCalendar.ExpoCalendar): CalendarInfo {
   return {
     source: "device",
     accountId: JSON.stringify([calendar.source.type, calendar.source.name]),
@@ -123,7 +162,10 @@ function eventPreview(event: Draft, calendar: CalendarInfo) {
     .join("\n");
 }
 
-function androidOccurrence(event: ExpoCalendarEvent, calendar: CalendarRef): CalendarEvent {
+function androidOccurrence(
+  event: ExpoCalendar.ExpoCalendarEvent,
+  calendar: CalendarRef,
+): CalendarEvent {
   const date = (value: string | Date) => {
     const iso = new Date(value).toISOString();
     return event.allDay ? iso.slice(0, 10) : iso;
@@ -154,15 +196,12 @@ export async function prepareDeviceCalendar(
     operation.action === "complete_reminder";
   const ios = Platform.OS === "ios" ? apple() : undefined;
   if (reminders && !ios) return { status: "unsupported" };
-  const permission = reminders
-    ? await expo.getRemindersPermissions()
-    : await expo.getCalendarPermissions();
+  const permissionKind = reminders ? "reminders" : "calendar";
+  const permission = await readPermission(expo, permissionKind);
   if (!current()) return unavailable;
   if (!permission.granted) {
     if (!permission.canAskAgain) return { status: "denied" };
-    const requested = reminders
-      ? await expo.requestRemindersPermissions()
-      : await expo.requestCalendarPermissions();
+    const requested = await requestPermission(expo, permissionKind);
     if (!requested.granted) return { status: "denied" };
   }
   if (!current()) return unavailable;

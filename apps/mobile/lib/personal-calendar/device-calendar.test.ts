@@ -1,6 +1,10 @@
 import type { CalendarOperation } from "@rakazo/contracts";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { prepareDeviceCalendar } from "./device-calendar";
+import {
+  prepareDeviceCalendar,
+  readAppleCalendarPermissions,
+  requestAppleCalendarPermission,
+} from "./device-calendar";
 
 const native = vi.hoisted(() => ({
   platform: { OS: "android" },
@@ -56,6 +60,54 @@ afterEach(() => {
   vi.resetAllMocks();
   native.platform.OS = "android";
   native.locale = hostLocale;
+});
+
+describe("device app permissions", () => {
+  it("reports the iPhone's active permissions and requests only the selected capability", async () => {
+    native.platform.OS = "ios";
+    const granted = { granted: true, canAskAgain: true };
+    const available = { granted: false, canAskAgain: true };
+    native.getCalendarPermissions.mockResolvedValueOnce(available).mockResolvedValueOnce(available);
+    native.getRemindersPermissions.mockResolvedValue(granted);
+    native.requestCalendarPermissions.mockResolvedValue(granted);
+
+    expect(await readAppleCalendarPermissions()).toEqual([
+      { kind: "calendar", granted: false },
+      { kind: "reminders", granted: true },
+    ]);
+    await requestAppleCalendarPermission("calendar");
+    expect(native.requestCalendarPermissions).toHaveBeenCalledOnce();
+    expect(native.getCalendars).not.toHaveBeenCalled();
+  });
+
+  it("directs the next tap to settings only when the OS cannot show a prompt", async () => {
+    native.platform.OS = "ios";
+    const blocked = { granted: false, canAskAgain: false };
+    native.getCalendarPermissions
+      .mockResolvedValueOnce({ granted: false, canAskAgain: true })
+      .mockResolvedValueOnce(blocked);
+    native.requestCalendarPermissions.mockResolvedValue(blocked);
+
+    expect(await requestAppleCalendarPermission("calendar")).toBeUndefined();
+    expect(await requestAppleCalendarPermission("calendar")).toBe("settings");
+    expect(native.requestCalendarPermissions).toHaveBeenCalledOnce();
+  });
+
+  it("directs the user to settings when a request returns without a permission decision", async () => {
+    native.platform.OS = "ios";
+    const undetermined = { granted: false, canAskAgain: true };
+    native.getCalendarPermissions.mockResolvedValue(undetermined);
+    native.requestCalendarPermissions.mockResolvedValue(undetermined);
+
+    expect(await requestAppleCalendarPermission("calendar")).toBe("settings");
+  });
+
+  it("does not offer or request new Android permissions from settings", async () => {
+    expect(await readAppleCalendarPermissions()).toEqual([]);
+    await requestAppleCalendarPermission("calendar");
+    expect(native.getCalendarPermissions).not.toHaveBeenCalled();
+    expect(native.requestCalendarPermissions).not.toHaveBeenCalled();
+  });
 });
 
 async function cancelledEventPreview(timing: typeof event.input.event.timing) {

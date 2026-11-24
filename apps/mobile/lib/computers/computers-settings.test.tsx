@@ -9,14 +9,20 @@ import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
 import { Alert } from "react-native";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import ComputersSettings from "../../app/(settings)/computers";
+import AppPermissionsSettings from "../../app/(settings)/app-permissions";
+import DevicesSettings from "../../app/(settings)/computers";
 import { listUserDevices, removeUserDevice } from "../account/user-devices";
 import { queryClient } from "../query/query";
 
 const mocks = vi.hoisted(() => ({
   cloud: vi.fn(),
+  phones: vi.fn(),
   setSize: vi.fn(),
   push: vi.fn(),
+  permissions: vi.fn(),
+  requestPermission: vi.fn(),
+  openSettings: vi.fn(),
+  active: true,
 }));
 
 vi.mock("../layout/side-insets", () => ({ useSideInsets: () => ({}) }));
@@ -36,17 +42,27 @@ vi.mock("../api/api", () => ({
   rpc: (method: string, body: unknown) => {
     if (method === "cloudComputers/list") return mocks.cloud();
     if (method === "cloudComputers/setSize") return mocks.setSize(body);
+    if (method === "mobileDevices/list") return mocks.phones();
     throw new Error(`Unexpected ${method}`);
   },
 }));
+vi.mock("../api/roster-signals", () => ({ useSpaceChanges: vi.fn() }));
 vi.mock("../api/session", () => ({ currentSessionGeneration: () => 1 }));
-vi.mock("../platform/app-foreground", () => ({ useAppForeground: () => true }));
+vi.mock("../platform/app-foreground", () => ({
+  useAppForeground: () => true,
+  useAppActive: () => mocks.active,
+}));
+vi.mock("../personal-calendar/device-calendar", () => ({
+  readAppleCalendarPermissions: mocks.permissions,
+  requestAppleCalendarPermission: mocks.requestPermission,
+}));
 vi.mock("../account/user-devices", () => ({
   listUserDevices: vi.fn(),
   removeUserDevice: vi.fn(),
 }));
 vi.mock("expo-router", () => ({
   useRouter: () => ({ push: mocks.push }),
+  useIsFocused: () => true,
   useFocusEffect: (effect: () => (() => void) | undefined) =>
     useEffect(() => effect() ?? undefined, [effect]),
 }));
@@ -100,18 +116,28 @@ vi.mock("../../components/settings/settings-group", () => ({
     accessibilityLabel?: string;
     disabled?: boolean;
     onPress?: () => void;
-  }) => (
-    <button
-      type="button"
-      aria-label={accessibilityLabel ?? title}
-      disabled={disabled}
-      onClick={onPress}
-    >
-      {title}
-      {value}
-      {detail}
-    </button>
-  ),
+  }) => {
+    const content = (
+      <>
+        {title}
+        {value}
+        {detail}
+      </>
+    );
+    if (!onPress) {
+      return <div data-label={accessibilityLabel ?? title}>{content}</div>;
+    }
+    return (
+      <button
+        type="button"
+        aria-label={accessibilityLabel ?? title}
+        disabled={disabled}
+        onClick={onPress}
+      >
+        {content}
+      </button>
+    );
+  },
 }));
 vi.mock("../../components/native/native-action-button", () => ({
   NativeActionButton: ({ label, onPress }: { label: string; onPress: () => void }) => (
@@ -144,6 +170,7 @@ vi.mock("react-native", () => {
       <span role="status" aria-label={accessibilityLabel} />
     ),
     Alert: { alert: vi.fn() },
+    Linking: { openSettings: mocks.openSettings },
     StyleSheet: { create: (styles: unknown) => styles },
   };
 });
@@ -159,6 +186,8 @@ beforeEach(() => {
   i18n.activate("en");
   queryClient.clear();
   mocks.cloud.mockResolvedValue(null);
+  mocks.phones.mockResolvedValue([]);
+  mocks.active = true;
   container = document.createElement("div");
   document.body.appendChild(container);
   root = createRoot(container);
@@ -174,10 +203,106 @@ async function settle() {
   await act(flush);
   await act(flush);
 }
-async function render() {
-  await act(async () => root.render(<ComputersSettings />));
+async function render(screen: ReactNode = <DevicesSettings />) {
+  await act(async () => root.render(screen));
   await settle();
 }
+
+function permissionGroup(label: string) {
+  return [...container.querySelectorAll("h3")].find((heading) => heading.textContent === label)
+    ?.parentElement;
+}
+
+it("shows pending capabilities as read-only and moves a granted capability to Authorized", async () => {
+  const calendar = { kind: "calendar", granted: false };
+  mocks.permissions.mockResolvedValue([calendar]);
+  mocks.requestPermission.mockImplementation(async () => {
+    mocks.permissions.mockResolvedValue([{ ...calendar, granted: true }]);
+  });
+  await render(<AppPermissionsSettings />);
+  expect(permissionGroup("Available")?.querySelector("button")?.textContent).toBe(
+    "CalendarConnect",
+  );
+  expect(permissionGroup("Authorized")?.textContent).toBe("AuthorizedNone");
+  const development = permissionGroup("In development");
+  expect(development?.querySelector("button")).toBeNull();
+  expect(
+    [...(development?.querySelectorAll("[data-label]") ?? [])].map((row) =>
+      row.getAttribute("data-label"),
+    ),
+  ).toEqual([
+    "Alarm and timer",
+    "Android app usage",
+    "Android calendar",
+    "Contacts",
+    "Android file system",
+    "Android location",
+    "Notifications",
+    "SMS",
+  ]);
+
+  await act(async () => permissionGroup("Available")?.querySelector("button")?.click());
+  await settle();
+  expect(mocks.requestPermission).toHaveBeenCalledWith("calendar");
+  expect(mocks.openSettings).not.toHaveBeenCalled();
+  expect(permissionGroup("Authorized")?.querySelector("button")?.textContent).toBe(
+    "CalendarSettings",
+  );
+});
+
+it("opens system settings when another prompt is unavailable and refreshes on return", async () => {
+  const calendar = { kind: "calendar", granted: false };
+  mocks.permissions.mockResolvedValue([calendar]);
+  mocks.requestPermission.mockResolvedValue("settings");
+  await render(<AppPermissionsSettings />);
+
+  await act(async () => permissionGroup("Available")?.querySelector("button")?.click());
+  await settle();
+  expect(mocks.requestPermission).toHaveBeenCalledWith("calendar");
+  expect(mocks.openSettings).toHaveBeenCalledOnce();
+  expect(permissionGroup("Available")?.querySelector("button")?.textContent).toBe(
+    "CalendarConnect",
+  );
+
+  // iOS can pass through an inactive state even when still notionally in the foreground.
+  mocks.active = false;
+  await render(<AppPermissionsSettings />);
+  mocks.permissions.mockResolvedValue([{ ...calendar, granted: true }]);
+  mocks.active = true;
+  await render(<AppPermissionsSettings />);
+  expect(permissionGroup("Authorized")?.querySelector("button")?.textContent).toBe(
+    "CalendarSettings",
+  );
+
+  await act(async () => permissionGroup("Authorized")?.querySelector("button")?.click());
+  expect(mocks.openSettings).toHaveBeenCalledTimes(2);
+  expect(mocks.requestPermission).toHaveBeenCalledOnce();
+  mocks.active = false;
+  await render(<AppPermissionsSettings />);
+  mocks.permissions.mockResolvedValue([calendar]);
+  mocks.active = true;
+  await render(<AppPermissionsSettings />);
+
+  expect(permissionGroup("Available")?.querySelector("button")?.textContent).toBe(
+    "CalendarConnect",
+  );
+  expect(permissionGroup("Authorized")?.textContent).toBe("AuthorizedNone");
+});
+
+it("keeps a declined native prompt in Available", async () => {
+  mocks.permissions.mockResolvedValue([{ kind: "calendar", granted: false }]);
+  mocks.requestPermission.mockResolvedValue(undefined);
+  await render(<AppPermissionsSettings />);
+
+  await act(async () => permissionGroup("Available")?.querySelector("button")?.click());
+  await settle();
+
+  expect(mocks.requestPermission).toHaveBeenCalledWith("calendar");
+  expect(mocks.openSettings).not.toHaveBeenCalled();
+  expect(permissionGroup("Available")?.querySelector("button")?.textContent).toBe(
+    "CalendarConnect",
+  );
+});
 function button(label: string) {
   return [...container.querySelectorAll<HTMLButtonElement>("button")].find(
     (candidate) =>
@@ -207,7 +332,7 @@ it("lists paired computers and removes one after confirmation", async () => {
   vi.mocked(listUserDevices).mockResolvedValueOnce([laptop, desk]).mockResolvedValue([laptop]);
   vi.mocked(removeUserDevice).mockResolvedValue();
   await render();
-  expect(container.textContent).toContain("LaptopConnected");
+  expect(container.textContent).toContain("LaptopOnline");
   expect(container.textContent).toContain("Desk PCOffline");
 
   await act(async () => button("Remove Desk PC, Offline")?.click());
@@ -225,7 +350,35 @@ it("lists paired computers and removes one after confirmation", async () => {
   await settle();
   expect(removeUserDevice).toHaveBeenCalledWith("d2");
   expect(container.textContent).not.toContain("Desk PC");
-  expect(container.textContent).toContain("LaptopConnected");
+  expect(container.textContent).toContain("LaptopOnline");
+});
+
+it("lists signed-in phones alongside computers and opens permissions for this phone", async () => {
+  vi.mocked(listUserDevices).mockResolvedValue([laptop]);
+  mocks.phones.mockResolvedValue([
+    {
+      deviceId: "phone-1",
+      platform: "android",
+      name: null,
+      connected: true,
+      onlineUntil: new Date(Date.now() + 60_000).toISOString(),
+    },
+    {
+      deviceId: "phone-2",
+      platform: "ios",
+      name: null,
+      connected: true,
+      onlineUntil: new Date(0).toISOString(),
+    },
+  ]);
+  await render();
+
+  expect(container.textContent).toContain("LaptopOnline");
+  expect(container.querySelector('[data-label="Android phone, Online"]')?.tagName).toBe("DIV");
+  expect(container.querySelector('[data-label="iPhone, Offline"]')?.tagName).toBe("DIV");
+  await act(async () => button("App permissions")?.click());
+  expect(mocks.push).toHaveBeenCalledWith("/app-permissions");
+  expect(removeUserDevice).not.toHaveBeenCalled();
 });
 
 it("hides a computer while its removal is pending and shows it again when it fails", async () => {
@@ -233,7 +386,7 @@ it("hides a computer while its removal is pending and shows it again when it fai
   vi.mocked(listUserDevices).mockResolvedValue([laptop]);
   vi.mocked(removeUserDevice).mockReturnValue(finishRemove.promise);
   await render();
-  await act(async () => button("Remove Laptop, Connected")?.click());
+  await act(async () => button("Remove Laptop, Online")?.click());
   await act(async () =>
     lastAlertButtons()
       .find((b) => b.style === "destructive")
@@ -242,7 +395,7 @@ it("hides a computer while its removal is pending and shows it again when it fai
   expect(container.textContent).not.toContain("Laptop");
   await act(async () => finishRemove.reject(new Error("offline")));
   await settle();
-  expect(container.textContent).toContain("LaptopConnected");
+  expect(container.textContent).toContain("LaptopOnline");
   expect(container.textContent).toContain("offline");
 });
 
@@ -260,7 +413,7 @@ it("keeps a removed computer gone when the list read after it fails", async () =
   );
   await settle();
   expect(container.textContent).not.toContain("Desk PC");
-  expect(container.textContent).toContain("LaptopConnected");
+  expect(container.textContent).toContain("LaptopOnline");
 });
 
 it("says when the cloud computers fail to load and retries them", async () => {
@@ -268,7 +421,7 @@ it("says when the cloud computers fail to load and retries them", async () => {
   mocks.cloud.mockRejectedValueOnce(new Error("offline")).mockResolvedValue(cloud);
   await render();
   expect(container.textContent).toContain("offline");
-  expect(container.textContent).not.toContain("No paired computers");
+  expect(container.textContent).not.toContain("No connected devices");
   await act(async () => button("Retry")?.click());
   await settle();
   expect(container.textContent).not.toContain("offline");
@@ -281,7 +434,7 @@ it("says when none are paired, and retries a failed load", async () => {
   expect(container.textContent).toContain("offline");
   await act(async () => button("Retry")?.click());
   await settle();
-  expect(container.textContent).toContain("No paired computers");
+  expect(container.textContent).toContain("No connected devices");
   expect(container.textContent).not.toContain("offline");
 });
 
@@ -318,7 +471,7 @@ it("keeps a confirmed size selected when refreshing the cloud list fails", async
   mocks.setSize.mockResolvedValue({ ok: true });
   await render();
 
-  const team = button("Team Computer")?.parentElement;
+  const team = container.querySelector('[data-label="Team Computer"]')?.parentElement;
   const large = [...(team?.querySelectorAll<HTMLButtonElement>("button") ?? [])].find((option) =>
     option.textContent?.startsWith("Choose Large"),
   );
@@ -328,7 +481,7 @@ it("keeps a confirmed size selected when refreshing the cloud list fails", async
 
   expect(mocks.setSize).toHaveBeenCalledWith({ computerId: "c1", size: "large" });
   expect(mocks.cloud).toHaveBeenCalledTimes(2);
-  expect(button("Team Computer")?.textContent).toMatch(
+  expect(container.querySelector('[data-label="Team Computer"]')?.textContent).toMatch(
     /Team ComputerLarge.*Applies on its next start/,
   );
   expect(large?.getAttribute("aria-pressed")).toBe("true");
@@ -343,7 +496,7 @@ it("points a size above the plan to Billing without saving it", async () => {
   vi.mocked(listUserDevices).mockResolvedValue([]);
   mocks.cloud.mockResolvedValue({ ...cloud, computers: [cloud.computers[0]] });
   await render();
-  expect(container.textContent).not.toContain("No paired computers");
+  expect(container.textContent).not.toContain("No connected devices");
   await act(async () => button("Choose Extra large (uses 4× hours)")?.click());
   expect(mocks.setSize).not.toHaveBeenCalled();
   expect(vi.mocked(Alert.alert).mock.calls.at(-1)?.[0]).toBe(
@@ -373,7 +526,9 @@ it("alerts when a size change fails", async () => {
   await act(async () => button("Choose Large (uses 2× hours)")?.click());
   await settle();
   expect(Alert.alert).toHaveBeenCalledWith("Could not change computer size");
-  expect(button("Team Computer")?.textContent).toBe("Team ComputerStandard");
+  expect(container.querySelector('[data-label="Team Computer"]')?.textContent).toBe(
+    "Team ComputerStandard",
+  );
   expect(button("Choose Standard")?.getAttribute("aria-pressed")).toBe("true");
   expect(mocks.cloud).toHaveBeenCalledOnce();
 });

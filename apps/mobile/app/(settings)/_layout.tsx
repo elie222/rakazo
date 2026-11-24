@@ -91,7 +91,14 @@ export default function SettingsLayout() {
       <Stack.Screen
         name="computers"
         options={{
-          ...glassHeaderOptions(t`Computers`),
+          ...glassHeaderOptions(t`Devices`),
+          contentStyle: { backgroundColor: native.groupedPage },
+        }}
+      />
+      <Stack.Screen
+        name="app-permissions"
+        options={{
+          ...glassHeaderOptions(t`App permissions`),
           contentStyle: { backgroundColor: native.groupedPage },
         }}
       />

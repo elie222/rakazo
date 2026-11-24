@@ -342,7 +342,7 @@ export default function Account() {
             icon: { ios: "key", android: "key-outline" },
           })}
           {settingsLink({
-            title: t`Computers`,
+            title: t`Devices`,
             href: "/computers",
             icon: { ios: "desktopcomputer", android: "desktop-outline" },
           })}

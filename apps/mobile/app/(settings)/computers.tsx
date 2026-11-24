@@ -1,5 +1,6 @@
 import { MenuView } from "@expo/ui/community/menu";
 import { useLingui } from "@lingui/react/macro";
+import { useNow } from "@rakazo/chat-ui/hooks";
 import type { CloudComputers, ComputerSize, UserDeviceSummary } from "@rakazo/contracts";
 import {
   applySavedCloudComputerSize,
@@ -8,7 +9,7 @@ import {
 } from "@rakazo/contracts";
 import { writeSaved } from "@rakazo/core/query";
 import { computerName, computerSizeLabel } from "@rakazo/i18n/computer-usage";
-import { useRouter } from "expo-router";
+import { useIsFocused, useRouter } from "expo-router";
 import { useState } from "react";
 import {
   ActivityIndicator,
@@ -17,28 +18,42 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { NativeActionButton } from "../../components/native/native-action-button";
 import { SettingsGroup, SettingsRow } from "../../components/settings/settings-group";
 import { listUserDevices, removeUserDevice } from "../../lib/account/user-devices";
+import { useSpaceChanges } from "../../lib/api/roster-signals";
 import { errorText } from "../../lib/api/user-error";
 import { mobileTokens } from "../../lib/appearance/appearance";
 import { useSideInsets } from "../../lib/layout/side-insets";
 import { native, useThemedStyles } from "../../lib/native/native";
-import { accountQuery, queryClient, rpcQuery, useSave } from "../../lib/query/query";
+import {
+  accountQuery,
+  queryClient,
+  rpcQuery,
+  targetRpcQuery,
+  useSave,
+} from "../../lib/query/query";
 import { useScreenQuery } from "../../lib/query/screen-query";
 import { ACCOUNT_SETTINGS } from "../../lib/query/settings-target";
 
 type CloudComputer = CloudComputers["computers"][number];
 
-export default function ComputersSettings() {
+export default function DevicesSettings() {
   const sideInsets = useSideInsets();
   const styles = useThemedStyles(createStyles);
   const { t } = useLingui();
   const router = useRouter();
+  const focused = useIsFocused();
   const devicesRead = accountQuery("userDevices", listUserDevices);
   const devicesQuery = useScreenQuery(devicesRead);
+  const phonesRead = targetRpcQuery(ACCOUNT_SETTINGS, "mobileDevices/list");
+  const phonesQuery = useScreenQuery(phonesRead);
+  const phones = phonesQuery.data;
+  useSpaceChanges("mobileDevices", () => phonesQuery.refetch({ cancelRefetch: false }), focused);
+  const now = useNow(focused && phones?.some((phone) => phone.connected) ? 1_000 : null);
   const cloudRead = rpcQuery("cloudComputers/list");
   const cloudQuery = useScreenQuery(cloudRead);
   const cloud = cloudQuery.data;
@@ -74,7 +89,7 @@ export default function ComputersSettings() {
   const devices = devicesQuery.data?.filter(
     (device) => !(removal.pending && removal.input?.deviceId === device.deviceId),
   );
-  const loadFailure = devicesQuery.error ?? cloudQuery.error;
+  const loadFailure = devicesQuery.error ?? phonesQuery.error ?? cloudQuery.error;
   const loadError = loadFailure ? errorText(loadFailure, t`Could not load`) : null;
   const error = removal.error ? errorText(removal.error, t`Could not remove`) : loadError;
   const cloudComputers = cloud?.computers ?? [];
@@ -82,7 +97,7 @@ export default function ComputersSettings() {
   async function refresh() {
     setRefreshing(true);
     removal.reset();
-    await Promise.all([devicesQuery.refetch(), cloudQuery.refetch()]);
+    await Promise.all([devicesQuery.refetch(), phonesQuery.refetch(), cloudQuery.refetch()]);
     setRefreshing(false);
   }
 
@@ -147,6 +162,17 @@ export default function ComputersSettings() {
     );
   }
 
+  function presence(connected: boolean) {
+    return {
+      value: connected ? t`Online` : t`Offline`,
+      trailing: <View style={[styles.dot, connected ? styles.online : styles.offline]} />,
+    };
+  }
+
+  function connectMore(title: string) {
+    Alert.alert(title, t`Open Rakazo on that device and sign in to the same account.`);
+  }
+
   return (
     <SafeAreaView edges={["bottom"]} style={styles.screen}>
       <ScrollView
@@ -155,33 +181,75 @@ export default function ComputersSettings() {
         contentInsetAdjustmentBehavior="automatic"
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => void refresh()} />}
       >
-        {!devices && !error ? (
+        {(!devices || !phones) && !error ? (
           <ActivityIndicator color={native.secondaryLabel} accessibilityLabel={t`Loading…`} />
         ) : null}
         {cloudComputers.length ? (
           <SettingsGroup label={t`Cloud computers`}>{cloudComputers.map(cloudRow)}</SettingsGroup>
         ) : null}
-        {devices?.length === 0 && cloud !== undefined && cloudComputers.length === 0 ? (
-          <Text style={styles.secondary}>{t`No paired computers`}</Text>
+        {phones?.length === 0 &&
+        devices?.length === 0 &&
+        cloud !== undefined &&
+        cloudComputers.length === 0 ? (
+          <SettingsGroup label={t`Your devices`}>
+            <SettingsRow title={t`No connected devices`} />
+          </SettingsGroup>
         ) : null}
-        {devices?.length ? (
-          <SettingsGroup label={cloudComputers.length ? t`Your devices` : undefined}>
-            {devices.map((device) => {
-              const status = device.connected ? t`Connected` : t`Offline`;
+        {devices?.length || phones?.length ? (
+          <SettingsGroup label={t`Your devices`}>
+            {devices?.map((device) => {
+              const status = presence(device.connected);
               return (
                 <SettingsRow
                   key={device.deviceId}
                   accessibilityRole="button"
-                  accessibilityLabel={t`Remove ${device.name}, ${status}`}
+                  accessibilityLabel={t`Remove ${device.name}, ${status.value}`}
                   disabled={removal.pending}
                   onPress={() => confirmRemove(device)}
                   title={device.name}
-                  value={status}
+                  {...status}
+                />
+              );
+            })}
+            {phones?.map((phone) => {
+              const name = phone.name || (phone.platform === "ios" ? t`iPhone` : t`Android phone`);
+              const status = presence(phone.connected && Date.parse(phone.onlineUntil) > now);
+              return (
+                <SettingsRow
+                  key={phone.deviceId}
+                  accessible
+                  accessibilityLabel={t`${name}, ${status.value}`}
+                  title={name}
+                  {...status}
                 />
               );
             })}
           </SettingsGroup>
         ) : null}
+        <SettingsGroup label={t`This phone`}>
+          <SettingsRow
+            title={t`App permissions`}
+            chevron="right"
+            onPress={() => router.push("/app-permissions")}
+          />
+        </SettingsGroup>
+        <SettingsGroup label={t`Connect more devices`}>
+          <SettingsRow
+            title={t`Connect your Mac`}
+            chevron="right"
+            onPress={() => connectMore(t`Connect your Mac`)}
+          />
+          <SettingsRow
+            title={t`Connect your Android phone`}
+            chevron="right"
+            onPress={() => connectMore(t`Connect your Android phone`)}
+          />
+          <SettingsRow
+            title={t`Connect your iPhone`}
+            chevron="right"
+            onPress={() => connectMore(t`Connect your iPhone`)}
+          />
+        </SettingsGroup>
         {error ? (
           <Text accessibilityRole="alert" style={styles.error}>
             {error}
@@ -191,7 +259,13 @@ export default function ComputersSettings() {
           <NativeActionButton
             fill={false}
             label={t`Retry`}
-            onPress={() => void Promise.all([devicesQuery.refetch(), cloudQuery.refetch()])}
+            onPress={() =>
+              void Promise.all([
+                devicesQuery.refetch(),
+                phonesQuery.refetch(),
+                cloudQuery.refetch(),
+              ])
+            }
             prominence="secondary"
           />
         ) : null}
@@ -205,7 +279,9 @@ function createStyles() {
   return StyleSheet.create({
     screen: { flex: 1, backgroundColor: native.groupedPage },
     content: { paddingHorizontal: 16, paddingTop: 16, paddingBottom: 32, gap: 16 },
-    secondary: { color: native.secondaryLabel, fontSize: 15 },
     error: { color: tokens.destructive, fontSize: 15 },
+    dot: { width: 8, height: 8, borderRadius: 4 },
+    online: { backgroundColor: tokens.success },
+    offline: { backgroundColor: tokens.destructive },
   });
 }
