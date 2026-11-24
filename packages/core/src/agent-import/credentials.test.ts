@@ -94,6 +94,15 @@ describe("credential ranges", () => {
       ]);
     });
 
+    it("covers one typed at the CLI's configure prompt", () => {
+      const prompt = "AWS Secret Access Key [None]: ";
+      expect(found(`${prompt}${"AbcdEfgh".repeat(5)}`)).toEqual(["AbcdEfgh".repeat(5)]);
+    });
+
+    it("leaves out a value at that prompt too short to be one", () => {
+      expect(found(`AWS Secret Access Key [None]: ${"AbcdEfgh".repeat(4)}`)).toEqual([]);
+    });
+
     it("covers an unnamed one beside its access key id", () => {
       expect(found(`Access key ID,Secret access key\n${id},${secret}`)).toEqual([id, secret]);
     });

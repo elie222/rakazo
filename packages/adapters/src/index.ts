@@ -293,6 +293,7 @@ export * from "./secrets/vault/page-share-secrets.js";
 export type { PastedSecrets } from "./secrets/vault/pasted-secrets.js";
 export {
   MAX_PASTED_KEYS,
+  PastedMessageTooLongError,
   preparePastedSecrets,
   TooManyPastedKeysError,
 } from "./secrets/vault/pasted-secrets.js";

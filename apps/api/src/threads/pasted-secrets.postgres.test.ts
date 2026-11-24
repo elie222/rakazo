@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import {
   EncryptedSecretStore,
   MAX_PASTED_KEYS,
+  PastedMessageTooLongError,
   storeBotSecret,
   TooManyPastedKeysError,
 } from "@rakazo/adapters";
@@ -108,11 +109,7 @@ describe.skipIf(!enabled)("keys pasted into a chat message (PostgreSQL)", () => 
     expect(await secrets.load(item.ciphertext, item.id)).toBe(key);
   });
 
-  it.each([
-    ["a key already saved", {}, "allow"],
-    ["a key blocked for bots", { policy: "off" as const }, "off"],
-    ["a key limited to chosen bots", { bots: { allBots: false, botIds: [] } }, "off"],
-  ])("saves %s again under a new name, blocked only if it was", async (_, access, policy) => {
+  it("saves a key already saved again under a new name", async () => {
     await runAsTenant(actor, () =>
       storeBotSecret({
         prisma,
@@ -120,7 +117,6 @@ describe.skipIf(!enabled)("keys pasted into a chat message (PostgreSQL)", () => 
         scope: { userId: actor.userId, spaceId: actor.spaceId },
         destination: { name: "deploy-key", origin: "", auth: { type: "command" } },
         plaintext: key,
-        ...access,
       }),
     );
 
@@ -128,10 +124,7 @@ describe.skipIf(!enabled)("keys pasted into a chat message (PostgreSQL)", () => 
 
     const variable = /Use \[saved as \$(PASTED_KEY_[0-9A-F]{6})\]/.exec(await stored())?.[1];
     expect(variable).toBeDefined();
-    const copy = await system.vaultCredential.findFirstOrThrow({
-      where: { userId: actor.userId, name: variable?.toLowerCase().replaceAll("_", "-") },
-    });
-    expect(copy.policy).toBe(policy);
+    expect(variable).not.toBe("DEPLOY_KEY");
     expect(await system.vaultCredential.count({ where: { userId: actor.userId } })).toBe(2);
   });
 
@@ -139,6 +132,17 @@ describe.skipIf(!enabled)("keys pasted into a chat message (PostgreSQL)", () => 
     const keys = Array.from({ length: MAX_PASTED_KEYS + 1 }, (_, n) => `${key}${n}`);
 
     await expect(send(keys.join(" "))).rejects.toBeInstanceOf(TooManyPastedKeysError);
+
+    expect(await system.message.count({ where: { threadId: target.threadId, role: "user" } })).toBe(
+      0,
+    );
+    expect(await system.vaultCredential.count({ where: { userId: actor.userId } })).toBe(0);
+  });
+
+  it("refuses a message its placeholders make too long and keeps none of it", async () => {
+    const short = ["xo", "xb-", "Abc123defG"].join("");
+
+    await expect(send(`${short} `.repeat(6_000))).rejects.toBeInstanceOf(PastedMessageTooLongError);
 
     expect(await system.message.count({ where: { threadId: target.threadId, role: "user" } })).toBe(
       0,

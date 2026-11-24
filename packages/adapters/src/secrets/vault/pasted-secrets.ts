@@ -1,13 +1,12 @@
 import { randomBytes } from "node:crypto";
 import type { SecretStore } from "@rakazo/adapter-kit";
-import { commandVariableName } from "@rakazo/contracts";
+import { commandVariableName, THREAD_MESSAGE_TEXT_MAX_LENGTH } from "@rakazo/contracts";
 import type { TextRange } from "@rakazo/core";
 import { ClientError, credentialMatches, joinRanges } from "@rakazo/core";
 import type { Prisma, PrismaClient } from "@rakazo/db";
 import { TransactionConflictError } from "@rakazo/db";
 import { persistPreparedSecret } from "../secret-persistence.js";
 import { isSecretAlreadySaved, VAULT_CHANGED, vaultFields } from "./vault-access.js";
-import { loadCommandVariables } from "./vault-commands.js";
 import { prepareBotSecret } from "./vault-save.js";
 
 const PASTED_NAME = "pasted-key";
@@ -22,6 +21,17 @@ export class TooManyPastedKeysError extends ClientError {
       "TOO_MANY_PASTED_KEYS",
     );
     this.name = "TooManyPastedKeysError";
+  }
+}
+
+export class PastedMessageTooLongError extends ClientError {
+  constructor() {
+    super(
+      "BAD_REQUEST",
+      "This message is too long once its keys are saved. Send a shorter one.",
+      "PASTED_MESSAGE_TOO_LONG",
+    );
+    this.name = "PastedMessageTooLongError";
   }
 }
 
@@ -77,8 +87,7 @@ export type PastedSecrets = {
  * the value is never kept in the conversation or sent to the model. Each is saved as `PASTED_KEY_`
  * and a random suffix, even a value already saved: another member's run resolves a name in their
  * own vault, and any chat can gain members, so a name the author already uses could give that run
- * their different item. A copy of a value the owner blocked or limited for bots is saved blocked,
- * so it never undoes that choice.
+ * their different item.
  */
 export async function preparePastedSecrets(
   deps: { prisma: PrismaClient; secretStore: SecretStore },
@@ -90,25 +99,7 @@ export async function preparePastedSecrets(
   if (!text || !values.size) return { text, store: async () => {}, persist: (commit) => commit() };
   const { prisma, secretStore } = deps;
   const scope = { userId: author.userId, spaceId: author.spaceId };
-  const { env, used } = await loadCommandVariables(prisma, secretStore, scope);
-  const itemOf = new Map(used.map((item) => [commandVariableName(item.name), item.id]));
-  const restricted = new Set(
-    (
-      await prisma.vaultCredential.findMany({
-        where: {
-          id: { in: [...itemOf.values()] },
-          OR: [{ policy: { not: "allow" } }, { limits: { some: {} } }],
-        },
-        select: { id: true },
-      })
-    ).map((row) => row.id),
-  );
-  const blocked = new Set(
-    Object.entries(env).flatMap(([variable, value]) =>
-      restricted.has(itemOf.get(variable) ?? "") ? [value] : [],
-    ),
-  );
-  const variables = new Map<string, string>();
+  const names = new Map<string, string>();
   const taken = new Set(
     (
       await prisma.vaultCredential.findMany({
@@ -117,6 +108,16 @@ export async function preparePastedSecrets(
       })
     ).map((row) => commandVariableName(row.name)),
   );
+  for (const value of values) {
+    let name: string;
+    do name = `${PASTED_NAME}-${randomBytes(3).toString("hex")}`;
+    while (taken.has(commandVariableName(name)));
+    taken.add(commandVariableName(name));
+    names.set(value, name);
+  }
+  // A placeholder is longer than a short key, so many repeats of one can outgrow the cap.
+  const swapped = swapRanges(text, ranges, (value) => commandVariableName(names.get(value) ?? ""));
+  if (swapped.length > THREAD_MESSAGE_TEXT_MAX_LENGTH) throw new PastedMessageTooLongError();
   const prepared: Awaited<ReturnType<typeof prepareBotSecret>>[] = [];
   // Another send took the name first. This one fails as a conflict; sent again, it picks another.
   const conflict = (error: unknown) => {
@@ -128,13 +129,7 @@ export async function preparePastedSecrets(
       commit,
     )();
   try {
-    for (const value of values) {
-      let name: string;
-      do name = `${PASTED_NAME}-${randomBytes(3).toString("hex")}`;
-      while (taken.has(commandVariableName(name)));
-      const variable = commandVariableName(name);
-      taken.add(variable);
-      variables.set(value, variable);
+    for (const [value, name] of names) {
       prepared.push(
         await prepareBotSecret({
           prisma,
@@ -143,7 +138,6 @@ export async function preparePastedSecrets(
           destination: { name, origin: "", auth: { type: "command" } },
           plaintext: value,
           createOnly: true,
-          ...(blocked.has(value) && { policy: "off" as const }),
         }).catch(conflict),
       );
     }
@@ -152,7 +146,7 @@ export async function preparePastedSecrets(
     return persist(() => Promise.reject(error));
   }
   return {
-    text: swapRanges(text, ranges, (value) => variables.get(value) ?? ""),
+    text: swapped,
     async store(tx) {
       for (const item of prepared) await item.store(tx).catch(conflict);
     },
