@@ -7,7 +7,7 @@ import { useEffect, useMemo, useReducer, useState } from "react";
 import { Platform, ScrollView, Text, useWindowDimensions, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { runErrorDiagnostic, runErrorWhatHappened } from "../../lib/cards/run-error-presentation";
-import { dateLocaleForUi, useUiLocale } from "../../lib/i18n/i18n";
+import { useDateLocale } from "../../lib/i18n/i18n";
 import { useMobileTokens } from "../../lib/native/native";
 import { NativeSymbol } from "../native/native-symbol";
 import { SheetCloseButton } from "../native/sheet-close-button";
@@ -17,7 +17,7 @@ import { RunErrorSheetContainer } from "./run-error-sheet-container";
 /** Saved provider diagnostics do not identify the credential owner. */
 export function useRunError(details: string | null, includeReset = true) {
   const { t } = useLingui();
-  const locale = useUiLocale();
+  const dateLocale = useDateLocale();
   const [clockVersion, refreshClock] = useReducer((version: number) => version + 1, 0);
   const error = details
     ? normalizeRunError(
@@ -31,7 +31,7 @@ export function useRunError(details: string | null, includeReset = true) {
           if (message === "Your model provider") return t`Model provider`;
           return translateRunError(message, values);
         },
-        dateLocaleForUi(locale),
+        dateLocale,
         Date.now(),
       )
     : null;
@@ -58,7 +58,7 @@ export function RunErrorSheet({
   action?: { label: string; onPress: () => void } | null;
 }) {
   const { t } = useLingui();
-  const locale = useUiLocale();
+  const dateLocale = useDateLocale();
   const tokens = useMobileTokens();
   const insets = useSafeAreaInsets();
   const { fontScale, height } = useWindowDimensions();
@@ -66,7 +66,7 @@ export function RunErrorSheet({
   const [technical, setTechnical] = useState(false);
   useEffect(() => setTechnical(false), [details]);
   if (!error) return null;
-  const diagnostic = runErrorDiagnostic(error, dateLocaleForUi(locale));
+  const diagnostic = runErrorDiagnostic(error, dateLocale);
   const whatHappened = runErrorWhatHappened(error);
   const textStyle = { color: tokens.foreground, fontSize: 16, lineHeight: 24 };
   return (

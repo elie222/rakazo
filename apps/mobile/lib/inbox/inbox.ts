@@ -17,7 +17,7 @@ export function filterBots<T extends { name: string; preview: string }>(
   return bots.filter((bot) => searchKey(`${bot.name} ${bot.preview}`).includes(needle));
 }
 
-export function formatThreadTime(iso: string, now = new Date()) {
+export function formatThreadTime(iso: string, now = new Date(), locale = dateLocaleForUi()) {
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return "";
 
@@ -26,24 +26,23 @@ export function formatThreadTime(iso: string, now = new Date()) {
   const dayDiff = Math.round((startOfToday - startOfThatDay) / DAY_MS);
 
   if (dayDiff <= 0) {
-    return clockTime(date);
+    return clockTime(date, locale);
   }
   if (dayDiff < 7) {
-    return date.toLocaleDateString(dateLocaleForUi(), { weekday: "long" });
+    return date.toLocaleDateString(locale, { weekday: "long" });
   }
-  return date.toLocaleDateString(dateLocaleForUi(), { month: "short", day: "numeric" });
+  return date.toLocaleDateString(locale, { month: "short", day: "numeric" });
 }
 
 /** When a snoozed chat wakes: the time today, the weekday within a week, or the date. */
-export function formatSnoozeWake(iso: string, now = new Date()) {
+export function formatSnoozeWake(iso: string, now = new Date(), locale = dateLocaleForUi()) {
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return "";
-  const time = clockTime(date);
+  const time = clockTime(date, locale);
   const day = snoozeWakeDay(date, now);
-  return day ? `${date.toLocaleDateString(dateLocaleForUi(), day)} ${time}` : time;
+  return day ? `${date.toLocaleDateString(locale, day)} ${time}` : time;
 }
 
-/** The time of day on the phone's 12- or 24-hour clock. */
-function clockTime(date: Date) {
-  return date.toLocaleTimeString(dateLocaleForUi(), { hour: "numeric", minute: "2-digit" });
+function clockTime(date: Date, locale: string) {
+  return date.toLocaleTimeString(locale, { hour: "numeric", minute: "2-digit" });
 }

@@ -68,7 +68,7 @@ import { CallKeyboardContext } from "../lib/calls/call-keyboard-context";
 import { useCallActive } from "../lib/calls/call-session";
 import { startIncomingCalls } from "../lib/calls/incoming-calls";
 import { loadComposerModelPickerPreference } from "../lib/composer/composer-model-picker-preference";
-import { bootstrapI18n } from "../lib/i18n/i18n";
+import { bootstrapI18n, refreshDeviceDateFormat } from "../lib/i18n/i18n";
 import { clearLastBot } from "../lib/inbox/last-bot";
 import { clearSavedChats } from "../lib/inbox/saved-chats";
 import { InboxBesideContext } from "../lib/layout/side-insets";
@@ -92,6 +92,7 @@ import {
 import { useNotificationResponses } from "../lib/notifications/open-notification";
 import { invalidateWatchChat } from "../lib/notifications/watch-chat";
 import { startWorkActivities } from "../lib/notifications/work-activity";
+import { subscribeAppState } from "../lib/platform/app-foreground";
 import { setMobileMonitoringScreen } from "../lib/platform/monitoring";
 import {
   completeMobileStartup,
@@ -391,6 +392,14 @@ function LayoutContent() {
   }, [ready]);
 
   useEffect(() => watchForegroundUpdates(), []);
+
+  useEffect(
+    () =>
+      subscribeAppState((state) => {
+        if (state === "active") void refreshDeviceDateFormat();
+      }),
+    [],
+  );
 
   useEffect(() => {
     markMobileStartupMounted();

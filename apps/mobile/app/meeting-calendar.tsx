@@ -17,7 +17,7 @@ import { ActivityIndicator, Alert, Platform, ScrollView } from "react-native";
 import { SettingsFooter, SettingsGroup, SettingsRow } from "../components/settings/settings-group";
 import { useSpaceChanges } from "../lib/api/roster-signals";
 import { errorText } from "../lib/api/user-error";
-import { dateLocaleForUi } from "../lib/i18n/i18n";
+import { useDateLocale } from "../lib/i18n/i18n";
 import { useSideInsets } from "../lib/layout/side-insets";
 import { showIOSActionSheet } from "../lib/native/ios-action-sheet";
 import { useScreenHeader } from "../lib/navigation/screen-header";
@@ -30,6 +30,7 @@ type UpcomingEvent = RpcOutput<"meetingCalendar/upcoming">["events"][number];
 export default function MeetingCalendarScreen() {
   const { botId = "" } = useLocalSearchParams<{ botId: string }>();
   const { t } = useLingui();
+  const dateLocale = useDateLocale();
   const read = rpcQuery("meetingCalendar/upcoming", { botId });
   const { data, error, refetch } = useScreenQuery(read, { enabled: Boolean(botId) });
   const focused = useIsFocused();
@@ -88,7 +89,7 @@ export default function MeetingCalendarScreen() {
   });
   useScreenHeader({ title: t`Auto-join` });
   const sideInsets = useSideInsets();
-  const format = new Intl.DateTimeFormat(dateLocaleForUi(), {
+  const format = new Intl.DateTimeFormat(dateLocale, {
     dateStyle: "medium",
     timeStyle: "short",
   });
