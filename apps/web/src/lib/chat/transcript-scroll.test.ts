@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  replyStartScrollTop,
   transcriptCanSnapAfterFrame,
   transcriptIsNearEnd,
   transcriptMovedDown,
@@ -36,5 +37,23 @@ describe("transcriptMovedDown", () => {
     expect(transcriptMovedDown(null, 920)).toBe(false);
     expect(transcriptMovedDown(950, 920)).toBe(false);
     expect(transcriptMovedDown(920, 950)).toBe(true);
+  });
+});
+
+describe("replyStartScrollTop", () => {
+  const view = (scrollHeight: number) => ({
+    scrollHeight,
+    scrollTop: 300,
+    clientHeight: 500,
+    getBoundingClientRect: () => ({ top: 100 }) as DOMRect,
+  });
+  const row = { getBoundingClientRect: () => ({ top: 400 }) as DOMRect };
+
+  it("keeps following while the reply's first line would stay in view at the end", () => {
+    expect(replyStartScrollTop(view(1_036), row, 64)).toBeNull();
+  });
+
+  it("stops with the reply's first line under the top padding once it would scroll away", () => {
+    expect(replyStartScrollTop(view(1_037), row, 64)).toBe(536);
   });
 });

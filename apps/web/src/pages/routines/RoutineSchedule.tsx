@@ -8,9 +8,10 @@ import {
   localizedClock,
   russianIntervalUnit,
 } from "@rakazo/core";
+import { cronUnitLabel } from "@rakazo/i18n/cron";
 import { Button, Input, OptionSelect } from "@rakazo/ui-web";
 import { Clock, X } from "lucide-react";
-import { cronFreqLabel, cronUnitLabel } from "../../lib/routines/cron";
+import { cronFreqLabel } from "../../lib/routines/cron";
 
 const UNITS: CronUnit[] = ["minutes", "hours", "days"];
 const TIMES = [
@@ -135,7 +136,8 @@ export function RoutineSchedule({
             placeholder="*/3 * * * *"
             aria-label={t`Cron expression`}
             onChange={(event) => patch({ cron: event.target.value })}
-            className="h-7 min-w-[120px] flex-1 font-mono text-body-sm md:text-body-sm"
+            size="sm"
+            className="min-w-[120px] flex-1 font-mono text-body-sm md:text-body-sm"
           />
         ) : null}
       </div>

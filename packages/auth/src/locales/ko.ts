@@ -23,27 +23,8 @@ export const KO_MESSAGES: Record<string, string> = {
   "Your Rakazo confirmation code": "Rakazo 확인 코드",
   "Enter this code in Rakazo to confirm it's you:":
     "본인임을 확인하려면 Rakazo에서 이 코드를 입력하세요:",
-  "Welcome to Rakazo": "Rakazo에 오신 것을 환영합니다",
-  "Welcome to Rakazo. The people who get the most out of it do three things:":
-    "Rakazo에 오신 것을 환영합니다. Rakazo를 가장 잘 활용하는 사람들은 세 가지를 합니다.",
-  "Get the apps": "앱 받기",
-  "Rakazo runs on {platforms}, so your bots can reach you wherever you are.":
-    "Rakazo는 {platforms}에서 실행되므로 봇이 어디서든 연락할 수 있습니다.",
-  "Join the community": "커뮤니티 참여하기",
-  "See what others are building, get help fast, and tell us what to build next on {discord}.":
-    "{discord}에서 다른 사람들이 만드는 것을 보고, 빠르게 도움을 받고, 다음에 만들 것을 알려 주세요.",
-  "Star us on GitHub": "GitHub에서 스타 누르기",
-  "Rakazo is open source. {star} helps more people find it.":
-    "Rakazo는 오픈 소스입니다. {star}는 더 많은 사람이 Rakazo를 찾는 데 도움이 됩니다.",
-  "A star on GitHub": "GitHub 스타",
-  "Questions? Just reply. I read every one.":
-    "질문이 있으신가요? 답장만 보내 주세요. 모두 읽습니다.",
   Unsubscribe: "수신 거부",
-  "Invite a friend": "친구 초대",
-  "Invite a friend to Rakazo: they get {weeks} weeks free, and you earn a free month when they start a qualifying subscription with a new card.":
-    "친구를 Rakazo에 초대하세요. 친구는 {weeks}주 동안 무료로 사용하고, 친구가 새 카드로 대상 구독을 시작하면 나는 한 달 무료를 받아요.",
   "Open Rakazo": "Rakazo를 열고",
-  "and choose Invite friends for your link.": "친구 초대를 선택해 링크를 받으세요.",
   "We received your Rakazo plugin": "Rakazo 플러그인을 받았습니다",
   "Thanks for submitting a plugin to the Rakazo marketplace.":
     "Rakazo 마켓플레이스에 플러그인을 제출해 주셔서 감사합니다.",

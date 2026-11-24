@@ -12,9 +12,12 @@ import { NativeMarkdown } from "./native/native-markdown";
 import { layout, markdownStyles } from "./native/styles";
 
 const markdownParser = createMarkdownIt();
+// Every code block needs a fence, four spaces or a tab; every bot row asks, so most skip the parse.
+const MAY_HOLD_CODE = /```|~~~| {4}|\t/;
 
 /** The code of each fenced or indented block in a message, as its copy button copies it. */
 export function markdownCodeBlocks(markdown: string): string[] {
+  if (!MAY_HOLD_CODE.test(markdown)) return [];
   const tokens: { type: string; content: string }[] = markdownParser.parse(markdown, {});
   return tokens
     .filter((token) => token.type === "fence" || token.type === "code_block")

@@ -32,6 +32,7 @@ infra/sandboxes/supervisor/dist
 .vercel
 .cache
 artifacts
+!apps/mobile/lib/artifacts
 !packages/contracts/src/artifacts
 backups
 test-report

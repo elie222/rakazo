@@ -18,6 +18,7 @@ export const ENDPOINT_SILENCE_MS = 1_200;
  */
 export const END_OF_SPEECH_GRACE_MS = 500;
 const RESTART_MIN_MS = 250;
+const LEVEL_INTERVAL_MS = 100;
 const RESTART_MAX_MS = 2_000;
 /** Restarts in a row that hear nothing: the recognizer is wedged, stop churning the mic. */
 const MAX_DEAD_RESTARTS = 5;
@@ -43,6 +44,7 @@ type DictationEventMap = {
   error: ErrorEvent;
   speechstart: null;
   speechend: null;
+  volumechange: { value: number };
 };
 type AudioSession = { category: string; categoryOptions: string[]; mode: string };
 
@@ -53,6 +55,7 @@ export type SpeechRecognizer = {
     interimResults: boolean;
     continuous: boolean;
     iosCategory?: AudioSession;
+    volumeChangeEventOptions?: { enabled: boolean; intervalMillis: number };
   }): void;
   getAudioSessionCategoryAndOptionsIOS(): AudioSession;
   stop(): void;
@@ -73,6 +76,7 @@ type Session = {
   onInterim?: (text: string) => void;
   onFinal: (text: string) => void;
   onGiveUp?: (reason: DictationGiveUp) => void;
+  onLevel?: (level: number) => void;
   /** Quiet gap that ends the utterance. */
   endpointMs: number;
   /** The caller chose the gap, so the silence timer alone ends a quiet session. */
@@ -174,6 +178,8 @@ export async function listen(opts: {
   onInterim?: (text: string) => void;
   onFinal: (text: string) => void;
   onGiveUp?: (reason: DictationGiveUp) => void;
+  /** The microphone's loudness from 0 (silence) to 1, a few times a second. */
+  onLevel?: (level: number) => void;
   signal?: AbortSignal;
   lang?: string;
   endpointMs?: number;
@@ -196,6 +202,7 @@ export async function listen(opts: {
     onInterim: opts.onInterim,
     onFinal: opts.onFinal,
     onGiveUp: opts.onGiveUp,
+    onLevel: opts.onLevel,
     endpointMs: opts.endpointMs ?? ENDPOINT_SILENCE_MS,
     ownEndpoint: opts.endpointMs !== undefined,
     reported: "",
@@ -229,6 +236,14 @@ export async function listen(opts: {
       armGrace(session);
     }),
   ];
+  if (opts.onLevel) {
+    // The recognizer reports -2 to 10, where anything under 0 is inaudible.
+    session.subs.push(
+      recognizer.addListener("volumechange", (event) => {
+        if (active === session) session.onLevel?.(Math.min(1, Math.max(0, event.value / 10)));
+      }),
+    );
+  }
   try {
     start(session);
   } catch {
@@ -270,6 +285,9 @@ function start(session: Session): void {
     lang: session.lang,
     interimResults: true,
     continuous: true,
+    ...(session.onLevel
+      ? { volumeChangeEventOptions: { enabled: true, intervalMillis: LEVEL_INTERVAL_MS } }
+      : {}),
     ...(session.call
       ? { iosCategory: session.recognizer.getAudioSessionCategoryAndOptionsIOS() }
       : {}),

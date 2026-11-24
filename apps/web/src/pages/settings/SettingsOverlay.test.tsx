@@ -71,6 +71,12 @@ vi.mock("./MemorySettingsOverlay", () => ({
     return null;
   },
 }));
+vi.mock("../../components/spaces/SpaceMembersSettings", () => ({
+  SpaceMembersSettings: ({ space }: { space: { id: string } }) => (
+    <div data-testid="space-members">{space.id}</div>
+  ),
+}));
+vi.mock("./SpaceSettingOverrides", () => ({ SpaceSettingOverrides: () => null }));
 vi.mock("./SpaceSettingsPanel", () => ({
   SpaceSettingsPanel: ({
     space,
@@ -105,6 +111,37 @@ vi.mock("../../components/settings/ApprovalRulesSettings", () => ({
 }));
 vi.mock("../../components/vault/VaultSettings", () => ({ VaultSettings: recordScope("vault") }));
 vi.mock("./LabsSettingsPanel", () => ({ LabsSettingsPanel: () => null }));
+vi.mock("./OrganizationSettingsPanel", () => ({
+  OrganizationOptionsMenu: ({ onActivityLog }: { onActivityLog: () => void }) => (
+    <button type="button" aria-label="Organization options" onClick={onActivityLog} />
+  ),
+  OrganizationSettingsPanel: ({
+    page,
+    onPageChange,
+  }: {
+    page: string;
+    onPageChange: (page: "main" | "members" | "log") => void;
+  }) => (
+    <div data-testid="organization-page" data-page={page}>
+      <button type="button" onClick={() => onPageChange("members")}>
+        Members
+      </button>
+    </div>
+  ),
+}));
+const { cloudComputerCount } = vi.hoisted(() => ({ cloudComputerCount: { current: 0 } }));
+vi.mock("../../components/computers/CloudComputerSizes", () => ({
+  CloudComputerSizes: () => <div data-testid="cloud-computers" />,
+  useCloudComputers: () => ({
+    data: { computers: Array.from({ length: cloudComputerCount.current }) },
+    isError: false,
+  }),
+}));
+vi.mock("../../components/computers/ComputerDeviceSettings", () => ({
+  ComputerDeviceSettings: () => <div data-testid="computer-devices" />,
+  useThisComputer: () => ({ thisComputer: null, plainHttp: false }),
+  userDevicesQuery: () => ({ queryKey: ["user:", "userDevices"], queryFn: async () => [] }),
+}));
 vi.mock("../../components/computers/ComputersUnavailableHint", () => ({
   computersAreUnavailable: () => false,
 }));
@@ -163,32 +200,41 @@ function button(container: HTMLElement, label: string) {
   return match;
 }
 
-it("lists the spaces under General and opens the one picked", async () => {
+it("lists the spaces under Spaces and opens the one picked", async () => {
   const onOpenSpace = vi.fn();
-  const { container, cleanup } = await render({ spaces, onOpenSpace });
+  const { container, cleanup } = await render({ spaces, onOpenSpace, section: "spaces" });
   try {
     const list = container.querySelector('[data-testid="settings-spaces"]');
     expect(list?.textContent).toContain("Acme");
     expect(list?.textContent).toContain("Beta");
     await act(async () => button(container, "Manage Beta").click());
     expect(onOpenSpace).toHaveBeenCalledWith("space-b");
-    // Spaces live under General, not in the nav.
-    expect(container.querySelector('[data-testid="settings-nav-space"]')).toBeNull();
   } finally {
     await cleanup();
   }
 });
 
-it("lists no spaces when there is only one", async () => {
-  const { container, cleanup } = await render({ spaces: [acme], onOpenSpace: vi.fn() });
+it("lists a lone space by name and opens its own page", async () => {
+  const onOpenSpace = vi.fn();
+  const { container, cleanup } = await render({
+    space: acme,
+    spaces: [acme],
+    onOpenSpace,
+    section: "spaces",
+  });
   try {
-    expect(container.querySelector('[data-testid="settings-spaces"]')).toBeNull();
+    expect(container.querySelector('[data-testid="settings-spaces"]')?.textContent).toContain(
+      "Acme",
+    );
+    expect(container.querySelector('[data-testid="space-members"]')).toBeNull();
+    await act(async () => button(container, "Manage Acme").click());
+    expect(onOpenSpace).toHaveBeenCalledWith("space-a");
   } finally {
     await cleanup();
   }
 });
 
-it("titles a space's page with its name and leads back to General", async () => {
+it("titles a space's page with its name and leads back to Spaces", async () => {
   const onDeleteSpace = vi.fn(async () => undefined);
   const onSectionChange = vi.fn();
   const { container, cleanup } = await render({
@@ -201,13 +247,13 @@ it("titles a space's page with its name and leads back to General", async () => 
   try {
     expect(container.querySelector("h2")?.textContent).toBe("Acme");
     expect(
-      container.querySelector('[data-testid="settings-nav-general"]')?.getAttribute("aria-current"),
+      container.querySelector('[data-testid="settings-nav-spaces"]')?.getAttribute("aria-current"),
     ).toBe("page");
     const panel = container.querySelector<HTMLButtonElement>('[data-testid="space-settings"]');
     await act(async () => panel?.click());
     expect(onDeleteSpace).toHaveBeenCalledWith("space-a");
     await act(async () => button(container, "Back").click());
-    expect(onSectionChange).toHaveBeenCalledWith("general");
+    expect(onSectionChange).toHaveBeenCalledWith("spaces");
   } finally {
     await cleanup();
   }
@@ -356,5 +402,63 @@ it("says what a page is for only where its name does not", async () => {
     );
   } finally {
     await voice.cleanup();
+  }
+});
+
+it("offers Computers once the Space has a cloud computer, with its sizes and paired computers", async () => {
+  const none = await render({ section: "computer" });
+  try {
+    expect(none.container.querySelector('[data-testid="settings-nav-computer"]')).toBeNull();
+    expect(none.container.querySelector('[data-testid="cloud-computers"]')).toBeNull();
+  } finally {
+    await none.cleanup();
+  }
+  cloudComputerCount.current = 1;
+  const some = await render({ section: "computer" });
+  try {
+    expect(some.container.querySelector('[data-testid="settings-nav-computer"]')?.textContent).toBe(
+      "Computers",
+    );
+    expect(some.container.querySelector('[data-testid="cloud-computers"]')).not.toBeNull();
+    expect(some.container.querySelector('[data-testid="computer-devices"]')).not.toBeNull();
+  } finally {
+    cloudComputerCount.current = 0;
+    await some.cleanup();
+  }
+});
+
+it("keeps the organization options in the page header, on the main Organization page only", async () => {
+  const { container, rerender, cleanup } = await render({ section: "organization" });
+  const header = () => container.querySelector('[data-testid="settings-header"]')!;
+  const options = () => header().querySelector('button[aria-label="Organization options"]');
+  const page = () =>
+    container.querySelector('[data-testid="organization-page"]')?.getAttribute("data-page");
+  try {
+    expect(options()).not.toBeNull();
+
+    await act(async () =>
+      header()
+        .querySelector<HTMLButtonElement>("button[aria-label='Organization options']")!
+        .click(),
+    );
+    expect(page()).toBe("log");
+    expect(options()).toBeNull();
+
+    // Leaving the section resets the page, so coming back shows the main page and its menu.
+    await rerender({ section: "general" });
+    expect(options()).toBeNull();
+    await rerender({ section: "organization" });
+    expect(page()).toBe("main");
+    expect(options()).not.toBeNull();
+
+    await act(async () =>
+      container
+        .querySelector<HTMLButtonElement>('[data-testid="organization-page"] button')!
+        .click(),
+    );
+    expect(page()).toBe("members");
+    expect(options()).toBeNull();
+  } finally {
+    await cleanup();
   }
 });

@@ -1,4 +1,4 @@
-import type { PushTokenStore } from "@rakazo/adapters";
+import type { MeetingCalendarService, PushTokenStore } from "@rakazo/adapters";
 import type { DirectoryAccountChange } from "@rakazo/auth";
 import type { PrismaClient, SpaceDeparture, ThreadEvents } from "@rakazo/db";
 import {
@@ -15,6 +15,7 @@ export interface AccountStatusDeps {
   pushTokens: Pick<PushTokenStore, "remove">;
   devices: DeviceStore;
   events: Pick<ThreadEvents, "notify">;
+  meetingCalendar?: Pick<MeetingCalendarService, "disconnectUser">;
   /** What follows leaving a Space (as after `afterSpaceDeparture`); never throws. */
   afterDeparture(
     actor: { spaceId: string; userId: string },
@@ -109,6 +110,7 @@ export async function endDeactivatedAccess(deps: AccountStatusDeps, userId: stri
     () => prisma.session.deleteMany({ where: { userId } }),
     () => revokeUserDevices(deps.devices, userId),
     () => deps.pushTokens.remove(userId),
+    async () => deps.meetingCalendar?.disconnectUser(userId),
     () => prisma.callPushDevice.deleteMany({ where: { userId } }),
     // A pending code would otherwise link a chat app to the account after this.
     () => prisma.messagingLinkCode.deleteMany({ where: { userId } }),

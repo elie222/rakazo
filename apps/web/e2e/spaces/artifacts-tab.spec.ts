@@ -52,6 +52,22 @@ test("opens Artifacts from the account menu and lists created files", async ({
   await expect(page.getByRole("button", { name: "Preview weekly.md" })).toBeVisible({
     timeout: 30_000,
   });
+  await page.getByRole("button", { name: "Preview weekly.md" }).click();
+  const preview = page.getByRole("dialog");
+  await expect(preview.getByRole("button", { name: "Copy weekly.md" })).toBeVisible();
+  await captureScreenshot(page, testInfo, "file-preview-copy");
+  await preview.getByRole("button", { name: "Copy weekly.md" }).click();
+  await expect(preview.getByRole("button", { name: "Copied", exact: true })).toBeVisible();
+  await preview.getByRole("button", { name: "Close preview" }).focus();
+  await page.keyboard.press("ControlOrMeta+a");
+  expect(
+    await page.evaluate(() => {
+      const body = document.querySelector('[role="dialog"] article');
+      const range = window.getSelection()?.getRangeAt(0);
+      return !!body && !!range && range.commonAncestorContainer === body;
+    }),
+  ).toBe(true);
+  await preview.getByRole("button", { name: "Close preview" }).click();
   await page.goto("/app/artifacts");
   await expect(page.getByRole("heading", { name: "Artifacts", exact: true })).toBeVisible();
   await expect(page.getByText("notes/artifacts-tab.md")).toBeVisible();
@@ -92,6 +108,11 @@ test("opens Artifacts from the account menu and lists created files", async ({
   await expect(page).toHaveURL(/\/app\/artifacts\/[^/]+$/);
   await expect(page.getByRole("heading", { name: "notes/artifacts-tab.md" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Artifacts tab" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Copy notes/artifacts-tab.md" })).toBeVisible();
+  await page.locator("article[data-file-preview-body]").focus();
+  await page.keyboard.press("ControlOrMeta+a");
+  expect(await page.evaluate(() => window.getSelection()?.toString())).toBe("Artifacts tab");
+  await page.evaluate(() => window.getSelection()?.removeAllRanges());
   await captureScreenshot(page, testInfo, "artifacts-preview");
 
   await page.getByRole("link", { name: "Back" }).click();

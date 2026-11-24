@@ -1,4 +1,19 @@
 /**
+ * The sessionless routes outside services deliver to: webhooks, inbound email and provider events.
+ * The inbound listener answers only these, so the app itself can stay off the internet.
+ */
+export const INBOUND_DELIVERY_ROUTES = {
+  "POST /api/v1/bots/:botId/webhook": "the bot's webhook secret as a bearer token",
+  "POST /api/v1/bots/:botId/github": "a body signature made with the bot's webhook secret",
+  "POST /api/meetings/calendar/webhook": "the calendar provider’s timestamped body signature",
+  "POST /api/meetings/events": "the meeting provider’s timestamped body signature",
+  "POST /api/v1/email/inbound": "the mail relay's shared secret as a bearer token",
+  "ALL /api/v1/messaging/webhook/:provider": "the platform's signature, checked by its adapter",
+  "POST /api/v1/phone/webhook": "the platform's signature, checked by its adapter",
+  "POST /api/v1/billing/webhook": "the billing provider's signature, checked by its adapter",
+} as const satisfies Readonly<Record<string, string>>;
+
+/**
  * Every raw route that answers a request with no signed-in session, with how it knows its caller.
  * RPC procedures share one sign-in step; a raw route checks its caller itself, so one that is not
  * listed here must refuse a request that carries no credentials.
@@ -8,6 +23,7 @@
  * that branch here.
  */
 export const SESSIONLESS_ROUTES: Readonly<Record<string, string>> = {
+  ...INBOUND_DELIVERY_ROUTES,
   "GET /api/auth/capabilities": "public: sign-in options from configuration, no database",
   "GET /api/auth/*": "the auth library: its own credential and session checks, on account tables",
   "POST /api/auth/*": "the auth library: its own credential and session checks, on account tables",
@@ -16,16 +32,21 @@ export const SESSIONLESS_ROUTES: Readonly<Record<string, string>> = {
   "PUT /api/auth/scim/v2/*": "the directory's bearer token",
   "PATCH /api/auth/scim/v2/*": "the directory's bearer token",
   "DELETE /api/auth/scim/v2/*": "the directory's bearer token",
-  "POST /api/v1/bots/:botId/webhook": "the bot's webhook secret as a bearer token",
-  "POST /api/v1/bots/:botId/github": "a body signature made with the bot's webhook secret",
   "GET /api/v1/email/unsubscribe": "a signed token in the link, bound to one user",
   "POST /api/v1/email/unsubscribe": "a signed token in the link, bound to one user",
-  "POST /api/v1/email/inbound": "the mail relay's shared secret as a bearer token",
-  "ALL /api/v1/messaging/webhook/:provider": "the platform's signature, checked by its adapter",
+  "GET /api/meetings/media": "public: static meeting camera page, no session data",
+  "GET /api/meetings/media/tile.css": "public: static camera tile styles",
+  "GET /api/meetings/media/mark.webp": "public: static camera tile mark",
+  "GET /api/meetings/media/bridge.js": "public: static camera media bridge",
+  "GET /api/meetings/media/audio-worklet.js": "public: static audio worklet",
+  "GET /api/meetings/media/session": "a signed expiring bearer grant scoped to one meeting",
+  "POST /api/meetings/media/turn": "a signed expiring bearer grant scoped to one admitted meeting",
+  "GET /api/meetings/calendar/oauth/callback":
+    "a fixed mobile relay or one-time Desktop loopback state; web completion requires the initiating user",
+  "GET /api/meetings/calendar/oauth/desktop":
+    "a short-lived opaque state tied to the initiating Desktop sign-in session",
   "GET /api/v1/messaging/install/slack/callback":
     "none: redirects to the web app, where the signed-in installer finishes; no database",
-  "POST /api/v1/phone/webhook": "the platform's signature, checked by its adapter",
-  "POST /api/v1/billing/webhook": "the billing provider's signature, checked by its adapter",
   "GET /api/v1/billing/return?client=mobile":
     "none: redirects to the mobile app's own link, a constant the request cannot change; no database",
   "GET /api/account/export": "a one-time token in the link, issued to the signed-in user",
@@ -49,5 +70,6 @@ export const SESSIONLESS_ROUTES: Readonly<Record<string, string>> = {
   "GET /api/dev/emails": "public in development only: mail the loopback-only emulator captured",
   "GET /health": "public: liveness, a constant body",
   "GET /ready": "public: readiness, no deployment details",
-  "GET /internal/health": "operators on the API port: 404 for a request the public proxy forwarded",
+  "GET /internal/health":
+    "operators on the deployment's own network: 404 for a public or proxy-forwarded caller",
 };

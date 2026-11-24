@@ -18,6 +18,8 @@ export function navigationSnapshotsPrompt(stored: AgentRunRequest["history"]): s
 
 export const SCREENSHOT_REMOVED_NOTE = "[Older screenshot removed; observe again if needed]";
 
+export const TOOL_IMAGE_REMOVED_NOTE = "[Older image removed; call the tool again if needed]";
+
 export const STALE_PAGE_STATE_NOTE =
   "[Earlier page state trimmed to save context. Facts you still need from that page should already be in your notes or tracker; otherwise take a fresh snapshot.]";
 

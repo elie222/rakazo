@@ -146,4 +146,21 @@ describe("visible thread snapshot publication", () => {
     expect(next?.run).toBeNull();
     expect(next?.messages).toBe(shown.messages);
   });
+
+  it("keeps a group's members when only a message changed, so other rows are not drawn again", () => {
+    const shown: MobileSnapshot = {
+      ...snapshot(),
+      members: [{ botId: "bot-1", name: "Ada" }] as MobileSnapshot["members"],
+      messages: [{ id: "message-1", role: "bot", blocks: [{ kind: "text", text: "Working" }] }],
+    };
+    const refreshed = structuredClone(shown);
+    refreshed.messages[0]!.blocks = [{ kind: "text", text: "Done" }];
+
+    const next = reconcileVisibleThreadSnapshot(shown, refreshed);
+
+    expect(next).toEqual(refreshed);
+    expect(next?.members).toBe(shown.members);
+    expect(next?.run).toBe(shown.run);
+    expect(next?.messages[0]).toBe(refreshed.messages[0]);
+  });
 });

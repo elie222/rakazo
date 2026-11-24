@@ -3,7 +3,8 @@
 Hosted model-credit billing enables the included decision checker for members without an
 account or Space approval-model choice. The existing Auto / Ask / Never modes, block rules,
 mandatory approvals and ordered backups still apply. A deliberate ask or uncertainty never
-advances to a backup. Errors and timeouts ultimately ask the owner. The existing run-access gates govern eligibility, including trials and free access periods.
+advances to a backup. When a member's own checker or backup cannot run, the included checker
+decides as the last backup. Errors and timeouts ultimately ask the owner. The existing run-access gates govern eligibility, including trials and free access periods.
 There is no second paid-history gate that can make a configured checker unavailable. Personal
 checker choices and general LLM deployment checkers keep their existing funding behavior. A deployment decision checker without a personal connection records operator expenses.
 
@@ -32,13 +33,15 @@ still wins. A matching backup does not change the primary checker’s funding so
    RAKAZO_AUTO_REVIEW_PROVIDER=openrouter
    RAKAZO_AUTO_REVIEW_MODEL=typesafe/jev-1.14
    RAKAZO_AUTO_REVIEW_TIMEOUT_MS=10000
-   RAKAZO_AUTO_REVIEW_MIN_CONFIDENCE=0.5
    ```
 
    Legacy direct decision-provider configuration still works and now records expenses too.
-   Do not treat the default confidence threshold as production calibrated.
-3. Before rollout, review the versioned examples in `packages/testkit/src/evals/approval.ts`
-   and the `approval-v3` rubric. With an authorized test key, run the existing CLI explicitly:
+   Each decision model's catalog entry sets the probability a pass needs, tuned in evals; setting
+   `RAKAZO_AUTO_REVIEW_MIN_CONFIDENCE` replaces it with one confidence floor for every model.
+3. Before rollout, review the [versioned examples](../packages/testkit/src/evals/suites/approval.ts)
+   and the rubric identified by
+   [`APPROVAL_DECISION_RUBRIC_VERSION`](../packages/adapters/src/approvals/decision-auto-review.ts)
+   (its state may include the owner's `ownerEarlierMessages`). With an authorized test key, run the existing CLI explicitly:
 
    ```sh
    pnpm test:evals --suite approval --live --provider openrouter \

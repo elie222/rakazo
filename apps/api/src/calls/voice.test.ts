@@ -1,5 +1,6 @@
 import { VoiceAccountError } from "@rakazo/adapter-kit";
 import * as adapters from "@rakazo/adapters";
+import { VoiceProviderRefusedError } from "@rakazo/adapters";
 import type { Actor } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
 import * as db from "@rakazo/db";
@@ -21,7 +22,6 @@ import {
   toVoiceCredential,
   toVoiceStatus,
   transcribeInboundVoice,
-  updateVoiceSpeechModel,
   voiceChoicesChanged,
   voiceCredentialHasKey,
   voiceCredentialPlaintext,
@@ -348,6 +348,9 @@ describe("isVoiceProviderFailure", () => {
   it("treats provider refusals and timeouts as expected but keeps bugs reported", () => {
     expect(isVoiceProviderFailure(new Error("Fish Audio could not speak that (500)."))).toBe(true);
     expect(isVoiceProviderFailure(new DOMException("timed out", "TimeoutError"))).toBe(true);
+    expect(isVoiceProviderFailure(new VoiceProviderRefusedError("speaking failed", 400))).toBe(
+      true,
+    );
     expect(isVoiceProviderFailure(new TypeError("Cannot read properties of undefined"))).toBe(
       false,
     );
@@ -364,145 +367,6 @@ describe("speechModelValue", () => {
 
   it("rejects a model id that cannot be a header or a JSON model id", () => {
     expect(() => speechModelValue("s1\ninjected")).toThrow("That speech model id is not valid.");
-  });
-});
-
-describe("updateVoiceSpeechModel", () => {
-  function speechDeps(
-    preference: { voiceId: string; isDefault: boolean } | null,
-    { overridden = false, provider = "fish-audio" } = {},
-  ) {
-    const credential = {
-      id: "cred-1",
-      userId: actor.userId,
-      provider,
-      secretId: "secret-1",
-    };
-    const table = () => ({
-      findUnique: vi.fn().mockResolvedValue(preference),
-      updateMany: vi.fn(),
-      upsert: vi
-        .fn()
-        .mockImplementation(async ({ update }: { update: { speechModel: string | null } }) => ({
-          voiceId: preference?.voiceId ?? "",
-          isDefault: preference?.isDefault ?? false,
-          speechModel: update.speechModel,
-        })),
-    });
-    const prisma = {
-      userVoiceCredential: { findFirst: vi.fn().mockResolvedValue(credential) },
-      spaceSettingOverride: {
-        findUnique: vi.fn().mockResolvedValue(overridden ? { setting: "voice" } : null),
-      },
-      userVoicePreference: table(),
-      spaceVoicePreference: table(),
-      $queryRaw: vi.fn().mockResolvedValue([{ locked: 1 }]),
-      $transaction: vi.fn(),
-    };
-    prisma.$transaction.mockImplementation(async (callback: (tx: typeof prisma) => unknown) =>
-      callback(prisma),
-    );
-    return {
-      deps: { prisma, secrets: { put: vi.fn(), load: vi.fn() } } as unknown as VoiceDeps,
-      account: prisma.userVoicePreference,
-      space: prisma.spaceVoicePreference,
-    };
-  }
-
-  it("stores the override without changing the selected voice", async () => {
-    const { deps, account, space } = speechDeps({ voiceId: "voice-1", isDefault: false });
-
-    await expect(
-      updateVoiceSpeechModel(deps, actor, { provider: "fish-audio", speechModel: " s1 " }),
-    ).resolves.toMatchObject({
-      provider: "fish-audio",
-      voiceId: "voice-1",
-      speechModel: "s1",
-      isDefault: false,
-    });
-    expect(account.upsert).toHaveBeenCalledWith({
-      where: { userId_credentialId: { userId: actor.userId, credentialId: "cred-1" } },
-      create: { userId: actor.userId, credentialId: "cred-1", speechModel: "s1" },
-      update: { speechModel: "s1" },
-    });
-    expect(account.updateMany).not.toHaveBeenCalled();
-    expect(space.upsert).not.toHaveBeenCalled();
-  });
-
-  it("stores an ElevenLabs speech model", async () => {
-    const { deps, account } = speechDeps(
-      { voiceId: "rachel", isDefault: true },
-      { provider: "elevenlabs" },
-    );
-
-    await expect(
-      updateVoiceSpeechModel(deps, actor, { provider: "elevenlabs", speechModel: "eleven_v4" }),
-    ).resolves.toMatchObject({
-      provider: "elevenlabs",
-      voiceId: "rachel",
-      speechModel: "eleven_v4",
-    });
-    expect(account.upsert).toHaveBeenCalledWith(
-      expect.objectContaining({ update: { speechModel: "eleven_v4" } }),
-    );
-  });
-
-  it("clears the override when the model is blank", async () => {
-    const { deps, account } = speechDeps({ voiceId: "voice-1", isDefault: true });
-
-    await expect(
-      updateVoiceSpeechModel(deps, actor, { provider: "fish-audio", speechModel: " " }),
-    ).resolves.toMatchObject({ speechModel: "" });
-    expect(account.upsert).toHaveBeenCalledWith(
-      expect.objectContaining({ update: { speechModel: null } }),
-    );
-  });
-
-  it("stores a model before a voice is chosen without replacing the default", async () => {
-    const { deps, account } = speechDeps(null);
-
-    await expect(
-      updateVoiceSpeechModel(deps, actor, { provider: "fish-audio", speechModel: "s1" }),
-    ).resolves.toMatchObject({
-      provider: "fish-audio",
-      voiceId: "",
-      speechModel: "s1",
-      isDefault: false,
-    });
-    expect(account.upsert).toHaveBeenCalledOnce();
-    expect(account.updateMany).not.toHaveBeenCalled();
-  });
-
-  it("writes the Space's own copy in a Space that overrides voice", async () => {
-    const { deps, account, space } = speechDeps(
-      { voiceId: "voice-1", isDefault: true },
-      { overridden: true },
-    );
-
-    await updateVoiceSpeechModel(deps, actor, { provider: "fish-audio", speechModel: "s1" });
-
-    expect(space.upsert).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: {
-          spaceId_userId_credentialId: {
-            spaceId: actor.spaceId,
-            userId: actor.userId,
-            credentialId: "cred-1",
-          },
-        },
-        update: { speechModel: "s1" },
-      }),
-    );
-    expect(account.upsert).not.toHaveBeenCalled();
-  });
-
-  it("rejects speech models for other providers before writing", async () => {
-    const { deps, account } = speechDeps({ voiceId: "voice-1", isDefault: true });
-
-    await expect(
-      updateVoiceSpeechModel(deps, actor, { provider: "openai", speechModel: "s1" }),
-    ).rejects.toThrow("This voice provider has no speech model.");
-    expect(account.upsert).not.toHaveBeenCalled();
   });
 });
 
@@ -875,18 +739,20 @@ describe("voiceCredentialPlaintext", () => {
     expect(voiceCredentialPlaintext({ provider: "macos", plaintext: "sk-test-key" })).toBe("macos");
   });
 
-  it("stores a self-hosted server's address and models without a key", () => {
+  it("stores a self-hosted server's address, models, and vocabulary without a key", () => {
     const plaintext = voiceCredentialPlaintext({
       provider: "openai-compatible",
       allowPrivateEndpoint: true,
       plaintext: "",
       baseUrl: "http://100.64.0.10:8810",
       ttsModel: "kokoro",
+      transcriptionVocabulary: "Acme, Xyla",
     });
     expect(JSON.parse(plaintext)).toEqual({
       kind: "openai_compatible",
       baseUrl: "http://100.64.0.10:8810/v1",
       ttsModel: "kokoro",
+      transcriptionVocabulary: "Acme, Xyla",
       sttModel: adapters.DEFAULT_COMPATIBLE_STT_MODEL,
     });
   });
@@ -1220,10 +1086,17 @@ describe("persistVoiceCredential", () => {
       const saved = await persistVoiceCredential(deps, actor, { provider: "xai", plaintext: "" });
 
       expect(verify).toHaveBeenCalledWith("xai-model-key", expect.anything());
-      expect(listVoices).toHaveBeenCalledWith("xai-model-key", expect.anything());
+      expect(listVoices).toHaveBeenCalledWith("xai-model-key", expect.anything(), {});
       expect(put).toHaveBeenCalledWith(adapters.MODEL_CONNECTION_VOICE_SECRET, expect.anything());
       expect(JSON.stringify(put.mock.calls)).not.toContain("xai-model-key");
       expect(saved).toMatchObject({ provider: "xai", hasKey: false, voiceId: "eve" });
+    });
+
+    it("lists the voices of the speech model it is connected with", async () => {
+      const { listVoices } = stubProvider();
+      const input = { provider: "openrouter", plaintext: "or-key-123", speechModel: "a/b" };
+      await persistVoiceCredential(linkedDeps().deps, actor, input);
+      expect(listVoices).toHaveBeenCalledWith("or-key-123", expect.anything(), { model: "a/b" });
     });
 
     it("uses a key the user enters instead of the model connection", async () => {

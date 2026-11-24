@@ -5,6 +5,7 @@ import {
   backOffRoutineAfterAccountError,
   clearRoutineBackoff,
   modelAccountRefusal,
+  releaseRoutineBackoffs,
   routineAccountBackoffMs,
 } from "./routine-backoff.js";
 
@@ -34,6 +35,7 @@ function fakeRoutine(overrides: Partial<Row> = {}) {
   };
   const routine = {
     count: vi.fn(async () => (row.accountFailures > 0 ? 1 : 0)),
+    findMany: vi.fn(async () => (row.accountFailures > 0 ? [{ id: "routine-1" }] : [])),
     findUnique: vi.fn(async () => ({ ...row })),
     update: vi.fn(async ({ data }: { data: Partial<Row> }) => Object.assign(row, data)),
   };
@@ -229,6 +231,62 @@ describe("clearRoutineBackoff", () => {
     const { deps, enqueue } = fakeRoutine();
 
     await clearRoutineBackoff(deps, { routineId: "routine-1", userId: "owner" }, NOW);
+
+    expect(deps.prisma.$transaction).not.toHaveBeenCalled();
+    expect(enqueue).not.toHaveBeenCalled();
+  });
+});
+
+describe("releaseRoutineBackoffs", () => {
+  it("returns the owner's held timer routine to its next occurrence", async () => {
+    const { row, deps, enqueue } = fakeRoutine({
+      accountFailures: 9,
+      nextRunAt: new Date("2026-03-03T06:20:00.000Z"),
+    });
+
+    await releaseRoutineBackoffs(deps, "owner", NOW);
+
+    expect(deps.prisma.routine.findMany).toHaveBeenCalledWith({
+      where: { userId: "owner", accountFailures: { gt: 0 } },
+      select: { id: true },
+    });
+    expect(row.accountFailures).toBe(0);
+    expect(row.nextRunAt).toEqual(new Date("2026-03-02T09:01:00.000Z"));
+    expect(enqueue).toHaveBeenCalledTimes(1);
+  });
+
+  it("has a held change trigger check right away", async () => {
+    const { row, deps, enqueue } = fakeRoutine({
+      crons: [],
+      watch: { kind: "http" },
+      accountFailures: 6,
+      nextRunAt: new Date("2026-03-02T11:40:00.000Z"),
+    });
+
+    await releaseRoutineBackoffs(deps, "owner", NOW);
+
+    expect(row.accountFailures).toBe(0);
+    expect(row.nextRunAt).toEqual(NOW);
+    expect(enqueue).toHaveBeenCalledTimes(1);
+  });
+
+  it("resets a paused routine's count without scheduling it", async () => {
+    const { row, deps, enqueue } = fakeRoutine({
+      active: false,
+      nextRunAt: null,
+      accountFailures: 3,
+    });
+
+    await releaseRoutineBackoffs(deps, "owner", NOW);
+
+    expect(row).toMatchObject({ accountFailures: 0, nextRunAt: null });
+    expect(enqueue).not.toHaveBeenCalled();
+  });
+
+  it("touches nothing when no routine is held", async () => {
+    const { deps, enqueue } = fakeRoutine();
+
+    await releaseRoutineBackoffs(deps, "owner", NOW);
 
     expect(deps.prisma.$transaction).not.toHaveBeenCalled();
     expect(enqueue).not.toHaveBeenCalled();

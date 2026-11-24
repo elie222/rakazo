@@ -20,6 +20,7 @@ vi.mock("expo-router/react-navigation", () => {
   };
 });
 vi.mock("../../lib/native/native-controls", () => ({ iosAtLeast: () => true }));
+vi.mock("react-native-safe-area-context", () => ({ useSafeAreaInsets: () => ({}) }));
 vi.mock("react-native", () => ({
   StyleSheet: { create: <T,>(styles: T) => styles },
   View: (props: { children?: ReactNode }) => createElement("div", null, props.children),

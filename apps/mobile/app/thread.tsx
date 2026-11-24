@@ -9,11 +9,11 @@ import { currentApiBase, selectedSpaceId } from "../lib/api/api";
 import {
   currentReadySessionGeneration,
   currentSessionGeneration,
-  loadVerifiedIntegrationsScope,
+  loadVerifiedScope,
   subscribeSessionGeneration,
 } from "../lib/api/session";
 import { errorText } from "../lib/api/user-error";
-import { integrationsCacheScope } from "../lib/integrations/integrations-cache";
+import { verifiedScope } from "../lib/api/verified-scope";
 import { useMobileTokens } from "../lib/native/native";
 import {
   threadRouteSpaceOnFocus,
@@ -44,8 +44,8 @@ export default function ThreadRoute() {
     let notified = false;
     let timer: ReturnType<typeof setTimeout>;
     const verify = () =>
-      void loadVerifiedIntegrationsScope()
-        .then((saved) => (saved?.apiBase === apiBase ? saved : integrationsCacheScope()))
+      void loadVerifiedScope()
+        .then((saved) => (saved?.apiBase === apiBase ? saved : verifiedScope()))
         .then((scope) => {
           if (
             !cancelled &&

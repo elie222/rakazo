@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   availableChatApps,
   isAvailableChatApp,
+  messagingChatApps,
   messagingConnectOptions,
   messagingProviderLabel,
   messagingProviderName,
@@ -13,7 +14,8 @@ describe("messaging provider labels", () => {
     expect(messagingProviderName("sendblue")).toBe("iMessage");
     expect(messagingProviderName("telegram")).toBe("Telegram");
     expect(messagingProviderName("photon")).toBe("iMessage (Photon)");
-    expect(messagingProviderName("teams")).toBe("teams");
+    expect(messagingProviderName("teams")).toBe("Microsoft Teams");
+    expect(messagingProviderName("signal")).toBe("signal");
   });
 
   it("finds a provider a user names by its id or its name", () => {
@@ -58,4 +60,29 @@ it("recognizes a catalog app that is also a chat app people can connect here", (
   expect(isAvailableChatApp({ name: "Notion", slug: "notion" }, chatApps)).toBe(false);
   expect(isAvailableChatApp({ name: "Slack", slug: "slack" }, [])).toBe(false);
   expect(isAvailableChatApp({ name: "Telegram", slug: "tg" }, ["telegram-work"])).toBe(true);
+});
+
+describe("messaging chat apps", () => {
+  it("lists an app with saved workspaces once, beside them, even when it also links with a code", () => {
+    const apps = messagingChatApps({
+      providers: ["slack", "telegram"],
+      installAvailable: false,
+      installations: [{ provider: "slack" }],
+      identities: [{ provider: "telegram" }, { provider: "slack" }, { provider: "signal" }],
+    });
+    expect(apps.installProviders).toEqual(["slack"]);
+    expect(apps.linkProviders).toEqual(["telegram"]);
+    expect(apps.otherIdentities).toEqual([{ provider: "signal" }]);
+  });
+
+  it("keeps accounts on apps no longer offered", () => {
+    const apps = messagingChatApps({
+      providers: ["telegram"],
+      installAvailable: false,
+      installations: [],
+      identities: [{ provider: "slack" }],
+    });
+    expect(apps).toMatchObject({ installProviders: [], linkProviders: ["telegram"] });
+    expect(apps.otherIdentities).toEqual([{ provider: "slack" }]);
+  });
 });

@@ -5,16 +5,24 @@ import {
   isTerminatingReplyResult,
 } from "../../approvals/approval-effect.js";
 import { argumentGiven } from "../../bots/update-bot-patch.js";
+import { listChatTranscripts, readChatMeeting } from "../../meetings/meeting-chat.js";
+import {
+  meetingTranscriptArgs,
+  READ_MEETING_TRANSCRIPT,
+} from "../../meetings/meeting-chat.tool-definition.js";
 import { IMAGE_RETURNING_COMPUTER_TOOLS } from "../../models/model-vision.js";
 import { MODEL_CANNOT_SEE_MESSAGE } from "../../models/model-vision.prompt.js";
+import { personalCalendarTools } from "../../personal-calendar/personal-calendar.tool-definition.js";
+import { calendarTool } from "../../personal-calendar/run-calendar-tool.js";
 import { strategicInitiativeToolAllowed } from "../../routines/strategic-initiative.js";
 import type { RunContext } from "../assembly/run-context.js";
 import { markReadOutsideContent } from "../assembly/run-context.js";
 import { noteComputerTaskStep } from "../lifecycle/run-progress.js";
 import { logToolRefusal } from "../turn/tool-completion-audit.js";
 import { refusal } from "../turn/tool-refusal.js";
+import { auditToolCall } from "./run-tool-audit.js";
 import type { ToolHandler } from "./run-tool-gate.js";
-import { auditToolCall, gateToolCall } from "./run-tool-gate.js";
+import { gateToolCall } from "./run-tool-gate.js";
 import { prepareToolRequest, resolveToolRequest } from "./run-tool-request.js";
 import {
   BUILTIN_AGENT_TOOL_NAMES,
@@ -38,21 +46,42 @@ import {
   USER_COMPUTER_ACT_TOOL,
   USER_COMPUTER_OBSERVE_TOOL,
   USER_COMPUTER_SHELL_TOOL,
+  USER_COMPUTER_TOOLS,
   userComputerAct,
+  userComputerList,
   userComputerObserve,
   userComputerShell,
 } from "./run-tools-user-computer.js";
+
+/** The owner's own computer: its shell, screen and computer list. */
+const ownComputerResult = (tool: string) =>
+  USER_COMPUTER_TOOLS.has(tool) || tool === "user_computer_list";
 
 const TOOL_HANDLERS = new Map<string, ToolHandler>([
   ...Object.entries(computerTools),
   ...Object.entries(fileTools),
   ...Object.entries(pageTools),
   ...Object.entries(memoryTools),
+  [
+    READ_MEETING_TRANSCRIPT,
+    async (ctx, call) => {
+      const input = meetingTranscriptArgs.safeParse(call.args);
+      if (!input.success || !ctx.source.meetingChat || (await ctx.trust.receivedOutsideMessage())) {
+        return call.finish({ error: "A meeting in this bot’s chat is required." });
+      }
+      const { meeting_id, offset, before } = input.data;
+      if (!meeting_id)
+        return call.finish(await listChatTranscripts(ctx.deps.prisma, ctx.run, before));
+      const transcript = await readChatMeeting(ctx.deps.prisma, ctx.run, meeting_id, offset);
+      return call.finish(transcript ?? { error: "The meeting transcript is unavailable." });
+    },
+  ],
   ...Object.entries(integrationTools),
   ...Object.entries(taskTools),
   ...Object.entries(messagingTools),
   ...Object.entries(secretTools),
   ...Object.entries(fleetTools),
+  ["user_computer_list", userComputerList],
   [USER_COMPUTER_SHELL_TOOL, userComputerShell],
   [USER_COMPUTER_OBSERVE_TOOL, userComputerObserve],
   [USER_COMPUTER_ACT_TOOL, userComputerAct],
@@ -60,6 +89,7 @@ const TOOL_HANDLERS = new Map<string, ToolHandler>([
   ...Object.entries(preferenceTools),
   ...Object.entries(feedbackTools),
   ...Object.entries(emailTools),
+  ...personalCalendarTools.map(({ name }) => [name, calendarTool] as const),
   ...[...PAGE_BROWSER_TOOL_NAMES].map((name) => [name, pageBrowserTool] as const),
 ]);
 
@@ -78,6 +108,8 @@ export async function applyTool(
   _route?: unknown,
   observer?: AgentToolExecutionObserver,
 ) {
+  // Refused there: a routine with its owner's computer is never offered update_bot.
+  if (ctx.source.ownerComputerRoutine) return dispatchTool(ctx, name, args, executionId, observer);
   // A bot naming itself in bot_id means its own settings. Dropping it here sends the call down
   // the own path everywhere: preparation, the stored approval, the handler and its taint check.
   if (
@@ -199,7 +231,7 @@ async function dispatchTool(
     return refuse(
       refusal(
         "daily_check_in_tool_not_allowed",
-        "Daily check-ins can only ask or message the user.",
+        "Daily check-ins can only ask the user. Put any reminder in your final reply.",
       ),
     );
   }
@@ -213,6 +245,11 @@ async function dispatchTool(
   }
   if (ctx.tools.disabled.has(name)) {
     return refuse(refusal("tool_disabled", "This tool is disabled for this bot."));
+  }
+  // A routine with its owner's computer may run only what it was offered, whatever name the
+  // runtime emits. It is offered no catalog or connector tool, so no call of its remaps either.
+  if (ctx.source.ownerComputerRoutine && !ctx.tools.offered.some((tool) => tool.name === name)) {
+    return refuse(refusal("tool_not_offered", `${name} is not available in this run.`));
   }
   // Only offered tools reach the model, but a runtime can still emit any name, and a connector
   // tool named like a local one still runs the local handler.
@@ -258,20 +295,25 @@ async function dispatchTool(
   if ("result" in gate) {
     const ownProfile = name === "update_bot" && !argumentGiven(args.bot_id);
     if (gate.replayed && toolResultTaintsRun(request.name) && !ownProfile) {
-      await markReadOutsideContent(ctx);
+      await markReadOutsideContent(ctx, gate.result, {
+        ownComputer: ownComputerResult(request.name),
+      });
     }
     return refuse(gate.result, request.name);
   }
   // Only a call that ran can have taken in outside content; one refused above, or whose approval
   // was denied, never did. A call that failed partway still counts.
   const runHandler = async () => {
+    let result: unknown;
     try {
-      return await toolHandler(gate.call.name)(ctx, gate.call);
+      result = await toolHandler(gate.call.name)(ctx, gate.call);
+      return result;
     } finally {
       // Editing its own profile returns only what this run wrote; a child's profile is another
       // bot's.
       const ownProfile = name === "update_bot" && !argumentGiven(args.bot_id);
-      if (toolResultTaintsRun(name) && !ownProfile) await markReadOutsideContent(ctx);
+      if (toolResultTaintsRun(name) && !ownProfile)
+        await markReadOutsideContent(ctx, result, { ownComputer: ownComputerResult(name) });
     }
   };
   if (!gate.call.applied) return runHandler();

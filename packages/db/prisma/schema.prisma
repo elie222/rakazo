@@ -22,8 +22,12 @@ model AiDataConsent {
 }
 
 model User {
+  meetingSessions MeetingSession[]
+  nativeCalendarRequests NativeCalendarRequest[]
   aiDataConsents AiDataConsent[]
   pages          Page[]
+  pageGrants PageGrant[]
+  pageComments PageComment[]
   id                          String                       @id
   name                        String
   email                       String
@@ -44,6 +48,9 @@ model User {
   avatarStyle                 String                       @default("organic")
   /// The icon set this user's bots wear unless one is pinned to another: "organic" or "rakazo".
   botAvatarSet                String                       @default("organic")
+  /// Null lets each client keep its previous device preference.
+  composerModelPicker          Boolean?
+  streamReplies                Boolean?
   /// IANA timezone such as "Pacific/Auckland". Null until set; bots then get UTC only.
   timezone                    String?
   /// The app language last chosen, such as "es" or "pt-BR". Null until an app reports it;
@@ -483,6 +490,8 @@ model Organization {
   spaces       Space[]
   billing      BillingAccount?
   modelCredits ModelCreditAccount?
+  computerAllowanceGrants ComputerAllowanceGrant[]
+  mediaCharges MediaCharge[]
   referralCode ReferralCode?
   referredBy   Referral?           @relation("ReferredOrganization")
   referrals    Referral[]          @relation("ReferrerOrganization")
@@ -579,6 +588,34 @@ model AccessGrant {
   @@map("access_grants")
 }
 
+/// Extra computer allowance an operator gave an organization for the period it was granted in.
+model ComputerAllowanceGrant {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  amountCents    Int
+  createdAt      DateTime     @default(now())
+
+  @@index([organizationId, createdAt])
+  @@map("computer_allowance_grants")
+}
+
+/// Hosted image and video generation an organization spent its monthly media balance on. Kept
+/// apart from the run that spent it, so deleting a bot or Space does not give the balance back.
+model MediaCharge {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  /// The generation charged, as `media:<external effect id>`; unique so a retry charges once.
+  source         String       @unique
+  kind           String
+  amountMicros   Int
+  createdAt      DateTime     @default(now())
+
+  @@index([organizationId, createdAt])
+  @@map("media_charges")
+}
+
 model PluginSubmission {
   id           String    @id @default(cuid())
   email        String
@@ -656,6 +693,8 @@ model Member {
 }
 
 model Space {
+  meetingSessions MeetingSession[]
+  meetingAllowanceUses MeetingAllowanceUse[]
   aiDataConsents              AiDataConsent[]
   id                          String                       @id
   organizationId              String
@@ -809,6 +848,9 @@ model DeploymentSettings {
   ownerUserId                     String?
   defaultModelProvider            String?
   defaultModelId                  String?
+  /// The admin-managed model and its deployment-owned key.
+  deploymentModelProvider         String?
+  deploymentModelId               String?
   deploymentModelCredentialCipher String?
   computerHost                    String?
   /// Provider id for new computers chosen in Settings; null keeps SANDBOX_PROVIDER.
@@ -991,6 +1033,7 @@ model SpaceVoicePreference {
 }
 
 model Bot {
+  meetingSessions MeetingSession[]
   screenGeneration Int @default(0)
   id                String            @id @default(cuid())
   spaceId           String
@@ -1159,6 +1202,7 @@ model Thread {
   historyCompactionRetryAfterSeq Int?
   reads                       ThreadRead[]
   messages                    Message[]
+  prunedMessageNonces         PrunedMessageNonce[]
   events                      Event[]
   tasks                       Task[]
   runs                        Run[]
@@ -1207,6 +1251,8 @@ model Message {
   replies          Message[] @relation("MessageReplies")
   runId            String?
   clientNonce      String?
+  nativeCalendarSessionId String?
+  nativeCalendarDeviceDigest String?
   /// Blind-index search tokens for the encrypted blocks; NULL until the row is encrypted.
   searchTokens     Int[]
   /// A bot reply's tool calls as sent and returned (JSON, see ToolHistorySchema), encrypted like
@@ -1224,6 +1270,20 @@ model Message {
   @@index([searchTokens], type: Gin)
   // Partial index messages_tool_work_idx (bot replies that used tools) is created in SQL.
   @@map("messages")
+}
+
+/// The send nonce of a message that history retention deleted, so a replayed signed delivery
+/// still finds it was handled. Holds no message content.
+model PrunedMessageNonce {
+  threadId    String
+  thread      Thread   @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  clientNonce String
+  messageId   String
+  seq         Int
+  createdAt   DateTime @default(now())
+
+  @@id([threadId, clientNonce])
+  @@map("pruned_message_nonces")
 }
 
 model Event {
@@ -1318,6 +1378,7 @@ model Run {
   updatedAt            DateTime          @updatedAt
   attempts             Attempt[]
   effects              ExternalEffect[]
+  nativeCalendarRequests NativeCalendarRequest[]
   steeringMessages     SteeringMessage[]
   externalMessage      ExternalMessage?
 
@@ -1504,6 +1565,26 @@ model Purchase {
   @@map("purchases")
 }
 
+model NativeCalendarRequest {
+  id        String   @id
+  runId     String
+  run       Run      @relation(fields: [runId], references: [id], onDelete: Cascade)
+  spaceId   String
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sessionId String
+  deviceDigest String
+  status    String
+  operation Json?
+  result    Json?
+  expiresAt DateTime
+  @@index([sessionId, status, expiresAt])
+  @@index([expiresAt])
+  @@index([runId])
+  @@index([userId])
+  @@map("native_calendar_requests")
+}
+
 model ExternalEffect {
   id             String   @id @default(cuid())
   spaceId        String
@@ -1549,6 +1630,11 @@ model Routine {
   /// Runs as a turn in its chat, with the whole conversation, waiting while the bot is busy there.
   /// Otherwise it runs on time alongside other work, with its recent results and the chat's last messages.
   inChat         Boolean   @default(false)
+  /// While set, a run may use the owner's own computer if its prompt hashes to this (see
+  /// routineRunUsesOwnerComputer). Only the owner sets it, in the app. A database trigger clears it
+  /// when the prompt, owner or bot changes, or it starts running in its chat or watching, and
+  /// another when the owner pairs or unpairs a computer.
+  computerPromptHash String?
   webhookEnabled Boolean   @default(false)
   githubEnabled  Boolean   @default(false)
   messageProvider String?
@@ -1563,14 +1649,20 @@ model Routine {
   watchState     Json?
   lastRunAt      DateTime?
   nextRunAt      DateTime?
+  endsAt         DateTime?
   /// Runs in a row the model provider refused for the account; each one spaces out the schedule.
   accountFailures Int      @default(0)
+  /// When failing runs last paused it; only runs after this count toward the next pause.
+  failurePausedAt DateTime?
+  /// Archiving its bot turned it off; restoring the bot turns it back on.
+  resumeOnRestore Boolean  @default(false)
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
   runs           Run[]
 
   @@index([active, nextRunAt])
   @@index([spaceId, botId])
+  // routines_ends_at_idx (routines with an end) is raw SQL: Prisma cannot express partial indexes.
   @@map("routines")
 }
 
@@ -1885,6 +1977,11 @@ model Computer {
   screenUrl               String?
   /// When the computer last started running; bounds how long it can stay up in one stretch.
   runningSince            DateTime?
+  /// The size it starts at next, within its organization's plan.
+  size                    String                   @default("standard")
+  /// The size used for billing and the stretch it applies to.
+  runningSize             String?
+  runningSizeSince        DateTime?
   /// The home's disk as the computer last reported it; null where it was never measured.
   diskUsedBytes           BigInt?
   diskFreeBytes           BigInt?
@@ -1897,9 +1994,26 @@ model Computer {
   maintenanceId           String?
   updates                 ComputerUpdate[]
   homeDeletionNotice      HomeDeletionNotice?
+  homeVersions            ComputerHomeVersion[]
 
   @@index([spaceId, scope])
   @@map("computers")
+}
+
+/// A stored revision of a computer's home, kept so its owner can restore an earlier one. Saves
+/// prune these; clearing or deleting the stored home deletes them with it.
+model ComputerHomeVersion {
+  id         String   @id @default(cuid())
+  computerId String
+  computer   Computer @relation(fields: [computerId], references: [id], onDelete: Cascade)
+  /// The `homeStorageId` the revision was stored under.
+  storageId  String
+  revision   String
+  savedAt    DateTime
+
+  @@unique([storageId, revision])
+  @@index([computerId, savedAt])
+  @@map("computer_home_versions")
 }
 
 /// Hosted billing only: a stopped computer whose saved home is due for deletion after its plan
@@ -1940,6 +2054,8 @@ model ComputerRun {
   userId     String?
   user       User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
   kind       String
+  /// Null for older runs or providers that do not bill by size.
+  size       String?
   /// The provider's id for the sandbox, to match runs with the provider's own usage and billing.
   providerRef String?
   startedAt  DateTime
@@ -1999,6 +2115,8 @@ model Artifact {
   version        Int        @default(1)
   // A file a stranger emailed: its own family, never one a later upload of that name joins.
   standalone     Boolean    @default(false)
+  meetingSessionId String? @unique
+  meetingSession MeetingSession? @relation(fields: [meetingSessionId], references: [id], onDelete: Cascade)
   // Client-chosen per upload so a retried upload that already landed returns this row.
   clientNonce    String?
 
@@ -2034,6 +2152,8 @@ model Page {
   /// Set when the page's content or title changes; pinning or sharing it is not an update.
   updatedAt      DateTime      @default(now())
   versions       PageVersion[]
+  grants         PageGrant[]
+  comments       PageComment[]
 
   @@index([spaceId, userId, updatedAt])
   @@index([botId])
@@ -2054,6 +2174,62 @@ model PageVersion {
 
   @@unique([pageId, version])
   @@map("page_versions")
+}
+
+model PageGrant {
+  id             String @id @default(cuid())
+  pageId         String
+  page           Page   @relation(fields: [pageId], references: [id], onDelete: Cascade)
+  recipientEmail String
+  userId         String?
+  user           User?  @relation(fields: [userId], references: [id], onDelete: SetNull)
+  /// Retains the binding when the account is deleted. It takes a fresh grant to share the address again.
+  bound          Boolean @default(false)
+  firstVersion   Int
+
+  @@unique([pageId, recipientEmail])
+  @@index([userId, pageId])
+  @@map("page_grants")
+}
+
+model PageComment {
+  id         String @id @default(cuid())
+  pageId     String
+  page       Page   @relation(fields: [pageId], references: [id], onDelete: Cascade)
+  authorId   String?
+  author     User?  @relation(fields: [authorId], references: [id], onDelete: SetNull)
+  version    Int
+  section    String
+  sectionOccurrence Int?
+  body       String
+  createdAt  DateTime @default(now())
+  resolvedAt DateTime?
+  requests   PageRevisionRequest[]
+
+  @@index([pageId, createdAt, id])
+  @@map("page_comments")
+}
+
+model PageRevisionRequest {
+  id          String @id @default(cuid())
+  commentId   String
+  /// A reviewer can explicitly retry a terminal request once. Replays reuse the same retry.
+  retryOf     String? @unique
+  comment     PageComment @relation(fields: [commentId], references: [id], onDelete: Cascade)
+  requesterId String
+  /// The requester's Space whose AI-sharing permission covers this request.
+  consentSpaceId String?
+  /// The exact grant at submission. A later grant does not reinstate work from this one.
+  grantId     String?
+  status      String @default("pending")
+  createdAt   DateTime @default(now())
+  draftSource String?
+  draftCode   String?
+  resultVersion Int?
+
+  @@index([grantId])
+  @@index([commentId, createdAt])
+  @@map("page_revision_requests")
 }
 
 model UsageRecord {
@@ -2089,6 +2265,8 @@ model UsageRecord {
   callId             String?  @unique
   operationId        String?
   operationKind      String   @default("answer")
+  /// Who paid: subscription, api_key, custom_endpoint, credits or deployment; null before it was recorded.
+  billing            String?
   /// Durable attribution, deliberately without lifecycle foreign keys.
   parentRunId        String?
   agentId            String?
@@ -2881,20 +3059,13 @@ model CapabilityInstallSpace {
   @@map("capability_install_spaces")
 }
 
-/// Operator grants; never purchased model credits. Counter includes uncertain reservations.
-model SpeechAllowance {
-  userId String @id
-  limitMicros BigInt
-  usedMicros BigInt @default(0)
-  expiresAt DateTime
-  @@map("speech_allowances")
-}
-
 /// Financial evidence survives chat deletion; contains no audio, transcripts or credentials.
 model SpeechCost {
   id String @id
   userId String
   spaceId String
+  /// The organization the Space belonged to when charged, so usage outlives the Space.
+  organizationId String?
   callId String?
   provider String
   operation String
@@ -2918,6 +3089,112 @@ model SpeechCost {
   updatedAt DateTime @default(now())
   @@index([userId, createdAt], map: "speech_costs_account")
   @@index([spaceId, createdAt], map: "speech_costs_space")
+  @@index([organizationId, createdAt], map: "speech_costs_organization")
   @@index([state, createdAt], map: "speech_costs_reconcile")
   @@map("speech_costs")
+}
+
+/// A bot's attendance and transcript import, scoped to the member who requested it.
+model MeetingSession {
+  id           String    @id @default(cuid())
+  spaceId      String
+  space        Space     @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  botId        String
+  bot          Bot       @relation(fields: [botId], references: [id], onDelete: Cascade)
+  userId       String
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  provider     String
+  platform     String
+  status       String
+  meetingUrl   String?   @db.Text
+  activeKey    String?   @unique
+  externalId   String?
+  recordingId  String?
+  transcriptId String?
+  transcript   String?   @db.Text
+  shareTranscript Boolean @default(false)
+  sharedArtifact Artifact?
+  error        String?
+  requestedAt  DateTime?
+  receivedAt   DateTime?
+  closedAt     DateTime?
+  expiresAt    DateTime
+  scheduledFor DateTime?
+  createdAt    DateTime  @default(now())
+
+  @@index([spaceId, userId, botId, createdAt])
+  @@index([spaceId, createdAt])
+  @@index([userId])
+  @@unique([provider, externalId])
+  @@index([spaceId, scheduledFor])
+  @@map("meeting_sessions")
+}
+
+/// Meetings a deleted bot already used, so deleting it does not give the Space its allowance back.
+model MeetingAllowanceUse {
+  id        String   @id @default(cuid())
+  spaceId   String
+  space     Space    @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  countedAt DateTime
+
+  @@index([spaceId, countedAt])
+  @@map("meeting_allowance_uses")
+}
+
+model MeetingCalendarConnection {
+  id                 String                  @id
+  spaceId            String
+  userId             String
+  provider           String
+  externalCalendarId String?
+  disconnecting      Boolean                 @default(false)
+  createdAt          DateTime                @default(now())
+  eventsDigest       String?
+  rules              MeetingCalendarRule[]
+  bookings           MeetingCalendarBooking[]
+
+  @@unique([spaceId, userId])
+  @@unique([provider, externalCalendarId])
+  @@map("meeting_calendar_connections")
+}
+
+model MeetingCalendarAuthorization {
+  id        String   @id
+  spaceId   String
+  userId    String
+  botId     String?
+  expiresAt DateTime
+  sessionId String?
+
+  @@unique([spaceId, userId])
+  @@map("meeting_calendar_authorizations")
+}
+
+model MeetingCalendarRule {
+  connectionId  String
+  connection    MeetingCalendarConnection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+  scope         String
+  targetId      String
+  botId         String?
+  eventStartsAt DateTime?
+  seriesId      String?
+  shareTranscript Boolean @default(false)
+
+  @@id([connectionId, scope, targetId])
+  @@map("meeting_calendar_rules")
+}
+
+model MeetingCalendarBooking {
+  connectionId String
+  connection   MeetingCalendarConnection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+  eventId      String
+  sessionId    String
+  startsAt     DateTime
+  linked       Boolean                   @default(false)
+  configDigest String
+  shareTranscript Boolean @default(false)
+
+  @@id([connectionId, eventId])
+  @@index([sessionId])
+  @@map("meeting_calendar_bookings")
 }

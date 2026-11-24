@@ -33,11 +33,7 @@ import {
 } from "./configured-sandbox.js";
 import type { SandboxProviderOptions } from "./sandbox-factory.js";
 import { createSandboxProvider } from "./sandbox-factory.js";
-
-export function sandboxKindForBot(envKind: string, computerHost: string | null | undefined) {
-  if (envKind === "docker" && computerHost === "this-mac") return "desktop";
-  return envKind;
-}
+import { sandboxKindCapabilities } from "./sandbox-kind-capabilities.js";
 
 export async function createRunSandbox(
   kind: string,
@@ -128,7 +124,7 @@ async function createBaseRunSandbox(
         }
       : opts.onUnsafeStop,
   });
-  if (kind !== "docker" || !opts.prisma) return primary;
+  if (!sandboxKindCapabilities(kind).offersHostComputer || !opts.prisma) return primary;
   return new HostAwareSandbox(
     primary,
     new HostComputerSandbox(opts.hostComputerUrl ?? "", opts.hostComputerToken ?? ""),
@@ -282,6 +278,10 @@ export class HostAwareSandbox implements SandboxProvider {
     options?: { maxBytes?: number },
   ) {
     return this.route(computer).readFile(computer, path, context, options);
+  }
+
+  readStoppedFile(...args: Parameters<NonNullable<SandboxProvider["readStoppedFile"]>>) {
+    return this.route(args[0]).readStoppedFile?.(...args) ?? Promise.resolve(undefined);
   }
 
   writeFile(computer: ComputerRef, file: PortableFile, context: AdapterContext) {

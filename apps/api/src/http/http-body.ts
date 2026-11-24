@@ -1,3 +1,5 @@
+import { withAbort } from "@rakazo/core";
+
 /** Reads a request body without buffering more than maxBytes. */
 export async function readBoundedBody(request: Request, maxBytes: number): Promise<string | null> {
   const contentLengthHeader = request.headers.get("content-length");
@@ -34,11 +36,15 @@ export async function readBoundedBody(request: Request, maxBytes: number): Promi
 
 /**
  * Reads a request body as bytes without buffering more than maxBytes. A declared length is
- * allocated before any byte arrives, so call this only after the caller is authenticated.
+ * allocated before any byte arrives, so call this only after the caller is authenticated,
+ * unless `preallocateFromContentLength` is false: a caller that must read the body first (a
+ * signed webhook) says so and gets the chunk-joined path instead.
  */
 export async function readBoundedBytes(
   request: Request,
   maxBytes: number,
+  signal?: AbortSignal,
+  options: { preallocateFromContentLength?: boolean } = {},
 ): Promise<Uint8Array | null> {
   const contentLengthHeader = request.headers.get("content-length");
   let declared: number | null = null;
@@ -48,10 +54,14 @@ export async function readBoundedBytes(
       cancelBody(request.body);
       return null;
     }
-    declared = contentLength;
+    if (options.preallocateFromContentLength !== false) declared = contentLength;
   }
 
   if (!request.body) return new Uint8Array();
+  if (signal?.aborted) {
+    cancelBody(request.body);
+    signal.throwIfAborted();
+  }
 
   const reader = request.body.getReader();
   // With a declared length the bytes land in one buffer; otherwise chunks are joined once at the end.
@@ -60,7 +70,8 @@ export async function readBoundedBytes(
   let bytes = 0;
   try {
     while (true) {
-      const { done, value } = await reader.read();
+      const read = reader.read();
+      const { done, value } = await (signal ? withAbort(read, signal) : read);
       if (done) break;
       if (bytes + value.byteLength > maxBytes) {
         cancelBody(reader);
@@ -75,6 +86,9 @@ export async function readBoundedBytes(
       }
       bytes += value.byteLength;
     }
+  } catch (error) {
+    if (signal?.aborted) cancelBody(reader);
+    throw error;
   } finally {
     reader.releaseLock();
   }

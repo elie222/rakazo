@@ -18,6 +18,7 @@ export const ES_MESSAGES: Record<string, string> = {
   Redo: "Rehacer",
   Cut: "Cortar",
   Copy: "Copiar",
+  "Copy Link Address": "Copiar dirección del enlace",
   Paste: "Pegar",
   "Paste and Match Style": "Pegar y adaptar estilo",
   Delete: "Eliminar",
@@ -38,6 +39,10 @@ export const ES_MESSAGES: Record<string, string> = {
   "Bring All to Front": "Traer todo al frente",
 
   // Updates
+  "Checking for Updates…": "Buscando actualizaciones…",
+  "Downloading Update…": "Descargando actualización…",
+  "Restart to Update…": "Reiniciar para actualizar…",
+  "Downloading Rakazo {version}…": "Descargando Rakazo {version}…",
   "Rakazo {version} is ready to install.": "Rakazo {version} está listo para instalarse.",
   Restart: "Reiniciar",
   Later: "Más tarde",

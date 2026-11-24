@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 
 import { i18n } from "@lingui/core";
+import { VAULT_ITEM_LIMIT } from "@rakazo/contracts";
 import type { Deferred } from "@rakazo/core/test-async";
 import { deferred, flush } from "@rakazo/core/test-async";
 import type { ReactNode } from "react";
@@ -1493,7 +1494,7 @@ it("shows a finished import's result even when the list can't be read after it",
 });
 
 it("says how many logins look past the room left, and sends them all for the server to judge", async () => {
-  state.credentials = Array.from({ length: 98 }, (_, index) =>
+  state.credentials = Array.from({ length: VAULT_ITEM_LIMIT - 2 }, (_, index) =>
     credential({ name: `key-${index}`, title: `Key ${index}` }),
   );
   const login = { title: "", password: "fake-pass", username: "bob" };

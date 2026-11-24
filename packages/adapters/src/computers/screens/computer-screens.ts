@@ -1,6 +1,10 @@
 import type { AdapterContext } from "@rakazo/adapter-kit";
 import { canReleaseScreenLease, canTakeScreenLease } from "@rakazo/core/node/screen-lease";
 
+/** How the page browser helper's own failures begin, which the failure log reads. */
+export const PAGE_BROWSER_TIMED_OUT = "Page browser timed out";
+export const PAGE_BROWSER_INTERRUPTED = "Page browser unavailable or interrupted";
+
 export const COMPUTER_SCREEN_UNAVAILABLE =
   "The computer screen is temporarily busy. Retry in a moment. File and shell tools still work.";
 

@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
-import type { Actor, MessageBlock } from "@rakazo/contracts";
+import type { Actor, MessageBlock, OutgoingDraft } from "@rakazo/contracts";
+import { outgoingDraftAnswer } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
 import {
   answerRunInput,
@@ -7,7 +8,9 @@ import {
   createDb,
   createPendingSteeringRun,
   createThreadMessage,
+  loadRunTurnCheckpoint,
   provisionMessagingIdentity,
+  RUN_TURN_CHECKPOINT_KIND,
   runAsSystem,
   runAsTenant,
   SpaceDeletionInProgressError,
@@ -191,6 +194,77 @@ describe.skipIf(!enabled)("typed replies to waiting cards (PostgreSQL)", () => {
       await system.message.findUniqueOrThrow({ where: { id: fixture.message.id } }),
     ).toMatchObject({ blocks: fixture.message.blocks });
   }
+
+  it.each(["created", "user"])(
+    "only replays a saved question when continuing the same turn (%s)",
+    async (trigger) => {
+      const { run } = await waitingCard(question, threadId, botId, trigger);
+      const transcript = JSON.stringify({
+        version: 1,
+        provider: "fake",
+        model: "test-model",
+        systemPrompt: "",
+        pendingToolCallId: "ask-1",
+        messages: [
+          { role: "user", content: "Ask which city to visit.", timestamp: 0 },
+          {
+            role: "assistant",
+            content: [
+              {
+                type: "toolCall",
+                name: "ask_user",
+                id: "ask-1",
+                arguments: { question: "Which city?", options: ["Berlin", "Paris"] },
+              },
+            ],
+            stopReason: "toolUse",
+            timestamp: 1,
+          },
+        ],
+      });
+      await system.externalEffect.create({
+        data: {
+          runId: run.id,
+          spaceId: actor.spaceId,
+          kind: RUN_TURN_CHECKPOINT_KIND,
+          status: RUN_TURN_CHECKPOINT_KIND,
+          idempotencyKey: JSON.stringify([RUN_TURN_CHECKPOINT_KIND, run.id]),
+          request: {},
+          result: transcript,
+        },
+      });
+      expect((await send(privateTarget(), "Paris")).runId).toBe(run.id);
+      expect(await loadRunTurnCheckpoint(system, run)).toBe(
+        trigger === "created" ? undefined : transcript,
+      );
+    },
+  );
+
+  it("uses the owner's first composer reply as the resumed intro's source", async () => {
+    const intro = await waitingCard(question, threadId, botId, "created");
+    const nonce = randomUUID();
+    const reply = await send(privateTarget(), "Look up the other bot's chat", nonce);
+    expect(reply.runId).toBe(intro.run.id);
+    const source = await system.message.findFirstOrThrow({
+      where: { threadId, seq: reply.seq },
+    });
+    expect(
+      await system.run.findUniqueOrThrow({
+        where: { id: intro.run.id },
+        include: { sourceMessage: true },
+      }),
+    ).toMatchObject({
+      status: "queued",
+      trigger: "user",
+      sourceMessage: { id: source.id, threadId, role: "user", authorUserId: actor.userId },
+    });
+
+    expect(await send(privateTarget(), "Look up the other bot's chat", nonce)).toMatchObject({
+      runId: intro.run.id,
+      seq: reply.seq,
+    });
+    expect(await system.message.count({ where: { threadId, role: "user" } })).toBe(1);
+  });
 
   it.each(["bot", "group"] as const)(
     "retires questions that are no longer latest in a %s send and starts one normal run",
@@ -549,6 +623,77 @@ describe.skipIf(!enabled)("typed replies to waiting cards (PostgreSQL)", () => {
       prompt: "Selected choice choice-2: Paris",
     });
   });
+
+  it.each(["send", "discard"] as const)(
+    "settles a draft once when the owner chooses %s",
+    async (action) => {
+      const outgoingDraft: OutgoingDraft = {
+        source: "Mail",
+        keys: { to: "to", subject: "subject", body: "body" },
+        values: { kind: "email", to: "sam@example.test", subject: "Handoff", body: "Before edits" },
+      };
+      const effectId = randomUUID();
+      const fixture = await waitingCard({
+        kind: "ask",
+        text: "Mail",
+        status: "pending",
+        approvalEffectId: effectId,
+        outgoingDraft,
+        actions: [
+          { id: "allow", label: "Send" },
+          { id: "deny", label: "Discard" },
+        ],
+      });
+      const originalRequest = { to: "sam@example.test", subject: "Handoff", body: "Before edits" };
+      await system.externalEffect.create({
+        data: {
+          id: effectId,
+          spaceId: actor.spaceId,
+          runId: fixture.run.id,
+          idempotencyKey: effectId,
+          kind: "send_email",
+          status: "intended",
+          request: originalRequest,
+        },
+      });
+      const answer = (value: string) =>
+        runAsTenant(actor, () =>
+          answerRunInput(prisma, {
+            spaceId: actor.spaceId,
+            threadId,
+            runId: fixture.run.id,
+            messageId: fixture.message.id,
+            answeredByUserId: actor.userId,
+            answer: value,
+          }),
+        );
+
+      await expect(answer("allow")).resolves.toBe(false);
+      const edited = {
+        kind: "email",
+        ...originalRequest,
+        to: "taylor@example.test",
+        body: "After edits",
+      } as const;
+      const submission = action === "send" ? outgoingDraftAnswer(edited) : "deny";
+      await expect(answer(submission)).resolves.toBe(true);
+      await expect(answer(submission)).resolves.toBe(false);
+      await expect(
+        system.externalEffect.findUniqueOrThrow({ where: { id: effectId } }),
+      ).resolves.toMatchObject({
+        status: action === "send" ? "approved" : "denied",
+        request:
+          action === "send"
+            ? { to: edited.to, subject: edited.subject, body: edited.body }
+            : originalRequest,
+      });
+      await expect(
+        system.run.findUniqueOrThrow({ where: { id: fixture.run.id } }),
+      ).resolves.toMatchObject({
+        status: "queued",
+      });
+    },
+  );
 
   it.each(["secret", "login", "approval"] as const)(
     "leaves a %s card and its run pending",

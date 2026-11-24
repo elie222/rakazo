@@ -6,9 +6,12 @@ import { act } from "react";
 import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { reportMobileError } from "../../lib/platform/monitoring";
+import { completeMobileStartup } from "../../lib/platform/startup";
 import { AppErrorBoundary } from "./app-error-boundary";
 
 vi.mock("../../lib/platform/monitoring", () => ({ reportMobileError: vi.fn() }));
+vi.mock("../../lib/platform/startup", () => ({ completeMobileStartup: vi.fn() }));
 vi.mock("expo-splash-screen", () => ({ hideAsync: vi.fn().mockResolvedValue(undefined) }));
 vi.mock("../../lib/appearance/appearance", () => ({
   mobileTokens: () => ({
@@ -25,7 +28,8 @@ vi.mock("react-native", () => ({
     </button>
   ),
   StyleSheet: { create: <T,>(styles: T) => styles },
-  Text: ({ children }: { children?: ReactNode }) => <span>{children}</span>,
+  Text: ({ accessibilityRole, children }: { accessibilityRole?: string; children?: ReactNode }) =>
+    accessibilityRole === "header" ? <h1>{children}</h1> : <span>{children}</span>,
   View: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
 }));
 
@@ -43,6 +47,7 @@ describe("AppErrorBoundary", () => {
 
   beforeEach(() => {
     shouldThrow = true;
+    vi.clearAllMocks();
     vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
     consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
     container = document.createElement("div");
@@ -57,8 +62,8 @@ describe("AppErrorBoundary", () => {
     vi.unstubAllGlobals();
   });
 
-  it("shows one retry action and renders the children again after retry", () => {
-    act(() =>
+  it("explains a failure without exposing details and renders the children again after retry", async () => {
+    await act(async () =>
       root.render(
         <AppErrorBoundary>
           <Child />
@@ -66,13 +71,21 @@ describe("AppErrorBoundary", () => {
       ),
     );
 
+    expect(container.querySelector("h1")?.textContent).toBe("Could not load");
+    expect(container.textContent).not.toContain("render failed");
     const retry = container.querySelector("button");
     expect(retry?.textContent).toBe("Try again");
+    expect(container.querySelectorAll("button")).toHaveLength(1);
+    expect(reportMobileError).toHaveBeenCalledExactlyOnceWith(expect.any(Error), "react.render");
     expect(SplashScreen.hideAsync).toHaveBeenCalledOnce();
+    expect(completeMobileStartup).toHaveBeenCalledOnce();
 
     shouldThrow = false;
     act(() => retry?.click());
 
     expect(container.textContent).toBe("Recovered content");
+    expect(reportMobileError).toHaveBeenCalledOnce();
+    expect(SplashScreen.hideAsync).toHaveBeenCalledOnce();
+    expect(completeMobileStartup).toHaveBeenCalledOnce();
   });
 });

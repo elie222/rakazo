@@ -6,9 +6,12 @@ import {
   isValidElement,
   useContext,
   useEffect,
+  useLayoutEffect,
   useState,
 } from "react";
+import { isPageIcon } from "../icon-names.js";
 import { ErrorBoundary } from "./boundary.js";
+import { Icon } from "./icon.js";
 import { Inline, Link, webUrl } from "./inline.js";
 import { documentLanguage, PageLanguage, wordsFor } from "./labels.js";
 import { PageHero, PageMeta, slugify } from "./text.js";
@@ -61,11 +64,28 @@ export function Page({
   const inherited = useContext(PageLanguage);
   const language = own ?? inherited ?? documentLanguage();
   const words = wordsFor(language);
-  useEffect(() => {
-    if (!own) return;
-    document.documentElement.lang = own;
-    document.documentElement.dir = wordsFor(own).dir;
-  }, [own]);
+  const direction = own ? words.dir : undefined;
+  // Restoring the host language happens after the render that cleared the override, which
+  // still read the override from the document, so render once more.
+  const [, rerender] = useState(0);
+  useLayoutEffect(() => {
+    if (!own || !direction) return;
+    const html = document.documentElement;
+    const originalLang = html.getAttribute("lang");
+    const originalDir = html.getAttribute("dir");
+    html.lang = own;
+    html.dir = direction;
+    return () => {
+      // A newer owner may have changed this document's language or direction.
+      if (html.getAttribute("lang") !== own) return;
+      if (originalLang === null) html.removeAttribute("lang");
+      else html.setAttribute("lang", originalLang);
+      rerender((count) => count + 1);
+      if (html.getAttribute("dir") !== direction) return;
+      if (originalDir === null) html.removeAttribute("dir");
+      else html.setAttribute("dir", originalDir);
+    };
+  }, [own, direction]);
   const links = Array.isArray(sources)
     ? sources.filter((source) => typeof source === "string")
     : [];
@@ -89,7 +109,7 @@ export function Page({
           className="rk-page"
           data-width={WIDTHS.has(width) ? width : "column"}
           lang={own}
-          dir={own ? words.dir : undefined}
+          dir={direction}
           style={colors as CSSProperties}
         >
           <header className="rk-header">
@@ -258,17 +278,26 @@ function ToneIcon({ tone }: { tone: string }) {
 export function Callout({
   lead,
   tone,
+  icon,
   children,
 }: {
   lead?: string;
   tone?: "info" | "success" | "warning" | "danger";
+  icon?: string;
   children?: ReactNode;
 }) {
   if (!lead && (children === undefined || children === null || children === "")) return null;
   const toned = tone && CALLOUT_TONES.has(tone) ? tone : undefined;
+  const drawn = isPageIcon(icon);
   return (
-    <div className="rk-callout" role="note" data-tone={toned}>
-      {toned ? <ToneIcon tone={toned} /> : null}
+    <div className="rk-callout" role="note" data-tone={toned} data-icon={drawn || undefined}>
+      {drawn ? (
+        <span className="rk-callout-glyph">
+          <Icon name={icon} />
+        </span>
+      ) : toned ? (
+        <ToneIcon tone={toned} />
+      ) : null}
       <div className="rk-callout-text">
         {lead ? <p className="rk-callout-lead">{lead}</p> : null}
         {children !== undefined && children !== null && children !== "" ? (

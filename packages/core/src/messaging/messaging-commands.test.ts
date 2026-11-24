@@ -40,6 +40,14 @@ describe("parseMessagingCommand", () => {
       expect(parseMessagingCommand(text)).toBeNull();
   });
 
+  it("recognizes standalone Thai stop commands", () => {
+    expect(parseMessagingCommand("หยุด")).toBe("stop");
+    expect(parseMessagingCommand("หยุด!")).toBe("stop");
+    expect(parseMessagingCommand("วันหยุด")).toBeNull();
+    expect(parseMessagingCommand("หยุดพัก")).toBeNull();
+    expect(parseMessagingCommand("ฉันจะหยุดพรุ่งนี้")).toBeNull();
+  });
+
   it("treats everything else as a normal message", () => {
     expect(parseMessagingCommand("yes please")).toBeNull();
     expect(parseMessagingCommand("YES!")).toBeNull();

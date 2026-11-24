@@ -18,25 +18,27 @@ import type {
   ToolStepCall,
 } from "@rakazo/contracts";
 import type { ToolStepOutcome } from "@rakazo/core";
-import { createStreamingRedactor } from "@rakazo/core";
-import { toolEffectIdempotencyKey } from "@rakazo/core/node/approval-effect-key";
+import { createStreamingRedactor, toolResultTaintsRun } from "@rakazo/core";
+import {
+  isToolEffectIdempotencyKey,
+  toolEffectIdempotencyKey,
+} from "@rakazo/core/node/approval-effect-key";
 import type { Bot, Computer, effectiveMemoryScope, Run, Task, Thread } from "@rakazo/db";
 import { dropRunTurnCheckpoint, saveRunTurnCheckpoint } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import type {
   ApprovalPausedToolResult,
   ApprovedEffectReplayQueue,
-  TerminatingToolResult,
 } from "../../approvals/approval-effect.js";
 import {
   approvalPausedToolResult,
   approvedEffectOccurrence,
-  OWNER_SETTINGS_REFUSAL_REPLY,
-  terminatingToolResult,
 } from "../../approvals/approval-effect.js";
+import { appendOutsideText } from "../../approvals/review-target-sources.js";
 import type { ComputerExecutionLease } from "../../computers/computer-lifecycle.js";
 import type { UnchangedVisualStreak } from "../../computers/screens/computer-tools.js";
 import type { selectRunConnections } from "../../integrations/connection-context.js";
+import type { RunMediaSources } from "../../media/media-sources.js";
 import type { loadBotMessageContext } from "../../messaging/bot-messages.js";
 import { namedAgentTools } from "../../runtime/pi/tools/pi-runtime-tools.js";
 import type { inferScript } from "../../runtime/scripted-runtime.js";
@@ -53,7 +55,6 @@ import type { ScreenTurn } from "../turn/screen-turn.js";
 import { providerToolCallId, runToolCallIds } from "../turn/tool-call-ids.js";
 import type { LoopGuardStreak } from "../turn/tool-loop.js";
 import type { ToolRefusal } from "../turn/tool-refusal.js";
-import { refusal } from "../turn/tool-refusal.js";
 import { restoreTurnCheckpoint, unresolvedTurnCheckpointCalls } from "../turn/turn-checkpoint.js";
 import type { ReplySnapshot } from "./reply-snapshot.js";
 import { restoreReply, snapshotReply } from "./reply-snapshot.js";
@@ -210,14 +211,22 @@ export interface RunState {
   overLimitActionCalls: number;
   /**
    * Whether outside content has entered the run. A run someone else started begins tainted,
-   * and so does a later attempt, including one with restored untrusted tool results.
+   * and so does a later attempt, including one with restored untrusted tool results. It only
+   * informs the approval model (see planActionGate's reviewOnly), never refuses a call.
    */
   tainted: boolean;
   /**
-   * The taint refusal for owner settings was returned in this attempt. A model that calls
-   * again gets the turn ended instead of the same error a second time.
+   * Whether outside content other than the owner's own computer output (its shell, screen and
+   * computer list) entered the run. Only the routine gate on that computer reads it, so a routine
+   * can take several steps there without asking each time (see userComputerGate).
    */
-  ownerSettingsRefused: boolean;
+  taintedBeyondOwnComputer?: boolean;
+  /**
+   * The text of the outside content this run read (tool results, the task of a run someone else
+   * started, replayed history), normalized and capped, so Auto Review can tell which targets of a call only that
+   * content named (see outsideOnlyTargets).
+   */
+  outsideText: string;
   /**
    * The instructions this attempt's model works from: the attempt-start snapshot its prompt
    * was built with, restored from the turn checkpoint on resume, and advanced only after a
@@ -227,6 +236,8 @@ export interface RunState {
    * attempt refuses own instruction writes rather than guessing.
    */
   ownInstructionsBaseline: string | undefined;
+  /** Set once this run archives its own bot: it may only finish its reply. */
+  selfArchived?: true;
   earlierAttempt: Promise<boolean> | undefined;
   /**
    * Hosts of the sites this run typed an approved wallet purchase into (fill_card, fill_pay_token):
@@ -235,6 +246,11 @@ export interface RunState {
   walletHosts: Set<string>;
   /** Where the page browser last said its page was, which picks a login's site to fill on. */
   pageUrl?: string;
+  /**
+   * A desktop action ran since the page browser last reported `pageUrl`, so the page may have
+   * changed: Auto Review treats what a page action types as going to a site the run was not given.
+   */
+  pageUrlUncertain?: boolean;
   vaultUses: Set<string>;
   handedOff: boolean;
   terminalCheckpointComplete: boolean;
@@ -256,12 +272,16 @@ export interface RunComputerContext {
   graphical: boolean;
   graphicalToolsAllowed: boolean;
   pageBrowserAllowed: boolean;
+  /** Screenshots reach some model: this run's, a computer model, or a checkpoint resolver. */
   acceptsImages: boolean;
+  /** This run's own model sees images, so read_file and web_fetch can hand it pictures. */
+  modelSeesImages: boolean;
   heldForTakeover: boolean;
 }
 
 export interface RunSource {
   ownerStartedRun: boolean;
+  meetingChat: boolean;
   messagingChannelRun: boolean;
   channelId: string | undefined;
   historySearchBeforeSeq: number;
@@ -274,6 +294,8 @@ export interface RunSource {
   peerMessage: Awaited<ReturnType<typeof loadBotMessageContext>>;
   /** Whose own computer user_computer_shell may reach (see userComputerOwner). */
   userComputerOwner: string | undefined;
+  /** A routine run its owner let use their computer: it may call only the tools it was offered. */
+  ownerComputerRoutine: boolean;
 }
 
 export interface RunTools {
@@ -293,6 +315,8 @@ export type RunTrust = ReturnType<typeof createRunTrustLoaders> & {
 export interface RunProviders {
   web: WebProvider;
   mediaGeneration: MediaGenerationProvider | undefined;
+  /** Where this run's images and videos come from. */
+  media: RunMediaSources;
   paidServices: PaidServiceProvider | undefined;
   browser: BrowserProvider;
   cloudAgent: ExecutorDeps["cloudAgent"];
@@ -424,36 +448,39 @@ export async function neverAsks(ctx: RunContext) {
   return (await ctx.trust.loadAutoReviewPreference()).skipApprovals;
 }
 
-/**
- * Refuse an owner-settings change in a run that read outside content. The first refusal
- * explains the block; a repeat ends the turn, because a model that ignored the explanation
- * would otherwise retry the same call without a bound.
- */
-export function refuseOwnerSettingsChange(
-  ctx: RunContext,
-  error: string,
-): { error: string } | TerminatingToolResult {
-  if (ctx.state.ownerSettingsRefused) {
-    return terminatingToolResult(OWNER_SETTINGS_REFUSAL_REPLY, { refused: "owner-settings" });
-  }
-  ctx.state.ownerSettingsRefused = true;
-  return refusal("outside_content_blocks_owner_settings", error);
-}
-
 export async function isRunTainted(ctx: RunContext) {
   const { state } = ctx;
-  if (state.tainted) return true;
+  // Own-computer output alone still leaves outside messages to check for.
+  if (state.taintedBeyondOwnComputer) return true;
   state.earlierAttempt ??= ctx.deps.prisma.attempt
     .count({ where: { runId: ctx.runId } })
     .then((count) => count > 1);
-  if ((await state.earlierAttempt) || (await ctx.trust.receivedOutsideMessage()))
+  if ((await state.earlierAttempt) || (await ctx.trust.receivedOutsideMessage())) {
     state.tainted = true;
+    state.taintedBeyondOwnComputer = true;
+  }
   return state.tainted;
 }
 
-/** Fresh outside input applies the existing action protections for this run. */
-export async function markReadOutsideContent(ctx: RunContext) {
+/** Like isRunTainted, but the owner's own computer output does not count. */
+export async function isRunTaintedBeyondOwnComputer(ctx: RunContext) {
+  await isRunTainted(ctx);
+  return ctx.state.taintedBeyondOwnComputer === true;
+}
+
+/**
+ * Fresh outside input applies the existing action protections for this run, and its text is kept
+ * so Auto Review can tell which targets of a later call only it named.
+ */
+export async function markReadOutsideContent(
+  ctx: RunContext,
+  content?: unknown,
+  from?: { ownComputer: boolean },
+) {
   ctx.state.tainted = true;
+  if (!from?.ownComputer) ctx.state.taintedBeyondOwnComputer = true;
+  if (content !== undefined)
+    ctx.state.outsideText = appendOutsideText(ctx.state.outsideText, content);
 }
 
 /** A change landed after this attempt's snapshot; only a fresh run can apply the rewrite. */
@@ -463,6 +490,23 @@ export const OWN_INSTRUCTIONS_CHANGED_ERROR =
 /** An older checkpoint predates the baseline; a resumed attempt must not guess. */
 export const OWN_INSTRUCTIONS_BASELINE_UNKNOWN_ERROR =
   "This resumed run cannot safely change its own instructions. Ask the user to send their request again so a new run starts from the current instructions.";
+
+/** Give the new task its own occurrences while keeping retries anchored to the intro. */
+export function seedIntroEffectOccurrences(
+  effects: Pick<RunContext["state"]["effects"], "counts" | "consumedIds">,
+  runId: string,
+  receipts: readonly { id: string; kind: string; idempotencyKey: string }[],
+): void {
+  for (const { id, kind, idempotencyKey } of receipts) {
+    effects.consumedIds.add(id);
+    if (!isToolEffectIdempotencyKey(idempotencyKey, runId, kind)) continue;
+    const prefix = `${runId}:${kind}:`;
+    const [digest, suffix] = idempotencyKey.slice(prefix.length).split(":");
+    const fingerprint = prefix + digest;
+    const occurrence = Number(suffix ?? 0);
+    effects.counts.set(fingerprint, Math.max(effects.counts.get(fingerprint) ?? 0, occurrence + 1));
+  }
+}
 
 export function nextMutatingEffectOccurrence(
   ctx: RunContext,
@@ -474,6 +518,26 @@ export function nextMutatingEffectOccurrence(
   const effects = ctx.state.effects;
   const fingerprint = toolEffectIdempotencyKey(ctx.runId, toolName, args);
   const approved = approvedKey ? approvedEffectOccurrence(approvedKey, fingerprint) : undefined;
+  // An edited approval keeps its original identity so a saved pre-edit call can recover after
+  // execution. Reserve that occurrence when there was no saved turn to reserve it for us.
+  if (
+    approved === undefined &&
+    approvedKey &&
+    isToolEffectIdempotencyKey(approvedKey, ctx.runId, toolName)
+  ) {
+    const prefix = `${ctx.runId}:${toolName}:`;
+    const [digest] = approvedKey.slice(prefix.length).split(":");
+    const originalFingerprint = prefix + digest;
+    const originalOccurrence = approvedEffectOccurrence(approvedKey, originalFingerprint) ?? 0;
+    if ((effects.counts.get(originalFingerprint) ?? 0) <= originalOccurrence) {
+      effects.occurrences.push({
+        executionId,
+        fingerprint: originalFingerprint,
+        occurrence: originalOccurrence,
+      });
+      effects.counts.set(originalFingerprint, originalOccurrence + 1);
+    }
+  }
   const previous = effects.restoredPending;
   if (previous?.executionId === executionId) {
     effects.restoredPending = undefined;
@@ -534,6 +598,10 @@ export function restoreTurnCheckpointEffects(
   const effects = ctx.state.effects;
   try {
     const saved = restoreTurnCheckpoint(turnCheckpoint, model);
+    // The saved turn's tool results are outside content this run already read.
+    for (const message of saved.messages)
+      if (message.role === "toolResult" && toolResultTaintsRun(message.toolName))
+        ctx.state.outsideText = appendOutsideText(ctx.state.outsideText, message.content);
     const unresolved = new Set(unresolvedTurnCheckpointCalls(saved.messages));
     const namedTools = namedAgentTools(partitionTools(ctx.tools.offered).listed);
     const available = new Set(namedTools.map((tool) => tool.name));

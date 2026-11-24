@@ -162,6 +162,7 @@ const ComposerBody = memo(function Composer({
     text: readComposerDraft(draftKey),
     bindings: readComposerDraftBindings(draftKey),
   }));
+  const [imeComposing, setImeComposing] = useState(false);
   const [largePaste, setLargePaste] = useState<{
     text: string;
     before: typeof composition;
@@ -402,7 +403,10 @@ const ComposerBody = memo(function Composer({
   // "reply" text, while an explicit cancel must keep "Reply cancelled".
   const replyAnnouncementKind = useRef<"reply" | "cancelled" | null>(null);
   const prevReplyTarget = useRef<ThreadMessage | null>(null);
-  const { draggingFiles, fileDragActive, dropHandlers } = useComposerFileDrop({
+  const [fieldset, setFieldset] = useState<HTMLFieldSetElement | null>(null);
+  const { fileDragActive, fileDropOverlay } = useComposerFileDrop({
+    docked,
+    composer: fieldset,
     disabled,
     onDropFiles: pickAttachments,
   });
@@ -627,13 +631,11 @@ const ComposerBody = memo(function Composer({
 
   return (
     <fieldset
+      ref={setFieldset}
       aria-label={t`Message composer`}
-      data-dragging={draggingFiles ? "files" : undefined}
-      {...dropHandlers}
-      className={`relative z-30 m-0 min-w-0 border-0 ${docked ? "p-0" : "px-3 pb-4 pt-0 md:px-[max(1.5rem,calc((100%_-_60rem)/2))] md:pb-6"} [&>*]:pointer-events-auto ${fileDragActive ? "pointer-events-auto" : "pointer-events-none"} ${
-        draggingFiles ? "rounded-[14px] ring-2 ring-inset ring-ring" : ""
-      }`}
+      className={`relative z-30 m-0 min-w-0 border-0 ${docked ? "p-0" : "px-3 pb-4 pt-0 md:px-[max(1.5rem,calc((100%_-_60rem)/2))] md:pb-6"} [&>*]:pointer-events-auto ${fileDragActive ? "pointer-events-auto" : "pointer-events-none"}`}
     >
+      {fileDropOverlay}
       <div role="status" data-testid="composer-announcement" className="sr-only">
         {replyAnnouncement}
       </div>
@@ -747,7 +749,7 @@ const ComposerBody = memo(function Composer({
           aria-label={t`Attach file`}
           disabled={disabled}
           onClick={() => fileInputRef.current?.click()}
-          className={`col-start-1 size-8 shrink-0 rounded-full border border-border bg-muted text-muted-foreground transition-colors hover:bg-accent hover:text-foreground ${
+          className={`col-start-1 shrink-0 rounded-full border border-border bg-muted text-muted-foreground transition-colors hover:bg-accent hover:text-foreground ${
             expanded ? "row-start-2" : ""
           }`}
         >
@@ -777,6 +779,9 @@ const ComposerBody = memo(function Composer({
               ref={textareaRef}
               onScroll={onTextareaScroll}
               value={draft}
+              onCompositionStart={() => setImeComposing(true)}
+              onCompositionEnd={() => setImeComposing(false)}
+              onBlur={() => setImeComposing(false)}
               onChange={(event) => {
                 completedSelection.current = null;
                 updateDraft(
@@ -906,14 +911,14 @@ const ComposerBody = memo(function Composer({
               autoComplete="off"
               dir="auto"
               rows={1}
-              className={`${COMPOSER_TEXT} block max-h-25 min-h-[24px] w-full resize-none overflow-y-auto bg-transparent text-transparent caret-foreground outline-none placeholder:text-muted-foreground selection:bg-ring/30 selection:text-transparent disabled:opacity-40 forced-colors:text-[CanvasText]`}
+              className={`${COMPOSER_TEXT} block max-h-25 min-h-[24px] w-full resize-none overflow-y-auto bg-transparent caret-foreground outline-none placeholder:text-muted-foreground selection:bg-ring/30 disabled:opacity-40 forced-colors:text-[CanvasText] ${imeComposing ? "text-foreground" : "text-transparent selection:text-transparent"}`}
             />
             <ComposerMentionHighlights
               ref={mirrorRef}
               text={draft}
               bindings={mentionBindings}
               targets={mentionTargets ?? []}
-              className={`${COMPOSER_TEXT} pointer-events-none absolute inset-0 overflow-y-hidden text-foreground [unicode-bidi:plaintext] forced-colors:hidden ${disabled ? "opacity-40" : ""}`}
+              className={`${COMPOSER_TEXT} pointer-events-none absolute inset-0 overflow-y-hidden text-foreground [unicode-bidi:plaintext] forced-colors:hidden ${disabled ? "opacity-40" : ""} ${imeComposing ? "invisible" : ""}`}
             />
           </div>
         </div>

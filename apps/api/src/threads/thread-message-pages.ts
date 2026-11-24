@@ -52,9 +52,12 @@ export async function loadMessagePage(
       const truncated = rows.length >= pageSize;
       const coveredThroughSeq = truncated ? (rows[rows.length - 1]?.seq ?? maxSeq) : maxSeq;
       const first = rows[0];
-      const hasOlder = first
-        ? (await prisma.message.count({ where: { threadId, seq: { lt: first.seq } } })) > 0
-        : false;
+      const older = first
+        ? await prisma.message.findFirst({
+            where: { threadId, seq: { lt: first.seq } },
+            select: { id: true },
+          })
+        : null;
       // Peer activity stays out of the normal transcript (including the
       // around target). Full peer history belongs in the bot-messages overlay
       // (includePeerRuns).
@@ -62,7 +65,7 @@ export async function loadMessagePage(
       return {
         threadId,
         messages: await toThreadMessages(prisma, messages),
-        olderCursor: hasOlder ? (first?.seq ?? null) : null,
+        olderCursor: older ? (first?.seq ?? null) : null,
         coveredThroughSeq,
       };
     }

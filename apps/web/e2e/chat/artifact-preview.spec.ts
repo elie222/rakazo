@@ -56,9 +56,10 @@ test("agent-attached files appear as cards with previews and downloads", async (
   await expect(dialog.getByRole("heading", { name: "Project preview" })).toBeVisible();
   const closeButton = dialog.getByRole("button", { name: "Close preview" });
   const downloadButton = dialog.getByRole("button", { name: "Download preview.md" });
+  const copyButton = dialog.getByRole("button", { name: "Copy preview.md" });
   await expect(closeButton).toBeFocused();
   await page.keyboard.press("Tab");
-  await expect(downloadButton).toBeFocused();
+  await expect(copyButton).toBeFocused();
   await page.keyboard.press("Shift+Tab");
   await expect(closeButton).toBeFocused();
   await captureScreenshot(page, testInfo, "markdown-preview-open");

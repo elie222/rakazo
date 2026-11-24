@@ -24,6 +24,7 @@ type SheetProps = {
   onClose: () => void;
   loginFields: readonly string[] | undefined;
   onSave: (fields: LoginFieldInput[], remember: boolean) => Promise<void>;
+  onDismiss?: () => Promise<void>;
 };
 let sheet: SheetProps;
 type EditorProps = {
@@ -42,7 +43,30 @@ vi.mock("react-native", async () => {
       ? Object.assign({}, ...style.map(flatten))
       : ((style as CSSProperties) ?? {});
   return {
+    ActivityIndicator: () => null,
     Platform: { OS: "ios" },
+    Pressable: ({
+      children,
+      onPress,
+      disabled,
+      accessibilityState,
+    }: {
+      children?: ReactNode;
+      onPress?: () => void;
+      disabled?: boolean;
+      accessibilityState?: { selected?: boolean };
+    }) =>
+      createElement(
+        "button",
+        {
+          type: "button",
+          onClick: onPress,
+          disabled,
+          "data-row": "true",
+          "data-selected": accessibilityState?.selected?.toString(),
+        },
+        children,
+      ),
     StyleSheet: { create: <T,>(styles: T) => styles },
     View: ({ children, style }: { children?: ReactNode; style?: unknown }) =>
       createElement("div", { style: flatten(style) }, children),
@@ -202,7 +226,7 @@ it("keeps an answered question without repeating the user's reply or leaving ans
   expect(container.querySelector("button")).toBeNull();
 });
 
-it("caps a secret card's title at two lines and leaves question titles whole", async () => {
+it("shows the full login request and site on the card", async () => {
   const login = await render({
     input: "secret",
     purpose: "password",
@@ -213,14 +237,25 @@ it("caps a secret card's title at two lines and leaves question titles whole", a
     },
   });
   expect(login.textContent).toBe(longTitle);
-  expect(login.dataset.lines).toBe("2");
-  expect(container.textContent).toContain("login.example.test");
+  expect(login.dataset.lines).toBeUndefined();
+  expect(state("login.example.test")?.dataset).toBeDefined();
+  expect(state("login.example.test")?.dataset.lines).toBeUndefined();
   expect(container.textContent).not.toContain("https://");
   expect(container.querySelector("input")).toBeNull();
-  expect(container.querySelector("button")?.textContent).toBe("Add");
+  expect(container.querySelector("button")?.textContent).toBe("Continue");
+});
 
-  expect((await render({ input: "secret", purpose: "otp" })).dataset.lines).toBe("2");
-  expect((await render({})).dataset.lines).toBeUndefined();
+it("shows the full request on an inline credential card", async () => {
+  const text =
+    "Repository access token for example/project (needs permission to read issues, edit files, and open pull requests)";
+  const title = await render({
+    text,
+    input: "secret",
+    purpose: "api_key",
+    credential: { name: "repo-token", origin: "", auth: { type: "command" } },
+  });
+  expect(title.textContent).toBe(text);
+  expect(title.dataset.lines).toBeUndefined();
 });
 
 const loginAsk = {
@@ -376,7 +411,7 @@ for (const [type, destination] of [
     );
     expect(container.textContent).toContain(destination);
     expect(container.querySelector("input")).toBeNull();
-    await act(async () => button("Add").click());
+    await act(async () => button("Continue").click());
     expect(editor).toMatchObject({ kind: type, ask: true, title: longTitle });
 
     await act(async () => editor.onSave({ value: '{"city":"Paris"}' }));
@@ -399,9 +434,7 @@ it("dismisses an inline secret card without sending a value", async () => {
   const onAnswer = vi.fn(async () => undefined);
   const onDismiss = vi.fn(async () => undefined);
   await render({ input: "secret", purpose: "otp" }, onAnswer, onDismiss);
-  expect(buttons()).toEqual(["Save", "Dismiss"]);
-  expect(button("Save").dataset.prominence).toBe("primary");
-  expect(button("Dismiss").dataset.prominence).toBe("secondary");
+  expect(buttons()).toEqual(["Dismiss", "Save"]);
 
   await act(async () => button("Dismiss").click());
 
@@ -449,28 +482,24 @@ it("leaves ordinary question answers to the composer", async () => {
   expect(container.querySelector("input")).toBeNull();
 });
 
-it("dismisses a login card directly without opening the sheet", async () => {
+it("keeps Dismiss out of a login card and offers it in the sheet", async () => {
   const onAnswer = vi.fn(async () => undefined);
   const onDismiss = vi.fn(async () => undefined);
   await render(loginAsk, onAnswer, onDismiss);
-  expect(buttons()).toEqual(["Add", "Dismiss"]);
-  expect(button("Add").dataset.prominence).toBe("secondary");
-  expect(button("Dismiss").dataset.prominence).toBe("plain");
-  await act(async () => button("Dismiss").click());
+  expect(buttons()).toEqual(["Continue"]);
+  await act(async () => button("Continue").click());
+  await act(async () => sheet.onDismiss!());
   expect(onDismiss).toHaveBeenCalledTimes(1);
   expect(onAnswer).not.toHaveBeenCalled();
   expect(container.textContent).toContain("Dismissed");
-  expect(container.querySelector("[data-sheet]")).toBeNull();
   expect(buttons()).toEqual([]);
 });
 
 it("lets the card's buttons wrap instead of overflowing at large text sizes", async () => {
-  for (const ask of [{ input: "secret", purpose: "otp" }, loginAsk]) {
-    await render(ask);
-    const row = button("Dismiss").parentElement!;
-    expect(row.style.flexDirection).toBe("row");
-    expect(row.style.flexWrap).toBe("wrap");
-  }
+  await render({ input: "secret", purpose: "otp" });
+  const row = button("Dismiss").parentElement!;
+  expect(row.style.flexDirection).toBe("row");
+  expect(row.style.flexWrap).toBe("wrap");
 });
 
 for (const input of ["secret", "login"]) {
@@ -503,30 +532,24 @@ for (const input of ["secret", "login"]) {
       ),
     );
     const labels = [...container.querySelectorAll("button")].map((button) => button.textContent);
-    expect(labels.includes("Dismiss")).toBe(canDismiss);
-    // A login is filled in only by the run's user; see the credential card test below.
+    // A login is filled in only by the run's user, and dismissed from its sheet; see the
+    // credential card test below.
     if (input === "login") {
-      expect(labels.includes("Add")).toBe(canDismiss);
+      expect(labels.includes("Dismiss")).toBe(false);
+      expect(labels.includes("Continue")).toBe(canDismiss);
       return;
     }
-    const primary = button("Save");
-    expect(primary.style.flex).toBe("1 1 0%");
-    expect(primary.dataset.fill).toBe("true");
-    if (canDismiss) expect(button("Dismiss").style.flex).toBe(primary.style.flex);
+    expect(labels.includes("Dismiss")).toBe(canDismiss);
     expect(labels.includes("Save")).toBe(true);
   });
 }
 
-it("stretches secret inputs and equal actions, enabling Save only with input", async () => {
+it("stretches the secret field and enables Save only with input", async () => {
   await render({ input: "secret", purpose: "otp" });
   expect(container.firstElementChild?.getAttribute("style")).toContain("width: 100%");
   const input = container.querySelector("input")!;
   expect(input.style.alignSelf).toBe("stretch");
   expect(button("Save").disabled).toBe(true);
-  for (const label of ["Save", "Dismiss"]) {
-    expect(button(label).style.flex).toBe("1 1 0%");
-    expect(button(label).dataset.fill).toBe("true");
-  }
   await act(async () => {
     Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
       input,
@@ -535,7 +558,6 @@ it("stretches secret inputs and equal actions, enabling Save only with input", a
     input.dispatchEvent(new Event("input", { bubbles: true }));
   });
   expect(button("Save").disabled).toBe(false);
-  expect(button("Save").dataset.prominence).toBe("primary");
 });
 
 it("fills the message column only for secret asks, including answered and login asks", async () => {
@@ -662,7 +684,7 @@ it.each([
   },
 );
 
-it("stacks option buttons in a non-wrapping full-width column and keeps approvals in a wrapping row", async () => {
+it("stacks option rows in a non-wrapping full-width column and keeps approvals in a wrapping row", async () => {
   const actions = [
     { id: "choice-1", label: "Plan a trip" },
     { id: "choice-2", label: "Write something" },
@@ -675,7 +697,8 @@ it("stacks option buttons in a non-wrapping full-width column and keeps approval
     );
     const buttons = [...container.querySelectorAll("button")];
     const row = buttons[0]!.parentElement!;
-    expect(buttons.map((b) => b.getAttribute("data-fill"))).toEqual(
+    // Question options are full-width rows; approvals stay native buttons sized to their label.
+    expect(buttons.map((b) => b.getAttribute(approval ? "data-fill" : "data-row"))).toEqual(
       approval ? ["false", "false"] : ["true", "true"],
     );
     expect(row.style.flexDirection).toBe(approval ? "row" : "column");

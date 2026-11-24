@@ -23,26 +23,8 @@ export const ES_MESSAGES: Record<string, string> = {
   "Your Rakazo confirmation code": "Tu código de confirmación de Rakazo",
   "Enter this code in Rakazo to confirm it's you:":
     "Introduce este código en Rakazo para confirmar que eres tú:",
-  "Welcome to Rakazo": "Te damos la bienvenida a Rakazo",
-  "Welcome to Rakazo. The people who get the most out of it do three things:":
-    "Te damos la bienvenida a Rakazo. Quienes más partido le sacan hacen tres cosas:",
-  "Get the apps": "Descarga las apps",
-  "Rakazo runs on {platforms}, so your bots can reach you wherever you are.":
-    "Rakazo funciona en {platforms}, para que tus bots puedan contactarte estés donde estés.",
-  "Join the community": "Únete a la comunidad",
-  "See what others are building, get help fast, and tell us what to build next on {discord}.":
-    "Mira lo que crean otros, consigue ayuda rápido y cuéntanos qué crear después en {discord}.",
-  "Star us on GitHub": "Danos una estrella en GitHub",
-  "Rakazo is open source. {star} helps more people find it.":
-    "Rakazo es de código abierto. {star} ayuda a que más gente lo encuentre.",
-  "A star on GitHub": "Una estrella en GitHub",
-  "Questions? Just reply. I read every one.": "¿Preguntas? Responde a este correo. Leo todos.",
   Unsubscribe: "Cancelar suscripción",
-  "Invite a friend": "Invita a un amigo",
-  "Invite a friend to Rakazo: they get {weeks} weeks free, and you earn a free month when they start a qualifying subscription with a new card.":
-    "Invita a un amigo a Rakazo: recibe {weeks} semanas gratis y tú ganas un mes gratis cuando empiece una suscripción válida con una tarjeta nueva.",
   "Open Rakazo": "Abre Rakazo",
-  "and choose Invite friends for your link.": "y elige Invitar amigos para obtener tu enlace.",
   "We received your Rakazo plugin": "Recibimos tu plugin de Rakazo",
   "Confirm your Rakazo page claim": "Confirma tu solicitud de página en Rakazo",
   "Confirm claim": "Confirmar solicitud",

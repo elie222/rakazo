@@ -17,19 +17,22 @@ import {
 } from "./auto-review.js";
 import {
   autoReviewDecisionQuestion,
-  MAX_OWNER_WORDS_CHARS,
+  reviewTaskMaxChars,
   truncateReviewText,
 } from "./auto-review.prompt.js";
+import { passConfidenceFloor } from "./decision-models.js";
+import type { DecisionCalibration } from "./model-descriptor.js";
 
-const MAX_TASK_CHARS = 400;
 const MAX_BOT_CHARS = 240;
-export const APPROVAL_DECISION_RUBRIC_VERSION = "approval-v3";
+export const APPROVAL_DECISION_RUBRIC_VERSION = "approval-v11";
 export class DecisionAutoReviewProvider implements AutoReviewProvider {
   constructor(
     private readonly options: {
       provider: DecisionProvider;
       providerId: string;
       model: string;
+      calibration: DecisionCalibration;
+      /** The operator's floor on the model's own confidence, instead of its calibration. */
       minConfidence?: number;
       timeoutMs?: number;
     },
@@ -56,10 +59,7 @@ export class DecisionAutoReviewProvider implements AutoReviewProvider {
             toolName: request.toolName,
             connectorKind: request.connectorKind,
             args: request.args,
-            userTask: truncateReviewText(
-              request.userTask,
-              request.newSite || request.savedContextWrite ? MAX_OWNER_WORDS_CHARS : MAX_TASK_CHARS,
-            ),
+            userTask: truncateReviewText(request.userTask, reviewTaskMaxChars(request)),
             botDescription: truncateReviewText(request.botDescription, MAX_BOT_CHARS),
             matchingRules: request.matchingRules.map((rule) => ({
               effect: rule.effect,
@@ -68,6 +68,13 @@ export class DecisionAutoReviewProvider implements AutoReviewProvider {
             })),
             ...(request.newSite ? { newSite: true } : {}),
             ...(request.savedContextWrite ? { savedContextWrite: true } : {}),
+            ...(request.ownComputerAction ? { ownComputerAction: true } : {}),
+            ...(request.ownerMessages?.length
+              ? { ownerEarlierMessages: request.ownerMessages }
+              : {}),
+            ...(request.outsideOnlyTargets?.length
+              ? { outsideOnlyTargets: request.outsideOnlyTargets }
+              : {}),
           },
           questions: { decision: autoReviewDecisionQuestion(request) },
         },
@@ -86,9 +93,13 @@ export class DecisionAutoReviewProvider implements AutoReviewProvider {
         return { decision: "error", model, reason: "Checker returned no decision." };
       if (
         typeof answer.confidence !== "number" ||
-        answer.confidence < (this.options.minConfidence ?? autoReviewMinConfidence())
+        answer.confidence <
+          (this.options.minConfidence ??
+            autoReviewMinConfidence() ??
+            passConfidenceFloor(this.options.calibration))
       )
-        return { decision: "ask", model, reason: "Checker is unsure." };
+        // An unsure checker asks like any other ask: a reason saying so tells the person nothing.
+        return { decision: "ask", model };
       return { decision: "pass", model };
     } catch (error) {
       const reason =

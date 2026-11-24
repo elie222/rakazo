@@ -1,3 +1,9 @@
+import { PAGE_ICON_GROUPS } from "./icon-names.js";
+
+const ICON_LIST = Object.entries(PAGE_ICON_GROUPS)
+  .map(([topic, names]) => `${topic}: ${names.join(", ")}`)
+  .join("; ");
+
 /** Returned by save_page {"help": true}, so ordinary turns do not pay for it. */
 export const PAGE_KIT_GUIDE = `# Pages
 
@@ -16,7 +22,7 @@ A page is JSX source whose default export is a React component. It renders in an
 - Lead with the answer: a Callout (lead + tone) or Metrics first, evidence below. The reader should get the point in two seconds.
 - Long pages (five or more sections) start with a TableOfContents whose ids match the Section ids. Number sections in reading order when the order matters.
 - Avoid walls of text and walls of identical cards: mix open sections, a Grid of two or three cells and one or two tables. Break prose into BulletList / NumberedList items.
-- Colour comes from the kit and useTheme: no hex colours, no gradients or glows, no emoji as icons or bullets. Tones (success, warning, danger, info) are for meaning, not decoration.
+- Colour comes from the kit and useTheme: no hex colours, no gradients or glows, no emoji as icons or bullets (use Icon). Tones (success, warning, danger, info) are for meaning, not decoration.
 - Every chart sits in a Section with a heading and, when useful, a caption naming the unit, the period and the source. Omit a section rather than show empty data or placeholder text.
 - A LineChart axis starts at 0 unless floor is set: for a narrow range (3.05% to 3.41%) set floor and ceiling just around the data. Chart series take palette colours in order, never tones; to make a part mean "failed", put that colour first with Page palette (from useTheme).
 - Custom SVG with text gets a fixed width and height plus style={{maxWidth: "100%"}}; a small viewBox at width "100%" scales its text with the page.
@@ -41,22 +47,27 @@ Text props and list items accept **bold**, *italic* or _italic_, \`code\` and ba
 - Divider: a hairline between parts. Floating {edge?: "bottom" | "top", align?: "start" | "center" | "end", bar?}: a row of controls pinned while scrolling. BackToTop {label?}: a button back to the top.
 
 ### Text and lists
-- Text: a paragraph. Callout {lead?, tone?}: a tinted note; children are the body.
+- Text: a paragraph. Callout {lead?, tone?, icon?}: a tinted note; children are the body.
 - Quote {cite?}: a quotation with its source.
 - BulletList {items, marker?: "pro" | "con"} and NumberedList {items}: an item is a string or {text, items?} for a nested list.
 - ProsCons {pros, cons, prosHeading?, consHeading?}: two cards of plus and minus points.
-- LinkCards {links: [{title, href, site?, date?}], numbered?}: a list of sources or related pages; the site defaults to the link's address.
+- LinkCards {links: [{title, href, site?, date?, icon?}], numbered?}: a list of sources or related pages; the site defaults to the link's address.
 - Legend {names: [string], comparison?: [index], dots?}: series names in chart colours, for a custom visual; comparison lists indexes of names drawn as grey dashed lines.
+
+### Icons
+- Icon {name, label?, size?}: a monochrome outline icon in the text colour, 1em tall unless size (px) is set. Give label only when it stands alone and means something; beside words it stays silent. An unknown name draws nothing.
+icon on Metrics, Steps, Rows, Properties and LinkCards items, and on Callout (instead of the tone mark), is a name drawn before the label. Use icons where they help the eye find things (itinerary steps, booking rows, key facts), one icon per kind of thing, not on every line.
+Names: ${ICON_LIST}.
 
 ### Math
 - Equation {label?}: a centred formula; children are terms. Frac {num, den}, Pow {base, exp}, Sqrt, Sum {from?, to?, sign?}, Paren {open?, close?}. Example: <Equation label="Break-even">Sales = <Frac num="fixed costs" den="margin" /></Equation>.
 
 ### Data
-- Metrics {metrics: [{value, label, detail?, tone?, delta?, better?, trend?}]}: headline numbers, up to four a row; tone colours the detail. delta ("+12%" or -3) adds an up or down mark, green when it moves the good way (better: "up" default, or "down" for churn and cost); trend (numbers) adds a small line under the figure.
-- Properties {items: [{label, value}]}: label and value pairs; value may be a Status.
+- Metrics {metrics: [{value, label, detail?, tone?, delta?, better?, trend?, icon?}]}: headline numbers, up to four a row; tone colours the detail. delta ("+12%" or -3) adds an up or down mark, green when it moves the good way (better: "up" default, or "down" for churn and cost); trend (numbers) adds a small line under the figure.
+- Properties {items: [{label, value, icon?}]}: label and value pairs; value may be a Status.
 - Status {tone?}: a short status word in a tinted pill, e.g. <Status tone="success">Shipped</Status>; tone "neutral" or none is grey.
-- Rows {rows: [{title, lead?, detail?, meta?, status?: {label, tone}}]}: a list; lead sits in a narrow column before the title, the status follows the title in its tone, meta sits at the right.
-- Steps {steps: [{title, detail?}]}: a numbered sequence. Checklist {items: [{text, done, meta?}]}: read-only progress.
+- Rows {rows: [{title, lead?, detail?, meta?, status?: {label, tone}, icon?}]}: a list; lead sits in a narrow column before the title, the status follows the title in its tone, meta sits at the right.
+- Steps {steps: [{title, detail?, icon?}]}: a numbered sequence. Checklist {items: [{text, done, meta?}]}: read-only progress.
 - Table {columns: string[], rows: cell[][], align?: ("auto" | "start" | "end" | "center")[], emphasis?: column, sortable?: boolean}: a cell is text, a number, {text, tone?} or a Status. Figures and single short words align to the end. Wide tables scroll sideways; long ones get a filter box and a sticky header; sortable makes headers sort.
 
 ### Charts
@@ -79,7 +90,7 @@ LineChart, Columns, ColumnSeries, Scatter, Heatmap and CalendarHeatmap show exac
 - Segmented {options: (string | {value, label, count?})[], value, onChange}: tabs for switching views. Wraps onto more lines; the chosen tab always shows.
 Keep each control's value in useState. A control placed straight in a Section or Grid is compact; inside your own element it is full size.
 - Button {label, onClick, variant?: "quiet" | "primary", disabled?}: one primary per group.
-- Select {label?, options: [{value, label}], value, onChange, placeholder?, disabled?}. Input {label?, value, onChange, placeholder?, type?: "text" | "number" | "search"}.
+- Select {label?, options: [{value, label}], value, onChange, placeholder?, disabled?}. Input {label?, value, onChange, placeholder?, type?: "text" | "number" | "search", min?: number}. Set min={0} on a number that can't go negative.
 - Toggle {label, value, onChange, disabled?}. Checkbox {label, value}: shows a recorded yes or no; the reader cannot change it, so things the reader ticks off are Toggles. A number the reader steps (servings, quantity) is a row of Button "−", the value and Button "+". Input has no Enter or submit event: act on onChange, or put a Button beside it.
 - LinkButton {label, href, variant?: "button" | "text"} and TextLink {href, children}: web or mail links, opened by the app.
 - CopyButton {label, text?, copiedLabel?}: copies text (else the label) and shows "Copied"; where copying is blocked it shows the text to select. For your own copy buttons call copyText(text), which resolves true once copied; navigator.clipboard is blocked in pages.

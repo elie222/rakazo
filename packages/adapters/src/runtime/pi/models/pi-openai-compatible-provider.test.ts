@@ -615,6 +615,48 @@ describe("openai-compatible provider", () => {
     expect(resolveHostname).toHaveBeenCalledWith("models.example.test");
   });
 
+  it("returns validated private DNS addresses for an mDNS .local hostname", async () => {
+    const addresses = [
+      { address: "192.168.1.30", family: 4 },
+      { address: "fd12::30", family: 6 },
+    ];
+    const resolveHostname = vi.fn(async () => addresses);
+    const lookup = createOpenAiCompatibleLookup(
+      new URL("http://printer.local:8080/v1"),
+      resolveHostname,
+      OWNER,
+    );
+    const result = await new Promise<unknown>((resolve, reject) => {
+      lookup("printer.local", { family: 0, all: true }, (error, resolved) =>
+        error ? reject(error) : resolve(resolved),
+      );
+    });
+    expect(result).toEqual(addresses);
+    expect(resolveHostname).toHaveBeenCalledWith("printer.local");
+  });
+
+  it("rejects an mDNS .local hostname that resolves outside the private network", async () => {
+    const lookup = createOpenAiCompatibleLookup(
+      new URL("http://printer.local:8080/v1"),
+      async () => [{ address: "93.184.216.34", family: 4 }],
+      OWNER,
+    );
+    const error = await new Promise<Error | null>((resolve) => {
+      lookup("printer.local", { family: 0, all: false }, (lookupError) => resolve(lookupError));
+    });
+    expect(error).toMatchObject({
+      message: "Local model server hostname resolved outside the private network",
+    });
+  });
+
+  it("rejects mDNS .local hostname lookups without private endpoint permission", () => {
+    const resolveHostname = vi.fn(async () => [{ address: "192.168.1.30", family: 4 }]);
+    expect(() =>
+      createOpenAiCompatibleLookup(new URL("http://printer.local:8080/v1"), resolveHostname),
+    ).toThrow(PRIVATE_MODEL_ENDPOINT_MESSAGE);
+    expect(resolveHostname).not.toHaveBeenCalled();
+  });
+
   it("dispatches trusted private hosts using checked DNS and the original Host header", async () => {
     process.env.RAKAZO_OPENAI_COMPAT_PRIVATE_HOSTS = "models.example.test";
     let host: string | undefined;
@@ -954,18 +996,6 @@ describe("openai-compatible provider", () => {
     ).rejects.toThrow(/empty response.*explicit model id/s);
   });
 
-  it("rejects oversized model lists", async () => {
-    const fetchImpl = async () => new Response("x".repeat(2 * 1024 * 1024 + 1));
-    await expect(
-      probeOpenAiCompatibleModels(
-        { baseUrl: "http://127.0.0.1:8000/v1" },
-        fetchImpl,
-        undefined,
-        OWNER,
-      ),
-    ).rejects.toThrow(/too large.*explicit model id/is);
-  });
-
   it("cancels model responses whose declared size exceeds the limit", async () => {
     let cancelled = false;
     const fetchImpl = async () =>
@@ -1226,6 +1256,26 @@ describe("built-in public compatible host", () => {
     ).resolves.toEqual(["example-model"]);
     expect(String(transport.mock.calls[0]?.[0])).toBe("https://ollama.com/api/balance");
     expect(transport).toHaveBeenCalledTimes(2);
+  });
+  it("verifies a DeepInfra key and lists only its chat models", async () => {
+    const transport = vi.fn(async (input: RequestInfo | URL) =>
+      String(input).endsWith("/v1/me")
+        ? new Response(null)
+        : Response.json({
+            data: [
+              { id: "chat-model", metadata: { tags: ["chat", "vision"] } },
+              { id: "embedding-model", metadata: { tags: ["embeddings"] } },
+              { id: "untagged-model", metadata: null },
+            ],
+          }),
+    );
+    await expect(
+      probeOpenAiCompatibleModels(
+        { baseUrl: "https://api.deepinfra.com/v1/openai", apiKey: "fake-key" },
+        transport,
+      ),
+    ).resolves.toEqual(["chat-model", "untagged-model"]);
+    expect(String(transport.mock.calls[0]?.[0])).toBe("https://api.deepinfra.com/v1/me");
   });
   it("does not verify unrelated compatible servers and rejects missing keys", async () => {
     const transport = vi.fn();

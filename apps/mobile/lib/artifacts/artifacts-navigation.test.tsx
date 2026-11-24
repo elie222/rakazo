@@ -70,6 +70,10 @@ vi.mock("../appearance/appearance", () => ({
   resolveMobileAppearance: () => "light",
 }));
 vi.mock("../native/native", () => ({ native: {}, useThemedStyles: () => ({}) }));
+vi.mock("../layout/split-view", () => ({
+  setInboxHidden: vi.fn(),
+  useSplitView: () => ({ foldActive: false }),
+}));
 
 let root: Root;
 let container: HTMLDivElement;

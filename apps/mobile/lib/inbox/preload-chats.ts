@@ -1,8 +1,9 @@
 import { isRetryableError } from "@rakazo/core";
-import { rpc, selectedSpaceId } from "../api/api";
+import { selectedSpaceId } from "../api/api";
 import type { MobileSnapshot } from "../api/mobile-types";
-import { isIntegrationsScopeCurrent } from "../integrations/integrations-cache";
+import { isVerifiedScopeCurrent } from "../api/verified-scope";
 import { onConversationCleared } from "../thread/conversation-cleared";
+import { chatRpc } from "./chat-rpc";
 import type { InboxItem } from "./inbox-spaces";
 import type { SavedChatsScope } from "./saved-chats";
 import {
@@ -13,31 +14,27 @@ import {
   writeSavedThread,
 } from "./saved-chats";
 
-/** How many chats from the top of the inbox open from a saved copy on their first tap. */
-export const PRELOADED_CHATS = 5;
+/** How many chats from the top of the inbox, in any Space, open from a saved copy on their first tap. */
+export const PRELOADED_CHATS = 20;
 
-type ChatTarget = { botId: string; groupId?: undefined } | { groupId: string; botId?: undefined };
+type ChatTarget = { spaceId?: string } & (
+  | { botId: string; groupId?: undefined }
+  | { groupId: string; botId?: undefined }
+);
 
 /** Chats already saved or fetched in this session, by Space and chat; each is fetched once. */
 const handled = new Set<string>();
 let running: Promise<void> | null = null;
 
-/** The chats the inbox lists from the selected Space, in the order it shows them. */
-export function inboxChats(
-  items: readonly InboxItem[],
-  current: { bots: readonly { id: string }[]; groups: readonly { id: string }[] },
-): ChatTarget[] {
-  const bots = new Set(current.bots.map((bot) => bot.id));
-  const groups = new Set(current.groups.map((group) => group.id));
-  const bot = (id: string): ChatTarget[] => (bots.has(id) ? [{ botId: id }] : []);
-  const group = (id: string): ChatTarget[] => (groups.has(id) ? [{ groupId: id }] : []);
-  return items.flatMap((item) => {
+/** The chats the inbox lists, in every Space, in the order it shows them. */
+export function inboxChats(items: readonly InboxItem[]): ChatTarget[] {
+  const bot = ({ id, spaceId }: { id: string; spaceId?: string }) => ({ botId: id, spaceId });
+  const group = ({ id, spaceId }: { id: string; spaceId?: string }) => ({ groupId: id, spaceId });
+  return items.flatMap((item): ChatTarget[] => {
     if (item.type === "pinned")
-      return item.chats.flatMap((chat) =>
-        chat.kind === "bot" ? bot(chat.bot.id) : group(chat.group.id),
-      );
-    if (item.type === "bot") return bot(item.bot.id);
-    return item.type === "group" ? group(item.group.id) : [];
+      return item.chats.map((chat) => (chat.kind === "bot" ? bot(chat.bot) : group(chat.group)));
+    if (item.type === "bot") return [bot(item.bot)];
+    return item.type === "group" ? [group(item.group)] : [];
   });
 }
 
@@ -62,19 +59,22 @@ export function preloadChats(chats: readonly ChatTarget[]): Promise<void> {
 async function preloadInto(scope: SavedChatsScope, targets: readonly ChatTarget[]) {
   for (const chat of targets) {
     // After a Space switch these chats belong to another Space; the new one gets its own pass.
-    if (!isIntegrationsScopeCurrent(scope)) return;
+    if (!isVerifiedScopeCurrent(scope)) return;
+    // A copy saved under the chat's own Space is the one opening it there reads.
+    const chatScope = { ...scope, spaceId: chat.spaceId ?? scope.spaceId };
     const target = savedChatTarget(chat);
-    const key = JSON.stringify([scope.namespace, scope.selectionId, target]);
+    const key = JSON.stringify([scope.namespace, chatScope.spaceId, target]);
     if (handled.has(key)) continue;
     handled.add(key);
-    if (readSavedThread(scope, target)) continue;
+    if (readSavedThread(chatScope, target)) continue;
     let cleared = false;
     const stopWatching = onConversationCleared((botId) => {
       if (botId === chat.botId) cleared = true;
     });
     let snapshot: MobileSnapshot;
     try {
-      snapshot = await rpc(
+      snapshot = await chatRpc(
+        chatScope.spaceId === scope.spaceId ? undefined : chatScope.spaceId,
         "threads/get",
         chat.groupId ? { groupId: chat.groupId } : { botId: chat.botId! },
       );
@@ -89,6 +89,7 @@ async function preloadInto(scope: SavedChatsScope, targets: readonly ChatTarget[
     }
     // A chat cleared meanwhile, or opened meanwhile (its screen saved a fresher copy), keeps
     // what it has.
-    if (!cleared && !readSavedThread(scope, target)) writeSavedThread(scope, target, snapshot);
+    if (!cleared && !readSavedThread(chatScope, target))
+      writeSavedThread(chatScope, target, snapshot);
   }
 }

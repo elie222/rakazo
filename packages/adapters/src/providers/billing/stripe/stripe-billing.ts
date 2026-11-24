@@ -27,6 +27,7 @@ import {
 } from "@rakazo/contracts";
 import { readBoundedJsonResponse } from "@rakazo/core";
 import { z } from "zod";
+import { stripeInvoiceRefund } from "./stripe-invoice-refund.js";
 
 export const STRIPE_API_VERSION = "2026-09-30.endive";
 const WEBHOOK_TOLERANCE_SECONDS = 300;
@@ -171,6 +172,21 @@ export class StripeBillingProvider implements BillingProvider {
       interval: price.recurring.interval,
       intervalCount: price.recurring.interval_count,
     };
+  }
+
+  refundInvoice(
+    customerId: string,
+    invoice: string | undefined,
+    confirm: boolean,
+    amountMinor?: number,
+  ) {
+    return stripeInvoiceRefund(
+      { request: this.request.bind(this), listPages: this.listPages.bind(this) },
+      customerId,
+      invoice,
+      confirm,
+      amountMinor,
+    );
   }
 
   async createCustomer(input: { email: string; organizationId: string }) {
@@ -740,7 +756,28 @@ export class StripeBillingProvider implements BillingProvider {
 
   async getCustomerSubscription(customerId: string): Promise<BillingSubscriptionSnapshot | null> {
     const chosen = pickStripeSubscription(await this.listLiveSubscriptions(customerId));
-    return chosen ? toSnapshot(chosen.subscription, chosen.status) : null;
+    if (!chosen) return null;
+    const snapshot = toSnapshot(chosen.subscription, chosen.status);
+    if (snapshot.paidAt || grantsAccess(chosen.status)) return snapshot;
+    // One that stopped billing may have paid for earlier periods before its latest charge failed.
+    const paidAt = await this.firstPaymentAt(chosen.subscription.id);
+    return paidAt ? { ...snapshot, paidAt } : snapshot;
+  }
+
+  private async firstPaymentAt(subscriptionId: string) {
+    const invoices = await this.listPages(
+      `/v1/invoices?subscription=${encodeURIComponent(subscriptionId)}&status=paid`,
+      z.object({
+        total: z.number().int().nullish(),
+        status_transitions: z.object({ paid_at: z.number().int().nullish() }).nullish(),
+      }),
+    );
+    const paid = invoices.flatMap((invoice) =>
+      (invoice.total ?? 0) > 0 && invoice.status_transitions?.paid_at
+        ? [invoice.status_transitions.paid_at]
+        : [],
+    );
+    return paid.length ? fromSeconds(Math.min(...paid)) : null;
   }
 
   async updateSeats(customerId: string, seats: number) {

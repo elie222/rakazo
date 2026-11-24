@@ -1,13 +1,14 @@
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { Bot, ComputerStatus } from "@rakazo/contracts";
+import { computerPreviewPlaceholder } from "@rakazo/i18n/computer-preview";
 import { BotAvatar, Button } from "@rakazo/ui-web";
 import { HardDrive, Maximize2, X } from "lucide-react";
 import type { ReactNode } from "react";
 import { ComputersUnavailableHint } from "../../../components/computers/ComputersUnavailableHint";
 import { runsOnUserMachine } from "../../../lib/computers/computer-sandbox";
 import { screenFrames, screenIframeSandbox } from "../../../lib/computers/computer-screen";
-import { computerLabel, computerPlaceholder, DesktopKindEmptyState } from "./computer-view";
+import { DesktopKindEmptyState } from "./computer-view";
 
 type ComputerPanelProps = {
   bot: Bot;
@@ -181,12 +182,7 @@ function ComputerPreview({
                   onOpenComputerSettings={onOpenComputerSettings}
                 />
               ) : (
-                (computerBooting ??
-                computerPlaceholder(
-                  computer?.state,
-                  booting,
-                  computerLabel(computer?.mode, bot.name),
-                ))
+                (computerBooting ?? computerPreviewPlaceholder(computer?.state, booting))
               ))}
           </div>
         )}

@@ -46,6 +46,37 @@ import { AgentImportForm } from "./agent-import";
 let root: Root | null = null;
 let container: HTMLDivElement | null = null;
 
+function press(label: string) {
+  return act(async () =>
+    [...container!.querySelectorAll("button")]
+      .find(
+        (item) =>
+          item.textContent === label ||
+          item.getAttribute("aria-label") === label ||
+          // A card's name follows its hidden initial.
+          item.lastElementChild?.textContent === label,
+      )!
+      .click(),
+  );
+}
+
+/** Opens the import on its first step, then picks where the agent comes from. */
+async function open(origin: string, form = <AgentImportForm onClose={noop} onCreated={noop} />) {
+  container = document.createElement("div");
+  document.body.append(container);
+  root = createRoot(container);
+  await act(async () => {
+    root!.render(form);
+  });
+  await press(origin);
+}
+
+function noop() {}
+
+function field<T extends Element>(selector: string) {
+  return container!.querySelector<T>(selector)!;
+}
+
 beforeEach(() => {
   importPreview.mockReset();
   importCreate.mockReset();
@@ -76,13 +107,14 @@ describe("choosing backups while a file is being read", () => {
       ...plan,
       suggestedName: files[0]?.content,
     }));
-    container = document.createElement("div");
-    document.body.append(container);
-    root = createRoot(container);
-    await act(async () => {
-      root!.render(<AgentImportForm onClose={() => undefined} onCreated={() => undefined} />);
-    });
-    return container.querySelector<HTMLInputElement>('[data-testid="agent-import-archive"]')!;
+    await open("OpenClaw");
+    return field<HTMLInputElement>('[data-testid="agent-import-archive"]');
+  }
+
+  async function documentInput() {
+    await press("Back");
+    await press("Another assistant");
+    return field<HTMLInputElement>('[data-testid="agent-import-document"]');
   }
 
   async function select(input: HTMLInputElement, file?: File) {
@@ -127,12 +159,9 @@ describe("choosing backups while a file is being read", () => {
     const first = deferred<ArrayBuffer>();
     const archive = await render();
     await select(archive, backup(first.promise));
-    const documentInput = container!.querySelector<HTMLInputElement>(
-      '[data-testid="agent-import-document"]',
-    )!;
     const documentFile = new File(["Document"], "agent.md", { type: "text/markdown" });
     Object.defineProperty(documentFile, "text", { value: async () => "Document" });
-    await select(documentInput, documentFile);
+    await select(await documentInput(), documentFile);
     expect(names()).toContain("Document");
 
     await act(async () => first.resolve(new Uint8Array([1]).buffer));
@@ -143,14 +172,16 @@ describe("choosing backups while a file is being read", () => {
 
   it("keeps a backup selected while an older document is still reading", async () => {
     const documentRead = deferred<string>();
-    const archive = await render();
-    const documentInput = container!.querySelector<HTMLInputElement>(
-      '[data-testid="agent-import-document"]',
-    )!;
+    await render();
     const documentFile = new File(["Document"], "agent.md", { type: "text/markdown" });
     Object.defineProperty(documentFile, "text", { value: () => documentRead.promise });
-    await select(documentInput, documentFile);
-    await select(archive, backup(Promise.resolve(new Uint8Array([2]).buffer)));
+    await select(await documentInput(), documentFile);
+    await press("Back");
+    await press("OpenClaw");
+    await select(
+      field<HTMLInputElement>('[data-testid="agent-import-archive"]'),
+      backup(Promise.resolve(new Uint8Array([2]).buffer)),
+    );
     expect(names()).toContain("Second");
 
     await act(async () => documentRead.resolve("Document"));
@@ -164,28 +195,24 @@ describe("choosing backups while a file is being read", () => {
     const archive = await render();
     importPreview.mockReturnValueOnce(finishPreview.promise);
     await select(archive, backup(Promise.resolve(new Uint8Array([1]).buffer)));
-    const chooseBackup = [...container!.querySelectorAll("button")].find(
-      (button) => button.textContent === "Choose backup",
-    )!;
-    expect(chooseBackup.disabled).toBe(true);
+    const button = (label: string) =>
+      [...container!.querySelectorAll("button")].find((item) => item.textContent === label)!;
+    expect(button("Choose backup").disabled).toBe(true);
 
-    const documentInput = container!.querySelector<HTMLInputElement>(
-      '[data-testid="agent-import-document"]',
-    )!;
     const documentFile = new File([], "large.md", { type: "text/markdown" });
     Object.defineProperty(documentFile, "size", { value: AGENT_DOCUMENT_MAX_BYTES + 1 });
-    await select(documentInput, documentFile);
+    await select(await documentInput(), documentFile);
     expect(container!.querySelector('[role="alert"]')?.textContent).toContain(
       "These files are too large to import.",
     );
-    expect(chooseBackup.disabled).toBe(false);
+    expect(button("Choose file").disabled).toBe(false);
 
     await act(async () => finishPreview.resolve({ ...plan, suggestedName: "First" }));
     expect(container!.querySelector('[role="alert"]')?.textContent).toContain(
       "These files are too large to import.",
     );
-    expect(container!.querySelector('[data-testid="agent-import-choose"]')).not.toBeNull();
-    expect(chooseBackup.disabled).toBe(false);
+    expect(container!.querySelector('[data-testid="agent-import-preview"]')).toBeNull();
+    expect(button("Choose file").disabled).toBe(false);
   });
 
   it("discards a pending backup when the native file picker is cancelled", async () => {
@@ -197,7 +224,7 @@ describe("choosing backups while a file is being read", () => {
     });
     await act(async () => first.resolve(new Uint8Array([1]).buffer));
     expect(importPreview).not.toHaveBeenCalled();
-    expect(container!.querySelector('[data-testid="agent-import-choose"]')).not.toBeNull();
+    expect(container!.querySelector('[data-testid="agent-import-files"]')).not.toBeNull();
   });
 
   it("discards a pending backup when the selection is cleared", async () => {
@@ -207,10 +234,10 @@ describe("choosing backups while a file is being read", () => {
     await select(input);
     await act(async () => first.resolve(new Uint8Array([1]).buffer));
     expect(importPreview).not.toHaveBeenCalled();
-    expect(container!.querySelector('[data-testid="agent-import-choose"]')).not.toBeNull();
+    expect(container!.querySelector('[data-testid="agent-import-files"]')).not.toBeNull();
   });
 
-  it.each(["Back", "Cancel new bot"])("discards a pending backup on %s", async (label) => {
+  it.each(["Back", "Close"])("discards a pending backup on %s", async (label) => {
     const first = deferred<ArrayBuffer>();
     const input = await render();
     await select(input, backup(first.promise));
@@ -280,21 +307,15 @@ const plan: AgentImportPlan = {
   mcpServers: [],
   routines: [],
   apiKeys: [],
+  leftovers: [],
   skipped: [],
 };
 
 describe("an item whose text looks like it contains a key", () => {
   it("starts unticked, says so, and can still be ticked", async () => {
     importPreview.mockResolvedValue(plan);
-    container = document.createElement("div");
-    document.body.append(container);
-    root = createRoot(container);
-    await act(async () => {
-      root!.render(<AgentImportForm onClose={() => undefined} onCreated={() => undefined} />);
-    });
-    const reply = container.querySelector<HTMLTextAreaElement>(
-      '[data-testid="agent-import-another"] textarea[aria-label="Paste the reply"]',
-    )!;
+    await open("Another assistant");
+    const reply = field<HTMLTextAreaElement>('[data-testid="agent-import-another"] textarea');
     await act(async () => {
       Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")?.set?.call(
         reply,
@@ -302,19 +323,16 @@ describe("an item whose text looks like it contains a key", () => {
       );
       reply.dispatchEvent(new Event("input", { bubbles: true }));
     });
-    const continueButton = [
-      ...container.querySelectorAll<HTMLButtonElement>(
-        '[data-testid="agent-import-another"] button',
-      ),
-    ].find((button) => button.textContent === "Continue")!;
-    await act(async () => continueButton.click());
+    await press("Continue");
 
     const box = (label: string) =>
       container!.querySelector<HTMLElement>(`[role="checkbox"][aria-label="${label}"]`)!;
-    const memory = container.querySelector('[data-testid="agent-import-memory"]')!;
+    const memory = container!.querySelector('[data-testid="agent-import-memory"]')!;
     expect(memory.textContent).toContain("Looks like it contains a key");
     expect(box("notes").getAttribute("aria-checked")).toBe("false");
-    // Everything else keeps its usual default.
+    // Everything else keeps its usual default, in a row that starts closed.
+    expect(box("Instructions")).toBeNull();
+    await press("Instructions");
     expect(box("Instructions").getAttribute("aria-checked")).toBe("true");
 
     await act(async () => box("notes").click());
@@ -340,15 +358,8 @@ describe("an item whose text looks like it contains a key", () => {
         },
       ],
     } satisfies AgentImportPlan);
-    container = document.createElement("div");
-    document.body.append(container);
-    root = createRoot(container);
-    await act(async () => {
-      root!.render(<AgentImportForm onClose={() => undefined} onCreated={() => undefined} />);
-    });
-    const reply = container.querySelector<HTMLTextAreaElement>(
-      '[data-testid="agent-import-another"] textarea[aria-label="Paste the reply"]',
-    )!;
+    await open("Another assistant");
+    const reply = field<HTMLTextAreaElement>('[data-testid="agent-import-another"] textarea');
     await act(async () => {
       Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")?.set?.call(
         reply,
@@ -356,21 +367,13 @@ describe("an item whose text looks like it contains a key", () => {
       );
       reply.dispatchEvent(new Event("input", { bubbles: true }));
     });
-    await act(async () =>
-      [
-        ...container!.querySelectorAll<HTMLButtonElement>(
-          '[data-testid="agent-import-another"] button',
-        ),
-      ]
-        .find((button) => button.textContent === "Continue")!
-        .click(),
-    );
-    const labels = [...container.querySelectorAll("[aria-label]")].map((element) =>
+    await press("Continue");
+    const labels = [...container!.querySelectorAll("[aria-label]")].map((element) =>
       element.getAttribute("aria-label"),
     );
     expect(labels).toEqual(expect.arrayContaining(["Memory 1", "Skill 1", "Memory for Memory 1"]));
-    const memory = container.querySelector('[data-testid="agent-import-memory"]')!;
-    const skills = container.querySelector('[data-testid="agent-import-skills"]')!;
+    const memory = container!.querySelector('[data-testid="agent-import-memory"]')!;
+    const skills = container!.querySelector('[data-testid="agent-import-skills"]')!;
     for (const section of [memory, skills]) {
       const summary = section.querySelector("ul > li > div > div")!;
       expect(summary.textContent).not.toContain(key);
@@ -390,15 +393,8 @@ describe("creating a bot", () => {
     importPreview.mockResolvedValue(plan);
     const onClose = vi.fn();
     const onCreated = vi.fn();
-    container = document.createElement("div");
-    document.body.append(container);
-    root = createRoot(container);
-    await act(async () => {
-      root!.render(<AgentImportForm onClose={onClose} onCreated={onCreated} />);
-    });
-    const archive = container.querySelector<HTMLInputElement>(
-      '[data-testid="agent-import-archive"]',
-    )!;
+    await open("OpenClaw", <AgentImportForm onClose={onClose} onCreated={onCreated} />);
+    const archive = field<HTMLInputElement>('[data-testid="agent-import-archive"]');
     const file = new File(["backup"], "backup.zip", { type: "application/zip" });
     Object.defineProperty(file, "arrayBuffer", {
       value: () => Promise.resolve(new Uint8Array([2]).buffer),
@@ -454,34 +450,22 @@ describe("creating a bot", () => {
       Reflect.deleteProperty(navigator, "clipboard");
     });
     importPreview.mockResolvedValue(plan);
-    container = document.createElement("div");
-    document.body.append(container);
-    root = createRoot(container);
+    await open("Another assistant");
+    await press("Copy prompt");
+    const reply = field<HTMLTextAreaElement>('[data-testid="agent-import-another"] textarea');
     await act(async () => {
-      root!.render(<AgentImportForm onClose={() => undefined} onCreated={() => undefined} />);
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")?.set?.call(
+        reply,
+        "# Instructions\nBe brief.\n",
+      );
+      reply.dispatchEvent(new Event("input", { bubbles: true }));
     });
-    const copyPrompt = [
-      ...container.querySelectorAll<HTMLButtonElement>(
-        '[data-testid="agent-import-another"] button',
-      ),
-    ].find((item) => item.textContent === "Copy prompt")!;
-    await act(async () => copyPrompt.click());
-    const archive = container.querySelector<HTMLInputElement>(
-      '[data-testid="agent-import-archive"]',
-    )!;
-    const file = new File(["backup"], "backup.zip", { type: "application/zip" });
-    Object.defineProperty(file, "arrayBuffer", {
-      value: () => Promise.resolve(new Uint8Array([2]).buffer),
-    });
-    await act(async () => {
-      Object.defineProperty(archive, "files", { configurable: true, value: [file] });
-      archive.dispatchEvent(new Event("change", { bubbles: true }));
-    });
-    expect(container.querySelector('[data-testid="agent-import-preview"]')).not.toBeNull();
+    await press("Continue");
+    expect(container!.querySelector('[data-testid="agent-import-preview"]')).not.toBeNull();
 
     await act(async () => refuse.reject(new Error("denied")));
     await act(async () => button("Back").click());
-    expect(container.querySelector('[data-testid="agent-import-preview"]')).toBeNull();
+    expect(container!.querySelector('[data-testid="agent-import-another"]')).not.toBeNull();
     expect(document.querySelector('[role="dialog"]')).toBeNull();
   });
 });
@@ -499,15 +483,8 @@ describe("a plain-HTTP LAN server, where crypto.randomUUID is missing", () => {
       },
     });
     importPreview.mockResolvedValue(plan);
-    container = document.createElement("div");
-    document.body.append(container);
-    root = createRoot(container);
-    await act(async () => {
-      root!.render(<AgentImportForm onClose={() => undefined} onCreated={() => undefined} />);
-    });
-    const reply = container.querySelector<HTMLTextAreaElement>(
-      '[data-testid="agent-import-another"] textarea[aria-label="Paste the reply"]',
-    )!;
+    await open("Another assistant");
+    const reply = field<HTMLTextAreaElement>('[data-testid="agent-import-another"] textarea');
     await act(async () => {
       Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")?.set?.call(
         reply,
@@ -515,29 +492,16 @@ describe("a plain-HTTP LAN server, where crypto.randomUUID is missing", () => {
       );
       reply.dispatchEvent(new Event("input", { bubbles: true }));
     });
-    await act(async () =>
-      [
-        ...container!.querySelectorAll<HTMLButtonElement>(
-          '[data-testid="agent-import-another"] button',
-        ),
-      ]
-        .find((button) => button.textContent === "Continue")!
-        .click(),
-    );
+    await press("Continue");
     expect(importPreview).toHaveBeenCalledTimes(1);
     expect(container!.querySelector('[data-testid="agent-import-preview"]')).not.toBeNull();
   });
 });
 
 describe("a Grok Bot reply with several Bots", () => {
-  it("asks which Bot, and forgets the choice when another source is read", async () => {
-    container = document.createElement("div");
-    document.body.append(container);
-    root = createRoot(container);
-    await act(async () => {
-      root!.render(<AgentImportForm onClose={() => undefined} onCreated={() => undefined} />);
-    });
-    const grok = container.querySelector('[data-testid="agent-import-grok"]')!;
+  it("asks which Bot, and forgets the choice on Back", async () => {
+    await open("Grok Bot");
+    const grok = container!.querySelector('[data-testid="agent-import-grok"]')!;
     const reply = grok.querySelector<HTMLTextAreaElement>("textarea")!;
     await act(async () => {
       Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")?.set?.call(
@@ -557,30 +521,16 @@ describe("a Grok Bot reply with several Bots", () => {
     expect(grok.textContent).toContain("Which Bot?");
     expect(importPreview).not.toHaveBeenCalled();
 
-    const archive = container.querySelector<HTMLInputElement>(
-      '[data-testid="agent-import-archive"]',
-    )!;
-    const file = new File(["backup"], "backup.zip", { type: "application/zip" });
-    Object.defineProperty(file, "arrayBuffer", {
-      value: () => Promise.reject(new Error("unreadable")),
-    });
-    await act(async () => {
-      Object.defineProperty(archive, "files", { configurable: true, value: [file] });
-      archive.dispatchEvent(new Event("change", { bubbles: true }));
-    });
-    expect(grok.textContent).not.toContain("Which Bot?");
+    await press("Back");
+    await press("Grok Bot");
+    expect(container!.textContent).not.toContain("Which Bot?");
   });
 });
 
 describe("choosing Grok Bot files", () => {
   it("disables Continue while the chosen files are read", async () => {
-    container = document.createElement("div");
-    document.body.append(container);
-    root = createRoot(container);
-    await act(async () => {
-      root!.render(<AgentImportForm onClose={() => undefined} onCreated={() => undefined} />);
-    });
-    const grok = container.querySelector('[data-testid="agent-import-grok"]')!;
+    await open("Grok Bot");
+    const grok = container!.querySelector('[data-testid="agent-import-grok"]')!;
     const reply = grok.querySelector<HTMLTextAreaElement>("textarea")!;
     await act(async () => {
       Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")?.set?.call(

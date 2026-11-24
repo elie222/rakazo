@@ -3,10 +3,8 @@ import { ph } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
 import type { BillingStatus, HeldCreditAmount } from "@rakazo/contracts";
 import {
-  ByokTierSchema,
   byokTierChangeOffered,
   byokYearlySwitchSavings,
-  COMPUTER_SIZE_SPECS,
   creditAmountChoices,
   DEFAULT_MONTHLY_CREDIT_AMOUNT,
   HeldCreditAmountSchema,
@@ -14,7 +12,10 @@ import {
   MODEL_CREDIT_AMOUNTS,
   ModelCreditAmountSchema,
 } from "@rakazo/contracts";
+import { ownKeySubscriptionCents, subscribedTier, tierPriceCents } from "@rakazo/core";
 import { writeSaved } from "@rakazo/core/query";
+import { formatBillingAmount, formatBillingDate, formatMonthlyPrice } from "@rakazo/i18n/billing";
+import { computerUsageDetails, tierComputerDescription } from "@rakazo/i18n/computer-usage";
 import { useIsFocused, useRouter } from "expo-router";
 import { useEffect, useRef, useState } from "react";
 import { Alert, ScrollView, Share, StyleSheet } from "react-native";
@@ -24,29 +25,16 @@ import {
   useStackedSettings,
 } from "../../components/settings/settings-group";
 import { selectedSpaceId } from "../../lib/api/api";
-import {
-  currentPlan,
-  openBillingPage,
-  ownKeySubscriptionCents,
-  planEndsAt,
-} from "../../lib/billing/billing";
+import { currentPlan, openBillingPage, planEndsAt } from "../../lib/billing/billing";
 import { rememberReferral } from "../../lib/billing/referral";
 import { dateLocaleForUi } from "../../lib/i18n/i18n";
 import { useSideInsets } from "../../lib/layout/side-insets";
-import { analyticsSurface } from "../../lib/native/analytics-surface";
+import { analyticsClient } from "../../lib/native/analytics-surface";
 import type { SaveSend } from "../../lib/query/query";
 import { formRead, queryClient, rpcQuery, useSave } from "../../lib/query/query";
 import { useScreenQuery } from "../../lib/query/screen-query";
 import type { SettingsTarget } from "../../lib/query/settings-target";
 import { openFromSettingsSheet } from "../../lib/settings/settings-sheet";
-
-function formatDate(iso: string) {
-  return new Date(iso).toLocaleDateString(dateLocaleForUi(), {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-  });
-}
 
 export default function BillingScreen() {
   const sideInsets = useSideInsets();
@@ -61,6 +49,11 @@ export default function BillingScreen() {
   const statusRead = formRead(rpcQuery("billing/status", undefined, space));
   const statusQuery = useScreenQuery(statusRead);
   const status = (statusQuery.isFetchedAfterMount && statusQuery.data) || null;
+  const [showComputerUsage, setShowComputerUsage] = useState(false);
+  const usageRead = rpcQuery("billing/computerUsage", undefined, space);
+  const computerUsage = useScreenQuery(usageRead, {
+    enabled: showComputerUsage && status?.canManage === true && status.computerHoursLeft != null,
+  });
   useEffect(() => {
     if (!status) return;
     rememberReferral(space ?? null, status.referral);
@@ -75,22 +68,31 @@ export default function BillingScreen() {
   useEffect(() => {
     if (readError && focused.current) Alert.alert(t`Could not load billing`);
   }, [readError, errorUpdatedAt, t]);
+  type BillingChange = (send: SaveSend) => Promise<BillingStatus | undefined>;
   const change = useSave({
     target,
-    save: async (work: (send: SaveSend) => Promise<BillingStatus | undefined>, send) => {
+    stale: [usageRead.queryKey],
+    save: async ({ work }: { work: BillingChange; failure?: string }, send) => {
       const next = await work(send);
       if (next) await writeSaved(queryClient, statusRead.queryKey, () => next);
     },
-    onFailed: (error) =>
+    onFailed: (error, { failure }) =>
       Alert.alert(
-        (error as { status?: number }).status === 402
-          ? t`Your card was not charged`
-          : t`Could not update billing`,
+        failure ??
+          ((error as { status?: number }).status === 402
+            ? t`Your card was not charged`
+            : t`Could not update billing`),
       ),
   });
   const pending = change.pending;
-  const action = change.run;
+  const action = (work: BillingChange, failure?: string) => change.run({ work, failure });
   if (!status) return null;
+  const locale = dateLocaleForUi();
+  const usageDetails =
+    status.canManage && showComputerUsage ? computerUsageDetails(computerUsage, locale) : null;
+  const usd = (cents: number) => formatBillingAmount(cents, "usd", locale);
+  const monthly = (cents: number) => formatMonthlyPrice(cents, locale);
+  const formatDate = (iso: string) => formatBillingDate(iso, locale);
 
   const plan = currentPlan(status);
   const endsAt = planEndsAt(status);
@@ -107,25 +109,20 @@ export default function BillingScreen() {
   const annualCents = status.byokAnnualPriceCents;
   const tiers = status.byokTiers ?? [];
   type TierOffer = (typeof tiers)[number];
-  const currentTier = ownKeyCents
-    ? tiers.find((offer) => offer.tier === ByokTierSchema.catch("standard").parse(status.byokTier))
-    : undefined;
+  const currentTier = ownKeyCents ? subscribedTier(status) : undefined;
   const tierChange = byokTierChangeOffered(status);
   const interval = status.byokInterval ?? "month";
-  const tierCents = (offer: TierOffer) =>
-    interval === "year" ? offer.annualPriceCents : offer.monthlyPriceCents;
+  const tierCents = (offer: TierOffer) => tierPriceCents(offer, interval);
   /** "$49 / month", at the plan's interval. */
   const tierPrice = (cents: number) => {
-    const price = `$${cents / 100}`;
+    const price = usd(cents);
     return interval === "year" ? t`${price} / year` : t`${price} / month`;
   };
-  const tierComputer = (offer: TierOffer) =>
-    t`${ph({ vcpus: COMPUTER_SIZE_SPECS[offer.computerSize].vcpus })} vCPU, ${ph({ memoryGb: COMPUTER_SIZE_SPECS[offer.computerSize].memoryGb })} GB, ${ph({ hours: offer.computerHours })} computer hours a month`;
   const changeTier = (offer: TierOffer, cents: number) =>
     Alert.alert(
       t`Switch to ${ph({ name: offer.name })}?`,
       // What the tier gives, then how the change bills.
-      `${tierComputer(offer)}\n\n${
+      `${tierComputerDescription(offer)}\n\n${
         status.state === "trialing"
           ? t`Your plan becomes ${ph({ price: tierPrice(cents) })} when your trial ends.`
           : cents > (ownKeyCents ?? 0)
@@ -143,7 +140,7 @@ export default function BillingScreen() {
   const tierRow = currentTier ? (
     <SettingsRow
       title={currentTier.name}
-      detail={tierComputer(currentTier)}
+      detail={tierComputerDescription(currentTier)}
       chevron={tierChange ? "down" : undefined}
       disabled={pending}
     />
@@ -160,8 +157,8 @@ export default function BillingScreen() {
           detail={
             ownKeyCents
               ? status.byokInterval === "year"
-                ? t`${ph({ price: `$${ownKeyCents / 100}` })} / year`
-                : t`${ph({ price: `$${ownKeyCents / 100}` })} / month`
+                ? t`${ph({ price: usd(ownKeyCents) })} / year`
+                : t`${ph({ price: usd(ownKeyCents) })} / month`
               : undefined
           }
           value={
@@ -217,8 +214,8 @@ export default function BillingScreen() {
               Alert.alert(
                 t`Switch to yearly?`,
                 status.state === "trialing"
-                  ? t`Your plan becomes ${ph({ price: `$${annualCents / 100}` })} / year when your trial ends.`
-                  : t`Your card is charged ${ph({ price: `$${annualCents / 100}` })} today, less the unused part of this month.`,
+                  ? t`Your plan becomes ${ph({ price: usd(annualCents) })} / year when your trial ends.`
+                  : t`Your card is charged ${ph({ price: usd(annualCents) })} today, less the unused part of this month.`,
                 [
                   { text: t`Cancel`, style: "cancel" },
                   {
@@ -252,6 +249,20 @@ export default function BillingScreen() {
           {status.computerHoursResetAt ? (
             <SettingsRow title={t`Resets`} value={formatDate(status.computerHoursResetAt)} />
           ) : null}
+          {status.canManage ? (
+            <SettingsRow
+              title={
+                status.standardComputerHours ? t`Standard hours by computer` : t`Hours by computer`
+              }
+              chevron={showComputerUsage ? "down" : "right"}
+              accessibilityState={{ expanded: showComputerUsage }}
+              onPress={() => setShowComputerUsage((open) => !open)}
+            />
+          ) : null}
+          {usageDetails?.rows.map((row) => (
+            <SettingsRow key={row.id} title={row.label} value={row.hours} />
+          ))}
+          {usageDetails?.message ? <SettingsRow title={usageDetails.message} /> : null}
           {endTrial ? (
             <SettingsRow
               title={t`Start plan now`}
@@ -260,7 +271,7 @@ export default function BillingScreen() {
                 Alert.alert(
                   t`Start your plan now?`,
                   ownKeyCents
-                    ? t`Your trial ends and your card is charged ${ph({ price: `$${ownKeyCents / 100}` })} today.`
+                    ? t`Your trial ends and your card is charged ${ph({ price: usd(ownKeyCents) })} today.`
                     : t`Your trial ends and your card is charged today.`,
                   [
                     { text: t`Cancel`, style: "cancel" },
@@ -312,14 +323,17 @@ export default function BillingScreen() {
         >
           <SettingsRow
             title={t`Available credits`}
-            value={`$${(status.balanceUsd ?? 0).toFixed(2)}`}
+            value={new Intl.NumberFormat(locale, {
+              style: "currency",
+              currency: "USD",
+            }).format(status.balanceUsd ?? 0)}
           />
           {status.canManage && recurring ? (
             <>
               <MenuView
                 actions={creditAmountChoices(amount).map((value) => ({
                   id: String(value),
-                  title: `$${value / 100} / month`,
+                  title: monthly(value),
                   state: amount === value ? ("on" as const) : ("off" as const),
                 }))}
                 onPressAction={({ nativeEvent }) =>
@@ -328,7 +342,7 @@ export default function BillingScreen() {
               >
                 <SettingsRow
                   title={t`Monthly credits`}
-                  value={`$${amount / 100} / month`}
+                  value={monthly(amount)}
                   chevron="down"
                   disabled={pending}
                 />
@@ -357,7 +371,7 @@ export default function BillingScreen() {
             <MenuView
               actions={MODEL_CREDIT_AMOUNTS.map((value) => ({
                 id: String(value),
-                title: `$${value / 100}`,
+                title: usd(value),
               }))}
               onPressAction={({ nativeEvent }) =>
                 action(async (send) => {
@@ -385,7 +399,7 @@ export default function BillingScreen() {
                 action(async (send) => {
                   await send("billing/selectFunding", {
                     funding: "credits",
-                    surface: analyticsSurface(),
+                    ...analyticsClient(),
                   });
                   router.replace("/models");
                   return undefined;

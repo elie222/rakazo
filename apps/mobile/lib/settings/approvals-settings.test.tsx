@@ -294,11 +294,13 @@ it("moves and removes rules, keeping legacy category rules removable only", asyn
 });
 
 it("offers Ask and Block, not Allow, for a tool a person approves every time", async () => {
-  state.rules = [rule({ id: "space", effect: "require_approval", matchValue: "create_space" })];
+  state.rules = [
+    rule({ id: "space", effect: "require_approval", matchValue: "set_child_instructions" }),
+  ];
   await render();
-  expect(menuButton("Create space", "Always ask")).toBeDefined();
-  expect(menuButton("Create space", "Blocked")).toBeDefined();
-  expect(menuButton("Create space", "Always allow")).toBeUndefined();
+  expect(menuButton("Set child instructions", "Always ask")).toBeDefined();
+  expect(menuButton("Set child instructions", "Blocked")).toBeDefined();
+  expect(menuButton("Set child instructions", "Always allow")).toBeUndefined();
 });
 
 it("dims every rule but blocks in Never ask, where only blocks apply", async () => {

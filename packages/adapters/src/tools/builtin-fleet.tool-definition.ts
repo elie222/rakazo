@@ -3,8 +3,12 @@ import {
   ATTACHMENT_MAX_COUNT,
   BOT_DESCRIPTION_MAX_LENGTH,
   BOT_INSTRUCTIONS_MAX_LENGTH,
+  ComputerModeSchema,
   FEEDBACK_DESCRIPTION_MAX_LENGTH,
   FEEDBACK_KINDS,
+  MemoryScopeSchema,
+  ReplyModeSchema,
+  TEAM_CHAT_RULES_MAX_LENGTH,
   ThinkingLevelSchema,
 } from "@rakazo/contracts";
 import { scheduleCreateBranch } from "./builtin-work.tool-definition.js";
@@ -17,11 +21,11 @@ const childRoutineTargetProperties = {
 /** Same exactly-one-timing-method rule as schedule_create, without watches, plus the target bot. */
 const createChildRoutineInputSchema = {
   oneOf: [
-    scheduleCreateBranch(["cron"], childRoutineTargetProperties),
-    scheduleCreateBranch(["every", "unit"], childRoutineTargetProperties),
-    scheduleCreateBranch(["runAt"], childRoutineTargetProperties),
-    scheduleCreateBranch(["delayMinutes"], childRoutineTargetProperties),
-    scheduleCreateBranch(["delaySeconds"], childRoutineTargetProperties),
+    scheduleCreateBranch(["cron"], childRoutineTargetProperties, false),
+    scheduleCreateBranch(["every", "unit"], childRoutineTargetProperties, false),
+    scheduleCreateBranch(["runAt"], childRoutineTargetProperties, false),
+    scheduleCreateBranch(["delayMinutes"], childRoutineTargetProperties, false),
+    scheduleCreateBranch(["delaySeconds"], childRoutineTargetProperties, false),
   ],
 };
 
@@ -123,11 +127,11 @@ export const fleetTools: ConnectorTool[] = [
         },
         model_provider: {
           type: "string",
-          description: "Optional connected model provider. Set together with model_id.",
+          description: "Provider id (e.g. opencode-go). Set together with model_id.",
         },
         model_id: {
           type: "string",
-          description: "Optional connected model ID. Set together with model_provider.",
+          description: "Model id or provider/id. Set together with model_provider.",
         },
       },
       required: ["name", "task"],
@@ -250,9 +254,30 @@ export const fleetTools: ConnectorTool[] = [
           type: "string",
           description: 'Voice to read replies in: a voice name, or "default".',
         },
+        replyMode: {
+          type: "string",
+          enum: [...ReplyModeSchema.options],
+          description: "messages: only what you send reaches people.",
+        },
+        teamChatAmbientEnabled: {
+          type: "boolean",
+          description: "Read all team chat, not only mentions.",
+        },
+        teamChatRules: { type: "string", maxLength: TEAM_CHAT_RULES_MAX_LENGTH },
+        memoryScope: { type: "string", enum: [...MemoryScopeSchema.options] },
+        disableTools: {
+          type: "array",
+          items: { type: "string" },
+          description: "Built-in tools to turn off.",
+        },
+        computer: {
+          type: "string",
+          enum: [...ComputerModeSchema.options],
+          description: "With bot_id only.",
+        },
         bot_id: {
           type: "string",
-          description: "A bot in this space, to update its profile instead of yours.",
+          description: "A bot in this space, to change it instead of yourself.",
         },
       },
     },
@@ -365,7 +390,7 @@ export const fleetTools: ConnectorTool[] = [
   {
     name: "archive_bot",
     description:
-      "Archive another bot in this space. Archiving stops its work and routines, hides it from the active list, and preserves its conversation, memory, and files for the user to restore or delete later. confirm_name must exactly match its name. This cannot archive you.",
+      "Archive a bot in this space, yourself included. Archiving stops its work and routines, hides it from the active list, and preserves its conversation, memory, and files for the user to restore or delete later. confirm_name must exactly match its name. Archiving yourself ends your work once this reply is sent.",
     inputSchema: {
       type: "object",
       properties: {
@@ -439,9 +464,29 @@ export const fleetTools: ConnectorTool[] = [
     },
   },
   {
+    name: "post_to_group",
+    description:
+      "Post a message as yourself in one of your groups. Wakes no member; use handoff_to_bot for that.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        group_id: { type: "string", description: "Group id from your groups list." },
+        group_name: { type: "string", description: "Exact group name, if no group_id." },
+        message: { type: "string", description: "Send code, logs and long content as files." },
+        files: {
+          type: "array",
+          items: { type: "string" },
+          maxItems: ATTACHMENT_MAX_COUNT,
+          description: "Paths on your computer to attach, never their contents. Zip folders.",
+        },
+      },
+      required: ["message"],
+    },
+  },
+  {
     name: "update_preferences",
     description:
-      "Read or change the user's own account preferences: timezone and Rakazo marketing emails. Change them only when the user asks. Call with no fields to read the current values. Email, password, sign-in, billing and account deletion are only in the app's settings.",
+      "Read or change the user's app preferences. Change only what the user asks. Omit fields to read. A null result for a chat preference means there is no account override. Use update_bot for the agent's own model. Email, password, sign-in, billing and deletion require the app's settings.",
     inputSchema: {
       type: "object",
       properties: {
@@ -452,6 +497,14 @@ export const fleetTools: ConnectorTool[] = [
         marketingEmails: {
           type: "boolean",
           description: "false unsubscribes from Rakazo's product emails; true resubscribes.",
+        },
+        composerModelPicker: {
+          type: "boolean",
+          description: "Enable inline model switching in the chat composer.",
+        },
+        streamReplies: {
+          type: "boolean",
+          description: "Show replies as they are written.",
         },
       },
       additionalProperties: false,

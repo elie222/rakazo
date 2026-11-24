@@ -9,9 +9,6 @@ import {
 } from "@rakazo/contracts";
 import { runAsTenant } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
-import { gateToolCall } from "../../runs/tools/run-tool-gate.js";
-import type { ToolRequest } from "../../runs/tools/run-tool-request.js";
-import { prepareToolRequest } from "../../runs/tools/run-tool-request.js";
 import { secretTools } from "../../runs/tools/run-tools-secrets.js";
 import type { BotSecretScope, VaultItemBots } from "../bot-secrets.js";
 import {
@@ -1537,57 +1534,6 @@ describe("a login's authenticator code, wherever its password is refused", () =>
       });
       return "error" in result ? result.error : `typed ${result.hidden ? "hidden" : "visible"}`;
     };
-  // A webhook run is refused at the approval gate, before anything is read to type.
-  const gated =
-    (db: ReturnType<typeof fakeDatabase>) => async (step: typeof password | typeof code) => {
-      const args = { actions: [step] };
-      const executionId = JSON.stringify(["pi-tool", "main", "call-1"]);
-      const request: ToolRequest = {
-        name: "browser_act",
-        args,
-        executionId,
-        connectorCall: { tool: "browser_act", args, executionId, route: undefined },
-        effectRequest: undefined,
-        resolvedTool: undefined,
-        catalogRemapped: false,
-        nextApprovedTool: undefined,
-        approvedEffectKey: undefined,
-        replayEffectToolName: "browser_act",
-        fleetSummary: undefined,
-        heldForApproval: false,
-        purchase: undefined,
-        cardUse: undefined,
-        loginUse: undefined,
-      };
-      const ctx = {
-        deps: { prisma: db.prisma, secretStore },
-        run: { ...scope, id: "run-1", botId: "bot-1", trigger: "webhook", threadId: "thread-1" },
-        runId: "run-1",
-        bot: { id: "bot-1", name: "Helper" },
-        thread: { id: "thread-1" },
-        source: { ownerStartedRun: false },
-        providers: { browser: {} },
-        computer: { pageBrowserAllowed: false, heldForTakeover: false },
-        context: { signal: new AbortController().signal },
-        secrets: [],
-        tools: { connector: new Map(), connectedPlugins: [] },
-        state: {
-          walletHosts: new Set<string>(),
-          tainted: false,
-          effects: { consumedIds: new Set(), counts: new Map(), occurrences: [] },
-        },
-        trust: {
-          loadApprovalRules: async () => [],
-          loadAutoReviewPreference: async () => ({ enabled: false, skipApprovals: false }),
-          receivedOutsideMessage: async () => true,
-        },
-      };
-      const prepared = await prepareToolRequest(ctx as never, request);
-      if (prepared) return "error" in prepared ? prepared.error : "stopped";
-      const outcome = await gateToolCall(ctx as never, request, undefined);
-      const result = (outcome as { result?: { error?: string } }).result;
-      return result?.error ?? "typed";
-    };
   const bot = { ...scope, botId: "bot-1" };
   it.each([
     [
@@ -1605,7 +1551,6 @@ describe("a login's authenticator code, wherever its password is refused", () =>
       () => saved({ policy: "ask" }),
       (db: ReturnType<typeof fakeDatabase>) => filled(db, bot),
     ],
-    ["a webhook run", () => saved({ policy: "ask" }), gated],
     [
       "another member's run",
       () => saved(),

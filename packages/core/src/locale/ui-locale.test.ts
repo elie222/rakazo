@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { matchUiLocale } from "./ui-locale.js";
 
-const ALL = ["en", "de", "es", "he", "pl", "pt-BR", "ru", "zh-CN", "zh-TW"] as const;
+const ALL = ["en", "de", "es", "he", "pl", "pt-BR", "ru", "th", "zh-CN", "zh-TW"] as const;
 const FEW = ["en", "de", "zh-CN"] as const;
 
 describe("matchUiLocale", () => {
@@ -12,6 +12,8 @@ describe("matchUiLocale", () => {
     expect(matchUiLocale("pt", ALL)).toBe("pt-BR");
     expect(matchUiLocale("es-419", ALL)).toBe("es");
     expect(matchUiLocale("pl-PL", ALL)).toBe("pl");
+    expect(matchUiLocale("th-TH", ALL)).toBe("th");
+    expect(matchUiLocale(" TH_th ", ALL)).toBe("th");
     expect(matchUiLocale(" PL_pl ", ALL)).toBe("pl");
     expect(matchUiLocale("iw-IL", ALL)).toBe("he");
     expect(matchUiLocale("zh_Hans_CN", ALL)).toBe("zh-CN");

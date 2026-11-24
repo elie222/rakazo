@@ -71,7 +71,10 @@ function liveFrame(life: AvatarLife) {
       if (!segment.clip || segment.start > now) continue;
       const clip = avatarClip(segment.clip);
       for (const blink of clip.blinks ?? [])
-        shut = Math.max(shut, avatarRestingBlink(now - segment.start - blink));
+        shut = Math.max(
+          shut,
+          avatarRestingBlink(now - segment.start + (segment.offset ?? 0) - blink),
+        );
     }
     frame.lid = Math.min(frame.lid, 1 - AVATAR_LID_CLOSE * shut);
   }
@@ -290,7 +293,7 @@ function LegacyBotAvatar({
     settling,
     reducedMotion,
   });
-  const life = useLife(state, clock, size, motion);
+  const life = useLife(state, clock, size, motion, identity || color);
   const poke = usePoke(life, pokeable && clock === "running");
   const bodyStyle = useBodyStyle(life, size);
   const picture =

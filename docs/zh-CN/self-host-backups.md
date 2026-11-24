@@ -31,6 +31,7 @@
 运行前停止机器人计算机和其他写入该数据库或数据目录的进程。
 脚本会先在干净的同级目录验证并解包主目录归档，再停止 API、worker 和监督服务。
 它拒绝符号链接或非目录的 `data/` 路径。
+脚本最多等待 Postgres 接受连接 60 秒。若启动失败或超时，脚本会打印查看 Postgres 日志的命令，并保持写入服务停止。
 
 SQL 在单个事务中导入，遇到错误（包括已有表冲突）立即停止。无效归档或导入失败不会替换当前文件目录。
 SQL 成功后，原目录移到 `data.rollback.<random>/data`，脚本打印回滚路径，再替换为备份中的目录。
@@ -62,6 +63,45 @@ RAKAZO_BACKUP_MIN_FREE_GB=5
 
 自定义 Compose 项目名时，还要设置相同的 `COMPOSE_PROJECT_NAME`。
 更新仓库不会更新 `/usr/local/sbin` 的副本；升级备份工具时需重新安装脚本和服务单元，并运行 `systemctl daemon-reload`。
+
+### 已发布镜像安装
+
+同一脚本也能备份用 `install-images.sh` 安装、没有源码检出的部署。将 `RAKAZO_DEPLOY_DIR`
+设为存放 `docker-compose.images.yml` 和 `.env` 的目录；该目录中没有生产 Compose 文件时，脚本使用
+`docker-compose.images.yml`，存在 `docker-compose.override.yml` 时也一并使用。如需其他文件组合，
+在 `RAKAZO_COMPOSE_FILE` 中按顺序列出部署目录内的路径，分隔方式与[更新器](./self-host-upgrading.md#叠加-compose-文件)相同。
+部署的 `.env` 中已为更新器设置的列表会原样使用；`/etc/rakazo/backup.env` 中的值优先于它。
+
+获取与当前运行版本对应的脚本和服务单元，然后启用定时器：
+
+```bash
+base=https://raw.githubusercontent.com/elie222/rakazo/vX.Y.Z/infra
+sudo curl -fsSL "$base/compose/backup-prod.sh" -o /usr/local/sbin/rakazo-backup
+sudo chmod 755 /usr/local/sbin/rakazo-backup
+for unit in rakazo-backup.service rakazo-backup.timer; do
+  sudo curl -fsSL "$base/systemd/$unit" -o "/etc/systemd/system/$unit"
+done
+sudo install -d -m 700 /etc/rakazo
+printf '\nRAKAZO_DEPLOY_DIR=%s\n' "$PWD" | sudo tee -a /etc/rakazo/backup.env >/dev/null
+sudo chmod 600 /etc/rakazo/backup.env
+sudo systemctl daemon-reload
+sudo systemctl enable --now rakazo-backup.timer
+sudo systemctl start rakazo-backup.service
+```
+
+请在部署目录中运行。部署目录会以单独一行追加到 `/etc/rakazo/backup.env`，不会替换已有设置。
+最后一条命令立即执行首次备份，配置错误会马上出现在 `journalctl -u rakazo-backup.service` 中。
+下面的恢复步骤同样适用，只需换成你自己的 Compose 文件和卷名。在按[加密与异地备份](#加密与异地备份)
+设置接收者之前，首次备份是明文的；演练只读取加密快照。演练脚本不包含在此安装中。在保存身份文件的机器上
+获取脚本，并对复制过去的加密快照运行：
+
+```bash
+curl -fsSLO https://raw.githubusercontent.com/elie222/rakazo/vX.Y.Z/infra/compose/backup-drill.sh
+bash backup-drill.sh ./<stamp> rakazo-backup.key
+```
+
+该堆栈运行 Postgres 16，因此演练需要 `pg_restore` 16 或更高版本。`.env` 中使用 `$` 引用的文件列表会被拒绝，
+因为脚本不会展开它：请在 `/etc/rakazo/backup.env` 中设置不含引用的列表。
 
 使用专用备份盘时，应持久挂载该磁盘，并把它的 `backups` 目录 bind mount 到 `/var/backups`。
 在 `/etc/fstab` 的 bind 挂载选项中加上 `x-systemd.requires-mounts-for=/mnt/your-backup-volume`。

@@ -1,5 +1,7 @@
 import type { Connection, ConnectionCatalogItem } from "@rakazo/contracts";
+import { CONNECTION_LABEL_MAX_LENGTH } from "@rakazo/contracts";
 import { abortableDelay } from "../primitives/async.js";
+import { sliceWellFormed } from "../primitives/utf8.js";
 
 type CatalogRef = Pick<ConnectionCatalogItem, "connectorId" | "slug">;
 
@@ -27,6 +29,16 @@ export function isCatalogItemConnected(
   );
 }
 
+/**
+ * A name from a provider's catalog as a connection label: never blank (the provider's own slug
+ * stands in) and short enough to leave room for `suffix`, which is kept whole.
+ */
+export function connectionLabelFrom(name: string, fallback: string, suffix = "") {
+  const base = name.trim() || fallback.trim();
+  const room = CONNECTION_LABEL_MAX_LENGTH - suffix.length;
+  return sliceWellFormed(base, room).trimEnd() + suffix;
+}
+
 /** "Gmail", then numbered accounts, skipping names already connected or authorizing. */
 export function nextCatalogAccountLabel(
   connections: readonly Connection[],
@@ -35,10 +47,11 @@ export function nextCatalogAccountLabel(
   const accounts = catalogItemAccounts(connections, item);
   const names = new Set(accounts.map((row) => row.displayName));
   let number = accounts.filter((row) => row.status === "connected").length + 1;
-  let label = number === 1 ? item.name : `${item.name} ${number}`;
+  const labelFor = (n: number) => connectionLabelFrom(item.name, item.slug, n === 1 ? "" : ` ${n}`);
+  let label = labelFor(number);
   while (names.has(label)) {
     number += 1;
-    label = `${item.name} ${number}`;
+    label = labelFor(number);
   }
   return label;
 }
@@ -105,9 +118,66 @@ export async function waitForConnection<Row extends { status: string }>(
     if (stopped()) return { status: "aborted" };
     if (row?.status === "connected") return { status: "connected", row };
     if (row?.status === "revoked") return { status: "aborted" };
-    await abortableDelay(CATALOG_CONNECT_POLL_MS, options.signal);
+    if (attempt + 1 < options.attempts) {
+      await abortableDelay(CATALOG_CONNECT_POLL_MS, options.signal);
+    }
   }
   return stopped() ? { status: "aborted" } : { status: "pending" };
+}
+
+const PROMPT_SIGN_IN_ATTEMPTS = 60;
+const RETURN_READ_ATTEMPTS = 3;
+
+/**
+ * Waits for a sign-in without calling a slow one failed. It polls for the time most take; after
+ * that `onSlow` lets the caller offer to start over, and this attempt is read again only when
+ * `whenBack` says the person came back to the app, which is when a finished sign-in shows.
+ */
+export async function waitForSignIn<Row extends { status: string }>(
+  connectionId: string,
+  complete: (input: { connectionId: string }) => Promise<Row>,
+  options: {
+    signal: AbortSignal;
+    onSlow: () => void;
+    /** Calls `read` each time the app regains focus or the foreground; returns how to stop. */
+    whenBack: (read: () => void) => () => void;
+  },
+): Promise<{ status: "connected"; row: Row } | { status: "aborted" }> {
+  const prompt = await waitForConnection(connectionId, complete, {
+    signal: options.signal,
+    attempts: PROMPT_SIGN_IN_ATTEMPTS,
+  });
+  if (prompt.status !== "pending") return prompt;
+  options.onSlow();
+  return new Promise((resolve) => {
+    const settle = (result: { status: "connected"; row: Row } | { status: "aborted" }) => {
+      stop();
+      options.signal.removeEventListener("abort", onAbort);
+      resolve(result);
+    };
+    const onAbort = () => settle({ status: "aborted" });
+    let reading = false;
+    const read = () => {
+      if (reading) return;
+      reading = true;
+      // A few tries, so one failed request does not lose a sign-in that just finished.
+      waitForConnection(connectionId, complete, {
+        signal: options.signal,
+        attempts: RETURN_READ_ATTEMPTS,
+      }).then(
+        (result) => {
+          reading = false;
+          if (result.status !== "pending") settle(result);
+        },
+        // Only an abort rejects, and the abort listener settles that.
+        () => {},
+      );
+    };
+    const stop = options.whenBack(read);
+    options.signal.addEventListener("abort", onAbort, { once: true });
+    // The person may have come back while the last timed read was still in flight.
+    read();
+  });
 }
 
 /** The server's NOT_FOUND code, not any 404 a proxy or an older server might send. */

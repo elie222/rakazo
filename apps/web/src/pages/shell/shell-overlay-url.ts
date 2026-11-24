@@ -1,6 +1,7 @@
 const SETTINGS_SECTIONS = [
   "general",
   "organization",
+  "spaces",
   "space",
   "models",
   "memory",
@@ -24,6 +25,7 @@ export type ShellOverlay =
   | { kind: "integrations" }
   | { kind: "skills" }
   | { kind: "templates" }
+  | { kind: "import" }
   | { kind: "mcp"; serverId?: string }
   | null;
 
@@ -33,6 +35,7 @@ const OVERLAY_KEYS = [
   "integrations",
   "skills",
   "templates",
+  "import",
   "mcp",
   "messaging",
 ] as const;
@@ -53,6 +56,7 @@ export function readShellOverlay(params: URLSearchParams): ShellOverlay {
   if (params.has("integrations")) return { kind: "integrations" };
   if (params.has("skills")) return { kind: "skills" };
   if (params.has("templates")) return { kind: "templates" };
+  if (params.has("import")) return { kind: "import" };
   if (params.has("mcp")) {
     const serverId = params.get("mcp");
     return serverId ? { kind: "mcp", serverId } : { kind: "mcp" };

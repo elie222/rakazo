@@ -8,9 +8,13 @@ const state = vi.hoisted(() => ({
   scope: true,
   rpc: vi.fn(),
 }));
-vi.mock("../api/api", () => ({ rpc: state.rpc, selectedSpaceId: () => state.space }));
-vi.mock("../integrations/integrations-cache", () => ({
-  isIntegrationsScopeCurrent: (scope: { selectionId: string }) => scope.selectionId === state.space,
+vi.mock("../api/api", () => ({ selectedSpaceId: () => state.space }));
+vi.mock("./chat-rpc", () => ({
+  chatRpc: (spaceId: string | undefined, path: string, input: object) =>
+    state.rpc(path, input, spaceId),
+}));
+vi.mock("../api/verified-scope", () => ({
+  isVerifiedScopeCurrent: (scope: { selectionId: string }) => scope.selectionId === state.space,
 }));
 vi.mock("./saved-chats", () => ({
   currentSavedChatsScope: () => null,
@@ -18,10 +22,10 @@ vi.mock("./saved-chats", () => ({
     state.scope ? { namespace: "ns", selectionId: state.space, spaceId: state.space } : null,
   savedChatTarget: ({ botId, groupId }: { botId?: string; groupId?: string }) =>
     groupId ? `group:${groupId}` : `bot:${botId}`,
-  readSavedThread: (scope: { selectionId: string }, target: string) =>
-    state.saved.get(`${scope.selectionId}/${target}`) ?? null,
-  writeSavedThread: (scope: { selectionId: string }, target: string, snapshot: unknown) => {
-    state.saved.set(`${scope.selectionId}/${target}`, snapshot);
+  readSavedThread: (scope: { spaceId: string }, target: string) =>
+    state.saved.get(`${scope.spaceId}/${target}`) ?? null,
+  writeSavedThread: (scope: { spaceId: string }, target: string, snapshot: unknown) => {
+    state.saved.set(`${scope.spaceId}/${target}`, snapshot);
   },
 }));
 
@@ -50,15 +54,12 @@ it("saves a copy of the first chats that have none, one request at a time", asyn
   first.resolve(snapshotOf({ botId: "b1" }));
   await pass;
 
-  expect(state.rpc.mock.calls.map(([, input]) => input)).toEqual([
-    { botId: "b1" },
-    { botId: "b3" },
-    { botId: "b4" },
-    { botId: "b5" },
-  ]);
+  expect(state.rpc.mock.calls.map(([, input]) => input)).toEqual(
+    chats.slice(0, PRELOADED_CHATS).filter(({ botId }) => botId !== "b2"),
+  );
   expect(state.saved.get(`${state.space}/bot:b2`)).toEqual({ kept: true });
   expect(state.saved.get(`${state.space}/bot:b1`)).toEqual(snapshotOf({ botId: "b1" }));
-  expect(state.saved.has(`${state.space}/bot:b6`)).toBe(false);
+  expect(state.saved.has(`${state.space}/bot:b${PRELOADED_CHATS + 1}`)).toBe(false);
 });
 
 it("asks for each chat once per Space, and again after a failed request", async () => {
@@ -93,17 +94,37 @@ it("does nothing without a saved-chat scope", async () => {
   expect(state.rpc).not.toHaveBeenCalled();
 });
 
-it("lists the selected Space's chats in inbox order, pinned ones first", () => {
+it("lists every Space's chats in inbox order, pinned ones first", () => {
   const items = [
-    { type: "pinned", chats: [{ kind: "group", group: { id: "g1" } }] },
+    { type: "pinned", chats: [{ kind: "group", group: { id: "g1", spaceId: "s1" } }] },
     { type: "heading", key: "h", title: "Bots" },
     { type: "bot", bot: { id: "b1" } },
-    { type: "bot", bot: { id: "elsewhere" } },
-    { type: "group", group: { id: "g2" } },
+    { type: "bot", bot: { id: "b2", spaceId: "s2" } },
+    { type: "group", group: { id: "g2", spaceId: "s2" } },
   ] as unknown as InboxItem[];
-  expect(inboxChats(items, { bots: [{ id: "b1" }], groups: [{ id: "g1" }, { id: "g2" }] })).toEqual(
-    [{ groupId: "g1" }, { botId: "b1" }, { groupId: "g2" }],
-  );
+  expect(inboxChats(items)).toEqual([
+    { groupId: "g1", spaceId: "s1" },
+    { botId: "b1", spaceId: undefined },
+    { botId: "b2", spaceId: "s2" },
+    { groupId: "g2", spaceId: "s2" },
+  ]);
+});
+
+it("saves another Space's chat under that Space, asking that Space for it", async () => {
+  await preloadChats([{ botId: "b1" }, { botId: "b2", spaceId: "space-other" }]);
+  expect(state.rpc.mock.calls).toEqual([
+    ["threads/get", { botId: "b1" }, undefined],
+    ["threads/get", { botId: "b2" }, "space-other"],
+  ]);
+  expect(state.saved.get(`${state.space}/bot:b1`)).toEqual(snapshotOf({ botId: "b1" }));
+  expect(state.saved.get("space-other/bot:b2")).toEqual(snapshotOf({ botId: "b2" }));
+  expect(state.saved.has(`${state.space}/bot:b2`)).toBe(false);
+});
+
+it("skips another Space's chat that already has a copy there", async () => {
+  state.saved.set("space-other/bot:b2", { kept: true });
+  await preloadChats([{ botId: "b2", spaceId: "space-other" }]);
+  expect(state.rpc).not.toHaveBeenCalled();
 });
 
 it("stops when the Space changes, and never asks for one Space's chats in another", async () => {

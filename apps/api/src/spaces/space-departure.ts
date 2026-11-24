@@ -1,7 +1,8 @@
 import type { JobPublisher, SandboxProvider } from "@rakazo/adapter-kit";
+import type { MeetingCalendarService, MeetingService } from "@rakazo/adapters";
 import { expireComputerControl, stopCancelledGroupRuns, wakeRun } from "@rakazo/adapters";
 import type { PrismaClient, SpaceDeparture, ThreadEvents } from "@rakazo/db";
-import { getLogger } from "@rakazo/logging";
+import { bestEffort, getLogger } from "@rakazo/logging";
 
 /**
  * After someone leaves a Space, is removed, or deletes their account: tell clients their runs
@@ -15,17 +16,26 @@ export async function afterSpaceDeparture(
     sandbox: SandboxProvider;
     jobs: JobPublisher;
     events: ThreadEvents;
+    meetings?: Pick<MeetingService, "stopForDepartedMember">;
+    meetingCalendar?: Pick<MeetingCalendarService, "disconnectOwner">;
   },
   actor: { spaceId: string; userId: string },
   departure: SpaceDeparture,
+  departedUserId = actor.userId,
 ): Promise<void> {
-  await Promise.all(
-    departure.events.map(({ threadId, seq }) =>
-      deps.events.notify(threadId, seq).catch((error) => {
-        getLogger().error("space departure realtime notification", error);
-      }),
-    ),
-  );
+  const calendar =
+    deps.meetingCalendar &&
+    bestEffort(
+      "disconnect meeting calendar after Space departure",
+      deps.meetingCalendar.disconnectOwner({ spaceId: actor.spaceId, userId: departedUserId }),
+    );
+  const meetings =
+    deps.meetings &&
+    bestEffort(
+      "stop meetings after Space departure",
+      deps.meetings.stopForDepartedMember({ spaceId: actor.spaceId, userId: departedUserId }),
+    );
+  await Promise.all(departure.events.map(({ threadId, seq }) => deps.events.notify(threadId, seq)));
   // Their routines pass to the owner, paused.
   await deps.events.publishSpaceChange?.(actor.spaceId, "routines");
   await stopCancelledGroupRuns(deps, actor, departure).catch((error) => {
@@ -39,4 +49,5 @@ export async function afterSpaceDeparture(
     ),
   );
   await Promise.all(departure.continuationRunIds.map((runId) => wakeRun(deps.jobs, runId)));
+  await Promise.all([calendar, meetings]);
 }

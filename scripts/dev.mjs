@@ -9,7 +9,9 @@
 // The database is `.env`'s DATABASE_URL when it is set: it must accept a
 // connection, or startup fails rather than falling back to a different one.
 // With no DATABASE_URL, a local Postgres container (`rakazo-dev-postgres`) is
-// started and reused by every checkout.
+// started and reused by every checkout. Without Docker, a Postgres cluster run
+// with locally installed Postgres (on PATH or from Homebrew) takes its place,
+// kept in the user's data directory and likewise shared by every checkout.
 // Setting WEB_PORT or API_PORT, in the shell or `.env`, turns off port selection. A relative
 // DATA_DIR resolves in the main checkout, so checkouts sharing the database share its files.
 // Branch databases, and their copied files, are dropped once the branch is deleted or merged.
@@ -19,16 +21,22 @@
 // Tailscale daemon forwards to it, so only devices signed in to your tailnet can reach it.
 import { execFileSync, spawn } from "node:child_process";
 import {
+  appendFileSync,
   constants,
   cpSync,
   existsSync,
+  mkdirSync,
+  mkdtempSync,
   readdirSync,
   readFileSync,
+  renameSync,
   rmSync,
   statSync,
+  writeFileSync,
 } from "node:fs";
 import { createRequire } from "node:module";
 import net from "node:net";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -50,6 +58,8 @@ const MANAGED = {
   container: "rakazo-dev-postgres",
   image: "postgres:18",
   port: 54318,
+  // Apart from the container's, so starting Docker later never collides with a running cluster.
+  localPort: 54319,
   owner: "rakazo",
   runtime: "rakazo_dev",
   database: "rakazo",
@@ -142,12 +152,133 @@ function withDatabase(url, database) {
   return parsed.toString();
 }
 
-async function startManagedPostgres() {
+function managedConnection(port) {
+  const server = `127.0.0.1:${port}`;
+  return {
+    url: `postgres://${MANAGED.runtime}:${MANAGED.runtime}@${server}/${MANAGED.database}`,
+    migrationUrl: `postgres://${MANAGED.owner}:${MANAGED.owner}@${server}/${MANAGED.database}`,
+  };
+}
+
+function dockerRunning() {
   try {
     run("docker", ["version", "--format", "{{.Server.Version}}"]);
+    return true;
   } catch {
-    throw new Error("No DATABASE_URL in .env and Docker is not running to start a local Postgres.");
+    return false;
   }
+}
+
+/** A directory with Postgres's server programs; libpq alone puts `initdb` on PATH without them. */
+function localPostgresBin() {
+  const onPath = (process.env.PATH ?? "").split(path.delimiter).filter(Boolean);
+  const homebrew = ["/opt/homebrew/opt", "/usr/local/opt"].flatMap((prefix) =>
+    ["postgresql@18", "postgresql@17"].map((name) => path.join(prefix, name, "bin")),
+  );
+  return [...onPath, ...homebrew].find((dir) =>
+    ["postgres", "initdb", "pg_ctl"].every((program) => existsSync(path.join(dir, program))),
+  );
+}
+
+/** Outside every checkout, so all of them share one cluster as they share the container. */
+function localPostgresHome() {
+  const base =
+    process.platform === "darwin"
+      ? path.join(os.homedir(), "Library", "Application Support")
+      : path.join(os.homedir(), ".local", "share");
+  return path.join(base, MANAGED.container);
+}
+
+/** Builds the cluster beside `dataDir` and moves it in whole, so checkouts starting together never see half of one. */
+function initLocalCluster(bin, dataDir) {
+  log(`Creating a shared local Postgres cluster in ${dataDir}`);
+  mkdirSync(path.dirname(dataDir), { recursive: true });
+  const building = mkdtempSync(`${dataDir}.init-`);
+  try {
+    const passwordFile = path.join(building, "password");
+    const cluster = path.join(building, "data");
+    // Development only: the cluster listens on loopback and holds throwaway data.
+    writeFileSync(passwordFile, MANAGED.owner, { mode: 0o600 });
+    run(path.join(bin, "initdb"), [
+      "-D",
+      cluster,
+      "-U",
+      MANAGED.owner,
+      "--auth=scram-sha-256",
+      `--pwfile=${passwordFile}`,
+      "--encoding=UTF8",
+    ]);
+    appendFileSync(
+      path.join(cluster, "postgresql.conf"),
+      `\nlisten_addresses = '127.0.0.1'\nport = ${MANAGED.localPort}\nunix_socket_directories = ''\n`,
+    );
+    try {
+      renameSync(cluster, dataDir);
+    } catch (error) {
+      // Another checkout finished first; use its cluster.
+      if (!existsSync(path.join(dataDir, "PG_VERSION"))) throw error;
+    }
+  } finally {
+    rmSync(building, { recursive: true, force: true });
+  }
+}
+
+async function startLocalPostgres() {
+  const connection = managedConnection(MANAGED.localPort);
+  const adminUrl = withDatabase(connection.migrationUrl, "postgres");
+  if (!(await connects(adminUrl))) {
+    const bin = localPostgresBin();
+    if (!bin) {
+      throw new Error(
+        "No DATABASE_URL in .env, and neither Docker nor a local Postgres install (postgres, initdb and pg_ctl) is available. Start Docker or install Postgres.",
+      );
+    }
+    const major = run(path.join(bin, "postgres"), ["--version"]).match(/(\d+)\.\d+/)?.[1];
+    // A cluster starts only under the major version that created it.
+    const dataDir = path.join(localPostgresHome(), major ?? "unknown");
+    if (!existsSync(path.join(dataDir, "PG_VERSION"))) initLocalCluster(bin, dataDir);
+    log(`Starting the shared local Postgres (${dataDir})`);
+    try {
+      run(path.join(bin, "pg_ctl"), [
+        "-D",
+        dataDir,
+        "-l",
+        path.join(dataDir, "server.log"),
+        "-w",
+        "start",
+      ]);
+    } catch (error) {
+      // Another checkout may be starting it at the same moment.
+      let started = false;
+      for (let attempt = 0; attempt < 60 && !started; attempt += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 500));
+        started = await connects(adminUrl);
+      }
+      if (!started) throw error;
+    }
+  }
+  const admin = new Client({ connectionString: adminUrl });
+  await admin.connect();
+  try {
+    const { rowCount } = await admin.query("SELECT 1 FROM pg_database WHERE datname = $1", [
+      MANAGED.database,
+    ]);
+    if (!rowCount) {
+      await admin
+        .query(`CREATE DATABASE ${admin.escapeIdentifier(MANAGED.database)}`)
+        .catch((error) => {
+          // Another checkout created it first.
+          if (error.code !== "42P04") throw error;
+        });
+    }
+  } finally {
+    await admin.end();
+  }
+  return connection;
+}
+
+async function startManagedPostgres() {
+  if (!dockerRunning()) return startLocalPostgres();
   const state = (() => {
     try {
       return run("docker", ["inspect", "--format", "{{.State.Running}}", MANAGED.container]);
@@ -188,11 +319,7 @@ async function startManagedPostgres() {
       await new Promise((resolve) => setTimeout(resolve, 500));
     }
   }
-  const server = `127.0.0.1:${MANAGED.port}`;
-  return {
-    url: `postgres://${MANAGED.runtime}:${MANAGED.runtime}@${server}/${MANAGED.database}`,
-    migrationUrl: `postgres://${MANAGED.owner}:${MANAGED.owner}@${server}/${MANAGED.database}`,
-  };
+  return managedConnection(MANAGED.port);
 }
 
 async function sharedDatabase() {
@@ -202,7 +329,7 @@ async function sharedDatabase() {
     if (await connects(migrationUrl)) return { url, migrationUrl };
     // A fallback would silently give this checkout different data than configured.
     throw new Error(
-      "The configured database does not accept a connection. Check DATABASE_MIGRATION_URL or DATABASE_URL, or remove DATABASE_URL to use the local container.",
+      "The configured database does not accept a connection. Check DATABASE_MIGRATION_URL or DATABASE_URL, or remove DATABASE_URL to use a local Postgres.",
     );
   }
   return startManagedPostgres();

@@ -2,7 +2,7 @@ import { mkdtemp, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type { PortableFile, SandboxProvider, StreamedPortableFile } from "@rakazo/adapter-kit";
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   fakeBoatProvider as fakeBoat,
   routeFakeBoatDownloads,
@@ -13,11 +13,9 @@ import { HostComputerSandbox } from "../host/host-computer-sandbox.js";
 import { startHostComputerServer } from "../host/host-computer-server.js";
 import { provisionPrepared } from "./sandbox-test-support.js";
 
-let restoreFetch: () => void;
-beforeAll(() => {
-  restoreFetch = routeFakeBoatDownloads();
+beforeEach(() => {
+  routeFakeBoatDownloads();
 });
-afterAll(() => restoreFetch());
 
 const context = {
   operationId: "sandbox-fault-test",
@@ -92,6 +90,26 @@ describe.each([
     await expect(
       provider.importWorkspace(computer, portableFiles([escapingFile]), context),
     ).rejects.toThrow(/escapes the computer workspace/i);
+  });
+
+  it("reads '.' segments as the folder they are in", async () => {
+    const provider = await makeProvider();
+    const computer = await provisionPrepared(
+      provider,
+      { botId: "dot", homePath: "/unused" },
+      context,
+    );
+    await provider.writeFile(
+      computer,
+      { path: "./notes/./a.txt", content: new TextEncoder().encode("a") },
+      context,
+    );
+    expect(await provider.listFiles(computer, ".", context)).toEqual(
+      await provider.listFiles(computer, "", context),
+    );
+    expect(await provider.listFiles(computer, "./notes", context)).toEqual(
+      await provider.listFiles(computer, "notes", context),
+    );
   });
 
   it("reports missing and oversized reads without returning partial data", async () => {

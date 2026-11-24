@@ -145,7 +145,9 @@ it("shows a computer of a kind this build does not know like any other", async (
   await render({ ...computer("stopped"), kind: "a-provider-since-removed" });
   expect(container.querySelector('[data-state="idle"]')?.textContent).toContain("Asleep");
   await render({ ...computer("running"), kind: "a-provider-since-removed" });
-  expect(container.querySelector('[data-state="running"]')?.textContent).toContain("Team Computer");
+  expect(container.querySelector('[data-state="running"]')?.textContent).toContain(
+    "Connecting to the screen…",
+  );
 });
 
 it.each([computer("running"), computer("suspended")])(

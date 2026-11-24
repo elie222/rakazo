@@ -38,7 +38,7 @@ const BUNDLES = {
     label: "desktop main process (the bundle and preload scripts Electron loads at launch)",
     dist: "apps/desktop/dist",
     build: "pnpm --filter @rakazo/desktop build",
-    files: () => ["main.js", "preload.cjs", "setup-preload.cjs"],
+    files: () => ["launch.js", "main.js", "preload.cjs", "setup-preload.cjs"],
     size: (bytes) => bytes.length,
     fix: 'This bundle is one file, so a dynamic import() of bundled code does not shrink it. List a heavy, rarely used dependency under "external" in apps/desktop/scripts/build.mjs and load it with a dynamic import() where it is used, as electron-updater is',
   },
@@ -57,7 +57,7 @@ function measure(root, bundle) {
     return { files, bytes: files.reduce((sum, file) => sum + file.bytes, 0) };
   } catch (error) {
     if (error.code !== "ENOENT") throw error;
-    return { missing: path.relative(root, error.path) };
+    return { missing: path.relative(root, error.path).split(path.sep).join("/") };
   }
 }
 

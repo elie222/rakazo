@@ -30,7 +30,7 @@ const NOW = new Date("2026-03-02T09:00:00.000Z");
 const MINUTE = 60_000;
 
 interface Scenario {
-  error: Error;
+  error?: Error;
   trigger?: string;
   retryOfRunId?: string | null;
   routineNotify?: boolean;
@@ -52,6 +52,8 @@ interface Scenario {
   routineGone?: boolean;
   noRoutine?: boolean;
   setupFailsOnce?: boolean;
+  oneShot?: boolean;
+  endsAt?: Date;
 }
 
 async function failRun(scenario: Scenario) {
@@ -93,7 +95,8 @@ async function failRun(scenario: Scenario) {
     }
     const backup = scenario.switchToBackup;
     if (backup) await request.onModelChange?.(backup.provider, backup.modelId);
-    throw scenario.error;
+    if (scenario.error) throw scenario.error;
+    yield { type: "text" as const, text: "Reminder sent." };
   });
   const prisma = {
     spaceMember: { findUnique: vi.fn(async () => ({ id: "member-1" })) },
@@ -124,8 +127,9 @@ async function failRun(scenario: Scenario) {
         if (scenario.routineGone && select?.name) return null;
         return {
           name: "Inbox sweep",
-          crons:
-            scenario.resumeAfterScheduleEdit && runtimeRun.mock.calls.length === 0
+          crons: scenario.oneShot
+            ? ["@once"]
+            : scenario.resumeAfterScheduleEdit && runtimeRun.mock.calls.length === 0
               ? ["0 * * * *"]
               : ["0 8 * * *"],
           timezone: "UTC",
@@ -134,8 +138,15 @@ async function failRun(scenario: Scenario) {
             scenario.nextRunAt === undefined
               ? new Date(NOW.getTime() + 24 * 60 * MINUTE)
               : scenario.nextRunAt,
+          ...(scenario.endsAt
+            ? { endsAt: scenario.endsAt, active: true, watch: null, userId: "user-1" }
+            : {}),
+          ...(scenario.oneShot ? { userId: "user-1", active: false, lastRunAt: NOW } : {}),
         };
       }),
+      count: vi.fn(async () => 0),
+      deleteMany: vi.fn(async () => ({ count: 1 })),
+      updateMany: vi.fn(async () => ({ count: 1 })),
     },
     chatGroup: { findMany: vi.fn(async () => []) },
     event: { count: vi.fn(async () => scenario.toolCalls ?? 0) },
@@ -221,6 +232,7 @@ async function failRun(scenario: Scenario) {
             }
           : null,
       ),
+      findMany: vi.fn(async () => []),
     },
     deploymentSettings: {
       findUnique: vi.fn(async () => ({
@@ -231,7 +243,7 @@ async function failRun(scenario: Scenario) {
     taughtSkill: { findMany: vi.fn(async () => []) },
     vaultCredential: { findMany: vi.fn(async () => []) },
     agentSkill: { findMany: vi.fn(async () => []) },
-    scratchpadItem: { findMany: vi.fn(async () => []) },
+    scratchpadItem: { findMany: vi.fn(async () => []), count: vi.fn(async () => 0) },
     externalEffect: { findMany: vi.fn(async () => []) },
     artifact: { findMany: vi.fn(async () => []) },
     $queryRaw: vi.fn(async () => []),
@@ -243,6 +255,7 @@ async function failRun(scenario: Scenario) {
     if (job.name === "routine.retry" && scenario.retryEnqueueFails) throw new Error("queue down");
   });
   const send = vi.fn(async (_message: NotificationMessage, _context: unknown) => undefined);
+  const publishSpaceChange = vi.fn(async () => undefined);
   const executor = createRunExecutor({
     prisma,
     deploymentModelKey: "fake-deployment-key",
@@ -262,6 +275,7 @@ async function failRun(scenario: Scenario) {
     events: {
       append: vi.fn(async () => undefined),
       finalizeRun,
+      publishSpaceChange,
       pauseRunForInput: vi.fn(async () => {
         run.status = "waiting_input";
         return { continuationRunId: null };
@@ -288,15 +302,19 @@ async function failRun(scenario: Scenario) {
     await executor.continueRun(run.id, "worker-1");
   }
   expect(finalizeRun).toHaveBeenCalledWith(
-    expect.objectContaining({
-      outcome: "failed",
-      error: scenario.pinnedTo ? "Connect that model provider first" : scenario.error.message,
-    }),
+    expect.objectContaining(
+      scenario.error
+        ? {
+            outcome: "failed",
+            error: scenario.pinnedTo ? "Connect that model provider first" : scenario.error.message,
+          }
+        : { outcome: "completed" },
+    ),
   );
   const retries = enqueue.mock.calls
     .map(([job]) => job)
     .filter((job) => job.name === "routine.retry");
-  return { retries, send, prisma, runtimeRun, run };
+  return { retries, send, prisma, runtimeRun, run, publishSpaceChange };
 }
 
 const overloaded = () =>
@@ -337,6 +355,20 @@ describe("routine failure notifications", () => {
     );
   });
 
+  it("offers a daily check-in only ask_user and never tells it to use message_user", async () => {
+    const { runtimeRun } = await failRun({
+      error: new Error("Invalid API key"),
+      clientNonce: "strategic-initiative:bot-1:1",
+    });
+    const request = runtimeRun.mock.calls[0]?.[0] as unknown as {
+      tools: { name: string }[];
+      instructions: string;
+    };
+    expect(request.tools.map((tool) => tool.name)).toEqual(["ask_user"]);
+    expect(request.instructions).toContain("exactly NO_RESPONSE");
+    expect(request.instructions).not.toContain("message_user");
+  });
+
   it("puts the unread chats across the user's Spaces on the app icon", async () => {
     const { send, prisma } = await failRun({ error: new Error("Invalid API key"), unreadChats: 3 });
     expect(send).toHaveBeenCalledWith(
@@ -373,7 +405,7 @@ describe("a routine run's prompt", () => {
   it("tells the bot it is one scheduled run, before the routine's own words", async () => {
     const { runtimeRun } = await failRun({ error: new Error("Invalid API key") });
     expect(prompt(runtimeRun)).toMatch(
-      /^This is one scheduled run of your routine "Inbox sweep": do the work now, and do not schedule it again\.\n\nSweep the inbox/,
+      /^This is one scheduled run of your routine "Inbox sweep": do the work now, and do not schedule it again\.[^\n]*\n\nSweep the inbox/,
     );
   });
 
@@ -383,8 +415,36 @@ describe("a routine run's prompt", () => {
       routineGone: true,
     });
     expect(prompt(runtimeRun)).toMatch(
-      /^This is one scheduled run of your routine: do the work now, and do not schedule it again\.\n\nSweep the inbox/,
+      /^This is one scheduled run of your routine: do the work now, and do not schedule it again\.[^\n]*\n\nSweep the inbox/,
     );
+  });
+
+  it("tells the bot when no run of the routine is left before its end", async () => {
+    const { runtimeRun } = await failRun({
+      error: new Error("Invalid API key"),
+      nextRunAt: null,
+      endsAt: new Date(NOW.getTime() + 60 * MINUTE),
+    });
+    expect(prompt(runtimeRun)).toContain(
+      "It is the last run: the routine reaches its end date and is deleted after it",
+    );
+  });
+
+  it("ends a routine whose last run fails for good, once none of its runs is under way", async () => {
+    const endsAt = new Date(NOW.getTime() + 60 * MINUTE);
+    const { prisma } = await failRun({
+      error: new Error("Invalid API key"),
+      nextRunAt: null,
+      endsAt,
+    });
+    expect(prisma.routine.deleteMany).toHaveBeenCalledWith({
+      where: expect.objectContaining({
+        active: true,
+        nextRunAt: null,
+        endsAt,
+        runs: { none: { status: { in: expect.any(Array) } } },
+      }),
+    });
   });
 
   it("leaves other runs and daily check-ins without it", async () => {
@@ -1187,4 +1247,32 @@ describe("reporting a failed run", () => {
       expect(JSON.stringify(fields)).not.toMatch(/fake-deployment-key|:\/\//);
     },
   );
+});
+
+describe("a one-time routine after its run", () => {
+  it("deletes the routine once the run completes", async () => {
+    const { prisma, publishSpaceChange } = await failRun({ oneShot: true, nextRunAt: null });
+
+    expect(prisma.routine.deleteMany).toHaveBeenCalledWith({
+      where: expect.objectContaining({
+        id: "routine-1",
+        userId: "user-1",
+        crons: { equals: ["@once"] },
+        active: false,
+        nextRunAt: null,
+        lastRunAt: { not: null },
+      }),
+    });
+    expect(publishSpaceChange).toHaveBeenCalledWith("space-1", "routines");
+  });
+
+  it("keeps the routine when the run fails", async () => {
+    const { prisma } = await failRun({
+      error: new Error("Invalid API key"),
+      oneShot: true,
+      nextRunAt: null,
+    });
+
+    expect(prisma.routine.deleteMany).not.toHaveBeenCalled();
+  });
 });

@@ -41,6 +41,7 @@ const resourceDirectories = {
   hi: "values-hi",
   ko: "values-ko",
   "pt-BR": "values-pt-rBR",
+  th: "values-th",
   tr: "values-tr",
 } as const satisfies Record<(typeof UI_LOCALES)[number], string>;
 

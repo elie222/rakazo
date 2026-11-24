@@ -3,7 +3,7 @@ import type { PrismaClient } from "../database/client.js";
 import { createDb } from "../database/client.js";
 import { asSystem } from "../database/row-security.js";
 import {
-  auditLogOrganization,
+  auditLogAccess,
   installAuditEventStore,
   listAuditEvents,
   pruneAuditEvents,
@@ -106,18 +106,21 @@ describePostgres("audit events (PostgreSQL)", () => {
     expect(remaining).toEqual([{ action: "test.new" }]);
   });
 
-  it("lets only the organization's owners and admins read it", async () => {
+  it("lets owners and admins read everyone's events and a member only their own", async () => {
     await prisma.space.create({
       data: { id: `${spaceId}-current`, organizationId, name: "Current" },
     });
     const reader = (role: string) =>
-      auditLogOrganization(prisma, {
+      auditLogAccess(prisma, {
         userId: `audit-user-${suffix}-${role}`,
         spaceId: `${spaceId}-current`,
       });
-    expect(await reader("owner")).toBe(organizationId);
-    expect(await reader("admin")).toBe(organizationId);
-    expect(await reader("member")).toBeNull();
+    expect(await reader("owner")).toEqual({ organizationId, actorId: null });
+    expect(await reader("admin")).toEqual({ organizationId, actorId: null });
+    expect(await reader("member")).toEqual({
+      organizationId,
+      actorId: `audit-user-${suffix}-member`,
+    });
     expect(await reader("stranger")).toBeNull();
   });
 

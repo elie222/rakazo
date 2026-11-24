@@ -85,7 +85,8 @@ export function ConnectorDetail({
               value={labelDrafts[row.id] ?? row.displayName}
               aria-label={t`Account label`}
               maxLength={CONNECTION_LABEL_MAX_LENGTH}
-              className="h-9 rounded-lg border-transparent bg-transparent px-2 text-body shadow-none hover:bg-accent/60 focus-visible:bg-background dark:bg-transparent"
+              size="lg"
+              className="rounded-lg border-transparent bg-transparent px-2 text-body shadow-none hover:bg-accent/60 focus-visible:bg-background dark:bg-transparent"
               onChange={(event) =>
                 setLabelDrafts((current) => ({
                   ...current,
@@ -106,8 +107,7 @@ export function ConnectorDetail({
             <Button
               type="button"
               variant="ghost"
-              className="h-8 shrink-0 px-2.5 text-label text-muted-foreground pointer-fine:opacity-0 pointer-fine:group-focus-within/account:opacity-100 pointer-fine:group-hover/account:opacity-100"
-              size="sm"
+              className="shrink-0 px-2.5 text-label text-muted-foreground pointer-fine:opacity-0 pointer-fine:group-focus-within/account:opacity-100 pointer-fine:group-hover/account:opacity-100"
               disabled={pending === row.id || uninstalling}
               onClick={() => void revokeAccount(row, item)}
             >
@@ -118,8 +118,8 @@ export function ConnectorDetail({
         <Button
           type="button"
           variant="ghost"
-          className="h-9 px-2 text-body text-muted-foreground"
-          size="sm"
+          className="px-2 text-body text-muted-foreground"
+          size="lg"
           disabled={connecting || uninstalling}
           onClick={() => void connect(item)}
         >

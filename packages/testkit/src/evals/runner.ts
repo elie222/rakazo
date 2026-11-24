@@ -8,6 +8,7 @@ import {
   messageBot,
 } from "@rakazo/adapters";
 import type { MessageBlock, ModelConnectInput, ReplyMode, RunStatus } from "@rakazo/contracts";
+import { encodeLoginSecret } from "@rakazo/contracts";
 import {
   ACTIVE_RUN_STATUSES,
   attachmentComputerPath,
@@ -17,15 +18,23 @@ import {
   splitToolHistory,
 } from "@rakazo/core";
 import type { createDb } from "@rakazo/db";
-import { createThreadEvents, readJsonColumn, storedMessageBlocks } from "@rakazo/db";
+import {
+  chatPreferencesSelect,
+  createThreadEvents,
+  readJsonColumn,
+  storedMessageBlocks,
+} from "@rakazo/db";
 import { z } from "zod";
+import { MailEmulator, address as mailAddress } from "../apps/mail.js";
 import type { HostedApp } from "../apps/mcp-host.js";
 import { hostOverMcp } from "../apps/mcp-host.js";
+import type { SignInMail } from "../apps/sign-in-site.js";
+import { SignInSite } from "../apps/sign-in-site.js";
 import { discardBotIntroRun } from "../discard-bot-intro.js";
 import { sessionCookieHeader } from "../index.js";
 import { asSystem } from "../system-db.js";
 import type { EvalCase, Evidence, SettingsSnapshot } from "./cases.js";
-import { EMPTY_SETTINGS, wakesRoutines } from "./cases.js";
+import { EMPTY_SETTINGS, EVAL_BOT_EMAIL_NAME, EVAL_INBOUND_EMAIL, wakesRoutines } from "./cases.js";
 import { EvalFailure, judgeOutcome, observe, settle, withinDeadline } from "./grading.js";
 import type { HistoryMessage } from "./history-fixtures.js";
 import type { DiagnosticToolObservation, HistoryDiagnostic } from "./history-observer.js";
@@ -71,6 +80,8 @@ export type EvalActor = {
 export type TrialOptions = {
   pricing?: EvalPricing;
   connection: ModelConnectInput;
+  /** The connection is the deployment's own model, so the account connects none of its own. */
+  deploymentModel?: boolean;
   timeoutMs: number;
   judge?: EvalJudge;
   maxToolCalls: number;
@@ -83,6 +94,7 @@ export type TrialOptions = {
       realtime: SilenceObserver;
       now: () => Date;
     },
+    site?: SignInSite,
   ) => Promise<EvalApp>;
 };
 const WAITING_STATUSES = ["waiting_input", "waiting_approval", "paused"];
@@ -103,6 +115,7 @@ export async function runTrial(
   });
   scenario.configure?.(services);
   const apps = scenario.apps?.(new Date()) ?? [];
+  const site = scenario.site ? new SignInSite(scenario.site) : undefined;
   const hostedApps: HostedApp[] = [];
   const notifications = new CapturingNotificationProvider();
   const realtime = new SilenceObserver();
@@ -114,8 +127,9 @@ export async function runTrial(
   let cookie = "";
   let botId = "";
   let peer: { id: string; name: string } | undefined;
-  // A group case talks to the subject inside a group thread; every other case uses its direct chat.
   let group: { id: string; threadId: string; memberIds: Map<string, string> } | undefined;
+  // A group case talks to the subject inside the group thread unless it asks for the direct chat.
+  let chatGroup: typeof group;
   let seededThreadId: string | undefined;
   const seededPaths: Record<string, string> = {};
   const runIds: string[] = [];
@@ -127,9 +141,15 @@ export async function runTrial(
   let clarificationPending = false;
   let priorMemory = "";
   let messagingLinked = false;
+  // Set once a wallet connect starts, so teardown revokes the credential even after a failed setup.
+  let walletCookie: string | undefined;
   let messagingAddress = "";
   let messagingOriginThreadId: string | null = null;
   const secrets = [options.connection.apiKey ?? "", options.connection.baseUrl ?? ""];
+  // The deployment's own model already serves every bot that names none.
+  const botModel = options.deploymentModel
+    ? {}
+    : { modelProvider: options.connection.provider, modelId: options.connection.modelId };
 
   let phase: FailureCategory = "harness";
   const seenTools = new Map<string, { name: string }>();
@@ -182,7 +202,7 @@ export async function runTrial(
     // A forced wake runs now; the agent is told it is the routine's due time instead.
     let clockShiftMs = 0;
     const now = () => new Date(Date.now() + clockShiftMs);
-    handles = await options.createApp(services, messaging, { notifications, realtime, now });
+    handles = await options.createApp(services, messaging, { notifications, realtime, now }, site);
     const prisma = asSystem(handles.prisma);
     db = prisma;
     realtime.attach(prisma);
@@ -193,6 +213,39 @@ export async function runTrial(
       );
     const trial = handles;
     const { app } = trial;
+    // The site's mail lands in whichever inbox owns the address typed, or nowhere the bot can read.
+    const deliverSiteMail = async (to: string, mail: SignInMail) => {
+      const recipient = mailAddress(to);
+      if (
+        scenario.botEmail &&
+        recipient === `${EVAL_BOT_EMAIL_NAME}@${EVAL_INBOUND_EMAIL.domain}`
+      ) {
+        const owner = actors[0]!;
+        await prisma.botEmailMessage.create({
+          data: {
+            spaceId: owner.spaceId,
+            botId: owner.botId,
+            key: randomUUID(),
+            references: [],
+            fromAddress: mail.from,
+            fromName: mail.fromName,
+            verified: true,
+            to: [recipient],
+            cc: [],
+            subject: mail.subject,
+            text: mail.text,
+          },
+        });
+        return;
+      }
+      for (const service of apps)
+        if (service instanceof MailEmulator && service.account.email === recipient)
+          service.receive({
+            from: `${mail.fromName} <${mail.from}>`,
+            subject: mail.subject,
+            body: mail.text,
+          });
+    };
     const setupActor = async () => {
       const signup = await app.request("/api/auth/sign-up/email", {
         method: "POST",
@@ -205,7 +258,7 @@ export async function runTrial(
       });
       if (!signup.ok) throw new EvalFailure("harness", `Fixture signup failed (${signup.status})`);
       cookie = sessionCookieHeader(signup);
-      await rpc(app, cookie, "models/connect", options.connection);
+      if (!options.deploymentModel) await rpc(app, cookie, "models/connect", options.connection);
       // Added the way a person adds a remote MCP server: an endpoint and a bearer token.
       for (const [index, service] of apps.entries())
         await rpc(app, cookie, "mcp/servers/create", {
@@ -238,10 +291,29 @@ export async function runTrial(
       await discardBotIntroRun(trial, cookie, botId);
       await rpc(app, cookie, "bots/update", {
         botId,
-        modelProvider: options.connection.provider,
-        modelId: options.connection.modelId,
+        ...botModel,
         replyMode: options.replyMode,
       });
+      if (scenario.botEmail) {
+        // Trials share the database, so an earlier trial's bot may hold the name.
+        await prisma.botEmailAddress.deleteMany({ where: { name: EVAL_BOT_EMAIL_NAME } });
+        await rpc(app, cookie, "bots/claimEmailAddress", { botId, name: EVAL_BOT_EMAIL_NAME });
+      }
+      if (site) site.deliver = (to, mail) => deliverSiteMail(to, mail);
+      // A password site's login is already saved in the user's vault, for every bot.
+      if (scenario.site?.login) {
+        const { origin, name, login } = scenario.site;
+        await rpc(app, cookie, "vault/put", {
+          destination: { name: `${name.toLowerCase()}-login`, origin, auth: { type: "login" } },
+          value: encodeLoginSecret({
+            fields: [
+              { label: "Email", value: login.email, hidden: false },
+              { label: "Password", value: login.password, hidden: true },
+            ],
+          }),
+          allBots: true,
+        });
+      }
       // Direct synthetic fixture state, so setup never depends on the behavior under test.
       if (scenario.botSetup)
         await prisma.bot.update({ where: { id: botId }, data: scenario.botSetup });
@@ -262,6 +334,10 @@ export async function runTrial(
           content: scenario.botMemory,
         });
       }
+      for (const [path, content] of Object.entries(scenario.botMemoryDocuments ?? {}))
+        await prisma.memoryDocument.create({
+          data: { ...persistedBot, botId, scope: "bot", path, content },
+        });
       if (scenario.peer) {
         const created = await rpc<{ id: string }>(app, cookie, "bots/create", {
           name: scenario.peer.name,
@@ -274,11 +350,29 @@ export async function runTrial(
         await discardBotIntroRun(trial, cookie, created.id);
         await rpc(app, cookie, "bots/update", {
           botId: created.id,
-          modelProvider: options.connection.provider,
-          modelId: options.connection.modelId,
+          ...botModel,
           replyMode: options.replyMode,
         });
         peer = { id: created.id, name: scenario.peer.name };
+      }
+      // Other bots in the space that the subject can see and manage; none runs a model.
+      for (const teammate of scenario.teammates ?? []) {
+        const created = await rpc<{ id: string }>(app, cookie, "bots/create", {
+          ...teammate,
+          title: "",
+          instructions: "",
+          notifyOnFinish: false,
+        });
+        await discardBotIntroRun(trial, cookie, created.id);
+      }
+      if (scenario.wallet) {
+        // The offline wallet emulator connects on its first status check after the poll interval.
+        walletCookie = cookie;
+        await rpc(app, cookie, "paymentWallet/connect", {});
+        await poll(async () => {
+          const status = await rpc<{ status: string }>(app, cookie, "paymentWallet/status", {});
+          return status.status === "connected" ? true : undefined;
+        }, deadline);
       }
       if (scenario.group) {
         // Without roles, members only author seeded history and never run a model.
@@ -296,16 +390,16 @@ export async function runTrial(
           if (roles)
             await rpc(app, cookie, "bots/update", {
               botId: member.id,
-              modelProvider: options.connection.provider,
-              modelId: options.connection.modelId,
+              ...botModel,
             });
           memberIds.set(name, member.id);
         }
         const created = await rpc<{ id: string; threadId: string }>(app, cookie, "groups/create", {
-          name: "Launch desk",
+          name: scenario.group.name ?? "Launch desk",
           botIds: [botId, ...memberIds.values()],
         });
         group = { ...created, memberIds };
+        if (!scenario.group.directChat) chatGroup = group;
       }
       messagingLinked = false;
       messagingAddress = `U-eval-${randomUUID()}`;
@@ -343,7 +437,7 @@ export async function runTrial(
     if (scenario.routine) {
       await rpc(app, cookie, "routines/create", {
         botId,
-        name: "Release watch",
+        name: scenario.routine.name ?? "Release watch",
         prompt: scenario.routine.prompt,
         crons: ["0 9 * * *"],
         timezone: "UTC",
@@ -358,8 +452,8 @@ export async function runTrial(
       return id;
     };
     if (scenario.history) {
-      const thread = group
-        ? { id: group.threadId }
+      const thread = chatGroup
+        ? { id: chatGroup.threadId }
         : await prisma.thread.findUniqueOrThrow({ where: { botId }, select: { id: true } });
       seededThreadId = thread.id;
       // Attachments go through the product's upload path so their bytes are stored as uploads are.
@@ -583,7 +677,13 @@ export async function runTrial(
       const { userId, ...botSettings } = bot;
       const user = await prisma.user.findUniqueOrThrow({
         where: { id: userId },
-        select: { email: true, name: true, timezone: true, marketingEmailOptOutAt: true },
+        select: {
+          email: true,
+          name: true,
+          timezone: true,
+          marketingEmailOptOutAt: true,
+          ...chatPreferencesSelect,
+        },
       });
       const { marketingEmailOptOutAt, ...userSettings } = user;
       return {
@@ -606,7 +706,7 @@ export async function runTrial(
       }
       if ("clear" in step) {
         await Promise.all([captureTools(), captureUsage()]);
-        await rpc(app, cookie, "threads/clear", { botId });
+        await rpc(app, cookie, "threads/clear", threadOf(botId, chatGroup));
         clearedToolCount = seenTools.size - (await countCurrentTools());
         continue;
       }
@@ -620,16 +720,16 @@ export async function runTrial(
           app,
           cookie,
           "threads/send",
-          group
+          chatGroup
             ? {
-                groupId: group.id,
+                groupId: chatGroup.id,
                 text: step.ask,
                 ...(step.unaddressed ? {} : { mentions: [{ kind: "bot", id: botId }] }),
               }
             : { botId, text: step.ask },
         );
         runId = sent.runId;
-        if (step.unaddressed && group)
+        if (step.unaddressed && chatGroup)
           ({ sourceMessageId: unaddressedMessageId } = await prisma.run.findUniqueOrThrow({
             where: { id: runId },
             select: { sourceMessageId: true },
@@ -864,7 +964,7 @@ export async function runTrial(
           runId?: string | null;
           blocks: ClarificationBlock[];
         }>;
-      }>(app, cookie, "threads/get", group ? { groupId: group.id } : { botId });
+      }>(app, cookie, "threads/get", chatGroup ? { groupId: chatGroup.id } : { botId });
       approvalPending =
         terminal.status === "waiting_input" &&
         snap.messages.some((m) =>
@@ -1046,7 +1146,7 @@ export async function runTrial(
       });
       const snapshot = await rpc<{
         messages: Array<{ runId?: string | null; blocks: MessageBlock[] }>;
-      }>(app, cookie, "threads/get", group ? { groupId: group.id } : { botId });
+      }>(app, cookie, "threads/get", chatGroup ? { groupId: chatGroup.id } : { botId });
       delegation = {
         helpers: await Promise.all(
           helpers.map(async (helper) => ({
@@ -1150,6 +1250,7 @@ export async function runTrial(
         : undefined;
     const evidence: Evidence = {
       text: lastText,
+      ...(site ? { site: structuredClone(site.state) } : {}),
       ...(delegation ? { delegation } : {}),
       ...(historySummary ? { historySummary } : {}),
       replies,
@@ -1231,8 +1332,8 @@ export async function runTrial(
         "memory-snapshot": evidence.memory,
       }).map(([key, value]) => [key, value === null ? null : redact(value, secrets)]),
     );
-    // Kept so a new rubric can grade the trial again without running the bot.
-    if (scenario.judge || scenario.observe) result.evidence = evidenceSnapshot(evidence, secrets);
+    // Kept so a changed check or rubric can grade the trial again without running the bot.
+    result.evidence = evidenceSnapshot(evidence, secrets);
     const grading = { judge: options.judge, deadline, secrets };
     await judgeOutcome(scenario, evidence, result, grading);
     if (handles.harnessIssues?.length) result.harnessIssues = [...handles.harnessIssues];
@@ -1265,6 +1366,11 @@ export async function runTrial(
       }
       try {
         await cleanupActors(handles, actors);
+      } catch {
+        result.cleanupFailed = true;
+      }
+      try {
+        if (walletCookie) await rpc(handles.app, walletCookie, "paymentWallet/disconnect", {});
       } catch {
         result.cleanupFailed = true;
       }
@@ -1532,14 +1638,18 @@ function actorScopes(actors: readonly EvalActor[]) {
   return actors.map(({ userId, spaceId }) => ({ userId, spaceId }));
 }
 
+/** The thread a case talks in: its group's for a group case, otherwise the bot's direct chat. */
+export const threadOf = (botId: string, group?: { id: string }) =>
+  group ? { groupId: group.id } : { botId };
+
 async function findScopeBots(
   prisma: EvalApp["prisma"],
   actors: readonly EvalActor[],
-): Promise<Array<{ id: string; userId: string; spaceId: string }>> {
+): Promise<Array<{ id: string; userId: string; spaceId: string; archivedAt: Date | null }>> {
   if (!actors.length) return [];
   return prisma.bot.findMany({
     where: { OR: actorScopes(actors) },
-    select: { id: true, userId: true, spaceId: true },
+    select: { id: true, userId: true, spaceId: true, archivedAt: true },
   });
 }
 
@@ -1562,11 +1672,13 @@ export async function cleanupActors(
   // A parent can finish spawning a child while its abort is settling. Repeat until
   // every bot and run visible after abort was included in the pass.
   for (let pass = 0; pass < 8; pass++) {
-    let bots: Array<{ id: string; userId: string; spaceId: string }> = actors.map((actor) => ({
-      id: actor.botId,
-      userId: actor.userId,
-      spaceId: actor.spaceId,
-    }));
+    let bots: Array<{ id: string; userId: string; spaceId: string; archivedAt: Date | null }> =
+      actors.map((actor) => ({
+        id: actor.botId,
+        userId: actor.userId,
+        spaceId: actor.spaceId,
+        archivedAt: null,
+      }));
     let runsBeforeStop: Array<{ id: string }> = [];
     try {
       await prisma.routine.updateMany({
@@ -1592,6 +1704,8 @@ export async function cleanupActors(
     }
 
     for (const bot of bots) {
+      // Archiving already stopped a bot's work (a case may archive one); its runs are cancelled below.
+      if (bot.archivedAt) continue;
       const actorCookie = cookieForBot(bot, actors);
       if (!actorCookie) {
         failures.push(new Error("No actor session for scoped bot"));
@@ -1629,7 +1743,9 @@ export async function cleanupActors(
       }
     }
 
-    let botsAfter: Array<{ id: string; userId: string; spaceId: string }> | undefined;
+    let botsAfter:
+      | Array<{ id: string; userId: string; spaceId: string; archivedAt: Date | null }>
+      | undefined;
     let runsAfter: Array<{ id: string; status: string }> | undefined;
     let activeRoutineCount: number | undefined;
     try {

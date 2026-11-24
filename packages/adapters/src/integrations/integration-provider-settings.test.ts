@@ -114,10 +114,10 @@ describe("integration provider settings", () => {
   });
   it("lists connected plugin slugs for the user, or none before setup", async () => {
     const f = fixture();
-    expect(await f.settings.listConnectedPluginSlugs("user-1")).toEqual([]);
+    expect(await f.settings.listConnectedPlugins("user-1")).toEqual({ slugs: [] });
     await f.settings.save({ provider: "composio", apiKey: "fake-plugin-key" }, context);
     vi.mocked(f.adapter.listConnectedExternalIds).mockResolvedValueOnce(["gmail"]);
-    expect(await f.settings.listConnectedPluginSlugs("user-1")).toEqual(["gmail"]);
+    expect((await f.settings.listConnectedPlugins("user-1")).slugs).toEqual(["gmail"]);
     expect(f.adapter.listConnectedExternalIds).toHaveBeenLastCalledWith(
       expect.objectContaining({ userId: "user-1" }),
     );

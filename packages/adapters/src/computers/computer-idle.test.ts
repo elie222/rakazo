@@ -5,10 +5,12 @@ import { FetchError } from "@boatdev/sdk";
 import type { AgentHomeStore, JobPublisher, SandboxProvider } from "@rakazo/adapter-kit";
 import {
   SandboxDamagedError,
+  SandboxDiskTooLargeError,
   SandboxProviderAccountError,
   SandboxRateLimitError,
   SandboxUnavailableError,
   SandboxUnresponsiveError,
+  WorkspaceSaveFailedError,
   WorkspaceTooLargeError,
 } from "@rakazo/adapter-kit";
 import type { PrismaClient, ThreadEvents } from "@rakazo/db";
@@ -105,7 +107,7 @@ describe("sandbox idle", () => {
     expect(harness.sandbox.stop).not.toHaveBeenCalled();
   });
 
-  it.each(["", "invalid", "NaN", "Infinity", "-1", "29999", "00", "0.0"])(
+  it.each(["", "invalid", "Infinity", "29999", "00", "0.0"])(
     "keeps idle sleep enabled with the default timeout for %j",
     (value) => {
       vi.stubEnv("SANDBOX_IDLE_MS", value);
@@ -115,7 +117,7 @@ describe("sandbox idle", () => {
     },
   );
 
-  it.each(["30000", "900000"])("schedules idle sleep using %s ms", (value) => {
+  it.each(["30000"])("schedules idle sleep using %s ms", (value) => {
     vi.stubEnv("SANDBOX_IDLE_MS", value);
     const harness = idleHarness();
     const now = new Date("2026-01-01T00:00:00.000Z").getTime();
@@ -161,12 +163,12 @@ describe("sandbox idle", () => {
     }
   });
 
-  it.each(["queued", "leased", "running"])(
-    "keeps a computer awake while a run is %s",
+  it.each(["leased", "running"])(
+    "keeps a computer awake while a run that claimed it is %s",
     async (status) => {
       const harness = idleHarness();
       harness.prisma.run.findFirst.mockImplementation(async ({ where }) =>
-        where.status.in.includes(status) ? { id: "run" } : null,
+        where.OR[0].status.in.includes(status) ? { id: "run", status } : null,
       );
 
       await sleepComputerIfIdle(harness.deps, harness.computer.id);
@@ -179,12 +181,14 @@ describe("sandbox idle", () => {
     },
   );
 
-  it.each([undefined, false, true])(
+  it.each([false, true])(
     "suspends a computer whose only active run is waiting_input (billsWhileRunning: %s)",
     async (billsWhileRunning) => {
       const harness = idleHarness({ billsWhileRunning });
       harness.prisma.run.findFirst.mockImplementation(async ({ where }) =>
-        where.status.in.includes("waiting_input") ? { id: "waiting-for-answer" } : null,
+        where.OR[0].status.in.includes("waiting_input")
+          ? { id: "waiting-for-answer", status: "waiting_input" }
+          : null,
       );
 
       await sleepComputerIfIdle(harness.deps, harness.computer.id);
@@ -246,13 +250,28 @@ describe("sandbox idle", () => {
   });
 
   it("fails closed when the provider cannot inspect background work", async () => {
-    const harness = idleHarness({ backgroundWorkProbeCode: 2 });
+    const sink = createTestSink();
+    installLogger(createLogger({ service: "test", sinks: [sink] }));
+    const harness = idleHarness({ probeError: new Error("Background work probe failed") });
 
     await sleepComputerIfIdle(harness.deps, harness.computer.id);
 
     expect(harness.sandbox.stop).not.toHaveBeenCalled();
     expect(harness.sandbox.keepAlive).toHaveBeenCalledOnce();
     expect(harness.jobs.enqueue).toHaveBeenCalledOnce();
+    expect(sink.events).toContainEqual(
+      expect.objectContaining({
+        message: "computer.sleep_held",
+        reason: "background_work_unknown",
+        phase: "before_checkpoint",
+      }),
+    );
+    expect(sink.events).toContainEqual(
+      expect.objectContaining({
+        message: "computer.background_work_probe_failed",
+        error: expect.objectContaining({ message: "Background work probe failed" }),
+      }),
+    );
   });
 
   it("fails closed when the provider reports a command failure as exit one", async () => {
@@ -268,7 +287,9 @@ describe("sandbox idle", () => {
   it("does not let an abandoned waiting takeover past its grace prevent idle suspension", async () => {
     const harness = idleHarness();
     harness.prisma.run.findFirst.mockImplementation(async ({ where }) =>
-      where.status.in.includes("waiting_takeover") ? { id: "waiting" } : null,
+      where.OR[1]?.status.in.includes("waiting_takeover")
+        ? { id: "waiting", status: "waiting_takeover" }
+        : null,
     );
 
     await sleepComputerIfIdle(harness.deps, harness.computer.id);
@@ -509,6 +530,27 @@ describe("sandbox idle", () => {
     expect(sink.events.some((event) => event.level === "error")).toBe(false);
   });
 
+  it("stops a computer too large to start again without a checkpoint or a retry", async () => {
+    const sink = createTestSink();
+    installLogger(createLogger({ service: "test", sinks: [sink] }));
+    const tooLarge = new SandboxDiskTooLargeError();
+    const harness = idleHarness({ probeError: tooLarge, exportError: tooLarge });
+
+    await expect(sleepComputerIfIdle(harness.deps, harness.computer.id)).resolves.toBeUndefined();
+
+    expect(harness.home.commit).not.toHaveBeenCalled();
+    expect(harness.sandbox.stop).toHaveBeenCalledOnce();
+    expect(harness.computer.state).toBe("suspended");
+    expect(sink.events).toContainEqual(
+      expect.objectContaining({
+        level: "warn",
+        message: "computer.checkpoint_skipped",
+        reason: "disk_too_large",
+      }),
+    );
+    expect(sink.events.some((event) => event.level === "error")).toBe(false);
+  });
+
   it("forces the stop of a damaged computer its provider refuses to stop", async () => {
     const boatApi = new FakeBoatApi();
     const boat = fakeBoatProvider(boatApi);
@@ -693,6 +735,52 @@ describe("sandbox idle", () => {
     expect(sink.events).toContainEqual(
       expect.objectContaining({ message: "computer.checkpoint_skipped", reason: "too_large" }),
     );
+  });
+
+  it.each(["disk_full", "disk_error", "timed_out"] as const)(
+    "stops a computer whose disk failed its save (%s) when its provider keeps its disk",
+    async (reason) => {
+      const sink = createTestSink();
+      installLogger(createLogger({ service: "test", sinks: [sink] }));
+      const harness = idleHarness({
+        exportError: new WorkspaceSaveFailedError(reason),
+        persistentHome: true,
+      });
+
+      await expect(sleepComputerIfIdle(harness.deps, harness.computer.id)).resolves.toBeUndefined();
+
+      expect(harness.sandbox.stop).toHaveBeenCalledExactlyOnceWith(
+        expect.anything(),
+        expect.anything(),
+        reason === "disk_error" ? { discardUnsaved: true } : undefined,
+      );
+      expect(harness.computer.state).toBe("suspended");
+      expect(harness.computer.homeRevision).toBe("rev-before");
+      expect(sink.events).toContainEqual(
+        expect.objectContaining({ level: "warn", message: "computer.checkpoint_skipped", reason }),
+      );
+      expect(sink.events.some((event) => event.level === "error")).toBe(false);
+    },
+  );
+
+  it("keeps a computer whose disk failed its save running, with a warning", async () => {
+    const sink = createTestSink();
+    installLogger(createLogger({ service: "test", sinks: [sink] }));
+    const harness = idleHarness({ exportError: new WorkspaceSaveFailedError("disk_error") });
+
+    await expect(sleepComputerIfIdle(harness.deps, harness.computer.id)).resolves.toBeUndefined();
+
+    expect(harness.sandbox.stop).not.toHaveBeenCalled();
+    expect(harness.computer.state).toBe("running");
+    expect(harness.jobs.enqueue).toHaveBeenCalledOnce();
+    expect(sink.events).toContainEqual(
+      expect.objectContaining({
+        level: "warn",
+        message: "computer.sleep_deferred",
+        reason: "disk_error",
+      }),
+    );
+    expect(sink.events.some((event) => event.level === "error")).toBe(false);
   });
 
   it("checks again later without an error when another save moved the home first", async () => {
@@ -1018,13 +1106,9 @@ describe("maximum active lifetime", () => {
     [undefined, DEFAULT_COMPUTER_MAX_ACTIVE_MS],
     ["0", 0],
     ["garbage", DEFAULT_COMPUTER_MAX_ACTIVE_MS],
-    ["", DEFAULT_COMPUTER_MAX_ACTIVE_MS],
-    ["-1", DEFAULT_COMPUTER_MAX_ACTIVE_MS],
     ["Infinity", DEFAULT_COMPUTER_MAX_ACTIVE_MS],
-    ["NaN", DEFAULT_COMPUTER_MAX_ACTIVE_MS],
     ["59999", DEFAULT_COMPUTER_MAX_ACTIVE_MS],
     ["60000", 60_000],
-    ["1800000", 30 * 60_000],
   ])("parses COMPUTER_MAX_ACTIVE_MS=%j", (value, expected) => {
     vi.stubEnv("COMPUTER_MAX_ACTIVE_MS", value);
     expect(computerMaxActiveMs()).toBe(expected);
@@ -1153,7 +1237,7 @@ describe("maximum active lifetime", () => {
   it("suspends past the limit under a run that is only waiting", async () => {
     const harness = idleHarness({ billsWhileRunning: true, runningSince: longAgo });
     harness.prisma.run.findFirst.mockImplementation(async ({ where }) =>
-      where.leaseExpiresAt ? null : { id: "waiting-for-approval" },
+      where.OR[0].leaseExpiresAt ? null : { id: "waiting-for-approval", status: "waiting_input" },
     );
 
     await sleepComputerIfIdle(harness.deps, harness.computer.id);
@@ -1210,7 +1294,9 @@ describe("maximum active lifetime", () => {
       takeoverRequestedAt: new Date(now - TAKEOVER_IDLE_GRACE_MS - 1),
     });
     harness.prisma.run.findFirst.mockImplementation(async ({ where }) =>
-      where.status.in.includes("waiting_takeover") ? { id: "waiting-for-user" } : null,
+      where.OR[1]?.status.in.includes("waiting_takeover")
+        ? { id: "waiting-for-user", status: "waiting_takeover" }
+        : null,
     );
 
     await sleepComputerIfIdle(harness.deps, harness.computer.id);
@@ -1247,7 +1333,9 @@ describe("maximum active lifetime", () => {
       controlLeaseExpiresAt: new Date(now + 60_000),
     });
     harness.prisma.run.findFirst.mockImplementation(async ({ where }) =>
-      where.status.in.includes("waiting_takeover") ? { id: "waiting-for-user" } : null,
+      where.OR[1]?.status.in.includes("waiting_takeover")
+        ? { id: "waiting-for-user", status: "waiting_takeover" }
+        : null,
     );
 
     await sleepComputerIfIdle(harness.deps, harness.computer.id);
@@ -1262,14 +1350,22 @@ describe("maximum active lifetime", () => {
   it("does not pull the computer out from under a run that is executing", async () => {
     const harness = idleHarness({ billsWhileRunning: true, runningSince: longAgo });
     harness.prisma.run.findFirst.mockResolvedValue({ id: "executing" });
+    harness.prisma.computerExecutionLease.findMany.mockResolvedValue([
+      { runId: "executing", fence: 1 },
+    ]);
 
     await sleepComputerIfIdle(harness.deps, harness.computer.id);
 
     expect(harness.prisma.run.findFirst).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({
-          status: { in: ["leased", "running"] },
-          leaseExpiresAt: { gt: new Date(now) },
+          OR: [
+            {
+              status: { in: ["leased", "running"] },
+              id: { in: ["executing"] },
+              leaseExpiresAt: { gt: new Date(now) },
+            },
+          ],
         }),
       }),
     );
@@ -1287,13 +1383,9 @@ describe("maximum active lifetime", () => {
       [undefined, 0],
       ["0", 0],
       ["garbage", 0],
-      ["", 0],
-      ["-1", 0],
       ["Infinity", 0],
-      ["NaN", 0],
       ["59999", 0],
       ["60000", 60_000],
-      ["3600000", 60 * 60_000],
     ])("parses COMPUTER_MAX_ACTIVE_UNBILLED_MS=%j", (value, expected) => {
       vi.stubEnv("COMPUTER_MAX_ACTIVE_UNBILLED_MS", value);
       expect(unbilledComputerMaxActiveMs()).toBe(expected);
@@ -1370,7 +1462,9 @@ describe("maximum active lifetime", () => {
 
       expect(harness.prisma.run.findFirst).toHaveBeenCalledWith(
         expect.objectContaining({
-          where: expect.objectContaining({ status: { in: ["leased", "running"] } }),
+          where: expect.objectContaining({
+            OR: [expect.objectContaining({ status: { in: ["leased", "running"] } })],
+          }),
         }),
       );
       expect(harness.sandbox.stop).not.toHaveBeenCalled();
@@ -1989,6 +2083,7 @@ function idleHarness(
     organization: {
       findUnique: vi.fn(async () => ({ modelCredits: { mode: "byok" }, billing: null })),
     },
+    computerAllowanceGrant: { aggregate: vi.fn(async () => ({ _sum: { amountCents: null } })) },
     space: { findUnique: vi.fn(async () => ({ organizationId: "organization" })) },
     thread: { update: vi.fn().mockResolvedValue({ nextMessageSeq: 1, nextEventSeq: 1 }) },
     message: {

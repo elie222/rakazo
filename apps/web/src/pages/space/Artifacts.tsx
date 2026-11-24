@@ -9,6 +9,7 @@ import {
   BotAvatar,
   Button,
   buttonVariants,
+  CopyTextFallback,
   Empty,
   EmptyDescription,
   EmptyHeader,
@@ -28,7 +29,9 @@ import {
 } from "@rakazo/ui-web";
 import { skipToken, useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+  Check,
   ChevronLeft,
+  Copy,
   Download,
   FileCode2,
   FileText,
@@ -52,8 +55,10 @@ import { PdfViewer } from "../../components/messages/PdfViewer";
 import { SandboxedHtmlViewer } from "../../components/messages/SandboxedHtmlViewer";
 import { WindowChrome } from "../../components/WindowChrome";
 import { takeInitialBootstrap } from "../../lib/bootstrap";
+import { useCopyText } from "../../lib/copy-text";
 import { formatRelativeTime } from "../../lib/locale/relative-time";
 import { decodeArtifactBase64, downloadArtifactBytes } from "../../lib/pages/artifact-open";
+import { selectFilePreviewContents } from "../../lib/pages/file-preview-selection";
 import { useObjectUrl } from "../../lib/pages/use-object-url";
 import { desktopBridge } from "../../lib/platform/desktop";
 import { createStoredPreference } from "../../lib/preferences/stored-preference";
@@ -74,14 +79,37 @@ type ArtifactSummary = Artifact & { versionCount: number };
 
 const NO_BOTS: Bot[] = [];
 
-function matchesCalendarDateFilter(iso: string, filter: DateFilter, now: Date): boolean {
+// Older browsers without locale week data still need the week start of each app language.
+const MONDAY_FIRST_LOCALES = new Set(["de", "es", "fr", "nl", "pl", "ru", "tr", "zh-CN"]);
+
+function firstDayOfWeek(locale: string): number {
+  const regional = new Intl.Locale(locale || "en") as Intl.Locale & {
+    getWeekInfo?: () => { firstDay: number };
+    weekInfo?: { firstDay: number };
+  };
+  const firstDay = (regional.getWeekInfo?.() ?? regional.weekInfo)?.firstDay;
+  // Intl uses 7 for Sunday; Date.getDay() uses 0.
+  return firstDay === undefined
+    ? MONDAY_FIRST_LOCALES.has(regional.baseName)
+      ? 1
+      : 0
+    : firstDay % 7;
+}
+
+function matchesCalendarDateFilter(
+  iso: string,
+  filter: DateFilter,
+  now: Date,
+  weekStartsOn: number,
+): boolean {
   if (filter === "all") return true;
   const date = new Date(iso);
   if (filter === "today") return date.toDateString() === now.toDateString();
   if (filter === "week") {
     const startOfWeek = new Date(now);
     startOfWeek.setHours(0, 0, 0, 0);
-    startOfWeek.setDate(startOfWeek.getDate() - startOfWeek.getDay());
+    const daysSinceStart = (startOfWeek.getDay() - weekStartsOn + 7) % 7;
+    startOfWeek.setDate(startOfWeek.getDate() - daysSinceStart);
     return date >= startOfWeek;
   }
   return date.getFullYear() === now.getFullYear() && date.getMonth() === now.getMonth();
@@ -145,12 +173,15 @@ export function ArtifactsPage() {
 
   const botsById = useMemo(() => new Map(bots.map((bot) => [bot.id, bot])), [bots]);
 
+  const { i18n } = useLingui();
+  const locale = i18n.locale;
   const filteredItems = useMemo(() => {
     if (!items) return null;
     const now = new Date();
+    const weekStartsOn = dateFilter === "week" ? firstDayOfWeek(locale) : 0;
     const query = searchQuery.trim().toLowerCase();
     return items.filter((item) => {
-      if (!matchesCalendarDateFilter(item.createdAt, dateFilter, now)) return false;
+      if (!matchesCalendarDateFilter(item.createdAt, dateFilter, now, weekStartsOn)) return false;
       if (!query) return true;
       return (
         item.name.toLowerCase().includes(query) ||
@@ -158,7 +189,7 @@ export function ArtifactsPage() {
       );
     });
     // `today` is listed so the midnight tick invalidates cached date filters.
-  }, [items, searchQuery, dateFilter, today]);
+  }, [items, searchQuery, dateFilter, today, locale]);
 
   const clientFilterActive = searchQuery.trim().length > 0 || dateFilter !== "all";
   const autoFetchedCursorRef = useRef<string | null>(null);
@@ -878,6 +909,7 @@ function PreviewPane({
   onToggleMaximize: () => void;
 }) {
   const { t } = useLingui();
+  const [copied, copy, copyFailed, resetCopy, copyFailedText] = useCopyText();
   const queries = useSpaceQueries();
   const versionsQuery = useQuery(
     queries.artifacts.listVersions.queryOptions({
@@ -912,7 +944,16 @@ function PreviewPane({
         : { status: "loading" };
 
   return (
-    <div className="flex min-w-0 flex-1 flex-col">
+    <section
+      aria-label={state.status === "ready" ? state.artifact.name : t`Preview`}
+      onKeyDown={(event) =>
+        selectFilePreviewContents(
+          event,
+          event.currentTarget.querySelector("[data-file-preview-body]"),
+        )
+      }
+      className="flex min-w-0 flex-1 flex-col"
+    >
       <header className="flex items-center gap-3 border-b border-border px-6 py-3">
         <div className="min-w-0 flex-1">
           <h2 className="truncate text-body-lg font-semibold">
@@ -938,6 +979,29 @@ function PreviewPane({
         ) : null}
         {state.status === "ready" ? (
           <>
+            {["markdown", "text"].includes(artifactPreviewKind(state.artifact.mimeType)) ? (
+              <IconTooltip label={copied ? t`Copied` : t`Copy ${state.artifact.name}`}>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  className="text-muted-foreground"
+                  aria-label={copied ? t`Copied` : t`Copy ${state.artifact.name}`}
+                  onClick={() => void copy(new TextDecoder("utf-8").decode(state.bytes))}
+                >
+                  {copied ? (
+                    <Check size={15} strokeWidth={1.9} />
+                  ) : (
+                    <Copy size={15} strokeWidth={1.9} />
+                  )}
+                </Button>
+              </IconTooltip>
+            ) : null}
+            <CopyTextFallback
+              open={copyFailed}
+              onOpenChange={resetCopy}
+              text={copyFailedText}
+              label={t`Copy ${state.artifact.name}`}
+            />
             <Button
               variant="outline"
               size="sm"
@@ -983,14 +1047,14 @@ function PreviewPane({
               <div className="absolute bottom-3 end-3 flex items-center gap-1.5 rounded-full bg-black/70 px-2.5 py-1.5 text-caption text-white">
                 <Lock size={12} strokeWidth={2} />
                 <span>
-                  <Trans>Isolated preview — no access to your account</Trans>
+                  <Trans>Isolated preview: no access to your account</Trans>
                 </span>
               </div>
             ) : null}
           </div>
         )}
       </div>
-    </div>
+    </section>
   );
 }
 
@@ -1003,7 +1067,12 @@ function ArtifactPreview({ artifact, bytes }: { artifact: Artifact; bytes: Uint8
     case "markdown":
       return (
         <div className="h-full overflow-y-auto bg-background">
-          <article className="mx-auto w-full max-w-[760px] px-8 py-10 text-body-lg leading-7 text-foreground">
+          <article
+            data-file-preview-body
+            // biome-ignore lint/a11y/noNoninteractiveTabindex: Focus the file body for keyboard selection.
+            tabIndex={0}
+            className="mx-auto w-full max-w-[760px] px-8 py-10 text-body-lg leading-7 text-foreground"
+          >
             <ChatMarkdown>{new TextDecoder("utf-8").decode(bytes)}</ChatMarkdown>
           </article>
         </div>
@@ -1011,7 +1080,12 @@ function ArtifactPreview({ artifact, bytes }: { artifact: Artifact; bytes: Uint8
     case "text":
       return (
         <div className="h-full overflow-auto bg-background">
-          <pre className="px-8 py-10 font-mono text-body-sm leading-6 whitespace-pre-wrap break-words text-foreground">
+          <pre
+            data-file-preview-body
+            // biome-ignore lint/a11y/noNoninteractiveTabindex: Focus the file body for keyboard selection.
+            tabIndex={0}
+            className="px-8 py-10 font-mono text-body-sm leading-6 whitespace-pre-wrap break-words text-foreground"
+          >
             {new TextDecoder("utf-8").decode(bytes)}
           </pre>
         </div>
@@ -1025,7 +1099,7 @@ function ArtifactPreview({ artifact, bytes }: { artifact: Artifact; bytes: Uint8
     case "none":
       return (
         <div className="grid h-full place-items-center px-6 text-center text-body text-muted-foreground/80">
-          <Trans>Preview isn't available for this file type — download it to view it.</Trans>
+          <Trans>Preview isn't available for this file type. Download it to view it.</Trans>
         </div>
       );
   }

@@ -1,0 +1,20 @@
+diff --git a/build/Speech.js b/build/Speech.js
+index a6e2c5ba83be38d2cfdd02a818179322b6420905..5d7c04da38490d4fd3481d4144f9dd7e71ec439a 100644
+--- a/build/Speech.js
++++ b/build/Speech.js
+@@ -72,7 +72,14 @@ function _registerListenersIfNeeded() {
+     const id = _makeCallbackId();
+     _CALLBACKS[id] = options;
+     _registerListenersIfNeeded();
+-    ExponentSpeech.speak(String(id), text, options);
++    // The native call rejects (an unknown voice, text too long) without sending speakingError.
++    Promise.resolve(ExponentSpeech.speak(String(id), text, options)).catch((error)=>{
++        delete _CALLBACKS[id];
++        _unregisterListenersIfNeeded();
++        if (options.onError) {
++            options.onError(error instanceof Error ? error : new Error(String(error)));
++        }
++    });
+ }
+ // @needsAudit
+ /**

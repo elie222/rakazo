@@ -1,11 +1,14 @@
 import type { Connection, ConnectionCatalogItem } from "@rakazo/contracts";
+import { CONNECTION_LABEL_MAX_LENGTH, ConnectionLabelSchema } from "@rakazo/contracts";
 import { describe, expect, it, vi } from "vitest";
 import {
   catalogItemAccounts,
   connectCatalogItem,
+  connectionLabelFrom,
   isCatalogItemConnected,
   nextCatalogAccountLabel,
   waitForConnection,
+  waitForSignIn,
 } from "./connection-catalog.js";
 
 const item: ConnectionCatalogItem = {
@@ -185,5 +188,111 @@ describe("waitForConnection", () => {
     }
     expect(await result).toEqual({ status: "connected", row: account("new", "connected") });
     expect(complete).toHaveBeenCalledTimes(4);
+  });
+});
+
+describe("waitForSignIn", () => {
+  it("reads a slow sign-in again when the person comes back, not on a timer", async () => {
+    let finished = false;
+    const complete = vi.fn(async () => account("slow", finished ? "connected" : "pending"));
+    const onSlow = vi.fn();
+    const stop = vi.fn();
+    let back = () => {};
+    vi.useFakeTimers();
+    try {
+      const result = waitForSignIn("slow", complete, {
+        signal: new AbortController().signal,
+        onSlow,
+        whenBack: (read) => {
+          back = read;
+          return stop;
+        },
+      });
+      await vi.runAllTimersAsync();
+      expect(onSlow).toHaveBeenCalledTimes(1);
+      const polled = complete.mock.calls.length;
+      await vi.advanceTimersByTimeAsync(600_000);
+      expect(complete).toHaveBeenCalledTimes(polled);
+      back();
+      await vi.runAllTimersAsync();
+      expect(stop).not.toHaveBeenCalled();
+      finished = true;
+      back();
+      await vi.runAllTimersAsync();
+      expect(await result).toEqual({ status: "connected", row: account("slow", "connected") });
+    } finally {
+      vi.useRealTimers();
+    }
+    expect(stop).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not lose a finished sign-in to one failed read on return", async () => {
+    let back = () => {};
+    let returned = false;
+    const complete = vi.fn(async () => {
+      if (!returned) return account("slow", "pending");
+      if (complete.mock.calls.length % 2 === 0) throw new Error("Unavailable");
+      return account("slow", "connected");
+    });
+    vi.useFakeTimers();
+    try {
+      const result = waitForSignIn("slow", complete, {
+        signal: new AbortController().signal,
+        onSlow: () => {},
+        whenBack: (read) => {
+          back = read;
+          return () => {};
+        },
+      });
+      await vi.runAllTimersAsync();
+      returned = true;
+      back();
+      await vi.runAllTimersAsync();
+      expect(await result).toEqual({ status: "connected", row: account("slow", "connected") });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("stops watching a slow sign-in once a newer attempt takes its place", async () => {
+    const controller = new AbortController();
+    const stop = vi.fn();
+    vi.useFakeTimers();
+    try {
+      const result = waitForSignIn("old", vi.fn().mockResolvedValue(account("old", "pending")), {
+        signal: controller.signal,
+        onSlow: () => {},
+        whenBack: () => stop,
+      });
+      await vi.runAllTimersAsync();
+      controller.abort();
+      expect(await result).toEqual({ status: "aborted" });
+    } finally {
+      vi.useRealTimers();
+    }
+    expect(stop).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("connection labels from catalog names", () => {
+  const longName = "A".repeat(120);
+
+  it("cuts a long name and keeps the account number whole", () => {
+    const long = { ...item, name: longName };
+    const first = nextCatalogAccountLabel([], long);
+    expect(first).toBe("A".repeat(CONNECTION_LABEL_MAX_LENGTH));
+    const second = nextCatalogAccountLabel(
+      [{ ...account("a", "connected"), displayName: first }],
+      long,
+    );
+    expect(second).toBe(`${"A".repeat(CONNECTION_LABEL_MAX_LENGTH - 2)} 2`);
+    expect(ConnectionLabelSchema.safeParse(second).success).toBe(true);
+  });
+
+  it("does not split a surrogate pair and falls back to the slug for a blank name", () => {
+    expect(connectionLabelFrom("a".repeat(CONNECTION_LABEL_MAX_LENGTH - 1) + "😀", "x")).toBe(
+      "a".repeat(CONNECTION_LABEL_MAX_LENGTH - 1),
+    );
+    expect(nextCatalogAccountLabel([], { ...item, name: "  " })).toBe("gmail");
   });
 });

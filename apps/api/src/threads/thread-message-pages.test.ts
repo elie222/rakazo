@@ -175,7 +175,7 @@ describe("thread message pages", () => {
       const prisma = {
         message: {
           findMany: vi.fn(async () => (around ? [...rows].reverse() : rows)),
-          count: vi.fn(async () => 0),
+          findFirst: vi.fn(async () => null),
         },
         run: {
           findMany: vi.fn(async () => [
@@ -478,10 +478,10 @@ describe("thread message pages", () => {
         createdAt: new Date("2026-08-16T00:00:06.000Z"),
       },
     ]);
-    const count = vi.fn(async () => 1);
+    const findFirst = vi.fn(async () => ({ id: "earlier-message" }));
     const runFindMany = vi.fn(async () => [{ id: "run-peer" }]);
     const prisma = {
-      message: { findMany, count },
+      message: { findMany, findFirst },
       run: { findMany: runFindMany },
     } as unknown as PrismaClient;
 
@@ -540,9 +540,9 @@ describe("thread message pages", () => {
         createdAt: new Date("2026-08-16T00:00:06.000Z"),
       },
     ]);
-    const count = vi.fn(async () => 0);
+    const findFirst = vi.fn(async () => null);
     const prisma = {
-      message: { findMany, count },
+      message: { findMany, findFirst },
       run: { findMany: vi.fn(async () => [{ id: "run-peer" }]) },
     } as unknown as PrismaClient;
 
@@ -573,7 +573,7 @@ describe("thread message pages", () => {
       },
     ]);
     const prisma = {
-      message: { findMany, count: vi.fn(async () => 0) },
+      message: { findMany, findFirst: vi.fn(async () => null) },
     } as unknown as PrismaClient;
 
     const page = await loadMessagePage(
@@ -792,57 +792,43 @@ describe("thread message pages", () => {
     expect(page.olderCursor).toBeNull();
   });
 
-  it("loads a page around a target sequence", async () => {
-    const findFirst = vi.fn(async () => ({ seq: 5 }));
-    const findMany = vi
-      .fn()
-      .mockResolvedValueOnce([
-        {
-          id: "message-3",
-          threadId: "thread-1",
-          seq: 3,
-          role: "bot",
-          blocks: [],
-          runId: null,
-          createdAt: new Date(),
-        },
-        {
-          id: "message-4",
-          threadId: "thread-1",
-          seq: 4,
-          role: "bot",
-          blocks: [],
-          runId: null,
-          createdAt: new Date(),
-        },
-        {
-          id: "message-5",
-          threadId: "thread-1",
-          seq: 5,
-          role: "bot",
-          blocks: [],
-          runId: null,
-          createdAt: new Date(),
-        },
-      ])
-      .mockResolvedValueOnce(1);
-    const count = vi.fn(async () => 1);
+  it.each([
+    { target: 1, firstSeq: 1, older: null, cursor: null },
+    { target: 5, firstSeq: 3, older: { id: "message-2" }, cursor: 3 },
+  ])("loads a page around sequence $target", async ({ target, firstSeq, older, cursor }) => {
+    const findFirst = vi.fn().mockResolvedValue(older);
+    const sequences = [firstSeq, firstSeq + 1, firstSeq + 2];
+    const findMany = vi.fn().mockResolvedValue(
+      sequences.map((seq) => ({
+        id: `message-${seq}`,
+        threadId: "thread-1",
+        seq,
+        role: "bot",
+        blocks: [],
+        runId: null,
+        createdAt: new Date(),
+      })),
+    );
     const prisma = {
-      message: { findFirst, findMany, count },
+      message: { findFirst, findMany },
     } as unknown as PrismaClient;
 
-    const page = await loadMessagePage(prisma, "thread-1", undefined, 4, { seq: 5 });
+    const page = await loadMessagePage(prisma, "thread-1", undefined, 4, { seq: target });
 
-    expect(page.messages.map((message) => message.seq)).toEqual([3, 4, 5]);
-    expect(page.olderCursor).toBe(3);
-    expect(page.coveredThroughSeq).toBe(7);
+    expect(page.messages.map((message) => message.seq)).toEqual(sequences);
+    expect(page.olderCursor).toBe(cursor);
+    expect(page.coveredThroughSeq).toBe(target + 2);
+    expect(findFirst).toHaveBeenCalledExactlyOnceWith({
+      where: { threadId: "thread-1", seq: { lt: firstSeq } },
+      select: { id: true },
+    });
     expect(findMany).toHaveBeenCalledWith({
       include: {
         replyTo: {
           select: { threadId: true, role: true, botId: true, authorUserId: true, blocks: true },
         },
       },
-      where: { threadId: "thread-1", seq: { gte: 3, lte: 7 } },
+      where: { threadId: "thread-1", seq: { gte: Math.max(0, target - 2), lte: target + 2 } },
       orderBy: { seq: "asc" },
       take: 4,
     });
@@ -1035,7 +1021,10 @@ describe("reply target validation", () => {
       replyTo: { id: "older-parent", threadId: "thread-1", role: "bot", botId: "bot-1", blocks },
     };
     const prisma = {
-      message: { findMany: vi.fn().mockResolvedValue([row]), count: vi.fn().mockResolvedValue(0) },
+      message: {
+        findMany: vi.fn().mockResolvedValue([row]),
+        findFirst: vi.fn().mockResolvedValue(null),
+      },
     } as unknown as PrismaClient;
     for (const around of [undefined, { seq: 100 }]) {
       const page = await loadMessagePage(prisma, "thread-1", undefined, 1, around);
@@ -1063,7 +1052,7 @@ it("derives attachment metadata from a validated parent outside the loaded page"
     replyTo: { threadId: "thread", role: "user", botId: null, blocks: [image] },
   };
   const prisma = {
-    message: { findMany: vi.fn().mockResolvedValue([row]), count: vi.fn().mockResolvedValue(0) },
+    message: { findMany: vi.fn().mockResolvedValue([row]) },
   } as unknown as PrismaClient;
   const page = await loadMessagePage(prisma, "thread", undefined, 1);
   expect(page.messages[0]?.replyPreview).toEqual({ role: "user", text: "", attachment: image });

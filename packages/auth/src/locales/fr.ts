@@ -23,28 +23,8 @@ export const FR_MESSAGES: Record<string, string> = {
   "Your Rakazo confirmation code": "Votre code de confirmation Rakazo",
   "Enter this code in Rakazo to confirm it's you:":
     "Saisissez ce code dans Rakazo pour confirmer que c’est bien vous :",
-  "Welcome to Rakazo": "Bienvenue dans Rakazo",
-  "Welcome to Rakazo. The people who get the most out of it do three things:":
-    "Bienvenue dans Rakazo. Ceux qui en tirent le meilleur parti font trois choses :",
-  "Get the apps": "Installez les apps",
-  "Rakazo runs on {platforms}, so your bots can reach you wherever you are.":
-    "Rakazo fonctionne sur {platforms}, pour que vos bots puissent vous joindre où que vous soyez.",
-  "Join the community": "Rejoignez la communauté",
-  "See what others are building, get help fast, and tell us what to build next on {discord}.":
-    "Découvrez ce que les autres créent, obtenez de l’aide rapidement et dites-nous quoi créer ensuite sur {discord}.",
-  "Star us on GitHub": "Ajoutez une étoile sur GitHub",
-  "Rakazo is open source. {star} helps more people find it.":
-    "Rakazo est open source. {star} aide plus de monde à le découvrir.",
-  "A star on GitHub": "Une étoile sur GitHub",
-  "Questions? Just reply. I read every one.":
-    "Des questions ? Répondez simplement. Je lis tous les messages.",
   Unsubscribe: "Se désabonner",
-  "Invite a friend": "Invitez un ami",
-  "Invite a friend to Rakazo: they get {weeks} weeks free, and you earn a free month when they start a qualifying subscription with a new card.":
-    "Invitez un ami sur Rakazo : il profite de {weeks} semaines gratuites, et vous gagnez un mois offert quand il démarre un abonnement éligible avec une nouvelle carte.",
   "Open Rakazo": "Ouvrez Rakazo",
-  "and choose Invite friends for your link.":
-    "et choisissez Inviter des amis pour obtenir votre lien.",
   "We received your Rakazo plugin": "Nous avons reçu votre plugin Rakazo",
   "Thanks for submitting a plugin to the Rakazo marketplace.":
     "Merci d’avoir proposé un plugin sur la marketplace Rakazo.",

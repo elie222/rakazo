@@ -21,6 +21,7 @@ import { checkDeviceTimezone } from "../i18n/device-timezone";
 import { getActiveUiLocale } from "../i18n/i18n";
 import { appBadgeGeneration } from "../notifications/app-badge";
 import { ensureOrganizations } from "../spaces/organizations";
+import { askFirstBot, needsFirstBot } from "./first-bot";
 import { retainInboxValue } from "./inbox-retention";
 import { saveInbox } from "./saved-chats";
 
@@ -46,6 +47,8 @@ export function useInbox(spaceActionRef: RefObject<{ busy: boolean; recoveryId: 
     null,
   );
   const [refreshing, setRefreshing] = useState(false);
+  // While the server makes a new account's first bot, the empty inbox offers no New bot.
+  const [creatingFirstBot, setCreatingFirstBot] = useState(false);
   const [badgeLoad, setBadgeLoad] = useState<{ generation: number } | null>(null);
   const inboxRequestId = useRef(0);
   const inboxLoaded = useRef(false);
@@ -118,6 +121,17 @@ export function useInbox(spaceActionRef: RefObject<{ busy: boolean; recoveryId: 
       void ensureOrganizations();
       setBadgeLoad({ generation: badgeGeneration });
       setLoadFailure(null);
+      if (needsFirstBot(navigation)) {
+        setCreatingFirstBot(true);
+        void askFirstBot(`${apiBase}:${generation}:${nextMe.userId}:${navigation.current.id}`, () =>
+          rpc("onboarding/firstBot"),
+        )
+          .then(async (botId) => {
+            if (botId && generation === currentSessionGeneration() && apiBase === currentApiBase())
+              await loadBots();
+          })
+          .finally(() => setCreatingFirstBot(false));
+      }
       saveInbox(
         {
           apiBase,
@@ -173,6 +187,7 @@ export function useInbox(spaceActionRef: RefObject<{ busy: boolean; recoveryId: 
     inboxLoading,
     loadFailure,
     refreshing,
+    creatingFirstBot,
     badgeLoad,
     inboxRequestId,
     inboxLoaded,

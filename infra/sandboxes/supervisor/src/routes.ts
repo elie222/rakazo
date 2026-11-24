@@ -9,6 +9,7 @@ import type { Context } from "hono";
 import { Hono } from "hono";
 import { z } from "zod";
 import { computerControlEndpoint, controlDesktop } from "./computer-control.js";
+import { computerGpuMatches, resolveComputerGpu } from "./computer-gpu.js";
 import {
   computerLocaleFields,
   computerLocaleMatches,
@@ -43,16 +44,16 @@ import {
   computerBrowserProxyPacUrl,
   computerComputeGpus,
   computerDns,
+  computerGpu,
   computerMounts,
   controlViaLoopback,
   dataDir,
   docker,
-  ensureComputerImage,
   inspectSupervisorContainer,
   screenNetworkMode,
   supervisorToken,
 } from "./context.js";
-import { computerEgressMode, ensureRestrictedEgressEnforced } from "./egress.js";
+import { computerEgressMode, computerEgressReport, ensureComputerEgress } from "./egress.js";
 import {
   applyContainerActions,
   observeContainer,
@@ -145,6 +146,7 @@ app.use("*", async (c, next) => {
 });
 
 app.get("/health", (c) => c.json({ ok: true, image: COMPUTER_IMAGE }));
+app.get("/diagnostics/egress", (c) => c.text(computerEgressReport()));
 
 app.use("/computers", limitSupervisorRequestBody);
 app.use("/computers/*", limitSupervisorRequestBody);
@@ -166,8 +168,9 @@ app.post("/computers", async (c) => {
       spaceId: body.spaceId,
     });
     return await withBotLifecycleLock(body.botId, async () => {
-      await ensureComputerImage();
-      await ensureRestrictedEgressEnforced();
+      await ensureComputerEgress();
+      // Docker resolves the render node anew on every start, so check it again now.
+      const gpu = computerGpu && resolveComputerGpu();
       const runtimeInfo = await inspectSupervisorContainer();
       // A containerized supervisor's host paths (data directory, Docker socket) are known only now.
       assertComputerMountSources(
@@ -260,6 +263,8 @@ app.post("/computers", async (c) => {
           computerDnsMatches(info.HostConfig.Dns, computerDns) &&
           // So are host mounts: an added, changed or removed one replaces the computer.
           computerMountsMatch(info, computerMounts) &&
+          // So is the render node with its group.
+          computerGpuMatches(info, gpu) &&
           // And GPUs: turning them on or off, or changing the count, replaces it too.
           computerComputeGpusMatch(info.HostConfig.DeviceRequests, computerComputeGpus) &&
           // So are the owner's time zone and language.
@@ -329,6 +334,7 @@ app.post("/computers", async (c) => {
           publishControlPort: controlViaLoopback,
           dns: computerDns,
           mounts: computerMounts,
+          gpu,
           computeGpus: computerComputeGpus,
           browserProxyPacUrl: computerBrowserProxyPacUrl,
           locale,
@@ -417,15 +423,16 @@ app.post("/computers/:id/exec", async (c) => {
     .parse(await c.req.json());
   const timeoutMs = boundedSandboxCommandTimeoutMs(body.timeoutMs);
   let container: Docker.Container;
-  let layout: ReturnType<typeof screenPorts>;
+  let layout: ReturnType<typeof screenPorts> | undefined;
   try {
     const managed = await managedContainer(id, headers.botId, headers.spaceId);
     // Docker would fail the exec inside the stream; answer up front so the caller can boot it.
     if (!managed.info.State.Running) return c.json({ error: "computer is not running" }, 409);
     container = managed.container;
     const screenId = headers.screenId || headers.botId || id;
-    const screenIndex = computerScreens.get(id)?.get(screenId)?.index ?? 0;
-    layout = screenPorts(screenIndex);
+    // Only the bot's own screen: without one, a graphical command fails instead of using another's.
+    const screenIndex = computerScreens.get(id)?.get(screenId)?.index;
+    layout = screenIndex === undefined ? undefined : screenPorts(screenIndex);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     return c.json({ stdout: "", stderr: message, code: 1 }, 200);

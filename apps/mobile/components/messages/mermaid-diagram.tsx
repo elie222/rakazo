@@ -92,10 +92,14 @@ export function MermaidDiagram({ source, palette, colorScheme, fallback }: Merma
           }}
           onError={fail}
           onHttpError={fail}
-          style={[styles.webview, { height: drawn ? diagram.height : 1 }]}
+          // The library's container is `flex: 1` with no height, which a message laid out at an
+          // exact size (Android) squeezes to nothing; the WebView fills it.
+          containerStyle={[styles.webviewContainer, { height: drawn ? diagram.height : 1 }]}
+          style={styles.webview}
           javaScriptEnabled
           allowsLinkPreview={false}
-          dataDetectorTypes="none"
+          // A list: Android's native view crashes on a plain string.
+          dataDetectorTypes={["none"]}
           javaScriptCanOpenWindowsAutomatically={false}
           domStorageEnabled={false}
           allowFileAccess={false}
@@ -134,5 +138,6 @@ const styles = StyleSheet.create({
     top: 0,
     opacity: 0,
   },
-  webview: { width: "100%", backgroundColor: "transparent" },
+  webviewContainer: { flex: 0 },
+  webview: { backgroundColor: "transparent" },
 });

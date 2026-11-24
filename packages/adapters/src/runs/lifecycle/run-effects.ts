@@ -1,3 +1,4 @@
+import { CATALOG_APPROVAL_TOOL } from "@rakazo/contracts";
 import {
   isToolEffectIdempotencyKey,
   legacyScopedToolEffectIdempotencyKey,
@@ -28,7 +29,7 @@ export const PASSED_EFFECT_STATUSES = ["approved", "executing", "uncertain", "co
 
 export const APPROVED_EFFECT_REPLAY_ORDER = [{ createdAt: "asc" as const }, { id: "asc" as const }];
 
-export const CATALOG_APPROVAL_TOOL = "__rakazoCatalogTool";
+export { CATALOG_APPROVAL_TOOL } from "@rakazo/contracts";
 
 export function approvalReplayEffectToolName(
   liveName: string,

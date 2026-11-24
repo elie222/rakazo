@@ -5,6 +5,7 @@ import { createRepos } from "../bots/bot-repository.js";
 import type { PrismaClient } from "../database/client.js";
 import { Prisma } from "../database/client.js";
 import { isUniqueViolation } from "../database/prisma-errors.js";
+import { DEFAULT_MESSAGING_BOT_INSTRUCTIONS } from "./messaging-bot.prompt.js";
 
 export interface MessagingIdentityRequest {
   /** Messaging platform hosting the conversation (sendblue, slack, …). */
@@ -53,7 +54,9 @@ export async function provisionMessagingIdentity(
 ): Promise<ProvisionedMessagingIdentity> {
   const { provider, address } = request;
   if (!ADDRESS_PATTERN.test(address)) {
-    throw new Error(`Invalid messaging address for ${provider}: ${address}`);
+    // The address is the sender's phone number or platform id, and this message is logged:
+    // name the provider only, never the value the inbound request chose.
+    throw new Error(`Invalid messaging address for ${provider}`);
   }
 
   const where = { provider_address: { provider, address } } as const;
@@ -117,10 +120,7 @@ export async function provisionMessagingIdentity(
       {
         name: "Assistant",
         description: `Personal agent for ${address} (${provider}), auto-created on first message.`,
-        instructions:
-          "You are the owner's personal agent. The owner reaches you over chat; " +
-          "keep replies concise and conversational. Your first reply doubles as onboarding: " +
-          "briefly introduce yourself and what you can help with.",
+        instructions: DEFAULT_MESSAGING_BOT_INSTRUCTIONS,
         notifyOnFinish: true,
       },
     );
@@ -146,7 +146,8 @@ export async function provisionMessagingIdentity(
     // A concurrent first-inbound won the (provider, address) race; report its result.
     const winner = await prisma.messagingIdentity.findUnique({ where });
     if (!winner) {
-      throw new Error(`messaging identity for ${provider}:${address} vanished after create failed`);
+      // Same reason as the invalid-address throw above: provider only, never the address.
+      throw new Error(`messaging identity for ${provider} vanished after create failed`);
     }
     // The winner's bot can differ from the bot this attempt found or
     // created; pair the result with the winning bot's own thread.

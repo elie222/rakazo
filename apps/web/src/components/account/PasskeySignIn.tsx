@@ -88,7 +88,7 @@ export function PasskeySignIn({
     <Button
       type="button"
       variant="outline"
-      size="lg"
+      size="xl"
       disabled={disabled || passkey.pending}
       className={className}
       onClick={passkey.start}

@@ -109,7 +109,11 @@ export function caseFingerprint(input: {
         model: modelSettings(input.connection),
         caseVersion: input.caseVersion,
         // Functions drop out; the steps, files and scripts a case feeds the bot later stay.
-        caseData: JSON.parse(JSON.stringify(input.scenario)),
+        caseData: JSON.parse(JSON.stringify({ ...input.scenario, fixtureData: undefined })),
+        // Hashed as written: a date the case plants in its content is part of the case.
+        ...(input.scenario.fixtureData === undefined
+          ? {}
+          : { fixtureData: sha256(JSON.stringify(input.scenario.fixtureData)) }),
         strategy: input.strategy,
         replyMode: input.replyMode,
         maxToolCalls: input.maxToolCalls,
@@ -162,6 +166,24 @@ export function firstRequestFetch(
     }
     if (!open) return Promise.reject(new Error("Stored trials replace this run"));
     return upstream(input, init);
+  };
+}
+
+/**
+ * Adds fields to the JSON body of every request for the eval model, such as a gateway's upstream
+ * routing. It wraps the fingerprinting fetch, so the added fields are part of the fingerprint.
+ */
+export function requestBodyFetch(
+  upstream: typeof fetch,
+  modelId: string,
+  extra: Record<string, unknown>,
+): typeof fetch {
+  return (input, init) => {
+    if (typeof init?.body !== "string" || !isFor(input, init.body, modelId))
+      return upstream(input, init);
+    const body: unknown = JSON.parse(init.body);
+    if (!body || typeof body !== "object" || Array.isArray(body)) return upstream(input, init);
+    return upstream(input, { ...init, body: JSON.stringify({ ...body, ...extra }) });
   };
 }
 

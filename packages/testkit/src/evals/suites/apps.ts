@@ -17,7 +17,7 @@ import {
 import type { JudgeInput } from "../judge.js";
 
 /** Multi-step work across emulated mail, file storage and notes services connected over MCP. */
-export const APPS_FIXTURE_VERSION = `apps-v2+${STUDIO_FIXTURE_VERSION}`;
+export const APPS_FIXTURE_VERSION = `apps-v3+${STUDIO_FIXTURE_VERSION}`;
 
 const check = (id: string, pass: boolean): Criterion => ({ id, pass });
 function app<T extends AppEmulator>(e: Evidence, kind: string) {

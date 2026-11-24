@@ -38,6 +38,7 @@ export type MobileBot = Pick<
   | "fleetManagement"
   | "crossSpaceCommunication"
   | "dailyCheckIns"
+  | "meetingsEnabled"
 > &
   Partial<Pick<Bot, "parentBotId" | "spaceId" | "instructions" | "snoozedUntil">>;
 export type MobileBotSection = BotSection;
@@ -59,6 +60,7 @@ export type MobileMe = Pick<
   | "labs"
   | "labsAvailable"
   | "botAvatarSet"
+  | "chatPreferences"
 >;
 export type MobileModel = ModelCatalogEntry;
 /** Shared DTO includes headerNames only; header values remain in the server secret. */

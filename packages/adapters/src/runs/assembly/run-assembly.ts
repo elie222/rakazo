@@ -1,9 +1,14 @@
+import { bestEffort } from "@rakazo/logging";
+import { resolveRunMediaSources } from "../../media/media-sources.js";
+import { hostedMediaWithinAllowance } from "../../media/media-usage.js";
+import { isMeetingChat, recentChatMeetings } from "../../meetings/meeting-chat.js";
+import { recentMeetingContext } from "../../meetings/meeting-chat.prompt.js";
+import { READ_MEETING_TRANSCRIPT } from "../../meetings/meeting-chat.tool-definition.js";
 import type { RunExecutorServices, RunHold } from "../lifecycle/run-attempt.js";
 import { mayOpenModelStream, requeueComputerRun } from "../lifecycle/run-lifecycle.js";
 import { takeoverCheckpointOf } from "../turn/takeover-resume.js";
 import {
   loadComputerInstructions,
-  loadModelFallbacks,
   prepareRunComputer,
   resolveRunCapabilities,
   selectRunTools,
@@ -13,6 +18,7 @@ import { buildTurnPrompt, createRunContext } from "./run-assembly-context.js";
 import { loadTurnContext, readThreadHistory } from "./run-assembly-history.js";
 import type { ConnectedRun } from "./run-assembly-records.js";
 import { connectRun, loadRunRecords, loadSavedTurn } from "./run-assembly-records.js";
+import { loadModelFallbacks } from "./run-model-fallbacks.js";
 
 /** Undefined when setup ended the run or handed it back, so there is no turn to run. */
 export async function assembleRunTurn(services: RunExecutorServices, hold: RunHold) {
@@ -32,12 +38,33 @@ export async function assembleRunTurn(services: RunExecutorServices, hold: RunHo
     model,
     computer,
   });
+  const meetingChat = isMeetingChat(hold.run, records.thread, capabilities.sourceMessage);
+  const meetings = meetingChat
+    ? ((await bestEffort(
+        "load recent meetings for direct chat",
+        recentChatMeetings(hold.deps.prisma, hold.run),
+      )) ?? [])
+    : [];
+  const media = hold.deps.artifacts
+    ? await resolveRunMediaSources(
+        {
+          ...hold.deps,
+          mediaGeneration: await hostedMediaWithinAllowance(
+            hold.deps.prisma,
+            services.mediaGeneration,
+          ),
+        },
+        hold.run,
+      )
+    : {};
   const tools = await selectRunTools(services, hold, {
+    media,
     saved,
     records,
     connected,
     turnContext,
     capabilities,
+    meetingTranscriptsAvailable: meetings.some(({ status }) => status === "ready"),
   });
   const computerInstructions = await loadComputerInstructions(hold, {
     records,
@@ -56,6 +83,8 @@ export async function assembleRunTurn(services: RunExecutorServices, hold: RunHo
     capabilities,
     tools,
     computerInstructions,
+    meetingChat,
+    media,
   });
   const prompt = await buildTurnPrompt(hold, {
     saved,
@@ -68,6 +97,10 @@ export async function assembleRunTurn(services: RunExecutorServices, hold: RunHo
     capabilities,
     tools,
     ctx,
+    meetingContext: recentMeetingContext(
+      meetings,
+      tools.tools.some(({ name }) => name === READ_MEETING_TRANSCRIPT),
+    ),
   });
   if (!(await turnMayStillStart(hold, { connected }))) return;
   const fallbacks = await loadModelFallbacks(hold, { records, model, capabilities });

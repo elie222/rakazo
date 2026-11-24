@@ -23,7 +23,6 @@ export function NativeActionButton({
   prominence = "primary",
   variant,
   fill,
-  align = "center",
   style,
   size = "default",
   icon,
@@ -67,7 +66,7 @@ export function NativeActionButton({
                 : 48,
           borderRadius: 12,
           alignItems: "center",
-          justifyContent: align === "start" ? "flex-start" : "center",
+          justifyContent: "center",
           alignSelf: stretches ? "stretch" : "flex-start",
           paddingHorizontal: variant === "text" ? 0 : small ? 6 : compact ? 0 : 16,
           paddingVertical: variant === "text" ? 8 : small ? 6 : compact ? 8 : 12,
@@ -92,7 +91,7 @@ export function NativeActionButton({
               style={{
                 color: colors.label,
                 flexShrink: 1,
-                textAlign: align === "start" ? "left" : "center",
+                textAlign: "center",
                 fontSize:
                   variant === "text"
                     ? 16

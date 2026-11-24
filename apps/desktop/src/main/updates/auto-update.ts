@@ -12,7 +12,16 @@ export interface UpdaterEnvironment {
   packaged: boolean;
   version: string;
   disabled?: boolean;
+  /**
+   * Reads the version of the app on disk, which another install (another account, a manual
+   * download) can replace while this one runs. When set, the app installs updates just before
+   * it quits instead of leaving that to the native updater, so it can skip a stale download.
+   */
+  installedVersion?: () => string | null;
 }
+
+/** Long enough for Squirrel.Mac to stage a local download, short enough that quitting never hangs. */
+export const INSTALL_BEFORE_QUIT_TIMEOUT_MS = 30_000;
 
 export function updaterSupport(env: UpdaterEnvironment): { supported: boolean; reason: string } {
   if (env.disabled === true) {
@@ -66,7 +75,12 @@ const OFFLINE = [
 // Squirrel.Mac refuses to replace an app run from a disk image or a translocated download.
 const READ_ONLY = ["read-only volume"];
 // ShipIt's ditto prints the POSIX text; macOS localizes the same failure's description.
-const DISK_FULL = ["no space left on device", "enospc", "设备上无剩余空间"];
+const DISK_FULL = [
+  "no space left on device",
+  "enospc",
+  "设备上无剩余空间",
+  "no queda espacio en el dispositivo",
+];
 const SIGNATURE = ["code sign", "signature", "not signed", "notariz"];
 
 /** Error text can contain local paths or URLs, so renderer-visible messages stay generic. */
@@ -76,6 +90,8 @@ export function classifyUpdaterFailure(error: unknown): UpdaterFailure {
   if (error instanceof SignatureUnreachableError && error.status === undefined) {
     return { kind: "offline", message: null };
   }
+  // The release host failing or rate limiting the feed passes; the next check retries it.
+  if (transientHttpStatus(error)) return { kind: "offline", message: null };
   const text = (error instanceof Error ? error.message : String(error)).trim().toLowerCase();
   if (NO_RELEASES.some((needle) => text.includes(needle))) {
     return {
@@ -103,6 +119,12 @@ export function classifyUpdaterFailure(error: unknown): UpdaterFailure {
     kind: "other",
     message: t("The update could not be completed. Try again later."),
   };
+}
+
+function transientHttpStatus(error: unknown): boolean {
+  if (typeof error !== "object" || error === null || !("statusCode" in error)) return false;
+  const status = error.statusCode;
+  return typeof status === "number" && (status === 429 || (status >= 500 && status < 600));
 }
 
 export type UpdaterEvent =
@@ -244,6 +266,7 @@ export function shouldCheck(
 export interface ElectronAutoUpdater {
   autoDownload: boolean;
   autoInstallOnAppQuit: boolean;
+  autoRunAppAfterInstall: boolean;
   allowDowngrade: boolean;
   allowPrerelease: boolean;
   disableWebInstaller: boolean;
@@ -305,9 +328,12 @@ export class DesktopUpdateController {
   /** Bumped by each download and updater error, so only the latest verification can finish. */
   private verificationAttempt = 0;
   private checkPromise: Promise<DesktopUpdateState> | null = null;
+  private emittedCheckErrors: Set<unknown> | null = null;
   private downloadPromise: Promise<DesktopUpdateState> | null = null;
   private checkWasRequested = false;
   private installStarted = false;
+  private quitInstallSettled: (() => void) | null = null;
+  private readonly listeners = new Set<(state: DesktopUpdateState) => void>();
 
   constructor(
     private readonly environment: UpdaterEnvironment,
@@ -321,6 +347,20 @@ export class DesktopUpdateController {
 
   state() {
     return this.current;
+  }
+
+  /** Calls `listener` after every state change, including download progress. */
+  subscribe(listener: (state: DesktopUpdateState) => void) {
+    this.listeners.add(listener);
+    return () => {
+      this.listeners.delete(listener);
+    };
+  }
+
+  private set(next: DesktopUpdateState) {
+    if (next === this.current) return;
+    this.current = next;
+    for (const listener of this.listeners) listener(next);
   }
 
   private push(event: UpdaterEvent) {
@@ -337,7 +377,7 @@ export class DesktopUpdateController {
     ) {
       this.lastCheckWasOffline = false;
     }
-    this.current = reduceUpdateState(this.current, event, this.clock.iso());
+    this.set(reduceUpdateState(this.current, event, this.clock.iso()));
     if (event.type === "not-available" || event.type === "downloaded" || event.type === "failed") {
       this.checkWasRequested = false;
     }
@@ -350,8 +390,10 @@ export class DesktopUpdateController {
     const loading = this.loadUpdater()
       .then((updater) => {
         updater.autoDownload = false;
-        // The updater would install on quit before an async verifier could finish.
-        updater.autoInstallOnAppQuit = this.verifyDownload === undefined;
+        // The updater would install on quit before an async verifier could finish, and
+        // without first checking whether the app on disk was replaced.
+        updater.autoInstallOnAppQuit =
+          this.verifyDownload === undefined && this.environment.installedVersion === undefined;
         updater.allowPrerelease = false;
         updater.allowDowngrade = false;
         updater.disableWebInstaller = true;
@@ -394,7 +436,10 @@ export class DesktopUpdateController {
             downloadedFileFrom(payload),
           );
         });
-        updater.on("error", (error) => this.fail(error));
+        updater.on("error", (error) => {
+          this.emittedCheckErrors?.add(error);
+          this.fail(error);
+        });
         this.loadedUpdater = updater;
         return updater;
       })
@@ -446,13 +491,13 @@ export class DesktopUpdateController {
     this.checkWasRequested = userInitiated;
     // A prior empty feed freezes automatic checks; a manual retry clears that freeze.
     if (this.current.phase === "unsupported" && checkOptions.environmentSupportsUpdates) {
-      this.current = {
+      this.set({
         ...this.current,
         phase: "idle",
         availableVersion: null,
         percent: null,
         message: null,
-      };
+      });
       // Do not make the user wait out the launch-check interval to retry.
       this.lastCheck = 0;
     }
@@ -461,12 +506,20 @@ export class DesktopUpdateController {
     now = this.clock.now();
     if (!shouldCheck(this.current, now, this.lastCheck, checkOptions)) return this.current;
     this.lastCheck = now;
+    const emittedErrors = new Set<unknown>();
+    this.emittedCheckErrors = emittedErrors;
     try {
       await updater.checkForUpdates();
     } catch (error) {
-      if (this.current.phase === "idle" || this.current.phase === "checking") {
+      // The updater can emit and reject with the same error; the event already set the UI state.
+      if (
+        !emittedErrors.has(error) &&
+        (this.current.phase === "idle" || this.current.phase === "checking")
+      ) {
         this.push({ type: "failed", error, userInitiated: this.checkWasRequested });
       }
+    } finally {
+      this.emittedCheckErrors = null;
     }
     return this.current;
   }
@@ -507,6 +560,16 @@ export class DesktopUpdateController {
       installFailed,
     });
     if (installFailed) this.onInstallFailure?.();
+    this.quitInstallSettled?.();
+  }
+
+  /**
+   * True when the app on disk is no longer the version running, so a download would downgrade or
+   * clobber it. An unreadable version counts too: it means another install is replacing the app.
+   */
+  installedElsewhere() {
+    const read = this.environment.installedVersion;
+    return read !== undefined && read() !== this.environment.version;
   }
 
   async install() {
@@ -516,13 +579,44 @@ export class DesktopUpdateController {
       return this.current;
     }
     this.installStarted = true;
-    this.current = { ...this.current, message: null };
+    this.set({ ...this.current, message: null });
     try {
       updater.quitAndInstall();
     } catch (error) {
       this.fail(error);
     }
     return this.current;
+  }
+
+  /**
+   * Stands in for the native install-on-quit where the app reads its installed version.
+   * Returns a promise to hold the quit on while the update is staged; the updater quits the
+   * app itself once it is, and the promise settles if staging fails or takes too long.
+   */
+  installBeforeQuit(): Promise<void> | null {
+    const updater = this.loadedUpdater;
+    if (this.environment.installedVersion === undefined || updater === null) return null;
+    // One attempt per quit: a failed staging lets the app quit instead of trying again.
+    if (this.quitInstallSettled !== null) return null;
+    if (this.installStarted || this.current.phase !== "ready") return null;
+    this.installStarted = true;
+    if (this.installedElsewhere()) return null;
+    return new Promise<void>((resolve) => {
+      const timer = setTimeout(settle, INSTALL_BEFORE_QUIT_TIMEOUT_MS);
+      function settle() {
+        clearTimeout(timer);
+        resolve();
+      }
+      this.quitInstallSettled = settle;
+      try {
+        // Quitting, not restarting: the user chose to quit.
+        updater.autoRunAppAfterInstall = false;
+        updater.quitAndInstall();
+      } catch (error) {
+        reportDesktopError(error, "desktop.update", { "update.failure": "install-on-quit" });
+        settle();
+      }
+    });
   }
 
   /** Stands in for the updater's own install-on-quit once a verifier has passed the download. */

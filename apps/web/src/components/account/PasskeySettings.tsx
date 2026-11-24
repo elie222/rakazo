@@ -139,7 +139,7 @@ function PasskeyList({ onRetry }: { onRetry: () => void }) {
                       }
                       if (event.key === "Escape") setRenaming(null);
                     }}
-                    className="h-8 flex-1"
+                    className="flex-1"
                   />
                   <Button type="submit" size="sm" disabled={pending || !renaming.name.trim()}>
                     <Trans>Save</Trans>

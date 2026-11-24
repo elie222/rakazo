@@ -49,6 +49,7 @@ A routine runs either in its chat, as a turn with the whole conversation that wa
 The bot chooses when it creates the routine: alongside for reports, digests, reminders and alerts whose prompt can say everything they need; in the chat for follow-ups that continue work the conversation is doing, such as updating a draft or fixing a deploy started there.
 A routine running alongside reads the chat's latest messages and its own earlier results, so it can say what changed instead of repeating itself, and searches the rest of the chat when it needs more.
 A routine in the chat that is still waiting after five minutes is handed to the running turn, so a run that goes on for hours does not hold it back; one that watches for changes always runs alongside, because what it read is not the user's words.
+A repeating routine or watch can end on a date: its last run before then is told it is the last, and the routine deletes itself once that run is done and says so in its chat, so a limited stretch such as "every day until Friday" is one routine rather than one per run.
 
 ## Computers
 
@@ -64,6 +65,8 @@ While a person has control the bot's screen actions are refused rather than queu
 A bot that needs a person for a sign-in, CAPTCHA, passkey or payment asks in the chat and continues when they press Done.
 Taking control of one bot's screen never blocks other bots on their own screens.
 Maintenance such as updating or resetting a computer lives in settings rather than on the screen.
+Bots get a full shell on their computer and are trusted to use it, so loops, substitutions, variables and scripts all run.
+The only commands refused are ones that reach beyond the bot's own work on a shared computer, such as stopping browser or desktop processes by name, stopping system services, or deleting the shared browser profile, because a bot cannot undo that damage to other bots, and a bot's own browser restarts by itself at its next screen action.
 
 ## Connections, skills, and plugins
 
@@ -100,9 +103,11 @@ Access checks and action approvals enforce these boundaries. Labeling text as de
 
 ## Approvals
 
-Approvals have three modes: Never ask runs every action without waiting, Auto lets an approval model pass actions that fit what the owner asked for and asks only when one is off-task or irreversible without being asked for, and Ask asks before any action that changes something; reading asks only when the request itself could carry private data somewhere new.
-Every mode is shaped by two lists of exact tools or sites, Allow and Block, which grow from approval cards and settings rather than from guessed categories, and a blocked action is refused without a card in every mode.
-Actions that outside text could steer, such as writes in webhook-started runs, another owner's bot connecting, or instruction changes after untrusted content entered a run, still ask in Auto and Ask. Never ask runs them, except that it refuses another owner's bot connecting when outside text could have asked for it.
+The approval mode is the one thing that decides whether a bot asks before acting. Ask asks you before anything that changes something, costs money or sends something out, and before reading a site you didn't name. Auto hands those to an approval model, which passes what fits your request and asks you about the rest. Never ask runs everything without waiting.
+Your own runs are the same wherever they start: a message in the app or from a linked chat app, and a routine you set up. Text the bot read from a page, an email or another bot never refuses a call or adds a question; it only tells the approval model that outside words are in play, which it never treats as your request.
+A few limits hold in every mode, because asking would not help: Block rules and your spending limit, limits that stop bots looping, anything that acts for another person (accepting another owner's bot connection, another chat's routines), and runs someone or something else started (another person, a webhook, another bot), which cannot use your private chats, account settings or bot management.
+A run nobody is watching (a routine, webhook, ticket or another bot) still posts its approval card and notifies you; if nobody answers within 30 minutes the card expires and the action is not done.
+Every mode is shaped by two lists of exact tools or sites, Allow and Block, which grow from approval cards and settings rather than from guessed categories.
 The deployment picks the default approval mode, so a self-hosted server works without any model and a hosted one can default to Auto.
 
 ## Deployment administration and host access

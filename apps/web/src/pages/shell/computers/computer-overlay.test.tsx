@@ -21,6 +21,11 @@ vi.mock("@rakazo/ui-web", () => ({
     <button type="button" {...props} />
   ),
 }));
+vi.mock("../../../components/computers/SaveScreenshotButton", () => ({
+  SaveScreenshotButton: ({ botId }: { botId: string }) => (
+    <button type="button" data-testid="save-screenshot" data-bot={botId} />
+  ),
+}));
 vi.mock("../../../components/teach/TeachCaptureOverlay", () => ({
   TeachCaptureOverlay: () => null,
 }));
@@ -61,13 +66,17 @@ function computer(state: ComputerStatus["state"]): ComputerStatus {
 async function render(
   state: ComputerStatus["state"],
   onStart = vi.fn(),
-  options: { hasControl?: boolean; shared?: boolean } = {},
+  options: { hasControl?: boolean; shared?: boolean; error?: string; ownMachine?: boolean } = {},
 ) {
   await act(async () => {
     root.render(
       <ComputerOverlay
         bot={bot}
-        computer={{ ...computer(state), ...(options.shared ? { shared: true } : {}) }}
+        computer={{
+          ...computer(state),
+          ...(options.shared ? { shared: true } : {}),
+          ...(options.ownMachine ? { runsOnUserMachine: true } : {}),
+        }}
         computerViewport={null}
         recordingSkill={null}
         teachBusy={false}
@@ -78,7 +87,7 @@ async function render(
         sendError={null}
         embeddedScreenUrl={null}
         screenFrameRef={() => undefined}
-        computerScreenError={null}
+        computerScreenError={options.error ?? null}
         computerBooting={null}
         onStopTeaching={() => undefined}
         onStopRun={() => undefined}
@@ -135,4 +144,24 @@ it("says sign-ins are shared while someone in a shared space has control", async
   expect(note()).toBeNull();
   await render("running", vi.fn(), { shared: true });
   expect(note()).toBeNull();
+});
+
+it("offers to save a screenshot of a running computer, whatever its frame is doing", async () => {
+  const save = () => container.querySelector<HTMLElement>('[data-testid="save-screenshot"]');
+  await render("running");
+  expect(save()?.dataset.bot).toBe("bot-1");
+  await render("running", vi.fn(), { hasControl: true });
+  expect(save()).not.toBeNull();
+  await render("running", vi.fn(), { error: "The screen did not respond." });
+  expect(save()).not.toBeNull();
+  // Nothing to capture on a computer that is not running.
+  await render("suspended");
+  expect(save()).toBeNull();
+  await render("stopped");
+  expect(save()).toBeNull();
+});
+
+it("offers no screenshot of the user's own machine, which has no screen in the app", async () => {
+  await render("running", vi.fn(), { ownMachine: true });
+  expect(container.querySelector('[data-testid="save-screenshot"]')).toBeNull();
 });

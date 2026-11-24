@@ -100,7 +100,7 @@ export function InvitePage() {
           else navigate("/app", { replace: true });
         }}
       >
-        <Button type="submit" className={submitClass}>
+        <Button type="submit" size="xl" className={submitClass}>
           {state.kind === "invalid" ? <Trans>Open Rakazo</Trans> : <Trans>Retry</Trans>}
         </Button>
       </AuthFrame>
@@ -119,7 +119,7 @@ export function InvitePage() {
           {joinError}
         </p>
       ) : null}
-      <Button type="submit" disabled={joining} className={cn(submitClass, "mt-6")}>
+      <Button type="submit" size="xl" disabled={joining} className={cn(submitClass, "mt-6")}>
         <Trans>Join</Trans>
       </Button>
     </AuthFrame>

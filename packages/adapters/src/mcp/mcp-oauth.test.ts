@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { OAuthMaterial } from "./mcp-oauth.js";
 import {
   launchArgSecrets,
+  MCP_LOOPBACK_REDIRECT_URI,
   McpOAuthBroker,
   McpOAuthClientRequiredError,
   McpOAuthRefusedError,
@@ -1038,6 +1039,80 @@ describe("MCP OAuth", () => {
     ).rejects.toThrow("MCP OAuth session is invalid or expired");
     expect(await shared.stored()).toEqual({ oauthGeneration: 1 });
     expect(await broker.statusFor(shared.server, shared.context)).toBe("none");
+  });
+
+  it("stores no grant when another process completes a sign-in for a server moved since", async () => {
+    const shared = sharedCredentials(null);
+    const broker = new McpOAuthBroker(shared.prisma as never, shared.secrets as never, {
+      fetch: issuingAuthServer().fetch,
+      resolveHostname: TEST_NETWORK.resolveHostname,
+    });
+    const session = await shared.beginSession({
+      oauth: {
+        codeVerifier: "verifier",
+        redirectUri: "http://127.0.0.1:5173/mcp/oauth/callback",
+        clientInformation: { client_id: "dynamic-1" },
+        discoveryState: {
+          authorizationServerUrl: "https://auth.example.test",
+          authorizationServerMetadata: {
+            issuer: "https://auth.example.test",
+            authorization_endpoint: "https://auth.example.test/authorize",
+            token_endpoint: "https://auth.example.test/token",
+            response_types_supported: ["code"],
+          },
+        },
+      },
+    });
+    // The settings API moves the server while the sign-in is in flight.
+    shared.server.endpoint = "https://moved.example.test/mcp";
+
+    await expect(
+      broker.complete({
+        sessionId: session.id,
+        code: "authorization-code",
+        state: session.id,
+        spaceId: shared.context.spaceId,
+        userId: shared.context.userId,
+      }),
+    ).rejects.toThrow();
+    expect((await shared.stored()).oauth?.tokens).toBeUndefined();
+  });
+
+  it("stores no grant when another process completes a sign-in for a server switched to stdio since", async () => {
+    const shared = sharedCredentials(null);
+    const broker = new McpOAuthBroker(shared.prisma as never, shared.secrets as never, {
+      fetch: issuingAuthServer().fetch,
+      resolveHostname: TEST_NETWORK.resolveHostname,
+    });
+    const session = await shared.beginSession({
+      oauth: {
+        codeVerifier: "verifier",
+        redirectUri: "http://127.0.0.1:5173/mcp/oauth/callback",
+        clientInformation: { client_id: "dynamic-1" },
+        discoveryState: {
+          authorizationServerUrl: "https://auth.example.test",
+          authorizationServerMetadata: {
+            issuer: "https://auth.example.test",
+            authorization_endpoint: "https://auth.example.test/authorize",
+            token_endpoint: "https://auth.example.test/token",
+            response_types_supported: ["code"],
+          },
+        },
+      },
+    });
+    // The settings API switches the server to stdio while the sign-in is in flight.
+    shared.server.endpoint = null;
+
+    await expect(
+      broker.complete({
+        sessionId: session.id,
+        code: "authorization-code",
+        state: session.id,
+        spaceId: shared.context.spaceId,
+        userId: shared.context.userId,
+      }),
+    ).rejects.toThrow();
+    expect((await shared.stored()).oauth?.tokens).toBeUndefined();
   });
 
   it("rejects completing a sign-in that outlives its disconnect", async () => {
@@ -2288,11 +2363,10 @@ describe("MCP OAuth", () => {
         if (url === "https://auth.example.test/register" && request.method === "POST") {
           return Response.json(
             {
-              error: "registration_not_supported",
-              error_description:
-                "Dynamic client registration is not supported. Only pre-registered partners are allowed.",
+              error: "invalid_client_metadata",
+              error_description: "The requested scope is not allowed for this client.",
             },
-            { status: 403 },
+            { status: 400 },
           );
         }
         throw new Error(`Unexpected request: ${request.method} ${url}`);
@@ -2345,7 +2419,7 @@ describe("MCP OAuth", () => {
       );
     expect(error).toBeInstanceOf(Error);
     expect((error as Error).message).toBe(
-      "Could not start MCP OAuth: HTTP 403 registration_not_supported: Dynamic client registration is not supported. Only pre-registered partners are allowed.",
+      "Could not start MCP OAuth: HTTP 400 invalid_client_metadata: The requested scope is not allowed for this client.",
     );
     expect((error as Error).message).not.toContain("[object Response]");
   });
@@ -2355,17 +2429,17 @@ describe("MCP OAuth", () => {
       () =>
         Response.json(
           {
-            error: "registration_not_supported",
+            error: "invalid_client_metadata",
             error_description:
               "Use Bearer access-token-value or quote static-credential-value to continue.",
           },
-          { status: 403 },
+          { status: 400 },
         ),
       "static-credential-value",
     );
 
     expect(error.message).toBe(
-      "Could not start MCP OAuth: HTTP 403 registration_not_supported: Use Bearer [redacted] or quote [redacted] to continue.",
+      "Could not start MCP OAuth: HTTP 400 invalid_client_metadata: Use Bearer [redacted] or quote [redacted] to continue.",
     );
     expect(error.message).not.toContain("access-token-value");
     expect(error.message).not.toContain("static-credential-value");
@@ -2375,13 +2449,13 @@ describe("MCP OAuth", () => {
     const description = `${"a".repeat(2_500)} tail-marker`;
     const error = await rejectedOAuthBegin(() =>
       Response.json(
-        { error: "registration_not_supported", error_description: description },
-        { status: 403 },
+        { error: "invalid_client_metadata", error_description: description },
+        { status: 400 },
       ),
     );
 
     expect(error.message).toBe(
-      `Could not start MCP OAuth: HTTP 403 registration_not_supported: ${"a".repeat(300)}`,
+      `Could not start MCP OAuth: HTTP 400 invalid_client_metadata: ${"a".repeat(300)}`,
     );
     expect(error.message).not.toContain("tail-marker");
   });
@@ -2392,16 +2466,16 @@ describe("MCP OAuth", () => {
       () =>
         Response.json(
           {
-            error: "registration_not_supported",
+            error: "invalid_client_metadata",
             error_description: `${"a".repeat(290)}${secret}`,
           },
-          { status: 403 },
+          { status: 400 },
         ),
       secret,
     );
 
     expect(error.message).toBe(
-      `Could not start MCP OAuth: HTTP 403 registration_not_supported: ${"a".repeat(290)}[redacted]`,
+      `Could not start MCP OAuth: HTTP 400 invalid_client_metadata: ${"a".repeat(290)}[redacted]`,
     );
     expect(error.message).not.toContain(secret.slice(0, 10));
   });
@@ -2409,12 +2483,12 @@ describe("MCP OAuth", () => {
   it("stops reading an oversized OAuth error body", async () => {
     const totalBytes = 128 * 1_024;
     const chunkBytes = 1_024;
-    const bytesRead = trackClonedBodies(403);
+    const bytesRead = trackClonedBodies(400);
 
     const error = await rejectedOAuthBegin(
       () =>
         new Response(chunkedBody(totalBytes, chunkBytes), {
-          status: 403,
+          status: 400,
           headers: { "content-type": "application/json" },
         }),
     );
@@ -2427,12 +2501,12 @@ describe("MCP OAuth", () => {
   });
 
   it("does not read an OAuth error body whose declared length exceeds the cap", async () => {
-    const bytesRead = trackClonedBodies(403);
+    const bytesRead = trackClonedBodies(400);
 
     const error = await rejectedOAuthBegin(
       () =>
         new Response(chunkedBody(64 * 1_024, 1_024), {
-          status: 403,
+          status: 400,
           headers: {
             "content-type": "application/json",
             "content-length": String(1024 * 1024),
@@ -2449,6 +2523,20 @@ describe("MCP OAuth", () => {
 
     expect(error).toBeInstanceOf(McpOAuthClientRequiredError);
     expect(error).toMatchObject({ code: MCP_OAUTH_CLIENT_REQUIRED });
+  });
+
+  it("asks for a pre-registered client when the server refuses to register one", async () => {
+    const error = await rejectedOAuthBegin(() => new Response("Forbidden", { status: 403 }));
+
+    expect(error).toBeInstanceOf(McpOAuthClientRequiredError);
+  });
+
+  it("keeps a forbidden redirect address a refusal rather than asking for a client", async () => {
+    const error = await rejectedOAuthBegin(() =>
+      Response.json({ error: "invalid_redirect_uri" }, { status: 403 }),
+    );
+
+    expect(error).not.toBeInstanceOf(McpOAuthClientRequiredError);
   });
 
   describe("with a pre-registered client", () => {
@@ -4067,4 +4155,201 @@ describe("MCP setup with an existing access token", () => {
       expect(secrets.put).not.toHaveBeenCalled();
     },
   );
+});
+
+describe("MCP sign-in on a loopback redirect", () => {
+  const WEB_CALLBACK = "https://app.example.test/mcp/oauth/callback";
+
+  /** An authorization server that registers loopback redirects only, as RFC 8252 clients use. */
+  function loopbackOnlyServer() {
+    const registrations: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+        const request = input instanceof Request ? input : new Request(input, init);
+        const url = logicalHref(input, init);
+        if (url === "https://mcp.example.test/mcp" && request.method === "POST") {
+          return new Response(null, {
+            status: 401,
+            headers: {
+              "WWW-Authenticate":
+                'Bearer resource_metadata="https://mcp.example.test/.well-known/oauth-protected-resource/mcp"',
+            },
+          });
+        }
+        if (url === "https://mcp.example.test/.well-known/oauth-protected-resource/mcp") {
+          return Response.json({
+            resource: "https://mcp.example.test/mcp",
+            authorization_servers: ["https://auth.example.test"],
+          });
+        }
+        if (url === "https://auth.example.test/.well-known/oauth-authorization-server") {
+          return Response.json({
+            issuer: "https://auth.example.test",
+            authorization_endpoint: "https://auth.example.test/authorize",
+            token_endpoint: "https://auth.example.test/token",
+            registration_endpoint: "https://auth.example.test/register",
+            response_types_supported: ["code"],
+            grant_types_supported: ["authorization_code", "refresh_token"],
+            code_challenge_methods_supported: ["S256"],
+          });
+        }
+        if (url === "https://auth.example.test/register" && request.method === "POST") {
+          const body = (await request.json()) as { redirect_uris: string[] };
+          const redirect = body.redirect_uris[0] ?? "";
+          registrations.push(redirect);
+          if (new URL(redirect).hostname !== "127.0.0.1")
+            return Response.json(
+              { error: "invalid_redirect_uri", error_description: "Redirect is not allowed" },
+              { status: 400 },
+            );
+          return Response.json(
+            { client_id: "loopback-client", redirect_uris: [redirect] },
+            { status: 201 },
+          );
+        }
+        throw new Error(`Unexpected request: ${request.method} ${url}`);
+      }),
+    );
+    const serverRow = { id: "server-1", endpoint: "https://mcp.example.test/mcp", secretId: null };
+    const secretRow = null;
+    const tx = {
+      $executeRaw: vi.fn().mockResolvedValue(1),
+      $queryRaw: vi.fn().mockResolvedValue([]),
+      mcpServer: {
+        findFirst: vi.fn().mockResolvedValue(serverRow),
+        update: vi.fn().mockResolvedValue({}),
+      },
+      secret: {
+        findFirst: vi.fn().mockResolvedValue(secretRow),
+        create: vi.fn().mockResolvedValue({}),
+        deleteMany: vi.fn().mockResolvedValue({ count: 1 }),
+      },
+    };
+    const sessions = oauthSessionStore();
+    const prisma = {
+      mcpServer: {
+        findFirst: vi.fn().mockResolvedValue(serverRow),
+        update: vi.fn().mockResolvedValue({}),
+      },
+      secret: {
+        findFirst: vi.fn().mockResolvedValue(secretRow),
+        create: vi.fn().mockResolvedValue({}),
+        deleteMany: vi.fn().mockResolvedValue({ count: 1 }),
+      },
+      mcpOAuthSession: sessions,
+      $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
+    };
+    let stored = 0;
+    const broker = new McpOAuthBroker(
+      prisma as never,
+      {
+        load: vi.fn(() => JSON.stringify({})),
+        put: vi.fn(async () => {
+          stored += 1;
+          return { id: `secret-${stored}`, ciphertext: `encrypted-${stored}` };
+        }),
+      } as never,
+      TEST_NETWORK,
+    );
+    const begin = (capturesLoopback?: boolean) =>
+      broker.begin({
+        serverId: "server-1",
+        spaceId: "workspace-1",
+        userId: "user-1",
+        redirectUri: WEB_CALLBACK,
+        capturesLoopback,
+      });
+    return { begin, registrations, sessions };
+  }
+
+  it("registers again on a loopback redirect when the server refuses the web callback", async () => {
+    const server = loopbackOnlyServer();
+    const started = await server.begin(true);
+
+    expect(started.status).toBe("authorization_required");
+    if (started.status !== "authorization_required") throw new Error("OAuth was not requested");
+    expect(server.registrations).toEqual([WEB_CALLBACK, MCP_LOOPBACK_REDIRECT_URI]);
+    const authorizationUrl = new URL(started.authorizationUrl);
+    expect(authorizationUrl.searchParams.get("client_id")).toBe("loopback-client");
+    expect(authorizationUrl.searchParams.get("redirect_uri")).toBe(MCP_LOOPBACK_REDIRECT_URI);
+    expect(authorizationUrl.searchParams.get("state")).toBe(started.sessionId);
+    // The code is exchanged against the redirect the sign-in was started with.
+    expect(server.sessions.create).toHaveBeenCalledTimes(1);
+    expect(server.sessions.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        id: started.sessionId,
+        redirectUri: MCP_LOOPBACK_REDIRECT_URI,
+      }),
+    });
+  });
+
+  it("keeps the refusal for a client that cannot read a loopback redirect", async () => {
+    const server = loopbackOnlyServer();
+    await expect(server.begin()).rejects.toBeInstanceOf(McpOAuthRefusedError);
+    await expect(server.begin(false)).rejects.toThrow("invalid_redirect_uri");
+    expect(server.registrations).toEqual([WEB_CALLBACK, WEB_CALLBACK]);
+    expect(server.sessions.create).not.toHaveBeenCalled();
+  });
+
+  it("does not blame the redirect for a failure that came after an earlier refusal of it", async () => {
+    const server = loopbackOnlyServer();
+    const healthy = vi.mocked(fetch).getMockImplementation()!;
+    vi.mocked(fetch).mockImplementation(async (input, init) => {
+      const url = logicalHref(input, init);
+      // The challenge itself names the redirect; the registration then fails for another reason.
+      if (url === "https://mcp.example.test/mcp")
+        return Response.json(
+          { error: "invalid_redirect_uri" },
+          {
+            status: 401,
+            headers: {
+              "WWW-Authenticate":
+                'Bearer resource_metadata="https://mcp.example.test/.well-known/oauth-protected-resource/mcp"',
+            },
+          },
+        );
+      if (url === "https://auth.example.test/register") {
+        server.registrations.push("refused");
+        return Response.json({ error: "invalid_client_metadata" }, { status: 400 });
+      }
+      return healthy(input, init);
+    });
+    await expect(server.begin(true)).rejects.toBeInstanceOf(McpOAuthRefusedError);
+    expect(server.registrations).toEqual(["refused"]);
+  });
+
+  it("tries the loopback redirect once", async () => {
+    const server = loopbackOnlyServer();
+    vi.mocked(fetch).mockImplementation(async (input, init) => {
+      const url = logicalHref(input, init);
+      if (url === "https://auth.example.test/register") {
+        server.registrations.push("refused");
+        return Response.json({ error: "invalid_redirect_uri" }, { status: 400 });
+      }
+      if (url === "https://mcp.example.test/mcp")
+        return new Response(null, {
+          status: 401,
+          headers: {
+            "WWW-Authenticate":
+              'Bearer resource_metadata="https://mcp.example.test/.well-known/oauth-protected-resource/mcp"',
+          },
+        });
+      if (url === "https://mcp.example.test/.well-known/oauth-protected-resource/mcp")
+        return Response.json({
+          resource: "https://mcp.example.test/mcp",
+          authorization_servers: ["https://auth.example.test"],
+        });
+      return Response.json({
+        issuer: "https://auth.example.test",
+        authorization_endpoint: "https://auth.example.test/authorize",
+        token_endpoint: "https://auth.example.test/token",
+        registration_endpoint: "https://auth.example.test/register",
+        response_types_supported: ["code"],
+        code_challenge_methods_supported: ["S256"],
+      });
+    });
+    await expect(server.begin(true)).rejects.toBeInstanceOf(McpOAuthRefusedError);
+    expect(server.registrations).toEqual(["refused", "refused"]);
+  });
 });

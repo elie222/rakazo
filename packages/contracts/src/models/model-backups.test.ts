@@ -5,6 +5,7 @@ import {
   connectionDisplayName,
   modelRoleChoiceKey,
   moveBackupChoice,
+  providerDisplayName,
   sameBackupChoices,
   withConnectionName,
 } from "./model-backups.js";
@@ -79,6 +80,47 @@ describe("connected backup model choices", () => {
     expect(connectionDisplayName({ ...credential, label: "Work" }, "Claude subscription")).toBe(
       "Claude subscription (Work)",
     );
+  });
+  it("names a provider by its subscription only when it is signed in with", () => {
+    const entry = {
+      provider: "anthropic",
+      providerName: "Anthropic",
+      subscriptionName: "Claude subscription",
+    };
+    expect(providerDisplayName({ ...entry, auth: "both" })).toBe("Anthropic");
+    expect(providerDisplayName({ ...entry, auth: "both" }, "api_key")).toBe("Anthropic");
+    expect(providerDisplayName({ ...entry, auth: "both" }, "sign-in")).toBe("Claude subscription");
+    expect(providerDisplayName({ ...entry, auth: "oauth" })).toBe("Claude subscription");
+    expect(providerDisplayName({ provider: "openai", providerName: "OpenAI" }, "oauth")).toBe(
+      "OpenAI",
+    );
+    expect(providerDisplayName({ provider: "custom" })).toBe("custom");
+  });
+  it("names a signed-in connection by its subscription in every option", () => {
+    const claude: ModelCatalogEntry = {
+      provider: "anthropic",
+      providerName: "Anthropic",
+      subscriptionName: "Claude subscription",
+      auth: "both",
+      id: "claude-sonnet",
+      label: "Claude Sonnet",
+      billing: "",
+    };
+    const subscription = {
+      id: "cred-claude",
+      provider: "anthropic",
+      label: "Anthropic",
+      hasKey: true,
+      isDefault: true,
+      authKind: "oauth" as const,
+    };
+    const [signedIn] = connectedBackupOptions([claude], [subscription]);
+    expect(signedIn).toMatchObject({
+      providerName: "Claude subscription",
+      connectionName: "Claude subscription",
+    });
+    const [withKey] = connectedBackupOptions([claude], [{ ...subscription, authKind: "api_key" }]);
+    expect(withKey).toMatchObject({ providerName: "Anthropic", connectionName: "Anthropic" });
   });
   it("offers computer use only seeing models on the member's own connections", () => {
     const managed: ModelCatalogEntry = {

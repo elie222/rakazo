@@ -15,8 +15,9 @@ The bot creates the routine and reports each run back in the same chat.
 
 ## Create or edit one yourself
 
-Open the bot's computer with **Agent computer** at the top of the chat. Below the screen is the
-bot's **Routines** list. Choose **Create Routine** (the **+**), or click a routine to edit it.
+On web or desktop, click the bot's name at the top of its chat to open the bot panel. In
+**Routines**, choose **New routine** if the list is empty, or **+** (labeled **Create routine**) if
+it already has routines. To edit a routine, select it from the list.
 
 1. **Name** the routine and write the **Instruction**: what it should do each time it runs.
 2. Under **When to run**, choose **Add trigger**.
@@ -36,7 +37,8 @@ accepts a cron expression. Times use your timezone, set in **Settings → Genera
 
 The bot checks something at a set interval (**Check every**, from 5 minutes to a day) and runs only
 when it changed. **What to watch** can be files or folders on the computer, a command's output, or a
-tool from a connected app. Turn on **Post "No changes" in chat** if you want a note every time. A
+tool from a connected app. A tool's arguments can hold a date that moves with the calendar: ask the
+bot to watch, say, what is due before `{{today+2d}}`. Turn on **Post "No changes" in chat** if you want a note every time. A
 watch can't be combined with a schedule.
 
 ### Webhook
@@ -66,8 +68,10 @@ Runs when the bot receives a message in Slack. Needs [Slack connected](./messagi
 > [!NOTE]
 > A routine run started by a webhook, an email or a Slack message follows your
 > [approval](./approvals.md) mode and Always allow list. Since outside text could steer it, tools
-> that change something are checked even if they never ask in your own chats, and a purchase is
-> refused. Always allow on a tool such as shell or the browser lets outside text use it freely.
+> that change something are checked even if they never ask in your own chats. Nobody may be
+> watching, so an approval card it posts expires after 30 minutes by default and the action isn't done.
+> `UNATTENDED_APPROVAL_EXPIRE_AFTER_MS` changes that window. Always allow on a
+> tool such as shell or the browser lets outside text use it freely.
 
 ## Test, pause and review
 
@@ -75,6 +79,9 @@ Runs when the bot receives a message in Slack. Needs [Slack connected](./messagi
 - Turn off **Active** to pause a routine without deleting it.
 - **Run history** shows each past run and its result.
 - A running routine shows **Running** in the list, with **Stop**.
+
+A recurring timer skips new runs while an earlier run from that timer is still active. If it is
+waiting for your input, answer in the chat where the question appeared to continue that run.
 
 ## On mobile
 

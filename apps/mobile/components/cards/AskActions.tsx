@@ -1,21 +1,53 @@
+import { MenuView } from "@expo/ui/community/menu";
 import { useLingui } from "@lingui/react/macro";
 import { BOT_INSTRUCTIONS_MAX_LENGTH } from "@rakazo/contracts";
 import { resolveAskChoice } from "@rakazo/core";
+import { routineApprovalActionLabel } from "@rakazo/i18n/routine-approval";
+import { typeScale } from "@rakazo/ui-tokens";
 import { useState } from "react";
 import type { ViewProps } from "react-native";
-import { Alert, TextInput, View } from "react-native";
+import {
+  ActivityIndicator,
+  Alert,
+  Pressable,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from "react-native";
 import { errorText } from "../../lib/api/user-error";
 import { mobileTokens } from "../../lib/appearance/appearance";
 import type { AskAction } from "../../lib/cards/ask-action-label";
 import { askActionLabel } from "../../lib/cards/ask-action-label";
-import { native } from "../../lib/native/native";
+import { native, useResolvedAppearance } from "../../lib/native/native";
 import { NativeActionButton } from "../native/native-action-button";
+import { NativeSymbol } from "../native/native-symbol";
+
+const styles = StyleSheet.create({
+  more: {
+    alignItems: "center",
+    justifyContent: "center",
+    minWidth: 44,
+    minHeight: 44,
+  },
+  option: {
+    alignItems: "center",
+    borderRadius: 12,
+    flexDirection: "row",
+    gap: 10,
+    minHeight: 44,
+    paddingHorizontal: 14,
+    paddingVertical: 11,
+  },
+  optionLabel: { ...typeScale.body, flex: 1 },
+});
 
 export function AskActions({
   actions,
   site,
   approval,
   instructions,
+  routineUpdate,
   disabled,
   selectedAnswer,
   onAnswer,
@@ -26,6 +58,7 @@ export function AskActions({
   site?: string;
   approval: boolean;
   instructions?: string;
+  routineUpdate?: boolean;
   disabled?: boolean;
   selectedAnswer?: string;
   onAnswer: (answer: string) => Promise<void>;
@@ -38,6 +71,7 @@ export function AskActions({
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(instructions ?? "");
   const submitting = pendingAction !== null;
+  const always = routineUpdate && actions.some((action) => action.id === "always");
   const displayActions =
     instructions !== undefined
       ? actions.flatMap((action) =>
@@ -46,6 +80,10 @@ export function AskActions({
             : [action],
         )
       : actions;
+
+  const inlineActions = always
+    ? displayActions.filter((action) => action.id !== "always")
+    : displayActions;
 
   async function submit(answer: string) {
     if (disabled || submitting) return;
@@ -74,13 +112,13 @@ export function AskActions({
       <View
         style={{
           flexDirection: approval ? "row" : "column",
-          // Option buttons stack full width; a wrapping column sizes its line to the
-          // widest button's own width, which collapses stretched buttons.
+          // Option rows stack full width; a wrapping column sizes its line to the
+          // widest row's own width, which collapses stretched rows.
           flexWrap: approval ? "wrap" : "nowrap",
-          gap: 6,
+          gap: approval ? 6 : 8,
         }}
       >
-        {displayActions.map((action) => {
+        {inlineActions.map((action) => {
           const emphasized = action.id === "allow" || action.id === "always";
           if (instructions !== undefined)
             return (
@@ -110,27 +148,121 @@ export function AskActions({
                 }
               />
             );
+          const label =
+            (routineUpdate && routineApprovalActionLabel(action.id)) ||
+            askActionLabel(action, { approval, site });
+          if (approval)
+            return (
+              <NativeActionButton
+                key={action.id}
+                accessibilityActions={accessibilityActions}
+                onAccessibilityAction={onAccessibilityAction}
+                label={label}
+                prominence={emphasized ? "primary" : "secondary"}
+                fill={false}
+                disabled={disabled || submitting}
+                busy={pendingAction === action.id}
+                onPress={() => void submit(action.id)}
+              />
+            );
+          // A question's options read as a list of answers, not a stack of call-to-action pills.
+          const chosen =
+            selectedAnswer !== undefined &&
+            resolveAskChoice(selectedAnswer, actions)?.id === action.id;
+          const inactive = disabled || submitting;
           return (
-            <NativeActionButton
+            <Pressable
               key={action.id}
+              accessibilityRole="button"
+              accessibilityLabel={label}
+              accessibilityState={{
+                disabled: inactive,
+                // Options carry a selection state only once the question has an answer.
+                ...(selectedAnswer === undefined ? {} : { selected: chosen }),
+              }}
               accessibilityActions={accessibilityActions}
               onAccessibilityAction={onAccessibilityAction}
-              label={askActionLabel(action, { approval, site })}
-              prominence={emphasized ? "primary" : "secondary"}
-              fill={!approval}
-              selected={
-                approval || selectedAnswer === undefined
-                  ? undefined
-                  : resolveAskChoice(selectedAnswer, actions)?.id === action.id
-              }
-              align={approval ? "center" : "start"}
-              disabled={disabled || submitting}
-              busy={pendingAction === action.id}
+              disabled={inactive}
               onPress={() => void submit(action.id)}
-            />
+              style={({ pressed }) => [
+                styles.option,
+                {
+                  backgroundColor: pressed || chosen ? native.fillPressed : native.page,
+                  opacity: inactive && !chosen && pendingAction !== action.id ? 0.6 : 1,
+                },
+              ]}
+            >
+              <Text
+                style={[
+                  styles.optionLabel,
+                  { color: disabled && !chosen ? tokens.mutedForeground : tokens.foreground },
+                ]}
+              >
+                {label}
+              </Text>
+              {pendingAction === action.id ? (
+                <ActivityIndicator size="small" color={tokens.mutedForeground} />
+              ) : chosen ? (
+                <NativeSymbol
+                  ios="checkmark"
+                  android="checkmark"
+                  size={15}
+                  color={tokens.mutedForeground}
+                />
+              ) : null}
+            </Pressable>
           );
         })}
+        {always ? (
+          <RoutineApprovalMenu
+            disabled={disabled || submitting}
+            busy={pendingAction === "always"}
+            onApprove={() => void submit("always")}
+          />
+        ) : null}
       </View>
     </View>
+  );
+}
+
+function RoutineApprovalMenu({
+  disabled,
+  busy,
+  onApprove,
+}: {
+  disabled: boolean | undefined;
+  busy: boolean;
+  onApprove: () => void;
+}) {
+  const { t } = useLingui();
+  const appearance = useResolvedAppearance();
+  const tokens = mobileTokens();
+  return (
+    <MenuView
+      actions={[
+        {
+          id: "always",
+          title: routineApprovalActionLabel("always") ?? "",
+          attributes: { disabled },
+        },
+      ]}
+      colorScheme={appearance}
+      onPressAction={onApprove}
+    >
+      <View
+        accessible
+        accessibilityRole="button"
+        accessibilityState={{ disabled, busy }}
+        accessibilityLabel={busy ? t`Sending…` : t`More approval options`}
+        style={styles.more}
+      >
+        <NativeSymbol
+          ios="ellipsis"
+          android="ellipsis-horizontal"
+          size={20}
+          color={tokens.foreground}
+        />
+      </View>
+    </MenuView>
   );
 }

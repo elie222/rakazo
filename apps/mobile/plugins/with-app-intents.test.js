@@ -130,7 +130,9 @@ describe("voice message Live Activity", () => {
   // EAS signs only the extensions app.json lists, under the bundle id the plugin gives them.
   it("lists the widget extension for EAS signing", () => {
     const app = JSON.parse(read("app.json")).expo;
-    const [extension] = app.extra.eas.build.experimental.ios.appExtensions;
+    const extension = app.extra.eas.build.experimental.ios.appExtensions.find(
+      ({ targetName }) => targetName === "RakazoWidgets",
+    );
     expect(read("plugins/with-app-intents.js")).toContain(`"${extension.targetName}"`);
     expect(extension.bundleIdentifier).toBe(`${app.ios.bundleIdentifier}.widgets`);
   });

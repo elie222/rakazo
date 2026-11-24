@@ -2,6 +2,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { UnauthorizedError } from "@modelcontextprotocol/sdk/client/auth.js";
+import { SseError } from "@modelcontextprotocol/sdk/client/sse.js";
 import { StreamableHTTPError } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import {
   OAuthError,
@@ -71,6 +72,7 @@ import {
   isNpxCommand,
   parseNpxLaunch,
 } from "./mcp-package-installer.js";
+import { reportExpiredMcpSignIn } from "./mcp-reconnect-card.js";
 import type { McpServerHealthUpdate } from "./mcp-server-health.js";
 import { needsMcpOAuthClient, recordMcpServerHealth } from "./mcp-server-health.js";
 import { mcpToolAllowed } from "./mcp-tool-permissions.js";
@@ -96,7 +98,8 @@ type SessionEntry = {
   launchSecrets?: string[];
 };
 class McpSecretChangedError extends Error {
-  constructor() {
+  /** `missing`: the server's current secret record could not be read, which a retry rarely fixes. */
+  constructor(readonly missing = false) {
     super("Secret changed during MCP connection; retry");
   }
 }
@@ -158,10 +161,15 @@ const UNREACHABLE_CODES = new Set([
 function expectedFailure(error: unknown, depth = 0): ExpectedFailure | undefined {
   if (depth > 5 || !(error instanceof Error)) return undefined;
   if (error instanceof McpConnectFailure) return error.expected;
-  if (error instanceof McpDiscoveryTimeoutError) return "unreachable";
+  // The credential changed again after the one reconnect; the next try reads the new one.
+  if (
+    error instanceof McpDiscoveryTimeoutError ||
+    (error instanceof McpSecretChangedError && !error.missing)
+  )
+    return "unreachable";
   if (error instanceof McpReauthorizationRequiredError || error instanceof UnauthorizedError)
     return "reconnect";
-  if (error instanceof StreamableHTTPError) {
+  if (error instanceof StreamableHTTPError || error instanceof SseError) {
     // A timeout, rate limit or server error is the server's own outage.
     if (error.code === 408 || error.code === 429 || (error.code ?? 0) >= 500) return "unreachable";
     // A 4xx or a non-MCP body (often an HTML page) means the endpoint is not an MCP server.
@@ -247,8 +255,9 @@ export type McpConnectorOptions = {
   stdioEnabled?: boolean;
   allowedCommands?: string[];
   network?: RemoteTransportDependencies;
-  /** Audit sink for failed discovery. Without it the log line stays the only trace. */
-  events?: Pick<ThreadEvents, "append">;
+  /** Audit sink for failed discovery. Without it the log line stays the only trace. With
+   * `notify`, an expired sign-in also leaves its authorization card in the run's chat. */
+  events?: Pick<ThreadEvents, "append"> & Partial<Pick<ThreadEvents, "notify">>;
   allowPrivateEndpoint?: boolean;
   /** Where `npx` packages are installed; see `defaultMcpPackagesRoot`. */
   packagesDir?: string;
@@ -560,7 +569,7 @@ export class McpConnector implements ConnectorProvider {
             .map((tool) => ({
               name: `mcp__${assignment.server.slug}__${tool.name}`,
               description: tool.description ?? tool.name,
-              ...mcpToolFields(tool),
+              ...mcpToolFields(tool, server.transport === "stdio" ? undefined : server.endpoint),
               route: {
                 connectorId: "mcp",
                 resourceId: assignment.serverId,
@@ -630,6 +639,14 @@ export class McpConnector implements ConnectorProvider {
             startedAt,
             secrets,
           );
+          // Only the bot's own assignment: the card's Authorize re-approves it.
+          if ("botId" in assignment)
+            await reportExpiredMcpSignIn(
+              { prisma: this.prisma, events: this.options.events },
+              context,
+              server,
+              error,
+            );
           return [unavailableTool(assignment.server, reason)];
         }
       }),
@@ -1174,7 +1191,7 @@ export class McpConnector implements ConnectorProvider {
             where: { id: current.secretId, ...itemSecretIn(context) },
           });
         }
-        if (!secret) throw new McpSecretChangedError();
+        if (!secret) throw new McpSecretChangedError(true);
       }
       let ref = secret?.ciphertext;
       let recordId = secret?.id;
@@ -1260,7 +1277,9 @@ export class McpConnector implements ConnectorProvider {
           const tokens = await provider?.tokens();
           const expiresAt = accessTokenExpiresAt(material.oauth);
           if (!tokens || (expiresAt !== undefined && Date.now() >= expiresAt))
-            throw new McpReauthorizationRequiredError(server.id);
+            throw provider?.renewalPending
+              ? new McpConnectFailure("MCP sign-in could not be renewed yet", "unreachable")
+              : new McpReauthorizationRequiredError(server.id);
           values = {
             access_token: tokens.access_token,
             refresh_token: tokens.refresh_token,

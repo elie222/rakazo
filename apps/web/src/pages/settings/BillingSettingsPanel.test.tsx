@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 
+import { i18n } from "@lingui/core";
 import { flush } from "@rakazo/core/test-async";
 import type { ComponentProps, ReactNode } from "react";
 import { act } from "react";
@@ -78,8 +79,11 @@ const status = {
 };
 
 const requests: Array<{ url: string; spaceId: string | null }> = [];
+let trialEnded = false;
 
 beforeEach(() => {
+  i18n.activate("en");
+  trialEnded = false;
   localStorage.setItem("rakazo:space-id", "space-a");
   vi.stubGlobal(
     "fetch",
@@ -88,8 +92,20 @@ beforeEach(() => {
         url: request.url,
         spaceId: new Headers(init?.headers ?? request.headers).get("x-rakazo-space-id"),
       });
+      if (request.url.endsWith("/billing/endTrial")) {
+        trialEnded = true;
+        return Response.json({ json: {} });
+      }
+      if (request.url.endsWith("/billing/computerUsage")) {
+        return Response.json({
+          json: {
+            computers: [],
+            otherHours: trialEnded ? 0 : 1,
+          },
+        });
+      }
       return Response.json({
-        json: request.url.endsWith("/billing/endTrial") ? {} : status,
+        json: trialEnded ? { ...status, state: "active", computerHoursLeft: 25 } : status,
       });
     }),
   );
@@ -136,10 +152,17 @@ it("sends the panel's confirmations to the space it opened for", async () => {
   });
 
   // Another tab selects another organization while this panel stays open.
+  await vi.waitFor(() => expect(container.textContent).toContain("Hours by computer"));
   localStorage.setItem("rakazo:space-id", "space-b");
   act(() => {
     window.dispatchEvent(new StorageEvent("storage", { key: "rakazo:space-id" }));
   });
+
+  await act(async () => {
+    button(container, "Hours by computer").click();
+    await flush();
+  });
+  await vi.waitFor(() => expect(container.textContent).toContain("Other computers"));
 
   await act(async () => {
     button(container, "Start plan now").click();
@@ -153,6 +176,9 @@ it("sends the panel's confirmations to the space it opened for", async () => {
 
   const endTrial = requests.find(({ url }) => url.endsWith("/billing/endTrial"));
   expect(endTrial).toMatchObject({ spaceId: "space-a" });
+  await vi.waitFor(() => expect(container.textContent).toContain("No computer hours used yet"));
+  const usageReads = requests.filter(({ url }) => url.endsWith("/billing/computerUsage"));
+  expect(usageReads.map(({ spaceId }) => spaceId)).toEqual(["space-a", "space-a"]);
   act(() => root.unmount());
   container.remove();
 });
@@ -174,6 +200,7 @@ it("acts on the window's space when another tab switched before the panel opened
     spaceId: "space-a",
   });
 
+  await vi.waitFor(() => expect(container.textContent).toContain("Start plan now"));
   await act(async () => {
     button(container, "Start plan now").click();
   });
@@ -216,6 +243,7 @@ it("opens the billing portal of the window's space, and says so when it cannot",
     await flush();
   });
 
+  await vi.waitFor(() => expect(container.textContent).toContain("Manage"));
   await act(async () => {
     button(container, "Manage").click();
     await flush();
@@ -234,6 +262,33 @@ it("opens the billing portal of the window's space, and says so when it cannot",
     expect.objectContaining({ spaceId: "space-a" }),
     expect.objectContaining({ spaceId: "space-a" }),
   ]);
+  act(() => root.unmount());
+  container.remove();
+});
+
+it("keeps showing loaded billing if a later refresh fails", async () => {
+  (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+  const client = createSpaceRpc("space-a");
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  root.queryClient.setDefaultOptions({ queries: { retry: false } });
+  const fetch = vi
+    .fn()
+    .mockResolvedValue(
+      Response.json({ json: { state: "active", canManage: false, hasCustomer: true, seats: 1 } }),
+    );
+  vi.stubGlobal("fetch", fetch);
+  await act(async () => root.render(panel(client, "space-a")));
+  await vi.waitFor(() => expect(container.textContent).toContain("Active"));
+  fetch.mockResolvedValueOnce(Response.json({ json: { message: "down" } }, { status: 500 }));
+  await act(async () => {
+    await root.queryClient.refetchQueries();
+    await flush();
+  });
+  expect(fetch).toHaveBeenCalledTimes(2);
+  expect(container.textContent).toContain("Active");
+  expect(container.querySelector('[role="alert"]')).toBeNull();
   act(() => root.unmount());
   container.remove();
 });

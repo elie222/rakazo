@@ -7,7 +7,7 @@ import { NativeSymbol } from "../native/native-symbol";
 
 export const UNREAD_JUMP_PILL_HEIGHT = 38;
 
-/** An unread-blue glass capsule with a directional chevron and label. */
+/** An unread-blue glass capsule with a label and a directional chevron after it. */
 export function UnreadJumpPill({
   direction,
   label,
@@ -37,6 +37,7 @@ export function UnreadJumpPill({
           boxShadow: "0 2px 6px rgba(0, 0, 0, 0.22)",
         }}
       >
+        <Text style={[styles.label, { color: onFill }]}>{label}</Text>
         <NativeSymbol
           ios={direction === "above" ? "chevron.up" : "chevron.down"}
           android={direction === "above" ? "chevron-up" : "chevron-down"}
@@ -44,7 +45,6 @@ export function UnreadJumpPill({
           weight="semibold"
           color={onFill}
         />
-        <Text style={[styles.label, { color: onFill }]}>{label}</Text>
       </GlassSurface>
     </Pressable>
   );
@@ -57,8 +57,8 @@ const styles = StyleSheet.create({
     gap: 6,
     height: UNREAD_JUMP_PILL_HEIGHT,
     borderRadius: UNREAD_JUMP_PILL_HEIGHT / 2,
-    paddingStart: 12,
-    paddingEnd: 14,
+    paddingStart: 14,
+    paddingEnd: 12,
   },
   label: {
     ...typeScale.secondary,

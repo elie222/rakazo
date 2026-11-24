@@ -7,8 +7,12 @@ import type {
 import type { IntegrationProviderConfig as SubmittedConfig } from "@rakazo/contracts";
 import { ClientError } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
+import { getLogger } from "@rakazo/logging";
 import * as z from "zod";
-import { ComposioConnector } from "../providers/integration/composio/composio-connector.js";
+import {
+  ComposioConnector,
+  sanitizeIntegrationError,
+} from "../providers/integration/composio/composio-connector.js";
 import { PipedreamConnector } from "../providers/integration/pipedream/pipedream-connector.js";
 import { credentialDigest } from "../secrets/credential-digest.js";
 
@@ -141,17 +145,33 @@ export class IntegrationProviderSettings {
     this.cache.delete(config.provider);
   }
 
-  /** Connected app slugs from the provider whose app ids match plugin slugs. */
-  async listConnectedPluginSlugs(userId: string): Promise<string[]> {
+  /**
+   * Connected app slugs from the provider whose app ids match plugin slugs, with the refs of
+   * the signed-in accounts when the provider lists them. `refsFailed` says that listing was
+   * tried and failed, so rows must not be matched to accounts this time.
+   */
+  async listConnectedPlugins(
+    userId: string,
+  ): Promise<{ slugs: string[]; refs?: string[]; refsFailed?: boolean }> {
     const provider = await this.resolve(PLUGIN_SLUG_PROVIDER);
-    if (!provider) return [];
-    return provider.listConnectedExternalIds({
+    if (!provider) return { slugs: [] };
+    const context = {
       userId,
       spaceId: "",
       operationId: "connections.sync",
       traceId: "connections.sync",
       signal: AbortSignal.timeout(15_000),
-    });
+    };
+    let refsFailed = false;
+    const [slugs, refs] = await Promise.all([
+      provider.listConnectedExternalIds(context),
+      provider.listConnectedRefs?.(context).catch((error: unknown) => {
+        getLogger().warn("signed-in accounts could not be listed", { error });
+        refsFailed = true;
+        return undefined;
+      }),
+    ]);
+    return { slugs, refs, refsFailed };
   }
 
   providers(): ManagedConnectorProvider[] {
@@ -163,7 +183,11 @@ export class IntegrationProviderSettings {
     for (const id of INTEGRATION_PROVIDER_IDS) {
       void this.resolve(id)
         .then((provider) => provider?.warmDirectory?.())
-        .catch(() => undefined);
+        .catch((error: unknown) => {
+          getLogger().warn(`${id} catalog could not be loaded`, {
+            error: sanitizeIntegrationError(error),
+          });
+        });
     }
   }
 }
@@ -232,6 +256,9 @@ class ConfiguredIntegrationProvider implements ManagedConnectorProvider {
   }
   async needsReconnect(context: AdapterContext, externalId: string) {
     return (await (await this.resolve())?.needsReconnect?.(context, externalId)) ?? false;
+  }
+  async listConnectedRefs(context: AdapterContext) {
+    return (await this.resolve())?.listConnectedRefs?.(context);
   }
   async listReconnectRefs(context: AdapterContext) {
     return (await (await this.resolve())?.listReconnectRefs?.(context)) ?? [];

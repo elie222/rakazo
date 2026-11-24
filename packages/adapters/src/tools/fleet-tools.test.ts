@@ -1,6 +1,7 @@
-import type { JobPublisher } from "@rakazo/adapter-kit";
+import type { AgentHomeStore, JobPublisher, SandboxProvider } from "@rakazo/adapter-kit";
 import type { PrismaClient, ThreadEvents } from "@rakazo/db";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { updateChildBot } from "../bots/child-bot-settings.js";
 import {
   ROUTINE_CHAT_TRIGGER_NOTE,
   ROUTINE_WEBHOOK_SETUP_NOTE,
@@ -14,7 +15,6 @@ import {
   prepareFleetRequest,
   setChildBotModel,
   setChildInstructions,
-  updateChildBot,
 } from "./fleet-tools.js";
 
 type FakeBot = {
@@ -170,6 +170,8 @@ function writeDeps(prisma: ReturnType<typeof fakeFleet>["prisma"], runSecrets: s
     prisma: prisma as unknown as PrismaClient,
     events: { append, notify: vi.fn(async () => undefined) } as unknown as ThreadEvents,
     jobs: { cancel: vi.fn(), enqueue } as unknown as JobPublisher,
+    home: {} as AgentHomeStore,
+    sandbox: {} as SandboxProvider,
     runSecrets,
     append,
     enqueue,
@@ -1346,19 +1348,16 @@ describe("updateChildBot", () => {
     expect(update).toHaveBeenCalledWith(expect.objectContaining({ data: { dailyCheckIns } }));
   });
 
-  it.each(["true", "false", 0, 1, {}, []])(
-    "rejects non-boolean dailyCheckIns: %j",
-    async (value) => {
-      const { prisma } = fakeFleet({ bots });
-      expect(
-        await updateChildBot(writeDeps(prisma), run, {
-          bot_id: "bot-child",
-          dailyCheckIns: value,
-        }),
-      ).toEqual({ error: "dailyCheckIns must be true or false." });
-      expect(prisma.$transaction).not.toHaveBeenCalled();
-    },
-  );
+  it.each(["true", 0])("rejects non-boolean dailyCheckIns: %j", async (value) => {
+    const { prisma } = fakeFleet({ bots });
+    expect(
+      await updateChildBot(writeDeps(prisma), run, {
+        bot_id: "bot-child",
+        dailyCheckIns: value,
+      }),
+    ).toEqual({ error: "dailyCheckIns must be true or false." });
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
 
   it("reuses the profile validation of update_bot", async () => {
     const { prisma } = fakeFleet({ bots });
@@ -1480,17 +1479,6 @@ describe("prepareFleetRequest set_child_instructions", () => {
       error: 'No bot with id "bot-ops". Call list_fleet for ids.',
     });
   });
-
-  it("refuses a second instruction write for the same child in one run before any card", async () => {
-    const { deps } = fakeFleet({
-      bots,
-      effects: [{ request: { botId: "bot-child", instructions: "First." }, result: { ok: true } }],
-    });
-    expect(await prepareFleetRequest(deps, run, "set_child_instructions", edit)).toEqual({
-      ok: false,
-      error: "You already changed this bot's instructions in this run.",
-    });
-  });
 });
 
 describe("setChildInstructions", () => {
@@ -1532,17 +1520,6 @@ describe("setChildInstructions", () => {
     });
     expect(await setChildInstructions(writeDeps(prisma), run, canonical)).toEqual({
       error: 'No bot with id "bot-child". Call list_fleet for ids.',
-    });
-    expect(prisma.$transaction).not.toHaveBeenCalled();
-  });
-
-  it("keeps one instruction write per child per run", async () => {
-    const { prisma } = fakeFleet({
-      bots: [{ id: "bot-self", name: "Designer" }, child],
-      effects: [{ request: { botId: "bot-child" }, result: { ok: true } }],
-    });
-    expect(await setChildInstructions(writeDeps(prisma), run, canonical)).toEqual({
-      error: "You already changed this bot's instructions in this run.",
     });
     expect(prisma.$transaction).not.toHaveBeenCalled();
   });

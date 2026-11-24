@@ -169,7 +169,11 @@ async function reconcile(deps: CloudAgentDeps, agent: Polled, provider: CloudAge
           followupDispatchedAt: null,
         });
       } else {
-        const marked = await fenced(deps, agent, { followupDispatchedAt: new Date() });
+        // The card stops polling once it finishes, so a run started since then, as by a person in
+        // the provider, is newer than the run it knows. Recovery compares against the newest run
+        // at send time, or it would take that run for this follow-up and drop the follow-up.
+        const { latestRunId = agent.latestRunId } = await provider.get(agent.remoteId, context);
+        const marked = await fenced(deps, agent, { followupDispatchedAt: new Date(), latestRunId });
         if (!marked.count) return;
         try {
           const snapshot = await provider.reply(
@@ -177,7 +181,7 @@ async function reconcile(deps: CloudAgentDeps, agent: Polled, provider: CloudAge
             cloudAgentPromptSchema.parse(agent.followup),
             context,
           );
-          if (!snapshot.latestRunId || snapshot.latestRunId === agent.latestRunId)
+          if (!snapshot.latestRunId || snapshot.latestRunId === latestRunId)
             throw new Error("Cloud agent follow-up did not identify a new run");
           await finishPoll(deps, agent, {
             ...snapshotData(snapshot),
@@ -387,8 +391,7 @@ async function finishPoll(
     return { seq, wakeRunId, nextPollAt };
   }, THREAD_LOCK_TRANSACTION_OPTIONS);
   if (!committed) return;
-  if (committed.seq !== undefined)
-    await deps.events.notify(agent.threadId, committed.seq).catch(() => undefined);
+  if (committed.seq !== undefined) await deps.events.notify(agent.threadId, committed.seq);
   if (committed.wakeRunId) await wakeRun(deps.jobs, committed.wakeRunId);
   if (committed.nextPollAt) await enqueueCloudAgent(deps, agent.id, committed.nextPollAt);
 }

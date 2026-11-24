@@ -5,6 +5,7 @@ const PROVIDER_NAMES: Record<string, string> = {
   telegram: "Telegram",
   lark: "Feishu",
   photon: "iMessage (Photon)",
+  teams: "Microsoft Teams",
 };
 
 /** User-facing name of a messaging provider (falls back to the raw id). */
@@ -77,4 +78,36 @@ export function availableChatApps(
   installAvailable: boolean,
 ): string[] {
   return messagingConnectOptions(providers, installAvailable).map(({ provider }) => provider);
+}
+
+/**
+ * The chat-app list in messaging settings: apps set up by a workspace install, with their
+ * saved workspaces, then one row per app linked with a code, then linked accounts on apps
+ * no longer offered.
+ */
+export function messagingChatApps<Identity extends { provider: string }>(input: {
+  providers: readonly string[];
+  installAvailable: boolean;
+  installations: readonly { provider: string }[];
+  identities: readonly Identity[];
+}) {
+  const options = messagingConnectOptions(input.providers, input.installAvailable);
+  const installable = options
+    .filter(({ method }) => method === "install")
+    .map(({ provider }) => provider);
+  // An app with saved workspaces is listed with them, even when it also links with a code.
+  const installProviders = [
+    ...new Set([...installable, ...input.installations.map(({ provider }) => provider)]),
+  ];
+  const linkProviders = options
+    .filter(({ method, provider }) => method === "link" && !installProviders.includes(provider))
+    .map(({ provider }) => provider);
+  return {
+    installable,
+    installProviders,
+    linkProviders,
+    otherIdentities: input.identities.filter(
+      ({ provider }) => !installProviders.includes(provider) && !linkProviders.includes(provider),
+    ),
+  };
 }

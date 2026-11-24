@@ -53,13 +53,13 @@ export function connectedContext(
   };
 }
 
-export async function loadLivePluginSlugs(
-  listConnectedPluginSlugs: ExecutorDeps["listConnectedPluginSlugs"],
+export async function loadLivePlugins(
+  listConnectedPlugins: ExecutorDeps["listConnectedPlugins"],
   userId: string,
-): Promise<{ ok: true; slugs: string[] } | { ok: false }> {
-  if (!listConnectedPluginSlugs) return { ok: false };
+): Promise<{ ok: true; slugs: string[]; refs?: string[]; refsFailed?: boolean } | { ok: false }> {
+  if (!listConnectedPlugins) return { ok: false };
   try {
-    return { ok: true, slugs: await listConnectedPluginSlugs(userId) };
+    return { ok: true, ...(await listConnectedPlugins(userId)) };
   } catch {
     return { ok: false };
   }
@@ -69,15 +69,19 @@ export async function persistLivePluginConnections(
   prisma: PrismaClient,
   owner: { userId: string; spaceId: string },
   rows: PluginConnectionRow[],
-  liveSlugs: string[],
+  live: { slugs: string[]; refs?: string[]; refsFailed?: boolean },
 ): Promise<void> {
-  const sync = planLiveConnectionSync(rows, liveSlugs);
+  // The rows wait for a pass that can tell whose account is signed in.
+  if (live.refsFailed) return;
+  const sync = planLiveConnectionSync(rows, live.slugs, Date.now(), live.refs);
   if (sync.connectIds.length > 0) {
     await prisma.connection.updateMany({
       where: {
         id: { in: sync.connectIds },
         userId: owner.userId,
         spaceId: owner.spaceId,
+        // A row revoked since the run read it stays revoked.
+        status: { in: ["pending", "error"] },
       },
       data: { status: "connected" },
     });
@@ -91,6 +95,7 @@ export async function persistLivePluginConnections(
         id: { in: sync.revokeIds },
         userId: owner.userId,
         spaceId: owner.spaceId,
+        status: { in: ["pending", "error"] },
       },
       data: { status: "revoked" },
     });

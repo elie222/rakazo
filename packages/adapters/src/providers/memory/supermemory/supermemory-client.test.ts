@@ -21,20 +21,20 @@ afterEach(() => vi.unstubAllGlobals());
 
 describe("Supermemory request URLs", () => {
   const operations = [
-    { method: "GET", path: "/v3/container-tags/list", request: probeSupermemory },
+    { method: "GET", path: "/namespaces?limit=1", request: probeSupermemory },
     {
       method: "POST",
-      path: "/v4/search",
+      path: "/ns/fake%3Atag/search",
       request: (connection: typeof config) => searchSupermemory("query", "fake:tag", connection),
     },
     {
       method: "POST",
-      path: "/v4/memories",
+      path: "/ns/fake%3Atag/document",
       request: (connection: typeof config) => saveSupermemoryMemory("fact", "fake:tag", connection),
     },
     {
       method: "DELETE",
-      path: "/v3/container-tags/fake%3Atag",
+      path: "/ns/fake%3Atag",
       request: (connection: typeof config) => deleteSupermemoryContainer("fake:tag", connection),
     },
   ];
@@ -73,11 +73,18 @@ describe("Supermemory request URLs", () => {
 });
 
 describe("searchSupermemory", () => {
-  it("posts the query and container tag, returning search results on success", async () => {
+  it("posts the query to the namespace, returning search results on success", async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(
         JSON.stringify({
-          results: [{ memory: "User prefers British English", similarity: 0.9 }],
+          results: [
+            {
+              id: "mem_fake",
+              memory: "User prefers British English",
+              similarity: 0.9,
+              system: { updatedAt: "2026-11-01T00:00:00.000Z" },
+            },
+          ],
         }),
         { status: 200 },
       ),
@@ -88,16 +95,24 @@ describe("searchSupermemory", () => {
 
     expect(result).toEqual({
       ok: true,
-      results: [{ memory: "User prefers British English", similarity: 0.9 }],
+      results: [
+        {
+          memory: "User prefers British English",
+          similarity: 0.9,
+          updatedAt: "2026-11-01T00:00:00.000Z",
+          id: "mem_fake",
+          containerTag: "rakazo:bot-123",
+        },
+      ],
     });
     const [url, init] = fetchMock.mock.calls[0]!;
-    expect(url).toBe("http://localhost:6767/v4/search");
+    expect(url).toBe("http://localhost:6767/ns/rakazo%3Abot-123/search");
     expect(init.headers.Authorization).toBe("Bearer sm_test_key");
     expect(init.redirect).toBe("error");
     expect(JSON.parse(init.body)).toStrictEqual({
-      q: "spelling preference",
-      containerTag: "rakazo:bot-123",
+      query: "spelling preference",
       searchMode: "memories",
+      threshold: 0.6,
       limit: MAX_RECALLED_MEMORIES,
     });
     vi.unstubAllGlobals();
@@ -131,7 +146,9 @@ describe("searchSupermemory", () => {
 
     expect(result).toEqual({
       ok: true,
-      results: [{ memory: "Older decision: use Postgres.", similarity: 0 }],
+      results: [
+        { memory: "Older decision: use Postgres.", similarity: 0, containerTag: "rakazo:bot-123" },
+      ],
     });
     vi.unstubAllGlobals();
   });
@@ -151,7 +168,10 @@ describe("searchSupermemory", () => {
 
     const result = await searchSupermemory("anything", "rakazo:bot-123", config);
 
-    expect(result).toEqual({ ok: true, results: [{ memory: "kept", similarity: 0 }] });
+    expect(result).toEqual({
+      ok: true,
+      results: [{ memory: "kept", similarity: 0, containerTag: "rakazo:bot-123" }],
+    });
     vi.unstubAllGlobals();
   });
 
@@ -236,11 +256,30 @@ describe("searchSupermemoryContainers", () => {
     ).resolves.toEqual({
       ok: true,
       results: [
-        { memory: "private", similarity: 0.9 },
-        { memory: "shared", similarity: 0.7 },
+        { memory: "private", similarity: 0.9, containerTag: "rakazo:bot-1" },
+        { memory: "shared", similarity: 0.7, containerTag: "rakazo:workspace:ws-1" },
       ],
     });
     vi.unstubAllGlobals();
+  });
+
+  it("keeps a fact's best score while citing the copy that has an id", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValueOnce(Response.json({ results: [{ memory: "tea", similarity: 0.9 }] }))
+        .mockResolvedValueOnce(
+          Response.json({ results: [{ id: "mem_b", memory: "tea", similarity: 0.4 }] }),
+        ),
+    );
+
+    await expect(
+      searchSupermemoryContainers("query", ["rakazo:workspace:ws-1", "rakazo:bot-1"], config),
+    ).resolves.toEqual({
+      ok: true,
+      results: [{ id: "mem_b", memory: "tea", similarity: 0.9, containerTag: "rakazo:bot-1" }],
+    });
   });
 });
 
@@ -257,11 +296,11 @@ describe("saveSupermemoryMemory", () => {
 
     expect(result).toEqual({ ok: true });
     const [url, init] = fetchMock.mock.calls[0]!;
-    expect(url).toBe("http://localhost:6767/v4/memories");
+    expect(url).toBe("http://localhost:6767/ns/rakazo%3Abot-123/document");
     expect(init.redirect).toBe("error");
-    expect(JSON.parse(init.body)).toEqual({
-      containerTag: "rakazo:bot-123",
-      memories: [{ content: "User prefers British English", isStatic: false }],
+    expect(JSON.parse(init.body)).toStrictEqual({
+      content: "User prefers British English",
+      dreaming: "instant",
     });
     vi.unstubAllGlobals();
   });
@@ -277,7 +316,7 @@ describe("saveSupermemoryMemory", () => {
     );
 
     const body = JSON.parse(fetchMock.mock.calls[0]![1].body);
-    expect(body.memories[0].content).toHaveLength(MAX_MEMORY_CONTENT_CHARS);
+    expect(body.content).toHaveLength(MAX_MEMORY_CONTENT_CHARS);
     vi.unstubAllGlobals();
   });
 
@@ -303,7 +342,7 @@ describe("saveSupermemoryMemoryToContainers", () => {
 });
 
 describe("deleteSupermemoryContainer", () => {
-  it("deletes the container tag on success", async () => {
+  it("deletes the namespace on success", async () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response("", { status: 200 }));
     vi.stubGlobal("fetch", fetchMock);
 
@@ -311,18 +350,19 @@ describe("deleteSupermemoryContainer", () => {
 
     expect(result).toEqual({ ok: true });
     const [url, init] = fetchMock.mock.calls[0]!;
-    expect(url).toBe("http://localhost:6767/v3/container-tags/rakazo%3Abot-123");
+    expect(url).toBe("http://localhost:6767/ns/rakazo%3Abot-123");
     expect(init.method).toBe("DELETE");
     expect(init.redirect).toBe("error");
     vi.unstubAllGlobals();
   });
 
-  // DELETE /v3/container-tags/{containerTag} responses from the Supermemory OpenAPI spec.
+  // DELETE /ns/{namespace} responses from the Supermemory OpenAPI spec.
   it.each([
     [200, { ok: true }],
     [404, { ok: true }],
     [403, { ok: false, error: SUPERMEMORY_DELETE_FORBIDDEN_ERROR }],
     [401, { ok: false, error: "Supermemory container delete failed: 401" }],
+    [409, { ok: false, error: "Supermemory container delete failed: 409" }],
     [500, { ok: false, error: "Supermemory container delete failed: 500" }],
   ] satisfies [number, SupermemorySaveResponse][])(
     "maps a %i response",
@@ -334,7 +374,7 @@ describe("deleteSupermemoryContainer", () => {
 });
 
 describe("probeSupermemory", () => {
-  it("succeeds when the container-tags endpoint responds", async () => {
+  it("succeeds when the namespaces endpoint responds", async () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response("[]", { status: 200 }));
     vi.stubGlobal("fetch", fetchMock);
     const result = await probeSupermemory(config);
@@ -400,7 +440,9 @@ describe("private-host transport", () => {
   // A finished Response from a stub hides this: the dispatcher close waits for
   // the body, and the caller cannot read that body until close returns.
   it("reads a body that arrives after the response headers", async () => {
-    const payload = JSON.stringify({ results: [{ memory: "late", similarity: 1 }] });
+    const payload = JSON.stringify({
+      results: [{ memory: "late", similarity: 1, containerTag: "fake:tag" }],
+    });
     const server = createServer((request, response) => {
       request.resume();
       response.writeHead(200, { "content-type": "application/json" });
@@ -422,7 +464,10 @@ describe("private-host transport", () => {
           undefined,
           AbortSignal.timeout(2_000),
         ),
-      ).resolves.toEqual({ ok: true, results: [{ memory: "late", similarity: 1 }] });
+      ).resolves.toEqual({
+        ok: true,
+        results: [{ memory: "late", similarity: 1, containerTag: "fake:tag" }],
+      });
     } finally {
       await new Promise((resolve) => server.close(resolve));
     }
@@ -433,7 +478,7 @@ describe("private-host transport", () => {
     const server = createServer((request, response) => {
       // A local tool can probe any listening loopback port; only Supermemory calls
       // are answered and count towards the sockets the client must release.
-      if (!/^\/v[34]\//.test(request.url ?? "")) {
+      if (!/^\/(ns\/|namespaces\?)/.test(request.url ?? "")) {
         request.resume();
         response.writeHead(404).end();
         return;
@@ -485,5 +530,32 @@ describe("oversized Supermemory answers", () => {
 
     expect(result).toMatchObject({ ok: false });
     expect(result).not.toEqual({ ok: false, error: "Supermemory response is too large." });
+  });
+});
+
+describe("supermemory emoji limits", () => {
+  it("does not cut an emoji in half when saving", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response("", { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const limit = MAX_MEMORY_CONTENT_CHARS - 1;
+    await saveSupermemoryMemory(`${"x".repeat(limit)}😀 tail`, "rakazo:bot-123", config);
+    const body = JSON.parse(fetchMock.mock.calls[0]![1].body);
+    expect(body.content).toBe("x".repeat(limit));
+    vi.unstubAllGlobals();
+  });
+
+  it("does not cut an emoji in half in a recalled memory", async () => {
+    const limit = MAX_MEMORY_CONTENT_CHARS - 1;
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValue(
+          new Response(JSON.stringify({ results: [{ memory: `${"x".repeat(limit)}😀 tail` }] })),
+        ),
+    );
+    const result = await searchSupermemory("anything", "rakazo:bot-123", config);
+    expect(result.ok && result.results[0]?.memory).toBe("x".repeat(limit));
+    vi.unstubAllGlobals();
   });
 });

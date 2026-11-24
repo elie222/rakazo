@@ -1,11 +1,11 @@
 import { useLingui } from "@lingui/react/macro";
-import type { RpcInput, RpcPath, SpaceBot, SpaceGroup } from "@rakazo/contracts";
+import type { SpaceBot, SpaceGroup } from "@rakazo/contracts";
 import { createSnoozeQueue } from "@rakazo/core";
 import type { Dispatch, SetStateAction } from "react";
 import { useCallback, useState } from "react";
 import { Alert } from "react-native";
 import type { BotOrganizationUpdate } from "../../components/inbox/bot-organize-modal";
-import type { ApiRequestContext, RpcArgs } from "../api/api";
+import type { ApiRequestContext } from "../api/api";
 import { captureApiRequestContext, currentApiBase, rpc, selectedSpaceId } from "../api/api";
 import type { MobileBot, MobileBotSection, MobileGroup, MobileSpace } from "../api/mobile-types";
 import { currentSessionGeneration, loadSessionToken } from "../api/session";
@@ -25,30 +25,11 @@ import { sendWith } from "../query/query";
 import { removeFromSearchInbox } from "../search/search-inbox";
 import { useLeaveDeletedChat } from "../thread/use-leave-deleted-chat";
 import { notifyArchivedChatsChanged } from "./archived/archived-chats";
+import { chatRpc } from "./chat-rpc";
 import type { InboxChatKind, InboxRowAction } from "./inbox-swipe";
 import { chatTarget, createLatestQueue, unreadOverrideKey } from "./inbox-swipe";
 import { confirmDeleteSection } from "./sections/confirm-delete-section";
 import { promptSectionName } from "./sections/section-name-prompt";
-
-/** Sends a request about a chat to that chat's space without switching to it. */
-async function chatRequestContext(
-  spaceId: string | undefined,
-): Promise<ApiRequestContext | undefined> {
-  if (!spaceId || spaceId === selectedSpaceId()) return undefined;
-  const context = await captureApiRequestContext();
-  return { ...context, headers: { ...context.headers, "x-rakazo-space-id": spaceId } };
-}
-
-export async function chatRpc<P extends RpcPath>(
-  spaceId: string | undefined,
-  proc: P,
-  body: RpcInput<P>,
-) {
-  const requestContext = await chatRequestContext(spaceId);
-  return requestContext
-    ? rpc(proc, ...([body, { requestContext, skipSpaceAuthRecovery: true }] as RpcArgs<P>))
-    : rpc(proc, ...([body] as RpcArgs<P>));
-}
 
 type ListUpdate<T> = Dispatch<SetStateAction<T[]>>;
 

@@ -23,7 +23,13 @@ export const TOOL_QUESTION_WAIT_MS = 10 * 60_000;
  * nobody to ask, so their questions are declined.
  */
 export function toolAskFor(ctx: RunContext): ToolAsk | undefined {
-  if (!ctx.source?.ownerStartedRun || ctx.source.messagingChannelRun) return undefined;
+  if (
+    !ctx.source?.ownerStartedRun ||
+    ctx.source.messagingChannelRun ||
+    ctx.run.trigger === "routine" ||
+    ctx.run.trigger === "messaging"
+  )
+    return undefined;
   return (question, signal) => askInRun(ctx, question, signal);
 }
 
@@ -65,7 +71,7 @@ async function askInRun(
   const ref = { spaceId: run.spaceId, threadId: message.threadId, messageId: message.id };
   const take = async (expire: boolean): Promise<ToolQuestionAnswer | undefined> => {
     const { answer, seq } = await takeToolQuestionAnswer(deps.prisma, ref, { expire });
-    if (seq !== undefined) await bestEffort("tool question", deps.events.notify(ref.threadId, seq));
+    if (seq !== undefined) await deps.events.notify(ref.threadId, seq);
     if (answer?.action !== "accept") return answer;
     const opened = key.open(answer.sealedValues);
     const checked = opened === undefined ? undefined : parsedValues(question, opened);

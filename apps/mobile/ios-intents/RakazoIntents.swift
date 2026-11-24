@@ -372,7 +372,7 @@ private final class RejectRedirects: NSObject, URLSessionTaskDelegate {
   }
 }
 
-private struct RakazoSession {
+struct RakazoSession {
   private static let transport = URLSession(
     configuration: .ephemeral, delegate: RejectRedirects(), delegateQueue: nil)
 
@@ -427,9 +427,9 @@ private struct RakazoSession {
 
   /// The app asks before AI first sees the user's data; an action from here cannot ask.
   func requireConsent(
-    _ target: [String: String], spaceId: String?, timeout: TimeInterval = 60
+    _ target: [String: String], uses: [String] = ["model", "memory"], spaceId: String?,
+    timeout: TimeInterval = 60
   ) async throws {
-    let uses = ["model", "memory"]
     var input: [String: Any] = target
     input["uses"] = uses
     let consent: ConsentStatus = try await rpc(
@@ -440,13 +440,31 @@ private struct RakazoSession {
   }
 
   /// Uses the same replayable SSE feed as the mobile chat, including a reply that finished
-  /// before this subscription opened. The resource deadline also bounds an idle stream.
+  /// before this subscription opened.
   func waitForReply(runId: String, botId: String, spaceId: String?) async throws -> Bool {
-    var request = try request(
-      "threads/subscribe", ["botId": botId, "cursor": 0], spaceId: spaceId, timeout: 28)
+    do {
+      return try await waitForThreadEvent(["botId": botId], after: 0, spaceId: spaceId, timeout: 28) {
+        $0.runId == runId && ["run.completed", "run.failed", "run.cancelled", "run.waiting_input",
+          "computer.takeover.requested"].contains($0.type)
+      }
+    } catch let error as URLError where error.code != .cancelled {
+      // The message was sent; a dropped stream leaves its reply in the app.
+      return false
+    }
+  }
+
+  /// Follows a chat's events after `cursor` until one matches. False when the deadline, which
+  /// also bounds an idle stream, passes first; a stream that drops before it throws.
+  func waitForThreadEvent(
+    _ target: [String: String], after cursor: Int, spaceId: String?, timeout: TimeInterval,
+    matching matches: (ThreadEventSummary) -> Bool
+  ) async throws -> Bool {
+    var input: [String: Any] = target
+    input["cursor"] = cursor
+    var request = try request("threads/subscribe", input, spaceId: spaceId, timeout: timeout)
     request.setValue("text/event-stream", forHTTPHeaderField: "accept")
     let config = URLSessionConfiguration.ephemeral
-    config.timeoutIntervalForResource = 28
+    config.timeoutIntervalForResource = timeout
     let stream = URLSession(configuration: config, delegate: RejectRedirects(), delegateQueue: nil)
     defer { stream.invalidateAndCancel() }
     do {
@@ -470,11 +488,9 @@ private struct RakazoSession {
             .joined(separator: "\n")
           frame.removeAll(keepingCapacity: true)
           guard let data = payload.data(using: .utf8),
-            let event = try? JSONDecoder().decode(Envelope<ReplyEvent>.self, from: data).json,
-            event.runId == runId
+            let event = try? JSONDecoder().decode(Envelope<ThreadEventSummary>.self, from: data).json
           else { continue }
-          if ["run.completed", "run.failed", "run.cancelled", "run.waiting_input",
-              "computer.takeover.requested"].contains(event.type) { return true }
+          if matches(event) { return true }
         } else {
           previousLf = byte == 10
           guard !discardingFrame else { continue }
@@ -485,17 +501,23 @@ private struct RakazoSession {
           }
         }
       }
-    } catch let error as URLError {
-      if error.code == .cancelled { throw error }
-      // The message was sent; a timeout or dropped stream leaves its reply in the app.
+    } catch let error as URLError where error.code == .timedOut {
+      return false
     }
-    return false
+    try Task.checkCancellation()
+    throw URLError(.networkConnectionLost)
   }
 
   private func request(
     _ procedure: String, _ input: [String: Any], spaceId: String?, timeout: TimeInterval
   ) throws -> URLRequest {
-    guard let url = URL(string: "\(apiBase)/rpc/\(procedure)") else {
+    try request(path: "/rpc/\(procedure)", body: ["json": input], spaceId: spaceId, timeout: timeout)
+  }
+
+  private func request(
+    path: String, body: [String: Any], spaceId: String?, timeout: TimeInterval
+  ) throws -> URLRequest {
+    guard let url = URL(string: "\(apiBase)\(path)") else {
       throw MessageBotError.signedOut
     }
     var request = URLRequest(url: url, timeoutInterval: timeout)
@@ -505,8 +527,19 @@ private struct RakazoSession {
     request.setValue("rakazo://", forHTTPHeaderField: "origin")
     request.setValue("Bearer \(token)", forHTTPHeaderField: "authorization")
     if let spaceId { request.setValue(spaceId, forHTTPHeaderField: "x-rakazo-space-id") }
-    request.httpBody = try JSONSerialization.data(withJSONObject: ["json": input])
+    request.httpBody = try JSONSerialization.data(withJSONObject: body)
     return request
+  }
+
+  /// Posts JSON to one of the server's plain HTTP routes, answering its status and body.
+  func post(
+    _ path: String, _ body: [String: Any], spaceId: String?, timeout: TimeInterval
+  ) async throws -> (Int, Data) {
+    let request = try request(path: path, body: body, spaceId: spaceId, timeout: timeout)
+    let (data, response) = try await Self.transport.data(for: request)
+    let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+    if status == 401 { throw MessageBotError.signedOut }
+    return (status, data)
   }
 
   private func checkResponse(_ response: URLResponse) throws {
@@ -525,6 +558,9 @@ private struct RakazoSession {
     if status == 401 { throw MessageBotError.signedOut }
     guard (200..<300).contains(status) else {
       let error = try? JSONDecoder().decode(Envelope<ServerError>.self, from: data)
+      if (400..<500).contains(status), status != 408 {
+        throw MessageBotError.rejected(status: status, message: error?.json.message)
+      }
       throw MessageBotError.server(error?.json.message)
     }
     return try JSONDecoder().decode(Envelope<Output>.self, from: data).json
@@ -552,12 +588,13 @@ private func secureStoreItem(_ key: String) -> String? {
   return nil
 }
 
-private enum MessageBotError: Error, CustomLocalizedStringResourceConvertible {
+enum MessageBotError: Error, CustomLocalizedStringResourceConvertible {
   case signedOut
   case noBot
   case needsYou
   case consentRequired
   case server(String?)
+  case rejected(status: Int, message: String?)
 
   var localizedStringResource: LocalizedStringResource {
     switch self {
@@ -565,8 +602,8 @@ private enum MessageBotError: Error, CustomLocalizedStringResourceConvertible {
     case .noBot: "Open a chat in Rakazo first."
     case .needsYou: "It needs you in Rakazo."
     case .consentRequired: "Review AI data sharing in Account settings before continuing."
-    case .server(let message?): "\(message)"
-    case .server(nil): "Something went wrong. Try again."
+    case .server(let message?), .rejected(_, let message?): "\(message)"
+    case .server(nil), .rejected(_, nil): "Something went wrong. Try again."
     }
   }
 }
@@ -592,7 +629,7 @@ private struct BotRoutines: Decodable {
   }
   let routines: [Routine]
 }
-private struct ReplyEvent: Decodable {
+struct ThreadEventSummary: Decodable {
   let runId: String?
   let type: String
 }

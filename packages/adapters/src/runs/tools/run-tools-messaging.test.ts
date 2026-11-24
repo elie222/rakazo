@@ -7,9 +7,22 @@ const mocks = vi.hoisted(() => ({
     ok: true as const,
     botId: "bot-servo",
     name: "Servo",
+    delivered: "deploy this",
     note: "Sent",
   })),
   handoffToGroupBot: vi.fn(async (..._args: unknown[]) => ({ ok: true as const })),
+  findPostableGroup: vi.fn(
+    async (..._args: unknown[]): Promise<{ error: string } | { id: string; name: string }> => ({
+      id: "group-launch",
+      name: "Launch",
+    }),
+  ),
+  postToGroup: vi.fn(async (..._args: unknown[]) => ({
+    ok: true as const,
+    group: "Launch",
+    messageId: "message-1",
+    note: "Posted in Launch. It started no member.",
+  })),
   readWorkspaceFile: vi.fn(async (..._args: unknown[]) => ({
     bytes: new Uint8Array([1]),
   })) as ReturnType<typeof vi.fn>,
@@ -24,8 +37,15 @@ const mocks = vi.hoisted(() => ({
     },
   })),
 }));
-vi.mock("../../messaging/bot-messages.js", () => ({ messageBot: mocks.messageBot }));
+vi.mock(import("../../messaging/bot-messages.js"), async (importOriginal) => ({
+  ...(await importOriginal()),
+  messageBot: mocks.messageBot,
+}));
 vi.mock("../../bots/group-handoff.js", () => ({ handoffToGroupBot: mocks.handoffToGroupBot }));
+vi.mock("../../bots/group-post.js", () => ({
+  findPostableGroup: mocks.findPostableGroup,
+  postToGroup: mocks.postToGroup,
+}));
 vi.mock("./run-tools-files.js", () => ({
   readWorkspaceFile: mocks.readWorkspaceFile,
   saveWorkspaceFile: mocks.saveWorkspaceFile,
@@ -48,8 +68,20 @@ function context(servoComputerId: string) {
     path === "bots/bot-coder" ? [{ path: "bots/bot-coder/site", kind: "directory" }] : [],
   );
   const findMany = vi.fn(async (..._args: unknown[]) => [
-    { id: "bot-coder", name: "Coder", computerId: "computer-team", computerSwitching: false },
-    { id: "bot-servo", name: "Servo", computerId: servoComputerId, computerSwitching: false },
+    {
+      id: "bot-coder",
+      name: "Coder",
+      computerId: "computer-team",
+      computerSwitching: false,
+      thread: { id: "thread-coder" },
+    },
+    {
+      id: "bot-servo",
+      name: "Servo",
+      computerId: servoComputerId,
+      computerSwitching: false,
+      thread: { id: "thread-servo" },
+    },
   ]);
   const ctx = {
     deps: { prisma: { bot: { findMany } }, sandbox: { listFiles } },
@@ -90,8 +122,9 @@ describe("sending files to another bot", () => {
   });
 
   it("passes paths on a shared computer instead of copying them", async () => {
-    const { ctx } = context("computer-team");
+    const { ctx, findMany } = context("computer-team");
     await messagingTools.message_bot!(ctx, callWith("message_bot", { files: ["site"] }));
+    expect(findMany).toHaveBeenCalledTimes(1);
     expect(mocks.readWorkspaceFile).not.toHaveBeenCalled();
     expect(mocks.saveWorkspaceFile).not.toHaveBeenCalled();
     expect(mocks.messageBot).toHaveBeenCalledWith(
@@ -180,15 +213,24 @@ describe("sending files to another bot", () => {
     expect(mocks.messageBot).not.toHaveBeenCalled();
   });
 
-  it("reads nothing for a recipient it cannot find", async () => {
-    const { ctx } = context("computer-servo");
+  it("lists reachable bots without reading files when it cannot find the recipient", async () => {
+    const { ctx, findMany } = context("computer-servo");
     await expect(
       messagingTools.message_bot!(
         ctx,
         callWith("message_bot", { bot_id: "bot-gone", files: ["site.zip"] }),
       ),
-    ).resolves.toEqual({ error: "no bot found with that id or name. Nothing was sent." });
+    ).resolves.toEqual({
+      error:
+        "no bot found with that id or name. Bots reachable from this space (use bot_id): Servo (bot-servo). Nothing was sent.",
+    });
+    expect(findMany).toHaveBeenCalledTimes(2);
+    expect(findMany).toHaveBeenNthCalledWith(2, {
+      where: { spaceId: "space-1", archivedAt: null },
+      select: { id: true, name: true, thread: { select: { id: true } } },
+    });
     expect(mocks.readWorkspaceFile).not.toHaveBeenCalled();
+    expect(mocks.messageBot).not.toHaveBeenCalled();
   });
 
   it("files a handoff's copies under the group that shows them", async () => {
@@ -315,5 +357,62 @@ describe("sending files to another bot", () => {
     ).resolves.toEqual({
       error: "site: not found, or your computer could not be read. Nothing was sent.",
     });
+  });
+});
+
+describe("posting into a group from outside it", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("posts with copies filed under the group, keyed by the call's effect", async () => {
+    const { ctx } = context("computer-team");
+    await expect(
+      messagingTools.post_to_group!(
+        ctx,
+        callWith("post_to_group", { group_name: "Launch", files: ["site.zip"] }),
+      ),
+    ).resolves.toMatchObject({ ok: true, group: "Launch", messageId: "message-1" });
+    expect(mocks.saveWorkspaceFile).toHaveBeenCalledWith(
+      ctx,
+      expect.anything(),
+      "site.zip",
+      expect.any(Uint8Array),
+      { botId: "bot-coder", groupId: "group-launch" },
+    );
+    expect(mocks.postToGroup).toHaveBeenCalledWith(
+      ctx.deps,
+      ctx.run,
+      { id: "group-launch", name: "Launch" },
+      expect.objectContaining({
+        message: "deploy this",
+        deliveryKey: "effect-1",
+        files: [expect.objectContaining({ artifactId: "artifact-zip" })],
+      }),
+    );
+  });
+
+  it("refuses a file whose path holds a secret", async () => {
+    const { ctx } = context("computer-team");
+    (ctx as { secrets: string[] }).secrets = ["tok-123456"];
+    await expect(
+      messagingTools.post_to_group!(
+        ctx,
+        callWith("post_to_group", { group_name: "Launch", files: ["tok-123456.txt"] }),
+      ),
+    ).resolves.toEqual({ error: "one of the paths can't be shared. Nothing was posted." });
+    expect(mocks.readWorkspaceFile).not.toHaveBeenCalled();
+    expect(mocks.postToGroup).not.toHaveBeenCalled();
+  });
+
+  it("posts nothing to a group it can't post in", async () => {
+    const { ctx } = context("computer-team");
+    mocks.findPostableGroup.mockResolvedValueOnce({ error: "you are not a member of that group" });
+    await expect(
+      messagingTools.post_to_group!(
+        ctx,
+        callWith("post_to_group", { group_name: "Other", files: ["site.zip"] }),
+      ),
+    ).resolves.toEqual({ error: "you are not a member of that group. Nothing was posted." });
+    expect(mocks.readWorkspaceFile).not.toHaveBeenCalled();
+    expect(mocks.postToGroup).not.toHaveBeenCalled();
   });
 });

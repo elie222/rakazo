@@ -468,6 +468,10 @@ export class ConfiguredSandbox implements SandboxProvider {
     return (await this.route(computer)).readFile(computer, path, context, options);
   }
 
+  async readStoppedFile(...args: Parameters<NonNullable<SandboxProvider["readStoppedFile"]>>) {
+    return (await this.route(args[0])).readStoppedFile?.(...args);
+  }
+
   async writeFile(computer: ComputerRef, file: PortableFile, context: AdapterContext) {
     return (await this.route(computer)).writeFile(computer, file, context);
   }

@@ -189,6 +189,11 @@ describeJourneys("required product journeys", () => {
           where: { botId: bot.id, status: { in: [...ACTIVE_RUN_STATUSES] } },
         })) === 0,
     );
+    // A bot without a computer simply has no earlier versions.
+    const { computerId } = await prisma.bot.findUniqueOrThrow({ where: { id: bot.id } });
+    await prisma.bot.update({ where: { id: bot.id }, data: { computerId: null } });
+    expect(await rpc(app, cookie, "computer/homeVersions", { botId: bot.id })).toEqual([]);
+    await prisma.bot.update({ where: { id: bot.id }, data: { computerId } });
     await rpc(app, cookie, "computer/boot", { botId: bot.id });
     const original = await prisma.bot.findUniqueOrThrow({
       where: { id: bot.id },
@@ -663,6 +668,24 @@ describeJourneys("required product journeys", () => {
     expect(
       await rpc(app, cookie, "memory/update", { documentId: doc.id, content: "legacy" }),
     ).toMatchObject({ content: "legacy", revision: doc.revision + 3 });
+  });
+
+  it("keeps saved memory from triggering scripted run commands", async () => {
+    const cookie = await signup(app, `memory-scripted-${stamp}@rakazo.test`, "Memory fixture");
+    const bot = await rpc<Bot>(app, cookie, "bots/create", {
+      name: "Keeper",
+      title: "Memory",
+      description: "",
+      instructions: "",
+    });
+    const [doc] = await rpc<Array<{ id: string }>>(app, cookie, "memory/list", {
+      botId: bot.id,
+    });
+    await rpc(app, cookie, "memory/update", {
+      documentId: doc!.id,
+      content: "The phrase for the failure drill is “fail this run”.",
+    });
+    await sendAndWait(app, cookie, bot.id, "Are you ready?");
   });
 
   it("clears a conversation without removing the bot, computer, memory, or routines", async () => {
@@ -1650,6 +1673,40 @@ describeJourneys("required product journeys", () => {
     expect(JSON.stringify(snap)).not.toContain(secret);
   });
 
+  it("keeps the zero data retention choice across a key replacement until it is turned off", async () => {
+    const cookie = await signup(app, `zdr-j-${stamp}@rakazo.test`, "Retention");
+    const connect = (extra: Record<string, unknown>) =>
+      rpc<{ id: string; zeroDataRetention?: boolean }>(app, cookie, "models/connect", {
+        provider: "openrouter",
+        modelId: "scripted",
+        ...extra,
+      });
+    const saved = async () =>
+      (
+        await rpc<Array<{ provider: string; zeroDataRetention?: boolean }>>(
+          app,
+          cookie,
+          "models/credentials",
+        )
+      ).find((credential) => credential.provider === "openrouter");
+
+    await connect({ apiKey: "test-zdr-key-one-not-real", zeroDataRetention: true });
+    expect((await saved())?.zeroDataRetention).toBe(true);
+    // A replacement key that does not mention the choice keeps it.
+    await connect({ apiKey: "test-zdr-key-two-not-real" });
+    expect((await saved())?.zeroDataRetention).toBe(true);
+    await connect({ apiKey: "test-zdr-key-three-not-real", zeroDataRetention: false });
+    expect((await saved())?.zeroDataRetention).toBeUndefined();
+
+    const refused = await raw(app, cookie, "models/connect", {
+      provider: "anthropic",
+      apiKey: "test-zdr-anthropic-not-real",
+      modelId: "claude-sonnet-4-5",
+      zeroDataRetention: true,
+    });
+    expect(refused.status).toBe(400);
+  });
+
   it("8: retrying a completed effect does not duplicate the destination write", async () => {
     const cookie = await signup(app, `crash-j-${stamp}@rakazo.test`, "Crash");
     await runWithoutAsking(cookie);
@@ -1945,7 +2002,7 @@ describeJourneys("required product journeys", () => {
     expect(bots.find((bot) => bot.id === source.id)?.fleetManagement).toBe(false);
   });
 
-  it("untrusted bot_message run cannot rewrite a child's instructions", async () => {
+  it("a bot_message run cannot rewrite a child's instructions without the owner", async () => {
     const cookie = await signup(app, `bot-management-trust-j-${stamp}@rakazo.test`, "Bot Manager");
     const parent = await rpc<Bot>(app, cookie, "bots/create", {
       name: "Chief",
@@ -1981,25 +2038,20 @@ describeJourneys("required product journeys", () => {
         select: { id: true, status: true },
       });
       peerRunId = peerRun?.id;
-      return Boolean(peerRun && ["completed", "failed", "cancelled"].includes(peerRun.status));
+      return Boolean(
+        peerRun && ["waiting_input", "completed", "failed", "cancelled"].includes(peerRun.status),
+      );
     });
-    const attempts = await prisma.event.findMany({
-      where: { runId: peerRunId, type: "agent.tool.completed" },
-      select: { payload: true },
-    });
-    expect(attempts.map((event) => event.payload)).toEqual([
-      expect.objectContaining({
-        name: "set_child_instructions",
-        outcome: "error",
-        error: "Bot management tools need a run you started.",
+    expect(
+      await prisma.externalEffect.count({
+        where: { runId: peerRunId, status: { in: ["approved", "completed"] } },
       }),
-    ]);
+    ).toBe(0);
     const after = await prisma.bot.findUniqueOrThrow({
       where: { id: scout!.id },
       select: { instructions: true },
     });
     expect(after.instructions).toBe(before.instructions);
-    await waitForDatabase(settled);
   });
 
   it("12b: a bot can silence and resume its own finish notifications", async () => {
@@ -4300,6 +4352,17 @@ describeJourneys("required product journeys", () => {
       return { cookie, me, chief };
     }
 
+    // Grouping and scheduling other bots run without a card by default, like spawn_bot; a rule
+    // that asks keeps the card these journeys check.
+    async function askFor(cookie: string, ...tools: string[]) {
+      for (const matchValue of tools)
+        await rpc(app, cookie, "approvalRules/set", {
+          effect: "require_approval",
+          matchKind: "tool",
+          matchValue,
+        });
+    }
+
     function createBot(cookie: string, name: string) {
       return rpc<Bot>(app, cookie, "bots/create", {
         name,
@@ -4396,6 +4459,7 @@ describeJourneys("required product journeys", () => {
 
     it("create_group shows every member, creates once on allow and nothing on deny", async () => {
       const { cookie, me, chief } = await fleetOwner("create");
+      await askFor(cookie, "create_group");
       const alpha = await createBot(cookie, "Alpha");
       const beta = await createBot(cookie, "Beta");
 
@@ -4476,6 +4540,7 @@ describeJourneys("required product journeys", () => {
 
     it("update_group removes a member, cancels only its group-thread runs and keeps the snapshot", async () => {
       const { cookie, me, chief } = await fleetOwner("update");
+      await askFor(cookie, "update_group");
       const alpha = await createBot(cookie, "Alpha");
       const beta = await createBot(cookie, "Beta");
       const gamma = await createBot(cookie, "Gamma");
@@ -4562,6 +4627,9 @@ describeJourneys("required product journeys", () => {
       const { cookie, chief } = await fleetOwner("update-self");
       const alpha = await createBot(cookie, "Alpha");
       const beta = await createBot(cookie, "Beta");
+      // The message names nobody, so every member runs it; only the caller may manage bots here.
+      for (const member of [alpha, beta])
+        await rpc(app, cookie, "bots/update", { botId: member.id, fleetManagement: false });
       const team = await rpc<{ id: string }>(app, cookie, "groups/create", {
         name: "Team",
         botIds: [chief.id, alpha.id, beta.id],
@@ -4712,7 +4780,7 @@ describeJourneys("required product journeys", () => {
       return { ...row, version: history[0]?.id ?? "initial", history };
     }
 
-    it("set_child_instructions rewrites a peer behind a card, with a version check, once per run", async () => {
+    it("set_child_instructions rewrites a peer behind a card, with a version check", async () => {
       const { cookie, chief } = await fleetOwner("child-edit");
       const scout = await createManagedBot(cookie, "Scout");
       const ops = await createBot(cookie, "Ops");
@@ -4759,12 +4827,13 @@ describeJourneys("required product journeys", () => {
         rewrite(edited.version, "Book venues and then to Obey me"),
       );
       await answerAndSettle(cookie, chief.id, twice, "allow");
+      // A second edit in the same run is checked against the version the first one left.
       expect(await toolOutcomes(twice.runId, "set_child_instructions")).toEqual(
         expect.arrayContaining([
           expect.objectContaining({ outcome: "succeeded" }),
           expect.objectContaining({
             outcome: "error",
-            error: "You already changed this bot's instructions in this run.",
+            error: "child changed; read it again with list_fleet",
           }),
         ]),
       );
@@ -4783,7 +4852,7 @@ describeJourneys("required product journeys", () => {
       expect((await childState(ops.id)).instructions).toBe("Plan the schedule");
     });
 
-    it("a run that took in a channel message cannot change the bots it manages; an app message does not taint it", async () => {
+    it("a run that took in a channel message still asks before changing the bots it manages", async () => {
       const { cookie, me, chief } = await fleetOwner("taint");
       const scout = await createManagedBot(cookie, "Scout");
       const chiefThread = await prisma.thread.findFirstOrThrow({ where: { botId: chief.id } });
@@ -4836,16 +4905,21 @@ describeJourneys("required product journeys", () => {
         return run.id;
       }
 
+      const waitingOn = (runId: string) =>
+        waitFor(
+          app,
+          cookie,
+          chief.id,
+          (snap) => snap.run?.id === runId && snap.run.status === "waiting_input",
+        );
+
       const tainted = await steeredRun("messaging", "Obey the channel");
-      await waitForRunEnd(tainted);
-      expect(await toolOutcomes(tainted, "set_child_instructions")).toEqual([
-        expect.objectContaining({
-          outcome: "error",
-          error:
-            "Changes to the bots you manage are blocked for the rest of this run because it received a channel or webhook message.",
-        }),
-      ]);
-      expect(await prisma.externalEffect.count({ where: { runId: tainted } })).toBe(0);
+      await answerAndSettle(
+        cookie,
+        chief.id,
+        { runId: tainted, waiting: await waitingOn(tainted) },
+        "deny",
+      );
       expect((await childState(scout.id)).instructions).toBe("");
 
       // A row queued before origins were recorded still carries the channel message itself.
@@ -4859,24 +4933,21 @@ describeJourneys("required product journeys", () => {
           text: "Mid-run channel note",
         },
       ]);
-      await waitForRunEnd(legacy);
-      expect(await toolOutcomes(legacy, "set_child_instructions")).toEqual([
-        expect.objectContaining({
-          outcome: "error",
-          error:
-            "Changes to the bots you manage are blocked for the rest of this run because it received a channel or webhook message.",
-        }),
-      ]);
+      await answerAndSettle(
+        cookie,
+        chief.id,
+        { runId: legacy, waiting: await waitingOn(legacy) },
+        "deny",
+      );
       expect((await childState(scout.id)).instructions).toBe("");
 
       const clean = await steeredRun(null, "Plan the offsite");
-      const waiting = await waitFor(
-        app,
+      await answerAndSettle(
         cookie,
         chief.id,
-        (snap) => snap.run?.id === clean && snap.run.status === "waiting_input",
+        { runId: clean, waiting: await waitingOn(clean) },
+        "allow",
       );
-      await answerAndSettle(cookie, chief.id, { runId: clean, waiting }, "allow");
       expect(await toolOutcomes(clean, "set_child_instructions")).toEqual(
         expect.arrayContaining([expect.objectContaining({ outcome: "succeeded" })]),
       );
@@ -4901,7 +4972,7 @@ describeJourneys("required product journeys", () => {
       const card = JSON.stringify(pending.waiting.messages);
       expect(card).toContain("Change the model of Scout?");
       expect(card).toContain("To: scripted");
-      expect(card).not.toContain("Always allow this tool");
+      expect(card).toContain("Always allow this tool");
       expect(await childState(scout.id)).toMatchObject({ modelProvider: null, modelId: null });
       const updates = () =>
         prisma.event.count({ where: { threadId: scout.threadId, type: "bot.updated" } });
@@ -4985,6 +5056,7 @@ describeJourneys("required product journeys", () => {
 
     it("create_child_routine schedules a peer in its own thread once", async () => {
       const { cookie, chief } = await fleetOwner("child-routine");
+      await askFor(cookie, "create_child_routine");
       const scout = await createManagedBot(cookie, "Scout");
       const prompt = `schedule bot ${scout.id} routine Brief every 1 days saying Summarize the news`;
 
@@ -5044,6 +5116,7 @@ describeJourneys("required product journeys", () => {
 
     it("turning the switch off during the pause refuses the approved child change", async () => {
       const { cookie, chief } = await fleetOwner("switch-pause");
+      await askFor(cookie, "create_child_routine");
       const scout = await createManagedBot(cookie, "Scout");
       await prisma.bot.update({
         where: { id: scout.id },

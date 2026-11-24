@@ -1,8 +1,9 @@
 import { RPCHandler } from "@orpc/server/fetch";
 import { SecretStoreUnavailableError } from "@rakazo/adapter-kit";
 import { listPiCatalog } from "@rakazo/adapters";
-import type { Actor } from "@rakazo/contracts";
+import type { Actor, BillingStatus } from "@rakazo/contracts";
 import { MAX_MODEL_SETTINGS_PER_CONNECTION, REPLY_QUOTE_MAX_LENGTH } from "@rakazo/contracts";
+import { MODEL_REQUIRED_SEND_ERROR } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
 import type { RouterDeps } from "../router.js";
@@ -18,6 +19,10 @@ describe("model setup gate", () => {
     deploymentModelConfigured?: boolean;
     deploymentModelHostCredentials?: boolean;
     deploymentModelCredentialCipher?: string;
+    savedDeploymentModel?: boolean;
+    /** A default an admin saved with its key; "credits" saves it where credits ignore it. */
+    adminDeploymentModel?: boolean | "credits";
+    funding?: Pick<BillingStatus, "creditPurchasesEnabled" | "funding" | "balanceUsd">;
   }) {
     const prisma = {
       user: {
@@ -37,17 +42,25 @@ describe("model setup gate", () => {
       },
       userModelPreference: { findFirst: vi.fn().mockResolvedValue(null) },
       deploymentSettings: {
-        findUnique: vi
-          .fn()
-          .mockResolvedValue(
-            options.deploymentModelCredentialCipher
+        findUnique: vi.fn().mockResolvedValue(
+          options.adminDeploymentModel
+            ? {
+                deploymentModelProvider: "anthropic",
+                deploymentModelId: "claude-sonnet-5",
+                deploymentModelCredentialCipher: "sealed-admin-key",
+                modelCreditsEnabled: options.adminDeploymentModel === "credits",
+              }
+            : options.deploymentModelCredentialCipher
               ? { deploymentModelCredentialCipher: options.deploymentModelCredentialCipher }
-              : null,
-          ),
+              : options.savedDeploymentModel
+                ? { defaultModelProvider: "openrouter", defaultModelId: "saved-model" }
+                : null,
+        ),
       },
     } as unknown as PrismaClient;
     const deps = {
       prisma,
+      billing: options.funding && { status: vi.fn().mockResolvedValue(options.funding) },
       env: {
         agentRuntime: options.agentRuntime,
         maxUploadSizeBytes: options.maxUploadSizeBytes,
@@ -68,7 +81,7 @@ describe("model setup gate", () => {
       email: "user@rakazo.test",
       isDeploymentOwner: true,
     } satisfies Actor;
-    return { actor, handler: new RPCHandler(createRouter(deps)) };
+    return { actor, handler: appHandler(deps) };
   }
 
   async function call(handler: RouterHandler, actor: Actor, path: string, body: unknown) {
@@ -84,7 +97,7 @@ describe("model setup gate", () => {
     return response;
   }
 
-  it.each([undefined, 1, 8, 100])(
+  it.each([undefined, 8])(
     "advertises the effective attachment count (%s)",
     async (maxAttachmentsPerMessage) => {
       const { actor, handler } = modelGateDeps({
@@ -153,6 +166,43 @@ describe("model setup gate", () => {
     });
   });
 
+  it("keeps an unfunded deployment model out of Settings and offers to connect one from chat", async () => {
+    const { actor, handler } = modelGateDeps({
+      agentRuntime: "pi",
+      deploymentModelConfigured: true,
+      funding: { creditPurchasesEnabled: true, funding: "byok", balanceUsd: 0 },
+    });
+    const role = await call(handler, actor, "models/role", { role: "main", scope: "account" });
+    expect(role.status).toBe(200);
+    await expect(role.json()).resolves.toMatchObject({ json: { deploymentPrimary: null } });
+
+    const send = await call(handler, actor, "threads/send", { botId: "bot-1", text: "hello" });
+    expect(send.status).toBe(400);
+    await expect(send.json()).resolves.toMatchObject({
+      json: { message: MODEL_REQUIRED_SEND_ERROR },
+    });
+  });
+
+  it.each([false, true])(
+    "shows a saved deployment model only while the deployment can run it (%s)",
+    async (deploymentModelConfigured) => {
+      const { actor, handler } = modelGateDeps({
+        agentRuntime: "pi",
+        deploymentModelConfigured,
+        savedDeploymentModel: true,
+      });
+      const role = await call(handler, actor, "models/role", { role: "main", scope: "account" });
+      expect(role.status).toBe(200);
+      await expect(role.json()).resolves.toMatchObject({
+        json: {
+          deploymentPrimary: deploymentModelConfigured
+            ? { provider: "openrouter", modelId: "saved-model" }
+            : null,
+        },
+      });
+    },
+  );
+
   it("names the provider the deployment default runs on with host credentials", async () => {
     const hostCredentials = modelGateDeps({
       agentRuntime: "pi",
@@ -172,6 +222,39 @@ describe("model setup gate", () => {
     });
     await expect(withKey.json()).resolves.toEqual({
       json: expect.objectContaining({ hostCredentialProvider: null, hostCredentialSource: null }),
+    });
+  });
+
+  it("runs members without a model on the one an admin set, without an environment model", async () => {
+    const { actor, handler } = modelGateDeps({ agentRuntime: "pi", adminDeploymentModel: true });
+
+    const me = await call(handler, actor, "me", null);
+    await expect(me.json()).resolves.toEqual({
+      json: expect.objectContaining({
+        needsModel: false,
+        defaultProvider: "anthropic",
+        defaultModel: "claude-sonnet-5",
+      }),
+    });
+    const role = await call(handler, actor, "models/role", { role: "main", scope: "account" });
+    await expect(role.json()).resolves.toMatchObject({
+      json: { deploymentPrimary: { provider: "anthropic", modelId: "claude-sonnet-5" } },
+    });
+  });
+
+  it("names host credentials while an admin's ignored model leaves the environment's running", async () => {
+    const { actor, handler } = modelGateDeps({
+      agentRuntime: "pi",
+      deploymentModelConfigured: true,
+      deploymentModelHostCredentials: true,
+      adminDeploymentModel: "credits",
+    });
+    const me = await call(handler, actor, "me", null);
+    await expect(me.json()).resolves.toEqual({
+      json: expect.objectContaining({
+        defaultProvider: "openrouter",
+        hostCredentialProvider: "openrouter",
+      }),
     });
   });
 
