@@ -193,6 +193,11 @@ type RevealSlot =
       value: string;
       units: string[];
     }
+  /**
+   * An image fades as one unit. Wrapping it keeps the fallback alt text, which the image
+   * component renders as a plain string when the image cannot load, inside the fading element.
+   */
+  | { kind: "image"; parent: HastNode; index: number; node: HastNode; start: number }
   | { kind: "element"; node: HastNode; start: number }
   | { kind: "marker"; node: HastNode; start: number };
 type RevealTextSlot = Extract<RevealSlot, { kind: "text" }>;
@@ -391,6 +396,19 @@ export function createStreamingRevealPlugin(
           }
           const tagName = child.tagName;
           const childSkip = skip || (tagName !== undefined && REVEAL_SKIP_TAGS.has(tagName));
+          if (!childSkip && tagName === "img") {
+            const alt = typeof child.properties?.alt === "string" ? child.properties.alt : "";
+            if (alt.trim().length > 0) {
+              slots.push({
+                kind: "image",
+                parent: node,
+                index,
+                node: child,
+                start: sourceOffset(child, 0),
+              });
+            }
+            continue;
+          }
           // A list marker is a pseudo-element, not a text node. Schedule it before the item's
           // first unit so the bullet fades in with the text; the stylesheet transitions its color.
           if (!childSkip && tagName === "li") {
@@ -458,6 +476,23 @@ export function createStreamingRevealPlugin(
 
       const replacements = new Map<HastNode, Map<number, HastNode[]>>();
       for (const slot of slots) {
+        if (slot.kind === "image") {
+          let perParent = replacements.get(slot.parent);
+          if (!perParent) {
+            perParent = new Map();
+            replacements.set(slot.parent, perParent);
+          }
+          perParent.set(slot.index, [
+            {
+              type: "element",
+              tagName: "span",
+              properties:
+                slot.start >= revealed ? nextRevealProperties() : { "data-rk-reveal": "settled" },
+              children: [slot.node],
+            },
+          ]);
+          continue;
+        }
         if (slot.kind === "marker") {
           // A separate variable, or settled units inside the item would inherit the marker delay.
           mergeRevealProperties(

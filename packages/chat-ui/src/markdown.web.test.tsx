@@ -927,6 +927,35 @@ describe("web markdown streaming", () => {
     container.remove();
   });
 
+  it("fades in an image's alt text with the words around it", async () => {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    const units = (state: string) =>
+      [...container.querySelectorAll(`[data-rk-reveal="${state}"]`)].map(
+        (unit) => unit.textContent,
+      );
+    await act(async () => {
+      root.render(<ChatMarkdown streaming>{"Look"}</ChatMarkdown>);
+    });
+    await act(async () => {
+      root.render(
+        <ChatMarkdown streaming>
+          {"Look ![A picture](https://example.com/picture.png)"}
+        </ChatMarkdown>,
+      );
+    });
+    const fresh = units("new");
+    expect(fresh).toHaveLength(1);
+    expect(fresh[0]).toContain("A picture");
+    expect(container.textContent).toContain("Look A picture");
+    await act(async () => {
+      root.unmount();
+    });
+    container.remove();
+  });
+
   it("continues the reveal rhythm into a new paragraph", async () => {
     vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
     const container = document.createElement("div");
