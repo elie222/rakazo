@@ -2475,6 +2475,7 @@ function renderInChatColumn(overrides: Partial<ComponentProps<typeof Composer>>)
   const column = document.createElement("main");
   const transcript = column.appendChild(document.createElement("div"));
   container!.before(column);
+  column.append(container!);
   onTestFinished(() => column.remove());
   act(() =>
     root?.render(
@@ -2483,8 +2484,9 @@ function renderInChatColumn(overrides: Partial<ComponentProps<typeof Composer>>)
       </FileDropZoneContext>,
     ),
   );
+  const composerBar = container!.querySelector('[data-testid="composer-bar"]')!;
   const overlay = () => column.querySelector('[data-testid="file-drop-overlay"]');
-  return { transcript, overlay };
+  return { column, composerBar, transcript, overlay };
 }
 
 const droppedFiles = [new File(["example"], "example.txt", { type: "text/plain" })];
@@ -2492,12 +2494,13 @@ const fileDrag = { types: ["Files"], items: [], files: droppedFiles };
 
 it("attaches files dropped anywhere on the chat column", () => {
   const onAttachmentPick = vi.fn(() => true);
-  const { transcript, overlay } = renderInChatColumn({ onAttachmentPick });
+  const { column, composerBar, transcript, overlay } = renderInChatColumn({ onAttachmentPick });
   const message = transcript.appendChild(document.createElement("p"));
   dispatchDrag(transcript, "dragenter", { types: ["text/plain"], items: [] });
   expect(overlay()).toBeNull();
   dispatchDrag(transcript, "dragenter", fileDrag);
-  expect(overlay()).not.toBeNull();
+  expect(overlay()?.parentElement).toBe(composerBar);
+  expect(column.querySelectorAll('[data-testid="file-drop-overlay"]')).toHaveLength(1);
   // Moving onto a child enters it before leaving its parent.
   dispatchDrag(message, "dragenter", fileDrag);
   dispatchDrag(transcript, "dragleave", fileDrag);
@@ -2526,8 +2529,8 @@ it("ignores files dragged from within the page", () => {
   const { transcript, overlay } = renderInChatColumn({ onAttachmentPick });
   dispatchDrag(transcript, "dragstart", fileDrag);
   dispatchDrag(transcript, "dragenter", fileDrag);
-  dispatchDrag(transcript, "drop", fileDrag);
   expect(overlay()).toBeNull();
+  dispatchDrag(transcript, "drop", fileDrag);
   expect(onAttachmentPick).not.toHaveBeenCalled();
   dispatchDrag(transcript, "dragend", fileDrag);
   dispatchDrag(transcript, "dragenter", fileDrag);
@@ -2538,6 +2541,7 @@ it("hides the drop overlay when the element under the drag was replaced", () => 
   const { transcript, overlay } = renderInChatColumn({});
   const streaming = transcript.appendChild(document.createElement("p"));
   dispatchDrag(streaming, "dragenter", fileDrag);
+  expect(overlay()).not.toBeNull();
   // A streaming reply swaps the node; its leave fires on the detached node and never arrives.
   streaming.replaceWith(document.createElement("p"));
   const replacement = transcript.querySelector("p")!;

@@ -15,7 +15,7 @@ import {
   updateComposerMentionBindings,
 } from "@rakazo/core";
 import { Button } from "@rakazo/ui-web";
-import { Box, Plus } from "lucide-react";
+import { Box, Paperclip, Plus } from "lucide-react";
 import type { ClipboardEvent, ComponentProps, ReactNode, RefObject } from "react";
 import {
   memo,
@@ -404,7 +404,7 @@ const ComposerBody = memo(function Composer({
   const replyAnnouncementKind = useRef<"reply" | "cancelled" | null>(null);
   const prevReplyTarget = useRef<ThreadMessage | null>(null);
   const [fieldset, setFieldset] = useState<HTMLFieldSetElement | null>(null);
-  const { fileDragActive, fileDropOverlay } = useComposerFileDrop({
+  const { fileDragActive, fileDragOverZone } = useComposerFileDrop({
     docked,
     composer: fieldset,
     disabled,
@@ -635,7 +635,6 @@ const ComposerBody = memo(function Composer({
       aria-label={t`Message composer`}
       className={`relative z-30 m-0 min-w-0 border-0 ${docked ? "p-0" : "px-3 pb-4 pt-0 md:px-[max(1.5rem,calc((100%_-_60rem)/2))] md:pb-6"} [&>*]:pointer-events-auto ${fileDragActive ? "pointer-events-auto" : "pointer-events-none"}`}
     >
-      {fileDropOverlay}
       <div role="status" data-testid="composer-announcement" className="sr-only">
         {replyAnnouncement}
       </div>
@@ -724,7 +723,7 @@ const ComposerBody = memo(function Composer({
         ref={composerBarRef}
         data-testid="composer-bar"
         data-expanded={expanded}
-        className={`grid grid-cols-[auto_minmax(0,1fr)_auto] content-end items-center rounded-[26px] border border-border pe-2.5 ps-3 transition-colors focus-within:border-input ${
+        className={`relative grid grid-cols-[auto_minmax(0,1fr)_auto] content-end items-center rounded-[26px] border border-border pe-2.5 ps-3 transition-colors focus-within:border-input ${
           docked ? "bg-card" : "bg-background dark:bg-card"
         } ${
           expanded
@@ -734,6 +733,15 @@ const ComposerBody = memo(function Composer({
               : "gap-x-3.5 py-[9px]"
         }`}
       >
+        {fileDragOverZone ? (
+          <div
+            aria-hidden="true"
+            data-testid="file-drop-overlay"
+            className="pointer-events-none absolute inset-0 z-40 grid place-items-center rounded-[inherit] border-2 border-dashed border-ring bg-background/80"
+          >
+            <Paperclip size={16} strokeWidth={1.8} className="text-muted-foreground" />
+          </div>
+        ) : null}
         <input
           ref={fileInputRef}
           type="file"
