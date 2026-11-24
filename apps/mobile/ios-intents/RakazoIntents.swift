@@ -440,13 +440,26 @@ struct RakazoSession {
   }
 
   /// Uses the same replayable SSE feed as the mobile chat, including a reply that finished
-  /// before this subscription opened. The resource deadline also bounds an idle stream.
+  /// before this subscription opened.
   func waitForReply(runId: String, botId: String, spaceId: String?) async throws -> Bool {
-    var request = try request(
-      "threads/subscribe", ["botId": botId, "cursor": 0], spaceId: spaceId, timeout: 28)
+    try await waitForThreadEvent(["botId": botId], after: 0, spaceId: spaceId, timeout: 28) {
+      $0.runId == runId && ["run.completed", "run.failed", "run.cancelled", "run.waiting_input",
+        "computer.takeover.requested"].contains($0.type)
+    }
+  }
+
+  /// Follows a chat's events after `cursor` until one matches. False when the deadline, which
+  /// also bounds an idle stream, passes or the stream drops first.
+  func waitForThreadEvent(
+    _ target: [String: String], after cursor: Int, spaceId: String?, timeout: TimeInterval,
+    matching matches: (ThreadEventSummary) -> Bool
+  ) async throws -> Bool {
+    var input: [String: Any] = target
+    input["cursor"] = cursor
+    var request = try request("threads/subscribe", input, spaceId: spaceId, timeout: timeout)
     request.setValue("text/event-stream", forHTTPHeaderField: "accept")
     let config = URLSessionConfiguration.ephemeral
-    config.timeoutIntervalForResource = 28
+    config.timeoutIntervalForResource = timeout
     let stream = URLSession(configuration: config, delegate: RejectRedirects(), delegateQueue: nil)
     defer { stream.invalidateAndCancel() }
     do {
@@ -470,11 +483,9 @@ struct RakazoSession {
             .joined(separator: "\n")
           frame.removeAll(keepingCapacity: true)
           guard let data = payload.data(using: .utf8),
-            let event = try? JSONDecoder().decode(Envelope<ReplyEvent>.self, from: data).json,
-            event.runId == runId
+            let event = try? JSONDecoder().decode(Envelope<ThreadEventSummary>.self, from: data).json
           else { continue }
-          if ["run.completed", "run.failed", "run.cancelled", "run.waiting_input",
-              "computer.takeover.requested"].contains(event.type) { return true }
+          if matches(event) { return true }
         } else {
           previousLf = byte == 10
           guard !discardingFrame else { continue }
@@ -596,7 +607,7 @@ private struct BotRoutines: Decodable {
   }
   let routines: [Routine]
 }
-private struct ReplyEvent: Decodable {
+struct ThreadEventSummary: Decodable {
   let runId: String?
   let type: String
 }

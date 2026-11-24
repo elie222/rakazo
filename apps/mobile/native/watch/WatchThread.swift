@@ -105,6 +105,7 @@ struct WatchThread: Decodable {
     }
   }
 
+  let cursor: Int
   let messages: [Message]
   let activeRuns: [Run]?
 

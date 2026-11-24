@@ -62,7 +62,7 @@ private final class WatchConnection: NSObject, WCSessionDelegate {
         switch request.action {
         case .send: error = .sendUnconfirmed
         case .answer: error = .answerUnconfirmed
-        case .chats, .thread: error = .unavailable
+        case .chats, .thread, .wait: error = .unavailable
         }
         continuation.resume(throwing: error)
       }
@@ -229,6 +229,7 @@ private struct WatchConversation: View {
   @State private var sendNonce = UUID()
   @State private var sendingText: String?
   @State private var needsRefresh = false
+  @State private var waits = 0
 
   private var chat: WatchChat { row.chat }
   private var tint: Color { row.color.flatMap(Color.init(hex:)) ?? Color.gray }
@@ -294,6 +295,13 @@ private struct WatchConversation: View {
       if connection.reachable && phase == .active { await refresh() }
       else if phase == .active { failure = .unavailable }
     }
+    // A suspended iPhone app cannot publish a revision, so ask it to wait for the reply.
+    .task(id: botWorking && connection.reachable && phase == .active ? waits : nil) {
+      guard botWorking, connection.reachable, phase == .active else { return }
+      let reply = try? await connection.request(WatchRequest(action: .wait, scope: scope, chat: chat))
+      guard let reply, !Task.isCancelled else { return }
+      if reply.changed == true { await refresh() } else { waits += 1 }
+    }
   }
 
   private static let composer = "composer"
@@ -316,6 +324,7 @@ private struct WatchConversation: View {
       messages = reply.messages ?? []
       botWorking = reply.botWorking == true
       failure = nil
+      waits += 1
     } catch {
       guard !Task.isCancelled, identity == connection.identityRevision else { return }
       let reason = error as? WatchFailure ?? .unavailable
