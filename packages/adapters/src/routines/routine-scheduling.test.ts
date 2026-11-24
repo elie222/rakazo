@@ -93,9 +93,9 @@ function pendingTimerFixture(reuse = true) {
 }
 
 describe("recurring routine catch-up", () => {
-  it("skips a scheduled tick while an earlier scheduled run awaits input", async () => {
+  it("skips a scheduled tick while an earlier run from the same timer is active", async () => {
     const { executor, tx, enqueue, append, scheduledAt } = pendingTimerFixture(false);
-    tx.run.findFirst.mockResolvedValueOnce({ id: "waiting-1" });
+    tx.run.findFirst.mockResolvedValueOnce({ id: "active-1" });
 
     await executor.wakeRoutine("routine-1", scheduledAt.toISOString());
 
@@ -104,7 +104,7 @@ describe("recurring routine catch-up", () => {
         routineId: "routine-1",
         userId: "user-1",
         trigger: "routine",
-        status: "waiting_input",
+        status: { in: ["queued", "leased", "running", "waiting_input", "waiting_takeover"] },
         clientNonce: { startsWith: "routine-timer:routine-1:" },
       },
       select: { id: true },
