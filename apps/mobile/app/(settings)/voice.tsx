@@ -431,7 +431,7 @@ export default function VoiceSettings() {
     baseUrl,
   });
   const offersModelConnection = modelConnections.length > 0 || Boolean(modelSignIn);
-  const showKeyForm = !offersModelConnection || keyFormProvider === provider;
+  const showKeyForm = credential?.hasKey || !offersModelConnection || keyFormProvider === provider;
 
   /**
    * The sign-in already saved the model connection; when voice cannot connect through it, read
@@ -723,7 +723,7 @@ export default function VoiceSettings() {
               onChoose={connect}
               onSignedIn={connectSignedIn}
             />
-            {offersModelConnection && !linked ? (
+            {offersModelConnection && !linked && !credential?.hasKey ? (
               <DisclosureRow
                 label={t`Or paste an API key`}
                 expanded={showKeyForm}

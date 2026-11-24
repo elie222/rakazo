@@ -332,7 +332,8 @@ export function VoiceSettingsOverlay({
     baseUrl,
   });
   const offersModelConnection = modelConnections.length > 0 || Boolean(modelSignIn);
-  const keyFolded = !linked && offersModelConnection && keyShownFor !== selected?.id;
+  const keyFolded =
+    !linked && !credential?.hasKey && offersModelConnection && keyShownFor !== selected?.id;
 
   /** Connects with the key form, or through the account's model connection when given one. */
   async function connect(modelCredentialId?: string): Promise<boolean> {

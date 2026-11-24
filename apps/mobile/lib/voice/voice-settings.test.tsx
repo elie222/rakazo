@@ -952,7 +952,6 @@ it("still needs a whole key to replace a key saved for a model-connection provid
   await render();
   await click("Linked");
   expect(keyField()?.placeholder).toBe("Paste a replacement key");
-  expect(container.textContent).not.toContain("Use Personal plan");
   expect(button("Replace key").disabled).toBe(true);
   await typeInto("API key", "a-whole-key");
   expect(button("Replace key").disabled).toBe(false);

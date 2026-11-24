@@ -27,7 +27,14 @@ describe("voiceConnectionForm", () => {
     });
     // A link that names no connection uses whichever the provider has.
     expect(form({ hasKey: false })).toMatchObject({ linked: true, modelConnections: [] });
-    expect(form({ hasKey: true })).toMatchObject({ linked: false, modelConnections: [] });
+  });
+
+  it("lets a key-based voice connection move to a Models connection", () => {
+    expect(form({ hasKey: true })).toMatchObject({
+      linked: false,
+      modelConnections: entry.modelConnections,
+      modelSignIn: undefined,
+    });
   });
 
   it("lets a working link move to another of the account's connections", () => {
@@ -47,9 +54,6 @@ describe("voiceConnectionForm", () => {
     expect(form({ hasKey: false }, { modelConnections: two })).toMatchObject({
       linked: true,
       modelConnections: two,
-    });
-    expect(form({ hasKey: true }, { modelConnections: two })).toMatchObject({
-      modelConnections: [],
     });
   });
 
