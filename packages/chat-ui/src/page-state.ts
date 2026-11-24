@@ -12,6 +12,14 @@ export function pageStateRetryable(error: unknown): boolean {
   return !(typeof code === "string" && REFUSED.has(code));
 }
 
+/** A cached page read with the values just saved, so reopening or redrawing it shows them. */
+export function withSavedValues<T extends { readerState?: PageState }>(
+  read: T | undefined,
+  values: PageState,
+): T | undefined {
+  return read?.readerState ? { ...read, readerState: { ...read.readerState, ...values } } : read;
+}
+
 /**
  * What a reader changed on a page, saved one request at a time: changes made while one is out go
  * in the next, a failed one goes again with the next, and one the server refused is dropped.

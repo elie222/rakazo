@@ -80,7 +80,7 @@ function ReviewPage({ pageId, onClose }: { pageId: string; onClose: () => void }
   });
   const readerState = draftId ? undefined : page?.readerState;
   const preview = usePageDocument(code, "card", false, 0, !draftId, revision?.anchor, readerState);
-  const stateSaver = usePageStateSaver(pageId, [read.queryKey]);
+  const stateSaver = usePageStateSaver(pageId, read.queryKey);
   const publish = useSave({
     save: (requestId: string, rpc) => rpc.pageReviews.publish({ pageId, requestId }),
     stale: [

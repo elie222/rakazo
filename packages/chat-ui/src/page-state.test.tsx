@@ -3,7 +3,7 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { PageStateSave } from "./page-state";
-import { pageStateRetryable, usePageStateQueue } from "./page-state";
+import { pageStateRetryable, usePageStateQueue, withSavedValues } from "./page-state";
 
 beforeEach(() => vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true));
 afterEach(() => vi.unstubAllGlobals());
@@ -32,4 +32,10 @@ it("saves a page's changes one request at a time, retrying a failure and droppin
   expect(pageStateRetryable(new Error("offline"))).toBe(true);
   expect(pageStateRetryable({ code: "PAGE_STATE_LIMIT" })).toBe(false);
   act(() => root.unmount());
+});
+
+it("adds saved values to a page read that carries the reader's values, and only to one", () => {
+  const read = { code: "x", readerState: { a: 1, b: 2 } };
+  expect(withSavedValues(read, { b: 3 })).toEqual({ code: "x", readerState: { a: 1, b: 3 } });
+  expect(withSavedValues({ code: "old version" }, { b: 3 })).toEqual({ code: "old version" });
 });

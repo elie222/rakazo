@@ -54,7 +54,7 @@ function Review({ pageId }: { pageId: string }) {
   savedState.current = readerState;
   const stateSaver = usePageStateSaver(pageId, {
     target: ACCOUNT_SETTINGS,
-    stale: [read.queryKey],
+    read: read.queryKey,
   });
   const apiBase = currentApiBase();
   const runtimeError = t`This page couldn't be shown.`;

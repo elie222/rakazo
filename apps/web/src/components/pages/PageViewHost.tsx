@@ -105,9 +105,10 @@ function OpenPage({
     stale: reads,
     onFailed: reconcile,
   });
-  const readerState = usePageStateSaver(shownId, [
+  const readerState = usePageStateSaver(
+    shownId,
     queries.pages.get.queryKey({ input: { pageId: shownId } }),
-  ]);
+  );
   const visibility = useSave({
     save: (visibility: PageVisibility, rpc) =>
       rpc.pages.setVisibility({ pageId: shownId, visibility }),
