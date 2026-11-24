@@ -153,8 +153,7 @@ function PagePreview({
         data-testid="page-card-preview"
         data-page-preview-scroll={canScroll ? "" : undefined}
         data-scrolling={lastScroll !== null || undefined}
-        role={canScroll ? undefined : "group"}
-        aria-label={t`Preview of ${title}`}
+        aria-label={canScroll ? t`Preview of ${title}` : undefined}
         tabIndex={canScroll ? 0 : -1}
         onScroll={(event) => {
           readScroll(event.currentTarget);
@@ -208,8 +207,6 @@ function PagePreview({
           className="hidden h-[max(0px,calc(var(--page-preview-height)_-_100%))] pointer-fine:block"
         />
       </section>
-      {/* When there is no scrollbar, the empty gutter also opens the page. */}
-      {!canScroll && openPreview}
     </div>
   );
 }
@@ -249,7 +246,7 @@ export function PageCard({
         <PagePreview document={document} title={title} failed={failed} onOpen={onOpen} />
       ) : null}
       <div
-        className={`flex h-[73px] items-center gap-[14px] border-t border-foreground/[0.04] px-5 pointer-fine:relative ${onOpen ? "motion-safe:transition-colors pointer-fine:group-hover/page-card:bg-foreground/[0.045] pointer-fine:has-focus-visible:bg-foreground/[0.045]" : ""}`}
+        className={`flex h-[73px] items-center gap-[14px] border-t border-foreground/[0.04] px-5 pointer-fine:group-has-[[data-page-preview-scroll]]/page-card:relative ${onOpen ? "motion-safe:transition-colors pointer-fine:group-hover/page-card:bg-foreground/[0.045] pointer-fine:has-focus-visible:bg-foreground/[0.045]" : ""}`}
       >
         <PageTileIcon />
         <div className="min-w-0">

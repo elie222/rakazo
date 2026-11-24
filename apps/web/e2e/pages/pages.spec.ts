@@ -305,6 +305,18 @@ test("a Page preview can grow when an absolute item moves below it", async ({ pa
   const overflow = () => preview.evaluate((element) => element.scrollHeight - element.clientHeight);
   expect(await overflow()).toBeLessThanOrEqual(1);
 
+  const openButton = card.getByRole("button", { name: `Open ${title}` });
+  const view = page.getByTestId("page-view");
+  await preview.click();
+  await expect(view).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(view).toBeHidden();
+  await expect(openButton).toBeFocused();
+  await page.keyboard.press("Enter");
+  await expect(view).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(view).toBeHidden();
+
   // Trigger the page component's own update inside the otherwise inert preview.
   await frame.locator("button").filter({ hasText: "Move notes" }).dispatchEvent("click");
   await expect(note).not.toBeInViewport();
