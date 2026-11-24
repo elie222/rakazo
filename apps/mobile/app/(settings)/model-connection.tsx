@@ -476,6 +476,7 @@ export default function ModelConnection() {
     connectedCredentialId: string,
   ): Promise<boolean> {
     if (!request?.onSaved) return finishConnecting(connectedModelId, connectedCredentialId);
+    if (modelConnectionRequest(requestId) !== request) return true;
     request.onSaved(connectedCredentialId);
     router.back();
     return true;

@@ -16,7 +16,11 @@ import BotSettingsScreen from "../../app/bot-settings";
 import { ModelPickerList } from "../../components/models/model-picker-list";
 import { queryClient } from "../query/query";
 import type { ModelConnectionRequest } from "./model-connection-request";
-import { modelConnectionRequest, openModelConnection } from "./model-connection-request";
+import {
+  closeModelConnection,
+  modelConnectionRequest,
+  openModelConnection,
+} from "./model-connection-request";
 import { modelPickerRequest } from "./model-picker-selection";
 
 const mocks = vi.hoisted(() => ({
@@ -866,6 +870,7 @@ async function renderConnection(request: Partial<ModelConnectionRequest> = {}) {
     ...request,
   });
   await renderStack("connection", { requestId });
+  return requestId;
 }
 
 function searchModels(text: string) {
@@ -1079,6 +1084,24 @@ describe("provider connection screen", () => {
     expect(onSaved).toHaveBeenCalledExactlyOnceWith(CREDENTIAL_ID);
     expect(mocks.back).toHaveBeenCalledOnce();
     expect(mocks.replace).not.toHaveBeenCalled();
+  });
+
+  it("does not return to Voice after its connection request was closed", async () => {
+    mocks.connected = false;
+    const finished = deferred<void>();
+    mocks.rpc.mockImplementation((procedure: string) =>
+      procedure === "models/connect" ? finished.promise : undefined,
+    );
+    const onSaved = vi.fn();
+    const requestId = await renderConnection({ onSaved });
+    editField("API key", "fixture-key");
+    await act(async () => buttonWithText("Connect API key")!.click());
+
+    closeModelConnection(requestId);
+    await act(async () => finished.resolve());
+
+    expect(onSaved).not.toHaveBeenCalled();
+    expect(mocks.back).not.toHaveBeenCalled();
   });
 
   it("opens prerequisites before issuing a code and lets the browser handoff be retried", async () => {

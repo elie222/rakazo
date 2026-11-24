@@ -17,17 +17,17 @@ import {
 import { fetchFresh, writeSaved } from "@rakazo/core/query";
 import { bestEffort } from "@rakazo/logging/best-effort";
 import { isCancelledError } from "@tanstack/react-query";
-import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
+import { useFocusEffect, useLocalSearchParams } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, ScrollView, Text, TextInput, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { DisclosureRow } from "../../components/models/model-connection-fields";
+import { VoiceModelConnectionActions } from "../../components/models/voice-model-connection-actions";
 import { NativeActionButton } from "../../components/native/native-action-button";
 import { NativeSwitch } from "../../components/native/native-switch";
 import { LoadFailure } from "../../components/ui/load-failure";
 import { MenuPicker } from "../../components/ui/menu-picker";
 import { errorText } from "../../lib/api/user-error";
-import { mobileTokens } from "../../lib/appearance/appearance";
 import {
   loadCallGreetingEnabled,
   loadCallSoundsEnabled,
@@ -38,16 +38,13 @@ import {
   saveWaitSoundEnabled,
 } from "../../lib/calls/call-sounds";
 import { useSideInsets } from "../../lib/layout/side-insets";
-import {
-  closeModelConnection,
-  openModelConnection,
-} from "../../lib/models/model-connection-request";
 import { native, useThemedStyles } from "../../lib/native/native";
 import { queryClient, rpcQuery } from "../../lib/query/query";
 import type { SettingsTarget } from "../../lib/query/settings-target";
 import { settingsRpc, settingsTarget } from "../../lib/query/settings-target";
 import { loadDeviceVoiceEnabled, saveDeviceVoiceEnabled } from "../../lib/voice/device-voice";
 import { speakText } from "../../lib/voice/voice";
+import { createVoiceStyles } from "../../lib/voice/voice-settings-styles";
 
 const DEVICE_CHOICE = "device";
 
@@ -107,7 +104,6 @@ export default function VoiceSettings() {
   const params = useLocalSearchParams<{ spaceId?: string }>();
   const target = useMemo(() => settingsTarget(params.spaceId), [params.spaceId]);
   const rpc = useMemo(() => settingsRpc(target), [target]);
-  const router = useRouter();
   const scope = target.scope;
   const deviceSettings = scope === "account";
   const sideInsets = useSideInsets();
@@ -428,36 +424,6 @@ export default function VoiceSettings() {
   const offersModelConnection = modelConnections.length > 0 || Boolean(modelSignIn);
   const showKeyForm = !offersModelConnection || keyFormProvider === provider;
 
-  // The Models sign-in this screen opened, which connects voice once it saves a connection.
-  const signInRequest = useRef<string | null>(null);
-  useEffect(
-    () => () => {
-      if (signInRequest.current) closeModelConnection(signInRequest.current);
-    },
-    [],
-  );
-  // Coming back here ends the sign-in this screen opened, so the button can open a new one.
-  useFocusEffect(
-    useCallback(() => {
-      if (signInRequest.current) closeModelConnection(signInRequest.current);
-      signInRequest.current = null;
-    }, []),
-  );
-
-  function signIn() {
-    // A second tap while the sign-in screen opens must not replace the request it reads.
-    if (!selected || signInRequest.current) return;
-    const requestId = openModelConnection({
-      provider: selected.id,
-      credentialId: null,
-      makeDefault: false,
-      target,
-      onSaved: (credentialId) => void connectSignedIn(credentialId),
-    });
-    signInRequest.current = requestId;
-    router.push({ pathname: "/model-connection", params: { requestId } });
-  }
-
   /**
    * The sign-in already saved the model connection; when voice cannot connect through it, read
    * the catalog again so it shows as a connection to use instead of another sign-in.
@@ -738,22 +704,16 @@ export default function VoiceSettings() {
                 textContentType="URL"
               />
             ) : null}
-            {modelConnections.map(({ id, label }) => (
-              <NativeActionButton
-                key={id}
-                disabled={pending !== null}
-                prominence={modelConnections.length === 1 && !linked ? "primary" : "secondary"}
-                label={t`Use ${label}`}
-                onPress={() => void connect(id)}
-              />
-            ))}
-            {modelSignIn ? (
-              <NativeActionButton
-                disabled={pending !== null}
-                label={modelSignIn}
-                onPress={signIn}
-              />
-            ) : null}
+            <VoiceModelConnectionActions
+              provider={selected.id}
+              target={target}
+              choices={modelConnections}
+              signInLabel={modelSignIn}
+              linked={linked}
+              disabled={pending !== null}
+              onChoose={connect}
+              onSignedIn={connectSignedIn}
+            />
             {offersModelConnection && !linked ? (
               <DisclosureRow
                 label={t`Or paste an API key`}
@@ -1010,39 +970,4 @@ export default function VoiceSettings() {
       </ScrollView>
     </SafeAreaView>
   );
-}
-
-function createVoiceStyles() {
-  const tokens = mobileTokens();
-  return StyleSheet.create({
-    screen: { flex: 1, backgroundColor: native.page },
-    content: { padding: 20, gap: 10 },
-    error: { color: tokens.destructive, marginBottom: 8 },
-    group: { borderRadius: 14, backgroundColor: native.fill, overflow: "hidden" },
-    groupRow: {
-      minHeight: 52,
-      paddingHorizontal: 16,
-      paddingVertical: 10,
-      flexDirection: "row",
-      alignItems: "center",
-      gap: 12,
-    },
-    groupDivider: {
-      borderTopWidth: StyleSheet.hairlineWidth,
-      borderTopColor: native.separator,
-    },
-    rowCopy: { flex: 1 },
-    cardTitle: { color: native.label, fontSize: 16 },
-    fieldLabel: { color: native.label, marginTop: 16 },
-    input: {
-      marginTop: 8,
-      borderRadius: 12,
-      backgroundColor: native.fill,
-      color: native.label,
-      paddingHorizontal: 14,
-      paddingVertical: 12,
-    },
-    disabled: { opacity: 0.4 },
-    pressed: { opacity: 0.7 },
-  });
 }

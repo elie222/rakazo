@@ -59,23 +59,23 @@ describePostgres("voice through a Grok sign-in (PostgreSQL contract)", () => {
     await fixture.secret.create({
       data: { id: stored.id, userId: id, kind: "model", ciphertext: stored.ciphertext },
     });
-    await fixture.userModelCredential.create({
+    const modelConnection = await fixture.userModelCredential.create({
       data: { userId: id, provider: "xai", label: "xAI", secretId: stored.id },
     });
     const storedModelSecret = async () => {
       const row = await fixture.secret.findUniqueOrThrow({ where: { id: stored.id } });
       return JSON.parse(await secrets.load(row.ciphertext, row.id));
     };
-    const resolve = () =>
+    const resolve = (credentialId?: string) =>
       runAsTenant(scope, () =>
         resolveVoiceKey(
           { prisma, secretStore: secrets },
           scope,
           "xai",
-          modelConnectionVoiceSecret(),
+          modelConnectionVoiceSecret(credentialId),
         ),
       );
-    return { resolve, storedModelSecret };
+    return { resolve, storedModelSecret, credentialId: modelConnection.id };
   }
 
   /** xAI's token endpoint, answering refreshes with `reply`; other requests fail the test. */
@@ -96,15 +96,15 @@ describePostgres("voice through a Grok sign-in (PostgreSQL contract)", () => {
   }
 
   it("refreshes an expired sign-in once, keeps the rotated token, and speaks with it", async () => {
-    const { resolve, storedModelSecret } = await seed();
+    const { resolve, storedModelSecret, credentialId } = await seed();
     const refreshes = tokenEndpoint(() =>
       Response.json({ access_token: "acc-1", refresh_token: "rt-1", expires_in: 3600 }),
     );
 
-    expect(await resolve()).toBe("acc-1");
+    expect(await resolve(credentialId)).toBe("acc-1");
     expect(await storedModelSecret()).toMatchObject({ access: "acc-1", refresh: "rt-1" });
     // The next request reads the saved token instead of spending the refresh token again.
-    expect(await resolve()).toBe("acc-1");
+    expect(await resolve(credentialId)).toBe("acc-1");
     expect(refreshes).toEqual(["rt-0"]);
   });
 

@@ -33,14 +33,13 @@ import {
 import { useQueryClient } from "@tanstack/react-query";
 import { XIcon } from "lucide-react";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
-import { SubscriptionSignInSteps } from "../../components/models/SubscriptionSignInSteps";
 import { useCallSession } from "../../lib/calls/call-session";
 import { speaker } from "../../lib/calls/tts";
-import { useCopyText } from "../../lib/copy-text";
 import { useModelOAuthSignIn } from "../../lib/models/use-model-oauth-signin";
 import { useSpaceQueries } from "../../lib/query/query";
 import { useBoundSpaceId, useSpaceRpc } from "../../lib/query/space-rpc";
 import { errorText } from "../../lib/query/user-error";
+import { VoiceModelConnectionActions } from "./voice-model-connection-actions";
 
 export function VoiceSettingsOverlay({
   onClose,
@@ -148,7 +147,6 @@ export function VoiceSettingsOverlay({
   const [notice, setNotice] = useState<string | null>(null);
   // With a model connection on offer, the key form stays folded until asked for.
   const [keyShownFor, setKeyShownFor] = useState<string | null>(null);
-  const [codeCopied, copyOAuthCode] = useCopyText();
   // The Models sign-in saves a model connection, which this provider's voice then uses.
   const signIn = useModelOAuthSignIn({
     onClearError: () => setError(null),
@@ -332,15 +330,6 @@ export function VoiceSettingsOverlay({
   });
   const offersModelConnection = modelConnections.length > 0 || Boolean(modelSignIn);
   const keyFolded = !linked && offersModelConnection && keyShownFor !== selected?.id;
-
-  function startModelSignIn() {
-    if (!selected) return;
-    void signIn.startSubscriptionSignIn({
-      provider: selected.id,
-      credentialId: null,
-      makeDefault: false,
-    });
-  }
 
   /** Connects with the key form, or through the account's model connection when given one. */
   async function connect(modelCredentialId?: string): Promise<boolean> {
@@ -596,43 +585,15 @@ export function VoiceSettingsOverlay({
         <>
           {managesConnection ? (
             <>
-              {modelSignIn ? (
-                <div className="mt-5">
-                  <SubscriptionSignInSteps
-                    oauth={signIn.oauth}
-                    setup={undefined}
-                    startLabel={modelSignIn}
-                    starting={signIn.oauthPending}
-                    disabled={busy || signingIn}
-                    onStart={startModelSignIn}
-                    onRestart={() => {
-                      signIn.cancelOAuthAttempt("replaced");
-                      startModelSignIn();
-                    }}
-                    codeCopied={codeCopied}
-                    onCopyCode={copyOAuthCode}
-                    pasteCode={signIn.pasteCode}
-                    onPasteCodeChange={signIn.setPasteCode}
-                    onSubmitCode={() => void signIn.submitOAuthCode()}
-                    onPageOpened={() => signIn.reportSignInStep("page_opened")}
-                  />
-                </div>
-              ) : null}
-              {modelConnections.length ? (
-                <div className="mt-5 flex flex-wrap items-center gap-2">
-                  {modelConnections.map(({ id, label }) => (
-                    <Button
-                      key={id}
-                      type="button"
-                      variant={modelConnections.length === 1 && !linked ? "default" : "outline"}
-                      disabled={busy || signingIn}
-                      onClick={() => void connect(id)}
-                    >
-                      {t`Use ${label}`}
-                    </Button>
-                  ))}
-                </div>
-              ) : null}
+              <VoiceModelConnectionActions
+                provider={selected.id}
+                choices={modelConnections}
+                signInLabel={modelSignIn}
+                linked={linked}
+                disabled={busy || signingIn}
+                signIn={signIn}
+                onChoose={connect}
+              />
               {keyFolded ? (
                 // Only the summary shows here; opening it swaps in the key form below.
                 <Disclosure
