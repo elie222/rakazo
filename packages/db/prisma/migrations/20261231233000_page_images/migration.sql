@@ -8,7 +8,8 @@ CREATE TABLE "page_images" (
     "mimeType" TEXT NOT NULL,
     "width" INTEGER NOT NULL,
     "height" INTEGER NOT NULL,
-    "data" TEXT NOT NULL,
+    "size" INTEGER NOT NULL,
+    "storageKey" TEXT NOT NULL,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     CONSTRAINT "page_images_pkey" PRIMARY KEY ("id")

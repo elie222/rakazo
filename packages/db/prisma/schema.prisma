@@ -2185,7 +2185,9 @@ model PageImage {
   mimeType  String
   width     Int
   height    Int
-  data      String
+  size      Int
+  /// Where the artifact store keeps the bytes, as for a chat file.
+  storageKey String
   createdAt DateTime @default(now())
 
   @@unique([pageId, hash])

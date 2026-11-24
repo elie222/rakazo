@@ -13,7 +13,7 @@ export type EncodedPageImage = {
   mimeType: "image/webp";
   width: number;
   height: number;
-  data: string;
+  bytes: Uint8Array;
   hash: string;
 };
 
@@ -37,7 +37,7 @@ export async function encodePageImage(bytes: Uint8Array): Promise<EncodedPageIma
       mimeType: "image/webp",
       width: info.width,
       height: info.height,
-      data: data.toString("base64"),
+      bytes: new Uint8Array(data.buffer, data.byteOffset, data.byteLength),
       hash: createHash("sha256").update(data).digest("hex"),
     };
   } catch (error) {

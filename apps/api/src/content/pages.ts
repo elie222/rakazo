@@ -1,5 +1,5 @@
 import { createHash, randomBytes } from "node:crypto";
-import type { SecretStore } from "@rakazo/adapter-kit";
+import type { AdapterContext, ArtifactStore, SecretStore } from "@rakazo/adapter-kit";
 import { forgetPageShareSecrets } from "@rakazo/adapters";
 import type {
   Actor,
@@ -11,14 +11,22 @@ import type {
 } from "@rakazo/contracts";
 import { pageReviewPath, pageShareTokenFromSlug, pageShareUrl } from "@rakazo/contracts";
 import { ClientError, escapeSearchWildcards } from "@rakazo/core";
-import type { PageShareSecret, Prisma, PrismaClient, ThreadEvents } from "@rakazo/db";
+import type {
+  PageShareSecret,
+  Prisma,
+  PrismaClient,
+  StoredPageImage,
+  ThreadEvents,
+} from "@rakazo/db";
 import {
   cancelPageGrantRequests,
+  findPageVersionImage,
   IsolationError,
   isRecordNotFound,
   lockPage,
+  pageImageSource,
+  pageImageStorageKeys,
   pageVersionImages,
-  readPageVersionImage,
   runAsSystem,
   signalPage,
   signalPageUsers,
@@ -31,6 +39,7 @@ const DEFAULT_LIST_LIMIT = 30;
 type PageDeps = {
   prisma: PrismaClient;
   secrets: SecretStore;
+  artifacts: ArtifactStore;
   webOrigin: string;
   events?: ThreadEvents;
 };
@@ -408,7 +417,7 @@ export async function setPageVisibility(
 
 export async function removePage(deps: PageDeps, actor: Actor, pageId: string) {
   const row = await requirePage(deps.prisma, actor, pageId);
-  const { removed, reviewers } = await runAsSystem(
+  const { removed, reviewers, imageKeys } = await runAsSystem(
     "remove an owned page and notify its reviewers",
     () =>
       deps.prisma.$transaction(async (tx) => {
@@ -418,6 +427,7 @@ export async function removePage(deps: PageDeps, actor: Actor, pageId: string) {
               ({ userId }) => userId,
             )
           : [];
+        const imageKeys = await pageImageStorageKeys(tx, { id: row.id });
         // The deleted row's link, not the one read before: a share may have swapped it since.
         const deleted = await stillThere(
           tx.page.delete({
@@ -425,16 +435,17 @@ export async function removePage(deps: PageDeps, actor: Actor, pageId: string) {
             select: { shareSecretId: true },
           }),
         );
-        if (!deleted.shareSecretId) return { removed: null, reviewers };
+        if (!deleted.shareSecretId) return { removed: null, reviewers, imageKeys };
         const secret = await tx.secret.findUnique({
           where: { id: deleted.shareSecretId },
           select: { id: true, ciphertext: true },
         });
         await tx.secret.deleteMany({ where: { id: deleted.shareSecretId } });
-        return { removed: secret, reviewers };
+        return { removed: secret, reviewers, imageKeys };
       }),
   );
   if (deps.events) await signalPageUsers(deps.events, [actor.userId, ...reviewers]);
+  await removePageImageFiles(deps.artifacts, actor, imageKeys);
   if (removed) await forgetPageShareSecrets(deps.secrets, [removed]);
   return { ok: true as const };
 }
@@ -451,6 +462,8 @@ async function sharedPageVersion(prisma: PrismaClient, token: string) {
         currentVersion: true,
         updatedAt: true,
         id: true,
+        userId: true,
+        spaceId: true,
         shareSecretId: true,
       },
     }),
@@ -483,13 +496,54 @@ export async function readSharedPage(
 }
 
 export async function readSharedPageImage(
-  prisma: PrismaClient,
+  deps: { prisma: PrismaClient; artifacts: ArtifactStore },
   token: string,
   imageId: string,
 ): Promise<PageImageSource | null> {
-  const shared = await sharedPageVersion(prisma, token);
+  const shared = await sharedPageVersion(deps.prisma, token);
   if (!shared) return null;
-  return runAsSystem("page share link image", () =>
-    readPageVersionImage(prisma, shared.version, imageId),
+  const image = await runAsSystem("page share link image", () =>
+    findPageVersionImage(deps.prisma, shared.version, imageId),
   );
+  return image && readPageImage(deps.artifacts, shared.page, image);
+}
+
+function pageImageContext(
+  owner: Pick<Actor, "spaceId" | "userId">,
+  operationId: string,
+): AdapterContext {
+  const { spaceId, userId } = owner;
+  return {
+    operationId,
+    traceId: operationId,
+    spaceId,
+    userId,
+    signal: new AbortController().signal,
+  };
+}
+
+/** A stored page picture as the viewer embeds it, read from the page's own Space. */
+export async function readPageImage(
+  artifacts: ArtifactStore,
+  reader: { userId: string },
+  image: StoredPageImage,
+): Promise<PageImageSource> {
+  const context = pageImageContext(
+    { spaceId: image.spaceId, userId: reader.userId },
+    "page-image-read",
+  );
+  return pageImageSource(image, await artifacts.get(image.storageKey, context));
+}
+
+/** Removes deleted pages' pictures once the deletion commits; the rows are gone, so failures only log. */
+async function removePageImageFiles(
+  artifacts: ArtifactStore,
+  actor: Pick<Actor, "spaceId" | "userId">,
+  storageKeys: string[],
+) {
+  const context = pageImageContext(actor, "page-image-delete");
+  for (const result of await Promise.allSettled(
+    storageKeys.map((storageKey) => artifacts.remove(storageKey, context)),
+  ))
+    if (result.status === "rejected") getLogger().error("page picture cleanup", result.reason);
 }

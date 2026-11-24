@@ -1,5 +1,5 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
-import { mkdtempSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type { AdapterContext, AgentRunRequest, AgentRuntimeEvent } from "@rakazo/adapter-kit";
@@ -54,11 +54,13 @@ describePages("pages", () => {
     }
   }
 
+  const dataDir = mkdtempSync(path.join(tmpdir(), "rakazo-pages-"));
+
   beforeAll(async () => {
     const { createApp } = await import("@rakazo/api/app");
     const handles = await createApp({
       databaseUrl: process.env.DATABASE_URL!,
-      dataDir: mkdtempSync(path.join(tmpdir(), "rakazo-pages-")),
+      dataDir,
       sandboxProvider: "fake",
       agentRuntime: "scripted",
       modelConnectionFetch: createModelConnectionFixtureFetch(listPiCatalog()),
@@ -166,10 +168,6 @@ describePages("pages", () => {
     });
     expect((await raw(app, owner, "pageReviews/image", { ...hotel, version: 2 })).status).toBe(404);
     expect((await raw(app, outsider, "pageReviews/image", beach)).status).toBe(404);
-    const [stored] = await db().$queryRaw<{ data: string }[]>`
-      SELECT data FROM page_images WHERE id = ${beach.imageId}`;
-    expect(stored!.data).toMatch(/^rkz1:/);
-
     const { shareUrl } = await rpc<{ shareUrl: string }>(app, owner, "pages/setVisibility", {
       pageId,
       visibility: "link",
@@ -193,6 +191,34 @@ describePages("pages", () => {
     expect((await raw(app, reviewer, "pageReviews/image", hotel)).status).toBe(404);
     await rpc(app, owner, "pageReviews/revoke", { pageId, grantId: grant.id });
     expect((await raw(app, reviewer, "pageReviews/image", beach)).status).toBe(404);
+  });
+
+  it("keeps one file per picture a page shows and removes it with the page", async () => {
+    const owner = await signup(app, `picture-files-${stamp}@example.test`, "Author");
+    const bot = await createBot(app, owner, "Picture file bot");
+    const photo = await rpc<{ id: string }>(app, owner, "artifacts/create", {
+      botId: bot.id,
+      name: "black.png",
+      mimeType: "image/png",
+      contentBase64:
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=",
+    });
+    const source = `const App = () => (\n  <Page title="Trip">\n    <Image src="image:hotel" alt="hotel" />\n  </Page>\n);\nexport default App;\n`;
+    await sendAndWait(app, owner, bot.id, {
+      text: `call save_page with ${JSON.stringify({ title: "Trip", source, images: { hotel: photo.id } })}`,
+    });
+    const { pageId } = (await lastResult(bot.id)) as { pageId: string };
+    await sendAndWait(app, owner, bot.id, {
+      text: `call save_page with ${JSON.stringify({ pageId, source: `${source}// again\n`, images: { hotel: photo.id } })}`,
+    });
+    const stored = await db().pageImage.findMany({ where: { pageId } });
+    expect(stored).toHaveLength(1);
+    const file = path.join(dataDir, "artifacts", stored[0]!.spaceId, stored[0]!.storageKey);
+    expect(existsSync(file)).toBe(true);
+    expect(readdirSync(path.dirname(file))).toHaveLength(2);
+
+    await rpc(app, owner, "pages/remove", { pageId });
+    expect(existsSync(file)).toBe(false);
   });
 
   it("grants only the page, keeps review history and publishes an isolated draft only with the owner", async () => {

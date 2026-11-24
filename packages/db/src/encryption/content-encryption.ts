@@ -120,12 +120,6 @@ export const ENCRYPTED_MODELS: Record<string, ModelSpec> = {
     ownerRelation: "bot",
     searchTokens: "prefix",
   },
-  PageImage: {
-    table: "page_images",
-    fields: { data: { hidden: true } },
-    space: { column: "spaceId" },
-    ownerRelation: "page",
-  },
 };
 
 /** Rows whose id → space mapping the ring learns from results, for child writes. */

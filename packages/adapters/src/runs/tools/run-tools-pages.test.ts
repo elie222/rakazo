@@ -384,7 +384,11 @@ describe("saving a page's pictures", () => {
     };
     run.deps.prisma.artifact = { findFirst: vi.fn(async () => artifact) };
     run.deps.prisma.externalEffect = { findFirst: vi.fn(async () => null) };
-    run.deps.artifacts = { get: vi.fn(async () => bytes) };
+    run.deps.artifacts = {
+      get: vi.fn(async () => bytes),
+      put: vi.fn(async () => ({ id: "object:picture", hash: "1" })),
+      remove: vi.fn(async () => undefined),
+    };
     Object.assign(run, {
       tools: { offered: [{ name: "web_fetch" }] },
       context: { signal: new AbortController().signal },
@@ -420,6 +424,7 @@ describe("saving a page's pictures", () => {
         mimeType: "image/webp",
         width: 8,
         height: 8,
+        storageKey: "object:picture",
       }),
       select: { id: true },
     });
@@ -427,6 +432,27 @@ describe("saving a page's pictures", () => {
       where: { pageId: "page-1", version: 1 },
       data: { images: { hotel: "image-1" } },
     });
+  });
+
+  it("removes a stored picture's file when the save does not commit", async () => {
+    const tx = {
+      page: { create: vi.fn(async () => ({ id: "page-1", title: "Trip", spaceId: "space-1" })) },
+      pageImage: {
+        findUnique: vi.fn(async () => null),
+        create: vi.fn(async () => {
+          throw new Error("database went away");
+        }),
+      },
+    };
+    const ctx = withFiles(context(tx), { storageKey: "object:1" }, await png());
+    await expect(
+      pageTools.save_page!(
+        ctx,
+        call({ title: "Trip", source: pictured("hotel"), images: { hotel: "artifact-1" } }),
+      ),
+    ).rejects.toThrow("database went away");
+    const deps = (ctx as { deps: { artifacts: { remove: ReturnType<typeof vi.fn> } } }).deps;
+    expect(deps.artifacts.remove).toHaveBeenCalledWith("object:picture", expect.anything());
   });
 
   it("refuses a web picture from a site this run was not given, and saves nothing", async () => {

@@ -28,6 +28,7 @@ import {
   pageImageSourceLabels,
   parsePageImageSources,
   preparePageImages,
+  stagePageImages,
   storePageImages,
 } from "./run-tools-page-images.js";
 
@@ -327,6 +328,9 @@ async function savePage(ctx: RunContext, call: ToolCall) {
       problems: prepared.problems,
       unchanged: true,
     };
+  if (Object.keys(prepared.images).length && !deps.artifacts)
+    return { error: "File storage is unavailable, so pictures cannot be saved.", unchanged: true };
+  const { staged, discard } = await stagePageImages(ctx, page?.id, prepared.images);
 
   const unapproved =
     page !== null &&
@@ -335,7 +339,7 @@ async function savePage(ctx: RunContext, call: ToolCall) {
     !(await neverAsks(ctx));
   let saved: { pageId: string; version: number; title: string };
   try {
-    saved = await deps.prisma.$transaction(async (tx) => {
+    const { kept: keptFiles, ...committed } = await deps.prisma.$transaction(async (tx) => {
       if (!page) {
         const created = await tx.page.create({
           data: {
@@ -347,14 +351,13 @@ async function savePage(ctx: RunContext, call: ToolCall) {
             versions: { create: { version: 1, title: title!, source, code: check.code } },
           },
         });
-        if (Object.keys(prepared.images).length) {
-          const images = await storePageImages(tx, created, {}, prepared.images, source);
+        const stored = await storePageImages(tx, created, {}, staged, source);
+        if (stored.kept.length)
           await tx.pageVersion.updateMany({
             where: { pageId: created.id, version: 1 },
-            data: { images },
+            data: { images: stored.images },
           });
-        }
-        return { pageId: created.id, version: 1, title: created.title };
+        return { pageId: created.id, version: 1, title: created.title, kept: stored.kept };
       }
       const version = page.currentVersion + 1;
       // Conditional on the version this change was built from, so two saves never interleave.
@@ -384,19 +387,22 @@ async function savePage(ctx: RunContext, call: ToolCall) {
         nextTitle = kept;
         await tx.page.update({ where: { id: page.id }, data: { title: kept } });
       }
-      const images = await storePageImages(
+      const { images, kept: keptImages } = await storePageImages(
         tx,
         { id: page.id, spaceId: run.spaceId },
         previousImages,
-        prepared.images,
+        staged,
         source,
       );
       await tx.pageVersion.create({
         data: { pageId: page.id, version, title: nextTitle, source, code: check.code, images },
       });
-      return { pageId: page.id, version, title: nextTitle };
+      return { pageId: page.id, version, title: nextTitle, kept: keptImages };
     });
+    saved = committed;
+    await discard(keptFiles);
   } catch (error) {
+    await discard([]);
     if (error instanceof PageChangedError || isUniqueViolation(error)) {
       return { error: "The page changed while saving; read it again and retry.", unchanged: true };
     }

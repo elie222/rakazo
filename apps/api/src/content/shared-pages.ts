@@ -1,3 +1,4 @@
+import type { ArtifactStore } from "@rakazo/adapter-kit";
 import { SHARED_PAGE_PATH_PREFIX } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
 import type { Context, Hono } from "hono";
@@ -20,7 +21,7 @@ const HEADERS = {
  */
 export function mountSharedPages(
   app: Hono,
-  prisma: PrismaClient,
+  deps: { prisma: PrismaClient; artifacts: ArtifactStore },
   clientIp: (c: Context) => string | undefined,
 ) {
   const reads = windowCounter(MINUTE_MS);
@@ -29,7 +30,7 @@ export function mountSharedPages(
     if (reads(throttleKey(clientIp(c))) > READS_PER_IP_PER_MINUTE) {
       return c.json({ error: "Too many requests" }, 429, { ...HEADERS, "retry-after": "60" });
     }
-    const page = await readSharedPage(prisma, c.req.param("token"));
+    const page = await readSharedPage(deps.prisma, c.req.param("token"));
     if (!page) return c.json({ error: "Not found" }, 404, HEADERS);
     return c.json(page, 200, HEADERS);
   });
@@ -37,7 +38,7 @@ export function mountSharedPages(
     if (imageReads(throttleKey(clientIp(c))) > IMAGE_READS_PER_IP_PER_MINUTE) {
       return c.json({ error: "Too many requests" }, 429, { ...HEADERS, "retry-after": "60" });
     }
-    const image = await readSharedPageImage(prisma, c.req.param("token"), c.req.param("imageId"));
+    const image = await readSharedPageImage(deps, c.req.param("token"), c.req.param("imageId"));
     if (!image) return c.json({ error: "Not found" }, 404, HEADERS);
     return c.json(image, 200, HEADERS);
   });

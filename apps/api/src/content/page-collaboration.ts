@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import type { ArtifactStore } from "@rakazo/adapter-kit";
 import type { Actor, PageComment, PageImageSource, PageReview } from "@rakazo/contracts";
 import { PageRevisionStatus } from "@rakazo/contracts";
 import { ClientError } from "@rakazo/core";
@@ -6,18 +7,19 @@ import type { Prisma, PrismaClient, ThreadEvents } from "@rakazo/db";
 import {
   cancelPageGrantRequests,
   canPageRequestRevision,
+  findPageVersionImage,
   IsolationError,
   lockPage,
   pageOwnerWhere,
   pageRevisionBotSelect,
   pageRevisionPendingCutoff,
   pageVersionImages,
-  readPageVersionImage,
   runAsSystem,
   signalPage,
   signalPageUsers,
   verifiedPageAccount,
 } from "@rakazo/db";
+import { readPageImage } from "./pages.js";
 
 const LIST_SIZE = 40;
 const MAX_GRANTS = 50;
@@ -137,21 +139,22 @@ export function getPageReview(
   });
 }
 
-export function getPageImage(
-  prisma: PrismaClient,
+export async function getPageImage(
+  deps: { prisma: PrismaClient; artifacts: ArtifactStore },
   actor: Actor,
   { pageId, version, imageId }: { pageId: string; version: number; imageId: string },
 ): Promise<PageImageSource> {
-  return readPageReview(prisma, actor, pageId, async (tx, { grant }) => {
+  const image = await readPageReview(deps.prisma, actor, pageId, async (tx, { grant }) => {
     if (version < (grant?.firstVersion ?? 1)) throw new IsolationError();
     const stored = await tx.pageVersion.findUnique({
       where: { pageId_version: { pageId, version } },
       select: { id: true, pageId: true, images: true },
     });
-    const image = stored ? await readPageVersionImage(tx, stored, imageId) : null;
+    const image = stored ? await findPageVersionImage(tx, stored, imageId) : null;
     if (!image) throw new IsolationError();
     return image;
   });
+  return readPageImage(deps.artifacts, actor, image);
 }
 
 export function getPageGrants(prisma: PrismaClient, actor: Actor, pageId: string) {

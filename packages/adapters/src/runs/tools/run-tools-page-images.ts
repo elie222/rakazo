@@ -4,6 +4,7 @@ import { resolveActionApprovalDetail, siteAlwaysAllowed } from "@rakazo/core";
 import { normalizedHttpUrl, urlSite } from "@rakazo/core/egress";
 import type { Prisma } from "@rakazo/db";
 import { pageImagesNamedIn } from "@rakazo/db";
+import { bestEffort } from "@rakazo/logging";
 import { MAX_FETCH_URL_LENGTH } from "../../approvals/approval-ask.js";
 import { resolveBotWorkspacePath } from "../../computers/screens/computer-support.js";
 import type { EncodedPageImage } from "../../pages/page-image.js";
@@ -152,25 +153,96 @@ export function keptPageImageNames(
   return Object.keys(pageImagesNamedIn({ ...previous, ...added }, source));
 }
 
+/** A picture ready for the save: bytes already in the artifact store, or one the page holds. */
+export type StagedPageImage = Omit<EncodedPageImage, "bytes"> & {
+  size: number;
+  /** Set when this save stored the bytes; unset when the page already holds the same picture. */
+  storageKey?: string;
+};
+
+/**
+ * Puts each new picture's bytes in the artifact store, as for a chat file, before the save's
+ * transaction, skipping pictures the page already holds. `discard` removes what the save stored
+ * but did not keep.
+ */
+export async function stagePageImages(
+  ctx: RunContext,
+  pageId: string | undefined,
+  images: Record<string, EncodedPageImage>,
+): Promise<{
+  staged: Record<string, StagedPageImage>;
+  discard: (kept: string[]) => Promise<void>;
+}> {
+  const { deps, context } = ctx;
+  const hashes = [...new Set(Object.values(images).map((image) => image.hash))];
+  const held = new Set(
+    pageId && hashes.length
+      ? (
+          await deps.prisma.pageImage.findMany({
+            where: { pageId, hash: { in: hashes } },
+            select: { hash: true },
+          })
+        ).map((image) => image.hash)
+      : [],
+  );
+  const stored = new Map<string, string>();
+  const discard = async (kept: string[]) => {
+    const unused = [...stored.values()].filter((storageKey) => !kept.includes(storageKey));
+    await Promise.all(
+      unused.map((storageKey) =>
+        bestEffort("remove an unsaved page picture", deps.artifacts!.remove(storageKey, context)),
+      ),
+    );
+  };
+  const staged: Record<string, StagedPageImage> = {};
+  try {
+    for (const [name, { bytes, ...image }] of Object.entries(images)) {
+      let storageKey = stored.get(image.hash);
+      if (!storageKey && !held.has(image.hash)) {
+        if (!deps.artifacts) throw new Error("Page pictures need file storage");
+        const put = await deps.artifacts.put(
+          { name: `${name}.webp`, mimeType: image.mimeType, bytes },
+          context,
+        );
+        storageKey = put.id;
+        stored.set(image.hash, storageKey);
+      }
+      staged[name] = { ...image, size: bytes.byteLength, storageKey };
+    }
+  } catch (error) {
+    await discard([]);
+    throw error;
+  }
+  return { staged, discard };
+}
+
+/** Records the staged pictures on the page; returns the version's map and the bytes it kept. */
 export async function storePageImages(
   tx: Prisma.TransactionClient,
   page: { id: string; spaceId: string },
   previous: PageImages,
-  added: Record<string, EncodedPageImage>,
+  added: Record<string, StagedPageImage>,
   source: string,
-): Promise<PageImages> {
+): Promise<{ images: PageImages; kept: string[] }> {
   const ids: PageImages = {};
-  for (const [name, image] of Object.entries(added)) {
-    const stored =
-      (await tx.pageImage.findUnique({
-        where: { pageId_hash: { pageId: page.id, hash: image.hash } },
-        select: { id: true },
-      })) ??
-      (await tx.pageImage.create({
-        data: { ...image, pageId: page.id, spaceId: page.spaceId },
-        select: { id: true },
-      }));
-    ids[name] = stored.id;
+  const kept: string[] = [];
+  for (const [name, { storageKey, ...image }] of Object.entries(added)) {
+    const held = await tx.pageImage.findUnique({
+      where: { pageId_hash: { pageId: page.id, hash: image.hash } },
+      select: { id: true },
+    });
+    if (held) {
+      ids[name] = held.id;
+      continue;
+    }
+    // Held when staged, so a page that lost it since has changed under this save.
+    if (!storageKey) throw new Error("A page picture went missing during the save");
+    const created = await tx.pageImage.create({
+      data: { ...image, storageKey, pageId: page.id, spaceId: page.spaceId },
+      select: { id: true },
+    });
+    ids[name] = created.id;
+    kept.push(storageKey);
   }
-  return pageImagesNamedIn({ ...previous, ...ids }, source);
+  return { images: pageImagesNamedIn({ ...previous, ...ids }, source), kept };
 }

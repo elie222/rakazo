@@ -10,6 +10,7 @@ import type { HeldLease } from "../database/leases.js";
 import { assertLeaseHeld } from "../database/leases.js";
 import { IsolationError } from "../database/scope.js";
 import { withTransactionRetry } from "../database/transaction-retry.js";
+import { pageImageStorageKeys } from "../pages/page-images.js";
 
 /** Per member, per organization: one person cannot fan out unbounded boundaries. */
 export const MAX_SPACES_PER_MEMBER = 32;
@@ -581,6 +582,7 @@ export async function deleteClaimedSpaceForMember(
         // was cut short; a retry finishes it.
         if (remainingBots > 0 || provisioned > 0) throw new SpaceDeletionInProgressError();
         const pageShareSecrets = await deletePageShareSecrets(tx, { spaceId: input.spaceId });
+        const pageImageKeys = await pageImageStorageKeys(tx, { spaceId: input.spaceId });
         await rehomeMemberItems(tx, input.spaceId);
         await releasePendingSpacePayments(tx, input.spaceId);
         const { organizationId } = await tx.space.delete({
@@ -592,7 +594,7 @@ export async function deleteClaimedSpaceForMember(
           where: { organizationId, role: GUEST_ROLE, spaceMemberships: { none: {} } },
         });
         const removed = {
-          artifactKeys: artifacts.map((artifact) => artifact.storageKey),
+          artifactKeys: [...artifacts.map((artifact) => artifact.storageKey), ...pageImageKeys],
           homeKeys: computers.map((computer) => computer.homeKey),
           pageShareSecrets,
         };
@@ -907,6 +909,7 @@ export async function deleteClaimedSpace(
           where: { pageShare: { is: { spaceId } } },
           select: { id: true, ciphertext: true },
         });
+        const pageImageKeys = await pageImageStorageKeys(tx, { spaceId });
         await releasePendingSpacePayments(tx, spaceId);
         const gone = await tx.space.deleteMany({
           where: { id: spaceId, deletionClaimId: claimId },
@@ -915,7 +918,10 @@ export async function deleteClaimedSpace(
           await tx.organization.deleteMany({ where: { id: organizationId, spaces: { none: {} } } });
         // The Space went to another claim: its rows and stored files are not this caller's.
         return {
-          artifactKeys: gone.count > 0 ? artifacts.map((artifact) => artifact.storageKey) : [],
+          artifactKeys:
+            gone.count > 0
+              ? [...artifacts.map((artifact) => artifact.storageKey), ...pageImageKeys]
+              : [],
           pageShareSecrets: gone.count > 0 ? pageShareSecrets : [],
         };
       },

@@ -19,18 +19,39 @@ export function pageVersionImages(
   );
 }
 
-export async function readPageVersionImage(
+/** Where a picture this version shows is stored, or null when the version does not show it. */
+export type StoredPageImage = { spaceId: string; mimeType: string; storageKey: string };
+
+export async function findPageVersionImage(
   db: Pick<Prisma.TransactionClient, "pageImage">,
   version: StoredVersion & { pageId: string },
   imageId: string,
-): Promise<PageImageSource | null> {
+): Promise<StoredPageImage | null> {
   const images = pageVersionImages(version, "reject");
   if (!Object.values(images).includes(imageId)) return null;
-  const image = await db.pageImage.findFirst({
+  return db.pageImage.findFirst({
     where: { id: imageId, pageId: version.pageId },
-    select: { mimeType: true, data: true },
+    select: { spaceId: true, mimeType: true, storageKey: true },
   });
-  return image ? { src: `data:${image.mimeType};base64,${image.data}` } : null;
+}
+
+export function pageImageSource(image: StoredPageImage, bytes: Uint8Array): PageImageSource {
+  return { src: `data:${image.mimeType};base64,${Buffer.from(bytes).toString("base64")}` };
+}
+
+/**
+ * The stored pictures of the pages about to be deleted, read in the deleting transaction so the
+ * caller can remove their bytes from the artifact store once it commits, as it does chat files.
+ */
+export async function pageImageStorageKeys(
+  tx: Pick<Prisma.TransactionClient, "pageImage">,
+  pages: Prisma.PageWhereInput,
+): Promise<string[]> {
+  const images = await tx.pageImage.findMany({
+    where: { page: { is: pages } },
+    select: { storageKey: true },
+  });
+  return images.map((image) => image.storageKey);
 }
 
 const IMAGE_REFERENCE = /(?<![\w-])image:([A-Za-z0-9][A-Za-z0-9_.-]{0,63})/g;

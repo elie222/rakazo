@@ -13,7 +13,7 @@ describe("encodePageImage", () => {
     const encoded = await encodePageImage(photo);
     if (typeof encoded === "string") throw new Error(encoded);
     expect(encoded).toMatchObject({ mimeType: "image/webp", width: 1600, height: 800 });
-    const stored = await sharp(Buffer.from(encoded.data, "base64")).metadata();
+    const stored = await sharp(encoded.bytes).metadata();
     expect(stored).toMatchObject({ format: "webp", width: 1600, height: 800 });
     expect(stored.exif).toBeUndefined();
   });
