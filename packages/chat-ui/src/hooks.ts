@@ -51,11 +51,11 @@ export function usePageStateQueue(pageId: string, run: (save: PageStateSave) => 
   shown.current = pageId;
   const next = useCallback(() => {
     const save = queued.current;
-    if (sending.current || !save || save.pageId !== pageId) return;
+    if (sending.current || !save || save.pageId !== shown.current) return;
     queued.current = null;
     sending.current = true;
     send.current(save);
-  }, [pageId]);
+  }, []);
   return {
     save(values: PageState) {
       const earlier = queued.current?.pageId === pageId ? queued.current.values : {};

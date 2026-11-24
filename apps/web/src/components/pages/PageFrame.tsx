@@ -48,6 +48,11 @@ export function PageFrame({
   const usedGesture = useRef<string | null>(null);
   const answerFrame = useRef<((message: object) => void) | null>(null);
   const latestState = useRef(savedState);
+  const shownDocument = useRef(document);
+  if (shownDocument.current !== document) {
+    shownDocument.current = document;
+    answerFrame.current = null;
+  }
   latestState.current = savedState;
   useEffect(() => {
     if (savedState) answerFrame.current?.(pageStateUpdate(savedState));
