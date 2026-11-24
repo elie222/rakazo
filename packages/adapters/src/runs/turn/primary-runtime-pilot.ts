@@ -1,6 +1,8 @@
 import { accessSync, constants } from "node:fs";
 import { isAbsolute } from "node:path";
 import type { AgentRunModel, AgentRunRequest } from "@rakazo/adapter-kit";
+import { redactSecrets } from "@rakazo/core";
+import type { PrismaClient } from "@rakazo/db";
 import { readMessageBlocks } from "@rakazo/db";
 import { nativeTextRuntime } from "../../providers/agent-runtime/claude/descriptor.js";
 
@@ -8,6 +10,20 @@ import { nativeTextRuntime } from "../../providers/agent-runtime/claude/descript
 export function pilotRuntimeForBot(botId: string, environment = process.env): string | undefined {
   const allowed = environment.PRIMARY_RUNTIME_PILOT_BOT_IDS?.split(",").map((id) => id.trim());
   return allowed?.includes(botId) ? nativeTextRuntime.id : undefined;
+}
+
+/** Group enrolment is separate from the existing direct-chat rollout. */
+export function groupPilotEnrolled(botId: string, environment = process.env) {
+  return (
+    environment.PRIMARY_RUNTIME_PILOT_GROUP_BOT_IDS?.split(",").some((id) => id.trim() === botId) ??
+    false
+  );
+}
+
+export function groupPilotRuntimeForBot(botId: string, environment = process.env) {
+  return groupPilotEnrolled(botId, environment)
+    ? pilotRuntimeForBot(botId, environment)
+    : undefined;
 }
 
 export function pilotLauncher(environment = process.env): string | undefined {
@@ -135,4 +151,94 @@ export function pilotConversation(
         : [];
     });
   return { prompt, history };
+}
+
+/** A group pilot turn never receives the normal group's history or instructions. */
+export async function pilotGroupRequest(
+  prisma: Pick<PrismaClient, "message">,
+  input: {
+    run: {
+      id: string;
+      botId: string;
+      userId: string;
+      spaceId: string;
+      threadId: string;
+      sourceMessageId: string | null;
+      primaryRuntime: string;
+      trigger: string;
+      routineId: string | null;
+    };
+    thread: {
+      id: string;
+      botId: string | null;
+      groupId: string | null;
+      externalConversationId: string | null;
+    };
+    model: AgentRunModel;
+    onUsage: AgentRunRequest["onUsage"];
+    redactions: readonly string[];
+  },
+): Promise<AgentRunRequest> {
+  const { run, thread, model, onUsage, redactions } = input;
+  const error = () => new Error("The group runtime pilot requires the bot owner's addressed text.");
+  if (
+    !thread.groupId ||
+    thread.botId ||
+    thread.externalConversationId ||
+    thread.id !== run.threadId ||
+    !run.sourceMessageId ||
+    run.trigger !== "user" ||
+    run.routineId ||
+    groupPilotRuntimeForBot(run.botId) !== run.primaryRuntime
+  )
+    throw error();
+  // Only the human group-send admission path persists a pilot Runtime on a group user run.
+  // Validate live membership/ownership and read the source by id, not from assembled history.
+  const source = await prisma.message.findFirst({
+    where: {
+      id: run.sourceMessageId,
+      threadId: run.threadId,
+      authorUserId: run.userId,
+      role: "user",
+      thread: {
+        groupId: thread.groupId,
+        spaceId: run.spaceId,
+        externalConversationId: null,
+        group: {
+          spaceId: run.spaceId,
+          archivedAt: null,
+          members: {
+            some: {
+              botId: run.botId,
+              bot: { spaceId: run.spaceId, userId: run.userId, archivedAt: null },
+            },
+          },
+        },
+      },
+    },
+    select: { id: true, threadId: true, blocks: true },
+  });
+  if (!source) throw error();
+  const { blocks, intact } = readMessageBlocks(source);
+  const [block] = blocks;
+  if (
+    !intact ||
+    blocks.length !== 1 ||
+    block?.kind !== "text" ||
+    typeof block.text !== "string" ||
+    !block.text.trim()
+  )
+    throw error();
+  return {
+    botId: run.botId,
+    threadId: run.threadId,
+    runId: run.id,
+    sourceMessageId: run.sourceMessageId,
+    prompt: redactSecrets(block.text, redactions),
+    instructions: "",
+    history: [],
+    tools: [],
+    model,
+    onUsage,
+  };
 }

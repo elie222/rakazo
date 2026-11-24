@@ -225,6 +225,8 @@ export { notifyMemberMessage } from "./runs/lifecycle/run-notifications.js";
 export { loadRunOrigin } from "./runs/lifecycle/run-origin.js";
 export * from "./runs/lifecycle/work-activity.js";
 export {
+  groupPilotEnrolled,
+  groupPilotRuntimeForBot,
   pilotLauncher,
   pilotRunModel,
   pilotRuntimeForBot,

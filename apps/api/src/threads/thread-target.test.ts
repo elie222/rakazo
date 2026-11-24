@@ -3124,7 +3124,7 @@ describe("sendThreadMessage", () => {
   describe("a group message", () => {
     async function sendToGroup(
       text: string,
-      mentions?: string[],
+      mentions?: Parameters<typeof sendThreadMessage>[3]["mentions"],
       activeRuns: Array<{
         id: string;
         botId: string;
@@ -3132,6 +3132,8 @@ describe("sendThreadMessage", () => {
         trigger: string;
       }> = [],
       replyTo?: { role: string; botId: string | null },
+      pilotOwnerBot?: { modelProvider: string; modelId: string; modelCredentialId: string } | null,
+      observation?: { assert: (tx: { message: { create: ReturnType<typeof vi.fn> } }) => void },
     ) {
       let messageSeq = 0;
       let eventSeq = 0;
@@ -3183,6 +3185,7 @@ describe("sendThreadMessage", () => {
             }),
           ),
         },
+        bot: { findFirst: vi.fn().mockResolvedValue(pilotOwnerBot ?? null) },
         task: { create: vi.fn().mockResolvedValue({ id: "task-x" }) },
         event: {
           create: vi.fn().mockResolvedValue({ id: "event-1", seq: 1, createdAt: new Date() }),
@@ -3206,7 +3209,7 @@ describe("sendThreadMessage", () => {
         message: { findUnique: vi.fn().mockResolvedValue(null) },
         $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
       } as unknown as PrismaClient;
-      await sendThreadMessage(
+      const send = sendThreadMessage(
         {
           prisma,
           events: { notify: vi.fn().mockResolvedValue(undefined) } as never,
@@ -3229,6 +3232,11 @@ describe("sendThreadMessage", () => {
           ...(replyTo ? { replyToMessageId: "reply-parent" } : {}),
         },
       );
+      try {
+        await send;
+      } finally {
+        observation?.assert(tx);
+      }
       return { tx, created: tx.run.create.mock.calls.map(([args]) => args.data) };
     }
 
@@ -3247,6 +3255,133 @@ describe("sendThreadMessage", () => {
         expect(sent.created.map((run) => run.groupReplyOptional)).toEqual([false]);
       }
     });
+
+    it("uses a typed bot mention as identity without waking other targets of the same id", async () => {
+      const { created, tx } = await sendToGroup("what is the plan?", [
+        { kind: "bot", id: "bot-b" },
+        { kind: "bot", id: "bot-b" },
+        { kind: "group", id: "bot-a" },
+        { kind: "routine", id: "bot-a" },
+      ]);
+      expect(created.map((run) => run.botId)).toEqual(["bot-b"]);
+      expect(tx.task.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          botId: "bot-b",
+          userId: "user-1",
+          threadId: "thread-1",
+          prompt: "what is the plan?",
+        }),
+      });
+      expect(tx.run.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          botId: "bot-b",
+          threadId: "thread-1",
+          trigger: "user",
+          sourceMessageId: "msg-1",
+        }),
+      });
+    });
+
+    async function withGroupPilot<T>(test: () => Promise<T>) {
+      vi.stubEnv("PRIMARY_RUNTIME_PILOT_BOT_IDS", "bot-b,bot-stale");
+      vi.stubEnv("PRIMARY_RUNTIME_PILOT_GROUP_BOT_IDS", "bot-b,bot-stale");
+      vi.stubEnv("PRIMARY_RUNTIME_PILOT_LAUNCHER", process.execPath);
+      try {
+        return await test();
+      } finally {
+        vi.unstubAllEnvs();
+      }
+    }
+
+    it.skipIf(process.platform !== "linux")(
+      "pins the explicitly addressed owner's runtime and does not wake a peer",
+      async () =>
+        withGroupPilot(async () => {
+          const model = {
+            modelProvider: "anthropic",
+            modelId: "claude-sonnet-4-6",
+            modelCredentialId: "fixture-b",
+          };
+          const { tx, created } = await sendToGroup(
+            "@Beta what is the plan?",
+            [{ kind: "bot", id: "bot-b" }],
+            [],
+            undefined,
+            model,
+          );
+          expect(tx.bot.findFirst).toHaveBeenCalledExactlyOnceWith({
+            where: { id: "bot-b", spaceId: "workspace-1", userId: "user-1", archivedAt: null },
+            select: { modelProvider: true, modelId: true, modelCredentialId: true },
+          });
+          expect(created).toEqual([
+            expect.objectContaining({
+              ...model,
+              botId: "bot-b",
+              modelPinned: true,
+              primaryRuntime: expect.any(String),
+            }),
+          ]);
+        }),
+    );
+
+    it("does not wake or steer the group pilot for ambient, everyone, inferred or legacy targeting", async () =>
+      withGroupPilot(async () => {
+        for (const input of ["what is the plan?", "@everyone what is the plan?"]) {
+          const { tx, created } = await sendToGroup(input);
+          expect(created.map((run) => run.botId)).toEqual(["bot-a"]);
+          expect(tx.run.findMany.mock.calls[0]![0].where.botId).toEqual({ in: ["bot-a"] });
+          expect(tx.steeringMessage.create).not.toHaveBeenCalled();
+          expect(tx.bot.findFirst).not.toHaveBeenCalled();
+        }
+        await expect(sendToGroup("@Beta what is the plan?")).rejects.toThrow(
+          "Mention a bot directly",
+        );
+        await expect(sendToGroup("what is the plan?", ["bot-b"])).rejects.toThrow(
+          "Mention a bot directly",
+        );
+        await expect(
+          sendToGroup("what is the plan?", undefined, [], { role: "bot", botId: "bot-b" }),
+        ).rejects.toThrow("Mention a bot directly");
+      }));
+
+    it.skipIf(process.platform !== "linux")(
+      "rejects nonowner and stale native targets before writing a group message",
+      async () =>
+        withGroupPilot(async () => {
+          const observation = {
+            assert: (tx: { message: { create: ReturnType<typeof vi.fn> } }) =>
+              expect(tx.message.create).not.toHaveBeenCalled(),
+          };
+          await expect(
+            sendToGroup(
+              "no access",
+              [{ kind: "bot", id: "bot-b" }],
+              [],
+              undefined,
+              null,
+              observation,
+            ),
+          ).rejects.toThrow("Only the pilot bot owner");
+          await expect(
+            sendToGroup(
+              "not a member",
+              [{ kind: "bot", id: "bot-stale" }],
+              [],
+              undefined,
+              null,
+              observation,
+            ),
+          ).rejects.toThrow("not a group member");
+        }),
+    );
+
+    it("does not silently fall back to a regular bot turn when group enrolment is misconfigured", async () =>
+      withGroupPilot(async () => {
+        vi.stubEnv("PRIMARY_RUNTIME_PILOT_BOT_IDS", "");
+        await expect(
+          sendToGroup("how will you handle this?", [{ kind: "bot", id: "bot-b" }]),
+        ).rejects.toThrow("not available on this deployment");
+      }));
 
     it("that mentions everyone wakes every member, who must reply", async () => {
       const { created } = await sendToGroup("@everyone what is the plan?");

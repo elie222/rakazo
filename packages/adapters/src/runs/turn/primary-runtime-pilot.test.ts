@@ -1,7 +1,9 @@
 import { afterEach, expect, it, vi } from "vitest";
 import {
+  groupPilotRuntimeForBot,
   loadPilotRuntime,
   pilotConversation,
+  pilotGroupRequest,
   pilotRunModel,
   pilotRuntimeForBot,
 } from "./primary-runtime-pilot.js";
@@ -68,4 +70,90 @@ it("projects only prior plain text in the owner's app DM; group markers never ru
   expect(() => pilotConversation(run, { ...thread, groupId: "group" }, bot, messages)).toThrow(
     "only supports the bot owner's plain text chat",
   );
+});
+
+it("leaves group delivery off without independent enrolment", () => {
+  expect(groupPilotRuntimeForBot("bot", { PRIMARY_RUNTIME_PILOT_BOT_IDS: "bot" })).toBeUndefined();
+  expect(
+    groupPilotRuntimeForBot("bot", { PRIMARY_RUNTIME_PILOT_GROUP_BOT_IDS: "bot" }),
+  ).toBeUndefined();
+});
+
+it("builds a fresh group request from the exact source, with no history, reply quote or secret bag", async () => {
+  vi.stubEnv("PRIMARY_RUNTIME_PILOT_BOT_IDS", run.botId);
+  vi.stubEnv("PRIMARY_RUNTIME_PILOT_GROUP_BOT_IDS", run.botId);
+  const input = {
+    run: {
+      ...run,
+      id: "run-a",
+      userId: "owner",
+      spaceId: "space",
+      threadId: "thread",
+      sourceMessageId: "current",
+    },
+    thread: { id: "thread", botId: null, groupId: "group", externalConversationId: null },
+    model,
+    onUsage: undefined,
+    redactions: ["hidden-credential"],
+  };
+  const prisma = {
+    message: {
+      findFirst: vi.fn().mockResolvedValue({
+        blocks: [{ kind: "text", text: "Respond only to this message." }],
+        replyQuote: "Private earlier conversation",
+        secrets: ["another bot credential"],
+      }),
+    },
+  };
+  await expect(pilotGroupRequest(prisma as never, input)).resolves.toEqual({
+    botId: "bot",
+    threadId: "thread",
+    runId: "run-a",
+    sourceMessageId: "current",
+    prompt: "Respond only to this message.",
+    history: [],
+    instructions: "",
+    model,
+    onUsage: undefined,
+    tools: [],
+  });
+  expect(prisma.message.findFirst).toHaveBeenCalledExactlyOnceWith({
+    where: {
+      id: "current",
+      threadId: "thread",
+      authorUserId: "owner",
+      role: "user",
+      thread: {
+        groupId: "group",
+        spaceId: "space",
+        externalConversationId: null,
+        group: {
+          spaceId: "space",
+          archivedAt: null,
+          members: {
+            some: {
+              botId: "bot",
+              bot: { spaceId: "space", userId: "owner", archivedAt: null },
+            },
+          },
+        },
+      },
+    },
+    select: { id: true, threadId: true, blocks: true },
+  });
+  await expect(
+    pilotGroupRequest(prisma as never, {
+      ...input,
+      run: { ...input.run, trigger: "follow_up" },
+    }),
+  ).rejects.toThrow("addressed text");
+  prisma.message.findFirst.mockResolvedValueOnce(null);
+  await expect(pilotGroupRequest(prisma as never, input)).rejects.toThrow("addressed text");
+  prisma.message.findFirst.mockResolvedValueOnce({
+    blocks: [
+      { kind: "text", text: "caption" },
+      { kind: "file", artifactId: "private" },
+    ],
+  });
+  await expect(pilotGroupRequest(prisma as never, input)).rejects.toThrow("addressed text");
 });

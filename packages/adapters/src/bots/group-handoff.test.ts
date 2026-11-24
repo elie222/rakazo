@@ -105,6 +105,42 @@ describe("group handoff ownership", () => {
     });
   });
 
+  it("keeps the receiving task prompt to the declared handoff text", async () => {
+    const { deps, tx, messageCreate } = harness([
+      { kind: "text", text: "prior source context must not be copied" },
+    ]);
+
+    await expect(
+      handoffToGroupBot(deps as never, run, "group-1", {
+        bot_id: "bot-b",
+        message: "  Take the next stage  ",
+      }),
+    ).resolves.toMatchObject({ ok: true, botId: "bot-b" });
+    expect(tx.task.create).toHaveBeenCalledWith({
+      data: {
+        spaceId: run.spaceId,
+        botId: "bot-b",
+        threadId: run.threadId,
+        userId: run.userId,
+        prompt: "Take the next stage",
+        status: "queued",
+      },
+    });
+    expect(messageCreate).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        blocks: [
+          {
+            kind: "handoff",
+            fromBotId: "bot-a",
+            toBotId: "bot-b",
+            text: "Take the next stage",
+            hop: 1,
+          },
+        ],
+      }),
+    });
+  });
+
   it("carries files on the handoff the next bot starts from", async () => {
     const { deps, messageCreate } = harness([{ kind: "text", text: "user request" }]);
     const file = {

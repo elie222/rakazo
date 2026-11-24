@@ -24,7 +24,7 @@ import { completeRun } from "../lifecycle/run-complete.js";
 import { failRun, handoffEndedTurn, requeueRunAfterDatabaseOutage } from "../lifecycle/run-fail.js";
 import { followUpsOffered, offeredFleetTools } from "../tools/run-tool-selection.js";
 import { applyTool } from "../tools/run-tools.js";
-import { loadPilotRuntime, pilotConversation } from "./primary-runtime-pilot.js";
+import { loadPilotRuntime, pilotConversation, pilotGroupRequest } from "./primary-runtime-pilot.js";
 import { consumeRunEvents } from "./run-turn.js";
 import { claimRunSteering } from "./run-turn-images.js";
 import { appendToolCompletionAudit, toolCompletionOutcome } from "./tool-completion-audit.js";
@@ -72,19 +72,32 @@ export async function runModelTurn(
     };
     const runtimeEvents = run.primaryRuntime
       ? (await loadPilotRuntime({ ...run, primaryRuntime: run.primaryRuntime }, request.model)).run(
-          {
-            ...pilotConversation(run, turn.records.thread, turn.records.bot, turn.records.messages),
-            botId: request.botId,
-            threadId: request.threadId,
-            runId,
-            sourceMessageId: request.sourceMessageId,
-            instructions: runIdentityInstruction(turn.records.bot, run.trigger),
-            model: request.model,
-            tools: [],
-            onUsage: request.onUsage,
-            secrets: request.secrets,
-          },
-          runtimeContext,
+          turn.records.thread.groupId
+            ? await pilotGroupRequest(deps.prisma, {
+                run: { ...run, primaryRuntime: run.primaryRuntime },
+                thread: turn.records.thread,
+                model: request.model,
+                onUsage: request.onUsage,
+                redactions: hold.secrets,
+              })
+            : {
+                ...pilotConversation(
+                  run,
+                  turn.records.thread,
+                  turn.records.bot,
+                  turn.records.messages,
+                ),
+                botId: request.botId,
+                threadId: request.threadId,
+                runId,
+                sourceMessageId: request.sourceMessageId,
+                instructions: runIdentityInstruction(turn.records.bot, run.trigger),
+                model: request.model,
+                tools: [],
+                onUsage: request.onUsage,
+                secrets: request.secrets,
+              },
+          turn.records.thread.groupId ? { signal: runtimeContext.signal } : runtimeContext,
         )
       : deps.runtime.run(request, runtimeContext);
     if (await consumeRunEvents(ctx, runtimeEvents)) return;
