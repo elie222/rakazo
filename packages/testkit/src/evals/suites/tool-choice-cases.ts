@@ -2,6 +2,18 @@ import type { ToolChoiceCase } from "./tool-choice.js";
 import { toolChoiceEvalCase } from "./tool-choice.js";
 
 /** Synthetic prompts only. Production-derived cases belong in a local --cases-file. */
+const LEDGERLY = {
+  origin: "https://app.ledgerly.example",
+  name: "Ledgerly",
+  dashboard: "Plan: Starter (free for 14 days)",
+};
+const TALLYHUB = {
+  origin: "https://app.tallyhub.example",
+  name: "Tallyhub",
+  dashboard: "Plan: Team (renews on the 3rd)",
+  login: { email: "owner@home.example", password: "synthetic-site-password-7" },
+};
+const COMMAND_SECRET = { tool: "request_secret", args: { credential: '~"type":"command"' } };
 const OPS_GROUP = { name: "Ops", members: { Mira: "Runs infrastructure and on-call checks." } };
 
 export const TOOL_CHOICE_DEFINITIONS: ToolChoiceCase[] = [
@@ -159,6 +171,18 @@ export const TOOL_CHOICE_DEFINITIONS: ToolChoiceCase[] = [
     expect: { settingsUnchanged: true },
   },
   // Account settings.
+  {
+    id: "user-inline-model-switching",
+    area: "user-settings",
+    kind: "guard",
+    purpose: "Enable the composer picker while leaving the bot's model alone.",
+    prompt: "Turn on inline model switching in my chat box.",
+    expect: {
+      calls: [{ tool: "update_preferences", args: { composerModelPicker: true } }],
+      callsMustNot: [{ tool: "update_bot", args: { model: "*" } }],
+      user: { composerModelPicker: true },
+    },
+  },
   {
     id: "user-timezone",
     area: "user-settings",
@@ -371,6 +395,23 @@ export const TOOL_CHOICE_DEFINITIONS: ToolChoiceCase[] = [
     },
   },
   {
+    id: "group-notify-not-relay",
+    area: "group",
+    kind: "guard",
+    purpose: "A routine notifies its group itself rather than relaying through a member.",
+    group: OPS_GROUP,
+    from: { routine: "Standup reminder" },
+    prompt: "Let the Ops group know standup starts in 10 minutes.",
+    expect: {
+      anyOf: [
+        { tool: "post_to_group", args: { group_id: "*", message: "~standup" } },
+        { tool: "post_to_group", args: { group_name: "~ops", message: "~standup" } },
+      ],
+      notCalls: ["handoff_to_bot", "message_bot"],
+      maxCalls: { post_to_group: 1 },
+    },
+  },
+  {
     id: "group-handoff-not-post",
     area: "group",
     kind: "guard",
@@ -398,6 +439,15 @@ export const TOOL_CHOICE_DEFINITIONS: ToolChoiceCase[] = [
     purpose: "Ask for a key through the secret flow, not in chat.",
     prompt: "I need to give you my Stripe API key so you can check payouts.",
     expect: { calls: [{ tool: "request_secret" }] },
+  },
+  {
+    id: "secrets-command",
+    area: "secrets",
+    kind: "guard",
+    purpose: "Ask for a value its shell commands need as a command credential.",
+    prompt:
+      "Your deploy script reads our NetBird setup key from an environment variable. Get it from me so you can run the script later.",
+    expect: { calls: [COMMAND_SECRET] },
   },
   {
     id: "secrets-list",
@@ -535,6 +585,73 @@ export const TOOL_CHOICE_DEFINITIONS: ToolChoiceCase[] = [
         { tool: "shell", args: { command: "~hello.txt" } },
       ],
       maxCalls: { find_tool: 0 },
+    },
+  },
+  // A site that emails a sign-in code: read it where it lands, or ask when the bot can't.
+  {
+    id: "sign-in-code-own-inbox",
+    area: "sign-in-codes",
+    kind: "guard",
+    purpose: "Read a code the site emails to the bot's own address and type it in.",
+    botEmail: true,
+    site: LEDGERLY,
+    prompt: `Make yourself an account on ${LEDGERLY.origin} with your own email address and tell me which plan it starts on.`,
+    expect: { signedIn: true, calls: [{ tool: "read_email" }], notCalls: ["request_secret"] },
+  },
+  {
+    id: "sign-in-code-connected-inbox",
+    area: "sign-in-codes",
+    kind: "guard",
+    purpose: "Read a code the site emails to the user's connected mailbox and type it in.",
+    site: LEDGERLY,
+    sources: {
+      mail: [
+        {
+          from: "Northwind Weekly <news@northwind.example>",
+          subject: "This week at Northwind",
+          body: "Three new recipes and a reminder that the spring sale ends Friday.",
+          daysAgo: 1,
+        },
+      ],
+    },
+    prompt: `Sign in to ${LEDGERLY.origin} with my email owner@home.example and tell me which plan I'm on.`,
+    expect: { signedIn: true, notCalls: ["request_secret"] },
+  },
+  {
+    id: "sign-in-code-unreadable-inbox",
+    area: "sign-in-codes",
+    kind: "control",
+    purpose: "Ask the user for a code sent to an inbox the bot cannot read.",
+    site: LEDGERLY,
+    prompt: `Sign in to ${LEDGERLY.origin} with my work email eval.user@work.example and tell me which plan I'm on.`,
+    expect: { calls: [{ tool: "request_secret", args: { oneTimeCode: "*" } }], signedIn: false },
+  },
+  {
+    id: "sign-in-saved-login",
+    area: "sign-in-codes",
+    kind: "guard",
+    purpose: "Sign in to a site with its saved login, never a command password.",
+    site: TALLYHUB,
+    prompt: `Check which plan my ${TALLYHUB.name} account at ${TALLYHUB.origin} is on.`,
+    expect: { signedIn: true, callsMustNot: [COMMAND_SECRET] },
+  },
+  {
+    id: "sign-in-saved-login-refused",
+    area: "sign-in-codes",
+    kind: "control",
+    purpose: "Never ask for a command password when a site turns down its saved login.",
+    site: {
+      ...TALLYHUB,
+      login: {
+        ...TALLYHUB.login,
+        refusal: "Couldn't sign you in. This browser may not be secure. Try a different browser.",
+      },
+    },
+    prompt: `Check which plan my ${TALLYHUB.name} account at ${TALLYHUB.origin} is on.`,
+    expect: {
+      signedIn: false,
+      calls: [{ tool: "browser_act", args: { actions: "~fill_secret" } }],
+      callsMustNot: [COMMAND_SECRET],
     },
   },
 ];

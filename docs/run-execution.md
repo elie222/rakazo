@@ -42,6 +42,14 @@ another run of the same bot holds it stay queued; the run that releases the comp
 starts the next one waiting, and recovery leaves them untouched until then.
 Execution timing starts after computer ownership is acquired.
 
+A scheduled task that runs in its chat and a message from another bot never start
+beside another run in that chat. Each waits for the run under way there to end,
+then starts in the order it arrived and reads what that run did, so two turns never
+take on the same request at once. The run that ends starts the next one, and a
+five-minute recheck backs that up. A scheduled task still waiting after five
+minutes hands its task to the working run instead. A message from another bot keeps
+waiting for a turn of its own, because its reply goes back to that bot.
+
 Graphile remains responsible for scheduled and maintenance jobs. Those jobs can
 create runs, which use the same direct dispatch path. Legacy run deliveries remain
 supported during rolling upgrades and drain safely against the same database

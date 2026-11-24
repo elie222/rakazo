@@ -186,7 +186,10 @@ export function ToolQuestionCard({
             />
           </View>
           {answer.error ? (
-            <Text style={[typeScale.caption, { color: tokens.destructive }]}>
+            <Text
+              accessibilityRole="alert"
+              style={[typeScale.caption, { color: tokens.destructive }]}
+            >
               {errorText(answer.error, t`Could not submit this answer`)}
             </Text>
           ) : null}

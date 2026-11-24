@@ -22,8 +22,9 @@ import {
 import type { FinishedShellCommand } from "../../../computers/sandbox/shell-command-stream.js";
 import { liftMcpResultImages } from "../../../mcp/mcp-result-images.js";
 import { isVerbatimMcpResult } from "../../../mcp/verbatim-mcp-result.js";
+import { NO_RESPONSE } from "../../../runs/assembly/silent-reply.js";
 import { providerToolCallId } from "../../../runs/turn/tool-call-ids.js";
-import { textContentArg } from "../../../runs/turn/tool-text.js";
+import { settleMsArg, textContentArg } from "../../../runs/turn/tool-text.js";
 import {
   connectionIdArgument,
   credentialArgument,
@@ -63,13 +64,15 @@ const AGENT_TOOL_NAME_PATTERN = /^[a-zA-Z0-9_-]+$/;
 const MAX_AGENT_TOOL_NAME_LENGTH = 64;
 const FALLBACK_AGENT_TOOL_NAME = "connector_tool";
 
-/** Optional self-host fuse. Unset, empty, or 0 means unlimited (default). */
+/** Optional self-host fuse. Unset, empty, or 0 means unlimited (default); anything else must be a whole number. */
 export function maxToolCallsPerTurn(env: NodeJS.ProcessEnv = process.env): number {
   const raw = env.MAX_TOOL_CALLS_PER_TURN?.trim();
   if (!raw) return 0;
-  const parsed = Number(raw);
-  if (!Number.isFinite(parsed) || parsed <= 0) return 0;
-  return Math.floor(parsed);
+  if (!/^\d+$/.test(raw) || !Number.isSafeInteger(Number(raw)))
+    throw new Error(
+      `MAX_TOOL_CALLS_PER_TURN must be a whole number of 0 or more (0 or unset means unlimited), got "${raw}"`,
+    );
+  return Number(raw);
 }
 
 export function toAgentTools(toolDefs: readonly ConnectorTool[], host: ToolHost): AgentTool[] {
@@ -87,6 +90,15 @@ export function toAgentTools(toolDefs: readonly ConnectorTool[], host: ToolHost)
     tool.name === USE_TOOL ? useToolAgentTool(tool, runnable, host) : tool,
   );
 }
+
+/** Tools that can change the page a sibling page action would type into. */
+const PAGE_CHANGING_TOOL_NAMES = new Set([
+  "computer_act",
+  "open_path",
+  "launch_app",
+  "browser_navigate",
+  "browser_act",
+]);
 
 /**
  * Unwraps to the real tool before anything else, so its gate, approvals, checkpoint, audit
@@ -116,7 +128,10 @@ function useToolAgentTool(
           ]),
           response: host.modelResponses,
         });
-        throw new Error(`${name} is not available. Use a name find_tool lists.`);
+        throw new Error(
+          host.request.unavailableToolReasons?.[name] ??
+            `${name} is not available. Use a name find_tool lists.`,
+        );
       }
       const prepared = tool.prepareArguments?.(args ?? {}) ?? args ?? {};
       const validated = validateToolArguments(tool, {
@@ -251,6 +266,7 @@ export function describeToolActivity(
     return record.help === true ? "Reading the page kit reference" : "Writing the page code";
   }
   if (toolName === "add_mcp_server") return `Connecting MCP server: ${detail(record.name)}`;
+  if (toolName === "remove_mcp_server") return `Removing MCP server: ${detail(record.name)}`;
   if (toolName === "computer_observe") return "Looking at the screen";
   if (toolName === "browser_navigate")
     return `Opening page: ${detail(redactActivityUrl(record.url))}`;
@@ -269,6 +285,7 @@ export function describeToolActivity(
   if (toolName === "create_child_routine") return `Scheduling routine: ${detail(record.name)}`;
   if (toolName === "remember") return "Saving a note to memory";
   if (toolName === "save_shared_memory") return `Saving shared memory: ${detail(record.path)}`;
+  if (toolName === "delete_shared_memory") return `Deleting shared memory: ${detail(record.path)}`;
   if (toolName === "web_search") return `Searching the web: ${detail(record.query)}`;
   if (toolName === "web_fetch") return `Reading page: ${detail(redactActivityUrl(record.url))}`;
   if (toolName === "service_search") return `Finding a service: ${detail(record.query)}`;
@@ -378,11 +395,14 @@ function toAgentTool(
     // Pi runs a turn's tool calls concurrently by default, so a batch that
     // creates a routine and lists routines can read the list before the row
     // exists. Pi runs the whole batch in order when any call in it is
-    // sequential. Remember also needs this to avoid competing revision writes, and request_secret
-    // so a sibling request cannot start after one pauses for its card and share its answer.
+    // sequential. Remember also needs this to avoid competing revision writes, request_secret
+    // so a sibling request cannot start after one pauses for its card and share its answer, and the
+    // page and desktop tools so a page action is gated against the page it will act on, never one
+    // a sibling is about to change.
     ...(SCHEDULE_TOOL_NAMES.has(tool.name) ||
     tool.name === "remember" ||
-    tool.name === "request_secret"
+    tool.name === "request_secret" ||
+    PAGE_CHANGING_TOOL_NAMES.has(tool.name)
       ? { executionMode: "sequential" as const }
       : {}),
     parameters: parametersFor(tool),
@@ -390,8 +410,8 @@ function toAgentTool(
       const raw = args && typeof args === "object" ? (args as Record<string, unknown>) : {};
       if (tool.name === "remember") {
         return {
-          content: String(raw.content ?? ""),
-          ...(typeof raw.old_text === "string" && raw.old_text ? { old_text: raw.old_text } : {}),
+          operations: raw.operations,
+          ...(typeof raw.path === "string" && raw.path.trim() ? { path: raw.path } : {}),
         };
       }
       if (tool.name === "request_takeover") {
@@ -426,8 +446,8 @@ function toAgentTool(
       if (tool.name === "computer_act") {
         return {
           actions: Array.isArray(raw.actions) ? raw.actions : [],
-          observe: raw.observe === undefined ? true : Boolean(raw.observe),
-          settle_ms: Number(raw.settle_ms ?? 350),
+          observe: raw.observe == null ? true : Boolean(raw.observe),
+          settle_ms: settleMsArg(raw.settle_ms),
         };
       }
       if (tool.name === "list_files") return { path: String(raw.path ?? "") };
@@ -568,6 +588,12 @@ function toAgentTool(
                   new Set(options).size !== options.length
                 ) {
                   throw new Error("ask_user requires two to four unique, non-empty options");
+                }
+                if (typeof args.question !== "string" || args.question.trim().length === 0) {
+                  // A blank question is a card nobody can answer, not a way to end quietly.
+                  throw new Error(
+                    `ask_user requires a question for the person. To finish without a message where staying silent is allowed, reply exactly ${NO_RESPONSE} instead.`,
+                  );
                 }
                 host.pausePending = true;
                 host.queue.push({

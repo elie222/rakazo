@@ -3,12 +3,13 @@ import { connectedAppMarks } from "@rakazo/core";
 import { useQuery } from "@tanstack/react-query";
 import { usePathname, useRouter } from "expo-router";
 import { useEffect, useRef } from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { Pressable, StyleSheet, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { mobileTokens } from "../../lib/appearance/appearance";
 import { useThemedStyles } from "../../lib/native/native";
 import { queryClient, rpcQuery } from "../../lib/query/query";
 import { ConnectorIcon } from "../integrations/connector-icon";
+import { GlassIconButton } from "../native/glass-icon-button";
 import { GlassSurface } from "../native/glass-surface";
 import { NativeSymbol } from "../native/native-symbol";
 import { createInboxStyles } from "./inbox-styles";
@@ -18,14 +19,8 @@ const MARK_SIZE = 26;
 // Matches the header's gap above its buttons, plus a little room for the home indicator.
 const HOME_INDICATOR_ROOM = 8;
 
-/** The sidebar's foot: the account, and the apps its bots can use with a way to connect more. */
-export function InboxFooter({
-  initial,
-  columnInsets,
-}: {
-  initial: string;
-  columnInsets: { left: number; right: number };
-}) {
+/** The sidebar's shortcuts to Settings and connected apps. */
+export function InboxFooter({ columnInsets }: { columnInsets: { left: number; right: number } }) {
   const inboxStyles = useThemedStyles(createInboxStyles);
   const styles = useThemedStyles(createStyles);
   const { t } = useLingui();
@@ -43,24 +38,14 @@ export function InboxFooter({
         },
       ]}
     >
-      <GlassSurface
-        shape="circle"
-        style={inboxStyles.headerCircle}
+      <GlassIconButton
+        accessibilityLabel={t`Settings`}
+        onPress={() => router.push("/account")}
+        ios="gearshape"
+        android="settings-outline"
+        size={44}
         fallbackStyle={inboxStyles.headerFill}
-      >
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={t`Account`}
-          onPress={() => router.push("/account")}
-          hitSlop={4}
-          style={({ pressed }) => [
-            inboxStyles.headerButton,
-            pressed && inboxStyles.headerButtonActive,
-          ]}
-        >
-          <Text style={inboxStyles.profileInitials}>{initial}</Text>
-        </Pressable>
-      </GlassSurface>
+      />
       <GlassSurface shape="capsule" style={styles.apps} fallbackStyle={inboxStyles.headerFill}>
         <Pressable
           accessibilityRole="button"

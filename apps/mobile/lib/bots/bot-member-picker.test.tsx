@@ -84,6 +84,7 @@ vi.mock("react-native", () => {
   };
 });
 vi.mock("../native/native", () => ({ native: {}, useMobileTokens: () => ({}) }));
+vi.mock("../native/announce", () => ({ announceToScreenReader: vi.fn() }));
 vi.mock("../../components/native/glass-title", () => ({ glassHeaderOptions: () => ({}) }));
 vi.mock("../../components/bots/bot-avatar", () => ({ BotAvatar: () => null }));
 vi.mock("../../components/native/native-action-button", () => ({

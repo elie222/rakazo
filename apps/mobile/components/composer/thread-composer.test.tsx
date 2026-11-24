@@ -251,7 +251,7 @@ const props: Omit<ComponentProps<typeof ThreadComposer>, "ref"> = {
   botId: "bot-1",
   onCall: false,
   sending: false,
-  styles: { circleButton: {}, composerFill: {} },
+  styles: { composerFill: {} },
   attachActions: [],
   attachFrom: vi.fn(),
   send: vi.fn(async () => {}),
@@ -452,6 +452,15 @@ describe("thread composer isolation", () => {
 
   function pickerRows() {
     return [...container.querySelectorAll<HTMLButtonElement>('button[aria-label^="@"]')];
+  }
+  /** The accessibilityRole the composer passed to a rendered button's Pressable. */
+  function roleOf(button: HTMLElement) {
+    // The mocked Pressable does not forward its role to the DOM, so read its React props.
+    const fiberKey = Object.keys(button).find((key) => key.startsWith("__reactFiber$"));
+    const fiber = (button as unknown as Record<string, { return: { memoizedProps: object } }>)[
+      fiberKey!
+    ]!;
+    return (fiber.return.memoizedProps as { accessibilityRole?: string }).accessibilityRole;
   }
 
   it("lists one row per bot with its avatar and name, at most five", () => {
@@ -1219,6 +1228,28 @@ describe("thread composer isolation", () => {
     expect(composer.current!.snapshot().skill).toBeNull();
   });
 
+  it("announces mention, skill, action and remove-skill rows as buttons", () => {
+    type("@He");
+    expect(pickerRows()).not.toHaveLength(0);
+    for (const row of pickerRows()) expect(roleOf(row)).toBe("button");
+    type("/Wri");
+    const skillRow = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="Skill Writing"]',
+    )!;
+    expect(roleOf(skillRow)).toBe("button");
+    type("/settings");
+    const actionRow = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="Chat Settings"]',
+    )!;
+    expect(roleOf(actionRow)).toBe("button");
+    type("/Wri");
+    press("Skill {name}");
+    const removeChip = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="Remove skill Writing"]',
+    )!;
+    expect(roleOf(removeChip)).toBe("button");
+  });
+
   it("offers skills only mid-message and attaches a picked one without wiping the draft", () => {
     const picker = () => container.querySelector('[data-testid="slash-picker"]');
     type("Hello @He");
@@ -1404,7 +1435,7 @@ describe("thread composer isolation", () => {
     }
   });
 
-  it("keeps right-to-left text clear of the call and send pills", () => {
+  it("keeps right-to-left text clear of the call and send buttons", () => {
     const style = (element: Element) => JSON.parse((element as HTMLElement).dataset.style!);
     // Right-to-left text runs up to the field's trailing edge, right next to the pill.
     for (const [label, draft] of [
@@ -1414,8 +1445,8 @@ describe("thread composer isolation", () => {
     ] as const) {
       type(draft);
       const button = container.querySelector(`button[aria-label="${label}"]`)!;
-      const capsule = style(button.closest('[data-glass="roundedRectangle"]')!);
-      expect(capsule.gap).toBe(capsule.paddingEnd);
+      // The text and the trailing buttons share a row that keeps space between them.
+      expect(style(button.parentElement!).columnGap).toBeGreaterThan(0);
     }
   });
 });

@@ -2,40 +2,44 @@ import type { Href, NativeStackNavigationProp } from "expo-router";
 import { useLocalSearchParams, useNavigation, useRouter } from "expo-router";
 import { useEffect } from "react";
 import { Platform } from "react-native";
-import { closeSettingsSheet } from "./settings-sheet";
+import { openFromSettingsSheet } from "./settings-sheet";
 
-const FROM_SETTINGS = "settings";
-// Leaving by the back button, a swipe or Cancel. Leaving a Space dismisses everything (POP_TO_TOP)
-// to go Home, so it is not one, and opening something else keeps the page below it.
-const BACK_ACTIONS = new Set(["GO_BACK", "POP"]);
+type SettingsDestination =
+  | { pathname: "/artifacts" | "/board"; params?: never }
+  | { pathname: "/space-members"; params: { spaceId: string } };
 
-/** Opens a root-stack page from settings so going back returns to settings. Android pushes it
- * over the settings page. On iOS a page over the sheet would be a second sheet, so the sheet
- * closes first and the page reopens it when it goes back (see `useBackToSettings`). */
-export function openFromSettings(router: { push(href: Href): void }, href: Href): void {
-  if (Platform.OS !== "ios") {
-    router.push(href);
-    return;
+type SettingsPage = "/account" | "/spaces";
+
+export function openFromSettings(
+  router: { push(href: Href): void },
+  destination: SettingsDestination,
+  fromSettings: SettingsPage,
+): void {
+  // iOS presents root screens opened above the Settings sheet as another sheet.
+  if (Platform.OS === "ios") {
+    openFromSettingsSheet(router, {
+      ...destination,
+      params: { ...destination.params, fromSettings },
+    });
+  } else {
+    router.push(destination);
   }
-  const { pathname, params } =
-    typeof href === "string" ? { pathname: href, params: undefined } : href;
-  closeSettingsSheet();
-  router.push({ pathname, params: { ...params, from: FROM_SETTINGS } } as Href);
 }
 
-/** Reopens settings once the page goes back, when settings opened it. */
 export function useBackToSettings(): void {
-  const { from } = useLocalSearchParams<{ from?: string }>();
+  const { fromSettings } = useLocalSearchParams<{ fromSettings?: string }>();
   const navigation = useNavigation<NativeStackNavigationProp<Record<string, object | undefined>>>();
   const router = useRouter();
 
   useEffect(() => {
-    if (from !== FROM_SETTINGS) return;
-    // Fires once the page is off the stack, so settings opens over what was below it.
-    const unsubscribe = navigation.addListener("removed", (event) => {
-      if (BACK_ACTIONS.has(event.data.action.type)) router.push("/account");
+    if (Platform.OS !== "ios" || (fromSettings !== "/account" && fromSettings !== "/spaces"))
+      return;
+
+    // Expo Router reports removals in a layout effect, before this passive effect unsubscribes.
+    return navigation.addListener("removed", ({ data: { action } }) => {
+      if (action.type !== "GO_BACK" && action.type !== "POP") return;
+      router.push("/account");
+      if (fromSettings === "/spaces") router.push("/spaces");
     });
-    // The event comes after this cleanup runs, so the listener stays until the next microtask.
-    return () => queueMicrotask(unsubscribe);
-  }, [from, navigation, router]);
+  }, [fromSettings, navigation, router]);
 }

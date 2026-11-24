@@ -1,6 +1,5 @@
 import { routineWakeupJob } from "@rakazo/adapter-kit";
 import { ONCE_ROUTINE_CRON } from "@rakazo/core";
-import { Prisma } from "@rakazo/db";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   ROUTINE_CHAT_TRIGGER_NOTE,
@@ -14,7 +13,6 @@ import {
   createScheduleFromTool,
   filterBuiltinToolsForRun,
   filterBuiltinToolsForThread,
-  isOneShotRoutineCron,
   listSchedulesFromTool,
   MAX_ACTIVE_ROUTINES_PER_BOT,
   resolveScheduleTiming,
@@ -52,6 +50,44 @@ describe("resolveScheduleTiming", () => {
     });
   });
 
+  it.each([
+    [90, "minutes", /1 hours? or every 2 hours/],
+    [120, "minutes", /exactly 2 hours: use every 2, unit "hours"/],
+    [1440, "minutes", /exactly 1 day: use every 1, unit "days"/],
+    [25, "hours", /1 days? or every 2 days/],
+    [48, "hours", /exactly 2 days: use every 2, unit "days"/],
+    [40, "days", /use cron/],
+    [756, "hours", /nearest is every 31 days \(/],
+    [1000, "hours", /use cron/],
+    [57600, "minutes", /use cron/],
+  ])("rejects every %i %s with the intervals that work", (every, unit, hint) => {
+    const result = resolveScheduleTiming({ every, unit });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error).toContain(`every ${every} ${unit} is out of range`);
+    expect(result.error).toMatch(hint);
+  });
+
+  it.each([
+    [1000, "hours"],
+    [57600, "minutes"],
+  ])("never suggests more than 31 days for every %i %s", (every, unit) => {
+    const result = resolveScheduleTiming({ every, unit });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error).not.toMatch(/unit "days"/);
+  });
+
+  it.each([
+    [7, "minutes", "*/7 * * * *"],
+    [60, "minutes", "*/60 * * * *"],
+    [24, "hours", "0 */24 * * *"],
+    [31, "days", "0 0 */31 * *"],
+  ])("still accepts every %i %s", (every, unit, cron) => {
+    const result = resolveScheduleTiming({ every, unit });
+    expect(result.ok && result.cron).toBe(cron);
+  });
+
   it("accepts every 1 minute", () => {
     const result = resolveScheduleTiming({ every: 1, unit: "minutes" });
     expect(result.ok).toBe(true);
@@ -85,6 +121,17 @@ describe("resolveScheduleTiming", () => {
     expect(result.cron).toBe(ONCE_ROUTINE_CRON);
     expect(result.nextRunAt.getTime()).toBeGreaterThan(Date.now());
     expect(result.nextRunAt.getTime()).toBeLessThanOrEqual(Date.now() + 31_000);
+  });
+
+  it("rejects one-shot delays too far out to be a date", () => {
+    expect(resolveScheduleTiming({ delayMinutes: 1e15 })).toEqual({
+      ok: false,
+      error: "The delay is too far in the future.",
+    });
+    expect(resolveScheduleTiming({ delaySeconds: 1e14 })).toEqual({
+      ok: false,
+      error: "The delay is too far in the future.",
+    });
   });
 
   it("rejects one-shot schedules in the past", () => {
@@ -310,13 +357,6 @@ describe("filterBuiltinToolsForThread", () => {
         { name: "remember" },
       ]);
     }
-  });
-});
-
-describe("isOneShotRoutineCron", () => {
-  it("detects the one-shot sentinel", () => {
-    expect(isOneShotRoutineCron(ONCE_ROUTINE_CRON)).toBe(true);
-    expect(isOneShotRoutineCron("0 9 * * *")).toBe(false);
   });
 });
 
@@ -555,6 +595,56 @@ describe("schedule tool persistence", () => {
         data: expect.objectContaining({ timezone, nextRunAt: new Date(nextRunAt) }),
       }),
     );
+  });
+
+  describe("with an end", () => {
+    beforeEach(() => vi.useFakeTimers({ now: new Date("2026-11-23T12:00:00Z") }));
+    afterEach(() => vi.useRealTimers());
+
+    function dailyUntil(endAt: string) {
+      const create = vi.fn(async (args: { data: Record<string, unknown> }) => ({
+        id: "routine-1",
+        ...args.data,
+      }));
+      const deps = {
+        prisma: { routine: { create, findMany: noRoutines } },
+        events: { append: vi.fn(async () => undefined) },
+        jobs: { enqueue: vi.fn(async () => undefined) },
+      } as unknown as Parameters<typeof createScheduleFromTool>[0];
+      const created = createScheduleFromTool(deps, {
+        spaceId: "ws-1",
+        botId: "bot-1",
+        userId: "user-1",
+        threadId: "thread-1",
+        name: "Black Friday deals",
+        prompt: "Check the deals",
+        timezone: "America/New_York",
+        schedule: { cron: "0 9 * * *" },
+        endAt,
+      });
+      return { create, created };
+    }
+
+    it("saves a date alone as the end of that day in the routine's timezone", async () => {
+      const { create, created } = dailyUntil("2026-11-30");
+      await expect(created).resolves.toMatchObject({
+        ok: true,
+        endAt: "Monday, 2026-11-30 23:59 (UTC-05:00)",
+      });
+      expect(create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ endsAt: new Date("2026-12-01T04:59:59.999Z") }),
+        }),
+      );
+    });
+
+    it("refuses an end before the first run without saving", async () => {
+      const { create, created } = dailyUntil("2026-11-23T08:00");
+      await expect(created).resolves.toEqual({
+        error: expect.stringContaining("The end date is before the next run."),
+      });
+      expect(create).not.toHaveBeenCalled();
+    });
   });
 
   it("createScheduleFromTool creates the routine for the target bot and thread", async () => {
@@ -967,12 +1057,27 @@ describe("schedule_create with a watch", () => {
 });
 
 describe("cancelScheduleFromTool", () => {
+  it("refuses a name more than one schedule has", async () => {
+    const deleteMany = vi.fn();
+    const deps = {
+      prisma: { routine: { count: vi.fn(async () => 2), findFirst: vi.fn(), deleteMany } },
+      events: { append: vi.fn() },
+      jobs: { enqueue: vi.fn(), cancel: vi.fn() },
+    } as unknown as Parameters<typeof cancelScheduleFromTool>[0];
+    await expect(
+      cancelScheduleFromTool(deps, { spaceId: "ws-1", botId: "bot-1", name: "Daily" }),
+    ).resolves.toEqual({
+      error: 'More than one schedule is named "Daily". Pass routineId instead.',
+    });
+    expect(deleteMany).not.toHaveBeenCalled();
+  });
+
   it("deletes with the caller's scope and does not cancel the job when the row moved", async () => {
     const findFirst = vi.fn(async () => ({ id: "routine-1", name: "Daily" }));
     const deleteMany = vi.fn(async () => ({ count: 1 }));
     const cancel = vi.fn(async () => undefined);
     const deps = {
-      prisma: { routine: { findFirst, deleteMany } },
+      prisma: { routine: { count: vi.fn(async () => 1), findFirst, deleteMany } },
       events: { append: vi.fn(async () => undefined) },
       jobs: { enqueue: vi.fn(async () => undefined), cancel },
     } as unknown as Parameters<typeof cancelScheduleFromTool>[0];
@@ -1135,23 +1240,31 @@ describe("updateScheduleFromTool", () => {
     },
   );
 
-  it("takes over another member's schedule and restarts its watch baseline", async () => {
-    const { findFirst, updateMany, update } = setup();
+  it("refuses a name longer than the editor allows", async () => {
+    const { updateMany, update } = setup();
+    await expect(update({ name: "x".repeat(81) })).resolves.toEqual({
+      error: "name must be at most 80 characters.",
+    });
+    expect(updateMany).not.toHaveBeenCalled();
+  });
+
+  it("refuses another member's change to what a schedule does", async () => {
+    const { updateMany, update } = setup();
     await expect(update({ userId: "user-2", prompt: "Order less" })).resolves.toMatchObject({
-      ok: true,
+      error: expect.stringContaining("Only the person who owns this routine"),
     });
-    expect(findFirst).toHaveBeenCalledWith({
-      where: { spaceId: "ws-1", botId: "bot-1", id: "routine-1", bot: { archivedAt: null } },
-    });
+    await expect(
+      update({ userId: "user-2", schedule: { cron: "0 9 * * 1" } }),
+    ).resolves.toHaveProperty("error");
+    expect(updateMany).not.toHaveBeenCalled();
+  });
+
+  it("lets another member pause a schedule, which stays its owner's", async () => {
+    const { updateMany, update } = setup();
+    await expect(update({ userId: "user-2", active: false })).resolves.toMatchObject({ ok: true });
     expect(updateMany).toHaveBeenCalledWith({
-      where: {
-        spaceId: "ws-1",
-        botId: "bot-1",
-        userId: "user-1",
-        id: "routine-1",
-        bot: { archivedAt: null },
-      },
-      data: { userId: "user-2", watchState: Prisma.DbNull, prompt: "Order less" },
+      where: expect.objectContaining({ userId: "user-1", id: "routine-1" }),
+      data: { active: false, crons: ["0 10 * * 1"], timezone: "Europe/Berlin", nextRunAt: null },
     });
   });
 
@@ -1169,7 +1282,10 @@ describe("updateScheduleFromTool", () => {
       timezone: "Europe/Berlin",
       schedule: "Every Monday at 10:00 AM",
       nextRun: "Monday, 2026-10-26 10:00 (UTC+01:00)",
-      changes: { prompt: { before: "Order the usual groceries", after: prompt } },
+      // Only the changed field is reported; the prompt is not echoed unchanged.
+      changes: {
+        prompt: { before: "Order the usual groceries", after: prompt },
+      },
     });
     expect(updateMany).toHaveBeenCalledWith({
       where: {
@@ -1222,6 +1338,93 @@ describe("updateScheduleFromTool", () => {
     };
     expect(result.ok).toBe(true);
     expect(result.changes).toEqual({});
+  });
+
+  it("does not report a retiming the row already stores", async () => {
+    // A paused routine sent its own cron back: the resolved timing is what it already holds.
+    const { update } = setup({ ...weekly, active: false, nextRunAt: null });
+    await expect(update({ schedule: { cron: "0 10 * * 1" } })).resolves.toMatchObject({
+      ok: true,
+      changes: {},
+    });
+  });
+
+  it("conflicts when the row moved since its approval was shown", async () => {
+    const { updateMany, update } = setup();
+    await expect(
+      update({
+        prompt: "Order less",
+        expected: { name: "Groceries", prompt: "Edited elsewhere" },
+      }),
+    ).resolves.toEqual({
+      error: "The schedule changed while saving. Call schedule_list and try again.",
+    });
+    expect(updateMany).not.toHaveBeenCalled();
+  });
+
+  it("applies the change when the pinned before-values still hold", async () => {
+    const { updateMany, update } = setup();
+    await expect(
+      update({
+        prompt: "Order less",
+        expected: { name: "Groceries", prompt: "Order the usual groceries" },
+      }),
+    ).resolves.toMatchObject({ ok: true });
+    // The write only lands on a row that still holds what the approval was shown.
+    expect(updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          name: "Groceries",
+          prompt: "Order the usual groceries",
+        }),
+      }),
+    );
+  });
+
+  it("reports a conflict when the row moved between the read and the write", async () => {
+    const { updateMany, update } = setup();
+    updateMany.mockResolvedValue({ count: 0 });
+    await expect(
+      update({
+        prompt: "Order less",
+        expected: { name: "Groceries", prompt: "Order the usual groceries" },
+      }),
+    ).resolves.toEqual({
+      error: "The schedule changed while saving. Call schedule_list and try again.",
+    });
+  });
+
+  it("sets an end and removes it with none", async () => {
+    const { updateMany, update } = setup();
+    const endsAt = new Date("2026-11-30T22:59:59.999Z");
+    await expect(update({ endAt: "2026-11-30" })).resolves.toMatchObject({
+      ok: true,
+      endAt: "Monday, 2026-11-30 23:59 (UTC+01:00)",
+      changes: { endAt: { before: null, after: "Monday, 2026-11-30 23:59 (UTC+01:00)" } },
+    });
+    expect(updateMany).toHaveBeenLastCalledWith({
+      where: expect.objectContaining({ nextRunAt: weekly.nextRunAt }),
+      data: expect.objectContaining({ endsAt }),
+    });
+
+    const ending = setup({ ...weekly, endsAt });
+    await expect(ending.update({ endAt: "none" })).resolves.toMatchObject({ ok: true });
+    expect(ending.updateMany).toHaveBeenLastCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ endsAt: null }) }),
+    );
+  });
+
+  it("refuses an end before the next run, or a retime past the end", async () => {
+    const { updateMany, update } = setup();
+    await expect(update({ endAt: "2026-10-25" })).resolves.toEqual({
+      error: expect.stringContaining("The end date is before the next run."),
+    });
+    const ending = setup({ ...weekly, endsAt: new Date("2026-10-25T00:00:00Z") });
+    await expect(ending.update({ schedule: { cron: "0 9 * * 1" } })).resolves.toEqual({
+      error: expect.stringContaining("The end date is before the next run."),
+    });
+    expect(updateMany).not.toHaveBeenCalled();
+    expect(ending.updateMany).not.toHaveBeenCalled();
   });
 
   it("moves the first run of the current repeat with startAt alone", async () => {
@@ -1328,6 +1531,54 @@ describe("updateScheduleFromTool", () => {
     });
   });
 
+  it("renames a routine on its last run without resuming its schedule", async () => {
+    const { updateMany, enqueue, update } = setup({
+      ...weekly,
+      nextRunAt: null,
+      endsAt: new Date("2026-10-25T00:00:00Z"),
+    });
+    await expect(update({ name: "Last groceries" })).resolves.toMatchObject({ ok: true });
+    expect(updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({ data: { name: "Last groceries" } }),
+    );
+    expect(enqueue).not.toHaveBeenCalled();
+  });
+
+  it("changes the timing of a routine on its last run without resuming it", async () => {
+    const { updateMany, update } = setup({
+      ...weekly,
+      nextRunAt: null,
+      endsAt: new Date("2026-10-20T05:00:00Z"),
+    });
+    await expect(update({ schedule: { cron: "0 9 * * 2" } })).resolves.toMatchObject({
+      ok: true,
+      nextRunAt: null,
+    });
+    expect(updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ crons: ["0 9 * * 2"], nextRunAt: null }),
+      }),
+    );
+  });
+
+  it("resumes a routine on its last run when its end moves later", async () => {
+    const { updateMany, enqueue, update } = setup({
+      ...weekly,
+      nextRunAt: null,
+      endsAt: new Date("2026-10-25T00:00:00Z"),
+    });
+    await expect(update({ endAt: "2026-12-31" })).resolves.toMatchObject({
+      ok: true,
+      nextRunAt: "2026-10-26T09:00:00.000Z",
+    });
+    expect(updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ nextRunAt: new Date("2026-10-26T09:00:00.000Z") }),
+      }),
+    );
+    expect(enqueue).toHaveBeenCalledOnce();
+  });
+
   it("pauses with active false and cancels the wakeup", async () => {
     const { updateMany, cancel, enqueue, update } = setup();
     await expect(update({ active: false })).resolves.toMatchObject({
@@ -1396,17 +1647,61 @@ describe("updateScheduleFromTool", () => {
     expect(updateMany).not.toHaveBeenCalled();
   });
 
-  it("keeps a watch's own interval", async () => {
-    const { update } = setup({
-      ...weekly,
-      crons: [],
-      watch: { kind: "files", paths: ["inbox"], everyMinutes: 15 },
-    });
+  const fileWatch = { kind: "files", paths: ["inbox"], everyMinutes: 15, loud: false };
+  const watching = { ...weekly, crons: [], watch: fileWatch };
+
+  it("points a watch's retime at everyMinutes", async () => {
+    const { updateMany, update } = setup(watching);
     await expect(update({ schedule: { cron: "0 9 * * *" } })).resolves.toEqual({
-      error:
-        "This routine is a watch: it checks every watch.everyMinutes minutes and has no schedule, so schedule_update can only change its name, prompt or active. The user can change how often it checks in the routine's settings on the web. Do not cancel and recreate it for this.",
+      error: expect.stringContaining("everyMinutes"),
     });
+    expect(updateMany).not.toHaveBeenCalled();
     await expect(update({ name: "Inbox" })).resolves.toMatchObject({ ok: true, name: "Inbox" });
+  });
+
+  it("changes how often a watch checks and checks again right away", async () => {
+    const { updateMany, enqueue, update } = setup(watching);
+    await expect(update({ everyMinutes: 60 })).resolves.toMatchObject({
+      ok: true,
+      everyMinutes: 60,
+      changes: { everyMinutes: { before: 15, after: 60 } },
+    });
+    const firstCheck = new Date(Date.now() + 2_000);
+    expect(updateMany).toHaveBeenCalledWith({
+      where: expect.objectContaining({ watch: { equals: fileWatch }, nextRunAt: weekly.nextRunAt }),
+      data: expect.objectContaining({
+        watch: { ...fileWatch, everyMinutes: 60 },
+        nextRunAt: firstCheck,
+      }),
+    });
+    expect(enqueue).toHaveBeenCalledWith(routineWakeupJob("routine-1", firstCheck));
+  });
+
+  it("keeps a paused watch paused when its interval changes", async () => {
+    const { updateMany, enqueue, update } = setup({ ...watching, active: false, nextRunAt: null });
+    await expect(update({ everyMinutes: 30 })).resolves.toMatchObject({ ok: true, active: false });
+    expect(updateMany).toHaveBeenCalledWith({
+      where: expect.anything(),
+      data: expect.objectContaining({ watch: { ...fileWatch, everyMinutes: 30 }, nextRunAt: null }),
+    });
+    expect(enqueue).not.toHaveBeenCalled();
+  });
+
+  it("refuses an interval outside the watch bounds or on a non-watch", async () => {
+    const { updateMany, update } = setup(watching);
+    for (const everyMinutes of [4, 1441, 7.5, "often"]) {
+      await expect(update({ everyMinutes })).resolves.toEqual({
+        error: "everyMinutes must be a whole number from 5 to 1440.",
+      });
+    }
+    await expect(update({ everyMinutes: 15 })).resolves.toEqual({ error: "Nothing to update." });
+    await expect(setup().update({ everyMinutes: 30 })).resolves.toEqual({
+      error: "everyMinutes is only for a routine that watches for changes.",
+    });
+    await expect(update({ userId: "user-2", everyMinutes: 30 })).resolves.toMatchObject({
+      error: expect.stringContaining("Only the person who owns this routine"),
+    });
+    expect(updateMany).not.toHaveBeenCalled();
   });
 });
 
@@ -1638,6 +1933,51 @@ describe("changeUserTimezone", () => {
     });
   });
 
+  it("keeps a routine on its last run without a next run", async () => {
+    const { deps, rows } = account([
+      {
+        spaceId: base.spaceId,
+        botId: base.botId,
+        userId: base.userId,
+        name: "Deals",
+        crons: ["0 9 * * *"],
+        timezone: "Africa/Cairo",
+        active: true,
+        watch: null,
+        nextRunAt: null,
+        endsAt: new Date(Date.now() + 60 * 60_000),
+      },
+    ]);
+
+    await changeUserTimezone(deps, "user-1", "Europe/London");
+
+    expect(rows[0]).toMatchObject({ timezone: "Europe/London", nextRunAt: null });
+  });
+
+  it("keeps a routine's end on the same local day when the zone moves", async () => {
+    const { deps, rows } = account([
+      {
+        spaceId: base.spaceId,
+        botId: base.botId,
+        userId: base.userId,
+        name: "Deals",
+        crons: ["0 9 * * *"],
+        timezone: "Africa/Cairo",
+        active: false,
+        watch: null,
+        nextRunAt: null,
+        endsAt: new Date("2031-11-30T21:59:59.999Z"),
+      },
+    ]);
+
+    await changeUserTimezone(deps, "user-1", "Europe/London");
+
+    expect(rows[0]).toMatchObject({
+      timezone: "Europe/London",
+      endsAt: new Date("2031-11-30T23:59:59.999Z"),
+    });
+  });
+
   it("moves nothing when the account had no saved zone", async () => {
     const { deps, rows, user } = account([
       {
@@ -1760,17 +2100,32 @@ describe("schedule tools with events", () => {
       key.plaintext = plaintext;
       return { id: "secret-1", ciphertext: "sealed" };
     });
+    const notices: unknown[] = [];
+    const stored = { webhookSecretId: null as string | null };
     const tx = {
       $queryRaw: vi.fn(async () => [{ webhookSecretId: null }]),
       secret: { create: vi.fn(), deleteMany: vi.fn() },
-      bot: { update: vi.fn() },
+      bot: {
+        update: vi.fn(async (args: { data: { webhookSecretId: string } }) => {
+          stored.webhookSecretId = args.data.webhookSecretId;
+        }),
+      },
+      thread: { update: vi.fn(async () => ({ nextMessageSeq: 2, spaceId: "ws-1" })) },
+      message: {
+        create: vi.fn(async (args: { data: { blocks: unknown } }) => {
+          notices.push(args.data.blocks);
+          return { id: "message-1" };
+        }),
+      },
+      event: { create: vi.fn(async () => ({ seq: 1 })) },
     };
     const prisma = accountZonePrisma(
       {
         routine: { create, findMany: noRoutines },
+        user: { findUnique: vi.fn(async () => null) },
         bot: {
           findFirst: vi.fn(async () => ({ id: "bot-1", userId: options.botUserId ?? "user-1" })),
-          findUnique: vi.fn(async () => ({ webhookSecretId: null })),
+          findUnique: vi.fn(async () => ({ ...stored })),
         },
         messagingIdentity: {
           findUnique: vi.fn(async () => (options.provider ? { provider: options.provider } : null)),
@@ -1784,15 +2139,36 @@ describe("schedule tools with events", () => {
         $transaction: async (run: (client: unknown) => Promise<unknown>) =>
           run({ ...prisma, ...tx }),
       },
-      events: { append: vi.fn() },
+      events: { append: vi.fn(), notify: vi.fn() },
       jobs: { enqueue },
       secretStore: { put },
     } as unknown as Parameters<typeof createScheduleFromTool>[0];
-    return { deps, create, enqueue, put, key };
+    return { deps, create, enqueue, put, key, notices };
   }
 
+  it("refuses an end on a routine events start, before making its webhook key", async () => {
+    const { deps, create, put } = eventDeps();
+    const result = await createScheduleFromTool(deps, {
+      ...owner,
+      ...scheduleCreateFields({
+        name: "Deploys",
+        prompt: "Summarize the deploy",
+        cron: "0 9 * * *",
+        on: { webhook: true },
+        endAt: "2031-01-01",
+      }),
+    });
+    expect(result).toEqual({
+      error: expect.stringContaining(
+        "A routine with webhook, Git, chat or email triggers can't have an end date.",
+      ),
+    });
+    expect(put).not.toHaveBeenCalled();
+    expect(create).not.toHaveBeenCalled();
+  });
+
   it("creates a routine only a webhook starts, and keeps its key from the result", async () => {
-    const { deps, create, enqueue, put, key } = eventDeps();
+    const { deps, create, enqueue, put, key, notices } = eventDeps();
     const result = await createScheduleFromTool(deps, {
       ...owner,
       ...scheduleCreateFields({
@@ -1820,6 +2196,10 @@ describe("schedule tools with events", () => {
     });
     expect(key.plaintext).not.toBe("");
     expect(JSON.stringify(result)).not.toContain(key.plaintext);
+    // The chat row offers the key to the person; the row itself never holds it.
+    expect(notices).toEqual([
+      [{ kind: "routine_event", change: "created", name: "Deploys", webhook: true }],
+    ]);
   });
 
   it("adds a chat event to a repeating schedule by the app's name", async () => {
@@ -1953,7 +2333,7 @@ describe("schedule tools with events", () => {
     expect(await update({})).toEqual({
       error: "A routine needs a schedule or an event. Cancel it instead.",
     });
-    // Another member's edit would take the routine over and leave its events off.
+    // Only the owner changes what it does; another member may still pause it, which keeps it theirs.
     expect(
       await updateScheduleFromTool(updateDeps, {
         ...owner,
@@ -1962,8 +2342,22 @@ describe("schedule tools with events", () => {
         prompt: "Summarize less",
         schedule: {},
       }),
-    ).toMatchObject({ error: expect.stringContaining("run only for the person who owns it") });
+    ).toMatchObject({ error: expect.stringContaining("Only the person who owns this routine") });
     expect(updateMany).not.toHaveBeenCalled();
+    await updateScheduleFromTool(updateDeps, {
+      ...owner,
+      userId: "user-2",
+      routineId: "routine-1",
+      active: false,
+      schedule: {},
+    });
+    expect(updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ userId: "user-1" }),
+        data: expect.not.objectContaining({ userId: expect.anything() }),
+      }),
+    );
+    updateMany.mockClear();
 
     const result = await update({ git: true });
     expect(updateMany).toHaveBeenCalledWith(

@@ -164,10 +164,18 @@ describe("server image publish workflow", () => {
     }
   });
 
+  it("deploys a queued main revision only while it is still main's head", () => {
+    const [check, ...rest] = ci.jobs["deploy-production"]?.steps ?? [];
+    expect(check?.id).toBe("head");
+    expect(check?.run).toContain('"$head" == "$GITHUB_SHA"');
+    for (const step of rest) expect(step.if).toBe("steps.head.outputs.current == 'true'");
+  });
+
   it("lets only the newest waiting main revision replace a queued one, never a running one", () => {
     const locks = [
       suites.jobs["static-checks"],
       suites.jobs["unit-tests-shard"],
+      suites.jobs["unit-tests-processes"],
       suites.jobs["test-integration-shard"],
       ci.jobs["publish-server-image"],
     ].map((job) => job?.concurrency);
@@ -182,7 +190,12 @@ describe("server image publish workflow", () => {
     for (const name of ["tests", "publish-server-image"]) {
       expect(ci.jobs[name]?.needs, name).toBeUndefined();
     }
-    for (const name of ["static-checks", "unit-tests-shard", "test-integration-shard"]) {
+    for (const name of [
+      "static-checks",
+      "unit-tests-shard",
+      "unit-tests-processes",
+      "test-integration-shard",
+    ]) {
       expect(suites.jobs[name]?.needs, name).toBeUndefined();
     }
   });

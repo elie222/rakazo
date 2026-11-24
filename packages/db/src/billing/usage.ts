@@ -42,6 +42,7 @@ export async function recordUsage(
       ? JSON.parse(JSON.stringify(event.pricingSnapshot))
       : undefined,
     usageSource: event.usageSource ?? null,
+    ...(event.billing ? { billing: event.billing } : {}),
   };
   const data = {
     fundingSource: attribution.fundingSource ?? "customer",

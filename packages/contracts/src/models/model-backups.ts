@@ -42,6 +42,18 @@ export function creditOfferingFromConnectionId(connectionId?: string | null): st
 }
 
 /**
+ * What a provider is called on screen: the plan people pay for when they sign in with one
+ * (`auth` is a saved credential's kind or an onboarding option), else the catalog's name.
+ */
+export function providerDisplayName(
+  entry: Pick<ModelCatalogEntry, "provider" | "providerName" | "subscriptionName" | "auth">,
+  auth?: string,
+): string {
+  const signedIn = entry.auth === "oauth" || auth === "oauth" || auth === "sign-in";
+  return (signedIn && entry.subscriptionName) || (entry.providerName ?? entry.provider);
+}
+
+/**
  * How a connection is named: its own label, prefixed by the provider when the label
  * does not already say which provider it is (a renamed key or a signed-in account).
  */
@@ -65,6 +77,25 @@ export function connectionDisplayName(
     return provider;
   if (label.toLowerCase().startsWith(provider.toLowerCase())) return label;
   return `${provider} (${label})`;
+}
+
+export function modelConnectionNames(
+  entry: Pick<
+    ModelCatalogEntry,
+    "provider" | "providerName" | "subscriptionName" | "auth" | "managed"
+  >,
+  credential?: Pick<ModelCredential, "provider" | "label" | "endpointName"> & { authKind?: string },
+): { providerName: string; connectionName: string } {
+  const providerName =
+    !credential && entry.managed
+      ? (entry.providerName ?? entry.provider)
+      : providerDisplayName(entry, credential?.authKind);
+  return {
+    providerName,
+    connectionName: credential
+      ? connectionDisplayName(credential, providerName, [entry.providerName ?? entry.provider])
+      : providerName,
+  };
 }
 
 /**
@@ -103,14 +134,14 @@ export function connectedBackupOptions(
   for (const [provider, models] of entries) {
     const owners = connections.get(provider) ?? [];
     const option = (entry: ModelCatalogEntry, connection?: ModelCredential) => {
-      const providerName = entry.providerName ?? entry.provider;
+      const names = modelConnectionNames(entry, connection);
       return {
         provider: entry.provider,
         modelId: entry.id,
         label: entry.label,
-        providerName,
+        providerName: names.providerName,
         ...(connection ? { credentialId: connection.id } : {}),
-        connectionName: connection ? connectionDisplayName(connection, providerName) : providerName,
+        connectionName: names.connectionName,
       };
     };
     for (const entry of models) {

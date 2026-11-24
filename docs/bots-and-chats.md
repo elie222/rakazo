@@ -54,7 +54,8 @@ can answer later.
 
 ## Bot settings
 
-Click the bot's name at the top of the chat to open its settings.
+On web and desktop, click the bot's name at the top of the chat to open its settings. On mobile,
+tap the bot's name to open its profile, then tap **Edit** to open **Chat settings**.
 
 - **Name** and avatar: pick a shape and color, or upload an image.
 - **Notifications**: **When it finishes or needs input**.

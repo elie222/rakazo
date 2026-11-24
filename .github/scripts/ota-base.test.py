@@ -394,6 +394,9 @@ class OtaBaseStepTests(OtaBaseTestCase):
             # Token edits regenerate the stylesheet alongside the source.
             ({tokens: "a = 2;\n", "packages/ui-tokens/src/tokens.css": ":root {}\n"}, "publish=true", eligible),
             ({"packages/logging/src/monitoring.ts": "export const m = 1;\n"}, "publish=true", eligible),
+            ({"packages/i18n/locales/de/messages.po": 'msgid "Save"\n'}, "publish=true", eligible),
+            ({"packages/i18n/src/cron.ts": "export const c = 1;\n"}, "publish=true", eligible),
+            ({"packages/i18n/package.json": "{}\n"}, "publish=false", "packages/i18n/package.json"),
             ({icon: "{}\n"}, "publish=false", icon),
             ({tokens: "export const a = 3;\n", SWIFT_FILE: "import UIKit\n"}, "publish=false", SWIFT_FILE),
             ({"packages/db/src/database/client.ts": "export const db = 1;\n"}, "publish=false", "No mobile OTA needed"),

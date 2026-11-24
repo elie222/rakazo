@@ -7,15 +7,7 @@ vi.mock("../api/session", () => ({
   registerSessionDiskCache: (clear: () => void) => sessionCaches.push(clear),
 }));
 
-const {
-  pageCardState,
-  pageMessage,
-  pageReadFailure,
-  pagePreviewLayout,
-  pageShareLink,
-  pageShareState,
-  reducePageShare,
-} = await import("./pages");
+const { pageCardState, pageMessage, pageReadFailure, pagePreviewLayout } = await import("./pages");
 
 const detail = (overrides: Partial<PageDetail> = {}): PageDetail => ({
   id: "page-1",
@@ -78,52 +70,6 @@ describe("pageMessage", () => {
     const link = { type: "rakazo-page:open-link", url: "https://example.com/" };
     expect(pageMessage(JSON.stringify(link))).toEqual(link);
     expect(pageMessage("not json")).toBeNull();
-  });
-});
-
-describe("reducePageShare", () => {
-  it("offers the link only once the server made the page public", () => {
-    let state = pageShareState(detail());
-    expect(pageShareLink(state)).toBeNull();
-    const reopened = reducePageShare(state, {
-      type: "loaded",
-      visibility: "link",
-      shareUrl: "https://rakazo.example/p/voice-old",
-    });
-    expect(pageShareLink(reopened)).toBe("https://rakazo.example/p/voice-old");
-    state = reducePageShare(state, { type: "choose", visibility: "link" });
-    expect(state.pending).toBe("link");
-    expect(pageShareLink(state)).toBeNull();
-    state = reducePageShare(state, {
-      type: "saved",
-      visibility: "link",
-      shareUrl: "https://rakazo.example/p/voice-abc",
-    });
-    expect(pageShareLink(state)).toBe("https://rakazo.example/p/voice-abc");
-    state = reducePageShare(state, { type: "choose", visibility: "private" });
-    expect(pageShareLink(state)).toBeNull();
-    // Not saved: the server, asked again, still has the link on.
-    state = reducePageShare(state, {
-      type: "failed",
-      visibility: "private",
-      actual: { visibility: "link", shareUrl: "https://rakazo.example/p/voice-abc" },
-    });
-    expect(state).toMatchObject({ visibility: "link", error: true, pending: null });
-    expect(pageShareLink(state)).toBe("https://rakazo.example/p/voice-abc");
-  });
-
-  it("ignores a late answer for a choice the user already changed", () => {
-    let state = reducePageShare(pageShareState(detail()), { type: "choose", visibility: "link" });
-    state = reducePageShare(state, { type: "choose", visibility: "private" });
-    const late = reducePageShare(state, {
-      type: "saved",
-      visibility: "link",
-      shareUrl: "https://rakazo.example/p/x",
-    });
-    expect(late).toBe(state);
-    expect(reducePageShare(state, { type: "failed", visibility: "link", actual: null })).toBe(
-      state,
-    );
   });
 });
 

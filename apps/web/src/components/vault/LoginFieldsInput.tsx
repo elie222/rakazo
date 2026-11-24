@@ -4,6 +4,7 @@ import { LOGIN_FIELD_LIMIT } from "@rakazo/contracts";
 import { Button, Input, Label, Toggle } from "@rakazo/ui-web";
 import { Lock, LockOpen, Plus, X } from "lucide-react";
 import { useId } from "react";
+import { passwordManagerIgnore } from "./password-manager-ignore";
 
 /**
  * Whether a login value is hidden: a hidden one stays masked and is typed only into password
@@ -61,6 +62,7 @@ function ValueInput({
       type={field.hidden ? "password" : "text"}
       // "off" is ignored for username-like fields; this stops browsers saving the login.
       autoComplete="new-password"
+      {...passwordManagerIgnore}
       spellCheck={false}
       disabled={disabled}
       value={field.value}
@@ -105,6 +107,7 @@ export function LoginFieldsInput({
                 className="w-full"
                 type={field.hidden ? "password" : "text"}
                 autoComplete="new-password"
+                {...passwordManagerIgnore}
                 spellCheck={false}
                 disabled={disabled}
                 value={field.value}
@@ -131,6 +134,7 @@ export function LoginFieldsInput({
               aria-label={t`Label`}
               placeholder={t`Label`}
               autoComplete="off"
+              {...passwordManagerIgnore}
               spellCheck={false}
               disabled={disabled}
               value={field.label}
@@ -149,12 +153,16 @@ export function LoginFieldsInput({
               disabled={disabled}
               onChange={(hidden) => update(index, { hidden })}
             />
+            <span id={`${ids}-${index}-label`} className="sr-only">
+              {label}
+            </span>
             {fields.length > 1 ? (
               <Button
                 type="button"
                 variant="ghost"
                 size="icon-sm"
                 aria-label={t`Remove`}
+                aria-describedby={`${ids}-${index}-label`}
                 className="shrink-0 text-muted-foreground"
                 disabled={disabled}
                 onClick={() => onChange(fields.filter((_, at) => at !== index))}

@@ -51,9 +51,9 @@ jobs:
     if: needs.result.outputs.result != 'skipped'
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    concurrency:
-      group: playwright-publication
-      cancel-in-progress: false
+    # Everything here is per run, so it never queues; only the history job is serialized.
+    outputs:
+      history_entry: ${{ steps.publish.outputs.history_entry }}
     steps:
       # workflow_run has repository secrets. Always use trusted default-branch code here;
       # never check out or execute the contributor's pull-request revision.
@@ -135,13 +135,12 @@ jobs:
           PLAYWRIGHT_PR_NUMBER: ${{ steps.pull_request.outputs.number }}
           PLAYWRIGHT_REPOSITORY_URL: ${{ github.server_url }}/${{ github.repository }}
           PLAYWRIGHT_PUBLISH_REPORT: "false"
+          PLAYWRIGHT_UPDATE_HISTORY: "false"
           PLAYWRIGHT_REPORT_DIR: ${{ runner.temp }}/playwright-artifacts/playwright-report
           PLAYWRIGHT_TEST_RESULTS_DIR: ${{ runner.temp }}/playwright-artifacts/apps/web/test-results
         run: bash scripts/publish-playwright-report.sh
       - name: Link screenshot gallery from pull request
-        if: >-
-          steps.pull_request.outputs.number != '' &&
-          steps.publish.outputs.latest_pr_run == 'true'
+        if: steps.pull_request.outputs.number != ''
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PLAYWRIGHT_PUBLIC_BASE_URL: ${{ vars.PLAYWRIGHT_PUBLIC_BASE_URL }}
@@ -167,10 +166,10 @@ jobs:
               echo "Missing Playwright review manifest at $review_path." >&2
               exit 1
             fi
-            changed_paths_file="$(mktemp)"
+            changed_files_file="$(mktemp)"
             gh api --paginate \
               "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}/files?per_page=100" \
-              --jq '.[].filename' > "$changed_paths_file"
+              --jq '.[] | {filename, changes, patch}' > "$changed_files_file"
             body="$(
               PLAYWRIGHT_GALLERY_URL="$gallery_url" \
               PLAYWRIGHT_DASHBOARD_URL="$public_base_url/index.html" \
@@ -178,7 +177,7 @@ jobs:
               PLAYWRIGHT_SHA="$SHA" \
                 pnpm exec tsx packages/testkit/src/screenshots/build-playwright-pr-screenshot-comment.ts \
                   "$review_path" \
-                  "$changed_paths_file"
+                  "$changed_files_file"
             )"
             marker="<!-- rakazo-playwright-screenshots -->"
             comment_id="$(gh api --paginate --slurp \
@@ -256,5 +255,18 @@ jobs:
       CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
       CODEX_SUBSCRIPTION_AUTH: ${{ secrets.CODEX_SUBSCRIPTION_AUTH }}
       GH_DEPENDENCY_UPDATES_PAT: ${{ secrets.GH_DEPENDENCY_UPDATES_PAT }}
+      S3_ACCESS_KEY_ID: ${{ secrets.S3_ACCESS_KEY_ID }}
+      S3_SECRET_ACCESS_KEY: ${{ secrets.S3_SECRET_ACCESS_KEY }}
+
+  history:
+    needs: publish
+    # Runs when a later publish step (the comment) failed after the gallery was uploaded.
+    if: ${{ !cancelled() && needs.publish.outputs.history_entry != '' }}
+    uses: ./.github/workflows/publish-playwright-history.yml
+    permissions:
+      contents: read
+    with:
+      entry: ${{ needs.publish.outputs.history_entry }}
+    secrets:
       S3_ACCESS_KEY_ID: ${{ secrets.S3_ACCESS_KEY_ID }}
       S3_SECRET_ACCESS_KEY: ${{ secrets.S3_SECRET_ACCESS_KEY }}

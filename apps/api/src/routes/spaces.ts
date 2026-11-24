@@ -27,6 +27,7 @@ import {
   setSpaceSettingOverride,
   spaceSettingOverrides,
 } from "@rakazo/db";
+import { hasChatHistory } from "../account/first-bot.js";
 import { otherSpaceOfBot, otherSpaceOfGroup } from "../bots/bot-space.js";
 import { invitationRecipientKey, sendInvitationEmail } from "../email/invitation-email.js";
 import type { RouterDeps } from "../router.js";
@@ -331,6 +332,7 @@ export function spacesRoutes(ctx: RouterContext) {
         thread,
         routines,
         spaces: navigation.spaces,
+        firstBotDue: navigation.firstBotDue,
         ...(botSpaceId ? { botSpaceId } : {}),
         ...(groupSpaceId ? { groupSpaceId } : {}),
       };
@@ -441,7 +443,11 @@ async function memberSpaceNavigation(
   const sectionsFor = (spaceId: string) => sectionsBySpace.get(spaceId) ?? [];
   const staleClaimBefore = new Date(Date.now() - SPACE_DELETION_CLAIM_TIMEOUT_MS);
 
+  // Only an account with nothing in sight is worth the wider look at its own Spaces.
+  const firstBotDue = spacesWithContent.size === 0 && !(await hasChatHistory(deps.prisma, actor));
+
   return {
+    firstBotDue,
     current: {
       id: actor.spaceId,
       name: currentMembership.space.name,

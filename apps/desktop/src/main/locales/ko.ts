@@ -17,6 +17,7 @@ export const KO_MESSAGES: Record<string, string> = {
   Redo: "실행 복귀",
   Cut: "오려두기",
   Copy: "복사하기",
+  "Copy Link Address": "링크 주소 복사",
   Paste: "붙여넣기",
   "Paste and Match Style": "붙여넣고 스타일 일치시키기",
   Delete: "삭제",

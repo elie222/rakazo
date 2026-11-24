@@ -7,11 +7,11 @@ import { MODEL_CONNECTION_VOICE_SECRET, resolveVoiceKey } from "./voice-model-co
 
 const scope = { userId: "user-1", spaceId: "space-1" };
 
-function credential(id: string, updatedAt: number) {
+function credential(id: string, updatedAt: number, provider = "xai") {
   return {
     id,
     userId: scope.userId,
-    provider: "xai",
+    provider,
     label: id,
     secretId: `secret-${id}`,
     createdAt: new Date(updatedAt),
@@ -71,6 +71,34 @@ describe("resolveVoiceKey", () => {
     await expect(resolveVoiceKey(d, scope, "xai", MODEL_CONNECTION_VOICE_SECRET)).resolves.toBe(
       "xai-new-model-key",
     );
+  });
+
+  it("refuses a linked OpenRouter connection set to zero data retention", async () => {
+    const { deps: d } = deps({
+      credentials: [credential("zdr", 1_000, "openrouter")],
+      secrets: {
+        "secret-zdr": serializeModelSecret({
+          kind: "api_key",
+          key: "openrouter-zdr-key",
+          zeroDataRetention: true,
+        }),
+      },
+    });
+    await expect(
+      resolveVoiceKey(d, scope, "openrouter", MODEL_CONNECTION_VOICE_SECRET),
+    ).rejects.toBeInstanceOf(VoiceAccountError);
+  });
+
+  it("uses a linked OpenRouter connection without zero data retention", async () => {
+    const { deps: d } = deps({
+      credentials: [credential("plain", 1_000, "openrouter")],
+      secrets: {
+        "secret-plain": serializeModelSecret({ kind: "api_key", key: "openrouter-key" }),
+      },
+    });
+    await expect(
+      resolveVoiceKey(d, scope, "openrouter", MODEL_CONNECTION_VOICE_SECRET),
+    ).resolves.toBe("openrouter-key");
   });
 
   it("refuses a model connection the deployment allowlist leaves out", async () => {

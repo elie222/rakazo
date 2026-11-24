@@ -1,9 +1,10 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { ScratchpadItem } from "@rakazo/contracts";
+import { shownOpenWork } from "@rakazo/core";
 import { writeSaved } from "@rakazo/core/query";
 import { Button, Checkbox, Input, SectionHeading } from "@rakazo/ui-web";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Plus, X } from "lucide-react";
+import { Plus, Undo2, X } from "lucide-react";
 import { useState } from "react";
 import { useSave, useSpaceQueries } from "../../lib/query/query";
 
@@ -53,6 +54,8 @@ export function ScratchpadSection({ botId }: { botId: string }) {
     },
   });
   const busy = change.pending;
+  // Parked work waits behind Show more, so what is still open leads the list.
+  const shown = shownOpenWork(items, showAll);
   const input = change.input;
   const error = change.error
     ? input && "title" in input
@@ -90,7 +93,7 @@ export function ScratchpadSection({ botId }: { botId: string }) {
         </Button>
       </SectionHeading>
       <div className="rounded-xl bg-muted/50 p-4">
-        {(showAll ? items : items.slice(0, 5)).map((item) => (
+        {shown.map((item) => (
           <div
             key={item.id}
             className="group -mx-2.5 flex items-start gap-2 rounded-lg px-2.5 py-2 hover:bg-accent/50"
@@ -102,9 +105,9 @@ export function ScratchpadSection({ botId }: { botId: string }) {
               onCheckedChange={(checked) => run({ item, status: checked ? "done" : "open" })}
               className="mt-[3px]"
             />
-            <div className="min-w-0 flex-1">
+            <div className="min-w-0 flex-1 break-words">
               <div
-                className={`text-start text-body-lg ${item.status === "done" ? "text-muted-foreground/80 line-through" : "text-foreground"}`}
+                className={`text-start text-body-lg ${item.status === "done" ? "text-muted-foreground/80 line-through" : item.status === "parked" ? "text-muted-foreground" : "text-foreground"}`}
                 dir="auto"
               >
                 {item.title}
@@ -115,6 +118,19 @@ export function ScratchpadSection({ botId }: { botId: string }) {
                 </div>
               ) : null}
             </div>
+            {item.status === "parked" ? (
+              <Button
+                variant="ghost"
+                size="icon-xs"
+                aria-label={t`Reopen`}
+                title={t`Reopen`}
+                disabled={busy}
+                onClick={() => run({ item, status: "open" })}
+                className="-mt-0.5 shrink-0 text-muted-foreground"
+              >
+                <Undo2 />
+              </Button>
+            ) : null}
             <Button
               variant="ghost"
               size="icon-xs"
@@ -127,11 +143,11 @@ export function ScratchpadSection({ botId }: { botId: string }) {
             </Button>
           </div>
         ))}
-        {items.length > 5 && !showAll ? (
+        {items.length > shown.length ? (
           <Button
             variant="ghost"
             size="sm"
-            className="mt-2 w-full text-muted-foreground"
+            className={`w-full text-muted-foreground ${shown.length ? "mt-2" : ""}`}
             onClick={() => setShowAll(true)}
           >
             <Trans>Show more</Trans>

@@ -2,6 +2,7 @@ import type { VoiceVerifyResult } from "@rakazo/adapter-kit";
 import { VoiceAccountError } from "@rakazo/adapter-kit";
 import type { VoiceAccountErrorCode } from "@rakazo/contracts";
 import {
+  ClientError,
   cancelResponseBody,
   deadlineSignal,
   MAX_VOICE_AUDIO_BYTES,
@@ -184,7 +185,21 @@ export function voiceAccountIssue(
   return !reason || reason === "invalid_api_key" ? "VOICE_KEY_REJECTED" : undefined;
 }
 
-/** The error a failed provider request throws; any 401 or 403 is the user's account to fix. */
+/** The voice provider failed on its side or did not answer in time; the person can try again. */
+export class VoiceProviderUnavailableError extends ClientError {
+  constructor(
+    message = "The voice service is not responding. Try again in a moment.",
+    options?: ErrorOptions,
+  ) {
+    super("SERVICE_UNAVAILABLE", message, "SERVICE_UNAVAILABLE", options);
+    this.name = "VoiceProviderUnavailableError";
+  }
+}
+
+/**
+ * The error a failed provider request throws: any 401 or 403 is the user's account to fix, and a
+ * server error on the provider's side is an outage to wait out.
+ */
 export function voiceRequestError(
   status: number,
   provider: string,
@@ -195,9 +210,27 @@ export function voiceRequestError(
 ): Error {
   const message = voiceHttpError(status, provider, what, body);
   const code = voiceAccountIssue(status, rawBody);
-  return code || status === 401 || status === 403
-    ? new VoiceAccountError(code, message)
-    : new Error(message);
+  if (code || status === 401 || status === 403) return new VoiceAccountError(code, message);
+  // The provider's own text stays in the cause: a server error can carry its internals.
+  if (status >= 500)
+    return new VoiceProviderUnavailableError(undefined, { cause: new Error(message) });
+  return new VoiceProviderRefusedError(message, status, reasonCode(rawBody));
+}
+
+/** The provider refused a request it could not serve, such as a voice the chosen model lacks. */
+export class VoiceProviderRefusedError extends Error {
+  /** The provider's machine-readable reason, safe to log, unlike its message. */
+  readonly reason: string | undefined;
+
+  constructor(
+    message: string,
+    readonly status: number,
+    reason?: string,
+  ) {
+    super(message);
+    this.name = "VoiceProviderRefusedError";
+    this.reason = reason && /^[\w.-]{1,64}$/.test(reason) ? reason : undefined;
+  }
 }
 
 export async function requireOk(res: Response, provider: string, what: string): Promise<Response> {

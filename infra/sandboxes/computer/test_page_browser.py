@@ -4,6 +4,7 @@ import importlib.util
 import json
 import os
 from pathlib import Path
+import shutil
 import socket
 import subprocess
 import sys
@@ -811,18 +812,56 @@ class PurchaseTest(unittest.TestCase):
             self.assertEqual(use_tab.called, used)
             self.assertEqual(json.loads(printed.call_args.args[0])["ok"], not used)
 
-    def test_a_failed_purchase_check_fails_even_with_an_alert_open(self):
+    def check_that_fails(self, dialog):
+        """What a purchase check that could not read the page answers, with `dialog` open on it."""
         listing = [{"type": "page", "id": "tab-1", "url": "https://shop.example.test/pay"}]
-        alert = {"hasDialog": True, "type": "alert", "message": "Hi"}
+        browser = FakeAgentBrowser()
+        browser.dialog = dialog
         with patch.dict(os.environ, {"RAKAZO_CDP_PORT": "1"}), patch.object(helper, "wait_for_cdp"), \
                 patch.object(helper, "http_get_json", return_value=listing), \
-                patch.object(helper, "AgentBrowser", return_value=FakeAgentBrowser()), \
+                patch.object(helper, "AgentBrowser", return_value=browser), \
+                patch.object(browser, "use_tab", create=True) as use_tab, \
                 patch.object(helper.PageBrowser, "purchase_check", side_effect=RuntimeError("page gone")), \
-                patch.object(helper.PageBrowser, "dialog", return_value=alert) as dialog, \
                 patch("builtins.print") as printed:
             helper.run(["rakazo-page-browser", "purchase_check", '{"desktop": true}'])
-        dialog.assert_not_called()
-        self.assertEqual(json.loads(printed.call_args.args[0])["ok"], False)
+        return json.loads(printed.call_args.args[0]), use_tab, browser
+
+    def test_a_check_that_cannot_read_the_page_because_a_dialog_is_open_names_its_type(self):
+        # Every type is reported as it is; the adapter decides which ones a press may answer.
+        for kind in ("alert", "beforeunload", "confirm", "prompt"):
+            with self.subTest(kind=kind):
+                result, use_tab, browser = self.check_that_fails({"type": kind, "message": "Sure?"})
+                self.assertEqual(result, {"ok": True, "url": "", "title": "", "site": "", "purchase": None,
+                                          "dialog": kind})
+                # On the tab the check read, and the dialog is left for the press to answer.
+                use_tab.assert_called_once_with("tab-1")
+                self.assertIsNotNone(browser.dialog)
+                self.assertNotIn(["dialog", "dismiss"], browser.sent)
+
+    def test_a_check_that_cannot_read_the_page_with_no_dialog_known_to_be_open_fails(self):
+        result, _, _ = self.check_that_fails(None)
+        self.assertEqual((result["ok"], result["error"]), (False, "page gone"))
+        self.assertNotIn("dialog", result)
+        # agent-browser that cannot answer about dialogs leaves the check failed.
+        with patch.object(FakeAgentBrowser, "answer", side_effect=helper.AbError("gone")):
+            result, _, _ = self.check_that_fails({"type": "confirm", "message": "Sure?"})
+        self.assertEqual(result["ok"], False)
+
+    def test_an_unreadable_page_in_a_check_that_ran_names_an_open_dialog_and_its_type(self):
+        FakePurchases.on_desktop = dict(helper.UNREADABLE_PURCHASE)
+        browser = FakeAgentBrowser()
+        with patch.object(browser, "use_tab", create=True):
+            self.assertEqual(page(browser).purchase_check({"desktop": True})["purchase"]["reason"], "unreadable")
+            browser.dialog = {"type": "confirm", "message": "Leave?"}
+            self.assertEqual(page(browser).purchase_check({"desktop": True}),
+                             {"ok": True, "url": "", "title": "", "site": "", "purchase": None, "dialog": "confirm"})
+        # A readable check never asks agent-browser about dialogs: a slow one must not hold it up.
+        FakePurchases.on_desktop = None
+        browser = FakeAgentBrowser()
+        with patch.object(browser, "use_tab", create=True) as use_tab:
+            page(browser).purchase_check({"desktop": True})
+        use_tab.assert_not_called()
+        self.assertNotIn(["dialog", "status"], browser.sent)
 
     def test_a_purchase_check_with_no_page_or_a_browser_page_showing_finds_nothing_to_buy(self):
         for listing in ([], [{"type": "page", "id": "newtab", "url": "chrome://newtab/"}]):
@@ -897,6 +936,41 @@ class DesktopPurchaseTest(unittest.TestCase):
         # Outside the browser window: nothing on the page is pressed.
         found, _ = self.purchases({"pagePoint": {"x": -5, "y": 6, "inside": False}})
         self.assertIsNone(found.desktop({"points": [{"x": 1, "y": 2}]}))
+
+    @unittest.skipUnless(shutil.which("node"), "requires Node to run the browser helper's JavaScript")
+    def test_zoomed_desktop_point_maps_to_the_intended_page_control(self):
+        script = r"""
+            const assert = require("node:assert/strict");
+            const { readFileSync } = require("node:fs");
+            const { runInNewContext } = require("node:vm");
+            const window = {
+                devicePixelRatio: 2 / 3, innerWidth: 1920, innerHeight: 1069,
+                outerWidth: 1280, outerHeight: 800, screenX: 0, screenY: 0,
+                screen: { width: 1280, height: 800 },
+                visualViewport: { scale: 1, offsetLeft: 0, offsetTop: 0 },
+            };
+            let focused = true;
+            runInNewContext(readFileSync(0, "utf8"), { window, document: { hasFocus: () => focused } });
+            const { pagePoint } = window.__rakazoPurchase;
+            const placed = pagePoint(800, 487, [1280, 800]);
+            assert.ok(placed?.inside, "67% browser zoom must preserve the click location");
+            assert.equal(placed.x, 1200);
+            assert.equal(placed.y, 600);
+            assert.equal(pagePoint(800, 487, [2560, 1600]), null, "unverified display scale");
+            focused = false;
+            assert.equal(pagePoint(800, 487, [1280, 800]), null, "unfocused browser");
+        """
+        result = subprocess.run(["node", "-e", script], input=helper.PURCHASE_HELPERS,
+                                capture_output=True, text=True, timeout=5)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_desktop_click_places_zoomed_points_using_the_physical_display(self):
+        found, asked = self.purchases({"pagePoint": {"x": 1200, "y": 600, "inside": True},
+                                     "purchaseAt(1200, 600": {"purchase": PAY, "frames": False}})
+        with patch.object(helper.subprocess, "check_output", return_value=b"1280 800\n") as geometry:
+            self.assertEqual(found.desktop({"points": [{"x": 800, "y": 487}]}), PAY)
+        geometry.assert_called_once()
+        self.assertIn(("page", "pagePoint(800, 487, [1280, 800])"), asked)
 
     def test_a_key_or_a_click_that_cannot_be_placed_asks_when_the_page_shows_a_payment(self):
         shows = {**PAY, "reason": "payment_page"}

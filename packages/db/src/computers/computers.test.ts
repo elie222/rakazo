@@ -6,6 +6,7 @@ import {
   computerHomeKey,
   computerScopeKey,
   ensureComputerRecord,
+  newComputerKind,
   resolveMaxComputersPerUser,
   restoreBotUnderComputerQuota,
 } from "./computers.js";
@@ -490,5 +491,13 @@ describe("restoreBotUnderComputerQuota", () => {
       computerId: "computer-a",
     });
     expect(inUse()).toBe(1);
+  });
+});
+
+describe("newComputerKind", () => {
+  it("puts a new bot on the host machine only once this Mac was chosen", () => {
+    expect(newComputerKind("local-vm", "this-mac")).toBe("desktop");
+    expect(newComputerKind("local-vm", "docker")).toBe("local-vm");
+    expect(newComputerKind("local-vm", null)).toBe("local-vm");
   });
 });

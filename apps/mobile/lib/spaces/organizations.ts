@@ -74,11 +74,17 @@ export function refreshOrganizations(): Promise<void> {
   });
 }
 
-/** After the server says organizations may have changed: their list and any members list shown. */
+/**
+ * After the server says organizations may have changed: their list, any members list shown, and
+ * what their plan or computer sizes decide.
+ */
 export function refreshOrganizationReads(): Promise<void> {
   return queryClient.invalidateQueries({
     predicate: ({ queryKey }) =>
-      queryKey.includes("organizations/list") || queryKey.includes("organizations/members/list"),
+      queryKey.includes("organizations/list") ||
+      queryKey.includes("organizations/members/list") ||
+      queryKey.includes("billing/status") ||
+      queryKey.includes("cloudComputers/list"),
   });
 }
 

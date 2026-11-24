@@ -1,23 +1,28 @@
 import { ORPCError } from "@orpc/server";
+import type { SavedDeploymentModel } from "@rakazo/adapters";
 import {
+  adminDeploymentModel,
   deploymentModelRole,
   findConnectedModelCredential,
   hasHostedModelCredits,
   hostCredentialSource,
   mcpStdioAvailable,
   resolveMemberMainModel,
+  sandboxKindCapabilities,
   selectConfiguredModel,
 } from "@rakazo/adapters";
 import type { Actor, Me } from "@rakazo/contracts";
 import {
   attachmentMaxBytes,
   attachmentMaxCount,
+  ChatPreferencesSchema,
   canonicalPiProviderId,
   LAB_FEATURES,
   modelCreditsUsd,
   resolveBotAvatarSet,
   resolveLabs,
 } from "@rakazo/contracts";
+import { chatPreferencesSelect } from "@rakazo/db";
 import { isAdmin } from "../auth/admins.js";
 import { effectiveSandboxProvider } from "../computers/computer-provider-config.js";
 import type { RouterDeps } from "../router.js";
@@ -40,6 +45,7 @@ export async function meDto(deps: RouterDeps, actor: Actor): Promise<Me> {
         timezone: true,
         locale: true,
         botAvatarSet: true,
+        ...chatPreferencesSelect,
         labs: true,
         signupSurvey: { select: { userId: true } },
       },
@@ -57,6 +63,7 @@ export async function meDto(deps: RouterDeps, actor: Actor): Promise<Me> {
     labsAvailable: LAB_FEATURES.filter((feature) => !deploymentLabs.includes(feature)),
     ticketBoardEnabled: labs.includes("board"),
     meetingsEnabled,
+    inboundOrigin: deps.env.publishedInboundOrigin,
     phoneCallsEnabled: deps.env.phoneCallsEnabled === true,
     navLinks: deps.env.navLinks ?? [],
     maxUploadSizeBytes: attachmentMaxBytes(deps.env),
@@ -73,13 +80,15 @@ export async function meDto(deps: RouterDeps, actor: Actor): Promise<Me> {
     // Set only while the active default is the deployment's own, running on host credentials.
     ...hostCredentials(
       !setup.main &&
+        !adminDeploymentModel(setup.settings) &&
         !setup.settings?.defaultModelProvider &&
         Boolean(deps.env.deploymentModelHostCredentials),
       deps.env.defaultProvider,
     ),
     computerHost: computerHostFor(setup.settings?.computerHost, sandboxProvider),
     canChooseHostComputer:
-      Boolean(deps.env.desktopHostChoiceEnabled) && sandboxProvider === "docker",
+      Boolean(deps.env.desktopHostChoiceEnabled) &&
+      sandboxKindCapabilities(sandboxProvider).offersHostComputer === true,
     // The deployment's provider: an account's own choice covers only its Team Computers.
     sandboxProvider,
     computerSettingsEnabled: Boolean(deps.env.computerSettingsEnabled),
@@ -91,6 +100,7 @@ export async function meDto(deps: RouterDeps, actor: Actor): Promise<Me> {
       }),
     avatarStyle: "organic",
     botAvatarSet: resolveBotAvatarSet(user.botAvatarSet),
+    chatPreferences: ChatPreferencesSchema.parse(user),
     timezone: user.timezone ?? null,
     locale: user.locale ?? null,
     billingEnabled: Boolean(deps.billing),
@@ -107,19 +117,23 @@ function computerHostFor(
   sandboxProvider: string,
 ): "docker" | "this-mac" | null {
   if (sandboxProvider === "desktop") return "this-mac";
-  if (sandboxProvider !== "docker") return null;
+  if (!sandboxKindCapabilities(sandboxProvider).offersHostComputer) return null;
   if (stored === "this-mac" || stored === "docker") return stored;
   return null;
 }
 
 /** Whether this member can use the deployment's model under the current funding mode. */
-export async function deploymentModelAccess(deps: RouterDeps, actor: Actor) {
+export async function deploymentModelAccess(
+  deps: RouterDeps,
+  actor: Actor,
+  settings: SavedDeploymentModel | null,
+) {
   const funding = deps.billing ? await deps.billing.status(actor) : null;
   const creditsAvailable = modelCreditsUsd(funding) !== null;
   return {
     creditsAvailable,
     hasDeployment:
-      Boolean(deps.env.deploymentModelConfigured) &&
+      (Boolean(deps.env.deploymentModelConfigured) || Boolean(adminDeploymentModel(settings))) &&
       (!funding?.creditPurchasesEnabled || creditsAvailable),
   };
 }
@@ -137,7 +151,7 @@ export async function modelSetup(deps: RouterDeps, actor: Actor) {
         (await hasHostedModelCredits(deps.prisma, actor, member.provider))))
       ? member
       : null;
-  const deploymentAccess = await deploymentModelAccess(deps, actor);
+  const deploymentAccess = await deploymentModelAccess(deps, actor, settings);
   return {
     main,
     model:
@@ -193,10 +207,16 @@ const ENDED = Symbol("ended");
  * looks identical to an idle one, and clients treat any frame as liveness. Auth ran once when the
  * stream opened, so before yielding anything this re-checks the session if SESSION_RECHECK_MS has
  * passed; a signed-out or revoked session ends the stream with UNAUTHORIZED.
+ *
+ * `forward` returns false for an event the client must not see. That event still re-checks the
+ * session, but it is not a frame, so it does not restart the silence window. The window runs from
+ * the pull after the previous frame. Time spent in `forward` counts against what is left; past the
+ * deadline, this pull yields a heartbeat before another event is read.
  */
 export async function* withHeartbeats<T>(
   context: { signal?: AbortSignal; stillAuthorized?: () => Promise<boolean> },
   follow: (signal: AbortSignal) => AsyncGenerator<T>,
+  forward?: (item: T) => boolean | Promise<boolean>,
 ): AsyncGenerator<T | typeof HEARTBEAT> {
   const controller = new AbortController();
   const source = follow(
@@ -204,38 +224,51 @@ export async function* withHeartbeats<T>(
   );
   let pending: Promise<IteratorResult<T>> | undefined;
   let authorizedAt = Date.now();
+  // Unset once a frame is yielded, so the next wait measures a full HEARTBEAT_MS from that pull.
+  let heartbeatDueAt: number | undefined;
   try {
     while (!context.signal?.aborted) {
-      // A heartbeat keeps `pending`, so the in-flight read stays the next event in order.
-      pending ??= source.next();
-      let timer: ReturnType<typeof setTimeout> | undefined;
-      let onAbort: (() => void) | undefined;
-      const next = await Promise.race([
-        pending,
-        // Racing the abort ends a source that ignores it, so its session re-checks can't run after
-        // shutdown has closed the database pool. The waiter is per read so a settled race, and the
-        // event it carried, isn't retained until disconnect.
-        new Promise<typeof HEARTBEAT | typeof ENDED>((resolve) => {
-          timer = setTimeout(() => resolve(HEARTBEAT), HEARTBEAT_MS);
-          if (context.signal?.aborted) return resolve(ENDED);
-          onAbort = () => resolve(ENDED);
-          context.signal?.addEventListener("abort", onAbort, { once: true });
-        }),
-      ]).finally(() => {
-        clearTimeout(timer);
-        if (onAbort) context.signal?.removeEventListener("abort", onAbort);
-      });
+      heartbeatDueAt ??= Date.now() + HEARTBEAT_MS;
+      const waitMs = heartbeatDueAt - Date.now();
+      let next: IteratorResult<T> | typeof HEARTBEAT | typeof ENDED;
+      if (waitMs <= 0) {
+        next = HEARTBEAT;
+      } else {
+        // A heartbeat keeps `pending`, so the in-flight read stays the next event in order.
+        pending ??= source.next();
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        let onAbort: (() => void) | undefined;
+        next = await Promise.race([
+          pending,
+          // Racing the abort ends a source that ignores it, so its session re-checks can't run after
+          // shutdown has closed the database pool. The waiter is per read so a settled race, and the
+          // event it carried, isn't retained until disconnect.
+          new Promise<typeof HEARTBEAT | typeof ENDED>((resolve) => {
+            timer = setTimeout(() => resolve(HEARTBEAT), waitMs);
+            if (context.signal?.aborted) return resolve(ENDED);
+            onAbort = () => resolve(ENDED);
+            context.signal?.addEventListener("abort", onAbort, { once: true });
+          }),
+        ]).finally(() => {
+          clearTimeout(timer);
+          if (onAbort) context.signal?.removeEventListener("abort", onAbort);
+        });
+      }
       if (next === ENDED || context.signal?.aborted) return;
       if (context.stillAuthorized && Date.now() - authorizedAt >= SESSION_RECHECK_MS) {
         if (!(await context.stillAuthorized())) throw new ORPCError("UNAUTHORIZED");
         authorizedAt = Date.now();
       }
       if (next === HEARTBEAT) {
+        heartbeatDueAt = undefined;
         yield HEARTBEAT;
         continue;
       }
       pending = undefined;
       if (next.done) return;
+      // A dropped event leaves `heartbeatDueAt` in place, including time spent deciding.
+      if (forward && !(await forward(next.value))) continue;
+      heartbeatDueAt = undefined;
       yield next.value;
     }
   } finally {

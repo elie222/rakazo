@@ -24,8 +24,10 @@ const mocks = vi.hoisted(() => ({
   rpc: vi.fn(),
   alert: vi.fn(),
   removeFromSearchInbox: vi.fn(),
+  addToSearchInbox: vi.fn(),
   loadArchived: vi.fn(),
   getCurrentRoute: vi.fn(),
+  isFocused: vi.fn(),
   router: {
     push: vi.fn(),
     replace: vi.fn(),
@@ -88,7 +90,7 @@ vi.mock("expo-router", () => ({
   useFocusEffect: (effect: () => (() => void) | undefined) => useEffect(effect, [effect]),
   useRouter: () => mocks.router,
   useNavigationContainerRef: () => ({ getCurrentRoute: mocks.getCurrentRoute }),
-  useNavigation: () => ({ setOptions: vi.fn() }),
+  useNavigation: () => ({ setOptions: vi.fn(), isFocused: mocks.isFocused }),
   useRoute: () => ({ key: "thread-1" }),
   useLocalSearchParams: () => ({ groupId: "group-b" }),
   Stack: { Screen: () => null },
@@ -115,6 +117,8 @@ vi.mock("../../appearance/appearance", () => ({ mobileTokens: () => ({}) }));
 vi.mock("../../api/user-error", () => ({ errorText: () => "failure" }));
 vi.mock("../../search/search-inbox", () => ({
   removeFromSearchInbox: mocks.removeFromSearchInbox,
+  addToSearchInbox: mocks.addToSearchInbox,
+  searchInboxSession: () => ({ generation: 0, apiBase: "https://example.test" }),
 }));
 vi.mock("../../layout/side-insets", () => ({ useSideInsets: () => ({}) }));
 vi.mock("../../thread/scroll/thread-edges", () => ({ threadEdgeOptions: () => ({}) }));
@@ -156,8 +160,10 @@ beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   mocks.getCurrentRoute.mockReturnValue({ name: "bot-profile", params: { botId: "bot-b" } });
   mocks.rpc.mockReset();
+  mocks.isFocused.mockReset().mockReturnValue(true);
   mocks.alert.mockReset();
   mocks.removeFromSearchInbox.mockReset();
+  mocks.addToSearchInbox.mockReset();
   for (const route of Object.values(mocks.router)) route.mockReset();
   container = document.createElement("div");
   root = createRoot(container);
@@ -332,7 +338,7 @@ describe("archived count", () => {
   });
 });
 
-describe("bot profile menu archive notifications", () => {
+describe("bot profile menu actions", () => {
   function renderActions() {
     let actions: { text: string; onPress: () => void }[] = [];
     function Header() {
@@ -367,6 +373,65 @@ describe("bot profile menu archive notifications", () => {
     expect(mocks.removeFromSearchInbox).toHaveBeenCalledOnce();
     expect(mocks.alert).toHaveBeenCalledExactlyOnceWith("Could not archive bot", "failure");
     stop();
+  });
+
+  it("opens the copy's chat once it is duplicated, and only once for repeated taps", async () => {
+    const action = renderActions();
+    const finish = deferred<{ id: string; name: string }>();
+    mocks.rpc.mockReturnValueOnce(finish.promise);
+    act(() => action("Duplicate").onPress());
+    act(() => action("Duplicate").onPress());
+    await flush();
+    expect(mocks.rpc).toHaveBeenCalledExactlyOnceWith(
+      "bots/duplicate",
+      { botId: "bot-b" },
+      expect.objectContaining({ requestContext: expect.anything() }),
+    );
+    expect(mocks.router.push).not.toHaveBeenCalled();
+    const copy = { id: "bot-c", name: "Bot (copy)" };
+    await act(async () => finish.resolve(copy));
+    expect(mocks.addToSearchInbox).toHaveBeenCalledWith(
+      { kind: "bot", bot: copy },
+      expect.anything(),
+    );
+    expect(mocks.router.dismissAll).toHaveBeenCalledOnce();
+    expect(mocks.router.push).toHaveBeenCalledExactlyOnceWith({
+      pathname: "/thread",
+      params: { botId: "bot-c", name: "Bot (copy)" },
+    });
+
+    // A tap while the profile is still closing makes no second copy.
+    act(() => action("Duplicate").onPress());
+    await flush();
+    expect(mocks.rpc.mock.calls.filter(([path]) => path === "bots/duplicate")).toHaveLength(1);
+  });
+
+  it("keeps the screen opened over the profile when the copy lands", async () => {
+    const action = renderActions();
+    const copy = { id: "bot-c", name: "Bot (copy)" };
+    mocks.rpc.mockResolvedValueOnce(copy);
+    act(() => action("Duplicate").onPress());
+    mocks.isFocused.mockReturnValue(false);
+    await flush();
+    expect(mocks.addToSearchInbox).toHaveBeenCalledOnce();
+    expect(mocks.router.dismissAll).not.toHaveBeenCalled();
+    expect(mocks.router.push).not.toHaveBeenCalled();
+
+    // Back on the profile, it duplicates again.
+    mocks.isFocused.mockReturnValue(true);
+    mocks.rpc.mockResolvedValueOnce({ id: "bot-d", name: "Bot (copy 2)" });
+    act(() => action("Duplicate").onPress());
+    await flush();
+    expect(mocks.rpc.mock.calls.filter(([path]) => path === "bots/duplicate")).toHaveLength(2);
+  });
+
+  it("says when a bot could not be duplicated and stays on the profile", async () => {
+    const action = renderActions();
+    mocks.rpc.mockRejectedValueOnce(new Error("offline"));
+    act(() => action("Duplicate").onPress());
+    await flush();
+    expect(mocks.alert).toHaveBeenCalledExactlyOnceWith("Could not duplicate bot", "failure");
+    expect(mocks.router.dismissAll).not.toHaveBeenCalled();
   });
 
   it.each([false, true])(
@@ -411,17 +476,9 @@ describe("bot profile menu archive notifications", () => {
   });
 
   it.each([
-    [{ name: "thread", params: { botId: "bot-b" } }, true],
     [{ name: "bot-profile", params: { botId: "bot-b" } }, true],
-    [{ name: "bot-settings", params: { botId: "bot-b" } }, true],
-    [{ name: "bot-model", params: { botId: "bot-b" } }, true],
-    [{ name: "computer", params: { botId: "bot-b" } }, true],
-    [{ name: "routines", params: { botId: "bot-b" } }, true],
-    [{ name: "routine", params: { botId: "bot-b" } }, true],
-    [{ name: "pages", params: { groupId: "removed-group" } }, true],
     [{ name: "thread", params: { botId: "other-bot" } }, false],
     [{ name: "thread", params: { groupId: "removed-group" } }, true],
-    [{ name: "group-settings", params: { groupId: "removed-group" } }, true],
     [{ name: "thread", params: { groupId: "retained-group" } }, false],
     [{ name: "artifacts", params: { botId: "bot-b" } }, false],
     [{ name: "index" }, false],
