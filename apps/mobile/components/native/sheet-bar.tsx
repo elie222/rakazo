@@ -5,7 +5,9 @@ import { GlassIconButton } from "./glass-icon-button";
 
 /**
  * The top bar of a modal sheet drawn in React Native, laid out like a native sheet's bar: round
- * glass buttons at either edge, so it matches the sheets that use native header items.
+ * glass buttons at either edge, so it matches the sheets that use native header items. Route
+ * sheets use those header items instead; this is for sheets opened in place over a screen, which
+ * hold that screen's state (a text selection, an unsaved draft) and have no navigation header.
  */
 export function SheetBar({ leading, trailing }: { leading?: ReactNode; trailing?: ReactNode }) {
   return (
@@ -41,6 +43,7 @@ export function SheetBarClose({
       ios="xmark"
       android="close"
       size={44}
+      fallbackStyle={{ backgroundColor: mobileTokens().muted }}
       disabled={disabled}
       onPress={onPress}
     />
@@ -55,6 +58,7 @@ export function SheetBarBack({ label, onPress }: { label: string; onPress: () =>
       ios="chevron.left"
       android="chevron-back"
       size={44}
+      fallbackStyle={{ backgroundColor: mobileTokens().muted }}
       onPress={onPress}
     />
   );

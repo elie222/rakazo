@@ -1,4 +1,3 @@
-import { createElement } from "react";
 // @vitest-environment jsdom
 
 import type { CSSProperties, ReactNode } from "react";
@@ -53,17 +52,7 @@ vi.mock("../../lib/appearance/appearance", () => ({ mobileTokens: () => ({}) }))
 vi.mock("../../lib/native/native", () => ({
   useThemedStyles: (factory: () => unknown) => factory(),
 }));
-vi.mock("../native/glass-icon-button", () => ({
-  GlassIconButton: ({
-    accessibilityLabel,
-    onPress,
-    disabled,
-  }: {
-    accessibilityLabel: string;
-    onPress: () => void;
-    disabled?: boolean;
-  }) => createElement("button", { type: "button", onClick: onPress, disabled }, accessibilityLabel),
-}));
+vi.mock("../native/glass-icon-button", () => import("../native/glass-icon-button.test-support"));
 vi.mock("../native/native-action-button", () => ({
   NativeActionButton: ({ label, onPress }: { label: string; onPress: () => void }) => (
     <button type="button" onClick={onPress}>
