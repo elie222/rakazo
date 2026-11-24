@@ -40,7 +40,9 @@ const client = new OpenAI({
 
 const stream = await client.chat.completions.create({
   model: "Research", // a bot's name or id
-  messages: [{ role: "user", content: "Watch r/LocalLLaMA for new model releases and tell me daily." }],
+  messages: [
+    { role: "user", content: "Watch r/LocalLLaMA for new model releases and tell me daily." },
+  ],
   stream: true,
 });
 for await (const chunk of stream) process.stdout.write(chunk.choices[0]?.delta?.content ?? "");
@@ -56,12 +58,12 @@ far; the bot keeps working either way. Token counts are reported as zero.
 
 For long jobs, start a task and come back for the result.
 
-| Request | Does |
-| --- | --- |
-| `POST /api/v1/tasks` with `{ "bot", "input", "callback_url"? }` | Starts a task |
-| `GET /api/v1/tasks/<id>` | Reads it |
-| `GET /api/v1/tasks/<id>/events` | Streams it as server-sent `task` events until it settles |
-| `POST /api/v1/tasks/<id>/messages` with `{ "input" }` | Sends a follow-up, such as an answer |
+| Request                                                         | Does                                                     |
+| --------------------------------------------------------------- | -------------------------------------------------------- |
+| `POST /api/v1/tasks` with `{ "bot", "input", "callback_url"? }` | Starts a task                                            |
+| `GET /api/v1/tasks/<id>`                                        | Reads it                                                 |
+| `GET /api/v1/tasks/<id>/events`                                 | Streams it as server-sent `task` events until it settles |
+| `POST /api/v1/tasks/<id>/messages` with `{ "input" }`           | Sends a follow-up, such as an answer                     |
 
 A task reads:
 
