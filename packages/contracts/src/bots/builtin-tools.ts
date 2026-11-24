@@ -75,6 +75,8 @@ export const BUILTIN_TOOL_NAMES = [
   "list_reminders",
   "create_reminder",
   "complete_reminder",
+  "start_phone_timer",
+  "set_phone_alarm",
   "read_email",
   "delete_email",
   "claim_email_address",

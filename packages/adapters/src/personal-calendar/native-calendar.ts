@@ -1,18 +1,23 @@
 import { createHash, randomUUID } from "node:crypto";
 import type {
   Actor,
-  CalendarOperation as Operation,
-  NativeCalendarRequest as Request,
-  CalendarResponse as Response,
+  CalendarOperation,
+  NativeClockOperation,
+  NativeDeviceOperation as Operation,
+  NativeDeviceRequest as Request,
+  NativeDeviceResponse as Response,
 } from "@rakazo/contracts";
 import {
-  CalendarOperation,
   CalendarResponse,
   CalendarResults,
   calendarOperationSource,
+  isNativeClockOperation,
   NATIVE_CALENDAR_WINDOW_MS,
+  NativeClockResponse,
+  NativeDeviceOperation,
 } from "@rakazo/contracts";
 import { deadlineSignal } from "@rakazo/core";
+import { approvalEffectKey } from "@rakazo/core/node/approval-effect-key";
 import type { NativeCalendarRequest, PrismaClient, RunLease, ThreadEvents } from "@rakazo/db";
 import {
   assertRunCanWriteHistory,
@@ -26,10 +31,14 @@ import { calendarWriteKey } from "./calendar-write-key.js";
 
 type Store = Pick<PrismaClient, "run" | "nativeCalendarRequest">;
 type Session = Pick<Actor, "spaceId" | "userId"> & { sessionId: string };
-type Device = Session & { deviceDigest: string };
+type Device = Session & { deviceDigest: string; capability?: "clock" };
 
 export const nativeCalendarDeviceDigest = (key: string) =>
   createHash("sha256").update(key).digest("hex");
+
+// Older API instances only recognize the legacy calendar digest during a rolling deploy.
+export const nativeClockDeviceDigest = (key: string) =>
+  createHash("sha256").update("rakazo-native-clock\0").update(key).digest("hex");
 
 type RequestId = Pick<Request, "id" | "runId" | "threadId">;
 
@@ -80,7 +89,9 @@ function privateRun(userId: string): Prisma.RunWhereInput {
 }
 
 function ownSource(session: Device, threadId?: string): Prisma.RunWhereInput {
-  const { sessionId, userId, deviceDigest } = session;
+  const { sessionId, userId, deviceDigest, capability } = session;
+  const digestField =
+    capability === "clock" ? "nativeClockDeviceDigest" : "nativeCalendarDeviceDigest";
   return {
     ...privateRun(userId),
     sourceMessage: {
@@ -88,7 +99,7 @@ function ownSource(session: Device, threadId?: string): Prisma.RunWhereInput {
       role: "user",
       authorUserId: userId,
       nativeCalendarSessionId: sessionId,
-      nativeCalendarDeviceDigest: deviceDigest,
+      [digestField]: deviceDigest,
     },
     steeringMessages: {
       none: {
@@ -96,8 +107,8 @@ function ownSource(session: Device, threadId?: string): Prisma.RunWhereInput {
           OR: [
             { nativeCalendarSessionId: null },
             { nativeCalendarSessionId: { not: sessionId } },
-            { nativeCalendarDeviceDigest: null },
-            { nativeCalendarDeviceDigest: { not: deviceDigest } },
+            { [digestField]: null },
+            { [digestField]: { not: deviceDigest } },
           ],
         },
       },
@@ -105,9 +116,13 @@ function ownSource(session: Device, threadId?: string): Prisma.RunWhereInput {
   };
 }
 
+function deviceWhere({ spaceId, userId, sessionId, deviceDigest }: Device) {
+  return { spaceId, userId, sessionId, deviceDigest };
+}
+
 function requestWhere(session: Device, request: RequestId): Prisma.NativeCalendarRequestWhereInput {
   return {
-    ...session,
+    ...deviceWhere(session),
     id: request.id,
     runId: request.runId,
     expiresAt: { gt: new Date() },
@@ -125,7 +140,7 @@ function requestDto(row: NativeCalendarRequest, threadId: string): Request {
       Math.max(0, row.expiresAt.getTime() - Date.now()),
     ),
     operation: readJsonColumn(
-      CalendarOperation,
+      NativeDeviceOperation,
       row.operation,
       {
         table: "native_calendar_requests",
@@ -140,7 +155,7 @@ function requestDto(row: NativeCalendarRequest, threadId: string): Request {
 export async function pendingNativeCalendar(store: Store, session: Device, botId: string) {
   const rows = await store.nativeCalendarRequest.findMany({
     where: {
-      ...session,
+      ...deviceWhere(session),
       status: "pending",
       expiresAt: { gt: new Date() },
       run: { ...ownSource(session), botId },
@@ -181,8 +196,16 @@ export async function finishNativeCalendar(
   const where = { ...requestWhere(session, request), status: "claimed" };
   const row = await deps.prisma.nativeCalendarRequest.findFirst({ where });
   if (!row) return false;
-  if (response.status === "ok") {
+  if (response.status === "dispatched") {
+    if (
+      session.capability !== "clock" ||
+      !isNativeClockOperation(requestDto(row, request.threadId).operation)
+    )
+      return false;
+  } else if (response.status === "ok") {
+    if (session.capability === "clock") return false;
     const operation = requestDto(row, request.threadId).operation;
+    if (isNativeClockOperation(operation)) return false;
     const parsed = CalendarResults[operation.action].safeParse(response.data);
     if (!parsed.success || !matchesNativeTarget(operation, parsed.data)) return false;
     response = { status: "ok", data: parsed.data };
@@ -200,7 +223,7 @@ export async function finishNativeCalendar(
   return true;
 }
 
-function matchesNativeTarget(operation: Operation, data: unknown) {
+function matchesNativeTarget(operation: CalendarOperation, data: unknown) {
   switch (operation.action) {
     case "create_calendar_event": {
       const result = CalendarResults.create_calendar_event.parse(data);
@@ -252,7 +275,7 @@ function matchesNativeTarget(operation: Operation, data: unknown) {
   }
 }
 
-export function isCalendarWrite(action: Operation["action"]) {
+export function isCalendarWrite(action: CalendarOperation["action"]) {
   return (
     action === "create_calendar_event" ||
     action === "create_reminder" ||
@@ -260,14 +283,32 @@ export function isCalendarWrite(action: Operation["action"]) {
   );
 }
 
+type RequestDeps = { prisma: PrismaClient; events: ThreadEvents };
+type RequestRun = { id: string; userId: string; spaceId: string; threadId: string };
+
+export function requestNativeCalendar(
+  deps: RequestDeps,
+  run: RequestRun,
+  lease: RunLease,
+  operation: CalendarOperation,
+  parent: AbortSignal,
+): Promise<CalendarResponse>;
+export function requestNativeCalendar(
+  deps: RequestDeps,
+  run: RequestRun,
+  lease: RunLease,
+  operation: NativeClockOperation,
+  parent: AbortSignal,
+): Promise<NativeClockResponse>;
 export async function requestNativeCalendar(
-  { prisma, events }: { prisma: PrismaClient; events: ThreadEvents },
-  run: { id: string; userId: string; spaceId: string; threadId: string },
+  { prisma, events }: RequestDeps,
+  run: RequestRun,
   lease: RunLease,
   operation: Operation,
   parent: AbortSignal,
 ): Promise<Response> {
-  if (calendarOperationSource(operation) !== "device") return { status: "unavailable" };
+  const clock = isNativeClockOperation(operation);
+  if (!clock && calendarOperationSource(operation) !== "device") return { status: "unavailable" };
   const { id: runId, userId, spaceId, threadId } = run;
   const owner = await prisma.run.findFirst({
     where: {
@@ -284,12 +325,18 @@ export async function requestNativeCalendar(
     },
     select: {
       sourceMessage: {
-        select: { nativeCalendarSessionId: true, nativeCalendarDeviceDigest: true },
+        select: {
+          nativeCalendarSessionId: true,
+          nativeCalendarDeviceDigest: true,
+          nativeClockDeviceDigest: true,
+        },
       },
     },
   });
   const sessionId = owner?.sourceMessage?.nativeCalendarSessionId;
-  const deviceDigest = owner?.sourceMessage?.nativeCalendarDeviceDigest;
+  const deviceDigest = clock
+    ? owner?.sourceMessage?.nativeClockDeviceDigest
+    : owner?.sourceMessage?.nativeCalendarDeviceDigest;
   if (!sessionId || !deviceDigest || !events.publishSpaceChange || !events.followSpaceChanges)
     return { status: "unavailable" };
   const live = await runAsSystem("verify the originating calendar session", () =>
@@ -299,9 +346,19 @@ export async function requestNativeCalendar(
     }),
   );
   if (!live) return { status: "unavailable" };
-  const session = { spaceId, userId, sessionId, deviceDigest };
-  const write = isCalendarWrite(operation.action);
-  const id = write ? calendarWriteKey(runId, operation) : randomUUID();
+  const session: Device = {
+    spaceId,
+    userId,
+    sessionId,
+    deviceDigest,
+    capability: clock ? "clock" : undefined,
+  };
+  const write = clock || isCalendarWrite(operation.action);
+  const id = clock
+    ? approvalEffectKey(runId, operation.action, operation.input)
+    : write
+      ? calendarWriteKey(runId, operation)
+      : randomUUID();
   const row = await prisma.$transaction(async (tx) => {
     await assertRunCanWriteHistory(tx, runId, { lease });
     if (
@@ -320,7 +377,7 @@ export async function requestNativeCalendar(
     await tx.nativeCalendarRequest.createMany({
       skipDuplicates: true,
       data: {
-        ...session,
+        ...deviceWhere(session),
         id,
         runId,
         operation,
@@ -334,8 +391,8 @@ export async function requestNativeCalendar(
 
   const readResult = (current: NativeCalendarRequest) =>
     current.status === "finished" && current.result
-      ? readJsonColumn(
-          CalendarResponse,
+      ? readJsonColumn<Response>(
+          clock ? NativeClockResponse : CalendarResponse,
           current.result,
           { table: "native_calendar_requests", column: "result", id },
           "reject",

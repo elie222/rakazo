@@ -2,6 +2,7 @@ import {
   disabledBuiltinToolSet,
   FLEET_TOOL_NAMES,
   FLEET_WRITE_TOOL_NAMES,
+  NativeClockActions,
 } from "@rakazo/contracts";
 import {
   approvalCardExpires,
@@ -136,6 +137,7 @@ export function offersAgentConnectionTools(options: {
 export function selectBuiltinToolsForRun(options: {
   ticketBoardEnabled?: boolean;
   phoneCallsEnabled?: boolean;
+  phoneClockAvailable?: boolean;
   historyRetrievalEnabled?: boolean;
   /** See historyMyChatsAllowed; otherwise search_history offers only this chat. */
   historyMyChats?: boolean;
@@ -223,6 +225,7 @@ export function selectBuiltinToolsForRun(options: {
   ).filter(
     (tool) =>
       !disabled.has(tool.name) &&
+      (options.phoneClockAvailable || !Object.hasOwn(NativeClockActions, tool.name)) &&
       (options.trigger !== "created" || CREATED_RUN_TOOL_NAMES.has(tool.name)) &&
       (options.trigger !== BACKGROUND_HELPER_TRIGGER || !SUBAGENT_HIDDEN_TOOLS.has(tool.name)) &&
       // A run nobody is watching is offered them too; its writes wait for the owner's approval.

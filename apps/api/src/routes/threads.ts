@@ -5,6 +5,7 @@ import {
   finishNativeCalendar,
   getActiveTeachingSession,
   nativeCalendarDeviceDigest,
+  nativeClockDeviceDigest,
   pendingNativeCalendar,
   settleCallRequest,
   wakeRun,
@@ -110,13 +111,16 @@ export function takeoverReleaser(deps: RouterDeps, actor: Actor, target: ThreadT
 function calendarDevice(
   { actor, nativeSessionId }: { actor: Actor; nativeSessionId?: string },
   key: string,
+  capability?: "clock",
 ) {
   return nativeSessionId
     ? {
         spaceId: actor.spaceId,
         userId: actor.userId,
         sessionId: nativeSessionId,
-        deviceDigest: nativeCalendarDeviceDigest(key),
+        deviceDigest:
+          capability === "clock" ? nativeClockDeviceDigest(key) : nativeCalendarDeviceDigest(key),
+        capability,
       }
     : undefined;
 }
@@ -139,6 +143,7 @@ export function threadsRoutes(ctx: RouterContext) {
       botId?: string;
       groupId?: string;
       nativeCalendarDeviceKey?: string;
+      nativeClockDeviceKey?: string;
     },
     startRoutines?: Parameters<typeof sendThreadMessage>[5],
     nativeSessionId?: string,
@@ -164,6 +169,7 @@ export function threadsRoutes(ctx: RouterContext) {
       ? { provider: deps.env.defaultProvider, model: deps.env.defaultModel }
       : null;
     const deviceKey = nativeSessionId && target.kind === "bot" && input.nativeCalendarDeviceKey;
+    const clockKey = nativeSessionId && target.kind === "bot" && input.nativeClockDeviceKey;
     return sendThreadMessage(
       {
         ...deps,
@@ -182,8 +188,9 @@ export function threadsRoutes(ctx: RouterContext) {
       {
         ...input,
         noModel,
-        nativeCalendarSessionId: deviceKey ? nativeSessionId : undefined,
+        nativeCalendarSessionId: deviceKey || clockKey ? nativeSessionId : undefined,
         nativeCalendarDeviceDigest: deviceKey ? nativeCalendarDeviceDigest(deviceKey) : undefined,
+        nativeClockDeviceDigest: clockKey ? nativeClockDeviceDigest(clockKey) : undefined,
       },
       takeoverReleaser(deps, actor, target),
       startRoutines,
@@ -261,16 +268,16 @@ export function threadsRoutes(ctx: RouterContext) {
         send(context.actor, input, undefined, context.nativeSessionId),
       ),
       nativeCalendarPending: authed.threads.nativeCalendarPending.handler(({ context, input }) => {
-        const device = calendarDevice(context, input.deviceKey);
+        const device = calendarDevice(context, input.deviceKey, input.capability);
         return device ? pendingNativeCalendar(deps.prisma, device, input.botId) : [];
       }),
       nativeCalendarClaim: authed.threads.nativeCalendarClaim.handler(({ context, input }) => {
-        const device = calendarDevice(context, input.deviceKey);
+        const device = calendarDevice(context, input.deviceKey, input.capability);
         return device ? claimNativeCalendar(deps.prisma, device, input) : null;
       }),
       nativeCalendarResult: authed.threads.nativeCalendarResult.handler(
         async ({ context, input }) => {
-          const device = calendarDevice(context, input.deviceKey);
+          const device = calendarDevice(context, input.deviceKey, input.capability);
           return {
             accepted: device
               ? await finishNativeCalendar(deps, device, input, input.response)

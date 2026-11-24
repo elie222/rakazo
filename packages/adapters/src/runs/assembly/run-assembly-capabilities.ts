@@ -510,6 +510,7 @@ export async function resolveRunCapabilities(
           select: {
             id: true,
             clientNonce: true,
+            nativeClockDeviceDigest: true,
             role: true,
             blocks: true,
             threadId: true,
@@ -728,6 +729,15 @@ export async function selectRunTools(
           }),
         ),
       historyRetrievalEnabled: contextStrategy !== "current" && !unknownChannelSourceId,
+      phoneClockAvailable:
+        Boolean(sourceMessage?.nativeClockDeviceDigest) &&
+        run.trigger === "user" &&
+        run.userId === bot.userId &&
+        !run.routineId &&
+        !run.delegatedFromRunId &&
+        !conversationThread.groupId &&
+        !conversationThread.externalConversationId &&
+        !voiceCall,
       historyMyChats: myChatsAllowed,
       ownPromptOnly: ownerComputerRoutine,
       meetingTranscriptsAvailable: parts.meetingTranscriptsAvailable,

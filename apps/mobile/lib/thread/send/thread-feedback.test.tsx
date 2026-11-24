@@ -758,6 +758,30 @@ describe("scoped mobile outbox", () => {
     expect(sends[0]?.[1].artifactIds).toEqual(["artifact-b", "artifact-c"]);
     expect(sends[1]?.[1]).toEqual(sends[0]?.[1]);
   });
+  it.each([false, true])(
+    "adds the clock proof only to a private send (group: %s)",
+    async (group) => {
+      const sendPayload = {
+        ...payload(),
+        attachments: [],
+        groupTarget: group ? "group-1" : undefined,
+      };
+      const foregroundClockDeviceKey = vi.fn(() => "clock-proof");
+      const attempt = feedback.sendAttempt(sendPayload);
+      await deliverSend(
+        sendPayload,
+        attempt,
+        request as unknown as typeof rpc,
+        undefined,
+        foregroundClockDeviceKey,
+      );
+      const [proc, body] = request.mock.calls[0]!;
+      expect(proc).toBe("threads/send");
+      expect(body.nativeClockDeviceKey).toBe(group ? undefined : "clock-proof");
+      expect(foregroundClockDeviceKey).toHaveBeenCalledTimes(group ? 0 : 1);
+    },
+  );
+
   it("starts mentioned routines only in the message's own replayable send", async () => {
     const mentions = [
       { kind: "routine" as const, id: "routine-1", name: "Digest" },
@@ -769,8 +793,15 @@ describe("scoped mobile outbox", () => {
       plan: resolveComposerSendPlan({ text, mentions, hasAttachments: true }),
     };
     const attempt = feedback.sendAttempt(sendPayload);
+    const foregroundClockDeviceKey = vi.fn(() => "clock-proof");
     const deliver = () =>
-      deliverSend(sendPayload, attempt, request as unknown as typeof rpc, () => "phone-proof");
+      deliverSend(
+        sendPayload,
+        attempt,
+        request as unknown as typeof rpc,
+        () => "phone-proof",
+        foregroundClockDeviceKey,
+      );
     request.mockRejectedValueOnce(new Error("Upload failed"));
     await expect(deliver()).rejects.toThrow("Upload failed");
     expect(request.mock.calls.map(([proc]) => proc)).toEqual(["artifacts/create"]);
@@ -798,6 +829,7 @@ describe("scoped mobile outbox", () => {
       nativeCalendarDeviceKey: "phone-proof",
     });
     expect(retried).toEqual(first);
+    expect(foregroundClockDeviceKey).not.toHaveBeenCalled();
   });
   it("sends the message itself when its routines were already started for this nonce", async () => {
     const mentions = [{ kind: "routine" as const, id: "routine-1", name: "Digest" }];

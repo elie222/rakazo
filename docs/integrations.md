@@ -34,6 +34,12 @@ If your phone asks for Calendar or Reminders access, allow it only if you want t
 Review any approval request in chat, and check the calendar or reminder list shown on your phone
 before confirming the request there.
 
+## Use your Android phone's clock
+
+Ask your bot to start a countdown or set a one-time alarm in a private
+chat. Keep that chat open on the same phone and confirm the time there. The phone hands the request
+to its clock app.
+
 ## Add your own tools
 
 GitHub, Linear and Notion can connect directly from Integrations without a managed app catalog.

@@ -45,24 +45,28 @@ const threadSendFields = threadTarget.safeExtend({
   clientNonce: z.string().min(1).max(200).optional(),
 });
 
-export const threadSendInput = threadSendFields.superRefine((input, ctx) => {
-  const text = input.text?.trim() ?? "";
-  const artifactIds = input.artifactIds ?? [];
-  if (!text && artifactIds.length === 0) {
-    ctx.addIssue({
-      code: "custom",
-      message: "Provide text or at least one attachment",
-      path: ["text"],
-    });
-  }
-  if (input.replyQuote && !input.replyToMessageId) {
-    ctx.addIssue({
-      code: "custom",
-      message: "replyQuote requires replyToMessageId",
-      path: ["replyQuote"],
-    });
-  }
-});
+export const threadSendInput = threadSendFields
+  .safeExtend({
+    nativeClockDeviceKey: NativeCalendarDeviceKey.optional(),
+  })
+  .superRefine((input, ctx) => {
+    const text = input.text?.trim() ?? "";
+    const artifactIds = input.artifactIds ?? [];
+    if (!text && artifactIds.length === 0) {
+      ctx.addIssue({
+        code: "custom",
+        message: "Provide text or at least one attachment",
+        path: ["text"],
+      });
+    }
+    if (input.replyQuote && !input.replyToMessageId) {
+      ctx.addIssue({
+        code: "custom",
+        message: "replyQuote requires replyToMessageId",
+        path: ["replyQuote"],
+      });
+    }
+  });
 
 export const threadSendOutput = z.object({
   taskId: Id,

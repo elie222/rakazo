@@ -14,6 +14,8 @@ import { IMAGE_RETURNING_COMPUTER_TOOLS } from "../../models/model-vision.js";
 import { MODEL_CANNOT_SEE_MESSAGE } from "../../models/model-vision.prompt.js";
 import { personalCalendarTools } from "../../personal-calendar/personal-calendar.tool-definition.js";
 import { calendarTool } from "../../personal-calendar/run-calendar-tool.js";
+import { phoneClockTools } from "../../phone-clock/phone-clock.tool-definition.js";
+import { phoneClockTool } from "../../phone-clock/run-phone-clock-tool.js";
 import { strategicInitiativeToolAllowed } from "../../routines/strategic-initiative.js";
 import type { RunContext } from "../assembly/run-context.js";
 import { markReadOutsideContent } from "../assembly/run-context.js";
@@ -90,6 +92,7 @@ const TOOL_HANDLERS = new Map<string, ToolHandler>([
   ...Object.entries(feedbackTools),
   ...Object.entries(emailTools),
   ...personalCalendarTools.map(({ name }) => [name, calendarTool] as const),
+  ...phoneClockTools.map(({ name }) => [name, phoneClockTool] as const),
   ...[...PAGE_BROWSER_TOOL_NAMES].map((name) => [name, pageBrowserTool] as const),
 ]);
 

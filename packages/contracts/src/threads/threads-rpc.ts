@@ -7,11 +7,8 @@ import {
   TOOL_QUESTION_FIELDS_MAX,
   ToolQuestionValueSchema,
 } from "../integrations/tool-question.js";
-import {
-  CalendarResponse,
-  NativeCalendarDeviceKey,
-  NativeCalendarRequest,
-} from "../personal-calendar/personal-calendar.js";
+import { NativeCalendarDeviceKey } from "../personal-calendar/personal-calendar.js";
+import { NativeDeviceRequest, NativeDeviceResponse } from "../phone-clock/native-clock.js";
 import { botId } from "../rpc/inputs.js";
 import { SpaceChangeKind } from "../spaces/space.js";
 import { ProductEventSchema } from "./events.js";
@@ -28,6 +25,11 @@ import {
   threadSendWithRoutinesInput,
   threadTarget,
 } from "./thread-send.js";
+
+const nativeDeviceProof = {
+  deviceKey: NativeCalendarDeviceKey,
+  capability: z.literal("clock").optional(),
+};
 
 export const threadsRpc = {
   threads: {
@@ -66,20 +68,20 @@ export const threadsRpc = {
       .input(threadSendWithRoutinesInput)
       .output(z.object({ routineRunIds: z.array(Id), send: threadSendOutput.optional() })),
     nativeCalendarPending: oc
-      .input(botId.extend({ deviceKey: NativeCalendarDeviceKey }))
-      .output(z.array(NativeCalendarRequest)),
+      .input(botId.extend(nativeDeviceProof))
+      .output(z.array(NativeDeviceRequest)),
     nativeCalendarClaim: oc
       .input(
-        NativeCalendarRequest.pick({ id: true, runId: true, threadId: true }).extend({
-          deviceKey: NativeCalendarDeviceKey,
-        }),
+        NativeDeviceRequest.pick({ id: true, runId: true, threadId: true }).extend(
+          nativeDeviceProof,
+        ),
       )
-      .output(NativeCalendarRequest.nullable()),
+      .output(NativeDeviceRequest.nullable()),
     nativeCalendarResult: oc
       .input(
-        NativeCalendarRequest.pick({ id: true, runId: true, threadId: true }).extend({
-          deviceKey: NativeCalendarDeviceKey,
-          response: CalendarResponse,
+        NativeDeviceRequest.pick({ id: true, runId: true, threadId: true }).extend({
+          ...nativeDeviceProof,
+          response: NativeDeviceResponse,
         }),
       )
       .output(z.object({ accepted: z.boolean() })),

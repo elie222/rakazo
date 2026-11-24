@@ -24,6 +24,7 @@ import { verifiedScope } from "../../api/verified-scope";
 import { artifactCacheSession } from "../../artifacts/artifact-cache-session";
 import { askToAddModel } from "../../models/model-settings";
 import { foregroundCalendarDeviceKey } from "../../personal-calendar/device-calendar-key";
+import { foregroundClockDeviceKey } from "../../phone-clock/device-clock-key";
 import { hasSavedUnsentSends, outboxDisk } from "./outbox-disk";
 import type { OutboxScope } from "./thread-feedback";
 import {
@@ -116,6 +117,7 @@ export function prepareUnsentSends(): Promise<void> {
 // Configure the wipe before bootstrap can replace credentials or the saved server.
 configureUnsentSends({
   foregroundCalendarDeviceKey,
+  foregroundClockDeviceKey,
   request: async (proc, body, options, spaceId) => {
     const generation = currentSessionGeneration();
     const context = await captureApiRequestContext();

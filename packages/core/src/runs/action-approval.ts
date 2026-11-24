@@ -73,6 +73,8 @@ const APPROVAL_REQUIRED_BUILTIN_TOOLS = new Set([
   "create_calendar_event",
   "create_reminder",
   "complete_reminder",
+  "start_phone_timer",
+  "set_phone_alarm",
   "generate_image",
   "generate_video",
   "service_call",

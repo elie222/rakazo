@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { CalendarOperation } from "@rakazo/contracts";
+import type { CalendarOperation, NativeClockOperation } from "@rakazo/contracts";
 import { NATIVE_CALENDAR_WINDOW_MS } from "@rakazo/contracts";
 import {
   asSystem,
@@ -17,6 +17,7 @@ import {
   claimNativeCalendar,
   finishNativeCalendar,
   nativeCalendarDeviceDigest,
+  nativeClockDeviceDigest,
   pendingNativeCalendar,
   pruneExpiredNativeCalendarRequests,
   requestNativeCalendar,
@@ -24,7 +25,7 @@ import {
 
 const url = process.env.VERIFY_DATABASE === "1" && process.env.DATABASE_URL;
 
-describe.skipIf(!url)("phone calendar execution", () => {
+describe.skipIf(!url)("native phone request execution", () => {
   const lease = { owner: "test-worker", fence: 1 };
   const calendar = { source: "device", accountId: "account", calendarId: "calendar" } as const;
   const operation: CalendarOperation = {
@@ -42,6 +43,10 @@ describe.skipIf(!url)("phone calendar execution", () => {
       },
     },
   };
+  const clockOperation: NativeClockOperation = {
+    action: "start_phone_timer",
+    input: { durationSeconds: 60, label: "Example timer" },
+  };
 
   let db: ReturnType<typeof createDb>;
   let system: ReturnType<typeof asSystem<typeof db.prisma>>;
@@ -49,6 +54,7 @@ describe.skipIf(!url)("phone calendar execution", () => {
   let identity: { userId: string; spaceId: string; botId: string; threadId: string };
   let sessionId: string;
   const deviceDigest = nativeCalendarDeviceDigest("test device");
+  const clockDigest = nativeClockDeviceDigest("test device");
 
   beforeAll(async () => {
     db = createDb(url as string, {
@@ -78,7 +84,11 @@ describe.skipIf(!url)("phone calendar execution", () => {
     if (db) await db.pool.end();
   });
 
-  async function run(trigger = "user", nativeCalendarSessionId: string | null = sessionId) {
+  async function run(
+    trigger = "user",
+    nativeCalendarSessionId: string | null = sessionId,
+    nativeClockDeviceDigest?: string,
+  ) {
     const source = await createThreadMessage(system, {
       threadId: identity.threadId,
       role: "user",
@@ -86,6 +96,7 @@ describe.skipIf(!url)("phone calendar execution", () => {
       blocks: [{ kind: "text", text: "Calendar fixture" }],
       nativeCalendarSessionId: nativeCalendarSessionId ?? undefined,
       nativeCalendarDeviceDigest: nativeCalendarSessionId ? deviceDigest : undefined,
+      nativeClockDeviceDigest,
     });
     const task = await system.task.create({
       data: { ...identity, prompt: "Calendar fixture", status: "running" },
@@ -168,6 +179,9 @@ describe.skipIf(!url)("phone calendar execution", () => {
           finishNativeCalendar(deps, otherPhone, target, { status: "cancelled" }),
         ),
       ).toBe(false);
+      expect(
+        await inTenant(() => finishNativeCalendar(deps, origin, target, { status: "dispatched" })),
+      ).toBe(false);
       const saved = { status: "ok", data: { id: "native-event", calendar } } as const;
       expect(await inTenant(() => finishNativeCalendar(deps, origin, target, saved))).toBe(true);
       await expect(result).resolves.toEqual(saved);
@@ -180,6 +194,85 @@ describe.skipIf(!url)("phone calendar execution", () => {
       await settled;
     }
   }, 20_000);
+
+  it("delivers a Clock request only to its origin and reuses its handoff receipt", async () => {
+    const record = await run("user", sessionId, clockDigest);
+    const { userId, spaceId, botId, threadId } = identity;
+    const calendarOrigin = { userId, spaceId, sessionId, deviceDigest };
+    const origin = { ...calendarOrigin, capability: "clock", deviceDigest: clockDigest } as const;
+    const inTenant = <T>(work: () => Promise<T>) => runAsTenant(origin, work);
+    const deps = { prisma: db.prisma, events };
+    const signal = new AbortController();
+    const request = () =>
+      inTenant(() => requestNativeCalendar(deps, record, lease, clockOperation, signal.signal));
+    const result = request();
+    const settled = Promise.allSettled([result]);
+    try {
+      const [pending] = await vi.waitFor(
+        async () => {
+          const rows = await inTenant(() => pendingNativeCalendar(db.prisma, origin, botId));
+          expect(rows).toHaveLength(1);
+          return rows;
+        },
+        { timeout: 8_000 },
+      );
+      expect(pending?.operation).toEqual(clockOperation);
+      const target = { id: pending!.id, runId: record.id, threadId };
+      expect(await inTenant(() => pendingNativeCalendar(db.prisma, calendarOrigin, botId))).toEqual(
+        [],
+      );
+      expect(
+        await inTenant(() => claimNativeCalendar(db.prisma, calendarOrigin, target)),
+      ).toBeNull();
+      expect(
+        await inTenant(() =>
+          claimNativeCalendar(db.prisma, { ...origin, sessionId: "different-session" }, target),
+        ),
+      ).toBeNull();
+      const claims = await inTenant(() =>
+        Promise.all([
+          claimNativeCalendar(db.prisma, origin, target),
+          claimNativeCalendar(db.prisma, origin, target),
+        ]),
+      );
+      expect(claims.filter(Boolean)).toHaveLength(1);
+      expect(
+        await inTenant(() =>
+          finishNativeCalendar(deps, origin, target, { status: "ok", data: { arbitrary: true } }),
+        ),
+      ).toBe(false);
+      const receipt = { status: "dispatched" } as const;
+      expect(await inTenant(() => finishNativeCalendar(deps, origin, target, receipt))).toBe(true);
+      await expect(result).resolves.toEqual(receipt);
+      expect(await inTenant(() => finishNativeCalendar(deps, origin, target, receipt))).toBe(false);
+      await expect(request()).resolves.toEqual(receipt);
+    } finally {
+      signal.abort();
+      await settled;
+    }
+  }, 20_000);
+
+  it("requires the original Clock proof on the source and any steering messages", async () => {
+    const deps = { prisma: db.prisma, events };
+    const calendarOnly = await run();
+    const withClock = await run("user", sessionId, clockDigest);
+    if (!calendarOnly.sourceMessageId) throw new Error("Missing fixture source message");
+    await system.steeringMessage.create({
+      data: {
+        botId: identity.botId,
+        userId: identity.userId,
+        messageId: calendarOnly.sourceMessageId,
+        runId: withClock.id,
+      },
+    });
+    for (const record of [calendarOnly, withClock]) {
+      await expect(
+        runAsTenant(identity, () =>
+          requestNativeCalendar(deps, record, lease, clockOperation, new AbortController().signal),
+        ),
+      ).resolves.toEqual({ status: "unavailable" });
+    }
+  });
 
   it("refuses unattended or device-less runs", async () => {
     const deps = { prisma: db.prisma, events };

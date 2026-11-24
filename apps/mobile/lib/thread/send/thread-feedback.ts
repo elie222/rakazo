@@ -67,6 +67,7 @@ export async function deliverSend(
   attempt: SendAttempt,
   request: typeof rpc,
   foregroundCalendarDeviceKey?: () => string | undefined,
+  foregroundClockDeviceKey?: () => string | undefined,
 ): Promise<number | undefined> {
   const { plan, groupTarget, botTarget, reroutedToGroup, attachments } = payload;
   const target = groupTarget ? { groupId: groupTarget } : { botId: botTarget! };
@@ -117,7 +118,13 @@ export async function deliverSend(
     ? (await request("threads/sendWithRoutines", { ...message, routineIds: plan.routineIds })).send
     : undefined;
   // Runs already saved for this nonce return no message; the plain send saves or replays it.
-  const accepted = sent ?? (await request("threads/send", message));
+  const clockKey = sent || groupTarget ? undefined : foregroundClockDeviceKey?.();
+  const accepted =
+    sent ??
+    (await request("threads/send", {
+      ...message,
+      ...(clockKey && { nativeClockDeviceKey: clockKey }),
+    }));
   attempt.acceptedRun = { runId: accepted.runId, taskId: accepted.taskId };
   return accepted.seq;
 }
@@ -140,6 +147,7 @@ type Config = {
   ): Promise<unknown>;
   scope(): OutboxScope | null;
   foregroundCalendarDeviceKey?(): string | undefined;
+  foregroundClockDeviceKey?(): string | undefined;
   serverReachable(): boolean;
   /** True while a password change may have revoked the session before replacing it. */
   passwordChanging(): boolean;
@@ -405,6 +413,7 @@ export function sendWaitingMessages(force = false): Promise<void> {
             attempt,
             request,
             config.foregroundCalendarDeviceKey,
+            config.foregroundClockDeviceKey,
           );
           // The retry under the new session gets the same seq back for the same nonce.
           if (stale()) {
