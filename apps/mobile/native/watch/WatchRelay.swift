@@ -348,9 +348,9 @@ final class WatchRelay: NSObject, WCSessionDelegate {
       let parts = request.parts, (1...16).contains(parts), (0..<parts).contains(part)
     else { throw WatchFailure.rejected }
     if part == 0 { upload = (id, 0, Data()) }
-    guard var current = upload, current.id == id, current.next == part,
-      current.audio.count + audio.count <= 640_000
-    else {
+    // A late part of a dismissed recording is refused without touching the current one.
+    guard var current = upload, current.id == id else { throw WatchFailure.rejected }
+    guard current.next == part, current.audio.count + audio.count <= 640_000 else {
       upload = nil
       throw WatchFailure.rejected
     }
@@ -375,7 +375,9 @@ final class WatchRelay: NSObject, WCSessionDelegate {
     }
     let reply = try? JSONDecoder().decode(WatchTranscript.self, from: data)
     switch status {
-    case 200..<300: return reply?.text ?? ""
+    case 200..<300:
+      guard let reply else { throw WatchFailure.voiceFailed }
+      return reply.text ?? ""
     // The server answers 409 when no voice provider is set up.
     case 409: throw WatchFailure.noVoice
     case 403 where reply?.code == "AI_CONSENT_REQUIRED": throw WatchFailure.consent
