@@ -198,9 +198,14 @@ final class WatchRelay: NSObject, WCSessionDelegate {
         + list.current.groups.map { (WatchChat.Kind.group, $0) }
       var avatarBudget = 16_000
       let open = entries.filter { $0.1.archivedAt == nil }
-      var rows = open
-        .sorted { $0.1.updatedAt > $1.1.updatedAt }
-        .prefix(60)
+      let sorted = open.sorted { $0.1.updatedAt > $1.1.updatedAt }
+      // The chat a complication opened stays listed, so the watch can open it.
+      let pinned = request.chat.flatMap { chat in
+        sorted.first { $0.0 == chat.kind && $0.1.id == chat.id }
+      }
+      var listed = Array(sorted.prefix(60))
+      if let pinned, !listed.contains(where: { $0.1.id == pinned.1.id }) { listed.append(pinned) }
+      var rows = listed
         .map { kind, entry in
           var row = WatchChatRow(
             chat: WatchChat(kind: kind, id: entry.id, name: entry.name),
@@ -220,7 +225,8 @@ final class WatchRelay: NSObject, WCSessionDelegate {
         data.count > 60_000, !rows.isEmpty
       {
         if let index = rows.lastIndex(where: { $0.avatar != nil }) { rows[index].avatar = nil }
-        else { rows.removeLast() }
+        else if let index = rows.lastIndex(where: { $0.id != pinned?.1.id }) { rows.remove(at: index) }
+        else { break }
       }
       chats = rows.map(\.chat)
       return WatchReply(

@@ -82,6 +82,7 @@ private final class WatchConnection: NSObject, WCSessionDelegate {
     var reply = WatchReply()
     for part in 0..<parts {
       let start = audio.startIndex + part * size
+      try Task.checkCancellation()
       reply = try await request(
         WatchRequest(
           action: .transcribe, scope: scope, chat: chat, nonce: id,
@@ -102,7 +103,7 @@ private struct WatchChats: View {
   @State private var needsReload = false
   @State private var canTranscribe: Bool?
   /// The chat a complication opened, waiting for the list that has it.
-  @State private var voiceTarget: (kind: String, id: String)?
+  @State private var voiceTarget: WatchChat?
   @State private var listen = false
 
   var body: some View {
@@ -153,8 +154,10 @@ private struct WatchChats: View {
       needsReload = true
     }
     .onOpenURL { url in
-      guard let target = WatchShelf.voiceTarget(url) else { return }
-      voiceTarget = target
+      guard let target = WatchShelf.voiceTarget(url), let kind = WatchChat.Kind(rawValue: target.kind)
+      else { return }
+      let name = WatchShelf.load().first { $0.id == target.id }?.name ?? ""
+      voiceTarget = WatchChat(kind: kind, id: target.id, name: name)
       openVoiceTarget()
       if voiceTarget != nil { Task { await load() } }
     }
@@ -170,7 +173,7 @@ private struct WatchChats: View {
 
   private func openVoiceTarget() {
     guard scope != nil, let target = voiceTarget,
-      let row = chats.first(where: { $0.chat.kind.rawValue == target.kind && $0.id == target.id })
+      let row = chats.first(where: { $0.chat.kind == target.kind && $0.id == target.id })
     else { return }
     voiceTarget = nil
     path = [row.id]
@@ -200,7 +203,8 @@ private struct WatchChats: View {
     loading = true
     defer { loading = false }
     do {
-      let reply = try await connection.request(WatchRequest(action: .chats))
+      // The relay keeps the chat a complication opened in the list, however old it is.
+      let reply = try await connection.request(WatchRequest(action: .chats, chat: voiceTarget))
       guard phase == .active, !Task.isCancelled, identity == connection.identityRevision
       else { return }
       scope = reply.scope
@@ -422,18 +426,20 @@ private struct WatchConversation: View {
 
   private func send() async {
     defer { working = false }
-    if draft != sendingText {
-      sendingText = draft
+    let text = draft
+    if text != sendingText {
+      sendingText = text
       sendNonce = UUID()
     }
     do {
       _ = try await connection.request(
-        WatchRequest(action: .send, scope: scope, chat: chat, text: draft, nonce: sendNonce))
+        WatchRequest(action: .send, scope: scope, chat: chat, text: text, nonce: sendNonce))
     } catch {
       failure = error as? WatchFailure ?? .sendUnconfirmed
       return
     }
-    draft = ""
+    // Words spoken while this sent wait to go next.
+    if draft == text { draft = "" }
     sendingText = nil
     await read()
   }

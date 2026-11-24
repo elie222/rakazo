@@ -50,11 +50,13 @@ struct WatchVoiceSheet: View {
 
   private func listen() async {
     stage = .recording
-    guard await AVAudioApplication.requestRecordPermission() else {
+    let allowed = await AVAudioApplication.requestRecordPermission()
+    guard !Task.isCancelled else { return }
+    guard allowed else {
       finish(.typeInstead)
       return
     }
-    guard let audio = await recorder.record() else {
+    guard let audio = await recorder.record(), !Task.isCancelled else {
       stage = .failed(nil)
       return
     }
@@ -109,13 +111,13 @@ final class WatchRecorder {
     else { return nil }
     self.recorder = recorder
     recorder.isMeteringEnabled = true
-    guard recorder.record(forDuration: Self.longest) else { return nil }
+    guard !Task.isCancelled, recorder.record(forDuration: Self.longest) else { return nil }
 
     let clock = ContinuousClock()
     let start = clock.now
     var heardSpeech = false
     var lastSpeech = start
-    while recorder.isRecording, !stopped {
+    while recorder.isRecording, !stopped, !Task.isCancelled {
       try? await Task.sleep(for: .milliseconds(100))
       recorder.updateMeters()
       let power = recorder.averagePower(forChannel: 0)
@@ -129,7 +131,7 @@ final class WatchRecorder {
       { break }
     }
     // A tap on Stop keeps quiet speech the level never caught.
-    let kept = (heardSpeech || stopped) && self.recorder === recorder
+    let kept = (heardSpeech || stopped) && self.recorder === recorder && !Task.isCancelled
     recorder.stop()
     self.recorder = nil
     level = 0
