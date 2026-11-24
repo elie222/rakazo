@@ -49,7 +49,7 @@ import { errorText } from "../lib/api/user-error";
 import { botReadsIn, useBotSetting, useNotifyOnFinish } from "../lib/bots/bot-setting";
 import { CallKeyboardContext } from "../lib/calls/call-keyboard-context";
 import { COMPUTER_LIFECYCLE_TIMEOUT_MS } from "../lib/computers/computer";
-import { dateLocaleForUi, useUiLocale } from "../lib/i18n/i18n";
+import { useDateLocale } from "../lib/i18n/i18n";
 import { useSideInsets } from "../lib/layout/side-insets";
 import { chatModelPickerChoices } from "../lib/models/chat-model";
 import { native, useMobileTokens } from "../lib/native/native";
@@ -71,7 +71,7 @@ function BotSettings() {
   const sideInsets = useSideInsets();
   const tokens = useMobileTokens();
   const { t } = useLingui();
-  const uiLocale = useUiLocale();
+  const dateLocale = useDateLocale();
   const router = useRouter();
   const {
     botId,
@@ -683,7 +683,7 @@ function BotSettings() {
                       value=""
                       choices={bot.instructionHistory.map((version) => ({
                         key: version.id,
-                        label: `${new Date(version.createdAt).toLocaleString(dateLocaleForUi(uiLocale))} (${version.reason})`,
+                        label: `${new Date(version.createdAt).toLocaleString(dateLocale)} (${version.reason})`,
                       }))}
                       onChange={(versionId) => {
                         if (pending || instructions !== bot.instructions) return;

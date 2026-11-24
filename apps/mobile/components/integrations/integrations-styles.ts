@@ -110,6 +110,8 @@ export function createIntegrationsStyles() {
       gap: 8,
     },
     toolsBody: { gap: 8, paddingTop: 4 },
+    toolSummary: { flex: 1, minWidth: 0 },
+    toolPicker: { width: 100 },
     toolName: { color: native.label, fontSize: 14 },
     addCustom: { padding: 12 },
   });

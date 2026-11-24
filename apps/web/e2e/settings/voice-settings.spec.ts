@@ -30,6 +30,22 @@ test("a self-hosted voice connection offers a separate transcription server", as
   await captureScreenshot(page, testInfo, "voice-self-hosted-transcription-server");
 });
 
+test("automatic call language is opt-in and persists on this device", async ({
+  page,
+}, testInfo) => {
+  await signup(page, `voice-language-${Date.now()}@rakazo.test`, "password12", "Voice Preview");
+  await completeOnboarding(page);
+  await openUserSettings(page, "voice");
+  const setting = page.getByRole("switch", { name: "Detect call language automatically" });
+  await expect(setting).not.toBeChecked();
+  await setting.click();
+  await expect(setting).toBeChecked();
+  await setting.scrollIntoViewIfNeeded();
+  await captureScreenshot(page, testInfo, "voice-automatic-language");
+  await page.reload();
+  await expect(setting).toBeChecked();
+});
+
 test("read-aloud asks before sharing voice data and cancel sends no speech", async ({
   page,
 }, testInfo) => {

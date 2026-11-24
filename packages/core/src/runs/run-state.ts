@@ -102,6 +102,23 @@ export function isTerminal(status: string): boolean {
   return TERMINAL.includes(status as RunStatus);
 }
 
+/** A failed reply to a typed message, which its sender can run again. */
+export function canRetryRun(
+  run:
+    | { status: string; trigger?: string | null; userId?: string | null; retryable?: boolean }
+    | null
+    | undefined,
+  userId: string | null | undefined,
+): boolean {
+  return (
+    run?.status === "failed" &&
+    run.trigger === "user" &&
+    run.retryable === true &&
+    Boolean(userId) &&
+    run.userId === userId
+  );
+}
+
 /**
  * A helper the bot started in the background. It works in a thread of its own, so the chat
  * that started it stays free, and its result comes back there as a HELPER_RESULT_TRIGGER run.

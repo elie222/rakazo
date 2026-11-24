@@ -20,6 +20,7 @@ import {
   ModelConnectionLabelSchema,
   ModelConnectionTargetSchema,
   ModelCredentialSchema,
+  ModelDisconnectPreviewSchema,
   ModelOAuthBeginSchema,
   ModelSettingsSaveSchema,
   modelChoiceListSchema,
@@ -158,6 +159,10 @@ export const modelsRpc = {
       .input(z.object({ credentialId: Id, label: ModelConnectionLabelSchema }))
       .output(z.object({ ok: z.literal(true) })),
     saveModelSettings: oc.input(ModelSettingsSaveSchema).output(z.object({ ok: z.literal(true) })),
+    /** What disconnecting this connection takes with it, for the question that asks first. */
+    disconnectPreview: oc
+      .input(z.object({ provider: z.string().trim().min(1), credentialId: Id }))
+      .output(ModelDisconnectPreviewSchema),
     /** Removes one connection, or every connection of the provider when older apps omit it. */
     disconnect: oc
       .input(z.object({ provider: z.string().trim().min(1), credentialId: Id.optional() }))

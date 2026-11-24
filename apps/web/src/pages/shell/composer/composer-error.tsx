@@ -4,7 +4,7 @@ import { computerHoursOut } from "@rakazo/contracts";
 import { isModelRequiredSendError, normalizeRunError } from "@rakazo/core";
 import { translateRunError } from "@rakazo/i18n/run-error";
 import { Button } from "@rakazo/ui-web";
-import { FileIcon, X } from "lucide-react";
+import { FileIcon, RotateCw, X } from "lucide-react";
 import type { RefObject } from "react";
 import { useEffect, useId, useRef } from "react";
 import { useBilling } from "../../../components/billing/SubscriptionGate";
@@ -20,6 +20,7 @@ export function ComposerError({
   onOpenConnections,
   onOpenBilling,
   onDismissError,
+  onRetryRun,
   textareaRef,
 }: {
   sendError: string | null;
@@ -33,6 +34,7 @@ export function ComposerError({
   onOpenConnections: () => void;
   onOpenBilling: () => void;
   onDismissError: () => void;
+  onRetryRun?: () => void;
   textareaRef: RefObject<HTMLTextAreaElement | null>;
 }) {
   const { t } = useLingui();
@@ -213,6 +215,18 @@ export function ComposerError({
           </details>
         ) : null}
       </div>
+      {!sendError && runError && !recovery && onRetryRun ? (
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          data-testid="composer-error-retry"
+          onClick={onRetryRun}
+        >
+          <RotateCw data-icon="inline-start" aria-hidden="true" />
+          {t`Try again`}
+        </Button>
+      ) : null}
       <button
         type="button"
         aria-label={t`Dismiss error`}

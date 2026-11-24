@@ -1,11 +1,25 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
+import { resetI18nForTests, setDeviceDateFormatForTests } from "../i18n/i18n";
 import { filterBots, formatThreadTime } from "./inbox.js";
 
 const now = new Date(2026, 7, 13, 21, 53, 0);
 
 describe("formatThreadTime", () => {
-  it("shows a 24-hour clock for today", () => {
+  afterEach(() => resetI18nForTests());
+
+  it("shows the time today on the phone's 24-hour clock", () => {
+    setDeviceDateFormatForTests({ region: "GB", hourCycle: "h23" });
     expect(formatThreadTime(local(now, 0, 14, 44), now)).toBe("14:44");
+  });
+
+  it("shows the time today on the phone's 12-hour clock", () => {
+    setDeviceDateFormatForTests({ region: "GB", hourCycle: "h12" });
+    expect(formatThreadTime(local(now, 0, 14, 44), now).replace(/\s/gu, " ")).toBe("2:44 pm");
+  });
+
+  it("writes dates the way the phone's region does", () => {
+    setDeviceDateFormatForTests({ region: "GB" });
+    expect(formatThreadTime(local(now, 20, 9, 0), now)).toBe("24 Jul");
   });
 
   it("shows the weekday within the past week", () => {

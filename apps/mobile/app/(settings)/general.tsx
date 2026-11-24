@@ -6,6 +6,7 @@ import { useFocusEffect, useIsFocused, useRouter } from "expo-router";
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { Alert, AppState, Platform, ScrollView, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { supportsComposerHardwareEnter } from "../../components/composer/composer-keyboard";
 import { NativeSegmentedControl } from "../../components/native/native-segmented-control";
 import {
   SettingsGroup,
@@ -23,6 +24,10 @@ import {
   getCachedAppearancePreference,
   setAppearancePreference,
 } from "../../lib/appearance/appearance";
+import {
+  setComposerEnterToSendPreference,
+  useComposerHardwareEnterPreference,
+} from "../../lib/composer/composer-enter-to-send-preference";
 import {
   getCachedComposerModelPicker,
   setComposerModelPicker,
@@ -98,6 +103,7 @@ export default function General() {
     onFailed: () => Alert.alert(t`Could not save`),
   });
   const appearance = getCachedAppearancePreference();
+  const enterToSend = useComposerHardwareEnterPreference();
   const chatSaveDisabled = loadingAccount || chatSave.pending;
   const deviceStreamReplies = useSyncExternalStore(
     subscribeResponseStreaming,
@@ -344,6 +350,14 @@ export default function General() {
               else void setComposerModelPicker(checked);
             }}
           />
+          {supportsComposerHardwareEnter ? (
+            <SettingsSwitch
+              label={t`Send with Enter`}
+              detail={t`Hardware keyboard`}
+              value={enterToSend}
+              onChange={(checked) => void setComposerEnterToSendPreference(checked)}
+            />
+          ) : null}
           <SettingsSwitch
             label={t`Load web images automatically`}
             value={loadRemoteImages}
