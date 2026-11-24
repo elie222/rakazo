@@ -5,7 +5,7 @@ export { desktopGuardRefusalMessage } from "./desktop-command-guard.prompt.js";
 // Processes of the shared desktop: the browser, the display, its window manager, the viewer, and
 // the session bus and portal the browser's file chooser uses.
 const SHARED_PROCESS =
-  /chrom|rakazo-browser|xvfb|x11vnc|websockify|novnc|fluxbox|dbus-daemon|xdg-desktop-portal/;
+  /chrom|brave|rakazo-browser|xvfb|x11vnc|websockify|novnc|fluxbox|dbus-daemon|xdg-desktop-portal/;
 const KILL = /^(?:pkill|killall|kill)$/;
 // The shared browser profiles and the display's socket and lock files.
 const SHARED_PATH = /\.browser-profiles|\/tmp\/\.x11-unix|\/tmp\/\.x\d+-lock/;

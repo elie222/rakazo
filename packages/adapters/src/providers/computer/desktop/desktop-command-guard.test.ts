@@ -7,6 +7,8 @@ describe("desktop-protection guard", () => {
     "pkill -f 'chromium --user-data-dir'",
     "killall chrome",
     "killall Xvfb",
+    "killall brave-browser",
+    "kill -9 -1 2>/dev/null",
     "/usr/bin/pkill x11vnc",
     "kill $(pgrep chromium)",
     "ps aux | grep chrome | awk '{print $2}' | xargs kill -9",
