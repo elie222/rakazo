@@ -1,0 +1,3 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+  <uses-permission android:name="com.android.alarm.permission.SET_ALARM" />
+</manifest>
