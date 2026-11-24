@@ -2,7 +2,7 @@ import { createRouterClient } from "@orpc/server";
 import type { McpOAuthSummary } from "@rakazo/adapters";
 import { McpOAuthClientRequiredError, McpOAuthRefusedError } from "@rakazo/adapters";
 import type { Actor } from "@rakazo/contracts";
-import { MCP_OAUTH_CLIENT_REQUIRED } from "@rakazo/contracts";
+import { MCP_OAUTH_CLIENT_REQUIRED, mcpServerConnection } from "@rakazo/contracts";
 import { flush } from "@rakazo/core/test-async";
 import type { PrismaClient } from "@rakazo/db";
 import { createLogger, createTestSink, getLogger, installLogger } from "@rakazo/logging";
@@ -249,6 +249,28 @@ describe("MCP server health", () => {
     });
   });
 
+  it.each([
+    ["fake-token", "ok", "connected"],
+    [undefined, "ok", "needs_sign_in"],
+    ["fake-token", "error", "needs_sign_in"],
+  ] as const)(
+    "reports a saved token (%s) with a %s probe and an unfinished sign-in as %s",
+    async (secret, healthStatus, expected) => {
+      const h = harness({
+        row: baseRow({ transport: "streamable_http", secretId: "secret-1", healthStatus }),
+      });
+      h.deps.mcpOAuth = undefined; // Read the real credential summary when listing saved servers.
+      Object.assign(h.deps.prisma.mcpServer, { findMany: async () => [h.row()] });
+      Object.assign(h.deps.prisma.secret, {
+        findMany: async () => [{ id: "secret-1", ciphertext: "encrypted" }],
+      });
+      vi.mocked(h.deps.secrets.load).mockResolvedValue(JSON.stringify({ secret, oauth: {} }));
+
+      const [server] = await h.clientFor().mcp.servers.list();
+      expect(mcpServerConnection(server!)).toBe(expected);
+    },
+  );
+
   describe("test", () => {
     it("probes the server and returns the recorded health", async () => {
       const { client, probe } = harness();
@@ -291,7 +313,12 @@ describe("MCP server health", () => {
 
     it("says why it did not probe when the server still needs its OAuth account", async () => {
       const { client, probe } = harness({
-        oauth: { status: "none", clientId: "client-1.apps.example.test", credential: true },
+        oauth: {
+          status: "none",
+          clientId: "client-1.apps.example.test",
+          credential: true,
+          hasBearerToken: false,
+        },
       });
 
       const tested = await client.mcp.servers.test({ id: "server-1" });
@@ -311,7 +338,12 @@ describe("MCP server health", () => {
       async (material, shouldProbe) => {
         const h = harness({
           row: baseRow({ secretId: "secret-1" }),
-          oauth: { status: "none", clientId: "fake-client", credential: true },
+          oauth: {
+            status: "none",
+            clientId: "fake-client",
+            credential: true,
+            hasBearerToken: "secret" in material,
+          },
         });
         vi.mocked(h.deps.prisma.secret.findFirst).mockResolvedValue({
           id: "secret-1",
@@ -380,7 +412,12 @@ describe("MCP server health", () => {
     it("does not probe a server whose OAuth account is not connected", async () => {
       const { client, probe, row } = harness({
         row: null,
-        oauth: { status: "none", clientId: "client-1.apps.example.test", credential: true },
+        oauth: {
+          status: "none",
+          clientId: "client-1.apps.example.test",
+          credential: true,
+          hasBearerToken: false,
+        },
       });
 
       const created = await client.mcp.servers.create(stdioInput);

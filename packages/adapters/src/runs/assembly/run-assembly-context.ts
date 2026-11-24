@@ -37,7 +37,7 @@ import type {
 import type { ThreadHistory, TurnContext } from "./run-assembly-history.js";
 import type { ConnectedRun, RunRecords, SavedTurn } from "./run-assembly-records.js";
 import type { RunContext, RunState } from "./run-context.js";
-import { restoreTurnCheckpointEffects } from "./run-context.js";
+import { restoreTurnCheckpointEffects, seedIntroEffectOccurrences } from "./run-context.js";
 import {
   connectedPluginsInstruction,
   taughtSkillsInstruction,
@@ -78,7 +78,9 @@ export async function createRunContext(
     secrets: runSecrets,
   } = hold;
   const { heldForTakeover, takeoverResume } = hold.takeover;
-  const { storedTurnCheckpoint } = parts.saved;
+  const { introEffects, storedTurnCheckpoint } = parts.saved;
+  const effects = { counts: new Map<string, number>(), consumedIds: new Set<string>() };
+  seedIntroEffectOccurrences(effects, runId, introEffects);
   const {
     bot,
     channelId,
@@ -138,10 +140,9 @@ export async function createRunContext(
     reply,
     approval: { pausePending: false, request: undefined },
     effects: {
-      counts: new Map(),
+      ...effects,
       occurrences: [],
       restoredPending: undefined,
-      consumedIds: new Set(),
       pendingTurnCheckpoints: new Map(),
       storedTurnCheckpoint,
     },

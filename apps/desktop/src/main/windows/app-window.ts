@@ -1,8 +1,8 @@
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { Session } from "electron";
-import { app, BrowserWindow, Menu, net, screen, session, shell } from "electron";
+import { app, BrowserWindow, Menu, nativeTheme, net, screen, session, shell } from "electron";
 import {
   mcpLoopbackRefusalFrom,
   mcpOAuthCallbackFrom,
@@ -22,6 +22,7 @@ import { LAUNCH_CHECK_DELAY_MS } from "../updates/auto-update.js";
 import type { AppDocumentState } from "./app-document-state.js";
 import { waitForMountedAppDocument } from "./app-document-state.js";
 import { contextMenuTemplate } from "./context-menu.js";
+import { historyTarget } from "./history-navigation.js";
 import {
   bundledRendererCandidates,
   bundledRendererHeaders,
@@ -35,7 +36,18 @@ import {
   oauthPopupSessionPreferences,
   shouldOpenInAppPopup,
 } from "./window-open.js";
-import { browserWindowOptions, developmentIconFile, warmWindowTtlMs } from "./window-options.js";
+import type { SavedBackground, SavedWindowBounds } from "./window-options.js";
+import {
+  appWindowBackground,
+  browserWindowOptions,
+  developmentIconFile,
+  paintedBackground,
+  parseSavedBackground,
+  parseSavedWindowBounds,
+  restorableWindowBounds,
+  systemWindowBackground,
+  warmWindowTtlMs,
+} from "./window-options.js";
 
 export const PROBE_TIMEOUT_MS = 8_000;
 /** The server or the network refused the page; the setup window says so and the server logs its side. */
@@ -148,25 +160,122 @@ async function defaultSessionHasOriginData(origin: string): Promise<boolean> {
     desktop.liveProbeWindows--;
   }
 }
+function windowBackgroundFile() {
+  return path.join(app.getPath("userData"), "window-background");
+}
+function lastPaintedBackground() {
+  try {
+    return parseSavedBackground(readFileSync(windowBackgroundFile(), "utf8"));
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT")
+      reportDesktopError(error, "desktop.startup");
+    return null;
+  }
+}
+/** Written at once: a few bytes, only when the page's colors change, and a quit cannot drop it. */
+function saveBackground(saved: SavedBackground) {
+  try {
+    writeFileSync(windowBackgroundFile(), JSON.stringify(saved));
+  } catch (error) {
+    reportDesktopError(error, "desktop.startup");
+  }
+}
+const SAVE_BOUNDS_DELAY_MS = 500;
+function windowBoundsFile() {
+  return path.join(app.getPath("userData"), "window-bounds.json");
+}
+function savedWindowBounds() {
+  let text: string;
+  try {
+    text = readFileSync(windowBoundsFile(), "utf8");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT")
+      reportDesktopError(error, "desktop.startup");
+    return null;
+  }
+  return restorableWindowBounds(
+    parseSavedWindowBounds(text),
+    screen.getAllDisplays().map((display) => display.workArea),
+  );
+}
+function currentWindowBounds(win: BrowserWindow): SavedWindowBounds {
+  return { ...win.getNormalBounds(), maximized: win.isMaximized(), fullScreen: win.isFullScreen() };
+}
+/** Synchronous, so a later save can never land before an earlier one and quitting cannot lose it. */
+function saveWindowBounds(win: BrowserWindow) {
+  try {
+    writeFileSync(windowBoundsFile(), JSON.stringify(currentWindowBounds(win)), "utf8");
+  } catch (error) {
+    reportDesktopError(error, "desktop.startup");
+  }
+}
+/** Remembers where the app window is so the next one opens there; a replaced window stops counting. */
+function rememberWindowBounds(win: BrowserWindow) {
+  let timer: NodeJS.Timeout | undefined;
+  const current = () => desktop.mainWindow === win && !win.isDestroyed();
+  const saveSoon = () => {
+    clearTimeout(timer);
+    timer = setTimeout(() => {
+      if (current()) saveWindowBounds(win);
+    }, SAVE_BOUNDS_DELAY_MS);
+  };
+  win.on("move", saveSoon);
+  win.on("resize", saveSoon);
+  win.on("maximize", saveSoon);
+  win.on("unmaximize", saveSoon);
+  win.on("enter-full-screen", saveSoon);
+  win.on("leave-full-screen", saveSoon);
+  win.on("close", () => {
+    clearTimeout(timer);
+    if (current()) saveWindowBounds(win);
+  });
+  win.once("closed", () => clearTimeout(timer));
+}
 export function createWindow(url: string, partition: string | null) {
   markOnce("rk:main:window-create-start");
   const icon = developmentIcon();
+  // A window being replaced may have moved within the save delay; record it so this one opens there.
+  if (desktop.mainWindow && !desktop.mainWindow.isDestroyed()) saveWindowBounds(desktop.mainWindow);
+  const saved = savedWindowBounds();
   const win = new BrowserWindow({
     ...browserWindowOptions(process.platform, screen.getPrimaryDisplay().workAreaSize),
+    backgroundColor: appWindowBackground(lastPaintedBackground(), nativeTheme.shouldUseDarkColors),
+    ...(saved === null
+      ? {}
+      : {
+          x: saved.x,
+          y: saved.y,
+          width: saved.width,
+          height: saved.height,
+          fullscreen: saved.fullScreen,
+        }),
     ...(icon ? { icon } : {}),
     webPreferences: {
       preload: path.join(import.meta.dirname, "preload.cjs"),
       nodeIntegration: false,
       contextIsolation: true,
       sandbox: true,
+      // Cache the page's compiled scripts on their first load, not only after Chromium has
+      // seen them run a few times, so the launch right after an update is fast too.
+      v8CacheOptions: "bypassHeatCheck",
       ...(partition === null ? {} : { partition }),
     },
+  });
+  if (saved?.maximized === true && !saved.fullScreen) win.maximize();
+  // The page names its background in its theme-color meta tag, including an appearance picked
+  // in settings; the window keeps it for resizes and opens in it next time.
+  win.webContents.on("did-change-theme-color", (_event, color) => {
+    const background = paintedBackground(color);
+    if (background === null) return;
+    win.setBackgroundColor(background);
+    saveBackground({ color: background, systemUsesDarkColors: nativeTheme.shouldUseDarkColors });
   });
   win.on("unresponsive", () =>
     reportDesktopError(new Error("Renderer unresponsive"), "desktop.unresponsive"),
   );
   desktop.mainWindow = win;
   appWindowTargets.set(win, url);
+  rememberWindowBounds(win);
   const targetOrigin = safeOrigin(url);
   // Intentional OAuth flows open the provider's authorize page via a named
   // window; give those and same-origin popups a normal frame. Everything else
@@ -205,6 +314,22 @@ export function createWindow(url: string, partition: string | null) {
   win.webContents.on("context-menu", (_event, params) => {
     Menu.buildFromTemplate(contextMenuTemplate(params)).popup({ window: win });
   });
+  // Trackpad swipes and mouse side buttons step through the app's history, as in a browser.
+  // Each server has its own window, so its history starts at this server's first page.
+  const stepHistory = (gesture: string) => {
+    const history = win.webContents.navigationHistory;
+    const index = historyTarget(
+      gesture,
+      {
+        urls: history.getAllEntries().map((entry) => entry.url),
+        activeIndex: history.getActiveIndex(),
+      },
+      targetOrigin,
+    );
+    if (index !== null) history.goToIndex(index);
+  };
+  win.on("swipe", (_event, direction) => stepHistory(direction));
+  win.on("app-command", (_event, command) => stepHistory(command));
   win.webContents.on("will-navigate", keepOnAppOrigin);
   win.webContents.on("will-redirect", keepOnAppOrigin);
   // The popup has no address bar, so a loopback redirect would otherwise strand
@@ -471,7 +596,7 @@ function oauthPopupWindowOptions(partition: string | null) {
     frame: true,
     titleBarStyle: "default" as const,
     autoHideMenuBar: true,
-    backgroundColor: "#0A0A0A",
+    backgroundColor: systemWindowBackground(nativeTheme.shouldUseDarkColors),
     webPreferences: oauthPopupSessionPreferences(partition),
   };
 }
