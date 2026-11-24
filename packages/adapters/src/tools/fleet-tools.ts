@@ -42,6 +42,7 @@ import { asRecord } from "../integrations/connector-http.js";
 import { resolveModelChoice } from "../models/model-choice.js";
 import type { BotModelChangeDeps } from "../models/model-selection.js";
 import { validateBotModelChange } from "../models/model-selection.js";
+import { routineEndInZone } from "../routines/routine-end.js";
 import {
   hasRoutineEvents,
   NO_ROUTINE_EVENTS,
@@ -62,6 +63,7 @@ import {
   toolRoutineEnd,
   userTimeZone,
 } from "./schedule-tools.js";
+import { describeRoutineTiming } from "./schedule-update-view.js";
 
 /** The fleet writes resolved up front so an approval card can show what will run. */
 export type FleetApprovalToolName = Exclude<
@@ -995,7 +997,6 @@ export async function createChildRoutine(
   const runAt = text(schedule.runAt);
   const cron = runAt ? ONCE_ROUTINE_CRON : text(schedule.cron);
   if (!cron && !on) return { error: "The approved routine is incomplete." };
-  const endAt = text(canonical.endAt);
   // A zone that came from the account is re-read under the account lock at creation,
   // not replayed from the approval. The identical-routine lookup filters on the
   // account's current zone for such routines — the move keeps them on it — instead of
@@ -1004,6 +1005,10 @@ export async function createChildRoutine(
   const pinnedTimezone = canonical.timezoneFromAccount === true ? undefined : timezone;
   const replayTimezone =
     pinnedTimezone === undefined ? await userTimeZone(deps.prisma, run.userId) : pinnedTimezone;
+  const approvedEnd = text(canonical.endAt);
+  const endsAt = approvedEnd
+    ? routineEndInZone(new Date(approvedEnd), timezone, replayTimezone)
+    : null;
   const existing = await deps.prisma.routine.findFirst({
     where: {
       spaceId: run.spaceId,
@@ -1016,7 +1021,7 @@ export async function createChildRoutine(
       crons: { equals: cron ? [cron] : [] },
       active: true,
       ...(runAt ? { nextRunAt: new Date(runAt) } : {}),
-      endsAt: endAt ? new Date(endAt) : null,
+      endsAt,
       // The identical routine has the approved events too, so a retry returns it instead of a
       // twin. A bot links one chat app, so any chat event on it is the approved one.
       webhookEnabled: on?.webhook === true,
@@ -1033,6 +1038,8 @@ export async function createChildRoutine(
       githubEnabled: true,
       messageProvider: true,
       emailSenders: true,
+      timezone: true,
+      endsAt: true,
     },
   });
   const target = { botId: child.id, botName: singleLine(child.name) };
@@ -1044,6 +1051,7 @@ export async function createChildRoutine(
       cron: existing.crons[0],
       nextRunAt: existing.nextRunAt?.toISOString() ?? null,
       oneShot: Boolean(runAt),
+      ...(existing.endsAt ? { endAt: describeRoutineTiming(existing).endAt } : {}),
       ...eventsResult(existing),
       ...target,
     };
@@ -1059,7 +1067,7 @@ export async function createChildRoutine(
     ...(pinnedTimezone === undefined ? {} : { timezone: pinnedTimezone }),
     schedule,
     ...(on ? { on } : {}),
-    ...(endAt ? { endAt } : {}),
+    ...(endsAt ? { endAt: endsAt.toISOString() } : {}),
   });
   return "error" in created ? created : { ...created, ...target };
 }

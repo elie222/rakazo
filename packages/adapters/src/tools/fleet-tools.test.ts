@@ -1855,17 +1855,55 @@ describe("createChildRoutine", () => {
     expect(deps.append).not.toHaveBeenCalled();
   });
 
-  it("creates the routine with the approved end and finds a retry by it", async () => {
-    const { prisma } = fakeFleet(fleet);
-    const endAt = "2026-10-24T23:59:59.999Z";
-    const result = await createChildRoutine(writeDeps(prisma), run, { ...canonical, endAt });
-    expect(result).toMatchObject({ ok: true, endAt: "Saturday, 2026-10-24 23:59 (UTC+00:00)" });
+  it("keeps the approved end's local time in the account's current zone, for creation and retries", async () => {
+    const { prisma } = fakeFleet({ ...fleet, timezone: "Europe/London" });
+    prisma.$transaction.mockImplementation(async (work: (client: unknown) => Promise<unknown>) =>
+      work(prisma),
+    );
+    (prisma as { $queryRaw?: unknown }).$queryRaw = vi.fn(async (strings: TemplateStringsArray) =>
+      strings.join("?").includes("FOR SHARE") ? [{ timezone: "Europe/London" }] : [],
+    );
+    const londonEnd = new Date("2026-10-24T22:59:59.999Z");
+    const result = await createChildRoutine(writeDeps(prisma), run, {
+      ...canonical,
+      timezone: "Europe/Paris",
+      timezoneFromAccount: true,
+      endAt: "2026-10-24T21:59:59.999Z",
+    });
+    expect(result).toMatchObject({ ok: true });
     expect(prisma.routine.findFirst).toHaveBeenCalledWith(
-      expect.objectContaining({ where: expect.objectContaining({ endsAt: new Date(endAt) }) }),
+      expect.objectContaining({ where: expect.objectContaining({ endsAt: londonEnd }) }),
     );
     expect(prisma.routine.create).toHaveBeenCalledWith({
-      data: expect.objectContaining({ endsAt: new Date(endAt) }),
+      data: expect.objectContaining({ timezone: "Europe/London", endsAt: londonEnd }),
     });
+  });
+
+  it("reports the end on a retry, as the first creation did", async () => {
+    const endsAt = new Date("2026-10-24T23:59:59.999Z");
+    const { prisma } = fakeFleet({
+      ...fleet,
+      routines: [
+        {
+          id: "routine-1",
+          name: "Daily",
+          crons: ["0 9 * * *"],
+          timezone: "UTC",
+          nextRunAt: new Date("2026-10-18T09:00:00Z"),
+          endsAt,
+        },
+      ],
+    });
+    const result = await createChildRoutine(writeDeps(prisma), run, {
+      ...canonical,
+      endAt: endsAt.toISOString(),
+    });
+    expect(result).toMatchObject({
+      ok: true,
+      routineId: "routine-1",
+      endAt: "Saturday, 2026-10-24 23:59 (UTC+00:00)",
+    });
+    expect(prisma.routine.create).not.toHaveBeenCalled();
   });
 
   it("keeps the routine name on one line in the routine, its result and its notification", async () => {
