@@ -1,3 +1,4 @@
+import type * as Db from "@rakazo/db";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const db = vi.hoisted(() => ({
@@ -5,7 +6,7 @@ const db = vi.hoisted(() => ({
   appendEventInTransaction: vi.fn(),
 }));
 vi.mock("@rakazo/db", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("@rakazo/db")>()),
+  ...(await importOriginal<typeof Db>()),
   ...db,
 }));
 

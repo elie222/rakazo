@@ -189,6 +189,27 @@ export async function endRoutinePastItsEnd(
   return stopped.count > 0;
 }
 
+/** Ends a watch whose next check falls after its end, instead of claiming that check. */
+export async function endWatchPastItsEnd(
+  deps: SpentRoutineDeps,
+  routine: Omit<EndedRoutine, "threadId"> & {
+    id: string;
+    userId: string;
+    threadId?: string | null;
+    endsAt?: Date | null;
+  },
+  nextRunAt: Date | null,
+  scheduledAt: Date,
+): Promise<boolean> {
+  const { endsAt } = routine;
+  if (!endsAt || runBeforeEnd(nextRunAt, endsAt)) return false;
+  return endRoutinePastItsEnd(
+    deps,
+    { ...routine, threadId: routine.threadId ?? null, endsAt },
+    scheduledAt,
+  );
+}
+
 export async function deleteEndedRoutine(
   deps: SpentRoutineDeps,
   run: { spaceId: string; routineId: string | null; userId: string },
