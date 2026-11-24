@@ -318,7 +318,7 @@ export function GroupSettings({
           <Trans>Group settings</Trans>
         </span>
         <Button
-          variant="ghost"
+          variant="floating"
           size="icon"
           aria-label={t`Close panel`}
           disabled={saving}

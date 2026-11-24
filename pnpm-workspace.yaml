@@ -76,6 +76,7 @@ auditConfig:
 
 patchedDependencies:
   dockerode@5.0.1: patches/dockerode@5.0.1.patch
+  expo-sharing@58.0.23: patches/expo-sharing@58.0.23.patch
   expo-speech@58.0.4: patches/expo-speech@58.0.4.patch
   fflate@0.8.3: patches/fflate@0.8.3.patch
   react-native-enriched-markdown@1.2.0: patches/react-native-enriched-markdown@1.2.0.patch

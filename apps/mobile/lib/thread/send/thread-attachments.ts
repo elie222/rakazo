@@ -25,6 +25,7 @@ import {
 } from "../../composer/pick-attachments";
 import { attachmentCountSkipReason } from "../../composer/pick-attachments-filter";
 import { useFileDrop } from "../../composer/use-file-drop";
+import { reportMobileError } from "../../platform/monitoring";
 
 export type PendingAttachment = PickedAttachment & { threadKey: string };
 
@@ -242,16 +243,18 @@ export function useThreadAttachments({
   };
 }
 
-/** Takes an incoming share into this chat once its upload limits are known. */
+/** Takes an incoming share when the chosen chat is visible and its upload limits are known. */
 export function useIncomingShareImport({
   attachments,
   composerRef,
+  focused,
   readOnly,
   threadKey,
   uploadConfig,
 }: {
   attachments: ReturnType<typeof useThreadAttachments>;
   composerRef: RefObject<ThreadComposerHandle | null>;
+  focused: boolean;
   readOnly: boolean;
   threadKey: string | undefined;
   uploadConfig?: { maxUploadSizeBytes?: number; maxAttachmentsPerMessage?: number };
@@ -272,7 +275,7 @@ export function useIncomingShareImport({
     committedThread.current = threadKey;
   }, [threadKey]);
   useEffect(() => {
-    if (!threadKey || readOnly || !uploadConfig || importingShare.current) return;
+    if (!focused || !threadKey || readOnly || !uploadConfig || importingShare.current) return;
     const share = takeIncomingShare(threadKey);
     if (!share) return;
     let active = true;
@@ -290,8 +293,12 @@ export function useIncomingShareImport({
           retryIncomingShare(share);
           return;
         }
-        if (result.failedFiles.length)
+        if (result.failedFiles.length) {
+          reportMobileError(new Error("Shared files could not be read"), "mobile.share", {
+            action: "import",
+          });
           retryIncomingShare({ ...share, text: "", files: result.failedFiles });
+        }
         // A drop or a picker opened before the import can add files while it reads, so the
         // room left is settled against the draft as it is now, as in addAttachments.
         const maxCount = attachmentMaxCount(uploadConfig);
@@ -344,5 +351,5 @@ export function useIncomingShareImport({
     return () => {
       active = false;
     };
-  }, [threadKey, readOnly, uploadConfig, retryTick]);
+  }, [focused, threadKey, readOnly, uploadConfig, retryTick]);
 }

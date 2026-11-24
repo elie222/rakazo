@@ -1,6 +1,6 @@
 import { isServerRunError, normalizeRunError } from "@rakazo/core";
 import type { Prisma, PrismaClient, ThreadEvents } from "@rakazo/db";
-import { bestEffort } from "@rakazo/logging";
+import { bestEffort, getLogger } from "@rakazo/logging";
 import type { RoutineRunRef } from "./routine-backoff.js";
 import { routineGroupThreadId } from "./routine-thread.js";
 import { postRoutineWatchMessage } from "./routine-watch.js";
@@ -95,6 +95,14 @@ export async function pauseRoutineAfterRepeatedFailures(
     }),
   );
   if (!paused) return;
+  const { kind, summary } = normalizeRunError(paused.error);
+  getLogger().warn("routine.paused_after_failures", {
+    "routine.id": run.routineId,
+    "space.id": run.spaceId,
+    "bot.id": run.botId,
+    "routine.failure_count": ROUTINE_FAILURE_PAUSE_AFTER,
+    "run.failure_kind": kind ?? "unclassified",
+  });
   await bestEffort(
     "routine failure pause change",
     deps.events.publishSpaceChange?.(run.spaceId, "routines"),
@@ -114,6 +122,6 @@ export async function pauseRoutineAfterRepeatedFailures(
     threadId,
     botId: run.botId,
     role: "bot",
-    text: `I paused the **${paused.name}** routine because its last ${ROUTINE_FAILURE_PAUSE_AFTER} runs failed: ${normalizeRunError(paused.error).summary}\n\nReply here and I'll help fix it.`,
+    text: `I paused the **${paused.name}** routine because its last ${ROUTINE_FAILURE_PAUSE_AFTER} runs failed: ${summary}\n\nReply here and I'll help fix it.`,
   });
 }

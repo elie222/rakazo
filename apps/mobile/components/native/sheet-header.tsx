@@ -91,8 +91,8 @@ export function trailingHeaderOptions(label: string, onPress: () => void, disabl
           unstable_headerRightItems: () => [
             {
               type: "button" as const,
+              // The verb (Save, Restore) as text: it says more than a checkmark would.
               label,
-              icon: { type: "sfSymbol" as const, name: "checkmark" as const },
               variant: "done" as const,
               tintColor: native.label,
               disabled,

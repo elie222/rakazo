@@ -130,7 +130,7 @@ export function SecretAskSheet({
           // A long title and site at large text sizes can leave the fields under the keyboard.
           automaticallyAdjustKeyboardInsets
         >
-          <Text accessibilityRole="header" numberOfLines={2} style={styles.title}>
+          <Text accessibilityRole="header" style={styles.title}>
             {title}
           </Text>
           <Text style={styles.destination}>{destination}</Text>
