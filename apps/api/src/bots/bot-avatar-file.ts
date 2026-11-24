@@ -3,6 +3,7 @@ import { BOT_AVATAR_FILE_PATH, botAvatarFileUrl, isBotAvatarValue } from "@rakaz
 import type { PrismaClient } from "@rakazo/db";
 import { runAsTenant } from "@rakazo/db";
 import type { Hono } from "hono";
+import { matchesIfNoneMatch } from "../http/conditional-request.js";
 
 function avatarVersion(color: string): string {
   return createHash("sha256").update(color).digest("hex").slice(0, 32);
@@ -45,7 +46,7 @@ export function mountBotAvatarFiles(
       "x-content-type-options": "nosniff",
       etag,
     };
-    if (c.req.header("if-none-match") === etag) return c.body(null, 304, headers);
+    if (matchesIfNoneMatch(c.req.header("if-none-match"), etag)) return c.body(null, 304, headers);
 
     const separator = bot.color.indexOf(",");
     const mime = bot.color.slice("data:".length, bot.color.indexOf(";"));

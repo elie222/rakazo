@@ -174,7 +174,7 @@ describePostgres("shared spaces: invites and membership (PostgreSQL)", () => {
     expect(image.headers.get("cache-control")).toBe("private, no-cache");
     expect(Buffer.from(await image.arrayBuffer()).toString("base64")).toBe("iVBORw0KGgo=");
 
-    const cached = { headers: { "if-none-match": image.headers.get("etag")! } };
+    const cached = { headers: { "if-none-match": `"other", W/${image.headers.get("etag")}` } };
     expect((await app.request(url, cached)).status).toBe(304);
     await system.spaceMember.deleteMany({ where: { spaceId, userId: owner.id } });
     expect((await app.request(url, cached)).status).toBe(404);
