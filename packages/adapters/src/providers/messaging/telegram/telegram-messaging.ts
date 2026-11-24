@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { TelegramAdapter, TelegramFormatConverter } from "@chat-adapter/telegram";
+import type { MessagingOutbound } from "@rakazo/adapter-kit";
 import { deadlineSignal, withAbort } from "@rakazo/core";
 import { getLogger } from "@rakazo/logging";
 import type { AdapterPostableMessage, CardElement, Root } from "chat";
@@ -11,7 +12,7 @@ import {
   toPlainText,
   walkAst,
 } from "chat";
-import type { MessagingOutbound, MessagingPlatform } from "../../../messaging/chat-sdk-surface.js";
+import type { MessagingPlatform } from "../../../messaging/chat-sdk-surface.js";
 import { splitMarkdown } from "../../../messaging/markdown-split.js";
 import type { MessagingMountContext } from "../../../messaging/messaging-platform-descriptor.js";
 import {

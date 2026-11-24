@@ -1306,7 +1306,6 @@ export interface MessagingOutbound {
 /** One messaging platform behind the chat surface (sendblue, slack, …). */
 export interface MessagingPlatformDescriptor {
   provider: string;
-  /** What this platform accepts outbound: markup, short-body splitting, attachment ceiling. */
   outbound?: MessagingOutbound;
   capabilities: MessagingCapabilities;
   /** The line people message to reach this deployment (a phone number), when it has one. */

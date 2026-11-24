@@ -3,7 +3,6 @@ import { createMemoryState } from "@chat-adapter/state-memory";
 import type {
   AdapterContext,
   AdapterDescriptor,
-  MessagingCapabilities,
   MessagingInboundAttachment,
   MessagingInboundEvent,
   MessagingInboundMessage,
@@ -16,8 +15,6 @@ import type {
   MessagingSendResult,
   MessagingSurface,
 } from "@rakazo/adapter-kit";
-
-export type { MessagingOutbound } from "@rakazo/adapter-kit";
 
 import { trimEndChars } from "@rakazo/contracts";
 import { deadlineSignal, MAX_RETRY_AFTER_MS, withAbort } from "@rakazo/core";
@@ -79,12 +76,8 @@ export const MESSAGING_WEBHOOK_MAX_BODY_BYTES = 256 * 1024;
  * webhook verification, payload translation, and platform API calls; the
  * extra hooks cover the few per-platform facts the SDK does not surface.
  */
-export interface MessagingPlatform {
-  provider: string;
-  capabilities: MessagingCapabilities;
+export interface MessagingPlatform extends MessagingPlatformDescriptor {
   adapter: Adapter;
-  /** What this platform accepts outbound: markup, how a long body is split, attachment ceiling. */
-  outbound?: MessagingOutbound;
   /**
    * The adapter's own thread-id prefix when it differs from `provider`, so
    * one adapter type can mount more than once (one Telegram bot per space:
@@ -92,8 +85,6 @@ export interface MessagingPlatform {
    * the adapter keeps its native ones. Defaults to `provider`.
    */
   adapterName?: string;
-  /** The line people message to reach this deployment (a phone number), when it has one. */
-  address?: string;
   /** Refresh an authenticated public destination without starting an inbound receiver. */
   resolveAddress?: (signal?: AbortSignal) => Promise<string | undefined>;
   /** Deterministic 1:1 thread id for platforms without openDM (sendblue). */
@@ -311,8 +302,6 @@ export class ChatSdkMessagingSurface implements MessagingSurface {
     const mounted = this.mountedForThread(request.threadId);
     await this.ensureInitialized();
     context.signal.throwIfAborted();
-    // Each platform declares how it reads markup and where it splits a long body. A platform that
-    // declares neither, such as Sendblue's iMessage with no markup, keeps a plain payload.
     const outbound = mounted.platform.outbound;
     const { attachment } = request;
     if (
@@ -325,22 +314,18 @@ export class ChatSdkMessagingSurface implements MessagingSurface {
         retryAfterMs: null,
       });
     }
-    const message = attachment
-      ? attachmentMessage(outbound?.photo, request.body, attachment)
-      : outbound?.markdown
-        ? { markdown: request.body }
-        : request.body;
+    const text = outbound?.markdown ? { markdown: request.body } : request.body;
     try {
       const threadId = toAdapterThreadId(mounted, request.threadId);
       const postOnce = mounted.platform.postOnce;
       const sent =
         postOnce && request.idempotencyKey && !attachment
-          ? await postOnce(
-              threadId,
-              outbound?.markdown ? { markdown: request.body } : request.body,
-              request.idempotencyKey,
-            )
-          : await mounted.chat.thread(threadId).post(message);
+          ? await postOnce(threadId, text, request.idempotencyKey)
+          : await mounted.chat
+              .thread(threadId)
+              .post(
+                attachment ? attachmentMessage(outbound?.photo, request.body, attachment) : text,
+              );
       const handle = "id" in sent && typeof sent.id === "string" ? sent.id : "";
       return { handle };
     } catch (error) {
@@ -598,10 +583,7 @@ function attachmentMessage(
   file: MessagingOutboundAttachment,
 ): PostableMarkdown {
   const data = Buffer.from(file.data.buffer, file.data.byteOffset, file.data.byteLength);
-  const asPhoto = photo
-    ? data.byteLength <= photo.maxBytes && photo.types.has(file.mimeType)
-    : false;
-  if (asPhoto) {
+  if (photo && data.byteLength <= photo.maxBytes && photo.types.has(file.mimeType)) {
     return {
       markdown: body,
       attachments: [{ type: "image", data, name: file.name, mimeType: file.mimeType }],

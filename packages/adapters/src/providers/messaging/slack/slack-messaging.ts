@@ -1,8 +1,7 @@
 import { replaceBareMentions } from "@chat-adapter/shared";
-import type { MessagingInboundMessage } from "@rakazo/adapter-kit";
+import type { MessagingInboundMessage, MessagingOutbound } from "@rakazo/adapter-kit";
 import type { Adapter } from "chat";
 import { convertEmojiPlaceholders } from "chat";
-import type { MessagingOutbound } from "../../../messaging/chat-sdk-surface.js";
 import { boundInboundMarkdown } from "../../../messaging/chat-sdk-surface.js";
 import { lazyChatAdapter } from "../../../messaging/lazy-chat-adapter.js";
 import { splitMarkdown } from "../../../messaging/markdown-split.js";

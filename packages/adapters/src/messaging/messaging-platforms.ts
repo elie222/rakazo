@@ -1,3 +1,4 @@
+import type { MessagingOutbound } from "@rakazo/adapter-kit";
 import { isVitestRuntime } from "@rakazo/core/node/test-runtime";
 import { inboundOrigin } from "../ingress/ingress-factory.js";
 import { larkMessaging } from "../providers/messaging/lark/lark-messaging.js";
@@ -7,7 +8,7 @@ import { slackMessaging } from "../providers/messaging/slack/slack-messaging.js"
 import { teamsMessaging } from "../providers/messaging/teams/teams-messaging.js";
 import { telegramMessaging } from "../providers/messaging/telegram/telegram-messaging.js";
 import { whatsappMessaging } from "../providers/messaging/whatsapp/whatsapp-messaging.js";
-import type { MessagingOutbound, MessagingPlatform } from "./chat-sdk-surface.js";
+import type { MessagingPlatform } from "./chat-sdk-surface.js";
 import type {
   MessagingEnvBindings,
   MessagingEnvValues,
@@ -126,5 +127,5 @@ export function isMessagingSurfaceEnabled(
  */
 export function splitOutboundBody(outbound: MessagingOutbound | undefined, body: string): string[] {
   if (!body.trim()) return [];
-  return outbound?.split ? outbound.split(body) : [body];
+  return outbound?.split?.(body) ?? [body];
 }

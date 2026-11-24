@@ -1,12 +1,11 @@
 import type { AttachmentTransport } from "@chat-adapter/shared";
 import { downloadAttachment, NetworkError } from "@chat-adapter/shared";
 import { WhatsAppAdapter, WhatsAppApiError } from "@chat-adapter/whatsapp";
-import type { MessagingOutboundStatus } from "@rakazo/adapter-kit";
+import type { MessagingOutbound, MessagingOutboundStatus } from "@rakazo/adapter-kit";
 import { ATTACHMENT_MAX_BYTES } from "@rakazo/contracts";
 import { deadlineSignal, uploadSizeFromEnv } from "@rakazo/core";
 import type { Attachment } from "chat";
 import { ConsoleLogger, convertEmojiPlaceholders } from "chat";
-import type { MessagingOutbound } from "../../../messaging/chat-sdk-surface.js";
 import { splitMarkdown } from "../../../messaging/markdown-split.js";
 import {
   arrayField,

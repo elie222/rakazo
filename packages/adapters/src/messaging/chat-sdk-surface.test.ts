@@ -5,15 +5,12 @@ import type { AdapterContext, MessagingInboundEvent } from "@rakazo/adapter-kit"
 import { MAX_RETRY_AFTER_MS } from "@rakazo/core";
 import type { Adapter, ChatInstance } from "chat";
 import { describe, expect, it, vi } from "vitest";
-import { larkOutbound } from "../providers/messaging/lark/lark-messaging.js";
-import { photonOutbound } from "../providers/messaging/photon/photon-messaging.js";
 import {
   enrichSlackTeamRoom,
   slackOutbound,
 } from "../providers/messaging/slack/slack-messaging.js";
 import { telegramOutbound } from "../providers/messaging/telegram/telegram-messaging.js";
-import { whatsappOutbound } from "../providers/messaging/whatsapp/whatsapp-messaging.js";
-import type { MessagingOutbound, MessagingPlatform } from "./chat-sdk-surface.js";
+import type { MessagingPlatform } from "./chat-sdk-surface.js";
 import {
   ChatSdkMessagingSurface,
   MESSAGING_WEBHOOK_MAX_BODY_BYTES,
@@ -27,15 +24,6 @@ const context: AdapterContext = {
   spaceId: "ws-1",
   userId: "user-1",
   signal: new AbortController().signal,
-};
-
-/** The facts each real platform declares, so a fixture carries the limits of the platform it stands in for. */
-const PLATFORM_OUTBOUND: Record<string, MessagingOutbound | undefined> = {
-  telegram: telegramOutbound,
-  whatsapp: whatsappOutbound,
-  slack: slackOutbound,
-  lark: larkOutbound,
-  photon: photonOutbound,
 };
 
 /**
@@ -105,9 +93,6 @@ function createPlatform(
   const platform: MessagingPlatform = {
     provider: "mock",
     capabilities: { direct: true, groups: true, receipt: "typing" },
-    ...(PLATFORM_OUTBOUND[overrides.provider ?? ""]
-      ? { outbound: PLATFORM_OUTBOUND[overrides.provider ?? ""] }
-      : {}),
     adapter,
     ...overrides,
   };
@@ -759,7 +744,10 @@ describe("ChatSdkMessagingSurface webhook plumbing", () => {
 
 describe("ChatSdkMessagingSurface outbound", () => {
   it("posts Telegram replies as Markdown", async () => {
-    const { surface, adapter } = createSurface({ provider: "telegram" });
+    const { surface, adapter } = createSurface({
+      provider: "telegram",
+      outbound: telegramOutbound,
+    });
     const body = "# Heading\n\n**bold** and [link](https://example.test)";
 
     await surface.sendToThread({ threadId: "telegram:123", body }, context);
@@ -770,7 +758,7 @@ describe("ChatSdkMessagingSurface outbound", () => {
   });
 
   it.each(["whatsapp", "lark", "slack"])("posts %s replies as Markdown", async (provider) => {
-    const { surface, adapter } = createSurface({ provider });
+    const { surface, adapter } = createSurface({ provider, outbound: { markdown: true } });
     const body = "**bold** and [link](https://example.test)";
     const threadId = `${provider}:C1:9`;
 
@@ -780,7 +768,11 @@ describe("ChatSdkMessagingSurface outbound", () => {
   });
 
   it("posts Photon iMessage replies as Markdown under the adapter's own thread ids", async () => {
-    const { surface, adapter } = createSurface({ provider: "photon", adapterName: "imessage" });
+    const { surface, adapter } = createSurface({
+      provider: "photon",
+      adapterName: "imessage",
+      outbound: { markdown: true },
+    });
     const body = "**bold** and [link](https://example.test)";
 
     await surface.sendToThread({ threadId: "photon:any;-;+15550001111", body }, context);
@@ -845,7 +837,10 @@ describe("ChatSdkMessagingSurface outbound", () => {
   });
 
   it("posts a Telegram image attachment as a photo", async () => {
-    const { surface, adapter } = createSurface({ provider: "telegram" });
+    const { surface, adapter } = createSurface({
+      provider: "telegram",
+      outbound: telegramOutbound,
+    });
     const data = new Uint8Array([1, 2, 3]);
 
     await surface.sendToThread(
@@ -870,7 +865,10 @@ describe("ChatSdkMessagingSurface outbound", () => {
     ["an SVG", "logo.svg", "image/svg+xml", 3],
     ["an image over the photo limit", "scan.png", "image/png", 10_000_001],
   ])("uploads %s to Telegram as a document", async (_label, name, mimeType, size) => {
-    const { surface, adapter } = createSurface({ provider: "telegram" });
+    const { surface, adapter } = createSurface({
+      provider: "telegram",
+      outbound: telegramOutbound,
+    });
     const data = new Uint8Array(size);
 
     await surface.sendToThread(
@@ -888,7 +886,10 @@ describe("ChatSdkMessagingSurface outbound", () => {
   });
 
   it("fails a file over Telegram's upload limit without retrying it", async () => {
-    const { surface, adapter } = createSurface({ provider: "telegram" });
+    const { surface, adapter } = createSurface({
+      provider: "telegram",
+      outbound: telegramOutbound,
+    });
     const attachment = {
       name: "video.mp4",
       mimeType: "video/mp4",

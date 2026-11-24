@@ -1,5 +1,6 @@
 import { TelegramFormatConverter } from "@chat-adapter/telegram";
 import { WhatsAppAdapter } from "@chat-adapter/whatsapp";
+import type { MessagingOutbound } from "@rakazo/adapter-kit";
 import { ConsoleLogger, convertEmojiPlaceholders, markdownToPlainText } from "chat";
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
@@ -8,7 +9,6 @@ import {
   telegramOutbound,
 } from "../providers/messaging/telegram/telegram-messaging.js";
 import { whatsappOutbound } from "../providers/messaging/whatsapp/whatsapp-messaging.js";
-import type { MessagingOutbound } from "./chat-sdk-surface.js";
 import { splitOutboundBody } from "./messaging-platforms.js";
 
 const LIMIT = 4096;
