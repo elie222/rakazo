@@ -5,6 +5,8 @@ import {
   browserWindowOptions,
   DEFAULT_WARM_WINDOW_TTL_MS,
   developmentIconFile,
+  parseSavedWindowBounds,
+  restorableWindowBounds,
   setupWindowOptions,
   warmWindowTtlMs,
 } from "./window-options.js";
@@ -126,5 +128,37 @@ describe("window background", () => {
       expect(browserWindowOptions(platform, laptop).backgroundColor).toBe(webDarkTokens.background);
       expect(setupWindowOptions(platform, laptop).backgroundColor).toBe(webDarkTokens.background);
     }
+  });
+});
+
+describe("saved window bounds", () => {
+  const saved = { x: 100, y: 50, width: 1000, height: 700, maximized: true, fullScreen: false };
+  const primary = { x: 0, y: 25, width: 1440, height: 850 };
+  const external = { x: 1440, y: 0, width: 1920, height: 1080 };
+
+  it("reads back what was written", () => {
+    expect(parseSavedWindowBounds(JSON.stringify(saved))).toEqual(saved);
+  });
+
+  it.each([
+    "",
+    "{",
+    "null",
+    '{"x":1,"y":2,"width":0,"height":5}',
+    '{"x":"1","y":2,"width":3,"height":4}',
+  ])("ignores an unusable file (%s)", (text) => {
+    expect(parseSavedWindowBounds(text)).toBeNull();
+  });
+
+  it("restores a window that is on a connected display, even across two", () => {
+    expect(restorableWindowBounds(saved, [primary])).toBe(saved);
+    const spanning = { ...saved, x: 1000 };
+    expect(restorableWindowBounds(spanning, [primary, external])).toBe(spanning);
+  });
+
+  it("falls back to the default when the display it was on is gone", () => {
+    const onExternal = { ...saved, x: 2000 };
+    expect(restorableWindowBounds(onExternal, [primary])).toBeNull();
+    expect(restorableWindowBounds({ ...saved, x: 1100 }, [primary])).toBeNull();
   });
 });
