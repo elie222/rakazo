@@ -76,6 +76,12 @@ export type ThreadComposerHandle = {
 const DRAFT_SAVE_DELAY_MS = 500;
 const MENTION_PICKER_MAX_ROWS = 5;
 
+function samePickerQuery(first: ComposerMentionQuery | null, second: ComposerMentionQuery | null) {
+  return (
+    first?.start === second?.start && first?.end === second?.end && first?.query === second?.query
+  );
+}
+
 type ThreadComposerProps = {
   ref: Ref<ThreadComposerHandle>;
   /** Where the unsent text is kept; without it the draft lives only while mounted. */
@@ -318,25 +324,27 @@ export function ThreadComposer({
     pickerIndex === null ? null : clampMentionHighlightIndex(pickerIndex, optionCount);
 
   function updatePickerQueries(value: string, start: number, end = start) {
-    setPickerIndex(null);
     // One skill per message: a chosen skill keeps the slash menu closed.
-    setSlashQuery(
-      selectedSkill ? null : composerSlashQuery(value, start, end, bindingsRef.current),
-    );
+    const nextSlash = selectedSkill
+      ? null
+      : composerSlashQuery(value, start, end, bindingsRef.current);
     // A mention selected by a backspace is waiting to be deleted, not re-picked.
-    if (selectedMentionRef.current !== null) {
-      setMentionQuery(null);
-      return;
+    const nextMention =
+      selectedMentionRef.current !== null
+        ? null
+        : composerMentionQuery(
+            value,
+            start,
+            end,
+            [...composerMentionTargets, ...composerSelectedMentions(bindingsRef.current)],
+            bindingsRef.current,
+          );
+    if (!samePickerQuery(mentionQuery, nextMention) || !samePickerQuery(slashQuery, nextSlash)) {
+      setPickerIndex(null);
     }
-    const query = composerMentionQuery(
-      value,
-      start,
-      end,
-      [...composerMentionTargets, ...composerSelectedMentions(bindingsRef.current)],
-      bindingsRef.current,
-    );
-    if (query) onMentionRequested?.();
-    setMentionQuery(query);
+    if (nextMention) onMentionRequested?.();
+    setSlashQuery(nextSlash);
+    setMentionQuery(nextMention);
   }
 
   function updateDraft(nativeValue: string) {

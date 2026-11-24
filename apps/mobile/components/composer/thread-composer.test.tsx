@@ -997,6 +997,19 @@ describe("thread composer isolation", () => {
     }
   });
 
+  it("keeps the keyboard highlight when a delayed selection reports the same query", () => {
+    const other = { ...skill, id: "skill-2", name: "Drawing" };
+    render({ agentSkills: [other, skill] });
+    type("/");
+    press("Hardware ArrowDown");
+    press("Hardware ArrowDown");
+
+    select(1, 1);
+    press("Hardware Enter");
+
+    expect(composer.current!.snapshot().skill).toEqual(skill);
+  });
+
   it("dismisses the picker with Escape and keeps the draft", () => {
     type("Ask @He");
 
