@@ -159,6 +159,9 @@ export function createWindow(url: string, partition: string | null) {
       nodeIntegration: false,
       contextIsolation: true,
       sandbox: true,
+      // Cache the page's compiled scripts on their first load, not only after Chromium has
+      // seen them run a few times, so the launch right after an update is fast too.
+      v8CacheOptions: "bypassHeatCheck",
       ...(partition === null ? {} : { partition }),
     },
   });
