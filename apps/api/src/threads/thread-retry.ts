@@ -1,8 +1,9 @@
 import type { JobPublisher } from "@rakazo/adapter-kit";
 import type { Actor } from "@rakazo/contracts";
 import { ACTIVE_RUN_STATUSES, ClientError, canRetryRun } from "@rakazo/core";
-import type { Prisma, PrismaClient } from "@rakazo/db";
+import type { Prisma, PrismaClient, ThreadEvents } from "@rakazo/db";
 import {
+  appendEventInTransaction,
   IsolationError,
   readJsonColumn,
   SpaceDeletionInProgressError,
@@ -12,6 +13,7 @@ import {
   withTransactionRetry,
 } from "@rakazo/db";
 import * as z from "zod";
+import { assertTeachingSendAllowed } from "../bots/taught-skills.js";
 import type { ThreadTarget } from "./thread-target.js";
 import { enqueueRunsNeedingContinue, lockAndLoadGroupMembers } from "./thread-target.js";
 
@@ -49,12 +51,12 @@ export async function hasRetryableFailure(
  * repeat returns the same run.
  */
 export async function retryThreadRun(
-  deps: { prisma: PrismaClient; jobs: JobPublisher },
+  deps: { prisma: PrismaClient; jobs: JobPublisher; events: ThreadEvents },
   actor: Actor,
   target: ThreadTarget,
   runId: string,
 ) {
-  const retry = await withTransactionRetry(() =>
+  const { run: retry, seq } = await withTransactionRetry(() =>
     deps.prisma.$transaction(async (tx) => {
       if (!(await spaceTakesWork(tx, actor.spaceId))) throw new SpaceDeletionInProgressError();
       const members =
@@ -69,10 +71,13 @@ export async function retryThreadRun(
         if (existing.threadId !== target.threadId || existing.userId !== actor.userId) {
           throw new IsolationError();
         }
-        if (members && !members.some((member) => member.botId === existing.botId)) {
+        if (
+          existing.status === "cancelled" ||
+          (members && !members.some((member) => member.botId === existing.botId))
+        ) {
           throw new StaleRetryError();
         }
-        return existing;
+        return { run: existing, seq: null };
       }
       const failed = await tx.run.findFirst({
         where: { id: runId, spaceId: actor.spaceId, threadId: target.threadId },
@@ -93,6 +98,9 @@ export async function retryThreadRun(
         (members && !members.some((member) => member.botId === botId))
       ) {
         throw new StaleRetryError();
+      }
+      if (target.kind === "bot") {
+        await assertTeachingSendAllowed(tx, actor.spaceId, botId);
       }
       const [newerMessage, busyRun] = await Promise.all([
         tx.message.findFirst({
@@ -150,10 +158,26 @@ export async function retryThreadRun(
         await tx.message.update({ where: { id: source.id }, data: { runId: run.id } });
       }
       if (target.kind === "group") await touchGroupUpdatedAt(tx, target.groupId);
-      return run;
+      const event = await appendEventInTransaction(tx, {
+        spaceId: actor.spaceId,
+        threadId: target.threadId,
+        botId,
+        runId: run.id,
+        type: "thread.meta",
+        payload: { retryQueued: true },
+      });
+      return { run, seq: event.seq };
     }, THREAD_LOCK_TRANSACTION_OPTIONS),
   );
   // A repeat wakes the existing retry again, in case the first wake was lost.
-  await enqueueRunsNeedingContinue(deps.jobs, [retry]);
+  await Promise.all([
+    enqueueRunsNeedingContinue(deps.jobs, [retry]),
+    ...(seq === null
+      ? []
+      : [
+          deps.events.notify(target.threadId, seq),
+          deps.events.publishSpaceChange?.(actor.spaceId, "runs"),
+        ]),
+  ]);
   return { runId: retry.id };
 }

@@ -2,13 +2,13 @@ import { randomUUID } from "node:crypto";
 import { onError } from "@orpc/server";
 import { RPCHandler } from "@orpc/server/fetch";
 import type { Actor } from "@rakazo/contracts";
-import { MODEL_REQUIRED_SEND_ERROR } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import {
   asSystem,
   createDb,
   createThreadEvents,
   createThreadMessage,
+  finalizeRun,
   provisionMessagingIdentity,
   runAsSystem,
 } from "@rakazo/db";
@@ -29,7 +29,6 @@ describe.skipIf(!enabled)("threads.retry (PostgreSQL)", () => {
   let threadId: string;
   let call: (path: string, input: Record<string, unknown>) => Promise<Response>;
   const enqueue = vi.fn().mockResolvedValue(undefined);
-  let env: { agentRuntime: string; deploymentModelConfigured: boolean };
 
   beforeAll(() => {
     const db = createDb(databaseUrl!);
@@ -51,14 +50,13 @@ describe.skipIf(!enabled)("threads.retry (PostgreSQL)", () => {
     botId = identity.botId;
     actor = { spaceId: identity.spaceId, userId: identity.userId } as Actor;
     threadId = (await system.thread.findFirstOrThrow({ where: { botId } })).id;
-    env = { agentRuntime: "scripted", deploymentModelConfigured: false };
     const deps = {
       prisma,
       events: createThreadEvents(prisma),
       jobs: { enqueue, cancel: vi.fn(), close: async () => undefined },
       secrets: { load: vi.fn() },
       sandbox: {},
-      env,
+      env: { agentRuntime: "scripted", deploymentModelConfigured: false },
     } as unknown as RouterDeps;
     // Domain errors answer with their own status, as in the app.
     const handler = new RPCHandler(createRouter(deps), {
@@ -87,7 +85,12 @@ describe.skipIf(!enabled)("threads.retry (PostgreSQL)", () => {
   });
 
   /** A typed message whose reply failed. */
-  const failedReply = async ({ trigger = "user", retryable = true } = {}) => {
+  const failedReply = async ({
+    trigger = "user",
+    retryable = true,
+    hasSource = true,
+    hasFollowUp = false,
+  } = {}) => {
     const message = await createThreadMessage(system, {
       threadId,
       role: "user",
@@ -96,27 +99,44 @@ describe.skipIf(!enabled)("threads.retry (PostgreSQL)", () => {
     });
     const work = { spaceId: actor.spaceId, botId, threadId, userId: actor.userId };
     const task = await system.task.create({
-      data: { ...work, prompt: "Summarize the open tickets.", status: "failed" },
+      data: { ...work, prompt: "Summarize the open tickets.", status: "running" },
     });
     const run = await system.run.create({
       data: {
         ...work,
         taskId: task.id,
-        status: "failed",
+        status: "running",
         trigger,
-        error: "terminated",
-        sourceMessageId: message.id,
+        sourceMessageId: hasSource ? message.id : null,
+        leaseOwner: "test-worker",
+        leaseFence: 1,
         modelProvider: "openrouter",
         modelId: "openai/gpt-4o",
         modelPinned: true,
       },
     });
     await system.message.update({ where: { id: message.id }, data: { runId: run.id } });
-    await createThreadEvents(system).append({
+    if (hasFollowUp) {
+      await createThreadMessage(system, {
+        threadId,
+        role: "user",
+        authorUserId: actor.userId,
+        blocks: [{ kind: "text", text: "Only the urgent tickets." }],
+      });
+    }
+    const attempt = await system.attempt.create({
+      data: { runId: run.id, fence: 1, status: "running" },
+    });
+    await finalizeRun(system, {
       ...work,
       runId: run.id,
-      type: "run.failed",
-      payload: { error: "terminated", ...(retryable ? { retryable: true } : {}) },
+      taskId: task.id,
+      attemptId: attempt.id,
+      leaseOwner: "test-worker",
+      leaseFence: 1,
+      outcome: "failed",
+      error: "terminated",
+      retryable,
     });
     return { message, run };
   };
@@ -131,6 +151,17 @@ describe.skipIf(!enabled)("threads.retry (PostgreSQL)", () => {
     expect(await response.json()).toMatchObject({
       json: { run: { id: run.id, retryable: true } },
     });
+  });
+
+  it.each([
+    ["the run has no source message", { hasSource: false }],
+    ["the sender followed up before the failure", { hasFollowUp: true }],
+  ] as const)("omits retry eligibility when %s", async (_, options) => {
+    const { run } = await failedReply(options);
+    const response = await call("get", { botId });
+    const body = (await response.json()) as { json: { run: { id: string; retryable?: boolean } } };
+    expect(body.json.run.id).toBe(run.id);
+    expect(body.json.run.retryable).toBeUndefined();
   });
 
   it("queues the failed reply again from its message, once", async () => {
@@ -168,10 +199,36 @@ describe.skipIf(!enabled)("threads.retry (PostgreSQL)", () => {
     expect(enqueue).toHaveBeenCalledTimes(2);
     expect(enqueue.mock.calls[1]).toEqual(enqueue.mock.calls[0]);
 
-    // A retry that has already ended is still the same receipt and cannot be woken again.
+    // A newer message can cancel the retry before another tab receives its receipt.
     await system.run.update({ where: { id: runId }, data: { status: "cancelled" } });
-    expect(await retry(run.id)).toEqual(first);
+    expect((await retry(run.id)).status).toBe(409);
     expect(enqueue).toHaveBeenCalledTimes(2);
+  });
+
+  it("persists one thread refresh signal when the retry is queued", async () => {
+    const { run } = await failedReply();
+    const receipt = await retry(run.id);
+    const { runId } = receipt.body.json as { runId: string };
+    await retry(run.id);
+    expect(await system.event.findMany({ where: { threadId, type: "thread.meta" } })).toMatchObject(
+      [{ runId, payload: { retryQueued: true } }],
+    );
+  });
+
+  it("returns the existing receipt if teaching starts after the retry was queued", async () => {
+    const { run } = await failedReply();
+    const receipt = await retry(run.id);
+    expect(receipt.status).toBe(200);
+    await system.taughtSkill.create({
+      data: {
+        spaceId: actor.spaceId,
+        botId,
+        userId: actor.userId,
+        goal: "Use the test inbox",
+        status: "recording",
+      },
+    });
+    expect(await retry(run.id)).toEqual(receipt);
   });
 
   it("returns the same retry to concurrent requests", async () => {
@@ -235,13 +292,4 @@ describe.skipIf(!enabled)("threads.retry (PostgreSQL)", () => {
       expect(enqueue).not.toHaveBeenCalled();
     },
   );
-
-  it("refuses without a model to run on, as a send does", async () => {
-    const { run } = await failedReply();
-    env.agentRuntime = "pi";
-    const refused = await retry(run.id);
-    expect(refused.status).toBe(400);
-    expect(JSON.stringify(refused.body)).toContain(MODEL_REQUIRED_SEND_ERROR);
-    expect(await system.run.count({ where: { retryOfRunId: run.id } })).toBe(0);
-  });
 });

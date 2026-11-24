@@ -283,6 +283,14 @@ export function withLiveStreamingProgress<
 
 const RUN_FAILURE_ERROR_MAX = 300;
 
+/** A retry was queued. Active thread readers reconcile through their normal snapshot. */
+export function isReplyRetryQueued(event: {
+  type: string;
+  payload?: Record<string, unknown>;
+}): boolean {
+  return event.type === "thread.meta" && event.payload?.retryQueued === true;
+}
+
 /** Reason a run failed, clamped for display, or null when there is no usable error to show. */
 export function runFailureError(event: {
   type: string;

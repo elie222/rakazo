@@ -2,6 +2,7 @@ import {
   abortableDelay,
   createRefreshCoalescer,
   errorStatus,
+  isReplyRetryQueued,
   isRetryableError,
   isRunTerminalEvent,
   messageUnreadFor,
@@ -274,7 +275,9 @@ export function useThreadLiveSubscription({
               }
               if (
                 shouldProject &&
-                (isRunTerminalEvent(event) || event.type === "run.waiting_input")
+                (isRunTerminalEvent(event) ||
+                  isReplyRetryQueued(event) ||
+                  event.type === "run.waiting_input")
               ) {
                 // Reconcile run ownership for ask cards first seen through live events.
                 void snapshotRefresh.invalidate().catch(() => undefined);

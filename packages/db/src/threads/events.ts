@@ -888,14 +888,29 @@ async function finalizeRunOnce(
     });
     if (task.count !== 1) throw new Error("Run task was not available to finalize");
 
+    let retryable = false;
     if (input.outcome === "failed") {
       // Before the partial reply below is saved: a reply the failure cut short answers no
       // steering, so the steering it was answering still gets a run of its own.
       await discardAnsweredSteering(tx, input);
       const { sourceMessage } = await tx.run.findUniqueOrThrow({
         where: { id: input.runId },
-        select: { sourceMessage: { select: { seq: true } } },
+        select: {
+          sourceMessage: { select: { seq: true, role: true, threadId: true, authorUserId: true } },
+        },
       });
+      if (
+        input.retryable &&
+        sourceMessage?.role === "user" &&
+        sourceMessage.threadId === input.threadId &&
+        sourceMessage.authorUserId === writableRun?.userId
+      ) {
+        const newer = await tx.message.findFirst({
+          where: { threadId: input.threadId, role: "user", seq: { gt: sourceMessage.seq } },
+          select: { id: true },
+        });
+        retryable = !newer;
+      }
       // A continuation's source is the newest steering it was created for. Only newer
       // messages justify another run after failure, even if setup failed before claiming.
       await tx.steeringMessage.updateMany({
@@ -944,7 +959,7 @@ async function finalizeRunOnce(
       payload:
         input.outcome === "completed"
           ? {}
-          : { error: input.error, ...(input.retryable ? { retryable: true } : {}) },
+          : { error: input.error, ...(retryable ? { retryable: true } : {}) },
     });
     await tx.event.deleteMany({
       where: { runId: input.runId, ...transientRunEventsWhere() },

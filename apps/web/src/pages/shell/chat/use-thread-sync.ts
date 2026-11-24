@@ -10,6 +10,7 @@ import type {
 import {
   activeThreadRuns,
   createRefreshCoalescer,
+  isReplyRetryQueued,
   isRunTerminalEvent,
   isRunWorking,
   isThreadSnapshotEvent,
@@ -463,6 +464,7 @@ export function useThreadSync({
         }
         if (
           isRunTerminalEvent(event) ||
+          isReplyRetryQueued(event) ||
           event.type === "run.waiting_input" ||
           event.type === "skill.teaching.stopped"
         ) {
@@ -563,7 +565,11 @@ export function useThreadSync({
         ) {
           void sidebarRefresh.invalidate().catch(() => undefined);
         }
-        if (isRunTerminalEvent(event) || event.type === "run.waiting_input") {
+        if (
+          isRunTerminalEvent(event) ||
+          isReplyRetryQueued(event) ||
+          event.type === "run.waiting_input"
+        ) {
           // waiting_input: reconcile ask cards if a stale post-send refresh raced SSE.
           void snapshotRefresh.invalidate().catch(() => undefined);
         }

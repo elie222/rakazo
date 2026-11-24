@@ -220,7 +220,10 @@ export async function threadSnapshot(
         last,
         activeRuns,
         failedRun:
-          terminalRun?.status === "failed" ? await mapRunWithFailure(tx, terminalRun) : null,
+          terminalRun?.status === "failed" &&
+          !activeRuns.some((run) => run.retryOfRunId === terminalRun.id)
+            ? await mapRunWithFailure(tx, terminalRun)
+            : null,
         liveEvents,
         memberStatuses,
       };
