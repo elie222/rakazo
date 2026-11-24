@@ -1,3 +1,4 @@
+import type { MessagingOutbound } from "../../../messaging/chat-sdk-surface.js";
 import { defineMessagingPlatform } from "../../../messaging/messaging-platform-descriptor.js";
 import { LazyLarkAdapter } from "./lazy-adapter.js";
 import { Domain } from "./thread-id.js";
@@ -15,6 +16,9 @@ function larkDomain(setting: string | undefined): Domain {
  * accepts unsigned webhook posts. Encrypt key and domain are optional (event encryption /
  * open.feishu.cn vs open.larksuite.com).
  */
+/** Lark posts the body as an md block, and declares no split of its own. */
+export const larkOutbound: MessagingOutbound = { markdown: true };
+
 export const larkMessaging = defineMessagingPlatform({
   env: {
     larkAppId: { name: "LARK_APP_ID", required: true },
@@ -37,6 +41,8 @@ export const larkMessaging = defineMessagingPlatform({
     });
     return {
       provider: "lark",
+      // Lark posts the body as an md block.
+      outbound: larkOutbound,
       capabilities: { direct: true, groups: false, receipt: null },
       adapter,
       postOnce: (threadId, message, idempotencyKey) =>

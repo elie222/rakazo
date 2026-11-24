@@ -49,6 +49,7 @@ import { loadRunOrigin } from "../runs/lifecycle/run-origin.js";
 import { isUserProgressClientNonce } from "../runs/lifecycle/user-progress.js";
 import { wakeRun } from "../runs/wakeups/wake-run.js";
 import { loadBotMessageContext } from "./bot-messages.js";
+import type { MessagingOutbound } from "./chat-sdk-surface.js";
 import { MessagingSendError } from "./chat-sdk-surface.js";
 import { splitOutboundBody } from "./messaging-platforms.js";
 import { resolveMessagingThreadId } from "./team-chat/team-chat-messaging.js";
@@ -200,6 +201,15 @@ export class MessagingDelivery {
 
   constructor(private readonly deps: MessagingDeliveryDeps) {
     this.outage = deps.outage ?? databaseOutage;
+  }
+
+  /**
+   * What the provider accepts outbound, declared by the platform that owns the limit. A provider
+   * with no mounted platform (a stale identity) keeps the body whole.
+   */
+  private outboundFacts(provider: string): MessagingOutbound | undefined {
+    return this.deps.messaging.platforms().find((platform) => platform.provider === provider)
+      ?.outbound;
   }
 
   /**
@@ -971,7 +981,7 @@ export class MessagingDelivery {
           this.deps.webOrigin &&
           new URL(`/app/${encodeURIComponent(run.botId)}`, this.deps.webOrigin).href,
       });
-      const parts = body ? splitOutboundBody(identity.provider, body) : [];
+      const parts = body ? splitOutboundBody(this.outboundFacts(identity.provider), body) : [];
       return {
         parts: parts.map((part, index) => ({
           idempotencyKey: index === 0 ? `msg:${message.id}` : `msg:${message.id}:${index + 1}`,
@@ -1082,7 +1092,10 @@ export class MessagingDelivery {
     await this.recordReplies(
       lane,
       messages.map(({ message, text }) => ({
-        parts: splitOutboundBody(identity.provider, `${fromLabel}: ${text}`).map((part, index) => ({
+        parts: splitOutboundBody(
+          this.outboundFacts(identity.provider),
+          `${fromLabel}: ${text}`,
+        ).map((part, index) => ({
           idempotencyKey: index === 0 ? `msg:${message.id}` : `msg:${message.id}:${index + 1}`,
           kind: "group",
           threadId: channel.threadId,

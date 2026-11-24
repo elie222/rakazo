@@ -26,6 +26,8 @@ import type { Prisma, PrismaClient } from "@rakazo/db";
 import { SpaceDeletionInProgressError } from "@rakazo/db";
 import type { Adapter } from "chat";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { telegramOutbound } from "../providers/messaging/telegram/telegram-messaging.js";
+import { whatsappOutbound } from "../providers/messaging/whatsapp/whatsapp-messaging.js";
 import { userProgressClientNonce } from "../runs/lifecycle/user-progress.js";
 import { ChatSdkMessagingSurface, MessagingSendError } from "./chat-sdk-surface.js";
 import { InstalledMessagingSurface } from "./installed-messaging-surface.js";
@@ -518,6 +520,18 @@ const PLATFORMS: MessagingPlatformDescriptor[] = [
   { provider: "sendblue", capabilities: { direct: true, groups: true, receipt: "typing" } },
   {
     provider: "telegram",
+    outbound: telegramOutbound,
+    capabilities: { direct: true, groups: false, receipt: null, files: true },
+  },
+  // A named Telegram mount shares its adapter's facts, and WhatsApp declares its own.
+  {
+    provider: "telegram-work",
+    outbound: telegramOutbound,
+    capabilities: { direct: true, groups: false, receipt: null, files: true },
+  },
+  {
+    provider: "whatsapp",
+    outbound: whatsappOutbound,
     capabilities: { direct: true, groups: false, receipt: null, files: true },
   },
 ];

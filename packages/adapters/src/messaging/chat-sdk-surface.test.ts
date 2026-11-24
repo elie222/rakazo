@@ -5,8 +5,15 @@ import type { AdapterContext, MessagingInboundEvent } from "@rakazo/adapter-kit"
 import { MAX_RETRY_AFTER_MS } from "@rakazo/core";
 import type { Adapter, ChatInstance } from "chat";
 import { describe, expect, it, vi } from "vitest";
-import { enrichSlackTeamRoom } from "../providers/messaging/slack/slack-messaging.js";
-import type { MessagingPlatform } from "./chat-sdk-surface.js";
+import { larkOutbound } from "../providers/messaging/lark/lark-messaging.js";
+import { photonOutbound } from "../providers/messaging/photon/photon-messaging.js";
+import {
+  enrichSlackTeamRoom,
+  slackOutbound,
+} from "../providers/messaging/slack/slack-messaging.js";
+import { telegramOutbound } from "../providers/messaging/telegram/telegram-messaging.js";
+import { whatsappOutbound } from "../providers/messaging/whatsapp/whatsapp-messaging.js";
+import type { MessagingOutbound, MessagingPlatform } from "./chat-sdk-surface.js";
 import {
   ChatSdkMessagingSurface,
   MESSAGING_WEBHOOK_MAX_BODY_BYTES,
@@ -20,6 +27,15 @@ const context: AdapterContext = {
   spaceId: "ws-1",
   userId: "user-1",
   signal: new AbortController().signal,
+};
+
+/** The facts each real platform declares, so a fixture carries the limits of the platform it stands in for. */
+const PLATFORM_OUTBOUND: Record<string, MessagingOutbound | undefined> = {
+  telegram: telegramOutbound,
+  whatsapp: whatsappOutbound,
+  slack: slackOutbound,
+  lark: larkOutbound,
+  photon: photonOutbound,
 };
 
 /**
@@ -89,6 +105,9 @@ function createPlatform(
   const platform: MessagingPlatform = {
     provider: "mock",
     capabilities: { direct: true, groups: true, receipt: "typing" },
+    ...(PLATFORM_OUTBOUND[overrides.provider ?? ""]
+      ? { outbound: PLATFORM_OUTBOUND[overrides.provider ?? ""] }
+      : {}),
     adapter,
     ...overrides,
   };
@@ -806,6 +825,7 @@ describe("ChatSdkMessagingSurface outbound", () => {
     const surface = new ChatSdkMessagingSurface([
       {
         provider: "slack",
+        outbound: slackOutbound,
         capabilities: { direct: true, groups: true, receipt: "reaction" },
         adapter,
       },

@@ -1,5 +1,5 @@
 import { getLogger } from "@rakazo/logging";
-import type { MessagingPlatform } from "../../../messaging/chat-sdk-surface.js";
+import type { MessagingOutbound, MessagingPlatform } from "../../../messaging/chat-sdk-surface.js";
 import type { MessagingMountContext } from "../../../messaging/messaging-platform-descriptor.js";
 import { defineMessagingPlatform } from "../../../messaging/messaging-platform-descriptor.js";
 import { LazyPhotonAdapter } from "./lazy-adapter.js";
@@ -85,6 +85,9 @@ export function photonProjectsFromEnv(
   return projects;
 }
 
+/** Photon's iMessage adapter renders Markdown as native styled text. */
+export const photonOutbound: MessagingOutbound = { markdown: true };
+
 function photonPlatform(
   provider: string,
   project: PhotonProjectCredentials,
@@ -93,6 +96,7 @@ function photonPlatform(
   return {
     provider,
     adapterName: "imessage",
+    outbound: photonOutbound,
     capabilities: { direct: true, groups: false, receipt: "typing" },
     adapter: new LazyPhotonAdapter({
       projectId: project.projectId,

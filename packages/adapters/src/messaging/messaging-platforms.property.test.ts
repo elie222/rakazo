@@ -3,7 +3,12 @@ import { WhatsAppAdapter } from "@chat-adapter/whatsapp";
 import { ConsoleLogger, convertEmojiPlaceholders, markdownToPlainText } from "chat";
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
-import { telegramFallbackText } from "../providers/messaging/telegram/telegram-messaging.js";
+import {
+  telegramFallbackText,
+  telegramOutbound,
+} from "../providers/messaging/telegram/telegram-messaging.js";
+import { whatsappOutbound } from "../providers/messaging/whatsapp/whatsapp-messaging.js";
+import type { MessagingOutbound } from "./chat-sdk-surface.js";
 import { splitOutboundBody } from "./messaging-platforms.js";
 
 const LIMIT = 4096;
@@ -25,6 +30,12 @@ const whatsapp = new WhatsAppRenderer({
 });
 
 type Provider = "telegram" | "whatsapp";
+
+/** The limits each platform declares, as its mount attaches them. */
+const OUTBOUND: Record<Provider, MessagingOutbound> = {
+  telegram: telegramOutbound,
+  whatsapp: whatsappOutbound,
+};
 /** A reply, the text a person should see for it outside code blocks, and its code. */
 type Reply = { body: string; text: string; code: string[] };
 type Delivery = { part: string; sent: string; fallback: string; text: string; code: string[] };
@@ -65,7 +76,7 @@ function deliver(provider: Provider, body: string): Delivery[] {
   const key = `${provider}\n${body}`;
   let delivery = deliveries.get(key);
   if (!delivery) {
-    delivery = splitOutboundBody(provider, body).map((part) => {
+    delivery = splitOutboundBody(OUTBOUND[provider], body).map((part) => {
       const sent = sentText(provider, part);
       const fallback =
         provider === "telegram"
@@ -323,7 +334,7 @@ describe.each<Provider>(["telegram", "whatsapp"])(
     it("returns a reply that fits one message as it was written", () => {
       fc.assert(
         fc.property(shortLinkedReply, ({ body }) => {
-          expect(splitOutboundBody(provider, body)).toEqual([body]);
+          expect(splitOutboundBody(OUTBOUND[provider], body)).toEqual([body]);
         }),
         runs,
       );
