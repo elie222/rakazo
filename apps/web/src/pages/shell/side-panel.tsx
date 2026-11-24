@@ -2,7 +2,7 @@ import { Trans, useLingui } from "@lingui/react/macro";
 import type { Bot, Group, ThreadSnapshot } from "@rakazo/contracts";
 import { Button } from "@rakazo/ui-web";
 import { X } from "lucide-react";
-import type { ComponentProps, Dispatch, ReactNode, SetStateAction } from "react";
+import type { ComponentProps, Dispatch, ReactNode, RefObject, SetStateAction } from "react";
 import { PagesList } from "../../components/pages/PagesList";
 import type { createSpaceRpc } from "../../lib/query/rpc";
 import { RoutineEditor } from "../routines/RoutineEditor";
@@ -15,6 +15,7 @@ import { firstThreadRoute } from "./use-shell-navigation";
 
 /** The panel beside the chat: a bot, a routine, a group, or an import. */
 export function ShellSidePanel({
+  focusRef,
   rpc,
   panel,
   setPanel,
@@ -38,6 +39,7 @@ export function ShellSidePanel({
   onCoversChat,
   onOverlays,
 }: {
+  focusRef: RefObject<HTMLElement | null>;
   rpc: ReturnType<typeof createSpaceRpc>;
   panel: Panel;
   setPanel: (panel: Panel) => void;
@@ -80,6 +82,7 @@ export function ShellSidePanel({
     <ResizableSidePanel
       open={open}
       panel={panel ?? "closed"}
+      focusRef={focusRef}
       onCoversChat={onCoversChat}
       onOverlays={onOverlays}
       onEscape={panel === "settings" && !computerOpen ? () => setPanel(null) : undefined}

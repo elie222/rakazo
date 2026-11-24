@@ -195,7 +195,8 @@ function SpaceShell() {
   const isMobileSidebar = useIsMobile();
   const [panelCoversChat, setPanelCoversChat] = useState(false);
   const [panelOverlays, setPanelOverlays] = useState(false);
-  const pages = usePagesForChat();
+  const sidePanelFocusRef = useRef<HTMLElement>(null);
+  const pages = usePagesForChat(thread.messageScroll, sidePanelFocusRef);
   const sidebar = useSidebarView({
     userId,
     isMobile: isMobileSidebar,
@@ -852,6 +853,7 @@ function SpaceShell() {
       />
 
       <ShellSidePanel
+        focusRef={sidePanelFocusRef}
         rpc={rpc}
         panel={panel}
         setPanel={setPanel}

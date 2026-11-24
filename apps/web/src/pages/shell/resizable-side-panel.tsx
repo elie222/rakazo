@@ -1,6 +1,6 @@
 import { t } from "@lingui/core/macro";
-import type { CSSProperties, PointerEvent, ReactNode } from "react";
-import { useEffect, useRef, useState } from "react";
+import type { CSSProperties, PointerEvent, ReactNode, RefObject } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useEventListener } from "../../lib/use-event-listener";
 import { isComposingKey } from "./shell-shortcuts";
 import { useBotsSidebarWidth } from "./sidebar/sidebar-layout";
@@ -34,6 +34,7 @@ function readPreferredWidth() {
 export function ResizableSidePanel({
   open,
   panel,
+  focusRef,
   children,
   onCoversChat,
   onOverlays,
@@ -41,6 +42,8 @@ export function ResizableSidePanel({
 }: {
   open: boolean;
   panel: string;
+  /** A fallback focus target while the panel is open. */
+  focusRef?: RefObject<HTMLElement | null>;
   /** Tells the shell when the open panel covers nearly all of the chat, so it can make the chat inert. */
   onCoversChat?: (covers: boolean) => void;
   /** Tells the shell when the open panel floats over the chat instead of sitting beside it. */
@@ -56,6 +59,13 @@ export function ResizableSidePanel({
   const overlay = viewportWidth - reservedLeadingPx < MIN_CHAT_WIDTH + MIN_WIDTH;
   const [dragging, setDragging] = useState(false);
   const panelRef = useRef<HTMLElement>(null);
+  const setPanelRef = useCallback(
+    (element: HTMLElement | null) => {
+      panelRef.current = element;
+      if (focusRef) focusRef.current = open ? element : null;
+    },
+    [focusRef, open],
+  );
   const drag = useRef<{ x: number; width: number; direction: number } | null>(null);
   const width = Math.max(MIN_WIDTH, Math.min(maxWidth, preferredWidth));
 
@@ -136,7 +146,7 @@ export function ResizableSidePanel({
 
   return (
     <aside
-      ref={panelRef}
+      ref={setPanelRef}
       tabIndex={-1}
       data-testid="side-panel"
       data-panel={panel}

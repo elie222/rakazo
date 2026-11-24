@@ -2,6 +2,7 @@ import { useLingui } from "@lingui/react/macro";
 import type { MessageBlock, PageSectionAnchor } from "@rakazo/contracts";
 import { PAGE_RUNTIME_PATH, pageReply, pageReplyText, pageViewerDocument } from "@rakazo/core";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import type { RefObject } from "react";
 import {
   createContext,
   useCallback,
@@ -120,11 +121,33 @@ export function usePageDocument(
 
 type Dock = { node: HTMLElement | null; page: { id: string; title: string } | null };
 
+function isVisibleInTranscript(element: HTMLElement, transcript: HTMLElement) {
+  const item = element.getBoundingClientRect();
+  const viewport = transcript.getBoundingClientRect();
+  return (
+    item.width > 0 &&
+    item.height > 0 &&
+    item.bottom > viewport.top &&
+    item.top < viewport.bottom &&
+    item.right > viewport.left &&
+    item.left < viewport.right
+  );
+}
+
+function focusWithoutScroll(target: HTMLElement | null | undefined, focusVisible?: boolean) {
+  if (!target?.isConnected) return false;
+  target.focus({ preventScroll: true, focusVisible } as FocusOptions);
+  return target.ownerDocument.activeElement === target;
+}
+
 /**
  * One chat's open-page state: what opened the page (for focus), a Share asked for with it, and
  * where the composer docks. Shared by the shell, the open page and the composer through context.
  */
-export function createPageSession() {
+export function createPageSession(
+  transcriptRef?: RefObject<HTMLElement | null>,
+  sidePanelRef?: RefObject<HTMLElement | null>,
+) {
   let opener: { element: HTMLElement; ring: boolean } | null = null;
   let shareRequest: string | null = null;
   let dock: Dock = { node: null, page: null };
@@ -138,11 +161,19 @@ export function createPageSession() {
           ? { element, ring: element.matches(":focus-visible") }
           : null;
     },
-    /** Focus goes back to what opened the page, with a ring only if it had one. */
+    /** Restore focus at the reader's current scroll position. */
     restoreFocus() {
-      if (!opener?.element.isConnected) return true;
-      opener.element.focus({ focusVisible: opener.ring } as FocusOptions);
-      return false;
+      const transcript = transcriptRef?.current;
+      if (
+        opener &&
+        (!transcript?.contains(opener.element) ||
+          isVisibleInTranscript(opener.element, transcript)) &&
+        focusWithoutScroll(opener.element, opener.ring)
+      )
+        return false;
+      if (focusWithoutScroll(transcript, opener?.ring)) return false;
+      // An open side panel can make the chat inert, and its menu item may have unmounted.
+      return !focusWithoutScroll(sidePanelRef?.current, opener?.ring);
     },
     askShare(pageId: string | null) {
       shareRequest = pageId;
@@ -213,8 +244,11 @@ export function usePageSession(): PageSession | null {
 }
 
 /** Opens a page by URL, remembering what opened it so focus can go back there. */
-export function usePagesForChat(): Pages {
-  const [session] = useState(createPageSession);
+export function usePagesForChat(
+  transcriptRef: RefObject<HTMLElement | null>,
+  sidePanelRef: RefObject<HTMLElement | null>,
+): Pages {
+  const [session] = useState(() => createPageSession(transcriptRef, sidePanelRef));
   const [, setSearchParams] = useSearchParams();
   const queries = useSpaceQueries();
   const queryClient = useQueryClient();
