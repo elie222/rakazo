@@ -19,7 +19,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { SandboxedHtmlPreview } from "../components/media/sandboxed-html-preview";
 import { NativeActionButton } from "../components/native/native-action-button";
 import { currentApiBase } from "../lib/api/api";
-import { useSpaceChanges } from "../lib/api/roster-signals";
+import { useRosterSignals, useSpaceChanges } from "../lib/api/roster-signals";
 import { useMobileTokens, useResolvedAppearance } from "../lib/native/native";
 import { HEADER_CONTROL_SIZE } from "../lib/native/native-controls";
 import { PageLoadFailure } from "../lib/pages/page-load-failure";
@@ -103,21 +103,21 @@ export default function PageScreen() {
   const shownPageId = useRef(pageId);
   shownPageId.current = pageId;
   const saving = loaded.status === "ready" && loaded.page.readerState !== undefined;
-  useSpaceChanges(
-    "pageState",
-    () => {
-      const reading = pageId;
-      return bestEffort(
-        "read saved page values again",
-        readPageState(reading).then((values) => {
-          if (reading !== shownPageId.current) return;
-          latestState.current = { pageId: reading, values };
-          answerPage.current?.(pageStateUpdate(values));
-        }),
-      );
-    },
-    saving,
-  );
+  const reads = useRef(0);
+  const readStateAgain = () => {
+    const reading = pageId;
+    const read = ++reads.current;
+    return bestEffort(
+      "read saved page values again",
+      readPageState(reading).then((values) => {
+        if (reading !== shownPageId.current || read !== reads.current) return;
+        latestState.current = { pageId: reading, values };
+        answerPage.current?.(pageStateUpdate(values));
+      }),
+    );
+  };
+  useSpaceChanges("pageState", readStateAgain, saving);
+  useRosterSignals(readStateAgain, saving);
   const receive = useCallback(
     (data: string, answer: (message: object) => void) => {
       const latest = latestState.current;

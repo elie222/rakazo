@@ -1,5 +1,5 @@
 import { useIsFocused } from "expo-router";
-import { useSpaceChanges } from "../api/roster-signals";
+import { useRosterSignals, useSpaceChanges } from "../api/roster-signals";
 import { queryClient } from "../query/query";
 
 export function usePageReviewSignals() {
@@ -17,13 +17,11 @@ export function usePageReviewSignals() {
       }),
     focused,
   );
-  useSpaceChanges(
-    "pageState",
-    () =>
-      queryClient.invalidateQueries({
-        predicate: ({ queryKey }) =>
-          queryKey.some((key) => typeof key === "string" && key.startsWith("pageReviews/state")),
-      }),
-    focused,
-  );
+  const readStateAgain = () =>
+    queryClient.invalidateQueries({
+      predicate: ({ queryKey }) =>
+        queryKey.some((key) => typeof key === "string" && key.startsWith("pageReviews/state")),
+    });
+  useSpaceChanges("pageState", readStateAgain, focused);
+  useRosterSignals(readStateAgain, focused);
 }
