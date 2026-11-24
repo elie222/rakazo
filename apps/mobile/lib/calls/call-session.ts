@@ -222,7 +222,7 @@ export function startCall(
   callSessionGeneration = currentSessionGeneration();
   callId = call.answered?.callId ?? newClientId();
   autoLanguage = call.autoLanguage === true;
-  deps = { ...ownDeps(call.requestContext), ...overrides };
+  deps = { ...ownDeps(call.requestContext, autoLanguage), ...overrides };
   switchBot = call.switchBot;
   callRunId = null;
   canTranscribe = call.transcribe ?? !autoLanguage;
@@ -884,7 +884,7 @@ function onCallEnded(ended: CallEnded): void {
 }
 
 /** This call's production deps; a hang-up or a newer call leaves them inert. */
-function ownDeps(requestContext?: ApiRequestContext): CallDeps {
+function ownDeps(requestContext?: ApiRequestContext, autoLanguage = false): CallDeps {
   const ownCallId = callId;
   return productionDeps({
     callId: ownCallId,
