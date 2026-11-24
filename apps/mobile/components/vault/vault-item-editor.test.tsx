@@ -51,6 +51,17 @@ vi.mock("react-native-safe-area-context", () => ({ useSafeAreaInsets: () => ({})
 vi.mock("../native/native-symbol", () => ({ NativeSymbol: () => null }));
 vi.mock("../ui/menu-picker", () => ({ MenuPicker: () => null }));
 vi.mock("./login-fields-editor", () => ({ LoginFieldsEditor: () => null }));
+vi.mock("../native/glass-icon-button", () => ({
+  GlassIconButton: ({
+    accessibilityLabel,
+    onPress,
+    disabled,
+  }: {
+    accessibilityLabel: string;
+    onPress: () => void;
+    disabled?: boolean;
+  }) => createElement("button", { type: "button", onClick: onPress, disabled }, accessibilityLabel),
+}));
 vi.mock("../native/native-action-button", () => ({
   NativeActionButton: ({ label }: { label: string }) =>
     createElement("button", { type: "button" }, label),

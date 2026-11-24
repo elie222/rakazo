@@ -78,6 +78,17 @@ vi.mock("../../components/vault/login-fields-editor", () => ({
       }),
     ),
 }));
+vi.mock("../../components/native/glass-icon-button", () => ({
+  GlassIconButton: ({
+    accessibilityLabel,
+    onPress,
+    disabled,
+  }: {
+    accessibilityLabel: string;
+    onPress: () => void;
+    disabled?: boolean;
+  }) => createElement("button", { type: "button", onClick: onPress, disabled }, accessibilityLabel),
+}));
 vi.mock("../../components/native/native-action-button", () => ({
   NativeActionButton: ({
     label,
