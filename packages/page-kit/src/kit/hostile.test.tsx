@@ -10,22 +10,23 @@ import * as controls from "./controls.js";
 import * as data from "./data.js";
 import * as dataviz from "./dataviz.js";
 import * as diagram from "./diagram.js";
+import * as icon from "./icon.js";
 import * as layout from "./layout.js";
 import * as media from "./media.js";
 import * as text from "./text.js";
 
 const modules = { ...calendar, ...charts, ...controls, ...data, ...dataviz, ...diagram, ...layout };
-const kit = { ...modules, ...media, ...text };
+const kit = { ...modules, ...media, ...text, ...icon };
 type Props<K extends PageKitComponentName> = ComponentProps<(typeof kit)[K]>;
 
 // Every list or object prop of the kit, with the fields its items carry. A page's code is
 // written by a model, so any of them can arrive as null, a bare value or half-filled items.
 const SHAPED: { [K in PageKitComponentName]?: { [P in keyof Props<K>]?: readonly string[] } } = {
   Page: { palette: [], sources: [] },
-  Metrics: { metrics: ["value", "label", "tone", "detail", "delta", "better", "trend"] },
-  Properties: { items: ["label", "value"] },
-  Rows: { rows: ["title", "lead", "detail", "meta", "status"] },
-  Steps: { steps: ["title", "detail"] },
+  Metrics: { metrics: ["value", "label", "tone", "detail", "delta", "better", "trend", "icon"] },
+  Properties: { items: ["label", "value", "icon"] },
+  Rows: { rows: ["title", "lead", "detail", "meta", "status", "icon"] },
+  Steps: { steps: ["title", "detail", "icon"] },
   Checklist: { items: ["text", "done", "meta"] },
   Table: { columns: [], rows: [], align: [] },
   Segmented: { options: ["value", "label", "count"] },
@@ -46,7 +47,7 @@ const SHAPED: { [K in PageKitComponentName]?: { [P in keyof Props<K>]?: readonly
   BulletList: { items: ["text", "items", "bullets"] },
   NumberedList: { items: ["text", "items", "bullets"] },
   ProsCons: { pros: ["text", "items", "bullets"], cons: ["text", "items", "bullets"] },
-  LinkCards: { links: ["title", "href", "site", "date"] },
+  LinkCards: { links: ["title", "href", "site", "date", "icon"] },
   Legend: { names: [], comparison: [] },
   Columns: { points: ["label", "value", "display"] },
   ColumnSeries: { labels: [], series: ["name", "values"], reference: ["value", "label"] },
@@ -88,6 +89,7 @@ const SHAPED: { [K in PageKitComponentName]?: { [P in keyof Props<K>]?: readonly
 
 // Components whose props are all text, numbers, flags, callbacks or children.
 const PLAIN = new Set<PageKitComponentName>([
+  "Icon",
   "Section",
   "Grid",
   "Text",
