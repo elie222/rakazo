@@ -2,6 +2,7 @@ import { t } from "@lingui/core/macro";
 import type { BotAvatarSet, ProductEvent, ThreadMessage, ThreadSnapshot } from "@rakazo/contracts";
 import type { CallExchange } from "@rakazo/core";
 import {
+  answerableAskMessageIds,
   CALL_FAREWELL_TIMEOUT_MS,
   callClientNonce,
   callRunStatus,
@@ -27,6 +28,7 @@ import {
   spokenMemory,
   withBotSpeech,
 } from "@rakazo/core";
+import { bestEffort } from "@rakazo/logging/best-effort";
 import { getGlobalBroadcastChannel } from "better-auth/client";
 import { useSyncExternalStore } from "react";
 import {
@@ -35,7 +37,7 @@ import {
   webLogoAvatarActivity,
 } from "../bots/logo-avatar-activity.js";
 import { reportClientError } from "../platform/monitoring";
-import { recheckSessionOnUnauthorized, rpc } from "../query/rpc.js";
+import { createSpaceRpc, recheckSessionOnUnauthorized, selectedSpaceId } from "../query/rpc.js";
 import { errorText } from "../query/user-error";
 import { pickUp } from "./call-pickup.js";
 import { dictation, usesServerDictation } from "./dictation.js";
@@ -45,6 +47,7 @@ import { speaker } from "./tts.js";
 type CallPhase = "ringing" | "listening" | "thinking" | "speaking";
 
 export interface CallState {
+  spaceId: string | null;
   botId: string;
   botName: string;
   botColor: string;
@@ -56,6 +59,12 @@ export interface CallState {
   /** The call window is tucked away; the call keeps running. */
   minimized: boolean;
   transcriptOpen: boolean;
+  approval: {
+    messageId: string;
+    effectId: string;
+    runId: string;
+    block: Extract<ThreadMessage["blocks"][number], { kind: "ask" }>;
+  } | null;
   caption: string;
   heard: string;
   exchanges: CallExchange[];
@@ -96,6 +105,8 @@ let sessionEpoch = 0;
 let transcribe: boolean | undefined;
 let thread: ThreadSnapshot | null = null;
 let feed: {
+  client: ReturnType<typeof createSpaceRpc>;
+  pendingAnswers: Set<string>;
   controller: AbortController;
   load: () => Promise<ThreadSnapshot | null>;
 } | null = null;
@@ -121,7 +132,10 @@ let bargedIn = false;
 let awaitingReply = false;
 /** The run whose approval card the caller was sent to answer on screen. */
 let approvalRunId: string | null = null;
+/** A successful tap is authoritative even while the thread feed still shows the old card. */
+const acceptedApprovalIds = new Set<string>();
 let awaitedRunId: string | null = null;
+let followedMessageId: string | null = null;
 const finishedRunIds = new Set<string>();
 /** Counting down an interim phrase heard over the reply, before it counts as cutting in. */
 const interim = createInterimBargeIn(() => {
@@ -184,6 +198,7 @@ export function startCall(call: {
   awaitedRunId = null;
   finishedRunIds.clear();
   state = {
+    spaceId: selectedSpaceId(),
     botId: call.botId,
     botName: call.botName,
     botColor: call.botColor ?? "",
@@ -193,13 +208,17 @@ export function startCall(call: {
     muted: false,
     minimized: false,
     transcriptOpen: false,
+    approval: null,
     caption: "",
     heard: "",
     exchanges: [],
   };
   unsubSpeech = speaker.subscribe((speech) => {
     if (!state || state.phase === "ringing") return;
-    if (openingPending && speech.status === "idle") openingPending = false;
+    if (openingPending && speech.status === "idle") {
+      openingPending = false;
+      syncApproval();
+    }
     if (speech.status === "speaking") {
       bargedIn = false;
       set({ phase: "speaking", caption: speech.caption ?? "" });
@@ -234,7 +253,7 @@ export function startCall(call: {
       set({ caption: heard.error });
     }
   });
-  watchThread(call.botId);
+  watchThread(call.botId, state.spaceId);
   emit();
   const ringing = new AbortController();
   pickup = ringing;
@@ -245,6 +264,7 @@ export function startCall(call: {
     pickup = null;
     if (!opening) {
       set({ phase: "listening", connectedAt: Date.now() });
+      syncApproval();
       void listen();
       return;
     }
@@ -259,6 +279,7 @@ export function startCall(call: {
     void speaker.speak(opening, { botId: call.botId, callId }).catch(() => {
       if (callId !== ringingCallId) return;
       openingPending = false;
+      syncApproval();
       void listen();
     });
   });
@@ -271,7 +292,8 @@ export function prepareCallAudio(): void {
 export function endCall(): void {
   // A caller hang-up closes the call server-side, which files the marker and the wrap-up
   // run. The bot's own end_call already did that, so only tell the server when it did not.
-  if (state && !botEndedCall) {
+  if (state && feed && !botEndedCall) {
+    const { client } = feed;
     const { botId, connectedAt } = state;
     const closingCallId = callId;
     const epoch = sessionEpoch;
@@ -279,7 +301,7 @@ export function endCall(): void {
       connectedAt === null ? undefined : Math.max(0, Math.round((Date.now() - connectedAt) / 1000));
     const closeServerCall = async () => {
       if (epoch !== sessionEpoch) return;
-      await rpc.threads.endCall({
+      await client.threads.endCall({
         botId,
         callId: closingCallId,
         ...(durationSeconds === undefined ? {} : { durationSeconds }),
@@ -313,6 +335,7 @@ function dropCall(): void {
   awaitedRunId = null;
   finishedRunIds.clear();
   unsubSpeech?.();
+  followedMessageId = null;
   unsubDictation?.();
   unsubSpeech = null;
   unsubDictation = null;
@@ -320,6 +343,7 @@ function dropCall(): void {
   speaker.stop();
   thread = null;
   spokenMessageIds.clear();
+  acceptedApprovalIds.clear();
   spokenMemory.clear();
   replySpeech.clear();
   streamRunId = null;
@@ -445,7 +469,8 @@ export function setCallMinimized(minimized: boolean): void {
 }
 
 /** Live feed for the bot on the call, independent of whichever thread is on screen. */
-function watchThread(botId: string) {
+function watchThread(botId: string, spaceId: string | null) {
+  const client = createSpaceRpc(spaceId);
   const controller = new AbortController();
   const avatarSource = newLogoAvatarActivitySource();
   const feedCallId = callId;
@@ -459,7 +484,7 @@ function watchThread(botId: string) {
   const load = async () => {
     if (!isCurrent()) return null;
     const request = ++requestEpoch;
-    const next = await rpc.threads.get({ botId }, { signal: controller.signal });
+    const next = await client.threads.get({ botId }, { signal: controller.signal });
     if (!isCurrent()) return null;
     if (request < acceptedEpoch) return thread;
     if (thread?.threadId === next.threadId && thread.cursor > next.cursor) return thread;
@@ -478,7 +503,7 @@ function watchThread(botId: string) {
     throw error;
   };
   const loadOrEnd = () => load().catch(endOnUnauthorized);
-  feed = { controller, load: loadOrEnd };
+  feed = { controller, load: loadOrEnd, client, pendingAnswers: new Set() };
   async function* endOnUnauthorizedEvents(events: AsyncIterable<ProductEvent>) {
     try {
       yield* events;
@@ -490,13 +515,13 @@ function watchThread(botId: string) {
     signal: controller.signal,
     loadInitial: loadOrEnd,
     loadHead: () =>
-      rpc.threads.head({ botId }, { signal: controller.signal }).catch(endOnUnauthorized),
+      client.threads.head({ botId }, { signal: controller.signal }).catch(endOnUnauthorized),
     refresh: loadOrEnd,
     currentSnapshot: () => thread,
     subscribe: async (cursor, signal) =>
       endOnUnauthorizedEvents(
         await openLogoAvatarActivityFeed(avatarSource, thread, cursor, signal, () =>
-          rpc.threads.subscribe({ botId, cursor }, { signal }),
+          client.threads.subscribe({ botId, cursor }, { signal }),
         ).catch(endOnUnauthorized),
       ),
     beforeEvent: (event) => webLogoAvatarActivity.apply(avatarSource, event),
@@ -555,8 +580,82 @@ function commit(next: ThreadSnapshot | null) {
     else finishedRunIds.add(run.id);
   }
   thread = next;
+  if (awaitingReply && followedMessageId) {
+    const turn = next.messages.find((message) => message.id === followedMessageId);
+    if (turn?.runId) awaitedRunId = turn.runId;
+  }
   reactToThread();
+  syncApproval();
   return next;
+}
+
+function syncApproval() {
+  const approval =
+    thread && state?.connectedAt != null && !openingPending ? pendingApproval(thread) : null;
+  if (
+    state &&
+    (state.approval?.block !== approval?.block || state.approval?.messageId !== approval?.messageId)
+  )
+    set({ approval });
+}
+
+function pendingApproval(snapshot: ThreadSnapshot): CallState["approval"] {
+  if (!identity) return null;
+  const followedRun = awaitingReply ? (approvalRunId ?? awaitedRunId) : null;
+  if (awaitingReply && !followedRun) return null;
+  const ids = answerableAskMessageIds(snapshot, identity);
+  for (let i = snapshot.messages.length - 1; i >= 0; i--) {
+    const message = snapshot.messages[i];
+    if (!message?.runId || (followedRun && message.runId !== followedRun) || !ids.has(message.id))
+      continue;
+    const block = message.blocks.find((part) => part.kind === "ask" && part.status !== "answered");
+    if (block?.kind !== "ask" || !isApprovalAskBlock(block)) continue;
+    const effectId = block.approvalEffectId;
+    if (effectId && !acceptedApprovalIds.has(effectId))
+      return { messageId: message.id, effectId, runId: message.runId, block };
+  }
+  return null;
+}
+
+/** Only the on-screen card submits a decision. Follow the resumed run even if the mic is idle. */
+export async function answerCallApproval(
+  effectId: string,
+  answer: string,
+  client = feed?.client,
+): Promise<void> {
+  const approval = state?.approval;
+  if (
+    !feed ||
+    !client ||
+    !state ||
+    !approval ||
+    approval.effectId !== effectId ||
+    feed.pendingAnswers.has(approval.messageId)
+  )
+    throw new Error(t`Could not submit this answer`);
+  const currentFeed = feed;
+  const { messageId } = approval;
+  followedMessageId = null;
+  currentFeed.pendingAnswers.add(messageId);
+  approvalRunId = approval.runId;
+  awaitingReply = true;
+  spokenMessageIds.add(messageId);
+  try {
+    const request = client.threads.answer({
+      botId: state.botId,
+      runId: approval.runId,
+      messageId,
+      approvalEffectId: effectId,
+      answer,
+    });
+    await request.finally(callSends.track(callId, request));
+    if (feed !== currentFeed) return;
+    acceptedApprovalIds.add(effectId);
+    if (state?.approval?.effectId === effectId) set({ approval: null, caption: "" });
+  } finally {
+    if (feed === currentFeed) await bestEffort("refresh call after approval", currentFeed.load());
+    currentFeed.pendingAnswers.delete(messageId);
+  }
 }
 
 /** The tail of playback reaches the microphone after the audio element ends. */
@@ -614,7 +713,7 @@ async function openMic() {
 }
 
 async function handleTranscript(text: string) {
-  if (!state) return;
+  if (!state || !feed) return;
   // Dictation stopped itself to deliver this final.
   micOpen = false;
   if (!text.trim()) {
@@ -657,20 +756,29 @@ async function handleTranscript(text: string) {
   const callFeed = feed;
   const turnCallId = callId;
   const closing = isFarewell(text);
+  followedMessageId = null;
   // An approval is only answered on screen, next to its details; a spoken reply would be refused.
   if (turn.kind === "approve_on_screen") {
     // The caption covers a card the call never read; once tapped, it must not pass for the reply.
     spokenMessageIds.add(turn.messageId);
     approvalRunId = turn.runId;
     awaitingReply = true;
+    syncApproval();
     if (closing) hangUpAfterReply = true;
-    set({ heard: "", caption: t`Approve or deny it on screen.` });
+    set({
+      heard: "",
+      caption:
+        state.approval?.effectId === turn.effectId || acceptedApprovalIds.has(turn.effectId)
+          ? ""
+          : t`Approve or deny it on screen.`,
+    });
     void listen();
     return;
   }
   approvalRunId = null;
   awaitedRunId = turn.kind === "answer" ? turn.runId : null;
   awaitingReply = true;
+  syncApproval();
   set({ heard: text, phase: "thinking", exchanges: [...exchanges, { role: "user", text }] });
   if (closing) {
     hangUpAfterReply = true;
@@ -684,7 +792,7 @@ async function handleTranscript(text: string) {
     const clientNonce = callClientNonce(turnCallId);
     const sendRequest =
       turn.kind === "answer"
-        ? rpc.threads.answer({
+        ? callFeed.client.threads.answer({
             botId,
             runId: turn.runId,
             messageId: turn.messageId,
@@ -692,15 +800,25 @@ async function handleTranscript(text: string) {
             clientNonce,
           })
         : turn.kind === "follow_up"
-          ? rpc.threads.followUp({ botId, text, clientNonce })
-          : rpc.threads.send({ botId, clientNonce, text });
+          ? callFeed.client.threads.followUp({ botId, text, clientNonce })
+          : callFeed.client.threads.send({ botId, clientNonce, text });
     releasePendingSend = callSends.track(turnCallId, sendRequest);
     const receipt = await sendRequest;
     if (!state || state.botId !== botId || callId !== turnCallId) return;
     if ("runId" in receipt) awaitedRunId = receipt.runId;
+    if (
+      turn.kind === "follow_up" &&
+      "messageId" in receipt &&
+      typeof receipt.messageId === "string"
+    ) {
+      followedMessageId = receipt.messageId;
+      if (thread) commit(thread);
+    }
+    syncApproval();
   } catch (error) {
     if (!state || state.botId !== botId || callId !== turnCallId) return;
     awaitingReply = false;
+    syncApproval();
     set({ caption: errorText(error, t`Could not send that`) });
     void listen();
     return;
@@ -713,6 +831,7 @@ async function handleTranscript(text: string) {
   } catch (error) {
     if (!state || state.botId !== botId || callId !== turnCallId) return;
     awaitingReply = false;
+    syncApproval();
     set({ caption: errorText(error, t`Could not send that`) });
     void listen();
   }
@@ -745,11 +864,14 @@ function reactToThread() {
   }
   // A turn sent back to listening mid-flight must not drop the reply it is waiting for.
   if (state.phase === "listening" && !awaitingReply) return;
+  if (awaitingReply && !approvalRunId && !awaitedRunId) return;
   const { botId } = state;
   const messages = thread?.messages ?? [];
   // Only what the bot wrote after the caller's latest turn answers it. A run that stopped on a
   // card keeps its live progress message after the card; that is not a reply.
-  const turnIndex = messages.findLastIndex((message) => message.role === "user");
+  const turnIndex = followedMessageId
+    ? messages.findIndex((message) => message.id === followedMessageId)
+    : messages.findLastIndex((message) => message.role === "user");
   const replyRunId = approvalRunId ?? awaitedRunId;
   speakAsWritten(replyRunId, messages);
   const lastBot = messages

@@ -11,9 +11,18 @@ import {
 import type { Deferred } from "@rakazo/core/test-async";
 import { deferred } from "@rakazo/core/test-async";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { recheckSessionOnUnauthorized, rpc } from "../query/rpc.js";
+import { recheckSessionOnUnauthorized, rpc, selectedSpaceId } from "../query/rpc.js";
 import { pickUp } from "./call-pickup.js";
-import { ECHO_GUARD_MS, endCall, getSnapshot, startCall, toggleMute } from "./call-session";
+import {
+  answerCallApproval,
+  ECHO_GUARD_MS,
+  endCall,
+  forgetSignedInUser,
+  getSnapshot,
+  startCall,
+  syncCallIdentity,
+  toggleMute,
+} from "./call-session";
 import { dictation, usesServerDictation } from "./dictation.js";
 import { speaker } from "./tts.js";
 
@@ -55,6 +64,11 @@ vi.mock("./tts.js", () => ({
 }));
 
 vi.mock("../query/rpc.js", () => ({
+  createSpaceRpc: (id: string) => {
+    if (id !== "space-1") throw Error("Unexpected call space");
+    return rpc;
+  },
+  selectedSpaceId: vi.fn(() => "space-1"),
   recheckSessionOnUnauthorized: vi.fn(),
   rpc: {
     threads: {
@@ -89,7 +103,7 @@ describe("call session", () => {
     isSpeaking.mockReturnValue(false);
     listen.mockResolvedValue(undefined);
     answer.mockResolvedValue({ ok: true } as never);
-    followUp.mockResolvedValue({ runId: "run-1", taskId: "task-1" } as never);
+    followUp.mockResolvedValue({ ok: true, messageId: "turn-1" });
     getThread.mockResolvedValue(snapshot([]) as never);
     send.mockResolvedValue({ runId: "run-1", taskId: "task-1" } as never);
     endCallRpc.mockResolvedValue({ ok: true } as never);
@@ -251,8 +265,20 @@ describe("call session", () => {
 
       recovered.send({
         ...userMessageEvent("call-1"),
-        id: "event-16",
+        id: "claimed",
         seq: 16,
+        runId: "run-1",
+        type: "thread.message.updated",
+        payload: {
+          messageId: "turn-1",
+          role: "user",
+          blocks: [{ kind: "text", text: "continue the current task" }],
+        },
+      });
+      recovered.send({
+        ...userMessageEvent("call-1"),
+        id: "event-16",
+        seq: 17,
         runId: "run-1",
         payload: {
           messageId: "current-reply",
@@ -264,7 +290,7 @@ describe("call session", () => {
       recovered.send({
         ...userMessageEvent("call-1"),
         id: "event-17",
-        seq: 17,
+        seq: 18,
         type: "run.completed",
         runId: "run-1",
         payload: {},
@@ -549,6 +575,265 @@ describe("call session", () => {
       expect.objectContaining({ messageId: "message-1" }),
     );
   });
+
+  it("finds the caller's waiting approval beside other active runs and retires it on acknowledgement", async () => {
+    vi.stubGlobal("window", { addEventListener: vi.fn() });
+    try {
+      syncCallIdentity("me");
+      const approval = approvalMessage();
+      const primary = { ...runningRun!, id: "work", userId: "me" };
+      const secret = { ...askMessage("code", { input: "secret" }), runId: "other" };
+      const pending = {
+        ...snapshot([approval, secret], primary),
+        activeRuns: [
+          primary,
+          { ...waitingRun!, userId: "me" },
+          { ...waitingRun!, id: "other", userId: "someone-else" },
+        ],
+      };
+      await answeredCall({ botId: "call-bot", botName: "Ada" });
+      const feed = vi.mocked(runThreadSubscription).mock.calls.at(-1)![0];
+      getThread.mockResolvedValue(pending);
+      await feed.refresh();
+      expect(getSnapshot()?.approval?.messageId).toBe(approval.id);
+      expect(dictation.stop).toHaveBeenCalledWith("cancel");
+      getThread.mockRejectedValueOnce(new Error("refresh offline"));
+      await answerCallApproval("effect-1", "deny");
+      expect(getSnapshot()?.approval).toBeNull();
+      await feed.refresh();
+      expect(getSnapshot()?.approval).toBeNull();
+      expect(answer).toHaveBeenCalledOnce();
+    } finally {
+      forgetSignedInUser();
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it.each(["running", "waiting_input"] as const)(
+    "routes speech to the %s primary run beside another approval",
+    async (status) => {
+      vi.stubGlobal("window", { addEventListener: vi.fn() });
+      try {
+        syncCallIdentity("me");
+        const approval = approvalMessage();
+        const primary = { ...runningRun!, id: "primary", userId: "me", status };
+        const question = { ...askMessage("choice", { text: "Which day?" }), runId: primary.id };
+        await answeredCall({ botId: "call-bot", botName: "Ada" });
+        getThread.mockResolvedValue({
+          ...snapshot(status === "running" ? [approval] : [approval, question], primary),
+          activeRuns: [primary, { ...waitingRun!, userId: "me" }],
+        });
+        await vi.mocked(runThreadSubscription).mock.calls.at(-1)![0].refresh();
+        expect(getSnapshot()?.approval?.messageId).toBe(approval.id);
+        vi.mocked(selectedSpaceId).mockReturnValue("another-tab-space");
+        const pending = deferred<never>();
+        (status === "running" ? followUp : answer).mockReturnValueOnce(pending.promise);
+        await heard("on Friday");
+        expect(getSnapshot()?.approval).toBeNull();
+        await expect(answerCallApproval("effect-1", "allow")).rejects.toThrow();
+        if (status === "running") {
+          expect(followUp).toHaveBeenCalledWith(expect.objectContaining({ text: "on Friday" }));
+          expect(answer).not.toHaveBeenCalled();
+        } else {
+          expect(answer).toHaveBeenCalledOnce();
+          expect(answer).toHaveBeenCalledWith(
+            expect.objectContaining({
+              messageId: question.id,
+              runId: primary.id,
+              answer: "on Friday",
+            }),
+          );
+        }
+        pending.reject(new Error("offline"));
+        await flushMicrotasks();
+        expect(getSnapshot()?.approval?.messageId).toBe(approval.id);
+      } finally {
+        vi.mocked(selectedSpaceId).mockReturnValue("space-1");
+        forgetSignedInUser();
+        vi.unstubAllGlobals();
+      }
+    },
+  );
+
+  it("waits for the claimed follow-up instead of reading the formerly busy run", async () => {
+    await answeredCall({ botId: "call-bot", botName: "Ada" });
+    const feed = vi.mocked(runThreadSubscription).mock.calls.at(-1)![0];
+    getThread.mockResolvedValue(snapshot([], runningRun));
+    await feed.refresh();
+    const turn = { ...callerMessage("continue"), runId: undefined };
+    const wrong = botMessage("other", "Original job finished.");
+    getThread.mockResolvedValue(snapshot([turn, wrong]));
+    await heard("continue");
+    await flushMicrotasks();
+    expect(speak).not.toHaveBeenCalled();
+    const right = { ...botMessage("continued", "Here is Friday's update."), runId: "continuation" };
+    getThread.mockResolvedValue(snapshot([{ ...turn, runId: right.runId }, wrong, right]));
+    await feed.refresh();
+    expect(speak).toHaveBeenCalledExactlyOnceWith(
+      "Here is Friday's update.",
+      expect.objectContaining({ messageId: right.id }),
+    );
+  });
+
+  it("offers only the first pending ask, and guards each approval within the message separately", async () => {
+    vi.stubGlobal("window", { addEventListener: vi.fn() });
+    try {
+      syncCallIdentity("me");
+      await answeredCall({ botId: "call-bot", botName: "Ada" });
+      const feed = vi.mocked(runThreadSubscription).mock.calls.at(-1)![0];
+      const message = approvalMessage();
+      const first = message.blocks[0]!;
+      if (first.kind !== "ask") throw Error("expected an approval");
+      const second = { ...first, approvalEffectId: "effect-2" };
+      const show = (blocks: ThreadMessage["blocks"]) =>
+        getThread.mockResolvedValue(
+          snapshot([{ ...message, blocks }], { ...waitingRun!, userId: "me" }),
+        );
+      show([{ kind: "ask", status: "pending", text: "Which date?" }, first, second]);
+      await feed.refresh();
+      expect(getSnapshot()?.approval).toBeNull();
+      show([first, second]);
+      await feed.refresh();
+      expect(getSnapshot()?.approval?.effectId).toBe("effect-1");
+      await heard("allow");
+      expect(getSnapshot()?.caption).toBe("");
+      expect(answer).not.toHaveBeenCalled();
+      show([{ ...first, status: "answered" }, second]);
+      await answerCallApproval("effect-1", "allow");
+      expect(getSnapshot()?.approval?.effectId).toBe("effect-2");
+      await expect(answerCallApproval("effect-1", "allow")).rejects.toThrow();
+      await answerCallApproval("effect-2", "deny");
+      expect(answer).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          messageId: message.id,
+          approvalEffectId: "effect-2",
+          answer: "deny",
+        }),
+      );
+    } finally {
+      forgetSignedInUser();
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("reconciles an approval already answered by another client after a rejected tap", async () => {
+    vi.stubGlobal("window", { addEventListener: vi.fn() });
+    try {
+      syncCallIdentity("me");
+      const turn = callerMessage("check the site");
+      const card = approvalMessage();
+      const feed = await approvalWait(turn, card);
+      getThread.mockResolvedValue(snapshot([turn, card], { ...waitingRun!, userId: "me" }));
+      await feed?.refresh();
+      answer.mockRejectedValueOnce(new Error("no longer awaiting an answer"));
+      getThread.mockResolvedValue(snapshot([turn, answered(card)]));
+      await expect(answerCallApproval("effect-1", "allow")).rejects.toThrow(
+        "no longer awaiting an answer",
+      );
+      expect(getSnapshot()?.approval).toBeNull();
+      await expect(answerCallApproval("effect-1", "allow")).rejects.toThrow();
+      expect(answer).toHaveBeenCalledOnce();
+    } finally {
+      forgetSignedInUser();
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("defers a pending approval through pickup and opening playback", async () => {
+    vi.stubGlobal("window", { addEventListener: vi.fn() });
+    try {
+      syncCallIdentity("me");
+      const ring = deferred<void>();
+      vi.mocked(pickUp).mockReturnValueOnce(ring.promise);
+      startCall({
+        botId: "call-bot",
+        botName: "Ada",
+        answered: { callId: "incoming", opening: "Hello!" },
+      });
+      const approval = approvalMessage();
+      getThread.mockResolvedValue(snapshot([approval], { ...waitingRun!, userId: "me" }));
+      await vi.mocked(runThreadSubscription).mock.calls.at(-1)![0].refresh();
+      expect(getSnapshot()?.approval).toBeNull();
+      ring.resolve();
+      await flushMicrotasks();
+      expect(getSnapshot()?.approval).toBeNull();
+      await finishSpeaking();
+      expect(getSnapshot()?.approval?.messageId).toBe(approval.id);
+    } finally {
+      forgetSignedInUser();
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it.each(["allow", "deny"])(
+    "resumes the owner's call after tapping %s on its approval",
+    async (decision) => {
+      vi.stubGlobal("window", { addEventListener: vi.fn() });
+      try {
+        syncCallIdentity("me");
+        const turn = callerMessage("check the site");
+        const approval = approvalMessage();
+        const feed = await approvalWait(turn, approval);
+        const waiting = (userId: string) => snapshot([turn, approval], { ...waitingRun!, userId });
+        getThread.mockResolvedValue(waiting("someone-else"));
+        await feed?.refresh();
+        expect(getSnapshot()?.approval).toBeNull();
+        getThread.mockResolvedValue(waiting("me"));
+        await feed?.refresh();
+        expect(getSnapshot()?.approval?.block).toEqual(approval.blocks[0]);
+        vi.mocked(selectedSpaceId).mockReturnValue("another-tab-space");
+        getThread.mockResolvedValue(
+          snapshot([turn, answered(approval), botMessage("done", "Ready to continue.")]),
+        );
+        const pending = deferred<never>();
+        answer.mockReturnValueOnce(pending.promise);
+        const first = answerCallApproval("effect-1", decision);
+        await expect(
+          answerCallApproval("effect-1", decision === "allow" ? "deny" : "allow"),
+        ).rejects.toThrow();
+        expect(answer).toHaveBeenCalledTimes(1);
+        getThread.mockResolvedValueOnce(waiting("me"));
+        pending.reject(new Error("offline"));
+        await expect(first).rejects.toThrow("offline");
+        await answerCallApproval("effect-1", decision);
+        expect(answer).toHaveBeenCalledWith({
+          botId: "call-bot",
+          runId: "run-1",
+          messageId: approval.id,
+          approvalEffectId: "effect-1",
+          answer: decision,
+        });
+        expect(getSnapshot()?.approval).toBeNull();
+        expect(speak).toHaveBeenLastCalledWith(
+          "Ready to continue.",
+          expect.objectContaining({ messageId: "done" }),
+        );
+        await finishSpeaking();
+        expect(getSnapshot()?.phase).toBe("listening");
+        const later = {
+          ...approval,
+          id: "later",
+          runId: "new-run",
+          blocks: approval.blocks.map((b) =>
+            b.kind === "ask" ? { ...b, approvalEffectId: "another-effect" } : b,
+          ),
+        };
+        getThread.mockResolvedValue(
+          snapshot([turn, answered(approval), later], {
+            ...waitingRun!,
+            id: "new-run",
+            userId: "me",
+          }),
+        );
+        await feed?.refresh();
+        expect(getSnapshot()?.approval?.messageId).toBe("later");
+      } finally {
+        vi.mocked(selectedSpaceId).mockReturnValue("space-1");
+        forgetSignedInUser();
+        vi.unstubAllGlobals();
+      }
+    },
+  );
 
   it("speaks only an approval's own reply to the tap, and keeps spoken answers off it", async () => {
     const turn = callerMessage("check the site");
@@ -1613,6 +1898,7 @@ describe("call session", () => {
 
       getThread.mockResolvedValue(
         snapshot([
+          callerMessage("wait, what about the deploy"),
           botMessage(
             "message-1",
             "Booked for Friday. The hotel is close. About the deploy, it shipped.",
@@ -1730,22 +2016,29 @@ function interim(transcript: string) {
 }
 
 function eventStream() {
-  let deliver: ((result: IteratorResult<ProductEvent>) => void) | undefined;
-  const events: AsyncIterable<ProductEvent> = {
-    [Symbol.asyncIterator]() {
-      return {
-        next: () => {
-          const next = deferred<IteratorResult<ProductEvent>>();
-          deliver = next.resolve;
-          return next.promise;
-        },
-      };
-    },
-  };
+  const queue: ProductEvent[] = [];
+  let ready = deferred<void>();
+  let ended = false;
+  async function* events() {
+    while (!ended || queue.length) {
+      const next = queue.shift();
+      if (next) yield next;
+      else {
+        await ready.promise;
+        ready = deferred<void>();
+      }
+    }
+  }
   return {
-    events,
-    send: (event: ProductEvent) => deliver?.({ value: event, done: false }),
-    end: () => deliver?.({ value: undefined, done: true }),
+    events: events(),
+    send(event: ProductEvent) {
+      queue.push(event);
+      ready.resolve();
+    },
+    end() {
+      ended = true;
+      ready.resolve();
+    },
   };
 }
 

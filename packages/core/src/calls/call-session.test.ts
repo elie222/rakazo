@@ -84,6 +84,7 @@ describe("call turn", () => {
   it("sends approvals and codes to the screen instead of answering them by voice", () => {
     expect(callTurn(waiting([approval]), "yes")).toEqual({
       kind: "approve_on_screen",
+      effectId: "effect-1",
       messageId: "ask",
       runId: "run-1",
     });
@@ -93,6 +94,10 @@ describe("call turn", () => {
   });
 
   it("steers a working run and otherwise sends a new message", () => {
+    expect(callTurn(waiting([question, approval]), "Friday")).toMatchObject({
+      kind: "answer",
+      answer: "Friday",
+    });
     expect(callTurn(waiting([question], "running"), "also this")).toEqual({ kind: "follow_up" });
     expect(callTurn(waiting([question], "completed"), "hello")).toEqual({ kind: "send" });
     expect(callTurn(waiting([{ ...question, status: "answered" }]), "hello")).toEqual({

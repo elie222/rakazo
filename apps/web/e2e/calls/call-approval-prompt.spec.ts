@@ -17,12 +17,21 @@ test("a call answers each turn and sends the caller to the screen for an approva
   await expect(call.getByText("Listening", { exact: true })).toBeVisible();
 
   await say(page, "show a fetch approval card");
-  await expect(call.getByText("Allow Web fetch example.test?", { exact: true })).toBeVisible({
-    timeout: 60_000,
-  });
+  await expect(call.getByTestId("ask-detail")).toContainText(
+    "https://docs.example.test/page?q=fixture",
+    { timeout: 60_000 },
+  );
   await finishClip(page);
-  await expect(call.getByText("Approve or deny it on screen.", { exact: true })).toBeVisible();
+  await expect(call.getByRole("button", { name: "Allow once", exact: true })).toBeVisible();
+  const deny = call.getByRole("button", { name: "Deny", exact: true });
+  await expect(deny).toBeVisible();
+  await expect(call.locator('[aria-live="polite"]')).toBeVisible();
   await captureScreenshot(page, testInfo, "call-approval-prompt");
+  await call.getByRole("button", { name: "Transcript" }).click();
+  await expect(call.getByText("show a fetch approval card", { exact: true })).toBeVisible();
+  await deny.click();
+  await expect(deny).toHaveCount(0);
+  await expect(call).toBeVisible();
 });
 
 /** Connects the scripted voice and calls the bot, with the caller's words and playback in the test's hands. */

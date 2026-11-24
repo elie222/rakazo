@@ -122,6 +122,7 @@ function resumePrompt(
 export interface AnswerRunInput {
   /** A composer message already accepted in this transaction, never client-supplied. */
   answerMessageId?: string;
+  approvalEffectId?: string;
   spaceId: string;
   threadId: string;
   runId: string;
@@ -261,6 +262,14 @@ async function commitAnswerRunInput(
   if (!message || !found) return null;
   const { entry: pendingAskEntry, ask: pendingAsk } = found;
   const approvalAsk = isApprovalAskBlock(pendingAsk);
+  const callId = callIdFromClientNonce(input.clientNonce);
+  // A spoken reply to an ordinary question may arrive after another client answered it.
+  if (callId && (approvalAsk || isSecretAskBlock(pendingAsk))) return null;
+  if (
+    input.approvalEffectId &&
+    (!approvalAsk || pendingAsk.approvalEffectId !== input.approvalEffectId)
+  )
+    return null;
   const secretAsk = isSecretAskBlock(pendingAsk);
   const choiceAsk = !approvalAsk && !secretAsk && Boolean(pendingAsk.actions?.length);
   const selectedChoice = choiceAsk ? resolveAskChoice(input.answer, pendingAsk.actions) : undefined;
@@ -385,7 +394,6 @@ async function commitAnswerRunInput(
   if (queued.count !== 1) return null;
 
   const recordedAnswer = secretAsk ? "" : (selectedChoice?.id ?? approvalAnswer);
-  const callId = callIdFromClientNonce(input.clientNonce);
   const recordsCallUtterance = Boolean(callId && !secretAsk);
 
   // Give spoken answers the same durable, call-scoped user utterance as other voice turns.

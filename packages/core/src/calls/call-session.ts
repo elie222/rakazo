@@ -73,7 +73,7 @@ export type CallThread = {
  */
 export type CallTurn =
   | { kind: "enter_code" }
-  | { kind: "approve_on_screen"; messageId: string; runId: string }
+  | { kind: "approve_on_screen"; messageId: string; runId: string; effectId: string }
   | { kind: "answer"; messageId: string; runId: string; answer: string }
   | { kind: "follow_up" }
   | { kind: "send" };
@@ -82,8 +82,14 @@ export function callTurn(thread: CallThread | null, text: string): CallTurn {
   // A code asked by any waiting run is never spoken, whichever run the thread shows first.
   if (pendingCallSecretAsk(thread)) return { kind: "enter_code" };
   const ask = pendingCallAsk(thread, thread?.run);
-  if (ask?.blocks.some(isApprovalAskBlock)) {
-    return { kind: "approve_on_screen", messageId: ask.message.id, runId: ask.runId };
+  const first = ask?.blocks[0];
+  if (ask && first?.kind === "ask" && first.approvalEffectId && isApprovalAskBlock(first)) {
+    return {
+      kind: "approve_on_screen",
+      messageId: ask.message.id,
+      runId: ask.runId,
+      effectId: first.approvalEffectId,
+    };
   }
   if (ask) {
     const answer = spokenDecision(text) ?? text;

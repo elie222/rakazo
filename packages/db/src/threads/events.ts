@@ -505,6 +505,10 @@ export async function sendUserMessage(
       }
       const author = await loadMessageAuthor(tx, input.authorUserId);
       const createRun = input.createRun !== false;
+      // A spoken follow-up may wait for a continuation. Its message points to the
+      // run that actually receives it, never the busy run holding its place.
+      const callFollowUp =
+        input.trigger === "follow_up" && !!callIdFromClientNonce(input.clientNonce);
       // Include the creation intro. It has no tools, so it must not absorb the message, and a
       // second run would overlap it on a dedicated computer. Pending steering waits for the
       // continuation that starts when the intro finishes.
@@ -587,7 +591,7 @@ export async function sendUserMessage(
               : {}),
           },
         });
-        if (input.linkMessageToRun) {
+        if (input.linkMessageToRun || callFollowUp) {
           await tx.message.update({ where: { id: message.id }, data: { runId: run.id } });
         }
       } else if (createRun && busy) {
@@ -611,7 +615,8 @@ export async function sendUserMessage(
               : {}),
           },
         });
-        await tx.message.update({ where: { id: message.id }, data: { runId: busy.id } });
+        if (!callFollowUp)
+          await tx.message.update({ where: { id: message.id }, data: { runId: busy.id } });
       }
       if (
         input.claim &&
@@ -623,7 +628,7 @@ export async function sendUserMessage(
         threadId: input.threadId,
         botId: input.botId,
         type: "thread.message.created",
-        runId: run?.id ?? busy?.id,
+        runId: run?.id ?? (callFollowUp ? undefined : busy?.id),
         payload: {
           messageId: message.id,
           role: "user",

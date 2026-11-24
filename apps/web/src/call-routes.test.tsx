@@ -70,6 +70,7 @@ vi.mock("./lib/bootstrap", () => ({
 vi.mock("./lib/query/rpc", () => {
   const client = {
     me: mocks.me,
+    threads: { endCall: mocks.endCall },
     voice: { status: mocks.voiceStatus },
   };
   return {
@@ -79,7 +80,6 @@ vi.mock("./lib/query/rpc", () => {
     rpc: {
       ...client,
       analytics: { screen: vi.fn(async () => ({ ok: true })) },
-      threads: { endCall: mocks.endCall },
       notifications: {
         declineIncomingCall: mocks.declineIncomingCall,
         subscribeCalls: mocks.subscribeCalls,
