@@ -444,8 +444,8 @@ export async function removePage(deps: PageDeps, actor: Actor, pageId: string) {
         return { removed: secret, reviewers, imageKeys };
       }),
   );
-  if (deps.events) await signalPageUsers(deps.events, [actor.userId, ...reviewers]);
   await removePageImageFiles(deps.artifacts, actor, imageKeys);
+  if (deps.events) await signalPageUsers(deps.events, [actor.userId, ...reviewers]);
   if (removed) await forgetPageShareSecrets(deps.secrets, [removed]);
   return { ok: true as const };
 }
