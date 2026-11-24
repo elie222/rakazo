@@ -1,5 +1,5 @@
 import type { AdapterContext, MemorySnapshot, MemoryStore } from "@rakazo/adapter-kit";
-import { MEMORY_ARCHIVE_PATH, MEMORY_INDEX_PATH } from "@rakazo/contracts";
+import { MEMORY_ARCHIVE_PATH } from "@rakazo/contracts";
 import { bestEffort } from "@rakazo/logging";
 import type { MemoryPromptDocument } from "./memory-context.prompt.js";
 import { AGENT_MEMORY_MAX_BYTES, buildAgentMemoryPrompt } from "./memory-context.prompt.js";
@@ -61,18 +61,15 @@ function promptDocuments(stored: StoredMemory, today?: string): MemoryPromptDocu
       .map((document) => ({
         ...document,
         scope: "bot" as const,
-        content:
-          today && document.path === MEMORY_INDEX_PATH
-            ? splitEndedEntries(document.content, today).current
-            : document.content,
+        content: today ? splitEndedEntries(document.content, today).current : document.content,
       })),
     ...stored.user.map((document) => ({ ...document, scope: "user" as const })),
   ];
 }
 
 /**
- * Appends ended entries to the archive before taking them out of memory, so a failure between
- * the two saves repeats the move next run instead of losing them; the archive keeps one copy.
+ * Appends ended entries to the archive before taking them out of their documents, so a failure
+ * between the saves repeats the move next run instead of losing them; the archive keeps one copy.
  */
 async function archiveEndedEntries(
   memory: MemoryStore,
@@ -81,29 +78,32 @@ async function archiveEndedEntries(
   today: string,
   context: AdapterContext,
 ): Promise<void> {
-  const index = documents.find((document) => document.path === MEMORY_INDEX_PATH);
-  if (!index) return;
-  const { current, ended } = splitEndedEntries(index.content, today);
-  if (!ended.length) return;
+  const moves = documents
+    .filter((document) => document.path !== MEMORY_ARCHIVE_PATH)
+    .map((document) => ({ document, ...splitEndedEntries(document.content, today) }))
+    .filter((move) => move.ended.length);
+  if (!moves.length) return;
   const archive = documents.find((document) => document.path === MEMORY_ARCHIVE_PATH);
   await memory.commit(
     {
       scope: "bot",
       botId,
       path: MEMORY_ARCHIVE_PATH,
-      content: ended.reduce(appendMemoryFact, archive?.content ?? ""),
+      content: moves.flatMap((move) => move.ended).reduce(appendMemoryFact, archive?.content ?? ""),
       expectedRevision: archive?.revision ?? 0,
     },
     context,
   );
-  await memory.commit(
-    {
-      scope: "bot",
-      botId,
-      path: MEMORY_INDEX_PATH,
-      content: current,
-      expectedRevision: index.revision,
-    },
-    context,
-  );
+  for (const { document, current } of moves) {
+    await memory.commit(
+      {
+        scope: "bot",
+        botId,
+        path: document.path,
+        content: current,
+        expectedRevision: document.revision,
+      },
+      context,
+    );
+  }
 }

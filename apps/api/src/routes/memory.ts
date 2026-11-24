@@ -3,11 +3,11 @@ import { MemoryRevisionConflictError } from "@rakazo/adapter-kit";
 import {
   buildAgentMemoryPrompt,
   isScratchpadStatus,
+  latestEndedDate,
   listScratchpadItems,
   mapScratchpadItem,
   memoryProviderDescriptors,
   readAgentMemory,
-  userMemoryDate,
 } from "@rakazo/adapters";
 import { isDeletableMemoryDocument } from "@rakazo/contracts";
 import { ClientError } from "@rakazo/core";
@@ -57,7 +57,7 @@ export function memoryRoutes(ctx: RouterContext) {
             botId: input.botId,
             signal: context.signal ?? new AbortController().signal,
           },
-          await userMemoryDate(deps.prisma, context.actor.userId, new Date()),
+          latestEndedDate(new Date()),
         );
         return buildAgentMemoryPrompt(documents).plan;
       }),

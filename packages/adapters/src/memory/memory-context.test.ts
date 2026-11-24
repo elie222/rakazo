@@ -127,6 +127,13 @@ describe("agent memory context", () => {
         2,
         "2026-01-03T12:00:00.000Z",
       ),
+      "USER.md": document(
+        "user",
+        "USER.md",
+        "Away until the 12th. (saved 2026-03-01, ends 2026-03-12)\n",
+        1,
+        "2026-03-01T12:00:00.000Z",
+      ),
     };
     const read = vi.fn(async ({ scope }: { scope: "bot" | "user" }) =>
       snapshot(scope === "user" ? [] : Object.values(documents)),
@@ -137,6 +144,11 @@ describe("agent memory context", () => {
 
     expect(result).not.toContain("flat 3");
     expect(result).not.toContain("Old rule");
+    expect(result).not.toContain("Away until");
+    expect(store.commit).toHaveBeenCalledWith(
+      expect.objectContaining({ path: "USER.md", content: "" }),
+      context,
+    );
     expect(result).toContain("No calls before 10.");
     expect(result).toContain("Quote 7 days.");
     expect(store.commit).toHaveBeenNthCalledWith(
@@ -144,7 +156,7 @@ describe("agent memory context", () => {
       expect.objectContaining({
         path: "ARCHIVE.md",
         content:
-          "Old rule. (saved 2026-01-01, ends 2026-01-02)\nNo visits to flat 3. (saved 2026-03-05, ends 2026-03-19)\n",
+          "Old rule. (saved 2026-01-01, ends 2026-01-02)\nNo visits to flat 3. (saved 2026-03-05, ends 2026-03-19)\nAway until the 12th. (saved 2026-03-01, ends 2026-03-12)\n",
         expectedRevision: 2,
       }),
       context,

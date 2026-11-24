@@ -165,6 +165,12 @@ describe("appendMemoryFact", () => {
     expect(appendMemoryFact(existing, "Prefers mornings. (saved 2026-03-09)")).toBe(existing);
   });
 
+  it("adds a fact again when it comes with a new end", () => {
+    const existing = "Hold sends. (saved 2026-03-01, ends 2026-03-12)\n";
+    const renewed = "Hold sends. (saved 2026-03-09, ends 2026-03-30)";
+    expect(appendMemoryFact(existing, renewed)).toBe(`${existing}${renewed}\n`);
+  });
+
   it("leaves memory unchanged for a fact it already holds or an empty fact", () => {
     expect(appendMemoryFact("a\ndurable fact\n", "durable fact")).toBe("a\ndurable fact\n");
     expect(appendMemoryFact("a\n", "   ")).toBe("a\n");

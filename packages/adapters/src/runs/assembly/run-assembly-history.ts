@@ -2,7 +2,7 @@ import { botMessageAllowsSilence, userTurnMessageForRun } from "@rakazo/core";
 import { isPartialReplyClientNonce, storedMessageBlocks } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { loadAgentMemoryContext } from "../../memory/memory-context.js";
-import { userMemoryDate } from "../../memory/memory-expiry.js";
+import { latestEndedDate } from "../../memory/memory-expiry.js";
 import { PARTIAL_REPLY_NOTE } from "../../messaging/automated-messages.prompt.js";
 import {
   historyWindowSize,
@@ -231,9 +231,9 @@ export async function loadTurnContext(
       loadCurrentTurnImages(deps, turnBlocks, context),
       savedContextHidden
         ? Promise.resolve("")
-        : userMemoryDate(deps.prisma, run.userId, deps.now?.() ?? new Date()).then((today) =>
-            loadAgentMemoryContext(deps.memory, bot.id, context, { today }),
-          ),
+        : loadAgentMemoryContext(deps.memory, bot.id, context, {
+            today: latestEndedDate(deps.now?.() ?? new Date()),
+          }),
       savedContextHidden
         ? Promise.resolve("")
         : loadAgentScratchpadContext(deps, {
