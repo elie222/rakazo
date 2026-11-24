@@ -75,10 +75,7 @@ describe("computer command identity", () => {
       env: { EXTRA: "1" },
     });
     await response.text();
-    expect(execs().at(-1)?.Env).toEqual([
-      ...computerCommandEnv({ display: ":1", debugPort: 9222 }),
-      "EXTRA=1",
-    ]);
+    expect(execs().at(-1)?.Env).toEqual([...computerCommandEnv(undefined), "EXTRA=1"]);
     expectContainerUser();
   });
 
@@ -228,6 +225,8 @@ describe("computer command identity", () => {
     ];
     expect(await shell("bot-b")).toEqual(["DISPLAY=:2", "RAKAZO_CDP_PORT=9223", ...workspace]);
     expect(await shell("bot-a")).toEqual(["DISPLAY=:1", "RAKAZO_CDP_PORT=9222", ...workspace]);
+    // A bot with no screen yet gets none, never the first bot's.
+    expect(await shell("bot-c")).toEqual(["DISPLAY=", ...workspace]);
   });
 
   it("writes uploaded files as the container's user", async () => {

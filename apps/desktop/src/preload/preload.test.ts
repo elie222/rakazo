@@ -15,17 +15,24 @@ function runPreload(
   const off = (ipc.off as ReturnType<typeof vi.fn>) ?? vi.fn();
   const sendSync = (ipc.sendSync as ReturnType<typeof vi.fn>) ?? vi.fn(() => null);
   const exposeInMainWorld = vi.fn();
+  const pageListeners = new Map<string, (event: { button: number }) => void>();
+  const history = { back: vi.fn(), forward: vi.fn() };
   const source = readFileSync(path.join(import.meta.dirname, file), "utf8");
 
   vm.runInNewContext(source, {
     process: { platform },
+    history,
+    window: {
+      addEventListener: (type: string, listener: (event: { button: number }) => void) =>
+        pageListeners.set(type, listener),
+    },
     require(moduleName: string) {
       if (moduleName !== "electron") throw new Error(`Unexpected preload import: ${moduleName}`);
       return { contextBridge: { exposeInMainWorld }, ipcRenderer: { invoke, on, off, sendSync } };
     },
   });
 
-  return { invoke, on, off, sendSync, exposeInMainWorld };
+  return { invoke, on, off, sendSync, exposeInMainWorld, pageListeners, history };
 }
 
 describe("desktop preload bridge", () => {
@@ -234,6 +241,24 @@ describe("desktop preload bridge", () => {
     expect(received).toEqual([{ session: 3, type: "end" }]);
     unsubscribe();
     expect(off).toHaveBeenCalledWith("desktop.speech.event", expect.any(Function));
+  });
+});
+
+describe("mouse side buttons", () => {
+  it("step through history on macOS, where no app command reports them", () => {
+    const { pageListeners, history } = runPreload("preload.cjs", {}, "darwin");
+    const mouseup = pageListeners.get("mouseup")!;
+    mouseup({ button: 3 });
+    expect(history.back).toHaveBeenCalledTimes(1);
+    mouseup({ button: 4 });
+    expect(history.forward).toHaveBeenCalledTimes(1);
+    mouseup({ button: 1 });
+    expect(history.back).toHaveBeenCalledTimes(1);
+    expect(history.forward).toHaveBeenCalledTimes(1);
+  });
+
+  it("are left to the main process elsewhere", () => {
+    expect(runPreload("preload.cjs", {}, "win32").pageListeners.size).toBe(0);
   });
 });
 

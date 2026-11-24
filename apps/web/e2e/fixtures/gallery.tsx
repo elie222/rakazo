@@ -439,10 +439,10 @@ const secrets: Scenario = {
     bot([
       {
         kind: "ask",
-        text: "I need an API key for the analytics service.",
+        text: "Repository access token for example/project (needs permission to read issues, edit files, and open pull requests)",
         input: "secret",
         purpose: "api_key",
-        credential: { name: "ANALYTICS_KEY", origin: "", auth: { type: "command" } },
+        credential: { name: "repo-token", origin: "", auth: { type: "command" } },
         status: "pending",
       },
     ]),

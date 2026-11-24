@@ -180,7 +180,6 @@ describe("lingui catalogs", () => {
 
   it("translates command credential controls in every locale", () => {
     const messages = [
-      "Command variable",
       "Available to shell commands as {commandVariable}",
       "{commandVariable} is reserved and cannot be used as a command variable. Choose another name.",
       "Show",

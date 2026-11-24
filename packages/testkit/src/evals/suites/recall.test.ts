@@ -487,6 +487,19 @@ describe("recall outcome grading", () => {
     };
     writeFileSync(file, JSON.stringify([badPattern]));
     expect(() => loadRecallCases(file)).toThrow(/valid regular expression/);
+    writeFileSync(
+      file,
+      JSON.stringify([
+        {
+          ...badPattern,
+          expect: { kind: "needs-tool", command: "uptime", after: "^computer_observe$" },
+        },
+      ]),
+    );
+    const [screen] = loadRecallCases(file);
+    const observed = { step: 1, name: "computer_observe", args: {} };
+    expect(screen!.grade(evidence([ran, observed], "Ran.")).map((c) => c.pass)).toEqual([false]);
+    expect(screen!.grade(evidence([observed, ran], "Ran.")).map((c) => c.pass)).toEqual([true]);
     const backwards = {
       ...badPattern,
       expect: { kind: "rubric", rubric: "sign-off" },

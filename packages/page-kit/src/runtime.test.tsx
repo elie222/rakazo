@@ -9,6 +9,7 @@ afterEach(() => {
   vi.useRealTimers();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
+  Reflect.deleteProperty(document, "scrollingElement");
 });
 
 function runInlineScripts() {
@@ -40,7 +41,81 @@ it("mounts a page and reports its height where the browser has no ResizeObserver
   // jsdom runs no inline scripts, so the page's own code shows its error panel; what matters is
   // that mounting got that far instead of throwing before anything drew.
   expect(document.body.textContent).toContain("This page couldn't be shown.");
-  expect(posted).toContainEqual(expect.objectContaining({ type: "rakazo-page:height" }));
+  await vi.waitFor(() =>
+    expect(posted).toContainEqual(expect.objectContaining({ type: "rakazo-page:height" })),
+  );
+});
+
+it("reports overflow changes even when the body box stays the same size", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const observers: Array<() => void> = [];
+  vi.stubGlobal(
+    "ResizeObserver",
+    class {
+      constructor(private readonly onResize: () => void) {}
+      observe() {
+        observers.push(this.onResize);
+        this.onResize();
+      }
+    },
+  );
+  const frames: FrameRequestCallback[] = [];
+  vi.spyOn(window, "requestAnimationFrame").mockImplementation((report) => frames.push(report));
+  const posted = vi.spyOn(window.parent, "postMessage").mockImplementation(() => {});
+  document.body.replaceChildren();
+  // jsdom has no layout. The body and the viewport can have different scroll ranges.
+  const viewport = document.documentElement;
+  Object.defineProperty(document, "scrollingElement", { configurable: true, value: viewport });
+  const readScrollHeight = vi.spyOn(viewport, "scrollHeight", "get").mockReturnValue(400);
+  const readHeight = vi.spyOn(document.body, "scrollHeight", "get").mockReturnValue(121);
+  await import("./runtime.js");
+  runInlineScripts();
+  await act(async () => {
+    window.RakazoPage!.mount({
+      code: pageViewerCode(`
+        export default function Report() {
+          return <div style={{ position: "relative", height: 100 }}>
+            <span style={{ position: "absolute", top: 24 }}>Last line</span>
+          </div>;
+        }
+      `),
+      theme: "light",
+      errorTitle: "Page error",
+    });
+    await flush();
+  });
+  for (const report of frames.splice(0)) report(0);
+  expect(posted).toHaveBeenCalledWith(
+    { type: "rakazo-page:height", height: 121, scrollHeight: 400 },
+    "*",
+  );
+  readHeight.mockClear();
+  posted.mockClear();
+
+  const lastLine = document.querySelector("span")!;
+  lastLine.style.top = "880px";
+  readScrollHeight.mockReturnValue(903);
+  await flush();
+  lastLine.style.color = "red";
+  await flush();
+  expect(frames).toHaveLength(1);
+  frames.shift()!(0);
+  expect(readHeight).toHaveBeenCalledTimes(1);
+  const dimensions = { type: "rakazo-page:height", height: 121, scrollHeight: 903 };
+  expect(posted).toHaveBeenCalledExactlyOnceWith(dimensions, "*");
+
+  lastLine.style.color = "blue";
+  await flush();
+  frames.shift()!(0);
+  expect(posted).toHaveBeenCalledTimes(1);
+  expect(frames).toHaveLength(0);
+
+  // The interactive viewer uses the report to update the page's print width as well.
+  vi.stubGlobal("innerWidth", window.innerWidth + 100);
+  observers[0]!();
+  frames.shift()!(0);
+  expect(posted).toHaveBeenCalledTimes(2);
+  expect(posted).toHaveBeenLastCalledWith(dimensions, "*");
 });
 
 it("runs a saved page that declares its own component under a kit component's name", async () => {
