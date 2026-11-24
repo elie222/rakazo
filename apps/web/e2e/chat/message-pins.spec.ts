@@ -26,6 +26,11 @@ test("a chat pin survives reload and opens its original message", async ({ page 
   await more.click();
   await page.getByRole("menuitem", { name: "Pin message", exact: true }).click();
   await expect(pins).toBeVisible();
+  const pinnedMessage = page.getByRole("menuitem", { name: text, exact: true });
+  await pins.click();
+  await expect(pinnedMessage).toBeVisible();
+  await captureScreenshot(page, testInfo, "chat-pinned-messages");
+  await page.keyboard.press("Escape");
 
   const botId = activeBotId(page);
   for (let index = 0; index < 4; index += 1) {
@@ -42,9 +47,6 @@ test("a chat pin survives reload and opens its original message", async ({ page 
   await page.reload({ waitUntil: "domcontentloaded" });
   await expect(row).not.toBeInViewport();
   await pins.click();
-  const pinnedMessage = page.getByRole("menuitem", { name: text, exact: true });
-  await expect(pinnedMessage).toBeVisible();
-  await captureScreenshot(page, testInfo, "chat-pinned-messages");
   await pinnedMessage.click();
   await expect(row).toBeInViewport();
 
