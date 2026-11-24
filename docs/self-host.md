@@ -83,6 +83,13 @@ instead of this host proxy.
 If the installer, Compose downloads, or image pulls are blocked, use the
 [restricted-network guide](./self-host-restricted-network.md) for mirror settings and local files.
 
+## Hosting platforms
+
+To run Rakazo without managing a server, [deploy on Railway](https://railway.com/new/template/rakazo-template)
+([setup guide](../infra/railway/README.md)) or
+[deploy to Render](https://render.com/deploy?repo=https://github.com/elie222/rakazo)
+([setup guide](../infra/render/README.md)).
+
 ## Docker Compose (single machine)
 
 1. Copy `.env.example` to `.env` and set `POSTGRES_PASSWORD` and `POSTGRES_APP_PASSWORD` (`openssl rand -hex 16` each), plus `BETTER_AUTH_SECRET`, `ENCRYPTION_KEY`, and `SCREEN_PROXY_SECRET` to independent long random strings (32+ characters; 64 hex for `ENCRYPTION_KEY`). Docker sandboxes also need a dedicated `SANDBOX_SUPERVISOR_TOKEN`. Keep existing `ENCRYPTION_KEY` values so stored credentials stay decryptable.
