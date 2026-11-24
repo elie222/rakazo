@@ -2629,7 +2629,7 @@ describe("conversation order", () => {
 
   it("splits a long reply before sending it through a Slack workspace install", async () => {
     const { messaging, sendToThread } = createSurface();
-    const provider = new SlackInstallProvider({
+    const provider: MessagingInstallProvider = new SlackInstallProvider({
       clientId: "fake-client",
       clientSecret: "fake-secret",
       signingSecret: "fake-signing-secret",
