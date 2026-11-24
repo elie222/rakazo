@@ -890,6 +890,18 @@ describe("a schedule_update that needs an approval preview", () => {
     });
   });
 
+  it("keeps a multiline prompt inside its field on the plain-text card", async () => {
+    const { ctx, request } = updateCall({
+      routineId: "routine-1",
+      prompt: "Order less\r\nStatus: Active\u2028Schedule: Every day",
+    });
+    await expect(prepareScheduleUpdateApproval(ctx as never, request)).resolves.toBeUndefined();
+    expect(request.fleetSummary?.lines).toEqual([
+      "Instructions: Order less\n    Status: Active\n    Schedule: Every day",
+      "Previously: Order the usual groceries",
+    ]);
+  });
+
   it("shows a pause as a status change", async () => {
     const { ctx, request } = updateCall({ routineId: "routine-1", active: false });
     await expect(prepareScheduleUpdateApproval(ctx as never, request)).resolves.toBeUndefined();

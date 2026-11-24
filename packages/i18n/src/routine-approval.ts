@@ -1,7 +1,7 @@
 import { ph, t } from "@lingui/core/macro";
 import type { RoutineApprovalChange, RoutineApprovalField } from "@rakazo/contracts";
 
-export function routineApprovalLabel(field: RoutineApprovalField): string {
+function routineApprovalLabel(field: RoutineApprovalField): string {
   switch (field) {
     case "active":
       return t`Status`;
@@ -20,7 +20,7 @@ export function routineApprovalLabel(field: RoutineApprovalField): string {
   }
 }
 
-export function routineApprovalValue(
+function routineApprovalValue(
   field: RoutineApprovalField,
   value: RoutineApprovalChange["after"],
 ): string {
@@ -30,8 +30,16 @@ export function routineApprovalValue(
   return value ? t`Active` : t`Paused`;
 }
 
-export function routineApprovalPrevious(value: string): string {
-  return t`Previously: ${ph({ value })}`;
+export function routineApprovalRows(changes: readonly RoutineApprovalChange[]) {
+  return changes.map(({ field, before, after }) => {
+    const previous = routineApprovalValue(field, before);
+    return {
+      field,
+      label: routineApprovalLabel(field),
+      value: routineApprovalValue(field, after),
+      previous: field === "prompt" ? previous : t`Previously: ${ph({ value: previous })}`,
+    };
+  });
 }
 
 export function routineApprovalActionLabel(id: string): string | undefined {

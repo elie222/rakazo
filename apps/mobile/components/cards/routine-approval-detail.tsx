@@ -1,10 +1,6 @@
 import { useLingui } from "@lingui/react/macro";
 import type { RoutineUpdateApproval } from "@rakazo/contracts";
-import {
-  routineApprovalLabel,
-  routineApprovalPrevious,
-  routineApprovalValue,
-} from "@rakazo/i18n/routine-approval";
+import { routineApprovalRows } from "@rakazo/i18n/routine-approval";
 import { fontWeight, typeScale } from "@rakazo/ui-tokens";
 import { useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
@@ -19,56 +15,53 @@ export function RoutineApprovalDetail({ review }: { review: RoutineUpdateApprova
   return (
     <View style={styles.review}>
       {review.reason ? <Text style={secondary}>{review.reason}</Text> : null}
-      {review.changes.map(({ field, before, after }, index) => {
-        const previous = routineApprovalValue(field, before);
-        return (
-          <View
-            key={field}
-            style={[
-              styles.field,
-              index > 0 && {
-                borderTopWidth: StyleSheet.hairlineWidth,
-                borderColor: tokens.border,
-                paddingTop: 12,
-              },
-            ]}
+      {routineApprovalRows(review.changes).map(({ field, label, value, previous }, index) => (
+        <View
+          key={field}
+          style={[
+            styles.field,
+            index > 0 && {
+              borderTopWidth: StyleSheet.hairlineWidth,
+              borderColor: tokens.border,
+              paddingTop: 12,
+            },
+          ]}
+        >
+          <Text style={secondary}>{label}</Text>
+          <Text
+            style={{
+              ...typeScale.secondary,
+              color: tokens.foreground,
+              fontWeight: field === "prompt" ? fontWeight.regular : fontWeight.medium,
+            }}
           >
-            <Text style={secondary}>{routineApprovalLabel(field)}</Text>
-            <Text
-              style={{
-                ...typeScale.secondary,
-                color: tokens.foreground,
-                fontWeight: field === "prompt" ? fontWeight.regular : fontWeight.medium,
-              }}
-            >
-              {routineApprovalValue(field, after)}
-            </Text>
-            {field === "prompt" ? (
-              <>
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityState={{ expanded: showPrevious }}
-                  onPress={() => setShowPrevious((previous) => !previous)}
-                  style={styles.disclosure}
-                >
-                  <NativeSymbol
-                    ios={showPrevious ? "chevron.down" : "chevron.forward"}
-                    android={showPrevious ? "chevron-down" : "chevron-forward"}
-                    size={13}
-                    color={tokens.foreground}
-                  />
-                  <Text style={[secondary, { color: tokens.foreground, flexShrink: 1 }]}>
-                    {t`Previous instructions`}
-                  </Text>
-                </Pressable>
-                {showPrevious ? <Text style={secondary}>{previous}</Text> : null}
-              </>
-            ) : (
-              <Text style={secondary}>{routineApprovalPrevious(previous)}</Text>
-            )}
-          </View>
-        );
-      })}
+            {value}
+          </Text>
+          {field === "prompt" ? (
+            <>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityState={{ expanded: showPrevious }}
+                onPress={() => setShowPrevious((previous) => !previous)}
+                style={styles.disclosure}
+              >
+                <NativeSymbol
+                  ios={showPrevious ? "chevron.down" : "chevron.forward"}
+                  android={showPrevious ? "chevron-down" : "chevron-forward"}
+                  size={13}
+                  color={tokens.foreground}
+                />
+                <Text style={[secondary, { color: tokens.foreground, flexShrink: 1 }]}>
+                  {t`Previous instructions`}
+                </Text>
+              </Pressable>
+              {showPrevious ? <Text style={secondary}>{previous}</Text> : null}
+            </>
+          ) : (
+            <Text style={secondary}>{previous}</Text>
+          )}
+        </View>
+      ))}
     </View>
   );
 }

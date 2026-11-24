@@ -96,7 +96,9 @@ export function routineApprovalLines(changes: RoutineApprovalChange[]): string[]
   };
   return changes.flatMap(({ field, before, after }) => {
     const text = (value: RoutineApprovalChange["after"]) => {
-      if (typeof value !== "boolean") return value ?? "None";
+      // Put continuation lines inside the value, so they cannot look like another approval field.
+      if (typeof value === "string") return value.replace(/\r\n|[\r\n\u2028\u2029]/g, "\n    ");
+      if (value === null) return "None";
       return field === "inChat"
         ? value
           ? "In this chat"
