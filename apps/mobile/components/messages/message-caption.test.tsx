@@ -18,7 +18,7 @@ const linking = vi.hoisted(() => ({
 vi.mock("../bots/bot-avatar", () => ({ BotAvatar: () => null }));
 vi.mock("../native/native-symbol", () => ({
   NativeSymbol: ({ ios, color }: { ios: string; color: string }) =>
-    createElement("span", { "data-symbol": ios, style: { color } }),
+    createElement("span", { "data-symbol": ios, "data-color": color }),
 }));
 
 vi.mock("react-native", () => {
@@ -142,9 +142,8 @@ describe("attachment captions", () => {
       );
     });
 
-    const icon = container.querySelector<HTMLElement>('[data-symbol="person.3"]');
-    expect(icon?.style.color).toBe(container.querySelector("span")?.style.color);
-    expect(icon?.style.color).toBeTruthy();
+    const icon = container.querySelector('[data-symbol="person.3"]');
+    expect(icon?.getAttribute("data-color")).toBe(lightTokens.foreground);
   });
 
   it("opens the page a sent page link names from the user's bubble", async () => {
